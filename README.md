@@ -10,7 +10,7 @@ set of data structures and objects that are written in Cython to gain maximum pe
 benefit of making it easy to extend that core functionality using regular Python. However, the border between what
 is Python and what is Cython is a bit blurred and not well designed in certain places.
 
-One option for the future development of Pywr (e.g. Pywr-2.x) would be a more explicit separate between the compute
+One option for the future development of Pywr (e.g. Pywr-2.x) would be a more explicit separation between the compute
 "core" and higher level functionality. Rust is a candidate for writing that core largely independent of Python, and
 possibly offers the benefits of (1) greater performance than Cython, and (2) easier maintenance in the future. 
 
