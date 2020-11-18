@@ -24,6 +24,7 @@ Any major revision to Pywr will have the following feature requirements:
  - Better error handling.
  - Cross-platform.
  - Faster!
+ - Strong input file (JSON) schema.
 
 ## Development installation instructions
 
