@@ -28,16 +28,16 @@ Any major revision to Pywr will have the following feature requirements:
 
 ## Development installation instructions
 
-Rust and GLPK are required for installation. To build the shared library run: 
+Rust and GLPK are required for installation. To create a development installation requires first compiling the
+Rust library and then installing the Python package in editable model.
 
 ```bash
-cargo build
+maturin develop
+pip install -e .
 ```
 
-This will create a shared library (.so or .dll) or `target/debug` (e.g. `libpywr.so`). To use the Python interface in
- development symlink or copy this shared library to the `pywr` folder as `pywr.so` or `pywr.pyd`. See the 
- [Pyo3 instructions](https://pyo3.rs/v0.12.3/index.html) for more information.
- 
+Alternatively use the `develop.sh` script to run the above two commands.
+
 Once this is complete the following will run a simple test script of some basic models via Python.
  
 ```bash
