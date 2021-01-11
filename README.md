@@ -12,14 +12,14 @@ is Python and what is Cython is a bit blurred and not well designed in certain p
 
 One option for the future development of Pywr (e.g. Pywr-2.x) would be a more explicit separation between the compute
 "core" and higher level functionality. Rust is a candidate for writing that core largely independent of Python, and
-possibly offers the benefits of (1) greater performance than Cython, and (2) easier maintenance in the future. 
+possibly offers the benefits of (1) greater performance than Cython, and (2) easier maintenance in the future.
 
 ## Requirements
 
 Any major revision to Pywr will have the following feature requirements:
 
  - Retain the "Parameter" system from Pywr-1.x - this is core functionality that makes Pywr really flexible.
- - Extendable in Python space. 
+ - Extendable in Python space.
  - An improved approach for outputting data and metrics.
  - Better error handling.
  - Cross-platform.
@@ -39,7 +39,7 @@ pip install -e .
 Alternatively use the `develop.sh` script to run the above two commands.
 
 Once this is complete the following will run a simple test script of some basic models via Python.
- 
+
 ```bash
 python -m pywr
 ```

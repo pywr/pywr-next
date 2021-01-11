@@ -25,11 +25,11 @@ class BaseNode(BaseModel):
     @classmethod
     def validate(cls, data):
         if not isinstance(data, dict):
-            raise TypeError('dict required')
-        if 'type' not in data:
+            raise TypeError("dict required")
+        if "type" not in data:
             raise ValueError('"type" key required')
 
-        klass_name = data.pop('type') + 'node'
+        klass_name = data.pop("type") + "node"
         klass = _node_registry[klass_name]
         return klass(**data)
 
@@ -95,15 +95,15 @@ class NodeCollection:
     @classmethod
     def validate(cls, data):
         if not isinstance(data, list):
-            raise TypeError('list required')
+            raise TypeError("list required")
 
         collection = cls()
         for node_data in data:
 
-            if 'type' not in node_data:
+            if "type" not in node_data:
                 raise ValueError('"type" key required')
 
-            klass_name = node_data.pop('type') + 'node'
+            klass_name = node_data.pop("type") + "node"
             klass = _node_registry[klass_name]
             node = klass(**node_data)
             if node.name in collection:
@@ -157,19 +157,19 @@ class ParameterCollection:
     @classmethod
     def validate(cls, data):
         if not isinstance(data, list):
-            raise TypeError('list required')
+            raise TypeError("list required")
 
         collection = cls()
         for parameter_data in data:
 
-            if 'type' not in parameter_data:
+            if "type" not in parameter_data:
                 raise ValueError('"type" key required')
 
-            klass_name = parameter_data.pop('type') + 'parameter'
+            klass_name = parameter_data.pop("type") + "parameter"
             klass = _parameter_registry[klass_name]
             parameter = klass(**parameter_data)
             if parameter.name in collection:
-                raise ValueError(f'Parameter name {parameter.name} already defined.')
+                raise ValueError(f"Parameter name {parameter.name} already defined.")
             collection[parameter.name] = parameter
         return collection
 

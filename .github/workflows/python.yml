@@ -40,15 +40,12 @@ jobs:
         python-version: ${{ matrix.python-version }}
     - name: Install system dependencies
       run: sudo apt-get install libglpk-dev
-    - name: Install Poetry
-      uses: snok/install-poetry@v1.1.1
-      with:
-        virtualenvs-create: true
-        virtualenvs-in-project: true
-    - name: Install Python Dependencies
-      run: poetry install
-    - name: Run tests
+    - name: Build and test
       run: |
-        source .venv/bin/activate
-        pytest tests/
-        coverage report
+        python -m venv venv
+        source venv/bin/activate
+        python -m pip install maturin pytest
+        maturin build --interpreter python${{ matrix.python-version }} --manylinux off
+        ls -la target/wheels
+        python -m pip install target/wheels/pywr*.whl
+        pytest tests

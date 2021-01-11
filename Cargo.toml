@@ -22,3 +22,6 @@ default = ["extension-module"]
 [lib]
 name = "pywr"
 crate-type = ["cdylib"]
+
+[package.metadata.maturin]
+requires-dist = ["pydantic"]

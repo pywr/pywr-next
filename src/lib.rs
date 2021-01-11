@@ -53,7 +53,7 @@ pub enum PywrError {
     #[error("atleast one parameter is required")]
     AtleastOneParameterRequired,
     #[error("scenario state not found")]
-    ScenarioStateNotFound
+    ScenarioStateNotFound,
 }
 
 type NodeIndex = usize;
@@ -802,7 +802,7 @@ impl Model {
 
     /// Returns the initial state of the network
     fn get_initial_state(&self, scenario_indices: &Vec<ScenarioIndex>) -> Vec<NetworkState> {
-        let mut states : Vec<NetworkState> = Vec::new();
+        let mut states: Vec<NetworkState> = Vec::new();
 
         for _scenario_index in scenario_indices {
             let mut state = NetworkState::new();
@@ -865,13 +865,12 @@ impl Model {
         solver: &mut Box<dyn Solver>,
         current_states: &Vec<NetworkState>,
     ) -> Result<Vec<NetworkState>, PywrError> {
-
         let mut next_states = Vec::with_capacity(current_states.len());
 
         for scenario_index in scenario_indices.iter() {
             let current_state = match current_states.get(scenario_index.index) {
                 Some(s) => s,
-                None => return Err(PywrError::ScenarioStateNotFound)
+                None => return Err(PywrError::ScenarioStateNotFound),
             };
             let pstate = self.compute_parameters(&timestep, &scenario_index, current_state)?;
 
@@ -1339,8 +1338,8 @@ impl Solver for GlpkSolver {
         self.problem.simplex()?;
         // Check solution status
         match self.problem.get_solution_status() {
-            glpk::SolutionStatus::Optimal => {},
-            _ => return Err(PywrError::SolveFailed)  // TODO more information in this error message
+            glpk::SolutionStatus::Optimal => {}
+            _ => return Err(PywrError::SolveFailed), // TODO more information in this error message
         }
 
         // Create the updated network state from the results
@@ -1622,9 +1621,8 @@ mod tests {
         let output_state = state0.node_states.get(output_node_idx).unwrap();
         match output_state {
             NodeState::Flow(fs) => assert_eq!(fs.in_flow, 10.0),
-            _ => assert!(false)
+            _ => assert!(false),
         };
-
     }
 
     #[test]

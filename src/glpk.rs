@@ -429,7 +429,9 @@ mod tests {
         problem.set_matrix_row(0, &vec![0, 2], &vec![1.0, 1.0]).unwrap();
         problem.set_row_bounds(0, Bounds::Lower(2.0)).unwrap();
         // Row2
-        problem.set_matrix_row(1, &vec![0, 1, 2], &vec![1.0, -5.0, 1.0]).unwrap();
+        problem
+            .set_matrix_row(1, &vec![0, 1, 2], &vec![1.0, -5.0, 1.0])
+            .unwrap();
         problem.set_row_bounds(1, Bounds::Fixed(1.0)).unwrap();
 
         let simplex_status = problem.simplex().unwrap();
