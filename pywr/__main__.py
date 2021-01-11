@@ -1,4 +1,4 @@
-from .pywr import PyModel
+from .pywr import PyModel  # type: ignore
 import random
 from itertools import product
 

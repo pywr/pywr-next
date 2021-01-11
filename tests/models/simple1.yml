@@ -1,0 +1,19 @@
+
+nodes:
+  - name: input1
+    type: input
+  - name: link1
+    type: link
+  - name: output1
+    type: output
+    cost: -10.0
+    max_flow: demand
+edges:
+  - from: input1
+    to: link1
+  - from: link1
+    to: output1
+parameters:
+  - name: demand
+    type: constant
+    value: 10.0
