@@ -1,0 +1,54 @@
+name: Python
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v1
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: "3.x"
+      - name: Install Dependencies
+        run: |
+          pip install pre-commit
+          pre-commit install-hooks
+      - name: Lint with pre-commit
+        run: pre-commit run --all-files
+
+  test:
+
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: [3.6, 3.7, 3.8, 3.9]
+
+    steps:
+    - uses: actions/checkout@v2
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v2
+      with:
+        python-version: ${{ matrix.python-version }}
+    - name: Install system dependencies
+      run: sudo apt-get install libglpk-dev
+    - name: Install Poetry
+      uses: snok/install-poetry@v1.1.1
+      with:
+        virtualenvs-create: true
+        virtualenvs-in-project: true
+    - name: Install Python Dependencies
+      run: poetry install
+    - name: Run tests
+      run: |
+        source .venv/bin/activate
+        pytest tests/
+        coverage report
