@@ -11,6 +11,7 @@ libc = "0.2"
 thiserror = "1.0"
 chrono = "0.4"
 ndarray = "0.13"
+float-cmp = "0.8.0"
 
 [dependencies.pyo3]
 version = "*"

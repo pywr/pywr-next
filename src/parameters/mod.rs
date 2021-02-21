@@ -1,6 +1,10 @@
 pub mod py;
-use super::{NetworkState, ParameterIndex, ParameterState, PywrError, ScenarioIndex, Timestep};
+use super::{NetworkState, ParameterState, PywrError};
+use crate::scenario::ScenarioIndex;
+use crate::timestep::Timestep;
 use ndarray::Array2;
+
+pub type ParameterIndex = usize;
 
 /// Meta data common to all parameters.
 #[derive(Debug)]
@@ -221,7 +225,7 @@ impl Parameter for AggregatedParameter {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Timestepper;
+    use crate::timestep::Timestepper;
     use ndarray::prelude::*;
 
     fn test_timestepper() -> Timestepper {
