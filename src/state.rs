@@ -1,6 +1,8 @@
-use crate::edge::Edge;
+use crate::edge::EdgeIndex;
+use crate::node::NodeIndex;
 use crate::timestep::Timestep;
 use crate::PywrError;
+use pyo3::prelude::*;
 
 #[derive(Clone, Copy, Debug)]
 pub enum NodeState {
@@ -29,6 +31,20 @@ impl NodeState {
             Self::Flow(s) => s.add_in_flow(flow),
             Self::Storage(s) => s.add_in_flow(flow, timestep),
         };
+    }
+
+    pub fn get_in_flow(&self) -> f64 {
+        match self {
+            Self::Flow(s) => s.in_flow,
+            Self::Storage(s) => s.flows.in_flow,
+        }
+    }
+
+    pub fn get_out_flow(&self) -> f64 {
+        match self {
+            Self::Flow(s) => s.out_flow,
+            Self::Storage(s) => s.flows.out_flow,
+        }
     }
 
     fn add_out_flow(&mut self, flow: f64, timestep: &Timestep) {
@@ -68,8 +84,8 @@ impl FlowState {
 
 #[derive(Clone, Copy, Debug)]
 pub struct StorageState {
-    pub(crate) volume: f64,
-    flows: FlowState,
+    pub volume: f64,
+    pub flows: FlowState,
 }
 
 impl StorageState {
@@ -112,10 +128,11 @@ impl EdgeState {
 pub type ParameterState = Vec<f64>;
 
 // State of the nodes and edges
+#[pyclass]
 #[derive(Clone, Debug)]
 pub struct NetworkState {
-    pub(crate) node_states: Vec<NodeState>,
-    pub(crate) edge_states: Vec<EdgeState>,
+    node_states: Vec<NodeState>,
+    edge_states: Vec<EdgeState>,
 }
 
 impl NetworkState {
@@ -143,22 +160,68 @@ impl NetworkState {
         }
     }
 
-    pub(crate) fn add_flow(&mut self, edge: &Edge, flow: f64, timestep: &Timestep) -> Result<(), PywrError> {
-        match self.node_states.get_mut(edge.from_node_index) {
+    pub(crate) fn push_node_state(&mut self, node_state: NodeState) {
+        self.node_states.push(node_state);
+    }
+
+    pub(crate) fn push_edge_state(&mut self, edge_state: EdgeState) {
+        self.edge_states.push(edge_state);
+    }
+
+    pub(crate) fn add_flow(
+        &mut self,
+        edge_index: EdgeIndex,
+        from_node_index: NodeIndex,
+        to_node_index: NodeIndex,
+        timestep: &Timestep,
+        flow: f64,
+    ) -> Result<(), PywrError> {
+        match self.node_states.get_mut(from_node_index) {
             Some(s) => s.add_out_flow(flow, timestep),
             None => return Err(PywrError::NodeIndexNotFound),
         };
 
-        match self.node_states.get_mut(edge.to_node_index) {
+        match self.node_states.get_mut(to_node_index) {
             Some(s) => s.add_in_flow(flow, timestep),
             None => return Err(PywrError::NodeIndexNotFound),
         };
 
-        match self.edge_states.get_mut(edge.index) {
+        match self.edge_states.get_mut(edge_index) {
             Some(s) => s.add_flow(flow),
             None => return Err(PywrError::EdgeIndexNotFound),
         };
 
         Ok(())
+    }
+
+    pub fn get_node_in_flow(&self, node_index: NodeIndex) -> Result<f64, PywrError> {
+        match self.node_states.get(node_index) {
+            Some(s) => Ok(s.get_in_flow()),
+            None => Err(PywrError::NodeIndexNotFound),
+        }
+    }
+
+    pub fn get_node_out_flow(&self, node_index: NodeIndex) -> Result<f64, PywrError> {
+        match self.node_states.get(node_index) {
+            Some(s) => Ok(s.get_out_flow()),
+            None => Err(PywrError::NodeIndexNotFound),
+        }
+    }
+
+    pub fn get_node_volume(&self, node_index: NodeIndex) -> Result<f64, PywrError> {
+        match self.node_states.get(node_index) {
+            Some(s) => match s {
+                NodeState::Storage(ss) => Ok(ss.volume),
+                NodeState::Flow(_) => Err(PywrError::MetricNotDefinedForNode),
+            },
+            None => Err(PywrError::MetricNotDefinedForNode),
+        }
+    }
+
+    pub fn get_edge_flow(&self, edge_index: EdgeIndex) -> Result<f64, PywrError> {
+        match self.edge_states.get(edge_index) {
+            Some(s) => Ok(s.flow),
+            None => Err(PywrError::EdgeIndexNotFound),
+        }
     }
 }

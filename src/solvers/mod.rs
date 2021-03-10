@@ -3,7 +3,7 @@ use crate::state::{NetworkState, ParameterState};
 use crate::timestep::Timestep;
 use crate::PywrError;
 
-pub mod glpk;
+pub mod clp;
 
 pub trait Solver {
     fn setup(&mut self, model: &Model) -> Result<(), PywrError>;

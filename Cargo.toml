@@ -12,6 +12,7 @@ thiserror = "1.0"
 chrono = "0.4"
 ndarray = "0.13"
 float-cmp = "0.8.0"
+clp-sys = { path = "./clp-sys" }
 
 [dependencies.pyo3]
 version = "*"
@@ -26,3 +27,8 @@ crate-type = ["cdylib"]
 
 [package.metadata.maturin]
 requires-dist = ["pydantic"]
+
+[workspace]
+members = [
+    "clp-sys",
+]

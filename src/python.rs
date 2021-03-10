@@ -1,10 +1,11 @@
+use crate::metric::Metric;
 use crate::model::Model;
 use crate::node::Constraint;
-use crate::parameters;
 use crate::scenario::ScenarioGroupCollection;
-use crate::solvers::glpk::GlpkSolver;
+use crate::solvers::clp::ClpSolver;
 use crate::solvers::Solver;
 use crate::timestep::Timestepper;
+use crate::{parameters, recorders};
 use crate::{EdgeIndex, NodeIndex, PywrError};
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
@@ -61,7 +62,8 @@ impl PyModel {
         scenarios.add_group("test-scenario", 5);
 
         let mut solver: Box<dyn Solver> = match solver_name {
-            "glpk" => Box::new(GlpkSolver::new().unwrap()),
+            //"glpk" => Box::new(GlpkSolver::new().unwrap()),
+            "clp" => Box::new(ClpSolver::new()),
             _ => return Err(PyErr::from(PywrError::UnrecognisedSolver)),
         };
 
@@ -98,6 +100,23 @@ impl PyModel {
         let idx = self.model.add_parameter(Box::new(parameter))?;
         Ok(idx)
     }
+
+    fn add_python_recorder(
+        &mut self,
+        name: &str,
+        metric: &str,
+        index: usize,
+        object: PyObject,
+    ) -> PyResult<recorders::RecorderIndex> {
+        let metric = match metric {
+            "NodeInFlow" => Metric::NodeInFlow(index),
+            _ => return Err(PyErr::from(PywrError::UnrecognisedMetric)),
+        };
+
+        let recorder = recorders::py::PyRecorder::new(name, object, metric);
+        let idx = self.model.add_recorder(Box::new(recorder))?;
+        Ok(idx)
+    }
 }
 
 /// A Python module implemented in Rust.
@@ -105,6 +124,7 @@ impl PyModel {
 fn pywr(py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<PyModel>()?;
     // m.add_function(wrap_pyfunction!(sum_as_string, m)?)?;
+    // m.add_class::<recorders::py::PyRecorder>()?;
 
     Ok(())
 }

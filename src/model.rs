@@ -4,7 +4,7 @@ use crate::scenario::{ScenarioGroupCollection, ScenarioIndex};
 use crate::solvers::Solver;
 use crate::state::{EdgeState, NetworkState, NodeState, ParameterState};
 use crate::timestep::{Timestep, Timestepper};
-use crate::{parameters, PywrError};
+use crate::{parameters, recorders, PywrError};
 use std::cmp::Ordering;
 use std::time::Instant;
 
@@ -12,6 +12,7 @@ pub struct Model {
     pub(crate) nodes: Vec<Node>,
     pub(crate) edges: Vec<Edge>,
     parameters: Vec<Box<dyn parameters::Parameter>>,
+    recorders: Vec<Box<dyn recorders::Recorder>>,
     scenarios: ScenarioGroupCollection,
 }
 
@@ -24,6 +25,7 @@ impl Model {
             nodes: Vec::new(),
             edges: Vec::new(),
             parameters: Vec::new(),
+            recorders: Vec::new(),
             scenarios: ScenarioGroupCollection::new(),
         }
     }
@@ -41,14 +43,14 @@ impl Model {
                     Node::Link(_n) => NodeState::new_flow_state(),
                     Node::Output(_n) => NodeState::new_flow_state(),
                     // TODO initial volume
-                    Node::Storage(_n) => NodeState::new_storage_state(0.0),
+                    Node::Storage(n) => NodeState::new_storage_state(n.initial_volume),
                 };
 
-                state.node_states.push(node_state);
+                state.push_node_state(node_state);
             }
 
             for _edge in &self.edges {
-                state.edge_states.push(EdgeState::new());
+                state.push_edge_state(EdgeState::new());
             }
 
             states.push(state)
@@ -57,7 +59,7 @@ impl Model {
     }
 
     pub fn run(
-        &self,
+        &mut self,
         timestepper: Timestepper,
         scenarios: ScenarioGroupCollection,
         solver: &mut Box<dyn Solver>,
@@ -87,7 +89,7 @@ impl Model {
 
     /// Perform a single timestep with the current state, and return the updated states.
     pub(crate) fn step(
-        &self,
+        &mut self,
         timestep: &Timestep,
         scenario_indices: &Vec<ScenarioIndex>,
         solver: &mut Box<dyn Solver>,
@@ -103,6 +105,8 @@ impl Model {
             let pstate = self.compute_parameters(&timestep, &scenario_index, current_state)?;
 
             let next_state = solver.solve(&self, timestep, current_state, &pstate)?;
+
+            self.save_recorders(&timestep, &scenario_index, &next_state, &pstate)?;
 
             next_states.push(next_state);
         }
@@ -125,7 +129,19 @@ impl Model {
         Ok(parameter_state)
     }
 
-    // TODO do these with macros??
+    fn save_recorders(
+        &mut self,
+        timestep: &Timestep,
+        scenario_index: &ScenarioIndex,
+        network_state: &NetworkState,
+        parameter_state: &ParameterState,
+    ) -> Result<(), PywrError> {
+        for recorder in self.recorders.iter_mut() {
+            recorder.save(timestep, scenario_index, network_state, parameter_state)?;
+        }
+        Ok(())
+    }
+
     /// Get a NodeIndex from a node's name
     pub fn get_node_index(&self, name: &str) -> Result<NodeIndex, PywrError> {
         match self.nodes.iter().find(|&n| n.name() == name) {
@@ -139,6 +155,14 @@ impl Model {
         match self.parameters.iter().position(|p| p.meta().name == name) {
             Some(idx) => Ok(idx),
             None => Err(PywrError::ParameterIndexNotFound),
+        }
+    }
+
+    /// Get a `RecorderIndex` from a recorder's name
+    pub fn get_recorder_index(&self, name: &str) -> Result<recorders::RecorderIndex, PywrError> {
+        match self.recorders.iter().position(|r| r.meta().name == name) {
+            Some(idx) => Ok(idx),
+            None => Err(PywrError::RecorderIndexNotFound),
         }
     }
 
@@ -185,7 +209,7 @@ impl Model {
     }
 
     /// Add a new Node::Link to the model.
-    pub fn add_storage_node(&mut self, name: &str) -> Result<NodeIndex, PywrError> {
+    pub fn add_storage_node(&mut self, name: &str, initial_volume: f64) -> Result<NodeIndex, PywrError> {
         // Check for name.
         if let Ok(idx) = self.get_node_index(name) {
             return Err(PywrError::NodeNameAlreadyExists(name.to_string(), idx.clone()));
@@ -193,7 +217,7 @@ impl Model {
 
         // Now add the node to the network.
         let node_index = self.nodes.len();
-        let node = Node::new_storage(&node_index, name);
+        let node = Node::new_storage(&node_index, name, initial_volume);
         self.nodes.push(node);
         Ok(node_index)
     }
@@ -214,6 +238,23 @@ impl Model {
         self.parameters.push(parameter);
 
         Ok(parameter_index)
+    }
+
+    /// Add a `recorders::Recorder` to the model
+    pub fn add_recorder(
+        &mut self,
+        recorder: Box<dyn recorders::Recorder>,
+    ) -> Result<recorders::RecorderIndex, PywrError> {
+        if let Ok(idx) = self.get_recorder_index(&recorder.meta().name) {
+            return Err(PywrError::RecorderNameAlreadyExists(
+                recorder.meta().name.to_string(),
+                idx.clone(),
+            ));
+        }
+
+        let recorder_index = self.recorders.len();
+        self.recorders.push(recorder);
+        Ok(recorder_index)
     }
 
     /// Set a constraint on a node.
@@ -314,16 +355,20 @@ impl Model {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::metric::Metric;
     use crate::model::Model;
     use crate::node::Constraint;
+    use crate::recorders::AssertionRecorder;
     use crate::scenario::{ScenarioGroupCollection, ScenarioIndex};
-    use crate::solvers::glpk::GlpkSolver;
+    use crate::solvers::clp::ClpSolver;
     use crate::solvers::Solver;
     use crate::timestep::Timestepper;
     use float_cmp::approx_eq;
+    use ndarray::prelude::*;
+    use ndarray::{Array2, Shape};
 
     fn default_timestepper() -> Timestepper {
-        Timestepper::new("2020-01-01", "2020-01-05", "%Y-%m-%d", 1).unwrap()
+        Timestepper::new("2020-01-01", "2020-01-15", "%Y-%m-%d", 1).unwrap()
     }
 
     fn default_scenarios() -> ScenarioGroupCollection {
@@ -392,13 +437,14 @@ mod tests {
             node_idx,
             Err(PywrError::NodeNameAlreadyExists("my-node".to_string(), 0))
         );
-        let node_idx = model.add_storage_node("my-node");
+        let node_idx = model.add_storage_node("my-node", 10.0);
         assert_eq!(
             node_idx,
             Err(PywrError::NodeNameAlreadyExists("my-node".to_string(), 0))
         );
     }
 
+    /// Create a simple test model with three nodes.
     fn simple_model() -> Model {
         let mut model = Model::new();
 
@@ -439,6 +485,37 @@ mod tests {
         model
     }
 
+    /// A test model with a single storage node.
+    fn simple_storage_model() -> Model {
+        let mut model = Model::new();
+
+        let storage_node_idx = model.add_storage_node("reservoir", 100.0).unwrap();
+        let output_node_idx = model.add_output_node("output").unwrap();
+
+        model.connect_nodes(storage_node_idx, output_node_idx).unwrap();
+
+        // Apply demand to the model
+        // TODO convenience function for adding a constant constraint.
+        let demand = parameters::ConstantParameter::new("demand", 10.0);
+        let demand_idx = model.add_parameter(Box::new(demand)).unwrap();
+        model
+            .set_node_constraint(output_node_idx, Some(demand_idx), Constraint::MaxFlow)
+            .unwrap();
+
+        let demand_cost = parameters::ConstantParameter::new("demand-cost", -10.0);
+        let demand_cost_idx = model.add_parameter(Box::new(demand_cost)).unwrap();
+        model.set_node_cost(output_node_idx, Some(demand_cost_idx)).unwrap();
+
+        let max_volume = parameters::ConstantParameter::new("max-volume", 100.0);
+        let max_volume_idx = model.add_parameter(Box::new(max_volume)).unwrap();
+
+        model
+            .set_node_constraint(storage_node_idx, Some(max_volume_idx), Constraint::MaxVolume)
+            .unwrap();
+
+        model
+    }
+
     #[test]
     /// Test adding a constant parameter to a model.
     fn test_constant_parameter() {
@@ -462,10 +539,10 @@ mod tests {
 
     #[test]
     fn test_step() {
-        let model = simple_model();
-        let mut timestepper = default_timestepper();
-        let mut scenarios = default_scenarios();
-        let mut solver: Box<dyn Solver> = Box::new(GlpkSolver::new().unwrap());
+        let mut model = simple_model();
+        let timestepper = default_timestepper();
+        let scenarios = default_scenarios();
+        let mut solver: Box<dyn Solver> = Box::new(ClpSolver::new());
 
         solver.setup(&model).unwrap();
 
@@ -483,22 +560,66 @@ mod tests {
         let output_node_idx = model.get_node_index("output").unwrap();
 
         let state0 = next_state.get(0).unwrap();
-        let output_state = state0.node_states.get(output_node_idx).unwrap();
-        match output_state {
-            NodeState::Flow(fs) => assert!(approx_eq!(f64, fs.in_flow, 10.0)),
-            _ => assert!(false),
-        };
+        let output_inflow = state0.get_node_in_flow(output_node_idx).unwrap();
+        assert!(approx_eq!(f64, output_inflow, 10.0));
     }
 
     #[test]
+    /// Test running a simple model
     fn test_run() {
-        let model = simple_model();
-        let mut timestepper = default_timestepper();
-        let mut scenarios = default_scenarios();
-        let mut solver: Box<dyn Solver> = Box::new(GlpkSolver::new().unwrap());
+        let mut model = simple_model();
+        let timestepper = default_timestepper();
+        let scenarios = default_scenarios();
+        let mut solver: Box<dyn Solver> = Box::new(ClpSolver::new());
+
+        // Set-up assertion for "input" node
+        let idx = model.get_node_index("input").unwrap();
+        let expected = Array2::from_elem((366, 10), 10.0);
+        let recorder = AssertionRecorder::new("input-flow", Metric::NodeOutFlow(idx), expected);
+        model.add_recorder(Box::new(recorder)).unwrap();
+
+        let idx = model.get_node_index("link").unwrap();
+        let expected = Array2::from_elem((366, 10), 10.0);
+        let recorder = AssertionRecorder::new("link-flow", Metric::NodeOutFlow(idx), expected);
+        model.add_recorder(Box::new(recorder)).unwrap();
+
+        let idx = model.get_node_index("output").unwrap();
+        let expected = Array2::from_elem((366, 10), 10.0);
+        let recorder = AssertionRecorder::new("output-flow", Metric::NodeInFlow(idx), expected);
+        model.add_recorder(Box::new(recorder)).unwrap();
+
+        let idx = model.get_parameter_index("total-demand").unwrap();
+        let expected = Array2::from_elem((366, 10), 12.0);
+        let recorder = AssertionRecorder::new("total-demand", Metric::ParameterValue(idx), expected);
+        model.add_recorder(Box::new(recorder)).unwrap();
 
         model.run(timestepper, scenarios, &mut solver).unwrap();
-        // TODO test results
+    }
+
+    #[test]
+    fn test_run_storage() {
+        let mut model = simple_storage_model();
+        let timestepper = default_timestepper();
+        let scenarios = default_scenarios();
+        let mut solver: Box<dyn Solver> = Box::new(ClpSolver::new());
+
+        let idx = model.get_node_index("output").unwrap();
+        let expected = array![
+            [10.0; 10], [10.0; 10], [10.0; 10], [10.0; 10], [10.0; 10], [10.0; 10], [10.0; 10], [10.0; 10], [10.0; 10],
+            [10.0; 10], [0.0; 10], [0.0; 10], [0.0; 10], [0.0; 10], [0.0; 10],
+        ];
+        let recorder = AssertionRecorder::new("output-flow", Metric::NodeInFlow(idx), expected);
+        model.add_recorder(Box::new(recorder)).unwrap();
+
+        let idx = model.get_node_index("reservoir").unwrap();
+        let expected = array![
+            [90.0; 10], [80.0; 10], [70.0; 10], [60.0; 10], [50.0; 10], [40.0; 10], [30.0; 10], [20.0; 10], [10.0; 10],
+            [0.0; 10], [0.0; 10], [0.0; 10], [0.0; 10], [0.0; 10], [0.0; 10],
+        ];
+        let recorder = AssertionRecorder::new("reservoir-volume", Metric::NodeVolume(idx), expected);
+        model.add_recorder(Box::new(recorder)).unwrap();
+
+        model.run(timestepper, scenarios, &mut solver).unwrap();
     }
 
     #[test]

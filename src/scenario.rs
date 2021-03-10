@@ -49,10 +49,7 @@ impl ScenarioGroupCollection {
                 indices.push(idx);
             }
             indices.reverse();
-            scenario_indices.push(ScenarioIndex {
-                index: scenario_id,
-                indices: indices,
-            });
+            scenario_indices.push(ScenarioIndex::new(scenario_id, indices));
         }
         scenario_indices
     }
@@ -62,4 +59,10 @@ impl ScenarioGroupCollection {
 pub struct ScenarioIndex {
     pub(crate) index: usize,
     pub(crate) indices: Vec<usize>,
+}
+
+impl ScenarioIndex {
+    pub(crate) fn new(index: usize, indices: Vec<usize>) -> Self {
+        Self { index, indices }
+    }
 }

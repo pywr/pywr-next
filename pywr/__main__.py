@@ -27,7 +27,7 @@ def simple1(use_python_parameter=False):
     model.add_constant("output-cost", -10.0)
     model.set_node_cost("my-output", "output-cost")
 
-    model.run("glpk")
+    model.run("clp")
 
 
 class RandomParameter:
@@ -67,7 +67,7 @@ def zones(num_zones: int, use_python_parameter=False):
         if random.random() < 0.5:
             model.connect_nodes(f"{zone_from}-link", f"{zone_to}-link")
 
-    model.run("glpk")
+    model.run("clp")
 
 
 if __name__ == "__main__":

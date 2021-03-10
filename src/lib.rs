@@ -1,21 +1,24 @@
+use chrono::ParseError;
 use thiserror::Error;
-
-pub mod edge;
-mod glpk;
-pub mod model;
-pub mod node;
-pub mod parameters;
-pub mod python;
-mod scenario;
-mod solvers;
-pub mod state;
-mod timestep;
 
 use crate::edge::{Edge, EdgeIndex};
 use crate::node::{Node, NodeIndex};
 use crate::parameters::ParameterIndex;
-use crate::state::{EdgeState, NetworkState, NodeState, ParameterState};
-use chrono::ParseError;
+use crate::recorders::RecorderIndex;
+use crate::state::{NetworkState, ParameterState};
+
+pub mod edge;
+mod metric;
+pub mod model;
+pub mod node;
+pub mod parameters;
+pub mod python;
+mod recorders;
+mod scenario;
+mod solvers;
+pub mod state;
+mod timestep;
+mod utils;
 
 #[derive(Error, Debug, PartialEq)]
 pub enum PywrError {
@@ -29,10 +32,14 @@ pub enum PywrError {
     EdgeIndexNotFound,
     #[error("parameter index not found")]
     ParameterIndexNotFound,
+    #[error("recorder index not found")]
+    RecorderIndexNotFound,
     #[error("node name `{0}` already exists on node {1}")]
     NodeNameAlreadyExists(String, NodeIndex),
     #[error("parameter name `{0}` already exists on parameter {1}")]
     ParameterNameAlreadyExists(String, ParameterIndex),
+    #[error("recorder name `{0}` already exists on parameter {1}")]
+    RecorderNameAlreadyExists(String, RecorderIndex),
     #[error("connections from output nodes are invalid")]
     InvalidNodeConnectionFromOutput,
     #[error("connections to input nodes are invalid")]
@@ -45,14 +52,14 @@ pub enum PywrError {
     ParseError(#[from] ParseError),
     #[error("timestep index out of range")]
     TimestepIndexOutOfRange,
-    #[error("glpk error")]
-    GlpkError(#[from] glpk::GlpkError),
     #[error("solver not initialised")]
     SolverNotSetup,
     #[error("no edges defined")]
     NoEdgesDefined,
     #[error("Python error")]
     PythonError,
+    #[error("Unrecognised metric")]
+    UnrecognisedMetric,
     #[error("Unrecognised solver")]
     UnrecognisedSolver,
     #[error("Solve failed")]
@@ -61,4 +68,10 @@ pub enum PywrError {
     AtleastOneParameterRequired,
     #[error("scenario state not found")]
     ScenarioStateNotFound,
+    #[error("clp error")]
+    ClpError(#[from] solvers::clp::ClpError),
+    #[error("metric not defined")]
+    MetricNotDefinedForNode,
+    #[error("recorder not initialised")]
+    RecorderNotInitialised,
 }

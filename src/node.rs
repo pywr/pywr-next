@@ -37,8 +37,8 @@ impl Node {
     }
 
     /// Create a new storage node
-    pub fn new_storage(node_index: &NodeIndex, name: &str) -> Self {
-        Self::Storage(StorageNode::new(node_index, name))
+    pub fn new_storage(node_index: &NodeIndex, name: &str, initial_volume: f64) -> Self {
+        Self::Storage(StorageNode::new(node_index, name, initial_volume))
     }
 
     /// Get a node's name
@@ -298,16 +298,18 @@ impl LinkNode {
 pub struct StorageNode {
     pub meta: NodeMeta,
     pub cost: Option<ParameterIndex>,
+    pub initial_volume: f64,
     pub storage_constraints: StorageConstraints,
     pub incoming_edges: Vec<EdgeIndex>,
     pub outgoing_edges: Vec<EdgeIndex>,
 }
 
 impl StorageNode {
-    fn new(index: &NodeIndex, name: &str) -> Self {
+    fn new(index: &NodeIndex, name: &str, initial_volume: f64) -> Self {
         Self {
             meta: NodeMeta::new(index, name),
             cost: None,
+            initial_volume,
             storage_constraints: StorageConstraints::new(),
             incoming_edges: Vec::new(),
             outgoing_edges: Vec::new(),

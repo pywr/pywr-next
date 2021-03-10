@@ -1,0 +1,689 @@
+use crate::model::Model;
+use crate::node::{FlowConstraints, StorageConstraints};
+use crate::solvers::Solver;
+use crate::timestep::Timestep;
+use crate::{NetworkState, Node, ParameterState, PywrError};
+use clp_sys::*;
+use libc::{c_double, c_int};
+use std::ffi::CString;
+use std::slice;
+use std::time::Instant;
+use thiserror::Error;
+
+#[derive(Error, Debug, PartialEq)]
+pub enum ClpError {
+    #[error("an unknown error occurred in Clp.")]
+    UnknownError,
+    #[error("the simplex model has not been created")]
+    SimplexNotInitialisedError,
+}
+
+pub type CoinBigIndex = c_int;
+
+struct ClpSimplex {
+    ptr: *mut Clp_Simplex,
+}
+
+impl ClpSimplex {
+    pub fn new() -> ClpSimplex {
+        let model: ClpSimplex;
+
+        unsafe {
+            let ptr = Clp_newModel();
+            model = ClpSimplex { ptr };
+            Clp_setLogLevel(ptr, 0);
+            Clp_setObjSense(ptr, 1.0);
+        }
+
+        model
+    }
+
+    pub fn print(&mut self) {
+        unsafe {
+            let prefix = CString::new("  ").expect("CString::new failed");
+            Clp_printModel(self.ptr, prefix.as_ptr());
+        }
+    }
+
+    pub fn resize(&mut self, new_number_rows: c_int, new_number_columns: c_int) {
+        unsafe {
+            Clp_resize(self.ptr, new_number_rows, new_number_columns);
+        }
+    }
+
+    pub fn change_row_lower(&mut self, row_lower: &Vec<c_double>) {
+        unsafe {
+            Clp_chgRowLower(self.ptr, row_lower.as_ptr());
+        }
+    }
+
+    pub fn change_row_upper(&mut self, row_upper: &Vec<c_double>) {
+        unsafe {
+            Clp_chgRowUpper(self.ptr, row_upper.as_ptr());
+        }
+    }
+
+    pub fn change_column_lower(&mut self, column_lower: &Vec<c_double>) {
+        unsafe {
+            Clp_chgColumnLower(self.ptr, column_lower.as_ptr());
+        }
+    }
+
+    pub fn change_column_upper(&mut self, column_upper: &Vec<c_double>) {
+        unsafe {
+            Clp_chgColumnUpper(self.ptr, column_upper.as_ptr());
+        }
+    }
+
+    pub fn change_objective_coefficients(&mut self, obj_coefficients: &Vec<c_double>) {
+        unsafe {
+            Clp_chgObjCoefficients(self.ptr, obj_coefficients.as_ptr());
+        }
+    }
+
+    pub fn add_rows(
+        &mut self,
+        row_lower: &Vec<c_double>,
+        row_upper: &Vec<c_double>,
+        row_starts: &Vec<CoinBigIndex>,
+        columns: &Vec<c_int>,
+        elements: &Vec<c_double>,
+    ) {
+        let number: c_int = row_lower.len() as c_int;
+
+        // println!("number: {}", number);
+        // println!("row_lower: {:?}", row_lower);
+        // println!("row_upper: {:?}", row_upper);
+        // println!("row_starts: {:?}", row_starts);
+        // println!("columns: {:?}", columns);
+        // println!("elements: {:?}", elements);
+
+        unsafe {
+            Clp_addRows(
+                self.ptr,
+                number,
+                row_lower.as_ptr(),
+                row_upper.as_ptr(),
+                row_starts.as_ptr(),
+                columns.as_ptr(),
+                elements.as_ptr(),
+            )
+        }
+    }
+
+    fn dual(&mut self) {
+        unsafe {
+            Clp_dual(self.ptr, 0);
+        }
+    }
+
+    fn initial_dual_solve(&mut self) {
+        unsafe {
+            Clp_initialDualSolve(self.ptr);
+        }
+    }
+
+    fn dual_solve(&mut self) {
+        unsafe {
+            Clp_dual(self.ptr, 0);
+        }
+    }
+
+    fn primal_column_solution(&mut self, number: usize) -> Vec<c_double> {
+        let solution: Vec<c_double>;
+        unsafe {
+            let data_ptr = Clp_primalColumnSolution(self.ptr);
+            solution = slice::from_raw_parts(data_ptr, number).to_vec()
+        }
+        solution
+    }
+
+    fn get_objective_coefficients(&mut self, number: usize) -> Vec<c_double> {
+        let coef: Vec<c_double>;
+        unsafe {
+            let data_ptr = Clp_getObjCoefficients(self.ptr);
+            coef = slice::from_raw_parts(data_ptr, number).to_vec()
+        }
+        coef
+    }
+
+    fn get_row_upper(&mut self, number: usize) -> Vec<c_double> {
+        let ub: Vec<c_double>;
+        unsafe {
+            let data_ptr = Clp_getRowUpper(self.ptr);
+            ub = slice::from_raw_parts(data_ptr, number).to_vec()
+        }
+        ub
+    }
+
+    fn objective_value(&self) -> c_double {
+        unsafe { Clp_objectiveValue(self.ptr) }
+    }
+}
+
+#[derive(Debug)]
+pub struct ClpSolution {
+    objective_value: f64,
+    primal_columns: Vec<f64>,
+}
+
+impl ClpSolution {
+    pub fn get_solution(&self, col: usize) -> f64 {
+        self.primal_columns[col]
+    }
+}
+
+#[derive(Debug)]
+pub enum Bounds {
+    Free,
+    Lower(f64),
+    Upper(f64),
+    Double(f64, f64),
+    Fixed(f64),
+}
+
+pub struct ClpModelBuilder {
+    col_lower: Vec<c_double>,
+    col_upper: Vec<c_double>,
+    col_obj_coef: Vec<c_double>,
+    row_lower: Vec<c_double>,
+    row_upper: Vec<c_double>,
+    row_starts: Vec<CoinBigIndex>,
+    columns: Vec<c_int>,
+    elements: Vec<c_double>,
+    model: Option<ClpSimplex>,
+}
+
+impl ClpModelBuilder {
+    pub fn new() -> Self {
+        Self {
+            col_lower: Vec::new(),
+            col_upper: Vec::new(),
+            col_obj_coef: Vec::new(),
+            row_lower: Vec::new(),
+            row_upper: Vec::new(),
+            row_starts: vec![0],
+            columns: Vec::new(),
+            elements: Vec::new(),
+            model: None,
+        }
+    }
+
+    pub fn add_column(&mut self, obj_coef: f64, bounds: Bounds) {
+        let (lb, ub): (f64, f64) = match bounds {
+            Bounds::Double(lb, ub) => (lb, ub),
+            Bounds::Lower(lb) => (lb, f64::MAX),
+            Bounds::Fixed(b) => (b, b),
+            Bounds::Free => (f64::MIN, f64::MAX),
+            Bounds::Upper(ub) => (f64::MIN, ub),
+        };
+
+        self.col_lower.push(lb);
+        self.col_upper.push(ub);
+        self.col_obj_coef.push(obj_coef);
+    }
+
+    pub fn set_obj_coefficient(&mut self, col: usize, obj_coef: f64) {
+        self.col_obj_coef[col] = obj_coef;
+    }
+
+    pub fn set_row_bounds(&mut self, row: usize, lb: f64, ub: f64) {
+        self.row_lower[row] = lb;
+        self.row_upper[row] = ub;
+    }
+
+    pub fn add_row(&mut self, row: ClpRowBuilder) {
+        self.row_lower.push(row.lower);
+        self.row_upper.push(row.upper);
+        let prev_row_start = self.row_starts.get(&self.row_starts.len() - 1).unwrap().clone();
+        self.row_starts.push(prev_row_start + row.columns.len() as CoinBigIndex);
+        for (column, value) in row.columns {
+            self.columns.push(column);
+            self.elements.push(value);
+        }
+    }
+
+    pub fn nrows(&self) -> usize {
+        self.row_upper.len()
+    }
+
+    pub fn setup(&mut self) {
+        let mut model = ClpSimplex::new();
+        model.resize(0, self.col_upper.len() as i32);
+
+        model.change_column_lower(&self.col_lower);
+        model.change_column_upper(&self.col_upper);
+        model.change_objective_coefficients(&self.col_obj_coef);
+        println!("Adding rows ...");
+        model.add_rows(
+            &self.row_lower,
+            &self.row_upper,
+            &self.row_starts,
+            &self.columns,
+            &self.elements,
+        );
+
+        // println!("row_lower: {:?}", self.row_lower);
+        // println!("row_upper: {:?}", self.row_upper);
+        // println!("row_starts: {:?}", self.row_starts);
+        // println!("columns: {:?}", self.columns);
+        // println!("elements: {:?}", self.elements);
+        // println!("obj_coef: {:?}", self.col_obj_coef);
+
+        model.initial_dual_solve();
+
+        self.model = Some(model);
+    }
+
+    pub fn solve(&mut self) -> Result<ClpSolution, ClpError> {
+        // let mut model = ClpSimplex::new();
+        let model = match &mut self.model {
+            Some(m) => m,
+            None => return Err(ClpError::SimplexNotInitialisedError),
+        };
+
+        //model.change_column_lower(&self.col_lower);
+        //model.change_column_upper(&self.col_upper);
+        model.change_objective_coefficients(&self.col_obj_coef);
+        model.change_row_lower(&self.row_lower);
+        model.change_row_upper(&self.row_upper);
+
+        // println!("number: {}", number);
+        // println!("row_lower: {:?}", self.row_lower);
+        // println!("row_upper: {:?}", self.row_upper);
+        // println!("row_starts: {:?}", self.row_starts);
+        // println!("columns: {:?}", self.columns);
+        // println!("elements: {:?}", self.elements);
+        // println!("obj_coef: {:?}", self.col_obj_coef);
+
+        // model.add_rows(
+        //     &self.row_lower,
+        //     &self.row_upper,
+        //     &self.row_starts,
+        //     &self.columns,
+        //     &self.elements,
+        // );
+        // println!("coef: {:?}", model.get_objective_coefficients(2));
+        // println!("row_upper: {:?}", model.get_row_upper(4));
+        let now = Instant::now();
+        model.dual_solve();
+        let t = now.elapsed().as_secs_f64();
+        // println!("dual solve: {} s; {} per s", t, 1.0/t);
+        // println!("coef: {:?}", model.get_objective_coefficients(2));
+
+        let solution = ClpSolution {
+            objective_value: model.objective_value(),
+            primal_columns: model.primal_column_solution(self.col_upper.len()),
+        };
+
+        Ok(solution)
+    }
+}
+
+pub struct ClpRowBuilder {
+    lower: f64,
+    upper: f64,
+    columns: Vec<(i32, f64)>,
+}
+
+impl ClpRowBuilder {
+    pub fn new() -> Self {
+        Self {
+            lower: 0.0,
+            upper: f64::MAX,
+            columns: Vec::new(),
+        }
+    }
+
+    pub fn set_upper(&mut self, upper: f64) {
+        self.upper = upper;
+    }
+
+    pub fn set_lower(&mut self, lower: f64) {
+        self.lower = lower
+    }
+
+    // pub fn set_bounds(&mut self, bounds: Bounds) {
+    //     let (lb, ub) = match bounds
+    // }
+
+    pub fn add_element(&mut self, column: i32, value: f64) {
+        self.columns.push((column, value))
+    }
+}
+
+pub struct ClpSolver {
+    builder: ClpModelBuilder,
+    start_node_constraints: Option<usize>,
+}
+
+impl ClpSolver {
+    pub(crate) fn new() -> Self {
+        Self {
+            builder: ClpModelBuilder::new(),
+            start_node_constraints: None,
+        }
+    }
+
+    /// Create a column for each edge
+    fn create_columns(&mut self, model: &Model) -> Result<(), PywrError> {
+        // One column per edge
+        let ncols = model.edges.len();
+        if ncols < 1 {
+            return Err(PywrError::NoEdgesDefined);
+        }
+        // Add columns set the columns as x >= 0.0 (i.e. no upper bounds)
+        for _ in 0..ncols {
+            self.builder.add_column(0.0, Bounds::Lower(0.0));
+        }
+
+        Ok(())
+    }
+
+    /// Create mass balance constraints for each edge
+    fn create_mass_balance_constraints(&mut self, model: &Model) {
+        for node in &model.nodes {
+            // Only link nodes create mass-balance constraints
+            if let Node::Link(link) = node {
+                let mut row = ClpRowBuilder::new();
+
+                for &edge_index in &link.incoming_edges {
+                    row.add_element(edge_index as i32, 1.0);
+                }
+                for &edge_index in &link.outgoing_edges {
+                    row.add_element(edge_index as i32, -1.0);
+                }
+
+                row.set_upper(0.0);
+                row.set_lower(0.0);
+
+                self.builder.add_row(row);
+            }
+        }
+    }
+
+    /// Create node constraints
+    ///
+    /// One constraint is created per node to enforce any constraints (flow or storage)
+    /// that it may define.
+    fn create_node_constraints(&mut self, model: &Model) {
+        let start_row = self.builder.nrows();
+
+        for node in &model.nodes {
+            // Create empty arrays to store the matrix data
+            let mut row = ClpRowBuilder::new();
+
+            match node {
+                Node::Link(link) => {
+                    for &edge_index in &link.outgoing_edges {
+                        row.add_element(edge_index as i32, 1.0);
+                    }
+                }
+                Node::Input(input) => {
+                    for &edge_index in &input.outgoing_edges {
+                        row.add_element(edge_index as i32, 1.0);
+                    }
+                }
+                Node::Output(output) => {
+                    for &edge_index in &output.incoming_edges {
+                        row.add_element(edge_index as i32, 1.0);
+                    }
+                }
+                Node::Storage(storage) => {
+                    for &edge_index in &storage.incoming_edges {
+                        row.add_element(edge_index as i32, 1.0);
+                    }
+                    for &edge_index in &storage.outgoing_edges {
+                        row.add_element(edge_index as i32, -1.0);
+                    }
+                }
+            };
+            self.builder.add_row(row);
+            self.start_node_constraints = Some(start_row);
+        }
+    }
+
+    /// Update edge objective coefficients
+    fn update_edge_objectives(&mut self, model: &Model, parameter_states: &ParameterState) -> Result<(), PywrError> {
+        for edge in &model.edges {
+            let cost: f64 = edge.cost(model, parameter_states)?;
+            self.builder.set_obj_coefficient(edge.index, cost);
+        }
+        Ok(())
+    }
+
+    /// Flow constraint to
+    fn flow_constraints_to_bounds(
+        &self,
+        flow_constraints: &FlowConstraints,
+        parameter_states: &ParameterState,
+    ) -> Result<(f64, f64), PywrError> {
+        // minimum flow defaults to zero if undefined.
+        let min_flow = match flow_constraints.min_flow {
+            Some(vol_idx) => match parameter_states.get(vol_idx) {
+                Some(v) => *v,
+                None => return Err(PywrError::ParameterIndexNotFound),
+            },
+            None => 0.0,
+        };
+
+        let max_flow = match flow_constraints.max_flow {
+            Some(vol_idx) => match parameter_states.get(vol_idx) {
+                Some(v) => *v,
+                None => return Err(PywrError::ParameterIndexNotFound),
+            },
+            None => f64::MAX,
+        };
+
+        Ok((min_flow, max_flow))
+    }
+
+    fn storage_constraints_to_bounds(
+        &self,
+        current_volume: f64,
+        timestep: &Timestep,
+        storage_constraints: &StorageConstraints,
+        parameter_states: &ParameterState,
+    ) -> Result<(f64, f64), PywrError> {
+        let min_vol = match storage_constraints.min_volume {
+            Some(vol_idx) => match parameter_states.get(vol_idx) {
+                Some(v) => *v,
+                None => return Err(PywrError::ParameterIndexNotFound),
+            },
+            None => 0.0,
+        };
+        let max_vol = match storage_constraints.max_volume {
+            Some(vol_idx) => match parameter_states.get(vol_idx) {
+                Some(v) => *v,
+                None => return Err(PywrError::ParameterIndexNotFound),
+            },
+            None => 0.0,
+        };
+
+        let dt = timestep.days();
+        let lb = -(current_volume - min_vol).max(0.0) / dt;
+        let ub = (max_vol - current_volume).max(0.0) / dt;
+
+        Ok((lb, ub))
+    }
+
+    /// Update node constraints
+    fn update_node_constraint_bounds(
+        &mut self,
+        model: &Model,
+        timestep: &Timestep,
+        network_state: &NetworkState,
+        parameter_states: &ParameterState,
+    ) -> Result<(), PywrError> {
+        let start_row = match self.start_node_constraints {
+            Some(r) => r,
+            None => return Err(PywrError::SolverNotSetup),
+        };
+
+        for node in &model.nodes {
+            let (lb, ub): (f64, f64) = match node {
+                Node::Link(n) => self.flow_constraints_to_bounds(&n.flow_constraints, parameter_states)?,
+                Node::Input(n) => self.flow_constraints_to_bounds(&n.flow_constraints, parameter_states)?,
+                Node::Output(n) => self.flow_constraints_to_bounds(&n.flow_constraints, parameter_states)?,
+                Node::Storage(n) => {
+                    let current_volume = network_state.get_node_volume(n.meta.index)?;
+
+                    self.storage_constraints_to_bounds(
+                        current_volume,
+                        timestep,
+                        &n.storage_constraints,
+                        parameter_states,
+                    )?
+                }
+            };
+
+            self.builder.set_row_bounds(start_row + node.index(), lb, ub);
+        }
+
+        Ok(())
+    }
+}
+
+impl Solver for ClpSolver {
+    fn setup(&mut self, model: &Model) -> Result<(), PywrError> {
+        // Create the columns
+        self.create_columns(model)?;
+        // Create edge mass balance constraints
+        self.create_mass_balance_constraints(model);
+        // Create the nodal constraints
+        self.create_node_constraints(model);
+
+        self.builder.setup();
+
+        Ok(())
+    }
+    fn solve(
+        &mut self,
+        model: &Model,
+        timestep: &Timestep,
+        network_state: &NetworkState,
+        parameter_state: &ParameterState,
+    ) -> Result<NetworkState, PywrError> {
+        self.update_edge_objectives(model, parameter_state)?;
+        self.update_node_constraint_bounds(model, timestep, network_state, parameter_state)?;
+
+        let solution = self.builder.solve()?;
+        // println!("{:?}", solution);
+        // Create the updated network state from the results
+        let mut new_state = network_state.with_capacity();
+
+        for edge in &model.edges {
+            let flow = solution.get_solution(edge.index);
+            new_state.add_flow(edge.index, edge.from_node_index, edge.to_node_index, timestep, flow)?;
+        }
+
+        Ok(new_state)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use float_cmp::approx_eq;
+
+    #[test]
+    fn clp_create() {
+        ClpSimplex::new();
+    }
+
+    #[test]
+    fn clp_add_rows() {
+        let mut model = ClpSimplex::new();
+        model.resize(0, 2);
+
+        let row_lower: Vec<c_double> = vec![0.0];
+        let row_upper: Vec<c_double> = vec![2.0];
+        let row_starts: Vec<CoinBigIndex> = vec![0, 2];
+        let columns: Vec<c_int> = vec![0, 1];
+        let elements: Vec<c_double> = vec![1.0, 1.0];
+
+        model.add_rows(&row_lower, &row_upper, &row_starts, &columns, &elements);
+    }
+
+    #[test]
+    fn model_builder_new() {
+        let builder = ClpModelBuilder::new();
+    }
+
+    #[test]
+    fn builder_add_rows() {
+        let mut builder = ClpModelBuilder::new();
+        let mut row = ClpRowBuilder::new();
+        row.add_element(0, 1.0);
+        row.add_element(1, 1.0);
+        row.set_lower(0.0);
+        row.set_upper(2.0);
+        builder.add_row(row);
+    }
+
+    #[test]
+    fn builder_solve() {
+        let mut builder = ClpModelBuilder::new();
+
+        builder.add_column(1.0, Bounds::Double(0.0, 2.0));
+        builder.add_column(0.0, Bounds::Lower(0.0));
+        builder.add_column(4.0, Bounds::Double(0.0, 4.0));
+
+        // Row1
+        let mut row = ClpRowBuilder::new();
+        row.add_element(0, 1.0);
+        row.add_element(2, 1.0);
+        row.set_lower(2.0);
+        row.set_upper(f64::MAX);
+        builder.add_row(row);
+
+        // Row2
+        let mut row = ClpRowBuilder::new();
+        row.add_element(0, 1.0);
+        row.add_element(1, -5.0);
+        row.add_element(2, 1.0);
+        row.set_lower(1.0);
+        row.set_upper(1.0);
+        builder.add_row(row);
+
+        builder.setup();
+
+        let solution = builder.solve().unwrap();
+
+        assert!(approx_eq!(f64, solution.objective_value, 2.0));
+    }
+
+    #[test]
+    fn builder_solve2() {
+        let mut builder = ClpModelBuilder::new();
+
+        builder.add_column(-2.0, Bounds::Lower(0.0));
+        builder.add_column(-3.0, Bounds::Lower(0.0));
+        builder.add_column(-4.0, Bounds::Lower(0.0));
+
+        // Row1
+        let mut row = ClpRowBuilder::new();
+        row.add_element(0, 3.0);
+        row.add_element(1, 2.0);
+        row.add_element(2, 1.0);
+        row.set_lower(f64::MIN);
+        row.set_upper(10.0);
+        builder.add_row(row);
+
+        // Row2
+        let mut row = ClpRowBuilder::new();
+        row.add_element(0, 2.0);
+        row.add_element(1, 5.0);
+        row.add_element(2, 3.0);
+        row.set_lower(f64::MIN);
+        row.set_upper(15.0);
+        builder.add_row(row);
+
+        builder.setup();
+
+        let solution = builder.solve().unwrap();
+
+        assert!(approx_eq!(f64, solution.objective_value, -20.0));
+        assert_eq!(solution.primal_columns, vec![0.0, 0.0, 5.0])
+    }
+}

@@ -28,7 +28,7 @@ Any major revision to Pywr will have the following feature requirements:
 
 ## Development installation instructions
 
-Rust and GLPK are required for installation. To create a development installation requires first compiling the
+Rust is required for installation. To create a development installation requires first compiling the
 Rust library and then installing the Python package in editable model.
 
 ```bash
