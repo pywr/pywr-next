@@ -15,7 +15,7 @@ jobs:
     steps:
       - uses: actions/checkout@v1
         with:
-          submodules: true        -
+          submodules: true
       - name: Set up Python
         uses: actions/setup-python@v2
         with:
