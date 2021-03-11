@@ -2,7 +2,7 @@ use crate::model::Model;
 use crate::node::{FlowConstraints, StorageConstraints};
 use crate::solvers::Solver;
 use crate::timestep::Timestep;
-use crate::{NetworkState, Node, ParameterState, PywrError};
+use crate::{NetworkState, Node, PywrError};
 use clp_sys::*;
 use libc::{c_double, c_int};
 use std::ffi::CString;
@@ -51,31 +51,31 @@ impl ClpSimplex {
         }
     }
 
-    pub fn change_row_lower(&mut self, row_lower: &Vec<c_double>) {
+    pub fn change_row_lower(&mut self, row_lower: &[c_double]) {
         unsafe {
             Clp_chgRowLower(self.ptr, row_lower.as_ptr());
         }
     }
 
-    pub fn change_row_upper(&mut self, row_upper: &Vec<c_double>) {
+    pub fn change_row_upper(&mut self, row_upper: &[c_double]) {
         unsafe {
             Clp_chgRowUpper(self.ptr, row_upper.as_ptr());
         }
     }
 
-    pub fn change_column_lower(&mut self, column_lower: &Vec<c_double>) {
+    pub fn change_column_lower(&mut self, column_lower: &[c_double]) {
         unsafe {
             Clp_chgColumnLower(self.ptr, column_lower.as_ptr());
         }
     }
 
-    pub fn change_column_upper(&mut self, column_upper: &Vec<c_double>) {
+    pub fn change_column_upper(&mut self, column_upper: &[c_double]) {
         unsafe {
             Clp_chgColumnUpper(self.ptr, column_upper.as_ptr());
         }
     }
 
-    pub fn change_objective_coefficients(&mut self, obj_coefficients: &Vec<c_double>) {
+    pub fn change_objective_coefficients(&mut self, obj_coefficients: &[c_double]) {
         unsafe {
             Clp_chgObjCoefficients(self.ptr, obj_coefficients.as_ptr());
         }
@@ -83,11 +83,11 @@ impl ClpSimplex {
 
     pub fn add_rows(
         &mut self,
-        row_lower: &Vec<c_double>,
-        row_upper: &Vec<c_double>,
-        row_starts: &Vec<CoinBigIndex>,
-        columns: &Vec<c_int>,
-        elements: &Vec<c_double>,
+        row_lower: &[c_double],
+        row_upper: &[c_double],
+        row_starts: &[CoinBigIndex],
+        columns: &[c_int],
+        elements: &[c_double],
     ) {
         let number: c_int = row_lower.len() as c_int;
 
@@ -235,7 +235,7 @@ impl ClpModelBuilder {
     pub fn add_row(&mut self, row: ClpRowBuilder) {
         self.row_lower.push(row.lower);
         self.row_upper.push(row.upper);
-        let prev_row_start = self.row_starts.get(&self.row_starts.len() - 1).unwrap().clone();
+        let prev_row_start = *self.row_starts.get(&self.row_starts.len() - 1).unwrap();
         self.row_starts.push(prev_row_start + row.columns.len() as CoinBigIndex);
         for (column, value) in row.columns {
             self.columns.push(column);
@@ -305,9 +305,9 @@ impl ClpModelBuilder {
         // );
         // println!("coef: {:?}", model.get_objective_coefficients(2));
         // println!("row_upper: {:?}", model.get_row_upper(4));
-        let now = Instant::now();
+        //let now = Instant::now();
         model.dual_solve();
-        let t = now.elapsed().as_secs_f64();
+        //let t = now.elapsed().as_secs_f64();
         // println!("dual solve: {} s; {} per s", t, 1.0/t);
         // println!("coef: {:?}", model.get_objective_coefficients(2));
 
@@ -444,7 +444,7 @@ impl ClpSolver {
     }
 
     /// Update edge objective coefficients
-    fn update_edge_objectives(&mut self, model: &Model, parameter_states: &ParameterState) -> Result<(), PywrError> {
+    fn update_edge_objectives(&mut self, model: &Model, parameter_states: &[f64]) -> Result<(), PywrError> {
         for edge in &model.edges {
             let cost: f64 = edge.cost(model, parameter_states)?;
             self.builder.set_obj_coefficient(edge.index, cost);
@@ -456,7 +456,7 @@ impl ClpSolver {
     fn flow_constraints_to_bounds(
         &self,
         flow_constraints: &FlowConstraints,
-        parameter_states: &ParameterState,
+        parameter_states: &[f64],
     ) -> Result<(f64, f64), PywrError> {
         // minimum flow defaults to zero if undefined.
         let min_flow = match flow_constraints.min_flow {
@@ -483,7 +483,7 @@ impl ClpSolver {
         current_volume: f64,
         timestep: &Timestep,
         storage_constraints: &StorageConstraints,
-        parameter_states: &ParameterState,
+        parameter_states: &[f64],
     ) -> Result<(f64, f64), PywrError> {
         let min_vol = match storage_constraints.min_volume {
             Some(vol_idx) => match parameter_states.get(vol_idx) {
@@ -513,7 +513,7 @@ impl ClpSolver {
         model: &Model,
         timestep: &Timestep,
         network_state: &NetworkState,
-        parameter_states: &ParameterState,
+        parameter_states: &[f64],
     ) -> Result<(), PywrError> {
         let start_row = match self.start_node_constraints {
             Some(r) => r,
@@ -562,7 +562,7 @@ impl Solver for ClpSolver {
         model: &Model,
         timestep: &Timestep,
         network_state: &NetworkState,
-        parameter_state: &ParameterState,
+        parameter_state: &[f64],
     ) -> Result<NetworkState, PywrError> {
         self.update_edge_objectives(model, parameter_state)?;
         self.update_node_constraint_bounds(model, timestep, network_state, parameter_state)?;

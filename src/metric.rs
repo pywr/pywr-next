@@ -1,7 +1,7 @@
 use crate::edge::EdgeIndex;
 use crate::node::NodeIndex;
 use crate::parameters::ParameterIndex;
-use crate::state::{NetworkState, ParameterState};
+use crate::state::NetworkState;
 use crate::PywrError;
 
 #[derive(Clone, Debug)]
@@ -14,7 +14,7 @@ pub enum Metric {
 }
 
 impl Metric {
-    pub fn get_value(&self, network_state: &NetworkState, parameter_state: &ParameterState) -> Result<f64, PywrError> {
+    pub fn get_value(&self, network_state: &NetworkState, parameter_state: &[f64]) -> Result<f64, PywrError> {
         match self {
             Metric::NodeInFlow(idx) => Ok(network_state.get_node_in_flow(*idx)?),
             Metric::NodeOutFlow(idx) => Ok(network_state.get_node_out_flow(*idx)?),

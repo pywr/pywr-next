@@ -19,7 +19,7 @@ impl Timestep {
     pub fn parse_from_str(date: &str, fmt: &str, index: TimestepIndex, timestep: i64) -> Result<Self, PywrError> {
         Ok(Self {
             date: NaiveDate::parse_from_str(date, fmt)?,
-            index: index,
+            index,
             duration: ChronoDuration::days(timestep),
         })
     }
@@ -60,7 +60,7 @@ impl Timestepper {
     /// Create a vector of `Timestep`s between the start and end dates at the given duration.
     pub(crate) fn timesteps(&self) -> Vec<Timestep> {
         let mut timesteps: Vec<Timestep> = Vec::new();
-        let mut current = Timestep::new(self.start.clone(), 0, self.timestep.clone());
+        let mut current = Timestep::new(self.start, 0, self.timestep);
 
         while current.date <= self.end {
             let next = current + self.timestep;

@@ -176,14 +176,13 @@ impl Node {
     //     }
     // }
 
-    pub(crate) fn set_cost(&mut self, param_idx: Option<ParameterIndex>) -> Result<(), PywrError> {
+    pub(crate) fn set_cost(&mut self, param_idx: Option<ParameterIndex>) {
         match self {
             Node::Input(n) => n.cost = param_idx,
             Node::Link(n) => n.cost = param_idx,
             Node::Output(n) => n.cost = param_idx,
             Node::Storage(n) => n.cost = param_idx,
         }
-        Ok(())
     }
 }
 

@@ -1,16 +1,13 @@
-use super::{NetworkState, Parameter, ParameterMeta, ParameterState, PywrError, Timestep};
+use super::{NetworkState, Parameter, ParameterMeta, PywrError, Timestep};
 use crate::scenario::ScenarioIndex;
 use pyo3::prelude::*;
 
-#[pyclass]
 pub struct PyParameter {
     meta: ParameterMeta,
     object: PyObject,
 }
 
-#[pymethods]
 impl PyParameter {
-    #[new]
     pub fn new(name: &str, obj: PyObject) -> Self {
         Self {
             meta: ParameterMeta::new(name),
@@ -28,7 +25,7 @@ impl Parameter for PyParameter {
         _timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
         _state: &NetworkState,
-        _parameter_state: &ParameterState,
+        _parameter_state: &[f64],
     ) -> Result<f64, PywrError> {
         let gil = Python::acquire_gil();
         let py = gil.python();

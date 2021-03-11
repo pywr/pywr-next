@@ -32,7 +32,7 @@ pub trait Parameter {
         timestep: &Timestep,
         scenario_index: &ScenarioIndex,
         network_state: &NetworkState,
-        parameter_state: &ParameterState,
+        parameter_state: &[f64],
     ) -> Result<f64, PywrError>;
 }
 
@@ -59,7 +59,7 @@ impl Parameter for ConstantParameter {
         _timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
         _state: &NetworkState,
-        _parameter_state: &ParameterState,
+        _parameter_state: &[f64],
     ) -> Result<f64, PywrError> {
         Ok(self.value)
     }
@@ -88,11 +88,11 @@ impl Parameter for VectorParameter {
         timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
         _state: &NetworkState,
-        _parameter_state: &ParameterState,
+        _parameter_state: &[f64],
     ) -> Result<f64, PywrError> {
         match self.values.get(timestep.index) {
             Some(v) => Ok(*v),
-            None => return Err(PywrError::TimestepIndexOutOfRange),
+            None => Err(PywrError::TimestepIndexOutOfRange),
         }
     }
 }
@@ -120,7 +120,7 @@ impl Parameter for Array2Parameter {
         timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
         _state: &NetworkState,
-        _parameter_state: &ParameterState,
+        _parameter_state: &[f64],
     ) -> Result<f64, PywrError> {
         // This panics if out-of-bounds
         // TODO scenarios!
@@ -161,7 +161,7 @@ impl Parameter for AggregatedParameter {
         _timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
         _state: &NetworkState,
-        parameter_state: &ParameterState,
+        parameter_state: &[f64],
     ) -> Result<f64, PywrError> {
         // TODO scenarios!
 
@@ -169,7 +169,7 @@ impl Parameter for AggregatedParameter {
             AggFunc::Sum => {
                 let mut total = 0.0_f64;
                 for idx in &self.parameter_indices {
-                    total += match parameter_state.get(idx.clone()) {
+                    total += match parameter_state.get(*idx) {
                         Some(v) => v,
                         None => return Err(PywrError::ParameterIndexNotFound),
                     };
@@ -179,7 +179,7 @@ impl Parameter for AggregatedParameter {
             AggFunc::Mean => {
                 let mut total = 0.0_f64;
                 for idx in &self.parameter_indices {
-                    total += match parameter_state.get(idx.clone()) {
+                    total += match parameter_state.get(*idx) {
                         Some(v) => v,
                         None => return Err(PywrError::ParameterIndexNotFound),
                     };
@@ -189,7 +189,7 @@ impl Parameter for AggregatedParameter {
             AggFunc::Max => {
                 let mut total = f64::MIN;
                 for idx in &self.parameter_indices {
-                    total = total.max(match parameter_state.get(idx.clone()) {
+                    total = total.max(match parameter_state.get(*idx) {
                         Some(v) => *v,
                         None => return Err(PywrError::ParameterIndexNotFound),
                     });
@@ -199,7 +199,7 @@ impl Parameter for AggregatedParameter {
             AggFunc::Min => {
                 let mut total = f64::MAX;
                 for idx in &self.parameter_indices {
-                    total = total.min(match parameter_state.get(idx.clone()) {
+                    total = total.min(match parameter_state.get(*idx) {
                         Some(v) => *v,
                         None => return Err(PywrError::ParameterIndexNotFound),
                     });
@@ -209,7 +209,7 @@ impl Parameter for AggregatedParameter {
             AggFunc::Product => {
                 let mut total = 1.0_f64;
                 for idx in &self.parameter_indices {
-                    total *= match parameter_state.get(idx.clone()) {
+                    total *= match parameter_state.get(*idx) {
                         Some(v) => *v,
                         None => return Err(PywrError::ParameterIndexNotFound),
                     };
@@ -225,8 +225,10 @@ impl Parameter for AggregatedParameter {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::assert_almost_eq;
     use crate::timestep::Timestepper;
     use ndarray::prelude::*;
+    use std::f64::consts::PI;
 
     fn test_timestepper() -> Timestepper {
         Timestepper::new("2020-01-01", "2020-12-31", "%Y-%m-%d", 1).unwrap()
@@ -235,7 +237,7 @@ mod tests {
     #[test]
     /// Test `ConstantParameter` returns the correct value.
     fn test_constant_parameter() {
-        let param = ConstantParameter::new("my-parameter", 3.14);
+        let param = ConstantParameter::new("my-parameter", PI);
         let timestepper = test_timestepper();
         let si = ScenarioIndex {
             index: 0,
@@ -245,7 +247,7 @@ mod tests {
         for ts in timestepper.timesteps().iter() {
             let ns = NetworkState::new();
             let ps = ParameterState::new();
-            assert_eq!(param.compute(ts, &si, &ns, &ps).unwrap(), 3.14);
+            assert_almost_eq!(param.compute(ts, &si, &ns, &ps).unwrap(), PI);
         }
     }
 
@@ -264,7 +266,7 @@ mod tests {
         for ts in timestepper.timesteps().iter() {
             let ns = NetworkState::new();
             let ps = ParameterState::new();
-            assert_eq!(param.compute(ts, &si, &ns, &ps).unwrap(), ts.index as f64);
+            assert_almost_eq!(param.compute(ts, &si, &ns, &ps).unwrap(), ts.index as f64);
         }
     }
 
@@ -349,7 +351,7 @@ mod tests {
 
         for ts in timestepper.timesteps().iter() {
             let ns = NetworkState::new();
-            assert_eq!(param.compute(ts, &si, &ns, &parameter_state).unwrap(), expected);
+            assert_almost_eq!(param.compute(ts, &si, &ns, &parameter_state).unwrap(), expected);
         }
     }
 }

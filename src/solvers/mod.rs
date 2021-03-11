@@ -1,5 +1,5 @@
 use crate::model::Model;
-use crate::state::{NetworkState, ParameterState};
+use crate::state::NetworkState;
 use crate::timestep::Timestep;
 use crate::PywrError;
 
@@ -12,6 +12,6 @@ pub trait Solver {
         model: &Model,
         timestep: &Timestep,
         network_state: &NetworkState,
-        parameter_state: &ParameterState,
+        parameter_state: &[f64],
     ) -> Result<NetworkState, PywrError>;
 }

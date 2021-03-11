@@ -45,7 +45,7 @@ impl ScenarioGroupCollection {
             let mut indices: Vec<usize> = Vec::with_capacity(self.groups.len());
             for grp in self.groups.iter().rev() {
                 let idx = remaining % grp.size;
-                remaining = remaining / grp.size;
+                remaining /= grp.size;
                 indices.push(idx);
             }
             indices.reverse();

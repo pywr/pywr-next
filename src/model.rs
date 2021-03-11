@@ -19,6 +19,12 @@ pub struct Model {
 // Required for Python API
 unsafe impl Send for Model {}
 
+impl Default for Model {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Model {
     pub fn new() -> Self {
         Self {
@@ -31,7 +37,7 @@ impl Model {
     }
 
     /// Returns the initial state of the network
-    pub(crate) fn get_initial_state(&self, scenario_indices: &Vec<ScenarioIndex>) -> Vec<NetworkState> {
+    pub(crate) fn get_initial_state(&self, scenario_indices: &[ScenarioIndex]) -> Vec<NetworkState> {
         let mut states: Vec<NetworkState> = Vec::new();
 
         for _scenario_index in scenario_indices {
@@ -42,7 +48,6 @@ impl Model {
                     Node::Input(_n) => NodeState::new_flow_state(),
                     Node::Link(_n) => NodeState::new_flow_state(),
                     Node::Output(_n) => NodeState::new_flow_state(),
-                    // TODO initial volume
                     Node::Storage(n) => NodeState::new_storage_state(n.initial_volume),
                 };
 
@@ -91,9 +96,9 @@ impl Model {
     pub(crate) fn step(
         &mut self,
         timestep: &Timestep,
-        scenario_indices: &Vec<ScenarioIndex>,
+        scenario_indices: &[ScenarioIndex],
         solver: &mut Box<dyn Solver>,
-        current_states: &Vec<NetworkState>,
+        current_states: &[NetworkState],
     ) -> Result<Vec<NetworkState>, PywrError> {
         let mut next_states = Vec::with_capacity(current_states.len());
 
@@ -134,7 +139,7 @@ impl Model {
         timestep: &Timestep,
         scenario_index: &ScenarioIndex,
         network_state: &NetworkState,
-        parameter_state: &ParameterState,
+        parameter_state: &[f64],
     ) -> Result<(), PywrError> {
         for recorder in self.recorders.iter_mut() {
             recorder.save(timestep, scenario_index, network_state, parameter_state)?;
@@ -145,7 +150,7 @@ impl Model {
     /// Get a NodeIndex from a node's name
     pub fn get_node_index(&self, name: &str) -> Result<NodeIndex, PywrError> {
         match self.nodes.iter().find(|&n| n.name() == name) {
-            Some(node) => Ok(node.index().clone()),
+            Some(node) => Ok(*node.index()),
             None => Err(PywrError::NodeIndexNotFound),
         }
     }
@@ -170,7 +175,7 @@ impl Model {
     pub fn add_input_node(&mut self, name: &str) -> Result<NodeIndex, PywrError> {
         // Check for name.
         if let Ok(idx) = self.get_node_index(name) {
-            return Err(PywrError::NodeNameAlreadyExists(name.to_string(), idx.clone()));
+            return Err(PywrError::NodeNameAlreadyExists(name.to_string(), idx));
         }
 
         // Now add the node to the network.
@@ -184,7 +189,7 @@ impl Model {
     pub fn add_link_node(&mut self, name: &str) -> Result<NodeIndex, PywrError> {
         // Check for name.
         if let Ok(idx) = self.get_node_index(name) {
-            return Err(PywrError::NodeNameAlreadyExists(name.to_string(), idx.clone()));
+            return Err(PywrError::NodeNameAlreadyExists(name.to_string(), idx));
         }
 
         // Now add the node to the network.
@@ -198,7 +203,7 @@ impl Model {
     pub fn add_output_node(&mut self, name: &str) -> Result<NodeIndex, PywrError> {
         // Check for name.
         if let Ok(idx) = self.get_node_index(name) {
-            return Err(PywrError::NodeNameAlreadyExists(name.to_string(), idx.clone()));
+            return Err(PywrError::NodeNameAlreadyExists(name.to_string(), idx));
         }
 
         // Now add the node to the network.
@@ -212,7 +217,7 @@ impl Model {
     pub fn add_storage_node(&mut self, name: &str, initial_volume: f64) -> Result<NodeIndex, PywrError> {
         // Check for name.
         if let Ok(idx) = self.get_node_index(name) {
-            return Err(PywrError::NodeNameAlreadyExists(name.to_string(), idx.clone()));
+            return Err(PywrError::NodeNameAlreadyExists(name.to_string(), idx));
         }
 
         // Now add the node to the network.
@@ -230,7 +235,7 @@ impl Model {
         if let Ok(idx) = self.get_parameter_index(&parameter.meta().name) {
             return Err(PywrError::ParameterNameAlreadyExists(
                 parameter.meta().name.to_string(),
-                idx.clone(),
+                idx,
             ));
         }
 
@@ -248,7 +253,7 @@ impl Model {
         if let Ok(idx) = self.get_recorder_index(&recorder.meta().name) {
             return Err(PywrError::RecorderNameAlreadyExists(
                 recorder.meta().name.to_string(),
-                idx.clone(),
+                idx,
             ));
         }
 
@@ -295,7 +300,7 @@ impl Model {
         match self.nodes.get_mut(node_idx) {
             Some(node) => {
                 // Try to add the parameter
-                node.set_cost(parameter_idx)?;
+                node.set_cost(parameter_idx);
                 Ok(())
             }
             None => Err(PywrError::NodeIndexNotFound),
@@ -365,7 +370,7 @@ mod tests {
     use crate::timestep::Timestepper;
     use float_cmp::approx_eq;
     use ndarray::prelude::*;
-    use ndarray::{Array2, Shape};
+    use ndarray::Array2;
 
     fn default_timestepper() -> Timestepper {
         Timestepper::new("2020-01-01", "2020-01-15", "%Y-%m-%d", 1).unwrap()
@@ -398,20 +403,20 @@ mod tests {
         if let Node::Input(node) = model.nodes.get(input_node_idx).unwrap() {
             assert_eq!(node.outgoing_edges.len(), 1);
         } else {
-            assert!(false, "Incorrect node type returned.")
+            panic!("Incorrect node type returned.")
         };
 
         if let Node::Link(node) = model.nodes.get(link_node_idx).unwrap() {
             assert_eq!(node.incoming_edges.len(), 1);
             assert_eq!(node.outgoing_edges.len(), 1);
         } else {
-            assert!(false, "Incorrect node type returned.")
+            panic!("Incorrect node type returned.")
         };
 
         if let Node::Output(node) = model.nodes.get(output_node_idx).unwrap() {
             assert_eq!(node.incoming_edges.len(), 1);
         } else {
-            assert!(false, "Incorrect node type returned.")
+            panic!("Incorrect node type returned.")
         };
     }
 

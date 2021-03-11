@@ -121,7 +121,7 @@ impl PyModel {
 
 /// A Python module implemented in Rust.
 #[pymodule]
-fn pywr(py: Python, m: &PyModule) -> PyResult<()> {
+fn pywr(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<PyModel>()?;
     // m.add_function(wrap_pyfunction!(sum_as_string, m)?)?;
     // m.add_class::<recorders::py::PyRecorder>()?;

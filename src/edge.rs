@@ -1,6 +1,6 @@
 use crate::model::Model;
 use crate::node::{Node, NodeIndex};
-use crate::{ParameterState, PywrError};
+use crate::PywrError;
 
 pub(crate) type EdgeIndex = usize;
 
@@ -14,13 +14,13 @@ pub struct Edge {
 impl Edge {
     pub(crate) fn new(index: &EdgeIndex, from_node_index: &NodeIndex, to_node_index: &NodeIndex) -> Self {
         Self {
-            index: index.clone(),
-            from_node_index: from_node_index.clone(),
-            to_node_index: to_node_index.clone(),
+            index: *index,
+            from_node_index: *from_node_index,
+            to_node_index: *to_node_index,
         }
     }
 
-    pub(crate) fn cost(&self, model: &Model, parameter_states: &ParameterState) -> Result<f64, PywrError> {
+    pub(crate) fn cost(&self, model: &Model, parameter_states: &[f64]) -> Result<f64, PywrError> {
         let from_node = match model.nodes.get(self.from_node_index) {
             Some(n) => n,
             None => return Err(PywrError::NodeIndexNotFound),

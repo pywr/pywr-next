@@ -1,10 +1,9 @@
 pub(crate) mod py;
-#[macro_use]
 use crate::assert_almost_eq;
 use crate::metric::Metric;
 use crate::scenario::ScenarioIndex;
 use crate::timestep::Timestep;
-use crate::{NetworkState, ParameterState, PywrError};
+use crate::{NetworkState, PywrError};
 use ndarray::prelude::*;
 use ndarray::Array2;
 
@@ -39,7 +38,7 @@ pub trait Recorder {
         timestep: &Timestep,
         scenario_index: &ScenarioIndex,
         network_state: &NetworkState,
-        parameter_state: &ParameterState,
+        parameter_state: &[f64],
     ) -> Result<(), PywrError>;
 }
 
@@ -75,7 +74,7 @@ impl Recorder for Array2Recorder {
         timestep: &Timestep,
         scenario_index: &ScenarioIndex,
         state: &NetworkState,
-        parameter_state: &ParameterState,
+        parameter_state: &[f64],
     ) -> Result<(), PywrError> {
         // This panics if out-of-bounds
 
@@ -117,7 +116,7 @@ impl Recorder for AssertionRecorder {
         timestep: &Timestep,
         scenario_index: &ScenarioIndex,
         state: &NetworkState,
-        parameter_state: &ParameterState,
+        parameter_state: &[f64],
     ) -> Result<(), PywrError> {
         // This panics if out-of-bounds
 
@@ -158,10 +157,9 @@ struct RecorderMetric {
 
 #[cfg(test)]
 mod tests {
-    use crate::state::{EdgeState, NodeState};
-    #[macro_use]
-    use crate::assert_almost_eq;
     use super::*;
+    use crate::assert_almost_eq;
+    use crate::state::{EdgeState, NodeState, ParameterState};
 
     #[test]
     fn test_array2_recorder() {
