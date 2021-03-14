@@ -28,6 +28,14 @@ Any major revision to Pywr will have the following feature requirements:
 
 ## Development installation instructions
 
+This repository contains a version of Clp using Git submodules. In order to build those submodules
+must be initialised first.
+
+```bash
+git submodule init
+git submodule update
+```
+
 Rust is required for installation. To create a development installation requires first compiling the
 Rust library and then installing the Python package in editable model.
 
