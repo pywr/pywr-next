@@ -1,10 +1,12 @@
 use crate::edge::{Edge, EdgeIndex};
 use crate::node::{Constraint, Node, NodeIndex};
+use crate::recorders::RecorderIndex;
 use crate::scenario::{ScenarioGroupCollection, ScenarioIndex};
 use crate::solvers::Solver;
 use crate::state::{EdgeState, NetworkState, NodeState, ParameterState};
 use crate::timestep::{Timestep, Timestepper};
 use crate::{parameters, recorders, PywrError};
+use ndarray::ArrayView2;
 use std::cmp::Ordering;
 use std::time::Instant;
 
@@ -63,6 +65,15 @@ impl Model {
         states
     }
 
+    fn setup(&mut self) -> Result<(), PywrError> {
+        // Setup recorders
+        for recorder in self.recorders.iter_mut() {
+            recorder.setup()?;
+        }
+
+        Ok(())
+    }
+
     pub fn run(
         &mut self,
         timestepper: Timestepper,
@@ -79,6 +90,7 @@ impl Model {
         // Setup the solver
         let mut count = 0;
         solver.setup(self)?;
+        self.setup()?;
 
         // Step a timestep
         for timestep in timesteps.iter() {
@@ -260,6 +272,13 @@ impl Model {
         let recorder_index = self.recorders.len();
         self.recorders.push(recorder);
         Ok(recorder_index)
+    }
+
+    pub fn get_recorder_view2(&self, recorder_idx: RecorderIndex) -> Result<ArrayView2<f64>, PywrError> {
+        match self.recorders.get(recorder_idx) {
+            Some(r) => r.data_view2(),
+            None => Err(PywrError::RecorderIndexNotFound),
+        }
     }
 
     /// Set a constraint on a node.

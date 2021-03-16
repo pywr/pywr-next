@@ -12,10 +12,14 @@ thiserror = "1.0"
 chrono = "0.4"
 ndarray = "0.13"
 float-cmp = "0.8.0"
+hdf5 = "0.7.1"
 clp-sys = { path = "./clp-sys" }
 
 [dependencies.pyo3]
 version = "*"
+
+[dev-dependencies]
+tempdir = "0.3"
 
 [features]
 extension-module = ["pyo3/extension-module"]

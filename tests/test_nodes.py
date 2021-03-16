@@ -1,34 +1,65 @@
 from pywr.nodes import Model, InputNode, LinkNode, OutputNode, NodeCollection
+from pathlib import Path
 import pytest
 
 
-def test_simple_schema():
-    """Test basic """
+@pytest.fixture()
+def test_dir() -> Path:
+    return Path(__file__).parent
 
-    data = {
-        "nodes": [
-            {"name": "input1", "type": "input"},
-            {"name": "link1", "type": "link"},
-            {"name": "output1", "type": "output", "cost": -10.0, "max_flow": "demand"},
-        ],
-        "edges": [
-            {"from_node": "input1", "to_node": "link1"},
-            {"from_node": "link1", "to_node": "output1"},
-        ],
-        "parameters": [{"name": "demand", "type": "constant", "value": 10.0}],
-    }
 
-    model = Model(**data)
-    assert len(model.nodes) == 3
-    assert len(model.edges) == 2
-    assert len(model.parameters) == 1
-    assert isinstance(model.nodes["input1"], InputNode)
-    assert isinstance(model.nodes["link1"], LinkNode)
-    assert isinstance(model.nodes["output1"], OutputNode)
+@pytest.fixture()
+def model_dir(test_dir: Path):
+    return test_dir / "models"
 
-    model.run()
 
-    # TODO test the outputs
+class TestSimple1:
+    def test_simple_schema(self):
+        """Test simple model from data"""
+
+        data = {
+            "nodes": [
+                {"name": "input1", "type": "input"},
+                {"name": "link1", "type": "link"},
+                {
+                    "name": "output1",
+                    "type": "output",
+                    "cost": -10.0,
+                    "max_flow": "demand",
+                },
+            ],
+            "edges": [
+                {"from_node": "input1", "to_node": "link1"},
+                {"from_node": "link1", "to_node": "output1"},
+            ],
+            "parameters": [{"name": "demand", "type": "constant", "value": 10.0}],
+        }
+
+        model = Model(**data)
+        assert len(model.nodes) == 3
+        assert len(model.edges) == 2
+        assert len(model.parameters) == 1
+        assert isinstance(model.nodes["input1"], InputNode)
+        assert isinstance(model.nodes["link1"], LinkNode)
+        assert isinstance(model.nodes["output1"], OutputNode)
+
+        model.run()
+        # TODO test the outputs
+
+    @pytest.mark.parametrize("filename", ["simple1.json", "simple1.yml"])
+    def test_from_file(self, model_dir: Path, filename: str):
+        model = Model.from_file(model_dir / filename)
+
+        assert len(model.nodes) == 3
+        assert len(model.edges) == 2
+        assert len(model.parameters) == 1
+        assert isinstance(model.nodes["input1"], InputNode)
+        assert isinstance(model.nodes["link1"], LinkNode)
+        assert isinstance(model.nodes["output1"], OutputNode)
+
+        model.run()
+
+        # TODO test the outputs
 
 
 def test_duplicate_node_name_error():

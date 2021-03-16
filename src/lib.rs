@@ -74,4 +74,8 @@ pub enum PywrError {
     MetricNotDefinedForNode,
     #[error("recorder not initialised")]
     RecorderNotInitialised,
+    #[error("hdf5 error")]
+    HDF5Error(String),
+    #[error("not implemented by recorder")]
+    NotSupportedByRecorder,
 }

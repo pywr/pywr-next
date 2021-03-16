@@ -1,7 +1,12 @@
+from __future__ import annotations
+from pathlib import Path
 from typing import List, Optional, Dict
 from pydantic import BaseModel
 from .pywr import PyModel  # type: ignore
 from .parameters import ParameterCollection
+from .recorders import RecorderCollection
+import json
+import yaml
 
 
 _node_registry = {}
@@ -120,7 +125,35 @@ class PrintRecorder:
 class Model(BaseModel):
     nodes: NodeCollection
     edges: List[Edge]
-    parameters: ParameterCollection
+    parameters: ParameterCollection = ParameterCollection()
+    recorders: RecorderCollection = RecorderCollection()
+
+    @classmethod
+    def from_file(cls, filepath: Path) -> Model:
+        """Load a model from a file. """
+
+        ext = filepath.suffix.lower()
+        if ext == ".json":
+            model = cls.from_json(filepath)
+        elif ext in (".yaml", ".yml"):
+            model = cls.from_yaml(filepath)
+        else:
+            raise ValueError(f'Filetype "{ext}" not supported.')
+        return model
+
+    @classmethod
+    def from_json(cls, filepath: Path) -> Model:
+        """Load a model from a JSON file. """
+        with open(filepath) as fh:
+            data = json.load(fh)
+        return cls(**data)
+
+    @classmethod
+    def from_yaml(cls, filepath: Path) -> Model:
+        """Load a model from a YAML file. """
+        with open(filepath) as fh:
+            data = yaml.safe_load(fh)
+        return cls(**data)
 
     def build(self) -> PyModel:
         """Construct a `PyModel`"""

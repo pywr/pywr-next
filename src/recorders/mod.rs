@@ -1,4 +1,5 @@
 pub(crate) mod py;
+
 use crate::assert_almost_eq;
 use crate::metric::Metric;
 use crate::scenario::ScenarioIndex;
@@ -40,6 +41,14 @@ pub trait Recorder {
         network_state: &NetworkState,
         parameter_state: &[f64],
     ) -> Result<(), PywrError>;
+    fn after_save(&mut self, timestep: &Timestep) -> Result<(), PywrError> {
+        Ok(())
+    }
+
+    // Data access
+    fn data_view2(&self) -> Result<ArrayView2<f64>, PywrError> {
+        Err(PywrError::NotSupportedByRecorder)
+    }
 }
 
 pub struct Array2Recorder {
@@ -64,7 +73,8 @@ impl Recorder for Array2Recorder {
     }
 
     fn setup(&mut self) -> Result<(), PywrError> {
-        self.array = Some(Array::zeros((10, 2)));
+        // TODO set this up properly.
+        self.array = Some(Array::zeros((365, 10)));
 
         Ok(())
     }
@@ -87,6 +97,13 @@ impl Recorder for Array2Recorder {
         };
 
         Ok(())
+    }
+
+    fn data_view2(&self) -> Result<ArrayView2<f64>, PywrError> {
+        match &self.array {
+            Some(a) => Ok(a.view()),
+            None => Err(PywrError::RecorderNotInitialised),
+        }
     }
 }
 
@@ -159,24 +176,81 @@ struct RecorderMetric {
 mod tests {
     use super::*;
     use crate::assert_almost_eq;
+    use crate::model::Model;
+    use crate::node::Constraint;
+    use crate::parameters;
+    use crate::scenario::ScenarioGroupCollection;
+    use crate::solvers::clp::ClpSolver;
+    use crate::solvers::Solver;
     use crate::state::{EdgeState, NodeState, ParameterState};
+    use crate::timestep::Timestepper;
+    use tempdir::TempDir;
+
+    fn default_timestepper() -> Timestepper {
+        Timestepper::new("2020-01-01", "2020-01-15", "%Y-%m-%d", 1).unwrap()
+    }
+
+    fn default_scenarios() -> ScenarioGroupCollection {
+        let mut scenarios = ScenarioGroupCollection::new();
+        scenarios.add_group("test-scenario", 10);
+        scenarios
+    }
+
+    /// Create a simple test model with three nodes.
+    fn simple_model() -> Model {
+        let mut model = Model::new();
+
+        let input_node_idx = model.add_input_node("input").unwrap();
+        let link_node_idx = model.add_link_node("link").unwrap();
+        let output_node_idx = model.add_output_node("output").unwrap();
+
+        model.connect_nodes(input_node_idx, link_node_idx).unwrap();
+        model.connect_nodes(link_node_idx, output_node_idx).unwrap();
+
+        let inflow = parameters::VectorParameter::new("inflow", vec![10.0; 366]);
+        let inflow_idx = model.add_parameter(Box::new(inflow)).unwrap();
+        model
+            .set_node_constraint(input_node_idx, Some(inflow_idx), Constraint::MaxFlow)
+            .unwrap();
+
+        let base_demand = parameters::ConstantParameter::new("base-demand", 10.0);
+        let base_demand_idx = model.add_parameter(Box::new(base_demand)).unwrap();
+
+        let demand_factor = parameters::ConstantParameter::new("demand-factor", 1.2);
+        let demand_factor_idx = model.add_parameter(Box::new(demand_factor)).unwrap();
+
+        let total_demand = parameters::AggregatedParameter::new(
+            "total-demand",
+            vec![base_demand_idx, demand_factor_idx],
+            parameters::AggFunc::Product,
+        );
+        let total_demand_idx = model.add_parameter(Box::new(total_demand)).unwrap();
+
+        model
+            .set_node_constraint(output_node_idx, Some(total_demand_idx), Constraint::MaxFlow)
+            .unwrap();
+
+        let demand_cost = parameters::ConstantParameter::new("demand-cost", -10.0);
+        let demand_cost_idx = model.add_parameter(Box::new(demand_cost)).unwrap();
+        model.set_node_cost(output_node_idx, Some(demand_cost_idx)).unwrap();
+
+        model
+    }
 
     #[test]
     fn test_array2_recorder() {
-        let mut state = NetworkState::new();
-        state.push_node_state(NodeState::new_flow_state());
-        state.push_node_state(NodeState::new_flow_state());
-        state.push_edge_state(EdgeState::new());
+        let mut model = simple_model();
+        let timestepper = default_timestepper();
+        let scenarios = default_scenarios();
+        let mut solver: Box<dyn Solver> = Box::new(ClpSolver::new());
 
-        let parameter_state = ParameterState::new();
-        let timestep = Timestep::parse_from_str("2020-01-01", "%Y-%m-%d", 0, 1).unwrap();
-        let scenario_index = ScenarioIndex::new(0, vec![0]);
+        let rec = Array2Recorder::new("test", Metric::NodeOutFlow(0));
 
-        state.add_flow(0, 0, 1, &timestep, 10.0).unwrap();
+        let rec_idx = model.add_recorder(Box::new(rec)).unwrap();
+        model.run(timestepper, scenarios, &mut solver).unwrap();
 
-        let mut rec = Array2Recorder::new("test", Metric::NodeOutFlow(0));
-        rec.setup().unwrap();
-        rec.save(&timestep, &scenario_index, &state, &parameter_state).unwrap();
-        assert_almost_eq!(rec.array.unwrap()[[0, 0]], 10.0);
+        let array = model.get_recorder_view2(rec_idx).unwrap();
+
+        assert_almost_eq!(array[[0, 0]], 10.0);
     }
 }

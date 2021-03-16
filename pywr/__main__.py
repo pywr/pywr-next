@@ -71,13 +71,13 @@ def zones(num_zones: int, use_python_parameter=False):
 
 
 if __name__ == "__main__":
-    print("Solving simple1(use_python_parameter=False) ...")
-    simple1(use_python_parameter=False)
-    print("Solving simple1(use_python_parameter=True) ...")
-    simple1(use_python_parameter=True)
+    # print("Solving simple1(use_python_parameter=False) ...")
+    # simple1(use_python_parameter=False)
+    # print("Solving simple1(use_python_parameter=True) ...")
+    # simple1(use_python_parameter=True)
 
-    for n in (10, 50, 100):
+    for n in (100,):
         print(f"Solving zones({n}, use_python_parameter=False) ...")
         zones(n, use_python_parameter=False)
-        print(f"Solving zones({n}, use_python_parameter=True) ...")
-        zones(n, use_python_parameter=True)
+        # print(f"Solving zones({n}, use_python_parameter=True) ...")
+        # zones(n, use_python_parameter=True)
