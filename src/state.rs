@@ -1,4 +1,4 @@
-use crate::edge::EdgeIndex;
+use crate::edge::{Edge, EdgeIndex};
 use crate::node::NodeIndex;
 use crate::timestep::Timestep;
 use crate::PywrError;
@@ -168,25 +168,18 @@ impl NetworkState {
         self.edge_states.push(edge_state);
     }
 
-    pub(crate) fn add_flow(
-        &mut self,
-        edge_index: EdgeIndex,
-        from_node_index: NodeIndex,
-        to_node_index: NodeIndex,
-        timestep: &Timestep,
-        flow: f64,
-    ) -> Result<(), PywrError> {
-        match self.node_states.get_mut(from_node_index) {
+    pub(crate) fn add_flow(&mut self, edge: &Edge, timestep: &Timestep, flow: f64) -> Result<(), PywrError> {
+        match self.node_states.get_mut(edge.from_node_index()) {
             Some(s) => s.add_out_flow(flow, timestep),
             None => return Err(PywrError::NodeIndexNotFound),
         };
 
-        match self.node_states.get_mut(to_node_index) {
+        match self.node_states.get_mut(edge.to_node_index()) {
             Some(s) => s.add_in_flow(flow, timestep),
             None => return Err(PywrError::NodeIndexNotFound),
         };
 
-        match self.edge_states.get_mut(edge_index) {
+        match self.edge_states.get_mut(edge.index()) {
             Some(s) => s.add_flow(flow),
             None => return Err(PywrError::EdgeIndexNotFound),
         };

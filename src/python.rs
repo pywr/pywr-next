@@ -34,26 +34,26 @@ impl PyModel {
     }
 
     fn add_input_node(&mut self, name: &str) -> PyResult<NodeIndex> {
-        let idx = self.model.add_input_node(name)?;
+        let idx = self.model.add_input_node(name)?.index();
         Ok(idx)
     }
 
     fn add_link_node(&mut self, name: &str) -> PyResult<NodeIndex> {
-        let idx = self.model.add_link_node(name)?;
+        let idx = self.model.add_link_node(name)?.index();
         Ok(idx)
     }
 
     fn add_output_node(&mut self, name: &str) -> PyResult<NodeIndex> {
-        let idx = self.model.add_output_node(name)?;
+        let idx = self.model.add_output_node(name)?.index();
         Ok(idx)
     }
 
     fn connect_nodes(&mut self, from_node_name: &str, to_node_name: &str) -> PyResult<EdgeIndex> {
-        let from_node_idx = self.model.get_node_index(from_node_name)?;
-        let to_node_idx = self.model.get_node_index(to_node_name)?;
+        let from_node = self.model.get_node_by_name(from_node_name)?;
+        let to_node = self.model.get_node_by_name(to_node_name)?;
 
-        let idx = self.model.connect_nodes(from_node_idx, to_node_idx)?;
-        Ok(idx)
+        let edge = self.model.connect_nodes(&from_node, &to_node)?;
+        Ok(edge.index())
     }
 
     fn run(&mut self, solver_name: &str) -> PyResult<()> {
@@ -72,19 +72,17 @@ impl PyModel {
     }
 
     fn set_node_constraint(&mut self, node_name: &str, parameter_name: &str) -> PyResult<()> {
-        let node_idx = self.model.get_node_index(node_name)?;
+        let node = self.model.get_node_by_name(node_name)?;
         let parameter_idx = self.model.get_parameter_index(parameter_name)?;
         // TODO support setting other constraints
-        self.model
-            .set_node_constraint(node_idx, Some(parameter_idx), Constraint::MaxFlow)?;
+        node.set_constraint(Some(parameter_idx), Constraint::MaxFlow)?;
         Ok(())
     }
 
     fn set_node_cost(&mut self, node_name: &str, parameter_name: &str) -> PyResult<()> {
-        let node_idx = self.model.get_node_index(node_name)?;
+        let node = self.model.get_node_by_name(node_name)?;
         let parameter_idx = self.model.get_parameter_index(parameter_name)?;
-
-        self.model.set_node_cost(node_idx, Some(parameter_idx))?;
+        node.set_cost(Some(parameter_idx));
         Ok(())
     }
 

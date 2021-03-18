@@ -28,14 +28,16 @@ pub enum PywrError {
     NodeConnectionAlreadyExists,
     #[error("node index not found")]
     NodeIndexNotFound,
+    #[error("node not found")]
+    NodeNotFound,
     #[error("edge index not found")]
     EdgeIndexNotFound,
     #[error("parameter index not found")]
     ParameterIndexNotFound,
     #[error("recorder index not found")]
     RecorderIndexNotFound,
-    #[error("node name `{0}` already exists on node {1}")]
-    NodeNameAlreadyExists(String, NodeIndex),
+    #[error("node name `{0}` already exists")]
+    NodeNameAlreadyExists(String),
     #[error("parameter name `{0}` already exists on parameter {1}")]
     ParameterNameAlreadyExists(String, ParameterIndex),
     #[error("recorder name `{0}` already exists on parameter {1}")]

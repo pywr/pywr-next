@@ -200,17 +200,18 @@ mod tests {
     fn simple_model() -> Model {
         let mut model = Model::new();
 
-        let input_node_idx = model.add_input_node("input").unwrap();
-        let link_node_idx = model.add_link_node("link").unwrap();
-        let output_node_idx = model.add_output_node("output").unwrap();
+        let input_node = model.add_input_node("input").unwrap();
+        let link_node = model.add_link_node("link").unwrap();
+        let output_node = model.add_output_node("output").unwrap();
 
-        model.connect_nodes(input_node_idx, link_node_idx).unwrap();
-        model.connect_nodes(link_node_idx, output_node_idx).unwrap();
+        model.connect_nodes(&input_node, &link_node).unwrap();
+        model.connect_nodes(&link_node, &output_node).unwrap();
 
         let inflow = parameters::VectorParameter::new("inflow", vec![10.0; 366]);
         let inflow_idx = model.add_parameter(Box::new(inflow)).unwrap();
-        model
-            .set_node_constraint(input_node_idx, Some(inflow_idx), Constraint::MaxFlow)
+
+        input_node
+            .set_constraint(Some(inflow_idx), Constraint::MaxFlow)
             .unwrap();
 
         let base_demand = parameters::ConstantParameter::new("base-demand", 10.0);
@@ -226,13 +227,14 @@ mod tests {
         );
         let total_demand_idx = model.add_parameter(Box::new(total_demand)).unwrap();
 
-        model
-            .set_node_constraint(output_node_idx, Some(total_demand_idx), Constraint::MaxFlow)
+        output_node
+            .set_constraint(Some(total_demand_idx), Constraint::MaxFlow)
             .unwrap();
 
         let demand_cost = parameters::ConstantParameter::new("demand-cost", -10.0);
         let demand_cost_idx = model.add_parameter(Box::new(demand_cost)).unwrap();
-        model.set_node_cost(output_node_idx, Some(demand_cost_idx)).unwrap();
+
+        output_node.set_cost(Some(demand_cost_idx));
 
         model
     }

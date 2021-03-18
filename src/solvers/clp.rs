@@ -1,13 +1,12 @@
 use crate::model::Model;
-use crate::node::{FlowConstraints, StorageConstraints};
+use crate::node::NodeType;
 use crate::solvers::Solver;
 use crate::timestep::Timestep;
-use crate::{NetworkState, Node, PywrError};
+use crate::{NetworkState, PywrError};
 use clp_sys::*;
 use libc::{c_double, c_int};
 use std::ffi::CString;
 use std::slice;
-use std::time::Instant;
 use thiserror::Error;
 
 #[derive(Error, Debug, PartialEq)]
@@ -384,21 +383,27 @@ impl ClpSolver {
     fn create_mass_balance_constraints(&mut self, model: &Model) {
         for node in &model.nodes {
             // Only link nodes create mass-balance constraints
-            if let Node::Link(link) = node {
-                let mut row = ClpRowBuilder::new();
 
-                for &edge_index in &link.incoming_edges {
-                    row.add_element(edge_index as i32, 1.0);
+            let mut row = ClpRowBuilder::new();
+
+            if let NodeType::Link = node.node_type() {
+                let incoming_edges = node.get_incoming_edges().unwrap();
+                let outgoing_edges = node.get_outgoing_edges().unwrap();
+
+                // TODO check for length >= 1
+
+                for edge in &incoming_edges {
+                    row.add_element(edge.index() as i32, 1.0);
                 }
-                for &edge_index in &link.outgoing_edges {
-                    row.add_element(edge_index as i32, -1.0);
+                for edge in &outgoing_edges {
+                    row.add_element(edge.index() as i32, -1.0);
                 }
 
                 row.set_upper(0.0);
                 row.set_lower(0.0);
-
-                self.builder.add_row(row);
             }
+
+            self.builder.add_row(row);
         }
     }
 
@@ -413,31 +418,32 @@ impl ClpSolver {
             // Create empty arrays to store the matrix data
             let mut row = ClpRowBuilder::new();
 
-            match node {
-                Node::Link(link) => {
-                    for &edge_index in &link.outgoing_edges {
-                        row.add_element(edge_index as i32, 1.0);
+            match node.node_type() {
+                NodeType::Link => {
+                    for edge in node.get_outgoing_edges().unwrap() {
+                        row.add_element(edge.index() as i32, 1.0);
                     }
                 }
-                Node::Input(input) => {
-                    for &edge_index in &input.outgoing_edges {
-                        row.add_element(edge_index as i32, 1.0);
+                NodeType::Input => {
+                    for edge in node.get_outgoing_edges().unwrap() {
+                        row.add_element(edge.index() as i32, 1.0);
                     }
                 }
-                Node::Output(output) => {
-                    for &edge_index in &output.incoming_edges {
-                        row.add_element(edge_index as i32, 1.0);
+                NodeType::Output => {
+                    for edge in node.get_incoming_edges().unwrap() {
+                        row.add_element(edge.index() as i32, 1.0);
                     }
                 }
-                Node::Storage(storage) => {
-                    for &edge_index in &storage.incoming_edges {
-                        row.add_element(edge_index as i32, 1.0);
+                NodeType::Storage => {
+                    for edge in node.get_incoming_edges().unwrap() {
+                        row.add_element(edge.index() as i32, 1.0);
                     }
-                    for &edge_index in &storage.outgoing_edges {
-                        row.add_element(edge_index as i32, -1.0);
+                    for edge in node.get_outgoing_edges().unwrap() {
+                        row.add_element(edge.index() as i32, -1.0);
                     }
                 }
-            };
+            }
+
             self.builder.add_row(row);
             self.start_node_constraints = Some(start_row);
         }
@@ -446,65 +452,10 @@ impl ClpSolver {
     /// Update edge objective coefficients
     fn update_edge_objectives(&mut self, model: &Model, parameter_states: &[f64]) -> Result<(), PywrError> {
         for edge in &model.edges {
-            let cost: f64 = edge.cost(model, parameter_states)?;
-            self.builder.set_obj_coefficient(edge.index, cost);
+            let cost: f64 = edge.cost(parameter_states)?;
+            self.builder.set_obj_coefficient(edge.index(), cost);
         }
         Ok(())
-    }
-
-    /// Flow constraint to
-    fn flow_constraints_to_bounds(
-        &self,
-        flow_constraints: &FlowConstraints,
-        parameter_states: &[f64],
-    ) -> Result<(f64, f64), PywrError> {
-        // minimum flow defaults to zero if undefined.
-        let min_flow = match flow_constraints.min_flow {
-            Some(vol_idx) => match parameter_states.get(vol_idx) {
-                Some(v) => *v,
-                None => return Err(PywrError::ParameterIndexNotFound),
-            },
-            None => 0.0,
-        };
-
-        let max_flow = match flow_constraints.max_flow {
-            Some(vol_idx) => match parameter_states.get(vol_idx) {
-                Some(v) => *v,
-                None => return Err(PywrError::ParameterIndexNotFound),
-            },
-            None => f64::MAX,
-        };
-
-        Ok((min_flow, max_flow))
-    }
-
-    fn storage_constraints_to_bounds(
-        &self,
-        current_volume: f64,
-        timestep: &Timestep,
-        storage_constraints: &StorageConstraints,
-        parameter_states: &[f64],
-    ) -> Result<(f64, f64), PywrError> {
-        let min_vol = match storage_constraints.min_volume {
-            Some(vol_idx) => match parameter_states.get(vol_idx) {
-                Some(v) => *v,
-                None => return Err(PywrError::ParameterIndexNotFound),
-            },
-            None => 0.0,
-        };
-        let max_vol = match storage_constraints.max_volume {
-            Some(vol_idx) => match parameter_states.get(vol_idx) {
-                Some(v) => *v,
-                None => return Err(PywrError::ParameterIndexNotFound),
-            },
-            None => 0.0,
-        };
-
-        let dt = timestep.days();
-        let lb = -(current_volume - min_vol).max(0.0) / dt;
-        let ub = (max_vol - current_volume).max(0.0) / dt;
-
-        Ok((lb, ub))
     }
 
     /// Update node constraints
@@ -521,20 +472,19 @@ impl ClpSolver {
         };
 
         for node in &model.nodes {
-            let (lb, ub): (f64, f64) = match node {
-                Node::Link(n) => self.flow_constraints_to_bounds(&n.flow_constraints, parameter_states)?,
-                Node::Input(n) => self.flow_constraints_to_bounds(&n.flow_constraints, parameter_states)?,
-                Node::Output(n) => self.flow_constraints_to_bounds(&n.flow_constraints, parameter_states)?,
-                Node::Storage(n) => {
-                    let current_volume = network_state.get_node_volume(n.meta.index)?;
-
-                    self.storage_constraints_to_bounds(
-                        current_volume,
-                        timestep,
-                        &n.storage_constraints,
-                        parameter_states,
-                    )?
+            let (lb, ub): (f64, f64) = match node.get_current_flow_bounds(parameter_states) {
+                Ok(bnds) => bnds,
+                Err(PywrError::FlowConstraintsUndefined) => {
+                    // Must be a storage node
+                    let (avail, missing) =
+                        match node.get_current_available_volume_bounds(network_state, parameter_states) {
+                            Ok(bnds) => bnds,
+                            Err(e) => return Err(e),
+                        };
+                    let dt = timestep.days();
+                    (-avail / dt, missing / dt)
                 }
+                Err(e) => return Err(e),
             };
 
             self.builder.set_row_bounds(start_row + node.index(), lb, ub);
@@ -573,8 +523,8 @@ impl Solver for ClpSolver {
         let mut new_state = network_state.with_capacity();
 
         for edge in &model.edges {
-            let flow = solution.get_solution(edge.index);
-            new_state.add_flow(edge.index, edge.from_node_index, edge.to_node_index, timestep, flow)?;
+            let flow = solution.get_solution(edge.index());
+            new_state.add_flow(edge, timestep, flow)?;
         }
 
         Ok(new_state)
@@ -607,7 +557,7 @@ mod tests {
 
     #[test]
     fn model_builder_new() {
-        let builder = ClpModelBuilder::new();
+        let _builder = ClpModelBuilder::new();
     }
 
     #[test]
