@@ -34,6 +34,8 @@ pub enum PywrError {
     EdgeIndexNotFound,
     #[error("parameter index not found")]
     ParameterIndexNotFound,
+    #[error("parameter not found")]
+    ParameterNotFound,
     #[error("recorder index not found")]
     RecorderIndexNotFound,
     #[error("node name `{0}` already exists")]

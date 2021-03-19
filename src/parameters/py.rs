@@ -1,4 +1,4 @@
-use super::{NetworkState, Parameter, ParameterMeta, PywrError, Timestep};
+use super::{NetworkState, ParameterMeta, PywrError, Timestep, _Parameter};
 use crate::scenario::ScenarioIndex;
 use pyo3::prelude::*;
 
@@ -16,7 +16,7 @@ impl PyParameter {
     }
 }
 
-impl Parameter for PyParameter {
+impl _Parameter for PyParameter {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }

@@ -1,4 +1,4 @@
-use crate::parameters::ParameterIndex;
+use crate::parameters::{Parameter, ParameterIndex};
 use crate::state::{NetworkState, NodeState, ParameterState};
 use crate::{Edge, PywrError};
 use std::cell::RefCell;
@@ -24,7 +24,7 @@ pub enum NodeType {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct Node(pub(crate) NodeRef);
+pub struct Node(NodeRef);
 
 #[derive(Debug, Clone)]
 pub enum Constraint {
@@ -183,25 +183,25 @@ impl Node {
     // }
 
     /// Set a constraint on a node.
-    pub fn set_constraint(&self, param_idx: Option<ParameterIndex>, constraint: Constraint) -> Result<(), PywrError> {
+    pub fn set_constraint(&self, parameter: Option<Parameter>, constraint: Constraint) -> Result<(), PywrError> {
         match constraint {
-            Constraint::MinFlow => self.set_min_flow_constraint(param_idx)?,
-            Constraint::MaxFlow => self.set_max_flow_constraint(param_idx)?,
+            Constraint::MinFlow => self.set_min_flow_constraint(parameter)?,
+            Constraint::MaxFlow => self.set_max_flow_constraint(parameter)?,
             Constraint::MinAndMaxFlow => {
-                self.set_min_flow_constraint(param_idx)?;
-                self.set_max_flow_constraint(param_idx)?;
+                self.set_min_flow_constraint(parameter.clone())?;
+                self.set_max_flow_constraint(parameter)?;
             }
-            Constraint::MinVolume => self.set_min_volume_constraint(param_idx)?,
-            Constraint::MaxVolume => self.set_max_volume_constraint(param_idx)?,
+            Constraint::MinVolume => self.set_min_volume_constraint(parameter)?,
+            Constraint::MaxVolume => self.set_max_volume_constraint(parameter)?,
         }
         Ok(())
     }
 
-    pub fn set_min_flow_constraint(&self, param_idx: Option<ParameterIndex>) -> Result<(), PywrError> {
+    pub fn set_min_flow_constraint(&self, parameter: Option<Parameter>) -> Result<(), PywrError> {
         match self.0.borrow_mut().deref_mut() {
-            _Node::Input(n) => Ok(n.set_min_flow(param_idx)),
-            _Node::Link(n) => Ok(n.set_min_flow(param_idx)),
-            _Node::Output(n) => Ok(n.set_min_flow(param_idx)),
+            _Node::Input(n) => Ok(n.set_min_flow(parameter)),
+            _Node::Link(n) => Ok(n.set_min_flow(parameter)),
+            _Node::Output(n) => Ok(n.set_min_flow(parameter)),
             _Node::Storage(_) => Err(PywrError::FlowConstraintsUndefined),
         }
     }
@@ -215,11 +215,11 @@ impl Node {
         }
     }
 
-    pub fn set_max_flow_constraint(&self, param_idx: Option<ParameterIndex>) -> Result<(), PywrError> {
+    pub fn set_max_flow_constraint(&self, parameter: Option<Parameter>) -> Result<(), PywrError> {
         match self.0.borrow_mut().deref_mut() {
-            _Node::Input(n) => Ok(n.set_max_flow(param_idx)),
-            _Node::Link(n) => Ok(n.set_max_flow(param_idx)),
-            _Node::Output(n) => Ok(n.set_max_flow(param_idx)),
+            _Node::Input(n) => Ok(n.set_max_flow(parameter)),
+            _Node::Link(n) => Ok(n.set_max_flow(parameter)),
+            _Node::Output(n) => Ok(n.set_max_flow(parameter)),
             _Node::Storage(_) => Err(PywrError::FlowConstraintsUndefined),
         }
     }
@@ -243,12 +243,12 @@ impl Node {
         }
     }
 
-    pub fn set_min_volume_constraint(&self, param_idx: Option<ParameterIndex>) -> Result<(), PywrError> {
+    pub fn set_min_volume_constraint(&self, parameter: Option<Parameter>) -> Result<(), PywrError> {
         match self.0.borrow_mut().deref_mut() {
             _Node::Input(_) => Err(PywrError::StorageConstraintsUndefined),
             _Node::Link(_) => Err(PywrError::StorageConstraintsUndefined),
             _Node::Output(_) => Err(PywrError::StorageConstraintsUndefined),
-            _Node::Storage(n) => Ok(n.set_min_volume(param_idx)),
+            _Node::Storage(n) => Ok(n.set_min_volume(parameter)),
         }
     }
 
@@ -261,12 +261,12 @@ impl Node {
         }
     }
 
-    pub fn set_max_volume_constraint(&self, param_idx: Option<ParameterIndex>) -> Result<(), PywrError> {
+    pub fn set_max_volume_constraint(&self, parameter: Option<Parameter>) -> Result<(), PywrError> {
         match self.0.borrow_mut().deref_mut() {
             _Node::Input(_) => Err(PywrError::StorageConstraintsUndefined),
             _Node::Link(_) => Err(PywrError::StorageConstraintsUndefined),
             _Node::Output(_) => Err(PywrError::StorageConstraintsUndefined),
-            _Node::Storage(n) => Ok(n.set_max_volume(param_idx)),
+            _Node::Storage(n) => Ok(n.set_max_volume(parameter)),
         }
     }
 
@@ -310,21 +310,12 @@ impl Node {
         }
     }
 
-    // fn cost(&self) -> Result<Option<ParameterIndex>, PywrError> {
-    //     match self {
-    //         Node::Input(n) => Ok(n.cost),
-    //         Node::Link(n) => Ok(n.cost),
-    //         Node::Output(n) => Ok(n.cost),
-    //         Node::Storage(n) => Ok(n.cost),
-    //     }
-    // }
-
-    pub(crate) fn set_cost(&self, param_idx: Option<ParameterIndex>) {
+    pub fn set_cost(&self, parameter: Option<Parameter>) {
         match self.0.borrow_mut().deref_mut() {
-            _Node::Input(n) => n.set_cost(param_idx),
-            _Node::Link(n) => n.set_cost(param_idx),
-            _Node::Output(n) => n.set_cost(param_idx),
-            _Node::Storage(n) => n.set_cost(param_idx),
+            _Node::Input(n) => n.set_cost(parameter),
+            _Node::Link(n) => n.set_cost(parameter),
+            _Node::Output(n) => n.set_cost(parameter),
+            _Node::Storage(n) => n.set_cost(parameter),
         }
     }
 
@@ -367,8 +358,8 @@ impl NodeMeta {
 
 #[derive(Debug, PartialEq)]
 pub struct FlowConstraints {
-    pub(crate) min_flow: Option<ParameterIndex>,
-    pub(crate) max_flow: Option<ParameterIndex>,
+    pub(crate) min_flow: Option<Parameter>,
+    pub(crate) max_flow: Option<Parameter>,
 }
 
 impl FlowConstraints {
@@ -382,8 +373,8 @@ impl FlowConstraints {
     ///
     /// Defaults to zero if no parameter is defined.
     fn get_min_flow(&self, parameter_states: &[f64]) -> f64 {
-        match self.min_flow {
-            Some(idx) => parameter_states[idx],
+        match &self.min_flow {
+            Some(p) => parameter_states[p.index()],
             None => 0.0,
         }
     }
@@ -391,8 +382,8 @@ impl FlowConstraints {
     ///
     /// Defaults to f64::MAX if no parameter is defined.
     fn get_max_flow(&self, parameter_states: &[f64]) -> f64 {
-        match self.max_flow {
-            Some(idx) => parameter_states[idx],
+        match &self.max_flow {
+            Some(p) => parameter_states[p.index()],
             None => f64::MAX, // TODO should this return infinity?
         }
     }
@@ -400,8 +391,8 @@ impl FlowConstraints {
 
 #[derive(Debug, PartialEq)]
 pub struct StorageConstraints {
-    pub(crate) min_volume: Option<ParameterIndex>,
-    pub(crate) max_volume: Option<ParameterIndex>, // TODO Should this be required (i.e. not an Option)
+    pub(crate) min_volume: Option<Parameter>,
+    pub(crate) max_volume: Option<Parameter>, // TODO Should this be required (i.e. not an Option)
 }
 
 impl StorageConstraints {
@@ -415,8 +406,8 @@ impl StorageConstraints {
     ///
     /// Defaults to zero if no parameter is defined.
     fn get_min_volume(&self, parameter_states: &[f64]) -> f64 {
-        match self.min_volume {
-            Some(idx) => parameter_states[idx],
+        match &self.min_volume {
+            Some(p) => parameter_states[p.index()],
             None => 0.0,
         }
     }
@@ -424,8 +415,8 @@ impl StorageConstraints {
     ///
     /// Defaults to f64::MAX if no parameter is defined.
     fn get_max_volume(&self, parameter_states: &[f64]) -> f64 {
-        match self.max_volume {
-            Some(idx) => parameter_states[idx],
+        match &self.max_volume {
+            Some(p) => parameter_states[p.index()],
             None => f64::MAX, // TODO should this return infinity?
         }
     }
@@ -434,7 +425,7 @@ impl StorageConstraints {
 #[derive(Debug, PartialEq)]
 pub struct InputNode {
     pub meta: NodeMeta,
-    pub cost: Option<ParameterIndex>,
+    pub cost: Option<Parameter>,
     pub flow_constraints: FlowConstraints,
     pub outgoing_edges: Vec<Edge>,
 }
@@ -448,23 +439,23 @@ impl InputNode {
             outgoing_edges: Vec::new(),
         }
     }
-    fn set_cost(&mut self, param_idx: Option<ParameterIndex>) {
-        self.cost = param_idx
+    fn set_cost(&mut self, parameter: Option<Parameter>) {
+        self.cost = parameter
     }
     fn get_cost(&self, parameter_states: &[f64]) -> f64 {
-        match self.cost {
-            Some(idx) => parameter_states[idx],
+        match &self.cost {
+            Some(p) => parameter_states[p.index()],
             None => 0.0,
         }
     }
-    fn set_min_flow(&mut self, param_idx: Option<ParameterIndex>) {
-        self.flow_constraints.min_flow = param_idx;
+    fn set_min_flow(&mut self, parameter: Option<Parameter>) {
+        self.flow_constraints.min_flow = parameter;
     }
     fn get_min_flow(&self, parameter_states: &[f64]) -> f64 {
         self.flow_constraints.get_min_flow(parameter_states)
     }
-    fn set_max_flow(&mut self, param_idx: Option<ParameterIndex>) {
-        self.flow_constraints.max_flow = param_idx;
+    fn set_max_flow(&mut self, parameter: Option<Parameter>) {
+        self.flow_constraints.max_flow = parameter;
     }
     fn get_max_flow(&self, parameter_states: &[f64]) -> f64 {
         self.flow_constraints.get_max_flow(parameter_states)
@@ -477,7 +468,7 @@ impl InputNode {
 #[derive(Debug, PartialEq)]
 pub struct OutputNode {
     pub meta: NodeMeta,
-    pub cost: Option<ParameterIndex>,
+    pub cost: Option<Parameter>,
     pub flow_constraints: FlowConstraints,
     pub incoming_edges: Vec<Edge>,
 }
@@ -491,23 +482,23 @@ impl OutputNode {
             incoming_edges: Vec::new(),
         }
     }
-    fn set_cost(&mut self, param_idx: Option<ParameterIndex>) {
-        self.cost = param_idx
+    fn set_cost(&mut self, parameter: Option<Parameter>) {
+        self.cost = parameter
     }
     fn get_cost(&self, parameter_states: &[f64]) -> f64 {
-        match self.cost {
-            Some(idx) => parameter_states[idx],
+        match &self.cost {
+            Some(p) => parameter_states[p.index()],
             None => 0.0,
         }
     }
-    fn set_min_flow(&mut self, param_idx: Option<ParameterIndex>) {
-        self.flow_constraints.min_flow = param_idx;
+    fn set_min_flow(&mut self, parameter: Option<Parameter>) {
+        self.flow_constraints.min_flow = parameter;
     }
     fn get_min_flow(&self, parameter_states: &[f64]) -> f64 {
         self.flow_constraints.get_min_flow(parameter_states)
     }
-    fn set_max_flow(&mut self, param_idx: Option<ParameterIndex>) {
-        self.flow_constraints.max_flow = param_idx;
+    fn set_max_flow(&mut self, parameter: Option<Parameter>) {
+        self.flow_constraints.max_flow = parameter;
     }
     fn get_max_flow(&self, parameter_states: &[f64]) -> f64 {
         self.flow_constraints.get_max_flow(parameter_states)
@@ -520,7 +511,7 @@ impl OutputNode {
 #[derive(Debug, PartialEq)]
 pub struct LinkNode {
     pub meta: NodeMeta,
-    pub cost: Option<ParameterIndex>,
+    pub cost: Option<Parameter>,
     pub flow_constraints: FlowConstraints,
     pub incoming_edges: Vec<Edge>,
     pub outgoing_edges: Vec<Edge>,
@@ -536,23 +527,23 @@ impl LinkNode {
             outgoing_edges: Vec::new(),
         }
     }
-    fn set_cost(&mut self, param_idx: Option<ParameterIndex>) {
-        self.cost = param_idx
+    fn set_cost(&mut self, parameter: Option<Parameter>) {
+        self.cost = parameter
     }
     fn get_cost(&self, parameter_states: &[f64]) -> f64 {
-        match self.cost {
-            Some(idx) => parameter_states[idx],
+        match &self.cost {
+            Some(p) => parameter_states[p.index()],
             None => 0.0,
         }
     }
-    fn set_min_flow(&mut self, param_idx: Option<ParameterIndex>) {
-        self.flow_constraints.min_flow = param_idx;
+    fn set_min_flow(&mut self, parameter: Option<Parameter>) {
+        self.flow_constraints.min_flow = parameter;
     }
     fn get_min_flow(&self, parameter_states: &[f64]) -> f64 {
         self.flow_constraints.get_min_flow(parameter_states)
     }
-    fn set_max_flow(&mut self, param_idx: Option<ParameterIndex>) {
-        self.flow_constraints.max_flow = param_idx;
+    fn set_max_flow(&mut self, parameter: Option<Parameter>) {
+        self.flow_constraints.max_flow = parameter;
     }
     fn get_max_flow(&self, parameter_states: &[f64]) -> f64 {
         self.flow_constraints.get_max_flow(parameter_states)
@@ -569,7 +560,7 @@ impl LinkNode {
 #[derive(Debug, PartialEq)]
 pub struct StorageNode {
     pub meta: NodeMeta,
-    pub cost: Option<ParameterIndex>,
+    pub cost: Option<Parameter>,
     pub initial_volume: f64,
     pub storage_constraints: StorageConstraints,
     pub incoming_edges: Vec<Edge>,
@@ -587,23 +578,23 @@ impl StorageNode {
             outgoing_edges: Vec::new(),
         }
     }
-    fn set_cost(&mut self, param_idx: Option<ParameterIndex>) {
-        self.cost = param_idx
+    fn set_cost(&mut self, parameter: Option<Parameter>) {
+        self.cost = parameter
     }
     fn get_cost(&self, parameter_states: &[f64]) -> f64 {
-        match self.cost {
-            Some(idx) => parameter_states[idx],
+        match &self.cost {
+            Some(p) => parameter_states[p.index()],
             None => 0.0,
         }
     }
-    fn set_min_volume(&mut self, param_idx: Option<ParameterIndex>) {
-        self.storage_constraints.min_volume = param_idx;
+    fn set_min_volume(&mut self, parameter: Option<Parameter>) {
+        self.storage_constraints.min_volume = parameter;
     }
     fn get_min_volume(&self, parameter_states: &[f64]) -> f64 {
         self.storage_constraints.get_min_volume(parameter_states)
     }
-    fn set_max_volume(&mut self, param_idx: Option<ParameterIndex>) {
-        self.storage_constraints.max_volume = param_idx;
+    fn set_max_volume(&mut self, parameter: Option<Parameter>) {
+        self.storage_constraints.max_volume = parameter;
     }
     fn get_max_volume(&self, parameter_states: &[f64]) -> f64 {
         self.storage_constraints.get_max_volume(parameter_states)

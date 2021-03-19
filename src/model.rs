@@ -12,7 +12,7 @@ use std::time::Instant;
 pub struct Model {
     pub nodes: Vec<Node>,
     pub edges: Vec<Edge>,
-    parameters: Vec<Box<dyn parameters::Parameter>>,
+    parameters: Vec<parameters::Parameter>,
     recorders: Vec<Box<dyn recorders::Recorder>>,
     scenarios: ScenarioGroupCollection,
 }
@@ -160,10 +160,10 @@ impl Model {
     }
 
     /// Get a `ParameterIndex` from a parameter's name
-    pub fn get_parameter_index(&self, name: &str) -> Result<parameters::ParameterIndex, PywrError> {
-        match self.parameters.iter().position(|p| p.meta().name == name) {
-            Some(idx) => Ok(idx),
-            None => Err(PywrError::ParameterIndexNotFound),
+    pub fn get_parameter_by_name(&self, name: &str) -> Result<parameters::Parameter, PywrError> {
+        match self.parameters.iter().find(|p| p.name() == name) {
+            Some(parameter) => Ok(parameter.clone()),
+            None => Err(PywrError::ParameterNotFound),
         }
     }
 
@@ -234,19 +234,20 @@ impl Model {
     /// Add a `parameters::Parameter` to the model
     pub fn add_parameter(
         &mut self,
-        parameter: Box<dyn parameters::Parameter>,
-    ) -> Result<parameters::ParameterIndex, PywrError> {
-        if let Ok(idx) = self.get_parameter_index(&parameter.meta().name) {
-            return Err(PywrError::ParameterNameAlreadyExists(
-                parameter.meta().name.to_string(),
-                idx,
-            ));
-        }
+        parameter: Box<dyn parameters::_Parameter>,
+    ) -> Result<parameters::Parameter, PywrError> {
+        // if let Ok(idx) = self.get_parameter_index(&parameter.meta().name) {
+        //     return Err(PywrError::ParameterNameAlreadyExists(
+        //         parameter.meta().name.to_string(),
+        //         idx,
+        //     ));
+        // }
 
         let parameter_index = self.parameters.len();
-        self.parameters.push(parameter);
 
-        Ok(parameter_index)
+        let p = parameters::Parameter::new(parameter, parameter_index);
+        self.parameters.push(p.clone());
+        Ok(p)
     }
 
     /// Add a `recorders::Recorder` to the model
@@ -270,51 +271,6 @@ impl Model {
         match self.recorders.get(recorder_idx) {
             Some(r) => r.data_view2(),
             None => Err(PywrError::RecorderIndexNotFound),
-        }
-    }
-
-    /// Set a constraint on a node.
-    pub(crate) fn set_node_constraint(
-        &mut self,
-        node_idx: NodeIndex,
-        parameter_idx: Option<parameters::ParameterIndex>,
-        constraint: Constraint,
-    ) -> Result<(), PywrError> {
-        if let Some(idx) = parameter_idx {
-            if idx >= self.parameters.len() {
-                return Err(PywrError::ParameterIndexNotFound);
-            }
-        }
-
-        match self.nodes.get_mut(node_idx) {
-            Some(node) => {
-                // Try to add the parameter
-                node.set_constraint(parameter_idx, constraint)?;
-                Ok(())
-            }
-            None => Err(PywrError::NodeIndexNotFound),
-        }
-    }
-
-    /// Set a cost on a node.
-    pub(crate) fn set_node_cost(
-        &mut self,
-        node_idx: NodeIndex,
-        parameter_idx: Option<parameters::ParameterIndex>,
-    ) -> Result<(), PywrError> {
-        if let Some(idx) = parameter_idx {
-            if idx >= self.parameters.len() {
-                return Err(PywrError::ParameterIndexNotFound);
-            }
-        }
-
-        match self.nodes.get_mut(node_idx) {
-            Some(node) => {
-                // Try to add the parameter
-                node.set_cost(parameter_idx);
-                Ok(())
-            }
-            None => Err(PywrError::NodeIndexNotFound),
         }
     }
 
@@ -439,33 +395,31 @@ mod tests {
         model.connect_nodes(&link_node, &output_node).unwrap();
 
         let inflow = parameters::VectorParameter::new("inflow", vec![10.0; 366]);
-        let inflow_idx = model.add_parameter(Box::new(inflow)).unwrap();
+        let inflow = model.add_parameter(Box::new(inflow)).unwrap();
 
-        input_node
-            .set_constraint(Some(inflow_idx), Constraint::MaxFlow)
-            .unwrap();
+        input_node.set_constraint(Some(inflow), Constraint::MaxFlow).unwrap();
 
         let base_demand = parameters::ConstantParameter::new("base-demand", 10.0);
-        let base_demand_idx = model.add_parameter(Box::new(base_demand)).unwrap();
+        let base_demand = model.add_parameter(Box::new(base_demand)).unwrap();
 
         let demand_factor = parameters::ConstantParameter::new("demand-factor", 1.2);
-        let demand_factor_idx = model.add_parameter(Box::new(demand_factor)).unwrap();
+        let demand_factor = model.add_parameter(Box::new(demand_factor)).unwrap();
 
         let total_demand = parameters::AggregatedParameter::new(
             "total-demand",
-            vec![base_demand_idx, demand_factor_idx],
+            vec![base_demand, demand_factor],
             parameters::AggFunc::Product,
         );
-        let total_demand_idx = model.add_parameter(Box::new(total_demand)).unwrap();
+        let total_demand = model.add_parameter(Box::new(total_demand)).unwrap();
 
         output_node
-            .set_constraint(Some(total_demand_idx), Constraint::MaxFlow)
+            .set_constraint(Some(total_demand), Constraint::MaxFlow)
             .unwrap();
 
         let demand_cost = parameters::ConstantParameter::new("demand-cost", -10.0);
-        let demand_cost_idx = model.add_parameter(Box::new(demand_cost)).unwrap();
+        let demand_cost = model.add_parameter(Box::new(demand_cost)).unwrap();
 
-        output_node.set_cost(Some(demand_cost_idx));
+        output_node.set_cost(Some(demand_cost));
 
         model
     }
@@ -508,14 +462,15 @@ mod tests {
         let node = model.add_input_node("input").unwrap();
 
         let input_max_flow = parameters::ConstantParameter::new("my-constant", 10.0);
-        let param_idx = model.add_parameter(Box::new(input_max_flow)).unwrap();
-        assert_eq!(param_idx, 0);
+        let parameter = model.add_parameter(Box::new(input_max_flow)).unwrap();
+        assert_eq!(parameter.index(), 0);
         // assign the new parameter to one of the nodes.
-        node.set_constraint(Some(param_idx), Constraint::MaxFlow).unwrap();
+        node.set_constraint(Some(parameter.clone()), Constraint::MaxFlow)
+            .unwrap();
 
         // Try to assign a constraint not defined for particular node type
         assert_eq!(
-            node.set_constraint(Some(param_idx), Constraint::MaxVolume),
+            node.set_constraint(Some(parameter), Constraint::MaxVolume),
             Err(PywrError::StorageConstraintsUndefined)
         );
     }
@@ -571,7 +526,7 @@ mod tests {
         let recorder = AssertionRecorder::new("output-flow", Metric::NodeInFlow(idx), expected);
         model.add_recorder(Box::new(recorder)).unwrap();
 
-        let idx = model.get_parameter_index("total-demand").unwrap();
+        let idx = model.get_parameter_by_name("total-demand").unwrap().index();
         let expected = Array2::from_elem((366, 10), 12.0);
         let recorder = AssertionRecorder::new("total-demand", Metric::ParameterValue(idx), expected);
         model.add_recorder(Box::new(recorder)).unwrap();

@@ -73,29 +73,29 @@ impl PyModel {
 
     fn set_node_constraint(&mut self, node_name: &str, parameter_name: &str) -> PyResult<()> {
         let node = self.model.get_node_by_name(node_name)?;
-        let parameter_idx = self.model.get_parameter_index(parameter_name)?;
+        let parameter = self.model.get_parameter_by_name(parameter_name)?;
         // TODO support setting other constraints
-        node.set_constraint(Some(parameter_idx), Constraint::MaxFlow)?;
+        node.set_constraint(Some(parameter), Constraint::MaxFlow)?;
         Ok(())
     }
 
     fn set_node_cost(&mut self, node_name: &str, parameter_name: &str) -> PyResult<()> {
         let node = self.model.get_node_by_name(node_name)?;
-        let parameter_idx = self.model.get_parameter_index(parameter_name)?;
-        node.set_cost(Some(parameter_idx));
+        let parameter = self.model.get_parameter_by_name(parameter_name)?;
+        node.set_cost(Some(parameter));
         Ok(())
     }
 
     /// Add a Python object as a parameter.
     fn add_python_parameter(&mut self, name: &str, object: PyObject) -> PyResult<parameters::ParameterIndex> {
         let parameter = parameters::py::PyParameter::new(name, object);
-        let idx = self.model.add_parameter(Box::new(parameter))?;
+        let idx = self.model.add_parameter(Box::new(parameter))?.index();
         Ok(idx)
     }
 
     fn add_constant(&mut self, name: &str, value: f64) -> PyResult<parameters::ParameterIndex> {
         let parameter = parameters::ConstantParameter::new(name, value);
-        let idx = self.model.add_parameter(Box::new(parameter))?;
+        let idx = self.model.add_parameter(Box::new(parameter))?.index();
         Ok(idx)
     }
 
