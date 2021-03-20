@@ -13,7 +13,7 @@ pub struct Model {
     pub nodes: Vec<Node>,
     pub edges: Vec<Edge>,
     parameters: Vec<parameters::Parameter>,
-    recorders: Vec<Box<dyn recorders::Recorder>>,
+    recorders: Vec<recorders::Recorder>,
     scenarios: ScenarioGroupCollection,
 }
 
@@ -168,10 +168,10 @@ impl Model {
     }
 
     /// Get a `RecorderIndex` from a recorder's name
-    pub fn get_recorder_index(&self, name: &str) -> Result<recorders::RecorderIndex, PywrError> {
-        match self.recorders.iter().position(|r| r.meta().name == name) {
-            Some(idx) => Ok(idx),
-            None => Err(PywrError::RecorderIndexNotFound),
+    pub fn get_recorder_by_name(&self, name: &str) -> Result<recorders::Recorder, PywrError> {
+        match self.recorders.iter().find(|r| r.name() == name) {
+            Some(recorder) => Ok(recorder.clone()),
+            None => Err(PywrError::RecorderNotFound),
         }
     }
 
@@ -236,6 +236,7 @@ impl Model {
         &mut self,
         parameter: Box<dyn parameters::_Parameter>,
     ) -> Result<parameters::Parameter, PywrError> {
+        // TODO reinstate this check
         // if let Ok(idx) = self.get_parameter_index(&parameter.meta().name) {
         //     return Err(PywrError::ParameterNameAlreadyExists(
         //         parameter.meta().name.to_string(),
@@ -251,27 +252,19 @@ impl Model {
     }
 
     /// Add a `recorders::Recorder` to the model
-    pub fn add_recorder(
-        &mut self,
-        recorder: Box<dyn recorders::Recorder>,
-    ) -> Result<recorders::RecorderIndex, PywrError> {
-        if let Ok(idx) = self.get_recorder_index(&recorder.meta().name) {
-            return Err(PywrError::RecorderNameAlreadyExists(
-                recorder.meta().name.to_string(),
-                idx,
-            ));
-        }
+    pub fn add_recorder(&mut self, recorder: Box<dyn recorders::_Recorder>) -> Result<recorders::Recorder, PywrError> {
+        // TODO reinstate this check
+        // if let Ok(idx) = self.get_recorder_by_name(&recorder.meta().name) {
+        //     return Err(PywrError::RecorderNameAlreadyExists(
+        //         recorder.meta().name.to_string(),
+        //         idx,
+        //     ));
+        // }
 
         let recorder_index = self.recorders.len();
-        self.recorders.push(recorder);
-        Ok(recorder_index)
-    }
-
-    pub fn get_recorder_view2(&self, recorder_idx: RecorderIndex) -> Result<ArrayView2<f64>, PywrError> {
-        match self.recorders.get(recorder_idx) {
-            Some(r) => r.data_view2(),
-            None => Err(PywrError::RecorderIndexNotFound),
-        }
+        let r = recorders::Recorder::new(recorder, recorder_index);
+        self.recorders.push(r.clone());
+        Ok(r)
     }
 
     /// Connect two nodes together

@@ -1,5 +1,5 @@
 pub mod py;
-use super::{NetworkState, ParameterState, PywrError};
+use super::{NetworkState, PywrError};
 use crate::scenario::ScenarioIndex;
 use crate::timestep::Timestep;
 use ndarray::Array2;
@@ -272,6 +272,7 @@ impl _Parameter for AggregatedParameter {
 mod tests {
     use super::*;
     use crate::assert_almost_eq;
+    use crate::state::ParameterState;
     use crate::timestep::Timestepper;
     use ndarray::prelude::*;
     use std::f64::consts::PI;

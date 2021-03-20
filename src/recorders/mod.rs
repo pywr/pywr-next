@@ -7,8 +7,13 @@ use crate::timestep::Timestep;
 use crate::{NetworkState, PywrError};
 use ndarray::prelude::*;
 use ndarray::Array2;
+use std::cell::RefCell;
+use std::fmt;
+use std::ops::{Deref, DerefMut};
+use std::rc::Rc;
 
 pub type RecorderIndex = usize;
+pub type RecorderRef = Rc<RefCell<Box<dyn _Recorder>>>;
 
 /// Meta data common to all parameters.
 #[derive(Clone, Debug)]
@@ -28,7 +33,7 @@ impl RecorderMeta {
     }
 }
 
-pub trait Recorder {
+pub trait _Recorder {
     fn meta(&self) -> &RecorderMeta;
     fn setup(&mut self) -> Result<(), PywrError> {
         Ok(())
@@ -46,8 +51,62 @@ pub trait Recorder {
     }
 
     // Data access
-    fn data_view2(&self) -> Result<ArrayView2<f64>, PywrError> {
+    fn data_view2(&self) -> Result<Array2<f64>, PywrError> {
         Err(PywrError::NotSupportedByRecorder)
+    }
+}
+
+#[derive(Clone)]
+pub struct Recorder(RecorderRef, RecorderIndex);
+
+impl PartialEq for Recorder {
+    fn eq(&self, other: &Recorder) -> bool {
+        // TODO which
+        self.1 == other.1
+    }
+}
+
+impl fmt::Debug for Recorder {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("Recorder").field(&self.name()).field(&self.1).finish()
+    }
+}
+
+impl Recorder {
+    pub fn new(parameter: Box<dyn _Recorder>, index: RecorderIndex) -> Self {
+        Self(Rc::new(RefCell::new(parameter)), index)
+    }
+
+    pub fn index(&self) -> RecorderIndex {
+        self.1
+    }
+
+    pub fn name(&self) -> String {
+        self.0.borrow().deref().meta().name.to_string()
+    }
+
+    pub fn setup(&self) -> Result<(), PywrError> {
+        self.0.borrow_mut().deref_mut().setup()
+    }
+
+    pub fn save(
+        &self,
+        timestep: &Timestep,
+        scenario_index: &ScenarioIndex,
+        network_state: &NetworkState,
+        parameter_state: &[f64],
+    ) -> Result<(), PywrError> {
+        self.0
+            .borrow_mut()
+            .deref_mut()
+            .save(timestep, scenario_index, network_state, parameter_state)
+    }
+
+    fn data_view2(&self) -> Result<Array2<f64>, PywrError> {
+        match self.0.borrow().deref().data_view2() {
+            Ok(av) => Ok(av),
+            Err(e) => Err(e),
+        }
     }
 }
 
@@ -67,7 +126,7 @@ impl Array2Recorder {
     }
 }
 
-impl Recorder for Array2Recorder {
+impl _Recorder for Array2Recorder {
     fn meta(&self) -> &RecorderMeta {
         &self.meta
     }
@@ -99,9 +158,9 @@ impl Recorder for Array2Recorder {
         Ok(())
     }
 
-    fn data_view2(&self) -> Result<ArrayView2<f64>, PywrError> {
+    fn data_view2(&self) -> Result<Array2<f64>, PywrError> {
         match &self.array {
-            Some(a) => Ok(a.view()),
+            Some(a) => Ok(a.clone()),
             None => Err(PywrError::RecorderNotInitialised),
         }
     }
@@ -123,7 +182,7 @@ impl AssertionRecorder {
     }
 }
 
-impl Recorder for AssertionRecorder {
+impl _Recorder for AssertionRecorder {
     fn meta(&self) -> &RecorderMeta {
         &self.meta
     }
@@ -248,10 +307,10 @@ mod tests {
 
         let rec = Array2Recorder::new("test", Metric::NodeOutFlow(0));
 
-        let rec_idx = model.add_recorder(Box::new(rec)).unwrap();
+        let rec = model.add_recorder(Box::new(rec)).unwrap();
         model.run(timestepper, scenarios, &mut solver).unwrap();
 
-        let array = model.get_recorder_view2(rec_idx).unwrap();
+        let array = rec.data_view2().unwrap();
 
         assert_almost_eq!(array[[0, 0]], 10.0);
     }

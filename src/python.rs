@@ -112,7 +112,7 @@ impl PyModel {
         };
 
         let recorder = recorders::py::PyRecorder::new(name, object, metric);
-        let idx = self.model.add_recorder(Box::new(recorder))?;
+        let idx = self.model.add_recorder(Box::new(recorder))?.index();
         Ok(idx)
     }
 }

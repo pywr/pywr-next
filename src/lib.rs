@@ -38,6 +38,8 @@ pub enum PywrError {
     ParameterNotFound,
     #[error("recorder index not found")]
     RecorderIndexNotFound,
+    #[error("recorder not found")]
+    RecorderNotFound,
     #[error("node name `{0}` already exists")]
     NodeNameAlreadyExists(String),
     #[error("parameter name `{0}` already exists on parameter {1}")]
