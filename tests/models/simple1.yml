@@ -1,4 +1,7 @@
-
+timestepper:
+  start: "2021-01-01"
+  end: "2021-12-31"
+  timestep: 1
 nodes:
   - name: input1
     type: input

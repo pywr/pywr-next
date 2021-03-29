@@ -18,6 +18,7 @@ class TestSimple1:
         """Test simple model from data"""
 
         data = {
+            "timestepper": {"start": "2020-01-01", "end": "2020-12-31", "timestep": 1},
             "nodes": [
                 {"name": "input1", "type": "input"},
                 {"name": "link1", "type": "link"},

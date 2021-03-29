@@ -1,6 +1,6 @@
 use crate::metric::Metric;
 use crate::model::Model;
-use crate::node::Constraint;
+use crate::node::{Constraint, ConstraintValue};
 use crate::scenario::ScenarioGroupCollection;
 use crate::solvers::clp::ClpSolver;
 use crate::solvers::Solver;
@@ -10,10 +10,19 @@ use crate::{EdgeIndex, NodeIndex, PywrError};
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
 use pyo3::PyErr;
+use std::path::Path;
 
 /// Python API
 ///
 /// The following structures provide a Python API to access the core model structures.
+
+#[derive(FromPyObject)]
+enum PyConstraintValue<'a> {
+    Scalar(f64),
+    Parameter(String),
+    #[pyo3(transparent)]
+    CatchAll(&'a PyAny), // This extraction never fails
+}
 
 impl std::convert::From<PywrError> for PyErr {
     fn from(err: PywrError) -> PyErr {
@@ -24,6 +33,25 @@ impl std::convert::From<PywrError> for PyErr {
 #[pyclass]
 struct PyModel {
     model: Model,
+}
+
+impl PyModel {
+    fn to_constraint_value(&self, value: PyConstraintValue) -> Result<ConstraintValue, PywrError> {
+        match value {
+            PyConstraintValue::Scalar(v) => Ok(ConstraintValue::Scalar(v)),
+            PyConstraintValue::Parameter(name) => {
+                let parameter = self.model.get_parameter_by_name(&name)?;
+                Ok(ConstraintValue::Parameter(parameter))
+            }
+            PyConstraintValue::CatchAll(obj) => {
+                if obj.is_none() {
+                    Ok(ConstraintValue::None)
+                } else {
+                    return Err(PywrError::InvalidConstraintValue);
+                }
+            }
+        }
+    }
 }
 
 #[pymethods]
@@ -56,10 +84,10 @@ impl PyModel {
         Ok(edge.index())
     }
 
-    fn run(&mut self, solver_name: &str) -> PyResult<()> {
-        let timestepper = Timestepper::new("2020-01-01", "2020-01-31", "%Y-%m-%d", 1)?;
+    fn run(&mut self, solver_name: &str, start: &str, end: &str, timestep: i64) -> PyResult<()> {
+        let timestepper = Timestepper::new(start, end, "%Y-%m-%d", timestep)?;
         let mut scenarios = ScenarioGroupCollection::new();
-        scenarios.add_group("test-scenario", 5);
+        scenarios.add_group("test-scenario", 1);
 
         let mut solver: Box<dyn Solver> = match solver_name {
             //"glpk" => Box::new(GlpkSolver::new().unwrap()),
@@ -71,18 +99,18 @@ impl PyModel {
         Ok(())
     }
 
-    fn set_node_constraint(&mut self, node_name: &str, parameter_name: &str) -> PyResult<()> {
+    fn set_node_constraint(&mut self, node_name: &str, value: PyConstraintValue) -> PyResult<()> {
         let node = self.model.get_node_by_name(node_name)?;
-        let parameter = self.model.get_parameter_by_name(parameter_name)?;
+        let value = self.to_constraint_value(value)?;
         // TODO support setting other constraints
-        node.set_constraint(Some(parameter), Constraint::MaxFlow)?;
+        node.set_constraint(value, Constraint::MaxFlow)?;
         Ok(())
     }
 
-    fn set_node_cost(&mut self, node_name: &str, parameter_name: &str) -> PyResult<()> {
+    fn set_node_cost(&mut self, node_name: &str, value: PyConstraintValue) -> PyResult<()> {
         let node = self.model.get_node_by_name(node_name)?;
-        let parameter = self.model.get_parameter_by_name(parameter_name)?;
-        node.set_cost(Some(parameter));
+        let value = self.to_constraint_value(value)?;
+        node.set_cost(value);
         Ok(())
     }
 
@@ -114,6 +142,14 @@ impl PyModel {
         let recorder = recorders::py::PyRecorder::new(name, object, metric);
         let idx = self.model.add_recorder(Box::new(recorder))?.index();
         Ok(idx)
+    }
+
+    fn add_hdf5_output(&mut self, name: &str, filename: &str) -> PyResult<()> {
+        let path = Path::new(filename);
+        let rec = recorders::hdf::HDF5Recorder::new(name, path.to_path_buf());
+
+        let rec = self.model.add_recorder(Box::new(rec))?;
+        Ok(())
     }
 }
 

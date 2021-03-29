@@ -57,10 +57,19 @@ impl Model {
         states
     }
 
-    fn setup(&mut self) -> Result<(), PywrError> {
+    fn setup(&self, timesteps: &Vec<Timestep>, scenario_indices: &Vec<ScenarioIndex>) -> Result<(), PywrError> {
         // Setup recorders
-        for recorder in self.recorders.iter_mut() {
-            recorder.setup()?;
+        for recorder in self.recorders.iter() {
+            recorder.setup(&self, timesteps, scenario_indices)?;
+        }
+
+        Ok(())
+    }
+
+    fn finalise(&self) -> Result<(), PywrError> {
+        // Setup recorders
+        for recorder in self.recorders.iter() {
+            recorder.finalise()?;
         }
 
         Ok(())
@@ -82,7 +91,7 @@ impl Model {
         // Setup the solver
         let mut count = 0;
         solver.setup(self)?;
-        self.setup()?;
+        self.setup(&timesteps, &scenario_indices)?;
 
         // Step a timestep
         for timestep in timesteps.iter() {
@@ -92,7 +101,7 @@ impl Model {
         }
         println!("speed: {} ts/s", count as f64 / now.elapsed().as_secs_f64());
         // println!("final state: {:?}", initial_state);
-
+        self.finalise()?;
         Ok(())
     }
 
@@ -120,6 +129,8 @@ impl Model {
             next_states.push(next_state);
         }
 
+        self.after_save_recorders(&timestep)?;
+
         Ok(next_states)
     }
 
@@ -139,14 +150,21 @@ impl Model {
     }
 
     fn save_recorders(
-        &mut self,
+        &self,
         timestep: &Timestep,
         scenario_index: &ScenarioIndex,
         network_state: &NetworkState,
         parameter_state: &[f64],
     ) -> Result<(), PywrError> {
-        for recorder in self.recorders.iter_mut() {
+        for recorder in self.recorders.iter() {
             recorder.save(timestep, scenario_index, network_state, parameter_state)?;
+        }
+        Ok(())
+    }
+
+    fn after_save_recorders(&self, timestep: &Timestep) -> Result<(), PywrError> {
+        for recorder in self.recorders.iter() {
+            recorder.after_save(timestep)?;
         }
         Ok(())
     }
@@ -163,7 +181,7 @@ impl Model {
     pub fn get_parameter_by_name(&self, name: &str) -> Result<parameters::Parameter, PywrError> {
         match self.parameters.iter().find(|p| p.name() == name) {
             Some(parameter) => Ok(parameter.clone()),
-            None => Err(PywrError::ParameterNotFound),
+            None => Err(PywrError::ParameterNotFound(name.to_string())),
         }
     }
 

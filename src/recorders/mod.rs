@@ -1,7 +1,9 @@
-pub(crate) mod py;
+pub mod hdf;
+pub mod py;
 
 use crate::assert_almost_eq;
 use crate::metric::Metric;
+use crate::model::Model;
 use crate::scenario::ScenarioIndex;
 use crate::timestep::Timestep;
 use crate::{NetworkState, PywrError};
@@ -35,7 +37,12 @@ impl RecorderMeta {
 
 pub trait _Recorder {
     fn meta(&self) -> &RecorderMeta;
-    fn setup(&mut self) -> Result<(), PywrError> {
+    fn setup(
+        &mut self,
+        model: &Model,
+        timesteps: &Vec<Timestep>,
+        scenario_indices: &Vec<ScenarioIndex>,
+    ) -> Result<(), PywrError> {
         Ok(())
     }
     fn before(&self) {}
@@ -47,6 +54,9 @@ pub trait _Recorder {
         parameter_state: &[f64],
     ) -> Result<(), PywrError>;
     fn after_save(&mut self, timestep: &Timestep) -> Result<(), PywrError> {
+        Ok(())
+    }
+    fn finalise(&mut self) -> Result<(), PywrError> {
         Ok(())
     }
 
@@ -85,8 +95,16 @@ impl Recorder {
         self.0.borrow().deref().meta().name.to_string()
     }
 
-    pub fn setup(&self) -> Result<(), PywrError> {
-        self.0.borrow_mut().deref_mut().setup()
+    pub fn setup(
+        &self,
+        model: &Model,
+        timesteps: &Vec<Timestep>,
+        scenario_indices: &Vec<ScenarioIndex>,
+    ) -> Result<(), PywrError> {
+        self.0
+            .borrow_mut()
+            .deref_mut()
+            .setup(model, timesteps, scenario_indices)
     }
 
     pub fn save(
@@ -100,6 +118,14 @@ impl Recorder {
             .borrow_mut()
             .deref_mut()
             .save(timestep, scenario_index, network_state, parameter_state)
+    }
+
+    pub fn after_save(&self, timestep: &Timestep) -> Result<(), PywrError> {
+        self.0.borrow_mut().deref_mut().after_save(timestep)
+    }
+
+    pub fn finalise(&self) -> Result<(), PywrError> {
+        self.0.borrow_mut().deref_mut().finalise()
     }
 
     fn data_view2(&self) -> Result<Array2<f64>, PywrError> {
@@ -131,7 +157,12 @@ impl _Recorder for Array2Recorder {
         &self.meta
     }
 
-    fn setup(&mut self) -> Result<(), PywrError> {
+    fn setup(
+        &mut self,
+        model: &Model,
+        timesteps: &Vec<Timestep>,
+        scenario_indices: &Vec<ScenarioIndex>,
+    ) -> Result<(), PywrError> {
         // TODO set this up properly.
         self.array = Some(Array::zeros((365, 10)));
 
@@ -236,7 +267,7 @@ mod tests {
     use super::*;
     use crate::assert_almost_eq;
     use crate::model::Model;
-    use crate::node::Constraint;
+    use crate::node::{Constraint, ConstraintValue};
     use crate::parameters;
     use crate::scenario::ScenarioGroupCollection;
     use crate::solvers::clp::ClpSolver;
@@ -270,7 +301,7 @@ mod tests {
         let inflow_idx = model.add_parameter(Box::new(inflow)).unwrap();
 
         input_node
-            .set_constraint(Some(inflow_idx), Constraint::MaxFlow)
+            .set_constraint(ConstraintValue::Parameter(inflow_idx), Constraint::MaxFlow)
             .unwrap();
 
         let base_demand = parameters::ConstantParameter::new("base-demand", 10.0);
@@ -287,13 +318,13 @@ mod tests {
         let total_demand_idx = model.add_parameter(Box::new(total_demand)).unwrap();
 
         output_node
-            .set_constraint(Some(total_demand_idx), Constraint::MaxFlow)
+            .set_constraint(ConstraintValue::Parameter(total_demand_idx), Constraint::MaxFlow)
             .unwrap();
 
         let demand_cost = parameters::ConstantParameter::new("demand-cost", -10.0);
         let demand_cost_idx = model.add_parameter(Box::new(demand_cost)).unwrap();
 
-        output_node.set_cost(Some(demand_cost_idx));
+        output_node.set_cost(ConstraintValue::Parameter(demand_cost_idx));
 
         model
     }

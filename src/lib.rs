@@ -34,8 +34,8 @@ pub enum PywrError {
     EdgeIndexNotFound,
     #[error("parameter index not found")]
     ParameterIndexNotFound,
-    #[error("parameter not found")]
-    ParameterNotFound,
+    #[error("parameter {0} not found")]
+    ParameterNotFound(String),
     #[error("recorder index not found")]
     RecorderIndexNotFound,
     #[error("recorder not found")]
@@ -80,8 +80,10 @@ pub enum PywrError {
     MetricNotDefinedForNode,
     #[error("recorder not initialised")]
     RecorderNotInitialised,
-    #[error("hdf5 error")]
+    #[error("hdf5 error - {0}")]
     HDF5Error(String),
     #[error("not implemented by recorder")]
     NotSupportedByRecorder,
+    #[error("invalid constraint value")]
+    InvalidConstraintValue,
 }
