@@ -8,6 +8,7 @@ use crate::timestep::Timestepper;
 use crate::{parameters, recorders};
 use crate::{EdgeIndex, NodeIndex, PywrError};
 use pyo3::exceptions::PyRuntimeError;
+use pyo3::ffi::Py_FatalError;
 use pyo3::prelude::*;
 use pyo3::PyErr;
 use std::path::Path;
@@ -47,7 +48,7 @@ impl PyModel {
                 if obj.is_none() {
                     Ok(ConstraintValue::None)
                 } else {
-                    return Err(PywrError::InvalidConstraintValue);
+                    Err(PywrError::InvalidConstraintValue(obj.to_string()))
                 }
             }
         }
@@ -76,6 +77,11 @@ impl PyModel {
         Ok(idx)
     }
 
+    fn add_storage_node(&mut self, name: &str, initial_volume: f64) -> PyResult<NodeIndex> {
+        let idx = self.model.add_storage_node(name, initial_volume)?.index();
+        Ok(idx)
+    }
+
     fn connect_nodes(&mut self, from_node_name: &str, to_node_name: &str) -> PyResult<EdgeIndex> {
         let from_node = self.model.get_node_by_name(from_node_name)?;
         let to_node = self.model.get_node_by_name(to_node_name)?;
@@ -99,11 +105,27 @@ impl PyModel {
         Ok(())
     }
 
-    fn set_node_constraint(&mut self, node_name: &str, value: PyConstraintValue) -> PyResult<()> {
+    fn set_node_constraint(
+        &mut self,
+        node_name: &str,
+        constraint_type: &str,
+        value: PyConstraintValue,
+    ) -> PyResult<()> {
         let node = self.model.get_node_by_name(node_name)?;
         let value = self.to_constraint_value(value)?;
-        // TODO support setting other constraints
-        node.set_constraint(value, Constraint::MaxFlow)?;
+
+        let constraint = match constraint_type {
+            "max_flow" => Constraint::MaxFlow,
+            "min_flow" => Constraint::MinFlow,
+            "max_volume" => Constraint::MaxVolume,
+            "min_volume" => Constraint::MinVolume,
+            _ => {
+                return Err(PyErr::from(PywrError::InvalidConstraintType(
+                    constraint_type.to_string(),
+                )))
+            }
+        };
+        node.set_constraint(value, constraint)?;
         Ok(())
     }
 

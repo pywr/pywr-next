@@ -84,6 +84,8 @@ pub enum PywrError {
     HDF5Error(String),
     #[error("not implemented by recorder")]
     NotSupportedByRecorder,
-    #[error("invalid constraint value")]
-    InvalidConstraintValue,
+    #[error("invalid constraint value: {0}")]
+    InvalidConstraintValue(String),
+    #[error("invalid constraint type: {0}")]
+    InvalidConstraintType(String),
 }

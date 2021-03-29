@@ -55,7 +55,7 @@ class InputNode(BaseNode):
         if self.cost is not None:
             r_model.set_node_cost(self.name, self.cost)
         if self.max_flow is not None:
-            r_model.set_node_constraint(self.name, self.max_flow)
+            r_model.set_node_constraint(self.name, "max_flow", self.max_flow)
 
 
 class LinkNode(BaseNode):
@@ -70,7 +70,7 @@ class LinkNode(BaseNode):
         if self.cost is not None:
             r_model.set_node_cost(self.name, self.cost)
         if self.max_flow is not None:
-            r_model.set_node_constraint(self.name, self.max_flow)
+            r_model.set_node_constraint(self.name, "max_flow", self.max_flow)
 
 
 class OutputNode(BaseNode):
@@ -85,7 +85,23 @@ class OutputNode(BaseNode):
         if self.cost is not None:
             r_model.set_node_cost(self.name, self.cost)
         if self.max_flow is not None:
-            r_model.set_node_constraint(self.name, self.max_flow)
+            r_model.set_node_constraint(self.name, "max_flow", self.max_flow)
+
+
+class StorageNode(BaseNode):
+    cost: Optional[Union[float, str]] = None
+    initial_volume: float = 0.0
+    min_volume: Optional[Union[float, str]] = None
+    max_volume: Optional[Union[float, str]] = None
+
+    def create_nodes(self, r_model: PyModel):
+        r_model.add_storage_node(self.name, self.initial_volume)
+
+    def set_constraints(self, r_model: PyModel):
+        if self.cost is not None:
+            r_model.set_node_cost(self.name, self.cost)
+        if self.max_volume is not None:
+            r_model.set_node_constraint(self.name, "max_volume", self.max_volume)
 
 
 class Edge(BaseModel):
