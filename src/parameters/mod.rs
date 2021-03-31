@@ -1,8 +1,9 @@
 pub mod py;
+
 use super::{NetworkState, PywrError};
 use crate::scenario::ScenarioIndex;
 use crate::timestep::Timestep;
-use ndarray::Array2;
+use ndarray::{Array1, Array2};
 use std::cell::RefCell;
 use std::fmt;
 use std::ops::Deref;
@@ -140,6 +141,37 @@ impl _Parameter for VectorParameter {
             Some(v) => Ok(*v),
             None => Err(PywrError::TimestepIndexOutOfRange),
         }
+    }
+}
+
+pub struct Array1Parameter {
+    meta: ParameterMeta,
+    array: Array1<f64>,
+}
+
+impl Array1Parameter {
+    pub fn new(name: &str, array: Array1<f64>) -> Self {
+        Self {
+            meta: ParameterMeta::new(name),
+            array,
+        }
+    }
+}
+
+impl _Parameter for Array1Parameter {
+    fn meta(&self) -> &ParameterMeta {
+        &self.meta
+    }
+    fn compute(
+        &self,
+        timestep: &Timestep,
+        _scenario_index: &ScenarioIndex,
+        _state: &NetworkState,
+        _parameter_state: &[f64],
+    ) -> Result<f64, PywrError> {
+        // This panics if out-of-bounds
+        let value = self.array[[timestep.index]];
+        Ok(value)
     }
 }
 

@@ -7,8 +7,9 @@ use crate::solvers::Solver;
 use crate::timestep::Timestepper;
 use crate::{parameters, recorders};
 use crate::{EdgeIndex, NodeIndex, PywrError};
+use ndarray::{Array1, ArrayView1};
+use numpy::{IntoPyArray, PyArrayDyn, PyReadonlyArray1, PyReadonlyArrayDyn};
 use pyo3::exceptions::PyRuntimeError;
-use pyo3::ffi::Py_FatalError;
 use pyo3::prelude::*;
 use pyo3::PyErr;
 use std::path::Path;
@@ -145,6 +146,12 @@ impl PyModel {
 
     fn add_constant(&mut self, name: &str, value: f64) -> PyResult<parameters::ParameterIndex> {
         let parameter = parameters::ConstantParameter::new(name, value);
+        let idx = self.model.add_parameter(Box::new(parameter))?.index();
+        Ok(idx)
+    }
+
+    fn add_array(&mut self, name: &str, values: PyReadonlyArray1<f64>) -> PyResult<parameters::ParameterIndex> {
+        let parameter = parameters::Array1Parameter::new(name, values.to_owned_array());
         let idx = self.model.add_parameter(Box::new(parameter))?.index();
         Ok(idx)
     }

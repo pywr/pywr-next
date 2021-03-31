@@ -28,6 +28,10 @@ class BaseNode(BaseModel):
         raise NotImplementedError()
 
     @classmethod
+    def get_class(cls, node_type: str) -> BaseNode:
+        return _node_registry[node_type.lower() + "node"]
+
+    @classmethod
     def __get_validators__(cls):
         yield cls.validate
 
@@ -38,8 +42,7 @@ class BaseNode(BaseModel):
         if "type" not in data:
             raise ValueError('"type" key required')
 
-        klass_name = data.pop("type") + "node"
-        klass = _node_registry[klass_name]
+        klass = cls.get_class(data.pop("type"))
         return klass(**data)
 
 
@@ -146,8 +149,7 @@ class NodeCollection:
             if "type" not in node_data:
                 raise ValueError('"type" key required')
 
-            klass_name = node_data.pop("type") + "node"
-            klass = _node_registry[klass_name]
+            klass = BaseNode.get_class(node_data.pop("type"))
             node = klass(**node_data)
             if node.name in collection:
                 raise ValueError(f'Node name "{node.name}" already defined.')
@@ -237,6 +239,7 @@ class Model(BaseModel):
     parameters: ParameterCollection = ParameterCollection()
     recorders: RecorderCollection = RecorderCollection()
     outputs: OutputCollection = OutputCollection()
+    path: Optional[Path] = None  # TODO not sure about this one.
 
     @classmethod
     def from_file(cls, filepath: Path) -> Model:
@@ -256,14 +259,14 @@ class Model(BaseModel):
         """Load a model from a JSON file. """
         with open(filepath) as fh:
             data = json.load(fh)
-        return cls(**data)
+        return cls(path=filepath.parent, **data)
 
     @classmethod
     def from_yaml(cls, filepath: Path) -> Model:
         """Load a model from a YAML file. """
         with open(filepath) as fh:
             data = yaml.safe_load(fh)
-        return cls(**data)
+        return cls(path=filepath.parent, **data)
 
     def build(self) -> PyModel:
         """Construct a `PyModel`"""
@@ -276,7 +279,7 @@ class Model(BaseModel):
             edge.create_edge(r_model)
 
         for parameter in self.parameters:
-            print(parameter)
+            parameter.setup(self.path)
             parameter.create_parameter(r_model)
 
         for output in self.outputs:

@@ -173,7 +173,7 @@ impl Model {
     pub fn get_node_by_name(&self, name: &str) -> Result<Node, PywrError> {
         match self.nodes.iter().find(|&n| n.name() == name) {
             Some(node) => Ok(node.clone()),
-            None => Err(PywrError::NodeNotFound),
+            None => Err(PywrError::NodeNotFound(name.to_string())),
         }
     }
 

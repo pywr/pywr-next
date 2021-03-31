@@ -4,6 +4,7 @@ version = "0.1.0"
 authors = ["James Tomlinson <tomo.bbe@gmail.com>"]
 edition = "2018"
 
+
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
@@ -11,6 +12,7 @@ libc = "0.2"
 thiserror = "1.0"
 chrono = "0.4"
 ndarray = "0.13"
+numpy = "0.13"
 float-cmp = "0.8.0"
 hdf5 = "0.7.1"
 clp-sys = { path = "./clp-sys" }
@@ -36,3 +38,11 @@ requires-dist = ["pydantic"]
 members = [
     "clp-sys",
 ]
+
+[build]
+rustflags = "-C target-cpu=native"
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+# panic = "abort"

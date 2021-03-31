@@ -28,8 +28,8 @@ pub enum PywrError {
     NodeConnectionAlreadyExists,
     #[error("node index not found")]
     NodeIndexNotFound,
-    #[error("node not found")]
-    NodeNotFound,
+    #[error("node with name {0} not found")]
+    NodeNotFound(String),
     #[error("edge index not found")]
     EdgeIndexNotFound,
     #[error("parameter index not found")]

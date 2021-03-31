@@ -7,7 +7,8 @@
   "nodes": [
     {
       "name": "input1",
-      "type": "input"
+      "type": "input",
+      "max_flow": "inflow"
     },
     {
       "name": "link1",
@@ -35,6 +36,12 @@
       "name": "demand",
       "type": "constant",
       "value": 10.0
+    },
+    {
+      "name": "inflow",
+      "type": "dataframe",
+      "url": "inflow.csv",
+      "column": "inflow"
     }
   ]
 }

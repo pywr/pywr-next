@@ -1,5 +1,9 @@
-from typing import Optional, Dict
+from pathlib import Path
+from typing import Optional, Dict, Any
+
+import numpy as np
 from pydantic import BaseModel
+import pandas  # type: ignore
 from .pywr import PyModel  # type: ignore
 
 _parameter_registry = {}
@@ -13,6 +17,9 @@ class BaseParameter(BaseModel):
         super().__init_subclass__(**kwargs)
         _parameter_registry[cls.__name__.lower()] = cls
 
+    def setup(self, path: Path):
+        pass
+
     def create_parameter(self, r_model: PyModel):
         raise NotImplementedError()
 
@@ -22,6 +29,28 @@ class ConstantParameter(BaseParameter):
 
     def create_parameter(self, r_model: PyModel):
         r_model.add_constant(self.name, self.value)
+
+
+class DataFrameParameter(BaseParameter):
+    """Provides  """
+
+    url: str
+    column: Optional[str] = None
+    df: Optional[
+        pandas.Series
+    ] = None  # TODO this is loaded state & not part of the schema.
+
+    def setup(self, path: Path):
+        url = Path(self.url)
+        if not url.is_absolute():
+            url = path / url
+        df = pandas.read_csv(url, parse_dates=True, index_col=0)
+        self.df = df[[self.column]].astype(np.float64)
+
+    def create_parameter(self, r_model: PyModel):
+        if self.df is None:
+            raise RuntimeError("Parameter not initialsed.")
+        r_model.add_array(self.name, self.df.values[:, 0])
 
 
 class ParameterCollection:
