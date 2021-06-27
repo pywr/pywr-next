@@ -1,18 +1,21 @@
 use crate::metric::Metric;
 use crate::model::Model;
 use crate::node::{Constraint, ConstraintValue};
+use crate::parameters::AggFunc;
 use crate::scenario::ScenarioGroupCollection;
 use crate::solvers::clp::ClpSolver;
 use crate::solvers::Solver;
 use crate::timestep::Timestepper;
 use crate::{parameters, recorders};
 use crate::{EdgeIndex, NodeIndex, PywrError};
-use ndarray::{Array1, ArrayView1};
-use numpy::{IntoPyArray, PyArrayDyn, PyReadonlyArray1, PyReadonlyArrayDyn};
-use pyo3::exceptions::PyRuntimeError;
+use ndarray::ArrayView1;
+use numpy::{PyArrayDyn, PyReadonlyArray1, PyReadonlyArrayDyn};
+use pyo3::create_exception;
+use pyo3::exceptions::{PyException, PyRuntimeError};
 use pyo3::prelude::*;
 use pyo3::PyErr;
 use std::path::Path;
+use std::str::FromStr;
 
 /// Python API
 ///
@@ -26,9 +29,14 @@ enum PyConstraintValue<'a> {
     CatchAll(&'a PyAny), // This extraction never fails
 }
 
+create_exception!(pywr, ParameterNotFoundError, PyException);
+
 impl std::convert::From<PywrError> for PyErr {
     fn from(err: PywrError) -> PyErr {
-        PyRuntimeError::new_err(err.to_string())
+        match err {
+            PywrError::ParameterNotFound(name) => ParameterNotFoundError::new_err(name),
+            _ => PyRuntimeError::new_err(err.to_string()),
+        }
     }
 }
 
@@ -156,15 +164,39 @@ impl PyModel {
         Ok(idx)
     }
 
+    fn add_aggregated_parameter(
+        &mut self,
+        name: &str,
+        parameter_names: Vec<String>,
+        agg_func: &str,
+    ) -> PyResult<parameters::ParameterIndex> {
+        // Find all the parameters by name
+        let mut parameters = Vec::with_capacity(parameter_names.len());
+        for name in parameter_names {
+            parameters.push(self.model.get_parameter_by_name(&name)?);
+        }
+
+        let agg_func = AggFunc::from_str(agg_func)?;
+        let parameter = parameters::AggregatedParameter::new(name, parameters, agg_func);
+
+        let idx = self.model.add_parameter(Box::new(parameter))?.index();
+
+        Ok(idx)
+    }
+
     fn add_python_recorder(
         &mut self,
         name: &str,
+        component: &str,
         metric: &str,
-        index: usize,
         object: PyObject,
     ) -> PyResult<recorders::RecorderIndex> {
         let metric = match metric {
-            "NodeInFlow" => Metric::NodeInFlow(index),
+            "node_inflow" => Metric::NodeInFlow(self.model.get_node_by_name(component)?.index()),
+            "node_outflow" => Metric::NodeOutFlow(self.model.get_node_by_name(component)?.index()),
+            "node_volume" => Metric::NodeVolume(self.model.get_node_by_name(component)?.index()),
+            // TODO implement edge_flow
+            "parameter" => Metric::ParameterValue(self.model.get_parameter_by_name(component)?.index()),
             _ => return Err(PyErr::from(PywrError::UnrecognisedMetric)),
         };
 
@@ -184,10 +216,11 @@ impl PyModel {
 
 /// A Python module implemented in Rust.
 #[pymodule]
-fn pywr(_py: Python, m: &PyModule) -> PyResult<()> {
+fn pywr(py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<PyModel>()?;
     // m.add_function(wrap_pyfunction!(sum_as_string, m)?)?;
     // m.add_class::<recorders::py::PyRecorder>()?;
+    m.add("ParameterNotFoundError", py.get_type::<ParameterNotFoundError>())?;
 
     Ok(())
 }

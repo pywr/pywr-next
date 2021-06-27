@@ -33,9 +33,9 @@ impl _Parameter for PyParameter {
         let value: f64 = match self.object.call_method0(py, "compute") {
             Ok(py_value) => match py_value.extract(py) {
                 Ok(v) => v,
-                Err(_) => return Err(PywrError::PythonError),
+                Err(e) => return Err(PywrError::PythonError(e.to_string())),
             },
-            Err(_) => return Err(PywrError::PythonError),
+            Err(e) => return Err(PywrError::PythonError(e.to_string())),
         };
 
         Ok(value)

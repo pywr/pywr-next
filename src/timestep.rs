@@ -1,9 +1,10 @@
 use crate::PywrError;
 use chrono::{Duration as ChronoDuration, NaiveDate};
+use pyo3::prelude::*;
 use std::ops::Add;
-
 type TimestepIndex = usize;
 
+#[pyclass]
 #[derive(Debug, Copy, Clone)]
 pub struct Timestep {
     pub date: NaiveDate,

@@ -62,8 +62,8 @@ pub enum PywrError {
     SolverNotSetup,
     #[error("no edges defined")]
     NoEdgesDefined,
-    #[error("Python error")]
-    PythonError,
+    #[error("Python error: {0}")]
+    PythonError(String),
     #[error("Unrecognised metric")]
     UnrecognisedMetric,
     #[error("Unrecognised solver")]
@@ -88,4 +88,6 @@ pub enum PywrError {
     InvalidConstraintValue(String),
     #[error("invalid constraint type: {0}")]
     InvalidConstraintType(String),
+    #[error("invalid aggregated function: {0}")]
+    InvalidAggregationFunction(String),
 }

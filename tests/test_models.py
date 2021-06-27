@@ -33,7 +33,6 @@ def test_simple_timeseries(model_dir: Path, tmpdir: Path):
 
     with h5py.File(output_fn, "r") as fh:
         for node in model.nodes:
-            print(node.name, np.squeeze(fh[node.name]))
             np.testing.assert_allclose(
                 np.squeeze(fh[node.name]), expected_data[node.name]
             )

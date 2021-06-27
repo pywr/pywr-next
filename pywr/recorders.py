@@ -1,4 +1,4 @@
-from typing import Optional, Dict
+from typing import Optional, Dict, List
 from pydantic import BaseModel
 from .pywr import PyModel  # type: ignore
 
@@ -20,6 +20,27 @@ class BaseRecorder(BaseModel):
 class HDF5Recorder(BaseRecorder):
     def create_recorder(self, r_model: PyModel):
         r_model.add_hdf5_recorder(self.name, self.comment)
+
+
+class AssertionRecorder(BaseRecorder):
+    component: str
+    metric: str
+    values: List[float]
+
+    def create_recorder(self, r_model: PyModel):
+        r_model.add_python_recorder(
+            self.name, self.component, self.metric, _AssertionRecorder(self.values)
+        )
+
+
+class _AssertionRecorder:
+    def __init__(self, values: List[float]):
+        self._iter = iter(values)
+
+    def save(self, timestep, value: float):
+        print(timestep, value)
+
+        assert next(self._iter) == value
 
 
 class RecorderCollection:

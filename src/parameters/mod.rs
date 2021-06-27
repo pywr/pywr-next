@@ -8,6 +8,7 @@ use std::cell::RefCell;
 use std::fmt;
 use std::ops::Deref;
 use std::rc::Rc;
+use std::str::FromStr;
 
 pub type ParameterIndex = usize;
 pub type ParameterRef = Rc<RefCell<Box<dyn _Parameter>>>;
@@ -212,6 +213,21 @@ pub enum AggFunc {
     Mean,
     Min,
     Max,
+}
+
+impl FromStr for AggFunc {
+    type Err = PywrError;
+
+    fn from_str(name: &str) -> Result<Self, Self::Err> {
+        match name {
+            "sum" => Ok(Self::Sum),
+            "product" => Ok(Self::Product),
+            "mean" => Ok(Self::Mean),
+            "min" => Ok(Self::Min),
+            "max" => Ok(Self::Max),
+            _ => Err(PywrError::InvalidAggregationFunction(name.to_string())),
+        }
+    }
 }
 
 pub struct AggregatedParameter {

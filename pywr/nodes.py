@@ -2,7 +2,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import List, Optional, Dict, Union
 from pydantic import BaseModel
-from .pywr import PyModel  # type: ignore
+from .pywr import PyModel, ParameterNotFoundError  # type: ignore
 from .parameters import ParameterCollection
 from .recorders import RecorderCollection
 import json
@@ -278,9 +278,26 @@ class Model(BaseModel):
         for edge in self.edges:
             edge.create_edge(r_model)
 
-        for parameter in self.parameters:
-            parameter.setup(self.path)
-            parameter.create_parameter(r_model)
+        # Build the parameters ...
+        remaining_parameters = [p for p in self.parameters]
+        while len(remaining_parameters) > 0:
+            failed_parameters = []  # Collection for parameters that fail to load
+            for parameter in remaining_parameters:
+                try:
+                    parameter.create_parameter(r_model, self.path)
+                except ParameterNotFoundError:
+                    # Parameter failed due to not finding another parameter.
+                    # This is likely a dependency that is not yet loaded.
+                    failed_parameters.append(parameter)
+
+            if len(failed_parameters) >= len(remaining_parameters):
+                raise RuntimeError(
+                    "Failed to load parameters due to a cycle in the dependency tree."
+                )
+            remaining_parameters = failed_parameters
+
+        for recorder in self.recorders:
+            recorder.create_recorder(r_model)
 
         for output in self.outputs:
             output.create_output(r_model)

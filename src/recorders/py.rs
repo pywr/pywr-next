@@ -28,7 +28,7 @@ impl _Recorder for PyRecorder {
 
     fn save(
         &mut self,
-        _timestep: &Timestep,
+        timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
         network_state: &NetworkState,
         parameter_state: &[f64],
@@ -36,10 +36,10 @@ impl _Recorder for PyRecorder {
         let gil = Python::acquire_gil();
         let py = gil.python();
 
-        let args = PyTuple::new(py, self.metric.get_value(network_state, parameter_state));
+        let args = (*timestep, self.metric.get_value(network_state, parameter_state)?);
         match self.object.call_method1(py, "save", args) {
             Ok(_) => Ok(()),
-            Err(_) => Err(PywrError::PythonError),
+            Err(e) => Err(PywrError::PythonError(e.to_string())),
         }
     }
 }

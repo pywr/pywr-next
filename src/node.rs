@@ -1,6 +1,6 @@
 use crate::metric::Metric;
-use crate::parameters::{Parameter, ParameterIndex};
-use crate::state::{NetworkState, NodeState, ParameterState};
+use crate::parameters::{ConstantParameter, Parameter};
+use crate::state::{NetworkState, NodeState};
 use crate::{Edge, PywrError};
 use std::cell::RefCell;
 use std::ops::{Deref, DerefMut};
