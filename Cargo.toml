@@ -3,25 +3,26 @@ name = "pywr-next"
 version = "0.1.0"
 authors = ["James Tomlinson <tomo.bbe@gmail.com>"]
 edition = "2018"
-
+resolver = "2"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-libc = "0.2"
-thiserror = "1.0"
-chrono = "0.4"
-ndarray = "0.13"
-numpy = "0.13"
+libc = "0.2.97"
+thiserror = "1.0.25"
+chrono = "0.4.19"
+ndarray = "0.15.3"
+numpy = "0.13.2"
 float-cmp = "0.8.0"
-hdf5 = "0.7.1"
+# This needs pinning to 0.8.x when it is released, the only 0.7.x doesn't work well with newer ndarray versions.
+hdf5 = { git = "https://github.com/aldanor/hdf5-rust" }
 clp-sys = { path = "./clp-sys" }
 
 [dependencies.pyo3]
-version = "*"
+version = "0.13.2"
 
 [dev-dependencies]
-tempdir = "0.3"
+tempdir = "0.3.7"
 
 [features]
 extension-module = ["pyo3/extension-module"]
@@ -38,11 +39,3 @@ requires-dist = ["pydantic"]
 members = [
     "clp-sys",
 ]
-
-[build]
-rustflags = "-C target-cpu=native"
-
-[profile.release]
-lto = "fat"
-codegen-units = 1
-# panic = "abort"

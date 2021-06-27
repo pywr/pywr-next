@@ -2,7 +2,6 @@ use super::{NetworkState, PywrError, RecorderMeta, Timestep, _Recorder};
 use crate::metric::Metric;
 use crate::model::Model;
 use crate::scenario::ScenarioIndex;
-use hdf5::Dataset;
 use ndarray::{s, Array2};
 use std::path::PathBuf;
 
@@ -49,7 +48,7 @@ impl _Recorder for HDF5Recorder {
             let metric = node.default_metric();
             let name = node.name().to_string();
             println!("Adding metric with name: {}", name);
-            let ds = match file.new_dataset::<f64>().create(&name, shape) {
+            let ds = match file.new_dataset::<f64>().shape(shape).create(&*name) {
                 Ok(ds) => ds,
                 Err(e) => return Err(PywrError::HDF5Error(e.to_string())),
             };
