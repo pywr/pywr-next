@@ -321,7 +321,7 @@ mod tests {
     use super::*;
     use crate::metric::Metric;
     use crate::model::Model;
-    use crate::node::Constraint;
+    use crate::node::{Constraint, ConstraintValue};
     use crate::recorders::AssertionRecorder;
     use crate::scenario::{ScenarioGroupCollection, ScenarioIndex};
     use crate::solvers::clp::ClpSolver;
@@ -408,7 +408,9 @@ mod tests {
         let inflow = parameters::VectorParameter::new("inflow", vec![10.0; 366]);
         let inflow = model.add_parameter(Box::new(inflow)).unwrap();
 
-        input_node.set_constraint(Some(inflow), Constraint::MaxFlow).unwrap();
+        input_node
+            .set_constraint(ConstraintValue::Parameter(inflow), Constraint::MaxFlow)
+            .unwrap();
 
         let base_demand = parameters::ConstantParameter::new("base-demand", 10.0);
         let base_demand = model.add_parameter(Box::new(base_demand)).unwrap();
@@ -424,13 +426,13 @@ mod tests {
         let total_demand = model.add_parameter(Box::new(total_demand)).unwrap();
 
         output_node
-            .set_constraint(Some(total_demand), Constraint::MaxFlow)
+            .set_constraint(ConstraintValue::Parameter(total_demand), Constraint::MaxFlow)
             .unwrap();
 
         let demand_cost = parameters::ConstantParameter::new("demand-cost", -10.0);
         let demand_cost = model.add_parameter(Box::new(demand_cost)).unwrap();
 
-        output_node.set_cost(Some(demand_cost));
+        output_node.set_cost(ConstraintValue::Parameter(demand_cost));
 
         model
     }
@@ -447,20 +449,20 @@ mod tests {
         // Apply demand to the model
         // TODO convenience function for adding a constant constraint.
         let demand = parameters::ConstantParameter::new("demand", 10.0);
-        let demand_idx = model.add_parameter(Box::new(demand)).unwrap();
+        let demand = model.add_parameter(Box::new(demand)).unwrap();
         output_node
-            .set_constraint(Some(demand_idx), Constraint::MaxFlow)
+            .set_constraint(ConstraintValue::Parameter(demand), Constraint::MaxFlow)
             .unwrap();
 
         let demand_cost = parameters::ConstantParameter::new("demand-cost", -10.0);
-        let demand_cost_idx = model.add_parameter(Box::new(demand_cost)).unwrap();
-        output_node.set_cost(Some(demand_cost_idx));
+        let demand_cost = model.add_parameter(Box::new(demand_cost)).unwrap();
+        output_node.set_cost(ConstraintValue::Parameter(demand_cost));
 
         let max_volume = parameters::ConstantParameter::new("max-volume", 100.0);
-        let max_volume_idx = model.add_parameter(Box::new(max_volume)).unwrap();
+        let max_volume = model.add_parameter(Box::new(max_volume)).unwrap();
 
         storage_node
-            .set_constraint(Some(max_volume_idx), Constraint::MaxVolume)
+            .set_constraint(ConstraintValue::Parameter(max_volume), Constraint::MaxVolume)
             .unwrap();
 
         model
@@ -476,12 +478,12 @@ mod tests {
         let parameter = model.add_parameter(Box::new(input_max_flow)).unwrap();
         assert_eq!(parameter.index(), 0);
         // assign the new parameter to one of the nodes.
-        node.set_constraint(Some(parameter.clone()), Constraint::MaxFlow)
+        node.set_constraint(ConstraintValue::Parameter(parameter.clone()), Constraint::MaxFlow)
             .unwrap();
 
         // Try to assign a constraint not defined for particular node type
         assert_eq!(
-            node.set_constraint(Some(parameter), Constraint::MaxVolume),
+            node.set_constraint(ConstraintValue::Parameter(parameter), Constraint::MaxVolume),
             Err(PywrError::StorageConstraintsUndefined)
         );
     }
@@ -553,18 +555,16 @@ mod tests {
         let mut solver: Box<dyn Solver> = Box::new(ClpSolver::new());
 
         let idx = model.get_node_by_name("output").unwrap().index();
-        let expected = array![
-            [10.0; 10], [10.0; 10], [10.0; 10], [10.0; 10], [10.0; 10], [10.0; 10], [10.0; 10], [10.0; 10], [10.0; 10],
-            [10.0; 10], [0.0; 10], [0.0; 10], [0.0; 10], [0.0; 10], [0.0; 10],
-        ];
+
+        let expected = Array2::from_shape_fn((15, 10), |(i, j)| if i < 10 { 10.0 } else { 0.0 });
+
         let recorder = AssertionRecorder::new("output-flow", Metric::NodeInFlow(idx), expected);
         model.add_recorder(Box::new(recorder)).unwrap();
 
         let idx = model.get_node_by_name("reservoir").unwrap().index();
-        let expected = array![
-            [90.0; 10], [80.0; 10], [70.0; 10], [60.0; 10], [50.0; 10], [40.0; 10], [30.0; 10], [20.0; 10], [10.0; 10],
-            [0.0; 10], [0.0; 10], [0.0; 10], [0.0; 10], [0.0; 10], [0.0; 10],
-        ];
+
+        let expected = Array2::from_shape_fn((15, 10), |(i, j)| (90.0 - 10.0 * i as f64).max(0.0));
+
         let recorder = AssertionRecorder::new("reservoir-volume", Metric::NodeVolume(idx), expected);
         model.add_recorder(Box::new(recorder)).unwrap();
 
