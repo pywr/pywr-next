@@ -1,5 +1,5 @@
+pub mod control_curves;
 pub mod py;
-
 use super::{NetworkState, PywrError};
 use crate::scenario::ScenarioIndex;
 use crate::timestep::Timestep;

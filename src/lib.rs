@@ -90,4 +90,6 @@ pub enum PywrError {
     InvalidConstraintType(String),
     #[error("invalid aggregated function: {0}")]
     InvalidAggregationFunction(String),
+    #[error("data out of range")]
+    DataOutOfRange,
 }

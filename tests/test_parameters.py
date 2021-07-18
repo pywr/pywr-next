@@ -64,7 +64,7 @@ class TestAggregatedParameter:
         model.run()
 
     def test_ordering(self, simple_data):
-        """Test an that a model loads if the aggregated parameter is defined before its dependencies."""
+        """Test that a model loads if the aggregated parameter is defined before its dependencies."""
 
         simple_data["parameters"] = [
             {
@@ -106,3 +106,38 @@ class TestAggregatedParameter:
 
         with pytest.raises(RuntimeError):
             model.run()
+
+
+class TestControlCurvePiecewiseInterpolatedParameter:
+    def test_basic(self, simple_data):
+        """Basic functional test of `ControlCurvePiecewiseInterpolatedParameter`"""
+
+        simple_data["parameters"] = [
+            {"name": "cc1", "type": "constant", "value": 0.8},
+            {"name": "cc2", "type": "constant", "value": 0.5},
+            {
+                "name": "cc_interp",
+                "type": "ControlCurvePiecewiseInterpolated",
+                "storage_node": "storage1",
+                "control_curves": ["cc1", "cc2"],
+                "values": [
+                    [10.0, 1.0],
+                    [0.0, 0.0],
+                    [-1.0, -10.0],
+                ],
+            },
+        ]
+
+        model = Model(**simple_data)
+        model.recorders.add(
+            **{
+                "name": "assert",
+                "type": "assertion",
+                "component": "cc_interp",
+                "metric": "parameter",
+                "values": [10.0] * 366,
+            }
+        )
+        assert len(model.parameters) == 3
+
+        model.run()

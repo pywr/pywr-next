@@ -184,6 +184,34 @@ impl PyModel {
         Ok(idx)
     }
 
+    fn add_piecewise_control_curve(
+        &mut self,
+        name: &str,
+        storage_node: &str,
+        control_curve_names: Vec<String>,
+        values: Vec<(f64, f64)>,
+        maximum: f64,
+        minimum: f64,
+    ) -> PyResult<parameters::ParameterIndex> {
+        let metric = Metric::NodeVolume(self.model.get_node_by_name(storage_node)?.index());
+
+        let mut control_curves = Vec::with_capacity(control_curve_names.len());
+        for name in control_curve_names {
+            control_curves.push(Metric::ParameterValue(self.model.get_parameter_by_name(&name)?.index()));
+        }
+
+        let parameter = parameters::control_curves::PiecewiseInterpolatedParameter::new(
+            name,
+            metric,
+            control_curves,
+            values,
+            maximum,
+            minimum,
+        );
+        let idx = self.model.add_parameter(Box::new(parameter))?.index();
+        Ok(idx)
+    }
+
     fn add_python_recorder(
         &mut self,
         name: &str,

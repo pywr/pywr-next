@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Tuple
 
 import numpy as np
 from pydantic import BaseModel
@@ -29,7 +29,7 @@ class ConstantParameter(BaseParameter):
 
 
 class DataFrameParameter(BaseParameter):
-    """Provides  """
+    """Provides"""
 
     url: str
     column: Optional[str] = None
@@ -56,6 +56,24 @@ class AggregatedParameter(BaseParameter):
     def create_parameter(self, r_model: PyModel, path: Path):
 
         r_model.add_aggregated_parameter(self.name, self.parameters, self.agg_func)
+
+
+class ControlCurvePiecewiseInterpolatedParameter(BaseParameter):
+    storage_node: str
+    control_curves: List[str]
+    values: List[Tuple[float, float]]
+    minimum: float = 0.0
+    maximum: float = 1.0
+
+    def create_parameter(self, r_model: PyModel, path: Path):
+        r_model.add_piecewise_control_curve(
+            self.name,
+            self.storage_node,
+            self.control_curves,
+            self.values,
+            self.minimum,
+            self.maximum,
+        )
 
 
 class ParameterCollection:
@@ -92,7 +110,7 @@ class ParameterCollection:
             if "type" not in parameter_data:
                 raise ValueError('"type" key required')
 
-            klass_name = parameter_data.pop("type") + "parameter"
+            klass_name = parameter_data.pop("type").lower() + "parameter"
             klass = _parameter_registry[klass_name]
             parameter = klass(**parameter_data)
             if parameter.name in collection:
