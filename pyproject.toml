@@ -1,3 +1,8 @@
 [build-system]
 requires = ["maturin", "setuptools"]
 build-backend = "maturin"
+
+[project]
+dependencies = [
+    "numpy", "scipy", "pandas", "pydantic"
+]
