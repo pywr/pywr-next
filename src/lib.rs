@@ -92,4 +92,6 @@ pub enum PywrError {
     InvalidAggregationFunction(String),
     #[error("data out of range")]
     DataOutOfRange,
+    #[error("internal parameter error: {0}")]
+    InternalParameterError(String),
 }

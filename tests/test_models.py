@@ -65,3 +65,26 @@ def test_model(model_dir: Path, tmpdir: Path, model_name: str):
             np.testing.assert_allclose(
                 np.squeeze(fh[node.name]), expected_data[node.name]
             )
+
+
+@pytest.mark.parametrize(
+    "model_name",
+    [
+        "simple-timeseries",
+        "simple-storage-timeseries",
+    ],
+)
+def test_model_benchmark(benchmark, model_dir: Path, model_name: str):
+
+    filename = model_dir / model_name / "model.json"
+    model = Model.from_file(filename)
+
+    r_model = model.build()
+
+    benchmark(
+        r_model.run,
+        "clp",
+        model.timestepper.start,
+        model.timestepper.end,
+        model.timestepper.timestep,
+    )

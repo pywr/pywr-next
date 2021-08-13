@@ -1,5 +1,6 @@
 from typing import Optional, Dict, List
 from pydantic import BaseModel
+import numpy as np
 from .pywr import PyModel  # type: ignore
 
 _recorder_registry = {}
@@ -34,13 +35,15 @@ class AssertionRecorder(BaseRecorder):
 
 
 class _AssertionRecorder:
-    def __init__(self, values: List[float]):
-        self._iter = iter(values)
+    def __init__(self, expected_values: List[float]):
+        self.expected_values = expected_values
+        self.simulated_values = []
 
     def save(self, timestep, value: float):
-        print(timestep, value)
+        self.simulated_values.append(value)
 
-        assert next(self._iter) == value
+    def finalise(self):
+        np.testing.assert_allclose(self.expected_values, self.simulated_values)
 
 
 class RecorderCollection:

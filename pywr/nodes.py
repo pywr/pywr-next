@@ -1,10 +1,11 @@
 from __future__ import annotations
 from pathlib import Path
-from typing import List, Optional, Dict, Union
+from typing import List, Optional, Dict, Union, Iterable
 from pydantic import BaseModel
 from .pywr import PyModel, ParameterNotFoundError  # type: ignore
-from .parameters import ParameterCollection
+from .parameters import ParameterCollection, ParameterRef
 from .recorders import RecorderCollection
+from .tables import TableCollection
 import json
 import yaml
 
@@ -32,6 +33,11 @@ class BaseNode(BaseModel):
         return _node_registry[node_type.lower() + "node"]
 
     @classmethod
+    def from_data(cls, node_data) -> BaseNode:
+        klass = cls.get_class(node_data.pop("type"))
+        return klass(**node_data)
+
+    @classmethod
     def __get_validators__(cls):
         yield cls.validate
 
@@ -47,9 +53,9 @@ class BaseNode(BaseModel):
 
 
 class InputNode(BaseNode):
-    cost: Optional[Union[float, str]] = None
-    min_flow: Optional[Union[float, str]] = None
-    max_flow: Optional[Union[float, str]] = None
+    cost: Optional[ParameterRef] = None
+    min_flow: Optional[ParameterRef] = None
+    max_flow: Optional[ParameterRef] = None
 
     def create_nodes(self, r_model: PyModel):
         r_model.add_input_node(self.name)
@@ -62,9 +68,9 @@ class InputNode(BaseNode):
 
 
 class LinkNode(BaseNode):
-    cost: Optional[Union[float, str]] = None
-    min_flow: Optional[Union[float, str]] = None
-    max_flow: Optional[Union[float, str]] = None
+    cost: Optional[ParameterRef] = None
+    min_flow: Optional[ParameterRef] = None
+    max_flow: Optional[ParameterRef] = None
 
     def create_nodes(self, r_model: PyModel):
         r_model.add_link_node(self.name)
@@ -77,9 +83,9 @@ class LinkNode(BaseNode):
 
 
 class OutputNode(BaseNode):
-    cost: Optional[Union[float, str]] = None
-    min_flow: Optional[Union[float, str]] = None
-    max_flow: Optional[Union[float, str]] = None
+    cost: Optional[ParameterRef] = None
+    min_flow: Optional[ParameterRef] = None
+    max_flow: Optional[ParameterRef] = None
 
     def create_nodes(self, r_model: PyModel):
         r_model.add_output_node(self.name)
@@ -92,10 +98,10 @@ class OutputNode(BaseNode):
 
 
 class StorageNode(BaseNode):
-    cost: Optional[Union[float, str]] = None
+    cost: Optional[ParameterRef] = None
     initial_volume: float = 0.0
-    min_volume: Optional[Union[float, str]] = None
-    max_volume: Optional[Union[float, str]] = None
+    min_volume: Optional[ParameterRef] = None
+    max_volume: Optional[ParameterRef] = None
 
     def create_nodes(self, r_model: PyModel):
         r_model.add_storage_node(self.name, self.initial_volume)
@@ -149,12 +155,18 @@ class NodeCollection:
             if "type" not in node_data:
                 raise ValueError('"type" key required')
 
-            klass = BaseNode.get_class(node_data.pop("type"))
-            node = klass(**node_data)
+            node = BaseNode.from_data(node_data)
             if node.name in collection:
                 raise ValueError(f'Node name "{node.name}" already defined.')
             collection[node.name] = node
         return collection
+
+    def append(self, node: BaseNode):
+        self._nodes[node.name] = node
+
+    def extend(self, nodes: Iterable[BaseNode]):
+        for node in nodes:
+            self.append(node)
 
 
 class PrintRecorder:
@@ -234,16 +246,17 @@ class Timestepper(BaseModel):
 
 class Model(BaseModel):
     timestepper: Timestepper
-    nodes: NodeCollection
-    edges: List[Edge]
+    nodes: NodeCollection = NodeCollection()
+    edges: List[Edge] = []
     parameters: ParameterCollection = ParameterCollection()
     recorders: RecorderCollection = RecorderCollection()
+    tables: TableCollection = TableCollection()
     outputs: OutputCollection = OutputCollection()
     path: Optional[Path] = None  # TODO not sure about this one.
 
     @classmethod
     def from_file(cls, filepath: Path) -> Model:
-        """Load a model from a file. """
+        """Load a model from a file."""
 
         ext = filepath.suffix.lower()
         if ext == ".json":
@@ -256,14 +269,14 @@ class Model(BaseModel):
 
     @classmethod
     def from_json(cls, filepath: Path) -> Model:
-        """Load a model from a JSON file. """
+        """Load a model from a JSON file."""
         with open(filepath) as fh:
             data = json.load(fh)
         return cls(path=filepath.parent, **data)
 
     @classmethod
     def from_yaml(cls, filepath: Path) -> Model:
-        """Load a model from a YAML file. """
+        """Load a model from a YAML file."""
         with open(filepath) as fh:
             data = yaml.safe_load(fh)
         return cls(path=filepath.parent, **data)

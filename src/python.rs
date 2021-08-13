@@ -1,7 +1,7 @@
 use crate::metric::Metric;
 use crate::model::Model;
 use crate::node::{Constraint, ConstraintValue};
-use crate::parameters::AggFunc;
+use crate::parameters::{AggFunc, AggIndexFunc};
 use crate::scenario::ScenarioGroupCollection;
 use crate::solvers::clp::ClpSolver;
 use crate::solvers::Solver;
@@ -111,6 +111,7 @@ impl PyModel {
         };
 
         self.model.run(timestepper, scenarios, &mut solver)?;
+
         Ok(())
     }
 
@@ -184,6 +185,26 @@ impl PyModel {
         Ok(idx)
     }
 
+    fn add_aggregated_index_parameter(
+        &mut self,
+        name: &str,
+        parameter_names: Vec<String>,
+        agg_func: &str,
+    ) -> PyResult<parameters::IndexParameterIndex> {
+        // Find all the parameters by name
+        let mut parameters = Vec::with_capacity(parameter_names.len());
+        for name in parameter_names {
+            parameters.push(self.model.get_index_parameter_by_name(&name)?);
+        }
+
+        let agg_func = AggIndexFunc::from_str(agg_func)?;
+        let parameter = parameters::AggregatedIndexParameter::new(name, parameters, agg_func);
+
+        let idx = self.model.add_index_parameter(Box::new(parameter))?.index();
+
+        Ok(idx)
+    }
+
     fn add_piecewise_control_curve(
         &mut self,
         name: &str,
@@ -193,7 +214,7 @@ impl PyModel {
         maximum: f64,
         minimum: f64,
     ) -> PyResult<parameters::ParameterIndex> {
-        let metric = Metric::NodeVolume(self.model.get_node_by_name(storage_node)?.index());
+        let metric = Metric::NodeProportionalVolume(self.model.get_node_by_name(storage_node)?.index());
 
         let mut control_curves = Vec::with_capacity(control_curve_names.len());
         for name in control_curve_names {
@@ -209,6 +230,78 @@ impl PyModel {
             minimum,
         );
         let idx = self.model.add_parameter(Box::new(parameter))?.index();
+        Ok(idx)
+    }
+
+    fn add_control_curve_index_parameter(
+        &mut self,
+        name: &str,
+        storage_node: &str,
+        control_curve_names: Vec<String>,
+    ) -> PyResult<parameters::IndexParameterIndex> {
+        let metric = Metric::NodeProportionalVolume(self.model.get_node_by_name(storage_node)?.index());
+
+        let mut control_curves = Vec::with_capacity(control_curve_names.len());
+        for name in control_curve_names {
+            control_curves.push(Metric::ParameterValue(self.model.get_parameter_by_name(&name)?.index()));
+        }
+
+        let parameter = parameters::control_curves::ControlCurveIndexParameter::new(name, metric, control_curves);
+        let idx = self.model.add_index_parameter(Box::new(parameter))?.index();
+        Ok(idx)
+    }
+
+    fn add_asymmetric_index_parameter(
+        &mut self,
+        name: &str,
+        on_parameter_name: &str,
+        off_parameter_name: &str,
+    ) -> PyResult<parameters::IndexParameterIndex> {
+        let on_parameter = self.model.get_index_parameter_by_name(on_parameter_name)?;
+        let off_parameter = self.model.get_index_parameter_by_name(off_parameter_name)?;
+
+        let parameter = parameters::asymmetric::AsymmetricSwitchIndexParameter::new(name, on_parameter, off_parameter);
+        let idx = self.model.add_index_parameter(Box::new(parameter))?.index();
+        Ok(idx)
+    }
+
+    fn add_indexed_array_parameter(
+        &mut self,
+        name: &str,
+        index_parameter_name: &str,
+        parameter_names: Vec<String>,
+    ) -> PyResult<parameters::ParameterIndex> {
+        let index_parameter = self.model.get_index_parameter_by_name(index_parameter_name)?;
+
+        let mut parameters = Vec::with_capacity(parameter_names.len());
+        for name in parameter_names {
+            parameters.push(self.model.get_parameter_by_name(&name)?);
+        }
+
+        let parameter = parameters::indexed_array::IndexedArrayParameter::new(name, index_parameter, parameters);
+        let idx = self.model.add_parameter(Box::new(parameter))?.index();
+        Ok(idx)
+    }
+
+    fn add_parameter_threshold_parameter(
+        &mut self,
+        name: &str,
+        parameter_name: &str,
+        threshold_name: &str,
+        predicate: &str,
+        ratchet: bool,
+    ) -> PyResult<parameters::IndexParameterIndex> {
+        let metric = Metric::ParameterValue(self.model.get_parameter_by_name(parameter_name)?.index());
+        let threshold = self.model.get_parameter_by_name(threshold_name)?;
+
+        let parameter = parameters::ThresholdParameter::new(
+            name,
+            metric,
+            threshold,
+            parameters::Predicate::from_str(predicate)?,
+            ratchet,
+        );
+        let idx = self.model.add_index_parameter(Box::new(parameter))?.index();
         Ok(idx)
     }
 

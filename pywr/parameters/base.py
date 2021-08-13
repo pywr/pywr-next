@@ -1,12 +1,17 @@
 from pathlib import Path
-from typing import Optional, Dict, Any, List, Tuple
+from typing import Optional, Dict, List, Tuple, TypeVar, Iterable, Union
 
 import numpy as np
 from pydantic import BaseModel
 import pandas  # type: ignore
-from .pywr import PyModel  # type: ignore
+from pywr.pywr import PyModel  # type: ignore
+
+from pywr.tables import TableRef
 
 _parameter_registry = {}
+
+
+ParameterRef = TypeVar("ParameterRef", float, str, Dict)
 
 
 class BaseParameter(BaseModel):
@@ -22,7 +27,7 @@ class BaseParameter(BaseModel):
 
 
 class ConstantParameter(BaseParameter):
-    value: float
+    value: Union[TableRef, float]
 
     def create_parameter(self, r_model: PyModel, path: Path):
         r_model.add_constant(self.name, self.value)
@@ -49,21 +54,57 @@ class DataFrameParameter(BaseParameter):
         r_model.add_array(self.name, df.values)
 
 
-class AggregatedParameter(BaseParameter):
-    agg_func: str  # TODO enum?
-    parameters: List[str]
+class ArrayIndexParameter(BaseParameter):
+    values: List[float]
 
     def create_parameter(self, r_model: PyModel, path: Path):
+        r_model.add_array(self.name, np.asarray(self.values))
 
+
+class AsymmetricSwitchIndexParameter(BaseParameter):
+    on_index_parameter: ParameterRef
+    off_index_parameter: ParameterRef
+
+    def create_parameter(self, r_model: PyModel, path: Path):
+        r_model.add_asymmetric_index_parameter(
+            self.name, self.on_index_parameter, self.off_index_parameter
+        )
+
+
+class IndexedArrayParameter(BaseParameter):
+    index_parameter: ParameterRef
+    parameters: List[ParameterRef]
+
+    def create_parameter(self, r_model: PyModel, path: Path):
+        r_model.add_indexed_array_parameter(
+            self.name, self.index_parameter, self.parameters
+        )
+
+
+class AggregatedParameter(BaseParameter):
+    agg_func: str  # TODO enum or typing.Literal (requires Python 3.8+)
+    parameters: List[ParameterRef]
+
+    def create_parameter(self, r_model: PyModel, path: Path):
         r_model.add_aggregated_parameter(self.name, self.parameters, self.agg_func)
+
+
+class AggregatedIndexParameter(BaseParameter):
+    agg_func: str  # TODO enum or typing.Literal (requires Python 3.8+)
+    parameters: List[ParameterRef]
+
+    def create_parameter(self, r_model: PyModel, path: Path):
+        r_model.add_aggregated_index_parameter(
+            self.name, self.parameters, self.agg_func
+        )
 
 
 class ControlCurvePiecewiseInterpolatedParameter(BaseParameter):
     storage_node: str
     control_curves: List[str]
     values: List[Tuple[float, float]]
-    minimum: float = 0.0
     maximum: float = 1.0
+    minimum: float = 0.0
 
     def create_parameter(self, r_model: PyModel, path: Path):
         r_model.add_piecewise_control_curve(
@@ -71,8 +112,8 @@ class ControlCurvePiecewiseInterpolatedParameter(BaseParameter):
             self.storage_node,
             self.control_curves,
             self.values,
-            self.minimum,
             self.maximum,
+            self.minimum,
         )
 
 
@@ -106,6 +147,7 @@ class ParameterCollection:
 
         collection = cls()
         for parameter_data in data:
+            print(parameter_data)
 
             if "type" not in parameter_data:
                 raise ValueError('"type" key required')
@@ -117,3 +159,10 @@ class ParameterCollection:
                 raise ValueError(f"Parameter name {parameter.name} already defined.")
             collection[parameter.name] = parameter
         return collection
+
+    def append(self, parameter: BaseParameter):
+        self._parameters[parameter.name] = parameter
+
+    def extend(self, parameters: Iterable[BaseParameter]):
+        for parameter in parameters:
+            self.append(parameter)

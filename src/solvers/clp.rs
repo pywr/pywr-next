@@ -1,6 +1,7 @@
 use crate::model::Model;
 use crate::node::NodeType;
 use crate::solvers::Solver;
+use crate::state::ParameterState;
 use crate::timestep::Timestep;
 use crate::{NetworkState, PywrError};
 use clp_sys::*;
@@ -110,9 +111,9 @@ impl ClpSimplex {
         }
     }
 
-    fn dual(&mut self) {
+    fn initial_solve(&mut self) {
         unsafe {
-            Clp_dual(self.ptr, 0);
+            Clp_initialSolve(self.ptr);
         }
     }
 
@@ -122,9 +123,21 @@ impl ClpSimplex {
         }
     }
 
+    fn initial_primal_solve(&mut self) {
+        unsafe {
+            Clp_initialPrimalSolve(self.ptr);
+        }
+    }
+
     fn dual_solve(&mut self) {
         unsafe {
             Clp_dual(self.ptr, 0);
+        }
+    }
+
+    fn primal_solve(&mut self) {
+        unsafe {
+            Clp_primal(self.ptr, 0);
         }
     }
 
@@ -253,7 +266,7 @@ impl ClpModelBuilder {
         model.change_column_lower(&self.col_lower);
         model.change_column_upper(&self.col_upper);
         model.change_objective_coefficients(&self.col_obj_coef);
-        println!("Adding rows ...");
+        // println!("Adding rows ...");
         model.add_rows(
             &self.row_lower,
             &self.row_upper,
@@ -306,6 +319,7 @@ impl ClpModelBuilder {
         // println!("row_upper: {:?}", model.get_row_upper(4));
         //let now = Instant::now();
         model.dual_solve();
+        // model.initial_solve();
         //let t = now.elapsed().as_secs_f64();
         // println!("dual solve: {} s; {} per s", t, 1.0/t);
         // println!("coef: {:?}", model.get_objective_coefficients(2));
@@ -450,7 +464,7 @@ impl ClpSolver {
     }
 
     /// Update edge objective coefficients
-    fn update_edge_objectives(&mut self, model: &Model, parameter_states: &[f64]) -> Result<(), PywrError> {
+    fn update_edge_objectives(&mut self, model: &Model, parameter_states: &ParameterState) -> Result<(), PywrError> {
         for edge in &model.edges {
             let cost: f64 = edge.cost(parameter_states)?;
             self.builder.set_obj_coefficient(edge.index(), cost);
@@ -464,7 +478,7 @@ impl ClpSolver {
         model: &Model,
         timestep: &Timestep,
         network_state: &NetworkState,
-        parameter_states: &[f64],
+        parameter_states: &ParameterState,
     ) -> Result<(), PywrError> {
         let start_row = match self.start_node_constraints {
             Some(r) => r,
@@ -512,7 +526,7 @@ impl Solver for ClpSolver {
         model: &Model,
         timestep: &Timestep,
         network_state: &NetworkState,
-        parameter_state: &[f64],
+        parameter_state: &ParameterState,
     ) -> Result<NetworkState, PywrError> {
         self.update_edge_objectives(model, parameter_state)?;
         self.update_node_constraint_bounds(model, timestep, network_state, parameter_state)?;

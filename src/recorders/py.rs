@@ -1,6 +1,8 @@
 use super::{NetworkState, PywrError, RecorderMeta, Timestep, _Recorder};
 use crate::metric::Metric;
+use crate::model::Model;
 use crate::scenario::ScenarioIndex;
+use crate::state::ParameterState;
 use pyo3::prelude::*;
 use pyo3::types::PyTuple;
 
@@ -30,14 +32,25 @@ impl _Recorder for PyRecorder {
         &mut self,
         timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
+        model: &Model,
         network_state: &NetworkState,
-        parameter_state: &[f64],
+        parameter_state: &ParameterState,
     ) -> Result<(), PywrError> {
         let gil = Python::acquire_gil();
         let py = gil.python();
 
-        let args = (*timestep, self.metric.get_value(network_state, parameter_state)?);
+        let args = (*timestep, self.metric.get_value(model, network_state, parameter_state)?);
         match self.object.call_method1(py, "save", args) {
+            Ok(_) => Ok(()),
+            Err(e) => Err(PywrError::PythonError(e.to_string())),
+        }
+    }
+
+    fn finalise(&mut self) -> Result<(), PywrError> {
+        let gil = Python::acquire_gil();
+        let py = gil.python();
+
+        match self.object.call_method0(py, "finalise") {
             Ok(_) => Ok(()),
             Err(e) => Err(PywrError::PythonError(e.to_string())),
         }

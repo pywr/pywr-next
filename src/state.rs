@@ -1,5 +1,6 @@
 use crate::edge::{Edge, EdgeIndex};
 use crate::node::NodeIndex;
+use crate::parameters::{IndexParameterIndex, ParameterIndex};
 use crate::timestep::Timestep;
 use crate::PywrError;
 use pyo3::prelude::*;
@@ -125,7 +126,51 @@ impl EdgeState {
     }
 }
 
-pub type ParameterState = Vec<f64>;
+// State of the parameters
+#[pyclass]
+#[derive(Clone, Debug)]
+pub struct ParameterState {
+    values: Vec<f64>,
+    indices: Vec<usize>,
+}
+
+impl ParameterState {
+    pub(crate) fn new() -> Self {
+        Self {
+            values: Vec::new(),
+            indices: Vec::new(),
+        }
+    }
+
+    pub(crate) fn with_capacity(num_values: usize, num_indices: usize) -> Self {
+        Self {
+            values: Vec::with_capacity(num_values),
+            indices: Vec::with_capacity(num_indices),
+        }
+    }
+
+    pub(crate) fn push_value(&mut self, value: f64) {
+        self.values.push(value)
+    }
+
+    pub(crate) fn push_index(&mut self, index: usize) {
+        self.indices.push(index)
+    }
+
+    pub(crate) fn get_value(&self, parameter_index: ParameterIndex) -> Result<f64, PywrError> {
+        match self.values.get(parameter_index) {
+            Some(v) => Ok(*v),
+            None => Err(PywrError::ParameterIndexNotFound),
+        }
+    }
+
+    pub(crate) fn get_index(&self, parameter_index: IndexParameterIndex) -> Result<usize, PywrError> {
+        match self.indices.get(parameter_index) {
+            Some(i) => Ok(*i),
+            None => Err(PywrError::ParameterIndexNotFound),
+        }
+    }
+}
 
 // State of the nodes and edges
 #[pyclass]

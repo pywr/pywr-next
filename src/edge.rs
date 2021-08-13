@@ -1,4 +1,5 @@
 use crate::node::{Node, NodeIndex};
+use crate::state::ParameterState;
 use crate::PywrError;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -38,12 +39,12 @@ impl Edge {
         self.0.borrow().to_node.index()
     }
 
-    pub(crate) fn cost(&self, parameter_states: &[f64]) -> Result<f64, PywrError> {
+    pub(crate) fn cost(&self, parameter_states: &ParameterState) -> Result<f64, PywrError> {
         let from_node = &self.0.borrow().from_node;
         let to_node = &self.0.borrow().to_node;
 
-        let from_cost = from_node.get_outgoing_cost(parameter_states);
-        let to_cost = to_node.get_incoming_cost(parameter_states);
+        let from_cost = from_node.get_outgoing_cost(parameter_states)?;
+        let to_cost = to_node.get_incoming_cost(parameter_states)?;
 
         Ok(from_cost + to_cost)
     }

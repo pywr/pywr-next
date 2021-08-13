@@ -2,6 +2,7 @@ use super::{NetworkState, PywrError, RecorderMeta, Timestep, _Recorder};
 use crate::metric::Metric;
 use crate::model::Model;
 use crate::scenario::ScenarioIndex;
+use crate::state::ParameterState;
 use ndarray::{s, Array2};
 use std::path::PathBuf;
 
@@ -65,13 +66,14 @@ impl _Recorder for HDF5Recorder {
         &mut self,
         timestep: &Timestep,
         scenario_index: &ScenarioIndex,
+        model: &Model,
         network_state: &NetworkState,
-        parameter_state: &[f64],
+        parameter_state: &ParameterState,
     ) -> Result<(), PywrError> {
         match (&mut self.array, &self.datasets) {
             (Some(array), Some(datasets)) => {
                 for (idx, (metric, _ds)) in datasets.iter().enumerate() {
-                    let value = metric.get_value(network_state, parameter_state)?;
+                    let value = metric.get_value(model, network_state, parameter_state)?;
                     array[[idx, scenario_index.index]] = value
                 }
                 Ok(())

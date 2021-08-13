@@ -25,6 +25,33 @@ def simple_data():
     }
 
 
+@pytest.fixture()
+def simple_storage_data():
+    return {
+        "timestepper": {"start": "2020-01-01", "end": "2020-01-31", "timestep": 1},
+        "nodes": [
+            {"name": "input1", "type": "input"},
+            {
+                "name": "storage1",
+                "type": "storage",
+                "max_volume": 20,
+                "initial_volume": 20,
+            },
+            {
+                "name": "output1",
+                "type": "output",
+                "cost": -10.0,
+                "max_flow": 1.0,
+            },
+        ],
+        "edges": [
+            {"from_node": "input1", "to_node": "storage1"},
+            {"from_node": "storage1", "to_node": "output1"},
+        ],
+        "parameters": [],
+    }
+
+
 class TestAggregatedParameter:
     __test_funcs__ = {
         "sum": np.sum,
@@ -109,10 +136,10 @@ class TestAggregatedParameter:
 
 
 class TestControlCurvePiecewiseInterpolatedParameter:
-    def test_basic(self, simple_data):
+    def test_basic(self, simple_storage_data):
         """Basic functional test of `ControlCurvePiecewiseInterpolatedParameter`"""
 
-        simple_data["parameters"] = [
+        simple_storage_data["parameters"] = [
             {"name": "cc1", "type": "constant", "value": 0.8},
             {"name": "cc2", "type": "constant", "value": 0.5},
             {
@@ -128,14 +155,37 @@ class TestControlCurvePiecewiseInterpolatedParameter:
             },
         ]
 
-        model = Model(**simple_data)
+        model = Model(**simple_storage_data)
         model.recorders.add(
             **{
                 "name": "assert",
                 "type": "assertion",
                 "component": "cc_interp",
                 "metric": "parameter",
-                "values": [10.0] * 366,
+                "values": [
+                    10.0,  # 20 Ml (full)
+                    1.0 + 9.0 * 0.15 / 0.2,  # 19 Ml (95%)
+                    1.0 + 9.0 * 0.10 / 0.2,  # 18 Ml (90%)
+                    1.0 + 9.0 * 0.05 / 0.2,  # 17 Ml (85%)
+                    0.0,  # 16 Ml (80%)
+                    0.0,  # 15 Ml (75%)
+                    0.0,  # 14 Ml (70%)
+                    0.0,  # 13 Ml (65%)
+                    0.0,  # 12 Ml (60%)
+                    0.0,  # 11 Ml (55%)
+                    -1.0,  # 10 Ml (50%)
+                    -1.0 - 9.0 * 0.05 / 0.5,  # 09 Ml (45%)
+                    -1.0 - 9.0 * 0.10 / 0.5,  # 09 Ml (40%)
+                    -1.0 - 9.0 * 0.15 / 0.5,  # 09 Ml (35%)
+                    -1.0 - 9.0 * 0.20 / 0.5,  # 09 Ml (30%)
+                    -1.0 - 9.0 * 0.25 / 0.5,  # 09 Ml (25%)
+                    -1.0 - 9.0 * 0.30 / 0.5,  # 09 Ml (20%)
+                    -1.0 - 9.0 * 0.35 / 0.5,  # 09 Ml (15%)
+                    -1.0 - 9.0 * 0.40 / 0.5,  # 09 Ml (10%)
+                    -1.0 - 9.0 * 0.45 / 0.5,  # 09 Ml (05%)
+                    -10.0,  # 09 Ml (00%)
+                ]
+                + [-10.0] * 10,
             }
         )
         assert len(model.parameters) == 3

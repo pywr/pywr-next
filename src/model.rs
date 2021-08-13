@@ -13,6 +13,8 @@ pub struct Model {
     pub nodes: Vec<Node>,
     pub edges: Vec<Edge>,
     parameters: Vec<parameters::Parameter>,
+    index_parameters: Vec<parameters::IndexParameter>,
+    parameters_resolve_order: Vec<parameters::ParameterType>,
     recorders: Vec<recorders::Recorder>,
     scenarios: ScenarioGroupCollection,
 }
@@ -32,6 +34,8 @@ impl Model {
             nodes: Vec::new(),
             edges: Vec::new(),
             parameters: Vec::new(),
+            index_parameters: Vec::new(),
+            parameters_resolve_order: Vec::new(),
             recorders: Vec::new(),
             scenarios: ScenarioGroupCollection::new(),
         }
@@ -58,6 +62,15 @@ impl Model {
     }
 
     fn setup(&self, timesteps: &Vec<Timestep>, scenario_indices: &Vec<ScenarioIndex>) -> Result<(), PywrError> {
+        // Setup parameters
+        for parameter in self.parameters.iter() {
+            parameter.setup(&self, timesteps, scenario_indices)?;
+        }
+
+        for parameter in self.index_parameters.iter() {
+            parameter.setup(&self, timesteps, scenario_indices)?;
+        }
+
         // Setup recorders
         for recorder in self.recorders.iter() {
             recorder.setup(&self, timesteps, scenario_indices)?;
@@ -100,7 +113,6 @@ impl Model {
             count += scenario_indices.len();
         }
         println!("speed: {} ts/s", count as f64 / now.elapsed().as_secs_f64());
-        // println!("final state: {:?}", initial_state);
         self.finalise()?;
         Ok(())
     }
@@ -125,7 +137,6 @@ impl Model {
             let next_state = solver.solve(&self, timestep, current_state, &pstate)?;
 
             self.save_recorders(&timestep, &scenario_index, &next_state, &pstate)?;
-
             next_states.push(next_state);
         }
 
@@ -140,11 +151,14 @@ impl Model {
         scenario_index: &ScenarioIndex,
         state: &NetworkState,
     ) -> Result<ParameterState, PywrError> {
-        let mut parameter_state = ParameterState::with_capacity(self.parameters.len());
+        let mut parameter_state = ParameterState::with_capacity(self.parameters.len(), 0);
+
         for parameter in &self.parameters {
-            let value = parameter.compute(timestep, scenario_index, state, &parameter_state)?;
-            parameter_state.push(value);
+            let value = parameter.compute(timestep, scenario_index, &self, state, &parameter_state)?;
+            parameter_state.push_value(value);
         }
+
+        for parameter in &self.index_parameters {}
 
         Ok(parameter_state)
     }
@@ -154,10 +168,10 @@ impl Model {
         timestep: &Timestep,
         scenario_index: &ScenarioIndex,
         network_state: &NetworkState,
-        parameter_state: &[f64],
+        parameter_state: &ParameterState,
     ) -> Result<(), PywrError> {
         for recorder in self.recorders.iter() {
-            recorder.save(timestep, scenario_index, network_state, parameter_state)?;
+            recorder.save(timestep, scenario_index, &self, network_state, parameter_state)?;
         }
         Ok(())
     }
@@ -180,6 +194,14 @@ impl Model {
     /// Get a `ParameterIndex` from a parameter's name
     pub fn get_parameter_by_name(&self, name: &str) -> Result<parameters::Parameter, PywrError> {
         match self.parameters.iter().find(|p| p.name() == name) {
+            Some(parameter) => Ok(parameter.clone()),
+            None => Err(PywrError::ParameterNotFound(name.to_string())),
+        }
+    }
+
+    /// Get a `IndexParameterIndex` from a parameter's name
+    pub fn get_index_parameter_by_name(&self, name: &str) -> Result<parameters::IndexParameter, PywrError> {
+        match self.index_parameters.iter().find(|p| p.name() == name) {
             Some(parameter) => Ok(parameter.clone()),
             None => Err(PywrError::ParameterNotFound(name.to_string())),
         }
@@ -266,6 +288,26 @@ impl Model {
 
         let p = parameters::Parameter::new(parameter, parameter_index);
         self.parameters.push(p.clone());
+        Ok(p)
+    }
+
+    /// Add a `parameters::IndexParameter` to the model
+    pub fn add_index_parameter(
+        &mut self,
+        index_parameter: Box<dyn parameters::_IndexParameter>,
+    ) -> Result<parameters::IndexParameter, PywrError> {
+        // TODO reinstate this check
+        // if let Ok(idx) = self.get_parameter_index(&parameter.meta().name) {
+        //     return Err(PywrError::ParameterNameAlreadyExists(
+        //         parameter.meta().name.to_string(),
+        //         idx,
+        //     ));
+        // }
+
+        let parameter_index = self.index_parameters.len();
+
+        let p = parameters::IndexParameter::new(index_parameter, parameter_index);
+        self.index_parameters.push(p.clone());
         Ok(p)
     }
 

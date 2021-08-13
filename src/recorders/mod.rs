@@ -5,6 +5,7 @@ use crate::assert_almost_eq;
 use crate::metric::Metric;
 use crate::model::Model;
 use crate::scenario::ScenarioIndex;
+use crate::state::ParameterState;
 use crate::timestep::Timestep;
 use crate::{NetworkState, PywrError};
 use ndarray::prelude::*;
@@ -50,8 +51,9 @@ pub trait _Recorder {
         &mut self,
         timestep: &Timestep,
         scenario_index: &ScenarioIndex,
+        model: &Model,
         network_state: &NetworkState,
-        parameter_state: &[f64],
+        parameter_state: &ParameterState,
     ) -> Result<(), PywrError>;
     fn after_save(&mut self, timestep: &Timestep) -> Result<(), PywrError> {
         Ok(())
@@ -111,13 +113,14 @@ impl Recorder {
         &self,
         timestep: &Timestep,
         scenario_index: &ScenarioIndex,
+        model: &Model,
         network_state: &NetworkState,
-        parameter_state: &[f64],
+        parameter_state: &ParameterState,
     ) -> Result<(), PywrError> {
         self.0
             .borrow_mut()
             .deref_mut()
-            .save(timestep, scenario_index, network_state, parameter_state)
+            .save(timestep, scenario_index, model, network_state, parameter_state)
     }
 
     pub fn after_save(&self, timestep: &Timestep) -> Result<(), PywrError> {
@@ -173,14 +176,15 @@ impl _Recorder for Array2Recorder {
         &mut self,
         timestep: &Timestep,
         scenario_index: &ScenarioIndex,
+        model: &Model,
         state: &NetworkState,
-        parameter_state: &[f64],
+        parameter_state: &ParameterState,
     ) -> Result<(), PywrError> {
         // This panics if out-of-bounds
 
         match &mut self.array {
             Some(array) => {
-                let value = self.metric.get_value(state, parameter_state)?;
+                let value = self.metric.get_value(model, state, parameter_state)?;
                 array[[timestep.index, scenario_index.index]] = value
             }
             None => return Err(PywrError::RecorderNotInitialised),
@@ -222,8 +226,9 @@ impl _Recorder for AssertionRecorder {
         &mut self,
         timestep: &Timestep,
         scenario_index: &ScenarioIndex,
+        model: &Model,
         state: &NetworkState,
-        parameter_state: &[f64],
+        parameter_state: &ParameterState,
     ) -> Result<(), PywrError> {
         // This panics if out-of-bounds
 
@@ -232,7 +237,7 @@ impl _Recorder for AssertionRecorder {
             None => panic!("Simulation produced results out of range."),
         };
 
-        assert_almost_eq!(self.metric.get_value(state, parameter_state)?, expected_value);
+        assert_almost_eq!(self.metric.get_value(model, state, parameter_state)?, expected_value);
 
         Ok(())
     }
