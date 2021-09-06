@@ -41,10 +41,7 @@ def test_simple_timeseries(model_dir: Path, tmpdir: Path):
 # TODO these tests could be auto-discovered.
 @pytest.mark.parametrize(
     "model_name",
-    [
-        "simple-timeseries",
-        "simple-storage-timeseries",
-    ],
+    ["simple-timeseries", "simple-storage-timeseries", "simple-wasm"],
 )
 def test_model(model_dir: Path, tmpdir: Path, model_name: str):
 
@@ -69,10 +66,7 @@ def test_model(model_dir: Path, tmpdir: Path, model_name: str):
 
 @pytest.mark.parametrize(
     "model_name",
-    [
-        "simple-timeseries",
-        "simple-storage-timeseries",
-    ],
+    ["simple-timeseries", "simple-storage-timeseries", "simple-wasm"],
 )
 def test_model_benchmark(benchmark, model_dir: Path, model_name: str):
 

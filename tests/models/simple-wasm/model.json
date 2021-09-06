@@ -1,0 +1,61 @@
+{
+  "timestepper": {
+    "start": "2021-01-01",
+    "end": "2021-12-31",
+    "timestep": 1
+  },
+  "nodes": [
+    {
+      "name": "input1",
+      "type": "input",
+      "max_flow": "inflow"
+    },
+    {
+      "name": "link1",
+      "type": "link"
+    },
+    {
+      "name": "output1",
+      "type": "output",
+      "cost": -10.0,
+      "max_flow": "demand"
+    }
+  ],
+  "edges": [
+    {
+      "from_node": "input1",
+      "to_node": "link1"
+    },
+    {
+      "from_node": "link1",
+      "to_node": "output1"
+    }
+  ],
+  "parameters": [
+    {
+      "name": "constant1",
+      "type": "constant",
+      "value": 3.1415
+    },
+    {
+      "name": "constant2",
+      "type": "constant",
+      "value": 1.0
+    },
+    {
+      "name": "demand",
+      "type": "simplewasm",
+      "src": "simple_wasm_parameter_opt.wasm",
+      "parameters": [
+        "constant1",
+        "constant2"
+      ]
+    },
+    {
+      "name": "inflow",
+      "type": "dataframe",
+      "url": "inflow.csv",
+      "column": "inflow"
+    }
+  ]
+}

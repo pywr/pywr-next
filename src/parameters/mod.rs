@@ -4,6 +4,7 @@ pub mod asymmetric;
 pub mod control_curves;
 pub mod indexed_array;
 pub mod py;
+pub mod simple_wasm;
 mod threshold;
 
 // Re-imports
