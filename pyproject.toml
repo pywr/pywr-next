@@ -3,6 +3,7 @@ requires = ["maturin", "setuptools"]
 build-backend = "maturin"
 
 [project]
+name = "pywr"
 dependencies = [
-    "numpy", "scipy", "pandas", "pydantic"
+    "numpy", "scipy", "pandas", "pydantic", "pyyaml", "h5py"
 ]
