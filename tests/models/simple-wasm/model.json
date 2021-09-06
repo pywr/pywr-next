@@ -45,7 +45,7 @@
     {
       "name": "demand",
       "type": "simplewasm",
-      "src": "simple_wasm_parameter_opt.wasm",
+      "src": "simple_wasm_parameter.wasm",
       "parameters": [
         "constant1",
         "constant2"
