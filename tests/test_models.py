@@ -55,7 +55,11 @@ def test_model(model_dir: Path, tmpdir: Path, model_name: str):
 
     assert output_fn.exists()
 
-    expected_data = pandas.read_csv(model_dir / model_name / "expected.csv")
+    expected_fn = model_dir / model_name / "expected.csv"
+    if not expected_fn.exists():
+        expected_fn = model_dir / model_name / "expected.csv.gz"
+
+    expected_data = pandas.read_csv(expected_fn)
 
     with h5py.File(output_fn, "r") as fh:
         for node in model.nodes:

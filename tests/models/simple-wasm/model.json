@@ -54,7 +54,7 @@
     {
       "name": "inflow",
       "type": "dataframe",
-      "url": "inflow.csv",
+      "url": "inflow.csv.gz",
       "column": "inflow"
     }
   ]
