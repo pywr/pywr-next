@@ -50,7 +50,7 @@ jobs:
       run: |
         python -m venv venv
         source venv/bin/activate
-        python -m pip install maturin pytest
+        python -m pip install maturin pytest pytest-benchmark
         maturin build --interpreter python${{ matrix.python-version }} --manylinux off
         ls -la target/wheels
         python -m pip install target/wheels/pywr*.whl
