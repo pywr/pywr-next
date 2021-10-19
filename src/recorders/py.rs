@@ -4,7 +4,6 @@ use crate::model::Model;
 use crate::scenario::ScenarioIndex;
 use crate::state::ParameterState;
 use pyo3::prelude::*;
-use pyo3::types::PyTuple;
 
 #[derive(Clone, Debug)]
 pub struct PyRecorder {

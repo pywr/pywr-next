@@ -1,7 +1,7 @@
 use super::interpolate;
 use crate::metric::Metric;
 use crate::model::Model;
-use crate::parameters::{Parameter, ParameterMeta, _Parameter};
+use crate::parameters::{ParameterMeta, _Parameter};
 use crate::scenario::ScenarioIndex;
 use crate::state::{NetworkState, ParameterState};
 use crate::timestep::Timestep;

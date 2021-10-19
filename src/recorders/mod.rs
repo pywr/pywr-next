@@ -40,9 +40,9 @@ pub trait _Recorder {
     fn meta(&self) -> &RecorderMeta;
     fn setup(
         &mut self,
-        model: &Model,
-        timesteps: &Vec<Timestep>,
-        scenario_indices: &Vec<ScenarioIndex>,
+        _model: &Model,
+        _timesteps: &Vec<Timestep>,
+        _scenario_indices: &Vec<ScenarioIndex>,
     ) -> Result<(), PywrError> {
         Ok(())
     }
@@ -55,7 +55,7 @@ pub trait _Recorder {
         network_state: &NetworkState,
         parameter_state: &ParameterState,
     ) -> Result<(), PywrError>;
-    fn after_save(&mut self, timestep: &Timestep) -> Result<(), PywrError> {
+    fn after_save(&mut self, _timestep: &Timestep) -> Result<(), PywrError> {
         Ok(())
     }
     fn finalise(&mut self) -> Result<(), PywrError> {
@@ -162,9 +162,9 @@ impl _Recorder for Array2Recorder {
 
     fn setup(
         &mut self,
-        model: &Model,
-        timesteps: &Vec<Timestep>,
-        scenario_indices: &Vec<ScenarioIndex>,
+        _model: &Model,
+        _timesteps: &Vec<Timestep>,
+        _scenario_indices: &Vec<ScenarioIndex>,
     ) -> Result<(), PywrError> {
         // TODO set this up properly.
         self.array = Some(Array::zeros((365, 10)));
@@ -277,9 +277,8 @@ mod tests {
     use crate::scenario::ScenarioGroupCollection;
     use crate::solvers::clp::ClpSolver;
     use crate::solvers::Solver;
-    use crate::state::{EdgeState, NodeState, ParameterState};
+
     use crate::timestep::Timestepper;
-    use tempdir::TempDir;
 
     fn default_timestepper() -> Timestepper {
         Timestepper::new("2020-01-01", "2020-01-15", "%Y-%m-%d", 1).unwrap()
