@@ -8,12 +8,12 @@ use crate::solvers::Solver;
 use crate::timestep::Timestepper;
 use crate::{parameters, recorders};
 use crate::{EdgeIndex, NodeIndex, PywrError};
-use ndarray::ArrayView1;
-use numpy::{PyArrayDyn, PyReadonlyArray1, PyReadonlyArrayDyn};
+
+use numpy::PyReadonlyArray1;
 use pyo3::create_exception;
 use pyo3::exceptions::{PyException, PyRuntimeError};
 use pyo3::prelude::*;
-use pyo3::types::PyBytes;
+
 use pyo3::PyErr;
 use std::path::Path;
 use std::str::FromStr;
@@ -348,7 +348,7 @@ impl PyModel {
         let path = Path::new(filename);
         let rec = recorders::hdf::HDF5Recorder::new(name, path.to_path_buf());
 
-        let rec = self.model.add_recorder(Box::new(rec))?;
+        let _rec = self.model.add_recorder(Box::new(rec))?;
         Ok(())
     }
 }

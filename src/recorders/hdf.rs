@@ -64,7 +64,7 @@ impl _Recorder for HDF5Recorder {
     }
     fn save(
         &mut self,
-        timestep: &Timestep,
+        _timestep: &Timestep,
         scenario_index: &ScenarioIndex,
         model: &Model,
         network_state: &NetworkState,

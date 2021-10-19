@@ -1,12 +1,12 @@
 use crate::edge::{Edge, EdgeIndex};
-use crate::node::{Constraint, Node, NodeIndex};
-use crate::recorders::RecorderIndex;
+use crate::node::Node;
+
 use crate::scenario::{ScenarioGroupCollection, ScenarioIndex};
 use crate::solvers::Solver;
 use crate::state::{EdgeState, NetworkState, ParameterState};
 use crate::timestep::{Timestep, Timestepper};
 use crate::{parameters, recorders, PywrError};
-use ndarray::ArrayView2;
+
 use std::time::Instant;
 
 pub struct Model {
@@ -64,16 +64,16 @@ impl Model {
     fn setup(&self, timesteps: &Vec<Timestep>, scenario_indices: &Vec<ScenarioIndex>) -> Result<(), PywrError> {
         // Setup parameters
         for parameter in self.parameters.iter() {
-            parameter.setup(&self, timesteps, scenario_indices)?;
+            parameter.setup(self, timesteps, scenario_indices)?;
         }
 
         for parameter in self.index_parameters.iter() {
-            parameter.setup(&self, timesteps, scenario_indices)?;
+            parameter.setup(self, timesteps, scenario_indices)?;
         }
 
         // Setup recorders
         for recorder in self.recorders.iter() {
-            recorder.setup(&self, timesteps, scenario_indices)?;
+            recorder.setup(self, timesteps, scenario_indices)?;
         }
 
         Ok(())
@@ -132,15 +132,15 @@ impl Model {
                 Some(s) => s,
                 None => return Err(PywrError::ScenarioStateNotFound),
             };
-            let pstate = self.compute_parameters(&timestep, &scenario_index, current_state)?;
+            let pstate = self.compute_parameters(timestep, scenario_index, current_state)?;
 
-            let next_state = solver.solve(&self, timestep, current_state, &pstate)?;
+            let next_state = solver.solve(self, timestep, current_state, &pstate)?;
 
-            self.save_recorders(&timestep, &scenario_index, &next_state, &pstate)?;
+            self.save_recorders(timestep, scenario_index, &next_state, &pstate)?;
             next_states.push(next_state);
         }
 
-        self.after_save_recorders(&timestep)?;
+        self.after_save_recorders(timestep)?;
 
         Ok(next_states)
     }
@@ -154,11 +154,11 @@ impl Model {
         let mut parameter_state = ParameterState::with_capacity(self.parameters.len(), 0);
 
         for parameter in &self.parameters {
-            let value = parameter.compute(timestep, scenario_index, &self, state, &parameter_state)?;
+            let value = parameter.compute(timestep, scenario_index, self, state, &parameter_state)?;
             parameter_state.push_value(value);
         }
 
-        for parameter in &self.index_parameters {}
+        for _parameter in &self.index_parameters {}
 
         Ok(parameter_state)
     }
@@ -171,7 +171,7 @@ impl Model {
         parameter_state: &ParameterState,
     ) -> Result<(), PywrError> {
         for recorder in self.recorders.iter() {
-            recorder.save(timestep, scenario_index, &self, network_state, parameter_state)?;
+            recorder.save(timestep, scenario_index, self, network_state, parameter_state)?;
         }
         Ok(())
     }
@@ -218,7 +218,7 @@ impl Model {
     /// Add a new Node::Input to the model.
     pub fn add_input_node(&mut self, name: &str) -> Result<Node, PywrError> {
         // Check for name.
-        if let Ok(node) = self.get_node_by_name(name) {
+        if let Ok(_node) = self.get_node_by_name(name) {
             return Err(PywrError::NodeNameAlreadyExists(name.to_string()));
         }
 
@@ -232,7 +232,7 @@ impl Model {
     /// Add a new Node::Link to the model.
     pub fn add_link_node(&mut self, name: &str) -> Result<Node, PywrError> {
         // Check for name.
-        if let Ok(node) = self.get_node_by_name(name) {
+        if let Ok(_node) = self.get_node_by_name(name) {
             return Err(PywrError::NodeNameAlreadyExists(name.to_string()));
         }
 
@@ -246,7 +246,7 @@ impl Model {
     /// Add a new Node::Link to the model.
     pub fn add_output_node(&mut self, name: &str) -> Result<Node, PywrError> {
         // Check for name.
-        if let Ok(node) = self.get_node_by_name(name) {
+        if let Ok(_node) = self.get_node_by_name(name) {
             return Err(PywrError::NodeNameAlreadyExists(name.to_string()));
         }
 
@@ -260,7 +260,7 @@ impl Model {
     /// Add a new Node::Link to the model.
     pub fn add_storage_node(&mut self, name: &str, initial_volume: f64) -> Result<Node, PywrError> {
         // Check for name.
-        if let Ok(node) = self.get_node_by_name(name) {
+        if let Ok(_node) = self.get_node_by_name(name) {
             return Err(PywrError::NodeNameAlreadyExists(name.to_string()));
         }
 
@@ -370,9 +370,8 @@ mod tests {
     use crate::solvers::Solver;
     use crate::timestep::Timestepper;
     use float_cmp::approx_eq;
-    use ndarray::prelude::*;
+
     use ndarray::Array2;
-    use std::ops::Deref;
 
     fn default_timestepper() -> Timestepper {
         Timestepper::new("2020-01-01", "2020-01-15", "%Y-%m-%d", 1).unwrap()
@@ -598,14 +597,14 @@ mod tests {
 
         let idx = model.get_node_by_name("output").unwrap().index();
 
-        let expected = Array2::from_shape_fn((15, 10), |(i, j)| if i < 10 { 10.0 } else { 0.0 });
+        let expected = Array2::from_shape_fn((15, 10), |(i, _j)| if i < 10 { 10.0 } else { 0.0 });
 
         let recorder = AssertionRecorder::new("output-flow", Metric::NodeInFlow(idx), expected);
         model.add_recorder(Box::new(recorder)).unwrap();
 
         let idx = model.get_node_by_name("reservoir").unwrap().index();
 
-        let expected = Array2::from_shape_fn((15, 10), |(i, j)| (90.0 - 10.0 * i as f64).max(0.0));
+        let expected = Array2::from_shape_fn((15, 10), |(i, _j)| (90.0 - 10.0 * i as f64).max(0.0));
 
         let recorder = AssertionRecorder::new("reservoir-volume", Metric::NodeVolume(idx), expected);
         model.add_recorder(Box::new(recorder)).unwrap();

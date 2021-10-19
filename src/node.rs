@@ -1,5 +1,5 @@
 use crate::metric::Metric;
-use crate::parameters::{ConstantParameter, Parameter};
+use crate::parameters::Parameter;
 use crate::state::{NetworkState, NodeState, ParameterState};
 use crate::{Edge, PywrError};
 use std::cell::RefCell;
@@ -126,18 +126,36 @@ impl Node {
     pub fn add_incoming_edge(&self, edge: Edge) -> Result<(), PywrError> {
         match self.0.borrow_mut().deref_mut() {
             _Node::Input(_n) => Err(PywrError::InvalidNodeConnectionToInput),
-            _Node::Output(n) => Ok(n.add_incoming_edge(edge)),
-            _Node::Link(n) => Ok(n.add_incoming_edge(edge)),
-            _Node::Storage(n) => Ok(n.add_incoming_edge(edge)),
+            _Node::Output(n) => {
+                n.add_incoming_edge(edge);
+                Ok(())
+            }
+            _Node::Link(n) => {
+                n.add_incoming_edge(edge);
+                Ok(())
+            }
+            _Node::Storage(n) => {
+                n.add_incoming_edge(edge);
+                Ok(())
+            }
         }
     }
 
     pub fn add_outgoing_edge(&self, edge: Edge) -> Result<(), PywrError> {
         match self.0.borrow_mut().deref_mut() {
-            _Node::Input(n) => Ok(n.add_outgoing_edge(edge)),
+            _Node::Input(n) => {
+                n.add_outgoing_edge(edge);
+                Ok(())
+            }
             _Node::Output(_n) => Err(PywrError::InvalidNodeConnectionFromOutput),
-            _Node::Link(n) => Ok(n.add_outgoing_edge(edge)),
-            _Node::Storage(n) => Ok(n.add_outgoing_edge(edge)),
+            _Node::Link(n) => {
+                n.add_outgoing_edge(edge);
+                Ok(())
+            }
+            _Node::Storage(n) => {
+                n.add_outgoing_edge(edge);
+                Ok(())
+            }
         }
     }
 
@@ -216,9 +234,18 @@ impl Node {
 
     pub fn set_min_flow_constraint(&self, value: ConstraintValue) -> Result<(), PywrError> {
         match self.0.borrow_mut().deref_mut() {
-            _Node::Input(n) => Ok(n.set_min_flow(value)),
-            _Node::Link(n) => Ok(n.set_min_flow(value)),
-            _Node::Output(n) => Ok(n.set_min_flow(value)),
+            _Node::Input(n) => {
+                n.set_min_flow(value);
+                Ok(())
+            }
+            _Node::Link(n) => {
+                n.set_min_flow(value);
+                Ok(())
+            }
+            _Node::Output(n) => {
+                n.set_min_flow(value);
+                Ok(())
+            }
             _Node::Storage(_) => Err(PywrError::FlowConstraintsUndefined),
         }
     }
@@ -234,9 +261,18 @@ impl Node {
 
     pub fn set_max_flow_constraint(&self, value: ConstraintValue) -> Result<(), PywrError> {
         match self.0.borrow_mut().deref_mut() {
-            _Node::Input(n) => Ok(n.set_max_flow(value)),
-            _Node::Link(n) => Ok(n.set_max_flow(value)),
-            _Node::Output(n) => Ok(n.set_max_flow(value)),
+            _Node::Input(n) => {
+                n.set_max_flow(value);
+                Ok(())
+            }
+            _Node::Link(n) => {
+                n.set_max_flow(value);
+                Ok(())
+            }
+            _Node::Output(n) => {
+                n.set_max_flow(value);
+                Ok(())
+            }
             _Node::Storage(_) => Err(PywrError::FlowConstraintsUndefined),
         }
     }
@@ -265,7 +301,10 @@ impl Node {
             _Node::Input(_) => Err(PywrError::StorageConstraintsUndefined),
             _Node::Link(_) => Err(PywrError::StorageConstraintsUndefined),
             _Node::Output(_) => Err(PywrError::StorageConstraintsUndefined),
-            _Node::Storage(n) => Ok(n.set_min_volume(value)),
+            _Node::Storage(n) => {
+                n.set_min_volume(value);
+                Ok(())
+            }
         }
     }
 
@@ -283,7 +322,10 @@ impl Node {
             _Node::Input(_) => Err(PywrError::StorageConstraintsUndefined),
             _Node::Link(_) => Err(PywrError::StorageConstraintsUndefined),
             _Node::Output(_) => Err(PywrError::StorageConstraintsUndefined),
-            _Node::Storage(n) => Ok(n.set_max_volume(value)),
+            _Node::Storage(n) => {
+                n.set_max_volume(value);
+                Ok(())
+            }
         }
     }
 

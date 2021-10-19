@@ -49,9 +49,9 @@ pub trait _Parameter {
     fn meta(&self) -> &ParameterMeta;
     fn setup(
         &mut self,
-        model: &Model,
-        timesteps: &Vec<Timestep>,
-        scenario_indices: &Vec<ScenarioIndex>,
+        _model: &Model,
+        _timesteps: &Vec<Timestep>,
+        _scenario_indices: &Vec<ScenarioIndex>,
     ) -> Result<(), PywrError> {
         Ok(())
     }
@@ -70,9 +70,9 @@ pub trait _IndexParameter {
     fn meta(&self) -> &ParameterMeta;
     fn setup(
         &mut self,
-        model: &Model,
-        timesteps: &Vec<Timestep>,
-        scenario_indices: &Vec<ScenarioIndex>,
+        _model: &Model,
+        _timesteps: &Vec<Timestep>,
+        _scenario_indices: &Vec<ScenarioIndex>,
     ) -> Result<(), PywrError> {
         Ok(())
     }
@@ -350,12 +350,8 @@ impl _Parameter for Array2Parameter {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::assert_almost_eq;
-    use crate::state::ParameterState;
+
     use crate::timestep::Timestepper;
-    use ndarray::prelude::*;
-    use std::f64::consts::PI;
 
     fn test_timestepper() -> Timestepper {
         Timestepper::new("2020-01-01", "2020-12-31", "%Y-%m-%d", 1).unwrap()
