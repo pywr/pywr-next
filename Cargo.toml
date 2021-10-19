@@ -17,6 +17,8 @@ float-cmp = "0.8.0"
 # This needs pinning to 0.8.x when it is released, the only 0.7.x doesn't work well with newer ndarray versions.
 hdf5 = { git = "https://github.com/aldanor/hdf5-rust" }
 clp-sys = { path = "./clp-sys" }
+wasmer = "2.0.0"
+
 
 [dependencies.pyo3]
 version = "0.14.1"
@@ -38,4 +40,7 @@ requires-dist = ["pydantic"]
 [workspace]
 members = [
     "clp-sys",
+]
+exclude = [
+    "tests/models/simple-wasm/simple-wasm-parameter"
 ]

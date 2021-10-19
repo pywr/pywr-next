@@ -41,10 +41,7 @@ def test_simple_timeseries(model_dir: Path, tmpdir: Path):
 # TODO these tests could be auto-discovered.
 @pytest.mark.parametrize(
     "model_name",
-    [
-        "simple-timeseries",
-        "simple-storage-timeseries",
-    ],
+    ["simple-timeseries", "simple-storage-timeseries", "simple-wasm"],
 )
 def test_model(model_dir: Path, tmpdir: Path, model_name: str):
 
@@ -58,7 +55,11 @@ def test_model(model_dir: Path, tmpdir: Path, model_name: str):
 
     assert output_fn.exists()
 
-    expected_data = pandas.read_csv(model_dir / model_name / "expected.csv")
+    expected_fn = model_dir / model_name / "expected.csv"
+    if not expected_fn.exists():
+        expected_fn = model_dir / model_name / "expected.csv.gz"
+
+    expected_data = pandas.read_csv(expected_fn)
 
     with h5py.File(output_fn, "r") as fh:
         for node in model.nodes:
@@ -69,10 +70,7 @@ def test_model(model_dir: Path, tmpdir: Path, model_name: str):
 
 @pytest.mark.parametrize(
     "model_name",
-    [
-        "simple-timeseries",
-        "simple-storage-timeseries",
-    ],
+    ["simple-timeseries", "simple-storage-timeseries", "simple-wasm"],
 )
 def test_model_benchmark(benchmark, model_dir: Path, model_name: str):
 

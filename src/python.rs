@@ -13,6 +13,7 @@ use numpy::{PyArrayDyn, PyReadonlyArray1, PyReadonlyArrayDyn};
 use pyo3::create_exception;
 use pyo3::exceptions::{PyException, PyRuntimeError};
 use pyo3::prelude::*;
+use pyo3::types::PyBytes;
 use pyo3::PyErr;
 use std::path::Path;
 use std::str::FromStr;
@@ -149,6 +150,23 @@ impl PyModel {
     /// Add a Python object as a parameter.
     fn add_python_parameter(&mut self, name: &str, object: PyObject) -> PyResult<parameters::ParameterIndex> {
         let parameter = parameters::py::PyParameter::new(name, object);
+        let idx = self.model.add_parameter(Box::new(parameter))?.index();
+        Ok(idx)
+    }
+
+    fn add_simple_wasm_parameter(
+        &mut self,
+        name: &str,
+        src: Vec<u8>,
+        parameter_names: Vec<String>,
+    ) -> PyResult<parameters::ParameterIndex> {
+        // Find all the parameters by name
+        let mut parameters = Vec::with_capacity(parameter_names.len());
+        for name in parameter_names {
+            parameters.push(self.model.get_parameter_by_name(&name)?);
+        }
+
+        let parameter = parameters::simple_wasm::SimpleWasmParameter::new(name, src, parameters);
         let idx = self.model.add_parameter(Box::new(parameter))?.index();
         Ok(idx)
     }
