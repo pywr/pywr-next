@@ -1,6 +1,6 @@
 import numpy as np
 import pandas
-from pywr.nodes import Model, HDF5Output
+from pywr.model import Model, HDF5Output
 from pathlib import Path
 import h5py
 import pytest

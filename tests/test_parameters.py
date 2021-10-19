@@ -1,6 +1,6 @@
 import pytest
 import numpy as np
-from pywr.nodes import Model
+from pywr.model import Model
 
 
 @pytest.fixture()
