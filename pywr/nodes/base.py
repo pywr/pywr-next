@@ -1,13 +1,13 @@
 from __future__ import annotations
 from typing import Optional, Dict, Iterable
-from pydantic import BaseModel
+from pydantic import BaseModel, Extra
 from ..pywr import PyModel, ParameterNotFoundError  # type: ignore
 
 
 node_registry = {}
 
 
-class BaseNode(BaseModel):
+class BaseNode(BaseModel, extra=Extra.forbid):
     name: str
     comment: Optional[str] = None
 

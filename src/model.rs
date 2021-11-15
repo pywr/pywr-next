@@ -7,11 +7,13 @@ use crate::state::{EdgeState, NetworkState, ParameterState};
 use crate::timestep::{Timestep, Timestepper};
 use crate::{parameters, recorders, PywrError};
 
+use crate::aggregated_node::AggregatedNode;
 use std::time::Instant;
 
 pub struct Model {
     pub nodes: Vec<Node>,
     pub edges: Vec<Edge>,
+    pub aggregated_nodes: Vec<AggregatedNode>,
     parameters: Vec<parameters::Parameter>,
     index_parameters: Vec<parameters::IndexParameter>,
     parameters_resolve_order: Vec<parameters::ParameterType>,
@@ -33,6 +35,7 @@ impl Model {
         Self {
             nodes: Vec::new(),
             edges: Vec::new(),
+            aggregated_nodes: Vec::new(),
             parameters: Vec::new(),
             index_parameters: Vec::new(),
             parameters_resolve_order: Vec::new(),
@@ -191,6 +194,14 @@ impl Model {
         }
     }
 
+    /// Get a `AggregatedNodeIndex` from a node's name
+    pub fn get_aggregated_node_by_name(&self, name: &str) -> Result<AggregatedNode, PywrError> {
+        match self.aggregated_nodes.iter().find(|&n| n.name() == name) {
+            Some(node) => Ok(node.clone()),
+            None => Err(PywrError::NodeNotFound(name.to_string())),
+        }
+    }
+
     /// Get a `ParameterIndex` from a parameter's name
     pub fn get_parameter_by_name(&self, name: &str) -> Result<parameters::Parameter, PywrError> {
         match self.parameters.iter().find(|p| p.name() == name) {
@@ -269,6 +280,19 @@ impl Model {
         let node = Node::new_storage(&node_index, name, initial_volume);
         self.nodes.push(node.clone());
         Ok(node)
+    }
+
+    /// Add a new `aggregated_node::AggregatedNode` to the model.
+    pub fn add_aggregated_node(&mut self, name: &str, nodes: Vec<Node>) -> Result<AggregatedNode, PywrError> {
+        if let Ok(_agg_node) = self.get_aggregated_node_by_name(name) {
+            return Err(PywrError::NodeNameAlreadyExists(name.to_string()));
+        }
+
+        let agg_node_index = self.aggregated_nodes.len();
+        let agg_node = AggregatedNode::new(&agg_node_index, name, nodes);
+        self.aggregated_nodes.push(agg_node.clone());
+
+        Ok(agg_node)
     }
 
     /// Add a `parameters::Parameter` to the model

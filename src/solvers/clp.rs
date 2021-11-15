@@ -368,6 +368,7 @@ impl ClpRowBuilder {
 pub struct ClpSolver {
     builder: ClpModelBuilder,
     start_node_constraints: Option<usize>,
+    start_agg_node_constraints: Option<usize>,
 }
 
 impl ClpSolver {
@@ -375,6 +376,7 @@ impl ClpSolver {
         Self {
             builder: ClpModelBuilder::new(),
             start_node_constraints: None,
+            start_agg_node_constraints: None,
         }
     }
 
@@ -459,8 +461,52 @@ impl ClpSolver {
             }
 
             self.builder.add_row(row);
-            self.start_node_constraints = Some(start_row);
         }
+        self.start_node_constraints = Some(start_row);
+    }
+
+    /// Create aggregated node constraints
+    ///
+    /// One constraint is created per node to enforce any constraints (flow or storage)
+    /// that it may define.
+    fn create_aggregated_node_constraints(&mut self, model: &Model) {
+        let start_row = self.builder.nrows();
+
+        for agg_node in &model.aggregated_nodes {
+            // Create empty arrays to store the matrix data
+            let mut row = ClpRowBuilder::new();
+
+            for node in agg_node.get_nodes() {
+                match node.node_type() {
+                    NodeType::Link => {
+                        for edge in node.get_outgoing_edges().unwrap() {
+                            row.add_element(edge.index() as i32, 1.0);
+                        }
+                    }
+                    NodeType::Input => {
+                        for edge in node.get_outgoing_edges().unwrap() {
+                            row.add_element(edge.index() as i32, 1.0);
+                        }
+                    }
+                    NodeType::Output => {
+                        for edge in node.get_incoming_edges().unwrap() {
+                            row.add_element(edge.index() as i32, 1.0);
+                        }
+                    }
+                    NodeType::Storage => {
+                        for edge in node.get_incoming_edges().unwrap() {
+                            row.add_element(edge.index() as i32, 1.0);
+                        }
+                        for edge in node.get_outgoing_edges().unwrap() {
+                            row.add_element(edge.index() as i32, -1.0);
+                        }
+                    }
+                }
+            }
+
+            self.builder.add_row(row);
+        }
+        self.start_agg_node_constraints = Some(start_row);
     }
 
     /// Update edge objective coefficients
@@ -506,6 +552,25 @@ impl ClpSolver {
 
         Ok(())
     }
+
+    /// Update aggregated node constraints
+    fn update_aggregated_node_constraint_bounds(
+        &mut self,
+        model: &Model,
+        parameter_states: &ParameterState,
+    ) -> Result<(), PywrError> {
+        let start_row = match self.start_agg_node_constraints {
+            Some(r) => r,
+            None => return Err(PywrError::SolverNotSetup),
+        };
+
+        for agg_node in &model.aggregated_nodes {
+            let (lb, ub): (f64, f64) = agg_node.get_current_flow_bounds(parameter_states)?;
+            self.builder.set_row_bounds(start_row + agg_node.index(), lb, ub);
+        }
+
+        Ok(())
+    }
 }
 
 impl Solver for ClpSolver {
@@ -516,6 +581,8 @@ impl Solver for ClpSolver {
         self.create_mass_balance_constraints(model);
         // Create the nodal constraints
         self.create_node_constraints(model);
+        // Create the aggregated node constraints
+        self.create_aggregated_node_constraints(model);
 
         self.builder.setup();
 
@@ -530,6 +597,7 @@ impl Solver for ClpSolver {
     ) -> Result<NetworkState, PywrError> {
         self.update_edge_objectives(model, parameter_state)?;
         self.update_node_constraint_bounds(model, timestep, network_state, parameter_state)?;
+        self.update_aggregated_node_constraint_bounds(model, parameter_state)?;
 
         let solution = self.builder.solve()?;
         // println!("{:?}", solution);

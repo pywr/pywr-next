@@ -12,6 +12,7 @@ pub(crate) struct HDF5Recorder {
     filename: PathBuf,
     file: Option<hdf5::File>,
     datasets: Option<Vec<(Metric, hdf5::Dataset)>>,
+    aggregated_datasets: Option<Vec<(Vec<Metric>, hdf5::Dataset)>>,
     array: Option<ndarray::Array2<f64>>,
 }
 
@@ -23,6 +24,7 @@ impl HDF5Recorder {
             file: None,
             datasets: None,
             array: None,
+            aggregated_datasets: None,
         }
     }
 }
@@ -42,6 +44,7 @@ impl _Recorder for HDF5Recorder {
             Err(e) => return Err(PywrError::HDF5Error(e.to_string())),
         };
         let mut datasets = Vec::new();
+        let mut agg_datasets = Vec::new();
 
         let shape = (timesteps.len(), scenario_indices.len());
 
@@ -56,8 +59,20 @@ impl _Recorder for HDF5Recorder {
             datasets.push((metric, ds));
         }
 
+        for agg_node in &model.aggregated_nodes {
+            let metrics = agg_node.default_metric();
+            let name = agg_node.name().to_string();
+            println!("Adding metric with name: {}", name);
+            let ds = match file.new_dataset::<f64>().shape(shape).create(&*name) {
+                Ok(ds) => ds,
+                Err(e) => return Err(PywrError::HDF5Error(e.to_string())),
+            };
+            agg_datasets.push((metrics, ds));
+        }
+
         self.array = Some(Array2::zeros((datasets.len(), scenario_indices.len())));
         self.datasets = Some(datasets);
+        self.aggregated_datasets = Some(agg_datasets);
         self.file = Some(file);
 
         Ok(())
@@ -79,11 +94,37 @@ impl _Recorder for HDF5Recorder {
                 Ok(())
             }
             _ => Err(PywrError::RecorderNotInitialised),
+        }?;
+
+        match (&mut self.array, &self.aggregated_datasets) {
+            (Some(array), Some(datasets)) => {
+                for (idx, (metrics, _ds)) in datasets.iter().enumerate() {
+                    let value: f64 = metrics
+                        .iter()
+                        .map(|m| m.get_value(model, network_state, parameter_state))
+                        .sum::<Result<_, _>>()?;
+                    array[[idx, scenario_index.index]] = value
+                }
+                Ok(())
+            }
+            _ => Err(PywrError::RecorderNotInitialised),
         }
     }
 
     fn after_save(&mut self, timestep: &Timestep) -> Result<(), PywrError> {
         match (&self.array, &mut self.datasets) {
+            (Some(array), Some(datasets)) => {
+                for (node_idx, (_metric, dataset)) in datasets.iter_mut().enumerate() {
+                    if let Err(e) = dataset.write_slice(array.slice(s![node_idx, ..]), s![timestep.index, ..]) {
+                        return Err(PywrError::HDF5Error(e.to_string()));
+                    }
+                }
+                Ok(())
+            }
+            _ => Err(PywrError::RecorderNotInitialised),
+        }?;
+
+        match (&self.array, &mut self.aggregated_datasets) {
             (Some(array), Some(datasets)) => {
                 for (node_idx, (_metric, dataset)) in datasets.iter_mut().enumerate() {
                     if let Err(e) = dataset.write_slice(array.slice(s![node_idx, ..]), s![timestep.index, ..]) {
