@@ -3,14 +3,12 @@ from scipy import stats
 import pytest
 
 from pywr.nodes import (
-    BaseNode,
     InputNode,
     LinkNode,
     OutputNode,
-    Edge,
-    Model,
-    Timestepper,
 )
+from pywr.edge import Edge
+from pywr.model import Model, Timestepper
 from pywr.parameters.base import ArrayIndexParameter
 
 

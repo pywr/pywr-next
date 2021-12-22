@@ -1,6 +1,6 @@
 import numpy as np
 import pandas
-from pywr.nodes import Model, HDF5Output
+from pywr.model import Model, HDF5Output
 from pathlib import Path
 import h5py
 import pytest
@@ -41,7 +41,12 @@ def test_simple_timeseries(model_dir: Path, tmpdir: Path):
 # TODO these tests could be auto-discovered.
 @pytest.mark.parametrize(
     "model_name",
-    ["simple-timeseries", "simple-storage-timeseries", "simple-wasm"],
+    [
+        "simple-timeseries",
+        "simple-storage-timeseries",
+        "simple-wasm",
+        "aggregated-node1",
+    ],
 )
 def test_model(model_dir: Path, tmpdir: Path, model_name: str):
 

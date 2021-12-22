@@ -14,6 +14,7 @@ use pyo3::create_exception;
 use pyo3::exceptions::{PyException, PyRuntimeError};
 use pyo3::prelude::*;
 
+use crate::aggregated_node::AggregatedNodeIndex;
 use pyo3::PyErr;
 use std::path::Path;
 use std::str::FromStr;
@@ -92,6 +93,16 @@ impl PyModel {
         Ok(idx)
     }
 
+    fn add_aggregated_node(&mut self, name: &str, node_names: Vec<String>) -> PyResult<AggregatedNodeIndex> {
+        let mut nodes = Vec::with_capacity(node_names.len());
+        for name in node_names {
+            nodes.push(self.model.get_node_by_name(&name)?);
+        }
+
+        let idx = self.model.add_aggregated_node(name, nodes)?.index();
+        Ok(idx)
+    }
+
     fn connect_nodes(&mut self, from_node_name: &str, to_node_name: &str) -> PyResult<EdgeIndex> {
         let from_node = self.model.get_node_by_name(from_node_name)?;
         let to_node = self.model.get_node_by_name(to_node_name)?;
@@ -125,6 +136,31 @@ impl PyModel {
         let node = self.model.get_node_by_name(node_name)?;
         let value = self.to_constraint_value(value)?;
 
+        let constraint = match constraint_type {
+            "max_flow" => Constraint::MaxFlow,
+            "min_flow" => Constraint::MinFlow,
+            "max_volume" => Constraint::MaxVolume,
+            "min_volume" => Constraint::MinVolume,
+            _ => {
+                return Err(PyErr::from(PywrError::InvalidConstraintType(
+                    constraint_type.to_string(),
+                )))
+            }
+        };
+        node.set_constraint(value, constraint)?;
+        Ok(())
+    }
+
+    fn set_aggregated_node_constraint(
+        &mut self,
+        node_name: &str,
+        constraint_type: &str,
+        value: PyConstraintValue,
+    ) -> PyResult<()> {
+        let node = self.model.get_aggregated_node_by_name(node_name)?;
+        let value = self.to_constraint_value(value)?;
+
+        // TODO implemented FromStr for Constraint
         let constraint = match constraint_type {
             "max_flow" => Constraint::MaxFlow,
             "min_flow" => Constraint::MinFlow,

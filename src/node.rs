@@ -6,6 +6,7 @@ use std::cell::RefCell;
 use std::ops::{Deref, DerefMut};
 use std::rc::Rc;
 
+// TODO this should use the new-type pattern.
 pub type NodeIndex = usize;
 pub type NodeRef = Rc<RefCell<_Node>>;
 
@@ -78,7 +79,7 @@ impl Node {
         }
     }
 
-    /// Get a node's name
+    /// Get a node's index
     pub fn index(&self) -> NodeIndex {
         match self.0.borrow().deref() {
             _Node::Input(n) => n.meta.index,
@@ -399,19 +400,26 @@ impl Node {
 
 /// Meta data common to all nodes.
 #[derive(Debug, PartialEq)]
-pub struct NodeMeta {
-    pub(crate) index: NodeIndex,
+pub struct NodeMeta<T> {
+    pub(crate) index: T,
     name: String,
     comment: String,
 }
 
-impl NodeMeta {
-    fn new(index: &NodeIndex, name: &str) -> Self {
+impl<T> NodeMeta<T>
+where
+    T: Copy,
+{
+    pub(crate) fn new(index: &T, name: &str) -> Self {
         Self {
             index: *index,
             name: name.to_string(),
             comment: "".to_string(),
         }
+    }
+
+    pub(crate) fn name(&self) -> String {
+        self.name.to_string()
     }
 }
 
@@ -422,7 +430,7 @@ pub struct FlowConstraints {
 }
 
 impl FlowConstraints {
-    fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             min_flow: ConstraintValue::None,
             max_flow: ConstraintValue::None,
@@ -431,7 +439,7 @@ impl FlowConstraints {
     /// Return the current minimum flow from the parameter state
     ///
     /// Defaults to zero if no parameter is defined.
-    fn get_min_flow(&self, parameter_states: &ParameterState) -> Result<f64, PywrError> {
+    pub(crate) fn get_min_flow(&self, parameter_states: &ParameterState) -> Result<f64, PywrError> {
         match &self.min_flow {
             ConstraintValue::None => Ok(0.0),
             ConstraintValue::Scalar(v) => Ok(*v),
@@ -441,7 +449,7 @@ impl FlowConstraints {
     /// Return the current maximum flow from the parameter state
     ///
     /// Defaults to f64::MAX if no parameter is defined.
-    fn get_max_flow(&self, parameter_states: &ParameterState) -> Result<f64, PywrError> {
+    pub(crate) fn get_max_flow(&self, parameter_states: &ParameterState) -> Result<f64, PywrError> {
         match &self.max_flow {
             ConstraintValue::None => Ok(f64::MAX), // TODO should this return infinity?
             ConstraintValue::Scalar(v) => Ok(*v),
@@ -487,7 +495,7 @@ impl StorageConstraints {
 
 #[derive(Debug, PartialEq)]
 pub struct InputNode {
-    pub meta: NodeMeta,
+    pub meta: NodeMeta<NodeIndex>,
     pub cost: ConstraintValue,
     pub flow_constraints: FlowConstraints,
     pub outgoing_edges: Vec<Edge>,
@@ -531,7 +539,7 @@ impl InputNode {
 
 #[derive(Debug, PartialEq)]
 pub struct OutputNode {
-    pub meta: NodeMeta,
+    pub meta: NodeMeta<NodeIndex>,
     pub cost: ConstraintValue,
     pub flow_constraints: FlowConstraints,
     pub incoming_edges: Vec<Edge>,
@@ -575,7 +583,7 @@ impl OutputNode {
 
 #[derive(Debug, PartialEq)]
 pub struct LinkNode {
-    pub meta: NodeMeta,
+    pub meta: NodeMeta<NodeIndex>,
     pub cost: ConstraintValue,
     pub flow_constraints: FlowConstraints,
     pub incoming_edges: Vec<Edge>,
@@ -625,7 +633,7 @@ impl LinkNode {
 
 #[derive(Debug, PartialEq)]
 pub struct StorageNode {
-    pub meta: NodeMeta,
+    pub meta: NodeMeta<NodeIndex>,
     pub cost: ConstraintValue,
     pub initial_volume: f64,
     pub storage_constraints: StorageConstraints,

@@ -7,6 +7,7 @@ use crate::parameters::ParameterIndex;
 use crate::recorders::RecorderIndex;
 use crate::state::NetworkState;
 
+pub mod aggregated_node;
 pub mod edge;
 mod metric;
 pub mod model;

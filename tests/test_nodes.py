@@ -1,4 +1,5 @@
-from pywr.nodes import Model, InputNode, LinkNode, OutputNode, NodeCollection
+from pywr.nodes import InputNode, LinkNode, OutputNode
+from pywr.model import Model
 from pathlib import Path
 import pytest
 
