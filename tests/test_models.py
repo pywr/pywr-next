@@ -46,6 +46,7 @@ def test_simple_timeseries(model_dir: Path, tmpdir: Path):
         "simple-storage-timeseries",
         "simple-wasm",
         "aggregated-node1",
+        "piecewise-link1",
     ],
 )
 def test_model(model_dir: Path, tmpdir: Path, model_name: str):
@@ -68,9 +69,17 @@ def test_model(model_dir: Path, tmpdir: Path, model_name: str):
 
     with h5py.File(output_fn, "r") as fh:
         for node in model.nodes:
-            np.testing.assert_allclose(
-                np.squeeze(fh[node.name]), expected_data[node.name]
-            )
+            for name, sub_name in node.iter_contents():
+                if sub_name is None:
+                    h5_node = name
+                    csv_col = name
+                else:
+                    h5_node = f"{name}/{sub_name}"
+                    csv_col = f"{name}-{sub_name}"
+
+                np.testing.assert_allclose(
+                    np.squeeze(fh[h5_node]), expected_data[csv_col]
+                )
 
 
 @pytest.mark.parametrize(

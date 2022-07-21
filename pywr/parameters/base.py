@@ -14,6 +14,26 @@ _parameter_registry = {}
 ParameterRef = TypeVar("ParameterRef", float, str, Dict)
 
 
+class NodeFullRef(BaseModel):
+    """A full reference to a node and its optional sub-component."""
+
+    node: str
+    component: Optional[str] = None
+
+
+NodeRef = TypeVar("NodeRef", str, NodeFullRef)
+
+
+def node_ref_to_names(ref: NodeRef) -> Tuple[str, Optional[str]]:
+    """Convenience function to convert a `NodeRef` to a tuple of node name and sub-component name."""
+    if isinstance(ref, str):
+        return ref, None
+    elif isinstance(ref, NodeFullRef):
+        return ref.node, ref.component
+    else:
+        raise ValueError(f"Node reference of type f{type(ref)} not supported.")
+
+
 class BaseParameter(BaseModel):
     name: str
     comment: Optional[str] = None
@@ -100,16 +120,19 @@ class AggregatedIndexParameter(BaseParameter):
 
 
 class ControlCurvePiecewiseInterpolatedParameter(BaseParameter):
-    storage_node: str
+    storage_node: NodeRef
     control_curves: List[str]
     values: List[Tuple[float, float]]
     maximum: float = 1.0
     minimum: float = 0.0
 
     def create_parameter(self, r_model: PyModel, path: Path):
+        storage_node, storage_node_sub_name = node_ref_to_names(self.storage_node)
+
         r_model.add_piecewise_control_curve(
             self.name,
-            self.storage_node,
+            storage_node,
+            storage_node_sub_name,
             self.control_curves,
             self.values,
             self.maximum,

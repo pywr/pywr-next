@@ -294,9 +294,9 @@ mod tests {
     fn simple_model() -> Model {
         let mut model = Model::new();
 
-        let input_node = model.add_input_node("input").unwrap();
-        let link_node = model.add_link_node("link").unwrap();
-        let output_node = model.add_output_node("output").unwrap();
+        let input_node = model.add_input_node("input", None).unwrap();
+        let link_node = model.add_link_node("link", None).unwrap();
+        let output_node = model.add_output_node("output", None).unwrap();
 
         model.connect_nodes(&input_node, &link_node).unwrap();
         model.connect_nodes(&link_node, &output_node).unwrap();

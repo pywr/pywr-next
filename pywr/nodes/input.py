@@ -16,6 +16,8 @@ class InputNode(BaseNode):
 
     def set_constraints(self, r_model: PyModel):
         if self.cost is not None:
-            r_model.set_node_cost(self.name, self.cost)
+            r_model.set_node_cost(self.name, None, self.cost)
         if self.max_flow is not None:
-            r_model.set_node_constraint(self.name, "max_flow", self.max_flow)
+            r_model.set_node_constraint(self.name, None, "max_flow", self.max_flow)
+        if self.min_flow is not None:
+            r_model.set_node_constraint(self.name, None, "min_flow", self.min_flow)

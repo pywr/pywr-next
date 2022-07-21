@@ -4,6 +4,7 @@ use crate::model::Model;
 use crate::scenario::ScenarioIndex;
 use crate::state::ParameterState;
 use ndarray::{s, Array2};
+use std::ops::Deref;
 use std::path::PathBuf;
 
 #[derive(Clone, Debug)]
@@ -50,12 +51,27 @@ impl _Recorder for HDF5Recorder {
 
         for node in &model.nodes {
             let metric = node.default_metric();
-            let name = node.name().to_string();
+            let (name, sub_name) = node.full_name();
             println!("Adding metric with name: {}", name);
-            let ds = match file.new_dataset::<f64>().shape(shape).create(&*name) {
-                Ok(ds) => ds,
-                Err(e) => return Err(PywrError::HDF5Error(e.to_string())),
+
+            let ds = match sub_name {
+                Some(sn) => {
+                    // This is a node with sub-nodes, create a group for the parent node
+                    let grp = match require_group(file.deref(), &name) {
+                        Ok(g) => g,
+                        Err(e) => return Err(PywrError::HDF5Error(e.to_string())),
+                    };
+                    match grp.new_dataset::<f64>().shape(shape).create(&*sn) {
+                        Ok(ds) => ds,
+                        Err(e) => return Err(PywrError::HDF5Error(e.to_string())),
+                    }
+                }
+                None => match file.new_dataset::<f64>().shape(shape).create(&*name) {
+                    Ok(ds) => ds,
+                    Err(e) => return Err(PywrError::HDF5Error(e.to_string())),
+                },
             };
+
             datasets.push((metric, ds));
         }
 
@@ -139,11 +155,21 @@ impl _Recorder for HDF5Recorder {
 
     fn finalise(&mut self) -> Result<(), PywrError> {
         match self.file.take() {
-            Some(file) => {
-                file.close();
-                Ok(())
-            }
+            Some(file) => match file.close() {
+                Ok(_) => Ok(()),
+                Err(e) => Err(PywrError::HDF5Error(e.to_string())),
+            },
             None => Err(PywrError::RecorderNotInitialised),
+        }
+    }
+}
+
+fn require_group(parent: &hdf5::Group, name: &str) -> Result<hdf5::Group, hdf5::Error> {
+    match parent.group(name) {
+        Ok(g) => Ok(g),
+        Err(_) => {
+            // Group could not be retrieved already, try to create it instead
+            parent.create_group(name)
         }
     }
 }

@@ -1,6 +1,7 @@
 from copy import copy
-from typing import List, Optional, Any, Dict
-from .nodes import Model, BaseNode, Edge, Timestepper, NodeCollection
+from typing import Optional, Dict
+from .nodes import BaseNode
+from .model import Model, Timestepper
 import logging
 
 logger = logging.getLogger(__name__)

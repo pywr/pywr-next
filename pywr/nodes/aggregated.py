@@ -12,7 +12,7 @@ class AggregatedNode(BaseNode):
     max_flow: Optional[ParameterRef] = None
 
     def create_nodes(self, r_model: PyModel):
-        r_model.add_aggregated_node(self.name, self.nodes)
+        r_model.add_aggregated_node(self.name, None, self.nodes)
 
     def set_constraints(self, r_model: PyModel):
         if self.min_flow is not None:
@@ -20,4 +20,6 @@ class AggregatedNode(BaseNode):
                 "Minimum flow constraints not implemented for aggregated node."
             )
         if self.max_flow is not None:
-            r_model.set_aggregated_node_constraint(self.name, "max_flow", self.max_flow)
+            r_model.set_aggregated_node_constraint(
+                self.name, None, "max_flow", self.max_flow
+            )

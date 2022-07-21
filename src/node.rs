@@ -46,36 +46,57 @@ pub enum ConstraintValue {
 
 impl Node {
     /// Create a new input node
-    pub fn new_input(node_index: &NodeIndex, name: &str) -> Self {
-        let node = _Node::Input(InputNode::new(node_index, name));
+    pub fn new_input(node_index: &NodeIndex, name: &str, sub_name: Option<&str>) -> Self {
+        let node = _Node::Input(InputNode::new(node_index, name, sub_name));
         Node(Rc::new(RefCell::new(node)))
     }
 
     /// Create a new output node
-    pub fn new_output(node_index: &NodeIndex, name: &str) -> Self {
-        let node = _Node::Output(OutputNode::new(node_index, name));
+    pub fn new_output(node_index: &NodeIndex, name: &str, sub_name: Option<&str>) -> Self {
+        let node = _Node::Output(OutputNode::new(node_index, name, sub_name));
         Node(Rc::new(RefCell::new(node)))
     }
 
     /// Create a new link node
-    pub fn new_link(node_index: &NodeIndex, name: &str) -> Self {
-        let node = _Node::Link(LinkNode::new(node_index, name));
+    pub fn new_link(node_index: &NodeIndex, name: &str, sub_name: Option<&str>) -> Self {
+        let node = _Node::Link(LinkNode::new(node_index, name, sub_name));
         Node(Rc::new(RefCell::new(node)))
     }
 
     /// Create a new storage node
-    pub fn new_storage(node_index: &NodeIndex, name: &str, initial_volume: f64) -> Self {
-        let node = _Node::Storage(StorageNode::new(node_index, name, initial_volume));
+    pub fn new_storage(node_index: &NodeIndex, name: &str, sub_name: Option<&str>, initial_volume: f64) -> Self {
+        let node = _Node::Storage(StorageNode::new(node_index, name, sub_name, initial_volume));
         Node(Rc::new(RefCell::new(node)))
     }
 
     /// Get a node's name
+    // TODO all these should be returning &str, but can't behind the RC<>
     pub fn name(&self) -> String {
         match self.0.borrow().deref() {
-            _Node::Input(n) => n.meta.name.clone(),
-            _Node::Output(n) => n.meta.name.clone(),
-            _Node::Link(n) => n.meta.name.clone(),
-            _Node::Storage(n) => n.meta.name.clone(),
+            _Node::Input(n) => n.meta.name(),
+            _Node::Output(n) => n.meta.name(),
+            _Node::Link(n) => n.meta.name(),
+            _Node::Storage(n) => n.meta.name(),
+        }
+    }
+
+    /// Get a node's sub_name
+    pub fn sub_name(&self) -> Option<String> {
+        match self.0.borrow().deref() {
+            _Node::Input(n) => n.meta.sub_name(),
+            _Node::Output(n) => n.meta.sub_name(),
+            _Node::Link(n) => n.meta.sub_name(),
+            _Node::Storage(n) => n.meta.sub_name(),
+        }
+    }
+
+    /// Get a node's full name
+    pub fn full_name(&self) -> (String, Option<String>) {
+        match self.0.borrow().deref() {
+            _Node::Input(n) => n.meta.full_name(),
+            _Node::Output(n) => n.meta.full_name(),
+            _Node::Link(n) => n.meta.full_name(),
+            _Node::Storage(n) => n.meta.full_name(),
         }
     }
 
@@ -403,6 +424,7 @@ impl Node {
 pub struct NodeMeta<T> {
     pub(crate) index: T,
     name: String,
+    sub_name: Option<String>,
     comment: String,
 }
 
@@ -410,16 +432,24 @@ impl<T> NodeMeta<T>
 where
     T: Copy,
 {
-    pub(crate) fn new(index: &T, name: &str) -> Self {
+    pub(crate) fn new(index: &T, name: &str, sub_name: Option<&str>) -> Self {
         Self {
             index: *index,
             name: name.to_string(),
+            sub_name: sub_name.map(|s| s.to_string()),
             comment: "".to_string(),
         }
     }
 
+    // TODO these should just return references to strings
     pub(crate) fn name(&self) -> String {
         self.name.to_string()
+    }
+    pub(crate) fn sub_name(&self) -> Option<String> {
+        self.sub_name.clone()
+    }
+    pub(crate) fn full_name(&self) -> (String, Option<String>) {
+        (self.name(), self.sub_name())
     }
 }
 
@@ -502,9 +532,9 @@ pub struct InputNode {
 }
 
 impl InputNode {
-    fn new(index: &NodeIndex, name: &str) -> Self {
+    fn new(index: &NodeIndex, name: &str, sub_name: Option<&str>) -> Self {
         Self {
-            meta: NodeMeta::new(index, name),
+            meta: NodeMeta::new(index, name, sub_name),
             cost: ConstraintValue::None,
             flow_constraints: FlowConstraints::new(),
             outgoing_edges: Vec::new(),
@@ -546,9 +576,9 @@ pub struct OutputNode {
 }
 
 impl OutputNode {
-    fn new(index: &NodeIndex, name: &str) -> Self {
+    fn new(index: &NodeIndex, name: &str, sub_name: Option<&str>) -> Self {
         Self {
-            meta: NodeMeta::new(index, name),
+            meta: NodeMeta::new(index, name, sub_name),
             cost: ConstraintValue::None,
             flow_constraints: FlowConstraints::new(),
             incoming_edges: Vec::new(),
@@ -591,9 +621,9 @@ pub struct LinkNode {
 }
 
 impl LinkNode {
-    fn new(index: &NodeIndex, name: &str) -> Self {
+    fn new(index: &NodeIndex, name: &str, sub_name: Option<&str>) -> Self {
         Self {
-            meta: NodeMeta::new(index, name),
+            meta: NodeMeta::new(index, name, sub_name),
             cost: ConstraintValue::None,
             flow_constraints: FlowConstraints::new(),
             incoming_edges: Vec::new(),
@@ -642,9 +672,9 @@ pub struct StorageNode {
 }
 
 impl StorageNode {
-    fn new(index: &NodeIndex, name: &str, initial_volume: f64) -> Self {
+    fn new(index: &NodeIndex, name: &str, sub_name: Option<&str>, initial_volume: f64) -> Self {
         Self {
-            meta: NodeMeta::new(index, name),
+            meta: NodeMeta::new(index, name, sub_name),
             cost: ConstraintValue::None,
             initial_volume,
             storage_constraints: StorageConstraints::new(),

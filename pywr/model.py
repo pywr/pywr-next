@@ -129,6 +129,17 @@ class Model(BaseModel):
             data = yaml.safe_load(fh)
         return cls(path=filepath.parent, **data)
 
+    def create_edge(self, from_node: str, to_node: str, r_model: PyModel):
+        for out_node_name, out_node_sub_name in self.nodes[
+            from_node
+        ].iter_output_connectors():
+            for in_node_name, in_node_sub_name in self.nodes[
+                to_node
+            ].iter_input_connectors():
+                r_model.connect_nodes(
+                    out_node_name, out_node_sub_name, in_node_name, in_node_sub_name
+                )
+
     def build(self) -> PyModel:
         """Construct a `PyModel`"""
 
@@ -137,7 +148,7 @@ class Model(BaseModel):
             node.create_nodes(r_model)
 
         for edge in self.edges:
-            edge.create_edge(r_model)
+            self.create_edge(edge.from_node, edge.to_node, r_model)
 
         # Build the parameters ...
         remaining_parameters = [p for p in self.parameters]
