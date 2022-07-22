@@ -49,7 +49,7 @@ def make_simple_connections(
     loc: int = 15,
     scale: int = 5,
 ):
-    num_connections = (number_of_systems ** 2) * density // 100 // 2
+    num_connections = (number_of_systems**2) * density // 100 // 2
 
     connections_added = 0
 
