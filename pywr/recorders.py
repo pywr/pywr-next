@@ -29,8 +29,13 @@ class AssertionRecorder(BaseRecorder):
     values: List[float]
 
     def create_recorder(self, r_model: PyModel):
+        # TODO support subnames on nodes
         r_model.add_python_recorder(
-            self.name, self.component, self.metric, _AssertionRecorder(self.values)
+            self.name,
+            self.component,
+            None,
+            self.metric,
+            _AssertionRecorder(self.values),
         )
 
 

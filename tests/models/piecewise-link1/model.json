@@ -1,0 +1,67 @@
+{
+  "timestepper": {
+    "start": "2021-01-01",
+    "end": "2021-12-31",
+    "timestep": 1
+  },
+  "nodes": [
+    {
+      "name": "input1",
+      "type": "input",
+      "max_flow": "inflow",
+      "min_flow": "inflow"
+    },
+    {
+      "name": "link1",
+      "type": "link"
+    },
+    {
+      "name": "mrf1",
+      "type": "piecewiselink",
+      "max_flows": [1.0, null],
+      "costs": [-10.0, null]
+    },
+    {
+      "name": "term1",
+      "type": "output"
+    },
+    {
+      "name": "demand1",
+      "type": "output",
+      "cost": -5.0,
+      "max_flow": "demand"
+    }
+
+  ],
+  "edges": [
+    {
+      "from_node": "input1",
+      "to_node": "link1"
+    },
+    {
+      "from_node": "link1",
+      "to_node": "mrf1"
+    },
+    {
+      "from_node": "mrf1",
+      "to_node": "term1"
+    },
+    {
+      "from_node": "link1",
+      "to_node": "demand1"
+    }
+  ],
+  "parameters": [
+    {
+      "name": "demand",
+      "type": "constant",
+      "value": 10.0
+    },
+    {
+      "name": "inflow",
+      "type": "dataframe",
+      "url": "inflow.csv",
+      "column": "inflow"
+    }
+  ]
+}

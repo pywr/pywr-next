@@ -12,26 +12,15 @@ pub struct InterpolatedParameter {
     metric: Metric,
     control_curves: Vec<Metric>,
     values: Vec<f64>,
-    maximum: f64,
-    minimum: f64,
 }
 
 impl InterpolatedParameter {
-    pub fn new(
-        name: &str,
-        metric: Metric,
-        control_curves: Vec<Metric>,
-        values: Vec<f64>,
-        maximum: f64,
-        minimum: f64,
-    ) -> Self {
+    pub fn new(name: &str, metric: Metric, control_curves: Vec<Metric>, values: Vec<f64>) -> Self {
         Self {
             meta: ParameterMeta::new(name),
             metric,
             control_curves,
             values,
-            maximum,
-            minimum,
         }
     }
 }
@@ -51,22 +40,31 @@ impl _Parameter for InterpolatedParameter {
         // Current value
         let x = self.metric.get_value(model, state, parameter_state)?;
 
-        let mut cc_previous_value = self.maximum;
+        let mut cc_prev = 1.0;
         for (idx, control_curve) in self.control_curves.iter().enumerate() {
             let cc_value = control_curve.get_value(model, state, parameter_state)?;
-            if x > cc_value {
-                let upper_value = self.values.get(idx).ok_or(PywrError::DataOutOfRange)?;
-                let lower_value = self.values.get(idx + 1).ok_or(PywrError::DataOutOfRange)?;
-                return Ok(interpolate(x, cc_value, cc_previous_value, *lower_value, *upper_value));
-            }
-            cc_previous_value = cc_value;
-        }
-        let upper_value = self
-            .values
-            .get(self.values.len() - 2)
-            .ok_or(PywrError::DataOutOfRange)?;
-        let lower_value = self.values.last().ok_or(PywrError::DataOutOfRange)?;
 
-        Ok(interpolate(x, 0.0, cc_previous_value, *lower_value, *upper_value))
+            if x >= cc_value {
+                return Ok(interpolate(
+                    x,
+                    cc_value,
+                    cc_prev,
+                    self.values[idx + 1],
+                    self.values[idx],
+                ));
+            }
+
+            cc_prev = cc_value
+        }
+
+        let cc_value = 0.0;
+        let n = self.values.len();
+        Ok(interpolate(
+            x,
+            cc_value,
+            cc_prev,
+            self.values[n - 1],
+            self.values[n - 2],
+        ))
     }
 }

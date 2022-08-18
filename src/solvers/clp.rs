@@ -546,7 +546,7 @@ impl ClpSolver {
                 }
                 Err(e) => return Err(e),
             };
-
+            // println!("Node {:?} [{}, {}]", node, lb, ub);
             self.builder.set_row_bounds(start_row + node.index(), lb, ub);
         }
 

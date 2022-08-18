@@ -4,3 +4,4 @@ from .link import LinkNode
 from .output import OutputNode
 from .storage import StorageNode
 from .aggregated import AggregatedNode
+from .piecewise_link import PiecewiseLinkNode

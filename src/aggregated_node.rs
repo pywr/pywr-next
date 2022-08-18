@@ -4,7 +4,6 @@ use crate::state::ParameterState;
 use crate::PywrError;
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::slice::Iter;
 
 pub type AggregatedNodeIndex = usize;
 pub type AggregatedNodeRef = Rc<RefCell<_AggregatedNode>>;
@@ -20,9 +19,9 @@ pub struct _AggregatedNode {
 pub struct AggregatedNode(AggregatedNodeRef);
 
 impl AggregatedNode {
-    pub fn new(index: &AggregatedNodeIndex, name: &str, nodes: Vec<Node>) -> Self {
+    pub fn new(index: &AggregatedNodeIndex, name: &str, sub_name: Option<&str>, nodes: Vec<Node>) -> Self {
         let agg_node = _AggregatedNode {
-            meta: NodeMeta::new(index, name),
+            meta: NodeMeta::new(index, name, sub_name),
             flow_constraints: FlowConstraints::new(),
             nodes,
         };
@@ -31,6 +30,16 @@ impl AggregatedNode {
 
     pub fn name(&self) -> String {
         self.0.borrow().meta.name()
+    }
+
+    /// Get a node's sub_name
+    pub fn sub_name(&self) -> Option<String> {
+        self.0.borrow().meta.sub_name()
+    }
+
+    /// Get a node's full name
+    pub fn full_name(&self) -> (String, Option<String>) {
+        self.0.borrow().meta.full_name()
     }
 
     pub fn index(&self) -> AggregatedNodeIndex {

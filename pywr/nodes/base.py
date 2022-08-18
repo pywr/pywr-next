@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Optional, Dict, Iterable
+from typing import Optional, Dict, Iterable, Generator, Tuple
 from pydantic import BaseModel, Extra
 from ..pywr import PyModel, ParameterNotFoundError  # type: ignore
 
@@ -20,6 +20,17 @@ class BaseNode(BaseModel, extra=Extra.forbid):
 
     def set_constraints(self, r_model: PyModel):
         raise NotImplementedError()
+
+    def iter_input_connectors(self) -> Generator[Tuple[str, Optional[str]], None, None]:
+        yield self.name, None
+
+    def iter_output_connectors(
+        self,
+    ) -> Generator[Tuple[str, Optional[str]], None, None]:
+        yield self.name, None
+
+    def iter_contents(self) -> Generator[Tuple[str, Optional[str]], None, None]:
+        yield self.name, None
 
     @classmethod
     def get_class(cls, node_type: str) -> BaseNode:

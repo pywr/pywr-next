@@ -7,7 +7,10 @@ from .base import (
     DataFrameParameter,
     ControlCurvePiecewiseInterpolatedParameter,
 )
-from .control_curves import ControlCurveIndexParameter
+from .control_curves import (
+    ControlCurveIndexParameter,
+    ControlCurveInterpolatedParameter,
+)
 from .profiles import MonthlyProfileParameter
 from .thresholds import ParameterThresholdParameter
 from .wasm import SimpleWasmParameter
