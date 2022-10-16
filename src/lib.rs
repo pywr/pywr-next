@@ -3,11 +3,12 @@ use thiserror::Error;
 
 use crate::edge::{Edge, EdgeIndex};
 use crate::node::NodeIndex;
-use crate::parameters::ParameterIndex;
+use crate::parameters::{IndexParameterIndex, ParameterIndex};
 use crate::recorders::RecorderIndex;
 use crate::state::NetworkState;
 
 pub mod aggregated_node;
+
 pub mod edge;
 mod metric;
 pub mod model;
@@ -20,6 +21,7 @@ mod solvers;
 pub mod state;
 mod timestep;
 mod utils;
+mod virtual_storage;
 
 #[derive(Error, Debug, PartialEq)]
 pub enum PywrError {
@@ -33,8 +35,10 @@ pub enum PywrError {
     NodeNotFound(String),
     #[error("edge index not found")]
     EdgeIndexNotFound,
-    #[error("parameter index not found")]
-    ParameterIndexNotFound,
+    #[error("parameter index {0} not found")]
+    ParameterIndexNotFound(ParameterIndex),
+    #[error("index parameter index {0} not found")]
+    IndexParameterIndexNotFound(IndexParameterIndex),
     #[error("parameter {0} not found")]
     ParameterNotFound(String),
     #[error("recorder index not found")]
@@ -45,6 +49,8 @@ pub enum PywrError {
     NodeNameAlreadyExists(String),
     #[error("parameter name `{0}` already exists on parameter {1}")]
     ParameterNameAlreadyExists(String, ParameterIndex),
+    #[error("index parameter name `{0}` already exists on index parameter {1}")]
+    IndexParameterNameAlreadyExists(String, IndexParameterIndex),
     #[error("recorder name `{0}` already exists on parameter {1}")]
     RecorderNameAlreadyExists(String, RecorderIndex),
     #[error("connections from output nodes are invalid")]
@@ -79,9 +85,11 @@ pub enum PywrError {
     ClpError(#[from] solvers::clp::ClpError),
     #[error("metric not defined")]
     MetricNotDefinedForNode,
+    #[error("invalid metric type: {0}")]
+    InvalidMetricType(String),
     #[error("recorder not initialised")]
     RecorderNotInitialised,
-    #[error("hdf5 error - {0}")]
+    #[error("hdf5 error: {0}")]
     HDF5Error(String),
     #[error("not implemented by recorder")]
     NotSupportedByRecorder,

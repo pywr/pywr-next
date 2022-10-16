@@ -2,22 +2,33 @@ use crate::edge::{Edge, EdgeIndex};
 use crate::node::{Node, NodeVec};
 
 use crate::scenario::{ScenarioGroupCollection, ScenarioIndex};
-use crate::solvers::Solver;
+use crate::solvers::{Solver, SolverTimings};
 use crate::state::{EdgeState, NetworkState, ParameterState};
 use crate::timestep::{Timestep, Timestepper};
-use crate::{parameters, recorders, NodeIndex, PywrError};
 
 use crate::aggregated_node::{AggregatedNode, AggregatedNodeIndex, AggregatedNodeVec};
 use std::ops::Deref;
+
+use crate::{parameters, recorders, IndexParameterIndex, NodeIndex, ParameterIndex, PywrError};
+
+use crate::parameters::ParameterType;
+use crate::virtual_storage::{VirtualStorage, VirtualStorageIndex, VirtualStorageVec};
+
 use std::time::Instant;
+
+#[derive(Default)]
+pub struct RunTimings {
+    solve: SolverTimings,
+}
 
 pub struct Model {
     pub nodes: NodeVec,
     pub edges: Vec<Edge>,
     pub aggregated_nodes: AggregatedNodeVec,
+    pub virtual_storage_nodes: VirtualStorageVec,
     parameters: Vec<parameters::Parameter>,
     index_parameters: Vec<parameters::IndexParameter>,
-    parameters_resolve_order: Vec<parameters::ParameterType>,
+    parameters_resolve_order: Vec<ParameterType>,
     recorders: Vec<recorders::Recorder>,
     scenarios: ScenarioGroupCollection,
 }
@@ -37,6 +48,7 @@ impl Model {
             nodes: NodeVec::new(),
             edges: Vec::new(),
             aggregated_nodes: AggregatedNodeVec::new(),
+            virtual_storage_nodes: VirtualStorageVec::new(),
             parameters: Vec::new(),
             index_parameters: Vec::new(),
             parameters_resolve_order: Vec::new(),
@@ -100,6 +112,8 @@ impl Model {
     ) -> Result<(), PywrError> {
         let now = Instant::now();
 
+        let mut timings = RunTimings::default();
+
         let timesteps = timestepper.timesteps();
         let scenario_indices = scenarios.scenario_indices();
         // One state per scenario
@@ -112,11 +126,27 @@ impl Model {
 
         // Step a timestep
         for timestep in timesteps.iter() {
-            let next_states = self.step(timestep, &scenario_indices, solver, &current_states)?;
+            let next_states = self.step(timestep, &scenario_indices, solver, &current_states, &mut timings)?;
             current_states = next_states;
             count += scenario_indices.len();
         }
-        println!("speed: {} ts/s", count as f64 / now.elapsed().as_secs_f64());
+
+        let total_duration = now.elapsed().as_secs_f64();
+        println!("total run time: {}s", total_duration);
+        println!(
+            "total update objective time: {}s",
+            timings.solve.update_objective.as_secs_f64()
+        );
+        println!(
+            "total update constraints time: {}s",
+            timings.solve.update_constraints.as_secs_f64()
+        );
+        println!("total LP solve time: {}s", timings.solve.solve.as_secs_f64());
+        println!(
+            "total save solution time: {}s",
+            timings.solve.save_solution.as_secs_f64()
+        );
+        println!("speed: {} ts/s", count as f64 / total_duration);
         self.finalise()?;
         Ok(())
     }
@@ -128,6 +158,7 @@ impl Model {
         scenario_indices: &[ScenarioIndex],
         solver: &mut Box<dyn Solver>,
         current_states: &[NetworkState],
+        timings: &mut RunTimings,
     ) -> Result<Vec<NetworkState>, PywrError> {
         let mut next_states = Vec::with_capacity(current_states.len());
 
@@ -138,8 +169,15 @@ impl Model {
             };
             let pstate = self.compute_parameters(timestep, scenario_index, current_state)?;
 
-            let next_state = solver.solve(self, timestep, current_state, &pstate)?;
+            for p in &self.parameters {
+                let idx = p.index();
+                let value = pstate.get_value(idx)?;
 
+                println!("{}[{}]={}", p.name(), idx, value);
+            }
+            let (next_state, solve_timings) = solver.solve(self, timestep, current_state, &pstate)?;
+            timings.solve += solve_timings;
+            panic!();
             self.save_recorders(timestep, scenario_index, &next_state, &pstate)?;
             next_states.push(next_state);
         }
@@ -157,9 +195,17 @@ impl Model {
     ) -> Result<ParameterState, PywrError> {
         let mut parameter_state = ParameterState::with_capacity(self.parameters.len(), 0);
 
-        for parameter in &self.parameters {
-            let value = parameter.compute(timestep, scenario_index, self, state, &parameter_state)?;
-            parameter_state.push_value(value);
+        for p_type in &self.parameters_resolve_order {
+            match p_type {
+                ParameterType::Parameter(p) => {
+                    let value = p.compute(timestep, scenario_index, self, state, &parameter_state)?;
+                    parameter_state.push_value(value);
+                }
+                ParameterType::Index(p) => {
+                    let value = p.compute(timestep, scenario_index, self, state, &parameter_state)?;
+                    parameter_state.push_index(value);
+                }
+            }
         }
 
         for _parameter in &self.index_parameters {}
@@ -235,6 +281,22 @@ impl Model {
             .find(|n| n.full_name() == (name, sub_name))
         {
             Some(node) => Ok(node),
+            None => Err(PywrError::NodeNotFound(name.to_string())),
+        }
+    }
+
+    /// Get a `VirtualStorageNodeIndex` from a node's name
+    pub fn get_virtual_storage_node_by_name(
+        &self,
+        name: &str,
+        sub_name: Option<&str>,
+    ) -> Result<&VirtualStorage, PywrError> {
+        match self
+            .virtual_storage_nodes
+            .iter()
+            .find(|&n| n.full_name() == (name, sub_name))
+        {
+            Some(node) => Ok(node.clone()),
             None => Err(PywrError::NodeNotFound(name.to_string())),
         }
     }
@@ -335,6 +397,22 @@ impl Model {
         Ok(node_index)
     }
 
+    /// Add a new `VirtualStorage` to the model.
+    pub fn add_virtual_storage_node(
+        &mut self,
+        name: &str,
+        sub_name: Option<&str>,
+        nodes: Vec<NodeIndex>,
+        factors: Option<Vec<f64>>,
+    ) -> Result<VirtualStorageIndex, PywrError> {
+        if let Ok(_agg_node) = self.get_virtual_storage_node_by_name(name, sub_name) {
+            return Err(PywrError::NodeNameAlreadyExists(name.to_string()));
+        }
+
+        let node_index = self.virtual_storage_nodes.push_new(name, sub_name, nodes, factors);
+        Ok(node_index)
+    }
+
     /// Add a `parameters::Parameter` to the model
     pub fn add_parameter(
         &mut self,
@@ -348,10 +426,14 @@ impl Model {
         //     ));
         // }
 
-        let parameter_index = self.parameters.len();
+        let parameter_index = ParameterIndex::new(self.parameters.len());
 
         let p = parameters::Parameter::new(parameter, parameter_index);
+
+        // Add the parameter ...
         self.parameters.push(p.clone());
+        // .. and add it to the resolve order
+        self.parameters_resolve_order.push(ParameterType::Parameter(p.clone()));
         Ok(p)
     }
 
@@ -368,10 +450,12 @@ impl Model {
         //     ));
         // }
 
-        let parameter_index = self.index_parameters.len();
+        let parameter_index = IndexParameterIndex::new(self.index_parameters.len());
 
         let p = parameters::IndexParameter::new(index_parameter, parameter_index);
         self.index_parameters.push(p.clone());
+        // .. and add it to the resolve order
+        self.parameters_resolve_order.push(ParameterType::Index(p.clone()));
         Ok(p)
     }
 

@@ -1,14 +1,16 @@
 use crate::model::Model;
 use crate::node::NodeType;
-use crate::solvers::Solver;
+use crate::solvers::{Solver, SolverTimings};
 use crate::state::ParameterState;
 use crate::timestep::Timestep;
 use crate::{NetworkState, PywrError};
 use clp_sys::*;
 use libc::{c_double, c_int};
+use std::collections::HashMap;
 use std::ffi::CString;
 use std::ops::Deref;
 use std::slice;
+use std::time::{Duration, Instant};
 use thiserror::Error;
 
 #[derive(Error, Debug, PartialEq)]
@@ -178,6 +180,7 @@ impl ClpSimplex {
 pub struct ClpSolution {
     objective_value: f64,
     primal_columns: Vec<f64>,
+    solve_time: Duration,
 }
 
 impl ClpSolution {
@@ -318,8 +321,10 @@ impl ClpModelBuilder {
         // );
         // println!("coef: {:?}", model.get_objective_coefficients(2));
         // println!("row_upper: {:?}", model.get_row_upper(4));
-        //let now = Instant::now();
+        let now = Instant::now();
         model.dual_solve();
+        let solve_time = now.elapsed();
+        // model.primal_solve();
         // model.initial_solve();
         //let t = now.elapsed().as_secs_f64();
         // println!("dual solve: {} s; {} per s", t, 1.0/t);
@@ -328,6 +333,7 @@ impl ClpModelBuilder {
         let solution = ClpSolution {
             objective_value: model.objective_value(),
             primal_columns: model.primal_column_solution(self.col_upper.len()),
+            solve_time,
         };
 
         Ok(solution)
@@ -337,7 +343,7 @@ impl ClpModelBuilder {
 pub struct ClpRowBuilder {
     lower: f64,
     upper: f64,
-    columns: Vec<(i32, f64)>,
+    columns: HashMap<i32, f64>,
 }
 
 impl ClpRowBuilder {
@@ -345,7 +351,7 @@ impl ClpRowBuilder {
         Self {
             lower: 0.0,
             upper: f64::MAX,
-            columns: Vec::new(),
+            columns: HashMap::new(),
         }
     }
 
@@ -361,8 +367,11 @@ impl ClpRowBuilder {
     //     let (lb, ub) = match bounds
     // }
 
+    /// Add an element to the row
+    ///
+    /// If the column already exists `value` will be added to the existing coefficient.
     pub fn add_element(&mut self, column: i32, value: f64) {
-        self.columns.push((column, value))
+        *self.columns.entry(column).or_insert(0.0) += value;
     }
 }
 
@@ -370,6 +379,7 @@ pub struct ClpSolver {
     builder: ClpModelBuilder,
     start_node_constraints: Option<usize>,
     start_agg_node_constraints: Option<usize>,
+    start_virtual_storage_constraints: Option<usize>,
 }
 
 impl ClpSolver {
@@ -378,6 +388,7 @@ impl ClpSolver {
             builder: ClpModelBuilder::new(),
             start_node_constraints: None,
             start_agg_node_constraints: None,
+            start_virtual_storage_constraints: None,
         }
     }
 
@@ -512,6 +523,51 @@ impl ClpSolver {
         self.start_agg_node_constraints = Some(start_row);
     }
 
+    /// Create aggregated node constraints
+    ///
+    /// One constraint is created per node to enforce any constraints (flow or storage)
+    /// that it may define.
+    fn create_virtual_storage_constraints(&mut self, model: &Model) {
+        let start_row = self.builder.nrows();
+
+        for virtual_storage in &model.virtual_storage_nodes {
+            // Create empty arrays to store the matrix data
+
+            if let Some(nodes) = virtual_storage.get_nodes_with_factors() {
+                let mut row = ClpRowBuilder::new();
+                for (node, factor) in nodes {
+                    match node.node_type() {
+                        NodeType::Link => {
+                            for edge in node.get_outgoing_edges().unwrap() {
+                                row.add_element(edge.index() as i32, factor);
+                            }
+                        }
+                        NodeType::Input => {
+                            for edge in node.get_outgoing_edges().unwrap() {
+                                row.add_element(edge.index() as i32, factor);
+                            }
+                        }
+                        NodeType::Output => {
+                            for edge in node.get_incoming_edges().unwrap() {
+                                row.add_element(edge.index() as i32, factor);
+                            }
+                        }
+                        NodeType::Storage => {
+                            for edge in node.get_incoming_edges().unwrap() {
+                                row.add_element(edge.index() as i32, factor);
+                            }
+                            for edge in node.get_outgoing_edges().unwrap() {
+                                row.add_element(edge.index() as i32, -factor);
+                            }
+                        }
+                    }
+                }
+                self.builder.add_row(row);
+            }
+        }
+        self.start_virtual_storage_constraints = Some(start_row);
+    }
+
     /// Update edge objective coefficients
     fn update_edge_objectives(&mut self, model: &Model, parameter_states: &ParameterState) -> Result<(), PywrError> {
         for edge in &model.edges {
@@ -539,18 +595,22 @@ impl ClpSolver {
                 Ok(bnds) => bnds,
                 Err(PywrError::FlowConstraintsUndefined) => {
                     // Must be a storage node
-                    let (avail, missing) =
-                        match node.get_current_available_volume_bounds(network_state, parameter_states) {
-                            Ok(bnds) => bnds,
-                            Err(e) => return Err(e),
-                        };
+                    let (avail, missing) = match node.get_current_available_volume_bounds(network_state) {
+                        Ok(bnds) => bnds,
+                        Err(e) => return Err(e),
+                    };
                     let dt = timestep.days();
                     (-avail / dt, missing / dt)
                 }
                 Err(e) => return Err(e),
             };
+<<<<<<< HEAD
             // println!("Node {:?} [{}, {}]", node, lb, ub);
             self.builder.set_row_bounds(start_row + *node.index(), lb, ub);
+=======
+            // println!("Node {:?} [{}, {}]", node.name(), lb, ub);
+            self.builder.set_row_bounds(start_row + node.index(), lb, ub);
+>>>>>>> 9060cf9 (WIP)
         }
 
         Ok(())
@@ -586,6 +646,8 @@ impl Solver for ClpSolver {
         self.create_node_constraints(model);
         // Create the aggregated node constraints
         self.create_aggregated_node_constraints(model);
+        // Create virtual storage constraints
+        self.create_virtual_storage_constraints(model);
 
         self.builder.setup();
 
@@ -597,22 +659,34 @@ impl Solver for ClpSolver {
         timestep: &Timestep,
         network_state: &NetworkState,
         parameter_state: &ParameterState,
-    ) -> Result<NetworkState, PywrError> {
+    ) -> Result<(NetworkState, SolverTimings), PywrError> {
+        let mut timings = SolverTimings::default();
+        let start_objective_update = Instant::now();
         self.update_edge_objectives(model, parameter_state)?;
+        timings.update_objective += start_objective_update.elapsed();
+
+        let start_constraint_update = Instant::now();
         self.update_node_constraint_bounds(model, timestep, network_state, parameter_state)?;
         self.update_aggregated_node_constraint_bounds(model, parameter_state)?;
+        timings.update_constraints += start_constraint_update.elapsed();
 
+        let start_solve = Instant::now();
         let solution = self.builder.solve()?;
+        //timings.solve += start_solve.elapsed();
+        timings.solve += solution.solve_time;
+
         // println!("{:?}", solution);
         // Create the updated network state from the results
         let mut new_state = network_state.with_capacity();
 
+        let start_save_solution = Instant::now();
         for edge in &model.edges {
             let flow = solution.get_solution(edge.index());
             new_state.add_flow(edge, timestep, flow)?;
         }
+        timings.save_solution += start_save_solution.elapsed();
 
-        Ok(new_state)
+        Ok((new_state, timings))
     }
 }
 

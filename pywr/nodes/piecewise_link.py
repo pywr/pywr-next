@@ -1,9 +1,11 @@
+from pathlib import Path
 from typing import Optional, Generator, Tuple, List
 from pydantic import validator
 from pywr.pywr import PyModel
 
 from pywr.nodes.base import BaseNode
-from pywr.parameters import ParameterRef
+from pywr.parameters import ParameterRef, BaseParameter
+from pywr.tables import TableCollection
 
 
 class PiecewiseLinkNode(BaseNode):
@@ -83,10 +85,18 @@ class PiecewiseLinkNode(BaseNode):
         for sub_name, _, _, _ in self.iter_attributes():
             r_model.add_link_node(self.name, sub_name)
 
-    def set_constraints(self, r_model: PyModel):
+    def set_constraints(self, r_model: PyModel, path: Path, tables: TableCollection):
         for sub_name, cost, _, max_flow in self.iter_attributes():
             # TODO min_flow
             if cost is not None:
-                r_model.set_node_cost(self.name, sub_name, cost)
+                cost_name = BaseParameter.ref_to_name(
+                    cost, f"{self.name}-{sub_name}-cost", r_model, path, tables
+                )
+                r_model.set_node_cost(self.name, sub_name, cost_name)
             if max_flow is not None:
-                r_model.set_node_constraint(self.name, sub_name, "max_flow", max_flow)
+                max_flow_name = BaseParameter.ref_to_name(
+                    cost, f"{self.name}-{sub_name}-max-flow", r_model, path, tables
+                )
+                r_model.set_node_constraint(
+                    self.name, sub_name, "max_flow", max_flow_name
+                )

@@ -159,16 +159,16 @@ impl ParameterState {
     }
 
     pub(crate) fn get_value(&self, parameter_index: ParameterIndex) -> Result<f64, PywrError> {
-        match self.values.get(parameter_index) {
+        match self.values.get(*parameter_index.deref()) {
             Some(v) => Ok(*v),
-            None => Err(PywrError::ParameterIndexNotFound),
+            None => Err(PywrError::ParameterIndexNotFound(parameter_index)),
         }
     }
 
     pub(crate) fn get_index(&self, parameter_index: IndexParameterIndex) -> Result<usize, PywrError> {
-        match self.indices.get(parameter_index) {
+        match self.indices.get(*parameter_index.deref()) {
             Some(i) => Ok(*i),
-            None => Err(PywrError::ParameterIndexNotFound),
+            None => Err(PywrError::IndexParameterIndexNotFound(parameter_index)),
         }
     }
 }

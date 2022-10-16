@@ -52,7 +52,6 @@ impl _Recorder for HDF5Recorder {
         for node in model.nodes.deref() {
             let metric = node.default_metric();
             let (name, sub_name) = node.full_name();
-            println!("Adding metric with name: {}", name);
 
             let ds = match sub_name {
                 Some(sn) => {

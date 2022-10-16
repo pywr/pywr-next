@@ -12,7 +12,8 @@ from pywr.nodes import node_registry
 from pywr.nodes.base import NodeCollection
 from pywr.parameters import ParameterCollection
 from pywr.recorders import RecorderCollection
-from pywr.tables import TableCollection
+from pywr.tables import TableCollection, TableRef
+from pywr.virtual_storage import VirtualStorageNodeCollection
 
 _output_registry = {}
 
@@ -95,6 +96,7 @@ class Timestepper(BaseModel):
 class Model(BaseModel):
     timestepper: Timestepper
     nodes: NodeCollection = NodeCollection()
+    virtual_nodes: VirtualStorageNodeCollection = VirtualStorageNodeCollection()
     edges: List[Edge] = []
     parameters: ParameterCollection = ParameterCollection()
     recorders: RecorderCollection = RecorderCollection()
@@ -140,11 +142,18 @@ class Model(BaseModel):
                     out_node_name, out_node_sub_name, in_node_name, in_node_sub_name
                 )
 
+    def get_table_value(self, ref: TableRef) -> float:
+        # TODO actually read the data
+        return 0.0
+
     def build(self) -> PyModel:
         """Construct a `PyModel`"""
 
         r_model = PyModel()
         for node in self.nodes:
+            node.create_nodes(r_model)
+
+        for node in self.virtual_nodes:
             node.create_nodes(r_model)
 
         for edge in self.edges:
@@ -156,13 +165,15 @@ class Model(BaseModel):
             failed_parameters = []  # Collection for parameters that fail to load
             for parameter in remaining_parameters:
                 try:
-                    parameter.create_parameter(r_model, self.path)
+                    parameter.create_parameter(r_model, self.path, self.tables)
                 except ParameterNotFoundError:
                     # Parameter failed due to not finding another parameter.
                     # This is likely a dependency that is not yet loaded.
                     failed_parameters.append(parameter)
 
             if len(failed_parameters) >= len(remaining_parameters):
+                for p in failed_parameters:
+                    print(p.name, type(p), p)
                 raise RuntimeError(
                     "Failed to load parameters due to a cycle in the dependency tree."
                 )
@@ -175,7 +186,7 @@ class Model(BaseModel):
             output.create_output(r_model)
 
         for node in self.nodes:
-            node.set_constraints(r_model)
+            node.set_constraints(r_model, self.path, self.tables)
 
         # r_model.add_python_recorder("a-recorder", "NodeInFlow", 0, PrintRecorder())
 
