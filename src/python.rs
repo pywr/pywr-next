@@ -8,6 +8,7 @@ use crate::solvers::Solver;
 use crate::timestep::Timestepper;
 use crate::{parameters, recorders};
 use crate::{EdgeIndex, NodeIndex, PywrError};
+use std::ops::Deref;
 
 use numpy::PyReadonlyArray1;
 use pyo3::create_exception;
@@ -66,6 +67,18 @@ impl PyModel {
     }
 }
 
+impl IntoPy<PyObject> for NodeIndex {
+    fn into_py(self, py: Python) -> PyObject {
+        self.deref().into_py(py)
+    }
+}
+
+impl IntoPy<PyObject> for AggregatedNodeIndex {
+    fn into_py(self, py: Python) -> PyObject {
+        self.deref().into_py(py)
+    }
+}
+
 #[pymethods]
 impl PyModel {
     #[new]
@@ -74,22 +87,22 @@ impl PyModel {
     }
 
     fn add_input_node(&mut self, name: &str, sub_name: Option<&str>) -> PyResult<NodeIndex> {
-        let idx = self.model.add_input_node(name, sub_name)?.index();
+        let idx = self.model.add_input_node(name, sub_name)?;
         Ok(idx)
     }
 
     fn add_link_node(&mut self, name: &str, sub_name: Option<&str>) -> PyResult<NodeIndex> {
-        let idx = self.model.add_link_node(name, sub_name)?.index();
+        let idx = self.model.add_link_node(name, sub_name)?;
         Ok(idx)
     }
 
     fn add_output_node(&mut self, name: &str, sub_name: Option<&str>) -> PyResult<NodeIndex> {
-        let idx = self.model.add_output_node(name, sub_name)?.index();
+        let idx = self.model.add_output_node(name, sub_name)?;
         Ok(idx)
     }
 
     fn add_storage_node(&mut self, name: &str, sub_name: Option<&str>, initial_volume: f64) -> PyResult<NodeIndex> {
-        let idx = self.model.add_storage_node(name, sub_name, initial_volume)?.index();
+        let idx = self.model.add_storage_node(name, sub_name, initial_volume)?;
         Ok(idx)
     }
 
@@ -101,10 +114,10 @@ impl PyModel {
     ) -> PyResult<AggregatedNodeIndex> {
         let mut nodes = Vec::with_capacity(node_names.len());
         for name in node_names {
-            nodes.push(self.model.get_node_by_name(&name, sub_name)?);
+            nodes.push(self.model.get_node_index_by_name(&name, sub_name)?);
         }
 
-        let idx = self.model.add_aggregated_node(name, sub_name, nodes)?.index();
+        let idx = self.model.add_aggregated_node(name, sub_name, nodes)?;
         Ok(idx)
     }
 
@@ -115,10 +128,10 @@ impl PyModel {
         to_node_name: &str,
         to_node_sub_name: Option<&str>,
     ) -> PyResult<EdgeIndex> {
-        let from_node = self.model.get_node_by_name(from_node_name, from_node_sub_name)?;
-        let to_node = self.model.get_node_by_name(to_node_name, to_node_sub_name)?;
+        let from_node = self.model.get_node_index_by_name(from_node_name, from_node_sub_name)?;
+        let to_node = self.model.get_node_index_by_name(to_node_name, to_node_sub_name)?;
 
-        let edge = self.model.connect_nodes(&from_node, &to_node)?;
+        let edge = self.model.connect_nodes(from_node, to_node)?;
         Ok(edge.index())
     }
 
@@ -145,8 +158,8 @@ impl PyModel {
         constraint_type: &str,
         value: PyConstraintValue,
     ) -> PyResult<()> {
-        let node = self.model.get_node_by_name(node_name, node_sub_name)?;
         let value = self.to_constraint_value(value)?;
+        let node = self.model.get_mut_node_by_name(node_name, node_sub_name)?;
 
         let constraint = match constraint_type {
             "max_flow" => Constraint::MaxFlow,
@@ -170,8 +183,8 @@ impl PyModel {
         constraint_type: &str,
         value: PyConstraintValue,
     ) -> PyResult<()> {
-        let node = self.model.get_aggregated_node_by_name(node_name, node_sub_name)?;
         let value = self.to_constraint_value(value)?;
+        let node = self.model.get_mut_aggregated_node_by_name(node_name, node_sub_name)?;
 
         // TODO implemented FromStr for Constraint
         let constraint = match constraint_type {
@@ -195,8 +208,8 @@ impl PyModel {
         node_sub_name: Option<&str>,
         value: PyConstraintValue,
     ) -> PyResult<()> {
-        let node = self.model.get_node_by_name(node_name, node_sub_name)?;
         let value = self.to_constraint_value(value)?;
+        let node = self.model.get_mut_node_by_name(node_name, node_sub_name)?;
         node.set_cost(value);
         Ok(())
     }
@@ -289,8 +302,7 @@ impl PyModel {
     ) -> PyResult<parameters::ParameterIndex> {
         let metric = Metric::NodeProportionalVolume(
             self.model
-                .get_node_by_name(storage_node_name, storage_node_sub_name)?
-                .index(),
+                .get_node_index_by_name(storage_node_name, storage_node_sub_name)?,
         );
 
         let mut control_curves = Vec::with_capacity(control_curve_names.len());
@@ -319,8 +331,7 @@ impl PyModel {
     ) -> PyResult<parameters::IndexParameterIndex> {
         let metric = Metric::NodeProportionalVolume(
             self.model
-                .get_node_by_name(storage_node_name, storage_node_sub_name)?
-                .index(),
+                .get_node_index_by_name(storage_node_name, storage_node_sub_name)?,
         );
 
         let mut control_curves = Vec::with_capacity(control_curve_names.len());
@@ -343,8 +354,7 @@ impl PyModel {
     ) -> PyResult<parameters::ParameterIndex> {
         let metric = Metric::NodeProportionalVolume(
             self.model
-                .get_node_by_name(storage_node_name, storage_node_sub_name)?
-                .index(),
+                .get_node_index_by_name(storage_node_name, storage_node_sub_name)?,
         );
 
         let mut control_curves = Vec::with_capacity(control_curve_names.len());
@@ -420,9 +430,9 @@ impl PyModel {
         object: PyObject,
     ) -> PyResult<recorders::RecorderIndex> {
         let metric = match metric {
-            "node_inflow" => Metric::NodeInFlow(self.model.get_node_by_name(component, component_sub_name)?.index()),
-            "node_outflow" => Metric::NodeOutFlow(self.model.get_node_by_name(component, component_sub_name)?.index()),
-            "node_volume" => Metric::NodeVolume(self.model.get_node_by_name(component, component_sub_name)?.index()),
+            "node_inflow" => Metric::NodeInFlow(self.model.get_node_index_by_name(component, component_sub_name)?),
+            "node_outflow" => Metric::NodeOutFlow(self.model.get_node_index_by_name(component, component_sub_name)?),
+            "node_volume" => Metric::NodeVolume(self.model.get_node_index_by_name(component, component_sub_name)?),
             // TODO implement edge_flow
             "parameter" => Metric::ParameterValue(self.model.get_parameter_by_name(component)?.index()),
             _ => return Err(PyErr::from(PywrError::UnrecognisedMetric)),

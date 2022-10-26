@@ -4,6 +4,7 @@ use crate::parameters::{IndexParameterIndex, ParameterIndex};
 use crate::timestep::Timestep;
 use crate::PywrError;
 use pyo3::prelude::*;
+use std::ops::Deref;
 
 #[derive(Clone, Copy, Debug)]
 pub enum NodeState {
@@ -214,12 +215,12 @@ impl NetworkState {
     }
 
     pub(crate) fn add_flow(&mut self, edge: &Edge, timestep: &Timestep, flow: f64) -> Result<(), PywrError> {
-        match self.node_states.get_mut(edge.from_node_index()) {
+        match self.node_states.get_mut(*edge.from_node_index()) {
             Some(s) => s.add_out_flow(flow, timestep),
             None => return Err(PywrError::NodeIndexNotFound),
         };
 
-        match self.node_states.get_mut(edge.to_node_index()) {
+        match self.node_states.get_mut(*edge.to_node_index()) {
             Some(s) => s.add_in_flow(flow, timestep),
             None => return Err(PywrError::NodeIndexNotFound),
         };
@@ -232,22 +233,22 @@ impl NetworkState {
         Ok(())
     }
 
-    pub fn get_node_in_flow(&self, node_index: NodeIndex) -> Result<f64, PywrError> {
-        match self.node_states.get(node_index) {
+    pub fn get_node_in_flow(&self, node_index: &NodeIndex) -> Result<f64, PywrError> {
+        match self.node_states.get(*node_index.deref()) {
             Some(s) => Ok(s.get_in_flow()),
             None => Err(PywrError::NodeIndexNotFound),
         }
     }
 
-    pub fn get_node_out_flow(&self, node_index: NodeIndex) -> Result<f64, PywrError> {
-        match self.node_states.get(node_index) {
+    pub fn get_node_out_flow(&self, node_index: &NodeIndex) -> Result<f64, PywrError> {
+        match self.node_states.get(*node_index.deref()) {
             Some(s) => Ok(s.get_out_flow()),
             None => Err(PywrError::NodeIndexNotFound),
         }
     }
 
-    pub fn get_node_volume(&self, node_index: NodeIndex) -> Result<f64, PywrError> {
-        match self.node_states.get(node_index) {
+    pub fn get_node_volume(&self, node_index: &NodeIndex) -> Result<f64, PywrError> {
+        match self.node_states.get(*node_index.deref()) {
             Some(s) => match s {
                 NodeState::Storage(ss) => Ok(ss.volume),
                 NodeState::Flow(_) => Err(PywrError::MetricNotDefinedForNode),
@@ -256,8 +257,8 @@ impl NetworkState {
         }
     }
 
-    pub fn get_edge_flow(&self, edge_index: EdgeIndex) -> Result<f64, PywrError> {
-        match self.edge_states.get(edge_index) {
+    pub fn get_edge_flow(&self, edge_index: &EdgeIndex) -> Result<f64, PywrError> {
+        match self.edge_states.get(*edge_index) {
             Some(s) => Ok(s.flow),
             None => Err(PywrError::EdgeIndexNotFound),
         }

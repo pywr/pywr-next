@@ -298,12 +298,13 @@ mod tests {
         let link_node = model.add_link_node("link", None).unwrap();
         let output_node = model.add_output_node("output", None).unwrap();
 
-        model.connect_nodes(&input_node, &link_node).unwrap();
-        model.connect_nodes(&link_node, &output_node).unwrap();
+        model.connect_nodes(input_node, link_node).unwrap();
+        model.connect_nodes(link_node, output_node).unwrap();
 
         let inflow = parameters::VectorParameter::new("inflow", vec![10.0; 366]);
         let inflow_idx = model.add_parameter(Box::new(inflow)).unwrap();
 
+        let input_node = model.get_mut_node_by_name("input", None).unwrap();
         input_node
             .set_constraint(ConstraintValue::Parameter(inflow_idx), Constraint::MaxFlow)
             .unwrap();
@@ -321,12 +322,13 @@ mod tests {
         );
         let total_demand_idx = model.add_parameter(Box::new(total_demand)).unwrap();
 
+        let demand_cost = parameters::ConstantParameter::new("demand-cost", -10.0);
+        let demand_cost_idx = model.add_parameter(Box::new(demand_cost)).unwrap();
+
+        let output_node = model.get_mut_node_by_name("output", None).unwrap();
         output_node
             .set_constraint(ConstraintValue::Parameter(total_demand_idx), Constraint::MaxFlow)
             .unwrap();
-
-        let demand_cost = parameters::ConstantParameter::new("demand-cost", -10.0);
-        let demand_cost_idx = model.add_parameter(Box::new(demand_cost)).unwrap();
 
         output_node.set_cost(ConstraintValue::Parameter(demand_cost_idx));
 
@@ -340,7 +342,9 @@ mod tests {
         let scenarios = default_scenarios();
         let mut solver: Box<dyn Solver> = Box::new(ClpSolver::new());
 
-        let rec = Array2Recorder::new("test", Metric::NodeOutFlow(0));
+        let node_idx = model.get_node_index_by_name("input", None).unwrap();
+
+        let rec = Array2Recorder::new("test", Metric::NodeOutFlow(node_idx));
 
         let rec = model.add_recorder(Box::new(rec)).unwrap();
         model.run(timestepper, scenarios, &mut solver).unwrap();

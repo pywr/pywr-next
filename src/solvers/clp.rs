@@ -7,6 +7,7 @@ use crate::{NetworkState, PywrError};
 use clp_sys::*;
 use libc::{c_double, c_int};
 use std::ffi::CString;
+use std::ops::Deref;
 use std::slice;
 use thiserror::Error;
 
@@ -397,7 +398,7 @@ impl ClpSolver {
 
     /// Create mass balance constraints for each edge
     fn create_mass_balance_constraints(&mut self, model: &Model) {
-        for node in &model.nodes {
+        for node in model.nodes.deref() {
             // Only link nodes create mass-balance constraints
 
             let mut row = ClpRowBuilder::new();
@@ -430,7 +431,7 @@ impl ClpSolver {
     fn create_node_constraints(&mut self, model: &Model) {
         let start_row = self.builder.nrows();
 
-        for node in &model.nodes {
+        for node in model.nodes.deref() {
             // Create empty arrays to store the matrix data
             let mut row = ClpRowBuilder::new();
 
@@ -472,11 +473,13 @@ impl ClpSolver {
     fn create_aggregated_node_constraints(&mut self, model: &Model) {
         let start_row = self.builder.nrows();
 
-        for agg_node in &model.aggregated_nodes {
+        for agg_node in model.aggregated_nodes.deref() {
             // Create empty arrays to store the matrix data
             let mut row = ClpRowBuilder::new();
 
-            for node in agg_node.get_nodes() {
+            for node_index in agg_node.get_nodes() {
+                // TODO error handling?
+                let node = model.nodes.get(&node_index).expect("Node index not found!");
                 match node.node_type() {
                     NodeType::Link => {
                         for edge in node.get_outgoing_edges().unwrap() {
@@ -512,7 +515,7 @@ impl ClpSolver {
     /// Update edge objective coefficients
     fn update_edge_objectives(&mut self, model: &Model, parameter_states: &ParameterState) -> Result<(), PywrError> {
         for edge in &model.edges {
-            let cost: f64 = edge.cost(parameter_states)?;
+            let cost: f64 = edge.cost(&model.nodes, parameter_states)?;
             self.builder.set_obj_coefficient(edge.index(), cost);
         }
         Ok(())
@@ -531,7 +534,7 @@ impl ClpSolver {
             None => return Err(PywrError::SolverNotSetup),
         };
 
-        for node in &model.nodes {
+        for node in model.nodes.deref() {
             let (lb, ub): (f64, f64) = match node.get_current_flow_bounds(parameter_states) {
                 Ok(bnds) => bnds,
                 Err(PywrError::FlowConstraintsUndefined) => {
@@ -547,7 +550,7 @@ impl ClpSolver {
                 Err(e) => return Err(e),
             };
             // println!("Node {:?} [{}, {}]", node, lb, ub);
-            self.builder.set_row_bounds(start_row + node.index(), lb, ub);
+            self.builder.set_row_bounds(start_row + *node.index(), lb, ub);
         }
 
         Ok(())
@@ -564,9 +567,9 @@ impl ClpSolver {
             None => return Err(PywrError::SolverNotSetup),
         };
 
-        for agg_node in &model.aggregated_nodes {
+        for agg_node in model.aggregated_nodes.deref() {
             let (lb, ub): (f64, f64) = agg_node.get_current_flow_bounds(parameter_states)?;
-            self.builder.set_row_bounds(start_row + agg_node.index(), lb, ub);
+            self.builder.set_row_bounds(start_row + *agg_node.index(), lb, ub);
         }
 
         Ok(())
