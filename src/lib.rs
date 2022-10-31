@@ -17,6 +17,7 @@ pub mod parameters;
 pub mod python;
 mod recorders;
 mod scenario;
+pub mod schema;
 mod solvers;
 pub mod state;
 mod timestep;

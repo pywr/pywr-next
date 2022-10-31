@@ -525,6 +525,7 @@ mod tests {
     use crate::solvers::Solver;
     use crate::timestep::Timestepper;
     use float_cmp::approx_eq;
+    use std::ops::Deref;
 
     use ndarray::Array2;
 
@@ -686,7 +687,7 @@ mod tests {
 
         let input_max_flow = parameters::ConstantParameter::new("my-constant", 10.0);
         let parameter = model.add_parameter(Box::new(input_max_flow)).unwrap();
-        assert_eq!(parameter.index(), 0);
+
         // assign the new parameter to one of the nodes.
         let node = model.get_mut_node_by_name("input", None).unwrap();
         node.set_constraint(ConstraintValue::Parameter(parameter.clone()), Constraint::MaxFlow)
@@ -708,6 +709,7 @@ mod tests {
 
         solver.setup(&model).unwrap();
 
+        let mut timings = RunTimings::default();
         let timesteps = timestepper.timesteps();
         let mut ts_iter = timesteps.iter();
         let scenario_indices = scenarios.scenario_indices();
@@ -715,7 +717,9 @@ mod tests {
         let current_state = model.get_initial_state(&scenario_indices);
         assert_eq!(current_state.len(), scenario_indices.len());
 
-        let next_state = model.step(ts, &scenario_indices, &mut solver, &current_state).unwrap();
+        let next_state = model
+            .step(ts, &scenario_indices, &mut solver, &current_state, &mut timings)
+            .unwrap();
 
         assert_eq!(next_state.len(), scenario_indices.len());
 
