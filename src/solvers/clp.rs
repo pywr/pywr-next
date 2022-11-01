@@ -530,12 +530,13 @@ impl ClpSolver {
     fn create_virtual_storage_constraints(&mut self, model: &Model) {
         let start_row = self.builder.nrows();
 
-        for virtual_storage in &model.virtual_storage_nodes {
+        for virtual_storage in model.virtual_storage_nodes.deref() {
             // Create empty arrays to store the matrix data
 
             if let Some(nodes) = virtual_storage.get_nodes_with_factors() {
                 let mut row = ClpRowBuilder::new();
-                for (node, factor) in nodes {
+                for (node_index, factor) in nodes {
+                    let node = model.nodes.get(&node_index).expect("Node index not found!");
                     match node.node_type() {
                         NodeType::Link => {
                             for edge in node.get_outgoing_edges().unwrap() {
@@ -604,13 +605,11 @@ impl ClpSolver {
                 }
                 Err(e) => return Err(e),
             };
-<<<<<<< HEAD
+
             // println!("Node {:?} [{}, {}]", node, lb, ub);
             self.builder.set_row_bounds(start_row + *node.index(), lb, ub);
-=======
+
             // println!("Node {:?} [{}, {}]", node.name(), lb, ub);
-            self.builder.set_row_bounds(start_row + node.index(), lb, ub);
->>>>>>> 9060cf9 (WIP)
         }
 
         Ok(())

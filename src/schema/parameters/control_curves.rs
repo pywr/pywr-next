@@ -109,11 +109,12 @@ mod tests {
     fn test_control_curve_piecewise_interpolated() {
         let data = r#"
             {
-                "type": "ControlCurvePiecewiseInterpolatedParameter",
+                "name": "My control curve",
+                "type": "ControlCurvePiecewiseInterpolated",
                 "storage_node": "Reservoir",
                 "control_curves": [
                     "reservoir_cc",
-                    {"type": "constant", "value":  0.2}
+                    {"name": "a-constant", "type": "Constant", "value":  0.2}
                 ],
                 "comment": "A witty comment",
                 "values": [

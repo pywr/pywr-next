@@ -67,16 +67,18 @@ mod tests {
     fn test_aggregated() {
         let data = r#"
             {
+                "name": "my-agg-param",
                 "type": "aggregated",
                 "agg_func": "min",
                 "comment": "Take the minimum of two parameters",
                 "parameters": [
                         {
+                            "name": "First parameter",
                             "type": "ControlCurvePiecewiseInterpolated",
                             "storage_node": "Reservoir",
                             "control_curves": [
                                 "reservoir_cc",
-                                {"type": "constant", "value":  0.2}
+                                {"name": "my-constant", "type": "Constant", "value":  0.2}
                             ],
                             "comment": "A witty comment",
                             "values": [
@@ -87,11 +89,12 @@ mod tests {
                             "minimum": 0.05
                         },
                         {
-                            "type": "ControlCurvePiecewiseInterpolatedParameter",
+                            "name": "Second parameter",
+                            "type": "ControlCurvePiecewiseInterpolated",
                             "storage_node": "Reservoir",
                             "control_curves": [
                                 "reservoir_cc",
-                                {"type": "constant", "value":  0.2}
+                                {"name": "my-constant", "type": "Constant", "value":  0.2}
                             ],
                             "comment": "A witty comment",
                             "values": [

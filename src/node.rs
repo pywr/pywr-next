@@ -388,7 +388,7 @@ impl Node {
         }
     }
 
-    pub fn set_min_volume_constraint(&mut self, value: ConstraintValue) -> Result<(), PywrError> {
+    pub fn set_min_volume_constraint(&mut self, value: f64) -> Result<(), PywrError> {
         match self {
             Self::Input(_) => Err(PywrError::StorageConstraintsUndefined),
             Self::Link(_) => Err(PywrError::StorageConstraintsUndefined),
@@ -400,16 +400,16 @@ impl Node {
         }
     }
 
-    pub fn get_current_min_volume(&self, parameter_states: &ParameterState) -> Result<f64, PywrError> {
+    pub fn get_current_min_volume(&self) -> Result<f64, PywrError> {
         match self {
             Self::Input(_) => Err(PywrError::StorageConstraintsUndefined),
             Self::Link(_) => Err(PywrError::StorageConstraintsUndefined),
             Self::Output(_) => Err(PywrError::StorageConstraintsUndefined),
-            Self::Storage(n) => n.get_min_volume(parameter_states),
+            Self::Storage(n) => Ok(n.get_min_volume()),
         }
     }
 
-    pub fn set_max_volume_constraint(&mut self, value: ConstraintValue) -> Result<(), PywrError> {
+    pub fn set_max_volume_constraint(&mut self, value: f64) -> Result<(), PywrError> {
         match self {
             Self::Input(_) => Err(PywrError::StorageConstraintsUndefined),
             Self::Link(_) => Err(PywrError::StorageConstraintsUndefined),
@@ -421,12 +421,12 @@ impl Node {
         }
     }
 
-    pub fn get_current_max_volume(&self, parameter_states: &ParameterState) -> Result<f64, PywrError> {
+    pub fn get_current_max_volume(&self) -> Result<f64, PywrError> {
         match self {
             Self::Input(_) => Err(PywrError::StorageConstraintsUndefined),
             Self::Link(_) => Err(PywrError::StorageConstraintsUndefined),
             Self::Output(_) => Err(PywrError::StorageConstraintsUndefined),
-            Self::Storage(n) => n.get_max_volume(parameter_states),
+            Self::Storage(n) => Ok(n.get_max_volume()),
         }
     }
 

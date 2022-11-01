@@ -177,7 +177,7 @@ impl Model {
             }
             let (next_state, solve_timings) = solver.solve(self, timestep, current_state, &pstate)?;
             timings.solve += solve_timings;
-            panic!();
+
             self.save_recorders(timestep, scenario_index, &next_state, &pstate)?;
             next_states.push(next_state);
         }
@@ -668,12 +668,11 @@ mod tests {
             .unwrap();
         output_node.set_cost(ConstraintValue::Parameter(demand_cost));
 
-        let max_volume = parameters::ConstantParameter::new("max-volume", 100.0);
-        let max_volume = model.add_parameter(Box::new(max_volume)).unwrap();
+        let max_volume = 100.0;
 
         let storage_node = model.get_mut_node_by_name("reservoir", None).unwrap();
         storage_node
-            .set_constraint(ConstraintValue::Parameter(max_volume), Constraint::MaxVolume)
+            .set_constraint(ConstraintValue::Scalar(max_volume), Constraint::MaxVolume)
             .unwrap();
 
         model
@@ -695,7 +694,7 @@ mod tests {
 
         // Try to assign a constraint not defined for particular node type
         assert_eq!(
-            node.set_constraint(ConstraintValue::Parameter(parameter), Constraint::MaxVolume),
+            node.set_constraint(ConstraintValue::Scalar(10.0), Constraint::MaxVolume),
             Err(PywrError::StorageConstraintsUndefined)
         );
     }

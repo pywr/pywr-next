@@ -101,8 +101,14 @@ mod tests {
                     }
                 ],
                 "edges": [
-                    ["supply1", "link1"],
-                    ["link1", "demand1"]
+                    {
+                        "from_node": "supply1",
+                        "to_node": "link1"
+                    },
+                    {
+                        "from_node": "link1",
+                        "to_node": "demand1"
+                    }
                 ]
             }
             "#;

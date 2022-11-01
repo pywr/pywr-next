@@ -69,8 +69,6 @@ struct PyMetric {
     value: Option<f64>,
 }
 
-impl Metric {}
-
 #[pyclass]
 struct PyModel {
     model: Model,
@@ -218,10 +216,7 @@ impl PyModel {
             nodes.push(self.model.get_node_index_by_name(&name, sub_name)?)
         }
 
-        let idx = self
-            .model
-            .add_virtual_storage_node(name, sub_name, nodes, factors)?
-            .index();
+        let idx = self.model.add_virtual_storage_node(name, sub_name, nodes, factors)?;
         Ok(idx)
     }
 

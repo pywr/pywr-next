@@ -5,7 +5,6 @@ use crate::parameters::ParameterIndex;
 use crate::state::{NetworkState, ParameterState};
 use crate::virtual_storage::VirtualStorageIndex;
 use crate::PywrError;
-use std::ops::Deref;
 
 #[derive(Clone, Debug)]
 pub enum Metric {
@@ -32,7 +31,7 @@ impl Metric {
             Metric::NodeVolume(idx) => Ok(network_state.get_node_volume(idx)?),
             Metric::NodeProportionalVolume(idx) => {
                 let volume = network_state.get_node_volume(idx)?;
-                let node = model.nodes.get(idx).ok_or(PywrError::NodeIndexNotFound)?;
+                let node = model.nodes.get(idx).map_err(|_| PywrError::NodeIndexNotFound)?;
                 let max_volume = node.get_current_max_volume()?;
 
                 // TODO handle divide by zero (is it full or empty?)
