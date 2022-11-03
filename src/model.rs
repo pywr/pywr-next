@@ -1,5 +1,5 @@
 use crate::edge::{Edge, EdgeIndex};
-use crate::node::{Node, NodeVec};
+use crate::node::{Node, NodeVec, StorageInitialVolume};
 
 use crate::scenario::{ScenarioGroupCollection, ScenarioIndex};
 use crate::solvers::{Solver, SolverTimings};
@@ -296,7 +296,7 @@ impl Model {
             .iter()
             .find(|&n| n.full_name() == (name, sub_name))
         {
-            Some(node) => Ok(node.clone()),
+            Some(node) => Ok(node),
             None => Err(PywrError::NodeNotFound(name.to_string())),
         }
     }
@@ -369,7 +369,7 @@ impl Model {
         &mut self,
         name: &str,
         sub_name: Option<&str>,
-        initial_volume: f64,
+        initial_volume: StorageInitialVolume,
     ) -> Result<NodeIndex, PywrError> {
         // Check for name.
         // TODO move this check to `NodeVec`
@@ -596,7 +596,7 @@ mod tests {
         );
 
         assert_eq!(
-            model.add_storage_node("my-node", None, 10.0),
+            model.add_storage_node("my-node", None, StorageInitialVolume::Absolute(10.0)),
             Err(PywrError::NodeNameAlreadyExists("my-node".to_string()))
         );
     }
@@ -649,7 +649,9 @@ mod tests {
     fn simple_storage_model() -> Model {
         let mut model = Model::new();
 
-        let storage_node = model.add_storage_node("reservoir", None, 100.0).unwrap();
+        let storage_node = model
+            .add_storage_node("reservoir", None, StorageInitialVolume::Absolute(100.0))
+            .unwrap();
         let output_node = model.add_output_node("output", None).unwrap();
 
         model.connect_nodes(storage_node, output_node).unwrap();

@@ -1,6 +1,8 @@
 use super::edge::Edge;
 use super::nodes::Node;
 use super::parameters::Parameter;
+use crate::{NodeIndex, PywrError};
+use std::collections::HashMap;
 use time::Date;
 
 #[derive(serde::Deserialize)]
@@ -65,13 +67,72 @@ impl PywrModel {
     }
 }
 
+/// Construct a model from its schema
+impl TryFrom<PywrModel> for crate::model::Model {
+    type Error = PywrError;
+
+    fn try_from(schema: PywrModel) -> Result<Self, Self::Error> {
+        let mut model = crate::model::Model::new();
+
+        // Create all the nodes
+        for node in &schema.nodes {
+            let _ = node.add_to_model(&mut model)?;
+        }
+
+        // Create the edges
+        for edge in &schema.edges {
+            let from_node = schema
+                .get_node_by_name(edge.from_node.as_str())
+                .ok_or_else(|| PywrError::NodeNotFound(edge.from_node.clone()))?;
+            let to_node = schema
+                .get_node_by_name(edge.to_node.as_str())
+                .ok_or_else(|| PywrError::NodeNotFound(edge.to_node.clone()))?;
+
+            // Connect each "from" connector to each "to" connector
+            for from_connector in from_node.output_connectors() {
+                for to_connector in to_node.input_connectors() {
+                    let from_node_index = model.get_node_index_by_name(from_connector.0, from_connector.1)?;
+                    let to_node_index = model.get_node_index_by_name(to_connector.0, to_connector.1)?;
+                    model.connect_nodes(from_node_index, to_node_index)?;
+                }
+            }
+        }
+
+        // Build the parameters
+        // if let Some(remaining_parameters) = schema.parameters {
+        //     while remaining_parameters.len() > 0 {
+        //         let mut failed_parameters: Vec<Parameter> = Vec::new();
+        //
+        //         for parameter in remaining_parameters {
+        //             match parameter.add_to_model(model) {}
+        //         }
+        //     }
+        // }
+
+        Ok(model)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::PywrModel;
+    use crate::scenario::ScenarioGroupCollection;
+    use crate::solvers::clp::ClpSolver;
+    use crate::solvers::Solver;
+    use crate::timestep::Timestepper;
 
-    #[test]
-    fn test_simple1() {
-        let data = r#"
+    fn default_timestepper() -> Timestepper {
+        Timestepper::new("2020-01-01", "2020-01-15", "%Y-%m-%d", 1).unwrap()
+    }
+
+    fn default_scenarios() -> ScenarioGroupCollection {
+        let mut scenarios = ScenarioGroupCollection::new();
+        scenarios.add_group("test-scenario", 10);
+        scenarios
+    }
+
+    fn simple1_str() -> &'static str {
+        r#"
             {
                 "metadata": {
                     "title": "Simple 1",
@@ -111,11 +172,33 @@ mod tests {
                     }
                 ]
             }
-            "#;
+            "#
+    }
 
-        let model: PywrModel = serde_json::from_str(data).unwrap();
+    #[test]
+    fn test_simple1_schema() {
+        let data = simple1_str();
+        let schema: PywrModel = serde_json::from_str(data).unwrap();
+
+        assert_eq!(schema.nodes.len(), 3);
+        assert_eq!(schema.edges.len(), 2);
+    }
+
+    #[test]
+    fn test_simple1_run() {
+        let data = simple1_str();
+        let schema: PywrModel = serde_json::from_str(data).unwrap();
+        let mut model: crate::model::Model = schema.try_into().unwrap();
 
         assert_eq!(model.nodes.len(), 3);
         assert_eq!(model.edges.len(), 2);
+
+        let timestepper = default_timestepper();
+        let scenarios = default_scenarios();
+        let mut solver: Box<dyn Solver> = Box::new(ClpSolver::new());
+
+        model.run(timestepper, scenarios, &mut solver).unwrap()
+
+        // TODO assert the results!
     }
 }

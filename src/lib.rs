@@ -62,6 +62,8 @@ pub enum PywrError {
     FlowConstraintsUndefined,
     #[error("storage constraints are undefined for this node")]
     StorageConstraintsUndefined,
+    #[error("missing initial volume for node: {0}")]
+    MissingInitialVolume(String),
     #[error("unable to parse date")]
     ParseError(#[from] ParseError),
     #[error("timestep index out of range")]

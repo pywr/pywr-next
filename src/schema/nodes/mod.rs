@@ -1,7 +1,12 @@
 mod core;
+mod river_gauge;
 
-pub use crate::schema::nodes::core::{CatchmentNode, InputNode, LinkNode, OutputNode, ReservoirNode, StorageNode};
-use crate::schema::parameters::ParameterFloatValue;
+pub use crate::schema::nodes::core::{
+    CatchmentNode, InputNode, LinkNode, OutputNode, StorageNode, WaterTreatmentWorks,
+};
+use crate::schema::parameters::DynamicFloatValue;
+use crate::{NodeIndex, PywrError};
+pub use river_gauge::RiverGaugeNode;
 use serde_json::Value;
 use std::collections::HashMap;
 
@@ -31,18 +36,12 @@ pub struct CustomNode {
 #[derive(serde::Deserialize, serde::Serialize)]
 #[serde(tag = "type")]
 pub enum CoreNode {
-    #[serde(alias = "input")]
     Input(InputNode),
-    #[serde(alias = "link")]
     Link(LinkNode),
-    #[serde(alias = "output")]
     Output(OutputNode),
-    #[serde(alias = "storage")]
     Storage(StorageNode),
-    #[serde(alias = "reservoir")]
-    Reservoir(ReservoirNode),
-    #[serde(alias = "catchment")]
     Catchment(CatchmentNode),
+    RiverGauge(RiverGaugeNode),
 }
 
 impl CoreNode {
@@ -56,12 +55,12 @@ impl CoreNode {
 
     pub fn node_type(&self) -> &str {
         match self {
-            CoreNode::Input(_) => "input",
-            CoreNode::Link(_) => "link",
-            CoreNode::Output(_) => "output",
-            CoreNode::Storage(_) => "storage",
-            CoreNode::Reservoir(_) => "reservoir",
-            CoreNode::Catchment(_) => "catchment",
+            CoreNode::Input(_) => "Input",
+            CoreNode::Link(_) => "Link",
+            CoreNode::Output(_) => "Output",
+            CoreNode::Storage(_) => "Storage",
+            CoreNode::Catchment(_) => "Catchment",
+            CoreNode::RiverGauge(_) => "RiverGauge",
         }
     }
 
@@ -71,19 +70,51 @@ impl CoreNode {
             CoreNode::Link(n) => &n.meta,
             CoreNode::Output(n) => &n.meta,
             CoreNode::Storage(n) => &n.meta,
-            CoreNode::Reservoir(n) => &n.meta,
             CoreNode::Catchment(n) => &n.meta,
+            CoreNode::RiverGauge(n) => &n.meta,
         }
     }
 
-    pub fn parameters(&self) -> HashMap<&str, &ParameterFloatValue> {
+    pub fn parameters(&self) -> HashMap<&str, &DynamicFloatValue> {
         match self {
             CoreNode::Input(n) => n.parameters(),
             CoreNode::Link(n) => n.parameters(),
             CoreNode::Output(n) => n.parameters(),
             CoreNode::Storage(n) => n.parameters(),
-            CoreNode::Reservoir(n) => n.parameters(),
-            _ => HashMap::new(),
+            _ => HashMap::new(), // TODO complete
+        }
+    }
+
+    pub fn add_to_model(&self, model: &mut crate::model::Model) -> Result<(), PywrError> {
+        match self {
+            CoreNode::Input(n) => n.add_to_model(model),
+            CoreNode::Link(n) => n.add_to_model(model),
+            CoreNode::Output(n) => n.add_to_model(model),
+            CoreNode::Storage(n) => n.add_to_model(model),
+            CoreNode::Catchment(n) => n.add_to_model(model),
+            CoreNode::RiverGauge(n) => n.add_to_model(model),
+        }
+    }
+
+    pub fn input_connectors(&self) -> Vec<(&str, Option<&str>)> {
+        match self {
+            CoreNode::Input(n) => n.input_connectors(),
+            CoreNode::Link(n) => n.input_connectors(),
+            CoreNode::Output(n) => n.input_connectors(),
+            CoreNode::Storage(n) => n.input_connectors(),
+            CoreNode::Catchment(n) => n.input_connectors(),
+            CoreNode::RiverGauge(n) => n.input_connectors(),
+        }
+    }
+
+    pub fn output_connectors(&self) -> Vec<(&str, Option<&str>)> {
+        match self {
+            CoreNode::Input(n) => n.output_connectors(),
+            CoreNode::Link(n) => n.output_connectors(),
+            CoreNode::Output(n) => n.output_connectors(),
+            CoreNode::Storage(n) => n.output_connectors(),
+            CoreNode::Catchment(n) => n.output_connectors(),
+            CoreNode::RiverGauge(n) => n.output_connectors(),
         }
     }
 }
@@ -117,10 +148,31 @@ impl Node {
         }
     }
 
-    pub fn parameters(&self) -> HashMap<&str, &ParameterFloatValue> {
+    pub fn parameters(&self) -> HashMap<&str, &DynamicFloatValue> {
         match self {
             Node::Core(n) => n.parameters(),
             Node::Custom(_) => HashMap::new(),
+        }
+    }
+
+    pub fn add_to_model(&self, model: &mut crate::model::Model) -> Result<(), PywrError> {
+        match self {
+            Node::Core(n) => n.add_to_model(model),
+            Node::Custom(n) => panic!("TODO custom nodes not yet supported: {}", n.meta.name.as_str()),
+        }
+    }
+
+    pub fn input_connectors(&self) -> Vec<(&str, Option<&str>)> {
+        match self {
+            Node::Core(n) => n.input_connectors(),
+            Node::Custom(n) => panic!("TODO custom nodes not yet supported: {}", n.meta.name.as_str()),
+        }
+    }
+
+    pub fn output_connectors(&self) -> Vec<(&str, Option<&str>)> {
+        match self {
+            Node::Core(n) => n.output_connectors(),
+            Node::Custom(n) => panic!("TODO custom nodes not yet supported: {}", n.meta.name.as_str()),
         }
     }
 }

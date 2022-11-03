@@ -1,6 +1,6 @@
 use crate::metric::Metric;
 use crate::model::Model;
-use crate::node::{Constraint, ConstraintValue};
+use crate::node::{Constraint, ConstraintValue, StorageInitialVolume};
 use crate::parameters::{AggFunc, AggIndexFunc};
 use crate::scenario::ScenarioGroupCollection;
 use crate::solvers::clp::ClpSolver;
@@ -185,7 +185,10 @@ impl PyModel {
     }
 
     fn add_storage_node(&mut self, name: &str, sub_name: Option<&str>, initial_volume: f64) -> PyResult<NodeIndex> {
-        let idx = self.model.add_storage_node(name, sub_name, initial_volume)?;
+        // TODO support proportional initial volume in Python API
+        let idx = self
+            .model
+            .add_storage_node(name, sub_name, StorageInitialVolume::Absolute(initial_volume))?;
         Ok(idx)
     }
 

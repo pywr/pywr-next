@@ -79,7 +79,12 @@ impl NodeVec {
         node_index
     }
 
-    pub fn push_new_storage(&mut self, name: &str, sub_name: Option<&str>, initial_volume: f64) -> NodeIndex {
+    pub fn push_new_storage(
+        &mut self,
+        name: &str,
+        sub_name: Option<&str>,
+        initial_volume: StorageInitialVolume,
+    ) -> NodeIndex {
         let node_index = NodeIndex(self.nodes.len());
         let node = Node::new_storage(&node_index, name, sub_name, initial_volume);
         self.nodes.push(node);
@@ -120,7 +125,12 @@ impl Node {
     }
 
     /// Create a new storage node
-    pub fn new_storage(node_index: &NodeIndex, name: &str, sub_name: Option<&str>, initial_volume: f64) -> Self {
+    pub fn new_storage(
+        node_index: &NodeIndex,
+        name: &str,
+        sub_name: Option<&str>,
+        initial_volume: StorageInitialVolume,
+    ) -> Self {
         Self::Storage(StorageNode::new(node_index, name, sub_name, initial_volume))
     }
 
@@ -188,7 +198,7 @@ impl Node {
             Self::Output(_n) => NodeState::new_flow_state(),
             Self::Link(_n) => NodeState::new_flow_state(),
             // TODO fix initial proportional volume!!!
-            Self::Storage(n) => NodeState::new_storage_state(n.initial_volume),
+            Self::Storage(n) => NodeState::new_storage_state(n.get_initial_volume()),
         }
     }
 
@@ -715,18 +725,24 @@ impl LinkNode {
     }
 }
 
+#[derive(Debug, PartialEq, Copy, Clone)]
+pub enum StorageInitialVolume {
+    Absolute(f64),
+    Proportional(f64),
+}
+
 #[derive(Debug, PartialEq)]
 pub struct StorageNode {
     pub meta: NodeMeta<NodeIndex>,
     pub cost: ConstraintValue,
-    pub initial_volume: f64,
+    pub initial_volume: StorageInitialVolume,
     pub storage_constraints: StorageConstraints,
     pub incoming_edges: Vec<Edge>,
     pub outgoing_edges: Vec<Edge>,
 }
 
 impl StorageNode {
-    fn new(index: &NodeIndex, name: &str, sub_name: Option<&str>, initial_volume: f64) -> Self {
+    fn new(index: &NodeIndex, name: &str, sub_name: Option<&str>, initial_volume: StorageInitialVolume) -> Self {
         Self {
             meta: NodeMeta::new(index, name, sub_name),
             cost: ConstraintValue::None,
@@ -765,5 +781,13 @@ impl StorageNode {
     }
     fn add_outgoing_edge(&mut self, edge: Edge) {
         self.outgoing_edges.push(edge);
+    }
+
+    /// Compute the initial absolute volume
+    fn get_initial_volume(&self) -> f64 {
+        match self.initial_volume {
+            StorageInitialVolume::Absolute(v) => v,
+            StorageInitialVolume::Proportional(pc) => pc / self.get_max_volume(),
+        }
     }
 }
