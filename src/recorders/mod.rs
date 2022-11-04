@@ -277,11 +277,11 @@ mod tests {
     use crate::scenario::ScenarioGroupCollection;
     use crate::solvers::clp::ClpSolver;
     use crate::solvers::Solver;
-
     use crate::timestep::Timestepper;
+    use time::macros::date;
 
     fn default_timestepper() -> Timestepper {
-        Timestepper::new("2020-01-01", "2020-01-15", "%Y-%m-%d", 1).unwrap()
+        Timestepper::new(date!(2020 - 01 - 01), date!(2020 - 01 - 15), 1)
     }
 
     fn default_scenarios() -> ScenarioGroupCollection {

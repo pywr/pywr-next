@@ -15,7 +15,7 @@ pub struct Metadata {
 #[derive(serde::Deserialize)]
 #[serde(untagged)]
 pub enum Timestep {
-    Days(u64),
+    Days(i64),
     Frequency(String),
 }
 
@@ -24,6 +24,17 @@ pub struct Timestepper {
     pub start: Date,
     pub end: Date,
     pub timestep: Timestep,
+}
+
+impl From<Timestepper> for crate::timestep::Timestepper {
+    fn from(ts: Timestepper) -> Self {
+        let timestep = match ts.timestep {
+            Timestep::Days(d) => d,
+            _ => todo!(),
+        };
+
+        Self::new(ts.start, ts.end, timestep)
+    }
 }
 
 #[derive(serde::Deserialize)]
@@ -120,9 +131,10 @@ mod tests {
     use crate::solvers::clp::ClpSolver;
     use crate::solvers::Solver;
     use crate::timestep::Timestepper;
+    use time::macros::date;
 
     fn default_timestepper() -> Timestepper {
-        Timestepper::new("2020-01-01", "2020-01-15", "%Y-%m-%d", 1).unwrap()
+        Timestepper::new(date!(2020 - 01 - 01), date!(2020 - 01 - 15), 1)
     }
 
     fn default_scenarios() -> ScenarioGroupCollection {

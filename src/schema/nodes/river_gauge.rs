@@ -64,9 +64,10 @@ mod tests {
     use crate::solvers::clp::ClpSolver;
     use crate::solvers::Solver;
     use crate::timestep::Timestepper;
+    use time::macros::date;
 
     fn default_timestepper() -> Timestepper {
-        Timestepper::new("2020-01-01", "2020-01-15", "%Y-%m-%d", 1).unwrap()
+        Timestepper::new(date!(2020 - 01 - 01), date!(2020 - 01 - 15), 1)
     }
 
     fn default_scenarios() -> ScenarioGroupCollection {
@@ -139,7 +140,7 @@ mod tests {
     }
 
     #[test]
-    fn test_simple1_run() {
+    fn test_model_run() {
         let data = model_str();
         let schema: PywrModel = serde_json::from_str(data).unwrap();
         let mut model: crate::model::Model = schema.try_into().unwrap();

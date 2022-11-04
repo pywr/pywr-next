@@ -4,7 +4,6 @@ use crate::scenario::ScenarioIndex;
 use crate::state::ParameterState;
 use crate::timestep::Timestep;
 use crate::{NetworkState, PywrError};
-use chrono::Datelike;
 
 pub struct DailyProfileParameter {
     meta: ParameterMeta,
@@ -32,6 +31,6 @@ impl _Parameter for DailyProfileParameter {
         _state: &NetworkState,
         _parameter_state: &ParameterState,
     ) -> Result<f64, PywrError> {
-        Ok(self.values[timestep.date.ordinal0() as usize])
+        Ok(self.values[timestep.date.ordinal() as usize])
     }
 }

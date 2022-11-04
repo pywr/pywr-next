@@ -9,7 +9,6 @@ edition = "2021"
 [dependencies]
 libc = "0.2.97"
 thiserror = "1.0.25"
-chrono = "0.4.19" # TODO rm chrono
 ndarray = "0.15.3"
 numpy = "0.14.1"
 float-cmp = "0.8.0"
@@ -18,7 +17,7 @@ clp-sys = { path = "./clp-sys" }
 wasmer = "2.0.0"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1.0"
-time = { version = "0.3", features = ["serde", "serde-well-known", "serde-human-readable"] }
+time = { version = "0.3", features = ["serde", "serde-well-known", "serde-human-readable", "macros"] }
 svgbobdoc = { version = "0.3.0", features = ["enable"]  }
 
 

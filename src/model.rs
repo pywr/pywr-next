@@ -525,12 +525,12 @@ mod tests {
     use crate::solvers::Solver;
     use crate::timestep::Timestepper;
     use float_cmp::approx_eq;
-    use std::ops::Deref;
-
     use ndarray::Array2;
+    use std::ops::Deref;
+    use time::macros::date;
 
     fn default_timestepper() -> Timestepper {
-        Timestepper::new("2020-01-01", "2020-01-15", "%Y-%m-%d", 1).unwrap()
+        Timestepper::new(date!(2020 - 01 - 01), date!(2020 - 01 - 15), 1)
     }
 
     fn default_scenarios() -> ScenarioGroupCollection {

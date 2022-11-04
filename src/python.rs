@@ -238,7 +238,14 @@ impl PyModel {
     }
 
     fn run(&mut self, solver_name: &str, start: &str, end: &str, timestep: i64) -> PyResult<()> {
-        let timestepper = Timestepper::new(start, end, "%Y-%m-%d", timestep)?;
+        let format = time::format_description::parse("[year]-[month]-[day]")
+            .map_err(|e| PywrError::InvalidDateFormatDescription(e))?;
+
+        let timestepper = Timestepper::new(
+            time::Date::parse(start, &format).map_err(|e| PywrError::DateParse(e))?,
+            time::Date::parse(end, &format).map_err(|e| PywrError::DateParse(e))?,
+            timestep,
+        );
         let mut scenarios = ScenarioGroupCollection::new();
         scenarios.add_group("test-scenario", 1);
 
@@ -587,10 +594,12 @@ impl PyModel {
     fn add_uniform_drawdown_profile_parameter(
         &mut self,
         name: &str,
-        reset_day: u32,
-        reset_month: u32,
-        residual_days: u32,
+        reset_day: u8,
+        reset_month: u8,
+        residual_days: u8,
     ) -> PyResult<parameters::ParameterIndex> {
+        let reset_month = time::Month::try_from(reset_month).map_err(|e| PywrError::InvalidDateComponentRange(e))?;
+
         let parameter = parameters::UniformDrawdownProfileParameter::new(name, reset_day, reset_month, residual_days);
         let idx = self.model.add_parameter(Box::new(parameter))?.index();
         Ok(idx)

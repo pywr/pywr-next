@@ -190,7 +190,7 @@ pub struct CatchmentNode {
 
 impl CatchmentNode {
     pub fn add_to_model(&self, model: &mut crate::model::Model) -> Result<(), PywrError> {
-        model.add_input_node(self.meta.name.as_str(), None);
+        model.add_input_node(self.meta.name.as_str(), None)?;
         Ok(())
     }
 

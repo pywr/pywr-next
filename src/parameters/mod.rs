@@ -404,9 +404,10 @@ impl _Parameter for Array2Parameter {
 mod tests {
 
     use crate::timestep::Timestepper;
+    use time::macros::date;
 
-    fn test_timestepper() -> Timestepper {
-        Timestepper::new("2020-01-01", "2020-12-31", "%Y-%m-%d", 1).unwrap()
+    fn default_timestepper() -> Timestepper {
+        Timestepper::new(date!(2020 - 01 - 01), date!(2020 - 01 - 15), 1)
     }
 
     // #[test]

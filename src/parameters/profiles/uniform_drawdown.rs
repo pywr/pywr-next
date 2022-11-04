@@ -1,31 +1,34 @@
+use time::{Date, Month};
+
 use crate::model::Model;
 use crate::parameters::{ParameterMeta, _Parameter};
 use crate::scenario::ScenarioIndex;
 use crate::state::ParameterState;
 use crate::timestep::Timestep;
 use crate::{NetworkState, PywrError};
-use chrono::Datelike;
 
 fn is_leap_year(year: i32) -> bool {
     (year % 4 == 0) & ((year % 100 != 0) | (year % 400 == 0))
 }
 
 struct ResetDate {
-    day: u32,
-    month: u32,
+    day: u8,
+    month: Month,
 }
 
 pub struct UniformDrawdownProfileParameter {
     meta: ParameterMeta,
     reset: ResetDate,
-    residual_days: u32,
-    reset_doy: u32,
+    residual_days: u8,
+    reset_doy: u16,
 }
 
 impl UniformDrawdownProfileParameter {
-    pub fn new(name: &str, reset_day: u32, reset_month: u32, residual_days: u32) -> Self {
+    pub fn new(name: &str, reset_day: u8, reset_month: Month, residual_days: u8) -> Self {
         // Calculate the reset day of year in a known leap year.
-        let reset_doy = chrono::NaiveDate::from_ymd(2016, reset_month, reset_day).ordinal0();
+        let reset_doy = Date::from_calendar_date(2016, reset_month, reset_day)
+            .expect("Invalid reset day")
+            .ordinal();
 
         Self {
             meta: ParameterMeta::new(name),
@@ -55,7 +58,7 @@ impl _Parameter for UniformDrawdownProfileParameter {
         let mut year = timestep.date.year();
 
         // Zero-base current day of the year.
-        let current_doy = timestep.date.ordinal0();
+        let current_doy = timestep.date.ordinal();
         let mut days_into_period: i32 = current_doy as i32 - self.reset_doy as i32;
         if days_into_period < 0 {
             // We're not past the reset day yet; use the previous year

@@ -1,4 +1,3 @@
-use chrono::ParseError;
 use thiserror::Error;
 
 use crate::edge::{Edge, EdgeIndex};
@@ -64,8 +63,12 @@ pub enum PywrError {
     StorageConstraintsUndefined,
     #[error("missing initial volume for node: {0}")]
     MissingInitialVolume(String),
-    #[error("unable to parse date")]
-    ParseError(#[from] ParseError),
+    #[error("invalid date format description")]
+    InvalidDateFormatDescription(#[from] time::error::InvalidFormatDescription),
+    #[error("failed to parse date")]
+    DateParse(#[from] time::error::Parse),
+    #[error("invalid date component range")]
+    InvalidDateComponentRange(#[from] time::error::ComponentRange),
     #[error("timestep index out of range")]
     TimestepIndexOutOfRange,
     #[error("solver not initialised")]
