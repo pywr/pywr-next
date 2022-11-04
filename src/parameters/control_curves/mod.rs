@@ -1,10 +1,12 @@
-pub mod index;
-pub mod interpolated;
-pub mod piecewise;
+mod index;
+mod interpolated;
+mod piecewise;
+mod simple;
 
 pub use index::ControlCurveIndexParameter;
 pub use interpolated::InterpolatedParameter;
 pub use piecewise::PiecewiseInterpolatedParameter;
+pub use simple::ControlCurveParameter;
 
 /// Interpolate
 fn interpolate(value: f64, lower_bound: f64, upper_bound: f64, lower_value: f64, upper_value: f64) -> f64 {

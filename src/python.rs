@@ -1,13 +1,14 @@
 use crate::metric::Metric;
 use crate::model::Model;
-use crate::node::{Constraint, ConstraintValue};
+use crate::node::{Constraint, ConstraintValue, StorageInitialVolume};
 use crate::parameters::{AggFunc, AggIndexFunc};
 use crate::scenario::ScenarioGroupCollection;
 use crate::solvers::clp::ClpSolver;
 use crate::solvers::Solver;
 use crate::timestep::Timestepper;
-use crate::{parameters, recorders};
+use crate::{parameters, recorders, IndexParameterIndex, ParameterIndex};
 use crate::{EdgeIndex, NodeIndex, PywrError};
+use std::ops::Deref;
 
 use numpy::PyReadonlyArray1;
 use pyo3::create_exception;
@@ -15,6 +16,7 @@ use pyo3::exceptions::{PyException, PyRuntimeError};
 use pyo3::prelude::*;
 
 use crate::aggregated_node::AggregatedNodeIndex;
+use crate::virtual_storage::VirtualStorageIndex;
 use pyo3::PyErr;
 use std::path::Path;
 use std::str::FromStr;
@@ -22,6 +24,23 @@ use std::str::FromStr;
 /// Python API
 ///
 /// The following structures provide a Python API to access the core model structures.
+///
+///
+///
+
+impl IntoPy<PyObject> for ParameterIndex {
+    fn into_py(self, py: Python<'_>) -> PyObject {
+        // delegates to i32's IntoPy implementation.
+        self.deref().into_py(py)
+    }
+}
+
+impl IntoPy<PyObject> for IndexParameterIndex {
+    fn into_py(self, py: Python<'_>) -> PyObject {
+        // delegates to i32's IntoPy implementation.
+        self.deref().into_py(py)
+    }
+}
 
 #[derive(FromPyObject)]
 enum PyConstraintValue<'a> {
@@ -42,12 +61,71 @@ impl std::convert::From<PywrError> for PyErr {
     }
 }
 
+#[derive(FromPyObject)]
+struct PyMetric {
+    metric_type: String,
+    name: Option<String>,
+    component: Option<String>,
+    value: Option<f64>,
+}
+
 #[pyclass]
 struct PyModel {
     model: Model,
 }
 
 impl PyModel {
+    fn try_pymetric_into_metric(&self, metric: PyMetric) -> Result<Metric, PywrError> {
+        match metric.metric_type.as_str() {
+            "node_volume" => {
+                let metric = Metric::NodeVolume(
+                    self.model
+                        .get_node_by_name(
+                            &metric.name.ok_or(PywrError::InvalidMetricType(metric.metric_type))?,
+                            metric.component.as_deref(),
+                        )?
+                        .index(),
+                );
+                Ok(metric)
+            }
+            "node_proportional_volume" => {
+                let metric = Metric::NodeProportionalVolume(
+                    self.model
+                        .get_node_by_name(
+                            &metric.name.ok_or(PywrError::InvalidMetricType(metric.metric_type))?,
+                            metric.component.as_deref(),
+                        )?
+                        .index(),
+                );
+                Ok(metric)
+            }
+            "virtual_storage_proportional_volume" => {
+                let metric = Metric::VirtualStorageProportionalVolume(
+                    self.model
+                        .get_virtual_storage_node_by_name(
+                            &metric.name.ok_or(PywrError::InvalidMetricType(metric.metric_type))?,
+                            metric.component.as_deref(),
+                        )?
+                        .index(),
+                );
+                Ok(metric)
+            }
+            "parameter_value" => {
+                let metric = Metric::ParameterValue(
+                    self.model
+                        .get_parameter_by_name(&metric.name.ok_or(PywrError::InvalidMetricType(metric.metric_type))?)?
+                        .index(),
+                );
+                Ok(metric)
+            }
+            "constant_float" => {
+                let metric = Metric::Constant(metric.value.ok_or(PywrError::InvalidMetricType(metric.metric_type))?);
+                Ok(metric)
+            }
+            _ => Err(PywrError::InvalidMetricType(metric.metric_type)),
+        }
+    }
+
     fn to_constraint_value(&self, value: PyConstraintValue) -> Result<ConstraintValue, PywrError> {
         match value {
             PyConstraintValue::Scalar(v) => Ok(ConstraintValue::Scalar(v)),
@@ -66,6 +144,24 @@ impl PyModel {
     }
 }
 
+impl IntoPy<PyObject> for NodeIndex {
+    fn into_py(self, py: Python) -> PyObject {
+        self.deref().into_py(py)
+    }
+}
+
+impl IntoPy<PyObject> for AggregatedNodeIndex {
+    fn into_py(self, py: Python) -> PyObject {
+        self.deref().into_py(py)
+    }
+}
+
+impl IntoPy<PyObject> for VirtualStorageIndex {
+    fn into_py(self, py: Python) -> PyObject {
+        self.deref().into_py(py)
+    }
+}
+
 #[pymethods]
 impl PyModel {
     #[new]
@@ -74,22 +170,25 @@ impl PyModel {
     }
 
     fn add_input_node(&mut self, name: &str, sub_name: Option<&str>) -> PyResult<NodeIndex> {
-        let idx = self.model.add_input_node(name, sub_name)?.index();
+        let idx = self.model.add_input_node(name, sub_name)?;
         Ok(idx)
     }
 
     fn add_link_node(&mut self, name: &str, sub_name: Option<&str>) -> PyResult<NodeIndex> {
-        let idx = self.model.add_link_node(name, sub_name)?.index();
+        let idx = self.model.add_link_node(name, sub_name)?;
         Ok(idx)
     }
 
     fn add_output_node(&mut self, name: &str, sub_name: Option<&str>) -> PyResult<NodeIndex> {
-        let idx = self.model.add_output_node(name, sub_name)?.index();
+        let idx = self.model.add_output_node(name, sub_name)?;
         Ok(idx)
     }
 
     fn add_storage_node(&mut self, name: &str, sub_name: Option<&str>, initial_volume: f64) -> PyResult<NodeIndex> {
-        let idx = self.model.add_storage_node(name, sub_name, initial_volume)?.index();
+        // TODO support proportional initial volume in Python API
+        let idx = self
+            .model
+            .add_storage_node(name, sub_name, StorageInitialVolume::Absolute(initial_volume))?;
         Ok(idx)
     }
 
@@ -101,10 +200,26 @@ impl PyModel {
     ) -> PyResult<AggregatedNodeIndex> {
         let mut nodes = Vec::with_capacity(node_names.len());
         for name in node_names {
-            nodes.push(self.model.get_node_by_name(&name, sub_name)?);
+            nodes.push(self.model.get_node_index_by_name(&name, sub_name)?);
         }
 
-        let idx = self.model.add_aggregated_node(name, sub_name, nodes)?.index();
+        let idx = self.model.add_aggregated_node(name, sub_name, nodes)?;
+        Ok(idx)
+    }
+
+    fn add_virtual_storage_node(
+        &mut self,
+        name: &str,
+        sub_name: Option<&str>,
+        node_names: Vec<String>,
+        factors: Option<Vec<f64>>,
+    ) -> PyResult<VirtualStorageIndex> {
+        let mut nodes = Vec::with_capacity(node_names.len());
+        for name in node_names {
+            nodes.push(self.model.get_node_index_by_name(&name, sub_name)?)
+        }
+
+        let idx = self.model.add_virtual_storage_node(name, sub_name, nodes, factors)?;
         Ok(idx)
     }
 
@@ -115,15 +230,22 @@ impl PyModel {
         to_node_name: &str,
         to_node_sub_name: Option<&str>,
     ) -> PyResult<EdgeIndex> {
-        let from_node = self.model.get_node_by_name(from_node_name, from_node_sub_name)?;
-        let to_node = self.model.get_node_by_name(to_node_name, to_node_sub_name)?;
+        let from_node = self.model.get_node_index_by_name(from_node_name, from_node_sub_name)?;
+        let to_node = self.model.get_node_index_by_name(to_node_name, to_node_sub_name)?;
 
-        let edge = self.model.connect_nodes(&from_node, &to_node)?;
+        let edge = self.model.connect_nodes(from_node, to_node)?;
         Ok(edge.index())
     }
 
     fn run(&mut self, solver_name: &str, start: &str, end: &str, timestep: i64) -> PyResult<()> {
-        let timestepper = Timestepper::new(start, end, "%Y-%m-%d", timestep)?;
+        let format = time::format_description::parse("[year]-[month]-[day]")
+            .map_err(|e| PywrError::InvalidDateFormatDescription(e))?;
+
+        let timestepper = Timestepper::new(
+            time::Date::parse(start, &format).map_err(|e| PywrError::DateParse(e))?,
+            time::Date::parse(end, &format).map_err(|e| PywrError::DateParse(e))?,
+            timestep,
+        );
         let mut scenarios = ScenarioGroupCollection::new();
         scenarios.add_group("test-scenario", 1);
 
@@ -145,8 +267,8 @@ impl PyModel {
         constraint_type: &str,
         value: PyConstraintValue,
     ) -> PyResult<()> {
-        let node = self.model.get_node_by_name(node_name, node_sub_name)?;
         let value = self.to_constraint_value(value)?;
+        let node = self.model.get_mut_node_by_name(node_name, node_sub_name)?;
 
         let constraint = match constraint_type {
             "max_flow" => Constraint::MaxFlow,
@@ -170,8 +292,8 @@ impl PyModel {
         constraint_type: &str,
         value: PyConstraintValue,
     ) -> PyResult<()> {
-        let node = self.model.get_aggregated_node_by_name(node_name, node_sub_name)?;
         let value = self.to_constraint_value(value)?;
+        let node = self.model.get_mut_aggregated_node_by_name(node_name, node_sub_name)?;
 
         // TODO implemented FromStr for Constraint
         let constraint = match constraint_type {
@@ -195,8 +317,8 @@ impl PyModel {
         node_sub_name: Option<&str>,
         value: PyConstraintValue,
     ) -> PyResult<()> {
-        let node = self.model.get_node_by_name(node_name, node_sub_name)?;
         let value = self.to_constraint_value(value)?;
+        let node = self.model.get_mut_node_by_name(node_name, node_sub_name)?;
         node.set_cost(value);
         Ok(())
     }
@@ -280,18 +402,13 @@ impl PyModel {
     fn add_piecewise_control_curve(
         &mut self,
         name: &str,
-        storage_node_name: &str,
-        storage_node_sub_name: Option<&str>,
+        metric: PyMetric,
         control_curve_names: Vec<String>,
         values: Vec<(f64, f64)>,
         maximum: f64,
         minimum: f64,
     ) -> PyResult<parameters::ParameterIndex> {
-        let metric = Metric::NodeProportionalVolume(
-            self.model
-                .get_node_by_name(storage_node_name, storage_node_sub_name)?
-                .index(),
-        );
+        let metric = self.try_pymetric_into_metric(metric)?;
 
         let mut control_curves = Vec::with_capacity(control_curve_names.len());
         for name in control_curve_names {
@@ -313,15 +430,10 @@ impl PyModel {
     fn add_control_curve_index_parameter(
         &mut self,
         name: &str,
-        storage_node_name: &str,
-        storage_node_sub_name: Option<&str>,
+        metric: PyMetric,
         control_curve_names: Vec<String>,
     ) -> PyResult<parameters::IndexParameterIndex> {
-        let metric = Metric::NodeProportionalVolume(
-            self.model
-                .get_node_by_name(storage_node_name, storage_node_sub_name)?
-                .index(),
-        );
+        let metric = self.try_pymetric_into_metric(metric)?;
 
         let mut control_curves = Vec::with_capacity(control_curve_names.len());
         for name in control_curve_names {
@@ -336,16 +448,11 @@ impl PyModel {
     fn add_control_curve_interpolated_parameter(
         &mut self,
         name: &str,
-        storage_node_name: &str,
-        storage_node_sub_name: Option<&str>,
+        metric: PyMetric,
         control_curve_names: Vec<String>,
         values: Vec<f64>,
     ) -> PyResult<parameters::ParameterIndex> {
-        let metric = Metric::NodeProportionalVolume(
-            self.model
-                .get_node_by_name(storage_node_name, storage_node_sub_name)?
-                .index(),
-        );
+        let metric = self.try_pymetric_into_metric(metric)?;
 
         let mut control_curves = Vec::with_capacity(control_curve_names.len());
         for name in control_curve_names {
@@ -353,6 +460,52 @@ impl PyModel {
         }
 
         let parameter = parameters::control_curves::InterpolatedParameter::new(name, metric, control_curves, values);
+        let idx = self.model.add_parameter(Box::new(parameter))?.index();
+        Ok(idx)
+    }
+
+    fn add_control_curve_parameter(
+        &mut self,
+        name: &str,
+        metric: PyMetric,
+        control_curve_names: Vec<String>,
+        parameter_names: Vec<String>,
+    ) -> PyResult<parameters::ParameterIndex> {
+        let metric = self.try_pymetric_into_metric(metric)?;
+
+        let mut control_curves = Vec::with_capacity(control_curve_names.len());
+        for name in control_curve_names {
+            control_curves.push(Metric::ParameterValue(self.model.get_parameter_by_name(&name)?.index()));
+        }
+
+        let mut parameters = Vec::with_capacity(parameter_names.len());
+        for name in parameter_names {
+            parameters.push(Metric::ParameterValue(self.model.get_parameter_by_name(&name)?.index()));
+        }
+
+        let parameter =
+            parameters::control_curves::ControlCurveParameter::new(name, metric, control_curves, parameters);
+        let idx = self.model.add_parameter(Box::new(parameter))?.index();
+        Ok(idx)
+    }
+
+    fn add_max_parameter(
+        &mut self,
+        name: &str,
+        metric: PyMetric,
+        threshold: f64,
+    ) -> PyResult<parameters::ParameterIndex> {
+        let metric = self.try_pymetric_into_metric(metric)?;
+
+        let parameter = parameters::MaxParameter::new(name, metric, threshold);
+        let idx = self.model.add_parameter(Box::new(parameter))?.index();
+        Ok(idx)
+    }
+
+    fn add_negative_parameter(&mut self, name: &str, metric: PyMetric) -> PyResult<parameters::ParameterIndex> {
+        let metric = self.try_pymetric_into_metric(metric)?;
+
+        let parameter = parameters::NegativeParameter::new(name, metric);
         let idx = self.model.add_parameter(Box::new(parameter))?.index();
         Ok(idx)
     }
@@ -389,16 +542,16 @@ impl PyModel {
         Ok(idx)
     }
 
-    fn add_parameter_threshold_parameter(
+    fn add_threshold_parameter(
         &mut self,
         name: &str,
-        parameter_name: &str,
-        threshold_name: &str,
+        metric: PyMetric,
+        threshold: PyMetric,
         predicate: &str,
         ratchet: bool,
     ) -> PyResult<parameters::IndexParameterIndex> {
-        let metric = Metric::ParameterValue(self.model.get_parameter_by_name(parameter_name)?.index());
-        let threshold = self.model.get_parameter_by_name(threshold_name)?;
+        let metric = self.try_pymetric_into_metric(metric)?;
+        let threshold = self.try_pymetric_into_metric(threshold)?;
 
         let parameter = parameters::ThresholdParameter::new(
             name,
@@ -411,6 +564,47 @@ impl PyModel {
         Ok(idx)
     }
 
+    fn add_polynomial1d_parameter(
+        &mut self,
+        name: &str,
+        metric: PyMetric,
+        coefficients: Vec<f64>,
+        scale: f64,
+        offset: f64,
+    ) -> PyResult<parameters::ParameterIndex> {
+        let metric = self.try_pymetric_into_metric(metric)?;
+
+        let parameter = parameters::Polynomial1DParameter::new(name, metric, coefficients, scale, offset);
+        let idx = self.model.add_parameter(Box::new(parameter))?.index();
+        Ok(idx)
+    }
+
+    fn add_monthly_profile_parameter(&mut self, name: &str, values: [f64; 12]) -> PyResult<parameters::ParameterIndex> {
+        let parameter = parameters::MonthlyProfileParameter::new(name, values);
+        let idx = self.model.add_parameter(Box::new(parameter))?.index();
+        Ok(idx)
+    }
+
+    fn add_daily_profile_parameter(&mut self, name: &str, values: [f64; 366]) -> PyResult<parameters::ParameterIndex> {
+        let parameter = parameters::DailyProfileParameter::new(name, values);
+        let idx = self.model.add_parameter(Box::new(parameter))?.index();
+        Ok(idx)
+    }
+
+    fn add_uniform_drawdown_profile_parameter(
+        &mut self,
+        name: &str,
+        reset_day: u8,
+        reset_month: u8,
+        residual_days: u8,
+    ) -> PyResult<parameters::ParameterIndex> {
+        let reset_month = time::Month::try_from(reset_month).map_err(|e| PywrError::InvalidDateComponentRange(e))?;
+
+        let parameter = parameters::UniformDrawdownProfileParameter::new(name, reset_day, reset_month, residual_days);
+        let idx = self.model.add_parameter(Box::new(parameter))?.index();
+        Ok(idx)
+    }
+
     fn add_python_recorder(
         &mut self,
         name: &str,
@@ -420,9 +614,9 @@ impl PyModel {
         object: PyObject,
     ) -> PyResult<recorders::RecorderIndex> {
         let metric = match metric {
-            "node_inflow" => Metric::NodeInFlow(self.model.get_node_by_name(component, component_sub_name)?.index()),
-            "node_outflow" => Metric::NodeOutFlow(self.model.get_node_by_name(component, component_sub_name)?.index()),
-            "node_volume" => Metric::NodeVolume(self.model.get_node_by_name(component, component_sub_name)?.index()),
+            "node_inflow" => Metric::NodeInFlow(self.model.get_node_index_by_name(component, component_sub_name)?),
+            "node_outflow" => Metric::NodeOutFlow(self.model.get_node_index_by_name(component, component_sub_name)?),
+            "node_volume" => Metric::NodeVolume(self.model.get_node_index_by_name(component, component_sub_name)?),
             // TODO implement edge_flow
             "parameter" => Metric::ParameterValue(self.model.get_parameter_by_name(component)?.index()),
             _ => return Err(PyErr::from(PywrError::UnrecognisedMetric)),

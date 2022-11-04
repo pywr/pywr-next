@@ -1,8 +1,10 @@
 from __future__ import annotations
-from typing import Optional, Dict, Iterable, Generator, Tuple
+
+from pathlib import Path
+from typing import Optional, Dict, Iterable, Generator, Tuple, Any
 from pydantic import BaseModel, Extra
 from ..pywr import PyModel, ParameterNotFoundError  # type: ignore
-
+from ..tables import TableCollection
 
 node_registry = {}
 
@@ -10,6 +12,7 @@ node_registry = {}
 class BaseNode(BaseModel, extra=Extra.forbid):
     name: str
     comment: Optional[str] = None
+    position: Optional[Any] = None
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
@@ -18,7 +21,7 @@ class BaseNode(BaseModel, extra=Extra.forbid):
     def create_nodes(self, r_model: PyModel):
         raise NotImplementedError()
 
-    def set_constraints(self, r_model: PyModel):
+    def set_constraints(self, r_model: PyModel, path: Path, tables: TableCollection):
         raise NotImplementedError()
 
     def iter_input_connectors(self) -> Generator[Tuple[str, Optional[str]], None, None]:
@@ -86,7 +89,6 @@ class NodeCollection:
 
         collection = cls()
         for node_data in data:
-
             if "type" not in node_data:
                 raise ValueError('"type" key required')
 

@@ -33,14 +33,14 @@ impl FromStr for Predicate {
 pub struct ThresholdParameter {
     meta: ParameterMeta,
     metric: Metric,
-    threshold: Parameter,
+    threshold: Metric,
     predicate: Predicate,
     ratchet: bool,
     previously_activated: InternalParameterState<bool>,
 }
 
 impl ThresholdParameter {
-    pub fn new(name: &str, metric: Metric, threshold: Parameter, predicate: Predicate, ratchet: bool) -> Self {
+    pub fn new(name: &str, metric: Metric, threshold: Metric, predicate: Predicate, ratchet: bool) -> Self {
         Self {
             meta: ParameterMeta::new(name),
             metric,
@@ -80,7 +80,7 @@ impl _IndexParameter for ThresholdParameter {
             return Ok(1);
         }
 
-        let threshold = parameter_state.get_value(self.threshold.index())?;
+        let threshold = self.threshold.get_value(model, network_state, parameter_state)?;
         let value = self.metric.get_value(model, network_state, parameter_state)?;
 
         let active = match self.predicate {

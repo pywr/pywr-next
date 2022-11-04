@@ -35,7 +35,7 @@ impl _Parameter for IndexedArrayParameter {
     ) -> Result<f64, PywrError> {
         let index = parameter_state.get_index(self.index_parameter.index())?;
 
-        let parameter = self.parameters.get(index).ok_or(PywrError::ParameterIndexNotFound)?;
+        let parameter = self.parameters.get(index).ok_or(PywrError::DataOutOfRange)?;
 
         parameter_state.get_value(parameter.index())
     }

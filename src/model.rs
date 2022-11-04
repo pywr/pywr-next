@@ -1,22 +1,34 @@
 use crate::edge::{Edge, EdgeIndex};
-use crate::node::Node;
+use crate::node::{Node, NodeVec, StorageInitialVolume};
 
 use crate::scenario::{ScenarioGroupCollection, ScenarioIndex};
-use crate::solvers::Solver;
+use crate::solvers::{Solver, SolverTimings};
 use crate::state::{EdgeState, NetworkState, ParameterState};
 use crate::timestep::{Timestep, Timestepper};
-use crate::{parameters, recorders, PywrError};
 
-use crate::aggregated_node::AggregatedNode;
+use crate::aggregated_node::{AggregatedNode, AggregatedNodeIndex, AggregatedNodeVec};
+use std::ops::Deref;
+
+use crate::{parameters, recorders, IndexParameterIndex, NodeIndex, ParameterIndex, PywrError};
+
+use crate::parameters::ParameterType;
+use crate::virtual_storage::{VirtualStorage, VirtualStorageIndex, VirtualStorageVec};
+
 use std::time::Instant;
 
+#[derive(Default)]
+pub struct RunTimings {
+    solve: SolverTimings,
+}
+
 pub struct Model {
-    pub nodes: Vec<Node>,
+    pub nodes: NodeVec,
     pub edges: Vec<Edge>,
-    pub aggregated_nodes: Vec<AggregatedNode>,
+    pub aggregated_nodes: AggregatedNodeVec,
+    pub virtual_storage_nodes: VirtualStorageVec,
     parameters: Vec<parameters::Parameter>,
     index_parameters: Vec<parameters::IndexParameter>,
-    parameters_resolve_order: Vec<parameters::ParameterType>,
+    parameters_resolve_order: Vec<ParameterType>,
     recorders: Vec<recorders::Recorder>,
     scenarios: ScenarioGroupCollection,
 }
@@ -33,9 +45,10 @@ impl Default for Model {
 impl Model {
     pub fn new() -> Self {
         Self {
-            nodes: Vec::new(),
+            nodes: NodeVec::new(),
             edges: Vec::new(),
-            aggregated_nodes: Vec::new(),
+            aggregated_nodes: AggregatedNodeVec::new(),
+            virtual_storage_nodes: VirtualStorageVec::new(),
             parameters: Vec::new(),
             index_parameters: Vec::new(),
             parameters_resolve_order: Vec::new(),
@@ -51,7 +64,7 @@ impl Model {
         for _scenario_index in scenario_indices {
             let mut state = NetworkState::new();
 
-            for node in &self.nodes {
+            for node in self.nodes.deref() {
                 state.push_node_state(node.new_state());
             }
 
@@ -99,6 +112,8 @@ impl Model {
     ) -> Result<(), PywrError> {
         let now = Instant::now();
 
+        let mut timings = RunTimings::default();
+
         let timesteps = timestepper.timesteps();
         let scenario_indices = scenarios.scenario_indices();
         // One state per scenario
@@ -111,11 +126,27 @@ impl Model {
 
         // Step a timestep
         for timestep in timesteps.iter() {
-            let next_states = self.step(timestep, &scenario_indices, solver, &current_states)?;
+            let next_states = self.step(timestep, &scenario_indices, solver, &current_states, &mut timings)?;
             current_states = next_states;
             count += scenario_indices.len();
         }
-        println!("speed: {} ts/s", count as f64 / now.elapsed().as_secs_f64());
+
+        let total_duration = now.elapsed().as_secs_f64();
+        println!("total run time: {}s", total_duration);
+        println!(
+            "total update objective time: {}s",
+            timings.solve.update_objective.as_secs_f64()
+        );
+        println!(
+            "total update constraints time: {}s",
+            timings.solve.update_constraints.as_secs_f64()
+        );
+        println!("total LP solve time: {}s", timings.solve.solve.as_secs_f64());
+        println!(
+            "total save solution time: {}s",
+            timings.solve.save_solution.as_secs_f64()
+        );
+        println!("speed: {} ts/s", count as f64 / total_duration);
         self.finalise()?;
         Ok(())
     }
@@ -127,6 +158,7 @@ impl Model {
         scenario_indices: &[ScenarioIndex],
         solver: &mut Box<dyn Solver>,
         current_states: &[NetworkState],
+        timings: &mut RunTimings,
     ) -> Result<Vec<NetworkState>, PywrError> {
         let mut next_states = Vec::with_capacity(current_states.len());
 
@@ -137,7 +169,14 @@ impl Model {
             };
             let pstate = self.compute_parameters(timestep, scenario_index, current_state)?;
 
-            let next_state = solver.solve(self, timestep, current_state, &pstate)?;
+            for p in &self.parameters {
+                let idx = p.index();
+                let value = pstate.get_value(idx)?;
+
+                println!("{}[{}]={}", p.name(), idx, value);
+            }
+            let (next_state, solve_timings) = solver.solve(self, timestep, current_state, &pstate)?;
+            timings.solve += solve_timings;
 
             self.save_recorders(timestep, scenario_index, &next_state, &pstate)?;
             next_states.push(next_state);
@@ -156,9 +195,17 @@ impl Model {
     ) -> Result<ParameterState, PywrError> {
         let mut parameter_state = ParameterState::with_capacity(self.parameters.len(), 0);
 
-        for parameter in &self.parameters {
-            let value = parameter.compute(timestep, scenario_index, self, state, &parameter_state)?;
-            parameter_state.push_value(value);
+        for p_type in &self.parameters_resolve_order {
+            match p_type {
+                ParameterType::Parameter(p) => {
+                    let value = p.compute(timestep, scenario_index, self, state, &parameter_state)?;
+                    parameter_state.push_value(value);
+                }
+                ParameterType::Index(p) => {
+                    let value = p.compute(timestep, scenario_index, self, state, &parameter_state)?;
+                    parameter_state.push_index(value);
+                }
+            }
         }
 
         for _parameter in &self.index_parameters {}
@@ -186,26 +233,70 @@ impl Model {
         Ok(())
     }
 
+    /// Get a Node from a node's name
+    pub fn get_node_index_by_name(&self, name: &str, sub_name: Option<&str>) -> Result<NodeIndex, PywrError> {
+        Ok(self.get_node_by_name(name, sub_name)?.index())
+    }
+
+    /// Get a Node from a node's name
+    pub fn get_node_by_name(&self, name: &str, sub_name: Option<&str>) -> Result<&Node, PywrError> {
+        match self.nodes.iter().find(|&n| n.full_name() == (name, sub_name)) {
+            Some(node) => Ok(node),
+            None => Err(PywrError::NodeNotFound(name.to_string())),
+        }
+    }
+
     /// Get a NodeIndex from a node's name
-    pub fn get_node_by_name(&self, name: &str, sub_name: Option<&str>) -> Result<Node, PywrError> {
-        match self
-            .nodes
-            .iter()
-            .find(|&n| n.full_name() == (name.to_string(), sub_name.map(|s| s.to_string())))
-        {
-            Some(node) => Ok(node.clone()),
+    pub fn get_mut_node_by_name(&mut self, name: &str, sub_name: Option<&str>) -> Result<&mut Node, PywrError> {
+        match self.nodes.iter_mut().find(|n| n.full_name() == (name, sub_name)) {
+            Some(node) => Ok(node),
             None => Err(PywrError::NodeNotFound(name.to_string())),
         }
     }
 
     /// Get a `AggregatedNodeIndex` from a node's name
-    pub fn get_aggregated_node_by_name(&self, name: &str, sub_name: Option<&str>) -> Result<AggregatedNode, PywrError> {
+    pub fn get_aggregated_node_by_name(
+        &self,
+        name: &str,
+        sub_name: Option<&str>,
+    ) -> Result<&AggregatedNode, PywrError> {
         match self
             .aggregated_nodes
             .iter()
-            .find(|&n| n.full_name() == (name.to_string(), sub_name.map(|s| s.to_string())))
+            .find(|&n| n.full_name() == (name, sub_name))
         {
-            Some(node) => Ok(node.clone()),
+            Some(node) => Ok(node),
+            None => Err(PywrError::NodeNotFound(name.to_string())),
+        }
+    }
+
+    pub fn get_mut_aggregated_node_by_name(
+        &mut self,
+        name: &str,
+        sub_name: Option<&str>,
+    ) -> Result<&mut AggregatedNode, PywrError> {
+        match self
+            .aggregated_nodes
+            .iter_mut()
+            .find(|n| n.full_name() == (name, sub_name))
+        {
+            Some(node) => Ok(node),
+            None => Err(PywrError::NodeNotFound(name.to_string())),
+        }
+    }
+
+    /// Get a `VirtualStorageNodeIndex` from a node's name
+    pub fn get_virtual_storage_node_by_name(
+        &self,
+        name: &str,
+        sub_name: Option<&str>,
+    ) -> Result<&VirtualStorage, PywrError> {
+        match self
+            .virtual_storage_nodes
+            .iter()
+            .find(|&n| n.full_name() == (name, sub_name))
+        {
+            Some(node) => Ok(node),
             None => Err(PywrError::NodeNotFound(name.to_string())),
         }
     }
@@ -235,45 +326,42 @@ impl Model {
     }
 
     /// Add a new Node::Input to the model.
-    pub fn add_input_node(&mut self, name: &str, sub_name: Option<&str>) -> Result<Node, PywrError> {
+    pub fn add_input_node(&mut self, name: &str, sub_name: Option<&str>) -> Result<NodeIndex, PywrError> {
         // Check for name.
+        // TODO move this check to `NodeVec`
         if let Ok(_node) = self.get_node_by_name(name, sub_name) {
             return Err(PywrError::NodeNameAlreadyExists(name.to_string()));
         }
 
         // Now add the node to the network.
-        let node_index = self.nodes.len();
-        let node = Node::new_input(&node_index, name, sub_name);
-        self.nodes.push(node.clone());
-        Ok(node)
+        let node_index = self.nodes.push_new_input(name, sub_name);
+        Ok(node_index)
     }
 
     /// Add a new Node::Link to the model.
-    pub fn add_link_node(&mut self, name: &str, sub_name: Option<&str>) -> Result<Node, PywrError> {
+    pub fn add_link_node(&mut self, name: &str, sub_name: Option<&str>) -> Result<NodeIndex, PywrError> {
         // Check for name.
+        // TODO move this check to `NodeVec`
         if let Ok(_node) = self.get_node_by_name(name, sub_name) {
             return Err(PywrError::NodeNameAlreadyExists(name.to_string()));
         }
 
         // Now add the node to the network.
-        let node_index = self.nodes.len();
-        let node = Node::new_link(&node_index, name, sub_name);
-        self.nodes.push(node.clone());
-        Ok(node)
+        let node_index = self.nodes.push_new_link(name, sub_name);
+        Ok(node_index)
     }
 
     /// Add a new Node::Link to the model.
-    pub fn add_output_node(&mut self, name: &str, sub_name: Option<&str>) -> Result<Node, PywrError> {
+    pub fn add_output_node(&mut self, name: &str, sub_name: Option<&str>) -> Result<NodeIndex, PywrError> {
         // Check for name.
+        // TODO move this check to `NodeVec`
         if let Ok(_node) = self.get_node_by_name(name, sub_name) {
             return Err(PywrError::NodeNameAlreadyExists(name.to_string()));
         }
 
         // Now add the node to the network.
-        let node_index = self.nodes.len();
-        let node = Node::new_output(&node_index, name, sub_name);
-        self.nodes.push(node.clone());
-        Ok(node)
+        let node_index = self.nodes.push_new_output(name, sub_name);
+        Ok(node_index)
     }
 
     /// Add a new Node::Link to the model.
@@ -281,18 +369,17 @@ impl Model {
         &mut self,
         name: &str,
         sub_name: Option<&str>,
-        initial_volume: f64,
-    ) -> Result<Node, PywrError> {
+        initial_volume: StorageInitialVolume,
+    ) -> Result<NodeIndex, PywrError> {
         // Check for name.
+        // TODO move this check to `NodeVec`
         if let Ok(_node) = self.get_node_by_name(name, sub_name) {
             return Err(PywrError::NodeNameAlreadyExists(name.to_string()));
         }
 
         // Now add the node to the network.
-        let node_index = self.nodes.len();
-        let node = Node::new_storage(&node_index, name, sub_name, initial_volume);
-        self.nodes.push(node.clone());
-        Ok(node)
+        let node_index = self.nodes.push_new_storage(name, sub_name, initial_volume);
+        Ok(node_index)
     }
 
     /// Add a new `aggregated_node::AggregatedNode` to the model.
@@ -300,17 +387,30 @@ impl Model {
         &mut self,
         name: &str,
         sub_name: Option<&str>,
-        nodes: Vec<Node>,
-    ) -> Result<AggregatedNode, PywrError> {
+        nodes: Vec<NodeIndex>,
+    ) -> Result<AggregatedNodeIndex, PywrError> {
         if let Ok(_agg_node) = self.get_aggregated_node_by_name(name, sub_name) {
             return Err(PywrError::NodeNameAlreadyExists(name.to_string()));
         }
 
-        let agg_node_index = self.aggregated_nodes.len();
-        let agg_node = AggregatedNode::new(&agg_node_index, name, sub_name, nodes);
-        self.aggregated_nodes.push(agg_node.clone());
+        let node_index = self.aggregated_nodes.push_new(name, sub_name, nodes);
+        Ok(node_index)
+    }
 
-        Ok(agg_node)
+    /// Add a new `VirtualStorage` to the model.
+    pub fn add_virtual_storage_node(
+        &mut self,
+        name: &str,
+        sub_name: Option<&str>,
+        nodes: Vec<NodeIndex>,
+        factors: Option<Vec<f64>>,
+    ) -> Result<VirtualStorageIndex, PywrError> {
+        if let Ok(_agg_node) = self.get_virtual_storage_node_by_name(name, sub_name) {
+            return Err(PywrError::NodeNameAlreadyExists(name.to_string()));
+        }
+
+        let node_index = self.virtual_storage_nodes.push_new(name, sub_name, nodes, factors);
+        Ok(node_index)
     }
 
     /// Add a `parameters::Parameter` to the model
@@ -326,10 +426,14 @@ impl Model {
         //     ));
         // }
 
-        let parameter_index = self.parameters.len();
+        let parameter_index = ParameterIndex::new(self.parameters.len());
 
         let p = parameters::Parameter::new(parameter, parameter_index);
+
+        // Add the parameter ...
         self.parameters.push(p.clone());
+        // .. and add it to the resolve order
+        self.parameters_resolve_order.push(ParameterType::Parameter(p.clone()));
         Ok(p)
     }
 
@@ -346,10 +450,12 @@ impl Model {
         //     ));
         // }
 
-        let parameter_index = self.index_parameters.len();
+        let parameter_index = IndexParameterIndex::new(self.index_parameters.len());
 
         let p = parameters::IndexParameter::new(index_parameter, parameter_index);
         self.index_parameters.push(p.clone());
+        // .. and add it to the resolve order
+        self.parameters_resolve_order.push(ParameterType::Index(p.clone()));
         Ok(p)
     }
 
@@ -370,22 +476,29 @@ impl Model {
     }
 
     /// Connect two nodes together
-    pub(crate) fn connect_nodes(&mut self, from_node: &Node, to_node: &Node) -> Result<Edge, PywrError> {
+    pub(crate) fn connect_nodes(
+        &mut self,
+        from_node_index: NodeIndex,
+        to_node_index: NodeIndex,
+    ) -> Result<Edge, PywrError> {
         // TODO check whether an edge between these two nodes already exists.
 
         // Self connections are not allowed.
-        if from_node == to_node {
+        if from_node_index == to_node_index {
             return Err(PywrError::InvalidNodeConnection);
         }
 
         // Next edge index
         let edge_index = self.edges.len() as EdgeIndex;
-        let edge = Edge::new(&edge_index, from_node, to_node);
+
+        let edge = Edge::new(&edge_index, from_node_index, to_node_index);
 
         // The model can get in a bad state here if the edge is added to the `from_node`
         // successfully, but fails on the `to_node`.
         // Suggest to do a check before attempting to add.
+        let from_node = self.nodes.get_mut(&from_node_index)?;
         from_node.add_outgoing_edge(edge.clone())?;
+        let to_node = self.nodes.get_mut(&to_node_index)?;
         to_node.add_incoming_edge(edge.clone())?;
 
         self.edges.push(edge.clone());
@@ -412,11 +525,12 @@ mod tests {
     use crate::solvers::Solver;
     use crate::timestep::Timestepper;
     use float_cmp::approx_eq;
-
     use ndarray::Array2;
+    use std::ops::Deref;
+    use time::macros::date;
 
     fn default_timestepper() -> Timestepper {
-        Timestepper::new("2020-01-01", "2020-01-15", "%Y-%m-%d", 1).unwrap()
+        Timestepper::new(date!(2020 - 01 - 01), date!(2020 - 01 - 15), 1)
     }
 
     fn default_scenarios() -> ScenarioGroupCollection {
@@ -433,16 +547,19 @@ mod tests {
         let link_node = model.add_link_node("link", None).unwrap();
         let output_node = model.add_output_node("output", None).unwrap();
 
-        assert_eq!(input_node.index(), 0);
-        assert_eq!(link_node.index(), 1);
-        assert_eq!(output_node.index(), 2);
+        assert_eq!(*input_node.deref(), 0);
+        assert_eq!(*link_node.deref(), 1);
+        assert_eq!(*output_node.deref(), 2);
 
-        let edge = model.connect_nodes(&input_node, &link_node).unwrap();
+        let edge = model.connect_nodes(input_node, link_node).unwrap();
         assert_eq!(edge.index(), 0);
-        let edge = model.connect_nodes(&link_node, &output_node).unwrap();
+        let edge = model.connect_nodes(link_node, output_node).unwrap();
         assert_eq!(edge.index(), 1);
 
-        // Now assert the internal instructure is as expected.
+        // Now assert the internal structure is as expected.
+        let input_node = model.get_node_by_name("input", None).unwrap();
+        let link_node = model.get_node_by_name("link", None).unwrap();
+        let output_node = model.get_node_by_name("output", None).unwrap();
         assert_eq!(input_node.get_outgoing_edges().unwrap().len(), 1);
         assert_eq!(link_node.get_incoming_edges().unwrap().len(), 1);
         assert_eq!(link_node.get_outgoing_edges().unwrap().len(), 1);
@@ -479,7 +596,7 @@ mod tests {
         );
 
         assert_eq!(
-            model.add_storage_node("my-node", None, 10.0),
+            model.add_storage_node("my-node", None, StorageInitialVolume::Absolute(10.0)),
             Err(PywrError::NodeNameAlreadyExists("my-node".to_string()))
         );
     }
@@ -492,12 +609,13 @@ mod tests {
         let link_node = model.add_link_node("link", None).unwrap();
         let output_node = model.add_output_node("output", None).unwrap();
 
-        model.connect_nodes(&input_node, &link_node).unwrap();
-        model.connect_nodes(&link_node, &output_node).unwrap();
+        model.connect_nodes(input_node, link_node).unwrap();
+        model.connect_nodes(link_node, output_node).unwrap();
 
         let inflow = parameters::VectorParameter::new("inflow", vec![10.0; 366]);
         let inflow = model.add_parameter(Box::new(inflow)).unwrap();
 
+        let input_node = model.get_mut_node_by_name("input", None).unwrap();
         input_node
             .set_constraint(ConstraintValue::Parameter(inflow), Constraint::MaxFlow)
             .unwrap();
@@ -515,13 +633,13 @@ mod tests {
         );
         let total_demand = model.add_parameter(Box::new(total_demand)).unwrap();
 
-        output_node
-            .set_constraint(ConstraintValue::Parameter(total_demand), Constraint::MaxFlow)
-            .unwrap();
-
         let demand_cost = parameters::ConstantParameter::new("demand-cost", -10.0);
         let demand_cost = model.add_parameter(Box::new(demand_cost)).unwrap();
 
+        let output_node = model.get_mut_node_by_name("output", None).unwrap();
+        output_node
+            .set_constraint(ConstraintValue::Parameter(total_demand), Constraint::MaxFlow)
+            .unwrap();
         output_node.set_cost(ConstraintValue::Parameter(demand_cost));
 
         model
@@ -531,28 +649,32 @@ mod tests {
     fn simple_storage_model() -> Model {
         let mut model = Model::new();
 
-        let storage_node = model.add_storage_node("reservoir", None, 100.0).unwrap();
+        let storage_node = model
+            .add_storage_node("reservoir", None, StorageInitialVolume::Absolute(100.0))
+            .unwrap();
         let output_node = model.add_output_node("output", None).unwrap();
 
-        model.connect_nodes(&storage_node, &output_node).unwrap();
+        model.connect_nodes(storage_node, output_node).unwrap();
 
         // Apply demand to the model
         // TODO convenience function for adding a constant constraint.
         let demand = parameters::ConstantParameter::new("demand", 10.0);
         let demand = model.add_parameter(Box::new(demand)).unwrap();
-        output_node
-            .set_constraint(ConstraintValue::Parameter(demand), Constraint::MaxFlow)
-            .unwrap();
 
         let demand_cost = parameters::ConstantParameter::new("demand-cost", -10.0);
         let demand_cost = model.add_parameter(Box::new(demand_cost)).unwrap();
+
+        let output_node = model.get_mut_node_by_name("output", None).unwrap();
+        output_node
+            .set_constraint(ConstraintValue::Parameter(demand), Constraint::MaxFlow)
+            .unwrap();
         output_node.set_cost(ConstraintValue::Parameter(demand_cost));
 
-        let max_volume = parameters::ConstantParameter::new("max-volume", 100.0);
-        let max_volume = model.add_parameter(Box::new(max_volume)).unwrap();
+        let max_volume = 100.0;
 
+        let storage_node = model.get_mut_node_by_name("reservoir", None).unwrap();
         storage_node
-            .set_constraint(ConstraintValue::Parameter(max_volume), Constraint::MaxVolume)
+            .set_constraint(ConstraintValue::Scalar(max_volume), Constraint::MaxVolume)
             .unwrap();
 
         model
@@ -562,18 +684,19 @@ mod tests {
     /// Test adding a constant parameter to a model.
     fn test_constant_parameter() {
         let mut model = Model::new();
-        let node = model.add_input_node("input", None).unwrap();
+        let node_index = model.add_input_node("input", None).unwrap();
 
         let input_max_flow = parameters::ConstantParameter::new("my-constant", 10.0);
         let parameter = model.add_parameter(Box::new(input_max_flow)).unwrap();
-        assert_eq!(parameter.index(), 0);
+
         // assign the new parameter to one of the nodes.
+        let node = model.get_mut_node_by_name("input", None).unwrap();
         node.set_constraint(ConstraintValue::Parameter(parameter.clone()), Constraint::MaxFlow)
             .unwrap();
 
         // Try to assign a constraint not defined for particular node type
         assert_eq!(
-            node.set_constraint(ConstraintValue::Parameter(parameter), Constraint::MaxVolume),
+            node.set_constraint(ConstraintValue::Scalar(10.0), Constraint::MaxVolume),
             Err(PywrError::StorageConstraintsUndefined)
         );
     }
@@ -587,6 +710,7 @@ mod tests {
 
         solver.setup(&model).unwrap();
 
+        let mut timings = RunTimings::default();
         let timesteps = timestepper.timesteps();
         let mut ts_iter = timesteps.iter();
         let scenario_indices = scenarios.scenario_indices();
@@ -594,14 +718,16 @@ mod tests {
         let current_state = model.get_initial_state(&scenario_indices);
         assert_eq!(current_state.len(), scenario_indices.len());
 
-        let next_state = model.step(ts, &scenario_indices, &mut solver, &current_state).unwrap();
+        let next_state = model
+            .step(ts, &scenario_indices, &mut solver, &current_state, &mut timings)
+            .unwrap();
 
         assert_eq!(next_state.len(), scenario_indices.len());
 
         let output_node = model.get_node_by_name("output", None).unwrap();
 
         let state0 = next_state.get(0).unwrap();
-        let output_inflow = state0.get_node_in_flow(output_node.index()).unwrap();
+        let output_inflow = state0.get_node_in_flow(&output_node.index()).unwrap();
         assert!(approx_eq!(f64, output_inflow, 10.0));
     }
 

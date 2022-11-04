@@ -3,6 +3,10 @@ mod aggregated_index;
 pub mod asymmetric;
 pub mod control_curves;
 pub mod indexed_array;
+mod max;
+mod negative;
+mod polynomial;
+mod profiles;
 pub mod py;
 pub mod simple_wasm;
 mod threshold;
@@ -10,24 +14,72 @@ mod threshold;
 // Re-imports
 pub use aggregated::{AggFunc, AggregatedParameter};
 pub use aggregated_index::{AggIndexFunc, AggregatedIndexParameter};
+pub use max::MaxParameter;
+pub use negative::NegativeParameter;
+pub use polynomial::Polynomial1DParameter;
+pub use profiles::{DailyProfileParameter, MonthlyProfileParameter, UniformDrawdownProfileParameter};
 pub use threshold::{Predicate, ThresholdParameter};
 
 use super::{NetworkState, PywrError};
 use crate::model::Model;
 use crate::scenario::ScenarioIndex;
+
 use crate::state::ParameterState;
 use crate::timestep::Timestep;
 use ndarray::{Array1, Array2};
 use std::cell::RefCell;
 use std::fmt;
+use std::fmt::{Display, Formatter};
 use std::ops::Deref;
 use std::rc::Rc;
 
-pub type ParameterIndex = usize;
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub struct ParameterIndex(usize);
 pub type ParameterRef = Rc<RefCell<Box<dyn _Parameter>>>;
 
-pub type IndexParameterIndex = usize;
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub struct IndexParameterIndex(usize);
 pub type IndexParameterRef = Rc<RefCell<Box<dyn _IndexParameter>>>;
+
+impl ParameterIndex {
+    pub fn new(idx: usize) -> Self {
+        Self(idx)
+    }
+}
+
+impl IndexParameterIndex {
+    pub fn new(idx: usize) -> Self {
+        Self(idx)
+    }
+}
+
+impl Deref for ParameterIndex {
+    type Target = usize;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl Deref for IndexParameterIndex {
+    type Target = usize;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl Display for ParameterIndex {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl Display for IndexParameterIndex {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
 
 /// Meta data common to all parameters.
 #[derive(Debug)]
@@ -163,7 +215,7 @@ impl IndexParameter {
         Self(Rc::new(RefCell::new(parameter)), index)
     }
 
-    pub fn index(&self) -> ParameterIndex {
+    pub fn index(&self) -> IndexParameterIndex {
         self.1
     }
 
@@ -352,9 +404,10 @@ impl _Parameter for Array2Parameter {
 mod tests {
 
     use crate::timestep::Timestepper;
+    use time::macros::date;
 
-    fn test_timestepper() -> Timestepper {
-        Timestepper::new("2020-01-01", "2020-12-31", "%Y-%m-%d", 1).unwrap()
+    fn default_timestepper() -> Timestepper {
+        Timestepper::new(date!(2020 - 01 - 01), date!(2020 - 01 - 15), 1)
     }
 
     // #[test]

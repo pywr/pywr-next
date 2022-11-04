@@ -49,10 +49,9 @@ impl _Recorder for HDF5Recorder {
 
         let shape = (timesteps.len(), scenario_indices.len());
 
-        for node in &model.nodes {
+        for node in model.nodes.deref() {
             let metric = node.default_metric();
             let (name, sub_name) = node.full_name();
-            println!("Adding metric with name: {}", name);
 
             let ds = match sub_name {
                 Some(sn) => {
@@ -66,7 +65,7 @@ impl _Recorder for HDF5Recorder {
                         Err(e) => return Err(PywrError::HDF5Error(e.to_string())),
                     }
                 }
-                None => match file.new_dataset::<f64>().shape(shape).create(&*name) {
+                None => match file.new_dataset::<f64>().shape(shape).create(name) {
                     Ok(ds) => ds,
                     Err(e) => return Err(PywrError::HDF5Error(e.to_string())),
                 },
@@ -75,7 +74,7 @@ impl _Recorder for HDF5Recorder {
             datasets.push((metric, ds));
         }
 
-        for agg_node in &model.aggregated_nodes {
+        for agg_node in model.aggregated_nodes.deref() {
             let metrics = agg_node.default_metric();
             let name = agg_node.name().to_string();
             println!("Adding metric with name: {}", name);

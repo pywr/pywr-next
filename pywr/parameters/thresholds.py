@@ -1,20 +1,24 @@
 from pathlib import Path
-from typing import List, Union
 
-from pydantic import validator
 from pywr.pywr import PyModel  # type: ignore
-from pywr.tables import TableRef
 
 from . import BaseParameter
+from ..tables import TableCollection
+from ..metric import ComponentMetricRef, to_full_ref
 
 
-class ParameterThresholdParameter(BaseParameter):
-    parameter: str
-    threshold: str
+class ThresholdParameter(BaseParameter):
+    metric: ComponentMetricRef
+    threshold: ComponentMetricRef
     predicate: str
     ratchet: bool = False
 
-    def create_parameter(self, r_model: PyModel, path: Path):
-        r_model.add_parameter_threshold_parameter(
-            self.name, self.parameter, self.threshold, self.predicate, self.ratchet
+    def create_parameter(self, r_model: PyModel, path: Path, tables: TableCollection):
+        metric = to_full_ref(self.metric, f"{self.name}-metric", r_model, path, tables)
+        threshold = to_full_ref(
+            self.threshold, f"{self.name}-threshold", r_model, path, tables
+        )
+
+        r_model.add_threshold_parameter(
+            self.name, metric, threshold, self.predicate, self.ratchet
         )

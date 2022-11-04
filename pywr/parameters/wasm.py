@@ -4,6 +4,7 @@ from typing import List
 from pywr.pywr import PyModel  # type: ignore
 
 from . import BaseParameter, ParameterRef
+from ..tables import TableCollection
 
 
 class SimpleWasmParameter(BaseParameter):
@@ -18,7 +19,7 @@ class SimpleWasmParameter(BaseParameter):
         with open(src, "rb") as fh:
             return fh.read()
 
-    def create_parameter(self, r_model: PyModel, path: Path):
+    def create_parameter(self, r_model: PyModel, path: Path, tables: TableCollection):
         data = self._load_wasm(path)
 
         r_model.add_simple_wasm_parameter(

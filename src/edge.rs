@@ -1,4 +1,4 @@
-use crate::node::{Node, NodeIndex};
+use crate::node::{Node, NodeIndex, NodeVec};
 use crate::state::ParameterState;
 use crate::PywrError;
 use std::cell::RefCell;
@@ -10,19 +10,19 @@ pub type EdgeRef = Rc<RefCell<_Edge>>;
 #[derive(Debug, PartialEq)]
 pub struct _Edge {
     pub index: EdgeIndex,
-    pub from_node: Node,
-    pub to_node: Node,
+    pub from_node_index: NodeIndex,
+    pub to_node_index: NodeIndex,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Edge(EdgeRef);
 
 impl Edge {
-    pub(crate) fn new(index: &EdgeIndex, from_node: &Node, to_node: &Node) -> Self {
+    pub(crate) fn new(index: &EdgeIndex, from_node_index: NodeIndex, to_node_index: NodeIndex) -> Self {
         let edge = _Edge {
             index: *index,
-            from_node: from_node.clone(),
-            to_node: to_node.clone(),
+            from_node_index,
+            to_node_index,
         };
         Edge(Rc::new(RefCell::new(edge)))
     }
@@ -32,16 +32,16 @@ impl Edge {
     }
 
     pub fn from_node_index(&self) -> NodeIndex {
-        self.0.borrow().from_node.index()
+        self.0.borrow().from_node_index
     }
 
     pub fn to_node_index(&self) -> NodeIndex {
-        self.0.borrow().to_node.index()
+        self.0.borrow().to_node_index
     }
 
-    pub(crate) fn cost(&self, parameter_states: &ParameterState) -> Result<f64, PywrError> {
-        let from_node = &self.0.borrow().from_node;
-        let to_node = &self.0.borrow().to_node;
+    pub(crate) fn cost(&self, nodes: &NodeVec, parameter_states: &ParameterState) -> Result<f64, PywrError> {
+        let from_node = nodes.get(&self.0.borrow().from_node_index)?;
+        let to_node = nodes.get(&self.0.borrow().to_node_index)?;
 
         let from_cost = from_node.get_outgoing_cost(parameter_states)?;
         let to_cost = to_node.get_incoming_cost(parameter_states)?;

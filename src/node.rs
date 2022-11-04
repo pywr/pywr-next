@@ -2,16 +2,21 @@ use crate::metric::Metric;
 use crate::parameters::Parameter;
 use crate::state::{NetworkState, NodeState, ParameterState};
 use crate::{Edge, PywrError};
-use std::cell::RefCell;
 use std::ops::{Deref, DerefMut};
-use std::rc::Rc;
 
-// TODO this should use the new-type pattern.
-pub type NodeIndex = usize;
-pub type NodeRef = Rc<RefCell<_Node>>;
+#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Debug)]
+pub struct NodeIndex(usize);
+
+impl Deref for NodeIndex {
+    type Target = usize;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
 
 #[derive(Debug, PartialEq)]
-pub enum _Node {
+pub enum Node {
     Input(InputNode),
     Output(OutputNode),
     Link(LinkNode),
@@ -25,8 +30,67 @@ pub enum NodeType {
     Storage,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct Node(NodeRef);
+pub struct NodeVec {
+    nodes: Vec<Node>,
+}
+
+impl Deref for NodeVec {
+    type Target = Vec<Node>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.nodes
+    }
+}
+
+impl DerefMut for NodeVec {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.nodes
+    }
+}
+
+impl NodeVec {
+    pub fn new() -> Self {
+        Self { nodes: Vec::new() }
+    }
+    pub fn get(&self, index: &NodeIndex) -> Result<&Node, PywrError> {
+        self.nodes.get(index.0).ok_or(PywrError::NodeIndexNotFound)
+    }
+
+    pub fn get_mut(&mut self, index: &NodeIndex) -> Result<&mut Node, PywrError> {
+        self.nodes.get_mut(index.0).ok_or(PywrError::NodeIndexNotFound)
+    }
+
+    pub fn push_new_input(&mut self, name: &str, sub_name: Option<&str>) -> NodeIndex {
+        let node_index = NodeIndex(self.nodes.len());
+        let node = Node::new_input(&node_index, name, sub_name);
+        self.nodes.push(node);
+        node_index
+    }
+    pub fn push_new_link(&mut self, name: &str, sub_name: Option<&str>) -> NodeIndex {
+        let node_index = NodeIndex(self.nodes.len());
+        let node = Node::new_link(&node_index, name, sub_name);
+        self.nodes.push(node);
+        node_index
+    }
+    pub fn push_new_output(&mut self, name: &str, sub_name: Option<&str>) -> NodeIndex {
+        let node_index = NodeIndex(self.nodes.len());
+        let node = Node::new_output(&node_index, name, sub_name);
+        self.nodes.push(node);
+        node_index
+    }
+
+    pub fn push_new_storage(
+        &mut self,
+        name: &str,
+        sub_name: Option<&str>,
+        initial_volume: StorageInitialVolume,
+    ) -> NodeIndex {
+        let node_index = NodeIndex(self.nodes.len());
+        let node = Node::new_storage(&node_index, name, sub_name, initial_volume);
+        self.nodes.push(node);
+        node_index
+    }
+}
 
 #[derive(Debug, Clone)]
 pub enum Constraint {
@@ -47,134 +111,136 @@ pub enum ConstraintValue {
 impl Node {
     /// Create a new input node
     pub fn new_input(node_index: &NodeIndex, name: &str, sub_name: Option<&str>) -> Self {
-        let node = _Node::Input(InputNode::new(node_index, name, sub_name));
-        Node(Rc::new(RefCell::new(node)))
+        Self::Input(InputNode::new(node_index, name, sub_name))
     }
 
     /// Create a new output node
     pub fn new_output(node_index: &NodeIndex, name: &str, sub_name: Option<&str>) -> Self {
-        let node = _Node::Output(OutputNode::new(node_index, name, sub_name));
-        Node(Rc::new(RefCell::new(node)))
+        Self::Output(OutputNode::new(node_index, name, sub_name))
     }
 
     /// Create a new link node
     pub fn new_link(node_index: &NodeIndex, name: &str, sub_name: Option<&str>) -> Self {
-        let node = _Node::Link(LinkNode::new(node_index, name, sub_name));
-        Node(Rc::new(RefCell::new(node)))
+        Self::Link(LinkNode::new(node_index, name, sub_name))
     }
 
     /// Create a new storage node
-    pub fn new_storage(node_index: &NodeIndex, name: &str, sub_name: Option<&str>, initial_volume: f64) -> Self {
-        let node = _Node::Storage(StorageNode::new(node_index, name, sub_name, initial_volume));
-        Node(Rc::new(RefCell::new(node)))
+    pub fn new_storage(
+        node_index: &NodeIndex,
+        name: &str,
+        sub_name: Option<&str>,
+        initial_volume: StorageInitialVolume,
+    ) -> Self {
+        Self::Storage(StorageNode::new(node_index, name, sub_name, initial_volume))
     }
 
     /// Get a node's name
-    // TODO all these should be returning &str, but can't behind the RC<>
-    pub fn name(&self) -> String {
-        match self.0.borrow().deref() {
-            _Node::Input(n) => n.meta.name(),
-            _Node::Output(n) => n.meta.name(),
-            _Node::Link(n) => n.meta.name(),
-            _Node::Storage(n) => n.meta.name(),
+    pub fn name(&self) -> &str {
+        match self {
+            Self::Input(n) => n.meta.name(),
+            Self::Output(n) => n.meta.name(),
+            Self::Link(n) => n.meta.name(),
+            Self::Storage(n) => n.meta.name(),
         }
     }
 
     /// Get a node's sub_name
-    pub fn sub_name(&self) -> Option<String> {
-        match self.0.borrow().deref() {
-            _Node::Input(n) => n.meta.sub_name(),
-            _Node::Output(n) => n.meta.sub_name(),
-            _Node::Link(n) => n.meta.sub_name(),
-            _Node::Storage(n) => n.meta.sub_name(),
+    pub fn sub_name(&self) -> Option<&str> {
+        match self {
+            Self::Input(n) => n.meta.sub_name(),
+            Self::Output(n) => n.meta.sub_name(),
+            Self::Link(n) => n.meta.sub_name(),
+            Self::Storage(n) => n.meta.sub_name(),
         }
     }
 
     /// Get a node's full name
-    pub fn full_name(&self) -> (String, Option<String>) {
-        match self.0.borrow().deref() {
-            _Node::Input(n) => n.meta.full_name(),
-            _Node::Output(n) => n.meta.full_name(),
-            _Node::Link(n) => n.meta.full_name(),
-            _Node::Storage(n) => n.meta.full_name(),
+    pub fn full_name(&self) -> (&str, Option<&str>) {
+        match self {
+            Self::Input(n) => n.meta.full_name(),
+            Self::Output(n) => n.meta.full_name(),
+            Self::Link(n) => n.meta.full_name(),
+            Self::Storage(n) => n.meta.full_name(),
         }
     }
 
     /// Get a node's index
     pub fn index(&self) -> NodeIndex {
-        match self.0.borrow().deref() {
-            _Node::Input(n) => n.meta.index,
-            _Node::Output(n) => n.meta.index,
-            _Node::Link(n) => n.meta.index,
-            _Node::Storage(n) => n.meta.index,
+        match self {
+            Self::Input(n) => n.meta.index,
+            Self::Output(n) => n.meta.index,
+            Self::Link(n) => n.meta.index,
+            Self::Storage(n) => n.meta.index,
         }
     }
 
     pub fn node_type(&self) -> NodeType {
-        match self.0.borrow().deref() {
-            _Node::Input(_) => NodeType::Input,
-            _Node::Output(_) => NodeType::Output,
-            _Node::Link(_) => NodeType::Link,
-            _Node::Storage(_) => NodeType::Storage,
+        match self {
+            Self::Input(_) => NodeType::Input,
+            Self::Output(_) => NodeType::Output,
+            Self::Link(_) => NodeType::Link,
+            Self::Storage(_) => NodeType::Storage,
         }
     }
 
     pub fn apply<F>(&self, f: F)
     where
-        F: Fn(&_Node),
+        F: Fn(&Node),
     {
-        f(self.0.borrow().deref());
+        f(self);
     }
 
     pub fn new_state(&self) -> NodeState {
         // TODO add a reference to the node in the state objects?
-        match self.0.borrow().deref() {
-            _Node::Input(_n) => NodeState::new_flow_state(),
-            _Node::Output(_n) => NodeState::new_flow_state(),
-            _Node::Link(_n) => NodeState::new_flow_state(),
-            _Node::Storage(n) => NodeState::new_storage_state(n.initial_volume),
+
+        match self {
+            Self::Input(_n) => NodeState::new_flow_state(),
+            Self::Output(_n) => NodeState::new_flow_state(),
+            Self::Link(_n) => NodeState::new_flow_state(),
+            // TODO fix initial proportional volume!!!
+            Self::Storage(n) => NodeState::new_storage_state(n.get_initial_volume()),
         }
     }
 
     pub fn default_metric(&self) -> Metric {
-        match self.0.borrow().deref() {
-            _Node::Input(_n) => Metric::NodeOutFlow(self.index()),
-            _Node::Output(_n) => Metric::NodeInFlow(self.index()),
-            _Node::Link(_n) => Metric::NodeOutFlow(self.index()),
-            _Node::Storage(_n) => Metric::NodeVolume(self.index()),
+        match self {
+            Self::Input(_n) => Metric::NodeOutFlow(self.index()),
+            Self::Output(_n) => Metric::NodeInFlow(self.index()),
+            Self::Link(_n) => Metric::NodeOutFlow(self.index()),
+            Self::Storage(_n) => Metric::NodeVolume(self.index()),
         }
     }
 
-    pub fn add_incoming_edge(&self, edge: Edge) -> Result<(), PywrError> {
-        match self.0.borrow_mut().deref_mut() {
-            _Node::Input(_n) => Err(PywrError::InvalidNodeConnectionToInput),
-            _Node::Output(n) => {
+    pub fn add_incoming_edge(&mut self, edge: Edge) -> Result<(), PywrError> {
+        match self {
+            Self::Input(_n) => Err(PywrError::InvalidNodeConnectionToInput),
+            Self::Output(n) => {
                 n.add_incoming_edge(edge);
                 Ok(())
             }
-            _Node::Link(n) => {
+            Self::Link(n) => {
                 n.add_incoming_edge(edge);
                 Ok(())
             }
-            _Node::Storage(n) => {
+            Self::Storage(n) => {
                 n.add_incoming_edge(edge);
                 Ok(())
             }
         }
     }
 
-    pub fn add_outgoing_edge(&self, edge: Edge) -> Result<(), PywrError> {
-        match self.0.borrow_mut().deref_mut() {
-            _Node::Input(n) => {
+    pub fn add_outgoing_edge(&mut self, edge: Edge) -> Result<(), PywrError> {
+        match self {
+            Self::Input(n) => {
                 n.add_outgoing_edge(edge);
                 Ok(())
             }
-            _Node::Output(_n) => Err(PywrError::InvalidNodeConnectionFromOutput),
-            _Node::Link(n) => {
+            Self::Output(_n) => Err(PywrError::InvalidNodeConnectionFromOutput),
+            Self::Link(n) => {
                 n.add_outgoing_edge(edge);
                 Ok(())
             }
-            _Node::Storage(n) => {
+            Self::Storage(n) => {
                 n.add_outgoing_edge(edge);
                 Ok(())
             }
@@ -182,20 +248,20 @@ impl Node {
     }
 
     pub fn get_incoming_edges(&self) -> Result<Vec<Edge>, PywrError> {
-        match self.0.borrow().deref() {
-            _Node::Input(_n) => Err(PywrError::InvalidNodeConnectionToInput), // TODO better error
-            _Node::Output(n) => Ok(n.incoming_edges.clone()),
-            _Node::Link(n) => Ok(n.incoming_edges.clone()),
-            _Node::Storage(n) => Ok(n.incoming_edges.clone()),
+        match self {
+            Self::Input(_n) => Err(PywrError::InvalidNodeConnectionToInput), // TODO better error
+            Self::Output(n) => Ok(n.incoming_edges.clone()),
+            Self::Link(n) => Ok(n.incoming_edges.clone()),
+            Self::Storage(n) => Ok(n.incoming_edges.clone()),
         }
     }
 
     pub fn get_outgoing_edges(&self) -> Result<Vec<Edge>, PywrError> {
-        match self.0.borrow().deref() {
-            _Node::Input(n) => Ok(n.outgoing_edges.clone()),
-            _Node::Output(_n) => Err(PywrError::InvalidNodeConnectionFromOutput), // TODO better error
-            _Node::Link(n) => Ok(n.outgoing_edges.clone()),
-            _Node::Storage(n) => Ok(n.outgoing_edges.clone()),
+        match self {
+            Self::Input(n) => Ok(n.outgoing_edges.clone()),
+            Self::Output(_n) => Err(PywrError::InvalidNodeConnectionFromOutput), // TODO better error
+            Self::Link(n) => Ok(n.outgoing_edges.clone()),
+            Self::Storage(n) => Ok(n.outgoing_edges.clone()),
         }
     }
 
@@ -240,7 +306,7 @@ impl Node {
     // }
 
     /// Set a constraint on a node.
-    pub fn set_constraint(&self, value: ConstraintValue, constraint: Constraint) -> Result<(), PywrError> {
+    pub fn set_constraint(&mut self, value: ConstraintValue, constraint: Constraint) -> Result<(), PywrError> {
         match constraint {
             Constraint::MinFlow => self.set_min_flow_constraint(value)?,
             Constraint::MaxFlow => self.set_max_flow_constraint(value)?,
@@ -248,63 +314,77 @@ impl Node {
                 self.set_min_flow_constraint(value.clone())?;
                 self.set_max_flow_constraint(value)?;
             }
-            Constraint::MinVolume => self.set_min_volume_constraint(value)?,
-            Constraint::MaxVolume => self.set_max_volume_constraint(value)?,
+            Constraint::MinVolume => match value {
+                ConstraintValue::Scalar(v) => self.set_min_volume_constraint(v)?,
+                _ => {
+                    return Err(PywrError::InvalidConstraintValue(
+                        "min_volume must be a scalar!".to_string(),
+                    ))
+                }
+            },
+            Constraint::MaxVolume => match value {
+                ConstraintValue::Scalar(v) => self.set_max_volume_constraint(v)?,
+                _ => {
+                    return Err(PywrError::InvalidConstraintValue(
+                        "max_volume must be a scalar!".to_string(),
+                    ))
+                }
+            },
         }
         Ok(())
     }
 
-    pub fn set_min_flow_constraint(&self, value: ConstraintValue) -> Result<(), PywrError> {
-        match self.0.borrow_mut().deref_mut() {
-            _Node::Input(n) => {
+    pub fn set_min_flow_constraint(&mut self, value: ConstraintValue) -> Result<(), PywrError> {
+        match self {
+            Self::Input(n) => {
                 n.set_min_flow(value);
                 Ok(())
             }
-            _Node::Link(n) => {
+            Self::Link(n) => {
                 n.set_min_flow(value);
                 Ok(())
             }
-            _Node::Output(n) => {
+            Self::Output(n) => {
                 n.set_min_flow(value);
                 Ok(())
             }
-            _Node::Storage(_) => Err(PywrError::FlowConstraintsUndefined),
+            Self::Storage(_) => Err(PywrError::FlowConstraintsUndefined),
         }
     }
 
     pub fn get_current_min_flow(&self, parameter_states: &ParameterState) -> Result<f64, PywrError> {
-        match self.0.borrow().deref() {
-            _Node::Input(n) => n.get_min_flow(parameter_states),
-            _Node::Link(n) => n.get_min_flow(parameter_states),
-            _Node::Output(n) => n.get_min_flow(parameter_states),
-            _Node::Storage(_) => Err(PywrError::FlowConstraintsUndefined),
+        match self {
+            Self::Input(n) => n.get_min_flow(parameter_states),
+            Self::Link(n) => n.get_min_flow(parameter_states),
+            Self::Output(n) => n.get_min_flow(parameter_states),
+            Self::Storage(_) => Err(PywrError::FlowConstraintsUndefined),
         }
     }
 
-    pub fn set_max_flow_constraint(&self, value: ConstraintValue) -> Result<(), PywrError> {
-        match self.0.borrow_mut().deref_mut() {
-            _Node::Input(n) => {
+    pub fn set_max_flow_constraint(&mut self, value: ConstraintValue) -> Result<(), PywrError> {
+        match self {
+            Self::Input(n) => {
                 n.set_max_flow(value);
                 Ok(())
             }
-            _Node::Link(n) => {
+            Self::Link(n) => {
                 n.set_max_flow(value);
                 Ok(())
             }
-            _Node::Output(n) => {
+            Self::Output(n) => {
                 n.set_max_flow(value);
                 Ok(())
             }
-            _Node::Storage(_) => Err(PywrError::FlowConstraintsUndefined),
+            Self::Storage(_) => Err(PywrError::FlowConstraintsUndefined),
         }
     }
 
     pub fn get_current_max_flow(&self, parameter_states: &ParameterState) -> Result<f64, PywrError> {
-        match self.0.borrow().deref() {
-            _Node::Input(n) => n.get_max_flow(parameter_states),
-            _Node::Link(n) => n.get_max_flow(parameter_states),
-            _Node::Output(n) => n.get_max_flow(parameter_states),
-            _Node::Storage(_) => Err(PywrError::FlowConstraintsUndefined),
+        match self {
+            Self::Input(n) => n.get_max_flow(parameter_states),
+            Self::Link(n) => n.get_max_flow(parameter_states),
+            Self::Output(n) => n.get_max_flow(parameter_states),
+            Self::Storage(_) => Err(PywrError::FlowConstraintsUndefined),
         }
     }
 
@@ -318,69 +398,59 @@ impl Node {
         }
     }
 
-    pub fn set_min_volume_constraint(&self, value: ConstraintValue) -> Result<(), PywrError> {
-        match self.0.borrow_mut().deref_mut() {
-            _Node::Input(_) => Err(PywrError::StorageConstraintsUndefined),
-            _Node::Link(_) => Err(PywrError::StorageConstraintsUndefined),
-            _Node::Output(_) => Err(PywrError::StorageConstraintsUndefined),
-            _Node::Storage(n) => {
+    pub fn set_min_volume_constraint(&mut self, value: f64) -> Result<(), PywrError> {
+        match self {
+            Self::Input(_) => Err(PywrError::StorageConstraintsUndefined),
+            Self::Link(_) => Err(PywrError::StorageConstraintsUndefined),
+            Self::Output(_) => Err(PywrError::StorageConstraintsUndefined),
+            Self::Storage(n) => {
                 n.set_min_volume(value);
                 Ok(())
             }
         }
     }
 
-    pub fn get_current_min_volume(&self, parameter_states: &ParameterState) -> Result<f64, PywrError> {
-        match self.0.borrow().deref() {
-            _Node::Input(_) => Err(PywrError::StorageConstraintsUndefined),
-            _Node::Link(_) => Err(PywrError::StorageConstraintsUndefined),
-            _Node::Output(_) => Err(PywrError::StorageConstraintsUndefined),
-            _Node::Storage(n) => n.get_min_volume(parameter_states),
+    pub fn get_current_min_volume(&self) -> Result<f64, PywrError> {
+        match self {
+            Self::Input(_) => Err(PywrError::StorageConstraintsUndefined),
+            Self::Link(_) => Err(PywrError::StorageConstraintsUndefined),
+            Self::Output(_) => Err(PywrError::StorageConstraintsUndefined),
+            Self::Storage(n) => Ok(n.get_min_volume()),
         }
     }
 
-    pub fn set_max_volume_constraint(&self, value: ConstraintValue) -> Result<(), PywrError> {
-        match self.0.borrow_mut().deref_mut() {
-            _Node::Input(_) => Err(PywrError::StorageConstraintsUndefined),
-            _Node::Link(_) => Err(PywrError::StorageConstraintsUndefined),
-            _Node::Output(_) => Err(PywrError::StorageConstraintsUndefined),
-            _Node::Storage(n) => {
+    pub fn set_max_volume_constraint(&mut self, value: f64) -> Result<(), PywrError> {
+        match self {
+            Self::Input(_) => Err(PywrError::StorageConstraintsUndefined),
+            Self::Link(_) => Err(PywrError::StorageConstraintsUndefined),
+            Self::Output(_) => Err(PywrError::StorageConstraintsUndefined),
+            Self::Storage(n) => {
                 n.set_max_volume(value);
                 Ok(())
             }
         }
     }
 
-    pub fn get_current_max_volume(&self, parameter_states: &ParameterState) -> Result<f64, PywrError> {
-        match self.0.borrow().deref() {
-            _Node::Input(_) => Err(PywrError::StorageConstraintsUndefined),
-            _Node::Link(_) => Err(PywrError::StorageConstraintsUndefined),
-            _Node::Output(_) => Err(PywrError::StorageConstraintsUndefined),
-            _Node::Storage(n) => n.get_max_volume(parameter_states),
+    pub fn get_current_max_volume(&self) -> Result<f64, PywrError> {
+        match self {
+            Self::Input(_) => Err(PywrError::StorageConstraintsUndefined),
+            Self::Link(_) => Err(PywrError::StorageConstraintsUndefined),
+            Self::Output(_) => Err(PywrError::StorageConstraintsUndefined),
+            Self::Storage(n) => Ok(n.get_max_volume()),
         }
     }
 
-    pub fn get_current_volume_bounds(&self, parameter_states: &ParameterState) -> Result<(f64, f64), PywrError> {
-        match (
-            self.get_current_min_volume(parameter_states),
-            self.get_current_max_volume(parameter_states),
-        ) {
+    pub fn get_current_volume_bounds(&self) -> Result<(f64, f64), PywrError> {
+        match (self.get_current_min_volume(), self.get_current_max_volume()) {
             (Ok(min_vol), Ok(max_vol)) => Ok((min_vol, max_vol)),
             _ => Err(PywrError::FlowConstraintsUndefined),
         }
     }
 
-    pub fn get_current_available_volume_bounds(
-        &self,
-        network_state: &NetworkState,
-        parameter_states: &ParameterState,
-    ) -> Result<(f64, f64), PywrError> {
-        match (
-            self.get_current_min_volume(parameter_states),
-            self.get_current_max_volume(parameter_states),
-        ) {
+    pub fn get_current_available_volume_bounds(&self, network_state: &NetworkState) -> Result<(f64, f64), PywrError> {
+        match (self.get_current_min_volume(), self.get_current_max_volume()) {
             (Ok(min_vol), Ok(max_vol)) => {
-                let current_volume = network_state.get_node_volume(self.index())?;
+                let current_volume = network_state.get_node_volume(&self.index())?;
 
                 let available = (current_volume - min_vol).max(0.0);
                 let missing = (max_vol - current_volume).max(0.0);
@@ -391,30 +461,30 @@ impl Node {
         }
     }
 
-    pub fn set_cost(&self, value: ConstraintValue) {
-        match self.0.borrow_mut().deref_mut() {
-            _Node::Input(n) => n.set_cost(value),
-            _Node::Link(n) => n.set_cost(value),
-            _Node::Output(n) => n.set_cost(value),
-            _Node::Storage(n) => n.set_cost(value),
+    pub fn set_cost(&mut self, value: ConstraintValue) {
+        match self {
+            Self::Input(n) => n.set_cost(value),
+            Self::Link(n) => n.set_cost(value),
+            Self::Output(n) => n.set_cost(value),
+            Self::Storage(n) => n.set_cost(value),
         }
     }
 
     pub fn get_outgoing_cost(&self, parameter_states: &ParameterState) -> Result<f64, PywrError> {
-        match self.0.borrow().deref() {
-            _Node::Input(n) => n.get_cost(parameter_states),
-            _Node::Link(n) => Ok(n.get_cost(parameter_states)? / 2.0),
-            _Node::Output(n) => n.get_cost(parameter_states),
-            _Node::Storage(n) => Ok(-n.get_cost(parameter_states)?),
+        match self {
+            Self::Input(n) => n.get_cost(parameter_states),
+            Self::Link(n) => Ok(n.get_cost(parameter_states)? / 2.0),
+            Self::Output(n) => n.get_cost(parameter_states),
+            Self::Storage(n) => Ok(-n.get_cost(parameter_states)?),
         }
     }
 
     pub fn get_incoming_cost(&self, parameter_states: &ParameterState) -> Result<f64, PywrError> {
-        match self.0.borrow().deref() {
-            _Node::Input(n) => n.get_cost(parameter_states),
-            _Node::Link(n) => Ok(n.get_cost(parameter_states)? / 2.0),
-            _Node::Output(n) => n.get_cost(parameter_states),
-            _Node::Storage(n) => n.get_cost(parameter_states),
+        match self {
+            Self::Input(n) => n.get_cost(parameter_states),
+            Self::Link(n) => Ok(n.get_cost(parameter_states)? / 2.0),
+            Self::Output(n) => n.get_cost(parameter_states),
+            Self::Storage(n) => n.get_cost(parameter_states),
         }
     }
 }
@@ -422,7 +492,7 @@ impl Node {
 /// Meta data common to all nodes.
 #[derive(Debug, PartialEq)]
 pub struct NodeMeta<T> {
-    pub(crate) index: T,
+    index: T,
     name: String,
     sub_name: Option<String>,
     comment: String,
@@ -441,14 +511,16 @@ where
         }
     }
 
-    // TODO these should just return references to strings
-    pub(crate) fn name(&self) -> String {
-        self.name.to_string()
+    pub(crate) fn index(&self) -> &T {
+        &self.index
     }
-    pub(crate) fn sub_name(&self) -> Option<String> {
-        self.sub_name.clone()
+    pub(crate) fn name(&self) -> &str {
+        self.name.as_str()
     }
-    pub(crate) fn full_name(&self) -> (String, Option<String>) {
+    pub(crate) fn sub_name(&self) -> Option<&str> {
+        self.sub_name.as_deref()
+    }
+    pub(crate) fn full_name(&self) -> (&str, Option<&str>) {
         (self.name(), self.sub_name())
     }
 }
@@ -490,36 +562,28 @@ impl FlowConstraints {
 
 #[derive(Debug, PartialEq)]
 pub struct StorageConstraints {
-    pub(crate) min_volume: ConstraintValue,
-    pub(crate) max_volume: ConstraintValue, // TODO Should this be required (i.e. not an Option)
+    pub(crate) min_volume: f64,
+    pub(crate) max_volume: f64, // TODO Should this be required (i.e. not an Option)
 }
 
 impl StorageConstraints {
     fn new() -> Self {
         Self {
-            min_volume: ConstraintValue::None,
-            max_volume: ConstraintValue::None,
+            min_volume: 0.0,
+            max_volume: f64::MAX,
         }
     }
     /// Return the current minimum volume from the parameter state
     ///
     /// Defaults to zero if no parameter is defined.
-    fn get_min_volume(&self, parameter_states: &ParameterState) -> Result<f64, PywrError> {
-        match &self.min_volume {
-            ConstraintValue::None => Ok(0.0),
-            ConstraintValue::Scalar(v) => Ok(*v),
-            ConstraintValue::Parameter(p) => parameter_states.get_value(p.index()),
-        }
+    fn get_min_volume(&self) -> f64 {
+        self.min_volume
     }
     /// Return the current maximum volume from the parameter state
     ///
     /// Defaults to f64::MAX if no parameter is defined.
-    fn get_max_volume(&self, parameter_states: &ParameterState) -> Result<f64, PywrError> {
-        match &self.max_volume {
-            ConstraintValue::None => Ok(f64::MAX), // TODO should this return infinity or an error?
-            ConstraintValue::Scalar(v) => Ok(*v),
-            ConstraintValue::Parameter(p) => parameter_states.get_value(p.index()),
-        }
+    fn get_max_volume(&self) -> f64 {
+        self.max_volume
     }
 }
 
@@ -661,18 +725,24 @@ impl LinkNode {
     }
 }
 
+#[derive(Debug, PartialEq, Copy, Clone)]
+pub enum StorageInitialVolume {
+    Absolute(f64),
+    Proportional(f64),
+}
+
 #[derive(Debug, PartialEq)]
 pub struct StorageNode {
     pub meta: NodeMeta<NodeIndex>,
     pub cost: ConstraintValue,
-    pub initial_volume: f64,
+    pub initial_volume: StorageInitialVolume,
     pub storage_constraints: StorageConstraints,
     pub incoming_edges: Vec<Edge>,
     pub outgoing_edges: Vec<Edge>,
 }
 
 impl StorageNode {
-    fn new(index: &NodeIndex, name: &str, sub_name: Option<&str>, initial_volume: f64) -> Self {
+    fn new(index: &NodeIndex, name: &str, sub_name: Option<&str>, initial_volume: StorageInitialVolume) -> Self {
         Self {
             meta: NodeMeta::new(index, name, sub_name),
             cost: ConstraintValue::None,
@@ -692,22 +762,32 @@ impl StorageNode {
             ConstraintValue::Parameter(p) => parameter_states.get_value(p.index()),
         }
     }
-    fn set_min_volume(&mut self, value: ConstraintValue) {
+    fn set_min_volume(&mut self, value: f64) {
+        // TODO use a set_min_volume method
         self.storage_constraints.min_volume = value;
     }
-    fn get_min_volume(&self, parameter_states: &ParameterState) -> Result<f64, PywrError> {
-        self.storage_constraints.get_min_volume(parameter_states)
+    fn get_min_volume(&self) -> f64 {
+        self.storage_constraints.get_min_volume()
     }
-    fn set_max_volume(&mut self, value: ConstraintValue) {
+    fn set_max_volume(&mut self, value: f64) {
+        // TODO use a set_min_volume method
         self.storage_constraints.max_volume = value;
     }
-    fn get_max_volume(&self, parameter_states: &ParameterState) -> Result<f64, PywrError> {
-        self.storage_constraints.get_max_volume(parameter_states)
+    fn get_max_volume(&self) -> f64 {
+        self.storage_constraints.get_max_volume()
     }
     fn add_incoming_edge(&mut self, edge: Edge) {
         self.incoming_edges.push(edge);
     }
     fn add_outgoing_edge(&mut self, edge: Edge) {
         self.outgoing_edges.push(edge);
+    }
+
+    /// Compute the initial absolute volume
+    fn get_initial_volume(&self) -> f64 {
+        match self.initial_volume {
+            StorageInitialVolume::Absolute(v) => v,
+            StorageInitialVolume::Proportional(pc) => pc / self.get_max_volume(),
+        }
     }
 }

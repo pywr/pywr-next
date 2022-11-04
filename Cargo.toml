@@ -2,21 +2,23 @@
 name = "pywr-next"
 version = "0.1.0"
 authors = ["James Tomlinson <tomo.bbe@gmail.com>"]
-edition = "2018"
-resolver = "2"
+edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 libc = "0.2.97"
 thiserror = "1.0.25"
-chrono = "0.4.19"
 ndarray = "0.15.3"
 numpy = "0.14.1"
 float-cmp = "0.8.0"
-hdf5 = "0.8.1"
+hdf5 = { version="0.8.1" }
 clp-sys = { path = "./clp-sys" }
 wasmer = "2.0.0"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1.0"
+time = { version = "0.3", features = ["serde", "serde-well-known", "serde-human-readable", "macros"] }
+svgbobdoc = { version = "0.3.0", features = ["enable"]  }
 
 
 [dependencies.pyo3]
