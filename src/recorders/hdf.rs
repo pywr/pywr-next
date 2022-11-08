@@ -1,6 +1,5 @@
 use super::{NetworkState, PywrError, RecorderMeta, Timestep, _Recorder};
 use crate::metric::Metric;
-use crate::model::Model;
 use crate::scenario::ScenarioIndex;
 use crate::state::ParameterState;
 use ndarray::{s, Array2};
@@ -11,17 +10,19 @@ use std::path::PathBuf;
 pub(crate) struct HDF5Recorder {
     meta: RecorderMeta,
     filename: PathBuf,
+    metrics: Vec<(Metric, (String, Option<String>))>,
     file: Option<hdf5::File>,
-    datasets: Option<Vec<(Metric, hdf5::Dataset)>>,
+    datasets: Option<Vec<hdf5::Dataset>>,
     aggregated_datasets: Option<Vec<(Vec<Metric>, hdf5::Dataset)>>,
     array: Option<ndarray::Array2<f64>>,
 }
 
 impl HDF5Recorder {
-    pub fn new(name: &str, filename: PathBuf) -> Self {
+    pub fn new(name: &str, filename: PathBuf, metrics: Vec<(Metric, (String, Option<String>))>) -> Self {
         Self {
             meta: RecorderMeta::new(name),
             filename,
+            metrics,
             file: None,
             datasets: None,
             array: None,
@@ -34,12 +35,7 @@ impl _Recorder for HDF5Recorder {
     fn meta(&self) -> &RecorderMeta {
         &self.meta
     }
-    fn setup(
-        &mut self,
-        model: &Model,
-        timesteps: &Vec<Timestep>,
-        scenario_indices: &Vec<ScenarioIndex>,
-    ) -> Result<(), PywrError> {
+    fn setup(&mut self, timesteps: &Vec<Timestep>, scenario_indices: &Vec<ScenarioIndex>) -> Result<(), PywrError> {
         let file = match hdf5::File::create(&self.filename) {
             Ok(f) => f,
             Err(e) => return Err(PywrError::HDF5Error(e.to_string())),
@@ -49,10 +45,7 @@ impl _Recorder for HDF5Recorder {
 
         let shape = (timesteps.len(), scenario_indices.len());
 
-        for node in model.nodes.deref() {
-            let metric = node.default_metric();
-            let (name, sub_name) = node.full_name();
-
+        for (metric, (name, sub_name)) in &self.metrics {
             let ds = match sub_name {
                 Some(sn) => {
                     // This is a node with sub-nodes, create a group for the parent node
@@ -60,30 +53,31 @@ impl _Recorder for HDF5Recorder {
                         Ok(g) => g,
                         Err(e) => return Err(PywrError::HDF5Error(e.to_string())),
                     };
-                    match grp.new_dataset::<f64>().shape(shape).create(&*sn) {
+                    match grp.new_dataset::<f64>().shape(shape).create(sn.as_str()) {
                         Ok(ds) => ds,
                         Err(e) => return Err(PywrError::HDF5Error(e.to_string())),
                     }
                 }
-                None => match file.new_dataset::<f64>().shape(shape).create(name) {
+                None => match file.new_dataset::<f64>().shape(shape).create(name.as_str()) {
                     Ok(ds) => ds,
                     Err(e) => return Err(PywrError::HDF5Error(e.to_string())),
                 },
             };
 
-            datasets.push((metric, ds));
+            datasets.push(ds);
         }
 
-        for agg_node in model.aggregated_nodes.deref() {
-            let metrics = agg_node.default_metric();
-            let name = agg_node.name().to_string();
-            println!("Adding metric with name: {}", name);
-            let ds = match file.new_dataset::<f64>().shape(shape).create(&*name) {
-                Ok(ds) => ds,
-                Err(e) => return Err(PywrError::HDF5Error(e.to_string())),
-            };
-            agg_datasets.push((metrics, ds));
-        }
+        // TODO re-enable support for aggregated nodes.
+        // for agg_node in model.aggregated_nodes.deref() {
+        //     let metrics = agg_node.default_metric();
+        //     let name = agg_node.name().to_string();
+        //     println!("Adding metric with name: {}", name);
+        //     let ds = match file.new_dataset::<f64>().shape(shape).create(&*name) {
+        //         Ok(ds) => ds,
+        //         Err(e) => return Err(PywrError::HDF5Error(e.to_string())),
+        //     };
+        //     agg_datasets.push((metrics, ds));
+        // }
 
         self.array = Some(Array2::zeros((datasets.len(), scenario_indices.len())));
         self.datasets = Some(datasets);
@@ -96,14 +90,13 @@ impl _Recorder for HDF5Recorder {
         &mut self,
         _timestep: &Timestep,
         scenario_index: &ScenarioIndex,
-        model: &Model,
         network_state: &NetworkState,
         parameter_state: &ParameterState,
     ) -> Result<(), PywrError> {
         match (&mut self.array, &self.datasets) {
             (Some(array), Some(datasets)) => {
-                for (idx, (metric, _ds)) in datasets.iter().enumerate() {
-                    let value = metric.get_value(model, network_state, parameter_state)?;
+                for (idx, (metric, _)) in self.metrics.iter().enumerate() {
+                    let value = metric.get_value(network_state, parameter_state)?;
                     array[[idx, scenario_index.index]] = value
                 }
                 Ok(())
@@ -116,7 +109,7 @@ impl _Recorder for HDF5Recorder {
                 for (idx, (metrics, _ds)) in datasets.iter().enumerate() {
                     let value: f64 = metrics
                         .iter()
-                        .map(|m| m.get_value(model, network_state, parameter_state))
+                        .map(|m| m.get_value(network_state, parameter_state))
                         .sum::<Result<_, _>>()?;
                     array[[idx, scenario_index.index]] = value
                 }
@@ -129,7 +122,7 @@ impl _Recorder for HDF5Recorder {
     fn after_save(&mut self, timestep: &Timestep) -> Result<(), PywrError> {
         match (&self.array, &mut self.datasets) {
             (Some(array), Some(datasets)) => {
-                for (node_idx, (_metric, dataset)) in datasets.iter_mut().enumerate() {
+                for (node_idx, dataset) in datasets.iter_mut().enumerate() {
                     if let Err(e) = dataset.write_slice(array.slice(s![node_idx, ..]), s![timestep.index, ..]) {
                         return Err(PywrError::HDF5Error(e.to_string()));
                     }

@@ -27,19 +27,15 @@ use crate::scenario::ScenarioIndex;
 use crate::state::ParameterState;
 use crate::timestep::Timestep;
 use ndarray::{Array1, Array2};
-use std::cell::RefCell;
 use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::ops::Deref;
-use std::rc::Rc;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub struct ParameterIndex(usize);
-pub type ParameterRef = Rc<RefCell<Box<dyn _Parameter>>>;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub struct IndexParameterIndex(usize);
-pub type IndexParameterRef = Rc<RefCell<Box<dyn _IndexParameter>>>;
 
 impl ParameterIndex {
     pub fn new(idx: usize) -> Self {
@@ -97,14 +93,12 @@ impl ParameterMeta {
     }
 }
 
-pub trait _Parameter {
+pub trait Parameter {
     fn meta(&self) -> &ParameterMeta;
-    fn setup(
-        &mut self,
-        _model: &Model,
-        _timesteps: &Vec<Timestep>,
-        _scenario_indices: &Vec<ScenarioIndex>,
-    ) -> Result<(), PywrError> {
+    fn name(&self) -> &str {
+        self.meta().name.as_str()
+    }
+    fn setup(&mut self, _timesteps: &Vec<Timestep>, _scenario_indices: &Vec<ScenarioIndex>) -> Result<(), PywrError> {
         Ok(())
     }
     fn before(&self) {}
@@ -112,20 +106,17 @@ pub trait _Parameter {
         &mut self,
         timestep: &Timestep,
         scenario_index: &ScenarioIndex,
-        model: &Model,
         network_state: &NetworkState,
         parameter_state: &ParameterState,
     ) -> Result<f64, PywrError>;
 }
 
-pub trait _IndexParameter {
+pub trait IndexParameter {
     fn meta(&self) -> &ParameterMeta;
-    fn setup(
-        &mut self,
-        _model: &Model,
-        _timesteps: &Vec<Timestep>,
-        _scenario_indices: &Vec<ScenarioIndex>,
-    ) -> Result<(), PywrError> {
+    fn name(&self) -> &str {
+        self.meta().name.as_str()
+    }
+    fn setup(&mut self, _timesteps: &Vec<Timestep>, _scenario_indices: &Vec<ScenarioIndex>) -> Result<(), PywrError> {
         Ok(())
     }
     fn before(&self) {}
@@ -133,122 +124,14 @@ pub trait _IndexParameter {
         &mut self,
         timestep: &Timestep,
         scenario_index: &ScenarioIndex,
-        model: &Model,
         network_state: &NetworkState,
         parameter_state: &ParameterState,
     ) -> Result<usize, PywrError>;
 }
 
-#[derive(Clone)]
-pub struct Parameter(ParameterRef, ParameterIndex);
-
-impl PartialEq for Parameter {
-    fn eq(&self, other: &Parameter) -> bool {
-        // TODO which
-        self.1 == other.1
-    }
-}
-
-impl fmt::Debug for Parameter {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_tuple("Parameter").field(&self.name()).field(&self.1).finish()
-    }
-}
-
-impl Parameter {
-    pub fn new(parameter: Box<dyn _Parameter>, index: ParameterIndex) -> Self {
-        Self(Rc::new(RefCell::new(parameter)), index)
-    }
-
-    pub fn index(&self) -> ParameterIndex {
-        self.1
-    }
-
-    pub fn name(&self) -> String {
-        self.0.borrow().deref().meta().name.to_string()
-    }
-
-    pub fn setup(
-        &self,
-        model: &Model,
-        timesteps: &Vec<Timestep>,
-        scenario_indices: &Vec<ScenarioIndex>,
-    ) -> Result<(), PywrError> {
-        self.0.borrow_mut().setup(model, timesteps, scenario_indices)
-    }
-
-    pub fn compute(
-        &self,
-        timestep: &Timestep,
-        scenario_index: &ScenarioIndex,
-        model: &Model,
-        network_state: &NetworkState,
-        parameter_state: &ParameterState,
-    ) -> Result<f64, PywrError> {
-        self.0
-            .borrow_mut()
-            .compute(timestep, scenario_index, model, network_state, parameter_state)
-    }
-}
-
-#[derive(Clone)]
-pub struct IndexParameter(IndexParameterRef, IndexParameterIndex);
-
-impl PartialEq for IndexParameter {
-    fn eq(&self, other: &IndexParameter) -> bool {
-        // TODO which
-        self.1 == other.1
-    }
-}
-
-impl fmt::Debug for IndexParameter {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_tuple("IndexParameter")
-            .field(&self.name())
-            .field(&self.1)
-            .finish()
-    }
-}
-
-impl IndexParameter {
-    pub fn new(parameter: Box<dyn _IndexParameter>, index: IndexParameterIndex) -> Self {
-        Self(Rc::new(RefCell::new(parameter)), index)
-    }
-
-    pub fn index(&self) -> IndexParameterIndex {
-        self.1
-    }
-
-    pub fn name(&self) -> String {
-        self.0.borrow().deref().meta().name.to_string()
-    }
-
-    pub fn setup(
-        &self,
-        model: &Model,
-        timesteps: &Vec<Timestep>,
-        scenario_indices: &Vec<ScenarioIndex>,
-    ) -> Result<(), PywrError> {
-        self.0.borrow_mut().setup(model, timesteps, scenario_indices)
-    }
-
-    pub fn compute(
-        &self,
-        timestep: &Timestep,
-        scenario_index: &ScenarioIndex,
-        model: &Model,
-        network_state: &NetworkState,
-        parameter_state: &ParameterState,
-    ) -> Result<usize, PywrError> {
-        self.0
-            .borrow_mut()
-            .compute(timestep, scenario_index, model, network_state, parameter_state)
-    }
-}
-
 pub enum ParameterType {
-    Parameter(Parameter),
-    Index(IndexParameter),
+    Parameter(ParameterIndex),
+    Index(IndexParameterIndex),
 }
 
 pub struct InternalParameterState<T: Copy> {
@@ -287,7 +170,7 @@ impl ConstantParameter {
     }
 }
 
-impl _Parameter for ConstantParameter {
+impl Parameter for ConstantParameter {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }
@@ -295,7 +178,6 @@ impl _Parameter for ConstantParameter {
         &mut self,
         _timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
-        _model: &Model,
         _state: &NetworkState,
         _parameter_state: &ParameterState,
     ) -> Result<f64, PywrError> {
@@ -317,7 +199,7 @@ impl VectorParameter {
     }
 }
 
-impl _Parameter for VectorParameter {
+impl Parameter for VectorParameter {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }
@@ -325,7 +207,6 @@ impl _Parameter for VectorParameter {
         &mut self,
         timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
-        _model: &Model,
         _state: &NetworkState,
         _parameter_state: &ParameterState,
     ) -> Result<f64, PywrError> {
@@ -350,7 +231,7 @@ impl Array1Parameter {
     }
 }
 
-impl _Parameter for Array1Parameter {
+impl Parameter for Array1Parameter {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }
@@ -358,7 +239,6 @@ impl _Parameter for Array1Parameter {
         &mut self,
         timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
-        _model: &Model,
         _state: &NetworkState,
         _parameter_state: &ParameterState,
     ) -> Result<f64, PywrError> {
@@ -382,7 +262,7 @@ impl Array2Parameter {
     }
 }
 
-impl _Parameter for Array2Parameter {
+impl Parameter for Array2Parameter {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }
@@ -390,7 +270,6 @@ impl _Parameter for Array2Parameter {
         &mut self,
         timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
-        _model: &Model,
         _state: &NetworkState,
         _parameter_state: &ParameterState,
     ) -> Result<f64, PywrError> {

@@ -1,5 +1,4 @@
-use super::{NetworkState, ParameterMeta, PywrError, Timestep, _Parameter};
-use crate::model::Model;
+use super::{NetworkState, Parameter, ParameterMeta, PywrError, Timestep};
 use crate::scenario::ScenarioIndex;
 use crate::state::ParameterState;
 use pyo3::prelude::*;
@@ -18,7 +17,7 @@ impl PyParameter {
     }
 }
 
-impl _Parameter for PyParameter {
+impl Parameter for PyParameter {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }
@@ -26,7 +25,6 @@ impl _Parameter for PyParameter {
         &mut self,
         _timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
-        _model: &Model,
         _state: &NetworkState,
         _parameter_state: &ParameterState,
     ) -> Result<f64, PywrError> {

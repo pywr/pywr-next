@@ -1,6 +1,5 @@
 use crate::metric::Metric;
-use crate::model::Model;
-use crate::parameters::{ParameterMeta, _IndexParameter};
+use crate::parameters::{IndexParameter, ParameterMeta};
 use crate::scenario::ScenarioIndex;
 use crate::state::{NetworkState, ParameterState};
 use crate::timestep::Timestep;
@@ -22,7 +21,7 @@ impl ControlCurveIndexParameter {
     }
 }
 
-impl _IndexParameter for ControlCurveIndexParameter {
+impl IndexParameter for ControlCurveIndexParameter {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }
@@ -30,15 +29,14 @@ impl _IndexParameter for ControlCurveIndexParameter {
         &mut self,
         _timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
-        model: &Model,
         state: &NetworkState,
         parameter_state: &ParameterState,
     ) -> Result<usize, PywrError> {
         // Current value
-        let x = self.metric.get_value(model, state, parameter_state)?;
+        let x = self.metric.get_value(state, parameter_state)?;
 
         for (idx, control_curve) in self.control_curves.iter().enumerate() {
-            let cc_value = control_curve.get_value(model, state, parameter_state)?;
+            let cc_value = control_curve.get_value(state, parameter_state)?;
             if x >= cc_value {
                 return Ok(idx);
             }

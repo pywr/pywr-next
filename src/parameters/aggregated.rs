@@ -1,9 +1,9 @@
 use super::{NetworkState, PywrError};
-use crate::model::Model;
-use crate::parameters::{Parameter, ParameterMeta, _Parameter};
+use crate::parameters::{Parameter, ParameterMeta};
 use crate::scenario::ScenarioIndex;
 use crate::state::ParameterState;
 use crate::timestep::Timestep;
+use crate::ParameterIndex;
 use std::str::FromStr;
 
 pub enum AggFunc {
@@ -31,12 +31,12 @@ impl FromStr for AggFunc {
 
 pub struct AggregatedParameter {
     meta: ParameterMeta,
-    parameters: Vec<Parameter>,
+    parameters: Vec<ParameterIndex>,
     agg_func: AggFunc,
 }
 
 impl AggregatedParameter {
-    pub fn new(name: &str, parameters: Vec<Parameter>, agg_func: AggFunc) -> Self {
+    pub fn new(name: &str, parameters: Vec<ParameterIndex>, agg_func: AggFunc) -> Self {
         Self {
             meta: ParameterMeta::new(name),
             parameters,
@@ -45,7 +45,7 @@ impl AggregatedParameter {
     }
 }
 
-impl _Parameter for AggregatedParameter {
+impl Parameter for AggregatedParameter {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }
@@ -53,7 +53,6 @@ impl _Parameter for AggregatedParameter {
         &mut self,
         _timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
-        _model: &Model,
         _state: &NetworkState,
         parameter_state: &ParameterState,
     ) -> Result<f64, PywrError> {
@@ -63,35 +62,35 @@ impl _Parameter for AggregatedParameter {
             AggFunc::Sum => {
                 let mut total = 0.0_f64;
                 for p in &self.parameters {
-                    total += parameter_state.get_value(p.index())?;
+                    total += parameter_state.get_value(*p)?;
                 }
                 total
             }
             AggFunc::Mean => {
                 let mut total = 0.0_f64;
                 for p in &self.parameters {
-                    total += parameter_state.get_value(p.index())?;
+                    total += parameter_state.get_value(*p)?;
                 }
                 total / self.parameters.len() as f64
             }
             AggFunc::Max => {
                 let mut total = f64::MIN;
                 for p in &self.parameters {
-                    total = total.max(parameter_state.get_value(p.index())?);
+                    total = total.max(parameter_state.get_value(*p)?);
                 }
                 total
             }
             AggFunc::Min => {
                 let mut total = f64::MAX;
                 for p in &self.parameters {
-                    total = total.min(parameter_state.get_value(p.index())?);
+                    total = total.min(parameter_state.get_value(*p)?);
                 }
                 total
             }
             AggFunc::Product => {
                 let mut total = 1.0_f64;
                 for p in &self.parameters {
-                    total *= parameter_state.get_value(p.index())?;
+                    total *= parameter_state.get_value(*p)?;
                 }
                 total
             }

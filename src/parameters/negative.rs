@@ -1,6 +1,5 @@
 use crate::metric::Metric;
-use crate::model::Model;
-use crate::parameters::{ParameterMeta, _Parameter};
+use crate::parameters::{Parameter, ParameterMeta};
 use crate::scenario::ScenarioIndex;
 use crate::state::ParameterState;
 use crate::timestep::Timestep;
@@ -20,7 +19,7 @@ impl NegativeParameter {
     }
 }
 
-impl _Parameter for NegativeParameter {
+impl Parameter for NegativeParameter {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }
@@ -28,12 +27,11 @@ impl _Parameter for NegativeParameter {
         &mut self,
         _timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
-        model: &Model,
         state: &NetworkState,
         parameter_state: &ParameterState,
     ) -> Result<f64, PywrError> {
         // Current value
-        let x = self.metric.get_value(model, state, parameter_state)?;
+        let x = self.metric.get_value(state, parameter_state)?;
         Ok(-x)
     }
 }

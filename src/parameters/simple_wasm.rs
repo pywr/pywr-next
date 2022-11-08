@@ -1,8 +1,7 @@
-use super::{NetworkState, ParameterMeta, PywrError, Timestep, _Parameter};
-use crate::model::Model;
-use crate::parameters::Parameter;
+use super::{NetworkState, Parameter, ParameterMeta, PywrError, Timestep};
 use crate::scenario::ScenarioIndex;
 use crate::state::ParameterState;
+use crate::ParameterIndex;
 use wasmer::{imports, Array, Instance, Module, NativeFunc, Store, WasmPtr};
 
 type ValueFunc = NativeFunc<(WasmPtr<f64, Array>, u32), f64>;
@@ -11,14 +10,14 @@ type SetFunc = NativeFunc<(WasmPtr<f64, Array>, u32, u32, f64), ()>;
 pub struct SimpleWasmParameter {
     meta: ParameterMeta,
     src: Vec<u8>,
-    parameters: Vec<Parameter>,
+    parameters: Vec<ParameterIndex>,
     func: Option<ValueFunc>,
     set_func: Option<SetFunc>,
     ptr: Option<WasmPtr<f64, Array>>,
 }
 
 impl SimpleWasmParameter {
-    pub fn new(name: &str, src: Vec<u8>, parameters: Vec<Parameter>) -> Self {
+    pub fn new(name: &str, src: Vec<u8>, parameters: Vec<ParameterIndex>) -> Self {
         Self {
             meta: ParameterMeta::new(name),
             src,
@@ -30,16 +29,11 @@ impl SimpleWasmParameter {
     }
 }
 
-impl _Parameter for SimpleWasmParameter {
+impl Parameter for SimpleWasmParameter {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }
-    fn setup(
-        &mut self,
-        _model: &Model,
-        _timesteps: &Vec<Timestep>,
-        _scenario_indices: &Vec<ScenarioIndex>,
-    ) -> Result<(), PywrError> {
+    fn setup(&mut self, _timesteps: &Vec<Timestep>, _scenario_indices: &Vec<ScenarioIndex>) -> Result<(), PywrError> {
         let store = Store::default();
         let module = Module::new(&store, &self.src).unwrap();
 
@@ -68,7 +62,6 @@ impl _Parameter for SimpleWasmParameter {
         &mut self,
         _timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
-        _model: &Model,
         _state: &NetworkState,
         parameter_state: &ParameterState,
     ) -> Result<f64, PywrError> {
@@ -84,7 +77,7 @@ impl _Parameter for SimpleWasmParameter {
         // Assign the parameter values to the WASM's internal memory
         let len = self.parameters.len() as u32;
         for (idx, p) in self.parameters.iter().enumerate() {
-            let v = parameter_state.get_value(p.index())?;
+            let v = parameter_state.get_value(*p)?;
 
             set_func.call(ptr, len, idx as u32, v).map_err(|e| {
                 PywrError::InternalParameterError(format!("Error calling WASM imported function: {:?}.", e))

@@ -1,7 +1,6 @@
 use super::interpolate;
 use crate::metric::Metric;
-use crate::model::Model;
-use crate::parameters::{ParameterMeta, _Parameter};
+use crate::parameters::{Parameter, ParameterMeta};
 use crate::scenario::ScenarioIndex;
 use crate::state::{NetworkState, ParameterState};
 use crate::timestep::Timestep;
@@ -36,7 +35,7 @@ impl PiecewiseInterpolatedParameter {
     }
 }
 
-impl _Parameter for PiecewiseInterpolatedParameter {
+impl Parameter for PiecewiseInterpolatedParameter {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }
@@ -44,16 +43,15 @@ impl _Parameter for PiecewiseInterpolatedParameter {
         &mut self,
         _timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
-        model: &Model,
         state: &NetworkState,
         parameter_state: &ParameterState,
     ) -> Result<f64, PywrError> {
         // Current value
-        let x = self.metric.get_value(model, state, parameter_state)?;
+        let x = self.metric.get_value(state, parameter_state)?;
 
         let mut cc_previous_value = self.maximum;
         for (idx, control_curve) in self.control_curves.iter().enumerate() {
-            let cc_value = control_curve.get_value(model, state, parameter_state)?;
+            let cc_value = control_curve.get_value(state, parameter_state)?;
             if x > cc_value {
                 let (upper_value, lower_value) = self.values.get(idx).ok_or(PywrError::DataOutOfRange)?;
                 return Ok(interpolate(x, cc_value, cc_previous_value, *lower_value, *upper_value));

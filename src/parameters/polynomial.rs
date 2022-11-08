@@ -1,6 +1,5 @@
 use crate::metric::Metric;
-use crate::model::Model;
-use crate::parameters::{ParameterMeta, _Parameter};
+use crate::parameters::{Parameter, ParameterMeta};
 use crate::scenario::ScenarioIndex;
 use crate::state::ParameterState;
 use crate::timestep::Timestep;
@@ -26,7 +25,7 @@ impl Polynomial1DParameter {
     }
 }
 
-impl _Parameter for Polynomial1DParameter {
+impl Parameter for Polynomial1DParameter {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }
@@ -34,12 +33,11 @@ impl _Parameter for Polynomial1DParameter {
         &mut self,
         _timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
-        model: &Model,
         state: &NetworkState,
         parameter_state: &ParameterState,
     ) -> Result<f64, PywrError> {
         // Current value
-        let x = self.metric.get_value(model, state, parameter_state)?;
+        let x = self.metric.get_value(state, parameter_state)?;
         let x = x * self.scale + self.offset;
         // Calculate the polynomial value
         let y = self

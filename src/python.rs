@@ -111,11 +111,9 @@ impl PyModel {
                 Ok(metric)
             }
             "parameter_value" => {
-                let metric = Metric::ParameterValue(
-                    self.model
-                        .get_parameter_by_name(&metric.name.ok_or(PywrError::InvalidMetricType(metric.metric_type))?)?
-                        .index(),
-                );
+                let metric = Metric::ParameterValue(self.model.get_parameter_index_by_name(
+                    &metric.name.ok_or(PywrError::InvalidMetricType(metric.metric_type))?,
+                )?);
                 Ok(metric)
             }
             "constant_float" => {
@@ -130,7 +128,7 @@ impl PyModel {
         match value {
             PyConstraintValue::Scalar(v) => Ok(ConstraintValue::Scalar(v)),
             PyConstraintValue::Parameter(name) => {
-                let parameter = self.model.get_parameter_by_name(&name)?;
+                let parameter = self.model.get_parameter_index_by_name(&name)?;
                 Ok(ConstraintValue::Parameter(parameter))
             }
             PyConstraintValue::CatchAll(obj) => {
@@ -326,7 +324,7 @@ impl PyModel {
     /// Add a Python object as a parameter.
     fn add_python_parameter(&mut self, name: &str, object: PyObject) -> PyResult<parameters::ParameterIndex> {
         let parameter = parameters::py::PyParameter::new(name, object);
-        let idx = self.model.add_parameter(Box::new(parameter))?.index();
+        let idx = self.model.add_parameter(Box::new(parameter))?;
         Ok(idx)
     }
 
@@ -339,23 +337,23 @@ impl PyModel {
         // Find all the parameters by name
         let mut parameters = Vec::with_capacity(parameter_names.len());
         for name in parameter_names {
-            parameters.push(self.model.get_parameter_by_name(&name)?);
+            parameters.push(self.model.get_parameter_index_by_name(&name)?);
         }
 
         let parameter = parameters::simple_wasm::SimpleWasmParameter::new(name, src, parameters);
-        let idx = self.model.add_parameter(Box::new(parameter))?.index();
+        let idx = self.model.add_parameter(Box::new(parameter))?;
         Ok(idx)
     }
 
     fn add_constant(&mut self, name: &str, value: f64) -> PyResult<parameters::ParameterIndex> {
         let parameter = parameters::ConstantParameter::new(name, value);
-        let idx = self.model.add_parameter(Box::new(parameter))?.index();
+        let idx = self.model.add_parameter(Box::new(parameter))?;
         Ok(idx)
     }
 
     fn add_array(&mut self, name: &str, values: PyReadonlyArray1<f64>) -> PyResult<parameters::ParameterIndex> {
         let parameter = parameters::Array1Parameter::new(name, values.to_owned_array());
-        let idx = self.model.add_parameter(Box::new(parameter))?.index();
+        let idx = self.model.add_parameter(Box::new(parameter))?;
         Ok(idx)
     }
 
@@ -368,13 +366,13 @@ impl PyModel {
         // Find all the parameters by name
         let mut parameters = Vec::with_capacity(parameter_names.len());
         for name in parameter_names {
-            parameters.push(self.model.get_parameter_by_name(&name)?);
+            parameters.push(self.model.get_parameter_index_by_name(&name)?);
         }
 
         let agg_func = AggFunc::from_str(agg_func)?;
         let parameter = parameters::AggregatedParameter::new(name, parameters, agg_func);
 
-        let idx = self.model.add_parameter(Box::new(parameter))?.index();
+        let idx = self.model.add_parameter(Box::new(parameter))?;
 
         Ok(idx)
     }
@@ -388,13 +386,13 @@ impl PyModel {
         // Find all the parameters by name
         let mut parameters = Vec::with_capacity(parameter_names.len());
         for name in parameter_names {
-            parameters.push(self.model.get_index_parameter_by_name(&name)?);
+            parameters.push(self.model.get_index_parameter_index_by_name(&name)?);
         }
 
         let agg_func = AggIndexFunc::from_str(agg_func)?;
         let parameter = parameters::AggregatedIndexParameter::new(name, parameters, agg_func);
 
-        let idx = self.model.add_index_parameter(Box::new(parameter))?.index();
+        let idx = self.model.add_index_parameter(Box::new(parameter))?;
 
         Ok(idx)
     }
@@ -412,7 +410,7 @@ impl PyModel {
 
         let mut control_curves = Vec::with_capacity(control_curve_names.len());
         for name in control_curve_names {
-            control_curves.push(Metric::ParameterValue(self.model.get_parameter_by_name(&name)?.index()));
+            control_curves.push(Metric::ParameterValue(self.model.get_parameter_index_by_name(&name)?));
         }
 
         let parameter = parameters::control_curves::PiecewiseInterpolatedParameter::new(
@@ -423,7 +421,7 @@ impl PyModel {
             maximum,
             minimum,
         );
-        let idx = self.model.add_parameter(Box::new(parameter))?.index();
+        let idx = self.model.add_parameter(Box::new(parameter))?;
         Ok(idx)
     }
 
@@ -437,11 +435,11 @@ impl PyModel {
 
         let mut control_curves = Vec::with_capacity(control_curve_names.len());
         for name in control_curve_names {
-            control_curves.push(Metric::ParameterValue(self.model.get_parameter_by_name(&name)?.index()));
+            control_curves.push(Metric::ParameterValue(self.model.get_parameter_index_by_name(&name)?));
         }
 
         let parameter = parameters::control_curves::ControlCurveIndexParameter::new(name, metric, control_curves);
-        let idx = self.model.add_index_parameter(Box::new(parameter))?.index();
+        let idx = self.model.add_index_parameter(Box::new(parameter))?;
         Ok(idx)
     }
 
@@ -456,11 +454,11 @@ impl PyModel {
 
         let mut control_curves = Vec::with_capacity(control_curve_names.len());
         for name in control_curve_names {
-            control_curves.push(Metric::ParameterValue(self.model.get_parameter_by_name(&name)?.index()));
+            control_curves.push(Metric::ParameterValue(self.model.get_parameter_index_by_name(&name)?));
         }
 
         let parameter = parameters::control_curves::InterpolatedParameter::new(name, metric, control_curves, values);
-        let idx = self.model.add_parameter(Box::new(parameter))?.index();
+        let idx = self.model.add_parameter(Box::new(parameter))?;
         Ok(idx)
     }
 
@@ -475,17 +473,17 @@ impl PyModel {
 
         let mut control_curves = Vec::with_capacity(control_curve_names.len());
         for name in control_curve_names {
-            control_curves.push(Metric::ParameterValue(self.model.get_parameter_by_name(&name)?.index()));
+            control_curves.push(Metric::ParameterValue(self.model.get_parameter_index_by_name(&name)?));
         }
 
         let mut parameters = Vec::with_capacity(parameter_names.len());
         for name in parameter_names {
-            parameters.push(Metric::ParameterValue(self.model.get_parameter_by_name(&name)?.index()));
+            parameters.push(Metric::ParameterValue(self.model.get_parameter_index_by_name(&name)?));
         }
 
         let parameter =
             parameters::control_curves::ControlCurveParameter::new(name, metric, control_curves, parameters);
-        let idx = self.model.add_parameter(Box::new(parameter))?.index();
+        let idx = self.model.add_parameter(Box::new(parameter))?;
         Ok(idx)
     }
 
@@ -498,7 +496,7 @@ impl PyModel {
         let metric = self.try_pymetric_into_metric(metric)?;
 
         let parameter = parameters::MaxParameter::new(name, metric, threshold);
-        let idx = self.model.add_parameter(Box::new(parameter))?.index();
+        let idx = self.model.add_parameter(Box::new(parameter))?;
         Ok(idx)
     }
 
@@ -506,7 +504,7 @@ impl PyModel {
         let metric = self.try_pymetric_into_metric(metric)?;
 
         let parameter = parameters::NegativeParameter::new(name, metric);
-        let idx = self.model.add_parameter(Box::new(parameter))?.index();
+        let idx = self.model.add_parameter(Box::new(parameter))?;
         Ok(idx)
     }
 
@@ -516,11 +514,11 @@ impl PyModel {
         on_parameter_name: &str,
         off_parameter_name: &str,
     ) -> PyResult<parameters::IndexParameterIndex> {
-        let on_parameter = self.model.get_index_parameter_by_name(on_parameter_name)?;
-        let off_parameter = self.model.get_index_parameter_by_name(off_parameter_name)?;
+        let on_parameter = self.model.get_index_parameter_index_by_name(on_parameter_name)?;
+        let off_parameter = self.model.get_index_parameter_index_by_name(off_parameter_name)?;
 
         let parameter = parameters::asymmetric::AsymmetricSwitchIndexParameter::new(name, on_parameter, off_parameter);
-        let idx = self.model.add_index_parameter(Box::new(parameter))?.index();
+        let idx = self.model.add_index_parameter(Box::new(parameter))?;
         Ok(idx)
     }
 
@@ -530,15 +528,15 @@ impl PyModel {
         index_parameter_name: &str,
         parameter_names: Vec<String>,
     ) -> PyResult<parameters::ParameterIndex> {
-        let index_parameter = self.model.get_index_parameter_by_name(index_parameter_name)?;
+        let index_parameter = self.model.get_index_parameter_index_by_name(index_parameter_name)?;
 
         let mut parameters = Vec::with_capacity(parameter_names.len());
         for name in parameter_names {
-            parameters.push(self.model.get_parameter_by_name(&name)?);
+            parameters.push(self.model.get_parameter_index_by_name(&name)?);
         }
 
         let parameter = parameters::indexed_array::IndexedArrayParameter::new(name, index_parameter, parameters);
-        let idx = self.model.add_parameter(Box::new(parameter))?.index();
+        let idx = self.model.add_parameter(Box::new(parameter))?;
         Ok(idx)
     }
 
@@ -560,7 +558,7 @@ impl PyModel {
             parameters::Predicate::from_str(predicate)?,
             ratchet,
         );
-        let idx = self.model.add_index_parameter(Box::new(parameter))?.index();
+        let idx = self.model.add_index_parameter(Box::new(parameter))?;
         Ok(idx)
     }
 
@@ -575,19 +573,19 @@ impl PyModel {
         let metric = self.try_pymetric_into_metric(metric)?;
 
         let parameter = parameters::Polynomial1DParameter::new(name, metric, coefficients, scale, offset);
-        let idx = self.model.add_parameter(Box::new(parameter))?.index();
+        let idx = self.model.add_parameter(Box::new(parameter))?;
         Ok(idx)
     }
 
     fn add_monthly_profile_parameter(&mut self, name: &str, values: [f64; 12]) -> PyResult<parameters::ParameterIndex> {
         let parameter = parameters::MonthlyProfileParameter::new(name, values);
-        let idx = self.model.add_parameter(Box::new(parameter))?.index();
+        let idx = self.model.add_parameter(Box::new(parameter))?;
         Ok(idx)
     }
 
     fn add_daily_profile_parameter(&mut self, name: &str, values: [f64; 366]) -> PyResult<parameters::ParameterIndex> {
         let parameter = parameters::DailyProfileParameter::new(name, values);
-        let idx = self.model.add_parameter(Box::new(parameter))?.index();
+        let idx = self.model.add_parameter(Box::new(parameter))?;
         Ok(idx)
     }
 
@@ -601,7 +599,7 @@ impl PyModel {
         let reset_month = time::Month::try_from(reset_month).map_err(|e| PywrError::InvalidDateComponentRange(e))?;
 
         let parameter = parameters::UniformDrawdownProfileParameter::new(name, reset_day, reset_month, residual_days);
-        let idx = self.model.add_parameter(Box::new(parameter))?.index();
+        let idx = self.model.add_parameter(Box::new(parameter))?;
         Ok(idx)
     }
 
@@ -618,7 +616,7 @@ impl PyModel {
             "node_outflow" => Metric::NodeOutFlow(self.model.get_node_index_by_name(component, component_sub_name)?),
             "node_volume" => Metric::NodeVolume(self.model.get_node_index_by_name(component, component_sub_name)?),
             // TODO implement edge_flow
-            "parameter" => Metric::ParameterValue(self.model.get_parameter_by_name(component)?.index()),
+            "parameter" => Metric::ParameterValue(self.model.get_parameter_index_by_name(component)?),
             _ => return Err(PyErr::from(PywrError::UnrecognisedMetric)),
         };
 
@@ -629,7 +627,19 @@ impl PyModel {
 
     fn add_hdf5_output(&mut self, name: &str, filename: &str) -> PyResult<()> {
         let path = Path::new(filename);
-        let rec = recorders::hdf::HDF5Recorder::new(name, path.to_path_buf());
+
+        let metrics = self
+            .model
+            .nodes
+            .iter()
+            .map(|n| {
+                let metric = n.default_metric();
+                let (name, sub_name) = n.full_name();
+                (metric, (name.to_string(), sub_name.map(|sn| sn.to_string())))
+            })
+            .collect();
+
+        let rec = recorders::hdf::HDF5Recorder::new(name, path.to_path_buf(), metrics);
 
         let _rec = self.model.add_recorder(Box::new(rec))?;
         Ok(())

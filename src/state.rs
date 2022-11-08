@@ -17,8 +17,8 @@ impl NodeState {
         Self::Flow(FlowState::new())
     }
 
-    pub(crate) fn new_storage_state(volume: f64) -> Self {
-        Self::Storage(StorageState::new(volume))
+    pub(crate) fn new_storage_state(initial_volume: f64, max_volume: f64) -> Self {
+        Self::Storage(StorageState::new(initial_volume, max_volume))
     }
 
     fn reset(&mut self) {
@@ -87,13 +87,15 @@ impl FlowState {
 #[derive(Clone, Copy, Debug)]
 pub struct StorageState {
     pub volume: f64,
+    pub max_volume: f64,
     pub flows: FlowState,
 }
 
 impl StorageState {
-    fn new(volume: f64) -> Self {
+    fn new(initial_volume: f64, max_volume: f64) -> Self {
         Self {
-            volume,
+            volume: initial_volume,
+            max_volume,
             flows: FlowState::new(),
         }
     }
@@ -110,6 +112,11 @@ impl StorageState {
     fn add_out_flow(&mut self, flow: f64, timestep: &Timestep) {
         self.flows.add_out_flow(flow);
         self.volume -= flow * timestep.days();
+    }
+
+    fn proportional_volume(&self) -> f64 {
+        // TODO handle divide by zero (is it full or empty?)
+        self.volume / self.max_volume
     }
 }
 
@@ -158,6 +165,7 @@ impl ParameterState {
         self.indices.push(index)
     }
 
+    // TODO this argument could be a reference?
     pub(crate) fn get_value(&self, parameter_index: ParameterIndex) -> Result<f64, PywrError> {
         match self.values.get(*parameter_index.deref()) {
             Some(v) => Ok(*v),
@@ -165,6 +173,7 @@ impl ParameterState {
         }
     }
 
+    // TODO this argument could be a reference?
     pub(crate) fn get_index(&self, parameter_index: IndexParameterIndex) -> Result<usize, PywrError> {
         match self.indices.get(*parameter_index.deref()) {
             Some(i) => Ok(*i),
@@ -251,6 +260,16 @@ impl NetworkState {
         match self.node_states.get(*node_index.deref()) {
             Some(s) => match s {
                 NodeState::Storage(ss) => Ok(ss.volume),
+                NodeState::Flow(_) => Err(PywrError::MetricNotDefinedForNode),
+            },
+            None => Err(PywrError::MetricNotDefinedForNode),
+        }
+    }
+
+    pub fn get_node_proportional_volume(&self, node_index: &NodeIndex) -> Result<f64, PywrError> {
+        match self.node_states.get(*node_index.deref()) {
+            Some(s) => match s {
+                NodeState::Storage(ss) => Ok(ss.proportional_volume()),
                 NodeState::Flow(_) => Err(PywrError::MetricNotDefinedForNode),
             },
             None => Err(PywrError::MetricNotDefinedForNode),

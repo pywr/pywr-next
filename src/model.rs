@@ -26,8 +26,8 @@ pub struct Model {
     pub edges: Vec<Edge>,
     pub aggregated_nodes: AggregatedNodeVec,
     pub virtual_storage_nodes: VirtualStorageVec,
-    parameters: Vec<parameters::Parameter>,
-    index_parameters: Vec<parameters::IndexParameter>,
+    parameters: Vec<Box<dyn parameters::Parameter>>,
+    index_parameters: Vec<Box<dyn parameters::IndexParameter>>,
     parameters_resolve_order: Vec<ParameterType>,
     recorders: Vec<recorders::Recorder>,
     scenarios: ScenarioGroupCollection,
@@ -77,19 +77,21 @@ impl Model {
         states
     }
 
-    fn setup(&self, timesteps: &Vec<Timestep>, scenario_indices: &Vec<ScenarioIndex>) -> Result<(), PywrError> {
+    fn setup(&mut self, timesteps: &Vec<Timestep>, scenario_indices: &Vec<ScenarioIndex>) -> Result<(), PywrError> {
         // Setup parameters
-        for parameter in self.parameters.iter() {
-            parameter.setup(self, timesteps, scenario_indices)?;
+        let mut state = Vec::new();
+        for parameter in self.parameters.iter_mut() {
+            let is = parameter.setup(timesteps, scenario_indices)?;
+            state.push(Box::new(is));
         }
 
-        for parameter in self.index_parameters.iter() {
-            parameter.setup(self, timesteps, scenario_indices)?;
+        for parameter in self.index_parameters.iter_mut() {
+            parameter.setup(timesteps, scenario_indices)?;
         }
 
         // Setup recorders
         for recorder in self.recorders.iter() {
-            recorder.setup(self, timesteps, scenario_indices)?;
+            recorder.setup(timesteps, scenario_indices)?;
         }
 
         Ok(())
@@ -169,12 +171,6 @@ impl Model {
             };
             let pstate = self.compute_parameters(timestep, scenario_index, current_state)?;
 
-            for p in &self.parameters {
-                let idx = p.index();
-                let value = pstate.get_value(idx)?;
-
-                println!("{}[{}]={}", p.name(), idx, value);
-            }
             let (next_state, solve_timings) = solver.solve(self, timestep, current_state, &pstate)?;
             timings.solve += solve_timings;
 
@@ -188,7 +184,7 @@ impl Model {
     }
 
     fn compute_parameters(
-        &self,
+        &mut self,
         timestep: &Timestep,
         scenario_index: &ScenarioIndex,
         state: &NetworkState,
@@ -197,12 +193,21 @@ impl Model {
 
         for p_type in &self.parameters_resolve_order {
             match p_type {
-                ParameterType::Parameter(p) => {
-                    let value = p.compute(timestep, scenario_index, self, state, &parameter_state)?;
+                ParameterType::Parameter(idx) => {
+                    let p = self
+                        .parameters
+                        .get_mut(*idx.deref())
+                        .ok_or_else(|| PywrError::ParameterIndexNotFound(*idx))?;
+                    let value = p.compute(timestep, scenario_index, state, &parameter_state)?;
                     parameter_state.push_value(value);
                 }
-                ParameterType::Index(p) => {
-                    let value = p.compute(timestep, scenario_index, self, state, &parameter_state)?;
+                ParameterType::Index(idx) => {
+                    let p = self
+                        .index_parameters
+                        .get_mut(*idx.deref())
+                        .ok_or_else(|| PywrError::IndexParameterIndexNotFound(*idx))?;
+
+                    let value = p.compute(timestep, scenario_index, state, &parameter_state)?;
                     parameter_state.push_index(value);
                 }
             }
@@ -301,18 +306,34 @@ impl Model {
         }
     }
 
-    /// Get a `ParameterIndex` from a parameter's name
-    pub fn get_parameter_by_name(&self, name: &str) -> Result<parameters::Parameter, PywrError> {
+    /// Get a `Parameter` from a parameter's name
+    pub fn get_parameter_by_name(&self, name: &str) -> Result<&Box<dyn parameters::Parameter>, PywrError> {
         match self.parameters.iter().find(|p| p.name() == name) {
             Some(parameter) => Ok(parameter.clone()),
             None => Err(PywrError::ParameterNotFound(name.to_string())),
         }
     }
 
-    /// Get a `IndexParameterIndex` from a parameter's name
-    pub fn get_index_parameter_by_name(&self, name: &str) -> Result<parameters::IndexParameter, PywrError> {
+    /// Get a `ParameterIndex` from a parameter's name
+    pub fn get_parameter_index_by_name(&self, name: &str) -> Result<ParameterIndex, PywrError> {
+        match self.parameters.iter().position(|p| p.name() == name) {
+            Some(idx) => Ok(ParameterIndex::new(idx)),
+            None => Err(PywrError::ParameterNotFound(name.to_string())),
+        }
+    }
+
+    /// Get a `IndexParameter` from a parameter's name
+    pub fn get_index_parameter_by_name(&self, name: &str) -> Result<&Box<dyn parameters::IndexParameter>, PywrError> {
         match self.index_parameters.iter().find(|p| p.name() == name) {
             Some(parameter) => Ok(parameter.clone()),
+            None => Err(PywrError::ParameterNotFound(name.to_string())),
+        }
+    }
+
+    /// Get a `IndexParameterIndex` from a parameter's name
+    pub fn get_index_parameter_index_by_name(&self, name: &str) -> Result<IndexParameterIndex, PywrError> {
+        match self.index_parameters.iter().position(|p| p.name() == name) {
+            Some(idx) => Ok(IndexParameterIndex::new(idx)),
             None => Err(PywrError::ParameterNotFound(name.to_string())),
         }
     }
@@ -414,10 +435,7 @@ impl Model {
     }
 
     /// Add a `parameters::Parameter` to the model
-    pub fn add_parameter(
-        &mut self,
-        parameter: Box<dyn parameters::_Parameter>,
-    ) -> Result<parameters::Parameter, PywrError> {
+    pub fn add_parameter(&mut self, parameter: Box<dyn parameters::Parameter>) -> Result<ParameterIndex, PywrError> {
         // TODO reinstate this check
         // if let Ok(idx) = self.get_parameter_index(&parameter.meta().name) {
         //     return Err(PywrError::ParameterNameAlreadyExists(
@@ -428,20 +446,19 @@ impl Model {
 
         let parameter_index = ParameterIndex::new(self.parameters.len());
 
-        let p = parameters::Parameter::new(parameter, parameter_index);
-
         // Add the parameter ...
-        self.parameters.push(p.clone());
+        self.parameters.push(parameter);
         // .. and add it to the resolve order
-        self.parameters_resolve_order.push(ParameterType::Parameter(p.clone()));
-        Ok(p)
+        self.parameters_resolve_order
+            .push(ParameterType::Parameter(parameter_index));
+        Ok(parameter_index)
     }
 
     /// Add a `parameters::IndexParameter` to the model
     pub fn add_index_parameter(
         &mut self,
-        index_parameter: Box<dyn parameters::_IndexParameter>,
-    ) -> Result<parameters::IndexParameter, PywrError> {
+        index_parameter: Box<dyn parameters::IndexParameter>,
+    ) -> Result<IndexParameterIndex, PywrError> {
         // TODO reinstate this check
         // if let Ok(idx) = self.get_parameter_index(&parameter.meta().name) {
         //     return Err(PywrError::ParameterNameAlreadyExists(
@@ -452,11 +469,11 @@ impl Model {
 
         let parameter_index = IndexParameterIndex::new(self.index_parameters.len());
 
-        let p = parameters::IndexParameter::new(index_parameter, parameter_index);
-        self.index_parameters.push(p.clone());
+        self.index_parameters.push(index_parameter);
         // .. and add it to the resolve order
-        self.parameters_resolve_order.push(ParameterType::Index(p.clone()));
-        Ok(p)
+        self.parameters_resolve_order
+            .push(ParameterType::Index(parameter_index));
+        Ok(parameter_index)
     }
 
     /// Add a `recorders::Recorder` to the model
@@ -755,7 +772,7 @@ mod tests {
         let recorder = AssertionRecorder::new("output-flow", Metric::NodeInFlow(idx), expected);
         model.add_recorder(Box::new(recorder)).unwrap();
 
-        let idx = model.get_parameter_by_name("total-demand").unwrap().index();
+        let idx = model.get_parameter_index_by_name("total-demand").unwrap();
         let expected = Array2::from_elem((366, 10), 12.0);
         let recorder = AssertionRecorder::new("total-demand", Metric::ParameterValue(idx), expected);
         model.add_recorder(Box::new(recorder)).unwrap();

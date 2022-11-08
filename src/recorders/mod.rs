@@ -38,12 +38,7 @@ impl RecorderMeta {
 
 pub trait _Recorder {
     fn meta(&self) -> &RecorderMeta;
-    fn setup(
-        &mut self,
-        _model: &Model,
-        _timesteps: &Vec<Timestep>,
-        _scenario_indices: &Vec<ScenarioIndex>,
-    ) -> Result<(), PywrError> {
+    fn setup(&mut self, _timesteps: &Vec<Timestep>, _scenario_indices: &Vec<ScenarioIndex>) -> Result<(), PywrError> {
         Ok(())
     }
     fn before(&self) {}
@@ -51,7 +46,6 @@ pub trait _Recorder {
         &mut self,
         timestep: &Timestep,
         scenario_index: &ScenarioIndex,
-        model: &Model,
         network_state: &NetworkState,
         parameter_state: &ParameterState,
     ) -> Result<(), PywrError>;
@@ -97,16 +91,8 @@ impl Recorder {
         self.0.borrow().deref().meta().name.to_string()
     }
 
-    pub fn setup(
-        &self,
-        model: &Model,
-        timesteps: &Vec<Timestep>,
-        scenario_indices: &Vec<ScenarioIndex>,
-    ) -> Result<(), PywrError> {
-        self.0
-            .borrow_mut()
-            .deref_mut()
-            .setup(model, timesteps, scenario_indices)
+    pub fn setup(&self, timesteps: &Vec<Timestep>, scenario_indices: &Vec<ScenarioIndex>) -> Result<(), PywrError> {
+        self.0.borrow_mut().deref_mut().setup(timesteps, scenario_indices)
     }
 
     pub fn save(
@@ -120,7 +106,7 @@ impl Recorder {
         self.0
             .borrow_mut()
             .deref_mut()
-            .save(timestep, scenario_index, model, network_state, parameter_state)
+            .save(timestep, scenario_index, network_state, parameter_state)
     }
 
     pub fn after_save(&self, timestep: &Timestep) -> Result<(), PywrError> {
@@ -160,12 +146,7 @@ impl _Recorder for Array2Recorder {
         &self.meta
     }
 
-    fn setup(
-        &mut self,
-        _model: &Model,
-        _timesteps: &Vec<Timestep>,
-        _scenario_indices: &Vec<ScenarioIndex>,
-    ) -> Result<(), PywrError> {
+    fn setup(&mut self, _timesteps: &Vec<Timestep>, _scenario_indices: &Vec<ScenarioIndex>) -> Result<(), PywrError> {
         // TODO set this up properly.
         self.array = Some(Array::zeros((365, 10)));
 
@@ -176,7 +157,6 @@ impl _Recorder for Array2Recorder {
         &mut self,
         timestep: &Timestep,
         scenario_index: &ScenarioIndex,
-        model: &Model,
         state: &NetworkState,
         parameter_state: &ParameterState,
     ) -> Result<(), PywrError> {
@@ -184,7 +164,7 @@ impl _Recorder for Array2Recorder {
 
         match &mut self.array {
             Some(array) => {
-                let value = self.metric.get_value(model, state, parameter_state)?;
+                let value = self.metric.get_value(state, parameter_state)?;
                 array[[timestep.index, scenario_index.index]] = value
             }
             None => return Err(PywrError::RecorderNotInitialised),
@@ -226,7 +206,6 @@ impl _Recorder for AssertionRecorder {
         &mut self,
         timestep: &Timestep,
         scenario_index: &ScenarioIndex,
-        model: &Model,
         state: &NetworkState,
         parameter_state: &ParameterState,
     ) -> Result<(), PywrError> {
@@ -237,7 +216,7 @@ impl _Recorder for AssertionRecorder {
             None => panic!("Simulation produced results out of range."),
         };
 
-        assert_almost_eq!(self.metric.get_value(model, state, parameter_state)?, expected_value);
+        assert_almost_eq!(self.metric.get_value(state, parameter_state)?, expected_value);
 
         Ok(())
     }

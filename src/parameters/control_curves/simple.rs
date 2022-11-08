@@ -1,6 +1,5 @@
 use crate::metric::Metric;
-use crate::model::Model;
-use crate::parameters::{ParameterMeta, _Parameter};
+use crate::parameters::{Parameter, ParameterMeta};
 use crate::scenario::ScenarioIndex;
 use crate::state::{NetworkState, ParameterState};
 use crate::timestep::Timestep;
@@ -24,7 +23,7 @@ impl ControlCurveParameter {
     }
 }
 
-impl _Parameter for ControlCurveParameter {
+impl Parameter for ControlCurveParameter {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }
@@ -32,22 +31,21 @@ impl _Parameter for ControlCurveParameter {
         &mut self,
         _timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
-        model: &Model,
         state: &NetworkState,
         parameter_state: &ParameterState,
     ) -> Result<f64, PywrError> {
         // Current value
-        let x = self.metric.get_value(model, state, parameter_state)?;
+        let x = self.metric.get_value(state, parameter_state)?;
 
         for (idx, control_curve) in self.control_curves.iter().enumerate() {
-            let cc_value = control_curve.get_value(model, state, parameter_state)?;
+            let cc_value = control_curve.get_value(state, parameter_state)?;
             if x >= cc_value {
                 let value = self.values.get(idx).ok_or_else(|| PywrError::DataOutOfRange)?;
-                return Ok(value.get_value(model, state, parameter_state)?);
+                return Ok(value.get_value(state, parameter_state)?);
             }
         }
 
         let value = self.values.last().ok_or_else(|| PywrError::DataOutOfRange)?;
-        return Ok(value.get_value(model, state, parameter_state)?);
+        return Ok(value.get_value(state, parameter_state)?);
     }
 }

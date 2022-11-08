@@ -1,5 +1,4 @@
-use crate::model::Model;
-use crate::parameters::{ParameterMeta, _Parameter};
+use crate::parameters::{Parameter, ParameterMeta};
 use crate::scenario::ScenarioIndex;
 use crate::state::ParameterState;
 use crate::timestep::Timestep;
@@ -19,7 +18,7 @@ impl MonthlyProfileParameter {
     }
 }
 
-impl _Parameter for MonthlyProfileParameter {
+impl Parameter for MonthlyProfileParameter {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }
@@ -27,7 +26,6 @@ impl _Parameter for MonthlyProfileParameter {
         &mut self,
         timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
-        _model: &Model,
         _state: &NetworkState,
         _parameter_state: &ParameterState,
     ) -> Result<f64, PywrError> {

@@ -1,7 +1,7 @@
 use crate::metric::Metric;
 use crate::parameters::Parameter;
 use crate::state::{NetworkState, NodeState, ParameterState};
-use crate::{Edge, PywrError};
+use crate::{Edge, ParameterIndex, PywrError};
 use std::ops::{Deref, DerefMut};
 
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Debug)]
@@ -105,7 +105,7 @@ pub enum Constraint {
 pub enum ConstraintValue {
     None,
     Scalar(f64),
-    Parameter(Parameter),
+    Parameter(ParameterIndex),
 }
 
 impl Node {
@@ -197,8 +197,7 @@ impl Node {
             Self::Input(_n) => NodeState::new_flow_state(),
             Self::Output(_n) => NodeState::new_flow_state(),
             Self::Link(_n) => NodeState::new_flow_state(),
-            // TODO fix initial proportional volume!!!
-            Self::Storage(n) => NodeState::new_storage_state(n.get_initial_volume()),
+            Self::Storage(n) => NodeState::new_storage_state(n.get_initial_volume(), n.get_min_volume()),
         }
     }
 
@@ -545,7 +544,7 @@ impl FlowConstraints {
         match &self.min_flow {
             ConstraintValue::None => Ok(0.0),
             ConstraintValue::Scalar(v) => Ok(*v),
-            ConstraintValue::Parameter(p) => parameter_states.get_value(p.index()),
+            ConstraintValue::Parameter(p) => parameter_states.get_value(*p),
         }
     }
     /// Return the current maximum flow from the parameter state
@@ -555,7 +554,7 @@ impl FlowConstraints {
         match &self.max_flow {
             ConstraintValue::None => Ok(f64::MAX), // TODO should this return infinity?
             ConstraintValue::Scalar(v) => Ok(*v),
-            ConstraintValue::Parameter(p) => parameter_states.get_value(p.index()),
+            ConstraintValue::Parameter(p) => parameter_states.get_value(*p),
         }
     }
 }
@@ -611,7 +610,7 @@ impl InputNode {
         match &self.cost {
             ConstraintValue::None => Ok(0.0),
             ConstraintValue::Scalar(v) => Ok(*v),
-            ConstraintValue::Parameter(p) => parameter_states.get_value(p.index()),
+            ConstraintValue::Parameter(p) => parameter_states.get_value(*p),
         }
     }
     fn set_min_flow(&mut self, value: ConstraintValue) {
@@ -655,7 +654,7 @@ impl OutputNode {
         match &self.cost {
             ConstraintValue::None => Ok(0.0),
             ConstraintValue::Scalar(v) => Ok(*v),
-            ConstraintValue::Parameter(p) => parameter_states.get_value(p.index()),
+            ConstraintValue::Parameter(p) => parameter_states.get_value(*p),
         }
     }
     fn set_min_flow(&mut self, value: ConstraintValue) {
@@ -701,7 +700,7 @@ impl LinkNode {
         match &self.cost {
             ConstraintValue::None => Ok(0.0),
             ConstraintValue::Scalar(v) => Ok(*v),
-            ConstraintValue::Parameter(p) => parameter_states.get_value(p.index()),
+            ConstraintValue::Parameter(p) => parameter_states.get_value(*p),
         }
     }
     fn set_min_flow(&mut self, value: ConstraintValue) {
@@ -759,7 +758,7 @@ impl StorageNode {
         match &self.cost {
             ConstraintValue::None => Ok(0.0),
             ConstraintValue::Scalar(v) => Ok(*v),
-            ConstraintValue::Parameter(p) => parameter_states.get_value(p.index()),
+            ConstraintValue::Parameter(p) => parameter_states.get_value(*p),
         }
     }
     fn set_min_volume(&mut self, value: f64) {

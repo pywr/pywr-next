@@ -1,6 +1,5 @@
 use crate::metric::Metric;
-use crate::model::Model;
-use crate::parameters::{InternalParameterState, Parameter, ParameterMeta, _IndexParameter};
+use crate::parameters::{IndexParameter, InternalParameterState, Parameter, ParameterMeta};
 use crate::scenario::ScenarioIndex;
 use crate::state::{NetworkState, ParameterState};
 use crate::timestep::Timestep;
@@ -52,17 +51,12 @@ impl ThresholdParameter {
     }
 }
 
-impl _IndexParameter for ThresholdParameter {
+impl IndexParameter for ThresholdParameter {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }
 
-    fn setup(
-        &mut self,
-        _model: &Model,
-        _timesteps: &Vec<Timestep>,
-        scenario_indices: &Vec<ScenarioIndex>,
-    ) -> Result<(), PywrError> {
+    fn setup(&mut self, _timesteps: &Vec<Timestep>, scenario_indices: &Vec<ScenarioIndex>) -> Result<(), PywrError> {
         self.previously_activated.setup(scenario_indices.len(), false);
         Ok(())
     }
@@ -71,7 +65,6 @@ impl _IndexParameter for ThresholdParameter {
         &mut self,
         _timestep: &Timestep,
         scenario_index: &ScenarioIndex,
-        model: &Model,
         network_state: &NetworkState,
         parameter_state: &ParameterState,
     ) -> Result<usize, PywrError> {
@@ -80,8 +73,8 @@ impl _IndexParameter for ThresholdParameter {
             return Ok(1);
         }
 
-        let threshold = self.threshold.get_value(model, network_state, parameter_state)?;
-        let value = self.metric.get_value(model, network_state, parameter_state)?;
+        let threshold = self.threshold.get_value(network_state, parameter_state)?;
+        let value = self.metric.get_value(network_state, parameter_state)?;
 
         let active = match self.predicate {
             Predicate::LessThan => value < threshold,
