@@ -6,7 +6,7 @@ use crate::scenario::ScenarioGroupCollection;
 use crate::solvers::clp::ClpSolver;
 use crate::solvers::Solver;
 use crate::timestep::Timestepper;
-use crate::{parameters, recorders, IndexParameterIndex, ParameterIndex};
+use crate::{parameters, recorders, IndexParameterIndex, ParameterIndex, RecorderIndex};
 use crate::{EdgeIndex, NodeIndex, PywrError};
 use std::ops::Deref;
 
@@ -155,6 +155,12 @@ impl IntoPy<PyObject> for AggregatedNodeIndex {
 }
 
 impl IntoPy<PyObject> for VirtualStorageIndex {
+    fn into_py(self, py: Python) -> PyObject {
+        self.deref().into_py(py)
+    }
+}
+
+impl IntoPy<PyObject> for RecorderIndex {
     fn into_py(self, py: Python) -> PyObject {
         self.deref().into_py(py)
     }
@@ -621,7 +627,7 @@ impl PyModel {
         };
 
         let recorder = recorders::py::PyRecorder::new(name, object, metric);
-        let idx = self.model.add_recorder(Box::new(recorder))?.index();
+        let idx = self.model.add_recorder(Box::new(recorder))?;
         Ok(idx)
     }
 

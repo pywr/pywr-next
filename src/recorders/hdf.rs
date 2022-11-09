@@ -1,4 +1,4 @@
-use super::{NetworkState, PywrError, RecorderMeta, Timestep, _Recorder};
+use super::{NetworkState, PywrError, Recorder, RecorderMeta, Timestep};
 use crate::metric::Metric;
 use crate::scenario::ScenarioIndex;
 use crate::state::ParameterState;
@@ -31,7 +31,7 @@ impl HDF5Recorder {
     }
 }
 
-impl _Recorder for HDF5Recorder {
+impl Recorder for HDF5Recorder {
     fn meta(&self) -> &RecorderMeta {
         &self.meta
     }

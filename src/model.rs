@@ -9,7 +9,7 @@ use crate::timestep::{Timestep, Timestepper};
 use crate::aggregated_node::{AggregatedNode, AggregatedNodeIndex, AggregatedNodeVec};
 use std::ops::Deref;
 
-use crate::{parameters, recorders, IndexParameterIndex, NodeIndex, ParameterIndex, PywrError};
+use crate::{parameters, recorders, IndexParameterIndex, NodeIndex, ParameterIndex, PywrError, RecorderIndex};
 
 use crate::parameters::ParameterType;
 use crate::virtual_storage::{VirtualStorage, VirtualStorageIndex, VirtualStorageVec};
@@ -29,7 +29,7 @@ pub struct Model {
     parameters: Vec<Box<dyn parameters::Parameter>>,
     index_parameters: Vec<Box<dyn parameters::IndexParameter>>,
     parameters_resolve_order: Vec<ParameterType>,
-    recorders: Vec<recorders::Recorder>,
+    recorders: Vec<Box<dyn recorders::Recorder>>,
     scenarios: ScenarioGroupCollection,
 }
 
@@ -90,16 +90,16 @@ impl Model {
         }
 
         // Setup recorders
-        for recorder in self.recorders.iter() {
+        for recorder in self.recorders.iter_mut() {
             recorder.setup(timesteps, scenario_indices)?;
         }
 
         Ok(())
     }
 
-    fn finalise(&self) -> Result<(), PywrError> {
+    fn finalise(&mut self) -> Result<(), PywrError> {
         // Setup recorders
-        for recorder in self.recorders.iter() {
+        for recorder in self.recorders.iter_mut() {
             recorder.finalise()?;
         }
 
@@ -219,20 +219,20 @@ impl Model {
     }
 
     fn save_recorders(
-        &self,
+        &mut self,
         timestep: &Timestep,
         scenario_index: &ScenarioIndex,
         network_state: &NetworkState,
         parameter_state: &ParameterState,
     ) -> Result<(), PywrError> {
-        for recorder in self.recorders.iter() {
-            recorder.save(timestep, scenario_index, self, network_state, parameter_state)?;
+        for recorder in self.recorders.iter_mut() {
+            recorder.save(timestep, scenario_index, network_state, parameter_state)?;
         }
         Ok(())
     }
 
-    fn after_save_recorders(&self, timestep: &Timestep) -> Result<(), PywrError> {
-        for recorder in self.recorders.iter() {
+    fn after_save_recorders(&mut self, timestep: &Timestep) -> Result<(), PywrError> {
+        for recorder in self.recorders.iter_mut() {
             recorder.after_save(timestep)?;
         }
         Ok(())
@@ -339,7 +339,7 @@ impl Model {
     }
 
     /// Get a `RecorderIndex` from a recorder's name
-    pub fn get_recorder_by_name(&self, name: &str) -> Result<recorders::Recorder, PywrError> {
+    pub fn get_recorder_by_name(&self, name: &str) -> Result<&Box<dyn recorders::Recorder>, PywrError> {
         match self.recorders.iter().find(|r| r.name() == name) {
             Some(recorder) => Ok(recorder.clone()),
             None => Err(PywrError::RecorderNotFound),
@@ -477,7 +477,7 @@ impl Model {
     }
 
     /// Add a `recorders::Recorder` to the model
-    pub fn add_recorder(&mut self, recorder: Box<dyn recorders::_Recorder>) -> Result<recorders::Recorder, PywrError> {
+    pub fn add_recorder(&mut self, recorder: Box<dyn recorders::Recorder>) -> Result<RecorderIndex, PywrError> {
         // TODO reinstate this check
         // if let Ok(idx) = self.get_recorder_by_name(&recorder.meta().name) {
         //     return Err(PywrError::RecorderNameAlreadyExists(
@@ -486,10 +486,9 @@ impl Model {
         //     ));
         // }
 
-        let recorder_index = self.recorders.len();
-        let r = recorders::Recorder::new(recorder, recorder_index);
-        self.recorders.push(r.clone());
-        Ok(r)
+        let recorder_index = RecorderIndex::new(self.index_parameters.len());
+        self.recorders.push(recorder);
+        Ok(recorder_index)
     }
 
     /// Connect two nodes together

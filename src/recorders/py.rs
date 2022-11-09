@@ -1,6 +1,5 @@
-use super::{NetworkState, PywrError, RecorderMeta, Timestep, _Recorder};
+use super::{NetworkState, PywrError, Recorder, RecorderMeta, Timestep};
 use crate::metric::Metric;
-use crate::model::Model;
 use crate::scenario::ScenarioIndex;
 use crate::state::ParameterState;
 use pyo3::prelude::*;
@@ -22,7 +21,7 @@ impl PyRecorder {
     }
 }
 
-impl _Recorder for PyRecorder {
+impl Recorder for PyRecorder {
     fn meta(&self) -> &RecorderMeta {
         &self.meta
     }

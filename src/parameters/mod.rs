@@ -21,7 +21,6 @@ pub use profiles::{DailyProfileParameter, MonthlyProfileParameter, UniformDrawdo
 pub use threshold::{Predicate, ThresholdParameter};
 
 use super::{NetworkState, PywrError};
-use crate::model::Model;
 use crate::scenario::ScenarioIndex;
 
 use crate::state::ParameterState;
