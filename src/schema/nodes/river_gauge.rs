@@ -106,7 +106,7 @@ mod tests {
 
     use crate::scenario::ScenarioGroupCollection;
     use crate::schema::model::PywrModel;
-    use crate::solvers::clp::ClpSolver;
+    use crate::solvers::clp::{ClpSimplex, ClpSolver};
     use crate::solvers::Solver;
     use crate::timestep::Timestepper;
     use time::macros::date;
@@ -188,14 +188,14 @@ mod tests {
     fn test_model_run() {
         let data = model_str();
         let schema: PywrModel = serde_json::from_str(data).unwrap();
-        let (mut model, timestepper): (crate::model::Model, Timestepper) = schema.try_into().unwrap();
+        let (mut model, timestepper): (crate::model::Model, Timestepper) = schema.try_into_model(None).unwrap();
 
         assert_eq!(model.nodes.len(), 5);
         assert_eq!(model.edges.len(), 6);
 
         let timestepper = default_timestepper();
         let scenarios = default_scenarios();
-        let mut solver: Box<dyn Solver> = Box::new(ClpSolver::new());
+        let mut solver: Box<dyn Solver> = Box::new(ClpSolver::<ClpSimplex>::new());
 
         model.run(timestepper, scenarios, &mut solver).unwrap()
 

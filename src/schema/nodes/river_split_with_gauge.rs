@@ -128,7 +128,7 @@ mod tests {
 
     use crate::scenario::ScenarioGroupCollection;
     use crate::schema::model::PywrModel;
-    use crate::solvers::clp::ClpSolver;
+    use crate::solvers::clp::{ClpSimplex, ClpSolver};
     use crate::solvers::Solver;
     use crate::timestep::Timestepper;
     use time::macros::date;
@@ -217,7 +217,7 @@ mod tests {
 
         let timestepper = default_timestepper();
         let scenarios = default_scenarios();
-        let mut solver: Box<dyn Solver> = Box::new(ClpSolver::new());
+        let mut solver: Box<dyn Solver> = Box::new(ClpSolver::<ClpSimplex>::new());
 
         model.run(timestepper, scenarios, &mut solver).unwrap()
 

@@ -213,7 +213,7 @@ mod tests {
     use crate::node::{Constraint, ConstraintValue};
     use crate::parameters;
     use crate::scenario::ScenarioGroupCollection;
-    use crate::solvers::clp::ClpSolver;
+    use crate::solvers::clp::{ClpSimplex, ClpSolver};
     use crate::solvers::Solver;
     use crate::timestep::Timestepper;
     use time::macros::date;
@@ -280,7 +280,7 @@ mod tests {
         let mut model = simple_model();
         let timestepper = default_timestepper();
         let scenarios = default_scenarios();
-        let mut solver: Box<dyn Solver> = Box::new(ClpSolver::new());
+        let mut solver: Box<dyn Solver> = Box::new(ClpSolver::<ClpSimplex>::new());
 
         let node_idx = model.get_node_index_by_name("input", None).unwrap();
 

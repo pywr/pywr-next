@@ -250,7 +250,7 @@ impl TryFrom<pywr_schema::PywrModel> for PywrModel {
 mod tests {
     use super::PywrModel;
     use crate::scenario::ScenarioGroupCollection;
-    use crate::solvers::clp::ClpSolver;
+    use crate::solvers::clp::{ClpSimplex, ClpSolver};
     use crate::solvers::Solver;
     use crate::timestep::Timestepper;
     use time::macros::date;
@@ -329,7 +329,7 @@ mod tests {
         assert_eq!(model.edges.len(), 2);
 
         let scenarios = default_scenarios();
-        let mut solver: Box<dyn Solver> = Box::new(ClpSolver::new());
+        let mut solver: Box<dyn Solver> = Box::new(ClpSolver::<ClpSimplex>::new());
 
         model.run(timestepper, scenarios, &mut solver).unwrap()
 
