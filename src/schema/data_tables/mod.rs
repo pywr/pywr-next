@@ -127,8 +127,8 @@ where
 {
     let path = make_path(table_path, data_path);
 
-    let file = File::open(path.clone()).map_err(|e| TableError::IO(e.to_string()))?;
-    let mut buf_reader = BufReader::new(file);
+    let file = File::open(path).map_err(|e| TableError::IO(e.to_string()))?;
+    let buf_reader = BufReader::new(file);
     let mut rdr = csv::Reader::from_reader(buf_reader);
 
     let headers: Vec<String> = rdr
@@ -177,7 +177,7 @@ where
     let path = make_path(table_path, data_path);
 
     let file = File::open(path.clone()).map_err(|e| TableError::IO(e.to_string()))?;
-    let mut buf_reader = BufReader::new(file);
+    let buf_reader = BufReader::new(file);
     let mut rdr = csv::Reader::from_reader(buf_reader);
 
     let tbl: HashMap<String, T> = rdr
@@ -213,7 +213,7 @@ where
     let path = make_path(table_path, data_path);
 
     let file = File::open(path.clone()).map_err(|e| TableError::IO(e.to_string()))?;
-    let mut buf_reader = BufReader::new(file);
+    let buf_reader = BufReader::new(file);
     let mut rdr = csv::Reader::from_reader(buf_reader);
 
     let tbl: HashMap<(String, String), T> = rdr
@@ -249,7 +249,7 @@ where
     let path = make_path(table_path, data_path);
 
     let file = File::open(path).map_err(|e| TableError::IO(e.to_string()))?;
-    let mut buf_reader = BufReader::new(file);
+    let buf_reader = BufReader::new(file);
     let mut rdr = csv::Reader::from_reader(buf_reader);
 
     let tbl: HashMap<String, Vec<T>> = rdr
@@ -278,7 +278,7 @@ where
     let path = make_path(table_path, data_path);
 
     let file = File::open(path).map_err(|e| TableError::IO(e.to_string()))?;
-    let mut buf_reader = BufReader::new(file);
+    let buf_reader = BufReader::new(file);
     let mut rdr = csv::Reader::from_reader(buf_reader);
 
     let tbl: HashMap<(String, String), Vec<T>> = rdr
@@ -302,7 +302,7 @@ where
     Ok(LoadedVecTable::Two(tbl))
 }
 
-#[derive(Error, Debug, PartialEq)]
+#[derive(Error, Debug, PartialEq, Eq)]
 pub enum TableError {
     #[error("table not found: {0}")]
     TableNotFound(String),
@@ -468,9 +468,8 @@ impl LoadedTableCollection {
     }
 
     /// Return a single scalar value from a table collection.
-    pub fn get_scalar_usize(&self, table_ref: &TableDataRef) -> Result<usize, TableError> {
-        let tbl = self.get_table(&table_ref.table)?;
-
+    pub fn get_scalar_usize(&self, _table_ref: &TableDataRef) -> Result<usize, TableError> {
+        // let tbl = self.get_table(&table_ref.table)?;
         todo!()
     }
 
@@ -523,7 +522,7 @@ impl From<TableDataRefV1> for TableDataRef {
 mod tests {
     use super::*;
     use std::fs::File;
-    use std::io::{Cursor, Write};
+    use std::io::Write;
     use tempfile::tempdir;
 
     #[test]

@@ -102,7 +102,7 @@ pub trait Parameter {
     fn name(&self) -> &str {
         self.meta().name.as_str()
     }
-    fn setup(&mut self, _timesteps: &Vec<Timestep>, _scenario_indices: &Vec<ScenarioIndex>) -> Result<(), PywrError> {
+    fn setup(&mut self, _timesteps: &[Timestep], _scenario_indices: &[ScenarioIndex]) -> Result<(), PywrError> {
         Ok(())
     }
     fn before(&self) {}
@@ -133,7 +133,7 @@ pub trait IndexParameter {
     fn name(&self) -> &str {
         self.meta().name.as_str()
     }
-    fn setup(&mut self, _timesteps: &Vec<Timestep>, _scenario_indices: &Vec<ScenarioIndex>) -> Result<(), PywrError> {
+    fn setup(&mut self, _timesteps: &[Timestep], _scenario_indices: &[ScenarioIndex]) -> Result<(), PywrError> {
         Ok(())
     }
     fn before(&self) {}
@@ -167,11 +167,13 @@ pub struct InternalParameterState<T: Copy> {
     state: Vec<T>,
 }
 
-impl<T: Copy> InternalParameterState<T> {
-    pub fn new() -> Self {
+impl<T: Copy> Default for InternalParameterState<T> {
+    fn default() -> Self {
         Self { state: Vec::new() }
     }
+}
 
+impl<T: Copy> InternalParameterState<T> {
     pub fn setup(&mut self, size: usize, fill_with: T) {
         self.state = (0..size).map(|_| fill_with).collect();
     }

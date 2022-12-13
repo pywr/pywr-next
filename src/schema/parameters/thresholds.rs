@@ -2,7 +2,7 @@ use crate::schema::data_tables::LoadedTableCollection;
 use crate::schema::parameters::{
     DynamicFloatValue, DynamicFloatValueType, IntoV2Parameter, ParameterMeta, TryFromV1Parameter, TryIntoV2Parameter,
 };
-use crate::{IndexParameterIndex, ParameterIndex, PywrError};
+use crate::{IndexParameterIndex, PywrError};
 use pywr_schema::parameters::{ParameterThresholdParameter as ParameterThresholdParameterV1, Predicate as PredicateV1};
 use std::collections::HashMap;
 use std::path::Path;

@@ -120,36 +120,25 @@ impl StorageState {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct EdgeState {
     flow: f64,
 }
 
 impl EdgeState {
-    pub(crate) fn new() -> Self {
-        Self { flow: 0.0 }
-    }
     fn add_flow(&mut self, flow: f64) {
         self.flow += flow;
     }
 }
 
 // State of the parameters
-#[pyclass]
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct ParameterState {
     values: Vec<f64>,
     indices: Vec<usize>,
 }
 
 impl ParameterState {
-    pub(crate) fn new() -> Self {
-        Self {
-            values: Vec::new(),
-            indices: Vec::new(),
-        }
-    }
-
     pub(crate) fn with_capacity(num_values: usize, num_indices: usize) -> Self {
         Self {
             values: Vec::with_capacity(num_values),
@@ -206,7 +195,7 @@ impl NetworkState {
 
         let mut edge_states = Vec::with_capacity(self.edge_states.len());
         for _ in 0..self.edge_states.len() {
-            edge_states.push(EdgeState::new())
+            edge_states.push(EdgeState::default())
         }
 
         Self {

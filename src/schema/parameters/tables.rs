@@ -1,6 +1,6 @@
 use crate::schema::parameters::{DynamicFloatValueType, IntoV2Parameter, ParameterMeta, TryFromV1Parameter};
 use crate::{ParameterIndex, PywrError};
-use ndarray::{arr2, arr3, s, ArrayBase, DataMut, Dimension, NewAxis, Slice};
+use ndarray::s;
 use pywr_schema::parameters::TablesArrayParameter as TablesArrayParameterV1;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -98,7 +98,7 @@ impl DataframeParameter {
         HashMap::new()
     }
 
-    pub fn add_to_model(&self, model: &mut crate::model::Model) -> Result<ParameterIndex, PywrError> {
+    pub fn add_to_model(&self, _model: &mut crate::model::Model) -> Result<ParameterIndex, PywrError> {
         // 1. Call Python & Pandas to read the data
 
         // 2. Validate the shape of the data array. I.e. check number of columns matches scenario

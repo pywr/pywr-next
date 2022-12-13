@@ -1,6 +1,6 @@
 use crate::schema::data_tables::LoadedTableCollection;
 use crate::schema::nodes::NodeMeta;
-use crate::schema::parameters::{DynamicFloatValue, ParameterFloatValue, TryIntoV2Parameter};
+use crate::schema::parameters::{DynamicFloatValue, TryIntoV2Parameter};
 use crate::PywrError;
 use pywr_schema::nodes::RiverGaugeNode as RiverGaugeNodeV1;
 use std::path::Path;
@@ -116,7 +116,7 @@ mod tests {
     }
 
     fn default_scenarios() -> ScenarioGroupCollection {
-        let mut scenarios = ScenarioGroupCollection::new();
+        let mut scenarios = ScenarioGroupCollection::default();
         scenarios.add_group("test-scenario", 10);
         scenarios
     }
@@ -195,7 +195,7 @@ mod tests {
 
         let timestepper = default_timestepper();
         let scenarios = default_scenarios();
-        let mut solver: Box<dyn Solver> = Box::new(ClpSolver::<ClpSimplex>::new());
+        let mut solver: Box<dyn Solver> = Box::new(ClpSolver::<ClpSimplex>::default());
 
         model.run(timestepper, scenarios, &mut solver).unwrap()
 

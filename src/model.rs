@@ -28,6 +28,7 @@ pub struct RunTimings {
     solve: SolverTimings,
 }
 
+#[derive(Default)]
 pub struct Model {
     pub nodes: NodeVec,
     pub edges: Vec<Edge>,
@@ -43,27 +44,7 @@ pub struct Model {
 // Required for Python API
 unsafe impl Send for Model {}
 
-impl Default for Model {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl Model {
-    pub fn new() -> Self {
-        Self {
-            nodes: NodeVec::new(),
-            edges: Vec::new(),
-            aggregated_nodes: AggregatedNodeVec::new(),
-            aggregated_storage_nodes: AggregatedStorageNodeVec::new(),
-            virtual_storage_nodes: VirtualStorageVec::new(),
-            parameters: Vec::new(),
-            index_parameters: Vec::new(),
-            parameters_resolve_order: Vec::new(),
-            recorders: Vec::new(),
-        }
-    }
-
     /// Returns the initial state of the network
     pub(crate) fn get_initial_state(&self, scenario_indices: &[ScenarioIndex]) -> Vec<NetworkState> {
         let mut states: Vec<NetworkState> = Vec::new();
@@ -76,7 +57,7 @@ impl Model {
             }
 
             for _edge in &self.edges {
-                state.push_edge_state(EdgeState::new());
+                state.push_edge_state(EdgeState::default());
             }
 
             states.push(state)
@@ -84,12 +65,11 @@ impl Model {
         states
     }
 
-    fn setup(&mut self, timesteps: &Vec<Timestep>, scenario_indices: &Vec<ScenarioIndex>) -> Result<(), PywrError> {
+    fn setup(&mut self, timesteps: &[Timestep], scenario_indices: &[ScenarioIndex]) -> Result<(), PywrError> {
         // Setup parameters
-        let mut state = Vec::new();
+
         for parameter in self.parameters.iter_mut() {
-            let is = parameter.setup(timesteps, scenario_indices)?;
-            state.push(Box::new(is));
+            parameter.setup(timesteps, scenario_indices)?;
         }
 
         for parameter in self.index_parameters.iter_mut() {
@@ -216,7 +196,7 @@ impl Model {
                     let p = self
                         .parameters
                         .get_mut(*idx.deref())
-                        .ok_or_else(|| PywrError::ParameterIndexNotFound(*idx))?;
+                        .ok_or(PywrError::ParameterIndexNotFound(*idx))?;
                     let value = p.compute(timestep, scenario_index, state, &parameter_state)?;
                     // debug!("Current value of parameter {}: {}", p.name(), value);
                     if value.is_nan() {
@@ -228,7 +208,7 @@ impl Model {
                     let p = self
                         .index_parameters
                         .get_mut(*idx.deref())
-                        .ok_or_else(|| PywrError::IndexParameterIndexNotFound(*idx))?;
+                        .ok_or(PywrError::IndexParameterIndexNotFound(*idx))?;
 
                     let value = p.compute(timestep, scenario_index, state, &parameter_state)?;
                     // debug!("Current value of index parameter {}: {}", p.name(), value);
@@ -290,7 +270,7 @@ impl Model {
         value: ConstraintValue,
     ) -> Result<(), PywrError> {
         let node = self.get_mut_node_by_name(name, sub_name)?;
-        node.set_cost(value.into());
+        node.set_cost(value);
         Ok(())
     }
 
@@ -301,7 +281,7 @@ impl Model {
         value: ConstraintValue,
     ) -> Result<(), PywrError> {
         let node = self.get_mut_node_by_name(name, sub_name)?;
-        node.set_max_flow_constraint(value.into())
+        node.set_max_flow_constraint(value)
     }
 
     pub fn set_node_min_flow(
@@ -311,7 +291,7 @@ impl Model {
         value: ConstraintValue,
     ) -> Result<(), PywrError> {
         let node = self.get_mut_node_by_name(name, sub_name)?;
-        node.set_min_flow_constraint(value.into())
+        node.set_min_flow_constraint(value)
     }
 
     /// Get a `AggregatedNodeIndex` from a node's name
@@ -352,7 +332,7 @@ impl Model {
         value: ConstraintValue,
     ) -> Result<(), PywrError> {
         let node = self.get_mut_aggregated_node_by_name(name, sub_name)?;
-        node.set_max_flow_constraint(value.into());
+        node.set_max_flow_constraint(value);
         Ok(())
     }
 
@@ -363,7 +343,7 @@ impl Model {
         value: ConstraintValue,
     ) -> Result<(), PywrError> {
         let node = self.get_mut_aggregated_node_by_name(name, sub_name)?;
-        node.set_min_flow_constraint(value.into());
+        node.set_min_flow_constraint(value);
         Ok(())
     }
 
@@ -740,14 +720,14 @@ mod tests {
     }
 
     fn default_scenarios() -> ScenarioGroupCollection {
-        let mut scenarios = ScenarioGroupCollection::new();
+        let mut scenarios = ScenarioGroupCollection::default();
         scenarios.add_group("test-scenario", 10);
         scenarios
     }
 
     #[test]
     fn test_simple_model() {
-        let mut model = Model::new();
+        let mut model = Model::default();
 
         let input_node = model.add_input_node("input", None).unwrap();
         let link_node = model.add_link_node("link", None).unwrap();
@@ -775,7 +755,7 @@ mod tests {
     #[test]
     /// Test the duplicate node names are not permitted.
     fn test_duplicate_node_name() {
-        let mut model = Model::new();
+        let mut model = Model::default();
 
         model.add_input_node("my-node", None).unwrap();
         // Second add with the same name
@@ -809,7 +789,7 @@ mod tests {
 
     /// Create a simple test model with three nodes.
     fn simple_model() -> Model {
-        let mut model = Model::new();
+        let mut model = Model::default();
 
         let input_node = model.add_input_node("input", None).unwrap();
         let link_node = model.add_link_node("link", None).unwrap();
@@ -855,7 +835,7 @@ mod tests {
 
     /// A test model with a single storage node.
     fn simple_storage_model() -> Model {
-        let mut model = Model::new();
+        let mut model = Model::default();
 
         let storage_node = model
             .add_storage_node("reservoir", None, StorageInitialVolume::Absolute(100.0), 0.0, 100.0)
@@ -891,7 +871,7 @@ mod tests {
     #[test]
     /// Test adding a constant parameter to a model.
     fn test_constant_parameter() {
-        let mut model = Model::new();
+        let mut model = Model::default();
         let node_index = model.add_input_node("input", None).unwrap();
 
         let input_max_flow = parameters::ConstantParameter::new("my-constant", 10.0);
@@ -914,7 +894,7 @@ mod tests {
         let mut model = simple_model();
         let timestepper = default_timestepper();
         let scenarios = default_scenarios();
-        let mut solver: Box<dyn Solver> = Box::new(ClpSolver::<ClpSimplex>::new());
+        let mut solver: Box<dyn Solver> = Box::new(ClpSolver::<ClpSimplex>::default());
 
         solver.setup(&model).unwrap();
 
@@ -945,7 +925,7 @@ mod tests {
         let mut model = simple_model();
         let timestepper = default_timestepper();
         let scenarios = default_scenarios();
-        let mut solver: Box<dyn Solver> = Box::new(ClpSolver::<ClpSimplex>::new());
+        let mut solver: Box<dyn Solver> = Box::new(ClpSolver::<ClpSimplex>::default());
 
         // Set-up assertion for "input" node
         let idx = model.get_node_by_name("input", None).unwrap().index();
@@ -976,7 +956,7 @@ mod tests {
         let mut model = simple_storage_model();
         let timestepper = default_timestepper();
         let scenarios = default_scenarios();
-        let mut solver: Box<dyn Solver> = Box::new(ClpSolver::<ClpSimplex>::new());
+        let mut solver: Box<dyn Solver> = Box::new(ClpSolver::<ClpSimplex>::default());
 
         let idx = model.get_node_by_name("output", None).unwrap().index();
 
@@ -998,7 +978,7 @@ mod tests {
     #[test]
     /// Test `ScenarioGroupCollection` iteration
     fn test_scenario_iteration() {
-        let mut collection = ScenarioGroupCollection::new();
+        let mut collection = ScenarioGroupCollection::default();
         collection.add_group("Scenarion A", 10);
         collection.add_group("Scenarion B", 2);
         collection.add_group("Scenarion C", 5);

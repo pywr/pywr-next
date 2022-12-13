@@ -1,4 +1,3 @@
-use crate::aggregated_storage_node::AggregatedStorageNodeIndex;
 use crate::edge::EdgeIndex;
 use crate::node::NodeIndex;
 use crate::parameters::{FloatValue, ParameterIndex};

@@ -13,6 +13,7 @@ impl Deref for VirtualStorageIndex {
     }
 }
 
+#[derive(Default)]
 pub struct VirtualStorageVec {
     nodes: Vec<VirtualStorage>,
 }
@@ -32,9 +33,6 @@ impl DerefMut for VirtualStorageVec {
 }
 
 impl VirtualStorageVec {
-    pub fn new() -> Self {
-        Self { nodes: Vec::new() }
-    }
     pub fn get(&self, index: &VirtualStorageIndex) -> Result<&VirtualStorage, PywrError> {
         self.nodes.get(index.0).ok_or(PywrError::NodeIndexNotFound)
     }
@@ -108,10 +106,8 @@ impl VirtualStorage {
     }
 
     pub fn get_nodes_with_factors(&self) -> Option<Vec<(NodeIndex, f64)>> {
-        if let Some(factors) = &self.factors {
-            Some(self.nodes.iter().zip(factors.iter()).map(|(n, f)| (*n, *f)).collect())
-        } else {
-            None
-        }
+        self.factors
+            .as_ref()
+            .map(|factors| self.nodes.iter().zip(factors.iter()).map(|(n, f)| (*n, *f)).collect())
     }
 }

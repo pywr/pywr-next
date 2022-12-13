@@ -1,7 +1,7 @@
 /// AggregatedIndexParameter
 ///
 use super::{NetworkState, PywrError};
-use crate::parameters::{IndexParameter, IndexParameterIndex, IndexValue, ParameterMeta};
+use crate::parameters::{IndexParameter, IndexValue, ParameterMeta};
 use crate::scenario::ScenarioIndex;
 use crate::state::ParameterState;
 use crate::timestep::Timestep;

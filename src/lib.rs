@@ -26,7 +26,7 @@ pub mod timestep;
 mod utils;
 mod virtual_storage;
 
-#[derive(Error, Debug, PartialEq)]
+#[derive(Error, Debug, PartialEq, Eq)]
 pub enum PywrError {
     #[error("failed to load schema: {0}")]
     SchemaLoad(String),

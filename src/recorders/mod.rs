@@ -60,7 +60,7 @@ pub trait Recorder {
     fn name(&self) -> &str {
         self.meta().name.as_str()
     }
-    fn setup(&mut self, _timesteps: &Vec<Timestep>, _scenario_indices: &Vec<ScenarioIndex>) -> Result<(), PywrError> {
+    fn setup(&mut self, _timesteps: &[Timestep], _scenario_indices: &[ScenarioIndex]) -> Result<(), PywrError> {
         Ok(())
     }
     fn before(&self) {}
@@ -105,7 +105,7 @@ impl Recorder for Array2Recorder {
         &self.meta
     }
 
-    fn setup(&mut self, _timesteps: &Vec<Timestep>, _scenario_indices: &Vec<ScenarioIndex>) -> Result<(), PywrError> {
+    fn setup(&mut self, _timesteps: &[Timestep], _scenario_indices: &[ScenarioIndex]) -> Result<(), PywrError> {
         // TODO set this up properly.
         self.array = Some(Array::zeros((365, 10)));
 
@@ -223,14 +223,14 @@ mod tests {
     }
 
     fn default_scenarios() -> ScenarioGroupCollection {
-        let mut scenarios = ScenarioGroupCollection::new();
+        let mut scenarios = ScenarioGroupCollection::default();
         scenarios.add_group("test-scenario", 10);
         scenarios
     }
 
     /// Create a simple test model with three nodes.
     fn simple_model() -> Model {
-        let mut model = Model::new();
+        let mut model = Model::default();
 
         let input_node = model.add_input_node("input", None).unwrap();
         let link_node = model.add_link_node("link", None).unwrap();
@@ -280,7 +280,7 @@ mod tests {
         let mut model = simple_model();
         let timestepper = default_timestepper();
         let scenarios = default_scenarios();
-        let mut solver: Box<dyn Solver> = Box::new(ClpSolver::<ClpSimplex>::new());
+        let mut solver: Box<dyn Solver> = Box::new(ClpSolver::<ClpSimplex>::default());
 
         let node_idx = model.get_node_index_by_name("input", None).unwrap();
 

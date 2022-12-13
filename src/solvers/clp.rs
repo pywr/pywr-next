@@ -14,7 +14,7 @@ use std::slice;
 use std::time::{Duration, Instant};
 use thiserror::Error;
 
-#[derive(Error, Debug, PartialEq)]
+#[derive(Error, Debug, PartialEq, Eq)]
 pub enum ClpError {
     #[error("an unknown error occurred in Clp.")]
     UnknownError,
@@ -28,8 +28,8 @@ pub struct ClpSimplex {
     ptr: *mut Clp_Simplex,
 }
 
-impl ClpSimplex {
-    pub fn new() -> ClpSimplex {
+impl Default for ClpSimplex {
+    fn default() -> Self {
         let model: ClpSimplex;
 
         unsafe {
@@ -38,10 +38,11 @@ impl ClpSimplex {
             Clp_setLogLevel(ptr, 0);
             Clp_setObjSense(ptr, 1.0);
         }
-
         model
     }
+}
 
+impl ClpSimplex {
     pub fn print(&mut self) {
         unsafe {
             let prefix = CString::new("  ").expect("CString::new failed");
@@ -212,8 +213,8 @@ pub struct ClpModelBuilder<T> {
     model: Option<T>,
 }
 
-impl<T> ClpModelBuilder<T> {
-    pub fn new() -> Self {
+impl<T> Default for ClpModelBuilder<T> {
+    fn default() -> Self {
         Self {
             col_lower: Vec::new(),
             col_upper: Vec::new(),
@@ -227,7 +228,9 @@ impl<T> ClpModelBuilder<T> {
             model: None,
         }
     }
+}
 
+impl<T> ClpModelBuilder<T> {
     pub fn add_column(&mut self, obj_coef: f64, bounds: Bounds) {
         let (lb, ub): (f64, f64) = match bounds {
             Bounds::Double(lb, ub) => (lb, ub),
@@ -270,7 +273,7 @@ impl<T> ClpModelBuilder<T> {
 
 impl ClpModelBuilder<ClpSimplex> {
     pub fn setup(&mut self) {
-        let mut model = ClpSimplex::new();
+        let mut model = ClpSimplex::default();
         model.resize(0, self.col_upper.len() as i32);
 
         model.change_column_lower(&self.col_lower);
@@ -348,7 +351,7 @@ impl ClpModelBuilder<ClpSimplex> {
 
 impl ClpModelBuilder<Highs> {
     pub fn setup(&mut self) {
-        let mut model = Highs::new();
+        let mut model = Highs::default();
 
         model.add_cols(
             &self.col_lower,
@@ -436,15 +439,17 @@ pub struct ClpRowBuilder {
     columns: HashMap<i32, f64>,
 }
 
-impl ClpRowBuilder {
-    pub fn new() -> Self {
+impl Default for ClpRowBuilder {
+    fn default() -> Self {
         Self {
             lower: 0.0,
             upper: f64::MAX,
             columns: HashMap::new(),
         }
     }
+}
 
+impl ClpRowBuilder {
     pub fn set_upper(&mut self, upper: f64) {
         self.upper = upper;
     }
@@ -465,6 +470,7 @@ impl ClpRowBuilder {
     }
 }
 
+#[derive(Default)]
 pub struct ClpSolver<T> {
     builder: ClpModelBuilder<T>,
     start_node_constraints: Option<usize>,
@@ -473,15 +479,6 @@ pub struct ClpSolver<T> {
 }
 
 impl<T> ClpSolver<T> {
-    pub fn new() -> Self {
-        Self {
-            builder: ClpModelBuilder::new(),
-            start_node_constraints: None,
-            start_agg_node_constraints: None,
-            start_virtual_storage_constraints: None,
-        }
-    }
-
     /// Create a column for each edge
     fn create_columns(&mut self, model: &Model) -> Result<(), PywrError> {
         // One column per edge
@@ -502,7 +499,7 @@ impl<T> ClpSolver<T> {
         for node in model.nodes.deref() {
             // Only link nodes create mass-balance constraints
 
-            let mut row = ClpRowBuilder::new();
+            let mut row = ClpRowBuilder::default();
 
             if let NodeType::Link = node.node_type() {
                 let incoming_edges = node.get_incoming_edges().unwrap();
@@ -534,7 +531,7 @@ impl<T> ClpSolver<T> {
 
         for node in model.nodes.deref() {
             // Create empty arrays to store the matrix data
-            let mut row = ClpRowBuilder::new();
+            let mut row = ClpRowBuilder::default();
 
             match node.node_type() {
                 NodeType::Link => {
@@ -576,7 +573,7 @@ impl<T> ClpSolver<T> {
 
         for agg_node in model.aggregated_nodes.deref() {
             // Create empty arrays to store the matrix data
-            let mut row = ClpRowBuilder::new();
+            let mut row = ClpRowBuilder::default();
 
             for node_index in agg_node.get_nodes() {
                 // TODO error handling?
@@ -624,7 +621,7 @@ impl<T> ClpSolver<T> {
             // Create empty arrays to store the matrix data
 
             if let Some(nodes) = virtual_storage.get_nodes_with_factors() {
-                let mut row = ClpRowBuilder::new();
+                let mut row = ClpRowBuilder::default();
                 for (node_index, factor) in nodes {
                     let node = model.nodes.get(&node_index).expect("Node index not found!");
                     match node.node_type() {
@@ -760,7 +757,6 @@ impl Solver for ClpSolver<ClpSimplex> {
         self.update_aggregated_node_constraint_bounds(model, parameter_state)?;
         timings.update_constraints += start_constraint_update.elapsed();
 
-        let start_solve = Instant::now();
         let solution = self.builder.solve()?;
         //timings.solve += start_solve.elapsed();
         timings.solve += solution.solve_time;
@@ -784,8 +780,8 @@ pub struct Highs {
     ptr: *mut c_void,
 }
 
-impl Highs {
-    pub fn new() -> Self {
+impl Default for Highs {
+    fn default() -> Self {
         let model: Highs;
 
         unsafe {
@@ -798,7 +794,9 @@ impl Highs {
 
         model
     }
+}
 
+impl Highs {
     pub fn add_cols(
         &mut self,
         col_lower: &[c_double],
@@ -931,7 +929,6 @@ impl Solver for ClpSolver<Highs> {
         self.update_aggregated_node_constraint_bounds(model, parameter_state)?;
         timings.update_constraints += start_constraint_update.elapsed();
 
-        let start_solve = Instant::now();
         let solution = self.builder.solve()?;
         //timings.solve += start_solve.elapsed();
         timings.solve += solution.solve_time;
@@ -958,12 +955,12 @@ mod tests {
 
     #[test]
     fn clp_create() {
-        ClpSimplex::new();
+        ClpSimplex::default();
     }
 
     #[test]
     fn clp_add_rows() {
-        let mut model = ClpSimplex::new();
+        let mut model = ClpSimplex::default();
         model.resize(0, 2);
 
         let row_lower: Vec<c_double> = vec![0.0];
@@ -977,13 +974,13 @@ mod tests {
 
     #[test]
     fn model_builder_new() {
-        let _builder: ClpModelBuilder<ClpSimplex> = ClpModelBuilder::new();
+        let _builder: ClpModelBuilder<ClpSimplex> = ClpModelBuilder::default();
     }
 
     #[test]
     fn builder_add_rows() {
-        let mut builder: ClpModelBuilder<ClpSimplex> = ClpModelBuilder::new();
-        let mut row = ClpRowBuilder::new();
+        let mut builder: ClpModelBuilder<ClpSimplex> = ClpModelBuilder::default();
+        let mut row = ClpRowBuilder::default();
         row.add_element(0, 1.0);
         row.add_element(1, 1.0);
         row.set_lower(0.0);
@@ -993,14 +990,14 @@ mod tests {
 
     #[test]
     fn builder_solve() {
-        let mut builder = ClpModelBuilder::<ClpSimplex>::new();
+        let mut builder = ClpModelBuilder::<ClpSimplex>::default();
 
         builder.add_column(1.0, Bounds::Double(0.0, 2.0));
         builder.add_column(0.0, Bounds::Lower(0.0));
         builder.add_column(4.0, Bounds::Double(0.0, 4.0));
 
         // Row1
-        let mut row = ClpRowBuilder::new();
+        let mut row = ClpRowBuilder::default();
         row.add_element(0, 1.0);
         row.add_element(2, 1.0);
         row.set_lower(2.0);
@@ -1008,7 +1005,7 @@ mod tests {
         builder.add_row(row);
 
         // Row2
-        let mut row = ClpRowBuilder::new();
+        let mut row = ClpRowBuilder::default();
         row.add_element(0, 1.0);
         row.add_element(1, -5.0);
         row.add_element(2, 1.0);
@@ -1025,14 +1022,14 @@ mod tests {
 
     #[test]
     fn builder_solve2() {
-        let mut builder = ClpModelBuilder::<ClpSimplex>::new();
+        let mut builder = ClpModelBuilder::<ClpSimplex>::default();
 
         builder.add_column(-2.0, Bounds::Lower(0.0));
         builder.add_column(-3.0, Bounds::Lower(0.0));
         builder.add_column(-4.0, Bounds::Lower(0.0));
 
         // Row1
-        let mut row = ClpRowBuilder::new();
+        let mut row = ClpRowBuilder::default();
         row.add_element(0, 3.0);
         row.add_element(1, 2.0);
         row.add_element(2, 1.0);
@@ -1041,7 +1038,7 @@ mod tests {
         builder.add_row(row);
 
         // Row2
-        let mut row = ClpRowBuilder::new();
+        let mut row = ClpRowBuilder::default();
         row.add_element(0, 2.0);
         row.add_element(1, 5.0);
         row.add_element(2, 3.0);

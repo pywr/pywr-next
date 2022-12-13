@@ -45,7 +45,7 @@ impl TryFromV1Parameter<DailyProfileParameterV1> for DailyProfileParameter {
         let meta: ParameterMeta = v1.meta.into_v2_parameter(parent_node, unnamed_count);
 
         let values: ConstantFloatVec = if let Some(values) = v1.values {
-            ConstantFloatVec::Literal(values.into())
+            ConstantFloatVec::Literal(values)
         } else if let Some(external) = v1.external {
             ConstantFloatVec::External(external.into())
         } else if let Some(table_ref) = v1.table_ref {

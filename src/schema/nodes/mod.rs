@@ -197,13 +197,13 @@ impl CoreNode {
             CoreNode::Catchment(n) => n.set_constraints(model, tables, data_path),
             CoreNode::RiverGauge(n) => n.set_constraints(model, tables, data_path),
             CoreNode::LossLink(n) => n.set_constraints(model, tables, data_path),
-            CoreNode::River(n) => Ok(()), // No constraints on river node
+            CoreNode::River(_) => Ok(()), // No constraints on river node
             CoreNode::RiverSplitWithGauge(n) => n.set_constraints(model, tables, data_path),
             CoreNode::WaterTreatmentWorks(n) => n.set_constraints(model, tables, data_path),
             CoreNode::Aggregated(n) => n.set_constraints(model, tables, data_path),
-            CoreNode::AggregatedStorage(n) => Ok(()), // No constraints on aggregated storage nodes.
-            CoreNode::VirtualStorage(n) => Ok(()),    // TODO
-            CoreNode::AnnualVirtualStorage(n) => Ok(()), // TODO
+            CoreNode::AggregatedStorage(_) => Ok(()), // No constraints on aggregated storage nodes.
+            CoreNode::VirtualStorage(_) => Ok(()),    // TODO
+            CoreNode::AnnualVirtualStorage(_) => Ok(()), // TODO
         }
     }
 

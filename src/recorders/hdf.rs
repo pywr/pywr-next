@@ -35,7 +35,7 @@ impl Recorder for HDF5Recorder {
     fn meta(&self) -> &RecorderMeta {
         &self.meta
     }
-    fn setup(&mut self, timesteps: &Vec<Timestep>, scenario_indices: &Vec<ScenarioIndex>) -> Result<(), PywrError> {
+    fn setup(&mut self, timesteps: &[Timestep], scenario_indices: &[ScenarioIndex]) -> Result<(), PywrError> {
         let file = match hdf5::File::create(&self.filename) {
             Ok(f) => f,
             Err(e) => return Err(PywrError::HDF5Error(e.to_string())),
@@ -45,11 +45,11 @@ impl Recorder for HDF5Recorder {
 
         let shape = (timesteps.len(), scenario_indices.len());
 
-        for (metric, (name, sub_name)) in &self.metrics {
+        for (_metric, (name, sub_name)) in &self.metrics {
             let ds = match sub_name {
                 Some(sn) => {
                     // This is a node with sub-nodes, create a group for the parent node
-                    let grp = match require_group(file.deref(), &name) {
+                    let grp = match require_group(file.deref(), name) {
                         Ok(g) => g,
                         Err(e) => return Err(PywrError::HDF5Error(e.to_string())),
                     };
@@ -71,7 +71,7 @@ impl Recorder for HDF5Recorder {
         // for agg_node in model.aggregated_nodes.deref() {
         //     let metrics = agg_node.default_metric();
         //     let name = agg_node.name().to_string();
-        //     println!("Adding metric with name: {}", name);
+        //     println!("Adding _metric with name: {}", name);
         //     let ds = match file.new_dataset::<f64>().shape(shape).create(&*name) {
         //         Ok(ds) => ds,
         //         Err(e) => return Err(PywrError::HDF5Error(e.to_string())),
@@ -94,7 +94,7 @@ impl Recorder for HDF5Recorder {
         parameter_state: &ParameterState,
     ) -> Result<(), PywrError> {
         match (&mut self.array, &self.datasets) {
-            (Some(array), Some(datasets)) => {
+            (Some(array), Some(_datasets)) => {
                 for (idx, (metric, _)) in self.metrics.iter().enumerate() {
                     let value = metric.get_value(network_state, parameter_state)?;
                     array[[idx, scenario_index.index]] = value

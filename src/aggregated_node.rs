@@ -1,5 +1,5 @@
 use crate::metric::Metric;
-use crate::node::{Constraint, ConstraintValue, FlowConstraints, Node, NodeMeta};
+use crate::node::{Constraint, ConstraintValue, FlowConstraints, NodeMeta};
 use crate::state::ParameterState;
 use crate::{NodeIndex, PywrError};
 use std::ops::{Deref, DerefMut};
@@ -15,6 +15,7 @@ impl Deref for AggregatedNodeIndex {
     }
 }
 
+#[derive(Default)]
 pub struct AggregatedNodeVec {
     nodes: Vec<AggregatedNode>,
 }
@@ -34,9 +35,6 @@ impl DerefMut for AggregatedNodeVec {
 }
 
 impl AggregatedNodeVec {
-    pub fn new() -> Self {
-        Self { nodes: Vec::new() }
-    }
     pub fn get(&self, index: &AggregatedNodeIndex) -> Result<&AggregatedNode, PywrError> {
         self.nodes.get(index.0).ok_or(PywrError::NodeIndexNotFound)
     }
@@ -110,7 +108,7 @@ impl AggregatedNode {
             Constraint::MinFlow => self.set_min_flow_constraint(value),
             Constraint::MaxFlow => self.set_max_flow_constraint(value),
             Constraint::MinAndMaxFlow => {
-                self.set_min_flow_constraint(value.clone());
+                self.set_min_flow_constraint(value);
                 self.set_max_flow_constraint(value);
             }
             Constraint::MinVolume => return Err(PywrError::StorageConstraintsUndefined),

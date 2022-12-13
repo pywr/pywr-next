@@ -25,7 +25,7 @@ fn main() {
     let schema_v2: PywrModel = schema.try_into().unwrap();
 
     // There must be a better way to do this!!
-    let mut new_file_name = args.model.clone().file_stem().unwrap().to_os_string();
+    let mut new_file_name = args.model.file_stem().unwrap().to_os_string();
     new_file_name.push("_v2");
     let mut new_file_name = PathBuf::from(new_file_name);
     new_file_name.set_extension("json");
@@ -37,7 +37,7 @@ fn main() {
     let schema_v2: PywrModel = serde_json::from_str(data.as_str()).unwrap();
 
     // TODO this should be part of the conversion below
-    let mut scenario_groups = ScenarioGroupCollection::new();
+    let mut scenario_groups = ScenarioGroupCollection::default();
     if let Some(scenarios) = &schema_v2.scenarios {
         for scenario in scenarios {
             scenario_groups.add_group(&scenario.name, scenario.size)
@@ -46,7 +46,7 @@ fn main() {
 
     let (mut model, timestepper): (Model, Timestepper) = schema_v2.try_into_model(None).unwrap();
 
-    let mut solver: Box<dyn Solver> = Box::new(ClpSolver::<ClpSimplex>::new());
+    let mut solver: Box<dyn Solver> = Box::new(ClpSolver::<ClpSimplex>::default());
 
     model.run(timestepper, scenario_groups, &mut solver).unwrap();
 }

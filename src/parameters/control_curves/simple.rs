@@ -40,12 +40,12 @@ impl Parameter for ControlCurveParameter {
         for (idx, control_curve) in self.control_curves.iter().enumerate() {
             let cc_value = control_curve.get_value(state, parameter_state)?;
             if x >= cc_value {
-                let value = self.values.get(idx).ok_or_else(|| PywrError::DataOutOfRange)?;
-                return Ok(value.get_value(state, parameter_state)?);
+                let value = self.values.get(idx).ok_or(PywrError::DataOutOfRange)?;
+                return value.get_value(state, parameter_state);
             }
         }
 
-        let value = self.values.last().ok_or_else(|| PywrError::DataOutOfRange)?;
-        return Ok(value.get_value(state, parameter_state)?);
+        let value = self.values.last().ok_or(PywrError::DataOutOfRange)?;
+        value.get_value(state, parameter_state)
     }
 }

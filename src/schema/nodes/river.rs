@@ -1,5 +1,5 @@
 use crate::schema::nodes::NodeMeta;
-use crate::schema::parameters::{DynamicFloatValue, ParameterFloatValue};
+use crate::schema::parameters::DynamicFloatValue;
 use crate::PywrError;
 use pywr_schema::nodes::LinkNode as LinkNodeV1;
 use std::collections::HashMap;

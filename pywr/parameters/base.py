@@ -6,7 +6,7 @@ from pydantic import BaseModel
 import pandas  # type: ignore
 from pywr.pywr import PyModel  # type: ignore
 
-from pywr.metric import ComponentMetricRef, to_full_ref
+from pywr._metric import ComponentMetricRef, to_full_ref
 from pywr.tables import TableRef, TableCollection
 
 _parameter_registry = {}
@@ -121,20 +121,24 @@ class ConstantParameter(BaseParameter):
 
 
 class MaxParameter(BaseParameter):
-    metric: ComponentMetricRef
+    _metric: ComponentMetricRef
     threshold: float = 0.0
 
     def create_parameter(self, r_model: PyModel, path: Path, tables: TableCollection):
-        metric = to_full_ref(self.metric, f"{self.name}-metric", r_model, path, tables)
-        r_model.add_max_parameter(self.name, metric, self.threshold)
+        _metric = to_full_ref(
+            self._metric, f"{self.name}-_metric", r_model, path, tables
+        )
+        r_model.add_max_parameter(self.name, _metric, self.threshold)
 
 
 class NegativeParameter(BaseParameter):
-    metric: ComponentMetricRef
+    _metric: ComponentMetricRef
 
     def create_parameter(self, r_model: PyModel, path: Path, tables: TableCollection):
-        metric = to_full_ref(self.metric, f"{self.name}-metric", r_model, path, tables)
-        r_model.add_negative_parameter(self.name, metric)
+        _metric = to_full_ref(
+            self._metric, f"{self.name}-_metric", r_model, path, tables
+        )
+        r_model.add_negative_parameter(self.name, _metric)
 
 
 class DataFrameParameter(BaseParameter):

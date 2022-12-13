@@ -3,7 +3,7 @@ use crate::schema::parameters::{
     DynamicFloatValue, DynamicFloatValueType, DynamicIndexValue, IntoV2Parameter, ParameterMeta, TryFromV1Parameter,
     TryIntoV2Parameter,
 };
-use crate::{IndexParameterIndex, ParameterIndex, PywrError};
+use crate::{ParameterIndex, PywrError};
 use pywr_schema::parameters::IndexedArrayParameter as IndexedArrayParameterV1;
 use std::collections::HashMap;
 use std::path::Path;

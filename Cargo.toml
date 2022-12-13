@@ -24,14 +24,14 @@ log = "0.4.17"
 pyo3-log = "0.7.0"
 indicatif = "0.17.2"
 highs-sys = "1.2.2"
+pyo3 = { version = "0.14.1", features = ["serde"] }
 # polars = { version = "0.25.1", features = ["lazy", "rows"] }
 # pywr-schema = { git = "https://github.com/pywr/pywr-schema/" }
 pywr-schema = { path = "../pywr-schema/pywr_schema" }
 # Binary dependencies
 clap =  { version="4.0", features=["derive"] }
 
-[dependencies.pyo3]
-version = "0.14.1"
+
 
 [dev-dependencies]
 tempfile = "3.3.0"

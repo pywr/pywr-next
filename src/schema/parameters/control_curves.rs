@@ -1,4 +1,3 @@
-use crate::metric::Metric;
 use crate::schema::data_tables::LoadedTableCollection;
 use crate::schema::parameters::{
     DynamicFloatValue, DynamicFloatValueType, IntoV2Parameter, ParameterMeta, TryFromV1Parameter, TryIntoV2Parameter,

@@ -1,10 +1,8 @@
 use crate::node::StorageInitialVolume;
-use crate::schema::data_tables::LoadedTableCollection;
 use crate::schema::nodes::NodeMeta;
 use crate::schema::parameters::{ConstantValue, DynamicFloatValue, TryIntoV2Parameter};
 use crate::PywrError;
 use pywr_schema::nodes::AnnualVirtualStorageNode as AnnualVirtualStorageNodeV1;
-use std::path::Path;
 
 #[derive(serde::Deserialize, serde::Serialize, Clone)]
 pub struct AnnualReset {

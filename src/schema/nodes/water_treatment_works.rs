@@ -1,6 +1,6 @@
 use crate::schema::data_tables::LoadedTableCollection;
 use crate::schema::nodes::NodeMeta;
-use crate::schema::parameters::{DynamicFloatValue, ParameterFloatValue};
+use crate::schema::parameters::DynamicFloatValue;
 use crate::PywrError;
 use std::path::Path;
 

@@ -15,20 +15,12 @@ impl ScenarioGroup {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct ScenarioGroupCollection {
     groups: Vec<ScenarioGroup>,
-    next_index: Option<ScenarioIndex>,
 }
 
 impl ScenarioGroupCollection {
-    pub fn new() -> Self {
-        Self {
-            groups: Vec::new(),
-            next_index: None,
-        }
-    }
-
     /// Add a `ScenarioGroup` to the collection
     pub fn add_group(&mut self, name: &str, size: usize) {
         // TODO error with duplicate names
@@ -55,7 +47,7 @@ impl ScenarioGroupCollection {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ScenarioIndex {
     pub(crate) index: usize,
     pub(crate) indices: Vec<usize>,

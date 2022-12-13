@@ -17,7 +17,7 @@ impl AsymmetricSwitchIndexParameter {
             meta: ParameterMeta::new(name),
             on_parameter,
             off_parameter,
-            current_state: InternalParameterState::new(),
+            current_state: InternalParameterState::default(),
         }
     }
 }
@@ -26,7 +26,7 @@ impl IndexParameter for AsymmetricSwitchIndexParameter {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }
-    fn setup(&mut self, _timesteps: &Vec<Timestep>, scenario_indices: &Vec<ScenarioIndex>) -> Result<(), PywrError> {
+    fn setup(&mut self, _timesteps: &[Timestep], scenario_indices: &[ScenarioIndex]) -> Result<(), PywrError> {
         self.current_state.setup(scenario_indices.len(), 0);
         Ok(())
     }

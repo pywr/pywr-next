@@ -33,7 +33,7 @@ impl Parameter for SimpleWasmParameter {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }
-    fn setup(&mut self, _timesteps: &Vec<Timestep>, _scenario_indices: &Vec<ScenarioIndex>) -> Result<(), PywrError> {
+    fn setup(&mut self, _timesteps: &[Timestep], _scenario_indices: &[ScenarioIndex]) -> Result<(), PywrError> {
         let store = Store::default();
         let module = Module::new(&store, &self.src).unwrap();
 

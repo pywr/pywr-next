@@ -1,6 +1,5 @@
 use crate::metric::Metric;
-use crate::node::{Constraint, ConstraintValue, FlowConstraints, Node, NodeMeta};
-use crate::state::ParameterState;
+use crate::node::NodeMeta;
 use crate::{NodeIndex, PywrError};
 use std::ops::{Deref, DerefMut};
 
@@ -15,6 +14,7 @@ impl Deref for AggregatedStorageNodeIndex {
     }
 }
 
+#[derive(Default)]
 pub struct AggregatedStorageNodeVec {
     nodes: Vec<AggregatedStorageNode>,
 }
@@ -34,9 +34,6 @@ impl DerefMut for AggregatedStorageNodeVec {
 }
 
 impl AggregatedStorageNodeVec {
-    pub fn new() -> Self {
-        Self { nodes: Vec::new() }
-    }
     pub fn get(&self, index: &AggregatedStorageNodeIndex) -> Result<&AggregatedStorageNode, PywrError> {
         self.nodes.get(index.0).ok_or(PywrError::NodeIndexNotFound)
     }
@@ -58,7 +55,7 @@ impl AggregatedStorageNodeVec {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct AggregatedStorageNode {
     pub meta: NodeMeta<AggregatedStorageNodeIndex>,
     pub nodes: Vec<NodeIndex>,

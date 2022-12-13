@@ -99,7 +99,7 @@ impl PywrModel {
         self.nodes
             .iter()
             .enumerate()
-            .find_map(|(idx, n)| (n.name() == name).then(|| idx))
+            .find_map(|(idx, n)| (n.name() == name).then_some(idx))
     }
 
     pub fn get_node(&self, idx: usize) -> Option<&Node> {
@@ -117,7 +117,7 @@ impl PywrModel {
         self,
         data_path: Option<&Path>,
     ) -> Result<(crate::model::Model, crate::timestep::Timestepper), PywrError> {
-        let mut model = crate::model::Model::new();
+        let mut model = crate::model::Model::default();
 
         // Load all the data tables
         let tables = LoadedTableCollection::from_schema(&self.tables, data_path)?;

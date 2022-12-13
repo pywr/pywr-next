@@ -1,4 +1,4 @@
-use crate::node::{Node, NodeIndex, NodeVec};
+use crate::node::{NodeIndex, NodeVec};
 use crate::state::ParameterState;
 use crate::PywrError;
 use std::cell::RefCell;
@@ -7,14 +7,14 @@ use std::rc::Rc;
 pub type EdgeIndex = usize;
 pub type EdgeRef = Rc<RefCell<_Edge>>;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct _Edge {
     pub index: EdgeIndex,
     pub from_node_index: NodeIndex,
     pub to_node_index: NodeIndex,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Edge(EdgeRef);
 
 impl Edge {

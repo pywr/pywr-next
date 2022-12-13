@@ -1,5 +1,4 @@
 use crate::metric::Metric;
-use crate::schema::data_tables::LoadedTableCollection;
 use crate::schema::parameters::{DynamicFloatValueType, IntoV2Parameter, ParameterMeta, TryFromV1Parameter};
 use crate::{ParameterIndex, PywrError};
 use pywr_schema::parameters::Polynomial1DParameter as Polynomial1DParameterV1;

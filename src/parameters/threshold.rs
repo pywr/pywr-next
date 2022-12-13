@@ -1,5 +1,5 @@
 use crate::metric::Metric;
-use crate::parameters::{IndexParameter, InternalParameterState, Parameter, ParameterMeta};
+use crate::parameters::{IndexParameter, InternalParameterState, ParameterMeta};
 use crate::scenario::ScenarioIndex;
 use crate::state::{NetworkState, ParameterState};
 use crate::timestep::Timestep;
@@ -46,7 +46,7 @@ impl ThresholdParameter {
             threshold,
             predicate,
             ratchet,
-            previously_activated: InternalParameterState::new(),
+            previously_activated: InternalParameterState::default(),
         }
     }
 }
@@ -56,7 +56,7 @@ impl IndexParameter for ThresholdParameter {
         &self.meta
     }
 
-    fn setup(&mut self, _timesteps: &Vec<Timestep>, scenario_indices: &Vec<ScenarioIndex>) -> Result<(), PywrError> {
+    fn setup(&mut self, _timesteps: &[Timestep], scenario_indices: &[ScenarioIndex]) -> Result<(), PywrError> {
         self.previously_activated.setup(scenario_indices.len(), false);
         Ok(())
     }

@@ -534,7 +534,7 @@ impl TryFromV1Parameter<ParameterValueV1> for DynamicIndexValue {
         let p = match v1 {
             // There was no such thing as s constant index in Pywr v1
             // TODO this could print a warning and do a cast to usize instead.
-            ParameterValueV1::Constant(v) => {
+            ParameterValueV1::Constant(_) => {
                 return Err(PywrError::V1SchemaConversion(
                     "Not possible to convert a float constant to an index constant".to_string(),
                 ))

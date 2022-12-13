@@ -1,16 +1,12 @@
-use crate::metric::Metric;
 use crate::model::Model;
-use crate::node::{Constraint, ConstraintValue, StorageInitialVolume};
-use crate::parameters::{AggFunc, AggIndexFunc};
 use crate::scenario::ScenarioGroupCollection;
 use crate::solvers::clp::{ClpSimplex, ClpSolver, Highs};
 use crate::solvers::Solver;
 use crate::timestep::Timestepper;
-use crate::{parameters, recorders, IndexParameterIndex, ParameterIndex, RecorderIndex};
+use crate::{IndexParameterIndex, ParameterIndex, RecorderIndex};
 use crate::{NodeIndex, PywrError};
 use std::ops::Deref;
 
-use numpy::PyReadonlyArray1;
 use pyo3::create_exception;
 use pyo3::exceptions::{PyException, PyRuntimeError};
 use pyo3::prelude::*;
@@ -20,8 +16,7 @@ use crate::recorders::hdf::HDF5Recorder;
 use crate::schema::model::PywrModel;
 use crate::virtual_storage::VirtualStorageIndex;
 use pyo3::PyErr;
-use std::path::{Path, PathBuf};
-use std::str::FromStr;
+use std::path::PathBuf;
 
 /// Python API
 ///
@@ -63,13 +58,13 @@ impl std::convert::From<PywrError> for PyErr {
     }
 }
 
-#[derive(FromPyObject)]
-struct PyMetric {
-    metric_type: String,
-    name: Option<String>,
-    component: Option<String>,
-    value: Option<f64>,
-}
+// #[derive(FromPyObject)]
+// struct PyMetric {
+//     metric_type: String,
+//     name: Option<String>,
+//     component: Option<String>,
+//     value: Option<f64>,
+// }
 
 // #[pyclass]
 // struct PyModel {
@@ -657,42 +652,50 @@ impl IntoPy<PyObject> for RecorderIndex {
 #[pyfunction]
 fn load_model(path: PathBuf) {
     let data = std::fs::read_to_string("test.json").unwrap();
-    let schema_v2: PywrModel = serde_json::from_str(data.as_str()).unwrap();
+    let _schema_v2: PywrModel = serde_json::from_str(data.as_str()).unwrap();
 }
 
 #[pyfunction]
 fn load_model_from_string(data: String) {
-    let schema_v2: PywrModel = serde_json::from_str(data.as_str()).unwrap();
+    let _schema_v2: PywrModel = serde_json::from_str(data.as_str()).unwrap();
 }
 
 #[pyfunction]
-fn run_model_from_string(data: String, solver_name: &str, path: Option<PathBuf>, output_h5: Option<PathBuf>) {
+fn run_model_from_string(
+    data: String,
+    solver_name: String,
+    path: Option<PathBuf>,
+    output_h5: Option<PathBuf>,
+) -> PyResult<()> {
+    // TODO handle the serde error properly
     let schema_v2: PywrModel = serde_json::from_str(data.as_str()).unwrap();
 
     // TODO this should be part of the conversion below
-    let mut scenario_groups = ScenarioGroupCollection::new();
+    let mut scenario_groups = ScenarioGroupCollection::default();
     if let Some(scenarios) = &schema_v2.scenarios {
         for scenario in scenarios {
             scenario_groups.add_group(&scenario.name, scenario.size)
         }
     }
 
-    let (mut model, timestepper): (Model, Timestepper) = schema_v2.try_into_model(path.as_deref()).unwrap();
+    let (mut model, timestepper): (Model, Timestepper) = schema_v2.try_into_model(path.as_deref())?;
 
     if let Some(pth) = output_h5 {
-        let mut metrics = model.get_node_default_metrics();
+        let metrics = model.get_node_default_metrics();
         // metrics.extend(model.get_parameter_metrics());
         let tables_rec = HDF5Recorder::new("tables", pth, metrics);
         model.add_recorder(Box::new(tables_rec)).unwrap();
     }
 
-    let mut solver: Box<dyn Solver> = match solver_name {
-        "clp" => Box::new(ClpSolver::<ClpSimplex>::new()),
-        "highs" => Box::new(ClpSolver::<Highs>::new()),
+    let mut solver: Box<dyn Solver> = match solver_name.as_str() {
+        "clp" => Box::new(ClpSolver::<ClpSimplex>::default()),
+        "highs" => Box::new(ClpSolver::<Highs>::default()),
         _ => panic!("Solver {} not recognised.", solver_name),
     };
 
-    model.run(timestepper, scenario_groups, &mut solver).unwrap();
+    model.run(timestepper, scenario_groups, &mut solver)?;
+
+    Ok(())
 }
 
 /// A Python module implemented in Rust.

@@ -1,4 +1,3 @@
-use crate::PywrError;
 use pyo3::prelude::*;
 use std::ops::Add;
 use time::{Date, Duration};

@@ -1,6 +1,6 @@
 use crate::schema::data_tables::LoadedTableCollection;
 use crate::schema::nodes::NodeMeta;
-use crate::schema::parameters::{DynamicFloatValue, ParameterFloatValue, TryIntoV2Parameter};
+use crate::schema::parameters::{DynamicFloatValue, TryIntoV2Parameter};
 use crate::PywrError;
 use pywr_schema::nodes::LossLinkNode as LossLinkNodeV1;
 use std::path::Path;

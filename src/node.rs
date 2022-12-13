@@ -1,8 +1,7 @@
 use crate::metric::Metric;
-use crate::parameters::{FloatValue, Parameter};
+use crate::parameters::FloatValue;
 use crate::state::{NetworkState, NodeState, ParameterState};
 use crate::{Edge, ParameterIndex, PywrError};
-use std::cmp::max;
 use std::ops::{Deref, DerefMut};
 
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Debug)]
@@ -31,6 +30,7 @@ pub enum NodeType {
     Storage,
 }
 
+#[derive(Default)]
 pub struct NodeVec {
     nodes: Vec<Node>,
 }
@@ -50,9 +50,6 @@ impl DerefMut for NodeVec {
 }
 
 impl NodeVec {
-    pub fn new() -> Self {
-        Self { nodes: Vec::new() }
-    }
     pub fn get(&self, index: &NodeIndex) -> Result<&Node, PywrError> {
         self.nodes.get(index.0).ok_or(PywrError::NodeIndexNotFound)
     }
@@ -337,7 +334,7 @@ impl Node {
             Constraint::MinFlow => self.set_min_flow_constraint(value)?,
             Constraint::MaxFlow => self.set_max_flow_constraint(value)?,
             Constraint::MinAndMaxFlow => {
-                self.set_min_flow_constraint(value.clone())?;
+                self.set_min_flow_constraint(value)?;
                 self.set_max_flow_constraint(value)?;
             }
             Constraint::MinVolume => match value {
@@ -516,7 +513,7 @@ impl Node {
 }
 
 /// Meta data common to all nodes.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct NodeMeta<T> {
     index: T,
     name: String,
