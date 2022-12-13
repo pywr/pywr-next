@@ -1,7 +1,8 @@
 use crate::metric::Metric;
-use crate::parameters::Parameter;
+use crate::parameters::{FloatValue, Parameter};
 use crate::state::{NetworkState, NodeState, ParameterState};
 use crate::{Edge, ParameterIndex, PywrError};
+use std::cmp::max;
 use std::ops::{Deref, DerefMut};
 
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Debug)]
@@ -84,9 +85,11 @@ impl NodeVec {
         name: &str,
         sub_name: Option<&str>,
         initial_volume: StorageInitialVolume,
+        min_volume: f64,
+        max_volume: f64,
     ) -> NodeIndex {
         let node_index = NodeIndex(self.nodes.len());
-        let node = Node::new_storage(&node_index, name, sub_name, initial_volume);
+        let node = Node::new_storage(&node_index, name, sub_name, initial_volume, min_volume, max_volume);
         self.nodes.push(node);
         node_index
     }
@@ -101,11 +104,26 @@ pub enum Constraint {
     MaxVolume,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub enum ConstraintValue {
     None,
     Scalar(f64),
     Parameter(ParameterIndex),
+}
+
+impl From<FloatValue> for ConstraintValue {
+    fn from(fv: FloatValue) -> Self {
+        match fv {
+            FloatValue::Constant(v) => ConstraintValue::Scalar(v),
+            FloatValue::Dynamic(idx) => ConstraintValue::Parameter(idx),
+        }
+    }
+}
+
+impl From<f64> for ConstraintValue {
+    fn from(v: f64) -> Self {
+        ConstraintValue::Scalar(v)
+    }
 }
 
 impl Node {
@@ -130,8 +148,17 @@ impl Node {
         name: &str,
         sub_name: Option<&str>,
         initial_volume: StorageInitialVolume,
+        min_volume: f64,
+        max_volume: f64,
     ) -> Self {
-        Self::Storage(StorageNode::new(node_index, name, sub_name, initial_volume))
+        Self::Storage(StorageNode::new(
+            node_index,
+            name,
+            sub_name,
+            initial_volume,
+            min_volume,
+            max_volume,
+        ))
     }
 
     /// Get a node's name
@@ -197,7 +224,7 @@ impl Node {
             Self::Input(_n) => NodeState::new_flow_state(),
             Self::Output(_n) => NodeState::new_flow_state(),
             Self::Link(_n) => NodeState::new_flow_state(),
-            Self::Storage(n) => NodeState::new_storage_state(n.get_initial_volume(), n.get_min_volume()),
+            Self::Storage(n) => NodeState::new_storage_state(n.get_initial_volume(), n.get_max_volume()),
         }
     }
 
@@ -212,7 +239,7 @@ impl Node {
 
     pub fn add_incoming_edge(&mut self, edge: Edge) -> Result<(), PywrError> {
         match self {
-            Self::Input(_n) => Err(PywrError::InvalidNodeConnectionToInput),
+            Self::Input(n) => Err(PywrError::InvalidNodeConnectionToInput(n.meta.name.clone())),
             Self::Output(n) => {
                 n.add_incoming_edge(edge);
                 Ok(())
@@ -234,7 +261,7 @@ impl Node {
                 n.add_outgoing_edge(edge);
                 Ok(())
             }
-            Self::Output(_n) => Err(PywrError::InvalidNodeConnectionFromOutput),
+            Self::Output(n) => Err(PywrError::InvalidNodeConnectionFromOutput(n.meta.name.clone())),
             Self::Link(n) => {
                 n.add_outgoing_edge(edge);
                 Ok(())
@@ -248,7 +275,7 @@ impl Node {
 
     pub fn get_incoming_edges(&self) -> Result<Vec<Edge>, PywrError> {
         match self {
-            Self::Input(_n) => Err(PywrError::InvalidNodeConnectionToInput), // TODO better error
+            Self::Input(n) => Err(PywrError::InvalidNodeConnectionToInput(n.meta.name.clone())), // TODO better error
             Self::Output(n) => Ok(n.incoming_edges.clone()),
             Self::Link(n) => Ok(n.incoming_edges.clone()),
             Self::Storage(n) => Ok(n.incoming_edges.clone()),
@@ -258,7 +285,7 @@ impl Node {
     pub fn get_outgoing_edges(&self) -> Result<Vec<Edge>, PywrError> {
         match self {
             Self::Input(n) => Ok(n.outgoing_edges.clone()),
-            Self::Output(_n) => Err(PywrError::InvalidNodeConnectionFromOutput), // TODO better error
+            Self::Output(n) => Err(PywrError::InvalidNodeConnectionFromOutput(n.meta.name.clone())), // TODO better error
             Self::Link(n) => Ok(n.outgoing_edges.clone()),
             Self::Storage(n) => Ok(n.outgoing_edges.clone()),
         }
@@ -566,11 +593,8 @@ pub struct StorageConstraints {
 }
 
 impl StorageConstraints {
-    fn new() -> Self {
-        Self {
-            min_volume: 0.0,
-            max_volume: f64::MAX,
-        }
+    fn new(min_volume: f64, max_volume: f64) -> Self {
+        Self { min_volume, max_volume }
     }
     /// Return the current minimum volume from the parameter state
     ///
@@ -741,12 +765,19 @@ pub struct StorageNode {
 }
 
 impl StorageNode {
-    fn new(index: &NodeIndex, name: &str, sub_name: Option<&str>, initial_volume: StorageInitialVolume) -> Self {
+    fn new(
+        index: &NodeIndex,
+        name: &str,
+        sub_name: Option<&str>,
+        initial_volume: StorageInitialVolume,
+        min_volume: f64,
+        max_volume: f64,
+    ) -> Self {
         Self {
             meta: NodeMeta::new(index, name, sub_name),
             cost: ConstraintValue::None,
             initial_volume,
-            storage_constraints: StorageConstraints::new(),
+            storage_constraints: StorageConstraints::new(min_volume, max_volume),
             incoming_edges: Vec::new(),
             outgoing_edges: Vec::new(),
         }

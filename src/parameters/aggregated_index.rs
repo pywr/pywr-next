@@ -1,7 +1,7 @@
 /// AggregatedIndexParameter
 ///
 use super::{NetworkState, PywrError};
-use crate::parameters::{IndexParameter, IndexParameterIndex, ParameterMeta};
+use crate::parameters::{IndexParameter, IndexParameterIndex, IndexValue, ParameterMeta};
 use crate::scenario::ScenarioIndex;
 use crate::state::ParameterState;
 use crate::timestep::Timestep;
@@ -34,15 +34,15 @@ impl FromStr for AggIndexFunc {
 
 pub struct AggregatedIndexParameter {
     meta: ParameterMeta,
-    index_parameters: Vec<IndexParameterIndex>,
+    values: Vec<IndexValue>,
     agg_func: AggIndexFunc,
 }
 
 impl AggregatedIndexParameter {
-    pub fn new(name: &str, index_parameters: Vec<IndexParameterIndex>, agg_func: AggIndexFunc) -> Self {
+    pub fn new(name: &str, values: Vec<IndexValue>, agg_func: AggIndexFunc) -> Self {
         Self {
             meta: ParameterMeta::new(name),
-            index_parameters,
+            values,
             agg_func,
         }
     }
@@ -64,36 +64,53 @@ impl IndexParameter for AggregatedIndexParameter {
         let value: usize = match self.agg_func {
             AggIndexFunc::Sum => {
                 let mut total = 0;
-                for p in &self.index_parameters {
-                    total += parameter_state.get_index(*p)?;
+                for p in &self.values {
+                    total += match p {
+                        IndexValue::Constant(v) => *v,
+                        IndexValue::Dynamic(p) => parameter_state.get_index(*p)?,
+                    };
                 }
                 total
             }
             AggIndexFunc::Max => {
                 let mut total = usize::MIN;
-                for p in &self.index_parameters {
-                    total = total.max(parameter_state.get_index(*p)?);
+                for p in &self.values {
+                    total = total.max(match p {
+                        IndexValue::Constant(v) => *v,
+                        IndexValue::Dynamic(p) => parameter_state.get_index(*p)?,
+                    });
                 }
                 total
             }
             AggIndexFunc::Min => {
                 let mut total = usize::MAX;
-                for p in &self.index_parameters {
-                    total = total.min(parameter_state.get_index(*p)?);
+                for p in &self.values {
+                    total = total.min(match p {
+                        IndexValue::Constant(v) => *v,
+                        IndexValue::Dynamic(p) => parameter_state.get_index(*p)?,
+                    });
                 }
                 total
             }
             AggIndexFunc::Product => {
                 let mut total = 1;
-                for p in &self.index_parameters {
-                    total *= parameter_state.get_index(*p)?;
+                for p in &self.values {
+                    total *= match p {
+                        IndexValue::Constant(v) => *v,
+                        IndexValue::Dynamic(p) => parameter_state.get_index(*p)?,
+                    };
                 }
                 total
             }
             AggIndexFunc::Any => {
                 let mut any = 0;
-                for p in &self.index_parameters {
-                    if parameter_state.get_index(*p)? > 0 {
+                for p in &self.values {
+                    let value = match p {
+                        IndexValue::Constant(v) => *v,
+                        IndexValue::Dynamic(p) => parameter_state.get_index(*p)?,
+                    };
+
+                    if value > 0 {
                         any = 1;
                         break;
                     };
@@ -102,8 +119,13 @@ impl IndexParameter for AggregatedIndexParameter {
             }
             AggIndexFunc::All => {
                 let mut all = 1;
-                for p in &self.index_parameters {
-                    if parameter_state.get_index(*p)? == 0 {
+                for p in &self.values {
+                    let value = match p {
+                        IndexValue::Constant(v) => *v,
+                        IndexValue::Dynamic(p) => parameter_state.get_index(*p)?,
+                    };
+
+                    if value == 0 {
                         all = 0;
                         break;
                     };

@@ -4,21 +4,21 @@ use crate::state::ParameterState;
 use crate::timestep::Timestep;
 use crate::{NetworkState, PywrError};
 
-pub struct MonthlyProfileParameter {
+pub struct Array1Parameter {
     meta: ParameterMeta,
-    values: [f64; 12],
+    array: ndarray::Array1<f64>,
 }
 
-impl MonthlyProfileParameter {
-    pub fn new(name: &str, values: [f64; 12]) -> Self {
+impl Array1Parameter {
+    pub fn new(name: &str, array: ndarray::Array1<f64>) -> Self {
         Self {
             meta: ParameterMeta::new(name),
-            values,
+            array,
         }
     }
 }
 
-impl Parameter for MonthlyProfileParameter {
+impl Parameter for Array1Parameter {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }
@@ -29,6 +29,6 @@ impl Parameter for MonthlyProfileParameter {
         _state: &NetworkState,
         _parameter_state: &ParameterState,
     ) -> Result<f64, PywrError> {
-        Ok(self.values[timestep.date.month() as usize - 1])
+        Ok(self.array[timestep.index])
     }
 }

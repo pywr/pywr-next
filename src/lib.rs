@@ -1,6 +1,6 @@
 use thiserror::Error;
 
-use crate::edge::{Edge, EdgeIndex};
+use crate::edge::Edge;
 use crate::node::NodeIndex;
 use crate::parameters::{IndexParameterIndex, ParameterIndex};
 use crate::recorders::RecorderIndex;
@@ -8,6 +8,7 @@ use crate::state::NetworkState;
 
 pub mod aggregated_node;
 
+mod aggregated_storage_node;
 pub mod edge;
 mod metric;
 pub mod model;
@@ -15,16 +16,18 @@ pub mod node;
 pub mod parameters;
 pub mod python;
 mod recorders;
-mod scenario;
+pub mod scenario;
 pub mod schema;
-mod solvers;
+pub mod solvers;
 pub mod state;
-mod timestep;
+pub mod timestep;
 mod utils;
 mod virtual_storage;
 
 #[derive(Error, Debug, PartialEq)]
 pub enum PywrError {
+    #[error("failed to load schema: {0}")]
+    SchemaLoad(String),
     #[error("invalid node connect")]
     InvalidNodeConnection,
     #[error("connection to node is already defined")]
@@ -35,6 +38,8 @@ pub enum PywrError {
     NodeNotFound(String),
     #[error("edge index not found")]
     EdgeIndexNotFound,
+    #[error("unexpected parameter type: {0}")]
+    UnexpectedParameterType(String),
     #[error("parameter index {0} not found")]
     ParameterIndexNotFound(ParameterIndex),
     #[error("index parameter index {0} not found")]
@@ -53,10 +58,10 @@ pub enum PywrError {
     IndexParameterNameAlreadyExists(String, IndexParameterIndex),
     #[error("recorder name `{0}` already exists on parameter {1}")]
     RecorderNameAlreadyExists(String, RecorderIndex),
-    #[error("connections from output nodes are invalid")]
-    InvalidNodeConnectionFromOutput,
-    #[error("connections to input nodes are invalid")]
-    InvalidNodeConnectionToInput,
+    #[error("connections from output nodes are invalid. node: {0}")]
+    InvalidNodeConnectionFromOutput(String),
+    #[error("connections to input nodes are invalid. node: {0}")]
+    InvalidNodeConnectionToInput(String),
     #[error("flow constraints are undefined for this node")]
     FlowConstraintsUndefined,
     #[error("storage constraints are undefined for this node")]
@@ -109,4 +114,8 @@ pub enum PywrError {
     DataOutOfRange,
     #[error("internal parameter error: {0}")]
     InternalParameterError(String),
+    #[error("conversion from v1 schema error: {0}")]
+    V1SchemaConversion(String),
+    #[error("data table error: {0}")]
+    DataTable(#[from] schema::data_tables::TableError),
 }

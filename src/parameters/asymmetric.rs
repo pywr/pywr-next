@@ -1,4 +1,4 @@
-use crate::parameters::{IndexParameter, IndexParameterIndex, InternalParameterState, ParameterMeta};
+use crate::parameters::{IndexParameter, IndexValue, InternalParameterState, ParameterMeta};
 use crate::scenario::ScenarioIndex;
 use crate::state::{NetworkState, ParameterState};
 use crate::timestep::Timestep;
@@ -6,13 +6,13 @@ use crate::PywrError;
 
 pub struct AsymmetricSwitchIndexParameter {
     meta: ParameterMeta,
-    on_parameter: IndexParameterIndex,
-    off_parameter: IndexParameterIndex,
+    on_parameter: IndexValue,
+    off_parameter: IndexValue,
     current_state: InternalParameterState<usize>,
 }
 
 impl AsymmetricSwitchIndexParameter {
-    pub fn new(name: &str, on_parameter: IndexParameterIndex, off_parameter: IndexParameterIndex) -> Self {
+    pub fn new(name: &str, on_parameter: IndexValue, off_parameter: IndexValue) -> Self {
         Self {
             meta: ParameterMeta::new(name),
             on_parameter,
@@ -38,14 +38,22 @@ impl IndexParameter for AsymmetricSwitchIndexParameter {
         _network_state: &NetworkState,
         parameter_state: &ParameterState,
     ) -> Result<usize, PywrError> {
-        let on_value = parameter_state.get_index(self.on_parameter)?;
+        let on_value = match self.on_parameter {
+            IndexValue::Constant(idx) => idx,
+            IndexValue::Dynamic(p) => parameter_state.get_index(p)?,
+        };
+
         let current_state = *self.current_state.get(scenario_index.index);
 
         if current_state > 0 {
             if on_value > 0 {
                 // No change
             } else {
-                let off_value = parameter_state.get_index(self.off_parameter)?;
+                let off_value = match self.off_parameter {
+                    IndexValue::Constant(idx) => idx,
+                    IndexValue::Dynamic(p) => parameter_state.get_index(p)?,
+                };
+
                 if off_value == 0 {
                     self.current_state.set(scenario_index.index, 0);
                 }

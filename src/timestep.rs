@@ -51,7 +51,7 @@ pub struct Timestepper {
 }
 
 impl Timestepper {
-    pub(crate) fn new(start: Date, end: Date, timestep: i64) -> Self {
+    pub fn new(start: Date, end: Date, timestep: i64) -> Self {
         Self {
             start,
             end,

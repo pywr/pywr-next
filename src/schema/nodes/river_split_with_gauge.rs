@@ -1,34 +1,44 @@
 use crate::schema::data_tables::LoadedTableCollection;
 use crate::schema::nodes::NodeMeta;
-use crate::schema::parameters::{DynamicFloatValue, ParameterFloatValue, TryIntoV2Parameter};
+use crate::schema::parameters::{DynamicFloatValue, TryIntoV2Parameter};
 use crate::PywrError;
-use pywr_schema::nodes::RiverGaugeNode as RiverGaugeNodeV1;
+use pywr_schema::nodes::RiverSplitWithGaugeNode as RiverSplitWithGaugeNodeV1;
 use std::path::Path;
 
 #[doc = svgbobdoc::transform!(
-/// This is used to represent a minimum residual flow (MRF) at a gauging station.
+/// This is used to represent a proportional split above a minimum residual flow (MRF) at a gauging station.
 ///
 ///
 /// ```svgbob
-///            <node>.mrf
+///           <node>.mrf
 ///          .------>L -----.
-///      U  |                |     D
-///     -*--|                |--->*- - -
-///         |                |
+///      U  | <node>.bypass  |     D[slot_name_0]
+///     -*--|------->L ------|--->*- - -
+///         | <node>.split_1 |
 ///          '------>L -----'
-///            <node>.bypass
+///                  |             D[slot_names_1]
+///                   '---------->*- - -
+///
+///         |                |
+///         | <node>.split_i |
+///          '------>L -----'
+///                  |             D[slot_names_i]
+///                   '---------->*- - -
 /// ```
 ///
 )]
 #[derive(serde::Deserialize, serde::Serialize, Clone)]
-pub struct RiverGaugeNode {
+pub struct RiverSplitWithGaugeNode {
     #[serde(flatten)]
     pub meta: NodeMeta,
     pub mrf: Option<DynamicFloatValue>,
     pub mrf_cost: Option<DynamicFloatValue>,
+    pub cost: Option<DynamicFloatValue>,
+    pub factors: Vec<DynamicFloatValue>,
+    pub slot_names: Vec<String>,
 }
 
-impl RiverGaugeNode {
+impl RiverSplitWithGaugeNode {
     fn mrf_sub_name() -> Option<&'static str> {
         Some("mrf")
     }
@@ -37,7 +47,12 @@ impl RiverGaugeNode {
         Some("bypass")
     }
 
+    fn split_sub_name(i: usize) -> Option<String> {
+        Some(format!("split-{}", i))
+    }
+
     pub fn add_to_model(&self, model: &mut crate::model::Model) -> Result<(), PywrError> {
+        // TODO do this properly
         model.add_link_node(self.meta.name.as_str(), Self::mrf_sub_name())?;
         model.add_link_node(self.meta.name.as_str(), Self::bypass_sub_name())?;
 
@@ -79,10 +94,10 @@ impl RiverGaugeNode {
     }
 }
 
-impl TryFrom<RiverGaugeNodeV1> for RiverGaugeNode {
+impl TryFrom<RiverSplitWithGaugeNodeV1> for RiverSplitWithGaugeNode {
     type Error = PywrError;
 
-    fn try_from(v1: RiverGaugeNodeV1) -> Result<Self, Self::Error> {
+    fn try_from(v1: RiverSplitWithGaugeNodeV1) -> Result<Self, Self::Error> {
         let meta: NodeMeta = v1.meta.into();
         let mut unnamed_count = 0;
 
@@ -96,7 +111,14 @@ impl TryFrom<RiverGaugeNodeV1> for RiverGaugeNode {
             .map(|v| v.try_into_v2_parameter(Some(&meta.name), &mut unnamed_count))
             .transpose()?;
 
-        let n = Self { meta, mrf, mrf_cost };
+        let n = Self {
+            meta,
+            mrf,
+            mrf_cost,
+            cost: None,
+            factors: vec![],
+            slot_names: vec![],
+        };
         Ok(n)
     }
 }
@@ -188,7 +210,7 @@ mod tests {
     fn test_model_run() {
         let data = model_str();
         let schema: PywrModel = serde_json::from_str(data).unwrap();
-        let (mut model, timestepper): (crate::model::Model, Timestepper) = schema.try_into().unwrap();
+        let (mut model, timestepper): (crate::model::Model, Timestepper) = schema.try_into_model(None).unwrap();
 
         assert_eq!(model.nodes.len(), 5);
         assert_eq!(model.edges.len(), 6);

@@ -383,7 +383,7 @@ pub struct ClpSolver {
 }
 
 impl ClpSolver {
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             builder: ClpModelBuilder::new(),
             start_node_constraints: None,
@@ -629,6 +629,7 @@ impl ClpSolver {
         for agg_node in model.aggregated_nodes.deref() {
             let (lb, ub): (f64, f64) = agg_node.get_current_flow_bounds(parameter_states)?;
             self.builder.set_row_bounds(start_row + *agg_node.index(), lb, ub);
+            // println!("Agg node {:?} [{}, {}]", agg_node.name(), lb, ub);
         }
 
         Ok(())

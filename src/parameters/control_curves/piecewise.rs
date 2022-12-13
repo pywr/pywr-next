@@ -10,7 +10,7 @@ pub struct PiecewiseInterpolatedParameter {
     meta: ParameterMeta,
     metric: Metric,
     control_curves: Vec<Metric>,
-    values: Vec<(f64, f64)>,
+    values: Vec<[f64; 2]>,
     maximum: f64,
     minimum: f64,
 }
@@ -20,7 +20,7 @@ impl PiecewiseInterpolatedParameter {
         name: &str,
         metric: Metric,
         control_curves: Vec<Metric>,
-        values: Vec<(f64, f64)>,
+        values: Vec<[f64; 2]>,
         maximum: f64,
         minimum: f64,
     ) -> Self {
@@ -53,18 +53,12 @@ impl Parameter for PiecewiseInterpolatedParameter {
         for (idx, control_curve) in self.control_curves.iter().enumerate() {
             let cc_value = control_curve.get_value(state, parameter_state)?;
             if x > cc_value {
-                let (upper_value, lower_value) = self.values.get(idx).ok_or(PywrError::DataOutOfRange)?;
-                return Ok(interpolate(x, cc_value, cc_previous_value, *lower_value, *upper_value));
+                let v = self.values.get(idx).ok_or(PywrError::DataOutOfRange)?;
+                return Ok(interpolate(x, cc_value, cc_previous_value, v[1], v[0]));
             }
             cc_previous_value = cc_value;
         }
-        let (upper_value, lower_value) = self.values.last().ok_or(PywrError::DataOutOfRange)?;
-        Ok(interpolate(
-            x,
-            self.minimum,
-            cc_previous_value,
-            *lower_value,
-            *upper_value,
-        ))
+        let v = self.values.last().ok_or(PywrError::DataOutOfRange)?;
+        Ok(interpolate(x, self.minimum, cc_previous_value, v[1], v[0]))
     }
 }

@@ -29,6 +29,6 @@ impl Parameter for DailyProfileParameter {
         _state: &NetworkState,
         _parameter_state: &ParameterState,
     ) -> Result<f64, PywrError> {
-        Ok(self.values[timestep.date.ordinal() as usize])
+        Ok(self.values[timestep.date.ordinal() as usize - 1])
     }
 }

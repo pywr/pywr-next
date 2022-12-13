@@ -266,6 +266,16 @@ impl NetworkState {
         }
     }
 
+    pub fn get_node_max_volume(&self, node_index: &NodeIndex) -> Result<f64, PywrError> {
+        match self.node_states.get(*node_index.deref()) {
+            Some(s) => match s {
+                NodeState::Storage(ss) => Ok(ss.max_volume),
+                NodeState::Flow(_) => Err(PywrError::MetricNotDefinedForNode),
+            },
+            None => Err(PywrError::MetricNotDefinedForNode),
+        }
+    }
+
     pub fn get_node_proportional_volume(&self, node_index: &NodeIndex) -> Result<f64, PywrError> {
         match self.node_states.get(*node_index.deref()) {
             Some(s) => match s {

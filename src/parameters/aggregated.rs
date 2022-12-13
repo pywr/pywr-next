@@ -1,9 +1,8 @@
 use super::{NetworkState, PywrError};
-use crate::parameters::{Parameter, ParameterMeta};
+use crate::parameters::{FloatValue, Parameter, ParameterMeta};
 use crate::scenario::ScenarioIndex;
 use crate::state::ParameterState;
 use crate::timestep::Timestep;
-use crate::ParameterIndex;
 use std::str::FromStr;
 
 pub enum AggFunc {
@@ -31,15 +30,15 @@ impl FromStr for AggFunc {
 
 pub struct AggregatedParameter {
     meta: ParameterMeta,
-    parameters: Vec<ParameterIndex>,
+    values: Vec<FloatValue>,
     agg_func: AggFunc,
 }
 
 impl AggregatedParameter {
-    pub fn new(name: &str, parameters: Vec<ParameterIndex>, agg_func: AggFunc) -> Self {
+    pub fn new(name: &str, values: Vec<FloatValue>, agg_func: AggFunc) -> Self {
         Self {
             meta: ParameterMeta::new(name),
-            parameters,
+            values,
             agg_func,
         }
     }
@@ -61,36 +60,51 @@ impl Parameter for AggregatedParameter {
         let value: f64 = match self.agg_func {
             AggFunc::Sum => {
                 let mut total = 0.0_f64;
-                for p in &self.parameters {
-                    total += parameter_state.get_value(*p)?;
+                for p in &self.values {
+                    total += match p {
+                        FloatValue::Constant(v) => *v,
+                        FloatValue::Dynamic(p) => parameter_state.get_value(*p)?,
+                    };
                 }
                 total
             }
             AggFunc::Mean => {
                 let mut total = 0.0_f64;
-                for p in &self.parameters {
-                    total += parameter_state.get_value(*p)?;
+                for p in &self.values {
+                    total += match p {
+                        FloatValue::Constant(v) => *v,
+                        FloatValue::Dynamic(p) => parameter_state.get_value(*p)?,
+                    };
                 }
-                total / self.parameters.len() as f64
+                total / self.values.len() as f64
             }
             AggFunc::Max => {
                 let mut total = f64::MIN;
-                for p in &self.parameters {
-                    total = total.max(parameter_state.get_value(*p)?);
+                for p in &self.values {
+                    total = total.max(match p {
+                        FloatValue::Constant(v) => *v,
+                        FloatValue::Dynamic(p) => parameter_state.get_value(*p)?,
+                    });
                 }
                 total
             }
             AggFunc::Min => {
                 let mut total = f64::MAX;
-                for p in &self.parameters {
-                    total = total.min(parameter_state.get_value(*p)?);
+                for p in &self.values {
+                    total = total.min(match p {
+                        FloatValue::Constant(v) => *v,
+                        FloatValue::Dynamic(p) => parameter_state.get_value(*p)?,
+                    });
                 }
                 total
             }
             AggFunc::Product => {
                 let mut total = 1.0_f64;
-                for p in &self.parameters {
-                    total *= parameter_state.get_value(*p)?;
+                for p in &self.values {
+                    total *= match p {
+                        FloatValue::Constant(v) => *v,
+                        FloatValue::Dynamic(p) => parameter_state.get_value(*p)?,
+                    };
                 }
                 total
             }

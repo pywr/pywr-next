@@ -22,7 +22,7 @@ pub struct ScenarioGroupCollection {
 }
 
 impl ScenarioGroupCollection {
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             groups: Vec::new(),
             next_index: None,
@@ -30,13 +30,13 @@ impl ScenarioGroupCollection {
     }
 
     /// Add a `ScenarioGroup` to the collection
-    pub(crate) fn add_group(&mut self, name: &str, size: usize) {
+    pub fn add_group(&mut self, name: &str, size: usize) {
         // TODO error with duplicate names
         self.groups.push(ScenarioGroup::new(name, size));
     }
 
     /// Return a vector of `ScenarioIndex`s for all combinations of the groups.
-    pub(crate) fn scenario_indices(&self) -> Vec<ScenarioIndex> {
+    pub fn scenario_indices(&self) -> Vec<ScenarioIndex> {
         let num: usize = self.groups.iter().map(|grp| grp.size).product();
         let mut scenario_indices: Vec<ScenarioIndex> = Vec::with_capacity(num);
 

@@ -247,15 +247,17 @@ mod tests {
             .set_constraint(ConstraintValue::Parameter(inflow_idx), Constraint::MaxFlow)
             .unwrap();
 
-        let base_demand = parameters::ConstantParameter::new("base-demand", 10.0);
-        let base_demand_idx = model.add_parameter(Box::new(base_demand)).unwrap();
+        let base_demand = 10.0;
 
         let demand_factor = parameters::ConstantParameter::new("demand-factor", 1.2);
-        let demand_factor_idx = model.add_parameter(Box::new(demand_factor)).unwrap();
+        let demand_factor = model.add_parameter(Box::new(demand_factor)).unwrap();
 
         let total_demand = parameters::AggregatedParameter::new(
             "total-demand",
-            vec![base_demand_idx, demand_factor_idx],
+            vec![
+                parameters::FloatValue::Constant(base_demand),
+                parameters::FloatValue::Dynamic(demand_factor),
+            ],
             parameters::AggFunc::Product,
         );
         let total_demand_idx = model.add_parameter(Box::new(total_demand)).unwrap();

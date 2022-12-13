@@ -3,7 +3,7 @@ from pathlib import Path
 
 import click
 
-from pywr.model import Model
+# from pywr.model import Model
 
 
 def configure_logging():

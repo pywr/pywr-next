@@ -1,6 +1,7 @@
+use crate::aggregated_storage_node::AggregatedStorageNodeIndex;
 use crate::edge::EdgeIndex;
 use crate::node::NodeIndex;
-use crate::parameters::ParameterIndex;
+use crate::parameters::{FloatValue, ParameterIndex};
 use crate::state::{NetworkState, ParameterState};
 use crate::virtual_storage::VirtualStorageIndex;
 use crate::PywrError;
@@ -11,10 +12,22 @@ pub enum Metric {
     NodeOutFlow(NodeIndex),
     NodeVolume(NodeIndex),
     NodeProportionalVolume(NodeIndex),
+    AggregatedNodeVolume(Vec<NodeIndex>),
+    AggregatedNodeProportionalVolume(Vec<NodeIndex>),
     EdgeFlow(EdgeIndex),
     ParameterValue(ParameterIndex),
+    VirtualStorageVolume(VirtualStorageIndex),
     VirtualStorageProportionalVolume(VirtualStorageIndex),
     Constant(f64),
+}
+
+impl From<FloatValue> for Metric {
+    fn from(v: FloatValue) -> Self {
+        match v {
+            FloatValue::Constant(v) => Self::Constant(v),
+            FloatValue::Dynamic(idx) => Self::ParameterValue(idx),
+        }
+    }
 }
 
 impl Metric {
@@ -26,8 +39,26 @@ impl Metric {
             Metric::NodeProportionalVolume(idx) => Ok(network_state.get_node_proportional_volume(idx)?),
             Metric::EdgeFlow(idx) => Ok(network_state.get_edge_flow(idx)?),
             Metric::ParameterValue(idx) => Ok(parameter_state.get_value(*idx)?),
-            Metric::VirtualStorageProportionalVolume(_idx) => Ok(1.0),
+            Metric::VirtualStorageVolume(_idx) => Ok(1.0), // TODO!!!
+            Metric::VirtualStorageProportionalVolume(_idx) => Ok(1.0), // TODO!!!
             Metric::Constant(v) => Ok(*v),
+            Metric::AggregatedNodeVolume(indices) => indices
+                .iter()
+                .map(|idx| network_state.get_node_volume(idx))
+                .sum::<Result<_, _>>(),
+            Metric::AggregatedNodeProportionalVolume(indices) => {
+                let volume: f64 = indices
+                    .iter()
+                    .map(|idx| network_state.get_node_volume(idx))
+                    .sum::<Result<_, _>>()?;
+
+                let max_volume: f64 = indices
+                    .iter()
+                    .map(|idx| network_state.get_node_max_volume(idx))
+                    .sum::<Result<_, _>>()?;
+                // TODO handle divide by zero
+                Ok(volume / max_volume)
+            }
         }
     }
 }

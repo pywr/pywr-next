@@ -1,6 +1,6 @@
 [package]
-name = "pywr-next"
-version = "0.1.0"
+name = "pywr"
+version = "2.0.0-dev"
 authors = ["James Tomlinson <tomo.bbe@gmail.com>"]
 edition = "2021"
 
@@ -13,19 +13,27 @@ ndarray = "0.15.3"
 numpy = "0.14.1"
 float-cmp = "0.8.0"
 hdf5 = { version="0.8.1" }
+csv = "1.1"
 clp-sys = { path = "./clp-sys" }
-wasmer = "2.0.0"
+wasmer = "2.3.0"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1.0"
 time = { version = "0.3", features = ["serde", "serde-well-known", "serde-human-readable", "macros"] }
 svgbobdoc = { version = "0.3.0", features = ["enable"]  }
-
+log = "0.4.17"
+pyo3-log = "0.7.0"
+indicatif = "0.17.2"
+# polars = { version = "0.25.1", features = ["lazy", "rows"] }
+# pywr-schema = { git = "https://github.com/pywr/pywr-schema/" }
+pywr-schema = { path = "../pywr-schema/pywr_schema" }
+# Binary dependencies
+clap =  { version="4.0", features=["derive"] }
 
 [dependencies.pyo3]
 version = "0.14.1"
 
 [dev-dependencies]
-tempdir = "0.3.7"
+tempfile = "3.3.0"
 
 [features]
 extension-module = ["pyo3/extension-module"]
@@ -33,7 +41,13 @@ default = ["extension-module"]
 
 [lib]
 name = "pywr"
-crate-type = ["cdylib"]
+path = "src/lib.rs"
+crate-type = ["cdylib", "rlib"]
+
+
+[[bin]]
+name = "pywr-cli"
+path = "src/main.rs"
 
 [package.metadata.maturin]
 requires-dist = ["pydantic"]
@@ -45,3 +59,8 @@ members = [
 exclude = [
     "tests/models/simple-wasm/simple-wasm-parameter"
 ]
+
+[profile.release]
+opt-level = 3 # fast and small wasm
+lto = true
+strip = true

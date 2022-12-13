@@ -1,8 +1,9 @@
 mod aggregated;
 mod aggregated_index;
-pub mod asymmetric;
-pub mod control_curves;
-pub mod indexed_array;
+mod array;
+mod asymmetric;
+mod control_curves;
+mod indexed_array;
 mod max;
 mod negative;
 mod polynomial;
@@ -12,16 +13,20 @@ pub mod simple_wasm;
 mod threshold;
 
 // Re-imports
+use super::{NetworkState, PywrError};
+use crate::scenario::ScenarioIndex;
 pub use aggregated::{AggFunc, AggregatedParameter};
 pub use aggregated_index::{AggIndexFunc, AggregatedIndexParameter};
+pub use asymmetric::AsymmetricSwitchIndexParameter;
+pub use control_curves::{
+    ControlCurveIndexParameter, ControlCurveParameter, InterpolatedParameter, PiecewiseInterpolatedParameter,
+};
+pub use indexed_array::IndexedArrayParameter;
 pub use max::MaxParameter;
 pub use negative::NegativeParameter;
 pub use polynomial::Polynomial1DParameter;
 pub use profiles::{DailyProfileParameter, MonthlyProfileParameter, UniformDrawdownProfileParameter};
 pub use threshold::{Predicate, ThresholdParameter};
-
-use super::{NetworkState, PywrError};
-use crate::scenario::ScenarioIndex;
 
 use crate::state::ParameterState;
 use crate::timestep::Timestep;
@@ -110,6 +115,19 @@ pub trait Parameter {
     ) -> Result<f64, PywrError>;
 }
 
+pub trait MultiStateParameter {
+    fn before(&self) {}
+    fn compute(
+        &mut self,
+        timestep: &Timestep,
+        scenario_index: &ScenarioIndex,
+        network_state: &NetworkState,
+        parameter_state: &ParameterState,
+    ) -> Result<(), PywrError>;
+
+    fn get_value(&mut self, key: &str) -> Result<f64, PywrError>;
+}
+
 pub trait IndexParameter {
     fn meta(&self) -> &ParameterMeta;
     fn name(&self) -> &str {
@@ -126,6 +144,18 @@ pub trait IndexParameter {
         network_state: &NetworkState,
         parameter_state: &ParameterState,
     ) -> Result<usize, PywrError>;
+}
+
+#[derive(Copy, Clone)]
+pub enum FloatValue {
+    Constant(f64),
+    Dynamic(ParameterIndex),
+}
+
+#[derive(Copy, Clone)]
+pub enum IndexValue {
+    Constant(usize),
+    Dynamic(IndexParameterIndex),
 }
 
 pub enum ParameterType {
