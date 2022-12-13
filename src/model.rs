@@ -484,9 +484,9 @@ impl Model {
     }
 
     /// Get a `Parameter` from a parameter's name
-    pub fn get_parameter_by_name(&self, name: &str) -> Result<&Box<dyn parameters::Parameter>, PywrError> {
+    pub fn get_parameter_by_name(&self, name: &str) -> Result<&dyn parameters::Parameter, PywrError> {
         match self.parameters.iter().find(|p| p.name() == name) {
-            Some(parameter) => Ok(parameter.clone()),
+            Some(parameter) => Ok(parameter.as_ref()),
             None => Err(PywrError::ParameterNotFound(name.to_string())),
         }
     }
@@ -500,9 +500,9 @@ impl Model {
     }
 
     /// Get a `IndexParameter` from a parameter's name
-    pub fn get_index_parameter_by_name(&self, name: &str) -> Result<&Box<dyn parameters::IndexParameter>, PywrError> {
+    pub fn get_index_parameter_by_name(&self, name: &str) -> Result<&dyn parameters::IndexParameter, PywrError> {
         match self.index_parameters.iter().find(|p| p.name() == name) {
-            Some(parameter) => Ok(parameter.clone()),
+            Some(parameter) => Ok(parameter.as_ref()),
             None => Err(PywrError::ParameterNotFound(name.to_string())),
         }
     }
@@ -516,9 +516,9 @@ impl Model {
     }
 
     /// Get a `RecorderIndex` from a recorder's name
-    pub fn get_recorder_by_name(&self, name: &str) -> Result<&Box<dyn recorders::Recorder>, PywrError> {
+    pub fn get_recorder_by_name(&self, name: &str) -> Result<&dyn recorders::Recorder, PywrError> {
         match self.recorders.iter().find(|r| r.name() == name) {
-            Some(recorder) => Ok(recorder.clone()),
+            Some(recorder) => Ok(recorder.as_ref()),
             None => Err(PywrError::RecorderNotFound),
         }
     }
@@ -727,7 +727,7 @@ mod tests {
     use crate::node::{Constraint, ConstraintValue};
     use crate::recorders::AssertionRecorder;
     use crate::scenario::{ScenarioGroupCollection, ScenarioIndex};
-    use crate::solvers::clp::ClpSolver;
+    use crate::solvers::clp::{ClpSimplex, ClpSolver};
     use crate::solvers::Solver;
     use crate::timestep::Timestepper;
     use float_cmp::approx_eq;
@@ -914,7 +914,7 @@ mod tests {
         let mut model = simple_model();
         let timestepper = default_timestepper();
         let scenarios = default_scenarios();
-        let mut solver: Box<dyn Solver> = Box::new(ClpSolver::new());
+        let mut solver: Box<dyn Solver> = Box::new(ClpSolver::<ClpSimplex>::new());
 
         solver.setup(&model).unwrap();
 
@@ -945,7 +945,7 @@ mod tests {
         let mut model = simple_model();
         let timestepper = default_timestepper();
         let scenarios = default_scenarios();
-        let mut solver: Box<dyn Solver> = Box::new(ClpSolver::new());
+        let mut solver: Box<dyn Solver> = Box::new(ClpSolver::<ClpSimplex>::new());
 
         // Set-up assertion for "input" node
         let idx = model.get_node_by_name("input", None).unwrap().index();
@@ -976,7 +976,7 @@ mod tests {
         let mut model = simple_storage_model();
         let timestepper = default_timestepper();
         let scenarios = default_scenarios();
-        let mut solver: Box<dyn Solver> = Box::new(ClpSolver::new());
+        let mut solver: Box<dyn Solver> = Box::new(ClpSolver::<ClpSimplex>::new());
 
         let idx = model.get_node_by_name("output", None).unwrap().index();
 
