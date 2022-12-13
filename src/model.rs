@@ -195,7 +195,9 @@ impl Model {
             next_states.push(next_state);
         }
 
+        let start_r_save = Instant::now();
         self.after_save_recorders(timestep)?;
+        timings.recorder_saving += start_r_save.elapsed();
 
         Ok(next_states)
     }

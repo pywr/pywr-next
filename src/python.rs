@@ -3,7 +3,7 @@ use crate::model::Model;
 use crate::node::{Constraint, ConstraintValue, StorageInitialVolume};
 use crate::parameters::{AggFunc, AggIndexFunc};
 use crate::scenario::ScenarioGroupCollection;
-use crate::solvers::clp::ClpSolver;
+use crate::solvers::clp::{ClpSimplex, ClpSolver, Highs};
 use crate::solvers::Solver;
 use crate::timestep::Timestepper;
 use crate::{parameters, recorders, IndexParameterIndex, ParameterIndex, RecorderIndex};
@@ -666,7 +666,7 @@ fn load_model_from_string(data: String) {
 }
 
 #[pyfunction]
-fn run_model_from_string(data: String, path: Option<PathBuf>, output_h5: Option<PathBuf>) {
+fn run_model_from_string(data: String, solver_name: &str, path: Option<PathBuf>, output_h5: Option<PathBuf>) {
     let schema_v2: PywrModel = serde_json::from_str(data.as_str()).unwrap();
 
     // TODO this should be part of the conversion below
@@ -686,7 +686,11 @@ fn run_model_from_string(data: String, path: Option<PathBuf>, output_h5: Option<
         model.add_recorder(Box::new(tables_rec)).unwrap();
     }
 
-    let mut solver: Box<dyn Solver> = Box::new(ClpSolver::new());
+    let mut solver: Box<dyn Solver> = match solver_name {
+        "clp" => Box::new(ClpSolver::<ClpSimplex>::new()),
+        "highs" => Box::new(ClpSolver::<Highs>::new()),
+        _ => panic!("Solver {} not recognised.", solver_name),
+    };
 
     model.run(timestepper, scenario_groups, &mut solver).unwrap();
 }

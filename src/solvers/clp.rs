@@ -5,10 +5,11 @@ use crate::state::ParameterState;
 use crate::timestep::Timestep;
 use crate::{NetworkState, PywrError};
 use clp_sys::*;
-use libc::{c_double, c_int};
+use libc::{c_double, c_int, c_void};
 use std::collections::HashMap;
 use std::ffi::CString;
 use std::ops::Deref;
+use std::ptr::null;
 use std::slice;
 use std::time::{Duration, Instant};
 use thiserror::Error;
@@ -23,7 +24,7 @@ pub enum ClpError {
 
 pub type CoinBigIndex = c_int;
 
-struct ClpSimplex {
+pub struct ClpSimplex {
     ptr: *mut Clp_Simplex,
 }
 
@@ -198,19 +199,20 @@ pub enum Bounds {
     Fixed(f64),
 }
 
-pub struct ClpModelBuilder {
+pub struct ClpModelBuilder<T> {
     col_lower: Vec<c_double>,
     col_upper: Vec<c_double>,
     col_obj_coef: Vec<c_double>,
     row_lower: Vec<c_double>,
     row_upper: Vec<c_double>,
+    row_mask: Vec<c_int>,
     row_starts: Vec<CoinBigIndex>,
     columns: Vec<c_int>,
     elements: Vec<c_double>,
-    model: Option<ClpSimplex>,
+    model: Option<T>,
 }
 
-impl ClpModelBuilder {
+impl<T> ClpModelBuilder<T> {
     pub fn new() -> Self {
         Self {
             col_lower: Vec::new(),
@@ -218,6 +220,7 @@ impl ClpModelBuilder {
             col_obj_coef: Vec::new(),
             row_lower: Vec::new(),
             row_upper: Vec::new(),
+            row_mask: Vec::new(),
             row_starts: vec![0],
             columns: Vec::new(),
             elements: Vec::new(),
@@ -251,6 +254,7 @@ impl ClpModelBuilder {
     pub fn add_row(&mut self, row: ClpRowBuilder) {
         self.row_lower.push(row.lower);
         self.row_upper.push(row.upper);
+        self.row_mask.push(1);
         let prev_row_start = *self.row_starts.get(&self.row_starts.len() - 1).unwrap();
         self.row_starts.push(prev_row_start + row.columns.len() as CoinBigIndex);
         for (column, value) in row.columns {
@@ -262,7 +266,9 @@ impl ClpModelBuilder {
     pub fn nrows(&self) -> usize {
         self.row_upper.len()
     }
+}
 
+impl ClpModelBuilder<ClpSimplex> {
     pub fn setup(&mut self) {
         let mut model = ClpSimplex::new();
         model.resize(0, self.col_upper.len() as i32);
@@ -340,6 +346,90 @@ impl ClpModelBuilder {
     }
 }
 
+impl ClpModelBuilder<Highs> {
+    pub fn setup(&mut self) {
+        let mut model = Highs::new();
+
+        model.add_cols(
+            &self.col_lower,
+            &self.col_upper,
+            &self.col_obj_coef,
+            self.col_upper.len() as i32,
+        );
+
+        // println!("Adding rows ...");
+        model.add_rows(
+            self.row_upper.len() as i32,
+            &self.row_lower,
+            &self.row_upper,
+            self.elements.len() as i32,
+            &self.row_starts,
+            &self.columns,
+            &self.elements,
+        );
+
+        // println!("row_lower: {:?}", self.row_lower);
+        // println!("row_upper: {:?}", self.row_upper);
+        // println!("row_starts: {:?}", self.row_starts);
+        // println!("columns: {:?}", self.columns);
+        // println!("elements: {:?}", self.elements);
+        // println!("obj_coef: {:?}", self.col_obj_coef);
+
+        // model.initial_dual_solve();
+
+        self.model = Some(model);
+    }
+
+    pub fn solve(&mut self) -> Result<ClpSolution, ClpError> {
+        // let mut model = ClpSimplex::new();
+        let model = match &mut self.model {
+            Some(m) => m,
+            None => return Err(ClpError::SimplexNotInitialisedError),
+        };
+
+        //model.change_column_lower(&self.col_lower);
+        //model.change_column_upper(&self.col_upper);
+
+        model.change_objective_coefficients(&self.col_obj_coef, self.col_obj_coef.len() as i32);
+
+        model.change_row_bounds(&self.row_mask, &self.row_lower, &self.row_upper);
+
+        // println!("number: {}", number);
+        // println!("row_lower: {:?}", self.row_lower);
+        // println!("row_upper: {:?}", self.row_upper);
+        // println!("row_starts: {:?}", self.row_starts);
+        // println!("columns: {:?}", self.columns);
+        // println!("elements: {:?}", self.elements);
+        // println!("obj_coef: {:?}", self.col_obj_coef);
+
+        // model.add_rows(
+        //     &self.row_lower,
+        //     &self.row_upper,
+        //     &self.row_starts,
+        //     &self.columns,
+        //     &self.elements,
+        // );
+        // println!("coef: {:?}", model.get_objective_coefficients(2));
+        // println!("row_upper: {:?}", model.get_row_upper(4));
+        let now = Instant::now();
+        model.run();
+        let solve_time = now.elapsed();
+        // model.primal_solve();
+        // model.initial_solve();
+        //let t = now.elapsed().as_secs_f64();
+        // println!("dual solve: {} s; {} per s", t, 1.0/t);
+        // println!("coef: {:?}", model.get_objective_coefficients(2));
+
+        let solution = ClpSolution {
+            objective_value: model.objective_value(),
+            primal_columns: model.primal_column_solution(self.col_upper.len(), self.row_upper.len()),
+            solve_time,
+        };
+
+        Ok(solution)
+    }
+}
+
 pub struct ClpRowBuilder {
     lower: f64,
     upper: f64,
@@ -375,14 +465,14 @@ impl ClpRowBuilder {
     }
 }
 
-pub struct ClpSolver {
-    builder: ClpModelBuilder,
+pub struct ClpSolver<T> {
+    builder: ClpModelBuilder<T>,
     start_node_constraints: Option<usize>,
     start_agg_node_constraints: Option<usize>,
     start_virtual_storage_constraints: Option<usize>,
 }
 
-impl ClpSolver {
+impl<T> ClpSolver<T> {
     pub fn new() -> Self {
         Self {
             builder: ClpModelBuilder::new(),
@@ -636,7 +726,178 @@ impl ClpSolver {
     }
 }
 
-impl Solver for ClpSolver {
+impl Solver for ClpSolver<ClpSimplex> {
+    fn setup(&mut self, model: &Model) -> Result<(), PywrError> {
+        // Create the columns
+        self.create_columns(model)?;
+        // Create edge mass balance constraints
+        self.create_mass_balance_constraints(model);
+        // Create the nodal constraints
+        self.create_node_constraints(model);
+        // Create the aggregated node constraints
+        self.create_aggregated_node_constraints(model);
+        // Create virtual storage constraints
+        self.create_virtual_storage_constraints(model);
+
+        self.builder.setup();
+
+        Ok(())
+    }
+    fn solve(
+        &mut self,
+        model: &Model,
+        timestep: &Timestep,
+        network_state: &NetworkState,
+        parameter_state: &ParameterState,
+    ) -> Result<(NetworkState, SolverTimings), PywrError> {
+        let mut timings = SolverTimings::default();
+        let start_objective_update = Instant::now();
+        self.update_edge_objectives(model, parameter_state)?;
+        timings.update_objective += start_objective_update.elapsed();
+
+        let start_constraint_update = Instant::now();
+        self.update_node_constraint_bounds(model, timestep, network_state, parameter_state)?;
+        self.update_aggregated_node_constraint_bounds(model, parameter_state)?;
+        timings.update_constraints += start_constraint_update.elapsed();
+
+        let start_solve = Instant::now();
+        let solution = self.builder.solve()?;
+        //timings.solve += start_solve.elapsed();
+        timings.solve += solution.solve_time;
+
+        // println!("{:?}", solution);
+        // Create the updated network state from the results
+        let mut new_state = network_state.with_capacity();
+
+        let start_save_solution = Instant::now();
+        for edge in &model.edges {
+            let flow = solution.get_solution(edge.index());
+            new_state.add_flow(edge, timestep, flow)?;
+        }
+        timings.save_solution += start_save_solution.elapsed();
+
+        Ok((new_state, timings))
+    }
+}
+
+pub struct Highs {
+    ptr: *mut c_void,
+}
+
+impl Highs {
+    pub fn new() -> Self {
+        let model: Highs;
+
+        unsafe {
+            let ptr = highs_sys::Highs_create();
+            model = Self { ptr };
+            let option_name = CString::new("output_flag").unwrap();
+            highs_sys::Highs_setBoolOptionValue(ptr, option_name.as_ptr(), 0);
+            highs_sys::Highs_changeObjectiveSense(ptr, highs_sys::OBJECTIVE_SENSE_MINIMIZE);
+        }
+
+        model
+    }
+
+    pub fn add_cols(
+        &mut self,
+        col_lower: &[c_double],
+        col_upper: &[c_double],
+        col_obj_coef: &[c_double],
+        ncols: c_int,
+    ) {
+        unsafe {
+            highs_sys::Highs_addCols(
+                self.ptr,
+                ncols,
+                col_obj_coef.as_ptr(),
+                col_lower.as_ptr(),
+                col_upper.as_ptr(),
+                0,
+                null(),
+                null(),
+                null(),
+            );
+        }
+    }
+
+    pub fn add_rows(
+        &mut self,
+        nrows: c_int,
+        row_lower: &[c_double],
+        row_upper: &[c_double],
+        nnz: c_int,
+        row_starts: &[CoinBigIndex],
+        columns: &[c_int],
+        elements: &[c_double],
+    ) {
+        unsafe {
+            highs_sys::Highs_addRows(
+                self.ptr,
+                nrows,
+                row_lower.as_ptr(),
+                row_upper.as_ptr(),
+                nnz,
+                row_starts.as_ptr(),
+                columns.as_ptr(),
+                elements.as_ptr(),
+            );
+        }
+    }
+
+    pub fn change_objective_coefficients(&mut self, obj_coefficients: &[c_double], numcols: c_int) {
+        unsafe {
+            highs_sys::Highs_changeColsCostByRange(self.ptr, 0, numcols, obj_coefficients.as_ptr());
+        }
+    }
+
+    pub fn change_row_bounds(&mut self, mask: &[c_int], lower: &[c_double], upper: &[c_double]) {
+        unsafe {
+            highs_sys::Highs_changeRowsBoundsByMask(self.ptr, mask.as_ptr(), lower.as_ptr(), upper.as_ptr());
+        }
+    }
+
+    pub fn run(&mut self) {
+        unsafe {
+            let status = highs_sys::Highs_run(self.ptr);
+            assert_eq!(status, highs_sys::STATUS_OK);
+        }
+    }
+
+    pub fn objective_value(&mut self) -> f64 {
+        let mut objective_function_value = 0.;
+        unsafe {
+            let info_name = CString::new("objective_function_value").unwrap();
+            highs_sys::Highs_getDoubleInfoValue(
+                self.ptr,
+                info_name.as_ptr(),
+                (&mut objective_function_value) as *mut f64,
+            );
+        }
+        objective_function_value
+    }
+
+    pub fn primal_column_solution(&mut self, numcol: usize, numrow: usize) -> Vec<f64> {
+        let colvalue: &mut [f64] = &mut vec![0.; numcol];
+        let coldual: &mut [f64] = &mut vec![0.; numcol];
+        let rowvalue: &mut [f64] = &mut vec![0.; numrow];
+        let rowdual: &mut [f64] = &mut vec![0.; numrow];
+
+        unsafe {
+            // Get the primal and dual solution
+            highs_sys::Highs_getSolution(
+                self.ptr,
+                colvalue.as_mut_ptr(),
+                coldual.as_mut_ptr(),
+                rowvalue.as_mut_ptr(),
+                rowdual.as_mut_ptr(),
+            );
+        }
+        colvalue.to_vec()
+    }
+}
+
+impl Solver for ClpSolver<Highs> {
     fn setup(&mut self, model: &Model) -> Result<(), PywrError> {
         // Create the columns
         self.create_columns(model)?;
@@ -716,12 +977,12 @@ mod tests {
 
     #[test]
     fn model_builder_new() {
-        let _builder = ClpModelBuilder::new();
+        let _builder: ClpModelBuilder<ClpSimplex> = ClpModelBuilder::new();
     }
 
     #[test]
     fn builder_add_rows() {
-        let mut builder = ClpModelBuilder::new();
+        let mut builder: ClpModelBuilder<ClpSimplex> = ClpModelBuilder::new();
         let mut row = ClpRowBuilder::new();
         row.add_element(0, 1.0);
         row.add_element(1, 1.0);
@@ -732,7 +993,7 @@ mod tests {
 
     #[test]
     fn builder_solve() {
-        let mut builder = ClpModelBuilder::new();
+        let mut builder = ClpModelBuilder::<ClpSimplex>::new();
 
         builder.add_column(1.0, Bounds::Double(0.0, 2.0));
         builder.add_column(0.0, Bounds::Lower(0.0));
@@ -764,7 +1025,7 @@ mod tests {
 
     #[test]
     fn builder_solve2() {
-        let mut builder = ClpModelBuilder::new();
+        let mut builder = ClpModelBuilder::<ClpSimplex>::new();
 
         builder.add_column(-2.0, Bounds::Lower(0.0));
         builder.add_column(-3.0, Bounds::Lower(0.0));
