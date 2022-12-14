@@ -1,51 +1,92 @@
-use crate::node::{NodeIndex, NodeVec};
+use crate::node::NodeVec;
 use crate::state::ParameterState;
-use crate::PywrError;
-use std::cell::RefCell;
-use std::rc::Rc;
+use crate::{NodeIndex, PywrError};
+use std::ops::{Deref, DerefMut};
 
-pub type EdgeIndex = usize;
-pub type EdgeRef = Rc<RefCell<_Edge>>;
+#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Debug)]
+pub struct EdgeIndex(usize);
+
+impl Deref for EdgeIndex {
+    type Target = usize;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct _Edge {
+pub struct Edge {
     pub index: EdgeIndex,
     pub from_node_index: NodeIndex,
     pub to_node_index: NodeIndex,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Edge(EdgeRef);
-
 impl Edge {
-    pub(crate) fn new(index: &EdgeIndex, from_node_index: NodeIndex, to_node_index: NodeIndex) -> Self {
-        let edge = _Edge {
-            index: *index,
+    pub(crate) fn new(index: EdgeIndex, from_node_index: NodeIndex, to_node_index: NodeIndex) -> Self {
+        Self {
+            index,
             from_node_index,
             to_node_index,
-        };
-        Edge(Rc::new(RefCell::new(edge)))
+        }
     }
 
     pub fn index(&self) -> EdgeIndex {
-        self.0.borrow().index
+        self.index
     }
 
     pub fn from_node_index(&self) -> NodeIndex {
-        self.0.borrow().from_node_index
+        self.from_node_index
     }
 
     pub fn to_node_index(&self) -> NodeIndex {
-        self.0.borrow().to_node_index
+        self.to_node_index
     }
 
     pub(crate) fn cost(&self, nodes: &NodeVec, parameter_states: &ParameterState) -> Result<f64, PywrError> {
-        let from_node = nodes.get(&self.0.borrow().from_node_index)?;
-        let to_node = nodes.get(&self.0.borrow().to_node_index)?;
+        let from_node = nodes.get(&self.from_node_index)?;
+        let to_node = nodes.get(&self.to_node_index)?;
 
         let from_cost = from_node.get_outgoing_cost(parameter_states)?;
         let to_cost = to_node.get_incoming_cost(parameter_states)?;
 
         Ok(from_cost + to_cost)
+    }
+}
+
+#[derive(Default)]
+pub struct EdgeVec {
+    edges: Vec<Edge>,
+}
+
+impl Deref for EdgeVec {
+    type Target = Vec<Edge>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.edges
+    }
+}
+
+impl DerefMut for EdgeVec {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.edges
+    }
+}
+
+impl EdgeVec {
+    pub fn get(&self, index: &EdgeIndex) -> Result<&Edge, PywrError> {
+        self.edges.get(index.0).ok_or(PywrError::EdgeIndexNotFound)
+    }
+
+    pub fn get_mut(&mut self, index: &EdgeIndex) -> Result<&mut Edge, PywrError> {
+        self.edges.get_mut(index.0).ok_or(PywrError::EdgeIndexNotFound)
+    }
+
+    pub fn push(&mut self, from_node_index: NodeIndex, to_node_index: NodeIndex) -> EdgeIndex {
+        let index = EdgeIndex(self.edges.len());
+        // TODO check whether an edge between these two nodes already exists.
+
+        let node = Edge::new(index, from_node_index, to_node_index);
+        self.edges.push(node);
+        index
     }
 }

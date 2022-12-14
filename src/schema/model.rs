@@ -260,7 +260,7 @@ mod tests {
     }
 
     fn default_scenarios() -> ScenarioGroupCollection {
-        let mut scenarios = ScenarioGroupCollection::new();
+        let mut scenarios = ScenarioGroupCollection::default();
         scenarios.add_group("test-scenario", 10);
         scenarios
     }
@@ -329,7 +329,7 @@ mod tests {
         assert_eq!(model.edges.len(), 2);
 
         let scenarios = default_scenarios();
-        let mut solver: Box<dyn Solver> = Box::new(ClpSolver::<ClpSimplex>::new());
+        let mut solver: Box<dyn Solver> = Box::new(ClpSolver::<ClpSimplex>::default());
 
         model.run(timestepper, scenarios, &mut solver).unwrap()
 

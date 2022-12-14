@@ -507,11 +507,11 @@ impl<T> ClpSolver<T> {
 
                 // TODO check for length >= 1
 
-                for edge in &incoming_edges {
-                    row.add_element(edge.index() as i32, 1.0);
+                for edge in incoming_edges {
+                    row.add_element(*edge.deref() as i32, 1.0);
                 }
-                for edge in &outgoing_edges {
-                    row.add_element(edge.index() as i32, -1.0);
+                for edge in outgoing_edges {
+                    row.add_element(*edge.deref() as i32, -1.0);
                 }
 
                 row.set_upper(0.0);
@@ -536,25 +536,25 @@ impl<T> ClpSolver<T> {
             match node.node_type() {
                 NodeType::Link => {
                     for edge in node.get_outgoing_edges().unwrap() {
-                        row.add_element(edge.index() as i32, 1.0);
+                        row.add_element(*edge.deref() as i32, 1.0);
                     }
                 }
                 NodeType::Input => {
                     for edge in node.get_outgoing_edges().unwrap() {
-                        row.add_element(edge.index() as i32, 1.0);
+                        row.add_element(*edge.deref() as i32, 1.0);
                     }
                 }
                 NodeType::Output => {
                     for edge in node.get_incoming_edges().unwrap() {
-                        row.add_element(edge.index() as i32, 1.0);
+                        row.add_element(*edge.deref() as i32, 1.0);
                     }
                 }
                 NodeType::Storage => {
                     for edge in node.get_incoming_edges().unwrap() {
-                        row.add_element(edge.index() as i32, 1.0);
+                        row.add_element(*edge.deref() as i32, 1.0);
                     }
                     for edge in node.get_outgoing_edges().unwrap() {
-                        row.add_element(edge.index() as i32, -1.0);
+                        row.add_element(*edge.deref() as i32, -1.0);
                     }
                 }
             }
@@ -581,25 +581,25 @@ impl<T> ClpSolver<T> {
                 match node.node_type() {
                     NodeType::Link => {
                         for edge in node.get_outgoing_edges().unwrap() {
-                            row.add_element(edge.index() as i32, 1.0);
+                            row.add_element(*edge.deref() as i32, 1.0);
                         }
                     }
                     NodeType::Input => {
                         for edge in node.get_outgoing_edges().unwrap() {
-                            row.add_element(edge.index() as i32, 1.0);
+                            row.add_element(*edge.deref() as i32, 1.0);
                         }
                     }
                     NodeType::Output => {
                         for edge in node.get_incoming_edges().unwrap() {
-                            row.add_element(edge.index() as i32, 1.0);
+                            row.add_element(*edge.deref() as i32, 1.0);
                         }
                     }
                     NodeType::Storage => {
                         for edge in node.get_incoming_edges().unwrap() {
-                            row.add_element(edge.index() as i32, 1.0);
+                            row.add_element(*edge.deref() as i32, 1.0);
                         }
                         for edge in node.get_outgoing_edges().unwrap() {
-                            row.add_element(edge.index() as i32, -1.0);
+                            row.add_element(*edge.deref() as i32, -1.0);
                         }
                     }
                 }
@@ -627,25 +627,25 @@ impl<T> ClpSolver<T> {
                     match node.node_type() {
                         NodeType::Link => {
                             for edge in node.get_outgoing_edges().unwrap() {
-                                row.add_element(edge.index() as i32, factor);
+                                row.add_element(*edge.deref() as i32, factor);
                             }
                         }
                         NodeType::Input => {
                             for edge in node.get_outgoing_edges().unwrap() {
-                                row.add_element(edge.index() as i32, factor);
+                                row.add_element(*edge.deref() as i32, factor);
                             }
                         }
                         NodeType::Output => {
                             for edge in node.get_incoming_edges().unwrap() {
-                                row.add_element(edge.index() as i32, factor);
+                                row.add_element(*edge.deref() as i32, factor);
                             }
                         }
                         NodeType::Storage => {
                             for edge in node.get_incoming_edges().unwrap() {
-                                row.add_element(edge.index() as i32, factor);
+                                row.add_element(*edge.deref() as i32, factor);
                             }
                             for edge in node.get_outgoing_edges().unwrap() {
-                                row.add_element(edge.index() as i32, -factor);
+                                row.add_element(*edge.deref() as i32, -factor);
                             }
                         }
                     }
@@ -658,9 +658,9 @@ impl<T> ClpSolver<T> {
 
     /// Update edge objective coefficients
     fn update_edge_objectives(&mut self, model: &Model, parameter_states: &ParameterState) -> Result<(), PywrError> {
-        for edge in &model.edges {
+        for edge in model.edges.deref() {
             let cost: f64 = edge.cost(&model.nodes, parameter_states)?;
-            self.builder.set_obj_coefficient(edge.index(), cost);
+            self.builder.set_obj_coefficient(*edge.index().deref(), cost);
         }
         Ok(())
     }
@@ -766,8 +766,8 @@ impl Solver for ClpSolver<ClpSimplex> {
         let mut new_state = network_state.with_capacity();
 
         let start_save_solution = Instant::now();
-        for edge in &model.edges {
-            let flow = solution.get_solution(edge.index());
+        for edge in model.edges.deref() {
+            let flow = solution.get_solution(*edge.index().deref());
             new_state.add_flow(edge, timestep, flow)?;
         }
         timings.save_solution += start_save_solution.elapsed();
@@ -938,8 +938,8 @@ impl Solver for ClpSolver<Highs> {
         let mut new_state = network_state.with_capacity();
 
         let start_save_solution = Instant::now();
-        for edge in &model.edges {
-            let flow = solution.get_solution(edge.index());
+        for edge in model.edges.deref() {
+            let flow = solution.get_solution(*edge.index().deref());
             new_state.add_flow(edge, timestep, flow)?;
         }
         timings.save_solution += start_save_solution.elapsed();

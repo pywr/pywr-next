@@ -1,3 +1,4 @@
+use crate::edge::EdgeIndex;
 use crate::metric::Metric;
 use crate::parameters::FloatValue;
 use crate::state::{NetworkState, NodeState, ParameterState};
@@ -234,7 +235,7 @@ impl Node {
         }
     }
 
-    pub fn add_incoming_edge(&mut self, edge: Edge) -> Result<(), PywrError> {
+    pub fn add_incoming_edge(&mut self, edge: EdgeIndex) -> Result<(), PywrError> {
         match self {
             Self::Input(n) => Err(PywrError::InvalidNodeConnectionToInput(n.meta.name.clone())),
             Self::Output(n) => {
@@ -252,7 +253,7 @@ impl Node {
         }
     }
 
-    pub fn add_outgoing_edge(&mut self, edge: Edge) -> Result<(), PywrError> {
+    pub fn add_outgoing_edge(&mut self, edge: EdgeIndex) -> Result<(), PywrError> {
         match self {
             Self::Input(n) => {
                 n.add_outgoing_edge(edge);
@@ -270,21 +271,21 @@ impl Node {
         }
     }
 
-    pub fn get_incoming_edges(&self) -> Result<Vec<Edge>, PywrError> {
+    pub fn get_incoming_edges(&self) -> Result<&Vec<EdgeIndex>, PywrError> {
         match self {
             Self::Input(n) => Err(PywrError::InvalidNodeConnectionToInput(n.meta.name.clone())), // TODO better error
-            Self::Output(n) => Ok(n.incoming_edges.clone()),
-            Self::Link(n) => Ok(n.incoming_edges.clone()),
-            Self::Storage(n) => Ok(n.incoming_edges.clone()),
+            Self::Output(n) => Ok(&n.incoming_edges),
+            Self::Link(n) => Ok(&n.incoming_edges),
+            Self::Storage(n) => Ok(&n.incoming_edges),
         }
     }
 
-    pub fn get_outgoing_edges(&self) -> Result<Vec<Edge>, PywrError> {
+    pub fn get_outgoing_edges(&self) -> Result<&Vec<EdgeIndex>, PywrError> {
         match self {
-            Self::Input(n) => Ok(n.outgoing_edges.clone()),
+            Self::Input(n) => Ok(&n.outgoing_edges),
             Self::Output(n) => Err(PywrError::InvalidNodeConnectionFromOutput(n.meta.name.clone())), // TODO better error
-            Self::Link(n) => Ok(n.outgoing_edges.clone()),
-            Self::Storage(n) => Ok(n.outgoing_edges.clone()),
+            Self::Link(n) => Ok(&n.outgoing_edges),
+            Self::Storage(n) => Ok(&n.outgoing_edges),
         }
     }
 
@@ -612,7 +613,7 @@ pub struct InputNode {
     pub meta: NodeMeta<NodeIndex>,
     pub cost: ConstraintValue,
     pub flow_constraints: FlowConstraints,
-    pub outgoing_edges: Vec<Edge>,
+    pub outgoing_edges: Vec<EdgeIndex>,
 }
 
 impl InputNode {
@@ -646,7 +647,7 @@ impl InputNode {
     fn get_max_flow(&self, parameter_states: &ParameterState) -> Result<f64, PywrError> {
         self.flow_constraints.get_max_flow(parameter_states)
     }
-    fn add_outgoing_edge(&mut self, edge: Edge) {
+    fn add_outgoing_edge(&mut self, edge: EdgeIndex) {
         self.outgoing_edges.push(edge);
     }
 }
@@ -656,7 +657,7 @@ pub struct OutputNode {
     pub meta: NodeMeta<NodeIndex>,
     pub cost: ConstraintValue,
     pub flow_constraints: FlowConstraints,
-    pub incoming_edges: Vec<Edge>,
+    pub incoming_edges: Vec<EdgeIndex>,
 }
 
 impl OutputNode {
@@ -690,7 +691,7 @@ impl OutputNode {
     fn get_max_flow(&self, parameter_states: &ParameterState) -> Result<f64, PywrError> {
         self.flow_constraints.get_max_flow(parameter_states)
     }
-    fn add_incoming_edge(&mut self, edge: Edge) {
+    fn add_incoming_edge(&mut self, edge: EdgeIndex) {
         self.incoming_edges.push(edge);
     }
 }
@@ -700,8 +701,8 @@ pub struct LinkNode {
     pub meta: NodeMeta<NodeIndex>,
     pub cost: ConstraintValue,
     pub flow_constraints: FlowConstraints,
-    pub incoming_edges: Vec<Edge>,
-    pub outgoing_edges: Vec<Edge>,
+    pub incoming_edges: Vec<EdgeIndex>,
+    pub outgoing_edges: Vec<EdgeIndex>,
 }
 
 impl LinkNode {
@@ -737,10 +738,10 @@ impl LinkNode {
         self.flow_constraints.get_max_flow(parameter_states)
     }
 
-    fn add_incoming_edge(&mut self, edge: Edge) {
+    fn add_incoming_edge(&mut self, edge: EdgeIndex) {
         self.incoming_edges.push(edge);
     }
-    fn add_outgoing_edge(&mut self, edge: Edge) {
+    fn add_outgoing_edge(&mut self, edge: EdgeIndex) {
         self.outgoing_edges.push(edge);
     }
 }
@@ -757,8 +758,8 @@ pub struct StorageNode {
     pub cost: ConstraintValue,
     pub initial_volume: StorageInitialVolume,
     pub storage_constraints: StorageConstraints,
-    pub incoming_edges: Vec<Edge>,
-    pub outgoing_edges: Vec<Edge>,
+    pub incoming_edges: Vec<EdgeIndex>,
+    pub outgoing_edges: Vec<EdgeIndex>,
 }
 
 impl StorageNode {
@@ -803,10 +804,10 @@ impl StorageNode {
     fn get_max_volume(&self) -> f64 {
         self.storage_constraints.get_max_volume()
     }
-    fn add_incoming_edge(&mut self, edge: Edge) {
+    fn add_incoming_edge(&mut self, edge: EdgeIndex) {
         self.incoming_edges.push(edge);
     }
-    fn add_outgoing_edge(&mut self, edge: Edge) {
+    fn add_outgoing_edge(&mut self, edge: EdgeIndex) {
         self.outgoing_edges.push(edge);
     }
 

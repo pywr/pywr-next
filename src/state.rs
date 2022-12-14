@@ -223,7 +223,7 @@ impl NetworkState {
             None => return Err(PywrError::NodeIndexNotFound),
         };
 
-        match self.edge_states.get_mut(edge.index()) {
+        match self.edge_states.get_mut(*edge.index()) {
             Some(s) => s.add_flow(flow),
             None => return Err(PywrError::EdgeIndexNotFound),
         };
@@ -276,7 +276,7 @@ impl NetworkState {
     }
 
     pub fn get_edge_flow(&self, edge_index: &EdgeIndex) -> Result<f64, PywrError> {
-        match self.edge_states.get(*edge_index) {
+        match self.edge_states.get(*edge_index.deref()) {
             Some(s) => Ok(s.flow),
             None => Err(PywrError::EdgeIndexNotFound),
         }

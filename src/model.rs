@@ -1,4 +1,4 @@
-use crate::edge::{Edge, EdgeIndex};
+use crate::edge::{EdgeIndex, EdgeVec};
 use crate::node::{ConstraintValue, Node, NodeVec, StorageInitialVolume};
 
 use crate::scenario::{ScenarioGroupCollection, ScenarioIndex};
@@ -31,7 +31,7 @@ pub struct RunTimings {
 #[derive(Default)]
 pub struct Model {
     pub nodes: NodeVec,
-    pub edges: Vec<Edge>,
+    pub edges: EdgeVec,
     pub aggregated_nodes: AggregatedNodeVec,
     pub aggregated_storage_nodes: AggregatedStorageNodeVec,
     pub virtual_storage_nodes: VirtualStorageVec,
@@ -56,7 +56,7 @@ impl Model {
                 state.push_node_state(node.new_state());
             }
 
-            for _edge in &self.edges {
+            for _edge in self.edges.deref() {
                 state.push_edge_state(EdgeState::default());
             }
 
@@ -668,34 +668,28 @@ impl Model {
     }
 
     /// Connect two nodes together
-    pub(crate) fn connect_nodes(
+    pub fn connect_nodes(
         &mut self,
         from_node_index: NodeIndex,
         to_node_index: NodeIndex,
-    ) -> Result<Edge, PywrError> {
-        // TODO check whether an edge between these two nodes already exists.
-
+    ) -> Result<EdgeIndex, PywrError> {
         // Self connections are not allowed.
         if from_node_index == to_node_index {
             return Err(PywrError::InvalidNodeConnection);
         }
 
         // Next edge index
-        let edge_index = self.edges.len() as EdgeIndex;
-
-        let edge = Edge::new(&edge_index, from_node_index, to_node_index);
+        let edge_index = self.edges.push(from_node_index, to_node_index);
 
         // The model can get in a bad state here if the edge is added to the `from_node`
         // successfully, but fails on the `to_node`.
         // Suggest to do a check before attempting to add.
         let from_node = self.nodes.get_mut(&from_node_index)?;
-        from_node.add_outgoing_edge(edge.clone())?;
+        from_node.add_outgoing_edge(edge_index)?;
         let to_node = self.nodes.get_mut(&to_node_index)?;
-        to_node.add_incoming_edge(edge.clone())?;
+        to_node.add_incoming_edge(edge_index)?;
 
-        self.edges.push(edge.clone());
-
-        Ok(edge)
+        Ok(edge_index)
     }
 }
 
@@ -738,9 +732,9 @@ mod tests {
         assert_eq!(*output_node.deref(), 2);
 
         let edge = model.connect_nodes(input_node, link_node).unwrap();
-        assert_eq!(edge.index(), 0);
+        assert_eq!(*edge.deref(), 0);
         let edge = model.connect_nodes(link_node, output_node).unwrap();
-        assert_eq!(edge.index(), 1);
+        assert_eq!(*edge.deref(), 1);
 
         // Now assert the internal structure is as expected.
         let input_node = model.get_node_by_name("input", None).unwrap();
