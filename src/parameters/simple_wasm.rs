@@ -1,7 +1,8 @@
-use super::{NetworkState, Parameter, ParameterMeta, PywrError, Timestep};
+use super::{Parameter, ParameterMeta, PywrError, Timestep};
 use crate::scenario::ScenarioIndex;
-use crate::state::ParameterState;
+use crate::state::State;
 use crate::ParameterIndex;
+use std::any::Any;
 use wasmer::{imports, Array, Instance, Module, NativeFunc, Store, WasmPtr};
 
 type ValueFunc = NativeFunc<(WasmPtr<f64, Array>, u32), f64>;
@@ -11,9 +12,6 @@ pub struct SimpleWasmParameter {
     meta: ParameterMeta,
     src: Vec<u8>,
     parameters: Vec<ParameterIndex>,
-    func: Option<ValueFunc>,
-    set_func: Option<SetFunc>,
-    ptr: Option<WasmPtr<f64, Array>>,
 }
 
 impl SimpleWasmParameter {
@@ -22,18 +20,25 @@ impl SimpleWasmParameter {
             meta: ParameterMeta::new(name),
             src,
             parameters,
-            func: None,
-            set_func: None,
-            ptr: None,
         }
     }
+}
+
+struct Internal {
+    func: ValueFunc,
+    set_func: SetFunc,
+    ptr: WasmPtr<f64, Array>,
 }
 
 impl Parameter for SimpleWasmParameter {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }
-    fn setup(&mut self, _timesteps: &[Timestep], _scenario_indices: &[ScenarioIndex]) -> Result<(), PywrError> {
+    fn setup(
+        &self,
+        _timesteps: &[Timestep],
+        _scenario_index: &ScenarioIndex,
+    ) -> Result<Option<Box<dyn Any>>, PywrError> {
         let store = Store::default();
         let module = Module::new(&store, &self.src).unwrap();
 
@@ -43,9 +48,9 @@ impl Parameter for SimpleWasmParameter {
         // Let's instantiate the Wasm module.
         // TODO handle these WASM errors.
         let instance = Instance::new(&module, &import_object).unwrap();
-        self.func = Some(instance.exports.get_function("value").unwrap().native().unwrap());
+        let func = instance.exports.get_function("value").unwrap().native().unwrap();
 
-        self.set_func = Some(instance.exports.get_function("set").unwrap().native().unwrap());
+        let set_func = instance.exports.get_function("set").unwrap().native().unwrap();
 
         let alloc = instance
             .exports
@@ -54,45 +59,43 @@ impl Parameter for SimpleWasmParameter {
             .native::<u32, WasmPtr<f64, Array>>()
             .unwrap();
 
-        self.ptr = Some(alloc.call(self.parameters.len() as u32).unwrap());
+        let ptr = alloc.call(self.parameters.len() as u32).unwrap();
 
-        Ok(())
+        let internal_state = Internal { func, set_func, ptr };
+
+        Ok(Some(Box::new(internal_state)))
     }
+
     fn compute(
-        &mut self,
+        &self,
         _timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
-        _state: &NetworkState,
-        parameter_state: &ParameterState,
+        state: &State,
+        internal_state: &mut Option<Box<dyn Any>>,
     ) -> Result<f64, PywrError> {
-        let ptr = self
-            .ptr
-            .ok_or_else(|| PywrError::InternalParameterError("Wasm memory not initialised.".to_string()))?;
-
-        let set_func = self
-            .set_func
-            .as_ref()
-            .ok_or_else(|| PywrError::InternalParameterError("Wasm function not generated.".to_string()))?;
+        // Downcast the internal state to the correct type
+        let funcs = match internal_state {
+            Some(internal) => match internal.downcast_mut::<Internal>() {
+                Some(pa) => pa,
+                None => panic!("Internal state did not downcast to the correct type! :("),
+            },
+            None => panic!("No internal state defined when one was expected! :("),
+        };
 
         // Assign the parameter values to the WASM's internal memory
         let len = self.parameters.len() as u32;
         for (idx, p) in self.parameters.iter().enumerate() {
-            let v = parameter_state.get_value(*p)?;
+            let v = state.get_parameter_value(*p)?;
 
-            set_func.call(ptr, len, idx as u32, v).map_err(|e| {
+            funcs.set_func.call(funcs.ptr, len, idx as u32, v).map_err(|e| {
                 PywrError::InternalParameterError(format!("Error calling WASM imported function: {:?}.", e))
             })?;
         }
 
         // Calculate the parameter's final value using the WASM function.
-        let value: f64 = self
-            .func
-            .as_ref()
-            .ok_or_else(|| PywrError::InternalParameterError("Wasm function not generated.".to_string()))?
-            .call(ptr, len)
-            .map_err(|e| {
-                PywrError::InternalParameterError(format!("Error calling WASM imported function: {:?}.", e))
-            })?;
+        let value: f64 = funcs.func.call(funcs.ptr, len).map_err(|e| {
+            PywrError::InternalParameterError(format!("Error calling WASM imported function: {:?}.", e))
+        })?;
 
         Ok(value)
     }

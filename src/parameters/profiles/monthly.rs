@@ -1,8 +1,9 @@
 use crate::parameters::{Parameter, ParameterMeta};
 use crate::scenario::ScenarioIndex;
-use crate::state::ParameterState;
+use crate::state::State;
 use crate::timestep::Timestep;
-use crate::{NetworkState, PywrError};
+use crate::PywrError;
+use std::any::Any;
 
 pub struct MonthlyProfileParameter {
     meta: ParameterMeta,
@@ -23,11 +24,11 @@ impl Parameter for MonthlyProfileParameter {
         &self.meta
     }
     fn compute(
-        &mut self,
+        &self,
         timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
-        _state: &NetworkState,
-        _parameter_state: &ParameterState,
+        _state: &State,
+        _internal_state: &mut Option<Box<dyn Any>>,
     ) -> Result<f64, PywrError> {
         Ok(self.values[timestep.date.month() as usize - 1])
     }

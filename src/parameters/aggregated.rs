@@ -1,8 +1,9 @@
-use super::{NetworkState, PywrError};
+use super::PywrError;
 use crate::parameters::{FloatValue, Parameter, ParameterMeta};
 use crate::scenario::ScenarioIndex;
-use crate::state::ParameterState;
+use crate::state::State;
 use crate::timestep::Timestep;
+use std::any::Any;
 use std::str::FromStr;
 
 pub enum AggFunc {
@@ -49,11 +50,11 @@ impl Parameter for AggregatedParameter {
         &self.meta
     }
     fn compute(
-        &mut self,
+        &self,
         _timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
-        _state: &NetworkState,
-        parameter_state: &ParameterState,
+        state: &State,
+        _internal_state: &mut Option<Box<dyn Any>>,
     ) -> Result<f64, PywrError> {
         // TODO scenarios!
 
@@ -63,7 +64,7 @@ impl Parameter for AggregatedParameter {
                 for p in &self.values {
                     total += match p {
                         FloatValue::Constant(v) => *v,
-                        FloatValue::Dynamic(p) => parameter_state.get_value(*p)?,
+                        FloatValue::Dynamic(p) => state.get_parameter_value(*p)?,
                     };
                 }
                 total
@@ -73,7 +74,7 @@ impl Parameter for AggregatedParameter {
                 for p in &self.values {
                     total += match p {
                         FloatValue::Constant(v) => *v,
-                        FloatValue::Dynamic(p) => parameter_state.get_value(*p)?,
+                        FloatValue::Dynamic(p) => state.get_parameter_value(*p)?,
                     };
                 }
                 total / self.values.len() as f64
@@ -83,7 +84,7 @@ impl Parameter for AggregatedParameter {
                 for p in &self.values {
                     total = total.max(match p {
                         FloatValue::Constant(v) => *v,
-                        FloatValue::Dynamic(p) => parameter_state.get_value(*p)?,
+                        FloatValue::Dynamic(p) => state.get_parameter_value(*p)?,
                     });
                 }
                 total
@@ -93,7 +94,7 @@ impl Parameter for AggregatedParameter {
                 for p in &self.values {
                     total = total.min(match p {
                         FloatValue::Constant(v) => *v,
-                        FloatValue::Dynamic(p) => parameter_state.get_value(*p)?,
+                        FloatValue::Dynamic(p) => state.get_parameter_value(*p)?,
                     });
                 }
                 total
@@ -103,7 +104,7 @@ impl Parameter for AggregatedParameter {
                 for p in &self.values {
                     total *= match p {
                         FloatValue::Constant(v) => *v,
-                        FloatValue::Dynamic(p) => parameter_state.get_value(*p)?,
+                        FloatValue::Dynamic(p) => state.get_parameter_value(*p)?,
                     };
                 }
                 total

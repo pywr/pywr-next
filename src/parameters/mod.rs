@@ -12,6 +12,7 @@ pub mod py;
 pub mod simple_wasm;
 mod threshold;
 
+use std::any::Any;
 // Re-imports
 use super::{NetworkState, PywrError};
 use crate::scenario::ScenarioIndex;
@@ -28,7 +29,7 @@ pub use polynomial::Polynomial1DParameter;
 pub use profiles::{DailyProfileParameter, MonthlyProfileParameter, UniformDrawdownProfileParameter};
 pub use threshold::{Predicate, ThresholdParameter};
 
-use crate::state::ParameterState;
+use crate::state::State;
 use crate::timestep::Timestep;
 use ndarray::{Array1, Array2};
 use std::fmt;
@@ -102,47 +103,55 @@ pub trait Parameter {
     fn name(&self) -> &str {
         self.meta().name.as_str()
     }
-    fn setup(&mut self, _timesteps: &[Timestep], _scenario_indices: &[ScenarioIndex]) -> Result<(), PywrError> {
-        Ok(())
+    fn setup(
+        &self,
+        _timesteps: &[Timestep],
+        _scenario_index: &ScenarioIndex,
+    ) -> Result<Option<Box<dyn Any>>, PywrError> {
+        Ok(None)
     }
     fn before(&self) {}
     fn compute(
-        &mut self,
+        &self,
         timestep: &Timestep,
         scenario_index: &ScenarioIndex,
-        network_state: &NetworkState,
-        parameter_state: &ParameterState,
+        state: &State,
+        internal_state: &mut Option<Box<dyn Any>>,
     ) -> Result<f64, PywrError>;
 }
 
-pub trait MultiStateParameter {
-    fn before(&self) {}
-    fn compute(
-        &mut self,
-        timestep: &Timestep,
-        scenario_index: &ScenarioIndex,
-        network_state: &NetworkState,
-        parameter_state: &ParameterState,
-    ) -> Result<(), PywrError>;
-
-    fn get_value(&mut self, key: &str) -> Result<f64, PywrError>;
-}
+// pub trait MultiStateParameter {
+//     fn before(&self) {}
+//     fn compute(
+//         &mut self,
+//         timestep: &Timestep,
+//         scenario_index: &ScenarioIndex,
+//         network_state: &NetworkState,
+//         parameter_state: &ParameterState,
+//     ) -> Result<(), PywrError>;
+//
+//     fn get_value(&mut self, key: &str) -> Result<f64, PywrError>;
+// }
 
 pub trait IndexParameter {
     fn meta(&self) -> &ParameterMeta;
     fn name(&self) -> &str {
         self.meta().name.as_str()
     }
-    fn setup(&mut self, _timesteps: &[Timestep], _scenario_indices: &[ScenarioIndex]) -> Result<(), PywrError> {
-        Ok(())
+    fn setup(
+        &self,
+        _timesteps: &[Timestep],
+        _scenario_index: &ScenarioIndex,
+    ) -> Result<Option<Box<dyn Any>>, PywrError> {
+        Ok(None)
     }
     fn before(&self) {}
     fn compute(
-        &mut self,
+        &self,
         timestep: &Timestep,
         scenario_index: &ScenarioIndex,
-        network_state: &NetworkState,
-        parameter_state: &ParameterState,
+        state: &State,
+        internal_state: &mut Option<Box<dyn Any>>,
     ) -> Result<usize, PywrError>;
 }
 
@@ -161,30 +170,6 @@ pub enum IndexValue {
 pub enum ParameterType {
     Parameter(ParameterIndex),
     Index(IndexParameterIndex),
-}
-
-pub struct InternalParameterState<T: Copy> {
-    state: Vec<T>,
-}
-
-impl<T: Copy> Default for InternalParameterState<T> {
-    fn default() -> Self {
-        Self { state: Vec::new() }
-    }
-}
-
-impl<T: Copy> InternalParameterState<T> {
-    pub fn setup(&mut self, size: usize, fill_with: T) {
-        self.state = (0..size).map(|_| fill_with).collect();
-    }
-
-    pub fn set(&mut self, index: usize, value: T) {
-        self.state[index] = value;
-    }
-
-    pub fn get(&self, index: usize) -> &T {
-        &self.state[index]
-    }
 }
 
 pub struct ConstantParameter {
@@ -206,11 +191,11 @@ impl Parameter for ConstantParameter {
         &self.meta
     }
     fn compute(
-        &mut self,
+        &self,
         _timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
-        _state: &NetworkState,
-        _parameter_state: &ParameterState,
+        _state: &State,
+        _internal_state: &mut Option<Box<dyn Any>>,
     ) -> Result<f64, PywrError> {
         Ok(self.value)
     }
@@ -235,11 +220,11 @@ impl Parameter for VectorParameter {
         &self.meta
     }
     fn compute(
-        &mut self,
+        &self,
         timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
-        _state: &NetworkState,
-        _parameter_state: &ParameterState,
+        _state: &State,
+        _internal_state: &mut Option<Box<dyn Any>>,
     ) -> Result<f64, PywrError> {
         match self.values.get(timestep.index) {
             Some(v) => Ok(*v),
@@ -267,11 +252,11 @@ impl Parameter for Array1Parameter {
         &self.meta
     }
     fn compute(
-        &mut self,
+        &self,
         timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
-        _state: &NetworkState,
-        _parameter_state: &ParameterState,
+        _state: &State,
+        _internal_state: &mut Option<Box<dyn Any>>,
     ) -> Result<f64, PywrError> {
         // This panics if out-of-bounds
         let value = self.array[[timestep.index]];
@@ -298,15 +283,14 @@ impl Parameter for Array2Parameter {
         &self.meta
     }
     fn compute(
-        &mut self,
+        &self,
         timestep: &Timestep,
-        _scenario_index: &ScenarioIndex,
-        _state: &NetworkState,
-        _parameter_state: &ParameterState,
+        scenario_index: &ScenarioIndex,
+        _state: &State,
+        _internal_state: &mut Option<Box<dyn Any>>,
     ) -> Result<f64, PywrError> {
         // This panics if out-of-bounds
-        // TODO scenarios!
-        Ok(self.array[[timestep.index, 0]])
+        Ok(self.array[[timestep.index, scenario_index.index]])
     }
 }
 

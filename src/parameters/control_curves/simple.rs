@@ -1,9 +1,10 @@
 use crate::metric::Metric;
 use crate::parameters::{Parameter, ParameterMeta};
 use crate::scenario::ScenarioIndex;
-use crate::state::{NetworkState, ParameterState};
+use crate::state::State;
 use crate::timestep::Timestep;
 use crate::PywrError;
+use std::any::Any;
 
 pub struct ControlCurveParameter {
     meta: ParameterMeta,
@@ -28,24 +29,24 @@ impl Parameter for ControlCurveParameter {
         &self.meta
     }
     fn compute(
-        &mut self,
+        &self,
         _timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
-        state: &NetworkState,
-        parameter_state: &ParameterState,
+        state: &State,
+        _internal_state: &mut Option<Box<dyn Any>>,
     ) -> Result<f64, PywrError> {
         // Current value
-        let x = self.metric.get_value(state, parameter_state)?;
+        let x = self.metric.get_value(state)?;
 
         for (idx, control_curve) in self.control_curves.iter().enumerate() {
-            let cc_value = control_curve.get_value(state, parameter_state)?;
+            let cc_value = control_curve.get_value(state)?;
             if x >= cc_value {
                 let value = self.values.get(idx).ok_or(PywrError::DataOutOfRange)?;
-                return value.get_value(state, parameter_state);
+                return value.get_value(state);
             }
         }
 
         let value = self.values.last().ok_or(PywrError::DataOutOfRange)?;
-        value.get_value(state, parameter_state)
+        value.get_value(state)
     }
 }

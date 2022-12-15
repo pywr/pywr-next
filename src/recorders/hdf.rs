@@ -1,20 +1,23 @@
-use super::{NetworkState, PywrError, Recorder, RecorderMeta, Timestep};
+use super::{PywrError, Recorder, RecorderMeta, Timestep};
 use crate::metric::Metric;
 use crate::scenario::ScenarioIndex;
-use crate::state::ParameterState;
+use crate::state::State;
 use ndarray::{s, Array2};
+use std::any::Any;
 use std::ops::Deref;
 use std::path::PathBuf;
 
 #[derive(Clone, Debug)]
-pub(crate) struct HDF5Recorder {
+pub struct HDF5Recorder {
     meta: RecorderMeta,
     filename: PathBuf,
     metrics: Vec<(Metric, (String, Option<String>))>,
-    file: Option<hdf5::File>,
-    datasets: Option<Vec<hdf5::Dataset>>,
-    aggregated_datasets: Option<Vec<(Vec<Metric>, hdf5::Dataset)>>,
-    array: Option<ndarray::Array2<f64>>,
+}
+
+struct Internal {
+    file: hdf5::File,
+    datasets: Vec<hdf5::Dataset>,
+    aggregated_datasets: Vec<(Vec<Metric>, hdf5::Dataset)>,
 }
 
 impl HDF5Recorder {
@@ -23,10 +26,6 @@ impl HDF5Recorder {
             meta: RecorderMeta::new(name),
             filename,
             metrics,
-            file: None,
-            datasets: None,
-            array: None,
-            aggregated_datasets: None,
         }
     }
 }
@@ -35,13 +34,17 @@ impl Recorder for HDF5Recorder {
     fn meta(&self) -> &RecorderMeta {
         &self.meta
     }
-    fn setup(&mut self, timesteps: &[Timestep], scenario_indices: &[ScenarioIndex]) -> Result<(), PywrError> {
+    fn setup(
+        &self,
+        timesteps: &[Timestep],
+        scenario_indices: &[ScenarioIndex],
+    ) -> Result<Option<Box<(dyn Any)>>, PywrError> {
         let file = match hdf5::File::create(&self.filename) {
             Ok(f) => f,
             Err(e) => return Err(PywrError::HDF5Error(e.to_string())),
         };
         let mut datasets = Vec::new();
-        let mut agg_datasets = Vec::new();
+        let mut aggregated_datasets = Vec::new();
 
         let shape = (timesteps.len(), scenario_indices.len());
 
@@ -79,79 +82,57 @@ impl Recorder for HDF5Recorder {
         //     agg_datasets.push((metrics, ds));
         // }
 
-        self.array = Some(Array2::zeros((datasets.len(), scenario_indices.len())));
-        self.datasets = Some(datasets);
-        self.aggregated_datasets = Some(agg_datasets);
-        self.file = Some(file);
+        let internal = Internal {
+            datasets,
+            aggregated_datasets,
+            file,
+        };
+
+        Ok(Some(Box::new(internal)))
+    }
+    fn save(
+        &self,
+        timestep: &Timestep,
+        scenario_indices: &[ScenarioIndex],
+        state: &[State],
+        internal_state: &mut Option<Box<dyn Any>>,
+    ) -> Result<(), PywrError> {
+        let internal = match internal_state {
+            Some(internal) => match internal.downcast_mut::<Internal>() {
+                Some(pa) => pa,
+                None => panic!("Internal state did not downcast to the correct type! :("),
+            },
+            None => panic!("No internal state defined when one was expected! :("),
+        };
+
+        for (dataset, (metric, _)) in internal.datasets.iter_mut().zip(&self.metrics) {
+            // Combine all the values for metric across all of the scenarios
+            let values = scenario_indices
+                .iter()
+                .zip(state)
+                .map(|(si, s)| metric.get_value(s))
+                .collect::<Result<Vec<_>, _>>()?;
+
+            if let Err(e) = dataset.write_slice(&values, s![timestep.index, ..]) {
+                return Err(PywrError::HDF5Error(e.to_string()));
+            }
+        }
 
         Ok(())
     }
-    fn save(
-        &mut self,
-        _timestep: &Timestep,
-        scenario_index: &ScenarioIndex,
-        network_state: &NetworkState,
-        parameter_state: &ParameterState,
-    ) -> Result<(), PywrError> {
-        match (&mut self.array, &self.datasets) {
-            (Some(array), Some(_datasets)) => {
-                for (idx, (metric, _)) in self.metrics.iter().enumerate() {
-                    let value = metric.get_value(network_state, parameter_state)?;
-                    array[[idx, scenario_index.index]] = value
-                }
-                Ok(())
-            }
-            _ => Err(PywrError::RecorderNotInitialised),
-        }?;
 
-        match (&mut self.array, &self.aggregated_datasets) {
-            (Some(array), Some(datasets)) => {
-                for (idx, (metrics, _ds)) in datasets.iter().enumerate() {
-                    let value: f64 = metrics
-                        .iter()
-                        .map(|m| m.get_value(network_state, parameter_state))
-                        .sum::<Result<_, _>>()?;
-                    array[[idx, scenario_index.index]] = value
+    fn finalise(&self, internal_state: &mut Option<Box<dyn Any>>) -> Result<(), PywrError> {
+        // This will leave the internal state with a `None` because we need to take
+        // ownership of the file handle in order to close it.
+        match internal_state.take() {
+            Some(internal) => {
+                if let Ok(internal) = internal.downcast::<Internal>() {
+                    internal.file.close().map_err(|e| PywrError::HDF5Error(e.to_string()))
+                } else {
+                    panic!("Internal state did not downcast to the correct type! :(");
                 }
-                Ok(())
             }
-            _ => Err(PywrError::RecorderNotInitialised),
-        }
-    }
-
-    fn after_save(&mut self, timestep: &Timestep) -> Result<(), PywrError> {
-        match (&self.array, &mut self.datasets) {
-            (Some(array), Some(datasets)) => {
-                for (node_idx, dataset) in datasets.iter_mut().enumerate() {
-                    if let Err(e) = dataset.write_slice(array.slice(s![node_idx, ..]), s![timestep.index, ..]) {
-                        return Err(PywrError::HDF5Error(e.to_string()));
-                    }
-                }
-                Ok(())
-            }
-            _ => Err(PywrError::RecorderNotInitialised),
-        }?;
-
-        match (&self.array, &mut self.aggregated_datasets) {
-            (Some(array), Some(datasets)) => {
-                for (node_idx, (_metric, dataset)) in datasets.iter_mut().enumerate() {
-                    if let Err(e) = dataset.write_slice(array.slice(s![node_idx, ..]), s![timestep.index, ..]) {
-                        return Err(PywrError::HDF5Error(e.to_string()));
-                    }
-                }
-                Ok(())
-            }
-            _ => Err(PywrError::RecorderNotInitialised),
-        }
-    }
-
-    fn finalise(&mut self) -> Result<(), PywrError> {
-        match self.file.take() {
-            Some(file) => match file.close() {
-                Ok(_) => Ok(()),
-                Err(e) => Err(PywrError::HDF5Error(e.to_string())),
-            },
-            None => Err(PywrError::RecorderNotInitialised),
+            None => panic!("No internal state defined when one was expected! :("),
         }
     }
 }

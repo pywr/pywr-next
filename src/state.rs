@@ -4,6 +4,7 @@ use crate::parameters::{IndexParameterIndex, ParameterIndex};
 use crate::timestep::Timestep;
 use crate::PywrError;
 use pyo3::prelude::*;
+use std::any::Any;
 use std::ops::Deref;
 
 #[derive(Clone, Copy, Debug)]
@@ -57,7 +58,7 @@ impl NodeState {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct FlowState {
     pub in_flow: f64,
     pub out_flow: f64,
@@ -84,7 +85,7 @@ impl FlowState {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct StorageState {
     pub volume: f64,
     pub max_volume: f64,
@@ -126,47 +127,87 @@ pub struct EdgeState {
 }
 
 impl EdgeState {
+    fn reset(&mut self) {
+        self.flow = 0.0;
+    }
     fn add_flow(&mut self, flow: f64) {
         self.flow += flow;
     }
 }
 
+#[derive(Debug)]
+pub struct ParameterStates {
+    values: Vec<Option<Box<dyn Any>>>,
+    indices: Vec<Option<Box<dyn Any>>>,
+}
+
+impl ParameterStates {
+    /// Create new default states for the desired number of parameters.
+    pub fn new(
+        initial_values_states: Vec<Option<Box<dyn Any>>>,
+        initial_indices_states: Vec<Option<Box<dyn Any>>>,
+    ) -> Self {
+        Self {
+            values: initial_values_states,
+            indices: initial_indices_states,
+        }
+    }
+
+    pub fn get_mut_value_state(&mut self, index: ParameterIndex) -> Option<&mut Option<Box<dyn Any>>> {
+        self.values.get_mut(*index.deref())
+    }
+
+    pub fn get_mut_index_state(&mut self, index: IndexParameterIndex) -> Option<&mut Option<Box<dyn Any>>> {
+        self.indices.get_mut(*index.deref())
+    }
+}
+
 // State of the parameters
-#[derive(Clone, Debug, Default)]
-pub struct ParameterState {
+#[derive(Debug)]
+struct ParameterValues {
     values: Vec<f64>,
     indices: Vec<usize>,
 }
 
-impl ParameterState {
-    pub(crate) fn with_capacity(num_values: usize, num_indices: usize) -> Self {
+impl ParameterValues {
+    fn new(num_values: usize, num_indices: usize) -> Self {
         Self {
-            values: Vec::with_capacity(num_values),
-            indices: Vec::with_capacity(num_indices),
+            values: vec![0.0; num_values],
+            indices: vec![0; num_indices],
         }
     }
 
-    pub(crate) fn push_value(&mut self, value: f64) {
-        self.values.push(value)
-    }
-
-    pub(crate) fn push_index(&mut self, index: usize) {
-        self.indices.push(index)
-    }
-
-    // TODO this argument could be a reference?
-    pub(crate) fn get_value(&self, parameter_index: ParameterIndex) -> Result<f64, PywrError> {
-        match self.values.get(*parameter_index.deref()) {
-            Some(v) => Ok(*v),
-            None => Err(PywrError::ParameterIndexNotFound(parameter_index)),
+    fn get_value(&self, idx: ParameterIndex) -> Result<f64, PywrError> {
+        match self.values.get(*idx.deref()) {
+            Some(s) => Ok(*s),
+            None => Err(PywrError::ParameterIndexNotFound(idx)),
         }
     }
 
-    // TODO this argument could be a reference?
-    pub(crate) fn get_index(&self, parameter_index: IndexParameterIndex) -> Result<usize, PywrError> {
-        match self.indices.get(*parameter_index.deref()) {
-            Some(i) => Ok(*i),
-            None => Err(PywrError::IndexParameterIndexNotFound(parameter_index)),
+    fn set_value(&mut self, idx: ParameterIndex, value: f64) -> Result<(), PywrError> {
+        match self.values.get_mut(*idx.deref()) {
+            Some(s) => {
+                *s = value;
+                Ok(())
+            }
+            None => Err(PywrError::ParameterIndexNotFound(idx)),
+        }
+    }
+
+    fn get_index(&self, idx: IndexParameterIndex) -> Result<usize, PywrError> {
+        match self.indices.get(*idx.deref()) {
+            Some(s) => Ok(*s),
+            None => Err(PywrError::IndexParameterIndexNotFound(idx)),
+        }
+    }
+
+    fn set_index(&mut self, idx: IndexParameterIndex, value: usize) -> Result<(), PywrError> {
+        match self.indices.get_mut(*idx.deref()) {
+            Some(s) => {
+                *s = value;
+                Ok(())
+            }
+            None => Err(PywrError::IndexParameterIndexNotFound(idx)),
         }
     }
 }
@@ -180,36 +221,26 @@ pub struct NetworkState {
 }
 
 impl NetworkState {
-    pub(crate) fn new() -> Self {
+    pub fn new(initial_node_states: Vec<NodeState>, num_edges: usize) -> Self {
         Self {
-            node_states: Vec::new(),
-            edge_states: Vec::new(),
+            node_states: initial_node_states,
+            edge_states: (0..num_edges).map(|_| EdgeState::default()).collect(),
         }
     }
 
-    pub(crate) fn with_capacity(&self) -> Self {
-        let mut node_states = self.node_states.clone();
-        for node_state in node_states.iter_mut() {
-            node_state.reset();
+    /// Reset the current flow information
+    ///
+    /// This method should be called between each time-step to set all the flow states to zero.
+    /// Non-flow state (i.e. volume) is retained. After this flow can be added back to the state
+    /// using the `.add_flow` method.
+    pub fn reset(&mut self) {
+        for ns in self.node_states.iter_mut() {
+            ns.reset()
         }
 
-        let mut edge_states = Vec::with_capacity(self.edge_states.len());
-        for _ in 0..self.edge_states.len() {
-            edge_states.push(EdgeState::default())
+        for es in self.edge_states.iter_mut() {
+            es.reset()
         }
-
-        Self {
-            node_states,
-            edge_states,
-        }
-    }
-
-    pub(crate) fn push_node_state(&mut self, node_state: NodeState) {
-        self.node_states.push(node_state);
-    }
-
-    pub(crate) fn push_edge_state(&mut self, edge_state: EdgeState) {
-        self.edge_states.push(edge_state);
     }
 
     pub(crate) fn add_flow(&mut self, edge: &Edge, timestep: &Timestep, flow: f64) -> Result<(), PywrError> {
@@ -280,5 +311,49 @@ impl NetworkState {
             Some(s) => Ok(s.flow),
             None => Err(PywrError::EdgeIndexNotFound),
         }
+    }
+}
+
+/// State of the model simulation
+pub struct State {
+    network: NetworkState,
+    parameters: ParameterValues,
+}
+
+impl State {
+    pub fn new(
+        initial_node_states: Vec<NodeState>,
+        num_edges: usize,
+        num_parameter_values: usize,
+        num_parameter_indices: usize,
+    ) -> Self {
+        Self {
+            network: NetworkState::new(initial_node_states, num_edges),
+            parameters: ParameterValues::new(num_parameter_values, num_parameter_indices),
+        }
+    }
+
+    pub fn get_network_state(&self) -> &NetworkState {
+        &self.network
+    }
+
+    pub fn get_mut_network_state(&mut self) -> &mut NetworkState {
+        &mut self.network
+    }
+
+    pub fn get_parameter_value(&self, idx: ParameterIndex) -> Result<f64, PywrError> {
+        self.parameters.get_value(idx)
+    }
+
+    pub fn set_parameter_value(&mut self, idx: ParameterIndex, value: f64) -> Result<(), PywrError> {
+        self.parameters.set_value(idx, value)
+    }
+
+    pub fn get_parameter_index(&self, idx: IndexParameterIndex) -> Result<usize, PywrError> {
+        self.parameters.get_index(idx)
+    }
+
+    pub fn set_parameter_index(&mut self, idx: IndexParameterIndex, value: usize) -> Result<(), PywrError> {
+        self.parameters.set_index(idx, value)
     }
 }

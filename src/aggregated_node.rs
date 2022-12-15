@@ -1,6 +1,6 @@
 use crate::metric::Metric;
 use crate::node::{Constraint, ConstraintValue, FlowConstraints, NodeMeta};
-use crate::state::ParameterState;
+use crate::state::State;
 use crate::{NodeIndex, PywrError};
 use std::ops::{Deref, DerefMut};
 
@@ -92,14 +92,14 @@ impl AggregatedNode {
     pub fn set_min_flow_constraint(&mut self, value: ConstraintValue) {
         self.flow_constraints.min_flow = value;
     }
-    pub fn get_min_flow_constraint(&self, parameter_states: &ParameterState) -> Result<f64, PywrError> {
-        self.flow_constraints.get_min_flow(parameter_states)
+    pub fn get_min_flow_constraint(&self, state: &State) -> Result<f64, PywrError> {
+        self.flow_constraints.get_min_flow(state)
     }
     pub fn set_max_flow_constraint(&mut self, value: ConstraintValue) {
         self.flow_constraints.max_flow = value;
     }
-    pub fn get_max_flow_constraint(&self, parameter_states: &ParameterState) -> Result<f64, PywrError> {
-        self.flow_constraints.get_max_flow(parameter_states)
+    pub fn get_max_flow_constraint(&self, state: &State) -> Result<f64, PywrError> {
+        self.flow_constraints.get_max_flow(state)
     }
 
     /// Set a constraint on a node.
@@ -117,19 +117,16 @@ impl AggregatedNode {
         Ok(())
     }
 
-    pub fn get_current_min_flow(&self, parameter_states: &ParameterState) -> Result<f64, PywrError> {
-        self.flow_constraints.get_min_flow(parameter_states)
+    pub fn get_current_min_flow(&self, state: &State) -> Result<f64, PywrError> {
+        self.flow_constraints.get_min_flow(state)
     }
 
-    pub fn get_current_max_flow(&self, parameter_states: &ParameterState) -> Result<f64, PywrError> {
-        self.flow_constraints.get_max_flow(parameter_states)
+    pub fn get_current_max_flow(&self, state: &State) -> Result<f64, PywrError> {
+        self.flow_constraints.get_max_flow(state)
     }
 
-    pub fn get_current_flow_bounds(&self, parameter_states: &ParameterState) -> Result<(f64, f64), PywrError> {
-        match (
-            self.get_current_min_flow(parameter_states),
-            self.get_current_max_flow(parameter_states),
-        ) {
+    pub fn get_current_flow_bounds(&self, state: &State) -> Result<(f64, f64), PywrError> {
+        match (self.get_current_min_flow(state), self.get_current_max_flow(state)) {
             (Ok(min_flow), Ok(max_flow)) => Ok((min_flow, max_flow)),
             _ => Err(PywrError::FlowConstraintsUndefined),
         }

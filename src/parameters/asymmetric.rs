@@ -1,14 +1,14 @@
-use crate::parameters::{IndexParameter, IndexValue, InternalParameterState, ParameterMeta};
+use crate::parameters::{IndexParameter, IndexValue, ParameterMeta};
 use crate::scenario::ScenarioIndex;
-use crate::state::{NetworkState, ParameterState};
+use crate::state::State;
 use crate::timestep::Timestep;
 use crate::PywrError;
+use std::any::Any;
 
 pub struct AsymmetricSwitchIndexParameter {
     meta: ParameterMeta,
     on_parameter: IndexValue,
     off_parameter: IndexValue,
-    current_state: InternalParameterState<usize>,
 }
 
 impl AsymmetricSwitchIndexParameter {
@@ -17,7 +17,6 @@ impl AsymmetricSwitchIndexParameter {
             meta: ParameterMeta::new(name),
             on_parameter,
             off_parameter,
-            current_state: InternalParameterState::default(),
         }
     }
 }
@@ -26,42 +25,52 @@ impl IndexParameter for AsymmetricSwitchIndexParameter {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }
-    fn setup(&mut self, _timesteps: &[Timestep], scenario_indices: &[ScenarioIndex]) -> Result<(), PywrError> {
-        self.current_state.setup(scenario_indices.len(), 0);
-        Ok(())
+    fn setup(
+        &self,
+        _timesteps: &[Timestep],
+        _scenario_index: &ScenarioIndex,
+    ) -> Result<Option<Box<dyn Any>>, PywrError> {
+        Ok(Some(Box::new(0_usize)))
     }
 
     fn compute(
-        &mut self,
+        &self,
         _timestep: &Timestep,
-        scenario_index: &ScenarioIndex,
-        _network_state: &NetworkState,
-        parameter_state: &ParameterState,
+        _scenario_index: &ScenarioIndex,
+        state: &State,
+        internal_state: &mut Option<Box<dyn Any>>,
     ) -> Result<usize, PywrError> {
         let on_value = match self.on_parameter {
             IndexValue::Constant(idx) => idx,
-            IndexValue::Dynamic(p) => parameter_state.get_index(p)?,
+            IndexValue::Dynamic(p) => state.get_parameter_index(p)?,
         };
 
-        let current_state = *self.current_state.get(scenario_index.index);
+        // Downcast the internal state to the correct type
+        let current_state = match internal_state {
+            Some(internal) => match internal.downcast_mut::<usize>() {
+                Some(pa) => pa,
+                None => panic!("Internal state did not downcast to the correct type! :("),
+            },
+            None => panic!("No internal state defined when one was expected! :("),
+        };
 
-        if current_state > 0 {
+        if *current_state > 0 {
             if on_value > 0 {
                 // No change
             } else {
                 let off_value = match self.off_parameter {
                     IndexValue::Constant(idx) => idx,
-                    IndexValue::Dynamic(p) => parameter_state.get_index(p)?,
+                    IndexValue::Dynamic(p) => state.get_parameter_index(p)?,
                 };
 
                 if off_value == 0 {
-                    self.current_state.set(scenario_index.index, 0);
+                    *current_state = 0;
                 }
             }
         } else if on_value > 0 {
-            self.current_state.set(scenario_index.index, 1);
+            *current_state = 1;
         }
 
-        Ok(*self.current_state.get(scenario_index.index))
+        Ok(*current_state)
     }
 }

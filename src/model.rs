@@ -1,23 +1,19 @@
+use crate::aggregated_node::{AggregatedNode, AggregatedNodeIndex, AggregatedNodeVec};
+use crate::aggregated_storage_node::{AggregatedStorageNode, AggregatedStorageNodeIndex, AggregatedStorageNodeVec};
 use crate::edge::{EdgeIndex, EdgeVec};
+use crate::metric::Metric;
 use crate::node::{ConstraintValue, Node, NodeVec, StorageInitialVolume};
-
+use crate::parameters::ParameterType;
 use crate::scenario::{ScenarioGroupCollection, ScenarioIndex};
 use crate::solvers::{Solver, SolverTimings};
-use crate::state::{EdgeState, NetworkState, ParameterState};
+use crate::state::{ParameterStates, State};
 use crate::timestep::{Timestep, Timestepper};
-
-use crate::aggregated_node::{AggregatedNode, AggregatedNodeIndex, AggregatedNodeVec};
-use std::ops::Deref;
-
-use crate::{parameters, recorders, IndexParameterIndex, NodeIndex, ParameterIndex, PywrError, RecorderIndex};
-
-use crate::parameters::ParameterType;
 use crate::virtual_storage::{VirtualStorage, VirtualStorageIndex, VirtualStorageVec};
-
-use crate::aggregated_storage_node::{AggregatedStorageNode, AggregatedStorageNodeIndex, AggregatedStorageNodeVec};
-use crate::metric::Metric;
+use crate::{parameters, recorders, IndexParameterIndex, NodeIndex, ParameterIndex, PywrError, RecorderIndex};
 use indicatif::ProgressIterator;
 use log::debug;
+use std::any::Any;
+use std::ops::Deref;
 use std::time::Duration;
 use std::time::Instant;
 
@@ -45,56 +41,66 @@ pub struct Model {
 unsafe impl Send for Model {}
 
 impl Model {
-    /// Returns the initial state of the network
-    pub(crate) fn get_initial_state(&self, scenario_indices: &[ScenarioIndex]) -> Vec<NetworkState> {
-        let mut states: Vec<NetworkState> = Vec::new();
+    /// Setup the model and create the initial state for each scenario.
+    fn setup(
+        &self,
+        timesteps: &[Timestep],
+        scenario_indices: &[ScenarioIndex],
+    ) -> Result<(Vec<State>, Vec<ParameterStates>, Vec<Option<Box<dyn Any>>>), PywrError> {
+        let mut states: Vec<State> = Vec::with_capacity(scenario_indices.len());
+        let mut parameter_internal_states: Vec<ParameterStates> = Vec::with_capacity(scenario_indices.len());
 
-        for _scenario_index in scenario_indices {
-            let mut state = NetworkState::new();
+        for scenario_index in scenario_indices {
+            // Node states are currently independent of the scenario
+            // TODO we could support different initial conditions by scenario (e.g. initial reservoir volumes)
+            let initial_node_states = self.nodes.iter().map(|n| n.new_state()).collect();
 
-            for node in self.nodes.deref() {
-                state.push_node_state(node.new_state());
-            }
+            // Get the initial internal state
+            let initial_values_states = self
+                .parameters
+                .iter()
+                .map(|p| p.setup(timesteps, scenario_index))
+                .collect::<Result<Vec<_>, _>>()?;
 
-            for _edge in self.edges.deref() {
-                state.push_edge_state(EdgeState::default());
-            }
+            let initial_indices_states = self
+                .index_parameters
+                .iter()
+                .map(|p| p.setup(timesteps, scenario_index))
+                .collect::<Result<Vec<_>, _>>()?;
 
-            states.push(state)
-        }
-        states
-    }
+            let state = State::new(
+                initial_node_states,
+                self.edges.len(),
+                initial_values_states.len(),
+                initial_indices_states.len(),
+            );
 
-    fn setup(&mut self, timesteps: &[Timestep], scenario_indices: &[ScenarioIndex]) -> Result<(), PywrError> {
-        // Setup parameters
+            states.push(state);
 
-        for parameter in self.parameters.iter_mut() {
-            parameter.setup(timesteps, scenario_indices)?;
-        }
-
-        for parameter in self.index_parameters.iter_mut() {
-            parameter.setup(timesteps, scenario_indices)?;
+            parameter_internal_states.push(ParameterStates::new(initial_values_states, initial_indices_states));
         }
 
         // Setup recorders
-        for recorder in self.recorders.iter_mut() {
-            recorder.setup(timesteps, scenario_indices)?;
+        let mut recorder_internal_states = Vec::new();
+        for recorder in &self.recorders {
+            let initial_state = recorder.setup(timesteps, scenario_indices)?;
+            recorder_internal_states.push(initial_state);
         }
 
-        Ok(())
+        Ok((states, parameter_internal_states, recorder_internal_states))
     }
 
-    fn finalise(&mut self) -> Result<(), PywrError> {
+    fn finalise(&self, recorder_internal_states: &mut Vec<Option<Box<dyn Any>>>) -> Result<(), PywrError> {
         // Setup recorders
-        for recorder in self.recorders.iter_mut() {
-            recorder.finalise()?;
+        for (recorder, internal_state) in self.recorders.iter().zip(recorder_internal_states) {
+            recorder.finalise(internal_state)?;
         }
 
         Ok(())
     }
 
     pub fn run(
-        &mut self,
+        &self,
         timestepper: Timestepper,
         scenarios: ScenarioGroupCollection,
         solver: &mut Box<dyn Solver>,
@@ -102,24 +108,38 @@ impl Model {
         let now = Instant::now();
 
         let mut timings = RunTimings::default();
-
         let timesteps = timestepper.timesteps();
         let scenario_indices = scenarios.scenario_indices();
-        // One state per scenario
-        let mut current_states = self.get_initial_state(&scenario_indices);
 
         // Setup the solver
         let mut count = 0;
         solver.setup(self)?;
-        self.setup(&timesteps, &scenario_indices)?;
+        // Setup the model and create the initial state
+        let (mut states, mut parameter_internal_states, mut recorder_internal_states) =
+            self.setup(&timesteps, &scenario_indices)?;
 
         // Step a timestep
         for timestep in timesteps.iter().progress() {
             debug!("Starting timestep {:?}", timestep);
-            let next_states = self.step(timestep, &scenario_indices, solver, &current_states, &mut timings)?;
-            current_states = next_states;
+
+            // State is mutated in-place
+            self.step(
+                timestep,
+                &scenario_indices,
+                solver,
+                &mut states,
+                &mut parameter_internal_states,
+                &mut timings,
+            )?;
+
+            let start_r_save = Instant::now();
+            self.save_recorders(timestep, &scenario_indices, &states, &mut recorder_internal_states)?;
+            timings.recorder_saving += start_r_save.elapsed();
+
             count += scenario_indices.len();
         }
+
+        self.finalise(&mut recorder_internal_states)?;
 
         let total_duration = now.elapsed().as_secs_f64();
         println!("total run time: {}s", total_duration);
@@ -142,102 +162,106 @@ impl Model {
             timings.solve.save_solution.as_secs_f64()
         );
         println!("speed: {} ts/s", count as f64 / total_duration);
-        self.finalise()?;
+
         Ok(())
     }
 
     /// Perform a single timestep with the current state, and return the updated states.
     pub(crate) fn step(
-        &mut self,
+        &self,
         timestep: &Timestep,
         scenario_indices: &[ScenarioIndex],
         solver: &mut Box<dyn Solver>,
-        current_states: &[NetworkState],
+        states: &mut [State],
+        parameter_internal_states: &mut [ParameterStates],
         timings: &mut RunTimings,
-    ) -> Result<Vec<NetworkState>, PywrError> {
-        let mut next_states = Vec::with_capacity(current_states.len());
+    ) -> Result<(), PywrError> {
+        for ((scenario_index, current_state), p_internal_state) in
+            scenario_indices.iter().zip(states).zip(parameter_internal_states)
+        {
+            // TODO clear the current parameter values state (i.e. set them all to zero).
 
-        for scenario_index in scenario_indices.iter() {
-            let current_state = match current_states.get(scenario_index.index) {
-                Some(s) => s,
-                None => return Err(PywrError::ScenarioStateNotFound),
-            };
             let start_p_calc = Instant::now();
-            let pstate = self.compute_parameters(timestep, scenario_index, current_state)?;
+            self.compute_parameters(timestep, scenario_index, current_state, p_internal_state)
+                .unwrap();
+
+            // State now contains updated parameter values BUT original network state
             timings.parameter_calculation += start_p_calc.elapsed();
 
-            let (next_state, solve_timings) = solver.solve(self, timestep, current_state, &pstate)?;
+            // Solve determines the new network state
+            let solve_timings = solver.solve(self, timestep, current_state).unwrap();
+            // State now contains updated parameter values AND updated network state
             timings.solve += solve_timings;
 
             let start_r_save = Instant::now();
-            self.save_recorders(timestep, scenario_index, &next_state, &pstate)?;
+
             timings.recorder_saving += start_r_save.elapsed();
-            next_states.push(next_state);
         }
 
-        let start_r_save = Instant::now();
-        self.after_save_recorders(timestep)?;
-        timings.recorder_saving += start_r_save.elapsed();
-
-        Ok(next_states)
+        Ok(())
     }
 
     fn compute_parameters(
-        &mut self,
+        &self,
         timestep: &Timestep,
         scenario_index: &ScenarioIndex,
-        state: &NetworkState,
-    ) -> Result<ParameterState, PywrError> {
-        let mut parameter_state = ParameterState::with_capacity(self.parameters.len(), 0);
+        state: &mut State,
+        internal_states: &mut ParameterStates,
+    ) -> Result<(), PywrError> {
+        // TODO reset parameter state to zero
 
         for p_type in &self.parameters_resolve_order {
             match p_type {
                 ParameterType::Parameter(idx) => {
+                    // Find the parameter itself
                     let p = self
                         .parameters
-                        .get_mut(*idx.deref())
+                        .get(*idx.deref())
                         .ok_or(PywrError::ParameterIndexNotFound(*idx))?;
-                    let value = p.compute(timestep, scenario_index, state, &parameter_state)?;
+                    // .. and its internal state
+                    let internal_state = internal_states
+                        .get_mut_value_state(*idx)
+                        .ok_or(PywrError::ParameterIndexNotFound(*idx))?;
+
+                    let value = p.compute(timestep, scenario_index, &state, internal_state)?;
                     // debug!("Current value of parameter {}: {}", p.name(), value);
+
+                    // TODO move this check into the method below
                     if value.is_nan() {
                         panic!("NaN value computed in parameter: {}", p.name());
                     }
-                    parameter_state.push_value(value);
+                    state.set_parameter_value(*idx, value)?;
                 }
                 ParameterType::Index(idx) => {
                     let p = self
                         .index_parameters
-                        .get_mut(*idx.deref())
+                        .get(*idx.deref())
                         .ok_or(PywrError::IndexParameterIndexNotFound(*idx))?;
 
-                    let value = p.compute(timestep, scenario_index, state, &parameter_state)?;
+                    // .. and its internal state
+                    let internal_state = internal_states
+                        .get_mut_index_state(*idx)
+                        .ok_or(PywrError::IndexParameterIndexNotFound(*idx))?;
+
+                    let value = p.compute(timestep, scenario_index, &state, internal_state)?;
                     // debug!("Current value of index parameter {}: {}", p.name(), value);
-                    parameter_state.push_index(value);
+                    state.set_parameter_index(*idx, value)?;
                 }
             }
         }
 
-        for _parameter in &self.index_parameters {}
-
-        Ok(parameter_state)
-    }
-
-    fn save_recorders(
-        &mut self,
-        timestep: &Timestep,
-        scenario_index: &ScenarioIndex,
-        network_state: &NetworkState,
-        parameter_state: &ParameterState,
-    ) -> Result<(), PywrError> {
-        for recorder in self.recorders.iter_mut() {
-            recorder.save(timestep, scenario_index, network_state, parameter_state)?;
-        }
         Ok(())
     }
 
-    fn after_save_recorders(&mut self, timestep: &Timestep) -> Result<(), PywrError> {
-        for recorder in self.recorders.iter_mut() {
-            recorder.after_save(timestep)?;
+    fn save_recorders(
+        &self,
+        timestep: &Timestep,
+        scenario_indices: &[ScenarioIndex],
+        states: &[State],
+        recorder_internal_states: &mut [Option<Box<dyn Any>>],
+    ) -> Result<(), PywrError> {
+        for (recorder, internal_state) in self.recorders.iter().zip(recorder_internal_states) {
+            recorder.save(timestep, scenario_indices, states, internal_state)?;
         }
         Ok(())
     }
@@ -897,7 +921,7 @@ mod tests {
         let mut ts_iter = timesteps.iter();
         let scenario_indices = scenarios.scenario_indices();
         let ts = ts_iter.next().unwrap();
-        let current_state = model.get_initial_state(&scenario_indices);
+        let current_state = model.create_initial_state(&scenario_indices);
         assert_eq!(current_state.len(), scenario_indices.len());
 
         let next_state = model

@@ -1,5 +1,5 @@
 use crate::model::Model;
-use crate::state::{NetworkState, ParameterState};
+use crate::state::State;
 use crate::timestep::Timestep;
 use crate::PywrError;
 use std::ops::{Add, AddAssign};
@@ -39,11 +39,5 @@ impl AddAssign for SolverTimings {
 
 pub trait Solver {
     fn setup(&mut self, model: &Model) -> Result<(), PywrError>;
-    fn solve(
-        &mut self,
-        model: &Model,
-        timestep: &Timestep,
-        network_state: &NetworkState,
-        parameter_state: &ParameterState,
-    ) -> Result<(NetworkState, SolverTimings), PywrError>;
+    fn solve(&mut self, model: &Model, timestep: &Timestep, state: &mut State) -> Result<SolverTimings, PywrError>;
 }

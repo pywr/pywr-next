@@ -4,14 +4,15 @@ pub mod py;
 use crate::assert_almost_eq;
 use crate::metric::Metric;
 use crate::scenario::ScenarioIndex;
-use crate::state::ParameterState;
 use crate::timestep::Timestep;
-use crate::{NetworkState, PywrError};
+use crate::PywrError;
 use ndarray::prelude::*;
 use ndarray::Array2;
+use std::any::Any;
 use std::fmt;
 use std::fmt::{Display, Formatter};
 
+use crate::state::State;
 use std::ops::Deref;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -60,27 +61,26 @@ pub trait Recorder {
     fn name(&self) -> &str {
         self.meta().name.as_str()
     }
-    fn setup(&mut self, _timesteps: &[Timestep], _scenario_indices: &[ScenarioIndex]) -> Result<(), PywrError> {
-        Ok(())
+    fn setup(
+        &self,
+        _timesteps: &[Timestep],
+        _scenario_indices: &[ScenarioIndex],
+    ) -> Result<Option<Box<dyn Any>>, PywrError> {
+        Ok(None)
     }
     fn before(&self) {}
-    fn save(
-        &mut self,
-        timestep: &Timestep,
-        scenario_index: &ScenarioIndex,
-        network_state: &NetworkState,
-        parameter_state: &ParameterState,
-    ) -> Result<(), PywrError>;
-    fn after_save(&mut self, _timestep: &Timestep) -> Result<(), PywrError> {
-        Ok(())
-    }
-    fn finalise(&mut self) -> Result<(), PywrError> {
-        Ok(())
-    }
 
-    // Data access
-    fn data_view2(&self) -> Result<Array2<f64>, PywrError> {
-        Err(PywrError::NotSupportedByRecorder)
+    fn save(
+        &self,
+        _timestep: &Timestep,
+        _scenario_indices: &[ScenarioIndex],
+        _state: &[State],
+        _internal_state: &mut Option<Box<dyn Any>>,
+    ) -> Result<(), PywrError> {
+        Ok(())
+    }
+    fn finalise(&self, _internal_state: &mut Option<Box<dyn Any>>) -> Result<(), PywrError> {
+        Ok(())
     }
 }
 
@@ -105,38 +105,39 @@ impl Recorder for Array2Recorder {
         &self.meta
     }
 
-    fn setup(&mut self, _timesteps: &[Timestep], _scenario_indices: &[ScenarioIndex]) -> Result<(), PywrError> {
-        // TODO set this up properly.
-        self.array = Some(Array::zeros((365, 10)));
+    fn setup(
+        &self,
+        timesteps: &[Timestep],
+        scenario_indices: &[ScenarioIndex],
+    ) -> Result<Option<Box<(dyn Any)>>, PywrError> {
+        let array: Array2<f64> = Array::zeros((timesteps.len(), scenario_indices.len()));
 
-        Ok(())
+        Ok(Some(Box::new(array)))
     }
 
     fn save(
-        &mut self,
+        &self,
         timestep: &Timestep,
-        scenario_index: &ScenarioIndex,
-        state: &NetworkState,
-        parameter_state: &ParameterState,
+        scenario_indices: &[ScenarioIndex],
+        state: &[State],
+        internal_state: &mut Option<Box<dyn Any>>,
     ) -> Result<(), PywrError> {
-        // This panics if out-of-bounds
-
-        match &mut self.array {
-            Some(array) => {
-                let value = self.metric.get_value(state, parameter_state)?;
-                array[[timestep.index, scenario_index.index]] = value
-            }
-            None => return Err(PywrError::RecorderNotInitialised),
+        // Downcast the internal state to the correct type
+        let array = match internal_state {
+            Some(internal) => match internal.downcast_mut::<Array2<f64>>() {
+                Some(pa) => pa,
+                None => panic!("Internal state did not downcast to the correct type! :("),
+            },
+            None => panic!("No internal state defined when one was expected! :("),
         };
 
-        Ok(())
-    }
-
-    fn data_view2(&self) -> Result<Array2<f64>, PywrError> {
-        match &self.array {
-            Some(a) => Ok(a.clone()),
-            None => Err(PywrError::RecorderNotInitialised),
+        // This panics if out-of-bounds
+        for scenario_index in scenario_indices {
+            let value = self.metric.get_value(&state[scenario_index.index])?;
+            array[[timestep.index, scenario_index.index]] = value
         }
+
+        Ok(())
     }
 }
 
@@ -162,20 +163,22 @@ impl Recorder for AssertionRecorder {
     }
 
     fn save(
-        &mut self,
+        &self,
         timestep: &Timestep,
-        scenario_index: &ScenarioIndex,
-        state: &NetworkState,
-        parameter_state: &ParameterState,
+        scenario_indices: &[ScenarioIndex],
+        state: &[State],
+        _internal_state: &mut Option<Box<dyn Any>>,
     ) -> Result<(), PywrError> {
         // This panics if out-of-bounds
 
-        let expected_value = match self.expected_values.get([timestep.index, scenario_index.index]) {
-            Some(v) => *v,
-            None => panic!("Simulation produced results out of range."),
-        };
+        for scenario_index in scenario_indices {
+            let expected_value = match self.expected_values.get([timestep.index, scenario_index.index]) {
+                Some(v) => *v,
+                None => panic!("Simulation produced results out of range."),
+            };
 
-        assert_almost_eq!(self.metric.get_value(state, parameter_state)?, expected_value);
+            assert_almost_eq!(self.metric.get_value(&state[scenario_index.index])?, expected_value);
+        }
 
         Ok(())
     }

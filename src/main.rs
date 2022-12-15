@@ -44,7 +44,7 @@ fn main() {
         }
     }
 
-    let (mut model, timestepper): (Model, Timestepper) = schema_v2.try_into_model(None).unwrap();
+    let (model, timestepper): (Model, Timestepper) = schema_v2.try_into_model(None).unwrap();
 
     let mut solver: Box<dyn Solver> = Box::new(ClpSolver::<ClpSimplex>::default());
 

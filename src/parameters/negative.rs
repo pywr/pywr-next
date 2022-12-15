@@ -1,9 +1,10 @@
 use crate::metric::Metric;
 use crate::parameters::{Parameter, ParameterMeta};
 use crate::scenario::ScenarioIndex;
-use crate::state::ParameterState;
+use crate::state::State;
 use crate::timestep::Timestep;
-use crate::{NetworkState, PywrError};
+use crate::PywrError;
+use std::any::Any;
 
 pub struct NegativeParameter {
     meta: ParameterMeta,
@@ -24,14 +25,14 @@ impl Parameter for NegativeParameter {
         &self.meta
     }
     fn compute(
-        &mut self,
+        &self,
         _timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
-        state: &NetworkState,
-        parameter_state: &ParameterState,
+        state: &State,
+        _internal_state: &mut Option<Box<dyn Any>>,
     ) -> Result<f64, PywrError> {
         // Current value
-        let x = self.metric.get_value(state, parameter_state)?;
+        let x = self.metric.get_value(state)?;
         Ok(-x)
     }
 }

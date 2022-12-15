@@ -1,9 +1,10 @@
 use crate::metric::Metric;
-use crate::parameters::{IndexParameter, InternalParameterState, ParameterMeta};
+use crate::parameters::{IndexParameter, ParameterMeta};
 use crate::scenario::ScenarioIndex;
-use crate::state::{NetworkState, ParameterState};
+use crate::state::State;
 use crate::timestep::Timestep;
 use crate::PywrError;
+use std::any::Any;
 use std::str::FromStr;
 
 pub enum Predicate {
@@ -35,7 +36,6 @@ pub struct ThresholdParameter {
     threshold: Metric,
     predicate: Predicate,
     ratchet: bool,
-    previously_activated: InternalParameterState<bool>,
 }
 
 impl ThresholdParameter {
@@ -46,7 +46,6 @@ impl ThresholdParameter {
             threshold,
             predicate,
             ratchet,
-            previously_activated: InternalParameterState::default(),
         }
     }
 }
@@ -56,25 +55,39 @@ impl IndexParameter for ThresholdParameter {
         &self.meta
     }
 
-    fn setup(&mut self, _timesteps: &[Timestep], scenario_indices: &[ScenarioIndex]) -> Result<(), PywrError> {
-        self.previously_activated.setup(scenario_indices.len(), false);
-        Ok(())
+    fn setup(
+        &self,
+        _timesteps: &[Timestep],
+        _scenario_index: &ScenarioIndex,
+    ) -> Result<Option<Box<dyn Any>>, PywrError> {
+        // Internal state is just a boolean indicating if the threshold was triggered previously.
+        // Initially this is false.
+        Ok(Some(Box::new(false)))
     }
 
     fn compute(
-        &mut self,
+        &self,
         _timestep: &Timestep,
-        scenario_index: &ScenarioIndex,
-        network_state: &NetworkState,
-        parameter_state: &ParameterState,
+        _scenario_index: &ScenarioIndex,
+        state: &State,
+        internal_state: &mut Option<Box<dyn Any>>,
     ) -> Result<usize, PywrError> {
+        // Downcast the internal state to the correct type
+        let previously_activated = match internal_state {
+            Some(internal) => match internal.downcast_mut::<bool>() {
+                Some(pa) => pa,
+                None => panic!("Internal state did not downcast to the correct type! :("),
+            },
+            None => panic!("No internal state defined when one was expected! :("),
+        };
+
         // Return early if ratchet has been hit
-        if self.ratchet & self.previously_activated.get(scenario_index.index) {
+        if self.ratchet & *previously_activated {
             return Ok(1);
         }
 
-        let threshold = self.threshold.get_value(network_state, parameter_state)?;
-        let value = self.metric.get_value(network_state, parameter_state)?;
+        let threshold = self.threshold.get_value(state)?;
+        let value = self.metric.get_value(state)?;
 
         let active = match self.predicate {
             Predicate::LessThan => value < threshold,
@@ -84,12 +97,12 @@ impl IndexParameter for ThresholdParameter {
             Predicate::GreaterThanOrEqualTo => value >= threshold,
         };
 
-        match active {
-            true => {
-                self.previously_activated.set(scenario_index.index, true);
-                Ok(1)
-            }
-            false => Ok(0),
+        if active {
+            // Update the internal state to remember we've been triggered!
+            *previously_activated = true;
+            Ok(1)
+        } else {
+            Ok(0)
         }
     }
 }

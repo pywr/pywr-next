@@ -2,9 +2,10 @@ use super::interpolate;
 use crate::metric::Metric;
 use crate::parameters::{Parameter, ParameterMeta};
 use crate::scenario::ScenarioIndex;
-use crate::state::{NetworkState, ParameterState};
+use crate::state::State;
 use crate::timestep::Timestep;
 use crate::PywrError;
+use std::any::Any;
 
 pub struct InterpolatedParameter {
     meta: ParameterMeta,
@@ -29,22 +30,22 @@ impl Parameter for InterpolatedParameter {
         &self.meta
     }
     fn compute(
-        &mut self,
+        &self,
         _timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
-        state: &NetworkState,
-        parameter_state: &ParameterState,
+        state: &State,
+        _internal_state: &mut Option<Box<dyn Any>>,
     ) -> Result<f64, PywrError> {
         // Current value
-        let x = self.metric.get_value(state, parameter_state)?;
+        let x = self.metric.get_value(state)?;
 
         let mut cc_prev = 1.0;
         for (idx, control_curve) in self.control_curves.iter().enumerate() {
-            let cc_value = control_curve.get_value(state, parameter_state)?;
+            let cc_value = control_curve.get_value(state)?;
 
             if x >= cc_value {
-                let lower_value = self.values[idx + 1].get_value(state, parameter_state)?;
-                let upper_value = self.values[idx].get_value(state, parameter_state)?;
+                let lower_value = self.values[idx + 1].get_value(state)?;
+                let upper_value = self.values[idx].get_value(state)?;
 
                 return Ok(interpolate(x, cc_value, cc_prev, lower_value, upper_value));
             }
@@ -55,8 +56,8 @@ impl Parameter for InterpolatedParameter {
         let cc_value = 0.0;
         let n = self.values.len();
 
-        let lower_value = self.values[n - 1].get_value(state, parameter_state)?;
-        let upper_value = self.values[n - 2].get_value(state, parameter_state)?;
+        let lower_value = self.values[n - 1].get_value(state)?;
+        let upper_value = self.values[n - 2].get_value(state)?;
 
         Ok(interpolate(x, cc_value, cc_prev, lower_value, upper_value))
     }

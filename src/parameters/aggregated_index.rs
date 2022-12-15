@@ -1,10 +1,11 @@
 /// AggregatedIndexParameter
 ///
-use super::{NetworkState, PywrError};
+use super::PywrError;
 use crate::parameters::{IndexParameter, IndexValue, ParameterMeta};
 use crate::scenario::ScenarioIndex;
-use crate::state::ParameterState;
+use crate::state::State;
 use crate::timestep::Timestep;
+use std::any::Any;
 use std::str::FromStr;
 
 pub enum AggIndexFunc {
@@ -53,11 +54,11 @@ impl IndexParameter for AggregatedIndexParameter {
         &self.meta
     }
     fn compute(
-        &mut self,
+        &self,
         _timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
-        _state: &NetworkState,
-        parameter_state: &ParameterState,
+        state: &State,
+        _internal_state: &mut Option<Box<dyn Any>>,
     ) -> Result<usize, PywrError> {
         // TODO scenarios!
 
@@ -67,7 +68,7 @@ impl IndexParameter for AggregatedIndexParameter {
                 for p in &self.values {
                     total += match p {
                         IndexValue::Constant(v) => *v,
-                        IndexValue::Dynamic(p) => parameter_state.get_index(*p)?,
+                        IndexValue::Dynamic(p) => state.get_parameter_index(*p)?,
                     };
                 }
                 total
@@ -77,7 +78,7 @@ impl IndexParameter for AggregatedIndexParameter {
                 for p in &self.values {
                     total = total.max(match p {
                         IndexValue::Constant(v) => *v,
-                        IndexValue::Dynamic(p) => parameter_state.get_index(*p)?,
+                        IndexValue::Dynamic(p) => state.get_parameter_index(*p)?,
                     });
                 }
                 total
@@ -87,7 +88,7 @@ impl IndexParameter for AggregatedIndexParameter {
                 for p in &self.values {
                     total = total.min(match p {
                         IndexValue::Constant(v) => *v,
-                        IndexValue::Dynamic(p) => parameter_state.get_index(*p)?,
+                        IndexValue::Dynamic(p) => state.get_parameter_index(*p)?,
                     });
                 }
                 total
@@ -97,7 +98,7 @@ impl IndexParameter for AggregatedIndexParameter {
                 for p in &self.values {
                     total *= match p {
                         IndexValue::Constant(v) => *v,
-                        IndexValue::Dynamic(p) => parameter_state.get_index(*p)?,
+                        IndexValue::Dynamic(p) => state.get_parameter_index(*p)?,
                     };
                 }
                 total
@@ -107,7 +108,7 @@ impl IndexParameter for AggregatedIndexParameter {
                 for p in &self.values {
                     let value = match p {
                         IndexValue::Constant(v) => *v,
-                        IndexValue::Dynamic(p) => parameter_state.get_index(*p)?,
+                        IndexValue::Dynamic(p) => state.get_parameter_index(*p)?,
                     };
 
                     if value > 0 {
@@ -122,7 +123,7 @@ impl IndexParameter for AggregatedIndexParameter {
                 for p in &self.values {
                     let value = match p {
                         IndexValue::Constant(v) => *v,
-                        IndexValue::Dynamic(p) => parameter_state.get_index(*p)?,
+                        IndexValue::Dynamic(p) => state.get_parameter_index(*p)?,
                     };
 
                     if value == 0 {

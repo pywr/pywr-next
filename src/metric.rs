@@ -1,7 +1,7 @@
 use crate::edge::EdgeIndex;
 use crate::node::NodeIndex;
 use crate::parameters::{FloatValue, ParameterIndex};
-use crate::state::{NetworkState, ParameterState};
+use crate::state::State;
 use crate::virtual_storage::VirtualStorageIndex;
 use crate::PywrError;
 
@@ -30,30 +30,30 @@ impl From<FloatValue> for Metric {
 }
 
 impl Metric {
-    pub fn get_value(&self, network_state: &NetworkState, parameter_state: &ParameterState) -> Result<f64, PywrError> {
+    pub fn get_value(&self, state: &State) -> Result<f64, PywrError> {
         match self {
-            Metric::NodeInFlow(idx) => Ok(network_state.get_node_in_flow(idx)?),
-            Metric::NodeOutFlow(idx) => Ok(network_state.get_node_out_flow(idx)?),
-            Metric::NodeVolume(idx) => Ok(network_state.get_node_volume(idx)?),
-            Metric::NodeProportionalVolume(idx) => Ok(network_state.get_node_proportional_volume(idx)?),
-            Metric::EdgeFlow(idx) => Ok(network_state.get_edge_flow(idx)?),
-            Metric::ParameterValue(idx) => Ok(parameter_state.get_value(*idx)?),
+            Metric::NodeInFlow(idx) => Ok(state.get_network_state().get_node_in_flow(idx)?),
+            Metric::NodeOutFlow(idx) => Ok(state.get_network_state().get_node_out_flow(idx)?),
+            Metric::NodeVolume(idx) => Ok(state.get_network_state().get_node_volume(idx)?),
+            Metric::NodeProportionalVolume(idx) => Ok(state.get_network_state().get_node_proportional_volume(idx)?),
+            Metric::EdgeFlow(idx) => Ok(state.get_network_state().get_edge_flow(idx)?),
+            Metric::ParameterValue(idx) => Ok(state.get_parameter_value(*idx)?),
             Metric::VirtualStorageVolume(_idx) => Ok(1.0), // TODO!!!
             Metric::VirtualStorageProportionalVolume(_idx) => Ok(1.0), // TODO!!!
             Metric::Constant(v) => Ok(*v),
             Metric::AggregatedNodeVolume(indices) => indices
                 .iter()
-                .map(|idx| network_state.get_node_volume(idx))
+                .map(|idx| state.get_network_state().get_node_volume(idx))
                 .sum::<Result<_, _>>(),
             Metric::AggregatedNodeProportionalVolume(indices) => {
                 let volume: f64 = indices
                     .iter()
-                    .map(|idx| network_state.get_node_volume(idx))
+                    .map(|idx| state.get_network_state().get_node_volume(idx))
                     .sum::<Result<_, _>>()?;
 
                 let max_volume: f64 = indices
                     .iter()
-                    .map(|idx| network_state.get_node_max_volume(idx))
+                    .map(|idx| state.get_network_state().get_node_max_volume(idx))
                     .sum::<Result<_, _>>()?;
                 // TODO handle divide by zero
                 Ok(volume / max_volume)

@@ -1,7 +1,7 @@
 use crate::model::Model;
 use crate::node::NodeType;
 use crate::solvers::{Solver, SolverTimings};
-use crate::state::ParameterState;
+use crate::state::State;
 use crate::timestep::Timestep;
 use crate::{NetworkState, PywrError};
 use clp_sys::*;
@@ -657,9 +657,9 @@ impl<T> ClpSolver<T> {
     }
 
     /// Update edge objective coefficients
-    fn update_edge_objectives(&mut self, model: &Model, parameter_states: &ParameterState) -> Result<(), PywrError> {
+    fn update_edge_objectives(&mut self, model: &Model, state: &State) -> Result<(), PywrError> {
         for edge in model.edges.deref() {
-            let cost: f64 = edge.cost(&model.nodes, parameter_states)?;
+            let cost: f64 = edge.cost(&model.nodes, state)?;
             self.builder.set_obj_coefficient(*edge.index().deref(), cost);
         }
         Ok(())
@@ -670,8 +670,7 @@ impl<T> ClpSolver<T> {
         &mut self,
         model: &Model,
         timestep: &Timestep,
-        network_state: &NetworkState,
-        parameter_states: &ParameterState,
+        state: &State,
     ) -> Result<(), PywrError> {
         let start_row = match self.start_node_constraints {
             Some(r) => r,
@@ -679,11 +678,11 @@ impl<T> ClpSolver<T> {
         };
 
         for node in model.nodes.deref() {
-            let (lb, ub): (f64, f64) = match node.get_current_flow_bounds(parameter_states) {
+            let (lb, ub): (f64, f64) = match node.get_current_flow_bounds(state) {
                 Ok(bnds) => bnds,
                 Err(PywrError::FlowConstraintsUndefined) => {
                     // Must be a storage node
-                    let (avail, missing) = match node.get_current_available_volume_bounds(network_state) {
+                    let (avail, missing) = match node.get_current_available_volume_bounds(state.get_network_state()) {
                         Ok(bnds) => bnds,
                         Err(e) => return Err(e),
                     };
@@ -703,18 +702,14 @@ impl<T> ClpSolver<T> {
     }
 
     /// Update aggregated node constraints
-    fn update_aggregated_node_constraint_bounds(
-        &mut self,
-        model: &Model,
-        parameter_states: &ParameterState,
-    ) -> Result<(), PywrError> {
+    fn update_aggregated_node_constraint_bounds(&mut self, model: &Model, state: &State) -> Result<(), PywrError> {
         let start_row = match self.start_agg_node_constraints {
             Some(r) => r,
             None => return Err(PywrError::SolverNotSetup),
         };
 
         for agg_node in model.aggregated_nodes.deref() {
-            let (lb, ub): (f64, f64) = agg_node.get_current_flow_bounds(parameter_states)?;
+            let (lb, ub): (f64, f64) = agg_node.get_current_flow_bounds(state)?;
             self.builder.set_row_bounds(start_row + *agg_node.index(), lb, ub);
             // println!("Agg node {:?} [{}, {}]", agg_node.name(), lb, ub);
         }
@@ -740,21 +735,15 @@ impl Solver for ClpSolver<ClpSimplex> {
 
         Ok(())
     }
-    fn solve(
-        &mut self,
-        model: &Model,
-        timestep: &Timestep,
-        network_state: &NetworkState,
-        parameter_state: &ParameterState,
-    ) -> Result<(NetworkState, SolverTimings), PywrError> {
+    fn solve(&mut self, model: &Model, timestep: &Timestep, state: &mut State) -> Result<SolverTimings, PywrError> {
         let mut timings = SolverTimings::default();
         let start_objective_update = Instant::now();
-        self.update_edge_objectives(model, parameter_state)?;
+        self.update_edge_objectives(model, state)?;
         timings.update_objective += start_objective_update.elapsed();
 
         let start_constraint_update = Instant::now();
-        self.update_node_constraint_bounds(model, timestep, network_state, parameter_state)?;
-        self.update_aggregated_node_constraint_bounds(model, parameter_state)?;
+        self.update_node_constraint_bounds(model, timestep, state)?;
+        self.update_aggregated_node_constraint_bounds(model, state)?;
         timings.update_constraints += start_constraint_update.elapsed();
 
         let solution = self.builder.solve()?;
@@ -763,16 +752,17 @@ impl Solver for ClpSolver<ClpSimplex> {
 
         // println!("{:?}", solution);
         // Create the updated network state from the results
-        let mut new_state = network_state.with_capacity();
+        let mut network_state = state.get_mut_network_state();
+        network_state.reset();
 
         let start_save_solution = Instant::now();
         for edge in model.edges.deref() {
             let flow = solution.get_solution(*edge.index().deref());
-            new_state.add_flow(edge, timestep, flow)?;
+            network_state.add_flow(edge, timestep, flow)?;
         }
         timings.save_solution += start_save_solution.elapsed();
 
-        Ok((new_state, timings))
+        Ok(timings)
     }
 }
 
@@ -912,21 +902,15 @@ impl Solver for ClpSolver<Highs> {
 
         Ok(())
     }
-    fn solve(
-        &mut self,
-        model: &Model,
-        timestep: &Timestep,
-        network_state: &NetworkState,
-        parameter_state: &ParameterState,
-    ) -> Result<(NetworkState, SolverTimings), PywrError> {
+    fn solve(&mut self, model: &Model, timestep: &Timestep, state: &mut State) -> Result<SolverTimings, PywrError> {
         let mut timings = SolverTimings::default();
         let start_objective_update = Instant::now();
-        self.update_edge_objectives(model, parameter_state)?;
+        self.update_edge_objectives(model, state)?;
         timings.update_objective += start_objective_update.elapsed();
 
         let start_constraint_update = Instant::now();
-        self.update_node_constraint_bounds(model, timestep, network_state, parameter_state)?;
-        self.update_aggregated_node_constraint_bounds(model, parameter_state)?;
+        self.update_node_constraint_bounds(model, timestep, state)?;
+        self.update_aggregated_node_constraint_bounds(model, state)?;
         timings.update_constraints += start_constraint_update.elapsed();
 
         let solution = self.builder.solve()?;
@@ -934,17 +918,18 @@ impl Solver for ClpSolver<Highs> {
         timings.solve += solution.solve_time;
 
         // println!("{:?}", solution);
-        // Create the updated network state from the results
-        let mut new_state = network_state.with_capacity();
+        // Reset the network state from the results
+        let mut network_state = state.get_mut_network_state();
+        network_state.reset();
 
         let start_save_solution = Instant::now();
         for edge in model.edges.deref() {
             let flow = solution.get_solution(*edge.index().deref());
-            new_state.add_flow(edge, timestep, flow)?;
+            network_state.add_flow(edge, timestep, flow)?;
         }
         timings.save_solution += start_save_solution.elapsed();
 
-        Ok((new_state, timings))
+        Ok(timings)
     }
 }
 
