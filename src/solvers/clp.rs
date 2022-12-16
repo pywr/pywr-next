@@ -28,6 +28,8 @@ pub struct ClpSimplex {
     ptr: *mut Clp_Simplex,
 }
 
+unsafe impl Send for ClpSimplex {}
+
 impl Default for ClpSimplex {
     fn default() -> Self {
         let model: ClpSimplex;
@@ -769,6 +771,8 @@ impl Solver for ClpSolver<ClpSimplex> {
 pub struct Highs {
     ptr: *mut c_void,
 }
+
+unsafe impl Send for Highs {}
 
 impl Default for Highs {
     fn default() -> Self {

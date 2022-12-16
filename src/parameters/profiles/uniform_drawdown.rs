@@ -50,7 +50,7 @@ impl Parameter for UniformDrawdownProfileParameter {
         timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
         _state: &State,
-        _internal_state: &mut Option<Box<dyn Any>>,
+        _internal_state: &mut Option<Box<dyn Any + Send>>,
     ) -> Result<f64, PywrError> {
         // Current calendar year (might be adjusted depending on position of reset day)
         let mut year = timestep.date.year();

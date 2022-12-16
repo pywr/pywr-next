@@ -687,13 +687,11 @@ fn run_model_from_string(
         model.add_recorder(Box::new(tables_rec)).unwrap();
     }
 
-    let mut solver: Box<dyn Solver> = match solver_name.as_str() {
-        "clp" => Box::new(ClpSolver::<ClpSimplex>::default()),
-        "highs" => Box::new(ClpSolver::<Highs>::default()),
+    match solver_name.as_str() {
+        "clp" => model.run::<ClpSimplex>(timestepper, scenario_groups),
+        "highs" => model.run::<Highs>(timestepper, scenario_groups),
         _ => panic!("Solver {} not recognised.", solver_name),
-    };
-
-    model.run(timestepper, scenario_groups, &mut solver)?;
+    }?;
 
     Ok(())
 }

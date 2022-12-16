@@ -98,7 +98,7 @@ impl ParameterMeta {
     }
 }
 
-pub trait Parameter {
+pub trait Parameter: Send + Sync {
     fn meta(&self) -> &ParameterMeta;
     fn name(&self) -> &str {
         self.meta().name.as_str()
@@ -107,7 +107,7 @@ pub trait Parameter {
         &self,
         _timesteps: &[Timestep],
         _scenario_index: &ScenarioIndex,
-    ) -> Result<Option<Box<dyn Any>>, PywrError> {
+    ) -> Result<Option<Box<dyn Any + Send>>, PywrError> {
         Ok(None)
     }
     fn before(&self) {}
@@ -116,7 +116,7 @@ pub trait Parameter {
         timestep: &Timestep,
         scenario_index: &ScenarioIndex,
         state: &State,
-        internal_state: &mut Option<Box<dyn Any>>,
+        internal_state: &mut Option<Box<dyn Any + Send>>,
     ) -> Result<f64, PywrError>;
 }
 
@@ -133,7 +133,7 @@ pub trait Parameter {
 //     fn get_value(&mut self, key: &str) -> Result<f64, PywrError>;
 // }
 
-pub trait IndexParameter {
+pub trait IndexParameter: Send + Sync {
     fn meta(&self) -> &ParameterMeta;
     fn name(&self) -> &str {
         self.meta().name.as_str()
@@ -142,7 +142,7 @@ pub trait IndexParameter {
         &self,
         _timesteps: &[Timestep],
         _scenario_index: &ScenarioIndex,
-    ) -> Result<Option<Box<dyn Any>>, PywrError> {
+    ) -> Result<Option<Box<dyn Any + Send>>, PywrError> {
         Ok(None)
     }
     fn before(&self) {}
@@ -151,7 +151,7 @@ pub trait IndexParameter {
         timestep: &Timestep,
         scenario_index: &ScenarioIndex,
         state: &State,
-        internal_state: &mut Option<Box<dyn Any>>,
+        internal_state: &mut Option<Box<dyn Any + Send>>,
     ) -> Result<usize, PywrError>;
 }
 
@@ -195,7 +195,7 @@ impl Parameter for ConstantParameter {
         _timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
         _state: &State,
-        _internal_state: &mut Option<Box<dyn Any>>,
+        _internal_state: &mut Option<Box<dyn Any + Send>>,
     ) -> Result<f64, PywrError> {
         Ok(self.value)
     }
@@ -224,7 +224,7 @@ impl Parameter for VectorParameter {
         timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
         _state: &State,
-        _internal_state: &mut Option<Box<dyn Any>>,
+        _internal_state: &mut Option<Box<dyn Any + Send>>,
     ) -> Result<f64, PywrError> {
         match self.values.get(timestep.index) {
             Some(v) => Ok(*v),
@@ -256,7 +256,7 @@ impl Parameter for Array1Parameter {
         timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
         _state: &State,
-        _internal_state: &mut Option<Box<dyn Any>>,
+        _internal_state: &mut Option<Box<dyn Any + Send>>,
     ) -> Result<f64, PywrError> {
         // This panics if out-of-bounds
         let value = self.array[[timestep.index]];
@@ -287,7 +287,7 @@ impl Parameter for Array2Parameter {
         timestep: &Timestep,
         scenario_index: &ScenarioIndex,
         _state: &State,
-        _internal_state: &mut Option<Box<dyn Any>>,
+        _internal_state: &mut Option<Box<dyn Any + Send>>,
     ) -> Result<f64, PywrError> {
         // This panics if out-of-bounds
         Ok(self.array[[timestep.index, scenario_index.index]])

@@ -137,15 +137,15 @@ impl EdgeState {
 
 #[derive(Debug)]
 pub struct ParameterStates {
-    values: Vec<Option<Box<dyn Any>>>,
-    indices: Vec<Option<Box<dyn Any>>>,
+    values: Vec<Option<Box<dyn Any + Send>>>,
+    indices: Vec<Option<Box<dyn Any + Send>>>,
 }
 
 impl ParameterStates {
     /// Create new default states for the desired number of parameters.
     pub fn new(
-        initial_values_states: Vec<Option<Box<dyn Any>>>,
-        initial_indices_states: Vec<Option<Box<dyn Any>>>,
+        initial_values_states: Vec<Option<Box<dyn Any + Send>>>,
+        initial_indices_states: Vec<Option<Box<dyn Any + Send>>>,
     ) -> Self {
         Self {
             values: initial_values_states,
@@ -153,11 +153,11 @@ impl ParameterStates {
         }
     }
 
-    pub fn get_mut_value_state(&mut self, index: ParameterIndex) -> Option<&mut Option<Box<dyn Any>>> {
+    pub fn get_mut_value_state(&mut self, index: ParameterIndex) -> Option<&mut Option<Box<dyn Any + Send>>> {
         self.values.get_mut(*index.deref())
     }
 
-    pub fn get_mut_index_state(&mut self, index: IndexParameterIndex) -> Option<&mut Option<Box<dyn Any>>> {
+    pub fn get_mut_index_state(&mut self, index: IndexParameterIndex) -> Option<&mut Option<Box<dyn Any + Send>>> {
         self.indices.get_mut(*index.deref())
     }
 }

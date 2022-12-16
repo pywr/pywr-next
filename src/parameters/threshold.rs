@@ -59,7 +59,7 @@ impl IndexParameter for ThresholdParameter {
         &self,
         _timesteps: &[Timestep],
         _scenario_index: &ScenarioIndex,
-    ) -> Result<Option<Box<dyn Any>>, PywrError> {
+    ) -> Result<Option<Box<dyn Any + Send>>, PywrError> {
         // Internal state is just a boolean indicating if the threshold was triggered previously.
         // Initially this is false.
         Ok(Some(Box::new(false)))
@@ -70,7 +70,7 @@ impl IndexParameter for ThresholdParameter {
         _timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
         state: &State,
-        internal_state: &mut Option<Box<dyn Any>>,
+        internal_state: &mut Option<Box<dyn Any + Send>>,
     ) -> Result<usize, PywrError> {
         // Downcast the internal state to the correct type
         let previously_activated = match internal_state {

@@ -30,7 +30,7 @@ impl Parameter for IndexedArrayParameter {
         _timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
         state: &State,
-        _internal_state: &mut Option<Box<dyn Any>>,
+        _internal_state: &mut Option<Box<dyn Any + Send>>,
     ) -> Result<f64, PywrError> {
         let index = match self.index_parameter {
             IndexValue::Constant(idx) => idx,

@@ -45,7 +45,7 @@ impl Parameter for PiecewiseInterpolatedParameter {
         _timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
         state: &State,
-        _internal_state: &mut Option<Box<dyn Any>>,
+        _internal_state: &mut Option<Box<dyn Any + Send>>,
     ) -> Result<f64, PywrError> {
         // Current value
         let x = self.metric.get_value(state)?;

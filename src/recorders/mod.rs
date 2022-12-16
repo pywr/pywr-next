@@ -56,7 +56,7 @@ impl RecorderMeta {
     }
 }
 
-pub trait Recorder {
+pub trait Recorder: Send + Sync {
     fn meta(&self) -> &RecorderMeta;
     fn name(&self) -> &str {
         self.meta().name.as_str()
@@ -283,14 +283,13 @@ mod tests {
         let mut model = simple_model();
         let timestepper = default_timestepper();
         let scenarios = default_scenarios();
-        let mut solver: Box<dyn Solver> = Box::new(ClpSolver::<ClpSimplex>::default());
 
         let node_idx = model.get_node_index_by_name("input", None).unwrap();
 
         let rec = Array2Recorder::new("test", Metric::NodeOutFlow(node_idx));
 
         let idx = model.add_recorder(Box::new(rec)).unwrap();
-        model.run(timestepper, scenarios, &mut solver).unwrap();
+        model.run::<ClpSimplex>(timestepper, scenarios).unwrap();
 
         // TODO fix this with respect to the trait.
         // let array = rec.data_view2().unwrap();

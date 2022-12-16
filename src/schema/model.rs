@@ -329,9 +329,8 @@ mod tests {
         assert_eq!(model.edges.len(), 2);
 
         let scenarios = default_scenarios();
-        let mut solver: Box<dyn Solver> = Box::new(ClpSolver::<ClpSimplex>::default());
 
-        model.run(timestepper, scenarios, &mut solver).unwrap()
+        model.run::<ClpSimplex>(timestepper, scenarios).unwrap()
 
         // TODO assert the results!
     }

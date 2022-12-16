@@ -5,6 +5,7 @@ use crate::metric::Metric;
 use crate::node::{ConstraintValue, Node, NodeVec, StorageInitialVolume};
 use crate::parameters::ParameterType;
 use crate::scenario::{ScenarioGroupCollection, ScenarioIndex};
+use crate::solvers::clp::ClpSolver;
 use crate::solvers::{Solver, SolverTimings};
 use crate::state::{ParameterStates, State};
 use crate::timestep::{Timestep, Timestepper};
@@ -37,20 +38,34 @@ pub struct Model {
     recorders: Vec<Box<dyn recorders::Recorder>>,
 }
 
-// Required for Python API
-unsafe impl Send for Model {}
-
 impl Model {
     /// Setup the model and create the initial state for each scenario.
-    fn setup(
+    fn setup<S>(
         &self,
         timesteps: &[Timestep],
         scenario_indices: &[ScenarioIndex],
-    ) -> Result<(Vec<State>, Vec<ParameterStates>, Vec<Option<Box<dyn Any>>>), PywrError> {
+    ) -> Result<
+        (
+            Vec<State>,
+            Vec<ParameterStates>,
+            Vec<Option<Box<dyn Any>>>,
+            Vec<Box<ClpSolver<S>>>,
+        ),
+        PywrError,
+    >
+    where
+        ClpSolver<S>: Solver,
+    {
         let mut states: Vec<State> = Vec::with_capacity(scenario_indices.len());
         let mut parameter_internal_states: Vec<ParameterStates> = Vec::with_capacity(scenario_indices.len());
+        let mut solvers = Vec::with_capacity(scenario_indices.len());
 
         for scenario_index in scenario_indices {
+            // Create a solver for each scenario
+            let mut solver = Box::new(ClpSolver::<S>::default());
+            solver.setup(self)?;
+            solvers.push(solver);
+
             // Node states are currently independent of the scenario
             // TODO we could support different initial conditions by scenario (e.g. initial reservoir volumes)
             let initial_node_states = self.nodes.iter().map(|n| n.new_state()).collect();
@@ -87,7 +102,7 @@ impl Model {
             recorder_internal_states.push(initial_state);
         }
 
-        Ok((states, parameter_internal_states, recorder_internal_states))
+        Ok((states, parameter_internal_states, recorder_internal_states, solvers))
     }
 
     fn finalise(&self, recorder_internal_states: &mut Vec<Option<Box<dyn Any>>>) -> Result<(), PywrError> {
@@ -99,12 +114,10 @@ impl Model {
         Ok(())
     }
 
-    pub fn run(
-        &self,
-        timestepper: Timestepper,
-        scenarios: ScenarioGroupCollection,
-        solver: &mut Box<dyn Solver>,
-    ) -> Result<(), PywrError> {
+    pub fn run<S>(&self, timestepper: Timestepper, scenarios: ScenarioGroupCollection) -> Result<(), PywrError>
+    where
+        ClpSolver<S>: Solver,
+    {
         let now = Instant::now();
 
         let mut timings = RunTimings::default();
@@ -113,10 +126,9 @@ impl Model {
 
         // Setup the solver
         let mut count = 0;
-        solver.setup(self)?;
         // Setup the model and create the initial state
-        let (mut states, mut parameter_internal_states, mut recorder_internal_states) =
-            self.setup(&timesteps, &scenario_indices)?;
+        let (mut states, mut parameter_internal_states, mut recorder_internal_states, mut solvers) =
+            self.setup::<S>(&timesteps, &scenario_indices)?;
 
         // Step a timestep
         for timestep in timesteps.iter().progress() {
@@ -126,7 +138,7 @@ impl Model {
             self.step(
                 timestep,
                 &scenario_indices,
-                solver,
+                &mut solvers,
                 &mut states,
                 &mut parameter_internal_states,
                 &mut timings,
@@ -167,36 +179,38 @@ impl Model {
     }
 
     /// Perform a single timestep with the current state, and return the updated states.
-    pub(crate) fn step(
+    pub(crate) fn step<S>(
         &self,
         timestep: &Timestep,
         scenario_indices: &[ScenarioIndex],
-        solver: &mut Box<dyn Solver>,
+        solvers: &mut [Box<ClpSolver<S>>],
         states: &mut [State],
         parameter_internal_states: &mut [ParameterStates],
         timings: &mut RunTimings,
-    ) -> Result<(), PywrError> {
-        for ((scenario_index, current_state), p_internal_state) in
-            scenario_indices.iter().zip(states).zip(parameter_internal_states)
-        {
-            // TODO clear the current parameter values state (i.e. set them all to zero).
+    ) -> Result<(), PywrError>
+    where
+        ClpSolver<S>: Solver,
+    {
+        scenario_indices
+            .iter()
+            .zip(states)
+            .zip(parameter_internal_states)
+            .zip(solvers)
+            .for_each(|(((scenario_index, current_state), p_internal_state), solver)| {
+                // TODO clear the current parameter values state (i.e. set them all to zero).
 
-            let start_p_calc = Instant::now();
-            self.compute_parameters(timestep, scenario_index, current_state, p_internal_state)
-                .unwrap();
+                let start_p_calc = Instant::now();
+                self.compute_parameters(timestep, scenario_index, current_state, p_internal_state)
+                    .unwrap();
 
-            // State now contains updated parameter values BUT original network state
-            timings.parameter_calculation += start_p_calc.elapsed();
+                // State now contains updated parameter values BUT original network state
+                timings.parameter_calculation += start_p_calc.elapsed();
 
-            // Solve determines the new network state
-            let solve_timings = solver.solve(self, timestep, current_state).unwrap();
-            // State now contains updated parameter values AND updated network state
-            timings.solve += solve_timings;
-
-            let start_r_save = Instant::now();
-
-            timings.recorder_saving += start_r_save.elapsed();
-        }
+                // Solve determines the new network state
+                let solve_timings = solver.solve(self, timestep, current_state).unwrap();
+                // State now contains updated parameter values AND updated network state
+                timings.solve += solve_timings;
+            });
 
         Ok(())
     }
@@ -725,7 +739,7 @@ mod tests {
     use crate::node::{Constraint, ConstraintValue};
     use crate::recorders::AssertionRecorder;
     use crate::scenario::{ScenarioGroupCollection, ScenarioIndex};
-    use crate::solvers::clp::{ClpSimplex, ClpSolver};
+    use crate::solvers::clp::{ClpSimplex, ClpSolver, Highs};
     use crate::solvers::Solver;
     use crate::timestep::Timestepper;
     use float_cmp::approx_eq;
@@ -912,28 +926,34 @@ mod tests {
         let mut model = simple_model();
         let timestepper = default_timestepper();
         let scenarios = default_scenarios();
-        let mut solver: Box<dyn Solver> = Box::new(ClpSolver::<ClpSimplex>::default());
-
-        solver.setup(&model).unwrap();
 
         let mut timings = RunTimings::default();
         let timesteps = timestepper.timesteps();
         let mut ts_iter = timesteps.iter();
         let scenario_indices = scenarios.scenario_indices();
         let ts = ts_iter.next().unwrap();
-        let current_state = model.create_initial_state(&scenario_indices);
+        let (mut current_state, mut p_internal, mut r_internal, mut solvers) =
+            model.setup::<ClpSimplex>(&timesteps, &scenario_indices).unwrap();
         assert_eq!(current_state.len(), scenario_indices.len());
 
-        let next_state = model
-            .step(ts, &scenario_indices, &mut solver, &current_state, &mut timings)
+        model
+            .step(
+                ts,
+                &scenario_indices,
+                &mut solvers,
+                &mut current_state,
+                &mut p_internal,
+                &mut timings,
+            )
             .unwrap();
-
-        assert_eq!(next_state.len(), scenario_indices.len());
 
         let output_node = model.get_node_by_name("output", None).unwrap();
 
-        let state0 = next_state.get(0).unwrap();
-        let output_inflow = state0.get_node_in_flow(&output_node.index()).unwrap();
+        let state0 = current_state.get(0).unwrap();
+        let output_inflow = state0
+            .get_network_state()
+            .get_node_in_flow(&output_node.index())
+            .unwrap();
         assert!(approx_eq!(f64, output_inflow, 10.0));
     }
 
@@ -943,7 +963,6 @@ mod tests {
         let mut model = simple_model();
         let timestepper = default_timestepper();
         let scenarios = default_scenarios();
-        let mut solver: Box<dyn Solver> = Box::new(ClpSolver::<ClpSimplex>::default());
 
         // Set-up assertion for "input" node
         let idx = model.get_node_by_name("input", None).unwrap().index();
@@ -966,7 +985,7 @@ mod tests {
         let recorder = AssertionRecorder::new("total-demand", Metric::ParameterValue(idx), expected);
         model.add_recorder(Box::new(recorder)).unwrap();
 
-        model.run(timestepper, scenarios, &mut solver).unwrap();
+        model.run::<ClpSimplex>(timestepper, scenarios).unwrap();
     }
 
     #[test]
@@ -974,7 +993,6 @@ mod tests {
         let mut model = simple_storage_model();
         let timestepper = default_timestepper();
         let scenarios = default_scenarios();
-        let mut solver: Box<dyn Solver> = Box::new(ClpSolver::<ClpSimplex>::default());
 
         let idx = model.get_node_by_name("output", None).unwrap().index();
 
@@ -990,7 +1008,7 @@ mod tests {
         let recorder = AssertionRecorder::new("reservoir-volume", Metric::NodeVolume(idx), expected);
         model.add_recorder(Box::new(recorder)).unwrap();
 
-        model.run(timestepper, scenarios, &mut solver).unwrap();
+        model.run::<ClpSimplex>(timestepper, scenarios).unwrap();
     }
 
     #[test]

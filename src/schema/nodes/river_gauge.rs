@@ -195,9 +195,8 @@ mod tests {
 
         let timestepper = default_timestepper();
         let scenarios = default_scenarios();
-        let mut solver: Box<dyn Solver> = Box::new(ClpSolver::<ClpSimplex>::default());
 
-        model.run(timestepper, scenarios, &mut solver).unwrap()
+        model.run::<ClpSimplex>(timestepper, scenarios).unwrap()
 
         // TODO assert the results!
     }

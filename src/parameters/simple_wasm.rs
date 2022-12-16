@@ -38,7 +38,7 @@ impl Parameter for SimpleWasmParameter {
         &self,
         _timesteps: &[Timestep],
         _scenario_index: &ScenarioIndex,
-    ) -> Result<Option<Box<dyn Any>>, PywrError> {
+    ) -> Result<Option<Box<dyn Any + Send>>, PywrError> {
         let store = Store::default();
         let module = Module::new(&store, &self.src).unwrap();
 
@@ -71,7 +71,7 @@ impl Parameter for SimpleWasmParameter {
         _timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
         state: &State,
-        internal_state: &mut Option<Box<dyn Any>>,
+        internal_state: &mut Option<Box<dyn Any + Send>>,
     ) -> Result<f64, PywrError> {
         // Downcast the internal state to the correct type
         let funcs = match internal_state {

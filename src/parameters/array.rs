@@ -28,7 +28,7 @@ impl Parameter for Array1Parameter {
         timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
         _state: &State,
-        _internal_state: &mut Option<Box<dyn Any>>,
+        _internal_state: &mut Option<Box<dyn Any + Send>>,
     ) -> Result<f64, PywrError> {
         Ok(self.array[timestep.index])
     }

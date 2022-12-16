@@ -54,7 +54,7 @@ impl Parameter for AggregatedParameter {
         _timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
         state: &State,
-        _internal_state: &mut Option<Box<dyn Any>>,
+        _internal_state: &mut Option<Box<dyn Any + Send>>,
     ) -> Result<f64, PywrError> {
         // TODO scenarios!
 

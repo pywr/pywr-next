@@ -29,7 +29,7 @@ impl IndexParameter for AsymmetricSwitchIndexParameter {
         &self,
         _timesteps: &[Timestep],
         _scenario_index: &ScenarioIndex,
-    ) -> Result<Option<Box<dyn Any>>, PywrError> {
+    ) -> Result<Option<Box<dyn Any + Send>>, PywrError> {
         Ok(Some(Box::new(0_usize)))
     }
 
@@ -38,7 +38,7 @@ impl IndexParameter for AsymmetricSwitchIndexParameter {
         _timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
         state: &State,
-        internal_state: &mut Option<Box<dyn Any>>,
+        internal_state: &mut Option<Box<dyn Any + Send>>,
     ) -> Result<usize, PywrError> {
         let on_value = match self.on_parameter {
             IndexValue::Constant(idx) => idx,

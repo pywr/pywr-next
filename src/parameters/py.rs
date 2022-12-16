@@ -28,7 +28,7 @@ impl Parameter for PyParameter {
         _timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
         _state: &State,
-        _internal_state: &mut Option<Box<dyn Any>>,
+        _internal_state: &mut Option<Box<dyn Any + Send>>,
     ) -> Result<f64, PywrError> {
         let gil = Python::acquire_gil();
         let py = gil.python();
