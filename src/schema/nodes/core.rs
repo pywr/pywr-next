@@ -1,7 +1,7 @@
 use crate::node::StorageInitialVolume;
 use crate::schema::data_tables::LoadedTableCollection;
 use crate::schema::nodes::NodeMeta;
-use crate::schema::parameters::{ConstantValue, DynamicFloatValue, TryIntoV2Parameter};
+use crate::schema::parameters::{ConstantFloatVec, ConstantValue, DynamicFloatValue, TryIntoV2Parameter};
 use crate::PywrError;
 use pywr_schema::nodes::{
     AggregatedNode as AggregatedNodeV1, AggregatedStorageNode as AggregatedStorageNodeV1,
@@ -504,9 +504,11 @@ impl AggregatedNode {
             .nodes
             .iter()
             .map(|name| model.get_node_index_by_name(name, None))
-            .collect::<Result<_, _>>()?;
+            .collect::<Result<Vec<_>, _>>()?;
 
-        model.add_aggregated_node(self.meta.name.as_str(), None, nodes)?;
+        // We initialise with no factors, but will update them in the `set_constraints` method
+        // once all the parameters are loaded.
+        model.add_aggregated_node(self.meta.name.as_str(), None, nodes.as_slice(), None)?;
         Ok(())
     }
 
@@ -524,6 +526,15 @@ impl AggregatedNode {
         if let Some(min_flow) = &self.min_flow {
             let value = min_flow.load(model, tables, data_path)?;
             model.set_aggregated_node_min_flow(self.meta.name.as_str(), None, value.into())?;
+        }
+
+        if let Some(factors) = &self.factors {
+            let values = factors
+                .iter()
+                .map(|f| f.load(model, tables, data_path))
+                .collect::<Result<Vec<_>, _>>()?;
+
+            model.set_aggregated_node_factors(self.meta.name.as_str(), None, Some(values.as_slice()))?;
         }
 
         Ok(())

@@ -688,8 +688,8 @@ fn run_model_from_string(
     }
 
     match solver_name.as_str() {
-        "clp" => model.run::<ClpSimplex>(timestepper, scenario_groups),
-        "highs" => model.run::<Highs>(timestepper, scenario_groups),
+        "clp" => model.run::<ClpSimplex>(&timestepper, &scenario_groups),
+        "highs" => model.run::<Highs>(&timestepper, &scenario_groups),
         _ => panic!("Solver {} not recognised.", solver_name),
     }?;
 

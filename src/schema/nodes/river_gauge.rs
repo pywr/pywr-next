@@ -196,7 +196,7 @@ mod tests {
         let timestepper = default_timestepper();
         let scenarios = default_scenarios();
 
-        model.run::<ClpSimplex>(timestepper, scenarios).unwrap()
+        model.run::<ClpSimplex>(&timestepper, &scenarios).unwrap()
 
         // TODO assert the results!
     }

@@ -22,6 +22,7 @@ pub mod scenario;
 pub mod schema;
 pub mod solvers;
 pub mod state;
+pub mod test_utils;
 pub mod timestep;
 mod utils;
 mod virtual_storage;

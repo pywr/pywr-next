@@ -332,15 +332,14 @@ impl TryFrom<NodeV1> for Node {
                 Ok(Self::Core(nv2))
             }
             NodeV1::Custom(n) => {
-                // TODO convert all custom nodes to simple links
-                let nv2 = LinkNode {
+                // Custom nodes are left as is (and therefore may not work).
+                let nv2 = CustomNode {
                     meta: n.meta.into(),
-                    max_flow: None,
-                    min_flow: None,
-                    cost: None,
+                    ty: n.ty,
+                    attributes: n.attributes,
                 };
 
-                Ok(Self::Core(CoreNode::Link(nv2)))
+                Ok(Self::Custom(nv2))
             }
         }
     }

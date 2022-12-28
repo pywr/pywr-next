@@ -46,5 +46,5 @@ fn main() {
 
     let (model, timestepper): (Model, Timestepper) = schema_v2.try_into_model(None).unwrap();
 
-    model.run::<ClpSimplex>(timestepper, scenario_groups).unwrap();
+    model.run::<ClpSimplex>(&timestepper, &scenario_groups).unwrap();
 }

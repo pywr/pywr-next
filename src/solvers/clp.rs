@@ -1,5 +1,6 @@
 use crate::model::Model;
-use crate::node::NodeType;
+use crate::node::{Node, NodeType};
+use crate::parameters::FloatValue;
 use crate::solvers::{Solver, SolverTimings};
 use crate::state::State;
 use crate::timestep::Timestep;
@@ -470,6 +471,34 @@ impl ClpRowBuilder {
     pub fn add_element(&mut self, column: i32, value: f64) {
         *self.columns.entry(column).or_insert(0.0) += value;
     }
+
+    fn add_node(&mut self, node: &Node, factor: f64) {
+        match node.node_type() {
+            NodeType::Link => {
+                for edge in node.get_outgoing_edges().unwrap() {
+                    self.add_element(*edge.deref() as i32, factor);
+                }
+            }
+            NodeType::Input => {
+                for edge in node.get_outgoing_edges().unwrap() {
+                    self.add_element(*edge.deref() as i32, factor);
+                }
+            }
+            NodeType::Output => {
+                for edge in node.get_incoming_edges().unwrap() {
+                    self.add_element(*edge.deref() as i32, factor);
+                }
+            }
+            NodeType::Storage => {
+                for edge in node.get_incoming_edges().unwrap() {
+                    self.add_element(*edge.deref() as i32, factor);
+                }
+                for edge in node.get_outgoing_edges().unwrap() {
+                    self.add_element(*edge.deref() as i32, -factor);
+                }
+            }
+        }
+    }
 }
 
 #[derive(Default)]
@@ -477,6 +506,7 @@ pub struct ClpSolver<T> {
     builder: ClpModelBuilder<T>,
     start_node_constraints: Option<usize>,
     start_agg_node_constraints: Option<usize>,
+    start_agg_node_factor_constraints: Option<usize>,
     start_virtual_storage_constraints: Option<usize>,
 }
 
@@ -566,6 +596,47 @@ impl<T> ClpSolver<T> {
         self.start_node_constraints = Some(start_row);
     }
 
+    /// Create aggregated node factor constraints
+    ///
+    /// One constraint is created per node to enforce any factor constraints
+    fn create_aggregated_node_factor_constraints(&mut self, model: &Model) {
+        let start_row = self.builder.nrows();
+
+        for agg_node in model.aggregated_nodes.deref() {
+            // Only create row for nodes that have factors
+            for factor_pairs in agg_node.get_norm_factor_pairs() {
+                for ((n0, f0), (n1, f1)) in factor_pairs {
+                    // Create rows for each node in the aggregated node pair with the first one.
+
+                    let mut row = ClpRowBuilder::default();
+
+                    // TODO error handling?
+                    let node0 = model.nodes.get(&n0).expect("Node index not found!");
+                    let node1 = model.nodes.get(&n1).expect("Node index not found!");
+
+                    let ff0 = match f0 {
+                        FloatValue::Constant(f) => f,
+                        _ => panic!("Dynamic float factors not supported!"),
+                    };
+
+                    let ff1 = match f1 {
+                        FloatValue::Constant(f) => f,
+                        _ => panic!("Dynamic float factors not supported!"),
+                    };
+
+                    row.add_node(node0, 1.0);
+                    row.add_node(node1, -ff0 / ff1);
+                    // Make the row fixed at zero RHS
+                    row.set_lower(0.0);
+                    row.set_upper(0.0);
+
+                    self.builder.add_row(row);
+                }
+            }
+        }
+        self.start_agg_node_factor_constraints = Some(start_row);
+    }
+
     /// Create aggregated node constraints
     ///
     /// One constraint is created per node to enforce any constraints (flow or storage)
@@ -612,10 +683,8 @@ impl<T> ClpSolver<T> {
         self.start_agg_node_constraints = Some(start_row);
     }
 
-    /// Create aggregated node constraints
+    /// Create virtual storage node constraints
     ///
-    /// One constraint is created per node to enforce any constraints (flow or storage)
-    /// that it may define.
     fn create_virtual_storage_constraints(&mut self, model: &Model) {
         let start_row = self.builder.nrows();
 
@@ -730,6 +799,8 @@ impl Solver for ClpSolver<ClpSimplex> {
         self.create_node_constraints(model);
         // Create the aggregated node constraints
         self.create_aggregated_node_constraints(model);
+        // Create the aggregated node factor constraints
+        self.create_aggregated_node_factor_constraints(model);
         // Create virtual storage constraints
         self.create_virtual_storage_constraints(model);
 
@@ -899,6 +970,8 @@ impl Solver for ClpSolver<Highs> {
         self.create_node_constraints(model);
         // Create the aggregated node constraints
         self.create_aggregated_node_constraints(model);
+        // Create the aggregated node factor constraints
+        self.create_aggregated_node_factor_constraints(model);
         // Create virtual storage constraints
         self.create_virtual_storage_constraints(model);
 

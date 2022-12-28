@@ -17,7 +17,7 @@ use super::parameters::control_curves::{
 pub use super::parameters::core::{ConstantParameter, MaxParameter, NegativeParameter};
 use super::parameters::indexed_array::IndexedArrayParameter;
 use super::parameters::polynomial::Polynomial1DParameter;
-use super::parameters::profiles::{DailyProfileParameter, MonthlyProfileParameter};
+use super::parameters::profiles::{DailyProfileParameter, MonthlyProfileParameter, UniformDrawdownProfileParameter};
 use super::parameters::tables::TablesArrayParameter;
 use super::parameters::thresholds::ParameterThresholdParameter;
 
@@ -124,6 +124,7 @@ pub enum Parameter {
     DailyProfile(DailyProfileParameter),
     IndexedArray(IndexedArrayParameter),
     MonthlyProfile(MonthlyProfileParameter),
+    UniformDrawdownProfile(UniformDrawdownProfileParameter),
     Max(MaxParameter),
     Negative(NegativeParameter),
     Polynomial1D(Polynomial1DParameter),
@@ -145,6 +146,7 @@ impl Parameter {
             Self::DailyProfile(p) => p.meta.name.as_str(),
             Self::IndexedArray(p) => p.meta.name.as_str(),
             Self::MonthlyProfile(p) => p.meta.name.as_str(),
+            Self::UniformDrawdownProfile(p) => p.meta.name.as_str(),
             Self::Max(p) => p.meta.name.as_str(),
             Self::Negative(p) => p.meta.name.as_str(),
             Self::Polynomial1D(p) => p.meta.name.as_str(),
@@ -166,6 +168,7 @@ impl Parameter {
             Self::DailyProfile(p) => p.node_references(),
             Self::IndexedArray(p) => p.node_references(),
             Self::MonthlyProfile(p) => p.node_references(),
+            Self::UniformDrawdownProfile(p) => p.node_references(),
             Self::Max(p) => p.node_references(),
             Self::Negative(p) => p.node_references(),
             Self::Polynomial1D(p) => p.node_references(),
@@ -206,6 +209,7 @@ impl Parameter {
             Self::DailyProfile(_) => "DailyProfile",
             Self::IndexedArray(_) => "IndexedArray",
             Self::MonthlyProfile(_) => "MonthlyProfile",
+            Self::UniformDrawdownProfile(_) => "UniformDrawdownProfile",
             Self::Max(_) => "Max",
             Self::Negative(_) => "Negative",
             Self::Polynomial1D(_) => "Polynomial1D",
@@ -234,6 +238,7 @@ impl Parameter {
             Self::DailyProfile(p) => ParameterType::Parameter(p.add_to_model(model, tables)?),
             Self::IndexedArray(p) => ParameterType::Parameter(p.add_to_model(model, tables, data_path)?),
             Self::MonthlyProfile(p) => ParameterType::Parameter(p.add_to_model(model, tables)?),
+            Self::UniformDrawdownProfile(p) => ParameterType::Parameter(p.add_to_model(model, tables)?),
             Self::Max(p) => ParameterType::Parameter(p.add_to_model(model, tables, data_path)?),
             Self::Negative(p) => ParameterType::Parameter(p.add_to_model(model, tables, data_path)?),
             Self::Polynomial1D(p) => ParameterType::Parameter(p.add_to_model(model)?),
@@ -285,6 +290,9 @@ impl TryFromV1Parameter<ParameterV1> for Parameter {
                 }
                 CoreParameter::MonthlyProfile(p) => {
                     Parameter::MonthlyProfile(p.try_into_v2_parameter(parent_node, unnamed_count)?)
+                }
+                CoreParameter::UniformDrawdownProfile(p) => {
+                    Parameter::UniformDrawdownProfile(p.try_into_v2_parameter(parent_node, unnamed_count)?)
                 }
                 CoreParameter::Max(p) => Parameter::Max(p.try_into_v2_parameter(parent_node, unnamed_count)?),
                 CoreParameter::Negative(p) => Parameter::Negative(p.try_into_v2_parameter(parent_node, unnamed_count)?),

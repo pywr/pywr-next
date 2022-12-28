@@ -3,7 +3,7 @@ use crate::aggregated_storage_node::{AggregatedStorageNode, AggregatedStorageNod
 use crate::edge::{EdgeIndex, EdgeVec};
 use crate::metric::Metric;
 use crate::node::{ConstraintValue, Node, NodeVec, StorageInitialVolume};
-use crate::parameters::ParameterType;
+use crate::parameters::{FloatValue, ParameterType};
 use crate::scenario::{ScenarioGroupCollection, ScenarioIndex};
 use crate::solvers::clp::ClpSolver;
 use crate::solvers::{Solver, SolverTimings};
@@ -114,7 +114,7 @@ impl Model {
         Ok(())
     }
 
-    pub fn run<S>(&self, timestepper: Timestepper, scenarios: ScenarioGroupCollection) -> Result<(), PywrError>
+    pub fn run<S>(&self, timestepper: &Timestepper, scenarios: &ScenarioGroupCollection) -> Result<(), PywrError>
     where
         ClpSolver<S>: Solver,
     {
@@ -385,6 +385,17 @@ impl Model {
         Ok(())
     }
 
+    pub fn set_aggregated_node_factors(
+        &mut self,
+        name: &str,
+        sub_name: Option<&str>,
+        values: Option<&[FloatValue]>,
+    ) -> Result<(), PywrError> {
+        let node = self.get_mut_aggregated_node_by_name(name, sub_name)?;
+        node.set_factors(values);
+        Ok(())
+    }
+
     /// Get a `&AggregatedStorageNode` from a node's name
     pub fn get_aggregated_storage_node_by_name(
         &self,
@@ -607,13 +618,14 @@ impl Model {
         &mut self,
         name: &str,
         sub_name: Option<&str>,
-        nodes: Vec<NodeIndex>,
+        nodes: &[NodeIndex],
+        factors: Option<&[f64]>,
     ) -> Result<AggregatedNodeIndex, PywrError> {
         if let Ok(_agg_node) = self.get_aggregated_node_by_name(name, sub_name) {
             return Err(PywrError::NodeNameAlreadyExists(name.to_string()));
         }
 
-        let node_index = self.aggregated_nodes.push_new(name, sub_name, nodes);
+        let node_index = self.aggregated_nodes.push_new(name, sub_name, nodes, factors);
         Ok(node_index)
     }
 
@@ -739,23 +751,11 @@ mod tests {
     use crate::node::{Constraint, ConstraintValue};
     use crate::recorders::AssertionRecorder;
     use crate::scenario::{ScenarioGroupCollection, ScenarioIndex};
-    use crate::solvers::clp::{ClpSimplex, ClpSolver, Highs};
-    use crate::solvers::Solver;
-    use crate::timestep::Timestepper;
+    use crate::solvers::clp::{ClpSimplex, Highs};
+    use crate::test_utils::{default_scenarios, default_timestepper, simple_model, simple_storage_model};
     use float_cmp::approx_eq;
     use ndarray::Array2;
     use std::ops::Deref;
-    use time::macros::date;
-
-    fn default_timestepper() -> Timestepper {
-        Timestepper::new(date!(2020 - 01 - 01), date!(2020 - 01 - 15), 1)
-    }
-
-    fn default_scenarios() -> ScenarioGroupCollection {
-        let mut scenarios = ScenarioGroupCollection::default();
-        scenarios.add_group("test-scenario", 10);
-        scenarios
-    }
 
     #[test]
     fn test_simple_model() {
@@ -817,87 +817,6 @@ mod tests {
             model.add_storage_node("my-node", None, StorageInitialVolume::Absolute(10.0), 0.0, 10.0),
             Err(PywrError::NodeNameAlreadyExists("my-node".to_string()))
         );
-    }
-
-    /// Create a simple test model with three nodes.
-    fn simple_model() -> Model {
-        let mut model = Model::default();
-
-        let input_node = model.add_input_node("input", None).unwrap();
-        let link_node = model.add_link_node("link", None).unwrap();
-        let output_node = model.add_output_node("output", None).unwrap();
-
-        model.connect_nodes(input_node, link_node).unwrap();
-        model.connect_nodes(link_node, output_node).unwrap();
-
-        let inflow = parameters::VectorParameter::new("inflow", vec![10.0; 366]);
-        let inflow = model.add_parameter(Box::new(inflow)).unwrap();
-
-        let input_node = model.get_mut_node_by_name("input", None).unwrap();
-        input_node
-            .set_constraint(ConstraintValue::Parameter(inflow), Constraint::MaxFlow)
-            .unwrap();
-
-        let base_demand = 10.0;
-
-        let demand_factor = parameters::ConstantParameter::new("demand-factor", 1.2);
-        let demand_factor = model.add_parameter(Box::new(demand_factor)).unwrap();
-
-        let total_demand = parameters::AggregatedParameter::new(
-            "total-demand",
-            vec![
-                parameters::FloatValue::Constant(base_demand),
-                parameters::FloatValue::Dynamic(demand_factor),
-            ],
-            parameters::AggFunc::Product,
-        );
-        let total_demand = model.add_parameter(Box::new(total_demand)).unwrap();
-
-        let demand_cost = parameters::ConstantParameter::new("demand-cost", -10.0);
-        let demand_cost = model.add_parameter(Box::new(demand_cost)).unwrap();
-
-        let output_node = model.get_mut_node_by_name("output", None).unwrap();
-        output_node
-            .set_constraint(ConstraintValue::Parameter(total_demand), Constraint::MaxFlow)
-            .unwrap();
-        output_node.set_cost(ConstraintValue::Parameter(demand_cost));
-
-        model
-    }
-
-    /// A test model with a single storage node.
-    fn simple_storage_model() -> Model {
-        let mut model = Model::default();
-
-        let storage_node = model
-            .add_storage_node("reservoir", None, StorageInitialVolume::Absolute(100.0), 0.0, 100.0)
-            .unwrap();
-        let output_node = model.add_output_node("output", None).unwrap();
-
-        model.connect_nodes(storage_node, output_node).unwrap();
-
-        // Apply demand to the model
-        // TODO convenience function for adding a constant constraint.
-        let demand = parameters::ConstantParameter::new("demand", 10.0);
-        let demand = model.add_parameter(Box::new(demand)).unwrap();
-
-        let demand_cost = parameters::ConstantParameter::new("demand-cost", -10.0);
-        let demand_cost = model.add_parameter(Box::new(demand_cost)).unwrap();
-
-        let output_node = model.get_mut_node_by_name("output", None).unwrap();
-        output_node
-            .set_constraint(ConstraintValue::Parameter(demand), Constraint::MaxFlow)
-            .unwrap();
-        output_node.set_cost(ConstraintValue::Parameter(demand_cost));
-
-        let max_volume = 100.0;
-
-        let storage_node = model.get_mut_node_by_name("reservoir", None).unwrap();
-        storage_node
-            .set_constraint(ConstraintValue::Scalar(max_volume), Constraint::MaxVolume)
-            .unwrap();
-
-        model
     }
 
     #[test]
@@ -985,7 +904,7 @@ mod tests {
         let recorder = AssertionRecorder::new("total-demand", Metric::ParameterValue(idx), expected);
         model.add_recorder(Box::new(recorder)).unwrap();
 
-        model.run::<ClpSimplex>(timestepper, scenarios).unwrap();
+        model.run::<ClpSimplex>(&timestepper, &scenarios).unwrap();
     }
 
     #[test]
@@ -1008,7 +927,7 @@ mod tests {
         let recorder = AssertionRecorder::new("reservoir-volume", Metric::NodeVolume(idx), expected);
         model.add_recorder(Box::new(recorder)).unwrap();
 
-        model.run::<ClpSimplex>(timestepper, scenarios).unwrap();
+        model.run::<ClpSimplex>(&timestepper, &scenarios).unwrap();
     }
 
     #[test]

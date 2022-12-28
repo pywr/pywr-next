@@ -210,15 +210,14 @@ mod tests {
     fn test_model_run() {
         let data = model_str();
         let schema: PywrModel = serde_json::from_str(data).unwrap();
-        let (mut model, timestepper): (crate::model::Model, Timestepper) = schema.try_into_model(None).unwrap();
+        let (model, timestepper): (crate::model::Model, Timestepper) = schema.try_into_model(None).unwrap();
 
         assert_eq!(model.nodes.len(), 5);
         assert_eq!(model.edges.len(), 6);
 
-        let timestepper = default_timestepper();
         let scenarios = default_scenarios();
 
-        model.run::<ClpSimplex>(timestepper, scenarios).unwrap()
+        model.run::<ClpSimplex>(&timestepper, &scenarios).unwrap()
 
         // TODO assert the results!
     }

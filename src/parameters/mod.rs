@@ -155,7 +155,7 @@ pub trait IndexParameter: Send + Sync {
     ) -> Result<usize, PywrError>;
 }
 
-#[derive(Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub enum FloatValue {
     Constant(f64),
     Dynamic(ParameterIndex),

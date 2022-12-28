@@ -1,3 +1,4 @@
+use crate::parameters::FloatValue;
 use crate::schema::data_tables::LoadedTableCollection;
 use crate::schema::nodes::NodeMeta;
 use crate::schema::parameters::DynamicFloatValue;
@@ -43,6 +44,9 @@ impl WaterTreatmentWorks {
     fn net_sub_name() -> Option<&'static str> {
         Some("net")
     }
+    fn agg_sub_name() -> Option<&'static str> {
+        Some("agg")
+    }
 
     fn net_soft_min_flow_sub_name() -> Option<&'static str> {
         Some("net_soft_min_flow")
@@ -53,7 +57,7 @@ impl WaterTreatmentWorks {
     }
 
     pub fn add_to_model(&self, model: &mut crate::model::Model) -> Result<(), PywrError> {
-        model.add_link_node(self.meta.name.as_str(), Self::loss_sub_name())?;
+        let idx_loss = model.add_link_node(self.meta.name.as_str(), Self::loss_sub_name())?;
         let idx_net = model.add_link_node(self.meta.name.as_str(), Self::net_sub_name())?;
         let idx_soft_min_flow = model.add_link_node(self.meta.name.as_str(), Self::net_soft_min_flow_sub_name())?;
         let idx_above_soft_min_flow =
@@ -63,7 +67,16 @@ impl WaterTreatmentWorks {
         model.connect_nodes(idx_net, idx_soft_min_flow)?;
         model.connect_nodes(idx_net, idx_above_soft_min_flow)?;
 
-        // TODO add the aggregated node that actually does the losses!
+        if self.loss_factor.is_some() {
+            // This aggregated node will contain the factors to enforce the loss
+            model.add_aggregated_node(
+                self.meta.name.as_str(),
+                Self::agg_sub_name(),
+                &[idx_net, idx_loss],
+                None,
+            )?;
+        }
+
         Ok(())
     }
 
@@ -105,6 +118,12 @@ impl WaterTreatmentWorks {
                 Self::net_soft_min_flow_sub_name(),
                 value.into(),
             )?;
+        }
+
+        if let Some(loss_factor) = &self.loss_factor {
+            // Set the factors for the loss
+            let factors = [FloatValue::Constant(1.0), loss_factor.load(model, tables, data_path)?];
+            model.set_aggregated_node_factors(self.meta.name.as_str(), Self::agg_sub_name(), Some(&factors))?;
         }
 
         Ok(())

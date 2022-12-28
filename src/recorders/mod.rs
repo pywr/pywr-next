@@ -211,72 +211,8 @@ struct RecorderMetric {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::assert_almost_eq;
-    use crate::model::Model;
-    use crate::node::{Constraint, ConstraintValue};
-    use crate::parameters;
-    use crate::scenario::ScenarioGroupCollection;
-    use crate::solvers::clp::{ClpSimplex, ClpSolver};
-    use crate::solvers::Solver;
-    use crate::timestep::Timestepper;
-    use time::macros::date;
-
-    fn default_timestepper() -> Timestepper {
-        Timestepper::new(date!(2020 - 01 - 01), date!(2020 - 01 - 15), 1)
-    }
-
-    fn default_scenarios() -> ScenarioGroupCollection {
-        let mut scenarios = ScenarioGroupCollection::default();
-        scenarios.add_group("test-scenario", 10);
-        scenarios
-    }
-
-    /// Create a simple test model with three nodes.
-    fn simple_model() -> Model {
-        let mut model = Model::default();
-
-        let input_node = model.add_input_node("input", None).unwrap();
-        let link_node = model.add_link_node("link", None).unwrap();
-        let output_node = model.add_output_node("output", None).unwrap();
-
-        model.connect_nodes(input_node, link_node).unwrap();
-        model.connect_nodes(link_node, output_node).unwrap();
-
-        let inflow = parameters::VectorParameter::new("inflow", vec![10.0; 366]);
-        let inflow_idx = model.add_parameter(Box::new(inflow)).unwrap();
-
-        let input_node = model.get_mut_node_by_name("input", None).unwrap();
-        input_node
-            .set_constraint(ConstraintValue::Parameter(inflow_idx), Constraint::MaxFlow)
-            .unwrap();
-
-        let base_demand = 10.0;
-
-        let demand_factor = parameters::ConstantParameter::new("demand-factor", 1.2);
-        let demand_factor = model.add_parameter(Box::new(demand_factor)).unwrap();
-
-        let total_demand = parameters::AggregatedParameter::new(
-            "total-demand",
-            vec![
-                parameters::FloatValue::Constant(base_demand),
-                parameters::FloatValue::Dynamic(demand_factor),
-            ],
-            parameters::AggFunc::Product,
-        );
-        let total_demand_idx = model.add_parameter(Box::new(total_demand)).unwrap();
-
-        let demand_cost = parameters::ConstantParameter::new("demand-cost", -10.0);
-        let demand_cost_idx = model.add_parameter(Box::new(demand_cost)).unwrap();
-
-        let output_node = model.get_mut_node_by_name("output", None).unwrap();
-        output_node
-            .set_constraint(ConstraintValue::Parameter(total_demand_idx), Constraint::MaxFlow)
-            .unwrap();
-
-        output_node.set_cost(ConstraintValue::Parameter(demand_cost_idx));
-
-        model
-    }
+    use crate::solvers::clp::ClpSimplex;
+    use crate::test_utils::{default_scenarios, default_timestepper, simple_model};
 
     #[test]
     fn test_array2_recorder() {
@@ -289,7 +225,7 @@ mod tests {
         let rec = Array2Recorder::new("test", Metric::NodeOutFlow(node_idx));
 
         let idx = model.add_recorder(Box::new(rec)).unwrap();
-        model.run::<ClpSimplex>(timestepper, scenarios).unwrap();
+        model.run::<ClpSimplex>(&timestepper, &scenarios).unwrap();
 
         // TODO fix this with respect to the trait.
         // let array = rec.data_view2().unwrap();
