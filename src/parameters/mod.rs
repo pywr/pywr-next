@@ -29,6 +29,7 @@ pub use polynomial::Polynomial1DParameter;
 pub use profiles::{DailyProfileParameter, MonthlyProfileParameter, UniformDrawdownProfileParameter};
 pub use threshold::{Predicate, ThresholdParameter};
 
+use crate::model::Model;
 use crate::state::State;
 use crate::timestep::Timestep;
 use ndarray::{Array1, Array2};
@@ -115,6 +116,7 @@ pub trait Parameter: Send + Sync {
         &self,
         timestep: &Timestep,
         scenario_index: &ScenarioIndex,
+        model: &Model,
         state: &State,
         internal_state: &mut Option<Box<dyn Any + Send>>,
     ) -> Result<f64, PywrError>;
@@ -150,6 +152,7 @@ pub trait IndexParameter: Send + Sync {
         &self,
         timestep: &Timestep,
         scenario_index: &ScenarioIndex,
+        model: &Model,
         state: &State,
         internal_state: &mut Option<Box<dyn Any + Send>>,
     ) -> Result<usize, PywrError>;
@@ -194,6 +197,7 @@ impl Parameter for ConstantParameter {
         &self,
         _timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
+        _model: &Model,
         _state: &State,
         _internal_state: &mut Option<Box<dyn Any + Send>>,
     ) -> Result<f64, PywrError> {
@@ -223,6 +227,7 @@ impl Parameter for VectorParameter {
         &self,
         timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
+        _model: &Model,
         _state: &State,
         _internal_state: &mut Option<Box<dyn Any + Send>>,
     ) -> Result<f64, PywrError> {
@@ -255,6 +260,7 @@ impl Parameter for Array1Parameter {
         &self,
         timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
+        _model: &Model,
         _state: &State,
         _internal_state: &mut Option<Box<dyn Any + Send>>,
     ) -> Result<f64, PywrError> {
@@ -286,6 +292,7 @@ impl Parameter for Array2Parameter {
         &self,
         timestep: &Timestep,
         scenario_index: &ScenarioIndex,
+        _model: &Model,
         _state: &State,
         _internal_state: &mut Option<Box<dyn Any + Send>>,
     ) -> Result<f64, PywrError> {

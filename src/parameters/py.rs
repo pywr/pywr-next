@@ -1,4 +1,5 @@
 use super::{Parameter, ParameterMeta, PywrError, Timestep};
+use crate::model::Model;
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
 use pyo3::prelude::*;
@@ -27,6 +28,7 @@ impl Parameter for PyParameter {
         &self,
         _timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
+        _model: &Model,
         _state: &State,
         _internal_state: &mut Option<Box<dyn Any + Send>>,
     ) -> Result<f64, PywrError> {

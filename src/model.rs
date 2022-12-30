@@ -25,6 +25,11 @@ pub struct RunTimings {
     solve: SolverTimings,
 }
 
+enum ComponentType {
+    Node(NodeIndex),
+    Parameter(ParameterType),
+}
+
 #[derive(Default)]
 pub struct Model {
     pub nodes: NodeVec,
@@ -34,7 +39,7 @@ pub struct Model {
     pub virtual_storage_nodes: VirtualStorageVec,
     parameters: Vec<Box<dyn parameters::Parameter>>,
     index_parameters: Vec<Box<dyn parameters::IndexParameter>>,
-    parameters_resolve_order: Vec<ParameterType>,
+    resolve_order: Vec<ComponentType>,
     recorders: Vec<Box<dyn recorders::Recorder>>,
 }
 
@@ -66,9 +71,8 @@ impl Model {
             solver.setup(self)?;
             solvers.push(solver);
 
-            // Node states are currently independent of the scenario
-            // TODO we could support different initial conditions by scenario (e.g. initial reservoir volumes)
-            let initial_node_states = self.nodes.iter().map(|n| n.new_state()).collect();
+            // Initialise node states. Note that storage nodes will have a zero volume at this point.
+            let initial_node_states = self.nodes.iter().map(|n| n.default_state()).collect();
 
             // Get the initial internal state
             let initial_values_states = self
@@ -200,7 +204,7 @@ impl Model {
                 // TODO clear the current parameter values state (i.e. set them all to zero).
 
                 let start_p_calc = Instant::now();
-                self.compute_parameters(timestep, scenario_index, current_state, p_internal_state)
+                self.compute_components(timestep, scenario_index, current_state, p_internal_state)
                     .unwrap();
 
                 // State now contains updated parameter values BUT original network state
@@ -215,7 +219,14 @@ impl Model {
         Ok(())
     }
 
-    fn compute_parameters(
+    /// Undertake calculations for model components before solve.
+    ///
+    /// This method iterates through the model components (nodes, parameters, etc) to perform
+    /// pre-solve calculations. For nodes this can be adjustments to storage volume (e.g. to
+    /// set initial volume). For parameters this involves computing the current value for the
+    /// the timestep. The `state` object is progressively updated with these values during this
+    /// method.
+    fn compute_components(
         &self,
         timestep: &Timestep,
         scenario_index: &ScenarioIndex,
@@ -224,42 +235,50 @@ impl Model {
     ) -> Result<(), PywrError> {
         // TODO reset parameter state to zero
 
-        for p_type in &self.parameters_resolve_order {
-            match p_type {
-                ParameterType::Parameter(idx) => {
-                    // Find the parameter itself
-                    let p = self
-                        .parameters
-                        .get(*idx.deref())
-                        .ok_or(PywrError::ParameterIndexNotFound(*idx))?;
-                    // .. and its internal state
-                    let internal_state = internal_states
-                        .get_mut_value_state(*idx)
-                        .ok_or(PywrError::ParameterIndexNotFound(*idx))?;
-
-                    let value = p.compute(timestep, scenario_index, &state, internal_state)?;
-                    // debug!("Current value of parameter {}: {}", p.name(), value);
-
-                    // TODO move this check into the method below
-                    if value.is_nan() {
-                        panic!("NaN value computed in parameter: {}", p.name());
-                    }
-                    state.set_parameter_value(*idx, value)?;
+        for c_type in &self.resolve_order {
+            match c_type {
+                ComponentType::Node(idx) => {
+                    let n = self.nodes.get(idx)?;
+                    n.before(timestep, state)?;
                 }
-                ParameterType::Index(idx) => {
-                    let p = self
-                        .index_parameters
-                        .get(*idx.deref())
-                        .ok_or(PywrError::IndexParameterIndexNotFound(*idx))?;
+                ComponentType::Parameter(p_type) => {
+                    match p_type {
+                        ParameterType::Parameter(idx) => {
+                            // Find the parameter itself
+                            let p = self
+                                .parameters
+                                .get(*idx.deref())
+                                .ok_or(PywrError::ParameterIndexNotFound(*idx))?;
+                            // .. and its internal state
+                            let internal_state = internal_states
+                                .get_mut_value_state(*idx)
+                                .ok_or(PywrError::ParameterIndexNotFound(*idx))?;
 
-                    // .. and its internal state
-                    let internal_state = internal_states
-                        .get_mut_index_state(*idx)
-                        .ok_or(PywrError::IndexParameterIndexNotFound(*idx))?;
+                            let value = p.compute(timestep, scenario_index, self, state, internal_state)?;
+                            // debug!("Current value of parameter {}: {}", p.name(), value);
 
-                    let value = p.compute(timestep, scenario_index, &state, internal_state)?;
-                    // debug!("Current value of index parameter {}: {}", p.name(), value);
-                    state.set_parameter_index(*idx, value)?;
+                            // TODO move this check into the method below
+                            if value.is_nan() {
+                                panic!("NaN value computed in parameter: {}", p.name());
+                            }
+                            state.set_parameter_value(*idx, value)?;
+                        }
+                        ParameterType::Index(idx) => {
+                            let p = self
+                                .index_parameters
+                                .get(*idx.deref())
+                                .ok_or(PywrError::IndexParameterIndexNotFound(*idx))?;
+
+                            // .. and its internal state
+                            let internal_state = internal_states
+                                .get_mut_index_state(*idx)
+                                .ok_or(PywrError::IndexParameterIndexNotFound(*idx))?;
+
+                            let value = p.compute(timestep, scenario_index, self, state, internal_state)?;
+                            // debug!("Current value of index parameter {}: {}", p.name(), value);
+                            state.set_parameter_index(*idx, value)?;
+                        }
+                    }
                 }
             }
         }
@@ -275,7 +294,7 @@ impl Model {
         recorder_internal_states: &mut [Option<Box<dyn Any>>],
     ) -> Result<(), PywrError> {
         for (recorder, internal_state) in self.recorders.iter().zip(recorder_internal_states) {
-            recorder.save(timestep, scenario_indices, states, internal_state)?;
+            recorder.save(timestep, scenario_indices, &self, states, internal_state)?;
         }
         Ok(())
     }
@@ -283,6 +302,11 @@ impl Model {
     /// Get a Node from a node's name
     pub fn get_node_index_by_name(&self, name: &str, sub_name: Option<&str>) -> Result<NodeIndex, PywrError> {
         Ok(self.get_node_by_name(name, sub_name)?.index())
+    }
+
+    /// Get a Node from a node's index
+    pub fn get_node(&self, index: &NodeIndex) -> Result<&Node, PywrError> {
+        self.nodes.get(index)
     }
 
     /// Get a Node from a node's name
@@ -562,6 +586,8 @@ impl Model {
 
         // Now add the node to the network.
         let node_index = self.nodes.push_new_input(name, sub_name);
+        // ... and add it to the resolve order.
+        self.resolve_order.push(ComponentType::Node(node_index));
         Ok(node_index)
     }
 
@@ -575,6 +601,8 @@ impl Model {
 
         // Now add the node to the network.
         let node_index = self.nodes.push_new_link(name, sub_name);
+        // ... and add it to the resolve order.
+        self.resolve_order.push(ComponentType::Node(node_index));
         Ok(node_index)
     }
 
@@ -588,6 +616,8 @@ impl Model {
 
         // Now add the node to the network.
         let node_index = self.nodes.push_new_output(name, sub_name);
+        // ... and add it to the resolve order.
+        self.resolve_order.push(ComponentType::Node(node_index));
         Ok(node_index)
     }
 
@@ -598,7 +628,7 @@ impl Model {
         sub_name: Option<&str>,
         initial_volume: StorageInitialVolume,
         min_volume: f64,
-        max_volume: f64,
+        max_volume: ConstraintValue,
     ) -> Result<NodeIndex, PywrError> {
         // Check for name.
         // TODO move this check to `NodeVec`
@@ -610,6 +640,8 @@ impl Model {
         let node_index = self
             .nodes
             .push_new_storage(name, sub_name, initial_volume, min_volume, max_volume);
+        // ... and add it to the resolve order.
+        self.resolve_order.push(ComponentType::Node(node_index));
         Ok(node_index)
     }
 
@@ -675,8 +707,8 @@ impl Model {
         // Add the parameter ...
         self.parameters.push(parameter);
         // .. and add it to the resolve order
-        self.parameters_resolve_order
-            .push(ParameterType::Parameter(parameter_index));
+        self.resolve_order
+            .push(ComponentType::Parameter(ParameterType::Parameter(parameter_index)));
         Ok(parameter_index)
     }
 
@@ -697,8 +729,8 @@ impl Model {
 
         self.index_parameters.push(index_parameter);
         // .. and add it to the resolve order
-        self.parameters_resolve_order
-            .push(ParameterType::Index(parameter_index));
+        self.resolve_order
+            .push(ComponentType::Parameter(ParameterType::Index(parameter_index)));
         Ok(parameter_index)
     }
 
@@ -814,7 +846,13 @@ mod tests {
         );
 
         assert_eq!(
-            model.add_storage_node("my-node", None, StorageInitialVolume::Absolute(10.0), 0.0, 10.0),
+            model.add_storage_node(
+                "my-node",
+                None,
+                StorageInitialVolume::Absolute(10.0),
+                0.0,
+                ConstraintValue::Scalar(10.0)
+            ),
             Err(PywrError::NodeNameAlreadyExists("my-node".to_string()))
         );
     }

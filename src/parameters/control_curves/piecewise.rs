@@ -1,5 +1,6 @@
 use super::interpolate;
 use crate::metric::Metric;
+use crate::model::Model;
 use crate::parameters::{Parameter, ParameterMeta};
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
@@ -44,15 +45,16 @@ impl Parameter for PiecewiseInterpolatedParameter {
         &self,
         _timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
+        model: &Model,
         state: &State,
         _internal_state: &mut Option<Box<dyn Any + Send>>,
     ) -> Result<f64, PywrError> {
         // Current value
-        let x = self.metric.get_value(state)?;
+        let x = self.metric.get_value(model, state)?;
 
         let mut cc_previous_value = self.maximum;
         for (idx, control_curve) in self.control_curves.iter().enumerate() {
-            let cc_value = control_curve.get_value(state)?;
+            let cc_value = control_curve.get_value(model, state)?;
             if x > cc_value {
                 let v = self.values.get(idx).ok_or(PywrError::DataOutOfRange)?;
                 return Ok(interpolate(x, cc_value, cc_previous_value, v[1], v[0]));

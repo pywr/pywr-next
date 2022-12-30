@@ -18,8 +18,8 @@ impl NodeState {
         Self::Flow(FlowState::new())
     }
 
-    pub(crate) fn new_storage_state(initial_volume: f64, max_volume: f64) -> Self {
-        Self::Storage(StorageState::new(initial_volume, max_volume))
+    pub(crate) fn new_storage_state(initial_volume: f64) -> Self {
+        Self::Storage(StorageState::new(initial_volume))
     }
 
     fn reset(&mut self) {
@@ -88,15 +88,13 @@ impl FlowState {
 #[derive(Clone, Copy, Debug, Default)]
 pub struct StorageState {
     pub volume: f64,
-    pub max_volume: f64,
     pub flows: FlowState,
 }
 
 impl StorageState {
-    fn new(initial_volume: f64, max_volume: f64) -> Self {
+    fn new(initial_volume: f64) -> Self {
         Self {
             volume: initial_volume,
-            max_volume,
             flows: FlowState::new(),
         }
     }
@@ -115,9 +113,9 @@ impl StorageState {
         self.volume -= flow * timestep.days();
     }
 
-    fn proportional_volume(&self) -> f64 {
+    fn proportional_volume(&self, max_volume: f64) -> f64 {
         // TODO handle divide by zero (is it full or empty?)
-        self.volume / self.max_volume
+        self.volume / max_volume
     }
 }
 
@@ -286,20 +284,10 @@ impl NetworkState {
         }
     }
 
-    pub fn get_node_max_volume(&self, node_index: &NodeIndex) -> Result<f64, PywrError> {
+    pub fn get_node_proportional_volume(&self, node_index: &NodeIndex, max_volume: f64) -> Result<f64, PywrError> {
         match self.node_states.get(*node_index.deref()) {
             Some(s) => match s {
-                NodeState::Storage(ss) => Ok(ss.max_volume),
-                NodeState::Flow(_) => Err(PywrError::MetricNotDefinedForNode),
-            },
-            None => Err(PywrError::MetricNotDefinedForNode),
-        }
-    }
-
-    pub fn get_node_proportional_volume(&self, node_index: &NodeIndex) -> Result<f64, PywrError> {
-        match self.node_states.get(*node_index.deref()) {
-            Some(s) => match s {
-                NodeState::Storage(ss) => Ok(ss.proportional_volume()),
+                NodeState::Storage(ss) => Ok(ss.proportional_volume(max_volume)),
                 NodeState::Flow(_) => Err(PywrError::MetricNotDefinedForNode),
             },
             None => Err(PywrError::MetricNotDefinedForNode),
@@ -311,6 +299,20 @@ impl NetworkState {
             Some(s) => Ok(s.flow),
             None => Err(PywrError::EdgeIndexNotFound),
         }
+    }
+
+    pub fn set_volume(&mut self, idx: NodeIndex, volume: f64) -> Result<(), PywrError> {
+        // TODO handle these errors properly
+        if let Some(node_state) = self.node_states.get_mut(*idx.deref()) {
+            match node_state {
+                NodeState::Flow(_) => panic!("Cannot set volume for a non-storage state :("),
+                NodeState::Storage(s) => s.volume = volume,
+            }
+        } else {
+            panic!("Node state not found.")
+        }
+
+        Ok(())
     }
 }
 
@@ -355,5 +357,9 @@ impl State {
 
     pub fn set_parameter_index(&mut self, idx: IndexParameterIndex, value: usize) -> Result<(), PywrError> {
         self.parameters.set_index(idx, value)
+    }
+
+    pub fn set_node_volume(&mut self, idx: NodeIndex, volume: f64) -> Result<(), PywrError> {
+        self.network.set_volume(idx, volume)
     }
 }

@@ -17,6 +17,10 @@ impl Timestep {
         Self { date, index, duration }
     }
 
+    pub fn is_first(&self) -> bool {
+        self.index == 0
+    }
+
     // pub fn parse_from_str(date: &str, fmt: &str, index: TimestepIndex, timestep: i64) -> Result<Self, PywrError> {
     //     Ok(Self {
     //         date: Date::parse_from_str(date, fmt)?,

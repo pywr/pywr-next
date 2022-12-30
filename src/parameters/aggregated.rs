@@ -1,4 +1,5 @@
 use super::PywrError;
+use crate::model::Model;
 use crate::parameters::{FloatValue, Parameter, ParameterMeta};
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
@@ -53,6 +54,7 @@ impl Parameter for AggregatedParameter {
         &self,
         _timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
+        _model: &Model,
         state: &State,
         _internal_state: &mut Option<Box<dyn Any + Send>>,
     ) -> Result<f64, PywrError> {

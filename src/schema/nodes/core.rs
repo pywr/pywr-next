@@ -1,4 +1,4 @@
-use crate::node::StorageInitialVolume;
+use crate::node::{ConstraintValue, StorageInitialVolume};
 use crate::schema::data_tables::LoadedTableCollection;
 use crate::schema::nodes::NodeMeta;
 use crate::schema::parameters::{ConstantFloatVec, ConstantValue, DynamicFloatValue, TryIntoV2Parameter};
@@ -292,7 +292,7 @@ impl TryFrom<OutputNodeV1> for OutputNode {
 pub struct StorageNode {
     #[serde(flatten)]
     pub meta: NodeMeta,
-    pub max_volume: Option<ConstantValue<f64>>,
+    pub max_volume: Option<ConstantValue<f64>>, // TODO allow this to be a dynamic value
     pub min_volume: Option<ConstantValue<f64>>,
     pub cost: Option<DynamicFloatValue>,
     pub initial_volume: Option<f64>,
@@ -332,9 +332,10 @@ impl StorageNode {
             Some(v) => v.load(tables)?,
             None => 0.0,
         };
+
         let max_volume = match &self.max_volume {
-            Some(v) => v.load(tables)?,
-            None => f64::MAX,
+            Some(v) => ConstraintValue::Scalar(v.load(tables)?),
+            None => ConstraintValue::None,
         };
 
         model.add_storage_node(self.meta.name.as_str(), None, initial_volume, min_volume, max_volume)?;

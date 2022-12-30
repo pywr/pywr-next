@@ -1,3 +1,4 @@
+use crate::model::Model;
 use crate::parameters::{Parameter, ParameterMeta};
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
@@ -27,6 +28,7 @@ impl Parameter for DailyProfileParameter {
         &self,
         timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
+        _model: &Model,
         _state: &State,
         _internal_state: &mut Option<Box<dyn Any + Send>>,
     ) -> Result<f64, PywrError> {

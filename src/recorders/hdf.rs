@@ -1,5 +1,6 @@
 use super::{PywrError, Recorder, RecorderMeta, Timestep};
 use crate::metric::Metric;
+use crate::model::Model;
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
 use ndarray::{s, Array2};
@@ -94,6 +95,7 @@ impl Recorder for HDF5Recorder {
         &self,
         timestep: &Timestep,
         scenario_indices: &[ScenarioIndex],
+        model: &Model,
         state: &[State],
         internal_state: &mut Option<Box<dyn Any>>,
     ) -> Result<(), PywrError> {
@@ -110,7 +112,7 @@ impl Recorder for HDF5Recorder {
             let values = scenario_indices
                 .iter()
                 .zip(state)
-                .map(|(si, s)| metric.get_value(s))
+                .map(|(si, s)| metric.get_value(model, s))
                 .collect::<Result<Vec<_>, _>>()?;
 
             if let Err(e) = dataset.write_slice(&values, s![timestep.index, ..]) {

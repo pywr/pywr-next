@@ -1,5 +1,3 @@
-extern crate core;
-
 use thiserror::Error;
 
 use crate::edge::Edge;

@@ -1,4 +1,5 @@
 use crate::edge::EdgeIndex;
+use crate::model::Model;
 use crate::node::NodeIndex;
 use crate::parameters::{FloatValue, ParameterIndex};
 use crate::state::State;
@@ -30,12 +31,17 @@ impl From<FloatValue> for Metric {
 }
 
 impl Metric {
-    pub fn get_value(&self, state: &State) -> Result<f64, PywrError> {
+    pub fn get_value(&self, model: &Model, state: &State) -> Result<f64, PywrError> {
         match self {
             Metric::NodeInFlow(idx) => Ok(state.get_network_state().get_node_in_flow(idx)?),
             Metric::NodeOutFlow(idx) => Ok(state.get_network_state().get_node_out_flow(idx)?),
             Metric::NodeVolume(idx) => Ok(state.get_network_state().get_node_volume(idx)?),
-            Metric::NodeProportionalVolume(idx) => Ok(state.get_network_state().get_node_proportional_volume(idx)?),
+            Metric::NodeProportionalVolume(idx) => {
+                let max_volume = model.get_node(idx)?.get_current_max_volume(state)?;
+                Ok(state
+                    .get_network_state()
+                    .get_node_proportional_volume(idx, max_volume)?)
+            }
             Metric::EdgeFlow(idx) => Ok(state.get_network_state().get_edge_flow(idx)?),
             Metric::ParameterValue(idx) => Ok(state.get_parameter_value(*idx)?),
             Metric::VirtualStorageVolume(_idx) => Ok(1.0), // TODO!!!
@@ -53,7 +59,7 @@ impl Metric {
 
                 let max_volume: f64 = indices
                     .iter()
-                    .map(|idx| state.get_network_state().get_node_max_volume(idx))
+                    .map(|idx| model.get_node(idx)?.get_current_max_volume(state))
                     .sum::<Result<_, _>>()?;
                 // TODO handle divide by zero
                 Ok(volume / max_volume)

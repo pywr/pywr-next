@@ -12,6 +12,7 @@ use std::any::Any;
 use std::fmt;
 use std::fmt::{Display, Formatter};
 
+use crate::model::Model;
 use crate::state::State;
 use std::ops::Deref;
 
@@ -74,6 +75,7 @@ pub trait Recorder: Send + Sync {
         &self,
         _timestep: &Timestep,
         _scenario_indices: &[ScenarioIndex],
+        _model: &Model,
         _state: &[State],
         _internal_state: &mut Option<Box<dyn Any>>,
     ) -> Result<(), PywrError> {
@@ -119,6 +121,7 @@ impl Recorder for Array2Recorder {
         &self,
         timestep: &Timestep,
         scenario_indices: &[ScenarioIndex],
+        model: &Model,
         state: &[State],
         internal_state: &mut Option<Box<dyn Any>>,
     ) -> Result<(), PywrError> {
@@ -133,7 +136,7 @@ impl Recorder for Array2Recorder {
 
         // This panics if out-of-bounds
         for scenario_index in scenario_indices {
-            let value = self.metric.get_value(&state[scenario_index.index])?;
+            let value = self.metric.get_value(model, &state[scenario_index.index])?;
             array[[timestep.index, scenario_index.index]] = value
         }
 
@@ -166,6 +169,7 @@ impl Recorder for AssertionRecorder {
         &self,
         timestep: &Timestep,
         scenario_indices: &[ScenarioIndex],
+        model: &Model,
         state: &[State],
         _internal_state: &mut Option<Box<dyn Any>>,
     ) -> Result<(), PywrError> {
@@ -177,7 +181,10 @@ impl Recorder for AssertionRecorder {
                 None => panic!("Simulation produced results out of range."),
             };
 
-            assert_almost_eq!(self.metric.get_value(&state[scenario_index.index])?, expected_value);
+            assert_almost_eq!(
+                self.metric.get_value(model, &state[scenario_index.index])?,
+                expected_value
+            );
         }
 
         Ok(())

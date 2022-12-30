@@ -1,5 +1,6 @@
 use super::interpolate;
 use crate::metric::Metric;
+use crate::model::Model;
 use crate::parameters::{Parameter, ParameterMeta};
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
@@ -33,19 +34,20 @@ impl Parameter for InterpolatedParameter {
         &self,
         _timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
+        model: &Model,
         state: &State,
         _internal_state: &mut Option<Box<dyn Any + Send>>,
     ) -> Result<f64, PywrError> {
         // Current value
-        let x = self.metric.get_value(state)?;
+        let x = self.metric.get_value(model, state)?;
 
         let mut cc_prev = 1.0;
         for (idx, control_curve) in self.control_curves.iter().enumerate() {
-            let cc_value = control_curve.get_value(state)?;
+            let cc_value = control_curve.get_value(model, state)?;
 
             if x >= cc_value {
-                let lower_value = self.values[idx + 1].get_value(state)?;
-                let upper_value = self.values[idx].get_value(state)?;
+                let lower_value = self.values[idx + 1].get_value(model, state)?;
+                let upper_value = self.values[idx].get_value(model, state)?;
 
                 return Ok(interpolate(x, cc_value, cc_prev, lower_value, upper_value));
             }
@@ -56,8 +58,8 @@ impl Parameter for InterpolatedParameter {
         let cc_value = 0.0;
         let n = self.values.len();
 
-        let lower_value = self.values[n - 1].get_value(state)?;
-        let upper_value = self.values[n - 2].get_value(state)?;
+        let lower_value = self.values[n - 1].get_value(model, state)?;
+        let upper_value = self.values[n - 2].get_value(model, state)?;
 
         Ok(interpolate(x, cc_value, cc_prev, lower_value, upper_value))
     }

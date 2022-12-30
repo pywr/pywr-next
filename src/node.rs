@@ -2,6 +2,7 @@ use crate::edge::EdgeIndex;
 use crate::metric::Metric;
 use crate::parameters::FloatValue;
 use crate::state::{NetworkState, NodeState, State};
+use crate::timestep::Timestep;
 use crate::{ParameterIndex, PywrError};
 use std::ops::{Deref, DerefMut};
 
@@ -84,7 +85,7 @@ impl NodeVec {
         sub_name: Option<&str>,
         initial_volume: StorageInitialVolume,
         min_volume: f64,
-        max_volume: f64,
+        max_volume: ConstraintValue,
     ) -> NodeIndex {
         let node_index = NodeIndex(self.nodes.len());
         let node = Node::new_storage(&node_index, name, sub_name, initial_volume, min_volume, max_volume);
@@ -147,7 +148,7 @@ impl Node {
         sub_name: Option<&str>,
         initial_volume: StorageInitialVolume,
         min_volume: f64,
-        max_volume: f64,
+        max_volume: ConstraintValue,
     ) -> Self {
         Self::Storage(StorageNode::new(
             node_index,
@@ -215,14 +216,12 @@ impl Node {
         f(self);
     }
 
-    pub fn new_state(&self) -> NodeState {
-        // TODO add a reference to the node in the state objects?
-
+    pub fn default_state(&self) -> NodeState {
         match self {
             Self::Input(_n) => NodeState::new_flow_state(),
             Self::Output(_n) => NodeState::new_flow_state(),
             Self::Link(_n) => NodeState::new_flow_state(),
-            Self::Storage(n) => NodeState::new_storage_state(n.get_initial_volume(), n.get_max_volume()),
+            Self::Storage(_n) => NodeState::new_storage_state(0.0),
         }
     }
 
@@ -329,6 +328,16 @@ impl Node {
     //     }
     // }
 
+    pub fn before(&self, timestep: &Timestep, state: &mut State) -> Result<(), PywrError> {
+        // Currently only storage nodes do something during before
+        match self {
+            Node::Input(_) => Ok(()),
+            Node::Output(_) => Ok(()),
+            Node::Link(_) => Ok(()),
+            Node::Storage(n) => n.before(timestep, state),
+        }
+    }
+
     /// Set a constraint on a node.
     pub fn set_constraint(&mut self, value: ConstraintValue, constraint: Constraint) -> Result<(), PywrError> {
         match constraint {
@@ -346,14 +355,7 @@ impl Node {
                     ))
                 }
             },
-            Constraint::MaxVolume => match value {
-                ConstraintValue::Scalar(v) => self.set_max_volume_constraint(v)?,
-                _ => {
-                    return Err(PywrError::InvalidConstraintValue(
-                        "max_volume must be a scalar!".to_string(),
-                    ))
-                }
-            },
+            Constraint::MaxVolume => self.set_max_volume_constraint(value)?,
         }
         Ok(())
     }
@@ -440,7 +442,7 @@ impl Node {
         }
     }
 
-    pub fn set_max_volume_constraint(&mut self, value: f64) -> Result<(), PywrError> {
+    pub fn set_max_volume_constraint(&mut self, value: ConstraintValue) -> Result<(), PywrError> {
         match self {
             Self::Input(_) => Err(PywrError::StorageConstraintsUndefined),
             Self::Link(_) => Err(PywrError::StorageConstraintsUndefined),
@@ -452,26 +454,26 @@ impl Node {
         }
     }
 
-    pub fn get_current_max_volume(&self) -> Result<f64, PywrError> {
+    pub fn get_current_max_volume(&self, state: &State) -> Result<f64, PywrError> {
         match self {
             Self::Input(_) => Err(PywrError::StorageConstraintsUndefined),
             Self::Link(_) => Err(PywrError::StorageConstraintsUndefined),
             Self::Output(_) => Err(PywrError::StorageConstraintsUndefined),
-            Self::Storage(n) => Ok(n.get_max_volume()),
+            Self::Storage(n) => n.get_max_volume(state),
         }
     }
 
-    pub fn get_current_volume_bounds(&self) -> Result<(f64, f64), PywrError> {
-        match (self.get_current_min_volume(), self.get_current_max_volume()) {
+    pub fn get_current_volume_bounds(&self, state: &State) -> Result<(f64, f64), PywrError> {
+        match (self.get_current_min_volume(), self.get_current_max_volume(state)) {
             (Ok(min_vol), Ok(max_vol)) => Ok((min_vol, max_vol)),
             _ => Err(PywrError::FlowConstraintsUndefined),
         }
     }
 
-    pub fn get_current_available_volume_bounds(&self, state: &NetworkState) -> Result<(f64, f64), PywrError> {
-        match (self.get_current_min_volume(), self.get_current_max_volume()) {
+    pub fn get_current_available_volume_bounds(&self, state: &State) -> Result<(f64, f64), PywrError> {
+        match (self.get_current_min_volume(), self.get_current_max_volume(state)) {
             (Ok(min_vol), Ok(max_vol)) => {
-                let current_volume = state.get_node_volume(&self.index())?;
+                let current_volume = state.get_network_state().get_node_volume(&self.index())?;
 
                 let available = (current_volume - min_vol).max(0.0);
                 let missing = (max_vol - current_volume).max(0.0);
@@ -584,11 +586,11 @@ impl FlowConstraints {
 #[derive(Debug, PartialEq)]
 pub struct StorageConstraints {
     pub(crate) min_volume: f64,
-    pub(crate) max_volume: f64, // TODO Should this be required (i.e. not an Option)
+    pub(crate) max_volume: ConstraintValue,
 }
 
 impl StorageConstraints {
-    fn new(min_volume: f64, max_volume: f64) -> Self {
+    fn new(min_volume: f64, max_volume: ConstraintValue) -> Self {
         Self { min_volume, max_volume }
     }
     /// Return the current minimum volume from the parameter state
@@ -600,8 +602,12 @@ impl StorageConstraints {
     /// Return the current maximum volume from the parameter state
     ///
     /// Defaults to f64::MAX if no parameter is defined.
-    fn get_max_volume(&self) -> f64 {
-        self.max_volume
+    fn get_max_volume(&self, state: &State) -> Result<f64, PywrError> {
+        match &self.max_volume {
+            ConstraintValue::None => Ok(f64::MAX),
+            ConstraintValue::Scalar(v) => Ok(*v),
+            ConstraintValue::Parameter(p) => state.get_parameter_value(*p),
+        }
     }
 }
 
@@ -766,7 +772,7 @@ impl StorageNode {
         sub_name: Option<&str>,
         initial_volume: StorageInitialVolume,
         min_volume: f64,
-        max_volume: f64,
+        max_volume: ConstraintValue,
     ) -> Self {
         Self {
             meta: NodeMeta::new(index, name, sub_name),
@@ -777,6 +783,23 @@ impl StorageNode {
             outgoing_edges: Vec::new(),
         }
     }
+
+    pub fn before(&self, timestep: &Timestep, state: &mut State) -> Result<(), PywrError> {
+        // Set the initial volume if it is the first timestep.
+        if timestep.is_first() {
+            let volume = match &self.initial_volume {
+                StorageInitialVolume::Absolute(iv) => *iv,
+                StorageInitialVolume::Proportional(ipc) => {
+                    let max_volume = self.get_max_volume(state)?;
+                    max_volume * ipc
+                }
+            };
+
+            state.set_node_volume(self.meta.index, volume)?;
+        }
+        Ok(())
+    }
+
     fn set_cost(&mut self, value: ConstraintValue) {
         self.cost = value
     }
@@ -794,12 +817,12 @@ impl StorageNode {
     fn get_min_volume(&self) -> f64 {
         self.storage_constraints.get_min_volume()
     }
-    fn set_max_volume(&mut self, value: f64) {
+    fn set_max_volume(&mut self, value: ConstraintValue) {
         // TODO use a set_min_volume method
         self.storage_constraints.max_volume = value;
     }
-    fn get_max_volume(&self) -> f64 {
-        self.storage_constraints.get_max_volume()
+    fn get_max_volume(&self, state: &State) -> Result<f64, PywrError> {
+        self.storage_constraints.get_max_volume(state)
     }
     fn add_incoming_edge(&mut self, edge: EdgeIndex) {
         self.incoming_edges.push(edge);
@@ -809,10 +832,10 @@ impl StorageNode {
     }
 
     /// Compute the initial absolute volume
-    fn get_initial_volume(&self) -> f64 {
+    fn get_initial_volume(&self, state: &State) -> Result<f64, PywrError> {
         match self.initial_volume {
-            StorageInitialVolume::Absolute(v) => v,
-            StorageInitialVolume::Proportional(pc) => pc / self.get_max_volume(),
+            StorageInitialVolume::Absolute(v) => Ok(v),
+            StorageInitialVolume::Proportional(pc) => Ok(pc * self.get_max_volume(state)?),
         }
     }
 }

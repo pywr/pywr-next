@@ -1,4 +1,5 @@
 use crate::metric::Metric;
+use crate::model::Model;
 use crate::parameters::{Parameter, ParameterMeta};
 use crate::scenario::ScenarioIndex;
 use std::any::Any;
@@ -31,11 +32,12 @@ impl Parameter for MaxParameter {
         &self,
         _timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
+        model: &Model,
         state: &State,
         _internal_state: &mut Option<Box<dyn Any + Send>>,
     ) -> Result<f64, PywrError> {
         // Current value
-        let x = self.metric.get_value(state)?;
+        let x = self.metric.get_value(model, state)?;
         Ok(x.max(self.threshold))
     }
 }

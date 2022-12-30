@@ -1,4 +1,5 @@
 use crate::metric::Metric;
+use crate::model::Model;
 use crate::parameters::{Parameter, ParameterMeta};
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
@@ -32,21 +33,22 @@ impl Parameter for ControlCurveParameter {
         &self,
         _timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
+        model: &Model,
         state: &State,
         _internal_state: &mut Option<Box<dyn Any + Send>>,
     ) -> Result<f64, PywrError> {
         // Current value
-        let x = self.metric.get_value(state)?;
+        let x = self.metric.get_value(model, state)?;
 
         for (idx, control_curve) in self.control_curves.iter().enumerate() {
-            let cc_value = control_curve.get_value(state)?;
+            let cc_value = control_curve.get_value(model, state)?;
             if x >= cc_value {
                 let value = self.values.get(idx).ok_or(PywrError::DataOutOfRange)?;
-                return value.get_value(state);
+                return value.get_value(model, state);
             }
         }
 
         let value = self.values.last().ok_or(PywrError::DataOutOfRange)?;
-        value.get_value(state)
+        value.get_value(model, state)
     }
 }

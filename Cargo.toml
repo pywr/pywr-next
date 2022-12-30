@@ -15,6 +15,7 @@ float-cmp = "0.8.0"
 hdf5 = { version="0.8.1" }
 csv = "1.1"
 clp-sys = { path = "./clp-sys" }
+clipm = { path = "./clipm" }
 wasmer = "2.3.0"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1.0"
@@ -24,7 +25,7 @@ log = "0.4.17"
 pyo3-log = "0.7.0"
 indicatif = "0.17.2"
 highs-sys = "1.2.2"
-pyo3 = { version = "0.14.1", features = ["serde"] }
+pyo3 = { version = "0.17.3", features = ["extension-module", "abi3-py37"] }
 # polars = { version = "0.25.1", features = ["lazy", "rows"] }
 # pywr-schema = { git = "https://github.com/pywr/pywr-schema/" }
 pywr-schema = { path = "../pywr-schema/pywr_schema" }
@@ -36,9 +37,6 @@ clap =  { version="4.0", features=["derive"] }
 [dev-dependencies]
 tempfile = "3.3.0"
 
-[features]
-extension-module = ["pyo3/extension-module"]
-default = ["extension-module"]
 
 [lib]
 name = "pywr"
@@ -50,11 +48,10 @@ crate-type = ["cdylib", "rlib"]
 name = "pywr-cli"
 path = "src/main.rs"
 
-[package.metadata.maturin]
-requires-dist = ["pydantic"]
 
 [workspace]
 members = [
+    "clipm",
     "clp-sys",
 ]
 exclude = [
@@ -63,5 +60,5 @@ exclude = [
 
 [profile.release]
 opt-level = 3 # fast and small wasm
-lto = true
+lto = false
 strip = true

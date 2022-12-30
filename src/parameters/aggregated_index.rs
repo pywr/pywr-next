@@ -1,6 +1,7 @@
 /// AggregatedIndexParameter
 ///
 use super::PywrError;
+use crate::model::Model;
 use crate::parameters::{IndexParameter, IndexValue, ParameterMeta};
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
@@ -57,6 +58,7 @@ impl IndexParameter for AggregatedIndexParameter {
         &self,
         _timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
+        _model: &Model,
         state: &State,
         _internal_state: &mut Option<Box<dyn Any + Send>>,
     ) -> Result<usize, PywrError> {

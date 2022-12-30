@@ -1,4 +1,5 @@
 use crate::metric::Metric;
+use crate::model::Model;
 use crate::parameters::{IndexParameter, ParameterMeta};
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
@@ -69,6 +70,7 @@ impl IndexParameter for ThresholdParameter {
         &self,
         _timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
+        model: &Model,
         state: &State,
         internal_state: &mut Option<Box<dyn Any + Send>>,
     ) -> Result<usize, PywrError> {
@@ -86,8 +88,8 @@ impl IndexParameter for ThresholdParameter {
             return Ok(1);
         }
 
-        let threshold = self.threshold.get_value(state)?;
-        let value = self.metric.get_value(state)?;
+        let threshold = self.threshold.get_value(model, state)?;
+        let value = self.metric.get_value(model, state)?;
 
         let active = match self.predicate {
             Predicate::LessThan => value < threshold,

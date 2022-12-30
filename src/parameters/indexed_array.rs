@@ -1,3 +1,4 @@
+use crate::model::Model;
 use crate::parameters::{FloatValue, IndexValue, Parameter, ParameterMeta};
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
@@ -29,6 +30,7 @@ impl Parameter for IndexedArrayParameter {
         &self,
         _timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
+        _model: &Model,
         state: &State,
         _internal_state: &mut Option<Box<dyn Any + Send>>,
     ) -> Result<f64, PywrError> {

@@ -1,3 +1,4 @@
+use crate::model::Model;
 use crate::parameters::{IndexParameter, IndexValue, ParameterMeta};
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
@@ -37,6 +38,7 @@ impl IndexParameter for AsymmetricSwitchIndexParameter {
         &self,
         _timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
+        _model: &Model,
         state: &State,
         internal_state: &mut Option<Box<dyn Any + Send>>,
     ) -> Result<usize, PywrError> {

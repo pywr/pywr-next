@@ -753,7 +753,7 @@ impl<T> ClpSolver<T> {
                 Ok(bnds) => bnds,
                 Err(PywrError::FlowConstraintsUndefined) => {
                     // Must be a storage node
-                    let (avail, missing) = match node.get_current_available_volume_bounds(state.get_network_state()) {
+                    let (avail, missing) = match node.get_current_available_volume_bounds(state) {
                         Ok(bnds) => bnds,
                         Err(e) => return Err(e),
                     };
