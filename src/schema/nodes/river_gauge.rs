@@ -103,11 +103,9 @@ impl TryFrom<RiverGaugeNodeV1> for RiverGaugeNode {
 
 #[cfg(test)]
 mod tests {
-
     use crate::scenario::ScenarioGroupCollection;
     use crate::schema::model::PywrModel;
-    use crate::solvers::clp::{ClpSimplex, ClpSolver};
-    use crate::solvers::Solver;
+    use crate::solvers::clp::ClpSolver;
     use crate::timestep::Timestepper;
     use time::macros::date;
 
@@ -196,7 +194,7 @@ mod tests {
         let timestepper = default_timestepper();
         let scenarios = default_scenarios();
 
-        model.run::<ClpSimplex>(&timestepper, &scenarios).unwrap()
+        model.run::<ClpSolver>(&timestepper, &scenarios).unwrap()
 
         // TODO assert the results!
     }

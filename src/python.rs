@@ -1,7 +1,6 @@
 use crate::model::Model;
 use crate::scenario::ScenarioGroupCollection;
-use crate::solvers::clp::{ClpSimplex, ClpSolver, Highs};
-use crate::solvers::Solver;
+use crate::solvers::clp::{ClpSolver, HighsSolver};
 use crate::timestep::Timestepper;
 use crate::{IndexParameterIndex, ParameterIndex, RecorderIndex};
 use crate::{NodeIndex, PywrError};
@@ -688,8 +687,8 @@ fn run_model_from_string(
     }
 
     match solver_name.as_str() {
-        "clp" => model.run::<ClpSimplex>(&timestepper, &scenario_groups),
-        "highs" => model.run::<Highs>(&timestepper, &scenario_groups),
+        "clp" => model.run::<ClpSolver>(&timestepper, &scenario_groups),
+        "highs" => model.run::<HighsSolver>(&timestepper, &scenario_groups),
         _ => panic!("Solver {} not recognised.", solver_name),
     }?;
 

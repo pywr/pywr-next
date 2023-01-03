@@ -2,8 +2,7 @@ use clap::Parser;
 use pywr::model::Model;
 use pywr::scenario::ScenarioGroupCollection;
 use pywr::schema::model::PywrModel;
-use pywr::solvers::clp::{ClpSimplex, ClpSolver, Highs};
-use pywr::solvers::Solver;
+use pywr::solvers::clp::{ClpSolver, SolverBuilder};
 use pywr::timestep::Timestepper;
 use std::path::PathBuf;
 
@@ -46,5 +45,5 @@ fn main() {
 
     let (model, timestepper): (Model, Timestepper) = schema_v2.try_into_model(None).unwrap();
 
-    model.run::<ClpSimplex>(&timestepper, &scenario_groups).unwrap();
+    model.run::<ClpSolver>(&timestepper, &scenario_groups).unwrap();
 }

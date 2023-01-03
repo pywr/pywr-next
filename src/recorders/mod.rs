@@ -218,7 +218,7 @@ struct RecorderMetric {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::solvers::clp::ClpSimplex;
+    use crate::solvers::clp::ClpSolver;
     use crate::test_utils::{default_scenarios, default_timestepper, simple_model};
 
     #[test]
@@ -232,7 +232,7 @@ mod tests {
         let rec = Array2Recorder::new("test", Metric::NodeOutFlow(node_idx));
 
         let idx = model.add_recorder(Box::new(rec)).unwrap();
-        model.run::<ClpSimplex>(&timestepper, &scenarios).unwrap();
+        model.run::<ClpSolver>(&timestepper, &scenarios).unwrap();
 
         // TODO fix this with respect to the trait.
         // let array = rec.data_view2().unwrap();

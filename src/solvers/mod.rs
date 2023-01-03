@@ -37,7 +37,7 @@ impl AddAssign for SolverTimings {
     }
 }
 
-pub trait Solver: Send + Default {
-    fn setup(&mut self, model: &Model) -> Result<(), PywrError>;
+pub trait Solver: Send {
+    fn setup(model: &Model) -> Result<Box<Self>, PywrError>;
     fn solve(&mut self, model: &Model, timestep: &Timestep, state: &mut State) -> Result<SolverTimings, PywrError>;
 }

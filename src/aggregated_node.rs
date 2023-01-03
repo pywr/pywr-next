@@ -186,7 +186,7 @@ mod tests {
     use crate::model::Model;
     use crate::node::ConstraintValue;
     use crate::recorders::AssertionRecorder;
-    use crate::solvers::clp::{ClpSimplex, Highs};
+    use crate::solvers::clp::{ClpSolver, HighsSolver};
     use crate::test_utils::{default_scenarios, default_timestepper};
     use ndarray::Array2;
 
@@ -234,6 +234,6 @@ mod tests {
         let recorder = AssertionRecorder::new("link-0-flow", Metric::NodeOutFlow(idx), expected);
         model.add_recorder(Box::new(recorder)).unwrap();
 
-        model.run::<ClpSimplex>(&timestepper, &scenarios).unwrap();
+        model.run::<ClpSolver>(&timestepper, &scenarios).unwrap();
     }
 }

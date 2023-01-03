@@ -5,7 +5,6 @@ use crate::metric::Metric;
 use crate::node::{ConstraintValue, Node, NodeVec, StorageInitialVolume};
 use crate::parameters::{FloatValue, ParameterType};
 use crate::scenario::{ScenarioGroupCollection, ScenarioIndex};
-use crate::solvers::clp::ClpSolver;
 use crate::solvers::{Solver, SolverTimings};
 use crate::state::{ParameterStates, State};
 use crate::timestep::{Timestep, Timestepper};
@@ -49,17 +48,9 @@ impl Model {
         &self,
         timesteps: &[Timestep],
         scenario_indices: &[ScenarioIndex],
-    ) -> Result<
-        (
-            Vec<State>,
-            Vec<ParameterStates>,
-            Vec<Option<Box<dyn Any>>>,
-            Vec<Box<ClpSolver<S>>>,
-        ),
-        PywrError,
-    >
+    ) -> Result<(Vec<State>, Vec<ParameterStates>, Vec<Option<Box<dyn Any>>>, Vec<Box<S>>), PywrError>
     where
-        ClpSolver<S>: Solver,
+        S: Solver,
     {
         let mut states: Vec<State> = Vec::with_capacity(scenario_indices.len());
         let mut parameter_internal_states: Vec<ParameterStates> = Vec::with_capacity(scenario_indices.len());
@@ -67,8 +58,8 @@ impl Model {
 
         for scenario_index in scenario_indices {
             // Create a solver for each scenario
-            let mut solver = Box::new(ClpSolver::<S>::default());
-            solver.setup(self)?;
+            let mut solver = S::setup(self)?;
+
             solvers.push(solver);
 
             // Initialise node states. Note that storage nodes will have a zero volume at this point.
@@ -120,7 +111,7 @@ impl Model {
 
     pub fn run<S>(&self, timestepper: &Timestepper, scenarios: &ScenarioGroupCollection) -> Result<(), PywrError>
     where
-        ClpSolver<S>: Solver,
+        S: Solver,
     {
         let now = Instant::now();
 
@@ -187,13 +178,13 @@ impl Model {
         &self,
         timestep: &Timestep,
         scenario_indices: &[ScenarioIndex],
-        solvers: &mut [Box<ClpSolver<S>>],
+        solvers: &mut [Box<S>],
         states: &mut [State],
         parameter_internal_states: &mut [ParameterStates],
         timings: &mut RunTimings,
     ) -> Result<(), PywrError>
     where
-        ClpSolver<S>: Solver,
+        S: Solver,
     {
         scenario_indices
             .iter()
@@ -783,7 +774,7 @@ mod tests {
     use crate::node::{Constraint, ConstraintValue};
     use crate::recorders::AssertionRecorder;
     use crate::scenario::{ScenarioGroupCollection, ScenarioIndex};
-    use crate::solvers::clp::{ClpSimplex, Highs};
+    use crate::solvers::clp::{ClpSolver, HighsSolver};
     use crate::test_utils::{default_scenarios, default_timestepper, simple_model, simple_storage_model};
     use float_cmp::approx_eq;
     use ndarray::Array2;
@@ -890,7 +881,7 @@ mod tests {
         let scenario_indices = scenarios.scenario_indices();
         let ts = ts_iter.next().unwrap();
         let (mut current_state, mut p_internal, mut r_internal, mut solvers) =
-            model.setup::<ClpSimplex>(&timesteps, &scenario_indices).unwrap();
+            model.setup::<ClpSolver>(&timesteps, &scenario_indices).unwrap();
         assert_eq!(current_state.len(), scenario_indices.len());
 
         model
@@ -942,7 +933,7 @@ mod tests {
         let recorder = AssertionRecorder::new("total-demand", Metric::ParameterValue(idx), expected);
         model.add_recorder(Box::new(recorder)).unwrap();
 
-        model.run::<ClpSimplex>(&timestepper, &scenarios).unwrap();
+        model.run::<ClpSolver>(&timestepper, &scenarios).unwrap();
     }
 
     #[test]
@@ -965,7 +956,7 @@ mod tests {
         let recorder = AssertionRecorder::new("reservoir-volume", Metric::NodeVolume(idx), expected);
         model.add_recorder(Box::new(recorder)).unwrap();
 
-        model.run::<ClpSimplex>(&timestepper, &scenarios).unwrap();
+        model.run::<ClpSolver>(&timestepper, &scenarios).unwrap();
     }
 
     #[test]

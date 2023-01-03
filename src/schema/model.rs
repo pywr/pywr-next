@@ -250,8 +250,7 @@ impl TryFrom<pywr_schema::PywrModel> for PywrModel {
 mod tests {
     use super::PywrModel;
     use crate::scenario::ScenarioGroupCollection;
-    use crate::solvers::clp::{ClpSimplex, ClpSolver};
-    use crate::solvers::Solver;
+    use crate::solvers::clp::ClpSolver;
     use crate::timestep::Timestepper;
     use time::macros::date;
 
@@ -330,7 +329,7 @@ mod tests {
 
         let scenarios = default_scenarios();
 
-        model.run::<ClpSimplex>(&timestepper, &scenarios).unwrap()
+        model.run::<ClpSolver>(&timestepper, &scenarios).unwrap()
 
         // TODO assert the results!
     }
