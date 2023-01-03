@@ -182,7 +182,7 @@ impl ClpSimplex {
 }
 
 #[derive(Debug)]
-pub enum Bounds {
+enum Bounds {
     Free,
     Lower(f64),
     Upper(f64),
@@ -190,7 +190,7 @@ pub enum Bounds {
     Fixed(f64),
 }
 
-pub struct LpBuilder {
+struct LpBuilder {
     col_lower: Vec<c_double>,
     col_upper: Vec<c_double>,
     col_obj_coef: Vec<c_double>,
@@ -259,7 +259,7 @@ impl LpBuilder {
     }
 }
 
-pub struct RowBuilder {
+struct RowBuilder {
     lower: f64,
     upper: f64,
     columns: HashMap<i32, f64>,
@@ -325,7 +325,7 @@ impl RowBuilder {
 }
 
 #[derive(Default)]
-pub struct SolverBuilder {
+struct SolverBuilder {
     builder: LpBuilder,
     start_node_constraints: Option<usize>,
     start_agg_node_constraints: Option<usize>,
