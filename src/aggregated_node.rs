@@ -124,8 +124,7 @@ impl AggregatedNode {
                     .iter()
                     .zip(factors)
                     .skip(1)
-                    .map(|(n1, f1)| ((*n0, *f0), (*n1, *f1)))
-                    .into_iter(),
+                    .map(|(n1, f1)| ((*n0, *f0), (*n1, *f1))),
             )
         } else {
             None
@@ -186,7 +185,7 @@ mod tests {
     use crate::model::Model;
     use crate::node::ConstraintValue;
     use crate::recorders::AssertionRecorder;
-    use crate::solvers::clp::{ClpSolver, HighsSolver};
+    use crate::solvers::ClpSolver;
     use crate::test_utils::{default_scenarios, default_timestepper};
     use ndarray::Array2;
 
@@ -212,7 +211,7 @@ mod tests {
         model.connect_nodes(input_node, link_node1).unwrap();
         model.connect_nodes(link_node1, output_node1).unwrap();
 
-        let agg_node = model.add_aggregated_node("agg-node", None, &[link_node0, link_node1], Some(&[2.0, 1.0]));
+        let _agg_node = model.add_aggregated_node("agg-node", None, &[link_node0, link_node1], Some(&[2.0, 1.0]));
 
         // Setup a demand on output-0
         let output_node = model.get_mut_node_by_name("output", Some("0")).unwrap();
@@ -225,13 +224,13 @@ mod tests {
         // Set-up assertion for "input" node
         let idx = model.get_node_by_name("link", Some("0")).unwrap().index();
         let expected = Array2::from_elem((366, 10), 100.0);
-        let recorder = AssertionRecorder::new("link-0-flow", Metric::NodeOutFlow(idx), expected);
+        let recorder = AssertionRecorder::new("link-0-flow", Metric::NodeOutFlow(idx), expected, None, None);
         model.add_recorder(Box::new(recorder)).unwrap();
 
         // Set-up assertion for "input" node
         let idx = model.get_node_by_name("link", Some("1")).unwrap().index();
         let expected = Array2::from_elem((366, 10), 50.0);
-        let recorder = AssertionRecorder::new("link-0-flow", Metric::NodeOutFlow(idx), expected);
+        let recorder = AssertionRecorder::new("link-0-flow", Metric::NodeOutFlow(idx), expected, None, None);
         model.add_recorder(Box::new(recorder)).unwrap();
 
         model.run::<ClpSolver>(&timestepper, &scenarios).unwrap();

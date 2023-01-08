@@ -2,7 +2,7 @@ use clap::Parser;
 use pywr::model::Model;
 use pywr::scenario::ScenarioGroupCollection;
 use pywr::schema::model::PywrModel;
-use pywr::solvers::clp::ClpSolver;
+use pywr::solvers::ClpSolver;
 use pywr::timestep::Timestepper;
 use std::path::PathBuf;
 

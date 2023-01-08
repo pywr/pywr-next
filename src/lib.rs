@@ -1,13 +1,12 @@
-use thiserror::Error;
+extern crate core;
 
-use crate::edge::Edge;
 use crate::node::NodeIndex;
 use crate::parameters::{IndexParameterIndex, ParameterIndex};
 use crate::recorders::RecorderIndex;
 use crate::state::NetworkState;
+use thiserror::Error;
 
 pub mod aggregated_node;
-
 mod aggregated_storage_node;
 pub mod edge;
 mod metric;
@@ -22,7 +21,6 @@ pub mod solvers;
 pub mod state;
 pub mod test_utils;
 pub mod timestep;
-mod utils;
 mod virtual_storage;
 
 #[derive(Error, Debug, PartialEq, Eq)]
@@ -94,7 +92,7 @@ pub enum PywrError {
     #[error("scenario state not found")]
     ScenarioStateNotFound,
     #[error("clp error")]
-    ClpError(#[from] solvers::clp::ClpError),
+    ClpError(#[from] solvers::ClpError),
     #[error("metric not defined")]
     MetricNotDefinedForNode,
     #[error("invalid metric type: {0}")]

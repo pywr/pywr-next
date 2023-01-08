@@ -1,20 +1,18 @@
+use crate::aggregated_node::AggregatedNodeIndex;
 use crate::model::Model;
+use crate::recorders::hdf::HDF5Recorder;
 use crate::scenario::ScenarioGroupCollection;
-use crate::solvers::clp::{ClpSolver, HighsSolver};
+use crate::schema::model::PywrModel;
+use crate::solvers::{ClIpmSolver, ClpSolver, HighsSolver};
 use crate::timestep::Timestepper;
+use crate::virtual_storage::VirtualStorageIndex;
 use crate::{IndexParameterIndex, ParameterIndex, RecorderIndex};
 use crate::{NodeIndex, PywrError};
-use std::ops::Deref;
-
 use pyo3::create_exception;
 use pyo3::exceptions::{PyException, PyRuntimeError};
 use pyo3::prelude::*;
-
-use crate::aggregated_node::AggregatedNodeIndex;
-use crate::recorders::hdf::HDF5Recorder;
-use crate::schema::model::PywrModel;
-use crate::virtual_storage::VirtualStorageIndex;
 use pyo3::PyErr;
+use std::ops::Deref;
 use std::path::PathBuf;
 
 /// Python API
@@ -689,6 +687,7 @@ fn run_model_from_string(
     match solver_name.as_str() {
         "clp" => model.run::<ClpSolver>(&timestepper, &scenario_groups),
         "highs" => model.run::<HighsSolver>(&timestepper, &scenario_groups),
+        "clipm" => model.run_multi_scenario::<ClIpmSolver>(&timestepper, &scenario_groups),
         _ => panic!("Solver {} not recognised.", solver_name),
     }?;
 

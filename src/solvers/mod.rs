@@ -5,7 +5,14 @@ use crate::PywrError;
 use std::ops::{Add, AddAssign};
 use std::time::Duration;
 
-pub mod clp;
+mod builder;
+mod clipm;
+mod clp;
+mod highs;
+
+pub use self::clipm::ClIpmSolver;
+pub use clp::{ClpError, ClpSolver};
+pub use highs::HighsSolver;
 
 #[derive(Default)]
 pub struct SolverTimings {
@@ -13,6 +20,12 @@ pub struct SolverTimings {
     pub update_constraints: Duration,
     pub solve: Duration,
     pub save_solution: Duration,
+}
+
+impl SolverTimings {
+    pub fn total(&self) -> Duration {
+        self.update_objective + self.update_constraints + self.solve + self.save_solution
+    }
 }
 
 impl Add<SolverTimings> for SolverTimings {
@@ -40,4 +53,9 @@ impl AddAssign for SolverTimings {
 pub trait Solver: Send {
     fn setup(model: &Model) -> Result<Box<Self>, PywrError>;
     fn solve(&mut self, model: &Model, timestep: &Timestep, state: &mut State) -> Result<SolverTimings, PywrError>;
+}
+
+pub trait MultiStateSolver: Send {
+    fn setup(model: &Model, num_scenarios: usize) -> Result<Box<Self>, PywrError>;
+    fn solve(&mut self, model: &Model, timestep: &Timestep, states: &mut [State]) -> Result<SolverTimings, PywrError>;
 }

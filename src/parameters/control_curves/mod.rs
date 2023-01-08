@@ -24,19 +24,19 @@ fn interpolate(value: f64, lower_bound: f64, upper_bound: f64, lower_value: f64,
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::assert_almost_eq;
+    use float_cmp::assert_approx_eq;
 
     #[test]
     fn test_interpolate() {
         // Middle of the range
-        assert_almost_eq!(interpolate(0.5, 0.0, 1.0, 0.0, 1.0), 0.5);
-        assert_almost_eq!(interpolate(0.25, 0.0, 1.0, 0.0, 1.0), 0.25);
-        assert_almost_eq!(interpolate(0.75, 0.0, 1.0, 0.0, 1.0), 0.75);
+        assert_approx_eq!(f64, interpolate(0.5, 0.0, 1.0, 0.0, 1.0), 0.5);
+        assert_approx_eq!(f64, interpolate(0.25, 0.0, 1.0, 0.0, 1.0), 0.25);
+        assert_approx_eq!(f64, interpolate(0.75, 0.0, 1.0, 0.0, 1.0), 0.75);
         // Below bounds; returns lower value
-        assert_almost_eq!(interpolate(-1.0, 0.0, 1.0, 0.0, 1.0), 0.0);
+        assert_approx_eq!(f64, interpolate(-1.0, 0.0, 1.0, 0.0, 1.0), 0.0);
         // Above bounds; returns upper value
-        assert_almost_eq!(interpolate(2.0, 0.0, 1.0, 0.0, 1.0), 1.0);
+        assert_approx_eq!(f64, interpolate(2.0, 0.0, 1.0, 0.0, 1.0), 1.0);
         // Equal bounds; returns lower value
-        assert_almost_eq!(interpolate(0.0, 0.0, 0.0, 0.0, 1.0), 0.0);
+        assert_approx_eq!(f64, interpolate(0.0, 0.0, 0.0, 0.0, 1.0), 0.0);
     }
 }

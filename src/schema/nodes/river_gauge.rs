@@ -105,7 +105,7 @@ impl TryFrom<RiverGaugeNodeV1> for RiverGaugeNode {
 mod tests {
     use crate::scenario::ScenarioGroupCollection;
     use crate::schema::model::PywrModel;
-    use crate::solvers::clp::ClpSolver;
+    use crate::solvers::ClpSolver;
     use crate::timestep::Timestepper;
     use time::macros::date;
 

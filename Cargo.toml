@@ -3,6 +3,7 @@ name = "pywr"
 version = "2.0.0-dev"
 authors = ["James Tomlinson <tomo.bbe@gmail.com>"]
 edition = "2021"
+rust-version = "1.60"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -11,7 +12,8 @@ libc = "0.2.97"
 thiserror = "1.0.25"
 ndarray = "0.15.3"
 numpy = "0.14.1"
-float-cmp = "0.8.0"
+num = "0.4.0"
+float-cmp = "0.9.0"
 hdf5 = { version="0.8.1" }
 csv = "1.1"
 clp-sys = { path = "./clp-sys" }
@@ -24,7 +26,8 @@ svgbobdoc = { version = "0.3.0", features = ["enable"]  }
 log = "0.4.17"
 pyo3-log = "0.7.0"
 indicatif = "0.17.2"
-highs-sys = "1.2.2"
+# highs-sys = "1.2.2"
+highs-sys = { path = "../../highs-sys" }
 pyo3 = { version = "0.17.3", features = ["extension-module", "abi3-py37"] }
 # polars = { version = "0.25.1", features = ["lazy", "rows"] }
 # pywr-schema = { git = "https://github.com/pywr/pywr-schema/" }

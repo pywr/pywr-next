@@ -13,7 +13,7 @@ pub fn default_timestepper() -> Timestepper {
 
 pub fn default_scenarios() -> ScenarioGroupCollection {
     let mut scenarios = ScenarioGroupCollection::default();
-    scenarios.add_group("test-scenario", 10);
+    scenarios.add_group("test-scenario", 2);
     scenarios
 }
 

@@ -1,19 +1,18 @@
 pub mod hdf;
 pub mod py;
 
-use crate::assert_almost_eq;
 use crate::metric::Metric;
+use crate::model::Model;
 use crate::scenario::ScenarioIndex;
+use crate::state::State;
 use crate::timestep::Timestep;
 use crate::PywrError;
+use float_cmp::assert_approx_eq;
 use ndarray::prelude::*;
 use ndarray::Array2;
 use std::any::Any;
 use std::fmt;
 use std::fmt::{Display, Formatter};
-
-use crate::model::Model;
-use crate::state::State;
 use std::ops::Deref;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -148,14 +147,24 @@ pub struct AssertionRecorder {
     meta: RecorderMeta,
     expected_values: Array2<f64>,
     metric: Metric,
+    ulps: i64,
+    epsilon: f64,
 }
 
 impl AssertionRecorder {
-    pub fn new(name: &str, metric: Metric, expected_values: Array2<f64>) -> Self {
+    pub fn new(
+        name: &str,
+        metric: Metric,
+        expected_values: Array2<f64>,
+        ulps: Option<i64>,
+        epsilon: Option<f64>,
+    ) -> Self {
         Self {
             meta: RecorderMeta::new(name),
             expected_values,
             metric,
+            ulps: ulps.unwrap_or(2),
+            epsilon: epsilon.unwrap_or(f64::EPSILON * 2.0),
         }
     }
 }
@@ -181,9 +190,12 @@ impl Recorder for AssertionRecorder {
                 None => panic!("Simulation produced results out of range."),
             };
 
-            assert_almost_eq!(
+            assert_approx_eq!(
+                f64,
                 self.metric.get_value(model, &state[scenario_index.index])?,
-                expected_value
+                expected_value,
+                epsilon = self.epsilon,
+                ulps = self.ulps
             );
         }
 
@@ -218,7 +230,7 @@ struct RecorderMetric {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::solvers::clp::ClpSolver;
+    use crate::solvers::ClpSolver;
     use crate::test_utils::{default_scenarios, default_timestepper, simple_model};
 
     #[test]
