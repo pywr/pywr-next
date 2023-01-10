@@ -103,21 +103,10 @@ impl TryFrom<RiverGaugeNodeV1> for RiverGaugeNode {
 
 #[cfg(test)]
 mod tests {
-    use crate::scenario::ScenarioGroupCollection;
     use crate::schema::model::PywrModel;
     use crate::solvers::ClpSolver;
+    use crate::test_utils::default_scenarios;
     use crate::timestep::Timestepper;
-    use time::macros::date;
-
-    fn default_timestepper() -> Timestepper {
-        Timestepper::new(date!(2020 - 01 - 01), date!(2020 - 01 - 15), 1)
-    }
-
-    fn default_scenarios() -> ScenarioGroupCollection {
-        let mut scenarios = ScenarioGroupCollection::default();
-        scenarios.add_group("test-scenario", 10);
-        scenarios
-    }
 
     fn model_str() -> &'static str {
         r#"
@@ -186,12 +175,11 @@ mod tests {
     fn test_model_run() {
         let data = model_str();
         let schema: PywrModel = serde_json::from_str(data).unwrap();
-        let (mut model, timestepper): (crate::model::Model, Timestepper) = schema.try_into_model(None).unwrap();
+        let (model, timestepper): (crate::model::Model, Timestepper) = schema.try_into_model(None).unwrap();
 
         assert_eq!(model.nodes.len(), 5);
         assert_eq!(model.edges.len(), 6);
 
-        let timestepper = default_timestepper();
         let scenarios = default_scenarios();
 
         model.run::<ClpSolver>(&timestepper, &scenarios).unwrap()

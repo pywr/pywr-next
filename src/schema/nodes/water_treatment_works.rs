@@ -3,6 +3,7 @@ use crate::schema::data_tables::LoadedTableCollection;
 use crate::schema::nodes::NodeMeta;
 use crate::schema::parameters::DynamicFloatValue;
 use crate::PywrError;
+use num::Zero;
 use std::path::Path;
 
 #[doc = svgbobdoc::transform!(
@@ -57,7 +58,7 @@ impl WaterTreatmentWorks {
     }
 
     pub fn add_to_model(&self, model: &mut crate::model::Model) -> Result<(), PywrError> {
-        let idx_loss = model.add_link_node(self.meta.name.as_str(), Self::loss_sub_name())?;
+        let idx_loss = model.add_output_node(self.meta.name.as_str(), Self::loss_sub_name())?;
         let idx_net = model.add_link_node(self.meta.name.as_str(), Self::net_sub_name())?;
         let idx_soft_min_flow = model.add_link_node(self.meta.name.as_str(), Self::net_soft_min_flow_sub_name())?;
         let idx_above_soft_min_flow =
@@ -121,9 +122,24 @@ impl WaterTreatmentWorks {
         }
 
         if let Some(loss_factor) = &self.loss_factor {
-            // Set the factors for the loss
-            let factors = [FloatValue::Constant(1.0), loss_factor.load(model, tables, data_path)?];
-            model.set_aggregated_node_factors(self.meta.name.as_str(), Self::agg_sub_name(), Some(&factors))?;
+            // Handle the case where we a given a zero loss factor
+            // The aggregated node does not support zero loss factors so filter them here.
+            let lf = match loss_factor.load(model, tables, data_path)? {
+                FloatValue::Constant(f) => {
+                    if f.is_zero() {
+                        None
+                    } else {
+                        Some(FloatValue::Constant(f))
+                    }
+                }
+                FloatValue::Dynamic(f) => Some(FloatValue::Dynamic(f)),
+            };
+
+            if let Some(lf) = lf {
+                // Set the factors for the loss
+                let factors = [FloatValue::Constant(1.0), lf];
+                model.set_aggregated_node_factors(self.meta.name.as_str(), Self::agg_sub_name(), Some(&factors))?;
+            }
         }
 
         Ok(())
@@ -148,10 +164,16 @@ impl WaterTreatmentWorks {
 
 #[cfg(test)]
 mod tests {
+    use crate::metric::Metric;
+    use crate::recorders::AssertionRecorder;
+    use crate::schema::model::PywrModel;
     use crate::schema::nodes::WaterTreatmentWorks;
+    use crate::solvers::ClpSolver;
+    use crate::test_utils::{default_scenarios, default_timestepper};
+    use ndarray::Array2;
 
     #[test]
-    fn test_wtw() {
+    fn test_wtw_schema_load() {
         let data = r#"
                 {
                   "type": "WaterTreatmentWorks",
@@ -187,5 +209,99 @@ mod tests {
         let node: WaterTreatmentWorks = serde_json::from_str(data).unwrap();
 
         assert_eq!(node.meta.name, "My WTW");
+    }
+
+    fn model_str() -> &'static str {
+        r#"
+            {
+                "metadata": {
+                    "title": "WTW Test 1",
+                    "description": "Test WTW work",
+                    "minimum_version": "0.1"
+                },
+                "timestepper": {
+                    "start": "2015-01-01",
+                    "end": "2015-12-31",
+                    "timestep": 1
+                },
+                "nodes": [
+                    {
+                        "name": "input1",
+                        "type": "Input",
+                        "flow": 15
+                    },
+                    {
+                        "name": "wtw1",
+                        "type": "WaterTreatmentWorks",
+                        "max_flow": 10.0,
+                        "loss_factor": 0.1
+                    },
+                    {
+                        "name": "demand1",
+                        "type": "Output",
+                        "max_flow": 15.0,
+                        "cost": -10
+                    }
+                ],
+                "edges": [
+                    {
+                        "from_node": "input1",
+                        "to_node": "wtw1"
+                    },
+                    {
+                        "from_node": "wtw1",
+                        "to_node": "demand1"
+                    }
+                ]
+            }
+            "#
+    }
+
+    #[test]
+    fn test_model_schema() {
+        let data = model_str();
+        let schema: PywrModel = serde_json::from_str(data).unwrap();
+
+        assert_eq!(schema.nodes.len(), 3);
+        assert_eq!(schema.edges.len(), 2);
+    }
+
+    #[test]
+    fn test_model_run() {
+        let data = model_str();
+        let schema: PywrModel = serde_json::from_str(data).unwrap();
+        let (mut model, timestepper) = schema.try_into_model(None).unwrap();
+
+        assert_eq!(model.nodes.len(), 6);
+        assert_eq!(model.edges.len(), 6);
+
+        let scenarios = default_scenarios();
+
+        // Setup expected results
+        // Set-up assertion for "input" node
+        // TODO write some helper functions for adding these assertion recorders
+        let idx = model.get_node_by_name("input1", None).unwrap().index();
+        let expected = Array2::from_elem(
+            (
+                timestepper.timesteps().len(),
+                default_scenarios().scenario_indices().len(),
+            ),
+            11.0,
+        );
+        let recorder = AssertionRecorder::new("input-flow", Metric::NodeOutFlow(idx), expected, None, None);
+        model.add_recorder(Box::new(recorder)).unwrap();
+
+        let idx = model.get_node_by_name("demand1", None).unwrap().index();
+        let expected = Array2::from_elem(
+            (
+                timestepper.timesteps().len(),
+                default_scenarios().scenario_indices().len(),
+            ),
+            10.0,
+        );
+        let recorder = AssertionRecorder::new("demand-flow", Metric::NodeInFlow(idx), expected, None, None);
+        model.add_recorder(Box::new(recorder)).unwrap();
+
+        model.run::<ClpSolver>(&timestepper, &scenarios).unwrap()
     }
 }
