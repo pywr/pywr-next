@@ -65,6 +65,7 @@ pub trait Recorder: Send + Sync {
         &self,
         _timesteps: &[Timestep],
         _scenario_indices: &[ScenarioIndex],
+        _model: &Model,
     ) -> Result<Option<Box<dyn Any>>, PywrError> {
         Ok(None)
     }
@@ -110,6 +111,7 @@ impl Recorder for Array2Recorder {
         &self,
         timesteps: &[Timestep],
         scenario_indices: &[ScenarioIndex],
+        _model: &Model,
     ) -> Result<Option<Box<(dyn Any)>>, PywrError> {
         let array: Array2<f64> = Array::zeros((timesteps.len(), scenario_indices.len()));
 

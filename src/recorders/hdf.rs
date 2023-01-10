@@ -3,7 +3,8 @@ use crate::metric::Metric;
 use crate::model::Model;
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
-use ndarray::{s, Array2};
+use hdf5::{Extents, Group};
+use ndarray::{s, Array1, Array2};
 use std::any::Any;
 use std::ops::Deref;
 use std::path::PathBuf;
@@ -19,6 +20,26 @@ struct Internal {
     file: hdf5::File,
     datasets: Vec<hdf5::Dataset>,
     aggregated_datasets: Vec<(Vec<Metric>, hdf5::Dataset)>,
+}
+
+#[derive(hdf5::H5Type, Copy, Clone, Debug)]
+#[repr(C)]
+pub struct Date {
+    index: usize,
+    year: i32,
+    month: u8,
+    day: u8,
+}
+
+impl Date {
+    fn from_timestamp(ts: &Timestep) -> Self {
+        Self {
+            index: ts.index,
+            year: ts.date.year(),
+            month: ts.date.month().into(),
+            day: ts.date.day(),
+        }
+    }
 }
 
 impl HDF5Recorder {
@@ -39,6 +60,7 @@ impl Recorder for HDF5Recorder {
         &self,
         timesteps: &[Timestep],
         scenario_indices: &[ScenarioIndex],
+        model: &Model,
     ) -> Result<Option<Box<(dyn Any)>>, PywrError> {
         let file = match hdf5::File::create(&self.filename) {
             Ok(f) => f,
@@ -47,25 +69,57 @@ impl Recorder for HDF5Recorder {
         let mut datasets = Vec::new();
         let mut aggregated_datasets = Vec::new();
 
+        // Create the time table
+        let dates: Array1<_> = timesteps.iter().map(Date::from_timestamp).collect();
+        if let Err(e) = file.deref().new_dataset_builder().with_data(&dates).create("time") {
+            return Err(PywrError::HDF5Error(e.to_string()));
+        }
+
         let shape = (timesteps.len(), scenario_indices.len());
 
-        for (_metric, (name, sub_name)) in &self.metrics {
-            let ds = match sub_name {
-                Some(sn) => {
-                    // This is a node with sub-nodes, create a group for the parent node
-                    let grp = match require_group(file.deref(), name) {
-                        Ok(g) => g,
-                        Err(e) => return Err(PywrError::HDF5Error(e.to_string())),
-                    };
-                    match grp.new_dataset::<f64>().shape(shape).create(sn.as_str()) {
-                        Ok(ds) => ds,
-                        Err(e) => return Err(PywrError::HDF5Error(e.to_string())),
-                    }
+        let root_grp = file.deref();
+
+        for (metric, (name, sub_name)) in &self.metrics {
+            let ds = match metric {
+                Metric::NodeInFlow(idx) => {
+                    let node = model.get_node(idx)?;
+                    require_node_dataset(root_grp, shape, node.name(), node.sub_name())?
                 }
-                None => match file.new_dataset::<f64>().shape(shape).create(name.as_str()) {
-                    Ok(ds) => ds,
-                    Err(e) => return Err(PywrError::HDF5Error(e.to_string())),
-                },
+                Metric::NodeOutFlow(idx) => {
+                    let node = model.get_node(idx)?;
+                    require_node_dataset(root_grp, shape, node.name(), node.sub_name())?
+                }
+                Metric::NodeVolume(idx) => {
+                    let node = model.get_node(idx)?;
+                    require_node_dataset(root_grp, shape, node.name(), node.sub_name())?
+                }
+                Metric::NodeProportionalVolume(idx) => {
+                    let node = model.get_node(idx)?;
+                    require_node_dataset(root_grp, shape, node.name(), node.sub_name())?
+                }
+                Metric::AggregatedNodeVolume(_) => {
+                    continue; // TODO
+                }
+                Metric::AggregatedNodeProportionalVolume(_) => {
+                    continue; // TODO
+                }
+                Metric::EdgeFlow(_) => {
+                    continue; // TODO
+                }
+                Metric::ParameterValue(idx) => {
+                    let parameter = model.get_parameter(idx)?;
+                    let parameter_group = require_group(root_grp, "parameters")?;
+                    require_dataset(&parameter_group, shape, parameter.name())?
+                }
+                Metric::VirtualStorageVolume(_) => {
+                    continue; // TODO
+                }
+                Metric::VirtualStorageProportionalVolume(_) => {
+                    continue; // TODO
+                }
+                Metric::Constant(_) => {
+                    continue; // TODO
+                }
             };
 
             datasets.push(ds);
@@ -139,12 +193,37 @@ impl Recorder for HDF5Recorder {
     }
 }
 
-fn require_group(parent: &hdf5::Group, name: &str) -> Result<hdf5::Group, hdf5::Error> {
+fn require_dataset<S: Into<Extents>>(parent: &Group, shape: S, name: &str) -> Result<hdf5::Dataset, PywrError> {
+    parent
+        .new_dataset::<f64>()
+        .shape(shape)
+        .create(name)
+        .map_err(|e| PywrError::HDF5Error(e.to_string()))
+}
+
+fn require_node_dataset<S: Into<Extents>>(
+    parent: &Group,
+    shape: S,
+    name: &str,
+    sub_name: Option<&str>,
+) -> Result<hdf5::Dataset, PywrError> {
+    match sub_name {
+        None => require_dataset(parent, shape, name),
+        Some(sn) => {
+            let grp = require_group(parent, name)?;
+            require_dataset(&grp, shape, sn)
+        }
+    }
+}
+
+fn require_group(parent: &Group, name: &str) -> Result<Group, PywrError> {
     match parent.group(name) {
         Ok(g) => Ok(g),
         Err(_) => {
             // Group could not be retrieved already, try to create it instead
-            parent.create_group(name)
+            parent
+                .create_group(name)
+                .map_err(|e| PywrError::HDF5Error(e.to_string()))
         }
     }
 }

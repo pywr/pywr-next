@@ -64,4 +64,4 @@ exclude = [
 [profile.release]
 opt-level = 3 # fast and small wasm
 lto = false
-strip = true
+# strip = true

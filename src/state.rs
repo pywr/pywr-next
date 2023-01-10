@@ -3,7 +3,6 @@ use crate::node::NodeIndex;
 use crate::parameters::{IndexParameterIndex, ParameterIndex};
 use crate::timestep::Timestep;
 use crate::PywrError;
-use pyo3::prelude::*;
 use std::any::Any;
 use std::ops::Deref;
 
@@ -211,7 +210,6 @@ impl ParameterValues {
 }
 
 // State of the nodes and edges
-#[pyclass]
 #[derive(Clone, Debug)]
 pub struct NetworkState {
     node_states: Vec<NodeState>,
@@ -317,6 +315,7 @@ impl NetworkState {
 }
 
 /// State of the model simulation
+#[derive(Debug)]
 pub struct State {
     network: NetworkState,
     parameters: ParameterValues,

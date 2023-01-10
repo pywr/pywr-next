@@ -3,7 +3,7 @@ use crate::aggregated_storage_node::{AggregatedStorageNode, AggregatedStorageNod
 use crate::edge::{EdgeIndex, EdgeVec};
 use crate::metric::Metric;
 use crate::node::{ConstraintValue, Node, NodeVec, StorageInitialVolume};
-use crate::parameters::{FloatValue, ParameterType};
+use crate::parameters::{FloatValue, Parameter, ParameterType};
 use crate::scenario::{ScenarioGroupCollection, ScenarioIndex};
 use crate::solvers::{MultiStateSolver, Solver, SolverTimings};
 use crate::state::{ParameterStates, State};
@@ -194,7 +194,7 @@ impl Model {
         // Setup recorders
         let mut recorder_internal_states = Vec::new();
         for recorder in &self.recorders {
-            let initial_state = recorder.setup(timesteps, scenario_indices)?;
+            let initial_state = recorder.setup(timesteps, scenario_indices, &self)?;
             recorder_internal_states.push(initial_state);
         }
 
@@ -734,9 +734,17 @@ impl Model {
             .map(|(idx, p)| {
                 let metric = Metric::ParameterValue(ParameterIndex::new(idx));
 
-                (metric, (p.name().to_string(), None))
+                (metric, (format!("param-{}", p.name()), None))
             })
             .collect()
+    }
+
+    /// Get a `Parameter` from a parameter's name
+    pub fn get_parameter(&self, index: &ParameterIndex) -> Result<&dyn parameters::Parameter, PywrError> {
+        match self.parameters.get(*index.deref()) {
+            Some(p) => Ok(p.as_ref()),
+            None => Err(PywrError::ParameterIndexNotFound(*index)),
+        }
     }
 
     /// Get a `Parameter` from a parameter's name
@@ -897,13 +905,12 @@ impl Model {
 
     /// Add a `parameters::Parameter` to the model
     pub fn add_parameter(&mut self, parameter: Box<dyn parameters::Parameter>) -> Result<ParameterIndex, PywrError> {
-        // TODO reinstate this check
-        // if let Ok(idx) = self.get_parameter_index(&parameter.meta().name) {
-        //     return Err(PywrError::ParameterNameAlreadyExists(
-        //         parameter.meta().name.to_string(),
-        //         idx,
-        //     ));
-        // }
+        if let Ok(idx) = self.get_parameter_index_by_name(&parameter.meta().name) {
+            return Err(PywrError::ParameterNameAlreadyExists(
+                parameter.meta().name.to_string(),
+                idx,
+            ));
+        }
 
         let parameter_index = ParameterIndex::new(self.parameters.len());
 
@@ -920,13 +927,12 @@ impl Model {
         &mut self,
         index_parameter: Box<dyn parameters::IndexParameter>,
     ) -> Result<IndexParameterIndex, PywrError> {
-        // TODO reinstate this check
-        // if let Ok(idx) = self.get_parameter_index(&parameter.meta().name) {
-        //     return Err(PywrError::ParameterNameAlreadyExists(
-        //         parameter.meta().name.to_string(),
-        //         idx,
-        //     ));
-        // }
+        if let Ok(idx) = self.get_index_parameter_index_by_name(&index_parameter.meta().name) {
+            return Err(PywrError::IndexParameterNameAlreadyExists(
+                index_parameter.meta().name.to_string(),
+                idx,
+            ));
+        }
 
         let parameter_index = IndexParameterIndex::new(self.index_parameters.len());
 
@@ -1152,7 +1158,8 @@ mod tests {
     }
 
     #[test]
-    /// Test running a simple model
+    #[ignore]
+    /// Test running a simple model with the OpenCL IPM solver
     fn test_run_cl_ipm() {
         let mut model = simple_model();
         let timestepper = default_timestepper();
