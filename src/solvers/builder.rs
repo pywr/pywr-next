@@ -1,3 +1,4 @@
+use crate::edge::EdgeIndex;
 use crate::model::Model;
 use crate::node::{Node, NodeType};
 use crate::parameters::FloatValue;
@@ -5,7 +6,9 @@ use crate::solvers::SolverTimings;
 use crate::state::State;
 use crate::timestep::Timestep;
 use crate::PywrError;
-use std::collections::BTreeMap;
+use num::Zero;
+use std::collections::{BTreeMap, HashMap};
+use std::fmt::Debug;
 use std::ops::Deref;
 use std::time::Instant;
 
@@ -69,8 +72,16 @@ where
         self.col_obj_coef.push(obj_coef);
     }
 
+    fn zero_obj_coefficients(&mut self) {
+        self.col_obj_coef.fill(0.0);
+    }
+
     fn set_obj_coefficient(&mut self, col: usize, obj_coef: f64) {
         self.col_obj_coef[col] = obj_coef;
+    }
+
+    fn add_obj_coefficient(&mut self, col: usize, obj_coef: f64) {
+        self.col_obj_coef[col] += obj_coef;
     }
 
     fn set_row_bounds(&mut self, row: usize, lb: f64, ub: f64) {
@@ -96,6 +107,7 @@ where
     }
 }
 
+#[derive(Debug)]
 struct RowBuilder<I> {
     lower: f64,
     upper: f64,
@@ -132,33 +144,94 @@ where
     ///
     /// If the column already exists `value` will be added to the existing coefficient.
     pub fn add_element(&mut self, column: I, value: f64) {
+        if !value.is_finite() {
+            panic!("Row factor is non-finite.");
+        }
         *self.columns.entry(column).or_insert(0.0) += value;
     }
+}
 
-    fn add_node(&mut self, node: &Node, factor: f64) {
-        match node.node_type() {
-            NodeType::Link => {
-                for edge in node.get_outgoing_edges().unwrap() {
-                    self.add_element(I::from(*edge.deref()).unwrap(), factor);
-                }
+/// A helper struct that contains a mapping from column to model `EdgeIndex`
+///
+/// A single column may represent one or more edges in the model due to trivial mass-balance
+/// constraints making their flows equal. This struct helps with construction of the mapping.
+struct ColumnEdgeMap<I> {
+    col_to_edges: Vec<Vec<EdgeIndex>>,
+    edge_to_col: HashMap<EdgeIndex, I>,
+}
+
+impl<I> Default for ColumnEdgeMap<I>
+where
+    I: num::PrimInt,
+{
+    fn default() -> Self {
+        Self {
+            col_to_edges: Vec::default(),
+            edge_to_col: HashMap::default(),
+        }
+    }
+}
+
+impl<I> ColumnEdgeMap<I>
+where
+    I: Copy + num::PrimInt,
+{
+    /// The number of columns in the map
+    fn ncols(&self) -> usize {
+        self.col_to_edges.len()
+    }
+
+    fn col_for_edge(&self, edge_index: &EdgeIndex) -> I {
+        *self
+            .edge_to_col
+            .get(edge_index)
+            .unwrap_or_else(|| panic!("EdgeIndex {:?} not found in column-edge map.", edge_index))
+    }
+
+    /// Add a new column to the map
+    fn add_simple_edge(&mut self, idx: EdgeIndex) {
+        if self.edge_to_col.contains_key(&idx) {
+            // TODO maybe this should be an error?
+            // panic!("Cannot add the same edge index twice.");
+            return;
+        }
+        // Next column id;
+        let col = I::from(self.col_to_edges.len()).unwrap();
+        self.col_to_edges.push(vec![idx]);
+        self.edge_to_col.insert(idx, col);
+    }
+
+    /// Add related columns
+    ///
+    /// `new_idx` should be
+    fn add_equal_edges(&mut self, idx1: EdgeIndex, idx2: EdgeIndex) {
+        let idx1_present = self.edge_to_col.contains_key(&idx1);
+        let idx2_present = self.edge_to_col.contains_key(&idx2);
+
+        match (idx1_present, idx2_present) {
+            (true, true) => {
+                // Both are already present; this should not happen?
             }
-            NodeType::Input => {
-                for edge in node.get_outgoing_edges().unwrap() {
-                    self.add_element(I::from(*edge.deref()).unwrap(), factor);
-                }
+            (false, true) => {
+                // idx1 is not present, but idx2 is
+                // Therefore add idx1 to idx2's column;
+                let col = self.col_for_edge(&idx2);
+                self.col_to_edges[col.to_usize().unwrap()].push(idx1);
+                self.edge_to_col.insert(idx1, col);
             }
-            NodeType::Output => {
-                for edge in node.get_incoming_edges().unwrap() {
-                    self.add_element(I::from(*edge.deref()).unwrap(), factor);
-                }
+            (true, false) => {
+                // idx1 is present, but idx2 is not
+                // Therefore add idx2 to idx1's column;
+                let col = self.col_for_edge(&idx1);
+                self.col_to_edges[col.to_usize().unwrap()].push(idx2);
+                self.edge_to_col.insert(idx2, col);
             }
-            NodeType::Storage => {
-                for edge in node.get_incoming_edges().unwrap() {
-                    self.add_element(I::from(*edge.deref()).unwrap(), factor);
-                }
-                for edge in node.get_outgoing_edges().unwrap() {
-                    self.add_element(I::from(*edge.deref()).unwrap(), -factor);
-                }
+            (false, false) => {
+                // Neither idx is present
+                let col = I::from(self.col_to_edges.len()).unwrap();
+                self.col_to_edges.push(vec![idx1, idx2]);
+                self.edge_to_col.insert(idx1, col);
+                self.edge_to_col.insert(idx2, col);
             }
         }
     }
@@ -166,6 +239,7 @@ where
 
 pub struct SolverBuilder<I> {
     builder: LpBuilder<I>,
+    col_edge_map: ColumnEdgeMap<I>,
     start_node_constraints: Option<I>,
     start_agg_node_constraints: Option<I>,
     start_agg_node_factor_constraints: Option<I>,
@@ -179,6 +253,7 @@ where
     fn default() -> Self {
         Self {
             builder: LpBuilder::default(),
+            col_edge_map: ColumnEdgeMap::default(),
             start_node_constraints: None,
             start_agg_node_constraints: None,
             start_agg_node_factor_constraints: None,
@@ -189,7 +264,7 @@ where
 
 impl<I> SolverBuilder<I>
 where
-    I: num::PrimInt + Default,
+    I: num::PrimInt + Default + Debug,
 {
     pub fn num_rows(&self) -> I {
         I::from(self.builder.row_upper.len()).unwrap()
@@ -239,6 +314,10 @@ where
         &self.builder.elements
     }
 
+    pub fn col_for_edge(&self, edge_index: &EdgeIndex) -> I {
+        self.col_edge_map.col_for_edge(edge_index)
+    }
+
     pub fn create(model: &Model) -> Result<Self, PywrError> {
         let mut builder = Self::default();
         // Create the columns
@@ -255,18 +334,55 @@ where
         // Create virtual storage constraints
         builder.create_virtual_storage_constraints(model);
 
+        // println!("num_rows: {:?}", builder.num_rows());
+        // println!("num_cols: {:?}", builder.num_cols());
+        // println!("num_non_zero: {:?}", builder.num_non_zero());
+        // println!("row_starts: {:?}", builder.row_starts());
+        // println!("columns: {:?}", builder.columns());
+        // println!("elements: {:?}", builder.elements());
+
         Ok(builder)
     }
 
-    /// Create a column for each edge
+    /// Create the columns in the linear program.
+    ///
+    /// Typically each edge will have its own column. However, we use the mass-balance information
+    /// to collapse edges (and their columns) where they are trivially the same. I.e. if there
+    /// is a single incoming edge and outgoing edge at a link node.
     fn create_columns(&mut self, model: &Model) -> Result<(), PywrError> {
         // One column per edge
         let ncols = model.edges.len();
         if ncols < 1 {
             return Err(PywrError::NoEdgesDefined);
         }
+
+        for edge in model.edges.iter() {
+            let edge_index = edge.index();
+            let from_node = model.get_node(&edge.from_node_index)?;
+
+            if let NodeType::Link = from_node.node_type() {
+                // We only look at link nodes; there should be no output nodes as a
+                // "from_node" and input nodes will have no upstream edges
+                let incoming_edges = from_node.get_incoming_edges()?;
+                // NB `edge` should be one of these outgoing edges
+                let outgoing_edges = from_node.get_outgoing_edges()?;
+                assert!(outgoing_edges.contains(&edge_index));
+                if (incoming_edges.len() == 1) && (outgoing_edges.len() == 1) {
+                    // Because of the mass-balance constraint these two edges must be equal to
+                    // one another.
+                    self.col_edge_map.add_equal_edges(edge_index, incoming_edges[0]);
+                } else {
+                    // Otherwise this edge has a more complex relationship with its upstream
+                    self.col_edge_map.add_simple_edge(edge_index);
+                }
+            } else {
+                // Other upstream node types mean the edge is added normally
+                self.col_edge_map.add_simple_edge(edge_index);
+            }
+        }
+
         // Add columns set the columns as x >= 0.0 (i.e. no upper bounds)
-        for _ in 0..ncols {
+        for _ in 0..self.col_edge_map.ncols() {
             self.builder.add_column(0.0, Bounds::Lower(0.0));
         }
 
@@ -284,19 +400,66 @@ where
                 let incoming_edges = node.get_incoming_edges().unwrap();
                 let outgoing_edges = node.get_outgoing_edges().unwrap();
 
-                // TODO check for length >= 1
+                // TODO use Display for the error message
+                if incoming_edges.is_empty() {
+                    panic!("Node {:?} contains no incoming edges 💥", node.full_name())
+                }
+                if outgoing_edges.is_empty() {
+                    panic!("Node {:?} contains no outgoing edges 💥", node.full_name())
+                }
 
                 for edge in incoming_edges {
-                    row.add_element(I::from(*edge.deref()).unwrap(), 1.0);
+                    let column = self.col_for_edge(edge);
+                    row.add_element(column, 1.0);
                 }
                 for edge in outgoing_edges {
-                    row.add_element(I::from(*edge.deref()).unwrap(), -1.0);
+                    let column = self.col_for_edge(edge);
+                    row.add_element(column, -1.0);
                 }
 
-                row.set_upper(0.0);
-                row.set_lower(0.0);
+                if row.columns.is_empty() {
+                    panic!("Row contains no columns!")
+                } else if row.columns.len() == 1 {
+                    // Skip this row because the edges must be mapped to the same column
+                } else {
+                    row.set_upper(0.0);
+                    row.set_lower(0.0);
 
-                self.builder.add_row(row);
+                    self.builder.add_row(row);
+                }
+            }
+        }
+    }
+
+    fn add_node(&mut self, node: &Node, factor: f64, row: &mut RowBuilder<I>) {
+        match node.node_type() {
+            NodeType::Link => {
+                for edge in node.get_outgoing_edges().unwrap() {
+                    let column = self.col_for_edge(edge);
+                    row.add_element(column, factor);
+                }
+            }
+            NodeType::Input => {
+                for edge in node.get_outgoing_edges().unwrap() {
+                    let column = self.col_for_edge(edge);
+                    row.add_element(column, factor);
+                }
+            }
+            NodeType::Output => {
+                for edge in node.get_incoming_edges().unwrap() {
+                    let column = self.col_for_edge(edge);
+                    row.add_element(column, factor);
+                }
+            }
+            NodeType::Storage => {
+                for edge in node.get_incoming_edges().unwrap() {
+                    let column = self.col_for_edge(edge);
+                    row.add_element(column, factor);
+                }
+                for edge in node.get_outgoing_edges().unwrap() {
+                    let column = self.col_for_edge(edge);
+                    row.add_element(column, -factor);
+                }
             }
         }
     }
@@ -312,31 +475,7 @@ where
             // Create empty arrays to store the matrix data
             let mut row: RowBuilder<I> = RowBuilder::default();
 
-            match node.node_type() {
-                NodeType::Link => {
-                    for edge in node.get_outgoing_edges().unwrap() {
-                        row.add_element(I::from(*edge.deref()).unwrap(), 1.0);
-                    }
-                }
-                NodeType::Input => {
-                    for edge in node.get_outgoing_edges().unwrap() {
-                        row.add_element(I::from(*edge.deref()).unwrap(), 1.0);
-                    }
-                }
-                NodeType::Output => {
-                    for edge in node.get_incoming_edges().unwrap() {
-                        row.add_element(I::from(*edge.deref()).unwrap(), 1.0);
-                    }
-                }
-                NodeType::Storage => {
-                    for edge in node.get_incoming_edges().unwrap() {
-                        row.add_element(I::from(*edge.deref()).unwrap(), 1.0);
-                    }
-                    for edge in node.get_outgoing_edges().unwrap() {
-                        row.add_element(I::from(*edge.deref()).unwrap(), -1.0);
-                    }
-                }
-            }
+            self.add_node(node, 1.0, &mut row);
 
             self.builder.add_row(row);
         }
@@ -371,8 +510,12 @@ where
                         _ => panic!("Dynamic float factors not supported!"),
                     };
 
-                    row.add_node(node0, 1.0);
-                    row.add_node(node1, -ff0 / ff1);
+                    if ff0.is_zero() || ff1.is_zero() {
+                        panic!("Aggregated node {:?} contains a zero factor.", agg_node.full_name());
+                    }
+
+                    self.add_node(node0, 1.0, &mut row);
+                    self.add_node(node1, -ff0 / ff1, &mut row);
                     // Make the row fixed at zero RHS
                     row.set_lower(0.0);
                     row.set_upper(0.0);
@@ -398,31 +541,7 @@ where
             for node_index in agg_node.get_nodes() {
                 // TODO error handling?
                 let node = model.nodes.get(&node_index).expect("Node index not found!");
-                match node.node_type() {
-                    NodeType::Link => {
-                        for edge in node.get_outgoing_edges().unwrap() {
-                            row.add_element(I::from(*edge.deref()).unwrap(), 1.0);
-                        }
-                    }
-                    NodeType::Input => {
-                        for edge in node.get_outgoing_edges().unwrap() {
-                            row.add_element(I::from(*edge.deref()).unwrap(), 1.0);
-                        }
-                    }
-                    NodeType::Output => {
-                        for edge in node.get_incoming_edges().unwrap() {
-                            row.add_element(I::from(*edge.deref()).unwrap(), 1.0);
-                        }
-                    }
-                    NodeType::Storage => {
-                        for edge in node.get_incoming_edges().unwrap() {
-                            row.add_element(I::from(*edge.deref()).unwrap(), 1.0);
-                        }
-                        for edge in node.get_outgoing_edges().unwrap() {
-                            row.add_element(I::from(*edge.deref()).unwrap(), -1.0);
-                        }
-                    }
-                }
+                self.add_node(node, 1.0, &mut row);
             }
 
             self.builder.add_row(row);
@@ -441,32 +560,14 @@ where
             if let Some(nodes) = virtual_storage.get_nodes_with_factors() {
                 let mut row: RowBuilder<I> = RowBuilder::default();
                 for (node_index, factor) in nodes {
-                    let node = model.nodes.get(&node_index).expect("Node index not found!");
-                    match node.node_type() {
-                        NodeType::Link => {
-                            for edge in node.get_outgoing_edges().unwrap() {
-                                row.add_element(I::from(*edge.deref()).unwrap(), factor);
-                            }
-                        }
-                        NodeType::Input => {
-                            for edge in node.get_outgoing_edges().unwrap() {
-                                row.add_element(I::from(*edge.deref()).unwrap(), factor);
-                            }
-                        }
-                        NodeType::Output => {
-                            for edge in node.get_incoming_edges().unwrap() {
-                                row.add_element(I::from(*edge.deref()).unwrap(), factor);
-                            }
-                        }
-                        NodeType::Storage => {
-                            for edge in node.get_incoming_edges().unwrap() {
-                                row.add_element(I::from(*edge.deref()).unwrap(), factor);
-                            }
-                            for edge in node.get_outgoing_edges().unwrap() {
-                                row.add_element(I::from(*edge.deref()).unwrap(), -factor);
-                            }
-                        }
+                    if !factor.is_finite() {
+                        panic!(
+                            "Virtual storage node {:?} contains a non-finite factor.",
+                            virtual_storage.full_name()
+                        );
                     }
+                    let node = model.nodes.get(&node_index).expect("Node index not found!");
+                    self.add_node(node, factor, &mut row);
                 }
                 self.builder.add_row(row);
             }
@@ -495,9 +596,12 @@ where
 
     /// Update edge objective coefficients
     fn update_edge_objectives(&mut self, model: &Model, state: &State) -> Result<(), PywrError> {
+        self.builder.zero_obj_coefficients();
         for edge in model.edges.deref() {
-            let cost: f64 = edge.cost(&model.nodes, state)?;
-            self.builder.set_obj_coefficient(*edge.index().deref(), cost);
+            let obj_coef: f64 = edge.cost(&model.nodes, state)?;
+            let col = self.col_for_edge(&edge.index());
+
+            self.builder.add_obj_coefficient(col.to_usize().unwrap(), obj_coef);
         }
         Ok(())
     }

@@ -1,15 +1,12 @@
 use super::builder::SolverBuilder;
 use crate::model::Model;
-use crate::node::NodeType;
 use crate::solvers::{Solver, SolverTimings};
 use crate::state::State;
 use crate::timestep::Timestep;
 use crate::PywrError;
 use clp_sys::*;
 use libc::{c_double, c_int};
-use std::collections::HashMap;
 use std::ffi::CString;
-use std::ops::Deref;
 use std::slice;
 use std::time::Instant;
 use thiserror::Error;
@@ -242,8 +239,9 @@ impl Solver for ClpSolver {
         network_state.reset();
 
         let start_save_solution = Instant::now();
-        for edge in model.edges.deref() {
-            let flow = solution[*edge.index().deref()];
+        for edge in model.edges.iter() {
+            let col = self.builder.col_for_edge(&edge.index()) as usize;
+            let flow = solution[col];
             network_state.add_flow(edge, timestep, flow)?;
         }
         timings.save_solution += start_save_solution.elapsed();

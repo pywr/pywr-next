@@ -1,5 +1,4 @@
 use crate::model::Model;
-use crate::node::NodeType;
 use crate::solvers::builder::SolverBuilder;
 use crate::solvers::{Solver, SolverTimings};
 use crate::state::State;
@@ -11,7 +10,6 @@ use highs_sys::{
     Highs_setBoolOptionValue, Highs_setStringOptionValue, OBJECTIVE_SENSE_MINIMIZE, STATUS_OK,
 };
 use libc::c_void;
-use std::collections::HashMap;
 use std::ffi::CString;
 use std::ops::Deref;
 use std::ptr::null;
@@ -25,7 +23,7 @@ unsafe impl Send for Highs {}
 
 impl Default for Highs {
     fn default() -> Self {
-        let mut model: Highs;
+        let model: Highs;
 
         unsafe {
             let ptr = Highs_create();
@@ -33,7 +31,7 @@ impl Default for Highs {
             let option_name = CString::new("output_flag").unwrap();
             Highs_setBoolOptionValue(ptr, option_name.as_ptr(), 0);
 
-            model.presolve("off");
+            // model.presolve("off");
 
             Highs_changeObjectiveSense(ptr, OBJECTIVE_SENSE_MINIMIZE);
         }
@@ -218,7 +216,8 @@ impl Solver for HighsSolver {
         let start_save_solution = Instant::now();
 
         for edge in model.edges.deref() {
-            let flow = solution[*edge.index().deref()];
+            let col = self.builder.col_for_edge(&edge.index()) as usize;
+            let flow = solution[col];
             network_state.add_flow(edge, timestep, flow)?;
         }
         timings.save_solution += start_save_solution.elapsed();

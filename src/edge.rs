@@ -3,7 +3,7 @@ use crate::state::State;
 use crate::{NodeIndex, PywrError};
 use std::ops::{Deref, DerefMut};
 
-#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Debug)]
+#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Debug, Hash)]
 pub struct EdgeIndex(usize);
 
 impl Deref for EdgeIndex {
