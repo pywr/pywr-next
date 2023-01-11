@@ -18,7 +18,9 @@ jobs:
       with:
         submodules: true
     - name: Install HDF5
-      run: sudo apt-get install libhdf5-dev
+      run: |
+        sudo apt-get update
+        sudo apt-get install libhdf5-dev
     - name: Build
       run: cargo build --verbose
     - name: Run tests
