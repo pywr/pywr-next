@@ -1,5 +1,5 @@
 use crate::model::Model;
-use crate::solvers::builder::SolverBuilder;
+use crate::solvers::builder::{BuiltSolver, SolverBuilder};
 use crate::solvers::{Solver, SolverTimings};
 use crate::state::State;
 use crate::timestep::Timestep;
@@ -150,38 +150,35 @@ impl Highs {
 }
 
 pub struct HighsSolver {
-    builder: SolverBuilder<HighsInt>,
+    builder: BuiltSolver<HighsInt>,
     highs: Highs,
 }
 
 impl Solver for HighsSolver {
     fn setup(model: &Model) -> Result<Box<Self>, PywrError> {
-        let builder = SolverBuilder::create(model)?;
-        let num_cols = builder.num_cols();
-        let num_rows = builder.num_rows();
-        let num_nz = builder.num_non_zero();
+        let builder: SolverBuilder<HighsInt> = SolverBuilder::default();
+        let built = builder.create(model)?;
+
+        let num_cols = built.num_cols();
+        let num_rows = built.num_rows();
+        let num_nz = built.num_non_zero();
 
         let mut highs_lp = Highs::default();
 
-        highs_lp.add_cols(
-            builder.col_lower(),
-            builder.col_upper(),
-            builder.col_obj_coef(),
-            num_cols,
-        );
+        highs_lp.add_cols(built.col_lower(), built.col_upper(), built.col_obj_coef(), num_cols);
 
         highs_lp.add_rows(
             num_rows,
-            builder.row_lower(),
-            builder.row_upper(),
+            built.row_lower(),
+            built.row_upper(),
             num_nz,
-            builder.row_starts(),
-            builder.columns(),
-            builder.elements(),
+            built.row_starts(),
+            built.columns(),
+            built.elements(),
         );
 
         Ok(Box::new(Self {
-            builder,
+            builder: built,
             highs: highs_lp,
         }))
     }
@@ -216,7 +213,7 @@ impl Solver for HighsSolver {
         let start_save_solution = Instant::now();
 
         for edge in model.edges.deref() {
-            let col = self.builder.col_for_edge(&edge.index()) as usize;
+            let col = self.builder.col_for_edge(edge.index()) as usize;
             let flow = solution[col];
             network_state.add_flow(edge, timestep, flow)?;
         }

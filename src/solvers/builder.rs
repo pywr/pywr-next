@@ -7,12 +7,13 @@ use crate::state::State;
 use crate::timestep::Timestep;
 use crate::PywrError;
 use num::Zero;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::ops::Deref;
 use std::time::Instant;
 
 const FMAX: f64 = f64::MAX;
+const FMIN: f64 = f64::MIN;
 
 #[derive(Debug)]
 enum Bounds {
@@ -23,7 +24,11 @@ enum Bounds {
     Fixed(f64),
 }
 
-struct LpBuilder<I> {
+/// Sparse form of a linear program.
+///
+/// This struct is intended to facilitate passing the LP data to a external library. Most
+/// libraries accept LP construct in sparse form.
+struct Lp<I> {
     col_lower: Vec<f64>,
     col_upper: Vec<f64>,
     col_obj_coef: Vec<f64>,
@@ -35,6 +40,57 @@ struct LpBuilder<I> {
     elements: Vec<f64>,
 }
 
+impl<I> Lp<I>
+where
+    I: num::PrimInt,
+{
+    /// Zero all objective coefficients.
+    fn zero_obj_coefficients(&mut self) {
+        self.col_obj_coef.fill(0.0);
+    }
+
+    /// Increment the given column's objective coefficient.
+    fn add_obj_coefficient(&mut self, col: usize, obj_coef: f64) {
+        self.col_obj_coef[col] += obj_coef;
+    }
+
+    /// Reset the row bounds to `FMIN` and `FMAX` for all rows with a mask.
+    fn reset_row_bounds(&mut self) {
+        for ((mask, lb), ub) in self
+            .row_mask
+            .iter()
+            .zip(self.row_lower.iter_mut())
+            .zip(self.row_upper.iter_mut())
+        {
+            if mask == &I::one() {
+                *lb = FMIN;
+                *ub = FMAX;
+            }
+        }
+    }
+
+    /// Apply new bounds to the given. If the bounds are tighter than the current bounds
+    /// then the bounds are updated. If the bounds are looser than the current bounds then they
+    /// are ignored.
+    fn apply_row_bounds(&mut self, row: usize, lb: f64, ub: f64) {
+        self.row_lower[row] = self.row_lower[row].max(lb);
+        self.row_upper[row] = self.row_upper[row].min(ub);
+    }
+}
+
+/// Helper struct for constructing a `LP<I>`
+///
+/// The builder facilitates constructing a linear programme one row at a time. Rows are divided
+/// between variable and fixed types. In the generated `LP<I>` the user is able to modify the
+/// variable rows, but not the fixed rows.
+struct LpBuilder<I> {
+    col_lower: Vec<f64>,
+    col_upper: Vec<f64>,
+    col_obj_coef: Vec<f64>,
+    rows: Vec<RowBuilder<I>>,
+    fixed_rows: Vec<RowBuilder<I>>,
+}
+
 impl<I> Default for LpBuilder<I>
 where
     I: num::PrimInt,
@@ -44,12 +100,8 @@ where
             col_lower: Vec::new(),
             col_upper: Vec::new(),
             col_obj_coef: Vec::new(),
-            row_lower: Vec::new(),
-            row_upper: Vec::new(),
-            row_mask: Vec::new(),
-            row_starts: vec![I::zero()],
-            columns: Vec::new(),
-            elements: Vec::new(),
+            rows: Vec::new(),
+            fixed_rows: Vec::new(),
         }
     }
 }
@@ -72,42 +124,81 @@ where
         self.col_obj_coef.push(obj_coef);
     }
 
-    fn zero_obj_coefficients(&mut self) {
-        self.col_obj_coef.fill(0.0);
+    /// Add a fixed row to the LP.
+    ///
+    /// This row is always added to the end of the LP, and does not return its row number
+    /// because it should not be changed again.
+    fn add_fixed_row(&mut self, row: RowBuilder<I>) {
+        self.fixed_rows.push(row);
     }
 
-    fn set_obj_coefficient(&mut self, col: usize, obj_coef: f64) {
-        self.col_obj_coef[col] = obj_coef;
-    }
-
-    fn add_obj_coefficient(&mut self, col: usize, obj_coef: f64) {
-        self.col_obj_coef[col] += obj_coef;
-    }
-
-    fn set_row_bounds(&mut self, row: usize, lb: f64, ub: f64) {
-        self.row_lower[row] = lb;
-        self.row_upper[row] = ub.min(FMAX);
-    }
-
-    fn add_row(&mut self, row: RowBuilder<I>) {
-        self.row_lower.push(row.lower);
-        self.row_upper.push(row.upper);
-        self.row_mask.push(I::one());
-        let prev_row_start = *self.row_starts.get(&self.row_starts.len() - 1).unwrap();
-        self.row_starts
-            .push(prev_row_start + I::from(row.columns.len()).unwrap());
-        for (column, value) in row.columns {
-            self.columns.push(column);
-            self.elements.push(value);
+    /// Add a row to the LP or return an existing row number if the same row already exists.
+    fn add_variable_row(&mut self, row: RowBuilder<I>) -> I {
+        match self.rows.iter().position(|r| r == &row) {
+            Some(row_id) => I::from(row_id).unwrap(),
+            None => {
+                // No row found, add a new one
+                let row_id = self.num_variable_rows();
+                self.rows.push(row);
+                row_id
+            }
         }
     }
 
-    fn num_rows(&self) -> I {
-        I::from(self.row_upper.len()).unwrap()
+    /// Return the number of variable rows
+    fn num_variable_rows(&self) -> I {
+        I::from(self.rows.len()).unwrap()
+    }
+
+    /// Return the number of fixed rows
+    fn num_fixed_rows(&self) -> I {
+        I::from(self.fixed_rows.len()).unwrap()
+    }
+
+    /// Build the LP into a final sparse form
+    fn build(self) -> Lp<I> {
+        let nrows = self.rows.len();
+        let mut row_lower = Vec::with_capacity(nrows);
+        let mut row_upper = Vec::with_capacity(nrows);
+        let mut row_mask = Vec::with_capacity(nrows);
+        let mut row_starts = vec![I::zero()];
+
+        // These capacities are not big enough, but difficult to estimate the size
+        // `nrows` is the minimum size.
+        let mut columns = Vec::with_capacity(nrows);
+        let mut elements = Vec::with_capacity(nrows);
+
+        // Construct the sparse matrix from the rows; variable rows first
+        // The mask marks the fixed rows as not requiring an update.
+        for (rows, mask) in [(self.rows, I::one()), (self.fixed_rows, I::zero())] {
+            for row in rows {
+                row_lower.push(row.lower);
+                row_upper.push(row.upper);
+                row_mask.push(mask);
+                let prev_row_start = *row_starts.get(&row_starts.len() - 1).unwrap();
+                row_starts.push(prev_row_start + I::from(row.columns.len()).unwrap());
+                for (column, value) in row.columns {
+                    columns.push(column);
+                    elements.push(value);
+                }
+            }
+        }
+
+        Lp {
+            col_lower: self.col_lower,
+            col_upper: self.col_upper,
+            col_obj_coef: self.col_obj_coef,
+            row_lower,
+            row_upper,
+            row_mask,
+            row_starts,
+            columns,
+            elements,
+        }
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 struct RowBuilder<I> {
     lower: f64,
     upper: f64,
@@ -151,31 +242,62 @@ where
     }
 }
 
-/// A helper struct that contains a mapping from column to model `EdgeIndex`
-///
-/// A single column may represent one or more edges in the model due to trivial mass-balance
-/// constraints making their flows equal. This struct helps with construction of the mapping.
 struct ColumnEdgeMap<I> {
     col_to_edges: Vec<Vec<EdgeIndex>>,
-    edge_to_col: HashMap<EdgeIndex, I>,
-}
-
-impl<I> Default for ColumnEdgeMap<I>
-where
-    I: num::PrimInt,
-{
-    fn default() -> Self {
-        Self {
-            col_to_edges: Vec::default(),
-            edge_to_col: HashMap::default(),
-        }
-    }
+    edge_to_col: Vec<I>,
 }
 
 impl<I> ColumnEdgeMap<I>
 where
     I: Copy + num::PrimInt,
 {
+    fn col_for_edge(&self, edge_index: EdgeIndex) -> I {
+        *self
+            .edge_to_col
+            .get(*edge_index.deref())
+            .unwrap_or_else(|| panic!("EdgeIndex {:?} not found in column-edge map.", edge_index))
+    }
+}
+
+/// A helper struct that contains a mapping from column to model `EdgeIndex`
+///
+/// A single column may represent one or more edges in the model due to trivial mass-balance
+/// constraints making their flows equal. This struct helps with construction of the mapping.
+struct ColumnEdgeMapBuilder<I> {
+    col_to_edges: Vec<Vec<EdgeIndex>>,
+    edge_to_col: BTreeMap<EdgeIndex, I>,
+}
+
+impl<I> Default for ColumnEdgeMapBuilder<I>
+where
+    I: num::PrimInt,
+{
+    fn default() -> Self {
+        Self {
+            col_to_edges: Vec::default(),
+            edge_to_col: BTreeMap::default(),
+        }
+    }
+}
+
+impl<I> ColumnEdgeMapBuilder<I>
+where
+    I: Copy + num::PrimInt,
+{
+    fn build(self) -> ColumnEdgeMap<I> {
+        // Convert the hashmap to vector
+        // There should be an entry for every index
+        assert_eq!(
+            *self.edge_to_col.keys().last().unwrap().deref(),
+            self.edge_to_col.len() - 1
+        );
+
+        ColumnEdgeMap {
+            col_to_edges: self.col_to_edges,
+            edge_to_col: self.edge_to_col.into_values().collect(),
+        }
+    }
+
     /// The number of columns in the map
     fn ncols(&self) -> usize {
         self.col_to_edges.len()
@@ -237,32 +359,15 @@ where
     }
 }
 
-pub struct SolverBuilder<I> {
-    builder: LpBuilder<I>,
+pub struct BuiltSolver<I> {
+    builder: Lp<I>,
     col_edge_map: ColumnEdgeMap<I>,
-    start_node_constraints: Option<I>,
-    start_agg_node_constraints: Option<I>,
-    start_agg_node_factor_constraints: Option<I>,
-    start_virtual_storage_constraints: Option<I>,
+    node_constraints_row_ids: Vec<usize>,
+    agg_node_constraint_row_ids: Vec<usize>,
+    start_virtual_storage_constraints: I,
 }
 
-impl<I> Default for SolverBuilder<I>
-where
-    I: num::PrimInt,
-{
-    fn default() -> Self {
-        Self {
-            builder: LpBuilder::default(),
-            col_edge_map: ColumnEdgeMap::default(),
-            start_node_constraints: None,
-            start_agg_node_constraints: None,
-            start_agg_node_factor_constraints: None,
-            start_virtual_storage_constraints: None,
-        }
-    }
-}
-
-impl<I> SolverBuilder<I>
+impl<I> BuiltSolver<I>
 where
     I: num::PrimInt + Default + Debug,
 {
@@ -314,34 +419,134 @@ where
         &self.builder.elements
     }
 
+    pub fn col_for_edge(&self, edge_index: EdgeIndex) -> I {
+        self.col_edge_map.col_for_edge(edge_index)
+    }
+
+    pub fn update(
+        &mut self,
+        model: &Model,
+        timestep: &Timestep,
+        state: &State,
+        timings: &mut SolverTimings,
+    ) -> Result<(), PywrError> {
+        let start_objective_update = Instant::now();
+        self.update_edge_objectives(model, state)?;
+        timings.update_objective += start_objective_update.elapsed();
+
+        let start_constraint_update = Instant::now();
+        // Reset the row bounds
+        self.builder.reset_row_bounds();
+        // Then these methods will add their bounds
+        self.update_node_constraint_bounds(model, timestep, state)?;
+        self.update_aggregated_node_constraint_bounds(model, state)?;
+        timings.update_constraints += start_constraint_update.elapsed();
+
+        Ok(())
+    }
+
+    /// Update edge objective coefficients
+    fn update_edge_objectives(&mut self, model: &Model, state: &State) -> Result<(), PywrError> {
+        self.builder.zero_obj_coefficients();
+        for edge in model.edges.deref() {
+            let obj_coef: f64 = edge.cost(&model.nodes, state)?;
+            let col = self.col_for_edge(edge.index());
+
+            self.builder.add_obj_coefficient(col.to_usize().unwrap(), obj_coef);
+        }
+        Ok(())
+    }
+
+    /// Update node constraints
+    fn update_node_constraint_bounds(
+        &mut self,
+        model: &Model,
+        timestep: &Timestep,
+        state: &State,
+    ) -> Result<(), PywrError> {
+        for (row_id, node) in self.node_constraints_row_ids.iter().zip(model.nodes.deref()) {
+            let (lb, ub): (f64, f64) = match node.get_current_flow_bounds(state) {
+                Ok(bnds) => bnds,
+                Err(PywrError::FlowConstraintsUndefined) => {
+                    // Must be a storage node
+                    let (avail, missing) = match node.get_current_available_volume_bounds(state) {
+                        Ok(bnds) => bnds,
+                        Err(e) => return Err(e),
+                    };
+                    let dt = timestep.days();
+                    (-avail / dt, missing / dt)
+                }
+                Err(e) => return Err(e),
+            };
+
+            self.builder.apply_row_bounds(*row_id, lb, ub);
+        }
+
+        Ok(())
+    }
+
+    /// Update aggregated node constraints
+    fn update_aggregated_node_constraint_bounds(&mut self, model: &Model, state: &State) -> Result<(), PywrError> {
+        for (row_id, agg_node) in self
+            .agg_node_constraint_row_ids
+            .iter()
+            .zip(model.aggregated_nodes.deref())
+        {
+            let (lb, ub): (f64, f64) = agg_node.get_current_flow_bounds(state)?;
+            self.builder.apply_row_bounds(*row_id, lb, ub);
+        }
+
+        Ok(())
+    }
+}
+
+pub struct SolverBuilder<I> {
+    builder: LpBuilder<I>,
+    col_edge_map: ColumnEdgeMapBuilder<I>,
+}
+
+impl<I> Default for SolverBuilder<I>
+where
+    I: num::PrimInt,
+{
+    fn default() -> Self {
+        Self {
+            builder: LpBuilder::default(),
+            col_edge_map: ColumnEdgeMapBuilder::default(),
+        }
+    }
+}
+
+impl<I> SolverBuilder<I>
+where
+    I: num::PrimInt + Default + Debug,
+{
     pub fn col_for_edge(&self, edge_index: &EdgeIndex) -> I {
         self.col_edge_map.col_for_edge(edge_index)
     }
 
-    pub fn create(model: &Model) -> Result<Self, PywrError> {
-        let mut builder = Self::default();
+    pub fn create(mut self, model: &Model) -> Result<BuiltSolver<I>, PywrError> {
         // Create the columns
-        builder.create_columns(model)?;
+        self.create_columns(model)?;
 
         // Create edge mass balance constraints
-        builder.create_mass_balance_constraints(model);
+        self.create_mass_balance_constraints(model);
         // Create the nodal constraints
-        builder.create_node_constraints(model);
+        let node_constraints_row_ids = self.create_node_constraints(model);
         // Create the aggregated node constraints
-        builder.create_aggregated_node_constraints(model);
+        let agg_node_constraint_row_ids = self.create_aggregated_node_constraints(model);
         // Create the aggregated node factor constraints
-        builder.create_aggregated_node_factor_constraints(model);
+        self.create_aggregated_node_factor_constraints(model);
         // Create virtual storage constraints
-        builder.create_virtual_storage_constraints(model);
+        // let start_virtual_storage_constraints = self.create_virtual_storage_constraints(model);
 
-        // println!("num_rows: {:?}", builder.num_rows());
-        // println!("num_cols: {:?}", builder.num_cols());
-        // println!("num_non_zero: {:?}", builder.num_non_zero());
-        // println!("row_starts: {:?}", builder.row_starts());
-        // println!("columns: {:?}", builder.columns());
-        // println!("elements: {:?}", builder.elements());
-
-        Ok(builder)
+        Ok(BuiltSolver {
+            builder: self.builder.build(),
+            col_edge_map: self.col_edge_map.build(),
+            node_constraints_row_ids,
+            agg_node_constraint_row_ids,
+            start_virtual_storage_constraints: I::zero(),
+        })
     }
 
     /// Create the columns in the linear program.
@@ -425,7 +630,7 @@ where
                     row.set_upper(0.0);
                     row.set_lower(0.0);
 
-                    self.builder.add_row(row);
+                    self.builder.add_fixed_row(row);
                 }
             }
         }
@@ -467,9 +672,9 @@ where
     /// Create node constraints
     ///
     /// One constraint is created per node to enforce any constraints (flow or storage)
-    /// that it may define.
-    fn create_node_constraints(&mut self, model: &Model) {
-        let start_row = self.builder.num_rows();
+    /// that it may define. Returns the row_ids associated with each constraint.
+    fn create_node_constraints(&mut self, model: &Model) -> Vec<usize> {
+        let mut row_ids = Vec::with_capacity(model.nodes.len());
 
         for node in model.nodes.deref() {
             // Create empty arrays to store the matrix data
@@ -477,17 +682,16 @@ where
 
             self.add_node(node, 1.0, &mut row);
 
-            self.builder.add_row(row);
+            let row_id = self.builder.add_variable_row(row);
+            row_ids.push(row_id.to_usize().unwrap())
         }
-        self.start_node_constraints = Some(start_row);
+        row_ids
     }
 
     /// Create aggregated node factor constraints
     ///
-    /// One constraint is created per node to enforce any factor constraints
+    /// One constraint is created per node to enforce any factor constraints.
     fn create_aggregated_node_factor_constraints(&mut self, model: &Model) {
-        let start_row = self.builder.num_rows();
-
         for agg_node in model.aggregated_nodes.deref() {
             // Only create row for nodes that have factors
             if let Some(factor_pairs) = agg_node.get_norm_factor_pairs() {
@@ -520,19 +724,19 @@ where
                     row.set_lower(0.0);
                     row.set_upper(0.0);
 
-                    self.builder.add_row(row);
+                    self.builder.add_fixed_row(row);
                 }
             }
         }
-        self.start_agg_node_factor_constraints = Some(start_row);
     }
 
     /// Create aggregated node constraints
     ///
     /// One constraint is created per node to enforce any constraints (flow or storage)
-    /// that it may define.
-    fn create_aggregated_node_constraints(&mut self, model: &Model) {
-        let start_row = self.builder.num_rows();
+    /// that it may define. Returns the row ids associated with each aggregated node constraint.
+    /// Panics if the model contains aggregated nodes with broken references to nodes.
+    fn create_aggregated_node_constraints(&mut self, model: &Model) -> Vec<usize> {
+        let mut row_ids = Vec::with_capacity(model.aggregated_nodes.len());
 
         for agg_node in model.aggregated_nodes.deref() {
             // Create empty arrays to store the matrix data
@@ -544,15 +748,16 @@ where
                 self.add_node(node, 1.0, &mut row);
             }
 
-            self.builder.add_row(row);
+            let row_id = self.builder.add_variable_row(row);
+            row_ids.push(row_id.to_usize().unwrap())
         }
-        self.start_agg_node_constraints = Some(start_row);
+        row_ids
     }
 
     /// Create virtual storage node constraints
     ///
-    fn create_virtual_storage_constraints(&mut self, model: &Model) {
-        let start_row = self.builder.num_rows();
+    fn create_virtual_storage_constraints(&mut self, model: &Model) -> I {
+        let start_row = self.builder.num_variable_rows();
 
         for virtual_storage in model.virtual_storage_nodes.deref() {
             // Create empty arrays to store the matrix data
@@ -569,91 +774,10 @@ where
                     let node = model.nodes.get(&node_index).expect("Node index not found!");
                     self.add_node(node, factor, &mut row);
                 }
-                self.builder.add_row(row);
+                self.builder.add_variable_row(row);
             }
         }
-        self.start_virtual_storage_constraints = Some(start_row);
-    }
-
-    pub fn update(
-        &mut self,
-        model: &Model,
-        timestep: &Timestep,
-        state: &State,
-        timings: &mut SolverTimings,
-    ) -> Result<(), PywrError> {
-        let start_objective_update = Instant::now();
-        self.update_edge_objectives(model, state)?;
-        timings.update_objective += start_objective_update.elapsed();
-
-        let start_constraint_update = Instant::now();
-        self.update_node_constraint_bounds(model, timestep, state)?;
-        self.update_aggregated_node_constraint_bounds(model, state)?;
-        timings.update_constraints += start_constraint_update.elapsed();
-
-        Ok(())
-    }
-
-    /// Update edge objective coefficients
-    fn update_edge_objectives(&mut self, model: &Model, state: &State) -> Result<(), PywrError> {
-        self.builder.zero_obj_coefficients();
-        for edge in model.edges.deref() {
-            let obj_coef: f64 = edge.cost(&model.nodes, state)?;
-            let col = self.col_for_edge(&edge.index());
-
-            self.builder.add_obj_coefficient(col.to_usize().unwrap(), obj_coef);
-        }
-        Ok(())
-    }
-
-    /// Update node constraints
-    fn update_node_constraint_bounds(
-        &mut self,
-        model: &Model,
-        timestep: &Timestep,
-        state: &State,
-    ) -> Result<(), PywrError> {
-        let start_row = match self.start_node_constraints {
-            Some(r) => r,
-            None => return Err(PywrError::SolverNotSetup),
-        };
-
-        for node in model.nodes.deref() {
-            let (lb, ub): (f64, f64) = match node.get_current_flow_bounds(state) {
-                Ok(bnds) => bnds,
-                Err(PywrError::FlowConstraintsUndefined) => {
-                    // Must be a storage node
-                    let (avail, missing) = match node.get_current_available_volume_bounds(state) {
-                        Ok(bnds) => bnds,
-                        Err(e) => return Err(e),
-                    };
-                    let dt = timestep.days();
-                    (-avail / dt, missing / dt)
-                }
-                Err(e) => return Err(e),
-            };
-
-            self.builder
-                .set_row_bounds(start_row.to_usize().unwrap() + *node.index(), lb, ub);
-        }
-
-        Ok(())
-    }
-
-    /// Update aggregated node constraints
-    fn update_aggregated_node_constraint_bounds(&mut self, model: &Model, state: &State) -> Result<(), PywrError> {
-        let start_row = match self.start_agg_node_constraints {
-            Some(r) => r,
-            None => return Err(PywrError::SolverNotSetup),
-        };
-
-        for agg_node in model.aggregated_nodes.deref() {
-            let (lb, ub): (f64, f64) = agg_node.get_current_flow_bounds(state)?;
-            self.builder
-                .set_row_bounds(start_row.to_usize().unwrap() + *agg_node.index(), lb, ub);
-        }
-
-        Ok(())
+        start_row
     }
 }
 
@@ -674,7 +798,7 @@ mod tests {
         row.add_element(1, 1.0);
         row.set_lower(0.0);
         row.set_upper(2.0);
-        builder.add_row(row);
+        builder.add_variable_row(row);
     }
 
     #[test]
@@ -692,7 +816,7 @@ mod tests {
         row.add_element(2, 1.0);
         row.set_lower(f64::MIN);
         row.set_upper(10.0);
-        builder.add_row(row);
+        builder.add_variable_row(row);
 
         // Row2
         let mut row = RowBuilder::default();
@@ -701,15 +825,17 @@ mod tests {
         row.add_element(2, 3.0);
         row.set_lower(f64::MIN);
         row.set_upper(15.0);
-        builder.add_row(row);
+        builder.add_variable_row(row);
 
-        assert_eq!(builder.row_upper, vec![10.0, 15.0]);
-        assert_eq!(builder.row_lower, vec![f64::MIN, f64::MIN]);
-        assert_eq!(builder.col_lower, vec![0.0, 0.0, 0.0]);
-        assert_eq!(builder.col_upper, vec![f64::MAX, f64::MAX, f64::MAX]);
-        assert_eq!(builder.col_obj_coef, vec![-2.0, -3.0, -4.0]);
-        assert_eq!(builder.row_starts, vec![0, 3, 6]);
-        assert_eq!(builder.columns, vec![0, 1, 2, 0, 1, 2]);
-        assert_eq!(builder.elements, vec![3.0, 2.0, 1.0, 2.0, 5.0, 3.0]);
+        let lp = builder.build();
+
+        assert_eq!(lp.row_upper, vec![10.0, 15.0]);
+        assert_eq!(lp.row_lower, vec![f64::MIN, f64::MIN]);
+        assert_eq!(lp.col_lower, vec![0.0, 0.0, 0.0]);
+        assert_eq!(lp.col_upper, vec![f64::MAX, f64::MAX, f64::MAX]);
+        assert_eq!(lp.col_obj_coef, vec![-2.0, -3.0, -4.0]);
+        assert_eq!(lp.row_starts, vec![0, 3, 6]);
+        assert_eq!(lp.columns, vec![0, 1, 2, 0, 1, 2]);
+        assert_eq!(lp.elements, vec![3.0, 2.0, 1.0, 2.0, 5.0, 3.0]);
     }
 }
