@@ -364,7 +364,7 @@ pub struct BuiltSolver<I> {
     col_edge_map: ColumnEdgeMap<I>,
     node_constraints_row_ids: Vec<usize>,
     agg_node_constraint_row_ids: Vec<usize>,
-    start_virtual_storage_constraints: I,
+    virtual_storage_constraint_row_ids: Vec<usize>,
 }
 
 impl<I> BuiltSolver<I>
@@ -440,6 +440,7 @@ where
         // Then these methods will add their bounds
         self.update_node_constraint_bounds(model, timestep, state)?;
         self.update_aggregated_node_constraint_bounds(model, state)?;
+        self.update_virtual_storage_node_constraint_bounds(model, timestep, state)?;
         timings.update_constraints += start_constraint_update.elapsed();
 
         Ok(())
@@ -464,6 +465,8 @@ where
         timestep: &Timestep,
         state: &State,
     ) -> Result<(), PywrError> {
+        let dt = timestep.days();
+
         for (row_id, node) in self.node_constraints_row_ids.iter().zip(model.nodes.deref()) {
             let (lb, ub): (f64, f64) = match node.get_current_flow_bounds(state) {
                 Ok(bnds) => bnds,
@@ -473,7 +476,7 @@ where
                         Ok(bnds) => bnds,
                         Err(e) => return Err(e),
                     };
-                    let dt = timestep.days();
+
                     (-avail / dt, missing / dt)
                 }
                 Err(e) => return Err(e),
@@ -493,6 +496,31 @@ where
             .zip(model.aggregated_nodes.deref())
         {
             let (lb, ub): (f64, f64) = agg_node.get_current_flow_bounds(state)?;
+            self.builder.apply_row_bounds(*row_id, lb, ub);
+        }
+
+        Ok(())
+    }
+
+    fn update_virtual_storage_node_constraint_bounds(
+        &mut self,
+        model: &Model,
+        timestep: &Timestep,
+        state: &State,
+    ) -> Result<(), PywrError> {
+        let dt = timestep.days();
+
+        for (row_id, node) in self
+            .virtual_storage_constraint_row_ids
+            .iter()
+            .zip(model.virtual_storage_nodes.deref())
+        {
+            let (avail, missing) = match node.get_current_available_volume_bounds(state) {
+                Ok(bnds) => bnds,
+                Err(e) => return Err(e),
+            };
+
+            let (lb, ub) = (-avail / dt, missing / dt);
             self.builder.apply_row_bounds(*row_id, lb, ub);
         }
 
@@ -538,14 +566,14 @@ where
         // Create the aggregated node factor constraints
         self.create_aggregated_node_factor_constraints(model);
         // Create virtual storage constraints
-        // let start_virtual_storage_constraints = self.create_virtual_storage_constraints(model);
+        let virtual_storage_constraint_row_ids = self.create_virtual_storage_constraints(model);
 
         Ok(BuiltSolver {
             builder: self.builder.build(),
             col_edge_map: self.col_edge_map.build(),
             node_constraints_row_ids,
             agg_node_constraint_row_ids,
-            start_virtual_storage_constraints: I::zero(),
+            virtual_storage_constraint_row_ids,
         })
     }
 
@@ -756,8 +784,8 @@ where
 
     /// Create virtual storage node constraints
     ///
-    fn create_virtual_storage_constraints(&mut self, model: &Model) -> I {
-        let start_row = self.builder.num_variable_rows();
+    fn create_virtual_storage_constraints(&mut self, model: &Model) -> Vec<usize> {
+        let mut row_ids = Vec::with_capacity(model.virtual_storage_nodes.len());
 
         for virtual_storage in model.virtual_storage_nodes.deref() {
             // Create empty arrays to store the matrix data
@@ -772,12 +800,13 @@ where
                         );
                     }
                     let node = model.nodes.get(&node_index).expect("Node index not found!");
-                    self.add_node(node, factor, &mut row);
+                    self.add_node(node, -factor, &mut row);
                 }
-                self.builder.add_variable_row(row);
+                let row_id = self.builder.add_variable_row(row);
+                row_ids.push(row_id.to_usize().unwrap());
             }
         }
-        start_row
+        row_ids
     }
 }
 

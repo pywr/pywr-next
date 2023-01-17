@@ -68,50 +68,35 @@ impl IndexParameter for AggregatedIndexParameter {
             AggIndexFunc::Sum => {
                 let mut total = 0;
                 for p in &self.values {
-                    total += match p {
-                        IndexValue::Constant(v) => *v,
-                        IndexValue::Dynamic(p) => state.get_parameter_index(*p)?,
-                    };
+                    total += p.get_index(state)?;
                 }
                 total
             }
             AggIndexFunc::Max => {
                 let mut total = usize::MIN;
                 for p in &self.values {
-                    total = total.max(match p {
-                        IndexValue::Constant(v) => *v,
-                        IndexValue::Dynamic(p) => state.get_parameter_index(*p)?,
-                    });
+                    total = total.max(p.get_index(state)?);
                 }
                 total
             }
             AggIndexFunc::Min => {
                 let mut total = usize::MAX;
                 for p in &self.values {
-                    total = total.min(match p {
-                        IndexValue::Constant(v) => *v,
-                        IndexValue::Dynamic(p) => state.get_parameter_index(*p)?,
-                    });
+                    total = total.min(p.get_index(state)?);
                 }
                 total
             }
             AggIndexFunc::Product => {
                 let mut total = 1;
                 for p in &self.values {
-                    total *= match p {
-                        IndexValue::Constant(v) => *v,
-                        IndexValue::Dynamic(p) => state.get_parameter_index(*p)?,
-                    };
+                    total *= p.get_index(state)?;
                 }
                 total
             }
             AggIndexFunc::Any => {
                 let mut any = 0;
                 for p in &self.values {
-                    let value = match p {
-                        IndexValue::Constant(v) => *v,
-                        IndexValue::Dynamic(p) => state.get_parameter_index(*p)?,
-                    };
+                    let value = p.get_index(state)?;
 
                     if value > 0 {
                         any = 1;
@@ -123,10 +108,7 @@ impl IndexParameter for AggregatedIndexParameter {
             AggIndexFunc::All => {
                 let mut all = 1;
                 for p in &self.values {
-                    let value = match p {
-                        IndexValue::Constant(v) => *v,
-                        IndexValue::Dynamic(p) => state.get_parameter_index(*p)?,
-                    };
+                    let value = p.get_index(state)?;
 
                     if value == 0 {
                         all = 0;

@@ -438,7 +438,7 @@ pub struct LoadedTableCollection {
 }
 
 impl LoadedTableCollection {
-    pub fn from_schema(table_defs: &Option<Vec<DataTable>>, data_path: Option<&Path>) -> Result<Self, TableError> {
+    pub fn from_schema(table_defs: Option<&[DataTable]>, data_path: Option<&Path>) -> Result<Self, TableError> {
         let mut tables = HashMap::new();
         if let Some(table_defs) = table_defs {
             for table_def in table_defs {

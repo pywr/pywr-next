@@ -164,10 +164,28 @@ pub enum FloatValue {
     Dynamic(ParameterIndex),
 }
 
+impl FloatValue {
+    pub fn get_value(&self, state: &State) -> Result<f64, PywrError> {
+        match self {
+            Self::Constant(v) => Ok(*v),
+            Self::Dynamic(p) => state.get_parameter_value(*p),
+        }
+    }
+}
+
 #[derive(Copy, Clone)]
 pub enum IndexValue {
     Constant(usize),
     Dynamic(IndexParameterIndex),
+}
+
+impl IndexValue {
+    pub fn get_index(&self, state: &State) -> Result<usize, PywrError> {
+        match self {
+            Self::Constant(v) => Ok(*v),
+            Self::Dynamic(p) => state.get_parameter_index(*p),
+        }
+    }
 }
 
 pub enum ParameterType {

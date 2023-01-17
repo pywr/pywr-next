@@ -5,6 +5,7 @@ mod core;
 mod indexed_array;
 mod polynomial;
 mod profiles;
+mod python;
 mod tables;
 mod thresholds;
 
@@ -23,6 +24,7 @@ use super::parameters::thresholds::ParameterThresholdParameter;
 
 use crate::parameters::{FloatValue, IndexValue, ParameterType};
 use crate::schema::data_tables::{LoadedTableCollection, TableDataRef};
+use crate::schema::parameters::python::PythonParameter;
 use crate::{IndexParameterIndex, ParameterIndex, PywrError};
 use pywr_schema::parameters::{
     CoreParameter, ExternalDataRef as ExternalDataRefV1, Parameter as ParameterV1, ParameterMeta as ParameterMetaV1,
@@ -130,6 +132,7 @@ pub enum Parameter {
     Polynomial1D(Polynomial1DParameter),
     ParameterThreshold(ParameterThresholdParameter),
     TablesArray(TablesArrayParameter),
+    Python(PythonParameter),
 }
 
 impl Parameter {
@@ -152,6 +155,7 @@ impl Parameter {
             Self::Polynomial1D(p) => p.meta.name.as_str(),
             Self::ParameterThreshold(p) => p.meta.name.as_str(),
             Self::TablesArray(p) => p.meta.name.as_str(),
+            Self::Python(p) => p.meta.name.as_str(),
         }
     }
 
@@ -174,6 +178,7 @@ impl Parameter {
             Self::Polynomial1D(p) => p.node_references(),
             Self::ParameterThreshold(p) => p.node_references(),
             Self::TablesArray(p) => p.node_references(),
+            Self::Python(p) => p.node_references(),
         }
     }
 
@@ -215,6 +220,7 @@ impl Parameter {
             Self::Polynomial1D(_) => "Polynomial1D",
             Self::ParameterThreshold(_) => "ParameterThreshold",
             Self::TablesArray(_) => "TablesArray",
+            Self::Python(_) => "Python",
         }
     }
 
@@ -244,6 +250,7 @@ impl Parameter {
             Self::Polynomial1D(p) => ParameterType::Parameter(p.add_to_model(model)?),
             Self::ParameterThreshold(p) => ParameterType::Index(p.add_to_model(model, tables, data_path)?),
             Self::TablesArray(p) => ParameterType::Parameter(p.add_to_model(model, data_path)?),
+            Self::Python(p) => ParameterType::Parameter(p.add_to_model(model, tables, data_path)?),
         };
 
         Ok(ty)

@@ -1,7 +1,9 @@
 use crate::edge::{Edge, EdgeIndex};
-use crate::node::NodeIndex;
+use crate::model::Model;
+use crate::node::{Node, NodeIndex};
 use crate::parameters::{IndexParameterIndex, ParameterIndex};
 use crate::timestep::Timestep;
+use crate::virtual_storage::VirtualStorageIndex;
 use crate::PywrError;
 use std::any::Any;
 use std::ops::Deref;
@@ -91,7 +93,7 @@ pub struct StorageState {
 }
 
 impl StorageState {
-    fn new(initial_volume: f64) -> Self {
+    pub fn new(initial_volume: f64) -> Self {
         Self {
             volume: initial_volume,
             flows: FlowState::new(),
@@ -214,13 +216,19 @@ impl ParameterValues {
 pub struct NetworkState {
     node_states: Vec<NodeState>,
     edge_states: Vec<EdgeState>,
+    virtual_storage_states: Vec<StorageState>,
 }
 
 impl NetworkState {
-    pub fn new(initial_node_states: Vec<NodeState>, num_edges: usize) -> Self {
+    pub fn new(
+        initial_node_states: Vec<NodeState>,
+        num_edges: usize,
+        initial_virtual_storage_states: Vec<StorageState>,
+    ) -> Self {
         Self {
             node_states: initial_node_states,
             edge_states: (0..num_edges).map(|_| EdgeState::default()).collect(),
+            virtual_storage_states: initial_virtual_storage_states,
         }
     }
 
@@ -254,6 +262,41 @@ impl NetworkState {
             Some(s) => s.add_flow(flow),
             None => return Err(PywrError::EdgeIndexNotFound),
         };
+
+        Ok(())
+    }
+
+    /// Complete a timestep after all the flow has been added.
+    ///
+    /// This final step ensures that derived states (e.g. virtual storage volume) are updated
+    /// once all of the flows have been updated.
+    pub fn complete(&mut self, model: &Model, timestep: &Timestep) -> Result<(), PywrError> {
+        // Update virtual storage node states
+        for (state, node) in self
+            .virtual_storage_states
+            .iter_mut()
+            .zip(model.virtual_storage_nodes.iter())
+        {
+            if let Some(node_factors) = node.get_nodes_with_factors() {
+                let flow = node_factors
+                    .iter()
+                    .map(|(idx, factor)| match self.node_states.get(*idx.deref()) {
+                        None => Err(PywrError::NodeIndexNotFound),
+                        Some(s) => {
+                            let node = model.nodes.get(idx)?;
+                            match node {
+                                Node::Input(_) => Ok(factor * s.get_out_flow()),
+                                Node::Output(_) => Ok(factor * s.get_in_flow()),
+                                Node::Link(_) => Ok(factor * s.get_in_flow()),
+                                Node::Storage(_) => panic!("Storage node not supported on virtual storage."),
+                            }
+                        }
+                    })
+                    .sum::<Result<f64, _>>()?;
+
+                state.add_out_flow(flow, timestep);
+            }
+        }
 
         Ok(())
     }
@@ -312,6 +355,35 @@ impl NetworkState {
 
         Ok(())
     }
+
+    pub fn set_virtual_storage_volume(&mut self, idx: VirtualStorageIndex, volume: f64) -> Result<(), PywrError> {
+        // TODO handle these errors properly
+        if let Some(s) = self.virtual_storage_states.get_mut(*idx.deref()) {
+            s.volume = volume
+        } else {
+            panic!("Virtual storage bode state not found.")
+        }
+
+        Ok(())
+    }
+
+    pub fn get_virtual_storage_volume(&self, node_index: &VirtualStorageIndex) -> Result<f64, PywrError> {
+        match self.virtual_storage_states.get(*node_index.deref()) {
+            Some(s) => Ok(s.volume),
+            None => Err(PywrError::NodeIndexNotFound), // TODO should be a specific VS error
+        }
+    }
+
+    pub fn get_virtual_storage_proportional_volume(
+        &self,
+        node_index: &VirtualStorageIndex,
+        max_volume: f64,
+    ) -> Result<f64, PywrError> {
+        match self.virtual_storage_states.get(*node_index.deref()) {
+            Some(s) => Ok(s.proportional_volume(max_volume)),
+            None => Err(PywrError::NodeIndexNotFound), // TODO should be a specific VS error
+        }
+    }
 }
 
 /// State of the model simulation
@@ -325,11 +397,12 @@ impl State {
     pub fn new(
         initial_node_states: Vec<NodeState>,
         num_edges: usize,
+        initial_virtual_storage_states: Vec<StorageState>,
         num_parameter_values: usize,
         num_parameter_indices: usize,
     ) -> Self {
         Self {
-            network: NetworkState::new(initial_node_states, num_edges),
+            network: NetworkState::new(initial_node_states, num_edges, initial_virtual_storage_states),
             parameters: ParameterValues::new(num_parameter_values, num_parameter_indices),
         }
     }
@@ -360,5 +433,9 @@ impl State {
 
     pub fn set_node_volume(&mut self, idx: NodeIndex, volume: f64) -> Result<(), PywrError> {
         self.network.set_volume(idx, volume)
+    }
+
+    pub fn set_virtual_storage_node_volume(&mut self, idx: VirtualStorageIndex, volume: f64) -> Result<(), PywrError> {
+        self.network.set_virtual_storage_volume(idx, volume)
     }
 }

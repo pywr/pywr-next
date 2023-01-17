@@ -1,7 +1,7 @@
 use crate::edge::EdgeIndex;
 use crate::metric::Metric;
 use crate::parameters::FloatValue;
-use crate::state::{NetworkState, NodeState, State};
+use crate::state::{NetworkState, NodeState, State, StorageState};
 use crate::timestep::Timestep;
 use crate::{ParameterIndex, PywrError};
 use std::ops::{Deref, DerefMut};
@@ -590,19 +590,19 @@ pub struct StorageConstraints {
 }
 
 impl StorageConstraints {
-    fn new(min_volume: f64, max_volume: ConstraintValue) -> Self {
+    pub fn new(min_volume: f64, max_volume: ConstraintValue) -> Self {
         Self { min_volume, max_volume }
     }
     /// Return the current minimum volume from the parameter state
     ///
     /// Defaults to zero if no parameter is defined.
-    fn get_min_volume(&self) -> f64 {
+    pub fn get_min_volume(&self) -> f64 {
         self.min_volume
     }
     /// Return the current maximum volume from the parameter state
     ///
     /// Defaults to f64::MAX if no parameter is defined.
-    fn get_max_volume(&self, state: &State) -> Result<f64, PywrError> {
+    pub fn get_max_volume(&self, state: &State) -> Result<f64, PywrError> {
         match &self.max_volume {
             ConstraintValue::None => Ok(f64::MAX),
             ConstraintValue::Scalar(v) => Ok(*v),

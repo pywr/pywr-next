@@ -120,7 +120,7 @@ impl PywrModel {
         let mut model = crate::model::Model::default();
 
         // Load all the data tables
-        let tables = LoadedTableCollection::from_schema(&self.tables, data_path)?;
+        let tables = LoadedTableCollection::from_schema(self.tables.as_deref(), data_path)?;
 
         // Create all the nodes
         let mut remaining_nodes = self.nodes.clone();

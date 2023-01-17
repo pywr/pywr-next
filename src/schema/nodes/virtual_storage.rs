@@ -1,6 +1,9 @@
-use crate::node::StorageInitialVolume;
+use crate::node::{ConstraintValue, StorageInitialVolume};
+use crate::schema::data_tables::LoadedTableCollection;
 use crate::schema::nodes::NodeMeta;
 use crate::schema::parameters::{ConstantValue, DynamicFloatValue, TryIntoV2Parameter};
+use crate::timestep::Timestep;
+use crate::virtual_storage::VirtualStorageReset;
 use crate::PywrError;
 use pywr_schema::nodes::VirtualStorageNode as VirtualStorageNodeV1;
 
@@ -18,8 +21,11 @@ pub struct VirtualStorageNode {
 }
 
 impl VirtualStorageNode {
-    pub fn add_to_model(&self, model: &mut crate::model::Model) -> Result<(), PywrError> {
-        // TODO this initial volume should be used??
+    pub fn add_to_model(
+        &self,
+        model: &mut crate::model::Model,
+        tables: &LoadedTableCollection,
+    ) -> Result<(), PywrError> {
         let initial_volume = if let Some(iv) = self.initial_volume {
             StorageInitialVolume::Absolute(iv)
         } else if let Some(pc) = self.initial_volume_pc {
@@ -28,13 +34,35 @@ impl VirtualStorageNode {
             return Err(PywrError::MissingInitialVolume(self.meta.name.to_string()));
         };
 
+        let min_volume = match &self.min_volume {
+            Some(v) => v.load(tables)?,
+            None => 0.0,
+        };
+
+        let max_volume = match &self.max_volume {
+            Some(v) => ConstraintValue::Scalar(v.load(tables)?),
+            None => ConstraintValue::None,
+        };
+
         let node_idxs = self
             .nodes
             .iter()
             .map(|name| model.get_node_index_by_name(name.as_str(), None))
-            .collect::<Result<_, _>>()?;
+            .collect::<Result<Vec<_>, _>>()?;
 
-        model.add_virtual_storage_node(self.meta.name.as_str(), None, node_idxs, self.factors.clone())?;
+        // Standard virtual storage node never resets.
+        let reset = VirtualStorageReset::Never;
+
+        model.add_virtual_storage_node(
+            self.meta.name.as_str(),
+            None,
+            &node_idxs,
+            self.factors.as_deref(),
+            initial_volume,
+            min_volume,
+            max_volume,
+            reset,
+        )?;
         Ok(())
     }
 

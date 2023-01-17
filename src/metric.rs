@@ -44,8 +44,13 @@ impl Metric {
             }
             Metric::EdgeFlow(idx) => Ok(state.get_network_state().get_edge_flow(idx)?),
             Metric::ParameterValue(idx) => Ok(state.get_parameter_value(*idx)?),
-            Metric::VirtualStorageVolume(_idx) => Ok(1.0), // TODO!!!
-            Metric::VirtualStorageProportionalVolume(_idx) => Ok(1.0), // TODO!!!
+            Metric::VirtualStorageVolume(idx) => Ok(state.get_network_state().get_virtual_storage_volume(idx)?),
+            Metric::VirtualStorageProportionalVolume(idx) => {
+                let max_volume = model.get_virtual_storage_node(idx)?.get_max_volume(state)?;
+                Ok(state
+                    .get_network_state()
+                    .get_virtual_storage_proportional_volume(idx, max_volume)?)
+            }
             Metric::Constant(v) => Ok(*v),
             Metric::AggregatedNodeVolume(indices) => indices
                 .iter()

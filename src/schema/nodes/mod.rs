@@ -178,8 +178,8 @@ impl CoreNode {
             CoreNode::WaterTreatmentWorks(n) => n.add_to_model(model),
             CoreNode::Aggregated(n) => n.add_to_model(model),
             CoreNode::AggregatedStorage(n) => n.add_to_model(model),
-            CoreNode::VirtualStorage(n) => n.add_to_model(model),
-            CoreNode::AnnualVirtualStorage(n) => n.add_to_model(model),
+            CoreNode::VirtualStorage(n) => n.add_to_model(model, tables),
+            CoreNode::AnnualVirtualStorage(n) => n.add_to_model(model, tables),
         }
     }
 

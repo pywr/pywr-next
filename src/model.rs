@@ -8,7 +8,7 @@ use crate::scenario::{ScenarioGroupCollection, ScenarioIndex};
 use crate::solvers::{MultiStateSolver, Solver, SolverTimings};
 use crate::state::{ParameterStates, State};
 use crate::timestep::{Timestep, Timestepper};
-use crate::virtual_storage::{VirtualStorage, VirtualStorageIndex, VirtualStorageVec};
+use crate::virtual_storage::{VirtualStorage, VirtualStorageIndex, VirtualStorageReset, VirtualStorageVec};
 use crate::{parameters, recorders, IndexParameterIndex, NodeIndex, ParameterIndex, PywrError, RecorderIndex};
 use indicatif::ProgressIterator;
 use log::debug;
@@ -136,6 +136,7 @@ impl RunTimings {
 
 enum ComponentType {
     Node(NodeIndex),
+    VirtualStorageNode(VirtualStorageIndex),
     Parameter(ParameterType),
 }
 
@@ -166,6 +167,8 @@ impl Model {
             // Initialise node states. Note that storage nodes will have a zero volume at this point.
             let initial_node_states = self.nodes.iter().map(|n| n.default_state()).collect();
 
+            let initial_virtual_storage_states = self.virtual_storage_nodes.iter().map(|n| n.default_state()).collect();
+
             // Get the initial internal state
             let initial_values_states = self
                 .parameters
@@ -182,6 +185,7 @@ impl Model {
             let state = State::new(
                 initial_node_states,
                 self.edges.len(),
+                initial_virtual_storage_states,
                 initial_values_states.len(),
                 initial_indices_states.len(),
             );
@@ -444,6 +448,10 @@ impl Model {
                     let n = self.nodes.get(idx)?;
                     n.before(timestep, state)?;
                 }
+                ComponentType::VirtualStorageNode(idx) => {
+                    let n = self.virtual_storage_nodes.get(idx)?;
+                    n.before(timestep, state)?;
+                }
                 ComponentType::Parameter(p_type) => {
                     match p_type {
                         ParameterType::Parameter(idx) => {
@@ -670,7 +678,12 @@ impl Model {
         }
     }
 
-    /// Get a `VirtualStorageNodeIndex` from a node's name
+    /// Get a `VirtualStorageNode` from a node's name
+    pub fn get_virtual_storage_node(&self, index: &VirtualStorageIndex) -> Result<&VirtualStorage, PywrError> {
+        self.virtual_storage_nodes.get(index)
+    }
+
+    /// Get a `VirtualStorageNode` from a node's name
     pub fn get_virtual_storage_node_by_name(
         &self,
         name: &str,
@@ -892,14 +905,31 @@ impl Model {
         &mut self,
         name: &str,
         sub_name: Option<&str>,
-        nodes: Vec<NodeIndex>,
-        factors: Option<Vec<f64>>,
+        nodes: &[NodeIndex],
+        factors: Option<&[f64]>,
+        initial_volume: StorageInitialVolume,
+        min_volume: f64,
+        max_volume: ConstraintValue,
+        reset: VirtualStorageReset,
     ) -> Result<VirtualStorageIndex, PywrError> {
         if let Ok(_agg_node) = self.get_virtual_storage_node_by_name(name, sub_name) {
             return Err(PywrError::NodeNameAlreadyExists(name.to_string()));
         }
 
-        let node_index = self.virtual_storage_nodes.push_new(name, sub_name, nodes, factors);
+        let node_index = self.virtual_storage_nodes.push_new(
+            name,
+            sub_name,
+            nodes,
+            factors,
+            initial_volume,
+            min_volume,
+            max_volume,
+            reset,
+        );
+
+        // Add to the resolve order.
+        self.resolve_order.push(ComponentType::VirtualStorageNode(node_index));
+
         Ok(node_index)
     }
 

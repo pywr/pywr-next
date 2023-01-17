@@ -217,6 +217,7 @@ impl Solver for HighsSolver {
             let flow = solution[col];
             network_state.add_flow(edge, timestep, flow)?;
         }
+        network_state.complete(model, timestep)?;
         timings.save_solution += start_save_solution.elapsed();
 
         Ok(timings)

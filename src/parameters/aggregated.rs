@@ -64,50 +64,35 @@ impl Parameter for AggregatedParameter {
             AggFunc::Sum => {
                 let mut total = 0.0_f64;
                 for p in &self.values {
-                    total += match p {
-                        FloatValue::Constant(v) => *v,
-                        FloatValue::Dynamic(p) => state.get_parameter_value(*p)?,
-                    };
+                    total += p.get_value(state)?;
                 }
                 total
             }
             AggFunc::Mean => {
                 let mut total = 0.0_f64;
                 for p in &self.values {
-                    total += match p {
-                        FloatValue::Constant(v) => *v,
-                        FloatValue::Dynamic(p) => state.get_parameter_value(*p)?,
-                    };
+                    total += p.get_value(state)?;
                 }
                 total / self.values.len() as f64
             }
             AggFunc::Max => {
                 let mut total = f64::MIN;
                 for p in &self.values {
-                    total = total.max(match p {
-                        FloatValue::Constant(v) => *v,
-                        FloatValue::Dynamic(p) => state.get_parameter_value(*p)?,
-                    });
+                    total = total.max(p.get_value(state)?);
                 }
                 total
             }
             AggFunc::Min => {
                 let mut total = f64::MAX;
                 for p in &self.values {
-                    total = total.min(match p {
-                        FloatValue::Constant(v) => *v,
-                        FloatValue::Dynamic(p) => state.get_parameter_value(*p)?,
-                    });
+                    total = total.min(p.get_value(state)?);
                 }
                 total
             }
             AggFunc::Product => {
                 let mut total = 1.0_f64;
                 for p in &self.values {
-                    total *= match p {
-                        FloatValue::Constant(v) => *v,
-                        FloatValue::Dynamic(p) => state.get_parameter_value(*p)?,
-                    };
+                    total *= p.get_value(state)?;
                 }
                 total
             }

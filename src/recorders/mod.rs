@@ -7,7 +7,7 @@ use crate::scenario::ScenarioIndex;
 use crate::state::State;
 use crate::timestep::Timestep;
 use crate::PywrError;
-use float_cmp::assert_approx_eq;
+use float_cmp::{approx_eq, assert_approx_eq};
 use ndarray::prelude::*;
 use ndarray::Array2;
 use std::any::Any;
@@ -199,6 +199,71 @@ impl Recorder for AssertionRecorder {
                 epsilon = self.epsilon,
                 ulps = self.ulps
             );
+        }
+
+        Ok(())
+    }
+}
+
+pub struct AssertionFnRecorder<F> {
+    meta: RecorderMeta,
+    expected_func: F,
+    metric: Metric,
+    ulps: i64,
+    epsilon: f64,
+}
+
+impl<F> AssertionFnRecorder<F>
+where
+    F: Fn(&Timestep, &ScenarioIndex) -> f64,
+{
+    pub fn new(name: &str, metric: Metric, expected_func: F, ulps: Option<i64>, epsilon: Option<f64>) -> Self {
+        Self {
+            meta: RecorderMeta::new(name),
+            expected_func,
+            metric,
+            ulps: ulps.unwrap_or(2),
+            epsilon: epsilon.unwrap_or(f64::EPSILON * 2.0),
+        }
+    }
+}
+
+impl<F> Recorder for AssertionFnRecorder<F>
+where
+    F: Send + Sync + Fn(&Timestep, &ScenarioIndex) -> f64,
+{
+    fn meta(&self) -> &RecorderMeta {
+        &self.meta
+    }
+
+    fn save(
+        &self,
+        timestep: &Timestep,
+        scenario_indices: &[ScenarioIndex],
+        model: &Model,
+        state: &[State],
+        _internal_state: &mut Option<Box<dyn Any>>,
+    ) -> Result<(), PywrError> {
+        // This panics if out-of-bounds
+
+        for scenario_index in scenario_indices {
+            let expected_value = (self.expected_func)(timestep, scenario_index);
+            let actual_value = self.metric.get_value(model, &state[scenario_index.index])?;
+
+            if !approx_eq!(
+                f64,
+                actual_value,
+                expected_value,
+                epsilon = self.epsilon,
+                ulps = self.ulps
+            ) {
+                panic!(
+                    r#"assertion failed at timestep {:?} in scenario {:?}: `(actual approx_eq expected)`
+   actual: `{:?}`,
+ expected: `{:?}`"#,
+                    timestep, scenario_index, actual_value, expected_value,
+                )
+            }
         }
 
         Ok(())
