@@ -94,8 +94,8 @@ impl TryFromV1Parameter<ParameterThresholdParameterV1> for ParameterThresholdPar
     ) -> Result<Self, Self::Error> {
         let meta: ParameterMeta = v1.meta.into_v2_parameter(parent_node, unnamed_count);
 
-        let parameter = v1.parameter.try_into_v2_parameter(parent_node, unnamed_count)?;
-        let threshold = v1.threshold.try_into_v2_parameter(parent_node, unnamed_count)?;
+        let parameter = v1.parameter.try_into_v2_parameter(Some(&meta.name), unnamed_count)?;
+        let threshold = v1.threshold.try_into_v2_parameter(Some(&meta.name), unnamed_count)?;
 
         // TODO warn or something about the lack of using the values here!!
 

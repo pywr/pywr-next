@@ -104,7 +104,8 @@ impl CsvDataTable {
 ///
 /// If `table_path` is relative and `data_path` is some path then join `table_path` to `data_path`.
 /// Otherwise just return `table_path`.
-fn make_path(table_path: &Path, data_path: Option<&Path>) -> PathBuf {
+// TODO make this a general utility function
+pub fn make_path(table_path: &Path, data_path: Option<&Path>) -> PathBuf {
     if table_path.is_relative() {
         if let Some(dp) = data_path {
             dp.join(table_path)
@@ -344,9 +345,10 @@ impl LoadedTable {
     pub fn get_scalar_f64(&self, key: &[&str]) -> Result<f64, TableError> {
         match self {
             LoadedTable::FloatScalar(tbl) => tbl.get_scalar(key),
-            _ => Err(TableError::WrongTableFormat(
-                "Scalar value requested from non-scalar table.".to_string(),
-            )),
+            _ => Err(TableError::WrongTableFormat(format!(
+                "Scalar value with key \"{:?}\" requested from non-scalar table.",
+                key
+            ))),
         }
     }
 }

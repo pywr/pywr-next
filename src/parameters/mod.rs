@@ -14,7 +14,7 @@ mod threshold;
 
 use std::any::Any;
 // Re-imports
-use super::{NetworkState, PywrError};
+use super::PywrError;
 use crate::scenario::ScenarioIndex;
 pub use aggregated::{AggFunc, AggregatedParameter};
 pub use aggregated_index::{AggIndexFunc, AggregatedIndexParameter};
@@ -27,6 +27,7 @@ pub use max::MaxParameter;
 pub use negative::NegativeParameter;
 pub use polynomial::Polynomial1DParameter;
 pub use profiles::{DailyProfileParameter, MonthlyProfileParameter, UniformDrawdownProfileParameter};
+pub use py::PyParameter;
 pub use threshold::{Predicate, ThresholdParameter};
 
 use crate::model::Model;
@@ -111,7 +112,9 @@ pub trait Parameter: Send + Sync {
     ) -> Result<Option<Box<dyn Any + Send>>, PywrError> {
         Ok(None)
     }
-    fn before(&self) {}
+    fn before(&self, _internal_state: &mut Option<Box<dyn Any + Send>>) -> Result<(), PywrError> {
+        Ok(())
+    }
     fn compute(
         &self,
         timestep: &Timestep,
@@ -120,6 +123,10 @@ pub trait Parameter: Send + Sync {
         state: &State,
         internal_state: &mut Option<Box<dyn Any + Send>>,
     ) -> Result<f64, PywrError>;
+
+    fn after(&self, _internal_state: &mut Option<Box<dyn Any + Send>>) -> Result<(), PywrError> {
+        Ok(())
+    }
 }
 
 // pub trait MultiStateParameter {
@@ -156,21 +163,6 @@ pub trait IndexParameter: Send + Sync {
         state: &State,
         internal_state: &mut Option<Box<dyn Any + Send>>,
     ) -> Result<usize, PywrError>;
-}
-
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub enum FloatValue {
-    Constant(f64),
-    Dynamic(ParameterIndex),
-}
-
-impl FloatValue {
-    pub fn get_value(&self, state: &State) -> Result<f64, PywrError> {
-        match self {
-            Self::Constant(v) => Ok(*v),
-            Self::Dynamic(p) => state.get_parameter_value(*p),
-        }
-    }
 }
 
 #[derive(Copy, Clone)]

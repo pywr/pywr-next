@@ -1,6 +1,6 @@
 use crate::metric::Metric;
+use crate::model::Model;
 use crate::node::{Constraint, ConstraintValue, FlowConstraints, NodeMeta};
-use crate::parameters::FloatValue;
 use crate::state::State;
 use crate::{NodeIndex, PywrError};
 use std::ops::{Deref, DerefMut};
@@ -49,7 +49,7 @@ impl AggregatedNodeVec {
         name: &str,
         sub_name: Option<&str>,
         nodes: &[NodeIndex],
-        factors: Option<&[f64]>,
+        factors: Option<Factors>,
     ) -> AggregatedNodeIndex {
         let node_index = AggregatedNodeIndex(self.nodes.len());
         let node = AggregatedNode::new(&node_index, name, sub_name, nodes, factors);
@@ -59,11 +59,17 @@ impl AggregatedNodeVec {
 }
 
 #[derive(Debug, PartialEq)]
+pub enum Factors {
+    Proportion(Vec<Metric>),
+    Ratio(Vec<Metric>),
+}
+
+#[derive(Debug, PartialEq)]
 pub struct AggregatedNode {
     meta: NodeMeta<AggregatedNodeIndex>,
     flow_constraints: FlowConstraints,
     nodes: Vec<NodeIndex>,
-    factors: Option<Vec<FloatValue>>,
+    factors: Option<Factors>,
 }
 
 impl AggregatedNode {
@@ -72,13 +78,13 @@ impl AggregatedNode {
         name: &str,
         sub_name: Option<&str>,
         nodes: &[NodeIndex],
-        factors: Option<&[f64]>,
+        factors: Option<Factors>,
     ) -> Self {
         Self {
             meta: NodeMeta::new(index, name, sub_name),
             flow_constraints: FlowConstraints::new(),
             nodes: nodes.to_vec(),
-            factors: factors.map(|f| f.iter().map(|f| FloatValue::Constant(*f)).collect()),
+            factors,
         }
     }
 
@@ -104,28 +110,39 @@ impl AggregatedNode {
         self.nodes.to_vec()
     }
 
-    pub fn set_factors(&mut self, values: Option<&[FloatValue]>) {
-        self.factors = values.map(|f| f.to_vec());
+    pub fn set_factors(&mut self, factors: Option<Factors>) {
+        self.factors = factors;
     }
 
-    pub fn get_factors(&self) -> Option<&Vec<FloatValue>> {
+    pub fn get_factors(&self) -> Option<&Factors> {
         self.factors.as_ref()
     }
 
+    pub fn get_factor_node_pairs(&self) -> Option<Vec<(NodeIndex, NodeIndex)>> {
+        if self.factors.is_some() {
+            let n0 = self.nodes[0];
+
+            Some(self.nodes.iter().skip(1).map(|&n1| (n0, n1)).collect::<Vec<_>>())
+        } else {
+            None
+        }
+    }
+
+    /// Return normalised factor pairs
+    ///
     pub fn get_norm_factor_pairs(
         &self,
-    ) -> Option<impl Iterator<Item = ((NodeIndex, FloatValue), (NodeIndex, FloatValue))> + '_> {
+        model: &Model,
+        state: &State,
+    ) -> Option<Vec<((NodeIndex, f64), (NodeIndex, f64))>> {
         if let Some(factors) = &self.factors {
-            let n0 = &self.nodes[0];
-            let f0 = &factors[0];
-
-            Some(
-                self.nodes
-                    .iter()
-                    .zip(factors)
-                    .skip(1)
-                    .map(|(n1, f1)| ((*n0, *f0), (*n1, *f1))),
-            )
+            let pairs = match factors {
+                Factors::Proportion(prop_factors) => {
+                    get_norm_proportional_factor_pairs(prop_factors, &self.nodes, model, state)
+                }
+                Factors::Ratio(ratio_factors) => get_norm_ratio_factor_pairs(ratio_factors, &self.nodes, model, state),
+            };
+            Some(pairs)
         } else {
             None
         }
@@ -134,14 +151,14 @@ impl AggregatedNode {
     pub fn set_min_flow_constraint(&mut self, value: ConstraintValue) {
         self.flow_constraints.min_flow = value;
     }
-    pub fn get_min_flow_constraint(&self, state: &State) -> Result<f64, PywrError> {
-        self.flow_constraints.get_min_flow(state)
+    pub fn get_min_flow_constraint(&self, model: &Model, state: &State) -> Result<f64, PywrError> {
+        self.flow_constraints.get_min_flow(model, state)
     }
     pub fn set_max_flow_constraint(&mut self, value: ConstraintValue) {
         self.flow_constraints.max_flow = value;
     }
-    pub fn get_max_flow_constraint(&self, state: &State) -> Result<f64, PywrError> {
-        self.flow_constraints.get_max_flow(state)
+    pub fn get_max_flow_constraint(&self, model: &Model, state: &State) -> Result<f64, PywrError> {
+        self.flow_constraints.get_max_flow(model, state)
     }
 
     /// Set a constraint on a node.
@@ -159,16 +176,19 @@ impl AggregatedNode {
         Ok(())
     }
 
-    pub fn get_current_min_flow(&self, state: &State) -> Result<f64, PywrError> {
-        self.flow_constraints.get_min_flow(state)
+    pub fn get_current_min_flow(&self, model: &Model, state: &State) -> Result<f64, PywrError> {
+        self.flow_constraints.get_min_flow(model, state)
     }
 
-    pub fn get_current_max_flow(&self, state: &State) -> Result<f64, PywrError> {
-        self.flow_constraints.get_max_flow(state)
+    pub fn get_current_max_flow(&self, model: &Model, state: &State) -> Result<f64, PywrError> {
+        self.flow_constraints.get_max_flow(model, state)
     }
 
-    pub fn get_current_flow_bounds(&self, state: &State) -> Result<(f64, f64), PywrError> {
-        match (self.get_current_min_flow(state), self.get_current_max_flow(state)) {
+    pub fn get_current_flow_bounds(&self, model: &Model, state: &State) -> Result<(f64, f64), PywrError> {
+        match (
+            self.get_current_min_flow(model, state),
+            self.get_current_max_flow(model, state),
+        ) {
             (Ok(min_flow), Ok(max_flow)) => Ok((min_flow, max_flow)),
             _ => Err(PywrError::FlowConstraintsUndefined),
         }
@@ -179,8 +199,69 @@ impl AggregatedNode {
     }
 }
 
+/// Proportional factors
+fn get_norm_proportional_factor_pairs(
+    factors: &[Metric],
+    nodes: &[NodeIndex],
+    model: &Model,
+    state: &State,
+) -> Vec<((NodeIndex, f64), (NodeIndex, f64))> {
+    if factors.len() != nodes.len() - 1 {
+        panic!("Found {} proportional factors and {} nodes in aggregated node. The number of proportional factors should equal one less than the number of nodes.", factors.len(), nodes.len());
+    }
+
+    // First get the current factor values
+    let values: Vec<f64> = factors
+        .iter()
+        .map(|f| f.get_value(model, state))
+        .collect::<Result<Vec<_>, PywrError>>()
+        .expect("Failed to get current factor values.");
+
+    // TODO do we need to assert that each individual factor is positive?
+    let total: f64 = values.iter().sum();
+    if total < 0.0 {
+        panic!("Proportional factors are too small or negative.");
+    }
+    if total >= 1.0 {
+        panic!("Proportional factors are too large.")
+    }
+
+    let f0 = 1.0 - total;
+    let n0 = nodes[0];
+
+    nodes
+        .iter()
+        .skip(1)
+        .zip(values.into_iter())
+        .map(move |(&n1, f1)| ((n0, f0), (n1, f1)))
+        .collect::<Vec<_>>()
+}
+
+/// Ratio factors
+fn get_norm_ratio_factor_pairs(
+    factors: &[Metric],
+    nodes: &[NodeIndex],
+    model: &Model,
+    state: &State,
+) -> Vec<((NodeIndex, f64), (NodeIndex, f64))> {
+    if factors.len() != nodes.len() {
+        panic!("Found {} ratio factors and {} nodes in aggregated node. The number of ratio factors should equal the number of nodes.", factors.len(), nodes.len());
+    }
+
+    let n0 = nodes[0];
+    let f0 = factors[0].get_value(model, state).unwrap();
+
+    nodes
+        .iter()
+        .zip(factors)
+        .skip(1)
+        .map(move |(&n1, f1)| ((n0, f0), (n1, f1.get_value(model, state).unwrap())))
+        .collect::<Vec<_>>()
+}
+
 #[cfg(test)]
 mod tests {
+    use crate::aggregated_node::Factors;
     use crate::metric::Metric;
     use crate::model::Model;
     use crate::node::ConstraintValue;
@@ -211,7 +292,9 @@ mod tests {
         model.connect_nodes(input_node, link_node1).unwrap();
         model.connect_nodes(link_node1, output_node1).unwrap();
 
-        let _agg_node = model.add_aggregated_node("agg-node", None, &[link_node0, link_node1], Some(&[2.0, 1.0]));
+        let factors = Some(Factors::Ratio(vec![Metric::Constant(2.0), Metric::Constant(1.0)]));
+
+        let _agg_node = model.add_aggregated_node("agg-node", None, &[link_node0, link_node1], factors);
 
         // Setup a demand on output-0
         let output_node = model.get_mut_node_by_name("output", Some("0")).unwrap();

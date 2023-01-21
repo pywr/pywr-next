@@ -1,9 +1,9 @@
-use crate::aggregated_node::{AggregatedNode, AggregatedNodeIndex, AggregatedNodeVec};
+use crate::aggregated_node::{AggregatedNode, AggregatedNodeIndex, AggregatedNodeVec, Factors};
 use crate::aggregated_storage_node::{AggregatedStorageNode, AggregatedStorageNodeIndex, AggregatedStorageNodeVec};
 use crate::edge::{EdgeIndex, EdgeVec};
 use crate::metric::Metric;
 use crate::node::{ConstraintValue, Node, NodeVec, StorageInitialVolume};
-use crate::parameters::{FloatValue, Parameter, ParameterType};
+use crate::parameters::ParameterType;
 use crate::scenario::{ScenarioGroupCollection, ScenarioIndex};
 use crate::solvers::{MultiStateSolver, Solver, SolverTimings};
 use crate::state::{ParameterStates, State};
@@ -13,7 +13,7 @@ use crate::{parameters, recorders, IndexParameterIndex, NodeIndex, ParameterInde
 use indicatif::ProgressIterator;
 use log::debug;
 use std::any::Any;
-use std::ops::{Deref, Div};
+use std::ops::Deref;
 use std::time::Duration;
 use std::time::Instant;
 
@@ -59,7 +59,7 @@ impl RunTimings {
 
     fn speed(&self) -> Option<f64> {
         match self.global {
-            RunDuration::Running(i) => None,
+            RunDuration::Running(_) => None,
             RunDuration::Finished(d, c) => Some(c as f64 / d.as_secs_f64()),
         }
     }
@@ -213,7 +213,7 @@ impl Model {
 
         for _scenario_index in scenario_indices {
             // Create a solver for each scenario
-            let mut solver = S::setup(self)?;
+            let solver = S::setup(self)?;
             solvers.push(solver);
         }
 
@@ -446,11 +446,11 @@ impl Model {
             match c_type {
                 ComponentType::Node(idx) => {
                     let n = self.nodes.get(idx)?;
-                    n.before(timestep, state)?;
+                    n.before(timestep, &self, state)?;
                 }
                 ComponentType::VirtualStorageNode(idx) => {
                     let n = self.virtual_storage_nodes.get(idx)?;
-                    n.before(timestep, state)?;
+                    n.before(timestep, &self, state)?;
                 }
                 ComponentType::Parameter(p_type) => {
                     match p_type {
@@ -568,6 +568,11 @@ impl Model {
     }
 
     /// Get a `AggregatedNodeIndex` from a node's name
+    pub fn get_aggregated_node(&self, index: &AggregatedNodeIndex) -> Result<&AggregatedNode, PywrError> {
+        self.aggregated_nodes.get(index)
+    }
+
+    /// Get a `AggregatedNode` from a node's name
     pub fn get_aggregated_node_by_name(
         &self,
         name: &str,
@@ -624,11 +629,19 @@ impl Model {
         &mut self,
         name: &str,
         sub_name: Option<&str>,
-        values: Option<&[FloatValue]>,
+        factors: Option<Factors>,
     ) -> Result<(), PywrError> {
         let node = self.get_mut_aggregated_node_by_name(name, sub_name)?;
-        node.set_factors(values);
+        node.set_factors(factors);
         Ok(())
+    }
+
+    /// Get a `&AggregatedStorageNode` from a node's name
+    pub fn get_aggregated_storage_node(
+        &self,
+        index: &AggregatedStorageNodeIndex,
+    ) -> Result<&AggregatedStorageNode, PywrError> {
+        self.aggregated_storage_nodes.get(index)
     }
 
     /// Get a `&AggregatedStorageNode` from a node's name
@@ -712,11 +725,11 @@ impl Model {
             } else {
                 Ok(Metric::NodeVolume(idx))
             }
-        } else if let Ok(node) = self.get_aggregated_storage_node_by_name(name, sub_name) {
+        } else if let Ok(idx) = self.get_aggregated_storage_node_index_by_name(name, sub_name) {
             if proportional {
-                Ok(Metric::AggregatedNodeProportionalVolume(node.nodes.clone()))
+                Ok(Metric::AggregatedNodeProportionalVolume(idx))
             } else {
-                Ok(Metric::AggregatedNodeVolume(node.nodes.clone()))
+                Ok(Metric::AggregatedNodeVolume(idx))
             }
         } else if let Ok(node) = self.get_virtual_storage_node_by_name(name, sub_name) {
             if proportional {
@@ -875,7 +888,7 @@ impl Model {
         name: &str,
         sub_name: Option<&str>,
         nodes: &[NodeIndex],
-        factors: Option<&[f64]>,
+        factors: Option<Factors>,
     ) -> Result<AggregatedNodeIndex, PywrError> {
         if let Ok(_agg_node) = self.get_aggregated_node_by_name(name, sub_name) {
             return Err(PywrError::NodeNameAlreadyExists(name.to_string()));
@@ -1108,8 +1121,11 @@ mod tests {
 
         // assign the new parameter to one of the nodes.
         let node = model.get_mut_node_by_name("input", None).unwrap();
-        node.set_constraint(ConstraintValue::Parameter(parameter.clone()), Constraint::MaxFlow)
-            .unwrap();
+        node.set_constraint(
+            ConstraintValue::Metric(Metric::ParameterValue(parameter)),
+            Constraint::MaxFlow,
+        )
+        .unwrap();
 
         // Try to assign a constraint not defined for particular node type
         assert_eq!(

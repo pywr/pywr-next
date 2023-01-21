@@ -294,7 +294,10 @@ impl SolverBuilder {
             // Collect all of the costs for all states together
             let cost = states
                 .iter()
-                .map(|s| edge.cost(&model.nodes, s).map(|c| if c != 0.0 { -c } else { 0.0 }))
+                .map(|s| {
+                    edge.cost(&model.nodes, model, s)
+                        .map(|c| if c != 0.0 { -c } else { 0.0 })
+                })
                 .collect::<Result<Vec<f64>, _>>()?;
 
             self.builder.set_obj_coefficient(*edge.index().deref(), &cost);
@@ -324,7 +327,7 @@ impl SolverBuilder {
                         .iter()
                         .map(|state| {
                             // TODO check for non-zero lower bounds and error?
-                            node.get_current_flow_bounds(state)
+                            node.get_current_flow_bounds(model, state)
                                 .expect("Flow bounds expected for Input, Output and Link nodes.")
                                 .1
                                 .min(B_MAX)
@@ -340,7 +343,7 @@ impl SolverBuilder {
                         .iter()
                         .map(|state| {
                             let (avail, missing) = node
-                                .get_current_available_volume_bounds(state)
+                                .get_current_available_volume_bounds(model, state)
                                 .expect("Volumes bounds expected for Storage nodes.");
                             (avail / dt, missing / dt)
                         })

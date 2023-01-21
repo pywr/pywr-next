@@ -648,7 +648,7 @@ impl IntoPy<PyObject> for RecorderIndex {
 
 #[pyfunction]
 fn load_model(path: PathBuf) {
-    let data = std::fs::read_to_string("test.json").unwrap();
+    let data = std::fs::read_to_string(path).unwrap();
     let _schema_v2: PywrModel = serde_json::from_str(data.as_str()).unwrap();
 }
 

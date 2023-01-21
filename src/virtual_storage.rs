@@ -1,3 +1,4 @@
+use crate::model::Model;
 use crate::node::{ConstraintValue, FlowConstraints, NodeMeta, StorageConstraints, StorageInitialVolume};
 use crate::state::{State, StorageState};
 use crate::timestep::Timestep;
@@ -137,7 +138,7 @@ impl VirtualStorage {
         StorageState::new(0.0)
     }
 
-    pub fn before(&self, timestep: &Timestep, state: &mut State) -> Result<(), PywrError> {
+    pub fn before(&self, timestep: &Timestep, model: &Model, state: &mut State) -> Result<(), PywrError> {
         let do_reset = if timestep.is_first() {
             // Set the initial volume if it is the first timestep.
             true
@@ -155,7 +156,7 @@ impl VirtualStorage {
             let volume = match &self.initial_volume {
                 StorageInitialVolume::Absolute(iv) => *iv,
                 StorageInitialVolume::Proportional(ipc) => {
-                    let max_volume = self.get_max_volume(state)?;
+                    let max_volume = self.get_max_volume(model, state)?;
                     max_volume * ipc
                 }
             };
@@ -180,13 +181,13 @@ impl VirtualStorage {
         self.storage_constraints.get_min_volume()
     }
 
-    pub fn get_max_volume(&self, state: &State) -> Result<f64, PywrError> {
-        self.storage_constraints.get_max_volume(state)
+    pub fn get_max_volume(&self, model: &Model, state: &State) -> Result<f64, PywrError> {
+        self.storage_constraints.get_max_volume(model, state)
     }
 
-    pub fn get_current_available_volume_bounds(&self, state: &State) -> Result<(f64, f64), PywrError> {
+    pub fn get_current_available_volume_bounds(&self, model: &Model, state: &State) -> Result<(f64, f64), PywrError> {
         let min_vol = self.get_min_volume();
-        let max_vol = self.get_max_volume(state)?;
+        let max_vol = self.get_max_volume(model, state)?;
 
         let current_volume = state.get_network_state().get_virtual_storage_volume(&self.index())?;
 

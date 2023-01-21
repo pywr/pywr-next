@@ -1,4 +1,5 @@
-use crate::parameters::FloatValue;
+use crate::aggregated_node::Factors;
+use crate::metric::Metric;
 use crate::schema::data_tables::LoadedTableCollection;
 use crate::schema::nodes::NodeMeta;
 use crate::schema::parameters::DynamicFloatValue;
@@ -58,7 +59,6 @@ impl WaterTreatmentWorks {
     }
 
     pub fn add_to_model(&self, model: &mut crate::model::Model) -> Result<(), PywrError> {
-        let idx_loss = model.add_output_node(self.meta.name.as_str(), Self::loss_sub_name())?;
         let idx_net = model.add_link_node(self.meta.name.as_str(), Self::net_sub_name())?;
         let idx_soft_min_flow = model.add_link_node(self.meta.name.as_str(), Self::net_soft_min_flow_sub_name())?;
         let idx_above_soft_min_flow =
@@ -69,6 +69,7 @@ impl WaterTreatmentWorks {
         model.connect_nodes(idx_net, idx_above_soft_min_flow)?;
 
         if self.loss_factor.is_some() {
+            let idx_loss = model.add_output_node(self.meta.name.as_str(), Self::loss_sub_name())?;
             // This aggregated node will contain the factors to enforce the loss
             model.add_aggregated_node(
                 self.meta.name.as_str(),
@@ -125,39 +126,48 @@ impl WaterTreatmentWorks {
             // Handle the case where we a given a zero loss factor
             // The aggregated node does not support zero loss factors so filter them here.
             let lf = match loss_factor.load(model, tables, data_path)? {
-                FloatValue::Constant(f) => {
+                Metric::Constant(f) => {
                     if f.is_zero() {
                         None
                     } else {
-                        Some(FloatValue::Constant(f))
+                        Some(Metric::Constant(f))
                     }
                 }
-                FloatValue::Dynamic(f) => Some(FloatValue::Dynamic(f)),
+                m => Some(m),
             };
 
             if let Some(lf) = lf {
                 // Set the factors for the loss
-                let factors = [FloatValue::Constant(1.0), lf];
-                model.set_aggregated_node_factors(self.meta.name.as_str(), Self::agg_sub_name(), Some(&factors))?;
+                // TODO allow for configuring as proportion of gross.
+                let factors = Factors::Ratio(vec![Metric::Constant(1.0), lf]);
+                model.set_aggregated_node_factors(self.meta.name.as_str(), Self::agg_sub_name(), Some(factors))?;
             }
         }
 
         Ok(())
     }
 
-    pub fn input_connectors(&self) -> Vec<(&str, Option<&str>)> {
-        // Connect directly to the total net and loss sub-nodes.
-        vec![
-            (self.meta.name.as_str(), Self::loss_sub_name()),
-            (self.meta.name.as_str(), Self::net_sub_name()),
-        ]
+    pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
+        // Connect directly to the total net
+        let mut connectors = vec![(self.meta.name.as_str(), Self::net_sub_name().map(|s| s.to_string()))];
+        // Only connect to the loss link if it is created
+        if self.loss_factor.is_some() {
+            connectors.push((self.meta.name.as_str(), Self::loss_sub_name().map(|s| s.to_string())))
+        }
+        connectors
     }
 
-    pub fn output_connectors(&self) -> Vec<(&str, Option<&str>)> {
+    pub fn output_connectors(&self) -> Vec<(&str, Option<String>)> {
         // Connect to the split of the net flow.
         vec![
-            (self.meta.name.as_str(), Self::net_soft_min_flow_sub_name()),
-            (self.meta.name.as_str(), Self::net_above_soft_min_flow_sub_name()),
+            (
+                self.meta.name.as_str(),
+                Self::net_soft_min_flow_sub_name().map(|s| s.to_string()),
+            ),
+            (
+                self.meta.name.as_str(),
+                Self::net_above_soft_min_flow_sub_name().map(|s| s.to_string()),
+            ),
         ]
     }
 }
@@ -187,22 +197,30 @@ mod tests {
                   "soft_min_flow": 105,
                   "cost": 2.29,
                   "max_flow": {
-                    "name": "My WTW max flow",
-                    "control_curves": [
-                      "A control curve"
-                    ],
-                    "values": [
-                      "a_max_flow",
-                      {
-                        "name": "zero",
-                        "type": "Constant",
-                        "value": 0.0
-                      }
-                    ],
-                    "storage_node": "My reservoir",
-                    "type": "ControlCurve"
+                    "type": "InlineParameter",
+                    "definition": {
+                        "type": "ControlCurve",
+                        "name": "My WTW max flow",
+                        "control_curves": [
+                          {
+                            "type": "Parameter",
+                            "name": "A control curve"
+                          }
+                        ],
+                        "values": [
+                          {
+                            "type": "Parameter",
+                            "name": "a max flow"
+                          },
+                          0.0
+                        ],
+                        "storage_node": "My reservoir"
+                    }
                   },
-                  "soft_min_flow_cost": "my_min_flow_cost"
+                  "soft_min_flow_cost": {
+                    "type": "Parameter",
+                    "name": "my_min_flow_cost"
+                  }
                 }
             "#;
 

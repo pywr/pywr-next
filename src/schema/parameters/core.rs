@@ -100,10 +100,12 @@ impl TryFromV1Parameter<MaxParameterV1> for MaxParameter {
         parent_node: Option<&str>,
         unnamed_count: &mut usize,
     ) -> Result<Self, Self::Error> {
-        let parameter = v1.parameter.try_into_v2_parameter(parent_node, unnamed_count)?;
+        let meta: ParameterMeta = v1.meta.into_v2_parameter(parent_node, unnamed_count);
+
+        let parameter = v1.parameter.try_into_v2_parameter(Some(&meta.name), unnamed_count)?;
 
         let p = Self {
-            meta: v1.meta.into_v2_parameter(parent_node, unnamed_count),
+            meta,
             parameter,
             threshold: v1.threshold,
         };
@@ -149,12 +151,11 @@ impl TryFromV1Parameter<NegativeParameterV1> for NegativeParameter {
         parent_node: Option<&str>,
         unnamed_count: &mut usize,
     ) -> Result<Self, Self::Error> {
-        let parameter = v1.parameter.try_into_v2_parameter(parent_node, unnamed_count)?;
+        let meta: ParameterMeta = v1.meta.into_v2_parameter(parent_node, unnamed_count);
 
-        let p = Self {
-            meta: v1.meta.into_v2_parameter(parent_node, unnamed_count),
-            parameter,
-        };
+        let parameter = v1.parameter.try_into_v2_parameter(Some(&meta.name), unnamed_count)?;
+
+        let p = Self { meta, parameter };
         Ok(p)
     }
 }

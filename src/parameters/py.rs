@@ -1,16 +1,21 @@
 use super::{Parameter, ParameterMeta, PywrError, Timestep};
+use crate::metric::Metric;
 use crate::model::Model;
-use crate::parameters::FloatValue;
+use crate::parameters::IndexValue;
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
 use pyo3::prelude::*;
-use pyo3::types::{PyDate, PyTuple};
+use pyo3::types::{IntoPyDict, PyDate, PyDict, PyTuple};
 use std::any::Any;
+use std::collections::HashMap;
 
 pub struct PyParameter {
     meta: ParameterMeta,
     object: Py<PyAny>,
-    parameters: Vec<FloatValue>,
+    args: Py<PyTuple>,
+    kwargs: Py<PyDict>,
+    metrics: HashMap<String, Metric>,
+    indices: HashMap<String, IndexValue>,
 }
 
 struct Internal {
@@ -24,11 +29,21 @@ impl Internal {
 }
 
 impl PyParameter {
-    pub fn new(name: &str, object: Py<PyAny>, parameters: &[FloatValue]) -> Self {
+    pub fn new(
+        name: &str,
+        object: Py<PyAny>,
+        args: Py<PyTuple>,
+        kwargs: Py<PyDict>,
+        metrics: &HashMap<String, Metric>,
+        indices: &HashMap<String, IndexValue>,
+    ) -> Self {
         Self {
             meta: ParameterMeta::new(name),
             object,
-            parameters: parameters.to_vec(),
+            args,
+            kwargs,
+            metrics: metrics.clone(),
+            indices: indices.clone(),
         }
     }
 }
@@ -43,18 +58,40 @@ impl Parameter for PyParameter {
         _timesteps: &[Timestep],
         _scenario_index: &ScenarioIndex,
     ) -> Result<Option<Box<dyn Any + Send>>, PywrError> {
-        let user_obj: PyObject = Python::with_gil(|py| -> PyResult<PyObject> { self.object.call0(py) }).unwrap();
+        pyo3::prepare_freethreaded_python();
+
+        let user_obj: PyObject = Python::with_gil(|py| -> PyResult<PyObject> {
+            let args = self.args.as_ref(py);
+            let kwargs = self.kwargs.as_ref(py);
+            self.object.call(py, args, Some(kwargs))
+        })
+        .unwrap();
 
         let internal = Internal { user_obj };
 
         Ok(Some(internal.into_boxed_any()))
     }
 
+    fn before(&self, internal_state: &mut Option<Box<dyn Any + Send>>) -> Result<(), PywrError> {
+        let internal = match internal_state {
+            Some(internal) => match internal.downcast_mut::<Internal>() {
+                Some(pa) => pa,
+                None => panic!("Internal state did not downcast to the correct type! :("),
+            },
+            None => panic!("No internal state defined when one was expected! :("),
+        };
+
+        Python::with_gil(|py| internal.user_obj.call_method0(py, "before"))
+            .map_err(|e| PywrError::PythonError(e.to_string()))?;
+
+        Ok(())
+    }
+
     fn compute(
         &self,
         timestep: &Timestep,
         scenario_index: &ScenarioIndex,
-        _model: &Model,
+        model: &Model,
         state: &State,
         internal_state: &mut Option<Box<dyn Any + Send>>,
     ) -> Result<f64, PywrError> {
@@ -76,20 +113,44 @@ impl Parameter for PyParameter {
 
             let si = scenario_index.index.into_py(py);
 
-            let p_states = self
-                .parameters
+            let metric_values: Vec<(&str, f64)> = self
+                .metrics
                 .iter()
-                .map(|value| value.get_value(state))
-                .collect::<Result<Vec<f64>, _>>()?
-                .into_py(py);
+                .map(|(k, value)| Ok((k.as_str(), value.get_value(model, state)?)))
+                .collect::<Result<Vec<_>, PywrError>>()?;
 
-            let args = PyTuple::new(py, [date, si.as_ref(py), p_states.as_ref(py)]);
+            let metric_dict = metric_values.into_py_dict(py);
+
+            let index_values: Vec<(&str, usize)> = self
+                .indices
+                .iter()
+                .map(|(k, value)| Ok((k.as_str(), value.get_index(state)?)))
+                .collect::<Result<Vec<_>, PywrError>>()?;
+
+            let index_dict = index_values.into_py_dict(py);
+
+            let args = PyTuple::new(py, [date, si.as_ref(py), metric_dict, index_dict]);
 
             internal.user_obj.call_method1(py, "calc", args)?.extract(py)
         })
         .map_err(|e| PywrError::PythonError(e.to_string()))?;
 
         Ok(value)
+    }
+
+    fn after(&self, internal_state: &mut Option<Box<dyn Any + Send>>) -> Result<(), PywrError> {
+        let internal = match internal_state {
+            Some(internal) => match internal.downcast_mut::<Internal>() {
+                Some(pa) => pa,
+                None => panic!("Internal state did not downcast to the correct type! :("),
+            },
+            None => panic!("No internal state defined when one was expected! :("),
+        };
+
+        Python::with_gil(|py| internal.user_obj.call_method0(py, "after"))
+            .map_err(|e| PywrError::PythonError(e.to_string()))?;
+
+        Ok(())
     }
 }
 
@@ -110,10 +171,10 @@ mod tests {
                 py,
                 r#"
 class MyParameter:
-    def __init__(self):
-        self.count = 0
+    def __init__(self, count, **kwargs):
+        self.count = count
 
-    def calc(self, ts, si, p_values):
+    def calc(self, ts, si, metrics, indices):
         self.count += si
         return float(self.count + ts.day)
 "#,
@@ -125,7 +186,10 @@ class MyParameter:
             test_module.getattr("MyParameter").unwrap().into()
         });
 
-        let param = PyParameter::new("my-parameter", class, &[]);
+        let args = Python::with_gil(|py| PyTuple::new(py, &[0]).into());
+        let kwargs = Python::with_gil(|py| PyDict::new(py).into());
+
+        let param = PyParameter::new("my-parameter", class, args, kwargs, &HashMap::new(), &HashMap::new());
         let timestepper = default_timestepper();
         let timesteps = timestepper.timesteps();
 

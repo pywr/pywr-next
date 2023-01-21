@@ -2,7 +2,6 @@ use crate::node::{ConstraintValue, StorageInitialVolume};
 use crate::schema::data_tables::LoadedTableCollection;
 use crate::schema::nodes::NodeMeta;
 use crate::schema::parameters::{ConstantValue, DynamicFloatValue, TryIntoV2Parameter};
-use crate::timestep::Timestep;
 use crate::virtual_storage::VirtualStorageReset;
 use crate::PywrError;
 use pywr_schema::nodes::VirtualStorageNode as VirtualStorageNodeV1;
@@ -66,11 +65,11 @@ impl VirtualStorageNode {
         Ok(())
     }
 
-    pub fn input_connectors(&self) -> Vec<(&str, Option<&str>)> {
+    pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
         vec![]
     }
 
-    pub fn output_connectors(&self) -> Vec<(&str, Option<&str>)> {
+    pub fn output_connectors(&self) -> Vec<(&str, Option<String>)> {
         vec![]
     }
 }

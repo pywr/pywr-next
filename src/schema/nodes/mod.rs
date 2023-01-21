@@ -207,7 +207,7 @@ impl CoreNode {
         }
     }
 
-    pub fn input_connectors(&self) -> Vec<(&str, Option<&str>)> {
+    pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
         match self {
             CoreNode::Input(n) => n.input_connectors(),
             CoreNode::Link(n) => n.input_connectors(),
@@ -227,7 +227,7 @@ impl CoreNode {
         }
     }
 
-    pub fn output_connectors(&self) -> Vec<(&str, Option<&str>)> {
+    pub fn output_connectors(&self, slot: Option<&str>) -> Vec<(&str, Option<String>)> {
         match self {
             CoreNode::Input(n) => n.output_connectors(),
             CoreNode::Link(n) => n.output_connectors(),
@@ -237,7 +237,7 @@ impl CoreNode {
             CoreNode::RiverGauge(n) => n.output_connectors(),
             CoreNode::LossLink(n) => n.output_connectors(),
             CoreNode::River(n) => n.output_connectors(),
-            CoreNode::RiverSplitWithGauge(n) => n.output_connectors(),
+            CoreNode::RiverSplitWithGauge(n) => n.output_connectors(slot),
             CoreNode::WaterTreatmentWorks(n) => n.output_connectors(),
             // TODO output_connectors should not exist for these aggregated & virtual nodes
             CoreNode::Aggregated(n) => n.output_connectors(),
@@ -307,16 +307,16 @@ impl Node {
         }
     }
 
-    pub fn input_connectors(&self) -> Vec<(&str, Option<&str>)> {
+    pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
         match self {
             Node::Core(n) => n.input_connectors(),
             Node::Custom(n) => panic!("TODO custom nodes not yet supported: {}", n.meta.name.as_str()),
         }
     }
 
-    pub fn output_connectors(&self) -> Vec<(&str, Option<&str>)> {
+    pub fn output_connectors(&self, slot: Option<&str>) -> Vec<(&str, Option<String>)> {
         match self {
-            Node::Core(n) => n.output_connectors(),
+            Node::Core(n) => n.output_connectors(slot),
             Node::Custom(n) => panic!("TODO custom nodes not yet supported: {}", n.meta.name.as_str()),
         }
     }

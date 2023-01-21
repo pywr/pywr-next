@@ -1,3 +1,4 @@
+use crate::aggregated_node::Factors;
 use crate::schema::data_tables::LoadedTableCollection;
 use crate::schema::nodes::NodeMeta;
 use crate::schema::parameters::{DynamicFloatValue, TryIntoV2Parameter};
@@ -12,17 +13,17 @@ use std::path::Path;
 /// ```svgbob
 ///           <node>.mrf
 ///          .------>L -----.
-///      U  | <node>.bypass  |     D[slot_name_0]
+///      U  | <node>.bypass  |     D[<default>]
 ///     -*--|------->L ------|--->*- - -
-///         | <node>.split_1 |
+///         | <node>.split-0 |
 ///          '------>L -----'
-///                  |             D[slot_names_1]
+///                  |             D[slot_name_0]
 ///                   '---------->*- - -
 ///
 ///         |                |
-///         | <node>.split_i |
+///         | <node>.split-i |
 ///          '------>L -----'
-///                  |             D[slot_names_i]
+///                  |             D[slot_name_i]
 ///                   '---------->*- - -
 /// ```
 ///
@@ -33,9 +34,7 @@ pub struct RiverSplitWithGaugeNode {
     pub meta: NodeMeta,
     pub mrf: Option<DynamicFloatValue>,
     pub mrf_cost: Option<DynamicFloatValue>,
-    pub cost: Option<DynamicFloatValue>,
-    pub factors: Vec<DynamicFloatValue>,
-    pub slot_names: Vec<String>,
+    pub splits: Vec<(DynamicFloatValue, String)>,
 }
 
 impl RiverSplitWithGaugeNode {
@@ -50,11 +49,27 @@ impl RiverSplitWithGaugeNode {
     fn split_sub_name(i: usize) -> Option<String> {
         Some(format!("split-{}", i))
     }
+    fn split_agg_sub_name(i: usize) -> Option<String> {
+        Some(format!("split-agg-{}", i))
+    }
 
     pub fn add_to_model(&self, model: &mut crate::model::Model) -> Result<(), PywrError> {
         // TODO do this properly
         model.add_link_node(self.meta.name.as_str(), Self::mrf_sub_name())?;
-        model.add_link_node(self.meta.name.as_str(), Self::bypass_sub_name())?;
+        let bypass_idx = model.add_link_node(self.meta.name.as_str(), Self::bypass_sub_name())?;
+
+        for (i, _) in self.splits.iter().enumerate() {
+            // Each split has a link node and an aggregated node to enforce the factors
+            let split_idx = model.add_link_node(self.meta.name.as_str(), Self::split_sub_name(i).as_deref())?;
+
+            // The factors will be set during the `set_constraints` method
+            model.add_aggregated_node(
+                self.meta.name.as_str(),
+                Self::split_agg_sub_name(i).as_deref(),
+                &[bypass_idx, split_idx],
+                None,
+            )?;
+        }
 
         Ok(())
     }
@@ -76,21 +91,53 @@ impl RiverSplitWithGaugeNode {
             model.set_node_max_flow(self.meta.name.as_str(), Self::mrf_sub_name(), value.into())?;
         }
 
+        for (i, (factor, _)) in self.splits.iter().enumerate() {
+            // Set the factors for each split
+            let factors = Factors::Proportion(vec![factor.load(model, tables, data_path)?]);
+            model.set_aggregated_node_factors(
+                self.meta.name.as_str(),
+                Self::split_agg_sub_name(i).as_deref(),
+                Some(factors),
+            )?;
+        }
+
         Ok(())
     }
 
-    pub fn input_connectors(&self) -> Vec<(&str, Option<&str>)> {
-        vec![
-            (self.meta.name.as_str(), Self::mrf_sub_name()),
-            (self.meta.name.as_str(), Self::bypass_sub_name()),
-        ]
+    /// These connectors are used for both incoming and outgoing edges on the default slot.
+    fn default_connectors(&self) -> Vec<(&str, Option<String>)> {
+        let mut connectors = vec![
+            (self.meta.name.as_str(), Self::mrf_sub_name().map(|s| s.to_string())),
+            (self.meta.name.as_str(), Self::bypass_sub_name().map(|s| s.to_string())),
+        ];
+
+        connectors.extend(
+            self.splits
+                .iter()
+                .enumerate()
+                .map(|(i, _)| (self.meta.name.as_str(), Self::split_sub_name(i))),
+        );
+
+        connectors
     }
 
-    pub fn output_connectors(&self) -> Vec<(&str, Option<&str>)> {
-        vec![
-            (self.meta.name.as_str(), Self::mrf_sub_name()),
-            (self.meta.name.as_str(), Self::bypass_sub_name()),
-        ]
+    pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
+        self.default_connectors()
+    }
+
+    pub fn output_connectors(&self, slot: Option<&str>) -> Vec<(&str, Option<String>)> {
+        match slot {
+            Some(slot) => {
+                let i = self
+                    .splits
+                    .iter()
+                    .position(|(_, s)| s == slot)
+                    .expect("Invalid slot name!");
+
+                vec![(self.meta.name.as_str(), Self::split_sub_name(i))]
+            }
+            None => self.default_connectors(),
+        }
     }
 }
 
@@ -111,13 +158,24 @@ impl TryFrom<RiverSplitWithGaugeNodeV1> for RiverSplitWithGaugeNode {
             .map(|v| v.try_into_v2_parameter(Some(&meta.name), &mut unnamed_count))
             .transpose()?;
 
+        let splits = v1
+            .factors
+            .into_iter()
+            .skip(1)
+            .zip(v1.slot_names.into_iter().skip(1))
+            .map(|(f, slot_name)| {
+                Ok((
+                    f.try_into_v2_parameter(Some(&meta.name), &mut unnamed_count)?,
+                    slot_name,
+                ))
+            })
+            .collect::<Result<Vec<(DynamicFloatValue, String)>, Self::Error>>()?;
+
         let n = Self {
             meta,
             mrf,
             mrf_cost,
-            cost: None,
-            factors: vec![],
-            slot_names: vec![],
+            splits,
         };
         Ok(n)
     }

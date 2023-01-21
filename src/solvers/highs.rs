@@ -213,7 +213,7 @@ impl Solver for HighsSolver {
         let start_save_solution = Instant::now();
 
         for edge in model.edges.deref() {
-            let col = self.builder.col_for_edge(edge.index()) as usize;
+            let col = self.builder.col_for_edge(&edge.index()) as usize;
             let flow = solution[col];
             network_state.add_flow(edge, timestep, flow)?;
         }

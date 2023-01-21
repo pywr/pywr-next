@@ -1,12 +1,11 @@
+use crate::aggregated_node::AggregatedNodeIndex;
 use crate::edge::EdgeIndex;
 use crate::model::Model;
 use crate::node::{Node, NodeType};
-use crate::parameters::FloatValue;
 use crate::solvers::SolverTimings;
 use crate::state::State;
 use crate::timestep::Timestep;
 use crate::PywrError;
-use num::Zero;
 use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::ops::Deref;
@@ -38,6 +37,8 @@ struct Lp<I> {
     row_starts: Vec<I>,
     columns: Vec<I>,
     elements: Vec<f64>,
+
+    coefficients_to_update: Vec<(I, I, f64)>,
 }
 
 impl<I> Lp<I>
@@ -69,12 +70,49 @@ where
         }
     }
 
+    fn reset_coefficients_to_update(&mut self) {
+        self.coefficients_to_update.clear();
+    }
+
     /// Apply new bounds to the given. If the bounds are tighter than the current bounds
     /// then the bounds are updated. If the bounds are looser than the current bounds then they
     /// are ignored.
     fn apply_row_bounds(&mut self, row: usize, lb: f64, ub: f64) {
         self.row_lower[row] = self.row_lower[row].max(lb);
         self.row_upper[row] = self.row_upper[row].min(ub);
+    }
+
+    fn update_row_coefficients(&mut self, row: I, node: &Node, factor: f64, col_edge_map: &ColumnEdgeMap<I>) {
+        match node.node_type() {
+            NodeType::Link => {
+                for edge in node.get_outgoing_edges().unwrap() {
+                    let column = col_edge_map.col_for_edge(edge);
+                    self.coefficients_to_update.push((row, column, factor))
+                }
+            }
+            NodeType::Input => {
+                for edge in node.get_outgoing_edges().unwrap() {
+                    let column = col_edge_map.col_for_edge(edge);
+                    self.coefficients_to_update.push((row, column, factor))
+                }
+            }
+            NodeType::Output => {
+                for edge in node.get_incoming_edges().unwrap() {
+                    let column = col_edge_map.col_for_edge(edge);
+                    self.coefficients_to_update.push((row, column, factor))
+                }
+            }
+            NodeType::Storage => {
+                for edge in node.get_incoming_edges().unwrap() {
+                    let column = col_edge_map.col_for_edge(edge);
+                    self.coefficients_to_update.push((row, column, factor))
+                }
+                for edge in node.get_outgoing_edges().unwrap() {
+                    let column = col_edge_map.col_for_edge(edge);
+                    self.coefficients_to_update.push((row, column, factor))
+                }
+            }
+        }
     }
 }
 
@@ -194,6 +232,7 @@ where
             row_starts,
             columns,
             elements,
+            coefficients_to_update: Vec::new(),
         }
     }
 }
@@ -251,7 +290,7 @@ impl<I> ColumnEdgeMap<I>
 where
     I: Copy + num::PrimInt,
 {
-    fn col_for_edge(&self, edge_index: EdgeIndex) -> I {
+    fn col_for_edge(&self, edge_index: &EdgeIndex) -> I {
         *self
             .edge_to_col
             .get(*edge_index.deref())
@@ -364,12 +403,13 @@ pub struct BuiltSolver<I> {
     col_edge_map: ColumnEdgeMap<I>,
     node_constraints_row_ids: Vec<usize>,
     agg_node_constraint_row_ids: Vec<usize>,
+    agg_node_factor_constraint_row_ids: Vec<(AggregatedNodeIndex, I)>,
     virtual_storage_constraint_row_ids: Vec<usize>,
 }
 
 impl<I> BuiltSolver<I>
 where
-    I: num::PrimInt + Default + Debug,
+    I: num::PrimInt + Default + Debug + Copy,
 {
     pub fn num_rows(&self) -> I {
         I::from(self.builder.row_upper.len()).unwrap()
@@ -419,8 +459,12 @@ where
         &self.builder.elements
     }
 
-    pub fn col_for_edge(&self, edge_index: EdgeIndex) -> I {
+    pub fn col_for_edge(&self, edge_index: &EdgeIndex) -> I {
         self.col_edge_map.col_for_edge(edge_index)
+    }
+
+    pub fn coefficients_to_update(&self) -> &[(I, I, f64)] {
+        &self.builder.coefficients_to_update
     }
 
     pub fn update(
@@ -437,8 +481,10 @@ where
         let start_constraint_update = Instant::now();
         // Reset the row bounds
         self.builder.reset_row_bounds();
+        self.builder.reset_coefficients_to_update();
         // Then these methods will add their bounds
         self.update_node_constraint_bounds(model, timestep, state)?;
+        self.update_aggregated_node_factor_constraints(model, state)?;
         self.update_aggregated_node_constraint_bounds(model, state)?;
         self.update_virtual_storage_node_constraint_bounds(model, timestep, state)?;
         timings.update_constraints += start_constraint_update.elapsed();
@@ -450,8 +496,8 @@ where
     fn update_edge_objectives(&mut self, model: &Model, state: &State) -> Result<(), PywrError> {
         self.builder.zero_obj_coefficients();
         for edge in model.edges.deref() {
-            let obj_coef: f64 = edge.cost(&model.nodes, state)?;
-            let col = self.col_for_edge(edge.index());
+            let obj_coef: f64 = edge.cost(&model.nodes, model, state)?;
+            let col = self.col_for_edge(&edge.index());
 
             self.builder.add_obj_coefficient(col.to_usize().unwrap(), obj_coef);
         }
@@ -468,11 +514,11 @@ where
         let dt = timestep.days();
 
         for (row_id, node) in self.node_constraints_row_ids.iter().zip(model.nodes.deref()) {
-            let (lb, ub): (f64, f64) = match node.get_current_flow_bounds(state) {
+            let (lb, ub): (f64, f64) = match node.get_current_flow_bounds(model, state) {
                 Ok(bnds) => bnds,
                 Err(PywrError::FlowConstraintsUndefined) => {
                     // Must be a storage node
-                    let (avail, missing) = match node.get_current_available_volume_bounds(state) {
+                    let (avail, missing) = match node.get_current_available_volume_bounds(model, state) {
                         Ok(bnds) => bnds,
                         Err(e) => return Err(e),
                     };
@@ -488,6 +534,32 @@ where
         Ok(())
     }
 
+    fn update_aggregated_node_factor_constraints(&mut self, model: &Model, state: &State) -> Result<(), PywrError> {
+        for (agg_node_id, row_id) in self.agg_node_factor_constraint_row_ids.iter() {
+            let agg_node = model.get_aggregated_node(agg_node_id)?;
+            // Only create row for nodes that have factors
+            if let Some(node_pairs) = agg_node.get_norm_factor_pairs(model, state) {
+                for ((n0, f0), (n1, f1)) in node_pairs {
+                    // Modify the constraint matrix coefficients for the nodes
+                    // TODO error handling?
+                    let node0 = model.nodes.get(&n0).expect("Node index not found!");
+                    let node1 = model.nodes.get(&n1).expect("Node index not found!");
+
+                    self.builder
+                        .update_row_coefficients(*row_id, node0, 1.0, &self.col_edge_map);
+                    self.builder
+                        .update_row_coefficients(*row_id, node1, -f0 / f1, &self.col_edge_map);
+
+                    self.builder.apply_row_bounds(row_id.to_usize().unwrap(), 0.0, 0.0);
+                }
+            } else {
+                panic!("No factor pairs found for an aggregated node that was setup with factors?!");
+            }
+        }
+
+        Ok(())
+    }
+
     /// Update aggregated node constraints
     fn update_aggregated_node_constraint_bounds(&mut self, model: &Model, state: &State) -> Result<(), PywrError> {
         for (row_id, agg_node) in self
@@ -495,7 +567,7 @@ where
             .iter()
             .zip(model.aggregated_nodes.deref())
         {
-            let (lb, ub): (f64, f64) = agg_node.get_current_flow_bounds(state)?;
+            let (lb, ub): (f64, f64) = agg_node.get_current_flow_bounds(model, state)?;
             self.builder.apply_row_bounds(*row_id, lb, ub);
         }
 
@@ -515,7 +587,7 @@ where
             .iter()
             .zip(model.virtual_storage_nodes.deref())
         {
-            let (avail, missing) = match node.get_current_available_volume_bounds(state) {
+            let (avail, missing) = match node.get_current_available_volume_bounds(model, state) {
                 Ok(bnds) => bnds,
                 Err(e) => return Err(e),
             };
@@ -564,7 +636,7 @@ where
         // Create the aggregated node constraints
         let agg_node_constraint_row_ids = self.create_aggregated_node_constraints(model);
         // Create the aggregated node factor constraints
-        self.create_aggregated_node_factor_constraints(model);
+        let agg_node_factor_constraint_row_ids = self.create_aggregated_node_factor_constraints(model);
         // Create virtual storage constraints
         let virtual_storage_constraint_row_ids = self.create_virtual_storage_constraints(model);
 
@@ -572,6 +644,7 @@ where
             builder: self.builder.build(),
             col_edge_map: self.col_edge_map.build(),
             node_constraints_row_ids,
+            agg_node_factor_constraint_row_ids,
             agg_node_constraint_row_ids,
             virtual_storage_constraint_row_ids,
         })
@@ -719,11 +792,13 @@ where
     /// Create aggregated node factor constraints
     ///
     /// One constraint is created per node to enforce any factor constraints.
-    fn create_aggregated_node_factor_constraints(&mut self, model: &Model) {
+    fn create_aggregated_node_factor_constraints(&mut self, model: &Model) -> Vec<(AggregatedNodeIndex, I)> {
+        let mut row_ids = Vec::new();
+
         for agg_node in model.aggregated_nodes.deref() {
             // Only create row for nodes that have factors
-            if let Some(factor_pairs) = agg_node.get_norm_factor_pairs() {
-                for ((n0, f0), (n1, f1)) in factor_pairs {
+            if let Some(node_pairs) = agg_node.get_factor_node_pairs() {
+                for (n0, n1) in node_pairs {
                     // Create rows for each node in the aggregated node pair with the first one.
 
                     let mut row = RowBuilder::default();
@@ -732,30 +807,19 @@ where
                     let node0 = model.nodes.get(&n0).expect("Node index not found!");
                     let node1 = model.nodes.get(&n1).expect("Node index not found!");
 
-                    let ff0 = match f0 {
-                        FloatValue::Constant(f) => f,
-                        _ => panic!("Dynamic float factors not supported!"),
-                    };
-
-                    let ff1 = match f1 {
-                        FloatValue::Constant(f) => f,
-                        _ => panic!("Dynamic float factors not supported!"),
-                    };
-
-                    if ff0.is_zero() || ff1.is_zero() {
-                        panic!("Aggregated node {:?} contains a zero factor.", agg_node.full_name());
-                    }
-
                     self.add_node(node0, 1.0, &mut row);
-                    self.add_node(node1, -ff0 / ff1, &mut row);
+                    self.add_node(node1, -1.0, &mut row);
                     // Make the row fixed at zero RHS
                     row.set_lower(0.0);
                     row.set_upper(0.0);
 
-                    self.builder.add_fixed_row(row);
+                    let row_id = self.builder.add_variable_row(row);
+                    row_ids.push((agg_node.index(), row_id))
                 }
             }
         }
+
+        row_ids
     }
 
     /// Create aggregated node constraints

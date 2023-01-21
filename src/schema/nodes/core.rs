@@ -1,7 +1,7 @@
 use crate::node::{ConstraintValue, StorageInitialVolume};
 use crate::schema::data_tables::LoadedTableCollection;
 use crate::schema::nodes::NodeMeta;
-use crate::schema::parameters::{ConstantFloatVec, ConstantValue, DynamicFloatValue, TryIntoV2Parameter};
+use crate::schema::parameters::{ConstantValue, DynamicFloatValue, TryIntoV2Parameter};
 use crate::PywrError;
 use pywr_schema::nodes::{
     AggregatedNode as AggregatedNodeV1, AggregatedStorageNode as AggregatedStorageNodeV1,
@@ -65,10 +65,10 @@ impl InputNode {
         Ok(())
     }
 
-    pub fn input_connectors(&self) -> Vec<(&str, Option<&str>)> {
+    pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
         vec![(self.meta.name.as_str(), None)]
     }
-    pub fn output_connectors(&self) -> Vec<(&str, Option<&str>)> {
+    pub fn output_connectors(&self) -> Vec<(&str, Option<String>)> {
         vec![(self.meta.name.as_str(), None)]
     }
 }
@@ -157,10 +157,10 @@ impl LinkNode {
         Ok(())
     }
 
-    pub fn input_connectors(&self) -> Vec<(&str, Option<&str>)> {
+    pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
         vec![(self.meta.name.as_str(), None)]
     }
-    pub fn output_connectors(&self) -> Vec<(&str, Option<&str>)> {
+    pub fn output_connectors(&self) -> Vec<(&str, Option<String>)> {
         vec![(self.meta.name.as_str(), None)]
     }
 }
@@ -249,11 +249,11 @@ impl OutputNode {
         Ok(())
     }
 
-    pub fn input_connectors(&self) -> Vec<(&str, Option<&str>)> {
+    pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
         vec![(self.meta.name.as_str(), None)]
     }
 
-    pub fn output_connectors(&self) -> Vec<(&str, Option<&str>)> {
+    pub fn output_connectors(&self) -> Vec<(&str, Option<String>)> {
         vec![(self.meta.name.as_str(), None)]
     }
 }
@@ -356,11 +356,11 @@ impl StorageNode {
         Ok(())
     }
 
-    pub fn input_connectors(&self) -> Vec<(&str, Option<&str>)> {
+    pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
         vec![(self.meta.name.as_str(), None)]
     }
 
-    pub fn output_connectors(&self) -> Vec<(&str, Option<&str>)> {
+    pub fn output_connectors(&self) -> Vec<(&str, Option<String>)> {
         vec![(self.meta.name.as_str(), None)]
     }
 }
@@ -459,11 +459,11 @@ impl CatchmentNode {
         Ok(())
     }
 
-    pub fn input_connectors(&self) -> Vec<(&str, Option<&str>)> {
+    pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
         vec![(self.meta.name.as_str(), None)]
     }
 
-    pub fn output_connectors(&self) -> Vec<(&str, Option<&str>)> {
+    pub fn output_connectors(&self) -> Vec<(&str, Option<String>)> {
         vec![(self.meta.name.as_str(), None)]
     }
 }
@@ -490,13 +490,20 @@ impl TryFrom<CatchmentNodeV1> for CatchmentNode {
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Clone)]
+#[serde(tag = "type")]
+pub enum Factors {
+    Proportion { factors: Vec<DynamicFloatValue> },
+    Ratio { factors: Vec<DynamicFloatValue> },
+}
+
+#[derive(serde::Deserialize, serde::Serialize, Clone)]
 pub struct AggregatedNode {
     #[serde(flatten)]
     pub meta: NodeMeta,
     pub nodes: Vec<String>,
     pub max_flow: Option<DynamicFloatValue>,
     pub min_flow: Option<DynamicFloatValue>,
-    pub factors: Option<Vec<DynamicFloatValue>>,
+    pub factors: Option<Factors>,
 }
 
 impl AggregatedNode {
@@ -530,24 +537,34 @@ impl AggregatedNode {
         }
 
         if let Some(factors) = &self.factors {
-            let values = factors
-                .iter()
-                .map(|f| f.load(model, tables, data_path))
-                .collect::<Result<Vec<_>, _>>()?;
+            let f = match factors {
+                Factors::Proportion { factors } => crate::aggregated_node::Factors::Proportion(
+                    factors
+                        .iter()
+                        .map(|f| f.load(model, tables, data_path))
+                        .collect::<Result<Vec<_>, _>>()?,
+                ),
+                Factors::Ratio { factors } => crate::aggregated_node::Factors::Ratio(
+                    factors
+                        .iter()
+                        .map(|f| f.load(model, tables, data_path))
+                        .collect::<Result<Vec<_>, _>>()?,
+                ),
+            };
 
-            model.set_aggregated_node_factors(self.meta.name.as_str(), None, Some(values.as_slice()))?;
+            model.set_aggregated_node_factors(self.meta.name.as_str(), None, Some(f))?;
         }
 
         Ok(())
     }
 
-    pub fn input_connectors(&self) -> Vec<(&str, Option<&str>)> {
+    pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
         // Not connectable
         // TODO this should be a trait? And error if you try to connect to a non-connectable node.
         vec![]
     }
 
-    pub fn output_connectors(&self) -> Vec<(&str, Option<&str>)> {
+    pub fn output_connectors(&self) -> Vec<(&str, Option<String>)> {
         // Not connectable
         vec![]
     }
@@ -561,11 +578,12 @@ impl TryFrom<AggregatedNodeV1> for AggregatedNode {
         let mut unnamed_count = 0;
 
         let factors = match v1.factors {
-            Some(f) => Some(
-                f.into_iter()
+            Some(f) => Some(Factors::Ratio {
+                factors: f
+                    .into_iter()
                     .map(|v| v.try_into_v2_parameter(Some(&meta.name), &mut unnamed_count))
                     .collect::<Result<_, _>>()?,
-            ),
+            }),
             None => None,
         };
 
@@ -609,13 +627,13 @@ impl AggregatedStorageNode {
         Ok(())
     }
 
-    pub fn input_connectors(&self) -> Vec<(&str, Option<&str>)> {
+    pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
         // Not connectable
         // TODO this should be a trait? And error if you try to connect to a non-connectable node.
         vec![]
     }
 
-    pub fn output_connectors(&self) -> Vec<(&str, Option<&str>)> {
+    pub fn output_connectors(&self) -> Vec<(&str, Option<String>)> {
         // Not connectable
         vec![]
     }

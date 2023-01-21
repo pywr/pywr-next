@@ -3,7 +3,6 @@ extern crate core;
 use crate::node::NodeIndex;
 use crate::parameters::{IndexParameterIndex, ParameterIndex};
 use crate::recorders::RecorderIndex;
-use crate::state::NetworkState;
 use thiserror::Error;
 
 pub mod aggregated_node;

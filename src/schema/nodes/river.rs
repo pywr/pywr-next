@@ -20,10 +20,10 @@ impl RiverNode {
         Ok(())
     }
 
-    pub fn input_connectors(&self) -> Vec<(&str, Option<&str>)> {
+    pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
         vec![(self.meta.name.as_str(), None)]
     }
-    pub fn output_connectors(&self) -> Vec<(&str, Option<&str>)> {
+    pub fn output_connectors(&self) -> Vec<(&str, Option<String>)> {
         vec![(self.meta.name.as_str(), None)]
     }
 }

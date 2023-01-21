@@ -11,14 +11,8 @@ fn is_leap_year(year: i32) -> bool {
     (year % 4 == 0) & ((year % 100 != 0) | (year % 400 == 0))
 }
 
-struct ResetDate {
-    day: u8,
-    month: Month,
-}
-
 pub struct UniformDrawdownProfileParameter {
     meta: ParameterMeta,
-    reset: ResetDate,
     residual_days: u8,
     reset_doy: u16,
 }
@@ -32,10 +26,6 @@ impl UniformDrawdownProfileParameter {
 
         Self {
             meta: ParameterMeta::new(name),
-            reset: ResetDate {
-                day: reset_day,
-                month: reset_month,
-            },
             residual_days,
             reset_doy,
         }

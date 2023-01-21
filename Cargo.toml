@@ -69,3 +69,5 @@ exclude = [
 opt-level = 3 # fast and small wasm
 lto = true
 # strip = true
+# Turn this on for profiling
+# debug = true

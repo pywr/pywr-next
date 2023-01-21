@@ -157,11 +157,14 @@ impl PywrModel {
                 .get_node_by_name(edge.to_node.as_str())
                 .ok_or_else(|| PywrError::NodeNotFound(edge.to_node.clone()))?;
 
+            let from_slot = edge.from_slot.as_deref();
+
             // Connect each "from" connector to each "to" connector
-            for from_connector in from_node.output_connectors() {
+            for from_connector in from_node.output_connectors(from_slot) {
                 for to_connector in to_node.input_connectors() {
-                    let from_node_index = model.get_node_index_by_name(from_connector.0, from_connector.1)?;
-                    let to_node_index = model.get_node_index_by_name(to_connector.0, to_connector.1)?;
+                    let from_node_index =
+                        model.get_node_index_by_name(from_connector.0, from_connector.1.as_deref())?;
+                    let to_node_index = model.get_node_index_by_name(to_connector.0, to_connector.1.as_deref())?;
                     model.connect_nodes(from_node_index, to_node_index)?;
                 }
             }

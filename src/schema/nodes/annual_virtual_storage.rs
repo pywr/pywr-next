@@ -77,11 +77,11 @@ impl AnnualVirtualStorageNode {
         Ok(())
     }
 
-    pub fn input_connectors(&self) -> Vec<(&str, Option<&str>)> {
+    pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
         vec![]
     }
 
-    pub fn output_connectors(&self) -> Vec<(&str, Option<&str>)> {
+    pub fn output_connectors(&self) -> Vec<(&str, Option<String>)> {
         vec![]
     }
 }

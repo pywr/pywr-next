@@ -1,8 +1,9 @@
+use crate::metric::Metric;
 /// Utilities for unit tests.
 /// TODO move this to its own local crate ("test-utilities") as part of a workspace.
 use crate::model::Model;
 use crate::node::{Constraint, ConstraintValue, StorageInitialVolume};
-use crate::parameters::{AggFunc, AggregatedParameter, ConstantParameter, FloatValue, VectorParameter};
+use crate::parameters::{AggFunc, AggregatedParameter, ConstantParameter, VectorParameter};
 use crate::scenario::ScenarioGroupCollection;
 use crate::timestep::Timestepper;
 use time::macros::date;
@@ -33,7 +34,10 @@ pub fn simple_model() -> Model {
 
     let input_node = model.get_mut_node_by_name("input", None).unwrap();
     input_node
-        .set_constraint(ConstraintValue::Parameter(inflow), Constraint::MaxFlow)
+        .set_constraint(
+            ConstraintValue::Metric(Metric::ParameterValue(inflow)),
+            Constraint::MaxFlow,
+        )
         .unwrap();
 
     let base_demand = 10.0;
@@ -43,7 +47,7 @@ pub fn simple_model() -> Model {
 
     let total_demand = AggregatedParameter::new(
         "total-demand",
-        vec![FloatValue::Constant(base_demand), FloatValue::Dynamic(demand_factor)],
+        &[Metric::Constant(base_demand), Metric::ParameterValue(demand_factor)],
         AggFunc::Product,
     );
     let total_demand = model.add_parameter(Box::new(total_demand)).unwrap();
@@ -53,9 +57,12 @@ pub fn simple_model() -> Model {
 
     let output_node = model.get_mut_node_by_name("output", None).unwrap();
     output_node
-        .set_constraint(ConstraintValue::Parameter(total_demand), Constraint::MaxFlow)
+        .set_constraint(
+            ConstraintValue::Metric(Metric::ParameterValue(total_demand)),
+            Constraint::MaxFlow,
+        )
         .unwrap();
-    output_node.set_cost(ConstraintValue::Parameter(demand_cost));
+    output_node.set_cost(ConstraintValue::Metric(Metric::ParameterValue(demand_cost)));
 
     model
 }
@@ -87,9 +94,12 @@ pub fn simple_storage_model() -> Model {
 
     let output_node = model.get_mut_node_by_name("output", None).unwrap();
     output_node
-        .set_constraint(ConstraintValue::Parameter(demand), Constraint::MaxFlow)
+        .set_constraint(
+            ConstraintValue::Metric(Metric::ParameterValue(demand)),
+            Constraint::MaxFlow,
+        )
         .unwrap();
-    output_node.set_cost(ConstraintValue::Parameter(demand_cost));
+    output_node.set_cost(ConstraintValue::Metric(Metric::ParameterValue(demand_cost)));
 
     let max_volume = 100.0;
 

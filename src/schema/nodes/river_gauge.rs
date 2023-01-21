@@ -64,17 +64,17 @@ impl RiverGaugeNode {
         Ok(())
     }
 
-    pub fn input_connectors(&self) -> Vec<(&str, Option<&str>)> {
+    pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
         vec![
-            (self.meta.name.as_str(), Self::mrf_sub_name()),
-            (self.meta.name.as_str(), Self::bypass_sub_name()),
+            (self.meta.name.as_str(), Self::mrf_sub_name().map(|s| s.to_string())),
+            (self.meta.name.as_str(), Self::bypass_sub_name().map(|s| s.to_string())),
         ]
     }
 
-    pub fn output_connectors(&self) -> Vec<(&str, Option<&str>)> {
+    pub fn output_connectors(&self) -> Vec<(&str, Option<String>)> {
         vec![
-            (self.meta.name.as_str(), Self::mrf_sub_name()),
-            (self.meta.name.as_str(), Self::bypass_sub_name()),
+            (self.meta.name.as_str(), Self::mrf_sub_name().map(|s| s.to_string())),
+            (self.meta.name.as_str(), Self::bypass_sub_name().map(|s| s.to_string())),
         ]
     }
 }

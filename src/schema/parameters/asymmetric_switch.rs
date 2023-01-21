@@ -54,10 +54,10 @@ impl TryFromV1Parameter<AsymmetricSwitchIndexParameterV1> for AsymmetricSwitchIn
 
         let on_index_parameter = v1
             .on_index_parameter
-            .try_into_v2_parameter(parent_node, unnamed_count)?;
+            .try_into_v2_parameter(Some(&meta.name), unnamed_count)?;
         let off_index_parameter = v1
             .off_index_parameter
-            .try_into_v2_parameter(parent_node, unnamed_count)?;
+            .try_into_v2_parameter(Some(&meta.name), unnamed_count)?;
 
         let p = Self {
             meta,

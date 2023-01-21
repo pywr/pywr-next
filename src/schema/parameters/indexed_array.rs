@@ -13,7 +13,7 @@ pub struct IndexedArrayParameter {
     #[serde(flatten)]
     pub meta: ParameterMeta,
     #[serde(alias = "params")]
-    pub parameters: Vec<DynamicFloatValue>,
+    pub metrics: Vec<DynamicFloatValue>,
     pub index_parameter: DynamicIndexValue,
 }
 
@@ -25,8 +25,8 @@ impl IndexedArrayParameter {
     pub fn parameters(&self) -> HashMap<&str, DynamicFloatValueType> {
         let mut attributes = HashMap::new();
 
-        let parameters = &self.parameters;
-        attributes.insert("parameters", parameters.into());
+        let metrics = &self.metrics;
+        attributes.insert("metrics", metrics.into());
 
         attributes
     }
@@ -39,13 +39,13 @@ impl IndexedArrayParameter {
     ) -> Result<ParameterIndex, PywrError> {
         let index_parameter = self.index_parameter.load(model, tables, data_path)?;
 
-        let parameters = self
-            .parameters
+        let metrics = self
+            .metrics
             .iter()
             .map(|v| v.load(model, tables, data_path))
             .collect::<Result<Vec<_>, _>>()?;
 
-        let p = crate::parameters::IndexedArrayParameter::new(&self.meta.name, index_parameter, parameters);
+        let p = crate::parameters::IndexedArrayParameter::new(&self.meta.name, index_parameter, &metrics);
 
         model.add_parameter(Box::new(p))
     }
@@ -59,16 +59,22 @@ impl TryFromV1Parameter<IndexedArrayParameterV1> for IndexedArrayParameter {
         parent_node: Option<&str>,
         unnamed_count: &mut usize,
     ) -> Result<Self, Self::Error> {
-        let parameters = v1
+        let meta: ParameterMeta = v1.meta.into_v2_parameter(parent_node, unnamed_count);
+
+        let metrics = v1
             .parameters
             .into_iter()
-            .map(|p| p.try_into_v2_parameter(parent_node, unnamed_count))
+            .map(|p| p.try_into_v2_parameter(Some(&meta.name), unnamed_count))
             .collect::<Result<Vec<_>, _>>()?;
 
+        let index_parameter = v1
+            .index_parameter
+            .try_into_v2_parameter(Some(&meta.name), unnamed_count)?;
+
         let p = Self {
-            meta: v1.meta.into_v2_parameter(parent_node, unnamed_count),
-            index_parameter: v1.index_parameter.try_into_v2_parameter(parent_node, unnamed_count)?,
-            parameters,
+            meta,
+            index_parameter,
+            metrics,
         };
         Ok(p)
     }

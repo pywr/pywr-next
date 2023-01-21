@@ -74,17 +74,17 @@ impl LossLinkNode {
         Ok(())
     }
 
-    pub fn input_connectors(&self) -> Vec<(&str, Option<&str>)> {
+    pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
         // Gross inflow goes to both nodes
         vec![
-            (self.meta.name.as_str(), Self::loss_sub_name()),
-            (self.meta.name.as_str(), Self::net_sub_name()),
+            (self.meta.name.as_str(), Self::loss_sub_name().map(|s| s.to_string())),
+            (self.meta.name.as_str(), Self::net_sub_name().map(|s| s.to_string())),
         ]
     }
 
-    pub fn output_connectors(&self) -> Vec<(&str, Option<&str>)> {
+    pub fn output_connectors(&self) -> Vec<(&str, Option<String>)> {
         // Only net goes to the downstream.
-        vec![(self.meta.name.as_str(), Self::net_sub_name())]
+        vec![(self.meta.name.as_str(), Self::net_sub_name().map(|s| s.to_string()))]
     }
 }
 

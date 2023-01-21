@@ -73,10 +73,10 @@ impl TryFromV1Parameter<ControlCurveInterpolatedParameterV1> for ControlCurveInt
         let control_curves = if let Some(control_curves) = v1.control_curves {
             control_curves
                 .into_iter()
-                .map(|p| p.try_into_v2_parameter(parent_node, unnamed_count))
+                .map(|p| p.try_into_v2_parameter(Some(&meta.name), unnamed_count))
                 .collect::<Result<Vec<_>, _>>()?
         } else if let Some(control_curve) = v1.control_curve {
-            vec![control_curve.try_into_v2_parameter(parent_node, unnamed_count)?]
+            vec![control_curve.try_into_v2_parameter(Some(&meta.name), unnamed_count)?]
         } else {
             return Err(PywrError::V1SchemaConversion(format!(
                 "ControlCurveInterpolatedParameter '{}' has no control curves defined.",
@@ -146,17 +146,19 @@ impl TryFromV1Parameter<ControlCurveIndexParameterV1> for ControlCurveIndexParam
         parent_node: Option<&str>,
         unnamed_count: &mut usize,
     ) -> Result<Self, Self::Error> {
+        let meta: ParameterMeta = v1.meta.into_v2_parameter(parent_node, unnamed_count);
+
         let control_curves = v1
             .control_curves
             .into_iter()
-            .map(|p| p.try_into_v2_parameter(parent_node, unnamed_count))
+            .map(|p| p.try_into_v2_parameter(Some(&meta.name), unnamed_count))
             .collect::<Result<Vec<_>, _>>()?;
 
         let values = if let Some(parameters) = v1.parameters {
             Some(
                 parameters
                     .into_iter()
-                    .map(|p| p.try_into_v2_parameter(parent_node, unnamed_count))
+                    .map(|p| p.try_into_v2_parameter(Some(&meta.name), unnamed_count))
                     .collect::<Result<Vec<_>, _>>()?,
             )
         } else {
@@ -164,7 +166,7 @@ impl TryFromV1Parameter<ControlCurveIndexParameterV1> for ControlCurveIndexParam
         };
 
         let p = Self {
-            meta: v1.meta.into_v2_parameter(parent_node, unnamed_count),
+            meta,
             control_curves,
             storage_node: v1.storage_node,
             values,
@@ -236,10 +238,10 @@ impl TryFromV1Parameter<ControlCurveParameterV1> for ControlCurveParameter {
         let control_curves = if let Some(control_curves) = v1.control_curves {
             control_curves
                 .into_iter()
-                .map(|p| p.try_into_v2_parameter(parent_node, unnamed_count))
+                .map(|p| p.try_into_v2_parameter(Some(&meta.name), unnamed_count))
                 .collect::<Result<Vec<_>, _>>()?
         } else if let Some(control_curve) = v1.control_curve {
-            vec![control_curve.try_into_v2_parameter(parent_node, unnamed_count)?]
+            vec![control_curve.try_into_v2_parameter(Some(&meta.name), unnamed_count)?]
         } else {
             return Err(PywrError::V1SchemaConversion(format!(
                 "ControlCurveParameter '{}' has no control curves defined.",
@@ -252,7 +254,7 @@ impl TryFromV1Parameter<ControlCurveParameterV1> for ControlCurveParameter {
         } else if let Some(parameters) = v1.parameters {
             parameters
                 .into_iter()
-                .map(|p| p.try_into_v2_parameter(parent_node, unnamed_count))
+                .map(|p| p.try_into_v2_parameter(Some(&meta.name), unnamed_count))
                 .collect::<Result<Vec<_>, _>>()?
         } else {
             return Err(PywrError::V1SchemaConversion(
@@ -339,10 +341,10 @@ impl TryFromV1Parameter<ControlCurvePiecewiseInterpolatedParameterV1> for Contro
         let control_curves = if let Some(control_curves) = v1.control_curves {
             control_curves
                 .into_iter()
-                .map(|p| p.try_into_v2_parameter(parent_node, unnamed_count))
+                .map(|p| p.try_into_v2_parameter(Some(&meta.name), unnamed_count))
                 .collect::<Result<Vec<_>, _>>()?
         } else if let Some(control_curve) = v1.control_curve {
-            vec![control_curve.try_into_v2_parameter(parent_node, unnamed_count)?]
+            vec![control_curve.try_into_v2_parameter(Some(&meta.name), unnamed_count)?]
         } else {
             return Err(PywrError::V1SchemaConversion(format!(
                 "ControlCurvePiecewiseInterpolatedParameter '{}' has no control curves defined.",
@@ -375,8 +377,8 @@ mod tests {
                 "type": "ControlCurvePiecewiseInterpolated",
                 "storage_node": "Reservoir",
                 "control_curves": [
-                    "reservoir_cc",
-                    {"name": "a-constant", "type": "Constant", "value":  0.2}
+                    {"type": "Parameter", "name": "reservoir_cc"},
+                    0.2
                 ],
                 "comment": "A witty comment",
                 "values": [

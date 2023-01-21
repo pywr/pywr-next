@@ -65,7 +65,7 @@ pub struct AggregatedParameter {
     #[serde(flatten)]
     pub meta: ParameterMeta,
     pub agg_func: AggFunc,
-    pub parameters: Vec<DynamicFloatValue>,
+    pub metrics: Vec<DynamicFloatValue>,
 }
 
 impl AggregatedParameter {
@@ -76,8 +76,8 @@ impl AggregatedParameter {
     pub fn parameters(&self) -> HashMap<&str, DynamicFloatValueType> {
         let mut attributes = HashMap::new();
 
-        let parameters = &self.parameters;
-        attributes.insert("parameters", parameters.into());
+        let metrics = &self.metrics;
+        attributes.insert("parameters", metrics.into());
 
         attributes
     }
@@ -88,13 +88,13 @@ impl AggregatedParameter {
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
     ) -> Result<ParameterIndex, PywrError> {
-        let parameters = self
-            .parameters
+        let metrics = self
+            .metrics
             .iter()
             .map(|v| v.load(model, tables, data_path))
             .collect::<Result<Vec<_>, _>>()?;
 
-        let p = crate::parameters::AggregatedParameter::new(&self.meta.name, parameters, self.agg_func.into());
+        let p = crate::parameters::AggregatedParameter::new(&self.meta.name, &metrics, self.agg_func.into());
 
         model.add_parameter(Box::new(p))
     }
@@ -108,16 +108,18 @@ impl TryFromV1Parameter<AggregatedParameterV1> for AggregatedParameter {
         parent_node: Option<&str>,
         unnamed_count: &mut usize,
     ) -> Result<Self, Self::Error> {
+        let meta: ParameterMeta = v1.meta.into_v2_parameter(parent_node, unnamed_count);
+
         let parameters = v1
             .parameters
             .into_iter()
-            .map(|p| p.try_into_v2_parameter(parent_node, unnamed_count))
+            .map(|p| p.try_into_v2_parameter(Some(&meta.name), unnamed_count))
             .collect::<Result<Vec<_>, _>>()?;
 
         let p = Self {
-            meta: v1.meta.into_v2_parameter(parent_node, unnamed_count),
+            meta,
             agg_func: v1.agg_func.into(),
-            parameters,
+            metrics: parameters,
         };
         Ok(p)
     }
@@ -210,16 +212,18 @@ impl TryFromV1Parameter<AggregatedIndexParameterV1> for AggregatedIndexParameter
         parent_node: Option<&str>,
         unnamed_count: &mut usize,
     ) -> Result<Self, Self::Error> {
+        let meta: ParameterMeta = v1.meta.into_v2_parameter(parent_node, unnamed_count);
+
         let parameters = v1
             .parameters
             .into_iter()
-            .map(|p| p.try_into_v2_parameter(parent_node, unnamed_count))
+            .map(|p| p.try_into_v2_parameter(Some(&meta.name), unnamed_count))
             .collect::<Result<Vec<_>, _>>()?;
 
         let p = Self {
-            meta: v1.meta.into_v2_parameter(parent_node, unnamed_count),
+            meta,
             agg_func: v1.agg_func.into(),
-            parameters,
+            parameters: parameters,
         };
         Ok(p)
     }
@@ -228,7 +232,8 @@ impl TryFromV1Parameter<AggregatedIndexParameterV1> for AggregatedIndexParameter
 #[cfg(test)]
 mod tests {
     use crate::schema::parameters::aggregated::AggregatedParameter;
-    use crate::schema::parameters::{DynamicFloatValue, DynamicFloatValueType, Parameter, ParameterFloatValue};
+    use crate::schema::parameters::{DynamicFloatValue, DynamicFloatValueType, MetricFloatValue, Parameter};
+    use serde_json::json;
 
     #[test]
     fn test_aggregated() {
@@ -238,39 +243,45 @@ mod tests {
                 "type": "aggregated",
                 "agg_func": "min",
                 "comment": "Take the minimum of two parameters",
-                "parameters": [
-                        {
-                            "name": "First parameter",
-                            "type": "ControlCurvePiecewiseInterpolated",
-                            "storage_node": "Reservoir",
-                            "control_curves": [
-                                "reservoir_cc",
-                                {"name": "my-constant", "type": "Constant", "value":  0.2}
-                            ],
-                            "comment": "A witty comment",
-                            "values": [
-                                [-0.1, -1.0],
-                                [-100, -200],
-                                [-300, -400]
-                            ],
-                            "minimum": 0.05
-                        },
-                        {
-                            "name": "Second parameter",
-                            "type": "ControlCurvePiecewiseInterpolated",
-                            "storage_node": "Reservoir",
-                            "control_curves": [
-                                "reservoir_cc",
-                                {"name": "my-constant", "type": "Constant", "value":  0.2}
-                            ],
-                            "comment": "A witty comment",
-                            "values": [
-                                [-0.1, -1.0],
-                                [-100, -200],
-                                [-300, -400]
-                            ],
-                            "minimum": 0.05
-                        }
+                "metrics": [
+                  {
+                    "type": "InlineParameter",
+                    "definition": {
+                        "name": "First parameter",
+                        "type": "ControlCurvePiecewiseInterpolated",
+                        "storage_node": "Reservoir",
+                        "control_curves": [
+                            {"type": "Parameter", "name": "reservoir_cc"},
+                            0.2
+                        ],
+                        "comment": "A witty comment",
+                        "values": [
+                            [-0.1, -1.0],
+                            [-100, -200],
+                            [-300, -400]
+                        ],
+                        "minimum": 0.05
+                    }
+                  },
+                  {
+                    "type": "InlineParameter",
+                    "definition": {
+                        "name": "Second parameter",
+                        "type": "ControlCurvePiecewiseInterpolated",
+                        "storage_node": "Reservoir",
+                        "control_curves": [
+                            {"type": "Parameter", "name": "reservoir_cc"},
+                            0.2
+                        ],
+                        "comment": "A witty comment",
+                        "values": [
+                            [-0.1, -1.0],
+                            [-100, -200],
+                            [-300, -400]
+                        ],
+                        "minimum": 0.05
+                    }
+                  }
                 ]
             }
             "#;
@@ -285,7 +296,7 @@ mod tests {
                 for p in children {
                     match p {
                         DynamicFloatValue::Dynamic(p) => match p {
-                            ParameterFloatValue::Inline(p) => match p.as_ref() {
+                            MetricFloatValue::InlineParameter { definition } => match definition.as_ref() {
                                 Parameter::ControlCurvePiecewiseInterpolated(p) => {
                                     assert_eq!(p.node_references().remove("storage_node"), Some("Reservoir"))
                                 }

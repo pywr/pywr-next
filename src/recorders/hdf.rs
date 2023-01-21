@@ -4,7 +4,7 @@ use crate::model::Model;
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
 use hdf5::{Extents, Group};
-use ndarray::{s, Array1, Array2};
+use ndarray::{s, Array1};
 use std::any::Any;
 use std::ops::Deref;
 use std::path::PathBuf;
@@ -79,7 +79,7 @@ impl Recorder for HDF5Recorder {
 
         let root_grp = file.deref();
 
-        for (metric, (name, sub_name)) in &self.metrics {
+        for (metric, _) in &self.metrics {
             let ds = match metric {
                 Metric::NodeInFlow(idx) => {
                     let node = model.get_node(idx)?;
@@ -166,7 +166,7 @@ impl Recorder for HDF5Recorder {
             let values = scenario_indices
                 .iter()
                 .zip(state)
-                .map(|(si, s)| metric.get_value(model, s))
+                .map(|(_, s)| metric.get_value(model, s))
                 .collect::<Result<Vec<_>, _>>()?;
 
             if let Err(e) = dataset.write_slice(&values, s![timestep.index, ..]) {

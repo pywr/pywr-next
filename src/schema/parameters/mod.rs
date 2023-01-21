@@ -9,23 +9,25 @@ mod python;
 mod tables;
 mod thresholds;
 
-use super::parameters::aggregated::{AggregatedIndexParameter, AggregatedParameter};
-use super::parameters::asymmetric_switch::AsymmetricSwitchIndexParameter;
-use super::parameters::control_curves::{
+pub use super::data_tables::{LoadedTableCollection, TableDataRef};
+pub use super::parameters::aggregated::{AggregatedIndexParameter, AggregatedParameter};
+pub use super::parameters::asymmetric_switch::AsymmetricSwitchIndexParameter;
+pub use super::parameters::control_curves::{
     ControlCurveIndexParameter, ControlCurveInterpolatedParameter, ControlCurveParameter,
     ControlCurvePiecewiseInterpolatedParameter,
 };
 pub use super::parameters::core::{ConstantParameter, MaxParameter, NegativeParameter};
-use super::parameters::indexed_array::IndexedArrayParameter;
-use super::parameters::polynomial::Polynomial1DParameter;
-use super::parameters::profiles::{DailyProfileParameter, MonthlyProfileParameter, UniformDrawdownProfileParameter};
-use super::parameters::tables::TablesArrayParameter;
-use super::parameters::thresholds::ParameterThresholdParameter;
-
-use crate::parameters::{FloatValue, IndexValue, ParameterType};
-use crate::schema::data_tables::{LoadedTableCollection, TableDataRef};
-use crate::schema::parameters::python::PythonParameter;
-use crate::{IndexParameterIndex, ParameterIndex, PywrError};
+pub use super::parameters::indexed_array::IndexedArrayParameter;
+pub use super::parameters::polynomial::Polynomial1DParameter;
+pub use super::parameters::profiles::{
+    DailyProfileParameter, MonthlyProfileParameter, UniformDrawdownProfileParameter,
+};
+pub use super::parameters::python::PythonParameter;
+pub use super::parameters::tables::TablesArrayParameter;
+pub use super::parameters::thresholds::ParameterThresholdParameter;
+use crate::metric::Metric;
+use crate::parameters::{IndexValue, ParameterType};
+use crate::{IndexParameterIndex, NodeIndex, PywrError};
 use pywr_schema::parameters::{
     CoreParameter, ExternalDataRef as ExternalDataRefV1, Parameter as ParameterV1, ParameterMeta as ParameterMetaV1,
     ParameterValue as ParameterValueV1, TableIndex as TableIndexV1,
@@ -387,35 +389,73 @@ impl TryFrom<ParameterValueV1> for ConstantValue<f64> {
     }
 }
 
-/// A floating-point(f64) value from another parameter
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
-#[serde(untagged)]
-pub enum ParameterFloatValue {
-    Reference(String),
-    Inline(Box<Parameter>),
+pub struct NodeReference {
+    name: String,
+    sub_name: Option<String>,
 }
 
-impl ParameterFloatValue {
+impl NodeReference {
+    fn get_node_index(&self, model: &crate::model::Model) -> Result<NodeIndex, PywrError> {
+        model.get_node_index_by_name(&self.name, self.sub_name.as_deref())
+    }
+}
+
+/// A floating-point(f64) value from a metric in the model.
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+#[serde(tag = "type")]
+pub enum MetricFloatValue {
+    NodeInFlow(NodeReference),
+    NodeOutFlow(NodeReference),
+    NodeVolume(NodeReference),
+    NodeProportionalVolume(NodeReference),
+    Parameter { name: String },
+    InlineParameter { definition: Box<Parameter> },
+}
+
+impl MetricFloatValue {
+    /// Load the metric definition into a `Metric` containing the appropriate internal references.
     pub fn load(
         &self,
         model: &mut crate::model::Model,
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
-    ) -> Result<ParameterIndex, PywrError> {
+    ) -> Result<Metric, PywrError> {
         match self {
-            ParameterFloatValue::Reference(name) => {
-                // This should be an existing parameter
-                model.get_parameter_index_by_name(name)
+            Self::NodeInFlow(node_ref) => Ok(Metric::NodeInFlow(node_ref.get_node_index(model)?)),
+            Self::NodeOutFlow(node_ref) => Ok(Metric::NodeOutFlow(node_ref.get_node_index(model)?)),
+            Self::NodeVolume(node_ref) => Ok(Metric::NodeVolume(node_ref.get_node_index(model)?)),
+            Self::NodeProportionalVolume(node_ref) => {
+                Ok(Metric::NodeProportionalVolume(node_ref.get_node_index(model)?))
             }
-            ParameterFloatValue::Inline(parameter) => {
-                // Inline parameter needs to be added
-                match parameter.add_to_model(model, tables, data_path)? {
-                    ParameterType::Parameter(idx) => Ok(idx),
-                    ParameterType::Index(_) => Err(PywrError::UnexpectedParameterType(format!(
+            Self::Parameter { name } => {
+                // This should be an existing parameter
+                Ok(Metric::ParameterValue(model.get_parameter_index_by_name(name)?))
+            }
+            Self::InlineParameter { definition } => {
+                // This inline parameter could already have been loaded on a previous attempt
+                // Let's see if exists first.
+                // TODO this will create strange issues if there are duplicate names in the
+                // parameter definitions. I.e. we will only ever load the first one and then
+                // assume it is the correct one for future references to that name. This could be
+                // improved by checking the parameter returned by name matches the definition here.
+
+                match model.get_parameter_index_by_name(definition.name()) {
+                    Ok(p) => {
+                        // Found a parameter with the name; assume it is the right one!
+                        Ok(Metric::ParameterValue(p))
+                    }
+                    Err(_) => {
+                        // An error retrieving a parameter with this name; assume it needs creating.
+                        match definition.add_to_model(model, tables, data_path)? {
+                            ParameterType::Parameter(idx) => Ok(Metric::ParameterValue(idx)),
+                            ParameterType::Index(_) => Err(PywrError::UnexpectedParameterType(format!(
                         "Found index parameter of type '{}' with name '{}' where an float parameter was expected.",
-                        parameter.ty(),
-                        parameter.name(),
+                        definition.ty(),
+                        definition.name(),
                     ))),
+                        }
+                    }
                 }
             }
         }
@@ -465,7 +505,7 @@ impl ParameterIndexValue {
 #[serde(untagged)]
 pub enum DynamicFloatValue {
     Constant(ConstantValue<f64>),
-    Dynamic(ParameterFloatValue),
+    Dynamic(MetricFloatValue),
 }
 
 impl DynamicFloatValue {
@@ -478,10 +518,10 @@ impl DynamicFloatValue {
         model: &mut crate::model::Model,
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
-    ) -> Result<FloatValue, PywrError> {
+    ) -> Result<Metric, PywrError> {
         let parameter_ref = match self {
-            DynamicFloatValue::Constant(v) => FloatValue::Constant(v.load(tables)?),
-            DynamicFloatValue::Dynamic(v) => FloatValue::Dynamic(v.load(model, tables, data_path)?),
+            DynamicFloatValue::Constant(v) => Metric::Constant(v.load(tables)?),
+            DynamicFloatValue::Dynamic(v) => v.load(model, tables, data_path)?,
         };
         Ok(parameter_ref)
     }
@@ -497,11 +537,11 @@ impl TryFromV1Parameter<ParameterValueV1> for DynamicFloatValue {
     ) -> Result<Self, Self::Error> {
         let p = match v1 {
             ParameterValueV1::Constant(v) => Self::Constant(ConstantValue::Literal(v)),
-            ParameterValueV1::Reference(p_name) => Self::Dynamic(ParameterFloatValue::Reference(p_name)),
+            ParameterValueV1::Reference(p_name) => Self::Dynamic(MetricFloatValue::Parameter { name: p_name }),
             ParameterValueV1::Table(tbl) => Self::Constant(ConstantValue::Table(tbl.into())),
-            ParameterValueV1::Inline(param) => Self::Dynamic(ParameterFloatValue::Inline(Box::new(
-                (*param).try_into_v2_parameter(parent_node, unnamed_count)?,
-            ))),
+            ParameterValueV1::Inline(param) => Self::Dynamic(MetricFloatValue::InlineParameter {
+                definition: Box::new((*param).try_into_v2_parameter(parent_node, unnamed_count)?),
+            }),
         };
         Ok(p)
     }

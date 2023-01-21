@@ -86,6 +86,12 @@ impl ClpSimplex {
         }
     }
 
+    pub fn modify_coefficient(&mut self, row: c_int, column: c_int, new_element: c_double) {
+        unsafe {
+            Clp_modifyCoefficient(self.ptr, row, column, new_element, 1);
+        }
+    }
+
     pub fn add_rows(
         &mut self,
         row_lower: &[c_double],
@@ -231,6 +237,11 @@ impl Solver for ClpSolver {
         let now = Instant::now();
         self.clp_simplex.change_row_lower(self.builder.row_lower());
         self.clp_simplex.change_row_upper(self.builder.row_upper());
+
+        for (row, column, coefficient) in self.builder.coefficients_to_update() {
+            self.clp_simplex.modify_coefficient(*row, *column, *coefficient)
+        }
+
         timings.update_constraints += now.elapsed();
 
         let now = Instant::now();
@@ -243,7 +254,7 @@ impl Solver for ClpSolver {
 
         let start_save_solution = Instant::now();
         for edge in model.edges.iter() {
-            let col = self.builder.col_for_edge(edge.index()) as usize;
+            let col = self.builder.col_for_edge(&edge.index()) as usize;
             let flow = solution[col];
             network_state.add_flow(edge, timestep, flow)?;
         }
