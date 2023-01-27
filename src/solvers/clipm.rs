@@ -1,5 +1,7 @@
+use crate::edge::EdgeIndex;
 use crate::model::Model;
-use crate::node::NodeType;
+use crate::node::{Node, NodeType};
+use crate::solvers::col_edge_map::{ColumnEdgeMap, ColumnEdgeMapBuilder};
 use crate::solvers::{MultiStateSolver, SolverTimings};
 use crate::state::State;
 use crate::timestep::Timestep;
@@ -43,7 +45,7 @@ impl Matrix {
     }
 }
 
-struct LpBuilder {
+struct Lp {
     inequality: Matrix,
     equality: Matrix,
     num_lps: usize,
@@ -52,49 +54,40 @@ struct LpBuilder {
     col_obj_coef: Vec<f64>,
 }
 
-impl LpBuilder {
-    fn new(num_lps: usize, num_cols: usize) -> Self {
-        Self {
-            inequality: Matrix::default(),
-            equality: Matrix::default(),
-            num_lps,
-            num_cols,
-            row_upper: Vec::new(),
-            // Pre-allocate array for the objective coefficients
-            col_obj_coef: vec![0.0; num_lps * num_cols],
+impl Lp {
+    /// Zero all objective coefficients.
+    fn zero_obj_coefficients(&mut self) {
+        self.col_obj_coef.fill(0.0);
+    }
+
+    pub fn add_obj_coefficient(&mut self, col: usize, obj_coef: &[f64]) {
+        let first_col_id = col * self.num_lps;
+        if obj_coef.len() != self.num_lps {
+            panic!("Objective coefficient slice must be the same length as the number of LPs.");
+        }
+
+        for (i, &v) in obj_coef.iter().enumerate() {
+            self.col_obj_coef[first_col_id + i] += v;
         }
     }
 
-    pub fn add_row(&mut self, row: RowBuilder) {
-        match &row.upper {
-            Bounds::Upper => {
-                // Current last entry of the inequality bounds
-                let idx = self.inequality.nrows() * self.num_lps;
-                // Add the row to the matrix
-                self.inequality.add_row(row);
-                // Extend the inequality bounds before the equality bounds
-                let values = vec![B_MAX; self.num_lps];
-                self.row_upper.splice(idx..idx, values.into_iter());
-            }
-            Bounds::Fixed => {
-                self.equality.add_row(row);
-                // Equality constraints default to zero bounds
-                self.row_upper.extend(vec![0.0; self.num_lps]);
-            }
+    /// Reset the row bounds to `FMIN` and `FMAX` for all rows with a mask.
+    fn reset_row_bounds(&mut self) {
+        for ub in self.row_upper.iter_mut().take(self.inequality.nrows() * self.num_lps) {
+            *ub = B_MAX
         }
     }
 
-    pub fn set_obj_coefficient(&mut self, col: usize, obj_coef: &[f64]) {
-        let i = col * self.num_lps;
-        let j = (col + 1) * self.num_lps;
-        self.col_obj_coef[i..j].copy_from_slice(obj_coef);
-    }
+    pub fn apply_row_bounds(&mut self, row: usize, ub: &[f64]) {
+        let first_row_id = row * self.num_lps;
 
-    pub fn set_row_bounds(&mut self, row: usize, ub: &[f64]) {
-        let i = row * self.num_lps;
-        let j = (row + 1) * self.num_lps;
+        if ub.len() != self.num_lps {
+            panic!("Upper bound slice must be the same length as the number of LPs.");
+        }
 
-        self.row_upper[i..j].copy_from_slice(ub);
+        for (i, v) in ub.iter().enumerate() {
+            self.row_upper[first_row_id + i] = self.row_upper[first_row_id + i].min(*v);
+        }
     }
 
     fn get_full_matrix(&self) -> Matrix {
@@ -119,13 +112,107 @@ impl LpBuilder {
     }
 }
 
-#[derive(Debug, Copy, Clone)]
+struct LpBuilder {
+    inequality: Vec<RowBuilder>,
+    equality: Vec<RowBuilder>,
+    num_lps: usize,
+    num_cols: usize,
+}
+
+impl LpBuilder {
+    fn new(num_lps: usize) -> Self {
+        Self {
+            inequality: Vec::new(),
+            equality: Vec::new(),
+            num_lps,
+            num_cols: 0,
+            // row_upper: Vec::new(),
+            // Pre-allocate array for the objective coefficients
+            // col_obj_coef: vec![0.0; num_lps * num_cols],
+        }
+    }
+
+    fn add_column(&mut self) {
+        self.num_cols += 1;
+    }
+
+    fn add_row(&mut self, row: RowBuilder) -> Option<usize> {
+        match &row.upper {
+            Bounds::Upper => {
+                // let row_id = self.inequality.len();
+                // self.inequality.push(row);
+                // Some(row_id)
+
+                match self.inequality.iter().position(|r| r == &row) {
+                    Some(row_id) => Some(row_id),
+                    None => {
+                        // No row found, add a new one.
+                        let row_id = self.inequality.len();
+                        self.inequality.push(row);
+                        Some(row_id)
+                    }
+                }
+            }
+            Bounds::Fixed => {
+                self.equality.push(row);
+                None
+            }
+        }
+    }
+
+    /// Build the LP into a final sparse form
+    fn build(self) -> Lp {
+        let num_rows = self.equality.len() + self.inequality.len();
+        let row_upper = vec![0.0; num_rows * self.num_lps];
+        let col_obj_coef = vec![0.0; self.num_cols * self.num_lps];
+
+        println!("Number of columns: {}", self.num_cols);
+        println!("Number of rows: {}", num_rows);
+        println!("Number of inequality rows: {}", self.inequality.len());
+        println!("Number of equality rows: {}", self.equality.len());
+        println!("Number of LPs: {}", self.num_lps);
+
+        // Build the two matrices
+        let mut inequality = Matrix::default();
+        let mut equality = Matrix::default();
+
+        for row in self.inequality.into_iter() {
+            // Current last entry of the inequality bounds
+            // let idx = inequality.nrows() * self.num_lps;
+            // Add the row to the matrix
+            inequality.add_row(row);
+            // Extend the inequality bounds before the equality bounds
+            // let values = vec![B_MAX; self.num_lps];
+            // row_upper.splice(idx..idx, values.into_iter());
+        }
+
+        for row in self.equality.into_iter() {
+            equality.add_row(row);
+            // Equality constraints default to zero bounds
+            // row_upper.extend(vec![0.0; self.num_lps]);
+        }
+
+        // println!("Inequality: {:?}", inequality);
+        // println!("Equality: {:?}", equality);
+
+        Lp {
+            inequality,
+            equality,
+            num_lps: self.num_lps,
+            num_cols: self.num_cols,
+            row_upper,
+            col_obj_coef,
+        }
+    }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq)]
 enum Bounds {
     Upper,
     Fixed,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone, PartialEq)]
 struct RowBuilder {
     upper: Bounds,
     columns: BTreeMap<usize, f64>,
@@ -157,35 +244,155 @@ impl RowBuilder {
     ///
     /// If the column already exists `value` will be added to the existing coefficient.
     fn add_element(&mut self, column: usize, value: f64) {
+        if !value.is_finite() {
+            panic!("Row factor is non-finite.");
+        }
         *self.columns.entry(column).or_insert(0.0) += value;
+    }
+}
+
+struct BuiltSolver {
+    lp: Lp,
+    col_edge_map: ColumnEdgeMap<usize>,
+    node_constraints_row_ids: Vec<usize>,
+}
+
+impl BuiltSolver {
+    pub fn col_obj_coef(&self) -> &[f64] {
+        &self.lp.col_obj_coef
+    }
+
+    pub fn row_upper(&self) -> &[f64] {
+        &self.lp.row_upper
+    }
+
+    pub fn col_for_edge(&self, edge_index: &EdgeIndex) -> usize {
+        self.col_edge_map.col_for_edge(edge_index)
+    }
+
+    fn update(
+        &mut self,
+        model: &Model,
+        timestep: &Timestep,
+        states: &[State],
+        timings: &mut SolverTimings,
+    ) -> Result<(), PywrError> {
+        let start_objective_update = Instant::now();
+        self.update_edge_objectives(model, states)?;
+        timings.update_objective += start_objective_update.elapsed();
+
+        let start_constraint_update = Instant::now();
+
+        self.lp.reset_row_bounds();
+        self.update_node_constraint_bounds(model, timestep, states)?;
+        // self.update_aggregated_node_constraint_bounds(model, state)?;
+        timings.update_constraints += start_constraint_update.elapsed();
+
+        Ok(())
+    }
+
+    /// Update edge objective coefficients
+    fn update_edge_objectives(&mut self, model: &Model, states: &[State]) -> Result<(), PywrError> {
+        self.lp.zero_obj_coefficients();
+        for edge in model.edges.deref() {
+            // Collect all of the costs for all states together
+            let cost = states
+                .iter()
+                .map(|s| {
+                    edge.cost(&model.nodes, model, s)
+                        .map(|c| if c != 0.0 { -c } else { 0.0 })
+                })
+                .collect::<Result<Vec<f64>, _>>()?;
+
+            let col = self.col_for_edge(&edge.index());
+            self.lp.add_obj_coefficient(col, &cost);
+        }
+        Ok(())
+    }
+
+    /// Update node constraints
+    fn update_node_constraint_bounds(
+        &mut self,
+        model: &Model,
+        timestep: &Timestep,
+        states: &[State],
+    ) -> Result<(), PywrError> {
+        let mut row_ids = self.node_constraints_row_ids.iter();
+
+        let dt = timestep.days();
+
+        for node in model.nodes.deref() {
+            match node.node_type() {
+                NodeType::Input | NodeType::Output | NodeType::Link => {
+                    if !node.is_max_flow_unconstrained().unwrap() {
+                        // Flow nodes will only respect the upper bounds
+                        let ub: Vec<f64> = states
+                            .iter()
+                            .map(|state| {
+                                // TODO check for non-zero lower bounds and error?
+                                node.get_current_flow_bounds(model, state)
+                                    .expect("Flow bounds expected for Input, Output and Link nodes.")
+                                    .1
+                                    .min(B_MAX)
+                            })
+                            .collect();
+                        // Apply the bounds to LP
+                        self.lp.apply_row_bounds(*row_ids.next().unwrap(), ub.as_slice());
+                    }
+                }
+                NodeType::Storage => {
+                    // Storage nodes instead have two constraints for available and missing volume.
+                    let (avail, missing): (Vec<_>, Vec<_>) = states
+                        .iter()
+                        .map(|state| {
+                            let (avail, missing) = node
+                                .get_current_available_volume_bounds(model, state)
+                                .expect("Volumes bounds expected for Storage nodes.");
+                            (avail / dt, missing / dt)
+                        })
+                        .unzip();
+                    // Storage nodes add two rows the LP. First is the bounds on increase
+                    // in volume. The second is the bounds on decrease in volume.
+                    self.lp.apply_row_bounds(*row_ids.next().unwrap(), missing.as_slice());
+
+                    self.lp.apply_row_bounds(*row_ids.next().unwrap(), avail.as_slice());
+                }
+            }
+        }
+
+        Ok(())
     }
 }
 
 struct SolverBuilder {
     builder: LpBuilder,
-    start_node_constraints: Option<usize>,
-    start_agg_node_constraints: Option<usize>,
-    start_agg_node_factor_constraints: Option<usize>,
-    start_virtual_storage_constraints: Option<usize>,
+    col_edge_map: ColumnEdgeMapBuilder<usize>,
+    // start_node_constraints: Option<usize>,
+    // start_agg_node_constraints: Option<usize>,
+    // start_agg_node_factor_constraints: Option<usize>,
+    // start_virtual_storage_constraints: Option<usize>,
 }
 
 impl SolverBuilder {
-    fn new(num_lps: usize, num_cols: usize) -> Self {
+    fn new(num_lps: usize) -> Self {
         Self {
-            builder: LpBuilder::new(num_lps, num_cols),
-            start_node_constraints: None,
-            start_agg_node_constraints: None,
-            start_agg_node_factor_constraints: None,
-            start_virtual_storage_constraints: None,
+            builder: LpBuilder::new(num_lps),
+            col_edge_map: ColumnEdgeMapBuilder::default(),
         }
     }
 
-    fn create(model: &Model, num_scenarios: usize) -> Result<Self, PywrError> {
-        let mut builder = Self::new(num_scenarios, model.edges.len());
+    pub fn col_for_edge(&self, edge_index: &EdgeIndex) -> usize {
+        self.col_edge_map.col_for_edge(edge_index)
+    }
+
+    fn create(mut self, model: &Model) -> Result<BuiltSolver, PywrError> {
+        // Create the columns
+        self.create_columns(model)?;
+
         // Create edge mass balance constraints
-        builder.create_mass_balance_constraints(model);
+        self.create_mass_balance_constraints(model);
         // Create the nodal constraints
-        builder.create_node_constraints(model);
+        let node_constraints_row_ids = self.create_node_constraints(model);
         // // Create the aggregated node constraints
         // builder.create_aggregated_node_constraints(model);
         // // Create the aggregated node factor constraints
@@ -193,7 +400,56 @@ impl SolverBuilder {
         // // Create virtual storage constraints
         // builder.create_virtual_storage_constraints(model);
 
-        Ok(builder)
+        Ok(BuiltSolver {
+            lp: self.builder.build(),
+            col_edge_map: self.col_edge_map.build(),
+            node_constraints_row_ids,
+        })
+    }
+
+    /// Create the columns in the linear program.
+    ///
+    /// Typically each edge will have its own column. However, we use the mass-balance information
+    /// to collapse edges (and their columns) where they are trivially the same. I.e. if there
+    /// is a single incoming edge and outgoing edge at a link node.
+    fn create_columns(&mut self, model: &Model) -> Result<(), PywrError> {
+        // One column per edge
+        let ncols = model.edges.len();
+        if ncols < 1 {
+            return Err(PywrError::NoEdgesDefined);
+        }
+
+        for edge in model.edges.iter() {
+            let edge_index = edge.index();
+            let from_node = model.get_node(&edge.from_node_index)?;
+
+            if let NodeType::Link = from_node.node_type() {
+                // We only look at link nodes; there should be no output nodes as a
+                // "from_node" and input nodes will have no upstream edges
+                let incoming_edges = from_node.get_incoming_edges()?;
+                // NB `edge` should be one of these outgoing edges
+                let outgoing_edges = from_node.get_outgoing_edges()?;
+                assert!(outgoing_edges.contains(&edge_index));
+                if (incoming_edges.len() == 1) && (outgoing_edges.len() == 1) {
+                    // Because of the mass-balance constraint these two edges must be equal to
+                    // one another.
+                    self.col_edge_map.add_equal_edges(edge_index, incoming_edges[0]);
+                } else {
+                    // Otherwise this edge has a more complex relationship with its upstream
+                    self.col_edge_map.add_simple_edge(edge_index);
+                }
+            } else {
+                // Other upstream node types mean the edge is added normally
+                self.col_edge_map.add_simple_edge(edge_index);
+            }
+        }
+
+        // Add columns set the columns as x >= 0.0 (i.e. no upper bounds)
+        for _ in 0..self.col_edge_map.ncols() {
+            self.builder.add_column();
+        }
+
+        Ok(())
     }
 
     /// Create mass balance constraints for each edge
@@ -209,13 +465,54 @@ impl SolverBuilder {
                 // TODO check for length >= 1
 
                 for edge in incoming_edges {
-                    row.add_element(*edge.deref(), 1.0);
+                    let column = self.col_for_edge(edge);
+                    row.add_element(column, 1.0);
                 }
                 for edge in outgoing_edges {
-                    row.add_element(*edge.deref(), -1.0);
+                    let column = self.col_for_edge(edge);
+                    row.add_element(column, -1.0);
                 }
 
-                self.builder.add_row(row);
+                if row.columns.is_empty() {
+                    panic!("Row contains no columns!")
+                } else if row.columns.len() == 1 {
+                    // Skip this row because the edges must be mapped to the same column
+                } else {
+                    self.builder.add_row(row);
+                }
+            }
+        }
+    }
+
+    fn add_node(&mut self, node: &Node, factor: f64, row: &mut RowBuilder) {
+        match node.node_type() {
+            NodeType::Link => {
+                for edge in node.get_outgoing_edges().unwrap() {
+                    let column = self.col_for_edge(edge);
+                    row.add_element(column, factor);
+                }
+            }
+            NodeType::Input => {
+                for edge in node.get_outgoing_edges().unwrap() {
+                    let column = self.col_for_edge(edge);
+                    row.add_element(column, factor);
+                }
+            }
+            NodeType::Output => {
+                for edge in node.get_incoming_edges().unwrap() {
+                    let column = self.col_for_edge(edge);
+                    row.add_element(column, factor);
+                }
+            }
+            NodeType::Storage => {
+                for edge in node.get_incoming_edges().unwrap() {
+                    let column = self.col_for_edge(edge);
+                    row.add_element(column, factor);
+                }
+                for edge in node.get_outgoing_edges().unwrap() {
+                    let column = self.col_for_edge(edge);
+                    row.add_element(column, -factor);
+                }
             }
         }
     }
@@ -224,156 +521,53 @@ impl SolverBuilder {
     ///
     /// One constraint is created per node to enforce any constraints (flow or storage)
     /// that it may define.
-    fn create_node_constraints(&mut self, model: &Model) {
-        let start_row = self.builder.inequality.nrows();
-
-        for node in model.nodes.deref() {
-            // Create empty arrays to store the matrix data
-            let mut row = RowBuilder::upper();
-            let mut add_negative_copy = false;
-
-            match node.node_type() {
-                NodeType::Link => {
-                    for edge in node.get_outgoing_edges().unwrap() {
-                        row.add_element(*edge.deref(), 1.0);
-                    }
-                }
-                NodeType::Input => {
-                    for edge in node.get_outgoing_edges().unwrap() {
-                        row.add_element(*edge.deref(), 1.0);
-                    }
-                }
-                NodeType::Output => {
-                    for edge in node.get_incoming_edges().unwrap() {
-                        row.add_element(*edge.deref(), 1.0);
-                    }
-                }
-                NodeType::Storage => {
-                    // Make two rows for Storage nodes
-                    add_negative_copy = true;
-                    for edge in node.get_incoming_edges().unwrap() {
-                        row.add_element(*edge.deref(), 1.0);
-                    }
-                    for edge in node.get_outgoing_edges().unwrap() {
-                        row.add_element(*edge.deref(), -1.0);
-                    }
-                }
-            }
-
-            self.builder.add_row(row.clone());
-            if add_negative_copy {
-                let neg_row = row.clone_negative();
-                self.builder.add_row(neg_row);
-            }
-        }
-        self.start_node_constraints = Some(start_row);
-    }
-
-    fn update(
-        &mut self,
-        model: &Model,
-        timestep: &Timestep,
-        states: &[State],
-        timings: &mut SolverTimings,
-    ) -> Result<(), PywrError> {
-        let start_objective_update = Instant::now();
-        self.update_edge_objectives(model, states)?;
-        timings.update_objective += start_objective_update.elapsed();
-
-        let start_constraint_update = Instant::now();
-        self.update_node_constraint_bounds(model, timestep, states)?;
-        // self.update_aggregated_node_constraint_bounds(model, state)?;
-        timings.update_constraints += start_constraint_update.elapsed();
-
-        Ok(())
-    }
-
-    /// Update edge objective coefficients
-    fn update_edge_objectives(&mut self, model: &Model, states: &[State]) -> Result<(), PywrError> {
-        for edge in model.edges.deref() {
-            // Collect all of the costs for all states together
-            let cost = states
-                .iter()
-                .map(|s| {
-                    edge.cost(&model.nodes, model, s)
-                        .map(|c| if c != 0.0 { -c } else { 0.0 })
-                })
-                .collect::<Result<Vec<f64>, _>>()?;
-
-            self.builder.set_obj_coefficient(*edge.index().deref(), &cost);
-        }
-        Ok(())
-    }
-
-    /// Update node constraints
-    fn update_node_constraint_bounds(
-        &mut self,
-        model: &Model,
-        timestep: &Timestep,
-        states: &[State],
-    ) -> Result<(), PywrError> {
-        let mut row = match self.start_node_constraints {
-            Some(r) => r,
-            None => return Err(PywrError::SolverNotSetup),
-        };
-
-        let dt = timestep.days();
+    fn create_node_constraints(&mut self, model: &Model) -> Vec<usize> {
+        let mut row_ids = Vec::with_capacity(model.nodes.len());
 
         for node in model.nodes.deref() {
             match node.node_type() {
                 NodeType::Input | NodeType::Output | NodeType::Link => {
-                    // Flow nodes will only respect the upper bounds
-                    let ub: Vec<f64> = states
-                        .iter()
-                        .map(|state| {
-                            // TODO check for non-zero lower bounds and error?
-                            node.get_current_flow_bounds(model, state)
-                                .expect("Flow bounds expected for Input, Output and Link nodes.")
-                                .1
-                                .min(B_MAX)
-                        })
-                        .collect();
-                    // Apply the bounds to LP
-                    self.builder.set_row_bounds(row, ub.as_slice());
-                    row += 1;
+                    // Only create node constraints for nodes that could become constrained
+                    if !node.is_max_flow_unconstrained().unwrap() {
+                        // Create empty arrays to store the matrix data
+                        let mut row = RowBuilder::upper();
+                        self.add_node(node, 1.0, &mut row);
+
+                        let row_id = self.builder.add_row(row.clone()).unwrap();
+                        row_ids.push(row_id);
+                    }
                 }
                 NodeType::Storage => {
-                    // Storage nodes instead have two constraints for availale and missing volume.
-                    let (avail, missing): (Vec<_>, Vec<_>) = states
-                        .iter()
-                        .map(|state| {
-                            let (avail, missing) = node
-                                .get_current_available_volume_bounds(model, state)
-                                .expect("Volumes bounds expected for Storage nodes.");
-                            (avail / dt, missing / dt)
-                        })
-                        .unzip();
-                    // Storage nodes add two rows the LP. First is the bounds on increase
-                    // in volume. The second is the bounds on decrease in volume.
-                    self.builder.set_row_bounds(row, missing.as_slice());
-                    row += 1;
-                    self.builder.set_row_bounds(row, avail.as_slice());
-                    row += 1;
+                    // Storage nodes have a different type of constraint
+                    let mut row = RowBuilder::upper();
+                    self.add_node(node, 1.0, &mut row);
+                    let row_id = self.builder.add_row(row.clone()).unwrap();
+                    row_ids.push(row_id);
+
+                    let neg_row = row.clone_negative();
+                    let row_id = self.builder.add_row(neg_row).unwrap();
+                    row_ids.push(row_id);
                 }
             }
         }
 
-        Ok(())
+        row_ids
     }
 }
 
-pub struct ClIpmSolver {
-    builder: SolverBuilder,
-    ipm: PathFollowingDirectClSolver,
+pub struct ClIpmF32Solver {
+    built: BuiltSolver,
+    ipm: PathFollowingDirectClSolver<f32>,
 }
 
-impl MultiStateSolver for ClIpmSolver {
+impl MultiStateSolver for ClIpmF32Solver {
     fn setup(model: &Model, num_scenarios: usize) -> Result<Box<Self>, PywrError> {
-        let builder = SolverBuilder::create(model, num_scenarios)?;
+        let builder = SolverBuilder::new(num_scenarios);
+        let built = builder.create(model)?;
 
-        let matrix = builder.builder.get_full_matrix();
+        let matrix = built.lp.get_full_matrix();
         let num_rows = matrix.row_starts.len() - 1;
-        let num_cols = builder.builder.num_cols;
+        let num_cols = built.lp.num_cols;
 
         // TODO handle the error better
         let ipm = PathFollowingDirectClSolver::from_data(
@@ -381,28 +575,30 @@ impl MultiStateSolver for ClIpmSolver {
             num_cols,
             matrix.row_starts,
             matrix.columns,
-            matrix.elements,
-            builder.builder.inequality.nrows() as u32,
+            matrix.elements.into_iter().map(|v| v as f32).collect(),
+            built.lp.inequality.nrows() as u32,
             num_scenarios as u32,
         )
         .expect("Failed to create the OpenCL IPM solver from the given LP data.");
 
-        Ok(Box::new(Self { builder, ipm }))
+        Ok(Box::new(Self { built, ipm }))
     }
 
     fn solve(&mut self, model: &Model, timestep: &Timestep, states: &mut [State]) -> Result<SolverTimings, PywrError> {
         // TODO complete the timings
         let mut timings = SolverTimings::default();
 
-        self.builder.update(model, timestep, states, &mut timings)?;
+        self.built.update(model, timestep, states, &mut timings)?;
+
+        let now = Instant::now();
+        let row_upper: Vec<_> = self.built.row_upper().iter().map(|&v| v as f32).collect();
+        let col_obj_coef: Vec<_> = self.built.col_obj_coef().iter().map(|&v| v as f32).collect();
 
         let solution = self
             .ipm
-            .solve(
-                self.builder.builder.row_upper.as_slice(),
-                self.builder.builder.col_obj_coef.as_slice(),
-            )
+            .solve(&row_upper, &col_obj_coef)
             .expect("Solve failed with the OpenCL IPM solver.");
+        timings.solve = now.elapsed();
 
         let start_save_solution = Instant::now();
         let num_states = states.len();
@@ -411,7 +607,96 @@ impl MultiStateSolver for ClIpmSolver {
             network_state.reset();
 
             for edge in model.edges.deref() {
-                let flow = solution[*edge.index().deref() * num_states + i];
+                let col = self.built.col_for_edge(&edge.index());
+                let flow = solution[col * num_states + i];
+                network_state.add_flow(edge, timestep, flow as f64)?;
+            }
+        }
+        timings.save_solution += start_save_solution.elapsed();
+
+        Ok(timings)
+    }
+}
+
+pub struct ClIpmF64Solver {
+    built: BuiltSolver,
+    ipm: PathFollowingDirectClSolver<f64>,
+}
+
+impl MultiStateSolver for ClIpmF64Solver {
+    fn setup(model: &Model, num_scenarios: usize) -> Result<Box<Self>, PywrError> {
+        let builder = SolverBuilder::new(num_scenarios);
+        let built = builder.create(model)?;
+
+        let matrix = built.lp.get_full_matrix();
+        let num_rows = matrix.row_starts.len() - 1;
+        let num_cols = built.lp.num_cols;
+
+        // TODO handle the error better
+        let ipm = PathFollowingDirectClSolver::from_data(
+            num_rows,
+            num_cols,
+            matrix.row_starts,
+            matrix.columns,
+            matrix.elements,
+            built.lp.inequality.nrows() as u32,
+            num_scenarios as u32,
+        )
+        .expect("Failed to create the OpenCL IPM solver from the given LP data.");
+
+        Ok(Box::new(Self { built, ipm }))
+    }
+
+    fn solve(&mut self, model: &Model, timestep: &Timestep, states: &mut [State]) -> Result<SolverTimings, PywrError> {
+        // TODO complete the timings
+        let mut timings = SolverTimings::default();
+
+        self.built.update(model, timestep, states, &mut timings)?;
+
+        let now = Instant::now();
+
+        // println!(
+        //     "Obj coefficients: {:?}",
+        //     self.built
+        //         .col_obj_coef()
+        //         .iter()
+        //         .step_by(self.built.lp.num_lps)
+        //         .collect::<Vec<_>>()
+        // );
+        println!(
+            "Row bounds 0: {:?}",
+            self.built
+                .row_upper()
+                .iter()
+                .step_by(self.built.lp.num_lps)
+                .collect::<Vec<_>>()
+        );
+
+        println!(
+            "Row bounds 1: {:?}",
+            self.built
+                .row_upper()
+                .iter()
+                .skip(1)
+                .step_by(self.built.lp.num_lps)
+                .collect::<Vec<_>>()
+        );
+
+        let solution = self
+            .ipm
+            .solve(self.built.row_upper(), self.built.col_obj_coef())
+            .expect("Solve failed with the OpenCL IPM solver.");
+        timings.solve = now.elapsed();
+
+        let start_save_solution = Instant::now();
+        let num_states = states.len();
+        for (i, state) in states.iter_mut().enumerate() {
+            let network_state = state.get_mut_network_state();
+            network_state.reset();
+
+            for edge in model.edges.deref() {
+                let col = self.built.col_for_edge(&edge.index());
+                let flow = solution[col * num_states + i];
                 network_state.add_flow(edge, timestep, flow)?;
             }
         }

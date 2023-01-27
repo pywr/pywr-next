@@ -26,8 +26,8 @@ svgbobdoc = { version = "0.3.0", features = ["enable"]  }
 log = "0.4.17"
 pyo3-log = "0.7.0"
 indicatif = "0.17.2"
-# highs-sys = "1.2.2"
-highs-sys = { path = "../../highs-sys" }
+highs-sys = "1.2.2"
+# highs-sys = { path = "../../highs-sys" }
 pyo3 = { version = "0.17.3" }
 # polars = { version = "0.25.1", features = ["lazy", "rows"] }
 pywr-schema = { git = "https://github.com/pywr/pywr-schema/" }

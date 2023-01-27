@@ -272,9 +272,7 @@ mod tests {
         assert_eq!(model.nodes.len(), 5);
         assert_eq!(model.edges.len(), 6);
 
-        let scenarios = default_scenarios();
-
-        model.run::<ClpSolver>(&timestepper, &scenarios).unwrap()
+        model.run::<ClpSolver>(&timestepper).unwrap()
 
         // TODO assert the results!
     }

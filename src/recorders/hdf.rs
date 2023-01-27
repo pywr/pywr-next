@@ -67,7 +67,7 @@ impl Recorder for HDF5Recorder {
             Err(e) => return Err(PywrError::HDF5Error(e.to_string())),
         };
         let mut datasets = Vec::new();
-        let mut aggregated_datasets = Vec::new();
+        let aggregated_datasets = Vec::new();
 
         // Create the time table
         let dates: Array1<_> = timesteps.iter().map(Date::from_timestamp).collect();

@@ -1,8 +1,7 @@
 use clap::{Parser, Subcommand};
 use pywr::model::Model;
-use pywr::scenario::ScenarioGroupCollection;
 use pywr::schema::model::PywrModel;
-use pywr::solvers::{ClIpmSolver, ClpSolver, HighsSolver};
+use pywr::solvers::{ClIpmF32Solver, ClIpmF64Solver, ClpSolver, HighsSolver};
 use pywr::timestep::Timestepper;
 use std::path::{Path, PathBuf};
 
@@ -98,20 +97,13 @@ fn run(path: &Path, solver: &str, data_path: Option<&Path>) {
     let data = std::fs::read_to_string(path).unwrap();
     let schema_v2: PywrModel = serde_json::from_str(data.as_str()).unwrap();
 
-    // TODO this should be part of the conversion below
-    let mut scenario_groups = ScenarioGroupCollection::default();
-    if let Some(scenarios) = &schema_v2.scenarios {
-        for scenario in scenarios {
-            scenario_groups.add_group(&scenario.name, scenario.size)
-        }
-    }
-
     let (model, timestepper): (Model, Timestepper) = schema_v2.try_into_model(data_path).unwrap();
 
     match solver {
-        "clp" => model.run::<ClpSolver>(&timestepper, &scenario_groups),
-        "highs" => model.run::<HighsSolver>(&timestepper, &scenario_groups),
-        "clipm" => model.run_multi_scenario::<ClIpmSolver>(&timestepper, &scenario_groups),
+        "clp" => model.run::<ClpSolver>(&timestepper),
+        "highs" => model.run::<HighsSolver>(&timestepper),
+        "clipm-f32" => model.run_multi_scenario::<ClIpmF32Solver>(&timestepper),
+        "clipm-f64" => model.run_multi_scenario::<ClIpmF64Solver>(&timestepper),
         _ => panic!("Solver {} not recognised.", solver),
     }
     .unwrap();

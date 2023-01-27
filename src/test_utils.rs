@@ -4,7 +4,6 @@ use crate::metric::Metric;
 use crate::model::Model;
 use crate::node::{Constraint, ConstraintValue, StorageInitialVolume};
 use crate::parameters::{AggFunc, AggregatedParameter, ConstantParameter, VectorParameter};
-use crate::scenario::ScenarioGroupCollection;
 use crate::timestep::Timestepper;
 use time::macros::date;
 
@@ -12,15 +11,10 @@ pub fn default_timestepper() -> Timestepper {
     Timestepper::new(date!(2020 - 01 - 01), date!(2020 - 01 - 15), 1)
 }
 
-pub fn default_scenarios() -> ScenarioGroupCollection {
-    let mut scenarios = ScenarioGroupCollection::default();
-    scenarios.add_group("test-scenario", 2);
-    scenarios
-}
-
 /// Create a simple test model with three nodes.
 pub fn simple_model() -> Model {
     let mut model = Model::default();
+    model.add_scenario_group("test-scenario", 2).unwrap();
 
     let input_node = model.add_input_node("input", None).unwrap();
     let link_node = model.add_link_node("link", None).unwrap();

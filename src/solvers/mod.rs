@@ -8,9 +8,10 @@ use std::time::Duration;
 mod builder;
 mod clipm;
 mod clp;
+mod col_edge_map;
 mod highs;
 
-pub use self::clipm::ClIpmSolver;
+pub use self::clipm::{ClIpmF32Solver, ClIpmF64Solver};
 pub use clp::{ClpError, ClpSolver};
 pub use highs::HighsSolver;
 

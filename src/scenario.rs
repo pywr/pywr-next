@@ -1,3 +1,5 @@
+use crate::PywrError;
+
 #[derive(Clone, Debug)]
 pub struct ScenarioGroup {
     name: String,
@@ -21,6 +23,14 @@ pub struct ScenarioGroupCollection {
 }
 
 impl ScenarioGroupCollection {
+    /// Find a `ScenarioGroup`'s index in the collection by name
+    pub fn get_group_index_by_name(&self, name: &str) -> Result<usize, PywrError> {
+        self.groups
+            .iter()
+            .position(|g| g.name == name)
+            .ok_or_else(|| PywrError::ScenarioNotFound(name.to_string()))
+    }
+
     /// Add a `ScenarioGroup` to the collection
     pub fn add_group(&mut self, name: &str, size: usize) {
         // TODO error with duplicate names

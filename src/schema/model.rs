@@ -119,6 +119,12 @@ impl PywrModel {
     ) -> Result<(crate::model::Model, crate::timestep::Timestepper), PywrError> {
         let mut model = crate::model::Model::default();
 
+        if let Some(scenarios) = &self.scenarios {
+            for scenario in scenarios {
+                model.add_scenario_group(&scenario.name, scenario.size)?;
+            }
+        }
+
         // Load all the data tables
         let tables = LoadedTableCollection::from_schema(self.tables.as_deref(), data_path)?;
 
@@ -252,20 +258,7 @@ impl TryFrom<pywr_schema::PywrModel> for PywrModel {
 #[cfg(test)]
 mod tests {
     use super::PywrModel;
-    use crate::scenario::ScenarioGroupCollection;
     use crate::solvers::ClpSolver;
-    use crate::timestep::Timestepper;
-    use time::macros::date;
-
-    fn default_timestepper() -> Timestepper {
-        Timestepper::new(date!(2020 - 01 - 01), date!(2020 - 01 - 15), 1)
-    }
-
-    fn default_scenarios() -> ScenarioGroupCollection {
-        let mut scenarios = ScenarioGroupCollection::default();
-        scenarios.add_group("test-scenario", 10);
-        scenarios
-    }
 
     fn simple1_str() -> &'static str {
         r#"
@@ -324,15 +317,13 @@ mod tests {
     fn test_simple1_run() {
         let data = simple1_str();
         let schema: PywrModel = serde_json::from_str(data).unwrap();
-        let (mut model, timestepper): (crate::model::Model, crate::timestep::Timestepper) =
+        let (model, timestepper): (crate::model::Model, crate::timestep::Timestepper) =
             schema.try_into_model(None).unwrap();
 
         assert_eq!(model.nodes.len(), 3);
         assert_eq!(model.edges.len(), 2);
 
-        let scenarios = default_scenarios();
-
-        model.run::<ClpSolver>(&timestepper, &scenarios).unwrap()
+        model.run::<ClpSolver>(&timestepper).unwrap()
 
         // TODO assert the results!
     }

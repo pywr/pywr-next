@@ -25,6 +25,7 @@ pub enum Node {
     Storage(StorageNode),
 }
 
+#[derive(Eq, PartialEq)]
 pub enum NodeType {
     Input,
     Output,
@@ -411,6 +412,15 @@ impl Node {
         }
     }
 
+    pub fn is_max_flow_unconstrained(&self) -> Result<bool, PywrError> {
+        match self {
+            Self::Input(n) => Ok(n.is_max_flow_unconstrained()),
+            Self::Link(n) => Ok(n.is_max_flow_unconstrained()),
+            Self::Output(n) => Ok(n.is_max_flow_unconstrained()),
+            Self::Storage(_) => Err(PywrError::FlowConstraintsUndefined),
+        }
+    }
+
     pub fn get_current_flow_bounds(&self, model: &Model, state: &State) -> Result<(f64, f64), PywrError> {
         match (
             self.get_current_min_flow(model, state),
@@ -581,6 +591,10 @@ impl FlowConstraints {
             ConstraintValue::Metric(m) => m.get_value(model, state),
         }
     }
+
+    pub(crate) fn is_max_flow_unconstrained(&self) -> bool {
+        self.max_flow == ConstraintValue::None
+    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -650,6 +664,9 @@ impl InputNode {
     fn get_max_flow(&self, model: &Model, state: &State) -> Result<f64, PywrError> {
         self.flow_constraints.get_max_flow(model, state)
     }
+    fn is_max_flow_unconstrained(&self) -> bool {
+        self.flow_constraints.is_max_flow_unconstrained()
+    }
     fn add_outgoing_edge(&mut self, edge: EdgeIndex) {
         self.outgoing_edges.push(edge);
     }
@@ -693,6 +710,9 @@ impl OutputNode {
     }
     fn get_max_flow(&self, model: &Model, state: &State) -> Result<f64, PywrError> {
         self.flow_constraints.get_max_flow(model, state)
+    }
+    fn is_max_flow_unconstrained(&self) -> bool {
+        self.flow_constraints.is_max_flow_unconstrained()
     }
     fn add_incoming_edge(&mut self, edge: EdgeIndex) {
         self.incoming_edges.push(edge);
@@ -740,7 +760,9 @@ impl LinkNode {
     fn get_max_flow(&self, model: &Model, state: &State) -> Result<f64, PywrError> {
         self.flow_constraints.get_max_flow(model, state)
     }
-
+    fn is_max_flow_unconstrained(&self) -> bool {
+        self.flow_constraints.is_max_flow_unconstrained()
+    }
     fn add_incoming_edge(&mut self, edge: EdgeIndex) {
         self.incoming_edges.push(edge);
     }
@@ -829,13 +851,5 @@ impl StorageNode {
     }
     fn add_outgoing_edge(&mut self, edge: EdgeIndex) {
         self.outgoing_edges.push(edge);
-    }
-
-    /// Compute the initial absolute volume
-    fn get_initial_volume(&self, model: &Model, state: &State) -> Result<f64, PywrError> {
-        match self.initial_volume {
-            StorageInitialVolume::Absolute(v) => Ok(v),
-            StorageInitialVolume::Proportional(pc) => Ok(pc * self.get_max_volume(model, state)?),
-        }
     }
 }

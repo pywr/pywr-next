@@ -543,12 +543,6 @@ mod tests {
             dir.as_ref().display()
         );
 
-        let table_ref = r#"
-            {
-                "table": "my-arrays",
-                "index": "my-reservoir"
-            }"#;
-
         // Create the temporary data
         {
             let data = r"reservoir,1,2,3,4,5,6,7,8,9,10,11,12

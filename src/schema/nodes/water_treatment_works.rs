@@ -179,7 +179,6 @@ mod tests {
     use crate::schema::model::PywrModel;
     use crate::schema::nodes::WaterTreatmentWorks;
     use crate::solvers::ClpSolver;
-    use crate::test_utils::{default_scenarios, default_timestepper};
     use ndarray::Array2;
 
     #[test]
@@ -293,33 +292,21 @@ mod tests {
         assert_eq!(model.nodes.len(), 6);
         assert_eq!(model.edges.len(), 6);
 
-        let scenarios = default_scenarios();
+        let scenario_indices = model.get_scenario_indices();
 
         // Setup expected results
         // Set-up assertion for "input" node
         // TODO write some helper functions for adding these assertion recorders
         let idx = model.get_node_by_name("input1", None).unwrap().index();
-        let expected = Array2::from_elem(
-            (
-                timestepper.timesteps().len(),
-                default_scenarios().scenario_indices().len(),
-            ),
-            11.0,
-        );
+        let expected = Array2::from_elem((timestepper.timesteps().len(), scenario_indices.len()), 11.0);
         let recorder = AssertionRecorder::new("input-flow", Metric::NodeOutFlow(idx), expected, None, None);
         model.add_recorder(Box::new(recorder)).unwrap();
 
         let idx = model.get_node_by_name("demand1", None).unwrap().index();
-        let expected = Array2::from_elem(
-            (
-                timestepper.timesteps().len(),
-                default_scenarios().scenario_indices().len(),
-            ),
-            10.0,
-        );
+        let expected = Array2::from_elem((timestepper.timesteps().len(), scenario_indices.len()), 10.0);
         let recorder = AssertionRecorder::new("demand-flow", Metric::NodeInFlow(idx), expected, None, None);
         model.add_recorder(Box::new(recorder)).unwrap();
 
-        model.run::<ClpSolver>(&timestepper, &scenarios).unwrap()
+        model.run::<ClpSolver>(&timestepper).unwrap()
     }
 }

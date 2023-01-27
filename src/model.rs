@@ -142,6 +142,7 @@ enum ComponentType {
 
 #[derive(Default)]
 pub struct Model {
+    scenarios: ScenarioGroupCollection,
     pub nodes: NodeVec,
     pub edges: EdgeVec,
     pub aggregated_nodes: AggregatedNodeVec,
@@ -158,12 +159,12 @@ impl Model {
     fn setup(
         &self,
         timesteps: &[Timestep],
-        scenario_indices: &[ScenarioIndex],
     ) -> Result<(Vec<State>, Vec<ParameterStates>, Vec<Option<Box<dyn Any>>>), PywrError> {
+        let scenario_indices = self.scenarios.scenario_indices();
         let mut states: Vec<State> = Vec::with_capacity(scenario_indices.len());
         let mut parameter_internal_states: Vec<ParameterStates> = Vec::with_capacity(scenario_indices.len());
 
-        for scenario_index in scenario_indices {
+        for scenario_index in &scenario_indices {
             // Initialise node states. Note that storage nodes will have a zero volume at this point.
             let initial_node_states = self.nodes.iter().map(|n| n.default_state()).collect();
 
@@ -198,17 +199,18 @@ impl Model {
         // Setup recorders
         let mut recorder_internal_states = Vec::new();
         for recorder in &self.recorders {
-            let initial_state = recorder.setup(timesteps, scenario_indices, &self)?;
+            let initial_state = recorder.setup(timesteps, &scenario_indices, &self)?;
             recorder_internal_states.push(initial_state);
         }
 
         Ok((states, parameter_internal_states, recorder_internal_states))
     }
 
-    fn setup_solver<S>(&self, scenario_indices: &[ScenarioIndex]) -> Result<Vec<Box<S>>, PywrError>
+    fn setup_solver<S>(&self) -> Result<Vec<Box<S>>, PywrError>
     where
         S: Solver,
     {
+        let scenario_indices = self.scenarios.scenario_indices();
         let mut solvers = Vec::with_capacity(scenario_indices.len());
 
         for _scenario_index in scenario_indices {
@@ -236,21 +238,20 @@ impl Model {
         Ok(())
     }
 
-    pub fn run<S>(&self, timestepper: &Timestepper, scenarios: &ScenarioGroupCollection) -> Result<(), PywrError>
+    pub fn run<S>(&self, timestepper: &Timestepper) -> Result<(), PywrError>
     where
         S: Solver,
     {
         let mut timings = RunTimings::default();
         let timesteps = timestepper.timesteps();
-        let scenario_indices = scenarios.scenario_indices();
+        let scenario_indices = self.scenarios.scenario_indices();
 
         // Setup the solver
         let mut count = 0;
         // Setup the model and create the initial state
-        let (mut states, mut parameter_internal_states, mut recorder_internal_states) =
-            self.setup(&timesteps, &scenario_indices)?;
+        let (mut states, mut parameter_internal_states, mut recorder_internal_states) = self.setup(&timesteps)?;
 
-        let mut solvers = self.setup_solver::<S>(&scenario_indices)?;
+        let mut solvers = self.setup_solver::<S>()?;
 
         // Step a timestep
         for timestep in timesteps.iter().progress() {
@@ -281,11 +282,7 @@ impl Model {
         Ok(())
     }
 
-    pub fn run_multi_scenario<S>(
-        &self,
-        timestepper: &Timestepper,
-        scenarios: &ScenarioGroupCollection,
-    ) -> Result<(), PywrError>
+    pub fn run_multi_scenario<S>(&self, timestepper: &Timestepper) -> Result<(), PywrError>
     where
         S: MultiStateSolver,
     {
@@ -293,13 +290,12 @@ impl Model {
 
         let mut timings = RunTimings::default();
         let timesteps = timestepper.timesteps();
-        let scenario_indices = scenarios.scenario_indices();
+        let scenario_indices = self.scenarios.scenario_indices();
 
         // Setup the solver
         let mut count = 0;
         // Setup the model and create the initial state
-        let (mut states, mut parameter_internal_states, mut recorder_internal_states) =
-            self.setup(&timesteps, &scenario_indices)?;
+        let (mut states, mut parameter_internal_states, mut recorder_internal_states) = self.setup(&timesteps)?;
 
         let mut solver = self.setup_multi_scenario::<S>(&scenario_indices)?;
 
@@ -508,6 +504,20 @@ impl Model {
             recorder.save(timestep, scenario_indices, &self, states, internal_state)?;
         }
         Ok(())
+    }
+
+    /// Add a `ScenarioGroup` to the model
+    pub fn add_scenario_group(&mut self, name: &str, size: usize) -> Result<(), PywrError> {
+        Ok(self.scenarios.add_group(name, size))
+    }
+
+    /// Get a `ScenarioGroup`'s index by name
+    pub fn get_scenario_group_index_by_name(&self, name: &str) -> Result<usize, PywrError> {
+        self.scenarios.get_group_index_by_name(name)
+    }
+
+    pub fn get_scenario_indices(&self) -> Vec<ScenarioIndex> {
+        self.scenarios.scenario_indices()
     }
 
     /// Get a Node from a node's name
@@ -1036,8 +1046,8 @@ mod tests {
     use crate::recorders::AssertionRecorder;
     use crate::scenario::{ScenarioGroupCollection, ScenarioIndex};
 
-    use crate::solvers::{ClIpmSolver, ClpSolver, HighsSolver};
-    use crate::test_utils::{default_scenarios, default_timestepper, simple_model, simple_storage_model};
+    use crate::solvers::{ClIpmF64Solver, ClpSolver, HighsSolver};
+    use crate::test_utils::{default_timestepper, simple_model, simple_storage_model};
     use float_cmp::approx_eq;
     use ndarray::Array2;
     use std::ops::Deref;
@@ -1114,7 +1124,7 @@ mod tests {
     /// Test adding a constant parameter to a model.
     fn test_constant_parameter() {
         let mut model = Model::default();
-        let node_index = model.add_input_node("input", None).unwrap();
+        let _node_index = model.add_input_node("input", None).unwrap();
 
         let input_max_flow = parameters::ConstantParameter::new("my-constant", 10.0);
         let parameter = model.add_parameter(Box::new(input_max_flow)).unwrap();
@@ -1136,18 +1146,19 @@ mod tests {
 
     #[test]
     fn test_step() {
-        let mut model = simple_model();
+        let model = simple_model();
+        let scenario_indices = model.get_scenario_indices();
+
         let timestepper = default_timestepper();
-        let scenarios = default_scenarios();
 
         let mut timings = RunTimings::default();
         let timesteps = timestepper.timesteps();
         let mut ts_iter = timesteps.iter();
-        let scenario_indices = scenarios.scenario_indices();
-        let ts = ts_iter.next().unwrap();
-        let (mut current_state, mut p_internal, mut r_internal) = model.setup(&timesteps, &scenario_indices).unwrap();
 
-        let mut solvers = model.setup_solver::<ClpSolver>(&scenario_indices).unwrap();
+        let ts = ts_iter.next().unwrap();
+        let (mut current_state, mut p_internal, r_internal) = model.setup(&timesteps).unwrap();
+
+        let mut solvers = model.setup_solver::<ClpSolver>().unwrap();
         assert_eq!(current_state.len(), scenario_indices.len());
 
         model
@@ -1176,7 +1187,6 @@ mod tests {
     fn test_run() {
         let mut model = simple_model();
         let timestepper = default_timestepper();
-        let scenarios = default_scenarios();
 
         // Set-up assertion for "input" node
         let idx = model.get_node_by_name("input", None).unwrap().index();
@@ -1199,8 +1209,8 @@ mod tests {
         let recorder = AssertionRecorder::new("total-demand", Metric::ParameterValue(idx), expected, None, None);
         model.add_recorder(Box::new(recorder)).unwrap();
 
-        model.run::<ClpSolver>(&timestepper, &scenarios).unwrap();
-        model.run::<HighsSolver>(&timestepper, &scenarios).unwrap();
+        model.run::<ClpSolver>(&timestepper).unwrap();
+        model.run::<HighsSolver>(&timestepper).unwrap();
     }
 
     #[test]
@@ -1209,7 +1219,6 @@ mod tests {
     fn test_run_cl_ipm() {
         let mut model = simple_model();
         let timestepper = default_timestepper();
-        let scenarios = default_scenarios();
 
         // Set-up assertion for "input" node
         let idx = model.get_node_by_name("input", None).unwrap().index();
@@ -1238,16 +1247,13 @@ mod tests {
         );
         model.add_recorder(Box::new(recorder)).unwrap();
 
-        model
-            .run_multi_scenario::<ClIpmSolver>(&timestepper, &scenarios)
-            .unwrap();
+        model.run_multi_scenario::<ClIpmF64Solver>(&timestepper).unwrap();
     }
 
     #[test]
     fn test_run_storage() {
         let mut model = simple_storage_model();
         let timestepper = default_timestepper();
-        let scenarios = default_scenarios();
 
         let idx = model.get_node_by_name("output", None).unwrap().index();
 
@@ -1263,7 +1269,7 @@ mod tests {
         let recorder = AssertionRecorder::new("reservoir-volume", Metric::NodeVolume(idx), expected, None, None);
         model.add_recorder(Box::new(recorder)).unwrap();
 
-        model.run::<ClpSolver>(&timestepper, &scenarios).unwrap();
+        model.run::<ClpSolver>(&timestepper).unwrap();
     }
 
     #[test]

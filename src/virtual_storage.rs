@@ -205,7 +205,7 @@ mod tests {
     use crate::recorders::AssertionFnRecorder;
     use crate::scenario::ScenarioIndex;
     use crate::solvers::ClpSolver;
-    use crate::test_utils::{default_scenarios, default_timestepper};
+    use crate::test_utils::default_timestepper;
     use crate::timestep::Timestep;
     use crate::virtual_storage::VirtualStorageReset;
 
@@ -214,7 +214,6 @@ mod tests {
     fn test_basic_virtual_storage() {
         let mut model = Model::default();
         let timestepper = default_timestepper();
-        let scenarios = default_scenarios();
 
         let input_node = model.add_input_node("input", None).unwrap();
         let link_node0 = model.add_link_node("link", Some("0")).unwrap();
@@ -278,6 +277,6 @@ mod tests {
         let recorder = AssertionFnRecorder::new("link-1-flow", Metric::NodeOutFlow(idx), expected, None, None);
         model.add_recorder(Box::new(recorder)).unwrap();
 
-        model.run::<ClpSolver>(&timestepper, &scenarios).unwrap();
+        model.run::<ClpSolver>(&timestepper).unwrap();
     }
 }

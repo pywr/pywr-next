@@ -1,9 +1,8 @@
 use crate::aggregated_node::AggregatedNodeIndex;
 use crate::model::Model;
 use crate::recorders::hdf::HDF5Recorder;
-use crate::scenario::ScenarioGroupCollection;
 use crate::schema::model::PywrModel;
-use crate::solvers::{ClIpmSolver, ClpSolver, HighsSolver};
+use crate::solvers::{ClIpmF32Solver, ClIpmF64Solver, ClpSolver, HighsSolver};
 use crate::timestep::Timestepper;
 use crate::virtual_storage::VirtualStorageIndex;
 use crate::{IndexParameterIndex, ParameterIndex, RecorderIndex};
@@ -667,14 +666,6 @@ fn run_model_from_string(
     // TODO handle the serde error properly
     let schema_v2: PywrModel = serde_json::from_str(data.as_str()).unwrap();
 
-    // TODO this should be part of the conversion below
-    let mut scenario_groups = ScenarioGroupCollection::default();
-    if let Some(scenarios) = &schema_v2.scenarios {
-        for scenario in scenarios {
-            scenario_groups.add_group(&scenario.name, scenario.size)
-        }
-    }
-
     let (mut model, timestepper): (Model, Timestepper) = schema_v2.try_into_model(path.as_deref())?;
 
     if let Some(pth) = output_h5 {
@@ -685,9 +676,10 @@ fn run_model_from_string(
     }
 
     match solver_name.as_str() {
-        "clp" => model.run::<ClpSolver>(&timestepper, &scenario_groups),
-        "highs" => model.run::<HighsSolver>(&timestepper, &scenario_groups),
-        "clipm" => model.run_multi_scenario::<ClIpmSolver>(&timestepper, &scenario_groups),
+        "clp" => model.run::<ClpSolver>(&timestepper),
+        "highs" => model.run::<HighsSolver>(&timestepper),
+        "clipm-f32" => model.run_multi_scenario::<ClIpmF32Solver>(&timestepper),
+        "clipm-f64" => model.run_multi_scenario::<ClIpmF64Solver>(&timestepper),
         _ => panic!("Solver {} not recognised.", solver_name),
     }?;
 

@@ -233,7 +233,6 @@ impl TryFromV1Parameter<AggregatedIndexParameterV1> for AggregatedIndexParameter
 mod tests {
     use crate::schema::parameters::aggregated::AggregatedParameter;
     use crate::schema::parameters::{DynamicFloatValue, DynamicFloatValueType, MetricFloatValue, Parameter};
-    use serde_json::json;
 
     #[test]
     fn test_aggregated() {

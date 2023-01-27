@@ -1,28 +1,64 @@
-use nalgebra_sparse::{coo::CooMatrix, csr::CsrMatrix};
+use nalgebra_sparse::csr::CsrMatrix;
 use std::cmp::Ordering;
 
-fn get_cl_program(context: &ocl::Context, device: &ocl::Device) -> ocl::Result<ocl::Program> {
-    let src = [include_str!("common.cl"), include_str!("path_following_direct.cl")].join("\n");
-
-    // TODO this was done with build argument before "-DREAL=double". Need to do a proper search
-    // on the ocl docs about whether this is possible.
-    let src = src.replace("REAL", "double").replace("EPS", "1e-4");
-
-    let program = ocl::Program::builder().devices(device).src(src).build(context)?;
-
-    Ok(program)
+pub trait GetClProgram {
+    fn get_cl_program(context: &ocl::Context, device: &ocl::Device) -> ocl::Result<ocl::Program>;
 }
 
-struct SparseMatrixBuffers {
-    values: ocl::Buffer<f64>,
+impl GetClProgram for f64 {
+    fn get_cl_program(context: &ocl::Context, device: &ocl::Device) -> ocl::Result<ocl::Program> {
+        let src = [include_str!("common.cl"), include_str!("path_following_direct.cl")].join("\n");
+
+        // TODO this was done with build argument before "-DREAL=double". Need to do a proper search
+        // on the ocl docs about whether this is possible.
+        let src = src.replace("REAL", "double").replace("EPS", "1e-3");
+
+        let opts = std::env::var("CLIPM_COMPILER_OPTS").unwrap_or_else(|_| "".to_string());
+        let program = ocl::Program::builder()
+            .cmplr_opt(opts)
+            .devices(device)
+            .src(src)
+            .build(context)?;
+
+        Ok(program)
+    }
+}
+
+impl GetClProgram for f32 {
+    fn get_cl_program(context: &ocl::Context, device: &ocl::Device) -> ocl::Result<ocl::Program> {
+        let src = [include_str!("common.cl"), include_str!("path_following_direct.cl")].join("\n");
+
+        // TODO this was done with build argument before "-DREAL=double". Need to do a proper search
+        // on the ocl docs about whether this is possible.
+        let src = src.replace("REAL", "float").replace("EPS", "1e-2");
+
+        let opts = std::env::var("CLIPM_COMPILER_OPTS").unwrap_or_else(|_| "".to_string());
+        let program = ocl::Program::builder()
+            .cmplr_opt(opts)
+            .devices(device)
+            .src(src)
+            .build(context)?;
+
+        Ok(program)
+    }
+}
+
+struct SparseMatrixBuffers<T>
+where
+    T: ocl::OclPrm,
+{
+    values: ocl::Buffer<T>,
     row_offsets: ocl::Buffer<u32>,
     col_indices: ocl::Buffer<u32>,
 }
 
-impl SparseMatrixBuffers {
-    fn from_sparse_matrix(a: &CsrMatrix<f64>, queue: &ocl::Queue) -> ocl::Result<Self> {
+impl<T> SparseMatrixBuffers<T>
+where
+    T: ocl::OclPrm,
+{
+    fn from_sparse_matrix(a: &CsrMatrix<T>, queue: &ocl::Queue) -> ocl::Result<Self> {
         // Copy the data from the host sparse matrix to the device buffers
-        let values = ocl::Buffer::<f64>::builder()
+        let values = ocl::Buffer::<T>::builder()
             .queue(queue.clone())
             .flags(ocl::flags::MEM_READ_ONLY)
             .copy_host_slice(a.values())
@@ -81,6 +117,13 @@ struct SparseNormalCholeskyClBuffers {
 
 impl SparseNormalCholeskyClBuffers {
     fn from_indices(indices: &SparseNormalCholeskyIndices, queue: &ocl::Queue) -> ocl::Result<Self> {
+        println!("Number of ANorm indptr size: {}", indices.anorm_indptr.len());
+        println!("Number of ANorm indptr_i: {}", indices.anorm_indptr_i.len());
+        println!("Number of ANorm indptr_i: {}", indices.anorm_indptr_j.len());
+        println!("Number of ANorm ldecomp_indptr: {}", indices.ldecomp_indptr.len());
+        println!("Number of ANorm ldecomp_indptr_i: {}", indices.ldecomp_indptr_i.len());
+        println!("Number of ANorm ldecomp_indptr_j: {}", indices.ldecomp_indptr_j.len());
+
         // Copy the data from the host sparse matrix to the device buffers
         let anorm_indptr = ocl::Buffer::<u32>::builder()
             .queue(queue.clone())
@@ -210,14 +253,17 @@ struct SparseNormalCholeskyIndices {
 }
 
 impl SparseNormalCholeskyIndices {
-    fn from_matrix(a: &CsrMatrix<f64>) -> Self {
+    fn from_matrix<T>(a: &CsrMatrix<T>) -> Self
+    where
+        T: ocl::OclPrm,
+    {
         let mut anorm_indptr = vec![0u32];
         let mut anorm_indptr_i = Vec::new();
         let mut anorm_indptr_j = Vec::new();
         let mut anorm_indices = Vec::new();
         let mut ldecomp_indptr = vec![0u32];
-        let mut ldecomp_indptr_i = Vec::new();
-        let mut ldecomp_indptr_j = Vec::new();
+        let mut ldecomp_indptr_i: Vec<u32> = Vec::new();
+        let mut ldecomp_indptr_j: Vec<u32> = Vec::new();
         // Entries of the L matrix
         let mut lindptr = vec![0u32];
         let mut ldiag_indptr = Vec::new();
@@ -242,17 +288,17 @@ impl SparseNormalCholeskyIndices {
                         let ik = i_cols[ii];
                         let jk = j_cols[jj];
 
-                        if ik == jk {
-                            anorm_indptr_i.push((i_offset + ii) as u32);
-                            anorm_indptr_j.push((j_offset + jj) as u32);
-                            anorm_indices.push(ik as u32);
-                            non_zero = true;
-                            ii += 1;
-                            jj += 1;
-                        } else if ik < jk {
-                            ii += 1;
-                        } else {
-                            jj += 1;
+                        match ik.cmp(&jk) {
+                            Ordering::Equal => {
+                                anorm_indptr_i.push((i_offset + ii) as u32);
+                                anorm_indptr_j.push((j_offset + jj) as u32);
+                                anorm_indices.push(ik as u32);
+                                non_zero = true;
+                                ii += 1;
+                                jj += 1;
+                            }
+                            Ordering::Less => ii += 1,
+                            Ordering::Greater => jj += 1,
                         }
                     }
                 }
@@ -270,8 +316,8 @@ impl SparseNormalCholeskyIndices {
 
                     match ik.cmp(&jk) {
                         Ordering::Equal => {
-                            ldecomp_indptr_i.push(ii as u32);
-                            ldecomp_indptr_j.push(jj as u32);
+                            ldecomp_indptr_i.push(ii.try_into().expect("L decomposition index to overflow."));
+                            ldecomp_indptr_j.push(jj.try_into().expect("L decomposition index to overflow."));
                             non_zero = true;
                             ii += 1;
                             jj += 1;
@@ -325,33 +371,39 @@ impl SparseNormalCholeskyIndices {
     }
 }
 
-struct PathBuffers {
-    x: ocl::Buffer<f64>,
-    z: ocl::Buffer<f64>,
-    y: ocl::Buffer<f64>,
-    w: ocl::Buffer<f64>,
+struct PathBuffers<T>
+where
+    T: ocl::OclPrm,
+{
+    x: ocl::Buffer<T>,
+    z: ocl::Buffer<T>,
+    y: ocl::Buffer<T>,
+    w: ocl::Buffer<T>,
 }
 
-impl PathBuffers {
+impl<T> PathBuffers<T>
+where
+    T: ocl::OclPrm,
+{
     fn new(num_rows: u32, num_cols: u32, num_lps: u32, queue: &ocl::Queue) -> ocl::Result<Self> {
-        let x = ocl::Buffer::<f64>::builder()
+        let x = ocl::Buffer::<T>::builder()
             .queue(queue.clone())
             .flags(ocl::flags::MEM_READ_WRITE)
             .len(num_cols * num_lps)
             .build()?;
-        let z = ocl::Buffer::<f64>::builder()
+        let z = ocl::Buffer::<T>::builder()
             .queue(queue.clone())
             .flags(ocl::flags::MEM_READ_WRITE)
             .len(num_cols * num_lps)
             .build()?;
 
-        let y = ocl::Buffer::<f64>::builder()
+        let y = ocl::Buffer::<T>::builder()
             .queue(queue.clone())
             .flags(ocl::flags::MEM_READ_WRITE)
             .len(num_rows * num_lps)
             .build()?;
 
-        let w = ocl::Buffer::<f64>::builder()
+        let w = ocl::Buffer::<T>::builder()
             .queue(queue.clone())
             .flags(ocl::flags::MEM_READ_WRITE)
             .len(num_rows * num_lps)
@@ -361,25 +413,30 @@ impl PathBuffers {
     }
 }
 
-pub struct PathFollowingDirectClBuffers {
-    a_buffers: SparseMatrixBuffers,
-    at_buffers: SparseMatrixBuffers,
+pub struct PathFollowingDirectClBuffers<T>
+where
+    T: ocl::OclPrm,
+{
+    a_buffers: SparseMatrixBuffers<T>,
+    at_buffers: SparseMatrixBuffers<T>,
     normal_buffers: SparseNormalCholeskyClBuffers,
-    ldata: ocl::Buffer<f64>,
+    ldata: ocl::Buffer<T>,
 
-    path_buffers: PathBuffers,
-    delta_path_buffers: PathBuffers,
+    path_buffers: PathBuffers<T>,
+    delta_path_buffers: PathBuffers<T>,
 
-    b_buffer: ocl::Buffer<f64>,
-    c_buffer: ocl::Buffer<f64>,
-    tmp_buffer: ocl::Buffer<f64>,
-    rhs_buffer: ocl::Buffer<f64>,
+    b_buffer: ocl::Buffer<T>,
+    c_buffer: ocl::Buffer<T>,
+    tmp_buffer: ocl::Buffer<T>,
+    rhs_buffer: ocl::Buffer<T>,
     status_buffer: ocl::Buffer<u32>,
-    num_lps: u32,
 }
 
-impl PathFollowingDirectClBuffers {
-    pub fn from_data(a: &CsrMatrix<f64>, num_lps: u32, queue: &ocl::Queue) -> ocl::Result<Self> {
+impl<T> PathFollowingDirectClBuffers<T>
+where
+    T: ocl::OclPrm,
+{
+    pub fn from_data(a: &CsrMatrix<T>, num_lps: u32, queue: &ocl::Queue) -> ocl::Result<Self> {
         let num_rows = a.nrows() as u32;
         let num_cols = a.ncols() as u32;
 
@@ -391,8 +448,10 @@ impl PathFollowingDirectClBuffers {
         let normal_indices = SparseNormalCholeskyIndices::from_matrix(a);
         let normal_buffers = SparseNormalCholeskyClBuffers::from_indices(&normal_indices, queue)?;
 
+        println!("Number of L indices: {}", normal_indices.lindices.len());
+
         // Require ldata for every LP
-        let ldata = ocl::Buffer::<f64>::builder()
+        let ldata = ocl::Buffer::<T>::builder()
             .queue(queue.clone())
             .flags(ocl::flags::MEM_READ_WRITE)
             .len(normal_indices.lindices.len() as u32 * num_lps)
@@ -401,13 +460,13 @@ impl PathFollowingDirectClBuffers {
         // Empty buffer for the "b" and "c" arrays;
         // These buffers are read only by the device but are written from the host ahead of
         // each set of solves.
-        let b_buffer = ocl::Buffer::<f64>::builder()
+        let b_buffer = ocl::Buffer::<T>::builder()
             .queue(queue.clone())
             .flags(ocl::flags::MEM_READ_ONLY & ocl::flags::MEM_HOST_WRITE_ONLY)
             .len(num_rows * num_lps)
             .build()?;
 
-        let c_buffer = ocl::Buffer::<f64>::builder()
+        let c_buffer = ocl::Buffer::<T>::builder()
             .queue(queue.clone())
             .flags(ocl::flags::MEM_READ_ONLY & ocl::flags::MEM_HOST_WRITE_ONLY)
             .len(num_cols * num_lps)
@@ -417,13 +476,13 @@ impl PathFollowingDirectClBuffers {
         let delta_path_buffers = PathBuffers::new(num_rows, num_cols, num_lps, queue)?;
 
         // Work buffers
-        let tmp_buffer = ocl::Buffer::<f64>::builder()
+        let tmp_buffer = ocl::Buffer::<T>::builder()
             .queue(queue.clone())
             .flags(ocl::flags::MEM_READ_WRITE)
             .len(num_cols * num_lps)
             .build()?;
 
-        let rhs_buffer = ocl::Buffer::<f64>::builder()
+        let rhs_buffer = ocl::Buffer::<T>::builder()
             .queue(queue.clone())
             .flags(ocl::flags::MEM_READ_WRITE)
             .len(num_rows * num_lps)
@@ -447,29 +506,34 @@ impl PathFollowingDirectClBuffers {
             tmp_buffer,
             rhs_buffer,
             status_buffer,
-            num_lps,
         })
     }
 }
 
-pub struct PathFollowingDirectClSolver {
+pub struct PathFollowingDirectClSolver<T>
+where
+    T: ocl::OclPrm,
+{
     context: ocl::Context,
     queue: ocl::Queue,
     program: ocl::Program,
-    buffers: PathFollowingDirectClBuffers,
+    buffers: PathFollowingDirectClBuffers<T>,
     kernel_normal_init: ocl::Kernel,
     kernel_normal_eq_step: ocl::Kernel,
-    solution: Vec<f64>,
+    solution: Vec<T>,
     status: Vec<u32>,
 }
 
-impl PathFollowingDirectClSolver {
+impl<T> PathFollowingDirectClSolver<T>
+where
+    T: ocl::OclPrm + GetClProgram,
+{
     pub fn from_data(
         num_rows: usize,
         num_cols: usize,
         row_offsets: Vec<usize>,
         col_indices: Vec<usize>,
-        values: Vec<f64>,
+        values: Vec<T>,
         num_inequality_constraints: u32,
         num_lps: u32,
     ) -> ocl::Result<Self> {
@@ -480,7 +544,7 @@ impl PathFollowingDirectClSolver {
             .devices(device)
             .build()
             .unwrap();
-        let program = get_cl_program(&context, &device).unwrap();
+        let program = T::get_cl_program(&context, &device).unwrap();
 
         let queue = ocl::Queue::new(&context, device, None)?;
 
@@ -541,7 +605,7 @@ impl PathFollowingDirectClSolver {
             .arg(num_inequality_constraints)
             .arg(&buffers.b_buffer)
             .arg(&buffers.c_buffer)
-            .arg(0.02f64)
+            .arg(0.1f32)
             .arg(&buffers.delta_path_buffers.x)
             .arg(&buffers.delta_path_buffers.z)
             .arg(&buffers.delta_path_buffers.y)
@@ -551,7 +615,7 @@ impl PathFollowingDirectClSolver {
             .arg(&buffers.status_buffer)
             .build()?;
 
-        let solution = vec![0.0; num_cols * num_lps as usize];
+        let solution: Vec<T> = vec![T::default(); num_cols * num_lps as usize];
         let status = vec![0u32; num_lps as usize];
 
         Ok(Self {
@@ -566,7 +630,7 @@ impl PathFollowingDirectClSolver {
         })
     }
 
-    pub fn solve(&mut self, b: &[f64], c: &[f64]) -> ocl::Result<&[f64]> {
+    pub fn solve(&mut self, b: &[T], c: &[T]) -> ocl::Result<&[T]> {
         // Copy b & c to the device
         self.buffers.b_buffer.write(b).enq()?;
 
@@ -576,23 +640,30 @@ impl PathFollowingDirectClSolver {
             self.kernel_normal_init.enq()?;
         }
 
-        self.buffers.path_buffers.x.read(&mut self.solution).enq()?;
-        self.queue.finish()?;
+        // self.buffers.path_buffers.x.read(&mut self.solution).enq()?;
+        // self.queue.finish()?;
 
-        for _ in 0..100 {
+        let mut last_iteration = 0;
+        for iter in 0..200 {
             unsafe {
                 self.kernel_normal_eq_step.enq()?;
             }
 
             self.buffers.status_buffer.read(&mut self.status).enq()?;
-            self.queue.finish()?;
+            // self.queue.finish()?;
 
-            if self.status.iter().all(|s| *s == 0) {
+            let num_incomplete: u32 = self.status.iter().sum();
+
+            println!("Number incomplete: {}", num_incomplete);
+
+            if num_incomplete == 0 {
                 break;
             }
+
+            last_iteration = iter;
         }
 
-        println!("Status: {:?}", self.status);
+        println!("Finished after iterations: {}", last_iteration);
 
         self.buffers.path_buffers.x.read(&mut self.solution).enq()?;
         self.queue.finish()?;
@@ -606,6 +677,7 @@ impl PathFollowingDirectClSolver {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use nalgebra_sparse::CooMatrix;
 
     #[test]
     fn build_program() {
@@ -616,7 +688,7 @@ mod tests {
             .devices(device)
             .build()
             .unwrap();
-        let p = get_cl_program(&context, &device).unwrap();
+        let p = f64::get_cl_program(&context, &device).unwrap();
     }
 
     fn test_matrx() -> CsrMatrix<f64> {

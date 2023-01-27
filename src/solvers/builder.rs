@@ -2,6 +2,7 @@ use crate::aggregated_node::AggregatedNodeIndex;
 use crate::edge::EdgeIndex;
 use crate::model::Model;
 use crate::node::{Node, NodeType};
+use crate::solvers::col_edge_map::{ColumnEdgeMap, ColumnEdgeMapBuilder};
 use crate::solvers::SolverTimings;
 use crate::state::State;
 use crate::timestep::Timestep;
@@ -278,123 +279,6 @@ where
             panic!("Row factor is non-finite.");
         }
         *self.columns.entry(column).or_insert(0.0) += value;
-    }
-}
-
-struct ColumnEdgeMap<I> {
-    col_to_edges: Vec<Vec<EdgeIndex>>,
-    edge_to_col: Vec<I>,
-}
-
-impl<I> ColumnEdgeMap<I>
-where
-    I: Copy + num::PrimInt,
-{
-    fn col_for_edge(&self, edge_index: &EdgeIndex) -> I {
-        *self
-            .edge_to_col
-            .get(*edge_index.deref())
-            .unwrap_or_else(|| panic!("EdgeIndex {:?} not found in column-edge map.", edge_index))
-    }
-}
-
-/// A helper struct that contains a mapping from column to model `EdgeIndex`
-///
-/// A single column may represent one or more edges in the model due to trivial mass-balance
-/// constraints making their flows equal. This struct helps with construction of the mapping.
-struct ColumnEdgeMapBuilder<I> {
-    col_to_edges: Vec<Vec<EdgeIndex>>,
-    edge_to_col: BTreeMap<EdgeIndex, I>,
-}
-
-impl<I> Default for ColumnEdgeMapBuilder<I>
-where
-    I: num::PrimInt,
-{
-    fn default() -> Self {
-        Self {
-            col_to_edges: Vec::default(),
-            edge_to_col: BTreeMap::default(),
-        }
-    }
-}
-
-impl<I> ColumnEdgeMapBuilder<I>
-where
-    I: Copy + num::PrimInt,
-{
-    fn build(self) -> ColumnEdgeMap<I> {
-        // Convert the hashmap to vector
-        // There should be an entry for every index
-        assert_eq!(
-            *self.edge_to_col.keys().last().unwrap().deref(),
-            self.edge_to_col.len() - 1
-        );
-
-        ColumnEdgeMap {
-            col_to_edges: self.col_to_edges,
-            edge_to_col: self.edge_to_col.into_values().collect(),
-        }
-    }
-
-    /// The number of columns in the map
-    fn ncols(&self) -> usize {
-        self.col_to_edges.len()
-    }
-
-    fn col_for_edge(&self, edge_index: &EdgeIndex) -> I {
-        *self
-            .edge_to_col
-            .get(edge_index)
-            .unwrap_or_else(|| panic!("EdgeIndex {:?} not found in column-edge map.", edge_index))
-    }
-
-    /// Add a new column to the map
-    fn add_simple_edge(&mut self, idx: EdgeIndex) {
-        if self.edge_to_col.contains_key(&idx) {
-            // TODO maybe this should be an error?
-            // panic!("Cannot add the same edge index twice.");
-            return;
-        }
-        // Next column id;
-        let col = I::from(self.col_to_edges.len()).unwrap();
-        self.col_to_edges.push(vec![idx]);
-        self.edge_to_col.insert(idx, col);
-    }
-
-    /// Add related columns
-    ///
-    /// `new_idx` should be
-    fn add_equal_edges(&mut self, idx1: EdgeIndex, idx2: EdgeIndex) {
-        let idx1_present = self.edge_to_col.contains_key(&idx1);
-        let idx2_present = self.edge_to_col.contains_key(&idx2);
-
-        match (idx1_present, idx2_present) {
-            (true, true) => {
-                // Both are already present; this should not happen?
-            }
-            (false, true) => {
-                // idx1 is not present, but idx2 is
-                // Therefore add idx1 to idx2's column;
-                let col = self.col_for_edge(&idx2);
-                self.col_to_edges[col.to_usize().unwrap()].push(idx1);
-                self.edge_to_col.insert(idx1, col);
-            }
-            (true, false) => {
-                // idx1 is present, but idx2 is not
-                // Therefore add idx2 to idx1's column;
-                let col = self.col_for_edge(&idx1);
-                self.col_to_edges[col.to_usize().unwrap()].push(idx2);
-                self.edge_to_col.insert(idx2, col);
-            }
-            (false, false) => {
-                // Neither idx is present
-                let col = I::from(self.col_to_edges.len()).unwrap();
-                self.col_to_edges.push(vec![idx1, idx2]);
-                self.edge_to_col.insert(idx1, col);
-                self.edge_to_col.insert(idx2, col);
-            }
-        }
     }
 }
 

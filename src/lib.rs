@@ -14,7 +14,7 @@ pub mod node;
 pub mod parameters;
 pub mod python;
 mod recorders;
-pub mod scenario;
+mod scenario;
 pub mod schema;
 pub mod solvers;
 pub mod state;
@@ -90,6 +90,8 @@ pub enum PywrError {
     AtleastOneParameterRequired,
     #[error("scenario state not found")]
     ScenarioStateNotFound,
+    #[error("scenario not found: {0}")]
+    ScenarioNotFound(String),
     #[error("clp error")]
     ClpError(#[from] solvers::ClpError),
     #[error("metric not defined")]

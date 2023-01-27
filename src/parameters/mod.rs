@@ -15,9 +15,13 @@ mod threshold;
 use std::any::Any;
 // Re-imports
 use super::PywrError;
+use crate::model::Model;
 use crate::scenario::ScenarioIndex;
+use crate::state::State;
+use crate::timestep::Timestep;
 pub use aggregated::{AggFunc, AggregatedParameter};
 pub use aggregated_index::{AggIndexFunc, AggregatedIndexParameter};
+pub use array::{Array1Parameter, Array2Parameter};
 pub use asymmetric::AsymmetricSwitchIndexParameter;
 pub use control_curves::{
     ControlCurveIndexParameter, ControlCurveParameter, InterpolatedParameter, PiecewiseInterpolatedParameter,
@@ -30,10 +34,6 @@ pub use profiles::{DailyProfileParameter, MonthlyProfileParameter, UniformDrawdo
 pub use py::PyParameter;
 pub use threshold::{Predicate, ThresholdParameter};
 
-use crate::model::Model;
-use crate::state::State;
-use crate::timestep::Timestep;
-use ndarray::{Array1, Array2};
 use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::ops::Deref;
@@ -245,69 +245,6 @@ impl Parameter for VectorParameter {
             Some(v) => Ok(*v),
             None => Err(PywrError::TimestepIndexOutOfRange),
         }
-    }
-}
-
-pub struct Array1Parameter {
-    meta: ParameterMeta,
-    array: Array1<f64>,
-}
-
-impl Array1Parameter {
-    pub fn new(name: &str, array: Array1<f64>) -> Self {
-        Self {
-            meta: ParameterMeta::new(name),
-            array,
-        }
-    }
-}
-
-impl Parameter for Array1Parameter {
-    fn meta(&self) -> &ParameterMeta {
-        &self.meta
-    }
-    fn compute(
-        &self,
-        timestep: &Timestep,
-        _scenario_index: &ScenarioIndex,
-        _model: &Model,
-        _state: &State,
-        _internal_state: &mut Option<Box<dyn Any + Send>>,
-    ) -> Result<f64, PywrError> {
-        // This panics if out-of-bounds
-        let value = self.array[[timestep.index]];
-        Ok(value)
-    }
-}
-
-pub struct Array2Parameter {
-    meta: ParameterMeta,
-    array: Array2<f64>,
-}
-
-impl Array2Parameter {
-    pub fn new(name: &str, array: Array2<f64>) -> Self {
-        Self {
-            meta: ParameterMeta::new(name),
-            array,
-        }
-    }
-}
-
-impl Parameter for Array2Parameter {
-    fn meta(&self) -> &ParameterMeta {
-        &self.meta
-    }
-    fn compute(
-        &self,
-        timestep: &Timestep,
-        scenario_index: &ScenarioIndex,
-        _model: &Model,
-        _state: &State,
-        _internal_state: &mut Option<Box<dyn Any + Send>>,
-    ) -> Result<f64, PywrError> {
-        // This panics if out-of-bounds
-        Ok(self.array[[timestep.index, scenario_index.index]])
     }
 }
 

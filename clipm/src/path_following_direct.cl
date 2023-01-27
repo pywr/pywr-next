@@ -155,7 +155,7 @@ __kernel void normal_eqn_step(
     uint wsize,
     __global REAL* restrict b,
     __global REAL* restrict c,
-    REAL delta,
+    float delta,
     __global REAL* restrict dx,
     __global REAL* restrict dz,
     __global REAL* restrict dy,
@@ -178,7 +178,7 @@ __kernel void normal_eqn_step(
     // Compute optimality
     REAL gamma = dot_product(z, x, ATsize) + dot_product(w, y, wsize);
     REAL mu = delta * gamma / (ATsize + wsize);
-    // update relative feasibility tolerance
+    // update relative tolerance
     gamma = gamma / (1 + vector_norm(x, ATsize) + vector_norm(y, Asize));
 
     // #ifdef DEBUG_GID
@@ -243,7 +243,7 @@ __kernel void normal_eqn_step(
         x, z, y, w, wsize, c, dy, mu, dx, dz, dw
     );
 
-    theta = min(0.9/theta, 1.0);
+    theta = min(0.9995/theta, 1.0);
     // if (gid == 0) {
     //     printf("%d theta: %g", gid, theta);
     // }
@@ -265,8 +265,8 @@ __kernel void normal_eqn_init(
     __global REAL* restrict w,
     uint wsize
 ) {
-    vector_set(x, 1.0, ATsize);
-    vector_set(z, 1.0, ATsize);
-    vector_set(y, 1.0, Asize);
-    vector_set(w, 1.0, wsize);
+    vector_set(x, 1000.0, ATsize);
+    vector_set(z, 1000.0, ATsize);
+    vector_set(y, 1000.0, Asize);
+    vector_set(w, 1000.0, wsize);
 }

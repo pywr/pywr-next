@@ -267,7 +267,7 @@ mod tests {
     use crate::node::ConstraintValue;
     use crate::recorders::AssertionRecorder;
     use crate::solvers::ClpSolver;
-    use crate::test_utils::{default_scenarios, default_timestepper};
+    use crate::test_utils::default_timestepper;
     use ndarray::Array2;
 
     /// Test the factors forcing a simple ratio of flow
@@ -277,7 +277,8 @@ mod tests {
     fn test_simple_factors() {
         let mut model = Model::default();
         let timestepper = default_timestepper();
-        let scenarios = default_scenarios();
+
+        model.add_scenario_group("test-scenario", 2).unwrap();
 
         let input_node = model.add_input_node("input", None).unwrap();
         let link_node0 = model.add_link_node("link", Some("0")).unwrap();
@@ -316,6 +317,6 @@ mod tests {
         let recorder = AssertionRecorder::new("link-0-flow", Metric::NodeOutFlow(idx), expected, None, None);
         model.add_recorder(Box::new(recorder)).unwrap();
 
-        model.run::<ClpSolver>(&timestepper, &scenarios).unwrap();
+        model.run::<ClpSolver>(&timestepper).unwrap();
     }
 }

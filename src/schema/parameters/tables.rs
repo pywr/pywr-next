@@ -53,11 +53,17 @@ impl TablesArrayParameter {
         let array = ds.read_2d::<f64>().map_err(|e| PywrError::HDF5Error(e.to_string()))?;
         // 2. TODO Validate the shape of the data array. I.e. check number of columns matches scenario
         //    and number of rows matches time-steps.
-        let array = array.slice_move(s![.., 0]);
 
         // 3. Create an ArrayParameter using the loaded array.
-        let p = crate::parameters::Array1Parameter::new(&self.meta.name, array);
-        model.add_parameter(Box::new(p))
+        if let Some(scenario) = &self.scenario {
+            let scenario_group = model.get_scenario_group_index_by_name(scenario)?;
+            let p = crate::parameters::Array2Parameter::new(&self.meta.name, array, scenario_group);
+            model.add_parameter(Box::new(p))
+        } else {
+            let array = array.slice_move(s![.., 0]);
+            let p = crate::parameters::Array1Parameter::new(&self.meta.name, array);
+            model.add_parameter(Box::new(p))
+        }
     }
 }
 
