@@ -43,7 +43,7 @@ impl TablesArrayParameter {
             self.url.clone()
         };
 
-        let file = hdf5::File::open(&pth).map_err(|e| PywrError::HDF5Error(e.to_string()))?; // open for reading
+        let file = hdf5::File::open(pth).map_err(|e| PywrError::HDF5Error(e.to_string()))?; // open for reading
 
         let grp = file.group(&self.wh).map_err(|e| PywrError::HDF5Error(e.to_string()))?; // find the group
         let ds = grp

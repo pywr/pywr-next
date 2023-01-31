@@ -346,8 +346,7 @@ impl LoadedTable {
         match self {
             LoadedTable::FloatScalar(tbl) => tbl.get_scalar(key),
             _ => Err(TableError::WrongTableFormat(format!(
-                "Scalar value with key \"{:?}\" requested from non-scalar table.",
-                key
+                "Scalar value with key \"{key:?}\" requested from non-scalar table."
             ))),
         }
     }

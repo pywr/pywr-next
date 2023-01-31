@@ -186,7 +186,7 @@ class MyParameter:
             test_module.getattr("MyParameter").unwrap().into()
         });
 
-        let args = Python::with_gil(|py| PyTuple::new(py, &[0]).into());
+        let args = Python::with_gil(|py| PyTuple::new(py, [0]).into());
         let kwargs = Python::with_gil(|py| PyDict::new(py).into());
 
         let param = PyParameter::new("my-parameter", class, args, kwargs, &HashMap::new(), &HashMap::new());
@@ -208,7 +208,7 @@ class MyParameter:
 
         let mut internal_p_states: Vec<_> = scenario_indices
             .iter()
-            .map(|si| param.setup(&timesteps, &si).expect("Could not setup the PyParameter"))
+            .map(|si| param.setup(&timesteps, si).expect("Could not setup the PyParameter"))
             .collect();
 
         let model = Model::default();

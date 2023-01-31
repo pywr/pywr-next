@@ -15,7 +15,7 @@ where
         *self
             .edge_to_col
             .get(*edge_index.deref())
-            .unwrap_or_else(|| panic!("EdgeIndex {:?} not found in column-edge map.", edge_index))
+            .unwrap_or_else(|| panic!("EdgeIndex {edge_index:?} not found in column-edge map."))
     }
 }
 
@@ -67,7 +67,7 @@ where
         *self
             .edge_to_col
             .get(edge_index)
-            .unwrap_or_else(|| panic!("EdgeIndex {:?} not found in column-edge map.", edge_index))
+            .unwrap_or_else(|| panic!("EdgeIndex {edge_index:?} not found in column-edge map."))
     }
 
     /// Add a new column to the map

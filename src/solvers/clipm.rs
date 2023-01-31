@@ -167,7 +167,7 @@ impl LpBuilder {
         let col_obj_coef = vec![0.0; self.num_cols * self.num_lps];
 
         println!("Number of columns: {}", self.num_cols);
-        println!("Number of rows: {}", num_rows);
+        println!("Number of rows: {num_rows}");
         println!("Number of inequality rows: {}", self.inequality.len());
         println!("Number of equality rows: {}", self.equality.len());
         println!("Number of LPs: {}", self.num_lps);

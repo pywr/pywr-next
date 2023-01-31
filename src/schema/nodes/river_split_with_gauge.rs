@@ -47,10 +47,10 @@ impl RiverSplitWithGaugeNode {
     }
 
     fn split_sub_name(i: usize) -> Option<String> {
-        Some(format!("split-{}", i))
+        Some(format!("split-{i}"))
     }
     fn split_agg_sub_name(i: usize) -> Option<String> {
-        Some(format!("split-agg-{}", i))
+        Some(format!("split-agg-{i}"))
     }
 
     pub fn add_to_model(&self, model: &mut crate::model::Model) -> Result<(), PywrError> {

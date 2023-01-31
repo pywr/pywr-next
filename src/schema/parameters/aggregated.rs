@@ -223,7 +223,7 @@ impl TryFromV1Parameter<AggregatedIndexParameterV1> for AggregatedIndexParameter
         let p = Self {
             meta,
             agg_func: v1.agg_func.into(),
-            parameters: parameters,
+            parameters,
         };
         Ok(p)
     }

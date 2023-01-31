@@ -87,7 +87,7 @@ impl MaxParameter {
         let idx = self.parameter.load(model, tables, data_path)?;
         let threshold = self.threshold.unwrap_or(0.0);
 
-        let p = crate::parameters::MaxParameter::new(&self.meta.name, idx.into(), threshold);
+        let p = crate::parameters::MaxParameter::new(&self.meta.name, idx, threshold);
         model.add_parameter(Box::new(p))
     }
 }
@@ -138,7 +138,7 @@ impl NegativeParameter {
     ) -> Result<ParameterIndex, PywrError> {
         let idx = self.parameter.load(model, tables, data_path)?;
 
-        let p = crate::parameters::NegativeParameter::new(&self.meta.name, idx.into());
+        let p = crate::parameters::NegativeParameter::new(&self.meta.name, idx);
         model.add_parameter(Box::new(p))
     }
 }

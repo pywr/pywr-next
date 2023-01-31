@@ -199,7 +199,7 @@ impl Model {
         // Setup recorders
         let mut recorder_internal_states = Vec::new();
         for recorder in &self.recorders {
-            let initial_state = recorder.setup(timesteps, &scenario_indices, &self)?;
+            let initial_state = recorder.setup(timesteps, &scenario_indices, self)?;
             recorder_internal_states.push(initial_state);
         }
 
@@ -323,7 +323,7 @@ impl Model {
         self.finalise(&mut recorder_internal_states)?;
 
         let total_duration = now.elapsed().as_secs_f64();
-        println!("total run time: {}s", total_duration);
+        println!("total run time: {total_duration}s");
         println!(
             "total parameter calculation time: {}s",
             timings.parameter_calculation.as_secs_f64()
@@ -442,11 +442,11 @@ impl Model {
             match c_type {
                 ComponentType::Node(idx) => {
                     let n = self.nodes.get(idx)?;
-                    n.before(timestep, &self, state)?;
+                    n.before(timestep, self, state)?;
                 }
                 ComponentType::VirtualStorageNode(idx) => {
                     let n = self.virtual_storage_nodes.get(idx)?;
-                    n.before(timestep, &self, state)?;
+                    n.before(timestep, self, state)?;
                 }
                 ComponentType::Parameter(p_type) => {
                     match p_type {
@@ -501,14 +501,15 @@ impl Model {
         recorder_internal_states: &mut [Option<Box<dyn Any>>],
     ) -> Result<(), PywrError> {
         for (recorder, internal_state) in self.recorders.iter().zip(recorder_internal_states) {
-            recorder.save(timestep, scenario_indices, &self, states, internal_state)?;
+            recorder.save(timestep, scenario_indices, self, states, internal_state)?;
         }
         Ok(())
     }
 
     /// Add a `ScenarioGroup` to the model
     pub fn add_scenario_group(&mut self, name: &str, size: usize) -> Result<(), PywrError> {
-        Ok(self.scenarios.add_group(name, size))
+        self.scenarios.add_group(name, size);
+        Ok(())
     }
 
     /// Get a `ScenarioGroup`'s index by name
@@ -1156,7 +1157,7 @@ mod tests {
         let mut ts_iter = timesteps.iter();
 
         let ts = ts_iter.next().unwrap();
-        let (mut current_state, mut p_internal, r_internal) = model.setup(&timesteps).unwrap();
+        let (mut current_state, mut p_internal, _r_internal) = model.setup(&timesteps).unwrap();
 
         let mut solvers = model.setup_solver::<ClpSolver>().unwrap();
         assert_eq!(current_state.len(), scenario_indices.len());

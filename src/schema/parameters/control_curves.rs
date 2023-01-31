@@ -46,13 +46,13 @@ impl ControlCurveInterpolatedParameter {
         let control_curves = self
             .control_curves
             .iter()
-            .map(|cc| cc.load(model, tables, data_path).map(|v| v.into()))
+            .map(|cc| cc.load(model, tables, data_path))
             .collect::<Result<_, _>>()?;
 
         let values = self
             .values
             .iter()
-            .map(|val| val.load(model, tables, data_path).map(|v| v.into()))
+            .map(|val| val.load(model, tables, data_path))
             .collect::<Result<_, _>>()?;
 
         let p = crate::parameters::InterpolatedParameter::new(&self.meta.name, metric, control_curves, values);
@@ -130,7 +130,7 @@ impl ControlCurveIndexParameter {
         let control_curves = self
             .control_curves
             .iter()
-            .map(|cc| cc.load(model, tables, data_path).map(|v| v.into()))
+            .map(|cc| cc.load(model, tables, data_path))
             .collect::<Result<_, _>>()?;
 
         let p = crate::parameters::ControlCurveIndexParameter::new(&self.meta.name, metric, control_curves);
@@ -211,13 +211,13 @@ impl ControlCurveParameter {
         let control_curves = self
             .control_curves
             .iter()
-            .map(|cc| cc.load(model, tables, data_path).map(|v| v.into()))
+            .map(|cc| cc.load(model, tables, data_path))
             .collect::<Result<_, _>>()?;
 
         let values = self
             .values
             .iter()
-            .map(|val| val.load(model, tables, data_path).map(|v| v.into()))
+            .map(|val| val.load(model, tables, data_path))
             .collect::<Result<_, _>>()?;
 
         let p = crate::parameters::ControlCurveParameter::new(&self.meta.name, metric, control_curves, values);
@@ -308,7 +308,7 @@ impl ControlCurvePiecewiseInterpolatedParameter {
         let control_curves = self
             .control_curves
             .iter()
-            .map(|cc| cc.load(model, tables, data_path).map(|v| v.into()))
+            .map(|cc| cc.load(model, tables, data_path))
             .collect::<Result<_, _>>()?;
 
         let values = match &self.values {

@@ -104,7 +104,7 @@ fn run(path: &Path, solver: &str, data_path: Option<&Path>) {
         "highs" => model.run::<HighsSolver>(&timestepper),
         "clipm-f32" => model.run_multi_scenario::<ClIpmF32Solver>(&timestepper),
         "clipm-f64" => model.run_multi_scenario::<ClIpmF64Solver>(&timestepper),
-        _ => panic!("Solver {} not recognised.", solver),
+        _ => panic!("Solver {solver} not recognised."),
     }
     .unwrap();
 }

@@ -87,8 +87,8 @@ impl FromV1Parameter<ParameterMetaV1> for ParameterMeta {
         Self {
             name: v1.name.unwrap_or_else(|| {
                 let pname = match parent_node {
-                    Some(pn) => format!("{}-p{}", pn, unnamed_count),
-                    None => format!("unnamed-{}", unnamed_count),
+                    Some(pn) => format!("{pn}-p{unnamed_count}"),
+                    None => format!("unnamed-{unnamed_count}"),
                 };
                 *unnamed_count += 1;
                 pname
@@ -104,7 +104,7 @@ impl FromV1Parameter<Option<ParameterMetaV1>> for ParameterMeta {
             Some(meta) => meta.into_v2_parameter(parent_node, unnamed_count),
             None => {
                 let meta = Self {
-                    name: format!("unnamed-{}", unnamed_count),
+                    name: format!("unnamed-{unnamed_count}"),
                     comment: None,
                 };
                 *unnamed_count += 1;

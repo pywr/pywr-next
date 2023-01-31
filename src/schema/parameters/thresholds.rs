@@ -70,8 +70,8 @@ impl ParameterThresholdParameter {
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
     ) -> Result<IndexParameterIndex, PywrError> {
-        let metric = self.parameter.load(model, tables, data_path)?.into();
-        let threshold = self.threshold.load(model, tables, data_path)?.into();
+        let metric = self.parameter.load(model, tables, data_path)?;
+        let threshold = self.threshold.load(model, tables, data_path)?;
 
         let p = crate::parameters::ThresholdParameter::new(
             &self.meta.name,

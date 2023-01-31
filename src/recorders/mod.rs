@@ -258,10 +258,9 @@ where
                 ulps = self.ulps
             ) {
                 panic!(
-                    r#"assertion failed at timestep {:?} in scenario {:?}: `(actual approx_eq expected)`
-   actual: `{:?}`,
- expected: `{:?}`"#,
-                    timestep, scenario_index, actual_value, expected_value,
+                    r#"assertion failed at timestep {timestep:?} in scenario {scenario_index:?}: `(actual approx_eq expected)`
+   actual: `{actual_value:?}`,
+ expected: `{expected_value:?}`"#,
                 )
             }
         }

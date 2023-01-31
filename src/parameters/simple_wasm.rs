@@ -90,14 +90,15 @@ impl Parameter for SimpleWasmParameter {
             let v = state.get_parameter_value(*p)?;
 
             funcs.set_func.call(funcs.ptr, len, idx as u32, v).map_err(|e| {
-                PywrError::InternalParameterError(format!("Error calling WASM imported function: {:?}.", e))
+                PywrError::InternalParameterError(format!("Error calling WASM imported function: {e:?}."))
             })?;
         }
 
         // Calculate the parameter's final value using the WASM function.
-        let value: f64 = funcs.func.call(funcs.ptr, len).map_err(|e| {
-            PywrError::InternalParameterError(format!("Error calling WASM imported function: {:?}.", e))
-        })?;
+        let value: f64 = funcs
+            .func
+            .call(funcs.ptr, len)
+            .map_err(|e| PywrError::InternalParameterError(format!("Error calling WASM imported function: {e:?}.")))?;
 
         Ok(value)
     }
