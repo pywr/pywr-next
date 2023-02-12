@@ -8,12 +8,14 @@ mod max;
 mod negative;
 mod polynomial;
 mod profiles;
-pub mod py;
+mod py;
+mod rhai;
 pub mod simple_wasm;
 mod threshold;
 
 use std::any::Any;
 // Re-imports
+pub use self::rhai::RhaiParameter;
 use super::PywrError;
 use crate::model::Model;
 use crate::scenario::ScenarioIndex;

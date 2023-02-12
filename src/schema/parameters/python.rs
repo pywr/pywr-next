@@ -1,4 +1,4 @@
-use crate::parameters::py::PyParameter;
+use crate::parameters::PyParameter;
 use crate::schema::data_tables::{make_path, LoadedTableCollection};
 use crate::schema::parameters::{DynamicFloatValue, DynamicFloatValueType, DynamicIndexValue, ParameterMeta};
 use crate::{ParameterIndex, PywrError};

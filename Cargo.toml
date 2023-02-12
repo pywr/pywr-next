@@ -26,14 +26,15 @@ svgbobdoc = { version = "0.3.0", features = ["enable"]  }
 log = "0.4.17"
 pyo3-log = "0.8.0"
 indicatif = "0.17.2"
-# highs-sys = "1.2.2"
-highs-sys = { path = "../../highs-sys" }
+highs-sys = "1.5.0"
+# highs-sys = { path = "../../highs-sys" }
 pyo3 = { version = "0.18.0" }
 # polars = { version = "0.25.1", features = ["lazy", "rows"] }
 pywr-schema = { git = "https://github.com/pywr/pywr-schema/" }
 # pywr-schema = { path = "../pywr-schema/pywr_schema" }
 # Binary dependencies
 clap =  { version="4.0", features=["derive"] }
+rhai = { version="1.12.0", features=["sync"] }
 
 
 [dev-dependencies]

@@ -1,7 +1,6 @@
-use super::{Parameter, ParameterMeta, PywrError, Timestep};
+use super::{IndexValue, Parameter, ParameterMeta, PywrError, Timestep};
 use crate::metric::Metric;
 use crate::model::Model;
-use crate::parameters::IndexValue;
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
 use pyo3::prelude::*;
@@ -162,7 +161,7 @@ mod tests {
 
     #[test]
     /// Test `PythonParameter` returns the correct value.
-    fn test_constant_parameter() {
+    fn test_counter_parameter() {
         // Init Python
         pyo3::prepare_freethreaded_python();
 
