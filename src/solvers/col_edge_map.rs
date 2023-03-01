@@ -3,7 +3,6 @@ use std::collections::BTreeMap;
 use std::ops::Deref;
 
 pub struct ColumnEdgeMap<I> {
-    col_to_edges: Vec<Vec<EdgeIndex>>,
     edge_to_col: Vec<I>,
 }
 
@@ -53,7 +52,6 @@ where
         );
 
         ColumnEdgeMap {
-            col_to_edges: self.col_to_edges,
             edge_to_col: self.edge_to_col.into_values().collect(),
         }
     }

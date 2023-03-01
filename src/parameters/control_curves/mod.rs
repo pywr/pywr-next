@@ -1,8 +1,10 @@
+mod apportion;
 mod index;
 mod interpolated;
 mod piecewise;
 mod simple;
 
+pub use apportion::ApportionParameter;
 pub use index::ControlCurveIndexParameter;
 pub use interpolated::InterpolatedParameter;
 pub use piecewise::PiecewiseInterpolatedParameter;

@@ -19,32 +19,35 @@ pub use self::rhai::RhaiParameter;
 use super::PywrError;
 use crate::model::Model;
 use crate::scenario::ScenarioIndex;
-use crate::state::State;
+use crate::state::{MultiValue, State};
 use crate::timestep::Timestep;
 pub use aggregated::{AggFunc, AggregatedParameter};
 pub use aggregated_index::{AggIndexFunc, AggregatedIndexParameter};
 pub use array::{Array1Parameter, Array2Parameter};
 pub use asymmetric::AsymmetricSwitchIndexParameter;
 pub use control_curves::{
-    ControlCurveIndexParameter, ControlCurveParameter, InterpolatedParameter, PiecewiseInterpolatedParameter,
+    ApportionParameter, ControlCurveIndexParameter, ControlCurveParameter, InterpolatedParameter,
+    PiecewiseInterpolatedParameter,
 };
 pub use indexed_array::IndexedArrayParameter;
 pub use max::MaxParameter;
 pub use negative::NegativeParameter;
 pub use polynomial::Polynomial1DParameter;
-pub use profiles::{DailyProfileParameter, MonthlyProfileParameter, UniformDrawdownProfileParameter};
+pub use profiles::{DailyProfileParameter, MonthlyInterpDay, MonthlyProfileParameter, UniformDrawdownProfileParameter};
 pub use py::PyParameter;
-pub use threshold::{Predicate, ThresholdParameter};
-
 use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::ops::Deref;
+pub use threshold::{Predicate, ThresholdParameter};
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub struct ParameterIndex(usize);
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub struct IndexParameterIndex(usize);
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub struct MultiValueParameterIndex(usize);
 
 impl ParameterIndex {
     pub fn new(idx: usize) -> Self {
@@ -53,6 +56,12 @@ impl ParameterIndex {
 }
 
 impl IndexParameterIndex {
+    pub fn new(idx: usize) -> Self {
+        Self(idx)
+    }
+}
+
+impl MultiValueParameterIndex {
     pub fn new(idx: usize) -> Self {
         Self(idx)
     }
@@ -74,6 +83,14 @@ impl Deref for IndexParameterIndex {
     }
 }
 
+impl Deref for MultiValueParameterIndex {
+    type Target = usize;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
 impl Display for ParameterIndex {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
@@ -81,6 +98,12 @@ impl Display for ParameterIndex {
 }
 
 impl Display for IndexParameterIndex {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl Display for MultiValueParameterIndex {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
     }
@@ -102,19 +125,24 @@ impl ParameterMeta {
     }
 }
 
+// TODO It might be possible to make these three traits into a single generic trait
 pub trait Parameter: Send + Sync {
+    fn as_any_mut(&mut self) -> &mut dyn Any;
     fn meta(&self) -> &ParameterMeta;
     fn name(&self) -> &str {
         self.meta().name.as_str()
     }
     fn setup(
         &self,
-        _timesteps: &[Timestep],
-        _scenario_index: &ScenarioIndex,
+        #[allow(unused_variables)] timesteps: &[Timestep],
+        #[allow(unused_variables)] scenario_index: &ScenarioIndex,
     ) -> Result<Option<Box<dyn Any + Send>>, PywrError> {
         Ok(None)
     }
-    fn before(&self, _internal_state: &mut Option<Box<dyn Any + Send>>) -> Result<(), PywrError> {
+    fn before(
+        &self,
+        #[allow(unused_variables)] internal_state: &mut Option<Box<dyn Any + Send>>,
+    ) -> Result<(), PywrError> {
         Ok(())
     }
     fn compute(
@@ -126,23 +154,17 @@ pub trait Parameter: Send + Sync {
         internal_state: &mut Option<Box<dyn Any + Send>>,
     ) -> Result<f64, PywrError>;
 
-    fn after(&self, _internal_state: &mut Option<Box<dyn Any + Send>>) -> Result<(), PywrError> {
+    fn after(
+        &self,
+        #[allow(unused_variables)] timestep: &Timestep,
+        #[allow(unused_variables)] scenario_index: &ScenarioIndex,
+        #[allow(unused_variables)] model: &Model,
+        #[allow(unused_variables)] state: &State,
+        #[allow(unused_variables)] internal_state: &mut Option<Box<dyn Any + Send>>,
+    ) -> Result<(), PywrError> {
         Ok(())
     }
 }
-
-// pub trait MultiStateParameter {
-//     fn before(&self) {}
-//     fn compute(
-//         &mut self,
-//         timestep: &Timestep,
-//         scenario_index: &ScenarioIndex,
-//         network_state: &NetworkState,
-//         parameter_state: &ParameterState,
-//     ) -> Result<(), PywrError>;
-//
-//     fn get_value(&mut self, key: &str) -> Result<f64, PywrError>;
-// }
 
 pub trait IndexParameter: Send + Sync {
     fn meta(&self) -> &ParameterMeta;
@@ -167,6 +189,42 @@ pub trait IndexParameter: Send + Sync {
     ) -> Result<usize, PywrError>;
 }
 
+pub trait MultiValueParameter: Send + Sync {
+    fn meta(&self) -> &ParameterMeta;
+    fn name(&self) -> &str {
+        self.meta().name.as_str()
+    }
+    fn setup(
+        &self,
+        #[allow(unused_variables)] timesteps: &[Timestep],
+        #[allow(unused_variables)] scenario_index: &ScenarioIndex,
+    ) -> Result<Option<Box<dyn Any + Send>>, PywrError> {
+        Ok(None)
+    }
+    fn before(&self, _internal_state: &mut Option<Box<dyn Any + Send>>) -> Result<(), PywrError> {
+        Ok(())
+    }
+    fn compute(
+        &self,
+        timestep: &Timestep,
+        scenario_index: &ScenarioIndex,
+        model: &Model,
+        state: &State,
+        internal_state: &mut Option<Box<dyn Any + Send>>,
+    ) -> Result<MultiValue, PywrError>;
+
+    fn after(
+        &self,
+        #[allow(unused_variables)] timestep: &Timestep,
+        #[allow(unused_variables)] scenario_index: &ScenarioIndex,
+        #[allow(unused_variables)] model: &Model,
+        #[allow(unused_variables)] state: &State,
+        #[allow(unused_variables)] internal_state: &mut Option<Box<dyn Any + Send>>,
+    ) -> Result<(), PywrError> {
+        Ok(())
+    }
+}
+
 #[derive(Copy, Clone)]
 pub enum IndexValue {
     Constant(usize),
@@ -185,6 +243,7 @@ impl IndexValue {
 pub enum ParameterType {
     Parameter(ParameterIndex),
     Index(IndexParameterIndex),
+    Multi(MultiValueParameterIndex),
 }
 
 pub struct ConstantParameter {
@@ -202,6 +261,10 @@ impl ConstantParameter {
 }
 
 impl Parameter for ConstantParameter {
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }
@@ -232,6 +295,9 @@ impl VectorParameter {
 }
 
 impl Parameter for VectorParameter {
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }
@@ -256,6 +322,8 @@ mod tests {
     use crate::timestep::Timestepper;
     use time::macros::date;
 
+    // TODO tests need re-enabling
+    #[allow(dead_code)]
     fn default_timestepper() -> Timestepper {
         Timestepper::new(date!(2020 - 01 - 01), date!(2020 - 01 - 15), 1)
     }

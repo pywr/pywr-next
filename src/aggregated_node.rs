@@ -167,7 +167,7 @@ impl AggregatedNode {
             Constraint::MinFlow => self.set_min_flow_constraint(value),
             Constraint::MaxFlow => self.set_max_flow_constraint(value),
             Constraint::MinAndMaxFlow => {
-                self.set_min_flow_constraint(value);
+                self.set_min_flow_constraint(value.clone());
                 self.set_max_flow_constraint(value);
             }
             Constraint::MinVolume => return Err(PywrError::StorageConstraintsUndefined),
@@ -263,7 +263,7 @@ fn get_norm_ratio_factor_pairs(
 mod tests {
     use crate::aggregated_node::Factors;
     use crate::metric::Metric;
-    use crate::model::Model;
+    use crate::model::{Model, RunOptions};
     use crate::node::ConstraintValue;
     use crate::recorders::AssertionRecorder;
     use crate::solvers::ClpSolver;
@@ -317,6 +317,6 @@ mod tests {
         let recorder = AssertionRecorder::new("link-0-flow", Metric::NodeOutFlow(idx), expected, None, None);
         model.add_recorder(Box::new(recorder)).unwrap();
 
-        model.run::<ClpSolver>(&timestepper).unwrap();
+        model.run::<ClpSolver>(&timestepper, &RunOptions::default()).unwrap();
     }
 }

@@ -3,9 +3,9 @@ use crate::metric::Metric;
 use crate::model::Model;
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
-use rhai::{Dynamic, Engine, FnPtr, FuncArgs, Map, Scope, AST};
+use rhai::{Dynamic, Engine, Map, Scope, AST};
 use std::any::Any;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 
 pub struct RhaiParameter {
     meta: ParameterMeta,
@@ -53,6 +53,9 @@ impl RhaiParameter {
 }
 
 impl Parameter for RhaiParameter {
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }
@@ -163,7 +166,7 @@ mod tests {
             },
         ];
 
-        let state = State::new(vec![], 0, vec![], 1, 0);
+        let state = State::new(vec![], 0, vec![], 1, 0, 0);
 
         let mut internal_p_states: Vec<_> = scenario_indices
             .iter()

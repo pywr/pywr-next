@@ -183,22 +183,10 @@ impl TryFrom<RiverSplitWithGaugeNodeV1> for RiverSplitWithGaugeNode {
 
 #[cfg(test)]
 mod tests {
-
-    use crate::scenario::ScenarioGroupCollection;
+    use crate::model::RunOptions;
     use crate::schema::model::PywrModel;
     use crate::solvers::ClpSolver;
     use crate::timestep::Timestepper;
-    use time::macros::date;
-
-    fn default_timestepper() -> Timestepper {
-        Timestepper::new(date!(2020 - 01 - 01), date!(2020 - 01 - 15), 1)
-    }
-
-    fn default_scenarios() -> ScenarioGroupCollection {
-        let mut scenarios = ScenarioGroupCollection::default();
-        scenarios.add_group("test-scenario", 10);
-        scenarios
-    }
 
     fn model_str() -> &'static str {
         r#"
@@ -272,7 +260,7 @@ mod tests {
         assert_eq!(model.nodes.len(), 5);
         assert_eq!(model.edges.len(), 6);
 
-        model.run::<ClpSolver>(&timestepper).unwrap()
+        model.run::<ClpSolver>(&timestepper, &RunOptions::default()).unwrap()
 
         // TODO assert the results!
     }

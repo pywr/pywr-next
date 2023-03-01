@@ -663,24 +663,24 @@ impl MultiStateSolver for ClIpmF64Solver {
         //         .step_by(self.built.lp.num_lps)
         //         .collect::<Vec<_>>()
         // );
-        println!(
-            "Row bounds 0: {:?}",
-            self.built
-                .row_upper()
-                .iter()
-                .step_by(self.built.lp.num_lps)
-                .collect::<Vec<_>>()
-        );
-
-        println!(
-            "Row bounds 1: {:?}",
-            self.built
-                .row_upper()
-                .iter()
-                .skip(1)
-                .step_by(self.built.lp.num_lps)
-                .collect::<Vec<_>>()
-        );
+        // println!(
+        //     "Row bounds 0: {:?}",
+        //     self.built
+        //         .row_upper()
+        //         .iter()
+        //         .step_by(self.built.lp.num_lps)
+        //         .collect::<Vec<_>>()
+        // );
+        //
+        // println!(
+        //     "Row bounds 1: {:?}",
+        //     self.built
+        //         .row_upper()
+        //         .iter()
+        //         .skip(1)
+        //         .step_by(self.built.lp.num_lps)
+        //         .collect::<Vec<_>>()
+        // );
 
         let solution = self
             .ipm

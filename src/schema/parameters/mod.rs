@@ -161,6 +161,8 @@ impl Parameter {
         }
     }
 
+    // TODO this exists in the v1 schema as a useful way to inspect node references
+    #[allow(dead_code)]
     fn node_references(&self) -> HashMap<&str, &str> {
         match self {
             Self::Constant(p) => p.node_references(),
@@ -252,7 +254,7 @@ impl Parameter {
             Self::Polynomial1D(p) => ParameterType::Parameter(p.add_to_model(model)?),
             Self::ParameterThreshold(p) => ParameterType::Index(p.add_to_model(model, tables, data_path)?),
             Self::TablesArray(p) => ParameterType::Parameter(p.add_to_model(model, data_path)?),
-            Self::Python(p) => ParameterType::Parameter(p.add_to_model(model, tables, data_path)?),
+            Self::Python(p) => p.add_to_model(model, tables, data_path)?,
         };
 
         Ok(ty)
@@ -409,7 +411,7 @@ pub enum MetricFloatValue {
     NodeOutFlow(NodeReference),
     NodeVolume(NodeReference),
     NodeProportionalVolume(NodeReference),
-    Parameter { name: String },
+    Parameter { name: String, key: Option<String> },
     InlineParameter { definition: Box<Parameter> },
 }
 
@@ -428,9 +430,20 @@ impl MetricFloatValue {
             Self::NodeProportionalVolume(node_ref) => {
                 Ok(Metric::NodeProportionalVolume(node_ref.get_node_index(model)?))
             }
-            Self::Parameter { name } => {
-                // This should be an existing parameter
-                Ok(Metric::ParameterValue(model.get_parameter_index_by_name(name)?))
+            Self::Parameter { name, key } => {
+                match key {
+                    Some(key) => {
+                        // Key given; this should be a multi-valued parameter
+                        Ok(Metric::MultiParameterValue((
+                            model.get_multi_valued_parameter_index_by_name(name)?,
+                            key.clone(),
+                        )))
+                    }
+                    None => {
+                        // This should be an existing parameter
+                        Ok(Metric::ParameterValue(model.get_parameter_index_by_name(name)?))
+                    }
+                }
             }
             Self::InlineParameter { definition } => {
                 // This inline parameter could already have been loaded on a previous attempt
@@ -451,6 +464,11 @@ impl MetricFloatValue {
                             ParameterType::Parameter(idx) => Ok(Metric::ParameterValue(idx)),
                             ParameterType::Index(_) => Err(PywrError::UnexpectedParameterType(format!(
                         "Found index parameter of type '{}' with name '{}' where an float parameter was expected.",
+                        definition.ty(),
+                        definition.name(),
+                    ))),
+                            ParameterType::Multi(_) => Err(PywrError::UnexpectedParameterType(format!(
+                        "Found an inline definition of a multi valued parameter of type '{}' with name '{}' where an float parameter was expected. Multi valued parameters cannot be defined inline.",
                         definition.ty(),
                         definition.name(),
                     ))),
@@ -488,6 +506,11 @@ impl ParameterIndexValue {
                     ParameterType::Index(idx) => Ok(idx),
                     ParameterType::Parameter(_) => Err(PywrError::UnexpectedParameterType(format!(
                         "Found float parameter of type '{}' with name '{}' where an index parameter was expected.",
+                        parameter.ty(),
+                        parameter.name(),
+                    ))),
+                            ParameterType::Multi(_) => Err(PywrError::UnexpectedParameterType(format!(
+                        "Found an inline definition of a multi valued parameter of type '{}' with name '{}' where an index parameter was expected. Multi valued parameters cannot be defined inline.",
                         parameter.ty(),
                         parameter.name(),
                     ))),
@@ -537,7 +560,10 @@ impl TryFromV1Parameter<ParameterValueV1> for DynamicFloatValue {
     ) -> Result<Self, Self::Error> {
         let p = match v1 {
             ParameterValueV1::Constant(v) => Self::Constant(ConstantValue::Literal(v)),
-            ParameterValueV1::Reference(p_name) => Self::Dynamic(MetricFloatValue::Parameter { name: p_name }),
+            ParameterValueV1::Reference(p_name) => Self::Dynamic(MetricFloatValue::Parameter {
+                name: p_name,
+                key: None,
+            }),
             ParameterValueV1::Table(tbl) => Self::Constant(ConstantValue::Table(tbl.into())),
             ParameterValueV1::Inline(param) => Self::Dynamic(MetricFloatValue::InlineParameter {
                 definition: Box::new((*param).try_into_v2_parameter(parent_node, unnamed_count)?),

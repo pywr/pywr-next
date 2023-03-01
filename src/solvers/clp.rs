@@ -43,6 +43,7 @@ impl Default for ClpSimplex {
 }
 
 impl ClpSimplex {
+    #[allow(dead_code)]
     pub fn print(&mut self) {
         unsafe {
             let prefix = CString::new("  ").expect("CString::new failed");
@@ -115,6 +116,7 @@ impl ClpSimplex {
         }
     }
 
+    #[allow(dead_code)]
     fn initial_solve(&mut self) {
         unsafe {
             Clp_initialSolve(self.ptr);
@@ -127,6 +129,7 @@ impl ClpSimplex {
         }
     }
 
+    #[allow(dead_code)]
     fn initial_primal_solve(&mut self) {
         unsafe {
             Clp_initialPrimalSolve(self.ptr);
@@ -139,6 +142,7 @@ impl ClpSimplex {
         }
     }
 
+    #[allow(dead_code)]
     fn primal_solve(&mut self) {
         unsafe {
             Clp_primal(self.ptr, 0);
@@ -154,6 +158,7 @@ impl ClpSimplex {
         solution
     }
 
+    #[allow(dead_code)]
     fn get_objective_coefficients(&mut self, number: usize) -> Vec<c_double> {
         let coef: Vec<c_double>;
         unsafe {
@@ -163,6 +168,7 @@ impl ClpSimplex {
         coef
     }
 
+    #[allow(dead_code)]
     fn get_row_upper(&mut self, number: usize) -> Vec<c_double> {
         let ub: Vec<c_double>;
         unsafe {
@@ -172,6 +178,7 @@ impl ClpSimplex {
         ub
     }
 
+    #[allow(dead_code)]
     fn objective_value(&self) -> c_double {
         unsafe { Clp_objectiveValue(self.ptr) }
     }

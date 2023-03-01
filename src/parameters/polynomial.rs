@@ -28,6 +28,9 @@ impl Polynomial1DParameter {
 }
 
 impl Parameter for Polynomial1DParameter {
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }

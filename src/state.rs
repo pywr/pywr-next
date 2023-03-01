@@ -1,11 +1,12 @@
 use crate::edge::{Edge, EdgeIndex};
 use crate::model::Model;
 use crate::node::{Node, NodeIndex};
-use crate::parameters::{IndexParameterIndex, ParameterIndex};
+use crate::parameters::{IndexParameterIndex, MultiValueParameterIndex, ParameterIndex};
 use crate::timestep::Timestep;
 use crate::virtual_storage::VirtualStorageIndex;
 use crate::PywrError;
 use std::any::Any;
+use std::collections::HashMap;
 use std::ops::Deref;
 
 #[derive(Clone, Copy, Debug)]
@@ -138,6 +139,7 @@ impl EdgeState {
 pub struct ParameterStates {
     values: Vec<Option<Box<dyn Any + Send>>>,
     indices: Vec<Option<Box<dyn Any + Send>>>,
+    multi: Vec<Option<Box<dyn Any + Send>>>,
 }
 
 impl ParameterStates {
@@ -145,10 +147,12 @@ impl ParameterStates {
     pub fn new(
         initial_values_states: Vec<Option<Box<dyn Any + Send>>>,
         initial_indices_states: Vec<Option<Box<dyn Any + Send>>>,
+        initial_multi_states: Vec<Option<Box<dyn Any + Send>>>,
     ) -> Self {
         Self {
             values: initial_values_states,
             indices: initial_indices_states,
+            multi: initial_multi_states,
         }
     }
 
@@ -159,6 +163,30 @@ impl ParameterStates {
     pub fn get_mut_index_state(&mut self, index: IndexParameterIndex) -> Option<&mut Option<Box<dyn Any + Send>>> {
         self.indices.get_mut(*index.deref())
     }
+
+    pub fn get_mut_multi_state(&mut self, index: MultiValueParameterIndex) -> Option<&mut Option<Box<dyn Any + Send>>> {
+        self.multi.get_mut(*index.deref())
+    }
+}
+
+#[derive(Debug, Default, Clone)]
+pub struct MultiValue {
+    values: HashMap<String, f64>,
+    indices: HashMap<String, usize>,
+}
+
+impl MultiValue {
+    pub fn new(values: HashMap<String, f64>, indices: HashMap<String, usize>) -> Self {
+        Self { values, indices }
+    }
+
+    pub fn get_value(&self, key: &str) -> Option<&f64> {
+        self.values.get(key)
+    }
+
+    pub fn get_index(&self, key: &str) -> Option<&usize> {
+        self.indices.get(key)
+    }
 }
 
 // State of the parameters
@@ -166,13 +194,15 @@ impl ParameterStates {
 struct ParameterValues {
     values: Vec<f64>,
     indices: Vec<usize>,
+    multi_values: Vec<MultiValue>,
 }
 
 impl ParameterValues {
-    fn new(num_values: usize, num_indices: usize) -> Self {
+    fn new(num_values: usize, num_indices: usize, num_multi_values: usize) -> Self {
         Self {
             values: vec![0.0; num_values],
             indices: vec![0; num_indices],
+            multi_values: vec![MultiValue::default(); num_multi_values],
         }
     }
 
@@ -207,6 +237,36 @@ impl ParameterValues {
                 Ok(())
             }
             None => Err(PywrError::IndexParameterIndexNotFound(idx)),
+        }
+    }
+
+    fn get_multi_value(&self, idx: MultiValueParameterIndex, key: &str) -> Result<f64, PywrError> {
+        match self.multi_values.get(*idx.deref()) {
+            Some(s) => match s.get_value(key) {
+                Some(v) => Ok(*v),
+                None => Err(PywrError::MultiValueParameterKeyNotFound(key.to_string())),
+            },
+            None => Err(PywrError::MultiValueParameterIndexNotFound(idx)),
+        }
+    }
+
+    fn set_multi_value(&mut self, idx: MultiValueParameterIndex, value: MultiValue) -> Result<(), PywrError> {
+        match self.multi_values.get_mut(*idx.deref()) {
+            Some(s) => {
+                *s = value;
+                Ok(())
+            }
+            None => Err(PywrError::MultiValueParameterIndexNotFound(idx)),
+        }
+    }
+
+    fn get_multi_index(&self, idx: MultiValueParameterIndex, key: &str) -> Result<usize, PywrError> {
+        match self.multi_values.get(*idx.deref()) {
+            Some(s) => match s.get_index(key) {
+                Some(v) => Ok(*v),
+                None => Err(PywrError::MultiValueParameterKeyNotFound(key.to_string())),
+            },
+            None => Err(PywrError::MultiValueParameterIndexNotFound(idx)),
         }
     }
 }
@@ -400,10 +460,11 @@ impl State {
         initial_virtual_storage_states: Vec<StorageState>,
         num_parameter_values: usize,
         num_parameter_indices: usize,
+        num_multi_parameters: usize,
     ) -> Self {
         Self {
             network: NetworkState::new(initial_node_states, num_edges, initial_virtual_storage_states),
-            parameters: ParameterValues::new(num_parameter_values, num_parameter_indices),
+            parameters: ParameterValues::new(num_parameter_values, num_parameter_indices, num_multi_parameters),
         }
     }
 
@@ -429,6 +490,22 @@ impl State {
 
     pub fn set_parameter_index(&mut self, idx: IndexParameterIndex, value: usize) -> Result<(), PywrError> {
         self.parameters.set_index(idx, value)
+    }
+
+    pub fn get_multi_parameter_value(&self, idx: MultiValueParameterIndex, key: &str) -> Result<f64, PywrError> {
+        self.parameters.get_multi_value(idx, key)
+    }
+
+    pub fn set_multi_parameter_value(
+        &mut self,
+        idx: MultiValueParameterIndex,
+        value: MultiValue,
+    ) -> Result<(), PywrError> {
+        self.parameters.set_multi_value(idx, value)
+    }
+
+    pub fn get_multi_parameter_index(&self, idx: MultiValueParameterIndex, key: &str) -> Result<usize, PywrError> {
+        self.parameters.get_multi_index(idx, key)
     }
 
     pub fn set_node_volume(&mut self, idx: NodeIndex, volume: f64) -> Result<(), PywrError> {

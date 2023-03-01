@@ -200,7 +200,7 @@ impl VirtualStorage {
 #[cfg(test)]
 mod tests {
     use crate::metric::Metric;
-    use crate::model::Model;
+    use crate::model::{Model, RunOptions};
     use crate::node::{ConstraintValue, StorageInitialVolume};
     use crate::recorders::AssertionFnRecorder;
     use crate::scenario::ScenarioIndex;
@@ -277,6 +277,6 @@ mod tests {
         let recorder = AssertionFnRecorder::new("link-1-flow", Metric::NodeOutFlow(idx), expected, None, None);
         model.add_recorder(Box::new(recorder)).unwrap();
 
-        model.run::<ClpSolver>(&timestepper).unwrap();
+        model.run::<ClpSolver>(&timestepper, &RunOptions::default()).unwrap();
     }
 }

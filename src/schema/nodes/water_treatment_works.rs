@@ -8,18 +8,26 @@ use num::Zero;
 use std::path::Path;
 
 #[doc = svgbobdoc::transform!(
-/// This is used to represent a water treatment works (WTW).
+/// A node used to represent a water treatment works (WTW) with optional losses.
 ///
-/// The node includes
+/// This nodes comprises an internal structure that allows specifying a minimum and
+/// maximum total net flow, an optional loss factor applied as a proportion of *net*
+/// flow, and an optional "soft" minimum flow.
+///
+/// When a loss factor is not given the `loss` node is not created. When a non-zero loss
+/// factor is provided `Output` and `Aggregated` nodes are created. The aggregated node
+/// is given factors that require the flow through the output node to be equal to
+/// loss factor mulitplied by the net flow. I.e. total gross flow will become
+/// (1 + loss factor) * net flow.
 ///
 ///
 /// ```svgbob
 ///                          <node>.net_soft_min_flow
-///                           .--->L ----.
+///                           .--->L ---.
 ///            <node>.net    |           |     D
 ///          .------>L ------|           |--->*- - -
 ///      U  |                |           |
-///     -*--|                '--->L ----'
+///     -*--|                 '--->L ---'
 ///         |                <node>.net_above_soft_min_flow
 ///          '------>O
 ///            <node>.loss
@@ -28,13 +36,21 @@ use std::path::Path;
 )]
 #[derive(serde::Deserialize, serde::Serialize, Clone)]
 pub struct WaterTreatmentWorks {
+    /// Node metadata
     #[serde(flatten)]
     pub meta: NodeMeta,
+    /// The proportion of net flow that is lost to the loss node.
     pub loss_factor: Option<DynamicFloatValue>,
+    /// The minimum flow through the `net` flow node.
     pub min_flow: Option<DynamicFloatValue>,
+    /// The maximum flow through the `net` flow node.
     pub max_flow: Option<DynamicFloatValue>,
+    /// The maximum flow applied to the `net_soft_min_flow` node which is typically
+    /// used as a "soft" minimum flow.
     pub soft_min_flow: Option<DynamicFloatValue>,
+    /// The cost applied to the `net_soft_min_flow` node.
     pub soft_min_flow_cost: Option<DynamicFloatValue>,
+    /// The cost applied to the `net` flow node.
     pub cost: Option<DynamicFloatValue>,
 }
 
@@ -175,6 +191,7 @@ impl WaterTreatmentWorks {
 #[cfg(test)]
 mod tests {
     use crate::metric::Metric;
+    use crate::model::RunOptions;
     use crate::recorders::AssertionRecorder;
     use crate::schema::model::PywrModel;
     use crate::schema::nodes::WaterTreatmentWorks;
@@ -307,6 +324,6 @@ mod tests {
         let recorder = AssertionRecorder::new("demand-flow", Metric::NodeInFlow(idx), expected, None, None);
         model.add_recorder(Box::new(recorder)).unwrap();
 
-        model.run::<ClpSolver>(&timestepper).unwrap()
+        model.run::<ClpSolver>(&timestepper, &RunOptions::default()).unwrap()
     }
 }

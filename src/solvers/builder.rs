@@ -17,11 +17,11 @@ const FMIN: f64 = f64::MIN;
 
 #[derive(Debug)]
 enum Bounds {
-    Free,
+    // Free,
     Lower(f64),
     Upper(f64),
-    Double(f64, f64),
-    Fixed(f64),
+    // Double(f64, f64),
+    // Fixed(f64),
 }
 
 /// Sparse form of a linear program.
@@ -151,10 +151,10 @@ where
 {
     fn add_column(&mut self, obj_coef: f64, bounds: Bounds) {
         let (lb, ub): (f64, f64) = match bounds {
-            Bounds::Double(lb, ub) => (lb, ub),
+            // Bounds::Double(lb, ub) => (lb, ub),
             Bounds::Lower(lb) => (lb, FMAX),
-            Bounds::Fixed(b) => (b, b),
-            Bounds::Free => (f64::MIN, FMAX),
+            // Bounds::Fixed(b) => (b, b),
+            // Bounds::Free => (f64::MIN, FMAX),
             Bounds::Upper(ub) => (f64::MIN, ub),
         };
 

@@ -43,6 +43,7 @@ impl Default for Highs {
 // TODO add error handling for all Highs calls
 
 impl Highs {
+    #[allow(dead_code)]
     fn presolve(&mut self, value: &str) {
         let option_name = CString::new("presolve").unwrap();
         let option_value = CString::new(value).unwrap();
@@ -115,6 +116,7 @@ impl Highs {
         }
     }
 
+    #[allow(dead_code)]
     pub fn objective_value(&mut self) -> f64 {
         let mut objective_function_value = 0.;
         unsafe {

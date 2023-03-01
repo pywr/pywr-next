@@ -4,7 +4,8 @@ use crate::schema::parameters::{
 };
 use crate::{ParameterIndex, PywrError};
 use pywr_schema::parameters::{
-    DailyProfileParameter as DailyProfileParameterV1, MonthlyProfileParameter as MonthlyProfileParameterV1,
+    DailyProfileParameter as DailyProfileParameterV1, MonthInterpDay as MonthInterpDayV1,
+    MonthlyProfileParameter as MonthlyProfileParameterV1,
     UniformDrawdownProfileParameter as UniformDrawdownProfileParameterV1,
 };
 use std::collections::HashMap;
@@ -63,11 +64,27 @@ impl TryFromV1Parameter<DailyProfileParameterV1> for DailyProfileParameter {
     }
 }
 
+#[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone)]
+pub enum MonthlyInterpDay {
+    First,
+    Last,
+}
+
+impl From<MonthlyInterpDay> for crate::parameters::MonthlyInterpDay {
+    fn from(value: MonthlyInterpDay) -> Self {
+        match value {
+            MonthlyInterpDay::First => Self::First,
+            MonthlyInterpDay::Last => Self::Last,
+        }
+    }
+}
+
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
 pub struct MonthlyProfileParameter {
     #[serde(flatten)]
     pub meta: ParameterMeta,
     pub values: ConstantFloatVec,
+    pub interp_day: Option<MonthlyInterpDay>,
 }
 
 impl MonthlyProfileParameter {
@@ -84,8 +101,21 @@ impl MonthlyProfileParameter {
         tables: &LoadedTableCollection,
     ) -> Result<ParameterIndex, PywrError> {
         let values = &self.values.load(tables)?[..12];
-        let p = crate::parameters::MonthlyProfileParameter::new(&self.meta.name, values.try_into().expect(""));
+        let p = crate::parameters::MonthlyProfileParameter::new(
+            &self.meta.name,
+            values.try_into().expect(""),
+            self.interp_day.map(|id| id.into()),
+        );
         model.add_parameter(Box::new(p))
+    }
+}
+
+impl From<MonthInterpDayV1> for MonthlyInterpDay {
+    fn from(value: MonthInterpDayV1) -> Self {
+        match value {
+            MonthInterpDayV1::First => Self::First,
+            MonthInterpDayV1::Last => Self::Last,
+        }
     }
 }
 
@@ -98,6 +128,7 @@ impl TryFromV1Parameter<MonthlyProfileParameterV1> for MonthlyProfileParameter {
         unnamed_count: &mut usize,
     ) -> Result<Self, Self::Error> {
         let meta: ParameterMeta = v1.meta.into_v2_parameter(parent_node, unnamed_count);
+        let interp_day = v1.interp_day.map(|id| id.into());
 
         let values: ConstantFloatVec = if let Some(values) = v1.values {
             ConstantFloatVec::Literal(values.to_vec())
@@ -112,7 +143,11 @@ impl TryFromV1Parameter<MonthlyProfileParameterV1> for MonthlyProfileParameter {
             )));
         };
 
-        let p = Self { meta, values };
+        let p = Self {
+            meta,
+            values,
+            interp_day,
+        };
         Ok(p)
     }
 }

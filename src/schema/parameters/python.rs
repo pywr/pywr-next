@@ -1,7 +1,7 @@
-use crate::parameters::PyParameter;
+use crate::parameters::{ParameterType, PyParameter};
 use crate::schema::data_tables::{make_path, LoadedTableCollection};
 use crate::schema::parameters::{DynamicFloatValue, DynamicFloatValueType, DynamicIndexValue, ParameterMeta};
-use crate::{ParameterIndex, PywrError};
+use crate::PywrError;
 use pyo3::prelude::PyModule;
 use pyo3::types::{PyDict, PyTuple};
 use pyo3::{IntoPy, PyErr, PyObject, Python, ToPyObject};
@@ -64,6 +64,10 @@ pub struct PythonParameter {
     pub module: PythonModule,
     /// The name of Python object from the module to use.
     pub object: String,
+    /// Is this a multi-valued parameter or not. If true then the calculation method should
+    /// return a dictionary with string keys and either floats or ints as values.
+    #[serde(default)]
+    pub multi: bool,
     /// Position arguments to pass to the object during setup.
     pub args: Vec<serde_json::Value>,
     /// Keyword arguments to pass to the object during setup.
@@ -121,7 +125,7 @@ impl PythonParameter {
         model: &mut crate::model::Model,
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
-    ) -> Result<ParameterIndex, PywrError> {
+    ) -> Result<ParameterType, PywrError> {
         pyo3::prepare_freethreaded_python();
 
         let object = Python::with_gil(|py| {
@@ -173,7 +177,13 @@ impl PythonParameter {
         };
 
         let p = PyParameter::new(&self.meta.name, object, args, kwargs, &metrics, &indices);
-        model.add_parameter(Box::new(p))
+        let pt = if self.multi {
+            ParameterType::Multi(model.add_multi_value_parameter(Box::new(p))?)
+        } else {
+            ParameterType::Parameter(model.add_parameter(Box::new(p))?)
+        };
+
+        Ok(pt)
     }
 }
 

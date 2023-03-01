@@ -3,7 +3,7 @@ use crate::aggregated_storage_node::{AggregatedStorageNode, AggregatedStorageNod
 use crate::edge::{EdgeIndex, EdgeVec};
 use crate::metric::Metric;
 use crate::node::{ConstraintValue, Node, NodeVec, StorageInitialVolume};
-use crate::parameters::ParameterType;
+use crate::parameters::{MultiValueParameterIndex, ParameterType};
 use crate::scenario::{ScenarioGroupCollection, ScenarioIndex};
 use crate::solvers::{MultiStateSolver, Solver, SolverTimings};
 use crate::state::{ParameterStates, State};
@@ -11,7 +11,8 @@ use crate::timestep::{Timestep, Timestepper};
 use crate::virtual_storage::{VirtualStorage, VirtualStorageIndex, VirtualStorageReset, VirtualStorageVec};
 use crate::{parameters, recorders, IndexParameterIndex, NodeIndex, ParameterIndex, PywrError, RecorderIndex};
 use indicatif::ProgressIterator;
-use log::debug;
+use log::{debug, info};
+use rayon::prelude::*;
 use std::any::Any;
 use std::ops::Deref;
 use std::time::Duration;
@@ -65,47 +66,47 @@ impl RunTimings {
     }
 
     fn print_table(&self) {
-        println!("Run timing statistics:");
+        info!("Run timing statistics:");
         let total = self.total_duration().as_secs_f64();
-        println!("{: <24} | {: <10}", "Metric", "Value");
-        println!("{: <24} | {: <10.5}s", "Total", total);
+        info!("{: <24} | {: <10}", "Metric", "Value");
+        info!("{: <24} | {: <10.5}s", "Total", total);
 
-        println!(
+        info!(
             "{: <24} | {: <10.5}s ({:5.2}%)",
             "Parameter calc",
             self.parameter_calculation.as_secs_f64(),
             100.0 * self.parameter_calculation.as_secs_f64() / total,
         );
 
-        println!(
+        info!(
             "{: <24} | {: <10.5}s ({:5.2}%)",
             "Recorder save",
             self.recorder_saving.as_secs_f64(),
             100.0 * self.recorder_saving.as_secs_f64() / total,
         );
 
-        println!(
+        info!(
             "{: <24} | {: <10.5}s ({:5.2}%)",
             "Solver::obj update",
             self.solve.update_objective.as_secs_f64(),
             100.0 * self.solve.update_objective.as_secs_f64() / total,
         );
 
-        println!(
+        info!(
             "{: <24} | {: <10.5}s ({:5.2}%)",
             "Solver::const update",
             self.solve.update_constraints.as_secs_f64(),
             100.0 * self.solve.update_constraints.as_secs_f64() / total
         );
 
-        println!(
+        info!(
             "{: <24} | {: <10.5}s ({:5.2}%)",
             "Solver::solve",
             self.solve.solve.as_secs_f64(),
             100.0 * self.solve.solve.as_secs_f64() / total,
         );
 
-        println!(
+        info!(
             "{: <24} | {: <10.5}s ({:5.2}%)",
             "Solver::result update",
             self.solve.save_solution.as_secs_f64(),
@@ -118,7 +119,7 @@ impl RunTimings {
             - self.recorder_saving.as_secs_f64()
             - self.solve.total().as_secs_f64();
 
-        println!(
+        info!(
             "{: <24} | {: <10.5}s ({:5.2}%)",
             "Residual",
             not_counted,
@@ -126,11 +127,9 @@ impl RunTimings {
         );
 
         match self.speed() {
-            None => println!("{: <24} | Unknown", "Speed"),
-            Some(speed) => println!("{: <24} | {: <10.5} ts/s", "Speed", speed),
+            None => info!("{: <24} | Unknown", "Speed"),
+            Some(speed) => info!("{: <24} | {: <10.5} ts/s", "Speed", speed),
         };
-
-        // println!("speed: {} ts/s", count as f64 / total_duration);
     }
 }
 
@@ -138,6 +137,24 @@ enum ComponentType {
     Node(NodeIndex),
     VirtualStorageNode(VirtualStorageIndex),
     Parameter(ParameterType),
+}
+
+#[derive(Default)]
+pub struct RunOptions {
+    parallel: bool,
+    threads: usize,
+}
+
+impl RunOptions {
+    pub fn parallel(mut self) -> Self {
+        self.parallel = true;
+        self
+    }
+
+    pub fn threads(mut self, threads: usize) -> Self {
+        self.threads = threads;
+        self
+    }
 }
 
 #[derive(Default)]
@@ -150,6 +167,7 @@ pub struct Model {
     pub virtual_storage_nodes: VirtualStorageVec,
     parameters: Vec<Box<dyn parameters::Parameter>>,
     index_parameters: Vec<Box<dyn parameters::IndexParameter>>,
+    multi_parameters: Vec<Box<dyn parameters::MultiValueParameter>>,
     resolve_order: Vec<ComponentType>,
     recorders: Vec<Box<dyn recorders::Recorder>>,
 }
@@ -183,17 +201,28 @@ impl Model {
                 .map(|p| p.setup(timesteps, scenario_index))
                 .collect::<Result<Vec<_>, _>>()?;
 
+            let initial_multi_param_states = self
+                .multi_parameters
+                .iter()
+                .map(|p| p.setup(timesteps, scenario_index))
+                .collect::<Result<Vec<_>, _>>()?;
+
             let state = State::new(
                 initial_node_states,
                 self.edges.len(),
                 initial_virtual_storage_states,
                 initial_values_states.len(),
                 initial_indices_states.len(),
+                initial_multi_param_states.len(),
             );
 
             states.push(state);
 
-            parameter_internal_states.push(ParameterStates::new(initial_values_states, initial_indices_states));
+            parameter_internal_states.push(ParameterStates::new(
+                initial_values_states,
+                initial_indices_states,
+                initial_multi_param_states,
+            ));
         }
 
         // Setup recorders
@@ -238,7 +267,7 @@ impl Model {
         Ok(())
     }
 
-    pub fn run<S>(&self, timestepper: &Timestepper) -> Result<(), PywrError>
+    pub fn run<S>(&self, timestepper: &Timestepper, options: &RunOptions) -> Result<(), PywrError>
     where
         S: Solver,
     {
@@ -253,19 +282,45 @@ impl Model {
 
         let mut solvers = self.setup_solver::<S>()?;
 
+        // Setup thread pool if running in parallel
+        let pool = if options.parallel {
+            Some(
+                rayon::ThreadPoolBuilder::new()
+                    .num_threads(options.threads)
+                    .build()
+                    .unwrap(),
+            )
+        } else {
+            None
+        };
+
         // Step a timestep
-        for timestep in timesteps.iter().progress() {
+        for timestep in timesteps.iter() {
             debug!("Starting timestep {:?}", timestep);
 
-            // State is mutated in-place
-            self.step(
-                timestep,
-                &scenario_indices,
-                &mut solvers,
-                &mut states,
-                &mut parameter_internal_states,
-                &mut timings,
-            )?;
+            if let Some(pool) = &pool {
+                // State is mutated in-place
+                pool.install(|| {
+                    self.step_par(
+                        timestep,
+                        &scenario_indices,
+                        &mut solvers,
+                        &mut states,
+                        &mut parameter_internal_states,
+                        &mut timings,
+                    )
+                })?;
+            } else {
+                // State is mutated in-place
+                self.step(
+                    timestep,
+                    &scenario_indices,
+                    &mut solvers,
+                    &mut states,
+                    &mut parameter_internal_states,
+                    &mut timings,
+                )?;
+            }
 
             let start_r_save = Instant::now();
             self.save_recorders(timestep, &scenario_indices, &states, &mut recorder_internal_states)?;
@@ -286,8 +341,6 @@ impl Model {
     where
         S: MultiStateSolver,
     {
-        let now = Instant::now();
-
         let mut timings = RunTimings::default();
         let timesteps = timestepper.timesteps();
         let scenario_indices = self.scenarios.scenario_indices();
@@ -322,32 +375,14 @@ impl Model {
 
         self.finalise(&mut recorder_internal_states)?;
 
-        let total_duration = now.elapsed().as_secs_f64();
-        println!("total run time: {total_duration}s");
-        println!(
-            "total parameter calculation time: {}s",
-            timings.parameter_calculation.as_secs_f64()
-        );
-        println!("total recorder save time: {}s", timings.recorder_saving.as_secs_f64());
-        println!(
-            "total update objective time: {}s",
-            timings.solve.update_objective.as_secs_f64()
-        );
-        println!(
-            "total update constraints time: {}s",
-            timings.solve.update_constraints.as_secs_f64()
-        );
-        println!("total LP solve time: {}s", timings.solve.solve.as_secs_f64());
-        println!(
-            "total save solution time: {}s",
-            timings.solve.save_solution.as_secs_f64()
-        );
-        println!("speed: {} ts/s", count as f64 / total_duration);
+        // End the global timer and print the run statistics
+        timings.finish(count);
+        timings.print_table();
 
         Ok(())
     }
 
-    /// Perform a single timestep with the current state, and return the updated states.
+    /// Perform a single timestep mutating the current state.
     pub(crate) fn step<S>(
         &self,
         timestep: &Timestep,
@@ -384,7 +419,57 @@ impl Model {
         Ok(())
     }
 
-    /// Perform a single timestep with the current state, and return the updated states.
+    /// Perform a single timestep in parallel using Rayon mutating the current state.
+    ///
+    /// Note that the `timings` struct will be incremented with the timing information from
+    /// each scenario and therefore contain the total time across all parallel threads (i.e.
+    /// not overall wall-time).
+    pub(crate) fn step_par<S>(
+        &self,
+        timestep: &Timestep,
+        scenario_indices: &[ScenarioIndex],
+        solvers: &mut [Box<S>],
+        states: &mut [State],
+        parameter_internal_states: &mut [ParameterStates],
+        timings: &mut RunTimings,
+    ) -> Result<(), PywrError>
+    where
+        S: Solver,
+    {
+        // Collect all the timings from each parallel solve
+        let step_times: Vec<_> = scenario_indices
+            .par_iter()
+            .zip(states)
+            .zip(parameter_internal_states)
+            .zip(solvers)
+            .map(|(((scenario_index, current_state), p_internal_state), solver)| {
+                // TODO clear the current parameter values state (i.e. set them all to zero).
+
+                let start_p_calc = Instant::now();
+                self.compute_components(timestep, scenario_index, current_state, p_internal_state)
+                    .unwrap();
+
+                // State now contains updated parameter values BUT original network state
+                let parameter_calculation = start_p_calc.elapsed();
+
+                // Solve determines the new network state
+                let solve_timings = solver.solve(self, timestep, current_state).unwrap();
+                // State now contains updated parameter values AND updated network state
+
+                (parameter_calculation, solve_timings)
+            })
+            .collect();
+
+        // Add them all together
+        for (parameter_calculation, solve_timings) in step_times.into_iter() {
+            timings.parameter_calculation += parameter_calculation;
+            timings.solve += solve_timings;
+        }
+
+        Ok(())
+    }
+
+    /// Perform a single timestep with a multi-state solver mutating the current state.
     pub(crate) fn step_multi_scenario<S>(
         &self,
         timestep: &Timestep,
@@ -462,7 +547,6 @@ impl Model {
                                 .ok_or(PywrError::ParameterIndexNotFound(*idx))?;
 
                             let value = p.compute(timestep, scenario_index, self, state, internal_state)?;
-                            // debug!("Current value of parameter {}: {}", p.name(), value);
 
                             // TODO move this check into the method below
                             if value.is_nan() {
@@ -484,6 +568,21 @@ impl Model {
                             let value = p.compute(timestep, scenario_index, self, state, internal_state)?;
                             // debug!("Current value of index parameter {}: {}", p.name(), value);
                             state.set_parameter_index(*idx, value)?;
+                        }
+                        ParameterType::Multi(idx) => {
+                            let p = self
+                                .multi_parameters
+                                .get(*idx.deref())
+                                .ok_or(PywrError::MultiValueParameterIndexNotFound(*idx))?;
+
+                            // .. and its internal state
+                            let internal_state = internal_states
+                                .get_mut_multi_state(*idx)
+                                .ok_or(PywrError::MultiValueParameterIndexNotFound(*idx))?;
+
+                            let value = p.compute(timestep, scenario_index, self, state, internal_state)?;
+                            // debug!("Current value of index parameter {}: {}", p.name(), value);
+                            state.set_multi_parameter_value(*idx, value)?;
                         }
                     }
                 }
@@ -515,6 +614,11 @@ impl Model {
     /// Get a `ScenarioGroup`'s index by name
     pub fn get_scenario_group_index_by_name(&self, name: &str) -> Result<usize, PywrError> {
         self.scenarios.get_group_index_by_name(name)
+    }
+
+    /// Get a `ScenarioGroup`'s size by name
+    pub fn get_scenario_group_size_by_name(&self, name: &str) -> Result<usize, PywrError> {
+        self.scenarios.get_group_by_name(name).map(|g| g.size())
     }
 
     pub fn get_scenario_indices(&self) -> Vec<ScenarioIndex> {
@@ -785,6 +889,14 @@ impl Model {
     }
 
     /// Get a `Parameter` from a parameter's name
+    pub fn get_mut_parameter(&mut self, index: &ParameterIndex) -> Result<&mut dyn parameters::Parameter, PywrError> {
+        match self.parameters.get_mut(*index.deref()) {
+            Some(p) => Ok(p.as_mut()),
+            None => Err(PywrError::ParameterIndexNotFound(*index)),
+        }
+    }
+
+    /// Get a `Parameter` from a parameter's name
     pub fn get_parameter_by_name(&self, name: &str) -> Result<&dyn parameters::Parameter, PywrError> {
         match self.parameters.iter().find(|p| p.name() == name) {
             Some(parameter) => Ok(parameter.as_ref()),
@@ -812,6 +924,14 @@ impl Model {
     pub fn get_index_parameter_index_by_name(&self, name: &str) -> Result<IndexParameterIndex, PywrError> {
         match self.index_parameters.iter().position(|p| p.name() == name) {
             Some(idx) => Ok(IndexParameterIndex::new(idx)),
+            None => Err(PywrError::ParameterNotFound(name.to_string())),
+        }
+    }
+
+    /// Get a `MultiValueParameterIndex` from a parameter's name
+    pub fn get_multi_valued_parameter_index_by_name(&self, name: &str) -> Result<MultiValueParameterIndex, PywrError> {
+        match self.multi_parameters.iter().position(|p| p.name() == name) {
+            Some(idx) => Ok(MultiValueParameterIndex::new(idx)),
             None => Err(PywrError::ParameterNotFound(name.to_string())),
         }
     }
@@ -994,6 +1114,28 @@ impl Model {
         // .. and add it to the resolve order
         self.resolve_order
             .push(ComponentType::Parameter(ParameterType::Index(parameter_index)));
+        Ok(parameter_index)
+    }
+
+    /// Add a `parameters::MultiValueParameter` to the model
+    pub fn add_multi_value_parameter(
+        &mut self,
+        parameter: Box<dyn parameters::MultiValueParameter>,
+    ) -> Result<MultiValueParameterIndex, PywrError> {
+        if let Ok(idx) = self.get_parameter_index_by_name(&parameter.meta().name) {
+            return Err(PywrError::ParameterNameAlreadyExists(
+                parameter.meta().name.to_string(),
+                idx,
+            ));
+        }
+
+        let parameter_index = MultiValueParameterIndex::new(self.multi_parameters.len());
+
+        // Add the parameter ...
+        self.multi_parameters.push(parameter);
+        // .. and add it to the resolve order
+        self.resolve_order
+            .push(ComponentType::Parameter(ParameterType::Multi(parameter_index)));
         Ok(parameter_index)
     }
 
@@ -1210,8 +1352,8 @@ mod tests {
         let recorder = AssertionRecorder::new("total-demand", Metric::ParameterValue(idx), expected, None, None);
         model.add_recorder(Box::new(recorder)).unwrap();
 
-        model.run::<ClpSolver>(&timestepper).unwrap();
-        model.run::<HighsSolver>(&timestepper).unwrap();
+        model.run::<ClpSolver>(&timestepper, &RunOptions::default()).unwrap();
+        model.run::<HighsSolver>(&timestepper, &RunOptions::default()).unwrap();
     }
 
     #[test]
@@ -1270,7 +1412,7 @@ mod tests {
         let recorder = AssertionRecorder::new("reservoir-volume", Metric::NodeVolume(idx), expected, None, None);
         model.add_recorder(Box::new(recorder)).unwrap();
 
-        model.run::<ClpSolver>(&timestepper).unwrap();
+        model.run::<ClpSolver>(&timestepper, &RunOptions::default()).unwrap();
     }
 
     #[test]

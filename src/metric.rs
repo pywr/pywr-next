@@ -2,12 +2,12 @@ use crate::aggregated_storage_node::AggregatedStorageNodeIndex;
 use crate::edge::EdgeIndex;
 use crate::model::Model;
 use crate::node::NodeIndex;
-use crate::parameters::ParameterIndex;
+use crate::parameters::{MultiValueParameterIndex, ParameterIndex};
 use crate::state::State;
 use crate::virtual_storage::VirtualStorageIndex;
 use crate::PywrError;
 
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Metric {
     NodeInFlow(NodeIndex),
     NodeOutFlow(NodeIndex),
@@ -17,6 +17,7 @@ pub enum Metric {
     AggregatedNodeProportionalVolume(AggregatedStorageNodeIndex),
     EdgeFlow(EdgeIndex),
     ParameterValue(ParameterIndex),
+    MultiParameterValue((MultiValueParameterIndex, String)),
     VirtualStorageVolume(VirtualStorageIndex),
     VirtualStorageProportionalVolume(VirtualStorageIndex),
     Constant(f64),
@@ -36,6 +37,7 @@ impl Metric {
             }
             Metric::EdgeFlow(idx) => Ok(state.get_network_state().get_edge_flow(idx)?),
             Metric::ParameterValue(idx) => Ok(state.get_parameter_value(*idx)?),
+            Metric::MultiParameterValue((idx, key)) => Ok(state.get_multi_parameter_value(*idx, key)?),
             Metric::VirtualStorageVolume(idx) => Ok(state.get_network_state().get_virtual_storage_volume(idx)?),
             Metric::VirtualStorageProportionalVolume(idx) => {
                 let max_volume = model.get_virtual_storage_node(idx)?.get_max_volume(model, state)?;

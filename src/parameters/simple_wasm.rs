@@ -32,6 +32,9 @@ struct Internal {
 }
 
 impl Parameter for SimpleWasmParameter {
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }

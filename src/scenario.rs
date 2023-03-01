@@ -15,6 +15,10 @@ impl ScenarioGroup {
             size,
         }
     }
+
+    pub fn size(&self) -> usize {
+        self.size
+    }
 }
 
 #[derive(Clone, Debug, Default)]
@@ -28,6 +32,14 @@ impl ScenarioGroupCollection {
         self.groups
             .iter()
             .position(|g| g.name == name)
+            .ok_or_else(|| PywrError::ScenarioNotFound(name.to_string()))
+    }
+
+    /// Find a `ScenarioGroup`'s index in the collection by name
+    pub fn get_group_by_name(&self, name: &str) -> Result<&ScenarioGroup, PywrError> {
+        self.groups
+            .iter()
+            .find(|g| g.name == name)
             .ok_or_else(|| PywrError::ScenarioNotFound(name.to_string()))
     }
 

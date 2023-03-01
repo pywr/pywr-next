@@ -1,5 +1,5 @@
 use crate::aggregated_node::AggregatedNodeIndex;
-use crate::model::Model;
+use crate::model::{Model, RunOptions};
 use crate::recorders::hdf::HDF5Recorder;
 use crate::schema::model::PywrModel;
 use crate::solvers::{ClIpmF32Solver, ClIpmF64Solver, ClpSolver, HighsSolver};
@@ -658,10 +658,12 @@ fn load_model_from_string(data: String) {
 
 #[pyfunction]
 fn run_model_from_string(
+    py: Python<'_>,
     data: String,
     solver_name: String,
     path: Option<PathBuf>,
     output_h5: Option<PathBuf>,
+    num_threads: Option<usize>,
 ) -> PyResult<()> {
     // TODO handle the serde error properly
     let schema_v2: PywrModel = serde_json::from_str(data.as_str()).unwrap();
@@ -675,13 +677,23 @@ fn run_model_from_string(
         model.add_recorder(Box::new(tables_rec)).unwrap();
     }
 
-    match solver_name.as_str() {
-        "clp" => model.run::<ClpSolver>(&timestepper),
-        "highs" => model.run::<HighsSolver>(&timestepper),
-        "clipm-f32" => model.run_multi_scenario::<ClIpmF32Solver>(&timestepper),
-        "clipm-f64" => model.run_multi_scenario::<ClIpmF64Solver>(&timestepper),
-        _ => panic!("Solver {solver_name} not recognised."),
-    }?;
+    let nt = num_threads.unwrap_or(1);
+    let options = if nt > 1 {
+        RunOptions::default().parallel().threads(nt)
+    } else {
+        RunOptions::default()
+    };
+
+    py.allow_threads(|| {
+        match solver_name.as_str() {
+            "clp" => model.run::<ClpSolver>(&timestepper, &options),
+            "highs" => model.run::<HighsSolver>(&timestepper, &options),
+            "clipm-f32" => model.run_multi_scenario::<ClIpmF32Solver>(&timestepper),
+            "clipm-f64" => model.run_multi_scenario::<ClIpmF64Solver>(&timestepper),
+            _ => panic!("Solver {solver_name} not recognised."),
+        }
+        .unwrap();
+    });
 
     Ok(())
 }

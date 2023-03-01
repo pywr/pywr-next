@@ -104,7 +104,7 @@ pub enum Constraint {
     MaxVolume,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ConstraintValue {
     None,
     Scalar(f64),
@@ -342,7 +342,7 @@ impl Node {
             Constraint::MinFlow => self.set_min_flow_constraint(value)?,
             Constraint::MaxFlow => self.set_max_flow_constraint(value)?,
             Constraint::MinAndMaxFlow => {
-                self.set_min_flow_constraint(value)?;
+                self.set_min_flow_constraint(value.clone())?;
                 self.set_max_flow_constraint(value)?;
             }
             Constraint::MinVolume => match value {

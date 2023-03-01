@@ -120,6 +120,9 @@ impl Recorder for HDF5Recorder {
                 Metric::Constant(_) => {
                     continue; // TODO
                 }
+                Metric::MultiParameterValue(_) => {
+                    continue; // TODO
+                }
             };
 
             datasets.push(ds);

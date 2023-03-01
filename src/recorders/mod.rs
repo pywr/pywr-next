@@ -88,7 +88,6 @@ pub trait Recorder: Send + Sync {
 
 pub struct Array2Recorder {
     meta: RecorderMeta,
-    array: Option<Array2<f64>>,
     metric: Metric,
 }
 
@@ -96,7 +95,6 @@ impl Array2Recorder {
     pub fn new(name: &str, metric: Metric) -> Self {
         Self {
             meta: RecorderMeta::new(name),
-            array: None,
             metric,
         }
     }
@@ -296,6 +294,7 @@ struct RecorderMetric {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::model::RunOptions;
     use crate::solvers::ClpSolver;
     use crate::test_utils::{default_timestepper, simple_model};
 
@@ -309,7 +308,7 @@ mod tests {
         let rec = Array2Recorder::new("test", Metric::NodeOutFlow(node_idx));
 
         let _idx = model.add_recorder(Box::new(rec)).unwrap();
-        model.run::<ClpSolver>(&timestepper).unwrap();
+        model.run::<ClpSolver>(&timestepper, &RunOptions::default()).unwrap();
 
         // TODO fix this with respect to the trait.
         // let array = rec.data_view2().unwrap();

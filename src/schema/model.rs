@@ -258,6 +258,7 @@ impl TryFrom<pywr_schema::PywrModel> for PywrModel {
 #[cfg(test)]
 mod tests {
     use super::PywrModel;
+    use crate::model::RunOptions;
     use crate::solvers::ClpSolver;
 
     fn simple1_str() -> &'static str {
@@ -323,7 +324,7 @@ mod tests {
         assert_eq!(model.nodes.len(), 3);
         assert_eq!(model.edges.len(), 2);
 
-        model.run::<ClpSolver>(&timestepper).unwrap()
+        model.run::<ClpSolver>(&timestepper, &RunOptions::default()).unwrap()
 
         // TODO assert the results!
     }

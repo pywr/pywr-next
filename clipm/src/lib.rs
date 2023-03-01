@@ -654,7 +654,7 @@ where
 
             let num_incomplete: u32 = self.status.iter().sum();
 
-            println!("Number incomplete: {}", num_incomplete);
+            // println!("Number incomplete: {}", num_incomplete);
 
             if num_incomplete == 0 {
                 break;
@@ -663,7 +663,7 @@ where
             last_iteration = iter;
         }
 
-        println!("Finished after iterations: {}", last_iteration);
+        // println!("Finished after iterations: {}", last_iteration);
 
         self.buffers.path_buffers.x.read(&mut self.solution).enq()?;
         self.queue.finish()?;

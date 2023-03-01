@@ -1,9 +1,29 @@
-use clap::{Parser, Subcommand};
-use pywr::model::Model;
+use clap::{Parser, Subcommand, ValueEnum};
+use pywr::model::{Model, RunOptions};
 use pywr::schema::model::PywrModel;
 use pywr::solvers::{ClIpmF32Solver, ClIpmF64Solver, ClpSolver, HighsSolver};
 use pywr::timestep::Timestepper;
+use std::fmt::{Display, Formatter};
 use std::path::{Path, PathBuf};
+
+#[derive(Copy, Clone, ValueEnum)]
+enum Solver {
+    Clp,
+    HIGHS,
+    CLIPMF32,
+    CLIPMF64,
+}
+
+impl Display for Solver {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Solver::Clp => write!(f, "clp"),
+            Solver::HIGHS => write!(f, "highs"),
+            Solver::CLIPMF32 => write!(f, "clipmf32"),
+            Solver::CLIPMF64 => write!(f, "clipmf64"),
+        }
+    }
+}
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -24,21 +44,26 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// does testing things
     Convert {
-        /// lists test values
+        /// Path to Pywr v1.x JSON.
         #[arg(short, long, value_name = "FILE")]
         model: PathBuf,
     },
 
     Run {
-        /// lists test values
-        #[arg(short, long, value_name = "FILE")]
+        /// Path to Pywr model JSON.
         model: PathBuf,
-        #[arg(short, long, value_name = "SOLVER")]
-        solver: String,
-        #[arg(short, long, value_name = "PATH")]
+        /// Solver to use.
+        #[arg(short, long, default_value_t=Solver::Clp)]
+        solver: Solver,
+        #[arg(short, long)]
         data_path: Option<PathBuf>,
+        /// Use multiple threads for simulation.
+        #[arg(short, long, default_value_t = false)]
+        parallel: bool,
+        /// The number of threads to use in parallel simulation.
+        #[arg(short, long, default_value_t = 1)]
+        threads: usize,
     },
 }
 
@@ -52,7 +77,17 @@ fn main() {
                 model,
                 solver,
                 data_path,
-            } => run(model, solver.as_str(), data_path.as_deref()),
+                parallel,
+                threads,
+            } => {
+                let options = if *parallel {
+                    RunOptions::default().parallel().threads(*threads)
+                } else {
+                    RunOptions::default()
+                };
+
+                run(model, solver, data_path.as_deref(), &options)
+            }
         },
         None => {}
     }
@@ -93,18 +128,17 @@ fn v1_to_v2(path: &Path) {
     std::fs::write(new_file_pth, serde_json::to_string_pretty(&schema_v2).unwrap()).unwrap();
 }
 
-fn run(path: &Path, solver: &str, data_path: Option<&Path>) {
+fn run(path: &Path, solver: &Solver, data_path: Option<&Path>, options: &RunOptions) {
     let data = std::fs::read_to_string(path).unwrap();
     let schema_v2: PywrModel = serde_json::from_str(data.as_str()).unwrap();
 
     let (model, timestepper): (Model, Timestepper) = schema_v2.try_into_model(data_path).unwrap();
 
-    match solver {
-        "clp" => model.run::<ClpSolver>(&timestepper),
-        "highs" => model.run::<HighsSolver>(&timestepper),
-        "clipm-f32" => model.run_multi_scenario::<ClIpmF32Solver>(&timestepper),
-        "clipm-f64" => model.run_multi_scenario::<ClIpmF64Solver>(&timestepper),
-        _ => panic!("Solver {solver} not recognised."),
+    match *solver {
+        Solver::Clp => model.run::<ClpSolver>(&timestepper, options),
+        Solver::HIGHS => model.run::<HighsSolver>(&timestepper, options),
+        Solver::CLIPMF32 => model.run_multi_scenario::<ClIpmF32Solver>(&timestepper),
+        Solver::CLIPMF64 => model.run_multi_scenario::<ClIpmF64Solver>(&timestepper),
     }
     .unwrap();
 }

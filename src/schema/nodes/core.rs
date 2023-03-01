@@ -452,7 +452,7 @@ impl CatchmentNode {
 
         if let Some(flow) = &self.flow {
             let value = flow.load(model, tables, data_path)?;
-            model.set_node_min_flow(self.meta.name.as_str(), None, value.into())?;
+            model.set_node_min_flow(self.meta.name.as_str(), None, value.clone().into())?;
             model.set_node_max_flow(self.meta.name.as_str(), None, value.into())?;
         }
 

@@ -1,14 +1,14 @@
 extern crate core;
 
 use crate::node::NodeIndex;
-use crate::parameters::{IndexParameterIndex, ParameterIndex};
+use crate::parameters::{IndexParameterIndex, MultiValueParameterIndex, ParameterIndex};
 use crate::recorders::RecorderIndex;
 use thiserror::Error;
 
 pub mod aggregated_node;
 mod aggregated_storage_node;
 pub mod edge;
-mod metric;
+pub mod metric;
 pub mod model;
 pub mod node;
 pub mod parameters;
@@ -42,6 +42,10 @@ pub enum PywrError {
     ParameterIndexNotFound(ParameterIndex),
     #[error("index parameter index {0} not found")]
     IndexParameterIndexNotFound(IndexParameterIndex),
+    #[error("multi value parameter index {0} not found")]
+    MultiValueParameterIndexNotFound(MultiValueParameterIndex),
+    #[error("multi value parameter key {0} not found")]
+    MultiValueParameterKeyNotFound(String),
     #[error("parameter {0} not found")]
     ParameterNotFound(String),
     #[error("recorder index not found")]

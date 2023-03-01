@@ -103,6 +103,7 @@ impl TryFrom<RiverGaugeNodeV1> for RiverGaugeNode {
 
 #[cfg(test)]
 mod tests {
+    use crate::model::RunOptions;
     use crate::schema::model::PywrModel;
     use crate::solvers::ClpSolver;
     use crate::timestep::Timestepper;
@@ -179,7 +180,7 @@ mod tests {
         assert_eq!(model.nodes.len(), 5);
         assert_eq!(model.edges.len(), 6);
 
-        model.run::<ClpSolver>(&timestepper).unwrap()
+        model.run::<ClpSolver>(&timestepper, &RunOptions::default()).unwrap()
 
         // TODO assert the results!
     }
