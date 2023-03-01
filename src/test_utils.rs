@@ -3,8 +3,12 @@ use crate::metric::Metric;
 /// TODO move this to its own local crate ("test-utilities") as part of a workspace.
 use crate::model::Model;
 use crate::node::{Constraint, ConstraintValue, StorageInitialVolume};
-use crate::parameters::{AggFunc, AggregatedParameter, ConstantParameter, VectorParameter};
+use crate::parameters::{AggFunc, AggregatedParameter, ConstantParameter, Parameter, VectorParameter};
+use crate::recorders::AssertionRecorder;
+use crate::solvers::ClpSolver;
 use crate::timestep::Timestepper;
+use ndarray::Array2;
+use time::ext::NumericalDuration;
 use time::macros::date;
 
 pub fn default_timestepper() -> Timestepper {
@@ -12,9 +16,9 @@ pub fn default_timestepper() -> Timestepper {
 }
 
 /// Create a simple test model with three nodes.
-pub fn simple_model() -> Model {
+pub fn simple_model(num_scenarios: usize) -> Model {
     let mut model = Model::default();
-    model.add_scenario_group("test-scenario", 2).unwrap();
+    model.add_scenario_group("test-scenario", num_scenarios).unwrap();
 
     let input_node = model.add_input_node("input", None).unwrap();
     let link_node = model.add_link_node("link", None).unwrap();
@@ -103,4 +107,30 @@ pub fn simple_storage_model() -> Model {
         .unwrap();
 
     model
+}
+
+/// Add the given parameter to the given model along with an assertion recorder that asserts
+/// whether the parameter returns the expected values when the model is run.
+///
+/// This function will run a number of time-steps equal to the number of rows in the expected
+/// values array.
+///
+/// See [AssertionRecorder] for more information.
+pub fn run_and_assert_parameter(
+    model: &mut Model,
+    parameter: Box<dyn Parameter>,
+    expected_values: Array2<f64>,
+    ulps: Option<i64>,
+    epsilon: Option<f64>,
+) {
+    let p_idx = model.add_parameter(parameter).unwrap();
+
+    let start = date!(2020 - 01 - 01);
+    let end = start.checked_add((expected_values.nrows() as i64 - 1).days()).unwrap();
+    let timestepper = Timestepper::new(start, end, 1);
+
+    let rec = AssertionRecorder::new("assert", Metric::ParameterValue(p_idx), expected_values, ulps, epsilon);
+
+    model.add_recorder(Box::new(rec)).unwrap();
+    model.run::<ClpSolver>(&timestepper, &Default::default()).unwrap();
 }

@@ -1289,7 +1289,7 @@ mod tests {
 
     #[test]
     fn test_step() {
-        let model = simple_model();
+        let model = simple_model(2);
         let scenario_indices = model.get_scenario_indices();
 
         let timestepper = default_timestepper();
@@ -1328,7 +1328,7 @@ mod tests {
     #[test]
     /// Test running a simple model
     fn test_run() {
-        let mut model = simple_model();
+        let mut model = simple_model(10);
         let timestepper = default_timestepper();
 
         // Set-up assertion for "input" node
@@ -1360,7 +1360,7 @@ mod tests {
     #[ignore]
     /// Test running a simple model with the OpenCL IPM solver
     fn test_run_cl_ipm() {
-        let mut model = simple_model();
+        let mut model = simple_model(10);
         let timestepper = default_timestepper();
 
         // Set-up assertion for "input" node

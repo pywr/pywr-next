@@ -300,7 +300,7 @@ mod tests {
 
     #[test]
     fn test_array2_recorder() {
-        let mut model = simple_model();
+        let mut model = simple_model(2);
         let timestepper = default_timestepper();
 
         let node_idx = model.get_node_index_by_name("input", None).unwrap();
