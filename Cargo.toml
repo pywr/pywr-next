@@ -26,8 +26,8 @@ svgbobdoc = { version = "0.3.0", features = ["enable"]  }
 log = "0.4.17"
 pyo3-log = "0.8.0"
 indicatif = "0.17.2"
-# highs-sys = "1.5.0"
-highs-sys = { path = "../../highs-sys" }
+highs-sys = "1.5.0"
+# highs-sys = { path = "../../highs-sys" }
 pyo3 = { version = "0.18.0" }
 rayon = "1.6.1"
 polars = { version = "0.27.2", features = ["lazy", "rows", "ndarray"] }
