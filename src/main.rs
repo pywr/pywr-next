@@ -46,7 +46,6 @@ struct Cli {
 enum Commands {
     Convert {
         /// Path to Pywr v1.x JSON.
-        #[arg(short, long, value_name = "FILE")]
         model: PathBuf,
     },
 

@@ -414,6 +414,13 @@ impl Model {
                 let solve_timings = solver.solve(self, timestep, current_state).unwrap();
                 // State now contains updated parameter values AND updated network state
                 timings.solve += solve_timings;
+
+                // Now run the "after" method on all components
+                let start_p_after = Instant::now();
+                self.after(timestep, scenario_index, current_state, p_internal_state)
+                    .unwrap();
+
+                timings.parameter_calculation += start_p_after.elapsed();
             });
 
         Ok(())
@@ -450,11 +457,18 @@ impl Model {
                     .unwrap();
 
                 // State now contains updated parameter values BUT original network state
-                let parameter_calculation = start_p_calc.elapsed();
+                let mut parameter_calculation = start_p_calc.elapsed();
 
                 // Solve determines the new network state
                 let solve_timings = solver.solve(self, timestep, current_state).unwrap();
                 // State now contains updated parameter values AND updated network state
+
+                // Now run the "after" method on all components
+                let start_p_after = Instant::now();
+                self.after(timestep, scenario_index, current_state, p_internal_state)
+                    .unwrap();
+
+                parameter_calculation += start_p_after.elapsed();
 
                 (parameter_calculation, solve_timings)
             })
@@ -487,7 +501,7 @@ impl Model {
         scenario_indices
             .iter()
             .zip(&mut *states)
-            .zip(parameter_internal_states)
+            .zip(parameter_internal_states.iter_mut())
             .for_each(|((scenario_index, current_state), p_internal_state)| {
                 // TODO clear the current parameter values state (i.e. set them all to zero).
 
@@ -504,6 +518,17 @@ impl Model {
         // State now contains updated parameter values AND updated network state
         timings.solve += solve_timings;
 
+        // Now run the "after" method on all components
+        scenario_indices
+            .iter()
+            .zip(&mut *states)
+            .zip(parameter_internal_states)
+            .for_each(|((scenario_index, current_state), p_internal_state)| {
+                let start_p_after = Instant::now();
+                self.after(timestep, scenario_index, current_state, p_internal_state)
+                    .unwrap();
+                timings.parameter_calculation += start_p_after.elapsed();
+            });
         Ok(())
     }
 
@@ -583,6 +608,79 @@ impl Model {
                             let value = p.compute(timestep, scenario_index, self, state, internal_state)?;
                             // debug!("Current value of index parameter {}: {}", p.name(), value);
                             state.set_multi_parameter_value(*idx, value)?;
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Undertake "after" for model components after solve.
+    ///
+    /// This method iterates through the model components (nodes, parameters, etc) to perform
+    /// pre-solve calculations. For nodes this can be adjustments to storage volume (e.g. to
+    /// set initial volume). For parameters this involves computing the current value for the
+    /// the timestep. The `state` object is progressively updated with these values during this
+    /// method.
+    fn after(
+        &self,
+        timestep: &Timestep,
+        scenario_index: &ScenarioIndex,
+        state: &mut State,
+        internal_states: &mut ParameterStates,
+    ) -> Result<(), PywrError> {
+        // TODO reset parameter state to zero
+
+        for c_type in &self.resolve_order {
+            match c_type {
+                ComponentType::Node(_) => {
+                    // Nodes do not have an "after" method.
+                }
+                ComponentType::VirtualStorageNode(_) => {
+                    // Nodes do not have an "after" method.;
+                }
+                ComponentType::Parameter(p_type) => {
+                    match p_type {
+                        ParameterType::Parameter(idx) => {
+                            // Find the parameter itself
+                            let p = self
+                                .parameters
+                                .get(*idx.deref())
+                                .ok_or(PywrError::ParameterIndexNotFound(*idx))?;
+                            // .. and its internal state
+                            let internal_state = internal_states
+                                .get_mut_value_state(*idx)
+                                .ok_or(PywrError::ParameterIndexNotFound(*idx))?;
+
+                            p.after(timestep, scenario_index, self, state, internal_state)?;
+                        }
+                        ParameterType::Index(idx) => {
+                            let p = self
+                                .index_parameters
+                                .get(*idx.deref())
+                                .ok_or(PywrError::IndexParameterIndexNotFound(*idx))?;
+
+                            // .. and its internal state
+                            let internal_state = internal_states
+                                .get_mut_index_state(*idx)
+                                .ok_or(PywrError::IndexParameterIndexNotFound(*idx))?;
+
+                            p.after(timestep, scenario_index, self, state, internal_state)?;
+                        }
+                        ParameterType::Multi(idx) => {
+                            let p = self
+                                .multi_parameters
+                                .get(*idx.deref())
+                                .ok_or(PywrError::MultiValueParameterIndexNotFound(*idx))?;
+
+                            // .. and its internal state
+                            let internal_state = internal_states
+                                .get_mut_multi_state(*idx)
+                                .ok_or(PywrError::MultiValueParameterIndexNotFound(*idx))?;
+
+                            p.after(timestep, scenario_index, self, state, internal_state)?;
                         }
                     }
                 }

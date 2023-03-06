@@ -3,6 +3,7 @@ mod aggregated_index;
 mod array;
 mod asymmetric;
 mod control_curves;
+mod delay;
 mod indexed_array;
 mod max;
 mod negative;
@@ -29,6 +30,7 @@ pub use control_curves::{
     ApportionParameter, ControlCurveIndexParameter, ControlCurveParameter, InterpolatedParameter,
     PiecewiseInterpolatedParameter,
 };
+pub use delay::DelayParameter;
 pub use indexed_array::IndexedArrayParameter;
 pub use max::MaxParameter;
 pub use negative::NegativeParameter;
@@ -125,6 +127,19 @@ impl ParameterMeta {
     }
 }
 
+/// Helper function to downcast to internal parameter state and print a helpful panic
+/// message if this fails.
+pub fn downcast_internal_state<T: 'static>(internal_state: &mut Option<Box<dyn Any + Send>>) -> &mut T {
+    // Downcast the internal state to the correct type
+    match internal_state {
+        Some(internal) => match internal.downcast_mut::<T>() {
+            Some(pa) => pa,
+            None => panic!("Internal state did not downcast to the correct type! :("),
+        },
+        None => panic!("No internal state defined when one was expected! :("),
+    }
+}
+
 // TODO It might be possible to make these three traits into a single generic trait
 pub trait Parameter: Send + Sync {
     fn as_any_mut(&mut self) -> &mut dyn Any;
@@ -132,6 +147,7 @@ pub trait Parameter: Send + Sync {
     fn name(&self) -> &str {
         self.meta().name.as_str()
     }
+
     fn setup(
         &self,
         #[allow(unused_variables)] timesteps: &[Timestep],
@@ -139,12 +155,7 @@ pub trait Parameter: Send + Sync {
     ) -> Result<Option<Box<dyn Any + Send>>, PywrError> {
         Ok(None)
     }
-    fn before(
-        &self,
-        #[allow(unused_variables)] internal_state: &mut Option<Box<dyn Any + Send>>,
-    ) -> Result<(), PywrError> {
-        Ok(())
-    }
+
     fn compute(
         &self,
         timestep: &Timestep,
@@ -171,6 +182,7 @@ pub trait IndexParameter: Send + Sync {
     fn name(&self) -> &str {
         self.meta().name.as_str()
     }
+
     fn setup(
         &self,
         _timesteps: &[Timestep],
@@ -178,7 +190,7 @@ pub trait IndexParameter: Send + Sync {
     ) -> Result<Option<Box<dyn Any + Send>>, PywrError> {
         Ok(None)
     }
-    fn before(&self) {}
+
     fn compute(
         &self,
         timestep: &Timestep,
@@ -187,6 +199,17 @@ pub trait IndexParameter: Send + Sync {
         state: &State,
         internal_state: &mut Option<Box<dyn Any + Send>>,
     ) -> Result<usize, PywrError>;
+
+    fn after(
+        &self,
+        #[allow(unused_variables)] timestep: &Timestep,
+        #[allow(unused_variables)] scenario_index: &ScenarioIndex,
+        #[allow(unused_variables)] model: &Model,
+        #[allow(unused_variables)] state: &State,
+        #[allow(unused_variables)] internal_state: &mut Option<Box<dyn Any + Send>>,
+    ) -> Result<(), PywrError> {
+        Ok(())
+    }
 }
 
 pub trait MultiValueParameter: Send + Sync {
@@ -201,9 +224,7 @@ pub trait MultiValueParameter: Send + Sync {
     ) -> Result<Option<Box<dyn Any + Send>>, PywrError> {
         Ok(None)
     }
-    fn before(&self, _internal_state: &mut Option<Box<dyn Any + Send>>) -> Result<(), PywrError> {
-        Ok(())
-    }
+
     fn compute(
         &self,
         timestep: &Timestep,

@@ -1,7 +1,7 @@
 {
   "metadata": {
-    "title": "PiecewiseLink 1",
-    "description": "A test of PiecewiseLinkNode.",
+    "title": "Delay 1",
+    "description": "A test of the DelayNode.",
     "minimum_version": "0.1"
   },
   "timestepper": {
@@ -12,31 +12,20 @@
   "nodes": [
     {
       "name": "input1",
-      "type": "Input",
-      "max_flow": 15
+      "type": "Catchment",
+      "flow": 15
     },
     {
       "name": "link1",
-      "type": "PiecewiseLink",
-      "steps": [
-        {
-          "cost": 1.0,
-          "max_flow": 1.0
-        },
-        {
-          "cost": 5.0,
-          "max_flow": 3.0
-        },
-        {
-          "cost": 15.0
-        }
-      ]
+      "type": "Delay",
+      "delay": 3,
+      "initial_value": 0.0
     },
     {
       "name": "demand1",
       "type": "Output",
-      "max_flow": 15.0,
-      "cost": -10
+      "max_flow": 20.0,
+      "cost": 1.0
     }
   ],
   "edges": [

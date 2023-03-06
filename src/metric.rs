@@ -13,6 +13,7 @@ pub enum Metric {
     NodeInFlow(NodeIndex),
     NodeOutFlow(NodeIndex),
     NodeVolume(NodeIndex),
+    NodeInFlowDeficit(NodeIndex),
     NodeProportionalVolume(NodeIndex),
     AggregatedNodeInFlow(AggregatedNodeIndex),
     AggregatedNodeOutFlow(AggregatedNodeIndex),
@@ -87,6 +88,12 @@ impl Metric {
                     .sum::<Result<_, _>>()?;
                 // TODO handle divide by zero
                 Ok(volume / max_volume)
+            }
+            Metric::NodeInFlowDeficit(idx) => {
+                let node = model.get_node(idx)?;
+                let flow = state.get_network_state().get_node_in_flow(idx)?;
+                let max_flow = node.get_current_max_flow(model, state)?;
+                Ok(max_flow - flow)
             }
         }
     }

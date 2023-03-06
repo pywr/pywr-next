@@ -1,7 +1,7 @@
 use super::{IndexValue, Parameter, ParameterMeta, PywrError, Timestep};
 use crate::metric::Metric;
 use crate::model::Model;
-use crate::parameters::MultiValueParameter;
+use crate::parameters::{downcast_internal_state, MultiValueParameter};
 use crate::scenario::ScenarioIndex;
 use crate::state::{MultiValue, State};
 use pyo3::prelude::*;
@@ -95,20 +95,14 @@ impl Parameter for PyParameter {
         Ok(Some(internal.into_boxed_any()))
     }
 
-    fn before(&self, internal_state: &mut Option<Box<dyn Any + Send>>) -> Result<(), PywrError> {
-        let internal = match internal_state {
-            Some(internal) => match internal.downcast_mut::<Internal>() {
-                Some(pa) => pa,
-                None => panic!("Internal state did not downcast to the correct type! :("),
-            },
-            None => panic!("No internal state defined when one was expected! :("),
-        };
-
-        Python::with_gil(|py| internal.user_obj.call_method0(py, "before"))
-            .map_err(|e| PywrError::PythonError(e.to_string()))?;
-
-        Ok(())
-    }
+    // fn before(&self, internal_state: &mut Option<Box<dyn Any + Send>>) -> Result<(), PywrError> {
+    //     let internal = downcast_internal_state::<Internal>(internal_state);
+    //
+    //     Python::with_gil(|py| internal.user_obj.call_method0(py, "before"))
+    //         .map_err(|e| PywrError::PythonError(e.to_string()))?;
+    //
+    //     Ok(())
+    // }
 
     fn compute(
         &self,
@@ -118,13 +112,7 @@ impl Parameter for PyParameter {
         state: &State,
         internal_state: &mut Option<Box<dyn Any + Send>>,
     ) -> Result<f64, PywrError> {
-        let internal = match internal_state {
-            Some(internal) => match internal.downcast_mut::<Internal>() {
-                Some(pa) => pa,
-                None => panic!("Internal state did not downcast to the correct type! :("),
-            },
-            None => panic!("No internal state defined when one was expected! :("),
-        };
+        let internal = downcast_internal_state::<Internal>(internal_state);
 
         let value: f64 = Python::with_gil(|py| {
             let date = PyDate::new(
@@ -156,13 +144,7 @@ impl Parameter for PyParameter {
         state: &State,
         internal_state: &mut Option<Box<dyn Any + Send>>,
     ) -> Result<(), PywrError> {
-        let internal = match internal_state {
-            Some(internal) => match internal.downcast_mut::<Internal>() {
-                Some(pa) => pa,
-                None => panic!("Internal state did not downcast to the correct type! :("),
-            },
-            None => panic!("No internal state defined when one was expected! :("),
-        };
+        let internal = downcast_internal_state::<Internal>(internal_state);
 
         Python::with_gil(|py| {
             // Only do this if the object has an "after" method defined.
@@ -215,20 +197,14 @@ impl MultiValueParameter for PyParameter {
         Ok(Some(internal.into_boxed_any()))
     }
 
-    fn before(&self, internal_state: &mut Option<Box<dyn Any + Send>>) -> Result<(), PywrError> {
-        let internal = match internal_state {
-            Some(internal) => match internal.downcast_mut::<Internal>() {
-                Some(pa) => pa,
-                None => panic!("Internal state did not downcast to the correct type! :("),
-            },
-            None => panic!("No internal state defined when one was expected! :("),
-        };
-
-        Python::with_gil(|py| internal.user_obj.call_method0(py, "before"))
-            .map_err(|e| PywrError::PythonError(e.to_string()))?;
-
-        Ok(())
-    }
+    // fn before(&self, internal_state: &mut Option<Box<dyn Any + Send>>) -> Result<(), PywrError> {
+    //     let internal = downcast_internal_state::<Internal>(internal_state);
+    //
+    //     Python::with_gil(|py| internal.user_obj.call_method0(py, "before"))
+    //         .map_err(|e| PywrError::PythonError(e.to_string()))?;
+    //
+    //     Ok(())
+    // }
 
     fn compute(
         &self,
@@ -238,13 +214,7 @@ impl MultiValueParameter for PyParameter {
         state: &State,
         internal_state: &mut Option<Box<dyn Any + Send>>,
     ) -> Result<MultiValue, PywrError> {
-        let internal = match internal_state {
-            Some(internal) => match internal.downcast_mut::<Internal>() {
-                Some(pa) => pa,
-                None => panic!("Internal state did not downcast to the correct type! :("),
-            },
-            None => panic!("No internal state defined when one was expected! :("),
-        };
+        let internal = downcast_internal_state::<Internal>(internal_state);
 
         let value: MultiValue = Python::with_gil(|py| {
             let date = PyDate::new(
@@ -306,13 +276,7 @@ impl MultiValueParameter for PyParameter {
         state: &State,
         internal_state: &mut Option<Box<dyn Any + Send>>,
     ) -> Result<(), PywrError> {
-        let internal = match internal_state {
-            Some(internal) => match internal.downcast_mut::<Internal>() {
-                Some(pa) => pa,
-                None => panic!("Internal state did not downcast to the correct type! :("),
-            },
-            None => panic!("No internal state defined when one was expected! :("),
-        };
+        let internal = downcast_internal_state::<Internal>(internal_state);
 
         Python::with_gil(|py| {
             // Only do this if the object has an "after" method defined.

@@ -81,27 +81,27 @@ impl Recorder for HDF5Recorder {
             let ds = match metric {
                 Metric::NodeInFlow(idx) => {
                     let node = model.get_node(idx)?;
-                    require_node_dataset(root_grp, shape, node.name(), node.sub_name())?
+                    require_node_dataset(root_grp, shape, node.name(), node.sub_name(), "inflow")?
                 }
                 Metric::NodeOutFlow(idx) => {
                     let node = model.get_node(idx)?;
-                    require_node_dataset(root_grp, shape, node.name(), node.sub_name())?
+                    require_node_dataset(root_grp, shape, node.name(), node.sub_name(), "outflow")?
                 }
                 Metric::NodeVolume(idx) => {
                     let node = model.get_node(idx)?;
-                    require_node_dataset(root_grp, shape, node.name(), node.sub_name())?
+                    require_node_dataset(root_grp, shape, node.name(), node.sub_name(), "volume")?
                 }
                 Metric::NodeProportionalVolume(idx) => {
                     let node = model.get_node(idx)?;
-                    require_node_dataset(root_grp, shape, node.name(), node.sub_name())?
+                    require_node_dataset(root_grp, shape, node.name(), node.sub_name(), "proportional-volume")?
                 }
                 Metric::AggregatedNodeVolume(idx) => {
                     let node = model.get_aggregated_storage_node(idx)?;
-                    require_node_dataset(root_grp, shape, node.name(), node.sub_name())?
+                    require_node_dataset(root_grp, shape, node.name(), node.sub_name(), "volume")?
                 }
                 Metric::AggregatedNodeProportionalVolume(idx) => {
                     let node = model.get_aggregated_storage_node(idx)?;
-                    require_node_dataset(root_grp, shape, node.name(), node.sub_name())?
+                    require_node_dataset(root_grp, shape, node.name(), node.sub_name(), "proportional-volume")?
                 }
                 Metric::EdgeFlow(_) => {
                     continue; // TODO
@@ -125,11 +125,15 @@ impl Recorder for HDF5Recorder {
                 }
                 Metric::AggregatedNodeInFlow(idx) => {
                     let node = model.get_aggregated_node(idx)?;
-                    require_node_dataset(root_grp, shape, node.name(), node.sub_name())?
+                    require_node_dataset(root_grp, shape, node.name(), node.sub_name(), "inflow")?
                 }
                 Metric::AggregatedNodeOutFlow(idx) => {
                     let node = model.get_aggregated_node(idx)?;
-                    require_node_dataset(root_grp, shape, node.name(), node.sub_name())?
+                    require_node_dataset(root_grp, shape, node.name(), node.sub_name(), "outflow")?
+                }
+                Metric::NodeInFlowDeficit(idx) => {
+                    let node = model.get_node(idx)?;
+                    require_node_dataset(root_grp, shape, node.name(), node.sub_name(), "flow-deficit")?
                 }
             };
 
@@ -196,17 +200,23 @@ fn require_dataset<S: Into<Extents>>(parent: &Group, shape: S, name: &str) -> Re
         .map_err(|e| PywrError::HDF5Error(e.to_string()))
 }
 
+/// Create a node dataset in /parent/name/sub_name/attribute
 fn require_node_dataset<S: Into<Extents>>(
     parent: &Group,
     shape: S,
     name: &str,
     sub_name: Option<&str>,
+    attribute: &str,
 ) -> Result<hdf5::Dataset, PywrError> {
     match sub_name {
-        None => require_dataset(parent, shape, name),
+        None => {
+            let grp = require_group(parent, name)?;
+            require_dataset(&grp, shape, attribute)
+        }
         Some(sn) => {
             let grp = require_group(parent, name)?;
-            require_dataset(&grp, shape, sn)
+            let grp = require_group(&grp, sn)?;
+            require_dataset(&grp, shape, attribute)
         }
     }
 }

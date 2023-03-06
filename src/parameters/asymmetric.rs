@@ -1,5 +1,5 @@
 use crate::model::Model;
-use crate::parameters::{IndexParameter, IndexValue, ParameterMeta};
+use crate::parameters::{downcast_internal_state, IndexParameter, IndexValue, ParameterMeta};
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
 use crate::timestep::Timestep;
@@ -48,13 +48,7 @@ impl IndexParameter for AsymmetricSwitchIndexParameter {
         };
 
         // Downcast the internal state to the correct type
-        let current_state = match internal_state {
-            Some(internal) => match internal.downcast_mut::<usize>() {
-                Some(pa) => pa,
-                None => panic!("Internal state did not downcast to the correct type! :("),
-            },
-            None => panic!("No internal state defined when one was expected! :("),
-        };
+        let current_state = downcast_internal_state::<usize>(internal_state);
 
         if *current_state > 0 {
             if on_value > 0 {

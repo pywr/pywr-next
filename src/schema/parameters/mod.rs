@@ -3,6 +3,7 @@ mod asymmetric_switch;
 mod control_curves;
 mod core;
 mod data_frame;
+mod delay;
 mod indexed_array;
 mod polynomial;
 mod profiles;
@@ -18,6 +19,7 @@ pub use super::parameters::control_curves::{
     ControlCurvePiecewiseInterpolatedParameter,
 };
 pub use super::parameters::core::{ConstantParameter, MaxParameter, NegativeParameter};
+pub use super::parameters::delay::DelayParameter;
 pub use super::parameters::indexed_array::IndexedArrayParameter;
 pub use super::parameters::polynomial::Polynomial1DParameter;
 pub use super::parameters::profiles::{
@@ -138,6 +140,7 @@ pub enum Parameter {
     TablesArray(TablesArrayParameter),
     Python(PythonParameter),
     DataFrame(DataFrameParameter),
+    Delay(DelayParameter),
 }
 
 impl Parameter {
@@ -162,6 +165,7 @@ impl Parameter {
             Self::TablesArray(p) => p.meta.name.as_str(),
             Self::Python(p) => p.meta.name.as_str(),
             Self::DataFrame(p) => p.meta.name.as_str(),
+            Parameter::Delay(p) => p.meta.name.as_str(),
         }
     }
 
@@ -188,6 +192,7 @@ impl Parameter {
             Self::TablesArray(p) => p.node_references(),
             Self::Python(p) => p.node_references(),
             Self::DataFrame(p) => p.node_references(),
+            Self::Delay(p) => p.node_references(),
         }
     }
 
@@ -231,6 +236,7 @@ impl Parameter {
             Self::TablesArray(_) => "TablesArray",
             Self::Python(_) => "Python",
             Self::DataFrame(_) => "DataFrame",
+            Self::Delay(_) => "Delay",
         }
     }
 
@@ -262,6 +268,7 @@ impl Parameter {
             Self::TablesArray(p) => ParameterType::Parameter(p.add_to_model(model, data_path)?),
             Self::Python(p) => p.add_to_model(model, tables, data_path)?,
             Self::DataFrame(p) => ParameterType::Parameter(p.add_to_model(model, data_path)?),
+            Self::Delay(p) => ParameterType::Parameter(p.add_to_model(model, tables, data_path)?),
         };
 
         Ok(ty)

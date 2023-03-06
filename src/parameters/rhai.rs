@@ -1,6 +1,7 @@
 use super::{IndexValue, Parameter, ParameterMeta, PywrError, Timestep};
 use crate::metric::Metric;
 use crate::model::Model;
+use crate::parameters::downcast_internal_state;
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
 use rhai::{Dynamic, Engine, Map, Scope, AST};
@@ -87,13 +88,7 @@ impl Parameter for RhaiParameter {
         state: &State,
         internal_state: &mut Option<Box<dyn Any + Send>>,
     ) -> Result<f64, PywrError> {
-        let internal = match internal_state {
-            Some(internal) => match internal.downcast_mut::<Internal>() {
-                Some(pa) => pa,
-                None => panic!("Internal state did not downcast to the correct type! :("),
-            },
-            None => panic!("No internal state defined when one was expected! :("),
-        };
+        let internal = downcast_internal_state::<Internal>(internal_state);
 
         let metric_values = self
             .metrics
