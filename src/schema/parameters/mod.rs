@@ -2,6 +2,7 @@ mod aggregated;
 mod asymmetric_switch;
 mod control_curves;
 mod core;
+mod data_frame;
 mod indexed_array;
 mod polynomial;
 mod profiles;
@@ -10,7 +11,7 @@ mod tables;
 mod thresholds;
 
 pub use super::data_tables::{LoadedTableCollection, TableDataRef};
-pub use super::parameters::aggregated::{AggregatedIndexParameter, AggregatedParameter};
+pub use super::parameters::aggregated::{AggFunc, AggregatedIndexParameter, AggregatedParameter, IndexAggFunc};
 pub use super::parameters::asymmetric_switch::AsymmetricSwitchIndexParameter;
 pub use super::parameters::control_curves::{
     ControlCurveIndexParameter, ControlCurveInterpolatedParameter, ControlCurveParameter,
@@ -27,6 +28,7 @@ pub use super::parameters::tables::TablesArrayParameter;
 pub use super::parameters::thresholds::ParameterThresholdParameter;
 use crate::metric::Metric;
 use crate::parameters::{IndexValue, ParameterType};
+pub use crate::schema::parameters::data_frame::DataFrameParameter;
 use crate::{IndexParameterIndex, NodeIndex, PywrError};
 use pywr_schema::parameters::{
     CoreParameter, ExternalDataRef as ExternalDataRefV1, Parameter as ParameterV1, ParameterMeta as ParameterMetaV1,
@@ -135,6 +137,7 @@ pub enum Parameter {
     ParameterThreshold(ParameterThresholdParameter),
     TablesArray(TablesArrayParameter),
     Python(PythonParameter),
+    DataFrame(DataFrameParameter),
 }
 
 impl Parameter {
@@ -158,6 +161,7 @@ impl Parameter {
             Self::ParameterThreshold(p) => p.meta.name.as_str(),
             Self::TablesArray(p) => p.meta.name.as_str(),
             Self::Python(p) => p.meta.name.as_str(),
+            Self::DataFrame(p) => p.meta.name.as_str(),
         }
     }
 
@@ -183,6 +187,7 @@ impl Parameter {
             Self::ParameterThreshold(p) => p.node_references(),
             Self::TablesArray(p) => p.node_references(),
             Self::Python(p) => p.node_references(),
+            Self::DataFrame(p) => p.node_references(),
         }
     }
 
@@ -225,6 +230,7 @@ impl Parameter {
             Self::ParameterThreshold(_) => "ParameterThreshold",
             Self::TablesArray(_) => "TablesArray",
             Self::Python(_) => "Python",
+            Self::DataFrame(_) => "DataFrame",
         }
     }
 
@@ -255,6 +261,7 @@ impl Parameter {
             Self::ParameterThreshold(p) => ParameterType::Index(p.add_to_model(model, tables, data_path)?),
             Self::TablesArray(p) => ParameterType::Parameter(p.add_to_model(model, data_path)?),
             Self::Python(p) => p.add_to_model(model, tables, data_path)?,
+            Self::DataFrame(p) => ParameterType::Parameter(p.add_to_model(model, data_path)?),
         };
 
         Ok(ty)

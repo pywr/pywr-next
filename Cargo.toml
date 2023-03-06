@@ -30,9 +30,10 @@ indicatif = "0.17.2"
 highs-sys = { path = "../../highs-sys" }
 pyo3 = { version = "0.18.0" }
 rayon = "1.6.1"
-# polars = { version = "0.25.1", features = ["lazy", "rows"] }
-# pywr-schema = { git = "https://github.com/pywr/pywr-schema/" }
-pywr-schema = { path = "../pywr-schema/pywr_schema" }
+polars = { version = "0.27.2", features = ["lazy", "rows", "ndarray"] }
+pyo3-polars = "0.2.0"
+pywr-schema = { git = "https://github.com/pywr/pywr-schema/", tag="v0.5.2" }
+# pywr-schema = { path = "../pywr-schema/pywr_schema" }
 # Binary dependencies
 clap =  { version="4.0", features=["derive"] }
 rhai = { version="1.12.0", features=["sync"] }

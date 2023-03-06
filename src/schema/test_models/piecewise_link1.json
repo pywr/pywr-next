@@ -1,0 +1,52 @@
+{
+  "metadata": {
+    "title": "PiecewiseLink 1",
+    "description": "A",
+    "minimum_version": "0.1"
+  },
+  "timestepper": {
+    "start": "2015-01-01",
+    "end": "2015-12-31",
+    "timestep": 1
+  },
+  "nodes": [
+    {
+      "name": "input1",
+      "type": "Input",
+      "flow": 15
+    },
+    {
+      "name": "link1",
+      "type": "PiecewiseLink",
+      "steps": [
+        {
+          "cost": 1.0,
+          "max_flow": 1.0
+        },
+        {
+          "cost": 5.0,
+          "max_flow": 3.0
+        },
+        {
+          "cost": 15.0
+        }
+      ]
+    },
+    {
+      "name": "demand1",
+      "type": "Output",
+      "max_flow": 15.0,
+      "cost": -10
+    }
+  ],
+  "edges": [
+    {
+      "from_node": "input1",
+      "to_node": "link1"
+    },
+    {
+      "from_node": "link1",
+      "to_node": "demand1"
+    }
+  ]
+}

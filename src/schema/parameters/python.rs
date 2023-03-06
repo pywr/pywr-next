@@ -80,7 +80,7 @@ pub struct PythonParameter {
     pub indices: Option<HashMap<String, DynamicIndexValue>>,
 }
 
-fn try_json_value_into_py(py: Python, value: &serde_json::Value) -> Result<Option<PyObject>, PywrError> {
+pub fn try_json_value_into_py(py: Python, value: &serde_json::Value) -> Result<Option<PyObject>, PywrError> {
     let py_value = match value {
         Value::Null => None,
         Value::Bool(v) => Some(v.into_py(py)),

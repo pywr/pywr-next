@@ -258,8 +258,15 @@ impl TryFrom<pywr_schema::PywrModel> for PywrModel {
 #[cfg(test)]
 mod tests {
     use super::PywrModel;
+    use crate::metric::Metric;
     use crate::model::RunOptions;
+    use crate::recorders::AssertionRecorder;
+    use crate::schema::parameters::{
+        AggFunc, AggregatedParameter, ConstantParameter, ConstantValue, DynamicFloatValue, MetricFloatValue, Parameter,
+        ParameterMeta,
+    };
     use crate::solvers::ClpSolver;
+    use ndarray::{Array1, Array2, Axis};
 
     fn simple1_str() -> &'static str {
         r#"
@@ -287,7 +294,10 @@ mod tests {
                     {
                         "name": "demand1",
                         "type": "Output",
-                        "max_flow": 10,
+                        "max_flow": {
+                            "type": "Parameter",
+                            "name": "demand"
+                        },
                         "cost": -10
                     }
                 ],
@@ -300,7 +310,8 @@ mod tests {
                         "from_node": "link1",
                         "to_node": "demand1"
                     }
-                ]
+                ],
+                "parameters": [{"name": "demand", "type": "Constant", "value": 10.0}]
             }
             "#
     }
@@ -318,14 +329,128 @@ mod tests {
     fn test_simple1_run() {
         let data = simple1_str();
         let schema: PywrModel = serde_json::from_str(data).unwrap();
-        let (model, timestepper): (crate::model::Model, crate::timestep::Timestepper) =
+        let (mut model, timestepper): (crate::model::Model, crate::timestep::Timestepper) =
             schema.try_into_model(None).unwrap();
 
         assert_eq!(model.nodes.len(), 3);
         assert_eq!(model.edges.len(), 2);
 
-        model.run::<ClpSolver>(&timestepper, &RunOptions::default()).unwrap()
+        let demand1_idx = model.get_node_index_by_name("demand1", None).unwrap();
 
-        // TODO assert the results!
+        let expected_values: Array1<f64> = [10.0; 365].to_vec().into();
+        let expected_values: Array2<f64> = expected_values.insert_axis(Axis(1));
+
+        let rec = AssertionRecorder::new(
+            "assert-demand1",
+            Metric::NodeInFlow(demand1_idx),
+            expected_values,
+            None,
+            None,
+        );
+        model.add_recorder(Box::new(rec)).unwrap();
+
+        model.run::<ClpSolver>(&timestepper, &RunOptions::default()).unwrap()
+    }
+
+    /// Test that a cycle in parameter dependencies does not load.
+    #[test]
+    fn test_cycle_error() {
+        let data = simple1_str();
+        let mut schema: PywrModel = serde_json::from_str(data).unwrap();
+
+        // Add additional parameters for the test
+        if let Some(parameters) = &mut schema.parameters {
+            parameters.extend(vec![
+                Parameter::Aggregated(AggregatedParameter {
+                    meta: ParameterMeta {
+                        name: "agg1".to_string(),
+                        comment: None,
+                    },
+                    agg_func: AggFunc::Sum,
+                    metrics: vec![
+                        DynamicFloatValue::Dynamic(MetricFloatValue::Parameter {
+                            name: "p1".to_string(),
+                            key: None,
+                        }),
+                        DynamicFloatValue::Dynamic(MetricFloatValue::Parameter {
+                            name: "agg2".to_string(),
+                            key: None,
+                        }),
+                    ],
+                }),
+                Parameter::Constant(ConstantParameter {
+                    meta: ParameterMeta {
+                        name: "p1".to_string(),
+                        comment: None,
+                    },
+                    value: ConstantValue::Literal(10.0),
+                }),
+                Parameter::Aggregated(AggregatedParameter {
+                    meta: ParameterMeta {
+                        name: "agg2".to_string(),
+                        comment: None,
+                    },
+                    agg_func: AggFunc::Sum,
+                    metrics: vec![
+                        DynamicFloatValue::Dynamic(MetricFloatValue::Parameter {
+                            name: "p1".to_string(),
+                            key: None,
+                        }),
+                        DynamicFloatValue::Dynamic(MetricFloatValue::Parameter {
+                            name: "agg1".to_string(),
+                            key: None,
+                        }),
+                    ],
+                }),
+            ]);
+        }
+
+        // TODO this could assert a specific type of error
+        assert!(schema.try_into_model(None).is_err());
+    }
+
+    /// Test that a model loads if the aggregated parameter is defined before its dependencies.
+    #[test]
+    fn test_ordering() {
+        let data = simple1_str();
+        let mut schema: PywrModel = serde_json::from_str(data).unwrap();
+
+        if let Some(parameters) = &mut schema.parameters {
+            parameters.extend(vec![
+                Parameter::Aggregated(AggregatedParameter {
+                    meta: ParameterMeta {
+                        name: "agg1".to_string(),
+                        comment: None,
+                    },
+                    agg_func: AggFunc::Sum,
+                    metrics: vec![
+                        DynamicFloatValue::Dynamic(MetricFloatValue::Parameter {
+                            name: "p1".to_string(),
+                            key: None,
+                        }),
+                        DynamicFloatValue::Dynamic(MetricFloatValue::Parameter {
+                            name: "p2".to_string(),
+                            key: None,
+                        }),
+                    ],
+                }),
+                Parameter::Constant(ConstantParameter {
+                    meta: ParameterMeta {
+                        name: "p1".to_string(),
+                        comment: None,
+                    },
+                    value: ConstantValue::Literal(10.0),
+                }),
+                Parameter::Constant(ConstantParameter {
+                    meta: ParameterMeta {
+                        name: "p2".to_string(),
+                        comment: None,
+                    },
+                    value: ConstantValue::Literal(10.0),
+                }),
+            ]);
+        }
+        // TODO this could assert a specific type of error
+        assert!(schema.try_into_model(None).is_ok());
     }
 }

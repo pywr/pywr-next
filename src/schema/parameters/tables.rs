@@ -86,32 +86,3 @@ impl TryFromV1Parameter<TablesArrayParameterV1> for TablesArrayParameter {
         Ok(p)
     }
 }
-
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
-pub struct DataframeParameter {
-    #[serde(flatten)]
-    pub meta: ParameterMeta,
-    #[serde(rename = "where")]
-    pub scenario: Option<String>,
-    pub url: String,
-}
-
-impl DataframeParameter {
-    pub fn node_references(&self) -> HashMap<&str, &str> {
-        HashMap::new()
-    }
-    pub fn parameters(&self) -> HashMap<&str, DynamicFloatValueType> {
-        HashMap::new()
-    }
-
-    pub fn add_to_model(&self, _model: &mut crate::model::Model) -> Result<ParameterIndex, PywrError> {
-        // 1. Call Python & Pandas to read the data
-
-        // 2. Validate the shape of the data array. I.e. check number of columns matches scenario
-        //    and number of rows matches time-steps.
-
-        // 3. Create an ArrayParameter using the loaded array.
-
-        todo!("See above comments")
-    }
-}

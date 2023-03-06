@@ -657,6 +657,25 @@ fn load_model_from_string(data: String) {
 }
 
 #[pyfunction]
+fn run_model_from_path(
+    py: Python<'_>,
+    path: PathBuf,
+    solver_name: String,
+    data_path: Option<PathBuf>,
+    output_h5: Option<PathBuf>,
+    num_threads: Option<usize>,
+) -> PyResult<()> {
+    let data = std::fs::read_to_string(path.clone()).unwrap();
+
+    let data_path = match data_path {
+        None => path.parent().map(|dp| dp.to_path_buf()),
+        Some(dp) => Some(dp),
+    };
+
+    run_model_from_string(py, data, solver_name, data_path, output_h5, num_threads)
+}
+
+#[pyfunction]
 fn run_model_from_string(
     py: Python<'_>,
     data: String,
@@ -706,6 +725,7 @@ fn pywr(py: Python, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(load_model, m)?)?;
     m.add_function(wrap_pyfunction!(load_model_from_string, m)?)?;
     m.add_function(wrap_pyfunction!(run_model_from_string, m)?)?;
+    m.add_function(wrap_pyfunction!(run_model_from_path, m)?)?;
 
     // m.add_class::<recorders::py::PyRecorder>()?;
     m.add("ParameterNotFoundError", py.get_type::<ParameterNotFoundError>())?;

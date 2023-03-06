@@ -1,4 +1,7 @@
 {
+  "metadata": {
+    "title": "Test of aggregated node."
+  },
   "timestepper": {
     "start": "2021-01-01",
     "end": "2021-12-31",
@@ -7,30 +10,36 @@
   "nodes": [
     {
       "name": "input1",
-      "type": "input",
-      "max_flow": "inflow"
+      "type": "Input",
+      "max_flow": {
+        "type": "Parameter",
+        "name": "inflow"
+      }
     },
     {
       "name": "link1",
-      "type": "link",
+      "type": "Link",
       "max_flow": 2.0
     },
     {
       "name": "link2",
-      "type": "link",
+      "type": "Link",
       "cost": 1.0
     },
     {
       "name": "agg-node",
-      "type": "aggregated",
+      "type": "Aggregated",
       "nodes": ["link1", "link2"],
       "max_flow": 5.0
     },
     {
       "name": "output1",
-      "type": "output",
+      "type": "Output",
       "cost": -10.0,
-      "max_flow": "demand"
+      "max_flow": {
+        "type": "Parameter",
+        "name": "demand"
+      }
     }
   ],
   "edges": [
@@ -54,14 +63,20 @@
   "parameters": [
     {
       "name": "demand",
-      "type": "constant",
+      "type": "Constant",
       "value": 10.0
     },
     {
       "name": "inflow",
-      "type": "dataframe",
+      "type": "DataFrame",
       "url": "inflow.csv",
-      "column": "inflow"
+      "pandas_kwargs": {
+        "index_col": 0
+      },
+      "columns": {
+        "type": "Column",
+        "name": "inflow"
+      }
     }
   ]
 }

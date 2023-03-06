@@ -1,3 +1,4 @@
+use crate::aggregated_node::AggregatedNodeIndex;
 use crate::aggregated_storage_node::AggregatedStorageNodeIndex;
 use crate::edge::EdgeIndex;
 use crate::model::Model;
@@ -13,6 +14,8 @@ pub enum Metric {
     NodeOutFlow(NodeIndex),
     NodeVolume(NodeIndex),
     NodeProportionalVolume(NodeIndex),
+    AggregatedNodeInFlow(AggregatedNodeIndex),
+    AggregatedNodeOutFlow(AggregatedNodeIndex),
     AggregatedNodeVolume(AggregatedStorageNodeIndex),
     AggregatedNodeProportionalVolume(AggregatedStorageNodeIndex),
     EdgeFlow(EdgeIndex),
@@ -29,6 +32,22 @@ impl Metric {
             Metric::NodeInFlow(idx) => Ok(state.get_network_state().get_node_in_flow(idx)?),
             Metric::NodeOutFlow(idx) => Ok(state.get_network_state().get_node_out_flow(idx)?),
             Metric::NodeVolume(idx) => Ok(state.get_network_state().get_node_volume(idx)?),
+            Metric::AggregatedNodeInFlow(idx) => {
+                let node = model.get_aggregated_node(idx)?;
+                // TODO this could be more efficient with an iterator method? I.e. avoid the `Vec<_>` allocation
+                node.get_nodes()
+                    .iter()
+                    .map(|idx| state.get_network_state().get_node_in_flow(idx))
+                    .sum::<Result<_, _>>()
+            }
+            Metric::AggregatedNodeOutFlow(idx) => {
+                let node = model.get_aggregated_node(idx)?;
+                // TODO this could be more efficient with an iterator method? I.e. avoid the `Vec<_>` allocation
+                node.get_nodes()
+                    .iter()
+                    .map(|idx| state.get_network_state().get_node_out_flow(idx))
+                    .sum::<Result<_, _>>()
+            }
             Metric::NodeProportionalVolume(idx) => {
                 let max_volume = model.get_node(idx)?.get_current_max_volume(model, state)?;
                 Ok(state

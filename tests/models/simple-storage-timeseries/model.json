@@ -1,4 +1,7 @@
 {
+  "metadata": {
+    "title": "Simple storage timeseries"
+  },
   "timestepper": {
     "start": "2021-01-01",
     "end": "2021-12-31",
@@ -7,21 +10,24 @@
   "nodes": [
     {
       "name": "input1",
-      "type": "input",
+      "type": "Input",
       "max_flow": 9.0
     },
     {
       "name": "storage1",
-      "type": "storage",
+      "type": "Storage",
       "cost": -1.0,
       "initial_volume": 500.0,
       "max_volume": 1000.0
     },
     {
       "name": "output1",
-      "type": "output",
+      "type": "Output",
       "cost": -10.0,
-      "max_flow": "demand"
+      "max_flow": {
+        "type": "Parameter",
+        "name": "demand"
+      }
     }
   ],
   "edges": [
@@ -37,7 +43,7 @@
   "parameters": [
     {
       "name": "demand",
-      "type": "constant",
+      "type": "Constant",
       "value": 10.0
     }
   ]

@@ -189,57 +189,7 @@ mod tests {
     use crate::timestep::Timestepper;
 
     fn model_str() -> &'static str {
-        r#"
-            {
-                "metadata": {
-                    "title": "Simple 1",
-                    "description": "A very simple example.",
-                    "minimum_version": "0.1"
-                },
-                "timestepper": {
-                    "start": "2015-01-01",
-                    "end": "2015-12-31",
-                    "timestep": 1
-                },
-                "nodes": [
-                    {
-                        "name": "catchment1",
-                        "type": "Catchment",
-                        "flow": 15
-                    },
-                    {
-                        "name": "gauge1",
-                        "type": "RiverGauge",
-                        "mrf": 5.0,
-                        "mrf_cost": -20.0
-                    },
-                    {
-                        "name": "term1",
-                        "type": "Output"
-                    },
-                    {
-                        "name": "demand1",
-                        "type": "Output",
-                        "max_flow": 15.0,
-                        "cost": -10
-                    }
-                ],
-                "edges": [
-                    {
-                        "from_node": "catchment1",
-                        "to_node": "gauge1"
-                    },
-                    {
-                        "from_node": "gauge1",
-                        "to_node": "term1"
-                    },
-                    {
-                        "from_node": "gauge1",
-                        "to_node": "demand1"
-                    }
-                ]
-            }
-            "#
+        include_str!("../test_models/river_split_with_gauge1.json")
     }
 
     #[test]

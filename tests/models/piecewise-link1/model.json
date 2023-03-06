@@ -1,4 +1,7 @@
 {
+  "metadata": {
+    "title": "Test of piecewise link."
+  },
   "timestepper": {
     "start": "2021-01-01",
     "end": "2021-12-31",
@@ -7,29 +10,45 @@
   "nodes": [
     {
       "name": "input1",
-      "type": "input",
-      "max_flow": "inflow",
-      "min_flow": "inflow"
+      "type": "Input",
+      "max_flow": {
+        "type": "Parameter",
+        "name":"inflow"
+      },
+      "min_flow": {
+        "type": "Parameter",
+        "name":"inflow"
+      }
     },
     {
       "name": "link1",
-      "type": "link"
+      "type": "Link"
     },
     {
       "name": "mrf1",
-      "type": "piecewiselink",
-      "max_flows": [1.0, null],
-      "costs": [-10.0, null]
+      "type": "PiecewiseLink",
+      "steps": [
+        {
+          "cost": -10.0,
+          "max_flow": 1.0
+        },
+        {
+
+        }
+      ]
     },
     {
       "name": "term1",
-      "type": "output"
+      "type": "Output"
     },
     {
       "name": "demand1",
-      "type": "output",
+      "type": "Output",
       "cost": -5.0,
-      "max_flow": "demand"
+      "max_flow": {
+        "type": "Parameter",
+        "name": "demand"
+      }
     }
 
   ],
@@ -54,14 +73,20 @@
   "parameters": [
     {
       "name": "demand",
-      "type": "constant",
+      "type": "Constant",
       "value": 10.0
     },
     {
       "name": "inflow",
-      "type": "dataframe",
+      "type": "DataFrame",
       "url": "inflow.csv",
-      "column": "inflow"
+      "pandas_kwargs": {
+        "index_col": 0
+      },
+      "columns": {
+        "type": "Column",
+        "name": "inflow"
+      }
     }
   ]
 }

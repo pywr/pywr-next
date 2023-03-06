@@ -19,7 +19,6 @@ pub struct HDF5Recorder {
 struct Internal {
     file: hdf5::File,
     datasets: Vec<hdf5::Dataset>,
-    aggregated_datasets: Vec<(Vec<Metric>, hdf5::Dataset)>,
 }
 
 #[derive(hdf5::H5Type, Copy, Clone, Debug)]
@@ -67,7 +66,6 @@ impl Recorder for HDF5Recorder {
             Err(e) => return Err(PywrError::HDF5Error(e.to_string())),
         };
         let mut datasets = Vec::new();
-        let aggregated_datasets = Vec::new();
 
         // Create the time table
         let dates: Array1<_> = timesteps.iter().map(Date::from_timestamp).collect();
@@ -97,11 +95,13 @@ impl Recorder for HDF5Recorder {
                     let node = model.get_node(idx)?;
                     require_node_dataset(root_grp, shape, node.name(), node.sub_name())?
                 }
-                Metric::AggregatedNodeVolume(_) => {
-                    continue; // TODO
+                Metric::AggregatedNodeVolume(idx) => {
+                    let node = model.get_aggregated_storage_node(idx)?;
+                    require_node_dataset(root_grp, shape, node.name(), node.sub_name())?
                 }
-                Metric::AggregatedNodeProportionalVolume(_) => {
-                    continue; // TODO
+                Metric::AggregatedNodeProportionalVolume(idx) => {
+                    let node = model.get_aggregated_storage_node(idx)?;
+                    require_node_dataset(root_grp, shape, node.name(), node.sub_name())?
                 }
                 Metric::EdgeFlow(_) => {
                     continue; // TODO
@@ -123,28 +123,20 @@ impl Recorder for HDF5Recorder {
                 Metric::MultiParameterValue(_) => {
                     continue; // TODO
                 }
+                Metric::AggregatedNodeInFlow(idx) => {
+                    let node = model.get_aggregated_node(idx)?;
+                    require_node_dataset(root_grp, shape, node.name(), node.sub_name())?
+                }
+                Metric::AggregatedNodeOutFlow(idx) => {
+                    let node = model.get_aggregated_node(idx)?;
+                    require_node_dataset(root_grp, shape, node.name(), node.sub_name())?
+                }
             };
 
             datasets.push(ds);
         }
 
-        // TODO re-enable support for aggregated nodes.
-        // for agg_node in model.aggregated_nodes.deref() {
-        //     let metrics = agg_node.default_metric();
-        //     let name = agg_node.name().to_string();
-        //     println!("Adding _metric with name: {}", name);
-        //     let ds = match file.new_dataset::<f64>().shape(shape).create(&*name) {
-        //         Ok(ds) => ds,
-        //         Err(e) => return Err(PywrError::HDF5Error(e.to_string())),
-        //     };
-        //     agg_datasets.push((metrics, ds));
-        // }
-
-        let internal = Internal {
-            datasets,
-            aggregated_datasets,
-            file,
-        };
+        let internal = Internal { datasets, file };
 
         Ok(Some(Box::new(internal)))
     }

@@ -8,7 +8,10 @@
     {
       "name": "input1",
       "type": "input",
-      "max_flow": "inflow"
+      "max_flow": {
+        "type": "Parameter",
+        "name": "inflow"
+      }
     },
     {
       "name": "link1",
@@ -18,7 +21,10 @@
       "name": "output1",
       "type": "output",
       "cost": -10.0,
-      "max_flow": "demand"
+      "max_flow": {
+        "type": "Parameter",
+        "name": "demand"
+      }
     }
   ],
   "edges": [
@@ -34,17 +40,17 @@
   "parameters": [
     {
       "name": "constant1",
-      "type": "constant",
+      "type": "Constant",
       "value": 3.1415
     },
     {
       "name": "constant2",
-      "type": "constant",
+      "type": "Constant",
       "value": 1.0
     },
     {
       "name": "demand",
-      "type": "simplewasm",
+      "type": "SimpleWasm",
       "src": "simple_wasm_parameter.wasm",
       "parameters": [
         "constant1",
@@ -53,7 +59,7 @@
     },
     {
       "name": "inflow",
-      "type": "dataframe",
+      "type": "DataFrame",
       "url": "inflow.csv.gz",
       "column": "inflow"
     }

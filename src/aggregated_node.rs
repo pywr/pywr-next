@@ -194,8 +194,8 @@ impl AggregatedNode {
         }
     }
 
-    pub fn default_metric(&self) -> Vec<Metric> {
-        self.nodes.iter().map(|n| Metric::NodeOutFlow(*n)).collect()
+    pub fn default_metric(&self) -> Metric {
+        Metric::AggregatedNodeInFlow(self.index())
     }
 }
 

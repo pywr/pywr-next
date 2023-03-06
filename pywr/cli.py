@@ -1,9 +1,9 @@
 import logging
 from pathlib import Path
+from typing import Optional
 
 import click
-
-# from pywr.model import Model
+from . import run_model_from_string
 
 
 def configure_logging():
@@ -25,8 +25,15 @@ def cli():
 
 @cli.command()
 @click.argument("path", type=click.Path(exists=True, file_okay=True))
-def run(path: str):
-    model = Model.from_file(Path(path))
+@click.option("-s", "--solver", type=click.Choice(["clp", "highs"]))
+@click.option(
+    "-d", "--data-path", type=click.Path(exists=True, dir_okay=True), default=None
+)
+@click.option("-t", "--threads", type=int, default=1)
+def run(path: str, solver: str, data_path: Optional[str], threads: int):
+    with open(path) as fh:
+        data = fh.read()
+    model = run_model_from_string(data, solver, data_path, None, threads)
     model.run()
 
 

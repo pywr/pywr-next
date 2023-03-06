@@ -1,6 +1,6 @@
 import numpy as np
 import pandas
-from pywr.model import Model, HDF5Output
+from pywr import run_model_from_path
 from pathlib import Path
 import h5py
 import pytest
@@ -20,22 +20,19 @@ def test_simple_timeseries(model_dir: Path, tmpdir: Path):
     """Test the simple model"""
 
     filename = model_dir / "simple-timeseries" / "model.json"
-    model = Model.from_file(filename)
 
     output_fn = tmpdir / "output.h5"
-    model.outputs.insert(HDF5Output(name="hdf5", filename=output_fn))
 
-    model.run()
-
+    run_model_from_path(filename, "clp", output_h5=str(output_fn))
     assert output_fn.exists()
 
-    expected_data = pandas.read_csv(model_dir / "simple-timeseries" / "expected.csv")
+    expected_data = pandas.read_csv(
+        model_dir / "simple-timeseries" / "expected.csv", index_col=0
+    )
 
     with h5py.File(output_fn, "r") as fh:
-        for node in model.nodes:
-            np.testing.assert_allclose(
-                np.squeeze(fh[node.name]), expected_data[node.name]
-            )
+        for node, df in expected_data.items():
+            np.testing.assert_allclose(np.squeeze(fh[node]), df)
 
 
 # TODO these tests could be auto-discovered.
@@ -44,7 +41,7 @@ def test_simple_timeseries(model_dir: Path, tmpdir: Path):
     [
         "simple-timeseries",
         "simple-storage-timeseries",
-        "simple-wasm",
+        # "simple-wasm", TODO the schema for the WASM parameter needs implementing
         "aggregated-node1",
         "piecewise-link1",
     ],
@@ -52,51 +49,19 @@ def test_simple_timeseries(model_dir: Path, tmpdir: Path):
 def test_model(model_dir: Path, tmpdir: Path, model_name: str):
 
     filename = model_dir / model_name / "model.json"
-    model = Model.from_file(filename)
-
     output_fn = tmpdir / "output.h5"
-    model.outputs.insert(HDF5Output(name="hdf5", filename=output_fn))
 
-    model.run()
-
+    run_model_from_path(filename, "clp", output_h5=str(output_fn))
     assert output_fn.exists()
 
     expected_fn = model_dir / model_name / "expected.csv"
     if not expected_fn.exists():
         expected_fn = model_dir / model_name / "expected.csv.gz"
 
-    expected_data = pandas.read_csv(expected_fn)
+    expected_data = pandas.read_csv(expected_fn, index_col=0)
 
     with h5py.File(output_fn, "r") as fh:
-        for node in model.nodes:
-            for name, sub_name in node.iter_contents():
-                if sub_name is None:
-                    h5_node = name
-                    csv_col = name
-                else:
-                    h5_node = f"{name}/{sub_name}"
-                    csv_col = f"{name}-{sub_name}"
-
-                np.testing.assert_allclose(
-                    np.squeeze(fh[h5_node]), expected_data[csv_col]
-                )
-
-
-@pytest.mark.parametrize(
-    "model_name",
-    ["simple-timeseries", "simple-storage-timeseries", "simple-wasm"],
-)
-def test_model_benchmark(benchmark, model_dir: Path, model_name: str):
-
-    filename = model_dir / model_name / "model.json"
-    model = Model.from_file(filename)
-
-    r_model = model.build()
-
-    benchmark(
-        r_model.run,
-        "clp",
-        model.timestepper.start,
-        model.timestepper.end,
-        model.timestepper.timestep,
-    )
+        print(fh.keys())
+        for node, df in expected_data.items():
+            print(node, df)
+            np.testing.assert_allclose(np.squeeze(fh[node]), df)

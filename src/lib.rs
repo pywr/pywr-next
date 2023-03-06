@@ -122,4 +122,6 @@ pub enum PywrError {
     V1SchemaConversion(String),
     #[error("data table error: {0}")]
     DataTable(#[from] schema::data_tables::TableError),
+    #[error("unsupported file format")]
+    UnsupportedFileFormat,
 }
