@@ -1,8 +1,11 @@
+use anyhow::{Context, Result};
 use clap::{Parser, Subcommand, ValueEnum};
 use pywr::model::{Model, RunOptions};
 use pywr::schema::model::PywrModel;
+use pywr::schema::ConversionError;
 use pywr::solvers::{ClIpmF32Solver, ClIpmF64Solver, ClpSolver, HighsSolver};
 use pywr::timestep::Timestepper;
+use pywr::PywrError;
 use std::fmt::{Display, Formatter};
 use std::path::{Path, PathBuf};
 
@@ -66,12 +69,12 @@ enum Commands {
     },
 }
 
-fn main() {
+fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match &cli.command {
         Some(command) => match command {
-            Commands::Convert { model } => convert(model),
+            Commands::Convert { model } => convert(model)?,
             Commands::Run {
                 model,
                 solver,
@@ -90,32 +93,38 @@ fn main() {
         },
         None => {}
     }
+
+    Ok(())
 }
 
-fn convert(path: &Path) {
+fn convert(path: &Path) -> Result<()> {
     if path.is_dir() {
         for entry in path.read_dir().expect("read_dir call failed").flatten() {
-            println!("{:?}", entry.path());
-
             let path = entry.path();
             if path.is_file()
                 && (path.extension().unwrap() == "json")
                 && (!path.file_stem().unwrap().to_str().unwrap().contains("_v2"))
             {
-                v1_to_v2(&path);
+                v1_to_v2(&path)
+                    .map_err(PywrError::Conversion)
+                    .with_context(|| format!("Could not convert model: `{:?}`", &path))?;
             }
         }
     } else {
-        v1_to_v2(path);
+        v1_to_v2(path)
+            .map_err(PywrError::Conversion)
+            .with_context(|| format!("Could not convert model: `{:?}`", path))?;
     }
+
+    Ok(())
 }
 
-fn v1_to_v2(path: &Path) {
+fn v1_to_v2(path: &Path) -> std::result::Result<(), ConversionError> {
     println!("Model: {}", path.display());
 
     let data = std::fs::read_to_string(path).unwrap();
     let schema: pywr_schema::PywrModel = serde_json::from_str(data.as_str()).unwrap();
-    let schema_v2: PywrModel = schema.try_into().unwrap();
+    let schema_v2: PywrModel = schema.try_into()?;
 
     // There must be a better way to do this!!
     let mut new_file_name = path.file_stem().unwrap().to_os_string();
@@ -125,6 +134,8 @@ fn v1_to_v2(path: &Path) {
     let new_file_pth = path.parent().unwrap().join(new_file_name);
 
     std::fs::write(new_file_pth, serde_json::to_string_pretty(&schema_v2).unwrap()).unwrap();
+
+    Ok(())
 }
 
 fn run(path: &Path, solver: &Solver, data_path: Option<&Path>, options: &RunOptions) {

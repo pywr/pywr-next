@@ -30,6 +30,7 @@ pub use super::parameters::tables::TablesArrayParameter;
 pub use super::parameters::thresholds::ParameterThresholdParameter;
 use crate::metric::Metric;
 use crate::parameters::{IndexValue, ParameterType};
+use crate::schema::error::ConversionError;
 pub use crate::schema::parameters::data_frame::DataFrameParameter;
 use crate::{IndexParameterIndex, NodeIndex, PywrError};
 use pywr_schema::parameters::{
@@ -276,7 +277,7 @@ impl Parameter {
 }
 
 impl TryFromV1Parameter<ParameterV1> for Parameter {
-    type Error = PywrError;
+    type Error = ConversionError;
 
     fn try_from_v1_parameter(
         v1: ParameterV1,
@@ -389,18 +390,14 @@ impl ConstantValue<usize> {
 }
 
 impl TryFrom<ParameterValueV1> for ConstantValue<f64> {
-    type Error = PywrError;
+    type Error = ConversionError;
 
     fn try_from(v1: ParameterValueV1) -> Result<Self, Self::Error> {
         match v1 {
             ParameterValueV1::Constant(v) => Ok(Self::Literal(v)),
-            ParameterValueV1::Reference(_) => Err(PywrError::V1SchemaConversion(
-                "Constant float value cannot be a parameter reference.".to_string(),
-            )),
+            ParameterValueV1::Reference(_) => Err(ConversionError::ConstantFloatReferencesParameter),
             ParameterValueV1::Table(tbl) => Ok(Self::Table(tbl.into())),
-            ParameterValueV1::Inline(_) => Err(PywrError::V1SchemaConversion(
-                "Constant float value cannot be an inline parameter.".to_string(),
-            )),
+            ParameterValueV1::Inline(_) => Err(ConversionError::ConstantFloatInlineParameter),
         }
     }
 }
@@ -565,7 +562,7 @@ impl DynamicFloatValue {
 }
 
 impl TryFromV1Parameter<ParameterValueV1> for DynamicFloatValue {
-    type Error = PywrError;
+    type Error = ConversionError;
 
     fn try_from_v1_parameter(
         v1: ParameterValueV1,
@@ -619,7 +616,7 @@ impl DynamicIndexValue {
 }
 
 impl TryFromV1Parameter<ParameterValueV1> for DynamicIndexValue {
-    type Error = PywrError;
+    type Error = ConversionError;
 
     fn try_from_v1_parameter(
         v1: ParameterValueV1,
@@ -629,11 +626,7 @@ impl TryFromV1Parameter<ParameterValueV1> for DynamicIndexValue {
         let p = match v1 {
             // There was no such thing as s constant index in Pywr v1
             // TODO this could print a warning and do a cast to usize instead.
-            ParameterValueV1::Constant(_) => {
-                return Err(PywrError::V1SchemaConversion(
-                    "Not possible to convert a float constant to an index constant".to_string(),
-                ))
-            }
+            ParameterValueV1::Constant(_) => return Err(ConversionError::FloatToIndex),
             ParameterValueV1::Reference(p_name) => Self::Dynamic(ParameterIndexValue::Reference(p_name)),
             ParameterValueV1::Table(tbl) => Self::Constant(ConstantValue::Table(tbl.into())),
             ParameterValueV1::Inline(param) => Self::Dynamic(ParameterIndexValue::Inline(Box::new(

@@ -3,6 +3,7 @@ extern crate core;
 use crate::node::NodeIndex;
 use crate::parameters::{IndexParameterIndex, MultiValueParameterIndex, ParameterIndex};
 use crate::recorders::RecorderIndex;
+use crate::schema::ConversionError;
 use thiserror::Error;
 
 pub mod aggregated_node;
@@ -24,6 +25,8 @@ mod virtual_storage;
 
 #[derive(Error, Debug, PartialEq, Eq)]
 pub enum PywrError {
+    #[error("Schema conversion error")]
+    Conversion(#[from] ConversionError),
     #[error("failed to load schema: {0}")]
     SchemaLoad(String),
     #[error("invalid node connect")]
@@ -118,8 +121,6 @@ pub enum PywrError {
     DataOutOfRange,
     #[error("internal parameter error: {0}")]
     InternalParameterError(String),
-    #[error("conversion from v1 schema error: {0}")]
-    V1SchemaConversion(String),
     #[error("data table error: {0}")]
     DataTable(#[from] schema::data_tables::TableError),
     #[error("unsupported file format")]

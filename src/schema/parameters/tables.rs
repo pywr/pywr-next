@@ -1,3 +1,4 @@
+use crate::schema::error::ConversionError;
 use crate::schema::parameters::{DynamicFloatValueType, IntoV2Parameter, ParameterMeta, TryFromV1Parameter};
 use crate::{ParameterIndex, PywrError};
 use ndarray::s;
@@ -68,7 +69,7 @@ impl TablesArrayParameter {
 }
 
 impl TryFromV1Parameter<TablesArrayParameterV1> for TablesArrayParameter {
-    type Error = PywrError;
+    type Error = ConversionError;
 
     fn try_from_v1_parameter(
         v1: TablesArrayParameterV1,

@@ -1,6 +1,7 @@
 use crate::metric::Metric;
 use crate::parameters::DelayParameter;
 use crate::schema::data_tables::LoadedTableCollection;
+use crate::schema::error::ConversionError;
 use crate::schema::nodes::NodeMeta;
 use crate::schema::parameters::ConstantValue;
 use crate::PywrError;
@@ -81,7 +82,7 @@ impl DelayNode {
 }
 
 impl TryFrom<DelayNodeV1> for DelayNode {
-    type Error = PywrError;
+    type Error = ConversionError;
 
     fn try_from(v1: DelayNodeV1) -> Result<Self, Self::Error> {
         let meta: NodeMeta = v1.meta.into();
@@ -92,9 +93,10 @@ impl TryFrom<DelayNodeV1> for DelayNode {
             None => match v1.timesteps {
                 Some(ts) => ts,
                 None => {
-                    return Err(PywrError::V1SchemaConversion(
-                        "DelayNode should have either `days` or `timesteps` defined.".to_string(),
-                    ))
+                    return Err(ConversionError::MissingAttribute {
+                        name: meta.name,
+                        attrs: vec!["days".to_string(), "timesteps".to_string()],
+                    })
                 }
             },
         } as usize;

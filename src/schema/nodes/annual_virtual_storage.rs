@@ -1,5 +1,6 @@
 use crate::node::{ConstraintValue, StorageInitialVolume};
 use crate::schema::data_tables::LoadedTableCollection;
+use crate::schema::error::ConversionError;
 use crate::schema::nodes::NodeMeta;
 use crate::schema::parameters::{ConstantValue, DynamicFloatValue, TryIntoV2Parameter};
 use crate::virtual_storage::VirtualStorageReset;
@@ -87,7 +88,7 @@ impl AnnualVirtualStorageNode {
 }
 
 impl TryFrom<AnnualVirtualStorageNodeV1> for AnnualVirtualStorageNode {
-    type Error = PywrError;
+    type Error = ConversionError;
 
     fn try_from(v1: AnnualVirtualStorageNodeV1) -> Result<Self, Self::Error> {
         let meta: NodeMeta = v1.meta.into();

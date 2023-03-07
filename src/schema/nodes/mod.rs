@@ -10,6 +10,7 @@ mod virtual_storage;
 mod water_treatment_works;
 
 use crate::schema::data_tables::LoadedTableCollection;
+use crate::schema::error::ConversionError;
 pub use crate::schema::nodes::core::{
     AggregatedNode, AggregatedStorageNode, CatchmentNode, InputNode, LinkNode, OutputNode, StorageNode,
 };
@@ -341,7 +342,7 @@ impl Node {
 }
 
 impl TryFrom<NodeV1> for Node {
-    type Error = PywrError;
+    type Error = ConversionError;
 
     fn try_from(v1: NodeV1) -> Result<Self, Self::Error> {
         match v1 {
@@ -364,7 +365,7 @@ impl TryFrom<NodeV1> for Node {
 }
 
 impl TryFrom<Box<CoreNodeV1>> for CoreNode {
-    type Error = PywrError;
+    type Error = ConversionError;
 
     fn try_from(v1: Box<CoreNodeV1>) -> Result<Self, Self::Error> {
         let n = match *v1 {

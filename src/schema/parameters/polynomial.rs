@@ -1,4 +1,5 @@
 use crate::metric::Metric;
+use crate::schema::error::ConversionError;
 use crate::schema::parameters::{DynamicFloatValueType, IntoV2Parameter, ParameterMeta, TryFromV1Parameter};
 use crate::{ParameterIndex, PywrError};
 use pywr_schema::parameters::Polynomial1DParameter as Polynomial1DParameterV1;
@@ -43,7 +44,7 @@ impl Polynomial1DParameter {
 }
 
 impl TryFromV1Parameter<Polynomial1DParameterV1> for Polynomial1DParameter {
-    type Error = PywrError;
+    type Error = ConversionError;
 
     fn try_from_v1_parameter(
         v1: Polynomial1DParameterV1,

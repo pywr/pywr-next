@@ -2,6 +2,7 @@ use super::edge::Edge;
 use super::nodes::Node;
 use super::parameters::Parameter;
 use crate::schema::data_tables::{DataTable, LoadedTableCollection};
+use crate::schema::error::ConversionError;
 use crate::schema::parameters::TryIntoV2Parameter;
 use crate::PywrError;
 use std::path::Path;
@@ -15,7 +16,7 @@ pub struct Metadata {
 }
 
 impl TryFrom<pywr_schema::model::Metadata> for Metadata {
-    type Error = PywrError;
+    type Error = ConversionError;
 
     fn try_from(v1: pywr_schema::model::Metadata) -> Result<Self, Self::Error> {
         Ok(Self {
@@ -50,7 +51,7 @@ pub struct Timestepper {
 }
 
 impl TryFrom<pywr_schema::model::Timestepper> for Timestepper {
-    type Error = PywrError;
+    type Error = ConversionError;
 
     fn try_from(v1: pywr_schema::model::Timestepper) -> Result<Self, Self::Error> {
         Ok(Self {
@@ -214,7 +215,7 @@ impl PywrModel {
 }
 
 impl TryFrom<pywr_schema::PywrModel> for PywrModel {
-    type Error = PywrError;
+    type Error = ConversionError;
 
     fn try_from(v1: pywr_schema::PywrModel) -> Result<Self, Self::Error> {
         let metadata = v1.metadata.try_into()?;

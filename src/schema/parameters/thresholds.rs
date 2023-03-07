@@ -1,4 +1,5 @@
 use crate::schema::data_tables::LoadedTableCollection;
+use crate::schema::error::ConversionError;
 use crate::schema::parameters::{
     DynamicFloatValue, DynamicFloatValueType, IntoV2Parameter, ParameterMeta, TryFromV1Parameter, TryIntoV2Parameter,
 };
@@ -85,7 +86,7 @@ impl ParameterThresholdParameter {
 }
 
 impl TryFromV1Parameter<ParameterThresholdParameterV1> for ParameterThresholdParameter {
-    type Error = PywrError;
+    type Error = ConversionError;
 
     fn try_from_v1_parameter(
         v1: ParameterThresholdParameterV1,

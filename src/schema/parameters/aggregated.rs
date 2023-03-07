@@ -1,4 +1,5 @@
 use crate::schema::data_tables::LoadedTableCollection;
+use crate::schema::error::ConversionError;
 use crate::schema::parameters::{
     DynamicFloatValue, DynamicFloatValueType, DynamicIndexValue, IntoV2Parameter, ParameterMeta, TryFromV1Parameter,
     TryIntoV2Parameter,
@@ -101,7 +102,7 @@ impl AggregatedParameter {
 }
 
 impl TryFromV1Parameter<AggregatedParameterV1> for AggregatedParameter {
-    type Error = PywrError;
+    type Error = ConversionError;
 
     fn try_from_v1_parameter(
         v1: AggregatedParameterV1,
@@ -205,7 +206,7 @@ impl AggregatedIndexParameter {
 }
 
 impl TryFromV1Parameter<AggregatedIndexParameterV1> for AggregatedIndexParameter {
-    type Error = PywrError;
+    type Error = ConversionError;
 
     fn try_from_v1_parameter(
         v1: AggregatedIndexParameterV1,

@@ -1,4 +1,5 @@
 use crate::schema::data_tables::LoadedTableCollection;
+use crate::schema::error::ConversionError;
 use crate::schema::parameters::{
     DynamicFloatValueType, DynamicIndexValue, IntoV2Parameter, ParameterMeta, TryFromV1Parameter, TryIntoV2Parameter,
 };
@@ -43,7 +44,7 @@ impl AsymmetricSwitchIndexParameter {
 }
 
 impl TryFromV1Parameter<AsymmetricSwitchIndexParameterV1> for AsymmetricSwitchIndexParameter {
-    type Error = PywrError;
+    type Error = ConversionError;
 
     fn try_from_v1_parameter(
         v1: AsymmetricSwitchIndexParameterV1,

@@ -1,4 +1,5 @@
 use crate::schema::data_tables::LoadedTableCollection;
+use crate::schema::error::ConversionError;
 use crate::schema::nodes::NodeMeta;
 use crate::schema::parameters::{DynamicFloatValue, TryIntoV2Parameter};
 use crate::PywrError;
@@ -80,7 +81,7 @@ impl RiverGaugeNode {
 }
 
 impl TryFrom<RiverGaugeNodeV1> for RiverGaugeNode {
-    type Error = PywrError;
+    type Error = ConversionError;
 
     fn try_from(v1: RiverGaugeNodeV1) -> Result<Self, Self::Error> {
         let meta: NodeMeta = v1.meta.into();

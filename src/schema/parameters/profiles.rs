@@ -1,4 +1,5 @@
 use crate::schema::data_tables::LoadedTableCollection;
+use crate::schema::error::ConversionError;
 use crate::schema::parameters::{
     ConstantFloatVec, ConstantValue, DynamicFloatValueType, IntoV2Parameter, ParameterMeta, TryFromV1Parameter,
 };
@@ -37,7 +38,7 @@ impl DailyProfileParameter {
 }
 
 impl TryFromV1Parameter<DailyProfileParameterV1> for DailyProfileParameter {
-    type Error = PywrError;
+    type Error = ConversionError;
 
     fn try_from_v1_parameter(
         v1: DailyProfileParameterV1,
@@ -53,10 +54,10 @@ impl TryFromV1Parameter<DailyProfileParameterV1> for DailyProfileParameter {
         } else if let Some(table_ref) = v1.table_ref {
             ConstantFloatVec::Table(table_ref.into())
         } else {
-            return Err(PywrError::V1SchemaConversion(format!(
-                "DailyProfileParameter '{}' has no valid values defined.",
-                &meta.name
-            )));
+            return Err(ConversionError::MissingAttribute {
+                name: meta.name,
+                attrs: vec!["values".to_string(), "table".to_string(), "url".to_string()],
+            });
         };
 
         let p = Self { meta, values };
@@ -120,7 +121,7 @@ impl From<MonthInterpDayV1> for MonthlyInterpDay {
 }
 
 impl TryFromV1Parameter<MonthlyProfileParameterV1> for MonthlyProfileParameter {
-    type Error = PywrError;
+    type Error = ConversionError;
 
     fn try_from_v1_parameter(
         v1: MonthlyProfileParameterV1,
@@ -137,10 +138,10 @@ impl TryFromV1Parameter<MonthlyProfileParameterV1> for MonthlyProfileParameter {
         } else if let Some(table_ref) = v1.table_ref {
             ConstantFloatVec::Table(table_ref.into())
         } else {
-            return Err(PywrError::V1SchemaConversion(format!(
-                "MonthlyProfileParameter '{}' has no valid values defined.",
-                &meta.name
-            )));
+            return Err(ConversionError::MissingAttribute {
+                name: meta.name,
+                attrs: vec!["values".to_string(), "table".to_string(), "url".to_string()],
+            });
         };
 
         let p = Self {
@@ -198,7 +199,7 @@ impl UniformDrawdownProfileParameter {
 }
 
 impl TryFromV1Parameter<UniformDrawdownProfileParameterV1> for UniformDrawdownProfileParameter {
-    type Error = PywrError;
+    type Error = ConversionError;
 
     fn try_from_v1_parameter(
         v1: UniformDrawdownProfileParameterV1,

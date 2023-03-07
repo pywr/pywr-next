@@ -1,4 +1,5 @@
 use crate::schema::data_tables::LoadedTableCollection;
+use crate::schema::error::ConversionError;
 use crate::schema::parameters::{
     DynamicFloatValue, DynamicFloatValueType, IntoV2Parameter, ParameterMeta, TryFromV1Parameter, TryIntoV2Parameter,
 };
@@ -61,7 +62,7 @@ impl ControlCurveInterpolatedParameter {
 }
 
 impl TryFromV1Parameter<ControlCurveInterpolatedParameterV1> for ControlCurveInterpolatedParameter {
-    type Error = PywrError;
+    type Error = ConversionError;
 
     fn try_from_v1_parameter(
         v1: ControlCurveInterpolatedParameterV1,
@@ -78,10 +79,10 @@ impl TryFromV1Parameter<ControlCurveInterpolatedParameterV1> for ControlCurveInt
         } else if let Some(control_curve) = v1.control_curve {
             vec![control_curve.try_into_v2_parameter(Some(&meta.name), unnamed_count)?]
         } else {
-            return Err(PywrError::V1SchemaConversion(format!(
-                "ControlCurveInterpolatedParameter '{}' has no control curves defined.",
-                &meta.name,
-            )));
+            return Err(ConversionError::MissingAttribute {
+                name: meta.name,
+                attrs: vec!["control_curves".to_string(), "control_curve".to_string()],
+            });
         };
 
         let values = v1.values.into_iter().map(DynamicFloatValue::from_f64).collect();
@@ -139,7 +140,7 @@ impl ControlCurveIndexParameter {
 }
 
 impl TryFromV1Parameter<ControlCurveIndexParameterV1> for ControlCurveIndexParameter {
-    type Error = PywrError;
+    type Error = ConversionError;
 
     fn try_from_v1_parameter(
         v1: ControlCurveIndexParameterV1,
@@ -226,7 +227,7 @@ impl ControlCurveParameter {
 }
 
 impl TryFromV1Parameter<ControlCurveParameterV1> for ControlCurveParameter {
-    type Error = PywrError;
+    type Error = ConversionError;
 
     fn try_from_v1_parameter(
         v1: ControlCurveParameterV1,
@@ -243,10 +244,10 @@ impl TryFromV1Parameter<ControlCurveParameterV1> for ControlCurveParameter {
         } else if let Some(control_curve) = v1.control_curve {
             vec![control_curve.try_into_v2_parameter(Some(&meta.name), unnamed_count)?]
         } else {
-            return Err(PywrError::V1SchemaConversion(format!(
-                "ControlCurveParameter '{}' has no control curves defined.",
-                &meta.name,
-            )));
+            return Err(ConversionError::MissingAttribute {
+                name: meta.name,
+                attrs: vec!["control_curves".to_string(), "control_curve".to_string()],
+            });
         };
 
         let values = if let Some(values) = v1.values {
@@ -257,9 +258,10 @@ impl TryFromV1Parameter<ControlCurveParameterV1> for ControlCurveParameter {
                 .map(|p| p.try_into_v2_parameter(Some(&meta.name), unnamed_count))
                 .collect::<Result<Vec<_>, _>>()?
         } else {
-            return Err(PywrError::V1SchemaConversion(
-                "No `values` or `parameters` curves defined.".to_string(),
-            ));
+            return Err(ConversionError::MissingAttribute {
+                name: meta.name,
+                attrs: vec!["values".to_string(), "parameters".to_string()],
+            });
         };
 
         let p = Self {
@@ -329,7 +331,7 @@ impl ControlCurvePiecewiseInterpolatedParameter {
 }
 
 impl TryFromV1Parameter<ControlCurvePiecewiseInterpolatedParameterV1> for ControlCurvePiecewiseInterpolatedParameter {
-    type Error = PywrError;
+    type Error = ConversionError;
 
     fn try_from_v1_parameter(
         v1: ControlCurvePiecewiseInterpolatedParameterV1,
@@ -346,10 +348,10 @@ impl TryFromV1Parameter<ControlCurvePiecewiseInterpolatedParameterV1> for Contro
         } else if let Some(control_curve) = v1.control_curve {
             vec![control_curve.try_into_v2_parameter(Some(&meta.name), unnamed_count)?]
         } else {
-            return Err(PywrError::V1SchemaConversion(format!(
-                "ControlCurvePiecewiseInterpolatedParameter '{}' has no control curves defined.",
-                &meta.name,
-            )));
+            return Err(ConversionError::MissingAttribute {
+                name: meta.name,
+                attrs: vec!["control_curves".to_string(), "control_curve".to_string()],
+            });
         };
 
         let p = Self {

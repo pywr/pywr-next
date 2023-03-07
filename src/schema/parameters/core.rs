@@ -1,4 +1,5 @@
 use crate::schema::data_tables::LoadedTableCollection;
+use crate::schema::error::ConversionError;
 use crate::schema::parameters::{
     ConstantValue, DynamicFloatValue, DynamicFloatValueType, IntoV2Parameter, ParameterMeta, TryFromV1Parameter,
     TryIntoV2Parameter,
@@ -37,7 +38,7 @@ impl ConstantParameter {
 }
 
 impl TryFromV1Parameter<ConstantParameterV1> for ConstantParameter {
-    type Error = PywrError;
+    type Error = ConversionError;
 
     fn try_from_v1_parameter(
         v1: ConstantParameterV1,
@@ -93,7 +94,7 @@ impl MaxParameter {
 }
 
 impl TryFromV1Parameter<MaxParameterV1> for MaxParameter {
-    type Error = PywrError;
+    type Error = ConversionError;
 
     fn try_from_v1_parameter(
         v1: MaxParameterV1,
@@ -144,7 +145,7 @@ impl NegativeParameter {
 }
 
 impl TryFromV1Parameter<NegativeParameterV1> for NegativeParameter {
-    type Error = PywrError;
+    type Error = ConversionError;
 
     fn try_from_v1_parameter(
         v1: NegativeParameterV1,

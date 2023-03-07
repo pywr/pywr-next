@@ -1,4 +1,5 @@
 use crate::schema::data_tables::LoadedTableCollection;
+use crate::schema::error::ConversionError;
 use crate::schema::nodes::NodeMeta;
 use crate::schema::parameters::{DynamicFloatValue, TryIntoV2Parameter};
 use crate::PywrError;
@@ -99,7 +100,7 @@ impl PiecewiseLinkNode {
 }
 
 impl TryFrom<PiecewiseLinkNodeV1> for PiecewiseLinkNode {
-    type Error = PywrError;
+    type Error = ConversionError;
 
     fn try_from(v1: PiecewiseLinkNodeV1) -> Result<Self, Self::Error> {
         let meta: NodeMeta = v1.meta.into();

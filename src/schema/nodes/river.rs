@@ -1,3 +1,4 @@
+use crate::schema::error::ConversionError;
 use crate::schema::nodes::NodeMeta;
 use crate::schema::parameters::DynamicFloatValue;
 use crate::PywrError;
@@ -29,26 +30,31 @@ impl RiverNode {
 }
 
 impl TryFrom<LinkNodeV1> for RiverNode {
-    type Error = PywrError;
+    type Error = ConversionError;
 
     fn try_from(v1: LinkNodeV1) -> Result<Self, Self::Error> {
+        let meta: NodeMeta = v1.meta.into();
+
         if v1.max_flow.is_some() {
-            return Err(PywrError::V1SchemaConversion(
-                "River node can not have a `max_flow`".to_string(),
-            ));
+            return Err(ConversionError::ExtraNodeAttribute {
+                name: meta.name,
+                attr: "max_flow".to_string(),
+            });
         }
         if v1.min_flow.is_some() {
-            return Err(PywrError::V1SchemaConversion(
-                "River node can not have a `min_flow`".to_string(),
-            ));
+            return Err(ConversionError::ExtraNodeAttribute {
+                name: meta.name,
+                attr: "min_flow".to_string(),
+            });
         }
         if v1.cost.is_some() {
-            return Err(PywrError::V1SchemaConversion(
-                "River node can not have a `cost`".to_string(),
-            ));
+            return Err(ConversionError::ExtraNodeAttribute {
+                name: meta.name,
+                attr: "cost".to_string(),
+            });
         }
 
-        let n = Self { meta: v1.meta.into() };
+        let n = Self { meta };
         Ok(n)
     }
 }

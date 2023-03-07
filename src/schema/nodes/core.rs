@@ -1,5 +1,6 @@
 use crate::node::{ConstraintValue, StorageInitialVolume};
 use crate::schema::data_tables::LoadedTableCollection;
+use crate::schema::error::ConversionError;
 use crate::schema::nodes::NodeMeta;
 use crate::schema::parameters::{ConstantValue, DynamicFloatValue, TryIntoV2Parameter};
 use crate::PywrError;
@@ -74,7 +75,7 @@ impl InputNode {
 }
 
 impl TryFrom<InputNodeV1> for InputNode {
-    type Error = PywrError;
+    type Error = ConversionError;
 
     fn try_from(v1: InputNodeV1) -> Result<Self, Self::Error> {
         let meta: NodeMeta = v1.meta.into();
@@ -84,6 +85,7 @@ impl TryFrom<InputNodeV1> for InputNode {
             .max_flow
             .map(|v| v.try_into_v2_parameter(Some(&meta.name), &mut unnamed_count))
             .transpose()?;
+
         let min_flow = v1
             .min_flow
             .map(|v| v.try_into_v2_parameter(Some(&meta.name), &mut unnamed_count))
@@ -166,7 +168,7 @@ impl LinkNode {
 }
 
 impl TryFrom<LinkNodeV1> for LinkNode {
-    type Error = PywrError;
+    type Error = ConversionError;
 
     fn try_from(v1: LinkNodeV1) -> Result<Self, Self::Error> {
         let meta: NodeMeta = v1.meta.into();
@@ -259,7 +261,7 @@ impl OutputNode {
 }
 
 impl TryFrom<OutputNodeV1> for OutputNode {
-    type Error = PywrError;
+    type Error = ConversionError;
 
     fn try_from(v1: OutputNodeV1) -> Result<Self, Self::Error> {
         let meta: NodeMeta = v1.meta.into();
@@ -366,7 +368,7 @@ impl StorageNode {
 }
 
 impl TryFrom<StorageNodeV1> for StorageNode {
-    type Error = PywrError;
+    type Error = ConversionError;
 
     fn try_from(v1: StorageNodeV1) -> Result<Self, Self::Error> {
         let meta: NodeMeta = v1.meta.into();
@@ -375,12 +377,37 @@ impl TryFrom<StorageNodeV1> for StorageNode {
         let cost = v1
             .cost
             .map(|v| v.try_into_v2_parameter(Some(&meta.name), &mut unnamed_count))
-            .transpose()?;
+            .transpose()
+            .map_err(|source| ConversionError::NodeAttribute {
+                attr: "cost".to_string(),
+                name: meta.name.clone(),
+                source: Box::new(source),
+            })?;
+
+        let max_volume =
+            v1.max_volume
+                .map(|v| v.try_into())
+                .transpose()
+                .map_err(|source| ConversionError::NodeAttribute {
+                    attr: "max_volume".to_string(),
+                    name: meta.name.clone(),
+                    source: Box::new(source),
+                })?;
+
+        let min_volume =
+            v1.min_volume
+                .map(|v| v.try_into())
+                .transpose()
+                .map_err(|source| ConversionError::NodeAttribute {
+                    attr: "min_volume".to_string(),
+                    name: meta.name.clone(),
+                    source: Box::new(source),
+                })?;
 
         let n = Self {
             meta,
-            max_volume: v1.max_volume.map(|v| v.try_into()).transpose()?,
-            min_volume: v1.min_volume.map(|v| v.try_into()).transpose()?,
+            max_volume,
+            min_volume,
             cost,
             initial_volume: v1.initial_volume,
             initial_volume_pc: v1.initial_volume_pc,
@@ -390,7 +417,7 @@ impl TryFrom<StorageNodeV1> for StorageNode {
 }
 
 impl TryFrom<ReservoirNodeV1> for StorageNode {
-    type Error = PywrError;
+    type Error = ConversionError;
 
     fn try_from(v1: ReservoirNodeV1) -> Result<Self, Self::Error> {
         let meta: NodeMeta = v1.meta.into();
@@ -469,7 +496,7 @@ impl CatchmentNode {
 }
 
 impl TryFrom<CatchmentNodeV1> for CatchmentNode {
-    type Error = PywrError;
+    type Error = ConversionError;
 
     fn try_from(v1: CatchmentNodeV1) -> Result<Self, Self::Error> {
         let meta: NodeMeta = v1.meta.into();
@@ -571,7 +598,7 @@ impl AggregatedNode {
 }
 
 impl TryFrom<AggregatedNodeV1> for AggregatedNode {
-    type Error = PywrError;
+    type Error = ConversionError;
 
     fn try_from(v1: AggregatedNodeV1) -> Result<Self, Self::Error> {
         let meta: NodeMeta = v1.meta.into();
@@ -640,7 +667,7 @@ impl AggregatedStorageNode {
 }
 
 impl TryFrom<AggregatedStorageNodeV1> for AggregatedStorageNode {
-    type Error = PywrError;
+    type Error = ConversionError;
 
     fn try_from(v1: AggregatedStorageNodeV1) -> Result<Self, Self::Error> {
         let n = Self {
