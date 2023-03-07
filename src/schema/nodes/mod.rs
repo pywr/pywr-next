@@ -175,12 +175,13 @@ impl CoreNode {
         &self,
         model: &mut crate::model::Model,
         tables: &LoadedTableCollection,
+        data_path: Option<&Path>,
     ) -> Result<(), PywrError> {
         match self {
             CoreNode::Input(n) => n.add_to_model(model),
             CoreNode::Link(n) => n.add_to_model(model),
             CoreNode::Output(n) => n.add_to_model(model),
-            CoreNode::Storage(n) => n.add_to_model(model, tables),
+            CoreNode::Storage(n) => n.add_to_model(model, tables, data_path),
             CoreNode::Catchment(n) => n.add_to_model(model),
             CoreNode::RiverGauge(n) => n.add_to_model(model),
             CoreNode::LossLink(n) => n.add_to_model(model),
@@ -189,8 +190,8 @@ impl CoreNode {
             CoreNode::WaterTreatmentWorks(n) => n.add_to_model(model),
             CoreNode::Aggregated(n) => n.add_to_model(model),
             CoreNode::AggregatedStorage(n) => n.add_to_model(model),
-            CoreNode::VirtualStorage(n) => n.add_to_model(model, tables),
-            CoreNode::AnnualVirtualStorage(n) => n.add_to_model(model, tables),
+            CoreNode::VirtualStorage(n) => n.add_to_model(model, tables, data_path),
+            CoreNode::AnnualVirtualStorage(n) => n.add_to_model(model, tables, data_path),
             CoreNode::PiecewiseLink(n) => n.add_to_model(model),
             CoreNode::Delay(n) => n.add_to_model(model),
         }
@@ -307,9 +308,10 @@ impl Node {
         &self,
         model: &mut crate::model::Model,
         tables: &LoadedTableCollection,
+        data_path: Option<&Path>,
     ) -> Result<(), PywrError> {
         match self {
-            Node::Core(n) => n.add_to_model(model, tables),
+            Node::Core(n) => n.add_to_model(model, tables, data_path),
             Node::Custom(n) => panic!("TODO custom nodes not yet supported: {}", n.meta.name.as_str()),
         }
     }
@@ -386,11 +388,11 @@ impl TryFrom<Box<CoreNodeV1>> for CoreNode {
             CoreNodeV1::PiecewiseLink(n) => Self::PiecewiseLink(n.try_into()?),
             CoreNodeV1::MultiSplitLink(_) => todo!(),
             CoreNodeV1::BreakLink(_) => todo!(),
-            CoreNodeV1::Delay(_) => todo!(),
-            CoreNodeV1::RiverSplit(_) => todo!(),
-            CoreNodeV1::MonthlyVirtualStorage(_) => todo!(),
-            CoreNodeV1::SeasonalVirtualStorage(_) => todo!(),
-            CoreNodeV1::RollingVirtualStorage(_) => todo!(),
+            CoreNodeV1::Delay(n) => Self::Delay(n.try_into()?),
+            CoreNodeV1::RiverSplit(_) => todo!("Conversion of RiverSplit nodes"),
+            CoreNodeV1::MonthlyVirtualStorage(_) => todo!("Conversion of MonthlyVirtualStorage nodes"),
+            CoreNodeV1::SeasonalVirtualStorage(_) => todo!("Conversion of SeasonalVirtualStorage nodes"),
+            CoreNodeV1::RollingVirtualStorage(_) => todo!("Conversion of RollingVirtualStorage nodes"),
         };
 
         Ok(n)

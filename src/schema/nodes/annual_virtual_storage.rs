@@ -2,10 +2,11 @@ use crate::node::{ConstraintValue, StorageInitialVolume};
 use crate::schema::data_tables::LoadedTableCollection;
 use crate::schema::error::ConversionError;
 use crate::schema::nodes::NodeMeta;
-use crate::schema::parameters::{ConstantValue, DynamicFloatValue, TryIntoV2Parameter};
+use crate::schema::parameters::{DynamicFloatValue, TryIntoV2Parameter};
 use crate::virtual_storage::VirtualStorageReset;
 use crate::PywrError;
 use pywr_schema::nodes::AnnualVirtualStorageNode as AnnualVirtualStorageNodeV1;
+use std::path::Path;
 
 #[derive(serde::Deserialize, serde::Serialize, Clone)]
 pub struct AnnualReset {
@@ -20,8 +21,8 @@ pub struct AnnualVirtualStorageNode {
     pub meta: NodeMeta,
     pub nodes: Vec<String>,
     pub factors: Option<Vec<f64>>,
-    pub max_volume: Option<ConstantValue<f64>>,
-    pub min_volume: Option<ConstantValue<f64>>,
+    pub max_volume: Option<DynamicFloatValue>,
+    pub min_volume: Option<DynamicFloatValue>,
     pub cost: Option<DynamicFloatValue>,
     pub initial_volume: Option<f64>,
     pub initial_volume_pc: Option<f64>,
@@ -33,6 +34,7 @@ impl AnnualVirtualStorageNode {
         &self,
         model: &mut crate::model::Model,
         tables: &LoadedTableCollection,
+        data_path: Option<&Path>,
     ) -> Result<(), PywrError> {
         // TODO this initial volume should be used??
         let initial_volume = if let Some(iv) = self.initial_volume {
@@ -44,12 +46,12 @@ impl AnnualVirtualStorageNode {
         };
 
         let min_volume = match &self.min_volume {
-            Some(v) => v.load(tables)?,
-            None => 0.0,
+            Some(v) => v.load(model, tables, data_path)?.into(),
+            None => ConstraintValue::Scalar(0.0),
         };
 
         let max_volume = match &self.max_volume {
-            Some(v) => ConstraintValue::Scalar(v.load(tables)?),
+            Some(v) => v.load(model, tables, data_path)?.into(),
             None => ConstraintValue::None,
         };
 
@@ -98,13 +100,22 @@ impl TryFrom<AnnualVirtualStorageNodeV1> for AnnualVirtualStorageNode {
             .cost
             .map(|v| v.try_into_v2_parameter(Some(&meta.name), &mut unnamed_count))
             .transpose()?;
+        let max_volume = v1
+            .max_volume
+            .map(|v| v.try_into_v2_parameter(Some(&meta.name), &mut unnamed_count))
+            .transpose()?;
+
+        let min_volume = v1
+            .min_volume
+            .map(|v| v.try_into_v2_parameter(Some(&meta.name), &mut unnamed_count))
+            .transpose()?;
 
         let n = Self {
             meta,
             nodes: v1.nodes,
             factors: v1.factors,
-            max_volume: v1.max_volume.map(|v| v.try_into()).transpose()?,
-            min_volume: v1.min_volume.map(|v| v.try_into()).transpose()?,
+            max_volume,
+            min_volume,
             cost,
             initial_volume: v1.initial_volume,
             initial_volume_pc: v1.initial_volume_pc,

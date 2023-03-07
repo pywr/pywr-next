@@ -136,7 +136,7 @@ impl PywrModel {
             let mut failed_nodes: Vec<Node> = Vec::new();
             let n = remaining_nodes.len();
             for node in remaining_nodes.into_iter() {
-                if let Err(e) = node.add_to_model(&mut model, &tables) {
+                if let Err(e) = node.add_to_model(&mut model, &tables, data_path) {
                     // Adding the node failed!
                     match e {
                         PywrError::NodeNotFound(_) => failed_nodes.push(node),

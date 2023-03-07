@@ -74,7 +74,7 @@ pub fn simple_storage_model() -> Model {
             "reservoir",
             None,
             StorageInitialVolume::Absolute(100.0),
-            0.0,
+            ConstraintValue::Scalar(0.0),
             ConstraintValue::Scalar(100.0),
         )
         .unwrap();

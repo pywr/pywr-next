@@ -1098,7 +1098,7 @@ impl Model {
         name: &str,
         sub_name: Option<&str>,
         initial_volume: StorageInitialVolume,
-        min_volume: f64,
+        min_volume: ConstraintValue,
         max_volume: ConstraintValue,
     ) -> Result<NodeIndex, PywrError> {
         // Check for name.
@@ -1155,7 +1155,7 @@ impl Model {
         nodes: &[NodeIndex],
         factors: Option<&[f64]>,
         initial_volume: StorageInitialVolume,
-        min_volume: f64,
+        min_volume: ConstraintValue,
         max_volume: ConstraintValue,
         reset: VirtualStorageReset,
     ) -> Result<VirtualStorageIndex, PywrError> {
@@ -1359,7 +1359,7 @@ mod tests {
                 "my-node",
                 None,
                 StorageInitialVolume::Absolute(10.0),
-                0.0,
+                ConstraintValue::Scalar(0.0),
                 ConstraintValue::Scalar(10.0)
             ),
             Err(PywrError::NodeNameAlreadyExists("my-node".to_string()))

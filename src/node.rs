@@ -85,7 +85,7 @@ impl NodeVec {
         name: &str,
         sub_name: Option<&str>,
         initial_volume: StorageInitialVolume,
-        min_volume: f64,
+        min_volume: ConstraintValue,
         max_volume: ConstraintValue,
     ) -> NodeIndex {
         let node_index = NodeIndex(self.nodes.len());
@@ -145,7 +145,7 @@ impl Node {
         name: &str,
         sub_name: Option<&str>,
         initial_volume: StorageInitialVolume,
-        min_volume: f64,
+        min_volume: ConstraintValue,
         max_volume: ConstraintValue,
     ) -> Self {
         Self::Storage(StorageNode::new(
@@ -345,14 +345,7 @@ impl Node {
                 self.set_min_flow_constraint(value.clone())?;
                 self.set_max_flow_constraint(value)?;
             }
-            Constraint::MinVolume => match value {
-                ConstraintValue::Scalar(v) => self.set_min_volume_constraint(v)?,
-                _ => {
-                    return Err(PywrError::InvalidConstraintValue(
-                        "min_volume must be a scalar!".to_string(),
-                    ))
-                }
-            },
+            Constraint::MinVolume => self.set_min_volume_constraint(value)?,
             Constraint::MaxVolume => self.set_max_volume_constraint(value)?,
         }
         Ok(())
@@ -431,7 +424,7 @@ impl Node {
         }
     }
 
-    pub fn set_min_volume_constraint(&mut self, value: f64) -> Result<(), PywrError> {
+    pub fn set_min_volume_constraint(&mut self, value: ConstraintValue) -> Result<(), PywrError> {
         match self {
             Self::Input(_) => Err(PywrError::StorageConstraintsUndefined),
             Self::Link(_) => Err(PywrError::StorageConstraintsUndefined),
@@ -443,12 +436,12 @@ impl Node {
         }
     }
 
-    pub fn get_current_min_volume(&self) -> Result<f64, PywrError> {
+    pub fn get_current_min_volume(&self, model: &Model, state: &State) -> Result<f64, PywrError> {
         match self {
             Self::Input(_) => Err(PywrError::StorageConstraintsUndefined),
             Self::Link(_) => Err(PywrError::StorageConstraintsUndefined),
             Self::Output(_) => Err(PywrError::StorageConstraintsUndefined),
-            Self::Storage(n) => Ok(n.get_min_volume()),
+            Self::Storage(n) => n.get_min_volume(model, state),
         }
     }
 
@@ -474,14 +467,20 @@ impl Node {
     }
 
     pub fn get_current_volume_bounds(&self, model: &Model, state: &State) -> Result<(f64, f64), PywrError> {
-        match (self.get_current_min_volume(), self.get_current_max_volume(model, state)) {
+        match (
+            self.get_current_min_volume(model, state),
+            self.get_current_max_volume(model, state),
+        ) {
             (Ok(min_vol), Ok(max_vol)) => Ok((min_vol, max_vol)),
             _ => Err(PywrError::FlowConstraintsUndefined),
         }
     }
 
     pub fn get_current_available_volume_bounds(&self, model: &Model, state: &State) -> Result<(f64, f64), PywrError> {
-        match (self.get_current_min_volume(), self.get_current_max_volume(model, state)) {
+        match (
+            self.get_current_min_volume(model, state),
+            self.get_current_max_volume(model, state),
+        ) {
             (Ok(min_vol), Ok(max_vol)) => {
                 let current_volume = state.get_network_state().get_node_volume(&self.index())?;
 
@@ -599,19 +598,23 @@ impl FlowConstraints {
 
 #[derive(Debug, PartialEq)]
 pub struct StorageConstraints {
-    pub(crate) min_volume: f64,
+    pub(crate) min_volume: ConstraintValue,
     pub(crate) max_volume: ConstraintValue,
 }
 
 impl StorageConstraints {
-    pub fn new(min_volume: f64, max_volume: ConstraintValue) -> Self {
+    pub fn new(min_volume: ConstraintValue, max_volume: ConstraintValue) -> Self {
         Self { min_volume, max_volume }
     }
     /// Return the current minimum volume from the parameter state
     ///
     /// Defaults to zero if no parameter is defined.
-    pub fn get_min_volume(&self) -> f64 {
-        self.min_volume
+    pub fn get_min_volume(&self, model: &Model, state: &State) -> Result<f64, PywrError> {
+        match &self.min_volume {
+            ConstraintValue::None => Ok(f64::MAX),
+            ConstraintValue::Scalar(v) => Ok(*v),
+            ConstraintValue::Metric(m) => m.get_value(model, state),
+        }
     }
     /// Return the current maximum volume from the parameter state
     ///
@@ -793,7 +796,7 @@ impl StorageNode {
         name: &str,
         sub_name: Option<&str>,
         initial_volume: StorageInitialVolume,
-        min_volume: f64,
+        min_volume: ConstraintValue,
         max_volume: ConstraintValue,
     ) -> Self {
         Self {
@@ -832,12 +835,12 @@ impl StorageNode {
             ConstraintValue::Metric(m) => m.get_value(model, state),
         }
     }
-    fn set_min_volume(&mut self, value: f64) {
+    fn set_min_volume(&mut self, value: ConstraintValue) {
         // TODO use a set_min_volume method
         self.storage_constraints.min_volume = value;
     }
-    fn get_min_volume(&self) -> f64 {
-        self.storage_constraints.get_min_volume()
+    fn get_min_volume(&self, model: &Model, state: &State) -> Result<f64, PywrError> {
+        self.storage_constraints.get_min_volume(model, state)
     }
     fn set_max_volume(&mut self, value: ConstraintValue) {
         // TODO use a set_min_volume method

@@ -52,7 +52,7 @@ impl VirtualStorageVec {
         nodes: &[NodeIndex],
         factors: Option<&[f64]>,
         initial_volume: StorageInitialVolume,
-        min_volume: f64,
+        min_volume: ConstraintValue,
         max_volume: ConstraintValue,
         reset: VirtualStorageReset,
     ) -> VirtualStorageIndex {
@@ -97,7 +97,7 @@ impl VirtualStorage {
         nodes: &[NodeIndex],
         factors: Option<&[f64]>,
         initial_volume: StorageInitialVolume,
-        min_volume: f64,
+        min_volume: ConstraintValue,
         max_volume: ConstraintValue,
         reset: VirtualStorageReset,
     ) -> Self {
@@ -177,8 +177,8 @@ impl VirtualStorage {
             .map(|factors| self.nodes.iter().zip(factors.iter()).map(|(n, f)| (*n, *f)).collect())
     }
 
-    pub fn get_min_volume(&self) -> f64 {
-        self.storage_constraints.get_min_volume()
+    pub fn get_min_volume(&self, model: &Model, state: &State) -> Result<f64, PywrError> {
+        self.storage_constraints.get_min_volume(model, state)
     }
 
     pub fn get_max_volume(&self, model: &Model, state: &State) -> Result<f64, PywrError> {
@@ -186,7 +186,7 @@ impl VirtualStorage {
     }
 
     pub fn get_current_available_volume_bounds(&self, model: &Model, state: &State) -> Result<(f64, f64), PywrError> {
-        let min_vol = self.get_min_volume();
+        let min_vol = self.get_min_volume(model, state)?;
         let max_vol = self.get_max_volume(model, state)?;
 
         let current_volume = state.get_network_state().get_virtual_storage_volume(&self.index())?;
@@ -236,7 +236,7 @@ mod tests {
             &[link_node0, link_node1],
             Some(&[2.0, 1.0]),
             StorageInitialVolume::Absolute(100.0),
-            0.0,
+            ConstraintValue::Scalar(0.0),
             ConstraintValue::Scalar(100.0),
             VirtualStorageReset::Never,
         );

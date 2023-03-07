@@ -2,7 +2,7 @@ use crate::node::{ConstraintValue, StorageInitialVolume};
 use crate::schema::data_tables::LoadedTableCollection;
 use crate::schema::error::ConversionError;
 use crate::schema::nodes::NodeMeta;
-use crate::schema::parameters::{ConstantValue, DynamicFloatValue, TryIntoV2Parameter};
+use crate::schema::parameters::{DynamicFloatValue, TryIntoV2Parameter};
 use crate::PywrError;
 use pywr_schema::nodes::{
     AggregatedNode as AggregatedNodeV1, AggregatedStorageNode as AggregatedStorageNodeV1,
@@ -294,8 +294,8 @@ impl TryFrom<OutputNodeV1> for OutputNode {
 pub struct StorageNode {
     #[serde(flatten)]
     pub meta: NodeMeta,
-    pub max_volume: Option<ConstantValue<f64>>, // TODO allow this to be a dynamic value
-    pub min_volume: Option<ConstantValue<f64>>,
+    pub max_volume: Option<DynamicFloatValue>,
+    pub min_volume: Option<DynamicFloatValue>,
     pub cost: Option<DynamicFloatValue>,
     pub initial_volume: Option<f64>,
     pub initial_volume_pc: Option<f64>,
@@ -321,6 +321,7 @@ impl StorageNode {
         &self,
         model: &mut crate::model::Model,
         tables: &LoadedTableCollection,
+        data_path: Option<&Path>,
     ) -> Result<(), PywrError> {
         let initial_volume = if let Some(iv) = self.initial_volume {
             StorageInitialVolume::Absolute(iv)
@@ -331,12 +332,12 @@ impl StorageNode {
         };
 
         let min_volume = match &self.min_volume {
-            Some(v) => v.load(tables)?,
-            None => 0.0,
+            Some(v) => v.load(model, tables, data_path)?.into(),
+            None => ConstraintValue::Scalar(0.0),
         };
 
         let max_volume = match &self.max_volume {
-            Some(v) => ConstraintValue::Scalar(v.load(tables)?),
+            Some(v) => v.load(model, tables, data_path)?.into(),
             None => ConstraintValue::None,
         };
 
@@ -384,25 +385,25 @@ impl TryFrom<StorageNodeV1> for StorageNode {
                 source: Box::new(source),
             })?;
 
-        let max_volume =
-            v1.max_volume
-                .map(|v| v.try_into())
-                .transpose()
-                .map_err(|source| ConversionError::NodeAttribute {
-                    attr: "max_volume".to_string(),
-                    name: meta.name.clone(),
-                    source: Box::new(source),
-                })?;
+        let max_volume = v1
+            .max_volume
+            .map(|v| v.try_into_v2_parameter(Some(&meta.name), &mut unnamed_count))
+            .transpose()
+            .map_err(|source| ConversionError::NodeAttribute {
+                attr: "max_volume".to_string(),
+                name: meta.name.clone(),
+                source: Box::new(source),
+            })?;
 
-        let min_volume =
-            v1.min_volume
-                .map(|v| v.try_into())
-                .transpose()
-                .map_err(|source| ConversionError::NodeAttribute {
-                    attr: "min_volume".to_string(),
-                    name: meta.name.clone(),
-                    source: Box::new(source),
-                })?;
+        let min_volume = v1
+            .min_volume
+            .map(|v| v.try_into_v2_parameter(Some(&meta.name), &mut unnamed_count))
+            .transpose()
+            .map_err(|source| ConversionError::NodeAttribute {
+                attr: "min_volume".to_string(),
+                name: meta.name.clone(),
+                source: Box::new(source),
+            })?;
 
         let n = Self {
             meta,
@@ -428,10 +429,20 @@ impl TryFrom<ReservoirNodeV1> for StorageNode {
             .map(|v| v.try_into_v2_parameter(Some(&meta.name), &mut unnamed_count))
             .transpose()?;
 
+        let max_volume = v1
+            .max_volume
+            .map(|v| v.try_into_v2_parameter(Some(&meta.name), &mut unnamed_count))
+            .transpose()?;
+
+        let min_volume = v1
+            .min_volume
+            .map(|v| v.try_into_v2_parameter(Some(&meta.name), &mut unnamed_count))
+            .transpose()?;
+
         let n = Self {
             meta,
-            max_volume: v1.max_volume.map(|v| v.try_into()).transpose()?,
-            min_volume: v1.min_volume.map(|v| v.try_into()).transpose()?,
+            max_volume,
+            min_volume,
             cost,
             initial_volume: v1.initial_volume,
             initial_volume_pc: v1.initial_volume_pc,
