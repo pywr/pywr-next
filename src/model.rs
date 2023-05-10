@@ -1292,7 +1292,9 @@ mod tests {
     use crate::recorders::AssertionRecorder;
     use crate::scenario::{ScenarioGroupCollection, ScenarioIndex};
 
-    use crate::solvers::{ClIpmF64Solver, ClpSolver, HighsSolver};
+    #[cfg(feature = "highs")]
+    use crate::solvers::HighsSolver;
+    use crate::solvers::{ClIpmF64Solver, ClpSolver};
     use crate::test_utils::{default_timestepper, simple_model, simple_storage_model};
     use float_cmp::approx_eq;
     use ndarray::Array2;
@@ -1456,6 +1458,7 @@ mod tests {
         model.add_recorder(Box::new(recorder)).unwrap();
 
         model.run::<ClpSolver>(&timestepper, &RunOptions::default()).unwrap();
+        #[cfg(feature = "highs")]
         model.run::<HighsSolver>(&timestepper, &RunOptions::default()).unwrap();
     }
 

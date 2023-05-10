@@ -9,10 +9,14 @@ mod builder;
 mod clipm;
 mod clp;
 mod col_edge_map;
+
+#[cfg(feature = "highs")]
 mod highs;
 
 pub use self::clipm::{ClIpmF32Solver, ClIpmF64Solver};
 pub use clp::{ClpError, ClpSolver};
+
+#[cfg(feature = "highs")]
 pub use highs::HighsSolver;
 
 #[derive(Default)]

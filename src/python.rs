@@ -2,7 +2,9 @@ use crate::aggregated_node::AggregatedNodeIndex;
 use crate::model::{Model, RunOptions};
 use crate::recorders::hdf::HDF5Recorder;
 use crate::schema::model::PywrModel;
-use crate::solvers::{ClIpmF32Solver, ClIpmF64Solver, ClpSolver, HighsSolver};
+#[cfg(feature = "highs")]
+use crate::solvers::HighsSolver;
+use crate::solvers::{ClIpmF32Solver, ClIpmF64Solver, ClpSolver};
 use crate::timestep::Timestepper;
 use crate::virtual_storage::VirtualStorageIndex;
 use crate::{IndexParameterIndex, ParameterIndex, RecorderIndex};
@@ -706,6 +708,7 @@ fn run_model_from_string(
     py.allow_threads(|| {
         match solver_name.as_str() {
             "clp" => model.run::<ClpSolver>(&timestepper, &options),
+            #[cfg(feature = "highs")]
             "highs" => model.run::<HighsSolver>(&timestepper, &options),
             "clipm-f32" => model.run_multi_scenario::<ClIpmF32Solver>(&timestepper),
             "clipm-f64" => model.run_multi_scenario::<ClIpmF64Solver>(&timestepper),
