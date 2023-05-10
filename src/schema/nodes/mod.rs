@@ -2,6 +2,7 @@ mod annual_virtual_storage;
 mod core;
 mod delay;
 mod loss_link;
+mod monthly_virtual_storage;
 mod piecewise_link;
 mod river;
 mod river_gauge;
@@ -20,6 +21,7 @@ use crate::schema::parameters::DynamicFloatValue;
 use crate::PywrError;
 pub use annual_virtual_storage::AnnualVirtualStorageNode;
 pub use loss_link::LossLinkNode;
+pub use monthly_virtual_storage::MonthlyVirtualStorageNode;
 pub use piecewise_link::{PiecewiseLinkNode, PiecewiseLinkStep};
 use pywr_schema::nodes::{
     CoreNode as CoreNodeV1, CustomNode as CustomNodeV1, Node as NodeV1, NodeMeta as NodeMetaV1,
@@ -108,6 +110,7 @@ pub enum CoreNode {
     AggregatedStorage(AggregatedStorageNode),
     VirtualStorage(VirtualStorageNode),
     AnnualVirtualStorage(AnnualVirtualStorageNode),
+    MonthlyVirtualStorage(MonthlyVirtualStorageNode),
 }
 
 impl CoreNode {
@@ -137,6 +140,7 @@ impl CoreNode {
             CoreNode::AnnualVirtualStorage(_) => "AnnualVirtualStorage",
             CoreNode::PiecewiseLink(_) => "PiecewiseLink",
             CoreNode::Delay(_) => "Delay",
+            CoreNode::MonthlyVirtualStorage(_) => "MonthlyVirtualStorage",
         }
     }
 
@@ -158,6 +162,7 @@ impl CoreNode {
             CoreNode::AnnualVirtualStorage(n) => &n.meta,
             CoreNode::PiecewiseLink(n) => &n.meta,
             CoreNode::Delay(n) => &n.meta,
+            CoreNode::MonthlyVirtualStorage(n) => &n.meta,
         }
     }
 
@@ -194,6 +199,7 @@ impl CoreNode {
             CoreNode::AnnualVirtualStorage(n) => n.add_to_model(model, tables, data_path),
             CoreNode::PiecewiseLink(n) => n.add_to_model(model),
             CoreNode::Delay(n) => n.add_to_model(model),
+            CoreNode::MonthlyVirtualStorage(n) => n.add_to_model(model, tables, data_path),
         }
     }
 
@@ -220,6 +226,7 @@ impl CoreNode {
             CoreNode::AnnualVirtualStorage(_) => Ok(()), // TODO
             CoreNode::PiecewiseLink(n) => n.set_constraints(model, tables, data_path),
             CoreNode::Delay(n) => n.set_constraints(model, tables),
+            CoreNode::MonthlyVirtualStorage(_) => Ok(()), // TODO
         }
     }
 
@@ -240,6 +247,7 @@ impl CoreNode {
             CoreNode::AggregatedStorage(n) => n.input_connectors(),
             CoreNode::VirtualStorage(n) => n.input_connectors(),
             CoreNode::AnnualVirtualStorage(n) => n.input_connectors(),
+            CoreNode::MonthlyVirtualStorage(n) => n.input_connectors(),
             CoreNode::PiecewiseLink(n) => n.input_connectors(),
             CoreNode::Delay(n) => n.input_connectors(),
         }
@@ -262,6 +270,7 @@ impl CoreNode {
             CoreNode::AggregatedStorage(n) => n.output_connectors(),
             CoreNode::VirtualStorage(n) => n.output_connectors(),
             CoreNode::AnnualVirtualStorage(n) => n.output_connectors(),
+            CoreNode::MonthlyVirtualStorage(n) => n.output_connectors(),
             CoreNode::PiecewiseLink(n) => n.output_connectors(),
             CoreNode::Delay(n) => n.output_connectors(),
         }
@@ -390,7 +399,7 @@ impl TryFrom<Box<CoreNodeV1>> for CoreNode {
             CoreNodeV1::BreakLink(_) => todo!(),
             CoreNodeV1::Delay(n) => Self::Delay(n.try_into()?),
             CoreNodeV1::RiverSplit(_) => todo!("Conversion of RiverSplit nodes"),
-            CoreNodeV1::MonthlyVirtualStorage(_) => todo!("Conversion of MonthlyVirtualStorage nodes"),
+            CoreNodeV1::MonthlyVirtualStorage(n) => Self::MonthlyVirtualStorage(n.try_into()?),
             CoreNodeV1::SeasonalVirtualStorage(_) => todo!("Conversion of SeasonalVirtualStorage nodes"),
             CoreNodeV1::RollingVirtualStorage(_) => todo!("Conversion of RollingVirtualStorage nodes"),
         };

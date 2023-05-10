@@ -17,6 +17,8 @@ pub enum ConversionError {
     ConstantFloatInlineParameter,
     #[error("Missing one of the following attributes {attrs:?} on parameter {name:?}.")]
     MissingAttribute { attrs: Vec<String>, name: String },
+    #[error("Unexpected the following attributes {attrs:?} on parameter {name:?}.")]
+    UnexpectedAttribute { attrs: Vec<String>, name: String },
     #[error("Can not convert a float constant to an index constant.")]
     FloatToIndex,
     #[error("Attribute {attr:?} is not allowed on node {name:?}.")]

@@ -1,10 +1,10 @@
 use crate::model::Model;
 use crate::node::{ConstraintValue, FlowConstraints, NodeMeta, StorageConstraints, StorageInitialVolume};
-use crate::state::{State, StorageState};
+use crate::state::{State, VirtualStorageState};
 use crate::timestep::Timestep;
 use crate::{NodeIndex, PywrError};
 use std::ops::{Deref, DerefMut};
-use time::Month;
+use time::{Date, Month};
 
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Debug)]
 pub struct VirtualStorageIndex(usize);
@@ -76,6 +76,7 @@ impl VirtualStorageVec {
 pub enum VirtualStorageReset {
     Never,
     DayOfYear { day: u8, month: Month },
+    NumberOfMonths { months: i32 },
 }
 
 // #[derive(Debug)]
@@ -134,8 +135,8 @@ impl VirtualStorage {
         self.factors.is_some()
     }
 
-    pub fn default_state(&self) -> StorageState {
-        StorageState::new(0.0)
+    pub fn default_state(&self) -> VirtualStorageState {
+        VirtualStorageState::new(0.0)
     }
 
     pub fn before(&self, timestep: &Timestep, model: &Model, state: &mut State) -> Result<(), PywrError> {
@@ -149,6 +150,17 @@ impl VirtualStorage {
                 VirtualStorageReset::DayOfYear { day, month } => {
                     (timestep.date.day() == day) && (timestep.date.month() == month)
                 }
+                VirtualStorageReset::NumberOfMonths { months } => {
+                    // Get the date when the virtual storage was last reset
+                    match state
+                        .get_network_state()
+                        .get_virtual_storage_last_reset(&self.index())?
+                    {
+                        // Reset if last reset is more than `months` ago.
+                        Some(last_reset) => months_since_last_reset(&timestep.date, &last_reset.date) >= months,
+                        None => true,
+                    }
+                }
             }
         };
 
@@ -161,7 +173,7 @@ impl VirtualStorage {
                 }
             };
 
-            state.set_virtual_storage_node_volume(*self.meta.index(), volume)?;
+            state.reset_virtual_storage_node_volume(*self.meta.index(), volume, timestep)?;
         }
 
         Ok(())
@@ -197,6 +209,11 @@ impl VirtualStorage {
     }
 }
 
+/// Calculate the number of months between `current` [Timestep] and the `last_reset` [Timestep].
+fn months_since_last_reset(current: &Date, last_reset: &Date) -> i32 {
+    (current.year() - last_reset.year()) * 12 + current.month() as i32 - last_reset.month() as i32
+}
+
 #[cfg(test)]
 mod tests {
     use crate::metric::Metric;
@@ -207,7 +224,29 @@ mod tests {
     use crate::solvers::ClpSolver;
     use crate::test_utils::default_timestepper;
     use crate::timestep::Timestep;
-    use crate::virtual_storage::VirtualStorageReset;
+    use crate::virtual_storage::{months_since_last_reset, VirtualStorageReset};
+    use time::macros::date;
+
+    /// Test the calculation of number of months since last reset
+    #[test]
+    fn test_months_since_last_reset() {
+        assert_eq!(
+            months_since_last_reset(&date!(2022 - 12 - 31), &date!(2022 - 12 - 31)),
+            0
+        );
+        assert_eq!(
+            months_since_last_reset(&date!(2023 - 12 - 31), &date!(2022 - 12 - 31)),
+            12
+        );
+        assert_eq!(
+            months_since_last_reset(&date!(2023 - 01 - 1), &date!(2022 - 12 - 31)),
+            1
+        );
+        assert_eq!(
+            months_since_last_reset(&date!(2022 - 12 - 1), &date!(2022 - 12 - 31)),
+            0
+        );
+    }
 
     /// Test the virtual storage constraints
     #[test]

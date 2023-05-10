@@ -102,7 +102,6 @@ pub struct ControlCurveIndexParameter {
     #[serde(flatten)]
     pub meta: ParameterMeta,
     pub control_curves: Vec<DynamicFloatValue>,
-    pub values: Option<Vec<DynamicFloatValue>>,
     pub storage_node: String,
 }
 
@@ -155,22 +154,52 @@ impl TryFromV1Parameter<ControlCurveIndexParameterV1> for ControlCurveIndexParam
             .map(|p| p.try_into_v2_parameter(Some(&meta.name), unnamed_count))
             .collect::<Result<Vec<_>, _>>()?;
 
-        let values = if let Some(parameters) = v1.parameters {
-            Some(
-                parameters
-                    .into_iter()
-                    .map(|p| p.try_into_v2_parameter(Some(&meta.name), unnamed_count))
-                    .collect::<Result<Vec<_>, _>>()?,
-            )
+        let p = Self {
+            meta,
+            control_curves,
+            storage_node: v1.storage_node,
+        };
+        Ok(p)
+    }
+}
+
+/// Pywr v1.x ControlCurveParameter can be an index parameter if it is not given "values"
+/// or "parameters" keys.
+impl TryFromV1Parameter<ControlCurveParameterV1> for ControlCurveIndexParameter {
+    type Error = ConversionError;
+
+    fn try_from_v1_parameter(
+        v1: ControlCurveParameterV1,
+        parent_node: Option<&str>,
+        unnamed_count: &mut usize,
+    ) -> Result<Self, Self::Error> {
+        let meta: ParameterMeta = v1.meta.into_v2_parameter(parent_node, unnamed_count);
+
+        let control_curves = if let Some(control_curves) = v1.control_curves {
+            control_curves
+                .into_iter()
+                .map(|p| p.try_into_v2_parameter(Some(&meta.name), unnamed_count))
+                .collect::<Result<Vec<_>, _>>()?
+        } else if let Some(control_curve) = v1.control_curve {
+            vec![control_curve.try_into_v2_parameter(Some(&meta.name), unnamed_count)?]
         } else {
-            None
+            return Err(ConversionError::MissingAttribute {
+                name: meta.name,
+                attrs: vec!["control_curves".to_string(), "control_curve".to_string()],
+            });
+        };
+
+        if v1.values.is_some() || v1.parameters.is_some() {
+            return Err(ConversionError::UnexpectedAttribute {
+                name: meta.name,
+                attrs: vec!["values".to_string(), "parameters".to_string()],
+            });
         };
 
         let p = Self {
             meta,
             control_curves,
             storage_node: v1.storage_node,
-            values,
         };
         Ok(p)
     }

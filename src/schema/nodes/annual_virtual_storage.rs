@@ -36,7 +36,6 @@ impl AnnualVirtualStorageNode {
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
     ) -> Result<(), PywrError> {
-        // TODO this initial volume should be used??
         let initial_volume = if let Some(iv) = self.initial_volume {
             StorageInitialVolume::Absolute(iv)
         } else if let Some(pc) = self.initial_volume_pc {
@@ -66,7 +65,6 @@ impl AnnualVirtualStorageNode {
             month: self.reset.month,
         };
 
-        // TODO this should be an annual virtual storage!
         model.add_virtual_storage_node(
             self.meta.name.as_str(),
             None,

@@ -122,6 +122,43 @@ impl StorageState {
 }
 
 #[derive(Clone, Copy, Debug, Default)]
+pub struct VirtualStorageState {
+    last_reset: Option<Timestep>,
+    storage: StorageState,
+}
+
+impl VirtualStorageState {
+    pub fn new(initial_volume: f64) -> Self {
+        Self {
+            last_reset: None,
+            storage: StorageState::new(initial_volume),
+        }
+    }
+
+    fn reset(&mut self) {
+        self.storage.reset();
+        // Volume remains unchanged
+    }
+
+    /// Reset the volume to a new value storing the `timestep`
+    fn reset_volume(&mut self, volume: f64, timestep: &Timestep) {
+        self.storage.volume = volume;
+        self.last_reset = Some(*timestep);
+    }
+
+    fn add_in_flow(&mut self, flow: f64, timestep: &Timestep) {
+        self.storage.add_in_flow(flow, timestep);
+    }
+    fn add_out_flow(&mut self, flow: f64, timestep: &Timestep) {
+        self.storage.add_out_flow(flow, timestep);
+    }
+
+    fn proportional_volume(&self, max_volume: f64) -> f64 {
+        self.storage.proportional_volume(max_volume)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default)]
 pub struct EdgeState {
     flow: f64,
 }
@@ -276,14 +313,14 @@ impl ParameterValues {
 pub struct NetworkState {
     node_states: Vec<NodeState>,
     edge_states: Vec<EdgeState>,
-    virtual_storage_states: Vec<StorageState>,
+    virtual_storage_states: Vec<VirtualStorageState>,
 }
 
 impl NetworkState {
     pub fn new(
         initial_node_states: Vec<NodeState>,
         num_edges: usize,
-        initial_virtual_storage_states: Vec<StorageState>,
+        initial_virtual_storage_states: Vec<VirtualStorageState>,
     ) -> Self {
         Self {
             node_states: initial_node_states,
@@ -416,12 +453,17 @@ impl NetworkState {
         Ok(())
     }
 
-    pub fn set_virtual_storage_volume(&mut self, idx: VirtualStorageIndex, volume: f64) -> Result<(), PywrError> {
+    pub fn reset_virtual_storage_volume(
+        &mut self,
+        idx: VirtualStorageIndex,
+        volume: f64,
+        timestep: &Timestep,
+    ) -> Result<(), PywrError> {
         // TODO handle these errors properly
         if let Some(s) = self.virtual_storage_states.get_mut(*idx.deref()) {
-            s.volume = volume
+            s.reset_volume(volume, timestep)
         } else {
-            panic!("Virtual storage bode state not found.")
+            panic!("Virtual storage node state not found.")
         }
 
         Ok(())
@@ -429,7 +471,7 @@ impl NetworkState {
 
     pub fn get_virtual_storage_volume(&self, node_index: &VirtualStorageIndex) -> Result<f64, PywrError> {
         match self.virtual_storage_states.get(*node_index.deref()) {
-            Some(s) => Ok(s.volume),
+            Some(s) => Ok(s.storage.volume),
             None => Err(PywrError::NodeIndexNotFound), // TODO should be a specific VS error
         }
     }
@@ -441,6 +483,16 @@ impl NetworkState {
     ) -> Result<f64, PywrError> {
         match self.virtual_storage_states.get(*node_index.deref()) {
             Some(s) => Ok(s.proportional_volume(max_volume)),
+            None => Err(PywrError::NodeIndexNotFound), // TODO should be a specific VS error
+        }
+    }
+
+    pub fn get_virtual_storage_last_reset(
+        &self,
+        node_index: &VirtualStorageIndex,
+    ) -> Result<&Option<Timestep>, PywrError> {
+        match self.virtual_storage_states.get(*node_index.deref()) {
+            Some(s) => Ok(&s.last_reset),
             None => Err(PywrError::NodeIndexNotFound), // TODO should be a specific VS error
         }
     }
@@ -457,7 +509,7 @@ impl State {
     pub fn new(
         initial_node_states: Vec<NodeState>,
         num_edges: usize,
-        initial_virtual_storage_states: Vec<StorageState>,
+        initial_virtual_storage_states: Vec<VirtualStorageState>,
         num_parameter_values: usize,
         num_parameter_indices: usize,
         num_multi_parameters: usize,
@@ -512,7 +564,12 @@ impl State {
         self.network.set_volume(idx, volume)
     }
 
-    pub fn set_virtual_storage_node_volume(&mut self, idx: VirtualStorageIndex, volume: f64) -> Result<(), PywrError> {
-        self.network.set_virtual_storage_volume(idx, volume)
+    pub fn reset_virtual_storage_node_volume(
+        &mut self,
+        idx: VirtualStorageIndex,
+        volume: f64,
+        timestep: &Timestep,
+    ) -> Result<(), PywrError> {
+        self.network.reset_virtual_storage_volume(idx, volume, timestep)
     }
 }

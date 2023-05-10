@@ -305,9 +305,10 @@ impl TryFromV1Parameter<ParameterV1> for Parameter {
                 CoreParameter::ControlCurveIndex(p) => {
                     Parameter::ControlCurveIndex(p.try_into_v2_parameter(parent_node, unnamed_count)?)
                 }
-                CoreParameter::ControlCurve(p) => {
-                    Parameter::ControlCurve(p.try_into_v2_parameter(parent_node, unnamed_count)?)
-                }
+                CoreParameter::ControlCurve(p) => match p.clone().try_into_v2_parameter(parent_node, unnamed_count) {
+                    Ok(p) => Parameter::ControlCurve(p),
+                    Err(_) => Parameter::ControlCurveIndex(p.try_into_v2_parameter(parent_node, unnamed_count)?),
+                },
                 CoreParameter::DailyProfile(p) => {
                     Parameter::DailyProfile(p.try_into_v2_parameter(parent_node, unnamed_count)?)
                 }
