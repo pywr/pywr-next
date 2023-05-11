@@ -26,7 +26,7 @@ svgbobdoc = { version = "0.3.0", features = ["enable"]  }
 log = "0.4.17"
 pyo3-log = "0.8.0"
 indicatif = "0.17.2"
-highs-sys = {  git = "https://github.com/Thell/highs-sys", branch="feature-flags", optional = true }
+highs-sys = {  git = "https://github.com/jetuk/highs-sys", branch="fix-build-libz-linking", optional = true }
 # highs-sys = { path = "../../highs-sys" }
 pyo3 = { version = "0.18.0" }
 rayon = "1.6.1"
