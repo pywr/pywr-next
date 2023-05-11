@@ -22,6 +22,6 @@ jobs:
         sudo apt-get update
         sudo apt-get install libhdf5-dev ocl-icd-opencl-dev zlib1g-dev
     - name: Build
-      run: cargo build --verbose
+      run: cargo build --verbose --no-default-features
     - name: Run tests
       run: cargo test --no-default-features
