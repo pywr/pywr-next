@@ -63,7 +63,7 @@ impl Timestepper {
     }
 
     /// Create a vector of `Timestep`s between the start and end dates at the given duration.
-    pub(crate) fn timesteps(&self) -> Vec<Timestep> {
+    pub fn timesteps(&self) -> Vec<Timestep> {
         let mut timesteps: Vec<Timestep> = Vec::new();
         let mut current = Timestep::new(self.start, 0, self.timestep);
 

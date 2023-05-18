@@ -174,10 +174,18 @@ pub struct Model {
 
 impl Model {
     /// Setup the model and create the initial state for each scenario.
-    fn setup(
+    pub fn setup(
         &self,
         timesteps: &[Timestep],
-    ) -> Result<(Vec<State>, Vec<ParameterStates>, Vec<Option<Box<dyn Any>>>), PywrError> {
+    ) -> Result<
+        (
+            Vec<ScenarioIndex>,
+            Vec<State>,
+            Vec<ParameterStates>,
+            Vec<Option<Box<dyn Any>>>,
+        ),
+        PywrError,
+    > {
         let scenario_indices = self.scenarios.scenario_indices();
         let mut states: Vec<State> = Vec::with_capacity(scenario_indices.len());
         let mut parameter_internal_states: Vec<ParameterStates> = Vec::with_capacity(scenario_indices.len());
@@ -232,10 +240,15 @@ impl Model {
             recorder_internal_states.push(initial_state);
         }
 
-        Ok((states, parameter_internal_states, recorder_internal_states))
+        Ok((
+            scenario_indices,
+            states,
+            parameter_internal_states,
+            recorder_internal_states,
+        ))
     }
 
-    fn setup_solver<S>(&self) -> Result<Vec<Box<S>>, PywrError>
+    pub fn setup_solver<S>(&self) -> Result<Vec<Box<S>>, PywrError>
     where
         S: Solver,
     {
@@ -273,12 +286,12 @@ impl Model {
     {
         let mut timings = RunTimings::default();
         let timesteps = timestepper.timesteps();
-        let scenario_indices = self.scenarios.scenario_indices();
 
         // Setup the solver
         let mut count = 0;
         // Setup the model and create the initial state
-        let (mut states, mut parameter_internal_states, mut recorder_internal_states) = self.setup(&timesteps)?;
+        let (scenario_indices, mut states, mut parameter_internal_states, mut recorder_internal_states) =
+            self.setup(&timesteps)?;
 
         let mut solvers = self.setup_solver::<S>()?;
 
@@ -343,12 +356,12 @@ impl Model {
     {
         let mut timings = RunTimings::default();
         let timesteps = timestepper.timesteps();
-        let scenario_indices = self.scenarios.scenario_indices();
 
         // Setup the solver
         let mut count = 0;
         // Setup the model and create the initial state
-        let (mut states, mut parameter_internal_states, mut recorder_internal_states) = self.setup(&timesteps)?;
+        let (scenario_indices, mut states, mut parameter_internal_states, mut recorder_internal_states) =
+            self.setup(&timesteps)?;
 
         let mut solver = self.setup_multi_scenario::<S>(&scenario_indices)?;
 
@@ -383,7 +396,7 @@ impl Model {
     }
 
     /// Perform a single timestep mutating the current state.
-    pub(crate) fn step<S>(
+    pub fn step<S>(
         &self,
         timestep: &Timestep,
         scenario_indices: &[ScenarioIndex],
@@ -1395,7 +1408,6 @@ mod tests {
     #[test]
     fn test_step() {
         let model = simple_model(2);
-        let scenario_indices = model.get_scenario_indices();
 
         let timestepper = default_timestepper();
 
@@ -1404,7 +1416,7 @@ mod tests {
         let mut ts_iter = timesteps.iter();
 
         let ts = ts_iter.next().unwrap();
-        let (mut current_state, mut p_internal, _r_internal) = model.setup(&timesteps).unwrap();
+        let (scenario_indices, mut current_state, mut p_internal, _r_internal) = model.setup(&timesteps).unwrap();
 
         let mut solvers = model.setup_solver::<ClpSolver>().unwrap();
         assert_eq!(current_state.len(), scenario_indices.len());
