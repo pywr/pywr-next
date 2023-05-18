@@ -8,7 +8,7 @@ use crate::PywrError;
 use std::path::Path;
 use time::Date;
 
-#[derive(serde::Deserialize, serde::Serialize)]
+#[derive(serde::Deserialize, serde::Serialize, Clone)]
 pub struct Metadata {
     pub title: String,
     pub description: Option<String>,
@@ -27,7 +27,7 @@ impl TryFrom<pywr_schema::model::Metadata> for Metadata {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize)]
+#[derive(serde::Deserialize, serde::Serialize, Clone)]
 #[serde(untagged)]
 pub enum Timestep {
     Days(i64),
@@ -43,7 +43,7 @@ impl From<pywr_schema::model::Timestep> for Timestep {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize)]
+#[derive(serde::Deserialize, serde::Serialize, Clone)]
 pub struct Timestepper {
     pub start: Date,
     pub end: Date,
@@ -73,14 +73,14 @@ impl From<Timestepper> for crate::timestep::Timestepper {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize)]
+#[derive(serde::Deserialize, serde::Serialize, Clone)]
 pub struct Scenario {
     pub name: String,
     pub size: usize,
     pub ensemble_names: Option<Vec<String>>,
 }
 
-#[derive(serde::Deserialize, serde::Serialize)]
+#[derive(serde::Deserialize, serde::Serialize, Clone)]
 pub struct PywrModel {
     pub metadata: Metadata,
     pub timestepper: Timestepper,
@@ -268,6 +268,7 @@ mod tests {
     };
     use crate::solvers::ClpSolver;
     use ndarray::{Array1, Array2, Axis};
+    use std::path::PathBuf;
 
     fn simple1_str() -> &'static str {
         r#"

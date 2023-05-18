@@ -1,4 +1,4 @@
-#[derive(serde::Deserialize, serde::Serialize)]
+#[derive(serde::Deserialize, serde::Serialize, Clone)]
 pub struct Edge {
     pub from_node: String,
     pub to_node: String,
