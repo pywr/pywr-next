@@ -227,7 +227,7 @@ impl MultiValue {
 }
 
 // State of the parameters
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct ParameterValues {
     values: Vec<f64>,
     indices: Vec<usize>,
@@ -499,7 +499,7 @@ impl NetworkState {
 }
 
 /// State of the model simulation
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct State {
     network: NetworkState,
     parameters: ParameterValues,
