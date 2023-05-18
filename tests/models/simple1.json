@@ -1,4 +1,7 @@
 {
+  "metadata": {
+    "title": "The simplest model!"
+  },
   "timestepper": {
     "start": "2020-01-01",
     "end": "2020-12-31",
@@ -7,17 +10,20 @@
   "nodes": [
     {
       "name": "input1",
-      "type": "input"
+      "type": "Input"
     },
     {
       "name": "link1",
-      "type": "link"
+      "type": "Link"
     },
     {
       "name": "output1",
-      "type": "output",
+      "type": "Output",
       "cost": -10.0,
-      "max_flow": "demand"
+      "max_flow": {
+        "type": "Parameter",
+        "name": "demand"
+      }
     }
   ],
   "edges": [
@@ -33,7 +39,7 @@
   "parameters": [
     {
       "name": "demand",
-      "type": "constant",
+      "type": "Constant",
       "value": 10.0
     }
   ]
