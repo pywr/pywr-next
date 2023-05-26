@@ -7,7 +7,7 @@ use crate::scenario::ScenarioIndex;
 use crate::state::State;
 use crate::timestep::Timestep;
 use crate::PywrError;
-use float_cmp::{approx_eq, assert_approx_eq};
+use float_cmp::{approx_eq, assert_approx_eq, ApproxEq, F64Margin};
 use ndarray::prelude::*;
 use ndarray::Array2;
 use std::any::Any;
@@ -164,7 +164,7 @@ impl AssertionRecorder {
             expected_values,
             metric,
             ulps: ulps.unwrap_or(2),
-            epsilon: epsilon.unwrap_or(f64::EPSILON * 2.0),
+            epsilon: epsilon.unwrap_or(1e-8),
         }
     }
 }
@@ -190,13 +190,25 @@ impl Recorder for AssertionRecorder {
                 None => panic!("Simulation produced results out of range."),
             };
 
-            assert_approx_eq!(
-                f64,
-                self.metric.get_value(model, &state[scenario_index.index])?,
+            let actual_value = self.metric.get_value(model, &state[scenario_index.index])?;
+
+            if !actual_value.approx_eq(
                 expected_value,
-                epsilon = self.epsilon,
-                ulps = self.ulps
-            );
+                F64Margin {
+                    epsilon: self.epsilon,
+                    ulps: self.ulps,
+                },
+            ) {
+                panic!(
+                    r#"assertion failed: (actual approx_eq expected)
+recorder: `{}`
+timestep: `{:?}` ({})
+scenario: `{:?}`
+actual: `{:?}`
+expected: `{:?}`"#,
+                    self.meta.name, timestep.date, timestep.index, scenario_index.index, actual_value, expected_value
+                )
+            }
         }
 
         Ok(())

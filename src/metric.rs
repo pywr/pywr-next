@@ -9,6 +9,23 @@ use crate::virtual_storage::VirtualStorageIndex;
 use crate::PywrError;
 
 #[derive(Clone, Debug, PartialEq)]
+pub struct VolumeBetweenControlCurves {
+    max_volume: Box<Metric>,
+    upper: Option<Box<Metric>>,
+    lower: Option<Box<Metric>>,
+}
+
+impl VolumeBetweenControlCurves {
+    pub fn new(max_volume: Metric, upper: Option<Metric>, lower: Option<Metric>) -> Self {
+        Self {
+            max_volume: Box::new(max_volume),
+            upper: upper.map(Box::new),
+            lower: lower.map(Box::new),
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub enum Metric {
     NodeInFlow(NodeIndex),
     NodeOutFlow(NodeIndex),
@@ -24,6 +41,7 @@ pub enum Metric {
     MultiParameterValue((MultiValueParameterIndex, String)),
     VirtualStorageVolume(VirtualStorageIndex),
     VirtualStorageProportionalVolume(VirtualStorageIndex),
+    VolumeBetweenControlCurves(VolumeBetweenControlCurves),
     Constant(f64),
 }
 
@@ -94,6 +112,20 @@ impl Metric {
                 let flow = state.get_network_state().get_node_in_flow(idx)?;
                 let max_flow = node.get_current_max_flow(model, state)?;
                 Ok(max_flow - flow)
+            }
+            Metric::VolumeBetweenControlCurves(vol) => {
+                let max_volume = vol.max_volume.get_value(model, state)?;
+                let lower = vol
+                    .lower
+                    .as_ref()
+                    .map_or(Ok(0.0), |metric| metric.get_value(model, state))?;
+                let upper = vol
+                    .upper
+                    .as_ref()
+                    .map_or(Ok(1.0), |metric| metric.get_value(model, state))?;
+
+                // TODO handle invalid bounds
+                Ok(max_volume * (upper - lower))
             }
         }
     }
