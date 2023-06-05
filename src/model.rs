@@ -1305,9 +1305,11 @@ mod tests {
     use crate::recorders::AssertionRecorder;
     use crate::scenario::{ScenarioGroupCollection, ScenarioIndex};
 
+    #[cfg(feature = "clipm")]
+    use crate::solvers::ClIpmF64Solver;
+    use crate::solvers::ClpSolver;
     #[cfg(feature = "highs")]
     use crate::solvers::HighsSolver;
-    use crate::solvers::{ClIpmF64Solver, ClpSolver};
     use crate::test_utils::{default_timestepper, simple_model, simple_storage_model};
     use float_cmp::approx_eq;
     use ndarray::Array2;
@@ -1476,6 +1478,7 @@ mod tests {
 
     #[test]
     #[ignore]
+    #[cfg(feature = "clipm")]
     /// Test running a simple model with the OpenCL IPM solver
     fn test_run_cl_ipm() {
         let mut model = simple_model(10);

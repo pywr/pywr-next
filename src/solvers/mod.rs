@@ -6,6 +6,7 @@ use std::ops::{Add, AddAssign};
 use std::time::Duration;
 
 mod builder;
+#[cfg(feature = "clipm")]
 mod clipm;
 mod clp;
 mod col_edge_map;
@@ -13,6 +14,7 @@ mod col_edge_map;
 #[cfg(feature = "highs")]
 mod highs;
 
+#[cfg(feature = "clipm")]
 pub use self::clipm::{ClIpmF32Solver, ClIpmF64Solver};
 pub use clp::{ClpError, ClpSolver};
 

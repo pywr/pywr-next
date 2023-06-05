@@ -3,9 +3,11 @@ use clap::{Parser, Subcommand, ValueEnum};
 use pywr::model::{Model, RunOptions};
 use pywr::schema::model::PywrModel;
 use pywr::schema::ConversionError;
+use pywr::solvers::ClpSolver;
 #[cfg(feature = "highs")]
 use pywr::solvers::HighsSolver;
-use pywr::solvers::{ClIpmF32Solver, ClIpmF64Solver, ClpSolver};
+#[cfg(feature = "clipm")]
+use pywr::solvers::{ClIpmF32Solver, ClIpmF64Solver};
 use pywr::timestep::Timestepper;
 use pywr::PywrError;
 use std::fmt::{Display, Formatter};
@@ -16,7 +18,9 @@ enum Solver {
     Clp,
     #[cfg(feature = "highs")]
     HIGHS,
+    #[cfg(feature = "clipm")]
     CLIPMF32,
+    #[cfg(feature = "clipm")]
     CLIPMF64,
 }
 
@@ -26,7 +30,9 @@ impl Display for Solver {
             Solver::Clp => write!(f, "clp"),
             #[cfg(feature = "highs")]
             Solver::HIGHS => write!(f, "highs"),
+            #[cfg(feature = "clipm")]
             Solver::CLIPMF32 => write!(f, "clipmf32"),
+            #[cfg(feature = "clipm")]
             Solver::CLIPMF64 => write!(f, "clipmf64"),
         }
     }
@@ -152,7 +158,9 @@ fn run(path: &Path, solver: &Solver, data_path: Option<&Path>, options: &RunOpti
         Solver::Clp => model.run::<ClpSolver>(&timestepper, options),
         #[cfg(feature = "highs")]
         Solver::HIGHS => model.run::<HighsSolver>(&timestepper, options),
+        #[cfg(feature = "clipm")]
         Solver::CLIPMF32 => model.run_multi_scenario::<ClIpmF32Solver>(&timestepper),
+        #[cfg(feature = "clipm")]
         Solver::CLIPMF64 => model.run_multi_scenario::<ClIpmF64Solver>(&timestepper),
     }
     .unwrap();
