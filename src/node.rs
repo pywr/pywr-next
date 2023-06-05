@@ -484,8 +484,8 @@ impl Node {
             (Ok(min_vol), Ok(max_vol)) => {
                 let current_volume = state.get_network_state().get_node_volume(&self.index())?;
 
-                let available = (current_volume - min_vol).max(0.0);
-                let missing = (max_vol - current_volume).max(0.0);
+                let available = current_volume - min_vol;
+                let missing = max_vol - current_volume;
 
                 Ok((available, missing))
             }

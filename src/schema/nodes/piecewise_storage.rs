@@ -183,14 +183,18 @@ mod tests {
     use crate::timestep::Timestepper;
     use ndarray::Array2;
 
-    fn model_str() -> &'static str {
+    fn piecewise_storage1_str() -> &'static str {
         include_str!("../test_models/piecewise_storage1.json")
+    }
+
+    fn piecewise_storage2_str() -> &'static str {
+        include_str!("../test_models/piecewise_storage2.json")
     }
 
     /// Test running `piecewise_storage1.json`
     #[test]
     fn test_piecewise_storage1() {
-        let data = model_str();
+        let data = piecewise_storage1_str();
         let schema: PywrModel = serde_json::from_str(data).unwrap();
         let (mut model, timestepper): (crate::model::Model, Timestepper) = schema.try_into_model(None).unwrap();
 
@@ -202,13 +206,67 @@ mod tests {
             .get_aggregated_storage_node_index_by_name("storage1", None)
             .unwrap();
 
-        let expected = Array2::from_shape_fn((366, 1), |(i, j)| {
+        let expected = Array2::from_shape_fn((366, 1), |(i, _)| {
             if i < 33 {
                 // Draw-down top store at 15 until it is emptied
                 985.0 - i as f64 * 15.0
             } else if i < 58 {
                 // The second store activates the input (via costs) such that the net draw down is now 10
                 495.0 - (i as f64 - 33.0) * 10.0
+            } else {
+                // Finally the abstraction stops to maintain the bottom store at 250
+                250.0
+            }
+        });
+
+        let recorder = AssertionRecorder::new(
+            "storage1-volume",
+            Metric::AggregatedNodeVolume(idx),
+            expected,
+            None,
+            None,
+        );
+        model.add_recorder(Box::new(recorder)).unwrap();
+
+        model.run::<ClpSolver>(&timestepper, &RunOptions::default()).unwrap();
+    }
+
+    /// Test running `piecewise_storage2.json`
+    #[test]
+    fn test_piecewise_storage2() {
+        let data = piecewise_storage2_str();
+        let schema: PywrModel = serde_json::from_str(data).unwrap();
+        let (mut model, timestepper): (crate::model::Model, Timestepper) = schema.try_into_model(None).unwrap();
+
+        assert_eq!(model.nodes.len(), 5);
+        assert_eq!(model.edges.len(), 6);
+
+        // TODO put this assertion data in the test model file.
+        let idx = model
+            .get_aggregated_storage_node_index_by_name("storage1", None)
+            .unwrap();
+
+        let expected = Array2::from_shape_fn((366, 1), |(i, _)| {
+            if i < 49 {
+                // Draw-down top store at 5 until it is emptied (control curve starts at 75%)
+                995.0 - i as f64 * 5.0
+            } else if i < 89 {
+                // The second store activates the input (via costs) such that the net draw down is now 2
+                750.0 - (i as f64 - 49.0) * 2.0
+            } else if i < 123 {
+                // The control curve lowers such that the first store re-activates and therefore
+                // disables the input (via costs). The net draw down returns to 5
+                670.0 - (i as f64 - 89.0) * 5.0
+            } else if i < 180 {
+                // The second store re-activates the input (via costs) such that the net draw down is now 2
+                500.0 - (i as f64 - 123.0) * 2.0
+            } else if i < 198 {
+                // The control curve lowers (again) such that the first store re-activates and therefore
+                // disables the input (via costs). The net draw down returns to 5
+                386.0 - (i as f64 - 180.0) * 5.0
+            } else if i < 223 {
+                // The second store re-activates the input (via costs) such that the net draw down is now 2
+                299.0 - (i as f64 - 198.0) * 2.0
             } else {
                 // Finally the abstraction stops to maintain the bottom store at 250
                 250.0
