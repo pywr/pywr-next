@@ -691,7 +691,7 @@ fn run_model_from_string(
     // TODO handle the serde error properly
     let schema_v2: PywrModel = serde_json::from_str(data.as_str()).unwrap();
 
-    let (mut model, timestepper): (Model, Timestepper) = schema_v2.try_into_model(path.as_deref())?;
+    let (mut model, timestepper): (Model, Timestepper) = schema_v2.build_model(path.as_deref())?;
 
     if let Some(pth) = output_h5 {
         let metrics = model.get_node_default_metrics();

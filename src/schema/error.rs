@@ -1,7 +1,12 @@
 use thiserror::Error;
 
-#[derive(Error, Debug, PartialEq, Eq)]
-pub enum SchemaError {}
+#[derive(Error, Debug)]
+pub enum SchemaError {
+    #[error("IO error: {0}")]
+    IO(String),
+    #[error("JSON error: {0}")]
+    Json(#[from] serde_json::Error),
+}
 
 #[derive(Error, Debug, PartialEq, Eq)]
 pub enum ConversionError {

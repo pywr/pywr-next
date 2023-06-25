@@ -304,7 +304,7 @@ mod tests {
     fn test_model_run() {
         let data = model_str();
         let schema: PywrModel = serde_json::from_str(data).unwrap();
-        let (mut model, timestepper) = schema.try_into_model(None).unwrap();
+        let (mut model, timestepper) = schema.build_model(None).unwrap();
 
         assert_eq!(model.nodes.len(), 6);
         assert_eq!(model.edges.len(), 6);

@@ -11,6 +11,7 @@ mod river_split_with_gauge;
 mod virtual_storage;
 mod water_treatment_works;
 
+use crate::metric::Metric;
 use crate::schema::data_tables::LoadedTableCollection;
 use crate::schema::error::ConversionError;
 pub use crate::schema::nodes::core::{
@@ -284,6 +285,31 @@ impl CoreNode {
             CoreNode::Delay(n) => n.output_connectors(),
         }
     }
+
+    /// Returns the default metric for this node.
+    pub fn default_metric(&self, model: &crate::model::Model) -> Result<Metric, PywrError> {
+        match self {
+            CoreNode::Input(n) => n.default_metric(model),
+            // CoreNode::Link(n) => n.output_connectors(),
+            // CoreNode::Output(n) => n.output_connectors(),
+            // CoreNode::Storage(n) => n.output_connectors(),
+            // CoreNode::Catchment(n) => n.output_connectors(),
+            // CoreNode::RiverGauge(n) => n.output_connectors(),
+            // CoreNode::LossLink(n) => n.output_connectors(),
+            // CoreNode::River(n) => n.output_connectors(),
+            // CoreNode::RiverSplitWithGauge(n) => n.output_connectors(slot),
+            // CoreNode::WaterTreatmentWorks(n) => n.output_connectors(),
+            // // TODO output_connectors should not exist for these aggregated & virtual nodes
+            // CoreNode::Aggregated(n) => n.output_connectors(),
+            // CoreNode::AggregatedStorage(n) => n.output_connectors(),
+            // CoreNode::VirtualStorage(n) => n.output_connectors(),
+            // CoreNode::AnnualVirtualStorage(n) => n.output_connectors(),
+            // CoreNode::MonthlyVirtualStorage(n) => n.output_connectors(),
+            // CoreNode::PiecewiseLink(n) => n.output_connectors(),
+            // CoreNode::Delay(n) => n.output_connectors(),
+            _ => todo!(),
+        }
+    }
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Clone)]
@@ -356,6 +382,14 @@ impl Node {
     pub fn output_connectors(&self, slot: Option<&str>) -> Vec<(&str, Option<String>)> {
         match self {
             Node::Core(n) => n.output_connectors(slot),
+            Node::Custom(n) => panic!("TODO custom nodes not yet supported: {}", n.meta.name.as_str()),
+        }
+    }
+
+    /// Returns the default metric for this node.
+    pub fn default_metric(&self, model: &crate::model::Model) -> Result<Metric, PywrError> {
+        match self {
+            Node::Core(n) => n.default_metric(model),
             Node::Custom(n) => panic!("TODO custom nodes not yet supported: {}", n.meta.name.as_str()),
         }
     }

@@ -968,19 +968,11 @@ impl Model {
         }
     }
 
-    pub fn get_node_default_metrics(&self) -> Vec<(Metric, (String, Option<String>))> {
+    pub fn get_node_default_metrics(&self) -> Vec<Metric> {
         self.nodes
             .iter()
-            .map(|n| {
-                let metric = n.default_metric();
-                let (name, sub_name) = n.full_name();
-                (metric, (name.to_string(), sub_name.map(|s| s.to_string())))
-            })
-            .chain(self.aggregated_nodes.iter().map(|n| {
-                let metric = n.default_metric();
-                let (name, sub_name) = n.full_name();
-                (metric, (name.to_string(), sub_name.map(|s| s.to_string())))
-            }))
+            .map(|n| n.default_metric())
+            .chain(self.aggregated_nodes.iter().map(|n| n.default_metric()))
             .collect()
     }
 

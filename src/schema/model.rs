@@ -2,7 +2,8 @@ use super::edge::Edge;
 use super::nodes::Node;
 use super::parameters::Parameter;
 use crate::schema::data_tables::{DataTable, LoadedTableCollection};
-use crate::schema::error::ConversionError;
+use crate::schema::error::{ConversionError, SchemaError};
+use crate::schema::outputs::Output;
 use crate::schema::parameters::TryIntoV2Parameter;
 use crate::PywrError;
 use std::path::Path;
@@ -89,9 +90,15 @@ pub struct PywrModel {
     pub edges: Vec<Edge>,
     pub parameters: Option<Vec<Parameter>>,
     pub tables: Option<Vec<DataTable>>,
+    pub outputs: Option<Vec<Output>>,
 }
 
 impl PywrModel {
+    pub fn from_path<P: AsRef<Path>>(path: P) -> Result<Self, SchemaError> {
+        let data = std::fs::read_to_string(path).map_err(|e| SchemaError::IO(e.to_string()))?;
+        Ok(serde_json::from_str(data.as_str())?)
+    }
+
     pub fn get_node_by_name(&self, name: &str) -> Option<&Node> {
         self.nodes.iter().find(|n| n.name() == name)
     }
@@ -114,8 +121,8 @@ impl PywrModel {
         }
     }
 
-    pub fn try_into_model(
-        self,
+    pub fn build_model(
+        &self,
         data_path: Option<&Path>,
     ) -> Result<(crate::model::Model, crate::timestep::Timestepper), PywrError> {
         let mut model = crate::model::Model::default();
@@ -204,11 +211,18 @@ impl PywrModel {
         }
 
         // Apply the inline parameters & constraints to the nodes
-        for node in self.nodes {
+        for node in &self.nodes {
             node.set_constraints(&mut model, &tables, data_path)?;
         }
 
-        let timestepper = self.timestepper.into();
+        // Create all of the outputs
+        if let Some(outputs) = &self.outputs {
+            for output in outputs {
+                output.add_to_model(&mut model, self)?;
+            }
+        }
+
+        let timestepper = self.timestepper.clone().into();
 
         Ok((model, timestepper))
     }
@@ -243,6 +257,7 @@ impl TryFrom<pywr_schema::PywrModel> for PywrModel {
 
         // TODO convert v1 tables!
         let tables = None;
+        let outputs = None;
 
         Ok(Self {
             metadata,
@@ -252,6 +267,7 @@ impl TryFrom<pywr_schema::PywrModel> for PywrModel {
             edges,
             parameters,
             tables,
+            outputs,
         })
     }
 }
@@ -332,7 +348,7 @@ mod tests {
         let data = simple1_str();
         let schema: PywrModel = serde_json::from_str(data).unwrap();
         let (mut model, timestepper): (crate::model::Model, crate::timestep::Timestepper) =
-            schema.try_into_model(None).unwrap();
+            schema.build_model(None).unwrap();
 
         assert_eq!(model.nodes.len(), 3);
         assert_eq!(model.edges.len(), 2);
@@ -408,7 +424,7 @@ mod tests {
         }
 
         // TODO this could assert a specific type of error
-        assert!(schema.try_into_model(None).is_err());
+        assert!(schema.build_model(None).is_err());
     }
 
     /// Test that a model loads if the aggregated parameter is defined before its dependencies.
@@ -453,6 +469,6 @@ mod tests {
             ]);
         }
         // TODO this could assert a specific type of error
-        assert!(schema.try_into_model(None).is_ok());
+        assert!(schema.build_model(None).is_ok());
     }
 }

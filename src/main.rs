@@ -152,7 +152,7 @@ fn run(path: &Path, solver: &Solver, data_path: Option<&Path>, options: &RunOpti
     let data = std::fs::read_to_string(path).unwrap();
     let schema_v2: PywrModel = serde_json::from_str(data.as_str()).unwrap();
 
-    let (model, timestepper): (Model, Timestepper) = schema_v2.try_into_model(data_path).unwrap();
+    let (model, timestepper): (Model, Timestepper) = schema_v2.build_model(data_path).unwrap();
 
     match *solver {
         Solver::Clp => model.run::<ClpSolver>(&timestepper, options),

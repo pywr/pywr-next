@@ -58,5 +58,11 @@
         "name": "inflow"
       }
     }
+  ],
+  "outputs": [
+    {
+      "format": "CSV",
+      "url": "outputs.csv"
+    }
   ]
 }
