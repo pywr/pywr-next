@@ -11,7 +11,7 @@ rust-version = "1.60"
 libc = "0.2.97"
 thiserror = "1.0.25"
 ndarray = "0.15.3"
-numpy = "0.18.0"
+numpy = "0.19.0"
 num = "0.4.0"
 float-cmp = "0.9.0"
 hdf5 = { version="0.8.1" }
@@ -28,10 +28,10 @@ pyo3-log = "0.8.0"
 indicatif = "0.17.2"
 highs-sys = {  git = "https://github.com/jetuk/highs-sys", branch="fix-build-libz-linking", optional = true }
 # highs-sys = { path = "../../highs-sys" }
-pyo3 = { version = "0.18.0" }
+pyo3 = { version = "0.19.0" }
 rayon = "1.6.1"
-polars = { version = "0.28.0", features = ["lazy", "rows", "ndarray"] }
-pyo3-polars = "0.2.1"
+polars = { version = "0.30.0", features = ["lazy", "rows", "ndarray"] }
+pyo3-polars = "0.4.0"
 pywr-schema = { git = "https://github.com/pywr/pywr-schema/", tag="v0.6.0" }
 rhai = { version="1.12.0", features=["sync"] }
 
