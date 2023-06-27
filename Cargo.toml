@@ -18,7 +18,7 @@ hdf5 = { version="0.8.1" }
 csv = "1.1"
 clp-sys = { path = "./clp-sys" }
 clipm = { path = "./clipm", optional = true }
-wasmer = "2.3.0"
+wasmer = "4.0.0"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1.0"
 time = { version = "0.3", features = ["serde", "serde-well-known", "serde-human-readable", "macros"] }
