@@ -196,7 +196,7 @@ mod tests {
     fn test_piecewise_storage1() {
         let data = piecewise_storage1_str();
         let schema: PywrModel = serde_json::from_str(data).unwrap();
-        let (mut model, timestepper): (crate::model::Model, Timestepper) = schema.try_into_model(None).unwrap();
+        let (mut model, timestepper): (crate::model::Model, Timestepper) = schema.build_model(None).unwrap();
 
         assert_eq!(model.nodes.len(), 5);
         assert_eq!(model.edges.len(), 6);
@@ -236,7 +236,7 @@ mod tests {
     fn test_piecewise_storage2() {
         let data = piecewise_storage2_str();
         let schema: PywrModel = serde_json::from_str(data).unwrap();
-        let (mut model, timestepper): (crate::model::Model, Timestepper) = schema.try_into_model(None).unwrap();
+        let (mut model, timestepper): (crate::model::Model, Timestepper) = schema.build_model(None).unwrap();
 
         assert_eq!(model.nodes.len(), 5);
         assert_eq!(model.edges.len(), 6);

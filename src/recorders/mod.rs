@@ -1,6 +1,8 @@
-pub mod hdf;
-pub mod py;
+mod csv;
+mod hdf;
+mod py;
 
+pub use self::csv::CSVRecorder;
 use crate::metric::Metric;
 use crate::model::Model;
 use crate::scenario::ScenarioIndex;
@@ -8,6 +10,7 @@ use crate::state::State;
 use crate::timestep::Timestep;
 use crate::PywrError;
 use float_cmp::{approx_eq, assert_approx_eq, ApproxEq, F64Margin};
+pub use hdf::HDF5Recorder;
 use ndarray::prelude::*;
 use ndarray::Array2;
 use std::any::Any;

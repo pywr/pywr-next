@@ -1,4 +1,4 @@
-use crate::recorders::hdf::HDF5Recorder;
+use crate::recorders::HDF5Recorder;
 use crate::PywrError;
 use std::path::PathBuf;
 

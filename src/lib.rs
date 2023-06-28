@@ -109,6 +109,8 @@ pub enum PywrError {
     RecorderNotInitialised,
     #[error("hdf5 error: {0}")]
     HDF5Error(String),
+    #[error("csv error: {0}")]
+    CSVError(String),
     #[error("not implemented by recorder")]
     NotSupportedByRecorder,
     #[error("invalid constraint value: {0}")]

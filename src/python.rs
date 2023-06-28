@@ -1,6 +1,6 @@
 use crate::aggregated_node::AggregatedNodeIndex;
 use crate::model::{Model, RunOptions};
-use crate::recorders::hdf::HDF5Recorder;
+use crate::recorders::HDF5Recorder;
 use crate::schema::model::PywrModel;
 use crate::solvers::ClpSolver;
 #[cfg(feature = "highs")]

@@ -1,8 +1,10 @@
+use crate::recorders::CSVRecorder;
 use crate::PywrError;
 use std::path::PathBuf;
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
 pub struct CsvOutput {
+    name: String,
     filename: PathBuf,
     /// The node's to save output for
     nodes: Vec<String>,
@@ -30,11 +32,10 @@ impl CsvOutput {
             })
             .collect::<Result<Vec<_>, PywrError>>()?;
 
-        todo!("Implement CSV recorder");
-        // let recorder = CsvRecorder::new(&self.name, &self.filename, metrics);
-        //
-        // model.add_recorder(Box::new(recorder))?;
-        //
-        // Ok(())
+        let recorder = CSVRecorder::new(&self.name, &self.filename, metrics);
+
+        model.add_recorder(Box::new(recorder))?;
+
+        Ok(())
     }
 }
