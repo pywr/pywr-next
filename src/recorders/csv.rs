@@ -141,6 +141,11 @@ impl Recorder for CSVRecorder {
                 Metric::VolumeBetweenControlCurves(_) => {
                     todo!("Recording VolumeBetweenControlCurves not implemented.")
                 }
+                Metric::MultiNodeInFlow { name, sub_name, .. } => (
+                    name.to_string(),
+                    sub_name.clone().unwrap_or("".to_string()),
+                    "inflow".to_string(),
+                ),
             };
 
             // Add entries for each scenario

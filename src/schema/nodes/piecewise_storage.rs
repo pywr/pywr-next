@@ -171,6 +171,11 @@ impl PiecewiseStorageNode {
     pub fn output_connectors(&self) -> Vec<(&str, Option<String>)> {
         vec![(self.meta.name.as_str(), Self::step_sub_name(self.steps.len()))]
     }
+
+    pub fn default_metric(&self, model: &crate::model::Model) -> Result<Metric, PywrError> {
+        let idx = model.get_aggregated_storage_node_index_by_name(self.meta.name.as_str(), None)?;
+        Ok(Metric::AggregatedNodeVolume(idx))
+    }
 }
 
 #[cfg(test)]
@@ -196,7 +201,7 @@ mod tests {
     fn test_piecewise_storage1() {
         let data = piecewise_storage1_str();
         let schema: PywrModel = serde_json::from_str(data).unwrap();
-        let (mut model, timestepper): (crate::model::Model, Timestepper) = schema.build_model(None).unwrap();
+        let (mut model, timestepper): (crate::model::Model, Timestepper) = schema.build_model(None, None).unwrap();
 
         assert_eq!(model.nodes.len(), 5);
         assert_eq!(model.edges.len(), 6);
@@ -236,7 +241,7 @@ mod tests {
     fn test_piecewise_storage2() {
         let data = piecewise_storage2_str();
         let schema: PywrModel = serde_json::from_str(data).unwrap();
-        let (mut model, timestepper): (crate::model::Model, Timestepper) = schema.build_model(None).unwrap();
+        let (mut model, timestepper): (crate::model::Model, Timestepper) = schema.build_model(None, None).unwrap();
 
         assert_eq!(model.nodes.len(), 5);
         assert_eq!(model.edges.len(), 6);

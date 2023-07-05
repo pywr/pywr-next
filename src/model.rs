@@ -829,6 +829,22 @@ impl Model {
         }
     }
 
+    /// Get a `AggregatedNodeIndex` from a node's name
+    pub fn get_aggregated_node_index_by_name(
+        &self,
+        name: &str,
+        sub_name: Option<&str>,
+    ) -> Result<AggregatedNodeIndex, PywrError> {
+        match self
+            .aggregated_nodes
+            .iter()
+            .find(|&n| n.full_name() == (name, sub_name))
+        {
+            Some(node) => Ok(node.index()),
+            None => Err(PywrError::NodeNotFound(name.to_string())),
+        }
+    }
+
     pub fn set_aggregated_node_max_flow(
         &mut self,
         name: &str,
@@ -936,6 +952,16 @@ impl Model {
             Some(node) => Ok(node),
             None => Err(PywrError::NodeNotFound(name.to_string())),
         }
+    }
+
+    /// Get a `VirtualStorageNode` from a node's name
+    pub fn get_virtual_storage_node_index_by_name(
+        &self,
+        name: &str,
+        sub_name: Option<&str>,
+    ) -> Result<VirtualStorageIndex, PywrError> {
+        let node = self.get_virtual_storage_node_by_name(name, sub_name)?;
+        Ok(node.index())
     }
 
     pub fn get_storage_node_metric(

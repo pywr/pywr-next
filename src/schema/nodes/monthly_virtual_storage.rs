@@ -1,3 +1,4 @@
+use crate::metric::Metric;
 use crate::node::{ConstraintValue, StorageInitialVolume};
 use crate::schema::data_tables::LoadedTableCollection;
 use crate::schema::error::ConversionError;
@@ -82,6 +83,11 @@ impl MonthlyVirtualStorageNode {
 
     pub fn output_connectors(&self) -> Vec<(&str, Option<String>)> {
         vec![]
+    }
+
+    pub fn default_metric(&self, model: &crate::model::Model) -> Result<Metric, PywrError> {
+        let idx = model.get_virtual_storage_node_index_by_name(self.meta.name.as_str(), None)?;
+        Ok(Metric::VirtualStorageVolume(idx))
     }
 }
 

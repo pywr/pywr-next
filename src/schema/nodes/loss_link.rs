@@ -1,3 +1,4 @@
+use crate::metric::Metric;
 use crate::schema::data_tables::LoadedTableCollection;
 use crate::schema::error::ConversionError;
 use crate::schema::nodes::NodeMeta;
@@ -9,6 +10,7 @@ use std::path::Path;
 #[doc = svgbobdoc::transform!(
 /// This is used to represent link with losses.
 ///
+/// The default output metric for this node is the net flow.
 ///
 /// ```svgbob
 ///
@@ -86,6 +88,11 @@ impl LossLinkNode {
     pub fn output_connectors(&self) -> Vec<(&str, Option<String>)> {
         // Only net goes to the downstream.
         vec![(self.meta.name.as_str(), Self::net_sub_name().map(|s| s.to_string()))]
+    }
+
+    pub fn default_metric(&self, model: &crate::model::Model) -> Result<Metric, PywrError> {
+        let idx = model.get_node_index_by_name(self.meta.name.as_str(), Self::net_sub_name().as_deref())?;
+        Ok(Metric::NodeOutFlow(idx))
     }
 }
 

@@ -4,6 +4,7 @@ mod hdf;
 pub use self::csv::CsvOutput;
 use crate::PywrError;
 pub use hdf::Hdf5Output;
+use std::path::Path;
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
 #[serde(tag = "type")]
@@ -17,9 +18,10 @@ impl Output {
         &self,
         model: &mut crate::model::Model,
         schema: &crate::schema::PywrModel,
+        output_path: Option<&Path>,
     ) -> Result<(), PywrError> {
         match self {
-            Self::CSV(o) => o.add_to_model(model, schema),
+            Self::CSV(o) => o.add_to_model(model, schema, output_path),
             Self::HDF5(o) => o.add_to_model(model, schema),
         }
     }

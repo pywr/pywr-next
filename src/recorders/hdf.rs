@@ -138,6 +138,9 @@ impl Recorder for HDF5Recorder {
                 Metric::VolumeBetweenControlCurves(_) => {
                     continue; // TODO
                 }
+                Metric::MultiNodeInFlow { name, sub_name, .. } => {
+                    require_node_dataset(root_grp, shape, name, sub_name.as_deref(), "inflow")?
+                }
             };
 
             datasets.push(ds);

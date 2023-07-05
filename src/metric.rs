@@ -42,6 +42,12 @@ pub enum Metric {
     VirtualStorageVolume(VirtualStorageIndex),
     VirtualStorageProportionalVolume(VirtualStorageIndex),
     VolumeBetweenControlCurves(VolumeBetweenControlCurves),
+    MultiNodeInFlow {
+        indices: Vec<NodeIndex>,
+        name: String,
+        sub_name: Option<String>,
+    },
+    // TODO implement other MultiNodeXXX variants
     Constant(f64),
 }
 
@@ -106,6 +112,13 @@ impl Metric {
                     .sum::<Result<_, _>>()?;
                 // TODO handle divide by zero
                 Ok(volume / max_volume)
+            }
+            Metric::MultiNodeInFlow { indices, .. } => {
+                let flow = indices
+                    .iter()
+                    .map(|idx| state.get_network_state().get_node_in_flow(idx))
+                    .sum::<Result<_, _>>()?;
+                Ok(flow)
             }
             Metric::NodeInFlowDeficit(idx) => {
                 let node = model.get_node(idx)?;

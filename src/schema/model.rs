@@ -6,7 +6,7 @@ use crate::schema::error::{ConversionError, SchemaError};
 use crate::schema::outputs::Output;
 use crate::schema::parameters::TryIntoV2Parameter;
 use crate::PywrError;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use time::Date;
 
 #[derive(serde::Deserialize, serde::Serialize, Clone)]
@@ -99,6 +99,10 @@ impl PywrModel {
         Ok(serde_json::from_str(data.as_str())?)
     }
 
+    pub fn from_str(data: &str) -> Result<Self, SchemaError> {
+        Ok(serde_json::from_str(data)?)
+    }
+
     pub fn get_node_by_name(&self, name: &str) -> Option<&Node> {
         self.nodes.iter().find(|n| n.name() == name)
     }
@@ -124,6 +128,7 @@ impl PywrModel {
     pub fn build_model(
         &self,
         data_path: Option<&Path>,
+        output_path: Option<&Path>,
     ) -> Result<(crate::model::Model, crate::timestep::Timestepper), PywrError> {
         let mut model = crate::model::Model::default();
 
@@ -218,7 +223,7 @@ impl PywrModel {
         // Create all of the outputs
         if let Some(outputs) = &self.outputs {
             for output in outputs {
-                output.add_to_model(&mut model, self)?;
+                output.add_to_model(&mut model, self, output_path)?;
             }
         }
 
@@ -284,59 +289,14 @@ mod tests {
     };
     use crate::solvers::ClpSolver;
     use ndarray::{Array1, Array2, Axis};
-    use std::path::PathBuf;
 
-    fn simple1_str() -> &'static str {
-        r#"
-            {
-                "metadata": {
-                    "title": "Simple 1",
-                    "description": "A very simple example.",
-                    "minimum_version": "0.1"
-                },
-                "timestepper": {
-                    "start": "2015-01-01",
-                    "end": "2015-12-31",
-                    "timestep": 1
-                },
-                "nodes": [
-                    {
-                        "name": "supply1",
-                        "type": "Input",
-                        "max_flow": 15
-                    },
-                    {
-                        "name": "link1",
-                        "type": "Link"
-                    },
-                    {
-                        "name": "demand1",
-                        "type": "Output",
-                        "max_flow": {
-                            "type": "Parameter",
-                            "name": "demand"
-                        },
-                        "cost": -10
-                    }
-                ],
-                "edges": [
-                    {
-                        "from_node": "supply1",
-                        "to_node": "link1"
-                    },
-                    {
-                        "from_node": "link1",
-                        "to_node": "demand1"
-                    }
-                ],
-                "parameters": [{"name": "demand", "type": "Constant", "value": 10.0}]
-            }
-            "#
+    fn model_str() -> &'static str {
+        include_str!("./test_models/simple1.json")
     }
 
     #[test]
     fn test_simple1_schema() {
-        let data = simple1_str();
+        let data = model_str();
         let schema: PywrModel = serde_json::from_str(data).unwrap();
 
         assert_eq!(schema.nodes.len(), 3);
@@ -345,10 +305,10 @@ mod tests {
 
     #[test]
     fn test_simple1_run() {
-        let data = simple1_str();
+        let data = model_str();
         let schema: PywrModel = serde_json::from_str(data).unwrap();
         let (mut model, timestepper): (crate::model::Model, crate::timestep::Timestepper) =
-            schema.build_model(None).unwrap();
+            schema.build_model(None, None).unwrap();
 
         assert_eq!(model.nodes.len(), 3);
         assert_eq!(model.edges.len(), 2);
@@ -373,7 +333,7 @@ mod tests {
     /// Test that a cycle in parameter dependencies does not load.
     #[test]
     fn test_cycle_error() {
-        let data = simple1_str();
+        let data = model_str();
         let mut schema: PywrModel = serde_json::from_str(data).unwrap();
 
         // Add additional parameters for the test
@@ -424,13 +384,13 @@ mod tests {
         }
 
         // TODO this could assert a specific type of error
-        assert!(schema.build_model(None).is_err());
+        assert!(schema.build_model(None, None).is_err());
     }
 
     /// Test that a model loads if the aggregated parameter is defined before its dependencies.
     #[test]
     fn test_ordering() {
-        let data = simple1_str();
+        let data = model_str();
         let mut schema: PywrModel = serde_json::from_str(data).unwrap();
 
         if let Some(parameters) = &mut schema.parameters {
@@ -469,6 +429,6 @@ mod tests {
             ]);
         }
         // TODO this could assert a specific type of error
-        assert!(schema.build_model(None).is_ok());
+        assert!(schema.build_model(None, None).is_ok());
     }
 }
