@@ -1,0 +1,51 @@
+{
+  "metadata": {
+    "title": "PiecewiseStorage 1",
+    "description": "A test of PiecewiseStorageNode.",
+    "minimum_version": "0.1"
+  },
+  "timestepper": {
+    "start": "2015-01-01",
+    "end": "2015-12-31",
+    "timestep": 1
+  },
+  "nodes": [
+    {
+      "name": "input1",
+      "type": "Input",
+      "max_flow": 5,
+      "cost": 2.0
+    },
+    {
+      "name": "storage1",
+      "type": "PiecewiseStorage",
+      "max_volume": 1000.0,
+      "steps": [
+        {
+          "cost": -15.0,
+          "control_curve": 0.25
+        },
+        {
+          "cost": -5.0,
+          "control_curve": 0.5
+        }
+      ]
+    },
+    {
+      "name": "demand1",
+      "type": "Output",
+      "max_flow": 15.0,
+      "cost": -10
+    }
+  ],
+  "edges": [
+    {
+      "from_node": "input1",
+      "to_node": "storage1"
+    },
+    {
+      "from_node": "storage1",
+      "to_node": "demand1"
+    }
+  ]
+}

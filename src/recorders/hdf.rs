@@ -135,6 +135,9 @@ impl Recorder for HDF5Recorder {
                     let node = model.get_node(idx)?;
                     require_node_dataset(root_grp, shape, node.name(), node.sub_name(), "flow-deficit")?
                 }
+                Metric::VolumeBetweenControlCurves(_) => {
+                    continue; // TODO
+                }
             };
 
             datasets.push(ds);
