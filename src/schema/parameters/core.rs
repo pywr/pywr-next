@@ -63,8 +63,8 @@ pub enum ActivationFunction {
     /// let data = r#"
     ///     {
     ///         "type": "BinaryStep",
-    ///         "min_output": 0.0,
-    ///         "max_output": 10.0
+    ///         "on_value": 0.0,
+    ///         "off_value": 10.0
     ///     }"#;
     /// let a: ActivationFunction = serde_json::from_str(data)?;
     /// # Ok::<(), serde_json::Error>(())
@@ -83,7 +83,7 @@ pub enum ActivationFunction {
     ///     {
     ///         "type": "Logistic",
     ///         "growth_rate": 1.0,
-    ///         "max_output": 10.0
+    ///         "max": 10.0
     ///     }"#;
     /// let a: ActivationFunction = serde_json::from_str(data)?;
     /// # Ok::<(), serde_json::Error>(())
