@@ -40,7 +40,7 @@ pub fn simple_model(num_scenarios: usize) -> Model {
 
     let base_demand = 10.0;
 
-    let demand_factor = ConstantParameter::new("demand-factor", 1.2);
+    let demand_factor = ConstantParameter::new("demand-factor", 1.2, None);
     let demand_factor = model.add_parameter(Box::new(demand_factor)).unwrap();
 
     let total_demand = AggregatedParameter::new(
@@ -50,7 +50,7 @@ pub fn simple_model(num_scenarios: usize) -> Model {
     );
     let total_demand = model.add_parameter(Box::new(total_demand)).unwrap();
 
-    let demand_cost = ConstantParameter::new("demand-cost", -10.0);
+    let demand_cost = ConstantParameter::new("demand-cost", -10.0, None);
     let demand_cost = model.add_parameter(Box::new(demand_cost)).unwrap();
 
     let output_node = model.get_mut_node_by_name("output", None).unwrap();
@@ -84,10 +84,10 @@ pub fn simple_storage_model() -> Model {
 
     // Apply demand to the model
     // TODO convenience function for adding a constant constraint.
-    let demand = ConstantParameter::new("demand", 10.0);
+    let demand = ConstantParameter::new("demand", 10.0, None);
     let demand = model.add_parameter(Box::new(demand)).unwrap();
 
-    let demand_cost = ConstantParameter::new("demand-cost", -10.0);
+    let demand_cost = ConstantParameter::new("demand-cost", -10.0, None);
     let demand_cost = model.add_parameter(Box::new(demand_cost)).unwrap();
 
     let output_node = model.get_mut_node_by_name("output", None).unwrap();

@@ -18,7 +18,9 @@ pub use super::parameters::control_curves::{
     ControlCurveIndexParameter, ControlCurveInterpolatedParameter, ControlCurveParameter,
     ControlCurvePiecewiseInterpolatedParameter,
 };
-pub use super::parameters::core::{ConstantParameter, MaxParameter, NegativeParameter};
+pub use super::parameters::core::{
+    ActivationFunction, ConstantParameter, ConstantVariableSettings, MaxParameter, NegativeParameter,
+};
 pub use super::parameters::delay::DelayParameter;
 pub use super::parameters::indexed_array::IndexedArrayParameter;
 pub use super::parameters::polynomial::Polynomial1DParameter;
@@ -349,6 +351,7 @@ impl TryFromV1Parameter<ParameterV1> for Parameter {
                         comment: Some(comment),
                     },
                     value: ConstantValue::Literal(0.0),
+                    variable: None,
                 })
             }
         };
@@ -707,5 +710,27 @@ impl<'a> From<&'a DynamicFloatValue> for DynamicFloatValueType<'a> {
 impl<'a> From<&'a Vec<DynamicFloatValue>> for DynamicFloatValueType<'a> {
     fn from(v: &'a Vec<DynamicFloatValue>) -> Self {
         Self::List(v)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::schema::parameters::Parameter;
+    use std::fs;
+    use std::path::PathBuf;
+
+    /// Test all of the documentation examples successfully deserialize.
+    #[test]
+    fn test_doc_examples() {
+        let mut doc_examples = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        doc_examples.push("src/schema/parameters/doc_examples");
+
+        for entry in fs::read_dir(doc_examples).unwrap() {
+            let p = entry.unwrap().path();
+            if p.is_file() {
+                let data = fs::read_to_string(p).unwrap();
+                let _: Parameter = serde_json::from_str(&data).unwrap();
+            }
+        }
     }
 }

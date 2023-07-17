@@ -1,0 +1,16 @@
+{
+    "type": "Aggregated",
+    "agg_func": "sum",
+    "parameters": [
+        3.1415,
+        {
+            "table": "demands",
+            "index": "my-node"
+        },
+        "my-other-parameter",
+        {
+            "type": "MonthlyProfile",
+            "values": []
+        }
+    ]
+}

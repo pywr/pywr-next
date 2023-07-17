@@ -1,7 +1,9 @@
+mod activation_function;
 mod aggregated;
 mod aggregated_index;
 mod array;
 mod asymmetric;
+mod constant;
 mod control_curves;
 mod delay;
 mod indexed_array;
@@ -13,6 +15,7 @@ mod py;
 mod rhai;
 pub mod simple_wasm;
 mod threshold;
+mod vector;
 
 use std::any::Any;
 // Re-imports
@@ -22,10 +25,12 @@ use crate::model::Model;
 use crate::scenario::ScenarioIndex;
 use crate::state::{MultiValue, State};
 use crate::timestep::Timestep;
+pub use activation_function::ActivationFunction;
 pub use aggregated::{AggFunc, AggregatedParameter};
 pub use aggregated_index::{AggIndexFunc, AggregatedIndexParameter};
 pub use array::{Array1Parameter, Array2Parameter};
 pub use asymmetric::AsymmetricSwitchIndexParameter;
+pub use constant::ConstantParameter;
 pub use control_curves::{
     ApportionParameter, ControlCurveIndexParameter, ControlCurveParameter, InterpolatedParameter,
     PiecewiseInterpolatedParameter,
@@ -41,6 +46,7 @@ use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::ops::Deref;
 pub use threshold::{Predicate, ThresholdParameter};
+pub use vector::VectorParameter;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub struct ParameterIndex(usize);
@@ -175,6 +181,28 @@ pub trait Parameter: Send + Sync {
     ) -> Result<(), PywrError> {
         Ok(())
     }
+
+    /// Return the parameter as a [`VariableParameter'] if it supports being a variable.
+    fn as_variable(&self) -> Option<&dyn VariableParameter> {
+        None
+    }
+
+    /// Can this parameter be a variable
+    fn can_be_variable(&self) -> bool {
+        self.as_variable().is_some()
+    }
+
+    /// Is this parameter an active variable
+    fn is_variable_active(&self) -> bool {
+        match self.as_variable() {
+            Some(var) => var.is_active(),
+            None => false,
+        }
+    }
+
+    fn as_variable_mut(&mut self) -> Option<&mut dyn VariableParameter> {
+        None
+    }
 }
 
 pub trait IndexParameter: Send + Sync {
@@ -267,74 +295,19 @@ pub enum ParameterType {
     Multi(MultiValueParameterIndex),
 }
 
-pub struct ConstantParameter {
-    meta: ParameterMeta,
-    value: f64,
-}
-
-impl ConstantParameter {
-    pub fn new(name: &str, value: f64) -> Self {
-        Self {
-            meta: ParameterMeta::new(name),
-            value,
-        }
-    }
-}
-
-impl Parameter for ConstantParameter {
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
-    }
-
-    fn meta(&self) -> &ParameterMeta {
-        &self.meta
-    }
-    fn compute(
-        &self,
-        _timestep: &Timestep,
-        _scenario_index: &ScenarioIndex,
-        _model: &Model,
-        _state: &State,
-        _internal_state: &mut Option<Box<dyn Any + Send>>,
-    ) -> Result<f64, PywrError> {
-        Ok(self.value)
-    }
-}
-
-pub struct VectorParameter {
-    meta: ParameterMeta,
-    values: Vec<f64>,
-}
-
-impl VectorParameter {
-    pub fn new(name: &str, values: Vec<f64>) -> Self {
-        Self {
-            meta: ParameterMeta::new(name),
-            values,
-        }
-    }
-}
-
-impl Parameter for VectorParameter {
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
-    }
-    fn meta(&self) -> &ParameterMeta {
-        &self.meta
-    }
-    fn compute(
-        &self,
-        timestep: &Timestep,
-        _scenario_index: &ScenarioIndex,
-        _model: &Model,
-        _state: &State,
-        _internal_state: &mut Option<Box<dyn Any + Send>>,
-    ) -> Result<f64, PywrError> {
-        match self.values.get(timestep.index) {
-            Some(v) => Ok(*v),
-            None => Err(PywrError::TimestepIndexOutOfRange),
-        }
-    }
+pub trait VariableParameter {
+    /// Is this variable activated (i.e. should be used in optimisation)
+    fn is_active(&self) -> bool;
+    /// Return the number of variables required
+    fn size(&self) -> usize;
+    /// Apply new variable values to the parameter
+    fn set_variables(&mut self, values: &[f64]);
+    /// Get the current variable values
+    fn get_variables(&self) -> Vec<f64>;
+    /// Get variable lower bounds
+    fn get_lower_bounds(&self) -> Vec<f64>;
+    /// Get variable upper bounds
+    fn get_upper_bounds(&self) -> Vec<f64>;
 }
 
 #[cfg(test)]

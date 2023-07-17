@@ -1389,7 +1389,7 @@ mod tests {
         let mut model = Model::default();
         let _node_index = model.add_input_node("input", None).unwrap();
 
-        let input_max_flow = parameters::ConstantParameter::new("my-constant", 10.0);
+        let input_max_flow = parameters::ConstantParameter::new("my-constant", 10.0, None);
         let parameter = model.add_parameter(Box::new(input_max_flow)).unwrap();
 
         // assign the new parameter to one of the nodes.

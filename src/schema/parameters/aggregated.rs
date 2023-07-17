@@ -44,23 +44,16 @@ impl From<AggFuncV1> for AggFunc {
     }
 }
 
-/// TODO finish this documentation
-/// {
-///     "type": "Aggregated",
-///     "agg_func": "sum",
-///     "parameters": [
-///         3.1415,
-///         {
-///             "table": "demands",
-///             "index": "my-node",
-///         },
-///         "my-other-parameter",
-///         {
-///             "type": "MonthlyProfile",
-///             "values": []
-///         }
-///     ]
-/// }
+// TODO finish this documentation
+/// A parameter that aggregates other parameters using a user specified function.
+///
+/// # JSON Examples
+///
+/// A simple example:
+/// ```json
+#[doc = include_str!("doc_examples/aggregated_1.json")]
+/// ```
+
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
 pub struct AggregatedParameter {
     #[serde(flatten)]
