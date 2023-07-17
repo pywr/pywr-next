@@ -44,12 +44,25 @@ impl From<AggFuncV1> for AggFunc {
     }
 }
 
-// TODO finish this documentation
-/// A parameter that aggregates other parameters using a user specified function.
+/// Schema for a parameter that aggregates metrics using a user specified function.
+///
+/// Each time-step the aggregation is updated using the current values of the referenced metrics.
+/// The available aggregation functions are defined by the [`AggFunc`] enum.
+///
+/// This parameter definition is applied to a model using [`crate::parameters::AggregatedParameter`].
+///
+/// See also [`AggregatedIndexParameter`] for aggregation of integer values.
 ///
 /// # JSON Examples
 ///
-/// A simple example:
+/// The example below shows the definition of an [`AggregatedParameter`] that sums the values
+/// from a variety of sources:
+///  - a literal constant: 3.1415,
+///  - a constant value from the table "demands" with reference "my-node",
+///  - the current value of the parameter "my-other-parameter",
+///  - the current volume of the node "my-reservoir", and
+///  - the current value of the inline monthly profile, named "my-monthly-profile".
+///
 /// ```json
 #[doc = include_str!("doc_examples/aggregated_1.json")]
 /// ```

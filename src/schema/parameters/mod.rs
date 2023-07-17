@@ -1,3 +1,12 @@
+//! Parameter schema definitions.
+//!
+//! The enum [`Parameter`] contains all of the valid Pywr parameter schemas. The parameter
+//! variants define separate schemas for different parameter types. When a model is generated
+//! from a schema the parameter schemas are added to the model using [`Parameter::add_to_model`].
+//! This typically adds a struct from [`crate::parameters`] to the model using the data
+//! defined in the schema.
+//!
+//! Serializing and deserializing is accomplished using [`serde`].
 mod aggregated;
 mod asymmetric_switch;
 mod control_curves;
