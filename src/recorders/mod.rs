@@ -1,5 +1,7 @@
+mod aggregator;
 mod csv;
 mod hdf;
+mod metric_set;
 mod py;
 
 pub use self::csv::CSVRecorder;
@@ -9,8 +11,9 @@ use crate::scenario::ScenarioIndex;
 use crate::state::State;
 use crate::timestep::Timestep;
 use crate::PywrError;
-use float_cmp::{approx_eq, assert_approx_eq, ApproxEq, F64Margin};
+use float_cmp::{approx_eq, ApproxEq, F64Margin};
 pub use hdf::HDF5Recorder;
+pub use metric_set::{MetricSet, MetricSetIndex};
 use ndarray::prelude::*;
 use ndarray::Array2;
 use std::any::Any;
@@ -44,7 +47,6 @@ impl Display for RecorderIndex {
 /// Meta data common to all parameters.
 #[derive(Clone, Debug)]
 pub struct RecorderMeta {
-    pub index: Option<RecorderIndex>,
     pub name: String,
     pub comment: String,
 }
@@ -52,7 +54,6 @@ pub struct RecorderMeta {
 impl RecorderMeta {
     fn new(name: &str) -> Self {
         Self {
-            index: None,
             name: name.to_string(),
             comment: "".to_string(),
         }

@@ -6,7 +6,7 @@ use crate::schema::error::{ConversionError, SchemaError};
 use crate::schema::outputs::Output;
 use crate::schema::parameters::TryIntoV2Parameter;
 use crate::PywrError;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use time::Date;
 
 #[derive(serde::Deserialize, serde::Serialize, Clone)]

@@ -6,8 +6,7 @@ use std::path::{Path, PathBuf};
 pub struct CsvOutput {
     name: String,
     filename: PathBuf,
-    /// The node's to save output for
-    nodes: Vec<String>,
+    metric_set: String,
 }
 
 impl CsvOutput {
@@ -17,28 +16,13 @@ impl CsvOutput {
         schema: &crate::schema::PywrModel,
         output_path: Option<&Path>,
     ) -> Result<(), PywrError> {
-        let metrics = self
-            .nodes
-            .iter()
-            .map(|node_name| {
-                // Get the node from the schema; not the model itself
-
-                let node = schema
-                    .get_node_by_name(node_name)
-                    .ok_or_else(|| PywrError::NodeNotFound(node_name.to_string()))?;
-
-                let metric = node.default_metric(model)?;
-
-                Ok(metric)
-            })
-            .collect::<Result<Vec<_>, PywrError>>()?;
-
         let filename = match (output_path, self.filename.is_relative()) {
             (Some(odir), true) => odir.join(&self.filename),
             _ => self.filename.to_path_buf(),
         };
 
-        let recorder = CSVRecorder::new(&self.name, &filename, metrics);
+        let metric_set_idx = model.get_metric_set_index_by_name(&self.metric_set)?;
+        let recorder = CSVRecorder::new(&self.name, &filename, metric_set_idx);
 
         model.add_recorder(Box::new(recorder))?;
 
@@ -48,16 +32,9 @@ impl CsvOutput {
 
 #[cfg(test)]
 mod tests {
-    use crate::metric::Metric;
     use crate::model::RunOptions;
-    use crate::recorders::AssertionRecorder;
-    use crate::schema::parameters::{
-        AggFunc, AggregatedParameter, ConstantParameter, ConstantValue, DynamicFloatValue, MetricFloatValue, Parameter,
-        ParameterMeta,
-    };
     use crate::schema::PywrModel;
     use crate::solvers::ClpSolver;
-    use ndarray::{Array1, Array2, Axis};
     use tempfile::TempDir;
 
     fn model_str() -> &'static str {

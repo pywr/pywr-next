@@ -4,6 +4,7 @@ use crate::edge::{EdgeIndex, EdgeVec};
 use crate::metric::Metric;
 use crate::node::{ConstraintValue, Node, NodeVec, StorageInitialVolume};
 use crate::parameters::{MultiValueParameterIndex, ParameterType};
+use crate::recorders::{MetricSet, MetricSetIndex};
 use crate::scenario::{ScenarioGroupCollection, ScenarioIndex};
 use crate::solvers::{MultiStateSolver, Solver, SolverTimings};
 use crate::state::{ParameterStates, State};
@@ -168,6 +169,7 @@ pub struct Model {
     parameters: Vec<Box<dyn parameters::Parameter>>,
     index_parameters: Vec<Box<dyn parameters::IndexParameter>>,
     multi_parameters: Vec<Box<dyn parameters::MultiValueParameter>>,
+    metric_sets: Vec<MetricSet>,
     resolve_order: Vec<ComponentType>,
     recorders: Vec<Box<dyn recorders::Recorder>>,
 }
@@ -1271,6 +1273,38 @@ impl Model {
         self.resolve_order
             .push(ComponentType::Parameter(ParameterType::Multi(parameter_index)));
         Ok(parameter_index)
+    }
+
+    /// Add a [`MetricSet`] to the model.
+    pub fn add_metric_set(&mut self, metric_set: MetricSet) -> Result<MetricSetIndex, PywrError> {
+        if let Ok(_) = self.get_metric_set_by_name(&metric_set.name()) {
+            return Err(PywrError::MetricSetNameAlreadyExists(metric_set.name().to_string()));
+        }
+
+        let metric_set_idx = MetricSetIndex::new(self.metric_sets.len());
+        self.metric_sets.push(metric_set);
+        Ok(metric_set_idx)
+    }
+
+    /// Get a [`MetricSet'] from its index.
+    pub fn get_metric_set(&self, index: MetricSetIndex) -> Result<&MetricSet, PywrError> {
+        self.metric_sets.get(*index).ok_or(PywrError::MetricSetIndexNotFound)
+    }
+
+    /// Get a ['MetricSet'] by its name.
+    pub fn get_metric_set_by_name(&self, name: &str) -> Result<&MetricSet, PywrError> {
+        self.metric_sets
+            .iter()
+            .find(|&m| m.name() == name)
+            .ok_or(PywrError::MetricSetNotFound(name.to_string()))
+    }
+
+    /// Get a ['MetricSetIndex'] by its name.
+    pub fn get_metric_set_index_by_name(&self, name: &str) -> Result<MetricSetIndex, PywrError> {
+        match self.metric_sets.iter().position(|m| m.name() == name) {
+            Some(idx) => Ok(MetricSetIndex::new(idx)),
+            None => Err(PywrError::MetricSetNotFound(name.to_string())),
+        }
     }
 
     /// Add a `recorders::Recorder` to the model

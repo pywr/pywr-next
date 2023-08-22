@@ -40,15 +40,20 @@
     }
   ],
   "parameters": [{"name": "demand", "type": "Constant", "value": 10.0}],
+  "metric_sets": [
+    {
+      "name": "nodes",
+      "metrics": [
+
+      ]
+    }
+  ],
   "outputs": [
     {
       "name": "my-outputs",
       "type": "CSV",
       "filename": "outputs.csv",
-      "nodes": [
-        "supply1",
-        "demand1"
-      ]
+      "metric_set": "nodes"
     }
   ]
 }

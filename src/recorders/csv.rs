@@ -1,19 +1,19 @@
 use super::{PywrError, Recorder, RecorderMeta, Timestep};
 use crate::metric::Metric;
 use crate::model::Model;
+use crate::recorders::metric_set::{MetricSet, MetricSetIndex};
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
-use ndarray::{s, Array1};
 use std::any::Any;
 use std::fs::File;
-use std::ops::Deref;
 use std::path::PathBuf;
 
+/// Output the values from a [`MetricSet`] to a CSV file.
 #[derive(Clone, Debug)]
 pub struct CSVRecorder {
     meta: RecorderMeta,
     filename: PathBuf,
-    metrics: Vec<Metric>,
+    metric_set_idx: MetricSetIndex,
 }
 
 struct Internal {
@@ -21,11 +21,11 @@ struct Internal {
 }
 
 impl CSVRecorder {
-    pub fn new<P: Into<PathBuf>>(name: &str, filename: P, metrics: Vec<Metric>) -> Self {
+    pub fn new<P: Into<PathBuf>>(name: &str, filename: P, metric_set_idx: MetricSetIndex) -> Self {
         Self {
             meta: RecorderMeta::new(name),
             filename: filename.into(),
-            metrics,
+            metric_set_idx,
         }
     }
 }
@@ -40,7 +40,6 @@ impl Recorder for CSVRecorder {
         scenario_indices: &[ScenarioIndex],
         model: &Model,
     ) -> Result<Option<Box<(dyn Any)>>, PywrError> {
-        // TODO handle the error
         let mut writer = csv::Writer::from_path(&self.filename).map_err(|e| PywrError::CSVError(e.to_string()))?;
 
         let num_scenarios = scenario_indices.len();
@@ -53,7 +52,9 @@ impl Recorder for CSVRecorder {
         let mut header_scenario = vec!["global-scenario-index".to_string()];
         let mut header_attribute = vec!["attribute".to_string()];
 
-        for metric in &self.metrics {
+        let metric_set = model.get_metric_set(self.metric_set_idx)?;
+
+        for metric in metric_set.iter_metrics() {
             let (name, sub_name, attribute) = match metric {
                 Metric::NodeInFlow(idx) => {
                     let node = model.get_node(idx)?;
@@ -191,7 +192,9 @@ impl Recorder for CSVRecorder {
 
         let mut row = vec![timestep.date.to_string()];
 
-        for metric in &self.metrics {
+        let metric_set = model.get_metric_set(self.metric_set_idx)?;
+
+        for metric in metric_set.iter_metrics() {
             // Combine all the values for metric across all of the scenarios
             let values = scenario_indices
                 .iter()
