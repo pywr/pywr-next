@@ -126,15 +126,18 @@ fn random_benchmark(
     num_scenarios: &[usize],
     num_threads: &[usize],
     solvers: &[&str], // TODO This should be an enum (see one also in main.rs; should incorporated into the crate).
+    sample_size: Option<usize>,
 ) {
-    // We'll do 1000 days to make interpretation of the timings a little easier.
+    // We'll do 100 days to make interpretation of the timings a little easier.
     // i.e. a run time of 1s would equal 1000 timesteps per second
-    let timestepper = Timestepper::new(date!(2020 - 01 - 01), date!(2022 - 09 - 26), 1);
+    let timestepper = Timestepper::new(date!(2020 - 01 - 01), date!(2020 - 04 - 09), 1);
 
     let mut group = c.benchmark_group(group_name);
-    group.sampling_mode(SamplingMode::Flat);
-    group.sample_size(20);
-    group.measurement_time(std::time::Duration::from_secs(60));
+    // group.sampling_mode(SamplingMode::Flat);
+    if let Some(n) = sample_size {
+        group.sample_size(n);
+    }
+    // group.measurement_time(std::time::Duration::from_secs(60));
 
     for &n_sys in num_systems {
         for &density in densities {
@@ -147,7 +150,7 @@ fn random_benchmark(
 
                     let parameter_string = format!("{n_sys} * {density} * {n_sc} * {n_threads}");
                     // This is the number of time-steps
-                    group.throughput(Throughput::Elements(1000 * n_sc as u64));
+                    group.throughput(Throughput::Elements(100 * n_sc as u64));
 
                     let options = if n_threads > 1 {
                         RunOptions::default().parallel().threads(n_threads)
@@ -196,6 +199,7 @@ fn bench_system_size(c: &mut Criterion) {
         &[1],
         &[1],
         &["highs", "clp"],
+        None,
     )
 }
 
@@ -208,6 +212,7 @@ fn bench_scenarios(c: &mut Criterion) {
         &[2, 10, 50, 100, 400, 1000],
         &[1],
         &["highs", "clp"],
+        None,
     )
 }
 
@@ -220,18 +225,20 @@ fn bench_threads(c: &mut Criterion) {
         &[100],
         &[2, 4, 8, 16],
         &["highs", "clp"],
+        None,
     )
 }
 
 fn bench_hyper_scenarios(c: &mut Criterion) {
     random_benchmark(
         c,
-        "random-models-scenarios",
+        "random-models-hyper-scenarios",
         &[20, 50],
         &[5],
         &[1000],
         &[1],
         &["clipmf64", "clp"],
+        Some(10),
     )
 }
 

@@ -1,3 +1,4 @@
+use log::debug;
 use nalgebra_sparse::csr::CsrMatrix;
 use std::cmp::Ordering;
 
@@ -117,12 +118,12 @@ struct SparseNormalCholeskyClBuffers {
 
 impl SparseNormalCholeskyClBuffers {
     fn from_indices(indices: &SparseNormalCholeskyIndices, queue: &ocl::Queue) -> ocl::Result<Self> {
-        println!("Number of ANorm indptr size: {}", indices.anorm_indptr.len());
-        println!("Number of ANorm indptr_i: {}", indices.anorm_indptr_i.len());
-        println!("Number of ANorm indptr_i: {}", indices.anorm_indptr_j.len());
-        println!("Number of ANorm ldecomp_indptr: {}", indices.ldecomp_indptr.len());
-        println!("Number of ANorm ldecomp_indptr_i: {}", indices.ldecomp_indptr_i.len());
-        println!("Number of ANorm ldecomp_indptr_j: {}", indices.ldecomp_indptr_j.len());
+        debug!("Number of ANorm indptr size: {}", indices.anorm_indptr.len());
+        debug!("Number of ANorm indptr_i: {}", indices.anorm_indptr_i.len());
+        debug!("Number of ANorm indptr_i: {}", indices.anorm_indptr_j.len());
+        debug!("Number of ANorm ldecomp_indptr: {}", indices.ldecomp_indptr.len());
+        debug!("Number of ANorm ldecomp_indptr_i: {}", indices.ldecomp_indptr_i.len());
+        debug!("Number of ANorm ldecomp_indptr_j: {}", indices.ldecomp_indptr_j.len());
 
         // Copy the data from the host sparse matrix to the device buffers
         let anorm_indptr = ocl::Buffer::<u32>::builder()
@@ -448,7 +449,7 @@ where
         let normal_indices = SparseNormalCholeskyIndices::from_matrix(a);
         let normal_buffers = SparseNormalCholeskyClBuffers::from_indices(&normal_indices, queue)?;
 
-        println!("Number of L indices: {}", normal_indices.lindices.len());
+        debug!("Number of L indices: {}", normal_indices.lindices.len());
 
         // Require ldata for every LP
         let ldata = ocl::Buffer::<T>::builder()
