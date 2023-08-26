@@ -6,6 +6,7 @@ mod control_curves;
 mod delay;
 mod indexed_array;
 mod max;
+mod min;
 mod negative;
 mod polynomial;
 mod profiles;
@@ -33,6 +34,7 @@ pub use control_curves::{
 pub use delay::DelayParameter;
 pub use indexed_array::IndexedArrayParameter;
 pub use max::MaxParameter;
+pub use min::MinParameter;
 pub use negative::NegativeParameter;
 pub use polynomial::Polynomial1DParameter;
 pub use profiles::{DailyProfileParameter, MonthlyInterpDay, MonthlyProfileParameter, UniformDrawdownProfileParameter};

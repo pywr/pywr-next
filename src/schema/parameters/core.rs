@@ -93,6 +93,33 @@ impl MaxParameter {
     }
 }
 
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+pub struct MinParameter {
+    #[serde(flatten)]
+    pub meta: ParameterMeta,
+    pub parameter: DynamicFloatValue,
+    pub threshold: Option<f64>,
+}
+
+impl MinParameter {
+    pub fn node_references(&self) -> HashMap<&str, &str> {
+        HashMap::new()
+    }
+
+    pub fn add_to_model(
+        &self,
+        model: &mut crate::model::Model,
+        tables: &LoadedTableCollection,
+        data_path: Option<&Path>,
+    ) -> Result<ParameterIndex, PywrError> {
+        let idx = self.parameter.load(model, tables, data_path)?;
+        let threshold = self.threshold.unwrap_or(0.0);
+
+        let p = crate::parameters::MinParameter::new(&self.meta.name, idx, threshold);
+        model.add_parameter(Box::new(p))
+    }
+}
+
 impl TryFromV1Parameter<MaxParameterV1> for MaxParameter {
     type Error = ConversionError;
 

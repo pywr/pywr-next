@@ -18,7 +18,7 @@ pub use super::parameters::control_curves::{
     ControlCurveIndexParameter, ControlCurveInterpolatedParameter, ControlCurveParameter,
     ControlCurvePiecewiseInterpolatedParameter,
 };
-pub use super::parameters::core::{ConstantParameter, MaxParameter, NegativeParameter};
+pub use super::parameters::core::{ConstantParameter, MaxParameter, MinParameter, NegativeParameter};
 pub use super::parameters::delay::DelayParameter;
 pub use super::parameters::indexed_array::IndexedArrayParameter;
 pub use super::parameters::polynomial::Polynomial1DParameter;
