@@ -105,6 +105,8 @@ pub enum PywrError {
     MetricNotDefinedForNode,
     #[error("invalid metric type: {0}")]
     InvalidMetricType(String),
+    #[error("invalid metric value: {0}")]
+    InvalidMetricValue(String),
     #[error("recorder not initialised")]
     RecorderNotInitialised,
     #[error("hdf5 error: {0}")]

@@ -93,6 +93,33 @@ impl MaxParameter {
     }
 }
 
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+pub struct DivisionParameter {
+    #[serde(flatten)]
+    pub meta: ParameterMeta,
+    pub numerator: DynamicFloatValue,
+    pub denominator: DynamicFloatValue,
+}
+
+impl DivisionParameter {
+    pub fn node_references(&self) -> HashMap<&str, &str> {
+        HashMap::new()
+    }
+
+    pub fn add_to_model(
+        &self,
+        model: &mut crate::model::Model,
+        tables: &LoadedTableCollection,
+        data_path: Option<&Path>,
+    ) -> Result<ParameterIndex, PywrError> {
+        let n = self.numerator.load(model, tables, data_path)?;
+        let d = self.denominator.load(model, tables, data_path)?;
+
+        let p = crate::parameters::DivisionParameter::new(&self.meta.name, n, d);
+        model.add_parameter(Box::new(p))
+    }
+}
+
 impl TryFromV1Parameter<MaxParameterV1> for MaxParameter {
     type Error = ConversionError;
 

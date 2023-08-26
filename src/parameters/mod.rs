@@ -13,6 +13,7 @@ mod py;
 mod rhai;
 pub mod simple_wasm;
 mod threshold;
+mod division;
 
 use std::any::Any;
 // Re-imports
@@ -41,6 +42,7 @@ use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::ops::Deref;
 pub use threshold::{Predicate, ThresholdParameter};
+pub use division::DivisionParameter;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub struct ParameterIndex(usize);

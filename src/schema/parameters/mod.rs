@@ -39,6 +39,7 @@ use pywr_schema::parameters::{
 };
 use std::collections::HashMap;
 use std::path::Path;
+use crate::schema::parameters::core::DivisionParameter;
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
 pub struct ParameterMeta {
@@ -142,6 +143,7 @@ pub enum Parameter {
     Python(PythonParameter),
     DataFrame(DataFrameParameter),
     Delay(DelayParameter),
+    Division(DivisionParameter),
 }
 
 impl Parameter {
@@ -166,6 +168,7 @@ impl Parameter {
             Self::TablesArray(p) => p.meta.name.as_str(),
             Self::Python(p) => p.meta.name.as_str(),
             Self::DataFrame(p) => p.meta.name.as_str(),
+            Self::Division(p) => p.meta.name.as_str(),
             Parameter::Delay(p) => p.meta.name.as_str(),
         }
     }
@@ -194,6 +197,7 @@ impl Parameter {
             Self::Python(p) => p.node_references(),
             Self::DataFrame(p) => p.node_references(),
             Self::Delay(p) => p.node_references(),
+            Self::Division(p) => p.node_references(),
         }
     }
 
@@ -238,6 +242,7 @@ impl Parameter {
             Self::Python(_) => "Python",
             Self::DataFrame(_) => "DataFrame",
             Self::Delay(_) => "Delay",
+            Self::Division(_) => "Division",
         }
     }
 
@@ -270,6 +275,7 @@ impl Parameter {
             Self::Python(p) => p.add_to_model(model, tables, data_path)?,
             Self::DataFrame(p) => ParameterType::Parameter(p.add_to_model(model, data_path)?),
             Self::Delay(p) => ParameterType::Parameter(p.add_to_model(model, tables, data_path)?),
+            Self::Division(p) => ParameterType::Parameter(p.add_to_model(model, tables, data_path)?),
         };
 
         Ok(ty)
