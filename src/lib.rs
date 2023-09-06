@@ -1,3 +1,5 @@
+#![cfg_attr(feature = "ipm-simd", feature(portable_simd))]
+
 extern crate core;
 
 use crate::node::NodeIndex;

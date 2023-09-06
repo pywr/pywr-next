@@ -7,12 +7,12 @@
 /// Benchmarks test the performance the solvers with different sized models (numbers of
 /// systems and density of transfers between them), numbers of scenarios (which vary the
 /// input flows) and number of CPU threads.
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, SamplingMode, Throughput};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use pywr::metric::Metric;
 use pywr::model::{Model, RunOptions};
 use pywr::node::ConstraintValue;
 use pywr::parameters::Array2Parameter;
-use pywr::solvers::{ClIpmF64Solver, ClpSolver, HighsSolver};
+use pywr::solvers::{ClIpmF64Solver, ClpSolver, HighsSolver, SimdIpmF64Solver};
 use pywr::timestep::Timestepper;
 use pywr::PywrError;
 use rand::{Rng, SeedableRng};
@@ -179,7 +179,15 @@ fn random_benchmark(
                         group.bench_with_input(
                             BenchmarkId::new("random-model-clipmf64", parameter_string.clone()),
                             &(n_sys, density, n_sc),
-                            |b, _n| b.iter(|| model.run_multi_scenario::<ClIpmF64Solver>(&timestepper)),
+                            |b, _n| b.iter(|| model.run_multi_scenario::<ClIpmF64Solver>(&timestepper, &options)),
+                        );
+                    }
+
+                    if solvers.contains(&"simdipmf64") {
+                        group.bench_with_input(
+                            BenchmarkId::new("random-model-simdipmf64", parameter_string.clone()),
+                            &(n_sys, density, n_sc),
+                            |b, _n| b.iter(|| model.run_multi_scenario::<SimdIpmF64Solver>(&timestepper, &options)),
                         );
                     }
                 }
@@ -204,12 +212,14 @@ fn bench_system_size(c: &mut Criterion) {
 }
 
 fn bench_scenarios(c: &mut Criterion) {
+    let scenarios: Vec<usize> = (0..11).into_iter().map(|p| 2_usize.pow(p)).collect();
+
     random_benchmark(
         c,
         "random-models-scenarios",
         &[20, 50],
         &[5],
-        &[2, 10, 50, 100, 400, 1000],
+        &scenarios,
         &[1],
         &["highs", "clp"],
         None,
@@ -220,24 +230,27 @@ fn bench_threads(c: &mut Criterion) {
     random_benchmark(
         c,
         "random-models-threads",
-        &[20, 50],
+        &[20],
         &[5],
-        &[100],
-        &[2, 4, 8, 16],
-        &["highs", "clp"],
-        None,
+        &[128, 32768],
+        &[1, 2, 4, 8, 16],
+        &["clp", "simdipmf64", "clipmf64"],
+        Some(10),
     )
 }
 
 fn bench_hyper_scenarios(c: &mut Criterion) {
+    let scenarios: Vec<usize> = (2..17).into_iter().map(|p| 2_usize.pow(p)).collect();
+
     random_benchmark(
         c,
         "random-models-hyper-scenarios",
-        &[20, 50],
+        &[20],
         &[5],
-        &[1000],
-        &[1],
-        &["clipmf64", "clp"],
+        &scenarios,
+        // &[1000],
+        &[8],
+        &["simdipmf64", "clipmf64", "clp"],
         Some(10),
     )
 }

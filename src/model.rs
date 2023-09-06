@@ -350,7 +350,7 @@ impl Model {
         Ok(())
     }
 
-    pub fn run_multi_scenario<S>(&self, timestepper: &Timestepper) -> Result<(), PywrError>
+    pub fn run_multi_scenario<S>(&self, timestepper: &Timestepper, options: &RunOptions) -> Result<(), PywrError>
     where
         S: MultiStateSolver,
     {
@@ -365,19 +365,29 @@ impl Model {
 
         let mut solver = self.setup_multi_scenario::<S>(&scenario_indices)?;
 
+        let num_threads = if options.parallel { options.threads } else { 1 };
+
+        // Setup thread pool
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(num_threads)
+            .build()
+            .unwrap();
+
         // Step a timestep
-        for timestep in timesteps.iter().progress() {
+        for timestep in timesteps.iter() {
             debug!("Starting timestep {:?}", timestep);
 
-            // State is mutated in-place
-            self.step_multi_scenario(
-                timestep,
-                &scenario_indices,
-                &mut solver,
-                &mut states,
-                &mut parameter_internal_states,
-                &mut timings,
-            )?;
+            pool.install(|| {
+                // State is mutated in-place
+                self.step_multi_scenario(
+                    timestep,
+                    &scenario_indices,
+                    &mut solver,
+                    &mut states,
+                    &mut parameter_internal_states,
+                    &mut timings,
+                )
+            })?;
 
             let start_r_save = Instant::now();
             self.save_recorders(timestep, &scenario_indices, &states, &mut recorder_internal_states)?;
@@ -1316,11 +1326,11 @@ mod tests {
     use crate::recorders::AssertionRecorder;
     use crate::scenario::{ScenarioGroupCollection, ScenarioIndex};
 
-    #[cfg(feature = "clipm")]
-    use crate::solvers::ClIpmF64Solver;
     use crate::solvers::ClpSolver;
     #[cfg(feature = "highs")]
     use crate::solvers::HighsSolver;
+    #[cfg(feature = "clipm")]
+    use crate::solvers::{ClIpmF64Solver, SimdIpmF64Solver};
     use crate::test_utils::{default_timestepper, simple_model, simple_storage_model};
     use float_cmp::approx_eq;
     use ndarray::Array2;
@@ -1488,31 +1498,30 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
     #[cfg(feature = "clipm")]
     /// Test running a simple model with the OpenCL IPM solver
     fn test_run_cl_ipm() {
-        let mut model = simple_model(10);
+        let mut model = simple_model(12);
         let timestepper = default_timestepper();
 
         // Set-up assertion for "input" node
         let idx = model.get_node_by_name("input", None).unwrap().index();
-        let expected = Array2::from_elem((366, 10), 10.0);
+        let expected = Array2::from_elem((366, 12), 10.0);
         let recorder = AssertionRecorder::new("input-flow", Metric::NodeOutFlow(idx), expected, None, Some(1.0e-6));
         model.add_recorder(Box::new(recorder)).unwrap();
 
         let idx = model.get_node_by_name("link", None).unwrap().index();
-        let expected = Array2::from_elem((366, 10), 10.0);
+        let expected = Array2::from_elem((366, 12), 10.0);
         let recorder = AssertionRecorder::new("link-flow", Metric::NodeOutFlow(idx), expected, None, Some(1.0e-6));
         model.add_recorder(Box::new(recorder)).unwrap();
 
         let idx = model.get_node_by_name("output", None).unwrap().index();
-        let expected = Array2::from_elem((366, 10), 10.0);
+        let expected = Array2::from_elem((366, 12), 10.0);
         let recorder = AssertionRecorder::new("output-flow", Metric::NodeInFlow(idx), expected, None, Some(1.0e-6));
         model.add_recorder(Box::new(recorder)).unwrap();
 
         let idx = model.get_parameter_index_by_name("total-demand").unwrap();
-        let expected = Array2::from_elem((366, 10), 12.0);
+        let expected = Array2::from_elem((366, 12), 12.0);
         let recorder = AssertionRecorder::new(
             "total-demand",
             Metric::ParameterValue(idx),
@@ -1522,7 +1531,12 @@ mod tests {
         );
         model.add_recorder(Box::new(recorder)).unwrap();
 
-        model.run_multi_scenario::<ClIpmF64Solver>(&timestepper).unwrap();
+        model
+            .run_multi_scenario::<ClIpmF64Solver>(&timestepper, &RunOptions::default())
+            .unwrap();
+        model
+            .run_multi_scenario::<SimdIpmF64Solver>(&timestepper, &RunOptions::default())
+            .unwrap();
     }
 
     #[test]

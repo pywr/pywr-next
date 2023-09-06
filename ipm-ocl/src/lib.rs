@@ -1,6 +1,6 @@
+use ipm_common::SparseNormalCholeskyIndices;
 use log::debug;
 use nalgebra_sparse::csr::CsrMatrix;
-use std::cmp::Ordering;
 
 pub trait GetClProgram {
     fn get_cl_program(context: &ocl::Context, device: &ocl::Device) -> ocl::Result<ocl::Program>;
@@ -235,143 +235,6 @@ impl SparseNormalCholeskyClBuffers {
     }
 }
 
-/// The indices for the LDL decomposition of A*AT
-#[derive(Debug)]
-struct SparseNormalCholeskyIndices {
-    anorm_indptr: Vec<u32>,
-    anorm_indptr_i: Vec<u32>,
-    anorm_indptr_j: Vec<u32>,
-    anorm_indices: Vec<u32>,
-    ldecomp_indptr: Vec<u32>,
-    ldecomp_indptr_i: Vec<u32>,
-    ldecomp_indptr_j: Vec<u32>,
-    lindptr: Vec<u32>,
-    ldiag_indptr: Vec<u32>,
-    lindices: Vec<u32>,
-    ltindptr: Vec<u32>,
-    ltindices: Vec<u32>,
-    ltmap: Vec<u32>,
-}
-
-impl SparseNormalCholeskyIndices {
-    fn from_matrix<T>(a: &CsrMatrix<T>) -> Self
-    where
-        T: ocl::OclPrm,
-    {
-        let mut anorm_indptr = vec![0u32];
-        let mut anorm_indptr_i = Vec::new();
-        let mut anorm_indptr_j = Vec::new();
-        let mut anorm_indices = Vec::new();
-        let mut ldecomp_indptr = vec![0u32];
-        let mut ldecomp_indptr_i: Vec<u32> = Vec::new();
-        let mut ldecomp_indptr_j: Vec<u32> = Vec::new();
-        // Entries of the L matrix
-        let mut lindptr = vec![0u32];
-        let mut ldiag_indptr = Vec::new();
-        let mut lindices: Vec<u32> = Vec::new();
-
-        for i in 0..a.nrows() {
-            for j in 0..=i {
-                let i_offset = a.row_offsets()[i];
-                let i_row = a.get_row(i).unwrap();
-                let i_cols = i_row.col_indices();
-                let j_offset = a.row_offsets()[j];
-                let j_row = a.get_row(j).unwrap();
-                let j_cols = j_row.col_indices();
-                let mut non_zero = false;
-                {
-                    // Search for matching indices in the a matrix for element AAT[i, j]
-
-                    let mut ii = 0usize;
-                    let mut jj = 0usize;
-
-                    while (ii < i_cols.len()) && (jj < j_cols.len()) {
-                        let ik = i_cols[ii];
-                        let jk = j_cols[jj];
-
-                        match ik.cmp(&jk) {
-                            Ordering::Equal => {
-                                anorm_indptr_i.push((i_offset + ii) as u32);
-                                anorm_indptr_j.push((j_offset + jj) as u32);
-                                anorm_indices.push(ik as u32);
-                                non_zero = true;
-                                ii += 1;
-                                jj += 1;
-                            }
-                            Ordering::Less => ii += 1,
-                            Ordering::Greater => jj += 1,
-                        }
-                    }
-                }
-
-                // Now search for matching indices for the L[i, k]*L[j, k]
-                let mut ii = lindptr[i] as usize;
-                let mut jj = lindptr[j] as usize;
-                let ii_max = lindices.len();
-
-                let jj_max = if i == j { ii_max } else { lindptr[j + 1] as usize };
-
-                while (ii < ii_max) && (jj < jj_max) {
-                    let ik = lindices[ii];
-                    let jk = lindices[jj];
-
-                    match ik.cmp(&jk) {
-                        Ordering::Equal => {
-                            ldecomp_indptr_i.push(ii.try_into().expect("L decomposition index to overflow."));
-                            ldecomp_indptr_j.push(jj.try_into().expect("L decomposition index to overflow."));
-                            non_zero = true;
-                            ii += 1;
-                            jj += 1;
-                        }
-                        Ordering::Less => ii += 1,
-                        Ordering::Greater => jj += 1,
-                    }
-                }
-
-                if non_zero {
-                    anorm_indptr.push(anorm_indptr_i.len() as u32);
-                    ldecomp_indptr.push(ldecomp_indptr_i.len() as u32);
-                    lindices.push(j as u32);
-                }
-                if i == j {
-                    ldiag_indptr.push(lindices.len() as u32 - 1)
-                }
-            }
-            lindptr.push(lindices.len() as u32)
-        }
-
-        let lvalues = vec![1.0; lindices.len()];
-        let lower = CsrMatrix::try_from_csr_data(
-            a.nrows(),
-            a.nrows(),
-            lindptr.iter().map(|r| *r as usize).collect::<Vec<_>>(),
-            lindices.iter().map(|r| *r as usize).collect::<Vec<_>>(),
-            lvalues,
-        )
-        .expect("Failed to create CSR data for Cholesky decomposition.");
-        let lower_t = lower.transpose();
-
-        let mut ltmap: Vec<_> = (0..lower.col_indices().len()).map(|i| i as u32).collect();
-        ltmap.sort_by_key(|&i| lower.col_indices()[i as usize]);
-
-        Self {
-            anorm_indptr,
-            anorm_indptr_i,
-            anorm_indptr_j,
-            anorm_indices,
-            ldecomp_indptr,
-            ldecomp_indptr_i,
-            ldecomp_indptr_j,
-            lindptr,
-            ldiag_indptr,
-            lindices,
-            ltindptr: lower_t.row_offsets().iter().map(|r| *r as u32).collect::<Vec<_>>(),
-            ltindices: lower_t.col_indices().iter().map(|r| *r as u32).collect::<Vec<_>>(),
-            ltmap,
-        }
-    }
-}
-
 struct PathBuffers<T>
 where
     T: ocl::OclPrm,
@@ -515,9 +378,6 @@ pub struct PathFollowingDirectClSolver<T>
 where
     T: ocl::OclPrm,
 {
-    context: ocl::Context,
-    queue: ocl::Queue,
-    program: ocl::Program,
     buffers: PathFollowingDirectClBuffers<T>,
     kernel_normal_init: ocl::Kernel,
     kernel_normal_eq_step: ocl::Kernel,
@@ -530,6 +390,8 @@ where
     T: ocl::OclPrm + GetClProgram,
 {
     pub fn from_data(
+        queue: &ocl::Queue,
+        program: &ocl::Program,
         num_rows: usize,
         num_cols: usize,
         row_offsets: Vec<usize>,
@@ -538,21 +400,10 @@ where
         num_inequality_constraints: u32,
         num_lps: u32,
     ) -> ocl::Result<Self> {
-        let platform = ocl::Platform::default();
-        let device = ocl::Device::first(platform).unwrap();
-        let context = ocl::Context::builder()
-            .platform(platform)
-            .devices(device)
-            .build()
-            .unwrap();
-        let program = T::get_cl_program(&context, &device).unwrap();
-
-        let queue = ocl::Queue::new(&context, device, None)?;
-
         let a = CsrMatrix::try_from_csr_data(num_rows, num_cols, row_offsets, col_indices, values)
             .expect("Failed to create matrix from given data");
 
-        let buffers = PathFollowingDirectClBuffers::from_data(&a, num_lps, &queue)?;
+        let buffers = PathFollowingDirectClBuffers::from_data(&a, num_lps, queue)?;
 
         let kernel_normal_init = ocl::Kernel::builder()
             .program(&program)
@@ -620,9 +471,6 @@ where
         let status = vec![0u32; num_lps as usize];
 
         Ok(Self {
-            context,
-            queue,
-            program,
             buffers,
             kernel_normal_init,
             kernel_normal_eq_step,
@@ -631,7 +479,7 @@ where
         })
     }
 
-    pub fn solve(&mut self, b: &[T], c: &[T]) -> ocl::Result<&[T]> {
+    pub fn solve(&mut self, queue: &ocl::Queue, b: &[T], c: &[T]) -> ocl::Result<&[T]> {
         // Copy b & c to the device
         self.buffers.b_buffer.write(b).enq()?;
 
@@ -644,8 +492,7 @@ where
         // self.buffers.path_buffers.x.read(&mut self.solution).enq()?;
         // self.queue.finish()?;
 
-        let mut last_iteration = 0;
-        for iter in 0..200 {
+        for _ in 0..200 {
             unsafe {
                 self.kernel_normal_eq_step.enq()?;
             }
@@ -660,16 +507,12 @@ where
             if num_incomplete == 0 {
                 break;
             }
-
-            last_iteration = iter;
         }
 
         // println!("Finished after iterations: {}", last_iteration);
 
         self.buffers.path_buffers.x.read(&mut self.solution).enq()?;
-        self.queue.finish()?;
-
-        // panic!("Testing!");
+        queue.finish()?;
 
         Ok(self.solution.as_slice())
     }

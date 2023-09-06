@@ -6,7 +6,7 @@ use pywr::schema::ConversionError;
 use pywr::solvers::ClpSolver;
 #[cfg(feature = "highs")]
 use pywr::solvers::HighsSolver;
-#[cfg(feature = "clipm")]
+#[cfg(feature = "ipm-ocl")]
 use pywr::solvers::{ClIpmF32Solver, ClIpmF64Solver};
 use pywr::timestep::Timestepper;
 use pywr::PywrError;
@@ -18,9 +18,9 @@ enum Solver {
     Clp,
     #[cfg(feature = "highs")]
     HIGHS,
-    #[cfg(feature = "clipm")]
+    #[cfg(feature = "ipm-ocl")]
     CLIPMF32,
-    #[cfg(feature = "clipm")]
+    #[cfg(feature = "ipm-ocl")]
     CLIPMF64,
 }
 
@@ -158,10 +158,10 @@ fn run(path: &Path, solver: &Solver, data_path: Option<&Path>, options: &RunOpti
         Solver::Clp => model.run::<ClpSolver>(&timestepper, options),
         #[cfg(feature = "highs")]
         Solver::HIGHS => model.run::<HighsSolver>(&timestepper, options),
-        #[cfg(feature = "clipm")]
-        Solver::CLIPMF32 => model.run_multi_scenario::<ClIpmF32Solver>(&timestepper),
-        #[cfg(feature = "clipm")]
-        Solver::CLIPMF64 => model.run_multi_scenario::<ClIpmF64Solver>(&timestepper),
+        #[cfg(feature = "ipm-ocl")]
+        Solver::CLIPMF32 => model.run_multi_scenario::<ClIpmF32Solver>(&timestepper, options),
+        #[cfg(feature = "ipm-ocl")]
+        Solver::CLIPMF64 => model.run_multi_scenario::<ClIpmF64Solver>(&timestepper, options),
     }
     .unwrap();
 }

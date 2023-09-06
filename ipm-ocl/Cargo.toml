@@ -1,11 +1,12 @@
 [package]
-name = "clipm"
+name = "ipm-ocl"
 version = "0.1.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-ocl = "0.19"
+ipm-common = { path = "../ipm-common" }
 nalgebra-sparse = "0.9.0"
+ocl = "0.19"
 log = "0.4.19"

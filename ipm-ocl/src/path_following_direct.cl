@@ -118,12 +118,11 @@ __kernel void cholesky_solve(
 
     jk = LTindptr[i]+1;
     jkk = LTindptr[i+1];
-    j = LTindices[jk];
 
     while(jk < jkk) {
+        j = LTindices[jk];
         x[i*gsize+gid] -= x[j*gsize+gid]*Ldata[LTmap[jk]*gsize+gid];
         jk += 1;
-        j = LTindices[jk];
     }
 
     jk = Lindptr[i+1]-1;

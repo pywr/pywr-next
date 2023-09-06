@@ -6,22 +6,26 @@ use std::ops::{Add, AddAssign};
 use std::time::Duration;
 
 mod builder;
-#[cfg(feature = "clipm")]
-mod clipm;
+#[cfg(feature = "ipm-ocl")]
+mod ipm_ocl;
+
 mod clp;
 mod col_edge_map;
-
 #[cfg(feature = "highs")]
 mod highs;
+#[cfg(feature = "ipm-simd")]
+mod ipm_simd;
 
-#[cfg(feature = "clipm")]
-pub use self::clipm::{ClIpmF32Solver, ClIpmF64Solver};
+#[cfg(feature = "ipm-ocl")]
+pub use self::ipm_ocl::{ClIpmF32Solver, ClIpmF64Solver};
+#[cfg(feature = "ipm-simd")]
+pub use self::ipm_simd::SimdIpmF64Solver;
 pub use clp::{ClpError, ClpSolver};
 
 #[cfg(feature = "highs")]
 pub use highs::HighsSolver;
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct SolverTimings {
     pub update_objective: Duration,
     pub update_constraints: Duration,

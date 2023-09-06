@@ -6,8 +6,13 @@ use crate::solvers::{MultiStateSolver, SolverTimings};
 use crate::state::State;
 use crate::timestep::Timestep;
 use crate::PywrError;
-use clipm::PathFollowingDirectClSolver;
+use ipm_ocl::{GetClProgram, PathFollowingDirectClSolver};
+use num::complex::ComplexFloat;
+use rayon::iter::IndexedParallelIterator;
+use rayon::iter::ParallelIterator;
+use rayon::prelude::ParallelSliceMut;
 use std::collections::BTreeMap;
+use std::f64;
 use std::ops::Deref;
 use std::time::Instant;
 
@@ -166,11 +171,11 @@ impl LpBuilder {
         let row_upper = vec![0.0; num_rows * self.num_lps];
         let col_obj_coef = vec![0.0; self.num_cols * self.num_lps];
 
-        println!("Number of columns: {}", self.num_cols);
-        println!("Number of rows: {num_rows}");
-        println!("Number of inequality rows: {}", self.inequality.len());
-        println!("Number of equality rows: {}", self.equality.len());
-        println!("Number of LPs: {}", self.num_lps);
+        // println!("Number of columns: {}", self.num_cols);
+        // println!("Number of rows: {num_rows}");
+        // println!("Number of inequality rows: {}", self.inequality.len());
+        // println!("Number of equality rows: {}", self.equality.len());
+        // println!("Number of LPs: {}", self.num_lps);
 
         // Build the two matrices
         let mut inequality = Matrix::default();
@@ -555,152 +560,203 @@ impl SolverBuilder {
     }
 }
 
+// TODO make this configurable
+const CHUNK_SIZE: usize = 4096;
+
 pub struct ClIpmF32Solver {
-    built: BuiltSolver,
-    ipm: PathFollowingDirectClSolver<f32>,
+    built: Vec<BuiltSolver>,
+    ipm: Vec<PathFollowingDirectClSolver<f32>>,
+    chunk_size: usize,
+    queue: ocl::Queue,
 }
 
 impl MultiStateSolver for ClIpmF32Solver {
     fn setup(model: &Model, num_scenarios: usize) -> Result<Box<Self>, PywrError> {
-        let builder = SolverBuilder::new(num_scenarios);
-        let built = builder.create(model)?;
+        let platform = ocl::Platform::default();
+        let device = ocl::Device::first(platform).expect("Failed to get OpenCL device.");
+        let context = ocl::Context::builder()
+            .platform(platform)
+            .devices(device)
+            .build()
+            .expect("Failed to create OpenCL context.");
 
-        let matrix = built.lp.get_full_matrix();
-        let num_rows = matrix.row_starts.len() - 1;
-        let num_cols = built.lp.num_cols;
+        let program = f32::get_cl_program(&context, &device).expect("Failed to create OpenCL program.");
+        let queue = ocl::Queue::new(&context, device, None).expect("Failed to create OpenCL queue.");
 
-        // TODO handle the error better
-        let ipm = PathFollowingDirectClSolver::from_data(
-            num_rows,
-            num_cols,
-            matrix.row_starts,
-            matrix.columns,
-            matrix.elements.into_iter().map(|v| v as f32).collect(),
-            built.lp.inequality.nrows() as u32,
-            num_scenarios as u32,
-        )
-        .expect("Failed to create the OpenCL IPM solver from the given LP data.");
+        let mut built_solvers = Vec::new();
+        let mut ipms = Vec::new();
 
-        Ok(Box::new(Self { built, ipm }))
+        for chunk_scenarios in (0..num_scenarios).collect::<Vec<_>>().chunks(CHUNK_SIZE) {
+            let builder = SolverBuilder::new(chunk_scenarios.len());
+            let built = builder.create(model)?;
+
+            let matrix = built.lp.get_full_matrix();
+            let num_rows = matrix.row_starts.len() - 1;
+            let num_cols = built.lp.num_cols;
+
+            // TODO handle the error better
+            let ipm = PathFollowingDirectClSolver::from_data(
+                &queue,
+                &program,
+                num_rows,
+                num_cols,
+                matrix.row_starts,
+                matrix.columns,
+                matrix.elements.into_iter().map(|v| v as f32).collect(),
+                built.lp.inequality.nrows() as u32,
+                chunk_scenarios.len() as u32,
+            )
+            .expect("Failed to create the OpenCL IPM solver from the given LP data.");
+
+            built_solvers.push(built);
+            ipms.push(ipm)
+        }
+
+        Ok(Box::new(Self {
+            built: built_solvers,
+            ipm: ipms,
+            chunk_size: CHUNK_SIZE,
+            queue,
+        }))
     }
 
     fn solve(&mut self, model: &Model, timestep: &Timestep, states: &mut [State]) -> Result<SolverTimings, PywrError> {
         // TODO complete the timings
         let mut timings = SolverTimings::default();
 
-        self.built.update(model, timestep, states, &mut timings)?;
+        states
+            .par_chunks_mut(self.chunk_size)
+            .zip(&mut self.built)
+            .zip(&mut self.ipm)
+            .for_each(|((chunk_states, built), ipm)| {
+                let mut timings = SolverTimings::default();
 
-        let now = Instant::now();
-        let row_upper: Vec<_> = self.built.row_upper().iter().map(|&v| v as f32).collect();
-        let col_obj_coef: Vec<_> = self.built.col_obj_coef().iter().map(|&v| v as f32).collect();
+                built.update(model, timestep, chunk_states, &mut timings).unwrap();
 
-        let solution = self
-            .ipm
-            .solve(&row_upper, &col_obj_coef)
-            .expect("Solve failed with the OpenCL IPM solver.");
-        timings.solve = now.elapsed();
+                let now = Instant::now();
+                let row_upper: Vec<_> = built.row_upper().iter().map(|&v| v as f32).collect();
+                let col_obj_coef: Vec<_> = built.col_obj_coef().iter().map(|&v| v as f32).collect();
 
-        let start_save_solution = Instant::now();
-        let num_states = states.len();
-        for (i, state) in states.iter_mut().enumerate() {
-            let network_state = state.get_mut_network_state();
-            network_state.reset();
+                let solution = ipm
+                    .solve(&self.queue, &row_upper, &col_obj_coef)
+                    .expect("Solve failed with the OpenCL IPM solver.");
+                timings.solve = now.elapsed();
 
-            for edge in model.edges.deref() {
-                let col = self.built.col_for_edge(&edge.index());
-                let flow = solution[col * num_states + i];
-                network_state.add_flow(edge, timestep, flow as f64)?;
-            }
-        }
-        timings.save_solution += start_save_solution.elapsed();
+                let start_save_solution = Instant::now();
+                let num_states = chunk_states.len();
+                for (i, state) in chunk_states.iter_mut().enumerate() {
+                    let network_state = state.get_mut_network_state();
+                    network_state.reset();
+
+                    for edge in model.edges.deref() {
+                        let col = built.col_for_edge(&edge.index());
+                        let flow = solution[col * num_states + i];
+                        network_state.add_flow(edge, timestep, flow as f64).unwrap();
+                    }
+                }
+                timings.save_solution += start_save_solution.elapsed();
+            });
 
         Ok(timings)
     }
 }
 
 pub struct ClIpmF64Solver {
-    built: BuiltSolver,
-    ipm: PathFollowingDirectClSolver<f64>,
+    built: Vec<BuiltSolver>,
+    ipm: Vec<PathFollowingDirectClSolver<f64>>,
+    chunk_size: usize,
+    queues: Vec<ocl::Queue>,
 }
 
 impl MultiStateSolver for ClIpmF64Solver {
     fn setup(model: &Model, num_scenarios: usize) -> Result<Box<Self>, PywrError> {
-        let builder = SolverBuilder::new(num_scenarios);
-        let built = builder.create(model)?;
+        let platform = ocl::Platform::default();
+        let device = ocl::Device::first(platform).expect("Failed to get OpenCL device.");
+        let context = ocl::Context::builder()
+            .platform(platform)
+            .devices(device)
+            .build()
+            .expect("Failed to create OpenCL context.");
 
-        let matrix = built.lp.get_full_matrix();
-        let num_rows = matrix.row_starts.len() - 1;
-        let num_cols = built.lp.num_cols;
+        let program = f64::get_cl_program(&context, &device).expect("Failed to create OpenCL program.");
 
-        // TODO handle the error better
-        let ipm = PathFollowingDirectClSolver::from_data(
-            num_rows,
-            num_cols,
-            matrix.row_starts,
-            matrix.columns,
-            matrix.elements,
-            built.lp.inequality.nrows() as u32,
-            num_scenarios as u32,
-        )
-        .expect("Failed to create the OpenCL IPM solver from the given LP data.");
+        let mut built_solvers = Vec::new();
+        let mut ipms = Vec::new();
+        let mut queues = Vec::new();
 
-        Ok(Box::new(Self { built, ipm }))
+        for chunk_scenarios in (0..num_scenarios).collect::<Vec<_>>().chunks(CHUNK_SIZE) {
+            // Create a queue per chunk.
+            let queue = ocl::Queue::new(&context, device, None).expect("Failed to create OpenCL queue.");
+
+            let builder = SolverBuilder::new(chunk_scenarios.len());
+            let built = builder.create(model)?;
+
+            let matrix = built.lp.get_full_matrix();
+            let num_rows = matrix.row_starts.len() - 1;
+            let num_cols = built.lp.num_cols;
+
+            // TODO handle the error better
+            let ipm = PathFollowingDirectClSolver::from_data(
+                &queue,
+                &program,
+                num_rows,
+                num_cols,
+                matrix.row_starts,
+                matrix.columns,
+                matrix.elements,
+                built.lp.inequality.nrows() as u32,
+                chunk_scenarios.len() as u32,
+            )
+            .expect("Failed to create the OpenCL IPM solver from the given LP data.");
+
+            built_solvers.push(built);
+            ipms.push(ipm);
+            queues.push(queue);
+        }
+
+        Ok(Box::new(Self {
+            built: built_solvers,
+            ipm: ipms,
+            chunk_size: CHUNK_SIZE,
+            queues,
+        }))
     }
 
     fn solve(&mut self, model: &Model, timestep: &Timestep, states: &mut [State]) -> Result<SolverTimings, PywrError> {
         // TODO complete the timings
         let mut timings = SolverTimings::default();
 
-        self.built.update(model, timestep, states, &mut timings)?;
+        states
+            .par_chunks_mut(self.chunk_size)
+            .zip(&mut self.built)
+            .zip(&mut self.ipm)
+            .zip(&self.queues)
+            .for_each(|(((chunk_states, built), ipm), queue)| {
+                let mut timings = SolverTimings::default();
 
-        let now = Instant::now();
+                built.update(model, timestep, chunk_states, &mut timings).unwrap();
 
-        // println!(
-        //     "Obj coefficients: {:?}",
-        //     self.built
-        //         .col_obj_coef()
-        //         .iter()
-        //         .step_by(self.built.lp.num_lps)
-        //         .collect::<Vec<_>>()
-        // );
-        // println!(
-        //     "Row bounds 0: {:?}",
-        //     self.built
-        //         .row_upper()
-        //         .iter()
-        //         .step_by(self.built.lp.num_lps)
-        //         .collect::<Vec<_>>()
-        // );
-        //
-        // println!(
-        //     "Row bounds 1: {:?}",
-        //     self.built
-        //         .row_upper()
-        //         .iter()
-        //         .skip(1)
-        //         .step_by(self.built.lp.num_lps)
-        //         .collect::<Vec<_>>()
-        // );
+                let now = Instant::now();
 
-        let solution = self
-            .ipm
-            .solve(self.built.row_upper(), self.built.col_obj_coef())
-            .expect("Solve failed with the OpenCL IPM solver.");
-        timings.solve = now.elapsed();
+                let solution = ipm
+                    .solve(queue, built.row_upper(), built.col_obj_coef())
+                    .expect("Solve failed with the OpenCL IPM solver.");
+                timings.solve = now.elapsed();
 
-        let start_save_solution = Instant::now();
-        let num_states = states.len();
-        for (i, state) in states.iter_mut().enumerate() {
-            let network_state = state.get_mut_network_state();
-            network_state.reset();
+                let start_save_solution = Instant::now();
+                let num_states = chunk_states.len();
+                for (i, state) in chunk_states.iter_mut().enumerate() {
+                    let network_state = state.get_mut_network_state();
+                    network_state.reset();
 
-            for edge in model.edges.deref() {
-                let col = self.built.col_for_edge(&edge.index());
-                let flow = solution[col * num_states + i];
-                network_state.add_flow(edge, timestep, flow)?;
-            }
-        }
-        timings.save_solution += start_save_solution.elapsed();
+                    for edge in model.edges.deref() {
+                        let col = built.col_for_edge(&edge.index());
+                        let flow = solution[col * num_states + i];
+                        network_state.add_flow(edge, timestep, flow).unwrap();
+                    }
+                }
+                timings.save_solution += start_save_solution.elapsed();
+            });
 
         Ok(timings)
     }
