@@ -30,9 +30,9 @@ impl Display for Solver {
             Solver::Clp => write!(f, "clp"),
             #[cfg(feature = "highs")]
             Solver::HIGHS => write!(f, "highs"),
-            #[cfg(feature = "clipm")]
+            #[cfg(feature = "ipm-ocl")]
             Solver::CLIPMF32 => write!(f, "clipmf32"),
-            #[cfg(feature = "clipm")]
+            #[cfg(feature = "ipm-ocl")]
             Solver::CLIPMF64 => write!(f, "clipmf64"),
         }
     }
