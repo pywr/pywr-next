@@ -202,11 +202,11 @@ fn bench_system_size(c: &mut Criterion) {
     random_benchmark(
         c,
         "random-models-size",
-        &[5, 10, 20, 30, 40, 50, 100],
+        &[5, 10, 20, 30, 40, 50],
         &[2, 5],
         &[1],
         &[1],
-        &["highs", "clp"],
+        &["highs", "clp", "simdipmf64"],
         None,
     )
 }
@@ -234,13 +234,13 @@ fn bench_threads(c: &mut Criterion) {
         &[5],
         &[128, 32768],
         &[1, 2, 4, 8, 16],
-        &["clp", "simdipmf64", "clipmf64"],
+        &["simdipmf64", "clipmf64", "clp", "highs"],
         Some(10),
     )
 }
 
 fn bench_hyper_scenarios(c: &mut Criterion) {
-    let scenarios: Vec<usize> = (2..17).into_iter().map(|p| 2_usize.pow(p)).collect();
+    let scenarios: Vec<usize> = (0..17).into_iter().map(|p| 2_usize.pow(p)).collect();
 
     random_benchmark(
         c,
@@ -248,9 +248,8 @@ fn bench_hyper_scenarios(c: &mut Criterion) {
         &[20],
         &[5],
         &scenarios,
-        // &[1000],
         &[8],
-        &["simdipmf64", "clipmf64", "clp"],
+        &["simdipmf64", "clipmf64", "clp", "highs"],
         Some(10),
     )
 }
