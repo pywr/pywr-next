@@ -12,15 +12,15 @@ use crate::PywrError::InvalidMetricValue;
 pub struct DivisionParameter {
     meta: ParameterMeta,
     numerator: Metric,
-    denominator: Metric
+    denominator: Metric,
 }
 
 impl DivisionParameter {
-    pub fn new(name: &str,  numerator: Metric, denominator: Metric) -> Self {
+    pub fn new(name: &str, numerator: Metric, denominator: Metric) -> Self {
         Self {
             meta: ParameterMeta::new(name),
             numerator,
-            denominator
+            denominator,
         }
     }
 }
@@ -41,13 +41,13 @@ impl Parameter for DivisionParameter {
         _internal_state: &mut Option<Box<dyn Any + Send>>,
     ) -> Result<f64, PywrError> {
         // TODO handle scenarios
-        let d = self.denominator.get_value(model, state)?;
+        let denominator = self.denominator.get_value(model, state)?;
 
-        if d == 0 {
-            Err(InvalidMetricValue(String::from(0)))
+        if denominator == 0.0 {
+            return Err(InvalidMetricValue(format!("Division by zero creates a NaN in {}.", self.name)));
         }
 
-        let value: f64 = self.numerator.get_value(model, state)? / self.denominator.get_value(model, state)?;
-        Ok(value)
+        let numerator = self.numerator.get_value(model, state)?;
+        Ok(numerator / denominator)
     }
 }
