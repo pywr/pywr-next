@@ -1,5 +1,6 @@
 use super::{dual_feasibility, primal_feasibility, Matrix};
 use crate::common::{compute_dx_dz_dw, dot_product, normal_eqn_rhs, vector_norm, vector_set, vector_update};
+use crate::Tolerances;
 use ipm_common::SparseNormalCholeskyIndices;
 use std::simd::{f64x4, Mask, SimdFloat, SimdPartialOrd, StdFloat};
 
@@ -185,7 +186,7 @@ pub fn normal_eqn_step(
     dw: &mut [f64x4],
     tmp: &mut [f64x4],
     tmp2: &mut [f64x4],
-    epsilon: f64x4,
+    tolerances: &Tolerances,
 ) -> Mask<i64, 4> {
     // printf("%d %d", gid, wsize);
 
@@ -208,7 +209,9 @@ pub fn normal_eqn_step(
 
     // println!("norm-r: {:?}, norm-s: {:?}, gamma: {:?}", normr, norms, gamma);
 
-    let status = normr.simd_lt(epsilon) & norms.simd_lt(epsilon) & gamma.simd_lt(epsilon);
+    let status = normr.simd_lt(tolerances.primal_feasibility)
+        & norms.simd_lt(tolerances.dual_feasibility)
+        & gamma.simd_lt(tolerances.optimality);
 
     if status.all() {
         // Feasible and optimal; no further work!

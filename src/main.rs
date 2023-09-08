@@ -1,13 +1,13 @@
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand, ValueEnum};
-use pywr::model::{Model, RunOptions};
+use pywr::model::Model;
 use pywr::schema::model::PywrModel;
 use pywr::schema::ConversionError;
-use pywr::solvers::ClpSolver;
-#[cfg(feature = "highs")]
-use pywr::solvers::HighsSolver;
 #[cfg(feature = "ipm-ocl")]
-use pywr::solvers::{ClIpmF32Solver, ClIpmF64Solver};
+use pywr::solvers::{ClIpmF32Solver, ClIpmF64Solver, ClIpmSolverSettings};
+use pywr::solvers::{ClpSolver, ClpSolverSettings};
+#[cfg(feature = "highs")]
+use pywr::solvers::{HighsSolver, HighsSolverSettings};
 use pywr::timestep::Timestepper;
 use pywr::PywrError;
 use std::fmt::{Display, Formatter};
@@ -91,15 +91,7 @@ fn main() -> Result<()> {
                 data_path,
                 parallel,
                 threads,
-            } => {
-                let options = if *parallel {
-                    RunOptions::default().parallel().threads(*threads)
-                } else {
-                    RunOptions::default()
-                };
-
-                run(model, solver, data_path.as_deref(), &options)
-            }
+            } => run(model, solver, data_path.as_deref()),
         },
         None => {}
     }
@@ -148,20 +140,20 @@ fn v1_to_v2(path: &Path) -> std::result::Result<(), ConversionError> {
     Ok(())
 }
 
-fn run(path: &Path, solver: &Solver, data_path: Option<&Path>, options: &RunOptions) {
+fn run(path: &Path, solver: &Solver, data_path: Option<&Path>) {
     let data = std::fs::read_to_string(path).unwrap();
     let schema_v2: PywrModel = serde_json::from_str(data.as_str()).unwrap();
 
     let (model, timestepper): (Model, Timestepper) = schema_v2.try_into_model(data_path).unwrap();
 
     match *solver {
-        Solver::Clp => model.run::<ClpSolver>(&timestepper, options),
+        Solver::Clp => model.run::<ClpSolver>(&timestepper, &ClpSolverSettings::default()),
         #[cfg(feature = "highs")]
-        Solver::HIGHS => model.run::<HighsSolver>(&timestepper, options),
+        Solver::HIGHS => model.run::<HighsSolver>(&timestepper, &HighsSolverSettings::default()),
         #[cfg(feature = "ipm-ocl")]
-        Solver::CLIPMF32 => model.run_multi_scenario::<ClIpmF32Solver>(&timestepper, options),
+        Solver::CLIPMF32 => model.run_multi_scenario::<ClIpmF32Solver>(&timestepper, &ClIpmSolverSettings::default()),
         #[cfg(feature = "ipm-ocl")]
-        Solver::CLIPMF64 => model.run_multi_scenario::<ClIpmF64Solver>(&timestepper, options),
+        Solver::CLIPMF64 => model.run_multi_scenario::<ClIpmF64Solver>(&timestepper, &ClIpmSolverSettings::default()),
     }
     .unwrap();
 }

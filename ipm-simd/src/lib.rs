@@ -12,6 +12,7 @@ use path_following_direct::ANormIndices;
 use path_following_direct::LDecompositionIndices;
 use path_following_direct::{LIndices, LTIndices};
 use std::f64;
+use std::num::NonZeroUsize;
 use std::simd::f64x4;
 
 struct PathData {
@@ -98,6 +99,23 @@ impl PathFollowingDirectSimdData {
     }
 }
 
+#[derive(Copy, Clone, PartialEq, Debug)]
+pub struct Tolerances {
+    pub primal_feasibility: f64x4,
+    pub dual_feasibility: f64x4,
+    pub optimality: f64x4,
+}
+
+impl Default for Tolerances {
+    fn default() -> Self {
+        Self {
+            primal_feasibility: f64x4::splat(1e-6),
+            dual_feasibility: f64x4::splat(1e-6),
+            optimality: f64x4::splat(1e-6),
+        }
+    }
+}
+
 pub struct PathFollowingDirectSimdSolver {
     buffers: PathFollowingDirectSimdData,
 }
@@ -119,7 +137,13 @@ impl PathFollowingDirectSimdSolver {
         Self { buffers }
     }
 
-    pub fn solve(&mut self, b: &[f64x4], c: &[f64x4]) -> &[f64x4] {
+    pub fn solve(
+        &mut self,
+        b: &[f64x4],
+        c: &[f64x4],
+        tolerances: &Tolerances,
+        max_iterations: NonZeroUsize,
+    ) -> &[f64x4] {
         normal_eqn_init(
             &mut self.buffers.path_buffers.x,
             &mut self.buffers.path_buffers.z,
@@ -128,11 +152,10 @@ impl PathFollowingDirectSimdSolver {
         );
 
         let delta = f64x4::splat(0.1);
-        let epsilon = f64x4::splat(1e-8);
         let mut iter = 0;
 
         let last_iteration = loop {
-            if iter >= 500 {
+            if iter >= max_iterations.get() {
                 break None;
             }
             let status = normal_eqn_step(
@@ -156,7 +179,7 @@ impl PathFollowingDirectSimdSolver {
                 &mut self.buffers.delta_path_buffers.w,
                 &mut self.buffers.tmp,
                 &mut self.buffers.rhs,
-                epsilon,
+                tolerances,
             );
 
             if status.all() {

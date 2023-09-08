@@ -17,13 +17,13 @@ mod highs;
 mod ipm_simd;
 
 #[cfg(feature = "ipm-ocl")]
-pub use self::ipm_ocl::{ClIpmF32Solver, ClIpmF64Solver};
+pub use self::ipm_ocl::{ClIpmF32Solver, ClIpmF64Solver, ClIpmSolverSettings, ClIpmSolverSettingsBuilder};
 #[cfg(feature = "ipm-simd")]
-pub use self::ipm_simd::SimdIpmF64Solver;
-pub use clp::{ClpError, ClpSolver};
+pub use self::ipm_simd::{SimdIpmF64Solver, SimdIpmSolverSettings, SimdIpmSolverSettingsBuilder};
+pub use clp::{ClpError, ClpSolver, ClpSolverSettings, ClpSolverSettingsBuilder};
 
 #[cfg(feature = "highs")]
-pub use highs::HighsSolver;
+pub use highs::{HighsSolver, HighsSolverSettings, HighsSolverSettingsBuilder};
 
 #[derive(Default, Debug)]
 pub struct SolverTimings {
@@ -61,12 +61,22 @@ impl AddAssign for SolverTimings {
     }
 }
 
+/// Solver settings that are common to all solvers.
+pub trait SolverSettings {
+    fn parallel(&self) -> bool;
+    fn threads(&self) -> usize;
+}
+
 pub trait Solver: Send {
-    fn setup(model: &Model) -> Result<Box<Self>, PywrError>;
+    type Settings;
+
+    fn setup(model: &Model, settings: &Self::Settings) -> Result<Box<Self>, PywrError>;
     fn solve(&mut self, model: &Model, timestep: &Timestep, state: &mut State) -> Result<SolverTimings, PywrError>;
 }
 
 pub trait MultiStateSolver: Send {
-    fn setup(model: &Model, num_scenarios: usize) -> Result<Box<Self>, PywrError>;
+    type Settings;
+
+    fn setup(model: &Model, num_scenarios: usize, settings: &Self::Settings) -> Result<Box<Self>, PywrError>;
     fn solve(&mut self, model: &Model, timestep: &Timestep, states: &mut [State]) -> Result<SolverTimings, PywrError>;
 }

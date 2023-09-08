@@ -1,3 +1,5 @@
+mod settings;
+
 use crate::edge::EdgeIndex;
 use crate::model::Model;
 use crate::node::{Node, NodeType};
@@ -6,12 +8,14 @@ use crate::solvers::{MultiStateSolver, SolverTimings};
 use crate::state::State;
 use crate::timestep::Timestep;
 use crate::PywrError;
-use ipm_simd::PathFollowingDirectSimdSolver;
+use ipm_simd::{PathFollowingDirectSimdSolver, Tolerances};
 use num::complex::ComplexFloat;
 use rayon::iter::IndexedParallelIterator;
 use rayon::iter::ParallelIterator;
 use rayon::prelude::ParallelSliceMut;
+pub use settings::{SimdIpmSolverSettings, SimdIpmSolverSettingsBuilder};
 use std::collections::BTreeMap;
+use std::num::NonZeroUsize;
 use std::ops::Deref;
 use std::simd::{f64x4, SimdFloat};
 use std::time::Instant;
@@ -578,10 +582,14 @@ const SIMD_LANES: usize = 4;
 pub struct SimdIpmF64Solver {
     built: Vec<BuiltSolver>,
     ipm: Vec<PathFollowingDirectSimdSolver>,
+    tolerances: Tolerances,
+    max_iterations: NonZeroUsize,
 }
 
 impl MultiStateSolver for SimdIpmF64Solver {
-    fn setup(model: &Model, num_scenarios: usize) -> Result<Box<Self>, PywrError> {
+    type Settings = SimdIpmSolverSettings;
+
+    fn setup(model: &Model, num_scenarios: usize, settings: &Self::Settings) -> Result<Box<Self>, PywrError> {
         let mut built_solvers = Vec::new();
         let mut ipms = Vec::new();
 
@@ -609,6 +617,8 @@ impl MultiStateSolver for SimdIpmF64Solver {
         Ok(Box::new(Self {
             built: built_solvers,
             ipm: ipms,
+            tolerances: settings.tolerances(),
+            max_iterations: settings.max_iterations(),
         }))
     }
 
@@ -628,7 +638,12 @@ impl MultiStateSolver for SimdIpmF64Solver {
 
                 let now = Instant::now();
 
-                let solution = ipm.solve(built.row_upper(), built.col_obj_coef());
+                let solution = ipm.solve(
+                    built.row_upper(),
+                    built.col_obj_coef(),
+                    &self.tolerances,
+                    self.max_iterations,
+                );
 
                 timings.solve = now.elapsed();
 

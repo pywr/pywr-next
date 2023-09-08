@@ -217,11 +217,11 @@ fn months_since_last_reset(current: &Date, last_reset: &Date) -> i32 {
 #[cfg(test)]
 mod tests {
     use crate::metric::Metric;
-    use crate::model::{Model, RunOptions};
+    use crate::model::Model;
     use crate::node::{ConstraintValue, StorageInitialVolume};
     use crate::recorders::AssertionFnRecorder;
     use crate::scenario::ScenarioIndex;
-    use crate::solvers::ClpSolver;
+    use crate::solvers::{ClpSolver, ClpSolverSettings};
     use crate::test_utils::default_timestepper;
     use crate::timestep::Timestep;
     use crate::virtual_storage::{months_since_last_reset, VirtualStorageReset};
@@ -316,6 +316,8 @@ mod tests {
         let recorder = AssertionFnRecorder::new("link-1-flow", Metric::NodeOutFlow(idx), expected, None, None);
         model.add_recorder(Box::new(recorder)).unwrap();
 
-        model.run::<ClpSolver>(&timestepper, &RunOptions::default()).unwrap();
+        model
+            .run::<ClpSolver>(&timestepper, &ClpSolverSettings::default())
+            .unwrap();
     }
 }

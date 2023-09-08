@@ -1,3 +1,5 @@
+mod settings;
+
 use crate::model::Model;
 use crate::solvers::builder::{BuiltSolver, SolverBuilder};
 use crate::solvers::{Solver, SolverTimings};
@@ -10,6 +12,7 @@ use highs_sys::{
     Highs_setBoolOptionValue, Highs_setStringOptionValue, OBJECTIVE_SENSE_MINIMIZE, STATUS_OK,
 };
 use libc::c_void;
+pub use settings::{HighsSolverSettings, HighsSolverSettingsBuilder};
 use std::ffi::CString;
 use std::ops::Deref;
 use std::ptr::null;
@@ -157,7 +160,9 @@ pub struct HighsSolver {
 }
 
 impl Solver for HighsSolver {
-    fn setup(model: &Model) -> Result<Box<Self>, PywrError> {
+    type Settings = HighsSolverSettings;
+
+    fn setup(model: &Model, settings: &Self::Settings) -> Result<Box<Self>, PywrError> {
         let builder: SolverBuilder<HighsInt> = SolverBuilder::default();
         let built = builder.create(model)?;
 

@@ -1,12 +1,12 @@
 use crate::aggregated_node::AggregatedNodeIndex;
-use crate::model::{Model, RunOptions};
+use crate::model::Model;
 use crate::recorders::hdf::HDF5Recorder;
 use crate::schema::model::PywrModel;
-use crate::solvers::ClpSolver;
-#[cfg(feature = "highs")]
-use crate::solvers::HighsSolver;
 #[cfg(feature = "ipm-ocl")]
-use crate::solvers::{ClIpmF32Solver, ClIpmF64Solver};
+use crate::solvers::{ClIpmF32Solver, ClIpmF64Solver, ClIpmSolverSettings};
+use crate::solvers::{ClpSolver, ClpSolverSettings};
+#[cfg(feature = "highs")]
+use crate::solvers::{HighsSolver, HighsSolverSettings};
 use crate::timestep::Timestepper;
 use crate::virtual_storage::VirtualStorageIndex;
 use crate::{IndexParameterIndex, ParameterIndex, RecorderIndex};
@@ -701,21 +701,16 @@ fn run_model_from_string(
     }
 
     let nt = num_threads.unwrap_or(1);
-    let options = if nt > 1 {
-        RunOptions::default().parallel().threads(nt)
-    } else {
-        RunOptions::default()
-    };
 
     py.allow_threads(|| {
         match solver_name.as_str() {
-            "clp" => model.run::<ClpSolver>(&timestepper, &options),
+            "clp" => model.run::<ClpSolver>(&timestepper, &ClpSolverSettings::default()),
             #[cfg(feature = "highs")]
-            "highs" => model.run::<HighsSolver>(&timestepper, &options),
+            "highs" => model.run::<HighsSolver>(&timestepper, &HighsSolverSettings::default()),
             #[cfg(feature = "ipm-ocl")]
-            "clipm-f32" => model.run_multi_scenario::<ClIpmF32Solver>(&timestepper, &options),
+            "clipm-f32" => model.run_multi_scenario::<ClIpmF32Solver>(&timestepper, &ClIpmSolverSettings::default()),
             #[cfg(feature = "ipm-simd")]
-            "clipm-f64" => model.run_multi_scenario::<ClIpmF64Solver>(&timestepper, &options),
+            "clipm-f64" => model.run_multi_scenario::<ClIpmF64Solver>(&timestepper, &ClIpmSolverSettings::default()),
             _ => panic!("Solver {solver_name} not recognised."),
         }
         .unwrap();

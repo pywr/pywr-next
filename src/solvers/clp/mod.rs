@@ -1,3 +1,5 @@
+mod settings;
+
 use super::builder::SolverBuilder;
 use crate::model::Model;
 use crate::solvers::builder::BuiltSolver;
@@ -7,6 +9,7 @@ use crate::timestep::Timestep;
 use crate::PywrError;
 use clp_sys::*;
 use libc::{c_double, c_int};
+pub use settings::{ClpSolverSettings, ClpSolverSettingsBuilder};
 use std::ffi::CString;
 use std::slice;
 use std::time::Instant;
@@ -224,7 +227,9 @@ impl ClpSolver {
 }
 
 impl Solver for ClpSolver {
-    fn setup(model: &Model) -> Result<Box<Self>, PywrError> {
+    type Settings = ClpSolverSettings;
+
+    fn setup(model: &Model, settings: &Self::Settings) -> Result<Box<Self>, PywrError> {
         let builder = SolverBuilder::default();
         let built = builder.create(model)?;
 

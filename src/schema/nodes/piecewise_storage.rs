@@ -176,10 +176,9 @@ impl PiecewiseStorageNode {
 #[cfg(test)]
 mod tests {
     use crate::metric::Metric;
-    use crate::model::RunOptions;
     use crate::recorders::AssertionRecorder;
     use crate::schema::model::PywrModel;
-    use crate::solvers::ClpSolver;
+    use crate::solvers::{ClpSolver, ClpSolverSettings};
     use crate::timestep::Timestepper;
     use ndarray::Array2;
 
@@ -228,7 +227,9 @@ mod tests {
         );
         model.add_recorder(Box::new(recorder)).unwrap();
 
-        model.run::<ClpSolver>(&timestepper, &RunOptions::default()).unwrap();
+        model
+            .run::<ClpSolver>(&timestepper, &ClpSolverSettings::default())
+            .unwrap();
     }
 
     /// Test running `piecewise_storage2.json`
@@ -282,6 +283,8 @@ mod tests {
         );
         model.add_recorder(Box::new(recorder)).unwrap();
 
-        model.run::<ClpSolver>(&timestepper, &RunOptions::default()).unwrap();
+        model
+            .run::<ClpSolver>(&timestepper, &ClpSolverSettings::default())
+            .unwrap();
     }
 }

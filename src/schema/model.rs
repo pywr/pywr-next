@@ -260,13 +260,12 @@ impl TryFrom<pywr_schema::PywrModel> for PywrModel {
 mod tests {
     use super::PywrModel;
     use crate::metric::Metric;
-    use crate::model::RunOptions;
     use crate::recorders::AssertionRecorder;
     use crate::schema::parameters::{
         AggFunc, AggregatedParameter, ConstantParameter, ConstantValue, DynamicFloatValue, MetricFloatValue, Parameter,
         ParameterMeta,
     };
-    use crate::solvers::ClpSolver;
+    use crate::solvers::{ClpSolver, ClpSolverSettings};
     use ndarray::{Array1, Array2, Axis};
     use std::path::PathBuf;
 
@@ -351,7 +350,9 @@ mod tests {
         );
         model.add_recorder(Box::new(rec)).unwrap();
 
-        model.run::<ClpSolver>(&timestepper, &RunOptions::default()).unwrap()
+        model
+            .run::<ClpSolver>(&timestepper, &ClpSolverSettings::default())
+            .unwrap()
     }
 
     /// Test that a cycle in parameter dependencies does not load.

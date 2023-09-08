@@ -263,10 +263,10 @@ fn get_norm_ratio_factor_pairs(
 mod tests {
     use crate::aggregated_node::Factors;
     use crate::metric::Metric;
-    use crate::model::{Model, RunOptions};
+    use crate::model::Model;
     use crate::node::ConstraintValue;
     use crate::recorders::AssertionRecorder;
-    use crate::solvers::ClpSolver;
+    use crate::solvers::{ClpSolver, ClpSolverSettings};
     use crate::test_utils::default_timestepper;
     use ndarray::Array2;
 
@@ -317,6 +317,8 @@ mod tests {
         let recorder = AssertionRecorder::new("link-0-flow", Metric::NodeOutFlow(idx), expected, None, None);
         model.add_recorder(Box::new(recorder)).unwrap();
 
-        model.run::<ClpSolver>(&timestepper, &RunOptions::default()).unwrap();
+        model
+            .run::<ClpSolver>(&timestepper, &ClpSolverSettings::default())
+            .unwrap();
     }
 }

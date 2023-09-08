@@ -9,10 +9,14 @@
 /// input flows) and number of CPU threads.
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use pywr::metric::Metric;
-use pywr::model::{Model, RunOptions};
+use pywr::model::Model;
 use pywr::node::ConstraintValue;
 use pywr::parameters::Array2Parameter;
-use pywr::solvers::{ClIpmF64Solver, ClpSolver, HighsSolver, SimdIpmF64Solver};
+use pywr::solvers::{
+    ClIpmF64Solver, ClIpmSolverSettings, ClIpmSolverSettingsBuilder, ClpSolver, ClpSolverSettings,
+    ClpSolverSettingsBuilder, HighsSolver, HighsSolverSettingsBuilder, SimdIpmF64Solver, SimdIpmSolverSettings,
+    SimdIpmSolverSettingsBuilder,
+};
 use pywr::timestep::Timestepper;
 use pywr::PywrError;
 use rand::{Rng, SeedableRng};
@@ -152,42 +156,63 @@ fn random_benchmark(
                     // This is the number of time-steps
                     group.throughput(Throughput::Elements(100 * n_sc as u64));
 
-                    let options = if n_threads > 1 {
-                        RunOptions::default().parallel().threads(n_threads)
-                    } else {
-                        RunOptions::default()
-                    };
-
                     if n_threads == 1 && solvers.contains(&"highs") {
+                        let mut setting_builder = HighsSolverSettingsBuilder::default();
+                        if n_threads > 1 {
+                            setting_builder.parallel();
+                            setting_builder.threads(n_threads);
+                        }
+                        let settings = setting_builder.build();
                         // Only do Highs benchmark for single-threaded
                         group.bench_with_input(
                             BenchmarkId::new("random-model-highs", parameter_string.clone()),
                             &n_sys,
-                            |b, _n| b.iter(|| model.run::<HighsSolver>(&timestepper, &options).unwrap()),
+                            |b, _n| b.iter(|| model.run::<HighsSolver>(&timestepper, &settings).unwrap()),
                         );
                     }
 
                     if solvers.contains(&"clp") {
+                        let mut setting_builder = ClpSolverSettingsBuilder::default();
+                        if n_threads > 1 {
+                            setting_builder.parallel();
+                            setting_builder.threads(n_threads);
+                        }
+                        let settings = setting_builder.build();
+
                         group.bench_with_input(
                             BenchmarkId::new("random-model-clp", parameter_string.clone()),
                             &(n_sys, density, n_sc),
-                            |b, _n| b.iter(|| model.run::<ClpSolver>(&timestepper, &options).unwrap()),
+                            |b, _n| b.iter(|| model.run::<ClpSolver>(&timestepper, &settings).unwrap()),
                         );
                     }
 
                     if solvers.contains(&"clipmf64") {
+                        let mut setting_builder = ClIpmSolverSettingsBuilder::default();
+                        if n_threads > 1 {
+                            setting_builder.parallel();
+                            setting_builder.threads(n_threads);
+                        }
+                        let settings = setting_builder.build();
+
                         group.bench_with_input(
                             BenchmarkId::new("random-model-clipmf64", parameter_string.clone()),
                             &(n_sys, density, n_sc),
-                            |b, _n| b.iter(|| model.run_multi_scenario::<ClIpmF64Solver>(&timestepper, &options)),
+                            |b, _n| b.iter(|| model.run_multi_scenario::<ClIpmF64Solver>(&timestepper, &settings)),
                         );
                     }
 
                     if solvers.contains(&"simdipmf64") {
+                        let mut setting_builder = SimdIpmSolverSettingsBuilder::default();
+                        if n_threads > 1 {
+                            setting_builder.parallel();
+                            setting_builder.threads(n_threads);
+                        }
+                        let settings = setting_builder.build();
+
                         group.bench_with_input(
                             BenchmarkId::new("random-model-simdipmf64", parameter_string.clone()),
                             &(n_sys, density, n_sc),
-                            |b, _n| b.iter(|| model.run_multi_scenario::<SimdIpmF64Solver>(&timestepper, &options)),
+                            |b, _n| b.iter(|| model.run_multi_scenario::<SimdIpmF64Solver>(&timestepper, &settings)),
                         );
                     }
                 }

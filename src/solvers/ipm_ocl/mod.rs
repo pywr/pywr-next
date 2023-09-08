@@ -1,8 +1,10 @@
+mod settings;
+
 use crate::edge::EdgeIndex;
 use crate::model::Model;
 use crate::node::{Node, NodeType};
 use crate::solvers::col_edge_map::{ColumnEdgeMap, ColumnEdgeMapBuilder};
-use crate::solvers::{MultiStateSolver, SolverTimings};
+use crate::solvers::{MultiStateSolver, SolverSettings, SolverTimings};
 use crate::state::State;
 use crate::timestep::Timestep;
 use crate::PywrError;
@@ -11,8 +13,10 @@ use num::complex::ComplexFloat;
 use rayon::iter::IndexedParallelIterator;
 use rayon::iter::ParallelIterator;
 use rayon::prelude::ParallelSliceMut;
+pub use settings::{ClIpmSolverSettings, ClIpmSolverSettingsBuilder};
 use std::collections::BTreeMap;
 use std::f64;
+use std::num::NonZeroUsize;
 use std::ops::Deref;
 use std::time::Instant;
 
@@ -560,18 +564,18 @@ impl SolverBuilder {
     }
 }
 
-// TODO make this configurable
-const CHUNK_SIZE: usize = 4096;
-
 pub struct ClIpmF32Solver {
     built: Vec<BuiltSolver>,
     ipm: Vec<PathFollowingDirectClSolver<f32>>,
-    chunk_size: usize,
+    chunk_size: NonZeroUsize,
+    max_iterations: NonZeroUsize,
     queue: ocl::Queue,
 }
 
 impl MultiStateSolver for ClIpmF32Solver {
-    fn setup(model: &Model, num_scenarios: usize) -> Result<Box<Self>, PywrError> {
+    type Settings = ClIpmSolverSettings;
+
+    fn setup(model: &Model, num_scenarios: usize, settings: &Self::Settings) -> Result<Box<Self>, PywrError> {
         let platform = ocl::Platform::default();
         let device = ocl::Device::first(platform).expect("Failed to get OpenCL device.");
         let context = ocl::Context::builder()
@@ -580,13 +584,16 @@ impl MultiStateSolver for ClIpmF32Solver {
             .build()
             .expect("Failed to create OpenCL context.");
 
-        let program = f32::get_cl_program(&context, &device).expect("Failed to create OpenCL program.");
+        let program =
+            f32::get_cl_program(&context, &device, &settings.tolerances()).expect("Failed to create OpenCL program.");
         let queue = ocl::Queue::new(&context, device, None).expect("Failed to create OpenCL queue.");
 
         let mut built_solvers = Vec::new();
         let mut ipms = Vec::new();
 
-        for chunk_scenarios in (0..num_scenarios).collect::<Vec<_>>().chunks(CHUNK_SIZE) {
+        let chunk_size = settings.chunk_size();
+
+        for chunk_scenarios in (0..num_scenarios).collect::<Vec<_>>().chunks(chunk_size.get()) {
             let builder = SolverBuilder::new(chunk_scenarios.len());
             let built = builder.create(model)?;
 
@@ -615,7 +622,8 @@ impl MultiStateSolver for ClIpmF32Solver {
         Ok(Box::new(Self {
             built: built_solvers,
             ipm: ipms,
-            chunk_size: CHUNK_SIZE,
+            chunk_size,
+            max_iterations: settings.max_iterations(),
             queue,
         }))
     }
@@ -625,7 +633,7 @@ impl MultiStateSolver for ClIpmF32Solver {
         let mut timings = SolverTimings::default();
 
         states
-            .par_chunks_mut(self.chunk_size)
+            .par_chunks_mut(self.chunk_size.get())
             .zip(&mut self.built)
             .zip(&mut self.ipm)
             .for_each(|((chunk_states, built), ipm)| {
@@ -638,7 +646,7 @@ impl MultiStateSolver for ClIpmF32Solver {
                 let col_obj_coef: Vec<_> = built.col_obj_coef().iter().map(|&v| v as f32).collect();
 
                 let solution = ipm
-                    .solve(&self.queue, &row_upper, &col_obj_coef)
+                    .solve(&self.queue, &row_upper, &col_obj_coef, self.max_iterations)
                     .expect("Solve failed with the OpenCL IPM solver.");
                 timings.solve = now.elapsed();
 
@@ -664,12 +672,15 @@ impl MultiStateSolver for ClIpmF32Solver {
 pub struct ClIpmF64Solver {
     built: Vec<BuiltSolver>,
     ipm: Vec<PathFollowingDirectClSolver<f64>>,
-    chunk_size: usize,
+    chunk_size: NonZeroUsize,
+    max_iterations: NonZeroUsize,
     queues: Vec<ocl::Queue>,
 }
 
 impl MultiStateSolver for ClIpmF64Solver {
-    fn setup(model: &Model, num_scenarios: usize) -> Result<Box<Self>, PywrError> {
+    type Settings = ClIpmSolverSettings;
+
+    fn setup(model: &Model, num_scenarios: usize, settings: &Self::Settings) -> Result<Box<Self>, PywrError> {
         let platform = ocl::Platform::default();
         let device = ocl::Device::first(platform).expect("Failed to get OpenCL device.");
         let context = ocl::Context::builder()
@@ -678,13 +689,16 @@ impl MultiStateSolver for ClIpmF64Solver {
             .build()
             .expect("Failed to create OpenCL context.");
 
-        let program = f64::get_cl_program(&context, &device).expect("Failed to create OpenCL program.");
+        let program =
+            f64::get_cl_program(&context, &device, &settings.tolerances()).expect("Failed to create OpenCL program.");
 
         let mut built_solvers = Vec::new();
         let mut ipms = Vec::new();
         let mut queues = Vec::new();
 
-        for chunk_scenarios in (0..num_scenarios).collect::<Vec<_>>().chunks(CHUNK_SIZE) {
+        let chunk_size = settings.chunk_size();
+
+        for chunk_scenarios in (0..num_scenarios).collect::<Vec<_>>().chunks(chunk_size.get()) {
             // Create a queue per chunk.
             let queue = ocl::Queue::new(&context, device, None).expect("Failed to create OpenCL queue.");
 
@@ -717,7 +731,8 @@ impl MultiStateSolver for ClIpmF64Solver {
         Ok(Box::new(Self {
             built: built_solvers,
             ipm: ipms,
-            chunk_size: CHUNK_SIZE,
+            chunk_size,
+            max_iterations: settings.max_iterations(),
             queues,
         }))
     }
@@ -727,7 +742,7 @@ impl MultiStateSolver for ClIpmF64Solver {
         let mut timings = SolverTimings::default();
 
         states
-            .par_chunks_mut(self.chunk_size)
+            .par_chunks_mut(self.chunk_size.get())
             .zip(&mut self.built)
             .zip(&mut self.ipm)
             .zip(&self.queues)
@@ -739,7 +754,7 @@ impl MultiStateSolver for ClIpmF64Solver {
                 let now = Instant::now();
 
                 let solution = ipm
-                    .solve(queue, built.row_upper(), built.col_obj_coef())
+                    .solve(queue, built.row_upper(), built.col_obj_coef(), self.max_iterations)
                     .expect("Solve failed with the OpenCL IPM solver.");
                 timings.solve = now.elapsed();
 

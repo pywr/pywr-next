@@ -185,7 +185,7 @@ __kernel void normal_eqn_step(
     //    printf("%d %d norm-r: %g, norm-s: %g, gamma: %g\n", gid, wsize, normr, norms, gamma);
     // }
     // #endif
-    if ((normr < EPS) && (norms < EPS) && (gamma < EPS)) {
+    if ((normr < EPS_PRIMAL_FEASIBILITY) && (norms < EPS_DUAL_FEASIBILITY) && (gamma < EPS_OPTIMALITY)) {
         // Feasible and optimal; no further work!
         status[gid] = 0;
         return;

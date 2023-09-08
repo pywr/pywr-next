@@ -1,18 +1,48 @@
 use ipm_common::SparseNormalCholeskyIndices;
 use log::debug;
 use nalgebra_sparse::csr::CsrMatrix;
+use std::num::NonZeroUsize;
+
+#[derive(Copy, Clone, PartialEq, Debug)]
+pub struct Tolerances {
+    pub primal_feasibility: f64,
+    pub dual_feasibility: f64,
+    pub optimality: f64,
+}
+
+impl Default for Tolerances {
+    fn default() -> Self {
+        Self {
+            primal_feasibility: 1e-6,
+            dual_feasibility: 1e-6,
+            optimality: 1e-6,
+        }
+    }
+}
 
 pub trait GetClProgram {
-    fn get_cl_program(context: &ocl::Context, device: &ocl::Device) -> ocl::Result<ocl::Program>;
+    fn get_cl_program(
+        context: &ocl::Context,
+        device: &ocl::Device,
+        tolerances: &Tolerances,
+    ) -> ocl::Result<ocl::Program>;
 }
 
 impl GetClProgram for f64 {
-    fn get_cl_program(context: &ocl::Context, device: &ocl::Device) -> ocl::Result<ocl::Program> {
+    fn get_cl_program(
+        context: &ocl::Context,
+        device: &ocl::Device,
+        tolerances: &Tolerances,
+    ) -> ocl::Result<ocl::Program> {
         let src = [include_str!("common.cl"), include_str!("path_following_direct.cl")].join("\n");
 
         // TODO this was done with build argument before "-DREAL=double". Need to do a proper search
         // on the ocl docs about whether this is possible.
-        let src = src.replace("REAL", "double").replace("EPS", "1e-3");
+        let src = src
+            .replace("REAL", "double")
+            .replace("EPS_PRIMAL_FEASIBILITY", &format!("{}", tolerances.primal_feasibility))
+            .replace("EPS_DUAL_FEASIBILITY", &format!("{}", tolerances.dual_feasibility))
+            .replace("EPS_OPTIMALITY", &format!("{}", tolerances.optimality));
 
         let opts = std::env::var("CLIPM_COMPILER_OPTS").unwrap_or_else(|_| "".to_string());
         let program = ocl::Program::builder()
@@ -26,12 +56,20 @@ impl GetClProgram for f64 {
 }
 
 impl GetClProgram for f32 {
-    fn get_cl_program(context: &ocl::Context, device: &ocl::Device) -> ocl::Result<ocl::Program> {
+    fn get_cl_program(
+        context: &ocl::Context,
+        device: &ocl::Device,
+        tolerances: &Tolerances,
+    ) -> ocl::Result<ocl::Program> {
         let src = [include_str!("common.cl"), include_str!("path_following_direct.cl")].join("\n");
 
-        // TODO this was done with build argument before "-DREAL=double". Need to do a proper search
+        // TODO this was done with build argument before "-DREAL=float". Need to do a proper search
         // on the ocl docs about whether this is possible.
-        let src = src.replace("REAL", "float").replace("EPS", "1e-2");
+        let src = src
+            .replace("REAL", "float")
+            .replace("EPS_PRIMAL_FEASIBILITY", &format!("{}", tolerances.primal_feasibility))
+            .replace("EPS_DUAL_FEASIBILITY", &format!("{}", tolerances.dual_feasibility))
+            .replace("EPS_OPTIMALITY", &format!("{}", tolerances.optimality));
 
         let opts = std::env::var("CLIPM_COMPILER_OPTS").unwrap_or_else(|_| "".to_string());
         let program = ocl::Program::builder()
@@ -479,7 +517,7 @@ where
         })
     }
 
-    pub fn solve(&mut self, queue: &ocl::Queue, b: &[T], c: &[T]) -> ocl::Result<&[T]> {
+    pub fn solve(&mut self, queue: &ocl::Queue, b: &[T], c: &[T], max_iterations: NonZeroUsize) -> ocl::Result<&[T]> {
         // Copy b & c to the device
         self.buffers.b_buffer.write(b).enq()?;
 
@@ -492,7 +530,7 @@ where
         // self.buffers.path_buffers.x.read(&mut self.solution).enq()?;
         // self.queue.finish()?;
 
-        for _ in 0..200 {
+        for _ in 0..max_iterations.get() {
             unsafe {
                 self.kernel_normal_eq_step.enq()?;
             }
@@ -532,7 +570,9 @@ mod tests {
             .devices(device)
             .build()
             .unwrap();
-        let p = f64::get_cl_program(&context, &device).unwrap();
+
+        let tolerances = Tolerances::default();
+        let _ = f64::get_cl_program(&context, &device, &tolerances).unwrap();
     }
 
     fn test_matrx() -> CsrMatrix<f64> {
