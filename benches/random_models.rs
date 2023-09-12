@@ -116,10 +116,10 @@ struct SolverSetup {
 
 fn default_solver_setups() -> Vec<SolverSetup> {
     vec![
-        SolverSetup {
-            setting: SolverSetting::Highs(HighsSolverSettings::default()),
-            name: "default".to_string(),
-        },
+        // SolverSetup {
+        //     setting: SolverSetting::Highs(HighsSolverSettings::default()),
+        //     name: "default".to_string(),
+        // },
         SolverSetup {
             setting: SolverSetting::Clp(ClpSolverSettings::default()),
             name: "default".to_string(),
@@ -146,7 +146,7 @@ fn bench_system_size(c: &mut Criterion) {
 }
 
 fn bench_scenarios(c: &mut Criterion) {
-    let scenarios: Vec<usize> = (0..11).into_iter().map(|p| 2_usize.pow(p)).collect();
+    let scenarios: Vec<usize> = vec![1, 2, 4, 6, 8, 10, 12, 24, 48, 64];
     let solver_setups = default_solver_setups();
 
     random_benchmark(
@@ -188,7 +188,7 @@ fn bench_threads(c: &mut Criterion) {
     random_benchmark(
         c,
         "random-models-threads",
-        &[20],
+        &[20, 50],
         &[5],
         &[256, 32768],
         &solver_setups,
@@ -217,7 +217,7 @@ fn bench_ipm_convergence(c: &mut Criterion) {
     random_benchmark(
         c,
         "random-models-ipm-convergence",
-        &[20],
+        &[20, 50],
         &[5],
         &[256, 32768],
         &solver_setups,
@@ -261,15 +261,6 @@ fn bench_hyper_scenarios(c: &mut Criterion) {
 
     let solver_setups = vec![
         SolverSetup {
-            setting: SolverSetting::Highs(
-                HighsSolverSettingsBuilder::default()
-                    .parallel()
-                    .threads(N_THREADS)
-                    .build(),
-            ),
-            name: "default".to_string(),
-        },
-        SolverSetup {
             setting: SolverSetting::Clp(
                 ClpSolverSettingsBuilder::default()
                     .parallel()
@@ -292,7 +283,7 @@ fn bench_hyper_scenarios(c: &mut Criterion) {
     random_benchmark(
         c,
         "random-models-hyper-scenarios",
-        &[20],
+        &[20, 50],
         &[5],
         &scenarios,
         &solver_setups,
