@@ -68,19 +68,19 @@ impl PathFollowingDirectSimdData {
         let l_ptr = LIndices::from_indices(&normal_indices);
         let lt_ptr = LTIndices::from_indices(&normal_indices);
 
-        println!("anorm_indptr: {}", normal_indices.anorm_indptr.len());
-        println!("anorm_indptr_i: {}", normal_indices.anorm_indptr_i.len());
-        println!("anorm_indptr_j: {}", normal_indices.anorm_indptr_j.len());
-        println!("anorm_indices: {}", normal_indices.anorm_indices.len());
-        println!("ldecomp_indptr: {}", normal_indices.ldecomp_indptr.len());
-        println!("ldecomp_indptr_i: {}", normal_indices.ldecomp_indptr_i.len());
-        println!("ldecomp_indptr_j: {}", normal_indices.ldecomp_indptr_j.len());
-        println!("lindptr: {}", normal_indices.lindptr.len());
-        println!("ldiag_indptr: {}", normal_indices.ldiag_indptr.len());
-        println!("lindices: {}", normal_indices.lindices.len());
-        println!("ltindptr: {}", normal_indices.ltindptr.len());
-        println!("ltindices: {}", normal_indices.ltindices.len());
-        println!("ltmap: {}", normal_indices.ltmap.len());
+        // println!("anorm_indptr: {}", normal_indices.anorm_indptr.len());
+        // println!("anorm_indptr_i: {}", normal_indices.anorm_indptr_i.len());
+        // println!("anorm_indptr_j: {}", normal_indices.anorm_indptr_j.len());
+        // println!("anorm_indices: {}", normal_indices.anorm_indices.len());
+        // println!("ldecomp_indptr: {}", normal_indices.ldecomp_indptr.len());
+        // println!("ldecomp_indptr_i: {}", normal_indices.ldecomp_indptr_i.len());
+        // println!("ldecomp_indptr_j: {}", normal_indices.ldecomp_indptr_j.len());
+        // println!("lindptr: {}", normal_indices.lindptr.len());
+        // println!("ldiag_indptr: {}", normal_indices.ldiag_indptr.len());
+        // println!("lindices: {}", normal_indices.lindices.len());
+        // println!("ltindptr: {}", normal_indices.ltindptr.len());
+        // println!("ltindices: {}", normal_indices.ltindices.len());
+        // println!("ltmap: {}", normal_indices.ltmap.len());
 
         // Require ldata for every SIMD lane
         let l_data: Vec<f64x4> = (0..normal_indices.lindices.len())
