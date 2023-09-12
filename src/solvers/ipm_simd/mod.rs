@@ -4,7 +4,7 @@ use crate::edge::EdgeIndex;
 use crate::model::Model;
 use crate::node::{Node, NodeType};
 use crate::solvers::col_edge_map::{ColumnEdgeMap, ColumnEdgeMapBuilder};
-use crate::solvers::{MultiStateSolver, SolverTimings};
+use crate::solvers::{MultiStateSolver, SolverFeatures, SolverTimings};
 use crate::state::State;
 use crate::timestep::Timestep;
 use crate::PywrError;
@@ -588,6 +588,10 @@ pub struct SimdIpmF64Solver {
 
 impl MultiStateSolver for SimdIpmF64Solver {
     type Settings = SimdIpmSolverSettings;
+
+    fn features() -> &'static [SolverFeatures] {
+        &[]
+    }
 
     fn setup(model: &Model, num_scenarios: usize, settings: &Self::Settings) -> Result<Box<Self>, PywrError> {
         let mut built_solvers = Vec::new();

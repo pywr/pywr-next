@@ -127,4 +127,6 @@ pub enum PywrError {
     DataTable(#[from] schema::data_tables::TableError),
     #[error("unsupported file format")]
     UnsupportedFileFormat,
+    #[error("missing solver features")]
+    MissingSolverFeatures,
 }

@@ -4,7 +4,7 @@ use crate::edge::EdgeIndex;
 use crate::model::Model;
 use crate::node::{Node, NodeType};
 use crate::solvers::col_edge_map::{ColumnEdgeMap, ColumnEdgeMapBuilder};
-use crate::solvers::{MultiStateSolver, SolverSettings, SolverTimings};
+use crate::solvers::{MultiStateSolver, SolverFeatures, SolverSettings, SolverTimings};
 use crate::state::State;
 use crate::timestep::Timestep;
 use crate::PywrError;
@@ -575,6 +575,10 @@ pub struct ClIpmF32Solver {
 impl MultiStateSolver for ClIpmF32Solver {
     type Settings = ClIpmSolverSettings;
 
+    fn features() -> &'static [SolverFeatures] {
+        &[]
+    }
+
     fn setup(model: &Model, num_scenarios: usize, settings: &Self::Settings) -> Result<Box<Self>, PywrError> {
         let platform = ocl::Platform::default();
         let device = ocl::Device::first(platform).expect("Failed to get OpenCL device.");
@@ -679,6 +683,10 @@ pub struct ClIpmF64Solver {
 
 impl MultiStateSolver for ClIpmF64Solver {
     type Settings = ClIpmSolverSettings;
+
+    fn features() -> &'static [SolverFeatures] {
+        &[]
+    }
 
     fn setup(model: &Model, num_scenarios: usize, settings: &Self::Settings) -> Result<Box<Self>, PywrError> {
         let platform = ocl::Platform::default();

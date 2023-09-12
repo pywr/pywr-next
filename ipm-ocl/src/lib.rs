@@ -347,7 +347,17 @@ where
         let at = a.transpose();
         let at_buffers = SparseMatrixBuffers::from_sparse_matrix(&at, queue)?;
 
-        let normal_indices = SparseNormalCholeskyIndices::from_matrix(a);
+        let mut normal_indices = SparseNormalCholeskyIndices::from_matrix(a);
+
+        // Really simple models may not have any entries in these arrays.
+        // However, the OCL buffers need to be at-least size 1. Add a temporary value as a work around.
+        if normal_indices.ldecomp_indptr_i.is_empty() {
+            normal_indices.ldecomp_indptr_i.push(0)
+        }
+        if normal_indices.ldecomp_indptr_j.is_empty() {
+            normal_indices.ldecomp_indptr_j.push(0)
+        }
+
         let normal_buffers = SparseNormalCholeskyClBuffers::from_indices(&normal_indices, queue)?;
 
         debug!("Number of L indices: {}", normal_indices.lindices.len());

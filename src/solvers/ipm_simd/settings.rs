@@ -115,8 +115,6 @@ impl SimdIpmSolverSettingsBuilder {
     }
     /// Construct a [`SimdIpmSolverSettings`] from the builder.
     pub fn build(&self) -> SimdIpmSolverSettings {
-        // Create a Foo from the FooBuilder, applying all settings in FooBuilder
-        // to Foo.
         SimdIpmSolverSettings {
             parallel: self.parallel,
             threads: self.threads,

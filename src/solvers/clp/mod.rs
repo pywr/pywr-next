@@ -3,7 +3,7 @@ mod settings;
 use super::builder::SolverBuilder;
 use crate::model::Model;
 use crate::solvers::builder::BuiltSolver;
-use crate::solvers::{Solver, SolverTimings};
+use crate::solvers::{Solver, SolverFeatures, SolverTimings};
 use crate::state::State;
 use crate::timestep::Timestep;
 use crate::PywrError;
@@ -228,6 +228,10 @@ impl ClpSolver {
 
 impl Solver for ClpSolver {
     type Settings = ClpSolverSettings;
+
+    fn features() -> &'static [SolverFeatures] {
+        &[SolverFeatures::AggregatedNodeFactors, SolverFeatures::VirtualStorage]
+    }
 
     fn setup(model: &Model, settings: &Self::Settings) -> Result<Box<Self>, PywrError> {
         let builder = SolverBuilder::default();

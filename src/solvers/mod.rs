@@ -6,13 +6,12 @@ use std::ops::{Add, AddAssign};
 use std::time::Duration;
 
 mod builder;
-#[cfg(feature = "ipm-ocl")]
-mod ipm_ocl;
-
 mod clp;
 mod col_edge_map;
 #[cfg(feature = "highs")]
 mod highs;
+#[cfg(feature = "ipm-ocl")]
+mod ipm_ocl;
 #[cfg(feature = "ipm-simd")]
 mod ipm_simd;
 
@@ -21,7 +20,6 @@ pub use self::ipm_ocl::{ClIpmF32Solver, ClIpmF64Solver, ClIpmSolverSettings, ClI
 #[cfg(feature = "ipm-simd")]
 pub use self::ipm_simd::{SimdIpmF64Solver, SimdIpmSolverSettings, SimdIpmSolverSettingsBuilder};
 pub use clp::{ClpError, ClpSolver, ClpSolverSettings, ClpSolverSettingsBuilder};
-
 #[cfg(feature = "highs")]
 pub use highs::{HighsSolver, HighsSolverSettings, HighsSolverSettingsBuilder};
 
@@ -61,6 +59,16 @@ impl AddAssign for SolverTimings {
     }
 }
 
+/// Features that a solver provides or a model may required.
+///
+/// This enum is used to ensure that a given solver implements the appropriate features
+/// to solve a given model.
+#[derive(PartialEq, Eq, Hash)]
+pub enum SolverFeatures {
+    AggregatedNodeFactors,
+    VirtualStorage,
+}
+
 /// Solver settings that are common to all solvers.
 pub trait SolverSettings {
     fn parallel(&self) -> bool;
@@ -70,13 +78,16 @@ pub trait SolverSettings {
 pub trait Solver: Send {
     type Settings;
 
+    /// An array of features that this solver provides.
+    fn features() -> &'static [SolverFeatures];
     fn setup(model: &Model, settings: &Self::Settings) -> Result<Box<Self>, PywrError>;
     fn solve(&mut self, model: &Model, timestep: &Timestep, state: &mut State) -> Result<SolverTimings, PywrError>;
 }
 
 pub trait MultiStateSolver: Send {
     type Settings;
-
+    /// An array of features that this solver provides.
+    fn features() -> &'static [SolverFeatures];
     fn setup(model: &Model, num_scenarios: usize, settings: &Self::Settings) -> Result<Box<Self>, PywrError>;
     fn solve(&mut self, model: &Model, timestep: &Timestep, states: &mut [State]) -> Result<SolverTimings, PywrError>;
 }

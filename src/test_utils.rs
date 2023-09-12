@@ -3,11 +3,20 @@ use crate::metric::Metric;
 /// TODO move this to its own local crate ("test-utilities") as part of a workspace.
 use crate::model::Model;
 use crate::node::{Constraint, ConstraintValue, StorageInitialVolume};
-use crate::parameters::{AggFunc, AggregatedParameter, ConstantParameter, Parameter, VectorParameter};
+use crate::parameters::{AggFunc, AggregatedParameter, Array2Parameter, ConstantParameter, Parameter, VectorParameter};
 use crate::recorders::AssertionRecorder;
+#[cfg(feature = "ipm-ocl")]
+use crate::solvers::ClIpmF64Solver;
 use crate::solvers::ClpSolver;
+#[cfg(feature = "highs")]
+use crate::solvers::HighsSolver;
+#[cfg(feature = "ipm-simd")]
+use crate::solvers::SimdIpmF64Solver;
 use crate::timestep::Timestepper;
+use crate::PywrError;
 use ndarray::Array2;
+use rand::Rng;
+use rand_distr::{Distribution, Normal};
 use time::ext::NumericalDuration;
 use time::macros::date;
 
@@ -115,7 +124,7 @@ pub fn simple_storage_model() -> Model {
 /// This function will run a number of time-steps equal to the number of rows in the expected
 /// values array.
 ///
-/// See [AssertionRecorder] for more information.
+/// See [`AssertionRecorder`] for more information.
 pub fn run_and_assert_parameter(
     model: &mut Model,
     parameter: Box<dyn Parameter>,
@@ -132,5 +141,154 @@ pub fn run_and_assert_parameter(
     let rec = AssertionRecorder::new("assert", Metric::ParameterValue(p_idx), expected_values, ulps, epsilon);
 
     model.add_recorder(Box::new(rec)).unwrap();
-    model.run::<ClpSolver>(&timestepper, &Default::default()).unwrap();
+    run_all_solvers(model, &timestepper)
+}
+
+/// Run a model using each of the in-built solvers.
+pub fn run_all_solvers(model: &Model, timestepper: &Timestepper) {
+    model
+        .run::<ClpSolver>(timestepper, &Default::default())
+        .expect("Failed to solve with CLP");
+
+    #[cfg(feature = "highs")]
+    model
+        .run::<HighsSolver>(timestepper, &Default::default())
+        .expect("Failed to solve with Highs");
+
+    #[cfg(feature = "ipm-simd")]
+    model
+        .run_multi_scenario::<SimdIpmF64Solver>(timestepper, &Default::default())
+        .expect("Failed to solve with SIMD IPM");
+
+    #[cfg(feature = "ipm-ocl")]
+    model
+        .run_multi_scenario::<ClIpmF64Solver>(timestepper, &Default::default())
+        .expect("Failed to solve with OpenCl IPM");
+}
+
+/// Make a simple system with random inputs.
+fn make_simple_system<R: Rng>(model: &mut Model, suffix: &str, rng: &mut R) -> Result<(), PywrError> {
+    let input_idx = model.add_input_node("input", Some(suffix))?;
+    let link_idx = model.add_link_node("link", Some(suffix))?;
+    let output_idx = model.add_output_node("output", Some(suffix))?;
+
+    model.connect_nodes(input_idx, link_idx)?;
+    model.connect_nodes(link_idx, output_idx)?;
+
+    let num_scenarios = model.get_scenario_group_size_by_name("test-scenario")?;
+    let scenario_group_index = model.get_scenario_group_index_by_name("test-scenario")?;
+
+    let inflow_distr: Normal<f64> = Normal::new(9.0, 1.0).unwrap();
+
+    let mut inflow = ndarray::Array2::zeros((1000, num_scenarios));
+
+    for x in inflow.iter_mut() {
+        *x = inflow_distr.sample(rng).max(0.0);
+    }
+    let inflow = Array2Parameter::new(&format!("inflow-{suffix}"), inflow, scenario_group_index);
+    let idx = model.add_parameter(Box::new(inflow))?;
+
+    model.set_node_max_flow(
+        "input",
+        Some(suffix),
+        ConstraintValue::Metric(Metric::ParameterValue(idx)),
+    )?;
+
+    model.set_node_cost("input", Some(suffix), ConstraintValue::Scalar(-10.0))?;
+
+    let outflow_distr = Normal::new(8.0, 3.0).unwrap();
+    let mut outflow: f64 = outflow_distr.sample(rng);
+    outflow = outflow.max(0.0);
+
+    model.set_node_max_flow("output", Some(suffix), ConstraintValue::Scalar(outflow))?;
+
+    model.set_node_cost("output", Some(suffix), ConstraintValue::Scalar(-500.0))?;
+
+    Ok(())
+}
+
+/// Make a simple connections between random systems
+///
+///
+fn make_simple_connections<R: Rng>(
+    model: &mut Model,
+    num_systems: usize,
+    density: usize,
+    rng: &mut R,
+) -> Result<(), PywrError> {
+    let num_connections = (num_systems.pow(2) * density / 100 / 2).max(1);
+
+    let mut connections_added: usize = 0;
+
+    while connections_added < num_connections {
+        let i = rng.gen_range(0..num_systems);
+        let j = rng.gen_range(0..num_systems);
+
+        if i == j {
+            continue;
+        }
+
+        let name = format!("{i:04}->{j:04}");
+
+        if let Ok(idx) = model.add_link_node("transfer", Some(&name)) {
+            let from_suffix = format!("sys-{i:04}");
+            let from_idx = model.get_node_index_by_name("link", Some(&from_suffix))?;
+            let to_suffix = format!("sys-{j:04}");
+            let to_idx = model.get_node_index_by_name("link", Some(&to_suffix))?;
+
+            model.connect_nodes(from_idx, idx)?;
+            model.connect_nodes(idx, to_idx)?;
+
+            connections_added += 1;
+        }
+    }
+
+    Ok(())
+}
+
+pub fn make_random_model<R: Rng>(
+    num_systems: usize,
+    density: usize,
+    num_scenarios: usize,
+    rng: &mut R,
+) -> Result<Model, PywrError> {
+    let mut model = Model::default();
+
+    model.add_scenario_group("test-scenario", num_scenarios)?;
+
+    for i in 0..num_systems {
+        let suffix = format!("sys-{i:04}");
+        make_simple_system(&mut model, &suffix, rng)?;
+    }
+
+    make_simple_connections(&mut model, num_systems, density, rng)?;
+
+    Ok(model)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::make_random_model;
+    use crate::solvers::{SimdIpmF64Solver, SimdIpmSolverSettings};
+    use crate::timestep::Timestepper;
+    use rand::SeedableRng;
+    use rand_chacha::ChaCha8Rng;
+    use time::macros::date;
+
+    #[test]
+    fn test_random_model() {
+        let n_sys = 50;
+        let density = 5;
+        let n_sc = 12;
+        // Make a consistent random number generator
+        // ChaCha8 should be consistent across builds and platforms
+        let mut rng = ChaCha8Rng::seed_from_u64(0);
+        let model = make_random_model(n_sys, density, n_sc, &mut rng).unwrap();
+
+        let timestepper = Timestepper::new(date!(2020 - 01 - 01), date!(2020 - 04 - 09), 1);
+        let settings = SimdIpmSolverSettings::default();
+        model
+            .run_multi_scenario::<SimdIpmF64Solver>(&timestepper, &settings)
+            .expect("Failed to run model!");
+    }
 }

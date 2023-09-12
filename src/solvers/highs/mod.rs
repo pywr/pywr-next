@@ -2,7 +2,7 @@ mod settings;
 
 use crate::model::Model;
 use crate::solvers::builder::{BuiltSolver, SolverBuilder};
-use crate::solvers::{Solver, SolverTimings};
+use crate::solvers::{Solver, SolverFeatures, SolverTimings};
 use crate::state::State;
 use crate::timestep::Timestep;
 use crate::PywrError;
@@ -161,6 +161,10 @@ pub struct HighsSolver {
 
 impl Solver for HighsSolver {
     type Settings = HighsSolverSettings;
+
+    fn features() -> &'static [SolverFeatures] {
+        &[]
+    }
 
     fn setup(model: &Model, settings: &Self::Settings) -> Result<Box<Self>, PywrError> {
         let builder: SolverBuilder<HighsInt> = SolverBuilder::default();

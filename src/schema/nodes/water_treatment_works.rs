@@ -195,6 +195,7 @@ mod tests {
     use crate::schema::model::PywrModel;
     use crate::schema::nodes::WaterTreatmentWorks;
     use crate::solvers::{ClpSolver, ClpSolverSettings};
+    use crate::test_utils::run_all_solvers;
     use ndarray::Array2;
 
     #[test]
@@ -323,8 +324,7 @@ mod tests {
         let recorder = AssertionRecorder::new("demand-flow", Metric::NodeInFlow(idx), expected, None, None);
         model.add_recorder(Box::new(recorder)).unwrap();
 
-        model
-            .run::<ClpSolver>(&timestepper, &ClpSolverSettings::default())
-            .unwrap()
+        // Test all solvers
+        run_all_solvers(&model, &timestepper);
     }
 }

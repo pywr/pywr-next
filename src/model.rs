@@ -5,7 +5,7 @@ use crate::metric::Metric;
 use crate::node::{ConstraintValue, Node, NodeVec, StorageInitialVolume};
 use crate::parameters::{MultiValueParameterIndex, ParameterType};
 use crate::scenario::{ScenarioGroupCollection, ScenarioIndex};
-use crate::solvers::{MultiStateSolver, Solver, SolverSettings, SolverTimings};
+use crate::solvers::{MultiStateSolver, Solver, SolverFeatures, SolverSettings, SolverTimings};
 use crate::state::{ParameterStates, State};
 use crate::timestep::{Timestep, Timestepper};
 use crate::virtual_storage::{VirtualStorage, VirtualStorageIndex, VirtualStorageReset, VirtualStorageVec};
@@ -14,6 +14,7 @@ use indicatif::ProgressIterator;
 use log::{debug, info};
 use rayon::prelude::*;
 use std::any::Any;
+use std::collections::HashSet;
 use std::ops::Deref;
 use std::time::Duration;
 use std::time::Instant;
@@ -230,11 +231,36 @@ impl Model {
         ))
     }
 
+    /// Check whether a solver [`S`] has the required features to run this model.
+    pub fn check_solver_features<S>(&self) -> bool
+    where
+        S: Solver,
+    {
+        let required_features = self.required_features();
+
+        required_features.iter().all(|f| S::features().contains(f))
+    }
+
+    /// Check whether a solver [`S`] has the required features to run this model.
+    pub fn check_multi_scenario_solver_features<S>(&self) -> bool
+    where
+        S: MultiStateSolver,
+    {
+        let required_features = self.required_features();
+
+        required_features.iter().all(|f| S::features().contains(f))
+    }
+
     pub fn setup_solver<S>(&self, settings: &S::Settings) -> Result<Vec<Box<S>>, PywrError>
     where
         S: Solver,
     {
+        if !self.check_solver_features::<S>() {
+            return Err(PywrError::MissingSolverFeatures);
+        }
+
         let scenario_indices = self.scenarios.scenario_indices();
+
         let mut solvers = Vec::with_capacity(scenario_indices.len());
 
         for _scenario_index in scenario_indices {
@@ -254,6 +280,9 @@ impl Model {
     where
         S: MultiStateSolver,
     {
+        if !self.check_multi_scenario_solver_features::<S>() {
+            return Err(PywrError::MissingSolverFeatures);
+        }
         S::setup(self, scenario_indices.len(), settings)
     }
 
@@ -552,6 +581,23 @@ impl Model {
         }
 
         Ok(())
+    }
+
+    /// Calculate the set of [`SolverFeatures`] required to correctly run this model.
+    fn required_features(&self) -> HashSet<SolverFeatures> {
+        let mut features = HashSet::new();
+
+        // Aggregated node factors required if any aggregated node has factors defined.
+        if self.aggregated_nodes.iter().any(|n| n.get_factors().is_some()) {
+            features.insert(SolverFeatures::AggregatedNodeFactors);
+        }
+
+        // The presence of any virtual storage node requires the VirtualStorage feature.
+        if self.virtual_storage_nodes.len() > 0 {
+            features.insert(SolverFeatures::VirtualStorage);
+        }
+
+        features
     }
 
     /// Undertake calculations for model components before solve.
@@ -1319,7 +1365,7 @@ mod tests {
     use crate::solvers::{ClpSolver, ClpSolverSettings};
     #[cfg(feature = "highs")]
     use crate::solvers::{HighsSolver, HighsSolverSettings};
-    use crate::test_utils::{default_timestepper, simple_model, simple_storage_model};
+    use crate::test_utils::{default_timestepper, run_all_solvers, simple_model, simple_storage_model};
     use float_cmp::approx_eq;
     use ndarray::Array2;
     use std::ops::Deref;
@@ -1480,55 +1526,8 @@ mod tests {
         let recorder = AssertionRecorder::new("total-demand", Metric::ParameterValue(idx), expected, None, None);
         model.add_recorder(Box::new(recorder)).unwrap();
 
-        model
-            .run::<ClpSolver>(&timestepper, &ClpSolverSettings::default())
-            .unwrap();
-        #[cfg(feature = "highs")]
-        model
-            .run::<HighsSolver>(&timestepper, &HighsSolverSettings::default())
-            .unwrap();
-    }
-
-    #[test]
-    #[cfg(feature = "clipm")]
-    /// Test running a simple model with the OpenCL IPM solver
-    fn test_run_cl_ipm() {
-        let mut model = simple_model(12);
-        let timestepper = default_timestepper();
-
-        // Set-up assertion for "input" node
-        let idx = model.get_node_by_name("input", None).unwrap().index();
-        let expected = Array2::from_elem((366, 12), 10.0);
-        let recorder = AssertionRecorder::new("input-flow", Metric::NodeOutFlow(idx), expected, None, Some(1.0e-6));
-        model.add_recorder(Box::new(recorder)).unwrap();
-
-        let idx = model.get_node_by_name("link", None).unwrap().index();
-        let expected = Array2::from_elem((366, 12), 10.0);
-        let recorder = AssertionRecorder::new("link-flow", Metric::NodeOutFlow(idx), expected, None, Some(1.0e-6));
-        model.add_recorder(Box::new(recorder)).unwrap();
-
-        let idx = model.get_node_by_name("output", None).unwrap().index();
-        let expected = Array2::from_elem((366, 12), 10.0);
-        let recorder = AssertionRecorder::new("output-flow", Metric::NodeInFlow(idx), expected, None, Some(1.0e-6));
-        model.add_recorder(Box::new(recorder)).unwrap();
-
-        let idx = model.get_parameter_index_by_name("total-demand").unwrap();
-        let expected = Array2::from_elem((366, 12), 12.0);
-        let recorder = AssertionRecorder::new(
-            "total-demand",
-            Metric::ParameterValue(idx),
-            expected,
-            Some(5),
-            Some(1.0e-6),
-        );
-        model.add_recorder(Box::new(recorder)).unwrap();
-
-        model
-            .run_multi_scenario::<ClIpmF64Solver>(&timestepper, &RunOptions::default())
-            .unwrap();
-        model
-            .run_multi_scenario::<SimdIpmF64Solver>(&timestepper, &RunOptions::default())
-            .unwrap();
+        // Test all solvers
+        run_all_solvers(&model, &timestepper);
     }
 
     #[test]
@@ -1550,9 +1549,8 @@ mod tests {
         let recorder = AssertionRecorder::new("reservoir-volume", Metric::NodeVolume(idx), expected, None, None);
         model.add_recorder(Box::new(recorder)).unwrap();
 
-        model
-            .run::<ClpSolver>(&timestepper, &ClpSolverSettings::default())
-            .unwrap();
+        // Test all solvers
+        run_all_solvers(&model, &timestepper);
     }
 
     #[test]

@@ -266,6 +266,7 @@ mod tests {
         ParameterMeta,
     };
     use crate::solvers::{ClpSolver, ClpSolverSettings};
+    use crate::test_utils::run_all_solvers;
     use ndarray::{Array1, Array2, Axis};
     use std::path::PathBuf;
 
@@ -350,9 +351,8 @@ mod tests {
         );
         model.add_recorder(Box::new(rec)).unwrap();
 
-        model
-            .run::<ClpSolver>(&timestepper, &ClpSolverSettings::default())
-            .unwrap()
+        // Test all solvers
+        run_all_solvers(&model, &timestepper);
     }
 
     /// Test that a cycle in parameter dependencies does not load.

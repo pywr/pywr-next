@@ -43,13 +43,13 @@ ocl = { version = "0.19", optional = true }
 clap =  { version="4.0", features=["derive"] }
 anyhow = "1.0.69"
 
+rand = "0.8.5"
+rand_distr = "0.4.3"
+rand_chacha = "0.3.1"
 
 [dev-dependencies]
 tempfile = "3.3.0"
 criterion = "0.5"
-rand = "0.8.5"
-rand_distr = "0.4.3"
-rand_chacha = "0.3.1"
 
 [lib]
 name = "pywr"
@@ -82,7 +82,7 @@ exclude = [
 
 [profile.release]
 opt-level = 3 # fast and small wasm
-lto = true
+# lto = true
 # strip = true
 # Turn this on for profiling
 # debug = true
