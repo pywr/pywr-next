@@ -709,7 +709,7 @@ fn run_model_from_string(
             "highs" => model.run::<HighsSolver>(&timestepper, &HighsSolverSettings::default()),
             #[cfg(feature = "ipm-ocl")]
             "clipm-f32" => model.run_multi_scenario::<ClIpmF32Solver>(&timestepper, &ClIpmSolverSettings::default()),
-            #[cfg(feature = "ipm-simd")]
+            #[cfg(feature = "ipm-ocl")]
             "clipm-f64" => model.run_multi_scenario::<ClIpmF64Solver>(&timestepper, &ClIpmSolverSettings::default()),
             _ => panic!("Solver {solver_name} not recognised."),
         }
