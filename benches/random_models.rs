@@ -8,11 +8,13 @@
 /// systems and density of transfers between them), numbers of scenarios (which vary the
 /// input flows) and number of CPU threads.
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
-use pywr::solvers::{
-    ClIpmF64Solver, ClIpmSolverSettings, ClIpmSolverSettingsBuilder, ClpSolver, ClpSolverSettings,
-    ClpSolverSettingsBuilder, HighsSolver, HighsSolverSettings, HighsSolverSettingsBuilder, SimdIpmF64Solver,
-    SimdIpmSolverSettings, SimdIpmSolverSettingsBuilder,
-};
+#[cfg(feature = "ipm-ocl")]
+use pywr::solvers::{ClIpmF64Solver, ClIpmSolverSettings, ClIpmSolverSettingsBuilder};
+use pywr::solvers::{ClpSolver, ClpSolverSettings, ClpSolverSettingsBuilder};
+#[cfg(feature = "highs")]
+use pywr::solvers::{HighsSolver, HighsSolverSettings, HighsSolverSettingsBuilder};
+#[cfg(feature = "ipm-simd")]
+use pywr::solvers::{SimdIpmF64Solver, SimdIpmSolverSettings, SimdIpmSolverSettingsBuilder};
 use pywr::test_utils::make_random_model;
 use pywr::timestep::Timestepper;
 use rand::SeedableRng;
@@ -62,6 +64,7 @@ fn random_benchmark(
                                 |b, _n| b.iter(|| model.run::<ClpSolver>(&timestepper, &settings)),
                             );
                         }
+                        #[cfg(feature = "highs")]
                         SolverSetting::Highs(settings) => {
                             let parameter_string = format!("highs * {n_sys} * {density} * {n_sc} * {}", &setup.name);
 
@@ -71,6 +74,7 @@ fn random_benchmark(
                                 |b, _n| b.iter(|| model.run::<HighsSolver>(&timestepper, &settings)),
                             );
                         }
+                        #[cfg(feature = "ipm-simd")]
                         SolverSetting::IpmSimd(settings) => {
                             let parameter_string =
                                 format!("ipm-simd-f64 * {n_sys} * {density} * {n_sc} * {}", &setup.name);
@@ -83,6 +87,7 @@ fn random_benchmark(
                                 },
                             );
                         }
+                        #[cfg(feature = "ipm-ocl")]
                         SolverSetting::IpmOcl(settings) => {
                             let parameter_string =
                                 format!("ipm-ocl-f64 * {n_sys} * {density} * {n_sc} * {}", &setup.name);
@@ -104,8 +109,11 @@ fn random_benchmark(
 
 enum SolverSetting {
     Clp(ClpSolverSettings),
+    #[cfg(feature = "highs")]
     Highs(HighsSolverSettings),
+    #[cfg(feature = "ipm-simd")]
     IpmSimd(SimdIpmSolverSettings),
+    #[cfg(feature = "ipm-ocl")]
     IpmOcl(ClIpmSolverSettings),
 }
 
@@ -116,16 +124,23 @@ struct SolverSetup {
 
 fn default_solver_setups() -> Vec<SolverSetup> {
     vec![
-        // SolverSetup {
-        //     setting: SolverSetting::Highs(HighsSolverSettings::default()),
-        //     name: "default".to_string(),
-        // },
+        #[cfg(feature = "highs")]
+        SolverSetup {
+            setting: SolverSetting::Highs(HighsSolverSettings::default()),
+            name: "default".to_string(),
+        },
         SolverSetup {
             setting: SolverSetting::Clp(ClpSolverSettings::default()),
             name: "default".to_string(),
         },
+        #[cfg(feature = "ipm-simd")]
         SolverSetup {
             setting: SolverSetting::IpmSimd(SimdIpmSolverSettings::default()),
+            name: "default".to_string(),
+        },
+        #[cfg(feature = "ipm-ocl")]
+        SolverSetup {
+            setting: SolverSetting::IpmOcl(ClIpmSolverSettings::default()),
             name: "default".to_string(),
         },
     ]
@@ -174,9 +189,21 @@ fn bench_threads(c: &mut Criterion) {
             name: format!("threads-{}", n_threads),
         });
 
+        #[cfg(feature = "ipm-simd")]
         solver_setups.push(SolverSetup {
             setting: SolverSetting::IpmSimd(
                 SimdIpmSolverSettingsBuilder::default()
+                    .parallel()
+                    .threads(n_threads)
+                    .build(),
+            ),
+            name: format!("threads-{}", n_threads),
+        });
+
+        #[cfg(feature = "ipm-ocl")]
+        solver_setups.push(SolverSetup {
+            setting: SolverSetting::IpmOcl(
+                ClIpmSolverSettingsBuilder::default()
                     .parallel()
                     .threads(n_threads)
                     .build(),
@@ -202,9 +229,21 @@ fn bench_ipm_convergence(c: &mut Criterion) {
     let mut solver_setups = Vec::new();
 
     for optimality in [1e-3, 1e-4, 1e-5, 1e-6, 1e-7, 1e-8] {
+        #[cfg(feature = "ipm-simd")]
         solver_setups.push(SolverSetup {
             setting: SolverSetting::IpmSimd(
                 SimdIpmSolverSettingsBuilder::default()
+                    .optimality(optimality)
+                    .parallel()
+                    .threads(N_THREADS)
+                    .build(),
+            ),
+            name: format!("opt-tol-{:e}", optimality),
+        });
+        #[cfg(feature = "ipm-ocl")]
+        solver_setups.push(SolverSetup {
+            setting: SolverSetting::IpmOcl(
+                ClIpmSolverSettingsBuilder::default()
                     .optimality(optimality)
                     .parallel()
                     .threads(N_THREADS)
@@ -231,6 +270,7 @@ fn bench_ocl_chunks(c: &mut Criterion) {
     let mut solver_setups = Vec::new();
 
     for chunk_size in [64, 128, 256, 512, 1024, 2056, 4096] {
+        #[cfg(feature = "ipm-ocl")]
         solver_setups.push(SolverSetup {
             setting: SolverSetting::IpmOcl(
                 ClIpmSolverSettingsBuilder::default()
@@ -269,9 +309,20 @@ fn bench_hyper_scenarios(c: &mut Criterion) {
             ),
             name: "default".to_string(),
         },
+        #[cfg(feature = "ipm-simd")]
         SolverSetup {
             setting: SolverSetting::IpmSimd(
                 SimdIpmSolverSettingsBuilder::default()
+                    .parallel()
+                    .threads(N_THREADS)
+                    .build(),
+            ),
+            name: "default".to_string(),
+        },
+        #[cfg(feature = "ipm-ocl")]
+        SolverSetup {
+            setting: SolverSetting::IpmOcl(
+                ClIpmSolverSettingsBuilder::default()
                     .parallel()
                     .threads(N_THREADS)
                     .build(),
