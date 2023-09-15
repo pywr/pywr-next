@@ -1426,8 +1426,6 @@ mod tests {
     #[cfg(feature = "clipm")]
     use crate::solvers::{ClIpmF64Solver, SimdIpmF64Solver};
     use crate::solvers::{ClpSolver, ClpSolverSettings};
-    #[cfg(feature = "highs")]
-    use crate::solvers::{HighsSolver, HighsSolverSettings};
     use crate::test_utils::{default_timestepper, run_all_solvers, simple_model, simple_storage_model};
     use float_cmp::approx_eq;
     use ndarray::{Array, Array2};

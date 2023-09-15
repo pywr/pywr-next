@@ -160,7 +160,7 @@ pub fn run_all_solvers(model: &Model, timestepper: &Timestepper) {
 
     #[cfg(feature = "ipm-simd")]
     model
-        .run_multi_scenario::<SimdIpmF64Solver>(timestepper, &Default::default())
+        .run_multi_scenario::<SimdIpmF64Solver<4>>(timestepper, &Default::default())
         .expect("Failed to solve with SIMD IPM");
 
     #[cfg(feature = "ipm-ocl")]
@@ -291,7 +291,7 @@ mod tests {
         let timestepper = Timestepper::new(date!(2020 - 01 - 01), date!(2020 - 04 - 09), 1);
         let settings = SimdIpmSolverSettings::default();
         model
-            .run_multi_scenario::<SimdIpmF64Solver>(&timestepper, &settings)
+            .run_multi_scenario::<SimdIpmF64Solver<4>>(&timestepper, &settings)
             .expect("Failed to run model!");
     }
 }

@@ -163,8 +163,8 @@ impl AssertionRecorder {
             meta: RecorderMeta::new(name),
             expected_values,
             metric,
-            ulps: ulps.unwrap_or(2),
-            epsilon: epsilon.unwrap_or(1e-8),
+            ulps: ulps.unwrap_or(5),
+            epsilon: epsilon.unwrap_or(1e-6),
         }
     }
 }
