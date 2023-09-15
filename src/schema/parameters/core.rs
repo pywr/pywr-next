@@ -93,6 +93,28 @@ impl MaxParameter {
     }
 }
 
+/// This parameter divides one Parameter by another.
+///
+/// # Arguments
+///
+/// * `numerator` - The parameter to use as the numerator (or dividend).
+/// * `denominator` - The parameter to use as the denominator (or divisor).
+///
+/// # Examples
+///
+/// ```json
+/// {
+///     "type": "Division",
+///     "numerator": {
+///         "type": "MonthlyProfile",
+///         "values": [1, 4, 5, 9, 1, 5, 10, 8, 11, 9, 11 ,12]
+///     },
+///     "denominator": {
+///         "type": "Constant",
+///         "value": 0.3
+///     }
+/// }
+/// ```
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
 pub struct DivisionParameter {
     #[serde(flatten)]

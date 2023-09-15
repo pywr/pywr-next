@@ -44,7 +44,7 @@ impl Parameter for DivisionParameter {
         let denominator = self.denominator.get_value(model, state)?;
 
         if denominator == 0.0 {
-            return Err(InvalidMetricValue(format!("Division by zero creates a NaN in {}.", self.name)));
+            return Err(InvalidMetricValue(format!("Division by zero creates a NaN in {}.", self.name())));
         }
 
         let numerator = self.numerator.get_value(model, state)?;
