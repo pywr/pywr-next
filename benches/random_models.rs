@@ -61,7 +61,33 @@ fn random_benchmark(
                             group.bench_with_input(
                                 BenchmarkId::new("random-model", parameter_string),
                                 &(n_sys, density, n_sc),
-                                |b, _n| b.iter(|| model.run::<ClpSolver>(&timestepper, &settings)),
+                                |b, _n| {
+                                    // Do the setup here outside of the time-step loop
+                                    let timesteps = timestepper.timesteps();
+                                    let (
+                                        scenario_indices,
+                                        mut states,
+                                        mut parameter_internal_states,
+                                        mut recorder_internal_states,
+                                    ) = model.setup(&timesteps).expect("Failed to setup the model.");
+
+                                    // Setup the solver
+                                    let mut solvers = model
+                                        .setup_solver::<ClpSolver>(settings)
+                                        .expect("Failed to setup the solver.");
+
+                                    b.iter(|| {
+                                        model.run_with_state::<ClpSolver>(
+                                            &timestepper,
+                                            &settings,
+                                            &scenario_indices,
+                                            &mut states,
+                                            &mut parameter_internal_states,
+                                            &mut recorder_internal_states,
+                                            &mut solvers,
+                                        )
+                                    })
+                                },
                             );
                         }
                         #[cfg(feature = "highs")]
@@ -71,7 +97,33 @@ fn random_benchmark(
                             group.bench_with_input(
                                 BenchmarkId::new("random-model", parameter_string),
                                 &(n_sys, density, n_sc),
-                                |b, _n| b.iter(|| model.run::<HighsSolver>(&timestepper, &settings)),
+                                |b, _n| {
+                                    // Do the setup here outside of the time-step loop
+                                    let timesteps = timestepper.timesteps();
+                                    let (
+                                        scenario_indices,
+                                        mut states,
+                                        mut parameter_internal_states,
+                                        mut recorder_internal_states,
+                                    ) = model.setup(&timesteps).expect("Failed to setup the model.");
+
+                                    // Setup the solver
+                                    let mut solvers = model
+                                        .setup_solver::<HighsSolver>(settings)
+                                        .expect("Failed to setup the solver.");
+
+                                    b.iter(|| {
+                                        model.run_with_state::<HighsSolver>(
+                                            &timestepper,
+                                            &settings,
+                                            &scenario_indices,
+                                            &mut states,
+                                            &mut parameter_internal_states,
+                                            &mut recorder_internal_states,
+                                            &mut solvers,
+                                        )
+                                    })
+                                },
                             );
                         }
                         #[cfg(feature = "ipm-simd")]
@@ -83,7 +135,31 @@ fn random_benchmark(
                                 BenchmarkId::new("random-model", parameter_string),
                                 &(n_sys, density, n_sc),
                                 |b, _n| {
-                                    b.iter(|| model.run_multi_scenario::<SimdIpmF64Solver>(&timestepper, &settings))
+                                    // Do the setup here outside of the time-step loop
+                                    let timesteps = timestepper.timesteps();
+                                    let (
+                                        scenario_indices,
+                                        mut states,
+                                        mut parameter_internal_states,
+                                        mut recorder_internal_states,
+                                    ) = model.setup(&timesteps).expect("Failed to setup the model.");
+
+                                    // Setup the solver
+                                    let mut solver = model
+                                        .setup_multi_scenario::<SimdIpmF64Solver>(&scenario_indices, settings)
+                                        .expect("Failed to setup the solver.");
+
+                                    b.iter(|| {
+                                        model.run_multi_scenario_with_state::<SimdIpmF64Solver>(
+                                            &timestepper,
+                                            &settings,
+                                            &scenario_indices,
+                                            &mut states,
+                                            &mut parameter_internal_states,
+                                            &mut recorder_internal_states,
+                                            &mut solver,
+                                        )
+                                    })
                                 },
                             );
                         }
@@ -95,7 +171,33 @@ fn random_benchmark(
                             group.bench_with_input(
                                 BenchmarkId::new("random-model", parameter_string),
                                 &(n_sys, density, n_sc),
-                                |b, _n| b.iter(|| model.run_multi_scenario::<ClIpmF64Solver>(&timestepper, &settings)),
+                                |b, _n| {
+                                    // Do the setup here outside of the time-step loop
+                                    let timesteps = timestepper.timesteps();
+                                    let (
+                                        scenario_indices,
+                                        mut states,
+                                        mut parameter_internal_states,
+                                        mut recorder_internal_states,
+                                    ) = model.setup(&timesteps).expect("Failed to setup the model.");
+
+                                    // Setup the solver
+                                    let mut solver = model
+                                        .setup_multi_scenario::<ClIpmF64Solver>(&scenario_indices, settings)
+                                        .expect("Failed to setup the solver.");
+
+                                    b.iter(|| {
+                                        model.run_multi_scenario_with_state::<ClIpmF64Solver>(
+                                            &timestepper,
+                                            &settings,
+                                            &scenario_indices,
+                                            &mut states,
+                                            &mut parameter_internal_states,
+                                            &mut recorder_internal_states,
+                                            &mut solver,
+                                        )
+                                    })
+                                },
                             );
                         }
                     }
@@ -269,7 +371,9 @@ fn bench_ocl_chunks(c: &mut Criterion) {
 
     let mut solver_setups = Vec::new();
 
-    for chunk_size in [64, 128, 256, 512, 1024, 2056, 4096] {
+    let chunk_sizes: Vec<usize> = (12..17).into_iter().map(|p| 2_usize.pow(p)).collect();
+
+    for chunk_size in chunk_sizes {
         #[cfg(feature = "ipm-ocl")]
         solver_setups.push(SolverSetup {
             setting: SolverSetting::IpmOcl(
@@ -285,7 +389,7 @@ fn bench_ocl_chunks(c: &mut Criterion) {
 
     random_benchmark(
         c,
-        "random-models-olc-chunks",
+        "random-models-ocl-chunks",
         &[20],
         &[5],
         &[32768],
@@ -334,7 +438,7 @@ fn bench_hyper_scenarios(c: &mut Criterion) {
     random_benchmark(
         c,
         "random-models-hyper-scenarios",
-        &[20, 50],
+        &[30, 40],
         &[5],
         &scenarios,
         &solver_setups,

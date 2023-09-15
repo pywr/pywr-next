@@ -272,7 +272,7 @@ impl Model {
         Ok(solvers)
     }
 
-    fn setup_multi_scenario<S>(
+    pub fn setup_multi_scenario<S>(
         &self,
         scenario_indices: &[ScenarioIndex],
         settings: &S::Settings,
@@ -286,7 +286,7 @@ impl Model {
         S::setup(self, scenario_indices.len(), settings)
     }
 
-    fn finalise(&self, recorder_internal_states: &mut Vec<Option<Box<dyn Any>>>) -> Result<(), PywrError> {
+    fn finalise(&self, recorder_internal_states: &mut [Option<Box<dyn Any>>]) -> Result<(), PywrError> {
         // Setup recorders
         for (recorder, internal_state) in self.recorders.iter().zip(recorder_internal_states) {
             recorder.finalise(internal_state)?;
@@ -295,21 +295,53 @@ impl Model {
         Ok(())
     }
 
+    /// Run a model through the given time-steps.
+    ///
+    /// This method will setup state and solvers, and then run the model through the time-steps.
     pub fn run<S>(&self, timestepper: &Timestepper, settings: &S::Settings) -> Result<(), PywrError>
     where
         S: Solver,
         <S as Solver>::Settings: SolverSettings,
     {
-        let mut timings = RunTimings::default();
         let timesteps = timestepper.timesteps();
 
-        // Setup the solver
-        let mut count = 0;
         // Setup the model and create the initial state
         let (scenario_indices, mut states, mut parameter_internal_states, mut recorder_internal_states) =
             self.setup(&timesteps)?;
 
+        // Setup the solver
         let mut solvers = self.setup_solver::<S>(settings)?;
+
+        self.run_with_state(
+            timestepper,
+            settings,
+            &scenario_indices,
+            &mut states,
+            &mut parameter_internal_states,
+            &mut recorder_internal_states,
+            &mut solvers,
+        )
+    }
+
+    /// Run the model with the provided states and solvers.
+    pub fn run_with_state<S>(
+        &self,
+        timestepper: &Timestepper,
+        settings: &S::Settings,
+        scenario_indices: &[ScenarioIndex],
+        states: &mut [State],
+        parameter_internal_states: &mut [ParameterStates],
+        recorder_internal_states: &mut [Option<Box<dyn Any>>],
+        solvers: &mut [Box<S>],
+    ) -> Result<(), PywrError>
+    where
+        S: Solver,
+        <S as Solver>::Settings: SolverSettings,
+    {
+        let mut timings = RunTimings::default();
+        let mut count = 0;
+
+        let timesteps = timestepper.timesteps();
 
         // Setup thread pool if running in parallel
         let pool = if settings.parallel() {
@@ -333,9 +365,9 @@ impl Model {
                     self.step_par(
                         timestep,
                         &scenario_indices,
-                        &mut solvers,
-                        &mut states,
-                        &mut parameter_internal_states,
+                        solvers,
+                        states,
+                        parameter_internal_states,
                         &mut timings,
                     )
                 })?;
@@ -344,21 +376,21 @@ impl Model {
                 self.step(
                     timestep,
                     &scenario_indices,
-                    &mut solvers,
-                    &mut states,
-                    &mut parameter_internal_states,
+                    solvers,
+                    states,
+                    parameter_internal_states,
                     &mut timings,
                 )?;
             }
 
             let start_r_save = Instant::now();
-            self.save_recorders(timestep, &scenario_indices, &states, &mut recorder_internal_states)?;
+            self.save_recorders(timestep, &scenario_indices, &states, recorder_internal_states)?;
             timings.recorder_saving += start_r_save.elapsed();
 
             count += scenario_indices.len();
         }
 
-        self.finalise(&mut recorder_internal_states)?;
+        self.finalise(recorder_internal_states)?;
         // End the global timer and print the run statistics
         timings.finish(count);
         timings.print_table();
@@ -366,22 +398,53 @@ impl Model {
         Ok(())
     }
 
+    /// Run a model through the given time-steps with [`MultiStateSolver`].
+    ///
+    /// This method will setup state and the solver, and then run the model through the time-steps.
     pub fn run_multi_scenario<S>(&self, timestepper: &Timestepper, settings: &S::Settings) -> Result<(), PywrError>
     where
         S: MultiStateSolver,
         <S as MultiStateSolver>::Settings: SolverSettings,
     {
-        let mut timings = RunTimings::default();
         let timesteps = timestepper.timesteps();
 
-        // Setup the solver
-        let mut count = 0;
         // Setup the model and create the initial state
         let (scenario_indices, mut states, mut parameter_internal_states, mut recorder_internal_states) =
             self.setup(&timesteps)?;
 
+        // Setup the solver
         let mut solver = self.setup_multi_scenario::<S>(&scenario_indices, settings)?;
 
+        self.run_multi_scenario_with_state(
+            &timestepper,
+            settings,
+            &scenario_indices,
+            &mut states,
+            &mut parameter_internal_states,
+            &mut recorder_internal_states,
+            &mut solver,
+        )
+    }
+
+    /// Run the model with the provided states and [`MultiStateSolver`] solver.
+    pub fn run_multi_scenario_with_state<S>(
+        &self,
+        timestepper: &Timestepper,
+        settings: &S::Settings,
+        scenario_indices: &[ScenarioIndex],
+        states: &mut [State],
+        parameter_internal_states: &mut [ParameterStates],
+        recorder_internal_states: &mut [Option<Box<dyn Any>>],
+        solver: &mut Box<S>,
+    ) -> Result<(), PywrError>
+    where
+        S: MultiStateSolver,
+        <S as MultiStateSolver>::Settings: SolverSettings,
+    {
+        let mut timings = RunTimings::default();
+        let mut count = 0;
+
+        let timesteps = timestepper.timesteps();
         let num_threads = if settings.parallel() { settings.threads() } else { 1 };
 
         // Setup thread pool
@@ -399,21 +462,21 @@ impl Model {
                 self.step_multi_scenario(
                     timestep,
                     &scenario_indices,
-                    &mut solver,
-                    &mut states,
-                    &mut parameter_internal_states,
+                    solver,
+                    states,
+                    parameter_internal_states,
                     &mut timings,
                 )
             })?;
 
             let start_r_save = Instant::now();
-            self.save_recorders(timestep, &scenario_indices, &states, &mut recorder_internal_states)?;
+            self.save_recorders(timestep, &scenario_indices, &states, recorder_internal_states)?;
             timings.recorder_saving += start_r_save.elapsed();
 
             count += scenario_indices.len();
         }
 
-        self.finalise(&mut recorder_internal_states)?;
+        self.finalise(recorder_internal_states)?;
 
         // End the global timer and print the run statistics
         timings.finish(count);
@@ -1367,7 +1430,7 @@ mod tests {
     use crate::solvers::{HighsSolver, HighsSolverSettings};
     use crate::test_utils::{default_timestepper, run_all_solvers, simple_model, simple_storage_model};
     use float_cmp::approx_eq;
-    use ndarray::Array2;
+    use ndarray::{Array, Array2};
     use std::ops::Deref;
 
     #[test]
@@ -1507,17 +1570,16 @@ mod tests {
 
         // Set-up assertion for "input" node
         let idx = model.get_node_by_name("input", None).unwrap().index();
-        let expected = Array2::from_elem((366, 10), 10.0);
-        let recorder = AssertionRecorder::new("input-flow", Metric::NodeOutFlow(idx), expected, None, None);
+        let expected = Array::from_shape_fn((366, 10), |(i, j)| (i as f64 + j as f64).min(12.0));
+
+        let recorder = AssertionRecorder::new("input-flow", Metric::NodeOutFlow(idx), expected.clone(), None, None);
         model.add_recorder(Box::new(recorder)).unwrap();
 
         let idx = model.get_node_by_name("link", None).unwrap().index();
-        let expected = Array2::from_elem((366, 10), 10.0);
-        let recorder = AssertionRecorder::new("link-flow", Metric::NodeOutFlow(idx), expected, None, None);
+        let recorder = AssertionRecorder::new("link-flow", Metric::NodeOutFlow(idx), expected.clone(), None, None);
         model.add_recorder(Box::new(recorder)).unwrap();
 
         let idx = model.get_node_by_name("output", None).unwrap().index();
-        let expected = Array2::from_elem((366, 10), 10.0);
         let recorder = AssertionRecorder::new("output-flow", Metric::NodeInFlow(idx), expected, None, None);
         model.add_recorder(Box::new(recorder)).unwrap();
 
