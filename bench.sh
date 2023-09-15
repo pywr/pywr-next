@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+set -e
+
 ODIR=benches/$1
 FEATURES="ipm-ocl,ipm-simd"
 
