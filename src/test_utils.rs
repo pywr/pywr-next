@@ -14,7 +14,7 @@ use crate::solvers::HighsSolver;
 use crate::solvers::SimdIpmF64Solver;
 use crate::timestep::Timestepper;
 use crate::PywrError;
-use ndarray::Array2;
+use ndarray::{Array, Array2};
 use rand::Rng;
 use rand_distr::{Distribution, Normal};
 use time::ext::NumericalDuration;
@@ -28,6 +28,7 @@ pub fn default_timestepper() -> Timestepper {
 pub fn simple_model(num_scenarios: usize) -> Model {
     let mut model = Model::default();
     model.add_scenario_group("test-scenario", num_scenarios).unwrap();
+    let scenario_idx = model.get_scenario_group_index_by_name("test-scenario").unwrap();
 
     let input_node = model.add_input_node("input", None).unwrap();
     let link_node = model.add_link_node("link", None).unwrap();
@@ -36,7 +37,9 @@ pub fn simple_model(num_scenarios: usize) -> Model {
     model.connect_nodes(input_node, link_node).unwrap();
     model.connect_nodes(link_node, output_node).unwrap();
 
-    let inflow = VectorParameter::new("inflow", vec![10.0; 366]);
+    let inflow = Array::from_shape_fn((366, num_scenarios), |(i, j)| i as f64 + j as f64);
+    let inflow = Array2Parameter::new("inflow", inflow, scenario_idx);
+
     let inflow = model.add_parameter(Box::new(inflow)).unwrap();
 
     let input_node = model.get_mut_node_by_name("input", None).unwrap();
@@ -266,7 +269,7 @@ pub fn make_random_model<R: Rng>(
     Ok(model)
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "ipm-simd"))]
 mod tests {
     use super::make_random_model;
     use crate::solvers::{SimdIpmF64Solver, SimdIpmSolverSettings};
