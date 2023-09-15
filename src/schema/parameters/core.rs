@@ -93,6 +93,25 @@ impl MaxParameter {
     }
 }
 
+/// This parameter takes the minimum of another Parameter and a constant value (threshold).
+///
+/// # Arguments
+///
+/// * `parameter` - The parameter to compare with the float.
+/// * `threshold` - The threshold value to compare with the given parameter.
+///
+/// # Examples
+///
+/// ```json
+/// {
+///     "type": "Min",
+///     "parameter": {
+///         "type": "MonthlyProfile",
+///         "values": [1, 4, 5, 9, 1, 5, 10, 8, 11, 9, 11 ,12]
+///     },
+///     "threshold": 2
+/// }
+/// ```
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
 pub struct MinParameter {
     #[serde(flatten)]
