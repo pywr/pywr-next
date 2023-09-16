@@ -358,7 +358,7 @@ fn bench_scenarios(c: &mut Criterion) {
     random_benchmark(
         c,
         "random-models-scenarios",
-        &[30],
+        &[20],
         &[5],
         &scenarios,
         &solver_setups,
@@ -426,7 +426,7 @@ fn bench_threads(c: &mut Criterion) {
     random_benchmark(
         c,
         "random-models-threads",
-        &[30],
+        &[20],
         &[5],
         &[256, 32768],
         &solver_setups,
@@ -467,7 +467,7 @@ fn bench_ipm_convergence(c: &mut Criterion) {
     random_benchmark(
         c,
         "random-models-ipm-convergence",
-        &[30],
+        &[20],
         &[5],
         &[256, 32768],
         &solver_setups,
@@ -480,7 +480,8 @@ fn bench_ocl_chunks(c: &mut Criterion) {
 
     let mut solver_setups = Vec::new();
 
-    let chunk_sizes: Vec<usize> = (10..16).into_iter().map(|p| 2_usize.pow(p)).collect();
+    // let chunk_sizes: Vec<usize> = (10..16).into_iter().map(|p| 2_usize.pow(p)).collect();
+    let chunk_sizes = vec![256, 512, 1024, 4096, 8192];
 
     for chunk_size in chunk_sizes {
         #[cfg(feature = "ipm-ocl")]
@@ -499,7 +500,7 @@ fn bench_ocl_chunks(c: &mut Criterion) {
     random_benchmark(
         c,
         "random-models-ocl-chunks",
-        &[30],
+        &[20],
         &[5],
         &[32768],
         &solver_setups,
@@ -509,20 +510,21 @@ fn bench_ocl_chunks(c: &mut Criterion) {
 
 /// Benchmark a large number of scenarios using various solvers
 fn bench_hyper_scenarios(c: &mut Criterion) {
-    let scenarios: Vec<usize> = (10..18).into_iter().map(|p| 2_usize.pow(p)).collect();
+    // Go from largest to smallest
+    let scenarios: Vec<usize> = (10..18).into_iter().map(|p| 2_usize.pow(p)).rev().collect();
 
     const N_THREADS: usize = 0;
 
     let solver_setups = vec![
-        SolverSetup {
-            setting: SolverSetting::Clp(
-                ClpSolverSettingsBuilder::default()
-                    .parallel()
-                    .threads(N_THREADS)
-                    .build(),
-            ),
-            name: "default".to_string(),
-        },
+        // SolverSetup {
+        //     setting: SolverSetting::Clp(
+        //         ClpSolverSettingsBuilder::default()
+        //             .parallel()
+        //             .threads(N_THREADS)
+        //             .build(),
+        //     ),
+        //     name: "default".to_string(),
+        // },
         #[cfg(feature = "ipm-simd")]
         SolverSetup {
             setting: SolverSetting::IpmSimdF64x1(
@@ -568,7 +570,7 @@ fn bench_hyper_scenarios(c: &mut Criterion) {
     random_benchmark(
         c,
         "random-models-hyper-scenarios",
-        &[30],
+        &[20],
         &[5],
         &scenarios,
         &solver_setups,
@@ -578,11 +580,11 @@ fn bench_hyper_scenarios(c: &mut Criterion) {
 
 criterion_group!(
     benches,
-    bench_system_size,
-    bench_scenarios,
-    bench_threads,
-    bench_hyper_scenarios,
-    bench_ipm_convergence,
+    // bench_system_size,
+    // bench_scenarios,
+    // bench_threads,
+    // bench_hyper_scenarios,
+    // bench_ipm_convergence,
     bench_ocl_chunks
 );
 criterion_main!(benches);

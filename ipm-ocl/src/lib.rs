@@ -539,8 +539,12 @@ where
 
         // self.buffers.path_buffers.x.read(&mut self.solution).enq()?;
         // self.queue.finish()?;
+        let mut iter = 0;
 
-        for _ in 0..max_iterations.get() {
+        let last_iteration = loop {
+            if iter >= max_iterations.get() {
+                break None;
+            }
             unsafe {
                 self.kernel_normal_eq_step.enq()?;
             }
@@ -553,8 +557,14 @@ where
             // println!("Number incomplete: {}", num_incomplete);
 
             if num_incomplete == 0 {
-                break;
+                break Some(iter);
             }
+
+            iter += 1
+        };
+
+        if last_iteration.is_none() {
+            panic!("Interior point method failed to converged all scenarios.")
         }
 
         // println!("Finished after iterations: {}", last_iteration);
