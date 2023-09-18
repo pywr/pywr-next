@@ -8,10 +8,16 @@ use pywr::solvers::{ClIpmF32Solver, ClIpmF64Solver, ClIpmSolverSettings};
 use pywr::solvers::{ClpSolver, ClpSolverSettings};
 #[cfg(feature = "highs")]
 use pywr::solvers::{HighsSolver, HighsSolverSettings};
+#[cfg(feature = "ipm-simd")]
+use pywr::solvers::{SimdIpmF64Solver, SimdIpmSolverSettings};
+use pywr::test_utils::make_random_model;
 use pywr::timestep::Timestepper;
 use pywr::PywrError;
+use rand::SeedableRng;
+use rand_chacha::ChaCha8Rng;
 use std::fmt::{Display, Formatter};
 use std::path::{Path, PathBuf};
+use time::macros::date;
 
 #[derive(Copy, Clone, ValueEnum)]
 enum Solver {
@@ -22,6 +28,8 @@ enum Solver {
     CLIPMF32,
     #[cfg(feature = "ipm-ocl")]
     CLIPMF64,
+    #[cfg(feature = "ipm-simd")]
+    IpmSimd,
 }
 
 impl Display for Solver {
@@ -34,6 +42,8 @@ impl Display for Solver {
             Solver::CLIPMF32 => write!(f, "clipmf32"),
             #[cfg(feature = "ipm-ocl")]
             Solver::CLIPMF64 => write!(f, "clipmf64"),
+            #[cfg(feature = "ipm-simd")]
+            Solver::IpmSimd => write!(f, "ipm-simd"),
         }
     }
 }
@@ -77,6 +87,14 @@ enum Commands {
         #[arg(short, long, default_value_t = 1)]
         threads: usize,
     },
+    RunRandom {
+        num_systems: usize,
+        density: usize,
+        num_scenarios: usize,
+        /// Solver to use.
+        #[arg(short, long, default_value_t=Solver::Clp)]
+        solver: Solver,
+    },
 }
 
 fn main() -> Result<()> {
@@ -92,6 +110,12 @@ fn main() -> Result<()> {
                 parallel,
                 threads,
             } => run(model, solver, data_path.as_deref()),
+            Commands::RunRandom {
+                num_systems,
+                density,
+                num_scenarios,
+                solver,
+            } => run_random(*num_systems, *density, *num_scenarios, solver),
         },
         None => {}
     }
@@ -154,6 +178,32 @@ fn run(path: &Path, solver: &Solver, data_path: Option<&Path>) {
         Solver::CLIPMF32 => model.run_multi_scenario::<ClIpmF32Solver>(&timestepper, &ClIpmSolverSettings::default()),
         #[cfg(feature = "ipm-ocl")]
         Solver::CLIPMF64 => model.run_multi_scenario::<ClIpmF64Solver>(&timestepper, &ClIpmSolverSettings::default()),
+        #[cfg(feature = "ipm-simd")]
+        Solver::IpmSimd => {
+            model.run_multi_scenario::<SimdIpmF64Solver<4>>(&timestepper, &SimdIpmSolverSettings::default())
+        }
+    }
+    .unwrap();
+}
+
+fn run_random(num_systems: usize, density: usize, num_scenarios: usize, solver: &Solver) {
+    let mut rng = ChaCha8Rng::seed_from_u64(0);
+    let model = make_random_model(num_systems, density, num_scenarios, &mut rng).unwrap();
+
+    let timestepper = Timestepper::new(date!(2020 - 01 - 01), date!(2020 - 04 - 09), 1);
+
+    match *solver {
+        Solver::Clp => model.run::<ClpSolver>(&timestepper, &ClpSolverSettings::default()),
+        #[cfg(feature = "highs")]
+        Solver::HIGHS => model.run::<HighsSolver>(&timestepper, &HighsSolverSettings::default()),
+        #[cfg(feature = "ipm-ocl")]
+        Solver::CLIPMF32 => model.run_multi_scenario::<ClIpmF32Solver>(&timestepper, &ClIpmSolverSettings::default()),
+        #[cfg(feature = "ipm-ocl")]
+        Solver::CLIPMF64 => model.run_multi_scenario::<ClIpmF64Solver>(&timestepper, &ClIpmSolverSettings::default()),
+        #[cfg(feature = "ipm-simd")]
+        Solver::IpmSimd => {
+            model.run_multi_scenario::<SimdIpmF64Solver<4>>(&timestepper, &SimdIpmSolverSettings::default())
+        }
     }
     .unwrap();
 }
