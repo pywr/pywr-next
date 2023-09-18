@@ -6,8 +6,8 @@ use crate::schema::parameters::{
 };
 use crate::{ParameterIndex, PywrError};
 use pywr_schema::parameters::{
-    ConstantParameter as ConstantParameterV1, MaxParameter as MaxParameterV1, MinParameter as MinParameterV1,
-    NegativeParameter as NegativeParameterV1,
+    ConstantParameter as ConstantParameterV1, DivisionParameter as DivisionParameterV1, MaxParameter as MaxParameterV1,
+    MinParameter as MinParameterV1, NegativeParameter as NegativeParameterV1,
 };
 use std::collections::HashMap;
 use std::path::Path;
@@ -94,6 +94,27 @@ impl MaxParameter {
     }
 }
 
+impl TryFromV1Parameter<MaxParameterV1> for MaxParameter {
+    type Error = ConversionError;
+
+    fn try_from_v1_parameter(
+        v1: MaxParameterV1,
+        parent_node: Option<&str>,
+        unnamed_count: &mut usize,
+    ) -> Result<Self, Self::Error> {
+        let meta: ParameterMeta = v1.meta.into_v2_parameter(parent_node, unnamed_count);
+
+        let parameter = v1.parameter.try_into_v2_parameter(Some(&meta.name), unnamed_count)?;
+
+        let p = Self {
+            meta,
+            parameter,
+            threshold: v1.threshold,
+        };
+        Ok(p)
+    }
+}
+
 /// This parameter divides one Parameter by another.
 ///
 /// # Arguments
@@ -143,22 +164,23 @@ impl DivisionParameter {
     }
 }
 
-impl TryFromV1Parameter<MaxParameterV1> for MaxParameter {
+impl TryFromV1Parameter<DivisionParameterV1> for DivisionParameter {
     type Error = ConversionError;
 
     fn try_from_v1_parameter(
-        v1: MaxParameterV1,
+        v1: DivisionParameterV1,
         parent_node: Option<&str>,
         unnamed_count: &mut usize,
     ) -> Result<Self, Self::Error> {
         let meta: ParameterMeta = v1.meta.into_v2_parameter(parent_node, unnamed_count);
 
-        let parameter = v1.parameter.try_into_v2_parameter(Some(&meta.name), unnamed_count)?;
+        let numerator = v1.numerator.try_into_v2_parameter(Some(&meta.name), unnamed_count)?;
+        let denominator = v1.denominator.try_into_v2_parameter(Some(&meta.name), unnamed_count)?;
 
         let p = Self {
             meta,
-            parameter,
-            threshold: v1.threshold,
+            numerator,
+            denominator,
         };
         Ok(p)
     }
