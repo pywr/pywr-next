@@ -7,6 +7,7 @@ use crate::schema::parameters::{
 use crate::{ParameterIndex, PywrError};
 use pywr_schema::parameters::{
     ConstantParameter as ConstantParameterV1, MaxParameter as MaxParameterV1, NegativeParameter as NegativeParameterV1,
+    MinParameter as MinParameterV1
 };
 use std::collections::HashMap;
 use std::path::Path;
@@ -93,6 +94,27 @@ impl MaxParameter {
     }
 }
 
+impl TryFromV1Parameter<MaxParameterV1> for MaxParameter {
+    type Error = ConversionError;
+
+    fn try_from_v1_parameter(
+        v1: MaxParameterV1,
+        parent_node: Option<&str>,
+        unnamed_count: &mut usize,
+    ) -> Result<Self, Self::Error> {
+        let meta: ParameterMeta = v1.meta.into_v2_parameter(parent_node, unnamed_count);
+
+        let parameter = v1.parameter.try_into_v2_parameter(Some(&meta.name), unnamed_count)?;
+
+        let p = Self {
+            meta,
+            parameter,
+            threshold: v1.threshold,
+        };
+        Ok(p)
+    }
+}
+
 /// This parameter takes the minimum of another Parameter and a constant value (threshold).
 ///
 /// # Arguments
@@ -139,11 +161,11 @@ impl MinParameter {
     }
 }
 
-impl TryFromV1Parameter<MaxParameterV1> for MaxParameter {
+impl TryFromV1Parameter<MinParameterV1> for MinParameter {
     type Error = ConversionError;
 
     fn try_from_v1_parameter(
-        v1: MaxParameterV1,
+        v1: MinParameterV1,
         parent_node: Option<&str>,
         unnamed_count: &mut usize,
     ) -> Result<Self, Self::Error> {
