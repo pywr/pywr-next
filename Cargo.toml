@@ -38,7 +38,7 @@ highs-sys = {  git = "https://github.com/jetuk/highs-sys", branch="fix-build-lib
 pyo3 = { version = "0.19.0" }
 rayon = "1.6.1"
 polars = { version = "0.32.0", features = ["lazy", "rows", "ndarray"] }
-pyo3-polars = "0.6.0"
+pyo3-polars = "0.7.0"
 pywr-schema = { git = "https://github.com/pywr/pywr-schema/", tag="v0.7.0" }
 rhai = { version="1.12.0", features=["sync"] }
 
