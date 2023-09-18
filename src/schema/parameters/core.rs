@@ -6,8 +6,8 @@ use crate::schema::parameters::{
 };
 use crate::{ParameterIndex, PywrError};
 use pywr_schema::parameters::{
-    ConstantParameter as ConstantParameterV1, MaxParameter as MaxParameterV1, MinParameter as MinParameterV1,
-    NegativeParameter as NegativeParameterV1,
+    ConstantParameter as ConstantParameterV1, DivisionParameter as DivisionParameterV1, MaxParameter as MaxParameterV1,
+    MinParameter as MinParameterV1, NegativeParameter as NegativeParameterV1,
 };
 use std::collections::HashMap;
 use std::path::Path;
@@ -110,6 +110,77 @@ impl TryFromV1Parameter<MaxParameterV1> for MaxParameter {
             meta,
             parameter,
             threshold: v1.threshold,
+        };
+        Ok(p)
+    }
+}
+
+/// This parameter divides one Parameter by another.
+///
+/// # Arguments
+///
+/// * `numerator` - The parameter to use as the numerator (or dividend).
+/// * `denominator` - The parameter to use as the denominator (or divisor).
+///
+/// # Examples
+///
+/// ```json
+/// {
+///     "type": "Division",
+///     "numerator": {
+///         "type": "MonthlyProfile",
+///         "values": [1, 4, 5, 9, 1, 5, 10, 8, 11, 9, 11 ,12]
+///     },
+///     "denominator": {
+///         "type": "Constant",
+///         "value": 0.3
+///     }
+/// }
+/// ```
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+pub struct DivisionParameter {
+    #[serde(flatten)]
+    pub meta: ParameterMeta,
+    pub numerator: DynamicFloatValue,
+    pub denominator: DynamicFloatValue,
+}
+
+impl DivisionParameter {
+    pub fn node_references(&self) -> HashMap<&str, &str> {
+        HashMap::new()
+    }
+
+    pub fn add_to_model(
+        &self,
+        model: &mut crate::model::Model,
+        tables: &LoadedTableCollection,
+        data_path: Option<&Path>,
+    ) -> Result<ParameterIndex, PywrError> {
+        let n = self.numerator.load(model, tables, data_path)?;
+        let d = self.denominator.load(model, tables, data_path)?;
+
+        let p = crate::parameters::DivisionParameter::new(&self.meta.name, n, d);
+        model.add_parameter(Box::new(p))
+    }
+}
+
+impl TryFromV1Parameter<DivisionParameterV1> for DivisionParameter {
+    type Error = ConversionError;
+
+    fn try_from_v1_parameter(
+        v1: DivisionParameterV1,
+        parent_node: Option<&str>,
+        unnamed_count: &mut usize,
+    ) -> Result<Self, Self::Error> {
+        let meta: ParameterMeta = v1.meta.into_v2_parameter(parent_node, unnamed_count);
+
+        let numerator = v1.numerator.try_into_v2_parameter(Some(&meta.name), unnamed_count)?;
+        let denominator = v1.denominator.try_into_v2_parameter(Some(&meta.name), unnamed_count)?;
+
+        let p = Self {
+            meta,
+            numerator,
+            denominator,
         };
         Ok(p)
     }

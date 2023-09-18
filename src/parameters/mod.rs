@@ -4,6 +4,7 @@ mod array;
 mod asymmetric;
 mod control_curves;
 mod delay;
+mod division;
 mod indexed_array;
 mod max;
 mod min;
@@ -32,6 +33,7 @@ pub use control_curves::{
     PiecewiseInterpolatedParameter,
 };
 pub use delay::DelayParameter;
+pub use division::DivisionParameter;
 pub use indexed_array::IndexedArrayParameter;
 pub use max::MaxParameter;
 pub use min::MinParameter;

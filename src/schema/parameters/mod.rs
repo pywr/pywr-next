@@ -31,6 +31,7 @@ pub use super::parameters::thresholds::ParameterThresholdParameter;
 use crate::metric::Metric;
 use crate::parameters::{IndexValue, ParameterType};
 use crate::schema::error::ConversionError;
+use crate::schema::parameters::core::DivisionParameter;
 pub use crate::schema::parameters::data_frame::DataFrameParameter;
 use crate::{IndexParameterIndex, NodeIndex, PywrError};
 use pywr_schema::parameters::{
@@ -143,6 +144,7 @@ pub enum Parameter {
     Python(PythonParameter),
     DataFrame(DataFrameParameter),
     Delay(DelayParameter),
+    Division(DivisionParameter),
 }
 
 impl Parameter {
@@ -168,6 +170,7 @@ impl Parameter {
             Self::TablesArray(p) => p.meta.name.as_str(),
             Self::Python(p) => p.meta.name.as_str(),
             Self::DataFrame(p) => p.meta.name.as_str(),
+            Self::Division(p) => p.meta.name.as_str(),
             Parameter::Delay(p) => p.meta.name.as_str(),
         }
     }
@@ -197,6 +200,7 @@ impl Parameter {
             Self::Python(p) => p.node_references(),
             Self::DataFrame(p) => p.node_references(),
             Self::Delay(p) => p.node_references(),
+            Self::Division(p) => p.node_references(),
         }
     }
 
@@ -242,6 +246,7 @@ impl Parameter {
             Self::Python(_) => "Python",
             Self::DataFrame(_) => "DataFrame",
             Self::Delay(_) => "Delay",
+            Self::Division(_) => "Division",
         }
     }
 
@@ -275,6 +280,7 @@ impl Parameter {
             Self::Python(p) => p.add_to_model(model, tables, data_path)?,
             Self::DataFrame(p) => ParameterType::Parameter(p.add_to_model(model, data_path)?),
             Self::Delay(p) => ParameterType::Parameter(p.add_to_model(model, tables, data_path)?),
+            Self::Division(p) => ParameterType::Parameter(p.add_to_model(model, tables, data_path)?),
         };
 
         Ok(ty)
@@ -338,7 +344,7 @@ impl TryFromV1Parameter<ParameterV1> for Parameter {
                     Parameter::TablesArray(p.try_into_v2_parameter(parent_node, unnamed_count)?)
                 }
                 CoreParameter::Min(p) => Parameter::Min(p.try_into_v2_parameter(parent_node, unnamed_count)?),
-                CoreParameter::Division(_) => todo!(),
+                CoreParameter::Division(p) => Parameter::Division(p.try_into_v2_parameter(parent_node, unnamed_count)?),
             },
             ParameterV1::Custom(p) => {
                 println!("Custom parameter: {:?} ({})", p.meta.name, p.ty);
