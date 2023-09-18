@@ -6,8 +6,8 @@ use crate::schema::parameters::{
 };
 use crate::{ParameterIndex, PywrError};
 use pywr_schema::parameters::{
-    ConstantParameter as ConstantParameterV1, MaxParameter as MaxParameterV1, NegativeParameter as NegativeParameterV1,
-    MinParameter as MinParameterV1
+    ConstantParameter as ConstantParameterV1, MaxParameter as MaxParameterV1, MinParameter as MinParameterV1,
+    NegativeParameter as NegativeParameterV1,
 };
 use std::collections::HashMap;
 use std::path::Path;
