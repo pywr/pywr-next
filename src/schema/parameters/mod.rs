@@ -18,7 +18,7 @@ pub use super::parameters::control_curves::{
     ControlCurveIndexParameter, ControlCurveInterpolatedParameter, ControlCurveParameter,
     ControlCurvePiecewiseInterpolatedParameter,
 };
-pub use super::parameters::core::{ConstantParameter, MaxParameter, NegativeParameter};
+pub use super::parameters::core::{ConstantParameter, MaxParameter, MinParameter, NegativeParameter};
 pub use super::parameters::delay::DelayParameter;
 pub use super::parameters::indexed_array::IndexedArrayParameter;
 pub use super::parameters::polynomial::Polynomial1DParameter;
@@ -135,6 +135,7 @@ pub enum Parameter {
     MonthlyProfile(MonthlyProfileParameter),
     UniformDrawdownProfile(UniformDrawdownProfileParameter),
     Max(MaxParameter),
+    Min(MinParameter),
     Negative(NegativeParameter),
     Polynomial1D(Polynomial1DParameter),
     ParameterThreshold(ParameterThresholdParameter),
@@ -160,6 +161,7 @@ impl Parameter {
             Self::MonthlyProfile(p) => p.meta.name.as_str(),
             Self::UniformDrawdownProfile(p) => p.meta.name.as_str(),
             Self::Max(p) => p.meta.name.as_str(),
+            Self::Min(p) => p.meta.name.as_str(),
             Self::Negative(p) => p.meta.name.as_str(),
             Self::Polynomial1D(p) => p.meta.name.as_str(),
             Self::ParameterThreshold(p) => p.meta.name.as_str(),
@@ -187,6 +189,7 @@ impl Parameter {
             Self::MonthlyProfile(p) => p.node_references(),
             Self::UniformDrawdownProfile(p) => p.node_references(),
             Self::Max(p) => p.node_references(),
+            Self::Min(p) => p.node_references(),
             Self::Negative(p) => p.node_references(),
             Self::Polynomial1D(p) => p.node_references(),
             Self::ParameterThreshold(p) => p.node_references(),
@@ -231,6 +234,7 @@ impl Parameter {
             Self::MonthlyProfile(_) => "MonthlyProfile",
             Self::UniformDrawdownProfile(_) => "UniformDrawdownProfile",
             Self::Max(_) => "Max",
+            Self::Min(_) => "Min",
             Self::Negative(_) => "Negative",
             Self::Polynomial1D(_) => "Polynomial1D",
             Self::ParameterThreshold(_) => "ParameterThreshold",
@@ -263,6 +267,7 @@ impl Parameter {
             Self::MonthlyProfile(p) => ParameterType::Parameter(p.add_to_model(model, tables)?),
             Self::UniformDrawdownProfile(p) => ParameterType::Parameter(p.add_to_model(model, tables)?),
             Self::Max(p) => ParameterType::Parameter(p.add_to_model(model, tables, data_path)?),
+            Self::Min(p) => ParameterType::Parameter(p.add_to_model(model, tables, data_path)?),
             Self::Negative(p) => ParameterType::Parameter(p.add_to_model(model, tables, data_path)?),
             Self::Polynomial1D(p) => ParameterType::Parameter(p.add_to_model(model)?),
             Self::ParameterThreshold(p) => ParameterType::Index(p.add_to_model(model, tables, data_path)?),
@@ -332,7 +337,8 @@ impl TryFromV1Parameter<ParameterV1> for Parameter {
                 CoreParameter::TablesArray(p) => {
                     Parameter::TablesArray(p.try_into_v2_parameter(parent_node, unnamed_count)?)
                 }
-                CoreParameter::Min(_) | CoreParameter::Division(_) => todo!(),
+                CoreParameter::Min(p) => Parameter::Min(p.try_into_v2_parameter(parent_node, unnamed_count)?),
+                CoreParameter::Division(_) => todo!(),
             },
             ParameterV1::Custom(p) => {
                 println!("Custom parameter: {:?} ({})", p.meta.name, p.ty);
