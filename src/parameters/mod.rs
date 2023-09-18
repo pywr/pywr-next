@@ -4,8 +4,10 @@ mod array;
 mod asymmetric;
 mod control_curves;
 mod delay;
+mod division;
 mod indexed_array;
 mod max;
+mod min;
 mod negative;
 mod polynomial;
 mod profiles;
@@ -13,7 +15,6 @@ mod py;
 mod rhai;
 pub mod simple_wasm;
 mod threshold;
-mod division;
 
 use std::any::Any;
 // Re-imports
@@ -32,8 +33,10 @@ pub use control_curves::{
     PiecewiseInterpolatedParameter,
 };
 pub use delay::DelayParameter;
+pub use division::DivisionParameter;
 pub use indexed_array::IndexedArrayParameter;
 pub use max::MaxParameter;
+pub use min::MinParameter;
 pub use negative::NegativeParameter;
 pub use polynomial::Polynomial1DParameter;
 pub use profiles::{DailyProfileParameter, MonthlyInterpDay, MonthlyProfileParameter, UniformDrawdownProfileParameter};
@@ -42,7 +45,6 @@ use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::ops::Deref;
 pub use threshold::{Predicate, ThresholdParameter};
-pub use division::DivisionParameter;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub struct ParameterIndex(usize);
