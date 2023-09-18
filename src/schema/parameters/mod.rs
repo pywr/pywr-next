@@ -337,7 +337,8 @@ impl TryFromV1Parameter<ParameterV1> for Parameter {
                 CoreParameter::TablesArray(p) => {
                     Parameter::TablesArray(p.try_into_v2_parameter(parent_node, unnamed_count)?)
                 }
-                CoreParameter::Min(_) | CoreParameter::Division(_) => todo!(),
+                CoreParameter::Min(p) => Parameter::Min(p.try_into_v2_parameter(parent_node, unnamed_count)?),
+                CoreParameter::Division(_) => todo!(),
             },
             ParameterV1::Custom(p) => {
                 println!("Custom parameter: {:?} ({})", p.meta.name, p.ty);
