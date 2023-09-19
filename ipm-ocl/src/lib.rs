@@ -16,7 +16,6 @@ impl Default for Tolerances {
             primal_feasibility: 1e-6,
             dual_feasibility: 1e-6,
             optimality: 1e-6,
-            optimality: 1e-6,
         }
     }
 }
