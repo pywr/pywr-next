@@ -11,6 +11,7 @@ use path_following_direct::ANormIndices;
 use path_following_direct::LDecompositionIndices;
 use path_following_direct::{LIndices, LTIndices};
 use std::f64;
+use std::fmt::Debug;
 use std::iter::Sum;
 use std::num::NonZeroUsize;
 use std::ops::{Add, AddAssign, Div, Mul, Neg, Sub};
@@ -208,11 +209,11 @@ where
     ) -> &[Simd<T, N>]
     where
         LaneCount<N>: SupportedLaneCount,
-        T: SimdElement<Mask = i64> + From<f64>,
+        T: SimdElement<Mask = i64> + From<f64> + Debug,
         Simd<T, N>: AddAssign
             + Sum
             + StdFloat
-            + SimdFloat
+            + SimdFloat<Mask = Mask<i64, N>>
             + SimdPartialOrd
             + SimdPartialEq<Mask = Mask<i64, N>>
             + Mul<Output = Simd<T, N>>

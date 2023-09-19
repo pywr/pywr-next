@@ -2,6 +2,8 @@ use super::{dual_feasibility, primal_feasibility, Matrix};
 use crate::common::{compute_dx_dz_dw, dot_product, normal_eqn_rhs, vector_norm, vector_set, vector_update};
 use crate::Tolerances;
 use ipm_common::SparseNormalCholeskyIndices;
+use nalgebra_sparse::na::SimdBool;
+use std::fmt::Debug;
 use std::iter::Sum;
 use std::ops::{Add, AddAssign, Div, Mul, Neg, Sub};
 use std::simd::{
@@ -229,7 +231,7 @@ where
     Simd<T, N>: AddAssign
         + Sum
         + StdFloat
-        + SimdFloat
+        + SimdFloat<Mask = Mask<i64, N>>
         + SimdPartialOrd
         + SimdPartialEq<Mask = Mask<i64, N>>
         + Mul<Output = Simd<T, N>>
@@ -251,13 +253,16 @@ where
     // update relative tolerance
     gamma = gamma / (Simd::<T, N>::splat(1.0.into()) + vector_norm(x) + vector_norm(y));
 
+    let is_nan: Mask<i64, N> = gamma.is_nan();
+    if is_nan.any() {
+        panic!("NaN encountered during IPM solve!")
+    }
+
     // #ifdef DEBUG_GID
     // if (gid == DEBUG_GID) {
     //    printf("%d %d norm-r: %g, norm-s: %g, gamma: %g\n", gid, wsize, normr, norms, gamma);
     // }
     // #endif
-
-    // println!("norm-r: {:?}, norm-s: {:?}, gamma: {:?}", normr, norms, gamma);
 
     let status: Mask<i64, N> = normr.simd_lt(tolerances.primal_feasibility)
         & norms.simd_lt(tolerances.dual_feasibility)
