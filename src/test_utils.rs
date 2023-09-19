@@ -202,7 +202,8 @@ fn make_simple_system<R: Rng>(
         ConstraintValue::Metric(Metric::ParameterValue(idx)),
     )?;
 
-    model.set_node_cost("input", Some(suffix), ConstraintValue::Scalar(-10.0))?;
+    let input_cost = rng.gen_range(-20.0..-5.00);
+    model.set_node_cost("input", Some(suffix), ConstraintValue::Scalar(input_cost))?;
 
     let outflow_distr = Normal::new(8.0, 3.0).unwrap();
     let mut outflow: f64 = outflow_distr.sample(rng);
@@ -239,6 +240,9 @@ fn make_simple_connections<R: Rng>(
         let name = format!("{i:04}->{j:04}");
 
         if let Ok(idx) = model.add_link_node("transfer", Some(&name)) {
+            let transfer_cost = rng.gen_range(0.0..1.0);
+            model.set_node_cost("transfer", Some(&name), ConstraintValue::Scalar(transfer_cost))?;
+
             let from_suffix = format!("sys-{i:04}");
             let from_idx = model.get_node_index_by_name("link", Some(&from_suffix))?;
             let to_suffix = format!("sys-{j:04}");
