@@ -161,98 +161,101 @@ __kernel void normal_eqn_step(
     __global REAL* restrict dw,
     __global REAL* restrict tmp,
     __global REAL* restrict tmp2,
-    __global uint* restrict status
+    __global uchar* restrict status
 ) {
     /* Perform a single step of the path-following algorithm.
 
     */
     uint gid = get_global_id(0);
     uint gsize = get_global_size(0);
+    uint iter;
 
-    // printf("%d %d", gid, wsize);
+    for (iter=0; iter<100; iter++) {
+        // printf("%d %d", gid, wsize);
 
-    // Compute feasibilities
-    REAL normr = primal_feasibility(Aindptr, Aindices, Adata, Asize, ATsize, x, w, wsize, b);
-    REAL norms = dual_feasibility(ATindptr, ATindices, ATdata, ATsize, Asize, y, c, z);
-    // Compute optimality
-    REAL gamma = dot_product(z, x, ATsize) + dot_product(w, y, wsize);
-    REAL mu = delta * gamma / (ATsize + wsize);
-    // update relative tolerance
-    gamma = gamma / (1 + vector_norm(x, ATsize) + vector_norm(y, Asize));
+        // Compute feasibilities
+        REAL normr = primal_feasibility(Aindptr, Aindices, Adata, Asize, ATsize, x, w, wsize, b);
+        REAL norms = dual_feasibility(ATindptr, ATindices, ATdata, ATsize, Asize, y, c, z);
+        // Compute optimality
+        REAL gamma = dot_product(z, x, ATsize) + dot_product(w, y, wsize);
+        REAL mu = delta * gamma / (ATsize + wsize);
+        // update relative tolerance
+        gamma = gamma / (1 + vector_norm(x, ATsize) + vector_norm(y, Asize));
 
-    // #ifdef DEBUG_GID
-    // if (gid == DEBUG_GID) {
-    //    printf("%d %d norm-r: %g, norm-s: %g, gamma: %g\n", gid, wsize, normr, norms, gamma);
-    // }
-    // #endif
-    if ((normr < EPS_PRIMAL_FEASIBILITY) && (norms < EPS_DUAL_FEASIBILITY) && (gamma < EPS_OPTIMALITY)) {
-        // Feasible and optimal; no further work!
-        status[gid] = 0;
-        return;
+        // #ifdef DEBUG_GID
+        // if (gid == DEBUG_GID) {
+        //    printf("%d %d norm-r: %g, norm-s: %g, gamma: %g\n", gid, wsize, normr, norms, gamma);
+        // }
+        // #endif
+        if ((normr < EPS_PRIMAL_FEASIBILITY) && (norms < EPS_DUAL_FEASIBILITY) && (gamma < EPS_OPTIMALITY)) {
+            // Feasible and optimal; no further work!
+            status[gid] = 0;
+            return;
+        }
+
+        // Solve normal equations
+        //   1. Calculate the RHS (into tmp2)
+        normal_eqn_rhs(
+            Aindptr, Aindices, Adata, Asize, ATindptr, ATindices, ATdata, ATsize,
+            x, z, y, b, c, mu, wsize, tmp, tmp2
+        );
+
+        //   2. Compute decomposition of normal matrix
+        normal_matrix_cholesky_decomposition(
+            Adata,
+            Asize,
+            Anorm_indptr,
+            Anorm_indptr_i,
+            Anorm_indptr_j,
+            Anorm_indices,
+            Ldecomp_indptr,
+            Ldecomp_indptr_i,
+            Ldecomp_indptr_j,
+            x,
+            z,
+            y,
+            w,
+            wsize,
+            Lindptr,
+            Ldiag_indptr,
+            Lindices,
+            Ldata
+        );
+
+        //   3. Solve system directly
+        cholesky_solve(
+            Asize,
+            Lindptr,
+            Lindices,
+            LTindptr,
+            LTindices,
+            LTmap,
+            Ldata,
+            tmp2,
+            dy
+        );
+
+        // Calculate dx and dz
+        //     dx = (c - AT.dot(y) - AT.dot(dy) + mu/x)*x/z
+        //     dz = (mu - z*dx)/x - z
+        //     dw = (mu - w*dy)/y - w
+        REAL theta = compute_dx_dz_dw(
+            Asize, ATindptr, ATindices, ATdata, ATsize,
+            x, z, y, w, wsize, c, dy, mu, dx, dz, dw
+        );
+
+        theta = min(0.9995/theta, 1.0);
+        // if (gid == 0) {
+        //     printf("%d theta: %g", gid, theta);
+        // }
+
+        vector_update(x, dx, 1.0, theta, ATsize);
+        vector_update(z, dz, 1.0, theta, ATsize);
+        vector_update(y, dy, 1.0, theta, Asize);
+        vector_update(w, dw, 1.0, theta, wsize);
+
+        status[gid] = 1;
     }
-
-    // Solve normal equations
-    //   1. Calculate the RHS (into tmp2)
-    normal_eqn_rhs(
-        Aindptr, Aindices, Adata, Asize, ATindptr, ATindices, ATdata, ATsize,
-        x, z, y, b, c, mu, wsize, tmp, tmp2
-    );
-
-    //   2. Compute decomposition of normal matrix
-    normal_matrix_cholesky_decomposition(
-        Adata,
-        Asize,
-        Anorm_indptr,
-        Anorm_indptr_i,
-        Anorm_indptr_j,
-        Anorm_indices,
-        Ldecomp_indptr,
-        Ldecomp_indptr_i,
-        Ldecomp_indptr_j,
-        x,
-        z,
-        y,
-        w,
-        wsize,
-        Lindptr,
-        Ldiag_indptr,
-        Lindices,
-        Ldata
-    );
-
-    //   3. Solve system directly
-    cholesky_solve(
-        Asize,
-        Lindptr,
-        Lindices,
-        LTindptr,
-        LTindices,
-        LTmap,
-        Ldata,
-        tmp2,
-        dy
-    );
-
-    // Calculate dx and dz
-    //     dx = (c - AT.dot(y) - AT.dot(dy) + mu/x)*x/z
-    //     dz = (mu - z*dx)/x - z
-    //     dw = (mu - w*dy)/y - w
-    REAL theta = compute_dx_dz_dw(
-        Asize, ATindptr, ATindices, ATdata, ATsize,
-        x, z, y, w, wsize, c, dy, mu, dx, dz, dw
-    );
-
-    theta = min(0.9995/theta, 1.0);
-    // if (gid == 0) {
-    //     printf("%d theta: %g", gid, theta);
-    // }
-
-    vector_update(x, dx, 1.0, theta, ATsize);
-    vector_update(z, dz, 1.0, theta, ATsize);
-    vector_update(y, dy, 1.0, theta, Asize);
-    vector_update(w, dw, 1.0, theta, wsize);
-
-    status[gid] = 1;
 }
 
 __kernel void normal_eqn_init(

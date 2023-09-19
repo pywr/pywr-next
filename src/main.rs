@@ -187,10 +187,16 @@ fn run(path: &Path, solver: &Solver, data_path: Option<&Path>) {
 }
 
 fn run_random(num_systems: usize, density: usize, num_scenarios: usize, solver: &Solver) {
+    let timestepper = Timestepper::new(date!(2020 - 01 - 01), date!(2020 - 01 - 05), 1);
     let mut rng = ChaCha8Rng::seed_from_u64(0);
-    let model = make_random_model(num_systems, density, num_scenarios, &mut rng).unwrap();
-
-    let timestepper = Timestepper::new(date!(2020 - 01 - 01), date!(2020 - 04 - 09), 1);
+    let model = make_random_model(
+        num_systems,
+        density,
+        timestepper.timesteps().len(),
+        num_scenarios,
+        &mut rng,
+    )
+    .unwrap();
 
     match *solver {
         Solver::Clp => model.run::<ClpSolver>(&timestepper, &ClpSolverSettings::default()),

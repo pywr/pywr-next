@@ -170,7 +170,12 @@ pub fn run_all_solvers(model: &Model, timestepper: &Timestepper) {
 }
 
 /// Make a simple system with random inputs.
-fn make_simple_system<R: Rng>(model: &mut Model, suffix: &str, rng: &mut R) -> Result<(), PywrError> {
+fn make_simple_system<R: Rng>(
+    model: &mut Model,
+    suffix: &str,
+    num_timesteps: usize,
+    rng: &mut R,
+) -> Result<(), PywrError> {
     let input_idx = model.add_input_node("input", Some(suffix))?;
     let link_idx = model.add_link_node("link", Some(suffix))?;
     let output_idx = model.add_output_node("output", Some(suffix))?;
@@ -183,7 +188,7 @@ fn make_simple_system<R: Rng>(model: &mut Model, suffix: &str, rng: &mut R) -> R
 
     let inflow_distr: Normal<f64> = Normal::new(9.0, 1.0).unwrap();
 
-    let mut inflow = ndarray::Array2::zeros((1000, num_scenarios));
+    let mut inflow = ndarray::Array2::zeros((num_timesteps, num_scenarios));
 
     for x in inflow.iter_mut() {
         *x = inflow_distr.sample(rng).max(0.0);
@@ -252,6 +257,7 @@ fn make_simple_connections<R: Rng>(
 pub fn make_random_model<R: Rng>(
     num_systems: usize,
     density: usize,
+    num_timesteps: usize,
     num_scenarios: usize,
     rng: &mut R,
 ) -> Result<Model, PywrError> {
@@ -261,7 +267,7 @@ pub fn make_random_model<R: Rng>(
 
     for i in 0..num_systems {
         let suffix = format!("sys-{i:04}");
-        make_simple_system(&mut model, &suffix, rng)?;
+        make_simple_system(&mut model, &suffix, num_timesteps, rng)?;
     }
 
     make_simple_connections(&mut model, num_systems, density, rng)?;
@@ -283,12 +289,13 @@ mod tests {
         let n_sys = 50;
         let density = 5;
         let n_sc = 12;
+        let timestepper = Timestepper::new(date!(2020 - 01 - 01), date!(2020 - 04 - 09), 1);
+
         // Make a consistent random number generator
         // ChaCha8 should be consistent across builds and platforms
         let mut rng = ChaCha8Rng::seed_from_u64(0);
-        let model = make_random_model(n_sys, density, n_sc, &mut rng).unwrap();
+        let model = make_random_model(n_sys, density, timestepper.timesteps().len(), n_sc, &mut rng).unwrap();
 
-        let timestepper = Timestepper::new(date!(2020 - 01 - 01), date!(2020 - 04 - 09), 1);
         let settings = SimdIpmSolverSettings::default();
         model
             .run_multi_scenario::<SimdIpmF64Solver<4>>(&timestepper, &settings)

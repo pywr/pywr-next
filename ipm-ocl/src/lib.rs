@@ -2,6 +2,7 @@ use ipm_common::SparseNormalCholeskyIndices;
 use log::debug;
 use nalgebra_sparse::csr::CsrMatrix;
 use std::num::NonZeroUsize;
+use std::time::Instant;
 
 #[derive(Copy, Clone, PartialEq, Debug)]
 pub struct Tolerances {
@@ -45,6 +46,8 @@ impl GetClProgram for f64 {
             .replace("EPS_OPTIMALITY", &format!("{}", tolerances.optimality));
 
         let opts = std::env::var("CLIPM_COMPILER_OPTS").unwrap_or_else(|_| "".to_string());
+
+        println!("Building program ...");
         let program = ocl::Program::builder()
             .cmplr_opt(opts)
             .devices(device)
@@ -331,7 +334,7 @@ where
     c_buffer: ocl::Buffer<T>,
     tmp_buffer: ocl::Buffer<T>,
     rhs_buffer: ocl::Buffer<T>,
-    status_buffer: ocl::Buffer<u32>,
+    status_buffer: ocl::Buffer<u8>,
 }
 
 impl<T> PathFollowingDirectClBuffers<T>
@@ -400,7 +403,7 @@ where
             .len(num_rows * num_lps)
             .build()?;
 
-        let status_buffer = ocl::Buffer::<u32>::builder()
+        let status_buffer = ocl::Buffer::<u8>::builder()
             .queue(queue.clone())
             .flags(ocl::flags::MEM_READ_WRITE)
             .len(num_lps)
@@ -429,8 +432,9 @@ where
     buffers: PathFollowingDirectClBuffers<T>,
     kernel_normal_init: ocl::Kernel,
     kernel_normal_eq_step: ocl::Kernel,
+    // kernel_normal_eq_solve: ocl::Kernel,
     solution: Vec<T>,
-    status: Vec<u32>,
+    status: Vec<u8>,
 }
 
 impl<T> PathFollowingDirectClSolver<T>
@@ -516,7 +520,7 @@ where
             .build()?;
 
         let solution: Vec<T> = vec![T::default(); num_cols * num_lps as usize];
-        let status = vec![0u32; num_lps as usize];
+        let status = vec![0u8; num_lps as usize];
 
         Ok(Self {
             buffers,
@@ -530,7 +534,6 @@ where
     pub fn solve(&mut self, queue: &ocl::Queue, b: &[T], c: &[T], max_iterations: NonZeroUsize) -> ocl::Result<&[T]> {
         // Copy b & c to the device
         self.buffers.b_buffer.write(b).enq()?;
-
         self.buffers.c_buffer.write(c).enq()?;
 
         unsafe {
@@ -545,6 +548,7 @@ where
             if iter >= max_iterations.get() {
                 break None;
             }
+
             unsafe {
                 self.kernel_normal_eq_step.enq()?;
             }
@@ -552,11 +556,8 @@ where
             self.buffers.status_buffer.read(&mut self.status).enq()?;
             // self.queue.finish()?;
 
-            let num_incomplete: u32 = self.status.iter().sum();
-
-            // println!("Number incomplete: {}", num_incomplete);
-
-            if num_incomplete == 0 {
+            let all_complete: bool = self.status.iter().all(|&s| s == 0);
+            if all_complete {
                 break Some(iter);
             }
 
@@ -568,7 +569,6 @@ where
         }
 
         // println!("Finished after iterations: {}", last_iteration);
-
         self.buffers.path_buffers.x.read(&mut self.solution).enq()?;
         queue.finish()?;
 

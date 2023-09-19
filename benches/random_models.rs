@@ -31,9 +31,9 @@ fn random_benchmark(
     solver_setups: &[SolverSetup], // TODO This should be an enum (see one also in main.rs; should incorporated into the crate).
     sample_size: Option<usize>,
 ) {
-    // We'll do 100 days to make interpretation of the timings a little easier.
-    // i.e. a run time of 1s would equal 1000 timesteps per second
-    let timestepper = Timestepper::new(date!(2020 - 01 - 01), date!(2020 - 04 - 09), 1);
+    // Run 10 time-steps
+    let timestepper = Timestepper::new(date!(2020 - 01 - 01), date!(2020 - 01 - 10), 1);
+    let timesteps = timestepper.timesteps();
 
     let mut group = c.benchmark_group(group_name);
     // group.sampling_mode(SamplingMode::Flat);
@@ -48,10 +48,10 @@ fn random_benchmark(
                 // Make a consistent random number generator
                 // ChaCha8 should be consistent across builds and platforms
                 let mut rng = ChaCha8Rng::seed_from_u64(0);
-                let model = make_random_model(n_sys, density, n_sc, &mut rng).unwrap();
+                let model = make_random_model(n_sys, density, timesteps.len(), n_sc, &mut rng).unwrap();
 
                 // This is the number of time-steps
-                group.throughput(Throughput::Elements(100 * n_sc as u64));
+                group.throughput(Throughput::Elements((timesteps.len() * n_sc) as u64));
 
                 for setup in solver_setups {
                     match &setup.setting {
@@ -63,7 +63,7 @@ fn random_benchmark(
                                 &(n_sys, density, n_sc),
                                 |b, _n| {
                                     // Do the setup here outside of the time-step loop
-                                    let timesteps = timestepper.timesteps();
+
                                     let (
                                         scenario_indices,
                                         mut states,
@@ -480,20 +480,19 @@ fn bench_ocl_chunks(c: &mut Criterion) {
 
     let mut solver_setups = Vec::new();
 
-    // let chunk_sizes: Vec<usize> = (10..16).into_iter().map(|p| 2_usize.pow(p)).collect();
-    let chunk_sizes = vec![256, 512, 1024, 4096, 8192];
+    let num_chunks = vec![1, 2, 4, 8, 16];
 
-    for chunk_size in chunk_sizes {
+    for num_chunks in num_chunks {
         #[cfg(feature = "ipm-ocl")]
         solver_setups.push(SolverSetup {
             setting: SolverSetting::IpmOcl(
                 ClIpmSolverSettingsBuilder::default()
                     .parallel()
                     .threads(N_THREADS)
-                    .chunk_size(NonZeroUsize::new(chunk_size).unwrap())
+                    .num_chunks(NonZeroUsize::new(num_chunks).unwrap())
                     .build(),
             ),
-            name: format!("chunk-size-{}", chunk_size),
+            name: format!("num-chunks-{}", num_chunks),
         });
     }
 
@@ -511,20 +510,20 @@ fn bench_ocl_chunks(c: &mut Criterion) {
 /// Benchmark a large number of scenarios using various solvers
 fn bench_hyper_scenarios(c: &mut Criterion) {
     // Go from largest to smallest
-    let scenarios: Vec<usize> = (10..18).into_iter().map(|p| 2_usize.pow(p)).rev().collect();
+    let scenarios: Vec<usize> = (10..21).into_iter().map(|p| 2_usize.pow(p)).rev().collect();
 
     const N_THREADS: usize = 0;
 
     let solver_setups = vec![
-        // SolverSetup {
-        //     setting: SolverSetting::Clp(
-        //         ClpSolverSettingsBuilder::default()
-        //             .parallel()
-        //             .threads(N_THREADS)
-        //             .build(),
-        //     ),
-        //     name: "default".to_string(),
-        // },
+        SolverSetup {
+            setting: SolverSetting::Clp(
+                ClpSolverSettingsBuilder::default()
+                    .parallel()
+                    .threads(N_THREADS)
+                    .build(),
+            ),
+            name: "default".to_string(),
+        },
         #[cfg(feature = "ipm-simd")]
         SolverSetup {
             setting: SolverSetting::IpmSimdF64x1(
@@ -580,11 +579,11 @@ fn bench_hyper_scenarios(c: &mut Criterion) {
 
 criterion_group!(
     benches,
-    // bench_system_size,
-    // bench_scenarios,
-    // bench_threads,
-    // bench_hyper_scenarios,
-    // bench_ipm_convergence,
+    bench_system_size,
+    bench_scenarios,
+    bench_threads,
+    bench_hyper_scenarios,
+    bench_ipm_convergence,
     bench_ocl_chunks
 );
 criterion_main!(benches);

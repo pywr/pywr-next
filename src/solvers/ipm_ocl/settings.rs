@@ -9,7 +9,7 @@ use std::num::NonZeroUsize;
 pub struct ClIpmSolverSettings {
     parallel: bool,
     threads: usize,
-    chunk_size: NonZeroUsize,
+    num_chunks: NonZeroUsize,
     tolerances: Tolerances,
     max_iterations: NonZeroUsize,
 }
@@ -37,8 +37,8 @@ impl ClIpmSolverSettings {
         ClIpmSolverSettingsBuilder::default()
     }
 
-    pub fn chunk_size(&self) -> NonZeroUsize {
-        self.chunk_size
+    pub fn num_chunks(&self) -> NonZeroUsize {
+        self.num_chunks
     }
 
     pub fn tolerances(&self) -> Tolerances {
@@ -61,7 +61,7 @@ impl ClIpmSolverSettings {
 /// let settings = ClIpmSolverSettingsBuilder::default().parallel().threads(4).build();
 ///
 /// let mut builder = ClIpmSolverSettingsBuilder::default();
-/// builder.chunk_size(NonZeroUsize::new(1024).unwrap());
+/// builder.num_chunks(NonZeroUsize::new(8).unwrap());
 /// let settings = builder.build();
 ///
 /// builder.parallel();
@@ -71,7 +71,7 @@ impl ClIpmSolverSettings {
 pub struct ClIpmSolverSettingsBuilder {
     parallel: bool,
     threads: usize,
-    chunk_size: NonZeroUsize,
+    num_chunks: NonZeroUsize,
     tolerances: Tolerances,
     max_iterations: NonZeroUsize,
 }
@@ -82,7 +82,7 @@ impl Default for ClIpmSolverSettingsBuilder {
             parallel: false,
             threads: 0,
             // Unwrap is safe as the value is non-zero!
-            chunk_size: NonZeroUsize::new(4096).unwrap(),
+            num_chunks: NonZeroUsize::new(16).unwrap(),
             tolerances: Tolerances::default(),
             max_iterations: NonZeroUsize::new(200).unwrap(),
         }
@@ -90,8 +90,8 @@ impl Default for ClIpmSolverSettingsBuilder {
 }
 
 impl ClIpmSolverSettingsBuilder {
-    pub fn chunk_size(&mut self, chunk_size: NonZeroUsize) -> &mut Self {
-        self.chunk_size = chunk_size;
+    pub fn num_chunks(&mut self, num_chunks: NonZeroUsize) -> &mut Self {
+        self.num_chunks = num_chunks;
         self
     }
 
@@ -130,7 +130,7 @@ impl ClIpmSolverSettingsBuilder {
         ClIpmSolverSettings {
             parallel: self.parallel,
             threads: self.threads,
-            chunk_size: self.chunk_size,
+            num_chunks: self.num_chunks,
             tolerances: self.tolerances,
             max_iterations: self.max_iterations,
         }
@@ -148,7 +148,7 @@ mod tests {
         let settings = ClIpmSolverSettings {
             parallel: true,
             threads: 0,
-            chunk_size: NonZeroUsize::new(4096).unwrap(),
+            num_chunks: NonZeroUsize::new(4).unwrap(),
             max_iterations: NonZeroUsize::new(200).unwrap(),
             tolerances: Tolerances::default(),
         };

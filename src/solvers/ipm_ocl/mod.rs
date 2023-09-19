@@ -595,7 +595,8 @@ impl MultiStateSolver for ClIpmF32Solver {
         let mut built_solvers = Vec::new();
         let mut ipms = Vec::new();
 
-        let chunk_size = settings.chunk_size();
+        let num_chunks = settings.num_chunks();
+        let chunk_size = NonZeroUsize::new(num_scenarios / num_chunks).unwrap();
 
         for chunk_scenarios in (0..num_scenarios).collect::<Vec<_>>().chunks(chunk_size.get()) {
             let builder = SolverBuilder::new(chunk_scenarios.len());
@@ -704,7 +705,8 @@ impl MultiStateSolver for ClIpmF64Solver {
         let mut ipms = Vec::new();
         let mut queues = Vec::new();
 
-        let chunk_size = settings.chunk_size();
+        let num_chunks = settings.num_chunks();
+        let chunk_size = NonZeroUsize::new(num_scenarios / num_chunks).unwrap();
 
         for chunk_scenarios in (0..num_scenarios).collect::<Vec<_>>().chunks(chunk_size.get()) {
             // Create a queue per chunk.
