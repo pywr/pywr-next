@@ -2,7 +2,6 @@ use ipm_common::SparseNormalCholeskyIndices;
 use log::debug;
 use nalgebra_sparse::csr::CsrMatrix;
 use std::num::NonZeroUsize;
-use std::time::Instant;
 
 #[derive(Copy, Clone, PartialEq, Debug)]
 pub struct Tolerances {
@@ -16,6 +15,7 @@ impl Default for Tolerances {
         Self {
             primal_feasibility: 1e-6,
             dual_feasibility: 1e-6,
+            optimality: 1e-6,
             optimality: 1e-6,
         }
     }
@@ -47,7 +47,6 @@ impl GetClProgram for f64 {
 
         let opts = std::env::var("CLIPM_COMPILER_OPTS").unwrap_or_else(|_| "".to_string());
 
-        println!("Building program ...");
         let program = ocl::Program::builder()
             .cmplr_opt(opts)
             .devices(device)
