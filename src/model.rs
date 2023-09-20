@@ -11,7 +11,7 @@ use crate::timestep::{Timestep, Timestepper};
 use crate::virtual_storage::{VirtualStorage, VirtualStorageIndex, VirtualStorageReset, VirtualStorageVec};
 use crate::{parameters, recorders, IndexParameterIndex, NodeIndex, ParameterIndex, PywrError, RecorderIndex};
 use indicatif::ProgressIterator;
-use log::{debug, info};
+use tracing::{debug, info};
 use rayon::prelude::*;
 use std::any::Any;
 use std::ops::Deref;

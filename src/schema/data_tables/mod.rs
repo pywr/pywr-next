@@ -1,5 +1,5 @@
 use crate::schema::parameters::TableIndex;
-use log::{debug, info};
+use tracing::{debug, info};
 use pywr_schema::parameters::TableDataRef as TableDataRefV1;
 use std::collections::HashMap;
 use std::fs::File;
