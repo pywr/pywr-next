@@ -4,8 +4,10 @@ mod array;
 mod asymmetric;
 mod control_curves;
 mod delay;
+mod division;
 mod indexed_array;
 mod max;
+mod min;
 mod negative;
 mod polynomial;
 mod profiles;
@@ -31,8 +33,10 @@ pub use control_curves::{
     PiecewiseInterpolatedParameter,
 };
 pub use delay::DelayParameter;
+pub use division::DivisionParameter;
 pub use indexed_array::IndexedArrayParameter;
 pub use max::MaxParameter;
+pub use min::MinParameter;
 pub use negative::NegativeParameter;
 pub use polynomial::Polynomial1DParameter;
 pub use profiles::{DailyProfileParameter, MonthlyInterpDay, MonthlyProfileParameter, UniformDrawdownProfileParameter};

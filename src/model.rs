@@ -12,12 +12,12 @@ use crate::timestep::{Timestep, Timestepper};
 use crate::virtual_storage::{VirtualStorage, VirtualStorageIndex, VirtualStorageReset, VirtualStorageVec};
 use crate::{parameters, recorders, IndexParameterIndex, NodeIndex, ParameterIndex, PywrError, RecorderIndex};
 use indicatif::ProgressIterator;
-use log::{debug, info};
 use rayon::prelude::*;
 use std::any::Any;
 use std::ops::Deref;
 use std::time::Duration;
 use std::time::Instant;
+use tracing::{debug, info};
 
 enum RunDuration {
     Running(Instant),
@@ -513,11 +513,11 @@ impl Model {
     {
         // First compute all the updated state
 
-        scenario_indices
-            .iter()
+        let p_calc_timings: Vec<_> = scenario_indices
+            .par_iter()
             .zip(&mut *states)
-            .zip(parameter_internal_states.iter_mut())
-            .for_each(|((scenario_index, current_state), p_internal_state)| {
+            .zip(&mut *parameter_internal_states)
+            .map(|((scenario_index, current_state), p_internal_state)| {
                 // TODO clear the current parameter values state (i.e. set them all to zero).
 
                 let start_p_calc = Instant::now();
@@ -525,8 +525,13 @@ impl Model {
                     .unwrap();
 
                 // State now contains updated parameter values BUT original network state
-                timings.parameter_calculation += start_p_calc.elapsed();
-            });
+                start_p_calc.elapsed()
+            })
+            .collect();
+
+        for t in p_calc_timings.into_iter() {
+            timings.parameter_calculation += t;
+        }
 
         // Now solve all the LPs simultaneously
         let solve_timings = solver.solve(self, timestep, states).unwrap();
@@ -534,16 +539,22 @@ impl Model {
         timings.solve += solve_timings;
 
         // Now run the "after" method on all components
-        scenario_indices
-            .iter()
+        let p_after_timings: Vec<_> = scenario_indices
+            .par_iter()
             .zip(&mut *states)
             .zip(parameter_internal_states)
-            .for_each(|((scenario_index, current_state), p_internal_state)| {
+            .map(|((scenario_index, current_state), p_internal_state)| {
                 let start_p_after = Instant::now();
                 self.after(timestep, scenario_index, current_state, p_internal_state)
                     .unwrap();
-                timings.parameter_calculation += start_p_after.elapsed();
-            });
+                start_p_after.elapsed()
+            })
+            .collect();
+
+        for t in p_after_timings.into_iter() {
+            timings.parameter_calculation += t;
+        }
+
         Ok(())
     }
 

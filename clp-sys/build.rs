@@ -1,23 +1,17 @@
 fn main() {
-    const COIN_UTILS_SRC: &str = "vendor/CoinUtils/src";
-    const COIN_CLP_SRC: &str = "vendor/Clp/src";
+    const COIN_UTILS_SRC: &str = "vendor/CoinUtils/CoinUtils/src";
+    const COIN_CLP_SRC: &str = "vendor/Clp/Clp/src";
     // Compile CoinUtils
     cc::Build::new()
         .cpp(true)
         .flag("-w")
         .flag("-DNDEBUG")
+        .flag("-DHAVE_CFLOAT")
         .flag(&*format!("-I{}", COIN_UTILS_SRC))
-        .file(format!("{}/CoinAdjacencyVector.cpp", COIN_UTILS_SRC))
         .file(format!("{}/CoinAlloc.cpp", COIN_UTILS_SRC))
-        .file(format!("{}/CoinBronKerbosch.cpp", COIN_UTILS_SRC))
         .file(format!("{}/CoinBuild.cpp", COIN_UTILS_SRC))
-        .file(format!("{}/CoinCliqueExtender.cpp", COIN_UTILS_SRC))
-        .file(format!("{}/CoinCliqueList.cpp", COIN_UTILS_SRC))
-        .file(format!("{}/CoinCliqueSet.cpp", COIN_UTILS_SRC))
-        .file(format!("{}/CoinCutPool.cpp", COIN_UTILS_SRC))
         .file(format!("{}/CoinDenseFactorization.cpp", COIN_UTILS_SRC))
         .file(format!("{}/CoinDenseVector.cpp", COIN_UTILS_SRC))
-        .file(format!("{}/CoinDynamicConflictGraph.cpp", COIN_UTILS_SRC))
         .file(format!("{}/CoinError.cpp", COIN_UTILS_SRC))
         .file(format!("{}/CoinFactorization1.cpp", COIN_UTILS_SRC))
         .file(format!("{}/CoinFactorization2.cpp", COIN_UTILS_SRC))
@@ -33,8 +27,6 @@ fn main() {
         .file(format!("{}/CoinModelUseful2.cpp", COIN_UTILS_SRC))
         .file(format!("{}/CoinModelUseful.cpp", COIN_UTILS_SRC))
         .file(format!("{}/CoinMpsIO.cpp", COIN_UTILS_SRC))
-        .file(format!("{}/CoinNodeHeap.cpp", COIN_UTILS_SRC))
-        .file(format!("{}/CoinOddWheelSeparator.cpp", COIN_UTILS_SRC))
         .file(format!("{}/CoinOslFactorization2.cpp", COIN_UTILS_SRC))
         .file(format!("{}/CoinOslFactorization3.cpp", COIN_UTILS_SRC))
         .file(format!("{}/CoinOslFactorization.cpp", COIN_UTILS_SRC))
@@ -66,10 +58,8 @@ fn main() {
         .file(format!("{}/CoinRational.cpp", COIN_UTILS_SRC))
         .file(format!("{}/CoinSearchTree.cpp", COIN_UTILS_SRC))
         .file(format!("{}/CoinShallowPackedVector.cpp", COIN_UTILS_SRC))
-        .file(format!("{}/CoinShortestPath.cpp", COIN_UTILS_SRC))
         .file(format!("{}/CoinSimpFactorization.cpp", COIN_UTILS_SRC))
         .file(format!("{}/CoinSnapshot.cpp", COIN_UTILS_SRC))
-        .file(format!("{}/CoinStaticConflictGraph.cpp", COIN_UTILS_SRC))
         .file(format!("{}/CoinStructuredModel.cpp", COIN_UTILS_SRC))
         .file(format!("{}/CoinWarmStartBasis.cpp", COIN_UTILS_SRC))
         .file(format!("{}/CoinWarmStartDual.cpp", COIN_UTILS_SRC))

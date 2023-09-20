@@ -4,7 +4,7 @@ use crate::schema::parameters::{DynamicFloatValueType, ParameterMeta};
 use crate::{ParameterIndex, PywrError};
 use ndarray::Array2;
 use polars::prelude::DataType::Float64;
-use polars::prelude::{DataFrame, Float64Type};
+use polars::prelude::{DataFrame, Float64Type, IndexOrder};
 use pyo3::prelude::PyModule;
 use pyo3::types::{PyDict, PyTuple};
 use pyo3::{IntoPy, PyErr, PyObject, Python, ToPyObject};
@@ -124,7 +124,7 @@ impl DataFrameParameter {
         match &self.columns {
             DataFrameColumns::Scenario(scenario) => {
                 let scenario_group = model.get_scenario_group_index_by_name(scenario)?;
-                let array: Array2<f64> = df.to_ndarray::<Float64Type>().unwrap();
+                let array: Array2<f64> = df.to_ndarray::<Float64Type>(IndexOrder::default()).unwrap();
                 let p = Array2Parameter::new(&self.meta.name, array, scenario_group);
                 model.add_parameter(Box::new(p))
             }

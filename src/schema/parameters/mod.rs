@@ -18,7 +18,7 @@ pub use super::parameters::control_curves::{
     ControlCurveIndexParameter, ControlCurveInterpolatedParameter, ControlCurveParameter,
     ControlCurvePiecewiseInterpolatedParameter,
 };
-pub use super::parameters::core::{ConstantParameter, MaxParameter, NegativeParameter};
+pub use super::parameters::core::{ConstantParameter, MaxParameter, MinParameter, NegativeParameter};
 pub use super::parameters::delay::DelayParameter;
 pub use super::parameters::indexed_array::IndexedArrayParameter;
 pub use super::parameters::polynomial::Polynomial1DParameter;
@@ -31,6 +31,7 @@ pub use super::parameters::thresholds::ParameterThresholdParameter;
 use crate::metric::Metric;
 use crate::parameters::{IndexValue, ParameterType};
 use crate::schema::error::ConversionError;
+use crate::schema::parameters::core::DivisionParameter;
 pub use crate::schema::parameters::data_frame::DataFrameParameter;
 use crate::{IndexParameterIndex, NodeIndex, PywrError};
 use pywr_schema::parameters::{
@@ -135,6 +136,7 @@ pub enum Parameter {
     MonthlyProfile(MonthlyProfileParameter),
     UniformDrawdownProfile(UniformDrawdownProfileParameter),
     Max(MaxParameter),
+    Min(MinParameter),
     Negative(NegativeParameter),
     Polynomial1D(Polynomial1DParameter),
     ParameterThreshold(ParameterThresholdParameter),
@@ -142,6 +144,7 @@ pub enum Parameter {
     Python(PythonParameter),
     DataFrame(DataFrameParameter),
     Delay(DelayParameter),
+    Division(DivisionParameter),
 }
 
 impl Parameter {
@@ -160,12 +163,14 @@ impl Parameter {
             Self::MonthlyProfile(p) => p.meta.name.as_str(),
             Self::UniformDrawdownProfile(p) => p.meta.name.as_str(),
             Self::Max(p) => p.meta.name.as_str(),
+            Self::Min(p) => p.meta.name.as_str(),
             Self::Negative(p) => p.meta.name.as_str(),
             Self::Polynomial1D(p) => p.meta.name.as_str(),
             Self::ParameterThreshold(p) => p.meta.name.as_str(),
             Self::TablesArray(p) => p.meta.name.as_str(),
             Self::Python(p) => p.meta.name.as_str(),
             Self::DataFrame(p) => p.meta.name.as_str(),
+            Self::Division(p) => p.meta.name.as_str(),
             Parameter::Delay(p) => p.meta.name.as_str(),
         }
     }
@@ -187,6 +192,7 @@ impl Parameter {
             Self::MonthlyProfile(p) => p.node_references(),
             Self::UniformDrawdownProfile(p) => p.node_references(),
             Self::Max(p) => p.node_references(),
+            Self::Min(p) => p.node_references(),
             Self::Negative(p) => p.node_references(),
             Self::Polynomial1D(p) => p.node_references(),
             Self::ParameterThreshold(p) => p.node_references(),
@@ -194,6 +200,7 @@ impl Parameter {
             Self::Python(p) => p.node_references(),
             Self::DataFrame(p) => p.node_references(),
             Self::Delay(p) => p.node_references(),
+            Self::Division(p) => p.node_references(),
         }
     }
 
@@ -231,6 +238,7 @@ impl Parameter {
             Self::MonthlyProfile(_) => "MonthlyProfile",
             Self::UniformDrawdownProfile(_) => "UniformDrawdownProfile",
             Self::Max(_) => "Max",
+            Self::Min(_) => "Min",
             Self::Negative(_) => "Negative",
             Self::Polynomial1D(_) => "Polynomial1D",
             Self::ParameterThreshold(_) => "ParameterThreshold",
@@ -238,6 +246,7 @@ impl Parameter {
             Self::Python(_) => "Python",
             Self::DataFrame(_) => "DataFrame",
             Self::Delay(_) => "Delay",
+            Self::Division(_) => "Division",
         }
     }
 
@@ -263,6 +272,7 @@ impl Parameter {
             Self::MonthlyProfile(p) => ParameterType::Parameter(p.add_to_model(model, tables)?),
             Self::UniformDrawdownProfile(p) => ParameterType::Parameter(p.add_to_model(model, tables)?),
             Self::Max(p) => ParameterType::Parameter(p.add_to_model(model, tables, data_path)?),
+            Self::Min(p) => ParameterType::Parameter(p.add_to_model(model, tables, data_path)?),
             Self::Negative(p) => ParameterType::Parameter(p.add_to_model(model, tables, data_path)?),
             Self::Polynomial1D(p) => ParameterType::Parameter(p.add_to_model(model)?),
             Self::ParameterThreshold(p) => ParameterType::Index(p.add_to_model(model, tables, data_path)?),
@@ -270,6 +280,7 @@ impl Parameter {
             Self::Python(p) => p.add_to_model(model, tables, data_path)?,
             Self::DataFrame(p) => ParameterType::Parameter(p.add_to_model(model, data_path)?),
             Self::Delay(p) => ParameterType::Parameter(p.add_to_model(model, tables, data_path)?),
+            Self::Division(p) => ParameterType::Parameter(p.add_to_model(model, tables, data_path)?),
         };
 
         Ok(ty)
@@ -332,6 +343,8 @@ impl TryFromV1Parameter<ParameterV1> for Parameter {
                 CoreParameter::TablesArray(p) => {
                     Parameter::TablesArray(p.try_into_v2_parameter(parent_node, unnamed_count)?)
                 }
+                CoreParameter::Min(p) => Parameter::Min(p.try_into_v2_parameter(parent_node, unnamed_count)?),
+                CoreParameter::Division(p) => Parameter::Division(p.try_into_v2_parameter(parent_node, unnamed_count)?),
             },
             ParameterV1::Custom(p) => {
                 println!("Custom parameter: {:?} ({})", p.meta.name, p.ty);
