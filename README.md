@@ -97,14 +97,9 @@ Any major revision to Pywr will have the following feature requirements:
 
 ### Built With
 
-* [![Next][Next.js]][Next-url]
-* [![React][React.js]][React-url]
-* [![Vue][Vue.js]][Vue-url]
-* [![Angular][Angular.io]][Angular-url]
-* [![Svelte][Svelte.dev]][Svelte-url]
-* [![Laravel][Laravel.com]][Laravel-url]
-* [![Bootstrap][Bootstrap.com]][Bootstrap-url]
-* [![JQuery][JQuery.com]][JQuery-url]
+[![Rust][Rust]][Rust-url]
+[![Python][Python]][Python-url]
+
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -275,6 +270,9 @@ Project Link: [https://github.com/pywr/pywr-next](https://github.com/pywr/pywr-n
 [license-url]: https://github.com/pywr/pywr-next/blob/master/LICENSE.txt
 [linkedin-shield]: https://img.shields.io/badge/-LinkedIn-black.svg?style=for-the-badge&logo=linkedin&colorB=555
 [linkedin-url]: https://linkedin.com/in/james-tomlinson-a465352b
-
+[Rust]: https://img.shields.io/badge/rust-ef4a23?style=for-the-badge&logo=rust&logoColor=white
+[Rust-url]: https://www.rust-lang.org/
+[Python]: https://img.shields.io/badge/python-275277?style=for-the-badge&logo=python&logoColor=white
+[Python-url]: https://www.python.org/
 
 Copyright (C) 2020-2023 James Tomlinson Associates Ltd.
