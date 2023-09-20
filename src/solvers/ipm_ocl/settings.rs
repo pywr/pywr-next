@@ -82,7 +82,7 @@ impl Default for ClIpmSolverSettingsBuilder {
             parallel: false,
             threads: 0,
             // Unwrap is safe as the value is non-zero!
-            num_chunks: NonZeroUsize::new(16).unwrap(),
+            num_chunks: NonZeroUsize::new(4).unwrap(),
             tolerances: Tolerances::default(),
             max_iterations: NonZeroUsize::new(200).unwrap(),
         }
