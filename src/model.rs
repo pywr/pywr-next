@@ -4,6 +4,7 @@ use crate::edge::{EdgeIndex, EdgeVec};
 use crate::metric::Metric;
 use crate::node::{ConstraintValue, Node, NodeVec, StorageInitialVolume};
 use crate::parameters::{MultiValueParameterIndex, ParameterType};
+use crate::recorders::{MetricSet, MetricSetIndex};
 use crate::scenario::{ScenarioGroupCollection, ScenarioIndex};
 use crate::solvers::{MultiStateSolver, Solver, SolverFeatures, SolverSettings, SolverTimings};
 use crate::state::{ParameterStates, State};
@@ -11,13 +12,13 @@ use crate::timestep::{Timestep, Timestepper};
 use crate::virtual_storage::{VirtualStorage, VirtualStorageIndex, VirtualStorageReset, VirtualStorageVec};
 use crate::{parameters, recorders, IndexParameterIndex, NodeIndex, ParameterIndex, PywrError, RecorderIndex};
 use indicatif::ProgressIterator;
-use log::{debug, info};
 use rayon::prelude::*;
 use std::any::Any;
 use std::collections::HashSet;
 use std::ops::Deref;
 use std::time::Duration;
 use std::time::Instant;
+use tracing::{debug, info};
 
 enum RunDuration {
     Running(Instant),
@@ -151,6 +152,7 @@ pub struct Model {
     parameters: Vec<Box<dyn parameters::Parameter>>,
     index_parameters: Vec<Box<dyn parameters::IndexParameter>>,
     multi_parameters: Vec<Box<dyn parameters::MultiValueParameter>>,
+    metric_sets: Vec<MetricSet>,
     resolve_order: Vec<ComponentType>,
     recorders: Vec<Box<dyn recorders::Recorder>>,
 }
@@ -947,6 +949,22 @@ impl Model {
         }
     }
 
+    /// Get a `AggregatedNodeIndex` from a node's name
+    pub fn get_aggregated_node_index_by_name(
+        &self,
+        name: &str,
+        sub_name: Option<&str>,
+    ) -> Result<AggregatedNodeIndex, PywrError> {
+        match self
+            .aggregated_nodes
+            .iter()
+            .find(|&n| n.full_name() == (name, sub_name))
+        {
+            Some(node) => Ok(node.index()),
+            None => Err(PywrError::NodeNotFound(name.to_string())),
+        }
+    }
+
     pub fn set_aggregated_node_max_flow(
         &mut self,
         name: &str,
@@ -1056,6 +1074,16 @@ impl Model {
         }
     }
 
+    /// Get a `VirtualStorageNode` from a node's name
+    pub fn get_virtual_storage_node_index_by_name(
+        &self,
+        name: &str,
+        sub_name: Option<&str>,
+    ) -> Result<VirtualStorageIndex, PywrError> {
+        let node = self.get_virtual_storage_node_by_name(name, sub_name)?;
+        Ok(node.index())
+    }
+
     pub fn get_storage_node_metric(
         &self,
         name: &str,
@@ -1084,34 +1112,6 @@ impl Model {
         } else {
             Err(PywrError::NodeNotFound(name.to_string()))
         }
-    }
-
-    pub fn get_node_default_metrics(&self) -> Vec<(Metric, (String, Option<String>))> {
-        self.nodes
-            .iter()
-            .map(|n| {
-                let metric = n.default_metric();
-                let (name, sub_name) = n.full_name();
-                (metric, (name.to_string(), sub_name.map(|s| s.to_string())))
-            })
-            .chain(self.aggregated_nodes.iter().map(|n| {
-                let metric = n.default_metric();
-                let (name, sub_name) = n.full_name();
-                (metric, (name.to_string(), sub_name.map(|s| s.to_string())))
-            }))
-            .collect()
-    }
-
-    pub fn get_parameter_metrics(&self) -> Vec<(Metric, (String, Option<String>))> {
-        self.parameters
-            .iter()
-            .enumerate()
-            .map(|(idx, p)| {
-                let metric = Metric::ParameterValue(ParameterIndex::new(idx));
-
-                (metric, (format!("param-{}", p.name()), None))
-            })
-            .collect()
     }
 
     /// Get a `Parameter` from a parameter's name
@@ -1373,6 +1373,38 @@ impl Model {
         Ok(parameter_index)
     }
 
+    /// Add a [`MetricSet`] to the model.
+    pub fn add_metric_set(&mut self, metric_set: MetricSet) -> Result<MetricSetIndex, PywrError> {
+        if let Ok(_) = self.get_metric_set_by_name(&metric_set.name()) {
+            return Err(PywrError::MetricSetNameAlreadyExists(metric_set.name().to_string()));
+        }
+
+        let metric_set_idx = MetricSetIndex::new(self.metric_sets.len());
+        self.metric_sets.push(metric_set);
+        Ok(metric_set_idx)
+    }
+
+    /// Get a [`MetricSet'] from its index.
+    pub fn get_metric_set(&self, index: MetricSetIndex) -> Result<&MetricSet, PywrError> {
+        self.metric_sets.get(*index).ok_or(PywrError::MetricSetIndexNotFound)
+    }
+
+    /// Get a ['MetricSet'] by its name.
+    pub fn get_metric_set_by_name(&self, name: &str) -> Result<&MetricSet, PywrError> {
+        self.metric_sets
+            .iter()
+            .find(|&m| m.name() == name)
+            .ok_or(PywrError::MetricSetNotFound(name.to_string()))
+    }
+
+    /// Get a ['MetricSetIndex'] by its name.
+    pub fn get_metric_set_index_by_name(&self, name: &str) -> Result<MetricSetIndex, PywrError> {
+        match self.metric_sets.iter().position(|m| m.name() == name) {
+            Some(idx) => Ok(MetricSetIndex::new(idx)),
+            None => Err(PywrError::MetricSetNotFound(name.to_string())),
+        }
+    }
+
     /// Add a `recorders::Recorder` to the model
     pub fn add_recorder(&mut self, recorder: Box<dyn recorders::Recorder>) -> Result<RecorderIndex, PywrError> {
         // TODO reinstate this check
@@ -1412,6 +1444,26 @@ impl Model {
 
         Ok(edge_index)
     }
+
+    /// Set the variable values on the parameter a index `['idx'].
+    pub fn set_parameter_variable_values(&mut self, idx: ParameterIndex, values: &[f64]) -> Result<(), PywrError> {
+        match self.parameters.get_mut(*idx.deref()) {
+            Some(parameter) => match parameter.as_variable_mut() {
+                Some(variable) => variable.set_variables(values),
+                None => Err(PywrError::ParameterTypeNotVariable),
+            },
+            None => Err(PywrError::ParameterIndexNotFound(idx)),
+        }
+    }
+
+    /// Return a vector of the current values of active variable parameters.
+    pub fn get_parameter_variable_values(&self) -> Vec<f64> {
+        self.parameters
+            .iter()
+            .filter_map(|p| p.as_variable().filter(|v| v.is_active()).map(|v| v.get_variables()))
+            .flatten()
+            .collect()
+    }
 }
 
 #[cfg(test)]
@@ -1420,9 +1472,9 @@ mod tests {
     use crate::metric::Metric;
     use crate::model::Model;
     use crate::node::{Constraint, ConstraintValue};
+    use crate::parameters::{ActivationFunction, Parameter, VariableParameter};
     use crate::recorders::AssertionRecorder;
     use crate::scenario::{ScenarioGroupCollection, ScenarioIndex};
-
     #[cfg(feature = "clipm")]
     use crate::solvers::{ClIpmF64Solver, SimdIpmF64Solver};
     use crate::solvers::{ClpSolver, ClpSolverSettings};
@@ -1505,7 +1557,7 @@ mod tests {
         let mut model = Model::default();
         let _node_index = model.add_input_node("input", None).unwrap();
 
-        let input_max_flow = parameters::ConstantParameter::new("my-constant", 10.0);
+        let input_max_flow = parameters::ConstantParameter::new("my-constant", 10.0, None);
         let parameter = model.add_parameter(Box::new(input_max_flow)).unwrap();
 
         // assign the new parameter to one of the nodes.
@@ -1711,5 +1763,38 @@ mod tests {
                 indices: vec![9, 1, 4]
             })
         );
+    }
+
+    #[test]
+    /// Test the variable API
+    fn test_variable_api() {
+        let mut model = Model::default();
+        let _node_index = model.add_input_node("input", None).unwrap();
+
+        let variable = ActivationFunction::Unit { min: 0.0, max: 10.0 };
+        let input_max_flow = parameters::ConstantParameter::new("my-constant", 10.0, Some(variable));
+
+        assert!(input_max_flow.can_be_variable());
+        assert!(input_max_flow.is_variable_active());
+        assert!(input_max_flow.is_active());
+
+        let input_max_flow_idx = model.add_parameter(Box::new(input_max_flow)).unwrap();
+
+        // assign the new parameter to one of the nodes.
+        let node = model.get_mut_node_by_name("input", None).unwrap();
+        node.set_constraint(
+            ConstraintValue::Metric(Metric::ParameterValue(input_max_flow_idx)),
+            Constraint::MaxFlow,
+        )
+        .unwrap();
+
+        let variable_values = model.get_parameter_variable_values();
+        assert_eq!(variable_values, vec![10.0]);
+
+        // Update the variable values
+        model.set_parameter_variable_values(input_max_flow_idx, &[5.0]).unwrap();
+
+        let variable_values = model.get_parameter_variable_values();
+        assert_eq!(variable_values, vec![5.0]);
     }
 }

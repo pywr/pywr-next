@@ -1,0 +1,5 @@
+{
+  "type": "Constant",
+  "name": "my-constant",
+  "value": 10.0
+}

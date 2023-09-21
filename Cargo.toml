@@ -4,6 +4,13 @@ version = "2.0.0-dev"
 authors = ["James Tomlinson <tomo.bbe@gmail.com>"]
 edition = "2021"
 rust-version = "1.60"
+description = "A generalised water resource allocation model."
+readme = "README.md"
+repository = "https://github.com/pywr/pywr-next/"
+license = "MIT OR Apache-2.0"
+license-file = "LICENSE"
+keywords = ["water", "modelling"]
+categories = ["science", "simulation"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -24,7 +31,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1.0"
 time = { version = "0.3", features = ["serde", "serde-well-known", "serde-human-readable", "macros"] }
 svgbobdoc = { version = "0.3.0", features = ["enable"]  }
-log = "0.4.17"
+tracing = "0.1"
 pyo3-log = "0.8.0"
 indicatif = "0.17.2"
 highs-sys = {  git = "https://github.com/jetuk/highs-sys", branch="fix-build-libz-linking", optional = true }
@@ -33,7 +40,7 @@ pyo3 = { version = "0.19.0" }
 rayon = "1.6.1"
 polars = { version = "0.32.0", features = ["lazy", "rows", "ndarray"] }
 pyo3-polars = "0.6.0"
-pywr-schema = { git = "https://github.com/pywr/pywr-schema/", tag="v0.6.0" }
+pywr-schema = { git = "https://github.com/pywr/pywr-schema/", tag="v0.7.0" }
 rhai = { version="1.12.0", features=["sync"] }
 
 # OpenCL

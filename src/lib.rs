@@ -4,7 +4,7 @@ extern crate core;
 
 use crate::node::NodeIndex;
 use crate::parameters::{IndexParameterIndex, MultiValueParameterIndex, ParameterIndex};
-use crate::recorders::RecorderIndex;
+use crate::recorders::{MetricSetIndex, RecorderIndex};
 use crate::schema::ConversionError;
 use thiserror::Error;
 
@@ -53,17 +53,23 @@ pub enum PywrError {
     MultiValueParameterKeyNotFound(String),
     #[error("parameter {0} not found")]
     ParameterNotFound(String),
+    #[error("metric set index not found")]
+    MetricSetIndexNotFound,
+    #[error("metric set with name {0} not found")]
+    MetricSetNotFound(String),
     #[error("recorder index not found")]
     RecorderIndexNotFound,
     #[error("recorder not found")]
     RecorderNotFound,
     #[error("node name `{0}` already exists")]
     NodeNameAlreadyExists(String),
-    #[error("parameter name `{0}` already exists on parameter {1}")]
+    #[error("parameter name `{0}` already exists at index {1}")]
     ParameterNameAlreadyExists(String, ParameterIndex),
-    #[error("index parameter name `{0}` already exists on index parameter {1}")]
+    #[error("index parameter name `{0}` already exists at index {1}")]
     IndexParameterNameAlreadyExists(String, IndexParameterIndex),
-    #[error("recorder name `{0}` already exists on parameter {1}")]
+    #[error("metric set name `{0}` already exists")]
+    MetricSetNameAlreadyExists(String),
+    #[error("recorder name `{0}` already exists at index {1}")]
     RecorderNameAlreadyExists(String, RecorderIndex),
     #[error("connections from output nodes are invalid. node: {0}")]
     InvalidNodeConnectionFromOutput(String),
@@ -107,10 +113,14 @@ pub enum PywrError {
     MetricNotDefinedForNode,
     #[error("invalid metric type: {0}")]
     InvalidMetricType(String),
+    #[error("invalid metric value: {0}")]
+    InvalidMetricValue(String),
     #[error("recorder not initialised")]
     RecorderNotInitialised,
     #[error("hdf5 error: {0}")]
     HDF5Error(String),
+    #[error("csv error: {0}")]
+    CSVError(String),
     #[error("not implemented by recorder")]
     NotSupportedByRecorder,
     #[error("invalid constraint value: {0}")]
@@ -127,6 +137,12 @@ pub enum PywrError {
     DataTable(#[from] schema::data_tables::TableError),
     #[error("unsupported file format")]
     UnsupportedFileFormat,
+    #[error("parameter type does is not a valid variable")]
+    ParameterTypeNotVariable,
+    #[error("parameter variable is not active")]
+    ParameterVariableNotActive,
+    #[error("incorrect number of values for parameter variable")]
+    ParameterVariableValuesIncorrectLength,
     #[error("missing solver features")]
     MissingSolverFeatures,
 }

@@ -1,0 +1,13 @@
+{
+  "type": "Constant",
+  "name": "my-variable",
+  "value": 5.0,
+  "variable": {
+    "is_active": true,
+    "activation": {
+      "type": "Unit",
+      "min": 0.0,
+      "max": 10.0
+    }
+  }
+}

@@ -1,3 +1,12 @@
+//! Parameter schema definitions.
+//!
+//! The enum [`Parameter`] contains all of the valid Pywr parameter schemas. The parameter
+//! variants define separate schemas for different parameter types. When a model is generated
+//! from a schema the parameter schemas are added to the model using [`Parameter::add_to_model`].
+//! This typically adds a struct from [`crate::parameters`] to the model using the data
+//! defined in the schema.
+//!
+//! Serializing and deserializing is accomplished using [`serde`].
 mod aggregated;
 mod asymmetric_switch;
 mod control_curves;
@@ -5,6 +14,7 @@ mod core;
 mod data_frame;
 mod delay;
 mod indexed_array;
+mod offset;
 mod polynomial;
 mod profiles;
 mod python;
@@ -18,7 +28,9 @@ pub use super::parameters::control_curves::{
     ControlCurveIndexParameter, ControlCurveInterpolatedParameter, ControlCurveParameter,
     ControlCurvePiecewiseInterpolatedParameter,
 };
-pub use super::parameters::core::{ConstantParameter, MaxParameter, NegativeParameter};
+pub use super::parameters::core::{
+    ActivationFunction, ConstantParameter, MaxParameter, MinParameter, NegativeParameter, VariableSettings,
+};
 pub use super::parameters::delay::DelayParameter;
 pub use super::parameters::indexed_array::IndexedArrayParameter;
 pub use super::parameters::polynomial::Polynomial1DParameter;
@@ -31,8 +43,10 @@ pub use super::parameters::thresholds::ParameterThresholdParameter;
 use crate::metric::Metric;
 use crate::parameters::{IndexValue, ParameterType};
 use crate::schema::error::ConversionError;
+use crate::schema::parameters::core::DivisionParameter;
 pub use crate::schema::parameters::data_frame::DataFrameParameter;
 use crate::{IndexParameterIndex, NodeIndex, PywrError};
+pub use offset::OffsetParameter;
 use pywr_schema::parameters::{
     CoreParameter, ExternalDataRef as ExternalDataRefV1, Parameter as ParameterV1, ParameterMeta as ParameterMetaV1,
     ParameterValue as ParameterValueV1, TableIndex as TableIndexV1,
@@ -135,6 +149,7 @@ pub enum Parameter {
     MonthlyProfile(MonthlyProfileParameter),
     UniformDrawdownProfile(UniformDrawdownProfileParameter),
     Max(MaxParameter),
+    Min(MinParameter),
     Negative(NegativeParameter),
     Polynomial1D(Polynomial1DParameter),
     ParameterThreshold(ParameterThresholdParameter),
@@ -142,6 +157,8 @@ pub enum Parameter {
     Python(PythonParameter),
     DataFrame(DataFrameParameter),
     Delay(DelayParameter),
+    Division(DivisionParameter),
+    Offset(OffsetParameter),
 }
 
 impl Parameter {
@@ -160,13 +177,16 @@ impl Parameter {
             Self::MonthlyProfile(p) => p.meta.name.as_str(),
             Self::UniformDrawdownProfile(p) => p.meta.name.as_str(),
             Self::Max(p) => p.meta.name.as_str(),
+            Self::Min(p) => p.meta.name.as_str(),
             Self::Negative(p) => p.meta.name.as_str(),
             Self::Polynomial1D(p) => p.meta.name.as_str(),
             Self::ParameterThreshold(p) => p.meta.name.as_str(),
             Self::TablesArray(p) => p.meta.name.as_str(),
             Self::Python(p) => p.meta.name.as_str(),
             Self::DataFrame(p) => p.meta.name.as_str(),
-            Parameter::Delay(p) => p.meta.name.as_str(),
+            Self::Division(p) => p.meta.name.as_str(),
+            Self::Delay(p) => p.meta.name.as_str(),
+            Self::Offset(p) => p.meta.name.as_str(),
         }
     }
 
@@ -187,6 +207,7 @@ impl Parameter {
             Self::MonthlyProfile(p) => p.node_references(),
             Self::UniformDrawdownProfile(p) => p.node_references(),
             Self::Max(p) => p.node_references(),
+            Self::Min(p) => p.node_references(),
             Self::Negative(p) => p.node_references(),
             Self::Polynomial1D(p) => p.node_references(),
             Self::ParameterThreshold(p) => p.node_references(),
@@ -194,6 +215,8 @@ impl Parameter {
             Self::Python(p) => p.node_references(),
             Self::DataFrame(p) => p.node_references(),
             Self::Delay(p) => p.node_references(),
+            Self::Division(p) => p.node_references(),
+            Self::Offset(p) => p.node_references(),
         }
     }
 
@@ -231,6 +254,7 @@ impl Parameter {
             Self::MonthlyProfile(_) => "MonthlyProfile",
             Self::UniformDrawdownProfile(_) => "UniformDrawdownProfile",
             Self::Max(_) => "Max",
+            Self::Min(_) => "Min",
             Self::Negative(_) => "Negative",
             Self::Polynomial1D(_) => "Polynomial1D",
             Self::ParameterThreshold(_) => "ParameterThreshold",
@@ -238,6 +262,8 @@ impl Parameter {
             Self::Python(_) => "Python",
             Self::DataFrame(_) => "DataFrame",
             Self::Delay(_) => "Delay",
+            Self::Division(_) => "Division",
+            Self::Offset(_) => "Offset",
         }
     }
 
@@ -263,6 +289,7 @@ impl Parameter {
             Self::MonthlyProfile(p) => ParameterType::Parameter(p.add_to_model(model, tables)?),
             Self::UniformDrawdownProfile(p) => ParameterType::Parameter(p.add_to_model(model, tables)?),
             Self::Max(p) => ParameterType::Parameter(p.add_to_model(model, tables, data_path)?),
+            Self::Min(p) => ParameterType::Parameter(p.add_to_model(model, tables, data_path)?),
             Self::Negative(p) => ParameterType::Parameter(p.add_to_model(model, tables, data_path)?),
             Self::Polynomial1D(p) => ParameterType::Parameter(p.add_to_model(model)?),
             Self::ParameterThreshold(p) => ParameterType::Index(p.add_to_model(model, tables, data_path)?),
@@ -270,6 +297,8 @@ impl Parameter {
             Self::Python(p) => p.add_to_model(model, tables, data_path)?,
             Self::DataFrame(p) => ParameterType::Parameter(p.add_to_model(model, data_path)?),
             Self::Delay(p) => ParameterType::Parameter(p.add_to_model(model, tables, data_path)?),
+            Self::Division(p) => ParameterType::Parameter(p.add_to_model(model, tables, data_path)?),
+            Self::Offset(p) => ParameterType::Parameter(p.add_to_model(model, tables, data_path)?),
         };
 
         Ok(ty)
@@ -332,6 +361,8 @@ impl TryFromV1Parameter<ParameterV1> for Parameter {
                 CoreParameter::TablesArray(p) => {
                     Parameter::TablesArray(p.try_into_v2_parameter(parent_node, unnamed_count)?)
                 }
+                CoreParameter::Min(p) => Parameter::Min(p.try_into_v2_parameter(parent_node, unnamed_count)?),
+                CoreParameter::Division(p) => Parameter::Division(p.try_into_v2_parameter(parent_node, unnamed_count)?),
             },
             ParameterV1::Custom(p) => {
                 println!("Custom parameter: {:?} ({})", p.meta.name, p.ty);
@@ -349,6 +380,7 @@ impl TryFromV1Parameter<ParameterV1> for Parameter {
                         comment: Some(comment),
                     },
                     value: ConstantValue::Literal(0.0),
+                    variable: None,
                 })
             }
         };
@@ -707,5 +739,27 @@ impl<'a> From<&'a DynamicFloatValue> for DynamicFloatValueType<'a> {
 impl<'a> From<&'a Vec<DynamicFloatValue>> for DynamicFloatValueType<'a> {
     fn from(v: &'a Vec<DynamicFloatValue>) -> Self {
         Self::List(v)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::schema::parameters::Parameter;
+    use std::fs;
+    use std::path::PathBuf;
+
+    /// Test all of the documentation examples successfully deserialize.
+    #[test]
+    fn test_doc_examples() {
+        let mut doc_examples = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        doc_examples.push("src/schema/parameters/doc_examples");
+
+        for entry in fs::read_dir(doc_examples).unwrap() {
+            let p = entry.unwrap().path();
+            if p.is_file() {
+                let data = fs::read_to_string(p).unwrap();
+                let _: Parameter = serde_json::from_str(&data).unwrap();
+            }
+        }
     }
 }

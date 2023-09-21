@@ -80,6 +80,8 @@ enum Commands {
         solver: Solver,
         #[arg(short, long)]
         data_path: Option<PathBuf>,
+        #[arg(short, long)]
+        output_path: Option<PathBuf>,
         /// Use multiple threads for simulation.
         #[arg(short, long, default_value_t = false)]
         parallel: bool,
@@ -107,9 +109,10 @@ fn main() -> Result<()> {
                 model,
                 solver,
                 data_path,
+                output_path,
                 parallel,
                 threads,
-            } => run(model, solver, data_path.as_deref()),
+            } => run(model, solver, data_path.as_deref(), output_path.as_deref()),
             Commands::RunRandom {
                 num_systems,
                 density,
@@ -164,11 +167,11 @@ fn v1_to_v2(path: &Path) -> std::result::Result<(), ConversionError> {
     Ok(())
 }
 
-fn run(path: &Path, solver: &Solver, data_path: Option<&Path>) {
+fn run(path: &Path, solver: &Solver, data_path: Option<&Path>, output_path: Option<&Path>) {
     let data = std::fs::read_to_string(path).unwrap();
     let schema_v2: PywrModel = serde_json::from_str(data.as_str()).unwrap();
 
-    let (model, timestepper): (Model, Timestepper) = schema_v2.try_into_model(data_path).unwrap();
+    let (model, timestepper): (Model, Timestepper) = schema_v2.build_model(data_path, output_path).unwrap();
 
     match *solver {
         Solver::Clp => model.run::<ClpSolver>(&timestepper, &ClpSolverSettings::default()),

@@ -79,6 +79,11 @@ impl DelayNode {
         // Outflow goes from the input node
         vec![(self.meta.name.as_str(), Self::input_sub_now().map(|s| s.to_string()))]
     }
+
+    pub fn default_metric(&self, model: &crate::model::Model) -> Result<Metric, PywrError> {
+        let idx = model.get_node_index_by_name(self.meta.name.as_str(), Self::input_sub_now().as_deref())?;
+        Ok(Metric::NodeOutFlow(idx))
+    }
 }
 
 impl TryFrom<DelayNodeV1> for DelayNode {
@@ -130,7 +135,7 @@ mod tests {
     fn test_model_run() {
         let data = model_str();
         let schema: PywrModel = serde_json::from_str(data).unwrap();
-        let (mut model, timestepper): (crate::model::Model, Timestepper) = schema.try_into_model(None).unwrap();
+        let (mut model, timestepper): (crate::model::Model, Timestepper) = schema.build_model(None, None).unwrap();
 
         assert_eq!(model.nodes.len(), 4);
         assert_eq!(model.edges.len(), 2);

@@ -1,0 +1,28 @@
+{
+    "name": "my-aggregated-value",
+    "type": "Aggregated",
+    "agg_func": "sum",
+    "metrics": [
+        3.1415,
+        {
+            "table": "demands",
+            "index": "my-node"
+        },
+        {
+            "type": "Parameter",
+            "name": "my-other-parameter"
+        },
+        {
+            "type": "NodeVolume",
+            "name": "my-reservoir"
+        },
+        {
+            "type": "InlineParameter",
+            "definition": {
+                "name": "my-monthly-profile",
+                "type": "MonthlyProfile",
+                "values": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0]
+            }
+        }
+    ]
+}

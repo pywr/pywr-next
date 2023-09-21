@@ -1,3 +1,4 @@
+use crate::metric::Metric;
 use crate::schema::data_tables::LoadedTableCollection;
 use crate::schema::error::ConversionError;
 use crate::schema::nodes::NodeMeta;
@@ -77,6 +78,19 @@ impl RiverGaugeNode {
             (self.meta.name.as_str(), Self::mrf_sub_name().map(|s| s.to_string())),
             (self.meta.name.as_str(), Self::bypass_sub_name().map(|s| s.to_string())),
         ]
+    }
+
+    pub fn default_metric(&self, model: &crate::model::Model) -> Result<Metric, PywrError> {
+        let indices = vec![
+            model.get_node_index_by_name(self.meta.name.as_str(), Self::mrf_sub_name())?,
+            model.get_node_index_by_name(self.meta.name.as_str(), Self::bypass_sub_name())?,
+        ];
+
+        Ok(Metric::MultiNodeInFlow {
+            indices,
+            name: self.meta.name.to_string(),
+            sub_name: Some("total".to_string()),
+        })
     }
 }
 
@@ -176,7 +190,7 @@ mod tests {
     fn test_model_run() {
         let data = model_str();
         let schema: PywrModel = serde_json::from_str(data).unwrap();
-        let (model, timestepper): (crate::model::Model, Timestepper) = schema.try_into_model(None).unwrap();
+        let (model, timestepper): (crate::model::Model, Timestepper) = schema.build_model(None, None).unwrap();
 
         assert_eq!(model.nodes.len(), 5);
         assert_eq!(model.edges.len(), 6);
