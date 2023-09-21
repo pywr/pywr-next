@@ -1337,6 +1337,26 @@ impl Model {
 
         Ok(edge_index)
     }
+
+    /// Set the variable values on the parameter a index `['idx'].
+    pub fn set_parameter_variable_values(&mut self, idx: ParameterIndex, values: &[f64]) -> Result<(), PywrError> {
+        match self.parameters.get_mut(*idx.deref()) {
+            Some(parameter) => match parameter.as_variable_mut() {
+                Some(variable) => variable.set_variables(values),
+                None => Err(PywrError::ParameterTypeNotVariable),
+            },
+            None => Err(PywrError::ParameterIndexNotFound(idx)),
+        }
+    }
+
+    /// Return a vector of the current values of active variable parameters.
+    pub fn get_parameter_variable_values(&self) -> Vec<f64> {
+        self.parameters
+            .iter()
+            .filter_map(|p| p.as_variable().filter(|v| v.is_active()).map(|v| v.get_variables()))
+            .flatten()
+            .collect()
+    }
 }
 
 #[cfg(test)]
@@ -1345,9 +1365,9 @@ mod tests {
     use crate::metric::Metric;
     use crate::model::Model;
     use crate::node::{Constraint, ConstraintValue};
+    use crate::parameters::{ActivationFunction, Parameter, VariableParameter};
     use crate::recorders::AssertionRecorder;
     use crate::scenario::{ScenarioGroupCollection, ScenarioIndex};
-
     #[cfg(feature = "clipm")]
     use crate::solvers::ClIpmF64Solver;
     use crate::solvers::ClpSolver;
@@ -1432,7 +1452,7 @@ mod tests {
         let mut model = Model::default();
         let _node_index = model.add_input_node("input", None).unwrap();
 
-        let input_max_flow = parameters::ConstantParameter::new("my-constant", 10.0);
+        let input_max_flow = parameters::ConstantParameter::new("my-constant", 10.0, None);
         let parameter = model.add_parameter(Box::new(input_max_flow)).unwrap();
 
         // assign the new parameter to one of the nodes.
@@ -1677,5 +1697,38 @@ mod tests {
                 indices: vec![9, 1, 4]
             })
         );
+    }
+
+    #[test]
+    /// Test the variable API
+    fn test_variable_api() {
+        let mut model = Model::default();
+        let _node_index = model.add_input_node("input", None).unwrap();
+
+        let variable = ActivationFunction::Unit { min: 0.0, max: 10.0 };
+        let input_max_flow = parameters::ConstantParameter::new("my-constant", 10.0, Some(variable));
+
+        assert!(input_max_flow.can_be_variable());
+        assert!(input_max_flow.is_variable_active());
+        assert!(input_max_flow.is_active());
+
+        let input_max_flow_idx = model.add_parameter(Box::new(input_max_flow)).unwrap();
+
+        // assign the new parameter to one of the nodes.
+        let node = model.get_mut_node_by_name("input", None).unwrap();
+        node.set_constraint(
+            ConstraintValue::Metric(Metric::ParameterValue(input_max_flow_idx)),
+            Constraint::MaxFlow,
+        )
+        .unwrap();
+
+        let variable_values = model.get_parameter_variable_values();
+        assert_eq!(variable_values, vec![10.0]);
+
+        // Update the variable values
+        model.set_parameter_variable_values(input_max_flow_idx, &[5.0]).unwrap();
+
+        let variable_values = model.get_parameter_variable_values();
+        assert_eq!(variable_values, vec![5.0]);
     }
 }

@@ -1,3 +1,12 @@
+//! Parameter schema definitions.
+//!
+//! The enum [`Parameter`] contains all of the valid Pywr parameter schemas. The parameter
+//! variants define separate schemas for different parameter types. When a model is generated
+//! from a schema the parameter schemas are added to the model using [`Parameter::add_to_model`].
+//! This typically adds a struct from [`crate::parameters`] to the model using the data
+//! defined in the schema.
+//!
+//! Serializing and deserializing is accomplished using [`serde`].
 mod aggregated;
 mod asymmetric_switch;
 mod control_curves;
@@ -5,6 +14,7 @@ mod core;
 mod data_frame;
 mod delay;
 mod indexed_array;
+mod offset;
 mod polynomial;
 mod profiles;
 mod python;
@@ -18,7 +28,9 @@ pub use super::parameters::control_curves::{
     ControlCurveIndexParameter, ControlCurveInterpolatedParameter, ControlCurveParameter,
     ControlCurvePiecewiseInterpolatedParameter,
 };
-pub use super::parameters::core::{ConstantParameter, MaxParameter, MinParameter, NegativeParameter};
+pub use super::parameters::core::{
+    ActivationFunction, ConstantParameter, MaxParameter, MinParameter, NegativeParameter, VariableSettings,
+};
 pub use super::parameters::delay::DelayParameter;
 pub use super::parameters::indexed_array::IndexedArrayParameter;
 pub use super::parameters::polynomial::Polynomial1DParameter;
@@ -34,6 +46,7 @@ use crate::schema::error::ConversionError;
 use crate::schema::parameters::core::DivisionParameter;
 pub use crate::schema::parameters::data_frame::DataFrameParameter;
 use crate::{IndexParameterIndex, NodeIndex, PywrError};
+pub use offset::OffsetParameter;
 use pywr_schema::parameters::{
     CoreParameter, ExternalDataRef as ExternalDataRefV1, Parameter as ParameterV1, ParameterMeta as ParameterMetaV1,
     ParameterValue as ParameterValueV1, TableIndex as TableIndexV1,
@@ -145,6 +158,7 @@ pub enum Parameter {
     DataFrame(DataFrameParameter),
     Delay(DelayParameter),
     Division(DivisionParameter),
+    Offset(OffsetParameter),
 }
 
 impl Parameter {
@@ -171,7 +185,8 @@ impl Parameter {
             Self::Python(p) => p.meta.name.as_str(),
             Self::DataFrame(p) => p.meta.name.as_str(),
             Self::Division(p) => p.meta.name.as_str(),
-            Parameter::Delay(p) => p.meta.name.as_str(),
+            Self::Delay(p) => p.meta.name.as_str(),
+            Self::Offset(p) => p.meta.name.as_str(),
         }
     }
 
@@ -201,6 +216,7 @@ impl Parameter {
             Self::DataFrame(p) => p.node_references(),
             Self::Delay(p) => p.node_references(),
             Self::Division(p) => p.node_references(),
+            Self::Offset(p) => p.node_references(),
         }
     }
 
@@ -247,6 +263,7 @@ impl Parameter {
             Self::DataFrame(_) => "DataFrame",
             Self::Delay(_) => "Delay",
             Self::Division(_) => "Division",
+            Self::Offset(_) => "Offset",
         }
     }
 
@@ -281,6 +298,7 @@ impl Parameter {
             Self::DataFrame(p) => ParameterType::Parameter(p.add_to_model(model, data_path)?),
             Self::Delay(p) => ParameterType::Parameter(p.add_to_model(model, tables, data_path)?),
             Self::Division(p) => ParameterType::Parameter(p.add_to_model(model, tables, data_path)?),
+            Self::Offset(p) => ParameterType::Parameter(p.add_to_model(model, tables, data_path)?),
         };
 
         Ok(ty)
@@ -362,6 +380,7 @@ impl TryFromV1Parameter<ParameterV1> for Parameter {
                         comment: Some(comment),
                     },
                     value: ConstantValue::Literal(0.0),
+                    variable: None,
                 })
             }
         };
@@ -720,5 +739,27 @@ impl<'a> From<&'a DynamicFloatValue> for DynamicFloatValueType<'a> {
 impl<'a> From<&'a Vec<DynamicFloatValue>> for DynamicFloatValueType<'a> {
     fn from(v: &'a Vec<DynamicFloatValue>) -> Self {
         Self::List(v)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::schema::parameters::Parameter;
+    use std::fs;
+    use std::path::PathBuf;
+
+    /// Test all of the documentation examples successfully deserialize.
+    #[test]
+    fn test_doc_examples() {
+        let mut doc_examples = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        doc_examples.push("src/schema/parameters/doc_examples");
+
+        for entry in fs::read_dir(doc_examples).unwrap() {
+            let p = entry.unwrap().path();
+            if p.is_file() {
+                let data = fs::read_to_string(p).unwrap();
+                let _: Parameter = serde_json::from_str(&data).unwrap();
+            }
+        }
     }
 }
