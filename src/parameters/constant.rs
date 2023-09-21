@@ -44,6 +44,10 @@ impl Parameter for ConstantParameter {
     fn as_variable(&self) -> Option<&dyn VariableParameter> {
         Some(self)
     }
+
+    fn as_variable_mut(&mut self) -> Option<&mut dyn VariableParameter> {
+        Some(self)
+    }
 }
 
 impl VariableParameter for ConstantParameter {
@@ -55,12 +59,14 @@ impl VariableParameter for ConstantParameter {
         1
     }
 
-    fn set_variables(&mut self, values: &[f64]) {
-        self.value = self
-            .variable
-            .as_ref()
-            .expect("Can't set value of an inactive variable!")
-            .apply(values[0]);
+    fn set_variables(&mut self, values: &[f64]) -> Result<(), PywrError> {
+        if values.len() == 1 {
+            let variable = self.variable.ok_or(PywrError::ParameterVariableNotActive)?;
+            self.value = variable.apply(values[0]);
+            Ok(())
+        } else {
+            Err(PywrError::ParameterVariableValuesIncorrectLength)
+        }
     }
 
     fn get_variables(&self) -> Vec<f64> {

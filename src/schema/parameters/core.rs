@@ -110,9 +110,9 @@ impl Into<crate::parameters::ActivationFunction> for ActivationFunction {
     }
 }
 
-/// Settings for a variable constant.
+/// Settings for a variable value.
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
-pub struct ConstantVariableSettings {
+pub struct VariableSettings {
     /// Is this parameter an active variable?
     pub is_active: bool,
     /// The activation function to use for the variable.
@@ -148,7 +148,7 @@ pub struct ConstantParameter {
     /// function is specified this value will be the `x` value for that activation function.
     pub value: ConstantValue<f64>,
     /// Definition of optional variable settings.
-    pub variable: Option<ConstantVariableSettings>,
+    pub variable: Option<VariableSettings>,
 }
 
 impl ConstantParameter {

@@ -191,6 +191,11 @@ pub trait Parameter: Send + Sync {
         None
     }
 
+    /// Return the parameter as a [`VariableParameter'] if it supports being a variable.
+    fn as_variable_mut(&mut self) -> Option<&mut dyn VariableParameter> {
+        None
+    }
+
     /// Can this parameter be a variable
     fn can_be_variable(&self) -> bool {
         self.as_variable().is_some()
@@ -202,10 +207,6 @@ pub trait Parameter: Send + Sync {
             Some(var) => var.is_active(),
             None => false,
         }
-    }
-
-    fn as_variable_mut(&mut self) -> Option<&mut dyn VariableParameter> {
-        None
     }
 }
 
@@ -305,7 +306,7 @@ pub trait VariableParameter {
     /// Return the number of variables required
     fn size(&self) -> usize;
     /// Apply new variable values to the parameter
-    fn set_variables(&mut self, values: &[f64]);
+    fn set_variables(&mut self, values: &[f64]) -> Result<(), PywrError>;
     /// Get the current variable values
     fn get_variables(&self) -> Vec<f64>;
     /// Get variable lower bounds

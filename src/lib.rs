@@ -135,4 +135,10 @@ pub enum PywrError {
     DataTable(#[from] schema::data_tables::TableError),
     #[error("unsupported file format")]
     UnsupportedFileFormat,
+    #[error("parameter type does is not a valid variable")]
+    ParameterTypeNotVariable,
+    #[error("parameter variable is not active")]
+    ParameterVariableNotActive,
+    #[error("incorrect number of values for parameter variable")]
+    ParameterVariableValuesIncorrectLength,
 }

@@ -28,7 +28,7 @@ pub use super::parameters::control_curves::{
     ControlCurvePiecewiseInterpolatedParameter,
 };
 pub use super::parameters::core::{
-    ActivationFunction, ConstantParameter, ConstantVariableSettings, MaxParameter, MinParameter, NegativeParameter,
+    ActivationFunction, ConstantParameter, MaxParameter, MinParameter, NegativeParameter, VariableSettings,
 };
 pub use super::parameters::delay::DelayParameter;
 pub use super::parameters::indexed_array::IndexedArrayParameter;
