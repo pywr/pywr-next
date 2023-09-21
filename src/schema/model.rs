@@ -3,6 +3,7 @@ use super::nodes::Node;
 use super::parameters::Parameter;
 use crate::schema::data_tables::{DataTable, LoadedTableCollection};
 use crate::schema::error::{ConversionError, SchemaError};
+use crate::schema::metric_sets::MetricSet;
 use crate::schema::outputs::Output;
 use crate::schema::parameters::TryIntoV2Parameter;
 use crate::PywrError;
@@ -90,6 +91,7 @@ pub struct PywrModel {
     pub edges: Vec<Edge>,
     pub parameters: Option<Vec<Parameter>>,
     pub tables: Option<Vec<DataTable>>,
+    pub metric_sets: Option<Vec<MetricSet>>,
     pub outputs: Option<Vec<Output>>,
 }
 
@@ -220,10 +222,17 @@ impl PywrModel {
             node.set_constraints(&mut model, &tables, data_path)?;
         }
 
+        // Create all of the metric sets
+        if let Some(metric_sets) = &self.metric_sets {
+            for metric_set in metric_sets {
+                metric_set.add_to_model(&mut model, self)?;
+            }
+        }
+
         // Create all of the outputs
         if let Some(outputs) = &self.outputs {
             for output in outputs {
-                output.add_to_model(&mut model, self, output_path)?;
+                output.add_to_model(&mut model, output_path)?;
             }
         }
 
@@ -263,6 +272,7 @@ impl TryFrom<pywr_schema::PywrModel> for PywrModel {
         // TODO convert v1 tables!
         let tables = None;
         let outputs = None;
+        let metric_sets = None;
 
         Ok(Self {
             metadata,
@@ -272,6 +282,7 @@ impl TryFrom<pywr_schema::PywrModel> for PywrModel {
             edges,
             parameters,
             tables,
+            metric_sets,
             outputs,
         })
     }

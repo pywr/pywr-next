@@ -10,19 +10,14 @@ pub struct CsvOutput {
 }
 
 impl CsvOutput {
-    pub fn add_to_model(
-        &self,
-        model: &mut crate::model::Model,
-        schema: &crate::schema::PywrModel,
-        output_path: Option<&Path>,
-    ) -> Result<(), PywrError> {
+    pub fn add_to_model(&self, model: &mut crate::model::Model, output_path: Option<&Path>) -> Result<(), PywrError> {
         let filename = match (output_path, self.filename.is_relative()) {
             (Some(odir), true) => odir.join(&self.filename),
             _ => self.filename.to_path_buf(),
         };
 
         let metric_set_idx = model.get_metric_set_index_by_name(&self.metric_set)?;
-        let recorder = CSVRecorder::new(&self.name, &filename, metric_set_idx);
+        let recorder = CSVRecorder::new(&self.name, filename, metric_set_idx);
 
         model.add_recorder(Box::new(recorder))?;
 

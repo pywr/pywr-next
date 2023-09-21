@@ -1,7 +1,7 @@
 use super::{PywrError, Recorder, RecorderMeta, Timestep};
 use crate::metric::Metric;
 use crate::model::Model;
-use crate::recorders::metric_set::{MetricSet, MetricSetIndex};
+use crate::recorders::metric_set::MetricSetIndex;
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
 use std::any::Any;

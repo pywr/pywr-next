@@ -51,8 +51,8 @@
   "outputs": [
     {
       "name": "my-outputs",
-      "type": "CSV",
-      "filename": "outputs.csv",
+      "type": "HDF5",
+      "filename": "outputs.h5",
       "metric_set": "nodes"
     }
   ]

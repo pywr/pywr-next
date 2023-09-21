@@ -14,15 +14,10 @@ pub enum Output {
 }
 
 impl Output {
-    pub fn add_to_model(
-        &self,
-        model: &mut crate::model::Model,
-        schema: &crate::schema::PywrModel,
-        output_path: Option<&Path>,
-    ) -> Result<(), PywrError> {
+    pub fn add_to_model(&self, model: &mut crate::model::Model, output_path: Option<&Path>) -> Result<(), PywrError> {
         match self {
-            Self::CSV(o) => o.add_to_model(model, schema, output_path),
-            Self::HDF5(o) => o.add_to_model(model, schema),
+            Self::CSV(o) => o.add_to_model(model, output_path),
+            Self::HDF5(o) => o.add_to_model(model, output_path),
         }
     }
 }

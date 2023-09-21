@@ -1007,26 +1007,6 @@ impl Model {
         }
     }
 
-    pub fn get_node_default_metrics(&self) -> Vec<Metric> {
-        self.nodes
-            .iter()
-            .map(|n| n.default_metric())
-            .chain(self.aggregated_nodes.iter().map(|n| n.default_metric()))
-            .collect()
-    }
-
-    pub fn get_parameter_metrics(&self) -> Vec<(Metric, (String, Option<String>))> {
-        self.parameters
-            .iter()
-            .enumerate()
-            .map(|(idx, p)| {
-                let metric = Metric::ParameterValue(ParameterIndex::new(idx));
-
-                (metric, (format!("param-{}", p.name()), None))
-            })
-            .collect()
-    }
-
     /// Get a `Parameter` from a parameter's name
     pub fn get_parameter(&self, index: &ParameterIndex) -> Result<&dyn parameters::Parameter, PywrError> {
         match self.parameters.get(*index.deref()) {

@@ -49,6 +49,14 @@ pub struct MetricSet {
 }
 
 impl MetricSet {
+    pub fn new(name: &str, aggregator: Option<PeriodicAggregator>, metrics: Vec<Metric>) -> Self {
+        Self {
+            name: name.to_string(),
+            aggregator,
+            metrics,
+        }
+    }
+
     /// The name of the [`MetricSet`].
     pub fn name(&self) -> &str {
         &self.name
