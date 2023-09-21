@@ -1,6 +1,7 @@
 use super::{PywrError, Recorder, RecorderMeta, Timestep};
 use crate::metric::Metric;
 use crate::model::Model;
+use crate::recorders::MetricSetIndex;
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
 use hdf5::{Extents, Group};
@@ -13,7 +14,8 @@ use std::path::PathBuf;
 pub struct HDF5Recorder {
     meta: RecorderMeta,
     filename: PathBuf,
-    metrics: Vec<(Metric, (String, Option<String>))>,
+    // TODO this could support saving multiple metric sets in different groups
+    metric_set_idx: MetricSetIndex,
 }
 
 struct Internal {
@@ -42,11 +44,11 @@ impl Date {
 }
 
 impl HDF5Recorder {
-    pub fn new(name: &str, filename: PathBuf, metrics: Vec<(Metric, (String, Option<String>))>) -> Self {
+    pub fn new<P: Into<PathBuf>>(name: &str, filename: P, metric_set_idx: MetricSetIndex) -> Self {
         Self {
             meta: RecorderMeta::new(name),
-            filename,
-            metrics,
+            filename: filename.into(),
+            metric_set_idx,
         }
     }
 }
@@ -77,7 +79,9 @@ impl Recorder for HDF5Recorder {
 
         let root_grp = file.deref();
 
-        for (metric, _) in &self.metrics {
+        let metric_set = model.get_metric_set(self.metric_set_idx)?;
+
+        for metric in metric_set.iter_metrics() {
             let ds = match metric {
                 Metric::NodeInFlow(idx) => {
                     let node = model.get_node(idx)?;
@@ -138,6 +142,9 @@ impl Recorder for HDF5Recorder {
                 Metric::VolumeBetweenControlCurves(_) => {
                     continue; // TODO
                 }
+                Metric::MultiNodeInFlow { name, sub_name, .. } => {
+                    require_node_dataset(root_grp, shape, name, sub_name.as_deref(), "inflow")?
+                }
             };
 
             datasets.push(ds);
@@ -163,7 +170,9 @@ impl Recorder for HDF5Recorder {
             None => panic!("No internal state defined when one was expected! :("),
         };
 
-        for (dataset, (metric, _)) in internal.datasets.iter_mut().zip(&self.metrics) {
+        let metric_set = model.get_metric_set(self.metric_set_idx)?;
+
+        for (dataset, metric) in internal.datasets.iter_mut().zip(metric_set.iter_metrics()) {
             // Combine all the values for metric across all of the scenarios
             let values = scenario_indices
                 .iter()

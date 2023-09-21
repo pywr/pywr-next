@@ -11,6 +11,7 @@ mod river_split_with_gauge;
 mod virtual_storage;
 mod water_treatment_works;
 
+use crate::metric::Metric;
 use crate::schema::data_tables::LoadedTableCollection;
 use crate::schema::error::ConversionError;
 pub use crate::schema::nodes::core::{
@@ -284,6 +285,30 @@ impl CoreNode {
             CoreNode::Delay(n) => n.output_connectors(),
         }
     }
+
+    /// Returns the default metric for this node.
+    pub fn default_metric(&self, model: &crate::model::Model) -> Result<Metric, PywrError> {
+        match self {
+            CoreNode::Input(n) => n.default_metric(model),
+            CoreNode::Link(n) => n.default_metric(model),
+            CoreNode::Output(n) => n.default_metric(model),
+            CoreNode::Storage(n) => n.default_metric(model),
+            CoreNode::Catchment(n) => n.default_metric(model),
+            CoreNode::RiverGauge(n) => n.default_metric(model),
+            CoreNode::LossLink(n) => n.default_metric(model),
+            CoreNode::River(n) => n.default_metric(model),
+            CoreNode::RiverSplitWithGauge(n) => n.default_metric(model),
+            CoreNode::WaterTreatmentWorks(n) => n.default_metric(model),
+            CoreNode::Aggregated(n) => n.default_metric(model),
+            CoreNode::AggregatedStorage(n) => n.default_metric(model),
+            CoreNode::VirtualStorage(n) => n.default_metric(model),
+            CoreNode::AnnualVirtualStorage(n) => n.default_metric(model),
+            CoreNode::MonthlyVirtualStorage(n) => n.default_metric(model),
+            CoreNode::PiecewiseLink(n) => n.default_metric(model),
+            CoreNode::Delay(n) => n.default_metric(model),
+            CoreNode::PiecewiseStorage(n) => n.default_metric(model),
+        }
+    }
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Clone)]
@@ -356,6 +381,14 @@ impl Node {
     pub fn output_connectors(&self, slot: Option<&str>) -> Vec<(&str, Option<String>)> {
         match self {
             Node::Core(n) => n.output_connectors(slot),
+            Node::Custom(n) => panic!("TODO custom nodes not yet supported: {}", n.meta.name.as_str()),
+        }
+    }
+
+    /// Returns the default metric for this node.
+    pub fn default_metric(&self, model: &crate::model::Model) -> Result<Metric, PywrError> {
+        match self {
+            Node::Core(n) => n.default_metric(model),
             Node::Custom(n) => panic!("TODO custom nodes not yet supported: {}", n.meta.name.as_str()),
         }
     }

@@ -1,3 +1,4 @@
+use crate::metric::Metric;
 use crate::node::{ConstraintValue, StorageInitialVolume};
 use crate::schema::data_tables::LoadedTableCollection;
 use crate::schema::error::ConversionError;
@@ -71,6 +72,11 @@ impl InputNode {
     }
     pub fn output_connectors(&self) -> Vec<(&str, Option<String>)> {
         vec![(self.meta.name.as_str(), None)]
+    }
+
+    pub fn default_metric(&self, model: &crate::model::Model) -> Result<Metric, PywrError> {
+        let idx = model.get_node_index_by_name(self.meta.name.as_str(), None)?;
+        Ok(Metric::NodeOutFlow(idx))
     }
 }
 
@@ -165,6 +171,11 @@ impl LinkNode {
     pub fn output_connectors(&self) -> Vec<(&str, Option<String>)> {
         vec![(self.meta.name.as_str(), None)]
     }
+
+    pub fn default_metric(&self, model: &crate::model::Model) -> Result<Metric, PywrError> {
+        let idx = model.get_node_index_by_name(self.meta.name.as_str(), None)?;
+        Ok(Metric::NodeOutFlow(idx))
+    }
 }
 
 impl TryFrom<LinkNodeV1> for LinkNode {
@@ -257,6 +268,11 @@ impl OutputNode {
 
     pub fn output_connectors(&self) -> Vec<(&str, Option<String>)> {
         vec![(self.meta.name.as_str(), None)]
+    }
+
+    pub fn default_metric(&self, model: &crate::model::Model) -> Result<Metric, PywrError> {
+        let idx = model.get_node_index_by_name(self.meta.name.as_str(), None)?;
+        Ok(Metric::NodeInFlow(idx))
     }
 }
 
@@ -365,6 +381,11 @@ impl StorageNode {
 
     pub fn output_connectors(&self) -> Vec<(&str, Option<String>)> {
         vec![(self.meta.name.as_str(), None)]
+    }
+
+    pub fn default_metric(&self, model: &crate::model::Model) -> Result<Metric, PywrError> {
+        let idx = model.get_node_index_by_name(self.meta.name.as_str(), None)?;
+        Ok(Metric::NodeVolume(idx))
     }
 }
 
@@ -504,6 +525,11 @@ impl CatchmentNode {
     pub fn output_connectors(&self) -> Vec<(&str, Option<String>)> {
         vec![(self.meta.name.as_str(), None)]
     }
+
+    pub fn default_metric(&self, model: &crate::model::Model) -> Result<Metric, PywrError> {
+        let idx = model.get_node_index_by_name(self.meta.name.as_str(), None)?;
+        Ok(Metric::NodeOutFlow(idx))
+    }
 }
 
 impl TryFrom<CatchmentNodeV1> for CatchmentNode {
@@ -606,6 +632,11 @@ impl AggregatedNode {
         // Not connectable
         vec![]
     }
+
+    pub fn default_metric(&self, model: &crate::model::Model) -> Result<Metric, PywrError> {
+        let idx = model.get_aggregated_node_index_by_name(self.meta.name.as_str(), None)?;
+        Ok(Metric::AggregatedNodeOutFlow(idx))
+    }
 }
 
 impl TryFrom<AggregatedNodeV1> for AggregatedNode {
@@ -674,6 +705,11 @@ impl AggregatedStorageNode {
     pub fn output_connectors(&self) -> Vec<(&str, Option<String>)> {
         // Not connectable
         vec![]
+    }
+
+    pub fn default_metric(&self, model: &crate::model::Model) -> Result<Metric, PywrError> {
+        let idx = model.get_aggregated_storage_node_index_by_name(self.meta.name.as_str(), None)?;
+        Ok(Metric::AggregatedNodeVolume(idx))
     }
 }
 

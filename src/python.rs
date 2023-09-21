@@ -1,6 +1,6 @@
 use crate::aggregated_node::AggregatedNodeIndex;
 use crate::model::{Model, RunOptions};
-use crate::recorders::hdf::HDF5Recorder;
+use crate::recorders::HDF5Recorder;
 use crate::schema::model::PywrModel;
 use crate::solvers::ClpSolver;
 #[cfg(feature = "highs")]
@@ -666,7 +666,6 @@ fn run_model_from_path(
     path: PathBuf,
     solver_name: String,
     data_path: Option<PathBuf>,
-    output_h5: Option<PathBuf>,
     num_threads: Option<usize>,
 ) -> PyResult<()> {
     let data = std::fs::read_to_string(path.clone()).unwrap();
@@ -676,7 +675,7 @@ fn run_model_from_path(
         Some(dp) => Some(dp),
     };
 
-    run_model_from_string(py, data, solver_name, data_path, output_h5, num_threads)
+    run_model_from_string(py, data, solver_name, data_path, num_threads)
 }
 
 #[pyfunction]
@@ -685,20 +684,12 @@ fn run_model_from_string(
     data: String,
     solver_name: String,
     path: Option<PathBuf>,
-    output_h5: Option<PathBuf>,
     num_threads: Option<usize>,
 ) -> PyResult<()> {
     // TODO handle the serde error properly
     let schema_v2: PywrModel = serde_json::from_str(data.as_str()).unwrap();
 
-    let (mut model, timestepper): (Model, Timestepper) = schema_v2.try_into_model(path.as_deref())?;
-
-    if let Some(pth) = output_h5 {
-        let metrics = model.get_node_default_metrics();
-        // metrics.extend(model.get_parameter_metrics());
-        let tables_rec = HDF5Recorder::new("tables", pth, metrics);
-        model.add_recorder(Box::new(tables_rec)).unwrap();
-    }
+    let (mut model, timestepper): (Model, Timestepper) = schema_v2.build_model(path.as_deref(), None)?;
 
     let nt = num_threads.unwrap_or(1);
     let options = if nt > 1 {
