@@ -1,4 +1,6 @@
 use crate::aggregated_node::Factors;
+use crate::metric::Metric;
+use crate::node::NodeIndex;
 use crate::schema::data_tables::LoadedTableCollection;
 use crate::schema::error::ConversionError;
 use crate::schema::nodes::NodeMeta;
@@ -140,6 +142,28 @@ impl RiverSplitWithGaugeNode {
             None => self.default_connectors(),
         }
     }
+
+    pub fn default_metric(&self, model: &crate::model::Model) -> Result<Metric, PywrError> {
+        let mut indices = vec![
+            model.get_node_index_by_name(self.meta.name.as_str(), Self::mrf_sub_name())?,
+            model.get_node_index_by_name(self.meta.name.as_str(), Self::bypass_sub_name())?,
+        ];
+
+        let split_idx: Vec<NodeIndex> = self
+            .splits
+            .iter()
+            .enumerate()
+            .map(|(i, _)| model.get_node_index_by_name(self.meta.name.as_str(), Self::split_sub_name(i).as_deref()))
+            .collect::<Result<_, _>>()?;
+
+        indices.extend(split_idx.into_iter());
+
+        Ok(Metric::MultiNodeInFlow {
+            indices,
+            name: self.meta.name.to_string(),
+            sub_name: Some("total".to_string()),
+        })
+    }
 }
 
 impl TryFrom<RiverSplitWithGaugeNodeV1> for RiverSplitWithGaugeNode {
@@ -206,7 +230,7 @@ mod tests {
     fn test_model_run() {
         let data = model_str();
         let schema: PywrModel = serde_json::from_str(data).unwrap();
-        let (model, timestepper): (crate::model::Model, Timestepper) = schema.try_into_model(None).unwrap();
+        let (model, timestepper): (crate::model::Model, Timestepper) = schema.build_model(None, None).unwrap();
 
         assert_eq!(model.nodes.len(), 5);
         assert_eq!(model.edges.len(), 6);

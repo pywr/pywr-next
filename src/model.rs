@@ -4,6 +4,7 @@ use crate::edge::{EdgeIndex, EdgeVec};
 use crate::metric::Metric;
 use crate::node::{ConstraintValue, Node, NodeVec, StorageInitialVolume};
 use crate::parameters::{MultiValueParameterIndex, ParameterType};
+use crate::recorders::{MetricSet, MetricSetIndex};
 use crate::scenario::{ScenarioGroupCollection, ScenarioIndex};
 use crate::solvers::{MultiStateSolver, Solver, SolverTimings};
 use crate::state::{ParameterStates, State};
@@ -11,12 +12,12 @@ use crate::timestep::{Timestep, Timestepper};
 use crate::virtual_storage::{VirtualStorage, VirtualStorageIndex, VirtualStorageReset, VirtualStorageVec};
 use crate::{parameters, recorders, IndexParameterIndex, NodeIndex, ParameterIndex, PywrError, RecorderIndex};
 use indicatif::ProgressIterator;
-use log::{debug, info};
 use rayon::prelude::*;
 use std::any::Any;
 use std::ops::Deref;
 use std::time::Duration;
 use std::time::Instant;
+use tracing::{debug, info};
 
 enum RunDuration {
     Running(Instant),
@@ -168,6 +169,7 @@ pub struct Model {
     parameters: Vec<Box<dyn parameters::Parameter>>,
     index_parameters: Vec<Box<dyn parameters::IndexParameter>>,
     multi_parameters: Vec<Box<dyn parameters::MultiValueParameter>>,
+    metric_sets: Vec<MetricSet>,
     resolve_order: Vec<ComponentType>,
     recorders: Vec<Box<dyn recorders::Recorder>>,
 }
@@ -511,11 +513,11 @@ impl Model {
     {
         // First compute all the updated state
 
-        scenario_indices
-            .iter()
+        let p_calc_timings: Vec<_> = scenario_indices
+            .par_iter()
             .zip(&mut *states)
-            .zip(parameter_internal_states.iter_mut())
-            .for_each(|((scenario_index, current_state), p_internal_state)| {
+            .zip(&mut *parameter_internal_states)
+            .map(|((scenario_index, current_state), p_internal_state)| {
                 // TODO clear the current parameter values state (i.e. set them all to zero).
 
                 let start_p_calc = Instant::now();
@@ -523,8 +525,13 @@ impl Model {
                     .unwrap();
 
                 // State now contains updated parameter values BUT original network state
-                timings.parameter_calculation += start_p_calc.elapsed();
-            });
+                start_p_calc.elapsed()
+            })
+            .collect();
+
+        for t in p_calc_timings.into_iter() {
+            timings.parameter_calculation += t;
+        }
 
         // Now solve all the LPs simultaneously
         let solve_timings = solver.solve(self, timestep, states).unwrap();
@@ -532,16 +539,22 @@ impl Model {
         timings.solve += solve_timings;
 
         // Now run the "after" method on all components
-        scenario_indices
-            .iter()
+        let p_after_timings: Vec<_> = scenario_indices
+            .par_iter()
             .zip(&mut *states)
             .zip(parameter_internal_states)
-            .for_each(|((scenario_index, current_state), p_internal_state)| {
+            .map(|((scenario_index, current_state), p_internal_state)| {
                 let start_p_after = Instant::now();
                 self.after(timestep, scenario_index, current_state, p_internal_state)
                     .unwrap();
-                timings.parameter_calculation += start_p_after.elapsed();
-            });
+                start_p_after.elapsed()
+            })
+            .collect();
+
+        for t in p_after_timings.into_iter() {
+            timings.parameter_calculation += t;
+        }
+
         Ok(())
     }
 
@@ -829,6 +842,22 @@ impl Model {
         }
     }
 
+    /// Get a `AggregatedNodeIndex` from a node's name
+    pub fn get_aggregated_node_index_by_name(
+        &self,
+        name: &str,
+        sub_name: Option<&str>,
+    ) -> Result<AggregatedNodeIndex, PywrError> {
+        match self
+            .aggregated_nodes
+            .iter()
+            .find(|&n| n.full_name() == (name, sub_name))
+        {
+            Some(node) => Ok(node.index()),
+            None => Err(PywrError::NodeNotFound(name.to_string())),
+        }
+    }
+
     pub fn set_aggregated_node_max_flow(
         &mut self,
         name: &str,
@@ -938,6 +967,16 @@ impl Model {
         }
     }
 
+    /// Get a `VirtualStorageNode` from a node's name
+    pub fn get_virtual_storage_node_index_by_name(
+        &self,
+        name: &str,
+        sub_name: Option<&str>,
+    ) -> Result<VirtualStorageIndex, PywrError> {
+        let node = self.get_virtual_storage_node_by_name(name, sub_name)?;
+        Ok(node.index())
+    }
+
     pub fn get_storage_node_metric(
         &self,
         name: &str,
@@ -966,34 +1005,6 @@ impl Model {
         } else {
             Err(PywrError::NodeNotFound(name.to_string()))
         }
-    }
-
-    pub fn get_node_default_metrics(&self) -> Vec<(Metric, (String, Option<String>))> {
-        self.nodes
-            .iter()
-            .map(|n| {
-                let metric = n.default_metric();
-                let (name, sub_name) = n.full_name();
-                (metric, (name.to_string(), sub_name.map(|s| s.to_string())))
-            })
-            .chain(self.aggregated_nodes.iter().map(|n| {
-                let metric = n.default_metric();
-                let (name, sub_name) = n.full_name();
-                (metric, (name.to_string(), sub_name.map(|s| s.to_string())))
-            }))
-            .collect()
-    }
-
-    pub fn get_parameter_metrics(&self) -> Vec<(Metric, (String, Option<String>))> {
-        self.parameters
-            .iter()
-            .enumerate()
-            .map(|(idx, p)| {
-                let metric = Metric::ParameterValue(ParameterIndex::new(idx));
-
-                (metric, (format!("param-{}", p.name()), None))
-            })
-            .collect()
     }
 
     /// Get a `Parameter` from a parameter's name
@@ -1253,6 +1264,38 @@ impl Model {
         self.resolve_order
             .push(ComponentType::Parameter(ParameterType::Multi(parameter_index)));
         Ok(parameter_index)
+    }
+
+    /// Add a [`MetricSet`] to the model.
+    pub fn add_metric_set(&mut self, metric_set: MetricSet) -> Result<MetricSetIndex, PywrError> {
+        if let Ok(_) = self.get_metric_set_by_name(&metric_set.name()) {
+            return Err(PywrError::MetricSetNameAlreadyExists(metric_set.name().to_string()));
+        }
+
+        let metric_set_idx = MetricSetIndex::new(self.metric_sets.len());
+        self.metric_sets.push(metric_set);
+        Ok(metric_set_idx)
+    }
+
+    /// Get a [`MetricSet'] from its index.
+    pub fn get_metric_set(&self, index: MetricSetIndex) -> Result<&MetricSet, PywrError> {
+        self.metric_sets.get(*index).ok_or(PywrError::MetricSetIndexNotFound)
+    }
+
+    /// Get a ['MetricSet'] by its name.
+    pub fn get_metric_set_by_name(&self, name: &str) -> Result<&MetricSet, PywrError> {
+        self.metric_sets
+            .iter()
+            .find(|&m| m.name() == name)
+            .ok_or(PywrError::MetricSetNotFound(name.to_string()))
+    }
+
+    /// Get a ['MetricSetIndex'] by its name.
+    pub fn get_metric_set_index_by_name(&self, name: &str) -> Result<MetricSetIndex, PywrError> {
+        match self.metric_sets.iter().position(|m| m.name() == name) {
+            Some(idx) => Ok(MetricSetIndex::new(idx)),
+            None => Err(PywrError::MetricSetNotFound(name.to_string())),
+        }
     }
 
     /// Add a `recorders::Recorder` to the model

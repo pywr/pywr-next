@@ -1,9 +1,75 @@
-# Pywr-next
+<!-- PROJECT SHIELDS -->
+<!--
+*** I'm using markdown "reference style" links for readability.
+*** Reference links are enclosed in brackets [ ] instead of parentheses ( ).
+*** See the bottom of this document for the declaration of the reference variables
+*** for contributors-url, forks-url, etc. This is an optional, concise syntax you may use.
+*** https://www.markdownguide.org/basic-syntax/#reference-style-links
+-->
+[![Contributors][contributors-shield]][contributors-url]
+[![Forks][forks-shield]][forks-url]
+[![Stargazers][stars-shield]][stars-url]
+[![Issues][issues-shield]][issues-url]
+[![MIT License][license-shield]][license-url]
+[![LinkedIn][linkedin-shield]][linkedin-url]
 
-This repository is an experimental repository exploring ideas for a major revision to Pywr using Rust as a backend. It
-is currently not ready for use beyond development and experimentation. Comments and discussions are welcome.
 
-## Motivation
+<!-- PROJECT LOGO -->
+<br />
+<div align="center">
+
+<!--
+***  <a href="https://github.com/pywr/pywr-next">
+***    <img src="images/logo.png" alt="Logo" width="80" height="80">
+***  </a>
+-->
+
+<h3 align="center">Pywr-next</h3>
+
+  <p align="center">
+    This is repository contains the current work-in-progress for the next major revision to
+    <a href="https://github.com/pywr/pywr">Pywr.</a> It uses Rust as a backend instead of Cython. It
+    is currently not ready for use beyond development and experimentation. Comments and discussions are welcome.
+    <br />
+    <br />
+    <a href="https://github.com/pywr/pywr-next/issues">Report Bug</a>
+    ·
+    <a href="https://github.com/pywr/pywr-next/issues">Request Feature</a>
+  </p>
+</div>
+
+
+
+<!-- TABLE OF CONTENTS -->
+<details>
+  <summary>Table of Contents</summary>
+  <ol>
+    <li>
+      <a href="#about-the-project">About The Project</a>
+      <ul>
+        <li><a href="#built-with">Built With</a></li>
+      </ul>
+    </li>
+    <li>
+      <a href="#getting-started">Getting Started</a>
+      <ul>
+        <li><a href="#prerequisites">Prerequisites</a></li>
+        <li><a href="#installation">Installation</a></li>
+      </ul>
+    </li>
+    <li><a href="#usage">Usage</a></li>
+    <li><a href="#roadmap">Roadmap</a></li>
+    <li><a href="#contributing">Contributing</a></li>
+    <li><a href="#license">License</a></li>
+    <li><a href="#contact">Contact</a></li>
+    <li><a href="#acknowledgments">Acknowledgments</a></li>
+  </ol>
+</details>
+
+
+
+<!-- ABOUT THE PROJECT -->
+## About The Project
 
 Pywr-1.x is a Python library which utilises Cython for performance. Over time this has resulted in a "core"
 set of data structures and objects that are written in Cython to gain maximum performance. Cython has the nice
@@ -14,7 +80,10 @@ One option for the future development of Pywr (e.g. Pywr-2.x) would be a more ex
 "core" and higher level functionality. Rust is a candidate for writing that core largely independent of Python, and
 possibly offers the benefits of (1) greater performance than Cython, and (2) easier maintenance in the future.
 
-## Requirements
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+
+### Requirements
 
 Any major revision to Pywr will have the following feature requirements:
 
@@ -26,7 +95,31 @@ Any major revision to Pywr will have the following feature requirements:
  - Faster!
  - Strong input file (JSON) schema.
 
-## Development installation instructions
+### Built With
+
+[![Rust][Rust]][Rust-url]
+[![Python][Python]][Python-url]
+
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+
+
+<!-- GETTING STARTED -->
+## Getting Started
+
+This is an example of how you may give instructions on setting up your project locally.
+To get a local copy up and running follow these simple example steps.
+
+### Prerequisites
+
+This is an example of how to list things you need to use the software and how to install them.
+* npm
+  ```sh
+  npm install npm@latest -g
+  ```
+
+### Getting started
 
 This repository contains a version of Clp using Git submodules. In order to build those submodules
 must be initialised first.
@@ -46,11 +139,140 @@ pip install -e .
 
 Alternatively use the `develop.sh` script to run the above two commands.
 
-Once this is complete the following will run a simple test script of some basic models via Python.
+Once this is complete the following will run a simple command line application from Python.
 
 ```bash
 python -m pywr
 ```
 
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
 
-Copyright (C) 2020 James Tomlinson Associates Ltd.
+
+
+<!-- USAGE EXAMPLES -->
+## Usage
+
+
+### Rust CLI
+
+A basic command line interface is included such that you can use this version of Pywr without Python. Running this
+currently requires disabling the default features that create the Python extension.
+
+To see the CLI commands available run the following:
+
+```bash
+cargo run --no-default-features -- --help
+```
+
+To run a Pywr v2 model use the following:
+
+```bash
+cargo run --no-default-features -- run tests/models/simple1.json
+```
+
+### Python CLI
+
+If the Python extension has been compiled using the above instructions a model can be run using the basic Python
+CLI.
+
+```bash
+python -m pywr run tests/models/simple1.json
+```
+
+## Porting a Pywr v1.x model to v2.x
+
+This version of Pywr is not backward compatible with Pywr v1.x. One of the major reasons for this version is the
+lack of a strong schema in the Pywr v1.x JSON files. Pywr v2.x uses an updated JSON schema that is defined in this
+repository. Therefore, v1.x JSON files must be converted to the v2.x JSON schema. This conversion can be undertaken
+manually, but there is also a work-in-progress conversion tool. The conversion tool uses a v1.x schema defined in
+the [pywr-schema](https://github.com/pywr/pywr-schema) project.
+
+**Please note that conversion  from Pywr v1.x to v2.x is experimental and not all features of Pywr are implemented
+in `pywr-schema` or have been implemented in Pywr v2.x yet. Due to the changes between these versions it is very
+likely an automatic conversion will not completely convert your model, and it _WILL_ require manual testing and
+checking.**
+
+```bash
+cargo run --no-default-features -- convert /path/to/my/v1.x/model.json
+```
+
+Feedback on porting models is very welcome, so please open an issue with any questions or problems.
+
+
+<!-- _For more examples, please refer to the [Documentation](https://example.com)_ -->
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+
+
+<!-- ROADMAP -->
+## Roadmap
+
+- [x] Proof-of-concept - demonstrate the benefits of the RIIR approach.
+- [ ] Redesign of outputs & metrics.
+- [ ] Redesign of variable API for integration with external optimisation algorithms.
+- [ ] Implement outstanding `Parameters` from Pywr v1.x
+- [ ] Design & implement Python API using Rust extension.
+- [ ] Release Pywr v2.x beta
+
+See the [open issues](https://github.com/pywr/pywr-next/issues) for a full list of proposed features (and known issues).
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+
+
+<!-- CONTRIBUTING -->
+## Contributing
+
+Contributions are what make the open source community such an amazing place to learn, inspire, and create. Any contributions you make are **greatly appreciated**.
+
+If you have a suggestion that would make this better, please fork the repo and create a pull request. You can also simply open an issue with the tag "enhancement".
+Don't forget to give the project a star! Thanks again!
+
+1. Fork the Project
+2. Create your Feature Branch (`git checkout -b feature/AmazingFeature`)
+3. Commit your Changes (`git commit -m 'Add some AmazingFeature'`)
+4. Push to the Branch (`git push origin feature/AmazingFeature`)
+5. Open a Pull Request
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+
+<!-- LICENSE -->
+## License
+
+Distributed under the Apache 2.0 or MIT License. See `LICENSE.txt` for more information.
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+<!-- CONTACT -->
+## Contact
+
+James Tomlinson - tomo.bbe@gmail.com
+
+Project Link: [https://github.com/pywr/pywr-next](https://github.com/pywr/pywr-next)
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+
+
+<!-- MARKDOWN LINKS & IMAGES -->
+<!-- https://www.markdownguide.org/basic-syntax/#reference-style-links -->
+[contributors-shield]: https://img.shields.io/github/contributors/pywr/pywr-next.svg?style=for-the-badge
+[contributors-url]: https://github.com/pywr/pywr-next/graphs/contributors
+[forks-shield]: https://img.shields.io/github/forks/pywr/pywr-next.svg?style=for-the-badge
+[forks-url]: https://github.com/pywr/pywr-next/network/members
+[stars-shield]: https://img.shields.io/github/stars/pywr/pywr-next.svg?style=for-the-badge
+[stars-url]: https://github.com/pywr/pywr-next/stargazers
+[issues-shield]: https://img.shields.io/github/issues/pywr/pywr-next.svg?style=for-the-badge
+[issues-url]: https://github.com/pywr/pywr-next/issues
+[license-shield]: https://img.shields.io/github/license/pywr/pywr-next.svg?style=for-the-badge
+[license-url]: https://github.com/pywr/pywr-next/blob/master/LICENSE.txt
+[linkedin-shield]: https://img.shields.io/badge/-LinkedIn-black.svg?style=for-the-badge&logo=linkedin&colorB=555
+[linkedin-url]: https://linkedin.com/in/james-tomlinson-a465352b
+[Rust]: https://img.shields.io/badge/rust-ef4a23?style=for-the-badge&logo=rust&logoColor=white
+[Rust-url]: https://www.rust-lang.org/
+[Python]: https://img.shields.io/badge/python-275277?style=for-the-badge&logo=python&logoColor=white
+[Python-url]: https://www.python.org/
+
+Copyright (C) 2020-2023 James Tomlinson Associates Ltd.

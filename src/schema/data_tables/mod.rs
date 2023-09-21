@@ -1,5 +1,4 @@
 use crate::schema::parameters::TableIndex;
-use log::{debug, info};
 use pywr_schema::parameters::TableDataRef as TableDataRefV1;
 use std::collections::HashMap;
 use std::fs::File;
@@ -7,6 +6,7 @@ use std::io::BufReader;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use thiserror::Error;
+use tracing::{debug, info};
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
 #[serde(rename_all = "lowercase")]

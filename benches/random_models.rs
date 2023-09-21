@@ -12,7 +12,7 @@ use pywr::metric::Metric;
 use pywr::model::{Model, RunOptions};
 use pywr::node::ConstraintValue;
 use pywr::parameters::Array2Parameter;
-use pywr::solvers::{ClpSolver, HighsSolver};
+use pywr::solvers::{ClIpmF64Solver, ClpSolver, HighsSolver};
 use pywr::timestep::Timestepper;
 use pywr::PywrError;
 use rand::{Rng, SeedableRng};
@@ -125,6 +125,7 @@ fn random_benchmark(
     densities: &[usize],
     num_scenarios: &[usize],
     num_threads: &[usize],
+    solvers: &[&str], // TODO This should be an enum (see one also in main.rs; should incorporated into the crate).
 ) {
     // We'll do 1000 days to make interpretation of the timings a little easier.
     // i.e. a run time of 1s would equal 1000 timesteps per second
@@ -154,7 +155,7 @@ fn random_benchmark(
                         RunOptions::default()
                     };
 
-                    if n_threads == 1 {
+                    if n_threads == 1 && solvers.contains(&"highs") {
                         // Only do Highs benchmark for single-threaded
                         group.bench_with_input(
                             BenchmarkId::new("random-model-highs", parameter_string.clone()),
@@ -163,11 +164,21 @@ fn random_benchmark(
                         );
                     }
 
-                    group.bench_with_input(
-                        BenchmarkId::new("random-model-clp", parameter_string.clone()),
-                        &(n_sys, density, n_sc),
-                        |b, _n| b.iter(|| model.run::<ClpSolver>(&timestepper, &options).unwrap()),
-                    );
+                    if solvers.contains(&"clp") {
+                        group.bench_with_input(
+                            BenchmarkId::new("random-model-clp", parameter_string.clone()),
+                            &(n_sys, density, n_sc),
+                            |b, _n| b.iter(|| model.run::<ClpSolver>(&timestepper, &options).unwrap()),
+                        );
+                    }
+
+                    if solvers.contains(&"clipmf64") {
+                        group.bench_with_input(
+                            BenchmarkId::new("random-model-clipmf64", parameter_string.clone()),
+                            &(n_sys, density, n_sc),
+                            |b, _n| b.iter(|| model.run_multi_scenario::<ClIpmF64Solver>(&timestepper)),
+                        );
+                    }
                 }
             }
         }
@@ -184,6 +195,7 @@ fn bench_system_size(c: &mut Criterion) {
         &[2, 5],
         &[1],
         &[1],
+        &["highs", "clp"],
     )
 }
 
@@ -195,12 +207,39 @@ fn bench_scenarios(c: &mut Criterion) {
         &[5],
         &[2, 10, 50, 100, 400, 1000],
         &[1],
+        &["highs", "clp"],
     )
 }
 
 fn bench_threads(c: &mut Criterion) {
-    random_benchmark(c, "random-models-threads", &[20, 50], &[5], &[100], &[2, 4, 8, 16])
+    random_benchmark(
+        c,
+        "random-models-threads",
+        &[20, 50],
+        &[5],
+        &[100],
+        &[2, 4, 8, 16],
+        &["highs", "clp"],
+    )
 }
 
-criterion_group!(benches, bench_system_size, bench_scenarios, bench_threads);
+fn bench_hyper_scenarios(c: &mut Criterion) {
+    random_benchmark(
+        c,
+        "random-models-scenarios",
+        &[20, 50],
+        &[5],
+        &[1000],
+        &[1],
+        &["clipmf64", "clp"],
+    )
+}
+
+criterion_group!(
+    benches,
+    bench_system_size,
+    bench_scenarios,
+    bench_threads,
+    bench_hyper_scenarios
+);
 criterion_main!(benches);

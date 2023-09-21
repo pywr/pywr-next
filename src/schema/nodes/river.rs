@@ -1,3 +1,4 @@
+use crate::metric::Metric;
 use crate::schema::error::ConversionError;
 use crate::schema::nodes::NodeMeta;
 use crate::schema::parameters::DynamicFloatValue;
@@ -26,6 +27,11 @@ impl RiverNode {
     }
     pub fn output_connectors(&self) -> Vec<(&str, Option<String>)> {
         vec![(self.meta.name.as_str(), None)]
+    }
+
+    pub fn default_metric(&self, model: &crate::model::Model) -> Result<Metric, PywrError> {
+        let idx = model.get_node_index_by_name(self.meta.name.as_str(), None)?;
+        Ok(Metric::NodeOutFlow(idx))
     }
 }
 

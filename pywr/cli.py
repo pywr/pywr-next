@@ -25,7 +25,7 @@ def cli():
 
 @cli.command()
 @click.argument("path", type=click.Path(exists=True, file_okay=True))
-@click.option("-s", "--solver", type=click.Choice(["clp", "highs"]))
+@click.option("-s", "--solver", type=click.Choice(["clp", "highs"]), default="clp")
 @click.option(
     "-d", "--data-path", type=click.Path(exists=True, dir_okay=True), default=None
 )
@@ -33,8 +33,8 @@ def cli():
 def run(path: str, solver: str, data_path: Optional[str], threads: int):
     with open(path) as fh:
         data = fh.read()
-    model = run_model_from_string(data, solver, data_path, None, threads)
-    model.run()
+
+    run_model_from_string(data, solver, data_path, None, threads)
 
 
 def start_cli():
