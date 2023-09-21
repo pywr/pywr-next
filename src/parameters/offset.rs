@@ -1,32 +1,35 @@
+use crate::metric::Metric;
 use crate::model::Model;
 use crate::parameters::{ActivationFunction, Parameter, ParameterMeta, VariableParameter};
 use crate::scenario::ScenarioIndex;
+use std::any::Any;
+
 use crate::state::State;
 use crate::timestep::Timestep;
 use crate::PywrError;
-use std::any::Any;
 
-pub struct ConstantParameter {
+pub struct OffsetParameter {
     meta: ParameterMeta,
-    value: f64,
+    metric: Metric,
+    offset: f64,
     variable: Option<ActivationFunction>,
 }
 
-impl ConstantParameter {
-    pub fn new(name: &str, value: f64, variable: Option<ActivationFunction>) -> Self {
+impl OffsetParameter {
+    pub fn new(name: &str, metric: Metric, offset: f64, variable: Option<ActivationFunction>) -> Self {
         Self {
             meta: ParameterMeta::new(name),
-            value,
+            metric,
+            offset,
             variable,
         }
     }
 }
 
-impl Parameter for ConstantParameter {
+impl Parameter for OffsetParameter {
     fn as_any_mut(&mut self) -> &mut dyn Any {
         self
     }
-
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }
@@ -34,13 +37,14 @@ impl Parameter for ConstantParameter {
         &self,
         _timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
-        _model: &Model,
-        _state: &State,
+        model: &Model,
+        state: &State,
         _internal_state: &mut Option<Box<dyn Any + Send>>,
     ) -> Result<f64, PywrError> {
-        Ok(self.value)
+        // Current value
+        let x = self.metric.get_value(model, state)?;
+        Ok(x + self.offset)
     }
-
     fn as_variable(&self) -> Option<&dyn VariableParameter> {
         Some(self)
     }
@@ -50,7 +54,7 @@ impl Parameter for ConstantParameter {
     }
 }
 
-impl VariableParameter for ConstantParameter {
+impl VariableParameter for OffsetParameter {
     fn is_active(&self) -> bool {
         self.variable.is_some()
     }
@@ -62,7 +66,7 @@ impl VariableParameter for ConstantParameter {
     fn set_variables(&mut self, values: &[f64]) -> Result<(), PywrError> {
         if values.len() == 1 {
             let variable = self.variable.ok_or(PywrError::ParameterVariableNotActive)?;
-            self.value = variable.apply(values[0]);
+            self.offset = variable.apply(values[0]);
             Ok(())
         } else {
             Err(PywrError::ParameterVariableValuesIncorrectLength)
@@ -70,7 +74,7 @@ impl VariableParameter for ConstantParameter {
     }
 
     fn get_variables(&self) -> Vec<f64> {
-        vec![self.value]
+        vec![self.offset]
     }
 
     fn get_lower_bounds(&self) -> Result<Vec<f64>, PywrError> {

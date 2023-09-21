@@ -14,6 +14,7 @@ mod core;
 mod data_frame;
 mod delay;
 mod indexed_array;
+mod offset;
 mod polynomial;
 mod profiles;
 mod python;
@@ -45,6 +46,7 @@ use crate::schema::error::ConversionError;
 use crate::schema::parameters::core::DivisionParameter;
 pub use crate::schema::parameters::data_frame::DataFrameParameter;
 use crate::{IndexParameterIndex, NodeIndex, PywrError};
+pub use offset::OffsetParameter;
 use pywr_schema::parameters::{
     CoreParameter, ExternalDataRef as ExternalDataRefV1, Parameter as ParameterV1, ParameterMeta as ParameterMetaV1,
     ParameterValue as ParameterValueV1, TableIndex as TableIndexV1,
@@ -156,6 +158,7 @@ pub enum Parameter {
     DataFrame(DataFrameParameter),
     Delay(DelayParameter),
     Division(DivisionParameter),
+    Offset(OffsetParameter),
 }
 
 impl Parameter {
@@ -182,7 +185,8 @@ impl Parameter {
             Self::Python(p) => p.meta.name.as_str(),
             Self::DataFrame(p) => p.meta.name.as_str(),
             Self::Division(p) => p.meta.name.as_str(),
-            Parameter::Delay(p) => p.meta.name.as_str(),
+            Self::Delay(p) => p.meta.name.as_str(),
+            Self::Offset(p) => p.meta.name.as_str(),
         }
     }
 
@@ -212,6 +216,7 @@ impl Parameter {
             Self::DataFrame(p) => p.node_references(),
             Self::Delay(p) => p.node_references(),
             Self::Division(p) => p.node_references(),
+            Self::Offset(p) => p.node_references(),
         }
     }
 
@@ -258,6 +263,7 @@ impl Parameter {
             Self::DataFrame(_) => "DataFrame",
             Self::Delay(_) => "Delay",
             Self::Division(_) => "Division",
+            Self::Offset(_) => "Offset",
         }
     }
 
@@ -292,6 +298,7 @@ impl Parameter {
             Self::DataFrame(p) => ParameterType::Parameter(p.add_to_model(model, data_path)?),
             Self::Delay(p) => ParameterType::Parameter(p.add_to_model(model, tables, data_path)?),
             Self::Division(p) => ParameterType::Parameter(p.add_to_model(model, tables, data_path)?),
+            Self::Offset(p) => ParameterType::Parameter(p.add_to_model(model, tables, data_path)?),
         };
 
         Ok(ty)

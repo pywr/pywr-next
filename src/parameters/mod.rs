@@ -11,6 +11,7 @@ mod indexed_array;
 mod max;
 mod min;
 mod negative;
+mod offset;
 mod polynomial;
 mod profiles;
 mod py;
@@ -43,6 +44,7 @@ pub use indexed_array::IndexedArrayParameter;
 pub use max::MaxParameter;
 pub use min::MinParameter;
 pub use negative::NegativeParameter;
+pub use offset::OffsetParameter;
 pub use polynomial::Polynomial1DParameter;
 pub use profiles::{DailyProfileParameter, MonthlyInterpDay, MonthlyProfileParameter, UniformDrawdownProfileParameter};
 pub use py::PyParameter;
@@ -310,9 +312,9 @@ pub trait VariableParameter {
     /// Get the current variable values
     fn get_variables(&self) -> Vec<f64>;
     /// Get variable lower bounds
-    fn get_lower_bounds(&self) -> Vec<f64>;
+    fn get_lower_bounds(&self) -> Result<Vec<f64>, PywrError>;
     /// Get variable upper bounds
-    fn get_upper_bounds(&self) -> Vec<f64>;
+    fn get_upper_bounds(&self) -> Result<Vec<f64>, PywrError>;
 }
 
 #[cfg(test)]
