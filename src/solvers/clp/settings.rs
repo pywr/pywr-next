@@ -44,8 +44,6 @@ impl ClpSolverSettings {
 /// let settings = ClpSolverSettingsBuilder::default().parallel().threads(4).build();
 ///
 /// let mut builder = ClpSolverSettingsBuilder::default();
-/// builder.chunk_size(NonZeroUsize::new(1024).unwrap());
-/// let settings = builder.build();
 ///
 /// builder.parallel();
 /// let settings = builder.build();
