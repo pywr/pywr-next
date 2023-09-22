@@ -37,7 +37,7 @@ pub fn simple_model(num_scenarios: usize) -> Model {
     model.connect_nodes(input_node, link_node).unwrap();
     model.connect_nodes(link_node, output_node).unwrap();
 
-    let inflow = Array::from_shape_fn((366, num_scenarios), |(i, j)| i as f64 + j as f64);
+    let inflow = Array::from_shape_fn((366, num_scenarios), |(i, j)| 1.0 + i as f64 + j as f64);
     let inflow = Array2Parameter::new("inflow", inflow, scenario_idx);
 
     let inflow = model.add_parameter(Box::new(inflow)).unwrap();
@@ -148,25 +148,40 @@ pub fn run_and_assert_parameter(
 }
 
 /// Run a model using each of the in-built solvers.
+///
+/// The model will only be run if the solver has the required solver features (and
+/// is also enabled as a Cargo feature).
 pub fn run_all_solvers(model: &Model, timestepper: &Timestepper) {
     model
         .run::<ClpSolver>(timestepper, &Default::default())
         .expect("Failed to solve with CLP");
 
     #[cfg(feature = "highs")]
-    model
-        .run::<HighsSolver>(timestepper, &Default::default())
-        .expect("Failed to solve with Highs");
+    {
+        if model.check_solver_features::<HighsSolver>() {
+            model
+                .run::<HighsSolver>(timestepper, &Default::default())
+                .expect("Failed to solve with Highs");
+        }
+    }
 
     #[cfg(feature = "ipm-simd")]
-    model
-        .run_multi_scenario::<SimdIpmF64Solver<4>>(timestepper, &Default::default())
-        .expect("Failed to solve with SIMD IPM");
+    {
+        if model.check_multi_scenario_solver_features::<SimdIpmF64Solver<4>>() {
+            model
+                .run_multi_scenario::<SimdIpmF64Solver<4>>(timestepper, &Default::default())
+                .expect("Failed to solve with SIMD IPM");
+        }
+    }
 
     #[cfg(feature = "ipm-ocl")]
-    model
-        .run_multi_scenario::<ClIpmF64Solver>(timestepper, &Default::default())
-        .expect("Failed to solve with OpenCl IPM");
+    {
+        if model.check_multi_scenario_solver_features::<ClIpmF64Solver>() {
+            model
+                .run_multi_scenario::<ClIpmF64Solver>(timestepper, &Default::default())
+                .expect("Failed to solve with OpenCl IPM");
+        }
+    }
 }
 
 /// Make a simple system with random inputs.

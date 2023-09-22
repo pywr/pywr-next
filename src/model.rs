@@ -652,6 +652,11 @@ impl Model {
     fn required_features(&self) -> HashSet<SolverFeatures> {
         let mut features = HashSet::new();
 
+        // Aggregated node feature required if there are any aggregated nodes
+        if self.aggregated_nodes.len() > 0 {
+            features.insert(SolverFeatures::AggregatedNode);
+        }
+
         // Aggregated node factors required if any aggregated node has factors defined.
         if self.aggregated_nodes.iter().any(|n| n.get_factors().is_some()) {
             features.insert(SolverFeatures::AggregatedNodeFactors);
@@ -1479,7 +1484,7 @@ mod tests {
     use crate::solvers::{ClIpmF64Solver, SimdIpmF64Solver};
     use crate::solvers::{ClpSolver, ClpSolverSettings};
     use crate::test_utils::{default_timestepper, run_all_solvers, simple_model, simple_storage_model};
-    use float_cmp::approx_eq;
+    use float_cmp::{approx_eq, assert_approx_eq};
     use ndarray::{Array, Array2};
     use std::ops::Deref;
 
@@ -1577,7 +1582,8 @@ mod tests {
 
     #[test]
     fn test_step() {
-        let model = simple_model(2);
+        const NUM_SCENARIOS: usize = 2;
+        let model = simple_model(NUM_SCENARIOS);
 
         let timestepper = default_timestepper();
 
@@ -1585,31 +1591,35 @@ mod tests {
         let timesteps = timestepper.timesteps();
         let mut ts_iter = timesteps.iter();
 
-        let ts = ts_iter.next().unwrap();
         let (scenario_indices, mut current_state, mut p_internal, _r_internal) = model.setup(&timesteps).unwrap();
 
         let mut solvers = model.setup_solver::<ClpSolver>(&ClpSolverSettings::default()).unwrap();
         assert_eq!(current_state.len(), scenario_indices.len());
 
-        model
-            .step(
-                ts,
-                &scenario_indices,
-                &mut solvers,
-                &mut current_state,
-                &mut p_internal,
-                &mut timings,
-            )
-            .unwrap();
-
         let output_node = model.get_node_by_name("output", None).unwrap();
 
-        let state0 = current_state.get(0).unwrap();
-        let output_inflow = state0
-            .get_network_state()
-            .get_node_in_flow(&output_node.index())
-            .unwrap();
-        assert!(approx_eq!(f64, output_inflow, 10.0));
+        for i in 0..2 {
+            let ts = ts_iter.next().unwrap();
+            model
+                .step(
+                    ts,
+                    &scenario_indices,
+                    &mut solvers,
+                    &mut current_state,
+                    &mut p_internal,
+                    &mut timings,
+                )
+                .unwrap();
+
+            for j in 0..NUM_SCENARIOS {
+                let state_j = current_state.get(j).unwrap();
+                let output_inflow = state_j
+                    .get_network_state()
+                    .get_node_in_flow(&output_node.index())
+                    .unwrap();
+                assert_approx_eq!(f64, output_inflow, (1.0 + i as f64 + j as f64).min(12.0));
+            }
+        }
     }
 
     #[test]
@@ -1620,7 +1630,7 @@ mod tests {
 
         // Set-up assertion for "input" node
         let idx = model.get_node_by_name("input", None).unwrap().index();
-        let expected = Array::from_shape_fn((366, 10), |(i, j)| (i as f64 + j as f64).min(12.0));
+        let expected = Array::from_shape_fn((366, 10), |(i, j)| (1.0 + i as f64 + j as f64).min(12.0));
 
         let recorder = AssertionRecorder::new("input-flow", Metric::NodeOutFlow(idx), expected.clone(), None, None);
         model.add_recorder(Box::new(recorder)).unwrap();

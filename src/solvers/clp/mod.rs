@@ -230,7 +230,11 @@ impl Solver for ClpSolver {
     type Settings = ClpSolverSettings;
 
     fn features() -> &'static [SolverFeatures] {
-        &[SolverFeatures::AggregatedNodeFactors, SolverFeatures::VirtualStorage]
+        &[
+            SolverFeatures::AggregatedNode,
+            SolverFeatures::AggregatedNodeFactors,
+            SolverFeatures::VirtualStorage,
+        ]
     }
 
     fn setup(model: &Model, settings: &Self::Settings) -> Result<Box<Self>, PywrError> {

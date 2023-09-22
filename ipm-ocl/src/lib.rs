@@ -13,9 +13,9 @@ pub struct Tolerances {
 impl Default for Tolerances {
     fn default() -> Self {
         Self {
-            primal_feasibility: 1e-6,
-            dual_feasibility: 1e-6,
-            optimality: 1e-6,
+            primal_feasibility: 1e-8,
+            dual_feasibility: 1e-8,
+            optimality: 1e-8,
         }
     }
 }

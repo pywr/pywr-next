@@ -164,9 +164,9 @@ where
 {
     fn default() -> Self {
         Self {
-            primal_feasibility: Simd::<T, N>::splat(1e-6.into()),
-            dual_feasibility: Simd::<T, N>::splat(1e-6.into()),
-            optimality: Simd::<T, N>::splat(1e-6.into()),
+            primal_feasibility: Simd::<T, N>::splat(1e-8.into()),
+            dual_feasibility: Simd::<T, N>::splat(1e-8.into()),
+            optimality: Simd::<T, N>::splat(1e-8.into()),
         }
     }
 }

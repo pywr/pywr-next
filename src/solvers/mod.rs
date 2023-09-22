@@ -65,6 +65,7 @@ impl AddAssign for SolverTimings {
 /// to solve a given model.
 #[derive(PartialEq, Eq, Hash)]
 pub enum SolverFeatures {
+    AggregatedNode,
     AggregatedNodeFactors,
     VirtualStorage,
 }

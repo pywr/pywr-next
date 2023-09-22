@@ -2,8 +2,6 @@ use super::{dual_feasibility, primal_feasibility, Matrix};
 use crate::common::{compute_dx_dz_dw, dot_product, normal_eqn_rhs, vector_norm, vector_set, vector_update};
 use crate::Tolerances;
 use ipm_common::SparseNormalCholeskyIndices;
-use nalgebra_sparse::na::SimdBool;
-use std::fmt::Debug;
 use std::iter::Sum;
 use std::ops::{Add, AddAssign, Div, Mul, Neg, Sub};
 use std::simd::{

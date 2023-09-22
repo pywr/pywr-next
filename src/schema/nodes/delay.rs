@@ -122,7 +122,6 @@ mod tests {
     use crate::metric::Metric;
     use crate::recorders::AssertionRecorder;
     use crate::schema::model::PywrModel;
-    use crate::solvers::{ClpSolver, ClpSolverSettings};
     use crate::test_utils::run_all_solvers;
     use crate::timestep::Timestepper;
     use ndarray::{concatenate, Array2, Axis};

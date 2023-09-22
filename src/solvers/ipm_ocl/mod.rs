@@ -706,7 +706,7 @@ impl MultiStateSolver for ClIpmF64Solver {
         let mut queues = Vec::new();
 
         let num_chunks = settings.num_chunks();
-        let chunk_size = NonZeroUsize::new(num_scenarios / num_chunks).unwrap();
+        let chunk_size = NonZeroUsize::new(num_scenarios / num_chunks).unwrap_or(NonZeroUsize::MIN);
 
         for chunk_scenarios in (0..num_scenarios).collect::<Vec<_>>().chunks(chunk_size.get()) {
             // Create a queue per chunk.
