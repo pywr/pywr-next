@@ -10,6 +10,8 @@ use pywr::solvers::HighsSolver;
 use pywr::solvers::{ClIpmF32Solver, ClIpmF64Solver};
 use pywr::timestep::Timestepper;
 use pywr::PywrError;
+use pywr::tracing::setup_tracing;
+use tracing_subscriber::field::debug;
 use std::fmt::{Display, Formatter};
 use std::path::{Path, PathBuf};
 
@@ -78,6 +80,8 @@ enum Commands {
         /// The number of threads to use in parallel simulation.
         #[arg(short, long, default_value_t = 1)]
         threads: usize,
+        #[arg(long, default_value_t = false)]
+        debug: bool,
     },
 }
 
@@ -94,6 +98,7 @@ fn main() -> Result<()> {
                 output_path,
                 parallel,
                 threads,
+                debug,
             } => {
                 let options = if *parallel {
                     RunOptions::default().parallel().threads(*threads)
@@ -101,7 +106,7 @@ fn main() -> Result<()> {
                     RunOptions::default()
                 };
 
-                run(model, solver, data_path.as_deref(), output_path.as_deref(), &options)
+                run(model, solver, data_path.as_deref(), output_path.as_deref(), &options, *debug)
             }
         },
         None => {}
@@ -151,7 +156,9 @@ fn v1_to_v2(path: &Path) -> std::result::Result<(), ConversionError> {
     Ok(())
 }
 
-fn run(path: &Path, solver: &Solver, data_path: Option<&Path>, output_path: Option<&Path>, options: &RunOptions) {
+fn run(path: &Path, solver: &Solver, data_path: Option<&Path>, output_path: Option<&Path>, options: &RunOptions, debug: bool) {
+    setup_tracing(debug).unwrap();
+
     let data = std::fs::read_to_string(path).unwrap();
     let schema_v2: PywrModel = serde_json::from_str(data.as_str()).unwrap();
 

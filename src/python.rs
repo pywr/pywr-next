@@ -11,6 +11,7 @@ use crate::timestep::Timestepper;
 use crate::virtual_storage::VirtualStorageIndex;
 use crate::{IndexParameterIndex, ParameterIndex, RecorderIndex};
 use crate::{NodeIndex, PywrError};
+use crate::tracing::setup_tracing;
 use pyo3::create_exception;
 use pyo3::exceptions::{PyException, PyRuntimeError};
 use pyo3::prelude::*;
@@ -665,6 +666,7 @@ fn run_model_from_path(
     py: Python<'_>,
     path: PathBuf,
     solver_name: String,
+    debug: bool,
     data_path: Option<PathBuf>,
     num_threads: Option<usize>,
 ) -> PyResult<()> {
@@ -675,7 +677,7 @@ fn run_model_from_path(
         Some(dp) => Some(dp),
     };
 
-    run_model_from_string(py, data, solver_name, data_path, num_threads)
+    run_model_from_string(py, data, solver_name, debug, data_path, num_threads,)
 }
 
 #[pyfunction]
@@ -683,9 +685,12 @@ fn run_model_from_string(
     py: Python<'_>,
     data: String,
     solver_name: String,
+    debug: bool,
     path: Option<PathBuf>,
     num_threads: Option<usize>,
 ) -> PyResult<()> {
+    setup_tracing(debug).map_err(|e| PyException::new_err(e.to_string()))?;
+
     // TODO handle the serde error properly
     let schema_v2: PywrModel = serde_json::from_str(data.as_str()).unwrap();
 
@@ -718,7 +723,6 @@ fn run_model_from_string(
 /// A Python module implemented in Rust.
 #[pymodule]
 fn pywr(py: Python, m: &PyModule) -> PyResult<()> {
-    pyo3_log::init();
 
     m.add_function(wrap_pyfunction!(load_model, m)?)?;
     m.add_function(wrap_pyfunction!(load_model_from_string, m)?)?;
