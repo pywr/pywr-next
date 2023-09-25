@@ -22,6 +22,7 @@ pub mod state;
 pub mod test_utils;
 pub mod timestep;
 mod virtual_storage;
+pub mod tracing;
 
 #[derive(Error, Debug, PartialEq, Eq)]
 pub enum PywrError {

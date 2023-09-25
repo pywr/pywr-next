@@ -31,6 +31,7 @@ serde_json = "1.0"
 time = { version = "0.3", features = ["serde", "serde-well-known", "serde-human-readable", "macros"] }
 svgbobdoc = { version = "0.3.0", features = ["enable"]  }
 tracing = "0.1"
+tracing-subscriber = { version ="0.3.17", features=["env-filter"] }
 pyo3-log = "0.8.0"
 indicatif = "0.17.2"
 highs-sys = {  git = "https://github.com/jetuk/highs-sys", branch="fix-build-libz-linking", optional = true }
