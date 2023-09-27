@@ -23,6 +23,7 @@ pub mod solvers;
 pub mod state;
 pub mod test_utils;
 pub mod timestep;
+pub mod tracing;
 mod virtual_storage;
 
 #[derive(Error, Debug, PartialEq, Eq)]

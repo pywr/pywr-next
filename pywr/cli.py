@@ -1,5 +1,4 @@
 import logging
-from pathlib import Path
 from typing import Optional
 
 import click
@@ -30,11 +29,13 @@ def cli():
     "-d", "--data-path", type=click.Path(exists=True, dir_okay=True), default=None
 )
 @click.option("-t", "--threads", type=int, default=1)
-def run(path: str, solver: str, data_path: Optional[str], threads: int):
+@click.option("-d", "--debug", is_flag=True)
+def run(path: str, solver: str, data_path: Optional[str], threads: int,
+        debug: bool):
     with open(path) as fh:
         data = fh.read()
 
-    run_model_from_string(data, solver, data_path, None, threads)
+    run_model_from_string(data, solver, debug, data_path, threads,)
 
 
 def start_cli():
