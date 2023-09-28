@@ -1,29 +1,36 @@
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand, ValueEnum};
-use pywr::model::{Model, RunOptions};
+use pywr::model::Model;
 use pywr::schema::model::PywrModel;
 use pywr::schema::ConversionError;
-use pywr::solvers::ClpSolver;
+#[cfg(feature = "ipm-ocl")]
+use pywr::solvers::{ClIpmF32Solver, ClIpmF64Solver, ClIpmSolverSettings};
+use pywr::solvers::{ClpSolver, ClpSolverSettings};
 #[cfg(feature = "highs")]
-use pywr::solvers::HighsSolver;
-#[cfg(feature = "clipm")]
-use pywr::solvers::{ClIpmF32Solver, ClIpmF64Solver};
+use pywr::solvers::{HighsSolver, HighsSolverSettings};
+#[cfg(feature = "ipm-simd")]
+use pywr::solvers::{SimdIpmF64Solver, SimdIpmSolverSettings};
+use pywr::test_utils::make_random_model;
 use pywr::timestep::Timestepper;
-use pywr::PywrError;
 use pywr::tracing::setup_tracing;
-use tracing_subscriber::field::debug;
+use pywr::PywrError;
+use rand::SeedableRng;
+use rand_chacha::ChaCha8Rng;
 use std::fmt::{Display, Formatter};
 use std::path::{Path, PathBuf};
+use time::macros::date;
 
 #[derive(Copy, Clone, ValueEnum)]
 enum Solver {
     Clp,
     #[cfg(feature = "highs")]
     HIGHS,
-    #[cfg(feature = "clipm")]
+    #[cfg(feature = "ipm-ocl")]
     CLIPMF32,
-    #[cfg(feature = "clipm")]
+    #[cfg(feature = "ipm-ocl")]
     CLIPMF64,
+    #[cfg(feature = "ipm-simd")]
+    IpmSimd,
 }
 
 impl Display for Solver {
@@ -32,10 +39,12 @@ impl Display for Solver {
             Solver::Clp => write!(f, "clp"),
             #[cfg(feature = "highs")]
             Solver::HIGHS => write!(f, "highs"),
-            #[cfg(feature = "clipm")]
+            #[cfg(feature = "ipm-ocl")]
             Solver::CLIPMF32 => write!(f, "clipmf32"),
-            #[cfg(feature = "clipm")]
+            #[cfg(feature = "ipm-ocl")]
             Solver::CLIPMF64 => write!(f, "clipmf64"),
+            #[cfg(feature = "ipm-simd")]
+            Solver::IpmSimd => write!(f, "ipm-simd"),
         }
     }
 }
@@ -83,6 +92,14 @@ enum Commands {
         #[arg(long, default_value_t = false)]
         debug: bool,
     },
+    RunRandom {
+        num_systems: usize,
+        density: usize,
+        num_scenarios: usize,
+        /// Solver to use.
+        #[arg(short, long, default_value_t=Solver::Clp)]
+        solver: Solver,
+    },
 }
 
 fn main() -> Result<()> {
@@ -99,15 +116,13 @@ fn main() -> Result<()> {
                 parallel,
                 threads,
                 debug,
-            } => {
-                let options = if *parallel {
-                    RunOptions::default().parallel().threads(*threads)
-                } else {
-                    RunOptions::default()
-                };
-
-                run(model, solver, data_path.as_deref(), output_path.as_deref(), &options, *debug)
-            }
+            } => run(model, solver, data_path.as_deref(), output_path.as_deref(), *debug),
+            Commands::RunRandom {
+                num_systems,
+                density,
+                num_scenarios,
+                solver,
+            } => run_random(*num_systems, *density, *num_scenarios, solver),
         },
         None => {}
     }
@@ -156,7 +171,7 @@ fn v1_to_v2(path: &Path) -> std::result::Result<(), ConversionError> {
     Ok(())
 }
 
-fn run(path: &Path, solver: &Solver, data_path: Option<&Path>, output_path: Option<&Path>, options: &RunOptions, debug: bool) {
+fn run(path: &Path, solver: &Solver, data_path: Option<&Path>, output_path: Option<&Path>, debug: bool) {
     setup_tracing(debug).unwrap();
 
     let data = std::fs::read_to_string(path).unwrap();
@@ -165,13 +180,45 @@ fn run(path: &Path, solver: &Solver, data_path: Option<&Path>, output_path: Opti
     let (model, timestepper): (Model, Timestepper) = schema_v2.build_model(data_path, output_path).unwrap();
 
     match *solver {
-        Solver::Clp => model.run::<ClpSolver>(&timestepper, options),
+        Solver::Clp => model.run::<ClpSolver>(&timestepper, &ClpSolverSettings::default()),
         #[cfg(feature = "highs")]
-        Solver::HIGHS => model.run::<HighsSolver>(&timestepper, options),
-        #[cfg(feature = "clipm")]
-        Solver::CLIPMF32 => model.run_multi_scenario::<ClIpmF32Solver>(&timestepper),
-        #[cfg(feature = "clipm")]
-        Solver::CLIPMF64 => model.run_multi_scenario::<ClIpmF64Solver>(&timestepper),
+        Solver::HIGHS => model.run::<HighsSolver>(&timestepper, &HighsSolverSettings::default()),
+        #[cfg(feature = "ipm-ocl")]
+        Solver::CLIPMF32 => model.run_multi_scenario::<ClIpmF32Solver>(&timestepper, &ClIpmSolverSettings::default()),
+        #[cfg(feature = "ipm-ocl")]
+        Solver::CLIPMF64 => model.run_multi_scenario::<ClIpmF64Solver>(&timestepper, &ClIpmSolverSettings::default()),
+        #[cfg(feature = "ipm-simd")]
+        Solver::IpmSimd => {
+            model.run_multi_scenario::<SimdIpmF64Solver<4>>(&timestepper, &SimdIpmSolverSettings::default())
+        }
+    }
+    .unwrap();
+}
+
+fn run_random(num_systems: usize, density: usize, num_scenarios: usize, solver: &Solver) {
+    let timestepper = Timestepper::new(date!(2020 - 01 - 01), date!(2020 - 01 - 10), 1);
+    let mut rng = ChaCha8Rng::seed_from_u64(0);
+    let model = make_random_model(
+        num_systems,
+        density,
+        timestepper.timesteps().len(),
+        num_scenarios,
+        &mut rng,
+    )
+    .unwrap();
+
+    match *solver {
+        Solver::Clp => model.run::<ClpSolver>(&timestepper, &ClpSolverSettings::default()),
+        #[cfg(feature = "highs")]
+        Solver::HIGHS => model.run::<HighsSolver>(&timestepper, &HighsSolverSettings::default()),
+        #[cfg(feature = "ipm-ocl")]
+        Solver::CLIPMF32 => model.run_multi_scenario::<ClIpmF32Solver>(&timestepper, &ClIpmSolverSettings::default()),
+        #[cfg(feature = "ipm-ocl")]
+        Solver::CLIPMF64 => model.run_multi_scenario::<ClIpmF64Solver>(&timestepper, &ClIpmSolverSettings::default()),
+        #[cfg(feature = "ipm-simd")]
+        Solver::IpmSimd => {
+            model.run_multi_scenario::<SimdIpmF64Solver<4>>(&timestepper, &SimdIpmSolverSettings::default())
+        }
     }
     .unwrap();
 }

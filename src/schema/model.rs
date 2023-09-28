@@ -292,13 +292,13 @@ impl TryFrom<pywr_schema::PywrModel> for PywrModel {
 mod tests {
     use super::PywrModel;
     use crate::metric::Metric;
-    use crate::model::RunOptions;
     use crate::recorders::AssertionRecorder;
     use crate::schema::parameters::{
         AggFunc, AggregatedParameter, ConstantParameter, ConstantValue, DynamicFloatValue, MetricFloatValue, Parameter,
         ParameterMeta,
     };
-    use crate::solvers::ClpSolver;
+    use crate::solvers::{ClpSolver, ClpSolverSettings};
+    use crate::test_utils::run_all_solvers;
     use ndarray::{Array1, Array2, Axis};
 
     fn model_str() -> &'static str {
@@ -338,7 +338,8 @@ mod tests {
         );
         model.add_recorder(Box::new(rec)).unwrap();
 
-        model.run::<ClpSolver>(&timestepper, &RunOptions::default()).unwrap()
+        // Test all solvers
+        run_all_solvers(&model, &timestepper);
     }
 
     /// Test that a cycle in parameter dependencies does not load.

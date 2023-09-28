@@ -375,9 +375,5 @@ REAL compute_dx_dz_dw(
         theta_wy = max(max(theta_wy, -dw[row_gid]/w[row_gid]), -dy[row_gid]/y[row_gid]);
     }
 
-    for (row=0; row<Asize; row++) {
-        row_gid = row*gsize + gid;
-    }
-
     return max(theta_xz, theta_wy);
 }

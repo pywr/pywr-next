@@ -24,7 +24,8 @@ float-cmp = "0.9.0"
 hdf5 = { version="0.8.1" }
 csv = "1.1"
 clp-sys = { path = "./clp-sys" }
-clipm = { path = "./clipm", optional = true }
+ipm-ocl = { path = "./ipm-ocl", optional = true }
+ipm-simd = { path = "./ipm-simd", optional = true }
 wasmer = "4.0.0"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1.0"
@@ -43,17 +44,20 @@ pyo3-polars = "0.7.0"
 pywr-schema = { git = "https://github.com/pywr/pywr-schema/", tag="v0.7.0" }
 rhai = { version="1.12.0", features=["sync"] }
 
+# OpenCL
+ocl = { version = "0.19", optional = true }
+
 # Binary dependencies
 clap =  { version="4.0", features=["derive"] }
 anyhow = "1.0.69"
 
+rand = "0.8.5"
+rand_distr = "0.4.3"
+rand_chacha = "0.3.1"
 
 [dev-dependencies]
 tempfile = "3.3.0"
 criterion = "0.5"
-rand = "0.8.5"
-rand_distr = "0.4.3"
-rand_chacha = "0.3.1"
 
 [lib]
 name = "pywr"
@@ -65,7 +69,8 @@ crate-type = ["cdylib", "rlib"]
 extension-module = ["pyo3/extension-module"]
 default = ["extension-module"]
 highs = ["dep:highs-sys"]
-clipm = ["dep:clipm"]
+ipm-ocl = ["dep:ipm-ocl", "dep:ocl"]
+ipm-simd = ["dep:ipm-simd"]
 
 [[bin]]
 name = "pywr-cli"
@@ -74,7 +79,9 @@ path = "src/main.rs"
 
 [workspace]
 members = [
-    "clipm",
+    "ipm-common",
+    "ipm-ocl",
+    "ipm-simd",
     "clp-sys",
 ]
 exclude = [
@@ -83,7 +90,7 @@ exclude = [
 
 [profile.release]
 opt-level = 3 # fast and small wasm
-lto = true
+# lto = true
 # strip = true
 # Turn this on for profiling
 # debug = true

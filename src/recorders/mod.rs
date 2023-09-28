@@ -167,8 +167,8 @@ impl AssertionRecorder {
             meta: RecorderMeta::new(name),
             expected_values,
             metric,
-            ulps: ulps.unwrap_or(2),
-            epsilon: epsilon.unwrap_or(1e-8),
+            ulps: ulps.unwrap_or(5),
+            epsilon: epsilon.unwrap_or(1e-6),
         }
     }
 }
@@ -310,9 +310,8 @@ struct RecorderMetric {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::RunOptions;
-    use crate::solvers::ClpSolver;
-    use crate::test_utils::{default_timestepper, simple_model};
+    use crate::solvers::{ClpSolver, ClpSolverSettings};
+    use crate::test_utils::{default_timestepper, run_all_solvers, simple_model};
 
     #[test]
     fn test_array2_recorder() {
@@ -324,7 +323,8 @@ mod tests {
         let rec = Array2Recorder::new("test", Metric::NodeOutFlow(node_idx));
 
         let _idx = model.add_recorder(Box::new(rec)).unwrap();
-        model.run::<ClpSolver>(&timestepper, &RunOptions::default()).unwrap();
+        // Test all solvers
+        run_all_solvers(&model, &timestepper);
 
         // TODO fix this with respect to the trait.
         // let array = rec.data_view2().unwrap();

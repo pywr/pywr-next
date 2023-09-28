@@ -1,3 +1,5 @@
+#![cfg_attr(feature = "ipm-simd", feature(portable_simd))]
+
 extern crate core;
 
 use crate::node::NodeIndex;
@@ -21,8 +23,8 @@ pub mod solvers;
 pub mod state;
 pub mod test_utils;
 pub mod timestep;
-mod virtual_storage;
 pub mod tracing;
+mod virtual_storage;
 
 #[derive(Error, Debug, PartialEq, Eq)]
 pub enum PywrError {
@@ -142,4 +144,6 @@ pub enum PywrError {
     ParameterVariableNotActive,
     #[error("incorrect number of values for parameter variable")]
     ParameterVariableValuesIncorrectLength,
+    #[error("missing solver features")]
+    MissingSolverFeatures,
 }

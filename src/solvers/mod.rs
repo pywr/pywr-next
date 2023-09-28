@@ -6,22 +6,24 @@ use std::ops::{Add, AddAssign};
 use std::time::Duration;
 
 mod builder;
-#[cfg(feature = "clipm")]
-mod clipm;
 mod clp;
 mod col_edge_map;
-
 #[cfg(feature = "highs")]
 mod highs;
+#[cfg(feature = "ipm-ocl")]
+mod ipm_ocl;
+#[cfg(feature = "ipm-simd")]
+mod ipm_simd;
 
-#[cfg(feature = "clipm")]
-pub use self::clipm::{ClIpmF32Solver, ClIpmF64Solver};
-pub use clp::{ClpError, ClpSolver};
-
+#[cfg(feature = "ipm-ocl")]
+pub use self::ipm_ocl::{ClIpmF32Solver, ClIpmF64Solver, ClIpmSolverSettings, ClIpmSolverSettingsBuilder};
+#[cfg(feature = "ipm-simd")]
+pub use self::ipm_simd::{SimdIpmF64Solver, SimdIpmSolverSettings, SimdIpmSolverSettingsBuilder};
+pub use clp::{ClpError, ClpSolver, ClpSolverSettings, ClpSolverSettingsBuilder};
 #[cfg(feature = "highs")]
-pub use highs::HighsSolver;
+pub use highs::{HighsSolver, HighsSolverSettings, HighsSolverSettingsBuilder};
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct SolverTimings {
     pub update_objective: Duration,
     pub update_constraints: Duration,
@@ -57,12 +59,36 @@ impl AddAssign for SolverTimings {
     }
 }
 
+/// Features that a solver provides or a model may required.
+///
+/// This enum is used to ensure that a given solver implements the appropriate features
+/// to solve a given model.
+#[derive(PartialEq, Eq, Hash)]
+pub enum SolverFeatures {
+    AggregatedNode,
+    AggregatedNodeFactors,
+    VirtualStorage,
+}
+
+/// Solver settings that are common to all solvers.
+pub trait SolverSettings {
+    fn parallel(&self) -> bool;
+    fn threads(&self) -> usize;
+}
+
 pub trait Solver: Send {
-    fn setup(model: &Model) -> Result<Box<Self>, PywrError>;
+    type Settings;
+
+    /// An array of features that this solver provides.
+    fn features() -> &'static [SolverFeatures];
+    fn setup(model: &Model, settings: &Self::Settings) -> Result<Box<Self>, PywrError>;
     fn solve(&mut self, model: &Model, timestep: &Timestep, state: &mut State) -> Result<SolverTimings, PywrError>;
 }
 
 pub trait MultiStateSolver: Send {
-    fn setup(model: &Model, num_scenarios: usize) -> Result<Box<Self>, PywrError>;
+    type Settings;
+    /// An array of features that this solver provides.
+    fn features() -> &'static [SolverFeatures];
+    fn setup(model: &Model, num_scenarios: usize, settings: &Self::Settings) -> Result<Box<Self>, PywrError>;
     fn solve(&mut self, model: &Model, timestep: &Timestep, states: &mut [State]) -> Result<SolverTimings, PywrError>;
 }

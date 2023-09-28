@@ -27,9 +27,8 @@ impl CsvOutput {
 
 #[cfg(test)]
 mod tests {
-    use crate::model::RunOptions;
     use crate::schema::PywrModel;
-    use crate::solvers::ClpSolver;
+    use crate::solvers::{ClpSolver, ClpSolverSettings};
     use tempfile::TempDir;
 
     fn model_str() -> &'static str {
@@ -56,7 +55,9 @@ mod tests {
         let (model, timestepper): (crate::model::Model, crate::timestep::Timestepper) =
             schema.build_model(None, Some(temp_dir.path())).unwrap();
 
-        model.run::<ClpSolver>(&timestepper, &RunOptions::default()).unwrap();
+        model
+            .run::<ClpSolver>(&timestepper, &ClpSolverSettings::default())
+            .unwrap();
 
         // After model run there should be an output file.
         let expected_path = temp_dir.path().join("outputs.csv");

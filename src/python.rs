@@ -1,17 +1,17 @@
 use crate::aggregated_node::AggregatedNodeIndex;
-use crate::model::{Model, RunOptions};
+use crate::model::Model;
 use crate::recorders::HDF5Recorder;
 use crate::schema::model::PywrModel;
-use crate::solvers::ClpSolver;
+#[cfg(feature = "ipm-ocl")]
+use crate::solvers::{ClIpmF32Solver, ClIpmF64Solver, ClIpmSolverSettings};
+use crate::solvers::{ClpSolver, ClpSolverSettings};
 #[cfg(feature = "highs")]
-use crate::solvers::HighsSolver;
-#[cfg(feature = "clipm")]
-use crate::solvers::{ClIpmF32Solver, ClIpmF64Solver};
+use crate::solvers::{HighsSolver, HighsSolverSettings};
 use crate::timestep::Timestepper;
+use crate::tracing::setup_tracing;
 use crate::virtual_storage::VirtualStorageIndex;
 use crate::{IndexParameterIndex, ParameterIndex, RecorderIndex};
 use crate::{NodeIndex, PywrError};
-use crate::tracing::setup_tracing;
 use pyo3::create_exception;
 use pyo3::exceptions::{PyException, PyRuntimeError};
 use pyo3::prelude::*;
@@ -677,7 +677,7 @@ fn run_model_from_path(
         Some(dp) => Some(dp),
     };
 
-    run_model_from_string(py, data, solver_name, debug, data_path, num_threads,)
+    run_model_from_string(py, data, solver_name, debug, data_path, num_threads)
 }
 
 #[pyfunction]
@@ -697,21 +697,16 @@ fn run_model_from_string(
     let (mut model, timestepper): (Model, Timestepper) = schema_v2.build_model(path.as_deref(), None)?;
 
     let nt = num_threads.unwrap_or(1);
-    let options = if nt > 1 {
-        RunOptions::default().parallel().threads(nt)
-    } else {
-        RunOptions::default()
-    };
 
     py.allow_threads(|| {
         match solver_name.as_str() {
-            "clp" => model.run::<ClpSolver>(&timestepper, &options),
+            "clp" => model.run::<ClpSolver>(&timestepper, &ClpSolverSettings::default()),
             #[cfg(feature = "highs")]
-            "highs" => model.run::<HighsSolver>(&timestepper, &options),
-            #[cfg(feature = "clipm")]
-            "clipm-f32" => model.run_multi_scenario::<ClIpmF32Solver>(&timestepper),
-            #[cfg(feature = "clipm")]
-            "clipm-f64" => model.run_multi_scenario::<ClIpmF64Solver>(&timestepper),
+            "highs" => model.run::<HighsSolver>(&timestepper, &HighsSolverSettings::default()),
+            #[cfg(feature = "ipm-ocl")]
+            "clipm-f32" => model.run_multi_scenario::<ClIpmF32Solver>(&timestepper, &ClIpmSolverSettings::default()),
+            #[cfg(feature = "ipm-ocl")]
+            "clipm-f64" => model.run_multi_scenario::<ClIpmF64Solver>(&timestepper, &ClIpmSolverSettings::default()),
             _ => panic!("Solver {solver_name} not recognised."),
         }
         .unwrap();
@@ -723,7 +718,6 @@ fn run_model_from_string(
 /// A Python module implemented in Rust.
 #[pymodule]
 fn pywr(py: Python, m: &PyModule) -> PyResult<()> {
-
     m.add_function(wrap_pyfunction!(load_model, m)?)?;
     m.add_function(wrap_pyfunction!(load_model_from_string, m)?)?;
     m.add_function(wrap_pyfunction!(run_model_from_string, m)?)?;
