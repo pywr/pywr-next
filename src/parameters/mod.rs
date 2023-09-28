@@ -46,7 +46,10 @@ pub use min::MinParameter;
 pub use negative::NegativeParameter;
 pub use offset::OffsetParameter;
 pub use polynomial::Polynomial1DParameter;
-pub use profiles::{DailyProfileParameter, MonthlyInterpDay, MonthlyProfileParameter, UniformDrawdownProfileParameter};
+pub use profiles::{
+    DailyProfileParameter, MonthlyInterpDay, MonthlyProfileParameter, RadialBasisFunction, RbfProfileParameter,
+    UniformDrawdownProfileParameter,
+};
 pub use py::PyParameter;
 use std::fmt;
 use std::fmt::{Display, Formatter};

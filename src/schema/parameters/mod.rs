@@ -35,7 +35,8 @@ pub use super::parameters::delay::DelayParameter;
 pub use super::parameters::indexed_array::IndexedArrayParameter;
 pub use super::parameters::polynomial::Polynomial1DParameter;
 pub use super::parameters::profiles::{
-    DailyProfileParameter, MonthlyProfileParameter, UniformDrawdownProfileParameter,
+    DailyProfileParameter, MonthlyProfileParameter, RadialBasisFunction, RbfProfileParameter,
+    UniformDrawdownProfileParameter,
 };
 pub use super::parameters::python::PythonParameter;
 pub use super::parameters::tables::TablesArrayParameter;
@@ -159,6 +160,7 @@ pub enum Parameter {
     Delay(DelayParameter),
     Division(DivisionParameter),
     Offset(OffsetParameter),
+    RbfProfile(RbfProfileParameter),
 }
 
 impl Parameter {
@@ -187,6 +189,7 @@ impl Parameter {
             Self::Division(p) => p.meta.name.as_str(),
             Self::Delay(p) => p.meta.name.as_str(),
             Self::Offset(p) => p.meta.name.as_str(),
+            Self::RbfProfile(p) => p.meta.name.as_str(),
         }
     }
 
@@ -217,6 +220,7 @@ impl Parameter {
             Self::Delay(p) => p.node_references(),
             Self::Division(p) => p.node_references(),
             Self::Offset(p) => p.node_references(),
+            Self::RbfProfile(p) => p.node_references(),
         }
     }
 
@@ -264,6 +268,7 @@ impl Parameter {
             Self::Delay(_) => "Delay",
             Self::Division(_) => "Division",
             Self::Offset(_) => "Offset",
+            Self::RbfProfile(_) => "RbfProfile",
         }
     }
 
@@ -299,6 +304,7 @@ impl Parameter {
             Self::Delay(p) => ParameterType::Parameter(p.add_to_model(model, tables, data_path)?),
             Self::Division(p) => ParameterType::Parameter(p.add_to_model(model, tables, data_path)?),
             Self::Offset(p) => ParameterType::Parameter(p.add_to_model(model, tables, data_path)?),
+            Self::RbfProfile(p) => ParameterType::Parameter(p.add_to_model(model)?),
         };
 
         Ok(ty)

@@ -1,5 +1,5 @@
 use crate::model::Model;
-use crate::parameters::{ActivationFunction, Parameter, ParameterMeta, VariableParameter};
+use crate::parameters::{downcast_internal_state, ActivationFunction, Parameter, ParameterMeta, VariableParameter};
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
 use crate::timestep::Timestep;
@@ -30,15 +30,26 @@ impl Parameter for ConstantParameter {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }
+
+    fn setup(
+        &self,
+        timesteps: &[Timestep],
+        scenario_index: &ScenarioIndex,
+    ) -> Result<Option<Box<dyn Any + Send>>, PywrError> {
+        Ok(Some(Box::new(self.value)))
+    }
+
     fn compute(
         &self,
         _timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
         _model: &Model,
         _state: &State,
-        _internal_state: &mut Option<Box<dyn Any + Send>>,
+        internal_state: &mut Option<Box<dyn Any + Send>>,
     ) -> Result<f64, PywrError> {
-        Ok(self.value)
+        let value = downcast_internal_state::<f64>(internal_state);
+
+        Ok(*value)
     }
 
     fn as_variable(&self) -> Option<&dyn VariableParameter> {

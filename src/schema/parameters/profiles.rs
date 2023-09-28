@@ -218,3 +218,64 @@ impl TryFromV1Parameter<UniformDrawdownProfileParameterV1> for UniformDrawdownPr
         Ok(p)
     }
 }
+
+/// Distance functions for radial basis function interpolation.
+#[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone)]
+pub enum RadialBasisFunction {
+    Linear,
+    Cubic,
+    ThinPlateSpline,
+    Gaussian { epsilon: f64 },
+    MultiQuadric { epsilon: f64 },
+    InverseMultiQuadric { epsilon: f64 },
+}
+
+impl Into<crate::parameters::RadialBasisFunction> for RadialBasisFunction {
+    fn into(self) -> crate::parameters::RadialBasisFunction {
+        match self {
+            Self::Linear => crate::parameters::RadialBasisFunction::Linear,
+            Self::Cubic => crate::parameters::RadialBasisFunction::Cubic,
+            Self::ThinPlateSpline => crate::parameters::RadialBasisFunction::ThinPlateSpline,
+            Self::Gaussian { epsilon } => crate::parameters::RadialBasisFunction::Gaussian { epsilon },
+            Self::MultiQuadric { epsilon } => crate::parameters::RadialBasisFunction::MultiQuadric { epsilon },
+            Self::InverseMultiQuadric { epsilon } => {
+                crate::parameters::RadialBasisFunction::InverseMultiQuadric { epsilon }
+            }
+        }
+    }
+}
+
+/// A parameter that interpolates between a set of points using a radial basis function to
+/// create a daily profile.
+///
+/// # JSON Examples
+///
+/// The example below shows the definition of a [`RbfProfileParameter`] in JSON.
+///
+/// ```json
+#[doc = include_str!("doc_examples/rbf_1.json")]
+/// ```
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+pub struct RbfProfileParameter {
+    #[serde(flatten)]
+    pub meta: ParameterMeta,
+    /// The points are the profile positions defined by an ordinal day of the year and a value.
+    /// Radial basis function interpolation is used to create a daily profile from these points.
+    pub points: Vec<(f64, f64)>,
+    /// The distance function used for interpolation.
+    pub function: RadialBasisFunction,
+}
+
+impl RbfProfileParameter {
+    pub fn node_references(&self) -> HashMap<&str, &str> {
+        HashMap::new()
+    }
+    pub fn parameters(&self) -> HashMap<&str, DynamicFloatValueType> {
+        HashMap::new()
+    }
+
+    pub fn add_to_model(&self, model: &mut crate::model::Model) -> Result<ParameterIndex, PywrError> {
+        let p = crate::parameters::RbfProfileParameter::new(&self.meta.name, self.points.clone(), self.function.into());
+        model.add_parameter(Box::new(p))
+    }
+}
