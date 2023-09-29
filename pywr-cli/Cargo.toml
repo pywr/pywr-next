@@ -1,0 +1,20 @@
+[package]
+name = "pywr-cli"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+clap =  { version="4.0", features=["derive"] }
+anyhow = "1.0.69"
+
+rand = "0.8.5"
+rand_chacha = "0.3.1"
+time = {  workspace = true, features = ["serde", "serde-well-known", "serde-human-readable", "macros"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+pywr-v1-schema = { workspace = true }
+
+pywr-core = { path = "../pywr-core" }
+pywr-schema = { path = "../pywr-schema" }

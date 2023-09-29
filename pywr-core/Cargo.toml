@@ -1,0 +1,63 @@
+[package]
+name = "pywr-core"
+version = "2.0.0-dev"
+authors = ["James Tomlinson <tomo.bbe@gmail.com>"]
+edition = "2021"
+rust-version = "1.60"
+description = "A generalised water resource allocation model."
+readme = "README.md"
+repository = "https://github.com/pywr/pywr-next/"
+license = "MIT OR Apache-2.0"
+license-file = "LICENSE"
+keywords = ["water", "modelling"]
+categories = ["science", "simulation"]
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+libc = "0.2.97"
+thiserror = {  workspace = true }
+ndarray = {  workspace = true }
+num = {  workspace = true }
+float-cmp = "0.9.0"
+hdf5 = {  workspace = true }
+csv = {  workspace = true }
+clp-sys = { path = "../clp-sys" }
+ipm-ocl = { path = "../ipm-ocl", optional = true }
+ipm-simd = { path = "../ipm-simd", optional = true }
+wasmer = "4.0.0"
+time = { workspace = true, features = ["macros"] }
+tracing = {  workspace = true }
+tracing-subscriber = { version ="0.3.17", features=["env-filter"] }
+highs-sys = {  git = "https://github.com/jetuk/highs-sys", branch="fix-build-libz-linking", optional = true }
+# highs-sys = { path = "../../highs-sys" }
+
+pyo3 = {  workspace = true }
+
+
+rayon = "1.6.1"
+
+
+rhai = { version="1.12.0", features=["sync"] }
+
+# OpenCL
+ocl = { version = "0.19", optional = true }
+
+rand = "0.8.5"
+rand_distr = "0.4.3"
+rand_chacha = "0.3.1"
+
+[dev-dependencies]
+criterion = "0.5"
+
+[features]
+highs = ["dep:highs-sys"]
+ipm-ocl = ["dep:ipm-ocl", "dep:ocl"]
+ipm-simd = ["dep:ipm-simd"]
+default = []
+
+
+
+[[bench]]
+name = "random_models"
+harness = false

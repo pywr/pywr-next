@@ -1,0 +1,36 @@
+[package]
+name = "pywr-schema"
+version = "0.1.0"
+authors = ["James Tomlinson <tomo.bbe@gmail.com>"]
+edition = "2021"
+rust-version = "1.60"
+description = "A generalised water resource allocation model."
+readme = "README.md"
+repository = "https://github.com/pywr/pywr-next/"
+license = "MIT OR Apache-2.0"
+license-file = "LICENSE"
+keywords = ["water", "modelling"]
+categories = ["science", "simulation"]
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+svgbobdoc = { version = "0.3.0", features = ["enable"]  }
+polars = { version = "0.33.2", features = ["lazy", "rows", "ndarray"] }
+pyo3-polars = "0.7.0"
+
+hdf5 = {  workspace = true }
+csv = {  workspace = true }
+tracing = {  workspace = true }
+pyo3 = {  workspace = true }
+num = {  workspace = true }
+ndarray = {  workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = {  workspace = true }
+pywr-v1-schema = { workspace = true }
+time = { workspace = true, features = ["serde", "serde-well-known", "serde-human-readable", "macros"] }
+pywr-core = { path="../pywr-core" }
+
+[dev-dependencies]
+tempfile = "3.3.0"
