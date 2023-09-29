@@ -191,6 +191,14 @@ Feedback on porting models is very welcome, so please open an issue with any que
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
+<!-- CRATES -->
+## Crates
+This repository contains the following crates:
+
+- `pywr-core`: A low-level Rust library for constructing network models. This crate interfaces with linear program solvers.
+- `pywr-schema`: A Rust library for validating Pywr JSON files against a schema, and then building a model from the schema using `pywr-core`.
+- `pywr-cli`: A command line interface for running Pywr models.
+- `pywr-python`: A Python package (and extension) for constructing and running Pywr models.
 
 
 <!-- ROADMAP -->
