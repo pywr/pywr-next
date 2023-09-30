@@ -117,10 +117,11 @@ git submodule init
 git submodule update
 ```
 
-Rust is required for installation. To create a development installation requires first compiling the
-Rust library and then installing the Python package in editable model.
+Rust is required for installation of the Python extension. To create a Python development installation 
+requires first compiling the Rust library and then installing the Python package in editable model.
 
 ```bash
+cd pywr-python
 maturin develop
 pip install -e .
 ```
@@ -143,19 +144,19 @@ python -m pywr
 
 ### Rust CLI
 
-A basic command line interface is included such that you can use this version of Pywr without Python. Running this
-currently requires disabling the default features that create the Python extension.
+A basic command line interface is included such that you can use this version of Pywr without Python.
+This CLI is in the `pywr-cli` crate. 
 
 To see the CLI commands available run the following:
 
 ```bash
-cargo run --no-default-features -- --help
+cargo run -p pywr-cli -- --help
 ```
 
 To run a Pywr v2 model use the following:
 
 ```bash
-cargo run --no-default-features -- run tests/models/simple1.json
+cargo run -p pywr-cli -- run tests/models/simple1.json
 ```
 
 ### Python CLI
