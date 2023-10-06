@@ -1,12 +1,44 @@
-fn main() {
-    const COIN_UTILS_SRC: &str = "vendor/CoinUtils/CoinUtils/src";
-    const COIN_CLP_SRC: &str = "vendor/Clp/Clp/src";
-    // Compile CoinUtils
-    cc::Build::new()
+use std::env;
+
+fn make_builder() -> cc::Build {
+    let target = env::var("TARGET").expect("Could not find TARGET in environment.");
+    let mut builder = cc::Build::new()
         .cpp(true)
-        .flag("-w")
-        .flag("-DNDEBUG")
-        .flag("-DHAVE_CFLOAT")
+        .warnings(false)
+        .extra_warnings(false)
+        .define("NDEBUG", None)
+        .define("HAVE_STDIO_H", None)
+        .define("HAVE_STDLIB_H", None)
+        .define("HAVE_STRING_H", None)
+        .define("HAVE_INTTYPES_H", None)
+        .define("HAVE_STDINT_H", None)
+        .define("HAVE_STRINGS_H", None)
+        .define("HAVE_SYS_TYPES_H", None)
+        .define("HAVE_SYS_STAT_H", None)
+        .define("HAVE_UNISTD_H", None)
+        .define("HAVE_CMATH", None)
+        .define("HAVE_CFLOAT", None)
+        // .define("HAVE_DLFCN_H", None)
+        .define("HAVE_MEMORY_H", None)
+        .to_owned();
+
+    if target.contains("msvc") {
+        builder.flag("-EHsc").flag_if_supported("-std:c++11");
+    } else {
+        builder.flag("-std=c++11").flag("-w");
+    }
+
+    builder
+}
+
+fn main() {
+    const COIN_UTILS_SRC: &str = "vendor/CoinUtils/src";
+    const COIN_CLP_SRC: &str = "vendor/Clp/src";
+
+    // Compile CoinUtils
+    let mut builder = make_builder();
+
+    builder
         .flag(&*format!("-I{}", COIN_UTILS_SRC))
         .file(format!("{}/CoinAlloc.cpp", COIN_UTILS_SRC))
         .file(format!("{}/CoinBuild.cpp", COIN_UTILS_SRC))
@@ -69,14 +101,11 @@ fn main() {
 
     // Compile CoinUtils
 
-    cc::Build::new()
-        .cpp(true)
-        .flag("-w")
+    let mut builder = make_builder();
+
+    builder
         .flag(&*format!("-I{}", COIN_UTILS_SRC))
         .flag(&*format!("-I{}", COIN_CLP_SRC))
-        .flag("-DNDEBUG")
-        .flag("-DHAVE_CFLOAT")
-        .flag("-DHAVE_CMATH")
         .file(format!("{}/ClpCholeskyBase.cpp", COIN_CLP_SRC))
         .file(format!("{}/ClpCholeskyDense.cpp", COIN_CLP_SRC))
         .file(format!("{}/ClpCholeskyPardiso.cpp", COIN_CLP_SRC))
@@ -132,7 +161,7 @@ fn main() {
         .file(format!("{}/ClpSimplexOther.cpp", COIN_CLP_SRC))
         .file(format!("{}/ClpSimplexPrimal.cpp", COIN_CLP_SRC))
         .file(format!("{}/ClpSolve.cpp", COIN_CLP_SRC))
-        .file(format!("{}/ClpSolver.cpp", COIN_CLP_SRC))
+        // .file(format!("{}/ClpSolver.cpp", COIN_CLP_SRC))
         // .file(format!("{}/CoinAbcBaseFactorization1.cpp", COIN_CLP_SRC))
         // .file(format!("{}/CoinAbcBaseFactorization2.cpp", COIN_CLP_SRC))
         // .file(format!("{}/CoinAbcBaseFactorization3.cpp", COIN_CLP_SRC))
