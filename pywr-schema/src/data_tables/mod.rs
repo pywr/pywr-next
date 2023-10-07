@@ -530,6 +530,11 @@ mod tests {
     fn test_dataframe_row_filter() {
         let dir = tempdir().unwrap();
 
+        // Temporary file name
+        let my_data_fn = dir.path().join("my-data.csv");
+        // Serialise using serde to do cross-platform character escaping correctly.
+        let my_data_fn = serde_json::to_string(&my_data_fn).unwrap();
+
         let table_def = format!(
             r#"
             {{
@@ -537,9 +542,9 @@ mod tests {
                 "type": "array",
                 "format": "csv",
                 "lookup": {{"row": 1}},
-                "url": "{}/my-data.csv"
+                "url": {}
             }}"#,
-            dir.as_ref().display()
+            my_data_fn
         );
 
         // Create the temporary data
