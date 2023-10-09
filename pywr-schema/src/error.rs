@@ -65,6 +65,8 @@ pub enum ConversionError {
     UnexpectedAttribute { attrs: Vec<String>, name: String },
     #[error("Can not convert a float constant to an index constant.")]
     FloatToIndex,
-    #[error("Attribute {attr:?} is not allowed on node {name:?}.")]
+    #[error("Attribute {attr:?} on node {name:?} is not allowed .")]
     ExtraNodeAttribute { attr: String, name: String },
+    #[error("Custom node of type {ty:?} on node {name:?} is not supported .")]
+    CustomNodeNotSupported { ty: String, name: String },
 }

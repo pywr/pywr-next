@@ -19,6 +19,7 @@ pub use crate::nodes::core::{
 pub use crate::nodes::delay::DelayNode;
 pub use crate::nodes::river::RiverNode;
 use crate::parameters::DynamicFloatValue;
+use crate::PywrModel;
 pub use annual_virtual_storage::AnnualVirtualStorageNode;
 pub use loss_link::LossLinkNode;
 pub use monthly_virtual_storage::MonthlyVirtualStorageNode;
@@ -26,14 +27,13 @@ pub use piecewise_link::{PiecewiseLinkNode, PiecewiseLinkStep};
 pub use piecewise_storage::PiecewiseStorageNode;
 use pywr_core::metric::Metric;
 use pywr_v1_schema::nodes::{
-    CoreNode as CoreNodeV1, CustomNode as CustomNodeV1, Node as NodeV1, NodeMeta as NodeMetaV1,
-    NodePosition as NodePositionV1,
+    CoreNode as CoreNodeV1, Node as NodeV1, NodeMeta as NodeMetaV1, NodePosition as NodePositionV1,
 };
 pub use river_gauge::RiverGaugeNode;
 pub use river_split_with_gauge::RiverSplitWithGaugeNode;
-use serde_json::Value;
 use std::collections::HashMap;
 use std::path::Path;
+use strum_macros::{Display, EnumString, EnumVariantNames, IntoStaticStr};
 pub use virtual_storage::VirtualStorageNode;
 pub use water_treatment_works::WaterTreatmentWorks;
 
@@ -54,7 +54,7 @@ impl From<NodePositionV1> for NodePosition {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Default)]
 pub struct NodeMeta {
     pub name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -73,29 +73,158 @@ impl From<NodeMetaV1> for NodeMeta {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
-pub struct CustomNode {
-    #[serde(rename = "type")]
-    pub ty: String,
-    #[serde(flatten)]
-    pub meta: NodeMeta,
-    #[serde(flatten)]
-    pub attributes: HashMap<String, Value>,
+#[derive(Display, IntoStaticStr, EnumString, EnumVariantNames, Copy, Clone)]
+pub enum NodeType {
+    Input,
+    Link,
+    Output,
+    Storage,
+    Catchment,
+    RiverGauge,
+    LossLink,
+    Delay,
+    PiecewiseLink,
+    PiecewiseStorage,
+    River,
+    RiverSplitWithGauge,
+    WaterTreatmentWorks,
+    Aggregated,
+    AggregatedStorage,
+    VirtualStorage,
+    AnnualVirtualStorage,
+    MonthlyVirtualStorage,
 }
 
-impl From<CustomNodeV1> for CustomNode {
-    fn from(v1: CustomNodeV1) -> Self {
+pub struct NodeBuilder {
+    ty: NodeType,
+    position: Option<NodePosition>,
+    name: Option<String>,
+}
+
+/// A builder for creating a new node.
+impl NodeBuilder {
+    pub fn new(ty: NodeType) -> Self {
         Self {
-            ty: v1.ty,
-            meta: v1.meta.into(),
-            attributes: v1.attributes,
+            ty,
+            position: None,
+            name: None,
+        }
+    }
+
+    /// Define the position of the node.
+    pub fn position(mut self, position: NodePosition) -> Self {
+        self.position = Some(position);
+        self
+    }
+
+    /// Define the name of the node.
+    pub fn name(mut self, name: String) -> Self {
+        self.name = Some(name);
+        self
+    }
+
+    /// Create the next default name without duplicating an existing name in the model.
+    pub fn next_default_name_for_model(mut self, model: &PywrModel) -> Self {
+        let mut num = 1;
+        loop {
+            let name = format!("{}-{}", self.ty.to_string(), num);
+            if model.get_node_by_name(&name).is_none() {
+                // No node with this name found!
+                self.name = Some(name);
+                break;
+            } else {
+                num += 1;
+            }
+        }
+        self
+    }
+
+    /// Build the [`Node`].
+    pub fn build(self) -> Node {
+        let name = self.name.unwrap_or_else(|| self.ty.to_string());
+        let meta = NodeMeta {
+            name,
+            position: self.position,
+            ..Default::default()
+        };
+
+        match self.ty {
+            NodeType::Input => Node::Input(InputNode {
+                meta,
+                ..Default::default()
+            }),
+            NodeType::Link => Node::Link(LinkNode {
+                meta,
+                ..Default::default()
+            }),
+            NodeType::Output => Node::Output(OutputNode {
+                meta,
+                ..Default::default()
+            }),
+            NodeType::Storage => Node::Storage(StorageNode {
+                meta,
+                ..Default::default()
+            }),
+            NodeType::Catchment => Node::Catchment(CatchmentNode {
+                meta,
+                ..Default::default()
+            }),
+            NodeType::RiverGauge => Node::RiverGauge(RiverGaugeNode {
+                meta,
+                ..Default::default()
+            }),
+            NodeType::LossLink => Node::LossLink(LossLinkNode {
+                meta,
+                ..Default::default()
+            }),
+            NodeType::Delay => Node::Delay(DelayNode {
+                meta,
+                ..Default::default()
+            }),
+            NodeType::PiecewiseLink => Node::PiecewiseLink(PiecewiseLinkNode {
+                meta,
+                ..Default::default()
+            }),
+            NodeType::PiecewiseStorage => Node::PiecewiseStorage(PiecewiseStorageNode {
+                meta,
+                ..Default::default()
+            }),
+            NodeType::River => Node::River(RiverNode { meta }),
+            NodeType::RiverSplitWithGauge => Node::RiverSplitWithGauge(RiverSplitWithGaugeNode {
+                meta,
+                ..Default::default()
+            }),
+            NodeType::WaterTreatmentWorks => Node::WaterTreatmentWorks(WaterTreatmentWorks {
+                meta,
+                ..Default::default()
+            }),
+            NodeType::Aggregated => Node::Aggregated(AggregatedNode {
+                meta,
+                ..Default::default()
+            }),
+            NodeType::AggregatedStorage => Node::AggregatedStorage(AggregatedStorageNode {
+                meta,
+                ..Default::default()
+            }),
+            NodeType::VirtualStorage => Node::VirtualStorage(VirtualStorageNode {
+                meta,
+                ..Default::default()
+            }),
+            NodeType::AnnualVirtualStorage => Node::AnnualVirtualStorage(AnnualVirtualStorageNode {
+                meta,
+                ..Default::default()
+            }),
+            NodeType::MonthlyVirtualStorage => Node::MonthlyVirtualStorage(MonthlyVirtualStorageNode {
+                meta,
+                ..Default::default()
+            }),
         }
     }
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Clone)]
 #[serde(tag = "type")]
-pub enum CoreNode {
+pub enum Node {
     Input(InputNode),
     Link(LinkNode),
     Output(OutputNode),
@@ -116,7 +245,7 @@ pub enum CoreNode {
     MonthlyVirtualStorage(MonthlyVirtualStorageNode),
 }
 
-impl CoreNode {
+impl Node {
     pub fn name(&self) -> &str {
         self.meta().name.as_str()
     }
@@ -125,58 +254,58 @@ impl CoreNode {
         self.meta().position.as_ref()
     }
 
-    pub fn node_type(&self) -> &str {
+    pub fn node_type(&self) -> NodeType {
         match self {
-            CoreNode::Input(_) => "Input",
-            CoreNode::Link(_) => "Link",
-            CoreNode::Output(_) => "Output",
-            CoreNode::Storage(_) => "Storage",
-            CoreNode::Catchment(_) => "Catchment",
-            CoreNode::RiverGauge(_) => "RiverGauge",
-            CoreNode::LossLink(_) => "LossLink",
-            CoreNode::River(_) => "River",
-            CoreNode::RiverSplitWithGauge(_) => "River",
-            CoreNode::WaterTreatmentWorks(_) => "WaterTreatmentWorks",
-            CoreNode::Aggregated(_) => "Aggregated",
-            CoreNode::AggregatedStorage(_) => "AggregatedStorage",
-            CoreNode::VirtualStorage(_) => "VirtualStorage",
-            CoreNode::AnnualVirtualStorage(_) => "AnnualVirtualStorage",
-            CoreNode::PiecewiseLink(_) => "PiecewiseLink",
-            CoreNode::PiecewiseStorage(_) => "PiecewiseStorage",
-            CoreNode::Delay(_) => "Delay",
-            CoreNode::MonthlyVirtualStorage(_) => "MonthlyVirtualStorage",
+            Node::Input(_) => NodeType::Input,
+            Node::Link(_) => NodeType::Link,
+            Node::Output(_) => NodeType::Output,
+            Node::Storage(_) => NodeType::Storage,
+            Node::Catchment(_) => NodeType::Catchment,
+            Node::RiverGauge(_) => NodeType::RiverGauge,
+            Node::LossLink(_) => NodeType::LossLink,
+            Node::River(_) => NodeType::River,
+            Node::RiverSplitWithGauge(_) => NodeType::RiverSplitWithGauge,
+            Node::WaterTreatmentWorks(_) => NodeType::WaterTreatmentWorks,
+            Node::Aggregated(_) => NodeType::Aggregated,
+            Node::AggregatedStorage(_) => NodeType::AggregatedStorage,
+            Node::VirtualStorage(_) => NodeType::VirtualStorage,
+            Node::AnnualVirtualStorage(_) => NodeType::AnnualVirtualStorage,
+            Node::PiecewiseLink(_) => NodeType::PiecewiseLink,
+            Node::PiecewiseStorage(_) => NodeType::PiecewiseStorage,
+            Node::Delay(_) => NodeType::Delay,
+            Node::MonthlyVirtualStorage(_) => NodeType::MonthlyVirtualStorage,
         }
     }
 
     pub fn meta(&self) -> &NodeMeta {
         match self {
-            CoreNode::Input(n) => &n.meta,
-            CoreNode::Link(n) => &n.meta,
-            CoreNode::Output(n) => &n.meta,
-            CoreNode::Storage(n) => &n.meta,
-            CoreNode::Catchment(n) => &n.meta,
-            CoreNode::RiverGauge(n) => &n.meta,
-            CoreNode::LossLink(n) => &n.meta,
-            CoreNode::River(n) => &n.meta,
-            CoreNode::RiverSplitWithGauge(n) => &n.meta,
-            CoreNode::WaterTreatmentWorks(n) => &n.meta,
-            CoreNode::Aggregated(n) => &n.meta,
-            CoreNode::AggregatedStorage(n) => &n.meta,
-            CoreNode::VirtualStorage(n) => &n.meta,
-            CoreNode::AnnualVirtualStorage(n) => &n.meta,
-            CoreNode::PiecewiseLink(n) => &n.meta,
-            CoreNode::PiecewiseStorage(n) => &n.meta,
-            CoreNode::Delay(n) => &n.meta,
-            CoreNode::MonthlyVirtualStorage(n) => &n.meta,
+            Node::Input(n) => &n.meta,
+            Node::Link(n) => &n.meta,
+            Node::Output(n) => &n.meta,
+            Node::Storage(n) => &n.meta,
+            Node::Catchment(n) => &n.meta,
+            Node::RiverGauge(n) => &n.meta,
+            Node::LossLink(n) => &n.meta,
+            Node::River(n) => &n.meta,
+            Node::RiverSplitWithGauge(n) => &n.meta,
+            Node::WaterTreatmentWorks(n) => &n.meta,
+            Node::Aggregated(n) => &n.meta,
+            Node::AggregatedStorage(n) => &n.meta,
+            Node::VirtualStorage(n) => &n.meta,
+            Node::AnnualVirtualStorage(n) => &n.meta,
+            Node::PiecewiseLink(n) => &n.meta,
+            Node::PiecewiseStorage(n) => &n.meta,
+            Node::Delay(n) => &n.meta,
+            Node::MonthlyVirtualStorage(n) => &n.meta,
         }
     }
 
     pub fn parameters(&self) -> HashMap<&str, &DynamicFloatValue> {
         match self {
-            CoreNode::Input(n) => n.parameters(),
-            CoreNode::Link(n) => n.parameters(),
-            CoreNode::Output(n) => n.parameters(),
-            CoreNode::Storage(n) => n.parameters(),
+            Node::Input(n) => n.parameters(),
+            Node::Link(n) => n.parameters(),
+            Node::Output(n) => n.parameters(),
+            Node::Storage(n) => n.parameters(),
             _ => HashMap::new(), // TODO complete
         }
     }
@@ -188,24 +317,24 @@ impl CoreNode {
         data_path: Option<&Path>,
     ) -> Result<(), SchemaError> {
         match self {
-            CoreNode::Input(n) => n.add_to_model(model),
-            CoreNode::Link(n) => n.add_to_model(model),
-            CoreNode::Output(n) => n.add_to_model(model),
-            CoreNode::Storage(n) => n.add_to_model(model, tables, data_path),
-            CoreNode::Catchment(n) => n.add_to_model(model),
-            CoreNode::RiverGauge(n) => n.add_to_model(model),
-            CoreNode::LossLink(n) => n.add_to_model(model),
-            CoreNode::River(n) => n.add_to_model(model),
-            CoreNode::RiverSplitWithGauge(n) => n.add_to_model(model),
-            CoreNode::WaterTreatmentWorks(n) => n.add_to_model(model),
-            CoreNode::Aggregated(n) => n.add_to_model(model),
-            CoreNode::AggregatedStorage(n) => n.add_to_model(model),
-            CoreNode::VirtualStorage(n) => n.add_to_model(model, tables, data_path),
-            CoreNode::AnnualVirtualStorage(n) => n.add_to_model(model, tables, data_path),
-            CoreNode::PiecewiseLink(n) => n.add_to_model(model),
-            CoreNode::PiecewiseStorage(n) => n.add_to_model(model, tables, data_path),
-            CoreNode::Delay(n) => n.add_to_model(model),
-            CoreNode::MonthlyVirtualStorage(n) => n.add_to_model(model, tables, data_path),
+            Node::Input(n) => n.add_to_model(model),
+            Node::Link(n) => n.add_to_model(model),
+            Node::Output(n) => n.add_to_model(model),
+            Node::Storage(n) => n.add_to_model(model, tables, data_path),
+            Node::Catchment(n) => n.add_to_model(model),
+            Node::RiverGauge(n) => n.add_to_model(model),
+            Node::LossLink(n) => n.add_to_model(model),
+            Node::River(n) => n.add_to_model(model),
+            Node::RiverSplitWithGauge(n) => n.add_to_model(model),
+            Node::WaterTreatmentWorks(n) => n.add_to_model(model),
+            Node::Aggregated(n) => n.add_to_model(model),
+            Node::AggregatedStorage(n) => n.add_to_model(model),
+            Node::VirtualStorage(n) => n.add_to_model(model, tables, data_path),
+            Node::AnnualVirtualStorage(n) => n.add_to_model(model, tables, data_path),
+            Node::PiecewiseLink(n) => n.add_to_model(model),
+            Node::PiecewiseStorage(n) => n.add_to_model(model, tables, data_path),
+            Node::Delay(n) => n.add_to_model(model),
+            Node::MonthlyVirtualStorage(n) => n.add_to_model(model, tables, data_path),
         }
     }
 
@@ -216,179 +345,96 @@ impl CoreNode {
         data_path: Option<&Path>,
     ) -> Result<(), SchemaError> {
         match self {
-            CoreNode::Input(n) => n.set_constraints(model, tables, data_path),
-            CoreNode::Link(n) => n.set_constraints(model, tables, data_path),
-            CoreNode::Output(n) => n.set_constraints(model, tables, data_path),
-            CoreNode::Storage(n) => n.set_constraints(model, tables, data_path),
-            CoreNode::Catchment(n) => n.set_constraints(model, tables, data_path),
-            CoreNode::RiverGauge(n) => n.set_constraints(model, tables, data_path),
-            CoreNode::LossLink(n) => n.set_constraints(model, tables, data_path),
-            CoreNode::River(_) => Ok(()), // No constraints on river node
-            CoreNode::RiverSplitWithGauge(n) => n.set_constraints(model, tables, data_path),
-            CoreNode::WaterTreatmentWorks(n) => n.set_constraints(model, tables, data_path),
-            CoreNode::Aggregated(n) => n.set_constraints(model, tables, data_path),
-            CoreNode::AggregatedStorage(_) => Ok(()), // No constraints on aggregated storage nodes.
-            CoreNode::VirtualStorage(_) => Ok(()),    // TODO
-            CoreNode::AnnualVirtualStorage(_) => Ok(()), // TODO
-            CoreNode::PiecewiseLink(n) => n.set_constraints(model, tables, data_path),
-            CoreNode::PiecewiseStorage(n) => n.set_constraints(model, tables, data_path),
-            CoreNode::Delay(n) => n.set_constraints(model, tables),
-            CoreNode::MonthlyVirtualStorage(_) => Ok(()), // TODO
+            Node::Input(n) => n.set_constraints(model, tables, data_path),
+            Node::Link(n) => n.set_constraints(model, tables, data_path),
+            Node::Output(n) => n.set_constraints(model, tables, data_path),
+            Node::Storage(n) => n.set_constraints(model, tables, data_path),
+            Node::Catchment(n) => n.set_constraints(model, tables, data_path),
+            Node::RiverGauge(n) => n.set_constraints(model, tables, data_path),
+            Node::LossLink(n) => n.set_constraints(model, tables, data_path),
+            Node::River(_) => Ok(()), // No constraints on river node
+            Node::RiverSplitWithGauge(n) => n.set_constraints(model, tables, data_path),
+            Node::WaterTreatmentWorks(n) => n.set_constraints(model, tables, data_path),
+            Node::Aggregated(n) => n.set_constraints(model, tables, data_path),
+            Node::AggregatedStorage(_) => Ok(()), // No constraints on aggregated storage nodes.
+            Node::VirtualStorage(_) => Ok(()),    // TODO
+            Node::AnnualVirtualStorage(_) => Ok(()), // TODO
+            Node::PiecewiseLink(n) => n.set_constraints(model, tables, data_path),
+            Node::PiecewiseStorage(n) => n.set_constraints(model, tables, data_path),
+            Node::Delay(n) => n.set_constraints(model, tables),
+            Node::MonthlyVirtualStorage(_) => Ok(()), // TODO
         }
     }
 
     pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
         match self {
-            CoreNode::Input(n) => n.input_connectors(),
-            CoreNode::Link(n) => n.input_connectors(),
-            CoreNode::Output(n) => n.input_connectors(),
-            CoreNode::Storage(n) => n.input_connectors(),
-            CoreNode::Catchment(n) => n.input_connectors(),
-            CoreNode::RiverGauge(n) => n.input_connectors(),
-            CoreNode::LossLink(n) => n.input_connectors(),
-            CoreNode::River(n) => n.input_connectors(),
-            CoreNode::RiverSplitWithGauge(n) => n.input_connectors(),
-            CoreNode::WaterTreatmentWorks(n) => n.input_connectors(),
+            Node::Input(n) => n.input_connectors(),
+            Node::Link(n) => n.input_connectors(),
+            Node::Output(n) => n.input_connectors(),
+            Node::Storage(n) => n.input_connectors(),
+            Node::Catchment(n) => n.input_connectors(),
+            Node::RiverGauge(n) => n.input_connectors(),
+            Node::LossLink(n) => n.input_connectors(),
+            Node::River(n) => n.input_connectors(),
+            Node::RiverSplitWithGauge(n) => n.input_connectors(),
+            Node::WaterTreatmentWorks(n) => n.input_connectors(),
             // TODO input_connectors should not exist for these aggregated & virtual nodes
-            CoreNode::Aggregated(n) => n.input_connectors(),
-            CoreNode::AggregatedStorage(n) => n.input_connectors(),
-            CoreNode::VirtualStorage(n) => n.input_connectors(),
-            CoreNode::AnnualVirtualStorage(n) => n.input_connectors(),
-            CoreNode::MonthlyVirtualStorage(n) => n.input_connectors(),
-            CoreNode::PiecewiseLink(n) => n.input_connectors(),
-            CoreNode::PiecewiseStorage(n) => n.input_connectors(),
-            CoreNode::Delay(n) => n.input_connectors(),
+            Node::Aggregated(n) => n.input_connectors(),
+            Node::AggregatedStorage(n) => n.input_connectors(),
+            Node::VirtualStorage(n) => n.input_connectors(),
+            Node::AnnualVirtualStorage(n) => n.input_connectors(),
+            Node::MonthlyVirtualStorage(n) => n.input_connectors(),
+            Node::PiecewiseLink(n) => n.input_connectors(),
+            Node::PiecewiseStorage(n) => n.input_connectors(),
+            Node::Delay(n) => n.input_connectors(),
         }
     }
 
     pub fn output_connectors(&self, slot: Option<&str>) -> Vec<(&str, Option<String>)> {
         match self {
-            CoreNode::Input(n) => n.output_connectors(),
-            CoreNode::Link(n) => n.output_connectors(),
-            CoreNode::Output(n) => n.output_connectors(),
-            CoreNode::Storage(n) => n.output_connectors(),
-            CoreNode::Catchment(n) => n.output_connectors(),
-            CoreNode::RiverGauge(n) => n.output_connectors(),
-            CoreNode::LossLink(n) => n.output_connectors(),
-            CoreNode::River(n) => n.output_connectors(),
-            CoreNode::RiverSplitWithGauge(n) => n.output_connectors(slot),
-            CoreNode::WaterTreatmentWorks(n) => n.output_connectors(),
+            Node::Input(n) => n.output_connectors(),
+            Node::Link(n) => n.output_connectors(),
+            Node::Output(n) => n.output_connectors(),
+            Node::Storage(n) => n.output_connectors(),
+            Node::Catchment(n) => n.output_connectors(),
+            Node::RiverGauge(n) => n.output_connectors(),
+            Node::LossLink(n) => n.output_connectors(),
+            Node::River(n) => n.output_connectors(),
+            Node::RiverSplitWithGauge(n) => n.output_connectors(slot),
+            Node::WaterTreatmentWorks(n) => n.output_connectors(),
             // TODO output_connectors should not exist for these aggregated & virtual nodes
-            CoreNode::Aggregated(n) => n.output_connectors(),
-            CoreNode::AggregatedStorage(n) => n.output_connectors(),
-            CoreNode::VirtualStorage(n) => n.output_connectors(),
-            CoreNode::AnnualVirtualStorage(n) => n.output_connectors(),
-            CoreNode::MonthlyVirtualStorage(n) => n.output_connectors(),
-            CoreNode::PiecewiseLink(n) => n.output_connectors(),
-            CoreNode::PiecewiseStorage(n) => n.output_connectors(),
-            CoreNode::Delay(n) => n.output_connectors(),
+            Node::Aggregated(n) => n.output_connectors(),
+            Node::AggregatedStorage(n) => n.output_connectors(),
+            Node::VirtualStorage(n) => n.output_connectors(),
+            Node::AnnualVirtualStorage(n) => n.output_connectors(),
+            Node::MonthlyVirtualStorage(n) => n.output_connectors(),
+            Node::PiecewiseLink(n) => n.output_connectors(),
+            Node::PiecewiseStorage(n) => n.output_connectors(),
+            Node::Delay(n) => n.output_connectors(),
         }
     }
 
     /// Returns the default metric for this node.
     pub fn default_metric(&self, model: &pywr_core::model::Model) -> Result<Metric, SchemaError> {
         match self {
-            CoreNode::Input(n) => n.default_metric(model),
-            CoreNode::Link(n) => n.default_metric(model),
-            CoreNode::Output(n) => n.default_metric(model),
-            CoreNode::Storage(n) => n.default_metric(model),
-            CoreNode::Catchment(n) => n.default_metric(model),
-            CoreNode::RiverGauge(n) => n.default_metric(model),
-            CoreNode::LossLink(n) => n.default_metric(model),
-            CoreNode::River(n) => n.default_metric(model),
-            CoreNode::RiverSplitWithGauge(n) => n.default_metric(model),
-            CoreNode::WaterTreatmentWorks(n) => n.default_metric(model),
-            CoreNode::Aggregated(n) => n.default_metric(model),
-            CoreNode::AggregatedStorage(n) => n.default_metric(model),
-            CoreNode::VirtualStorage(n) => n.default_metric(model),
-            CoreNode::AnnualVirtualStorage(n) => n.default_metric(model),
-            CoreNode::MonthlyVirtualStorage(n) => n.default_metric(model),
-            CoreNode::PiecewiseLink(n) => n.default_metric(model),
-            CoreNode::Delay(n) => n.default_metric(model),
-            CoreNode::PiecewiseStorage(n) => n.default_metric(model),
-        }
-    }
-}
-
-#[derive(serde::Deserialize, serde::Serialize, Clone)]
-#[serde(untagged)]
-pub enum Node {
-    Core(CoreNode),
-    Custom(CustomNode),
-}
-
-impl Node {
-    pub fn name(&self) -> &str {
-        match self {
-            Node::Core(n) => n.name(),
-            Node::Custom(n) => n.meta.name.as_str(),
-        }
-    }
-
-    pub fn position(&self) -> Option<&NodePosition> {
-        match self {
-            Node::Core(n) => n.position(),
-            Node::Custom(n) => n.meta.position.as_ref(),
-        }
-    }
-
-    pub fn node_type(&self) -> &str {
-        match self {
-            Node::Core(n) => n.node_type(),
-            Node::Custom(n) => n.ty.as_str(),
-        }
-    }
-
-    pub fn parameters(&self) -> HashMap<&str, &DynamicFloatValue> {
-        match self {
-            Node::Core(n) => n.parameters(),
-            Node::Custom(_) => HashMap::new(),
-        }
-    }
-
-    pub fn add_to_model(
-        &self,
-        model: &mut pywr_core::model::Model,
-        tables: &LoadedTableCollection,
-        data_path: Option<&Path>,
-    ) -> Result<(), SchemaError> {
-        match self {
-            Node::Core(n) => n.add_to_model(model, tables, data_path),
-            Node::Custom(n) => panic!("TODO custom nodes not yet supported: {}", n.meta.name.as_str()),
-        }
-    }
-
-    pub fn set_constraints(
-        &self,
-        model: &mut pywr_core::model::Model,
-        tables: &LoadedTableCollection,
-        data_path: Option<&Path>,
-    ) -> Result<(), SchemaError> {
-        match self {
-            Node::Core(n) => n.set_constraints(model, tables, data_path),
-            Node::Custom(n) => panic!("TODO custom nodes not yet supported: {}", n.meta.name.as_str()),
-        }
-    }
-
-    pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
-        match self {
-            Node::Core(n) => n.input_connectors(),
-            Node::Custom(n) => panic!("TODO custom nodes not yet supported: {}", n.meta.name.as_str()),
-        }
-    }
-
-    pub fn output_connectors(&self, slot: Option<&str>) -> Vec<(&str, Option<String>)> {
-        match self {
-            Node::Core(n) => n.output_connectors(slot),
-            Node::Custom(n) => panic!("TODO custom nodes not yet supported: {}", n.meta.name.as_str()),
-        }
-    }
-
-    /// Returns the default metric for this node.
-    pub fn default_metric(&self, model: &pywr_core::model::Model) -> Result<Metric, SchemaError> {
-        match self {
-            Node::Core(n) => n.default_metric(model),
-            Node::Custom(n) => panic!("TODO custom nodes not yet supported: {}", n.meta.name.as_str()),
+            Node::Input(n) => n.default_metric(model),
+            Node::Link(n) => n.default_metric(model),
+            Node::Output(n) => n.default_metric(model),
+            Node::Storage(n) => n.default_metric(model),
+            Node::Catchment(n) => n.default_metric(model),
+            Node::RiverGauge(n) => n.default_metric(model),
+            Node::LossLink(n) => n.default_metric(model),
+            Node::River(n) => n.default_metric(model),
+            Node::RiverSplitWithGauge(n) => n.default_metric(model),
+            Node::WaterTreatmentWorks(n) => n.default_metric(model),
+            Node::Aggregated(n) => n.default_metric(model),
+            Node::AggregatedStorage(n) => n.default_metric(model),
+            Node::VirtualStorage(n) => n.default_metric(model),
+            Node::AnnualVirtualStorage(n) => n.default_metric(model),
+            Node::MonthlyVirtualStorage(n) => n.default_metric(model),
+            Node::PiecewiseLink(n) => n.default_metric(model),
+            Node::Delay(n) => n.default_metric(model),
+            Node::PiecewiseStorage(n) => n.default_metric(model),
         }
     }
 }
@@ -399,24 +445,18 @@ impl TryFrom<NodeV1> for Node {
     fn try_from(v1: NodeV1) -> Result<Self, Self::Error> {
         match v1 {
             NodeV1::Core(n) => {
-                let nv2: CoreNode = n.try_into()?;
-                Ok(Self::Core(nv2))
+                let nv2: Node = n.try_into()?;
+                Ok(nv2)
             }
-            NodeV1::Custom(n) => {
-                // Custom nodes are left as is (and therefore may not work).
-                let nv2 = CustomNode {
-                    meta: n.meta.into(),
-                    ty: n.ty,
-                    attributes: n.attributes,
-                };
-
-                Ok(Self::Custom(nv2))
-            }
+            NodeV1::Custom(n) => Err(ConversionError::CustomNodeNotSupported {
+                name: n.meta.name,
+                ty: n.ty,
+            }),
         }
     }
 }
 
-impl TryFrom<Box<CoreNodeV1>> for CoreNode {
+impl TryFrom<Box<CoreNodeV1>> for Node {
     type Error = ConversionError;
 
     fn try_from(v1: Box<CoreNodeV1>) -> Result<Self, Self::Error> {

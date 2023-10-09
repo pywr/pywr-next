@@ -5,7 +5,7 @@ use pywr_core::metric::Metric;
 use pywr_v1_schema::nodes::LinkNode as LinkNodeV1;
 use std::collections::HashMap;
 
-#[derive(serde::Deserialize, serde::Serialize, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Default)]
 pub struct RiverNode {
     #[serde(flatten)]
     pub meta: NodeMeta,

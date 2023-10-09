@@ -18,6 +18,8 @@ categories = ["science", "simulation"]
 svgbobdoc = { version = "0.3.0", features = ["enable"]  }
 polars = { version = "0.33.2", features = ["lazy", "rows", "ndarray"] }
 pyo3-polars = "0.7.0"
+strum = "0.25"
+strum_macros = "0.25"
 
 hdf5 = {  workspace = true }
 csv = {  workspace = true }

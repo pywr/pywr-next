@@ -12,7 +12,7 @@ use pywr_v1_schema::nodes::{
 use std::collections::HashMap;
 use std::path::Path;
 
-#[derive(serde::Deserialize, serde::Serialize, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Default)]
 pub struct InputNode {
     #[serde(flatten)]
     pub meta: NodeMeta,
@@ -110,7 +110,7 @@ impl TryFrom<InputNodeV1> for InputNode {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Default)]
 pub struct LinkNode {
     #[serde(flatten)]
     pub meta: NodeMeta,
@@ -207,7 +207,7 @@ impl TryFrom<LinkNodeV1> for LinkNode {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Default)]
 pub struct OutputNode {
     #[serde(flatten)]
     pub meta: NodeMeta,
@@ -305,7 +305,7 @@ impl TryFrom<OutputNodeV1> for OutputNode {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Default)]
 pub struct StorageNode {
     #[serde(flatten)]
     pub meta: NodeMeta,
@@ -483,7 +483,7 @@ impl TryFrom<ReservoirNodeV1> for StorageNode {
 /// ```
 ///
 )]
-#[derive(serde::Deserialize, serde::Serialize, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Default)]
 pub struct CatchmentNode {
     #[serde(flatten)]
     pub meta: NodeMeta,
@@ -559,7 +559,7 @@ pub enum Factors {
     Ratio { factors: Vec<DynamicFloatValue> },
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Default)]
 pub struct AggregatedNode {
     #[serde(flatten)]
     pub meta: NodeMeta,
@@ -676,7 +676,7 @@ impl TryFrom<AggregatedNodeV1> for AggregatedNode {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Default)]
 pub struct AggregatedStorageNode {
     #[serde(flatten)]
     pub meta: NodeMeta,
