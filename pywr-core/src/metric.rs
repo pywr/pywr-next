@@ -1,7 +1,7 @@
 use crate::aggregated_node::AggregatedNodeIndex;
 use crate::aggregated_storage_node::AggregatedStorageNodeIndex;
 use crate::edge::EdgeIndex;
-use crate::model::Model;
+use crate::network::Network;
 use crate::node::NodeIndex;
 use crate::parameters::{MultiValueParameterIndex, ParameterIndex};
 use crate::state::State;
@@ -52,7 +52,7 @@ pub enum Metric {
 }
 
 impl Metric {
-    pub fn get_value(&self, model: &Model, state: &State) -> Result<f64, PywrError> {
+    pub fn get_value(&self, model: &Network, state: &State) -> Result<f64, PywrError> {
         match self {
             Metric::NodeInFlow(idx) => Ok(state.get_network_state().get_node_in_flow(idx)?),
             Metric::NodeOutFlow(idx) => Ok(state.get_network_state().get_node_out_flow(idx)?),

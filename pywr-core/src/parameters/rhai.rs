@@ -1,6 +1,6 @@
 use super::{IndexValue, Parameter, ParameterMeta, PywrError, Timestep};
 use crate::metric::Metric;
-use crate::model::Model;
+use crate::network::Network;
 use crate::parameters::downcast_internal_state;
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
@@ -84,7 +84,7 @@ impl Parameter for RhaiParameter {
         &self,
         timestep: &Timestep,
         scenario_index: &ScenarioIndex,
-        model: &Model,
+        model: &Network,
         state: &State,
         internal_state: &mut Option<Box<dyn Any + Send>>,
     ) -> Result<f64, PywrError> {
@@ -119,6 +119,7 @@ impl Parameter for RhaiParameter {
 mod tests {
     use super::*;
     use crate::test_utils::default_timestepper;
+    use crate::timestep::TimeDomain;
     use float_cmp::assert_approx_eq;
 
     #[test]
@@ -148,7 +149,8 @@ mod tests {
         );
 
         let timestepper = default_timestepper();
-        let timesteps = timestepper.timesteps();
+        let time: TimeDomain = timestepper.into();
+        let timesteps = time.timesteps();
 
         let scenario_indices = [
             ScenarioIndex {
@@ -168,9 +170,9 @@ mod tests {
             .map(|si| param.setup(&timesteps, si).expect("Could not setup the PyParameter"))
             .collect();
 
-        let model = Model::default();
+        let model = Network::default();
 
-        for ts in &timesteps {
+        for ts in timesteps {
             for (si, internal) in scenario_indices.iter().zip(internal_p_states.iter_mut()) {
                 let value = param.compute(ts, si, &model, &state, internal).unwrap();
 

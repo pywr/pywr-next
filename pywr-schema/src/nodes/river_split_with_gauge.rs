@@ -4,6 +4,7 @@ use crate::nodes::NodeMeta;
 use crate::parameters::{DynamicFloatValue, TryIntoV2Parameter};
 use pywr_core::aggregated_node::Factors;
 use pywr_core::metric::Metric;
+use pywr_core::models::ModelDomain;
 use pywr_core::node::NodeIndex;
 use pywr_v1_schema::nodes::RiverSplitWithGaugeNode as RiverSplitWithGaugeNodeV1;
 use std::path::Path;
@@ -55,17 +56,17 @@ impl RiverSplitWithGaugeNode {
         Some(format!("split-agg-{i}"))
     }
 
-    pub fn add_to_model(&self, model: &mut pywr_core::model::Model) -> Result<(), SchemaError> {
+    pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
         // TODO do this properly
-        model.add_link_node(self.meta.name.as_str(), Self::mrf_sub_name())?;
-        let bypass_idx = model.add_link_node(self.meta.name.as_str(), Self::bypass_sub_name())?;
+        network.add_link_node(self.meta.name.as_str(), Self::mrf_sub_name())?;
+        let bypass_idx = network.add_link_node(self.meta.name.as_str(), Self::bypass_sub_name())?;
 
         for (i, _) in self.splits.iter().enumerate() {
             // Each split has a link node and an aggregated node to enforce the factors
-            let split_idx = model.add_link_node(self.meta.name.as_str(), Self::split_sub_name(i).as_deref())?;
+            let split_idx = network.add_link_node(self.meta.name.as_str(), Self::split_sub_name(i).as_deref())?;
 
             // The factors will be set during the `set_constraints` method
-            model.add_aggregated_node(
+            network.add_aggregated_node(
                 self.meta.name.as_str(),
                 Self::split_agg_sub_name(i).as_deref(),
                 &[bypass_idx, split_idx],
@@ -78,25 +79,26 @@ impl RiverSplitWithGaugeNode {
 
     pub fn set_constraints(
         &self,
-        model: &mut pywr_core::model::Model,
+        network: &mut pywr_core::network::Network,
+        domain: &ModelDomain,
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
     ) -> Result<(), SchemaError> {
         // MRF applies as a maximum on the MRF node.
         if let Some(cost) = &self.mrf_cost {
-            let value = cost.load(model, tables, data_path)?;
-            model.set_node_cost(self.meta.name.as_str(), Self::mrf_sub_name(), value.into())?;
+            let value = cost.load(network, domain, tables, data_path)?;
+            network.set_node_cost(self.meta.name.as_str(), Self::mrf_sub_name(), value.into())?;
         }
 
         if let Some(mrf) = &self.mrf {
-            let value = mrf.load(model, tables, data_path)?;
-            model.set_node_max_flow(self.meta.name.as_str(), Self::mrf_sub_name(), value.into())?;
+            let value = mrf.load(network, domain, tables, data_path)?;
+            network.set_node_max_flow(self.meta.name.as_str(), Self::mrf_sub_name(), value.into())?;
         }
 
         for (i, (factor, _)) in self.splits.iter().enumerate() {
             // Set the factors for each split
-            let factors = Factors::Proportion(vec![factor.load(model, tables, data_path)?]);
-            model.set_aggregated_node_factors(
+            let factors = Factors::Proportion(vec![factor.load(network, domain, tables, data_path)?]);
+            network.set_aggregated_node_factors(
                 self.meta.name.as_str(),
                 Self::split_agg_sub_name(i).as_deref(),
                 Some(factors),
@@ -142,17 +144,17 @@ impl RiverSplitWithGaugeNode {
         }
     }
 
-    pub fn default_metric(&self, model: &pywr_core::model::Model) -> Result<Metric, SchemaError> {
+    pub fn default_metric(&self, network: &pywr_core::network::Network) -> Result<Metric, SchemaError> {
         let mut indices = vec![
-            model.get_node_index_by_name(self.meta.name.as_str(), Self::mrf_sub_name())?,
-            model.get_node_index_by_name(self.meta.name.as_str(), Self::bypass_sub_name())?,
+            network.get_node_index_by_name(self.meta.name.as_str(), Self::mrf_sub_name())?,
+            network.get_node_index_by_name(self.meta.name.as_str(), Self::bypass_sub_name())?,
         ];
 
         let split_idx: Vec<NodeIndex> = self
             .splits
             .iter()
             .enumerate()
-            .map(|(i, _)| model.get_node_index_by_name(self.meta.name.as_str(), Self::split_sub_name(i).as_deref()))
+            .map(|(i, _)| network.get_node_index_by_name(self.meta.name.as_str(), Self::split_sub_name(i).as_deref()))
             .collect::<Result<_, _>>()?;
 
         indices.extend(split_idx.into_iter());
@@ -209,7 +211,6 @@ impl TryFrom<RiverSplitWithGaugeNodeV1> for RiverSplitWithGaugeNode {
 mod tests {
     use crate::model::PywrModel;
     use pywr_core::test_utils::run_all_solvers;
-    use pywr_core::timestep::Timestepper;
 
     fn model_str() -> &'static str {
         include_str!("../test_models/river_split_with_gauge1.json")
@@ -220,21 +221,22 @@ mod tests {
         let data = model_str();
         let schema: PywrModel = serde_json::from_str(data).unwrap();
 
-        assert_eq!(schema.nodes.len(), 4);
-        assert_eq!(schema.edges.len(), 3);
+        assert_eq!(schema.network.nodes.len(), 4);
+        assert_eq!(schema.network.edges.len(), 3);
     }
 
     #[test]
     fn test_model_run() {
         let data = model_str();
         let schema: PywrModel = serde_json::from_str(data).unwrap();
-        let (model, timestepper): (pywr_core::model::Model, Timestepper) = schema.build_model(None, None).unwrap();
+        let model = schema.build_model(None, None).unwrap();
 
-        assert_eq!(model.nodes.len(), 5);
-        assert_eq!(model.edges.len(), 6);
+        let network = model.network();
+        assert_eq!(network.nodes().len(), 5);
+        assert_eq!(network.edges().len(), 6);
 
         // Test all solvers
-        run_all_solvers(&model, &timestepper);
+        run_all_solvers(&model);
 
         // TODO assert the results!
     }

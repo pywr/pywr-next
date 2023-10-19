@@ -8,6 +8,7 @@ mod control_curves;
 mod delay;
 mod division;
 mod indexed_array;
+mod inter_model_transfer;
 mod max;
 mod min;
 mod negative;
@@ -24,7 +25,7 @@ use std::any::Any;
 // Re-imports
 pub use self::rhai::RhaiParameter;
 use super::PywrError;
-use crate::model::Model;
+use crate::network::Network;
 use crate::scenario::ScenarioIndex;
 use crate::state::{MultiValue, State};
 use crate::timestep::Timestep;
@@ -41,6 +42,7 @@ pub use control_curves::{
 pub use delay::DelayParameter;
 pub use division::DivisionParameter;
 pub use indexed_array::IndexedArrayParameter;
+pub use inter_model_transfer::InterModelTransfer;
 pub use max::MaxParameter;
 pub use min::MinParameter;
 pub use negative::NegativeParameter;
@@ -172,7 +174,7 @@ pub trait Parameter: Send + Sync {
         &self,
         timestep: &Timestep,
         scenario_index: &ScenarioIndex,
-        model: &Model,
+        model: &Network,
         state: &State,
         internal_state: &mut Option<Box<dyn Any + Send>>,
     ) -> Result<f64, PywrError>;
@@ -181,7 +183,7 @@ pub trait Parameter: Send + Sync {
         &self,
         #[allow(unused_variables)] timestep: &Timestep,
         #[allow(unused_variables)] scenario_index: &ScenarioIndex,
-        #[allow(unused_variables)] model: &Model,
+        #[allow(unused_variables)] model: &Network,
         #[allow(unused_variables)] state: &State,
         #[allow(unused_variables)] internal_state: &mut Option<Box<dyn Any + Send>>,
     ) -> Result<(), PywrError> {
@@ -230,7 +232,7 @@ pub trait IndexParameter: Send + Sync {
         &self,
         timestep: &Timestep,
         scenario_index: &ScenarioIndex,
-        model: &Model,
+        model: &Network,
         state: &State,
         internal_state: &mut Option<Box<dyn Any + Send>>,
     ) -> Result<usize, PywrError>;
@@ -239,7 +241,7 @@ pub trait IndexParameter: Send + Sync {
         &self,
         #[allow(unused_variables)] timestep: &Timestep,
         #[allow(unused_variables)] scenario_index: &ScenarioIndex,
-        #[allow(unused_variables)] model: &Model,
+        #[allow(unused_variables)] model: &Network,
         #[allow(unused_variables)] state: &State,
         #[allow(unused_variables)] internal_state: &mut Option<Box<dyn Any + Send>>,
     ) -> Result<(), PywrError> {
@@ -264,7 +266,7 @@ pub trait MultiValueParameter: Send + Sync {
         &self,
         timestep: &Timestep,
         scenario_index: &ScenarioIndex,
-        model: &Model,
+        model: &Network,
         state: &State,
         internal_state: &mut Option<Box<dyn Any + Send>>,
     ) -> Result<MultiValue, PywrError>;
@@ -273,7 +275,7 @@ pub trait MultiValueParameter: Send + Sync {
         &self,
         #[allow(unused_variables)] timestep: &Timestep,
         #[allow(unused_variables)] scenario_index: &ScenarioIndex,
-        #[allow(unused_variables)] model: &Model,
+        #[allow(unused_variables)] model: &Network,
         #[allow(unused_variables)] state: &State,
         #[allow(unused_variables)] internal_state: &mut Option<Box<dyn Any + Send>>,
     ) -> Result<(), PywrError> {

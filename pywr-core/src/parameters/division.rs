@@ -1,6 +1,6 @@
 use super::PywrError;
 use crate::metric::Metric;
-use crate::model::Model;
+use crate::network::Network;
 use crate::parameters::{Parameter, ParameterMeta};
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
@@ -35,7 +35,7 @@ impl Parameter for DivisionParameter {
         &self,
         _timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
-        model: &Model,
+        model: &Network,
         state: &State,
         _internal_state: &mut Option<Box<dyn Any + Send>>,
     ) -> Result<f64, PywrError> {

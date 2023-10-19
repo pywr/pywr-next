@@ -13,6 +13,8 @@ pub enum SchemaError {
     NodeNotFound(String),
     #[error("parameter {0} not found")]
     ParameterNotFound(String),
+    #[error("network {0} not found")]
+    NetworkNotFound(String),
     #[error("missing initial volume for node: {0}")]
     MissingInitialVolume(String),
     #[error("Pywr core error: {0}")]
@@ -39,6 +41,8 @@ pub enum SchemaError {
     CSVError(String),
     #[error("unexpected parameter type: {0}")]
     UnexpectedParameterType(String),
+    #[error("Scenario group with name {0} not found")]
+    ScenarioGroupNotFound(String),
 }
 
 impl From<SchemaError> for PyErr {

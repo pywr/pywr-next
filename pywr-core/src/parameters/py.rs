@@ -1,6 +1,6 @@
 use super::{IndexValue, Parameter, ParameterMeta, PywrError, Timestep};
 use crate::metric::Metric;
-use crate::model::Model;
+use crate::network::Network;
 use crate::parameters::{downcast_internal_state, MultiValueParameter};
 use crate::scenario::ScenarioIndex;
 use crate::state::{MultiValue, State};
@@ -47,7 +47,7 @@ impl PyParameter {
         }
     }
 
-    fn get_metrics_dict<'py>(&self, model: &Model, state: &State, py: Python<'py>) -> Result<&'py PyDict, PywrError> {
+    fn get_metrics_dict<'py>(&self, model: &Network, state: &State, py: Python<'py>) -> Result<&'py PyDict, PywrError> {
         let metric_values: Vec<(&str, f64)> = self
             .metrics
             .iter()
@@ -108,7 +108,7 @@ impl Parameter for PyParameter {
         &self,
         timestep: &Timestep,
         scenario_index: &ScenarioIndex,
-        model: &Model,
+        model: &Network,
         state: &State,
         internal_state: &mut Option<Box<dyn Any + Send>>,
     ) -> Result<f64, PywrError> {
@@ -140,7 +140,7 @@ impl Parameter for PyParameter {
         &self,
         timestep: &Timestep,
         scenario_index: &ScenarioIndex,
-        model: &Model,
+        model: &Network,
         state: &State,
         internal_state: &mut Option<Box<dyn Any + Send>>,
     ) -> Result<(), PywrError> {
@@ -210,7 +210,7 @@ impl MultiValueParameter for PyParameter {
         &self,
         timestep: &Timestep,
         scenario_index: &ScenarioIndex,
-        model: &Model,
+        model: &Network,
         state: &State,
         internal_state: &mut Option<Box<dyn Any + Send>>,
     ) -> Result<MultiValue, PywrError> {
@@ -272,7 +272,7 @@ impl MultiValueParameter for PyParameter {
         &self,
         timestep: &Timestep,
         scenario_index: &ScenarioIndex,
-        model: &Model,
+        model: &Network,
         state: &State,
         internal_state: &mut Option<Box<dyn Any + Send>>,
     ) -> Result<(), PywrError> {
@@ -309,6 +309,7 @@ impl MultiValueParameter for PyParameter {
 mod tests {
     use super::*;
     use crate::test_utils::default_timestepper;
+    use crate::timestep::TimeDomain;
     use float_cmp::assert_approx_eq;
 
     #[test]
@@ -342,7 +343,8 @@ class MyParameter:
 
         let param = PyParameter::new("my-parameter", class, args, kwargs, &HashMap::new(), &HashMap::new());
         let timestepper = default_timestepper();
-        let timesteps = timestepper.timesteps();
+        let time: TimeDomain = timestepper.into();
+        let timesteps = time.timesteps();
 
         let scenario_indices = [
             ScenarioIndex {
@@ -362,9 +364,9 @@ class MyParameter:
             .map(|si| Parameter::setup(&param, &timesteps, si).expect("Could not setup the PyParameter"))
             .collect();
 
-        let model = Model::default();
+        let model = Network::default();
 
-        for ts in &timesteps {
+        for ts in timesteps {
             for (si, internal) in scenario_indices.iter().zip(internal_p_states.iter_mut()) {
                 let value = Parameter::compute(&param, ts, si, &model, &state, internal).unwrap();
 
@@ -410,7 +412,8 @@ class MyParameter:
 
         let param = PyParameter::new("my-parameter", class, args, kwargs, &HashMap::new(), &HashMap::new());
         let timestepper = default_timestepper();
-        let timesteps = timestepper.timesteps();
+        let time: TimeDomain = timestepper.into();
+        let timesteps = time.timesteps();
 
         let scenario_indices = [
             ScenarioIndex {
@@ -430,9 +433,9 @@ class MyParameter:
             .map(|si| MultiValueParameter::setup(&param, &timesteps, si).expect("Could not setup the PyParameter"))
             .collect();
 
-        let model = Model::default();
+        let model = Network::default();
 
-        for ts in &timesteps {
+        for ts in timesteps {
             for (si, internal) in scenario_indices.iter().zip(internal_p_states.iter_mut()) {
                 let value = MultiValueParameter::compute(&param, ts, si, &model, &state, internal).unwrap();
 

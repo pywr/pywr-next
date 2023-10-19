@@ -3,6 +3,7 @@ use crate::error::{ConversionError, SchemaError};
 use crate::parameters::{
     DynamicFloatValueType, DynamicIndexValue, IntoV2Parameter, ParameterMeta, TryFromV1Parameter, TryIntoV2Parameter,
 };
+use pywr_core::models::ModelDomain;
 use pywr_core::parameters::IndexParameterIndex;
 use pywr_v1_schema::parameters::AsymmetricSwitchIndexParameter as AsymmetricSwitchIndexParameterV1;
 use std::collections::HashMap;
@@ -26,12 +27,13 @@ impl AsymmetricSwitchIndexParameter {
 
     pub fn add_to_model(
         &self,
-        model: &mut pywr_core::model::Model,
+        network: &mut pywr_core::network::Network,
+        domain: &ModelDomain,
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
     ) -> Result<IndexParameterIndex, SchemaError> {
-        let on_index_parameter = self.on_index_parameter.load(model, tables, data_path)?;
-        let off_index_parameter = self.off_index_parameter.load(model, tables, data_path)?;
+        let on_index_parameter = self.on_index_parameter.load(network, domain, tables, data_path)?;
+        let off_index_parameter = self.off_index_parameter.load(network, domain, tables, data_path)?;
 
         let p = pywr_core::parameters::AsymmetricSwitchIndexParameter::new(
             &self.meta.name,
@@ -39,7 +41,7 @@ impl AsymmetricSwitchIndexParameter {
             off_index_parameter,
         );
 
-        Ok(model.add_index_parameter(Box::new(p))?)
+        Ok(network.add_index_parameter(Box::new(p))?)
     }
 }
 

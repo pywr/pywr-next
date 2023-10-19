@@ -3,6 +3,7 @@ use crate::error::{ConversionError, SchemaError};
 use crate::nodes::NodeMeta;
 use crate::parameters::{DynamicFloatValue, TryIntoV2Parameter};
 use pywr_core::metric::Metric;
+use pywr_core::models::ModelDomain;
 use pywr_core::node::{ConstraintValue, StorageInitialVolume};
 use pywr_v1_schema::nodes::{
     AggregatedNode as AggregatedNodeV1, AggregatedStorageNode as AggregatedStorageNodeV1,
@@ -37,30 +38,31 @@ impl InputNode {
         attributes
     }
 
-    pub fn add_to_model(&self, model: &mut pywr_core::model::Model) -> Result<(), SchemaError> {
-        model.add_input_node(self.meta.name.as_str(), None)?;
+    pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
+        network.add_input_node(self.meta.name.as_str(), None)?;
         Ok(())
     }
 
     pub fn set_constraints(
         &self,
-        model: &mut pywr_core::model::Model,
+        network: &mut pywr_core::network::Network,
+        domain: &ModelDomain,
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
     ) -> Result<(), SchemaError> {
         if let Some(cost) = &self.cost {
-            let value = cost.load(model, tables, data_path)?;
-            model.set_node_cost(self.meta.name.as_str(), None, value.into())?;
+            let value = cost.load(network, domain, tables, data_path)?;
+            network.set_node_cost(self.meta.name.as_str(), None, value.into())?;
         }
 
         if let Some(max_flow) = &self.max_flow {
-            let value = max_flow.load(model, tables, data_path)?;
-            model.set_node_max_flow(self.meta.name.as_str(), None, value.into())?;
+            let value = max_flow.load(network, domain, tables, data_path)?;
+            network.set_node_max_flow(self.meta.name.as_str(), None, value.into())?;
         }
 
         if let Some(min_flow) = &self.min_flow {
-            let value = min_flow.load(model, tables, data_path)?;
-            model.set_node_min_flow(self.meta.name.as_str(), None, value.into())?;
+            let value = min_flow.load(network, domain, tables, data_path)?;
+            network.set_node_min_flow(self.meta.name.as_str(), None, value.into())?;
         }
 
         Ok(())
@@ -73,8 +75,8 @@ impl InputNode {
         vec![(self.meta.name.as_str(), None)]
     }
 
-    pub fn default_metric(&self, model: &pywr_core::model::Model) -> Result<Metric, SchemaError> {
-        let idx = model.get_node_index_by_name(self.meta.name.as_str(), None)?;
+    pub fn default_metric(&self, network: &pywr_core::network::Network) -> Result<Metric, SchemaError> {
+        let idx = network.get_node_index_by_name(self.meta.name.as_str(), None)?;
         Ok(Metric::NodeOutFlow(idx))
     }
 }
@@ -135,30 +137,31 @@ impl LinkNode {
         attributes
     }
 
-    pub fn add_to_model(&self, model: &mut pywr_core::model::Model) -> Result<(), SchemaError> {
-        model.add_link_node(self.meta.name.as_str(), None)?;
+    pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
+        network.add_link_node(self.meta.name.as_str(), None)?;
         Ok(())
     }
 
     pub fn set_constraints(
         &self,
-        model: &mut pywr_core::model::Model,
+        network: &mut pywr_core::network::Network,
+        domain: &ModelDomain,
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
     ) -> Result<(), SchemaError> {
         if let Some(cost) = &self.cost {
-            let value = cost.load(model, tables, data_path)?;
-            model.set_node_cost(self.meta.name.as_str(), None, value.into())?;
+            let value = cost.load(network, domain, tables, data_path)?;
+            network.set_node_cost(self.meta.name.as_str(), None, value.into())?;
         }
 
         if let Some(max_flow) = &self.max_flow {
-            let value = max_flow.load(model, tables, data_path)?;
-            model.set_node_max_flow(self.meta.name.as_str(), None, value.into())?;
+            let value = max_flow.load(network, domain, tables, data_path)?;
+            network.set_node_max_flow(self.meta.name.as_str(), None, value.into())?;
         }
 
         if let Some(min_flow) = &self.min_flow {
-            let value = min_flow.load(model, tables, data_path)?;
-            model.set_node_min_flow(self.meta.name.as_str(), None, value.into())?;
+            let value = min_flow.load(network, domain, tables, data_path)?;
+            network.set_node_min_flow(self.meta.name.as_str(), None, value.into())?;
         }
 
         Ok(())
@@ -171,8 +174,8 @@ impl LinkNode {
         vec![(self.meta.name.as_str(), None)]
     }
 
-    pub fn default_metric(&self, model: &pywr_core::model::Model) -> Result<Metric, SchemaError> {
-        let idx = model.get_node_index_by_name(self.meta.name.as_str(), None)?;
+    pub fn default_metric(&self, network: &pywr_core::network::Network) -> Result<Metric, SchemaError> {
+        let idx = network.get_node_index_by_name(self.meta.name.as_str(), None)?;
         Ok(Metric::NodeOutFlow(idx))
     }
 }
@@ -232,30 +235,31 @@ impl OutputNode {
         attributes
     }
 
-    pub fn add_to_model(&self, model: &mut pywr_core::model::Model) -> Result<(), SchemaError> {
-        model.add_output_node(self.meta.name.as_str(), None)?;
+    pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
+        network.add_output_node(self.meta.name.as_str(), None)?;
         Ok(())
     }
 
     pub fn set_constraints(
         &self,
-        model: &mut pywr_core::model::Model,
+        network: &mut pywr_core::network::Network,
+        domain: &ModelDomain,
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
     ) -> Result<(), SchemaError> {
         if let Some(cost) = &self.cost {
-            let value = cost.load(model, tables, data_path)?;
-            model.set_node_cost(self.meta.name.as_str(), None, value.into())?;
+            let value = cost.load(network, domain, tables, data_path)?;
+            network.set_node_cost(self.meta.name.as_str(), None, value.into())?;
         }
 
         if let Some(max_flow) = &self.max_flow {
-            let value = max_flow.load(model, tables, data_path)?;
-            model.set_node_max_flow(self.meta.name.as_str(), None, value.into())?;
+            let value = max_flow.load(network, domain, tables, data_path)?;
+            network.set_node_max_flow(self.meta.name.as_str(), None, value.into())?;
         }
 
         if let Some(min_flow) = &self.min_flow {
-            let value = min_flow.load(model, tables, data_path)?;
-            model.set_node_min_flow(self.meta.name.as_str(), None, value.into())?;
+            let value = min_flow.load(network, domain, tables, data_path)?;
+            network.set_node_min_flow(self.meta.name.as_str(), None, value.into())?;
         }
 
         Ok(())
@@ -269,8 +273,8 @@ impl OutputNode {
         vec![(self.meta.name.as_str(), None)]
     }
 
-    pub fn default_metric(&self, model: &pywr_core::model::Model) -> Result<Metric, SchemaError> {
-        let idx = model.get_node_index_by_name(self.meta.name.as_str(), None)?;
+    pub fn default_metric(&self, network: &pywr_core::network::Network) -> Result<Metric, SchemaError> {
+        let idx = network.get_node_index_by_name(self.meta.name.as_str(), None)?;
         Ok(Metric::NodeInFlow(idx))
     }
 }
@@ -334,7 +338,8 @@ impl StorageNode {
 
     pub fn add_to_model(
         &self,
-        model: &mut pywr_core::model::Model,
+        network: &mut pywr_core::network::Network,
+        domain: &ModelDomain,
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
     ) -> Result<(), SchemaError> {
@@ -347,28 +352,29 @@ impl StorageNode {
         };
 
         let min_volume = match &self.min_volume {
-            Some(v) => v.load(model, tables, data_path)?.into(),
+            Some(v) => v.load(network, domain, tables, data_path)?.into(),
             None => ConstraintValue::Scalar(0.0),
         };
 
         let max_volume = match &self.max_volume {
-            Some(v) => v.load(model, tables, data_path)?.into(),
+            Some(v) => v.load(network, domain, tables, data_path)?.into(),
             None => ConstraintValue::None,
         };
 
-        model.add_storage_node(self.meta.name.as_str(), None, initial_volume, min_volume, max_volume)?;
+        network.add_storage_node(self.meta.name.as_str(), None, initial_volume, min_volume, max_volume)?;
         Ok(())
     }
 
     pub fn set_constraints(
         &self,
-        model: &mut pywr_core::model::Model,
+        network: &mut pywr_core::network::Network,
+        domain: &ModelDomain,
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
     ) -> Result<(), SchemaError> {
         if let Some(cost) = &self.cost {
-            let value = cost.load(model, tables, data_path)?;
-            model.set_node_cost(self.meta.name.as_str(), None, value.into())?;
+            let value = cost.load(network, domain, tables, data_path)?;
+            network.set_node_cost(self.meta.name.as_str(), None, value.into())?;
         }
 
         Ok(())
@@ -382,8 +388,8 @@ impl StorageNode {
         vec![(self.meta.name.as_str(), None)]
     }
 
-    pub fn default_metric(&self, model: &pywr_core::model::Model) -> Result<Metric, SchemaError> {
-        let idx = model.get_node_index_by_name(self.meta.name.as_str(), None)?;
+    pub fn default_metric(&self, network: &pywr_core::network::Network) -> Result<Metric, SchemaError> {
+        let idx = network.get_node_index_by_name(self.meta.name.as_str(), None)?;
         Ok(Metric::NodeVolume(idx))
     }
 }
@@ -474,7 +480,7 @@ impl TryFrom<ReservoirNodeV1> for StorageNode {
 #[doc = svgbobdoc::transform!(
 /// This is used to represent a catchment inflow.
 ///
-/// Catchment nodes create a single [`crate::node::InputNode`] node in the model, but
+/// Catchment nodes create a single [`crate::node::InputNode`] node in the network, but
 /// ensure that the maximum and minimum flow are equal to [`Self::flow`].
 ///
 /// ```svgbob
@@ -492,26 +498,27 @@ pub struct CatchmentNode {
 }
 
 impl CatchmentNode {
-    pub fn add_to_model(&self, model: &mut pywr_core::model::Model) -> Result<(), SchemaError> {
-        model.add_input_node(self.meta.name.as_str(), None)?;
+    pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
+        network.add_input_node(self.meta.name.as_str(), None)?;
         Ok(())
     }
 
     pub fn set_constraints(
         &self,
-        model: &mut pywr_core::model::Model,
+        network: &mut pywr_core::network::Network,
+        domain: &ModelDomain,
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
     ) -> Result<(), SchemaError> {
         if let Some(cost) = &self.cost {
-            let value = cost.load(model, tables, data_path)?;
-            model.set_node_cost(self.meta.name.as_str(), None, value.into())?;
+            let value = cost.load(network, domain, tables, data_path)?;
+            network.set_node_cost(self.meta.name.as_str(), None, value.into())?;
         }
 
         if let Some(flow) = &self.flow {
-            let value = flow.load(model, tables, data_path)?;
-            model.set_node_min_flow(self.meta.name.as_str(), None, value.clone().into())?;
-            model.set_node_max_flow(self.meta.name.as_str(), None, value.into())?;
+            let value = flow.load(network, domain, tables, data_path)?;
+            network.set_node_min_flow(self.meta.name.as_str(), None, value.clone().into())?;
+            network.set_node_max_flow(self.meta.name.as_str(), None, value.into())?;
         }
 
         Ok(())
@@ -525,8 +532,8 @@ impl CatchmentNode {
         vec![(self.meta.name.as_str(), None)]
     }
 
-    pub fn default_metric(&self, model: &pywr_core::model::Model) -> Result<Metric, SchemaError> {
-        let idx = model.get_node_index_by_name(self.meta.name.as_str(), None)?;
+    pub fn default_metric(&self, network: &pywr_core::network::Network) -> Result<Metric, SchemaError> {
+        let idx = network.get_node_index_by_name(self.meta.name.as_str(), None)?;
         Ok(Metric::NodeOutFlow(idx))
     }
 }
@@ -570,33 +577,34 @@ pub struct AggregatedNode {
 }
 
 impl AggregatedNode {
-    pub fn add_to_model(&self, model: &mut pywr_core::model::Model) -> Result<(), SchemaError> {
+    pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
         let nodes = self
             .nodes
             .iter()
-            .map(|name| model.get_node_index_by_name(name, None))
+            .map(|name| network.get_node_index_by_name(name, None))
             .collect::<Result<Vec<_>, _>>()?;
 
         // We initialise with no factors, but will update them in the `set_constraints` method
         // once all the parameters are loaded.
-        model.add_aggregated_node(self.meta.name.as_str(), None, nodes.as_slice(), None)?;
+        network.add_aggregated_node(self.meta.name.as_str(), None, nodes.as_slice(), None)?;
         Ok(())
     }
 
     pub fn set_constraints(
         &self,
-        model: &mut pywr_core::model::Model,
+        network: &mut pywr_core::network::Network,
+        domain: &ModelDomain,
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
     ) -> Result<(), SchemaError> {
         if let Some(max_flow) = &self.max_flow {
-            let value = max_flow.load(model, tables, data_path)?;
-            model.set_aggregated_node_max_flow(self.meta.name.as_str(), None, value.into())?;
+            let value = max_flow.load(network, domain, tables, data_path)?;
+            network.set_aggregated_node_max_flow(self.meta.name.as_str(), None, value.into())?;
         }
 
         if let Some(min_flow) = &self.min_flow {
-            let value = min_flow.load(model, tables, data_path)?;
-            model.set_aggregated_node_min_flow(self.meta.name.as_str(), None, value.into())?;
+            let value = min_flow.load(network, domain, tables, data_path)?;
+            network.set_aggregated_node_min_flow(self.meta.name.as_str(), None, value.into())?;
         }
 
         if let Some(factors) = &self.factors {
@@ -604,18 +612,18 @@ impl AggregatedNode {
                 Factors::Proportion { factors } => pywr_core::aggregated_node::Factors::Proportion(
                     factors
                         .iter()
-                        .map(|f| f.load(model, tables, data_path))
+                        .map(|f| f.load(network, domain, tables, data_path))
                         .collect::<Result<Vec<_>, _>>()?,
                 ),
                 Factors::Ratio { factors } => pywr_core::aggregated_node::Factors::Ratio(
                     factors
                         .iter()
-                        .map(|f| f.load(model, tables, data_path))
+                        .map(|f| f.load(network, domain, tables, data_path))
                         .collect::<Result<Vec<_>, _>>()?,
                 ),
             };
 
-            model.set_aggregated_node_factors(self.meta.name.as_str(), None, Some(f))?;
+            network.set_aggregated_node_factors(self.meta.name.as_str(), None, Some(f))?;
         }
 
         Ok(())
@@ -632,8 +640,8 @@ impl AggregatedNode {
         vec![]
     }
 
-    pub fn default_metric(&self, model: &pywr_core::model::Model) -> Result<Metric, SchemaError> {
-        let idx = model.get_aggregated_node_index_by_name(self.meta.name.as_str(), None)?;
+    pub fn default_metric(&self, network: &pywr_core::network::Network) -> Result<Metric, SchemaError> {
+        let idx = network.get_aggregated_node_index_by_name(self.meta.name.as_str(), None)?;
         Ok(Metric::AggregatedNodeOutFlow(idx))
     }
 }
@@ -684,14 +692,14 @@ pub struct AggregatedStorageNode {
 }
 
 impl AggregatedStorageNode {
-    pub fn add_to_model(&self, model: &mut pywr_core::model::Model) -> Result<(), SchemaError> {
+    pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
         let nodes = self
             .storage_nodes
             .iter()
-            .map(|name| model.get_node_index_by_name(name, None))
+            .map(|name| network.get_node_index_by_name(name, None))
             .collect::<Result<_, _>>()?;
 
-        model.add_aggregated_storage_node(self.meta.name.as_str(), None, nodes)?;
+        network.add_aggregated_storage_node(self.meta.name.as_str(), None, nodes)?;
         Ok(())
     }
 
@@ -706,8 +714,8 @@ impl AggregatedStorageNode {
         vec![]
     }
 
-    pub fn default_metric(&self, model: &pywr_core::model::Model) -> Result<Metric, SchemaError> {
-        let idx = model.get_aggregated_storage_node_index_by_name(self.meta.name.as_str(), None)?;
+    pub fn default_metric(&self, network: &pywr_core::network::Network) -> Result<Metric, SchemaError> {
+        let idx = network.get_aggregated_storage_node_index_by_name(self.meta.name.as_str(), None)?;
         Ok(Metric::AggregatedNodeVolume(idx))
     }
 }

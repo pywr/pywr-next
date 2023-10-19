@@ -16,8 +16,8 @@ impl RiverNode {
         HashMap::new()
     }
 
-    pub fn add_to_model(&self, model: &mut pywr_core::model::Model) -> Result<(), SchemaError> {
-        model.add_link_node(self.meta.name.as_str(), None)?;
+    pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
+        network.add_link_node(self.meta.name.as_str(), None)?;
         Ok(())
     }
 
@@ -28,8 +28,8 @@ impl RiverNode {
         vec![(self.meta.name.as_str(), None)]
     }
 
-    pub fn default_metric(&self, model: &pywr_core::model::Model) -> Result<Metric, SchemaError> {
-        let idx = model.get_node_index_by_name(self.meta.name.as_str(), None)?;
+    pub fn default_metric(&self, network: &pywr_core::network::Network) -> Result<Metric, SchemaError> {
+        let idx = network.get_node_index_by_name(self.meta.name.as_str(), None)?;
         Ok(Metric::NodeOutFlow(idx))
     }
 }

@@ -1,5 +1,5 @@
 use crate::metric::Metric;
-use crate::model::Model;
+use crate::network::Network;
 use crate::recorders::aggregator::{PeriodValue, PeriodicAggregator, PeriodicAggregatorState};
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
@@ -69,7 +69,7 @@ impl MetricSet {
         &self,
         timestep: &Timestep,
         scenario_indices: &[ScenarioIndex],
-        model: &Model,
+        model: &Network,
         state: &[State],
         internal_state: &mut MetricSetState,
     ) -> Result<(), PywrError> {

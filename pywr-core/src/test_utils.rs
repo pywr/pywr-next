@@ -1,10 +1,12 @@
 use crate::metric::Metric;
+use crate::models::{Model, ModelDomain};
 /// Utilities for unit tests.
 /// TODO move this to its own local crate ("test-utilities") as part of a workspace.
-use crate::model::Model;
+use crate::network::Network;
 use crate::node::{Constraint, ConstraintValue, StorageInitialVolume};
 use crate::parameters::{AggFunc, AggregatedParameter, Array2Parameter, ConstantParameter, Parameter};
 use crate::recorders::AssertionRecorder;
+use crate::scenario::ScenarioGroupCollection;
 #[cfg(feature = "ipm-ocl")]
 use crate::solvers::ClIpmF64Solver;
 use crate::solvers::ClpSolver;
@@ -12,7 +14,7 @@ use crate::solvers::ClpSolver;
 use crate::solvers::HighsSolver;
 #[cfg(feature = "ipm-simd")]
 use crate::solvers::SimdIpmF64Solver;
-use crate::timestep::Timestepper;
+use crate::timestep::{TimeDomain, Timestepper};
 use crate::PywrError;
 use ndarray::{Array, Array2};
 use rand::Rng;
@@ -24,25 +26,25 @@ pub fn default_timestepper() -> Timestepper {
     Timestepper::new(date!(2020 - 01 - 01), date!(2020 - 01 - 15), 1)
 }
 
-/// Create a simple test model with three nodes.
-pub fn simple_model(num_scenarios: usize) -> Model {
-    let mut model = Model::default();
-    model.add_scenario_group("test-scenario", num_scenarios).unwrap();
-    let scenario_idx = model.get_scenario_group_index_by_name("test-scenario").unwrap();
+pub fn default_time_domain() -> TimeDomain {
+    default_timestepper().into()
+}
 
-    let input_node = model.add_input_node("input", None).unwrap();
-    let link_node = model.add_link_node("link", None).unwrap();
-    let output_node = model.add_output_node("output", None).unwrap();
+/// Create a simple test network with three nodes.
+pub fn simple_network(network: &mut Network, inflow_scenario_index: usize, num_inflow_scenarios: usize) {
+    let input_node = network.add_input_node("input", None).unwrap();
+    let link_node = network.add_link_node("link", None).unwrap();
+    let output_node = network.add_output_node("output", None).unwrap();
 
-    model.connect_nodes(input_node, link_node).unwrap();
-    model.connect_nodes(link_node, output_node).unwrap();
+    network.connect_nodes(input_node, link_node).unwrap();
+    network.connect_nodes(link_node, output_node).unwrap();
 
-    let inflow = Array::from_shape_fn((366, num_scenarios), |(i, j)| 1.0 + i as f64 + j as f64);
-    let inflow = Array2Parameter::new("inflow", inflow, scenario_idx);
+    let inflow = Array::from_shape_fn((366, num_inflow_scenarios), |(i, j)| 1.0 + i as f64 + j as f64);
+    let inflow = Array2Parameter::new("inflow", inflow, inflow_scenario_index);
 
-    let inflow = model.add_parameter(Box::new(inflow)).unwrap();
+    let inflow = network.add_parameter(Box::new(inflow)).unwrap();
 
-    let input_node = model.get_mut_node_by_name("input", None).unwrap();
+    let input_node = network.get_mut_node_by_name("input", None).unwrap();
     input_node
         .set_constraint(
             ConstraintValue::Metric(Metric::ParameterValue(inflow)),
@@ -53,19 +55,19 @@ pub fn simple_model(num_scenarios: usize) -> Model {
     let base_demand = 10.0;
 
     let demand_factor = ConstantParameter::new("demand-factor", 1.2, None);
-    let demand_factor = model.add_parameter(Box::new(demand_factor)).unwrap();
+    let demand_factor = network.add_parameter(Box::new(demand_factor)).unwrap();
 
     let total_demand = AggregatedParameter::new(
         "total-demand",
         &[Metric::Constant(base_demand), Metric::ParameterValue(demand_factor)],
         AggFunc::Product,
     );
-    let total_demand = model.add_parameter(Box::new(total_demand)).unwrap();
+    let total_demand = network.add_parameter(Box::new(total_demand)).unwrap();
 
     let demand_cost = ConstantParameter::new("demand-cost", -10.0, None);
-    let demand_cost = model.add_parameter(Box::new(demand_cost)).unwrap();
+    let demand_cost = network.add_parameter(Box::new(demand_cost)).unwrap();
 
-    let output_node = model.get_mut_node_by_name("output", None).unwrap();
+    let output_node = network.get_mut_node_by_name("output", None).unwrap();
     output_node
         .set_constraint(
             ConstraintValue::Metric(Metric::ParameterValue(total_demand)),
@@ -73,15 +75,29 @@ pub fn simple_model(num_scenarios: usize) -> Model {
         )
         .unwrap();
     output_node.set_cost(ConstraintValue::Metric(Metric::ParameterValue(demand_cost)));
+}
+/// Create a simple test model with three nodes.
+pub fn simple_model(num_scenarios: usize) -> Model {
+    let mut scenario_collection = ScenarioGroupCollection::default();
+    scenario_collection.add_group("test-scenario", num_scenarios);
 
-    model
+    let domain = ModelDomain::from(default_timestepper(), scenario_collection);
+    let mut network = Network::default();
+
+    let idx = domain
+        .scenarios()
+        .group_index("test-scenario")
+        .expect("Could not find scenario group");
+
+    simple_network(&mut network, idx, num_scenarios);
+
+    Model::new(domain, network)
 }
 
 /// A test model with a single storage node.
 pub fn simple_storage_model() -> Model {
-    let mut model = Model::default();
-
-    let storage_node = model
+    let mut network = Network::default();
+    let storage_node = network
         .add_storage_node(
             "reservoir",
             None,
@@ -90,19 +106,19 @@ pub fn simple_storage_model() -> Model {
             ConstraintValue::Scalar(100.0),
         )
         .unwrap();
-    let output_node = model.add_output_node("output", None).unwrap();
+    let output_node = network.add_output_node("output", None).unwrap();
 
-    model.connect_nodes(storage_node, output_node).unwrap();
+    network.connect_nodes(storage_node, output_node).unwrap();
 
     // Apply demand to the model
     // TODO convenience function for adding a constant constraint.
     let demand = ConstantParameter::new("demand", 10.0, None);
-    let demand = model.add_parameter(Box::new(demand)).unwrap();
+    let demand = network.add_parameter(Box::new(demand)).unwrap();
 
     let demand_cost = ConstantParameter::new("demand-cost", -10.0, None);
-    let demand_cost = model.add_parameter(Box::new(demand_cost)).unwrap();
+    let demand_cost = network.add_parameter(Box::new(demand_cost)).unwrap();
 
-    let output_node = model.get_mut_node_by_name("output", None).unwrap();
+    let output_node = network.get_mut_node_by_name("output", None).unwrap();
     output_node
         .set_constraint(
             ConstraintValue::Metric(Metric::ParameterValue(demand)),
@@ -111,14 +127,7 @@ pub fn simple_storage_model() -> Model {
         .unwrap();
     output_node.set_cost(ConstraintValue::Metric(Metric::ParameterValue(demand_cost)));
 
-    let max_volume = 100.0;
-
-    let storage_node = model.get_mut_node_by_name("reservoir", None).unwrap();
-    storage_node
-        .set_constraint(ConstraintValue::Scalar(max_volume), Constraint::MaxVolume)
-        .unwrap();
-
-    model
+    Model::new(default_time_domain().into(), network)
 }
 
 /// Add the given parameter to the given model along with an assertion recorder that asserts
@@ -135,32 +144,31 @@ pub fn run_and_assert_parameter(
     ulps: Option<i64>,
     epsilon: Option<f64>,
 ) {
-    let p_idx = model.add_parameter(parameter).unwrap();
+    let p_idx = model.network_mut().add_parameter(parameter).unwrap();
 
     let start = date!(2020 - 01 - 01);
     let end = start.checked_add((expected_values.nrows() as i64 - 1).days()).unwrap();
-    let timestepper = Timestepper::new(start, end, 1);
 
     let rec = AssertionRecorder::new("assert", Metric::ParameterValue(p_idx), expected_values, ulps, epsilon);
 
-    model.add_recorder(Box::new(rec)).unwrap();
-    run_all_solvers(model, &timestepper)
+    model.network_mut().add_recorder(Box::new(rec)).unwrap();
+    run_all_solvers(model)
 }
 
 /// Run a model using each of the in-built solvers.
 ///
 /// The model will only be run if the solver has the required solver features (and
 /// is also enabled as a Cargo feature).
-pub fn run_all_solvers(model: &Model, timestepper: &Timestepper) {
+pub fn run_all_solvers(model: &Model) {
     model
-        .run::<ClpSolver>(timestepper, &Default::default())
+        .run::<ClpSolver>(&Default::default())
         .expect("Failed to solve with CLP");
 
     #[cfg(feature = "highs")]
     {
         if model.check_solver_features::<HighsSolver>() {
             model
-                .run::<HighsSolver>(timestepper, &Default::default())
+                .run::<HighsSolver>(&Default::default())
                 .expect("Failed to solve with Highs");
         }
     }
@@ -169,7 +177,7 @@ pub fn run_all_solvers(model: &Model, timestepper: &Timestepper) {
     {
         if model.check_multi_scenario_solver_features::<SimdIpmF64Solver<4>>() {
             model
-                .run_multi_scenario::<SimdIpmF64Solver<4>>(timestepper, &Default::default())
+                .run_multi_scenario::<SimdIpmF64Solver<4>>(&Default::default())
                 .expect("Failed to solve with SIMD IPM");
         }
     }
@@ -178,7 +186,7 @@ pub fn run_all_solvers(model: &Model, timestepper: &Timestepper) {
     {
         if model.check_multi_scenario_solver_features::<ClIpmF64Solver>() {
             model
-                .run_multi_scenario::<ClIpmF64Solver>(timestepper, &Default::default())
+                .run_multi_scenario::<ClIpmF64Solver>(&Default::default())
                 .expect("Failed to solve with OpenCl IPM");
         }
     }
@@ -186,47 +194,46 @@ pub fn run_all_solvers(model: &Model, timestepper: &Timestepper) {
 
 /// Make a simple system with random inputs.
 fn make_simple_system<R: Rng>(
-    model: &mut Model,
+    network: &mut Network,
     suffix: &str,
     num_timesteps: usize,
+    num_inflow_scenarios: usize,
+    inflow_scenario_group_index: usize,
     rng: &mut R,
 ) -> Result<(), PywrError> {
-    let input_idx = model.add_input_node("input", Some(suffix))?;
-    let link_idx = model.add_link_node("link", Some(suffix))?;
-    let output_idx = model.add_output_node("output", Some(suffix))?;
+    let input_idx = network.add_input_node("input", Some(suffix))?;
+    let link_idx = network.add_link_node("link", Some(suffix))?;
+    let output_idx = network.add_output_node("output", Some(suffix))?;
 
-    model.connect_nodes(input_idx, link_idx)?;
-    model.connect_nodes(link_idx, output_idx)?;
-
-    let num_scenarios = model.get_scenario_group_size_by_name("test-scenario")?;
-    let scenario_group_index = model.get_scenario_group_index_by_name("test-scenario")?;
+    network.connect_nodes(input_idx, link_idx)?;
+    network.connect_nodes(link_idx, output_idx)?;
 
     let inflow_distr: Normal<f64> = Normal::new(9.0, 1.0).unwrap();
 
-    let mut inflow = ndarray::Array2::zeros((num_timesteps, num_scenarios));
+    let mut inflow = ndarray::Array2::zeros((num_timesteps, num_inflow_scenarios));
 
     for x in inflow.iter_mut() {
         *x = inflow_distr.sample(rng).max(0.0);
     }
-    let inflow = Array2Parameter::new(&format!("inflow-{suffix}"), inflow, scenario_group_index);
-    let idx = model.add_parameter(Box::new(inflow))?;
+    let inflow = Array2Parameter::new(&format!("inflow-{suffix}"), inflow, inflow_scenario_group_index);
+    let idx = network.add_parameter(Box::new(inflow))?;
 
-    model.set_node_max_flow(
+    network.set_node_max_flow(
         "input",
         Some(suffix),
         ConstraintValue::Metric(Metric::ParameterValue(idx)),
     )?;
 
     let input_cost = rng.gen_range(-20.0..-5.00);
-    model.set_node_cost("input", Some(suffix), ConstraintValue::Scalar(input_cost))?;
+    network.set_node_cost("input", Some(suffix), ConstraintValue::Scalar(input_cost))?;
 
     let outflow_distr = Normal::new(8.0, 3.0).unwrap();
     let mut outflow: f64 = outflow_distr.sample(rng);
     outflow = outflow.max(0.0);
 
-    model.set_node_max_flow("output", Some(suffix), ConstraintValue::Scalar(outflow))?;
+    network.set_node_max_flow("output", Some(suffix), ConstraintValue::Scalar(outflow))?;
 
-    model.set_node_cost("output", Some(suffix), ConstraintValue::Scalar(-500.0))?;
+    network.set_node_cost("output", Some(suffix), ConstraintValue::Scalar(-500.0))?;
 
     Ok(())
 }
@@ -235,7 +242,7 @@ fn make_simple_system<R: Rng>(
 ///
 ///
 fn make_simple_connections<R: Rng>(
-    model: &mut Model,
+    model: &mut Network,
     num_systems: usize,
     density: usize,
     rng: &mut R,
@@ -276,20 +283,39 @@ fn make_simple_connections<R: Rng>(
 pub fn make_random_model<R: Rng>(
     num_systems: usize,
     density: usize,
-    num_timesteps: usize,
     num_scenarios: usize,
     rng: &mut R,
 ) -> Result<Model, PywrError> {
-    let mut model = Model::default();
+    let timestepper = Timestepper::new(date!(2020 - 01 - 01), date!(2020 - 04 - 09), 1);
 
-    model.add_scenario_group("test-scenario", num_scenarios)?;
+    let mut scenario_collection = ScenarioGroupCollection::default();
+    scenario_collection.add_group("test-scenario", num_scenarios);
 
+    let domain = ModelDomain::from(timestepper, scenario_collection);
+
+    let inflow_scenario_group_index = domain
+        .scenarios()
+        .group_index("test-scenario")
+        .expect("Could not find scenario group.");
+
+    let (num_timesteps, num_inflow_scenarios) = domain.shape();
+
+    let mut network = Network::default();
     for i in 0..num_systems {
         let suffix = format!("sys-{i:04}");
-        make_simple_system(&mut model, &suffix, num_timesteps, rng)?;
+        make_simple_system(
+            &mut network,
+            &suffix,
+            num_timesteps,
+            num_inflow_scenarios,
+            inflow_scenario_group_index,
+            rng,
+        )?;
     }
 
-    make_simple_connections(&mut model, num_systems, density, rng)?;
+    make_simple_connections(&mut network, num_systems, density, rng)?;
+
+    let model = Model::new(domain, network);
 
     Ok(model)
 }
@@ -298,26 +324,23 @@ pub fn make_random_model<R: Rng>(
 mod tests {
     use super::make_random_model;
     use crate::solvers::{SimdIpmF64Solver, SimdIpmSolverSettings};
-    use crate::timestep::Timestepper;
     use rand::SeedableRng;
     use rand_chacha::ChaCha8Rng;
-    use time::macros::date;
 
     #[test]
     fn test_random_model() {
         let n_sys = 50;
         let density = 5;
         let n_sc = 12;
-        let timestepper = Timestepper::new(date!(2020 - 01 - 01), date!(2020 - 04 - 09), 1);
 
         // Make a consistent random number generator
         // ChaCha8 should be consistent across builds and platforms
         let mut rng = ChaCha8Rng::seed_from_u64(0);
-        let model = make_random_model(n_sys, density, timestepper.timesteps().len(), n_sc, &mut rng).unwrap();
+        let model = make_random_model(n_sys, density, n_sc, &mut rng).unwrap();
 
         let settings = SimdIpmSolverSettings::default();
         model
-            .run_multi_scenario::<SimdIpmF64Solver<4>>(&timestepper, &settings)
+            .run_multi_scenario::<SimdIpmF64Solver<4>>(&settings)
             .expect("Failed to run model!");
     }
 }

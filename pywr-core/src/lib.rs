@@ -2,6 +2,7 @@
 
 extern crate core;
 
+use crate::models::CrossNetworkParameterIndex;
 use crate::node::NodeIndex;
 use crate::parameters::{IndexParameterIndex, MultiValueParameterIndex, ParameterIndex};
 use crate::recorders::RecorderIndex;
@@ -13,11 +14,12 @@ pub mod aggregated_node;
 mod aggregated_storage_node;
 pub mod edge;
 pub mod metric;
-pub mod model;
+pub mod models;
+pub mod network;
 pub mod node;
 pub mod parameters;
 pub mod recorders;
-mod scenario;
+pub mod scenario;
 pub mod solvers;
 pub mod state;
 pub mod test_utils;
@@ -45,6 +47,8 @@ pub enum PywrError {
     MultiValueParameterIndexNotFound(MultiValueParameterIndex),
     #[error("multi value parameter key {0} not found")]
     MultiValueParameterKeyNotFound(String),
+    #[error("inter-network parameter state not initialised")]
+    InterNetworkParameterStateNotInitialised,
     #[error("parameter {0} not found")]
     ParameterNotFound(String),
     #[error("metric set index not found")]
@@ -73,6 +77,8 @@ pub enum PywrError {
     FlowConstraintsUndefined,
     #[error("storage constraints are undefined for this node")]
     StorageConstraintsUndefined,
+    #[error("No more timesteps")]
+    EndOfTimesteps,
     #[error("timestep index out of range")]
     TimestepIndexOutOfRange,
     #[error("solver not initialised")]
@@ -127,6 +133,10 @@ pub enum PywrError {
     ParameterVariableValuesIncorrectLength,
     #[error("missing solver features")]
     MissingSolverFeatures,
+    #[error("network {0} not found")]
+    NetworkNotFound(String),
+    #[error("network index ({0}) not found")]
+    NetworkIndexNotFound(usize),
 }
 
 // Python errors

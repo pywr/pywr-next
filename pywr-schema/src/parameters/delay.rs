@@ -1,11 +1,12 @@
 use crate::data_tables::LoadedTableCollection;
 use crate::error::SchemaError;
 use crate::parameters::{DynamicFloatValue, DynamicFloatValueType, ParameterMeta};
+use pywr_core::models::ModelDomain;
 use pywr_core::parameters::ParameterIndex;
 use std::collections::HashMap;
 use std::path::Path;
 
-/// A parameter that delays a value from the model by a number of time-steps.
+/// A parameter that delays a value from the network by a number of time-steps.
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
 pub struct DelayParameter {
     #[serde(flatten)]
@@ -31,12 +32,13 @@ impl DelayParameter {
 
     pub fn add_to_model(
         &self,
-        model: &mut pywr_core::model::Model,
+        network: &mut pywr_core::network::Network,
+        domain: &ModelDomain,
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
     ) -> Result<ParameterIndex, SchemaError> {
-        let metric = self.metric.load(model, tables, data_path)?;
+        let metric = self.metric.load(network, domain, tables, data_path)?;
         let p = pywr_core::parameters::DelayParameter::new(&self.meta.name, metric, self.delay, self.initial_value);
-        Ok(model.add_parameter(Box::new(p))?)
+        Ok(network.add_parameter(Box::new(p))?)
     }
 }

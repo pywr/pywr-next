@@ -1,5 +1,6 @@
 use crate::edge::{Edge, EdgeIndex};
-use crate::model::Model;
+use crate::models::CrossNetworkParameterIndex;
+use crate::network::Network;
 use crate::node::{Node, NodeIndex};
 use crate::parameters::{IndexParameterIndex, MultiValueParameterIndex, ParameterIndex};
 use crate::timestep::Timestep;
@@ -367,12 +368,12 @@ impl NetworkState {
     ///
     /// This final step ensures that derived states (e.g. virtual storage volume) are updated
     /// once all of the flows have been updated.
-    pub fn complete(&mut self, model: &Model, timestep: &Timestep) -> Result<(), PywrError> {
+    pub fn complete(&mut self, model: &Network, timestep: &Timestep) -> Result<(), PywrError> {
         // Update virtual storage node states
         for (state, node) in self
             .virtual_storage_states
             .iter_mut()
-            .zip(model.virtual_storage_nodes.iter())
+            .zip(model.virtual_storage_nodes().iter())
         {
             if let Some(node_factors) = node.get_nodes_with_factors() {
                 let flow = node_factors
@@ -380,7 +381,7 @@ impl NetworkState {
                     .map(|(idx, factor)| match self.node_states.get(*idx.deref()) {
                         None => Err(PywrError::NodeIndexNotFound),
                         Some(s) => {
-                            let node = model.nodes.get(idx)?;
+                            let node = model.nodes().get(idx)?;
                             match node {
                                 Node::Input(_) => Ok(factor * s.get_out_flow()),
                                 Node::Output(_) => Ok(factor * s.get_in_flow()),

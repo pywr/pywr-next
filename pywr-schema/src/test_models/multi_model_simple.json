@@ -1,0 +1,34 @@
+{
+  "metadata": {
+    "title": "Simple 1",
+    "description": "A very simple example.",
+    "minimum_version": "0.1"
+  },
+  "timestepper": {
+    "start": "2015-01-01",
+    "end": "2015-12-31",
+    "timestep": 1
+  },
+  "networks": [
+    {
+      "name": "sub-model1",
+      "network": "sub-model1.json",
+      "transfers": []
+    },
+    {
+      "name": "sub-model2",
+      "network": "sub-model2.json",
+      "transfers": [
+        {
+          "from_network": "sub-model1",
+          "metric": {
+            "type": "NodeInFlow",
+            "name": "demand1"
+          },
+          "to_parameter": "inflow"
+        }
+      ]
+    }
+  ]
+
+}

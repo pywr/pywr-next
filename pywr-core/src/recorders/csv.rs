@@ -1,6 +1,6 @@
 use super::{PywrError, Recorder, RecorderMeta, Timestep};
 use crate::metric::Metric;
-use crate::model::Model;
+use crate::network::Network;
 use crate::recorders::metric_set::MetricSetIndex;
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
@@ -38,7 +38,7 @@ impl Recorder for CSVRecorder {
         &self,
         _timesteps: &[Timestep],
         scenario_indices: &[ScenarioIndex],
-        model: &Model,
+        model: &Network,
     ) -> Result<Option<Box<(dyn Any)>>, PywrError> {
         let mut writer = csv::Writer::from_path(&self.filename).map_err(|e| PywrError::CSVError(e.to_string()))?;
 
@@ -178,7 +178,7 @@ impl Recorder for CSVRecorder {
         &self,
         timestep: &Timestep,
         scenario_indices: &[ScenarioIndex],
-        model: &Model,
+        model: &Network,
         state: &[State],
         internal_state: &mut Option<Box<dyn Any>>,
     ) -> Result<(), PywrError> {

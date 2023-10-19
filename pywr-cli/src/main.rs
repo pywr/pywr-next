@@ -1,6 +1,5 @@
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand, ValueEnum};
-use pywr_core::model::Model;
 #[cfg(feature = "ipm-ocl")]
 use pywr_core::solvers::{ClIpmF32Solver, ClIpmF64Solver, ClIpmSolverSettings};
 use pywr_core::solvers::{ClpSolver, ClpSolverSettings};
@@ -173,48 +172,36 @@ fn run(path: &Path, solver: &Solver, data_path: Option<&Path>, output_path: Opti
     let data = std::fs::read_to_string(path).unwrap();
     let schema_v2: PywrModel = serde_json::from_str(data.as_str()).unwrap();
 
-    let (model, timestepper): (Model, Timestepper) = schema_v2.build_model(data_path, output_path).unwrap();
+    let model = schema_v2.build_model(data_path, output_path).unwrap();
 
     match *solver {
-        Solver::Clp => model.run::<ClpSolver>(&timestepper, &ClpSolverSettings::default()),
+        Solver::Clp => model.run::<ClpSolver>(&ClpSolverSettings::default()),
         #[cfg(feature = "highs")]
-        Solver::HIGHS => model.run::<HighsSolver>(&timestepper, &HighsSolverSettings::default()),
+        Solver::HIGHS => model.run::<HighsSolver>(&HighsSolverSettings::default()),
         #[cfg(feature = "ipm-ocl")]
-        Solver::CLIPMF32 => model.run_multi_scenario::<ClIpmF32Solver>(&timestepper, &ClIpmSolverSettings::default()),
+        Solver::CLIPMF32 => model.run_multi_scenario::<ClIpmF32Solver>(&ClIpmSolverSettings::default()),
         #[cfg(feature = "ipm-ocl")]
-        Solver::CLIPMF64 => model.run_multi_scenario::<ClIpmF64Solver>(&timestepper, &ClIpmSolverSettings::default()),
+        Solver::CLIPMF64 => model.run_multi_scenario::<ClIpmF64Solver>(&ClIpmSolverSettings::default()),
         #[cfg(feature = "ipm-simd")]
-        Solver::IpmSimd => {
-            model.run_multi_scenario::<SimdIpmF64Solver<4>>(&timestepper, &SimdIpmSolverSettings::default())
-        }
+        Solver::IpmSimd => model.run_multi_scenario::<SimdIpmF64Solver<4>>(&SimdIpmSolverSettings::default()),
     }
     .unwrap();
 }
 
 fn run_random(num_systems: usize, density: usize, num_scenarios: usize, solver: &Solver) {
-    let timestepper = Timestepper::new(date!(2020 - 01 - 01), date!(2020 - 01 - 10), 1);
     let mut rng = ChaCha8Rng::seed_from_u64(0);
-    let model = make_random_model(
-        num_systems,
-        density,
-        timestepper.timesteps().len(),
-        num_scenarios,
-        &mut rng,
-    )
-    .unwrap();
+    let model = make_random_model(num_systems, density, num_scenarios, &mut rng).unwrap();
 
     match *solver {
-        Solver::Clp => model.run::<ClpSolver>(&timestepper, &ClpSolverSettings::default()),
+        Solver::Clp => model.run::<ClpSolver>(&ClpSolverSettings::default()),
         #[cfg(feature = "highs")]
-        Solver::HIGHS => model.run::<HighsSolver>(&timestepper, &HighsSolverSettings::default()),
+        Solver::HIGHS => model.run::<HighsSolver>(&HighsSolverSettings::default()),
         #[cfg(feature = "ipm-ocl")]
-        Solver::CLIPMF32 => model.run_multi_scenario::<ClIpmF32Solver>(&timestepper, &ClIpmSolverSettings::default()),
+        Solver::CLIPMF32 => model.run_multi_scenario::<ClIpmF32Solver>(&ClIpmSolverSettings::default()),
         #[cfg(feature = "ipm-ocl")]
-        Solver::CLIPMF64 => model.run_multi_scenario::<ClIpmF64Solver>(&timestepper, &ClIpmSolverSettings::default()),
+        Solver::CLIPMF64 => model.run_multi_scenario::<ClIpmF64Solver>(&ClIpmSolverSettings::default()),
         #[cfg(feature = "ipm-simd")]
-        Solver::IpmSimd => {
-            model.run_multi_scenario::<SimdIpmF64Solver<4>>(&timestepper, &SimdIpmSolverSettings::default())
-        }
+        Solver::IpmSimd => model.run_multi_scenario::<SimdIpmF64Solver<4>>(&SimdIpmSolverSettings::default()),
     }
     .unwrap();
 }

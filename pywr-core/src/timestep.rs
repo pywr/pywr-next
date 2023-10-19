@@ -63,7 +63,7 @@ impl Timestepper {
     }
 
     /// Create a vector of `Timestep`s between the start and end dates at the given duration.
-    pub fn timesteps(&self) -> Vec<Timestep> {
+    fn timesteps(&self) -> Vec<Timestep> {
         let mut timesteps: Vec<Timestep> = Vec::new();
         let mut current = Timestep::new(self.start, 0, self.timestep);
 
@@ -73,5 +73,24 @@ impl Timestepper {
             current = next;
         }
         timesteps
+    }
+}
+
+/// The time domain that a model will be simulated over.
+pub struct TimeDomain {
+    timesteps: Vec<Timestep>,
+}
+
+impl TimeDomain {
+    pub fn timesteps(&self) -> &[Timestep] {
+        &self.timesteps
+    }
+}
+
+impl From<Timestepper> for TimeDomain {
+    fn from(value: Timestepper) -> Self {
+        Self {
+            timesteps: value.timesteps(),
+        }
     }
 }

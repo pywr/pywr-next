@@ -4,6 +4,7 @@ use crate::parameters::{
     DynamicFloatValue, DynamicFloatValueType, DynamicIndexValue, IntoV2Parameter, ParameterMeta, TryFromV1Parameter,
     TryIntoV2Parameter,
 };
+use pywr_core::models::ModelDomain;
 use pywr_core::parameters::ParameterIndex;
 use pywr_v1_schema::parameters::IndexedArrayParameter as IndexedArrayParameterV1;
 use std::collections::HashMap;
@@ -34,21 +35,22 @@ impl IndexedArrayParameter {
 
     pub fn add_to_model(
         &self,
-        model: &mut pywr_core::model::Model,
+        network: &mut pywr_core::network::Network,
+        domain: &ModelDomain,
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
     ) -> Result<ParameterIndex, SchemaError> {
-        let index_parameter = self.index_parameter.load(model, tables, data_path)?;
+        let index_parameter = self.index_parameter.load(network, domain, tables, data_path)?;
 
         let metrics = self
             .metrics
             .iter()
-            .map(|v| v.load(model, tables, data_path))
+            .map(|v| v.load(network, domain, tables, data_path))
             .collect::<Result<Vec<_>, _>>()?;
 
         let p = pywr_core::parameters::IndexedArrayParameter::new(&self.meta.name, index_parameter, &metrics);
 
-        Ok(model.add_parameter(Box::new(p))?)
+        Ok(network.add_parameter(Box::new(p))?)
     }
 }
 

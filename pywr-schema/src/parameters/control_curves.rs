@@ -3,6 +3,7 @@ use crate::error::{ConversionError, SchemaError};
 use crate::parameters::{
     DynamicFloatValue, DynamicFloatValueType, IntoV2Parameter, ParameterMeta, TryFromV1Parameter, TryIntoV2Parameter,
 };
+use pywr_core::models::ModelDomain;
 use pywr_core::parameters::{IndexParameterIndex, ParameterIndex};
 use pywr_v1_schema::parameters::{
     ControlCurveIndexParameter as ControlCurveIndexParameterV1,
@@ -38,26 +39,27 @@ impl ControlCurveInterpolatedParameter {
 
     pub fn add_to_model(
         &self,
-        model: &mut pywr_core::model::Model,
+        network: &mut pywr_core::network::Network,
+        domain: &ModelDomain,
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
     ) -> Result<ParameterIndex, SchemaError> {
-        let metric = model.get_storage_node_metric(&self.storage_node, None, true)?;
+        let metric = network.get_storage_node_metric(&self.storage_node, None, true)?;
 
         let control_curves = self
             .control_curves
             .iter()
-            .map(|cc| cc.load(model, tables, data_path))
+            .map(|cc| cc.load(network, domain, tables, data_path))
             .collect::<Result<_, _>>()?;
 
         let values = self
             .values
             .iter()
-            .map(|val| val.load(model, tables, data_path))
+            .map(|val| val.load(network, domain, tables, data_path))
             .collect::<Result<_, _>>()?;
 
         let p = pywr_core::parameters::InterpolatedParameter::new(&self.meta.name, metric, control_curves, values);
-        Ok(model.add_parameter(Box::new(p))?)
+        Ok(network.add_parameter(Box::new(p))?)
     }
 }
 
@@ -121,20 +123,21 @@ impl ControlCurveIndexParameter {
 
     pub fn add_to_model(
         &self,
-        model: &mut pywr_core::model::Model,
+        network: &mut pywr_core::network::Network,
+        domain: &ModelDomain,
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
     ) -> Result<IndexParameterIndex, SchemaError> {
-        let metric = model.get_storage_node_metric(&self.storage_node, None, true)?;
+        let metric = network.get_storage_node_metric(&self.storage_node, None, true)?;
 
         let control_curves = self
             .control_curves
             .iter()
-            .map(|cc| cc.load(model, tables, data_path))
+            .map(|cc| cc.load(network, domain, tables, data_path))
             .collect::<Result<_, _>>()?;
 
         let p = pywr_core::parameters::ControlCurveIndexParameter::new(&self.meta.name, metric, control_curves);
-        Ok(model.add_index_parameter(Box::new(p))?)
+        Ok(network.add_index_parameter(Box::new(p))?)
     }
 }
 
@@ -232,26 +235,27 @@ impl ControlCurveParameter {
 
     pub fn add_to_model(
         &self,
-        model: &mut pywr_core::model::Model,
+        network: &mut pywr_core::network::Network,
+        domain: &ModelDomain,
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
     ) -> Result<ParameterIndex, SchemaError> {
-        let metric = model.get_storage_node_metric(&self.storage_node, None, true)?;
+        let metric = network.get_storage_node_metric(&self.storage_node, None, true)?;
 
         let control_curves = self
             .control_curves
             .iter()
-            .map(|cc| cc.load(model, tables, data_path))
+            .map(|cc| cc.load(network, domain, tables, data_path))
             .collect::<Result<_, _>>()?;
 
         let values = self
             .values
             .iter()
-            .map(|val| val.load(model, tables, data_path))
+            .map(|val| val.load(network, domain, tables, data_path))
             .collect::<Result<_, _>>()?;
 
         let p = pywr_core::parameters::ControlCurveParameter::new(&self.meta.name, metric, control_curves, values);
-        Ok(model.add_parameter(Box::new(p))?)
+        Ok(network.add_parameter(Box::new(p))?)
     }
 }
 
@@ -330,16 +334,17 @@ impl ControlCurvePiecewiseInterpolatedParameter {
 
     pub fn add_to_model(
         &self,
-        model: &mut pywr_core::model::Model,
+        network: &mut pywr_core::network::Network,
+        domain: &ModelDomain,
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
     ) -> Result<ParameterIndex, SchemaError> {
-        let metric = model.get_storage_node_metric(&self.storage_node, None, true)?;
+        let metric = network.get_storage_node_metric(&self.storage_node, None, true)?;
 
         let control_curves = self
             .control_curves
             .iter()
-            .map(|cc| cc.load(model, tables, data_path))
+            .map(|cc| cc.load(network, domain, tables, data_path))
             .collect::<Result<_, _>>()?;
 
         let values = match &self.values {
@@ -355,7 +360,7 @@ impl ControlCurvePiecewiseInterpolatedParameter {
             self.maximum.unwrap_or(1.0),
             self.minimum.unwrap_or(0.0),
         );
-        Ok(model.add_parameter(Box::new(p))?)
+        Ok(network.add_parameter(Box::new(p))?)
     }
 }
 

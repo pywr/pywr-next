@@ -4,6 +4,7 @@ use crate::parameters::{DynamicFloatValue, DynamicFloatValueType, DynamicIndexVa
 use pyo3::prelude::PyModule;
 use pyo3::types::{PyDict, PyTuple};
 use pyo3::{IntoPy, PyErr, PyObject, Python, ToPyObject};
+use pywr_core::models::ModelDomain;
 use pywr_core::parameters::{ParameterType, PyParameter};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -25,9 +26,9 @@ pub enum PythonModule {
 /// is initialised with user provided positional and/or keyword arguments that can be provided
 /// here.
 ///
-/// In additions `metrics` and `indices` can be specified. These dependent values from the model
+/// In additions `metrics` and `indices` can be specified. These dependent values from the network
 /// are provided to the calculation method of the Python object. This allows a custom Python
-/// parameter to use information from the current model simulation (e.g. current storage volume,
+/// parameter to use information from the current network simulation (e.g. current storage volume,
 /// other parameter value or index).
 ///
 /// ```
@@ -122,7 +123,8 @@ impl PythonParameter {
 
     pub fn add_to_model(
         &self,
-        model: &mut pywr_core::model::Model,
+        network: &mut pywr_core::network::Network,
+        domain: &ModelDomain,
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
     ) -> Result<ParameterType, SchemaError> {
@@ -163,7 +165,7 @@ impl PythonParameter {
         let metrics = match &self.metrics {
             Some(metrics) => metrics
                 .iter()
-                .map(|(k, v)| Ok((k.to_string(), v.load(model, tables, data_path)?)))
+                .map(|(k, v)| Ok((k.to_string(), v.load(network, domain, tables, data_path)?)))
                 .collect::<Result<HashMap<_, _>, SchemaError>>()?,
             None => HashMap::new(),
         };
@@ -171,16 +173,16 @@ impl PythonParameter {
         let indices = match &self.indices {
             Some(indices) => indices
                 .iter()
-                .map(|(k, v)| Ok((k.to_string(), v.load(model, tables, data_path)?)))
+                .map(|(k, v)| Ok((k.to_string(), v.load(network, domain, tables, data_path)?)))
                 .collect::<Result<HashMap<_, _>, SchemaError>>()?,
             None => HashMap::new(),
         };
 
         let p = PyParameter::new(&self.meta.name, object, args, kwargs, &metrics, &indices);
         let pt = if self.multi {
-            ParameterType::Multi(model.add_multi_value_parameter(Box::new(p))?)
+            ParameterType::Multi(network.add_multi_value_parameter(Box::new(p))?)
         } else {
-            ParameterType::Parameter(model.add_parameter(Box::new(p))?)
+            ParameterType::Parameter(network.add_parameter(Box::new(p))?)
         };
 
         Ok(pt)
@@ -191,7 +193,9 @@ impl PythonParameter {
 mod tests {
     use crate::data_tables::LoadedTableCollection;
     use crate::parameters::python::PythonParameter;
-    use pywr_core::model::Model;
+    use pywr_core::models::ModelDomain;
+    use pywr_core::network::Network;
+    use pywr_core::test_utils::default_time_domain;
     use serde_json::json;
     use std::fs::File;
     use std::io::Write;
@@ -234,10 +238,11 @@ class MyParameter:
         pyo3::prepare_freethreaded_python();
         // Load the schema ...
         let param: PythonParameter = serde_json::from_str(data.as_str()).unwrap();
-        // ... add it to an empty model
+        // ... add it to an empty network
         // this should trigger loading the module and extracting the class
-        let mut model = Model::default();
+        let domain: ModelDomain = default_time_domain().into();
+        let mut network = Network::default();
         let tables = LoadedTableCollection::from_schema(None, None).unwrap();
-        param.add_to_model(&mut model, &tables, None).unwrap();
+        param.add_to_model(&mut network, &domain, &tables, None).unwrap();
     }
 }

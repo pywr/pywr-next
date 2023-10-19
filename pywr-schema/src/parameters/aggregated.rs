@@ -4,6 +4,7 @@ use crate::parameters::{
     DynamicFloatValue, DynamicFloatValueType, DynamicIndexValue, IntoV2Parameter, ParameterMeta, TryFromV1Parameter,
     TryIntoV2Parameter,
 };
+use pywr_core::models::ModelDomain;
 use pywr_core::parameters::{IndexParameterIndex, ParameterIndex};
 use pywr_v1_schema::parameters::{
     AggFunc as AggFuncV1, AggregatedIndexParameter as AggregatedIndexParameterV1,
@@ -49,7 +50,7 @@ impl From<AggFuncV1> for AggFunc {
 /// Each time-step the aggregation is updated using the current values of the referenced metrics.
 /// The available aggregation functions are defined by the [`AggFunc`] enum.
 ///
-/// This parameter definition is applied to a model using [`crate::parameters::AggregatedParameter`].
+/// This parameter definition is applied to a network using [`crate::parameters::AggregatedParameter`].
 ///
 /// See also [`AggregatedIndexParameter`] for aggregation of integer values.
 ///
@@ -91,19 +92,20 @@ impl AggregatedParameter {
 
     pub fn add_to_model(
         &self,
-        model: &mut pywr_core::model::Model,
+        network: &mut pywr_core::network::Network,
+        domain: &ModelDomain,
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
     ) -> Result<ParameterIndex, SchemaError> {
         let metrics = self
             .metrics
             .iter()
-            .map(|v| v.load(model, tables, data_path))
+            .map(|v| v.load(network, domain, tables, data_path))
             .collect::<Result<Vec<_>, _>>()?;
 
         let p = pywr_core::parameters::AggregatedParameter::new(&self.meta.name, &metrics, self.agg_func.into());
 
-        Ok(model.add_parameter(Box::new(p))?)
+        Ok(network.add_parameter(Box::new(p))?)
     }
 }
 
@@ -195,19 +197,20 @@ impl AggregatedIndexParameter {
 
     pub fn add_to_model(
         &self,
-        model: &mut pywr_core::model::Model,
+        network: &mut pywr_core::network::Network,
+        domain: &ModelDomain,
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
     ) -> Result<IndexParameterIndex, SchemaError> {
         let parameters = self
             .parameters
             .iter()
-            .map(|v| v.load(model, tables, data_path))
+            .map(|v| v.load(network, domain, tables, data_path))
             .collect::<Result<Vec<_>, _>>()?;
 
         let p = pywr_core::parameters::AggregatedIndexParameter::new(&self.meta.name, parameters, self.agg_func.into());
 
-        Ok(model.add_index_parameter(Box::new(p))?)
+        Ok(network.add_index_parameter(Box::new(p))?)
     }
 }
 

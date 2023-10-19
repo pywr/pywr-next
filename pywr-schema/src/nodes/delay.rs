@@ -41,29 +41,29 @@ impl DelayNode {
         Some("outflow")
     }
 
-    pub fn add_to_model(&self, model: &mut pywr_core::model::Model) -> Result<(), SchemaError> {
-        model.add_output_node(self.meta.name.as_str(), Self::output_sub_name())?;
-        model.add_input_node(self.meta.name.as_str(), Self::input_sub_now())?;
+    pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
+        network.add_output_node(self.meta.name.as_str(), Self::output_sub_name())?;
+        network.add_input_node(self.meta.name.as_str(), Self::input_sub_now())?;
 
         Ok(())
     }
 
     pub fn set_constraints(
         &self,
-        model: &mut pywr_core::model::Model,
+        network: &mut pywr_core::network::Network,
         tables: &LoadedTableCollection,
     ) -> Result<(), SchemaError> {
         // Create the delay parameter
         let name = format!("{}-delay", self.meta.name.as_str());
-        let output_idx = model.get_node_index_by_name(self.meta.name.as_str(), Self::output_sub_name())?;
+        let output_idx = network.get_node_index_by_name(self.meta.name.as_str(), Self::output_sub_name())?;
         let metric = Metric::NodeInFlow(output_idx);
         let p = pywr_core::parameters::DelayParameter::new(&name, metric, self.delay, self.initial_value.load(tables)?);
-        let delay_idx = model.add_parameter(Box::new(p))?;
+        let delay_idx = network.add_parameter(Box::new(p))?;
 
         // Apply it as a constraint on the input node.
         let metric = Metric::ParameterValue(delay_idx);
-        model.set_node_max_flow(self.meta.name.as_str(), Self::input_sub_now(), metric.clone().into())?;
-        model.set_node_min_flow(self.meta.name.as_str(), Self::input_sub_now(), metric.into())?;
+        network.set_node_max_flow(self.meta.name.as_str(), Self::input_sub_now(), metric.clone().into())?;
+        network.set_node_min_flow(self.meta.name.as_str(), Self::input_sub_now(), metric.into())?;
 
         Ok(())
     }
@@ -78,8 +78,8 @@ impl DelayNode {
         vec![(self.meta.name.as_str(), Self::input_sub_now().map(|s| s.to_string()))]
     }
 
-    pub fn default_metric(&self, model: &pywr_core::model::Model) -> Result<Metric, SchemaError> {
-        let idx = model.get_node_index_by_name(self.meta.name.as_str(), Self::input_sub_now().as_deref())?;
+    pub fn default_metric(&self, network: &pywr_core::network::Network) -> Result<Metric, SchemaError> {
+        let idx = network.get_node_index_by_name(self.meta.name.as_str(), Self::input_sub_now().as_deref())?;
         Ok(Metric::NodeOutFlow(idx))
     }
 }
@@ -132,27 +132,28 @@ mod tests {
     fn test_model_run() {
         let data = model_str();
         let schema: PywrModel = serde_json::from_str(data).unwrap();
-        let (mut model, timestepper): (pywr_core::model::Model, Timestepper) = schema.build_model(None, None).unwrap();
+        let mut model: pywr_core::models::Model = schema.build_model(None, None).unwrap();
 
-        assert_eq!(model.nodes.len(), 4);
-        assert_eq!(model.edges.len(), 2);
+        let network = model.network_mut();
+        assert_eq!(network.nodes().len(), 4);
+        assert_eq!(network.edges().len(), 2);
 
         // TODO put this assertion data in the test model file.
-        let idx = model.get_node_by_name("link1", Some("inflow")).unwrap().index();
+        let idx = network.get_node_by_name("link1", Some("inflow")).unwrap().index();
         let expected = Array2::from_elem((366, 1), 15.0);
         let recorder = AssertionRecorder::new("link1-inflow", Metric::NodeInFlow(idx), expected, None, None);
-        model.add_recorder(Box::new(recorder)).unwrap();
+        network.add_recorder(Box::new(recorder)).unwrap();
 
-        let idx = model.get_node_by_name("link1", Some("outflow")).unwrap().index();
+        let idx = network.get_node_by_name("link1", Some("outflow")).unwrap().index();
         let expected = concatenate![
             Axis(0),
             Array2::from_elem((3, 1), 0.0),
             Array2::from_elem((363, 1), 15.0)
         ];
         let recorder = AssertionRecorder::new("link1-outflow", Metric::NodeOutFlow(idx), expected, None, None);
-        model.add_recorder(Box::new(recorder)).unwrap();
+        network.add_recorder(Box::new(recorder)).unwrap();
 
         // Test all solvers
-        run_all_solvers(&model, &timestepper);
+        run_all_solvers(&model);
     }
 }

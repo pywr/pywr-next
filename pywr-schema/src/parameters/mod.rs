@@ -1,9 +1,9 @@
 //! Parameter schema definitions.
 //!
 //! The enum [`Parameter`] contains all of the valid Pywr parameter schemas. The parameter
-//! variants define separate schemas for different parameter types. When a model is generated
-//! from a schema the parameter schemas are added to the model using [`Parameter::add_to_model`].
-//! This typically adds a struct from [`crate::parameters`] to the model using the data
+//! variants define separate schemas for different parameter types. When a network is generated
+//! from a schema the parameter schemas are added to the network using [`Parameter::add_to_model`].
+//! This typically adds a struct from [`crate::parameters`] to the network using the data
 //! defined in the schema.
 //!
 //! Serializing and deserializing is accomplished using [`serde`].
@@ -14,6 +14,7 @@ mod core;
 mod data_frame;
 mod delay;
 mod indexed_array;
+mod inter_model_transfer;
 mod offset;
 mod polynomial;
 mod profiles;
@@ -43,8 +44,10 @@ pub use super::parameters::thresholds::ParameterThresholdParameter;
 use crate::error::{ConversionError, SchemaError};
 use crate::parameters::core::DivisionParameter;
 pub use crate::parameters::data_frame::DataFrameParameter;
+pub use inter_model_transfer::InterModelTransferParameter;
 pub use offset::OffsetParameter;
 use pywr_core::metric::Metric;
+use pywr_core::models::ModelDomain;
 use pywr_core::node::NodeIndex;
 use pywr_core::parameters::{IndexParameterIndex, IndexValue, ParameterType};
 use pywr_v1_schema::parameters::{
@@ -159,6 +162,7 @@ pub enum Parameter {
     Delay(DelayParameter),
     Division(DivisionParameter),
     Offset(OffsetParameter),
+    InterModelTransfer(InterModelTransferParameter),
 }
 
 impl Parameter {
@@ -187,6 +191,7 @@ impl Parameter {
             Self::Division(p) => p.meta.name.as_str(),
             Self::Delay(p) => p.meta.name.as_str(),
             Self::Offset(p) => p.meta.name.as_str(),
+            Self::InterModelTransfer(p) => p.meta.name.as_str(),
         }
     }
 
@@ -217,6 +222,7 @@ impl Parameter {
             Self::Delay(p) => p.node_references(),
             Self::Division(p) => p.node_references(),
             Self::Offset(p) => p.node_references(),
+            Self::InterModelTransfer(p) => p.node_references(),
         }
     }
 
@@ -264,41 +270,46 @@ impl Parameter {
             Self::Delay(_) => "Delay",
             Self::Division(_) => "Division",
             Self::Offset(_) => "Offset",
+            Self::InterModelTransfer(_) => "InterModelTransfer",
         }
     }
 
     pub fn add_to_model(
         &self,
-        model: &mut pywr_core::model::Model,
+        network: &mut pywr_core::network::Network,
+        domain: &ModelDomain,
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
     ) -> Result<ParameterType, SchemaError> {
         let ty = match self {
-            Self::Constant(p) => ParameterType::Parameter(p.add_to_model(model, tables)?),
-            Self::ControlCurveInterpolated(p) => ParameterType::Parameter(p.add_to_model(model, tables, data_path)?),
-            Self::Aggregated(p) => ParameterType::Parameter(p.add_to_model(model, tables, data_path)?),
-            Self::AggregatedIndex(p) => ParameterType::Index(p.add_to_model(model, tables, data_path)?),
-            Self::AsymmetricSwitchIndex(p) => ParameterType::Index(p.add_to_model(model, tables, data_path)?),
-            Self::ControlCurvePiecewiseInterpolated(p) => {
-                ParameterType::Parameter(p.add_to_model(model, tables, data_path)?)
+            Self::Constant(p) => ParameterType::Parameter(p.add_to_model(network, tables)?),
+            Self::ControlCurveInterpolated(p) => {
+                ParameterType::Parameter(p.add_to_model(network, domain, tables, data_path)?)
             }
-            Self::ControlCurveIndex(p) => ParameterType::Index(p.add_to_model(model, tables, data_path)?),
-            Self::ControlCurve(p) => ParameterType::Parameter(p.add_to_model(model, tables, data_path)?),
-            Self::DailyProfile(p) => ParameterType::Parameter(p.add_to_model(model, tables)?),
-            Self::IndexedArray(p) => ParameterType::Parameter(p.add_to_model(model, tables, data_path)?),
-            Self::MonthlyProfile(p) => ParameterType::Parameter(p.add_to_model(model, tables)?),
-            Self::UniformDrawdownProfile(p) => ParameterType::Parameter(p.add_to_model(model, tables)?),
-            Self::Max(p) => ParameterType::Parameter(p.add_to_model(model, tables, data_path)?),
-            Self::Min(p) => ParameterType::Parameter(p.add_to_model(model, tables, data_path)?),
-            Self::Negative(p) => ParameterType::Parameter(p.add_to_model(model, tables, data_path)?),
-            Self::Polynomial1D(p) => ParameterType::Parameter(p.add_to_model(model)?),
-            Self::ParameterThreshold(p) => ParameterType::Index(p.add_to_model(model, tables, data_path)?),
-            Self::TablesArray(p) => ParameterType::Parameter(p.add_to_model(model, data_path)?),
-            Self::Python(p) => p.add_to_model(model, tables, data_path)?,
-            Self::DataFrame(p) => ParameterType::Parameter(p.add_to_model(model, data_path)?),
-            Self::Delay(p) => ParameterType::Parameter(p.add_to_model(model, tables, data_path)?),
-            Self::Division(p) => ParameterType::Parameter(p.add_to_model(model, tables, data_path)?),
-            Self::Offset(p) => ParameterType::Parameter(p.add_to_model(model, tables, data_path)?),
+            Self::Aggregated(p) => ParameterType::Parameter(p.add_to_model(network, domain, tables, data_path)?),
+            Self::AggregatedIndex(p) => ParameterType::Index(p.add_to_model(network, domain, tables, data_path)?),
+            Self::AsymmetricSwitchIndex(p) => ParameterType::Index(p.add_to_model(network, domain, tables, data_path)?),
+            Self::ControlCurvePiecewiseInterpolated(p) => {
+                ParameterType::Parameter(p.add_to_model(network, domain, tables, data_path)?)
+            }
+            Self::ControlCurveIndex(p) => ParameterType::Index(p.add_to_model(network, domain, tables, data_path)?),
+            Self::ControlCurve(p) => ParameterType::Parameter(p.add_to_model(network, domain, tables, data_path)?),
+            Self::DailyProfile(p) => ParameterType::Parameter(p.add_to_model(network, tables)?),
+            Self::IndexedArray(p) => ParameterType::Parameter(p.add_to_model(network, domain, tables, data_path)?),
+            Self::MonthlyProfile(p) => ParameterType::Parameter(p.add_to_model(network, tables)?),
+            Self::UniformDrawdownProfile(p) => ParameterType::Parameter(p.add_to_model(network, tables)?),
+            Self::Max(p) => ParameterType::Parameter(p.add_to_model(network, domain, tables, data_path)?),
+            Self::Min(p) => ParameterType::Parameter(p.add_to_model(network, domain, tables, data_path)?),
+            Self::Negative(p) => ParameterType::Parameter(p.add_to_model(network, domain, tables, data_path)?),
+            Self::Polynomial1D(p) => ParameterType::Parameter(p.add_to_model(network)?),
+            Self::ParameterThreshold(p) => ParameterType::Index(p.add_to_model(network, domain, tables, data_path)?),
+            Self::TablesArray(p) => ParameterType::Parameter(p.add_to_model(network, domain, data_path)?),
+            Self::Python(p) => p.add_to_model(network, domain, tables, data_path)?,
+            Self::DataFrame(p) => ParameterType::Parameter(p.add_to_model(network, domain, data_path)?),
+            Self::Delay(p) => ParameterType::Parameter(p.add_to_model(network, domain, tables, data_path)?),
+            Self::Division(p) => ParameterType::Parameter(p.add_to_model(network, domain, tables, data_path)?),
+            Self::Offset(p) => ParameterType::Parameter(p.add_to_model(network, domain, tables, data_path)?),
+            Self::InterModelTransfer(p) => ParameterType::Parameter(p.add_to_model(network)?),
         };
 
         Ok(ty)
@@ -442,20 +453,56 @@ pub struct NodeReference {
 }
 
 impl NodeReference {
-    fn get_node_index(&self, model: &pywr_core::model::Model) -> Result<NodeIndex, SchemaError> {
-        Ok(model.get_node_index_by_name(&self.name, self.sub_name.as_deref())?)
+    fn get_node_index(&self, network: &pywr_core::network::Network) -> Result<NodeIndex, SchemaError> {
+        Ok(network.get_node_index_by_name(&self.name, self.sub_name.as_deref())?)
     }
 }
 
-/// A floating-point(f64) value from a metric in the model.
+/// A floating-point(f64) value from a metric in the network.
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
 #[serde(tag = "type")]
-pub enum MetricFloatValue {
+pub enum MetricFloatReference {
     NodeInFlow(NodeReference),
     NodeOutFlow(NodeReference),
     NodeVolume(NodeReference),
     NodeProportionalVolume(NodeReference),
     Parameter { name: String, key: Option<String> },
+}
+
+impl MetricFloatReference {
+    /// Load the metric definition into a `Metric` containing the appropriate internal references.
+    pub fn load(&self, network: &pywr_core::network::Network) -> Result<Metric, SchemaError> {
+        match self {
+            Self::NodeInFlow(node_ref) => Ok(Metric::NodeInFlow(node_ref.get_node_index(network)?)),
+            Self::NodeOutFlow(node_ref) => Ok(Metric::NodeOutFlow(node_ref.get_node_index(network)?)),
+            Self::NodeVolume(node_ref) => Ok(Metric::NodeVolume(node_ref.get_node_index(network)?)),
+            Self::NodeProportionalVolume(node_ref) => {
+                Ok(Metric::NodeProportionalVolume(node_ref.get_node_index(network)?))
+            }
+            Self::Parameter { name, key } => {
+                match key {
+                    Some(key) => {
+                        // Key given; this should be a multi-valued parameter
+                        Ok(Metric::MultiParameterValue((
+                            network.get_multi_valued_parameter_index_by_name(name)?,
+                            key.clone(),
+                        )))
+                    }
+                    None => {
+                        // This should be an existing parameter
+                        Ok(Metric::ParameterValue(network.get_parameter_index_by_name(name)?))
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// A floating-point(f64) value from a metric in the network.
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+#[serde(untagged)]
+pub enum MetricFloatValue {
+    Reference(MetricFloatReference),
     InlineParameter { definition: Box<Parameter> },
 }
 
@@ -463,32 +510,13 @@ impl MetricFloatValue {
     /// Load the metric definition into a `Metric` containing the appropriate internal references.
     pub fn load(
         &self,
-        model: &mut pywr_core::model::Model,
+        network: &mut pywr_core::network::Network,
+        domain: &ModelDomain,
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
     ) -> Result<Metric, SchemaError> {
         match self {
-            Self::NodeInFlow(node_ref) => Ok(Metric::NodeInFlow(node_ref.get_node_index(model)?)),
-            Self::NodeOutFlow(node_ref) => Ok(Metric::NodeOutFlow(node_ref.get_node_index(model)?)),
-            Self::NodeVolume(node_ref) => Ok(Metric::NodeVolume(node_ref.get_node_index(model)?)),
-            Self::NodeProportionalVolume(node_ref) => {
-                Ok(Metric::NodeProportionalVolume(node_ref.get_node_index(model)?))
-            }
-            Self::Parameter { name, key } => {
-                match key {
-                    Some(key) => {
-                        // Key given; this should be a multi-valued parameter
-                        Ok(Metric::MultiParameterValue((
-                            model.get_multi_valued_parameter_index_by_name(name)?,
-                            key.clone(),
-                        )))
-                    }
-                    None => {
-                        // This should be an existing parameter
-                        Ok(Metric::ParameterValue(model.get_parameter_index_by_name(name)?))
-                    }
-                }
-            }
+            Self::Reference(reference) => Ok(reference.load(network)?),
             Self::InlineParameter { definition } => {
                 // This inline parameter could already have been loaded on a previous attempt
                 // Let's see if exists first.
@@ -497,14 +525,14 @@ impl MetricFloatValue {
                 // assume it is the correct one for future references to that name. This could be
                 // improved by checking the parameter returned by name matches the definition here.
 
-                match model.get_parameter_index_by_name(definition.name()) {
+                match network.get_parameter_index_by_name(definition.name()) {
                     Ok(p) => {
                         // Found a parameter with the name; assume it is the right one!
                         Ok(Metric::ParameterValue(p))
                     }
                     Err(_) => {
                         // An error retrieving a parameter with this name; assume it needs creating.
-                        match definition.add_to_model(model, tables, data_path)? {
+                        match definition.add_to_model(network, &domain, tables, data_path)? {
                             ParameterType::Parameter(idx) => Ok(Metric::ParameterValue(idx)),
                             ParameterType::Index(_) => Err(SchemaError::UnexpectedParameterType(format!(
                         "Found index parameter of type '{}' with name '{}' where an float parameter was expected.",
@@ -535,18 +563,19 @@ pub enum ParameterIndexValue {
 impl ParameterIndexValue {
     pub fn load(
         &self,
-        model: &mut pywr_core::model::Model,
+        network: &mut pywr_core::network::Network,
+        domain: &ModelDomain,
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
     ) -> Result<IndexParameterIndex, SchemaError> {
         match self {
             Self::Reference(name) => {
                 // This should be an existing parameter
-                Ok(model.get_index_parameter_index_by_name(name)?)
+                Ok(network.get_index_parameter_index_by_name(name)?)
             }
             Self::Inline(parameter) => {
                 // Inline parameter needs to be added
-                match parameter.add_to_model(model, tables, data_path)? {
+                match parameter.add_to_model(network, domain, tables, data_path)? {
                     ParameterType::Index(idx) => Ok(idx),
                     ParameterType::Parameter(_) => Err(SchemaError::UnexpectedParameterType(format!(
                         "Found float parameter of type '{}' with name '{}' where an index parameter was expected.",
@@ -582,13 +611,14 @@ impl DynamicFloatValue {
 
     pub fn load(
         &self,
-        model: &mut pywr_core::model::Model,
+        network: &mut pywr_core::network::Network,
+        domain: &ModelDomain,
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
     ) -> Result<Metric, SchemaError> {
         let parameter_ref = match self {
             DynamicFloatValue::Constant(v) => Metric::Constant(v.load(tables)?),
-            DynamicFloatValue::Dynamic(v) => v.load(model, tables, data_path)?,
+            DynamicFloatValue::Dynamic(v) => v.load(network, domain, tables, data_path)?,
         };
         Ok(parameter_ref)
     }
@@ -604,10 +634,12 @@ impl TryFromV1Parameter<ParameterValueV1> for DynamicFloatValue {
     ) -> Result<Self, Self::Error> {
         let p = match v1 {
             ParameterValueV1::Constant(v) => Self::Constant(ConstantValue::Literal(v)),
-            ParameterValueV1::Reference(p_name) => Self::Dynamic(MetricFloatValue::Parameter {
-                name: p_name,
-                key: None,
-            }),
+            ParameterValueV1::Reference(p_name) => {
+                Self::Dynamic(MetricFloatValue::Reference(MetricFloatReference::Parameter {
+                    name: p_name,
+                    key: None,
+                }))
+            }
             ParameterValueV1::Table(tbl) => Self::Constant(ConstantValue::Table(tbl.into())),
             ParameterValueV1::Inline(param) => Self::Dynamic(MetricFloatValue::InlineParameter {
                 definition: Box::new((*param).try_into_v2_parameter(parent_node, unnamed_count)?),
@@ -636,13 +668,14 @@ impl DynamicIndexValue {
     ///
     pub fn load(
         &self,
-        model: &mut pywr_core::model::Model,
+        network: &mut pywr_core::network::Network,
+        domain: &ModelDomain,
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
     ) -> Result<IndexValue, SchemaError> {
         let parameter_ref = match self {
             DynamicIndexValue::Constant(v) => IndexValue::Constant(v.load(tables)?),
-            DynamicIndexValue::Dynamic(v) => IndexValue::Dynamic(v.load(model, tables, data_path)?),
+            DynamicIndexValue::Dynamic(v) => IndexValue::Dynamic(v.load(network, domain, tables, data_path)?),
         };
         Ok(parameter_ref)
     }

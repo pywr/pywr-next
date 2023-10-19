@@ -25,6 +25,7 @@ pub use monthly_virtual_storage::MonthlyVirtualStorageNode;
 pub use piecewise_link::{PiecewiseLinkNode, PiecewiseLinkStep};
 pub use piecewise_storage::PiecewiseStorageNode;
 use pywr_core::metric::Metric;
+use pywr_core::models::ModelDomain;
 use pywr_v1_schema::nodes::{
     CoreNode as CoreNodeV1, CustomNode as CustomNodeV1, Node as NodeV1, NodeMeta as NodeMetaV1,
     NodePosition as NodePositionV1,
@@ -183,56 +184,58 @@ impl CoreNode {
 
     pub fn add_to_model(
         &self,
-        model: &mut pywr_core::model::Model,
+        network: &mut pywr_core::network::Network,
+        domain: &ModelDomain,
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
     ) -> Result<(), SchemaError> {
         match self {
-            CoreNode::Input(n) => n.add_to_model(model),
-            CoreNode::Link(n) => n.add_to_model(model),
-            CoreNode::Output(n) => n.add_to_model(model),
-            CoreNode::Storage(n) => n.add_to_model(model, tables, data_path),
-            CoreNode::Catchment(n) => n.add_to_model(model),
-            CoreNode::RiverGauge(n) => n.add_to_model(model),
-            CoreNode::LossLink(n) => n.add_to_model(model),
-            CoreNode::River(n) => n.add_to_model(model),
-            CoreNode::RiverSplitWithGauge(n) => n.add_to_model(model),
-            CoreNode::WaterTreatmentWorks(n) => n.add_to_model(model),
-            CoreNode::Aggregated(n) => n.add_to_model(model),
-            CoreNode::AggregatedStorage(n) => n.add_to_model(model),
-            CoreNode::VirtualStorage(n) => n.add_to_model(model, tables, data_path),
-            CoreNode::AnnualVirtualStorage(n) => n.add_to_model(model, tables, data_path),
-            CoreNode::PiecewiseLink(n) => n.add_to_model(model),
-            CoreNode::PiecewiseStorage(n) => n.add_to_model(model, tables, data_path),
-            CoreNode::Delay(n) => n.add_to_model(model),
-            CoreNode::MonthlyVirtualStorage(n) => n.add_to_model(model, tables, data_path),
+            CoreNode::Input(n) => n.add_to_model(network),
+            CoreNode::Link(n) => n.add_to_model(network),
+            CoreNode::Output(n) => n.add_to_model(network),
+            CoreNode::Storage(n) => n.add_to_model(network, domain, tables, data_path),
+            CoreNode::Catchment(n) => n.add_to_model(network),
+            CoreNode::RiverGauge(n) => n.add_to_model(network),
+            CoreNode::LossLink(n) => n.add_to_model(network),
+            CoreNode::River(n) => n.add_to_model(network),
+            CoreNode::RiverSplitWithGauge(n) => n.add_to_model(network),
+            CoreNode::WaterTreatmentWorks(n) => n.add_to_model(network),
+            CoreNode::Aggregated(n) => n.add_to_model(network),
+            CoreNode::AggregatedStorage(n) => n.add_to_model(network),
+            CoreNode::VirtualStorage(n) => n.add_to_model(network, domain, tables, data_path),
+            CoreNode::AnnualVirtualStorage(n) => n.add_to_model(network, domain, tables, data_path),
+            CoreNode::PiecewiseLink(n) => n.add_to_model(network),
+            CoreNode::PiecewiseStorage(n) => n.add_to_model(network, domain, tables, data_path),
+            CoreNode::Delay(n) => n.add_to_model(network),
+            CoreNode::MonthlyVirtualStorage(n) => n.add_to_model(network, domain, tables, data_path),
         }
     }
 
     pub fn set_constraints(
         &self,
-        model: &mut pywr_core::model::Model,
+        network: &mut pywr_core::network::Network,
+        domain: &ModelDomain,
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
     ) -> Result<(), SchemaError> {
         match self {
-            CoreNode::Input(n) => n.set_constraints(model, tables, data_path),
-            CoreNode::Link(n) => n.set_constraints(model, tables, data_path),
-            CoreNode::Output(n) => n.set_constraints(model, tables, data_path),
-            CoreNode::Storage(n) => n.set_constraints(model, tables, data_path),
-            CoreNode::Catchment(n) => n.set_constraints(model, tables, data_path),
-            CoreNode::RiverGauge(n) => n.set_constraints(model, tables, data_path),
-            CoreNode::LossLink(n) => n.set_constraints(model, tables, data_path),
+            CoreNode::Input(n) => n.set_constraints(network, domain, tables, data_path),
+            CoreNode::Link(n) => n.set_constraints(network, domain, tables, data_path),
+            CoreNode::Output(n) => n.set_constraints(network, domain, tables, data_path),
+            CoreNode::Storage(n) => n.set_constraints(network, domain, tables, data_path),
+            CoreNode::Catchment(n) => n.set_constraints(network, domain, tables, data_path),
+            CoreNode::RiverGauge(n) => n.set_constraints(network, domain, tables, data_path),
+            CoreNode::LossLink(n) => n.set_constraints(network, domain, tables, data_path),
             CoreNode::River(_) => Ok(()), // No constraints on river node
-            CoreNode::RiverSplitWithGauge(n) => n.set_constraints(model, tables, data_path),
-            CoreNode::WaterTreatmentWorks(n) => n.set_constraints(model, tables, data_path),
-            CoreNode::Aggregated(n) => n.set_constraints(model, tables, data_path),
+            CoreNode::RiverSplitWithGauge(n) => n.set_constraints(network, domain, tables, data_path),
+            CoreNode::WaterTreatmentWorks(n) => n.set_constraints(network, domain, tables, data_path),
+            CoreNode::Aggregated(n) => n.set_constraints(network, domain, tables, data_path),
             CoreNode::AggregatedStorage(_) => Ok(()), // No constraints on aggregated storage nodes.
             CoreNode::VirtualStorage(_) => Ok(()),    // TODO
             CoreNode::AnnualVirtualStorage(_) => Ok(()), // TODO
-            CoreNode::PiecewiseLink(n) => n.set_constraints(model, tables, data_path),
-            CoreNode::PiecewiseStorage(n) => n.set_constraints(model, tables, data_path),
-            CoreNode::Delay(n) => n.set_constraints(model, tables),
+            CoreNode::PiecewiseLink(n) => n.set_constraints(network, domain, tables, data_path),
+            CoreNode::PiecewiseStorage(n) => n.set_constraints(network, domain, tables, data_path),
+            CoreNode::Delay(n) => n.set_constraints(network, tables),
             CoreNode::MonthlyVirtualStorage(_) => Ok(()), // TODO
         }
     }
@@ -286,26 +289,26 @@ impl CoreNode {
     }
 
     /// Returns the default metric for this node.
-    pub fn default_metric(&self, model: &pywr_core::model::Model) -> Result<Metric, SchemaError> {
+    pub fn default_metric(&self, network: &pywr_core::network::Network) -> Result<Metric, SchemaError> {
         match self {
-            CoreNode::Input(n) => n.default_metric(model),
-            CoreNode::Link(n) => n.default_metric(model),
-            CoreNode::Output(n) => n.default_metric(model),
-            CoreNode::Storage(n) => n.default_metric(model),
-            CoreNode::Catchment(n) => n.default_metric(model),
-            CoreNode::RiverGauge(n) => n.default_metric(model),
-            CoreNode::LossLink(n) => n.default_metric(model),
-            CoreNode::River(n) => n.default_metric(model),
-            CoreNode::RiverSplitWithGauge(n) => n.default_metric(model),
-            CoreNode::WaterTreatmentWorks(n) => n.default_metric(model),
-            CoreNode::Aggregated(n) => n.default_metric(model),
-            CoreNode::AggregatedStorage(n) => n.default_metric(model),
-            CoreNode::VirtualStorage(n) => n.default_metric(model),
-            CoreNode::AnnualVirtualStorage(n) => n.default_metric(model),
-            CoreNode::MonthlyVirtualStorage(n) => n.default_metric(model),
-            CoreNode::PiecewiseLink(n) => n.default_metric(model),
-            CoreNode::Delay(n) => n.default_metric(model),
-            CoreNode::PiecewiseStorage(n) => n.default_metric(model),
+            CoreNode::Input(n) => n.default_metric(network),
+            CoreNode::Link(n) => n.default_metric(network),
+            CoreNode::Output(n) => n.default_metric(network),
+            CoreNode::Storage(n) => n.default_metric(network),
+            CoreNode::Catchment(n) => n.default_metric(network),
+            CoreNode::RiverGauge(n) => n.default_metric(network),
+            CoreNode::LossLink(n) => n.default_metric(network),
+            CoreNode::River(n) => n.default_metric(network),
+            CoreNode::RiverSplitWithGauge(n) => n.default_metric(network),
+            CoreNode::WaterTreatmentWorks(n) => n.default_metric(network),
+            CoreNode::Aggregated(n) => n.default_metric(network),
+            CoreNode::AggregatedStorage(n) => n.default_metric(network),
+            CoreNode::VirtualStorage(n) => n.default_metric(network),
+            CoreNode::AnnualVirtualStorage(n) => n.default_metric(network),
+            CoreNode::MonthlyVirtualStorage(n) => n.default_metric(network),
+            CoreNode::PiecewiseLink(n) => n.default_metric(network),
+            CoreNode::Delay(n) => n.default_metric(network),
+            CoreNode::PiecewiseStorage(n) => n.default_metric(network),
         }
     }
 }
@@ -348,24 +351,26 @@ impl Node {
 
     pub fn add_to_model(
         &self,
-        model: &mut pywr_core::model::Model,
+        network: &mut pywr_core::network::Network,
+        domain: &ModelDomain,
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
     ) -> Result<(), SchemaError> {
         match self {
-            Node::Core(n) => n.add_to_model(model, tables, data_path),
+            Node::Core(n) => n.add_to_model(network, domain, tables, data_path),
             Node::Custom(n) => panic!("TODO custom nodes not yet supported: {}", n.meta.name.as_str()),
         }
     }
 
     pub fn set_constraints(
         &self,
-        model: &mut pywr_core::model::Model,
+        network: &mut pywr_core::network::Network,
+        domain: &ModelDomain,
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
     ) -> Result<(), SchemaError> {
         match self {
-            Node::Core(n) => n.set_constraints(model, tables, data_path),
+            Node::Core(n) => n.set_constraints(network, domain, tables, data_path),
             Node::Custom(n) => panic!("TODO custom nodes not yet supported: {}", n.meta.name.as_str()),
         }
     }
@@ -385,9 +390,9 @@ impl Node {
     }
 
     /// Returns the default metric for this node.
-    pub fn default_metric(&self, model: &pywr_core::model::Model) -> Result<Metric, SchemaError> {
+    pub fn default_metric(&self, network: &pywr_core::network::Network) -> Result<Metric, SchemaError> {
         match self {
-            Node::Core(n) => n.default_metric(model),
+            Node::Core(n) => n.default_metric(network),
             Node::Custom(n) => panic!("TODO custom nodes not yet supported: {}", n.meta.name.as_str()),
         }
     }

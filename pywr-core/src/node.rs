@@ -1,6 +1,6 @@
 use crate::edge::EdgeIndex;
 use crate::metric::Metric;
-use crate::model::Model;
+use crate::network::Network;
 use crate::state::{NodeState, State};
 use crate::timestep::Timestep;
 use crate::PywrError;
@@ -326,13 +326,13 @@ impl Node {
     //     }
     // }
 
-    pub fn before(&self, timestep: &Timestep, model: &Model, state: &mut State) -> Result<(), PywrError> {
+    pub fn before(&self, timestep: &Timestep, network: &Network, state: &mut State) -> Result<(), PywrError> {
         // Currently only storage nodes do something during before
         match self {
             Node::Input(_) => Ok(()),
             Node::Output(_) => Ok(()),
             Node::Link(_) => Ok(()),
-            Node::Storage(n) => n.before(timestep, model, state),
+            Node::Storage(n) => n.before(timestep, network, state),
         }
     }
 
@@ -369,11 +369,11 @@ impl Node {
         }
     }
 
-    pub fn get_current_min_flow(&self, model: &Model, state: &State) -> Result<f64, PywrError> {
+    pub fn get_current_min_flow(&self, network: &Network, state: &State) -> Result<f64, PywrError> {
         match self {
-            Self::Input(n) => n.get_min_flow(model, state),
-            Self::Link(n) => n.get_min_flow(model, state),
-            Self::Output(n) => n.get_min_flow(model, state),
+            Self::Input(n) => n.get_min_flow(network, state),
+            Self::Link(n) => n.get_min_flow(network, state),
+            Self::Output(n) => n.get_min_flow(network, state),
             Self::Storage(_) => Err(PywrError::FlowConstraintsUndefined),
         }
     }
@@ -396,11 +396,11 @@ impl Node {
         }
     }
 
-    pub fn get_current_max_flow(&self, model: &Model, state: &State) -> Result<f64, PywrError> {
+    pub fn get_current_max_flow(&self, network: &Network, state: &State) -> Result<f64, PywrError> {
         match self {
-            Self::Input(n) => n.get_max_flow(model, state),
-            Self::Link(n) => n.get_max_flow(model, state),
-            Self::Output(n) => n.get_max_flow(model, state),
+            Self::Input(n) => n.get_max_flow(network, state),
+            Self::Link(n) => n.get_max_flow(network, state),
+            Self::Output(n) => n.get_max_flow(network, state),
             Self::Storage(_) => Err(PywrError::FlowConstraintsUndefined),
         }
     }
@@ -414,10 +414,10 @@ impl Node {
         }
     }
 
-    pub fn get_current_flow_bounds(&self, model: &Model, state: &State) -> Result<(f64, f64), PywrError> {
+    pub fn get_current_flow_bounds(&self, network: &Network, state: &State) -> Result<(f64, f64), PywrError> {
         match (
-            self.get_current_min_flow(model, state),
-            self.get_current_max_flow(model, state),
+            self.get_current_min_flow(network, state),
+            self.get_current_max_flow(network, state),
         ) {
             (Ok(min_flow), Ok(max_flow)) => Ok((min_flow, max_flow)),
             _ => Err(PywrError::FlowConstraintsUndefined),
@@ -436,12 +436,12 @@ impl Node {
         }
     }
 
-    pub fn get_current_min_volume(&self, model: &Model, state: &State) -> Result<f64, PywrError> {
+    pub fn get_current_min_volume(&self, network: &Network, state: &State) -> Result<f64, PywrError> {
         match self {
             Self::Input(_) => Err(PywrError::StorageConstraintsUndefined),
             Self::Link(_) => Err(PywrError::StorageConstraintsUndefined),
             Self::Output(_) => Err(PywrError::StorageConstraintsUndefined),
-            Self::Storage(n) => n.get_min_volume(model, state),
+            Self::Storage(n) => n.get_min_volume(network, state),
         }
     }
 
@@ -457,29 +457,33 @@ impl Node {
         }
     }
 
-    pub fn get_current_max_volume(&self, model: &Model, state: &State) -> Result<f64, PywrError> {
+    pub fn get_current_max_volume(&self, network: &Network, state: &State) -> Result<f64, PywrError> {
         match self {
             Self::Input(_) => Err(PywrError::StorageConstraintsUndefined),
             Self::Link(_) => Err(PywrError::StorageConstraintsUndefined),
             Self::Output(_) => Err(PywrError::StorageConstraintsUndefined),
-            Self::Storage(n) => n.get_max_volume(model, state),
+            Self::Storage(n) => n.get_max_volume(network, state),
         }
     }
 
-    pub fn get_current_volume_bounds(&self, model: &Model, state: &State) -> Result<(f64, f64), PywrError> {
+    pub fn get_current_volume_bounds(&self, network: &Network, state: &State) -> Result<(f64, f64), PywrError> {
         match (
-            self.get_current_min_volume(model, state),
-            self.get_current_max_volume(model, state),
+            self.get_current_min_volume(network, state),
+            self.get_current_max_volume(network, state),
         ) {
             (Ok(min_vol), Ok(max_vol)) => Ok((min_vol, max_vol)),
             _ => Err(PywrError::FlowConstraintsUndefined),
         }
     }
 
-    pub fn get_current_available_volume_bounds(&self, model: &Model, state: &State) -> Result<(f64, f64), PywrError> {
+    pub fn get_current_available_volume_bounds(
+        &self,
+        network: &Network,
+        state: &State,
+    ) -> Result<(f64, f64), PywrError> {
         match (
-            self.get_current_min_volume(model, state),
-            self.get_current_max_volume(model, state),
+            self.get_current_min_volume(network, state),
+            self.get_current_max_volume(network, state),
         ) {
             (Ok(min_vol), Ok(max_vol)) => {
                 let current_volume = state.get_network_state().get_node_volume(&self.index())?;
@@ -502,21 +506,21 @@ impl Node {
         }
     }
 
-    pub fn get_outgoing_cost(&self, model: &Model, state: &State) -> Result<f64, PywrError> {
+    pub fn get_outgoing_cost(&self, network: &Network, state: &State) -> Result<f64, PywrError> {
         match self {
-            Self::Input(n) => n.get_cost(model, state),
-            Self::Link(n) => Ok(n.get_cost(model, state)? / 2.0),
-            Self::Output(n) => n.get_cost(model, state),
-            Self::Storage(n) => Ok(-n.get_cost(model, state)?),
+            Self::Input(n) => n.get_cost(network, state),
+            Self::Link(n) => Ok(n.get_cost(network, state)? / 2.0),
+            Self::Output(n) => n.get_cost(network, state),
+            Self::Storage(n) => Ok(-n.get_cost(network, state)?),
         }
     }
 
-    pub fn get_incoming_cost(&self, model: &Model, state: &State) -> Result<f64, PywrError> {
+    pub fn get_incoming_cost(&self, network: &Network, state: &State) -> Result<f64, PywrError> {
         match self {
-            Self::Input(n) => n.get_cost(model, state),
-            Self::Link(n) => Ok(n.get_cost(model, state)? / 2.0),
-            Self::Output(n) => n.get_cost(model, state),
-            Self::Storage(n) => n.get_cost(model, state),
+            Self::Input(n) => n.get_cost(network, state),
+            Self::Link(n) => Ok(n.get_cost(network, state)? / 2.0),
+            Self::Output(n) => n.get_cost(network, state),
+            Self::Storage(n) => n.get_cost(network, state),
         }
     }
 }
@@ -573,21 +577,21 @@ impl FlowConstraints {
     /// Return the current minimum flow from the parameter state
     ///
     /// Defaults to zero if no parameter is defined.
-    pub(crate) fn get_min_flow(&self, model: &Model, state: &State) -> Result<f64, PywrError> {
+    pub(crate) fn get_min_flow(&self, network: &Network, state: &State) -> Result<f64, PywrError> {
         match &self.min_flow {
             ConstraintValue::None => Ok(0.0),
             ConstraintValue::Scalar(v) => Ok(*v),
-            ConstraintValue::Metric(m) => m.get_value(model, state),
+            ConstraintValue::Metric(m) => m.get_value(network, state),
         }
     }
     /// Return the current maximum flow from the parameter state
     ///
     /// Defaults to f64::MAX if no parameter is defined.
-    pub(crate) fn get_max_flow(&self, model: &Model, state: &State) -> Result<f64, PywrError> {
+    pub(crate) fn get_max_flow(&self, network: &Network, state: &State) -> Result<f64, PywrError> {
         match &self.max_flow {
             ConstraintValue::None => Ok(f64::MAX), // TODO should this return infinity?
             ConstraintValue::Scalar(v) => Ok(*v),
-            ConstraintValue::Metric(m) => m.get_value(model, state),
+            ConstraintValue::Metric(m) => m.get_value(network, state),
         }
     }
 
@@ -609,21 +613,21 @@ impl StorageConstraints {
     /// Return the current minimum volume from the parameter state
     ///
     /// Defaults to zero if no parameter is defined.
-    pub fn get_min_volume(&self, model: &Model, state: &State) -> Result<f64, PywrError> {
+    pub fn get_min_volume(&self, network: &Network, state: &State) -> Result<f64, PywrError> {
         match &self.min_volume {
             ConstraintValue::None => Ok(f64::MAX),
             ConstraintValue::Scalar(v) => Ok(*v),
-            ConstraintValue::Metric(m) => m.get_value(model, state),
+            ConstraintValue::Metric(m) => m.get_value(network, state),
         }
     }
     /// Return the current maximum volume from the parameter state
     ///
     /// Defaults to f64::MAX if no parameter is defined.
-    pub fn get_max_volume(&self, model: &Model, state: &State) -> Result<f64, PywrError> {
+    pub fn get_max_volume(&self, network: &Network, state: &State) -> Result<f64, PywrError> {
         match &self.max_volume {
             ConstraintValue::None => Ok(f64::MAX),
             ConstraintValue::Scalar(v) => Ok(*v),
-            ConstraintValue::Metric(m) => m.get_value(model, state),
+            ConstraintValue::Metric(m) => m.get_value(network, state),
         }
     }
 }
@@ -648,24 +652,24 @@ impl InputNode {
     fn set_cost(&mut self, value: ConstraintValue) {
         self.cost = value
     }
-    fn get_cost(&self, model: &Model, state: &State) -> Result<f64, PywrError> {
+    fn get_cost(&self, network: &Network, state: &State) -> Result<f64, PywrError> {
         match &self.cost {
             ConstraintValue::None => Ok(0.0),
             ConstraintValue::Scalar(v) => Ok(*v),
-            ConstraintValue::Metric(m) => m.get_value(model, state),
+            ConstraintValue::Metric(m) => m.get_value(network, state),
         }
     }
     fn set_min_flow(&mut self, value: ConstraintValue) {
         self.flow_constraints.min_flow = value;
     }
-    fn get_min_flow(&self, model: &Model, state: &State) -> Result<f64, PywrError> {
-        self.flow_constraints.get_min_flow(model, state)
+    fn get_min_flow(&self, network: &Network, state: &State) -> Result<f64, PywrError> {
+        self.flow_constraints.get_min_flow(network, state)
     }
     fn set_max_flow(&mut self, value: ConstraintValue) {
         self.flow_constraints.max_flow = value;
     }
-    fn get_max_flow(&self, model: &Model, state: &State) -> Result<f64, PywrError> {
-        self.flow_constraints.get_max_flow(model, state)
+    fn get_max_flow(&self, network: &Network, state: &State) -> Result<f64, PywrError> {
+        self.flow_constraints.get_max_flow(network, state)
     }
     fn is_max_flow_unconstrained(&self) -> bool {
         self.flow_constraints.is_max_flow_unconstrained()
@@ -695,24 +699,24 @@ impl OutputNode {
     fn set_cost(&mut self, value: ConstraintValue) {
         self.cost = value
     }
-    fn get_cost(&self, model: &Model, state: &State) -> Result<f64, PywrError> {
+    fn get_cost(&self, network: &Network, state: &State) -> Result<f64, PywrError> {
         match &self.cost {
             ConstraintValue::None => Ok(0.0),
             ConstraintValue::Scalar(v) => Ok(*v),
-            ConstraintValue::Metric(m) => m.get_value(model, state),
+            ConstraintValue::Metric(m) => m.get_value(network, state),
         }
     }
     fn set_min_flow(&mut self, value: ConstraintValue) {
         self.flow_constraints.min_flow = value;
     }
-    fn get_min_flow(&self, model: &Model, state: &State) -> Result<f64, PywrError> {
-        self.flow_constraints.get_min_flow(model, state)
+    fn get_min_flow(&self, network: &Network, state: &State) -> Result<f64, PywrError> {
+        self.flow_constraints.get_min_flow(network, state)
     }
     fn set_max_flow(&mut self, value: ConstraintValue) {
         self.flow_constraints.max_flow = value;
     }
-    fn get_max_flow(&self, model: &Model, state: &State) -> Result<f64, PywrError> {
-        self.flow_constraints.get_max_flow(model, state)
+    fn get_max_flow(&self, network: &Network, state: &State) -> Result<f64, PywrError> {
+        self.flow_constraints.get_max_flow(network, state)
     }
     fn is_max_flow_unconstrained(&self) -> bool {
         self.flow_constraints.is_max_flow_unconstrained()
@@ -744,24 +748,24 @@ impl LinkNode {
     fn set_cost(&mut self, value: ConstraintValue) {
         self.cost = value
     }
-    fn get_cost(&self, model: &Model, state: &State) -> Result<f64, PywrError> {
+    fn get_cost(&self, network: &Network, state: &State) -> Result<f64, PywrError> {
         match &self.cost {
             ConstraintValue::None => Ok(0.0),
             ConstraintValue::Scalar(v) => Ok(*v),
-            ConstraintValue::Metric(m) => m.get_value(model, state),
+            ConstraintValue::Metric(m) => m.get_value(network, state),
         }
     }
     fn set_min_flow(&mut self, value: ConstraintValue) {
         self.flow_constraints.min_flow = value;
     }
-    fn get_min_flow(&self, model: &Model, state: &State) -> Result<f64, PywrError> {
-        self.flow_constraints.get_min_flow(model, state)
+    fn get_min_flow(&self, network: &Network, state: &State) -> Result<f64, PywrError> {
+        self.flow_constraints.get_min_flow(network, state)
     }
     fn set_max_flow(&mut self, value: ConstraintValue) {
         self.flow_constraints.max_flow = value;
     }
-    fn get_max_flow(&self, model: &Model, state: &State) -> Result<f64, PywrError> {
-        self.flow_constraints.get_max_flow(model, state)
+    fn get_max_flow(&self, network: &Network, state: &State) -> Result<f64, PywrError> {
+        self.flow_constraints.get_max_flow(network, state)
     }
     fn is_max_flow_unconstrained(&self) -> bool {
         self.flow_constraints.is_max_flow_unconstrained()
@@ -809,13 +813,13 @@ impl StorageNode {
         }
     }
 
-    pub fn before(&self, timestep: &Timestep, model: &Model, state: &mut State) -> Result<(), PywrError> {
+    pub fn before(&self, timestep: &Timestep, network: &Network, state: &mut State) -> Result<(), PywrError> {
         // Set the initial volume if it is the first timestep.
         if timestep.is_first() {
             let volume = match &self.initial_volume {
                 StorageInitialVolume::Absolute(iv) => *iv,
                 StorageInitialVolume::Proportional(ipc) => {
-                    let max_volume = self.get_max_volume(model, state)?;
+                    let max_volume = self.get_max_volume(network, state)?;
                     max_volume * ipc
                 }
             };
@@ -828,26 +832,26 @@ impl StorageNode {
     fn set_cost(&mut self, value: ConstraintValue) {
         self.cost = value
     }
-    fn get_cost(&self, model: &Model, state: &State) -> Result<f64, PywrError> {
+    fn get_cost(&self, network: &Network, state: &State) -> Result<f64, PywrError> {
         match &self.cost {
             ConstraintValue::None => Ok(0.0),
             ConstraintValue::Scalar(v) => Ok(*v),
-            ConstraintValue::Metric(m) => m.get_value(model, state),
+            ConstraintValue::Metric(m) => m.get_value(network, state),
         }
     }
     fn set_min_volume(&mut self, value: ConstraintValue) {
         // TODO use a set_min_volume method
         self.storage_constraints.min_volume = value;
     }
-    fn get_min_volume(&self, model: &Model, state: &State) -> Result<f64, PywrError> {
-        self.storage_constraints.get_min_volume(model, state)
+    fn get_min_volume(&self, network: &Network, state: &State) -> Result<f64, PywrError> {
+        self.storage_constraints.get_min_volume(network, state)
     }
     fn set_max_volume(&mut self, value: ConstraintValue) {
         // TODO use a set_min_volume method
         self.storage_constraints.max_volume = value;
     }
-    fn get_max_volume(&self, model: &Model, state: &State) -> Result<f64, PywrError> {
-        self.storage_constraints.get_max_volume(model, state)
+    fn get_max_volume(&self, network: &Network, state: &State) -> Result<f64, PywrError> {
+        self.storage_constraints.get_max_volume(network, state)
     }
     fn add_incoming_edge(&mut self, edge: EdgeIndex) {
         self.incoming_edges.push(edge);

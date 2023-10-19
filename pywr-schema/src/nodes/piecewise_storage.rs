@@ -3,6 +3,7 @@ use crate::error::SchemaError;
 use crate::nodes::NodeMeta;
 use crate::parameters::DynamicFloatValue;
 use pywr_core::metric::{Metric, VolumeBetweenControlCurves};
+use pywr_core::models::ModelDomain;
 use pywr_core::node::{ConstraintValue, StorageInitialVolume};
 use std::path::Path;
 
@@ -58,12 +59,13 @@ impl PiecewiseStorageNode {
 
     pub fn add_to_model(
         &self,
-        model: &mut pywr_core::model::Model,
+        network: &mut pywr_core::network::Network,
+        domain: &ModelDomain,
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
     ) -> Result<(), SchemaError> {
         // These are the min and max volume of the overall node
-        let max_volume = self.max_volume.load(model, tables, data_path)?;
+        let max_volume = self.max_volume.load(network, domain, tables, data_path)?;
 
         let mut store_node_indices = Vec::new();
 
@@ -72,12 +74,16 @@ impl PiecewiseStorageNode {
             // The volume of this step is the proportion between the last control curve
             // (or zero if first) and this control curve.
             let lower = if i > 0 {
-                Some(self.steps[i - 1].control_curve.load(model, tables, data_path)?)
+                Some(
+                    self.steps[i - 1]
+                        .control_curve
+                        .load(network, domain, tables, data_path)?,
+                )
             } else {
                 None
             };
 
-            let upper = step.control_curve.load(model, tables, data_path)?;
+            let upper = step.control_curve.load(network, domain, tables, data_path)?;
 
             let max_volume = ConstraintValue::Metric(Metric::VolumeBetweenControlCurves(
                 VolumeBetweenControlCurves::new(max_volume.clone(), Some(upper), lower),
@@ -88,7 +94,7 @@ impl PiecewiseStorageNode {
             // Assume each store is full to start with
             let initial_volume = StorageInitialVolume::Proportional(1.0);
 
-            let idx = model.add_storage_node(
+            let idx = network.add_storage_node(
                 self.meta.name.as_str(),
                 Self::step_sub_name(i).as_deref(),
                 initial_volume,
@@ -98,8 +104,8 @@ impl PiecewiseStorageNode {
 
             if let Some(prev_idx) = store_node_indices.last() {
                 // There was a lower store; connect to it in both directions
-                model.connect_nodes(idx, *prev_idx)?;
-                model.connect_nodes(*prev_idx, idx)?;
+                network.connect_nodes(idx, *prev_idx)?;
+                network.connect_nodes(*prev_idx, idx)?;
             }
 
             store_node_indices.push(idx);
@@ -107,7 +113,7 @@ impl PiecewiseStorageNode {
 
         // The volume of this store the remain proportion above the last control curve
         let lower = match self.steps.last() {
-            Some(step) => Some(step.control_curve.load(model, tables, data_path)?),
+            Some(step) => Some(step.control_curve.load(network, domain, tables, data_path)?),
             None => None,
         };
 
@@ -125,7 +131,7 @@ impl PiecewiseStorageNode {
         let initial_volume = StorageInitialVolume::Proportional(1.0);
 
         // And one for the residual part above the less step
-        let idx = model.add_storage_node(
+        let idx = network.add_storage_node(
             self.meta.name.as_str(),
             Self::step_sub_name(self.steps.len()).as_deref(),
             initial_volume,
@@ -135,21 +141,22 @@ impl PiecewiseStorageNode {
 
         if let Some(prev_idx) = store_node_indices.last() {
             // There was a lower store; connect to it in both directions
-            model.connect_nodes(idx, *prev_idx)?;
-            model.connect_nodes(*prev_idx, idx)?;
+            network.connect_nodes(idx, *prev_idx)?;
+            network.connect_nodes(*prev_idx, idx)?;
         }
 
         store_node_indices.push(idx);
 
         // Finally, add an aggregate storage node covering all the individual stores
-        model.add_aggregated_storage_node(self.meta.name.as_str(), None, store_node_indices)?;
+        network.add_aggregated_storage_node(self.meta.name.as_str(), None, store_node_indices)?;
 
         Ok(())
     }
 
     pub fn set_constraints(
         &self,
-        model: &mut pywr_core::model::Model,
+        network: &mut pywr_core::network::Network,
+        domain: &ModelDomain,
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
     ) -> Result<(), SchemaError> {
@@ -157,8 +164,8 @@ impl PiecewiseStorageNode {
             let sub_name = Self::step_sub_name(i);
 
             if let Some(cost) = &step.cost {
-                let value = cost.load(model, tables, data_path)?;
-                model.set_node_cost(self.meta.name.as_str(), sub_name.as_deref(), value.into())?;
+                let value = cost.load(network, domain, tables, data_path)?;
+                network.set_node_cost(self.meta.name.as_str(), sub_name.as_deref(), value.into())?;
             }
         }
 
@@ -172,8 +179,8 @@ impl PiecewiseStorageNode {
         vec![(self.meta.name.as_str(), Self::step_sub_name(self.steps.len()))]
     }
 
-    pub fn default_metric(&self, model: &pywr_core::model::Model) -> Result<Metric, SchemaError> {
-        let idx = model.get_aggregated_storage_node_index_by_name(self.meta.name.as_str(), None)?;
+    pub fn default_metric(&self, network: &pywr_core::network::Network) -> Result<Metric, SchemaError> {
+        let idx = network.get_aggregated_storage_node_index_by_name(self.meta.name.as_str(), None)?;
         Ok(Metric::AggregatedNodeVolume(idx))
     }
 }
@@ -200,13 +207,14 @@ mod tests {
     fn test_piecewise_storage1() {
         let data = piecewise_storage1_str();
         let schema: PywrModel = serde_json::from_str(data).unwrap();
-        let (mut model, timestepper): (pywr_core::model::Model, Timestepper) = schema.build_model(None, None).unwrap();
+        let mut model = schema.build_model(None, None).unwrap();
 
-        assert_eq!(model.nodes.len(), 5);
-        assert_eq!(model.edges.len(), 6);
+        let network = model.network_mut();
+        assert_eq!(network.nodes().len(), 5);
+        assert_eq!(network.edges().len(), 6);
 
         // TODO put this assertion data in the test model file.
-        let idx = model
+        let idx = network
             .get_aggregated_storage_node_index_by_name("storage1", None)
             .unwrap();
 
@@ -230,10 +238,10 @@ mod tests {
             None,
             None,
         );
-        model.add_recorder(Box::new(recorder)).unwrap();
+        network.add_recorder(Box::new(recorder)).unwrap();
 
         // Test all solvers
-        run_all_solvers(&model, &timestepper);
+        run_all_solvers(&model);
     }
 
     /// Test running `piecewise_storage2.json`
@@ -241,13 +249,14 @@ mod tests {
     fn test_piecewise_storage2() {
         let data = piecewise_storage2_str();
         let schema: PywrModel = serde_json::from_str(data).unwrap();
-        let (mut model, timestepper): (pywr_core::model::Model, Timestepper) = schema.build_model(None, None).unwrap();
+        let mut model = schema.build_model(None, None).unwrap();
 
-        assert_eq!(model.nodes.len(), 5);
-        assert_eq!(model.edges.len(), 6);
+        let network = model.network_mut();
+        assert_eq!(network.nodes().len(), 5);
+        assert_eq!(network.edges().len(), 6);
 
         // TODO put this assertion data in the test model file.
-        let idx = model
+        let idx = network
             .get_aggregated_storage_node_index_by_name("storage1", None)
             .unwrap();
 
@@ -285,9 +294,9 @@ mod tests {
             None,
             None,
         );
-        model.add_recorder(Box::new(recorder)).unwrap();
+        network.add_recorder(Box::new(recorder)).unwrap();
 
         // Test all solvers
-        run_all_solvers(&model, &timestepper);
+        run_all_solvers(&model);
     }
 }
