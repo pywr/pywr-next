@@ -600,11 +600,11 @@ mod tests {
         assert!(build_result.is_ok());
     }
 
-    /// Test the simple multi-model
+    /// Test the multi1 model
     #[test]
-    fn test_multi_model_simple() {
+    fn test_multi1_model() {
         let mut model_fn = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        model_fn.push("src/test_models/multi_model_simple.json");
+        model_fn.push("src/test_models/multi1/model.json");
 
         let schema = PywrMultiNetworkModel::from_path(model_fn.as_path()).unwrap();
         let model = schema.build_model(model_fn.parent(), None).unwrap();

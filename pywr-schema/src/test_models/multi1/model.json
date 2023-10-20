@@ -1,7 +1,7 @@
 {
   "metadata": {
-    "title": "Simple 1",
-    "description": "A very simple example.",
+    "title": "Multi-model 1",
+    "description": "A simple multi-model that passes data from sub-model1 to sub-model2.",
     "minimum_version": "0.1"
   },
   "timestepper": {
