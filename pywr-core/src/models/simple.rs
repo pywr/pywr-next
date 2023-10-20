@@ -24,12 +24,14 @@ impl<S> ModelState<S> {
     }
 }
 
+/// A standard Pywr model containing a single network.
 pub struct Model {
     domain: ModelDomain,
     network: Network,
 }
 
 impl Model {
+    /// Construct a new model from a [`ModelDomain`] and [`Network`].
     pub fn new(domain: ModelDomain, network: Network) -> Self {
         Self { domain, network }
     }

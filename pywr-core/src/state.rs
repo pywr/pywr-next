@@ -1,5 +1,4 @@
 use crate::edge::{Edge, EdgeIndex};
-use crate::models::CrossNetworkParameterIndex;
 use crate::network::Network;
 use crate::node::{Node, NodeIndex};
 use crate::parameters::{IndexParameterIndex, MultiValueParameterIndex, ParameterIndex};

@@ -32,31 +32,8 @@ impl OtherNetworkIndex {
     }
 }
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
-pub struct CrossNetworkParameterIndex(usize);
-
-impl CrossNetworkParameterIndex {
-    pub fn new(idx: usize) -> Self {
-        Self(idx)
-    }
-}
-
-impl Deref for CrossNetworkParameterIndex {
-    type Target = usize;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl Display for CrossNetworkParameterIndex {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
 /// A special parameter that retrieves a value from a metric in another model.
-struct MultiNetworkParameter {
+struct MultiNetworkTransfer {
     // The model to get the value from.
     from_model_idx: OtherNetworkIndex,
     // The metric to get the value from.
@@ -68,7 +45,7 @@ struct MultiNetworkParameter {
 struct MultiNetworkEntry {
     name: String,
     network: Network,
-    parameters: Vec<MultiNetworkParameter>,
+    parameters: Vec<MultiNetworkTransfer>,
 }
 
 pub struct MultiNetworkModelState<S> {
@@ -132,7 +109,7 @@ impl MultiNetworkModel {
         to_network_idx: usize,
         to_parameter_idx: ParameterIndex,
     ) {
-        let parameter = MultiNetworkParameter {
+        let parameter = MultiNetworkTransfer {
             from_model_idx: OtherNetworkIndex::new(from_network_idx, to_network_idx),
             from_metric,
             to_parameter_idx,
@@ -170,8 +147,8 @@ impl MultiNetworkModel {
         })
     }
 
-    /// Compute cross-model parameters
-    fn compute_cross_model_parameters(
+    /// Compute inter model transfers
+    fn compute_inter_model_transfers(
         &self,
         model_idx: usize,
         scenario_indices: &[ScenarioIndex],
@@ -184,9 +161,9 @@ impl MultiNetworkModel {
         let (before, after) = states.split_at_mut(model_idx);
         let (this_models_state, after) = after.split_first_mut().unwrap();
 
-        // Compute cross-model components for all scenarios
+        // Compute inter-model transfers for all scenarios
         for scenario_index in scenario_indices.iter() {
-            compute_cross_model_parameters(
+            compute_inter_model_transfers(
                 scenario_index,
                 &this_model.parameters,
                 this_models_state,
@@ -200,7 +177,7 @@ impl MultiNetworkModel {
         Ok(())
     }
 
-    /// Perform a single time-step of the multi-model.
+    /// Perform a single time-step of the multi1-model.
     pub fn step<S>(&self, state: &mut MultiNetworkModelState<Vec<Box<S>>>) -> Result<(), PywrError>
     where
         S: Solver,
@@ -217,8 +194,8 @@ impl MultiNetworkModel {
         let scenario_indices = self.domain.scenarios.indices();
 
         for (idx, entry) in self.networks.iter().enumerate() {
-            // Perform cross-model state updates
-            self.compute_cross_model_parameters(idx, scenario_indices, &mut state.states)?;
+            // Perform inter-model state updates
+            self.compute_inter_model_transfers(idx, scenario_indices, &mut state.states)?;
 
             let sub_model_solvers = state.solvers.get_mut(idx).unwrap();
             let sub_model_states = state.states.get_mut(idx).unwrap();
@@ -303,27 +280,27 @@ impl MultiNetworkModel {
     }
 }
 
-/// Calculate cross-model parameters for the given scenario index.
+/// Calculate inter-model parameters for the given scenario index.
 ///
 ///
-fn compute_cross_model_parameters(
+fn compute_inter_model_transfers(
     scenario_index: &ScenarioIndex,
-    cross_model_parameters: &[MultiNetworkParameter],
+    inter_model_transfers: &[MultiNetworkTransfer],
     state: &mut NetworkState,
     before_models: &[MultiNetworkEntry],
     before_states: &[NetworkState],
     after_models: &[MultiNetworkEntry],
     after_states: &[NetworkState],
 ) -> Result<(), PywrError> {
-    // Iterate through all of the cross-model parameters
-    for parameter in cross_model_parameters {
+    // Iterate through all of the inter-model transfers
+    for parameter in inter_model_transfers {
         // Determine which model and state we are getting the value from
         let (other_model, other_model_state) = match parameter.from_model_idx {
             OtherNetworkIndex::Before(i) => {
                 let rev_i = before_states.len() - i.get();
                 (&before_models[rev_i], &before_states[rev_i])
             }
-            OtherNetworkIndex::After(i) => (&after_models[i.get()], &after_states[i.get()]),
+            OtherNetworkIndex::After(i) => (&after_models[i.get() - 1], &after_states[i.get() - 1]),
         };
         // Get the value from the other model's state/metric
         let value = parameter
@@ -380,8 +357,8 @@ mod tests {
 
         let mut state = multi_model
             .setup::<ClpSolver>(&Default::default())
-            .expect("Failed to setup multi-model.");
+            .expect("Failed to setup multi1-model.");
 
-        multi_model.step(&mut state).expect("Failed to step multi-model.")
+        multi_model.step(&mut state).expect("Failed to step multi1-model.")
     }
 }

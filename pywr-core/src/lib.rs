@@ -2,7 +2,6 @@
 
 extern crate core;
 
-use crate::models::CrossNetworkParameterIndex;
 use crate::node::NodeIndex;
 use crate::parameters::{IndexParameterIndex, MultiValueParameterIndex, ParameterIndex};
 use crate::recorders::RecorderIndex;
@@ -43,9 +42,9 @@ pub enum PywrError {
     ParameterIndexNotFound(ParameterIndex),
     #[error("index parameter index {0} not found")]
     IndexParameterIndexNotFound(IndexParameterIndex),
-    #[error("multi value parameter index {0} not found")]
+    #[error("multi1 value parameter index {0} not found")]
     MultiValueParameterIndexNotFound(MultiValueParameterIndex),
-    #[error("multi value parameter key {0} not found")]
+    #[error("multi1 value parameter key {0} not found")]
     MultiValueParameterKeyNotFound(String),
     #[error("inter-network parameter state not initialised")]
     InterNetworkParameterStateNotInitialised,

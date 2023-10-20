@@ -166,6 +166,12 @@ impl NetworkState {
     }
 }
 
+/// A Pywr network containing nodes, edges, parameters, metric sets, etc.
+///
+/// This struct is the main entry point for constructing a Pywr network and should be used
+/// to represent a discrete system. A network can be simulated using a model and a solver. The
+/// network is translated into a linear program using the [`Solver`] trait.
+///
 #[derive(Default)]
 pub struct Network {
     nodes: NodeVec,
@@ -438,7 +444,7 @@ impl Network {
         Ok(())
     }
 
-    /// Perform a single timestep with a multi-state solver mutating the current state.
+    /// Perform a single timestep with a multi1-state solver mutating the current state.
     pub(crate) fn step_multi_scenario<S>(
         &self,
         timestep: &Timestep,
