@@ -4,6 +4,7 @@ use crate::network::{Network, NetworkState, RunTimings};
 use crate::parameters::{downcast_internal_state, ParameterIndex};
 use crate::scenario::ScenarioIndex;
 use crate::solvers::{Solver, SolverSettings};
+use crate::timestep::Timestep;
 use crate::PywrError;
 use std::any::Any;
 use std::fmt;
@@ -34,12 +35,14 @@ impl OtherNetworkIndex {
 
 /// A special parameter that retrieves a value from a metric in another model.
 struct MultiNetworkTransfer {
-    // The model to get the value from.
+    /// The model to get the value from.
     from_model_idx: OtherNetworkIndex,
-    // The metric to get the value from.
+    /// The metric to get the value from.
     from_metric: Metric,
-    // The parameter to save the value to.
+    /// The parameter to save the value to.
     to_parameter_idx: ParameterIndex,
+    /// Optional initial value to use on the first time-step
+    initial_value: Option<f64>,
 }
 
 struct MultiNetworkEntry {
@@ -82,6 +85,14 @@ impl MultiNetworkModel {
             .ok_or(PywrError::NetworkIndexNotFound(idx))
     }
 
+    /// Get a mutable reference to a network by index.
+    pub fn network_mut(&mut self, idx: usize) -> Result<&mut Network, PywrError> {
+        self.networks
+            .get_mut(idx)
+            .map(|n| &mut n.network)
+            .ok_or(PywrError::NetworkIndexNotFound(idx))
+    }
+
     /// Get the index of a network by name.
     pub fn get_network_index_by_name(&self, name: &str) -> Result<usize, PywrError> {
         self.networks
@@ -102,17 +113,20 @@ impl MultiNetworkModel {
         idx
     }
 
-    pub fn add_parameter(
+    /// Add a transfer of data from one network to another.
+    pub fn add_inter_network_transfer(
         &mut self,
         from_network_idx: usize,
         from_metric: Metric,
         to_network_idx: usize,
         to_parameter_idx: ParameterIndex,
+        initial_value: Option<f64>,
     ) {
         let parameter = MultiNetworkTransfer {
             from_model_idx: OtherNetworkIndex::new(from_network_idx, to_network_idx),
             from_metric,
             to_parameter_idx,
+            initial_value,
         };
 
         self.networks[to_network_idx].parameters.push(parameter);
@@ -151,6 +165,7 @@ impl MultiNetworkModel {
     fn compute_inter_model_transfers(
         &self,
         model_idx: usize,
+        timestep: &Timestep,
         scenario_indices: &[ScenarioIndex],
         states: &mut [NetworkState],
     ) -> Result<(), PywrError> {
@@ -164,6 +179,7 @@ impl MultiNetworkModel {
         // Compute inter-model transfers for all scenarios
         for scenario_index in scenario_indices.iter() {
             compute_inter_model_transfers(
+                timestep,
                 scenario_index,
                 &this_model.parameters,
                 this_models_state,
@@ -195,7 +211,7 @@ impl MultiNetworkModel {
 
         for (idx, entry) in self.networks.iter().enumerate() {
             // Perform inter-model state updates
-            self.compute_inter_model_transfers(idx, scenario_indices, &mut state.states)?;
+            self.compute_inter_model_transfers(idx, timestep, scenario_indices, &mut state.states)?;
 
             let sub_model_solvers = state.solvers.get_mut(idx).unwrap();
             let sub_model_states = state.states.get_mut(idx).unwrap();
@@ -284,6 +300,7 @@ impl MultiNetworkModel {
 ///
 ///
 fn compute_inter_model_transfers(
+    timestep: &Timestep,
     scenario_index: &ScenarioIndex,
     inter_model_transfers: &[MultiNetworkTransfer],
     state: &mut NetworkState,
@@ -302,10 +319,15 @@ fn compute_inter_model_transfers(
             }
             OtherNetworkIndex::After(i) => (&after_models[i.get() - 1], &after_states[i.get() - 1]),
         };
-        // Get the value from the other model's state/metric
-        let value = parameter
-            .from_metric
-            .get_value(&other_model.network, other_model_state.state(scenario_index))?;
+
+        let value = match timestep.is_first().then(|| parameter.initial_value).flatten() {
+            // Use the initial value if it is given and it is the first time-step.
+            Some(initial_value) => initial_value,
+            // Otherwise, get the value from the other model's state/metric
+            None => parameter
+                .from_metric
+                .get_value(&other_model.network, other_model_state.state(scenario_index))?,
+        };
 
         // Save the value in the internal state of receiving network's parameter
         // This will panic if the parameter index points to the wrong type of parameter (i.e.

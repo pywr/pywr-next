@@ -345,6 +345,7 @@ pub struct PywrMultiNetworkTransfer {
     pub from_network: String,
     pub metric: MetricFloatReference,
     pub to_parameter: String,
+    pub initial_value: Option<f64>,
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Clone)]
@@ -431,7 +432,13 @@ impl PywrMultiNetworkModel {
 
                 let to_parameter_idx = to_network.get_parameter_index_by_name(&transfer.to_parameter)?;
 
-                model.add_parameter(from_network_idx, from_metric, to_network_idx, to_parameter_idx);
+                model.add_inter_network_transfer(
+                    from_network_idx,
+                    from_metric,
+                    to_network_idx,
+                    to_parameter_idx,
+                    transfer.initial_value,
+                );
             }
         }
 
@@ -607,7 +614,97 @@ mod tests {
         model_fn.push("src/test_models/multi1/model.json");
 
         let schema = PywrMultiNetworkModel::from_path(model_fn.as_path()).unwrap();
-        let model = schema.build_model(model_fn.parent(), None).unwrap();
+        let mut model = schema.build_model(model_fn.parent(), None).unwrap();
+
+        // Add some recorders for the expected outputs
+        let network_1_idx = model
+            .get_network_index_by_name("network1")
+            .expect("network 1 not found");
+        let network_1 = model.network_mut(network_1_idx).expect("network 1 not found");
+        let demand1_idx = network_1.get_node_index_by_name("demand1", None).unwrap();
+
+        let expected_values: Array1<f64> = [10.0; 365].to_vec().into();
+        let expected_values: Array2<f64> = expected_values.insert_axis(Axis(1));
+
+        let rec = AssertionRecorder::new(
+            "assert-demand1",
+            Metric::NodeInFlow(demand1_idx),
+            expected_values,
+            None,
+            None,
+        );
+        network_1.add_recorder(Box::new(rec)).unwrap();
+
+        // Inflow to demand2 should be 10.0 via the transfer from network1 (demand1)
+        let network_2_idx = model
+            .get_network_index_by_name("network2")
+            .expect("network 1 not found");
+        let network_2 = model.network_mut(network_2_idx).expect("network 2 not found");
+        let demand1_idx = network_2.get_node_index_by_name("demand2", None).unwrap();
+
+        let expected_values: Array1<f64> = [10.0; 365].to_vec().into();
+        let expected_values: Array2<f64> = expected_values.insert_axis(Axis(1));
+
+        let rec = AssertionRecorder::new(
+            "assert-demand2",
+            Metric::NodeInFlow(demand1_idx),
+            expected_values,
+            None,
+            None,
+        );
+        network_2.add_recorder(Box::new(rec)).unwrap();
+
+        model.run::<ClpSolver>(&Default::default()).unwrap();
+    }
+
+    /// Test the multi2 model
+    #[test]
+    fn test_multi2_model() {
+        let mut model_fn = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        model_fn.push("src/test_models/multi2/model.json");
+
+        let schema = PywrMultiNetworkModel::from_path(model_fn.as_path()).unwrap();
+        let mut model = schema.build_model(model_fn.parent(), None).unwrap();
+
+        // Add some recorders for the expected outputs
+        // inflow1 should be set to a max of 20.0 from the "demand" parameter in network2
+        let network_1_idx = model
+            .get_network_index_by_name("network1")
+            .expect("network 1 not found");
+        let network_1 = model.network_mut(network_1_idx).expect("network 1 not found");
+        let demand1_idx = network_1.get_node_index_by_name("demand1", None).unwrap();
+
+        let expected_values: Array1<f64> = [10.0; 365].to_vec().into();
+        let expected_values: Array2<f64> = expected_values.insert_axis(Axis(1));
+
+        let rec = AssertionRecorder::new(
+            "assert-demand1",
+            Metric::NodeInFlow(demand1_idx),
+            expected_values,
+            None,
+            None,
+        );
+        network_1.add_recorder(Box::new(rec)).unwrap();
+
+        // Inflow to demand2 should be 10.0 via the transfer from network1 (demand1)
+        let network_2_idx = model
+            .get_network_index_by_name("network2")
+            .expect("network 1 not found");
+        let network_2 = model.network_mut(network_2_idx).expect("network 2 not found");
+        let demand1_idx = network_2.get_node_index_by_name("demand2", None).unwrap();
+
+        let expected_values: Array1<f64> = [10.0; 365].to_vec().into();
+        let expected_values: Array2<f64> = expected_values.insert_axis(Axis(1));
+
+        let rec = AssertionRecorder::new(
+            "assert-demand2",
+            Metric::NodeInFlow(demand1_idx),
+            expected_values,
+            None,
+            None,
+        );
+        network_2.add_recorder(Box::new(rec)).unwrap();
+
         model.run::<ClpSolver>(&Default::default()).unwrap();
     }
 }
