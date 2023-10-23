@@ -24,7 +24,7 @@ use pywr_v1_schema::nodes::DelayNode as DelayNodeV1;
 /// ```
 ///
 )]
-#[derive(serde::Deserialize, serde::Serialize, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Default)]
 pub struct DelayNode {
     #[serde(flatten)]
     pub meta: NodeMeta,

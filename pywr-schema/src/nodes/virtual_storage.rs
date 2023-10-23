@@ -9,7 +9,7 @@ use pywr_core::virtual_storage::VirtualStorageReset;
 use pywr_v1_schema::nodes::VirtualStorageNode as VirtualStorageNodeV1;
 use std::path::Path;
 
-#[derive(serde::Deserialize, serde::Serialize, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Default)]
 pub struct VirtualStorageNode {
     #[serde(flatten)]
     pub meta: NodeMeta,

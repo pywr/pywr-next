@@ -31,7 +31,7 @@ use std::path::Path;
 /// ```
 ///
 )]
-#[derive(serde::Deserialize, serde::Serialize, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Default)]
 pub struct RiverSplitWithGaugeNode {
     #[serde(flatten)]
     pub meta: NodeMeta,

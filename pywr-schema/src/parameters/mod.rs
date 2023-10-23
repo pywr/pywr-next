@@ -411,6 +411,12 @@ pub enum ConstantValue<T> {
     External(ExternalDataRef),
 }
 
+impl Default for ConstantValue<f64> {
+    fn default() -> Self {
+        Self::Literal(0.0)
+    }
+}
+
 impl ConstantValue<f64> {
     /// Return the value loading from a table if required.
     pub fn load(&self, tables: &LoadedTableCollection) -> Result<f64, SchemaError> {
@@ -602,6 +608,12 @@ impl ParameterIndexValue {
 pub enum DynamicFloatValue {
     Constant(ConstantValue<f64>),
     Dynamic(MetricFloatValue),
+}
+
+impl Default for DynamicFloatValue {
+    fn default() -> Self {
+        Self::Constant(ConstantValue::default())
+    }
 }
 
 impl DynamicFloatValue {

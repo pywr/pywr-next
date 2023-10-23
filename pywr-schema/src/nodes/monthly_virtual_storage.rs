@@ -14,7 +14,13 @@ pub struct NumberOfMonthsReset {
     pub months: u8,
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Clone)]
+impl Default for NumberOfMonthsReset {
+    fn default() -> Self {
+        Self { months: 1 }
+    }
+}
+
+#[derive(serde::Deserialize, serde::Serialize, Clone, Default)]
 pub struct MonthlyVirtualStorageNode {
     #[serde(flatten)]
     pub meta: NodeMeta,

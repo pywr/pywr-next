@@ -36,7 +36,7 @@ pub struct PiecewiseLinkStep {
 /// ```
 ///
 )]
-#[derive(serde::Deserialize, serde::Serialize, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Default)]
 pub struct PiecewiseLinkNode {
     #[serde(flatten)]
     pub meta: NodeMeta,

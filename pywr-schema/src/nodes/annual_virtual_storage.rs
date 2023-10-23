@@ -16,7 +16,17 @@ pub struct AnnualReset {
     pub use_initial_volume: bool,
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Clone)]
+impl Default for AnnualReset {
+    fn default() -> Self {
+        Self {
+            day: 1,
+            month: time::Month::January,
+            use_initial_volume: false,
+        }
+    }
+}
+
+#[derive(serde::Deserialize, serde::Serialize, Clone, Default)]
 pub struct AnnualVirtualStorageNode {
     #[serde(flatten)]
     pub meta: NodeMeta,
