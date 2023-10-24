@@ -282,6 +282,15 @@ impl Into<pywr_core::parameters::RbfProfileVariableConfig> for RbfProfileVariabl
 /// ```json
 #[doc = include_str!("doc_examples/rbf_1.json")]
 /// ```
+///
+///  The example below shows the definition of a [`RbfProfileParameter`] in JSON with variable
+///  settings defined. This settings determine how the interpolation points be modified by
+///  external algorithms. See [`RbfProfileVariableSettings`] for more information.
+///
+/// ```json
+#[doc = include_str!("doc_examples/rbf_2.json")]
+/// ```
+///
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
 pub struct RbfProfileParameter {
     #[serde(flatten)]

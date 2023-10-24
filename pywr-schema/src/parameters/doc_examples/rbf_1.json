@@ -2,9 +2,9 @@
     "name": "my-interpolated-profile",
     "type": "RbfProfile",
     "points": [
-        [90.0, 0.5],
-        [180.0, 0.3],
-        [270.0, 0.7]
+        [90, 0.5],
+        [180, 0.3],
+        [270, 0.7]
     ],
     "function": {"Gaussian": { "epsilon":  3.0 }}
 }

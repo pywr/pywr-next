@@ -36,7 +36,7 @@ pub use super::parameters::indexed_array::IndexedArrayParameter;
 pub use super::parameters::polynomial::Polynomial1DParameter;
 pub use super::parameters::profiles::{
     DailyProfileParameter, MonthlyProfileParameter, RadialBasisFunction, RbfProfileParameter,
-    UniformDrawdownProfileParameter,
+    RbfProfileVariableSettings, UniformDrawdownProfileParameter,
 };
 pub use super::parameters::python::PythonParameter;
 pub use super::parameters::tables::TablesArrayParameter;
