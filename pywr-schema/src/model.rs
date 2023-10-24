@@ -263,7 +263,7 @@ pub enum PywrNetworkRef {
 ///
 /// The simplest model is given in the example below:
 ///
-/// ```
+/// ```json
 #[doc = include_str!("test_models/simple1.json")]
 /// ```
 ///
@@ -426,7 +426,7 @@ pub struct PywrMultiNetworkEntry {
 /// The following example shows a model with networks with the inflow to "supply2" in the second
 /// network defined as the flow to "demand1" in the first network.
 ///
-/// ```
+/// ```json5
 /// // model.json
 #[doc = include_str!("test_models/multi1/model.json")]
 /// // network1.json
