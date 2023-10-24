@@ -52,16 +52,16 @@ impl Parameter for ConstantParameter {
         Ok(*value)
     }
 
-    fn as_variable(&self) -> Option<&dyn VariableParameter> {
+    fn as_f64_variable(&self) -> Option<&dyn VariableParameter<f64>> {
         Some(self)
     }
 
-    fn as_variable_mut(&mut self) -> Option<&mut dyn VariableParameter> {
+    fn as_f64_variable_mut(&mut self) -> Option<&mut dyn VariableParameter<f64>> {
         Some(self)
     }
 }
 
-impl VariableParameter for ConstantParameter {
+impl VariableParameter<f64> for ConstantParameter {
     fn is_active(&self) -> bool {
         self.variable.is_some()
     }

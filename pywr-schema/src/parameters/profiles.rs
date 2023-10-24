@@ -245,6 +245,33 @@ impl Into<pywr_core::parameters::RadialBasisFunction> for RadialBasisFunction {
     }
 }
 
+/// Settings for a variable RBF profile.
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Copy)]
+pub struct RbfProfileVariableSettings {
+    /// Is this parameter an active variable?
+    pub is_active: bool,
+    /// Optional maximum number of days that the interpolation points can be moved from their
+    ///  original position. If this is `None` then the points can not be moved from their
+    ///  original day of the year.
+    pub days_of_year_range: Option<u32>,
+    /// Optional upper bound for the value of each interpolation point. If this is `None` then
+    ///  there is no upper bound.
+    pub value_upper_bounds: Option<f64>,
+    /// Optional lower bound for the value of each interpolation point. If this is `None` then
+    ///  the lower bound is zero.
+    pub value_lower_bounds: Option<f64>,
+}
+
+impl Into<pywr_core::parameters::RbfProfileVariableConfig> for RbfProfileVariableSettings {
+    fn into(self) -> pywr_core::parameters::RbfProfileVariableConfig {
+        pywr_core::parameters::RbfProfileVariableConfig::new(
+            self.days_of_year_range,
+            self.value_upper_bounds.unwrap_or(f64::INFINITY),
+            self.value_lower_bounds.unwrap_or(0.0),
+        )
+    }
+}
+
 /// A parameter that interpolates between a set of points using a radial basis function to
 /// create a daily profile.
 ///
@@ -261,9 +288,11 @@ pub struct RbfProfileParameter {
     pub meta: ParameterMeta,
     /// The points are the profile positions defined by an ordinal day of the year and a value.
     /// Radial basis function interpolation is used to create a daily profile from these points.
-    pub points: Vec<(f64, f64)>,
+    pub points: Vec<(u32, f64)>,
     /// The distance function used for interpolation.
     pub function: RadialBasisFunction,
+    /// Definition of optional variable settings.
+    pub variable: Option<RbfProfileVariableSettings>,
 }
 
 impl RbfProfileParameter {
@@ -275,8 +304,24 @@ impl RbfProfileParameter {
     }
 
     pub fn add_to_model(&self, model: &mut pywr_core::model::Model) -> Result<ParameterIndex, SchemaError> {
-        let p =
-            pywr_core::parameters::RbfProfileParameter::new(&self.meta.name, self.points.clone(), self.function.into());
+        let variable = match self.variable {
+            None => None,
+            Some(v) => {
+                // Only set the variable data if the user has indicated the variable is active.
+                if v.is_active {
+                    Some(v.into())
+                } else {
+                    None
+                }
+            }
+        };
+
+        let p = pywr_core::parameters::RbfProfileParameter::new(
+            &self.meta.name,
+            self.points.clone(),
+            self.function.into(),
+            variable,
+        );
         Ok(model.add_parameter(Box::new(p))?)
     }
 }

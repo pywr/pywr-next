@@ -1,5 +1,5 @@
 use crate::model::Model;
-use crate::parameters::{downcast_internal_state, Parameter, ParameterMeta};
+use crate::parameters::{downcast_internal_state, Parameter, ParameterMeta, VariableParameter};
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
 use crate::timestep::Timestep;
@@ -7,20 +7,43 @@ use crate::PywrError;
 use nalgebra::DMatrix;
 use std::any::Any;
 
+pub struct RbfProfileVariableConfig {
+    days_of_year_range: Option<u32>,
+    value_upper_bounds: f64,
+    value_lower_bounds: f64,
+}
+
+impl RbfProfileVariableConfig {
+    pub fn new(days_of_year_range: Option<u32>, value_upper_bounds: f64, value_lower_bounds: f64) -> Self {
+        Self {
+            days_of_year_range,
+            value_upper_bounds,
+            value_lower_bounds,
+        }
+    }
+}
+
 /// A parameter that interpolates between a set of points using a radial basis function to
 /// create a daily profile.
 pub struct RbfProfileParameter {
     meta: ParameterMeta,
-    points: Vec<(f64, f64)>,
+    points: Vec<(u32, f64)>,
     function: RadialBasisFunction,
+    variable: Option<RbfProfileVariableConfig>,
 }
 
 impl RbfProfileParameter {
-    pub fn new(name: &str, points: Vec<(f64, f64)>, function: RadialBasisFunction) -> Self {
+    pub fn new(
+        name: &str,
+        points: Vec<(u32, f64)>,
+        function: RadialBasisFunction,
+        variable: Option<RbfProfileVariableConfig>,
+    ) -> Self {
         Self {
             meta: ParameterMeta::new(name),
             points,
             function,
+            variable,
         }
     }
 }
@@ -55,6 +78,134 @@ impl Parameter for RbfProfileParameter {
         let profile = downcast_internal_state::<[f64; 366]>(internal_state);
         // Return today's value from the profile
         Ok(profile[timestep.date.ordinal() as usize - 1])
+    }
+
+    fn as_f64_variable(&self) -> Option<&dyn VariableParameter<f64>> {
+        Some(self)
+    }
+
+    fn as_f64_variable_mut(&mut self) -> Option<&mut dyn VariableParameter<f64>> {
+        Some(self)
+    }
+
+    fn as_u32_variable(&self) -> Option<&dyn VariableParameter<u32>> {
+        Some(self)
+    }
+
+    fn as_u32_variable_mut(&mut self) -> Option<&mut dyn VariableParameter<u32>> {
+        Some(self)
+    }
+}
+
+impl VariableParameter<f64> for RbfProfileParameter {
+    fn is_active(&self) -> bool {
+        self.variable.is_some()
+    }
+
+    /// The size is the number of points that define the profile.
+    fn size(&self) -> usize {
+        self.points.len()
+    }
+
+    /// The f64 values update the profile value of each point.
+    fn set_variables(&mut self, values: &[f64]) -> Result<(), PywrError> {
+        if values.len() == self.points.len() {
+            for (point, v) in self.points.iter_mut().zip(values) {
+                point.1 = *v;
+            }
+            Ok(())
+        } else {
+            Err(PywrError::ParameterVariableValuesIncorrectLength)
+        }
+    }
+
+    /// The f64 values are the profile values of each point.
+    fn get_variables(&self) -> Vec<f64> {
+        self.points.iter().map(|p| p.1).collect()
+    }
+
+    fn get_lower_bounds(&self) -> Result<Vec<f64>, PywrError> {
+        if let Some(variable) = &self.variable {
+            let lb = (0..self.points.len()).map(|_| variable.value_lower_bounds).collect();
+            Ok(lb)
+        } else {
+            Err(PywrError::ParameterVariableNotActive)
+        }
+    }
+
+    fn get_upper_bounds(&self) -> Result<Vec<f64>, PywrError> {
+        if let Some(variable) = &self.variable {
+            let ub = (0..self.points.len()).map(|_| variable.value_upper_bounds).collect();
+            Ok(ub)
+        } else {
+            Err(PywrError::ParameterVariableNotActive)
+        }
+    }
+}
+
+impl VariableParameter<u32> for RbfProfileParameter {
+    fn is_active(&self) -> bool {
+        self.variable.as_ref().is_some_and(|v| v.days_of_year_range.is_some())
+    }
+
+    /// The size is the number of points that define the profile.
+    fn size(&self) -> usize {
+        self.points.len()
+    }
+
+    /// Sets the day of year for each point.
+    fn set_variables(&mut self, values: &[u32]) -> Result<(), PywrError> {
+        if values.len() == self.points.len() {
+            for (point, v) in self.points.iter_mut().zip(values) {
+                point.0 = *v;
+            }
+            Ok(())
+        } else {
+            Err(PywrError::ParameterVariableValuesIncorrectLength)
+        }
+    }
+
+    /// Returns the day of year for each point.
+    fn get_variables(&self) -> Vec<u32> {
+        self.points.iter().map(|p| p.0).collect()
+    }
+
+    fn get_lower_bounds(&self) -> Result<Vec<u32>, PywrError> {
+        if let Some(variable) = &self.variable {
+            if let Some(days_of_year_range) = &variable.days_of_year_range {
+                // Make sure the lower bound is not less than 1 and handle integer underflow
+                let lb = self
+                    .points
+                    .iter()
+                    .map(|p| p.0.checked_sub(*days_of_year_range).unwrap_or(1).max(1))
+                    .collect();
+
+                Ok(lb)
+            } else {
+                Err(PywrError::ParameterVariableNotActive)
+            }
+        } else {
+            Err(PywrError::ParameterVariableNotActive)
+        }
+    }
+
+    fn get_upper_bounds(&self) -> Result<Vec<u32>, PywrError> {
+        if let Some(variable) = &self.variable {
+            if let Some(days_of_year_range) = &variable.days_of_year_range {
+                // Make sure the upper bound is not greater than 365 and handle integer overflow
+                let lb = self
+                    .points
+                    .iter()
+                    .map(|p| p.0.checked_add(*days_of_year_range).unwrap_or(365).min(365))
+                    .collect();
+
+                Ok(lb)
+            } else {
+                Err(PywrError::ParameterVariableNotActive)
+            }
+        } else {
+            Err(PywrError::ParameterVariableNotActive)
+        }
     }
 }
 
@@ -121,11 +272,14 @@ fn interpolate_rbf<const N: usize>(points: &[(f64, f64)], function: &RadialBasis
 /// This method repeats the point 365 days before and after the user provided points. This
 /// helps create a cyclic interpolation suitable for a annual profile. It then repeats the
 /// value for the 58th day to create a daily profile 366 days long.
-fn interpolate_rbf_profile(points: &[(f64, f64)], function: &RadialBasisFunction) -> [f64; 366] {
+fn interpolate_rbf_profile(points: &[(u32, f64)], function: &RadialBasisFunction) -> [f64; 366] {
     // Replicate the points in the year before and after.
-    let year_before: Vec<_> = points.iter().map(|p| (p.0 - 365.0, p.1)).collect();
-    let year_after: Vec<_> = points.iter().map(|p| (p.0 + 365.0, p.1)).collect();
-    let points = [year_before, points.to_vec(), year_after].concat();
+    let year_before = points.iter().map(|p| (p.0 as f64 - 365.0, p.1));
+    let year_after = points.iter().map(|p| (p.0 as f64 + 365.0, p.1));
+    let points: Vec<_> = year_before
+        .chain(points.iter().map(|p| (p.0 as f64, p.1)))
+        .chain(year_after)
+        .collect();
 
     let mut x_out = [f64::default(); 365];
     for (i, v) in x_out.iter_mut().enumerate() {
@@ -228,7 +382,7 @@ mod tests {
     /// ```
     #[test]
     fn test_rbf_interpolation_profile() {
-        let points: Vec<(f64, f64)> = vec![(90.0, 0.5), (180.0, 0.3), (270.0, 0.7)];
+        let points: Vec<(u32, f64)> = vec![(90, 0.5), (180, 0.3), (270, 0.7)];
 
         let rbf = RadialBasisFunction::MultiQuadric { epsilon: 1.0 / 50.0 };
         let f_interp = interpolate_rbf_profile(&points, &rbf);
