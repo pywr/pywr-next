@@ -248,6 +248,27 @@ pub enum PywrNetworkRef {
     Inline(PywrNetwork),
 }
 
+/// The top-level schema for a Pywr model.
+///
+/// A Pywr model is defined by this top-level schema which is mostly conveniently loaded from a
+/// JSON file. The schema is used to "build" a [`pywr_core::models::Model`] which can then be
+/// "run" to produce results. The purpose of the schema is to provide a higher level and more
+/// user friendly interface to model definition than the core model itself. This allows
+/// abstractions, such as [`crate::nodes::WaterTreatmentWorks`], to be created and used in the
+/// schema without the user needing to know the details of how this is implemented in the core
+/// model.
+///
+///
+/// # Example
+///
+/// The simplest model is given in the example below:
+///
+/// ```
+#[doc = include_str!("test_models/simple1.json")]
+/// ```
+///
+///
+///
 #[derive(serde::Deserialize, serde::Serialize, Clone)]
 pub struct PywrModel {
     pub metadata: Metadata,
@@ -355,6 +376,67 @@ pub struct PywrMultiNetworkEntry {
     pub transfers: Vec<PywrMultiNetworkTransfer>,
 }
 
+/// A Pywr model containing multiple link networks.
+///
+/// This schema is used to define a model containing multiple linked networks. Each network
+/// is self-contained and solve as like a single a model. However, the networks can be linked
+/// together using [`PywrMultiNetworkTransfer`]s. These transfers allow the value of a metric
+/// in one network to be used as the value of a parameter in another network. This allows complex
+/// inter-model relationships to be defined.
+///
+/// The model is solved by iterating over the networks within each time-step. Inter-network
+/// transfers are updated between each network solve. The networks are solved in the order
+/// that they are defined. This means that the order of the networks is important. For example,
+/// the 1st network will only be able to use the previous time-step's state from other networks.
+/// Whereas the 2nd network can use metrics calculated in the current time-step of the 1st model.
+///
+/// The overall algorithm produces an single model run with interleaved solving of each network.
+/// The pseudo-code for the algorithm is:
+///
+/// ```text
+/// for time_step in time_steps {
+///     for network in networks {
+///         // Get the latest values from the other networks
+///         network.update_inter_network_transfers();
+///         // Solve this network's allocation routine / linear program
+///         network.solve();
+///     }
+/// }
+/// ```
+///
+/// # When to use
+///
+/// A `PywrMultiNetworkModel` should be used in cases where there is a strong separation between
+/// the networks being simulated. The allocation routine (linear program) of each network is solved
+/// independently each time-step. This means that the only way in which the networks can share
+/// information and data is between the linear program solves via the user defined transfers.
+///
+/// Configuring a model like this maybe be beneficial in the following cases:
+///   1. Represent separate systems with limited and/or prescribed connectivity. For example,
+///     linking networks from two suppliers connected by a strategic transfer.
+///   2. Have important validated behaviour of the allocation that should be retained. If the
+///     networks (linear programs) were combined into a single model, the allocation routine could
+///     produce different results (i.e. penalty costs from one model influencing another).
+///   2. Are very large and/or complex to control model run times. The run time of a
+///     `PywrMultiNetworkModel` is roughly the sum of the individual networks. Whereas the time
+///     solve a large linear program combining all the networks could be significantly longer.
+///
+/// # Example
+///
+/// The following example shows a model with networks with the inflow to "supply2" in the second
+/// network defined as the flow to "demand1" in the first network.
+///
+/// ```
+/// // model.json
+#[doc = include_str!("test_models/multi1/model.json")]
+/// // network1.json
+#[doc = include_str!("test_models/multi1/network1.json")]
+/// // network2.json
+#[doc = include_str!("test_models/multi1/network2.json")]
+/// ```
+///
+///
+///
 #[derive(serde::Deserialize, serde::Serialize, Clone)]
 pub struct PywrMultiNetworkModel {
     pub metadata: Metadata,
