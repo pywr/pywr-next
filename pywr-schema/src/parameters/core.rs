@@ -195,7 +195,7 @@ impl TryFromV1Parameter<ConstantParameterV1> for ConstantParameter {
         let value = if let Some(v) = v1.value {
             ConstantValue::Literal(v)
         } else if let Some(tbl) = v1.table {
-            ConstantValue::Table(tbl.into())
+            ConstantValue::Table(tbl.try_into()?)
         } else {
             ConstantValue::Literal(0.0)
         };

@@ -50,9 +50,9 @@ impl TryFromV1Parameter<DailyProfileParameterV1> for DailyProfileParameter {
         let values: ConstantFloatVec = if let Some(values) = v1.values {
             ConstantFloatVec::Literal(values)
         } else if let Some(external) = v1.external {
-            ConstantFloatVec::External(external.into())
+            ConstantFloatVec::External(external.try_into()?)
         } else if let Some(table_ref) = v1.table_ref {
-            ConstantFloatVec::Table(table_ref.into())
+            ConstantFloatVec::Table(table_ref.try_into()?)
         } else {
             return Err(ConversionError::MissingAttribute {
                 name: meta.name,
@@ -134,9 +134,9 @@ impl TryFromV1Parameter<MonthlyProfileParameterV1> for MonthlyProfileParameter {
         let values: ConstantFloatVec = if let Some(values) = v1.values {
             ConstantFloatVec::Literal(values.to_vec())
         } else if let Some(external) = v1.external {
-            ConstantFloatVec::External(external.into())
+            ConstantFloatVec::External(external.try_into()?)
         } else if let Some(table_ref) = v1.table_ref {
-            ConstantFloatVec::Table(table_ref.into())
+            ConstantFloatVec::Table(table_ref.try_into()?)
         } else {
             return Err(ConversionError::MissingAttribute {
                 name: meta.name,

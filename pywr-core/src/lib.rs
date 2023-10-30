@@ -3,7 +3,7 @@
 extern crate core;
 
 use crate::node::NodeIndex;
-use crate::parameters::{IndexParameterIndex, MultiValueParameterIndex, ParameterIndex};
+use crate::parameters::{IndexParameterIndex, InterpolationError, MultiValueParameterIndex, ParameterIndex};
 use crate::recorders::RecorderIndex;
 use pyo3::exceptions::{PyException, PyRuntimeError};
 use pyo3::{create_exception, PyErr};
@@ -127,6 +127,8 @@ pub enum PywrError {
     ParameterVariableValuesIncorrectLength,
     #[error("missing solver features")]
     MissingSolverFeatures,
+    #[error("interpolation error: {0}")]
+    Interpolation(#[from] InterpolationError),
 }
 
 // Python errors

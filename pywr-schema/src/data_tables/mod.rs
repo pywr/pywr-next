@@ -1,4 +1,5 @@
 use crate::parameters::TableIndex;
+use crate::ConversionError;
 use pywr_v1_schema::parameters::TableDataRef as TableDataRefV1;
 use std::collections::HashMap;
 use std::fs::File;
@@ -509,13 +510,22 @@ impl TableDataRef {
     }
 }
 
-impl From<TableDataRefV1> for TableDataRef {
-    fn from(v1: TableDataRefV1) -> Self {
-        Self {
+impl TryFrom<TableDataRefV1> for TableDataRef {
+    type Error = ConversionError;
+    fn try_from(v1: TableDataRefV1) -> Result<Self, Self::Error> {
+        let column = match v1.column {
+            None => None,
+            Some(c) => Some(c.try_into()?),
+        };
+        let index = match v1.index {
+            None => None,
+            Some(i) => Some(i.try_into()?),
+        };
+        Ok(Self {
             table: v1.table,
-            column: v1.column.map(|i| i.into()),
-            index: v1.index.map(|i| i.into()),
-        }
+            column,
+            index,
+        })
     }
 }
 
