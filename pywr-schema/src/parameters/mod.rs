@@ -48,6 +48,7 @@ use crate::parameters::core::DivisionParameter;
 pub use crate::parameters::data_frame::DataFrameParameter;
 use crate::parameters::interpolated::InterpolatedParameter;
 pub use offset::OffsetParameter;
+use pywr_core::derived_metric::DerivedMetric;
 use pywr_core::metric::Metric;
 use pywr_core::node::NodeIndex;
 use pywr_core::parameters::{IndexParameterIndex, IndexValue, ParameterType};
@@ -528,7 +529,8 @@ impl MetricFloatValue {
             Self::NodeOutFlow(node_ref) => Ok(Metric::NodeOutFlow(node_ref.get_node_index(model)?)),
             Self::NodeVolume(node_ref) => Ok(Metric::NodeVolume(node_ref.get_node_index(model)?)),
             Self::NodeProportionalVolume(node_ref) => {
-                Ok(Metric::NodeProportionalVolume(node_ref.get_node_index(model)?))
+                let dm = DerivedMetric::NodeProportionalVolume(node_ref.get_node_index(model)?);
+                Ok(Metric::DerivedMetric(model.add_derived_metric(dm)))
             }
             Self::Parameter { name, key } => {
                 match key {

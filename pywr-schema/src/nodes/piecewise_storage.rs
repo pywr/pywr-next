@@ -2,8 +2,9 @@ use crate::data_tables::LoadedTableCollection;
 use crate::error::SchemaError;
 use crate::nodes::NodeMeta;
 use crate::parameters::DynamicFloatValue;
-use pywr_core::metric::{Metric, VolumeBetweenControlCurves};
+use pywr_core::metric::Metric;
 use pywr_core::node::{ConstraintValue, StorageInitialVolume};
+use pywr_core::parameters::VolumeBetweenControlCurvesParameter;
 use std::path::Path;
 
 #[derive(serde::Deserialize, serde::Serialize, Clone)]
@@ -79,9 +80,14 @@ impl PiecewiseStorageNode {
 
             let upper = step.control_curve.load(model, tables, data_path)?;
 
-            let max_volume = ConstraintValue::Metric(Metric::VolumeBetweenControlCurves(
-                VolumeBetweenControlCurves::new(max_volume.clone(), Some(upper), lower),
-            ));
+            let max_volume_parameter = VolumeBetweenControlCurvesParameter::new(
+                format!("{}-{}-max-volume", self.meta.name, Self::step_sub_name(i).unwrap()).as_str(),
+                max_volume.clone(),
+                Some(upper),
+                lower,
+            );
+            let max_volume_parameter_idx = model.add_parameter(Box::new(max_volume_parameter))?;
+            let max_volume = ConstraintValue::Metric(Metric::ParameterValue(max_volume_parameter_idx));
 
             // Each store has min volume of zero
             let min_volume = ConstraintValue::Scalar(0.0);
@@ -113,11 +119,19 @@ impl PiecewiseStorageNode {
 
         let upper = None;
 
-        let max_volume = ConstraintValue::Metric(Metric::VolumeBetweenControlCurves(VolumeBetweenControlCurves::new(
+        let max_volume_parameter = VolumeBetweenControlCurvesParameter::new(
+            format!(
+                "{}-{}-max-volume",
+                self.meta.name,
+                Self::step_sub_name(self.steps.len()).unwrap()
+            )
+            .as_str(),
             max_volume.clone(),
             upper,
             lower,
-        )));
+        );
+        let max_volume_parameter_idx = model.add_parameter(Box::new(max_volume_parameter))?;
+        let max_volume = ConstraintValue::Metric(Metric::ParameterValue(max_volume_parameter_idx));
 
         // Each store has min volume of zero
         let min_volume = ConstraintValue::Scalar(0.0);
@@ -181,9 +195,9 @@ impl PiecewiseStorageNode {
 #[cfg(test)]
 mod tests {
     use crate::model::PywrModel;
-    use ndarray::Array2;
-    use pywr_core::metric::Metric;
-    use pywr_core::recorders::AssertionRecorder;
+    use ndarray::{concatenate, Array, Array2, Axis};
+    use pywr_core::metric::{IndexMetric, Metric};
+    use pywr_core::recorders::{AssertionRecorder, IndexAssertionRecorder};
     use pywr_core::test_utils::run_all_solvers;
     use pywr_core::timestep::Timestepper;
 
@@ -251,7 +265,7 @@ mod tests {
             .get_aggregated_storage_node_index_by_name("storage1", None)
             .unwrap();
 
-        let expected = Array2::from_shape_fn((366, 1), |(i, _)| {
+        let expected_volume = Array2::from_shape_fn((366, 1), |(i, _)| {
             if i < 49 {
                 // Draw-down top store at 5 until it is emptied (control curve starts at 75%)
                 995.0 - i as f64 * 5.0
@@ -278,12 +292,31 @@ mod tests {
             }
         });
 
+        // The drought index should register the time-step after storage is below 500
+        let expected_drought_index = expected_volume.mapv(|v| if v < 500.0 { 1 } else { 0 });
+        // The initial time-step has zero drought index because the initial volume is above the control curve
+        let initial_drought_index: Array<usize, _> = Array2::zeros((1, 1));
+
+        let expected_drought_index =
+            concatenate(Axis(0), &[initial_drought_index.view(), expected_drought_index.view()]).unwrap();
+
         let recorder = AssertionRecorder::new(
             "storage1-volume",
             Metric::AggregatedNodeVolume(idx),
-            expected,
+            expected_volume,
             None,
             None,
+        );
+        model.add_recorder(Box::new(recorder)).unwrap();
+
+        let idx = model
+            .get_index_parameter_index_by_name("storage1-drought-index")
+            .unwrap();
+
+        let recorder = IndexAssertionRecorder::new(
+            "storage1-drought-index",
+            IndexMetric::IndexParameterValue(idx),
+            expected_drought_index,
         );
         model.add_recorder(Box::new(recorder)).unwrap();
 
