@@ -1,5 +1,4 @@
 use crate::data_tables::{make_path, TableError};
-use crate::parameters::TableIndexEntry;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::BufReader;
@@ -16,7 +15,7 @@ impl<T> LoadedVecTable<T>
 where
     T: Copy,
 {
-    fn get_vec(&self, key: &[&TableIndexEntry]) -> Result<&Vec<T>, TableError> {
+    pub fn get_vec(&self, key: &[&str]) -> Result<&Vec<T>, TableError> {
         match self {
             LoadedVecTable::One(tbl) => {
                 if key.len() == 1 {

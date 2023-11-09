@@ -53,7 +53,7 @@ use pywr_core::node::NodeIndex;
 use pywr_core::parameters::{IndexParameterIndex, IndexValue, ParameterType};
 use pywr_v1_schema::parameters::{
     CoreParameter, ExternalDataRef as ExternalDataRefV1, Parameter as ParameterV1, ParameterMeta as ParameterMetaV1,
-    ParameterValue as ParameterValueV1, TableIndex as TableIndexV1, TableIndexEntry,
+    ParameterValue as ParameterValueV1, TableIndex as TableIndexV1, TableIndexEntry as TableIndexEntryV1,
 };
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -793,15 +793,15 @@ impl TryFrom<TableIndexV1> for TableIndex {
     fn try_from(v1: TableIndexV1) -> Result<Self, Self::Error> {
         match v1 {
             TableIndexV1::Single(s) => match s {
-                TableIndexEntry::Name(s) => Ok(TableIndex::Single(s)),
-                TableIndexEntry::Index(_) => Err(ConversionError::IntegerTableIndicesNotSupported),
+                TableIndexEntryV1::Name(s) => Ok(TableIndex::Single(s)),
+                TableIndexEntryV1::Index(_) => Err(ConversionError::IntegerTableIndicesNotSupported),
             },
             TableIndexV1::Multi(s) => {
                 let names = s
                     .into_iter()
                     .map(|e| match e {
-                        TableIndexEntry::Name(s) => Ok(s),
-                        TableIndexEntry::Index(_) => Err(ConversionError::IntegerTableIndicesNotSupported),
+                        TableIndexEntryV1::Name(s) => Ok(s),
+                        TableIndexEntryV1::Index(_) => Err(ConversionError::IntegerTableIndicesNotSupported),
                     })
                     .collect::<Result<Vec<_>, _>>()?;
                 Ok(Self::Multi(names))

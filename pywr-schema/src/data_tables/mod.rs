@@ -1,13 +1,19 @@
+mod scalar;
+mod vec;
+
+use crate::data_tables::scalar::{
+    load_csv_row2_scalar_table_one, load_csv_row_col_scalar_table_one, load_csv_row_scalar_table_one,
+};
+use crate::data_tables::vec::{load_csv_row2_vec_table_one, load_csv_row_vec_table_one};
 use crate::parameters::TableIndex;
 use crate::ConversionError;
 use pywr_v1_schema::parameters::TableDataRef as TableDataRefV1;
+pub use scalar::LoadedScalarTable;
 use std::collections::HashMap;
-use std::fs::File;
-use std::io::BufReader;
 use std::path::{Path, PathBuf};
-use std::str::FromStr;
 use thiserror::Error;
 use tracing::{debug, info};
+use vec::LoadedVecTable;
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
 #[serde(rename_all = "lowercase")]
@@ -118,192 +124,6 @@ pub fn make_path(table_path: &Path, data_path: Option<&Path>) -> PathBuf {
     }
 }
 
-/// Load a CSV file with looks for each rows & columns
-fn load_csv_row_col_scalar_table_one<T>(
-    table_path: &Path,
-    data_path: Option<&Path>,
-) -> Result<LoadedScalarTable<T>, TableError>
-where
-    T: FromStr + Copy,
-    TableError: From<T::Err>,
-{
-    let path = make_path(table_path, data_path);
-
-    let file = File::open(path).map_err(|e| TableError::IO(e.to_string()))?;
-    let buf_reader = BufReader::new(file);
-    let mut rdr = csv::Reader::from_reader(buf_reader);
-
-    let headers: Vec<String> = rdr
-        .headers()
-        .map_err(|e| TableError::Csv(e.to_string()))?
-        .iter()
-        .skip(1)
-        .map(|s| s.to_string())
-        .collect();
-
-    let tbl: HashMap<(String, String), T> = rdr
-        .records()
-        .map(|result| {
-            // The iterator yields Result<StringRecord, Error>, so we check the
-            // error here.
-            let record = result.map_err(|e| TableError::Csv(e.to_string()))?;
-
-            let key = record.get(0).ok_or(TableError::KeyParse)?.to_string();
-
-            let values: Vec<T> = record.iter().skip(1).map(|v| v.parse()).collect::<Result<_, _>>()?;
-
-            let values: Vec<((String, String), T)> = values
-                .into_iter()
-                .zip(&headers)
-                .map(|(v, col)| ((key.clone(), col.to_string()), v))
-                .collect();
-
-            Ok(values)
-        })
-        .collect::<Result<Vec<_>, TableError>>()?
-        .into_iter()
-        .flatten()
-        .collect();
-
-    Ok(LoadedScalarTable::Two(tbl))
-}
-
-fn load_csv_row_scalar_table_one<T>(
-    table_path: &Path,
-    data_path: Option<&Path>,
-) -> Result<LoadedScalarTable<T>, TableError>
-where
-    T: FromStr + Copy,
-    TableError: From<T::Err>,
-{
-    let path = make_path(table_path, data_path);
-
-    let file = File::open(path.clone()).map_err(|e| TableError::IO(e.to_string()))?;
-    let buf_reader = BufReader::new(file);
-    let mut rdr = csv::Reader::from_reader(buf_reader);
-
-    let tbl: HashMap<String, T> = rdr
-        .records()
-        .map(|result| {
-            // The iterator yields Result<StringRecord, Error>, so we check the
-            // error here.
-            let record = result.map_err(|e| TableError::Csv(e.to_string()))?;
-
-            let key = record.get(0).ok_or(TableError::KeyParse)?.to_string();
-
-            let values: Vec<T> = record.iter().skip(1).map(|v| v.parse()).collect::<Result<_, _>>()?;
-
-            if values.len() > 1 {
-                return Err(TableError::TooManyValues(path.clone()));
-            }
-
-            Ok((key, values[0]))
-        })
-        .collect::<Result<_, TableError>>()?;
-
-    Ok(LoadedScalarTable::One(tbl))
-}
-
-fn load_csv_row2_scalar_table_one<T>(
-    table_path: &Path,
-    data_path: Option<&Path>,
-) -> Result<LoadedScalarTable<T>, TableError>
-where
-    T: FromStr + Copy,
-    TableError: From<T::Err>,
-{
-    let path = make_path(table_path, data_path);
-
-    let file = File::open(path.clone()).map_err(|e| TableError::IO(e.to_string()))?;
-    let buf_reader = BufReader::new(file);
-    let mut rdr = csv::Reader::from_reader(buf_reader);
-
-    let tbl: HashMap<(String, String), T> = rdr
-        .records()
-        .map(|result| {
-            // The iterator yields Result<StringRecord, Error>, so we check the
-            // error here.
-            let record = result.map_err(|e| TableError::Csv(e.to_string()))?;
-
-            let key = (
-                record.get(0).ok_or(TableError::KeyParse)?.to_string(),
-                record.get(1).ok_or(TableError::KeyParse)?.to_string(),
-            );
-
-            let values: Vec<T> = record.iter().skip(2).map(|v| v.parse()).collect::<Result<_, _>>()?;
-
-            if values.len() > 1 {
-                return Err(TableError::TooManyValues(path.clone()));
-            }
-
-            Ok((key, values[0]))
-        })
-        .collect::<Result<_, TableError>>()?;
-
-    Ok(LoadedScalarTable::Two(tbl))
-}
-
-fn load_csv_row_vec_table_one<T>(table_path: &Path, data_path: Option<&Path>) -> Result<LoadedVecTable<T>, TableError>
-where
-    T: FromStr,
-    TableError: From<T::Err>,
-{
-    let path = make_path(table_path, data_path);
-
-    let file = File::open(path).map_err(|e| TableError::IO(e.to_string()))?;
-    let buf_reader = BufReader::new(file);
-    let mut rdr = csv::Reader::from_reader(buf_reader);
-
-    let tbl: HashMap<String, Vec<T>> = rdr
-        .records()
-        .map(|result| {
-            // The iterator yields Result<StringRecord, Error>, so we check the
-            // error here.
-            let record = result.map_err(|e| TableError::Csv(e.to_string()))?;
-
-            let key = record.get(0).ok_or(TableError::KeyParse)?.to_string();
-
-            let values: Vec<T> = record.iter().skip(1).map(|v| v.parse()).collect::<Result<_, _>>()?;
-
-            Ok((key, values))
-        })
-        .collect::<Result<_, TableError>>()?;
-
-    Ok(LoadedVecTable::One(tbl))
-}
-
-fn load_csv_row2_vec_table_one<T>(table_path: &Path, data_path: Option<&Path>) -> Result<LoadedVecTable<T>, TableError>
-where
-    T: FromStr,
-    TableError: From<T::Err>,
-{
-    let path = make_path(table_path, data_path);
-
-    let file = File::open(path).map_err(|e| TableError::IO(e.to_string()))?;
-    let buf_reader = BufReader::new(file);
-    let mut rdr = csv::Reader::from_reader(buf_reader);
-
-    let tbl: HashMap<(String, String), Vec<T>> = rdr
-        .records()
-        .map(|result| {
-            // The iterator yields Result<StringRecord, Error>, so we check the
-            // error here.
-            let record = result.map_err(|e| TableError::Csv(e.to_string()))?;
-
-            let key = (
-                record.get(0).ok_or(TableError::KeyParse)?.to_string(),
-                record.get(1).ok_or(TableError::KeyParse)?.to_string(),
-            );
-
-            let values: Vec<T> = record.iter().skip(2).map(|v| v.parse()).collect::<Result<_, _>>()?;
-
-            Ok((key, values))
-        })
-        .collect::<Result<_, TableError>>()?;
-
-    Ok(LoadedVecTable::Two(tbl))
-}
-
 #[derive(Error, Debug, PartialEq, Eq)]
 pub enum TableError {
     #[error("table not found: {0}")]
@@ -326,6 +146,8 @@ pub enum TableError {
     WrongTableFormat(String),
     #[error("too many values for scalar table when loading data table from: {0}")]
     TooManyValues(PathBuf),
+    #[error("table index out of bounds: {0}")]
+    IndexOutOfBounds(usize),
 }
 
 pub enum LoadedTable {
@@ -349,88 +171,6 @@ impl LoadedTable {
             _ => Err(TableError::WrongTableFormat(format!(
                 "Scalar value with key \"{key:?}\" requested from non-scalar table."
             ))),
-        }
-    }
-}
-
-pub enum LoadedScalarTable<T> {
-    One(HashMap<String, T>),
-    Two(HashMap<(String, String), T>),
-    Three(HashMap<(String, String, String), T>),
-}
-
-impl<T> LoadedScalarTable<T>
-where
-    T: Copy,
-{
-    fn get_scalar(&self, key: &[&str]) -> Result<T, TableError> {
-        match self {
-            LoadedScalarTable::One(tbl) => {
-                if key.len() == 1 {
-                    tbl.get(key[0]).ok_or(TableError::EntryNotFound).copied()
-                } else {
-                    Err(TableError::WrongKeySize(1, key.len()))
-                }
-            }
-            LoadedScalarTable::Two(tbl) => {
-                if key.len() == 2 {
-                    // I think this copies the strings and is not very efficient.
-                    let k = (key[0].to_string(), key[1].to_string());
-                    tbl.get(&k).ok_or(TableError::EntryNotFound).copied()
-                } else {
-                    Err(TableError::WrongKeySize(2, key.len()))
-                }
-            }
-            LoadedScalarTable::Three(tbl) => {
-                if key.len() == 3 {
-                    // I think this copies the strings and is not very efficient.
-                    let k = (key[0].to_string(), key[1].to_string(), key[2].to_string());
-                    tbl.get(&k).ok_or(TableError::EntryNotFound).copied()
-                } else {
-                    Err(TableError::WrongKeySize(3, key.len()))
-                }
-            }
-        }
-    }
-}
-
-pub enum LoadedVecTable<T> {
-    One(HashMap<String, Vec<T>>),
-    Two(HashMap<(String, String), Vec<T>>),
-    Three(HashMap<(String, String, String), Vec<T>>),
-}
-
-impl<T> LoadedVecTable<T>
-where
-    T: Copy,
-{
-    fn get_vec(&self, key: &[&str]) -> Result<&Vec<T>, TableError> {
-        match self {
-            LoadedVecTable::One(tbl) => {
-                if key.len() == 1 {
-                    tbl.get(key[0]).ok_or(TableError::EntryNotFound)
-                } else {
-                    Err(TableError::WrongKeySize(1, key.len()))
-                }
-            }
-            LoadedVecTable::Two(tbl) => {
-                if key.len() == 2 {
-                    // I think this copies the strings and is not very efficient.
-                    let k = (key[0].to_string(), key[1].to_string());
-                    tbl.get(&k).ok_or(TableError::EntryNotFound)
-                } else {
-                    Err(TableError::WrongKeySize(2, key.len()))
-                }
-            }
-            LoadedVecTable::Three(tbl) => {
-                if key.len() == 3 {
-                    // I think this copies the strings and is not very efficient.
-                    let k = (key[0].to_string(), key[1].to_string(), key[2].to_string());
-                    tbl.get(&k).ok_or(TableError::EntryNotFound)
-                } else {
-                    Err(TableError::WrongKeySize(3, key.len()))
-                }
-            }
         }
     }
 }

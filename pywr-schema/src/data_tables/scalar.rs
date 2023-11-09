@@ -1,27 +1,16 @@
 use crate::data_tables::{make_path, TableError};
-use crate::parameters::TableIndexEntry;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
 use std::str::FromStr;
 
-fn table_index_to_position(key: &TableIndexEntry, keys: &[String]) -> Result<usize, TableError> {
-    match key {
-        TableIndexEntry::Index(idx) => Ok(*idx),
-        TableIndexEntry::Name(name) => keys.iter().position(|k| k == name).ok_or(TableError::EntryNotFound),
-    }
-}
-
-fn table_index_to_str(key: &TableIndexEntry) -> Result<&str, TableError> {
-    match key {
-        TableIndexEntry::Index(_) => Err(TableError::IndexingByPositionNotSupported),
-        TableIndexEntry::Name(name) => Ok(name.as_str()),
-    }
+fn table_key_to_position(key: &str, keys: &[String]) -> Result<usize, TableError> {
+    keys.iter().position(|k| k == key).ok_or(TableError::EntryNotFound)
 }
 
 /// A simple table with a string based key for scalar values.
-struct ScalarTableOne<T> {
+pub struct ScalarTableOne<T> {
     keys: Vec<String>,
     values: Vec<T>,
 }
@@ -30,34 +19,36 @@ impl<T> ScalarTableOne<T>
 where
     T: Copy,
 {
-    fn get_scalar(&self, index: &TableIndexEntry) -> Result<T, TableError> {
-        let k = table_index_to_position(index, &self.keys)?;
-        self.values.get(k).ok_or(TableError::IndexOutOfBounds(k)).copied()
+    fn get_scalar(&self, key: &str) -> Result<T, TableError> {
+        let index = table_key_to_position(key, &self.keys)?;
+        self.values
+            .get(index)
+            .ok_or(TableError::IndexOutOfBounds(index))
+            .copied()
     }
 }
 
 /// A simple table with two strings for a key to scalar values.
-struct ScalarTableTwo<T> {
+pub struct ScalarTableR1C1<T> {
     index: (Vec<String>, Vec<String>),
     // Could this be flattened for a small performance gain?
     values: Vec<Vec<T>>,
 }
 
-impl<T> ScalarTableTwo<T>
+impl<T> ScalarTableR1C1<T>
 where
     T: Copy,
 {
-    fn get_scalar(&self, index: &[&TableIndexEntry]) -> Result<T, TableError> {
+    fn get_scalar(&self, index: &[&str]) -> Result<T, TableError> {
         if index.len() == 2 {
-            // I think this copies the strings and is not very efficient.
-            let k0 = table_index_to_position(index[0], &self.index.0)?;
-            let k1 = table_index_to_position(index[1], &self.index.1)?;
+            let idx0 = table_key_to_position(index[0], &self.index.0)?;
+            let idx1 = table_key_to_position(index[1], &self.index.1)?;
 
             self.values
-                .get(k0)
-                .ok_or(TableError::IndexOutOfBounds(k0))?
-                .get(k1)
-                .ok_or(TableError::IndexOutOfBounds(k1))
+                .get(idx0)
+                .ok_or(TableError::IndexOutOfBounds(idx0))?
+                .get(idx1)
+                .ok_or(TableError::IndexOutOfBounds(idx1))
                 .copied()
         } else {
             Err(TableError::WrongKeySize(2, index.len()))
@@ -65,10 +56,30 @@ where
     }
 }
 
+/// A simple table with two strings for a key to scalar values.
+pub struct ScalarTableR2<T> {
+    values: HashMap<(String, String), T>,
+}
+
+impl<T> ScalarTableR2<T>
+where
+    T: Copy,
+{
+    fn get_scalar(&self, index: &[&str]) -> Result<T, TableError> {
+        if index.len() == 3 {
+            // I think this copies the strings and is not very efficient.
+            let k = (index[0].to_string(), index[1].to_string());
+            self.values.get(&k).ok_or(TableError::EntryNotFound).copied()
+        } else {
+            Err(TableError::WrongKeySize(3, index.len()))
+        }
+    }
+}
+
 /// A simple table with three strings for a key to scalar values.
 ///
 /// This table can not be indexed by position.
-struct ScalarTableThree<T> {
+pub struct ScalarTableThree<T> {
     values: HashMap<(String, String, String), T>,
 }
 
@@ -76,15 +87,10 @@ impl<T> ScalarTableThree<T>
 where
     T: Copy,
 {
-    fn get_scalar(&self, index: &[&TableIndexEntry]) -> Result<T, TableError> {
+    fn get_scalar(&self, index: &[&str]) -> Result<T, TableError> {
         if index.len() == 3 {
             // I think this copies the strings and is not very efficient.
-            let k0 = table_index_to_str(index[0])?;
-            let k1 = table_index_to_str(index[1])?;
-            let k2 = table_index_to_str(index[2])?;
-
-            let k = (k0.to_string(), k1.to_string(), k2.to_string());
-
+            let k = (index[0].to_string(), index[1].to_string(), index[2].to_string());
             self.values.get(&k).ok_or(TableError::EntryNotFound).copied()
         } else {
             Err(TableError::WrongKeySize(3, index.len()))
@@ -94,7 +100,8 @@ where
 
 pub enum LoadedScalarTable<T> {
     One(ScalarTableOne<T>),
-    Two(ScalarTableTwo<T>),
+    Row1Col1(ScalarTableR1C1<T>),
+    Row2(ScalarTableR2<T>),
     Three(ScalarTableThree<T>),
 }
 
@@ -102,7 +109,7 @@ impl<T> LoadedScalarTable<T>
 where
     T: Copy,
 {
-    fn get_scalar(&self, key: &[&TableIndexEntry]) -> Result<T, TableError> {
+    pub fn get_scalar(&self, key: &[&str]) -> Result<T, TableError> {
         match self {
             LoadedScalarTable::One(tbl) => {
                 if key.len() == 1 {
@@ -111,7 +118,8 @@ where
                     Err(TableError::WrongKeySize(1, key.len()))
                 }
             }
-            LoadedScalarTable::Two(tbl) => tbl.get_scalar(key),
+            LoadedScalarTable::Row1Col1(tbl) => tbl.get_scalar(key),
+            LoadedScalarTable::Row2(tbl) => tbl.get_scalar(key),
             LoadedScalarTable::Three(tbl) => tbl.get_scalar(key),
         }
     }
@@ -158,7 +166,7 @@ where
         })
         .collect::<Result<Vec<_>, TableError>>()?;
 
-    Ok(LoadedScalarTable::Two(ScalarTableTwo {
+    Ok(LoadedScalarTable::Row1Col1(ScalarTableR1C1 {
         index: (row_headers, col_headers),
         values,
     }))
@@ -238,5 +246,5 @@ where
         })
         .collect::<Result<_, TableError>>()?;
 
-    Ok(LoadedScalarTable::Three(ScalarTableThree { values }))
+    Ok(LoadedScalarTable::Row2(ScalarTableR2 { values }))
 }
