@@ -1,47 +1,25 @@
 use crate::aggregated_node::AggregatedNodeIndex;
 use crate::aggregated_storage_node::AggregatedStorageNodeIndex;
+use crate::derived_metric::DerivedMetricIndex;
 use crate::edge::EdgeIndex;
 use crate::network::Network;
 use crate::node::NodeIndex;
-use crate::parameters::{MultiValueParameterIndex, ParameterIndex};
+use crate::parameters::{IndexParameterIndex, MultiValueParameterIndex, ParameterIndex};
 use crate::state::State;
 use crate::virtual_storage::VirtualStorageIndex;
 use crate::PywrError;
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct VolumeBetweenControlCurves {
-    max_volume: Box<Metric>,
-    upper: Option<Box<Metric>>,
-    lower: Option<Box<Metric>>,
-}
-
-impl VolumeBetweenControlCurves {
-    pub fn new(max_volume: Metric, upper: Option<Metric>, lower: Option<Metric>) -> Self {
-        Self {
-            max_volume: Box::new(max_volume),
-            upper: upper.map(Box::new),
-            lower: lower.map(Box::new),
-        }
-    }
-}
-
 #[derive(Clone, Debug, PartialEq)]
 pub enum Metric {
     NodeInFlow(NodeIndex),
     NodeOutFlow(NodeIndex),
     NodeVolume(NodeIndex),
-    NodeInFlowDeficit(NodeIndex),
-    NodeProportionalVolume(NodeIndex),
     AggregatedNodeInFlow(AggregatedNodeIndex),
     AggregatedNodeOutFlow(AggregatedNodeIndex),
     AggregatedNodeVolume(AggregatedStorageNodeIndex),
-    AggregatedNodeProportionalVolume(AggregatedStorageNodeIndex),
     EdgeFlow(EdgeIndex),
     ParameterValue(ParameterIndex),
     MultiParameterValue((MultiValueParameterIndex, String)),
     VirtualStorageVolume(VirtualStorageIndex),
-    VirtualStorageProportionalVolume(VirtualStorageIndex),
-    VolumeBetweenControlCurves(VolumeBetweenControlCurves),
     MultiNodeInFlow {
         indices: Vec<NodeIndex>,
         name: String,
@@ -49,6 +27,7 @@ pub enum Metric {
     },
     // TODO implement other MultiNodeXXX variants
     Constant(f64),
+    DerivedMetric(DerivedMetricIndex),
 }
 
 impl Metric {
@@ -73,22 +52,12 @@ impl Metric {
                     .map(|idx| state.get_network_state().get_node_out_flow(idx))
                     .sum::<Result<_, _>>()
             }
-            Metric::NodeProportionalVolume(idx) => {
-                let max_volume = model.get_node(idx)?.get_current_max_volume(model, state)?;
-                Ok(state
-                    .get_network_state()
-                    .get_node_proportional_volume(idx, max_volume)?)
-            }
+
             Metric::EdgeFlow(idx) => Ok(state.get_network_state().get_edge_flow(idx)?),
             Metric::ParameterValue(idx) => Ok(state.get_parameter_value(*idx)?),
             Metric::MultiParameterValue((idx, key)) => Ok(state.get_multi_parameter_value(*idx, key)?),
             Metric::VirtualStorageVolume(idx) => Ok(state.get_network_state().get_virtual_storage_volume(idx)?),
-            Metric::VirtualStorageProportionalVolume(idx) => {
-                let max_volume = model.get_virtual_storage_node(idx)?.get_max_volume(model, state)?;
-                Ok(state
-                    .get_network_state()
-                    .get_virtual_storage_proportional_volume(idx, max_volume)?)
-            }
+            Metric::DerivedMetric(idx) => state.get_derived_metric_value(*idx),
             Metric::Constant(v) => Ok(*v),
             Metric::AggregatedNodeVolume(idx) => {
                 let node = model.get_aggregated_storage_node(idx)?;
@@ -97,22 +66,7 @@ impl Metric {
                     .map(|idx| state.get_network_state().get_node_volume(idx))
                     .sum::<Result<_, _>>()
             }
-            Metric::AggregatedNodeProportionalVolume(idx) => {
-                let node = model.get_aggregated_storage_node(idx)?;
-                let volume: f64 = node
-                    .nodes
-                    .iter()
-                    .map(|idx| state.get_network_state().get_node_volume(idx))
-                    .sum::<Result<_, _>>()?;
 
-                let max_volume: f64 = node
-                    .nodes
-                    .iter()
-                    .map(|idx| model.get_node(idx)?.get_current_max_volume(model, state))
-                    .sum::<Result<_, _>>()?;
-                // TODO handle divide by zero
-                Ok(volume / max_volume)
-            }
             Metric::MultiNodeInFlow { indices, .. } => {
                 let flow = indices
                     .iter()
@@ -120,26 +74,21 @@ impl Metric {
                     .sum::<Result<_, _>>()?;
                 Ok(flow)
             }
-            Metric::NodeInFlowDeficit(idx) => {
-                let node = model.get_node(idx)?;
-                let flow = state.get_network_state().get_node_in_flow(idx)?;
-                let max_flow = node.get_current_max_flow(model, state)?;
-                Ok(max_flow - flow)
-            }
-            Metric::VolumeBetweenControlCurves(vol) => {
-                let max_volume = vol.max_volume.get_value(model, state)?;
-                let lower = vol
-                    .lower
-                    .as_ref()
-                    .map_or(Ok(0.0), |metric| metric.get_value(model, state))?;
-                let upper = vol
-                    .upper
-                    .as_ref()
-                    .map_or(Ok(1.0), |metric| metric.get_value(model, state))?;
+        }
+    }
+}
 
-                // TODO handle invalid bounds
-                Ok(max_volume * (upper - lower))
-            }
+#[derive(Clone, Debug, PartialEq)]
+pub enum IndexMetric {
+    IndexParameterValue(IndexParameterIndex),
+    Constant(usize),
+}
+
+impl IndexMetric {
+    pub fn get_value(&self, _network: &Network, state: &State) -> Result<usize, PywrError> {
+        match self {
+            Self::IndexParameterValue(idx) => state.get_parameter_index(*idx),
+            Self::Constant(i) => Ok(*i),
         }
     }
 }

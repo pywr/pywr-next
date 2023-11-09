@@ -507,7 +507,7 @@ impl PywrMultiNetworkModel {
                 let from_network_idx = model.get_network_index_by_name(&transfer.from_network)?;
 
                 // Load the metric from the "from" network
-                let from_network = model.network(from_network_idx)?;
+                let from_network = model.network_mut(from_network_idx)?;
                 let from_metric = transfer.metric.load(from_network)?;
 
                 let to_network = model.network(to_network_idx)?;

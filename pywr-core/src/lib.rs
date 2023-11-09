@@ -2,6 +2,7 @@
 
 extern crate core;
 
+use crate::derived_metric::DerivedMetricIndex;
 use crate::node::NodeIndex;
 use crate::parameters::{IndexParameterIndex, MultiValueParameterIndex, ParameterIndex};
 use crate::recorders::RecorderIndex;
@@ -11,6 +12,7 @@ use thiserror::Error;
 
 pub mod aggregated_node;
 mod aggregated_storage_node;
+pub mod derived_metric;
 pub mod edge;
 pub mod metric;
 pub mod models;
@@ -58,6 +60,10 @@ pub enum PywrError {
     RecorderIndexNotFound,
     #[error("recorder not found")]
     RecorderNotFound,
+    #[error("derived metric not found")]
+    DerivedMetricNotFound,
+    #[error("derived metric index {0} not found")]
+    DerivedMetricIndexNotFound(DerivedMetricIndex),
     #[error("node name `{0}` already exists")]
     NodeNameAlreadyExists(String),
     #[error("parameter name `{0}` already exists at index {1}")]
@@ -136,6 +142,8 @@ pub enum PywrError {
     NetworkNotFound(String),
     #[error("network index ({0}) not found")]
     NetworkIndexNotFound(usize),
+    #[error("parameters do not provide an initial value")]
+    ParameterNoInitialValue,
 }
 
 // Python errors

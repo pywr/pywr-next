@@ -46,6 +46,7 @@ use crate::parameters::core::DivisionParameter;
 pub use crate::parameters::data_frame::DataFrameParameter;
 pub use inter_model_transfer::InterModelTransferParameter;
 pub use offset::OffsetParameter;
+use pywr_core::derived_metric::DerivedMetric;
 use pywr_core::metric::Metric;
 use pywr_core::models::ModelDomain;
 use pywr_core::node::NodeIndex;
@@ -477,13 +478,14 @@ pub enum MetricFloatReference {
 
 impl MetricFloatReference {
     /// Load the metric definition into a `Metric` containing the appropriate internal references.
-    pub fn load(&self, network: &pywr_core::network::Network) -> Result<Metric, SchemaError> {
+    pub fn load(&self, network: &mut pywr_core::network::Network) -> Result<Metric, SchemaError> {
         match self {
             Self::NodeInFlow(node_ref) => Ok(Metric::NodeInFlow(node_ref.get_node_index(network)?)),
             Self::NodeOutFlow(node_ref) => Ok(Metric::NodeOutFlow(node_ref.get_node_index(network)?)),
             Self::NodeVolume(node_ref) => Ok(Metric::NodeVolume(node_ref.get_node_index(network)?)),
             Self::NodeProportionalVolume(node_ref) => {
-                Ok(Metric::NodeProportionalVolume(node_ref.get_node_index(network)?))
+                let dm = DerivedMetric::NodeProportionalVolume(node_ref.get_node_index(network)?);
+                Ok(Metric::DerivedMetric(network.add_derived_metric(dm)))
             }
             Self::Parameter { name, key } => {
                 match key {

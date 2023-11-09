@@ -163,7 +163,7 @@ mod tests {
             },
         ];
 
-        let state = State::new(vec![], 0, vec![], 1, 0, 0);
+        let state = State::new(vec![], 0, vec![], 1, 0, 0, 0);
 
         let mut internal_p_states: Vec<_> = scenario_indices
             .iter()

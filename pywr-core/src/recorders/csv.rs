@@ -77,12 +77,8 @@ impl Recorder for CSVRecorder {
 
                     (name.to_string(), sub_name, "volume".to_string())
                 }
-                Metric::NodeProportionalVolume(idx) => {
-                    let node = model.get_node(idx)?;
-                    let (name, sub_name) = node.full_name();
-                    let sub_name = sub_name.map_or("".to_string(), |sn| sn.to_string());
-
-                    (name.to_string(), sub_name, "proportional-volume".to_string())
+                Metric::DerivedMetric(idx) => {
+                    todo!("Derived metrics are not yet supported in CSV recorders");
                 }
                 Metric::AggregatedNodeVolume(idx) => {
                     let node = model.get_aggregated_storage_node(idx)?;
@@ -90,13 +86,6 @@ impl Recorder for CSVRecorder {
                     let sub_name = sub_name.map_or("".to_string(), |sn| sn.to_string());
 
                     (name.to_string(), sub_name, "volume".to_string())
-                }
-                Metric::AggregatedNodeProportionalVolume(idx) => {
-                    let node = model.get_aggregated_storage_node(idx)?;
-                    let (name, sub_name) = node.full_name();
-                    let sub_name = sub_name.map_or("".to_string(), |sn| sn.to_string());
-
-                    (name.to_string(), sub_name, "proportional-volume".to_string())
                 }
                 Metric::EdgeFlow(_) => {
                     continue; // TODO
@@ -107,9 +96,6 @@ impl Recorder for CSVRecorder {
                     (name.to_string(), "".to_string(), "parameter".to_string())
                 }
                 Metric::VirtualStorageVolume(_) => {
-                    continue; // TODO
-                }
-                Metric::VirtualStorageProportionalVolume(_) => {
                     continue; // TODO
                 }
                 Metric::Constant(_) => {
@@ -131,16 +117,6 @@ impl Recorder for CSVRecorder {
                     let sub_name = sub_name.map_or("".to_string(), |sn| sn.to_string());
 
                     (name.to_string(), sub_name, "outflow".to_string())
-                }
-                Metric::NodeInFlowDeficit(idx) => {
-                    let node = model.get_node(idx)?;
-                    let (name, sub_name) = node.full_name();
-                    let sub_name = sub_name.map_or("".to_string(), |sn| sn.to_string());
-
-                    (name.to_string(), sub_name, "inflow-deficit".to_string())
-                }
-                Metric::VolumeBetweenControlCurves(_) => {
-                    todo!("Recording VolumeBetweenControlCurves not implemented.")
                 }
                 Metric::MultiNodeInFlow { name, sub_name, .. } => (
                     name.to_string(),

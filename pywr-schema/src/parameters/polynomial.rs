@@ -1,6 +1,5 @@
 use crate::error::{ConversionError, SchemaError};
 use crate::parameters::{DynamicFloatValueType, IntoV2Parameter, ParameterMeta, TryFromV1Parameter};
-use pywr_core::metric::Metric;
 use pywr_core::parameters::ParameterIndex;
 use pywr_v1_schema::parameters::Polynomial1DParameter as Polynomial1DParameterV1;
 use std::collections::HashMap;
@@ -25,12 +24,8 @@ impl Polynomial1DParameter {
     }
 
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<ParameterIndex, SchemaError> {
-        let node_idx = network.get_node_index_by_name(&self.storage_node, None)?;
-        let metric = if self.use_proportional_volume.unwrap_or(true) {
-            Metric::NodeProportionalVolume(node_idx)
-        } else {
-            Metric::NodeVolume(node_idx)
-        };
+        let metric =
+            network.get_storage_node_metric(&self.storage_node, None, self.use_proportional_volume.unwrap_or(true))?;
 
         let p = pywr_core::parameters::Polynomial1DParameter::new(
             &self.meta.name,

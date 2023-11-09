@@ -95,17 +95,12 @@ impl Recorder for HDF5Recorder {
                     let node = model.get_node(idx)?;
                     require_node_dataset(root_grp, shape, node.name(), node.sub_name(), "volume")?
                 }
-                Metric::NodeProportionalVolume(idx) => {
-                    let node = model.get_node(idx)?;
-                    require_node_dataset(root_grp, shape, node.name(), node.sub_name(), "proportional-volume")?
+                Metric::DerivedMetric(idx) => {
+                    todo!("Derived metrics are not yet supported in HDF recorders");
                 }
                 Metric::AggregatedNodeVolume(idx) => {
                     let node = model.get_aggregated_storage_node(idx)?;
                     require_node_dataset(root_grp, shape, node.name(), node.sub_name(), "volume")?
-                }
-                Metric::AggregatedNodeProportionalVolume(idx) => {
-                    let node = model.get_aggregated_storage_node(idx)?;
-                    require_node_dataset(root_grp, shape, node.name(), node.sub_name(), "proportional-volume")?
                 }
                 Metric::EdgeFlow(_) => {
                     continue; // TODO
@@ -116,9 +111,6 @@ impl Recorder for HDF5Recorder {
                     require_dataset(&parameter_group, shape, parameter.name())?
                 }
                 Metric::VirtualStorageVolume(_) => {
-                    continue; // TODO
-                }
-                Metric::VirtualStorageProportionalVolume(_) => {
                     continue; // TODO
                 }
                 Metric::Constant(_) => {
@@ -134,13 +126,6 @@ impl Recorder for HDF5Recorder {
                 Metric::AggregatedNodeOutFlow(idx) => {
                     let node = model.get_aggregated_node(idx)?;
                     require_node_dataset(root_grp, shape, node.name(), node.sub_name(), "outflow")?
-                }
-                Metric::NodeInFlowDeficit(idx) => {
-                    let node = model.get_node(idx)?;
-                    require_node_dataset(root_grp, shape, node.name(), node.sub_name(), "flow-deficit")?
-                }
-                Metric::VolumeBetweenControlCurves(_) => {
-                    continue; // TODO
                 }
                 Metric::MultiNodeInFlow { name, sub_name, .. } => {
                     require_node_dataset(root_grp, shape, name, sub_name.as_deref(), "inflow")?
