@@ -616,7 +616,7 @@ impl StorageConstraints {
             ConstraintValue::Metric(m) => m.get_value(model, state),
         }
     }
-    /// Return the current maximum volume from the parameter state
+    /// Return the current maximum volume from the metric state
     ///
     /// Defaults to f64::MAX if no parameter is defined.
     pub fn get_max_volume(&self, model: &Model, state: &State) -> Result<f64, PywrError> {

@@ -36,7 +36,7 @@ pub use asymmetric::AsymmetricSwitchIndexParameter;
 pub use constant::ConstantParameter;
 pub use control_curves::{
     ApportionParameter, ControlCurveIndexParameter, ControlCurveParameter, InterpolatedParameter,
-    PiecewiseInterpolatedParameter,
+    PiecewiseInterpolatedParameter, VolumeBetweenControlCurvesParameter,
 };
 pub use delay::DelayParameter;
 pub use division::DivisionParameter;
