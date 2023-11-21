@@ -79,6 +79,8 @@ pub enum PywrError {
     FlowConstraintsUndefined,
     #[error("storage constraints are undefined for this node")]
     StorageConstraintsUndefined,
+    #[error("can not add virtual storage node to a storage node")]
+    NoVirtualStorageOnStorageNode,
     #[error("timestep index out of range")]
     TimestepIndexOutOfRange,
     #[error("solver not initialised")]
