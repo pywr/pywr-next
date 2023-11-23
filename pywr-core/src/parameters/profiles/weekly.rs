@@ -174,7 +174,6 @@ impl WeeklyProfileParameter {
         Self {
             meta: ParameterMeta::new(name),
             values,
-            // values: WeeklyProfileSize::try_from(values),
             interp_day,
         }
     }
