@@ -7,6 +7,7 @@ use pywr_core::parameters::ParameterIndex;
 use pywr_v1_schema::parameters::{
     DailyProfileParameter as DailyProfileParameterV1, MonthInterpDay as MonthInterpDayV1,
     MonthlyProfileParameter as MonthlyProfileParameterV1,
+    // WeeklyProfileParameter as WeeklyProfileParameterV1,
     UniformDrawdownProfileParameter as UniformDrawdownProfileParameterV1,
 };
 use std::collections::HashMap;
@@ -218,3 +219,60 @@ impl TryFromV1Parameter<UniformDrawdownProfileParameterV1> for UniformDrawdownPr
         Ok(p)
     }
 }
+
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+pub struct WeeklyProfileParameter {
+    #[serde(flatten)]
+    pub meta: ParameterMeta,
+    pub values: ConstantFloatVec,
+}
+
+impl WeeklyProfileParameter {
+    pub fn node_references(&self) -> HashMap<&str, &str> {
+        HashMap::new()
+    }
+    pub fn parameters(&self) -> HashMap<&str, DynamicFloatValueType> {
+        HashMap::new()
+    }
+
+    pub fn add_to_model(
+        &self,
+        model: &mut pywr_core::model::Model,
+        tables: &LoadedTableCollection,
+    ) -> Result<ParameterIndex, SchemaError> {
+        let values = &self.values.load(tables)?;
+        let p = pywr_core::parameters::WeeklyProfileParameter::new(
+            &self.meta.name,
+            values.try_into().expect(""),
+        );
+        Ok(model.add_parameter(Box::new(p))?)
+    }
+}
+
+// impl TryFromV1Parameter<WeeklyProfileParameterV1> for WeeklyProfileParameter {
+//     type Error = ConversionError;
+//
+//     fn try_from_v1_parameter(
+//         v1: WeeklyProfileParameterV1,
+//         parent_node: Option<&str>,
+//         unnamed_count: &mut usize,
+//     ) -> Result<Self, Self::Error> {
+//         let meta: ParameterMeta = v1.meta.into_v2_parameter(parent_node, unnamed_count);
+//
+//         let values: ConstantFloatVec = if let Some(values) = v1.values {
+//             ConstantFloatVec::Literal(values)
+//         } else if let Some(external) = v1.external {
+//             ConstantFloatVec::External(external.into())
+//         } else if let Some(table_ref) = v1.table_ref {
+//             ConstantFloatVec::Table(table_ref.into())
+//         } else {
+//             return Err(ConversionError::MissingAttribute {
+//                 name: meta.name,
+//                 attrs: vec!["values".to_string(), "table".to_string(), "url".to_string()],
+//             });
+//         };
+//
+//         let p = Self { meta, values };
+//         Ok(p)
+//     }
+// }
