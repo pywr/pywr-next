@@ -38,7 +38,7 @@ pub use super::parameters::discount_factor::DiscountFactorParameter;
 pub use super::parameters::indexed_array::IndexedArrayParameter;
 pub use super::parameters::polynomial::Polynomial1DParameter;
 pub use super::parameters::profiles::{
-    DailyProfileParameter, MonthlyProfileParameter, UniformDrawdownProfileParameter,
+    DailyProfileParameter, MonthlyProfileParameter, UniformDrawdownProfileParameter, WeeklyProfileParameter,
 };
 pub use super::parameters::python::PythonParameter;
 pub use super::parameters::tables::TablesArrayParameter;
@@ -152,6 +152,7 @@ pub enum Parameter {
     DailyProfile(DailyProfileParameter),
     IndexedArray(IndexedArrayParameter),
     MonthlyProfile(MonthlyProfileParameter),
+    WeeklyProfile(WeeklyProfileParameter),
     UniformDrawdownProfile(UniformDrawdownProfileParameter),
     Max(MaxParameter),
     Min(MinParameter),
@@ -182,6 +183,7 @@ impl Parameter {
             Self::DailyProfile(p) => p.meta.name.as_str(),
             Self::IndexedArray(p) => p.meta.name.as_str(),
             Self::MonthlyProfile(p) => p.meta.name.as_str(),
+            Self::WeeklyProfile(p) => p.meta.name.as_str(),
             Self::UniformDrawdownProfile(p) => p.meta.name.as_str(),
             Self::Max(p) => p.meta.name.as_str(),
             Self::Min(p) => p.meta.name.as_str(),
@@ -214,6 +216,7 @@ impl Parameter {
             Self::DailyProfile(p) => p.node_references(),
             Self::IndexedArray(p) => p.node_references(),
             Self::MonthlyProfile(p) => p.node_references(),
+            Self::WeeklyProfile(p) => p.node_references(),
             Self::UniformDrawdownProfile(p) => p.node_references(),
             Self::Max(p) => p.node_references(),
             Self::Min(p) => p.node_references(),
@@ -263,6 +266,7 @@ impl Parameter {
             Self::DailyProfile(_) => "DailyProfile",
             Self::IndexedArray(_) => "IndexedArray",
             Self::MonthlyProfile(_) => "MonthlyProfile",
+            Self::WeeklyProfile(_) => "WeeklyProfile",
             Self::UniformDrawdownProfile(_) => "UniformDrawdownProfile",
             Self::Max(_) => "Max",
             Self::Min(_) => "Min",
@@ -300,6 +304,7 @@ impl Parameter {
             Self::DailyProfile(p) => ParameterType::Parameter(p.add_to_model(model, tables)?),
             Self::IndexedArray(p) => ParameterType::Parameter(p.add_to_model(model, tables, data_path)?),
             Self::MonthlyProfile(p) => ParameterType::Parameter(p.add_to_model(model, tables)?),
+            Self::WeeklyProfile(p) => ParameterType::Parameter(p.add_to_model(model, tables)?),
             Self::UniformDrawdownProfile(p) => ParameterType::Parameter(p.add_to_model(model, tables)?),
             Self::Max(p) => ParameterType::Parameter(p.add_to_model(model, tables, data_path)?),
             Self::Min(p) => ParameterType::Parameter(p.add_to_model(model, tables, data_path)?),
@@ -362,6 +367,9 @@ impl TryFromV1Parameter<ParameterV1> for Parameter {
                 CoreParameter::MonthlyProfile(p) => {
                     Parameter::MonthlyProfile(p.try_into_v2_parameter(parent_node, unnamed_count)?)
                 }
+                // CoreParameter::WeeklyProfile(p) => {
+                //     Parameter::WeeklyProfile(p.try_into_v2_parameter(parent_node, unnamed_count)?)
+                // }
                 CoreParameter::UniformDrawdownProfile(p) => {
                     Parameter::UniformDrawdownProfile(p.try_into_v2_parameter(parent_node, unnamed_count)?)
                 }
