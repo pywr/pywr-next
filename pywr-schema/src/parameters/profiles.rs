@@ -5,7 +5,8 @@ use crate::parameters::{
 };
 use pywr_core::parameters::ParameterIndex;
 use pywr_v1_schema::parameters::{
-    DailyProfileParameter as DailyProfileParameterV1, MonthInterpDay as MonthInterpDayV1,
+    DailyProfileParameter as DailyProfileParameterV1,
+    MonthInterpDay as MonthInterpDayV1,
     MonthlyProfileParameter as MonthlyProfileParameterV1,
     // WeeklyProfileParameter as WeeklyProfileParameterV1,
     UniformDrawdownProfileParameter as UniformDrawdownProfileParameterV1,
@@ -243,7 +244,7 @@ impl WeeklyProfileParameter {
         let values = &self.values.load(tables)?;
         let p = pywr_core::parameters::WeeklyProfileParameter::new(
             &self.meta.name,
-            values.try_into().expect(""),
+            values.try_into().expect("")
         );
         Ok(model.add_parameter(Box::new(p))?)
     }
