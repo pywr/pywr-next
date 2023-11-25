@@ -38,7 +38,7 @@ pub fn simple_model(num_scenarios: usize) -> Model {
     model.connect_nodes(link_node, output_node).unwrap();
 
     let inflow = Array::from_shape_fn((366, num_scenarios), |(i, j)| 1.0 + i as f64 + j as f64);
-    let inflow = Array2Parameter::new("inflow", inflow, scenario_idx);
+    let inflow = Array2Parameter::new("inflow", inflow, scenario_idx, None);
 
     let inflow = model.add_parameter(Box::new(inflow)).unwrap();
 
@@ -208,7 +208,7 @@ fn make_simple_system<R: Rng>(
     for x in inflow.iter_mut() {
         *x = inflow_distr.sample(rng).max(0.0);
     }
-    let inflow = Array2Parameter::new(&format!("inflow-{suffix}"), inflow, scenario_group_index);
+    let inflow = Array2Parameter::new(&format!("inflow-{suffix}"), inflow, scenario_group_index, None);
     let idx = model.add_parameter(Box::new(inflow))?;
 
     model.set_node_max_flow(

@@ -97,7 +97,7 @@ mod test {
 
         // Create an artificial volume series to use for the delay test
         let volumes = Array1::linspace(1.0, 0.0, 21);
-        let volume = Array1Parameter::new("test-x", volumes.clone());
+        let volume = Array1Parameter::new("test-x", volumes.clone(), None);
 
         let volume_idx = model.add_parameter(Box::new(volume)).unwrap();
 

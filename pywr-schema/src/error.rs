@@ -39,6 +39,8 @@ pub enum SchemaError {
     CSVError(String),
     #[error("unexpected parameter type: {0}")]
     UnexpectedParameterType(String),
+    #[error("mismatch in the length of data provided. expected: {expected}, found: {found}")]
+    DataLengthMismatch { expected: usize, found: usize },
 }
 
 impl From<SchemaError> for PyErr {
@@ -69,4 +71,12 @@ pub enum ConversionError {
     ExtraNodeAttribute { attr: String, name: String },
     #[error("Custom node of type {ty:?} on node {name:?} is not supported .")]
     CustomNodeNotSupported { ty: String, name: String },
+    #[error("Integer table indices are not supported.")]
+    IntegerTableIndicesNotSupported,
+    #[error("Conversion of one of the following attributes {attrs:?} is not supported on parameter {name:?}.")]
+    UnsupportedAttribute { attrs: Vec<String>, name: String },
+    #[error("Conversion of one of the following feature is not supported on parameter {name:?}: {feature}")]
+    UnsupportedFeature { feature: String, name: String },
+    #[error("Parameter {name:?} of type `{ty:?}` are not supported in Pywr v2. {instead:?}")]
+    DeprecatedParameter { ty: String, name: String, instead: String },
 }

@@ -1535,7 +1535,7 @@ mod tests {
     use crate::metric::Metric;
     use crate::model::Model;
     use crate::node::{Constraint, ConstraintValue};
-    use crate::parameters::{ActivationFunction, InterpolatedParameter, Parameter, VariableParameter};
+    use crate::parameters::{ActivationFunction, ControlCurveInterpolatedParameter, Parameter, VariableParameter};
     use crate::recorders::AssertionRecorder;
     use crate::scenario::{ScenarioGroupCollection, ScenarioIndex};
     #[cfg(feature = "clipm")]
@@ -1758,7 +1758,7 @@ mod tests {
 
         // Set-up a control curve that uses the proportional volume
         // This should be use the initial proportion (100%) on the first time-step, and then the previous day's end value
-        let cc = InterpolatedParameter::new(
+        let cc = ControlCurveInterpolatedParameter::new(
             "interp",
             Metric::DerivedMetric(dm_idx),
             vec![],
