@@ -5,7 +5,7 @@ mod metric_set;
 mod py;
 
 pub use self::csv::CSVRecorder;
-use crate::metric::Metric;
+use crate::metric::{IndexMetric, Metric};
 use crate::model::Model;
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
@@ -275,6 +275,62 @@ where
                     r#"assertion failed at timestep {timestep:?} in scenario {scenario_index:?}: `(actual approx_eq expected)`
    actual: `{actual_value:?}`,
  expected: `{expected_value:?}`"#,
+                )
+            }
+        }
+
+        Ok(())
+    }
+}
+
+pub struct IndexAssertionRecorder {
+    meta: RecorderMeta,
+    expected_values: Array2<usize>,
+    metric: IndexMetric,
+}
+
+impl IndexAssertionRecorder {
+    pub fn new(name: &str, metric: IndexMetric, expected_values: Array2<usize>) -> Self {
+        Self {
+            meta: RecorderMeta::new(name),
+            expected_values,
+            metric,
+        }
+    }
+}
+
+impl Recorder for IndexAssertionRecorder {
+    fn meta(&self) -> &RecorderMeta {
+        &self.meta
+    }
+
+    fn save(
+        &self,
+        timestep: &Timestep,
+        scenario_indices: &[ScenarioIndex],
+        model: &Model,
+        state: &[State],
+        _internal_state: &mut Option<Box<dyn Any>>,
+    ) -> Result<(), PywrError> {
+        // This panics if out-of-bounds
+
+        for scenario_index in scenario_indices {
+            let expected_value = match self.expected_values.get([timestep.index, scenario_index.index]) {
+                Some(v) => *v,
+                None => panic!("Simulation produced results out of range."),
+            };
+
+            let actual_value = self.metric.get_value(model, &state[scenario_index.index])?;
+
+            if actual_value != expected_value {
+                panic!(
+                    r#"assertion failed: (actual eq expected)
+recorder: `{}`
+timestep: `{:?}` ({})
+scenario: `{:?}`
+actual: `{:?}`
+expected: `{:?}`"#,
+                    self.meta.name, timestep.date, timestep.index, scenario_index.index, actual_value, expected_value
                 )
             }
         }

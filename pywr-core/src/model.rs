@@ -1,5 +1,6 @@
 use crate::aggregated_node::{AggregatedNode, AggregatedNodeIndex, AggregatedNodeVec, Factors};
 use crate::aggregated_storage_node::{AggregatedStorageNode, AggregatedStorageNodeIndex, AggregatedStorageNodeVec};
+use crate::derived_metric::{DerivedMetric, DerivedMetricIndex};
 use crate::edge::{EdgeIndex, EdgeVec};
 use crate::metric::Metric;
 use crate::node::{ConstraintValue, Node, NodeVec, StorageInitialVolume};
@@ -138,6 +139,7 @@ enum ComponentType {
     Node(NodeIndex),
     VirtualStorageNode(VirtualStorageIndex),
     Parameter(ParameterType),
+    DerivedMetric(DerivedMetricIndex),
 }
 
 #[derive(Default)]
@@ -151,6 +153,7 @@ pub struct Model {
     parameters: Vec<Box<dyn parameters::Parameter>>,
     index_parameters: Vec<Box<dyn parameters::IndexParameter>>,
     multi_parameters: Vec<Box<dyn parameters::MultiValueParameter>>,
+    derived_metrics: Vec<DerivedMetric>,
     metric_sets: Vec<MetricSet>,
     resolve_order: Vec<ComponentType>,
     recorders: Vec<Box<dyn recorders::Recorder>>,
@@ -206,6 +209,7 @@ impl Model {
                 initial_values_states.len(),
                 initial_indices_states.len(),
                 initial_multi_param_states.len(),
+                self.derived_metrics.len(),
             );
 
             states.push(state);
@@ -748,6 +752,16 @@ impl Model {
                         }
                     }
                 }
+                ComponentType::DerivedMetric(idx) => {
+                    // Compute derived metrics in before
+                    let m = self
+                        .derived_metrics
+                        .get(*idx.deref())
+                        .ok_or(PywrError::DerivedMetricIndexNotFound(*idx))?;
+                    if let Some(value) = m.before(timestep, self, state)? {
+                        state.set_derived_metric_value(*idx, value)?;
+                    }
+                }
             }
         }
 
@@ -820,6 +834,15 @@ impl Model {
                             p.after(timestep, scenario_index, self, state, internal_state)?;
                         }
                     }
+                }
+                ComponentType::DerivedMetric(idx) => {
+                    // Compute derived metrics in "after"
+                    let m = self
+                        .derived_metrics
+                        .get(*idx.deref())
+                        .ok_or(PywrError::DerivedMetricIndexNotFound(*idx))?;
+                    let value = m.compute(self, state)?;
+                    state.set_derived_metric_value(*idx, value)?;
                 }
             }
         }
@@ -1089,7 +1112,7 @@ impl Model {
     }
 
     pub fn get_storage_node_metric(
-        &self,
+        &mut self,
         name: &str,
         sub_name: Option<&str>,
         proportional: bool,
@@ -1097,24 +1120,60 @@ impl Model {
         if let Ok(idx) = self.get_node_index_by_name(name, sub_name) {
             // A regular node
             if proportional {
-                Ok(Metric::NodeProportionalVolume(idx))
+                // Proportional is a derived metric
+                let dm_idx = self.add_derived_metric(DerivedMetric::NodeProportionalVolume(idx));
+                Ok(Metric::DerivedMetric(dm_idx))
             } else {
                 Ok(Metric::NodeVolume(idx))
             }
         } else if let Ok(idx) = self.get_aggregated_storage_node_index_by_name(name, sub_name) {
             if proportional {
-                Ok(Metric::AggregatedNodeProportionalVolume(idx))
+                // Proportional is a derived metric
+                let dm_idx = self.add_derived_metric(DerivedMetric::AggregatedNodeProportionalVolume(idx));
+                Ok(Metric::DerivedMetric(dm_idx))
             } else {
                 Ok(Metric::AggregatedNodeVolume(idx))
             }
         } else if let Ok(node) = self.get_virtual_storage_node_by_name(name, sub_name) {
             if proportional {
-                Ok(Metric::VirtualStorageProportionalVolume(node.index()))
+                // Proportional is a derived metric
+                let dm_idx = self.add_derived_metric(DerivedMetric::VirtualStorageProportionalVolume(node.index()));
+                Ok(Metric::DerivedMetric(dm_idx))
             } else {
                 Ok(Metric::VirtualStorageVolume(node.index()))
             }
         } else {
             Err(PywrError::NodeNotFound(name.to_string()))
+        }
+    }
+
+    /// Get a [`DerivedMetricIndex`] for the given derived metric
+    pub fn get_derived_metric_index(&self, derived_metric: &DerivedMetric) -> Result<DerivedMetricIndex, PywrError> {
+        let idx = self
+            .derived_metrics
+            .iter()
+            .position(|dm| dm == derived_metric)
+            .ok_or(PywrError::DerivedMetricNotFound)?;
+
+        Ok(DerivedMetricIndex::new(idx))
+    }
+
+    /// Get a [`DerivedMetricIndex`] for the given derived metric
+    pub fn get_derived_metric(&self, index: &DerivedMetricIndex) -> Result<&DerivedMetric, PywrError> {
+        self.derived_metrics
+            .get(*index.deref())
+            .ok_or(PywrError::DerivedMetricNotFound)
+    }
+
+    pub fn add_derived_metric(&mut self, derived_metric: DerivedMetric) -> DerivedMetricIndex {
+        match self.get_derived_metric_index(&derived_metric) {
+            Ok(idx) => idx,
+            Err(_) => {
+                self.derived_metrics.push(derived_metric);
+                let idx = DerivedMetricIndex::new(self.derived_metrics.len() - 1);
+                self.resolve_order.push(ComponentType::DerivedMetric(idx));
+                idx
+            }
         }
     }
 
@@ -1496,7 +1555,7 @@ mod tests {
     use crate::metric::Metric;
     use crate::model::Model;
     use crate::node::{Constraint, ConstraintValue};
-    use crate::parameters::{ActivationFunction, Parameter, VariableParameter};
+    use crate::parameters::{ActivationFunction, ControlCurveInterpolatedParameter, Parameter, VariableParameter};
     use crate::recorders::AssertionRecorder;
     use crate::scenario::{ScenarioGroupCollection, ScenarioIndex};
     #[cfg(feature = "clipm")]
@@ -1688,6 +1747,47 @@ mod tests {
         let expected = Array2::from_shape_fn((15, 10), |(i, _j)| (90.0 - 10.0 * i as f64).max(0.0));
 
         let recorder = AssertionRecorder::new("reservoir-volume", Metric::NodeVolume(idx), expected, None, None);
+        model.add_recorder(Box::new(recorder)).unwrap();
+
+        // Test all solvers
+        run_all_solvers(&model, &timestepper);
+    }
+
+    /// Test proportional storage derived metric.
+    ///
+    /// Proportional storage is a derived metric that is updated after each solve. However, a
+    /// parameter may required a value for the initial time-step based on the initial volume.
+    #[test]
+    fn test_storage_proportional_volume() {
+        let mut model = simple_storage_model();
+        let timestepper = default_timestepper();
+
+        let idx = model.get_node_by_name("reservoir", None).unwrap().index();
+        let dm_idx = model.add_derived_metric(DerivedMetric::NodeProportionalVolume(idx));
+
+        // These are the expected values for the proportional volume at the end of the time-step
+        let expected = Array2::from_shape_fn((15, 10), |(i, _j)| (90.0 - 10.0 * i as f64).max(0.0) / 100.0);
+        let recorder = AssertionRecorder::new(
+            "reservoir-proportion-volume",
+            Metric::DerivedMetric(dm_idx),
+            expected,
+            None,
+            None,
+        );
+        model.add_recorder(Box::new(recorder)).unwrap();
+
+        // Set-up a control curve that uses the proportional volume
+        // This should be use the initial proportion (100%) on the first time-step, and then the previous day's end value
+        let cc = ControlCurveInterpolatedParameter::new(
+            "interp",
+            Metric::DerivedMetric(dm_idx),
+            vec![],
+            vec![Metric::Constant(100.0), Metric::Constant(0.0)],
+        );
+        let p_idx = model.add_parameter(Box::new(cc)).unwrap();
+        let expected = Array2::from_shape_fn((15, 10), |(i, _j)| (100.0 - 10.0 * i as f64).max(0.0));
+
+        let recorder = AssertionRecorder::new("reservoir-cc", Metric::ParameterValue(p_idx), expected, None, None);
         model.add_recorder(Box::new(recorder)).unwrap();
 
         // Test all solvers

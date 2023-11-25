@@ -1,3 +1,4 @@
+use crate::derived_metric::DerivedMetricIndex;
 use crate::edge::{Edge, EdgeIndex};
 use crate::model::Model;
 use crate::node::{Node, NodeIndex};
@@ -503,6 +504,7 @@ impl NetworkState {
 pub struct State {
     network: NetworkState,
     parameters: ParameterValues,
+    derived_metrics: Vec<f64>,
 }
 
 impl State {
@@ -513,10 +515,12 @@ impl State {
         num_parameter_values: usize,
         num_parameter_indices: usize,
         num_multi_parameters: usize,
+        num_derived_metrics: usize,
     ) -> Self {
         Self {
             network: NetworkState::new(initial_node_states, num_edges, initial_virtual_storage_states),
             parameters: ParameterValues::new(num_parameter_values, num_parameter_indices, num_multi_parameters),
+            derived_metrics: vec![0.0; num_derived_metrics],
         }
     }
 
@@ -571,5 +575,22 @@ impl State {
         timestep: &Timestep,
     ) -> Result<(), PywrError> {
         self.network.reset_virtual_storage_volume(idx, volume, timestep)
+    }
+
+    pub fn get_derived_metric_value(&self, idx: DerivedMetricIndex) -> Result<f64, PywrError> {
+        match self.derived_metrics.get(*idx.deref()) {
+            Some(s) => Ok(*s),
+            None => Err(PywrError::DerivedMetricIndexNotFound(idx)),
+        }
+    }
+
+    pub fn set_derived_metric_value(&mut self, idx: DerivedMetricIndex, value: f64) -> Result<(), PywrError> {
+        match self.derived_metrics.get_mut(*idx.deref()) {
+            Some(s) => {
+                *s = value;
+                Ok(())
+            }
+            None => Err(PywrError::DerivedMetricIndexNotFound(idx)),
+        }
     }
 }

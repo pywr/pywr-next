@@ -54,5 +54,23 @@
       "from_node": "storage1",
       "to_node": "demand1"
     }
+  ],
+  "parameters": [
+    {
+      "name": "storage1-drought-curve",
+      "type": "Constant",
+      "value": 0.5
+    },
+    {
+      "name": "storage1-drought-index",
+      "type": "ControlCurveIndex",
+      "storage_node": "storage1",
+      "control_curves": [
+        {
+          "type": "Parameter",
+          "name": "storage1-drought-curve"
+        }
+      ]
+    }
   ]
 }

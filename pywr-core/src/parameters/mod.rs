@@ -6,8 +6,11 @@ mod asymmetric;
 mod constant;
 mod control_curves;
 mod delay;
+mod discount_factor;
 mod division;
 mod indexed_array;
+mod interpolate;
+mod interpolated;
 mod max;
 mod min;
 mod negative;
@@ -35,12 +38,15 @@ pub use array::{Array1Parameter, Array2Parameter};
 pub use asymmetric::AsymmetricSwitchIndexParameter;
 pub use constant::ConstantParameter;
 pub use control_curves::{
-    ApportionParameter, ControlCurveIndexParameter, ControlCurveParameter, InterpolatedParameter,
-    PiecewiseInterpolatedParameter,
+    ApportionParameter, ControlCurveIndexParameter, ControlCurveInterpolatedParameter, ControlCurveParameter,
+    PiecewiseInterpolatedParameter, VolumeBetweenControlCurvesParameter,
 };
 pub use delay::DelayParameter;
+pub use discount_factor::DiscountFactorParameter;
 pub use division::DivisionParameter;
 pub use indexed_array::IndexedArrayParameter;
+pub use interpolate::{interpolate, linear_interpolation, InterpolationError};
+pub use interpolated::InterpolatedParameter;
 pub use max::MaxParameter;
 pub use min::MinParameter;
 pub use negative::NegativeParameter;

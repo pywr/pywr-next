@@ -16,6 +16,7 @@ pub struct TablesArrayParameter {
     pub scenario: Option<String>,
     pub checksum: Option<HashMap<String, String>>,
     pub url: PathBuf,
+    pub timestep_offset: Option<i32>,
 }
 
 impl TablesArrayParameter {
@@ -60,11 +61,16 @@ impl TablesArrayParameter {
         // 3. Create an ArrayParameter using the loaded array.
         if let Some(scenario) = &self.scenario {
             let scenario_group = model.get_scenario_group_index_by_name(scenario)?;
-            let p = pywr_core::parameters::Array2Parameter::new(&self.meta.name, array, scenario_group);
+            let p = pywr_core::parameters::Array2Parameter::new(
+                &self.meta.name,
+                array,
+                scenario_group,
+                self.timestep_offset,
+            );
             Ok(model.add_parameter(Box::new(p))?)
         } else {
             let array = array.slice_move(s![.., 0]);
-            let p = pywr_core::parameters::Array1Parameter::new(&self.meta.name, array);
+            let p = pywr_core::parameters::Array1Parameter::new(&self.meta.name, array, self.timestep_offset);
             Ok(model.add_parameter(Box::new(p))?)
         }
     }
@@ -85,6 +91,7 @@ impl TryFromV1Parameter<TablesArrayParameterV1> for TablesArrayParameter {
             scenario: v1.scenario,
             checksum: v1.checksum,
             url: v1.url,
+            timestep_offset: None,
         };
         Ok(p)
     }
