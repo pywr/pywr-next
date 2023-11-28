@@ -206,7 +206,6 @@ mod tests {
     use pywr_core::metric::{IndexMetric, Metric};
     use pywr_core::recorders::{AssertionRecorder, IndexAssertionRecorder};
     use pywr_core::test_utils::run_all_solvers;
-    use pywr_core::timestep::Timestepper;
 
     fn piecewise_storage1_str() -> &'static str {
         include_str!("../test_models/piecewise_storage1.json")

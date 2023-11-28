@@ -121,7 +121,6 @@ impl TryFrom<RiverGaugeNodeV1> for RiverGaugeNode {
 mod tests {
     use crate::model::PywrModel;
     use pywr_core::test_utils::run_all_solvers;
-    use pywr_core::timestep::Timestepper;
 
     fn model_str() -> &'static str {
         r#"

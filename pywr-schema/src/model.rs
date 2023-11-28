@@ -23,7 +23,9 @@ impl TryFrom<pywr_v1_schema::model::Metadata> for Metadata {
 
     fn try_from(v1: pywr_v1_schema::model::Metadata) -> Result<Self, Self::Error> {
         Ok(Self {
-            title: v1.title,
+            title: v1
+                .title
+                .unwrap_or("Model converted from Pywr v1.x with no title.".to_string()),
             description: v1.description,
             minimum_version: v1.minimum_version,
         })

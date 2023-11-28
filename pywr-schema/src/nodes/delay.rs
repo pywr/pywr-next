@@ -122,7 +122,6 @@ mod tests {
     use pywr_core::metric::Metric;
     use pywr_core::recorders::AssertionRecorder;
     use pywr_core::test_utils::run_all_solvers;
-    use pywr_core::timestep::Timestepper;
 
     fn model_str() -> &'static str {
         include_str!("../test_models/delay1.json")

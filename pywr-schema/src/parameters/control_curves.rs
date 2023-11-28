@@ -58,7 +58,12 @@ impl ControlCurveInterpolatedParameter {
             .map(|val| val.load(network, domain, tables, data_path))
             .collect::<Result<_, _>>()?;
 
-        let p = pywr_core::parameters::InterpolatedParameter::new(&self.meta.name, metric, control_curves, values);
+        let p = pywr_core::parameters::ControlCurveInterpolatedParameter::new(
+            &self.meta.name,
+            metric,
+            control_curves,
+            values,
+        );
         Ok(network.add_parameter(Box::new(p))?)
     }
 }
@@ -87,7 +92,26 @@ impl TryFromV1Parameter<ControlCurveInterpolatedParameterV1> for ControlCurveInt
             });
         };
 
-        let values = v1.values.into_iter().map(DynamicFloatValue::from_f64).collect();
+        // Handle the case where neither or both "values" and "parameters" are defined.
+        let values = match (v1.values, v1.parameters) {
+            (None, None) => {
+                return Err(ConversionError::MissingAttribute {
+                    name: meta.name,
+                    attrs: vec!["values".to_string(), "parameters".to_string()],
+                });
+            }
+            (Some(_), Some(_)) => {
+                return Err(ConversionError::UnexpectedAttribute {
+                    name: meta.name,
+                    attrs: vec!["values".to_string(), "parameters".to_string()],
+                });
+            }
+            (Some(values), None) => values.into_iter().map(DynamicFloatValue::from_f64).collect(),
+            (None, Some(parameters)) => parameters
+                .into_iter()
+                .map(|p| p.try_into_v2_parameter(Some(&meta.name), unnamed_count))
+                .collect::<Result<Vec<_>, _>>()?,
+        };
 
         let p = Self {
             meta,
@@ -393,7 +417,7 @@ impl TryFromV1Parameter<ControlCurvePiecewiseInterpolatedParameterV1> for Contro
             control_curves,
             storage_node: v1.storage_node,
             values: v1.values,
-            minimum: Some(v1.minimum),
+            minimum: v1.minimum,
             maximum: None,
         };
         Ok(p)

@@ -20,7 +20,6 @@ pub use crate::nodes::core::{
 pub use crate::nodes::delay::DelayNode;
 pub use crate::nodes::river::RiverNode;
 use crate::parameters::DynamicFloatValue;
-use crate::PywrModel;
 pub use annual_virtual_storage::AnnualVirtualStorageNode;
 pub use loss_link::LossLinkNode;
 pub use monthly_virtual_storage::MonthlyVirtualStorageNode;

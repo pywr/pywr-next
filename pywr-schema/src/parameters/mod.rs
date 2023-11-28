@@ -13,8 +13,10 @@ mod control_curves;
 mod core;
 mod data_frame;
 mod delay;
+mod discount_factor;
 mod indexed_array;
 mod inter_model_transfer;
+mod interpolated;
 mod offset;
 mod polynomial;
 mod profiles;
@@ -33,6 +35,7 @@ pub use super::parameters::core::{
     ActivationFunction, ConstantParameter, MaxParameter, MinParameter, NegativeParameter, VariableSettings,
 };
 pub use super::parameters::delay::DelayParameter;
+pub use super::parameters::discount_factor::DiscountFactorParameter;
 pub use super::parameters::indexed_array::IndexedArrayParameter;
 pub use super::parameters::polynomial::Polynomial1DParameter;
 pub use super::parameters::profiles::{
@@ -44,6 +47,7 @@ pub use super::parameters::thresholds::ParameterThresholdParameter;
 use crate::error::{ConversionError, SchemaError};
 use crate::parameters::core::DivisionParameter;
 pub use crate::parameters::data_frame::DataFrameParameter;
+use crate::parameters::interpolated::InterpolatedParameter;
 pub use inter_model_transfer::InterModelTransferParameter;
 pub use offset::OffsetParameter;
 use pywr_core::derived_metric::DerivedMetric;
@@ -53,10 +57,10 @@ use pywr_core::node::NodeIndex;
 use pywr_core::parameters::{IndexParameterIndex, IndexValue, ParameterType};
 use pywr_v1_schema::parameters::{
     CoreParameter, ExternalDataRef as ExternalDataRefV1, Parameter as ParameterV1, ParameterMeta as ParameterMetaV1,
-    ParameterValue as ParameterValueV1, TableIndex as TableIndexV1,
+    ParameterValue as ParameterValueV1, TableIndex as TableIndexV1, TableIndexEntry as TableIndexEntryV1,
 };
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
 pub struct ParameterMeta {
@@ -163,6 +167,8 @@ pub enum Parameter {
     Delay(DelayParameter),
     Division(DivisionParameter),
     Offset(OffsetParameter),
+    DiscountFactor(DiscountFactorParameter),
+    Interpolated(InterpolatedParameter),
     InterModelTransfer(InterModelTransferParameter),
 }
 
@@ -192,6 +198,8 @@ impl Parameter {
             Self::Division(p) => p.meta.name.as_str(),
             Self::Delay(p) => p.meta.name.as_str(),
             Self::Offset(p) => p.meta.name.as_str(),
+            Self::DiscountFactor(p) => p.meta.name.as_str(),
+            Self::Interpolated(p) => p.meta.name.as_str(),
             Self::InterModelTransfer(p) => p.meta.name.as_str(),
         }
     }
@@ -223,6 +231,8 @@ impl Parameter {
             Self::Delay(p) => p.node_references(),
             Self::Division(p) => p.node_references(),
             Self::Offset(p) => p.node_references(),
+            Self::DiscountFactor(p) => p.node_references(),
+            Self::Interpolated(p) => p.node_references(),
             Self::InterModelTransfer(p) => p.node_references(),
         }
     }
@@ -271,6 +281,8 @@ impl Parameter {
             Self::Delay(_) => "Delay",
             Self::Division(_) => "Division",
             Self::Offset(_) => "Offset",
+            Self::DiscountFactor(_) => "DiscountFactor",
+            Self::Interpolated(_) => "Interpolated",
             Self::InterModelTransfer(_) => "InterModelTransfer",
         }
     }
@@ -310,6 +322,8 @@ impl Parameter {
             Self::Delay(p) => ParameterType::Parameter(p.add_to_model(network, domain, tables, data_path)?),
             Self::Division(p) => ParameterType::Parameter(p.add_to_model(network, domain, tables, data_path)?),
             Self::Offset(p) => ParameterType::Parameter(p.add_to_model(network, domain, tables, data_path)?),
+            Self::DiscountFactor(p) => ParameterType::Parameter(p.add_to_model(network, domain, tables, data_path)?),
+            Self::Interpolated(p) => ParameterType::Parameter(p.add_to_model(network, domain, tables, data_path)?),
             Self::InterModelTransfer(p) => ParameterType::Parameter(p.add_to_model(network)?),
         };
 
@@ -375,6 +389,42 @@ impl TryFromV1Parameter<ParameterV1> for Parameter {
                 }
                 CoreParameter::Min(p) => Parameter::Min(p.try_into_v2_parameter(parent_node, unnamed_count)?),
                 CoreParameter::Division(p) => Parameter::Division(p.try_into_v2_parameter(parent_node, unnamed_count)?),
+                CoreParameter::DataFrame(p) => {
+                    Parameter::DataFrame(p.try_into_v2_parameter(parent_node, unnamed_count)?)
+                }
+                CoreParameter::Deficit(p) => {
+                    return Err(ConversionError::DeprecatedParameter {
+                        ty: "DeficitParameter".to_string(),
+                        name: p.meta.map(|m| m.name).flatten().unwrap_or("unnamed".to_string()),
+                        instead: "Use a derived metric instead.".to_string(),
+                    })
+                }
+                CoreParameter::DiscountFactor(p) => {
+                    Parameter::DiscountFactor(p.try_into_v2_parameter(parent_node, unnamed_count)?)
+                }
+                CoreParameter::InterpolatedVolume(p) => {
+                    Parameter::Interpolated(p.try_into_v2_parameter(parent_node, unnamed_count)?)
+                }
+                CoreParameter::InterpolatedFlow(p) => {
+                    Parameter::Interpolated(p.try_into_v2_parameter(parent_node, unnamed_count)?)
+                }
+                CoreParameter::HydropowerTarget(_) => todo!("Implement HydropowerTargetParameter"),
+                CoreParameter::Storage(p) => {
+                    return Err(ConversionError::DeprecatedParameter {
+                        ty: "StorageParameter".to_string(),
+                        name: p.meta.map(|m| m.name).flatten().unwrap_or("unnamed".to_string()),
+                        instead: "Use a derived metric instead.".to_string(),
+                    })
+                }
+                CoreParameter::RollingMeanFlowNode(_) => todo!("Implement RollingMeanFlowNodeParameter"),
+                CoreParameter::ScenarioWrapper(_) => todo!("Implement ScenarioWrapperParameter"),
+                CoreParameter::Flow(p) => {
+                    return Err(ConversionError::DeprecatedParameter {
+                        ty: "FlowParameter".to_string(),
+                        name: p.meta.map(|m| m.name).flatten().unwrap_or("unnamed".to_string()),
+                        instead: "Use a derived metric instead.".to_string(),
+                    })
+                }
             },
             ParameterV1::Custom(p) => {
                 println!("Custom parameter: {:?} ({})", p.meta.name, p.ty);
@@ -447,7 +497,7 @@ impl TryFrom<ParameterValueV1> for ConstantValue<f64> {
         match v1 {
             ParameterValueV1::Constant(v) => Ok(Self::Literal(v)),
             ParameterValueV1::Reference(_) => Err(ConversionError::ConstantFloatReferencesParameter),
-            ParameterValueV1::Table(tbl) => Ok(Self::Table(tbl.into())),
+            ParameterValueV1::Table(tbl) => Ok(Self::Table(tbl.try_into()?)),
             ParameterValueV1::Inline(_) => Err(ConversionError::ConstantFloatInlineParameter),
         }
     }
@@ -455,8 +505,8 @@ impl TryFrom<ParameterValueV1> for ConstantValue<f64> {
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
 pub struct NodeReference {
-    name: String,
-    sub_name: Option<String>,
+    pub name: String,
+    pub sub_name: Option<String>,
 }
 
 impl NodeReference {
@@ -654,7 +704,7 @@ impl TryFromV1Parameter<ParameterValueV1> for DynamicFloatValue {
                     key: None,
                 }))
             }
-            ParameterValueV1::Table(tbl) => Self::Constant(ConstantValue::Table(tbl.into())),
+            ParameterValueV1::Table(tbl) => Self::Constant(ConstantValue::Table(tbl.try_into()?)),
             ParameterValueV1::Inline(param) => Self::Dynamic(MetricFloatValue::InlineParameter {
                 definition: Box::new((*param).try_into_v2_parameter(parent_node, unnamed_count)?),
             }),
@@ -708,7 +758,7 @@ impl TryFromV1Parameter<ParameterValueV1> for DynamicIndexValue {
             // TODO this could print a warning and do a cast to usize instead.
             ParameterValueV1::Constant(_) => return Err(ConversionError::FloatToIndex),
             ParameterValueV1::Reference(p_name) => Self::Dynamic(ParameterIndexValue::Reference(p_name)),
-            ParameterValueV1::Table(tbl) => Self::Constant(ConstantValue::Table(tbl.into())),
+            ParameterValueV1::Table(tbl) => Self::Constant(ConstantValue::Table(tbl.try_into()?)),
             ParameterValueV1::Inline(param) => Self::Dynamic(ParameterIndexValue::Inline(Box::new(
                 (*param).try_into_v2_parameter(parent_node, unnamed_count)?,
             ))),
@@ -741,18 +791,27 @@ impl ConstantFloatVec {
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
 pub struct ExternalDataRef {
-    url: String,
+    url: PathBuf,
     column: Option<TableIndex>,
     index: Option<TableIndex>,
 }
 
-impl From<ExternalDataRefV1> for ExternalDataRef {
-    fn from(v1: ExternalDataRefV1) -> Self {
-        Self {
+impl TryFrom<ExternalDataRefV1> for ExternalDataRef {
+    type Error = ConversionError;
+    fn try_from(v1: ExternalDataRefV1) -> Result<Self, Self::Error> {
+        let column = match v1.column {
+            None => None,
+            Some(c) => Some(c.try_into()?),
+        };
+        let index = match v1.index {
+            None => None,
+            Some(i) => Some(i.try_into()?),
+        };
+        Ok(Self {
             url: v1.url,
-            column: v1.column.map(|i| i.into()),
-            index: v1.index.map(|i| i.into()),
-        }
+            column,
+            index,
+        })
     }
 }
 
@@ -763,11 +822,25 @@ pub enum TableIndex {
     Multi(Vec<String>),
 }
 
-impl From<TableIndexV1> for TableIndex {
-    fn from(v1: TableIndexV1) -> Self {
+impl TryFrom<TableIndexV1> for TableIndex {
+    type Error = ConversionError;
+
+    fn try_from(v1: TableIndexV1) -> Result<Self, Self::Error> {
         match v1 {
-            TableIndexV1::Single(s) => Self::Single(s),
-            TableIndexV1::Multi(s) => Self::Multi(s),
+            TableIndexV1::Single(s) => match s {
+                TableIndexEntryV1::Name(s) => Ok(TableIndex::Single(s)),
+                TableIndexEntryV1::Index(_) => Err(ConversionError::IntegerTableIndicesNotSupported),
+            },
+            TableIndexV1::Multi(s) => {
+                let names = s
+                    .into_iter()
+                    .map(|e| match e {
+                        TableIndexEntryV1::Name(s) => Ok(s),
+                        TableIndexEntryV1::Index(_) => Err(ConversionError::IntegerTableIndicesNotSupported),
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                Ok(Self::Multi(names))
+            }
         }
     }
 }
