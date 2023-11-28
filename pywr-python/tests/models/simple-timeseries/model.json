@@ -59,10 +59,22 @@
       }
     }
   ],
+  "metric_sets": [
+    {
+      "name": "nodes",
+      "metrics": [
+        "input1",
+        "link1",
+        "output1"
+      ]
+    }
+  ],
   "outputs": [
     {
-      "format": "CSV",
-      "url": "outputs.csv"
+      "name": "outputs",
+      "type": "HDF5",
+      "filename": "outputs.h5",
+      "metric_set": "nodes"
     }
   ]
 }

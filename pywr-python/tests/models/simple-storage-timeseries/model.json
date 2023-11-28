@@ -46,5 +46,23 @@
       "type": "Constant",
       "value": 10.0
     }
+  ],
+  "metric_sets": [
+    {
+      "name": "nodes",
+      "metrics": [
+        "input1",
+        "storage1",
+        "output1"
+      ]
+    }
+  ],
+  "outputs": [
+    {
+      "name": "outputs",
+      "type": "HDF5",
+      "filename": "outputs.h5",
+      "metric_set": "nodes"
+    }
   ]
 }
