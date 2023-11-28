@@ -1189,12 +1189,13 @@ impl Network {
         min_volume: ConstraintValue,
         max_volume: ConstraintValue,
         reset: VirtualStorageReset,
+        cost: ConstraintValue,
     ) -> Result<VirtualStorageIndex, PywrError> {
         if let Ok(_agg_node) = self.get_virtual_storage_node_by_name(name, sub_name) {
             return Err(PywrError::NodeNameAlreadyExists(name.to_string()));
         }
 
-        let node_index = self.virtual_storage_nodes.push_new(
+        let vs_node_index = self.virtual_storage_nodes.push_new(
             name,
             sub_name,
             nodes,
@@ -1203,12 +1204,20 @@ impl Network {
             min_volume,
             max_volume,
             reset,
+            cost,
         );
 
-        // Add to the resolve order.
-        self.resolve_order.push(ComponentType::VirtualStorageNode(node_index));
+        // Link the virtual storage node to the nodes it is including
+        for node_idx in nodes {
+            let node = self.nodes.get_mut(node_idx)?;
+            node.add_virtual_storage(vs_node_index)?;
+        }
 
-        Ok(node_index)
+        // Add to the resolve order.
+        self.resolve_order
+            .push(ComponentType::VirtualStorageNode(vs_node_index));
+
+        Ok(vs_node_index)
     }
 
     /// Add a `parameters::Parameter` to the network

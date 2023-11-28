@@ -84,6 +84,8 @@ pub enum PywrError {
     StorageConstraintsUndefined,
     #[error("No more timesteps")]
     EndOfTimesteps,
+    #[error("can not add virtual storage node to a storage node")]
+    NoVirtualStorageOnStorageNode,
     #[error("timestep index out of range")]
     TimestepIndexOutOfRange,
     #[error("solver not initialised")]

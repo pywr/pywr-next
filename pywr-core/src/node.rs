@@ -3,6 +3,7 @@ use crate::metric::Metric;
 use crate::network::Network;
 use crate::state::{NodeState, State};
 use crate::timestep::Timestep;
+use crate::virtual_storage::VirtualStorageIndex;
 use crate::PywrError;
 use std::ops::{Deref, DerefMut};
 
@@ -121,6 +122,13 @@ impl From<Metric> for ConstraintValue {
     fn from(metric: Metric) -> Self {
         Self::Metric(metric)
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CostAggFunc {
+    Sum,
+    Max,
+    Min,
 }
 
 impl Node {
@@ -283,6 +291,24 @@ impl Node {
             Self::Output(n) => Err(PywrError::InvalidNodeConnectionFromOutput(n.meta.name.clone())), // TODO better error
             Self::Link(n) => Ok(&n.outgoing_edges),
             Self::Storage(n) => Ok(&n.outgoing_edges),
+        }
+    }
+
+    pub fn add_virtual_storage(&mut self, virtual_storage_index: VirtualStorageIndex) -> Result<(), PywrError> {
+        match self {
+            Self::Input(n) => {
+                n.cost.virtual_storage_nodes.push(virtual_storage_index);
+                Ok(())
+            }
+            Self::Output(n) => {
+                n.cost.virtual_storage_nodes.push(virtual_storage_index);
+                Ok(())
+            }
+            Self::Link(n) => {
+                n.cost.virtual_storage_nodes.push(virtual_storage_index);
+                Ok(())
+            }
+            Self::Storage(_) => Err(PywrError::NoVirtualStorageOnStorageNode),
         }
     }
 
@@ -506,6 +532,17 @@ impl Node {
         }
     }
 
+    pub fn set_cost_agg_func(&mut self, agg_func: CostAggFunc) -> Result<(), PywrError> {
+        match self {
+            Self::Input(n) => n.set_cost_agg_func(agg_func),
+            Self::Link(n) => n.set_cost_agg_func(agg_func),
+            Self::Output(n) => n.set_cost_agg_func(agg_func),
+            Self::Storage(_) => return Err(PywrError::NoVirtualStorageOnStorageNode),
+        };
+
+        Ok(())
+    }
+
     pub fn get_outgoing_cost(&self, network: &Network, state: &State) -> Result<f64, PywrError> {
         match self {
             Self::Input(n) => n.get_cost(network, state),
@@ -632,10 +669,65 @@ impl StorageConstraints {
     }
 }
 
+/// Generic cost data for a node.
+#[derive(Debug, PartialEq)]
+struct NodeCost {
+    local: ConstraintValue,
+    virtual_storage_nodes: Vec<VirtualStorageIndex>,
+    agg_func: CostAggFunc,
+}
+
+impl Default for NodeCost {
+    fn default() -> Self {
+        Self {
+            local: ConstraintValue::None,
+            virtual_storage_nodes: Vec::new(),
+            agg_func: CostAggFunc::Max,
+        }
+    }
+}
+
+impl NodeCost {
+    fn get_cost(&self, network: &Network, state: &State) -> Result<f64, PywrError> {
+        let local_cost = match &self.local {
+            ConstraintValue::None => Ok(0.0),
+            ConstraintValue::Scalar(v) => Ok(*v),
+            ConstraintValue::Metric(m) => m.get_value(network, state),
+        }?;
+
+        let vs_costs: Vec<f64> = self
+            .virtual_storage_nodes
+            .iter()
+            .map(|idx| {
+                let vs = network.get_virtual_storage_node(idx)?;
+                vs.get_cost(network, state)
+            })
+            .collect::<Result<_, _>>()?;
+
+        let cost = match self.agg_func {
+            CostAggFunc::Sum => local_cost + vs_costs.iter().sum::<f64>(),
+            CostAggFunc::Max => local_cost.max(
+                vs_costs
+                    .into_iter()
+                    .max_by(|a, b| a.total_cmp(b))
+                    .unwrap_or(f64::NEG_INFINITY),
+            ),
+            CostAggFunc::Min => local_cost.min(
+                vs_costs
+                    .into_iter()
+                    .min_by(|a, b| a.total_cmp(b))
+                    .unwrap_or(f64::INFINITY),
+            ),
+        };
+
+        Ok(cost)
+    }
+}
+
 #[derive(Debug, PartialEq)]
 pub struct InputNode {
     pub meta: NodeMeta<NodeIndex>,
-    pub cost: ConstraintValue,
+    cost: NodeCost,
     pub flow_constraints: FlowConstraints,
     pub outgoing_edges: Vec<EdgeIndex>,
 }
@@ -644,20 +736,19 @@ impl InputNode {
     fn new(index: &NodeIndex, name: &str, sub_name: Option<&str>) -> Self {
         Self {
             meta: NodeMeta::new(index, name, sub_name),
-            cost: ConstraintValue::None,
+            cost: NodeCost::default(),
             flow_constraints: FlowConstraints::new(),
             outgoing_edges: Vec::new(),
         }
     }
     fn set_cost(&mut self, value: ConstraintValue) {
-        self.cost = value
+        self.cost.local = value
+    }
+    fn set_cost_agg_func(&mut self, agg_func: CostAggFunc) {
+        self.cost.agg_func = agg_func
     }
     fn get_cost(&self, network: &Network, state: &State) -> Result<f64, PywrError> {
-        match &self.cost {
-            ConstraintValue::None => Ok(0.0),
-            ConstraintValue::Scalar(v) => Ok(*v),
-            ConstraintValue::Metric(m) => m.get_value(network, state),
-        }
+        self.cost.get_cost(network, state)
     }
     fn set_min_flow(&mut self, value: ConstraintValue) {
         self.flow_constraints.min_flow = value;
@@ -682,7 +773,7 @@ impl InputNode {
 #[derive(Debug, PartialEq)]
 pub struct OutputNode {
     pub meta: NodeMeta<NodeIndex>,
-    pub cost: ConstraintValue,
+    cost: NodeCost,
     pub flow_constraints: FlowConstraints,
     pub incoming_edges: Vec<EdgeIndex>,
 }
@@ -691,20 +782,19 @@ impl OutputNode {
     fn new(index: &NodeIndex, name: &str, sub_name: Option<&str>) -> Self {
         Self {
             meta: NodeMeta::new(index, name, sub_name),
-            cost: ConstraintValue::None,
+            cost: NodeCost::default(),
             flow_constraints: FlowConstraints::new(),
             incoming_edges: Vec::new(),
         }
     }
     fn set_cost(&mut self, value: ConstraintValue) {
-        self.cost = value
+        self.cost.local = value
     }
     fn get_cost(&self, network: &Network, state: &State) -> Result<f64, PywrError> {
-        match &self.cost {
-            ConstraintValue::None => Ok(0.0),
-            ConstraintValue::Scalar(v) => Ok(*v),
-            ConstraintValue::Metric(m) => m.get_value(network, state),
-        }
+        self.cost.get_cost(network, state)
+    }
+    fn set_cost_agg_func(&mut self, agg_func: CostAggFunc) {
+        self.cost.agg_func = agg_func
     }
     fn set_min_flow(&mut self, value: ConstraintValue) {
         self.flow_constraints.min_flow = value;
@@ -729,7 +819,7 @@ impl OutputNode {
 #[derive(Debug, PartialEq)]
 pub struct LinkNode {
     pub meta: NodeMeta<NodeIndex>,
-    pub cost: ConstraintValue,
+    cost: NodeCost,
     pub flow_constraints: FlowConstraints,
     pub incoming_edges: Vec<EdgeIndex>,
     pub outgoing_edges: Vec<EdgeIndex>,
@@ -739,21 +829,20 @@ impl LinkNode {
     fn new(index: &NodeIndex, name: &str, sub_name: Option<&str>) -> Self {
         Self {
             meta: NodeMeta::new(index, name, sub_name),
-            cost: ConstraintValue::None,
+            cost: NodeCost::default(),
             flow_constraints: FlowConstraints::new(),
             incoming_edges: Vec::new(),
             outgoing_edges: Vec::new(),
         }
     }
     fn set_cost(&mut self, value: ConstraintValue) {
-        self.cost = value
+        self.cost.local = value
+    }
+    fn set_cost_agg_func(&mut self, agg_func: CostAggFunc) {
+        self.cost.agg_func = agg_func
     }
     fn get_cost(&self, network: &Network, state: &State) -> Result<f64, PywrError> {
-        match &self.cost {
-            ConstraintValue::None => Ok(0.0),
-            ConstraintValue::Scalar(v) => Ok(*v),
-            ConstraintValue::Metric(m) => m.get_value(network, state),
-        }
+        self.cost.get_cost(network, state)
     }
     fn set_min_flow(&mut self, value: ConstraintValue) {
         self.flow_constraints.min_flow = value;

@@ -55,6 +55,7 @@ impl VirtualStorageVec {
         min_volume: ConstraintValue,
         max_volume: ConstraintValue,
         reset: VirtualStorageReset,
+        cost: ConstraintValue,
     ) -> VirtualStorageIndex {
         let node_index = VirtualStorageIndex(self.nodes.len());
         let node = VirtualStorage::new(
@@ -67,6 +68,7 @@ impl VirtualStorageVec {
             min_volume,
             max_volume,
             reset,
+            cost,
         );
         self.nodes.push(node);
         node_index
@@ -88,6 +90,7 @@ pub struct VirtualStorage {
     pub initial_volume: StorageInitialVolume,
     pub storage_constraints: StorageConstraints,
     pub reset: VirtualStorageReset,
+    pub cost: ConstraintValue,
 }
 
 impl VirtualStorage {
@@ -101,6 +104,7 @@ impl VirtualStorage {
         min_volume: ConstraintValue,
         max_volume: ConstraintValue,
         reset: VirtualStorageReset,
+        cost: ConstraintValue,
     ) -> Self {
         Self {
             meta: NodeMeta::new(index, name, sub_name),
@@ -110,6 +114,7 @@ impl VirtualStorage {
             initial_volume,
             storage_constraints: StorageConstraints::new(min_volume, max_volume),
             reset,
+            cost,
         }
     }
 
@@ -139,7 +144,15 @@ impl VirtualStorage {
         VirtualStorageState::new(0.0)
     }
 
-    pub fn before(&self, timestep: &Timestep, model: &Network, state: &mut State) -> Result<(), PywrError> {
+    pub fn get_cost(&self, network: &Network, state: &State) -> Result<f64, PywrError> {
+        match &self.cost {
+            ConstraintValue::None => Ok(0.0),
+            ConstraintValue::Scalar(v) => Ok(*v),
+            ConstraintValue::Metric(m) => m.get_value(network, state),
+        }
+    }
+
+    pub fn before(&self, timestep: &Timestep, network: &Network, state: &mut State) -> Result<(), PywrError> {
         let do_reset = if timestep.is_first() {
             // Set the initial volume if it is the first timestep.
             true
@@ -168,7 +181,7 @@ impl VirtualStorage {
             let volume = match &self.initial_volume {
                 StorageInitialVolume::Absolute(iv) => *iv,
                 StorageInitialVolume::Proportional(ipc) => {
-                    let max_volume = self.get_max_volume(model, state)?;
+                    let max_volume = self.get_max_volume(network, state)?;
                     max_volume * ipc
                 }
             };
@@ -220,11 +233,12 @@ mod tests {
     use crate::models::Model;
     use crate::network::Network;
     use crate::node::{ConstraintValue, StorageInitialVolume};
-    use crate::recorders::AssertionFnRecorder;
+    use crate::recorders::{AssertionFnRecorder, AssertionRecorder};
     use crate::scenario::ScenarioIndex;
-    use crate::test_utils::{default_timestepper, run_all_solvers};
+    use crate::test_utils::{default_timestepper, run_all_solvers, simple_model};
     use crate::timestep::Timestep;
     use crate::virtual_storage::{months_since_last_reset, VirtualStorageReset};
+    use ndarray::Array;
     use time::macros::date;
 
     /// Test the calculation of number of months since last reset
@@ -276,6 +290,7 @@ mod tests {
             ConstraintValue::Scalar(0.0),
             ConstraintValue::Scalar(100.0),
             VirtualStorageReset::Never,
+            ConstraintValue::Scalar(0.0),
         );
 
         // Setup a demand on output-0 and output-1
@@ -315,6 +330,37 @@ mod tests {
         network.add_recorder(Box::new(recorder)).unwrap();
 
         let model = Model::new(default_timestepper().into(), network);
+        // Test all solvers
+        run_all_solvers(&model);
+    }
+
+    #[test]
+    /// Test virtual storage node costs
+    fn test_virtual_storage_node_costs() {
+        let mut model = simple_model(1);
+        let network = model.network_mut();
+        let timestepper = default_timestepper();
+
+        let nodes = vec![network.get_node_index_by_name("input", None).unwrap()];
+        // Virtual storage node cost is high enough to prevent any flow
+        network
+            .add_virtual_storage_node(
+                "vs",
+                None,
+                &nodes,
+                None,
+                StorageInitialVolume::Proportional(1.0),
+                ConstraintValue::Scalar(0.0),
+                ConstraintValue::Scalar(100.0),
+                VirtualStorageReset::Never,
+                ConstraintValue::Scalar(20.0),
+            )
+            .unwrap();
+
+        let expected = Array::zeros((366, 1));
+        let idx = network.get_node_by_name("output", None).unwrap().index();
+        let recorder = AssertionRecorder::new("output-flow", Metric::NodeInFlow(idx), expected, None, None);
+        network.add_recorder(Box::new(recorder)).unwrap();
 
         // Test all solvers
         run_all_solvers(&model);

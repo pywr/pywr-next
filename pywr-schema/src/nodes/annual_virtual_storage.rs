@@ -56,6 +56,11 @@ impl AnnualVirtualStorageNode {
             return Err(SchemaError::MissingInitialVolume(self.meta.name.to_string()));
         };
 
+        let cost = match &self.cost {
+            Some(v) => v.load(network, domain, tables, data_path)?.into(),
+            None => ConstraintValue::Scalar(0.0),
+        };
+
         let min_volume = match &self.min_volume {
             Some(v) => v.load(network, domain, tables, data_path)?.into(),
             None => ConstraintValue::Scalar(0.0),
@@ -86,6 +91,7 @@ impl AnnualVirtualStorageNode {
             min_volume,
             max_volume,
             reset,
+            cost,
         )?;
         Ok(())
     }

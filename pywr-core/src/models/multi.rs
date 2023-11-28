@@ -7,10 +7,8 @@ use crate::solvers::{Solver, SolverSettings};
 use crate::timestep::Timestep;
 use crate::PywrError;
 use std::any::Any;
-use std::fmt;
-use std::fmt::{Display, Formatter};
+use std::fmt::Display;
 use std::num::NonZeroUsize;
-use std::ops::Deref;
 use std::time::Instant;
 
 /// An index to another model
