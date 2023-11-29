@@ -45,6 +45,7 @@ def test_simple_timeseries(model_dir: Path, tmpdir: Path):
     [
         "simple-timeseries",
         "simple-storage-timeseries",
+        "simple-custom-parameter",
         # "simple-wasm", TODO the schema for the WASM parameter needs implementing
         "aggregated-node1",
         "piecewise-link1",
