@@ -117,7 +117,7 @@ git submodule init
 git submodule update
 ```
 
-Rust is required for installation of the Python extension. To create a Python development installation 
+Rust is required for installation of the Python extension. To create a Python development installation
 requires first compiling the Rust library and then installing the Python package in editable model.
 
 ```bash
@@ -145,18 +145,22 @@ python -m pywr
 ### Rust CLI
 
 A basic command line interface is included such that you can use this version of Pywr without Python.
-This CLI is in the `pywr-cli` crate. 
+This CLI is in the `pywr-cli` crate. To install run the following:
+
+```bash
+cargo install --path pywr-cli
+```
 
 To see the CLI commands available run the following:
 
 ```bash
-cargo run -p pywr-cli -- --help
+pywr --help
 ```
 
 To run a Pywr v2 model use the following:
 
 ```bash
-cargo run -p pywr-cli -- run tests/models/simple1.json
+pywr run tests/models/simple1.json
 ```
 
 ### Python CLI
@@ -182,7 +186,7 @@ likely an automatic conversion will not completely convert your model, and it _W
 checking.**
 
 ```bash
-cargo run --no-default-features -- convert /path/to/my/v1.x/model.json
+pywr convert /path/to/my/v1.x/model.json
 ```
 
 Feedback on porting models is very welcome, so please open an issue with any questions or problems.

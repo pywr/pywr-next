@@ -1551,7 +1551,7 @@ mod tests {
     use crate::solvers::{ClIpmF64Solver, SimdIpmF64Solver};
     use crate::solvers::{ClpSolver, ClpSolverSettings};
     use crate::test_utils::{default_timestepper, run_all_solvers, simple_model, simple_storage_model};
-    use float_cmp::{approx_eq, assert_approx_eq};
+    use float_cmp::assert_approx_eq;
     use ndarray::{Array, Array2};
     use std::ops::Deref;
 
