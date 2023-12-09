@@ -420,6 +420,9 @@ impl TryFromV1Parameter<ParameterV1> for Parameter {
                         instead: "Use a derived metric instead.".to_string(),
                     })
                 }
+                CoreParameter::RbfProfile(p) => {
+                    Parameter::RbfProfile(p.try_into_v2_parameter(parent_node, unnamed_count)?)
+                }
             },
             ParameterV1::Custom(p) => {
                 println!("Custom parameter: {:?} ({})", p.meta.name, p.ty);

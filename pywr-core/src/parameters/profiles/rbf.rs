@@ -213,6 +213,7 @@ impl VariableParameter<u32> for RbfProfileParameter {
 pub enum RadialBasisFunction {
     Linear,
     Cubic,
+    Quintic,
     ThinPlateSpline,
     Gaussian { epsilon: f64 },
     MultiQuadric { epsilon: f64 },
@@ -224,6 +225,7 @@ impl RadialBasisFunction {
         match self {
             RadialBasisFunction::Linear => r,
             RadialBasisFunction::Cubic => r.powi(3),
+            RadialBasisFunction::Quintic => r.powi(5),
             RadialBasisFunction::ThinPlateSpline => r.powi(2) * r.ln(),
             RadialBasisFunction::Gaussian { epsilon } => (-(epsilon * r).powi(2)).exp(),
             RadialBasisFunction::MultiQuadric { epsilon } => (1.0 + (epsilon * r).powi(2)).sqrt(),
