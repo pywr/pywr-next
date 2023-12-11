@@ -11,9 +11,10 @@ use crate::scenario::ScenarioIndex;
 use crate::state::State;
 use crate::timestep::Timestep;
 use crate::PywrError;
+pub use aggregator::{AggregationFrequency, AggregationFunction, Aggregator};
 use float_cmp::{approx_eq, ApproxEq, F64Margin};
 pub use hdf::HDF5Recorder;
-pub use metric_set::{MetricSet, MetricSetIndex};
+pub use metric_set::{MetricSet, MetricSetIndex, MetricSetState};
 use ndarray::prelude::*;
 use ndarray::Array2;
 use std::any::Any;
@@ -81,6 +82,7 @@ pub trait Recorder: Send + Sync {
         _scenario_indices: &[ScenarioIndex],
         _model: &Model,
         _state: &[State],
+        _metric_set_states: &[Vec<MetricSetState>],
         _internal_state: &mut Option<Box<dyn Any>>,
     ) -> Result<(), PywrError> {
         Ok(())
@@ -126,6 +128,7 @@ impl Recorder for Array2Recorder {
         scenario_indices: &[ScenarioIndex],
         model: &Model,
         state: &[State],
+        metric_set_states: &[Vec<MetricSetState>],
         internal_state: &mut Option<Box<dyn Any>>,
     ) -> Result<(), PywrError> {
         // Downcast the internal state to the correct type
@@ -184,6 +187,7 @@ impl Recorder for AssertionRecorder {
         scenario_indices: &[ScenarioIndex],
         model: &Model,
         state: &[State],
+        metric_set_states: &[Vec<MetricSetState>],
         _internal_state: &mut Option<Box<dyn Any>>,
     ) -> Result<(), PywrError> {
         // This panics if out-of-bounds
@@ -256,6 +260,7 @@ where
         scenario_indices: &[ScenarioIndex],
         model: &Model,
         state: &[State],
+        metric_set_states: &[Vec<MetricSetState>],
         _internal_state: &mut Option<Box<dyn Any>>,
     ) -> Result<(), PywrError> {
         // This panics if out-of-bounds
@@ -310,6 +315,7 @@ impl Recorder for IndexAssertionRecorder {
         scenario_indices: &[ScenarioIndex],
         model: &Model,
         state: &[State],
+        metric_set_states: &[Vec<MetricSetState>],
         _internal_state: &mut Option<Box<dyn Any>>,
     ) -> Result<(), PywrError> {
         // This panics if out-of-bounds

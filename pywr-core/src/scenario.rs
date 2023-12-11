@@ -16,6 +16,10 @@ impl ScenarioGroup {
         }
     }
 
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
     pub fn size(&self) -> usize {
         self.size
     }
@@ -27,6 +31,18 @@ pub struct ScenarioGroupCollection {
 }
 
 impl ScenarioGroupCollection {
+    /// Find a `ScenarioGroup` in the collection by its index
+    pub fn get_group(&self, idx: usize) -> Result<&ScenarioGroup, PywrError> {
+        self.groups
+            .get(idx)
+            .ok_or_else(|| PywrError::ScenarioGroupIndexNotFound(idx))
+    }
+
+    /// Get all `ScenarioGroup`s in the collection
+    pub fn get_groups(&self) -> &[ScenarioGroup] {
+        &self.groups
+    }
+
     /// Find a `ScenarioGroup`'s index in the collection by name
     pub fn get_group_index_by_name(&self, name: &str) -> Result<usize, PywrError> {
         self.groups

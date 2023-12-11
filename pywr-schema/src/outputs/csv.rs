@@ -35,13 +35,17 @@ mod tests {
     use pywr_core::solvers::{ClpSolver, ClpSolverSettings};
     use tempfile::TempDir;
 
-    fn model_str() -> &'static str {
+    fn csv1_str() -> &'static str {
         include_str!("../test_models/csv1.json")
+    }
+
+    fn csv2_str() -> &'static str {
+        include_str!("../test_models/csv2.json")
     }
 
     #[test]
     fn test_schema() {
-        let data = model_str();
+        let data = csv1_str();
         let schema = PywrModel::from_str(data).unwrap();
 
         assert_eq!(schema.nodes.len(), 3);
@@ -50,8 +54,26 @@ mod tests {
     }
 
     #[test]
-    fn test_run() {
-        let data = model_str();
+    fn test_csv1_run() {
+        let data = csv1_str();
+        let schema = PywrModel::from_str(data).unwrap();
+
+        let temp_dir = TempDir::new().unwrap();
+
+        let (model, timestepper) = schema.build_model(None, Some(temp_dir.path())).unwrap();
+
+        model
+            .run::<ClpSolver>(&timestepper, &ClpSolverSettings::default())
+            .unwrap();
+
+        // After model run there should be an output file.
+        let expected_path = temp_dir.path().join("outputs.csv");
+        assert!(expected_path.exists());
+    }
+
+    #[test]
+    fn test_csv2_run() {
+        let data = csv2_str();
         let schema = PywrModel::from_str(data).unwrap();
 
         let temp_dir = TempDir::new().unwrap();

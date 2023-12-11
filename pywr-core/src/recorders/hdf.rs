@@ -1,4 +1,4 @@
-use super::{PywrError, Recorder, RecorderMeta, Timestep};
+use super::{MetricSetState, PywrError, Recorder, RecorderMeta, Timestep};
 use crate::metric::Metric;
 use crate::model::Model;
 use crate::recorders::MetricSetIndex;
@@ -145,6 +145,7 @@ impl Recorder for HDF5Recorder {
         scenario_indices: &[ScenarioIndex],
         model: &Model,
         state: &[State],
+        metric_set_states: &[Vec<MetricSetState>],
         internal_state: &mut Option<Box<dyn Any>>,
     ) -> Result<(), PywrError> {
         let internal = match internal_state {

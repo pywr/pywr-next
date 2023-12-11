@@ -3,6 +3,7 @@ use crate::edge::{Edge, EdgeIndex};
 use crate::model::Model;
 use crate::node::{Node, NodeIndex};
 use crate::parameters::{IndexParameterIndex, MultiValueParameterIndex, ParameterIndex};
+use crate::recorders::{MetricSetIndex, MetricSetState};
 use crate::timestep::Timestep;
 use crate::virtual_storage::VirtualStorageIndex;
 use crate::PywrError;
