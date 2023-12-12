@@ -38,7 +38,8 @@ pub use super::parameters::discount_factor::DiscountFactorParameter;
 pub use super::parameters::indexed_array::IndexedArrayParameter;
 pub use super::parameters::polynomial::Polynomial1DParameter;
 pub use super::parameters::profiles::{
-    DailyProfileParameter, MonthlyProfileParameter, UniformDrawdownProfileParameter,
+    DailyProfileParameter, MonthlyProfileParameter, RadialBasisFunction, RbfProfileParameter,
+    RbfProfileVariableSettings, UniformDrawdownProfileParameter,
 };
 pub use super::parameters::python::PythonParameter;
 pub use super::parameters::tables::TablesArrayParameter;
@@ -166,6 +167,7 @@ pub enum Parameter {
     Offset(OffsetParameter),
     DiscountFactor(DiscountFactorParameter),
     Interpolated(InterpolatedParameter),
+    RbfProfile(RbfProfileParameter),
 }
 
 impl Parameter {
@@ -196,6 +198,7 @@ impl Parameter {
             Self::Offset(p) => p.meta.name.as_str(),
             Self::DiscountFactor(p) => p.meta.name.as_str(),
             Self::Interpolated(p) => p.meta.name.as_str(),
+            Self::RbfProfile(p) => p.meta.name.as_str(),
         }
     }
 
@@ -228,6 +231,7 @@ impl Parameter {
             Self::Offset(p) => p.node_references(),
             Self::DiscountFactor(p) => p.node_references(),
             Self::Interpolated(p) => p.node_references(),
+            Self::RbfProfile(p) => p.node_references(),
         }
     }
 
@@ -277,6 +281,7 @@ impl Parameter {
             Self::Offset(_) => "Offset",
             Self::DiscountFactor(_) => "DiscountFactor",
             Self::Interpolated(_) => "Interpolated",
+            Self::RbfProfile(_) => "RbfProfile",
         }
     }
 
@@ -314,6 +319,7 @@ impl Parameter {
             Self::Offset(p) => ParameterType::Parameter(p.add_to_model(model, tables, data_path)?),
             Self::DiscountFactor(p) => ParameterType::Parameter(p.add_to_model(model, tables, data_path)?),
             Self::Interpolated(p) => ParameterType::Parameter(p.add_to_model(model, tables, data_path)?),
+            Self::RbfProfile(p) => ParameterType::Parameter(p.add_to_model(model)?),
         };
 
         Ok(ty)
@@ -413,6 +419,9 @@ impl TryFromV1Parameter<ParameterV1> for Parameter {
                         name: p.meta.map(|m| m.name).flatten().unwrap_or("unnamed".to_string()),
                         instead: "Use a derived metric instead.".to_string(),
                     })
+                }
+                CoreParameter::RbfProfile(p) => {
+                    Parameter::RbfProfile(p.try_into_v2_parameter(parent_node, unnamed_count)?)
                 }
             },
             ParameterV1::Custom(p) => {
