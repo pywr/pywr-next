@@ -54,7 +54,10 @@ pub use min::MinParameter;
 pub use negative::NegativeParameter;
 pub use offset::OffsetParameter;
 pub use polynomial::Polynomial1DParameter;
-pub use profiles::{DailyProfileParameter, MonthlyInterpDay, MonthlyProfileParameter, UniformDrawdownProfileParameter};
+pub use profiles::{
+    DailyProfileParameter, MonthlyInterpDay, MonthlyProfileParameter, RadialBasisFunction, RbfProfileParameter,
+    RbfProfileVariableConfig, UniformDrawdownProfileParameter,
+};
 pub use py::PyParameter;
 use std::fmt;
 use std::fmt::{Display, Formatter};
@@ -196,24 +199,47 @@ pub trait Parameter: Send + Sync {
         Ok(())
     }
 
-    /// Return the parameter as a [`VariableParameter'] if it supports being a variable.
-    fn as_variable(&self) -> Option<&dyn VariableParameter> {
+    /// Return the parameter as a [`VariableParameter<f64>'] if it supports being a variable.
+    fn as_f64_variable(&self) -> Option<&dyn VariableParameter<f64>> {
         None
     }
 
-    /// Return the parameter as a [`VariableParameter'] if it supports being a variable.
-    fn as_variable_mut(&mut self) -> Option<&mut dyn VariableParameter> {
+    /// Return the parameter as a [`VariableParameter<f64>'] if it supports being a variable.
+    fn as_f64_variable_mut(&mut self) -> Option<&mut dyn VariableParameter<f64>> {
         None
     }
 
     /// Can this parameter be a variable
-    fn can_be_variable(&self) -> bool {
-        self.as_variable().is_some()
+    fn can_be_f64_variable(&self) -> bool {
+        self.as_f64_variable().is_some()
     }
 
     /// Is this parameter an active variable
-    fn is_variable_active(&self) -> bool {
-        match self.as_variable() {
+    fn is_f64_variable_active(&self) -> bool {
+        match self.as_f64_variable() {
+            Some(var) => var.is_active(),
+            None => false,
+        }
+    }
+
+    /// Return the parameter as a [`VariableParameter<u32>'] if it supports being a variable.
+    fn as_u32_variable(&self) -> Option<&dyn VariableParameter<u32>> {
+        None
+    }
+
+    /// Return the parameter as a [`VariableParameter<u32>'] if it supports being a variable.
+    fn as_u32_variable_mut(&mut self) -> Option<&mut dyn VariableParameter<u32>> {
+        None
+    }
+
+    /// Can this parameter be a variable
+    fn can_be_u32_variable(&self) -> bool {
+        self.as_u32_variable().is_some()
+    }
+
+    /// Is this parameter an active variable
+    fn is_u32_variable_active(&self) -> bool {
+        match self.as_u32_variable() {
             Some(var) => var.is_active(),
             None => false,
         }
@@ -310,19 +336,25 @@ pub enum ParameterType {
     Multi(MultiValueParameterIndex),
 }
 
-pub trait VariableParameter {
+/// A parameter that can be optimised.
+///
+/// This trait is used to allow parameter's internal values to be accessed and altered by
+/// external algorithms. It is primarily designed to be used by the optimisation algorithms
+/// such as multi-objective evolutionary algorithms. The trait is generic to the type of
+/// the variable values being optimised but these will typically by `f64` and `u32`.
+pub trait VariableParameter<T> {
     /// Is this variable activated (i.e. should be used in optimisation)
     fn is_active(&self) -> bool;
     /// Return the number of variables required
     fn size(&self) -> usize;
     /// Apply new variable values to the parameter
-    fn set_variables(&mut self, values: &[f64]) -> Result<(), PywrError>;
+    fn set_variables(&mut self, values: &[T]) -> Result<(), PywrError>;
     /// Get the current variable values
-    fn get_variables(&self) -> Vec<f64>;
+    fn get_variables(&self) -> Vec<T>;
     /// Get variable lower bounds
-    fn get_lower_bounds(&self) -> Result<Vec<f64>, PywrError>;
+    fn get_lower_bounds(&self) -> Result<Vec<T>, PywrError>;
     /// Get variable upper bounds
-    fn get_upper_bounds(&self) -> Result<Vec<f64>, PywrError>;
+    fn get_upper_bounds(&self) -> Result<Vec<T>, PywrError>;
 }
 
 #[cfg(test)]

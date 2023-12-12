@@ -43,6 +43,8 @@ pub enum SchemaError {
     UnexpectedParameterType(String),
     #[error("mismatch in the length of data provided. expected: {expected}, found: {found}")]
     DataLengthMismatch { expected: usize, found: usize },
+    #[error("Failed to estimate epsilon for use in the radial basis function.")]
+    RbfEpsilonEstimation,
     #[error("Scenario group with name {0} not found")]
     ScenarioGroupNotFound(String),
 }
@@ -83,4 +85,11 @@ pub enum ConversionError {
     UnsupportedFeature { feature: String, name: String },
     #[error("Parameter {name:?} of type `{ty:?}` are not supported in Pywr v2. {instead:?}")]
     DeprecatedParameter { ty: String, name: String, instead: String },
+    #[error("Unexpected type for attribute {attr} on parameter {name}. Expected `{expected}`, found `{actual}`")]
+    UnexpectedType {
+        attr: String,
+        name: String,
+        expected: String,
+        actual: String,
+    },
 }

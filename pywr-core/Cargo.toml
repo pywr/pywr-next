@@ -31,6 +31,7 @@ tracing = {  workspace = true }
 tracing-subscriber = { version ="0.3.17", features=["env-filter"] }
 highs-sys = {  git = "https://github.com/jetuk/highs-sys", branch="fix-build-libz-linking", optional = true }
 # highs-sys = { path = "../../highs-sys" }
+nalgebra = "0.32.3"
 
 pyo3 = {  workspace = true }
 
