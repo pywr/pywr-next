@@ -8,6 +8,7 @@ use pywr_v1_schema::parameters::{
     DailyProfileParameter as DailyProfileParameterV1,
     MonthInterpDay as MonthInterpDayV1,
     MonthlyProfileParameter as MonthlyProfileParameterV1,
+    // WeeklyProfileParameter as WeeklyProfileParameterV1,
     UniformDrawdownProfileParameter as UniformDrawdownProfileParameterV1,
     WeeklyProfileParameter as WeeklyProfileParameterV1,
 };
@@ -287,6 +288,7 @@ impl From<WeeklyInterpDay> for pywr_core::parameters::WeeklyInterpDay {
 /// The values in the last week are interpolated between `10` and `12` (i.e the value on 31<sup>st</sup>
 /// December).
 ///
+
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
 pub struct WeeklyProfileParameter {
     #[serde(flatten)]
@@ -317,7 +319,6 @@ impl WeeklyProfileParameter {
     }
 }
 
-// TODO
 impl TryFromV1Parameter<WeeklyProfileParameterV1> for WeeklyProfileParameter {
     type Error = ConversionError;
 
@@ -343,7 +344,11 @@ impl TryFromV1Parameter<WeeklyProfileParameterV1> for WeeklyProfileParameter {
         };
 
         // pywr 1 does not support interpolation
-        let p = Self { meta, values, interp_day: None };
+        let p = Self {
+            meta,
+            values,
+            interp_day: None,
+        };
         Ok(p)
     }
 }
