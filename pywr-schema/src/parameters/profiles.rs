@@ -511,7 +511,7 @@ impl From<WeeklyInterpDay> for pywr_core::parameters::WeeklyInterpDay {
 ///    value on the last week).
 ///
 /// This does apply to a 53-week profile.
-
+///
 /// # Examples
 /// ## Without interpolation
 /// This defines a piece-wise weekly profile. Each day of the same week has the same value:
@@ -551,7 +551,6 @@ impl From<WeeklyInterpDay> for pywr_core::parameters::WeeklyInterpDay {
 /// The values in the last week are interpolated between `10` and `12` (i.e the value on 31<sup>st</sup>
 /// December).
 ///
-
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
 pub struct WeeklyProfileParameter {
     #[serde(flatten)]
