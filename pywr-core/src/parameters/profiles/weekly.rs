@@ -192,7 +192,6 @@ mod tests {
     use crate::parameters::profiles::weekly::{WeeklyInterpDay, WeeklyProfileSize};
     use float_cmp::{approx_eq, F64Margin};
     use time::{Date, Duration, Month};
-    use time::{Date, Month};
 
     /// Compare the arrays
     fn assert(calculated_values: &[f64], expected_values: &[f64]) {
