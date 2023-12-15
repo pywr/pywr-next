@@ -1,0 +1,16 @@
+{
+    "name": "my-interpolated-profile",
+    "type": "RbfProfile",
+    "points": [
+        [90, 0.5],
+        [180, 0.3],
+        [270, 0.7]
+    ],
+    "function": {"Gaussian": { "epsilon":  3.0 }},
+    "variable": {
+        "is_active": true,
+        "days_of_year_range": 30,
+        "value_upper_bounds": 1.0,
+        "value_lower_bounds": 0.0
+    }
+}
