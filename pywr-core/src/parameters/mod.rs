@@ -53,7 +53,7 @@ pub use negative::NegativeParameter;
 pub use offset::OffsetParameter;
 pub use polynomial::Polynomial1DParameter;
 pub use profiles::{
-    DailyProfileParameter, MonthlyInterpDay, MonthlyProfileParameter, UniformDrawdownProfileParameter,
+    DailyProfileParameter, MonthlyInterpDay, MonthlyProfileParameter, UniformDrawdownProfileParameter, WeeklyInterpDay,
     WeeklyProfileParameter,
 };
 pub use py::PyParameter;
