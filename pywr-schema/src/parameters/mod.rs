@@ -443,6 +443,7 @@ impl TryFromV1Parameter<ParameterV1> for Parameter {
                 CoreParameter::WeeklyProfile(p) => {
                     Parameter::WeeklyProfile(p.try_into_v2_parameter(parent_node, unnamed_count)?)
                 }
+                CoreParameter::RbfProfile(_) => todo!(),
                 CoreParameter::UniformDrawdownProfile(p) => {
                     Parameter::UniformDrawdownProfile(p.try_into_v2_parameter(parent_node, unnamed_count)?)
                 }
