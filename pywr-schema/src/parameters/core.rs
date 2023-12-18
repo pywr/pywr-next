@@ -446,3 +446,103 @@ impl TryFromV1Parameter<NegativeParameterV1> for NegativeParameter {
         Ok(p)
     }
 }
+
+/// This parameter takes the maximum of the negative of a Parameter and a constant value (threshold).
+///
+/// # Arguments
+///
+/// * `parameter` - The parameter to compare with the float.
+/// * `threshold` - The threshold value to compare against the given parameter. Default to 0.0.
+///
+/// # Examples
+///
+/// ```json
+/// {
+///     "type": "NegativeMax",
+///     "parameter": {
+///         "type": "MonthlyProfile",
+///         "values": [-1, -4, 5, 9, 1, 5, 10, 8, 11, 9, 11 ,12]
+///     },
+///     "threshold": 2
+/// }
+/// ```
+/// In January this parameter returns 2, in February 4.
+///
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+pub struct NegativeMaxParameter {
+    #[serde(flatten)]
+    pub meta: ParameterMeta,
+    pub parameter: DynamicFloatValue,
+    pub threshold: Option<f64>,
+}
+
+impl NegativeMaxParameter {
+    pub fn node_references(&self) -> HashMap<&str, &str> {
+        HashMap::new()
+    }
+
+    pub fn add_to_model(
+        &self,
+        model: &mut pywr_core::model::Model,
+        tables: &LoadedTableCollection,
+        data_path: Option<&Path>,
+    ) -> Result<ParameterIndex, SchemaError> {
+        let idx = self.parameter.load(model, tables, data_path)?;
+        let threshold = self.threshold.unwrap_or(0.0);
+
+        let p = pywr_core::parameters::NegativeMaxParameter::new(&self.meta.name, idx, threshold);
+        Ok(model.add_parameter(Box::new(p))?)
+    }
+}
+
+// TODO NegativeMaxParameter from v1
+
+/// This parameter takes the minimum of the negative of a Parameter and a constant value (threshold).
+///
+/// # Arguments
+///
+/// * `parameter` - The parameter to compare with the float.
+/// * `threshold` - The threshold value to compare against the given parameter. Default to 0.0.
+///
+/// # Examples
+///
+/// ```json
+/// {
+///     "type": "NegativeMin",
+///     "parameter": {
+///         "type": "MonthlyProfile",
+///         "values": [-1, -4, 5, 9, 1, 5, 10, 8, 11, 9, 11 ,12]
+///     },
+///     "threshold": 2
+/// }
+/// ```
+/// In January this parameter returns 1, in February 2.
+///
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+pub struct NegativeMinParameter {
+    #[serde(flatten)]
+    pub meta: ParameterMeta,
+    pub parameter: DynamicFloatValue,
+    pub threshold: Option<f64>,
+}
+
+impl NegativeMinParameter {
+    pub fn node_references(&self) -> HashMap<&str, &str> {
+        HashMap::new()
+    }
+
+    pub fn add_to_model(
+        &self,
+        model: &mut pywr_core::model::Model,
+        tables: &LoadedTableCollection,
+        data_path: Option<&Path>,
+    ) -> Result<ParameterIndex, SchemaError> {
+        let idx = self.parameter.load(model, tables, data_path)?;
+        let threshold = self.threshold.unwrap_or(0.0);
+
+        let p = pywr_core::parameters::NegativeMinParameter::new(&self.meta.name, idx, threshold);
+        Ok(model.add_parameter(Box::new(p))?)
+    }
+}
+
+// TODO NegativeMinParameter from v1

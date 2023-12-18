@@ -14,6 +14,8 @@ mod interpolated;
 mod max;
 mod min;
 mod negative;
+mod negativemax;
+mod negativemin;
 mod offset;
 mod polynomial;
 mod profiles;
@@ -22,6 +24,7 @@ mod rhai;
 pub mod simple_wasm;
 mod threshold;
 mod vector;
+mod flow;
 
 use std::any::Any;
 // Re-imports
@@ -50,6 +53,8 @@ pub use interpolated::InterpolatedParameter;
 pub use max::MaxParameter;
 pub use min::MinParameter;
 pub use negative::NegativeParameter;
+pub use negativemax::NegativeMaxParameter;
+pub use negativemin::NegativeMinParameter;
 pub use offset::OffsetParameter;
 pub use polynomial::Polynomial1DParameter;
 pub use profiles::{

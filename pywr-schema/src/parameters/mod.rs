@@ -31,7 +31,8 @@ pub use super::parameters::control_curves::{
     ControlCurvePiecewiseInterpolatedParameter,
 };
 pub use super::parameters::core::{
-    ActivationFunction, ConstantParameter, MaxParameter, MinParameter, NegativeParameter, VariableSettings,
+    ActivationFunction, ConstantParameter, MaxParameter, MinParameter, NegativeMaxParameter, NegativeMinParameter,
+    NegativeParameter, VariableSettings,
 };
 pub use super::parameters::delay::DelayParameter;
 pub use super::parameters::discount_factor::DiscountFactorParameter;
@@ -157,6 +158,8 @@ pub enum Parameter {
     Max(MaxParameter),
     Min(MinParameter),
     Negative(NegativeParameter),
+    NegativeMax(NegativeMaxParameter),
+    NegativeMin(NegativeMinParameter),
     Polynomial1D(Polynomial1DParameter),
     ParameterThreshold(ParameterThresholdParameter),
     TablesArray(TablesArrayParameter),
@@ -199,6 +202,8 @@ impl Parameter {
             Self::DiscountFactor(p) => p.meta.name.as_str(),
             Self::Interpolated(p) => p.meta.name.as_str(),
             Self::RbfProfile(p) => p.meta.name.as_str(),
+            Self::NegativeMax(p) => p.meta.name.as_str(),
+            Self::NegativeMin(p) => p.meta.name.as_str(),
         }
     }
 
@@ -232,6 +237,8 @@ impl Parameter {
             Self::DiscountFactor(p) => p.node_references(),
             Self::Interpolated(p) => p.node_references(),
             Self::RbfProfile(p) => p.node_references(),
+            Self::NegativeMax(p) => p.node_references(),
+            Self::NegativeMin(p) => p.node_references(),
         }
     }
 
@@ -282,6 +289,8 @@ impl Parameter {
             Self::DiscountFactor(_) => "DiscountFactor",
             Self::Interpolated(_) => "Interpolated",
             Self::RbfProfile(_) => "RbfProfile",
+            Self::NegativeMax(_) => "NegativeMax",
+            Self::NegativeMin(_) => "NegativeMin",
         }
     }
 
@@ -320,6 +329,8 @@ impl Parameter {
             Self::DiscountFactor(p) => ParameterType::Parameter(p.add_to_model(model, tables, data_path)?),
             Self::Interpolated(p) => ParameterType::Parameter(p.add_to_model(model, tables, data_path)?),
             Self::RbfProfile(p) => ParameterType::Parameter(p.add_to_model(model)?),
+            Self::NegativeMax(p) => ParameterType::Parameter(p.add_to_model(model, tables, data_path)?),
+            Self::NegativeMin(p) => ParameterType::Parameter(p.add_to_model(model, tables, data_path)?),
         };
 
         Ok(ty)
