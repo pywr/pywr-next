@@ -24,7 +24,6 @@ mod rhai;
 pub mod simple_wasm;
 mod threshold;
 mod vector;
-mod flow;
 
 use std::any::Any;
 // Re-imports
