@@ -25,7 +25,7 @@
             "type": "NodeInFlow",
             "name": "demand1"
           },
-          "to_parameter": "inflow"
+          "name": "inflow"
         }
       ]
     }

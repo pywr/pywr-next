@@ -2,6 +2,7 @@ use crate::aggregated_node::AggregatedNodeIndex;
 use crate::aggregated_storage_node::AggregatedStorageNodeIndex;
 use crate::derived_metric::DerivedMetricIndex;
 use crate::edge::EdgeIndex;
+use crate::models::MultiNetworkTransferIndex;
 use crate::network::Network;
 use crate::node::NodeIndex;
 use crate::parameters::{IndexParameterIndex, MultiValueParameterIndex, ParameterIndex};
@@ -28,6 +29,7 @@ pub enum Metric {
     // TODO implement other MultiNodeXXX variants
     Constant(f64),
     DerivedMetric(DerivedMetricIndex),
+    InterNetworkTransfer(MultiNetworkTransferIndex),
 }
 
 impl Metric {
@@ -74,6 +76,7 @@ impl Metric {
                     .sum::<Result<_, _>>()?;
                 Ok(flow)
             }
+            Metric::InterNetworkTransfer(idx) => state.get_inter_network_transfer_value(*idx),
         }
     }
 }

@@ -3,7 +3,7 @@ mod simple;
 
 use crate::scenario::{ScenarioDomain, ScenarioGroupCollection};
 use crate::timestep::{TimeDomain, Timestepper};
-pub use multi::MultiNetworkModel;
+pub use multi::{MultiNetworkModel, MultiNetworkTransferIndex};
 pub use simple::Model;
 
 pub struct ModelDomain {

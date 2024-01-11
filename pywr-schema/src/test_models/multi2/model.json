@@ -20,7 +20,7 @@
             "type": "Parameter",
             "name": "demand"
           },
-          "to_parameter": "inflow",
+          "name": "inflow",
           "initial_value": 10.0
         }
       ]
@@ -35,7 +35,7 @@
             "type": "NodeInFlow",
             "name": "demand1"
           },
-          "to_parameter": "inflow"
+          "name": "inflow"
         }
       ]
     }

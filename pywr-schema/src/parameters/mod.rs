@@ -15,7 +15,6 @@ mod data_frame;
 mod delay;
 mod discount_factor;
 mod indexed_array;
-mod inter_model_transfer;
 mod interpolated;
 mod offset;
 mod polynomial;
@@ -46,14 +45,14 @@ pub use super::parameters::python::PythonParameter;
 pub use super::parameters::tables::TablesArrayParameter;
 pub use super::parameters::thresholds::ParameterThresholdParameter;
 use crate::error::{ConversionError, SchemaError};
+use crate::model::PywrMultiNetworkTransfer;
 use crate::parameters::core::DivisionParameter;
 pub use crate::parameters::data_frame::DataFrameParameter;
 use crate::parameters::interpolated::InterpolatedParameter;
-pub use inter_model_transfer::InterModelTransferParameter;
 pub use offset::OffsetParameter;
 use pywr_core::derived_metric::DerivedMetric;
 use pywr_core::metric::Metric;
-use pywr_core::models::ModelDomain;
+use pywr_core::models::{ModelDomain, MultiNetworkTransferIndex};
 use pywr_core::node::NodeIndex;
 use pywr_core::parameters::{IndexParameterIndex, IndexValue, ParameterType};
 use pywr_v1_schema::parameters::{
@@ -171,7 +170,6 @@ pub enum Parameter {
     DiscountFactor(DiscountFactorParameter),
     Interpolated(InterpolatedParameter),
     RbfProfile(RbfProfileParameter),
-    InterModelTransfer(InterModelTransferParameter),
 }
 
 impl Parameter {
@@ -203,7 +201,6 @@ impl Parameter {
             Self::DiscountFactor(p) => p.meta.name.as_str(),
             Self::Interpolated(p) => p.meta.name.as_str(),
             Self::RbfProfile(p) => p.meta.name.as_str(),
-            Self::InterModelTransfer(p) => p.meta.name.as_str(),
         }
     }
 
@@ -237,7 +234,6 @@ impl Parameter {
             Self::DiscountFactor(p) => p.node_references(),
             Self::Interpolated(p) => p.node_references(),
             Self::RbfProfile(p) => p.node_references(),
-            Self::InterModelTransfer(p) => p.node_references(),
         }
     }
 
@@ -288,7 +284,6 @@ impl Parameter {
             Self::DiscountFactor(_) => "DiscountFactor",
             Self::Interpolated(_) => "Interpolated",
             Self::RbfProfile(_) => "RbfProfile",
-            Self::InterModelTransfer(_) => "InterModelTransfer",
         }
     }
 
@@ -298,39 +293,69 @@ impl Parameter {
         domain: &ModelDomain,
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
+        inter_network_transfers: &[PywrMultiNetworkTransfer],
     ) -> Result<ParameterType, SchemaError> {
         let ty = match self {
             Self::Constant(p) => ParameterType::Parameter(p.add_to_model(network, tables)?),
             Self::ControlCurveInterpolated(p) => {
-                ParameterType::Parameter(p.add_to_model(network, domain, tables, data_path)?)
+                ParameterType::Parameter(p.add_to_model(network, domain, tables, data_path, inter_network_transfers)?)
             }
-            Self::Aggregated(p) => ParameterType::Parameter(p.add_to_model(network, domain, tables, data_path)?),
-            Self::AggregatedIndex(p) => ParameterType::Index(p.add_to_model(network, domain, tables, data_path)?),
-            Self::AsymmetricSwitchIndex(p) => ParameterType::Index(p.add_to_model(network, domain, tables, data_path)?),
+            Self::Aggregated(p) => {
+                ParameterType::Parameter(p.add_to_model(network, domain, tables, data_path, inter_network_transfers)?)
+            }
+            Self::AggregatedIndex(p) => {
+                ParameterType::Index(p.add_to_model(network, domain, tables, data_path, inter_network_transfers)?)
+            }
+            Self::AsymmetricSwitchIndex(p) => {
+                ParameterType::Index(p.add_to_model(network, domain, tables, data_path, inter_network_transfers)?)
+            }
             Self::ControlCurvePiecewiseInterpolated(p) => {
-                ParameterType::Parameter(p.add_to_model(network, domain, tables, data_path)?)
+                ParameterType::Parameter(p.add_to_model(network, domain, tables, data_path, inter_network_transfers)?)
             }
-            Self::ControlCurveIndex(p) => ParameterType::Index(p.add_to_model(network, domain, tables, data_path)?),
-            Self::ControlCurve(p) => ParameterType::Parameter(p.add_to_model(network, domain, tables, data_path)?),
+            Self::ControlCurveIndex(p) => {
+                ParameterType::Index(p.add_to_model(network, domain, tables, data_path, inter_network_transfers)?)
+            }
+            Self::ControlCurve(p) => {
+                ParameterType::Parameter(p.add_to_model(network, domain, tables, data_path, inter_network_transfers)?)
+            }
             Self::DailyProfile(p) => ParameterType::Parameter(p.add_to_model(network, tables)?),
-            Self::IndexedArray(p) => ParameterType::Parameter(p.add_to_model(network, domain, tables, data_path)?),
+            Self::IndexedArray(p) => {
+                ParameterType::Parameter(p.add_to_model(network, domain, tables, data_path, inter_network_transfers)?)
+            }
             Self::MonthlyProfile(p) => ParameterType::Parameter(p.add_to_model(network, tables)?),
             Self::UniformDrawdownProfile(p) => ParameterType::Parameter(p.add_to_model(network, tables)?),
-            Self::Max(p) => ParameterType::Parameter(p.add_to_model(network, domain, tables, data_path)?),
-            Self::Min(p) => ParameterType::Parameter(p.add_to_model(network, domain, tables, data_path)?),
-            Self::Negative(p) => ParameterType::Parameter(p.add_to_model(network, domain, tables, data_path)?),
+            Self::Max(p) => {
+                ParameterType::Parameter(p.add_to_model(network, domain, tables, data_path, inter_network_transfers)?)
+            }
+            Self::Min(p) => {
+                ParameterType::Parameter(p.add_to_model(network, domain, tables, data_path, inter_network_transfers)?)
+            }
+            Self::Negative(p) => {
+                ParameterType::Parameter(p.add_to_model(network, domain, tables, data_path, inter_network_transfers)?)
+            }
             Self::Polynomial1D(p) => ParameterType::Parameter(p.add_to_model(network)?),
-            Self::ParameterThreshold(p) => ParameterType::Index(p.add_to_model(network, domain, tables, data_path)?),
+            Self::ParameterThreshold(p) => {
+                ParameterType::Index(p.add_to_model(network, domain, tables, data_path, inter_network_transfers)?)
+            }
             Self::TablesArray(p) => ParameterType::Parameter(p.add_to_model(network, domain, data_path)?),
-            Self::Python(p) => p.add_to_model(network, domain, tables, data_path)?,
+            Self::Python(p) => p.add_to_model(network, domain, tables, data_path, inter_network_transfers)?,
             Self::DataFrame(p) => ParameterType::Parameter(p.add_to_model(network, domain, data_path)?),
-            Self::Delay(p) => ParameterType::Parameter(p.add_to_model(network, domain, tables, data_path)?),
-            Self::Division(p) => ParameterType::Parameter(p.add_to_model(network, domain, tables, data_path)?),
-            Self::Offset(p) => ParameterType::Parameter(p.add_to_model(network, domain, tables, data_path)?),
-            Self::DiscountFactor(p) => ParameterType::Parameter(p.add_to_model(network, domain, tables, data_path)?),
-            Self::Interpolated(p) => ParameterType::Parameter(p.add_to_model(network, domain, tables, data_path)?),
+            Self::Delay(p) => {
+                ParameterType::Parameter(p.add_to_model(network, domain, tables, data_path, inter_network_transfers)?)
+            }
+            Self::Division(p) => {
+                ParameterType::Parameter(p.add_to_model(network, domain, tables, data_path, inter_network_transfers)?)
+            }
+            Self::Offset(p) => {
+                ParameterType::Parameter(p.add_to_model(network, domain, tables, data_path, inter_network_transfers)?)
+            }
+            Self::DiscountFactor(p) => {
+                ParameterType::Parameter(p.add_to_model(network, domain, tables, data_path, inter_network_transfers)?)
+            }
+            Self::Interpolated(p) => {
+                ParameterType::Parameter(p.add_to_model(network, domain, tables, data_path, inter_network_transfers)?)
+            }
             Self::RbfProfile(p) => ParameterType::Parameter(p.add_to_model(network)?),
-            Self::InterModelTransfer(p) => ParameterType::Parameter(p.add_to_model(network)?),
         };
 
         Ok(ty)
@@ -533,11 +558,16 @@ pub enum MetricFloatReference {
     NodeVolume(NodeReference),
     NodeProportionalVolume(NodeReference),
     Parameter { name: String, key: Option<String> },
+    InterNetworkTransfer { name: String },
 }
 
 impl MetricFloatReference {
     /// Load the metric definition into a `Metric` containing the appropriate internal references.
-    pub fn load(&self, network: &mut pywr_core::network::Network) -> Result<Metric, SchemaError> {
+    pub fn load(
+        &self,
+        network: &mut pywr_core::network::Network,
+        inter_network_transfers: &[PywrMultiNetworkTransfer],
+    ) -> Result<Metric, SchemaError> {
         match self {
             Self::NodeInFlow(node_ref) => Ok(Metric::NodeInFlow(node_ref.get_node_index(network)?)),
             Self::NodeOutFlow(node_ref) => Ok(Metric::NodeOutFlow(node_ref.get_node_index(network)?)),
@@ -561,6 +591,13 @@ impl MetricFloatReference {
                     }
                 }
             }
+            Self::InterNetworkTransfer { name } => {
+                // Find the matching inter model transfer
+                match inter_network_transfers.iter().position(|t| &t.name == name) {
+                    Some(idx) => Ok(Metric::InterNetworkTransfer(MultiNetworkTransferIndex(idx))),
+                    None => Err(SchemaError::InterNetworkTransferNotFound(name.to_string())),
+                }
+            }
         }
     }
 }
@@ -581,9 +618,10 @@ impl MetricFloatValue {
         domain: &ModelDomain,
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
+        inter_network_transfers: &[PywrMultiNetworkTransfer],
     ) -> Result<Metric, SchemaError> {
         match self {
-            Self::Reference(reference) => Ok(reference.load(network)?),
+            Self::Reference(reference) => Ok(reference.load(network, inter_network_transfers)?),
             Self::InlineParameter { definition } => {
                 // This inline parameter could already have been loaded on a previous attempt
                 // Let's see if exists first.
@@ -599,7 +637,7 @@ impl MetricFloatValue {
                     }
                     Err(_) => {
                         // An error retrieving a parameter with this name; assume it needs creating.
-                        match definition.add_to_model(network, &domain, tables, data_path)? {
+                        match definition.add_to_model(network, &domain, tables, data_path, inter_network_transfers)? {
                             ParameterType::Parameter(idx) => Ok(Metric::ParameterValue(idx)),
                             ParameterType::Index(_) => Err(SchemaError::UnexpectedParameterType(format!(
                         "Found index parameter of type '{}' with name '{}' where an float parameter was expected.",
@@ -634,6 +672,7 @@ impl ParameterIndexValue {
         domain: &ModelDomain,
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
+        inter_network_transfers: &[PywrMultiNetworkTransfer],
     ) -> Result<IndexParameterIndex, SchemaError> {
         match self {
             Self::Reference(name) => {
@@ -642,7 +681,7 @@ impl ParameterIndexValue {
             }
             Self::Inline(parameter) => {
                 // Inline parameter needs to be added
-                match parameter.add_to_model(network, domain, tables, data_path)? {
+                match parameter.add_to_model(network, domain, tables, data_path, inter_network_transfers)? {
                     ParameterType::Index(idx) => Ok(idx),
                     ParameterType::Parameter(_) => Err(SchemaError::UnexpectedParameterType(format!(
                         "Found float parameter of type '{}' with name '{}' where an index parameter was expected.",
@@ -688,10 +727,11 @@ impl DynamicFloatValue {
         domain: &ModelDomain,
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
+        inter_network_transfers: &[PywrMultiNetworkTransfer],
     ) -> Result<Metric, SchemaError> {
         let parameter_ref = match self {
             DynamicFloatValue::Constant(v) => Metric::Constant(v.load(tables)?),
-            DynamicFloatValue::Dynamic(v) => v.load(network, domain, tables, data_path)?,
+            DynamicFloatValue::Dynamic(v) => v.load(network, domain, tables, data_path, inter_network_transfers)?,
         };
         Ok(parameter_ref)
     }
@@ -745,10 +785,13 @@ impl DynamicIndexValue {
         domain: &ModelDomain,
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
+        inter_network_transfers: &[PywrMultiNetworkTransfer],
     ) -> Result<IndexValue, SchemaError> {
         let parameter_ref = match self {
             DynamicIndexValue::Constant(v) => IndexValue::Constant(v.load(tables)?),
-            DynamicIndexValue::Dynamic(v) => IndexValue::Dynamic(v.load(network, domain, tables, data_path)?),
+            DynamicIndexValue::Dynamic(v) => {
+                IndexValue::Dynamic(v.load(network, domain, tables, data_path, inter_network_transfers)?)
+            }
         };
         Ok(parameter_ref)
     }

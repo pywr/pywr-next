@@ -1,5 +1,6 @@
 use crate::data_tables::LoadedTableCollection;
 use crate::error::{ConversionError, SchemaError};
+use crate::model::PywrMultiNetworkTransfer;
 use crate::parameters::{
     DynamicFloatValueType, DynamicIndexValue, IntoV2Parameter, ParameterMeta, TryFromV1Parameter, TryIntoV2Parameter,
 };
@@ -31,9 +32,14 @@ impl AsymmetricSwitchIndexParameter {
         domain: &ModelDomain,
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
+        inter_network_transfers: &[PywrMultiNetworkTransfer],
     ) -> Result<IndexParameterIndex, SchemaError> {
-        let on_index_parameter = self.on_index_parameter.load(network, domain, tables, data_path)?;
-        let off_index_parameter = self.off_index_parameter.load(network, domain, tables, data_path)?;
+        let on_index_parameter =
+            self.on_index_parameter
+                .load(network, domain, tables, data_path, inter_network_transfers)?;
+        let off_index_parameter =
+            self.off_index_parameter
+                .load(network, domain, tables, data_path, inter_network_transfers)?;
 
         let p = pywr_core::parameters::AsymmetricSwitchIndexParameter::new(
             &self.meta.name,

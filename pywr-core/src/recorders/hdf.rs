@@ -130,6 +130,9 @@ impl Recorder for HDF5Recorder {
                 Metric::MultiNodeInFlow { name, sub_name, .. } => {
                     require_node_dataset(root_grp, shape, name, sub_name.as_deref(), "inflow")?
                 }
+                Metric::InterNetworkTransfer(_) => {
+                    continue; // TODO
+                }
             };
 
             datasets.push(ds);

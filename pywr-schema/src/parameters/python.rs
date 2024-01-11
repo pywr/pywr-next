@@ -1,5 +1,6 @@
 use crate::data_tables::{make_path, LoadedTableCollection};
 use crate::error::SchemaError;
+use crate::model::PywrMultiNetworkTransfer;
 use crate::parameters::{DynamicFloatValue, DynamicFloatValueType, DynamicIndexValue, ParameterMeta};
 use pyo3::prelude::PyModule;
 use pyo3::types::{PyDict, PyTuple};
@@ -127,6 +128,7 @@ impl PythonParameter {
         domain: &ModelDomain,
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
+        inter_network_transfers: &[PywrMultiNetworkTransfer],
     ) -> Result<ParameterType, SchemaError> {
         pyo3::prepare_freethreaded_python();
 
@@ -165,7 +167,12 @@ impl PythonParameter {
         let metrics = match &self.metrics {
             Some(metrics) => metrics
                 .iter()
-                .map(|(k, v)| Ok((k.to_string(), v.load(network, domain, tables, data_path)?)))
+                .map(|(k, v)| {
+                    Ok((
+                        k.to_string(),
+                        v.load(network, domain, tables, data_path, inter_network_transfers)?,
+                    ))
+                })
                 .collect::<Result<HashMap<_, _>, SchemaError>>()?,
             None => HashMap::new(),
         };
@@ -173,7 +180,12 @@ impl PythonParameter {
         let indices = match &self.indices {
             Some(indices) => indices
                 .iter()
-                .map(|(k, v)| Ok((k.to_string(), v.load(network, domain, tables, data_path)?)))
+                .map(|(k, v)| {
+                    Ok((
+                        k.to_string(),
+                        v.load(network, domain, tables, data_path, inter_network_transfers)?,
+                    ))
+                })
                 .collect::<Result<HashMap<_, _>, SchemaError>>()?,
             None => HashMap::new(),
         };
@@ -243,6 +255,6 @@ class MyParameter:
         let domain: ModelDomain = default_time_domain().into();
         let mut network = Network::default();
         let tables = LoadedTableCollection::from_schema(None, None).unwrap();
-        param.add_to_model(&mut network, &domain, &tables, None).unwrap();
+        param.add_to_model(&mut network, &domain, &tables, None, &[]).unwrap();
     }
 }

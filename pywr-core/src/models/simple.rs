@@ -72,7 +72,7 @@ impl Model {
         let timesteps = self.domain.time.timesteps();
         let scenario_indices = self.domain.scenarios.indices();
 
-        let state = self.network.setup_network(&timesteps, &scenario_indices)?;
+        let state = self.network.setup_network(&timesteps, &scenario_indices, 0)?;
         let recorder_state = self.network.setup_recorders(&timesteps, &scenario_indices)?;
         let solvers = self.network.setup_solver::<S>(&scenario_indices, settings)?;
 
@@ -91,7 +91,7 @@ impl Model {
         let timesteps = self.domain.time.timesteps();
         let scenario_indices = self.domain.scenarios.indices();
 
-        let state = self.network.setup_network(&timesteps, &scenario_indices)?;
+        let state = self.network.setup_network(&timesteps, &scenario_indices, 0)?;
         let recorder_state = self.network.setup_recorders(&timesteps, &scenario_indices)?;
         let solvers = self
             .network

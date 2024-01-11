@@ -1,5 +1,6 @@
 use crate::data_tables::LoadedTableCollection;
 use crate::error::{ConversionError, SchemaError};
+use crate::model::PywrMultiNetworkTransfer;
 use crate::parameters::{
     DynamicFloatValue, DynamicFloatValueType, DynamicIndexValue, IntoV2Parameter, ParameterMeta, TryFromV1Parameter,
     TryIntoV2Parameter,
@@ -39,13 +40,16 @@ impl IndexedArrayParameter {
         domain: &ModelDomain,
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
+        inter_network_transfers: &[PywrMultiNetworkTransfer],
     ) -> Result<ParameterIndex, SchemaError> {
-        let index_parameter = self.index_parameter.load(network, domain, tables, data_path)?;
+        let index_parameter = self
+            .index_parameter
+            .load(network, domain, tables, data_path, inter_network_transfers)?;
 
         let metrics = self
             .metrics
             .iter()
-            .map(|v| v.load(network, domain, tables, data_path))
+            .map(|v| v.load(network, domain, tables, data_path, inter_network_transfers))
             .collect::<Result<Vec<_>, _>>()?;
 
         let p = pywr_core::parameters::IndexedArrayParameter::new(&self.meta.name, index_parameter, &metrics);

@@ -215,6 +215,7 @@ impl Network {
         &self,
         timesteps: &[Timestep],
         scenario_indices: &[ScenarioIndex],
+        num_inter_network_transfers: usize,
     ) -> Result<NetworkState, PywrError> {
         let mut states: Vec<State> = Vec::with_capacity(scenario_indices.len());
         let mut parameter_internal_states: Vec<ParameterStates> = Vec::with_capacity(scenario_indices.len());
@@ -252,6 +253,7 @@ impl Network {
                 initial_indices_states.len(),
                 initial_multi_param_states.len(),
                 self.derived_metrics.len(),
+                num_inter_network_transfers,
             );
             states.push(state);
 

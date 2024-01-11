@@ -3,6 +3,7 @@ use crate::parameters::{ConstantValue, DynamicFloatValue, DynamicFloatValueType,
 use pywr_core::parameters::ParameterIndex;
 
 use crate::error::SchemaError;
+use crate::model::PywrMultiNetworkTransfer;
 use pywr_core::models::ModelDomain;
 use std::collections::HashMap;
 use std::path::Path;
@@ -54,6 +55,7 @@ impl OffsetParameter {
         domain: &ModelDomain,
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
+        inter_network_transfers: &[PywrMultiNetworkTransfer],
     ) -> Result<ParameterIndex, SchemaError> {
         let variable = match &self.variable {
             None => None,
@@ -67,7 +69,9 @@ impl OffsetParameter {
             }
         };
 
-        let idx = self.metric.load(network, domain, tables, data_path)?;
+        let idx = self
+            .metric
+            .load(network, domain, tables, data_path, inter_network_transfers)?;
 
         let p = pywr_core::parameters::OffsetParameter::new(&self.meta.name, idx, self.offset.load(tables)?, variable);
         Ok(network.add_parameter(Box::new(p))?)

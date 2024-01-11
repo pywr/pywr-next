@@ -1,5 +1,6 @@
 use crate::data_tables::LoadedTableCollection;
 use crate::error::{ConversionError, SchemaError};
+use crate::model::PywrMultiNetworkTransfer;
 use crate::parameters::{
     DynamicFloatValue, DynamicFloatValueType, DynamicIndexValue, IntoV2Parameter, ParameterMeta, TryFromV1Parameter,
     TryIntoV2Parameter,
@@ -96,11 +97,12 @@ impl AggregatedParameter {
         domain: &ModelDomain,
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
+        inter_network_transfers: &[PywrMultiNetworkTransfer],
     ) -> Result<ParameterIndex, SchemaError> {
         let metrics = self
             .metrics
             .iter()
-            .map(|v| v.load(network, domain, tables, data_path))
+            .map(|v| v.load(network, domain, tables, data_path, inter_network_transfers))
             .collect::<Result<Vec<_>, _>>()?;
 
         let p = pywr_core::parameters::AggregatedParameter::new(&self.meta.name, &metrics, self.agg_func.into());
@@ -201,11 +203,12 @@ impl AggregatedIndexParameter {
         domain: &ModelDomain,
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
+        inter_network_transfers: &[PywrMultiNetworkTransfer],
     ) -> Result<IndexParameterIndex, SchemaError> {
         let parameters = self
             .parameters
             .iter()
-            .map(|v| v.load(network, domain, tables, data_path))
+            .map(|v| v.load(network, domain, tables, data_path, inter_network_transfers))
             .collect::<Result<Vec<_>, _>>()?;
 
         let p = pywr_core::parameters::AggregatedIndexParameter::new(&self.meta.name, parameters, self.agg_func.into());

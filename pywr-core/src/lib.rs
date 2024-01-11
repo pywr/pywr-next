@@ -3,6 +3,7 @@
 extern crate core;
 
 use crate::derived_metric::DerivedMetricIndex;
+use crate::models::MultiNetworkTransferIndex;
 use crate::node::NodeIndex;
 use crate::parameters::{IndexParameterIndex, InterpolationError, MultiValueParameterIndex, ParameterIndex};
 use crate::recorders::RecorderIndex;
@@ -50,6 +51,8 @@ pub enum PywrError {
     MultiValueParameterKeyNotFound(String),
     #[error("inter-network parameter state not initialised")]
     InterNetworkParameterStateNotInitialised,
+    #[error("inter-network parameter index {0} not found")]
+    MultiNetworkTransferIndexNotFound(MultiNetworkTransferIndex),
     #[error("parameter {0} not found")]
     ParameterNotFound(String),
     #[error("metric set index not found")]

@@ -13,7 +13,7 @@ mod water_treatment_works;
 
 use crate::data_tables::LoadedTableCollection;
 use crate::error::{ConversionError, SchemaError};
-use crate::model::PywrNetwork;
+use crate::model::{PywrMultiNetworkTransfer, PywrNetwork};
 pub use crate::nodes::core::{
     AggregatedNode, AggregatedStorageNode, CatchmentNode, InputNode, LinkNode, OutputNode, StorageNode,
 };
@@ -317,12 +317,13 @@ impl Node {
         domain: &ModelDomain,
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
+        inter_network_transfers: &[PywrMultiNetworkTransfer],
     ) -> Result<(), SchemaError> {
         match self {
             Node::Input(n) => n.add_to_model(network),
             Node::Link(n) => n.add_to_model(network),
             Node::Output(n) => n.add_to_model(network),
-            Node::Storage(n) => n.add_to_model(network, domain, tables, data_path),
+            Node::Storage(n) => n.add_to_model(network, domain, tables, data_path, inter_network_transfers),
             Node::Catchment(n) => n.add_to_model(network),
             Node::RiverGauge(n) => n.add_to_model(network),
             Node::LossLink(n) => n.add_to_model(network),
@@ -331,12 +332,16 @@ impl Node {
             Node::WaterTreatmentWorks(n) => n.add_to_model(network),
             Node::Aggregated(n) => n.add_to_model(network),
             Node::AggregatedStorage(n) => n.add_to_model(network),
-            Node::VirtualStorage(n) => n.add_to_model(network, domain, tables, data_path),
-            Node::AnnualVirtualStorage(n) => n.add_to_model(network, domain, tables, data_path),
+            Node::VirtualStorage(n) => n.add_to_model(network, domain, tables, data_path, inter_network_transfers),
+            Node::AnnualVirtualStorage(n) => {
+                n.add_to_model(network, domain, tables, data_path, inter_network_transfers)
+            }
             Node::PiecewiseLink(n) => n.add_to_model(network),
-            Node::PiecewiseStorage(n) => n.add_to_model(network, domain, tables, data_path),
+            Node::PiecewiseStorage(n) => n.add_to_model(network, domain, tables, data_path, inter_network_transfers),
             Node::Delay(n) => n.add_to_model(network),
-            Node::MonthlyVirtualStorage(n) => n.add_to_model(network, domain, tables, data_path),
+            Node::MonthlyVirtualStorage(n) => {
+                n.add_to_model(network, domain, tables, data_path, inter_network_transfers)
+            }
         }
     }
 
@@ -346,24 +351,29 @@ impl Node {
         domain: &ModelDomain,
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
+        inter_network_transfers: &[PywrMultiNetworkTransfer],
     ) -> Result<(), SchemaError> {
         match self {
-            Node::Input(n) => n.set_constraints(network, domain, tables, data_path),
-            Node::Link(n) => n.set_constraints(network, domain, tables, data_path),
-            Node::Output(n) => n.set_constraints(network, domain, tables, data_path),
-            Node::Storage(n) => n.set_constraints(network, domain, tables, data_path),
-            Node::Catchment(n) => n.set_constraints(network, domain, tables, data_path),
-            Node::RiverGauge(n) => n.set_constraints(network, domain, tables, data_path),
-            Node::LossLink(n) => n.set_constraints(network, domain, tables, data_path),
+            Node::Input(n) => n.set_constraints(network, domain, tables, data_path, inter_network_transfers),
+            Node::Link(n) => n.set_constraints(network, domain, tables, data_path, inter_network_transfers),
+            Node::Output(n) => n.set_constraints(network, domain, tables, data_path, inter_network_transfers),
+            Node::Storage(n) => n.set_constraints(network, domain, tables, data_path, inter_network_transfers),
+            Node::Catchment(n) => n.set_constraints(network, domain, tables, data_path, inter_network_transfers),
+            Node::RiverGauge(n) => n.set_constraints(network, domain, tables, data_path, inter_network_transfers),
+            Node::LossLink(n) => n.set_constraints(network, domain, tables, data_path, inter_network_transfers),
             Node::River(_) => Ok(()), // No constraints on river node
-            Node::RiverSplitWithGauge(n) => n.set_constraints(network, domain, tables, data_path),
-            Node::WaterTreatmentWorks(n) => n.set_constraints(network, domain, tables, data_path),
-            Node::Aggregated(n) => n.set_constraints(network, domain, tables, data_path),
+            Node::RiverSplitWithGauge(n) => {
+                n.set_constraints(network, domain, tables, data_path, inter_network_transfers)
+            }
+            Node::WaterTreatmentWorks(n) => {
+                n.set_constraints(network, domain, tables, data_path, inter_network_transfers)
+            }
+            Node::Aggregated(n) => n.set_constraints(network, domain, tables, data_path, inter_network_transfers),
             Node::AggregatedStorage(_) => Ok(()), // No constraints on aggregated storage nodes.
             Node::VirtualStorage(_) => Ok(()),    // TODO
             Node::AnnualVirtualStorage(_) => Ok(()), // TODO
-            Node::PiecewiseLink(n) => n.set_constraints(network, domain, tables, data_path),
-            Node::PiecewiseStorage(n) => n.set_constraints(network, domain, tables, data_path),
+            Node::PiecewiseLink(n) => n.set_constraints(network, domain, tables, data_path, inter_network_transfers),
+            Node::PiecewiseStorage(n) => n.set_constraints(network, domain, tables, data_path, inter_network_transfers),
             Node::Delay(n) => n.set_constraints(network, tables),
             Node::MonthlyVirtualStorage(_) => Ok(()), // TODO
         }

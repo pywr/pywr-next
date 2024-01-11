@@ -1,5 +1,6 @@
 use crate::data_tables::LoadedTableCollection;
 use crate::error::{ConversionError, SchemaError};
+use crate::model::PywrMultiNetworkTransfer;
 use crate::nodes::NodeMeta;
 use crate::parameters::{DynamicFloatValue, TryIntoV2Parameter};
 use pywr_core::metric::Metric;
@@ -62,22 +63,23 @@ impl PiecewiseLinkNode {
         domain: &ModelDomain,
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
+        inter_network_transfers: &[PywrMultiNetworkTransfer],
     ) -> Result<(), SchemaError> {
         for (i, step) in self.steps.iter().enumerate() {
             let sub_name = Self::step_sub_name(i);
 
             if let Some(cost) = &step.cost {
-                let value = cost.load(network, domain, tables, data_path)?;
+                let value = cost.load(network, domain, tables, data_path, inter_network_transfers)?;
                 network.set_node_cost(self.meta.name.as_str(), sub_name.as_deref(), value.into())?;
             }
 
             if let Some(max_flow) = &step.max_flow {
-                let value = max_flow.load(network, domain, tables, data_path)?;
+                let value = max_flow.load(network, domain, tables, data_path, inter_network_transfers)?;
                 network.set_node_max_flow(self.meta.name.as_str(), sub_name.as_deref(), value.into())?;
             }
 
             if let Some(min_flow) = &step.min_flow {
-                let value = min_flow.load(network, domain, tables, data_path)?;
+                let value = min_flow.load(network, domain, tables, data_path, inter_network_transfers)?;
                 network.set_node_min_flow(self.meta.name.as_str(), sub_name.as_deref(), value.into())?;
             }
         }

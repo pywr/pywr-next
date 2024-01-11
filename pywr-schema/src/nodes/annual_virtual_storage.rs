@@ -1,5 +1,6 @@
 use crate::data_tables::LoadedTableCollection;
 use crate::error::{ConversionError, SchemaError};
+use crate::model::PywrMultiNetworkTransfer;
 use crate::nodes::NodeMeta;
 use crate::parameters::{DynamicFloatValue, TryIntoV2Parameter};
 use pywr_core::metric::Metric;
@@ -47,6 +48,7 @@ impl AnnualVirtualStorageNode {
         domain: &ModelDomain,
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
+        inter_network_transfers: &[PywrMultiNetworkTransfer],
     ) -> Result<(), SchemaError> {
         let initial_volume = if let Some(iv) = self.initial_volume {
             StorageInitialVolume::Absolute(iv)
@@ -57,17 +59,23 @@ impl AnnualVirtualStorageNode {
         };
 
         let cost = match &self.cost {
-            Some(v) => v.load(network, domain, tables, data_path)?.into(),
+            Some(v) => v
+                .load(network, domain, tables, data_path, inter_network_transfers)?
+                .into(),
             None => ConstraintValue::Scalar(0.0),
         };
 
         let min_volume = match &self.min_volume {
-            Some(v) => v.load(network, domain, tables, data_path)?.into(),
+            Some(v) => v
+                .load(network, domain, tables, data_path, inter_network_transfers)?
+                .into(),
             None => ConstraintValue::Scalar(0.0),
         };
 
         let max_volume = match &self.max_volume {
-            Some(v) => v.load(network, domain, tables, data_path)?.into(),
+            Some(v) => v
+                .load(network, domain, tables, data_path, inter_network_transfers)?
+                .into(),
             None => ConstraintValue::None,
         };
 

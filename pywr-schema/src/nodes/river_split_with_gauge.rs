@@ -1,5 +1,6 @@
 use crate::data_tables::LoadedTableCollection;
 use crate::error::{ConversionError, SchemaError};
+use crate::model::PywrMultiNetworkTransfer;
 use crate::nodes::NodeMeta;
 use crate::parameters::{DynamicFloatValue, TryIntoV2Parameter};
 use pywr_core::aggregated_node::Factors;
@@ -83,21 +84,28 @@ impl RiverSplitWithGaugeNode {
         domain: &ModelDomain,
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
+        inter_network_transfers: &[PywrMultiNetworkTransfer],
     ) -> Result<(), SchemaError> {
         // MRF applies as a maximum on the MRF node.
         if let Some(cost) = &self.mrf_cost {
-            let value = cost.load(network, domain, tables, data_path)?;
+            let value = cost.load(network, domain, tables, data_path, inter_network_transfers)?;
             network.set_node_cost(self.meta.name.as_str(), Self::mrf_sub_name(), value.into())?;
         }
 
         if let Some(mrf) = &self.mrf {
-            let value = mrf.load(network, domain, tables, data_path)?;
+            let value = mrf.load(network, domain, tables, data_path, inter_network_transfers)?;
             network.set_node_max_flow(self.meta.name.as_str(), Self::mrf_sub_name(), value.into())?;
         }
 
         for (i, (factor, _)) in self.splits.iter().enumerate() {
             // Set the factors for each split
-            let factors = Factors::Proportion(vec![factor.load(network, domain, tables, data_path)?]);
+            let factors = Factors::Proportion(vec![factor.load(
+                network,
+                domain,
+                tables,
+                data_path,
+                inter_network_transfers,
+            )?]);
             network.set_aggregated_node_factors(
                 self.meta.name.as_str(),
                 Self::split_agg_sub_name(i).as_deref(),

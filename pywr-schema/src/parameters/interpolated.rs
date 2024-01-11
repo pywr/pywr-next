@@ -1,5 +1,6 @@
 use crate::data_tables::LoadedTableCollection;
 use crate::error::SchemaError;
+use crate::model::PywrMultiNetworkTransfer;
 use crate::parameters::{
     DynamicFloatValue, DynamicFloatValueType, IntoV2Parameter, MetricFloatReference, MetricFloatValue, NodeReference,
     ParameterMeta, TryFromV1Parameter, TryIntoV2Parameter,
@@ -55,8 +56,11 @@ impl InterpolatedParameter {
         domain: &ModelDomain,
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
+        inter_network_transfers: &[PywrMultiNetworkTransfer],
     ) -> Result<ParameterIndex, SchemaError> {
-        let x = self.x.load(network, domain, tables, data_path)?;
+        let x = self
+            .x
+            .load(network, domain, tables, data_path, inter_network_transfers)?;
 
         // Sense check the points
         if self.xp.len() != self.fp.len() {
@@ -69,12 +73,12 @@ impl InterpolatedParameter {
         let xp = self
             .xp
             .iter()
-            .map(|p| p.load(network, domain, tables, data_path))
+            .map(|p| p.load(network, domain, tables, data_path, inter_network_transfers))
             .collect::<Result<Vec<_>, _>>()?;
         let fp = self
             .fp
             .iter()
-            .map(|p| p.load(network, domain, tables, data_path))
+            .map(|p| p.load(network, domain, tables, data_path, inter_network_transfers))
             .collect::<Result<Vec<_>, _>>()?;
 
         let points = xp

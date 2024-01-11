@@ -123,6 +123,9 @@ impl Recorder for CSVRecorder {
                     sub_name.clone().unwrap_or("".to_string()),
                     "inflow".to_string(),
                 ),
+                Metric::InterNetworkTransfer(_) => {
+                    continue; // TODO
+                }
             };
 
             // Add entries for each scenario

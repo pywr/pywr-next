@@ -1,5 +1,6 @@
 use crate::data_tables::LoadedTableCollection;
 use crate::error::{ConversionError, SchemaError};
+use crate::model::PywrMultiNetworkTransfer;
 use crate::parameters::{
     DynamicFloatValue, DynamicFloatValueType, IntoV2Parameter, ParameterMeta, TryFromV1Parameter, TryIntoV2Parameter,
 };
@@ -74,9 +75,14 @@ impl ParameterThresholdParameter {
         domain: &ModelDomain,
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
+        inter_network_transfers: &[PywrMultiNetworkTransfer],
     ) -> Result<IndexParameterIndex, SchemaError> {
-        let metric = self.parameter.load(network, domain, tables, data_path)?;
-        let threshold = self.threshold.load(network, domain, tables, data_path)?;
+        let metric = self
+            .parameter
+            .load(network, domain, tables, data_path, inter_network_transfers)?;
+        let threshold = self
+            .threshold
+            .load(network, domain, tables, data_path, inter_network_transfers)?;
 
         let p = pywr_core::parameters::ThresholdParameter::new(
             &self.meta.name,

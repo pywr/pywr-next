@@ -4,7 +4,7 @@
       "name": "supply2",
       "type": "Input",
       "max_flow": {
-        "type": "Parameter",
+        "type": "InterNetworkTransfer",
         "name": "inflow"
       }
     },
@@ -37,10 +37,6 @@
       "name": "demand",
       "type": "Constant",
       "value": 20.0
-    },
-    {
-      "name": "inflow",
-      "type": "InterModelTransfer"
     }
   ]
 }

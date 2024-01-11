@@ -47,6 +47,8 @@ pub enum SchemaError {
     RbfEpsilonEstimation,
     #[error("Scenario group with name {0} not found")]
     ScenarioGroupNotFound(String),
+    #[error("Inter-network transfer with name {0} not found")]
+    InterNetworkTransferNotFound(String),
 }
 
 impl From<SchemaError> for PyErr {
