@@ -8,16 +8,13 @@ use pywr_core::solvers::{HighsSolver, HighsSolverSettings};
 #[cfg(feature = "ipm-simd")]
 use pywr_core::solvers::{SimdIpmF64Solver, SimdIpmSolverSettings};
 use pywr_core::test_utils::make_random_model;
-use pywr_core::timestep::Timestepper;
 use pywr_core::tracing::setup_tracing;
-use pywr_core::PywrError;
-use pywr_schema::model::PywrModel;
+use pywr_schema::model::{PywrModel, PywrMultiNetworkModel};
 use pywr_schema::ConversionError;
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use std::fmt::{Display, Formatter};
 use std::path::{Path, PathBuf};
-use time::macros::date;
 
 #[derive(Copy, Clone, ValueEnum)]
 enum Solver {
@@ -91,6 +88,25 @@ enum Commands {
         #[arg(long, default_value_t = false)]
         debug: bool,
     },
+    RunMulti {
+        /// Path to Pywr model JSON.
+        model: PathBuf,
+        /// Solver to use.
+        #[arg(short, long, default_value_t=Solver::Clp)]
+        solver: Solver,
+        #[arg(short, long)]
+        data_path: Option<PathBuf>,
+        #[arg(short, long)]
+        output_path: Option<PathBuf>,
+        /// Use multiple threads for simulation.
+        #[arg(short, long, default_value_t = false)]
+        parallel: bool,
+        /// The number of threads to use in parallel simulation.
+        #[arg(short, long, default_value_t = 1)]
+        threads: usize,
+        #[arg(long, default_value_t = false)]
+        debug: bool,
+    },
     RunRandom {
         num_systems: usize,
         density: usize,
@@ -108,6 +124,15 @@ fn main() -> Result<()> {
         Some(command) => match command {
             Commands::Convert { model } => convert(model)?,
             Commands::Run {
+                model,
+                solver,
+                data_path,
+                output_path,
+                parallel,
+                threads,
+                debug,
+            } => run(model, solver, data_path.as_deref(), output_path.as_deref(), *debug),
+            Commands::RunMulti {
                 model,
                 solver,
                 data_path,
@@ -171,6 +196,28 @@ fn run(path: &Path, solver: &Solver, data_path: Option<&Path>, output_path: Opti
 
     let data = std::fs::read_to_string(path).unwrap();
     let schema_v2: PywrModel = serde_json::from_str(data.as_str()).unwrap();
+
+    let model = schema_v2.build_model(data_path, output_path).unwrap();
+
+    match *solver {
+        Solver::Clp => model.run::<ClpSolver>(&ClpSolverSettings::default()),
+        #[cfg(feature = "highs")]
+        Solver::HIGHS => model.run::<HighsSolver>(&HighsSolverSettings::default()),
+        #[cfg(feature = "ipm-ocl")]
+        Solver::CLIPMF32 => model.run_multi_scenario::<ClIpmF32Solver>(&ClIpmSolverSettings::default()),
+        #[cfg(feature = "ipm-ocl")]
+        Solver::CLIPMF64 => model.run_multi_scenario::<ClIpmF64Solver>(&ClIpmSolverSettings::default()),
+        #[cfg(feature = "ipm-simd")]
+        Solver::IpmSimd => model.run_multi_scenario::<SimdIpmF64Solver<4>>(&SimdIpmSolverSettings::default()),
+    }
+    .unwrap();
+}
+
+fn run_multi(path: &Path, solver: &Solver, data_path: Option<&Path>, output_path: Option<&Path>, debug: bool) {
+    setup_tracing(debug).unwrap();
+
+    let data = std::fs::read_to_string(path).unwrap();
+    let schema_v2: PywrMultiNetworkModel = serde_json::from_str(data.as_str()).unwrap();
 
     let model = schema_v2.build_model(data_path, output_path).unwrap();
 
