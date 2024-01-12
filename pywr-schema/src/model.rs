@@ -384,7 +384,7 @@ pub struct PywrMultiNetworkEntry {
 /// A Pywr model containing multiple link networks.
 ///
 /// This schema is used to define a model containing multiple linked networks. Each network
-/// is self-contained and solve as like a single a model. However, the networks can be linked
+/// is self-contained and solved as like a single a model. However, the networks can be linked
 /// together using [`PywrMultiNetworkTransfer`]s. These transfers allow the value of a metric
 /// in one network to be used as the value of a parameter in another network. This allows complex
 /// inter-model relationships to be defined.
@@ -411,7 +411,7 @@ pub struct PywrMultiNetworkEntry {
 ///
 /// # When to use
 ///
-/// A `PywrMultiNetworkModel` should be used in cases where there is a strong separation between
+/// A [`PywrMultiNetworkModel`] should be used in cases where there is a strong separation between
 /// the networks being simulated. The allocation routine (linear program) of each network is solved
 /// independently each time-step. This means that the only way in which the networks can share
 /// information and data is between the linear program solves via the user defined transfers.
@@ -423,7 +423,7 @@ pub struct PywrMultiNetworkEntry {
 ///     networks (linear programs) were combined into a single model, the allocation routine could
 ///     produce different results (i.e. penalty costs from one model influencing another).
 ///   2. Are very large and/or complex to control model run times. The run time of a
-///     `PywrMultiNetworkModel` is roughly the sum of the individual networks. Whereas the time
+///     [`PywrMultiNetworkModel`] is roughly the sum of the individual networks. Whereas the time
 ///     solve a large linear program combining all the networks could be significantly longer.
 ///
 /// # Example
