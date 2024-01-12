@@ -140,7 +140,7 @@ fn main() -> Result<()> {
                 parallel,
                 threads,
                 debug,
-            } => run(model, solver, data_path.as_deref(), output_path.as_deref(), *debug),
+            } => run_multi(model, solver, data_path.as_deref(), output_path.as_deref(), *debug),
             Commands::RunRandom {
                 num_systems,
                 density,
@@ -195,6 +195,7 @@ fn run(path: &Path, solver: &Solver, data_path: Option<&Path>, output_path: Opti
     setup_tracing(debug).unwrap();
 
     let data = std::fs::read_to_string(path).unwrap();
+    let data_path = data_path.or_else(|| path.parent());
     let schema_v2: PywrModel = serde_json::from_str(data.as_str()).unwrap();
 
     let model = schema_v2.build_model(data_path, output_path).unwrap();
@@ -217,6 +218,8 @@ fn run_multi(path: &Path, solver: &Solver, data_path: Option<&Path>, output_path
     setup_tracing(debug).unwrap();
 
     let data = std::fs::read_to_string(path).unwrap();
+    let data_path = data_path.or_else(|| path.parent());
+
     let schema_v2: PywrMultiNetworkModel = serde_json::from_str(data.as_str()).unwrap();
 
     let model = schema_v2.build_model(data_path, output_path).unwrap();
