@@ -1,8 +1,10 @@
 use crate::data_tables::LoadedTableCollection;
 use crate::error::{ConversionError, SchemaError};
+use crate::model::PywrMultiNetworkTransfer;
 use crate::parameters::{
     DynamicFloatValue, DynamicFloatValueType, IntoV2Parameter, ParameterMeta, TryFromV1Parameter, TryIntoV2Parameter,
 };
+use pywr_core::models::ModelDomain;
 use pywr_core::parameters::IndexParameterIndex;
 use pywr_v1_schema::parameters::{
     ParameterThresholdParameter as ParameterThresholdParameterV1, Predicate as PredicateV1,
@@ -69,12 +71,18 @@ impl ParameterThresholdParameter {
 
     pub fn add_to_model(
         &self,
-        model: &mut pywr_core::model::Model,
+        network: &mut pywr_core::network::Network,
+        domain: &ModelDomain,
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
+        inter_network_transfers: &[PywrMultiNetworkTransfer],
     ) -> Result<IndexParameterIndex, SchemaError> {
-        let metric = self.parameter.load(model, tables, data_path)?;
-        let threshold = self.threshold.load(model, tables, data_path)?;
+        let metric = self
+            .parameter
+            .load(network, domain, tables, data_path, inter_network_transfers)?;
+        let threshold = self
+            .threshold
+            .load(network, domain, tables, data_path, inter_network_transfers)?;
 
         let p = pywr_core::parameters::ThresholdParameter::new(
             &self.meta.name,
@@ -83,7 +91,7 @@ impl ParameterThresholdParameter {
             self.predicate.into(),
             self.ratchet,
         );
-        Ok(model.add_index_parameter(Box::new(p))?)
+        Ok(network.add_index_parameter(Box::new(p))?)
     }
 }
 

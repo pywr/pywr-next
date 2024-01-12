@@ -1,4 +1,4 @@
-use crate::model::Model;
+use crate::network::Network;
 use crate::parameters::{downcast_internal_state, ActivationFunction, Parameter, ParameterMeta, VariableParameter};
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
@@ -43,7 +43,7 @@ impl Parameter for ConstantParameter {
         &self,
         _timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
-        _model: &Model,
+        _model: &Network,
         _state: &State,
         internal_state: &mut Option<Box<dyn Any + Send>>,
     ) -> Result<f64, PywrError> {

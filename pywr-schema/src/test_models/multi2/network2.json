@@ -1,0 +1,42 @@
+{
+  "nodes": [
+    {
+      "name": "supply2",
+      "type": "Input",
+      "max_flow": {
+        "type": "InterNetworkTransfer",
+        "name": "inflow"
+      }
+    },
+    {
+      "name": "link2",
+      "type": "Link"
+    },
+    {
+      "name": "demand2",
+      "type": "Output",
+      "max_flow": {
+        "type": "Parameter",
+        "name": "demand"
+      },
+      "cost": -10
+    }
+  ],
+  "edges": [
+    {
+      "from_node": "supply2",
+      "to_node": "link2"
+    },
+    {
+      "from_node": "link2",
+      "to_node": "demand2"
+    }
+  ],
+  "parameters": [
+    {
+      "name": "demand",
+      "type": "Constant",
+      "value": 20.0
+    }
+  ]
+}

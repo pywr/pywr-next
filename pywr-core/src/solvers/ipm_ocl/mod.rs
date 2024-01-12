@@ -1,15 +1,14 @@
 mod settings;
 
 use crate::edge::EdgeIndex;
-use crate::model::Model;
+use crate::network::Network;
 use crate::node::{Node, NodeType};
 use crate::solvers::col_edge_map::{ColumnEdgeMap, ColumnEdgeMapBuilder};
-use crate::solvers::{MultiStateSolver, SolverFeatures, SolverSettings, SolverTimings};
+use crate::solvers::{MultiStateSolver, SolverFeatures, SolverTimings};
 use crate::state::State;
 use crate::timestep::Timestep;
 use crate::PywrError;
 use ipm_ocl::{GetClProgram, PathFollowingDirectClSolver};
-use num::complex::ComplexFloat;
 use rayon::iter::IndexedParallelIterator;
 use rayon::iter::ParallelIterator;
 use rayon::prelude::ParallelSliceMut;
@@ -281,34 +280,34 @@ impl BuiltSolver {
 
     fn update(
         &mut self,
-        model: &Model,
+        network: &Network,
         timestep: &Timestep,
         states: &[State],
         timings: &mut SolverTimings,
     ) -> Result<(), PywrError> {
         let start_objective_update = Instant::now();
-        self.update_edge_objectives(model, states)?;
+        self.update_edge_objectives(network, states)?;
         timings.update_objective += start_objective_update.elapsed();
 
         let start_constraint_update = Instant::now();
 
         self.lp.reset_row_bounds();
-        self.update_node_constraint_bounds(model, timestep, states)?;
-        // self.update_aggregated_node_constraint_bounds(model, state)?;
+        self.update_node_constraint_bounds(network, timestep, states)?;
+        // self.update_aggregated_node_constraint_bounds(network, state)?;
         timings.update_constraints += start_constraint_update.elapsed();
 
         Ok(())
     }
 
     /// Update edge objective coefficients
-    fn update_edge_objectives(&mut self, model: &Model, states: &[State]) -> Result<(), PywrError> {
+    fn update_edge_objectives(&mut self, network: &Network, states: &[State]) -> Result<(), PywrError> {
         self.lp.zero_obj_coefficients();
-        for edge in model.edges.deref() {
+        for edge in network.edges().deref() {
             // Collect all of the costs for all states together
             let cost = states
                 .iter()
                 .map(|s| {
-                    edge.cost(&model.nodes, model, s)
+                    edge.cost(&network.nodes(), network, s)
                         .map(|c| if c != 0.0 { -c } else { 0.0 })
                 })
                 .collect::<Result<Vec<f64>, _>>()?;
@@ -322,7 +321,7 @@ impl BuiltSolver {
     /// Update node constraints
     fn update_node_constraint_bounds(
         &mut self,
-        model: &Model,
+        network: &Network,
         timestep: &Timestep,
         states: &[State],
     ) -> Result<(), PywrError> {
@@ -330,7 +329,7 @@ impl BuiltSolver {
 
         let dt = timestep.days();
 
-        for node in model.nodes.deref() {
+        for node in network.nodes().deref() {
             match node.node_type() {
                 NodeType::Input | NodeType::Output | NodeType::Link => {
                     if !node.is_max_flow_unconstrained().unwrap() {
@@ -339,7 +338,7 @@ impl BuiltSolver {
                             .iter()
                             .map(|state| {
                                 // TODO check for non-zero lower bounds and error?
-                                node.get_current_flow_bounds(model, state)
+                                node.get_current_flow_bounds(network, state)
                                     .expect("Flow bounds expected for Input, Output and Link nodes.")
                                     .1
                                     .min(B_MAX)
@@ -355,7 +354,7 @@ impl BuiltSolver {
                         .iter()
                         .map(|state| {
                             let (avail, missing) = node
-                                .get_current_available_volume_bounds(model, state)
+                                .get_current_available_volume_bounds(network, state)
                                 .expect("Volumes bounds expected for Storage nodes.");
                             (avail / dt, missing / dt)
                         })
@@ -394,20 +393,20 @@ impl SolverBuilder {
         self.col_edge_map.col_for_edge(edge_index)
     }
 
-    fn create(mut self, model: &Model) -> Result<BuiltSolver, PywrError> {
+    fn create(mut self, network: &Network) -> Result<BuiltSolver, PywrError> {
         // Create the columns
-        self.create_columns(model)?;
+        self.create_columns(network)?;
 
         // Create edge mass balance constraints
-        self.create_mass_balance_constraints(model);
+        self.create_mass_balance_constraints(network);
         // Create the nodal constraints
-        let node_constraints_row_ids = self.create_node_constraints(model);
+        let node_constraints_row_ids = self.create_node_constraints(network);
         // // Create the aggregated node constraints
-        // builder.create_aggregated_node_constraints(model);
+        // builder.create_aggregated_node_constraints(network);
         // // Create the aggregated node factor constraints
-        // builder.create_aggregated_node_factor_constraints(model);
+        // builder.create_aggregated_node_factor_constraints(network);
         // // Create virtual storage constraints
-        // builder.create_virtual_storage_constraints(model);
+        // builder.create_virtual_storage_constraints(network);
 
         Ok(BuiltSolver {
             lp: self.builder.build(),
@@ -421,16 +420,16 @@ impl SolverBuilder {
     /// Typically each edge will have its own column. However, we use the mass-balance information
     /// to collapse edges (and their columns) where they are trivially the same. I.e. if there
     /// is a single incoming edge and outgoing edge at a link node.
-    fn create_columns(&mut self, model: &Model) -> Result<(), PywrError> {
+    fn create_columns(&mut self, network: &Network) -> Result<(), PywrError> {
         // One column per edge
-        let ncols = model.edges.len();
+        let ncols = network.edges().len();
         if ncols < 1 {
             return Err(PywrError::NoEdgesDefined);
         }
 
-        for edge in model.edges.iter() {
+        for edge in network.edges().iter() {
             let edge_index = edge.index();
-            let from_node = model.get_node(&edge.from_node_index)?;
+            let from_node = network.get_node(&edge.from_node_index)?;
 
             if let NodeType::Link = from_node.node_type() {
                 // We only look at link nodes; there should be no output nodes as a
@@ -462,8 +461,8 @@ impl SolverBuilder {
     }
 
     /// Create mass balance constraints for each edge
-    fn create_mass_balance_constraints(&mut self, model: &Model) {
-        for node in model.nodes.deref() {
+    fn create_mass_balance_constraints(&mut self, network: &Network) {
+        for node in network.nodes().deref() {
             // Only link nodes create mass-balance constraints
 
             if let NodeType::Link = node.node_type() {
@@ -530,10 +529,10 @@ impl SolverBuilder {
     ///
     /// One constraint is created per node to enforce any constraints (flow or storage)
     /// that it may define.
-    fn create_node_constraints(&mut self, model: &Model) -> Vec<usize> {
-        let mut row_ids = Vec::with_capacity(model.nodes.len());
+    fn create_node_constraints(&mut self, network: &Network) -> Vec<usize> {
+        let mut row_ids = Vec::with_capacity(network.nodes().len());
 
-        for node in model.nodes.deref() {
+        for node in network.nodes().deref() {
             match node.node_type() {
                 NodeType::Input | NodeType::Output | NodeType::Link => {
                     // Only create node constraints for nodes that could become constrained
@@ -579,7 +578,7 @@ impl MultiStateSolver for ClIpmF32Solver {
         &[]
     }
 
-    fn setup(model: &Model, num_scenarios: usize, settings: &Self::Settings) -> Result<Box<Self>, PywrError> {
+    fn setup(network: &Network, num_scenarios: usize, settings: &Self::Settings) -> Result<Box<Self>, PywrError> {
         let platform = ocl::Platform::default();
         let device = ocl::Device::first(platform).expect("Failed to get OpenCL device.");
         let context = ocl::Context::builder()
@@ -600,7 +599,7 @@ impl MultiStateSolver for ClIpmF32Solver {
 
         for chunk_scenarios in (0..num_scenarios).collect::<Vec<_>>().chunks(chunk_size.get()) {
             let builder = SolverBuilder::new(chunk_scenarios.len());
-            let built = builder.create(model)?;
+            let built = builder.create(network)?;
 
             let matrix = built.lp.get_full_matrix();
             let num_rows = matrix.row_starts.len() - 1;
@@ -633,9 +632,14 @@ impl MultiStateSolver for ClIpmF32Solver {
         }))
     }
 
-    fn solve(&mut self, model: &Model, timestep: &Timestep, states: &mut [State]) -> Result<SolverTimings, PywrError> {
+    fn solve(
+        &mut self,
+        network: &Network,
+        timestep: &Timestep,
+        states: &mut [State],
+    ) -> Result<SolverTimings, PywrError> {
         // TODO complete the timings
-        let mut timings = SolverTimings::default();
+        let timings = SolverTimings::default();
 
         states
             .par_chunks_mut(self.chunk_size.get())
@@ -644,7 +648,7 @@ impl MultiStateSolver for ClIpmF32Solver {
             .for_each(|((chunk_states, built), ipm)| {
                 let mut timings = SolverTimings::default();
 
-                built.update(model, timestep, chunk_states, &mut timings).unwrap();
+                built.update(network, timestep, chunk_states, &mut timings).unwrap();
 
                 let now = Instant::now();
                 let row_upper: Vec<_> = built.row_upper().iter().map(|&v| v as f32).collect();
@@ -661,7 +665,7 @@ impl MultiStateSolver for ClIpmF32Solver {
                     let network_state = state.get_mut_network_state();
                     network_state.reset();
 
-                    for edge in model.edges.deref() {
+                    for edge in network.edges().deref() {
                         let col = built.col_for_edge(&edge.index());
                         let flow = solution[col * num_states + i];
                         network_state.add_flow(edge, timestep, flow as f64).unwrap();
@@ -689,7 +693,7 @@ impl MultiStateSolver for ClIpmF64Solver {
         &[]
     }
 
-    fn setup(model: &Model, num_scenarios: usize, settings: &Self::Settings) -> Result<Box<Self>, PywrError> {
+    fn setup(network: &Network, num_scenarios: usize, settings: &Self::Settings) -> Result<Box<Self>, PywrError> {
         let platform = ocl::Platform::default();
         let device = ocl::Device::first(platform).expect("Failed to get OpenCL device.");
         let context = ocl::Context::builder()
@@ -713,7 +717,7 @@ impl MultiStateSolver for ClIpmF64Solver {
             let queue = ocl::Queue::new(&context, device, None).expect("Failed to create OpenCL queue.");
 
             let builder = SolverBuilder::new(chunk_scenarios.len());
-            let built = builder.create(model)?;
+            let built = builder.create(network)?;
 
             let matrix = built.lp.get_full_matrix();
             let num_rows = matrix.row_starts.len() - 1;
@@ -747,9 +751,14 @@ impl MultiStateSolver for ClIpmF64Solver {
         }))
     }
 
-    fn solve(&mut self, model: &Model, timestep: &Timestep, states: &mut [State]) -> Result<SolverTimings, PywrError> {
+    fn solve(
+        &mut self,
+        network: &Network,
+        timestep: &Timestep,
+        states: &mut [State],
+    ) -> Result<SolverTimings, PywrError> {
         // TODO complete the timings
-        let mut timings = SolverTimings::default();
+        let timings = SolverTimings::default();
 
         states
             .par_chunks_mut(self.chunk_size.get())
@@ -759,7 +768,7 @@ impl MultiStateSolver for ClIpmF64Solver {
             .for_each(|(((chunk_states, built), ipm), queue)| {
                 let mut timings = SolverTimings::default();
 
-                built.update(model, timestep, chunk_states, &mut timings).unwrap();
+                built.update(network, timestep, chunk_states, &mut timings).unwrap();
 
                 let now = Instant::now();
 
@@ -774,7 +783,7 @@ impl MultiStateSolver for ClIpmF64Solver {
                     let network_state = state.get_mut_network_state();
                     network_state.reset();
 
-                    for edge in model.edges.deref() {
+                    for edge in network.edges().deref() {
                         let col = built.col_for_edge(&edge.index());
                         let flow = solution[col * num_states + i];
                         network_state.add_flow(edge, timestep, flow).unwrap();

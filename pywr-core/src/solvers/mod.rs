@@ -1,4 +1,4 @@
-use crate::model::Model;
+use crate::network::Network;
 use crate::state::State;
 use crate::timestep::Timestep;
 use crate::PywrError;
@@ -81,14 +81,15 @@ pub trait Solver: Send {
 
     /// An array of features that this solver provides.
     fn features() -> &'static [SolverFeatures];
-    fn setup(model: &Model, settings: &Self::Settings) -> Result<Box<Self>, PywrError>;
-    fn solve(&mut self, model: &Model, timestep: &Timestep, state: &mut State) -> Result<SolverTimings, PywrError>;
+    fn setup(model: &Network, settings: &Self::Settings) -> Result<Box<Self>, PywrError>;
+    fn solve(&mut self, model: &Network, timestep: &Timestep, state: &mut State) -> Result<SolverTimings, PywrError>;
 }
 
 pub trait MultiStateSolver: Send {
     type Settings;
     /// An array of features that this solver provides.
     fn features() -> &'static [SolverFeatures];
-    fn setup(model: &Model, num_scenarios: usize, settings: &Self::Settings) -> Result<Box<Self>, PywrError>;
-    fn solve(&mut self, model: &Model, timestep: &Timestep, states: &mut [State]) -> Result<SolverTimings, PywrError>;
+    fn setup(model: &Network, num_scenarios: usize, settings: &Self::Settings) -> Result<Box<Self>, PywrError>;
+    fn solve(&mut self, model: &Network, timestep: &Timestep, states: &mut [State])
+        -> Result<SolverTimings, PywrError>;
 }

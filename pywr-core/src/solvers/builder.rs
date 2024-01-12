@@ -1,6 +1,6 @@
 use crate::aggregated_node::AggregatedNodeIndex;
 use crate::edge::EdgeIndex;
-use crate::model::Model;
+use crate::network::Network;
 use crate::node::{Node, NodeType};
 use crate::solvers::col_edge_map::{ColumnEdgeMap, ColumnEdgeMapBuilder};
 use crate::solvers::SolverTimings;
@@ -353,13 +353,13 @@ where
 
     pub fn update(
         &mut self,
-        model: &Model,
+        network: &Network,
         timestep: &Timestep,
         state: &State,
         timings: &mut SolverTimings,
     ) -> Result<(), PywrError> {
         let start_objective_update = Instant::now();
-        self.update_edge_objectives(model, state)?;
+        self.update_edge_objectives(network, state)?;
         timings.update_objective += start_objective_update.elapsed();
 
         let start_constraint_update = Instant::now();
@@ -367,20 +367,20 @@ where
         self.builder.reset_row_bounds();
         self.builder.reset_coefficients_to_update();
         // Then these methods will add their bounds
-        self.update_node_constraint_bounds(model, timestep, state)?;
-        self.update_aggregated_node_factor_constraints(model, state)?;
-        self.update_aggregated_node_constraint_bounds(model, state)?;
-        self.update_virtual_storage_node_constraint_bounds(model, timestep, state)?;
+        self.update_node_constraint_bounds(network, timestep, state)?;
+        self.update_aggregated_node_factor_constraints(network, state)?;
+        self.update_aggregated_node_constraint_bounds(network, state)?;
+        self.update_virtual_storage_node_constraint_bounds(network, timestep, state)?;
         timings.update_constraints += start_constraint_update.elapsed();
 
         Ok(())
     }
 
     /// Update edge objective coefficients
-    fn update_edge_objectives(&mut self, model: &Model, state: &State) -> Result<(), PywrError> {
+    fn update_edge_objectives(&mut self, network: &Network, state: &State) -> Result<(), PywrError> {
         self.builder.zero_obj_coefficients();
-        for edge in model.edges.deref() {
-            let obj_coef: f64 = edge.cost(&model.nodes, model, state)?;
+        for edge in network.edges().deref() {
+            let obj_coef: f64 = edge.cost(network.nodes(), network, state)?;
             let col = self.col_for_edge(&edge.index());
 
             self.builder.add_obj_coefficient(col.to_usize().unwrap(), obj_coef);
@@ -391,18 +391,18 @@ where
     /// Update node constraints
     fn update_node_constraint_bounds(
         &mut self,
-        model: &Model,
+        network: &Network,
         timestep: &Timestep,
         state: &State,
     ) -> Result<(), PywrError> {
         let dt = timestep.days();
 
-        for (row_id, node) in self.node_constraints_row_ids.iter().zip(model.nodes.deref()) {
-            let (lb, ub): (f64, f64) = match node.get_current_flow_bounds(model, state) {
+        for (row_id, node) in self.node_constraints_row_ids.iter().zip(network.nodes().deref()) {
+            let (lb, ub): (f64, f64) = match node.get_current_flow_bounds(network, state) {
                 Ok(bnds) => bnds,
                 Err(PywrError::FlowConstraintsUndefined) => {
                     // Must be a storage node
-                    let (avail, missing) = match node.get_current_available_volume_bounds(model, state) {
+                    let (avail, missing) = match node.get_current_available_volume_bounds(network, state) {
                         Ok(bnds) => bnds,
                         Err(e) => return Err(e),
                     };
@@ -418,16 +418,17 @@ where
         Ok(())
     }
 
-    fn update_aggregated_node_factor_constraints(&mut self, model: &Model, state: &State) -> Result<(), PywrError> {
+    fn update_aggregated_node_factor_constraints(&mut self, network: &Network, state: &State) -> Result<(), PywrError> {
         for (agg_node_id, row_id) in self.agg_node_factor_constraint_row_ids.iter() {
-            let agg_node = model.get_aggregated_node(agg_node_id)?;
+            let agg_node = network.get_aggregated_node(agg_node_id)?;
             // Only create row for nodes that have factors
-            if let Some(node_pairs) = agg_node.get_norm_factor_pairs(model, state) {
+            if let Some(node_pairs) = agg_node.get_norm_factor_pairs(network, state) {
                 for ((n0, f0), (n1, f1)) in node_pairs {
                     // Modify the constraint matrix coefficients for the nodes
                     // TODO error handling?
-                    let node0 = model.nodes.get(&n0).expect("Node index not found!");
-                    let node1 = model.nodes.get(&n1).expect("Node index not found!");
+                    let nodes = network.nodes();
+                    let node0 = nodes.get(&n0).expect("Node index not found!");
+                    let node1 = nodes.get(&n1).expect("Node index not found!");
 
                     self.builder
                         .update_row_coefficients(*row_id, node0, 1.0, &self.col_edge_map);
@@ -445,13 +446,13 @@ where
     }
 
     /// Update aggregated node constraints
-    fn update_aggregated_node_constraint_bounds(&mut self, model: &Model, state: &State) -> Result<(), PywrError> {
+    fn update_aggregated_node_constraint_bounds(&mut self, network: &Network, state: &State) -> Result<(), PywrError> {
         for (row_id, agg_node) in self
             .agg_node_constraint_row_ids
             .iter()
-            .zip(model.aggregated_nodes.deref())
+            .zip(network.aggregated_nodes().deref())
         {
-            let (lb, ub): (f64, f64) = agg_node.get_current_flow_bounds(model, state)?;
+            let (lb, ub): (f64, f64) = agg_node.get_current_flow_bounds(network, state)?;
             self.builder.apply_row_bounds(*row_id, lb, ub);
         }
 
@@ -460,7 +461,7 @@ where
 
     fn update_virtual_storage_node_constraint_bounds(
         &mut self,
-        model: &Model,
+        network: &Network,
         timestep: &Timestep,
         state: &State,
     ) -> Result<(), PywrError> {
@@ -469,9 +470,9 @@ where
         for (row_id, node) in self
             .virtual_storage_constraint_row_ids
             .iter()
-            .zip(model.virtual_storage_nodes.deref())
+            .zip(network.virtual_storage_nodes().deref())
         {
-            let (avail, missing) = match node.get_current_available_volume_bounds(model, state) {
+            let (avail, missing) = match node.get_current_available_volume_bounds(network, state) {
                 Ok(bnds) => bnds,
                 Err(e) => return Err(e),
             };
@@ -509,20 +510,20 @@ where
         self.col_edge_map.col_for_edge(edge_index)
     }
 
-    pub fn create(mut self, model: &Model) -> Result<BuiltSolver<I>, PywrError> {
+    pub fn create(mut self, network: &Network) -> Result<BuiltSolver<I>, PywrError> {
         // Create the columns
-        self.create_columns(model)?;
+        self.create_columns(network)?;
 
         // Create edge mass balance constraints
-        self.create_mass_balance_constraints(model);
+        self.create_mass_balance_constraints(network);
         // Create the nodal constraints
-        let node_constraints_row_ids = self.create_node_constraints(model);
+        let node_constraints_row_ids = self.create_node_constraints(network);
         // Create the aggregated node constraints
-        let agg_node_constraint_row_ids = self.create_aggregated_node_constraints(model);
+        let agg_node_constraint_row_ids = self.create_aggregated_node_constraints(network);
         // Create the aggregated node factor constraints
-        let agg_node_factor_constraint_row_ids = self.create_aggregated_node_factor_constraints(model);
+        let agg_node_factor_constraint_row_ids = self.create_aggregated_node_factor_constraints(network);
         // Create virtual storage constraints
-        let virtual_storage_constraint_row_ids = self.create_virtual_storage_constraints(model);
+        let virtual_storage_constraint_row_ids = self.create_virtual_storage_constraints(network);
 
         Ok(BuiltSolver {
             builder: self.builder.build(),
@@ -539,16 +540,16 @@ where
     /// Typically each edge will have its own column. However, we use the mass-balance information
     /// to collapse edges (and their columns) where they are trivially the same. I.e. if there
     /// is a single incoming edge and outgoing edge at a link node.
-    fn create_columns(&mut self, model: &Model) -> Result<(), PywrError> {
+    fn create_columns(&mut self, network: &Network) -> Result<(), PywrError> {
         // One column per edge
-        let ncols = model.edges.len();
+        let ncols = network.edges().len();
         if ncols < 1 {
             return Err(PywrError::NoEdgesDefined);
         }
 
-        for edge in model.edges.iter() {
+        for edge in network.edges().iter() {
             let edge_index = edge.index();
-            let from_node = model.get_node(&edge.from_node_index)?;
+            let from_node = network.get_node(&edge.from_node_index)?;
 
             if let NodeType::Link = from_node.node_type() {
                 // We only look at link nodes; there should be no output nodes as a
@@ -580,8 +581,8 @@ where
     }
 
     /// Create mass balance constraints for each edge
-    fn create_mass_balance_constraints(&mut self, model: &Model) {
-        for node in model.nodes.deref() {
+    fn create_mass_balance_constraints(&mut self, network: &Network) {
+        for node in network.nodes().deref() {
             // Only link nodes create mass-balance constraints
 
             if let NodeType::Link = node.node_type() {
@@ -658,10 +659,10 @@ where
     ///
     /// One constraint is created per node to enforce any constraints (flow or storage)
     /// that it may define. Returns the row_ids associated with each constraint.
-    fn create_node_constraints(&mut self, model: &Model) -> Vec<usize> {
-        let mut row_ids = Vec::with_capacity(model.nodes.len());
+    fn create_node_constraints(&mut self, network: &Network) -> Vec<usize> {
+        let mut row_ids = Vec::with_capacity(network.nodes().len());
 
-        for node in model.nodes.deref() {
+        for node in network.nodes().deref() {
             // Create empty arrays to store the matrix data
             let mut row: RowBuilder<I> = RowBuilder::default();
 
@@ -676,10 +677,10 @@ where
     /// Create aggregated node factor constraints
     ///
     /// One constraint is created per node to enforce any factor constraints.
-    fn create_aggregated_node_factor_constraints(&mut self, model: &Model) -> Vec<(AggregatedNodeIndex, I)> {
+    fn create_aggregated_node_factor_constraints(&mut self, network: &Network) -> Vec<(AggregatedNodeIndex, I)> {
         let mut row_ids = Vec::new();
 
-        for agg_node in model.aggregated_nodes.deref() {
+        for agg_node in network.aggregated_nodes().deref() {
             // Only create row for nodes that have factors
             if let Some(node_pairs) = agg_node.get_factor_node_pairs() {
                 for (n0, n1) in node_pairs {
@@ -688,8 +689,9 @@ where
                     let mut row = RowBuilder::default();
 
                     // TODO error handling?
-                    let node0 = model.nodes.get(&n0).expect("Node index not found!");
-                    let node1 = model.nodes.get(&n1).expect("Node index not found!");
+                    let nodes = network.nodes();
+                    let node0 = nodes.get(&n0).expect("Node index not found!");
+                    let node1 = nodes.get(&n1).expect("Node index not found!");
 
                     self.add_node(node0, 1.0, &mut row);
                     self.add_node(node1, -1.0, &mut row);
@@ -711,16 +713,16 @@ where
     /// One constraint is created per node to enforce any constraints (flow or storage)
     /// that it may define. Returns the row ids associated with each aggregated node constraint.
     /// Panics if the model contains aggregated nodes with broken references to nodes.
-    fn create_aggregated_node_constraints(&mut self, model: &Model) -> Vec<usize> {
-        let mut row_ids = Vec::with_capacity(model.aggregated_nodes.len());
+    fn create_aggregated_node_constraints(&mut self, network: &Network) -> Vec<usize> {
+        let mut row_ids = Vec::with_capacity(network.aggregated_nodes().len());
 
-        for agg_node in model.aggregated_nodes.deref() {
+        for agg_node in network.aggregated_nodes().deref() {
             // Create empty arrays to store the matrix data
             let mut row: RowBuilder<I> = RowBuilder::default();
 
             for node_index in agg_node.get_nodes() {
                 // TODO error handling?
-                let node = model.nodes.get(&node_index).expect("Node index not found!");
+                let node = network.nodes().get(&node_index).expect("Node index not found!");
                 self.add_node(node, 1.0, &mut row);
             }
 
@@ -732,10 +734,10 @@ where
 
     /// Create virtual storage node constraints
     ///
-    fn create_virtual_storage_constraints(&mut self, model: &Model) -> Vec<usize> {
-        let mut row_ids = Vec::with_capacity(model.virtual_storage_nodes.len());
+    fn create_virtual_storage_constraints(&mut self, network: &Network) -> Vec<usize> {
+        let mut row_ids = Vec::with_capacity(network.virtual_storage_nodes().len());
 
-        for virtual_storage in model.virtual_storage_nodes.deref() {
+        for virtual_storage in network.virtual_storage_nodes().deref() {
             // Create empty arrays to store the matrix data
 
             if let Some(nodes) = virtual_storage.get_nodes_with_factors() {
@@ -747,7 +749,7 @@ where
                             virtual_storage.full_name()
                         );
                     }
-                    let node = model.nodes.get(&node_index).expect("Node index not found!");
+                    let node = network.nodes().get(&node_index).expect("Node index not found!");
                     self.add_node(node, -factor, &mut row);
                 }
                 let row_id = self.builder.add_variable_row(row);

@@ -23,9 +23,9 @@ impl Polynomial1DParameter {
         HashMap::new()
     }
 
-    pub fn add_to_model(&self, model: &mut pywr_core::model::Model) -> Result<ParameterIndex, SchemaError> {
+    pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<ParameterIndex, SchemaError> {
         let metric =
-            model.get_storage_node_metric(&self.storage_node, None, self.use_proportional_volume.unwrap_or(true))?;
+            network.get_storage_node_metric(&self.storage_node, None, self.use_proportional_volume.unwrap_or(true))?;
 
         let p = pywr_core::parameters::Polynomial1DParameter::new(
             &self.meta.name,
@@ -34,7 +34,7 @@ impl Polynomial1DParameter {
             self.scale.unwrap_or(1.0),
             self.offset.unwrap_or(0.0),
         );
-        Ok(model.add_parameter(Box::new(p))?)
+        Ok(network.add_parameter(Box::new(p))?)
     }
 }
 

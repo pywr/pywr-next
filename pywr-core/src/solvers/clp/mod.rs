@@ -1,7 +1,7 @@
 mod settings;
 
 use super::builder::SolverBuilder;
-use crate::model::Model;
+use crate::network::Network;
 use crate::solvers::builder::BuiltSolver;
 use crate::solvers::{Solver, SolverFeatures, SolverTimings};
 use crate::state::State;
@@ -237,7 +237,7 @@ impl Solver for ClpSolver {
         ]
     }
 
-    fn setup(model: &Model, settings: &Self::Settings) -> Result<Box<Self>, PywrError> {
+    fn setup(model: &Network, settings: &Self::Settings) -> Result<Box<Self>, PywrError> {
         let builder = SolverBuilder::default();
         let built = builder.create(model)?;
 
@@ -245,7 +245,7 @@ impl Solver for ClpSolver {
         Ok(Box::new(solver))
     }
 
-    fn solve(&mut self, model: &Model, timestep: &Timestep, state: &mut State) -> Result<SolverTimings, PywrError> {
+    fn solve(&mut self, model: &Network, timestep: &Timestep, state: &mut State) -> Result<SolverTimings, PywrError> {
         let mut timings = SolverTimings::default();
         self.builder.update(model, timestep, state, &mut timings)?;
 
@@ -273,7 +273,7 @@ impl Solver for ClpSolver {
         network_state.reset();
 
         let start_save_solution = Instant::now();
-        for edge in model.edges.iter() {
+        for edge in model.edges().iter() {
             let col = self.builder.col_for_edge(&edge.index()) as usize;
             let flow = solution[col];
             network_state.add_flow(edge, timestep, flow)?;

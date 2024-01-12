@@ -1,4 +1,4 @@
-use crate::model::Model;
+use crate::network::Network;
 use crate::node::NodeVec;
 use crate::state::State;
 use crate::{NodeIndex, PywrError};
@@ -43,7 +43,7 @@ impl Edge {
         self.to_node_index
     }
 
-    pub(crate) fn cost(&self, nodes: &NodeVec, model: &Model, state: &State) -> Result<f64, PywrError> {
+    pub(crate) fn cost(&self, nodes: &NodeVec, model: &Network, state: &State) -> Result<f64, PywrError> {
         let from_node = nodes.get(&self.from_node_index)?;
         let to_node = nodes.get(&self.to_node_index)?;
 

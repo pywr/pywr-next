@@ -13,7 +13,7 @@ pub struct Hdf5Output {
 impl Hdf5Output {
     pub fn add_to_model(
         &self,
-        model: &mut pywr_core::model::Model,
+        network: &mut pywr_core::network::Network,
         output_path: Option<&Path>,
     ) -> Result<(), SchemaError> {
         let filename = match (output_path, self.filename.is_relative()) {
@@ -21,11 +21,11 @@ impl Hdf5Output {
             _ => self.filename.to_path_buf(),
         };
 
-        let metric_set_idx = model.get_metric_set_index_by_name(&self.metric_set)?;
+        let metric_set_idx = network.get_metric_set_index_by_name(&self.metric_set)?;
 
         let recorder = HDF5Recorder::new(&self.name, filename, metric_set_idx);
 
-        model.add_recorder(Box::new(recorder))?;
+        network.add_recorder(Box::new(recorder))?;
 
         Ok(())
     }
@@ -46,9 +46,9 @@ mod tests {
         let data = model_str();
         let schema = PywrModel::from_str(data).unwrap();
 
-        assert_eq!(schema.nodes.len(), 3);
-        assert_eq!(schema.edges.len(), 2);
-        assert!(schema.outputs.is_some_and(|o| o.len() == 1));
+        assert_eq!(schema.network.nodes.len(), 3);
+        assert_eq!(schema.network.edges.len(), 2);
+        assert!(schema.network.outputs.is_some_and(|o| o.len() == 1));
     }
 
     #[test]
@@ -58,11 +58,9 @@ mod tests {
 
         let temp_dir = TempDir::new().unwrap();
 
-        let (model, timestepper) = schema.build_model(None, Some(temp_dir.path())).unwrap();
+        let model = schema.build_model(None, Some(temp_dir.path())).unwrap();
 
-        model
-            .run::<ClpSolver>(&timestepper, &ClpSolverSettings::default())
-            .unwrap();
+        model.run::<ClpSolver>(&ClpSolverSettings::default()).unwrap();
 
         // After model run there should be an output file.
         let expected_path = temp_dir.path().join("outputs.h5");

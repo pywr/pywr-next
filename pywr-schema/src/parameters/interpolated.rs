@@ -1,10 +1,12 @@
 use crate::data_tables::LoadedTableCollection;
 use crate::error::SchemaError;
+use crate::model::PywrMultiNetworkTransfer;
 use crate::parameters::{
-    DynamicFloatValue, DynamicFloatValueType, IntoV2Parameter, MetricFloatValue, NodeReference, ParameterMeta,
-    TryFromV1Parameter, TryIntoV2Parameter,
+    DynamicFloatValue, DynamicFloatValueType, IntoV2Parameter, MetricFloatReference, MetricFloatValue, NodeReference,
+    ParameterMeta, TryFromV1Parameter, TryIntoV2Parameter,
 };
 use crate::ConversionError;
+use pywr_core::models::ModelDomain;
 use pywr_core::parameters::ParameterIndex;
 use pywr_v1_schema::parameters::{
     InterpolatedFlowParameter as InterpolatedFlowParameterV1,
@@ -50,11 +52,15 @@ impl InterpolatedParameter {
 
     pub fn add_to_model(
         &self,
-        model: &mut pywr_core::model::Model,
+        network: &mut pywr_core::network::Network,
+        domain: &ModelDomain,
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
+        inter_network_transfers: &[PywrMultiNetworkTransfer],
     ) -> Result<ParameterIndex, SchemaError> {
-        let x = self.x.load(model, tables, data_path)?;
+        let x = self
+            .x
+            .load(network, domain, tables, data_path, inter_network_transfers)?;
 
         // Sense check the points
         if self.xp.len() != self.fp.len() {
@@ -67,12 +73,12 @@ impl InterpolatedParameter {
         let xp = self
             .xp
             .iter()
-            .map(|p| p.load(model, tables, data_path))
+            .map(|p| p.load(network, domain, tables, data_path, inter_network_transfers))
             .collect::<Result<Vec<_>, _>>()?;
         let fp = self
             .fp
             .iter()
-            .map(|p| p.load(model, tables, data_path))
+            .map(|p| p.load(network, domain, tables, data_path, inter_network_transfers))
             .collect::<Result<Vec<_>, _>>()?;
 
         let points = xp
@@ -87,7 +93,7 @@ impl InterpolatedParameter {
             points,
             self.error_on_bounds.unwrap_or(true),
         );
-        Ok(model.add_parameter(Box::new(p))?)
+        Ok(network.add_parameter(Box::new(p))?)
     }
 }
 
@@ -107,7 +113,7 @@ impl TryFromV1Parameter<InterpolatedFlowParameterV1> for InterpolatedParameter {
             sub_name: None,
         };
         // This defaults to the node's inflow; not sure if we can do better than that.
-        let x = DynamicFloatValue::Dynamic(MetricFloatValue::NodeInFlow(node_ref));
+        let x = DynamicFloatValue::Dynamic(MetricFloatValue::Reference(MetricFloatReference::NodeInFlow(node_ref)));
 
         let xp = v1
             .flows
@@ -170,7 +176,7 @@ impl TryFromV1Parameter<InterpolatedVolumeParameterV1> for InterpolatedParameter
             sub_name: None,
         };
         // This defaults to the node's inflow; not sure if we can do better than that.
-        let x = DynamicFloatValue::Dynamic(MetricFloatValue::NodeVolume(node_ref));
+        let x = DynamicFloatValue::Dynamic(MetricFloatValue::Reference(MetricFloatReference::NodeInFlow(node_ref)));
 
         let xp = v1
             .volumes

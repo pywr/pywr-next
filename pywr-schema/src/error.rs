@@ -13,6 +13,8 @@ pub enum SchemaError {
     NodeNotFound(String),
     #[error("parameter {0} not found")]
     ParameterNotFound(String),
+    #[error("network {0} not found")]
+    NetworkNotFound(String),
     #[error("missing initial volume for node: {0}")]
     MissingInitialVolume(String),
     #[error("Pywr core error: {0}")]
@@ -43,6 +45,10 @@ pub enum SchemaError {
     DataLengthMismatch { expected: usize, found: usize },
     #[error("Failed to estimate epsilon for use in the radial basis function.")]
     RbfEpsilonEstimation,
+    #[error("Scenario group with name {0} not found")]
+    ScenarioGroupNotFound(String),
+    #[error("Inter-network transfer with name {0} not found")]
+    InterNetworkTransferNotFound(String),
 }
 
 impl From<SchemaError> for PyErr {

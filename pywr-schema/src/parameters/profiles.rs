@@ -28,12 +28,12 @@ impl DailyProfileParameter {
 
     pub fn add_to_model(
         &self,
-        model: &mut pywr_core::model::Model,
+        network: &mut pywr_core::network::Network,
         tables: &LoadedTableCollection,
     ) -> Result<ParameterIndex, SchemaError> {
         let values = &self.values.load(tables)?[..366];
         let p = pywr_core::parameters::DailyProfileParameter::new(&self.meta.name, values.try_into().expect(""));
-        Ok(model.add_parameter(Box::new(p))?)
+        Ok(network.add_parameter(Box::new(p))?)
     }
 }
 
@@ -98,7 +98,7 @@ impl MonthlyProfileParameter {
 
     pub fn add_to_model(
         &self,
-        model: &mut pywr_core::model::Model,
+        network: &mut pywr_core::network::Network,
         tables: &LoadedTableCollection,
     ) -> Result<ParameterIndex, SchemaError> {
         let values = &self.values.load(tables)?[..12];
@@ -107,7 +107,7 @@ impl MonthlyProfileParameter {
             values.try_into().expect(""),
             self.interp_day.map(|id| id.into()),
         );
-        Ok(model.add_parameter(Box::new(p))?)
+        Ok(network.add_parameter(Box::new(p))?)
     }
 }
 
@@ -172,7 +172,7 @@ impl UniformDrawdownProfileParameter {
 
     pub fn add_to_model(
         &self,
-        model: &mut pywr_core::model::Model,
+        network: &mut pywr_core::network::Network,
         tables: &LoadedTableCollection,
     ) -> Result<ParameterIndex, SchemaError> {
         let reset_day = match &self.reset_day {
@@ -194,7 +194,7 @@ impl UniformDrawdownProfileParameter {
             reset_month,
             residual_days,
         );
-        Ok(model.add_parameter(Box::new(p))?)
+        Ok(network.add_parameter(Box::new(p))?)
     }
 }
 
@@ -364,7 +364,7 @@ impl RbfProfileParameter {
         HashMap::new()
     }
 
-    pub fn add_to_model(&self, model: &mut pywr_core::model::Model) -> Result<ParameterIndex, SchemaError> {
+    pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<ParameterIndex, SchemaError> {
         let variable = match self.variable {
             None => None,
             Some(v) => {
@@ -381,7 +381,7 @@ impl RbfProfileParameter {
 
         let p =
             pywr_core::parameters::RbfProfileParameter::new(&self.meta.name, self.points.clone(), function, variable);
-        Ok(model.add_parameter(Box::new(p))?)
+        Ok(network.add_parameter(Box::new(p))?)
     }
 }
 

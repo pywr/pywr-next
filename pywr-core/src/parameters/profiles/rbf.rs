@@ -1,4 +1,4 @@
-use crate::model::Model;
+use crate::network::Network;
 use crate::parameters::{downcast_internal_state, Parameter, ParameterMeta, VariableParameter};
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
@@ -70,7 +70,7 @@ impl Parameter for RbfProfileParameter {
         &self,
         timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
-        _model: &Model,
+        _network: &Network,
         _state: &State,
         internal_state: &mut Option<Box<dyn Any + Send>>,
     ) -> Result<f64, PywrError> {

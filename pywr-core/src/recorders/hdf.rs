@@ -1,6 +1,6 @@
 use super::{PywrError, Recorder, RecorderMeta, Timestep};
 use crate::metric::Metric;
-use crate::model::Model;
+use crate::network::Network;
 use crate::recorders::MetricSetIndex;
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
@@ -61,7 +61,7 @@ impl Recorder for HDF5Recorder {
         &self,
         timesteps: &[Timestep],
         scenario_indices: &[ScenarioIndex],
-        model: &Model,
+        model: &Network,
     ) -> Result<Option<Box<(dyn Any)>>, PywrError> {
         let file = match hdf5::File::create(&self.filename) {
             Ok(f) => f,
@@ -130,6 +130,9 @@ impl Recorder for HDF5Recorder {
                 Metric::MultiNodeInFlow { name, sub_name, .. } => {
                     require_node_dataset(root_grp, shape, name, sub_name.as_deref(), "inflow")?
                 }
+                Metric::InterNetworkTransfer(_) => {
+                    continue; // TODO
+                }
             };
 
             datasets.push(ds);
@@ -143,7 +146,7 @@ impl Recorder for HDF5Recorder {
         &self,
         timestep: &Timestep,
         scenario_indices: &[ScenarioIndex],
-        model: &Model,
+        model: &Network,
         state: &[State],
         internal_state: &mut Option<Box<dyn Any>>,
     ) -> Result<(), PywrError> {
