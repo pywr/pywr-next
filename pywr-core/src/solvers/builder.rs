@@ -15,11 +15,10 @@ use std::time::Instant;
 const FMAX: f64 = f64::MAX;
 const FMIN: f64 = f64::MIN;
 
-#[derive(Debug)]
 enum Bounds {
     // Free,
     Lower(f64),
-    Upper(f64),
+    // Upper(f64),
     // Double(f64, f64),
     // Fixed(f64),
 }
@@ -155,7 +154,7 @@ where
             Bounds::Lower(lb) => (lb, FMAX),
             // Bounds::Fixed(b) => (b, b),
             // Bounds::Free => (f64::MIN, FMAX),
-            Bounds::Upper(ub) => (f64::MIN, ub),
+            // Bounds::Upper(ub) => (f64::MIN, ub),
         };
 
         self.col_lower.push(lb);
@@ -187,11 +186,6 @@ where
     /// Return the number of variable rows
     fn num_variable_rows(&self) -> I {
         I::from(self.rows.len()).unwrap()
-    }
-
-    /// Return the number of fixed rows
-    fn num_fixed_rows(&self) -> I {
-        I::from(self.fixed_rows.len()).unwrap()
     }
 
     /// Build the LP into a final sparse form
@@ -295,16 +289,8 @@ impl<I> BuiltSolver<I>
 where
     I: num::PrimInt + Default + Debug + Copy,
 {
-    pub fn num_rows(&self) -> I {
-        I::from(self.builder.row_upper.len()).unwrap()
-    }
-
     pub fn num_cols(&self) -> I {
         I::from(self.builder.col_upper.len()).unwrap()
-    }
-
-    pub fn num_non_zero(&self) -> I {
-        I::from(self.builder.elements.len()).unwrap()
     }
 
     pub fn col_lower(&self) -> &[f64] {
@@ -325,10 +311,6 @@ where
 
     pub fn row_upper(&self) -> &[f64] {
         &self.builder.row_upper
-    }
-
-    pub fn row_mask(&self) -> &[I] {
-        &self.builder.row_mask
     }
 
     pub fn row_starts(&self) -> &[I] {

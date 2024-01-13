@@ -148,9 +148,6 @@ impl VirtualStorageState {
         self.last_reset = Some(*timestep);
     }
 
-    fn add_in_flow(&mut self, flow: f64, timestep: &Timestep) {
-        self.storage.add_in_flow(flow, timestep);
-    }
     fn add_out_flow(&mut self, flow: f64, timestep: &Timestep) {
         self.storage.add_out_flow(flow, timestep);
     }
@@ -343,6 +340,10 @@ impl NetworkState {
 
         for es in self.edge_states.iter_mut() {
             es.reset()
+        }
+
+        for vs in self.virtual_storage_states.iter_mut() {
+            vs.reset()
         }
     }
 
