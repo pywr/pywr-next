@@ -31,10 +31,6 @@ fn random_benchmark(
     solver_setups: &[SolverSetup], // TODO This should be an enum (see one also in main.rs; should incorporated into the crate).
     sample_size: Option<usize>,
 ) {
-    // Run 10 time-steps
-    let timestepper = Timestepper::new(date!(2020 - 01 - 01), date!(2020 - 01 - 10), 1);
-    let timesteps = timestepper.timesteps();
-
     let mut group = c.benchmark_group(group_name);
     // group.sampling_mode(SamplingMode::Flat);
     if let Some(n) = sample_size {
@@ -48,10 +44,11 @@ fn random_benchmark(
                 // Make a consistent random number generator
                 // ChaCha8 should be consistent across builds and platforms
                 let mut rng = ChaCha8Rng::seed_from_u64(0);
-                let model = make_random_model(n_sys, density, timesteps.len(), n_sc, &mut rng).unwrap();
+                let model = make_random_model(n_sys, density, n_sc, &mut rng).unwrap();
+                let num_timesteps = model.domain().time().timesteps().len();
 
                 // This is the number of time-steps
-                group.throughput(Throughput::Elements((timesteps.len() * n_sc) as u64));
+                group.throughput(Throughput::Elements((num_timesteps * n_sc) as u64));
 
                 for setup in solver_setups {
                     match &setup.setting {
@@ -63,30 +60,10 @@ fn random_benchmark(
                                 &(n_sys, density, n_sc),
                                 |b, _n| {
                                     // Do the setup here outside of the time-step loop
+                                    let mut state =
+                                        model.setup::<ClpSolver>(&settings).expect("Failed to setup the model.");
 
-                                    let (
-                                        scenario_indices,
-                                        mut states,
-                                        mut parameter_internal_states,
-                                        mut recorder_internal_states,
-                                    ) = model.setup(&timesteps).expect("Failed to setup the model.");
-
-                                    // Setup the solver
-                                    let mut solvers = model
-                                        .setup_solver::<ClpSolver>(settings)
-                                        .expect("Failed to setup the solver.");
-
-                                    b.iter(|| {
-                                        model.run_with_state::<ClpSolver>(
-                                            &timestepper,
-                                            &settings,
-                                            &scenario_indices,
-                                            &mut states,
-                                            &mut parameter_internal_states,
-                                            &mut recorder_internal_states,
-                                            &mut solvers,
-                                        )
-                                    })
+                                    b.iter(|| model.run_with_state(&mut state, &settings))
                                 },
                             );
                         }
@@ -98,31 +75,11 @@ fn random_benchmark(
                                 BenchmarkId::new("random-model", parameter_string),
                                 &(n_sys, density, n_sc),
                                 |b, _n| {
-                                    // Do the setup here outside of the time-step loop
-                                    let timesteps = timestepper.timesteps();
-                                    let (
-                                        scenario_indices,
-                                        mut states,
-                                        mut parameter_internal_states,
-                                        mut recorder_internal_states,
-                                    ) = model.setup(&timesteps).expect("Failed to setup the model.");
+                                    let mut state = model
+                                        .setup::<HighsSolver>(&settings)
+                                        .expect("Failed to setup the model.");
 
-                                    // Setup the solver
-                                    let mut solvers = model
-                                        .setup_solver::<HighsSolver>(settings)
-                                        .expect("Failed to setup the solver.");
-
-                                    b.iter(|| {
-                                        model.run_with_state::<HighsSolver>(
-                                            &timestepper,
-                                            &settings,
-                                            &scenario_indices,
-                                            &mut states,
-                                            &mut parameter_internal_states,
-                                            &mut recorder_internal_states,
-                                            &mut solvers,
-                                        )
-                                    })
+                                    b.iter(|| model.run_with_state(&mut state, &settings))
                                 },
                             );
                         }
@@ -135,31 +92,11 @@ fn random_benchmark(
                                 BenchmarkId::new("random-model", parameter_string),
                                 &(n_sys, density, n_sc),
                                 |b, _n| {
-                                    // Do the setup here outside of the time-step loop
-                                    let timesteps = timestepper.timesteps();
-                                    let (
-                                        scenario_indices,
-                                        mut states,
-                                        mut parameter_internal_states,
-                                        mut recorder_internal_states,
-                                    ) = model.setup(&timesteps).expect("Failed to setup the model.");
+                                    let mut state = model
+                                        .setup_multi_scenario::<SimdIpmF64Solver<1>>(&settings)
+                                        .expect("Failed to setup the model.");
 
-                                    // Setup the solver
-                                    let mut solver = model
-                                        .setup_multi_scenario::<SimdIpmF64Solver<1>>(&scenario_indices, settings)
-                                        .expect("Failed to setup the solver.");
-
-                                    b.iter(|| {
-                                        model.run_multi_scenario_with_state::<SimdIpmF64Solver<1>>(
-                                            &timestepper,
-                                            &settings,
-                                            &scenario_indices,
-                                            &mut states,
-                                            &mut parameter_internal_states,
-                                            &mut recorder_internal_states,
-                                            &mut solver,
-                                        )
-                                    })
+                                    b.iter(|| model.run_multi_scenario_with_state(&mut state, &settings))
                                 },
                             );
                         }
@@ -173,30 +110,11 @@ fn random_benchmark(
                                 &(n_sys, density, n_sc),
                                 |b, _n| {
                                     // Do the setup here outside of the time-step loop
-                                    let timesteps = timestepper.timesteps();
-                                    let (
-                                        scenario_indices,
-                                        mut states,
-                                        mut parameter_internal_states,
-                                        mut recorder_internal_states,
-                                    ) = model.setup(&timesteps).expect("Failed to setup the model.");
+                                    let mut state = model
+                                        .setup_multi_scenario::<SimdIpmF64Solver<2>>(&settings)
+                                        .expect("Failed to setup the model.");
 
-                                    // Setup the solver
-                                    let mut solver = model
-                                        .setup_multi_scenario::<SimdIpmF64Solver<2>>(&scenario_indices, settings)
-                                        .expect("Failed to setup the solver.");
-
-                                    b.iter(|| {
-                                        model.run_multi_scenario_with_state::<SimdIpmF64Solver<2>>(
-                                            &timestepper,
-                                            &settings,
-                                            &scenario_indices,
-                                            &mut states,
-                                            &mut parameter_internal_states,
-                                            &mut recorder_internal_states,
-                                            &mut solver,
-                                        )
-                                    })
+                                    b.iter(|| model.run_multi_scenario_with_state(&mut state, &settings))
                                 },
                             );
                         }
@@ -210,30 +128,11 @@ fn random_benchmark(
                                 &(n_sys, density, n_sc),
                                 |b, _n| {
                                     // Do the setup here outside of the time-step loop
-                                    let timesteps = timestepper.timesteps();
-                                    let (
-                                        scenario_indices,
-                                        mut states,
-                                        mut parameter_internal_states,
-                                        mut recorder_internal_states,
-                                    ) = model.setup(&timesteps).expect("Failed to setup the model.");
+                                    let mut state = model
+                                        .setup_multi_scenario::<SimdIpmF64Solver<4>>(&settings)
+                                        .expect("Failed to setup the model.");
 
-                                    // Setup the solver
-                                    let mut solver = model
-                                        .setup_multi_scenario::<SimdIpmF64Solver<4>>(&scenario_indices, settings)
-                                        .expect("Failed to setup the solver.");
-
-                                    b.iter(|| {
-                                        model.run_multi_scenario_with_state::<SimdIpmF64Solver<4>>(
-                                            &timestepper,
-                                            &settings,
-                                            &scenario_indices,
-                                            &mut states,
-                                            &mut parameter_internal_states,
-                                            &mut recorder_internal_states,
-                                            &mut solver,
-                                        )
-                                    })
+                                    b.iter(|| model.run_multi_scenario_with_state(&mut state, &settings))
                                 },
                             );
                         }
@@ -247,30 +146,11 @@ fn random_benchmark(
                                 &(n_sys, density, n_sc),
                                 |b, _n| {
                                     // Do the setup here outside of the time-step loop
-                                    let timesteps = timestepper.timesteps();
-                                    let (
-                                        scenario_indices,
-                                        mut states,
-                                        mut parameter_internal_states,
-                                        mut recorder_internal_states,
-                                    ) = model.setup(&timesteps).expect("Failed to setup the model.");
+                                    let mut state = model
+                                        .setup_multi_scenario::<ClIpmF64Solver>(&settings)
+                                        .expect("Failed to setup the model.");
 
-                                    // Setup the solver
-                                    let mut solver = model
-                                        .setup_multi_scenario::<ClIpmF64Solver>(&scenario_indices, settings)
-                                        .expect("Failed to setup the solver.");
-
-                                    b.iter(|| {
-                                        model.run_multi_scenario_with_state::<ClIpmF64Solver>(
-                                            &timestepper,
-                                            &settings,
-                                            &scenario_indices,
-                                            &mut states,
-                                            &mut parameter_internal_states,
-                                            &mut recorder_internal_states,
-                                            &mut solver,
-                                        )
-                                    })
+                                    b.iter(|| model.run_multi_scenario_with_state(&mut state, &settings))
                                 },
                             );
                         }

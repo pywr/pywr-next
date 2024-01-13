@@ -4,9 +4,7 @@ use crate::solvers::{ClIpmF32Solver, ClIpmF64Solver, ClIpmSolverSettings};
 use crate::solvers::{HighsSolver, HighsSolverSettings};
 use pyo3::exceptions::PyException;
 use pyo3::prelude::*;
-use pywr_core::model::Model;
 use pywr_core::solvers::{ClpSolver, ClpSolverSettings};
-use pywr_core::timestep::Timestepper;
 use pywr_core::tracing::setup_tracing;
 use pywr_core::ParameterNotFoundError;
 use pywr_schema::PywrModel;
@@ -676,19 +674,19 @@ fn run_model_from_string(
     // TODO handle the serde error properly
     let schema_v2: PywrModel = serde_json::from_str(data.as_str()).unwrap();
 
-    let (mut model, timestepper): (Model, Timestepper) = schema_v2.build_model(path.as_deref(), None)?;
+    let model = schema_v2.build_model(path.as_deref(), None)?;
 
     let nt = num_threads.unwrap_or(1);
 
     py.allow_threads(|| {
         match solver_name.as_str() {
-            "clp" => model.run::<ClpSolver>(&timestepper, &ClpSolverSettings::default()),
+            "clp" => model.run::<ClpSolver>(&ClpSolverSettings::default()),
             #[cfg(feature = "highs")]
-            "highs" => model.run::<HighsSolver>(&timestepper, &HighsSolverSettings::default()),
+            "highs" => model.run::<HighsSolver>(&HighsSolverSettings::default()),
             #[cfg(feature = "ipm-ocl")]
-            "clipm-f32" => model.run_multi_scenario::<ClIpmF32Solver>(&timestepper, &ClIpmSolverSettings::default()),
+            "clipm-f32" => model.run_multi_scenario::<ClIpmF32Solver>(&ClIpmSolverSettings::default()),
             #[cfg(feature = "ipm-ocl")]
-            "clipm-f64" => model.run_multi_scenario::<ClIpmF64Solver>(&timestepper, &ClIpmSolverSettings::default()),
+            "clipm-f64" => model.run_multi_scenario::<ClIpmF64Solver>(&ClIpmSolverSettings::default()),
             _ => panic!("Solver {solver_name} not recognised."),
         }
         .unwrap();

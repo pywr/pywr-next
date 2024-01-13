@@ -9,33 +9,35 @@
     "end": "2015-12-31",
     "timestep": 1
   },
-  "nodes": [
-    {
-      "name": "input1",
-      "type": "Catchment",
-      "flow": 15
-    },
-    {
-      "name": "link1",
-      "type": "Delay",
-      "delay": 3,
-      "initial_value": 0.0
-    },
-    {
-      "name": "demand1",
-      "type": "Output",
-      "max_flow": 20.0,
-      "cost": 1.0
-    }
-  ],
-  "edges": [
-    {
-      "from_node": "input1",
-      "to_node": "link1"
-    },
-    {
-      "from_node": "link1",
-      "to_node": "demand1"
-    }
-  ]
+  "network": {
+    "nodes": [
+      {
+        "name": "input1",
+        "type": "Catchment",
+        "flow": 15
+      },
+      {
+        "name": "link1",
+        "type": "Delay",
+        "delay": 3,
+        "initial_value": 0.0
+      },
+      {
+        "name": "demand1",
+        "type": "Output",
+        "max_flow": 20.0,
+        "cost": 1.0
+      }
+    ],
+    "edges": [
+      {
+        "from_node": "input1",
+        "to_node": "link1"
+      },
+      {
+        "from_node": "link1",
+        "to_node": "demand1"
+      }
+    ]
+  }
 }

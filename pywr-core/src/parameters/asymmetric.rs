@@ -1,4 +1,4 @@
-use crate::model::Model;
+use crate::network::Network;
 use crate::parameters::{downcast_internal_state, IndexParameter, IndexValue, ParameterMeta};
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
@@ -38,7 +38,7 @@ impl IndexParameter for AsymmetricSwitchIndexParameter {
         &self,
         _timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
-        _model: &Model,
+        _model: &Network,
         state: &State,
         internal_state: &mut Option<Box<dyn Any + Send>>,
     ) -> Result<usize, PywrError> {

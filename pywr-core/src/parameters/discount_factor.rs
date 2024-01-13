@@ -1,5 +1,5 @@
 use crate::metric::Metric;
-use crate::model::Model;
+use crate::network::Network;
 use crate::parameters::{Parameter, ParameterMeta};
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
@@ -34,12 +34,12 @@ impl Parameter for DiscountFactorParameter {
         &self,
         timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
-        model: &Model,
+        network: &Network,
         state: &State,
         _internal_state: &mut Option<Box<dyn Any + Send>>,
     ) -> Result<f64, PywrError> {
         let year = timestep.date.year() - self.base_year;
-        let rate = self.discount_rate.get_value(model, state)?;
+        let rate = self.discount_rate.get_value(network, state)?;
 
         let factor = 1.0 / (1.0 + rate).powi(year);
         Ok(factor)
@@ -57,12 +57,13 @@ mod test {
     #[test]
     fn test_basic() {
         let mut model = simple_model(1);
+        let mut network = model.network_mut();
 
         // Create an artificial volume series to use for the delay test
         let volumes = Array1::linspace(1.0, 0.0, 21);
         let volume = Array1Parameter::new("test-x", volumes.clone(), None);
 
-        let volume_idx = model.add_parameter(Box::new(volume)).unwrap();
+        let volume_idx = network.add_parameter(Box::new(volume)).unwrap();
 
         const DELAY: usize = 3; // 3 time-step delay
         let parameter = DiscountFactorParameter::new(

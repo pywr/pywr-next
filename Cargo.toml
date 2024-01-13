@@ -1,5 +1,3 @@
-
-
 [workspace]
 resolver = "2"
 members = [
@@ -40,11 +38,11 @@ thiserror = "1.0.25"
 time = { version = "0.3", features = ["serde", "serde-well-known", "serde-human-readable", "macros"] }
 num = "0.4.0"
 ndarray = "0.15.3"
-polars = { version = "0.35.4", features = ["lazy", "rows", "ndarray"] }
-pyo3-polars = "0.9.0"
+polars = { version = "0.36.2", features = ["lazy", "rows", "ndarray"] }
+pyo3-polars = "0.10.0"
 pyo3 = { version = "0.20.0" }
 tracing = "0.1"
 csv = "1.1"
 hdf5 = { version="0.8.1" }
 hdf5-sys = { version="0.8.1", features=["static"] }
-pywr-v1-schema = { git = "https://github.com/pywr/pywr-schema/", tag="v0.8.0", package = "pywr-schema" }
+pywr-v1-schema = { git = "https://github.com/pywr/pywr-schema/", tag="v0.9.0", package = "pywr-schema" }

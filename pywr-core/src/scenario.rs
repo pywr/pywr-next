@@ -31,6 +31,12 @@ pub struct ScenarioGroupCollection {
 }
 
 impl ScenarioGroupCollection {
+    /// Number of [`ScenarioGroup`]s in the collection.
+    pub fn len(&self) -> usize {
+        self.groups.len()
+    }
+
+    /// Find a [`ScenarioGroup`]s index in the collection by name
     /// Find a `ScenarioGroup` in the collection by its index
     pub fn get_group(&self, idx: usize) -> Result<&ScenarioGroup, PywrError> {
         self.groups
@@ -51,7 +57,7 @@ impl ScenarioGroupCollection {
             .ok_or_else(|| PywrError::ScenarioNotFound(name.to_string()))
     }
 
-    /// Find a `ScenarioGroup`'s index in the collection by name
+    /// Find a [`ScenarioGroup`]s index in the collection by name
     pub fn get_group_by_name(&self, name: &str) -> Result<&ScenarioGroup, PywrError> {
         self.groups
             .iter()
@@ -59,14 +65,14 @@ impl ScenarioGroupCollection {
             .ok_or_else(|| PywrError::ScenarioNotFound(name.to_string()))
     }
 
-    /// Add a `ScenarioGroup` to the collection
+    /// Add a [`ScenarioGroup`] to the collection
     pub fn add_group(&mut self, name: &str, size: usize) {
         // TODO error with duplicate names
         self.groups.push(ScenarioGroup::new(name, size));
     }
 
     /// Return a vector of `ScenarioIndex`s for all combinations of the groups.
-    pub fn scenario_indices(&self) -> Vec<ScenarioIndex> {
+    fn scenario_indices(&self) -> Vec<ScenarioIndex> {
         let num: usize = self.groups.iter().map(|grp| grp.size).product();
         let mut scenario_indices: Vec<ScenarioIndex> = Vec::with_capacity(num);
 
@@ -94,5 +100,49 @@ pub struct ScenarioIndex {
 impl ScenarioIndex {
     pub(crate) fn new(index: usize, indices: Vec<usize>) -> Self {
         Self { index, indices }
+    }
+}
+
+pub struct ScenarioDomain {
+    scenario_indices: Vec<ScenarioIndex>,
+    scenario_group_names: Vec<String>,
+}
+
+impl ScenarioDomain {
+    /// The total number of scenario combinations in the domain.
+    pub fn len(&self) -> usize {
+        self.scenario_indices.len()
+    }
+    pub fn indices(&self) -> &[ScenarioIndex] {
+        &self.scenario_indices
+    }
+
+    /// Return the index of a scenario group by name
+    pub fn group_index(&self, name: &str) -> Option<usize> {
+        self.scenario_group_names.iter().position(|n| n == name)
+    }
+
+    /// Return the name of each scenario group
+    pub fn group_names(&self) -> &[String] {
+        &self.scenario_group_names
+    }
+}
+
+impl From<ScenarioGroupCollection> for ScenarioDomain {
+    fn from(value: ScenarioGroupCollection) -> Self {
+        // Handle creating at-least one scenario if the collection is empty.
+        if value.len() > 0 {
+            let scenario_group_names = value.groups.iter().map(|g| g.name.clone()).collect();
+
+            Self {
+                scenario_indices: value.scenario_indices(),
+                scenario_group_names,
+            }
+        } else {
+            Self {
+                scenario_indices: vec![ScenarioIndex::new(0, vec![0])],
+                scenario_group_names: vec!["default".to_string()],
+            }
+        }
     }
 }

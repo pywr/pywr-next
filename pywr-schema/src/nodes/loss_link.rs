@@ -1,8 +1,10 @@
 use crate::data_tables::LoadedTableCollection;
 use crate::error::{ConversionError, SchemaError};
+use crate::model::PywrMultiNetworkTransfer;
 use crate::nodes::NodeMeta;
 use crate::parameters::{DynamicFloatValue, TryIntoV2Parameter};
 use pywr_core::metric::Metric;
+use pywr_core::models::ModelDomain;
 use pywr_v1_schema::nodes::LossLinkNode as LossLinkNodeV1;
 use std::path::Path;
 
@@ -42,11 +44,11 @@ impl LossLinkNode {
         Some("net")
     }
 
-    pub fn add_to_model(&self, model: &mut pywr_core::model::Model) -> Result<(), SchemaError> {
-        model.add_link_node(self.meta.name.as_str(), Self::net_sub_name())?;
-        // TODO make the loss node configurable (i.e. it could be a link if a model wanted to use the loss)
+    pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
+        network.add_link_node(self.meta.name.as_str(), Self::net_sub_name())?;
+        // TODO make the loss node configurable (i.e. it could be a link if a network wanted to use the loss)
         // The above would need to support slots in the connections.
-        model.add_output_node(self.meta.name.as_str(), Self::loss_sub_name())?;
+        network.add_output_node(self.meta.name.as_str(), Self::loss_sub_name())?;
 
         // TODO add the aggregated node that actually does the losses!
         Ok(())
@@ -54,23 +56,25 @@ impl LossLinkNode {
 
     pub fn set_constraints(
         &self,
-        model: &mut pywr_core::model::Model,
+        network: &mut pywr_core::network::Network,
+        domain: &ModelDomain,
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
+        inter_network_transfers: &[PywrMultiNetworkTransfer],
     ) -> Result<(), SchemaError> {
         if let Some(cost) = &self.net_cost {
-            let value = cost.load(model, tables, data_path)?;
-            model.set_node_cost(self.meta.name.as_str(), Self::net_sub_name(), value.into())?;
+            let value = cost.load(network, domain, tables, data_path, inter_network_transfers)?;
+            network.set_node_cost(self.meta.name.as_str(), Self::net_sub_name(), value.into())?;
         }
 
         if let Some(max_flow) = &self.max_net_flow {
-            let value = max_flow.load(model, tables, data_path)?;
-            model.set_node_max_flow(self.meta.name.as_str(), Self::net_sub_name(), value.into())?;
+            let value = max_flow.load(network, domain, tables, data_path, inter_network_transfers)?;
+            network.set_node_max_flow(self.meta.name.as_str(), Self::net_sub_name(), value.into())?;
         }
 
         if let Some(min_flow) = &self.min_net_flow {
-            let value = min_flow.load(model, tables, data_path)?;
-            model.set_node_min_flow(self.meta.name.as_str(), Self::net_sub_name(), value.into())?;
+            let value = min_flow.load(network, domain, tables, data_path, inter_network_transfers)?;
+            network.set_node_min_flow(self.meta.name.as_str(), Self::net_sub_name(), value.into())?;
         }
 
         Ok(())
@@ -89,8 +93,8 @@ impl LossLinkNode {
         vec![(self.meta.name.as_str(), Self::net_sub_name().map(|s| s.to_string()))]
     }
 
-    pub fn default_metric(&self, model: &pywr_core::model::Model) -> Result<Metric, SchemaError> {
-        let idx = model.get_node_index_by_name(self.meta.name.as_str(), Self::net_sub_name().as_deref())?;
+    pub fn default_metric(&self, network: &pywr_core::network::Network) -> Result<Metric, SchemaError> {
+        let idx = network.get_node_index_by_name(self.meta.name.as_str(), Self::net_sub_name().as_deref())?;
         Ok(Metric::NodeOutFlow(idx))
     }
 }

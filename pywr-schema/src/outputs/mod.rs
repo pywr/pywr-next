@@ -16,12 +16,12 @@ pub enum Output {
 impl Output {
     pub fn add_to_model(
         &self,
-        model: &mut pywr_core::model::Model,
+        network: &mut pywr_core::network::Network,
         output_path: Option<&Path>,
     ) -> Result<(), SchemaError> {
         match self {
-            Self::CSV(o) => o.add_to_model(model, output_path),
-            Self::HDF5(o) => o.add_to_model(model, output_path),
+            Self::CSV(o) => o.add_to_model(network, output_path),
+            Self::HDF5(o) => o.add_to_model(network, output_path),
         }
     }
 }

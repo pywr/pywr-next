@@ -6,7 +6,8 @@ mod py;
 
 pub use self::csv::CSVRecorder;
 use crate::metric::{IndexMetric, Metric};
-use crate::model::Model;
+use crate::models::ModelDomain;
+use crate::network::Network;
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
 use crate::timestep::Timestep;
@@ -66,12 +67,7 @@ pub trait Recorder: Send + Sync {
     fn name(&self) -> &str {
         self.meta().name.as_str()
     }
-    fn setup(
-        &self,
-        _timesteps: &[Timestep],
-        _scenario_indices: &[ScenarioIndex],
-        _model: &Model,
-    ) -> Result<Option<Box<dyn Any>>, PywrError> {
+    fn setup(&self, _domain: &ModelDomain, _model: &Network) -> Result<Option<Box<dyn Any>>, PywrError> {
         Ok(None)
     }
     fn before(&self) {}
@@ -80,7 +76,7 @@ pub trait Recorder: Send + Sync {
         &self,
         _timestep: &Timestep,
         _scenario_indices: &[ScenarioIndex],
-        _model: &Model,
+        _model: &Network,
         _state: &[State],
         _metric_set_states: &[Vec<MetricSetState>],
         _internal_state: &mut Option<Box<dyn Any>>,
@@ -111,13 +107,8 @@ impl Recorder for Array2Recorder {
         &self.meta
     }
 
-    fn setup(
-        &self,
-        timesteps: &[Timestep],
-        scenario_indices: &[ScenarioIndex],
-        _model: &Model,
-    ) -> Result<Option<Box<(dyn Any)>>, PywrError> {
-        let array: Array2<f64> = Array::zeros((timesteps.len(), scenario_indices.len()));
+    fn setup(&self, domain: &ModelDomain, _model: &Network) -> Result<Option<Box<(dyn Any)>>, PywrError> {
+        let array: Array2<f64> = Array::zeros((domain.time().len(), domain.scenarios().len()));
 
         Ok(Some(Box::new(array)))
     }
@@ -126,7 +117,7 @@ impl Recorder for Array2Recorder {
         &self,
         timestep: &Timestep,
         scenario_indices: &[ScenarioIndex],
-        model: &Model,
+        model: &Network,
         state: &[State],
         metric_set_states: &[Vec<MetricSetState>],
         internal_state: &mut Option<Box<dyn Any>>,
@@ -185,7 +176,7 @@ impl Recorder for AssertionRecorder {
         &self,
         timestep: &Timestep,
         scenario_indices: &[ScenarioIndex],
-        model: &Model,
+        model: &Network,
         state: &[State],
         metric_set_states: &[Vec<MetricSetState>],
         _internal_state: &mut Option<Box<dyn Any>>,
@@ -258,7 +249,7 @@ where
         &self,
         timestep: &Timestep,
         scenario_indices: &[ScenarioIndex],
-        model: &Model,
+        model: &Network,
         state: &[State],
         metric_set_states: &[Vec<MetricSetState>],
         _internal_state: &mut Option<Box<dyn Any>>,
@@ -313,7 +304,7 @@ impl Recorder for IndexAssertionRecorder {
         &self,
         timestep: &Timestep,
         scenario_indices: &[ScenarioIndex],
-        model: &Model,
+        network: &Network,
         state: &[State],
         metric_set_states: &[Vec<MetricSetState>],
         _internal_state: &mut Option<Box<dyn Any>>,
@@ -326,7 +317,7 @@ impl Recorder for IndexAssertionRecorder {
                 None => panic!("Simulation produced results out of range."),
             };
 
-            let actual_value = self.metric.get_value(model, &state[scenario_index.index])?;
+            let actual_value = self.metric.get_value(network, &state[scenario_index.index])?;
 
             if actual_value != expected_value {
                 panic!(
@@ -372,21 +363,19 @@ struct RecorderMetric {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::solvers::{ClpSolver, ClpSolverSettings};
-    use crate::test_utils::{default_timestepper, run_all_solvers, simple_model};
+    use crate::test_utils::{run_all_solvers, simple_model};
 
     #[test]
     fn test_array2_recorder() {
         let mut model = simple_model(2);
-        let timestepper = default_timestepper();
 
-        let node_idx = model.get_node_index_by_name("input", None).unwrap();
+        let node_idx = model.network().get_node_index_by_name("input", None).unwrap();
 
         let rec = Array2Recorder::new("test", Metric::NodeOutFlow(node_idx));
 
-        let _idx = model.add_recorder(Box::new(rec)).unwrap();
+        let _idx = model.network_mut().add_recorder(Box::new(rec)).unwrap();
         // Test all solvers
-        run_all_solvers(&model, &timestepper);
+        run_all_solvers(&model);
 
         // TODO fix this with respect to the trait.
         // let array = rec.data_view2().unwrap();

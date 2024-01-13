@@ -1,4 +1,4 @@
-use crate::model::Model;
+use crate::network::Network;
 use crate::node::{ConstraintValue, FlowConstraints, NodeMeta, StorageConstraints, StorageInitialVolume};
 use crate::state::{State, VirtualStorageState};
 use crate::timestep::Timestep;
@@ -144,15 +144,15 @@ impl VirtualStorage {
         VirtualStorageState::new(0.0)
     }
 
-    pub fn get_cost(&self, model: &Model, state: &State) -> Result<f64, PywrError> {
+    pub fn get_cost(&self, network: &Network, state: &State) -> Result<f64, PywrError> {
         match &self.cost {
             ConstraintValue::None => Ok(0.0),
             ConstraintValue::Scalar(v) => Ok(*v),
-            ConstraintValue::Metric(m) => m.get_value(model, state),
+            ConstraintValue::Metric(m) => m.get_value(network, state),
         }
     }
 
-    pub fn before(&self, timestep: &Timestep, model: &Model, state: &mut State) -> Result<(), PywrError> {
+    pub fn before(&self, timestep: &Timestep, network: &Network, state: &mut State) -> Result<(), PywrError> {
         let do_reset = if timestep.is_first() {
             // Set the initial volume if it is the first timestep.
             true
@@ -181,7 +181,7 @@ impl VirtualStorage {
             let volume = match &self.initial_volume {
                 StorageInitialVolume::Absolute(iv) => *iv,
                 StorageInitialVolume::Proportional(ipc) => {
-                    let max_volume = self.get_max_volume(model, state)?;
+                    let max_volume = self.get_max_volume(network, state)?;
                     max_volume * ipc
                 }
             };
@@ -202,15 +202,15 @@ impl VirtualStorage {
             .map(|factors| self.nodes.iter().zip(factors.iter()).map(|(n, f)| (*n, *f)).collect())
     }
 
-    pub fn get_min_volume(&self, model: &Model, state: &State) -> Result<f64, PywrError> {
+    pub fn get_min_volume(&self, model: &Network, state: &State) -> Result<f64, PywrError> {
         self.storage_constraints.get_min_volume(model, state)
     }
 
-    pub fn get_max_volume(&self, model: &Model, state: &State) -> Result<f64, PywrError> {
+    pub fn get_max_volume(&self, model: &Network, state: &State) -> Result<f64, PywrError> {
         self.storage_constraints.get_max_volume(model, state)
     }
 
-    pub fn get_current_available_volume_bounds(&self, model: &Model, state: &State) -> Result<(f64, f64), PywrError> {
+    pub fn get_current_available_volume_bounds(&self, model: &Network, state: &State) -> Result<(f64, f64), PywrError> {
         let min_vol = self.get_min_volume(model, state)?;
         let max_vol = self.get_max_volume(model, state)?;
 
@@ -230,11 +230,11 @@ fn months_since_last_reset(current: &Date, last_reset: &Date) -> i32 {
 #[cfg(test)]
 mod tests {
     use crate::metric::Metric;
-    use crate::model::Model;
+    use crate::models::Model;
+    use crate::network::Network;
     use crate::node::{ConstraintValue, StorageInitialVolume};
     use crate::recorders::{AssertionFnRecorder, AssertionRecorder};
     use crate::scenario::ScenarioIndex;
-    use crate::solvers::{ClpSolver, ClpSolverSettings};
     use crate::test_utils::{default_timestepper, run_all_solvers, simple_model};
     use crate::timestep::Timestep;
     use crate::virtual_storage::{months_since_last_reset, VirtualStorageReset};
@@ -265,25 +265,23 @@ mod tests {
     /// Test the virtual storage constraints
     #[test]
     fn test_basic_virtual_storage() {
-        let mut model = Model::default();
-        let timestepper = default_timestepper();
+        let mut network = Network::default();
 
-        let input_node = model.add_input_node("input", None).unwrap();
-        let link_node0 = model.add_link_node("link", Some("0")).unwrap();
-        let output_node0 = model.add_output_node("output", Some("0")).unwrap();
+        let input_node = network.add_input_node("input", None).unwrap();
+        let link_node0 = network.add_link_node("link", Some("0")).unwrap();
+        let output_node0 = network.add_output_node("output", Some("0")).unwrap();
 
-        model.connect_nodes(input_node, link_node0).unwrap();
-        model.connect_nodes(link_node0, output_node0).unwrap();
+        network.connect_nodes(input_node, link_node0).unwrap();
+        network.connect_nodes(link_node0, output_node0).unwrap();
 
-        let link_node1 = model.add_link_node("link", Some("1")).unwrap();
-        let output_node1 = model.add_output_node("output", Some("1")).unwrap();
+        let link_node1 = network.add_link_node("link", Some("1")).unwrap();
+        let output_node1 = network.add_output_node("output", Some("1")).unwrap();
 
-        model.connect_nodes(input_node, link_node1).unwrap();
-        model.connect_nodes(link_node1, output_node1).unwrap();
+        network.connect_nodes(input_node, link_node1).unwrap();
+        network.connect_nodes(link_node1, output_node1).unwrap();
 
         // Virtual storage with contributions from link-node0 than link-node1
-
-        let _vs = model.add_virtual_storage_node(
+        let _vs = network.add_virtual_storage_node(
             "virtual-storage",
             None,
             &[link_node0, link_node1],
@@ -297,7 +295,7 @@ mod tests {
 
         // Setup a demand on output-0 and output-1
         for sub_name in &["0", "1"] {
-            let output_node = model.get_mut_node_by_name("output", Some(sub_name)).unwrap();
+            let output_node = network.get_mut_node_by_name("output", Some(sub_name)).unwrap();
             output_node
                 .set_max_flow_constraint(ConstraintValue::Scalar(10.0))
                 .unwrap();
@@ -308,7 +306,7 @@ mod tests {
         // 30 per day.
         // TODO assert let expected_vol = |ts: &Timestep, _si| (70.0 - ts.index as f64 * 30.0).max(0.0);
         // Set-up assertion for "link" node
-        let idx = model.get_node_by_name("link", Some("0")).unwrap().index();
+        let idx = network.get_node_by_name("link", Some("0")).unwrap().index();
         let expected = |ts: &Timestep, _si: &ScenarioIndex| {
             if ts.index < 3 {
                 10.0
@@ -317,10 +315,10 @@ mod tests {
             }
         };
         let recorder = AssertionFnRecorder::new("link-0-flow", Metric::NodeOutFlow(idx), expected, None, None);
-        model.add_recorder(Box::new(recorder)).unwrap();
+        network.add_recorder(Box::new(recorder)).unwrap();
 
         // Set-up assertion for "input" node
-        let idx = model.get_node_by_name("link", Some("1")).unwrap().index();
+        let idx = network.get_node_by_name("link", Some("1")).unwrap().index();
         let expected = |ts: &Timestep, _si: &ScenarioIndex| {
             if ts.index < 4 {
                 10.0
@@ -329,21 +327,23 @@ mod tests {
             }
         };
         let recorder = AssertionFnRecorder::new("link-1-flow", Metric::NodeOutFlow(idx), expected, None, None);
-        model.add_recorder(Box::new(recorder)).unwrap();
+        network.add_recorder(Box::new(recorder)).unwrap();
 
+        let model = Model::new(default_timestepper().into(), network);
         // Test all solvers
-        run_all_solvers(&model, &timestepper);
+        run_all_solvers(&model);
     }
 
     #[test]
     /// Test virtual storage node costs
     fn test_virtual_storage_node_costs() {
         let mut model = simple_model(1);
+        let network = model.network_mut();
         let timestepper = default_timestepper();
 
-        let nodes = vec![model.get_node_index_by_name("input", None).unwrap()];
+        let nodes = vec![network.get_node_index_by_name("input", None).unwrap()];
         // Virtual storage node cost is high enough to prevent any flow
-        model
+        network
             .add_virtual_storage_node(
                 "vs",
                 None,
@@ -358,11 +358,11 @@ mod tests {
             .unwrap();
 
         let expected = Array::zeros((366, 1));
-        let idx = model.get_node_by_name("output", None).unwrap().index();
+        let idx = network.get_node_by_name("output", None).unwrap().index();
         let recorder = AssertionRecorder::new("output-flow", Metric::NodeInFlow(idx), expected, None, None);
-        model.add_recorder(Box::new(recorder)).unwrap();
+        network.add_recorder(Box::new(recorder)).unwrap();
 
         // Test all solvers
-        run_all_solvers(&model, &timestepper);
+        run_all_solvers(&model);
     }
 }

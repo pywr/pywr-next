@@ -1,6 +1,7 @@
 use super::{MetricSetState, PywrError, Recorder, RecorderMeta, Timestep};
 use crate::metric::Metric;
-use crate::model::Model;
+use crate::models::ModelDomain;
+use crate::network::Network;
 use crate::recorders::metric_set::MetricSetIndex;
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
@@ -35,38 +36,33 @@ impl Recorder for CSVRecorder {
     fn meta(&self) -> &RecorderMeta {
         &self.meta
     }
-    fn setup(
-        &self,
-        _timesteps: &[Timestep],
-        scenario_indices: &[ScenarioIndex],
-        model: &Model,
-    ) -> Result<Option<Box<(dyn Any)>>, PywrError> {
+    fn setup(&self, domain: &ModelDomain, network: &Network) -> Result<Option<Box<(dyn Any)>>, PywrError> {
         let mut writer = csv::Writer::from_path(&self.filename).map_err(|e| PywrError::CSVError(e.to_string()))?;
 
         let mut names = vec![];
         let mut sub_names = vec![];
         let mut attributes = vec![];
 
-        let metric_set = model.get_metric_set(self.metric_set_idx)?;
+        let metric_set = network.get_metric_set(self.metric_set_idx)?;
 
         for metric in metric_set.iter_metrics() {
             let (name, sub_name, attribute) = match metric {
                 Metric::NodeInFlow(idx) => {
-                    let node = model.get_node(idx)?;
+                    let node = network.get_node(idx)?;
                     let (name, sub_name) = node.full_name();
                     let sub_name = sub_name.map_or("".to_string(), |sn| sn.to_string());
 
                     (name.to_string(), sub_name, "inflow".to_string())
                 }
                 Metric::NodeOutFlow(idx) => {
-                    let node = model.get_node(idx)?;
+                    let node = network.get_node(idx)?;
                     let (name, sub_name) = node.full_name();
                     let sub_name = sub_name.map_or("".to_string(), |sn| sn.to_string());
 
                     (name.to_string(), sub_name, "outflow".to_string())
                 }
                 Metric::NodeVolume(idx) => {
-                    let node = model.get_node(idx)?;
+                    let node = network.get_node(idx)?;
                     let (name, sub_name) = node.full_name();
                     let sub_name = sub_name.map_or("".to_string(), |sn| sn.to_string());
 
@@ -76,7 +72,7 @@ impl Recorder for CSVRecorder {
                     todo!("Derived metrics are not yet supported in CSV recorders");
                 }
                 Metric::AggregatedNodeVolume(idx) => {
-                    let node = model.get_aggregated_storage_node(idx)?;
+                    let node = network.get_aggregated_storage_node(idx)?;
                     let (name, sub_name) = node.full_name();
                     let sub_name = sub_name.map_or("".to_string(), |sn| sn.to_string());
 
@@ -86,7 +82,7 @@ impl Recorder for CSVRecorder {
                     continue; // TODO
                 }
                 Metric::ParameterValue(idx) => {
-                    let parameter = model.get_parameter(idx)?;
+                    let parameter = network.get_parameter(idx)?;
                     let name = parameter.name();
                     (name.to_string(), "".to_string(), "parameter".to_string())
                 }
@@ -100,14 +96,14 @@ impl Recorder for CSVRecorder {
                     continue; // TODO
                 }
                 Metric::AggregatedNodeInFlow(idx) => {
-                    let node = model.get_aggregated_node(idx)?;
+                    let node = network.get_aggregated_node(idx)?;
                     let (name, sub_name) = node.full_name();
                     let sub_name = sub_name.map_or("".to_string(), |sn| sn.to_string());
 
                     (name.to_string(), sub_name, "inflow".to_string())
                 }
                 Metric::AggregatedNodeOutFlow(idx) => {
-                    let node = model.get_aggregated_node(idx)?;
+                    let node = network.get_aggregated_node(idx)?;
                     let (name, sub_name) = node.full_name();
                     let sub_name = sub_name.map_or("".to_string(), |sn| sn.to_string());
 
@@ -118,6 +114,9 @@ impl Recorder for CSVRecorder {
                     sub_name.clone().unwrap_or("".to_string()),
                     "inflow".to_string(),
                 ),
+                Metric::InterNetworkTransfer(_) => {
+                    continue; // TODO
+                }
             };
 
             // Add entries for each scenario
@@ -134,11 +133,11 @@ impl Recorder for CSVRecorder {
 
         // This is a vec of vec for each scenario group
         let mut header_scenario_groups = Vec::new();
-        for group in model.get_scenario_groups() {
-            header_scenario_groups.push(vec![format!("scenario-group: {}", group.name())]);
+        for group_name in domain.scenarios().group_names() {
+            header_scenario_groups.push(vec![format!("scenario-group: {}", group_name)]);
         }
 
-        for scenario_index in scenario_indices.iter() {
+        for scenario_index in domain.scenarios().indices().iter() {
             // Repeat the names, sub-names and attributes for every scenario
             header_name.extend(names.clone());
             header_sub_name.extend(sub_names.clone());
@@ -181,7 +180,7 @@ impl Recorder for CSVRecorder {
         &self,
         timestep: &Timestep,
         scenario_indices: &[ScenarioIndex],
-        model: &Model,
+        network: &Network,
         state: &[State],
         metric_set_states: &[Vec<MetricSetState>],
         internal_state: &mut Option<Box<dyn Any>>,

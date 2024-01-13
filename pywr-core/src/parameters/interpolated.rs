@@ -1,5 +1,5 @@
 use crate::metric::Metric;
-use crate::model::Model;
+use crate::network::Network;
 use crate::parameters::interpolate::linear_interpolation;
 use crate::parameters::{Parameter, ParameterMeta};
 use crate::scenario::ScenarioIndex;
@@ -38,19 +38,19 @@ impl Parameter for InterpolatedParameter {
         &self,
         _timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
-        model: &Model,
+        network: &Network,
         state: &State,
         _internal_state: &mut Option<Box<dyn Any + Send>>,
     ) -> Result<f64, PywrError> {
         // Current value
-        let x = self.x.get_value(model, state)?;
+        let x = self.x.get_value(network, state)?;
 
         let points = self
             .points
             .iter()
             .map(|(x, f)| {
-                let xp = x.get_value(model, state)?;
-                let fp = f.get_value(model, state)?;
+                let xp = x.get_value(network, state)?;
+                let fp = f.get_value(network, state)?;
 
                 Ok::<(f64, f64), PywrError>((xp, fp))
             })

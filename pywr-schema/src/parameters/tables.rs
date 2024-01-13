@@ -1,6 +1,7 @@
 use crate::error::{ConversionError, SchemaError};
 use crate::parameters::{DynamicFloatValueType, IntoV2Parameter, ParameterMeta, TryFromV1Parameter};
 use ndarray::s;
+use pywr_core::models::ModelDomain;
 use pywr_core::parameters::ParameterIndex;
 use pywr_v1_schema::parameters::TablesArrayParameter as TablesArrayParameterV1;
 use std::collections::HashMap;
@@ -29,7 +30,8 @@ impl TablesArrayParameter {
 
     pub fn add_to_model(
         &self,
-        model: &mut pywr_core::model::Model,
+        network: &mut pywr_core::network::Network,
+        domain: &ModelDomain,
         data_path: Option<&Path>,
     ) -> Result<ParameterIndex, SchemaError> {
         // 1. Load the file from the HDF5 file (NB this is not Pandas format).
@@ -60,18 +62,22 @@ impl TablesArrayParameter {
 
         // 3. Create an ArrayParameter using the loaded array.
         if let Some(scenario) = &self.scenario {
-            let scenario_group = model.get_scenario_group_index_by_name(scenario)?;
+            let scenario_group_index = domain
+                .scenarios()
+                .group_index(scenario)
+                .ok_or(SchemaError::ScenarioGroupNotFound(scenario.to_string()))?;
+
             let p = pywr_core::parameters::Array2Parameter::new(
                 &self.meta.name,
                 array,
-                scenario_group,
+                scenario_group_index,
                 self.timestep_offset,
             );
-            Ok(model.add_parameter(Box::new(p))?)
+            Ok(network.add_parameter(Box::new(p))?)
         } else {
             let array = array.slice_move(s![.., 0]);
             let p = pywr_core::parameters::Array1Parameter::new(&self.meta.name, array, self.timestep_offset);
-            Ok(model.add_parameter(Box::new(p))?)
+            Ok(network.add_parameter(Box::new(p))?)
         }
     }
 }

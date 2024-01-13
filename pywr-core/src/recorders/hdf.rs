@@ -1,6 +1,7 @@
 use super::{MetricSetState, PywrError, Recorder, RecorderMeta, Timestep};
 use crate::metric::Metric;
-use crate::model::Model;
+use crate::models::ModelDomain;
+use crate::network::Network;
 use crate::recorders::MetricSetIndex;
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
@@ -57,12 +58,7 @@ impl Recorder for HDF5Recorder {
     fn meta(&self) -> &RecorderMeta {
         &self.meta
     }
-    fn setup(
-        &self,
-        timesteps: &[Timestep],
-        scenario_indices: &[ScenarioIndex],
-        model: &Model,
-    ) -> Result<Option<Box<(dyn Any)>>, PywrError> {
+    fn setup(&self, domain: &ModelDomain, model: &Network) -> Result<Option<Box<(dyn Any)>>, PywrError> {
         let file = match hdf5::File::create(&self.filename) {
             Ok(f) => f,
             Err(e) => return Err(PywrError::HDF5Error(e.to_string())),
@@ -70,12 +66,12 @@ impl Recorder for HDF5Recorder {
         let mut datasets = Vec::new();
 
         // Create the time table
-        let dates: Array1<_> = timesteps.iter().map(Date::from_timestamp).collect();
+        let dates: Array1<_> = domain.time().timesteps().iter().map(Date::from_timestamp).collect();
         if let Err(e) = file.deref().new_dataset_builder().with_data(&dates).create("time") {
             return Err(PywrError::HDF5Error(e.to_string()));
         }
 
-        let shape = (timesteps.len(), scenario_indices.len());
+        let shape = (domain.time().len(), domain.scenarios().len());
 
         let root_grp = file.deref();
 
@@ -130,6 +126,9 @@ impl Recorder for HDF5Recorder {
                 Metric::MultiNodeInFlow { name, sub_name, .. } => {
                     require_node_dataset(root_grp, shape, name, sub_name.as_deref(), "inflow")?
                 }
+                Metric::InterNetworkTransfer(_) => {
+                    continue; // TODO
+                }
             };
 
             datasets.push(ds);
@@ -143,7 +142,7 @@ impl Recorder for HDF5Recorder {
         &self,
         timestep: &Timestep,
         scenario_indices: &[ScenarioIndex],
-        model: &Model,
+        model: &Network,
         state: &[State],
         metric_set_states: &[Vec<MetricSetState>],
         internal_state: &mut Option<Box<dyn Any>>,

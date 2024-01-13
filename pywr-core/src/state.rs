@@ -1,9 +1,9 @@
 use crate::derived_metric::DerivedMetricIndex;
 use crate::edge::{Edge, EdgeIndex};
-use crate::model::Model;
+use crate::models::MultiNetworkTransferIndex;
+use crate::network::Network;
 use crate::node::{Node, NodeIndex};
 use crate::parameters::{IndexParameterIndex, MultiValueParameterIndex, ParameterIndex};
-use crate::recorders::{MetricSetIndex, MetricSetState};
 use crate::timestep::Timestep;
 use crate::virtual_storage::VirtualStorageIndex;
 use crate::PywrError;
@@ -369,12 +369,12 @@ impl NetworkState {
     ///
     /// This final step ensures that derived states (e.g. virtual storage volume) are updated
     /// once all of the flows have been updated.
-    pub fn complete(&mut self, model: &Model, timestep: &Timestep) -> Result<(), PywrError> {
+    pub fn complete(&mut self, model: &Network, timestep: &Timestep) -> Result<(), PywrError> {
         // Update virtual storage node states
         for (state, node) in self
             .virtual_storage_states
             .iter_mut()
-            .zip(model.virtual_storage_nodes.iter())
+            .zip(model.virtual_storage_nodes().iter())
         {
             if let Some(node_factors) = node.get_nodes_with_factors() {
                 let flow = node_factors
@@ -382,7 +382,7 @@ impl NetworkState {
                     .map(|(idx, factor)| match self.node_states.get(*idx.deref()) {
                         None => Err(PywrError::NodeIndexNotFound),
                         Some(s) => {
-                            let node = model.nodes.get(idx)?;
+                            let node = model.nodes().get(idx)?;
                             match node {
                                 Node::Input(_) => Ok(factor * s.get_out_flow()),
                                 Node::Output(_) => Ok(factor * s.get_in_flow()),
@@ -506,6 +506,7 @@ pub struct State {
     network: NetworkState,
     parameters: ParameterValues,
     derived_metrics: Vec<f64>,
+    inter_network_values: Vec<f64>,
 }
 
 impl State {
@@ -517,11 +518,13 @@ impl State {
         num_parameter_indices: usize,
         num_multi_parameters: usize,
         num_derived_metrics: usize,
+        num_inter_network_values: usize,
     ) -> Self {
         Self {
             network: NetworkState::new(initial_node_states, num_edges, initial_virtual_storage_states),
             parameters: ParameterValues::new(num_parameter_values, num_parameter_indices, num_multi_parameters),
             derived_metrics: vec![0.0; num_derived_metrics],
+            inter_network_values: vec![0.0; num_inter_network_values],
         }
     }
 
@@ -592,6 +595,27 @@ impl State {
                 Ok(())
             }
             None => Err(PywrError::DerivedMetricIndexNotFound(idx)),
+        }
+    }
+
+    pub fn get_inter_network_transfer_value(&self, idx: MultiNetworkTransferIndex) -> Result<f64, PywrError> {
+        match self.inter_network_values.get(*idx.deref()) {
+            Some(s) => Ok(*s),
+            None => Err(PywrError::MultiNetworkTransferIndexNotFound(idx)),
+        }
+    }
+
+    pub fn set_inter_network_transfer_value(
+        &mut self,
+        idx: MultiNetworkTransferIndex,
+        value: f64,
+    ) -> Result<(), PywrError> {
+        match self.inter_network_values.get_mut(*idx.deref()) {
+            Some(s) => {
+                *s = value;
+                Ok(())
+            }
+            None => Err(PywrError::MultiNetworkTransferIndexNotFound(idx)),
         }
     }
 }

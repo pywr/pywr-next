@@ -9,6 +9,7 @@ use pyo3::prelude::PyModule;
 use pyo3::types::{PyDict, PyTuple};
 use pyo3::{IntoPy, PyErr, PyObject, Python, ToPyObject};
 use pyo3_polars::PyDataFrame;
+use pywr_core::models::ModelDomain;
 use pywr_core::parameters::{Array1Parameter, Array2Parameter, ParameterIndex};
 use pywr_v1_schema::parameters::DataFrameParameter as DataFrameParameterV1;
 use std::collections::HashMap;
@@ -71,7 +72,8 @@ impl DataFrameParameter {
 
     pub fn add_to_model(
         &self,
-        model: &mut pywr_core::model::Model,
+        network: &mut pywr_core::network::Network,
+        domain: &ModelDomain,
         data_path: Option<&Path>,
     ) -> Result<ParameterIndex, SchemaError> {
         // Handle the case of an optional data path with a relative url.
@@ -126,10 +128,14 @@ impl DataFrameParameter {
         // 3. Create an ArrayParameter using the loaded array.
         match &self.columns {
             DataFrameColumns::Scenario(scenario) => {
-                let scenario_group = model.get_scenario_group_index_by_name(scenario)?;
+                let scenario_group_index = domain
+                    .scenarios()
+                    .group_index(scenario)
+                    .ok_or(SchemaError::ScenarioGroupNotFound(scenario.to_string()))?;
+
                 let array: Array2<f64> = df.to_ndarray::<Float64Type>(IndexOrder::default()).unwrap();
-                let p = Array2Parameter::new(&self.meta.name, array, scenario_group, self.timestep_offset);
-                Ok(model.add_parameter(Box::new(p))?)
+                let p = Array2Parameter::new(&self.meta.name, array, scenario_group_index, self.timestep_offset);
+                Ok(network.add_parameter(Box::new(p))?)
             }
             DataFrameColumns::Column(column) => {
                 let series = df.column(column).unwrap();
@@ -143,7 +149,7 @@ impl DataFrameParameter {
                     .to_owned();
 
                 let p = Array1Parameter::new(&self.meta.name, array, self.timestep_offset);
-                Ok(model.add_parameter(Box::new(p))?)
+                Ok(network.add_parameter(Box::new(p))?)
             }
         }
     }
