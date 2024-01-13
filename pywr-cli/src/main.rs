@@ -128,8 +128,8 @@ fn main() -> Result<()> {
                 solver,
                 data_path,
                 output_path,
-                parallel,
-                threads,
+                parallel: _,
+                threads: _,
                 debug,
             } => run(model, solver, data_path.as_deref(), output_path.as_deref(), *debug),
             Commands::RunMulti {
@@ -137,8 +137,8 @@ fn main() -> Result<()> {
                 solver,
                 data_path,
                 output_path,
-                parallel,
-                threads,
+                parallel: _,
+                threads: _,
                 debug,
             } => run_multi(model, solver, data_path.as_deref(), output_path.as_deref(), *debug),
             Commands::RunRandom {

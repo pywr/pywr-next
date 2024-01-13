@@ -237,7 +237,7 @@ impl Solver for ClpSolver {
         ]
     }
 
-    fn setup(model: &Network, settings: &Self::Settings) -> Result<Box<Self>, PywrError> {
+    fn setup(model: &Network, _settings: &Self::Settings) -> Result<Box<Self>, PywrError> {
         let builder = SolverBuilder::default();
         let built = builder.create(model)?;
 

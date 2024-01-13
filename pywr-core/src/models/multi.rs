@@ -382,8 +382,8 @@ mod tests {
         let mut network2 = Network::default();
         simple_network(&mut network2, test_scenario_group_idx, 2);
 
-        let network1_idx = multi_model.add_network("network1", network1);
-        let network2_idx = multi_model.add_network("network2", network2);
+        let _network1_idx = multi_model.add_network("network1", network1);
+        let _network2_idx = multi_model.add_network("network2", network2);
 
         let mut state = multi_model
             .setup::<ClpSolver>(&Default::default())
