@@ -119,7 +119,7 @@ impl Recorder for Array2Recorder {
         scenario_indices: &[ScenarioIndex],
         model: &Network,
         state: &[State],
-        metric_set_states: &[Vec<MetricSetState>],
+        _metric_set_states: &[Vec<MetricSetState>],
         internal_state: &mut Option<Box<dyn Any>>,
     ) -> Result<(), PywrError> {
         // Downcast the internal state to the correct type
@@ -178,7 +178,7 @@ impl Recorder for AssertionRecorder {
         scenario_indices: &[ScenarioIndex],
         model: &Network,
         state: &[State],
-        metric_set_states: &[Vec<MetricSetState>],
+        _metric_set_states: &[Vec<MetricSetState>],
         _internal_state: &mut Option<Box<dyn Any>>,
     ) -> Result<(), PywrError> {
         // This panics if out-of-bounds
@@ -251,7 +251,7 @@ where
         scenario_indices: &[ScenarioIndex],
         model: &Network,
         state: &[State],
-        metric_set_states: &[Vec<MetricSetState>],
+        _metric_set_states: &[Vec<MetricSetState>],
         _internal_state: &mut Option<Box<dyn Any>>,
     ) -> Result<(), PywrError> {
         // This panics if out-of-bounds
@@ -306,7 +306,7 @@ impl Recorder for IndexAssertionRecorder {
         scenario_indices: &[ScenarioIndex],
         network: &Network,
         state: &[State],
-        metric_set_states: &[Vec<MetricSetState>],
+        _metric_set_states: &[Vec<MetricSetState>],
         _internal_state: &mut Option<Box<dyn Any>>,
     ) -> Result<(), PywrError> {
         // This panics if out-of-bounds

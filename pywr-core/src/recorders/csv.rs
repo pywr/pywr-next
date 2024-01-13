@@ -68,7 +68,7 @@ impl Recorder for CSVRecorder {
 
                     (name.to_string(), sub_name, "volume".to_string())
                 }
-                Metric::DerivedMetric(idx) => {
+                Metric::DerivedMetric(_idx) => {
                     todo!("Derived metrics are not yet supported in CSV recorders");
                 }
                 Metric::AggregatedNodeVolume(idx) => {
@@ -179,9 +179,9 @@ impl Recorder for CSVRecorder {
     fn save(
         &self,
         timestep: &Timestep,
-        scenario_indices: &[ScenarioIndex],
-        network: &Network,
-        state: &[State],
+        _scenario_indices: &[ScenarioIndex],
+        _network: &Network,
+        _state: &[State],
         metric_set_states: &[Vec<MetricSetState>],
         internal_state: &mut Option<Box<dyn Any>>,
     ) -> Result<(), PywrError> {

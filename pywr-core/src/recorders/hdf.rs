@@ -91,7 +91,7 @@ impl Recorder for HDF5Recorder {
                     let node = model.get_node(idx)?;
                     require_node_dataset(root_grp, shape, node.name(), node.sub_name(), "volume")?
                 }
-                Metric::DerivedMetric(idx) => {
+                Metric::DerivedMetric(_idx) => {
                     todo!("Derived metrics are not yet supported in HDF recorders");
                 }
                 Metric::AggregatedNodeVolume(idx) => {
@@ -144,7 +144,7 @@ impl Recorder for HDF5Recorder {
         scenario_indices: &[ScenarioIndex],
         model: &Network,
         state: &[State],
-        metric_set_states: &[Vec<MetricSetState>],
+        _metric_set_states: &[Vec<MetricSetState>],
         internal_state: &mut Option<Box<dyn Any>>,
     ) -> Result<(), PywrError> {
         let internal = match internal_state {

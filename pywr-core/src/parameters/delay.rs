@@ -36,8 +36,8 @@ impl Parameter for DelayParameter {
 
     fn setup(
         &self,
-        timesteps: &[Timestep],
-        scenario_index: &ScenarioIndex,
+        _timesteps: &[Timestep],
+        _scenario_index: &ScenarioIndex,
     ) -> Result<Option<Box<dyn Any + Send>>, PywrError> {
         // Internally we need to store a history of previous values
         let memory: VecDeque<f64> = (0..self.delay).map(|_| self.initial_value).collect();
@@ -46,10 +46,10 @@ impl Parameter for DelayParameter {
 
     fn compute(
         &self,
-        timestep: &Timestep,
-        scenario_index: &ScenarioIndex,
-        model: &Network,
-        state: &State,
+        _timestep: &Timestep,
+        _scenario_index: &ScenarioIndex,
+        _model: &Network,
+        _state: &State,
         internal_state: &mut Option<Box<dyn Any + Send>>,
     ) -> Result<f64, PywrError> {
         // Downcast the internal state to the correct type
@@ -66,8 +66,8 @@ impl Parameter for DelayParameter {
 
     fn after(
         &self,
-        timestep: &Timestep,
-        scenario_index: &ScenarioIndex,
+        _timestep: &Timestep,
+        _scenario_index: &ScenarioIndex,
         model: &Network,
         state: &State,
         internal_state: &mut Option<Box<dyn Any + Send>>,

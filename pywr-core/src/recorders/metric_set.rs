@@ -86,7 +86,7 @@ impl MetricSet {
     pub fn save(
         &self,
         timestep: &Timestep,
-        scenario_index: &ScenarioIndex,
+        _scenario_index: &ScenarioIndex,
         model: &Network,
         state: &State,
         internal_state: &mut MetricSetState,

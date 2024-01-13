@@ -89,7 +89,7 @@ mod tests {
 
     #[test]
     fn builder_test() {
-        let settings = ClpSolverSettings {
+        let _settings = ClpSolverSettings {
             parallel: true,
             threads: 0,
         };
