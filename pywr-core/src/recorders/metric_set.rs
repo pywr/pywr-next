@@ -1,6 +1,6 @@
 use crate::metric::Metric;
 use crate::network::Network;
-use crate::recorders::aggregator::{PeriodValue, PeriodicAggregator, PeriodicAggregatorState};
+use crate::recorders::aggregator::{Aggregator, AggregatorState, PeriodValue};
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
 use crate::timestep::Timestep;
@@ -33,23 +33,30 @@ impl Display for MetricSetIndex {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct MetricSetState {
     // Populated with any yielded values from the last processing.
     current_values: Option<Vec<PeriodValue>>,
     // If the metric set aggregates then this state tracks the aggregation of each metric
-    aggregation_states: Option<Vec<PeriodicAggregatorState>>,
+    aggregation_states: Option<Vec<AggregatorState>>,
+}
+
+impl MetricSetState {
+    pub fn current_values(&self) -> Option<&[PeriodValue]> {
+        self.current_values.as_deref()
+    }
 }
 
 /// A set of metrics with an optional aggregator
 #[derive(Clone, Debug)]
 pub struct MetricSet {
     name: String,
-    aggregator: Option<PeriodicAggregator>,
+    aggregator: Option<Aggregator>,
     metrics: Vec<Metric>,
 }
 
 impl MetricSet {
-    pub fn new(name: &str, aggregator: Option<PeriodicAggregator>, metrics: Vec<Metric>) -> Self {
+    pub fn new(name: &str, aggregator: Option<Aggregator>, metrics: Vec<Metric>) -> Self {
         Self {
             name: name.to_string(),
             aggregator,
@@ -65,23 +72,32 @@ impl MetricSet {
         self.metrics.iter()
     }
 
-    fn save(
+    /// Setup a new [`MetricSetState`] for this [`MetricSet`].
+    pub fn setup(&self) -> MetricSetState {
+        MetricSetState {
+            current_values: None,
+            aggregation_states: self
+                .aggregator
+                .as_ref()
+                .map(|a| self.metrics.iter().map(|_| a.setup()).collect()),
+        }
+    }
+
+    pub fn save(
         &self,
         timestep: &Timestep,
-        scenario_indices: &[ScenarioIndex],
+        scenario_index: &ScenarioIndex,
         model: &Network,
-        state: &[State],
+        state: &State,
         internal_state: &mut MetricSetState,
     ) -> Result<(), PywrError> {
         // Combine all the values for metric across all of the scenarios
         let values: Vec<PeriodValue> = self
             .metrics
             .iter()
-            .flat_map(|metric| {
-                scenario_indices.iter().zip(state).map(|(_, s)| {
-                    let value = metric.get_value(model, s)?;
-                    Ok::<PeriodValue, PywrError>(PeriodValue::new(timestep.date, timestep.duration, value))
-                })
+            .map(|metric| {
+                let value = metric.get_value(model, state)?;
+                Ok::<PeriodValue, PywrError>(PeriodValue::new(timestep.date, timestep.duration, value))
             })
             .collect::<Result<Vec<_>, _>>()?;
 
@@ -97,7 +113,7 @@ impl MetricSet {
             let agg_values = values
                 .into_iter()
                 .zip(aggregation_states.iter_mut())
-                .map(|(value, current_state)| aggregator.process_value(current_state, value))
+                .map(|(value, current_state)| aggregator.append_value(current_state, value))
                 .collect::<Option<Vec<_>>>();
 
             internal_state.current_values = agg_values;

@@ -3,9 +3,10 @@ use crate::aggregated_storage_node::{AggregatedStorageNode, AggregatedStorageNod
 use crate::derived_metric::{DerivedMetric, DerivedMetricIndex};
 use crate::edge::{EdgeIndex, EdgeVec};
 use crate::metric::Metric;
+use crate::models::ModelDomain;
 use crate::node::{ConstraintValue, Node, NodeVec, StorageInitialVolume};
 use crate::parameters::{MultiValueParameterIndex, ParameterType};
-use crate::recorders::{MetricSet, MetricSetIndex};
+use crate::recorders::{MetricSet, MetricSetIndex, MetricSetState};
 use crate::scenario::ScenarioIndex;
 use crate::solvers::{MultiStateSolver, Solver, SolverFeatures, SolverTimings};
 use crate::state::{ParameterStates, State};
@@ -148,6 +149,8 @@ pub struct NetworkState {
     states: Vec<State>,
     // Parameter state by scenario
     parameter_internal_states: Vec<ParameterStates>,
+    // Metric set states by scenario
+    metric_set_internal_states: Vec<Vec<MetricSetState>>,
 }
 
 impl NetworkState {
@@ -219,6 +222,7 @@ impl Network {
     ) -> Result<NetworkState, PywrError> {
         let mut states: Vec<State> = Vec::with_capacity(scenario_indices.len());
         let mut parameter_internal_states: Vec<ParameterStates> = Vec::with_capacity(scenario_indices.len());
+        let mut metric_set_internal_states: Vec<_> = Vec::with_capacity(scenario_indices.len());
 
         for scenario_index in scenario_indices {
             // Initialise node states. Note that storage nodes will have a zero volume at this point.
@@ -262,23 +266,22 @@ impl Network {
                 initial_indices_states,
                 initial_multi_param_states,
             ));
+
+            metric_set_internal_states.push(self.metric_sets.iter().map(|p| p.setup()).collect::<Vec<_>>());
         }
 
         Ok(NetworkState {
             states,
             parameter_internal_states,
+            metric_set_internal_states,
         })
     }
 
-    pub fn setup_recorders(
-        &self,
-        timesteps: &[Timestep],
-        scenario_indices: &[ScenarioIndex],
-    ) -> Result<Vec<Option<Box<dyn Any>>>, PywrError> {
+    pub fn setup_recorders(&self, domain: &ModelDomain) -> Result<Vec<Option<Box<dyn Any>>>, PywrError> {
         // Setup recorders
         let mut recorder_internal_states = Vec::new();
         for recorder in &self.recorders {
-            let initial_state = recorder.setup(timesteps, &scenario_indices, self)?;
+            let initial_state = recorder.setup(domain, self)?;
             recorder_internal_states.push(initial_state);
         }
 
@@ -367,29 +370,38 @@ impl Network {
             .iter()
             .zip(state.states.iter_mut())
             .zip(state.parameter_internal_states.iter_mut())
+            .zip(state.metric_set_internal_states.iter_mut())
             .zip(solvers)
-            .for_each(|(((scenario_index, current_state), p_internal_states), solver)| {
-                // TODO clear the current parameter values state (i.e. set them all to zero).
+            .for_each(
+                |((((scenario_index, current_state), p_internal_states), ms_internal_states), solver)| {
+                    // TODO clear the current parameter values state (i.e. set them all to zero).
 
-                let start_p_calc = Instant::now();
-                self.compute_components(timestep, scenario_index, current_state, p_internal_states)
+                    let start_p_calc = Instant::now();
+                    self.compute_components(timestep, scenario_index, current_state, p_internal_states)
+                        .unwrap();
+
+                    // State now contains updated parameter values BUT original network state
+                    timings.parameter_calculation += start_p_calc.elapsed();
+
+                    // Solve determines the new network state
+                    let solve_timings = solver.solve(self, timestep, current_state).unwrap();
+                    // State now contains updated parameter values AND updated network state
+                    timings.solve += solve_timings;
+
+                    // Now run the "after" method on all components
+                    let start_p_after = Instant::now();
+                    self.after(
+                        timestep,
+                        scenario_index,
+                        current_state,
+                        p_internal_states,
+                        ms_internal_states,
+                    )
                     .unwrap();
 
-                // State now contains updated parameter values BUT original network state
-                timings.parameter_calculation += start_p_calc.elapsed();
-
-                // Solve determines the new network state
-                let solve_timings = solver.solve(self, timestep, current_state).unwrap();
-                // State now contains updated parameter values AND updated network state
-                timings.solve += solve_timings;
-
-                // Now run the "after" method on all components
-                let start_p_after = Instant::now();
-                self.after(timestep, scenario_index, current_state, p_internal_states)
-                    .unwrap();
-
-                timings.parameter_calculation += start_p_after.elapsed();
-            });
+                    timings.parameter_calculation += start_p_after.elapsed();
+                },
+            );
 
         Ok(())
     }
@@ -415,30 +427,39 @@ impl Network {
             .par_iter()
             .zip(&mut state.states)
             .zip(&mut state.parameter_internal_states)
+            .zip(&mut state.metric_set_internal_states)
             .zip(solvers)
-            .map(|(((scenario_index, current_state), p_internal_state), solver)| {
-                // TODO clear the current parameter values state (i.e. set them all to zero).
+            .map(
+                |((((scenario_index, current_state), p_internal_state), ms_internal_state), solver)| {
+                    // TODO clear the current parameter values state (i.e. set them all to zero).
 
-                let start_p_calc = Instant::now();
-                self.compute_components(timestep, scenario_index, current_state, p_internal_state)
+                    let start_p_calc = Instant::now();
+                    self.compute_components(timestep, scenario_index, current_state, p_internal_state)
+                        .unwrap();
+
+                    // State now contains updated parameter values BUT original network state
+                    let mut parameter_calculation = start_p_calc.elapsed();
+
+                    // Solve determines the new network state
+                    let solve_timings = solver.solve(self, timestep, current_state).unwrap();
+                    // State now contains updated parameter values AND updated network state
+
+                    // Now run the "after" method on all components
+                    let start_p_after = Instant::now();
+                    self.after(
+                        timestep,
+                        scenario_index,
+                        current_state,
+                        p_internal_state,
+                        ms_internal_state,
+                    )
                     .unwrap();
 
-                // State now contains updated parameter values BUT original network state
-                let mut parameter_calculation = start_p_calc.elapsed();
+                    parameter_calculation += start_p_after.elapsed();
 
-                // Solve determines the new network state
-                let solve_timings = solver.solve(self, timestep, current_state).unwrap();
-                // State now contains updated parameter values AND updated network state
-
-                // Now run the "after" method on all components
-                let start_p_after = Instant::now();
-                self.after(timestep, scenario_index, current_state, p_internal_state)
-                    .unwrap();
-
-                parameter_calculation += start_p_after.elapsed();
-
-                (parameter_calculation, solve_timings)
-            })
+                    (parameter_calculation, solve_timings)
+                },
+            )
             .collect();
 
         // Add them all together
@@ -495,12 +516,21 @@ impl Network {
             .par_iter()
             .zip(&mut state.states)
             .zip(&mut state.parameter_internal_states)
-            .map(|((scenario_index, current_state), p_internal_states)| {
-                let start_p_after = Instant::now();
-                self.after(timestep, scenario_index, current_state, p_internal_states)
+            .zip(&mut state.metric_set_internal_states)
+            .map(
+                |(((scenario_index, current_state), p_internal_states), ms_internal_states)| {
+                    let start_p_after = Instant::now();
+                    self.after(
+                        timestep,
+                        scenario_index,
+                        current_state,
+                        p_internal_states,
+                        ms_internal_states,
+                    )
                     .unwrap();
-                start_p_after.elapsed()
-            })
+                    start_p_after.elapsed()
+                },
+            )
             .collect();
 
         for t in p_after_timings.into_iter() {
@@ -640,6 +670,7 @@ impl Network {
         scenario_index: &ScenarioIndex,
         state: &mut State,
         internal_states: &mut ParameterStates,
+        metric_set_states: &mut [MetricSetState],
     ) -> Result<(), PywrError> {
         // TODO reset parameter state to zero
 
@@ -706,6 +737,11 @@ impl Network {
             }
         }
 
+        // Finally, save new data to the metric set
+        for (metric_set, ms_state) in self.metric_sets.iter().zip(metric_set_states.iter_mut()) {
+            metric_set.save(timestep, scenario_index, self, state, ms_state)?;
+        }
+
         Ok(())
     }
 
@@ -717,7 +753,14 @@ impl Network {
         recorder_internal_states: &mut [Option<Box<dyn Any>>],
     ) -> Result<(), PywrError> {
         for (recorder, internal_state) in self.recorders.iter().zip(recorder_internal_states) {
-            recorder.save(timestep, scenario_indices, self, &state.states, internal_state)?;
+            recorder.save(
+                timestep,
+                scenario_indices,
+                self,
+                &state.states,
+                &state.metric_set_internal_states,
+                internal_state,
+            )?;
         }
         Ok(())
     }
@@ -1297,7 +1340,9 @@ impl Network {
 
     /// Get a [`MetricSet'] from its index.
     pub fn get_metric_set(&self, index: MetricSetIndex) -> Result<&MetricSet, PywrError> {
-        self.metric_sets.get(*index).ok_or(PywrError::MetricSetIndexNotFound)
+        self.metric_sets
+            .get(*index)
+            .ok_or_else(|| PywrError::MetricSetIndexNotFound(index))
     }
 
     /// Get a ['MetricSet'] by its name.

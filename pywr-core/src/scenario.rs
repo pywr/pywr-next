@@ -16,6 +16,10 @@ impl ScenarioGroup {
         }
     }
 
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
     pub fn size(&self) -> usize {
         self.size
     }
@@ -33,6 +37,19 @@ impl ScenarioGroupCollection {
     }
 
     /// Find a [`ScenarioGroup`]s index in the collection by name
+    /// Find a `ScenarioGroup` in the collection by its index
+    pub fn get_group(&self, idx: usize) -> Result<&ScenarioGroup, PywrError> {
+        self.groups
+            .get(idx)
+            .ok_or_else(|| PywrError::ScenarioGroupIndexNotFound(idx))
+    }
+
+    /// Get all `ScenarioGroup`s in the collection
+    pub fn get_groups(&self) -> &[ScenarioGroup] {
+        &self.groups
+    }
+
+    /// Find a `ScenarioGroup`'s index in the collection by name
     pub fn get_group_index_by_name(&self, name: &str) -> Result<usize, PywrError> {
         self.groups
             .iter()
@@ -92,6 +109,10 @@ pub struct ScenarioDomain {
 }
 
 impl ScenarioDomain {
+    /// The total number of scenario combinations in the domain.
+    pub fn len(&self) -> usize {
+        self.scenario_indices.len()
+    }
     pub fn indices(&self) -> &[ScenarioIndex] {
         &self.scenario_indices
     }
@@ -99,6 +120,11 @@ impl ScenarioDomain {
     /// Return the index of a scenario group by name
     pub fn group_index(&self, name: &str) -> Option<usize> {
         self.scenario_group_names.iter().position(|n| n == name)
+    }
+
+    /// Return the name of each scenario group
+    pub fn group_names(&self) -> &[String] {
+        &self.scenario_group_names
     }
 }
 
