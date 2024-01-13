@@ -79,15 +79,14 @@ impl Schema {
 
     /// Convert the schema to a Pywr model.
     fn build(&mut self, data_path: Option<PathBuf>, output_path: Option<PathBuf>) -> PyResult<Model> {
-        let (model, timestepper) = self.schema.build_model(data_path.as_deref(), output_path.as_deref())?;
-        Ok(Model { model, timestepper })
+        let model = self.schema.build_model(data_path.as_deref(), output_path.as_deref())?;
+        Ok(Model { model })
     }
 }
 
 #[pyclass]
 pub struct Model {
-    model: pywr_core::model::Model,
-    timestepper: pywr_core::timestep::Timestepper,
+    model: pywr_core::models::Model,
 }
 
 #[pymethods]
@@ -96,7 +95,7 @@ impl Model {
         match solver {
             "clp" => {
                 let settings = build_clp_settings(solver_kwargs)?;
-                self.model.run::<ClpSolver>(&self.timestepper, &settings)?;
+                self.model.run::<ClpSolver>(&settings)?;
             }
             _ => {
                 return Err(PyRuntimeError::new_err(format!("Unknown solver: {}", solver)));

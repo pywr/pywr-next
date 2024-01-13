@@ -1,5 +1,5 @@
 use crate::metric::Metric;
-use crate::model::Model;
+use crate::network::Network;
 use crate::node::{Constraint, ConstraintValue, FlowConstraints, NodeMeta};
 use crate::state::State;
 use crate::{NodeIndex, PywrError};
@@ -132,7 +132,7 @@ impl AggregatedNode {
     ///
     pub fn get_norm_factor_pairs(
         &self,
-        model: &Model,
+        model: &Network,
         state: &State,
     ) -> Option<Vec<((NodeIndex, f64), (NodeIndex, f64))>> {
         if let Some(factors) = &self.factors {
@@ -151,13 +151,13 @@ impl AggregatedNode {
     pub fn set_min_flow_constraint(&mut self, value: ConstraintValue) {
         self.flow_constraints.min_flow = value;
     }
-    pub fn get_min_flow_constraint(&self, model: &Model, state: &State) -> Result<f64, PywrError> {
+    pub fn get_min_flow_constraint(&self, model: &Network, state: &State) -> Result<f64, PywrError> {
         self.flow_constraints.get_min_flow(model, state)
     }
     pub fn set_max_flow_constraint(&mut self, value: ConstraintValue) {
         self.flow_constraints.max_flow = value;
     }
-    pub fn get_max_flow_constraint(&self, model: &Model, state: &State) -> Result<f64, PywrError> {
+    pub fn get_max_flow_constraint(&self, model: &Network, state: &State) -> Result<f64, PywrError> {
         self.flow_constraints.get_max_flow(model, state)
     }
 
@@ -176,15 +176,15 @@ impl AggregatedNode {
         Ok(())
     }
 
-    pub fn get_current_min_flow(&self, model: &Model, state: &State) -> Result<f64, PywrError> {
+    pub fn get_current_min_flow(&self, model: &Network, state: &State) -> Result<f64, PywrError> {
         self.flow_constraints.get_min_flow(model, state)
     }
 
-    pub fn get_current_max_flow(&self, model: &Model, state: &State) -> Result<f64, PywrError> {
+    pub fn get_current_max_flow(&self, model: &Network, state: &State) -> Result<f64, PywrError> {
         self.flow_constraints.get_max_flow(model, state)
     }
 
-    pub fn get_current_flow_bounds(&self, model: &Model, state: &State) -> Result<(f64, f64), PywrError> {
+    pub fn get_current_flow_bounds(&self, model: &Network, state: &State) -> Result<(f64, f64), PywrError> {
         match (
             self.get_current_min_flow(model, state),
             self.get_current_max_flow(model, state),
@@ -203,7 +203,7 @@ impl AggregatedNode {
 fn get_norm_proportional_factor_pairs(
     factors: &[Metric],
     nodes: &[NodeIndex],
-    model: &Model,
+    model: &Network,
     state: &State,
 ) -> Vec<((NodeIndex, f64), (NodeIndex, f64))> {
     if factors.len() != nodes.len() - 1 {
@@ -241,7 +241,7 @@ fn get_norm_proportional_factor_pairs(
 fn get_norm_ratio_factor_pairs(
     factors: &[Metric],
     nodes: &[NodeIndex],
-    model: &Model,
+    model: &Network,
     state: &State,
 ) -> Vec<((NodeIndex, f64), (NodeIndex, f64))> {
     if factors.len() != nodes.len() {
@@ -263,10 +263,11 @@ fn get_norm_ratio_factor_pairs(
 mod tests {
     use crate::aggregated_node::Factors;
     use crate::metric::Metric;
-    use crate::model::Model;
+    use crate::models::Model;
+    use crate::network::Network;
     use crate::node::ConstraintValue;
     use crate::recorders::AssertionRecorder;
-    use crate::test_utils::{default_timestepper, run_all_solvers};
+    use crate::test_utils::{default_time_domain, run_all_solvers};
     use ndarray::Array2;
 
     /// Test the factors forcing a simple ratio of flow
@@ -274,30 +275,27 @@ mod tests {
     /// The model has a single input that diverges to two links and respective output nodes.
     #[test]
     fn test_simple_factors() {
-        let mut model = Model::default();
-        let timestepper = default_timestepper();
+        let mut network = Network::default();
 
-        model.add_scenario_group("test-scenario", 2).unwrap();
+        let input_node = network.add_input_node("input", None).unwrap();
+        let link_node0 = network.add_link_node("link", Some("0")).unwrap();
+        let output_node0 = network.add_output_node("output", Some("0")).unwrap();
 
-        let input_node = model.add_input_node("input", None).unwrap();
-        let link_node0 = model.add_link_node("link", Some("0")).unwrap();
-        let output_node0 = model.add_output_node("output", Some("0")).unwrap();
+        network.connect_nodes(input_node, link_node0).unwrap();
+        network.connect_nodes(link_node0, output_node0).unwrap();
 
-        model.connect_nodes(input_node, link_node0).unwrap();
-        model.connect_nodes(link_node0, output_node0).unwrap();
+        let link_node1 = network.add_link_node("link", Some("1")).unwrap();
+        let output_node1 = network.add_output_node("output", Some("1")).unwrap();
 
-        let link_node1 = model.add_link_node("link", Some("1")).unwrap();
-        let output_node1 = model.add_output_node("output", Some("1")).unwrap();
-
-        model.connect_nodes(input_node, link_node1).unwrap();
-        model.connect_nodes(link_node1, output_node1).unwrap();
+        network.connect_nodes(input_node, link_node1).unwrap();
+        network.connect_nodes(link_node1, output_node1).unwrap();
 
         let factors = Some(Factors::Ratio(vec![Metric::Constant(2.0), Metric::Constant(1.0)]));
 
-        let _agg_node = model.add_aggregated_node("agg-node", None, &[link_node0, link_node1], factors);
+        let _agg_node = network.add_aggregated_node("agg-node", None, &[link_node0, link_node1], factors);
 
         // Setup a demand on output-0
-        let output_node = model.get_mut_node_by_name("output", Some("0")).unwrap();
+        let output_node = network.get_mut_node_by_name("output", Some("0")).unwrap();
         output_node
             .set_max_flow_constraint(ConstraintValue::Scalar(100.0))
             .unwrap();
@@ -305,17 +303,19 @@ mod tests {
         output_node.set_cost(ConstraintValue::Scalar(-10.0));
 
         // Set-up assertion for "input" node
-        let idx = model.get_node_by_name("link", Some("0")).unwrap().index();
+        let idx = network.get_node_by_name("link", Some("0")).unwrap().index();
         let expected = Array2::from_elem((366, 10), 100.0);
         let recorder = AssertionRecorder::new("link-0-flow", Metric::NodeOutFlow(idx), expected, None, None);
-        model.add_recorder(Box::new(recorder)).unwrap();
+        network.add_recorder(Box::new(recorder)).unwrap();
 
         // Set-up assertion for "input" node
-        let idx = model.get_node_by_name("link", Some("1")).unwrap().index();
+        let idx = network.get_node_by_name("link", Some("1")).unwrap().index();
         let expected = Array2::from_elem((366, 10), 50.0);
         let recorder = AssertionRecorder::new("link-0-flow", Metric::NodeOutFlow(idx), expected, None, None);
-        model.add_recorder(Box::new(recorder)).unwrap();
+        network.add_recorder(Box::new(recorder)).unwrap();
 
-        run_all_solvers(&model, &timestepper);
+        let model = Model::new(default_time_domain().into(), network);
+
+        run_all_solvers(&model);
     }
 }

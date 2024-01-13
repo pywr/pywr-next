@@ -1,6 +1,7 @@
 use crate::error::SchemaError;
 use crate::parameters::python::try_json_value_into_py;
-use crate::parameters::{DynamicFloatValueType, ParameterMeta};
+use crate::parameters::{DynamicFloatValueType, IntoV2Parameter, ParameterMeta, TryFromV1Parameter};
+use crate::ConversionError;
 use ndarray::Array2;
 use polars::prelude::DataType::Float64;
 use polars::prelude::{DataFrame, Float64Type, IndexOrder};
@@ -8,7 +9,9 @@ use pyo3::prelude::PyModule;
 use pyo3::types::{PyDict, PyTuple};
 use pyo3::{IntoPy, PyErr, PyObject, Python, ToPyObject};
 use pyo3_polars::PyDataFrame;
+use pywr_core::models::ModelDomain;
 use pywr_core::parameters::{Array1Parameter, Array2Parameter, ParameterIndex};
+use pywr_v1_schema::parameters::DataFrameParameter as DataFrameParameterV1;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
@@ -55,6 +58,7 @@ pub struct DataFrameParameter {
     pub meta: ParameterMeta,
     pub url: PathBuf,
     pub columns: DataFrameColumns,
+    pub timestep_offset: Option<i32>,
     pub pandas_kwargs: HashMap<String, serde_json::Value>,
 }
 
@@ -68,7 +72,8 @@ impl DataFrameParameter {
 
     pub fn add_to_model(
         &self,
-        model: &mut pywr_core::model::Model,
+        network: &mut pywr_core::network::Network,
+        domain: &ModelDomain,
         data_path: Option<&Path>,
     ) -> Result<ParameterIndex, SchemaError> {
         // Handle the case of an optional data path with a relative url.
@@ -123,10 +128,14 @@ impl DataFrameParameter {
         // 3. Create an ArrayParameter using the loaded array.
         match &self.columns {
             DataFrameColumns::Scenario(scenario) => {
-                let scenario_group = model.get_scenario_group_index_by_name(scenario)?;
+                let scenario_group_index = domain
+                    .scenarios()
+                    .group_index(scenario)
+                    .ok_or(SchemaError::ScenarioGroupNotFound(scenario.to_string()))?;
+
                 let array: Array2<f64> = df.to_ndarray::<Float64Type>(IndexOrder::default()).unwrap();
-                let p = Array2Parameter::new(&self.meta.name, array, scenario_group);
-                Ok(model.add_parameter(Box::new(p))?)
+                let p = Array2Parameter::new(&self.meta.name, array, scenario_group_index, self.timestep_offset);
+                Ok(network.add_parameter(Box::new(p))?)
             }
             DataFrameColumns::Column(column) => {
                 let series = df.column(column).unwrap();
@@ -139,9 +148,58 @@ impl DataFrameParameter {
                     .unwrap()
                     .to_owned();
 
-                let p = Array1Parameter::new(&self.meta.name, array);
-                Ok(model.add_parameter(Box::new(p))?)
+                let p = Array1Parameter::new(&self.meta.name, array, self.timestep_offset);
+                Ok(network.add_parameter(Box::new(p))?)
             }
         }
+    }
+}
+
+impl TryFromV1Parameter<DataFrameParameterV1> for DataFrameParameter {
+    type Error = ConversionError;
+
+    fn try_from_v1_parameter(
+        v1: DataFrameParameterV1,
+        parent_node: Option<&str>,
+        unnamed_count: &mut usize,
+    ) -> Result<Self, Self::Error> {
+        let meta: ParameterMeta = v1.meta.into_v2_parameter(parent_node, unnamed_count);
+        let url = v1.url.ok_or(ConversionError::MissingAttribute {
+            attrs: vec!["url".to_string()],
+            name: meta.name.clone(),
+        })?;
+
+        // Here we can only handle a specific column or assume the columns map to a scenario group.
+        let columns = match (v1.column, v1.scenario) {
+            (None, None) => {
+                return Err(ConversionError::MissingAttribute {
+                    attrs: vec!["column".to_string(), "scenario".to_string()],
+                    name: meta.name.clone(),
+                })
+            }
+            (Some(_), Some(_)) => {
+                return Err(ConversionError::UnexpectedAttribute {
+                    attrs: vec!["column".to_string(), "scenario".to_string()],
+                    name: meta.name.clone(),
+                })
+            }
+            (Some(c), None) => DataFrameColumns::Column(c),
+            (None, Some(s)) => DataFrameColumns::Scenario(s),
+        };
+
+        if v1.index.is_some() || v1.indexes.is_some() || v1.table.is_some() {
+            return Err(ConversionError::UnsupportedAttribute {
+                attrs: vec!["index".to_string(), "indexes".to_string(), "table".to_string()],
+                name: meta.name.clone(),
+            });
+        }
+
+        Ok(Self {
+            meta,
+            url,
+            columns,
+            timestep_offset: v1.timestep_offset,
+            pandas_kwargs: v1.pandas_kwargs,
+        })
     }
 }

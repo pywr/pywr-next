@@ -1,4 +1,4 @@
-use crate::model::Model;
+use crate::network::Network;
 use crate::parameters::{Parameter, ParameterIndex, ParameterMeta};
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
@@ -69,7 +69,7 @@ impl Parameter for MonthlyProfileParameter {
         &self,
         timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
-        _model: &Model,
+        _model: &Network,
         _state: &State,
         _internal_state: &mut Option<Box<dyn Any + Send>>,
     ) -> Result<f64, PywrError> {
@@ -102,7 +102,7 @@ pub struct MonthlyProfileVariable {
 
 #[allow(dead_code)]
 impl MonthlyProfileVariable {
-    fn update(&self, model: &mut Model, new_values: &[f64]) {
+    fn update(&self, model: &mut Network, new_values: &[f64]) {
         let p = model.get_mut_parameter(&self.index).unwrap();
 
         let profile = p.as_any_mut().downcast_mut::<MonthlyProfileParameter>().unwrap();

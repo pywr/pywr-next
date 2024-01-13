@@ -1,5 +1,5 @@
 use crate::aggregated_storage_node::AggregatedStorageNodeIndex;
-use crate::model::Model;
+use crate::network::Network;
 use crate::node::NodeIndex;
 use crate::state::State;
 use crate::timestep::Timestep;
@@ -46,31 +46,31 @@ pub enum DerivedMetric {
 }
 
 impl DerivedMetric {
-    pub fn before(&self, timestep: &Timestep, model: &Model, state: &State) -> Result<Option<f64>, PywrError> {
+    pub fn before(&self, timestep: &Timestep, network: &Network, state: &State) -> Result<Option<f64>, PywrError> {
         // On the first time-step set the initial value
         if timestep.is_first() {
-            self.compute(model, state).map(|v| Some(v))
+            self.compute(network, state).map(|v| Some(v))
         } else {
             Ok(None)
         }
     }
 
-    pub fn compute(&self, model: &Model, state: &State) -> Result<f64, PywrError> {
+    pub fn compute(&self, network: &Network, state: &State) -> Result<f64, PywrError> {
         match self {
             Self::NodeProportionalVolume(idx) => {
-                let max_volume = model.get_node(idx)?.get_current_max_volume(model, state)?;
+                let max_volume = network.get_node(idx)?.get_current_max_volume(network, state)?;
                 Ok(state
                     .get_network_state()
                     .get_node_proportional_volume(idx, max_volume)?)
             }
             Self::VirtualStorageProportionalVolume(idx) => {
-                let max_volume = model.get_virtual_storage_node(idx)?.get_max_volume(model, state)?;
+                let max_volume = network.get_virtual_storage_node(idx)?.get_max_volume(network, state)?;
                 Ok(state
                     .get_network_state()
                     .get_virtual_storage_proportional_volume(idx, max_volume)?)
             }
             Self::AggregatedNodeProportionalVolume(idx) => {
-                let node = model.get_aggregated_storage_node(idx)?;
+                let node = network.get_aggregated_storage_node(idx)?;
                 let volume: f64 = node
                     .nodes
                     .iter()
@@ -80,15 +80,15 @@ impl DerivedMetric {
                 let max_volume: f64 = node
                     .nodes
                     .iter()
-                    .map(|idx| model.get_node(idx)?.get_current_max_volume(model, state))
+                    .map(|idx| network.get_node(idx)?.get_current_max_volume(network, state))
                     .sum::<Result<_, _>>()?;
                 // TODO handle divide by zero
                 Ok(volume / max_volume)
             }
             Self::NodeInFlowDeficit(idx) => {
-                let node = model.get_node(idx)?;
+                let node = network.get_node(idx)?;
                 let flow = state.get_network_state().get_node_in_flow(idx)?;
-                let max_flow = node.get_current_max_flow(model, state)?;
+                let max_flow = node.get_current_max_flow(network, state)?;
                 Ok(max_flow - flow)
             }
         }

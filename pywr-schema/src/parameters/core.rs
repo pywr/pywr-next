@@ -1,9 +1,11 @@
 use crate::data_tables::LoadedTableCollection;
 use crate::error::{ConversionError, SchemaError};
+use crate::model::PywrMultiNetworkTransfer;
 use crate::parameters::{
     ConstantValue, DynamicFloatValue, DynamicFloatValueType, IntoV2Parameter, ParameterMeta, TryFromV1Parameter,
     TryIntoV2Parameter,
 };
+use pywr_core::models::ModelDomain;
 use pywr_core::parameters::ParameterIndex;
 use pywr_v1_schema::parameters::{
     ConstantParameter as ConstantParameterV1, DivisionParameter as DivisionParameterV1, MaxParameter as MaxParameterV1,
@@ -15,7 +17,7 @@ use std::path::Path;
 /// Activation function or transformation to apply to variable value.
 ///
 /// These different functions are used to specify how a variable value is transformed
-/// before being used in a model. These transformations can be useful for optimisation
+/// before being used in a network. These transformations can be useful for optimisation
 /// algorithms to represent a, for example, binary-like variable in a continuous domain. Each
 /// activation function requires different data to parameterize the function's behaviour.
 ///
@@ -146,7 +148,7 @@ pub struct ConstantParameter {
     pub meta: ParameterMeta,
     /// The value the parameter should return.
     ///
-    /// In the simple case this will be the value used by the model. However, if an activation
+    /// In the simple case this will be the value used by the network. However, if an activation
     /// function is specified this value will be the `x` value for that activation function.
     pub value: ConstantValue<f64>,
     /// Definition of optional variable settings.
@@ -164,7 +166,7 @@ impl ConstantParameter {
 
     pub fn add_to_model(
         &self,
-        model: &mut pywr_core::model::Model,
+        network: &mut pywr_core::network::Network,
         tables: &LoadedTableCollection,
     ) -> Result<ParameterIndex, SchemaError> {
         let variable = match &self.variable {
@@ -180,7 +182,7 @@ impl ConstantParameter {
         };
 
         let p = pywr_core::parameters::ConstantParameter::new(&self.meta.name, self.value.load(tables)?, variable);
-        Ok(model.add_parameter(Box::new(p))?)
+        Ok(network.add_parameter(Box::new(p))?)
     }
 }
 
@@ -195,7 +197,7 @@ impl TryFromV1Parameter<ConstantParameterV1> for ConstantParameter {
         let value = if let Some(v) = v1.value {
             ConstantValue::Literal(v)
         } else if let Some(tbl) = v1.table {
-            ConstantValue::Table(tbl.into())
+            ConstantValue::Table(tbl.try_into()?)
         } else {
             ConstantValue::Literal(0.0)
         };
@@ -229,15 +231,19 @@ impl MaxParameter {
 
     pub fn add_to_model(
         &self,
-        model: &mut pywr_core::model::Model,
+        network: &mut pywr_core::network::Network,
+        domain: &ModelDomain,
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
+        inter_network_transfers: &[PywrMultiNetworkTransfer],
     ) -> Result<ParameterIndex, SchemaError> {
-        let idx = self.parameter.load(model, tables, data_path)?;
+        let idx = self
+            .parameter
+            .load(network, domain, tables, data_path, inter_network_transfers)?;
         let threshold = self.threshold.unwrap_or(0.0);
 
         let p = pywr_core::parameters::MaxParameter::new(&self.meta.name, idx, threshold);
-        Ok(model.add_parameter(Box::new(p))?)
+        Ok(network.add_parameter(Box::new(p))?)
     }
 }
 
@@ -299,15 +305,21 @@ impl DivisionParameter {
 
     pub fn add_to_model(
         &self,
-        model: &mut pywr_core::model::Model,
+        network: &mut pywr_core::network::Network,
+        domain: &ModelDomain,
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
+        inter_network_transfers: &[PywrMultiNetworkTransfer],
     ) -> Result<ParameterIndex, SchemaError> {
-        let n = self.numerator.load(model, tables, data_path)?;
-        let d = self.denominator.load(model, tables, data_path)?;
+        let n = self
+            .numerator
+            .load(network, domain, tables, data_path, inter_network_transfers)?;
+        let d = self
+            .denominator
+            .load(network, domain, tables, data_path, inter_network_transfers)?;
 
         let p = pywr_core::parameters::DivisionParameter::new(&self.meta.name, n, d);
-        Ok(model.add_parameter(Box::new(p))?)
+        Ok(network.add_parameter(Box::new(p))?)
     }
 }
 
@@ -367,15 +379,19 @@ impl MinParameter {
 
     pub fn add_to_model(
         &self,
-        model: &mut pywr_core::model::Model,
+        network: &mut pywr_core::network::Network,
+        domain: &ModelDomain,
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
+        inter_network_transfers: &[PywrMultiNetworkTransfer],
     ) -> Result<ParameterIndex, SchemaError> {
-        let idx = self.parameter.load(model, tables, data_path)?;
+        let idx = self
+            .parameter
+            .load(network, domain, tables, data_path, inter_network_transfers)?;
         let threshold = self.threshold.unwrap_or(0.0);
 
         let p = pywr_core::parameters::MinParameter::new(&self.meta.name, idx, threshold);
-        Ok(model.add_parameter(Box::new(p))?)
+        Ok(network.add_parameter(Box::new(p))?)
     }
 }
 
@@ -419,14 +435,18 @@ impl NegativeParameter {
 
     pub fn add_to_model(
         &self,
-        model: &mut pywr_core::model::Model,
+        network: &mut pywr_core::network::Network,
+        domain: &ModelDomain,
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
+        inter_network_transfers: &[PywrMultiNetworkTransfer],
     ) -> Result<ParameterIndex, SchemaError> {
-        let idx = self.parameter.load(model, tables, data_path)?;
+        let idx = self
+            .parameter
+            .load(network, domain, tables, data_path, inter_network_transfers)?;
 
         let p = pywr_core::parameters::NegativeParameter::new(&self.meta.name, idx);
-        Ok(model.add_parameter(Box::new(p))?)
+        Ok(network.add_parameter(Box::new(p))?)
     }
 }
 

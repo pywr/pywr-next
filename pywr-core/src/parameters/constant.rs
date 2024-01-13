@@ -1,5 +1,5 @@
-use crate::model::Model;
-use crate::parameters::{ActivationFunction, Parameter, ParameterMeta, VariableParameter};
+use crate::network::Network;
+use crate::parameters::{downcast_internal_state, ActivationFunction, Parameter, ParameterMeta, VariableParameter};
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
 use crate::timestep::Timestep;
@@ -30,27 +30,38 @@ impl Parameter for ConstantParameter {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }
+
+    fn setup(
+        &self,
+        timesteps: &[Timestep],
+        scenario_index: &ScenarioIndex,
+    ) -> Result<Option<Box<dyn Any + Send>>, PywrError> {
+        Ok(Some(Box::new(self.value)))
+    }
+
     fn compute(
         &self,
         _timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
-        _model: &Model,
+        _model: &Network,
         _state: &State,
-        _internal_state: &mut Option<Box<dyn Any + Send>>,
+        internal_state: &mut Option<Box<dyn Any + Send>>,
     ) -> Result<f64, PywrError> {
-        Ok(self.value)
+        let value = downcast_internal_state::<f64>(internal_state);
+
+        Ok(*value)
     }
 
-    fn as_variable(&self) -> Option<&dyn VariableParameter> {
+    fn as_f64_variable(&self) -> Option<&dyn VariableParameter<f64>> {
         Some(self)
     }
 
-    fn as_variable_mut(&mut self) -> Option<&mut dyn VariableParameter> {
+    fn as_f64_variable_mut(&mut self) -> Option<&mut dyn VariableParameter<f64>> {
         Some(self)
     }
 }
 
-impl VariableParameter for ConstantParameter {
+impl VariableParameter<f64> for ConstantParameter {
     fn is_active(&self) -> bool {
         self.variable.is_some()
     }

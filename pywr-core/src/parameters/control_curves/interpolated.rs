@@ -1,6 +1,6 @@
-use super::interpolate;
 use crate::metric::Metric;
-use crate::model::Model;
+use crate::network::Network;
+use crate::parameters::interpolate::interpolate;
 use crate::parameters::{Parameter, ParameterMeta};
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
@@ -8,14 +8,14 @@ use crate::timestep::Timestep;
 use crate::PywrError;
 use std::any::Any;
 
-pub struct InterpolatedParameter {
+pub struct ControlCurveInterpolatedParameter {
     meta: ParameterMeta,
     metric: Metric,
     control_curves: Vec<Metric>,
     values: Vec<Metric>,
 }
 
-impl InterpolatedParameter {
+impl ControlCurveInterpolatedParameter {
     pub fn new(name: &str, metric: Metric, control_curves: Vec<Metric>, values: Vec<Metric>) -> Self {
         Self {
             meta: ParameterMeta::new(name),
@@ -26,7 +26,7 @@ impl InterpolatedParameter {
     }
 }
 
-impl Parameter for InterpolatedParameter {
+impl Parameter for ControlCurveInterpolatedParameter {
     fn as_any_mut(&mut self) -> &mut dyn Any {
         self
     }
@@ -37,7 +37,7 @@ impl Parameter for InterpolatedParameter {
         &self,
         _timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
-        model: &Model,
+        model: &Network,
         state: &State,
         _internal_state: &mut Option<Box<dyn Any + Send>>,
     ) -> Result<f64, PywrError> {

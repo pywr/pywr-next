@@ -1,6 +1,6 @@
 mod settings;
 
-use crate::model::Model;
+use crate::network::Network;
 use crate::solvers::builder::{BuiltSolver, SolverBuilder};
 use crate::solvers::{Solver, SolverFeatures, SolverTimings};
 use crate::state::State;
@@ -166,9 +166,9 @@ impl Solver for HighsSolver {
         &[]
     }
 
-    fn setup(model: &Model, settings: &Self::Settings) -> Result<Box<Self>, PywrError> {
+    fn setup(network: &Network, settings: &Self::Settings) -> Result<Box<Self>, PywrError> {
         let builder: SolverBuilder<HighsInt> = SolverBuilder::default();
-        let built = builder.create(model)?;
+        let built = builder.create(network)?;
 
         let num_cols = built.num_cols();
         let num_rows = built.num_rows();
@@ -193,9 +193,9 @@ impl Solver for HighsSolver {
             highs: highs_lp,
         }))
     }
-    fn solve(&mut self, model: &Model, timestep: &Timestep, state: &mut State) -> Result<SolverTimings, PywrError> {
+    fn solve(&mut self, network: &Network, timestep: &Timestep, state: &mut State) -> Result<SolverTimings, PywrError> {
         let mut timings = SolverTimings::default();
-        self.builder.update(model, timestep, state, &mut timings)?;
+        self.builder.update(network, timestep, state, &mut timings)?;
 
         let num_cols = self.builder.num_cols();
         let num_rows = self.builder.num_rows();
@@ -223,12 +223,12 @@ impl Solver for HighsSolver {
         network_state.reset();
         let start_save_solution = Instant::now();
 
-        for edge in model.edges.deref() {
+        for edge in network.edges().deref() {
             let col = self.builder.col_for_edge(&edge.index()) as usize;
             let flow = solution[col];
             network_state.add_flow(edge, timestep, flow)?;
         }
-        network_state.complete(model, timestep)?;
+        network_state.complete(network, timestep)?;
         timings.save_solution += start_save_solution.elapsed();
 
         Ok(timings)

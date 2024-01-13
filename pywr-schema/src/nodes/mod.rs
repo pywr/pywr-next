@@ -13,19 +13,20 @@ mod water_treatment_works;
 
 use crate::data_tables::LoadedTableCollection;
 use crate::error::{ConversionError, SchemaError};
+use crate::model::{PywrMultiNetworkTransfer, PywrNetwork};
 pub use crate::nodes::core::{
     AggregatedNode, AggregatedStorageNode, CatchmentNode, InputNode, LinkNode, OutputNode, StorageNode,
 };
 pub use crate::nodes::delay::DelayNode;
 pub use crate::nodes::river::RiverNode;
 use crate::parameters::DynamicFloatValue;
-use crate::PywrModel;
 pub use annual_virtual_storage::AnnualVirtualStorageNode;
 pub use loss_link::LossLinkNode;
 pub use monthly_virtual_storage::MonthlyVirtualStorageNode;
 pub use piecewise_link::{PiecewiseLinkNode, PiecewiseLinkStep};
 pub use piecewise_storage::PiecewiseStorageNode;
 use pywr_core::metric::Metric;
+use pywr_core::models::ModelDomain;
 use pywr_v1_schema::nodes::{
     CoreNode as CoreNodeV1, Node as NodeV1, NodeMeta as NodeMetaV1, NodePosition as NodePositionV1,
 };
@@ -124,11 +125,11 @@ impl NodeBuilder {
     }
 
     /// Create the next default name without duplicating an existing name in the model.
-    pub fn next_default_name_for_model(mut self, model: &PywrModel) -> Self {
+    pub fn next_default_name_for_model(mut self, network: &PywrNetwork) -> Self {
         let mut num = 1;
         loop {
             let name = format!("{}-{}", self.ty.to_string(), num);
-            if model.get_node_by_name(&name).is_none() {
+            if network.get_node_by_name(&name).is_none() {
                 // No node with this name found!
                 self.name = Some(name);
                 break;
@@ -312,56 +313,68 @@ impl Node {
 
     pub fn add_to_model(
         &self,
-        model: &mut pywr_core::model::Model,
+        network: &mut pywr_core::network::Network,
+        domain: &ModelDomain,
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
+        inter_network_transfers: &[PywrMultiNetworkTransfer],
     ) -> Result<(), SchemaError> {
         match self {
-            Node::Input(n) => n.add_to_model(model),
-            Node::Link(n) => n.add_to_model(model),
-            Node::Output(n) => n.add_to_model(model),
-            Node::Storage(n) => n.add_to_model(model, tables, data_path),
-            Node::Catchment(n) => n.add_to_model(model),
-            Node::RiverGauge(n) => n.add_to_model(model),
-            Node::LossLink(n) => n.add_to_model(model),
-            Node::River(n) => n.add_to_model(model),
-            Node::RiverSplitWithGauge(n) => n.add_to_model(model),
-            Node::WaterTreatmentWorks(n) => n.add_to_model(model),
-            Node::Aggregated(n) => n.add_to_model(model),
-            Node::AggregatedStorage(n) => n.add_to_model(model),
-            Node::VirtualStorage(n) => n.add_to_model(model, tables, data_path),
-            Node::AnnualVirtualStorage(n) => n.add_to_model(model, tables, data_path),
-            Node::PiecewiseLink(n) => n.add_to_model(model),
-            Node::PiecewiseStorage(n) => n.add_to_model(model, tables, data_path),
-            Node::Delay(n) => n.add_to_model(model),
-            Node::MonthlyVirtualStorage(n) => n.add_to_model(model, tables, data_path),
+            Node::Input(n) => n.add_to_model(network),
+            Node::Link(n) => n.add_to_model(network),
+            Node::Output(n) => n.add_to_model(network),
+            Node::Storage(n) => n.add_to_model(network, domain, tables, data_path, inter_network_transfers),
+            Node::Catchment(n) => n.add_to_model(network),
+            Node::RiverGauge(n) => n.add_to_model(network),
+            Node::LossLink(n) => n.add_to_model(network),
+            Node::River(n) => n.add_to_model(network),
+            Node::RiverSplitWithGauge(n) => n.add_to_model(network),
+            Node::WaterTreatmentWorks(n) => n.add_to_model(network),
+            Node::Aggregated(n) => n.add_to_model(network),
+            Node::AggregatedStorage(n) => n.add_to_model(network),
+            Node::VirtualStorage(n) => n.add_to_model(network, domain, tables, data_path, inter_network_transfers),
+            Node::AnnualVirtualStorage(n) => {
+                n.add_to_model(network, domain, tables, data_path, inter_network_transfers)
+            }
+            Node::PiecewiseLink(n) => n.add_to_model(network),
+            Node::PiecewiseStorage(n) => n.add_to_model(network, domain, tables, data_path, inter_network_transfers),
+            Node::Delay(n) => n.add_to_model(network),
+            Node::MonthlyVirtualStorage(n) => {
+                n.add_to_model(network, domain, tables, data_path, inter_network_transfers)
+            }
         }
     }
 
     pub fn set_constraints(
         &self,
-        model: &mut pywr_core::model::Model,
+        network: &mut pywr_core::network::Network,
+        domain: &ModelDomain,
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
+        inter_network_transfers: &[PywrMultiNetworkTransfer],
     ) -> Result<(), SchemaError> {
         match self {
-            Node::Input(n) => n.set_constraints(model, tables, data_path),
-            Node::Link(n) => n.set_constraints(model, tables, data_path),
-            Node::Output(n) => n.set_constraints(model, tables, data_path),
-            Node::Storage(n) => n.set_constraints(model, tables, data_path),
-            Node::Catchment(n) => n.set_constraints(model, tables, data_path),
-            Node::RiverGauge(n) => n.set_constraints(model, tables, data_path),
-            Node::LossLink(n) => n.set_constraints(model, tables, data_path),
+            Node::Input(n) => n.set_constraints(network, domain, tables, data_path, inter_network_transfers),
+            Node::Link(n) => n.set_constraints(network, domain, tables, data_path, inter_network_transfers),
+            Node::Output(n) => n.set_constraints(network, domain, tables, data_path, inter_network_transfers),
+            Node::Storage(n) => n.set_constraints(network, domain, tables, data_path, inter_network_transfers),
+            Node::Catchment(n) => n.set_constraints(network, domain, tables, data_path, inter_network_transfers),
+            Node::RiverGauge(n) => n.set_constraints(network, domain, tables, data_path, inter_network_transfers),
+            Node::LossLink(n) => n.set_constraints(network, domain, tables, data_path, inter_network_transfers),
             Node::River(_) => Ok(()), // No constraints on river node
-            Node::RiverSplitWithGauge(n) => n.set_constraints(model, tables, data_path),
-            Node::WaterTreatmentWorks(n) => n.set_constraints(model, tables, data_path),
-            Node::Aggregated(n) => n.set_constraints(model, tables, data_path),
+            Node::RiverSplitWithGauge(n) => {
+                n.set_constraints(network, domain, tables, data_path, inter_network_transfers)
+            }
+            Node::WaterTreatmentWorks(n) => {
+                n.set_constraints(network, domain, tables, data_path, inter_network_transfers)
+            }
+            Node::Aggregated(n) => n.set_constraints(network, domain, tables, data_path, inter_network_transfers),
             Node::AggregatedStorage(_) => Ok(()), // No constraints on aggregated storage nodes.
             Node::VirtualStorage(_) => Ok(()),    // TODO
             Node::AnnualVirtualStorage(_) => Ok(()), // TODO
-            Node::PiecewiseLink(n) => n.set_constraints(model, tables, data_path),
-            Node::PiecewiseStorage(n) => n.set_constraints(model, tables, data_path),
-            Node::Delay(n) => n.set_constraints(model, tables),
+            Node::PiecewiseLink(n) => n.set_constraints(network, domain, tables, data_path, inter_network_transfers),
+            Node::PiecewiseStorage(n) => n.set_constraints(network, domain, tables, data_path, inter_network_transfers),
+            Node::Delay(n) => n.set_constraints(network, tables),
             Node::MonthlyVirtualStorage(_) => Ok(()), // TODO
         }
     }
@@ -415,26 +428,26 @@ impl Node {
     }
 
     /// Returns the default metric for this node.
-    pub fn default_metric(&self, model: &pywr_core::model::Model) -> Result<Metric, SchemaError> {
+    pub fn default_metric(&self, network: &pywr_core::network::Network) -> Result<Metric, SchemaError> {
         match self {
-            Node::Input(n) => n.default_metric(model),
-            Node::Link(n) => n.default_metric(model),
-            Node::Output(n) => n.default_metric(model),
-            Node::Storage(n) => n.default_metric(model),
-            Node::Catchment(n) => n.default_metric(model),
-            Node::RiverGauge(n) => n.default_metric(model),
-            Node::LossLink(n) => n.default_metric(model),
-            Node::River(n) => n.default_metric(model),
-            Node::RiverSplitWithGauge(n) => n.default_metric(model),
-            Node::WaterTreatmentWorks(n) => n.default_metric(model),
-            Node::Aggregated(n) => n.default_metric(model),
-            Node::AggregatedStorage(n) => n.default_metric(model),
-            Node::VirtualStorage(n) => n.default_metric(model),
-            Node::AnnualVirtualStorage(n) => n.default_metric(model),
-            Node::MonthlyVirtualStorage(n) => n.default_metric(model),
-            Node::PiecewiseLink(n) => n.default_metric(model),
-            Node::Delay(n) => n.default_metric(model),
-            Node::PiecewiseStorage(n) => n.default_metric(model),
+            Node::Input(n) => n.default_metric(network),
+            Node::Link(n) => n.default_metric(network),
+            Node::Output(n) => n.default_metric(network),
+            Node::Storage(n) => n.default_metric(network),
+            Node::Catchment(n) => n.default_metric(network),
+            Node::RiverGauge(n) => n.default_metric(network),
+            Node::LossLink(n) => n.default_metric(network),
+            Node::River(n) => n.default_metric(network),
+            Node::RiverSplitWithGauge(n) => n.default_metric(network),
+            Node::WaterTreatmentWorks(n) => n.default_metric(network),
+            Node::Aggregated(n) => n.default_metric(network),
+            Node::AggregatedStorage(n) => n.default_metric(network),
+            Node::VirtualStorage(n) => n.default_metric(network),
+            Node::AnnualVirtualStorage(n) => n.default_metric(network),
+            Node::MonthlyVirtualStorage(n) => n.default_metric(network),
+            Node::PiecewiseLink(n) => n.default_metric(network),
+            Node::Delay(n) => n.default_metric(network),
+            Node::PiecewiseStorage(n) => n.default_metric(network),
         }
     }
 }

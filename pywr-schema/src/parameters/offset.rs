@@ -3,6 +3,8 @@ use crate::parameters::{ConstantValue, DynamicFloatValue, DynamicFloatValueType,
 use pywr_core::parameters::ParameterIndex;
 
 use crate::error::SchemaError;
+use crate::model::PywrMultiNetworkTransfer;
+use pywr_core::models::ModelDomain;
 use std::collections::HashMap;
 use std::path::Path;
 
@@ -29,7 +31,7 @@ pub struct OffsetParameter {
     pub meta: ParameterMeta,
     /// The offset value applied to the metric.
     ///
-    /// In the simple case this will be the value used by the model. However, if an activation
+    /// In the simple case this will be the value used by the network. However, if an activation
     /// function is specified this value will be the `x` value for that activation function.
     pub offset: ConstantValue<f64>,
     /// The metric from which to apply the offset.
@@ -49,9 +51,11 @@ impl OffsetParameter {
 
     pub fn add_to_model(
         &self,
-        model: &mut pywr_core::model::Model,
+        network: &mut pywr_core::network::Network,
+        domain: &ModelDomain,
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
+        inter_network_transfers: &[PywrMultiNetworkTransfer],
     ) -> Result<ParameterIndex, SchemaError> {
         let variable = match &self.variable {
             None => None,
@@ -65,9 +69,11 @@ impl OffsetParameter {
             }
         };
 
-        let idx = self.metric.load(model, tables, data_path)?;
+        let idx = self
+            .metric
+            .load(network, domain, tables, data_path, inter_network_transfers)?;
 
         let p = pywr_core::parameters::OffsetParameter::new(&self.meta.name, idx, self.offset.load(tables)?, variable);
-        Ok(model.add_parameter(Box::new(p))?)
+        Ok(network.add_parameter(Box::new(p))?)
     }
 }

@@ -2,7 +2,8 @@ use crate::aggregated_node::AggregatedNodeIndex;
 use crate::aggregated_storage_node::AggregatedStorageNodeIndex;
 use crate::derived_metric::DerivedMetricIndex;
 use crate::edge::EdgeIndex;
-use crate::model::Model;
+use crate::models::MultiNetworkTransferIndex;
+use crate::network::Network;
 use crate::node::NodeIndex;
 use crate::parameters::{IndexParameterIndex, MultiValueParameterIndex, ParameterIndex};
 use crate::state::State;
@@ -28,10 +29,11 @@ pub enum Metric {
     // TODO implement other MultiNodeXXX variants
     Constant(f64),
     DerivedMetric(DerivedMetricIndex),
+    InterNetworkTransfer(MultiNetworkTransferIndex),
 }
 
 impl Metric {
-    pub fn get_value(&self, model: &Model, state: &State) -> Result<f64, PywrError> {
+    pub fn get_value(&self, model: &Network, state: &State) -> Result<f64, PywrError> {
         match self {
             Metric::NodeInFlow(idx) => Ok(state.get_network_state().get_node_in_flow(idx)?),
             Metric::NodeOutFlow(idx) => Ok(state.get_network_state().get_node_out_flow(idx)?),
@@ -74,6 +76,7 @@ impl Metric {
                     .sum::<Result<_, _>>()?;
                 Ok(flow)
             }
+            Metric::InterNetworkTransfer(idx) => state.get_inter_network_transfer_value(*idx),
         }
     }
 }
@@ -85,7 +88,7 @@ pub enum IndexMetric {
 }
 
 impl IndexMetric {
-    pub fn get_value(&self, model: &Model, state: &State) -> Result<usize, PywrError> {
+    pub fn get_value(&self, _network: &Network, state: &State) -> Result<usize, PywrError> {
         match self {
             Self::IndexParameterValue(idx) => state.get_parameter_index(*idx),
             Self::Constant(i) => Ok(*i),

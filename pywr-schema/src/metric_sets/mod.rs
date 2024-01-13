@@ -1,5 +1,5 @@
 use crate::error::SchemaError;
-use crate::PywrModel;
+use crate::model::PywrNetwork;
 use serde::{Deserialize, Serialize};
 
 ///
@@ -12,8 +12,8 @@ pub enum OutputMetric {
 impl OutputMetric {
     fn try_clone_into_metric(
         &self,
-        model: &pywr_core::model::Model,
-        schema: &PywrModel,
+        network: &pywr_core::network::Network,
+        schema: &PywrNetwork,
     ) -> Result<pywr_core::metric::Metric, SchemaError> {
         match self {
             OutputMetric::NodeName(node_name) => {
@@ -22,7 +22,7 @@ impl OutputMetric {
                     .get_node_by_name(node_name)
                     .ok_or_else(|| SchemaError::NodeNotFound(node_name.to_string()))?;
                 // Create and return the node's default metric
-                node.default_metric(model)
+                node.default_metric(network)
             }
         }
     }
@@ -36,15 +36,19 @@ pub struct MetricSet {
 }
 
 impl MetricSet {
-    pub fn add_to_model(&self, model: &mut pywr_core::model::Model, schema: &PywrModel) -> Result<(), SchemaError> {
+    pub fn add_to_model(
+        &self,
+        network: &mut pywr_core::network::Network,
+        schema: &PywrNetwork,
+    ) -> Result<(), SchemaError> {
         // Convert the schema representation to internal metrics.
         let metrics: Vec<pywr_core::metric::Metric> = self
             .metrics
             .iter()
-            .map(|m| m.try_clone_into_metric(model, schema))
+            .map(|m| m.try_clone_into_metric(network, schema))
             .collect::<Result<_, _>>()?;
         let metric_set = pywr_core::recorders::MetricSet::new(&self.name, None, metrics);
-        let _ = model.add_metric_set(metric_set)?;
+        let _ = network.add_metric_set(metric_set)?;
 
         Ok(())
     }

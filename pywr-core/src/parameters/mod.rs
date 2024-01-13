@@ -6,8 +6,11 @@ mod asymmetric;
 mod constant;
 mod control_curves;
 mod delay;
+mod discount_factor;
 mod division;
 mod indexed_array;
+mod interpolate;
+mod interpolated;
 mod max;
 mod min;
 mod negative;
@@ -24,7 +27,7 @@ use std::any::Any;
 // Re-imports
 pub use self::rhai::RhaiParameter;
 use super::PywrError;
-use crate::model::Model;
+use crate::network::Network;
 use crate::scenario::ScenarioIndex;
 use crate::state::{MultiValue, State};
 use crate::timestep::Timestep;
@@ -35,18 +38,24 @@ pub use array::{Array1Parameter, Array2Parameter};
 pub use asymmetric::AsymmetricSwitchIndexParameter;
 pub use constant::ConstantParameter;
 pub use control_curves::{
-    ApportionParameter, ControlCurveIndexParameter, ControlCurveParameter, InterpolatedParameter,
+    ApportionParameter, ControlCurveIndexParameter, ControlCurveInterpolatedParameter, ControlCurveParameter,
     PiecewiseInterpolatedParameter, VolumeBetweenControlCurvesParameter,
 };
 pub use delay::DelayParameter;
+pub use discount_factor::DiscountFactorParameter;
 pub use division::DivisionParameter;
 pub use indexed_array::IndexedArrayParameter;
+pub use interpolate::{interpolate, linear_interpolation, InterpolationError};
+pub use interpolated::InterpolatedParameter;
 pub use max::MaxParameter;
 pub use min::MinParameter;
 pub use negative::NegativeParameter;
 pub use offset::OffsetParameter;
 pub use polynomial::Polynomial1DParameter;
-pub use profiles::{DailyProfileParameter, MonthlyInterpDay, MonthlyProfileParameter, UniformDrawdownProfileParameter};
+pub use profiles::{
+    DailyProfileParameter, MonthlyInterpDay, MonthlyProfileParameter, RadialBasisFunction, RbfProfileParameter,
+    RbfProfileVariableConfig, UniformDrawdownProfileParameter,
+};
 pub use py::PyParameter;
 use std::fmt;
 use std::fmt::{Display, Formatter};
@@ -172,7 +181,7 @@ pub trait Parameter: Send + Sync {
         &self,
         timestep: &Timestep,
         scenario_index: &ScenarioIndex,
-        model: &Model,
+        model: &Network,
         state: &State,
         internal_state: &mut Option<Box<dyn Any + Send>>,
     ) -> Result<f64, PywrError>;
@@ -181,31 +190,54 @@ pub trait Parameter: Send + Sync {
         &self,
         #[allow(unused_variables)] timestep: &Timestep,
         #[allow(unused_variables)] scenario_index: &ScenarioIndex,
-        #[allow(unused_variables)] model: &Model,
+        #[allow(unused_variables)] model: &Network,
         #[allow(unused_variables)] state: &State,
         #[allow(unused_variables)] internal_state: &mut Option<Box<dyn Any + Send>>,
     ) -> Result<(), PywrError> {
         Ok(())
     }
 
-    /// Return the parameter as a [`VariableParameter'] if it supports being a variable.
-    fn as_variable(&self) -> Option<&dyn VariableParameter> {
+    /// Return the parameter as a [`VariableParameter<f64>'] if it supports being a variable.
+    fn as_f64_variable(&self) -> Option<&dyn VariableParameter<f64>> {
         None
     }
 
-    /// Return the parameter as a [`VariableParameter'] if it supports being a variable.
-    fn as_variable_mut(&mut self) -> Option<&mut dyn VariableParameter> {
+    /// Return the parameter as a [`VariableParameter<f64>'] if it supports being a variable.
+    fn as_f64_variable_mut(&mut self) -> Option<&mut dyn VariableParameter<f64>> {
         None
     }
 
     /// Can this parameter be a variable
-    fn can_be_variable(&self) -> bool {
-        self.as_variable().is_some()
+    fn can_be_f64_variable(&self) -> bool {
+        self.as_f64_variable().is_some()
     }
 
     /// Is this parameter an active variable
-    fn is_variable_active(&self) -> bool {
-        match self.as_variable() {
+    fn is_f64_variable_active(&self) -> bool {
+        match self.as_f64_variable() {
+            Some(var) => var.is_active(),
+            None => false,
+        }
+    }
+
+    /// Return the parameter as a [`VariableParameter<u32>'] if it supports being a variable.
+    fn as_u32_variable(&self) -> Option<&dyn VariableParameter<u32>> {
+        None
+    }
+
+    /// Return the parameter as a [`VariableParameter<u32>'] if it supports being a variable.
+    fn as_u32_variable_mut(&mut self) -> Option<&mut dyn VariableParameter<u32>> {
+        None
+    }
+
+    /// Can this parameter be a variable
+    fn can_be_u32_variable(&self) -> bool {
+        self.as_u32_variable().is_some()
+    }
+
+    /// Is this parameter an active variable
+    fn is_u32_variable_active(&self) -> bool {
+        match self.as_u32_variable() {
             Some(var) => var.is_active(),
             None => false,
         }
@@ -230,7 +262,7 @@ pub trait IndexParameter: Send + Sync {
         &self,
         timestep: &Timestep,
         scenario_index: &ScenarioIndex,
-        model: &Model,
+        model: &Network,
         state: &State,
         internal_state: &mut Option<Box<dyn Any + Send>>,
     ) -> Result<usize, PywrError>;
@@ -239,7 +271,7 @@ pub trait IndexParameter: Send + Sync {
         &self,
         #[allow(unused_variables)] timestep: &Timestep,
         #[allow(unused_variables)] scenario_index: &ScenarioIndex,
-        #[allow(unused_variables)] model: &Model,
+        #[allow(unused_variables)] model: &Network,
         #[allow(unused_variables)] state: &State,
         #[allow(unused_variables)] internal_state: &mut Option<Box<dyn Any + Send>>,
     ) -> Result<(), PywrError> {
@@ -264,7 +296,7 @@ pub trait MultiValueParameter: Send + Sync {
         &self,
         timestep: &Timestep,
         scenario_index: &ScenarioIndex,
-        model: &Model,
+        model: &Network,
         state: &State,
         internal_state: &mut Option<Box<dyn Any + Send>>,
     ) -> Result<MultiValue, PywrError>;
@@ -273,7 +305,7 @@ pub trait MultiValueParameter: Send + Sync {
         &self,
         #[allow(unused_variables)] timestep: &Timestep,
         #[allow(unused_variables)] scenario_index: &ScenarioIndex,
-        #[allow(unused_variables)] model: &Model,
+        #[allow(unused_variables)] model: &Network,
         #[allow(unused_variables)] state: &State,
         #[allow(unused_variables)] internal_state: &mut Option<Box<dyn Any + Send>>,
     ) -> Result<(), PywrError> {
@@ -302,19 +334,25 @@ pub enum ParameterType {
     Multi(MultiValueParameterIndex),
 }
 
-pub trait VariableParameter {
+/// A parameter that can be optimised.
+///
+/// This trait is used to allow parameter's internal values to be accessed and altered by
+/// external algorithms. It is primarily designed to be used by the optimisation algorithms
+/// such as multi-objective evolutionary algorithms. The trait is generic to the type of
+/// the variable values being optimised but these will typically by `f64` and `u32`.
+pub trait VariableParameter<T> {
     /// Is this variable activated (i.e. should be used in optimisation)
     fn is_active(&self) -> bool;
     /// Return the number of variables required
     fn size(&self) -> usize;
     /// Apply new variable values to the parameter
-    fn set_variables(&mut self, values: &[f64]) -> Result<(), PywrError>;
+    fn set_variables(&mut self, values: &[T]) -> Result<(), PywrError>;
     /// Get the current variable values
-    fn get_variables(&self) -> Vec<f64>;
+    fn get_variables(&self) -> Vec<T>;
     /// Get variable lower bounds
-    fn get_lower_bounds(&self) -> Result<Vec<f64>, PywrError>;
+    fn get_lower_bounds(&self) -> Result<Vec<T>, PywrError>;
     /// Get variable upper bounds
-    fn get_upper_bounds(&self) -> Result<Vec<f64>, PywrError>;
+    fn get_upper_bounds(&self) -> Result<Vec<T>, PywrError>;
 }
 
 #[cfg(test)]

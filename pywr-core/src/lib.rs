@@ -3,8 +3,9 @@
 extern crate core;
 
 use crate::derived_metric::DerivedMetricIndex;
+use crate::models::MultiNetworkTransferIndex;
 use crate::node::NodeIndex;
-use crate::parameters::{IndexParameterIndex, MultiValueParameterIndex, ParameterIndex};
+use crate::parameters::{IndexParameterIndex, InterpolationError, MultiValueParameterIndex, ParameterIndex};
 use crate::recorders::RecorderIndex;
 use pyo3::exceptions::{PyException, PyRuntimeError};
 use pyo3::{create_exception, PyErr};
@@ -15,11 +16,12 @@ mod aggregated_storage_node;
 pub mod derived_metric;
 pub mod edge;
 pub mod metric;
-pub mod model;
+pub mod models;
+pub mod network;
 pub mod node;
 pub mod parameters;
 pub mod recorders;
-mod scenario;
+pub mod scenario;
 pub mod solvers;
 pub mod state;
 pub mod test_utils;
@@ -43,10 +45,14 @@ pub enum PywrError {
     ParameterIndexNotFound(ParameterIndex),
     #[error("index parameter index {0} not found")]
     IndexParameterIndexNotFound(IndexParameterIndex),
-    #[error("multi value parameter index {0} not found")]
+    #[error("multi1 value parameter index {0} not found")]
     MultiValueParameterIndexNotFound(MultiValueParameterIndex),
-    #[error("multi value parameter key {0} not found")]
+    #[error("multi1 value parameter key {0} not found")]
     MultiValueParameterKeyNotFound(String),
+    #[error("inter-network parameter state not initialised")]
+    InterNetworkParameterStateNotInitialised,
+    #[error("inter-network parameter index {0} not found")]
+    MultiNetworkTransferIndexNotFound(MultiNetworkTransferIndex),
     #[error("parameter {0} not found")]
     ParameterNotFound(String),
     #[error("metric set index not found")]
@@ -79,6 +85,10 @@ pub enum PywrError {
     FlowConstraintsUndefined,
     #[error("storage constraints are undefined for this node")]
     StorageConstraintsUndefined,
+    #[error("No more timesteps")]
+    EndOfTimesteps,
+    #[error("can not add virtual storage node to a storage node")]
+    NoVirtualStorageOnStorageNode,
     #[error("timestep index out of range")]
     TimestepIndexOutOfRange,
     #[error("solver not initialised")]
@@ -133,6 +143,12 @@ pub enum PywrError {
     ParameterVariableValuesIncorrectLength,
     #[error("missing solver features")]
     MissingSolverFeatures,
+    #[error("interpolation error: {0}")]
+    Interpolation(#[from] InterpolationError),
+    #[error("network {0} not found")]
+    NetworkNotFound(String),
+    #[error("network index ({0}) not found")]
+    NetworkIndexNotFound(usize),
     #[error("parameters do not provide an initial value")]
     ParameterNoInitialValue,
 }

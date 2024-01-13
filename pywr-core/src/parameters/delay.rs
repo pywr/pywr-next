@@ -1,5 +1,5 @@
 use crate::metric::Metric;
-use crate::model::Model;
+use crate::network::Network;
 use crate::parameters::{downcast_internal_state, Parameter, ParameterMeta};
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
@@ -48,7 +48,7 @@ impl Parameter for DelayParameter {
         &self,
         timestep: &Timestep,
         scenario_index: &ScenarioIndex,
-        model: &Model,
+        model: &Network,
         state: &State,
         internal_state: &mut Option<Box<dyn Any + Send>>,
     ) -> Result<f64, PywrError> {
@@ -68,7 +68,7 @@ impl Parameter for DelayParameter {
         &self,
         timestep: &Timestep,
         scenario_index: &ScenarioIndex,
-        model: &Model,
+        model: &Network,
         state: &State,
         internal_state: &mut Option<Box<dyn Any + Send>>,
     ) -> Result<(), PywrError> {
@@ -97,9 +97,9 @@ mod test {
 
         // Create an artificial volume series to use for the delay test
         let volumes = Array1::linspace(1.0, 0.0, 21);
-        let volume = Array1Parameter::new("test-x", volumes.clone());
+        let volume = Array1Parameter::new("test-x", volumes.clone(), None);
 
-        let volume_idx = model.add_parameter(Box::new(volume)).unwrap();
+        let volume_idx = model.network_mut().add_parameter(Box::new(volume)).unwrap();
 
         const DELAY: usize = 3; // 3 time-step delay
         let parameter = DelayParameter::new(

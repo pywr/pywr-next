@@ -1,8 +1,10 @@
 use crate::data_tables::LoadedTableCollection;
 use crate::error::{ConversionError, SchemaError};
+use crate::model::PywrMultiNetworkTransfer;
 use crate::nodes::NodeMeta;
 use crate::parameters::{DynamicFloatValue, TryIntoV2Parameter};
 use pywr_core::metric::Metric;
+use pywr_core::models::ModelDomain;
 use pywr_core::node::{ConstraintValue, StorageInitialVolume};
 use pywr_core::virtual_storage::VirtualStorageReset;
 use pywr_v1_schema::nodes::VirtualStorageNode as VirtualStorageNodeV1;
@@ -24,9 +26,11 @@ pub struct VirtualStorageNode {
 impl VirtualStorageNode {
     pub fn add_to_model(
         &self,
-        model: &mut pywr_core::model::Model,
+        network: &mut pywr_core::network::Network,
+        domain: &ModelDomain,
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
+        inter_network_transfers: &[PywrMultiNetworkTransfer],
     ) -> Result<(), SchemaError> {
         let initial_volume = if let Some(iv) = self.initial_volume {
             StorageInitialVolume::Absolute(iv)
@@ -36,26 +40,37 @@ impl VirtualStorageNode {
             return Err(SchemaError::MissingInitialVolume(self.meta.name.to_string()));
         };
 
+        let cost = match &self.cost {
+            Some(v) => v
+                .load(network, domain, tables, data_path, inter_network_transfers)?
+                .into(),
+            None => ConstraintValue::Scalar(0.0),
+        };
+
         let min_volume = match &self.min_volume {
-            Some(v) => v.load(model, tables, data_path)?.into(),
+            Some(v) => v
+                .load(network, domain, tables, data_path, inter_network_transfers)?
+                .into(),
             None => ConstraintValue::Scalar(0.0),
         };
 
         let max_volume = match &self.max_volume {
-            Some(v) => v.load(model, tables, data_path)?.into(),
+            Some(v) => v
+                .load(network, domain, tables, data_path, inter_network_transfers)?
+                .into(),
             None => ConstraintValue::None,
         };
 
         let node_idxs = self
             .nodes
             .iter()
-            .map(|name| model.get_node_index_by_name(name.as_str(), None))
+            .map(|name| network.get_node_index_by_name(name.as_str(), None))
             .collect::<Result<Vec<_>, _>>()?;
 
         // Standard virtual storage node never resets.
         let reset = VirtualStorageReset::Never;
 
-        model.add_virtual_storage_node(
+        network.add_virtual_storage_node(
             self.meta.name.as_str(),
             None,
             &node_idxs,
@@ -64,6 +79,7 @@ impl VirtualStorageNode {
             min_volume,
             max_volume,
             reset,
+            cost,
         )?;
         Ok(())
     }
@@ -76,8 +92,8 @@ impl VirtualStorageNode {
         vec![]
     }
 
-    pub fn default_metric(&self, model: &pywr_core::model::Model) -> Result<Metric, SchemaError> {
-        let idx = model.get_virtual_storage_node_index_by_name(self.meta.name.as_str(), None)?;
+    pub fn default_metric(&self, network: &pywr_core::network::Network) -> Result<Metric, SchemaError> {
+        let idx = network.get_virtual_storage_node_index_by_name(self.meta.name.as_str(), None)?;
         Ok(Metric::VirtualStorageVolume(idx))
     }
 }

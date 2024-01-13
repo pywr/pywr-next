@@ -1,6 +1,6 @@
-use super::interpolate;
 use crate::metric::Metric;
-use crate::model::Model;
+use crate::network::Network;
+use crate::parameters::interpolate::interpolate;
 use crate::parameters::{Parameter, ParameterMeta};
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
@@ -48,7 +48,7 @@ impl Parameter for PiecewiseInterpolatedParameter {
         &self,
         _timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
-        model: &Model,
+        model: &Network,
         state: &State,
         _internal_state: &mut Option<Box<dyn Any + Send>>,
     ) -> Result<f64, PywrError> {
@@ -82,9 +82,9 @@ mod test {
         let mut model = simple_model(1);
 
         // Create an artificial volume series to use for the interpolation test
-        let volume = Array1Parameter::new("test-x", Array1::linspace(1.0, 0.0, 21));
+        let volume = Array1Parameter::new("test-x", Array1::linspace(1.0, 0.0, 21), None);
 
-        let volume_idx = model.add_parameter(Box::new(volume)).unwrap();
+        let volume_idx = model.network_mut().add_parameter(Box::new(volume)).unwrap();
 
         let parameter = PiecewiseInterpolatedParameter::new(
             "test-parameter",
