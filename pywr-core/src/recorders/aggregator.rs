@@ -24,9 +24,13 @@ impl AggregationFrequency {
                     current_date.year()
                 };
                 // 1st of the next month
+                // SAFETY: This should be safe to unwrap as it will always create a valid date unless
+                // we are at the limit of dates that are representable.
                 Date::from_calendar_date(year, current_date.month().next(), 1).unwrap()
             }
             // 1st of January in the next year
+            // SAFETY: This should be safe to unwrap as it will always create a valid date unless
+            // we are at the limit of dates that are representable.
             Self::Annual => Date::from_calendar_date(current_date.year() + 1, Month::January, 1).unwrap(),
         }
     }
@@ -40,8 +44,6 @@ impl AggregationFrequency {
         let end_date = value.start + value.duration;
 
         while current_date < end_date {
-            // This should be safe to unwrap as it will always create a valid date unless
-            // we are at the limit of dates that are representable.
             let start_of_next_period = self.start_of_next_period(&current_date);
 
             let current_duration = if start_of_next_period <= end_date {
