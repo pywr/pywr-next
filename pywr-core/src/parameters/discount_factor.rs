@@ -65,7 +65,6 @@ mod test {
 
         let _volume_idx = network.add_parameter(Box::new(volume)).unwrap();
 
-        const DELAY: usize = 3; // 3 time-step delay
         let parameter = DiscountFactorParameter::new(
             "test-parameter",
             Metric::Constant(0.03), // Interpolate with the parameter based values
