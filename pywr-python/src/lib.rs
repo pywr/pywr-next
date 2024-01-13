@@ -676,7 +676,7 @@ fn run_model_from_string(
 
     let model = schema_v2.build_model(path.as_deref(), None)?;
 
-    let nt = num_threads.unwrap_or(1);
+    let _nt = num_threads.unwrap_or(1);
 
     py.allow_threads(|| {
         match solver_name.as_str() {
