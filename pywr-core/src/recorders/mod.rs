@@ -336,30 +336,6 @@ expected: `{:?}`"#,
     }
 }
 
-pub enum RecorderAggregation {
-    Min,
-    Max,
-    Mean,
-    Median,
-    Sum,
-    Quantile(f64),
-    CountNonZero,
-    CountAboveThreshold(f64),
-}
-
-pub enum Direction {
-    Minimise,
-    Maximise,
-}
-
-struct RecorderMetric {
-    temporal_aggregation: RecorderAggregation,
-    scenario_aggregation: RecorderAggregation,
-    lower_bounds: Option<f64>,
-    upper_bounds: Option<f64>,
-    objective: Option<Direction>,
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
