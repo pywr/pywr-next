@@ -33,8 +33,8 @@ impl Parameter for ConstantParameter {
 
     fn setup(
         &self,
-        timesteps: &[Timestep],
-        scenario_index: &ScenarioIndex,
+        _timesteps: &[Timestep],
+        _scenario_index: &ScenarioIndex,
     ) -> Result<Option<Box<dyn ParameterState>>, PywrError> {
         Ok(Some(Box::new(self.value)))
     }

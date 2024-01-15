@@ -381,9 +381,9 @@ mod tests {
         let mut state = max_annual_min.default_state();
 
         let mut date = date!(2023 - 01 - 01);
-        for i in 0..365 * 3 {
+        for _i in 0..365 * 3 {
             let value = PeriodValue::new(date, Duration::days(1), date.year() as f64);
-            let agg_value = max_annual_min.append_value(&mut state, value);
+            let _agg_value = max_annual_min.append_value(&mut state, value);
             date = date + Duration::days(1);
         }
 

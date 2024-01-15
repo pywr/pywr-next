@@ -51,21 +51,20 @@ mod test {
     use crate::metric::Metric;
     use crate::parameters::{Array1Parameter, DiscountFactorParameter};
     use crate::test_utils::{run_and_assert_parameter, simple_model};
-    use ndarray::{concatenate, s, Array1, Array2, Axis};
+    use ndarray::{Array1, Array2, Axis};
 
     /// Basic functional test of the delay parameter.
     #[test]
     fn test_basic() {
         let mut model = simple_model(1);
-        let mut network = model.network_mut();
+        let network = model.network_mut();
 
         // Create an artificial volume series to use for the delay test
         let volumes = Array1::linspace(1.0, 0.0, 21);
         let volume = Array1Parameter::new("test-x", volumes.clone(), None);
 
-        let volume_idx = network.add_parameter(Box::new(volume)).unwrap();
+        let _volume_idx = network.add_parameter(Box::new(volume)).unwrap();
 
-        const DELAY: usize = 3; // 3 time-step delay
         let parameter = DiscountFactorParameter::new(
             "test-parameter",
             Metric::Constant(0.03), // Interpolate with the parameter based values

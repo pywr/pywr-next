@@ -105,6 +105,6 @@ mod tests {
         assert!(linear_interpolation(1.0, &not_enough_points, true).is_err());
 
         let non_monotonic_points = vec![(1.0, 3.0), (2.0, 4.5), (2.0, 6.0), (4.0, 7.5), (5.0, 9.0)];
-        assert!(linear_interpolation(1.0, &not_enough_points, true).is_err());
+        assert!(linear_interpolation(3.0, &non_monotonic_points, true).is_err());
     }
 }
