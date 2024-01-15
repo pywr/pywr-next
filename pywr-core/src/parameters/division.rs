@@ -3,7 +3,7 @@ use crate::metric::Metric;
 use crate::network::Network;
 use crate::parameters::{Parameter, ParameterMeta};
 use crate::scenario::ScenarioIndex;
-use crate::state::State;
+use crate::state::{ParameterState, State};
 use crate::timestep::Timestep;
 use crate::PywrError::InvalidMetricValue;
 use std::any::Any;
@@ -37,7 +37,7 @@ impl Parameter for DivisionParameter {
         _scenario_index: &ScenarioIndex,
         model: &Network,
         state: &State,
-        _internal_state: &mut Option<Box<dyn Any + Send>>,
+        _internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<f64, PywrError> {
         // TODO handle scenarios
         let denominator = self.denominator.get_value(model, state)?;

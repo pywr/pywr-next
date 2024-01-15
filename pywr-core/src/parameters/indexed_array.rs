@@ -2,7 +2,7 @@ use crate::metric::Metric;
 use crate::network::Network;
 use crate::parameters::{IndexValue, Parameter, ParameterMeta};
 use crate::scenario::ScenarioIndex;
-use crate::state::State;
+use crate::state::{ParameterState, State};
 use crate::timestep::Timestep;
 use crate::PywrError;
 use std::any::Any;
@@ -36,7 +36,7 @@ impl Parameter for IndexedArrayParameter {
         _scenario_index: &ScenarioIndex,
         model: &Network,
         state: &State,
-        _internal_state: &mut Option<Box<dyn Any + Send>>,
+        _internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<f64, PywrError> {
         let index = match self.index_parameter {
             IndexValue::Constant(idx) => idx,

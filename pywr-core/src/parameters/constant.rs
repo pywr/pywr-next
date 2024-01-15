@@ -1,7 +1,7 @@
 use crate::network::Network;
 use crate::parameters::{downcast_internal_state, ActivationFunction, Parameter, ParameterMeta, VariableParameter};
 use crate::scenario::ScenarioIndex;
-use crate::state::State;
+use crate::state::{ParameterState, State};
 use crate::timestep::Timestep;
 use crate::PywrError;
 use std::any::Any;
@@ -35,7 +35,7 @@ impl Parameter for ConstantParameter {
         &self,
         timesteps: &[Timestep],
         scenario_index: &ScenarioIndex,
-    ) -> Result<Option<Box<dyn Any + Send>>, PywrError> {
+    ) -> Result<Option<Box<dyn ParameterState>>, PywrError> {
         Ok(Some(Box::new(self.value)))
     }
 
@@ -45,7 +45,7 @@ impl Parameter for ConstantParameter {
         _scenario_index: &ScenarioIndex,
         _model: &Network,
         _state: &State,
-        internal_state: &mut Option<Box<dyn Any + Send>>,
+        internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<f64, PywrError> {
         let value = downcast_internal_state::<f64>(internal_state);
 

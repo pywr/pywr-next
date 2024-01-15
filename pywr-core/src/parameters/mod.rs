@@ -19,7 +19,6 @@ mod polynomial;
 mod profiles;
 mod py;
 mod rhai;
-pub mod simple_wasm;
 mod threshold;
 mod vector;
 
@@ -29,7 +28,7 @@ pub use self::rhai::RhaiParameter;
 use super::PywrError;
 use crate::network::Network;
 use crate::scenario::ScenarioIndex;
-use crate::state::{MultiValue, State};
+use crate::state::{MultiValue, ParameterState, State};
 use crate::timestep::Timestep;
 pub use activation_function::ActivationFunction;
 pub use aggregated::{AggFunc, AggregatedParameter};
@@ -150,10 +149,10 @@ impl ParameterMeta {
 
 /// Helper function to downcast to internal parameter state and print a helpful panic
 /// message if this fails.
-pub fn downcast_internal_state<T: 'static>(internal_state: &mut Option<Box<dyn Any + Send>>) -> &mut T {
+pub fn downcast_internal_state<T: 'static>(internal_state: &mut Option<Box<dyn ParameterState>>) -> &mut T {
     // Downcast the internal state to the correct type
     match internal_state {
-        Some(internal) => match internal.downcast_mut::<T>() {
+        Some(internal) => match internal.as_mut().as_any_mut().downcast_mut::<T>() {
             Some(pa) => pa,
             None => panic!("Internal state did not downcast to the correct type! :("),
         },
@@ -173,7 +172,7 @@ pub trait Parameter: Send + Sync {
         &self,
         #[allow(unused_variables)] timesteps: &[Timestep],
         #[allow(unused_variables)] scenario_index: &ScenarioIndex,
-    ) -> Result<Option<Box<dyn Any + Send>>, PywrError> {
+    ) -> Result<Option<Box<dyn ParameterState>>, PywrError> {
         Ok(None)
     }
 
@@ -183,7 +182,7 @@ pub trait Parameter: Send + Sync {
         scenario_index: &ScenarioIndex,
         model: &Network,
         state: &State,
-        internal_state: &mut Option<Box<dyn Any + Send>>,
+        internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<f64, PywrError>;
 
     fn after(
@@ -192,7 +191,7 @@ pub trait Parameter: Send + Sync {
         #[allow(unused_variables)] scenario_index: &ScenarioIndex,
         #[allow(unused_variables)] model: &Network,
         #[allow(unused_variables)] state: &State,
-        #[allow(unused_variables)] internal_state: &mut Option<Box<dyn Any + Send>>,
+        #[allow(unused_variables)] internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<(), PywrError> {
         Ok(())
     }
@@ -254,7 +253,7 @@ pub trait IndexParameter: Send + Sync {
         &self,
         _timesteps: &[Timestep],
         _scenario_index: &ScenarioIndex,
-    ) -> Result<Option<Box<dyn Any + Send>>, PywrError> {
+    ) -> Result<Option<Box<dyn ParameterState>>, PywrError> {
         Ok(None)
     }
 
@@ -264,7 +263,7 @@ pub trait IndexParameter: Send + Sync {
         scenario_index: &ScenarioIndex,
         model: &Network,
         state: &State,
-        internal_state: &mut Option<Box<dyn Any + Send>>,
+        internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<usize, PywrError>;
 
     fn after(
@@ -273,7 +272,7 @@ pub trait IndexParameter: Send + Sync {
         #[allow(unused_variables)] scenario_index: &ScenarioIndex,
         #[allow(unused_variables)] model: &Network,
         #[allow(unused_variables)] state: &State,
-        #[allow(unused_variables)] internal_state: &mut Option<Box<dyn Any + Send>>,
+        #[allow(unused_variables)] internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<(), PywrError> {
         Ok(())
     }
@@ -288,7 +287,7 @@ pub trait MultiValueParameter: Send + Sync {
         &self,
         #[allow(unused_variables)] timesteps: &[Timestep],
         #[allow(unused_variables)] scenario_index: &ScenarioIndex,
-    ) -> Result<Option<Box<dyn Any + Send>>, PywrError> {
+    ) -> Result<Option<Box<dyn ParameterState>>, PywrError> {
         Ok(None)
     }
 
@@ -298,7 +297,7 @@ pub trait MultiValueParameter: Send + Sync {
         scenario_index: &ScenarioIndex,
         model: &Network,
         state: &State,
-        internal_state: &mut Option<Box<dyn Any + Send>>,
+        internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<MultiValue, PywrError>;
 
     fn after(
@@ -307,7 +306,7 @@ pub trait MultiValueParameter: Send + Sync {
         #[allow(unused_variables)] scenario_index: &ScenarioIndex,
         #[allow(unused_variables)] model: &Network,
         #[allow(unused_variables)] state: &State,
-        #[allow(unused_variables)] internal_state: &mut Option<Box<dyn Any + Send>>,
+        #[allow(unused_variables)] internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<(), PywrError> {
         Ok(())
     }

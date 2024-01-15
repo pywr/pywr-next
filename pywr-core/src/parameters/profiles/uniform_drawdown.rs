@@ -1,7 +1,7 @@
 use crate::network::Network;
 use crate::parameters::{Parameter, ParameterMeta};
 use crate::scenario::ScenarioIndex;
-use crate::state::State;
+use crate::state::{ParameterState, State};
 use crate::timestep::Timestep;
 use crate::PywrError;
 use std::any::Any;
@@ -45,7 +45,7 @@ impl Parameter for UniformDrawdownProfileParameter {
         _scenario_index: &ScenarioIndex,
         _model: &Network,
         _state: &State,
-        _internal_state: &mut Option<Box<dyn Any + Send>>,
+        _internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<f64, PywrError> {
         // Current calendar year (might be adjusted depending on position of reset day)
         let mut year = timestep.date.year();

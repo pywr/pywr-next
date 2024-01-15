@@ -2,7 +2,7 @@ use crate::metric::Metric;
 use crate::network::Network;
 use crate::parameters::{downcast_internal_state, Parameter, ParameterMeta};
 use crate::scenario::ScenarioIndex;
-use crate::state::State;
+use crate::state::{ParameterState, State};
 use crate::timestep::Timestep;
 use crate::PywrError;
 use std::any::Any;
@@ -38,7 +38,7 @@ impl Parameter for DelayParameter {
         &self,
         timesteps: &[Timestep],
         scenario_index: &ScenarioIndex,
-    ) -> Result<Option<Box<dyn Any + Send>>, PywrError> {
+    ) -> Result<Option<Box<dyn ParameterState>>, PywrError> {
         // Internally we need to store a history of previous values
         let memory: VecDeque<f64> = (0..self.delay).map(|_| self.initial_value).collect();
         Ok(Some(Box::new(memory)))
@@ -50,7 +50,7 @@ impl Parameter for DelayParameter {
         scenario_index: &ScenarioIndex,
         model: &Network,
         state: &State,
-        internal_state: &mut Option<Box<dyn Any + Send>>,
+        internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<f64, PywrError> {
         // Downcast the internal state to the correct type
         let memory = downcast_internal_state::<VecDeque<f64>>(internal_state);
@@ -70,7 +70,7 @@ impl Parameter for DelayParameter {
         scenario_index: &ScenarioIndex,
         model: &Network,
         state: &State,
-        internal_state: &mut Option<Box<dyn Any + Send>>,
+        internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<(), PywrError> {
         // Downcast the internal state to the correct type
         let memory = downcast_internal_state::<VecDeque<f64>>(internal_state);

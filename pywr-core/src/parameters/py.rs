@@ -3,7 +3,7 @@ use crate::metric::Metric;
 use crate::network::Network;
 use crate::parameters::{downcast_internal_state, MultiValueParameter};
 use crate::scenario::ScenarioIndex;
-use crate::state::{MultiValue, State};
+use crate::state::{MultiValue, ParameterState, State};
 use pyo3::prelude::*;
 use pyo3::types::{IntoPyDict, PyDate, PyDict, PyFloat, PyLong, PyTuple};
 use std::any::Any;
@@ -18,12 +18,13 @@ pub struct PyParameter {
     indices: HashMap<String, IndexValue>,
 }
 
+#[derive(Clone)]
 struct Internal {
     user_obj: PyObject,
 }
 
 impl Internal {
-    fn into_boxed_any(self) -> Box<dyn Any + Send> {
+    fn into_boxed_any(self) -> Box<dyn ParameterState> {
         Box::new(self)
     }
 }
@@ -80,7 +81,7 @@ impl Parameter for PyParameter {
         &self,
         _timesteps: &[Timestep],
         _scenario_index: &ScenarioIndex,
-    ) -> Result<Option<Box<dyn Any + Send>>, PywrError> {
+    ) -> Result<Option<Box<dyn ParameterState>>, PywrError> {
         pyo3::prepare_freethreaded_python();
 
         let user_obj: PyObject = Python::with_gil(|py| -> PyResult<PyObject> {
@@ -95,7 +96,7 @@ impl Parameter for PyParameter {
         Ok(Some(internal.into_boxed_any()))
     }
 
-    // fn before(&self, internal_state: &mut Option<Box<dyn Any + Send>>) -> Result<(), PywrError> {
+    // fn before(&self, internal_state: &mut Option<Box<dyn ParameterState>>) -> Result<(), PywrError> {
     //     let internal = downcast_internal_state::<Internal>(internal_state);
     //
     //     Python::with_gil(|py| internal.user_obj.call_method0(py, "before"))
@@ -110,7 +111,7 @@ impl Parameter for PyParameter {
         scenario_index: &ScenarioIndex,
         model: &Network,
         state: &State,
-        internal_state: &mut Option<Box<dyn Any + Send>>,
+        internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<f64, PywrError> {
         let internal = downcast_internal_state::<Internal>(internal_state);
 
@@ -142,7 +143,7 @@ impl Parameter for PyParameter {
         scenario_index: &ScenarioIndex,
         model: &Network,
         state: &State,
-        internal_state: &mut Option<Box<dyn Any + Send>>,
+        internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<(), PywrError> {
         let internal = downcast_internal_state::<Internal>(internal_state);
 
@@ -182,7 +183,7 @@ impl MultiValueParameter for PyParameter {
         &self,
         _timesteps: &[Timestep],
         _scenario_index: &ScenarioIndex,
-    ) -> Result<Option<Box<dyn Any + Send>>, PywrError> {
+    ) -> Result<Option<Box<dyn ParameterState>>, PywrError> {
         pyo3::prepare_freethreaded_python();
 
         let user_obj: PyObject = Python::with_gil(|py| -> PyResult<PyObject> {
@@ -197,7 +198,7 @@ impl MultiValueParameter for PyParameter {
         Ok(Some(internal.into_boxed_any()))
     }
 
-    // fn before(&self, internal_state: &mut Option<Box<dyn Any + Send>>) -> Result<(), PywrError> {
+    // fn before(&self, internal_state: &mut Option<Box<dyn ParameterState>>) -> Result<(), PywrError> {
     //     let internal = downcast_internal_state::<Internal>(internal_state);
     //
     //     Python::with_gil(|py| internal.user_obj.call_method0(py, "before"))
@@ -212,7 +213,7 @@ impl MultiValueParameter for PyParameter {
         scenario_index: &ScenarioIndex,
         model: &Network,
         state: &State,
-        internal_state: &mut Option<Box<dyn Any + Send>>,
+        internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<MultiValue, PywrError> {
         let internal = downcast_internal_state::<Internal>(internal_state);
 
@@ -274,7 +275,7 @@ impl MultiValueParameter for PyParameter {
         scenario_index: &ScenarioIndex,
         model: &Network,
         state: &State,
-        internal_state: &mut Option<Box<dyn Any + Send>>,
+        internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<(), PywrError> {
         let internal = downcast_internal_state::<Internal>(internal_state);
 

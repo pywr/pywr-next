@@ -1,7 +1,7 @@
 use crate::network::Network;
 use crate::parameters::{Parameter, ParameterMeta};
 use crate::scenario::ScenarioIndex;
-use crate::state::State;
+use crate::state::{ParameterState, State};
 use crate::timestep::Timestep;
 use crate::PywrError;
 use ndarray::{Array1, Array2, Axis};
@@ -36,7 +36,7 @@ impl Parameter for Array1Parameter {
         _scenario_index: &ScenarioIndex,
         _model: &Network,
         _state: &State,
-        _internal_state: &mut Option<Box<dyn Any + Send>>,
+        _internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<f64, PywrError> {
         let idx = match self.timestep_offset {
             None => timestep.index,
@@ -80,7 +80,7 @@ impl Parameter for Array2Parameter {
         scenario_index: &ScenarioIndex,
         _model: &Network,
         _state: &State,
-        _internal_state: &mut Option<Box<dyn Any + Send>>,
+        _internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<f64, PywrError> {
         // This panics if out-of-bounds
         let t_idx = match self.timestep_offset {

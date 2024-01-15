@@ -1,7 +1,7 @@
 use crate::network::Network;
 use crate::parameters::{downcast_internal_state, Parameter, ParameterMeta, VariableParameter};
 use crate::scenario::ScenarioIndex;
-use crate::state::State;
+use crate::state::{ParameterState, State};
 use crate::timestep::Timestep;
 use crate::PywrError;
 use nalgebra::DMatrix;
@@ -61,7 +61,7 @@ impl Parameter for RbfProfileParameter {
         &self,
         _timesteps: &[Timestep],
         _scenario_index: &ScenarioIndex,
-    ) -> Result<Option<Box<dyn Any + Send>>, PywrError> {
+    ) -> Result<Option<Box<dyn ParameterState>>, PywrError> {
         let profile = interpolate_rbf_profile(&self.points, &self.function);
         Ok(Some(Box::new(profile)))
     }
@@ -72,7 +72,7 @@ impl Parameter for RbfProfileParameter {
         _scenario_index: &ScenarioIndex,
         _network: &Network,
         _state: &State,
-        internal_state: &mut Option<Box<dyn Any + Send>>,
+        internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<f64, PywrError> {
         // Get the profile from the internal state
         let profile = downcast_internal_state::<[f64; 366]>(internal_state);
