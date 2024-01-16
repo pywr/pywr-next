@@ -2,10 +2,9 @@ use crate::metric::Metric;
 use crate::network::Network;
 use crate::parameters::{IndexParameter, ParameterMeta};
 use crate::scenario::ScenarioIndex;
-use crate::state::State;
+use crate::state::{ParameterState, State};
 use crate::timestep::Timestep;
 use crate::PywrError;
-use std::any::Any;
 
 pub struct ControlCurveIndexParameter {
     meta: ParameterMeta,
@@ -33,7 +32,7 @@ impl IndexParameter for ControlCurveIndexParameter {
         _scenario_index: &ScenarioIndex,
         model: &Network,
         state: &State,
-        _internal_state: &mut Option<Box<dyn Any + Send>>,
+        _internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<usize, PywrError> {
         // Current value
         let x = self.metric.get_value(model, state)?;

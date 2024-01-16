@@ -4,9 +4,8 @@ use super::PywrError;
 use crate::network::Network;
 use crate::parameters::{IndexParameter, IndexValue, ParameterMeta};
 use crate::scenario::ScenarioIndex;
-use crate::state::State;
+use crate::state::{ParameterState, State};
 use crate::timestep::Timestep;
-use std::any::Any;
 use std::str::FromStr;
 
 pub enum AggIndexFunc {
@@ -60,7 +59,7 @@ impl IndexParameter for AggregatedIndexParameter {
         _scenario_index: &ScenarioIndex,
         _model: &Network,
         state: &State,
-        _internal_state: &mut Option<Box<dyn Any + Send>>,
+        _internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<usize, PywrError> {
         // TODO scenarios!
 

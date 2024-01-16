@@ -1,7 +1,7 @@
 use crate::network::Network;
 use crate::parameters::{Parameter, ParameterIndex, ParameterMeta};
 use crate::scenario::ScenarioIndex;
-use crate::state::State;
+use crate::state::{ParameterState, State};
 use crate::timestep::Timestep;
 use crate::PywrError;
 use std::any::Any;
@@ -71,7 +71,7 @@ impl Parameter for MonthlyProfileParameter {
         _scenario_index: &ScenarioIndex,
         _model: &Network,
         _state: &State,
-        _internal_state: &mut Option<Box<dyn Any + Send>>,
+        _internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<f64, PywrError> {
         let v = match &self.interp_day {
             Some(interp_day) => match interp_day {
