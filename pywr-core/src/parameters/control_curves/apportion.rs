@@ -2,10 +2,9 @@ use crate::metric::Metric;
 use crate::network::Network;
 use crate::parameters::{MultiValueParameter, ParameterMeta};
 use crate::scenario::ScenarioIndex;
-use crate::state::{MultiValue, State};
+use crate::state::{MultiValue, ParameterState, State};
 use crate::timestep::Timestep;
 use crate::PywrError;
-use std::any::Any;
 use std::collections::HashMap;
 
 /// A parameter which divides a apportions a metric to an upper and lower amount based
@@ -42,7 +41,7 @@ impl MultiValueParameter for ApportionParameter {
         _scenario_index: &ScenarioIndex,
         model: &Network,
         state: &State,
-        _internal_state: &mut Option<Box<dyn Any + Send>>,
+        _internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<MultiValue, PywrError> {
         // Current value
         let x = self.metric.get_value(model, state)?;

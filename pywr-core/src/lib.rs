@@ -6,7 +6,7 @@ use crate::derived_metric::DerivedMetricIndex;
 use crate::models::MultiNetworkTransferIndex;
 use crate::node::NodeIndex;
 use crate::parameters::{IndexParameterIndex, InterpolationError, MultiValueParameterIndex, ParameterIndex};
-use crate::recorders::RecorderIndex;
+use crate::recorders::{MetricSetIndex, RecorderIndex};
 use pyo3::exceptions::{PyException, PyRuntimeError};
 use pyo3::{create_exception, PyErr};
 use thiserror::Error;
@@ -55,8 +55,8 @@ pub enum PywrError {
     MultiNetworkTransferIndexNotFound(MultiNetworkTransferIndex),
     #[error("parameter {0} not found")]
     ParameterNotFound(String),
-    #[error("metric set index not found")]
-    MetricSetIndexNotFound,
+    #[error("metric set index {0} not found")]
+    MetricSetIndexNotFound(MetricSetIndex),
     #[error("metric set with name {0} not found")]
     MetricSetNotFound(String),
     #[error("recorder index not found")]
@@ -109,6 +109,8 @@ pub enum PywrError {
     ScenarioStateNotFound,
     #[error("scenario not found: {0}")]
     ScenarioNotFound(String),
+    #[error("scenario group index not found: {0}")]
+    ScenarioGroupIndexNotFound(usize),
     #[error("clp error")]
     ClpError(#[from] solvers::ClpError),
     #[error("metric not defined")]

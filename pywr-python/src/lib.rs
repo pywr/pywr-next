@@ -1,3 +1,6 @@
+use pyo3::exceptions::PyRuntimeError;
+use pyo3::prelude::*;
+use pyo3::types::{PyDate, PyDateAccess, PyDict, PyType};
 /// Python API
 ///
 /// The following structures provide a Python API to access the core model structures.
@@ -6,13 +9,10 @@
 ///
 
 #[cfg(feature = "ipm-ocl")]
-use crate::solvers::{ClIpmF32Solver, ClIpmF64Solver, ClIpmSolverSettings};
-#[cfg(feature = "highs")]
-use crate::solvers::{HighsSolver, HighsSolverSettings};
-use pyo3::exceptions::PyRuntimeError;
-use pyo3::prelude::*;
-use pyo3::types::{PyDate, PyDateAccess, PyDict, PyType};
+use pywr_core::solvers::{ClIpmF32Solver, ClIpmF64Solver, ClIpmSolverSettings};
 use pywr_core::solvers::{ClpSolver, ClpSolverSettings, ClpSolverSettingsBuilder};
+#[cfg(feature = "highs")]
+use pywr_core::solvers::{HighsSolver, HighsSolverSettings, HighsSolverSettings, HighsSolverSettingsBuilde};
 use std::fmt;
 use std::path::PathBuf;
 use time::Date;
@@ -33,6 +33,23 @@ impl fmt::Display for PySchemaError {
 impl From<PySchemaError> for PyErr {
     fn from(err: PySchemaError) -> PyErr {
         PyRuntimeError::new_err(err.to_string())
+    }
+}
+
+#[derive(Debug)]
+struct PyPywrError {
+    error: pywr_core::PywrError,
+}
+
+impl From<PyPywrError> for PyErr {
+    fn from(err: PyPywrError) -> PyErr {
+        PyRuntimeError::new_err(err.to_string())
+    }
+}
+
+impl fmt::Display for PyPywrError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.error)
     }
 }
 
@@ -91,15 +108,22 @@ pub struct Model {
 
 #[pymethods]
 impl Model {
-    fn run(&self, solver: &str, solver_kwargs: Option<&PyDict>) -> PyResult<()> {
-        match solver {
+    fn run(&self, solver_name: &str, solver_kwargs: Option<&PyDict>) -> PyResult<()> {
+        match solver_name {
             "clp" => {
                 let settings = build_clp_settings(solver_kwargs)?;
                 self.model.run::<ClpSolver>(&settings)?;
             }
-            _ => {
-                return Err(PyRuntimeError::new_err(format!("Unknown solver: {}", solver)));
+            #[cfg(feature = "highs")]
+            "highs" => {
+                let settings = build_highs_settings(solver_kwargs)?;
+                model.run::<HighsSolver>(&HighsSolverSettings::default())?;
             }
+            #[cfg(feature = "ipm-ocl")]
+            "clipm-f32" => model.run_multi_scenario::<ClIpmF32Solver>(&ClIpmSolverSettings::default()),
+            #[cfg(feature = "ipm-ocl")]
+            "clipm-f64" => model.run_multi_scenario::<ClIpmF64Solver>(&ClIpmSolverSettings::default()),
+            _ => return Err(PyRuntimeError::new_err(format!("Unknown solver: {}", solver_name))),
         }
 
         Ok(())
@@ -115,6 +139,47 @@ fn build_clp_settings(kwargs: Option<&PyDict>) -> PyResult<ClpSolverSettings> {
                 builder.threads(threads.extract::<usize>()?);
             }
             kwargs.del_item("threads")?;
+        }
+
+        if let Ok(value) = kwargs.get_item("parallel") {
+            if let Some(parallel) = value {
+                if parallel.extract::<bool>()? {
+                    builder.parallel();
+                }
+            }
+            kwargs.del_item("parallel")?;
+        }
+
+        if !kwargs.is_empty() {
+            return Err(PyRuntimeError::new_err(format!(
+                "Unknown keyword arguments: {:?}",
+                kwargs
+            )));
+        }
+    }
+
+    Ok(builder.build())
+}
+
+#[cfg(feature = "highs")]
+fn build_highs_settings(kwargs: Option<&PyDict>) -> PyResult<HighsSolverSettings> {
+    let mut builder = HighsSolverSettingsBuilder::default();
+
+    if let Some(kwargs) = kwargs {
+        if let Ok(value) = kwargs.get_item("threads") {
+            if let Some(threads) = value {
+                builder.threads(threads.extract::<usize>()?);
+            }
+            kwargs.del_item("threads")?;
+        }
+
+        if let Ok(value) = kwargs.get_item("parallel") {
+            if let Some(parallel) = value {
+                if parallel.extract::<bool>()? {
+                    builder.parallel();
+                }
+            }
+            kwargs.del_item("parallel")?;
         }
 
         if !kwargs.is_empty() {

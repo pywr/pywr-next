@@ -6,14 +6,16 @@ mod py;
 
 pub use self::csv::CSVRecorder;
 use crate::metric::{IndexMetric, Metric};
+use crate::models::ModelDomain;
 use crate::network::Network;
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
 use crate::timestep::Timestep;
 use crate::PywrError;
+pub use aggregator::{AggregationFrequency, AggregationFunction, Aggregator};
 use float_cmp::{approx_eq, ApproxEq, F64Margin};
 pub use hdf::HDF5Recorder;
-pub use metric_set::{MetricSet, MetricSetIndex};
+pub use metric_set::{MetricSet, MetricSetIndex, MetricSetState};
 use ndarray::prelude::*;
 use ndarray::Array2;
 use std::any::Any;
@@ -65,12 +67,7 @@ pub trait Recorder: Send + Sync {
     fn name(&self) -> &str {
         self.meta().name.as_str()
     }
-    fn setup(
-        &self,
-        _timesteps: &[Timestep],
-        _scenario_indices: &[ScenarioIndex],
-        _model: &Network,
-    ) -> Result<Option<Box<dyn Any>>, PywrError> {
+    fn setup(&self, _domain: &ModelDomain, _model: &Network) -> Result<Option<Box<dyn Any>>, PywrError> {
         Ok(None)
     }
     fn before(&self) {}
@@ -81,6 +78,7 @@ pub trait Recorder: Send + Sync {
         _scenario_indices: &[ScenarioIndex],
         _model: &Network,
         _state: &[State],
+        _metric_set_states: &[Vec<MetricSetState>],
         _internal_state: &mut Option<Box<dyn Any>>,
     ) -> Result<(), PywrError> {
         Ok(())
@@ -109,13 +107,8 @@ impl Recorder for Array2Recorder {
         &self.meta
     }
 
-    fn setup(
-        &self,
-        timesteps: &[Timestep],
-        scenario_indices: &[ScenarioIndex],
-        _model: &Network,
-    ) -> Result<Option<Box<(dyn Any)>>, PywrError> {
-        let array: Array2<f64> = Array::zeros((timesteps.len(), scenario_indices.len()));
+    fn setup(&self, domain: &ModelDomain, _model: &Network) -> Result<Option<Box<(dyn Any)>>, PywrError> {
+        let array: Array2<f64> = Array::zeros((domain.time().len(), domain.scenarios().len()));
 
         Ok(Some(Box::new(array)))
     }
@@ -126,6 +119,7 @@ impl Recorder for Array2Recorder {
         scenario_indices: &[ScenarioIndex],
         model: &Network,
         state: &[State],
+        _metric_set_states: &[Vec<MetricSetState>],
         internal_state: &mut Option<Box<dyn Any>>,
     ) -> Result<(), PywrError> {
         // Downcast the internal state to the correct type
@@ -184,6 +178,7 @@ impl Recorder for AssertionRecorder {
         scenario_indices: &[ScenarioIndex],
         model: &Network,
         state: &[State],
+        _metric_set_states: &[Vec<MetricSetState>],
         _internal_state: &mut Option<Box<dyn Any>>,
     ) -> Result<(), PywrError> {
         // This panics if out-of-bounds
@@ -256,6 +251,7 @@ where
         scenario_indices: &[ScenarioIndex],
         model: &Network,
         state: &[State],
+        _metric_set_states: &[Vec<MetricSetState>],
         _internal_state: &mut Option<Box<dyn Any>>,
     ) -> Result<(), PywrError> {
         // This panics if out-of-bounds
@@ -310,6 +306,7 @@ impl Recorder for IndexAssertionRecorder {
         scenario_indices: &[ScenarioIndex],
         network: &Network,
         state: &[State],
+        _metric_set_states: &[Vec<MetricSetState>],
         _internal_state: &mut Option<Box<dyn Any>>,
     ) -> Result<(), PywrError> {
         // This panics if out-of-bounds
@@ -337,30 +334,6 @@ expected: `{:?}`"#,
 
         Ok(())
     }
-}
-
-pub enum RecorderAggregation {
-    Min,
-    Max,
-    Mean,
-    Median,
-    Sum,
-    Quantile(f64),
-    CountNonZero,
-    CountAboveThreshold(f64),
-}
-
-pub enum Direction {
-    Minimise,
-    Maximise,
-}
-
-struct RecorderMetric {
-    temporal_aggregation: RecorderAggregation,
-    scenario_aggregation: RecorderAggregation,
-    lower_bounds: Option<f64>,
-    upper_bounds: Option<f64>,
-    objective: Option<Direction>,
 }
 
 #[cfg(test)]

@@ -16,11 +16,11 @@ use pywr_core::solvers::{HighsSolver, HighsSolverSettings};
 #[cfg(feature = "ipm-simd")]
 use pywr_core::solvers::{SimdIpmF64Solver, SimdIpmSolverSettings, SimdIpmSolverSettingsBuilder};
 use pywr_core::test_utils::make_random_model;
-use pywr_core::timestep::Timestepper;
+
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
-use std::num::NonZeroUsize;
-use time::macros::date;
+
+
 
 fn random_benchmark(
     c: &mut Criterion,
@@ -317,9 +317,9 @@ fn bench_threads(c: &mut Criterion) {
 fn bench_ipm_convergence(c: &mut Criterion) {
     const N_THREADS: usize = 0;
 
-    let mut solver_setups = Vec::new();
+    let solver_setups = Vec::new();
 
-    for optimality in [1e-3, 1e-4, 1e-5, 1e-6, 1e-7, 1e-8] {
+    for _optimality in [1e-3, 1e-4, 1e-5, 1e-6, 1e-7, 1e-8] {
         #[cfg(feature = "ipm-simd")]
         solver_setups.push(SolverSetup {
             setting: SolverSetting::IpmSimdF64x4(
@@ -358,11 +358,11 @@ fn bench_ipm_convergence(c: &mut Criterion) {
 fn bench_ocl_chunks(c: &mut Criterion) {
     const N_THREADS: usize = 0;
 
-    let mut solver_setups = Vec::new();
+    let solver_setups = Vec::new();
 
     let num_chunks = vec![1, 2, 4, 8, 16];
 
-    for num_chunks in num_chunks {
+    for _num_chunks in num_chunks {
         #[cfg(feature = "ipm-ocl")]
         solver_setups.push(SolverSetup {
             setting: SolverSetting::IpmOcl(

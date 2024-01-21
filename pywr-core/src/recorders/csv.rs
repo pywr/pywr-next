@@ -1,11 +1,13 @@
-use super::{PywrError, Recorder, RecorderMeta, Timestep};
+use super::{MetricSetState, PywrError, Recorder, RecorderMeta, Timestep};
 use crate::metric::Metric;
+use crate::models::ModelDomain;
 use crate::network::Network;
 use crate::recorders::metric_set::MetricSetIndex;
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
 use std::any::Any;
 use std::fs::File;
+use std::ops::Deref;
 use std::path::PathBuf;
 
 /// Output the values from a [`MetricSet`] to a CSV file.
@@ -34,54 +36,43 @@ impl Recorder for CSVRecorder {
     fn meta(&self) -> &RecorderMeta {
         &self.meta
     }
-    fn setup(
-        &self,
-        _timesteps: &[Timestep],
-        scenario_indices: &[ScenarioIndex],
-        model: &Network,
-    ) -> Result<Option<Box<(dyn Any)>>, PywrError> {
+    fn setup(&self, domain: &ModelDomain, network: &Network) -> Result<Option<Box<(dyn Any)>>, PywrError> {
         let mut writer = csv::Writer::from_path(&self.filename).map_err(|e| PywrError::CSVError(e.to_string()))?;
 
-        let num_scenarios = scenario_indices.len();
-        // TODO this could write a header row for each scenario group instead of the global index
-        let scenario_headers = scenario_indices.iter().map(|si| format!("{}", si.index));
+        let mut names = vec![];
+        let mut sub_names = vec![];
+        let mut attributes = vec![];
 
-        // These are the header rows in the CSV file; we start each
-        let mut header_name = vec!["node".to_string()];
-        let mut header_sub_name = vec!["sub-node".to_string()];
-        let mut header_scenario = vec!["global-scenario-index".to_string()];
-        let mut header_attribute = vec!["attribute".to_string()];
-
-        let metric_set = model.get_metric_set(self.metric_set_idx)?;
+        let metric_set = network.get_metric_set(self.metric_set_idx)?;
 
         for metric in metric_set.iter_metrics() {
             let (name, sub_name, attribute) = match metric {
                 Metric::NodeInFlow(idx) => {
-                    let node = model.get_node(idx)?;
+                    let node = network.get_node(idx)?;
                     let (name, sub_name) = node.full_name();
                     let sub_name = sub_name.map_or("".to_string(), |sn| sn.to_string());
 
                     (name.to_string(), sub_name, "inflow".to_string())
                 }
                 Metric::NodeOutFlow(idx) => {
-                    let node = model.get_node(idx)?;
+                    let node = network.get_node(idx)?;
                     let (name, sub_name) = node.full_name();
                     let sub_name = sub_name.map_or("".to_string(), |sn| sn.to_string());
 
                     (name.to_string(), sub_name, "outflow".to_string())
                 }
                 Metric::NodeVolume(idx) => {
-                    let node = model.get_node(idx)?;
+                    let node = network.get_node(idx)?;
                     let (name, sub_name) = node.full_name();
                     let sub_name = sub_name.map_or("".to_string(), |sn| sn.to_string());
 
                     (name.to_string(), sub_name, "volume".to_string())
                 }
-                Metric::DerivedMetric(idx) => {
+                Metric::DerivedMetric(_idx) => {
                     todo!("Derived metrics are not yet supported in CSV recorders");
                 }
                 Metric::AggregatedNodeVolume(idx) => {
-                    let node = model.get_aggregated_storage_node(idx)?;
+                    let node = network.get_aggregated_storage_node(idx)?;
                     let (name, sub_name) = node.full_name();
                     let sub_name = sub_name.map_or("".to_string(), |sn| sn.to_string());
 
@@ -91,7 +82,7 @@ impl Recorder for CSVRecorder {
                     continue; // TODO
                 }
                 Metric::ParameterValue(idx) => {
-                    let parameter = model.get_parameter(idx)?;
+                    let parameter = network.get_parameter(idx)?;
                     let name = parameter.name();
                     (name.to_string(), "".to_string(), "parameter".to_string())
                 }
@@ -105,14 +96,14 @@ impl Recorder for CSVRecorder {
                     continue; // TODO
                 }
                 Metric::AggregatedNodeInFlow(idx) => {
-                    let node = model.get_aggregated_node(idx)?;
+                    let node = network.get_aggregated_node(idx)?;
                     let (name, sub_name) = node.full_name();
                     let sub_name = sub_name.map_or("".to_string(), |sn| sn.to_string());
 
                     (name.to_string(), sub_name, "inflow".to_string())
                 }
                 Metric::AggregatedNodeOutFlow(idx) => {
-                    let node = model.get_aggregated_node(idx)?;
+                    let node = network.get_aggregated_node(idx)?;
                     let (name, sub_name) = node.full_name();
                     let sub_name = sub_name.map_or("".to_string(), |sn| sn.to_string());
 
@@ -129,10 +120,33 @@ impl Recorder for CSVRecorder {
             };
 
             // Add entries for each scenario
-            header_name.extend(vec![name; num_scenarios]);
-            header_sub_name.extend(vec![sub_name; num_scenarios]);
-            header_scenario.extend(scenario_headers.clone());
-            header_attribute.extend(vec![attribute; num_scenarios]);
+            names.push(name);
+            sub_names.push(sub_name);
+            attributes.push(attribute);
+        }
+
+        // These are the header rows in the CSV file; we start each
+        let mut header_name = vec!["node".to_string()];
+        let mut header_sub_name = vec!["sub-node".to_string()];
+        let mut header_attribute = vec!["attribute".to_string()];
+        let mut header_scenario = vec!["global-scenario-index".to_string()];
+
+        // This is a vec of vec for each scenario group
+        let mut header_scenario_groups = Vec::new();
+        for group_name in domain.scenarios().group_names() {
+            header_scenario_groups.push(vec![format!("scenario-group: {}", group_name)]);
+        }
+
+        for scenario_index in domain.scenarios().indices().iter() {
+            // Repeat the names, sub-names and attributes for every scenario
+            header_name.extend(names.clone());
+            header_sub_name.extend(sub_names.clone());
+            header_attribute.extend(attributes.clone());
+            header_scenario.extend(vec![format!("{}", scenario_index.index); names.len()]);
+
+            for (group_idx, idx) in scenario_index.indices.iter().enumerate() {
+                header_scenario_groups[group_idx].extend(vec![format!("{}", idx); names.len()]);
+            }
         }
 
         writer
@@ -142,11 +156,20 @@ impl Recorder for CSVRecorder {
             .write_record(header_sub_name)
             .map_err(|e| PywrError::CSVError(e.to_string()))?;
         writer
-            .write_record(header_scenario)
-            .map_err(|e| PywrError::CSVError(e.to_string()))?;
-        writer
             .write_record(header_attribute)
             .map_err(|e| PywrError::CSVError(e.to_string()))?;
+        writer
+            .write_record(header_scenario)
+            .map_err(|e| PywrError::CSVError(e.to_string()))?;
+
+        // There could be no scenario groups defined
+        if header_scenario_groups.len() > 0 {
+            for group in header_scenario_groups {
+                writer
+                    .write_record(group)
+                    .map_err(|e| PywrError::CSVError(e.to_string()))?;
+            }
+        }
 
         let internal = Internal { writer };
 
@@ -156,9 +179,10 @@ impl Recorder for CSVRecorder {
     fn save(
         &self,
         timestep: &Timestep,
-        scenario_indices: &[ScenarioIndex],
-        model: &Network,
-        state: &[State],
+        _scenario_indices: &[ScenarioIndex],
+        _network: &Network,
+        _state: &[State],
+        metric_set_states: &[Vec<MetricSetState>],
         internal_state: &mut Option<Box<dyn Any>>,
     ) -> Result<(), PywrError> {
         let internal = match internal_state {
@@ -171,23 +195,29 @@ impl Recorder for CSVRecorder {
 
         let mut row = vec![timestep.date.to_string()];
 
-        let metric_set = model.get_metric_set(self.metric_set_idx)?;
+        // Iterate through all of the scenario's state
+        for ms_scenario_states in metric_set_states.iter() {
+            let metric_set_state = ms_scenario_states
+                .get(*self.metric_set_idx.deref())
+                .ok_or_else(|| PywrError::MetricSetIndexNotFound(self.metric_set_idx))?;
 
-        for metric in metric_set.iter_metrics() {
-            // Combine all the values for metric across all of the scenarios
-            let values = scenario_indices
-                .iter()
-                .zip(state)
-                .map(|(_, s)| metric.get_value(model, s).map(|v| format!("{:.2}", v)))
-                .collect::<Result<Vec<_>, _>>()?;
+            if let Some(current_values) = metric_set_state.current_values() {
+                let values = current_values
+                    .iter()
+                    .map(|v| format!("{:.2}", v.value))
+                    .collect::<Vec<_>>();
 
-            row.extend(values);
+                row.extend(values);
+            }
         }
 
-        internal
-            .writer
-            .write_record(row)
-            .map_err(|e| PywrError::CSVError(e.to_string()))?;
+        // Only write
+        if row.len() > 1 {
+            internal
+                .writer
+                .write_record(row)
+                .map_err(|e| PywrError::CSVError(e.to_string()))?;
+        }
         Ok(())
     }
 

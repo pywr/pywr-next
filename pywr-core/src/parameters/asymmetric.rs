@@ -1,10 +1,9 @@
 use crate::network::Network;
 use crate::parameters::{downcast_internal_state, IndexParameter, IndexValue, ParameterMeta};
 use crate::scenario::ScenarioIndex;
-use crate::state::State;
+use crate::state::{ParameterState, State};
 use crate::timestep::Timestep;
 use crate::PywrError;
-use std::any::Any;
 
 pub struct AsymmetricSwitchIndexParameter {
     meta: ParameterMeta,
@@ -30,7 +29,7 @@ impl IndexParameter for AsymmetricSwitchIndexParameter {
         &self,
         _timesteps: &[Timestep],
         _scenario_index: &ScenarioIndex,
-    ) -> Result<Option<Box<dyn Any + Send>>, PywrError> {
+    ) -> Result<Option<Box<dyn ParameterState>>, PywrError> {
         Ok(Some(Box::new(0_usize)))
     }
 
@@ -40,7 +39,7 @@ impl IndexParameter for AsymmetricSwitchIndexParameter {
         _scenario_index: &ScenarioIndex,
         _model: &Network,
         state: &State,
-        internal_state: &mut Option<Box<dyn Any + Send>>,
+        internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<usize, PywrError> {
         let on_value = match self.on_parameter {
             IndexValue::Constant(idx) => idx,

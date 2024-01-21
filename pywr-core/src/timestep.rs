@@ -85,6 +85,11 @@ impl TimeDomain {
     pub fn timesteps(&self) -> &[Timestep] {
         &self.timesteps
     }
+
+    /// The total number of time-steps in the domain.
+    pub fn len(&self) -> usize {
+        self.timesteps.len()
+    }
 }
 
 impl From<Timestepper> for TimeDomain {

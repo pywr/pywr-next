@@ -7,6 +7,7 @@ use crate::parameters::{IndexParameterIndex, MultiValueParameterIndex, Parameter
 use crate::timestep::Timestep;
 use crate::virtual_storage::VirtualStorageIndex;
 use crate::PywrError;
+use dyn_clone::DynClone;
 use std::any::Any;
 use std::collections::HashMap;
 use std::ops::Deref;
@@ -148,9 +149,6 @@ impl VirtualStorageState {
         self.last_reset = Some(*timestep);
     }
 
-    fn add_in_flow(&mut self, flow: f64, timestep: &Timestep) {
-        self.storage.add_in_flow(flow, timestep);
-    }
     fn add_out_flow(&mut self, flow: f64, timestep: &Timestep) {
         self.storage.add_out_flow(flow, timestep);
     }
@@ -174,19 +172,39 @@ impl EdgeState {
     }
 }
 
-#[derive(Debug)]
+pub trait ParameterState: Any + Send + DynClone {
+    fn as_any(&self) -> &dyn Any;
+    fn as_any_mut(&mut self) -> &mut dyn Any;
+}
+
+impl<T> ParameterState for T
+where
+    T: Any + Send + Clone,
+{
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+}
+// impl ParameterState for f64 {}
+
+dyn_clone::clone_trait_object!(ParameterState);
+
+#[derive(Clone)]
 pub struct ParameterStates {
-    values: Vec<Option<Box<dyn Any + Send>>>,
-    indices: Vec<Option<Box<dyn Any + Send>>>,
-    multi: Vec<Option<Box<dyn Any + Send>>>,
+    values: Vec<Option<Box<dyn ParameterState>>>,
+    indices: Vec<Option<Box<dyn ParameterState>>>,
+    multi: Vec<Option<Box<dyn ParameterState>>>,
 }
 
 impl ParameterStates {
     /// Create new default states for the desired number of parameters.
     pub fn new(
-        initial_values_states: Vec<Option<Box<dyn Any + Send>>>,
-        initial_indices_states: Vec<Option<Box<dyn Any + Send>>>,
-        initial_multi_states: Vec<Option<Box<dyn Any + Send>>>,
+        initial_values_states: Vec<Option<Box<dyn ParameterState>>>,
+        initial_indices_states: Vec<Option<Box<dyn ParameterState>>>,
+        initial_multi_states: Vec<Option<Box<dyn ParameterState>>>,
     ) -> Self {
         Self {
             values: initial_values_states,
@@ -195,15 +213,18 @@ impl ParameterStates {
         }
     }
 
-    pub fn get_mut_value_state(&mut self, index: ParameterIndex) -> Option<&mut Option<Box<dyn Any + Send>>> {
+    pub fn get_mut_value_state(&mut self, index: ParameterIndex) -> Option<&mut Option<Box<dyn ParameterState>>> {
         self.values.get_mut(*index.deref())
     }
 
-    pub fn get_mut_index_state(&mut self, index: IndexParameterIndex) -> Option<&mut Option<Box<dyn Any + Send>>> {
+    pub fn get_mut_index_state(&mut self, index: IndexParameterIndex) -> Option<&mut Option<Box<dyn ParameterState>>> {
         self.indices.get_mut(*index.deref())
     }
 
-    pub fn get_mut_multi_state(&mut self, index: MultiValueParameterIndex) -> Option<&mut Option<Box<dyn Any + Send>>> {
+    pub fn get_mut_multi_state(
+        &mut self,
+        index: MultiValueParameterIndex,
+    ) -> Option<&mut Option<Box<dyn ParameterState>>> {
         self.multi.get_mut(*index.deref())
     }
 }
@@ -343,6 +364,10 @@ impl NetworkState {
 
         for es in self.edge_states.iter_mut() {
             es.reset()
+        }
+
+        for vs in self.virtual_storage_states.iter_mut() {
+            vs.reset()
         }
     }
 

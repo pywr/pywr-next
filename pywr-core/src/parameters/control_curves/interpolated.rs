@@ -3,7 +3,7 @@ use crate::network::Network;
 use crate::parameters::interpolate::interpolate;
 use crate::parameters::{Parameter, ParameterMeta};
 use crate::scenario::ScenarioIndex;
-use crate::state::State;
+use crate::state::{ParameterState, State};
 use crate::timestep::Timestep;
 use crate::PywrError;
 use std::any::Any;
@@ -39,7 +39,7 @@ impl Parameter for ControlCurveInterpolatedParameter {
         _scenario_index: &ScenarioIndex,
         model: &Network,
         state: &State,
-        _internal_state: &mut Option<Box<dyn Any + Send>>,
+        _internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<f64, PywrError> {
         // Current value
         let x = self.metric.get_value(model, state)?;

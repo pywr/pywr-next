@@ -339,7 +339,7 @@ mod tests {
     fn test_virtual_storage_node_costs() {
         let mut model = simple_model(1);
         let network = model.network_mut();
-        let timestepper = default_timestepper();
+        let _timestepper = default_timestepper();
 
         let nodes = vec![network.get_node_index_by_name("input", None).unwrap()];
         // Virtual storage node cost is high enough to prevent any flow

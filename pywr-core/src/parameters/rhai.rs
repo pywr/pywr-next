@@ -3,7 +3,7 @@ use crate::metric::Metric;
 use crate::network::Network;
 use crate::parameters::downcast_internal_state;
 use crate::scenario::ScenarioIndex;
-use crate::state::State;
+use crate::state::{ParameterState, State};
 use rhai::{Dynamic, Engine, Map, Scope, AST};
 use std::any::Any;
 use std::collections::HashMap;
@@ -17,6 +17,7 @@ pub struct RhaiParameter {
     indices: HashMap<String, IndexValue>,
 }
 
+#[derive(Clone)]
 struct Internal {
     state: Dynamic,
 }
@@ -65,7 +66,7 @@ impl Parameter for RhaiParameter {
         &self,
         _timesteps: &[Timestep],
         _scenario_index: &ScenarioIndex,
-    ) -> Result<Option<Box<dyn Any + Send>>, PywrError> {
+    ) -> Result<Option<Box<dyn ParameterState>>, PywrError> {
         let mut scope = Scope::new();
 
         let mut state = self.initial_state.clone().into();
@@ -86,7 +87,7 @@ impl Parameter for RhaiParameter {
         scenario_index: &ScenarioIndex,
         model: &Network,
         state: &State,
-        internal_state: &mut Option<Box<dyn Any + Send>>,
+        internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<f64, PywrError> {
         let internal = downcast_internal_state::<Internal>(internal_state);
 

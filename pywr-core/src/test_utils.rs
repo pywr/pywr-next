@@ -147,7 +147,7 @@ pub fn run_and_assert_parameter(
     let p_idx = model.network_mut().add_parameter(parameter).unwrap();
 
     let start = date!(2020 - 01 - 01);
-    let end = start.checked_add((expected_values.nrows() as i64 - 1).days()).unwrap();
+    let _end = start.checked_add((expected_values.nrows() as i64 - 1).days()).unwrap();
 
     let rec = AssertionRecorder::new("assert", Metric::ParameterValue(p_idx), expected_values, ulps, epsilon);
 

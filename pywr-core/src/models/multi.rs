@@ -159,7 +159,7 @@ impl MultiNetworkModel {
             let state = entry
                 .network
                 .setup_network(&timesteps, &scenario_indices, entry.parameters.len())?;
-            let recorder_state = entry.network.setup_recorders(&timesteps, &scenario_indices)?;
+            let recorder_state = entry.network.setup_recorders(&self.domain)?;
             let solver = entry.network.setup_solver::<S>(&scenario_indices, settings)?;
 
             states.push(state);
@@ -382,8 +382,8 @@ mod tests {
         let mut network2 = Network::default();
         simple_network(&mut network2, test_scenario_group_idx, 2);
 
-        let network1_idx = multi_model.add_network("network1", network1);
-        let network2_idx = multi_model.add_network("network2", network2);
+        let _network1_idx = multi_model.add_network("network1", network1);
+        let _network2_idx = multi_model.add_network("network2", network2);
 
         let mut state = multi_model
             .setup::<ClpSolver>(&Default::default())
