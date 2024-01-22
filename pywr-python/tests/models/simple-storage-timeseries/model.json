@@ -7,62 +7,64 @@
     "end": "2021-12-31",
     "timestep": 1
   },
-  "nodes": [
-    {
-      "name": "input1",
-      "type": "Input",
-      "max_flow": 9.0
-    },
-    {
-      "name": "storage1",
-      "type": "Storage",
-      "cost": -1.0,
-      "initial_volume": 500.0,
-      "max_volume": 1000.0
-    },
-    {
-      "name": "output1",
-      "type": "Output",
-      "cost": -10.0,
-      "max_flow": {
-        "type": "Parameter",
-        "name": "demand"
+  "network": {
+    "nodes": [
+      {
+        "name": "input1",
+        "type": "Input",
+        "max_flow": 9.0
+      },
+      {
+        "name": "storage1",
+        "type": "Storage",
+        "cost": -1.0,
+        "initial_volume": 500.0,
+        "max_volume": 1000.0
+      },
+      {
+        "name": "output1",
+        "type": "Output",
+        "cost": -10.0,
+        "max_flow": {
+          "type": "Parameter",
+          "name": "demand"
+        }
       }
-    }
-  ],
-  "edges": [
-    {
-      "from_node": "input1",
-      "to_node": "storage1"
-    },
-    {
-      "from_node": "storage1",
-      "to_node": "output1"
-    }
-  ],
-  "parameters": [
-    {
-      "name": "demand",
-      "type": "Constant",
-      "value": 10.0
-    }
-  ],
-  "metric_sets": [
-    {
-      "name": "nodes",
-      "metrics": [
-        "input1",
-        "storage1",
-        "output1"
-      ]
-    }
-  ],
-  "outputs": [
-    {
-      "name": "outputs",
-      "type": "HDF5",
-      "filename": "outputs.h5",
-      "metric_set": "nodes"
-    }
-  ]
+    ],
+    "edges": [
+      {
+        "from_node": "input1",
+        "to_node": "storage1"
+      },
+      {
+        "from_node": "storage1",
+        "to_node": "output1"
+      }
+    ],
+    "parameters": [
+      {
+        "name": "demand",
+        "type": "Constant",
+        "value": 10.0
+      }
+    ],
+    "metric_sets": [
+      {
+        "name": "nodes",
+        "metrics": [
+          "input1",
+          "storage1",
+          "output1"
+        ]
+      }
+    ],
+    "outputs": [
+      {
+        "name": "outputs",
+        "type": "HDF5",
+        "filename": "outputs.h5",
+        "metric_set": "nodes"
+      }
+    ]
+  }
 }
