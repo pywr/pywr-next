@@ -125,6 +125,7 @@ impl PythonParameter {
     pub fn add_to_model(
         &self,
         network: &mut pywr_core::network::Network,
+        schema: &crate::model::PywrNetwork,
         domain: &ModelDomain,
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
@@ -170,7 +171,7 @@ impl PythonParameter {
                 .map(|(k, v)| {
                     Ok((
                         k.to_string(),
-                        v.load(network, domain, tables, data_path, inter_network_transfers)?,
+                        v.load(network, schema, domain, tables, data_path, inter_network_transfers)?,
                     ))
                 })
                 .collect::<Result<HashMap<_, _>, SchemaError>>()?,
@@ -183,7 +184,7 @@ impl PythonParameter {
                 .map(|(k, v)| {
                     Ok((
                         k.to_string(),
-                        v.load(network, domain, tables, data_path, inter_network_transfers)?,
+                        v.load(network, schema, domain, tables, data_path, inter_network_transfers)?,
                     ))
                 })
                 .collect::<Result<HashMap<_, _>, SchemaError>>()?,
@@ -204,6 +205,7 @@ impl PythonParameter {
 #[cfg(test)]
 mod tests {
     use crate::data_tables::LoadedTableCollection;
+    use crate::model::PywrNetwork;
     use crate::parameters::python::PythonParameter;
     use pywr_core::models::ModelDomain;
     use pywr_core::network::Network;
@@ -253,8 +255,11 @@ class MyParameter:
         // ... add it to an empty network
         // this should trigger loading the module and extracting the class
         let domain: ModelDomain = default_time_domain().into();
+        let schema = PywrNetwork::default();
         let mut network = Network::default();
         let tables = LoadedTableCollection::from_schema(None, None).unwrap();
-        param.add_to_model(&mut network, &domain, &tables, None, &[]).unwrap();
+        param
+            .add_to_model(&mut network, &schema, &domain, &tables, None, &[])
+            .unwrap();
     }
 }

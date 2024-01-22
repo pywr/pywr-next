@@ -1,5 +1,5 @@
 use crate::error::{ConversionError, SchemaError};
-use crate::nodes::NodeMeta;
+use crate::nodes::{NodeAttribute, NodeMeta};
 use crate::parameters::DynamicFloatValue;
 use pywr_core::metric::Metric;
 use pywr_v1_schema::nodes::LinkNode as LinkNodeV1;
@@ -28,9 +28,32 @@ impl RiverNode {
         vec![(self.meta.name.as_str(), None)]
     }
 
-    pub fn default_metric(&self, network: &pywr_core::network::Network) -> Result<Metric, SchemaError> {
+    pub fn create_metric(
+        &self,
+        network: &pywr_core::network::Network,
+        attribute: Option<NodeAttribute>,
+    ) -> Result<Metric, SchemaError> {
+        // Use the default attribute if none is specified
+        let attr = attribute.unwrap_or_else(|| self.default_attribute());
+
         let idx = network.get_node_index_by_name(self.meta.name.as_str(), None)?;
-        Ok(Metric::NodeOutFlow(idx))
+
+        let metric = match attr {
+            NodeAttribute::Outflow => Metric::NodeOutFlow(idx),
+            NodeAttribute::Inflow => Metric::NodeInFlow(idx),
+            _ => {
+                return Err(SchemaError::NodeAttributeNotSupported {
+                    name: self.meta.name.clone(),
+                    attr,
+                })
+            }
+        };
+
+        Ok(metric)
+    }
+
+    pub fn default_attribute(&self) -> NodeAttribute {
+        NodeAttribute::Outflow
     }
 }
 

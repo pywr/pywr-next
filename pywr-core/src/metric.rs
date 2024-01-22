@@ -21,11 +21,8 @@ pub enum Metric {
     ParameterValue(ParameterIndex),
     MultiParameterValue((MultiValueParameterIndex, String)),
     VirtualStorageVolume(VirtualStorageIndex),
-    MultiNodeInFlow {
-        indices: Vec<NodeIndex>,
-        name: String,
-        sub_name: Option<String>,
-    },
+    MultiNodeInFlow { indices: Vec<NodeIndex>, name: String },
+    MultiNodeOutFlow { indices: Vec<NodeIndex>, name: String },
     // TODO implement other MultiNodeXXX variants
     Constant(f64),
     DerivedMetric(DerivedMetricIndex),
@@ -73,6 +70,13 @@ impl Metric {
                 let flow = indices
                     .iter()
                     .map(|idx| state.get_network_state().get_node_in_flow(idx))
+                    .sum::<Result<_, _>>()?;
+                Ok(flow)
+            }
+            Metric::MultiNodeOutFlow { indices, .. } => {
+                let flow = indices
+                    .iter()
+                    .map(|idx| state.get_network_state().get_node_out_flow(idx))
                     .sum::<Result<_, _>>()?;
                 Ok(flow)
             }

@@ -72,6 +72,7 @@ impl ParameterThresholdParameter {
     pub fn add_to_model(
         &self,
         network: &mut pywr_core::network::Network,
+        schema: &crate::model::PywrNetwork,
         domain: &ModelDomain,
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
@@ -79,10 +80,10 @@ impl ParameterThresholdParameter {
     ) -> Result<IndexParameterIndex, SchemaError> {
         let metric = self
             .parameter
-            .load(network, domain, tables, data_path, inter_network_transfers)?;
+            .load(network, schema, domain, tables, data_path, inter_network_transfers)?;
         let threshold = self
             .threshold
-            .load(network, domain, tables, data_path, inter_network_transfers)?;
+            .load(network, schema, domain, tables, data_path, inter_network_transfers)?;
 
         let p = pywr_core::parameters::ThresholdParameter::new(
             &self.meta.name,

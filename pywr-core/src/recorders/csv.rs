@@ -109,11 +109,8 @@ impl Recorder for CSVRecorder {
 
                     (name.to_string(), sub_name, "outflow".to_string())
                 }
-                Metric::MultiNodeInFlow { name, sub_name, .. } => (
-                    name.to_string(),
-                    sub_name.clone().unwrap_or("".to_string()),
-                    "inflow".to_string(),
-                ),
+                Metric::MultiNodeInFlow { name, .. } => (name.to_string(), "".to_string(), "inflow".to_string()),
+                Metric::MultiNodeOutFlow { name, .. } => (name.to_string(), "".to_string(), "outflow".to_string()),
                 Metric::InterNetworkTransfer(_) => {
                     continue; // TODO
                 }

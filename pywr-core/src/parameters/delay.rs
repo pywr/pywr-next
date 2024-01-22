@@ -39,7 +39,6 @@ impl Parameter for DelayParameter {
         _timesteps: &[Timestep],
         _scenario_index: &ScenarioIndex,
     ) -> Result<Option<Box<dyn ParameterState>>, PywrError> {
-
         // Internally we need to store a history of previous values
         let memory: VecDeque<f64> = (0..self.delay).map(|_| self.initial_value).collect();
         Ok(Some(Box::new(memory)))

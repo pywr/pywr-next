@@ -1,4 +1,5 @@
 use crate::data_tables::TableError;
+use crate::nodes::NodeAttribute;
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::PyErr;
 use thiserror::Error;
@@ -11,6 +12,8 @@ pub enum SchemaError {
     Json(#[from] serde_json::Error),
     #[error("node with name {0} not found")]
     NodeNotFound(String),
+    #[error("node with name {name} does not support attribute {attr}")]
+    NodeAttributeNotSupported { name: String, attr: NodeAttribute },
     #[error("parameter {0} not found")]
     ParameterNotFound(String),
     #[error("network {0} not found")]

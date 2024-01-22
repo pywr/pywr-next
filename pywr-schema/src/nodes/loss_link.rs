@@ -1,7 +1,7 @@
 use crate::data_tables::LoadedTableCollection;
 use crate::error::{ConversionError, SchemaError};
 use crate::model::PywrMultiNetworkTransfer;
-use crate::nodes::NodeMeta;
+use crate::nodes::{NodeAttribute, NodeMeta};
 use crate::parameters::{DynamicFloatValue, TryIntoV2Parameter};
 use pywr_core::metric::Metric;
 use pywr_core::models::ModelDomain;
@@ -57,23 +57,24 @@ impl LossLinkNode {
     pub fn set_constraints(
         &self,
         network: &mut pywr_core::network::Network,
+        schema: &crate::model::PywrNetwork,
         domain: &ModelDomain,
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
         inter_network_transfers: &[PywrMultiNetworkTransfer],
     ) -> Result<(), SchemaError> {
         if let Some(cost) = &self.net_cost {
-            let value = cost.load(network, domain, tables, data_path, inter_network_transfers)?;
+            let value = cost.load(network, schema, domain, tables, data_path, inter_network_transfers)?;
             network.set_node_cost(self.meta.name.as_str(), Self::net_sub_name(), value.into())?;
         }
 
         if let Some(max_flow) = &self.max_net_flow {
-            let value = max_flow.load(network, domain, tables, data_path, inter_network_transfers)?;
+            let value = max_flow.load(network, schema, domain, tables, data_path, inter_network_transfers)?;
             network.set_node_max_flow(self.meta.name.as_str(), Self::net_sub_name(), value.into())?;
         }
 
         if let Some(min_flow) = &self.min_net_flow {
-            let value = min_flow.load(network, domain, tables, data_path, inter_network_transfers)?;
+            let value = min_flow.load(network, schema, domain, tables, data_path, inter_network_transfers)?;
             network.set_node_min_flow(self.meta.name.as_str(), Self::net_sub_name(), value.into())?;
         }
 
@@ -93,9 +94,48 @@ impl LossLinkNode {
         vec![(self.meta.name.as_str(), Self::net_sub_name().map(|s| s.to_string()))]
     }
 
-    pub fn default_metric(&self, network: &pywr_core::network::Network) -> Result<Metric, SchemaError> {
-        let idx = network.get_node_index_by_name(self.meta.name.as_str(), Self::net_sub_name().as_deref())?;
-        Ok(Metric::NodeOutFlow(idx))
+    pub fn create_metric(
+        &self,
+        network: &pywr_core::network::Network,
+        attribute: Option<NodeAttribute>,
+    ) -> Result<Metric, SchemaError> {
+        // Use the default attribute if none is specified
+        let attr = attribute.unwrap_or_else(|| self.default_attribute());
+
+        let metric = match attr {
+            NodeAttribute::Inflow => {
+                let indices = vec![
+                    network.get_node_index_by_name(self.meta.name.as_str(), Self::net_sub_name())?,
+                    network.get_node_index_by_name(self.meta.name.as_str(), Self::loss_sub_name())?,
+                ];
+
+                Metric::MultiNodeInFlow {
+                    indices,
+                    name: self.meta.name.to_string(),
+                }
+            }
+            NodeAttribute::Outflow => {
+                let idx = network.get_node_index_by_name(self.meta.name.as_str(), Self::net_sub_name().as_deref())?;
+                Metric::NodeOutFlow(idx)
+            }
+            NodeAttribute::Loss => {
+                let idx = network.get_node_index_by_name(self.meta.name.as_str(), Self::loss_sub_name().as_deref())?;
+                // This is an output node that only supports inflow
+                Metric::NodeInFlow(idx)
+            }
+            _ => {
+                return Err(SchemaError::NodeAttributeNotSupported {
+                    name: self.meta.name.clone(),
+                    attr,
+                })
+            }
+        };
+
+        Ok(metric)
+    }
+
+    pub fn default_attribute(&self) -> NodeAttribute {
+        NodeAttribute::Outflow
     }
 }
 
