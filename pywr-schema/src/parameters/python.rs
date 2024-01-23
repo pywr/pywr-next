@@ -50,8 +50,9 @@ pub enum PythonModule {
 ///             "name": "another-parameter"
 ///         },
 ///         "volume": {
-///             "type": "NodeVolume",
-///             "name": "a-reservoir"
+///             "type": "Node",
+///             "name": "a-reservoir",
+///             "attribute": "Volume"
 ///         }
 ///     }
 /// }"#;
