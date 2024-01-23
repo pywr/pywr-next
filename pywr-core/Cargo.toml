@@ -25,7 +25,6 @@ csv = {  workspace = true }
 clp-sys = { path = "../clp-sys" }
 ipm-ocl = { path = "../ipm-ocl", optional = true }
 ipm-simd = { path = "../ipm-simd", optional = true }
-wasmer = "4.0.0"
 time = { workspace = true, features = ["macros"] }
 tracing = {  workspace = true }
 tracing-subscriber = { version ="0.3.17", features=["env-filter"] }
