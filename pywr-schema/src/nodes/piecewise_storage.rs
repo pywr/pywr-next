@@ -56,6 +56,8 @@ pub struct PiecewiseStorageNode {
 }
 
 impl PiecewiseStorageNode {
+    const DEFAULT_ATTRIBUTE: NodeAttribute = NodeAttribute::Outflow;
+
     fn step_sub_name(i: usize) -> Option<String> {
         Some(format!("store-{i:02}"))
     }
@@ -221,7 +223,7 @@ impl PiecewiseStorageNode {
         attribute: Option<NodeAttribute>,
     ) -> Result<Metric, SchemaError> {
         // Use the default attribute if none is specified
-        let attr = attribute.unwrap_or_else(|| self.default_attribute());
+        let attr = attribute.unwrap_or(Self::DEFAULT_ATTRIBUTE);
 
         let idx = network.get_aggregated_storage_node_index_by_name(self.meta.name.as_str(), Self::agg_sub_name())?;
 
@@ -241,10 +243,6 @@ impl PiecewiseStorageNode {
         };
 
         Ok(metric)
-    }
-
-    pub fn default_attribute(&self) -> NodeAttribute {
-        NodeAttribute::Outflow
     }
 }
 

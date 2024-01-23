@@ -32,6 +32,8 @@ pub struct RiverGaugeNode {
 }
 
 impl RiverGaugeNode {
+    const DEFAULT_ATTRIBUTE: NodeAttribute = NodeAttribute::Outflow;
+
     fn mrf_sub_name() -> Option<&'static str> {
         Some("mrf")
     }
@@ -90,7 +92,7 @@ impl RiverGaugeNode {
         attribute: Option<NodeAttribute>,
     ) -> Result<Metric, SchemaError> {
         // Use the default attribute if none is specified
-        let attr = attribute.unwrap_or_else(|| self.default_attribute());
+        let attr = attribute.unwrap_or(Self::DEFAULT_ATTRIBUTE);
 
         let indices = vec![
             network.get_node_index_by_name(self.meta.name.as_str(), Self::mrf_sub_name())?,
@@ -115,10 +117,6 @@ impl RiverGaugeNode {
         };
 
         Ok(metric)
-    }
-
-    pub fn default_attribute(&self) -> NodeAttribute {
-        NodeAttribute::Outflow
     }
 }
 

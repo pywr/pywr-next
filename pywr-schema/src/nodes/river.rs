@@ -12,6 +12,8 @@ pub struct RiverNode {
 }
 
 impl RiverNode {
+    const DEFAULT_ATTRIBUTE: NodeAttribute = NodeAttribute::Outflow;
+
     pub fn parameters(&self) -> HashMap<&str, &DynamicFloatValue> {
         HashMap::new()
     }
@@ -34,7 +36,7 @@ impl RiverNode {
         attribute: Option<NodeAttribute>,
     ) -> Result<Metric, SchemaError> {
         // Use the default attribute if none is specified
-        let attr = attribute.unwrap_or_else(|| self.default_attribute());
+        let attr = attribute.unwrap_or(Self::DEFAULT_ATTRIBUTE);
 
         let idx = network.get_node_index_by_name(self.meta.name.as_str(), None)?;
 
@@ -50,10 +52,6 @@ impl RiverNode {
         };
 
         Ok(metric)
-    }
-
-    pub fn default_attribute(&self) -> NodeAttribute {
-        NodeAttribute::Outflow
     }
 }
 

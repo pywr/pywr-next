@@ -36,6 +36,8 @@ pub struct LossLinkNode {
 }
 
 impl LossLinkNode {
+    const DEFAULT_ATTRIBUTE: NodeAttribute = NodeAttribute::Outflow;
+
     fn loss_sub_name() -> Option<&'static str> {
         Some("loss")
     }
@@ -100,7 +102,7 @@ impl LossLinkNode {
         attribute: Option<NodeAttribute>,
     ) -> Result<Metric, SchemaError> {
         // Use the default attribute if none is specified
-        let attr = attribute.unwrap_or_else(|| self.default_attribute());
+        let attr = attribute.unwrap_or(Self::DEFAULT_ATTRIBUTE);
 
         let metric = match attr {
             NodeAttribute::Inflow => {
@@ -132,10 +134,6 @@ impl LossLinkNode {
         };
 
         Ok(metric)
-    }
-
-    pub fn default_attribute(&self) -> NodeAttribute {
-        NodeAttribute::Outflow
     }
 }
 

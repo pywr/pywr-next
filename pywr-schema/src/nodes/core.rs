@@ -25,6 +25,8 @@ pub struct InputNode {
 }
 
 impl InputNode {
+    pub const DEFAULT_ATTRIBUTE: NodeAttribute = NodeAttribute::Outflow;
+
     pub fn parameters(&self) -> HashMap<&str, &DynamicFloatValue> {
         let mut attributes = HashMap::new();
         if let Some(p) = &self.max_flow {
@@ -85,7 +87,7 @@ impl InputNode {
         attribute: Option<NodeAttribute>,
     ) -> Result<Metric, SchemaError> {
         // Use the default attribute if none is specified
-        let attr = attribute.unwrap_or_else(|| self.default_attribute());
+        let attr = attribute.unwrap_or(Self::DEFAULT_ATTRIBUTE);
 
         let idx = network.get_node_index_by_name(self.meta.name.as_str(), None)?;
 
@@ -100,10 +102,6 @@ impl InputNode {
         };
 
         Ok(metric)
-    }
-
-    pub fn default_attribute(&self) -> NodeAttribute {
-        NodeAttribute::Outflow
     }
 }
 
@@ -148,6 +146,8 @@ pub struct LinkNode {
 }
 
 impl LinkNode {
+    const DEFAULT_ATTRIBUTE: NodeAttribute = NodeAttribute::Outflow;
+
     pub fn parameters(&self) -> HashMap<&str, &DynamicFloatValue> {
         let mut attributes = HashMap::new();
         if let Some(p) = &self.max_flow {
@@ -208,7 +208,7 @@ impl LinkNode {
         attribute: Option<NodeAttribute>,
     ) -> Result<Metric, SchemaError> {
         // Use the default attribute if none is specified
-        let attr = attribute.unwrap_or_else(|| self.default_attribute());
+        let attr = attribute.unwrap_or(Self::DEFAULT_ATTRIBUTE);
 
         let idx = network.get_node_index_by_name(self.meta.name.as_str(), None)?;
 
@@ -224,10 +224,6 @@ impl LinkNode {
         };
 
         Ok(metric)
-    }
-
-    pub fn default_attribute(&self) -> NodeAttribute {
-        NodeAttribute::Outflow
     }
 }
 
@@ -271,6 +267,8 @@ pub struct OutputNode {
 }
 
 impl OutputNode {
+    const DEFAULT_ATTRIBUTE: NodeAttribute = NodeAttribute::Inflow;
+
     pub fn parameters(&self) -> HashMap<&str, &DynamicFloatValue> {
         let mut attributes = HashMap::new();
         if let Some(p) = &self.max_flow {
@@ -332,7 +330,7 @@ impl OutputNode {
         attribute: Option<NodeAttribute>,
     ) -> Result<Metric, SchemaError> {
         // Use the default attribute if none is specified
-        let attr = attribute.unwrap_or_else(|| self.default_attribute());
+        let attr = attribute.unwrap_or(Self::DEFAULT_ATTRIBUTE);
 
         let idx = network.get_node_index_by_name(self.meta.name.as_str(), None)?;
 
@@ -347,10 +345,6 @@ impl OutputNode {
         };
 
         Ok(metric)
-    }
-
-    pub fn default_attribute(&self) -> NodeAttribute {
-        NodeAttribute::Inflow
     }
 }
 
@@ -396,6 +390,8 @@ pub struct StorageNode {
 }
 
 impl StorageNode {
+    const DEFAULT_ATTRIBUTE: NodeAttribute = NodeAttribute::Volume;
+
     pub fn parameters(&self) -> HashMap<&str, &DynamicFloatValue> {
         let mut attributes = HashMap::new();
         // if let Some(p) = &self.max_volume {
@@ -477,7 +473,7 @@ impl StorageNode {
         attribute: Option<NodeAttribute>,
     ) -> Result<Metric, SchemaError> {
         // Use the default attribute if none is specified
-        let attr = attribute.unwrap_or_else(|| self.default_attribute());
+        let attr = attribute.unwrap_or(Self::DEFAULT_ATTRIBUTE);
 
         let idx = network.get_node_index_by_name(self.meta.name.as_str(), None)?;
 
@@ -497,10 +493,6 @@ impl StorageNode {
         };
 
         Ok(metric)
-    }
-
-    pub fn default_attribute(&self) -> NodeAttribute {
-        NodeAttribute::Volume
     }
 }
 
@@ -608,6 +600,8 @@ pub struct CatchmentNode {
 }
 
 impl CatchmentNode {
+    const DEFAULT_ATTRIBUTE: NodeAttribute = NodeAttribute::Outflow;
+
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
         network.add_input_node(self.meta.name.as_str(), None)?;
         Ok(())
@@ -650,7 +644,7 @@ impl CatchmentNode {
         attribute: Option<NodeAttribute>,
     ) -> Result<Metric, SchemaError> {
         // Use the default attribute if none is specified
-        let attr = attribute.unwrap_or_else(|| self.default_attribute());
+        let attr = attribute.unwrap_or(Self::DEFAULT_ATTRIBUTE);
 
         let idx = network.get_node_index_by_name(self.meta.name.as_str(), None)?;
 
@@ -665,10 +659,6 @@ impl CatchmentNode {
         };
 
         Ok(metric)
-    }
-
-    pub fn default_attribute(&self) -> NodeAttribute {
-        NodeAttribute::Outflow
     }
 }
 
@@ -711,6 +701,8 @@ pub struct AggregatedNode {
 }
 
 impl AggregatedNode {
+    const DEFAULT_ATTRIBUTE: NodeAttribute = NodeAttribute::Outflow;
+
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
         let nodes = self
             .nodes
@@ -782,7 +774,7 @@ impl AggregatedNode {
         attribute: Option<NodeAttribute>,
     ) -> Result<Metric, SchemaError> {
         // Use the default attribute if none is specified
-        let attr = attribute.unwrap_or_else(|| self.default_attribute());
+        let attr = attribute.unwrap_or(Self::DEFAULT_ATTRIBUTE);
 
         let idx = network.get_aggregated_node_index_by_name(self.meta.name.as_str(), None)?;
 
@@ -798,10 +790,6 @@ impl AggregatedNode {
         };
 
         Ok(metric)
-    }
-
-    pub fn default_attribute(&self) -> NodeAttribute {
-        NodeAttribute::Outflow
     }
 }
 
@@ -851,6 +839,8 @@ pub struct AggregatedStorageNode {
 }
 
 impl AggregatedStorageNode {
+    const DEFAULT_ATTRIBUTE: NodeAttribute = NodeAttribute::Outflow;
+
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
         let nodes = self
             .storage_nodes
@@ -879,7 +869,7 @@ impl AggregatedStorageNode {
         attribute: Option<NodeAttribute>,
     ) -> Result<Metric, SchemaError> {
         // Use the default attribute if none is specified
-        let attr = attribute.unwrap_or_else(|| self.default_attribute());
+        let attr = attribute.unwrap_or(Self::DEFAULT_ATTRIBUTE);
 
         let idx = network.get_aggregated_storage_node_index_by_name(self.meta.name.as_str(), None)?;
 
@@ -899,10 +889,6 @@ impl AggregatedStorageNode {
         };
 
         Ok(metric)
-    }
-
-    pub fn default_attribute(&self) -> NodeAttribute {
-        NodeAttribute::Outflow
     }
 }
 

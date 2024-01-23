@@ -25,6 +25,8 @@ pub struct VirtualStorageNode {
 }
 
 impl VirtualStorageNode {
+    const DEFAULT_ATTRIBUTE: NodeAttribute = NodeAttribute::Volume;
+
     pub fn add_to_model(
         &self,
         network: &mut pywr_core::network::Network,
@@ -100,7 +102,7 @@ impl VirtualStorageNode {
         attribute: Option<NodeAttribute>,
     ) -> Result<Metric, SchemaError> {
         // Use the default attribute if none is specified
-        let attr = attribute.unwrap_or_else(|| self.default_attribute());
+        let attr = attribute.unwrap_or(Self::DEFAULT_ATTRIBUTE);
 
         let idx = network.get_virtual_storage_node_index_by_name(self.meta.name.as_str(), None)?;
 
@@ -120,10 +122,6 @@ impl VirtualStorageNode {
         };
 
         Ok(metric)
-    }
-
-    pub fn default_attribute(&self) -> NodeAttribute {
-        NodeAttribute::Volume
     }
 }
 

@@ -33,6 +33,8 @@ pub struct DelayNode {
 }
 
 impl DelayNode {
+    const DEFAULT_ATTRIBUTE: NodeAttribute = NodeAttribute::Outflow;
+
     fn output_sub_name() -> Option<&'static str> {
         Some("inflow")
     }
@@ -84,7 +86,7 @@ impl DelayNode {
         attribute: Option<NodeAttribute>,
     ) -> Result<Metric, SchemaError> {
         // Use the default attribute if none is specified
-        let attr = attribute.unwrap_or_else(|| self.default_attribute());
+        let attr = attribute.unwrap_or(Self::DEFAULT_ATTRIBUTE);
 
         let metric = match attr {
             NodeAttribute::Outflow => {
@@ -104,10 +106,6 @@ impl DelayNode {
         };
 
         Ok(metric)
-    }
-
-    pub fn default_attribute(&self) -> NodeAttribute {
-        NodeAttribute::Outflow
     }
 }
 

@@ -42,6 +42,8 @@ pub struct RiverSplitWithGaugeNode {
 }
 
 impl RiverSplitWithGaugeNode {
+    const DEFAULT_ATTRIBUTE: NodeAttribute = NodeAttribute::Outflow;
+
     fn mrf_sub_name() -> Option<&'static str> {
         Some("mrf")
     }
@@ -160,7 +162,7 @@ impl RiverSplitWithGaugeNode {
         attribute: Option<NodeAttribute>,
     ) -> Result<Metric, SchemaError> {
         // Use the default attribute if none is specified
-        let attr = attribute.unwrap_or_else(|| self.default_attribute());
+        let attr = attribute.unwrap_or(Self::DEFAULT_ATTRIBUTE);
 
         // This gets the indices of all the link nodes
         // There's currently no way to isolate the flows to the individual splits
@@ -197,10 +199,6 @@ impl RiverSplitWithGaugeNode {
         };
 
         Ok(metric)
-    }
-
-    pub fn default_attribute(&self) -> NodeAttribute {
-        NodeAttribute::Outflow
     }
 }
 
