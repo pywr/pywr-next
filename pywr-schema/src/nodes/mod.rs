@@ -8,6 +8,7 @@ mod piecewise_storage;
 mod river;
 mod river_gauge;
 mod river_split_with_gauge;
+mod rolling_virtual_storage;
 mod virtual_storage;
 mod water_treatment_works;
 
@@ -19,6 +20,7 @@ pub use crate::nodes::core::{
 };
 pub use crate::nodes::delay::DelayNode;
 pub use crate::nodes::river::RiverNode;
+use crate::nodes::rolling_virtual_storage::RollingVirtualStorageNode;
 use crate::parameters::DynamicFloatValue;
 pub use annual_virtual_storage::AnnualVirtualStorageNode;
 pub use loss_link::LossLinkNode;
@@ -94,6 +96,7 @@ pub enum NodeType {
     VirtualStorage,
     AnnualVirtualStorage,
     MonthlyVirtualStorage,
+    RollingVirtualStorage,
 }
 
 pub struct NodeBuilder {
@@ -219,6 +222,10 @@ impl NodeBuilder {
                 meta,
                 ..Default::default()
             }),
+            NodeType::RollingVirtualStorage => Node::RollingVirtualStorage(RollingVirtualStorageNode {
+                meta,
+                ..Default::default()
+            }),
         }
     }
 }
@@ -244,6 +251,7 @@ pub enum Node {
     VirtualStorage(VirtualStorageNode),
     AnnualVirtualStorage(AnnualVirtualStorageNode),
     MonthlyVirtualStorage(MonthlyVirtualStorageNode),
+    RollingVirtualStorage(RollingVirtualStorageNode),
 }
 
 impl Node {
@@ -275,6 +283,7 @@ impl Node {
             Node::PiecewiseStorage(_) => NodeType::PiecewiseStorage,
             Node::Delay(_) => NodeType::Delay,
             Node::MonthlyVirtualStorage(_) => NodeType::MonthlyVirtualStorage,
+            Node::RollingVirtualStorage(_) => NodeType::RollingVirtualStorage,
         }
     }
 
@@ -298,6 +307,7 @@ impl Node {
             Node::PiecewiseStorage(n) => &n.meta,
             Node::Delay(n) => &n.meta,
             Node::MonthlyVirtualStorage(n) => &n.meta,
+            Node::RollingVirtualStorage(n) => &n.meta,
         }
     }
 
@@ -342,6 +352,9 @@ impl Node {
             Node::MonthlyVirtualStorage(n) => {
                 n.add_to_model(network, domain, tables, data_path, inter_network_transfers)
             }
+            Node::RollingVirtualStorage(n) => {
+                n.add_to_model(network, domain, tables, data_path, inter_network_transfers)
+            }
         }
     }
 
@@ -376,6 +389,7 @@ impl Node {
             Node::PiecewiseStorage(n) => n.set_constraints(network, domain, tables, data_path, inter_network_transfers),
             Node::Delay(n) => n.set_constraints(network, tables),
             Node::MonthlyVirtualStorage(_) => Ok(()), // TODO
+            Node::RollingVirtualStorage(_) => Ok(()), // TODO
         }
     }
 
@@ -400,6 +414,7 @@ impl Node {
             Node::PiecewiseLink(n) => n.input_connectors(),
             Node::PiecewiseStorage(n) => n.input_connectors(),
             Node::Delay(n) => n.input_connectors(),
+            Node::RollingVirtualStorage(n) => n.input_connectors(),
         }
     }
 
@@ -424,6 +439,7 @@ impl Node {
             Node::PiecewiseLink(n) => n.output_connectors(),
             Node::PiecewiseStorage(n) => n.output_connectors(),
             Node::Delay(n) => n.output_connectors(),
+            Node::RollingVirtualStorage(n) => n.output_connectors(),
         }
     }
 
@@ -448,6 +464,7 @@ impl Node {
             Node::PiecewiseLink(n) => n.default_metric(network),
             Node::Delay(n) => n.default_metric(network),
             Node::PiecewiseStorage(n) => n.default_metric(network),
+            Node::RollingVirtualStorage(n) => n.default_metric(network),
         }
     }
 }
@@ -495,7 +512,7 @@ impl TryFrom<Box<CoreNodeV1>> for Node {
             CoreNodeV1::RiverSplit(_) => todo!("Conversion of RiverSplit nodes"),
             CoreNodeV1::MonthlyVirtualStorage(n) => Self::MonthlyVirtualStorage(n.try_into()?),
             CoreNodeV1::SeasonalVirtualStorage(_) => todo!("Conversion of SeasonalVirtualStorage nodes"),
-            CoreNodeV1::RollingVirtualStorage(_) => todo!("Conversion of RollingVirtualStorage nodes"),
+            CoreNodeV1::RollingVirtualStorage(n) => Self::RollingVirtualStorage(n.try_into()?),
         };
 
         Ok(n)

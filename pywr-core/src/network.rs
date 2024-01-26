@@ -1235,6 +1235,7 @@ impl Network {
         min_volume: ConstraintValue,
         max_volume: ConstraintValue,
         reset: VirtualStorageReset,
+        rolling_window: Option<usize>,
         cost: ConstraintValue,
     ) -> Result<VirtualStorageIndex, PywrError> {
         if let Ok(_agg_node) = self.get_virtual_storage_node_by_name(name, sub_name) {
@@ -1250,6 +1251,7 @@ impl Network {
             min_volume,
             max_volume,
             reset,
+            rolling_window,
             cost,
         );
 

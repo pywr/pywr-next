@@ -6,23 +6,49 @@ use crate::parameters::{DynamicFloatValue, TryIntoV2Parameter};
 use pywr_core::metric::Metric;
 use pywr_core::models::ModelDomain;
 use pywr_core::node::{ConstraintValue, StorageInitialVolume};
+use pywr_core::timestep::TimeDomain;
 use pywr_core::virtual_storage::VirtualStorageReset;
-use pywr_v1_schema::nodes::MonthlyVirtualStorageNode as MonthlyVirtualStorageNodeV1;
+use pywr_v1_schema::nodes::RollingVirtualStorageNode as RollingVirtualStorageNodeV1;
 use std::path::Path;
 
+/// The length of the rolling window.
+///
+/// This can be specified in either days or time-steps.
 #[derive(serde::Deserialize, serde::Serialize, Clone)]
-pub struct NumberOfMonthsReset {
-    pub months: u8,
+pub enum RollingWindow {
+    Days(usize),
+    Timesteps(usize),
 }
 
-impl Default for NumberOfMonthsReset {
+impl Default for RollingWindow {
     fn default() -> Self {
-        Self { months: 1 }
+        Self::Timesteps(30)
     }
 }
 
+impl RollingWindow {
+    /// Convert the rolling window to a number of time-steps.
+    pub fn as_timesteps(&self, time: &TimeDomain) -> usize {
+        match self {
+            Self::Days(days) => *days / time.step_duration().whole_days() as usize,
+            Self::Timesteps(timesteps) => *timesteps,
+        }
+    }
+}
+
+/// A virtual storage node that constrains node(s) utilisation over a fixed window.
+///
+/// A virtual storage node represents a "virtual" volume that can be used to constrain the utilisation of one or more
+/// nodes. This rolling virtual storage node constraints the utilisation of the nodes using a fixed window of the
+/// last `N` days or time-steps. Each time-step the available volume in the virtual storage is based on the maximum
+/// volume less the sum of the utilisation of the nodes over the window. The window is rolled forward each time-step,
+/// with the oldest time-step being removed from the history and the newest utilisation added.
+///
+/// The rolling virtual storage node is useful for representing rolling licences. For example, a 30-day or 90-day
+/// licence on a water abstraction.
+///
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default)]
-pub struct MonthlyVirtualStorageNode {
+pub struct RollingVirtualStorageNode {
     #[serde(flatten)]
     pub meta: NodeMeta,
     pub nodes: Vec<String>,
@@ -32,10 +58,10 @@ pub struct MonthlyVirtualStorageNode {
     pub cost: Option<DynamicFloatValue>,
     pub initial_volume: Option<f64>,
     pub initial_volume_pc: Option<f64>,
-    pub reset: NumberOfMonthsReset,
+    pub window: RollingWindow,
 }
 
-impl MonthlyVirtualStorageNode {
+impl RollingVirtualStorageNode {
     pub fn add_to_model(
         &self,
         network: &mut pywr_core::network::Network,
@@ -79,11 +105,10 @@ impl MonthlyVirtualStorageNode {
             .map(|name| network.get_node_index_by_name(name.as_str(), None))
             .collect::<Result<Vec<_>, _>>()?;
 
-        let reset = VirtualStorageReset::NumberOfMonths {
-            months: self.reset.months as i32,
-        };
+        // The rolling licence never resets
+        let reset = VirtualStorageReset::Never;
+        let timesteps = self.window.as_timesteps(domain.time());
 
-        // TODO this should be an annual virtual storage!
         network.add_virtual_storage_node(
             self.meta.name.as_str(),
             None,
@@ -93,7 +118,7 @@ impl MonthlyVirtualStorageNode {
             min_volume,
             max_volume,
             reset,
-            None,
+            Some(timesteps),
             cost,
         )?;
         Ok(())
@@ -113,10 +138,10 @@ impl MonthlyVirtualStorageNode {
     }
 }
 
-impl TryFrom<MonthlyVirtualStorageNodeV1> for MonthlyVirtualStorageNode {
+impl TryFrom<RollingVirtualStorageNodeV1> for RollingVirtualStorageNode {
     type Error = ConversionError;
 
-    fn try_from(v1: MonthlyVirtualStorageNodeV1) -> Result<Self, Self::Error> {
+    fn try_from(v1: RollingVirtualStorageNodeV1) -> Result<Self, Self::Error> {
         let meta: NodeMeta = v1.meta.into();
         let mut unnamed_count = 0;
 
@@ -134,6 +159,17 @@ impl TryFrom<MonthlyVirtualStorageNodeV1> for MonthlyVirtualStorageNode {
             .map(|v| v.try_into_v2_parameter(Some(&meta.name), &mut unnamed_count))
             .transpose()?;
 
+        let window = if let Some(days) = v1.days {
+            RollingWindow::Days(days as usize)
+        } else if let Some(timesteps) = v1.timesteps {
+            RollingWindow::Timesteps(timesteps as usize)
+        } else {
+            return Err(ConversionError::MissingAttribute {
+                attrs: vec!["days".to_string(), "timesteps".to_string()],
+                name: meta.name.clone(),
+            });
+        };
+
         let n = Self {
             meta,
             nodes: v1.nodes,
@@ -143,8 +179,41 @@ impl TryFrom<MonthlyVirtualStorageNodeV1> for MonthlyVirtualStorageNode {
             cost,
             initial_volume: v1.initial_volume,
             initial_volume_pc: v1.initial_volume_pc,
-            reset: NumberOfMonthsReset { months: v1.months },
+            window,
         };
         Ok(n)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::model::PywrModel;
+    use ndarray::Array2;
+    use pywr_core::metric::Metric;
+    use pywr_core::recorders::AssertionRecorder;
+    use pywr_core::test_utils::run_all_solvers;
+
+    fn model_str() -> &'static str {
+        include_str!("../test_models/30-day-licence.json")
+    }
+
+    #[test]
+    fn test_model_run() {
+        let data = model_str();
+        let schema: PywrModel = serde_json::from_str(data).unwrap();
+        let mut model: pywr_core::models::Model = schema.build_model(None, None).unwrap();
+
+        let network = model.network_mut();
+        assert_eq!(network.nodes().len(), 3);
+        assert_eq!(network.edges().len(), 2);
+
+        // TODO put this assertion data in the test model file.
+        let idx = network.get_node_by_name("link1", None).unwrap().index();
+        let expected = Array2::from_elem((366, 1), 10.0);
+        let recorder = AssertionRecorder::new("link1-inflow", Metric::NodeInFlow(idx), expected, None, None);
+        network.add_recorder(Box::new(recorder)).unwrap();
+
+        // Test all solvers
+        run_all_solvers(&model);
     }
 }

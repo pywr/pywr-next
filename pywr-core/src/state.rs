@@ -9,7 +9,7 @@ use crate::virtual_storage::VirtualStorageIndex;
 use crate::PywrError;
 use dyn_clone::DynClone;
 use std::any::Any;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::ops::Deref;
 
 #[derive(Clone, Copy, Debug)]
@@ -124,17 +124,57 @@ impl StorageState {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default)]
+/// Stores the history of virtual storage flows.
+#[derive(Clone, Debug, Default)]
+struct VirtualStorageHistory {
+    /// The flows are stored in a queue. The oldest flow is popped from the front of the queue
+    flows: VecDeque<f64>,
+    /// The maximum size of the history.
+    size: usize,
+}
+
+impl VirtualStorageHistory {
+    fn new(size: usize, initial_flow: f64) -> Self {
+        Self {
+            flows: vec![initial_flow; size].into(),
+            size,
+        }
+    }
+
+    /// Reset the history to the initial flow.
+    fn reset(&mut self, initial_flow: f64) {
+        self.flows = vec![initial_flow; self.size].into();
+    }
+
+    /// Add new flow to the history.
+    fn add_flow(&mut self, flow: f64) {
+        self.flows.push_back(flow);
+    }
+
+    /// Pop the oldest flow from the history as long as the history is at least as long as the
+    /// maximum size. If the history is shorter than the maximum size then return zero.
+    fn pop_flow(&mut self) -> f64 {
+        if self.flows.len() >= self.size {
+            self.flows.pop_front().unwrap()
+        } else {
+            0.0
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default)]
 pub struct VirtualStorageState {
     last_reset: Option<Timestep>,
     storage: StorageState,
+    history: Option<VirtualStorageHistory>,
 }
 
 impl VirtualStorageState {
-    pub fn new(initial_volume: f64) -> Self {
+    pub fn new(initial_volume: f64, history_size: Option<usize>) -> Self {
         Self {
             last_reset: None,
             storage: StorageState::new(initial_volume),
+            history: history_size.map(|size| VirtualStorageHistory::new(size, initial_volume)),
         }
     }
 
@@ -149,8 +189,23 @@ impl VirtualStorageState {
         self.last_reset = Some(*timestep);
     }
 
+    fn reset_history(&mut self, initial_flow: f64) {
+        if let Some(history) = self.history.as_mut() {
+            history.reset(initial_flow);
+        }
+    }
+
+    fn recover_last_historical_flow(&mut self, timestep: &Timestep) {
+        if let Some(history) = self.history.as_mut() {
+            self.storage.add_in_flow(history.pop_flow(), timestep);
+        }
+    }
+
     fn add_out_flow(&mut self, flow: f64, timestep: &Timestep) {
         self.storage.add_out_flow(flow, timestep);
+        if let Some(history) = self.history.as_mut() {
+            history.add_flow(flow);
+        }
     }
 
     fn proportional_volume(&self, max_volume: f64) -> f64 {
@@ -496,6 +551,36 @@ impl NetworkState {
         Ok(())
     }
 
+    pub fn reset_virtual_storage_history(
+        &mut self,
+        idx: VirtualStorageIndex,
+        initial_volume: f64,
+    ) -> Result<(), PywrError> {
+        // TODO handle these errors properly
+        if let Some(s) = self.virtual_storage_states.get_mut(*idx.deref()) {
+            s.reset_history(initial_volume)
+        } else {
+            panic!("Virtual storage node state not found.")
+        }
+
+        Ok(())
+    }
+
+    pub fn recover_virtual_storage_last_historical_flow(
+        &mut self,
+        idx: VirtualStorageIndex,
+        timestep: &Timestep,
+    ) -> Result<(), PywrError> {
+        // TODO handle these errors properly
+        if let Some(s) = self.virtual_storage_states.get_mut(*idx.deref()) {
+            s.recover_last_historical_flow(timestep)
+        } else {
+            panic!("Virtual storage node state not found.")
+        }
+
+        Ok(())
+    }
+
     pub fn get_virtual_storage_volume(&self, node_index: &VirtualStorageIndex) -> Result<f64, PywrError> {
         match self.virtual_storage_states.get(*node_index.deref()) {
             Some(s) => Ok(s.storage.volume),
@@ -604,6 +689,22 @@ impl State {
         timestep: &Timestep,
     ) -> Result<(), PywrError> {
         self.network.reset_virtual_storage_volume(idx, volume, timestep)
+    }
+
+    pub fn reset_virtual_storage_history(
+        &mut self,
+        idx: VirtualStorageIndex,
+        initial_volume: f64,
+    ) -> Result<(), PywrError> {
+        self.network.reset_virtual_storage_history(idx, initial_volume)
+    }
+
+    pub fn recover_virtual_storage_last_historical_flow(
+        &mut self,
+        idx: VirtualStorageIndex,
+        timestep: &Timestep,
+    ) -> Result<(), PywrError> {
+        self.network.recover_virtual_storage_last_historical_flow(idx, timestep)
     }
 
     pub fn get_derived_metric_value(&self, idx: DerivedMetricIndex) -> Result<f64, PywrError> {

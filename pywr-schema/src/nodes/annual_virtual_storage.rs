@@ -99,6 +99,7 @@ impl AnnualVirtualStorageNode {
             min_volume,
             max_volume,
             reset,
+            None,
             cost,
         )?;
         Ok(())

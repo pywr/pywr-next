@@ -55,6 +55,7 @@ impl VirtualStorageVec {
         min_volume: ConstraintValue,
         max_volume: ConstraintValue,
         reset: VirtualStorageReset,
+        rolling_window: Option<usize>,
         cost: ConstraintValue,
     ) -> VirtualStorageIndex {
         let node_index = VirtualStorageIndex(self.nodes.len());
@@ -68,6 +69,7 @@ impl VirtualStorageVec {
             min_volume,
             max_volume,
             reset,
+            rolling_window,
             cost,
         );
         self.nodes.push(node);
@@ -90,6 +92,7 @@ pub struct VirtualStorage {
     pub initial_volume: StorageInitialVolume,
     pub storage_constraints: StorageConstraints,
     pub reset: VirtualStorageReset,
+    pub rolling_window: Option<usize>,
     pub cost: ConstraintValue,
 }
 
@@ -104,6 +107,7 @@ impl VirtualStorage {
         min_volume: ConstraintValue,
         max_volume: ConstraintValue,
         reset: VirtualStorageReset,
+        rolling_window: Option<usize>,
         cost: ConstraintValue,
     ) -> Self {
         Self {
@@ -114,6 +118,7 @@ impl VirtualStorage {
             initial_volume,
             storage_constraints: StorageConstraints::new(min_volume, max_volume),
             reset,
+            rolling_window,
             cost,
         }
     }
@@ -141,7 +146,7 @@ impl VirtualStorage {
     }
 
     pub fn default_state(&self) -> VirtualStorageState {
-        VirtualStorageState::new(0.0)
+        VirtualStorageState::new(0.0, self.rolling_window)
     }
 
     pub fn get_cost(&self, network: &Network, state: &State) -> Result<f64, PywrError> {
@@ -178,15 +183,25 @@ impl VirtualStorage {
         };
 
         if do_reset {
+            let max_volume = self.get_max_volume(network, state)?;
+            // Determine the initial volume
             let volume = match &self.initial_volume {
                 StorageInitialVolume::Absolute(iv) => *iv,
-                StorageInitialVolume::Proportional(ipc) => {
-                    let max_volume = self.get_max_volume(network, state)?;
-                    max_volume * ipc
-                }
+                StorageInitialVolume::Proportional(ipc) => max_volume * ipc,
             };
 
+            // Reset the volume
             state.reset_virtual_storage_node_volume(*self.meta.index(), volume, timestep)?;
+            // Reset the rolling history if defined
+            if let Some(window) = self.rolling_window {
+                // Initially the missing volume is distributed evenly across the window
+                let initial_flow = (max_volume - volume) / window as f64;
+                state.reset_virtual_storage_history(*self.meta.index(), initial_flow)?;
+            }
+        }
+        // Recover any historical flows from a rolling window
+        if self.rolling_window.is_some() {
+            state.recover_virtual_storage_last_historical_flow(*self.meta.index(), timestep)?;
         }
 
         Ok(())
@@ -290,6 +305,7 @@ mod tests {
             ConstraintValue::Scalar(0.0),
             ConstraintValue::Scalar(100.0),
             VirtualStorageReset::Never,
+            None,
             ConstraintValue::Scalar(0.0),
         );
 
@@ -339,7 +355,6 @@ mod tests {
     fn test_virtual_storage_node_costs() {
         let mut model = simple_model(1);
         let network = model.network_mut();
-        let _timestepper = default_timestepper();
 
         let nodes = vec![network.get_node_index_by_name("input", None).unwrap()];
         // Virtual storage node cost is high enough to prevent any flow
@@ -353,6 +368,7 @@ mod tests {
                 ConstraintValue::Scalar(0.0),
                 ConstraintValue::Scalar(100.0),
                 VirtualStorageReset::Never,
+                None,
                 ConstraintValue::Scalar(20.0),
             )
             .unwrap();
@@ -360,6 +376,49 @@ mod tests {
         let expected = Array::zeros((366, 1));
         let idx = network.get_node_by_name("output", None).unwrap().index();
         let recorder = AssertionRecorder::new("output-flow", Metric::NodeInFlow(idx), expected, None, None);
+        network.add_recorder(Box::new(recorder)).unwrap();
+
+        // Test all solvers
+        run_all_solvers(&model);
+    }
+
+    #[test]
+    /// Test virtual storage rolling window constraint
+    fn test_virtual_storage_node_rolling_constraint() {
+        let mut model = simple_model(1);
+        let network = model.network_mut();
+
+        let nodes = vec![network.get_node_index_by_name("input", None).unwrap()];
+
+        // Virtual storage with contributions from input
+        // Max volume is 2.5 and is assumed to start full
+        let _vs = network.add_virtual_storage_node(
+            "virtual-storage",
+            None,
+            &nodes,
+            Some(&[1.0]),
+            StorageInitialVolume::Absolute(2.5),
+            ConstraintValue::Scalar(0.0),
+            ConstraintValue::Scalar(2.5),
+            VirtualStorageReset::Never,
+            Some(5),
+            ConstraintValue::Scalar(0.0),
+        );
+
+        // Expected values will follow a pattern set by the first few time-steps
+        let expected = |ts: &Timestep, _si: &ScenarioIndex| {
+            match ts.index % 5 {
+                //                               Vol   Abs   Recovered = New vol.
+                0 => 1.0, // End of day licence: 2.5 - 1.0 + 0.0 = 1.5
+                1 => 1.5, // End of day licence: 1.5 - 1.5 + 0.0 = 0.0
+                2 => 0.0, // End of day licence: 0.0 - 0.0 + 0.0 = 0.0
+                3 => 0.0, // End of day licence: 0.0 - 0.0 + 0.0 = 0.0
+                4 => 0.0, // End of day licence: 0.0 - 0.0 + 0.0 = 0.0
+                _ => panic!("Unexpected timestep index"),
+            }
+        };
+        let idx = network.get_node_by_name("output", None).unwrap().index();
+        let recorder = AssertionFnRecorder::new("output-flow", Metric::NodeInFlow(idx), expected, None, None);
         network.add_recorder(Box::new(recorder)).unwrap();
 
         // Test all solvers
