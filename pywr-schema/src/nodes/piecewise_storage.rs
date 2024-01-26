@@ -56,7 +56,7 @@ pub struct PiecewiseStorageNode {
 }
 
 impl PiecewiseStorageNode {
-    const DEFAULT_ATTRIBUTE: NodeAttribute = NodeAttribute::Outflow;
+    const DEFAULT_ATTRIBUTE: NodeAttribute = NodeAttribute::Volume;
 
     fn step_sub_name(i: usize) -> Option<String> {
         Some(format!("store-{i:02}"))
