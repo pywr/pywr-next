@@ -192,6 +192,7 @@ impl RiverSplitWithGaugeNode {
             },
             _ => {
                 return Err(SchemaError::NodeAttributeNotSupported {
+                    ty: "RiverSplitWithGaugeNode".to_string(),
                     name: self.meta.name.clone(),
                     attr,
                 })

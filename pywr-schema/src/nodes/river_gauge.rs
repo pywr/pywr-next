@@ -110,6 +110,7 @@ impl RiverGaugeNode {
             },
             _ => {
                 return Err(SchemaError::NodeAttributeNotSupported {
+                    ty: "RiverGaugeNode".to_string(),
                     name: self.meta.name.clone(),
                     attr,
                 })

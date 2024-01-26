@@ -95,6 +95,7 @@ impl InputNode {
             NodeAttribute::Outflow => Metric::NodeOutFlow(idx),
             _ => {
                 return Err(SchemaError::NodeAttributeNotSupported {
+                    ty: "InputNode".to_string(),
                     name: self.meta.name.clone(),
                     attr,
                 })
@@ -217,6 +218,7 @@ impl LinkNode {
             NodeAttribute::Inflow => Metric::NodeInFlow(idx),
             _ => {
                 return Err(SchemaError::NodeAttributeNotSupported {
+                    ty: "LinkNode".to_string(),
                     name: self.meta.name.clone(),
                     attr,
                 })
@@ -338,6 +340,7 @@ impl OutputNode {
             NodeAttribute::Inflow => Metric::NodeInFlow(idx),
             _ => {
                 return Err(SchemaError::NodeAttributeNotSupported {
+                    ty: "OutputNode".to_string(),
                     name: self.meta.name.clone(),
                     attr,
                 })
@@ -486,6 +489,7 @@ impl StorageNode {
             }
             _ => {
                 return Err(SchemaError::NodeAttributeNotSupported {
+                    ty: "StorageNode".to_string(),
                     name: self.meta.name.clone(),
                     attr,
                 })
@@ -652,6 +656,7 @@ impl CatchmentNode {
             NodeAttribute::Outflow => Metric::NodeOutFlow(idx),
             _ => {
                 return Err(SchemaError::NodeAttributeNotSupported {
+                    ty: "CatchmentNode".to_string(),
                     name: self.meta.name.clone(),
                     attr,
                 })
@@ -783,6 +788,7 @@ impl AggregatedNode {
             NodeAttribute::Inflow => Metric::AggregatedNodeInFlow(idx),
             _ => {
                 return Err(SchemaError::NodeAttributeNotSupported {
+                    ty: "AggregatedNode".to_string(),
                     name: self.meta.name.clone(),
                     attr,
                 })
@@ -882,6 +888,7 @@ impl AggregatedStorageNode {
             }
             _ => {
                 return Err(SchemaError::NodeAttributeNotSupported {
+                    ty: "AggregatedStorageNode".to_string(),
                     name: self.meta.name.clone(),
                     attr,
                 })

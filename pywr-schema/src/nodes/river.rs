@@ -45,6 +45,7 @@ impl RiverNode {
             NodeAttribute::Inflow => Metric::NodeInFlow(idx),
             _ => {
                 return Err(SchemaError::NodeAttributeNotSupported {
+                    ty: "RiverNode".to_string(),
                     name: self.meta.name.clone(),
                     attr,
                 })

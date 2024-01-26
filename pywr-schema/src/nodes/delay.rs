@@ -99,6 +99,7 @@ impl DelayNode {
             }
             _ => {
                 return Err(SchemaError::NodeAttributeNotSupported {
+                    ty: "DelayNode".to_string(),
                     name: self.meta.name.clone(),
                     attr,
                 })

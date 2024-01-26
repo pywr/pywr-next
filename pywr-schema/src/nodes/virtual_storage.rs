@@ -115,6 +115,7 @@ impl VirtualStorageNode {
             }
             _ => {
                 return Err(SchemaError::NodeAttributeNotSupported {
+                    ty: "VirtualStorageNode".to_string(),
                     name: self.meta.name.clone(),
                     attr,
                 })

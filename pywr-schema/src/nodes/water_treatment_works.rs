@@ -225,6 +225,7 @@ impl WaterTreatmentWorks {
             }
             _ => {
                 return Err(SchemaError::NodeAttributeNotSupported {
+                    ty: "WaterTreatmentWorksNode".to_string(),
                     name: self.meta.name.clone(),
                     attr,
                 })

@@ -131,6 +131,7 @@ impl PiecewiseLinkNode {
             },
             _ => {
                 return Err(SchemaError::NodeAttributeNotSupported {
+                    ty: "PiecewiseLinkNode".to_string(),
                     name: self.meta.name.clone(),
                     attr,
                 })

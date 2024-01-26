@@ -135,6 +135,7 @@ impl AnnualVirtualStorageNode {
             }
             _ => {
                 return Err(SchemaError::NodeAttributeNotSupported {
+                    ty: "AnnualVirtualStorageNode".to_string(),
                     name: self.meta.name.clone(),
                     attr,
                 })

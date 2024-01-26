@@ -127,6 +127,7 @@ impl LossLinkNode {
             }
             _ => {
                 return Err(SchemaError::NodeAttributeNotSupported {
+                    ty: "LossLinkNode".to_string(),
                     name: self.meta.name.clone(),
                     attr,
                 })

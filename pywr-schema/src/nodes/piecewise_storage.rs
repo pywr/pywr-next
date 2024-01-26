@@ -236,6 +236,7 @@ impl PiecewiseStorageNode {
             }
             _ => {
                 return Err(SchemaError::NodeAttributeNotSupported {
+                    ty: "PiecewiseStorageNode".to_string(),
                     name: self.meta.name.clone(),
                     attr,
                 })
