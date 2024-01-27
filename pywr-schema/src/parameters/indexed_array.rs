@@ -37,19 +37,20 @@ impl IndexedArrayParameter {
     pub fn add_to_model(
         &self,
         network: &mut pywr_core::network::Network,
+        schema: &crate::model::PywrNetwork,
         domain: &ModelDomain,
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
         inter_network_transfers: &[PywrMultiNetworkTransfer],
     ) -> Result<ParameterIndex, SchemaError> {
-        let index_parameter = self
-            .index_parameter
-            .load(network, domain, tables, data_path, inter_network_transfers)?;
+        let index_parameter =
+            self.index_parameter
+                .load(network, schema, domain, tables, data_path, inter_network_transfers)?;
 
         let metrics = self
             .metrics
             .iter()
-            .map(|v| v.load(network, domain, tables, data_path, inter_network_transfers))
+            .map(|v| v.load(network, schema, domain, tables, data_path, inter_network_transfers))
             .collect::<Result<Vec<_>, _>>()?;
 
         let p = pywr_core::parameters::IndexedArrayParameter::new(&self.meta.name, index_parameter, &metrics);

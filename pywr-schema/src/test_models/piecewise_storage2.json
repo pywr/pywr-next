@@ -78,7 +78,10 @@
       {
         "name": "storage1-drought-index",
         "type": "ControlCurveIndex",
-        "storage_node": "storage1",
+        "storage_node": {
+          "name": "storage1",
+          "attribute": "ProportionalVolume"
+        },
         "control_curves": [
           {
             "type": "Parameter",

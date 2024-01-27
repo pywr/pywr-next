@@ -1,6 +1,6 @@
 use crate::data_tables::LoadedTableCollection;
 use crate::error::{ConversionError, SchemaError};
-use crate::nodes::NodeMeta;
+use crate::nodes::{NodeAttribute, NodeMeta};
 use crate::parameters::ConstantValue;
 use pywr_core::metric::Metric;
 use pywr_v1_schema::nodes::DelayNode as DelayNodeV1;
@@ -33,6 +33,8 @@ pub struct DelayNode {
 }
 
 impl DelayNode {
+    const DEFAULT_ATTRIBUTE: NodeAttribute = NodeAttribute::Outflow;
+
     fn output_sub_name() -> Option<&'static str> {
         Some("inflow")
     }
@@ -78,9 +80,33 @@ impl DelayNode {
         vec![(self.meta.name.as_str(), Self::input_sub_now().map(|s| s.to_string()))]
     }
 
-    pub fn default_metric(&self, network: &pywr_core::network::Network) -> Result<Metric, SchemaError> {
-        let idx = network.get_node_index_by_name(self.meta.name.as_str(), Self::input_sub_now().as_deref())?;
-        Ok(Metric::NodeOutFlow(idx))
+    pub fn create_metric(
+        &self,
+        network: &pywr_core::network::Network,
+        attribute: Option<NodeAttribute>,
+    ) -> Result<Metric, SchemaError> {
+        // Use the default attribute if none is specified
+        let attr = attribute.unwrap_or(Self::DEFAULT_ATTRIBUTE);
+
+        let metric = match attr {
+            NodeAttribute::Outflow => {
+                let idx = network.get_node_index_by_name(self.meta.name.as_str(), Self::input_sub_now())?;
+                Metric::NodeOutFlow(idx)
+            }
+            NodeAttribute::Inflow => {
+                let idx = network.get_node_index_by_name(self.meta.name.as_str(), Self::output_sub_name())?;
+                Metric::NodeInFlow(idx)
+            }
+            _ => {
+                return Err(SchemaError::NodeAttributeNotSupported {
+                    ty: "DelayNode".to_string(),
+                    name: self.meta.name.clone(),
+                    attr,
+                })
+            }
+        };
+
+        Ok(metric)
     }
 }
 

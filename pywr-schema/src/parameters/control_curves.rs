@@ -1,8 +1,9 @@
 use crate::data_tables::LoadedTableCollection;
 use crate::error::{ConversionError, SchemaError};
 use crate::model::PywrMultiNetworkTransfer;
+use crate::nodes::NodeAttribute;
 use crate::parameters::{
-    DynamicFloatValue, DynamicFloatValueType, IntoV2Parameter, ParameterMeta, TryFromV1Parameter, TryIntoV2Parameter,
+    DynamicFloatValue, IntoV2Parameter, NodeReference, ParameterMeta, TryFromV1Parameter, TryIntoV2Parameter,
 };
 use pywr_core::models::ModelDomain;
 use pywr_core::parameters::{IndexParameterIndex, ParameterIndex};
@@ -12,7 +13,6 @@ use pywr_v1_schema::parameters::{
     ControlCurveParameter as ControlCurveParameterV1,
     ControlCurvePiecewiseInterpolatedParameter as ControlCurvePiecewiseInterpolatedParameterV1,
 };
-use std::collections::HashMap;
 use std::path::Path;
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
@@ -20,44 +20,32 @@ pub struct ControlCurveInterpolatedParameter {
     #[serde(flatten)]
     pub meta: ParameterMeta,
     pub control_curves: Vec<DynamicFloatValue>,
-    pub storage_node: String,
+    pub storage_node: NodeReference,
     pub values: Vec<DynamicFloatValue>,
 }
 
 impl ControlCurveInterpolatedParameter {
-    pub fn node_references(&self) -> HashMap<&str, &str> {
-        vec![("storage_node", self.storage_node.as_str())].into_iter().collect()
-    }
-
-    pub fn parameters(&self) -> HashMap<&str, DynamicFloatValueType> {
-        let mut attributes = HashMap::new();
-
-        let cc = &self.control_curves;
-        attributes.insert("control_curves", cc.into());
-
-        attributes
-    }
-
     pub fn add_to_model(
         &self,
         network: &mut pywr_core::network::Network,
+        schema: &crate::model::PywrNetwork,
         domain: &ModelDomain,
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
         inter_network_transfers: &[PywrMultiNetworkTransfer],
     ) -> Result<ParameterIndex, SchemaError> {
-        let metric = network.get_storage_node_metric(&self.storage_node, None, true)?;
+        let metric = self.storage_node.load(network, schema)?;
 
         let control_curves = self
             .control_curves
             .iter()
-            .map(|cc| cc.load(network, domain, tables, data_path, inter_network_transfers))
+            .map(|cc| cc.load(network, schema, domain, tables, data_path, inter_network_transfers))
             .collect::<Result<_, _>>()?;
 
         let values = self
             .values
             .iter()
-            .map(|val| val.load(network, domain, tables, data_path, inter_network_transfers))
+            .map(|val| val.load(network, schema, domain, tables, data_path, inter_network_transfers))
             .collect::<Result<_, _>>()?;
 
         let p = pywr_core::parameters::ControlCurveInterpolatedParameter::new(
@@ -115,10 +103,16 @@ impl TryFromV1Parameter<ControlCurveInterpolatedParameterV1> for ControlCurveInt
                 .collect::<Result<Vec<_>, _>>()?,
         };
 
+        // v1 uses proportional volume for control curves
+        let storage_node = NodeReference {
+            name: v1.storage_node,
+            attribute: Some(NodeAttribute::ProportionalVolume),
+        };
+
         let p = Self {
             meta,
             control_curves,
-            storage_node: v1.storage_node,
+            storage_node,
             values,
         };
         Ok(p)
@@ -130,37 +124,25 @@ pub struct ControlCurveIndexParameter {
     #[serde(flatten)]
     pub meta: ParameterMeta,
     pub control_curves: Vec<DynamicFloatValue>,
-    pub storage_node: String,
+    pub storage_node: NodeReference,
 }
 
 impl ControlCurveIndexParameter {
-    pub fn node_references(&self) -> HashMap<&str, &str> {
-        vec![("storage_node", self.storage_node.as_str())].into_iter().collect()
-    }
-
-    pub fn parameters(&self) -> HashMap<&str, DynamicFloatValueType> {
-        let mut attributes = HashMap::new();
-
-        let cc = &self.control_curves;
-        attributes.insert("control_curves", cc.into());
-
-        attributes
-    }
-
     pub fn add_to_model(
         &self,
         network: &mut pywr_core::network::Network,
+        schema: &crate::model::PywrNetwork,
         domain: &ModelDomain,
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
         inter_network_transfers: &[PywrMultiNetworkTransfer],
     ) -> Result<IndexParameterIndex, SchemaError> {
-        let metric = network.get_storage_node_metric(&self.storage_node, None, true)?;
+        let metric = self.storage_node.load(network, schema)?;
 
         let control_curves = self
             .control_curves
             .iter()
-            .map(|cc| cc.load(network, domain, tables, data_path, inter_network_transfers))
+            .map(|cc| cc.load(network, schema, domain, tables, data_path, inter_network_transfers))
             .collect::<Result<_, _>>()?;
 
         let p = pywr_core::parameters::ControlCurveIndexParameter::new(&self.meta.name, metric, control_curves);
@@ -184,10 +166,16 @@ impl TryFromV1Parameter<ControlCurveIndexParameterV1> for ControlCurveIndexParam
             .map(|p| p.try_into_v2_parameter(Some(&meta.name), unnamed_count))
             .collect::<Result<Vec<_>, _>>()?;
 
+        // v1 uses proportional volume for control curves
+        let storage_node = NodeReference {
+            name: v1.storage_node,
+            attribute: Some(NodeAttribute::ProportionalVolume),
+        };
+
         let p = Self {
             meta,
             control_curves,
-            storage_node: v1.storage_node,
+            storage_node,
         };
         Ok(p)
     }
@@ -226,10 +214,16 @@ impl TryFromV1Parameter<ControlCurveParameterV1> for ControlCurveIndexParameter 
             });
         };
 
+        // v1 uses proportional volume for control curves
+        let storage_node = NodeReference {
+            name: v1.storage_node,
+            attribute: Some(NodeAttribute::ProportionalVolume),
+        };
+
         let p = Self {
             meta,
             control_curves,
-            storage_node: v1.storage_node,
+            storage_node,
         };
         Ok(p)
     }
@@ -240,46 +234,32 @@ pub struct ControlCurveParameter {
     #[serde(flatten)]
     pub meta: ParameterMeta,
     pub control_curves: Vec<DynamicFloatValue>,
-    pub storage_node: String,
+    pub storage_node: NodeReference,
     pub values: Vec<DynamicFloatValue>,
 }
 
 impl ControlCurveParameter {
-    pub fn node_references(&self) -> HashMap<&str, &str> {
-        vec![("storage_node", self.storage_node.as_str())].into_iter().collect()
-    }
-
-    pub fn parameters(&self) -> HashMap<&str, DynamicFloatValueType> {
-        let mut attributes = HashMap::new();
-
-        let cc = &self.control_curves;
-        attributes.insert("control_curves", cc.into());
-        let values = &self.values;
-        attributes.insert("values", values.into());
-
-        attributes
-    }
-
     pub fn add_to_model(
         &self,
         network: &mut pywr_core::network::Network,
+        schema: &crate::model::PywrNetwork,
         domain: &ModelDomain,
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
         inter_network_transfers: &[PywrMultiNetworkTransfer],
     ) -> Result<ParameterIndex, SchemaError> {
-        let metric = network.get_storage_node_metric(&self.storage_node, None, true)?;
+        let metric = self.storage_node.load(network, schema)?;
 
         let control_curves = self
             .control_curves
             .iter()
-            .map(|cc| cc.load(network, domain, tables, data_path, inter_network_transfers))
+            .map(|cc| cc.load(network, schema, domain, tables, data_path, inter_network_transfers))
             .collect::<Result<_, _>>()?;
 
         let values = self
             .values
             .iter()
-            .map(|val| val.load(network, domain, tables, data_path, inter_network_transfers))
+            .map(|val| val.load(network, schema, domain, tables, data_path, inter_network_transfers))
             .collect::<Result<_, _>>()?;
 
         let p = pywr_core::parameters::ControlCurveParameter::new(&self.meta.name, metric, control_curves, values);
@@ -325,10 +305,16 @@ impl TryFromV1Parameter<ControlCurveParameterV1> for ControlCurveParameter {
             });
         };
 
+        // v1 uses proportional volume for control curves
+        let storage_node = NodeReference {
+            name: v1.storage_node,
+            attribute: Some(NodeAttribute::ProportionalVolume),
+        };
+
         let p = Self {
             meta,
             control_curves,
-            storage_node: v1.storage_node,
+            storage_node,
             values,
         };
         Ok(p)
@@ -340,40 +326,28 @@ pub struct ControlCurvePiecewiseInterpolatedParameter {
     #[serde(flatten)]
     pub meta: ParameterMeta,
     pub control_curves: Vec<DynamicFloatValue>,
-    pub storage_node: String,
+    pub storage_node: NodeReference,
     pub values: Option<Vec<[f64; 2]>>,
     pub minimum: Option<f64>,
     pub maximum: Option<f64>,
 }
 
 impl ControlCurvePiecewiseInterpolatedParameter {
-    pub fn node_references(&self) -> HashMap<&str, &str> {
-        vec![("storage_node", self.storage_node.as_str())].into_iter().collect()
-    }
-
-    pub fn parameters(&self) -> HashMap<&str, DynamicFloatValueType> {
-        let mut attributes = HashMap::new();
-
-        let cc = &self.control_curves;
-        attributes.insert("control_curves", cc.into());
-
-        attributes
-    }
-
     pub fn add_to_model(
         &self,
         network: &mut pywr_core::network::Network,
+        schema: &crate::model::PywrNetwork,
         domain: &ModelDomain,
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
         inter_network_transfers: &[PywrMultiNetworkTransfer],
     ) -> Result<ParameterIndex, SchemaError> {
-        let metric = network.get_storage_node_metric(&self.storage_node, None, true)?;
+        let metric = self.storage_node.load(network, schema)?;
 
         let control_curves = self
             .control_curves
             .iter()
-            .map(|cc| cc.load(network, domain, tables, data_path, inter_network_transfers))
+            .map(|cc| cc.load(network, schema, domain, tables, data_path, inter_network_transfers))
             .collect::<Result<_, _>>()?;
 
         let values = match &self.values {
@@ -417,10 +391,16 @@ impl TryFromV1Parameter<ControlCurvePiecewiseInterpolatedParameterV1> for Contro
             });
         };
 
+        // v1 uses proportional volume for control curves
+        let storage_node = NodeReference {
+            name: v1.storage_node,
+            attribute: Some(NodeAttribute::ProportionalVolume),
+        };
+
         let p = Self {
             meta,
             control_curves,
-            storage_node: v1.storage_node,
+            storage_node,
             values: v1.values,
             minimum: v1.minimum,
             maximum: None,
@@ -432,7 +412,6 @@ impl TryFromV1Parameter<ControlCurvePiecewiseInterpolatedParameterV1> for Contro
 #[cfg(test)]
 mod tests {
     use crate::parameters::control_curves::ControlCurvePiecewiseInterpolatedParameter;
-    use crate::parameters::DynamicFloatValueType;
 
     #[test]
     fn test_control_curve_piecewise_interpolated() {
@@ -440,7 +419,10 @@ mod tests {
             {
                 "name": "My control curve",
                 "type": "ControlCurvePiecewiseInterpolated",
-                "storage_node": "Reservoir",
+                "storage_node": {
+                  "name": "Reservoir",
+                  "attribute": "ProportionalVolume"
+                },
                 "control_curves": [
                     {"type": "Parameter", "name": "reservoir_cc"},
                     0.2
@@ -457,13 +439,6 @@ mod tests {
 
         let param: ControlCurvePiecewiseInterpolatedParameter = serde_json::from_str(data).unwrap();
 
-        assert_eq!(param.node_references().len(), 1);
-        assert_eq!(param.node_references().remove("storage_node"), Some("Reservoir"));
-
-        assert_eq!(param.parameters().len(), 1);
-        match param.parameters().remove("control_curves").unwrap() {
-            DynamicFloatValueType::List(p) => assert_eq!(p.len(), 2),
-            _ => panic!("Wrong variant for control_curves."),
-        };
+        assert_eq!(param.storage_node.name, "Reservoir");
     }
 }

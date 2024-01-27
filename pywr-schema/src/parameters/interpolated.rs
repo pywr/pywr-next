@@ -53,6 +53,7 @@ impl InterpolatedParameter {
     pub fn add_to_model(
         &self,
         network: &mut pywr_core::network::Network,
+        schema: &crate::model::PywrNetwork,
         domain: &ModelDomain,
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
@@ -60,7 +61,7 @@ impl InterpolatedParameter {
     ) -> Result<ParameterIndex, SchemaError> {
         let x = self
             .x
-            .load(network, domain, tables, data_path, inter_network_transfers)?;
+            .load(network, schema, domain, tables, data_path, inter_network_transfers)?;
 
         // Sense check the points
         if self.xp.len() != self.fp.len() {
@@ -73,12 +74,12 @@ impl InterpolatedParameter {
         let xp = self
             .xp
             .iter()
-            .map(|p| p.load(network, domain, tables, data_path, inter_network_transfers))
+            .map(|p| p.load(network, schema, domain, tables, data_path, inter_network_transfers))
             .collect::<Result<Vec<_>, _>>()?;
         let fp = self
             .fp
             .iter()
-            .map(|p| p.load(network, domain, tables, data_path, inter_network_transfers))
+            .map(|p| p.load(network, schema, domain, tables, data_path, inter_network_transfers))
             .collect::<Result<Vec<_>, _>>()?;
 
         let points = xp
@@ -110,10 +111,10 @@ impl TryFromV1Parameter<InterpolatedFlowParameterV1> for InterpolatedParameter {
         // Convert the node reference to a metric
         let node_ref = NodeReference {
             name: v1.node,
-            sub_name: None,
+            attribute: None,
         };
-        // This defaults to the node's inflow; not sure if we can do better than that.
-        let x = DynamicFloatValue::Dynamic(MetricFloatValue::Reference(MetricFloatReference::NodeInFlow(node_ref)));
+        // This defaults to v2's default metric
+        let x = DynamicFloatValue::Dynamic(MetricFloatValue::Reference(MetricFloatReference::Node(node_ref)));
 
         let xp = v1
             .flows
@@ -173,10 +174,10 @@ impl TryFromV1Parameter<InterpolatedVolumeParameterV1> for InterpolatedParameter
         // Convert the node reference to a metric
         let node_ref = NodeReference {
             name: v1.node,
-            sub_name: None,
+            attribute: None,
         };
         // This defaults to the node's inflow; not sure if we can do better than that.
-        let x = DynamicFloatValue::Dynamic(MetricFloatValue::Reference(MetricFloatReference::NodeInFlow(node_ref)));
+        let x = DynamicFloatValue::Dynamic(MetricFloatValue::Reference(MetricFloatReference::Node(node_ref)));
 
         let xp = v1
             .volumes

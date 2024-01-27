@@ -1,8 +1,9 @@
 use crate::data_tables::LoadedTableCollection;
 use crate::error::{ConversionError, SchemaError};
 use crate::model::PywrMultiNetworkTransfer;
-use crate::nodes::NodeMeta;
+use crate::nodes::{NodeAttribute, NodeMeta};
 use crate::parameters::{DynamicFloatValue, TryIntoV2Parameter};
+use pywr_core::derived_metric::DerivedMetric;
 use pywr_core::metric::Metric;
 use pywr_core::models::ModelDomain;
 use pywr_core::node::{ConstraintValue, StorageInitialVolume};
@@ -42,9 +43,12 @@ pub struct AnnualVirtualStorageNode {
 }
 
 impl AnnualVirtualStorageNode {
+    pub const DEFAULT_ATTRIBUTE: NodeAttribute = NodeAttribute::Volume;
+
     pub fn add_to_model(
         &self,
         network: &mut pywr_core::network::Network,
+        schema: &crate::model::PywrNetwork,
         domain: &ModelDomain,
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
@@ -60,21 +64,21 @@ impl AnnualVirtualStorageNode {
 
         let cost = match &self.cost {
             Some(v) => v
-                .load(network, domain, tables, data_path, inter_network_transfers)?
+                .load(network, schema, domain, tables, data_path, inter_network_transfers)?
                 .into(),
             None => ConstraintValue::Scalar(0.0),
         };
 
         let min_volume = match &self.min_volume {
             Some(v) => v
-                .load(network, domain, tables, data_path, inter_network_transfers)?
+                .load(network, schema, domain, tables, data_path, inter_network_transfers)?
                 .into(),
             None => ConstraintValue::Scalar(0.0),
         };
 
         let max_volume = match &self.max_volume {
             Some(v) => v
-                .load(network, domain, tables, data_path, inter_network_transfers)?
+                .load(network, schema, domain, tables, data_path, inter_network_transfers)?
                 .into(),
             None => ConstraintValue::None,
         };
@@ -112,9 +116,33 @@ impl AnnualVirtualStorageNode {
         vec![]
     }
 
-    pub fn default_metric(&self, network: &pywr_core::network::Network) -> Result<Metric, SchemaError> {
+    pub fn create_metric(
+        &self,
+        network: &mut pywr_core::network::Network,
+        attribute: Option<NodeAttribute>,
+    ) -> Result<Metric, SchemaError> {
+        // Use the default attribute if none is specified
+        let attr = attribute.unwrap_or(Self::DEFAULT_ATTRIBUTE);
+
         let idx = network.get_virtual_storage_node_index_by_name(self.meta.name.as_str(), None)?;
-        Ok(Metric::VirtualStorageVolume(idx))
+
+        let metric = match attr {
+            NodeAttribute::Volume => Metric::VirtualStorageVolume(idx),
+            NodeAttribute::ProportionalVolume => {
+                let dm = DerivedMetric::VirtualStorageProportionalVolume(idx);
+                let derived_metric_idx = network.add_derived_metric(dm);
+                Metric::DerivedMetric(derived_metric_idx)
+            }
+            _ => {
+                return Err(SchemaError::NodeAttributeNotSupported {
+                    ty: "AnnualVirtualStorageNode".to_string(),
+                    name: self.meta.name.clone(),
+                    attr,
+                })
+            }
+        };
+
+        Ok(metric)
     }
 }
 

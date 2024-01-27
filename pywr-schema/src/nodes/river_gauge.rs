@@ -1,7 +1,7 @@
 use crate::data_tables::LoadedTableCollection;
 use crate::error::{ConversionError, SchemaError};
 use crate::model::PywrMultiNetworkTransfer;
-use crate::nodes::NodeMeta;
+use crate::nodes::{NodeAttribute, NodeMeta};
 use crate::parameters::{DynamicFloatValue, TryIntoV2Parameter};
 use pywr_core::metric::Metric;
 use pywr_core::models::ModelDomain;
@@ -32,6 +32,8 @@ pub struct RiverGaugeNode {
 }
 
 impl RiverGaugeNode {
+    const DEFAULT_ATTRIBUTE: NodeAttribute = NodeAttribute::Outflow;
+
     fn mrf_sub_name() -> Option<&'static str> {
         Some("mrf")
     }
@@ -50,6 +52,7 @@ impl RiverGaugeNode {
     pub fn set_constraints(
         &self,
         network: &mut pywr_core::network::Network,
+        schema: &crate::model::PywrNetwork,
         domain: &ModelDomain,
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
@@ -57,12 +60,12 @@ impl RiverGaugeNode {
     ) -> Result<(), SchemaError> {
         // MRF applies as a maximum on the MRF node.
         if let Some(cost) = &self.mrf_cost {
-            let value = cost.load(network, domain, tables, data_path, inter_network_transfers)?;
+            let value = cost.load(network, schema, domain, tables, data_path, inter_network_transfers)?;
             network.set_node_cost(self.meta.name.as_str(), Self::mrf_sub_name(), value.into())?;
         }
 
         if let Some(mrf) = &self.mrf {
-            let value = mrf.load(network, domain, tables, data_path, inter_network_transfers)?;
+            let value = mrf.load(network, schema, domain, tables, data_path, inter_network_transfers)?;
             network.set_node_max_flow(self.meta.name.as_str(), Self::mrf_sub_name(), value.into())?;
         }
 
@@ -83,17 +86,38 @@ impl RiverGaugeNode {
         ]
     }
 
-    pub fn default_metric(&self, network: &pywr_core::network::Network) -> Result<Metric, SchemaError> {
+    pub fn create_metric(
+        &self,
+        network: &pywr_core::network::Network,
+        attribute: Option<NodeAttribute>,
+    ) -> Result<Metric, SchemaError> {
+        // Use the default attribute if none is specified
+        let attr = attribute.unwrap_or(Self::DEFAULT_ATTRIBUTE);
+
         let indices = vec![
             network.get_node_index_by_name(self.meta.name.as_str(), Self::mrf_sub_name())?,
             network.get_node_index_by_name(self.meta.name.as_str(), Self::bypass_sub_name())?,
         ];
 
-        Ok(Metric::MultiNodeInFlow {
-            indices,
-            name: self.meta.name.to_string(),
-            sub_name: Some("total".to_string()),
-        })
+        let metric = match attr {
+            NodeAttribute::Inflow => Metric::MultiNodeInFlow {
+                indices,
+                name: self.meta.name.to_string(),
+            },
+            NodeAttribute::Outflow => Metric::MultiNodeOutFlow {
+                indices,
+                name: self.meta.name.to_string(),
+            },
+            _ => {
+                return Err(SchemaError::NodeAttributeNotSupported {
+                    ty: "RiverGaugeNode".to_string(),
+                    name: self.meta.name.clone(),
+                    attr,
+                })
+            }
+        };
+
+        Ok(metric)
     }
 }
 
