@@ -22,8 +22,9 @@
         {
           "from_network": "network1",
           "metric": {
-            "type": "NodeInFlow",
-            "name": "demand1"
+            "type": "Node",
+            "name": "demand1",
+            "attribute": "Inflow"
           },
           "name": "inflow"
         }

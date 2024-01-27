@@ -13,8 +13,9 @@
             "name": "my-other-parameter"
         },
         {
-            "type": "NodeVolume",
-            "name": "my-reservoir"
+            "type": "Node",
+            "name": "my-reservoir",
+            "attribute": "Volume"
         },
         {
             "type": "InlineParameter",
