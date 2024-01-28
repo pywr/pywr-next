@@ -315,9 +315,9 @@ impl TryFrom<OutputNodeV1> for OutputNode {
 
 #[derive(serde::Deserialize, serde::Serialize, Clone, PartialEq, Copy, Debug)]
 pub enum StorageInitialVolume {
-    #[serde(rename = "initial_volume")]
+    #[serde(alias = "absolute")]
     Absolute(f64),
-    #[serde(rename = "initial_volume_pc")]
+    #[serde(rename = "proportional")]
     Proportional(f64),
 }
 
@@ -343,7 +343,6 @@ pub struct StorageNode {
     pub max_volume: Option<DynamicFloatValue>,
     pub min_volume: Option<DynamicFloatValue>,
     pub cost: Option<DynamicFloatValue>,
-    #[serde(flatten)]
     pub initial_volume: StorageInitialVolume,
 }
 
@@ -807,7 +806,9 @@ mod tests {
                 "name": "storage1",
                 "type": "Storage",
                 "volume": 15.0,
-                "initial_volume": 12.0
+                "initial_volume": {
+                    "absolute": 12.0
+                }
             }
             "#;
 
@@ -823,7 +824,9 @@ mod tests {
                 "name": "storage1",
                 "type": "Storage",
                 "volume": 15.0,
-                "initial_volume_pc": 0.5
+                "initial_volume": {
+                    "proportional": 0.5
+                }
             }
             "#;
 

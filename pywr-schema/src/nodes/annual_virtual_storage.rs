@@ -1,11 +1,12 @@
 use crate::data_tables::LoadedTableCollection;
 use crate::error::{ConversionError, SchemaError};
 use crate::model::PywrMultiNetworkTransfer;
+use crate::nodes::core::StorageInitialVolume;
 use crate::nodes::NodeMeta;
 use crate::parameters::{DynamicFloatValue, TryIntoV2Parameter};
 use pywr_core::metric::Metric;
 use pywr_core::models::ModelDomain;
-use pywr_core::node::{ConstraintValue, StorageInitialVolume};
+use pywr_core::node::ConstraintValue;
 use pywr_core::virtual_storage::VirtualStorageReset;
 use pywr_v1_schema::nodes::AnnualVirtualStorageNode as AnnualVirtualStorageNodeV1;
 use std::path::Path;
@@ -36,8 +37,7 @@ pub struct AnnualVirtualStorageNode {
     pub max_volume: Option<DynamicFloatValue>,
     pub min_volume: Option<DynamicFloatValue>,
     pub cost: Option<DynamicFloatValue>,
-    pub initial_volume: Option<f64>,
-    pub initial_volume_pc: Option<f64>,
+    pub initial_volume: StorageInitialVolume,
     pub reset: AnnualReset,
 }
 
@@ -50,14 +50,6 @@ impl AnnualVirtualStorageNode {
         data_path: Option<&Path>,
         inter_network_transfers: &[PywrMultiNetworkTransfer],
     ) -> Result<(), SchemaError> {
-        let initial_volume = if let Some(iv) = self.initial_volume {
-            StorageInitialVolume::Absolute(iv)
-        } else if let Some(pc) = self.initial_volume_pc {
-            StorageInitialVolume::Proportional(pc)
-        } else {
-            return Err(SchemaError::MissingInitialVolume(self.meta.name.to_string()));
-        };
-
         let cost = match &self.cost {
             Some(v) => v
                 .load(network, domain, tables, data_path, inter_network_transfers)?
@@ -95,7 +87,7 @@ impl AnnualVirtualStorageNode {
             None,
             node_idxs.as_ref(),
             self.factors.as_deref(),
-            initial_volume,
+            self.initial_volume.into(),
             min_volume,
             max_volume,
             reset,
@@ -139,6 +131,14 @@ impl TryFrom<AnnualVirtualStorageNodeV1> for AnnualVirtualStorageNode {
             .map(|v| v.try_into_v2_parameter(Some(&meta.name), &mut unnamed_count))
             .transpose()?;
 
+        let initial_volume = if let Some(v) = v1.initial_volume {
+            StorageInitialVolume::Absolute(v)
+        } else if let Some(v) = v1.initial_volume_pc {
+            StorageInitialVolume::Proportional(v)
+        } else {
+            StorageInitialVolume::default()
+        };
+
         let n = Self {
             meta,
             nodes: v1.nodes,
@@ -146,8 +146,7 @@ impl TryFrom<AnnualVirtualStorageNodeV1> for AnnualVirtualStorageNode {
             max_volume,
             min_volume,
             cost,
-            initial_volume: v1.initial_volume,
-            initial_volume_pc: v1.initial_volume_pc,
+            initial_volume,
             reset: AnnualReset {
                 day: v1.reset_day,
                 month: v1.reset_month,
