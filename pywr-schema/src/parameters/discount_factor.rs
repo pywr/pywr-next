@@ -35,14 +35,15 @@ impl DiscountFactorParameter {
     pub fn add_to_model(
         &self,
         network: &mut pywr_core::network::Network,
+        schema: &crate::model::PywrNetwork,
         domain: &ModelDomain,
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
         inter_network_transfers: &[PywrMultiNetworkTransfer],
     ) -> Result<ParameterIndex, SchemaError> {
-        let discount_rate = self
-            .discount_rate
-            .load(network, domain, tables, data_path, inter_network_transfers)?;
+        let discount_rate =
+            self.discount_rate
+                .load(network, schema, domain, tables, data_path, inter_network_transfers)?;
         let p = pywr_core::parameters::DiscountFactorParameter::new(&self.meta.name, discount_rate, self.base_year);
         Ok(network.add_parameter(Box::new(p))?)
     }

@@ -29,6 +29,7 @@ impl AsymmetricSwitchIndexParameter {
     pub fn add_to_model(
         &self,
         network: &mut pywr_core::network::Network,
+        schema: &crate::model::PywrNetwork,
         domain: &ModelDomain,
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
@@ -36,10 +37,10 @@ impl AsymmetricSwitchIndexParameter {
     ) -> Result<IndexParameterIndex, SchemaError> {
         let on_index_parameter =
             self.on_index_parameter
-                .load(network, domain, tables, data_path, inter_network_transfers)?;
+                .load(network, schema, domain, tables, data_path, inter_network_transfers)?;
         let off_index_parameter =
             self.off_index_parameter
-                .load(network, domain, tables, data_path, inter_network_transfers)?;
+                .load(network, schema, domain, tables, data_path, inter_network_transfers)?;
 
         let p = pywr_core::parameters::AsymmetricSwitchIndexParameter::new(
             &self.meta.name,

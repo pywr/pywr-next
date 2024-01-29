@@ -146,7 +146,14 @@ impl PywrNetwork {
             let mut failed_nodes: Vec<Node> = Vec::new();
             let n = remaining_nodes.len();
             for node in remaining_nodes.into_iter() {
-                if let Err(e) = node.add_to_model(&mut network, &domain, &tables, data_path, inter_network_transfers) {
+                if let Err(e) = node.add_to_model(
+                    &mut network,
+                    &self,
+                    &domain,
+                    &tables,
+                    data_path,
+                    inter_network_transfers,
+                ) {
                     // Adding the node failed!
                     match e {
                         SchemaError::PywrCore(core_err) => match core_err {
@@ -197,9 +204,14 @@ impl PywrNetwork {
                 let mut failed_parameters: Vec<Parameter> = Vec::new();
                 let n = remaining_parameters.len();
                 for parameter in remaining_parameters.into_iter() {
-                    if let Err(e) =
-                        parameter.add_to_model(&mut network, &domain, &tables, data_path, inter_network_transfers)
-                    {
+                    if let Err(e) = parameter.add_to_model(
+                        &mut network,
+                        &self,
+                        &domain,
+                        &tables,
+                        data_path,
+                        inter_network_transfers,
+                    ) {
                         // Adding the parameter failed!
                         match e {
                             SchemaError::PywrCore(core_err) => match core_err {
@@ -225,7 +237,14 @@ impl PywrNetwork {
 
         // Apply the inline parameters & constraints to the nodes
         for node in &self.nodes {
-            node.set_constraints(&mut network, &domain, &tables, data_path, inter_network_transfers)?;
+            node.set_constraints(
+                &mut network,
+                &self,
+                &domain,
+                &tables,
+                data_path,
+                inter_network_transfers,
+            )?;
         }
 
         // Create all of the metric sets
@@ -494,6 +513,7 @@ impl PywrMultiNetworkModel {
 
         let domain = ModelDomain::from(timestepper, scenario_collection);
         let mut model = pywr_core::models::MultiNetworkModel::new(domain);
+        let mut schemas = Vec::with_capacity(self.networks.len());
 
         // First load all the networks
         // These will contain any parameters that are referenced by the inter-model transfers
@@ -513,10 +533,24 @@ impl PywrMultiNetworkModel {
                     };
 
                     let network_schema = PywrNetwork::from_path(pth)?;
-                    network_schema.build_network(model.domain(), data_path, output_path, &network_entry.transfers)?
+                    let net = network_schema.build_network(
+                        model.domain(),
+                        data_path,
+                        output_path,
+                        &network_entry.transfers,
+                    )?;
+                    schemas.push(network_schema);
+                    net
                 }
                 PywrNetworkRef::Inline(network_schema) => {
-                    network_schema.build_network(model.domain(), data_path, output_path, &network_entry.transfers)?
+                    let net = network_schema.build_network(
+                        model.domain(),
+                        data_path,
+                        output_path,
+                        &network_entry.transfers,
+                    )?;
+                    schemas.push(network_schema.clone());
+                    net
                 }
             };
 
@@ -531,7 +565,7 @@ impl PywrMultiNetworkModel {
                 // Load the metric from the "from" network
                 let from_network = model.network_mut(from_network_idx)?;
                 // The transfer metric will fail to load if it is defined as an inter-model transfer itself.
-                let from_metric = transfer.metric.load(from_network, &[])?;
+                let from_metric = transfer.metric.load(from_network, &schemas[from_network_idx], &[])?;
 
                 model.add_inter_network_transfer(from_network_idx, from_metric, to_network_idx, transfer.initial_value);
             }

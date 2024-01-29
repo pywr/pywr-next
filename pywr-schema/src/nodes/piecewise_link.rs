@@ -1,7 +1,7 @@
 use crate::data_tables::LoadedTableCollection;
 use crate::error::{ConversionError, SchemaError};
 use crate::model::PywrMultiNetworkTransfer;
-use crate::nodes::NodeMeta;
+use crate::nodes::{NodeAttribute, NodeMeta};
 use crate::parameters::{DynamicFloatValue, TryIntoV2Parameter};
 use pywr_core::metric::Metric;
 use pywr_core::models::ModelDomain;
@@ -45,6 +45,8 @@ pub struct PiecewiseLinkNode {
 }
 
 impl PiecewiseLinkNode {
+    const DEFAULT_ATTRIBUTE: NodeAttribute = NodeAttribute::Outflow;
+
     fn step_sub_name(i: usize) -> Option<String> {
         Some(format!("step-{i:02}"))
     }
@@ -60,6 +62,7 @@ impl PiecewiseLinkNode {
     pub fn set_constraints(
         &self,
         network: &mut pywr_core::network::Network,
+        schema: &crate::model::PywrNetwork,
         domain: &ModelDomain,
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
@@ -69,17 +72,17 @@ impl PiecewiseLinkNode {
             let sub_name = Self::step_sub_name(i);
 
             if let Some(cost) = &step.cost {
-                let value = cost.load(network, domain, tables, data_path, inter_network_transfers)?;
+                let value = cost.load(network, schema, domain, tables, data_path, inter_network_transfers)?;
                 network.set_node_cost(self.meta.name.as_str(), sub_name.as_deref(), value.into())?;
             }
 
             if let Some(max_flow) = &step.max_flow {
-                let value = max_flow.load(network, domain, tables, data_path, inter_network_transfers)?;
+                let value = max_flow.load(network, schema, domain, tables, data_path, inter_network_transfers)?;
                 network.set_node_max_flow(self.meta.name.as_str(), sub_name.as_deref(), value.into())?;
             }
 
             if let Some(min_flow) = &step.min_flow {
-                let value = min_flow.load(network, domain, tables, data_path, inter_network_transfers)?;
+                let value = min_flow.load(network, schema, domain, tables, data_path, inter_network_transfers)?;
                 network.set_node_min_flow(self.meta.name.as_str(), sub_name.as_deref(), value.into())?;
             }
         }
@@ -102,7 +105,14 @@ impl PiecewiseLinkNode {
             .collect()
     }
 
-    pub fn default_metric(&self, network: &pywr_core::network::Network) -> Result<Metric, SchemaError> {
+    pub fn create_metric(
+        &self,
+        network: &pywr_core::network::Network,
+        attribute: Option<NodeAttribute>,
+    ) -> Result<Metric, SchemaError> {
+        // Use the default attribute if none is specified
+        let attr = attribute.unwrap_or(Self::DEFAULT_ATTRIBUTE);
+
         let indices = self
             .steps
             .iter()
@@ -110,11 +120,25 @@ impl PiecewiseLinkNode {
             .map(|(i, _)| network.get_node_index_by_name(self.meta.name.as_str(), Self::step_sub_name(i).as_deref()))
             .collect::<Result<Vec<_>, _>>()?;
 
-        Ok(Metric::MultiNodeInFlow {
-            indices,
-            name: self.meta.name.to_string(),
-            sub_name: Some("total".to_string()),
-        })
+        let metric = match attr {
+            NodeAttribute::Inflow => Metric::MultiNodeInFlow {
+                indices,
+                name: self.meta.name.to_string(),
+            },
+            NodeAttribute::Outflow => Metric::MultiNodeOutFlow {
+                indices,
+                name: self.meta.name.to_string(),
+            },
+            _ => {
+                return Err(SchemaError::NodeAttributeNotSupported {
+                    ty: "PiecewiseLinkNode".to_string(),
+                    name: self.meta.name.clone(),
+                    attr,
+                })
+            }
+        };
+
+        Ok(metric)
     }
 }
 
