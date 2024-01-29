@@ -19,7 +19,7 @@ polars = {  workspace = true }
 pyo3 = {  workspace = true }
 pyo3-polars = {  workspace = true }
 strum = "0.25"
-strum_macros = "0.25"
+strum_macros = "0.26"
 
 hdf5 = {  workspace = true }
 csv = {  workspace = true }
