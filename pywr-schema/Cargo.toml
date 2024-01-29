@@ -18,7 +18,7 @@ svgbobdoc = { version = "0.3.0", features = ["enable"]  }
 polars = {  workspace = true }
 pyo3 = {  workspace = true }
 pyo3-polars = {  workspace = true }
-strum = "0.25"
+strum = "0.26"
 strum_macros = "0.25"
 
 hdf5 = {  workspace = true }
