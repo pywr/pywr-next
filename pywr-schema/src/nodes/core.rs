@@ -315,9 +315,7 @@ impl TryFrom<OutputNodeV1> for OutputNode {
 
 #[derive(serde::Deserialize, serde::Serialize, Clone, PartialEq, Copy, Debug)]
 pub enum StorageInitialVolume {
-    #[serde(alias = "absolute")]
     Absolute(f64),
-    #[serde(rename = "proportional")]
     Proportional(f64),
 }
 
@@ -807,7 +805,7 @@ mod tests {
                 "type": "Storage",
                 "volume": 15.0,
                 "initial_volume": {
-                    "absolute": 12.0
+                    "Absolute": 12.0
                 }
             }
             "#;
@@ -825,7 +823,7 @@ mod tests {
                 "type": "Storage",
                 "volume": 15.0,
                 "initial_volume": {
-                    "proportional": 0.5
+                    "Proportional": 0.5
                 }
             }
             "#;
