@@ -94,6 +94,7 @@ impl AggregatedParameter {
     pub fn add_to_model(
         &self,
         network: &mut pywr_core::network::Network,
+        schema: &crate::model::PywrNetwork,
         domain: &ModelDomain,
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
@@ -102,7 +103,7 @@ impl AggregatedParameter {
         let metrics = self
             .metrics
             .iter()
-            .map(|v| v.load(network, domain, tables, data_path, inter_network_transfers))
+            .map(|v| v.load(network, schema, domain, tables, data_path, inter_network_transfers))
             .collect::<Result<Vec<_>, _>>()?;
 
         let p = pywr_core::parameters::AggregatedParameter::new(&self.meta.name, &metrics, self.agg_func.into());
@@ -200,6 +201,7 @@ impl AggregatedIndexParameter {
     pub fn add_to_model(
         &self,
         network: &mut pywr_core::network::Network,
+        schema: &crate::model::PywrNetwork,
         domain: &ModelDomain,
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
@@ -208,7 +210,7 @@ impl AggregatedIndexParameter {
         let parameters = self
             .parameters
             .iter()
-            .map(|v| v.load(network, domain, tables, data_path, inter_network_transfers))
+            .map(|v| v.load(network, schema, domain, tables, data_path, inter_network_transfers))
             .collect::<Result<Vec<_>, _>>()?;
 
         let p = pywr_core::parameters::AggregatedIndexParameter::new(&self.meta.name, parameters, self.agg_func.into());
@@ -261,7 +263,10 @@ mod tests {
                     "definition": {
                         "name": "First parameter",
                         "type": "ControlCurvePiecewiseInterpolated",
-                        "storage_node": "Reservoir",
+                        "storage_node": {
+                          "name": "Reservoir",
+                          "attribute": "ProportionalVolume"
+                        },
                         "control_curves": [
                             {"type": "Parameter", "name": "reservoir_cc"},
                             0.2
@@ -280,7 +285,10 @@ mod tests {
                     "definition": {
                         "name": "Second parameter",
                         "type": "ControlCurvePiecewiseInterpolated",
-                        "storage_node": "Reservoir",
+                        "storage_node": {
+                          "name": "Reservoir",
+                          "attribute": "ProportionalVolume"
+                        },
                         "control_curves": [
                             {"type": "Parameter", "name": "reservoir_cc"},
                             0.2
@@ -310,7 +318,7 @@ mod tests {
                         DynamicFloatValue::Dynamic(p) => match p {
                             MetricFloatValue::InlineParameter { definition } => match definition.as_ref() {
                                 Parameter::ControlCurvePiecewiseInterpolated(p) => {
-                                    assert_eq!(p.node_references().remove("storage_node"), Some("Reservoir"))
+                                    assert_eq!(p.storage_node.name, "Reservoir")
                                 }
                                 _ => panic!("Incorrect core parameter deserialized."),
                             },

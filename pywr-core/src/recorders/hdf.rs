@@ -123,9 +123,8 @@ impl Recorder for HDF5Recorder {
                     let node = model.get_aggregated_node(idx)?;
                     require_node_dataset(root_grp, shape, node.name(), node.sub_name(), "outflow")?
                 }
-                Metric::MultiNodeInFlow { name, sub_name, .. } => {
-                    require_node_dataset(root_grp, shape, name, sub_name.as_deref(), "inflow")?
-                }
+                Metric::MultiNodeInFlow { name, .. } => require_node_dataset(root_grp, shape, name, None, "inflow")?,
+                Metric::MultiNodeOutFlow { name, .. } => require_node_dataset(root_grp, shape, name, None, "outflow")?,
                 Metric::InterNetworkTransfer(_) => {
                     continue; // TODO
                 }

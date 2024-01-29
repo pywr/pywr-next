@@ -13,7 +13,7 @@ pub enum OutputMetric {
 impl OutputMetric {
     fn try_clone_into_metric(
         &self,
-        network: &pywr_core::network::Network,
+        network: &mut pywr_core::network::Network,
         schema: &PywrNetwork,
     ) -> Result<pywr_core::metric::Metric, SchemaError> {
         match self {
@@ -23,7 +23,7 @@ impl OutputMetric {
                     .get_node_by_name(node_name)
                     .ok_or_else(|| SchemaError::NodeNotFound(node_name.to_string()))?;
                 // Create and return the node's default metric
-                node.default_metric(network)
+                node.create_metric(network, None)
             }
         }
     }

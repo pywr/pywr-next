@@ -20,8 +20,6 @@ use pywr_core::test_utils::make_random_model;
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 
-
-
 fn random_benchmark(
     c: &mut Criterion,
     group_name: &str,
