@@ -6,7 +6,7 @@ authors = [
     {name="James Tomlinson", email="tomo.bbe@gmail.com>"}
 ]
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.9"
 license = "MIT OR Apache-2.0"
 dependencies = [
   "pandas",

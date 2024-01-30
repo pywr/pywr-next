@@ -7,13 +7,16 @@ on:
 jobs:
   macos:
     runs-on: macos-latest
+    strategy:
+      matrix:
+        python-version: [ '3.9', '3.10', '3.11', '3.12' ]
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: true
       - uses: actions/setup-python@v5
         with:
-          python-version: 3.9
+          python-version: ${{ matrix.python-version }}
           architecture: x64
       - uses: dtolnay/rust-toolchain@stable
       - name: Build wheels - x86_64
@@ -31,11 +34,11 @@ jobs:
         uses: PyO3/maturin-action@v1
         with:
           target: universal2-apple-darwin
-          args: --release --out dist -m pywr-python/Cargo.toml
+          args: -i ${{ matrix.python-version }} --release --out dist -m pywr-python/Cargo.toml
       - name: Install built wheel - universal2
         run: |
           pip install pytest h5py
-          pip install pywr --no-index --find-links dist --force-reinstall --pre
+          pip install pywr --no-index --find-links dist --force-reinstall
           python -c "import pywr"
           python -m pytest
       - name: Upload wheels
@@ -48,25 +51,25 @@ jobs:
     runs-on: windows-latest
     strategy:
       matrix:
-        target: [x64, x86]
+        python-version: [ '3.9', '3.10', '3.11', '3.12' ]
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: true
       - uses: actions/setup-python@v5
         with:
-          python-version: 3.9
-          architecture: ${{ matrix.target }}
+          python-version: ${{ matrix.python-version }}
+          architecture: x64
       - uses: dtolnay/rust-toolchain@stable
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
           target: ${{ matrix.target }}
-          args: --release --out dist -m pywr-python/Cargo.toml
+          args: -i ${{ matrix.python-version }} --release --out dist -m pywr-python/Cargo.toml
       - name: Install built wheel
         run: |
           pip install pytest h5py
-          pip install pywr --no-index --find-links dist --force-reinstall --pre
+          pip install pywr --no-index --find-links dist --force-reinstall
           python -c "import pywr"
           python -m pytest
       - name: Upload wheels
@@ -79,26 +82,26 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        target: [x86_64, i686]
+        python-version: [ '3.9', '3.10', '3.11', '3.12' ]
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: true
       - uses: actions/setup-python@v5
         with:
-          python-version: 3.9
+          python-version: ${{ matrix.python-version }}
           architecture: x64
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
           target: ${{ matrix.target }}
           manylinux: auto
-          args: --release --out dist -m pywr-python/Cargo.toml
+          args: -i ${{ matrix.python-version }} --release --out dist -m pywr-python/Cargo.toml
       - name: Install built wheel
         if: matrix.target == 'x86_64'
         run: |
           pip install pytest h5py
-          pip install pywr --no-index --find-links dist --force-reinstall --pre
+          pip install pywr --no-index --find-links dist --force-reinstall
           python -c "import pywr"
           python -m pytest
       - name: Upload wheels
