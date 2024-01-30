@@ -23,6 +23,7 @@ jobs:
           args: --release --out dist --sdist -m pywr-python/Cargo.toml
       - name: Install built wheel - x86_64
         run: |
+          pip install pytest h5py
           pip install pywr --no-index --find-links dist --force-reinstall
           python -c "import pywr"
           python -m pytest
@@ -33,6 +34,7 @@ jobs:
           args: --release --out dist -m pywr-python/Cargo.toml
       - name: Install built wheel - universal2
         run: |
+          pip install pytest h5py
           pip install pywr --no-index --find-links dist --force-reinstall
           python -c "import pywr"
           python -m pytest
@@ -63,8 +65,10 @@ jobs:
           args: --release --out dist -m pywr-python/Cargo.toml
       - name: Install built wheel
         run: |
+          pip install pytest h5py
           pip install pywr --no-index --find-links dist --force-reinstall
           python -c "import pywr"
+          python -m pytest
       - name: Upload wheels
         uses: actions/upload-artifact@v3
         with:
@@ -93,8 +97,10 @@ jobs:
       - name: Install built wheel
         if: matrix.target == 'x86_64'
         run: |
+          pip install pytest h5py
           pip install pywr --no-index --find-links dist --force-reinstall
           python -c "import pywr"
+          python -m pytest
       - name: Upload wheels
         uses: actions/upload-artifact@v3
         with:
