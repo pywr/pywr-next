@@ -1,3 +1,8 @@
+# Python workflow for building and testing wheels.
+#
+# TODO: Ideally the runtime dependencies would be installed by pip from pyproject.toml
+# However, this is not currently possible to do with pip: https://github.com/pypa/pip/issues/11440
+
 name: Python
 
 on:
@@ -26,8 +31,8 @@ jobs:
           args: --release --out dist --sdist -m pywr-python/Cargo.toml
       - name: Install built wheel - x86_64
         run: |
-          pip install pytest h5py
-          pip install pywr --no-index --find-links dist --force-reinstall --pre
+          pip install pytest h5py pandas polars pyarrow click
+          pip install pywr --no-index --find-links dist --force-reinstall --no-deps
           python -c "import pywr"
           python -m pytest
       - name: Build wheels - universal2
@@ -37,8 +42,8 @@ jobs:
           args: -i ${{ matrix.python-version }} --release --out dist -m pywr-python/Cargo.toml
       - name: Install built wheel - universal2
         run: |
-          pip install pytest h5py
-          pip install pywr --no-index --find-links dist --force-reinstall
+          pip install pytest h5py pandas polars pyarrow click
+          pip install pywr --no-index --find-links dist --force-reinstall --no-deps
           python -c "import pywr"
           python -m pytest
       - name: Upload wheels
@@ -68,8 +73,8 @@ jobs:
           args: -i ${{ matrix.python-version }} --release --out dist -m pywr-python/Cargo.toml
       - name: Install built wheel
         run: |
-          pip install pytest h5py
-          pip install pywr --no-index --find-links dist --force-reinstall
+          pip install pytest h5py pandas polars pyarrow click
+          pip install pywr --no-index --find-links dist --force-reinstall --no-deps
           python -c "import pywr"
           python -m pytest
       - name: Upload wheels
@@ -98,10 +103,9 @@ jobs:
           manylinux: auto
           args: -i ${{ matrix.python-version }} --release --out dist -m pywr-python/Cargo.toml
       - name: Install built wheel
-        if: matrix.target == 'x86_64'
         run: |
-          pip install pytest h5py
-          pip install pywr --no-index --find-links dist --force-reinstall
+          pip install pytest h5py pandas polars pyarrow click
+          pip install pywr --no-index --find-links dist --force-reinstall --no-deps
           python -c "import pywr"
           python -m pytest
       - name: Upload wheels
