@@ -39,7 +39,7 @@ time = { version = "0.3", features = ["serde", "serde-well-known", "serde-human-
 num = "0.4.0"
 ndarray = "0.15.3"
 polars = { version = "0.36.2", features = ["lazy", "rows", "ndarray"] }
-pyo3-polars = "0.10.0"
+pyo3-polars = "0.11.1"
 pyo3 = { version = "0.20.0" }
 tracing = "0.1"
 csv = "1.1"
