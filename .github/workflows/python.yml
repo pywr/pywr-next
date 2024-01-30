@@ -24,7 +24,7 @@ jobs:
       - name: Install built wheel - x86_64
         run: |
           pip install pytest h5py
-          pip install pywr --no-index --find-links dist --force-reinstall
+          pip install pywr --no-index --find-links dist --force-reinstall --pre
           python -c "import pywr"
           python -m pytest
       - name: Build wheels - universal2
@@ -35,7 +35,7 @@ jobs:
       - name: Install built wheel - universal2
         run: |
           pip install pytest h5py
-          pip install pywr --no-index --find-links dist --force-reinstall
+          pip install pywr --no-index --find-links dist --force-reinstall --pre
           python -c "import pywr"
           python -m pytest
       - name: Upload wheels
@@ -66,7 +66,7 @@ jobs:
       - name: Install built wheel
         run: |
           pip install pytest h5py
-          pip install pywr --no-index --find-links dist --force-reinstall
+          pip install pywr --no-index --find-links dist --force-reinstall --pre
           python -c "import pywr"
           python -m pytest
       - name: Upload wheels
@@ -98,7 +98,7 @@ jobs:
         if: matrix.target == 'x86_64'
         run: |
           pip install pytest h5py
-          pip install pywr --no-index --find-links dist --force-reinstall
+          pip install pywr --no-index --find-links dist --force-reinstall --pre
           python -c "import pywr"
           python -m pytest
       - name: Upload wheels
