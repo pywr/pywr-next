@@ -16,6 +16,7 @@ use crate::{parameters, recorders, IndexParameterIndex, NodeIndex, ParameterInde
 use rayon::prelude::*;
 use std::any::Any;
 use std::collections::HashSet;
+use std::num::NonZeroUsize;
 use std::ops::Deref;
 use std::time::Duration;
 use std::time::Instant;
@@ -1235,7 +1236,7 @@ impl Network {
         min_volume: ConstraintValue,
         max_volume: ConstraintValue,
         reset: VirtualStorageReset,
-        rolling_window: Option<usize>,
+        rolling_window: Option<NonZeroUsize>,
         cost: ConstraintValue,
     ) -> Result<VirtualStorageIndex, PywrError> {
         if let Ok(_agg_node) = self.get_virtual_storage_node_by_name(name, sub_name) {

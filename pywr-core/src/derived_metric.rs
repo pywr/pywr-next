@@ -67,7 +67,7 @@ impl DerivedMetric {
                 let max_volume = network.get_virtual_storage_node(idx)?.get_max_volume(network, state)?;
                 Ok(state
                     .get_network_state()
-                    .get_virtual_storage_proportional_volume(idx, max_volume)?)
+                    .get_virtual_storage_proportional_volume(*idx, max_volume)?)
             }
             Self::AggregatedNodeProportionalVolume(idx) => {
                 let node = network.get_aggregated_storage_node(idx)?;

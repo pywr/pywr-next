@@ -3,6 +3,9 @@ use crate::node::{ConstraintValue, FlowConstraints, NodeMeta, StorageConstraints
 use crate::state::{State, VirtualStorageState};
 use crate::timestep::Timestep;
 use crate::{NodeIndex, PywrError};
+use std::fmt;
+use std::fmt::{Display, Formatter};
+use std::num::NonZeroUsize;
 use std::ops::{Deref, DerefMut};
 use time::{Date, Month};
 
@@ -14,6 +17,12 @@ impl Deref for VirtualStorageIndex {
 
     fn deref(&self) -> &Self::Target {
         &self.0
+    }
+}
+
+impl Display for VirtualStorageIndex {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
     }
 }
 
@@ -55,7 +64,7 @@ impl VirtualStorageVec {
         min_volume: ConstraintValue,
         max_volume: ConstraintValue,
         reset: VirtualStorageReset,
-        rolling_window: Option<usize>,
+        rolling_window: Option<NonZeroUsize>,
         cost: ConstraintValue,
     ) -> VirtualStorageIndex {
         let node_index = VirtualStorageIndex(self.nodes.len());
@@ -92,7 +101,7 @@ pub struct VirtualStorage {
     pub initial_volume: StorageInitialVolume,
     pub storage_constraints: StorageConstraints,
     pub reset: VirtualStorageReset,
-    pub rolling_window: Option<usize>,
+    pub rolling_window: Option<NonZeroUsize>,
     pub cost: ConstraintValue,
 }
 
@@ -107,7 +116,7 @@ impl VirtualStorage {
         min_volume: ConstraintValue,
         max_volume: ConstraintValue,
         reset: VirtualStorageReset,
-        rolling_window: Option<usize>,
+        rolling_window: Option<NonZeroUsize>,
         cost: ConstraintValue,
     ) -> Self {
         Self {
@@ -170,10 +179,7 @@ impl VirtualStorage {
                 }
                 VirtualStorageReset::NumberOfMonths { months } => {
                     // Get the date when the virtual storage was last reset
-                    match state
-                        .get_network_state()
-                        .get_virtual_storage_last_reset(&self.index())?
-                    {
+                    match state.get_network_state().get_virtual_storage_last_reset(self.index())? {
                         // Reset if last reset is more than `months` ago.
                         Some(last_reset) => months_since_last_reset(&timestep.date, &last_reset.date) >= months,
                         None => true,
@@ -195,7 +201,7 @@ impl VirtualStorage {
             // Reset the rolling history if defined
             if let Some(window) = self.rolling_window {
                 // Initially the missing volume is distributed evenly across the window
-                let initial_flow = (max_volume - volume) / window as f64;
+                let initial_flow = (max_volume - volume) / window.get() as f64;
                 state.reset_virtual_storage_history(*self.meta.index(), initial_flow)?;
             }
         }
