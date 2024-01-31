@@ -36,7 +36,7 @@ pub use river_gauge::RiverGaugeNode;
 pub use river_split_with_gauge::RiverSplitWithGaugeNode;
 use std::collections::HashMap;
 use std::path::Path;
-use strum_macros::{Display, EnumDiscriminants, EnumString, EnumVariantNames, IntoStaticStr};
+use strum_macros::{Display, EnumDiscriminants, EnumString, IntoStaticStr, VariantNames};
 pub use virtual_storage::VirtualStorageNode;
 pub use water_treatment_works::WaterTreatmentWorks;
 
@@ -221,7 +221,7 @@ impl NodeBuilder {
 
 #[derive(serde::Deserialize, serde::Serialize, Clone, EnumDiscriminants)]
 #[serde(tag = "type")]
-#[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumVariantNames))]
+#[strum_discriminants(derive(Display, IntoStaticStr, EnumString, VariantNames))]
 // This creates a separate enum called `NodeType` that is available in this module.
 #[strum_discriminants(name(NodeType))]
 pub enum Node {

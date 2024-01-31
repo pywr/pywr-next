@@ -302,6 +302,23 @@ pub struct PywrModel {
 }
 
 impl PywrModel {
+    pub fn new(title: &str, start: &Date, end: &Date) -> Self {
+        Self {
+            metadata: Metadata {
+                title: title.to_string(),
+                description: None,
+                minimum_version: None,
+            },
+            timestepper: Timestepper {
+                start: *start,
+                end: *end,
+                timestep: Timestep::Days(1),
+            },
+            scenarios: None,
+            network: PywrNetwork::default(),
+        }
+    }
+
     pub fn from_path<P: AsRef<Path>>(path: P) -> Result<Self, SchemaError> {
         let data = std::fs::read_to_string(path).map_err(|e| SchemaError::IO(e.to_string()))?;
         Ok(serde_json::from_str(data.as_str())?)
