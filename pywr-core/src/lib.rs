@@ -7,6 +7,7 @@ use crate::models::MultiNetworkTransferIndex;
 use crate::node::NodeIndex;
 use crate::parameters::{IndexParameterIndex, InterpolationError, MultiValueParameterIndex, ParameterIndex};
 use crate::recorders::{MetricSetIndex, RecorderIndex};
+use crate::virtual_storage::VirtualStorageIndex;
 use pyo3::exceptions::{PyException, PyRuntimeError};
 use pyo3::{create_exception, PyErr};
 use thiserror::Error;
@@ -41,6 +42,8 @@ pub enum PywrError {
     NodeNotFound(String),
     #[error("edge index not found")]
     EdgeIndexNotFound,
+    #[error("virtual storage index {0} not found")]
+    VirtualStorageIndexNotFound(VirtualStorageIndex),
     #[error("parameter index {0} not found")]
     ParameterIndexNotFound(ParameterIndex),
     #[error("index parameter index {0} not found")]

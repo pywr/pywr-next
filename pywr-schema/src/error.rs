@@ -56,6 +56,8 @@ pub enum SchemaError {
     ScenarioGroupNotFound(String),
     #[error("Inter-network transfer with name {0} not found")]
     InterNetworkTransferNotFound(String),
+    #[error("Invalid rolling window definition on parameter {name}. Must convert to a positive integer.")]
+    InvalidRollingWindow { name: String },
 }
 
 impl From<SchemaError> for PyErr {

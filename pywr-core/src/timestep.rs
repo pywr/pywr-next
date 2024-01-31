@@ -82,6 +82,14 @@ pub struct TimeDomain {
 }
 
 impl TimeDomain {
+    /// Return the duration of each time-step.
+    pub fn step_duration(&self) -> Duration {
+        // This relies on the assumption that all time-steps are the same length.
+        // Ideally, this invariant would be refactored to have the duration stored here in `TimeDomain`,
+        // rather than in `Timestep`.
+        self.timesteps.first().expect("Not time-steps defined.").duration
+    }
+
     pub fn timesteps(&self) -> &[Timestep] {
         &self.timesteps
     }
