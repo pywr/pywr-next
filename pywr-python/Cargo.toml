@@ -18,6 +18,8 @@ pyo3 = {  workspace = true }
 pyo3-polars = {  workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+time = { workspace = true, features = ["serde", "serde-well-known", "serde-human-readable", "macros"] }
+
 pywr-core = { path="../pywr-core" }
 pywr-schema = { path="../pywr-schema" }
 

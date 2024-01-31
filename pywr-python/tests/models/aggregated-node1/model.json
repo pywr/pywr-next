@@ -1,0 +1,107 @@
+{
+  "metadata": {
+    "title": "Test of aggregated node."
+  },
+  "timestepper": {
+    "start": "2021-01-01",
+    "end": "2021-12-31",
+    "timestep": 1
+  },
+  "network": {
+    "nodes": [
+      {
+        "name": "input1",
+        "type": "Input",
+        "max_flow": {
+          "type": "Parameter",
+          "name": "inflow"
+        }
+      },
+      {
+        "name": "link1",
+        "type": "Link",
+        "max_flow": 2.0
+      },
+      {
+        "name": "link2",
+        "type": "Link",
+        "cost": 1.0
+      },
+      {
+        "name": "agg-node",
+        "type": "Aggregated",
+        "nodes": [
+          "link1",
+          "link2"
+        ],
+        "max_flow": 5.0
+      },
+      {
+        "name": "output1",
+        "type": "Output",
+        "cost": -10.0,
+        "max_flow": {
+          "type": "Parameter",
+          "name": "demand"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "from_node": "input1",
+        "to_node": "link1"
+      },
+      {
+        "from_node": "input1",
+        "to_node": "link2"
+      },
+      {
+        "from_node": "link1",
+        "to_node": "output1"
+      },
+      {
+        "from_node": "link2",
+        "to_node": "output1"
+      }
+    ],
+    "parameters": [
+      {
+        "name": "demand",
+        "type": "Constant",
+        "value": 10.0
+      },
+      {
+        "name": "inflow",
+        "type": "DataFrame",
+        "url": "inflow.csv",
+        "pandas_kwargs": {
+          "index_col": 0
+        },
+        "columns": {
+          "type": "Column",
+          "name": "inflow"
+        }
+      }
+    ],
+    "metric_sets": [
+      {
+        "name": "nodes",
+        "metrics": [
+          "input1",
+          "link1",
+          "link2",
+          "output1",
+          "agg-node"
+        ]
+      }
+    ],
+    "outputs": [
+      {
+        "name": "outputs",
+        "type": "HDF5",
+        "filename": "outputs.h5",
+        "metric_set": "nodes"
+      }
+    ]
+  }
+}
