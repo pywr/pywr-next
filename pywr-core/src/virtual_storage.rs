@@ -260,6 +260,7 @@ mod tests {
     use crate::timestep::Timestep;
     use crate::virtual_storage::{months_since_last_reset, VirtualStorageReset};
     use ndarray::Array;
+    use std::num::NonZeroUsize;
     use time::macros::date;
 
     /// Test the calculation of number of months since last reset
@@ -407,7 +408,7 @@ mod tests {
             ConstraintValue::Scalar(0.0),
             ConstraintValue::Scalar(2.5),
             VirtualStorageReset::Never,
-            Some(5),
+            Some(NonZeroUsize::new(5).unwrap()),
             ConstraintValue::Scalar(0.0),
         );
 
