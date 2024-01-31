@@ -117,21 +117,18 @@ git submodule init
 git submodule update
 ```
 
-Rust is required for installation of the Python extension. To create a Python development installation 
-requires first compiling the Rust library and then installing the Python package in editable model.
+Rust is required for installation of the Python extension. To create a Python development installation
+requires first compiling the Rust library and then the Python extension. The following example uses
+a virtual environment to install the Python dependencies, compile the Pywr extension and run the Pywr Python CLI.
+
 
 ```bash
-cd pywr-python
-maturin develop
-pip install -e .
-```
-
-Alternatively use the `develop.sh` script to run the above two commands.
-
-Once this is complete the following will run a simple command line application from Python.
-
-```bash
-python -m pywr
+python -m venv .venv # create a new virtual environment
+source .venv/bin/activate # activate the virtual environment (linux)
+# .venv\Scripts\activate # activate the virtual environment (windows)
+pip install maturin  # install maturin for building the Python extension
+maturin develop # compile the Pywr Python extension
+python -m pywr  # run the Pywr Python CLI
 ```
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
@@ -145,7 +142,7 @@ python -m pywr
 ### Rust CLI
 
 A basic command line interface is included such that you can use this version of Pywr without Python.
-This CLI is in the `pywr-cli` crate. 
+This CLI is in the `pywr-cli` crate.
 
 To see the CLI commands available run the following:
 
