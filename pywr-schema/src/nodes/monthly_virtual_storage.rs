@@ -158,7 +158,10 @@ impl TryFrom<MonthlyVirtualStorageNodeV1> for MonthlyVirtualStorageNode {
         } else if let Some(v) = v1.initial_volume_pc {
             StorageInitialVolume::Proportional(v)
         } else {
-            StorageInitialVolume::default()
+            return Err(ConversionError::MissingAttribute {
+                name: meta.name,
+                attrs: vec!["initial_volume".to_string(), "initial_volume_pc".to_string()],
+            });
         };
 
         let n = Self {
