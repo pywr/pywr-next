@@ -1,8 +1,9 @@
 import logging
+from pathlib import Path
 from typing import Optional
 
 import click
-from . import run_model_from_string
+from . import run_from_path
 
 
 def configure_logging():
@@ -28,18 +29,19 @@ def cli():
 @click.option(
     "-d", "--data-path", type=click.Path(exists=True, dir_okay=True), default=None
 )
-@click.option("-t", "--threads", type=int, default=1)
-@click.option("-d", "--debug", is_flag=True)
-def run(path: str, solver: str, data_path: Optional[str], threads: int, debug: bool):
-    with open(path) as fh:
-        data = fh.read()
+@click.option(
+    "-o", "--output-path", type=click.Path(exists=True, dir_okay=True), default=None
+)
+def run(path: str, solver: str, data_path: Optional[str], output_path: Optional[str]):
 
-    run_model_from_string(
-        data,
-        solver,
-        debug,
-        data_path,
-        threads,
+    data_path = Path(data_path) if data_path is not None else None
+    output_path = Path(output_path) if output_path is not None else None
+
+    run_from_path(
+        Path(path),
+        solver=solver,
+        data_path=data_path,
+        output_path=output_path,
     )
 
 
