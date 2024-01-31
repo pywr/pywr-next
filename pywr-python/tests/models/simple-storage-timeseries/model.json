@@ -18,7 +18,9 @@
         "name": "storage1",
         "type": "Storage",
         "cost": -1.0,
-        "initial_volume": 500.0,
+        "initial_volume": {
+          "Absolute": 500.0
+        },
         "max_volume": 1000.0
       },
       {
