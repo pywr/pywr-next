@@ -118,13 +118,15 @@ git submodule update
 ```
 
 Rust is required for installation of the Python extension. To create a Python development installation
-requires first compiling the Rust library and then installing the Python package in editable model. The
-following example uses [Poetry](https://python-poetry.org/) to manage the Python environment, compile
-the Pywr extension and run the Pywr Python CLI.
+requires first compiling the Rust library and then the Python extension. The following example uses
+a virtual environment to install the Python dependencies, compile the Pywr extension and run the Pywr Python CLI.
+
 
 ```bash
-poetry install # install dependencies
-poetry shell # activate the virtual environment
+python -m venv .venv # create a new virtual environment
+source .venv/bin/activate # activate the virtual environment (linux)
+# .venv\Scripts\activate # activate the virtual environment (windows)
+pip install maturin  # install maturin for building the Python extension
 maturin develop # compile the Pywr Python extension
 python -m pywr  # run the Pywr Python CLI
 ```
