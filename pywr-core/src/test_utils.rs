@@ -30,6 +30,16 @@ pub fn default_time_domain() -> TimeDomain {
     default_timestepper().into()
 }
 
+pub fn default_domain() -> ModelDomain {
+    default_time_domain().into()
+}
+
+pub fn default_model() -> Model {
+    let domain = default_domain();
+    let network = Network::default();
+    Model::new(domain, network)
+}
+
 /// Create a simple test network with three nodes.
 pub fn simple_network(network: &mut Network, inflow_scenario_index: usize, num_inflow_scenarios: usize) {
     let input_node = network.add_input_node("input", None).unwrap();

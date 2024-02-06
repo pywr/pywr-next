@@ -149,10 +149,23 @@ impl ParameterMeta {
 
 /// Helper function to downcast to internal parameter state and print a helpful panic
 /// message if this fails.
-pub fn downcast_internal_state<T: 'static>(internal_state: &mut Option<Box<dyn ParameterState>>) -> &mut T {
+pub fn downcast_internal_state_mut<T: 'static>(internal_state: &mut Option<Box<dyn ParameterState>>) -> &mut T {
     // Downcast the internal state to the correct type
     match internal_state {
         Some(internal) => match internal.as_mut().as_any_mut().downcast_mut::<T>() {
+            Some(pa) => pa,
+            None => panic!("Internal state did not downcast to the correct type! :("),
+        },
+        None => panic!("No internal state defined when one was expected! :("),
+    }
+}
+
+/// Helper function to downcast to internal parameter state and print a helpful panic
+/// message if this fails.
+pub fn downcast_internal_state_ref<T: 'static>(internal_state: &Option<Box<dyn ParameterState>>) -> &T {
+    // Downcast the internal state to the correct type
+    match internal_state {
+        Some(internal) => match internal.as_ref().as_any().downcast_ref::<T>() {
             Some(pa) => pa,
             None => panic!("Internal state did not downcast to the correct type! :("),
         },
@@ -340,14 +353,23 @@ pub enum ParameterType {
 /// such as multi-objective evolutionary algorithms. The trait is generic to the type of
 /// the variable values being optimised but these will typically by `f64` and `u32`.
 pub trait VariableParameter<T> {
+    fn meta(&self) -> &ParameterMeta;
+    fn name(&self) -> &str {
+        self.meta().name.as_str()
+    }
+
     /// Is this variable activated (i.e. should be used in optimisation)
     fn is_active(&self) -> bool;
     /// Return the number of variables required
     fn size(&self) -> usize;
-    /// Apply new variable values to the parameter
-    fn set_variables(&mut self, values: &[T]) -> Result<(), PywrError>;
+    /// Apply new variable values to the parameter's state
+    fn set_variables(
+        &self,
+        values: &[T],
+        internal_state: &mut Option<Box<dyn ParameterState>>,
+    ) -> Result<(), PywrError>;
     /// Get the current variable values
-    fn get_variables(&self) -> Vec<T>;
+    fn get_variables(&self, internal_state: &Option<Box<dyn ParameterState>>) -> Option<Vec<T>>;
     /// Get variable lower bounds
     fn get_lower_bounds(&self) -> Result<Vec<T>, PywrError>;
     /// Get variable upper bounds

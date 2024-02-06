@@ -1,7 +1,7 @@
 use super::{IndexValue, Parameter, ParameterMeta, PywrError, Timestep};
 use crate::metric::Metric;
 use crate::network::Network;
-use crate::parameters::{downcast_internal_state, MultiValueParameter};
+use crate::parameters::{downcast_internal_state_mut, MultiValueParameter};
 use crate::scenario::ScenarioIndex;
 use crate::state::{MultiValue, ParameterState, State};
 use pyo3::prelude::*;
@@ -113,7 +113,7 @@ impl Parameter for PyParameter {
         state: &State,
         internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<f64, PywrError> {
-        let internal = downcast_internal_state::<Internal>(internal_state);
+        let internal = downcast_internal_state_mut::<Internal>(internal_state);
 
         let value: f64 = Python::with_gil(|py| {
             let date = PyDate::new(
@@ -145,7 +145,7 @@ impl Parameter for PyParameter {
         state: &State,
         internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<(), PywrError> {
-        let internal = downcast_internal_state::<Internal>(internal_state);
+        let internal = downcast_internal_state_mut::<Internal>(internal_state);
 
         Python::with_gil(|py| {
             // Only do this if the object has an "after" method defined.
@@ -215,7 +215,7 @@ impl MultiValueParameter for PyParameter {
         state: &State,
         internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<MultiValue, PywrError> {
-        let internal = downcast_internal_state::<Internal>(internal_state);
+        let internal = downcast_internal_state_mut::<Internal>(internal_state);
 
         let value: MultiValue = Python::with_gil(|py| {
             let date = PyDate::new(
@@ -277,7 +277,7 @@ impl MultiValueParameter for PyParameter {
         state: &State,
         internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<(), PywrError> {
-        let internal = downcast_internal_state::<Internal>(internal_state);
+        let internal = downcast_internal_state_mut::<Internal>(internal_state);
 
         Python::with_gil(|py| {
             // Only do this if the object has an "after" method defined.
