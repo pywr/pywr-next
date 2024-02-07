@@ -5,6 +5,7 @@ use crate::parameters::{
     DynamicFloatValue, DynamicFloatValueType, IntoV2Parameter, MetricFloatReference, MetricFloatValue, NodeReference,
     ParameterMeta, TryFromV1Parameter, TryIntoV2Parameter,
 };
+use crate::timeseries::LoadedTimeseriesCollection;
 use crate::ConversionError;
 use pywr_core::models::ModelDomain;
 use pywr_core::parameters::ParameterIndex;
@@ -58,10 +59,17 @@ impl InterpolatedParameter {
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
         inter_network_transfers: &[PywrMultiNetworkTransfer],
+        timeseries: &LoadedTimeseriesCollection,
     ) -> Result<ParameterIndex, SchemaError> {
-        let x = self
-            .x
-            .load(network, schema, domain, tables, data_path, inter_network_transfers)?;
+        let x = self.x.load(
+            network,
+            schema,
+            domain,
+            tables,
+            data_path,
+            inter_network_transfers,
+            timeseries,
+        )?;
 
         // Sense check the points
         if self.xp.len() != self.fp.len() {
@@ -74,12 +82,32 @@ impl InterpolatedParameter {
         let xp = self
             .xp
             .iter()
-            .map(|p| p.load(network, schema, domain, tables, data_path, inter_network_transfers))
+            .map(|p| {
+                p.load(
+                    network,
+                    schema,
+                    domain,
+                    tables,
+                    data_path,
+                    inter_network_transfers,
+                    timeseries,
+                )
+            })
             .collect::<Result<Vec<_>, _>>()?;
         let fp = self
             .fp
             .iter()
-            .map(|p| p.load(network, schema, domain, tables, data_path, inter_network_transfers))
+            .map(|p| {
+                p.load(
+                    network,
+                    schema,
+                    domain,
+                    tables,
+                    data_path,
+                    inter_network_transfers,
+                    timeseries,
+                )
+            })
             .collect::<Result<Vec<_>, _>>()?;
 
         let points = xp

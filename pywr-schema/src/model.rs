@@ -6,6 +6,7 @@ use crate::error::{ConversionError, SchemaError};
 use crate::metric_sets::MetricSet;
 use crate::outputs::Output;
 use crate::parameters::{MetricFloatReference, TryIntoV2Parameter};
+use crate::timeseries::{LoadedTimeseriesCollection, Timeseries};
 use pywr_core::models::ModelDomain;
 use pywr_core::PywrError;
 use std::path::{Path, PathBuf};
@@ -91,6 +92,7 @@ pub struct PywrNetwork {
     pub edges: Vec<Edge>,
     pub parameters: Option<Vec<Parameter>>,
     pub tables: Option<Vec<DataTable>>,
+    pub timeseries: Option<Vec<Timeseries>>,
     pub metric_sets: Option<Vec<MetricSet>>,
     pub outputs: Option<Vec<Output>>,
 }
@@ -139,6 +141,9 @@ impl PywrNetwork {
         // Load all the data tables
         let tables = LoadedTableCollection::from_schema(self.tables.as_deref(), data_path)?;
 
+        // Load all timeseries data
+        let timeseries = LoadedTimeseriesCollection::from_schema(self.timeseries.as_deref(), domain, data_path)?;
+
         // Create all the nodes
         let mut remaining_nodes = self.nodes.clone();
 
@@ -153,6 +158,7 @@ impl PywrNetwork {
                     &tables,
                     data_path,
                     inter_network_transfers,
+                    &timeseries,
                 ) {
                     // Adding the node failed!
                     match e {
@@ -211,6 +217,7 @@ impl PywrNetwork {
                         &tables,
                         data_path,
                         inter_network_transfers,
+                        &timeseries,
                     ) {
                         // Adding the parameter failed!
                         match e {
@@ -244,6 +251,7 @@ impl PywrNetwork {
                 &tables,
                 data_path,
                 inter_network_transfers,
+                &timeseries,
             )?;
         }
 
@@ -382,6 +390,7 @@ impl TryFrom<pywr_v1_schema::PywrModel> for PywrModel {
 
         // TODO convert v1 tables!
         let tables = None;
+        let timeseries = None;
         let outputs = None;
         let metric_sets = None;
         let network = PywrNetwork {
@@ -389,6 +398,7 @@ impl TryFrom<pywr_v1_schema::PywrModel> for PywrModel {
             edges,
             parameters,
             tables,
+            timeseries,
             metric_sets,
             outputs,
         };

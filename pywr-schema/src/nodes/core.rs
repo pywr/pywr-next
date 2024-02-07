@@ -3,6 +3,7 @@ use crate::error::{ConversionError, SchemaError};
 use crate::model::PywrMultiNetworkTransfer;
 use crate::nodes::{NodeAttribute, NodeMeta};
 use crate::parameters::{DynamicFloatValue, TryIntoV2Parameter};
+use crate::timeseries::LoadedTimeseriesCollection;
 use pywr_core::derived_metric::DerivedMetric;
 use pywr_core::metric::Metric;
 use pywr_core::models::ModelDomain;
@@ -55,19 +56,44 @@ impl InputNode {
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
         inter_network_transfers: &[PywrMultiNetworkTransfer],
+        timeseries: &LoadedTimeseriesCollection,
     ) -> Result<(), SchemaError> {
         if let Some(cost) = &self.cost {
-            let value = cost.load(network, schema, domain, tables, data_path, inter_network_transfers)?;
+            let value = cost.load(
+                network,
+                schema,
+                domain,
+                tables,
+                data_path,
+                inter_network_transfers,
+                timeseries,
+            )?;
             network.set_node_cost(self.meta.name.as_str(), None, value.into())?;
         }
 
         if let Some(max_flow) = &self.max_flow {
-            let value = max_flow.load(network, schema, domain, tables, data_path, inter_network_transfers)?;
+            let value = max_flow.load(
+                network,
+                schema,
+                domain,
+                tables,
+                data_path,
+                inter_network_transfers,
+                timeseries,
+            )?;
             network.set_node_max_flow(self.meta.name.as_str(), None, value.into())?;
         }
 
         if let Some(min_flow) = &self.min_flow {
-            let value = min_flow.load(network, schema, domain, tables, data_path, inter_network_transfers)?;
+            let value = min_flow.load(
+                network,
+                schema,
+                domain,
+                tables,
+                data_path,
+                inter_network_transfers,
+                timeseries,
+            )?;
             network.set_node_min_flow(self.meta.name.as_str(), None, value.into())?;
         }
 
@@ -177,19 +203,44 @@ impl LinkNode {
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
         inter_network_transfers: &[PywrMultiNetworkTransfer],
+        timeseries: &LoadedTimeseriesCollection,
     ) -> Result<(), SchemaError> {
         if let Some(cost) = &self.cost {
-            let value = cost.load(network, schema, domain, tables, data_path, inter_network_transfers)?;
+            let value = cost.load(
+                network,
+                schema,
+                domain,
+                tables,
+                data_path,
+                inter_network_transfers,
+                timeseries,
+            )?;
             network.set_node_cost(self.meta.name.as_str(), None, value.into())?;
         }
 
         if let Some(max_flow) = &self.max_flow {
-            let value = max_flow.load(network, schema, domain, tables, data_path, inter_network_transfers)?;
+            let value = max_flow.load(
+                network,
+                schema,
+                domain,
+                tables,
+                data_path,
+                inter_network_transfers,
+                timeseries,
+            )?;
             network.set_node_max_flow(self.meta.name.as_str(), None, value.into())?;
         }
 
         if let Some(min_flow) = &self.min_flow {
-            let value = min_flow.load(network, schema, domain, tables, data_path, inter_network_transfers)?;
+            let value = min_flow.load(
+                network,
+                schema,
+                domain,
+                tables,
+                data_path,
+                inter_network_transfers,
+                timeseries,
+            )?;
             network.set_node_min_flow(self.meta.name.as_str(), None, value.into())?;
         }
 
@@ -299,19 +350,44 @@ impl OutputNode {
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
         inter_network_transfers: &[PywrMultiNetworkTransfer],
+        timeseries: &LoadedTimeseriesCollection,
     ) -> Result<(), SchemaError> {
         if let Some(cost) = &self.cost {
-            let value = cost.load(network, schema, domain, tables, data_path, inter_network_transfers)?;
+            let value = cost.load(
+                network,
+                schema,
+                domain,
+                tables,
+                data_path,
+                inter_network_transfers,
+                timeseries,
+            )?;
             network.set_node_cost(self.meta.name.as_str(), None, value.into())?;
         }
 
         if let Some(max_flow) = &self.max_flow {
-            let value = max_flow.load(network, schema, domain, tables, data_path, inter_network_transfers)?;
+            let value = max_flow.load(
+                network,
+                schema,
+                domain,
+                tables,
+                data_path,
+                inter_network_transfers,
+                timeseries,
+            )?;
             network.set_node_max_flow(self.meta.name.as_str(), None, value.into())?;
         }
 
         if let Some(min_flow) = &self.min_flow {
-            let value = min_flow.load(network, schema, domain, tables, data_path, inter_network_transfers)?;
+            let value = min_flow.load(
+                network,
+                schema,
+                domain,
+                tables,
+                data_path,
+                inter_network_transfers,
+                timeseries,
+            )?;
             network.set_node_min_flow(self.meta.name.as_str(), None, value.into())?;
         }
 
@@ -438,17 +514,34 @@ impl StorageNode {
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
         inter_network_transfers: &[PywrMultiNetworkTransfer],
+        timeseries: &LoadedTimeseriesCollection,
     ) -> Result<(), SchemaError> {
         let min_volume = match &self.min_volume {
             Some(v) => v
-                .load(network, schema, domain, tables, data_path, inter_network_transfers)?
+                .load(
+                    network,
+                    schema,
+                    domain,
+                    tables,
+                    data_path,
+                    inter_network_transfers,
+                    timeseries,
+                )?
                 .into(),
             None => ConstraintValue::Scalar(0.0),
         };
 
         let max_volume = match &self.max_volume {
             Some(v) => v
-                .load(network, schema, domain, tables, data_path, inter_network_transfers)?
+                .load(
+                    network,
+                    schema,
+                    domain,
+                    tables,
+                    data_path,
+                    inter_network_transfers,
+                    timeseries,
+                )?
                 .into(),
             None => ConstraintValue::None,
         };
@@ -471,9 +564,18 @@ impl StorageNode {
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
         inter_network_transfers: &[PywrMultiNetworkTransfer],
+        timeseries: &LoadedTimeseriesCollection,
     ) -> Result<(), SchemaError> {
         if let Some(cost) = &self.cost {
-            let value = cost.load(network, schema, domain, tables, data_path, inter_network_transfers)?;
+            let value = cost.load(
+                network,
+                schema,
+                domain,
+                tables,
+                data_path,
+                inter_network_transfers,
+                timeseries,
+            )?;
             network.set_node_cost(self.meta.name.as_str(), None, value.into())?;
         }
 
@@ -654,14 +756,31 @@ impl CatchmentNode {
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
         inter_network_transfers: &[PywrMultiNetworkTransfer],
+        timeseries: &LoadedTimeseriesCollection,
     ) -> Result<(), SchemaError> {
         if let Some(cost) = &self.cost {
-            let value = cost.load(network, schema, domain, tables, data_path, inter_network_transfers)?;
+            let value = cost.load(
+                network,
+                schema,
+                domain,
+                tables,
+                data_path,
+                inter_network_transfers,
+                timeseries,
+            )?;
             network.set_node_cost(self.meta.name.as_str(), None, value.into())?;
         }
 
         if let Some(flow) = &self.flow {
-            let value = flow.load(network, schema, domain, tables, data_path, inter_network_transfers)?;
+            let value = flow.load(
+                network,
+                schema,
+                domain,
+                tables,
+                data_path,
+                inter_network_transfers,
+                timeseries,
+            )?;
             network.set_node_min_flow(self.meta.name.as_str(), None, value.clone().into())?;
             network.set_node_max_flow(self.meta.name.as_str(), None, value.into())?;
         }
@@ -764,14 +883,31 @@ impl AggregatedNode {
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
         inter_network_transfers: &[PywrMultiNetworkTransfer],
+        timeseries: &LoadedTimeseriesCollection,
     ) -> Result<(), SchemaError> {
         if let Some(max_flow) = &self.max_flow {
-            let value = max_flow.load(network, schema, domain, tables, data_path, inter_network_transfers)?;
+            let value = max_flow.load(
+                network,
+                schema,
+                domain,
+                tables,
+                data_path,
+                inter_network_transfers,
+                timeseries,
+            )?;
             network.set_aggregated_node_max_flow(self.meta.name.as_str(), None, value.into())?;
         }
 
         if let Some(min_flow) = &self.min_flow {
-            let value = min_flow.load(network, schema, domain, tables, data_path, inter_network_transfers)?;
+            let value = min_flow.load(
+                network,
+                schema,
+                domain,
+                tables,
+                data_path,
+                inter_network_transfers,
+                timeseries,
+            )?;
             network.set_aggregated_node_min_flow(self.meta.name.as_str(), None, value.into())?;
         }
 
@@ -780,13 +916,33 @@ impl AggregatedNode {
                 Factors::Proportion { factors } => pywr_core::aggregated_node::Factors::Proportion(
                     factors
                         .iter()
-                        .map(|f| f.load(network, schema, domain, tables, data_path, inter_network_transfers))
+                        .map(|f| {
+                            f.load(
+                                network,
+                                schema,
+                                domain,
+                                tables,
+                                data_path,
+                                inter_network_transfers,
+                                timeseries,
+                            )
+                        })
                         .collect::<Result<Vec<_>, _>>()?,
                 ),
                 Factors::Ratio { factors } => pywr_core::aggregated_node::Factors::Ratio(
                     factors
                         .iter()
-                        .map(|f| f.load(network, schema, domain, tables, data_path, inter_network_transfers))
+                        .map(|f| {
+                            f.load(
+                                network,
+                                schema,
+                                domain,
+                                tables,
+                                data_path,
+                                inter_network_transfers,
+                                timeseries,
+                            )
+                        })
                         .collect::<Result<Vec<_>, _>>()?,
                 ),
             };

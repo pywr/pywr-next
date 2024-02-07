@@ -5,6 +5,7 @@ use crate::parameters::{
     DynamicFloatValue, DynamicFloatValueType, DynamicIndexValue, IntoV2Parameter, ParameterMeta, TryFromV1Parameter,
     TryIntoV2Parameter,
 };
+use crate::timeseries::LoadedTimeseriesCollection;
 use pywr_core::models::ModelDomain;
 use pywr_core::parameters::ParameterIndex;
 use pywr_v1_schema::parameters::IndexedArrayParameter as IndexedArrayParameterV1;
@@ -42,15 +43,32 @@ impl IndexedArrayParameter {
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
         inter_network_transfers: &[PywrMultiNetworkTransfer],
+        timeseries: &LoadedTimeseriesCollection,
     ) -> Result<ParameterIndex, SchemaError> {
-        let index_parameter =
-            self.index_parameter
-                .load(network, schema, domain, tables, data_path, inter_network_transfers)?;
+        let index_parameter = self.index_parameter.load(
+            network,
+            schema,
+            domain,
+            tables,
+            data_path,
+            inter_network_transfers,
+            timeseries,
+        )?;
 
         let metrics = self
             .metrics
             .iter()
-            .map(|v| v.load(network, schema, domain, tables, data_path, inter_network_transfers))
+            .map(|v| {
+                v.load(
+                    network,
+                    schema,
+                    domain,
+                    tables,
+                    data_path,
+                    inter_network_transfers,
+                    timeseries,
+                )
+            })
             .collect::<Result<Vec<_>, _>>()?;
 
         let p = pywr_core::parameters::IndexedArrayParameter::new(&self.meta.name, index_parameter, &metrics);

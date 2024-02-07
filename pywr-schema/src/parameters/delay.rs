@@ -2,6 +2,7 @@ use crate::data_tables::LoadedTableCollection;
 use crate::error::SchemaError;
 use crate::model::PywrMultiNetworkTransfer;
 use crate::parameters::{DynamicFloatValue, DynamicFloatValueType, ParameterMeta};
+use crate::timeseries::LoadedTimeseriesCollection;
 use pywr_core::models::ModelDomain;
 use pywr_core::parameters::ParameterIndex;
 use std::collections::HashMap;
@@ -39,10 +40,17 @@ impl DelayParameter {
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
         inter_network_transfers: &[PywrMultiNetworkTransfer],
+        timeseries: &LoadedTimeseriesCollection,
     ) -> Result<ParameterIndex, SchemaError> {
-        let metric = self
-            .metric
-            .load(network, schema, domain, tables, data_path, inter_network_transfers)?;
+        let metric = self.metric.load(
+            network,
+            schema,
+            domain,
+            tables,
+            data_path,
+            inter_network_transfers,
+            timeseries,
+        )?;
         let p = pywr_core::parameters::DelayParameter::new(&self.meta.name, metric, self.delay, self.initial_value);
         Ok(network.add_parameter(Box::new(p))?)
     }

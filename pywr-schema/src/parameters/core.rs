@@ -5,6 +5,7 @@ use crate::parameters::{
     ConstantValue, DynamicFloatValue, DynamicFloatValueType, IntoV2Parameter, ParameterMeta, TryFromV1Parameter,
     TryIntoV2Parameter,
 };
+use crate::timeseries::LoadedTimeseriesCollection;
 use pywr_core::models::ModelDomain;
 use pywr_core::parameters::ParameterIndex;
 use pywr_v1_schema::parameters::{
@@ -237,10 +238,17 @@ impl MaxParameter {
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
         inter_network_transfers: &[PywrMultiNetworkTransfer],
+        timeseries: &LoadedTimeseriesCollection,
     ) -> Result<ParameterIndex, SchemaError> {
-        let idx = self
-            .parameter
-            .load(network, schema, domain, tables, data_path, inter_network_transfers)?;
+        let idx = self.parameter.load(
+            network,
+            schema,
+            domain,
+            tables,
+            data_path,
+            inter_network_transfers,
+            timeseries,
+        )?;
         let threshold = self.threshold.unwrap_or(0.0);
 
         let p = pywr_core::parameters::MaxParameter::new(&self.meta.name, idx, threshold);
@@ -312,13 +320,26 @@ impl DivisionParameter {
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
         inter_network_transfers: &[PywrMultiNetworkTransfer],
+        timeseries: &LoadedTimeseriesCollection,
     ) -> Result<ParameterIndex, SchemaError> {
-        let n = self
-            .numerator
-            .load(network, schema, domain, tables, data_path, inter_network_transfers)?;
-        let d = self
-            .denominator
-            .load(network, schema, domain, tables, data_path, inter_network_transfers)?;
+        let n = self.numerator.load(
+            network,
+            schema,
+            domain,
+            tables,
+            data_path,
+            inter_network_transfers,
+            timeseries,
+        )?;
+        let d = self.denominator.load(
+            network,
+            schema,
+            domain,
+            tables,
+            data_path,
+            inter_network_transfers,
+            timeseries,
+        )?;
 
         let p = pywr_core::parameters::DivisionParameter::new(&self.meta.name, n, d);
         Ok(network.add_parameter(Box::new(p))?)
@@ -387,10 +408,17 @@ impl MinParameter {
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
         inter_network_transfers: &[PywrMultiNetworkTransfer],
+        timeseries: &LoadedTimeseriesCollection,
     ) -> Result<ParameterIndex, SchemaError> {
-        let idx = self
-            .parameter
-            .load(network, schema, domain, tables, data_path, inter_network_transfers)?;
+        let idx = self.parameter.load(
+            network,
+            schema,
+            domain,
+            tables,
+            data_path,
+            inter_network_transfers,
+            timeseries,
+        )?;
         let threshold = self.threshold.unwrap_or(0.0);
 
         let p = pywr_core::parameters::MinParameter::new(&self.meta.name, idx, threshold);
@@ -444,10 +472,17 @@ impl NegativeParameter {
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
         inter_network_transfers: &[PywrMultiNetworkTransfer],
+        timeseries: &LoadedTimeseriesCollection,
     ) -> Result<ParameterIndex, SchemaError> {
-        let idx = self
-            .parameter
-            .load(network, schema, domain, tables, data_path, inter_network_transfers)?;
+        let idx = self.parameter.load(
+            network,
+            schema,
+            domain,
+            tables,
+            data_path,
+            inter_network_transfers,
+            timeseries,
+        )?;
 
         let p = pywr_core::parameters::NegativeParameter::new(&self.meta.name, idx);
         Ok(network.add_parameter(Box::new(p))?)

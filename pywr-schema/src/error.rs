@@ -1,5 +1,6 @@
 use crate::data_tables::TableError;
 use crate::nodes::NodeAttribute;
+use polars::error::PolarsError;
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::PyErr;
 use thiserror::Error;
@@ -28,6 +29,16 @@ pub enum SchemaError {
     PywrCore(#[from] pywr_core::PywrError),
     #[error("data table error: {0}")]
     DataTable(#[from] TableError),
+    #[error("Timeseries '{0} not found")]
+    TimeseriesNotFound(String),
+    #[error("Column '{col}' not found in timeseries input '{name}'")]
+    ColumnNotFound { col: String, name: String },
+    #[error("Timeseries provider '{provider}' does not support '{fmt}' file types")]
+    TimeseriesUnsupportedFileFormat { provider: String, fmt: String },
+    #[error("Timeseries provider '{provider}' cannot parse file: '{path}'")]
+    TimeseriesUnparsableFileFormat { provider: String, path: String },
+    #[error("Polars error: {0}")]
+    PolarsError(#[from] PolarsError),
     #[error("Circular node reference(s) found.")]
     CircularNodeReference,
     #[error("Circular parameters reference(s) found.")]

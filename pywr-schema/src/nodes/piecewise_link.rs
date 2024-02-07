@@ -3,6 +3,7 @@ use crate::error::{ConversionError, SchemaError};
 use crate::model::PywrMultiNetworkTransfer;
 use crate::nodes::{NodeAttribute, NodeMeta};
 use crate::parameters::{DynamicFloatValue, TryIntoV2Parameter};
+use crate::timeseries::LoadedTimeseriesCollection;
 use pywr_core::metric::Metric;
 use pywr_core::models::ModelDomain;
 use pywr_v1_schema::nodes::PiecewiseLinkNode as PiecewiseLinkNodeV1;
@@ -67,22 +68,47 @@ impl PiecewiseLinkNode {
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
         inter_network_transfers: &[PywrMultiNetworkTransfer],
+        timeseries: &LoadedTimeseriesCollection,
     ) -> Result<(), SchemaError> {
         for (i, step) in self.steps.iter().enumerate() {
             let sub_name = Self::step_sub_name(i);
 
             if let Some(cost) = &step.cost {
-                let value = cost.load(network, schema, domain, tables, data_path, inter_network_transfers)?;
+                let value = cost.load(
+                    network,
+                    schema,
+                    domain,
+                    tables,
+                    data_path,
+                    inter_network_transfers,
+                    timeseries,
+                )?;
                 network.set_node_cost(self.meta.name.as_str(), sub_name.as_deref(), value.into())?;
             }
 
             if let Some(max_flow) = &step.max_flow {
-                let value = max_flow.load(network, schema, domain, tables, data_path, inter_network_transfers)?;
+                let value = max_flow.load(
+                    network,
+                    schema,
+                    domain,
+                    tables,
+                    data_path,
+                    inter_network_transfers,
+                    timeseries,
+                )?;
                 network.set_node_max_flow(self.meta.name.as_str(), sub_name.as_deref(), value.into())?;
             }
 
             if let Some(min_flow) = &step.min_flow {
-                let value = min_flow.load(network, schema, domain, tables, data_path, inter_network_transfers)?;
+                let value = min_flow.load(
+                    network,
+                    schema,
+                    domain,
+                    tables,
+                    data_path,
+                    inter_network_transfers,
+                    timeseries,
+                )?;
                 network.set_node_min_flow(self.meta.name.as_str(), sub_name.as_deref(), value.into())?;
             }
         }
