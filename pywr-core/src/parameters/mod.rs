@@ -235,12 +235,12 @@ pub trait Parameter: Send + Sync {
         Ok(())
     }
 
-    /// Return the parameter as a [`VariableParameter<f64>'] if it supports being a variable.
+    /// Return the parameter as a [`VariableParameter<f64>`] if it supports being a variable.
     fn as_f64_variable(&self) -> Option<&dyn VariableParameter<f64>> {
         None
     }
 
-    /// Return the parameter as a [`VariableParameter<f64>'] if it supports being a variable.
+    /// Return the parameter as a [`VariableParameter<f64>`] if it supports being a variable.
     fn as_f64_variable_mut(&mut self) -> Option<&mut dyn VariableParameter<f64>> {
         None
     }
@@ -250,12 +250,12 @@ pub trait Parameter: Send + Sync {
         self.as_f64_variable().is_some()
     }
 
-    /// Return the parameter as a [`VariableParameter<u32>'] if it supports being a variable.
+    /// Return the parameter as a [`VariableParameter<u32>`] if it supports being a variable.
     fn as_u32_variable(&self) -> Option<&dyn VariableParameter<u32>> {
         None
     }
 
-    /// Return the parameter as a [`VariableParameter<u32>'] if it supports being a variable.
+    /// Return the parameter as a [`VariableParameter<u32>`] if it supports being a variable.
     fn as_u32_variable_mut(&mut self) -> Option<&mut dyn VariableParameter<u32>> {
         None
     }

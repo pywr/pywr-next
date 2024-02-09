@@ -6,7 +6,7 @@ use crate::parameters::{DynamicFloatValue, TryIntoV2Parameter};
 use pywr_core::derived_metric::DerivedMetric;
 use pywr_core::metric::Metric;
 use pywr_core::models::ModelDomain;
-use pywr_core::node::{ConstraintValue, StorageInitialVolume};
+use pywr_core::node::{ConstraintValue, StorageInitialVolume as CoreStorageInitialVolume};
 use pywr_v1_schema::nodes::{
     AggregatedNode as AggregatedNodeV1, AggregatedStorageNode as AggregatedStorageNodeV1,
     CatchmentNode as CatchmentNodeV1, InputNode as InputNodeV1, LinkNode as LinkNodeV1, OutputNode as OutputNodeV1,
@@ -381,15 +381,35 @@ impl TryFrom<OutputNodeV1> for OutputNode {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Clone, Default)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, PartialEq, Copy, Debug)]
+pub enum StorageInitialVolume {
+    Absolute(f64),
+    Proportional(f64),
+}
+
+impl Default for StorageInitialVolume {
+    fn default() -> Self {
+        StorageInitialVolume::Proportional(1.0)
+    }
+}
+
+impl Into<CoreStorageInitialVolume> for StorageInitialVolume {
+    fn into(self) -> CoreStorageInitialVolume {
+        match self {
+            StorageInitialVolume::Absolute(v) => CoreStorageInitialVolume::Absolute(v),
+            StorageInitialVolume::Proportional(v) => CoreStorageInitialVolume::Proportional(v),
+        }
+    }
+}
+
+#[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug)]
 pub struct StorageNode {
     #[serde(flatten)]
     pub meta: NodeMeta,
     pub max_volume: Option<DynamicFloatValue>,
     pub min_volume: Option<DynamicFloatValue>,
     pub cost: Option<DynamicFloatValue>,
-    pub initial_volume: Option<f64>,
-    pub initial_volume_pc: Option<f64>,
+    pub initial_volume: StorageInitialVolume,
 }
 
 impl StorageNode {
@@ -419,14 +439,6 @@ impl StorageNode {
         data_path: Option<&Path>,
         inter_network_transfers: &[PywrMultiNetworkTransfer],
     ) -> Result<(), SchemaError> {
-        let initial_volume = if let Some(iv) = self.initial_volume {
-            StorageInitialVolume::Absolute(iv)
-        } else if let Some(pc) = self.initial_volume_pc {
-            StorageInitialVolume::Proportional(pc)
-        } else {
-            return Err(SchemaError::MissingInitialVolume(self.meta.name.to_string()));
-        };
-
         let min_volume = match &self.min_volume {
             Some(v) => v
                 .load(network, schema, domain, tables, data_path, inter_network_transfers)?
@@ -441,7 +453,13 @@ impl StorageNode {
             None => ConstraintValue::None,
         };
 
-        network.add_storage_node(self.meta.name.as_str(), None, initial_volume, min_volume, max_volume)?;
+        network.add_storage_node(
+            self.meta.name.as_str(),
+            None,
+            self.initial_volume.into(),
+            min_volume,
+            max_volume,
+        )?;
         Ok(())
     }
 
@@ -537,13 +555,23 @@ impl TryFrom<StorageNodeV1> for StorageNode {
                 source: Box::new(source),
             })?;
 
+        let initial_volume = if let Some(v) = v1.initial_volume {
+            StorageInitialVolume::Absolute(v)
+        } else if let Some(v) = v1.initial_volume_pc {
+            StorageInitialVolume::Proportional(v)
+        } else {
+            return Err(ConversionError::MissingAttribute {
+                name: meta.name,
+                attrs: vec!["initial_volume".to_string(), "initial_volume_pc".to_string()],
+            });
+        };
+
         let n = Self {
             meta,
             max_volume,
             min_volume,
             cost,
-            initial_volume: v1.initial_volume,
-            initial_volume_pc: v1.initial_volume_pc,
+            initial_volume,
         };
         Ok(n)
     }
@@ -571,13 +599,20 @@ impl TryFrom<ReservoirNodeV1> for StorageNode {
             .map(|v| v.try_into_v2_parameter(Some(&meta.name), &mut unnamed_count))
             .transpose()?;
 
+        let initial_volume = if let Some(v) = v1.initial_volume {
+            StorageInitialVolume::Absolute(v)
+        } else if let Some(v) = v1.initial_volume_pc {
+            StorageInitialVolume::Proportional(v)
+        } else {
+            StorageInitialVolume::default()
+        };
+
         let n = Self {
             meta,
             max_volume,
             min_volume,
             cost,
-            initial_volume: v1.initial_volume,
-            initial_volume_pc: v1.initial_volume_pc,
+            initial_volume,
         };
         Ok(n)
     }
@@ -913,7 +948,9 @@ impl TryFrom<AggregatedStorageNodeV1> for AggregatedStorageNode {
 
 #[cfg(test)]
 mod tests {
+    use crate::nodes::core::StorageInitialVolume;
     use crate::nodes::InputNode;
+    use crate::nodes::StorageNode;
 
     #[test]
     fn test_input() {
@@ -928,5 +965,41 @@ mod tests {
         let node: InputNode = serde_json::from_str(data).unwrap();
 
         assert_eq!(node.meta.name, "supply1");
+    }
+
+    #[test]
+    fn test_storage_initial_volume_absolute() {
+        let data = r#"
+            {
+                "name": "storage1",
+                "type": "Storage",
+                "volume": 15.0,
+                "initial_volume": {
+                    "Absolute": 12.0
+                }
+            }
+            "#;
+
+        let storage: StorageNode = serde_json::from_str(data).unwrap();
+
+        assert_eq!(storage.initial_volume, StorageInitialVolume::Absolute(12.0));
+    }
+
+    #[test]
+    fn test_storage_initial_volume_proportional() {
+        let data = r#"
+            {
+                "name": "storage1",
+                "type": "Storage",
+                "volume": 15.0,
+                "initial_volume": {
+                    "Proportional": 0.5
+                }
+            }
+            "#;
+
+        let storage: StorageNode = serde_json::from_str(data).unwrap();
+
+        assert_eq!(storage.initial_volume, StorageInitialVolume::Proportional(0.5));
     }
 }
