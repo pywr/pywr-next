@@ -1,8 +1,8 @@
 use crate::metric::Metric;
 use crate::network::Network;
 use crate::parameters::{
-    downcast_internal_state_mut, downcast_internal_state_ref, ActivationFunction, Parameter, ParameterMeta,
-    VariableParameter,
+    downcast_internal_state_mut, downcast_internal_state_ref, downcast_variable_config_ref, ActivationFunction,
+    Parameter, ParameterMeta, VariableConfig, VariableParameter,
 };
 use crate::scenario::ScenarioIndex;
 use std::any::Any;
@@ -15,19 +15,17 @@ pub struct OffsetParameter {
     meta: ParameterMeta,
     metric: Metric,
     offset: f64,
-    variable: Option<ActivationFunction>,
 }
 
 // We store this internal value as an Option<f64> so that it can be updated by the variable API
 type InternalValue = Option<f64>;
 
 impl OffsetParameter {
-    pub fn new(name: &str, metric: Metric, offset: f64, variable: Option<ActivationFunction>) -> Self {
+    pub fn new(name: &str, metric: Metric, offset: f64) -> Self {
         Self {
             meta: ParameterMeta::new(name),
             metric,
             offset,
-            variable,
         }
     }
 
@@ -37,10 +35,7 @@ impl OffsetParameter {
     /// have come from the variable API and is passed through the activation function.
     fn offset(&self, internal_state: &Option<Box<dyn ParameterState>>) -> f64 {
         match downcast_internal_state_ref::<InternalValue>(internal_state) {
-            Some(value) => match self.variable {
-                Some(variable) => variable.apply(*value),
-                None => unreachable!("Internal state should not be set if variable is not active"),
-            },
+            Some(value) => *value,
             None => self.offset,
         }
     }
@@ -79,22 +74,22 @@ impl VariableParameter<f64> for OffsetParameter {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }
-    fn is_active(&self) -> bool {
-        self.variable.is_some()
-    }
 
-    fn size(&self) -> usize {
+    fn size(&self, _variable_config: &Box<dyn VariableConfig>) -> usize {
         1
     }
 
     fn set_variables(
         &self,
         values: &[f64],
+        variable_config: &Box<dyn VariableConfig>,
         internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<(), PywrError> {
+        let activation_function = downcast_variable_config_ref::<ActivationFunction>(variable_config);
+
         if values.len() == 1 {
             let value = downcast_internal_state_mut::<InternalValue>(internal_state);
-            *value = Some(values[0]);
+            *value = Some(activation_function.apply(values[0]));
             Ok(())
         } else {
             Err(PywrError::ParameterVariableValuesIncorrectLength)
@@ -108,17 +103,13 @@ impl VariableParameter<f64> for OffsetParameter {
         }
     }
 
-    fn get_lower_bounds(&self) -> Result<Vec<f64>, PywrError> {
-        match self.variable {
-            Some(variable) => Ok(vec![variable.lower_bound()]),
-            None => Err(PywrError::ParameterVariableNotActive),
-        }
+    fn get_lower_bounds(&self, variable_config: &Box<dyn VariableConfig>) -> Result<Vec<f64>, PywrError> {
+        let activation_function = downcast_variable_config_ref::<ActivationFunction>(variable_config);
+        Ok(vec![activation_function.lower_bound()])
     }
 
-    fn get_upper_bounds(&self) -> Result<Vec<f64>, PywrError> {
-        match self.variable {
-            Some(variable) => Ok(vec![variable.upper_bound()]),
-            None => Err(PywrError::ParameterVariableNotActive),
-        }
+    fn get_upper_bounds(&self, variable_config: &Box<dyn VariableConfig>) -> Result<Vec<f64>, PywrError> {
+        let activation_function = downcast_variable_config_ref::<ActivationFunction>(variable_config);
+        Ok(vec![activation_function.upper_bound()])
     }
 }

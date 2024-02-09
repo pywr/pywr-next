@@ -508,7 +508,6 @@ impl TryFromV1Parameter<ParameterV1> for Parameter {
                         comment: Some(comment),
                     },
                     value: ConstantValue::Literal(0.0),
-                    variable: None,
                 })
             }
         };

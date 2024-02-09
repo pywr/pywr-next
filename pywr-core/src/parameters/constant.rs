@@ -1,7 +1,7 @@
 use crate::network::Network;
 use crate::parameters::{
-    downcast_internal_state_mut, downcast_internal_state_ref, ActivationFunction, Parameter, ParameterMeta,
-    VariableParameter,
+    downcast_internal_state_mut, downcast_internal_state_ref, downcast_variable_config_ref, ActivationFunction,
+    Parameter, ParameterMeta, VariableConfig, VariableParameter,
 };
 use crate::scenario::ScenarioIndex;
 use crate::state::{ParameterState, State};
@@ -12,18 +12,16 @@ use std::any::Any;
 pub struct ConstantParameter {
     meta: ParameterMeta,
     value: f64,
-    variable: Option<ActivationFunction>,
 }
 
 // We store this internal value as an Option<f64> so that it can be updated by the variable API
 type InternalValue = Option<f64>;
 
 impl ConstantParameter {
-    pub fn new(name: &str, value: f64, variable: Option<ActivationFunction>) -> Self {
+    pub fn new(name: &str, value: f64) -> Self {
         Self {
             meta: ParameterMeta::new(name),
             value,
-            variable,
         }
     }
 
@@ -33,10 +31,7 @@ impl ConstantParameter {
     /// have come from the variable API and is passed through the activation function.
     fn value(&self, internal_state: &Option<Box<dyn ParameterState>>) -> f64 {
         match downcast_internal_state_ref::<InternalValue>(internal_state) {
-            Some(value) => match self.variable {
-                Some(variable) => variable.apply(*value),
-                None => unreachable!("Internal state should not be set if variable is not active"),
-            },
+            Some(value) => *value,
             None => self.value,
         }
     }
@@ -84,22 +79,22 @@ impl VariableParameter<f64> for ConstantParameter {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }
-    fn is_active(&self) -> bool {
-        self.variable.is_some()
-    }
 
-    fn size(&self) -> usize {
+    fn size(&self, _variable_config: &Box<dyn VariableConfig>) -> usize {
         1
     }
 
     fn set_variables(
         &self,
         values: &[f64],
+        variable_config: &Box<dyn VariableConfig>,
         internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<(), PywrError> {
+        let activation_function = downcast_variable_config_ref::<ActivationFunction>(variable_config);
+
         if values.len() == 1 {
             let value = downcast_internal_state_mut::<InternalValue>(internal_state);
-            *value = Some(values[0]);
+            *value = Some(activation_function.apply(values[0]));
             Ok(())
         } else {
             Err(PywrError::ParameterVariableValuesIncorrectLength)
@@ -113,24 +108,20 @@ impl VariableParameter<f64> for ConstantParameter {
         }
     }
 
-    fn get_lower_bounds(&self) -> Result<Vec<f64>, PywrError> {
-        match self.variable {
-            Some(variable) => Ok(vec![variable.lower_bound()]),
-            None => Err(PywrError::ParameterVariableNotActive),
-        }
+    fn get_lower_bounds(&self, variable_config: &Box<dyn VariableConfig>) -> Result<Vec<f64>, PywrError> {
+        let activation_function = downcast_variable_config_ref::<ActivationFunction>(variable_config);
+        Ok(vec![activation_function.lower_bound()])
     }
 
-    fn get_upper_bounds(&self) -> Result<Vec<f64>, PywrError> {
-        match self.variable {
-            Some(variable) => Ok(vec![variable.upper_bound()]),
-            None => Err(PywrError::ParameterVariableNotActive),
-        }
+    fn get_upper_bounds(&self, variable_config: &Box<dyn VariableConfig>) -> Result<Vec<f64>, PywrError> {
+        let activation_function = downcast_variable_config_ref::<ActivationFunction>(variable_config);
+        Ok(vec![activation_function.upper_bound()])
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::parameters::{ActivationFunction, ConstantParameter, Parameter, VariableParameter};
+    use crate::parameters::{ActivationFunction, ConstantParameter, Parameter, VariableConfig, VariableParameter};
     use crate::test_utils::default_domain;
     use float_cmp::assert_approx_eq;
 
@@ -138,7 +129,8 @@ mod tests {
     fn test_variable_api() {
         let domain = default_domain();
 
-        let p = ConstantParameter::new("test", 1.0, Some(ActivationFunction::Unit { min: 0.0, max: 2.0 }));
+        let var: Box<dyn VariableConfig> = Box::new(ActivationFunction::Unit { min: 0.0, max: 2.0 });
+        let p = ConstantParameter::new("test", 1.0);
         let mut state = p
             .setup(
                 &domain.time().timesteps(),
@@ -150,7 +142,7 @@ mod tests {
         assert_eq!(p.get_variables(&state), None);
 
         // Update the value via the variable API
-        p.set_variables(&[2.0], &mut state).unwrap();
+        p.set_variables(&[2.0], &var, &mut state).unwrap();
 
         // Check the parameter returns the new value
         assert_approx_eq!(f64, p.value(&state), 2.0);
