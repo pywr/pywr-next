@@ -43,6 +43,5 @@ pyo3-polars = "0.11.1"
 pyo3 = { version = "0.20.2" }
 tracing = "0.1"
 csv = "1.1"
-hdf5 = { version="0.8.1" }
-hdf5-sys = { version="0.8.1", features=["static"] }
+hdf5 = { git="https://github.com/aldanor/hdf5-rust.git", package = "hdf5", features=["static", "zlib"] }
 pywr-v1-schema = { git = "https://github.com/pywr/pywr-schema/", tag="v0.9.0", package = "pywr-schema" }
