@@ -31,6 +31,8 @@ pub enum SchemaError {
     DataTable(#[from] TableError),
     #[error("Timeseries '{0} not found")]
     TimeseriesNotFound(String),
+    #[error("The duration of timeseries '{0}' could not be determined.")]
+    TimeseriesDurationNotFound(String),
     #[error("Column '{col}' not found in timeseries input '{name}'")]
     ColumnNotFound { col: String, name: String },
     #[error("Timeseries provider '{provider}' does not support '{fmt}' file types")]

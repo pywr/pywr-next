@@ -73,9 +73,9 @@
         "name": "inflow",
         "provider": {
           "type": "Polars",
-          "index_col": 0
-        },
-        "url": "../test_models/inflow.csv"
+          "time_col": "date",
+          "url": "../test_models/inflow.csv"
+        }
       }
     ]
   }

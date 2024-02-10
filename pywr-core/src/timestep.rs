@@ -77,6 +77,7 @@ impl Timestepper {
 }
 
 /// The time domain that a model will be simulated over.
+#[derive(Debug)]
 pub struct TimeDomain {
     timesteps: Vec<Timestep>,
 }
@@ -97,6 +98,14 @@ impl TimeDomain {
     /// The total number of time-steps in the domain.
     pub fn len(&self) -> usize {
         self.timesteps.len()
+    }
+
+    pub fn first_timestep(&self) -> &Timestep {
+        self.timesteps.first().expect("No time-steps defined.")
+    }
+
+    pub fn last_timestep(&self) -> &Timestep {
+        self.timesteps.last().expect("No time-steps defined.")
     }
 }
 

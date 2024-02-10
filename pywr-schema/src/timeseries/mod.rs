@@ -1,3 +1,4 @@
+mod align_and_resample;
 mod polars_dataset;
 
 use ndarray::{Array1, Array2};
@@ -23,33 +24,20 @@ enum TimeseriesProvider {
     Polars(PolarsDataset),
 }
 
-struct ResamplingArgs {}
-
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
 pub struct Timeseries {
     #[serde(flatten)]
-    names: ParameterMeta,
+    meta: ParameterMeta,
     provider: TimeseriesProvider,
-    url: PathBuf,
 }
 
 impl Timeseries {
     pub fn load(&self, domain: &ModelDomain, data_path: Option<&Path>) -> Result<DataFrame, SchemaError> {
         match &self.provider {
-            TimeseriesProvider::Polars(dataset) => dataset.load(self.url.as_path(), data_path),
+            TimeseriesProvider::Polars(dataset) => dataset.load(self.meta.name.as_str(), data_path, domain),
             TimeseriesProvider::Pandas => todo!(),
         }
     }
-}
-
-fn align_and_resample(df: &DataFrame, domain: &ModelDomain) -> Result<DataFrame, SchemaError> {
-    // 1. check that time column contains datetime
-    // 2. get domain timestep frequency
-    // 3. get df timestep frequency
-    // 4. resample df if they don't match
-    // 5. slice df to align with domain start and end dates
-
-    todo!()
 }
 
 pub struct LoadedTimeseriesCollection {
@@ -66,7 +54,8 @@ impl LoadedTimeseriesCollection {
         if let Some(timeseries_defs) = timeseries_defs {
             for ts in timeseries_defs {
                 let df = ts.load(domain, data_path)?;
-                timeseries.insert(ts.names.name.clone(), df);
+                // TODO error if key already exists
+                timeseries.insert(ts.meta.name.clone(), df);
             }
         }
         Ok(Self { timeseries })

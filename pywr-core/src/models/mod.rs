@@ -6,6 +6,7 @@ use crate::timestep::{TimeDomain, Timestepper};
 pub use multi::{MultiNetworkModel, MultiNetworkTransferIndex};
 pub use simple::Model;
 
+#[derive(Debug)]
 pub struct ModelDomain {
     time: TimeDomain,
     scenarios: ScenarioDomain,

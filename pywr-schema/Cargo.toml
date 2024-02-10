@@ -15,7 +15,7 @@ categories = ["science", "simulation"]
 
 [dependencies]
 svgbobdoc = { version = "0.3.0", features = ["enable"]  }
-polars = {  workspace = true, features = ["csv"] }
+polars = {  workspace = true, features = ["csv", "diff", "dtype-datetime", "dtype-date", "dynamic_group_by"] }
 pyo3 = {  workspace = true }
 pyo3-polars = {  workspace = true }
 strum = "0.26"
@@ -32,6 +32,7 @@ thiserror = {  workspace = true }
 pywr-v1-schema = { workspace = true }
 time = { workspace = true, features = ["serde", "serde-well-known", "serde-human-readable", "macros"] }
 pywr-core = { path="../pywr-core" }
+chrono = "0.4.33"
 
 [dev-dependencies]
 tempfile = "3.3.0"
