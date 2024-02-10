@@ -18,7 +18,7 @@ libc = "0.2.97"
 thiserror = {  workspace = true }
 ndarray = {  workspace = true }
 num = {  workspace = true }
-float-cmp = "0.9.0"
+float-cmp = {  workspace = true }
 hdf5 = {  workspace = true }
 hdf5-sys = {  workspace = true }
 csv = {  workspace = true }

@@ -130,7 +130,7 @@ pub enum TableError {
     TableNotFound(String),
     #[error("entry not found")]
     EntryNotFound,
-    #[error("wrong key size; expected: {0}; given: {0}")]
+    #[error("wrong key size; expected: {0}; given: {1}")]
     WrongKeySize(usize, usize),
     #[error("failed to get or parse key")]
     KeyParse,

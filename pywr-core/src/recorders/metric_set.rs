@@ -123,4 +123,22 @@ impl MetricSet {
 
         Ok(())
     }
+
+    pub fn finalise(&self, internal_state: &mut MetricSetState) {
+        if let Some(aggregator) = &self.aggregator {
+            let aggregation_states = internal_state
+                .aggregation_states
+                .as_mut()
+                .expect("Aggregation state expected for metric set with aggregator!");
+
+            let final_values = aggregation_states
+                .iter_mut()
+                .map(|current_state| aggregator.finalise(current_state))
+                .collect::<Option<Vec<_>>>();
+
+            internal_state.current_values = final_values;
+        } else {
+            internal_state.current_values = None;
+        }
+    }
 }

@@ -299,8 +299,9 @@ impl MultiNetworkModel {
         }
 
         for (idx, entry) in self.networks.iter().enumerate() {
+            let sub_model_ms_states = state.states.get_mut(idx).unwrap().all_metric_set_internal_states_mut();
             let sub_model_recorder_states = state.recorder_states.get_mut(idx).unwrap();
-            entry.network.finalise(sub_model_recorder_states)?;
+            entry.network.finalise(sub_model_ms_states, sub_model_recorder_states)?;
         }
         // End the global timer and print the run statistics
         timings.finish(count);

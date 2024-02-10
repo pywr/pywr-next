@@ -22,6 +22,10 @@ impl<S> ModelState<S> {
     pub fn network_state_mut(&mut self) -> &mut NetworkState {
         &mut self.state
     }
+
+    pub fn recorder_state(&self) -> &Vec<Option<Box<dyn Any>>> {
+        &self.recorder_state
+    }
 }
 
 /// A standard Pywr model containing a single network.
@@ -196,7 +200,7 @@ impl Model {
     /// Run a model through the given time-steps.
     ///
     /// This method will setup state and solvers, and then run the model through the time-steps.
-    pub fn run<S>(&self, settings: &S::Settings) -> Result<(), PywrError>
+    pub fn run<S>(&self, settings: &S::Settings) -> Result<Vec<Option<Box<dyn Any>>>, PywrError>
     where
         S: Solver,
         <S as Solver>::Settings: SolverSettings,
@@ -205,7 +209,7 @@ impl Model {
 
         self.run_with_state::<S>(&mut state, settings)?;
 
-        Ok(())
+        Ok(state.recorder_state)
     }
 
     /// Run the model with the provided states and solvers.
@@ -243,7 +247,10 @@ impl Model {
             count += self.domain.scenarios.indices().len();
         }
 
-        self.network.finalise(&mut state.recorder_state)?;
+        self.network.finalise(
+            state.state.all_metric_set_internal_states_mut(),
+            &mut state.recorder_state,
+        )?;
         // End the global timer and print the run statistics
         timings.finish(count);
         timings.print_table();
@@ -296,7 +303,10 @@ impl Model {
             count += self.domain.scenarios.indices().len();
         }
 
-        self.network.finalise(&mut state.recorder_state)?;
+        self.network.finalise(
+            state.state.all_metric_set_internal_states_mut(),
+            &mut state.recorder_state,
+        )?;
 
         // End the global timer and print the run statistics
         timings.finish(count);

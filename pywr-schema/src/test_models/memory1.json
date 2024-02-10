@@ -50,6 +50,23 @@
     "metric_sets": [
       {
         "name": "nodes",
+        "aggregator": {
+          "freq": {
+            "type": "Annual"
+          },
+          "func": {
+            "type": "CountNonZero"
+          },
+          "child": {
+            "freq": {
+              "type": "Rolling",
+              "window": 4
+            },
+            "func": {
+              "type": "Min"
+            }
+          }
+        },
         "metrics": [
           {
             "type": "Default",
@@ -60,10 +77,20 @@
     ],
     "outputs": [
       {
-        "name": "my-outputs",
-        "type": "HDF5",
-        "filename": "outputs.h5",
-        "metric_set": "nodes"
+        "name": "outputs",
+        "type": "Memory",
+        "metric_set": "nodes",
+        "aggregation": {
+          "time": {
+            "type": "CountNonZero"
+          },
+          "metrics": {
+            "type": "Max"
+          },
+          "scenario": {
+            "type": "Sum"
+          }
+        }
       }
     ]
   }

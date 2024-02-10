@@ -1,13 +1,23 @@
 use crate::error::SchemaError;
 use crate::model::PywrNetwork;
+use crate::nodes::NodeAttribute;
 use serde::{Deserialize, Serialize};
+use std::num::NonZeroUsize;
 
 /// Output metrics that can be recorded from a model run.
 #[derive(Deserialize, Serialize, Clone)]
-#[serde(untagged)]
+#[serde(tag = "type")]
 pub enum OutputMetric {
     /// Output the default metric for a node.
-    NodeName(String),
+    Default {
+        node: String,
+    },
+    Deficit {
+        node: String,
+    },
+    Parameter {
+        name: String,
+    },
 }
 
 impl OutputMetric {
@@ -17,13 +27,25 @@ impl OutputMetric {
         schema: &PywrNetwork,
     ) -> Result<pywr_core::metric::Metric, SchemaError> {
         match self {
-            OutputMetric::NodeName(node_name) => {
+            OutputMetric::Default { node } => {
                 // Get the node from the schema; not the model itself
                 let node = schema
-                    .get_node_by_name(node_name)
-                    .ok_or_else(|| SchemaError::NodeNotFound(node_name.to_string()))?;
+                    .get_node_by_name(node)
+                    .ok_or_else(|| SchemaError::NodeNotFound(node.to_string()))?;
                 // Create and return the node's default metric
                 node.create_metric(network, None)
+            }
+            OutputMetric::Deficit { node } => {
+                // Get the node from the schema; not the model itself
+                let node = schema
+                    .get_node_by_name(node)
+                    .ok_or_else(|| SchemaError::NodeNotFound(node.to_string()))?;
+                // Create and return the metric
+                node.create_metric(network, Some(NodeAttribute::Deficit))
+            }
+            OutputMetric::Parameter { name } => {
+                let parameter_idx = network.get_parameter_index_by_name(name)?;
+                Ok(pywr_core::metric::Metric::ParameterValue(parameter_idx))
             }
         }
     }
@@ -31,12 +53,13 @@ impl OutputMetric {
 
 /// Aggregation function to apply over metric values.
 #[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone)]
-#[serde(rename_all = "lowercase")]
+#[serde(tag = "type")]
 pub enum MetricAggFunc {
     Sum,
     Max,
     Min,
     Mean,
+    CountNonZero,
 }
 
 impl From<MetricAggFunc> for pywr_core::recorders::AggregationFunction {
@@ -46,15 +69,17 @@ impl From<MetricAggFunc> for pywr_core::recorders::AggregationFunction {
             MetricAggFunc::Max => pywr_core::recorders::AggregationFunction::Max,
             MetricAggFunc::Min => pywr_core::recorders::AggregationFunction::Min,
             MetricAggFunc::Mean => pywr_core::recorders::AggregationFunction::Mean,
+            MetricAggFunc::CountNonZero => pywr_core::recorders::AggregationFunction::CountNonZero,
         }
     }
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone)]
-#[serde(rename_all = "lowercase")]
+#[serde(tag = "type")]
 pub enum MetricAggFrequency {
     Monthly,
     Annual,
+    Rolling { window: NonZeroUsize },
 }
 
 impl From<MetricAggFrequency> for pywr_core::recorders::AggregationFrequency {
@@ -62,6 +87,7 @@ impl From<MetricAggFrequency> for pywr_core::recorders::AggregationFrequency {
         match value {
             MetricAggFrequency::Monthly => pywr_core::recorders::AggregationFrequency::Monthly,
             MetricAggFrequency::Annual => pywr_core::recorders::AggregationFrequency::Annual,
+            MetricAggFrequency::Rolling { window } => pywr_core::recorders::AggregationFrequency::Rolling { window },
         }
     }
 }
@@ -104,6 +130,7 @@ impl From<MetricAggregator> for pywr_core::recorders::Aggregator {
 pub struct MetricSet {
     name: String,
     metrics: Vec<OutputMetric>,
+    indices: Vec<OutputMetric>,
     aggregator: Option<MetricAggregator>,
 }
 

@@ -1,9 +1,11 @@
+use std::num::NonZeroUsize;
 use time::{Date, Duration, Month};
 
 #[derive(Clone, Debug)]
 pub enum AggregationFrequency {
     Monthly,
     Annual,
+    Rolling { window: NonZeroUsize },
 }
 
 impl AggregationFrequency {
@@ -11,6 +13,10 @@ impl AggregationFrequency {
         match self {
             Self::Monthly => (period_start.year() == date.year()) && (period_start.month() == date.month()),
             Self::Annual => period_start.year() == date.year(),
+            Self::Rolling { window } => {
+                let period_end = *period_start + Duration::days(window.get() as i64);
+                (period_start <= date) && (date < &period_end)
+            }
         }
     }
 
@@ -32,6 +38,7 @@ impl AggregationFrequency {
             // SAFETY: This should be safe to unwrap as it will always create a valid date unless
             // we are at the limit of dates that are representable.
             Self::Annual => Date::from_calendar_date(current_date.year() + 1, Month::January, 1).unwrap(),
+            Self::Rolling { window } => *current_date + Duration::days(window.get() as i64),
         }
     }
 
@@ -71,10 +78,11 @@ pub enum AggregationFunction {
     Mean,
     Min,
     Max,
+    CountNonZero,
 }
 
 impl AggregationFunction {
-    fn calc(&self, values: &[PeriodValue]) -> Option<f64> {
+    pub fn calc(&self, values: &[PeriodValue]) -> Option<f64> {
         match self {
             AggregationFunction::Sum => Some(values.iter().map(|v| v.value * v.duration.whole_days() as f64).sum()),
             AggregationFunction::Mean => {
@@ -83,7 +91,6 @@ impl AggregationFunction {
                     None
                 } else {
                     let sum: f64 = values.iter().map(|v| v.value * v.duration.whole_days() as f64).sum();
-
                     Some(sum / ndays as f64)
                 }
             }
@@ -95,6 +102,43 @@ impl AggregationFunction {
                 a.partial_cmp(b)
                     .expect("Failed to calculate maximum of values containing a NaN.")
             }),
+            AggregationFunction::CountNonZero => {
+                let count = values.iter().filter(|v| v.value != 0.0).count();
+                Some(count as f64)
+            }
+        }
+    }
+
+    pub fn calc_f64(&self, values: &[f64]) -> Option<f64> {
+        match self {
+            AggregationFunction::Sum => Some(values.iter().sum()),
+            AggregationFunction::Mean => {
+                let ndays: i64 = values.len() as i64;
+                if ndays == 0 {
+                    None
+                } else {
+                    let sum: f64 = values.iter().sum();
+                    Some(sum / ndays as f64)
+                }
+            }
+            AggregationFunction::Min => values
+                .iter()
+                .min_by(|a, b| {
+                    a.partial_cmp(b)
+                        .expect("Failed to calculate minimum of values containing a NaN.")
+                })
+                .copied(),
+            AggregationFunction::Max => values
+                .iter()
+                .max_by(|a, b| {
+                    a.partial_cmp(b)
+                        .expect("Failed to calculate maximum of values containing a NaN.")
+                })
+                .copied(),
+            AggregationFunction::CountNonZero => {
+                let count = values.iter().filter(|v| **v != 0.0).count();
+                Some(count as f64)
+            }
         }
     }
 }

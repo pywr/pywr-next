@@ -124,6 +124,8 @@ pub enum PywrError {
     InvalidMetricValue(String),
     #[error("recorder not initialised")]
     RecorderNotInitialised,
+    #[error("recorder does not supported aggregation")]
+    RecorderDoesNotSupportAggregation,
     #[error("hdf5 error: {0}")]
     HDF5Error(String),
     #[error("csv error: {0}")]

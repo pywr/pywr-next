@@ -218,7 +218,11 @@ impl Recorder for CSVRecorder {
         Ok(())
     }
 
-    fn finalise(&self, internal_state: &mut Option<Box<dyn Any>>) -> Result<(), PywrError> {
+    fn finalise(
+        &self,
+        _metric_set_states: &[Vec<MetricSetState>],
+        internal_state: &mut Option<Box<dyn Any>>,
+    ) -> Result<(), PywrError> {
         // This will leave the internal state with a `None` because we need to take
         // ownership of the file handle in order to close it.
         match internal_state.take() {
