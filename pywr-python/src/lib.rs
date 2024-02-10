@@ -196,6 +196,8 @@ fn build_highs_settings(kwargs: Option<&PyDict>) -> PyResult<HighsSolverSettings
 /// A Python module implemented in Rust.
 #[pymodule]
 fn pywr(_py: Python, m: &PyModule) -> PyResult<()> {
+    pyo3_log::init();
+
     m.add_class::<Schema>()?;
     m.add_class::<Model>()?;
 
