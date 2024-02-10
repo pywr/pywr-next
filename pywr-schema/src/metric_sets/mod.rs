@@ -130,7 +130,6 @@ impl From<MetricAggregator> for pywr_core::recorders::Aggregator {
 pub struct MetricSet {
     name: String,
     metrics: Vec<OutputMetric>,
-    indices: Vec<OutputMetric>,
     aggregator: Option<MetricAggregator>,
 }
 
