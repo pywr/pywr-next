@@ -54,7 +54,8 @@ pub use offset::OffsetParameter;
 pub use polynomial::Polynomial1DParameter;
 pub use profiles::{
     DailyProfileParameter, MonthlyInterpDay, MonthlyProfileParameter, RadialBasisFunction, RbfProfileParameter,
-    RbfProfileVariableConfig, UniformDrawdownProfileParameter, WeeklyInterpDay, WeeklyProfileParameter,
+    RbfProfileVariableConfig, UniformDrawdownProfileParameter, WeeklyInterpDay, WeeklyProfileError,
+    WeeklyProfileParameter, WeeklyProfileValues,
 };
 pub use py::PyParameter;
 use std::fmt;

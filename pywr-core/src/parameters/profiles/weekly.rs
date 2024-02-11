@@ -5,6 +5,7 @@ use crate::state::State;
 use crate::timestep::Timestep;
 use crate::PywrError;
 use std::any::Any;
+use thiserror::Error;
 use time::{util::is_leap_year, Date};
 
 pub enum WeeklyInterpDay {
@@ -13,12 +14,12 @@ pub enum WeeklyInterpDay {
 }
 
 // A weekly profile can be 52 or 53 week long
-enum WeeklyProfileSize {
+pub enum WeeklyProfileValues {
     FiftyTwo([f64; 52]),
     FiftyThree([f64; 53]),
 }
 
-impl WeeklyProfileSize {
+impl WeeklyProfileValues {
     /// Get the week position in a calendar year from date. The position starts from 0 on the
     /// first week day and ends with 1 on the last week day.
     fn current_pos(&self, date: &Date) -> f64 {
@@ -54,6 +55,9 @@ impl WeeklyProfileSize {
 
     /// Get the value corresponding to the week index for the provided date
     fn current(&self, date: &Date) -> f64 {
+        // The current_index function always returns and index between 0 and
+        // 52 (for Self::FiftyTwo) or 53 (Self::FiftyThree). This ensures
+        // that the index is always in range in the value array below
         let current_index = self.current_index(date);
 
         match self {
@@ -140,29 +144,37 @@ impl WeeklyProfileSize {
     }
 }
 
-impl From<Vec<f64>> for WeeklyProfileSize {
-    fn from(v: Vec<f64>) -> Self {
-        match v.len() {
-            52 => WeeklyProfileSize::FiftyTwo(v.try_into().unwrap()),
-            53 => WeeklyProfileSize::FiftyThree(v.try_into().unwrap()),
-            _ => panic!("52 or 53 values must be given for a weekly profile parameter"),
+#[derive(Error, Debug, PartialEq, Eq)]
+pub enum WeeklyProfileError {
+    #[error("52 or 53 values must be given for a weekly profile parameter")]
+    InvalidLength,
+}
+
+impl TryFrom<&[f64]> for WeeklyProfileValues {
+    type Error = WeeklyProfileError;
+
+    fn try_from(value: &[f64]) -> Result<Self, Self::Error> {
+        match value.len() {
+            52 => Ok(WeeklyProfileValues::FiftyTwo(value.try_into().unwrap())),
+            53 => Ok(WeeklyProfileValues::FiftyThree(value.try_into().unwrap())),
+            _ => Err(WeeklyProfileError::InvalidLength),
         }
     }
 }
 
-/// Schema for a weekly profile parameter. This supports a profile with either 52 or 53 weeks,
-/// with or without interpolation.
+/// Weekly profile parameter. This supports a profile with either 52 or 53 weeks, with or without interpolation.
 pub struct WeeklyProfileParameter {
     meta: ParameterMeta,
-    values: WeeklyProfileSize,
+    values: WeeklyProfileValues,
     interp_day: Option<WeeklyInterpDay>,
 }
 
 impl WeeklyProfileParameter {
-    pub fn new(name: &str, values: Vec<f64>, interp_day: Option<WeeklyInterpDay>) -> Self {
+    pub fn new(name: &str, values: WeeklyProfileValues, interp_day: Option<WeeklyInterpDay>) -> Self {
         Self {
             meta: ParameterMeta::new(name),
-            values: WeeklyProfileSize::from(values),
+            values,
+            // values: WeeklyProfileSize::try_from(values),
             interp_day,
         }
     }
@@ -189,29 +201,12 @@ impl Parameter for WeeklyProfileParameter {
 
 #[cfg(test)]
 mod tests {
-    use crate::parameters::profiles::weekly::{WeeklyInterpDay, WeeklyProfileSize};
-    use float_cmp::{approx_eq, F64Margin};
+    use crate::parameters::profiles::weekly::{WeeklyInterpDay, WeeklyProfileValues};
+    use crate::test_utils::assert_approx_array_eq;
     use time::{Date, Duration, Month};
 
-    /// Compare the arrays
-    fn assert(calculated_values: &[f64], expected_values: &[f64]) {
-        let margins = F64Margin {
-            epsilon: 2.0,
-            ulps: (f64::EPSILON * 2.0) as i64,
-        };
-        for (i, (calculated, expected)) in calculated_values.iter().zip(expected_values).enumerate() {
-            if !approx_eq!(f64, *calculated, *expected, margins) {
-                panic!(
-                    r#"assertion failed on item #{i:?}
-                    actual: `{calculated:?}`,
-                    expected: `{expected:?}`"#,
-                )
-            }
-        }
-    }
-
     /// Build a time-series from the weekly profile
-    fn collect(week_size: &WeeklyProfileSize, interp_day: Option<WeeklyInterpDay>) -> Vec<f64> {
+    fn collect(week_size: &WeeklyProfileValues, interp_day: Option<WeeklyInterpDay>) -> Vec<f64> {
         let dt0 = Date::from_calendar_date(2020, Month::January, 1).unwrap();
         let dt1 = Date::from_calendar_date(2020, Month::December, 31).unwrap();
 
@@ -235,7 +230,7 @@ mod tests {
             20.0, 21.0, 22.0, 23.0, 24.0, 25.0, 26.0, 27.0, 28.0, 29.0, 30.0, 31.0, 32.0, 33.0, 34.0, 35.0, 36.0, 37.0,
             38.0, 39.0, 40.0, 41.0, 42.0, 43.0, 44.0, 45.0, 46.0, 47.0, 48.0, 49.0, 50.0, 51.0, 52.0,
         ];
-        let week_size = WeeklyProfileSize::FiftyTwo(profile);
+        let week_size = WeeklyProfileValues::FiftyTwo(profile);
 
         // No interpolation
         let expected_values_interp_none = [
@@ -261,7 +256,7 @@ mod tests {
             51.0, 51.0, 51.0, 51.0, 51.0, 51.0, 52.0, 52.0, 52.0, 52.0, 52.0, 52.0, 52.0, 52.0, 52.0,
         ];
         let values_interp_none = collect(&week_size, None);
-        assert(&values_interp_none, &expected_values_interp_none);
+        assert_approx_array_eq(&values_interp_none, &expected_values_interp_none);
 
         // WeeklyInterpDay::First
         let expected_values_interp_first = [
@@ -300,7 +295,7 @@ mod tests {
             52.0, 44.71429, 37.42857, 30.14286, 22.85714, 15.57143, 8.28571, 52.0, 44.71429, 37.42857,
         ];
         let values_interp_first = collect(&week_size, Some(WeeklyInterpDay::First));
-        assert(&values_interp_first, &expected_values_interp_first);
+        assert_approx_array_eq(&values_interp_first, &expected_values_interp_first);
 
         // WeeklyInterpDay::Last
         let expected_values_interp_last = [
@@ -339,7 +334,7 @@ mod tests {
             51.14286, 51.28571, 51.42857, 51.57143, 51.71429, 51.85714, 52.0, 51.875,
         ];
         let values_interp_none = collect(&week_size, Some(WeeklyInterpDay::Last));
-        assert(&values_interp_none, &expected_values_interp_last);
+        assert_approx_array_eq(&values_interp_none, &expected_values_interp_last);
     }
 
     /// Test a leap year with a profile of 53 values
@@ -350,7 +345,7 @@ mod tests {
             20.0, 21.0, 22.0, 23.0, 24.0, 25.0, 26.0, 27.0, 28.0, 29.0, 30.0, 31.0, 32.0, 33.0, 34.0, 35.0, 36.0, 37.0,
             38.0, 39.0, 40.0, 41.0, 42.0, 43.0, 44.0, 45.0, 46.0, 47.0, 48.0, 49.0, 50.0, 51.0, 52.0, 53.0,
         ];
-        let week_size = WeeklyProfileSize::FiftyThree(profile);
+        let week_size = WeeklyProfileValues::FiftyThree(profile);
 
         // No interpolation
         let expected_values_interp_none = [
@@ -376,7 +371,7 @@ mod tests {
             51.0, 51.0, 51.0, 51.0, 51.0, 51.0, 52.0, 52.0, 52.0, 52.0, 52.0, 52.0, 52.0, 53.0, 53.0,
         ];
         let values_interp_none = collect(&week_size, None);
-        assert(&values_interp_none, &expected_values_interp_none);
+        assert_approx_array_eq(&values_interp_none, &expected_values_interp_none);
 
         // WeeklyInterpDay::First
         let expected_values_interp_first = [
@@ -415,7 +410,7 @@ mod tests {
             52.0, 52.14286, 52.28571, 52.42857, 52.57143, 52.71429, 52.85714, 53.0, 45.57143,
         ];
         let values_interp_first = collect(&week_size, Some(WeeklyInterpDay::First));
-        assert(&values_interp_first, &expected_values_interp_first);
+        assert_approx_array_eq(&values_interp_first, &expected_values_interp_first);
 
         // WeeklyInterpDay::Last
         let expected_values_interp_last = [
@@ -454,6 +449,6 @@ mod tests {
             51.14286, 51.28571, 51.42857, 51.57143, 51.71429, 51.85714, 52.0, 52.125,
         ];
         let values_interp_none = collect(&week_size, Some(WeeklyInterpDay::Last));
-        assert(&values_interp_none, &expected_values_interp_last);
+        assert_approx_array_eq(&values_interp_none, &expected_values_interp_last);
     }
 }

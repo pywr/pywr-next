@@ -8,4 +8,4 @@ pub use daily::DailyProfileParameter;
 pub use monthly::{MonthlyInterpDay, MonthlyProfileParameter};
 pub use rbf::{RadialBasisFunction, RbfProfileParameter, RbfProfileVariableConfig};
 pub use uniform_drawdown::UniformDrawdownProfileParameter;
-pub use weekly::{WeeklyInterpDay, WeeklyProfileParameter};
+pub use weekly::{WeeklyInterpDay, WeeklyProfileError, WeeklyProfileParameter, WeeklyProfileValues};
