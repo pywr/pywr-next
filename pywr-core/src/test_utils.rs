@@ -14,6 +14,7 @@ use crate::solvers::HighsSolver;
 use crate::solvers::SimdIpmF64Solver;
 use crate::timestep::Timestepper;
 use crate::PywrError;
+use float_cmp::{approx_eq, F64Margin};
 use ndarray::{Array, Array2};
 use rand::Rng;
 use rand_distr::{Distribution, Normal};
@@ -319,5 +320,22 @@ mod tests {
         model
             .run_multi_scenario::<SimdIpmF64Solver<4>>(&timestepper, &settings)
             .expect("Failed to run model!");
+    }
+}
+
+/// Compare two arrays of f64
+pub fn assert_approx_array_eq(calculated_values: &[f64], expected_values: &[f64]) {
+    let margins = F64Margin {
+        epsilon: 2.0,
+        ulps: (f64::EPSILON * 2.0) as i64,
+    };
+    for (i, (calculated, expected)) in calculated_values.iter().zip(expected_values).enumerate() {
+        if !approx_eq!(f64, *calculated, *expected, margins) {
+            panic!(
+                r#"assertion failed on item #{i:?}
+                    actual: `{calculated:?}`,
+                    expected: `{expected:?}`"#,
+            )
+        }
     }
 }
