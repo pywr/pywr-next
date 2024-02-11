@@ -504,6 +504,7 @@ impl TryFromV1Parameter<ParameterV1> for Parameter {
                 }
                 CoreParameter::RollingMeanFlowNode(_) => todo!("Implement RollingMeanFlowNodeParameter"),
                 CoreParameter::ScenarioWrapper(_) => todo!("Implement ScenarioWrapperParameter"),
+                CoreParameter::WeeklyProfile(_) => todo!("Implement WeeklyProfileParameter"),
                 CoreParameter::Flow(p) => {
                     return Err(ConversionError::DeprecatedParameter {
                         ty: "FlowParameter".to_string(),
@@ -513,6 +514,12 @@ impl TryFromV1Parameter<ParameterV1> for Parameter {
                 }
                 CoreParameter::RbfProfile(p) => {
                     Parameter::RbfProfile(p.try_into_v2_parameter(parent_node, unnamed_count)?)
+                }
+                CoreParameter::NegativeMax(p) => {
+                    Parameter::NegativeMax(p.try_into_v2_parameter(parent_node, unnamed_count)?)
+                }
+                CoreParameter::NegativeMin(p) => {
+                    Parameter::NegativeMin(p.try_into_v2_parameter(parent_node, unnamed_count)?)
                 }
             },
             ParameterV1::Custom(p) => {

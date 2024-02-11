@@ -45,4 +45,4 @@ pyo3-log = "0.9.0"
 tracing = {  version ="0.1", features = ["log"] }
 csv = "1.1"
 hdf5 = { git="https://github.com/aldanor/hdf5-rust.git", package = "hdf5", features=["static", "zlib"] }
-pywr-v1-schema = { git = "https://github.com/pywr/pywr-schema/", tag="v0.9.0", package = "pywr-schema" }
+pywr-v1-schema = { git = "https://github.com/pywr/pywr-schema/", tag="v0.11.0", package = "pywr-schema" }
