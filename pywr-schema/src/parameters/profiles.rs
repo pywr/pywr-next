@@ -3,7 +3,7 @@ use crate::error::{ConversionError, SchemaError};
 use crate::parameters::{
     ConstantFloatVec, ConstantValue, DynamicFloatValueType, IntoV2Parameter, ParameterMeta, TryFromV1Parameter,
 };
-use pywr_core::parameters::ParameterIndex;
+use pywr_core::parameters::{ParameterIndex, WeeklyProfileError, WeeklyProfileValues};
 use pywr_v1_schema::parameters::{
     DailyProfileParameter as DailyProfileParameterV1, MonthInterpDay as MonthInterpDayV1,
     MonthlyProfileParameter as MonthlyProfileParameterV1, RbfProfileParameter as RbfProfileParameterV1,
@@ -247,6 +247,16 @@ impl From<WeeklyInterpDay> for pywr_core::parameters::WeeklyInterpDay {
 ///     are linearly interpolated in each week and the string specifies whether the given values are
 ///     the first or last day of the week. See the examples below for more information.
 ///
+/// ## Interpolation notes
+/// When the profile is interpolated, the following assumptions are made for a 52-week profile due to the missing
+/// values on the 53<sup>rd</sup> week:
+///  - when `interp_day` is First, the upper boundary in the 52<sup>nd</sup> and 53<sup>rd</sup> week is the
+///    same (i.e. the value on 1<sup>st</sup> January)
+///  - when `interp_day` is Last the 1<sup>st</sup> and last week will share the same lower bound (i.e. the
+///    value on the last week).
+///
+/// This does apply to a 53-week profile.
+
 /// # Examples
 /// ## Without interpolation
 /// This defines a piece-wise weekly profile. Each day of the same week has the same value:
@@ -310,7 +320,12 @@ impl WeeklyProfileParameter {
     ) -> Result<ParameterIndex, SchemaError> {
         let p = pywr_core::parameters::WeeklyProfileParameter::new(
             &self.meta.name,
-            self.values.load(tables)?,
+            WeeklyProfileValues::try_from(self.values.load(tables)?.as_slice()).map_err(
+                |err: WeeklyProfileError| SchemaError::LoadParameter {
+                    name: self.meta.name.to_string(),
+                    error: err.to_string(),
+                },
+            )?,
             self.interp_day.map(|id| id.into()),
         );
         Ok(model.add_parameter(Box::new(p))?)

@@ -43,6 +43,8 @@ pub enum SchemaError {
     DataLengthMismatch { expected: usize, found: usize },
     #[error("Failed to estimate epsilon for use in the radial basis function.")]
     RbfEpsilonEstimation,
+    #[error("Failed to load parameter {name}: {error}")]
+    LoadParameter { name: String, error: String },
 }
 
 impl From<SchemaError> for PyErr {
