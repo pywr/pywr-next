@@ -8,6 +8,7 @@ mod control_curves;
 mod delay;
 mod discount_factor;
 mod division;
+mod hydropower;
 mod indexed_array;
 mod interpolate;
 mod interpolated;
@@ -44,6 +45,7 @@ pub use control_curves::{
 pub use delay::DelayParameter;
 pub use discount_factor::DiscountFactorParameter;
 pub use division::DivisionParameter;
+pub use hydropower::HydropowerTargetParameter;
 pub use indexed_array::IndexedArrayParameter;
 pub use interpolate::{interpolate, linear_interpolation, InterpolationError};
 pub use interpolated::InterpolatedParameter;

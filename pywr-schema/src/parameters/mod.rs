@@ -14,6 +14,7 @@ mod core;
 mod data_frame;
 mod delay;
 mod discount_factor;
+mod hydropower;
 mod indexed_array;
 mod interpolated;
 mod offset;
@@ -47,6 +48,7 @@ pub use super::parameters::thresholds::ParameterThresholdParameter;
 use crate::error::{ConversionError, SchemaError};
 use crate::parameters::core::DivisionParameter;
 pub use crate::parameters::data_frame::DataFrameParameter;
+pub use crate::parameters::hydropower::HydropowerTargetParameter;
 use crate::parameters::interpolated::InterpolatedParameter;
 pub use offset::OffsetParameter;
 use pywr_core::derived_metric::DerivedMetric;
@@ -164,6 +166,7 @@ pub enum Parameter {
     DataFrame(DataFrameParameter),
     Delay(DelayParameter),
     Division(DivisionParameter),
+    HydropowerTarget(HydropowerTargetParameter),
     Offset(OffsetParameter),
     DiscountFactor(DiscountFactorParameter),
     Interpolated(InterpolatedParameter),
@@ -199,6 +202,7 @@ impl Parameter {
             Self::DiscountFactor(p) => p.meta.name.as_str(),
             Self::Interpolated(p) => p.meta.name.as_str(),
             Self::RbfProfile(p) => p.meta.name.as_str(),
+            Self::HydropowerTarget(p) => p.meta.name.as_str(),
         }
     }
 
@@ -232,6 +236,7 @@ impl Parameter {
             Self::DiscountFactor(p) => p.node_references(),
             Self::Interpolated(p) => p.node_references(),
             Self::RbfProfile(p) => p.node_references(),
+            Self::HydropowerTarget(p) => p.node_references(),
         }
     }
 
@@ -282,6 +287,7 @@ impl Parameter {
             Self::DiscountFactor(_) => "DiscountFactor",
             Self::Interpolated(_) => "Interpolated",
             Self::RbfProfile(_) => "RbfProfile",
+            Self::HydropowerTarget(_) => "HydropowerTarget",
         }
     }
 
@@ -320,6 +326,7 @@ impl Parameter {
             Self::DiscountFactor(p) => ParameterType::Parameter(p.add_to_model(model, tables, data_path)?),
             Self::Interpolated(p) => ParameterType::Parameter(p.add_to_model(model, tables, data_path)?),
             Self::RbfProfile(p) => ParameterType::Parameter(p.add_to_model(model)?),
+            Self::HydropowerTarget(p) => ParameterType::Parameter(p.add_to_model(model, tables, data_path)?),
         };
 
         Ok(ty)
@@ -403,7 +410,9 @@ impl TryFromV1Parameter<ParameterV1> for Parameter {
                 CoreParameter::InterpolatedFlow(p) => {
                     Parameter::Interpolated(p.try_into_v2_parameter(parent_node, unnamed_count)?)
                 }
-                CoreParameter::HydropowerTarget(_) => todo!("Implement HydropowerTargetParameter"),
+                CoreParameter::HydropowerTarget(p) => {
+                    Parameter::HydropowerTarget(p.try_into_v2_parameter(parent_node, unnamed_count)?)
+                }
                 CoreParameter::Storage(p) => {
                     return Err(ConversionError::DeprecatedParameter {
                         ty: "StorageParameter".to_string(),
