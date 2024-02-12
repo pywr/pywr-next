@@ -556,7 +556,7 @@ impl TryFromV1Parameter<NegativeMaxParameterV1> for NegativeMaxParameter {
 /// ```json
 /// {
 ///     "type": "NegativeMin",
-///     "parameter": {
+///     "metric": {
 ///         "type": "MonthlyProfile",
 ///         "values": [-1, -4, 5, 9, 1, 5, 10, 8, 11, 9, 11 ,12]
 ///     },
