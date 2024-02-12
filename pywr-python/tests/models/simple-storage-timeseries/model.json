@@ -54,9 +54,18 @@
       {
         "name": "nodes",
         "metrics": [
-          "input1",
-          "storage1",
-          "output1"
+          {
+            "type": "Default",
+            "node": "input1"
+          },
+          {
+            "type": "Default",
+            "node": "storage1"
+          },
+          {
+            "type": "Default",
+            "node": "output1"
+          }
         ]
       }
     ],
