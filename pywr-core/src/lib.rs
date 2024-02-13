@@ -158,6 +158,8 @@ pub enum PywrError {
     NetworkIndexNotFound(usize),
     #[error("parameters do not provide an initial value")]
     ParameterNoInitialValue,
+    #[error("parameter state not found for parameter index {0}")]
+    ParameterStateNotFound(ParameterIndex),
 }
 
 // Python errors

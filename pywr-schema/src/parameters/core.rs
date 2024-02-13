@@ -151,8 +151,6 @@ pub struct ConstantParameter {
     /// In the simple case this will be the value used by the network. However, if an activation
     /// function is specified this value will be the `x` value for that activation function.
     pub value: ConstantValue<f64>,
-    /// Definition of optional variable settings.
-    pub variable: Option<VariableSettings>,
 }
 
 impl ConstantParameter {
@@ -169,19 +167,7 @@ impl ConstantParameter {
         network: &mut pywr_core::network::Network,
         tables: &LoadedTableCollection,
     ) -> Result<ParameterIndex, SchemaError> {
-        let variable = match &self.variable {
-            None => None,
-            Some(v) => {
-                // Only set the variable data if the user has indicated the variable is active.
-                if v.is_active {
-                    Some(v.activation.into())
-                } else {
-                    None
-                }
-            }
-        };
-
-        let p = pywr_core::parameters::ConstantParameter::new(&self.meta.name, self.value.load(tables)?, variable);
+        let p = pywr_core::parameters::ConstantParameter::new(&self.meta.name, self.value.load(tables)?);
         Ok(network.add_parameter(Box::new(p))?)
     }
 }
@@ -205,7 +191,6 @@ impl TryFromV1Parameter<ConstantParameterV1> for ConstantParameter {
         let p = Self {
             meta: v1.meta.into_v2_parameter(parent_node, unnamed_count),
             value,
-            variable: None, // TODO implement conversion of v1 variable definition
         };
         Ok(p)
     }

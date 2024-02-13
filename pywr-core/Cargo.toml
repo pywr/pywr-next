@@ -20,7 +20,6 @@ ndarray = {  workspace = true }
 num = {  workspace = true }
 float-cmp = {  workspace = true }
 hdf5 = {  workspace = true }
-hdf5-sys = {  workspace = true }
 csv = {  workspace = true }
 clp-sys = { path = "../clp-sys" }
 ipm-ocl = { path = "../ipm-ocl", optional = true }

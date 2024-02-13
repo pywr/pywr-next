@@ -271,6 +271,10 @@ impl ParameterStates {
         }
     }
 
+    pub fn get_value_state(&self, index: ParameterIndex) -> Option<&Option<Box<dyn ParameterState>>> {
+        self.values.get(*index.deref())
+    }
+
     pub fn get_mut_value_state(&mut self, index: ParameterIndex) -> Option<&mut Option<Box<dyn ParameterState>>> {
         self.values.get_mut(*index.deref())
     }

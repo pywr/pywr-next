@@ -239,7 +239,7 @@ impl RadialBasisFunction {
         let rbf = match self {
             Self::Linear => pywr_core::parameters::RadialBasisFunction::Linear,
             Self::Cubic => pywr_core::parameters::RadialBasisFunction::Cubic,
-            Self::Quintic => pywr_core::parameters::RadialBasisFunction::Cubic,
+            Self::Quintic => pywr_core::parameters::RadialBasisFunction::Quintic,
             Self::ThinPlateSpline => pywr_core::parameters::RadialBasisFunction::ThinPlateSpline,
             Self::Gaussian { epsilon } => {
                 let epsilon = match epsilon {
@@ -352,8 +352,6 @@ pub struct RbfProfileParameter {
     pub points: Vec<(u32, f64)>,
     /// The distance function used for interpolation.
     pub function: RadialBasisFunction,
-    /// Definition of optional variable settings.
-    pub variable: Option<RbfProfileVariableSettings>,
 }
 
 impl RbfProfileParameter {
@@ -365,22 +363,9 @@ impl RbfProfileParameter {
     }
 
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<ParameterIndex, SchemaError> {
-        let variable = match self.variable {
-            None => None,
-            Some(v) => {
-                // Only set the variable data if the user has indicated the variable is active.
-                if v.is_active {
-                    Some(v.into())
-                } else {
-                    None
-                }
-            }
-        };
-
         let function = self.function.into_core_rbf(&self.points)?;
 
-        let p =
-            pywr_core::parameters::RbfProfileParameter::new(&self.meta.name, self.points.clone(), function, variable);
+        let p = pywr_core::parameters::RbfProfileParameter::new(&self.meta.name, self.points.clone(), function);
         Ok(network.add_parameter(Box::new(p))?)
     }
 }
@@ -463,12 +448,7 @@ impl TryFromV1Parameter<RbfProfileParameterV1> for RbfProfileParameter {
             RadialBasisFunction::MultiQuadric { epsilon }
         };
 
-        let p = Self {
-            meta,
-            points,
-            function,
-            variable: None,
-        };
+        let p = Self { meta, points, function };
 
         Ok(p)
     }

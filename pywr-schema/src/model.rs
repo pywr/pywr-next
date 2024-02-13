@@ -662,7 +662,6 @@ mod tests {
                         comment: None,
                     },
                     value: ConstantValue::Literal(10.0),
-                    variable: None,
                 }),
                 Parameter::Aggregated(AggregatedParameter {
                     meta: ParameterMeta {
@@ -719,7 +718,6 @@ mod tests {
                         comment: None,
                     },
                     value: ConstantValue::Literal(10.0),
-                    variable: None,
                 }),
                 Parameter::Constant(ConstantParameter {
                     meta: ParameterMeta {
@@ -727,7 +725,6 @@ mod tests {
                         comment: None,
                     },
                     value: ConstantValue::Literal(10.0),
-                    variable: None,
                 }),
             ]);
         }
