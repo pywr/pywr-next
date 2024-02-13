@@ -191,9 +191,9 @@ where
 }
 
 /// Helper function to downcast to variable config and print a helpful panic message if this fails.
-pub fn downcast_variable_config_ref<T: 'static>(variable_config: &Box<dyn VariableConfig>) -> &T {
+pub fn downcast_variable_config_ref<T: 'static>(variable_config: &dyn VariableConfig) -> &T {
     // Downcast the internal state to the correct type
-    match variable_config.as_ref().as_any().downcast_ref::<T>() {
+    match variable_config.as_any().downcast_ref::<T>() {
         Some(pa) => pa,
         None => panic!("Variable config did not downcast to the correct type! :("),
     }
@@ -369,20 +369,20 @@ pub trait VariableParameter<T> {
     }
 
     /// Return the number of variables required
-    fn size(&self, variable_config: &Box<dyn VariableConfig>) -> usize;
+    fn size(&self, variable_config: &dyn VariableConfig) -> usize;
     /// Apply new variable values to the parameter's state
     fn set_variables(
         &self,
         values: &[T],
-        variable_config: &Box<dyn VariableConfig>,
+        variable_config: &dyn VariableConfig,
         internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<(), PywrError>;
     /// Get the current variable values
     fn get_variables(&self, internal_state: &Option<Box<dyn ParameterState>>) -> Option<Vec<T>>;
     /// Get variable lower bounds
-    fn get_lower_bounds(&self, variable_config: &Box<dyn VariableConfig>) -> Result<Vec<T>, PywrError>;
+    fn get_lower_bounds(&self, variable_config: &dyn VariableConfig) -> Result<Vec<T>, PywrError>;
     /// Get variable upper bounds
-    fn get_upper_bounds(&self, variable_config: &Box<dyn VariableConfig>) -> Result<Vec<T>, PywrError>;
+    fn get_upper_bounds(&self, variable_config: &dyn VariableConfig) -> Result<Vec<T>, PywrError>;
 }
 
 #[cfg(test)]

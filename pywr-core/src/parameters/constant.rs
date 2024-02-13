@@ -80,14 +80,14 @@ impl VariableParameter<f64> for ConstantParameter {
         &self.meta
     }
 
-    fn size(&self, _variable_config: &Box<dyn VariableConfig>) -> usize {
+    fn size(&self, _variable_config: &dyn VariableConfig) -> usize {
         1
     }
 
     fn set_variables(
         &self,
         values: &[f64],
-        variable_config: &Box<dyn VariableConfig>,
+        variable_config: &dyn VariableConfig,
         internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<(), PywrError> {
         let activation_function = downcast_variable_config_ref::<ActivationFunction>(variable_config);
@@ -108,12 +108,12 @@ impl VariableParameter<f64> for ConstantParameter {
         }
     }
 
-    fn get_lower_bounds(&self, variable_config: &Box<dyn VariableConfig>) -> Result<Vec<f64>, PywrError> {
+    fn get_lower_bounds(&self, variable_config: &dyn VariableConfig) -> Result<Vec<f64>, PywrError> {
         let activation_function = downcast_variable_config_ref::<ActivationFunction>(variable_config);
         Ok(vec![activation_function.lower_bound()])
     }
 
-    fn get_upper_bounds(&self, variable_config: &Box<dyn VariableConfig>) -> Result<Vec<f64>, PywrError> {
+    fn get_upper_bounds(&self, variable_config: &dyn VariableConfig) -> Result<Vec<f64>, PywrError> {
         let activation_function = downcast_variable_config_ref::<ActivationFunction>(variable_config);
         Ok(vec![activation_function.upper_bound()])
     }
@@ -121,7 +121,7 @@ impl VariableParameter<f64> for ConstantParameter {
 
 #[cfg(test)]
 mod tests {
-    use crate::parameters::{ActivationFunction, ConstantParameter, Parameter, VariableConfig, VariableParameter};
+    use crate::parameters::{ActivationFunction, ConstantParameter, Parameter, VariableParameter};
     use crate::test_utils::default_domain;
     use float_cmp::assert_approx_eq;
 
@@ -129,7 +129,7 @@ mod tests {
     fn test_variable_api() {
         let domain = default_domain();
 
-        let var: Box<dyn VariableConfig> = Box::new(ActivationFunction::Unit { min: 0.0, max: 2.0 });
+        let var = ActivationFunction::Unit { min: 0.0, max: 2.0 };
         let p = ConstantParameter::new("test", 1.0);
         let mut state = p
             .setup(

@@ -75,14 +75,14 @@ impl VariableParameter<f64> for OffsetParameter {
         &self.meta
     }
 
-    fn size(&self, _variable_config: &Box<dyn VariableConfig>) -> usize {
+    fn size(&self, _variable_config: &dyn VariableConfig) -> usize {
         1
     }
 
     fn set_variables(
         &self,
         values: &[f64],
-        variable_config: &Box<dyn VariableConfig>,
+        variable_config: &dyn VariableConfig,
         internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<(), PywrError> {
         let activation_function = downcast_variable_config_ref::<ActivationFunction>(variable_config);
@@ -103,12 +103,12 @@ impl VariableParameter<f64> for OffsetParameter {
         }
     }
 
-    fn get_lower_bounds(&self, variable_config: &Box<dyn VariableConfig>) -> Result<Vec<f64>, PywrError> {
+    fn get_lower_bounds(&self, variable_config: &dyn VariableConfig) -> Result<Vec<f64>, PywrError> {
         let activation_function = downcast_variable_config_ref::<ActivationFunction>(variable_config);
         Ok(vec![activation_function.lower_bound()])
     }
 
-    fn get_upper_bounds(&self, variable_config: &Box<dyn VariableConfig>) -> Result<Vec<f64>, PywrError> {
+    fn get_upper_bounds(&self, variable_config: &dyn VariableConfig) -> Result<Vec<f64>, PywrError> {
         let activation_function = downcast_variable_config_ref::<ActivationFunction>(variable_config);
         Ok(vec![activation_function.upper_bound()])
     }

@@ -1423,7 +1423,7 @@ impl Network {
         &self,
         parameter_index: ParameterIndex,
         values: &[f64],
-        variable_config: &Box<dyn VariableConfig>,
+        variable_config: &dyn VariableConfig,
         state: &mut NetworkState,
     ) -> Result<(), PywrError> {
         match self.parameters.get(*parameter_index.deref()) {
@@ -1454,7 +1454,7 @@ impl Network {
         parameter_index: ParameterIndex,
         scenario_index: ScenarioIndex,
         values: &[f64],
-        variable_config: &Box<dyn VariableConfig>,
+        variable_config: &dyn VariableConfig,
         state: &mut NetworkState,
     ) -> Result<(), PywrError> {
         match self.parameters.get(*parameter_index.deref()) {
@@ -1529,7 +1529,7 @@ impl Network {
         &self,
         parameter_index: ParameterIndex,
         values: &[u32],
-        variable_config: &Box<dyn VariableConfig>,
+        variable_config: &dyn VariableConfig,
         state: &mut NetworkState,
     ) -> Result<(), PywrError> {
         match self.parameters.get(*parameter_index.deref()) {
@@ -1560,7 +1560,7 @@ impl Network {
         parameter_index: ParameterIndex,
         scenario_index: ScenarioIndex,
         values: &[u32],
-        variable_config: &Box<dyn VariableConfig>,
+        variable_config: &dyn VariableConfig,
         state: &mut NetworkState,
     ) -> Result<(), PywrError> {
         match self.parameters.get(*parameter_index.deref()) {
@@ -1934,7 +1934,7 @@ mod tests {
     fn test_variable_api() {
         let mut model = simple_model(1);
 
-        let variable: Box<dyn VariableConfig> = Box::new(ActivationFunction::Unit { min: 0.0, max: 10.0 });
+        let variable = ActivationFunction::Unit { min: 0.0, max: 10.0 };
         let input_max_flow = parameters::ConstantParameter::new("my-constant", 10.0);
 
         assert!(input_max_flow.can_be_f64_variable());

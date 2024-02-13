@@ -155,7 +155,7 @@ impl VariableParameter<f64> for RbfProfileParameter {
     }
 
     /// The size is the number of points that define the profile.
-    fn size(&self, _variable_config: &Box<dyn VariableConfig>) -> usize {
+    fn size(&self, _variable_config: &dyn VariableConfig) -> usize {
         self.points.len()
     }
 
@@ -163,7 +163,7 @@ impl VariableParameter<f64> for RbfProfileParameter {
     fn set_variables(
         &self,
         values: &[f64],
-        _variable_config: &Box<dyn VariableConfig>,
+        _variable_config: &dyn VariableConfig,
         internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<(), PywrError> {
         if values.len() == self.points.len() {
@@ -184,13 +184,13 @@ impl VariableParameter<f64> for RbfProfileParameter {
         value.points_y.clone()
     }
 
-    fn get_lower_bounds(&self, variable_config: &Box<dyn VariableConfig>) -> Result<Vec<f64>, PywrError> {
+    fn get_lower_bounds(&self, variable_config: &dyn VariableConfig) -> Result<Vec<f64>, PywrError> {
         let config = downcast_variable_config_ref::<RbfProfileVariableConfig>(variable_config);
         let lb = (0..self.points.len()).map(|_| config.value_lower_bounds).collect();
         Ok(lb)
     }
 
-    fn get_upper_bounds(&self, variable_config: &Box<dyn VariableConfig>) -> Result<Vec<f64>, PywrError> {
+    fn get_upper_bounds(&self, variable_config: &dyn VariableConfig) -> Result<Vec<f64>, PywrError> {
         let config = downcast_variable_config_ref::<RbfProfileVariableConfig>(variable_config);
         let lb = (0..self.points.len()).map(|_| config.value_upper_bounds).collect();
         Ok(lb)
@@ -202,7 +202,7 @@ impl VariableParameter<u32> for RbfProfileParameter {
         &self.meta
     }
     /// The size is the number of points that define the profile.
-    fn size(&self, variable_config: &Box<dyn VariableConfig>) -> usize {
+    fn size(&self, variable_config: &dyn VariableConfig) -> usize {
         let config = downcast_variable_config_ref::<RbfProfileVariableConfig>(variable_config);
         match config.days_of_year_range {
             Some(_) => self.points.len(),
@@ -214,7 +214,7 @@ impl VariableParameter<u32> for RbfProfileParameter {
     fn set_variables(
         &self,
         values: &[u32],
-        _variable_config: &Box<dyn VariableConfig>,
+        _variable_config: &dyn VariableConfig,
         internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<(), PywrError> {
         if values.len() == self.points.len() {
@@ -235,7 +235,7 @@ impl VariableParameter<u32> for RbfProfileParameter {
         value.points_x.clone()
     }
 
-    fn get_lower_bounds(&self, variable_config: &Box<dyn VariableConfig>) -> Result<Vec<u32>, PywrError> {
+    fn get_lower_bounds(&self, variable_config: &dyn VariableConfig) -> Result<Vec<u32>, PywrError> {
         let config = downcast_variable_config_ref::<RbfProfileVariableConfig>(variable_config);
 
         if let Some(days_of_year_range) = &config.days_of_year_range {
@@ -252,7 +252,7 @@ impl VariableParameter<u32> for RbfProfileParameter {
         }
     }
 
-    fn get_upper_bounds(&self, variable_config: &Box<dyn VariableConfig>) -> Result<Vec<u32>, PywrError> {
+    fn get_upper_bounds(&self, variable_config: &dyn VariableConfig) -> Result<Vec<u32>, PywrError> {
         let config = downcast_variable_config_ref::<RbfProfileVariableConfig>(variable_config);
 
         if let Some(days_of_year_range) = &config.days_of_year_range {
