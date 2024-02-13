@@ -1433,7 +1433,7 @@ impl Network {
                     for parameter_states in state.iter_parameter_states_mut() {
                         let internal_state = parameter_states
                             .get_mut_value_state(parameter_index)
-                            .ok_or(PywrError::ParameterIndexNotFound(parameter_index))?;
+                            .ok_or(PywrError::ParameterStateNotFound(parameter_index))?;
 
                         variable.set_variables(values, variable_config, internal_state)?;
                     }
@@ -1463,7 +1463,7 @@ impl Network {
                     let internal_state = state
                         .parameter_states_mut(&scenario_index)
                         .get_mut_value_state(parameter_index)
-                        .ok_or(PywrError::ParameterIndexNotFound(parameter_index))?;
+                        .ok_or(PywrError::ParameterStateNotFound(parameter_index))?;
                     variable.set_variables(values, variable_config, internal_state)
                 }
                 None => Err(PywrError::ParameterTypeNotVariable),
@@ -1485,7 +1485,8 @@ impl Network {
                     let internal_state = state
                         .parameter_states(&scenario_index)
                         .get_value_state(parameter_index)
-                        .unwrap();
+                        .ok_or_else(|| PywrError::ParameterStateNotFound(parameter_index))?;
+
                     Ok(variable.get_variables(internal_state))
                 }
                 None => Err(PywrError::ParameterTypeNotVariable),
@@ -1505,11 +1506,13 @@ impl Network {
                     let values = state
                         .iter_parameter_states()
                         .map(|parameter_states| {
-                            let internal_state = parameter_states.get_value_state(parameter_index).unwrap();
+                            let internal_state = parameter_states
+                                .get_value_state(parameter_index)
+                                .ok_or_else(|| PywrError::ParameterStateNotFound(parameter_index))?;
 
-                            variable.get_variables(internal_state)
+                            Ok(variable.get_variables(internal_state))
                         })
-                        .collect();
+                        .collect::<Result<_, PywrError>>()?;
 
                     Ok(values)
                 }
@@ -1536,7 +1539,7 @@ impl Network {
                     for parameter_states in state.iter_parameter_states_mut() {
                         let internal_state = parameter_states
                             .get_mut_value_state(parameter_index)
-                            .ok_or(PywrError::ParameterIndexNotFound(parameter_index))?;
+                            .ok_or(PywrError::ParameterStateNotFound(parameter_index))?;
 
                         variable.set_variables(values, variable_config, internal_state)?;
                     }
@@ -1588,7 +1591,7 @@ impl Network {
                     let internal_state = state
                         .parameter_states(&scenario_index)
                         .get_value_state(parameter_index)
-                        .unwrap();
+                        .ok_or_else(|| PywrError::ParameterStateNotFound(parameter_index))?;
                     Ok(variable.get_variables(internal_state))
                 }
                 None => Err(PywrError::ParameterTypeNotVariable),
