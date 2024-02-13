@@ -128,7 +128,7 @@ impl PeriodicAggregatorState {
                 // New value is part of a different period (assume the next one).
 
                 // Calculate the aggregated value of the previous period.
-                let agg_period = if let Some(agg_value) = agg_func.calc(&current_values) {
+                let agg_period = if let Some(agg_value) = agg_func.calc(current_values) {
                     let agg_duration = value.start - current_period_start;
                     Some(PeriodValue::new(current_period_start, agg_duration, agg_value))
                 } else {
@@ -160,7 +160,7 @@ impl PeriodicAggregatorState {
 
     fn calc_aggregation(&self, agg_func: &AggregationFunction) -> Option<PeriodValue> {
         if let Some(current_values) = &self.current_values {
-            if let Some(agg_value) = agg_func.calc(&current_values) {
+            if let Some(agg_value) = agg_func.calc(current_values) {
                 // SAFETY: The current_values vector is guaranteed to contain at least one value.
                 let current_period_start = current_values
                     .first()

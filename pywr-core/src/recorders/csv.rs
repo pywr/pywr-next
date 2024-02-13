@@ -160,7 +160,7 @@ impl Recorder for CSVRecorder {
             .map_err(|e| PywrError::CSVError(e.to_string()))?;
 
         // There could be no scenario groups defined
-        if header_scenario_groups.len() > 0 {
+        if header_scenario_groups.is_empty() {
             for group in header_scenario_groups {
                 writer
                     .write_record(group)
@@ -196,7 +196,7 @@ impl Recorder for CSVRecorder {
         for ms_scenario_states in metric_set_states.iter() {
             let metric_set_state = ms_scenario_states
                 .get(*self.metric_set_idx.deref())
-                .ok_or_else(|| PywrError::MetricSetIndexNotFound(self.metric_set_idx))?;
+                .ok_or(PywrError::MetricSetIndexNotFound(self.metric_set_idx))?;
 
             if let Some(current_values) = metric_set_state.current_values() {
                 let values = current_values

@@ -232,7 +232,7 @@ fn get_norm_proportional_factor_pairs(
     nodes
         .iter()
         .skip(1)
-        .zip(values.into_iter())
+        .zip(values)
         .map(move |(&n1, f1)| ((n0, f0), (n1, f1)))
         .collect::<Vec<_>>()
 }
