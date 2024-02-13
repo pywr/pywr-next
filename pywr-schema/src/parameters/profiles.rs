@@ -239,7 +239,7 @@ impl RadialBasisFunction {
         let rbf = match self {
             Self::Linear => pywr_core::parameters::RadialBasisFunction::Linear,
             Self::Cubic => pywr_core::parameters::RadialBasisFunction::Cubic,
-            Self::Quintic => pywr_core::parameters::RadialBasisFunction::Cubic,
+            Self::Quintic => pywr_core::parameters::RadialBasisFunction::Quintic,
             Self::ThinPlateSpline => pywr_core::parameters::RadialBasisFunction::ThinPlateSpline,
             Self::Gaussian { epsilon } => {
                 let epsilon = match epsilon {
