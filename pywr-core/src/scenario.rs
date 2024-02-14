@@ -138,7 +138,7 @@ impl ScenarioDomain {
 impl From<ScenarioGroupCollection> for ScenarioDomain {
     fn from(value: ScenarioGroupCollection) -> Self {
         // Handle creating at-least one scenario if the collection is empty.
-        if value.is_empty() {
+        if !value.is_empty() {
             let scenario_group_names = value.groups.iter().map(|g| g.name.clone()).collect();
 
             Self {
