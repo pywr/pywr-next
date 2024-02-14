@@ -314,12 +314,12 @@ pub struct RbfProfileVariableSettings {
     pub value_lower_bounds: Option<f64>,
 }
 
-impl Into<pywr_core::parameters::RbfProfileVariableConfig> for RbfProfileVariableSettings {
-    fn into(self) -> pywr_core::parameters::RbfProfileVariableConfig {
-        pywr_core::parameters::RbfProfileVariableConfig::new(
-            self.days_of_year_range,
-            self.value_upper_bounds.unwrap_or(f64::INFINITY),
-            self.value_lower_bounds.unwrap_or(0.0),
+impl From<RbfProfileVariableSettings> for pywr_core::parameters::RbfProfileVariableConfig {
+    fn from(settings: RbfProfileVariableSettings) -> Self {
+        Self::new(
+            settings.days_of_year_range,
+            settings.value_upper_bounds.unwrap_or(f64::INFINITY),
+            settings.value_lower_bounds.unwrap_or(0.0),
         )
     }
 }
@@ -380,12 +380,7 @@ impl TryFromV1Parameter<RbfProfileParameterV1> for RbfProfileParameter {
     ) -> Result<Self, Self::Error> {
         let meta: ParameterMeta = v1.meta.into_v2_parameter(parent_node, unnamed_count);
 
-        let points = v1
-            .days_of_year
-            .into_iter()
-            .zip(v1.values.into_iter())
-            .map(|(doy, v)| (doy, v))
-            .collect();
+        let points = v1.days_of_year.into_iter().zip(v1.values).collect();
 
         if v1.rbf_kwargs.contains_key("smooth") {
             return Err(ConversionError::UnsupportedFeature {
@@ -420,7 +415,7 @@ impl TryFromV1Parameter<RbfProfileParameterV1> for RbfProfileParameter {
         let function = if let Some(function_value) = v1.rbf_kwargs.get("function") {
             if let Some(function_str) = function_value.as_str() {
                 // Function kwarg is a string!
-                let f = match function_str {
+                match function_str {
                     "multiquadric" => RadialBasisFunction::MultiQuadric { epsilon },
                     "inverse" => RadialBasisFunction::InverseMultiQuadric { epsilon },
                     "gaussian" => RadialBasisFunction::Gaussian { epsilon },
@@ -433,8 +428,7 @@ impl TryFromV1Parameter<RbfProfileParameterV1> for RbfProfileParameter {
                             name: meta.name.clone(),
                         })
                     }
-                };
-                f
+                }
             } else {
                 return Err(ConversionError::UnexpectedType {
                     attr: "function".to_string(),

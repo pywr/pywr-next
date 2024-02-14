@@ -179,7 +179,7 @@ impl RiverSplitWithGaugeNode {
             .map(|(i, _)| network.get_node_index_by_name(self.meta.name.as_str(), Self::split_sub_name(i).as_deref()))
             .collect::<Result<_, _>>()?;
 
-        indices.extend(split_idx.into_iter());
+        indices.extend(split_idx);
 
         let metric = match attr {
             NodeAttribute::Inflow => Metric::MultiNodeInFlow {

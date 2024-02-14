@@ -117,11 +117,11 @@ impl LossLinkNode {
                 }
             }
             NodeAttribute::Outflow => {
-                let idx = network.get_node_index_by_name(self.meta.name.as_str(), Self::net_sub_name().as_deref())?;
+                let idx = network.get_node_index_by_name(self.meta.name.as_str(), Self::net_sub_name())?;
                 Metric::NodeOutFlow(idx)
             }
             NodeAttribute::Loss => {
-                let idx = network.get_node_index_by_name(self.meta.name.as_str(), Self::loss_sub_name().as_deref())?;
+                let idx = network.get_node_index_by_name(self.meta.name.as_str(), Self::loss_sub_name())?;
                 // This is an output node that only supports inflow
                 Metric::NodeInFlow(idx)
             }

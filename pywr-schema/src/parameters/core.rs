@@ -94,20 +94,24 @@ pub enum ActivationFunction {
     Logistic { growth_rate: f64, max: f64 },
 }
 
-impl Into<pywr_core::parameters::ActivationFunction> for ActivationFunction {
-    fn into(self) -> pywr_core::parameters::ActivationFunction {
-        match self {
-            Self::Unit { min, max } => pywr_core::parameters::ActivationFunction::Unit { min, max },
-            Self::Rectifier { min, max, off_value } => pywr_core::parameters::ActivationFunction::Rectifier {
-                min,
-                max,
-                neg_value: off_value.unwrap_or(0.0),
-            },
-            Self::BinaryStep { on_value, off_value } => pywr_core::parameters::ActivationFunction::BinaryStep {
-                pos_value: on_value,
-                neg_value: off_value.unwrap_or(0.0),
-            },
-            Self::Logistic { growth_rate, max } => {
+impl From<ActivationFunction> for pywr_core::parameters::ActivationFunction {
+    fn from(a: ActivationFunction) -> Self {
+        match a {
+            ActivationFunction::Unit { min, max } => pywr_core::parameters::ActivationFunction::Unit { min, max },
+            ActivationFunction::Rectifier { min, max, off_value } => {
+                pywr_core::parameters::ActivationFunction::Rectifier {
+                    min,
+                    max,
+                    neg_value: off_value.unwrap_or(0.0),
+                }
+            }
+            ActivationFunction::BinaryStep { on_value, off_value } => {
+                pywr_core::parameters::ActivationFunction::BinaryStep {
+                    pos_value: on_value,
+                    neg_value: off_value.unwrap_or(0.0),
+                }
+            }
+            ActivationFunction::Logistic { growth_rate, max } => {
                 pywr_core::parameters::ActivationFunction::Logistic { growth_rate, max }
             }
         }
