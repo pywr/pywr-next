@@ -1,4 +1,4 @@
-use time::{Date, Duration, Month};
+use chrono::{Datelike, Duration, NaiveDate, NaiveDateTime};
 
 #[derive(Clone, Debug)]
 pub enum AggregationFrequency {
@@ -7,31 +7,39 @@ pub enum AggregationFrequency {
 }
 
 impl AggregationFrequency {
-    fn is_date_in_period(&self, period_start: &Date, date: &Date) -> bool {
+    fn is_date_in_period(&self, period_start: &NaiveDateTime, date: &NaiveDateTime) -> bool {
         match self {
             Self::Monthly => (period_start.year() == date.year()) && (period_start.month() == date.month()),
             Self::Annual => period_start.year() == date.year(),
         }
     }
 
-    fn start_of_next_period(&self, current_date: &Date) -> Date {
+    fn start_of_next_period(&self, current_date: &NaiveDateTime) -> NaiveDateTime {
         match self {
             Self::Monthly => {
+                let current_month = current_date.month();
                 // Increment the year if we're in December
-                let year = if current_date.month() == Month::December {
+                let year = if current_month == 12 {
                     current_date.year() + 1
                 } else {
                     current_date.year()
                 };
+                let next_month = (current_month % 12) + 1;
                 // 1st of the next month
                 // SAFETY: This should be safe to unwrap as it will always create a valid date unless
                 // we are at the limit of dates that are representable.
-                Date::from_calendar_date(year, current_date.month().next(), 1).unwrap()
+                NaiveDate::from_ymd_opt(year, next_month, 1)
+                    .unwrap()
+                    .and_hms_opt(0, 0, 0)
+                    .unwrap()
             }
             // 1st of January in the next year
             // SAFETY: This should be safe to unwrap as it will always create a valid date unless
             // we are at the limit of dates that are representable.
-            Self::Annual => Date::from_calendar_date(current_date.year() + 1, Month::January, 1).unwrap(),
+            Self::Annual => NaiveDate::from_ymd_opt(current_date.year() + 1, 1, 1)
+                .unwrap()
+                .and_hms_opt(0, 0, 0)
+                .unwrap(),
         }
     }
 
@@ -76,13 +84,13 @@ pub enum AggregationFunction {
 impl AggregationFunction {
     fn calc(&self, values: &[PeriodValue]) -> Option<f64> {
         match self {
-            AggregationFunction::Sum => Some(values.iter().map(|v| v.value * v.duration.whole_days() as f64).sum()),
+            AggregationFunction::Sum => Some(values.iter().map(|v| v.value * v.duration.num_days() as f64).sum()),
             AggregationFunction::Mean => {
-                let ndays: i64 = values.iter().map(|v| v.duration.whole_days()).sum();
+                let ndays: i64 = values.iter().map(|v| v.duration.num_days()).sum();
                 if ndays == 0 {
                     None
                 } else {
-                    let sum: f64 = values.iter().map(|v| v.value * v.duration.whole_days() as f64).sum();
+                    let sum: f64 = values.iter().map(|v| v.value * v.duration.num_days() as f64).sum();
 
                     Some(sum / ndays as f64)
                 }
@@ -194,13 +202,13 @@ struct PeriodicAggregator {
 
 #[derive(Debug, Copy, Clone)]
 pub struct PeriodValue {
-    pub start: Date,
+    pub start: NaiveDateTime,
     pub duration: Duration,
     pub value: f64,
 }
 
 impl PeriodValue {
-    pub fn new(start: Date, duration: Duration, value: f64) -> Self {
+    pub fn new(start: NaiveDateTime, duration: Duration, value: f64) -> Self {
         Self { start, duration, value }
     }
 }
@@ -319,9 +327,8 @@ impl Aggregator {
 mod tests {
     use super::{AggregationFrequency, AggregationFunction, Aggregator, PeriodicAggregator, PeriodicAggregatorState};
     use crate::recorders::aggregator::PeriodValue;
+    use chrono::{Datelike, Duration, NaiveDate};
     use float_cmp::assert_approx_eq;
-    use time::macros::date;
-    use time::Duration;
 
     #[test]
     fn test_periodic_aggregator() {
@@ -332,28 +339,32 @@ mod tests {
 
         let mut state = PeriodicAggregatorState::default();
 
-        let agg_value = agg.process_value(
-            &mut state,
-            PeriodValue::new(date!(2023 - 01 - 30), Duration::days(1), 1.0),
-        );
+        let start = NaiveDate::from_ymd_opt(2023, 1, 30)
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap();
+        let agg_value = agg.process_value(&mut state, PeriodValue::new(start, Duration::days(1), 1.0));
         assert!(agg_value.is_none());
 
-        let agg_value = agg.process_value(
-            &mut state,
-            PeriodValue::new(date!(2023 - 01 - 31), Duration::days(1), 1.0),
-        );
+        let start = NaiveDate::from_ymd_opt(2023, 1, 31)
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap();
+        let agg_value = agg.process_value(&mut state, PeriodValue::new(start, Duration::days(1), 1.0));
         assert!(agg_value.is_none());
 
-        let agg_value = agg.process_value(
-            &mut state,
-            PeriodValue::new(date!(2023 - 02 - 01), Duration::days(1), 1.0),
-        );
+        let start = NaiveDate::from_ymd_opt(2023, 2, 1)
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap();
+        let agg_value = agg.process_value(&mut state, PeriodValue::new(start, Duration::days(1), 1.0));
         assert!(agg_value.is_some());
 
-        let agg_value = agg.process_value(
-            &mut state,
-            PeriodValue::new(date!(2023 - 02 - 02), Duration::days(1), 1.0),
-        );
+        let start = NaiveDate::from_ymd_opt(2023, 2, 2)
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap();
+        let agg_value = agg.process_value(&mut state, PeriodValue::new(start, Duration::days(1), 1.0));
         assert!(agg_value.is_none());
     }
 
@@ -380,7 +391,10 @@ mod tests {
 
         let mut state = max_annual_min.default_state();
 
-        let mut date = date!(2023 - 01 - 01);
+        let mut date = NaiveDate::from_ymd_opt(2023, 1, 1)
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap();
         for _i in 0..365 * 3 {
             let value = PeriodValue::new(date, Duration::days(1), date.year() as f64);
             let _agg_value = max_annual_min.append_value(&mut state, value);

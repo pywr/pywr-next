@@ -5,6 +5,7 @@ use crate::network::Network;
 use crate::recorders::MetricSetIndex;
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
+use chrono::Datelike;
 use hdf5::{Extents, Group};
 use ndarray::{s, Array1};
 use std::any::Any;
@@ -38,8 +39,8 @@ impl Date {
         Self {
             index: ts.index,
             year: ts.date.year(),
-            month: ts.date.month().into(),
-            day: ts.date.day(),
+            month: ts.date.month() as u8,
+            day: ts.date.day() as u8,
         }
     }
 }

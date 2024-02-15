@@ -6,10 +6,11 @@ use crate::error::{ConversionError, SchemaError};
 use crate::metric_sets::MetricSet;
 use crate::outputs::Output;
 use crate::parameters::{MetricFloatReference, TryIntoV2Parameter};
+use chrono::{NaiveDate, NaiveDateTime, NaiveTime};
 use pywr_core::models::ModelDomain;
+use pywr_core::timestep::TimestepDuration;
 use pywr_core::PywrError;
 use std::path::{Path, PathBuf};
-use time::Date;
 
 #[derive(serde::Deserialize, serde::Serialize, Clone)]
 pub struct Metadata {
@@ -48,10 +49,22 @@ impl From<pywr_v1_schema::model::Timestep> for Timestep {
     }
 }
 
+#[derive(serde::Deserialize, serde::Serialize, Clone, Copy)]
+pub struct DateTimeComponents {
+    date: NaiveDate,
+    time: Option<NaiveTime>,
+}
+
+impl DateTimeComponents {
+    pub fn new(date: NaiveDate, time: Option<NaiveTime>) -> Self {
+        Self { date, time }
+    }
+}
+
 #[derive(serde::Deserialize, serde::Serialize, Clone)]
 pub struct Timestepper {
-    pub start: Date,
-    pub end: Date,
+    pub start: DateTimeComponents,
+    pub end: DateTimeComponents,
     pub timestep: Timestep,
 }
 
@@ -59,9 +72,17 @@ impl TryFrom<pywr_v1_schema::model::Timestepper> for Timestepper {
     type Error = ConversionError;
 
     fn try_from(v1: pywr_v1_schema::model::Timestepper) -> Result<Self, Self::Error> {
+        let start_date = NaiveDate::from_ymd_opt(v1.start.year(), v1.start.month() as u32, v1.start.day() as u32)
+            .ok_or(ConversionError::UnparseableDate(v1.start.to_string()))?;
+        let start = DateTimeComponents::new(start_date, None);
+
+        let end_date = NaiveDate::from_ymd_opt(v1.end.year(), v1.end.month() as u32, v1.end.day() as u32)
+            .ok_or(ConversionError::UnparseableDate(v1.end.to_string()))?;
+        let end = DateTimeComponents::new(end_date, None);
+
         Ok(Self {
-            start: v1.start,
-            end: v1.end,
+            start,
+            end,
             timestep: v1.timestep.into(),
         })
     }
@@ -70,11 +91,21 @@ impl TryFrom<pywr_v1_schema::model::Timestepper> for Timestepper {
 impl From<Timestepper> for pywr_core::timestep::Timestepper {
     fn from(ts: Timestepper) -> Self {
         let timestep = match ts.timestep {
-            Timestep::Days(d) => d,
-            _ => todo!(),
+            Timestep::Days(d) => TimestepDuration::Days(d),
+            Timestep::Frequency(f) => TimestepDuration::Frequency(f),
         };
 
-        Self::new(ts.start, ts.end, timestep)
+        let start = match ts.start.time {
+            Some(time) => NaiveDateTime::new(ts.start.date, time),
+            None => NaiveDateTime::new(ts.start.date, NaiveTime::default()),
+        };
+
+        let end = match ts.end.time {
+            Some(time) => NaiveDateTime::new(ts.end.date, time),
+            None => NaiveDateTime::new(ts.end.date, NaiveTime::default()),
+        };
+
+        Self::new(start, end, timestep)
     }
 }
 
@@ -302,7 +333,7 @@ pub struct PywrModel {
 }
 
 impl PywrModel {
-    pub fn new(title: &str, start: &Date, end: &Date) -> Self {
+    pub fn new(title: &str, start: &DateTimeComponents, end: &DateTimeComponents) -> Self {
         Self {
             metadata: Metadata {
                 title: title.to_string(),

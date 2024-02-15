@@ -157,8 +157,12 @@ mod tests {
                     "minimum_version": "0.1"
                 },
                 "timestepper": {
-                    "start": "2015-01-01",
-                    "end": "2015-12-31",
+                    "start": {
+                        "date": "2015-01-01"
+                    },
+                    "end": {
+                        "date": "2015-12-31"
+                    },
                     "timestep": 1
                 },
                 "network": {

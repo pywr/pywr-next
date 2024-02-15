@@ -4,6 +4,7 @@ use crate::network::Network;
 use crate::parameters::downcast_internal_state;
 use crate::scenario::ScenarioIndex;
 use crate::state::{ParameterState, State};
+use chrono::Datelike;
 use rhai::{Dynamic, Engine, Map, Scope, AST};
 use std::any::Any;
 use std::collections::HashMap;

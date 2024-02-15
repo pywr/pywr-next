@@ -35,7 +35,7 @@ impl RollingWindow {
     pub fn as_timesteps(&self, time: &TimeDomain) -> Option<NonZeroUsize> {
         match self {
             Self::Days(days) => {
-                let timesteps = days.get() / time.step_duration().whole_days() as usize;
+                let timesteps = days.get() / time.step_duration().num_days() as usize;
 
                 NonZeroUsize::new(timesteps)
             }

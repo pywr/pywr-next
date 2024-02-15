@@ -1,3 +1,4 @@
+use chrono::NaiveDate;
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
 use pyo3::types::{PyDate, PyDateAccess, PyDict, PyType};
@@ -13,9 +14,9 @@ use pywr_core::solvers::{ClIpmF32Solver, ClIpmF64Solver, ClIpmSolverSettings};
 use pywr_core::solvers::{ClpSolver, ClpSolverSettings, ClpSolverSettingsBuilder};
 #[cfg(feature = "highs")]
 use pywr_core::solvers::{HighsSolver, HighsSolverSettings, HighsSolverSettings, HighsSolverSettingsBuilde};
+use pywr_schema::model::DateTimeComponents;
 use std::fmt;
 use std::path::PathBuf;
-use time::Date;
 
 #[derive(Debug)]
 struct PySchemaError {
@@ -63,9 +64,11 @@ impl Schema {
     #[new]
     fn new(title: &str, start: &PyDate, end: &PyDate) -> Self {
         // SAFETY: We know that the date & month are valid because it is a Python date.
-        let start =
-            Date::from_calendar_date(start.get_year(), start.get_month().try_into().unwrap(), start.get_day()).unwrap();
-        let end = Date::from_calendar_date(end.get_year(), end.get_month().try_into().unwrap(), end.get_day()).unwrap();
+        let start_date =
+            NaiveDate::from_ymd_opt(start.get_year(), start.get_month() as u32, start.get_day() as u32).unwrap();
+        let start = DateTimeComponents::new(start_date, None);
+        let end_date = NaiveDate::from_ymd_opt(end.get_year(), end.get_month() as u32, end.get_day() as u32).unwrap();
+        let end = DateTimeComponents::new(end_date, None);
 
         Self {
             schema: pywr_schema::PywrModel::new(title, &start, &end),

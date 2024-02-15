@@ -14,16 +14,24 @@ use crate::solvers::ClpSolver;
 use crate::solvers::HighsSolver;
 #[cfg(feature = "ipm-simd")]
 use crate::solvers::SimdIpmF64Solver;
-use crate::timestep::{TimeDomain, Timestepper};
+use crate::timestep::{TimeDomain, TimestepDuration, Timestepper};
 use crate::PywrError;
+use chrono::{Days, NaiveDate};
 use ndarray::{Array, Array2};
 use rand::Rng;
 use rand_distr::{Distribution, Normal};
-use time::ext::NumericalDuration;
-use time::macros::date;
 
 pub fn default_timestepper() -> Timestepper {
-    Timestepper::new(date!(2020 - 01 - 01), date!(2020 - 01 - 15), 1)
+    let start = NaiveDate::from_ymd_opt(2020, 1, 1)
+        .unwrap()
+        .and_hms_opt(0, 0, 0)
+        .unwrap();
+    let end = NaiveDate::from_ymd_opt(2020, 1, 15)
+        .unwrap()
+        .and_hms_opt(0, 0, 0)
+        .unwrap();
+    let duration = TimestepDuration::Days(1);
+    Timestepper::new(start, end, duration)
 }
 
 pub fn default_time_domain() -> TimeDomain {
@@ -146,8 +154,13 @@ pub fn run_and_assert_parameter(
 ) {
     let p_idx = model.network_mut().add_parameter(parameter).unwrap();
 
-    let start = date!(2020 - 01 - 01);
-    let _end = start.checked_add((expected_values.nrows() as i64 - 1).days()).unwrap();
+    let start = NaiveDate::from_ymd_opt(2020, 1, 1)
+        .unwrap()
+        .and_hms_opt(0, 0, 0)
+        .unwrap();
+    let _end = start
+        .checked_add_days(Days::new(expected_values.nrows() as u64 - 1))
+        .unwrap();
 
     let rec = AssertionRecorder::new("assert", Metric::ParameterValue(p_idx), expected_values, ulps, epsilon);
 
@@ -286,7 +299,16 @@ pub fn make_random_model<R: Rng>(
     num_scenarios: usize,
     rng: &mut R,
 ) -> Result<Model, PywrError> {
-    let timestepper = Timestepper::new(date!(2020 - 01 - 01), date!(2020 - 04 - 09), 1);
+    let start = NaiveDate::from_ymd_opt(2020, 1, 1)
+        .unwrap()
+        .and_hms_opt(0, 0, 0)
+        .unwrap();
+    let end = NaiveDate::from_ymd_opt(2020, 4, 9)
+        .unwrap()
+        .and_hms_opt(0, 0, 0)
+        .unwrap();
+    let duration = TimestepDuration::Days(1);
+    let timestepper = Timestepper::new(start, end, duration);
 
     let mut scenario_collection = ScenarioGroupCollection::default();
     scenario_collection.add_group("test-scenario", num_scenarios);

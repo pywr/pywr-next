@@ -4,6 +4,7 @@ use crate::network::Network;
 use crate::parameters::{downcast_internal_state, MultiValueParameter};
 use crate::scenario::ScenarioIndex;
 use crate::state::{MultiValue, ParameterState, State};
+use chrono::Datelike;
 use pyo3::prelude::*;
 use pyo3::types::{IntoPyDict, PyDate, PyDict, PyFloat, PyLong, PyTuple};
 use std::any::Any;
@@ -120,7 +121,7 @@ impl Parameter for PyParameter {
                 py,
                 timestep.date.year(),
                 timestep.date.month() as u8,
-                timestep.date.day(),
+                timestep.date.day() as u8,
             )?;
 
             let si = scenario_index.index.into_py(py);
@@ -154,7 +155,7 @@ impl Parameter for PyParameter {
                     py,
                     timestep.date.year(),
                     timestep.date.month() as u8,
-                    timestep.date.day(),
+                    timestep.date.day() as u8,
                 )?;
 
                 let si = scenario_index.index.into_py(py);
@@ -222,7 +223,7 @@ impl MultiValueParameter for PyParameter {
                 py,
                 timestep.date.year(),
                 timestep.date.month() as u8,
-                timestep.date.day(),
+                timestep.date.day() as u8,
             )
             .map_err(|e: PyErr| PywrError::PythonError(e.to_string()))?;
 
@@ -286,7 +287,7 @@ impl MultiValueParameter for PyParameter {
                     py,
                     timestep.date.year(),
                     timestep.date.month() as u8,
-                    timestep.date.day(),
+                    timestep.date.day() as u8,
                 )?;
 
                 let si = scenario_index.index.into_py(py);

@@ -15,7 +15,7 @@ use std::path::Path;
 #[derive(serde::Deserialize, serde::Serialize, Clone)]
 pub struct AnnualReset {
     pub day: u8,
-    pub month: time::Month,
+    pub month: chrono::Month,
     pub use_initial_volume: bool,
 }
 
@@ -23,7 +23,7 @@ impl Default for AnnualReset {
     fn default() -> Self {
         Self {
             day: 1,
-            month: time::Month::January,
+            month: chrono::Month::January,
             use_initial_volume: false,
         }
     }
@@ -82,7 +82,7 @@ impl AnnualVirtualStorageNode {
             .collect::<Result<Vec<_>, _>>()?;
 
         let reset = VirtualStorageReset::DayOfYear {
-            day: self.reset.day,
+            day: self.reset.day as u32,
             month: self.reset.month,
         };
 
@@ -171,6 +171,8 @@ impl TryFrom<AnnualVirtualStorageNodeV1> for AnnualVirtualStorageNode {
             });
         };
 
+        let month = chrono::Month::try_from(v1.reset_month as u8)?;
+
         let n = Self {
             meta,
             nodes: v1.nodes,
@@ -181,7 +183,7 @@ impl TryFrom<AnnualVirtualStorageNodeV1> for AnnualVirtualStorageNode {
             initial_volume,
             reset: AnnualReset {
                 day: v1.reset_day,
-                month: v1.reset_month,
+                month,
                 use_initial_volume: v1.reset_to_initial_volume,
             },
         };

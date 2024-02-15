@@ -3,11 +3,11 @@ use crate::node::{ConstraintValue, FlowConstraints, NodeMeta, StorageConstraints
 use crate::state::{State, VirtualStorageState};
 use crate::timestep::Timestep;
 use crate::{NodeIndex, PywrError};
+use chrono::{Datelike, Month, NaiveDateTime};
 use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::num::NonZeroUsize;
 use std::ops::{Deref, DerefMut};
-use time::{Date, Month};
 
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Debug)]
 pub struct VirtualStorageIndex(usize);
@@ -88,7 +88,7 @@ impl VirtualStorageVec {
 
 pub enum VirtualStorageReset {
     Never,
-    DayOfYear { day: u8, month: Month },
+    DayOfYear { day: u32, month: Month },
     NumberOfMonths { months: i32 },
 }
 
@@ -175,7 +175,7 @@ impl VirtualStorage {
             match self.reset {
                 VirtualStorageReset::Never => false,
                 VirtualStorageReset::DayOfYear { day, month } => {
-                    (timestep.date.day() == day) && (timestep.date.month() == month)
+                    (timestep.date.day() == day) && (timestep.date.month() == month.number_from_month())
                 }
                 VirtualStorageReset::NumberOfMonths { months } => {
                     // Get the date when the virtual storage was last reset
@@ -244,7 +244,7 @@ impl VirtualStorage {
 }
 
 /// Calculate the number of months between `current` [Timestep] and the `last_reset` [Timestep].
-fn months_since_last_reset(current: &Date, last_reset: &Date) -> i32 {
+fn months_since_last_reset(current: &NaiveDateTime, last_reset: &NaiveDateTime) -> i32 {
     (current.year() - last_reset.year()) * 12 + current.month() as i32 - last_reset.month() as i32
 }
 
@@ -259,29 +259,52 @@ mod tests {
     use crate::test_utils::{default_timestepper, run_all_solvers, simple_model};
     use crate::timestep::Timestep;
     use crate::virtual_storage::{months_since_last_reset, VirtualStorageReset};
+    use chrono::NaiveDate;
     use ndarray::Array;
     use std::num::NonZeroUsize;
-    use time::macros::date;
 
     /// Test the calculation of number of months since last reset
     #[test]
     fn test_months_since_last_reset() {
-        assert_eq!(
-            months_since_last_reset(&date!(2022 - 12 - 31), &date!(2022 - 12 - 31)),
-            0
-        );
-        assert_eq!(
-            months_since_last_reset(&date!(2023 - 12 - 31), &date!(2022 - 12 - 31)),
-            12
-        );
-        assert_eq!(
-            months_since_last_reset(&date!(2023 - 01 - 1), &date!(2022 - 12 - 31)),
-            1
-        );
-        assert_eq!(
-            months_since_last_reset(&date!(2022 - 12 - 1), &date!(2022 - 12 - 31)),
-            0
-        );
+        let current = NaiveDate::from_ymd_opt(2022, 12, 31)
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap();
+        let last_reset = NaiveDate::from_ymd_opt(2022, 12, 31)
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap();
+        assert_eq!(months_since_last_reset(&current, &last_reset), 0);
+
+        let current = NaiveDate::from_ymd_opt(2023, 12, 31)
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap();
+        let last_reset = NaiveDate::from_ymd_opt(2022, 12, 31)
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap();
+        assert_eq!(months_since_last_reset(&current, &last_reset), 12);
+
+        let current = NaiveDate::from_ymd_opt(2023, 01, 1)
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap();
+        let last_reset = NaiveDate::from_ymd_opt(2022, 12, 31)
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap();
+        assert_eq!(months_since_last_reset(&current, &last_reset), 1);
+
+        let current = NaiveDate::from_ymd_opt(2022, 12, 1)
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap();
+        let last_reset = NaiveDate::from_ymd_opt(2022, 12, 31)
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap();
+        assert_eq!(months_since_last_reset(&current, &last_reset), 0);
     }
 
     /// Test the virtual storage constraints
