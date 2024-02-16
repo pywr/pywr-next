@@ -149,7 +149,7 @@ impl ParameterMeta {
 
 /// Helper function to downcast to internal parameter state and print a helpful panic
 /// message if this fails.
-pub fn downcast_internal_state<T: 'static>(internal_state: &mut Option<Box<dyn ParameterState>>) -> &mut T {
+pub fn downcast_internal_state_mut<T: 'static>(internal_state: &mut Option<Box<dyn ParameterState>>) -> &mut T {
     // Downcast the internal state to the correct type
     match internal_state {
         Some(internal) => match internal.as_mut().as_any_mut().downcast_mut::<T>() {
@@ -157,6 +157,45 @@ pub fn downcast_internal_state<T: 'static>(internal_state: &mut Option<Box<dyn P
             None => panic!("Internal state did not downcast to the correct type! :("),
         },
         None => panic!("No internal state defined when one was expected! :("),
+    }
+}
+
+/// Helper function to downcast to internal parameter state and print a helpful panic
+/// message if this fails.
+pub fn downcast_internal_state_ref<T: 'static>(internal_state: &Option<Box<dyn ParameterState>>) -> &T {
+    // Downcast the internal state to the correct type
+    match internal_state {
+        Some(internal) => match internal.as_ref().as_any().downcast_ref::<T>() {
+            Some(pa) => pa,
+            None => panic!("Internal state did not downcast to the correct type! :("),
+        },
+        None => panic!("No internal state defined when one was expected! :("),
+    }
+}
+
+pub trait VariableConfig: Any + Send {
+    fn as_any(&self) -> &dyn Any;
+    fn as_any_mut(&mut self) -> &mut dyn Any;
+}
+
+impl<T> VariableConfig for T
+where
+    T: Any + Send,
+{
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+}
+
+/// Helper function to downcast to variable config and print a helpful panic message if this fails.
+pub fn downcast_variable_config_ref<T: 'static>(variable_config: &dyn VariableConfig) -> &T {
+    // Downcast the internal state to the correct type
+    match variable_config.as_any().downcast_ref::<T>() {
+        Some(pa) => pa,
+        None => panic!("Variable config did not downcast to the correct type! :("),
     }
 }
 
@@ -211,14 +250,6 @@ pub trait Parameter: Send + Sync {
         self.as_f64_variable().is_some()
     }
 
-    /// Is this parameter an active variable
-    fn is_f64_variable_active(&self) -> bool {
-        match self.as_f64_variable() {
-            Some(var) => var.is_active(),
-            None => false,
-        }
-    }
-
     /// Return the parameter as a [`VariableParameter<u32>`] if it supports being a variable.
     fn as_u32_variable(&self) -> Option<&dyn VariableParameter<u32>> {
         None
@@ -232,14 +263,6 @@ pub trait Parameter: Send + Sync {
     /// Can this parameter be a variable
     fn can_be_u32_variable(&self) -> bool {
         self.as_u32_variable().is_some()
-    }
-
-    /// Is this parameter an active variable
-    fn is_u32_variable_active(&self) -> bool {
-        match self.as_u32_variable() {
-            Some(var) => var.is_active(),
-            None => false,
-        }
     }
 }
 
@@ -340,18 +363,26 @@ pub enum ParameterType {
 /// such as multi-objective evolutionary algorithms. The trait is generic to the type of
 /// the variable values being optimised but these will typically by `f64` and `u32`.
 pub trait VariableParameter<T> {
-    /// Is this variable activated (i.e. should be used in optimisation)
-    fn is_active(&self) -> bool;
+    fn meta(&self) -> &ParameterMeta;
+    fn name(&self) -> &str {
+        self.meta().name.as_str()
+    }
+
     /// Return the number of variables required
-    fn size(&self) -> usize;
-    /// Apply new variable values to the parameter
-    fn set_variables(&mut self, values: &[T]) -> Result<(), PywrError>;
+    fn size(&self, variable_config: &dyn VariableConfig) -> usize;
+    /// Apply new variable values to the parameter's state
+    fn set_variables(
+        &self,
+        values: &[T],
+        variable_config: &dyn VariableConfig,
+        internal_state: &mut Option<Box<dyn ParameterState>>,
+    ) -> Result<(), PywrError>;
     /// Get the current variable values
-    fn get_variables(&self) -> Vec<T>;
+    fn get_variables(&self, internal_state: &Option<Box<dyn ParameterState>>) -> Option<Vec<T>>;
     /// Get variable lower bounds
-    fn get_lower_bounds(&self) -> Result<Vec<T>, PywrError>;
+    fn get_lower_bounds(&self, variable_config: &dyn VariableConfig) -> Result<Vec<T>, PywrError>;
     /// Get variable upper bounds
-    fn get_upper_bounds(&self) -> Result<Vec<T>, PywrError>;
+    fn get_upper_bounds(&self, variable_config: &dyn VariableConfig) -> Result<Vec<T>, PywrError>;
 }
 
 #[cfg(test)]

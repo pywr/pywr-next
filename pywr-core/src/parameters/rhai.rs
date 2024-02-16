@@ -1,7 +1,7 @@
 use super::{IndexValue, Parameter, ParameterMeta, PywrError, Timestep};
 use crate::metric::Metric;
 use crate::network::Network;
-use crate::parameters::downcast_internal_state;
+use crate::parameters::downcast_internal_state_mut;
 use crate::scenario::ScenarioIndex;
 use crate::state::{ParameterState, State};
 use chrono::Datelike;
@@ -90,7 +90,7 @@ impl Parameter for RhaiParameter {
         state: &State,
         internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<f64, PywrError> {
-        let internal = downcast_internal_state::<Internal>(internal_state);
+        let internal = downcast_internal_state_mut::<Internal>(internal_state);
 
         let metric_values = self
             .metrics

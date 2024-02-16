@@ -5,7 +5,7 @@ use crate::scenario::{ScenarioDomain, ScenarioGroupCollection};
 use crate::timestep::{TimeDomain, Timestepper};
 use crate::PywrError;
 pub use multi::{MultiNetworkModel, MultiNetworkTransferIndex};
-pub use simple::Model;
+pub use simple::{Model, ModelState};
 
 pub struct ModelDomain {
     time: TimeDomain,
