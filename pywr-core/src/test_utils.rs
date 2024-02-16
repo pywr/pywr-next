@@ -35,7 +35,7 @@ pub fn default_timestepper() -> Timestepper {
 }
 
 pub fn default_time_domain() -> TimeDomain {
-    default_timestepper().into()
+    TimeDomain::from_timestepper(default_timestepper()).unwrap()
 }
 
 /// Create a simple test network with three nodes.

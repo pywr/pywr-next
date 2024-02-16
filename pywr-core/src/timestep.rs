@@ -4,6 +4,8 @@ use polars::time::ClosedWindow;
 use pyo3::prelude::*;
 use std::ops::Add;
 
+use crate::PywrError;
+
 type TimestepIndex = usize;
 
 #[pyclass]
@@ -59,9 +61,9 @@ impl Timestepper {
     }
 
     /// Create a vector of `Timestep`s between the start and end dates at the given duration.
-    fn timesteps(&self) -> Vec<Timestep> {
+    fn timesteps(&self) -> Result<Vec<Timestep>, PywrError> {
         match self.timestep {
-            TimestepDuration::Days(days) => self.generate_timesteps_from_days(days),
+            TimestepDuration::Days(days) => Ok(self.generate_timesteps_from_days(days)),
             TimestepDuration::Frequency(ref frequency) => self.generate_timesteps_from_frequency(frequency.clone()),
         }
     }
@@ -79,7 +81,7 @@ impl Timestepper {
         timesteps
     }
 
-    fn generate_timesteps_from_frequency(&self, frequency: String) -> Vec<Timestep> {
+    fn generate_timesteps_from_frequency(&self, frequency: String) -> Result<Vec<Timestep>, PywrError> {
         let duration = polars::time::Duration::parse(&frequency);
 
         // Need to add an extra day to the end date so that the duration of the last timestep can be calculated.
@@ -99,7 +101,7 @@ impl Timestepper {
                 + Duration::nanoseconds(duration.nanoseconds())
         };
 
-        let dates: Vec<Option<NaiveDateTime>> = polars::time::date_range(
+        let dates  = polars::time::date_range(
             "timesteps",
             self.start,
             end,
@@ -107,25 +109,21 @@ impl Timestepper {
             ClosedWindow::Both,
             TimeUnit::Milliseconds,
             None,
-        )
-        .unwrap()
+        ).map_err(|e| PywrError::TimestepRangeGenerationError(e.to_string()))?
         .as_datetime_iter()
-        .collect();
-
-        dbg!(&dates);
+        .map(|x| x.ok_or(PywrError::TimestepGenerationError(frequency.clone())))
+        .collect::<Result<Vec<NaiveDateTime>, PywrError>>()?;
 
         let timesteps = dates
             .windows(2)
             .enumerate()
             .map(|(i, dates)| {
-                let d1 = dates[0].unwrap();
-                let d2 = dates[1].unwrap();
-                let duration = d2 - d1;
-                Timestep::new(d1, i, duration)
+                let duration = dates[1] - dates[0];
+                Timestep::new(dates[0], i, duration)
             })
-            .collect();
+            .collect::<Vec<Timestep>>();
 
-        timesteps
+        Ok(timesteps)
     }
 }
 
@@ -151,15 +149,13 @@ impl TimeDomain {
     pub fn len(&self) -> usize {
         self.timesteps.len()
     }
-}
 
-impl From<Timestepper> for TimeDomain {
-    fn from(value: Timestepper) -> Self {
-        Self {
-            timesteps: value.timesteps(),
-        }
+    pub fn from_timestepper(timesepper: Timestepper) -> Result<Self, PywrError> {
+        let timesteps = timesepper.timesteps()?;
+        Ok(Self { timesteps })
     }
 }
+
 
 #[cfg(test)]
 mod test {
@@ -175,7 +171,7 @@ mod test {
         let timestep = TimestepDuration::Days(1);
 
         let timestepper = Timestepper::new(start, end, timestep);
-        let timesteps = timestepper.timesteps();
+        let timesteps = timestepper.timesteps().unwrap();
         assert!(timesteps.len() == 10);
         assert_eq!(timesteps.first().unwrap().duration, Duration::days(1));
         assert_eq!(timesteps.last().unwrap().duration, Duration::days(1));
@@ -183,7 +179,7 @@ mod test {
         let timestep = TimestepDuration::Frequency(String::from("1d"));
 
         let timestepper = Timestepper::new(start, end, timestep);
-        let timesteps = timestepper.timesteps();
+        let timesteps = timestepper.timesteps().unwrap();
         assert!(timesteps.len() == 10);
         assert_eq!(timesteps.first().unwrap().duration, Duration::days(1));
         assert_eq!(timesteps.last().unwrap().duration, Duration::days(1));
@@ -196,7 +192,7 @@ mod test {
         let timestep = TimestepDuration::Frequency(String::from("1w"));
 
         let timestepper = Timestepper::new(start, end, timestep);
-        let timesteps = timestepper.timesteps();
+        let timesteps = timestepper.timesteps().unwrap();
 
         assert!(timesteps.len() == 4);
         assert_eq!(timesteps.first().unwrap().duration, Duration::days(7));
@@ -210,7 +206,7 @@ mod test {
         let timestep = TimestepDuration::Frequency(String::from("1mo"));
 
         let timestepper = Timestepper::new(start, end, timestep);
-        let timesteps = timestepper.timesteps();
+        let timesteps = timestepper.timesteps().unwrap();
         assert!(timesteps.len() == 4);
         assert_eq!(timesteps[0].duration, Duration::days(31));
         assert_eq!(timesteps[1].duration, Duration::days(28));
@@ -225,7 +221,7 @@ mod test {
         let timestep = TimestepDuration::Frequency(String::from("1h"));
 
         let timestepper = Timestepper::new(start, end, timestep);
-        let timesteps = timestepper.timesteps();
+        let timesteps = timestepper.timesteps().unwrap();
         assert!(timesteps.len() == 5);
         assert_eq!(timesteps.first().unwrap().duration, Duration::hours(1));
         assert_eq!(timesteps.last().unwrap().duration, Duration::hours(1));

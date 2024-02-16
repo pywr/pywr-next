@@ -3,8 +3,12 @@
     "title": "Test of aggregated node."
   },
   "timestepper": {
-    "start": "2021-01-01",
-    "end": "2021-12-31",
+    "start": {
+      "date": "2021-01-01"
+    },
+    "end": {
+      "date": "2021-12-31"
+    },
     "timestep": 1
   },
   "network": {

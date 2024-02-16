@@ -1,4 +1,4 @@
-use chrono::{Datelike, Duration, NaiveDate, NaiveDateTime};
+use chrono::{Datelike, Duration, NaiveDate, NaiveDateTime, NaiveTime};
 
 #[derive(Clone, Debug)]
 pub enum AggregationFrequency {
@@ -28,18 +28,16 @@ impl AggregationFrequency {
                 // 1st of the next month
                 // SAFETY: This should be safe to unwrap as it will always create a valid date unless
                 // we are at the limit of dates that are representable.
-                NaiveDate::from_ymd_opt(year, next_month, 1)
-                    .unwrap()
-                    .and_hms_opt(0, 0, 0)
-                    .unwrap()
+                let date = NaiveDate::from_ymd_opt(year, next_month, 1).unwrap();
+                NaiveDateTime::new(date, NaiveTime::default())
             }
-            // 1st of January in the next year
-            // SAFETY: This should be safe to unwrap as it will always create a valid date unless
-            // we are at the limit of dates that are representable.
-            Self::Annual => NaiveDate::from_ymd_opt(current_date.year() + 1, 1, 1)
-                .unwrap()
-                .and_hms_opt(0, 0, 0)
-                .unwrap(),
+            Self::Annual => {
+                // 1st of January in the next year
+                // SAFETY: This should be safe to unwrap as it will always create a valid date unless
+                // we are at the limit of dates that are representable.
+                let date = NaiveDate::from_ymd_opt(current_date.year() + 1, 1, 1).unwrap();
+                NaiveDateTime::new(date, NaiveTime::default())
+            }
         }
     }
 
