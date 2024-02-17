@@ -97,10 +97,9 @@ impl VariableParameter<f64> for OffsetParameter {
     }
 
     fn get_variables(&self, internal_state: &Option<Box<dyn ParameterState>>) -> Option<Vec<f64>> {
-        match downcast_internal_state_ref::<InternalValue>(internal_state) {
-            Some(value) => Some(vec![*value]),
-            None => None,
-        }
+        downcast_internal_state_ref::<InternalValue>(internal_state)
+            .as_ref()
+            .map(|value| vec![*value])
     }
 
     fn get_lower_bounds(&self, variable_config: &dyn VariableConfig) -> Result<Vec<f64>, PywrError> {
