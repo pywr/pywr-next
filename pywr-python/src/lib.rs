@@ -15,6 +15,7 @@ use pywr_core::solvers::{ClpSolver, ClpSolverSettings, ClpSolverSettingsBuilder}
 use pywr_core::solvers::{HighsSolver, HighsSolverSettings, HighsSolverSettings, HighsSolverSettingsBuilde};
 use std::fmt;
 use std::path::PathBuf;
+use std::str::FromStr;
 use time::Date;
 
 #[derive(Debug)]

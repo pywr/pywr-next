@@ -82,11 +82,7 @@ impl InterpolatedParameter {
             .map(|p| p.load(network, schema, domain, tables, data_path, inter_network_transfers))
             .collect::<Result<Vec<_>, _>>()?;
 
-        let points = xp
-            .into_iter()
-            .zip(fp.into_iter())
-            .map(|(xp, fp)| (xp, fp))
-            .collect::<Vec<_>>();
+        let points = xp.into_iter().zip(fp).collect::<Vec<_>>();
 
         let p = pywr_core::parameters::InterpolatedParameter::new(
             &self.meta.name,
