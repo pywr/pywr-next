@@ -33,7 +33,7 @@ impl TryFrom<pywr_v1_schema::model::Metadata> for Metadata {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Debug)]
 #[serde(untagged)]
 pub enum Timestep {
     Days(i64),
@@ -49,22 +49,17 @@ impl From<pywr_v1_schema::model::Timestep> for Timestep {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Clone, Copy)]
-pub struct DateTimeComponents {
-    date: NaiveDate,
-    time: Option<NaiveTime>,
+#[derive(serde::Deserialize, serde::Serialize, Clone, Copy, Debug)]
+#[serde(untagged)]
+pub enum DateType {
+    Date(NaiveDate),
+    DateTime(NaiveDateTime),
 }
 
-impl DateTimeComponents {
-    pub fn new(date: NaiveDate, time: Option<NaiveTime>) -> Self {
-        Self { date, time }
-    }
-}
-
-#[derive(serde::Deserialize, serde::Serialize, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Debug)]
 pub struct Timestepper {
-    pub start: DateTimeComponents,
-    pub end: DateTimeComponents,
+    pub start: DateType,
+    pub end: DateType,
     pub timestep: Timestep,
 }
 
@@ -72,13 +67,15 @@ impl TryFrom<pywr_v1_schema::model::Timestepper> for Timestepper {
     type Error = ConversionError;
 
     fn try_from(v1: pywr_v1_schema::model::Timestepper) -> Result<Self, Self::Error> {
-        let start_date = NaiveDate::from_ymd_opt(v1.start.year(), v1.start.month() as u32, v1.start.day() as u32)
-            .ok_or(ConversionError::UnparseableDate(v1.start.to_string()))?;
-        let start = DateTimeComponents::new(start_date, None);
+        let start = DateType::Date(
+            NaiveDate::from_ymd_opt(v1.start.year(), v1.start.month() as u32, v1.start.day() as u32)
+                .ok_or(ConversionError::UnparseableDate(v1.start.to_string()))?,
+        );
 
-        let end_date = NaiveDate::from_ymd_opt(v1.end.year(), v1.end.month() as u32, v1.end.day() as u32)
-            .ok_or(ConversionError::UnparseableDate(v1.end.to_string()))?;
-        let end = DateTimeComponents::new(end_date, None);
+        let end = DateType::Date(
+            NaiveDate::from_ymd_opt(v1.end.year(), v1.end.month() as u32, v1.end.day() as u32)
+                .ok_or(ConversionError::UnparseableDate(v1.end.to_string()))?,
+        );
 
         Ok(Self {
             start,
@@ -95,14 +92,14 @@ impl From<Timestepper> for pywr_core::timestep::Timestepper {
             Timestep::Frequency(f) => TimestepDuration::Frequency(f),
         };
 
-        let start = match ts.start.time {
-            Some(time) => NaiveDateTime::new(ts.start.date, time),
-            None => NaiveDateTime::new(ts.start.date, NaiveTime::default()),
+        let start = match ts.start {
+            DateType::Date(date) => NaiveDateTime::new(date, NaiveTime::default()),
+            DateType::DateTime(date_time) => date_time,
         };
 
-        let end = match ts.end.time {
-            Some(time) => NaiveDateTime::new(ts.end.date, time),
-            None => NaiveDateTime::new(ts.end.date, NaiveTime::default()),
+        let end = match ts.end {
+            DateType::Date(date) => NaiveDateTime::new(date, NaiveTime::default()),
+            DateType::DateTime(date_time) => date_time,
         };
 
         Self::new(start, end, timestep)
@@ -333,7 +330,7 @@ pub struct PywrModel {
 }
 
 impl PywrModel {
-    pub fn new(title: &str, start: &DateTimeComponents, end: &DateTimeComponents) -> Self {
+    pub fn new(title: &str, start: &DateType, end: &DateType) -> Self {
         Self {
             metadata: Metadata {
                 title: title.to_string(),
@@ -609,6 +606,7 @@ impl PywrMultiNetworkModel {
 #[cfg(test)]
 mod tests {
     use super::{PywrModel, PywrMultiNetworkModel};
+    use crate::model::Timestepper;
     use crate::parameters::{
         AggFunc, AggregatedParameter, ConstantParameter, ConstantValue, DynamicFloatValue, MetricFloatReference,
         MetricFloatValue, Parameter, ParameterMeta,
@@ -864,4 +862,61 @@ mod tests {
 
         model.run::<ClpSolver>(&Default::default()).unwrap();
     }
+
+
+    #[test]
+    fn test_date() {
+        let timestepper_str = r#"
+        {
+            "start": "2015-01-01",
+            "end": "2015-12-31",
+            "timestep": 1
+        }
+        "#;
+
+        let timestep: Timestepper = serde_json::from_str(timestepper_str).unwrap();
+
+        match timestep.start {
+            super::DateType::Date(date) => {
+                assert_eq!(date, chrono::NaiveDate::from_ymd_opt(2015, 1, 1).unwrap());
+            }
+            _ => panic!("Expected a date"),
+        }
+        
+        match timestep.end {
+            super::DateType::Date(date) => {
+                assert_eq!(date, chrono::NaiveDate::from_ymd_opt(2015, 12, 31).unwrap());
+            }
+            _ => panic!("Expected a date"),
+            
+        }
+    }
+
+    #[test]
+    fn test_datetime() {
+        let timestepper_str = r#"
+        {
+            "start": "2015-01-01T12:30:00",
+            "end": "2015-01-01T14:30:00",
+            "timestep": 1
+        }
+        "#;
+
+        let timestep: Timestepper = serde_json::from_str(timestepper_str).unwrap();
+
+        match timestep.start {
+            super::DateType::DateTime(date_time) => {
+                assert_eq!(date_time, chrono::NaiveDate::from_ymd_opt(2015, 1, 1).unwrap().and_hms_opt(12, 30, 0).unwrap());
+            }
+            _ => panic!("Expected a date"),
+        }
+
+        match timestep.end {
+            super::DateType::DateTime(date_time) => {
+                assert_eq!(date_time, chrono::NaiveDate::from_ymd_opt(2015, 1, 1).unwrap().and_hms_opt(14, 30, 0).unwrap());
+            }
+            _ => panic!("Expected a date"),
+        }
+    }
+
 }
