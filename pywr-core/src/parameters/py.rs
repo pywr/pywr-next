@@ -345,7 +345,7 @@ class MyParameter:
 
         let param = PyParameter::new("my-parameter", class, args, kwargs, &HashMap::new(), &HashMap::new());
         let timestepper = default_timestepper();
-        let time: TimeDomain = TimeDomain::from_timestepper(timestepper).unwrap();
+        let time: TimeDomain = TimeDomain::try_from(timestepper).unwrap();
         let timesteps = time.timesteps();
 
         let scenario_indices = [
@@ -414,7 +414,7 @@ class MyParameter:
 
         let param = PyParameter::new("my-parameter", class, args, kwargs, &HashMap::new(), &HashMap::new());
         let timestepper = default_timestepper();
-        let time: TimeDomain = TimeDomain::from_timestepper(timestepper).unwrap();
+        let time: TimeDomain = TimeDomain::try_from(timestepper).unwrap();
         let timesteps = time.timesteps();
 
         let scenario_indices = [

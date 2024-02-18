@@ -101,7 +101,7 @@ impl Timestepper {
                 + Duration::nanoseconds(duration.nanoseconds())
         };
 
-        let dates  = polars::time::date_range(
+        let dates = polars::time::date_range(
             "timesteps",
             self.start,
             end,
@@ -109,7 +109,8 @@ impl Timestepper {
             ClosedWindow::Both,
             TimeUnit::Milliseconds,
             None,
-        ).map_err(|e| PywrError::TimestepRangeGenerationError(e.to_string()))?
+        )
+        .map_err(|e| PywrError::TimestepRangeGenerationError(e.to_string()))?
         .as_datetime_iter()
         .map(|x| x.ok_or(PywrError::TimestepGenerationError(frequency.clone())))
         .collect::<Result<Vec<NaiveDateTime>, PywrError>>()?;
@@ -149,13 +150,16 @@ impl TimeDomain {
     pub fn len(&self) -> usize {
         self.timesteps.len()
     }
+}
 
-    pub fn from_timestepper(timesepper: Timestepper) -> Result<Self, PywrError> {
-        let timesteps = timesepper.timesteps()?;
+impl TryFrom<Timestepper> for TimeDomain {
+    type Error = PywrError;
+
+    fn try_from(value: Timestepper) -> Result<Self, Self::Error> {
+        let timesteps = value.timesteps()?;
         Ok(Self { timesteps })
     }
 }
-
 
 #[cfg(test)]
 mod test {

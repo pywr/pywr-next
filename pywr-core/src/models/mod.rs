@@ -17,11 +17,11 @@ impl ModelDomain {
         Self { time, scenarios }
     }
 
-    pub fn from(timestepper: Timestepper, scenario_collection: ScenarioGroupCollection) -> Self {
-        Self {
-            time: TimeDomain::from_timestepper(timestepper).unwrap(),
+    pub fn from(timestepper: Timestepper, scenario_collection: ScenarioGroupCollection) -> Result<Self, PywrError> {
+        Ok(Self {
+            time: TimeDomain::try_from(timestepper)?,
             scenarios: scenario_collection.into(),
-        }
+        })
     }
 
     pub fn time(&self) -> &TimeDomain {
@@ -35,9 +35,13 @@ impl ModelDomain {
     pub fn shape(&self) -> (usize, usize) {
         (self.time.timesteps().len(), self.scenarios.indices().len())
     }
+}
 
-    pub fn from_timestepper(timestepper: Timestepper) -> Result<Self, PywrError> {
-        let time = TimeDomain::from_timestepper(timestepper)?;
+impl TryFrom<Timestepper> for ModelDomain {
+    type Error = PywrError;
+
+    fn try_from(value: Timestepper) -> Result<Self, Self::Error> {
+        let time = TimeDomain::try_from(value)?;
         Ok(Self {
             time,
             scenarios: ScenarioGroupCollection::default().into(),

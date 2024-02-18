@@ -374,7 +374,7 @@ impl PywrModel {
             }
         }
 
-        let domain = ModelDomain::from(timestepper, scenario_collection);
+        let domain = ModelDomain::from(timestepper, scenario_collection)?;
 
         let network = self.network.build_network(&domain, data_path, output_path, &[])?;
 
@@ -542,7 +542,7 @@ impl PywrMultiNetworkModel {
             }
         }
 
-        let domain = ModelDomain::from(timestepper, scenario_collection);
+        let domain = ModelDomain::from(timestepper, scenario_collection)?;
         let mut model = pywr_core::models::MultiNetworkModel::new(domain);
         let mut schemas = Vec::with_capacity(self.networks.len());
 

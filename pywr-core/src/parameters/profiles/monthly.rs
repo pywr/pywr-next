@@ -86,9 +86,9 @@ impl Parameter for MonthlyProfileParameter {
         let v = match &self.interp_day {
             Some(interp_day) => match interp_day {
                 MonthlyInterpDay::First => {
-                    let next_month = (timestep.date.month() % 12) + 1;
-                    let first_value = self.values[timestep.date.month() as usize - 1];
-                    let last_value = self.values[next_month as usize - 1];
+                    let next_month0 = (timestep.date.month0() + 1) % 12;
+                    let first_value = self.values[timestep.date.month0() as usize];
+                    let last_value = self.values[next_month0 as usize];
 
                     interpolate_first(&timestep.date, first_value, last_value)
                 }

@@ -35,7 +35,7 @@ pub fn default_timestepper() -> Timestepper {
 }
 
 pub fn default_time_domain() -> TimeDomain {
-    TimeDomain::from_timestepper(default_timestepper()).unwrap()
+    TimeDomain::try_from(default_timestepper()).unwrap()
 }
 
 pub fn default_domain() -> ModelDomain {
@@ -99,7 +99,7 @@ pub fn simple_model(num_scenarios: usize) -> Model {
     let mut scenario_collection = ScenarioGroupCollection::default();
     scenario_collection.add_group("test-scenario", num_scenarios);
 
-    let domain = ModelDomain::from(default_timestepper(), scenario_collection);
+    let domain = ModelDomain::from(default_timestepper(), scenario_collection).unwrap();
     let mut network = Network::default();
 
     let idx = domain
@@ -323,7 +323,7 @@ pub fn make_random_model<R: Rng>(
     let mut scenario_collection = ScenarioGroupCollection::default();
     scenario_collection.add_group("test-scenario", num_scenarios);
 
-    let domain = ModelDomain::from(timestepper, scenario_collection);
+    let domain = ModelDomain::from(timestepper, scenario_collection).unwrap();
 
     let inflow_scenario_group_index = domain
         .scenarios()

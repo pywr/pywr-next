@@ -151,7 +151,7 @@ mod tests {
         );
 
         let timestepper = default_timestepper();
-        let time: TimeDomain = TimeDomain::from_timestepper(timestepper).unwrap();
+        let time: TimeDomain = TimeDomain::try_from(timestepper).unwrap();
         let timesteps = time.timesteps();
 
         let scenario_indices = [

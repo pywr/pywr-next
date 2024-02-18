@@ -375,7 +375,7 @@ mod tests {
         let recorder = AssertionFnRecorder::new("link-1-flow", Metric::NodeOutFlow(idx), expected, None, None);
         network.add_recorder(Box::new(recorder)).unwrap();
 
-        let domain = ModelDomain::from_timestepper(default_timestepper()).unwrap();
+        let domain = ModelDomain::try_from(default_timestepper()).unwrap();
         let model = Model::new(domain, network);
         // Test all solvers
         run_all_solvers(&model);
