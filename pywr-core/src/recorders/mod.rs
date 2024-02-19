@@ -16,7 +16,7 @@ use crate::PywrError;
 pub use aggregator::{AggregationFrequency, AggregationFunction, Aggregator};
 use float_cmp::{approx_eq, ApproxEq, F64Margin};
 pub use hdf::HDF5Recorder;
-pub use memory::{Aggregation, MemoryRecorder};
+pub use memory::{Aggregation, AggregationError, MemoryRecorder};
 pub use metric_set::{MetricSet, MetricSetIndex, MetricSetState};
 use ndarray::prelude::*;
 use ndarray::Array2;

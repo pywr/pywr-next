@@ -6,7 +6,7 @@ use crate::derived_metric::DerivedMetricIndex;
 use crate::models::MultiNetworkTransferIndex;
 use crate::node::NodeIndex;
 use crate::parameters::{IndexParameterIndex, InterpolationError, MultiValueParameterIndex, ParameterIndex};
-use crate::recorders::{MetricSetIndex, RecorderIndex};
+use crate::recorders::{AggregationError, MetricSetIndex, RecorderIndex};
 use crate::virtual_storage::VirtualStorageIndex;
 use pyo3::exceptions::{PyException, PyRuntimeError};
 use pyo3::{create_exception, PyErr};
@@ -160,6 +160,8 @@ pub enum PywrError {
     ParameterNoInitialValue,
     #[error("parameter state not found for parameter index {0}")]
     ParameterStateNotFound(ParameterIndex),
+    #[error("aggregation error: {0}")]
+    Aggregation(#[from] AggregationError),
 }
 
 // Python errors

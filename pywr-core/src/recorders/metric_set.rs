@@ -5,6 +5,7 @@ use crate::scenario::ScenarioIndex;
 use crate::state::State;
 use crate::timestep::Timestep;
 use crate::PywrError;
+use core::f64;
 use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::ops::Deref;
@@ -36,13 +37,13 @@ impl Display for MetricSetIndex {
 #[derive(Debug, Clone)]
 pub struct MetricSetState {
     // Populated with any yielded values from the last processing.
-    current_values: Option<Vec<PeriodValue>>,
+    current_values: Option<Vec<PeriodValue<f64>>>,
     // If the metric set aggregates then this state tracks the aggregation of each metric
     aggregation_states: Option<Vec<AggregatorState>>,
 }
 
 impl MetricSetState {
-    pub fn current_values(&self) -> Option<&[PeriodValue]> {
+    pub fn current_values(&self) -> Option<&[PeriodValue<f64>]> {
         self.current_values.as_deref()
     }
 }
@@ -92,12 +93,12 @@ impl MetricSet {
         internal_state: &mut MetricSetState,
     ) -> Result<(), PywrError> {
         // Combine all the values for metric across all of the scenarios
-        let values: Vec<PeriodValue> = self
+        let values: Vec<PeriodValue<f64>> = self
             .metrics
             .iter()
             .map(|metric| {
                 let value = metric.get_value(model, state)?;
-                Ok::<PeriodValue, PywrError>(PeriodValue::new(timestep.date, timestep.duration, value))
+                Ok::<PeriodValue<f64>, PywrError>(PeriodValue::new(timestep.date, timestep.duration, value))
             })
             .collect::<Result<Vec<_>, _>>()?;
 
