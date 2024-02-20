@@ -42,6 +42,7 @@ mod tests {
     use crate::PywrModel;
     use float_cmp::assert_approx_eq;
     use pywr_core::solvers::{ClpSolver, ClpSolverSettings};
+    use std::str::FromStr;
     use tempfile::TempDir;
 
     fn memory1_str() -> &'static str {
