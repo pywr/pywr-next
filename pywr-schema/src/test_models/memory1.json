@@ -59,8 +59,8 @@
           },
           "child": {
             "freq": {
-              "type": "Rolling",
-              "window": 4
+              "type": "Days",
+              "days": 4
             },
             "func": {
               "type": "Min"

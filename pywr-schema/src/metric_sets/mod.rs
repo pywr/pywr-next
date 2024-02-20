@@ -79,7 +79,7 @@ impl From<MetricAggFunc> for pywr_core::recorders::AggregationFunction {
 pub enum MetricAggFrequency {
     Monthly,
     Annual,
-    Rolling { window: NonZeroUsize },
+    Days { days: NonZeroUsize },
 }
 
 impl From<MetricAggFrequency> for pywr_core::recorders::AggregationFrequency {
@@ -87,7 +87,7 @@ impl From<MetricAggFrequency> for pywr_core::recorders::AggregationFrequency {
         match value {
             MetricAggFrequency::Monthly => pywr_core::recorders::AggregationFrequency::Monthly,
             MetricAggFrequency::Annual => pywr_core::recorders::AggregationFrequency::Annual,
-            MetricAggFrequency::Rolling { window } => pywr_core::recorders::AggregationFrequency::Rolling { window },
+            MetricAggFrequency::Days { days } => pywr_core::recorders::AggregationFrequency::Days(days),
         }
     }
 }

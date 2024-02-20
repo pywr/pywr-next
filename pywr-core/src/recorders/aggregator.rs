@@ -5,7 +5,7 @@ use time::{Date, Duration, Month};
 pub enum AggregationFrequency {
     Monthly,
     Annual,
-    Rolling { window: NonZeroUsize },
+    Days(NonZeroUsize),
 }
 
 impl AggregationFrequency {
@@ -13,8 +13,8 @@ impl AggregationFrequency {
         match self {
             Self::Monthly => (period_start.year() == date.year()) && (period_start.month() == date.month()),
             Self::Annual => period_start.year() == date.year(),
-            Self::Rolling { window } => {
-                let period_end = *period_start + Duration::days(window.get() as i64);
+            Self::Days(days) => {
+                let period_end = *period_start + Duration::days(days.get() as i64);
                 (period_start <= date) && (date < &period_end)
             }
         }
@@ -38,7 +38,7 @@ impl AggregationFrequency {
             // SAFETY: This should be safe to unwrap as it will always create a valid date unless
             // we are at the limit of dates that are representable.
             Self::Annual => Date::from_calendar_date(current_date.year() + 1, Month::January, 1).unwrap(),
-            Self::Rolling { window } => *current_date + Duration::days(window.get() as i64),
+            Self::Days(days) => *current_date + Duration::days(days.get() as i64),
         }
     }
 
