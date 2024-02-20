@@ -3,4 +3,4 @@ authors = ["James Tomlinson"]
 language = "en"
 multilingual = false
 src = "src"
-title = "The Pywr Book"
+title = "Pywr User Guide"
