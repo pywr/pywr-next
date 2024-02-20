@@ -50,9 +50,9 @@ impl Aggregation {
         } else {
             self.metric
                 .as_ref()
-                .ok_or_else(|| AggregationError::AggregationFunctionNotDefined)?
+                .ok_or(AggregationError::AggregationFunctionNotDefined)?
                 .calc_f64(&values.value)
-                .ok_or_else(|| AggregationError::AggregationFunctionFailed)?
+                .ok_or(AggregationError::AggregationFunctionFailed)?
         };
 
         Ok(PeriodValue::new(values.start, values.duration, agg_value))
@@ -71,9 +71,9 @@ impl Aggregation {
         } else {
             self.metric
                 .as_ref()
-                .ok_or_else(|| AggregationError::AggregationFunctionNotDefined)?
-                .calc_f64(&values)
-                .ok_or_else(|| AggregationError::AggregationFunctionFailed)?
+                .ok_or(AggregationError::AggregationFunctionNotDefined)?
+                .calc_f64(values)
+                .ok_or(AggregationError::AggregationFunctionFailed)?
         };
 
         Ok(agg_value)
@@ -92,9 +92,9 @@ impl Aggregation {
         } else {
             self.scenario
                 .as_ref()
-                .ok_or_else(|| AggregationError::AggregationFunctionNotDefined)?
-                .calc_f64(&values)
-                .ok_or_else(|| AggregationError::AggregationFunctionFailed)?
+                .ok_or(AggregationError::AggregationFunctionNotDefined)?
+                .calc_f64(values)
+                .ok_or(AggregationError::AggregationFunctionFailed)?
         };
 
         Ok(agg_value)
@@ -113,9 +113,9 @@ impl Aggregation {
         } else {
             self.time
                 .as_ref()
-                .ok_or_else(|| AggregationError::AggregationFunctionNotDefined)?
-                .calc_period_values(&values)
-                .ok_or_else(|| AggregationError::AggregationFunctionFailed)?
+                .ok_or(AggregationError::AggregationFunctionNotDefined)?
+                .calc_period_values(values)
+                .ok_or(AggregationError::AggregationFunctionFailed)?
         };
 
         Ok(agg_value)
@@ -248,7 +248,7 @@ impl Recorder for MemoryRecorder {
         for (ms_scenario_states, scenario_data) in metric_set_states.iter().zip(internal_state.data.iter_mut()) {
             let metric_set_state = ms_scenario_states
                 .get(*self.metric_set_idx.deref())
-                .ok_or_else(|| PywrError::MetricSetIndexNotFound(self.metric_set_idx))?;
+                .ok_or(PywrError::MetricSetIndexNotFound(self.metric_set_idx))?;
 
             if let Some(current_values) = metric_set_state.current_values() {
                 scenario_data.push(current_values.into());
@@ -275,7 +275,7 @@ impl Recorder for MemoryRecorder {
         for (ms_scenario_states, scenario_data) in metric_set_states.iter().zip(internal_state.data.iter_mut()) {
             let metric_set_state = ms_scenario_states
                 .get(*self.metric_set_idx.deref())
-                .ok_or_else(|| PywrError::MetricSetIndexNotFound(self.metric_set_idx))?;
+                .ok_or(PywrError::MetricSetIndexNotFound(self.metric_set_idx))?;
 
             if let Some(current_values) = metric_set_state.current_values() {
                 scenario_data.push(current_values.into());
