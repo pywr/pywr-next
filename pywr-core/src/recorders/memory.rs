@@ -167,7 +167,7 @@ impl InternalState {
 
     /// Aggregate over the saved data to a single value using the provided aggregation functions.
     ///
-    /// This method will first aggregation over the metrics, then over time, and finally over the scenarios.
+    /// This method will first aggregation over time, then over the metrics, and finally over the scenarios.
     fn aggregate_scenario_metric_time(&self, aggregation: &Aggregation) -> Result<f64, AggregationError> {
         let scenario_data: Vec<f64> = self
             .data
