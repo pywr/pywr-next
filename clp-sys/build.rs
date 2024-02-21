@@ -32,8 +32,8 @@ fn make_builder() -> cc::Build {
 }
 
 fn main() {
-    const COIN_UTILS_SRC: &str = "vendor/CoinUtils/src";
-    const COIN_CLP_SRC: &str = "vendor/Clp/src";
+    const COIN_UTILS_SRC: &str = "vendor/CoinUtils/CoinUtils/src";
+    const COIN_CLP_SRC: &str = "vendor/Clp/Clp/src";
 
     // Compile CoinUtils
     let mut builder = make_builder();
