@@ -1,10 +1,48 @@
-use chrono::{Duration, Months, NaiveDateTime};
+use chrono::{Months, NaiveDateTime, TimeDelta};
 use polars::datatypes::TimeUnit;
 use polars::time::ClosedWindow;
 use pyo3::prelude::*;
 use std::ops::Add;
 
 use crate::PywrError;
+
+#[pyclass]
+#[derive(Debug, Copy, Clone)]
+pub struct PywrDuration(TimeDelta);
+
+impl From<TimeDelta> for PywrDuration {
+    fn from(duration: TimeDelta) -> Self {
+        Self(duration)
+    }
+}
+
+impl PartialEq<TimeDelta> for PywrDuration {
+    fn eq(&self, other: &TimeDelta) -> bool {
+        self.0 == *other
+    }
+}
+
+impl PywrDuration {
+    pub fn days(days: i64) -> Self {
+        Self(TimeDelta::days(days))
+    }
+
+    pub fn whole_days(&self) -> Option<i64> {
+        if self.fractional_days() % 1.0 == 0.0 {
+            Some(self.0.num_days())
+        } else {
+            None
+        }
+    }
+
+    pub fn fractional_days(&self) -> f64 {
+        self.0.num_seconds() as f64 / 3600.0 / 24.0
+    }
+
+    pub fn time_delta(&self) -> &TimeDelta {
+        &self.0
+    }
+}
 
 type TimestepIndex = usize;
 
@@ -13,11 +51,11 @@ type TimestepIndex = usize;
 pub struct Timestep {
     pub date: NaiveDateTime,
     pub index: TimestepIndex,
-    pub duration: Duration,
+    pub duration: PywrDuration,
 }
 
 impl Timestep {
-    pub fn new(date: NaiveDateTime, index: TimestepIndex, duration: Duration) -> Self {
+    pub fn new(date: NaiveDateTime, index: TimestepIndex, duration: PywrDuration) -> Self {
         Self { date, index, duration }
     }
 
@@ -26,16 +64,16 @@ impl Timestep {
     }
 
     pub(crate) fn days(&self) -> f64 {
-        self.duration.num_seconds() as f64 / 3600.0 / 24.0
+        self.duration.fractional_days()
     }
 }
 
-impl Add<Duration> for Timestep {
+impl Add<PywrDuration> for Timestep {
     type Output = Timestep;
 
-    fn add(self, other: Duration) -> Self {
+    fn add(self, other: PywrDuration) -> Self {
         Self {
-            date: self.date + other,
+            date: self.date + other.0,
             index: self.index + 1,
             duration: other,
         }
@@ -70,7 +108,7 @@ impl Timestepper {
 
     fn generate_timesteps_from_days(&self, days: i64) -> Vec<Timestep> {
         let mut timesteps: Vec<Timestep> = Vec::new();
-        let duration = Duration::days(days);
+        let duration = PywrDuration::days(days);
         let mut current = Timestep::new(self.start, 0, duration);
 
         while current.date <= self.end {
@@ -86,9 +124,9 @@ impl Timestepper {
 
         // Need to add an extra day to the end date so that the duration of the last timestep can be calculated.
         let end = if duration.days_only() {
-            self.end + Duration::days(duration.days())
+            self.end + TimeDelta::days(duration.days())
         } else if duration.weeks_only() {
-            self.end + Duration::weeks(duration.weeks())
+            self.end + TimeDelta::weeks(duration.weeks())
         } else if duration.months_only() {
             let months = Months::new(duration.months() as u32);
             self.end + months
@@ -96,9 +134,9 @@ impl Timestepper {
             let months = Months::new(duration.months() as u32);
             self.end
                 + months
-                + Duration::days(duration.days())
-                + Duration::weeks(duration.weeks())
-                + Duration::nanoseconds(duration.nanoseconds())
+                + TimeDelta::days(duration.days())
+                + TimeDelta::weeks(duration.weeks())
+                + TimeDelta::nanoseconds(duration.nanoseconds())
         };
 
         let dates = polars::time::date_range(
@@ -120,7 +158,7 @@ impl Timestepper {
             .enumerate()
             .map(|(i, dates)| {
                 let duration = dates[1] - dates[0];
-                Timestep::new(dates[0], i, duration)
+                Timestep::new(dates[0], i, duration.into())
             })
             .collect::<Vec<Timestep>>();
 
@@ -135,7 +173,7 @@ pub struct TimeDomain {
 
 impl TimeDomain {
     /// Return the duration of each time-step.
-    pub fn step_duration(&self) -> Duration {
+    pub fn step_duration(&self) -> PywrDuration {
         // This relies on the assumption that all time-steps are the same length.
         // Ideally, this invariant would be refactored to have the duration stored here in `TimeDomain`,
         // rather than in `Timestep`.
@@ -167,7 +205,7 @@ impl TryFrom<Timestepper> for TimeDomain {
 
 #[cfg(test)]
 mod test {
-    use chrono::{Duration, NaiveDateTime};
+    use chrono::{NaiveDateTime, TimeDelta};
 
     use super::{TimestepDuration, Timestepper};
 
@@ -181,16 +219,16 @@ mod test {
         let timestepper = Timestepper::new(start, end, timestep);
         let timesteps = timestepper.timesteps().unwrap();
         assert!(timesteps.len() == 10);
-        assert_eq!(timesteps.first().unwrap().duration, Duration::days(1));
-        assert_eq!(timesteps.last().unwrap().duration, Duration::days(1));
+        assert_eq!(timesteps.first().unwrap().duration, TimeDelta::days(1));
+        assert_eq!(timesteps.last().unwrap().duration, TimeDelta::days(1));
 
         let timestep = TimestepDuration::Frequency(String::from("1d"));
 
         let timestepper = Timestepper::new(start, end, timestep);
         let timesteps = timestepper.timesteps().unwrap();
         assert!(timesteps.len() == 10);
-        assert_eq!(timesteps.first().unwrap().duration, Duration::days(1));
-        assert_eq!(timesteps.last().unwrap().duration, Duration::days(1));
+        assert_eq!(timesteps.first().unwrap().duration, TimeDelta::days(1));
+        assert_eq!(timesteps.last().unwrap().duration, TimeDelta::days(1));
     }
 
     #[test]
@@ -203,8 +241,8 @@ mod test {
         let timesteps = timestepper.timesteps().unwrap();
 
         assert!(timesteps.len() == 4);
-        assert_eq!(timesteps.first().unwrap().duration, Duration::days(7));
-        assert_eq!(timesteps.last().unwrap().duration, Duration::days(7));
+        assert_eq!(timesteps.first().unwrap().duration, TimeDelta::days(7));
+        assert_eq!(timesteps.last().unwrap().duration, TimeDelta::days(7));
     }
 
     #[test]
@@ -216,10 +254,10 @@ mod test {
         let timestepper = Timestepper::new(start, end, timestep);
         let timesteps = timestepper.timesteps().unwrap();
         assert!(timesteps.len() == 4);
-        assert_eq!(timesteps[0].duration, Duration::days(31));
-        assert_eq!(timesteps[1].duration, Duration::days(28));
-        assert_eq!(timesteps[2].duration, Duration::days(31));
-        assert_eq!(timesteps[3].duration, Duration::days(30));
+        assert_eq!(timesteps[0].duration, TimeDelta::days(31));
+        assert_eq!(timesteps[1].duration, TimeDelta::days(28));
+        assert_eq!(timesteps[2].duration, TimeDelta::days(31));
+        assert_eq!(timesteps[3].duration, TimeDelta::days(30));
     }
 
     #[test]
@@ -231,7 +269,7 @@ mod test {
         let timestepper = Timestepper::new(start, end, timestep);
         let timesteps = timestepper.timesteps().unwrap();
         assert!(timesteps.len() == 5);
-        assert_eq!(timesteps.first().unwrap().duration, Duration::hours(1));
-        assert_eq!(timesteps.last().unwrap().duration, Duration::hours(1));
+        assert_eq!(timesteps.first().unwrap().duration, TimeDelta::hours(1));
+        assert_eq!(timesteps.last().unwrap().duration, TimeDelta::hours(1));
     }
 }

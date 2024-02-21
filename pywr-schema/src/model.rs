@@ -13,7 +13,6 @@ use pywr_core::PywrError;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
-
 #[derive(serde::Deserialize, serde::Serialize, Clone)]
 pub struct Metadata {
     pub title: String,
@@ -860,7 +859,6 @@ mod tests {
         model.run::<ClpSolver>(&Default::default()).unwrap();
     }
 
-
     #[test]
     fn test_date() {
         let timestepper_str = r#"
@@ -879,13 +877,12 @@ mod tests {
             }
             _ => panic!("Expected a date"),
         }
-        
+
         match timestep.end {
             super::DateType::Date(date) => {
                 assert_eq!(date, chrono::NaiveDate::from_ymd_opt(2015, 12, 31).unwrap());
             }
             _ => panic!("Expected a date"),
-            
         }
     }
 
@@ -903,17 +900,28 @@ mod tests {
 
         match timestep.start {
             super::DateType::DateTime(date_time) => {
-                assert_eq!(date_time, chrono::NaiveDate::from_ymd_opt(2015, 1, 1).unwrap().and_hms_opt(12, 30, 0).unwrap());
+                assert_eq!(
+                    date_time,
+                    chrono::NaiveDate::from_ymd_opt(2015, 1, 1)
+                        .unwrap()
+                        .and_hms_opt(12, 30, 0)
+                        .unwrap()
+                );
             }
             _ => panic!("Expected a date"),
         }
 
         match timestep.end {
             super::DateType::DateTime(date_time) => {
-                assert_eq!(date_time, chrono::NaiveDate::from_ymd_opt(2015, 1, 1).unwrap().and_hms_opt(14, 30, 0).unwrap());
+                assert_eq!(
+                    date_time,
+                    chrono::NaiveDate::from_ymd_opt(2015, 1, 1)
+                        .unwrap()
+                        .and_hms_opt(14, 30, 0)
+                        .unwrap()
+                );
             }
             _ => panic!("Expected a date"),
         }
     }
-
 }

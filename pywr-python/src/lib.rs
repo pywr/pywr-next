@@ -19,7 +19,6 @@ use std::fmt;
 use std::path::PathBuf;
 use std::str::FromStr;
 
-
 #[derive(Debug)]
 struct PySchemaError {
     error: pywr_schema::SchemaError,
