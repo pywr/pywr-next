@@ -49,18 +49,10 @@ impl ClpSolverSettings {
 /// let settings = builder.build();
 ///
 /// ```
+#[derive(Default)]
 pub struct ClpSolverSettingsBuilder {
     parallel: bool,
     threads: usize,
-}
-
-impl Default for ClpSolverSettingsBuilder {
-    fn default() -> Self {
-        Self {
-            parallel: false,
-            threads: 0,
-        }
-    }
 }
 
 impl ClpSolverSettingsBuilder {

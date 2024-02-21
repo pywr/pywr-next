@@ -39,7 +39,7 @@ fn main() {
     let mut builder = make_builder();
 
     builder
-        .flag(&*format!("-I{}", COIN_UTILS_SRC))
+        .flag(&format!("-I{}", COIN_UTILS_SRC))
         .file(format!("{}/CoinAlloc.cpp", COIN_UTILS_SRC))
         .file(format!("{}/CoinBuild.cpp", COIN_UTILS_SRC))
         .file(format!("{}/CoinDenseFactorization.cpp", COIN_UTILS_SRC))
@@ -104,8 +104,8 @@ fn main() {
     let mut builder = make_builder();
 
     builder
-        .flag(&*format!("-I{}", COIN_UTILS_SRC))
-        .flag(&*format!("-I{}", COIN_CLP_SRC))
+        .flag(&format!("-I{}", COIN_UTILS_SRC))
+        .flag(&format!("-I{}", COIN_CLP_SRC))
         .file(format!("{}/ClpCholeskyBase.cpp", COIN_CLP_SRC))
         .file(format!("{}/ClpCholeskyDense.cpp", COIN_CLP_SRC))
         .file(format!("{}/ClpCholeskyPardiso.cpp", COIN_CLP_SRC))

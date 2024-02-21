@@ -33,6 +33,7 @@ impl CsvOutput {
 mod tests {
     use crate::PywrModel;
     use pywr_core::solvers::{ClpSolver, ClpSolverSettings};
+    use std::str::FromStr;
     use tempfile::TempDir;
 
     fn csv1_str() -> &'static str {

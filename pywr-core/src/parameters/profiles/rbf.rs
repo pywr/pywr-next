@@ -49,7 +49,7 @@ struct RbfProfileInternalState {
 }
 
 impl RbfProfileInternalState {
-    fn new(points: &Vec<(u32, f64)>, function: &RadialBasisFunction) -> Self {
+    fn new(points: &[(u32, f64)], function: &RadialBasisFunction) -> Self {
         let profile = interpolate_rbf_profile(points, function);
 
         Self {
@@ -75,8 +75,8 @@ impl RbfProfileInternalState {
 
     /// Update the profile with the given points used as default. Any locally stored x and y values are
     /// used in preference to the default points when interpolating the profile.
-    fn update_profile(&mut self, points: &Vec<(u32, f64)>, function: &RadialBasisFunction) {
-        let points = match (&self.points_x, &self.points_y) {
+    fn update_profile(&mut self, points: &[(u32, f64)], function: &RadialBasisFunction) {
+        let points: Vec<_> = match (&self.points_x, &self.points_y) {
             (Some(x), Some(y)) => x.iter().zip(y.iter()).map(|(x, y)| (*x, *y)).collect(),
             (Some(x), None) => x
                 .iter()
@@ -84,7 +84,7 @@ impl RbfProfileInternalState {
                 .map(|(x, y)| (*x, y))
                 .collect(),
             (None, Some(y)) => points.iter().zip(y.iter()).map(|((x, _), y)| (*x, *y)).collect(),
-            (None, None) => points.clone(),
+            (None, None) => points.to_vec(),
         };
 
         self.profile = interpolate_rbf_profile(&points, function);

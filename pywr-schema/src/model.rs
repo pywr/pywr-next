@@ -11,6 +11,8 @@ use pywr_core::models::ModelDomain;
 use pywr_core::timestep::TimestepDuration;
 use pywr_core::PywrError;
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
+
 
 #[derive(serde::Deserialize, serde::Serialize, Clone)]
 pub struct Metadata {
@@ -123,14 +125,18 @@ pub struct PywrNetwork {
     pub outputs: Option<Vec<Output>>,
 }
 
+impl FromStr for PywrNetwork {
+    type Err = SchemaError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(serde_json::from_str(s)?)
+    }
+}
+
 impl PywrNetwork {
     pub fn from_path<P: AsRef<Path>>(path: P) -> Result<Self, SchemaError> {
         let data = std::fs::read_to_string(path).map_err(|e| SchemaError::IO(e.to_string()))?;
         Ok(serde_json::from_str(data.as_str())?)
-    }
-
-    pub fn from_str(data: &str) -> Result<Self, SchemaError> {
-        Ok(serde_json::from_str(data)?)
     }
 
     pub fn get_node_by_name(&self, name: &str) -> Option<&Node> {
@@ -174,14 +180,9 @@ impl PywrNetwork {
             let mut failed_nodes: Vec<Node> = Vec::new();
             let n = remaining_nodes.len();
             for node in remaining_nodes.into_iter() {
-                if let Err(e) = node.add_to_model(
-                    &mut network,
-                    &self,
-                    &domain,
-                    &tables,
-                    data_path,
-                    inter_network_transfers,
-                ) {
+                if let Err(e) =
+                    node.add_to_model(&mut network, self, domain, &tables, data_path, inter_network_transfers)
+                {
                     // Adding the node failed!
                     match e {
                         SchemaError::PywrCore(core_err) => match core_err {
@@ -232,14 +233,9 @@ impl PywrNetwork {
                 let mut failed_parameters: Vec<Parameter> = Vec::new();
                 let n = remaining_parameters.len();
                 for parameter in remaining_parameters.into_iter() {
-                    if let Err(e) = parameter.add_to_model(
-                        &mut network,
-                        &self,
-                        &domain,
-                        &tables,
-                        data_path,
-                        inter_network_transfers,
-                    ) {
+                    if let Err(e) =
+                        parameter.add_to_model(&mut network, self, domain, &tables, data_path, inter_network_transfers)
+                    {
                         // Adding the parameter failed!
                         match e {
                             SchemaError::PywrCore(core_err) => match core_err {
@@ -265,14 +261,7 @@ impl PywrNetwork {
 
         // Apply the inline parameters & constraints to the nodes
         for node in &self.nodes {
-            node.set_constraints(
-                &mut network,
-                &self,
-                &domain,
-                &tables,
-                data_path,
-                inter_network_transfers,
-            )?;
+            node.set_constraints(&mut network, self, domain, &tables, data_path, inter_network_transfers)?;
         }
 
         // Create all of the metric sets
@@ -329,6 +318,14 @@ pub struct PywrModel {
     pub network: PywrNetwork,
 }
 
+impl FromStr for PywrModel {
+    type Err = SchemaError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(serde_json::from_str(s)?)
+    }
+}
+
 impl PywrModel {
     pub fn new(title: &str, start: &DateType, end: &DateType) -> Self {
         Self {
@@ -350,10 +347,6 @@ impl PywrModel {
     pub fn from_path<P: AsRef<Path>>(path: P) -> Result<Self, SchemaError> {
         let data = std::fs::read_to_string(path).map_err(|e| SchemaError::IO(e.to_string()))?;
         Ok(serde_json::from_str(data.as_str())?)
-    }
-
-    pub fn from_str(data: &str) -> Result<Self, SchemaError> {
-        Ok(serde_json::from_str(data)?)
     }
 
     pub fn build_model(
@@ -514,14 +507,18 @@ pub struct PywrMultiNetworkModel {
     pub networks: Vec<PywrMultiNetworkEntry>,
 }
 
+impl FromStr for PywrMultiNetworkModel {
+    type Err = SchemaError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(serde_json::from_str(s)?)
+    }
+}
+
 impl PywrMultiNetworkModel {
     pub fn from_path<P: AsRef<Path>>(path: P) -> Result<Self, SchemaError> {
         let data = std::fs::read_to_string(path).map_err(|e| SchemaError::IO(e.to_string()))?;
         Ok(serde_json::from_str(data.as_str())?)
-    }
-
-    pub fn from_str(data: &str) -> Result<Self, SchemaError> {
-        Ok(serde_json::from_str(data)?)
     }
 
     pub fn build_model(

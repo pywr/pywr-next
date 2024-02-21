@@ -150,6 +150,10 @@ impl TimeDomain {
     pub fn len(&self) -> usize {
         self.timesteps.len()
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.timesteps.is_empty()
+    }
 }
 
 impl TryFrom<Timestepper> for TimeDomain {

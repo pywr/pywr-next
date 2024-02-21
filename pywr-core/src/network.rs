@@ -1344,7 +1344,7 @@ impl Network {
 
     /// Add a [`MetricSet`] to the network.
     pub fn add_metric_set(&mut self, metric_set: MetricSet) -> Result<MetricSetIndex, PywrError> {
-        if let Ok(_) = self.get_metric_set_by_name(&metric_set.name()) {
+        if self.get_metric_set_by_name(metric_set.name()).is_ok() {
             return Err(PywrError::MetricSetNameAlreadyExists(metric_set.name().to_string()));
         }
 
@@ -1357,7 +1357,7 @@ impl Network {
     pub fn get_metric_set(&self, index: MetricSetIndex) -> Result<&MetricSet, PywrError> {
         self.metric_sets
             .get(*index)
-            .ok_or_else(|| PywrError::MetricSetIndexNotFound(index))
+            .ok_or(PywrError::MetricSetIndexNotFound(index))
     }
 
     /// Get a ['MetricSet'] by its name.
@@ -1485,7 +1485,7 @@ impl Network {
                     let internal_state = state
                         .parameter_states(&scenario_index)
                         .get_value_state(parameter_index)
-                        .ok_or_else(|| PywrError::ParameterStateNotFound(parameter_index))?;
+                        .ok_or(PywrError::ParameterStateNotFound(parameter_index))?;
 
                     Ok(variable.get_variables(internal_state))
                 }
@@ -1508,7 +1508,7 @@ impl Network {
                         .map(|parameter_states| {
                             let internal_state = parameter_states
                                 .get_value_state(parameter_index)
-                                .ok_or_else(|| PywrError::ParameterStateNotFound(parameter_index))?;
+                                .ok_or(PywrError::ParameterStateNotFound(parameter_index))?;
 
                             Ok(variable.get_variables(internal_state))
                         })
@@ -1591,7 +1591,7 @@ impl Network {
                     let internal_state = state
                         .parameter_states(&scenario_index)
                         .get_value_state(parameter_index)
-                        .ok_or_else(|| PywrError::ParameterStateNotFound(parameter_index))?;
+                        .ok_or(PywrError::ParameterStateNotFound(parameter_index))?;
                     Ok(variable.get_variables(internal_state))
                 }
                 None => Err(PywrError::ParameterTypeNotVariable),
