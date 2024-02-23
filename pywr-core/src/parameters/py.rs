@@ -6,7 +6,7 @@ use crate::scenario::ScenarioIndex;
 use crate::state::{MultiValue, ParameterState, State};
 use chrono::Datelike;
 use pyo3::prelude::*;
-use pyo3::types::{IntoPyDict, PyDate, PyDict, PyFloat, PyLong, PyTuple};
+use pyo3::types::{IntoPyDict, PyDict, PyFloat, PyLong, PyTuple};
 use std::any::Any;
 use std::collections::HashMap;
 
@@ -117,19 +117,14 @@ impl Parameter for PyParameter {
         let internal = downcast_internal_state_mut::<Internal>(internal_state);
 
         let value: f64 = Python::with_gil(|py| {
-            let date = PyDate::new(
-                py,
-                timestep.date.year(),
-                timestep.date.month() as u8,
-                timestep.date.day() as u8,
-            )?;
+            let date = timestep.date.into_py(py);
 
             let si = scenario_index.index.into_py(py);
 
             let metric_dict = self.get_metrics_dict(model, state, py)?;
             let index_dict = self.get_indices_dict(state, py)?;
 
-            let args = PyTuple::new(py, [date, si.as_ref(py), metric_dict, index_dict]);
+            let args = PyTuple::new(py, [date.as_ref(py), si.as_ref(py), metric_dict, index_dict]);
 
             internal.user_obj.call_method1(py, "calc", args)?.extract(py)
         })
@@ -151,19 +146,14 @@ impl Parameter for PyParameter {
         Python::with_gil(|py| {
             // Only do this if the object has an "after" method defined.
             if internal.user_obj.getattr(py, "after").is_ok() {
-                let date = PyDate::new(
-                    py,
-                    timestep.date.year(),
-                    timestep.date.month() as u8,
-                    timestep.date.day() as u8,
-                )?;
+                let date = timestep.date.into_py(py);
 
                 let si = scenario_index.index.into_py(py);
 
                 let metric_dict = self.get_metrics_dict(model, state, py)?;
                 let index_dict = self.get_indices_dict(state, py)?;
 
-                let args = PyTuple::new(py, [date, si.as_ref(py), metric_dict, index_dict]);
+                let args = PyTuple::new(py, [date.as_ref(py), si.as_ref(py), metric_dict, index_dict]);
 
                 internal.user_obj.call_method1(py, "after", args)?;
             }
@@ -219,20 +209,14 @@ impl MultiValueParameter for PyParameter {
         let internal = downcast_internal_state_mut::<Internal>(internal_state);
 
         let value: MultiValue = Python::with_gil(|py| {
-            let date = PyDate::new(
-                py,
-                timestep.date.year(),
-                timestep.date.month() as u8,
-                timestep.date.day() as u8,
-            )
-            .map_err(|e: PyErr| PywrError::PythonError(e.to_string()))?;
+            let date = timestep.date.into_py(py);
 
             let si = scenario_index.index.into_py(py);
 
             let metric_dict = self.get_metrics_dict(model, state, py)?;
             let index_dict = self.get_indices_dict(state, py)?;
 
-            let args = PyTuple::new(py, [date, si.as_ref(py), metric_dict, index_dict]);
+            let args = PyTuple::new(py, [date.as_ref(py), si.as_ref(py), metric_dict, index_dict]);
 
             let py_values: HashMap<String, PyObject> = internal
                 .user_obj
@@ -283,19 +267,14 @@ impl MultiValueParameter for PyParameter {
         Python::with_gil(|py| {
             // Only do this if the object has an "after" method defined.
             if internal.user_obj.getattr(py, "after").is_ok() {
-                let date = PyDate::new(
-                    py,
-                    timestep.date.year(),
-                    timestep.date.month() as u8,
-                    timestep.date.day() as u8,
-                )?;
+                let date = timestep.date.into_py(py);
 
                 let si = scenario_index.index.into_py(py);
 
                 let metric_dict = self.get_metrics_dict(model, state, py)?;
                 let index_dict = self.get_indices_dict(state, py)?;
 
-                let args = PyTuple::new(py, [date, si.as_ref(py), metric_dict, index_dict]);
+                let args = PyTuple::new(py, [date.as_ref(py), si.as_ref(py), metric_dict, index_dict]);
 
                 internal.user_obj.call_method1(py, "after", args)?;
             }

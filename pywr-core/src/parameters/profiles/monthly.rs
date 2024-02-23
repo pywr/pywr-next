@@ -4,9 +4,8 @@ use crate::scenario::ScenarioIndex;
 use crate::state::{ParameterState, State};
 use crate::timestep::Timestep;
 use crate::PywrError;
-use std::any::Any;
-
 use chrono::{Datelike, NaiveDateTime};
+use std::any::Any;
 
 #[derive(Copy, Clone)]
 pub enum MonthlyInterpDay {

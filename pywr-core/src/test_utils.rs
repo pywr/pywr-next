@@ -35,7 +35,7 @@ pub fn default_timestepper() -> Timestepper {
 }
 
 pub fn default_time_domain() -> TimeDomain {
-    TimeDomain::try_from(default_timestepper()).unwrap()
+    default_timestepper().try_into().unwrap()
 }
 
 pub fn default_domain() -> ModelDomain {

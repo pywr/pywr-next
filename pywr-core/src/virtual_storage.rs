@@ -251,7 +251,7 @@ fn months_since_last_reset(current: &NaiveDateTime, last_reset: &NaiveDateTime) 
 #[cfg(test)]
 mod tests {
     use crate::metric::Metric;
-    use crate::models::{Model, ModelDomain};
+    use crate::models::Model;
     use crate::network::Network;
     use crate::node::{ConstraintValue, StorageInitialVolume};
     use crate::recorders::{AssertionFnRecorder, AssertionRecorder};
@@ -375,7 +375,7 @@ mod tests {
         let recorder = AssertionFnRecorder::new("link-1-flow", Metric::NodeOutFlow(idx), expected, None, None);
         network.add_recorder(Box::new(recorder)).unwrap();
 
-        let domain = ModelDomain::try_from(default_timestepper()).unwrap();
+        let domain = default_timestepper().try_into().unwrap();
         let model = Model::new(domain, network);
         // Test all solvers
         run_all_solvers(&model);

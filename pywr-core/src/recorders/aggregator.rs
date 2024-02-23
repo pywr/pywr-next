@@ -48,7 +48,7 @@ impl AggregationFrequency {
         let mut sub_values = Vec::new();
 
         let mut current_date = value.start;
-        let end_date = value.start + *value.duration.time_delta();
+        let end_date = value.duration + value.start;
 
         while current_date < end_date {
             let start_of_next_period = self.start_of_next_period(&current_date);

@@ -31,7 +31,7 @@ nalgebra = "0.32.3"
 chrono = { workspace = true }
 polars = { workspace = true }
 
-pyo3 = {  workspace = true }
+pyo3 = {  workspace = true, features = ["chrono"] }
 
 
 rayon = "1.6.1"

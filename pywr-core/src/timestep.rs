@@ -6,6 +6,9 @@ use std::ops::Add;
 
 use crate::PywrError;
 
+const SECS_IN_DAY: i64 = 60 * 60 * 24;
+
+/// A newtype for `chrono::TimeDelta` that provides a couple of useful convenience methods.
 #[pyclass]
 #[derive(Debug, Copy, Clone)]
 pub struct PywrDuration(TimeDelta);
@@ -22,25 +25,38 @@ impl PartialEq<TimeDelta> for PywrDuration {
     }
 }
 
+impl PartialEq<PywrDuration> for PywrDuration {
+    fn eq(&self, other: &PywrDuration) -> bool {
+        self.0 == other.0
+    }
+}
+
+impl Add<NaiveDateTime> for PywrDuration {
+    type Output = NaiveDateTime;
+
+    fn add(self, datetime: NaiveDateTime) -> NaiveDateTime {
+        datetime + self.0
+    }
+}
+
 impl PywrDuration {
+    /// Create a new `PywrDuration` from a number of days.
     pub fn days(days: i64) -> Self {
         Self(TimeDelta::days(days))
     }
 
+    /// Returns the number of whole days in the duration, if the total duration is a whole number of days.
     pub fn whole_days(&self) -> Option<i64> {
-        if self.fractional_days() % 1.0 == 0.0 {
+        if self.0.num_seconds() % SECS_IN_DAY == 0 {
             Some(self.0.num_days())
         } else {
             None
         }
     }
 
+    // Returns the fractional number of days in the duration.
     pub fn fractional_days(&self) -> f64 {
-        self.0.num_seconds() as f64 / 3600.0 / 24.0
-    }
-
-    pub fn time_delta(&self) -> &TimeDelta {
-        &self.0
+        self.0.num_seconds() as f64 / SECS_IN_DAY as f64
     }
 }
 
@@ -100,12 +116,13 @@ impl Timestepper {
 
     /// Create a vector of `Timestep`s between the start and end dates at the given duration.
     fn timesteps(&self) -> Result<Vec<Timestep>, PywrError> {
-        match self.timestep {
-            TimestepDuration::Days(days) => Ok(self.generate_timesteps_from_days(days)),
-            TimestepDuration::Frequency(ref frequency) => self.generate_timesteps_from_frequency(frequency.clone()),
+        match &self.timestep {
+            TimestepDuration::Days(days) => Ok(self.generate_timesteps_from_days(*days)),
+            TimestepDuration::Frequency(frequency) => self.generate_timesteps_from_frequency(frequency.as_str()),
         }
     }
 
+    /// Creates a vector of `Timestep`s between the start and end dates at the given duration of days.
     fn generate_timesteps_from_days(&self, days: i64) -> Vec<Timestep> {
         let mut timesteps: Vec<Timestep> = Vec::new();
         let duration = PywrDuration::days(days);
@@ -119,8 +136,11 @@ impl Timestepper {
         timesteps
     }
 
-    fn generate_timesteps_from_frequency(&self, frequency: String) -> Result<Vec<Timestep>, PywrError> {
-        let duration = polars::time::Duration::parse(&frequency);
+    /// Creates a vector of `Timestep`s between the start and end dates for a given frequency `&str`.
+    ///
+    /// Valid frequency strings are those that can be parsed by `polars::time::Duration::parse`. See: [https://docs.rs/polars-time/latest/polars_time/struct.Duration.html#method.parse]
+    fn generate_timesteps_from_frequency(&self, frequency: &str) -> Result<Vec<Timestep>, PywrError> {
+        let duration = polars::time::Duration::parse(frequency);
 
         // Need to add an extra day to the end date so that the duration of the last timestep can be calculated.
         let end = if duration.days_only() {
@@ -150,7 +170,7 @@ impl Timestepper {
         )
         .map_err(|e| PywrError::TimestepRangeGenerationError(e.to_string()))?
         .as_datetime_iter()
-        .map(|x| x.ok_or(PywrError::TimestepGenerationError(frequency.clone())))
+        .map(|x| x.ok_or(PywrError::TimestepGenerationError(frequency.to_string())))
         .collect::<Result<Vec<NaiveDateTime>, PywrError>>()?;
 
         let timesteps = dates
@@ -207,9 +227,10 @@ impl TryFrom<Timestepper> for TimeDomain {
 mod test {
     use chrono::{NaiveDateTime, TimeDelta};
 
+    use crate::timestep::{PywrDuration, SECS_IN_DAY};
+
     use super::{TimestepDuration, Timestepper};
 
-    /// Basic functional test of the delay parameter.
     #[test]
     fn test_days() {
         let start = NaiveDateTime::parse_from_str("2021-01-01 00:00:00", "%Y-%m-%d %H:%M:%S").unwrap();
@@ -271,5 +292,30 @@ mod test {
         assert!(timesteps.len() == 5);
         assert_eq!(timesteps.first().unwrap().duration, TimeDelta::hours(1));
         assert_eq!(timesteps.last().unwrap().duration, TimeDelta::hours(1));
+    }
+
+    #[test]
+    fn test_pywr_duration() {
+        let duration = PywrDuration::days(5);
+        assert_eq!(duration.whole_days(), Some(5));
+        assert_eq!(duration.fractional_days(), 5.0);
+
+        let duration: PywrDuration = TimeDelta::hours(12).into();
+        assert_eq!(duration.whole_days(), None);
+        assert_eq!(duration.fractional_days(), 0.5);
+
+        let duration: PywrDuration = TimeDelta::minutes(30).into();
+        assert_eq!(duration.whole_days(), None);
+        assert_eq!(duration.fractional_days(), 1.0 / 48.0);
+
+        let duration_secs = SECS_IN_DAY + 1;
+        let duration: PywrDuration = TimeDelta::seconds(duration_secs).into();
+        assert_eq!(duration.whole_days(), None);
+        assert_eq!(duration.fractional_days(), duration_secs as f64 / SECS_IN_DAY as f64);
+
+        let duration_secs = SECS_IN_DAY - 1;
+        let duration: PywrDuration = TimeDelta::seconds(duration_secs).into();
+        assert_eq!(duration.whole_days(), None);
+        assert_eq!(duration.fractional_days(), duration_secs as f64 / SECS_IN_DAY as f64);
     }
 }

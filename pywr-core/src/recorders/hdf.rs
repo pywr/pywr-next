@@ -5,7 +5,7 @@ use crate::network::Network;
 use crate::recorders::MetricSetIndex;
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
-use chrono::Datelike;
+use chrono::{Datelike, Timelike};
 use hdf5::{Extents, Group};
 use ndarray::{s, Array1};
 use std::any::Any;
@@ -27,20 +27,26 @@ struct Internal {
 
 #[derive(hdf5::H5Type, Copy, Clone, Debug)]
 #[repr(C)]
-pub struct Date {
+pub struct DateTime {
     index: usize,
     year: i32,
     month: u8,
     day: u8,
+    hour: u8,
+    minute: u8,
+    second: u8,
 }
 
-impl Date {
+impl DateTime {
     fn from_timestamp(ts: &Timestep) -> Self {
         Self {
             index: ts.index,
             year: ts.date.year(),
             month: ts.date.month() as u8,
             day: ts.date.day() as u8,
+            hour: ts.date.time().hour() as u8,
+            minute: ts.date.time().minute() as u8,
+            second: ts.date.time().second() as u8,
         }
     }
 }
@@ -67,7 +73,7 @@ impl Recorder for HDF5Recorder {
         let mut datasets = Vec::new();
 
         // Create the time table
-        let dates: Array1<_> = domain.time().timesteps().iter().map(Date::from_timestamp).collect();
+        let dates: Array1<_> = domain.time().timesteps().iter().map(DateTime::from_timestamp).collect();
         if let Err(e) = file.deref().new_dataset_builder().with_data(&dates).create("time") {
             return Err(PywrError::HDF5Error(e.to_string()));
         }
