@@ -14,7 +14,7 @@ categories = ["science", "simulation"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-pyo3 = {  workspace = true }
+pyo3 = {  workspace = true, features = ["extension-module", "macros"] }
 pyo3-polars = {  workspace = true }
 pyo3-log = {  workspace = true }
 serde = { workspace = true }
@@ -24,9 +24,6 @@ chrono = { workspace = true }
 pywr-core = { path="../pywr-core" }
 pywr-schema = { path="../pywr-schema" }
 
-[features]
-extension-module = ["pyo3/extension-module"]
-default = ["extension-module"]
 
 [lib]
 name = "pywr"
