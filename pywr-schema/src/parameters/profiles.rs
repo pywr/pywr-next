@@ -176,12 +176,12 @@ impl UniformDrawdownProfileParameter {
         tables: &LoadedTableCollection,
     ) -> Result<ParameterIndex, SchemaError> {
         let reset_day = match &self.reset_day {
-            Some(v) => v.load(tables)? as u8,
+            Some(v) => v.load(tables)? as u32,
             None => 1,
         };
         let reset_month = match &self.reset_month {
-            Some(v) => time::Month::try_from(v.load(tables)? as u8)?,
-            None => time::Month::January,
+            Some(v) => v.load(tables)? as u32,
+            None => 1,
         };
         let residual_days = match &self.residual_days {
             Some(v) => v.load(tables)? as u8,
