@@ -2,11 +2,10 @@ use crate::metric::Metric;
 use crate::network::Network;
 use crate::parameters::{Parameter, ParameterMeta};
 use crate::scenario::ScenarioIndex;
-use std::any::Any;
-
 use crate::state::{ParameterState, State};
 use crate::timestep::Timestep;
 use crate::PywrError;
+use std::any::Any;
 
 pub struct NegativeMinParameter {
     meta: ParameterMeta,
