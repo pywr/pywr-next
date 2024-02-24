@@ -23,10 +23,12 @@ fn make_builder() -> cc::Build {
         .to_owned();
 
     if target.contains("msvc") {
-        builder.flag("-EHsc").flag_if_supported("-std:c++11");
+        builder.flag("-EHsc");
     } else {
-        builder.flag("-std=c++11").flag("-w");
+        builder.flag("-w");
     }
+
+    builder.flag_if_supported("-std=c++14");
 
     builder
 }
