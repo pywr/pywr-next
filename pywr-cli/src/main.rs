@@ -1,3 +1,6 @@
+mod tracing;
+
+use crate::tracing::setup_tracing;
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand, ValueEnum};
 #[cfg(feature = "ipm-ocl")]
@@ -8,7 +11,6 @@ use pywr_core::solvers::{HighsSolver, HighsSolverSettings};
 #[cfg(feature = "ipm-simd")]
 use pywr_core::solvers::{SimdIpmF64Solver, SimdIpmSolverSettings};
 use pywr_core::test_utils::make_random_model;
-use pywr_core::tracing::setup_tracing;
 use pywr_schema::model::{PywrModel, PywrMultiNetworkModel};
 use pywr_schema::ConversionError;
 use rand::SeedableRng;

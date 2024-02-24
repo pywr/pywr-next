@@ -5,7 +5,7 @@ use crate::edge::{EdgeIndex, EdgeVec};
 use crate::metric::Metric;
 use crate::models::ModelDomain;
 use crate::node::{ConstraintValue, Node, NodeVec, StorageInitialVolume};
-use crate::parameters::{MultiValueParameterIndex, ParameterType};
+use crate::parameters::{MultiValueParameterIndex, ParameterType, VariableConfig};
 use crate::recorders::{MetricSet, MetricSetIndex, MetricSetState};
 use crate::scenario::ScenarioIndex;
 use crate::solvers::{MultiStateSolver, Solver, SolverFeatures, SolverTimings};
@@ -18,6 +18,7 @@ use std::any::Any;
 use std::collections::HashSet;
 use std::num::NonZeroUsize;
 use std::ops::Deref;
+use std::slice::{Iter, IterMut};
 use std::time::Duration;
 use std::time::Instant;
 use tracing::info;
@@ -170,6 +171,16 @@ impl NetworkState {
 
     pub fn parameter_states_mut(&mut self, scenario_index: &ScenarioIndex) -> &mut ParameterStates {
         &mut self.parameter_internal_states[scenario_index.index]
+    }
+
+    /// Returns an iterator of immutable parameter states for each scenario.
+    pub fn iter_parameter_states(&self) -> Iter<'_, ParameterStates> {
+        self.parameter_internal_states.iter()
+    }
+
+    /// Returns an iterator that allows modifying the parameter states for each scenario.
+    pub fn iter_parameter_states_mut(&mut self) -> IterMut<'_, ParameterStates> {
+        self.parameter_internal_states.iter_mut()
     }
 }
 
@@ -1333,7 +1344,7 @@ impl Network {
 
     /// Add a [`MetricSet`] to the network.
     pub fn add_metric_set(&mut self, metric_set: MetricSet) -> Result<MetricSetIndex, PywrError> {
-        if let Ok(_) = self.get_metric_set_by_name(&metric_set.name()) {
+        if self.get_metric_set_by_name(metric_set.name()).is_ok() {
             return Err(PywrError::MetricSetNameAlreadyExists(metric_set.name().to_string()));
         }
 
@@ -1346,7 +1357,7 @@ impl Network {
     pub fn get_metric_set(&self, index: MetricSetIndex) -> Result<&MetricSet, PywrError> {
         self.metric_sets
             .get(*index)
-            .ok_or_else(|| PywrError::MetricSetIndexNotFound(index))
+            .ok_or(PywrError::MetricSetIndexNotFound(index))
     }
 
     /// Get a ['MetricSet'] by its name.
@@ -1405,44 +1416,188 @@ impl Network {
         Ok(edge_index)
     }
 
-    /// Set the variable values on the parameter a index `['idx'].
-    pub fn set_f64_parameter_variable_values(&mut self, idx: ParameterIndex, values: &[f64]) -> Result<(), PywrError> {
-        match self.parameters.get_mut(*idx.deref()) {
-            Some(parameter) => match parameter.as_f64_variable_mut() {
-                Some(variable) => variable.set_variables(values),
+    /// Set the variable values on the parameter [`parameter_index`].
+    ///
+    /// This will update the internal state of the parameter with the new values for all scenarios.
+    pub fn set_f64_parameter_variable_values(
+        &self,
+        parameter_index: ParameterIndex,
+        values: &[f64],
+        variable_config: &dyn VariableConfig,
+        state: &mut NetworkState,
+    ) -> Result<(), PywrError> {
+        match self.parameters.get(*parameter_index.deref()) {
+            Some(parameter) => match parameter.as_f64_variable() {
+                Some(variable) => {
+                    // Iterate over all scenarios and set the variable values
+                    for parameter_states in state.iter_parameter_states_mut() {
+                        let internal_state = parameter_states
+                            .get_mut_value_state(parameter_index)
+                            .ok_or(PywrError::ParameterStateNotFound(parameter_index))?;
+
+                        variable.set_variables(values, variable_config, internal_state)?;
+                    }
+
+                    Ok(())
+                }
                 None => Err(PywrError::ParameterTypeNotVariable),
             },
-            None => Err(PywrError::ParameterIndexNotFound(idx)),
+            None => Err(PywrError::ParameterIndexNotFound(parameter_index)),
+        }
+    }
+
+    /// Set the variable values on the parameter [`parameter_index`] and scenario [`scenario_index`].
+    ///
+    /// Only the internal state of the parameter for the given scenario will be updated.
+    pub fn set_f64_parameter_variable_values_for_scenario(
+        &self,
+        parameter_index: ParameterIndex,
+        scenario_index: ScenarioIndex,
+        values: &[f64],
+        variable_config: &dyn VariableConfig,
+        state: &mut NetworkState,
+    ) -> Result<(), PywrError> {
+        match self.parameters.get(*parameter_index.deref()) {
+            Some(parameter) => match parameter.as_f64_variable() {
+                Some(variable) => {
+                    let internal_state = state
+                        .parameter_states_mut(&scenario_index)
+                        .get_mut_value_state(parameter_index)
+                        .ok_or(PywrError::ParameterStateNotFound(parameter_index))?;
+                    variable.set_variables(values, variable_config, internal_state)
+                }
+                None => Err(PywrError::ParameterTypeNotVariable),
+            },
+            None => Err(PywrError::ParameterIndexNotFound(parameter_index)),
         }
     }
 
     /// Return a vector of the current values of active variable parameters.
-    pub fn get_f64_parameter_variable_values(&self) -> Vec<f64> {
-        self.parameters
-            .iter()
-            .filter_map(|p| p.as_f64_variable().filter(|v| v.is_active()).map(|v| v.get_variables()))
-            .flatten()
-            .collect()
-    }
+    pub fn get_f64_parameter_variable_values_for_scenario(
+        &self,
+        parameter_index: ParameterIndex,
+        scenario_index: ScenarioIndex,
+        state: &NetworkState,
+    ) -> Result<Option<Vec<f64>>, PywrError> {
+        match self.parameters.get(*parameter_index.deref()) {
+            Some(parameter) => match parameter.as_f64_variable() {
+                Some(variable) => {
+                    let internal_state = state
+                        .parameter_states(&scenario_index)
+                        .get_value_state(parameter_index)
+                        .ok_or(PywrError::ParameterStateNotFound(parameter_index))?;
 
-    /// Set the variable values on the parameter a index `['idx'].
-    pub fn set_u32_parameter_variable_values(&mut self, idx: ParameterIndex, values: &[u32]) -> Result<(), PywrError> {
-        match self.parameters.get_mut(*idx.deref()) {
-            Some(parameter) => match parameter.as_u32_variable_mut() {
-                Some(variable) => variable.set_variables(values),
+                    Ok(variable.get_variables(internal_state))
+                }
                 None => Err(PywrError::ParameterTypeNotVariable),
             },
-            None => Err(PywrError::ParameterIndexNotFound(idx)),
+            None => Err(PywrError::ParameterIndexNotFound(parameter_index)),
+        }
+    }
+
+    pub fn get_f64_parameter_variable_values(
+        &self,
+        parameter_index: ParameterIndex,
+        state: &NetworkState,
+    ) -> Result<Vec<Option<Vec<f64>>>, PywrError> {
+        match self.parameters.get(*parameter_index.deref()) {
+            Some(parameter) => match parameter.as_f64_variable() {
+                Some(variable) => {
+                    let values = state
+                        .iter_parameter_states()
+                        .map(|parameter_states| {
+                            let internal_state = parameter_states
+                                .get_value_state(parameter_index)
+                                .ok_or(PywrError::ParameterStateNotFound(parameter_index))?;
+
+                            Ok(variable.get_variables(internal_state))
+                        })
+                        .collect::<Result<_, PywrError>>()?;
+
+                    Ok(values)
+                }
+                None => Err(PywrError::ParameterTypeNotVariable),
+            },
+            None => Err(PywrError::ParameterIndexNotFound(parameter_index)),
+        }
+    }
+
+    /// Set the variable values on the parameter [`parameter_index`].
+    ///
+    /// This will update the internal state of the parameter with the new values for scenarios.
+    pub fn set_u32_parameter_variable_values(
+        &self,
+        parameter_index: ParameterIndex,
+        values: &[u32],
+        variable_config: &dyn VariableConfig,
+        state: &mut NetworkState,
+    ) -> Result<(), PywrError> {
+        match self.parameters.get(*parameter_index.deref()) {
+            Some(parameter) => match parameter.as_u32_variable() {
+                Some(variable) => {
+                    // Iterate over all scenarios and set the variable values
+                    for parameter_states in state.iter_parameter_states_mut() {
+                        let internal_state = parameter_states
+                            .get_mut_value_state(parameter_index)
+                            .ok_or(PywrError::ParameterStateNotFound(parameter_index))?;
+
+                        variable.set_variables(values, variable_config, internal_state)?;
+                    }
+
+                    Ok(())
+                }
+                None => Err(PywrError::ParameterTypeNotVariable),
+            },
+            None => Err(PywrError::ParameterIndexNotFound(parameter_index)),
+        }
+    }
+
+    /// Set the variable values on the parameter [`parameter_index`] and scenario [`scenario_index`].
+    ///
+    /// Only the internal state of the parameter for the given scenario will be updated.
+    pub fn set_u32_parameter_variable_values_for_scenario(
+        &self,
+        parameter_index: ParameterIndex,
+        scenario_index: ScenarioIndex,
+        values: &[u32],
+        variable_config: &dyn VariableConfig,
+        state: &mut NetworkState,
+    ) -> Result<(), PywrError> {
+        match self.parameters.get(*parameter_index.deref()) {
+            Some(parameter) => match parameter.as_u32_variable() {
+                Some(variable) => {
+                    let internal_state = state
+                        .parameter_states_mut(&scenario_index)
+                        .get_mut_value_state(parameter_index)
+                        .ok_or(PywrError::ParameterIndexNotFound(parameter_index))?;
+                    variable.set_variables(values, variable_config, internal_state)
+                }
+                None => Err(PywrError::ParameterTypeNotVariable),
+            },
+            None => Err(PywrError::ParameterIndexNotFound(parameter_index)),
         }
     }
 
     /// Return a vector of the current values of active variable parameters.
-    pub fn get_u32_parameter_variable_values(&self) -> Vec<u32> {
-        self.parameters
-            .iter()
-            .filter_map(|p| p.as_u32_variable().filter(|v| v.is_active()).map(|v| v.get_variables()))
-            .flatten()
-            .collect()
+    pub fn get_u32_parameter_variable_values_for_scenario(
+        &self,
+        parameter_index: ParameterIndex,
+        scenario_index: ScenarioIndex,
+        state: &NetworkState,
+    ) -> Result<Option<Vec<u32>>, PywrError> {
+        match self.parameters.get(*parameter_index.deref()) {
+            Some(parameter) => match parameter.as_u32_variable() {
+                Some(variable) => {
+                    let internal_state = state
+                        .parameter_states(&scenario_index)
+                        .get_value_state(parameter_index)
+                        .ok_or(PywrError::ParameterStateNotFound(parameter_index))?;
+                    Ok(variable.get_variables(internal_state))
+                }
+                None => Err(PywrError::ParameterTypeNotVariable),
+            },
+            None => Err(PywrError::ParameterIndexNotFound(parameter_index)),
+        }
     }
 }
 
@@ -1452,7 +1607,7 @@ mod tests {
     use crate::metric::Metric;
     use crate::network::Network;
     use crate::node::{Constraint, ConstraintValue};
-    use crate::parameters::{ActivationFunction, ControlCurveInterpolatedParameter, Parameter, VariableParameter};
+    use crate::parameters::{ActivationFunction, ControlCurveInterpolatedParameter, Parameter};
     use crate::recorders::AssertionRecorder;
     use crate::scenario::{ScenarioDomain, ScenarioGroupCollection, ScenarioIndex};
     #[cfg(feature = "clipm")]
@@ -1538,7 +1693,7 @@ mod tests {
         let mut network = Network::default();
         let _node_index = network.add_input_node("input", None).unwrap();
 
-        let input_max_flow = parameters::ConstantParameter::new("my-constant", 10.0, None);
+        let input_max_flow = parameters::ConstantParameter::new("my-constant", 10.0);
         let parameter = network.add_parameter(Box::new(input_max_flow)).unwrap();
 
         // assign the new parameter to one of the nodes.
@@ -1777,35 +1932,44 @@ mod tests {
     #[test]
     /// Test the variable API
     fn test_variable_api() {
-        let mut network = Network::default();
-        let _node_index = network.add_input_node("input", None).unwrap();
+        let mut model = simple_model(1);
 
         let variable = ActivationFunction::Unit { min: 0.0, max: 10.0 };
-        let input_max_flow = parameters::ConstantParameter::new("my-constant", 10.0, Some(variable));
+        let input_max_flow = parameters::ConstantParameter::new("my-constant", 10.0);
 
         assert!(input_max_flow.can_be_f64_variable());
-        assert!(input_max_flow.is_f64_variable_active());
-        assert!(input_max_flow.is_active());
 
-        let input_max_flow_idx = network.add_parameter(Box::new(input_max_flow)).unwrap();
+        let input_max_flow_idx = model.network_mut().add_parameter(Box::new(input_max_flow)).unwrap();
 
         // assign the new parameter to one of the nodes.
-        let node = network.get_mut_node_by_name("input", None).unwrap();
+        let node = model.network_mut().get_mut_node_by_name("input", None).unwrap();
         node.set_constraint(
             ConstraintValue::Metric(Metric::ParameterValue(input_max_flow_idx)),
             Constraint::MaxFlow,
         )
         .unwrap();
 
-        let variable_values = network.get_f64_parameter_variable_values();
-        assert_eq!(variable_values, vec![10.0]);
+        let mut state = model.setup::<ClpSolver>(&ClpSolverSettings::default()).unwrap();
+
+        // Initially the variable value should be unset
+        let variable_values = model
+            .network_mut()
+            .get_f64_parameter_variable_values(input_max_flow_idx, state.network_state())
+            .unwrap();
+        assert_eq!(variable_values, vec![None]);
 
         // Update the variable values
-        network
-            .set_f64_parameter_variable_values(input_max_flow_idx, &[5.0])
+        model
+            .network_mut()
+            .set_f64_parameter_variable_values(input_max_flow_idx, &[5.0], &variable, state.network_state_mut())
             .unwrap();
 
-        let variable_values = network.get_f64_parameter_variable_values();
-        assert_eq!(variable_values, vec![5.0]);
+        // After update the variable value should match what was set
+        let variable_values = model
+            .network_mut()
+            .get_f64_parameter_variable_values(input_max_flow_idx, state.network_state())
+            .unwrap();
+
+        assert_eq!(variable_values, vec![Some(vec![5.0])]);
     }
 }

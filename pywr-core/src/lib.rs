@@ -27,7 +27,6 @@ pub mod solvers;
 pub mod state;
 pub mod test_utils;
 pub mod timestep;
-pub mod tracing;
 pub mod virtual_storage;
 
 #[derive(Error, Debug, PartialEq, Eq)]
@@ -156,6 +155,12 @@ pub enum PywrError {
     NetworkIndexNotFound(usize),
     #[error("parameters do not provide an initial value")]
     ParameterNoInitialValue,
+    #[error("parameter state not found for parameter index {0}")]
+    ParameterStateNotFound(ParameterIndex),
+    #[error("Could not create timestep range due to following error: {0}")]
+    TimestepRangeGenerationError(String),
+    #[error("Could not create timesteps for frequency '{0}'")]
+    TimestepGenerationError(String),
 }
 
 // Python errors

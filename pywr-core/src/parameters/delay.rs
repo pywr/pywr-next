@@ -1,6 +1,6 @@
 use crate::metric::Metric;
 use crate::network::Network;
-use crate::parameters::{downcast_internal_state, Parameter, ParameterMeta};
+use crate::parameters::{downcast_internal_state_mut, Parameter, ParameterMeta};
 use crate::scenario::ScenarioIndex;
 use crate::state::{ParameterState, State};
 use crate::timestep::Timestep;
@@ -53,7 +53,7 @@ impl Parameter for DelayParameter {
         internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<f64, PywrError> {
         // Downcast the internal state to the correct type
-        let memory = downcast_internal_state::<VecDeque<f64>>(internal_state);
+        let memory = downcast_internal_state_mut::<VecDeque<f64>>(internal_state);
 
         // Take the oldest value from the queue
         // It should be guaranteed that the internal memory/queue has self.delay number of values
@@ -73,7 +73,7 @@ impl Parameter for DelayParameter {
         internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<(), PywrError> {
         // Downcast the internal state to the correct type
-        let memory = downcast_internal_state::<VecDeque<f64>>(internal_state);
+        let memory = downcast_internal_state_mut::<VecDeque<f64>>(internal_state);
 
         // Get today's value from the metric
         let value = self.metric.get_value(model, state)?;

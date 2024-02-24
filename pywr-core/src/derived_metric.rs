@@ -49,7 +49,7 @@ impl DerivedMetric {
     pub fn before(&self, timestep: &Timestep, network: &Network, state: &State) -> Result<Option<f64>, PywrError> {
         // On the first time-step set the initial value
         if timestep.is_first() {
-            self.compute(network, state).map(|v| Some(v))
+            self.compute(network, state).map(Some)
         } else {
             Ok(None)
         }

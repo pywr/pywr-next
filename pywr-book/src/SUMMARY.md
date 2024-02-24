@@ -2,8 +2,6 @@
 
 - [Introduction](./introduction.md)
 - [Getting started](./getting_started.md)
-  - [Installation](./installation.md)
-  - [Licensing](./licensing.md)
   - [Related projects](./related_projects.md)
 - [Core concepts](./concepts/README.md)
   - [The network](./concepts/the-network.md)

@@ -6,6 +6,7 @@ use crate::solvers::{Solver, SolverSettings};
 use crate::timestep::Timestep;
 use crate::PywrError;
 use std::any::Any;
+use std::cmp::Ordering;
 use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::num::NonZeroUsize;
@@ -22,12 +23,10 @@ enum OtherNetworkIndex {
 
 impl OtherNetworkIndex {
     fn new(from_idx: usize, to_idx: usize) -> Self {
-        if from_idx == to_idx {
-            panic!("Cannot create OtherNetworkIndex to self.")
-        } else if from_idx < to_idx {
-            Self::Before(NonZeroUsize::new(to_idx - from_idx).unwrap())
-        } else {
-            Self::After(NonZeroUsize::new(from_idx - to_idx).unwrap())
+        match from_idx.cmp(&to_idx) {
+            Ordering::Equal => panic!("Cannot create OtherNetworkIndex to self."),
+            Ordering::Less => Self::Before(NonZeroUsize::new(to_idx - from_idx).unwrap()),
+            Ordering::Greater => Self::After(NonZeroUsize::new(from_idx - to_idx).unwrap()),
         }
     }
 }
@@ -158,9 +157,9 @@ impl MultiNetworkModel {
         for entry in &self.networks {
             let state = entry
                 .network
-                .setup_network(&timesteps, &scenario_indices, entry.parameters.len())?;
+                .setup_network(timesteps, scenario_indices, entry.parameters.len())?;
             let recorder_state = entry.network.setup_recorders(&self.domain)?;
-            let solver = entry.network.setup_solver::<S>(&scenario_indices, settings)?;
+            let solver = entry.network.setup_solver::<S>(scenario_indices, settings)?;
 
             states.push(state);
             recorder_states.push(recorder_state);
@@ -197,10 +196,10 @@ impl MultiNetworkModel {
                 scenario_index,
                 &this_model.parameters,
                 this_models_state,
-                &before_models,
-                &before,
-                &after_models,
-                &after,
+                before_models,
+                before,
+                after_models,
+                after,
             )?;
         }
 
@@ -368,7 +367,7 @@ mod tests {
         let mut scenario_collection = ScenarioGroupCollection::default();
         scenario_collection.add_group("test-scenario", 2);
 
-        let mut multi_model = MultiNetworkModel::new(ModelDomain::from(timestepper, scenario_collection));
+        let mut multi_model = MultiNetworkModel::new(ModelDomain::from(timestepper, scenario_collection).unwrap());
 
         let test_scenario_group_idx = multi_model
             .domain()

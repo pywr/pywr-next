@@ -176,12 +176,12 @@ impl UniformDrawdownProfileParameter {
         tables: &LoadedTableCollection,
     ) -> Result<ParameterIndex, SchemaError> {
         let reset_day = match &self.reset_day {
-            Some(v) => v.load(tables)? as u8,
+            Some(v) => v.load(tables)? as u32,
             None => 1,
         };
         let reset_month = match &self.reset_month {
-            Some(v) => time::Month::try_from(v.load(tables)? as u8)?,
-            None => time::Month::January,
+            Some(v) => v.load(tables)? as u32,
+            None => 1,
         };
         let residual_days = match &self.residual_days {
             Some(v) => v.load(tables)? as u8,
@@ -239,7 +239,7 @@ impl RadialBasisFunction {
         let rbf = match self {
             Self::Linear => pywr_core::parameters::RadialBasisFunction::Linear,
             Self::Cubic => pywr_core::parameters::RadialBasisFunction::Cubic,
-            Self::Quintic => pywr_core::parameters::RadialBasisFunction::Cubic,
+            Self::Quintic => pywr_core::parameters::RadialBasisFunction::Quintic,
             Self::ThinPlateSpline => pywr_core::parameters::RadialBasisFunction::ThinPlateSpline,
             Self::Gaussian { epsilon } => {
                 let epsilon = match epsilon {
@@ -314,12 +314,12 @@ pub struct RbfProfileVariableSettings {
     pub value_lower_bounds: Option<f64>,
 }
 
-impl Into<pywr_core::parameters::RbfProfileVariableConfig> for RbfProfileVariableSettings {
-    fn into(self) -> pywr_core::parameters::RbfProfileVariableConfig {
-        pywr_core::parameters::RbfProfileVariableConfig::new(
-            self.days_of_year_range,
-            self.value_upper_bounds.unwrap_or(f64::INFINITY),
-            self.value_lower_bounds.unwrap_or(0.0),
+impl From<RbfProfileVariableSettings> for pywr_core::parameters::RbfProfileVariableConfig {
+    fn from(settings: RbfProfileVariableSettings) -> Self {
+        Self::new(
+            settings.days_of_year_range,
+            settings.value_upper_bounds.unwrap_or(f64::INFINITY),
+            settings.value_lower_bounds.unwrap_or(0.0),
         )
     }
 }
@@ -352,8 +352,6 @@ pub struct RbfProfileParameter {
     pub points: Vec<(u32, f64)>,
     /// The distance function used for interpolation.
     pub function: RadialBasisFunction,
-    /// Definition of optional variable settings.
-    pub variable: Option<RbfProfileVariableSettings>,
 }
 
 impl RbfProfileParameter {
@@ -365,22 +363,9 @@ impl RbfProfileParameter {
     }
 
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<ParameterIndex, SchemaError> {
-        let variable = match self.variable {
-            None => None,
-            Some(v) => {
-                // Only set the variable data if the user has indicated the variable is active.
-                if v.is_active {
-                    Some(v.into())
-                } else {
-                    None
-                }
-            }
-        };
-
         let function = self.function.into_core_rbf(&self.points)?;
 
-        let p =
-            pywr_core::parameters::RbfProfileParameter::new(&self.meta.name, self.points.clone(), function, variable);
+        let p = pywr_core::parameters::RbfProfileParameter::new(&self.meta.name, self.points.clone(), function);
         Ok(network.add_parameter(Box::new(p))?)
     }
 }
@@ -395,12 +380,7 @@ impl TryFromV1Parameter<RbfProfileParameterV1> for RbfProfileParameter {
     ) -> Result<Self, Self::Error> {
         let meta: ParameterMeta = v1.meta.into_v2_parameter(parent_node, unnamed_count);
 
-        let points = v1
-            .days_of_year
-            .into_iter()
-            .zip(v1.values.into_iter())
-            .map(|(doy, v)| (doy, v))
-            .collect();
+        let points = v1.days_of_year.into_iter().zip(v1.values).collect();
 
         if v1.rbf_kwargs.contains_key("smooth") {
             return Err(ConversionError::UnsupportedFeature {
@@ -435,7 +415,7 @@ impl TryFromV1Parameter<RbfProfileParameterV1> for RbfProfileParameter {
         let function = if let Some(function_value) = v1.rbf_kwargs.get("function") {
             if let Some(function_str) = function_value.as_str() {
                 // Function kwarg is a string!
-                let f = match function_str {
+                match function_str {
                     "multiquadric" => RadialBasisFunction::MultiQuadric { epsilon },
                     "inverse" => RadialBasisFunction::InverseMultiQuadric { epsilon },
                     "gaussian" => RadialBasisFunction::Gaussian { epsilon },
@@ -448,8 +428,7 @@ impl TryFromV1Parameter<RbfProfileParameterV1> for RbfProfileParameter {
                             name: meta.name.clone(),
                         })
                     }
-                };
-                f
+                }
             } else {
                 return Err(ConversionError::UnexpectedType {
                     attr: "function".to_string(),
@@ -463,12 +442,7 @@ impl TryFromV1Parameter<RbfProfileParameterV1> for RbfProfileParameter {
             RadialBasisFunction::MultiQuadric { epsilon }
         };
 
-        let p = Self {
-            meta,
-            points,
-            function,
-            variable: None,
-        };
+        let p = Self { meta, points, function };
 
         Ok(p)
     }

@@ -481,7 +481,7 @@ impl TryFromV1Parameter<ParameterV1> for Parameter {
                 CoreParameter::Deficit(p) => {
                     return Err(ConversionError::DeprecatedParameter {
                         ty: "DeficitParameter".to_string(),
-                        name: p.meta.map(|m| m.name).flatten().unwrap_or("unnamed".to_string()),
+                        name: p.meta.and_then(|m| m.name).unwrap_or("unnamed".to_string()),
                         instead: "Use a derived metric instead.".to_string(),
                     })
                 }
@@ -498,7 +498,7 @@ impl TryFromV1Parameter<ParameterV1> for Parameter {
                 CoreParameter::Storage(p) => {
                     return Err(ConversionError::DeprecatedParameter {
                         ty: "StorageParameter".to_string(),
-                        name: p.meta.map(|m| m.name).flatten().unwrap_or("unnamed".to_string()),
+                        name: p.meta.and_then(|m| m.name).unwrap_or("unnamed".to_string()),
                         instead: "Use a derived metric instead.".to_string(),
                     })
                 }
@@ -508,7 +508,7 @@ impl TryFromV1Parameter<ParameterV1> for Parameter {
                 CoreParameter::Flow(p) => {
                     return Err(ConversionError::DeprecatedParameter {
                         ty: "FlowParameter".to_string(),
-                        name: p.meta.map(|m| m.name).flatten().unwrap_or("unnamed".to_string()),
+                        name: p.meta.and_then(|m| m.name).unwrap_or("unnamed".to_string()),
                         instead: "Use a derived metric instead.".to_string(),
                     })
                 }
@@ -538,7 +538,6 @@ impl TryFromV1Parameter<ParameterV1> for Parameter {
                         comment: Some(comment),
                     },
                     value: ConstantValue::Literal(0.0),
-                    variable: None,
                 })
             }
         };
@@ -703,7 +702,7 @@ impl MetricFloatValue {
                     }
                     Err(_) => {
                         // An error retrieving a parameter with this name; assume it needs creating.
-                        match definition.add_to_model(network, schema, &domain, tables, data_path, inter_network_transfers)? {
+                        match definition.add_to_model(network, schema, domain, tables, data_path, inter_network_transfers)? {
                             ParameterType::Parameter(idx) => Ok(Metric::ParameterValue(idx)),
                             ParameterType::Index(_) => Err(SchemaError::UnexpectedParameterType(format!(
                         "Found index parameter of type '{}' with name '{}' where an float parameter was expected.",

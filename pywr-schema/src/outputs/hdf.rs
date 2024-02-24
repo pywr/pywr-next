@@ -35,6 +35,7 @@ impl Hdf5Output {
 mod tests {
     use crate::PywrModel;
     use pywr_core::solvers::{ClpSolver, ClpSolverSettings};
+    use std::str::FromStr;
     use tempfile::TempDir;
 
     fn model_str() -> &'static str {
