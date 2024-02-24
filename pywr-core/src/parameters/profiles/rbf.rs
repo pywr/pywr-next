@@ -7,6 +7,7 @@ use crate::scenario::ScenarioIndex;
 use crate::state::{ParameterState, State};
 use crate::timestep::Timestep;
 use crate::PywrError;
+use chrono::Datelike;
 use nalgebra::DMatrix;
 use std::any::Any;
 

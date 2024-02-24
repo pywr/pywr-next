@@ -19,7 +19,6 @@ tracing = { workspace = true }
 tracing-subscriber = { version ="0.3.17", features=["env-filter"] }
 rand = "0.8.5"
 rand_chacha = "0.3.1"
-time = {  workspace = true, features = ["serde", "serde-well-known", "serde-human-readable", "macros"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 pywr-v1-schema = { workspace = true }

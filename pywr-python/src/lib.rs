@@ -1,6 +1,7 @@
+use chrono::NaiveDate;
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
-use pyo3::types::{PyDate, PyDateAccess, PyDict, PyType};
+use pyo3::types::{PyDateAccess, PyDateTime, PyDict, PyTimeAccess, PyType};
 /// Python API
 ///
 /// The following structures provide a Python API to access the core model structures.
@@ -13,10 +14,10 @@ use pywr_core::solvers::{ClIpmF32Solver, ClIpmF64Solver, ClIpmSolverSettings};
 use pywr_core::solvers::{ClpSolver, ClpSolverSettings, ClpSolverSettingsBuilder};
 #[cfg(feature = "highs")]
 use pywr_core::solvers::{HighsSolver, HighsSolverSettings, HighsSolverSettings, HighsSolverSettingsBuilde};
+use pywr_schema::model::DateType;
 use std::fmt;
 use std::path::PathBuf;
 use std::str::FromStr;
-use time::Date;
 
 #[derive(Debug)]
 struct PySchemaError {
@@ -62,11 +63,25 @@ pub struct Schema {
 #[pymethods]
 impl Schema {
     #[new]
-    fn new(title: &str, start: &PyDate, end: &PyDate) -> Self {
+    fn new(title: &str, start: &PyDateTime, end: &PyDateTime) -> Self {
         // SAFETY: We know that the date & month are valid because it is a Python date.
-        let start =
-            Date::from_calendar_date(start.get_year(), start.get_month().try_into().unwrap(), start.get_day()).unwrap();
-        let end = Date::from_calendar_date(end.get_year(), end.get_month().try_into().unwrap(), end.get_day()).unwrap();
+        let start = DateType::DateTime(
+            NaiveDate::from_ymd_opt(start.get_year(), start.get_month() as u32, start.get_day() as u32)
+                .unwrap()
+                .and_hms_opt(
+                    start.get_hour() as u32,
+                    start.get_minute() as u32,
+                    start.get_second() as u32,
+                )
+                .unwrap(),
+        );
+
+        let end = DateType::DateTime(
+            NaiveDate::from_ymd_opt(end.get_year(), end.get_month() as u32, end.get_day() as u32)
+                .unwrap()
+                .and_hms_opt(end.get_hour() as u32, end.get_minute() as u32, end.get_second() as u32)
+                .unwrap(),
+        );
 
         Self {
             schema: pywr_schema::PywrModel::new(title, &start, &end),
