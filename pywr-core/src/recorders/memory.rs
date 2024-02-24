@@ -324,7 +324,7 @@ mod tests {
         let mut rng = ChaCha8Rng::seed_from_u64(0);
         let dist: Normal<f64> = Normal::new(0.0, 1.0).unwrap();
 
-        let time_domain: TimeDomain = default_timestepper().into();
+        let time_domain: TimeDomain = default_timestepper().try_into().unwrap();
         // The expected values from this test
         let mut count_non_zero_max = 0.0;
         let mut count_non_zero_by_metric = vec![0.0; num_metrics];

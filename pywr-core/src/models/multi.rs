@@ -368,7 +368,7 @@ mod tests {
         let mut scenario_collection = ScenarioGroupCollection::default();
         scenario_collection.add_group("test-scenario", 2);
 
-        let mut multi_model = MultiNetworkModel::new(ModelDomain::from(timestepper, scenario_collection));
+        let mut multi_model = MultiNetworkModel::new(ModelDomain::from(timestepper, scenario_collection).unwrap());
 
         let test_scenario_group_idx = multi_model
             .domain()

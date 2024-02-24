@@ -36,12 +36,6 @@ pub enum SchemaError {
     UnsupportedFileFormat,
     #[error("Python error: {0}")]
     PythonError(String),
-    #[error("invalid date format description")]
-    InvalidDateFormatDescription(#[from] time::error::InvalidFormatDescription),
-    #[error("failed to parse date")]
-    DateParse(#[from] time::error::Parse),
-    #[error("invalid date component range")]
-    InvalidDateComponentRange(#[from] time::error::ComponentRange),
     #[error("hdf5 error: {0}")]
     HDF5Error(String),
     #[error("csv error: {0}")]
@@ -103,4 +97,8 @@ pub enum ConversionError {
         expected: String,
         actual: String,
     },
+    #[error("'{0}' could not be parsed into a NaiveDate")]
+    UnparseableDate(String),
+    #[error("Chrono out of range error: {0}")]
+    OutOfRange(#[from] chrono::OutOfRange),
 }

@@ -4,6 +4,7 @@ use crate::network::Network;
 use crate::parameters::downcast_internal_state_mut;
 use crate::scenario::ScenarioIndex;
 use crate::state::{ParameterState, State};
+use chrono::Datelike;
 use rhai::{Dynamic, Engine, Map, Scope, AST};
 use std::any::Any;
 use std::collections::HashMap;
@@ -150,7 +151,7 @@ mod tests {
         );
 
         let timestepper = default_timestepper();
-        let time: TimeDomain = timestepper.into();
+        let time: TimeDomain = TimeDomain::try_from(timestepper).unwrap();
         let timesteps = time.timesteps();
 
         let scenario_indices = [

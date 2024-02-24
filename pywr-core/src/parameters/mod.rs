@@ -388,13 +388,16 @@ pub trait VariableParameter<T> {
 #[cfg(test)]
 mod tests {
 
-    use crate::timestep::Timestepper;
-    use time::macros::date;
+    use crate::timestep::{TimestepDuration, Timestepper};
+    use chrono::NaiveDateTime;
 
     // TODO tests need re-enabling
     #[allow(dead_code)]
     fn default_timestepper() -> Timestepper {
-        Timestepper::new(date!(2020 - 01 - 01), date!(2020 - 01 - 15), 1)
+        let start = NaiveDateTime::parse_from_str("2020-01-01 00:00:00", "%Y-%m-%d %H:%M:%S").unwrap();
+        let end = NaiveDateTime::parse_from_str("2020-01-15 00:00:00", "%Y-%m-%d %H:%M:%S").unwrap();
+        let duration = TimestepDuration::Days(1);
+        Timestepper::new(start, end, duration)
     }
 
     // #[test]
