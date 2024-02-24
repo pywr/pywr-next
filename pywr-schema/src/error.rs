@@ -52,6 +52,8 @@ pub enum SchemaError {
     InterNetworkTransferNotFound(String),
     #[error("Invalid rolling window definition on parameter {name}. Must convert to a positive integer.")]
     InvalidRollingWindow { name: String },
+    #[error("Failed to load parameter {name}: {error}")]
+    LoadParameter { name: String, error: String },
 }
 
 impl From<SchemaError> for PyErr {
