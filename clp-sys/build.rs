@@ -24,11 +24,14 @@ fn make_builder() -> cc::Build {
 
     if target.contains("msvc") {
         builder.flag("-EHsc");
+        // Flag required for macros __cplusplus to work correctly.
+        // See: https://devblogs.microsoft.com/cppblog/msvc-now-correctly-reports-__cplusplus/
+        builder.flag("/Zc:__cplusplus");
+        builder.flag("/std:c++14");
     } else {
+        builder.flag("-std=c++11");
         builder.flag("-w");
     }
-
-    builder.flag_if_supported("-std=c++14");
 
     builder
 }
