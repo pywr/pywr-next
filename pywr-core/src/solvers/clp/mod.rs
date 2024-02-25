@@ -92,7 +92,7 @@ impl ClpSimplex {
 
     pub fn modify_coefficient(&mut self, row: c_int, column: c_int, new_element: c_double) {
         unsafe {
-            Clp_modifyCoefficient(self.ptr, row, column, new_element, true);
+            Clp_modifyCoefficient(self.ptr, row, column, new_element, 1);
         }
     }
 

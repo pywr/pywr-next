@@ -1,5 +1,4 @@
 use std::env;
-use std::path::PathBuf;
 
 fn make_builder() -> cc::Build {
     let target = env::var("TARGET").expect("Could not find TARGET in environment.");
@@ -190,19 +189,4 @@ fn main() {
         .file(format!("{}/Idiot.cpp", COIN_CLP_SRC))
         .file(format!("{}/IdiSolve.cpp", COIN_CLP_SRC))
         .compile("Clp");
-
-    // Generate the Rust bindings
-    let headers_path_str = format!("{}/Clp_C_Interface.h", COIN_CLP_SRC);
-
-    let bindings = bindgen::Builder::default()
-        .header(headers_path_str)
-        .clang_arg(format!("-I{}", COIN_CLP_SRC))
-        .clang_arg(format!("-I{}", COIN_UTILS_SRC))
-        .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
-        .generate()
-        .expect("Unable to generate bindings");
-
-    // Write the bindings to the $OUT_DIR/bindings.rs file.
-    let out_path = PathBuf::from(env::var("OUT_DIR").unwrap()).join("bindings.rs");
-    bindings.write_to_file(out_path).expect("Couldn't write bindings!");
 }
