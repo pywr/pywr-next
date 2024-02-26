@@ -405,17 +405,17 @@ where
             let agg_node = network.get_aggregated_node(agg_node_id)?;
             // Only create row for nodes that have factors
             if let Some(node_pairs) = agg_node.get_norm_factor_pairs(network, state) {
-                for ((n0, f0), (n1, f1)) in node_pairs {
+                for node_pair in node_pairs {
                     // Modify the constraint matrix coefficients for the nodes
                     // TODO error handling?
                     let nodes = network.nodes();
-                    let node0 = nodes.get(&n0).expect("Node index not found!");
-                    let node1 = nodes.get(&n1).expect("Node index not found!");
+                    let node0 = nodes.get(&node_pair.node0.index).expect("Node index not found!");
+                    let node1 = nodes.get(&node_pair.node1.index).expect("Node index not found!");
 
                     self.builder
                         .update_row_coefficients(*row_id, node0, 1.0, &self.col_edge_map);
                     self.builder
-                        .update_row_coefficients(*row_id, node1, -f0 / f1, &self.col_edge_map);
+                        .update_row_coefficients(*row_id, node1, -node_pair.ratio(), &self.col_edge_map);
 
                     self.builder.apply_row_bounds(row_id.to_usize().unwrap(), 0.0, 0.0);
                 }
