@@ -4,7 +4,6 @@ use crate::network::Network;
 use crate::parameters::{downcast_internal_state_mut, MultiValueParameter};
 use crate::scenario::ScenarioIndex;
 use crate::state::{MultiValue, ParameterState, State};
-use chrono::Datelike;
 use pyo3::prelude::*;
 use pyo3::types::{IntoPyDict, PyDict, PyFloat, PyLong, PyTuple};
 use std::any::Any;
@@ -291,6 +290,7 @@ mod tests {
     use super::*;
     use crate::test_utils::default_timestepper;
     use crate::timestep::TimeDomain;
+    use chrono::Datelike;
     use float_cmp::assert_approx_eq;
 
     #[test]
