@@ -120,6 +120,7 @@ impl Parameter for RhaiParameter {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::state::StateBuilder;
     use crate::test_utils::default_timestepper;
     use crate::timestep::TimeDomain;
     use float_cmp::assert_approx_eq;
@@ -165,7 +166,7 @@ mod tests {
             },
         ];
 
-        let state = State::new(vec![], 0, vec![], 1, 0, 0, 0, 0);
+        let state = StateBuilder::new(vec![], 0).with_value_parameters(1).build();
 
         let mut internal_p_states: Vec<_> = scenario_indices
             .iter()
