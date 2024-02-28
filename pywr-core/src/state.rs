@@ -611,7 +611,15 @@ impl NetworkState {
     }
 }
 
-/// State of the model simulation
+/// State of the model simulation.
+///
+/// This struct contains the state of the model simulation at a given point in time. The state
+/// contains the current state of the network, the values of the parameters, the values of the
+/// derived metrics, and the values of the inter-network transfers.
+///
+/// This struct can be constructed using the [`StateBuilder`] and then updated using the various
+/// methods to set the values of the parameters, derived metrics, and inter-network transfers.
+///
 #[derive(Debug, Clone)]
 pub struct State {
     network: NetworkState,
@@ -621,24 +629,6 @@ pub struct State {
 }
 
 impl State {
-    pub fn new(
-        initial_node_states: Vec<NodeState>,
-        num_edges: usize,
-        initial_virtual_storage_states: Vec<VirtualStorageState>,
-        num_parameter_values: usize,
-        num_parameter_indices: usize,
-        num_multi_parameters: usize,
-        num_derived_metrics: usize,
-        num_inter_network_values: usize,
-    ) -> Self {
-        Self {
-            network: NetworkState::new(initial_node_states, num_edges, initial_virtual_storage_states),
-            parameters: ParameterValues::new(num_parameter_values, num_parameter_indices, num_multi_parameters),
-            derived_metrics: vec![0.0; num_derived_metrics],
-            inter_network_values: vec![0.0; num_inter_network_values],
-        }
-    }
-
     pub fn get_network_state(&self) -> &NetworkState {
         &self.network
     }
@@ -743,6 +733,98 @@ impl State {
                 Ok(())
             }
             None => Err(PywrError::MultiNetworkTransferIndexNotFound(idx)),
+        }
+    }
+}
+
+/// Builder for the [`State`] struct.
+///
+/// This builder is used to create a new state with the desired initial values. The builder
+/// allows for the creation of a state with a specific number of nodes and edges, and optionally
+/// with initial virtual storage, parameter, derived metric, and inter-network transfer states.
+pub struct StateBuilder {
+    initial_node_states: Vec<NodeState>,
+    num_edges: usize,
+    initial_virtual_storage_states: Option<Vec<VirtualStorageState>>,
+    num_value_parameters: Option<usize>,
+    num_index_parameters: Option<usize>,
+    num_multi_parameters: Option<usize>,
+    num_derived_metrics: Option<usize>,
+    num_inter_network_values: Option<usize>,
+}
+
+impl StateBuilder {
+    /// Create a new state builder with the desired initial node states and number of edges.
+    ///
+    /// # Arguments
+    ///
+    /// * `initial_node_states` - The initial states for the nodes in the network.
+    /// * `num_edges` - The number of edges in the network.
+    pub fn new(initial_node_states: Vec<NodeState>, num_edges: usize) -> Self {
+        Self {
+            initial_node_states,
+            num_edges,
+            initial_virtual_storage_states: None,
+            num_value_parameters: None,
+            num_index_parameters: None,
+            num_multi_parameters: None,
+            num_derived_metrics: None,
+            num_inter_network_values: None,
+        }
+    }
+
+    /// Add initial virtual storage states to the builder.
+    pub fn with_virtual_storage_states(mut self, initial_virtual_storage_states: Vec<VirtualStorageState>) -> Self {
+        self.initial_virtual_storage_states = Some(initial_virtual_storage_states);
+        self
+    }
+
+    /// Add the number of value parameters to the builder.
+    pub fn with_value_parameters(mut self, num_value_parameters: usize) -> Self {
+        self.num_value_parameters = Some(num_value_parameters);
+        self
+    }
+
+    /// Add the number of index parameters to the builder.
+    pub fn with_index_parameters(mut self, num_index_parameters: usize) -> Self {
+        self.num_index_parameters = Some(num_index_parameters);
+
+        self
+    }
+
+    /// Add the number of multivalued parameters to the builder.
+    pub fn with_multi_parameters(mut self, num_multi_parameters: usize) -> Self {
+        self.num_multi_parameters = Some(num_multi_parameters);
+        self
+    }
+
+    /// Add the number of derived metrics to the builder.
+    pub fn with_derived_metrics(mut self, num_derived_metrics: usize) -> Self {
+        self.num_derived_metrics = Some(num_derived_metrics);
+        self
+    }
+
+    /// Add the number of inter-network transfer values to the builder.
+    pub fn with_inter_network_transfers(mut self, num_inter_network_values: usize) -> Self {
+        self.num_inter_network_values = Some(num_inter_network_values);
+        self
+    }
+
+    /// Build the [`State`] from the builder.
+    pub fn build(self) -> State {
+        State {
+            network: NetworkState::new(
+                self.initial_node_states,
+                self.num_edges,
+                self.initial_virtual_storage_states.unwrap_or_default(),
+            ),
+            parameters: ParameterValues::new(
+                self.num_value_parameters.unwrap_or(0),
+                self.num_index_parameters.unwrap_or(0),
+                self.num_multi_parameters.unwrap_or(0),
+            ),
+            derived_metrics: vec![0.0; self.num_derived_metrics.unwrap_or(0)],
+            inter_network_values: vec![0.0; self.num_inter_network_values.unwrap_or(0)],
         }
     }
 }

@@ -9,7 +9,7 @@ use crate::parameters::{MultiValueParameterIndex, ParameterType, VariableConfig}
 use crate::recorders::{MetricSet, MetricSetIndex, MetricSetState};
 use crate::scenario::ScenarioIndex;
 use crate::solvers::{MultiStateSolver, Solver, SolverFeatures, SolverTimings};
-use crate::state::{ParameterStates, State};
+use crate::state::{ParameterStates, State, StateBuilder};
 use crate::timestep::Timestep;
 use crate::virtual_storage::{VirtualStorage, VirtualStorageIndex, VirtualStorageReset, VirtualStorageVec};
 use crate::{parameters, recorders, IndexParameterIndex, NodeIndex, ParameterIndex, PywrError, RecorderIndex};
@@ -262,16 +262,16 @@ impl Network {
                 .map(|p| p.setup(timesteps, scenario_index))
                 .collect::<Result<Vec<_>, _>>()?;
 
-            let state = State::new(
-                initial_node_states,
-                self.edges.len(),
-                initial_virtual_storage_states,
-                initial_values_states.len(),
-                initial_indices_states.len(),
-                initial_multi_param_states.len(),
-                self.derived_metrics.len(),
-                num_inter_network_transfers,
-            );
+            let state_builder = StateBuilder::new(initial_node_states, self.edges.len())
+                .with_virtual_storage_states(initial_virtual_storage_states)
+                .with_value_parameters(initial_values_states.len())
+                .with_index_parameters(initial_indices_states.len())
+                .with_multi_parameters(initial_multi_param_states.len())
+                .with_derived_metrics(self.derived_metrics.len())
+                .with_inter_network_transfers(num_inter_network_transfers);
+
+            let state = state_builder.build();
+
             states.push(state);
 
             parameter_internal_states.push(ParameterStates::new(
