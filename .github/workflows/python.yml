@@ -11,48 +11,48 @@ on:
 
 jobs:
 
-# Mac OS X does not work with the HDF5 crate for some reason.
-#  macos:
-#    runs-on: macos-latest
-#    strategy:
-#      matrix:
-#        python-version: [ '3.9', '3.10', '3.11', '3.12' ]
-#    steps:
-#      - uses: actions/checkout@v4
-#        with:
-#          submodules: true
-#      - uses: actions/setup-python@v5
-#        with:
-#          python-version: ${{ matrix.python-version }}
-#          architecture: x64
-#      - uses: dtolnay/rust-toolchain@stable
-#      - name: Build wheels - x86_64
-#        uses: PyO3/maturin-action@v1
-#        with:
-#          target: x86_64
-#          args: --release --out dist --sdist -m pywr-python/Cargo.toml
-#      - name: Install built wheel - x86_64
-#        run: |
-#          pip install pytest h5py pandas polars pyarrow click
-#          pip install pywr --no-index --find-links dist --force-reinstall --no-deps
-#          python -c "import pywr"
-#          python -m pytest
-#      - name: Build wheels - universal2
-#        uses: PyO3/maturin-action@v1
-#        with:
-#          target: universal2-apple-darwin
-#          args: -i ${{ matrix.python-version }} --release --out dist -m pywr-python/Cargo.toml
-#      - name: Install built wheel - universal2
-#        run: |
-#          pip install pytest h5py pandas polars pyarrow click
-#          pip install pywr --no-index --find-links dist --force-reinstall --no-deps
-#          python -c "import pywr"
-#          python -m pytest
-#      - name: Upload wheels
-#        uses: actions/upload-artifact@v4
-#        with:
-#          name: wheels
-#          path: dist
+  # Mac OS X does not work with the HDF5 crate for some reason.
+  #  macos:
+  #    runs-on: macos-latest
+  #    strategy:
+  #      matrix:
+  #        python-version: [ '3.9', '3.10', '3.11', '3.12' ]
+  #    steps:
+  #      - uses: actions/checkout@v4
+  #        with:
+  #          submodules: true
+  #      - uses: actions/setup-python@v5
+  #        with:
+  #          python-version: ${{ matrix.python-version }}
+  #          architecture: x64
+  #      - uses: dtolnay/rust-toolchain@stable
+  #      - name: Build wheels - x86_64
+  #        uses: PyO3/maturin-action@v1
+  #        with:
+  #          target: x86_64
+  #          args: --release --out dist --sdist -m pywr-python/Cargo.toml
+  #      - name: Install built wheel - x86_64
+  #        run: |
+  #          pip install pytest h5py pandas polars pyarrow click
+  #          pip install pywr --no-index --find-links dist --force-reinstall --no-deps
+  #          python -c "import pywr"
+  #          python -m pytest
+  #      - name: Build wheels - universal2
+  #        uses: PyO3/maturin-action@v1
+  #        with:
+  #          target: universal2-apple-darwin
+  #          args: -i ${{ matrix.python-version }} --release --out dist -m pywr-python/Cargo.toml
+  #      - name: Install built wheel - universal2
+  #        run: |
+  #          pip install pytest h5py pandas polars pyarrow click
+  #          pip install pywr --no-index --find-links dist --force-reinstall --no-deps
+  #          python -c "import pywr"
+  #          python -m pytest
+  #      - name: Upload wheels
+  #        uses: actions/upload-artifact@v4
+  #        with:
+  #          name: wheels
+  #          path: dist
 
   windows:
     runs-on: windows-latest
@@ -82,7 +82,7 @@ jobs:
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:
-          name: wheels
+          name: wheels-win-${{ matrix.python-version }}
           path: dist
 
   linux:
@@ -113,7 +113,7 @@ jobs:
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:
-          name: wheels
+          name: wheels-linux-${{ matrix.python-version }}
           path: dist
 
 #  linux-cross:
