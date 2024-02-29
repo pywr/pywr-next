@@ -14,20 +14,39 @@ use crate::solvers::ClpSolver;
 use crate::solvers::HighsSolver;
 #[cfg(feature = "ipm-simd")]
 use crate::solvers::SimdIpmF64Solver;
-use crate::timestep::{TimeDomain, Timestepper};
+use crate::timestep::{TimeDomain, TimestepDuration, Timestepper};
 use crate::PywrError;
+use chrono::{Days, NaiveDate};
+use float_cmp::{approx_eq, F64Margin};
 use ndarray::{Array, Array2};
 use rand::Rng;
 use rand_distr::{Distribution, Normal};
-use time::ext::NumericalDuration;
-use time::macros::date;
 
 pub fn default_timestepper() -> Timestepper {
-    Timestepper::new(date!(2020 - 01 - 01), date!(2020 - 01 - 15), 1)
+    let start = NaiveDate::from_ymd_opt(2020, 1, 1)
+        .unwrap()
+        .and_hms_opt(0, 0, 0)
+        .unwrap();
+    let end = NaiveDate::from_ymd_opt(2020, 1, 15)
+        .unwrap()
+        .and_hms_opt(0, 0, 0)
+        .unwrap();
+    let duration = TimestepDuration::Days(1);
+    Timestepper::new(start, end, duration)
 }
 
 pub fn default_time_domain() -> TimeDomain {
-    default_timestepper().into()
+    default_timestepper().try_into().unwrap()
+}
+
+pub fn default_domain() -> ModelDomain {
+    default_time_domain().into()
+}
+
+pub fn default_model() -> Model {
+    let domain = default_domain();
+    let network = Network::default();
+    Model::new(domain, network)
 }
 
 /// Create a simple test network with three nodes.
@@ -54,7 +73,7 @@ pub fn simple_network(network: &mut Network, inflow_scenario_index: usize, num_i
 
     let base_demand = 10.0;
 
-    let demand_factor = ConstantParameter::new("demand-factor", 1.2, None);
+    let demand_factor = ConstantParameter::new("demand-factor", 1.2);
     let demand_factor = network.add_parameter(Box::new(demand_factor)).unwrap();
 
     let total_demand = AggregatedParameter::new(
@@ -64,7 +83,7 @@ pub fn simple_network(network: &mut Network, inflow_scenario_index: usize, num_i
     );
     let total_demand = network.add_parameter(Box::new(total_demand)).unwrap();
 
-    let demand_cost = ConstantParameter::new("demand-cost", -10.0, None);
+    let demand_cost = ConstantParameter::new("demand-cost", -10.0);
     let demand_cost = network.add_parameter(Box::new(demand_cost)).unwrap();
 
     let output_node = network.get_mut_node_by_name("output", None).unwrap();
@@ -81,7 +100,7 @@ pub fn simple_model(num_scenarios: usize) -> Model {
     let mut scenario_collection = ScenarioGroupCollection::default();
     scenario_collection.add_group("test-scenario", num_scenarios);
 
-    let domain = ModelDomain::from(default_timestepper(), scenario_collection);
+    let domain = ModelDomain::from(default_timestepper(), scenario_collection).unwrap();
     let mut network = Network::default();
 
     let idx = domain
@@ -112,10 +131,10 @@ pub fn simple_storage_model() -> Model {
 
     // Apply demand to the model
     // TODO convenience function for adding a constant constraint.
-    let demand = ConstantParameter::new("demand", 10.0, None);
+    let demand = ConstantParameter::new("demand", 10.0);
     let demand = network.add_parameter(Box::new(demand)).unwrap();
 
-    let demand_cost = ConstantParameter::new("demand-cost", -10.0, None);
+    let demand_cost = ConstantParameter::new("demand-cost", -10.0);
     let demand_cost = network.add_parameter(Box::new(demand_cost)).unwrap();
 
     let output_node = network.get_mut_node_by_name("output", None).unwrap();
@@ -146,8 +165,13 @@ pub fn run_and_assert_parameter(
 ) {
     let p_idx = model.network_mut().add_parameter(parameter).unwrap();
 
-    let start = date!(2020 - 01 - 01);
-    let _end = start.checked_add((expected_values.nrows() as i64 - 1).days()).unwrap();
+    let start = NaiveDate::from_ymd_opt(2020, 1, 1)
+        .unwrap()
+        .and_hms_opt(0, 0, 0)
+        .unwrap();
+    let _end = start
+        .checked_add_days(Days::new(expected_values.nrows() as u64 - 1))
+        .unwrap();
 
     let rec = AssertionRecorder::new("assert", Metric::ParameterValue(p_idx), expected_values, ulps, epsilon);
 
@@ -286,12 +310,21 @@ pub fn make_random_model<R: Rng>(
     num_scenarios: usize,
     rng: &mut R,
 ) -> Result<Model, PywrError> {
-    let timestepper = Timestepper::new(date!(2020 - 01 - 01), date!(2020 - 04 - 09), 1);
+    let start = NaiveDate::from_ymd_opt(2020, 1, 1)
+        .unwrap()
+        .and_hms_opt(0, 0, 0)
+        .unwrap();
+    let end = NaiveDate::from_ymd_opt(2020, 4, 9)
+        .unwrap()
+        .and_hms_opt(0, 0, 0)
+        .unwrap();
+    let duration = TimestepDuration::Days(1);
+    let timestepper = Timestepper::new(start, end, duration);
 
     let mut scenario_collection = ScenarioGroupCollection::default();
     scenario_collection.add_group("test-scenario", num_scenarios);
 
-    let domain = ModelDomain::from(timestepper, scenario_collection);
+    let domain = ModelDomain::from(timestepper, scenario_collection).unwrap();
 
     let inflow_scenario_group_index = domain
         .scenarios()
@@ -342,5 +375,22 @@ mod tests {
         model
             .run_multi_scenario::<SimdIpmF64Solver<4>>(&settings)
             .expect("Failed to run model!");
+    }
+}
+
+/// Compare two arrays of f64
+pub fn assert_approx_array_eq(calculated_values: &[f64], expected_values: &[f64]) {
+    let margins = F64Margin {
+        epsilon: 2.0,
+        ulps: (f64::EPSILON * 2.0) as i64,
+    };
+    for (i, (calculated, expected)) in calculated_values.iter().zip(expected_values).enumerate() {
+        if !approx_eq!(f64, *calculated, *expected, margins) {
+            panic!(
+                r#"assertion failed on item #{i:?}
+                    actual: `{calculated:?}`,
+                    expected: `{expected:?}`"#,
+            )
+        }
     }
 }

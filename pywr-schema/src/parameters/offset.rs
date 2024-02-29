@@ -37,8 +37,6 @@ pub struct OffsetParameter {
     pub offset: ConstantValue<f64>,
     /// The metric from which to apply the offset.
     pub metric: DynamicFloatValue,
-    /// Definition of optional variable settings.
-    pub variable: Option<VariableSettings>,
 }
 
 impl OffsetParameter {
@@ -60,18 +58,6 @@ impl OffsetParameter {
         inter_network_transfers: &[PywrMultiNetworkTransfer],
         timeseries: &LoadedTimeseriesCollection,
     ) -> Result<ParameterIndex, SchemaError> {
-        let variable = match &self.variable {
-            None => None,
-            Some(v) => {
-                // Only set the variable data if the user has indicated the variable is active.
-                if v.is_active {
-                    Some(v.activation.into())
-                } else {
-                    None
-                }
-            }
-        };
-
         let idx = self.metric.load(
             network,
             schema,
@@ -82,7 +68,7 @@ impl OffsetParameter {
             timeseries,
         )?;
 
-        let p = pywr_core::parameters::OffsetParameter::new(&self.meta.name, idx, self.offset.load(tables)?, variable);
+        let p = pywr_core::parameters::OffsetParameter::new(&self.meta.name, idx, self.offset.load(tables)?);
         Ok(network.add_parameter(Box::new(p))?)
     }
 }

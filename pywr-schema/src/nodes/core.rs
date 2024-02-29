@@ -469,9 +469,9 @@ impl Default for StorageInitialVolume {
     }
 }
 
-impl Into<CoreStorageInitialVolume> for StorageInitialVolume {
-    fn into(self) -> CoreStorageInitialVolume {
-        match self {
+impl From<StorageInitialVolume> for CoreStorageInitialVolume {
+    fn from(v: StorageInitialVolume) -> Self {
+        match v {
             StorageInitialVolume::Absolute(v) => CoreStorageInitialVolume::Absolute(v),
             StorageInitialVolume::Proportional(v) => CoreStorageInitialVolume::Proportional(v),
         }

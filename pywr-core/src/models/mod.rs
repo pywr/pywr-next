@@ -3,8 +3,9 @@ mod simple;
 
 use crate::scenario::{ScenarioDomain, ScenarioGroupCollection};
 use crate::timestep::{TimeDomain, Timestepper};
+use crate::PywrError;
 pub use multi::{MultiNetworkModel, MultiNetworkTransferIndex};
-pub use simple::Model;
+pub use simple::{Model, ModelState};
 
 #[derive(Debug)]
 pub struct ModelDomain {
@@ -17,11 +18,11 @@ impl ModelDomain {
         Self { time, scenarios }
     }
 
-    pub fn from(timestepper: Timestepper, scenario_collection: ScenarioGroupCollection) -> Self {
-        Self {
-            time: timestepper.into(),
+    pub fn from(timestepper: Timestepper, scenario_collection: ScenarioGroupCollection) -> Result<Self, PywrError> {
+        Ok(Self {
+            time: TimeDomain::try_from(timestepper)?,
             scenarios: scenario_collection.into(),
-        }
+        })
     }
 
     pub fn time(&self) -> &TimeDomain {
@@ -37,12 +38,15 @@ impl ModelDomain {
     }
 }
 
-impl From<Timestepper> for ModelDomain {
-    fn from(value: Timestepper) -> Self {
-        Self {
-            time: value.into(),
+impl TryFrom<Timestepper> for ModelDomain {
+    type Error = PywrError;
+
+    fn try_from(value: Timestepper) -> Result<Self, Self::Error> {
+        let time = TimeDomain::try_from(value)?;
+        Ok(Self {
+            time,
             scenarios: ScenarioGroupCollection::default().into(),
-        }
+        })
     }
 }
 

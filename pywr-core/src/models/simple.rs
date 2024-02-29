@@ -72,9 +72,9 @@ impl Model {
         let timesteps = self.domain.time.timesteps();
         let scenario_indices = self.domain.scenarios.indices();
 
-        let state = self.network.setup_network(&timesteps, &scenario_indices, 0)?;
+        let state = self.network.setup_network(timesteps, scenario_indices, 0)?;
         let recorder_state = self.network.setup_recorders(&self.domain)?;
-        let solvers = self.network.setup_solver::<S>(&scenario_indices, settings)?;
+        let solvers = self.network.setup_solver::<S>(scenario_indices, settings)?;
 
         Ok(ModelState {
             current_time_step_idx: 0,
@@ -91,11 +91,11 @@ impl Model {
         let timesteps = self.domain.time.timesteps();
         let scenario_indices = self.domain.scenarios.indices();
 
-        let state = self.network.setup_network(&timesteps, &scenario_indices, 0)?;
+        let state = self.network.setup_network(timesteps, scenario_indices, 0)?;
         let recorder_state = self.network.setup_recorders(&self.domain)?;
         let solvers = self
             .network
-            .setup_multi_scenario_solver::<S>(&scenario_indices, settings)?;
+            .setup_multi_scenario_solver::<S>(scenario_indices, settings)?;
 
         Ok(ModelState {
             current_time_step_idx: 0,
@@ -132,12 +132,12 @@ impl Model {
                 // State is mutated in-place
                 pool.install(|| {
                     self.network
-                        .step_par(timestep, &scenario_indices, solvers, network_state, timings)
+                        .step_par(timestep, scenario_indices, solvers, network_state, timings)
                 })?;
             }
             None => {
                 self.network
-                    .step(timestep, &scenario_indices, solvers, network_state, timings)?;
+                    .step(timestep, scenario_indices, solvers, network_state, timings)?;
             }
         }
 
@@ -178,7 +178,7 @@ impl Model {
         // State is mutated in-place
         thread_pool.install(|| {
             self.network
-                .step_multi_scenario(timestep, &scenario_indices, solvers, network_state, timings)
+                .step_multi_scenario(timestep, scenario_indices, solvers, network_state, timings)
         })?;
 
         let start_r_save = Instant::now();

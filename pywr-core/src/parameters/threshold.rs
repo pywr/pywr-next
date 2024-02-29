@@ -1,6 +1,6 @@
 use crate::metric::Metric;
 use crate::network::Network;
-use crate::parameters::{downcast_internal_state, IndexParameter, ParameterMeta};
+use crate::parameters::{downcast_internal_state_mut, IndexParameter, ParameterMeta};
 use crate::scenario::ScenarioIndex;
 use crate::state::{ParameterState, State};
 use crate::timestep::Timestep;
@@ -74,7 +74,7 @@ impl IndexParameter for ThresholdParameter {
         internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<usize, PywrError> {
         // Downcast the internal state to the correct type
-        let previously_activated = downcast_internal_state::<bool>(internal_state);
+        let previously_activated = downcast_internal_state_mut::<bool>(internal_state);
 
         // Return early if ratchet has been hit
         if self.ratchet & *previously_activated {

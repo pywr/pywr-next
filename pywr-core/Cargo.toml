@@ -15,30 +15,29 @@ categories = ["science", "simulation"]
 
 [dependencies]
 libc = "0.2.97"
-thiserror = {  workspace = true }
-ndarray = {  workspace = true }
-num = {  workspace = true }
+thiserror = { workspace = true }
+ndarray = { workspace = true }
+num = { workspace = true }
 float-cmp = "0.9.0"
-hdf5 = {  workspace = true }
-hdf5-sys = {  workspace = true }
-csv = {  workspace = true }
-clp-sys = { path = "../clp-sys" }
+hdf5 = { workspace = true }
+csv = { workspace = true }
+clp-sys = { path = "../clp-sys", version = "0.1.0" }
 ipm-ocl = { path = "../ipm-ocl", optional = true }
 ipm-simd = { path = "../ipm-simd", optional = true }
-time = { workspace = true, features = ["macros"] }
 tracing = {  workspace = true }
-tracing-subscriber = { version ="0.3.17", features=["env-filter"] }
 highs-sys = {  git = "https://github.com/jetuk/highs-sys", branch="fix-build-libz-linking", optional = true }
 # highs-sys = { path = "../../highs-sys" }
 nalgebra = "0.32.3"
+chrono = { workspace = true }
+polars = { workspace = true }
 
-pyo3 = {  workspace = true }
+pyo3 = {  workspace = true, features = ["chrono"] }
 
 
 rayon = "1.6.1"
 
 
-rhai = { version="1.12.0", features=["sync"] }
+rhai = { version = "1.12.0", features = ["sync"] }
 
 # OpenCL
 ocl = { version = "0.19", optional = true }

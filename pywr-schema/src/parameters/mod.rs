@@ -39,7 +39,7 @@ pub use super::parameters::indexed_array::IndexedArrayParameter;
 pub use super::parameters::polynomial::Polynomial1DParameter;
 pub use super::parameters::profiles::{
     DailyProfileParameter, MonthlyProfileParameter, RadialBasisFunction, RbfProfileParameter,
-    RbfProfileVariableSettings, UniformDrawdownProfileParameter,
+    RbfProfileVariableSettings, UniformDrawdownProfileParameter, WeeklyProfileParameter,
 };
 pub use super::parameters::python::PythonParameter;
 pub use super::parameters::tables::TablesArrayParameter;
@@ -154,6 +154,7 @@ pub enum Parameter {
     DailyProfile(DailyProfileParameter),
     IndexedArray(IndexedArrayParameter),
     MonthlyProfile(MonthlyProfileParameter),
+    WeeklyProfile(WeeklyProfileParameter),
     UniformDrawdownProfile(UniformDrawdownProfileParameter),
     Max(MaxParameter),
     Min(MinParameter),
@@ -185,6 +186,7 @@ impl Parameter {
             Self::DailyProfile(p) => p.meta.name.as_str(),
             Self::IndexedArray(p) => p.meta.name.as_str(),
             Self::MonthlyProfile(p) => p.meta.name.as_str(),
+            Self::WeeklyProfile(p) => p.meta.name.as_str(),
             Self::UniformDrawdownProfile(p) => p.meta.name.as_str(),
             Self::Max(p) => p.meta.name.as_str(),
             Self::Min(p) => p.meta.name.as_str(),
@@ -216,6 +218,7 @@ impl Parameter {
             Self::DailyProfile(_) => "DailyProfile",
             Self::IndexedArray(_) => "IndexedArray",
             Self::MonthlyProfile(_) => "MonthlyProfile",
+            Self::WeeklyProfile(_) => "WeeklyProfile",
             Self::UniformDrawdownProfile(_) => "UniformDrawdownProfile",
             Self::Max(_) => "Max",
             Self::Min(_) => "Min",
@@ -320,6 +323,7 @@ impl Parameter {
                 timeseries,
             )?),
             Self::MonthlyProfile(p) => ParameterType::Parameter(p.add_to_model(network, tables)?),
+            Self::WeeklyProfile(p) => ParameterType::Parameter(p.add_to_model(network, tables)?),
             Self::UniformDrawdownProfile(p) => ParameterType::Parameter(p.add_to_model(network, tables)?),
             Self::Max(p) => ParameterType::Parameter(p.add_to_model(
                 network,
@@ -485,7 +489,7 @@ impl TryFromV1Parameter<ParameterV1> for Parameter {
                 CoreParameter::Deficit(p) => {
                     return Err(ConversionError::DeprecatedParameter {
                         ty: "DeficitParameter".to_string(),
-                        name: p.meta.map(|m| m.name).flatten().unwrap_or("unnamed".to_string()),
+                        name: p.meta.and_then(|m| m.name).unwrap_or("unnamed".to_string()),
                         instead: "Use a derived metric instead.".to_string(),
                     })
                 }
@@ -498,11 +502,16 @@ impl TryFromV1Parameter<ParameterV1> for Parameter {
                 CoreParameter::InterpolatedFlow(p) => {
                     Parameter::Interpolated(p.try_into_v2_parameter(parent_node, unnamed_count)?)
                 }
+                CoreParameter::NegativeMax(_) => todo!("Implement NegativeMaxParameter"),
+                CoreParameter::NegativeMin(_) => todo!("Implement NegativeMinParameter"),
                 CoreParameter::HydropowerTarget(_) => todo!("Implement HydropowerTargetParameter"),
+                CoreParameter::WeeklyProfile(p) => {
+                    Parameter::WeeklyProfile(p.try_into_v2_parameter(parent_node, unnamed_count)?)
+                }
                 CoreParameter::Storage(p) => {
                     return Err(ConversionError::DeprecatedParameter {
                         ty: "StorageParameter".to_string(),
-                        name: p.meta.map(|m| m.name).flatten().unwrap_or("unnamed".to_string()),
+                        name: p.meta.and_then(|m| m.name).unwrap_or("unnamed".to_string()),
                         instead: "Use a derived metric instead.".to_string(),
                     })
                 }
@@ -511,7 +520,7 @@ impl TryFromV1Parameter<ParameterV1> for Parameter {
                 CoreParameter::Flow(p) => {
                     return Err(ConversionError::DeprecatedParameter {
                         ty: "FlowParameter".to_string(),
-                        name: p.meta.map(|m| m.name).flatten().unwrap_or("unnamed".to_string()),
+                        name: p.meta.and_then(|m| m.name).unwrap_or("unnamed".to_string()),
                         instead: "Use a derived metric instead.".to_string(),
                     })
                 }
@@ -535,7 +544,6 @@ impl TryFromV1Parameter<ParameterV1> for Parameter {
                         comment: Some(comment),
                     },
                     value: ConstantValue::Literal(0.0),
-                    variable: None,
                 })
             }
         };
@@ -702,7 +710,7 @@ impl MetricFloatValue {
                     }
                     Err(_) => {
                         // An error retrieving a parameter with this name; assume it needs creating.
-                        match definition.add_to_model(network, schema, &domain, tables, data_path, inter_network_transfers, timeseries)? {
+                        match definition.add_to_model(network, schema, domain, tables, data_path, inter_network_transfers, timeseries)? {
                             ParameterType::Parameter(idx) => Ok(Metric::ParameterValue(idx)),
                             ParameterType::Index(_) => Err(SchemaError::UnexpectedParameterType(format!(
                         "Found index parameter of type '{}' with name '{}' where an float parameter was expected.",

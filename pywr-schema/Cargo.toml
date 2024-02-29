@@ -30,9 +30,8 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = {  workspace = true }
 pywr-v1-schema = { workspace = true }
-time = { workspace = true, features = ["serde", "serde-well-known", "serde-human-readable", "macros"] }
 pywr-core = { path="../pywr-core" }
-chrono = "0.4.33"
+chrono = { workspace = true, features = ["serde"] }
 
 [dev-dependencies]
 tempfile = "3.3.0"

@@ -43,7 +43,11 @@ pub fn align_and_resample(
         None => return Err(SchemaError::TimeseriesDurationNotFound(name.to_string())),
     };
 
-    let model_duration = domain.time().step_duration().whole_nanoseconds() as i64;
+    let model_duration = domain
+        .time()
+        .step_duration()
+        .whole_nanoseconds()
+        .expect("Nano seconds could not be extracted from model step duration") as i64;
 
     let df = match model_duration.cmp(&timeseries_duration) {
         Ordering::Greater => {
@@ -82,15 +86,13 @@ pub fn align_and_resample(
 }
 
 fn slice_start(df: DataFrame, time_col: &str, domain: &ModelDomain) -> Result<DataFrame, SchemaError> {
-    let start = domain.time().first_timestep().date.midnight().assume_utc();
-    let start = NaiveDateTime::from_timestamp_opt(start.unix_timestamp(), 0).unwrap();
+    let start = domain.time().first_timestep().date;
     let df = df.clone().lazy().filter(col(time_col).gt_eq(lit(start))).collect()?;
     Ok(df)
 }
 
 fn slice_end(df: DataFrame, time_col: &str, domain: &ModelDomain) -> Result<DataFrame, SchemaError> {
-    let end = domain.time().last_timestep().date.midnight().assume_utc();
-    let end = NaiveDateTime::from_timestamp_opt(end.unix_timestamp(), 0).unwrap();
+    let end = domain.time().last_timestep().date;
     let df = df.clone().lazy().filter(col(time_col).lt_eq(lit(end))).collect()?;
     Ok(df)
 }
@@ -103,20 +105,18 @@ mod tests {
     use pywr_core::{
         models::ModelDomain,
         scenario::{ScenarioDomain, ScenarioGroupCollection},
-        timestep::{TimeDomain, Timestepper},
+        timestep::{TimeDomain, TimestepDuration, Timestepper},
     };
-    use time::{Date, Month};
 
-    use crate::timeseries::{align_and_resample::align_and_resample, tests};
+    use crate::timeseries::align_and_resample::align_and_resample;
 
     #[test]
     fn test_downsample_and_slice() {
-        let time_domain: TimeDomain = Timestepper::new(
-            Date::from_calendar_date(2021, Month::January, 7).unwrap(),
-            Date::from_calendar_date(2021, Month::January, 20).unwrap(),
-            7,
-        )
-        .into();
+        let start = NaiveDateTime::parse_from_str("2021-01-07 00:00:00", "%Y-%m-%d %H:%M:%S").unwrap();
+        let end = NaiveDateTime::parse_from_str("2021-01-20 00:00:00", "%Y-%m-%d %H:%M:%S").unwrap();
+        let timestep = TimestepDuration::Days(7);
+        let timestepper = Timestepper::new(start, end, timestep);
+        let time_domain = TimeDomain::try_from(timestepper).unwrap();
 
         let scenario_domain: ScenarioDomain = ScenarioGroupCollection::new(vec![]).into();
 
@@ -167,12 +167,12 @@ mod tests {
 
     #[test]
     fn test_upsample_and_slice() {
-        let time_domain: TimeDomain = Timestepper::new(
-            Date::from_calendar_date(2021, Month::January, 1).unwrap(),
-            Date::from_calendar_date(2021, Month::January, 14).unwrap(),
-            1,
-        )
-        .into();
+        let start = NaiveDateTime::parse_from_str("2021-01-01 00:00:00", "%Y-%m-%d %H:%M:%S").unwrap();
+        let end = NaiveDateTime::parse_from_str("2021-01-14 00:00:00", "%Y-%m-%d %H:%M:%S").unwrap();
+        let timestep = TimestepDuration::Days(1);
+        let timestepper = Timestepper::new(start, end, timestep);
+        let time_domain = TimeDomain::try_from(timestepper).unwrap();
+
         let scenario_domain: ScenarioDomain = ScenarioGroupCollection::new(vec![]).into();
         let domain = ModelDomain::new(time_domain, scenario_domain);
 
@@ -206,12 +206,12 @@ mod tests {
 
     #[test]
     fn test_no_resample_slice() {
-        let time_domain: TimeDomain = Timestepper::new(
-            Date::from_calendar_date(2021, Month::January, 1).unwrap(),
-            Date::from_calendar_date(2021, Month::January, 3).unwrap(),
-            1,
-        )
-        .into();
+        let start = NaiveDateTime::parse_from_str("2021-01-01 00:00:00", "%Y-%m-%d %H:%M:%S").unwrap();
+        let end = NaiveDateTime::parse_from_str("2021-01-03 00:00:00", "%Y-%m-%d %H:%M:%S").unwrap();
+        let timestep = TimestepDuration::Days(1);
+        let timestepper = Timestepper::new(start, end, timestep);
+        let time_domain = TimeDomain::try_from(timestepper).unwrap();
+
         let scenario_domain: ScenarioDomain = ScenarioGroupCollection::new(vec![]).into();
         let domain = ModelDomain::new(time_domain, scenario_domain);
 

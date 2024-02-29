@@ -4,8 +4,8 @@ use crate::scenario::ScenarioIndex;
 use crate::state::{ParameterState, State};
 use crate::timestep::Timestep;
 use crate::PywrError;
+use chrono::{Datelike, NaiveDate};
 use std::any::Any;
-use time::{Date, Month};
 
 fn is_leap_year(year: i32) -> bool {
     (year % 4 == 0) & ((year % 100 != 0) | (year % 400 == 0))
@@ -18,11 +18,11 @@ pub struct UniformDrawdownProfileParameter {
 }
 
 impl UniformDrawdownProfileParameter {
-    pub fn new(name: &str, reset_day: u8, reset_month: Month, residual_days: u8) -> Self {
+    pub fn new(name: &str, reset_day: u32, reset_month: u32, residual_days: u8) -> Self {
         // Calculate the reset day of year in a known leap year.
-        let reset_doy = Date::from_calendar_date(2016, reset_month, reset_day)
+        let reset_doy = NaiveDate::from_ymd_opt(2016, reset_month, reset_day)
             .expect("Invalid reset day")
-            .ordinal();
+            .ordinal() as u16;
 
         Self {
             meta: ParameterMeta::new(name),

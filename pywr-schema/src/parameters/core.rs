@@ -95,20 +95,24 @@ pub enum ActivationFunction {
     Logistic { growth_rate: f64, max: f64 },
 }
 
-impl Into<pywr_core::parameters::ActivationFunction> for ActivationFunction {
-    fn into(self) -> pywr_core::parameters::ActivationFunction {
-        match self {
-            Self::Unit { min, max } => pywr_core::parameters::ActivationFunction::Unit { min, max },
-            Self::Rectifier { min, max, off_value } => pywr_core::parameters::ActivationFunction::Rectifier {
-                min,
-                max,
-                neg_value: off_value.unwrap_or(0.0),
-            },
-            Self::BinaryStep { on_value, off_value } => pywr_core::parameters::ActivationFunction::BinaryStep {
-                pos_value: on_value,
-                neg_value: off_value.unwrap_or(0.0),
-            },
-            Self::Logistic { growth_rate, max } => {
+impl From<ActivationFunction> for pywr_core::parameters::ActivationFunction {
+    fn from(a: ActivationFunction) -> Self {
+        match a {
+            ActivationFunction::Unit { min, max } => pywr_core::parameters::ActivationFunction::Unit { min, max },
+            ActivationFunction::Rectifier { min, max, off_value } => {
+                pywr_core::parameters::ActivationFunction::Rectifier {
+                    min,
+                    max,
+                    neg_value: off_value.unwrap_or(0.0),
+                }
+            }
+            ActivationFunction::BinaryStep { on_value, off_value } => {
+                pywr_core::parameters::ActivationFunction::BinaryStep {
+                    pos_value: on_value,
+                    neg_value: off_value.unwrap_or(0.0),
+                }
+            }
+            ActivationFunction::Logistic { growth_rate, max } => {
                 pywr_core::parameters::ActivationFunction::Logistic { growth_rate, max }
             }
         }
@@ -152,8 +156,6 @@ pub struct ConstantParameter {
     /// In the simple case this will be the value used by the network. However, if an activation
     /// function is specified this value will be the `x` value for that activation function.
     pub value: ConstantValue<f64>,
-    /// Definition of optional variable settings.
-    pub variable: Option<VariableSettings>,
 }
 
 impl ConstantParameter {
@@ -170,19 +172,7 @@ impl ConstantParameter {
         network: &mut pywr_core::network::Network,
         tables: &LoadedTableCollection,
     ) -> Result<ParameterIndex, SchemaError> {
-        let variable = match &self.variable {
-            None => None,
-            Some(v) => {
-                // Only set the variable data if the user has indicated the variable is active.
-                if v.is_active {
-                    Some(v.activation.into())
-                } else {
-                    None
-                }
-            }
-        };
-
-        let p = pywr_core::parameters::ConstantParameter::new(&self.meta.name, self.value.load(tables)?, variable);
+        let p = pywr_core::parameters::ConstantParameter::new(&self.meta.name, self.value.load(tables)?);
         Ok(network.add_parameter(Box::new(p))?)
     }
 }
@@ -206,7 +196,6 @@ impl TryFromV1Parameter<ConstantParameterV1> for ConstantParameter {
         let p = Self {
             meta: v1.meta.into_v2_parameter(parent_node, unnamed_count),
             value,
-            variable: None, // TODO implement conversion of v1 variable definition
         };
         Ok(p)
     }

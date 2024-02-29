@@ -23,23 +23,28 @@ fn make_builder() -> cc::Build {
         .to_owned();
 
     if target.contains("msvc") {
-        builder.flag("-EHsc").flag_if_supported("-std:c++11");
+        builder.flag("-EHsc");
+        // Flag required for macros __cplusplus to work correctly.
+        // See: https://devblogs.microsoft.com/cppblog/msvc-now-correctly-reports-__cplusplus/
+        builder.flag("/Zc:__cplusplus");
+        builder.flag("/std:c++14");
     } else {
-        builder.flag("-std=c++11").flag("-w");
+        builder.flag("-std=c++11");
+        builder.flag("-w");
     }
 
     builder
 }
 
 fn main() {
-    const COIN_UTILS_SRC: &str = "vendor/CoinUtils/src";
-    const COIN_CLP_SRC: &str = "vendor/Clp/src";
+    const COIN_UTILS_SRC: &str = "vendor/CoinUtils/CoinUtils/src";
+    const COIN_CLP_SRC: &str = "vendor/Clp/Clp/src";
 
     // Compile CoinUtils
     let mut builder = make_builder();
 
     builder
-        .flag(&*format!("-I{}", COIN_UTILS_SRC))
+        .flag(&format!("-I{}", COIN_UTILS_SRC))
         .file(format!("{}/CoinAlloc.cpp", COIN_UTILS_SRC))
         .file(format!("{}/CoinBuild.cpp", COIN_UTILS_SRC))
         .file(format!("{}/CoinDenseFactorization.cpp", COIN_UTILS_SRC))
@@ -104,8 +109,8 @@ fn main() {
     let mut builder = make_builder();
 
     builder
-        .flag(&*format!("-I{}", COIN_UTILS_SRC))
-        .flag(&*format!("-I{}", COIN_CLP_SRC))
+        .flag(&format!("-I{}", COIN_UTILS_SRC))
+        .flag(&format!("-I{}", COIN_CLP_SRC))
         .file(format!("{}/ClpCholeskyBase.cpp", COIN_CLP_SRC))
         .file(format!("{}/ClpCholeskyDense.cpp", COIN_CLP_SRC))
         .file(format!("{}/ClpCholeskyPardiso.cpp", COIN_CLP_SRC))

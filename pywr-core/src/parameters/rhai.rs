@@ -1,9 +1,10 @@
 use super::{IndexValue, Parameter, ParameterMeta, PywrError, Timestep};
 use crate::metric::Metric;
 use crate::network::Network;
-use crate::parameters::downcast_internal_state;
+use crate::parameters::downcast_internal_state_mut;
 use crate::scenario::ScenarioIndex;
 use crate::state::{ParameterState, State};
+use chrono::Datelike;
 use rhai::{Dynamic, Engine, Map, Scope, AST};
 use std::any::Any;
 use std::collections::HashMap;
@@ -89,7 +90,7 @@ impl Parameter for RhaiParameter {
         state: &State,
         internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<f64, PywrError> {
-        let internal = downcast_internal_state::<Internal>(internal_state);
+        let internal = downcast_internal_state_mut::<Internal>(internal_state);
 
         let metric_values = self
             .metrics
@@ -119,6 +120,7 @@ impl Parameter for RhaiParameter {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::state::StateBuilder;
     use crate::test_utils::default_timestepper;
     use crate::timestep::TimeDomain;
     use float_cmp::assert_approx_eq;
@@ -150,7 +152,7 @@ mod tests {
         );
 
         let timestepper = default_timestepper();
-        let time: TimeDomain = timestepper.into();
+        let time: TimeDomain = TimeDomain::try_from(timestepper).unwrap();
         let timesteps = time.timesteps();
 
         let scenario_indices = [
@@ -164,7 +166,7 @@ mod tests {
             },
         ];
 
-        let state = State::new(vec![], 0, vec![], 1, 0, 0, 0, 0);
+        let state = StateBuilder::new(vec![], 0).with_value_parameters(1).build();
 
         let mut internal_p_states: Vec<_> = scenario_indices
             .iter()

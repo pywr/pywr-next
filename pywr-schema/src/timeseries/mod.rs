@@ -107,9 +107,9 @@ impl LoadedTimeseriesCollection {
 mod tests {
     use std::path::PathBuf;
 
+    use chrono::{Datelike, NaiveDate};
     use ndarray::Array;
     use pywr_core::{metric::Metric, recorders::AssertionRecorder, test_utils::run_all_solvers};
-    use time::Date;
 
     use crate::PywrModel;
 
@@ -130,7 +130,7 @@ mod tests {
         let mut model = schema.build_model(Some(model_dir.as_path()), None).unwrap();
 
         let expected = Array::from_shape_fn((365, 1), |(x, _)| {
-            (Date::from_ordinal_date(2021, (x + 1) as u16).unwrap().day() + 2) as f64
+            (NaiveDate::from_yo_opt(2021, (x + 1) as u32).unwrap().day() + 2) as f64
         });
         let idx = model.network().get_node_by_name("output1", None).unwrap().index();
 

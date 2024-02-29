@@ -2,7 +2,11 @@
 name = "clp-sys"
 version = "0.1.0"
 authors = ["James Tomlinson <tomo.bbe@gmail.com>"]
-edition = "2018"
+edition = "2021"
+description = "Low-level bindings to COIN-OR CLP (Coin-or linear programming)."
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/pywr/pywr-next/"
+
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

@@ -193,7 +193,7 @@ impl TryFrom<PiecewiseLinkNodeV1> for PiecewiseLinkNode {
 
         let steps = costs
             .into_iter()
-            .zip(max_flows.into_iter())
+            .zip(max_flows)
             .map(|(cost, max_flow)| PiecewiseLinkStep {
                 max_flow,
                 min_flow: None,

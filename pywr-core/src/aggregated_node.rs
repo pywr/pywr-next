@@ -72,6 +72,36 @@ pub struct AggregatedNode {
     factors: Option<Factors>,
 }
 
+#[derive(Debug, PartialEq, Copy, Clone)]
+pub struct NodeFactor {
+    pub index: NodeIndex,
+    pub factor: f64,
+}
+
+impl NodeFactor {
+    fn new(node: NodeIndex, factor: f64) -> Self {
+        Self { index: node, factor }
+    }
+}
+
+/// A pair of nodes and their factors
+#[derive(Debug, PartialEq, Copy, Clone)]
+pub struct NodeFactorPair {
+    pub node0: NodeFactor,
+    pub node1: NodeFactor,
+}
+
+impl NodeFactorPair {
+    fn new(node0: NodeFactor, node1: NodeFactor) -> Self {
+        Self { node0, node1 }
+    }
+
+    /// Return the ratio of the two factors (node0 / node1)
+    pub fn ratio(&self) -> f64 {
+        self.node0.factor / self.node1.factor
+    }
+}
+
 impl AggregatedNode {
     pub fn new(
         index: &AggregatedNodeIndex,
@@ -130,11 +160,7 @@ impl AggregatedNode {
 
     /// Return normalised factor pairs
     ///
-    pub fn get_norm_factor_pairs(
-        &self,
-        model: &Network,
-        state: &State,
-    ) -> Option<Vec<((NodeIndex, f64), (NodeIndex, f64))>> {
+    pub fn get_norm_factor_pairs(&self, model: &Network, state: &State) -> Option<Vec<NodeFactorPair>> {
         if let Some(factors) = &self.factors {
             let pairs = match factors {
                 Factors::Proportion(prop_factors) => {
@@ -205,7 +231,7 @@ fn get_norm_proportional_factor_pairs(
     nodes: &[NodeIndex],
     model: &Network,
     state: &State,
-) -> Vec<((NodeIndex, f64), (NodeIndex, f64))> {
+) -> Vec<NodeFactorPair> {
     if factors.len() != nodes.len() - 1 {
         panic!("Found {} proportional factors and {} nodes in aggregated node. The number of proportional factors should equal one less than the number of nodes.", factors.len(), nodes.len());
     }
@@ -232,8 +258,8 @@ fn get_norm_proportional_factor_pairs(
     nodes
         .iter()
         .skip(1)
-        .zip(values.into_iter())
-        .map(move |(&n1, f1)| ((n0, f0), (n1, f1)))
+        .zip(values)
+        .map(move |(&n1, f1)| NodeFactorPair::new(NodeFactor::new(n0, f0), NodeFactor::new(n1, f1)))
         .collect::<Vec<_>>()
 }
 
@@ -243,7 +269,7 @@ fn get_norm_ratio_factor_pairs(
     nodes: &[NodeIndex],
     model: &Network,
     state: &State,
-) -> Vec<((NodeIndex, f64), (NodeIndex, f64))> {
+) -> Vec<NodeFactorPair> {
     if factors.len() != nodes.len() {
         panic!("Found {} ratio factors and {} nodes in aggregated node. The number of ratio factors should equal the number of nodes.", factors.len(), nodes.len());
     }
@@ -255,7 +281,12 @@ fn get_norm_ratio_factor_pairs(
         .iter()
         .zip(factors)
         .skip(1)
-        .map(move |(&n1, f1)| ((n0, f0), (n1, f1.get_value(model, state).unwrap())))
+        .map(move |(&n1, f1)| {
+            NodeFactorPair::new(
+                NodeFactor::new(n0, f0),
+                NodeFactor::new(n1, f1.get_value(model, state).unwrap()),
+            )
+        })
         .collect::<Vec<_>>()
 }
 

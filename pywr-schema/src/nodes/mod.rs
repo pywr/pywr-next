@@ -121,7 +121,7 @@ impl NodeBuilder {
     pub fn next_default_name_for_model(mut self, network: &PywrNetwork) -> Self {
         let mut num = 1;
         loop {
-            let name = format!("{}-{}", self.ty.to_string(), num);
+            let name = format!("{}-{}", self.ty, num);
             if network.get_node_by_name(&name).is_none() {
                 // No node with this name found!
                 self.name = Some(name);

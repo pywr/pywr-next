@@ -35,18 +35,19 @@ impl ScenarioGroupCollection {
         Self { groups }
     }
 
-
     /// Number of [`ScenarioGroup`]s in the collection.
     pub fn len(&self) -> usize {
         self.groups.len()
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.groups.is_empty()
+    }
+
     /// Find a [`ScenarioGroup`]s index in the collection by name
     /// Find a `ScenarioGroup` in the collection by its index
     pub fn get_group(&self, idx: usize) -> Result<&ScenarioGroup, PywrError> {
-        self.groups
-            .get(idx)
-            .ok_or_else(|| PywrError::ScenarioGroupIndexNotFound(idx))
+        self.groups.get(idx).ok_or(PywrError::ScenarioGroupIndexNotFound(idx))
     }
 
     /// Get all `ScenarioGroup`s in the collection
@@ -119,6 +120,11 @@ impl ScenarioDomain {
     pub fn len(&self) -> usize {
         self.scenario_indices.len()
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.scenario_indices.is_empty()
+    }
+
     pub fn indices(&self) -> &[ScenarioIndex] {
         &self.scenario_indices
     }
@@ -137,7 +143,7 @@ impl ScenarioDomain {
 impl From<ScenarioGroupCollection> for ScenarioDomain {
     fn from(value: ScenarioGroupCollection) -> Self {
         // Handle creating at-least one scenario if the collection is empty.
-        if value.len() > 0 {
+        if !value.is_empty() {
             let scenario_group_names = value.groups.iter().map(|g| g.name.clone()).collect();
 
             Self {
