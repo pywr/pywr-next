@@ -328,7 +328,7 @@ impl OutputNode {
 
     pub fn create_metric(
         &self,
-        network: &pywr_core::network::Network,
+        network: &mut pywr_core::network::Network,
         attribute: Option<NodeAttribute>,
     ) -> Result<Metric, SchemaError> {
         // Use the default attribute if none is specified
@@ -338,6 +338,11 @@ impl OutputNode {
 
         let metric = match attr {
             NodeAttribute::Inflow => Metric::NodeInFlow(idx),
+            NodeAttribute::Deficit => {
+                let dm = DerivedMetric::NodeInFlowDeficit(idx);
+                let dm_idx = network.add_derived_metric(dm);
+                Metric::DerivedMetric(dm_idx)
+            }
             _ => {
                 return Err(SchemaError::NodeAttributeNotSupported {
                     ty: "OutputNode".to_string(),

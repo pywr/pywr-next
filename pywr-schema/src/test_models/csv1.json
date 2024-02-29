@@ -51,7 +51,10 @@
       {
         "name": "nodes",
         "metrics": [
-          "demand1"
+          {
+            "type": "Default",
+            "node": "demand1"
+          }
         ]
       }
     ],

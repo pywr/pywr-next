@@ -1,6 +1,7 @@
 mod aggregator;
 mod csv;
 mod hdf;
+mod memory;
 mod metric_set;
 mod py;
 
@@ -15,6 +16,7 @@ use crate::PywrError;
 pub use aggregator::{AggregationFrequency, AggregationFunction, Aggregator};
 use float_cmp::{approx_eq, ApproxEq, F64Margin};
 pub use hdf::HDF5Recorder;
+pub use memory::{Aggregation, AggregationError, MemoryRecorder};
 pub use metric_set::{MetricSet, MetricSetIndex, MetricSetState};
 use ndarray::prelude::*;
 use ndarray::Array2;
@@ -83,8 +85,16 @@ pub trait Recorder: Send + Sync {
     ) -> Result<(), PywrError> {
         Ok(())
     }
-    fn finalise(&self, _internal_state: &mut Option<Box<dyn Any>>) -> Result<(), PywrError> {
+    fn finalise(
+        &self,
+        _metric_set_states: &[Vec<MetricSetState>],
+        _internal_state: &mut Option<Box<dyn Any>>,
+    ) -> Result<(), PywrError> {
         Ok(())
+    }
+
+    fn aggregated_value(&self, _internal_state: &Option<Box<dyn Any>>) -> Result<f64, PywrError> {
+        Err(PywrError::RecorderDoesNotSupportAggregation)
     }
 }
 

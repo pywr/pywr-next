@@ -6,7 +6,7 @@ use crate::derived_metric::DerivedMetricIndex;
 use crate::models::MultiNetworkTransferIndex;
 use crate::node::NodeIndex;
 use crate::parameters::{IndexParameterIndex, InterpolationError, MultiValueParameterIndex, ParameterIndex};
-use crate::recorders::{MetricSetIndex, RecorderIndex};
+use crate::recorders::{AggregationError, MetricSetIndex, RecorderIndex};
 use crate::virtual_storage::VirtualStorageIndex;
 use pyo3::exceptions::{PyException, PyRuntimeError};
 use pyo3::{create_exception, PyErr};
@@ -123,6 +123,8 @@ pub enum PywrError {
     InvalidMetricValue(String),
     #[error("recorder not initialised")]
     RecorderNotInitialised,
+    #[error("recorder does not supported aggregation")]
+    RecorderDoesNotSupportAggregation,
     #[error("hdf5 error: {0}")]
     HDF5Error(String),
     #[error("csv error: {0}")]
@@ -161,6 +163,8 @@ pub enum PywrError {
     TimestepRangeGenerationError(String),
     #[error("Could not create timesteps for frequency '{0}'")]
     TimestepGenerationError(String),
+    #[error("aggregation error: {0}")]
+    Aggregation(#[from] AggregationError),
 }
 
 // Python errors

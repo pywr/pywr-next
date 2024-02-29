@@ -182,6 +182,10 @@ impl NetworkState {
     pub fn iter_parameter_states_mut(&mut self) -> IterMut<'_, ParameterStates> {
         self.parameter_internal_states.iter_mut()
     }
+
+    pub fn all_metric_set_internal_states_mut(&mut self) -> &mut [Vec<MetricSetState>] {
+        &mut self.metric_set_internal_states
+    }
 }
 
 /// A Pywr network containing nodes, edges, parameters, metric sets, etc.
@@ -358,10 +362,22 @@ impl Network {
         S::setup(self, scenario_indices.len(), settings)
     }
 
-    pub fn finalise(&self, recorder_internal_states: &mut [Option<Box<dyn Any>>]) -> Result<(), PywrError> {
+    pub fn finalise(
+        &self,
+        metric_set_states: &mut [Vec<MetricSetState>],
+        recorder_internal_states: &mut [Option<Box<dyn Any>>],
+    ) -> Result<(), PywrError> {
+        // Finally, save new data to the metric set
+
+        for ms_states in metric_set_states.iter_mut() {
+            for (metric_set, ms_state) in self.metric_sets.iter().zip(ms_states.iter_mut()) {
+                metric_set.finalise(ms_state);
+            }
+        }
+
         // Setup recorders
         for (recorder, internal_state) in self.recorders.iter().zip(recorder_internal_states) {
-            recorder.finalise(internal_state)?;
+            recorder.finalise(metric_set_states, internal_state)?;
         }
 
         Ok(())
@@ -1132,6 +1148,20 @@ impl Network {
     pub fn get_recorder_by_name(&self, name: &str) -> Result<&dyn recorders::Recorder, PywrError> {
         match self.recorders.iter().find(|r| r.name() == name) {
             Some(recorder) => Ok(recorder.as_ref()),
+            None => Err(PywrError::RecorderNotFound),
+        }
+    }
+
+    pub fn get_recorder_index_by_name(&self, name: &str) -> Result<RecorderIndex, PywrError> {
+        match self.recorders.iter().position(|r| r.name() == name) {
+            Some(idx) => Ok(RecorderIndex::new(idx)),
+            None => Err(PywrError::RecorderNotFound),
+        }
+    }
+
+    pub fn get_aggregated_value(&self, name: &str, recorder_states: &[Option<Box<dyn Any>>]) -> Result<f64, PywrError> {
+        match self.recorders.iter().enumerate().find(|(_, r)| r.name() == name) {
+            Some((idx, recorder)) => recorder.aggregated_value(&recorder_states[idx]),
             None => Err(PywrError::RecorderNotFound),
         }
     }

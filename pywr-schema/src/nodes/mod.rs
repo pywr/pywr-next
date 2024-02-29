@@ -86,6 +86,7 @@ pub enum NodeAttribute {
     Volume,
     ProportionalVolume,
     Loss,
+    Deficit,
 }
 
 pub struct NodeBuilder {

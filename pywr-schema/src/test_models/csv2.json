@@ -50,12 +50,19 @@
     "metric_sets": [
       {
         "name": "nodes",
-        "aggregator": {
-          "freq": "monthly",
-          "func": "mean"
-        },
+          "aggregator": {
+            "freq": {
+              "type": "Monthly"
+            },
+            "func": {
+              "type": "Mean"
+            }
+          },
         "metrics": [
-          "demand1"
+          {
+            "type": "Default",
+            "node": "demand1"
+          }
         ]
       }
     ],

@@ -1,9 +1,11 @@
 mod csv;
 mod hdf;
+mod memory;
 
 pub use self::csv::CsvOutput;
 use crate::error::SchemaError;
 pub use hdf::Hdf5Output;
+pub use memory::MemoryOutput;
 use std::path::Path;
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
@@ -11,6 +13,7 @@ use std::path::Path;
 pub enum Output {
     CSV(CsvOutput),
     HDF5(Hdf5Output),
+    Memory(MemoryOutput),
 }
 
 impl Output {
@@ -22,6 +25,7 @@ impl Output {
         match self {
             Self::CSV(o) => o.add_to_model(network, output_path),
             Self::HDF5(o) => o.add_to_model(network, output_path),
+            Self::Memory(o) => o.add_to_model(network),
         }
     }
 }
