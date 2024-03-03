@@ -1,17 +1,13 @@
 mod align_and_resample;
 mod polars_dataset;
 
-use ndarray::{Array1, Array2};
-use polars::error::PolarsError;
+use ndarray::Array2;
 use polars::prelude::DataType::Float64;
-use polars::prelude::{DataFrame, Float64Type, IndexOrder, Schema};
+use polars::prelude::{DataFrame, Float64Type, IndexOrder};
 use pywr_core::models::ModelDomain;
 use pywr_core::parameters::{Array1Parameter, Array2Parameter, ParameterIndex};
-use std::{
-    collections::HashMap,
-    path::{Path, PathBuf},
-};
-use thiserror::Error;
+use pywr_core::PywrError;
+use std::{collections::HashMap, path::Path};
 
 use crate::{parameters::ParameterMeta, SchemaError};
 
@@ -75,8 +71,17 @@ impl LoadedTimeseriesCollection {
 
         let array = series.cast(&Float64)?.f64()?.to_ndarray()?.to_owned();
         let name = format!("{}_{}", name, col);
-        let p = Array1Parameter::new(&name, array, None);
-        Ok(network.add_parameter(Box::new(p))?)
+
+        match network.get_parameter_index_by_name(&name) {
+            Ok(idx) => Ok(idx),
+            Err(e) => match e {
+                PywrError::ParameterNotFound(_) => {
+                    let p = Array1Parameter::new(&name, array, None);
+                    Ok(network.add_parameter(Box::new(p))?)
+                }
+                _ => Err(SchemaError::PywrCore(e)),
+            },
+        }
     }
 
     pub fn load_df(
@@ -97,9 +102,18 @@ impl LoadedTimeseriesCollection {
             .ok_or(SchemaError::TimeseriesNotFound(name.to_string()))?;
 
         let array: Array2<f64> = df.to_ndarray::<Float64Type>(IndexOrder::default()).unwrap();
-        let name = format!("{}_{}", name, scenario);
-        let p = Array2Parameter::new(&name, array, scenario_group_index, None);
-        Ok(network.add_parameter(Box::new(p))?)
+        let name = format!("timeseries.{}_{}", name, scenario);
+
+        match network.get_parameter_index_by_name(&name) {
+            Ok(idx) => Ok(idx),
+            Err(e) => match e {
+                PywrError::ParameterNotFound(_) => {
+                    let p = Array2Parameter::new(&name, array, scenario_group_index, None);
+                    Ok(network.add_parameter(Box::new(p))?)
+                }
+                _ => Err(SchemaError::PywrCore(e)),
+            },
+        }
     }
 }
 

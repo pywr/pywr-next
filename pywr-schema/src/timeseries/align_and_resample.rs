@@ -1,10 +1,6 @@
-use std::{cmp::Ordering, ops::Deref};
-
-use chrono::{format, NaiveDateTime};
-
 use polars::{prelude::*, series::ops::NullBehavior};
 use pywr_core::models::ModelDomain;
-use pywr_v1_schema::model;
+use std::{cmp::Ordering, ops::Deref};
 
 use crate::SchemaError;
 
@@ -47,7 +43,7 @@ pub fn align_and_resample(
         .time()
         .step_duration()
         .whole_nanoseconds()
-        .expect("Nano seconds could not be extracted from model step duration") as i64;
+        .expect("Nano seconds could not be extracted from model step duration");
 
     let df = match model_duration.cmp(&timeseries_duration) {
         Ordering::Greater => {
