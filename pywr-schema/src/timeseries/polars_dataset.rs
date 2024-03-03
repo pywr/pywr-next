@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use polars::{frame::DataFrame, prelude::*};
 use pywr_core::models::ModelDomain;
 
-use crate::SchemaError;
+use crate::timeseries::TimeseriesError;
 
 use super::align_and_resample::align_and_resample;
 
@@ -14,7 +14,12 @@ pub struct PolarsDataset {
 }
 
 impl PolarsDataset {
-    pub fn load(&self, name: &str, data_path: Option<&Path>, domain: &ModelDomain) -> Result<DataFrame, SchemaError> {
+    pub fn load(
+        &self,
+        name: &str,
+        data_path: Option<&Path>,
+        domain: &ModelDomain,
+    ) -> Result<DataFrame, TimeseriesError> {
         let fp = if self.url.is_absolute() {
             self.url.clone()
         } else if let Some(data_path) = data_path {
@@ -36,13 +41,13 @@ impl PolarsDataset {
                         todo!()
                     }
                     Some(other_ext) => {
-                        return Err(SchemaError::TimeseriesUnsupportedFileFormat {
+                        return Err(TimeseriesError::TimeseriesUnsupportedFileFormat {
                             provider: "polars".to_string(),
                             fmt: other_ext.to_string(),
                         })
                     }
                     None => {
-                        return Err(SchemaError::TimeseriesUnparsableFileFormat {
+                        return Err(TimeseriesError::TimeseriesUnparsableFileFormat {
                             provider: "polars".to_string(),
                             path: self.url.to_string_lossy().to_string(),
                         })
@@ -50,7 +55,7 @@ impl PolarsDataset {
                 }
             }
             None => {
-                return Err(SchemaError::TimeseriesUnparsableFileFormat {
+                return Err(TimeseriesError::TimeseriesUnparsableFileFormat {
                     provider: "polars".to_string(),
                     path: self.url.to_string_lossy().to_string(),
                 })

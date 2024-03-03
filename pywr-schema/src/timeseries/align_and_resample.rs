@@ -2,14 +2,14 @@ use polars::{prelude::*, series::ops::NullBehavior};
 use pywr_core::models::ModelDomain;
 use std::{cmp::Ordering, ops::Deref};
 
-use crate::SchemaError;
+use crate::timeseries::TimeseriesError;
 
 pub fn align_and_resample(
     name: &str,
     df: DataFrame,
     time_col: &str,
     domain: &ModelDomain,
-) -> Result<DataFrame, SchemaError> {
+) -> Result<DataFrame, TimeseriesError> {
     // Ensure type of time column is datetime and that it is sorted
     let df = df
         .clone()
@@ -36,7 +36,7 @@ pub fn align_and_resample(
 
     let timeseries_duration = match durations.get(0) {
         Some(duration) => duration,
-        None => return Err(SchemaError::TimeseriesDurationNotFound(name.to_string())),
+        None => return Err(TimeseriesError::TimeseriesDurationNotFound(name.to_string())),
     };
 
     let model_duration = domain
@@ -81,13 +81,13 @@ pub fn align_and_resample(
     Ok(df)
 }
 
-fn slice_start(df: DataFrame, time_col: &str, domain: &ModelDomain) -> Result<DataFrame, SchemaError> {
+fn slice_start(df: DataFrame, time_col: &str, domain: &ModelDomain) -> Result<DataFrame, TimeseriesError> {
     let start = domain.time().first_timestep().date;
     let df = df.clone().lazy().filter(col(time_col).gt_eq(lit(start))).collect()?;
     Ok(df)
 }
 
-fn slice_end(df: DataFrame, time_col: &str, domain: &ModelDomain) -> Result<DataFrame, SchemaError> {
+fn slice_end(df: DataFrame, time_col: &str, domain: &ModelDomain) -> Result<DataFrame, TimeseriesError> {
     let end = domain.time().last_timestep().date;
     let df = df.clone().lazy().filter(col(time_col).lt_eq(lit(end))).collect()?;
     Ok(df)

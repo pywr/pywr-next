@@ -1,5 +1,6 @@
 use crate::data_tables::TableError;
 use crate::nodes::NodeAttribute;
+use crate::timeseries::TimeseriesError;
 use polars::error::PolarsError;
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::PyErr;
@@ -29,18 +30,6 @@ pub enum SchemaError {
     PywrCore(#[from] pywr_core::PywrError),
     #[error("data table error: {0}")]
     DataTable(#[from] TableError),
-    #[error("Timeseries '{0} not found")]
-    TimeseriesNotFound(String),
-    #[error("The duration of timeseries '{0}' could not be determined.")]
-    TimeseriesDurationNotFound(String),
-    #[error("Column '{col}' not found in timeseries input '{name}'")]
-    ColumnNotFound { col: String, name: String },
-    #[error("Timeseries provider '{provider}' does not support '{fmt}' file types")]
-    TimeseriesUnsupportedFileFormat { provider: String, fmt: String },
-    #[error("Timeseries provider '{provider}' cannot parse file: '{path}'")]
-    TimeseriesUnparsableFileFormat { provider: String, path: String },
-    #[error("Polars error: {0}")]
-    PolarsError(#[from] PolarsError),
     #[error("Circular node reference(s) found.")]
     CircularNodeReference,
     #[error("Circular parameters reference(s) found.")]
@@ -67,6 +56,8 @@ pub enum SchemaError {
     InvalidRollingWindow { name: String },
     #[error("Failed to load parameter {name}: {error}")]
     LoadParameter { name: String, error: String },
+    #[error("Timeseries error: {0}")]
+    Timeseries(#[from] TimeseriesError),
 }
 
 impl From<SchemaError> for PyErr {
