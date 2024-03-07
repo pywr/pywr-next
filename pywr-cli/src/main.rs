@@ -179,6 +179,7 @@ fn v1_to_v2(path: &Path) -> std::result::Result<(), ConversionError> {
 
     let data = std::fs::read_to_string(path).unwrap();
     let schema: pywr_v1_schema::PywrModel = serde_json::from_str(data.as_str()).unwrap();
+
     let schema_v2: PywrModel = schema.try_into()?;
 
     // There must be a better way to do this!!

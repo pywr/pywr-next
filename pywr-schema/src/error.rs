@@ -107,4 +107,8 @@ pub enum ConversionError {
     UnparseableDate(String),
     #[error("Chrono out of range error: {0}")]
     OutOfRange(#[from] chrono::OutOfRange),
+    #[error("The dataframe parameters '{0}' defines both a column and a scenario attribute. Only 1 is allowed.")]
+    AmbiguousColumnAndScenario(String),
+    #[error("The dataframe parameters '{0}' defines both a column and a scenario. Only 1 is allowed.")]
+    MissingColumnOrScenario(String),
 }

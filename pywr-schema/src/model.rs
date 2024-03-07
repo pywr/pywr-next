@@ -4,13 +4,21 @@ use super::parameters::Parameter;
 use crate::data_tables::{DataTable, LoadedTableCollection};
 use crate::error::{ConversionError, SchemaError};
 use crate::metric_sets::MetricSet;
+use crate::nodes::NodeAndTimeseries;
 use crate::outputs::Output;
-use crate::parameters::{MetricFloatReference, TryIntoV2Parameter};
-use crate::timeseries::{LoadedTimeseriesCollection, Timeseries};
+use crate::parameters::{
+    convert_parameter_v1_to_v2, DataFrameColumns, DynamicFloatValue, MetricFloatReference, MetricFloatValue,
+    TimeseriesReference, TryIntoV2Parameter,
+};
+use crate::timeseries::{convert_from_v1_data, LoadedTimeseriesCollection, Timeseries};
 use chrono::{NaiveDate, NaiveDateTime, NaiveTime};
+use polars::frame::DataFrame;
 use pywr_core::models::ModelDomain;
 use pywr_core::timestep::TimestepDuration;
 use pywr_core::PywrError;
+use serde::de;
+use std::collections::HashSet;
+use std::hash::Hash;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
@@ -405,29 +413,74 @@ impl TryFrom<pywr_v1_schema::PywrModel> for PywrModel {
         let metadata = v1.metadata.try_into()?;
         let timestepper = v1.timestepper.try_into()?;
 
-        let nodes = v1
+        let nodes_and_ts: Vec<NodeAndTimeseries> = v1
             .nodes
+            .clone()
             .into_iter()
             .map(|n| n.try_into())
             .collect::<Result<Vec<_>, _>>()?;
 
+        let mut ts_data = nodes_and_ts
+            .iter()
+            .filter_map(|n| n.timeseries.clone())
+            .flatten()
+            .collect::<Vec<_>>();
+
+        let mut nodes = nodes_and_ts.into_iter().map(|n| n.node).collect::<Vec<_>>();
+
         let edges = v1.edges.into_iter().map(|e| e.into()).collect();
 
-        let parameters = if let Some(v1_parameters) = v1.parameters {
+        let (parameters, param_ts_data) = if let Some(v1_parameters) = v1.parameters {
             let mut unnamed_count: usize = 0;
-            Some(
-                v1_parameters
-                    .into_iter()
-                    .map(|p| p.try_into_v2_parameter(None, &mut unnamed_count))
-                    .collect::<Result<Vec<_>, _>>()?,
-            )
+            let (parameters, param_ts_data) = convert_parameter_v1_to_v2(v1_parameters, &mut unnamed_count)?;
+            (Some(parameters), Some(param_ts_data))
+        } else {
+            (None, None)
+        };
+
+        ts_data.extend(param_ts_data.into_iter().flatten());
+
+        let timeseries = if !ts_data.is_empty() {
+            let ts = convert_from_v1_data(&ts_data, &v1.tables);
+            let ts_names: HashSet<&str> = ts.iter().map(|t| t.name()).collect();
+
+            // Update node param references
+            for n in nodes.iter_mut() {
+                let mut params = n.parameters_mut();
+                for param in params.values_mut() {
+                    if let DynamicFloatValue::Dynamic(MetricFloatValue::Reference(MetricFloatReference::Parameter {
+                        name,
+                        key: _,
+                    })) = param
+                    {
+                        // If the parameter name matches one of the timeseries names, assume parameter reference needs updating to a timeseries reference.
+                        // This should be fine as the sources of all the names is the v1 parameter list which should have unique names.
+                        if ts_names.contains(name.as_str()) {
+                            if let Some(data) = ts_data.iter().find(|t| t.name.as_ref().unwrap() == name) {
+                                let col = match (&data.column, &data.scenario) {
+                                    (Some(col), None) => DataFrameColumns::Column(col.clone()),
+                                    (None, Some(scenario)) => DataFrameColumns::Scenario(scenario.clone()),
+                                    (Some(_), Some(_)) => {
+                                        return Err(ConversionError::AmbiguousColumnAndScenario(name.clone()))
+                                    }
+                                    (None, None) => return Err(ConversionError::MissingColumnOrScenario(name.clone())),
+                                };
+                                let ts_ref = DynamicFloatValue::Dynamic(MetricFloatValue::Timeseries(
+                                    TimeseriesReference::new(name.clone(), col),
+                                ));
+                                **param = ts_ref;
+                            }
+                        }
+                    }
+                }
+            }
+            Some(ts)
         } else {
             None
         };
 
         // TODO convert v1 tables!
         let tables = None;
-        let timeseries = None;
         let outputs = None;
         let metric_sets = None;
         let network = PywrNetwork {

@@ -13,7 +13,7 @@ use pywr_core::virtual_storage::VirtualStorageReset;
 use pywr_v1_schema::nodes::AnnualVirtualStorageNode as AnnualVirtualStorageNodeV1;
 use std::path::Path;
 
-#[derive(serde::Deserialize, serde::Serialize, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Debug)]
 pub struct AnnualReset {
     pub day: u8,
     pub month: chrono::Month,
@@ -30,7 +30,7 @@ impl Default for AnnualReset {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Clone, Default)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug)]
 pub struct AnnualVirtualStorageNode {
     #[serde(flatten)]
     pub meta: NodeMeta,

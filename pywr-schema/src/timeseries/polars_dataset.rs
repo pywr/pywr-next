@@ -9,11 +9,15 @@ use super::align_and_resample::align_and_resample;
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
 pub struct PolarsDataset {
-    time_col: String,
+    time_col: Option<String>,
     url: PathBuf,
 }
 
 impl PolarsDataset {
+    pub fn new(time_col: Option<String>, url: PathBuf) -> Self {
+        Self { time_col, url }
+    }
+
     pub fn load(
         &self,
         name: &str,
@@ -62,7 +66,14 @@ impl PolarsDataset {
             }
         };
 
-        df = align_and_resample(name, df, self.time_col.as_str(), domain)?;
+        df = match self.time_col {
+            Some(ref col) => align_and_resample(name, df, col, domain)?,
+            None => {
+                // If a time col has not been provided assume it is the first column
+                let first_col = df.get_column_names()[0].to_string();
+                align_and_resample(name, df, first_col.as_str(), domain)?
+            }
+        };
 
         Ok(df)
     }

@@ -17,7 +17,7 @@ use std::path::Path;
 /// The length of the rolling window.
 ///
 /// This can be specified in either days or time-steps.
-#[derive(serde::Deserialize, serde::Serialize, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Debug)]
 pub enum RollingWindow {
     Days(NonZeroUsize),
     Timesteps(NonZeroUsize),
@@ -62,7 +62,7 @@ impl RollingWindow {
 /// The rolling virtual storage node is useful for representing rolling licences. For example, a 30-day or 90-day
 /// licence on a water abstraction.
 ///
-#[derive(serde::Deserialize, serde::Serialize, Clone, Default)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug)]
 pub struct RollingVirtualStorageNode {
     #[serde(flatten)]
     pub meta: NodeMeta,

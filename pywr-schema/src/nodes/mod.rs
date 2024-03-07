@@ -21,7 +21,7 @@ pub use crate::nodes::core::{
 pub use crate::nodes::delay::DelayNode;
 pub use crate::nodes::river::RiverNode;
 use crate::nodes::rolling_virtual_storage::RollingVirtualStorageNode;
-use crate::parameters::DynamicFloatValue;
+use crate::parameters::{DynamicFloatValue, TimeseriesV1Data};
 use crate::timeseries::LoadedTimeseriesCollection;
 pub use annual_virtual_storage::AnnualVirtualStorageNode;
 pub use loss_link::LossLinkNode;
@@ -32,6 +32,9 @@ use pywr_core::metric::Metric;
 use pywr_core::models::ModelDomain;
 use pywr_v1_schema::nodes::{
     CoreNode as CoreNodeV1, Node as NodeV1, NodeMeta as NodeMetaV1, NodePosition as NodePositionV1,
+};
+use pywr_v1_schema::parameters::{
+    CoreParameter as CoreParameterV1, Parameter as ParameterV1, ParameterValue as ParameterValueV1,
 };
 pub use river_gauge::RiverGaugeNode;
 pub use river_split_with_gauge::RiverSplitWithGaugeNode;
@@ -220,7 +223,7 @@ impl NodeBuilder {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Clone, EnumDiscriminants)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, EnumDiscriminants, Debug)]
 #[serde(tag = "type")]
 #[strum_discriminants(derive(Display, IntoStaticStr, EnumString, VariantNames))]
 // This creates a separate enum called `NodeType` that is available in this module.
@@ -291,6 +294,13 @@ impl Node {
             Node::Link(n) => n.parameters(),
             Node::Output(n) => n.parameters(),
             Node::Storage(n) => n.parameters(),
+            _ => HashMap::new(), // TODO complete
+        }
+    }
+
+    pub fn parameters_mut(&mut self) -> HashMap<&str, &mut DynamicFloatValue> {
+        match self {
+            Node::Input(n) => n.parameters_mut(),
             _ => HashMap::new(), // TODO complete
         }
     }
@@ -632,5 +642,43 @@ impl TryFrom<Box<CoreNodeV1>> for Node {
         };
 
         Ok(n)
+    }
+}
+
+#[derive(Debug)]
+pub struct NodeAndTimeseries {
+    pub node: Node,
+    pub timeseries: Option<Vec<TimeseriesV1Data>>,
+}
+
+impl TryFrom<NodeV1> for NodeAndTimeseries {
+    type Error = ConversionError;
+
+    fn try_from(v1: NodeV1) -> Result<Self, Self::Error> {
+        let mut ts_vec = Vec::new();
+        for param_value in v1.parameters().values() {
+            match param_value {
+                pywr_v1_schema::parameters::ParameterValueType::Single(param) => {
+                    if let ParameterValueV1::Inline(p) = param {
+                        if let ParameterV1::Core(CoreParameterV1::DataFrame(df_param)) = p.as_ref() {
+                            let mut ts_data: TimeseriesV1Data = df_param.clone().into();
+
+                            if ts_data.name.is_none() {
+                                let name = format!("{}.timeseries", v1.name());
+                                ts_data.name = Some(name);
+                            }
+
+                            ts_vec.push(ts_data);
+                        }
+                    }
+                }
+                pywr_v1_schema::parameters::ParameterValueType::List(_) => todo!(),
+            }
+        }
+
+        let timeseries = if ts_vec.is_empty() { None } else { Some(ts_vec) };
+
+        let node = Node::try_from(v1)?;
+        Ok(Self { node, timeseries })
     }
 }

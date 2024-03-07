@@ -37,7 +37,7 @@ use std::path::Path;
 /// ```
 ///
 )]
-#[derive(serde::Deserialize, serde::Serialize, Clone, Default)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug)]
 pub struct WaterTreatmentWorks {
     /// Node metadata
     #[serde(flatten)]

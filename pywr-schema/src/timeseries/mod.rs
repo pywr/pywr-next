@@ -8,10 +8,12 @@ use polars::prelude::{DataFrame, Float64Type, IndexOrder};
 use pywr_core::models::ModelDomain;
 use pywr_core::parameters::{Array1Parameter, Array2Parameter, ParameterIndex};
 use pywr_core::PywrError;
+use pywr_v1_schema::tables::TableVec;
+use std::sync::Arc;
 use std::{collections::HashMap, path::Path};
 use thiserror::Error;
 
-use crate::parameters::ParameterMeta;
+use crate::parameters::{ParameterMeta, TimeseriesV1Data, TimeseriesV1Source};
 
 use self::polars_dataset::PolarsDataset;
 
@@ -56,8 +58,13 @@ impl Timeseries {
             TimeseriesProvider::Pandas => todo!(),
         }
     }
+
+    pub fn name(&self) -> &str {
+        &self.meta.name
+    }
 }
 
+#[derive(Default)]
 pub struct LoadedTimeseriesCollection {
     timeseries: HashMap<String, DataFrame>,
 }
@@ -137,6 +144,52 @@ impl LoadedTimeseriesCollection {
             },
         }
     }
+}
+
+pub fn convert_from_v1_data(df_data: &[TimeseriesV1Data], v1_tables: &Option<TableVec>) -> Vec<Timeseries> {
+    let mut ts = HashMap::new();
+    for data in df_data.iter() {
+        match &data.source {
+            TimeseriesV1Source::Table(name) => {
+                let tables = v1_tables.as_ref().unwrap();
+                let table = tables.iter().find(|t| t.name == *name).unwrap();
+                let name = table.name.clone();
+                if ts.contains_key(&name) {
+                    continue;
+                }
+
+                let time_col = None;
+                let provider = PolarsDataset::new(time_col, table.url.clone());
+
+                ts.insert(
+                    name.clone(),
+                    Timeseries {
+                        meta: ParameterMeta { name, comment: None },
+                        provider: TimeseriesProvider::Polars(provider),
+                    },
+                );
+            }
+            TimeseriesV1Source::Url(url) => {
+                let name = data.name.as_ref().unwrap().clone();
+                if ts.contains_key(&name) {
+                    continue;
+                }
+
+                // TODO: time_col should use the index_col from the v1 data?
+                let time_col = None;
+                let provider = PolarsDataset::new(time_col, url.clone());
+
+                ts.insert(
+                    name.clone(),
+                    Timeseries {
+                        meta: ParameterMeta { name, comment: None },
+                        provider: TimeseriesProvider::Polars(provider),
+                    },
+                );
+            }
+        }
+    }
+    ts.into_values().collect::<Vec<Timeseries>>()
 }
 
 #[cfg(test)]

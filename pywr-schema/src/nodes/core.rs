@@ -16,7 +16,7 @@ use pywr_v1_schema::nodes::{
 use std::collections::HashMap;
 use std::path::Path;
 
-#[derive(serde::Deserialize, serde::Serialize, Clone, Default)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug)]
 pub struct InputNode {
     #[serde(flatten)]
     pub meta: NodeMeta,
@@ -37,6 +37,21 @@ impl InputNode {
             attributes.insert("min_flow", p);
         }
         if let Some(p) = &self.cost {
+            attributes.insert("cost", p);
+        }
+
+        attributes
+    }
+
+    pub fn parameters_mut(&mut self) -> HashMap<&str, &mut DynamicFloatValue> {
+        let mut attributes = HashMap::new();
+        if let Some(p) = &mut self.max_flow {
+            attributes.insert("max_flow", p);
+        }
+        if let Some(p) = &mut self.min_flow {
+            attributes.insert("min_flow", p);
+        }
+        if let Some(p) = &mut self.cost {
             attributes.insert("cost", p);
         }
 
@@ -163,7 +178,7 @@ impl TryFrom<InputNodeV1> for InputNode {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Clone, Default)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug)]
 pub struct LinkNode {
     #[serde(flatten)]
     pub meta: NodeMeta,
@@ -310,7 +325,7 @@ impl TryFrom<LinkNodeV1> for LinkNode {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Clone, Default)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug)]
 pub struct OutputNode {
     #[serde(flatten)]
     pub meta: NodeMeta,
@@ -732,7 +747,7 @@ impl TryFrom<ReservoirNodeV1> for StorageNode {
 /// ```
 ///
 )]
-#[derive(serde::Deserialize, serde::Serialize, Clone, Default)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug)]
 pub struct CatchmentNode {
     #[serde(flatten)]
     pub meta: NodeMeta,
@@ -842,14 +857,14 @@ impl TryFrom<CatchmentNodeV1> for CatchmentNode {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Debug)]
 #[serde(tag = "type")]
 pub enum Factors {
     Proportion { factors: Vec<DynamicFloatValue> },
     Ratio { factors: Vec<DynamicFloatValue> },
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Clone, Default)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug)]
 pub struct AggregatedNode {
     #[serde(flatten)]
     pub meta: NodeMeta,
@@ -1028,7 +1043,7 @@ impl TryFrom<AggregatedNodeV1> for AggregatedNode {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Clone, Default)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug)]
 pub struct AggregatedStorageNode {
     #[serde(flatten)]
     pub meta: NodeMeta,
