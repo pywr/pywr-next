@@ -74,7 +74,7 @@
         "provider": {
           "type": "Polars",
           "time_col": "date",
-          "url": "../test_models/inflow.csv"
+          "url": "inflow.csv"
         }
       }
     ]

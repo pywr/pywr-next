@@ -212,8 +212,6 @@ mod tests {
 
         let model_dir = PathBuf::from(cargo_manifest_dir).join("src/test_models");
 
-        dbg!(&model_dir);
-
         let data = model_str();
         let schema: PywrModel = serde_json::from_str(data).unwrap();
         let mut model = schema.build_model(Some(model_dir.as_path()), None).unwrap();
