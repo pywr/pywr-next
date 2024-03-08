@@ -24,7 +24,7 @@ impl DiscountFactorParameter {
     }
 }
 
-impl Parameter for DiscountFactorParameter {
+impl Parameter<f64> for DiscountFactorParameter {
     fn as_any_mut(&mut self) -> &mut dyn Any {
         self
     }

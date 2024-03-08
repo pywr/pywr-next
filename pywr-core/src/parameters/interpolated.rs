@@ -27,7 +27,7 @@ impl InterpolatedParameter {
     }
 }
 
-impl Parameter for InterpolatedParameter {
+impl Parameter<f64> for InterpolatedParameter {
     fn as_any_mut(&mut self) -> &mut dyn Any {
         self
     }

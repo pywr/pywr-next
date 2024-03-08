@@ -1,10 +1,11 @@
 use crate::metric::Metric;
 use crate::network::Network;
-use crate::parameters::{IndexParameter, ParameterMeta};
+use crate::parameters::{Parameter, ParameterMeta};
 use crate::scenario::ScenarioIndex;
 use crate::state::{ParameterState, State};
 use crate::timestep::Timestep;
 use crate::PywrError;
+use std::any::Any;
 
 pub struct ControlCurveIndexParameter {
     meta: ParameterMeta,
@@ -22,7 +23,11 @@ impl ControlCurveIndexParameter {
     }
 }
 
-impl IndexParameter for ControlCurveIndexParameter {
+impl Parameter<usize> for ControlCurveIndexParameter {
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }

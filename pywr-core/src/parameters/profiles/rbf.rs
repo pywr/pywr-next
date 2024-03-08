@@ -101,7 +101,7 @@ impl RbfProfileParameter {
     }
 }
 
-impl Parameter for RbfProfileParameter {
+impl Parameter<f64> for RbfProfileParameter {
     fn as_any_mut(&mut self) -> &mut dyn Any {
         self
     }

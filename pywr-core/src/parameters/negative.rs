@@ -21,7 +21,7 @@ impl NegativeParameter {
     }
 }
 
-impl Parameter for NegativeParameter {
+impl Parameter<f64> for NegativeParameter {
     fn as_any_mut(&mut self) -> &mut dyn Any {
         self
     }

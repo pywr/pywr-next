@@ -37,7 +37,7 @@ impl PiecewiseInterpolatedParameter {
     }
 }
 
-impl Parameter for PiecewiseInterpolatedParameter {
+impl Parameter<f64> for PiecewiseInterpolatedParameter {
     fn as_any_mut(&mut self) -> &mut dyn Any {
         self
     }

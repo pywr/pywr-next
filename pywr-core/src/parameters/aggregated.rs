@@ -47,7 +47,7 @@ impl AggregatedParameter {
     }
 }
 
-impl Parameter for AggregatedParameter {
+impl Parameter<f64> for AggregatedParameter {
     fn as_any_mut(&mut self) -> &mut dyn Any {
         self
     }

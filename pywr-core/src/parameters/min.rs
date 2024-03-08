@@ -24,7 +24,7 @@ impl MinParameter {
     }
 }
 
-impl Parameter for MinParameter {
+impl Parameter<f64> for MinParameter {
     fn as_any_mut(&mut self) -> &mut dyn Any {
         self
     }

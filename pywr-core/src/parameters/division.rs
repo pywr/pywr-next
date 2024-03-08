@@ -24,7 +24,7 @@ impl DivisionParameter {
     }
 }
 
-impl Parameter for DivisionParameter {
+impl Parameter<f64> for DivisionParameter {
     fn as_any_mut(&mut self) -> &mut dyn Any {
         self
     }

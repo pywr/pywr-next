@@ -26,7 +26,7 @@ impl ControlCurveInterpolatedParameter {
     }
 }
 
-impl Parameter for ControlCurveInterpolatedParameter {
+impl Parameter<f64> for ControlCurveInterpolatedParameter {
     fn as_any_mut(&mut self) -> &mut dyn Any {
         self
     }
