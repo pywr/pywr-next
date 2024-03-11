@@ -6,7 +6,6 @@ use crate::state::{ParameterState, State};
 use crate::timestep::Timestep;
 use crate::PywrError;
 use chrono::Datelike;
-use std::any::Any;
 
 pub struct DiscountFactorParameter {
     meta: ParameterMeta,
@@ -25,9 +24,6 @@ impl DiscountFactorParameter {
 }
 
 impl Parameter<f64> for DiscountFactorParameter {
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
-    }
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }

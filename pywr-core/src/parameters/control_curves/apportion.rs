@@ -5,7 +5,6 @@ use crate::scenario::ScenarioIndex;
 use crate::state::{MultiValue, ParameterState, State};
 use crate::timestep::Timestep;
 use crate::PywrError;
-use std::any::Any;
 use std::collections::HashMap;
 
 /// A parameter which divides a apportions a metric to an upper and lower amount based
@@ -33,10 +32,6 @@ impl ApportionParameter {
 }
 
 impl Parameter<MultiValue> for ApportionParameter {
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
-    }
-
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }

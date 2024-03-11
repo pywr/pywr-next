@@ -5,7 +5,6 @@ use crate::state::{ParameterState, State};
 use crate::timestep::Timestep;
 use crate::PywrError;
 use ndarray::{Array1, Array2, Axis};
-use std::any::Any;
 
 pub struct Array1Parameter {
     meta: ParameterMeta,
@@ -24,9 +23,6 @@ impl Array1Parameter {
 }
 
 impl Parameter<f64> for Array1Parameter {
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
-    }
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }
@@ -67,9 +63,6 @@ impl Array2Parameter {
 }
 
 impl Parameter<f64> for Array2Parameter {
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
-    }
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }
