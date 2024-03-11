@@ -9,6 +9,7 @@ members = [
     "pywr-schema",
     "pywr-cli",
     "pywr-python",
+    "pywr-schema-macros",
 ]
 exclude = [
     "tests/models/simple-wasm/simple-wasm-parameter"

@@ -5,7 +5,9 @@ use crate::nodes::{NodeAttribute, NodeMeta};
 use crate::parameters::{DynamicFloatValue, TryIntoV2Parameter};
 use pywr_core::metric::Metric;
 use pywr_core::models::ModelDomain;
+use pywr_schema_macros::PywrNode;
 use pywr_v1_schema::nodes::PiecewiseLinkNode as PiecewiseLinkNodeV1;
+use std::collections::HashMap;
 use std::path::Path;
 
 #[derive(serde::Deserialize, serde::Serialize, Clone)]
@@ -37,7 +39,7 @@ pub struct PiecewiseLinkStep {
 /// ```
 ///
 )]
-#[derive(serde::Deserialize, serde::Serialize, Clone, Default)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Default, PywrNode)]
 pub struct PiecewiseLinkNode {
     #[serde(flatten)]
     pub meta: NodeMeta,

@@ -7,6 +7,7 @@ use pywr_core::derived_metric::DerivedMetric;
 use pywr_core::metric::Metric;
 use pywr_core::models::ModelDomain;
 use pywr_core::node::{ConstraintValue, StorageInitialVolume as CoreStorageInitialVolume};
+use pywr_schema_macros::PywrNode;
 use pywr_v1_schema::nodes::{
     AggregatedNode as AggregatedNodeV1, AggregatedStorageNode as AggregatedStorageNodeV1,
     CatchmentNode as CatchmentNodeV1, InputNode as InputNodeV1, LinkNode as LinkNodeV1, OutputNode as OutputNodeV1,
@@ -15,7 +16,7 @@ use pywr_v1_schema::nodes::{
 use std::collections::HashMap;
 use std::path::Path;
 
-#[derive(serde::Deserialize, serde::Serialize, Clone, Default)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Default, PywrNode)]
 pub struct InputNode {
     #[serde(flatten)]
     pub meta: NodeMeta,
@@ -26,21 +27,6 @@ pub struct InputNode {
 
 impl InputNode {
     pub const DEFAULT_ATTRIBUTE: NodeAttribute = NodeAttribute::Outflow;
-
-    pub fn parameters(&self) -> HashMap<&str, &DynamicFloatValue> {
-        let mut attributes = HashMap::new();
-        if let Some(p) = &self.max_flow {
-            attributes.insert("max_flow", p);
-        }
-        if let Some(p) = &self.min_flow {
-            attributes.insert("min_flow", p);
-        }
-        if let Some(p) = &self.cost {
-            attributes.insert("cost", p);
-        }
-
-        attributes
-    }
 
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
         network.add_input_node(self.meta.name.as_str(), None)?;
@@ -137,7 +123,7 @@ impl TryFrom<InputNodeV1> for InputNode {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Clone, Default)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Default, PywrNode)]
 pub struct LinkNode {
     #[serde(flatten)]
     pub meta: NodeMeta,
@@ -148,21 +134,6 @@ pub struct LinkNode {
 
 impl LinkNode {
     const DEFAULT_ATTRIBUTE: NodeAttribute = NodeAttribute::Outflow;
-
-    pub fn parameters(&self) -> HashMap<&str, &DynamicFloatValue> {
-        let mut attributes = HashMap::new();
-        if let Some(p) = &self.max_flow {
-            attributes.insert("max_flow", p);
-        }
-        if let Some(p) = &self.min_flow {
-            attributes.insert("min_flow", p);
-        }
-        if let Some(p) = &self.cost {
-            attributes.insert("cost", p);
-        }
-
-        attributes
-    }
 
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
         network.add_link_node(self.meta.name.as_str(), None)?;
@@ -259,7 +230,7 @@ impl TryFrom<LinkNodeV1> for LinkNode {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Clone, Default)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Default, PywrNode)]
 pub struct OutputNode {
     #[serde(flatten)]
     pub meta: NodeMeta,
@@ -270,21 +241,6 @@ pub struct OutputNode {
 
 impl OutputNode {
     const DEFAULT_ATTRIBUTE: NodeAttribute = NodeAttribute::Inflow;
-
-    pub fn parameters(&self) -> HashMap<&str, &DynamicFloatValue> {
-        let mut attributes = HashMap::new();
-        if let Some(p) = &self.max_flow {
-            attributes.insert("max_flow", p);
-        }
-        if let Some(p) = &self.min_flow {
-            attributes.insert("min_flow", p);
-        }
-        if let Some(p) = &self.cost {
-            attributes.insert("cost", p);
-        }
-
-        attributes
-    }
 
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
         network.add_output_node(self.meta.name.as_str(), None)?;
@@ -407,7 +363,7 @@ impl From<StorageInitialVolume> for CoreStorageInitialVolume {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, PywrNode)]
 pub struct StorageNode {
     #[serde(flatten)]
     pub meta: NodeMeta,
@@ -419,21 +375,6 @@ pub struct StorageNode {
 
 impl StorageNode {
     const DEFAULT_ATTRIBUTE: NodeAttribute = NodeAttribute::Volume;
-
-    pub fn parameters(&self) -> HashMap<&str, &DynamicFloatValue> {
-        let mut attributes = HashMap::new();
-        // if let Some(p) = &self.max_volume {
-        //     attributes.insert("max_volume", p);
-        // }
-        // if let Some(p) = &self.min_volume {
-        //     attributes.insert("min_volume", p);
-        // }
-        if let Some(p) = &self.cost {
-            attributes.insert("cost", p);
-        }
-
-        attributes
-    }
 
     pub fn add_to_model(
         &self,
@@ -635,7 +576,7 @@ impl TryFrom<ReservoirNodeV1> for StorageNode {
 /// ```
 ///
 )]
-#[derive(serde::Deserialize, serde::Serialize, Clone, Default)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Default, PywrNode)]
 pub struct CatchmentNode {
     #[serde(flatten)]
     pub meta: NodeMeta,
@@ -735,7 +676,7 @@ pub enum Factors {
     Ratio { factors: Vec<DynamicFloatValue> },
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Clone, Default)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Default, PywrNode)]
 pub struct AggregatedNode {
     #[serde(flatten)]
     pub meta: NodeMeta,
@@ -877,7 +818,7 @@ impl TryFrom<AggregatedNodeV1> for AggregatedNode {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Clone, Default)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Default, PywrNode)]
 pub struct AggregatedStorageNode {
     #[serde(flatten)]
     pub meta: NodeMeta,
