@@ -32,7 +32,7 @@ impl UniformDrawdownProfileParameter {
     }
 }
 
-impl Parameter for UniformDrawdownProfileParameter {
+impl Parameter<f64> for UniformDrawdownProfileParameter {
     fn as_any_mut(&mut self) -> &mut dyn Any {
         self
     }

@@ -26,7 +26,7 @@ impl DelayParameter {
     }
 }
 
-impl Parameter for DelayParameter {
+impl Parameter<f64> for DelayParameter {
     fn as_any_mut(&mut self) -> &mut dyn Any {
         self
     }

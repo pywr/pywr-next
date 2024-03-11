@@ -23,7 +23,7 @@ impl IndexedArrayParameter {
     }
 }
 
-impl Parameter for IndexedArrayParameter {
+impl Parameter<f64> for IndexedArrayParameter {
     fn as_any_mut(&mut self) -> &mut dyn Any {
         self
     }

@@ -9,7 +9,7 @@ use crate::parameters::{MultiValueParameterIndex, ParameterType, VariableConfig}
 use crate::recorders::{MetricSet, MetricSetIndex, MetricSetState};
 use crate::scenario::ScenarioIndex;
 use crate::solvers::{MultiStateSolver, Solver, SolverFeatures, SolverTimings};
-use crate::state::{ParameterStates, State, StateBuilder};
+use crate::state::{MultiValue, ParameterStates, State, StateBuilder};
 use crate::timestep::Timestep;
 use crate::virtual_storage::{VirtualStorage, VirtualStorageIndex, VirtualStorageReset, VirtualStorageVec};
 use crate::{parameters, recorders, IndexParameterIndex, NodeIndex, ParameterIndex, PywrError, RecorderIndex};
@@ -182,6 +182,10 @@ impl NetworkState {
     pub fn iter_parameter_states_mut(&mut self) -> IterMut<'_, ParameterStates> {
         self.parameter_internal_states.iter_mut()
     }
+
+    pub fn all_metric_set_internal_states_mut(&mut self) -> &mut [Vec<MetricSetState>] {
+        &mut self.metric_set_internal_states
+    }
 }
 
 /// A Pywr network containing nodes, edges, parameters, metric sets, etc.
@@ -197,9 +201,9 @@ pub struct Network {
     aggregated_nodes: AggregatedNodeVec,
     aggregated_storage_nodes: AggregatedStorageNodeVec,
     virtual_storage_nodes: VirtualStorageVec,
-    parameters: Vec<Box<dyn parameters::Parameter>>,
-    index_parameters: Vec<Box<dyn parameters::IndexParameter>>,
-    multi_parameters: Vec<Box<dyn parameters::MultiValueParameter>>,
+    parameters: Vec<Box<dyn parameters::Parameter<f64>>>,
+    index_parameters: Vec<Box<dyn parameters::Parameter<usize>>>,
+    multi_parameters: Vec<Box<dyn parameters::Parameter<MultiValue>>>,
     derived_metrics: Vec<DerivedMetric>,
     metric_sets: Vec<MetricSet>,
     resolve_order: Vec<ComponentType>,
@@ -358,10 +362,22 @@ impl Network {
         S::setup(self, scenario_indices.len(), settings)
     }
 
-    pub fn finalise(&self, recorder_internal_states: &mut [Option<Box<dyn Any>>]) -> Result<(), PywrError> {
+    pub fn finalise(
+        &self,
+        metric_set_states: &mut [Vec<MetricSetState>],
+        recorder_internal_states: &mut [Option<Box<dyn Any>>],
+    ) -> Result<(), PywrError> {
+        // Finally, save new data to the metric set
+
+        for ms_states in metric_set_states.iter_mut() {
+            for (metric_set, ms_state) in self.metric_sets.iter().zip(ms_states.iter_mut()) {
+                metric_set.finalise(ms_state);
+            }
+        }
+
         // Setup recorders
         for (recorder, internal_state) in self.recorders.iter().zip(recorder_internal_states) {
-            recorder.finalise(internal_state)?;
+            recorder.finalise(metric_set_states, internal_state)?;
         }
 
         Ok(())
@@ -1073,7 +1089,7 @@ impl Network {
     }
 
     /// Get a `Parameter` from a parameter's name
-    pub fn get_parameter(&self, index: &ParameterIndex) -> Result<&dyn parameters::Parameter, PywrError> {
+    pub fn get_parameter(&self, index: &ParameterIndex) -> Result<&dyn parameters::Parameter<f64>, PywrError> {
         match self.parameters.get(*index.deref()) {
             Some(p) => Ok(p.as_ref()),
             None => Err(PywrError::ParameterIndexNotFound(*index)),
@@ -1081,7 +1097,10 @@ impl Network {
     }
 
     /// Get a `Parameter` from a parameter's name
-    pub fn get_mut_parameter(&mut self, index: &ParameterIndex) -> Result<&mut dyn parameters::Parameter, PywrError> {
+    pub fn get_mut_parameter(
+        &mut self,
+        index: &ParameterIndex,
+    ) -> Result<&mut dyn parameters::Parameter<f64>, PywrError> {
         match self.parameters.get_mut(*index.deref()) {
             Some(p) => Ok(p.as_mut()),
             None => Err(PywrError::ParameterIndexNotFound(*index)),
@@ -1089,7 +1108,7 @@ impl Network {
     }
 
     /// Get a `Parameter` from a parameter's name
-    pub fn get_parameter_by_name(&self, name: &str) -> Result<&dyn parameters::Parameter, PywrError> {
+    pub fn get_parameter_by_name(&self, name: &str) -> Result<&dyn parameters::Parameter<f64>, PywrError> {
         match self.parameters.iter().find(|p| p.name() == name) {
             Some(parameter) => Ok(parameter.as_ref()),
             None => Err(PywrError::ParameterNotFound(name.to_string())),
@@ -1105,7 +1124,7 @@ impl Network {
     }
 
     /// Get a `IndexParameter` from a parameter's name
-    pub fn get_index_parameter_by_name(&self, name: &str) -> Result<&dyn parameters::IndexParameter, PywrError> {
+    pub fn get_index_parameter_by_name(&self, name: &str) -> Result<&dyn parameters::Parameter<usize>, PywrError> {
         match self.index_parameters.iter().find(|p| p.name() == name) {
             Some(parameter) => Ok(parameter.as_ref()),
             None => Err(PywrError::ParameterNotFound(name.to_string())),
@@ -1132,6 +1151,20 @@ impl Network {
     pub fn get_recorder_by_name(&self, name: &str) -> Result<&dyn recorders::Recorder, PywrError> {
         match self.recorders.iter().find(|r| r.name() == name) {
             Some(recorder) => Ok(recorder.as_ref()),
+            None => Err(PywrError::RecorderNotFound),
+        }
+    }
+
+    pub fn get_recorder_index_by_name(&self, name: &str) -> Result<RecorderIndex, PywrError> {
+        match self.recorders.iter().position(|r| r.name() == name) {
+            Some(idx) => Ok(RecorderIndex::new(idx)),
+            None => Err(PywrError::RecorderNotFound),
+        }
+    }
+
+    pub fn get_aggregated_value(&self, name: &str, recorder_states: &[Option<Box<dyn Any>>]) -> Result<f64, PywrError> {
+        match self.recorders.iter().enumerate().find(|(_, r)| r.name() == name) {
+            Some((idx, recorder)) => recorder.aggregated_value(&recorder_states[idx]),
             None => Err(PywrError::RecorderNotFound),
         }
     }
@@ -1281,7 +1314,10 @@ impl Network {
     }
 
     /// Add a `parameters::Parameter` to the network
-    pub fn add_parameter(&mut self, parameter: Box<dyn parameters::Parameter>) -> Result<ParameterIndex, PywrError> {
+    pub fn add_parameter(
+        &mut self,
+        parameter: Box<dyn parameters::Parameter<f64>>,
+    ) -> Result<ParameterIndex, PywrError> {
         if let Ok(idx) = self.get_parameter_index_by_name(&parameter.meta().name) {
             return Err(PywrError::ParameterNameAlreadyExists(
                 parameter.meta().name.to_string(),
@@ -1302,7 +1338,7 @@ impl Network {
     /// Add a `parameters::IndexParameter` to the network
     pub fn add_index_parameter(
         &mut self,
-        index_parameter: Box<dyn parameters::IndexParameter>,
+        index_parameter: Box<dyn parameters::Parameter<usize>>,
     ) -> Result<IndexParameterIndex, PywrError> {
         if let Ok(idx) = self.get_index_parameter_index_by_name(&index_parameter.meta().name) {
             return Err(PywrError::IndexParameterNameAlreadyExists(
@@ -1323,7 +1359,7 @@ impl Network {
     /// Add a `parameters::MultiValueParameter` to the network
     pub fn add_multi_value_parameter(
         &mut self,
-        parameter: Box<dyn parameters::MultiValueParameter>,
+        parameter: Box<dyn parameters::Parameter<MultiValue>>,
     ) -> Result<MultiValueParameterIndex, PywrError> {
         if let Ok(idx) = self.get_parameter_index_by_name(&parameter.meta().name) {
             return Err(PywrError::ParameterNameAlreadyExists(

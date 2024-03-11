@@ -1,9 +1,11 @@
 use crate::data_tables::LoadedTableCollection;
 use crate::error::{ConversionError, SchemaError};
 use crate::nodes::{NodeAttribute, NodeMeta};
-use crate::parameters::ConstantValue;
+use crate::parameters::{ConstantValue, DynamicFloatValue};
 use pywr_core::metric::Metric;
+use pywr_schema_macros::PywrNode;
 use pywr_v1_schema::nodes::DelayNode as DelayNodeV1;
+use std::collections::HashMap;
 
 #[doc = svgbobdoc::transform!(
 /// This node is used to introduce a delay between flows entering and leaving the node.
@@ -24,7 +26,7 @@ use pywr_v1_schema::nodes::DelayNode as DelayNodeV1;
 /// ```
 ///
 )]
-#[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, PywrNode)]
 pub struct DelayNode {
     #[serde(flatten)]
     pub meta: NodeMeta,

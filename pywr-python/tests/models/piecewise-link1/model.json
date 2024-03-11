@@ -92,11 +92,26 @@
       {
         "name": "nodes",
         "metrics": [
-          "input1",
-          "link1",
-          "mrf1",
-          "demand1",
-          "term1"
+          {
+            "type": "Default",
+            "node": "input1"
+          },
+          {
+            "type": "Default",
+            "node": "link1"
+          },
+          {
+            "type": "Default",
+            "node": "mrf1"
+          },
+          {
+            "type": "Default",
+            "node": "demand1"
+          },
+          {
+            "type": "Default",
+            "node": "term1"
+          }
         ]
       }
     ],

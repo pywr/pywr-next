@@ -4,7 +4,7 @@ use crate::scenario::ScenarioIndex;
 use crate::state::{ParameterState, State};
 use crate::timestep::Timestep;
 use crate::PywrError;
-use chrono::{Datelike, NaiveDate};
+use chrono::{Datelike, NaiveDate, NaiveDateTime, Timelike};
 use std::any::Any;
 use thiserror::Error;
 
@@ -20,17 +20,22 @@ pub enum WeeklyProfileValues {
 }
 
 impl WeeklyProfileValues {
-    /// Get the week position in a calendar year from date. The position starts from 0 on the
-    /// first week day and ends with 1 on the last week day.
-    fn current_pos(&self, date: &NaiveDate) -> f64 {
-        let current_day = date.ordinal();
-        (current_day - 1) as f64 / 7.0
+    /// Get the week position in a calendar year from date. In the first year week, the position
+    /// starts from 0 on the first week day and ends with 1 on the last day. Seconds may be
+    /// included in the position by setting with_seconds to true.
+    fn current_pos(&self, date: &NaiveDateTime, with_seconds: bool) -> f64 {
+        let mut current_day = date.ordinal() as f64;
+        if with_seconds {
+            let seconds_in_day = date.num_seconds_from_midnight() as f64 / 86400.0;
+            current_day += seconds_in_day;
+        }
+        (current_day - 1.0) / 7.0
     }
 
     /// Get the week index from the provided date
-    fn current_index(&self, date: &NaiveDate) -> usize {
+    fn current_index(&self, date: &NaiveDateTime) -> usize {
         let current_day = date.ordinal();
-        let current_pos = self.current_pos(date) as usize;
+        let current_pos = self.current_pos(date, false) as usize;
 
         // if year is leap the last week starts on the 365th day
         let is_leap_year = NaiveDate::from_ymd_opt(date.year(), 1, 1).unwrap().leap_year();
@@ -55,7 +60,7 @@ impl WeeklyProfileValues {
     }
 
     /// Get the value corresponding to the week index for the provided date
-    fn current(&self, date: &NaiveDate) -> f64 {
+    fn current(&self, date: &NaiveDateTime) -> f64 {
         // The current_index function always returns and index between 0 and
         // 52 (for Self::FiftyTwo) or 53 (Self::FiftyThree). This ensures
         // that the index is always in range in the value array below
@@ -70,7 +75,7 @@ impl WeeklyProfileValues {
     /// Get the next week's value based on the week index of the provided date. If the current
     /// week is larger than the array length, the value corresponding to the first week is
     /// returned.
-    fn next(&self, date: &NaiveDate) -> f64 {
+    fn next(&self, date: &NaiveDateTime) -> f64 {
         let current_week_index = self.current_index(date);
 
         match self {
@@ -93,7 +98,7 @@ impl WeeklyProfileValues {
 
     /// Get the previous week's value based on the week index of the provided date. If the
     /// current week index is 0 than the last array value is returned.
-    fn prev(&self, date: &NaiveDate) -> f64 {
+    fn prev(&self, date: &NaiveDateTime) -> f64 {
         let current_week_index = self.current_index(date);
 
         match self {
@@ -116,8 +121,8 @@ impl WeeklyProfileValues {
 
     /// Find the value corresponding to the given date by linearly interpolating between two
     /// consecutive week's values.
-    fn interpolate(&self, date: &NaiveDate, first_value: f64, last_value: f64) -> f64 {
-        let current_pos = self.current_pos(date);
+    fn interpolate(&self, date: &NaiveDateTime, first_value: f64, last_value: f64) -> f64 {
+        let current_pos = self.current_pos(date, true);
         let week_delta = current_pos - current_pos.floor();
         first_value + (last_value - first_value) * week_delta
     }
@@ -126,7 +131,7 @@ impl WeeklyProfileValues {
     /// interpolated profile, the upper boundary in the 52nd and 53rd week is the same when
     /// WeeklyInterpDay is First (i.e. the value on 1st January). When WeeklyInterpDay is Last the
     /// 1st and last week will share the same lower bound (i.e. the value on the last week).
-    fn value(&self, date: &NaiveDate, interp_day: &Option<WeeklyInterpDay>) -> f64 {
+    fn value(&self, date: &NaiveDateTime, interp_day: &Option<WeeklyInterpDay>) -> f64 {
         match interp_day {
             None => self.current(date),
             Some(interp_day) => match interp_day {
@@ -180,7 +185,7 @@ impl WeeklyProfileParameter {
     }
 }
 
-impl Parameter for WeeklyProfileParameter {
+impl Parameter<f64> for WeeklyProfileParameter {
     fn as_any_mut(&mut self) -> &mut dyn Any {
         self
     }
@@ -195,7 +200,7 @@ impl Parameter for WeeklyProfileParameter {
         _state: &State,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<f64, PywrError> {
-        Ok(self.values.value(&timestep.date.date(), &self.interp_day))
+        Ok(self.values.value(&timestep.date, &self.interp_day))
     }
 }
 
@@ -204,16 +209,26 @@ mod tests {
     use crate::parameters::profiles::weekly::{WeeklyInterpDay, WeeklyProfileValues};
     use crate::test_utils::assert_approx_array_eq;
     use chrono::{Datelike, NaiveDate, TimeDelta};
+    use float_cmp::{assert_approx_eq, F64Margin};
 
     /// Build a time-series from the weekly profile
     fn collect(week_size: &WeeklyProfileValues, interp_day: Option<WeeklyInterpDay>) -> Vec<f64> {
-        let dt0 = NaiveDate::from_ymd_opt(2020, 1, 1).unwrap();
-        let dt1 = NaiveDate::from_ymd_opt(2020, 12, 31).unwrap();
+        let dt0 = NaiveDate::from_ymd_opt(2020, 1, 1)
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap();
+        let dt1 = NaiveDate::from_ymd_opt(2020, 12, 31)
+            .unwrap()
+            .and_hms_opt(23, 59, 59)
+            .unwrap();
 
         let mut dt = dt0;
         let mut data: Vec<f64> = Vec::new();
         while dt <= dt1 {
-            let date = NaiveDate::from_ymd_opt(dt.year(), dt.month(), dt.day()).unwrap();
+            let date = NaiveDate::from_ymd_opt(dt.year(), dt.month(), dt.day())
+                .unwrap()
+                .and_hms_opt(0, 0, 0)
+                .unwrap();
             let value = week_size.value(&date, &interp_day);
             data.push(value);
 
@@ -450,5 +465,32 @@ mod tests {
         ];
         let values_interp_none = collect(&week_size, Some(WeeklyInterpDay::Last));
         assert_approx_array_eq(&values_interp_none, &expected_values_interp_last);
+    }
+
+    /// Test the interpolation with the time
+    #[test]
+    fn test_time_interpolation() {
+        let profile = [
+            1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0, 19.0,
+            20.0, 21.0, 22.0, 23.0, 24.0, 25.0, 26.0, 27.0, 28.0, 29.0, 30.0, 31.0, 32.0, 33.0, 34.0, 35.0, 36.0, 37.0,
+            38.0, 39.0, 40.0, 41.0, 42.0, 43.0, 44.0, 45.0, 46.0, 47.0, 48.0, 49.0, 50.0, 51.0, 52.0,
+        ];
+        let week_size = WeeklyProfileValues::FiftyTwo(profile);
+
+        let t0 = NaiveDate::from_ymd_opt(2016, 1, 1)
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap();
+        assert_eq!(week_size.interpolate(&t0, 0.0, 1.0), 0.0);
+
+        let t0 = NaiveDate::from_ymd_opt(2016, 1, 7)
+            .unwrap()
+            .and_hms_opt(12, 00, 00)
+            .unwrap();
+        let margins = F64Margin {
+            epsilon: 2.0,
+            ulps: (f64::EPSILON * 2.0) as i64,
+        };
+        assert_approx_eq!(f64, week_size.interpolate(&t0, 0.0, 1.0), 1.928571429, margins);
     }
 }

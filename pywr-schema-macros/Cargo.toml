@@ -1,0 +1,22 @@
+[package]
+name = "pywr-schema-macros"
+version = "2.0.0-dev"
+edition = "2021"
+rust-version = "1.60"
+description = "A generalised water resource allocation model."
+readme = "../README.md"
+repository = "https://github.com/pywr/pywr-next/"
+license = "MIT OR Apache-2.0"
+keywords = ["water", "modelling"]
+categories = ["science", "simulation"]
+
+[lib]
+name = "pywr_schema_macros"
+path = "src/lib.rs"
+proc-macro = true
+
+[dependencies]
+syn = "2.0.52"
+quote = "1.0.35"
+
+

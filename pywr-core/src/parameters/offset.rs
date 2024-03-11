@@ -41,7 +41,7 @@ impl OffsetParameter {
     }
 }
 
-impl Parameter for OffsetParameter {
+impl Parameter<f64> for OffsetParameter {
     fn as_any_mut(&mut self) -> &mut dyn Any {
         self
     }

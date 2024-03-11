@@ -6,7 +6,9 @@ use crate::parameters::{DynamicFloatValue, TryIntoV2Parameter};
 use crate::timeseries::LoadedTimeseriesCollection;
 use pywr_core::metric::Metric;
 use pywr_core::models::ModelDomain;
+use pywr_schema_macros::PywrNode;
 use pywr_v1_schema::nodes::RiverGaugeNode as RiverGaugeNodeV1;
+use std::collections::HashMap;
 use std::path::Path;
 
 #[doc = svgbobdoc::transform!(
@@ -24,7 +26,7 @@ use std::path::Path;
 /// ```
 ///
 )]
-#[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, PywrNode)]
 pub struct RiverGaugeNode {
     #[serde(flatten)]
     pub meta: NodeMeta,

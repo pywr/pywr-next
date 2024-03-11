@@ -21,7 +21,7 @@ impl DailyProfileParameter {
     }
 }
 
-impl Parameter for DailyProfileParameter {
+impl Parameter<f64> for DailyProfileParameter {
     fn as_any_mut(&mut self) -> &mut dyn Any {
         self
     }

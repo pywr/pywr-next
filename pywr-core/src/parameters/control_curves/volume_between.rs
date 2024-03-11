@@ -26,7 +26,7 @@ impl VolumeBetweenControlCurvesParameter {
     }
 }
 
-impl Parameter for VolumeBetweenControlCurvesParameter {
+impl Parameter<f64> for VolumeBetweenControlCurvesParameter {
     fn as_any_mut(&mut self) -> &mut dyn Any {
         self
     }

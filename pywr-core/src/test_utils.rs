@@ -158,7 +158,7 @@ pub fn simple_storage_model() -> Model {
 /// See [`AssertionRecorder`] for more information.
 pub fn run_and_assert_parameter(
     model: &mut Model,
-    parameter: Box<dyn Parameter>,
+    parameter: Box<dyn Parameter<f64>>,
     expected_values: Array2<f64>,
     ulps: Option<i64>,
     epsilon: Option<f64>,

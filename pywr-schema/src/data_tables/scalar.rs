@@ -66,12 +66,12 @@ where
     T: Copy,
 {
     fn get_scalar(&self, index: &[&str]) -> Result<T, TableError> {
-        if index.len() == 3 {
+        if index.len() == 2 {
             // I think this copies the strings and is not very efficient.
             let k = (index[0].to_string(), index[1].to_string());
             self.values.get(&k).ok_or(TableError::EntryNotFound).copied()
         } else {
-            Err(TableError::WrongKeySize(3, index.len()))
+            Err(TableError::WrongKeySize(2, index.len()))
         }
     }
 }

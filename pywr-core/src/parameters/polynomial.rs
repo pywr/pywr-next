@@ -27,7 +27,7 @@ impl Polynomial1DParameter {
     }
 }
 
-impl Parameter for Polynomial1DParameter {
+impl Parameter<f64> for Polynomial1DParameter {
     fn as_any_mut(&mut self) -> &mut dyn Any {
         self
     }

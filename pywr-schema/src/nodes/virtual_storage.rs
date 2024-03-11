@@ -10,10 +10,12 @@ use pywr_core::metric::Metric;
 use pywr_core::models::ModelDomain;
 use pywr_core::node::ConstraintValue;
 use pywr_core::virtual_storage::VirtualStorageReset;
+use pywr_schema_macros::PywrNode;
 use pywr_v1_schema::nodes::VirtualStorageNode as VirtualStorageNodeV1;
+use std::collections::HashMap;
 use std::path::Path;
 
-#[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, PywrNode)]
 pub struct VirtualStorageNode {
     #[serde(flatten)]
     pub meta: NodeMeta,

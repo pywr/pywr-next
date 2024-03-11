@@ -55,7 +55,7 @@ impl RhaiParameter {
     }
 }
 
-impl Parameter for RhaiParameter {
+impl Parameter<f64> for RhaiParameter {
     fn as_any_mut(&mut self) -> &mut dyn Any {
         self
     }

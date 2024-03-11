@@ -20,7 +20,7 @@ impl VectorParameter {
     }
 }
 
-impl Parameter for VectorParameter {
+impl Parameter<f64> for VectorParameter {
     fn as_any_mut(&mut self) -> &mut dyn Any {
         self
     }
