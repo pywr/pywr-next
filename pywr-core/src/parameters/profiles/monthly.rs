@@ -4,7 +4,7 @@ use crate::scenario::ScenarioIndex;
 use crate::state::{ParameterState, State};
 use crate::timestep::Timestep;
 use crate::PywrError;
-use chrono::{Datelike, NaiveDateTime};
+use chrono::{Datelike, NaiveDateTime, Timelike};
 use std::any::Any;
 
 #[derive(Copy, Clone)]
@@ -49,7 +49,9 @@ fn interpolate_first(date: &NaiveDateTime, first_value: f64, last_value: f64) ->
     } else if date.day() > days_in_month {
         last_value
     } else {
-        first_value + (last_value - first_value) * (date.day() - 1) as f64 / days_in_month as f64
+        first_value
+            + (last_value - first_value) * (date.day() as f64 + date.num_seconds_from_midnight() as f64 / 86400.0 - 1.0)
+                / days_in_month as f64
     }
 }
 
@@ -63,7 +65,9 @@ fn interpolate_last(date: &NaiveDateTime, first_value: f64, last_value: f64) -> 
     } else if date.day() >= days_in_month {
         last_value
     } else {
-        first_value + (last_value - first_value) * date.day() as f64 / days_in_month as f64
+        first_value
+            + (last_value - first_value) * (date.day() as f64 + date.num_seconds_from_midnight() as f64 / 86400.0)
+                / days_in_month as f64
     }
 }
 
