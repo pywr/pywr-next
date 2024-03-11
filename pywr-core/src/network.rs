@@ -5,14 +5,14 @@ use crate::edge::{EdgeIndex, EdgeVec};
 use crate::metric::Metric;
 use crate::models::ModelDomain;
 use crate::node::{ConstraintValue, Node, NodeVec, StorageInitialVolume};
-use crate::parameters::{MultiValueParameterIndex, ParameterType, VariableConfig};
+use crate::parameters::{ParameterType, VariableConfig};
 use crate::recorders::{MetricSet, MetricSetIndex, MetricSetState};
 use crate::scenario::ScenarioIndex;
 use crate::solvers::{MultiStateSolver, Solver, SolverFeatures, SolverTimings};
 use crate::state::{MultiValue, ParameterStates, State, StateBuilder};
 use crate::timestep::Timestep;
 use crate::virtual_storage::{VirtualStorage, VirtualStorageIndex, VirtualStorageReset, VirtualStorageVec};
-use crate::{parameters, recorders, IndexParameterIndex, NodeIndex, ParameterIndex, PywrError, RecorderIndex};
+use crate::{parameters, recorders, NodeIndex, ParameterIndex, PywrError, RecorderIndex};
 use rayon::prelude::*;
 use std::any::Any;
 use std::collections::HashSet;
@@ -1089,7 +1089,7 @@ impl Network {
     }
 
     /// Get a `Parameter` from a parameter's name
-    pub fn get_parameter(&self, index: &ParameterIndex) -> Result<&dyn parameters::Parameter<f64>, PywrError> {
+    pub fn get_parameter(&self, index: &ParameterIndex<f64>) -> Result<&dyn parameters::Parameter<f64>, PywrError> {
         match self.parameters.get(*index.deref()) {
             Some(p) => Ok(p.as_ref()),
             None => Err(PywrError::ParameterIndexNotFound(*index)),
@@ -1099,7 +1099,7 @@ impl Network {
     /// Get a `Parameter` from a parameter's name
     pub fn get_mut_parameter(
         &mut self,
-        index: &ParameterIndex,
+        index: &ParameterIndex<f64>,
     ) -> Result<&mut dyn parameters::Parameter<f64>, PywrError> {
         match self.parameters.get_mut(*index.deref()) {
             Some(p) => Ok(p.as_mut()),
@@ -1116,7 +1116,7 @@ impl Network {
     }
 
     /// Get a `ParameterIndex` from a parameter's name
-    pub fn get_parameter_index_by_name(&self, name: &str) -> Result<ParameterIndex, PywrError> {
+    pub fn get_parameter_index_by_name(&self, name: &str) -> Result<ParameterIndex<f64>, PywrError> {
         match self.parameters.iter().position(|p| p.name() == name) {
             Some(idx) => Ok(ParameterIndex::new(idx)),
             None => Err(PywrError::ParameterNotFound(name.to_string())),
@@ -1132,17 +1132,20 @@ impl Network {
     }
 
     /// Get a `IndexParameterIndex` from a parameter's name
-    pub fn get_index_parameter_index_by_name(&self, name: &str) -> Result<IndexParameterIndex, PywrError> {
+    pub fn get_index_parameter_index_by_name(&self, name: &str) -> Result<ParameterIndex<usize>, PywrError> {
         match self.index_parameters.iter().position(|p| p.name() == name) {
-            Some(idx) => Ok(IndexParameterIndex::new(idx)),
+            Some(idx) => Ok(ParameterIndex::new(idx)),
             None => Err(PywrError::ParameterNotFound(name.to_string())),
         }
     }
 
     /// Get a `MultiValueParameterIndex` from a parameter's name
-    pub fn get_multi_valued_parameter_index_by_name(&self, name: &str) -> Result<MultiValueParameterIndex, PywrError> {
+    pub fn get_multi_valued_parameter_index_by_name(
+        &self,
+        name: &str,
+    ) -> Result<ParameterIndex<MultiValue>, PywrError> {
         match self.multi_parameters.iter().position(|p| p.name() == name) {
-            Some(idx) => Ok(MultiValueParameterIndex::new(idx)),
+            Some(idx) => Ok(ParameterIndex::new(idx)),
             None => Err(PywrError::ParameterNotFound(name.to_string())),
         }
     }
@@ -1317,7 +1320,7 @@ impl Network {
     pub fn add_parameter(
         &mut self,
         parameter: Box<dyn parameters::Parameter<f64>>,
-    ) -> Result<ParameterIndex, PywrError> {
+    ) -> Result<ParameterIndex<f64>, PywrError> {
         if let Ok(idx) = self.get_parameter_index_by_name(&parameter.meta().name) {
             return Err(PywrError::ParameterNameAlreadyExists(
                 parameter.meta().name.to_string(),
@@ -1339,7 +1342,7 @@ impl Network {
     pub fn add_index_parameter(
         &mut self,
         index_parameter: Box<dyn parameters::Parameter<usize>>,
-    ) -> Result<IndexParameterIndex, PywrError> {
+    ) -> Result<ParameterIndex<usize>, PywrError> {
         if let Ok(idx) = self.get_index_parameter_index_by_name(&index_parameter.meta().name) {
             return Err(PywrError::IndexParameterNameAlreadyExists(
                 index_parameter.meta().name.to_string(),
@@ -1347,7 +1350,7 @@ impl Network {
             ));
         }
 
-        let parameter_index = IndexParameterIndex::new(self.index_parameters.len());
+        let parameter_index = ParameterIndex::new(self.index_parameters.len());
 
         self.index_parameters.push(index_parameter);
         // .. and add it to the resolve order
@@ -1360,7 +1363,7 @@ impl Network {
     pub fn add_multi_value_parameter(
         &mut self,
         parameter: Box<dyn parameters::Parameter<MultiValue>>,
-    ) -> Result<MultiValueParameterIndex, PywrError> {
+    ) -> Result<ParameterIndex<MultiValue>, PywrError> {
         if let Ok(idx) = self.get_parameter_index_by_name(&parameter.meta().name) {
             return Err(PywrError::ParameterNameAlreadyExists(
                 parameter.meta().name.to_string(),
@@ -1368,7 +1371,7 @@ impl Network {
             ));
         }
 
-        let parameter_index = MultiValueParameterIndex::new(self.multi_parameters.len());
+        let parameter_index = ParameterIndex::new(self.multi_parameters.len());
 
         // Add the parameter ...
         self.multi_parameters.push(parameter);
@@ -1457,7 +1460,7 @@ impl Network {
     /// This will update the internal state of the parameter with the new values for all scenarios.
     pub fn set_f64_parameter_variable_values(
         &self,
-        parameter_index: ParameterIndex,
+        parameter_index: ParameterIndex<f64>,
         values: &[f64],
         variable_config: &dyn VariableConfig,
         state: &mut NetworkState,
@@ -1487,7 +1490,7 @@ impl Network {
     /// Only the internal state of the parameter for the given scenario will be updated.
     pub fn set_f64_parameter_variable_values_for_scenario(
         &self,
-        parameter_index: ParameterIndex,
+        parameter_index: ParameterIndex<f64>,
         scenario_index: ScenarioIndex,
         values: &[f64],
         variable_config: &dyn VariableConfig,
@@ -1511,7 +1514,7 @@ impl Network {
     /// Return a vector of the current values of active variable parameters.
     pub fn get_f64_parameter_variable_values_for_scenario(
         &self,
-        parameter_index: ParameterIndex,
+        parameter_index: ParameterIndex<f64>,
         scenario_index: ScenarioIndex,
         state: &NetworkState,
     ) -> Result<Option<Vec<f64>>, PywrError> {
@@ -1533,7 +1536,7 @@ impl Network {
 
     pub fn get_f64_parameter_variable_values(
         &self,
-        parameter_index: ParameterIndex,
+        parameter_index: ParameterIndex<f64>,
         state: &NetworkState,
     ) -> Result<Vec<Option<Vec<f64>>>, PywrError> {
         match self.parameters.get(*parameter_index.deref()) {
@@ -1563,7 +1566,7 @@ impl Network {
     /// This will update the internal state of the parameter with the new values for scenarios.
     pub fn set_u32_parameter_variable_values(
         &self,
-        parameter_index: ParameterIndex,
+        parameter_index: ParameterIndex<f64>,
         values: &[u32],
         variable_config: &dyn VariableConfig,
         state: &mut NetworkState,
@@ -1593,7 +1596,7 @@ impl Network {
     /// Only the internal state of the parameter for the given scenario will be updated.
     pub fn set_u32_parameter_variable_values_for_scenario(
         &self,
-        parameter_index: ParameterIndex,
+        parameter_index: ParameterIndex<f64>,
         scenario_index: ScenarioIndex,
         values: &[u32],
         variable_config: &dyn VariableConfig,
@@ -1617,7 +1620,7 @@ impl Network {
     /// Return a vector of the current values of active variable parameters.
     pub fn get_u32_parameter_variable_values_for_scenario(
         &self,
-        parameter_index: ParameterIndex,
+        parameter_index: ParameterIndex<f64>,
         scenario_index: ScenarioIndex,
         state: &NetworkState,
     ) -> Result<Option<Vec<u32>>, PywrError> {

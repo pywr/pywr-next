@@ -5,7 +5,7 @@ use crate::parameters::{
     DynamicFloatValueType, DynamicIndexValue, IntoV2Parameter, ParameterMeta, TryFromV1Parameter, TryIntoV2Parameter,
 };
 use pywr_core::models::ModelDomain;
-use pywr_core::parameters::IndexParameterIndex;
+use pywr_core::parameters::ParameterIndex;
 use pywr_v1_schema::parameters::AsymmetricSwitchIndexParameter as AsymmetricSwitchIndexParameterV1;
 use std::collections::HashMap;
 use std::path::Path;
@@ -34,7 +34,7 @@ impl AsymmetricSwitchIndexParameter {
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
         inter_network_transfers: &[PywrMultiNetworkTransfer],
-    ) -> Result<IndexParameterIndex, SchemaError> {
+    ) -> Result<ParameterIndex<usize>, SchemaError> {
         let on_index_parameter =
             self.on_index_parameter
                 .load(network, schema, domain, tables, data_path, inter_network_transfers)?;

@@ -5,7 +5,7 @@ use crate::parameters::{
     DynamicFloatValue, DynamicFloatValueType, IntoV2Parameter, ParameterMeta, TryFromV1Parameter, TryIntoV2Parameter,
 };
 use pywr_core::models::ModelDomain;
-use pywr_core::parameters::IndexParameterIndex;
+use pywr_core::parameters::ParameterIndex;
 use pywr_v1_schema::parameters::{
     ParameterThresholdParameter as ParameterThresholdParameterV1, Predicate as PredicateV1,
 };
@@ -77,7 +77,7 @@ impl ParameterThresholdParameter {
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
         inter_network_transfers: &[PywrMultiNetworkTransfer],
-    ) -> Result<IndexParameterIndex, SchemaError> {
+    ) -> Result<ParameterIndex<usize>, SchemaError> {
         let metric = self
             .parameter
             .load(network, schema, domain, tables, data_path, inter_network_transfers)?;

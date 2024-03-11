@@ -170,7 +170,7 @@ impl ConstantParameter {
         &self,
         network: &mut pywr_core::network::Network,
         tables: &LoadedTableCollection,
-    ) -> Result<ParameterIndex, SchemaError> {
+    ) -> Result<ParameterIndex<f64>, SchemaError> {
         let p = pywr_core::parameters::ConstantParameter::new(&self.meta.name, self.value.load(tables)?);
         Ok(network.add_parameter(Box::new(p))?)
     }
@@ -226,7 +226,7 @@ impl MaxParameter {
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
         inter_network_transfers: &[PywrMultiNetworkTransfer],
-    ) -> Result<ParameterIndex, SchemaError> {
+    ) -> Result<ParameterIndex<f64>, SchemaError> {
         let idx = self
             .parameter
             .load(network, schema, domain, tables, data_path, inter_network_transfers)?;
@@ -301,7 +301,7 @@ impl DivisionParameter {
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
         inter_network_transfers: &[PywrMultiNetworkTransfer],
-    ) -> Result<ParameterIndex, SchemaError> {
+    ) -> Result<ParameterIndex<f64>, SchemaError> {
         let n = self
             .numerator
             .load(network, schema, domain, tables, data_path, inter_network_transfers)?;
@@ -376,7 +376,7 @@ impl MinParameter {
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
         inter_network_transfers: &[PywrMultiNetworkTransfer],
-    ) -> Result<ParameterIndex, SchemaError> {
+    ) -> Result<ParameterIndex<f64>, SchemaError> {
         let idx = self
             .parameter
             .load(network, schema, domain, tables, data_path, inter_network_transfers)?;
@@ -433,7 +433,7 @@ impl NegativeParameter {
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
         inter_network_transfers: &[PywrMultiNetworkTransfer],
-    ) -> Result<ParameterIndex, SchemaError> {
+    ) -> Result<ParameterIndex<f64>, SchemaError> {
         let idx = self
             .parameter
             .load(network, schema, domain, tables, data_path, inter_network_transfers)?;

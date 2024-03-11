@@ -53,7 +53,7 @@ use crate::parameters::interpolated::InterpolatedParameter;
 pub use offset::OffsetParameter;
 use pywr_core::metric::Metric;
 use pywr_core::models::{ModelDomain, MultiNetworkTransferIndex};
-use pywr_core::parameters::{IndexParameterIndex, IndexValue, ParameterType};
+use pywr_core::parameters::{IndexValue, ParameterIndex, ParameterType};
 use pywr_v1_schema::parameters::{
     CoreParameter, ExternalDataRef as ExternalDataRefV1, Parameter as ParameterV1, ParameterMeta as ParameterMetaV1,
     ParameterValue as ParameterValueV1, TableIndex as TableIndexV1, TableIndexEntry as TableIndexEntryV1,
@@ -718,7 +718,7 @@ impl ParameterIndexValue {
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
         inter_network_transfers: &[PywrMultiNetworkTransfer],
-    ) -> Result<IndexParameterIndex, SchemaError> {
+    ) -> Result<ParameterIndex<usize>, SchemaError> {
         match self {
             Self::Reference(name) => {
                 // This should be an existing parameter
