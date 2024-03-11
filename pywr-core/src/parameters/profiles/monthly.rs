@@ -67,7 +67,7 @@ fn interpolate_last(date: &NaiveDateTime, first_value: f64, last_value: f64) -> 
     }
 }
 
-impl Parameter for MonthlyProfileParameter {
+impl Parameter<f64> for MonthlyProfileParameter {
     fn as_any_mut(&mut self) -> &mut dyn Any {
         self
     }

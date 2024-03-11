@@ -37,7 +37,7 @@ impl ConstantParameter {
     }
 }
 
-impl Parameter for ConstantParameter {
+impl Parameter<f64> for ConstantParameter {
     fn as_any_mut(&mut self) -> &mut dyn Any {
         self
     }

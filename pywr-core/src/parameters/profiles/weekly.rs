@@ -180,7 +180,7 @@ impl WeeklyProfileParameter {
     }
 }
 
-impl Parameter for WeeklyProfileParameter {
+impl Parameter<f64> for WeeklyProfileParameter {
     fn as_any_mut(&mut self) -> &mut dyn Any {
         self
     }

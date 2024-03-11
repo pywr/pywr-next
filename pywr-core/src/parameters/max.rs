@@ -24,7 +24,7 @@ impl MaxParameter {
     }
 }
 
-impl Parameter for MaxParameter {
+impl Parameter<f64> for MaxParameter {
     fn as_any_mut(&mut self) -> &mut dyn Any {
         self
     }

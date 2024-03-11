@@ -28,7 +28,7 @@ pub use self::rhai::RhaiParameter;
 use super::PywrError;
 use crate::network::Network;
 use crate::scenario::ScenarioIndex;
-use crate::state::{MultiValue, ParameterState, State};
+use crate::state::{ParameterState, State};
 use crate::timestep::Timestep;
 pub use activation_function::ActivationFunction;
 pub use aggregated::{AggFunc, AggregatedParameter};
@@ -200,8 +200,10 @@ pub fn downcast_variable_config_ref<T: 'static>(variable_config: &dyn VariableCo
     }
 }
 
-// TODO It might be possible to make these three traits into a single generic trait
-pub trait Parameter: Send + Sync {
+/// A trait that defines a component that produces a value each time-step.
+///
+/// The trait is generic over the type of the value produced.
+pub trait Parameter<T>: Send + Sync {
     fn as_any_mut(&mut self) -> &mut dyn Any;
     fn meta(&self) -> &ParameterMeta;
     fn name(&self) -> &str {
@@ -223,7 +225,7 @@ pub trait Parameter: Send + Sync {
         model: &Network,
         state: &State,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<f64, PywrError>;
+    ) -> Result<T, PywrError>;
 
     fn after(
         &self,
@@ -264,75 +266,6 @@ pub trait Parameter: Send + Sync {
     /// Can this parameter be a variable
     fn can_be_u32_variable(&self) -> bool {
         self.as_u32_variable().is_some()
-    }
-}
-
-pub trait IndexParameter: Send + Sync {
-    fn meta(&self) -> &ParameterMeta;
-    fn name(&self) -> &str {
-        self.meta().name.as_str()
-    }
-
-    fn setup(
-        &self,
-        _timesteps: &[Timestep],
-        _scenario_index: &ScenarioIndex,
-    ) -> Result<Option<Box<dyn ParameterState>>, PywrError> {
-        Ok(None)
-    }
-
-    fn compute(
-        &self,
-        timestep: &Timestep,
-        scenario_index: &ScenarioIndex,
-        model: &Network,
-        state: &State,
-        internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<usize, PywrError>;
-
-    fn after(
-        &self,
-        #[allow(unused_variables)] timestep: &Timestep,
-        #[allow(unused_variables)] scenario_index: &ScenarioIndex,
-        #[allow(unused_variables)] model: &Network,
-        #[allow(unused_variables)] state: &State,
-        #[allow(unused_variables)] internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<(), PywrError> {
-        Ok(())
-    }
-}
-
-pub trait MultiValueParameter: Send + Sync {
-    fn meta(&self) -> &ParameterMeta;
-    fn name(&self) -> &str {
-        self.meta().name.as_str()
-    }
-    fn setup(
-        &self,
-        #[allow(unused_variables)] timesteps: &[Timestep],
-        #[allow(unused_variables)] scenario_index: &ScenarioIndex,
-    ) -> Result<Option<Box<dyn ParameterState>>, PywrError> {
-        Ok(None)
-    }
-
-    fn compute(
-        &self,
-        timestep: &Timestep,
-        scenario_index: &ScenarioIndex,
-        model: &Network,
-        state: &State,
-        internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<MultiValue, PywrError>;
-
-    fn after(
-        &self,
-        #[allow(unused_variables)] timestep: &Timestep,
-        #[allow(unused_variables)] scenario_index: &ScenarioIndex,
-        #[allow(unused_variables)] model: &Network,
-        #[allow(unused_variables)] state: &State,
-        #[allow(unused_variables)] internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<(), PywrError> {
-        Ok(())
     }
 }
 

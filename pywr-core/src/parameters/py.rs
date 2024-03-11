@@ -1,7 +1,7 @@
 use super::{IndexValue, Parameter, ParameterMeta, PywrError, Timestep};
 use crate::metric::Metric;
 use crate::network::Network;
-use crate::parameters::{downcast_internal_state_mut, MultiValueParameter};
+use crate::parameters::downcast_internal_state_mut;
 use crate::scenario::ScenarioIndex;
 use crate::state::{MultiValue, ParameterState, State};
 use pyo3::prelude::*;
@@ -69,7 +69,7 @@ impl PyParameter {
     }
 }
 
-impl Parameter for PyParameter {
+impl Parameter<f64> for PyParameter {
     fn as_any_mut(&mut self) -> &mut dyn Any {
         self
     }
@@ -164,7 +164,11 @@ impl Parameter for PyParameter {
     }
 }
 
-impl MultiValueParameter for PyParameter {
+impl Parameter<MultiValue> for PyParameter {
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }
@@ -343,7 +347,7 @@ class MyParameter:
 
         let mut internal_p_states: Vec<_> = scenario_indices
             .iter()
-            .map(|si| Parameter::setup(&param, &timesteps, si).expect("Could not setup the PyParameter"))
+            .map(|si| Parameter::<f64>::setup(&param, &timesteps, si).expect("Could not setup the PyParameter"))
             .collect();
 
         let model = Network::default();
@@ -412,14 +416,14 @@ class MyParameter:
 
         let mut internal_p_states: Vec<_> = scenario_indices
             .iter()
-            .map(|si| MultiValueParameter::setup(&param, &timesteps, si).expect("Could not setup the PyParameter"))
+            .map(|si| Parameter::<MultiValue>::setup(&param, &timesteps, si).expect("Could not setup the PyParameter"))
             .collect();
 
         let model = Network::default();
 
         for ts in timesteps {
             for (si, internal) in scenario_indices.iter().zip(internal_p_states.iter_mut()) {
-                let value = MultiValueParameter::compute(&param, ts, si, &model, &state, internal).unwrap();
+                let value = Parameter::<MultiValue>::compute(&param, ts, si, &model, &state, internal).unwrap();
 
                 assert_approx_eq!(f64, *value.get_value("a-float").unwrap(), std::f64::consts::PI);
 
