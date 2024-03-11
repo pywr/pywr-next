@@ -19,6 +19,16 @@ pub enum PythonModule {
     Path(PathBuf),
 }
 
+/// The expected return type of the Python parameter.
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum PythonReturnType {
+    #[default]
+    Float,
+    Int,
+    Dict,
+}
+
 /// A Parameter that uses a Python object for its calculations.
 ///
 /// This struct defines a schema for loading a [`crate::parameters::PyParameter`] from external
@@ -68,10 +78,10 @@ pub struct PythonParameter {
     pub module: PythonModule,
     /// The name of Python object from the module to use.
     pub object: String,
-    /// Is this a multi-valued parameter or not. If true then the calculation method should
-    /// return a dictionary with string keys and either floats or ints as values.
+    /// The return type of the Python calculation. This is used to convert the Python return value
+    /// to the appropriate type for the Parameter.
     #[serde(default)]
-    pub multi: bool,
+    pub return_type: PythonReturnType,
     /// Position arguments to pass to the object during setup.
     pub args: Vec<serde_json::Value>,
     /// Keyword arguments to pass to the object during setup.
@@ -211,10 +221,11 @@ impl PythonParameter {
         };
 
         let p = PyParameter::new(&self.meta.name, object, args, kwargs, &metrics, &indices);
-        let pt = if self.multi {
-            ParameterType::Multi(network.add_multi_value_parameter(Box::new(p))?)
-        } else {
-            ParameterType::Parameter(network.add_parameter(Box::new(p))?)
+
+        let pt = match self.return_type {
+            PythonReturnType::Float => ParameterType::Parameter(network.add_parameter(Box::new(p))?),
+            PythonReturnType::Int => ParameterType::Index(network.add_index_parameter(Box::new(p))?),
+            PythonReturnType::Dict => ParameterType::Multi(network.add_multi_value_parameter(Box::new(p))?),
         };
 
         Ok(pt)
@@ -231,42 +242,24 @@ mod tests {
     use pywr_core::network::Network;
     use pywr_core::test_utils::default_time_domain;
     use serde_json::json;
-    use std::fs::File;
-    use std::io::Write;
-    use tempfile::tempdir;
+    use std::path::PathBuf;
 
     #[test]
-    fn test_python_parameter() {
-        let dir = tempdir().unwrap();
-
-        let file_path = dir.path().join("my_parameter.py");
+    fn test_python_float_parameter() {
+        let mut py_fn = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        py_fn.push("src/test_models/test_parameters.py");
 
         let data = json!(
             {
-                "name": "my-custom-calculation",
+                "name": "my-float-parameter",
                 "type": "Python",
-                "path": file_path,
-                "object": "MyParameter",
+                "path": py_fn,
+                "object": "FloatParameter",
                 "args": [0, ],
                 "kwargs": {},
             }
         )
         .to_string();
-
-        let mut file = File::create(file_path).unwrap();
-        write!(
-            file,
-            r#"
-class MyParameter:
-    def __init__(self, count, *args, **kwargs):
-        self.count = 0
-
-    def calc(self, ts, si, p_values):
-        self.count += si
-        return float(self.count + ts.day)
-"#
-        )
-        .unwrap();
 
         // Init Python
         pyo3::prepare_freethreaded_python();
@@ -282,5 +275,42 @@ class MyParameter:
         param
             .add_to_model(&mut network, &schema, &domain, &tables, None, &[], &timeseries)
             .unwrap();
+
+        assert!(network.get_parameter_by_name("my-float-parameter").is_ok());
+    }
+
+    #[test]
+    fn test_python_int_parameter() {
+        let mut py_fn = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        py_fn.push("src/test_models/test_parameters.py");
+
+        let data = json!(
+            {
+                "name": "my-int-parameter",
+                "type": "Python",
+                "path": py_fn,
+                "return_type": "int",
+                "object": "FloatParameter",
+                "args": [0, ],
+                "kwargs": {},
+            }
+        )
+        .to_string();
+
+        // Init Python
+        pyo3::prepare_freethreaded_python();
+        // Load the schema ...
+        let param: PythonParameter = serde_json::from_str(data.as_str()).unwrap();
+        // ... add it to an empty network
+        // this should trigger loading the module and extracting the class
+        let domain: ModelDomain = default_time_domain().into();
+        let schema = PywrNetwork::default();
+        let mut network = Network::default();
+        let tables = LoadedTableCollection::from_schema(None, None).unwrap();
+        param
+            .add_to_model(&mut network, &schema, &domain, &tables, None, &[])
+            .unwrap();
+
+        assert!(network.get_index_parameter_by_name("my-int-parameter").is_ok());
     }
 }
