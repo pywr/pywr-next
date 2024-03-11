@@ -17,7 +17,7 @@ enum PywrField {
 /// Generates a [`TokenStream`] containing the implementation of two methods, `parameters`
 /// and `parameters_mut`, for the given struct.
 ///
-/// Both method returns a [`HashMap`] of parameter names to [`DynamicFloatValue`]. This 
+/// Both method returns a [`HashMap`] of parameter names to [`DynamicFloatValue`]. This
 /// is intended to be used for nodes and parameter structs in the Pywr schema.
 fn impl_parameter_references_derive(ast: &syn::DeriveInput) -> TokenStream {
     // Name of the node type
@@ -157,9 +157,7 @@ fn type_to_ident(ty: &syn::Type) -> Option<PywrField> {
                         // Match on path types that are no self types.
                         let arg_type_path = match arg_ty {
                             Some(ty) => match ty {
-                                syn::Type::Path(type_path) if type_path.qself.is_none() => {
-                                    Some(type_path)
-                                }
+                                syn::Type::Path(type_path) if type_path.qself.is_none() => Some(type_path),
                                 _ => None,
                             },
                             None => None,
