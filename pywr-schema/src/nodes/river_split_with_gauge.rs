@@ -7,7 +7,9 @@ use pywr_core::aggregated_node::Factors;
 use pywr_core::metric::Metric;
 use pywr_core::models::ModelDomain;
 use pywr_core::node::NodeIndex;
+use pywr_schema_macros::PywrNode;
 use pywr_v1_schema::nodes::RiverSplitWithGaugeNode as RiverSplitWithGaugeNodeV1;
+use std::collections::HashMap;
 use std::path::Path;
 
 #[doc = svgbobdoc::transform!(
@@ -32,7 +34,7 @@ use std::path::Path;
 /// ```
 ///
 )]
-#[derive(serde::Deserialize, serde::Serialize, Clone, Default)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Default, PywrNode)]
 pub struct RiverSplitWithGaugeNode {
     #[serde(flatten)]
     pub meta: NodeMeta,

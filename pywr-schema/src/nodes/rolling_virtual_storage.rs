@@ -9,7 +9,9 @@ use pywr_core::models::ModelDomain;
 use pywr_core::node::{ConstraintValue, StorageInitialVolume};
 use pywr_core::timestep::TimeDomain;
 use pywr_core::virtual_storage::VirtualStorageReset;
+use pywr_schema_macros::PywrNode;
 use pywr_v1_schema::nodes::RollingVirtualStorageNode as RollingVirtualStorageNodeV1;
+use std::collections::HashMap;
 use std::num::NonZeroUsize;
 use std::path::Path;
 
@@ -61,7 +63,7 @@ impl RollingWindow {
 /// The rolling virtual storage node is useful for representing rolling licences. For example, a 30-day or 90-day
 /// licence on a water abstraction.
 ///
-#[derive(serde::Deserialize, serde::Serialize, Clone, Default)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Default, PywrNode)]
 pub struct RollingVirtualStorageNode {
     #[serde(flatten)]
     pub meta: NodeMeta,

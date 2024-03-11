@@ -8,6 +8,8 @@ use pywr_core::metric::Metric;
 use pywr_core::models::ModelDomain;
 use pywr_core::node::{ConstraintValue, StorageInitialVolume};
 use pywr_core::parameters::VolumeBetweenControlCurvesParameter;
+use pywr_schema_macros::PywrNode;
+use std::collections::HashMap;
 use std::path::Path;
 
 #[derive(serde::Deserialize, serde::Serialize, Clone)]
@@ -42,7 +44,7 @@ pub struct PiecewiseStore {
 /// ```
 ///
 )]
-#[derive(serde::Deserialize, serde::Serialize, Clone, Default)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Default, PywrNode)]
 pub struct PiecewiseStorageNode {
     #[serde(flatten)]
     pub meta: NodeMeta,
