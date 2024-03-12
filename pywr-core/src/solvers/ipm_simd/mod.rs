@@ -16,7 +16,8 @@ pub use settings::{SimdIpmSolverSettings, SimdIpmSolverSettingsBuilder};
 use std::collections::BTreeMap;
 use std::num::NonZeroUsize;
 use std::ops::Deref;
-use std::simd::{LaneCount, Simd, SimdFloat, SupportedLaneCount};
+use std::simd::prelude::SimdFloat;
+use std::simd::{LaneCount, Simd, SupportedLaneCount};
 use std::time::Instant;
 
 const B_MAX: f64 = 999999.0;
