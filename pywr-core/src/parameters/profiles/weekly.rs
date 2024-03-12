@@ -5,7 +5,6 @@ use crate::state::{ParameterState, State};
 use crate::timestep::Timestep;
 use crate::PywrError;
 use chrono::{Datelike, NaiveDate, NaiveDateTime, Timelike};
-use std::any::Any;
 use thiserror::Error;
 
 pub enum WeeklyInterpDay {
@@ -186,9 +185,6 @@ impl WeeklyProfileParameter {
 }
 
 impl Parameter<f64> for WeeklyProfileParameter {
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
-    }
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }

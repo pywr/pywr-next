@@ -5,7 +5,6 @@ use crate::scenario::ScenarioIndex;
 use crate::state::{ParameterState, State};
 use crate::timestep::Timestep;
 use crate::PywrError;
-use std::any::Any;
 
 pub struct ControlCurveIndexParameter {
     meta: ParameterMeta,
@@ -24,10 +23,6 @@ impl ControlCurveIndexParameter {
 }
 
 impl Parameter<usize> for ControlCurveIndexParameter {
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
-    }
-
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }

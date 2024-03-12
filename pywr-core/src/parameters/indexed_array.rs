@@ -5,7 +5,6 @@ use crate::scenario::ScenarioIndex;
 use crate::state::{ParameterState, State};
 use crate::timestep::Timestep;
 use crate::PywrError;
-use std::any::Any;
 
 pub struct IndexedArrayParameter {
     meta: ParameterMeta,
@@ -24,9 +23,6 @@ impl IndexedArrayParameter {
 }
 
 impl Parameter<f64> for IndexedArrayParameter {
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
-    }
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }
