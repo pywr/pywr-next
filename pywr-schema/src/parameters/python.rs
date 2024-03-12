@@ -30,10 +30,10 @@ pub enum PythonReturnType {
 
 /// A Parameter that uses a Python object for its calculations.
 ///
-/// This struct defines a schema for loading a [`crate::parameters::PyParameter`] from external
+/// This struct defines a schema for loading a [`PyParameter`] from external
 /// sources. The user provides the name of an object in the given module. Typically, this object will be
 /// a class the user has written. For more information on the expected format and signature of
-/// this object please refer to the [`crate::parameters::PyParameter`] documentation. The object
+/// this object please refer to the [`PyParameter`] documentation. The object
 /// is initialised with user provided positional and/or keyword arguments that can be provided
 /// here.
 ///
