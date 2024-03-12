@@ -42,6 +42,8 @@ jobs:
         with:
           submodules: true
       - uses: dtolnay/rust-toolchain@nightly
+      - name: Install Intel OpenCL
+        run: sudo apt-get install -y intel-opencl-icd ocl-icd-opencl-dev
       - name: Build
         run: cargo +nightly build --verbose --no-default-features --features ipm-simd,ipm-ocl
       - name: Run tests
