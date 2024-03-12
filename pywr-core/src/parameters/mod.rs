@@ -204,7 +204,6 @@ pub fn downcast_variable_config_ref<T: 'static>(variable_config: &dyn VariableCo
 ///
 /// The trait is generic over the type of the value produced.
 pub trait Parameter<T>: Send + Sync {
-    fn as_any_mut(&mut self) -> &mut dyn Any;
     fn meta(&self) -> &ParameterMeta;
     fn name(&self) -> &str {
         self.meta().name.as_str()

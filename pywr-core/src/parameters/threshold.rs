@@ -5,7 +5,6 @@ use crate::scenario::ScenarioIndex;
 use crate::state::{ParameterState, State};
 use crate::timestep::Timestep;
 use crate::PywrError;
-use std::any::Any;
 use std::str::FromStr;
 
 pub enum Predicate {
@@ -52,10 +51,6 @@ impl ThresholdParameter {
 }
 
 impl Parameter<usize> for ThresholdParameter {
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
-    }
-
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }

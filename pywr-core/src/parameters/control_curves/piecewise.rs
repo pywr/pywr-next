@@ -6,7 +6,6 @@ use crate::scenario::ScenarioIndex;
 use crate::state::{ParameterState, State};
 use crate::timestep::Timestep;
 use crate::PywrError;
-use std::any::Any;
 
 pub struct PiecewiseInterpolatedParameter {
     meta: ParameterMeta,
@@ -38,9 +37,6 @@ impl PiecewiseInterpolatedParameter {
 }
 
 impl Parameter<f64> for PiecewiseInterpolatedParameter {
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
-    }
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }

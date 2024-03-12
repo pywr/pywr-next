@@ -4,7 +4,6 @@ use crate::scenario::ScenarioIndex;
 use crate::state::{ParameterState, State};
 use crate::timestep::Timestep;
 use crate::PywrError;
-use std::any::Any;
 
 pub struct AsymmetricSwitchIndexParameter {
     meta: ParameterMeta,
@@ -23,10 +22,6 @@ impl AsymmetricSwitchIndexParameter {
 }
 
 impl Parameter<usize> for AsymmetricSwitchIndexParameter {
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
-    }
-
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }

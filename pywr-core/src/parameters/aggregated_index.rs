@@ -6,7 +6,6 @@ use crate::parameters::{IndexValue, Parameter, ParameterMeta};
 use crate::scenario::ScenarioIndex;
 use crate::state::{ParameterState, State};
 use crate::timestep::Timestep;
-use std::any::Any;
 use std::str::FromStr;
 
 pub enum AggIndexFunc {
@@ -51,10 +50,6 @@ impl AggregatedIndexParameter {
 }
 
 impl Parameter<usize> for AggregatedIndexParameter {
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
-    }
-
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }

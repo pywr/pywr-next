@@ -1,11 +1,10 @@
 use crate::network::Network;
-use crate::parameters::{Parameter, ParameterIndex, ParameterMeta};
+use crate::parameters::{Parameter, ParameterMeta};
 use crate::scenario::ScenarioIndex;
 use crate::state::{ParameterState, State};
 use crate::timestep::Timestep;
 use crate::PywrError;
 use chrono::{Datelike, NaiveDateTime, Timelike};
-use std::any::Any;
 
 #[derive(Copy, Clone)]
 pub enum MonthlyInterpDay {
@@ -72,9 +71,6 @@ fn interpolate_last(date: &NaiveDateTime, first_value: f64, last_value: f64) -> 
 }
 
 impl Parameter<f64> for MonthlyProfileParameter {
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
-    }
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }
@@ -107,23 +103,5 @@ impl Parameter<f64> for MonthlyProfileParameter {
             None => self.values[timestep.date.month() as usize - 1],
         };
         Ok(v)
-    }
-}
-
-// TODO this is a proof-of-concept of a external "variable"
-#[allow(dead_code)]
-pub struct MonthlyProfileVariable {
-    index: ParameterIndex,
-}
-
-#[allow(dead_code)]
-impl MonthlyProfileVariable {
-    fn update(&self, model: &mut Network, new_values: &[f64]) {
-        let p = model.get_mut_parameter(&self.index).unwrap();
-
-        let profile = p.as_any_mut().downcast_mut::<MonthlyProfileParameter>().unwrap();
-
-        // This panics if the slices are different lengths!
-        profile.values.copy_from_slice(new_values);
     }
 }

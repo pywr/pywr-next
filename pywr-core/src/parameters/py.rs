@@ -6,7 +6,6 @@ use crate::scenario::ScenarioIndex;
 use crate::state::{MultiValue, ParameterState, State};
 use pyo3::prelude::*;
 use pyo3::types::{IntoPyDict, PyDict, PyFloat, PyLong, PyTuple};
-use std::any::Any;
 use std::collections::HashMap;
 
 pub struct PyParameter {
@@ -146,9 +145,7 @@ impl PyParameter {
 }
 
 impl Parameter<f64> for PyParameter {
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
-    }
+
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }
@@ -185,9 +182,7 @@ impl Parameter<f64> for PyParameter {
 }
 
 impl Parameter<usize> for PyParameter {
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
-    }
+
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }
@@ -224,10 +219,6 @@ impl Parameter<usize> for PyParameter {
 }
 
 impl Parameter<MultiValue> for PyParameter {
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
-    }
-
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }
