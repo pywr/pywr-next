@@ -42,7 +42,6 @@ jobs:
         with:
           submodules: true
       - uses: dtolnay/rust-toolchain@nightly
-      - run: cargo test --all-features
       - name: Build
         run: cargo +nightly build --verbose --no-default-features --features ipm-simd,ipm-ocl
       - name: Run tests
