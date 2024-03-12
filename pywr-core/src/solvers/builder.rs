@@ -293,6 +293,14 @@ where
         I::from(self.builder.col_upper.len()).unwrap()
     }
 
+    pub fn num_rows(&self) -> I {
+        I::from(self.builder.row_upper.len()).unwrap()
+    }
+
+    pub fn num_non_zero(&self) -> I {
+        I::from(self.builder.elements.len()).unwrap()
+    }
+
     pub fn col_lower(&self) -> &[f64] {
         &self.builder.col_lower
     }
@@ -311,6 +319,10 @@ where
 
     pub fn row_upper(&self) -> &[f64] {
         &self.builder.row_upper
+    }
+
+    pub fn row_mask(&self) -> &[I] {
+        &self.builder.row_mask
     }
 
     pub fn row_starts(&self) -> &[I] {
