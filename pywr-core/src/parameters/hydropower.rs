@@ -8,17 +8,17 @@ use crate::utils::inverse_hydropower_calculation;
 use crate::PywrError;
 use std::any::Any;
 
-pub struct TurbineData {
+pub struct HydropowerTargetData {
     pub target: Metric,
-    pub elevation: f64,
-    pub min_head: f64,
+    pub elevation: Option<f64>,
+    pub min_head: Option<f64>,
     pub max_flow: Option<Metric>,
     pub min_flow: Option<Metric>,
-    pub efficiency: f64,
+    pub efficiency: Option<f64>,
     pub water_elevation: Option<Metric>,
-    pub water_density: f64,
-    pub flow_unit_conversion: f64,
-    pub energy_unit_conversion: f64,
+    pub water_density: Option<f64>,
+    pub flow_unit_conversion: Option<f64>,
+    pub energy_unit_conversion: Option<f64>,
 }
 
 pub struct HydropowerTargetParameter {
@@ -36,7 +36,7 @@ pub struct HydropowerTargetParameter {
 }
 
 impl HydropowerTargetParameter {
-    pub fn new(name: &str, turbine_data: TurbineData) -> Self {
+    pub fn new(name: &str, turbine_data: HydropowerTargetData) -> Self {
         Self {
             meta: ParameterMeta::new(name),
             target: turbine_data.target,

@@ -5,7 +5,7 @@ use crate::parameters::{
 };
 use crate::{ConversionError, SchemaError};
 use pywr_core::models::ModelDomain;
-use pywr_core::parameters::{ParameterIndex, TurbineData};
+use pywr_core::parameters::{HydropowerTargetData, ParameterIndex};
 use pywr_v1_schema::parameters::HydropowerTargetParameter as HydropowerTargetParameterV1;
 use std::collections::HashMap;
 use std::path::Path;
@@ -70,7 +70,8 @@ pub struct HydropowerTargetParameter {
     /// A factor used to transform the units of flow to be compatible with the equation above.
     /// This should convert flow to units of m<sup>3</sup> day<sup>-1</sup>. Default to `1.0`.
     pub flow_unit_conversion: Option<f64>,
-    /// A factor used to transform the units of total energy. Defaults to 1e<sup>-6</sup> to return `MJ`.
+    /// A factor used to transform the units of total energy. Defaults to 1e<sup>-6</sup> to
+    /// return `MJ`.
     pub energy_unit_conversion: Option<f64>,
 }
 
@@ -95,18 +96,20 @@ impl HydropowerTargetParameter {
         let target = self
             .target
             .load(network, schema, domain, tables, data_path, inter_network_transfers)?;
-
-        let water_elevation =
-            self.water_elevation
-                .load(network, schema, domain, tables, data_path, inter_network_transfers)?;
+        let water_elevation = self
+            .water_elevation
+            .map(|t| t.load(network, schema, domain, tables, data_path, inter_network_transfers))
+            .transpose()?;
         let max_flow = self
             .max_flow
-            .load(network, schema, domain, tables, data_path, inter_network_transfers)?;
+            .map(|t| t.load(network, schema, domain, tables, data_path, inter_network_transfers))
+            .transpose()?;
         let min_flow = self
             .min_flow
-            .load(network, schema, domain, tables, data_path, inter_network_transfers)?;
+            .map(|t| t.load(network, schema, domain, tables, data_path, inter_network_transfers))
+            .transpose()?;
 
-        let turbine_data = TurbineData {
+        let turbine_data = HydropowerTargetData {
             target,
             water_elevation,
             elevation: self.turbine_elevation,
