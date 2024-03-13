@@ -9,6 +9,7 @@ mod river;
 mod river_gauge;
 mod river_split_with_gauge;
 mod rolling_virtual_storage;
+mod turbine;
 mod virtual_storage;
 mod water_treatment_works;
 
@@ -21,6 +22,7 @@ pub use crate::nodes::core::{
 pub use crate::nodes::delay::DelayNode;
 pub use crate::nodes::river::RiverNode;
 use crate::nodes::rolling_virtual_storage::RollingVirtualStorageNode;
+use crate::nodes::turbine::TurbineNode;
 use crate::parameters::DynamicFloatValue;
 pub use annual_virtual_storage::AnnualVirtualStorageNode;
 pub use loss_link::LossLinkNode;
@@ -87,6 +89,7 @@ pub enum NodeAttribute {
     ProportionalVolume,
     Loss,
     Deficit,
+    Power,
 }
 
 pub struct NodeBuilder {
@@ -216,6 +219,10 @@ impl NodeBuilder {
                 meta,
                 ..Default::default()
             }),
+            NodeType::Turbine => Node::Turbine(TurbineNode {
+                meta,
+                ..Default::default()
+            }),
         }
     }
 }
@@ -245,6 +252,7 @@ pub enum Node {
     AnnualVirtualStorage(AnnualVirtualStorageNode),
     MonthlyVirtualStorage(MonthlyVirtualStorageNode),
     RollingVirtualStorage(RollingVirtualStorageNode),
+    Turbine(TurbineNode),
 }
 
 impl Node {
@@ -282,6 +290,7 @@ impl Node {
             Node::Delay(n) => &n.meta,
             Node::MonthlyVirtualStorage(n) => &n.meta,
             Node::RollingVirtualStorage(n) => &n.meta,
+            Node::Turbine(n) => &n.meta,
         }
     }
 
@@ -334,6 +343,7 @@ impl Node {
             Node::RollingVirtualStorage(n) => {
                 n.add_to_model(network, schema, domain, tables, data_path, inter_network_transfers)
             }
+            Node::Turbine(n) => n.add_to_model(network),
         }
     }
 
@@ -378,6 +388,7 @@ impl Node {
                 n.set_constraints(network, schema, domain, tables, data_path, inter_network_transfers)
             }
             Node::Delay(n) => n.set_constraints(network, tables),
+            Node::Turbine(n) => n.set_constraints(network, schema, domain, tables, data_path, inter_network_transfers),
             Node::MonthlyVirtualStorage(_) => Ok(()), // TODO
             Node::RollingVirtualStorage(_) => Ok(()), // TODO
         }
@@ -405,6 +416,7 @@ impl Node {
             Node::PiecewiseStorage(n) => n.input_connectors(),
             Node::Delay(n) => n.input_connectors(),
             Node::RollingVirtualStorage(n) => n.input_connectors(),
+            Node::Turbine(n) => n.input_connectors(),
         }
     }
 
@@ -430,6 +442,7 @@ impl Node {
             Node::PiecewiseStorage(n) => n.output_connectors(),
             Node::Delay(n) => n.output_connectors(),
             Node::RollingVirtualStorage(n) => n.output_connectors(),
+            Node::Turbine(n) => n.output_connectors(),
         }
     }
 
@@ -459,6 +472,7 @@ impl Node {
             Node::PiecewiseStorage(n) => n.create_metric(network, attribute),
             Node::Delay(n) => n.create_metric(network, attribute),
             Node::RollingVirtualStorage(n) => n.create_metric(network, attribute),
+            Node::Turbine(n) => n.create_metric(network, attribute),
         }
     }
 }
