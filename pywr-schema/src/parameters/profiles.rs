@@ -31,7 +31,7 @@ impl DailyProfileParameter {
         &self,
         network: &mut pywr_core::network::Network,
         tables: &LoadedTableCollection,
-    ) -> Result<ParameterIndex, SchemaError> {
+    ) -> Result<ParameterIndex<f64>, SchemaError> {
         let values = &self.values.load(tables)?[..366];
         let p = pywr_core::parameters::DailyProfileParameter::new(&self.meta.name, values.try_into().expect(""));
         Ok(network.add_parameter(Box::new(p))?)
@@ -101,7 +101,7 @@ impl MonthlyProfileParameter {
         &self,
         network: &mut pywr_core::network::Network,
         tables: &LoadedTableCollection,
-    ) -> Result<ParameterIndex, SchemaError> {
+    ) -> Result<ParameterIndex<f64>, SchemaError> {
         let values = &self.values.load(tables)?[..12];
         let p = pywr_core::parameters::MonthlyProfileParameter::new(
             &self.meta.name,
@@ -175,7 +175,7 @@ impl UniformDrawdownProfileParameter {
         &self,
         network: &mut pywr_core::network::Network,
         tables: &LoadedTableCollection,
-    ) -> Result<ParameterIndex, SchemaError> {
+    ) -> Result<ParameterIndex<f64>, SchemaError> {
         let reset_day = match &self.reset_day {
             Some(v) => v.load(tables)? as u32,
             None => 1,
@@ -363,7 +363,7 @@ impl RbfProfileParameter {
         HashMap::new()
     }
 
-    pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<ParameterIndex, SchemaError> {
+    pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<ParameterIndex<f64>, SchemaError> {
         let function = self.function.into_core_rbf(&self.points)?;
 
         let p = pywr_core::parameters::RbfProfileParameter::new(&self.meta.name, self.points.clone(), function);
@@ -545,7 +545,7 @@ impl WeeklyProfileParameter {
         &self,
         network: &mut pywr_core::network::Network,
         tables: &LoadedTableCollection,
-    ) -> Result<ParameterIndex, SchemaError> {
+    ) -> Result<ParameterIndex<f64>, SchemaError> {
         let p = pywr_core::parameters::WeeklyProfileParameter::new(
             &self.meta.name,
             WeeklyProfileValues::try_from(self.values.load(tables)?.as_slice()).map_err(

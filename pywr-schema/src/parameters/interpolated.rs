@@ -58,7 +58,7 @@ impl InterpolatedParameter {
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
         inter_network_transfers: &[PywrMultiNetworkTransfer],
-    ) -> Result<ParameterIndex, SchemaError> {
+    ) -> Result<ParameterIndex<f64>, SchemaError> {
         let x = self
             .x
             .load(network, schema, domain, tables, data_path, inter_network_transfers)?;

@@ -75,7 +75,7 @@ impl DataFrameParameter {
         network: &mut pywr_core::network::Network,
         domain: &ModelDomain,
         data_path: Option<&Path>,
-    ) -> Result<ParameterIndex, SchemaError> {
+    ) -> Result<ParameterIndex<f64>, SchemaError> {
         // Handle the case of an optional data path with a relative url.
         let pth = if let Some(dp) = data_path {
             if self.url.is_relative() {

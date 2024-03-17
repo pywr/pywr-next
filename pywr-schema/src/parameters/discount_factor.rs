@@ -40,7 +40,7 @@ impl DiscountFactorParameter {
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
         inter_network_transfers: &[PywrMultiNetworkTransfer],
-    ) -> Result<ParameterIndex, SchemaError> {
+    ) -> Result<ParameterIndex<f64>, SchemaError> {
         let discount_rate =
             self.discount_rate
                 .load(network, schema, domain, tables, data_path, inter_network_transfers)?;
