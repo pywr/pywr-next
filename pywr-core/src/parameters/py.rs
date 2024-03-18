@@ -1,5 +1,5 @@
 use super::{Parameter, ParameterMeta, PywrError, Timestep};
-use crate::metric::{IndexMetric, Metric};
+use crate::metric::{MetricF64, MetricUsize};
 use crate::network::Network;
 use crate::parameters::downcast_internal_state_mut;
 use crate::scenario::ScenarioIndex;
@@ -13,8 +13,8 @@ pub struct PyParameter {
     object: Py<PyAny>,
     args: Py<PyTuple>,
     kwargs: Py<PyDict>,
-    metrics: HashMap<String, Metric>,
-    indices: HashMap<String, IndexMetric>,
+    metrics: HashMap<String, MetricF64>,
+    indices: HashMap<String, MetricUsize>,
 }
 
 #[derive(Clone)]
@@ -34,8 +34,8 @@ impl PyParameter {
         object: Py<PyAny>,
         args: Py<PyTuple>,
         kwargs: Py<PyDict>,
-        metrics: &HashMap<String, Metric>,
-        indices: &HashMap<String, IndexMetric>,
+        metrics: &HashMap<String, MetricF64>,
+        indices: &HashMap<String, MetricUsize>,
     ) -> Self {
         Self {
             meta: ParameterMeta::new(name),

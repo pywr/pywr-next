@@ -1,4 +1,4 @@
-use crate::metric::Metric;
+use crate::metric::MetricF64;
 use crate::network::Network;
 use crate::parameters::{
     downcast_internal_state_mut, downcast_internal_state_ref, downcast_variable_config_ref, ActivationFunction,
@@ -11,7 +11,7 @@ use crate::PywrError;
 
 pub struct OffsetParameter {
     meta: ParameterMeta,
-    metric: Metric,
+    metric: MetricF64,
     offset: f64,
 }
 
@@ -19,7 +19,7 @@ pub struct OffsetParameter {
 type InternalValue = Option<f64>;
 
 impl OffsetParameter {
-    pub fn new(name: &str, metric: Metric, offset: f64) -> Self {
+    pub fn new(name: &str, metric: MetricF64, offset: f64) -> Self {
         Self {
             meta: ParameterMeta::new(name),
             metric,

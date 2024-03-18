@@ -1,5 +1,5 @@
 use super::{MetricSetState, PywrError, Recorder, RecorderMeta, Timestep};
-use crate::metric::Metric;
+use crate::metric::MetricF64;
 use crate::models::ModelDomain;
 use crate::network::Network;
 use crate::recorders::metric_set::MetricSetIndex;
@@ -47,71 +47,71 @@ impl Recorder for CSVRecorder {
 
         for metric in metric_set.iter_metrics() {
             let (name, sub_name, attribute) = match metric {
-                Metric::NodeInFlow(idx) => {
+                MetricF64::NodeInFlow(idx) => {
                     let node = network.get_node(idx)?;
                     let (name, sub_name) = node.full_name();
                     let sub_name = sub_name.map_or("".to_string(), |sn| sn.to_string());
 
                     (name.to_string(), sub_name, "inflow".to_string())
                 }
-                Metric::NodeOutFlow(idx) => {
+                MetricF64::NodeOutFlow(idx) => {
                     let node = network.get_node(idx)?;
                     let (name, sub_name) = node.full_name();
                     let sub_name = sub_name.map_or("".to_string(), |sn| sn.to_string());
 
                     (name.to_string(), sub_name, "outflow".to_string())
                 }
-                Metric::NodeVolume(idx) => {
+                MetricF64::NodeVolume(idx) => {
                     let node = network.get_node(idx)?;
                     let (name, sub_name) = node.full_name();
                     let sub_name = sub_name.map_or("".to_string(), |sn| sn.to_string());
 
                     (name.to_string(), sub_name, "volume".to_string())
                 }
-                Metric::DerivedMetric(_idx) => {
+                MetricF64::DerivedMetric(_idx) => {
                     todo!("Derived metrics are not yet supported in CSV recorders");
                 }
-                Metric::AggregatedNodeVolume(idx) => {
+                MetricF64::AggregatedNodeVolume(idx) => {
                     let node = network.get_aggregated_storage_node(idx)?;
                     let (name, sub_name) = node.full_name();
                     let sub_name = sub_name.map_or("".to_string(), |sn| sn.to_string());
 
                     (name.to_string(), sub_name, "volume".to_string())
                 }
-                Metric::EdgeFlow(_) => {
+                MetricF64::EdgeFlow(_) => {
                     continue; // TODO
                 }
-                Metric::ParameterValue(idx) => {
+                MetricF64::ParameterValue(idx) => {
                     let parameter = network.get_parameter(idx)?;
                     let name = parameter.name();
                     (name.to_string(), "".to_string(), "parameter".to_string())
                 }
-                Metric::VirtualStorageVolume(_) => {
+                MetricF64::VirtualStorageVolume(_) => {
                     continue; // TODO
                 }
-                Metric::Constant(_) => {
+                MetricF64::Constant(_) => {
                     continue; // TODO
                 }
-                Metric::MultiParameterValue(_) => {
+                MetricF64::MultiParameterValue(_) => {
                     continue; // TODO
                 }
-                Metric::AggregatedNodeInFlow(idx) => {
+                MetricF64::AggregatedNodeInFlow(idx) => {
                     let node = network.get_aggregated_node(idx)?;
                     let (name, sub_name) = node.full_name();
                     let sub_name = sub_name.map_or("".to_string(), |sn| sn.to_string());
 
                     (name.to_string(), sub_name, "inflow".to_string())
                 }
-                Metric::AggregatedNodeOutFlow(idx) => {
+                MetricF64::AggregatedNodeOutFlow(idx) => {
                     let node = network.get_aggregated_node(idx)?;
                     let (name, sub_name) = node.full_name();
                     let sub_name = sub_name.map_or("".to_string(), |sn| sn.to_string());
 
                     (name.to_string(), sub_name, "outflow".to_string())
                 }
-                Metric::MultiNodeInFlow { name, .. } => (name.to_string(), "".to_string(), "inflow".to_string()),
-                Metric::MultiNodeOutFlow { name, .. } => (name.to_string(), "".to_string(), "outflow".to_string()),
-                Metric::InterNetworkTransfer(_) => {
+                MetricF64::MultiNodeInFlow { name, .. } => (name.to_string(), "".to_string(), "inflow".to_string()),
+                MetricF64::MultiNodeOutFlow { name, .. } => (name.to_string(), "".to_string(), "outflow".to_string()),
+                MetricF64::InterNetworkTransfer(_) => {
                     continue; // TODO
                 }
             };

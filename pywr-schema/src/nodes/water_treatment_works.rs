@@ -5,7 +5,7 @@ use crate::nodes::{NodeAttribute, NodeMeta};
 use crate::parameters::DynamicFloatValue;
 use num::Zero;
 use pywr_core::aggregated_node::Factors;
-use pywr_core::metric::Metric;
+use pywr_core::metric::MetricF64;
 use pywr_core::models::ModelDomain;
 use pywr_schema_macros::PywrNode;
 use std::collections::HashMap;
@@ -151,11 +151,11 @@ impl WaterTreatmentWorks {
             // Handle the case where we a given a zero loss factor
             // The aggregated node does not support zero loss factors so filter them here.
             let lf = match loss_factor.load(network, schema, domain, tables, data_path, inter_network_transfers)? {
-                Metric::Constant(f) => {
+                MetricF64::Constant(f) => {
                     if f.is_zero() {
                         None
                     } else {
-                        Some(Metric::Constant(f))
+                        Some(MetricF64::Constant(f))
                     }
                 }
                 m => Some(m),
@@ -164,7 +164,7 @@ impl WaterTreatmentWorks {
             if let Some(lf) = lf {
                 // Set the factors for the loss
                 // TODO allow for configuring as proportion of gross.
-                let factors = Factors::Ratio(vec![Metric::Constant(1.0), lf]);
+                let factors = Factors::Ratio(vec![MetricF64::Constant(1.0), lf]);
                 network.set_aggregated_node_factors(self.meta.name.as_str(), Self::agg_sub_name(), Some(factors))?;
             }
         }
@@ -200,7 +200,7 @@ impl WaterTreatmentWorks {
         &self,
         network: &pywr_core::network::Network,
         attribute: Option<NodeAttribute>,
-    ) -> Result<Metric, SchemaError> {
+    ) -> Result<MetricF64, SchemaError> {
         // Use the default attribute if none is specified
         let attr = attribute.unwrap_or(Self::DEFAULT_ATTRIBUTE);
 
@@ -211,19 +211,19 @@ impl WaterTreatmentWorks {
                     network.get_node_index_by_name(self.meta.name.as_str(), Self::loss_sub_name())?,
                 ];
 
-                Metric::MultiNodeInFlow {
+                MetricF64::MultiNodeInFlow {
                     indices,
                     name: self.meta.name.to_string(),
                 }
             }
             NodeAttribute::Outflow => {
                 let idx = network.get_node_index_by_name(self.meta.name.as_str(), Self::net_sub_name())?;
-                Metric::NodeOutFlow(idx)
+                MetricF64::NodeOutFlow(idx)
             }
             NodeAttribute::Loss => {
                 let idx = network.get_node_index_by_name(self.meta.name.as_str(), Self::loss_sub_name())?;
                 // This is an output node that only supports inflow
-                Metric::NodeInFlow(idx)
+                MetricF64::NodeInFlow(idx)
             }
             _ => {
                 return Err(SchemaError::NodeAttributeNotSupported {
@@ -243,7 +243,7 @@ mod tests {
     use crate::model::PywrModel;
     use crate::nodes::WaterTreatmentWorks;
     use ndarray::Array2;
-    use pywr_core::metric::Metric;
+    use pywr_core::metric::MetricF64;
     use pywr_core::recorders::AssertionRecorder;
     use pywr_core::test_utils::run_all_solvers;
 
@@ -371,12 +371,12 @@ mod tests {
         // TODO write some helper functions for adding these assertion recorders
         let idx = network.get_node_by_name("input1", None).unwrap().index();
         let expected = Array2::from_elem(shape, 11.0);
-        let recorder = AssertionRecorder::new("input-flow", Metric::NodeOutFlow(idx), expected, None, None);
+        let recorder = AssertionRecorder::new("input-flow", MetricF64::NodeOutFlow(idx), expected, None, None);
         network.add_recorder(Box::new(recorder)).unwrap();
 
         let idx = network.get_node_by_name("demand1", None).unwrap().index();
         let expected = Array2::from_elem(shape, 10.0);
-        let recorder = AssertionRecorder::new("demand-flow", Metric::NodeInFlow(idx), expected, None, None);
+        let recorder = AssertionRecorder::new("demand-flow", MetricF64::NodeInFlow(idx), expected, None, None);
         network.add_recorder(Box::new(recorder)).unwrap();
 
         // Test all solvers

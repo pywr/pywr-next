@@ -4,7 +4,7 @@ use crate::model::PywrMultiNetworkTransfer;
 use crate::nodes::{NodeAttribute, NodeMeta};
 use crate::parameters::{DynamicFloatValue, TryIntoV2Parameter};
 use pywr_core::derived_metric::DerivedMetric;
-use pywr_core::metric::Metric;
+use pywr_core::metric::MetricF64;
 use pywr_core::models::ModelDomain;
 use pywr_core::node::{ConstraintValue, StorageInitialVolume as CoreStorageInitialVolume};
 use pywr_schema_macros::PywrNode;
@@ -71,14 +71,14 @@ impl InputNode {
         &self,
         network: &pywr_core::network::Network,
         attribute: Option<NodeAttribute>,
-    ) -> Result<Metric, SchemaError> {
+    ) -> Result<MetricF64, SchemaError> {
         // Use the default attribute if none is specified
         let attr = attribute.unwrap_or(Self::DEFAULT_ATTRIBUTE);
 
         let idx = network.get_node_index_by_name(self.meta.name.as_str(), None)?;
 
         let metric = match attr {
-            NodeAttribute::Outflow => Metric::NodeOutFlow(idx),
+            NodeAttribute::Outflow => MetricF64::NodeOutFlow(idx),
             _ => {
                 return Err(SchemaError::NodeAttributeNotSupported {
                     ty: "InputNode".to_string(),
@@ -178,15 +178,15 @@ impl LinkNode {
         &self,
         network: &pywr_core::network::Network,
         attribute: Option<NodeAttribute>,
-    ) -> Result<Metric, SchemaError> {
+    ) -> Result<MetricF64, SchemaError> {
         // Use the default attribute if none is specified
         let attr = attribute.unwrap_or(Self::DEFAULT_ATTRIBUTE);
 
         let idx = network.get_node_index_by_name(self.meta.name.as_str(), None)?;
 
         let metric = match attr {
-            NodeAttribute::Outflow => Metric::NodeOutFlow(idx),
-            NodeAttribute::Inflow => Metric::NodeInFlow(idx),
+            NodeAttribute::Outflow => MetricF64::NodeOutFlow(idx),
+            NodeAttribute::Inflow => MetricF64::NodeInFlow(idx),
             _ => {
                 return Err(SchemaError::NodeAttributeNotSupported {
                     ty: "LinkNode".to_string(),
@@ -286,18 +286,18 @@ impl OutputNode {
         &self,
         network: &mut pywr_core::network::Network,
         attribute: Option<NodeAttribute>,
-    ) -> Result<Metric, SchemaError> {
+    ) -> Result<MetricF64, SchemaError> {
         // Use the default attribute if none is specified
         let attr = attribute.unwrap_or(Self::DEFAULT_ATTRIBUTE);
 
         let idx = network.get_node_index_by_name(self.meta.name.as_str(), None)?;
 
         let metric = match attr {
-            NodeAttribute::Inflow => Metric::NodeInFlow(idx),
+            NodeAttribute::Inflow => MetricF64::NodeInFlow(idx),
             NodeAttribute::Deficit => {
                 let dm = DerivedMetric::NodeInFlowDeficit(idx);
                 let dm_idx = network.add_derived_metric(dm);
-                Metric::DerivedMetric(dm_idx)
+                MetricF64::DerivedMetric(dm_idx)
             }
             _ => {
                 return Err(SchemaError::NodeAttributeNotSupported {
@@ -438,18 +438,18 @@ impl StorageNode {
         &self,
         network: &mut pywr_core::network::Network,
         attribute: Option<NodeAttribute>,
-    ) -> Result<Metric, SchemaError> {
+    ) -> Result<MetricF64, SchemaError> {
         // Use the default attribute if none is specified
         let attr = attribute.unwrap_or(Self::DEFAULT_ATTRIBUTE);
 
         let idx = network.get_node_index_by_name(self.meta.name.as_str(), None)?;
 
         let metric = match attr {
-            NodeAttribute::Volume => Metric::NodeVolume(idx),
+            NodeAttribute::Volume => MetricF64::NodeVolume(idx),
             NodeAttribute::ProportionalVolume => {
                 let dm = DerivedMetric::NodeProportionalVolume(idx);
                 let derived_metric_idx = network.add_derived_metric(dm);
-                Metric::DerivedMetric(derived_metric_idx)
+                MetricF64::DerivedMetric(derived_metric_idx)
             }
             _ => {
                 return Err(SchemaError::NodeAttributeNotSupported {
@@ -627,14 +627,14 @@ impl CatchmentNode {
         &self,
         network: &pywr_core::network::Network,
         attribute: Option<NodeAttribute>,
-    ) -> Result<Metric, SchemaError> {
+    ) -> Result<MetricF64, SchemaError> {
         // Use the default attribute if none is specified
         let attr = attribute.unwrap_or(Self::DEFAULT_ATTRIBUTE);
 
         let idx = network.get_node_index_by_name(self.meta.name.as_str(), None)?;
 
         let metric = match attr {
-            NodeAttribute::Outflow => Metric::NodeOutFlow(idx),
+            NodeAttribute::Outflow => MetricF64::NodeOutFlow(idx),
             _ => {
                 return Err(SchemaError::NodeAttributeNotSupported {
                     ty: "CatchmentNode".to_string(),
@@ -758,15 +758,15 @@ impl AggregatedNode {
         &self,
         network: &pywr_core::network::Network,
         attribute: Option<NodeAttribute>,
-    ) -> Result<Metric, SchemaError> {
+    ) -> Result<MetricF64, SchemaError> {
         // Use the default attribute if none is specified
         let attr = attribute.unwrap_or(Self::DEFAULT_ATTRIBUTE);
 
         let idx = network.get_aggregated_node_index_by_name(self.meta.name.as_str(), None)?;
 
         let metric = match attr {
-            NodeAttribute::Outflow => Metric::AggregatedNodeOutFlow(idx),
-            NodeAttribute::Inflow => Metric::AggregatedNodeInFlow(idx),
+            NodeAttribute::Outflow => MetricF64::AggregatedNodeOutFlow(idx),
+            NodeAttribute::Inflow => MetricF64::AggregatedNodeInFlow(idx),
             _ => {
                 return Err(SchemaError::NodeAttributeNotSupported {
                     ty: "AggregatedNode".to_string(),
@@ -854,18 +854,18 @@ impl AggregatedStorageNode {
         &self,
         network: &mut pywr_core::network::Network,
         attribute: Option<NodeAttribute>,
-    ) -> Result<Metric, SchemaError> {
+    ) -> Result<MetricF64, SchemaError> {
         // Use the default attribute if none is specified
         let attr = attribute.unwrap_or(Self::DEFAULT_ATTRIBUTE);
 
         let idx = network.get_aggregated_storage_node_index_by_name(self.meta.name.as_str(), None)?;
 
         let metric = match attr {
-            NodeAttribute::Volume => Metric::AggregatedNodeVolume(idx),
+            NodeAttribute::Volume => MetricF64::AggregatedNodeVolume(idx),
             NodeAttribute::ProportionalVolume => {
                 let dm = DerivedMetric::AggregatedNodeProportionalVolume(idx);
                 let derived_metric_idx = network.add_derived_metric(dm);
-                Metric::DerivedMetric(derived_metric_idx)
+                MetricF64::DerivedMetric(derived_metric_idx)
             }
             _ => {
                 return Err(SchemaError::NodeAttributeNotSupported {
