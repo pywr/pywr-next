@@ -145,7 +145,6 @@ impl PyParameter {
 }
 
 impl Parameter<f64> for PyParameter {
-
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }
@@ -182,7 +181,6 @@ impl Parameter<f64> for PyParameter {
 }
 
 impl Parameter<usize> for PyParameter {
-
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }
