@@ -51,9 +51,9 @@ use crate::parameters::core::DivisionParameter;
 pub use crate::parameters::data_frame::DataFrameParameter;
 use crate::parameters::interpolated::InterpolatedParameter;
 pub use offset::OffsetParameter;
-use pywr_core::metric::Metric;
+use pywr_core::metric::{IndexMetric, Metric};
 use pywr_core::models::{ModelDomain, MultiNetworkTransferIndex};
-use pywr_core::parameters::{IndexValue, ParameterIndex, ParameterType};
+use pywr_core::parameters::{ParameterIndex, ParameterType};
 use pywr_v1_schema::parameters::{
     CoreParameter, ExternalDataRef as ExternalDataRefV1, Parameter as ParameterV1, ParameterMeta as ParameterMetaV1,
     ParameterValue as ParameterValueV1, TableIndex as TableIndexV1, TableIndexEntry as TableIndexEntryV1,
@@ -835,12 +835,17 @@ impl DynamicIndexValue {
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
         inter_network_transfers: &[PywrMultiNetworkTransfer],
-    ) -> Result<IndexValue, SchemaError> {
+    ) -> Result<IndexMetric, SchemaError> {
         let parameter_ref = match self {
-            DynamicIndexValue::Constant(v) => IndexValue::Constant(v.load(tables)?),
-            DynamicIndexValue::Dynamic(v) => {
-                IndexValue::Dynamic(v.load(network, schema, domain, tables, data_path, inter_network_transfers)?)
-            }
+            DynamicIndexValue::Constant(v) => IndexMetric::Constant(v.load(tables)?),
+            DynamicIndexValue::Dynamic(v) => IndexMetric::IndexParameterValue(v.load(
+                network,
+                schema,
+                domain,
+                tables,
+                data_path,
+                inter_network_transfers,
+            )?),
         };
         Ok(parameter_ref)
     }

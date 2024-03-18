@@ -1,5 +1,5 @@
-use super::{IndexValue, Parameter, ParameterMeta, PywrError, Timestep};
-use crate::metric::Metric;
+use super::{Parameter, ParameterMeta, PywrError, Timestep};
+use crate::metric::{IndexMetric, Metric};
 use crate::network::Network;
 use crate::parameters::downcast_internal_state_mut;
 use crate::scenario::ScenarioIndex;
@@ -14,7 +14,7 @@ pub struct RhaiParameter {
     ast: AST,
     initial_state: Map,
     metrics: HashMap<String, Metric>,
-    indices: HashMap<String, IndexValue>,
+    indices: HashMap<String, IndexMetric>,
 }
 
 #[derive(Clone)]
@@ -28,7 +28,7 @@ impl RhaiParameter {
         script: &str,
         initial_state: Map,
         metrics: &HashMap<String, Metric>,
-        indices: &HashMap<String, IndexValue>,
+        indices: &HashMap<String, IndexMetric>,
     ) -> Self {
         let mut engine = Engine::new();
 
@@ -82,7 +82,7 @@ impl Parameter<f64> for RhaiParameter {
         &self,
         timestep: &Timestep,
         scenario_index: &ScenarioIndex,
-        model: &Network,
+        network: &Network,
         state: &State,
         internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<f64, PywrError> {
@@ -91,13 +91,13 @@ impl Parameter<f64> for RhaiParameter {
         let metric_values = self
             .metrics
             .iter()
-            .map(|(k, value)| Ok((k.into(), value.get_value(model, state)?.into())))
+            .map(|(k, value)| Ok((k.into(), value.get_value(network, state)?.into())))
             .collect::<Result<rhai::Map, PywrError>>()?;
 
         let index_values = self
             .indices
             .iter()
-            .map(|(k, value)| Ok((k.into(), (value.get_index(state)? as i64).into())))
+            .map(|(k, value)| Ok((k.into(), (value.get_value(network, state)? as i64).into())))
             .collect::<Result<rhai::Map, PywrError>>()?;
 
         let args = (*timestep, scenario_index.index as i64, metric_values, index_values);
