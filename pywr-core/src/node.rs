@@ -1,5 +1,5 @@
 use crate::edge::EdgeIndex;
-use crate::metric::Metric;
+use crate::metric::MetricF64;
 use crate::network::Network;
 use crate::state::{NodeState, State};
 use crate::timestep::Timestep;
@@ -109,7 +109,7 @@ pub enum Constraint {
 pub enum ConstraintValue {
     None,
     Scalar(f64),
-    Metric(Metric),
+    Metric(MetricF64),
 }
 
 impl From<f64> for ConstraintValue {
@@ -118,8 +118,8 @@ impl From<f64> for ConstraintValue {
     }
 }
 
-impl From<Metric> for ConstraintValue {
-    fn from(metric: Metric) -> Self {
+impl From<MetricF64> for ConstraintValue {
+    fn from(metric: MetricF64) -> Self {
         Self::Metric(metric)
     }
 }
@@ -231,12 +231,12 @@ impl Node {
         }
     }
 
-    pub fn default_metric(&self) -> Metric {
+    pub fn default_metric(&self) -> MetricF64 {
         match self {
-            Self::Input(_n) => Metric::NodeOutFlow(self.index()),
-            Self::Output(_n) => Metric::NodeInFlow(self.index()),
-            Self::Link(_n) => Metric::NodeOutFlow(self.index()),
-            Self::Storage(_n) => Metric::NodeVolume(self.index()),
+            Self::Input(_n) => MetricF64::NodeOutFlow(self.index()),
+            Self::Output(_n) => MetricF64::NodeInFlow(self.index()),
+            Self::Link(_n) => MetricF64::NodeOutFlow(self.index()),
+            Self::Storage(_n) => MetricF64::NodeVolume(self.index()),
         }
     }
 

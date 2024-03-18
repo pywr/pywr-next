@@ -1,4 +1,4 @@
-use crate::metric::Metric;
+use crate::metric::MetricF64;
 use crate::network::Network;
 use crate::parameters::{Parameter, ParameterMeta};
 use crate::scenario::ScenarioIndex;
@@ -8,14 +8,14 @@ use crate::PywrError;
 
 pub struct Polynomial1DParameter {
     meta: ParameterMeta,
-    metric: Metric,
+    metric: MetricF64,
     coefficients: Vec<f64>,
     scale: f64,
     offset: f64,
 }
 
 impl Polynomial1DParameter {
-    pub fn new(name: &str, metric: Metric, coefficients: Vec<f64>, scale: f64, offset: f64) -> Self {
+    pub fn new(name: &str, metric: MetricF64, coefficients: Vec<f64>, scale: f64, offset: f64) -> Self {
         Self {
             meta: ParameterMeta::new(name),
             metric,

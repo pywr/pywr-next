@@ -1,4 +1,4 @@
-use crate::metric::Metric;
+use crate::metric::MetricF64;
 use crate::node::NodeMeta;
 use crate::{NodeIndex, PywrError};
 use std::ops::{Deref, DerefMut};
@@ -91,7 +91,7 @@ impl AggregatedStorageNode {
         self.nodes.to_vec()
     }
 
-    pub fn default_metric(&self) -> Vec<Metric> {
-        self.nodes.iter().map(|n| Metric::NodeOutFlow(*n)).collect()
+    pub fn default_metric(&self) -> Vec<MetricF64> {
+        self.nodes.iter().map(|n| MetricF64::NodeOutFlow(*n)).collect()
     }
 }

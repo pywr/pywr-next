@@ -1,5 +1,5 @@
 use super::{MetricSetState, PywrError, Recorder, RecorderMeta, Timestep};
-use crate::metric::Metric;
+use crate::metric::MetricF64;
 use crate::models::ModelDomain;
 use crate::network::Network;
 use crate::recorders::MetricSetIndex;
@@ -86,53 +86,55 @@ impl Recorder for HDF5Recorder {
 
         for metric in metric_set.iter_metrics() {
             let ds = match metric {
-                Metric::NodeInFlow(idx) => {
+                MetricF64::NodeInFlow(idx) => {
                     let node = model.get_node(idx)?;
                     require_node_dataset(root_grp, shape, node.name(), node.sub_name(), "inflow")?
                 }
-                Metric::NodeOutFlow(idx) => {
+                MetricF64::NodeOutFlow(idx) => {
                     let node = model.get_node(idx)?;
                     require_node_dataset(root_grp, shape, node.name(), node.sub_name(), "outflow")?
                 }
-                Metric::NodeVolume(idx) => {
+                MetricF64::NodeVolume(idx) => {
                     let node = model.get_node(idx)?;
                     require_node_dataset(root_grp, shape, node.name(), node.sub_name(), "volume")?
                 }
-                Metric::DerivedMetric(_idx) => {
+                MetricF64::DerivedMetric(_idx) => {
                     todo!("Derived metrics are not yet supported in HDF recorders");
                 }
-                Metric::AggregatedNodeVolume(idx) => {
+                MetricF64::AggregatedNodeVolume(idx) => {
                     let node = model.get_aggregated_storage_node(idx)?;
                     require_node_dataset(root_grp, shape, node.name(), node.sub_name(), "volume")?
                 }
-                Metric::EdgeFlow(_) => {
+                MetricF64::EdgeFlow(_) => {
                     continue; // TODO
                 }
-                Metric::ParameterValue(idx) => {
+                MetricF64::ParameterValue(idx) => {
                     let parameter = model.get_parameter(idx)?;
                     let parameter_group = require_group(root_grp, "parameters")?;
                     require_dataset(&parameter_group, shape, parameter.name())?
                 }
-                Metric::VirtualStorageVolume(_) => {
+                MetricF64::VirtualStorageVolume(_) => {
                     continue; // TODO
                 }
-                Metric::Constant(_) => {
+                MetricF64::Constant(_) => {
                     continue; // TODO
                 }
-                Metric::MultiParameterValue(_) => {
+                MetricF64::MultiParameterValue(_) => {
                     continue; // TODO
                 }
-                Metric::AggregatedNodeInFlow(idx) => {
+                MetricF64::AggregatedNodeInFlow(idx) => {
                     let node = model.get_aggregated_node(idx)?;
                     require_node_dataset(root_grp, shape, node.name(), node.sub_name(), "inflow")?
                 }
-                Metric::AggregatedNodeOutFlow(idx) => {
+                MetricF64::AggregatedNodeOutFlow(idx) => {
                     let node = model.get_aggregated_node(idx)?;
                     require_node_dataset(root_grp, shape, node.name(), node.sub_name(), "outflow")?
                 }
-                Metric::MultiNodeInFlow { name, .. } => require_node_dataset(root_grp, shape, name, None, "inflow")?,
-                Metric::MultiNodeOutFlow { name, .. } => require_node_dataset(root_grp, shape, name, None, "outflow")?,
-                Metric::InterNetworkTransfer(_) => {
+                MetricF64::MultiNodeInFlow { name, .. } => require_node_dataset(root_grp, shape, name, None, "inflow")?,
+                MetricF64::MultiNodeOutFlow { name, .. } => {
+                    require_node_dataset(root_grp, shape, name, None, "outflow")?
+                }
+                MetricF64::InterNetworkTransfer(_) => {
                     continue; // TODO
                 }
             };

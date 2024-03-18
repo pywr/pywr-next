@@ -1,4 +1,4 @@
-use crate::metric::{IndexMetric, Metric};
+use crate::metric::{MetricF64, MetricUsize};
 use crate::network::Network;
 use crate::parameters::{Parameter, ParameterMeta};
 use crate::scenario::ScenarioIndex;
@@ -8,12 +8,12 @@ use crate::PywrError;
 
 pub struct IndexedArrayParameter {
     meta: ParameterMeta,
-    index_parameter: IndexMetric,
-    metrics: Vec<Metric>,
+    index_parameter: MetricUsize,
+    metrics: Vec<MetricF64>,
 }
 
 impl IndexedArrayParameter {
-    pub fn new(name: &str, index_parameter: IndexMetric, metrics: &[Metric]) -> Self {
+    pub fn new(name: &str, index_parameter: MetricUsize, metrics: &[MetricF64]) -> Self {
         Self {
             meta: ParameterMeta::new(name),
             index_parameter,

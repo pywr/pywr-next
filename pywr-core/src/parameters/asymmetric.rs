@@ -1,4 +1,4 @@
-use crate::metric::IndexMetric;
+use crate::metric::MetricUsize;
 use crate::network::Network;
 use crate::parameters::{downcast_internal_state_mut, Parameter, ParameterMeta};
 use crate::scenario::ScenarioIndex;
@@ -8,12 +8,12 @@ use crate::PywrError;
 
 pub struct AsymmetricSwitchIndexParameter {
     meta: ParameterMeta,
-    on_parameter: IndexMetric,
-    off_parameter: IndexMetric,
+    on_parameter: MetricUsize,
+    off_parameter: MetricUsize,
 }
 
 impl AsymmetricSwitchIndexParameter {
-    pub fn new(name: &str, on_parameter: IndexMetric, off_parameter: IndexMetric) -> Self {
+    pub fn new(name: &str, on_parameter: MetricUsize, off_parameter: MetricUsize) -> Self {
         Self {
             meta: ParameterMeta::new(name),
             on_parameter,

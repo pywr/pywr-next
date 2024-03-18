@@ -3,7 +3,7 @@ use crate::error::{ConversionError, SchemaError};
 use crate::model::PywrMultiNetworkTransfer;
 use crate::nodes::{NodeAttribute, NodeMeta};
 use crate::parameters::{DynamicFloatValue, TryIntoV2Parameter};
-use pywr_core::metric::Metric;
+use pywr_core::metric::MetricF64;
 use pywr_core::models::ModelDomain;
 use pywr_schema_macros::PywrNode;
 use pywr_v1_schema::nodes::RiverGaugeNode as RiverGaugeNodeV1;
@@ -92,7 +92,7 @@ impl RiverGaugeNode {
         &self,
         network: &pywr_core::network::Network,
         attribute: Option<NodeAttribute>,
-    ) -> Result<Metric, SchemaError> {
+    ) -> Result<MetricF64, SchemaError> {
         // Use the default attribute if none is specified
         let attr = attribute.unwrap_or(Self::DEFAULT_ATTRIBUTE);
 
@@ -102,11 +102,11 @@ impl RiverGaugeNode {
         ];
 
         let metric = match attr {
-            NodeAttribute::Inflow => Metric::MultiNodeInFlow {
+            NodeAttribute::Inflow => MetricF64::MultiNodeInFlow {
                 indices,
                 name: self.meta.name.to_string(),
             },
-            NodeAttribute::Outflow => Metric::MultiNodeOutFlow {
+            NodeAttribute::Outflow => MetricF64::MultiNodeOutFlow {
                 indices,
                 name: self.meta.name.to_string(),
             },

@@ -1,7 +1,7 @@
 /// AggregatedIndexParameter
 ///
 use super::PywrError;
-use crate::metric::IndexMetric;
+use crate::metric::MetricUsize;
 use crate::network::Network;
 use crate::parameters::{Parameter, ParameterMeta};
 use crate::scenario::ScenarioIndex;
@@ -36,12 +36,12 @@ impl FromStr for AggIndexFunc {
 
 pub struct AggregatedIndexParameter {
     meta: ParameterMeta,
-    values: Vec<IndexMetric>,
+    values: Vec<MetricUsize>,
     agg_func: AggIndexFunc,
 }
 
 impl AggregatedIndexParameter {
-    pub fn new(name: &str, values: Vec<IndexMetric>, agg_func: AggIndexFunc) -> Self {
+    pub fn new(name: &str, values: Vec<MetricUsize>, agg_func: AggIndexFunc) -> Self {
         Self {
             meta: ParameterMeta::new(name),
             values,
