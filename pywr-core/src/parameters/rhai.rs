@@ -6,7 +6,6 @@ use crate::scenario::ScenarioIndex;
 use crate::state::{ParameterState, State};
 use chrono::Datelike;
 use rhai::{Dynamic, Engine, Map, Scope, AST};
-use std::any::Any;
 use std::collections::HashMap;
 
 pub struct RhaiParameter {
@@ -55,10 +54,7 @@ impl RhaiParameter {
     }
 }
 
-impl Parameter for RhaiParameter {
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
-    }
+impl Parameter<f64> for RhaiParameter {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }

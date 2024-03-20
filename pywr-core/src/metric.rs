@@ -5,8 +5,8 @@ use crate::edge::EdgeIndex;
 use crate::models::MultiNetworkTransferIndex;
 use crate::network::Network;
 use crate::node::NodeIndex;
-use crate::parameters::{IndexParameterIndex, MultiValueParameterIndex, ParameterIndex};
-use crate::state::State;
+use crate::parameters::ParameterIndex;
+use crate::state::{MultiValue, State};
 use crate::virtual_storage::VirtualStorageIndex;
 use crate::PywrError;
 #[derive(Clone, Debug, PartialEq)]
@@ -18,8 +18,8 @@ pub enum Metric {
     AggregatedNodeOutFlow(AggregatedNodeIndex),
     AggregatedNodeVolume(AggregatedStorageNodeIndex),
     EdgeFlow(EdgeIndex),
-    ParameterValue(ParameterIndex),
-    MultiParameterValue((MultiValueParameterIndex, String)),
+    ParameterValue(ParameterIndex<f64>),
+    MultiParameterValue((ParameterIndex<MultiValue>, String)),
     VirtualStorageVolume(VirtualStorageIndex),
     MultiNodeInFlow { indices: Vec<NodeIndex>, name: String },
     MultiNodeOutFlow { indices: Vec<NodeIndex>, name: String },
@@ -87,7 +87,7 @@ impl Metric {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum IndexMetric {
-    IndexParameterValue(IndexParameterIndex),
+    IndexParameterValue(ParameterIndex<usize>),
     Constant(usize),
 }
 

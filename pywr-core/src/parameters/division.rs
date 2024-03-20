@@ -6,7 +6,6 @@ use crate::scenario::ScenarioIndex;
 use crate::state::{ParameterState, State};
 use crate::timestep::Timestep;
 use crate::PywrError::InvalidMetricValue;
-use std::any::Any;
 
 pub struct DivisionParameter {
     meta: ParameterMeta,
@@ -24,10 +23,7 @@ impl DivisionParameter {
     }
 }
 
-impl Parameter for DivisionParameter {
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
-    }
+impl Parameter<f64> for DivisionParameter {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }

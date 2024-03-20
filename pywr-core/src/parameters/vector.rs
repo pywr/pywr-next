@@ -4,7 +4,6 @@ use crate::scenario::ScenarioIndex;
 use crate::state::{ParameterState, State};
 use crate::timestep::Timestep;
 use crate::PywrError;
-use std::any::Any;
 
 pub struct VectorParameter {
     meta: ParameterMeta,
@@ -20,10 +19,7 @@ impl VectorParameter {
     }
 }
 
-impl Parameter for VectorParameter {
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
-    }
+impl Parameter<f64> for VectorParameter {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }

@@ -2,8 +2,6 @@ use crate::metric::Metric;
 use crate::network::Network;
 use crate::parameters::{Parameter, ParameterMeta};
 use crate::scenario::ScenarioIndex;
-use std::any::Any;
-
 use crate::state::{ParameterState, State};
 use crate::timestep::Timestep;
 use crate::PywrError;
@@ -24,10 +22,7 @@ impl MaxParameter {
     }
 }
 
-impl Parameter for MaxParameter {
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
-    }
+impl Parameter<f64> for MaxParameter {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }

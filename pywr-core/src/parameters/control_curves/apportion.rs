@@ -1,6 +1,6 @@
 use crate::metric::Metric;
 use crate::network::Network;
-use crate::parameters::{MultiValueParameter, ParameterMeta};
+use crate::parameters::{Parameter, ParameterMeta};
 use crate::scenario::ScenarioIndex;
 use crate::state::{MultiValue, ParameterState, State};
 use crate::timestep::Timestep;
@@ -31,7 +31,7 @@ impl ApportionParameter {
     }
 }
 
-impl MultiValueParameter for ApportionParameter {
+impl Parameter<MultiValue> for ApportionParameter {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }

@@ -23,7 +23,7 @@ impl Polynomial1DParameter {
         HashMap::new()
     }
 
-    pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<ParameterIndex, SchemaError> {
+    pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<ParameterIndex<f64>, SchemaError> {
         let metric =
             network.get_storage_node_metric(&self.storage_node, None, self.use_proportional_volume.unwrap_or(true))?;
 

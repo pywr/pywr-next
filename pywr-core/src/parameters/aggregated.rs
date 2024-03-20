@@ -5,7 +5,6 @@ use crate::parameters::{Parameter, ParameterMeta};
 use crate::scenario::ScenarioIndex;
 use crate::state::{ParameterState, State};
 use crate::timestep::Timestep;
-use std::any::Any;
 use std::str::FromStr;
 
 pub enum AggFunc {
@@ -47,10 +46,7 @@ impl AggregatedParameter {
     }
 }
 
-impl Parameter for AggregatedParameter {
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
-    }
+impl Parameter<f64> for AggregatedParameter {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }

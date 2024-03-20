@@ -7,6 +7,8 @@ use num::Zero;
 use pywr_core::aggregated_node::Factors;
 use pywr_core::metric::Metric;
 use pywr_core::models::ModelDomain;
+use pywr_schema_macros::PywrNode;
+use std::collections::HashMap;
 use std::path::Path;
 
 #[doc = svgbobdoc::transform!(
@@ -36,7 +38,7 @@ use std::path::Path;
 /// ```
 ///
 )]
-#[derive(serde::Deserialize, serde::Serialize, Clone, Default)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Default, PywrNode)]
 pub struct WaterTreatmentWorks {
     /// Node metadata
     #[serde(flatten)]

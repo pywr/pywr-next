@@ -2,7 +2,7 @@
 ///
 use super::PywrError;
 use crate::network::Network;
-use crate::parameters::{IndexParameter, IndexValue, ParameterMeta};
+use crate::parameters::{IndexValue, Parameter, ParameterMeta};
 use crate::scenario::ScenarioIndex;
 use crate::state::{ParameterState, State};
 use crate::timestep::Timestep;
@@ -49,7 +49,7 @@ impl AggregatedIndexParameter {
     }
 }
 
-impl IndexParameter for AggregatedIndexParameter {
+impl Parameter<usize> for AggregatedIndexParameter {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }

@@ -1,6 +1,6 @@
 use crate::metric::Metric;
 use crate::network::Network;
-use crate::parameters::{downcast_internal_state_mut, IndexParameter, ParameterMeta};
+use crate::parameters::{downcast_internal_state_mut, Parameter, ParameterMeta};
 use crate::scenario::ScenarioIndex;
 use crate::state::{ParameterState, State};
 use crate::timestep::Timestep;
@@ -50,7 +50,7 @@ impl ThresholdParameter {
     }
 }
 
-impl IndexParameter for ThresholdParameter {
+impl Parameter<usize> for ThresholdParameter {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }

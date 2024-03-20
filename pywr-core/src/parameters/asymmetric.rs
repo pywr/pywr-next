@@ -1,5 +1,5 @@
 use crate::network::Network;
-use crate::parameters::{downcast_internal_state_mut, IndexParameter, IndexValue, ParameterMeta};
+use crate::parameters::{downcast_internal_state_mut, IndexValue, Parameter, ParameterMeta};
 use crate::scenario::ScenarioIndex;
 use crate::state::{ParameterState, State};
 use crate::timestep::Timestep;
@@ -21,7 +21,7 @@ impl AsymmetricSwitchIndexParameter {
     }
 }
 
-impl IndexParameter for AsymmetricSwitchIndexParameter {
+impl Parameter<usize> for AsymmetricSwitchIndexParameter {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }

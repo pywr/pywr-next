@@ -5,8 +5,6 @@ use crate::parameters::{
     Parameter, ParameterMeta, VariableConfig, VariableParameter,
 };
 use crate::scenario::ScenarioIndex;
-use std::any::Any;
-
 use crate::state::{ParameterState, State};
 use crate::timestep::Timestep;
 use crate::PywrError;
@@ -41,10 +39,7 @@ impl OffsetParameter {
     }
 }
 
-impl Parameter for OffsetParameter {
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
-    }
+impl Parameter<f64> for OffsetParameter {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }

@@ -6,7 +6,6 @@ use crate::scenario::ScenarioIndex;
 use crate::state::{ParameterState, State};
 use crate::timestep::Timestep;
 use crate::PywrError;
-use std::any::Any;
 
 /// A parameter that interpolates a value to a function with given discrete data points.
 pub struct InterpolatedParameter {
@@ -27,10 +26,7 @@ impl InterpolatedParameter {
     }
 }
 
-impl Parameter for InterpolatedParameter {
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
-    }
+impl Parameter<f64> for InterpolatedParameter {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }

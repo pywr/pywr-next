@@ -300,7 +300,45 @@ impl Node {
             Node::Link(n) => n.parameters(),
             Node::Output(n) => n.parameters(),
             Node::Storage(n) => n.parameters(),
-            _ => HashMap::new(), // TODO complete
+            Node::Catchment(n) => n.parameters(),
+            Node::RiverGauge(n) => n.parameters(),
+            Node::LossLink(n) => n.parameters(),
+            Node::River(n) => n.parameters(),
+            Node::RiverSplitWithGauge(n) => n.parameters(),
+            Node::WaterTreatmentWorks(n) => n.parameters(),
+            Node::Aggregated(n) => n.parameters(),
+            Node::AggregatedStorage(n) => n.parameters(),
+            Node::VirtualStorage(n) => n.parameters(),
+            Node::AnnualVirtualStorage(n) => n.parameters(),
+            Node::PiecewiseLink(n) => n.parameters(),
+            Node::PiecewiseStorage(n) => n.parameters(),
+            Node::Delay(n) => n.parameters(),
+            Node::MonthlyVirtualStorage(n) => n.parameters(),
+            Node::RollingVirtualStorage(n) => n.parameters(),
+        }
+    }
+
+    pub fn parameters_mut(&mut self) -> HashMap<&str, &mut DynamicFloatValue> {
+        match self {
+            Node::Input(n) => n.parameters_mut(),
+            Node::Link(n) => n.parameters_mut(),
+            Node::Output(n) => n.parameters_mut(),
+            Node::Storage(n) => n.parameters_mut(),
+            Node::Catchment(n) => n.parameters_mut(),
+            Node::RiverGauge(n) => n.parameters_mut(),
+            Node::LossLink(n) => n.parameters_mut(),
+            Node::River(n) => n.parameters_mut(),
+            Node::RiverSplitWithGauge(n) => n.parameters_mut(),
+            Node::WaterTreatmentWorks(n) => n.parameters_mut(),
+            Node::Aggregated(n) => n.parameters_mut(),
+            Node::AggregatedStorage(n) => n.parameters_mut(),
+            Node::VirtualStorage(n) => n.parameters_mut(),
+            Node::AnnualVirtualStorage(n) => n.parameters_mut(),
+            Node::PiecewiseLink(n) => n.parameters_mut(),
+            Node::PiecewiseStorage(n) => n.parameters_mut(),
+            Node::Delay(n) => n.parameters_mut(),
+            Node::MonthlyVirtualStorage(n) => n.parameters_mut(),
+            Node::RollingVirtualStorage(n) => n.parameters_mut(),
         }
     }
 

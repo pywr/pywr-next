@@ -5,7 +5,6 @@ use crate::scenario::ScenarioIndex;
 use crate::state::{ParameterState, State};
 use crate::timestep::Timestep;
 use crate::PywrError;
-use std::any::Any;
 use std::collections::VecDeque;
 
 pub struct DelayParameter {
@@ -26,10 +25,7 @@ impl DelayParameter {
     }
 }
 
-impl Parameter for DelayParameter {
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
-    }
+impl Parameter<f64> for DelayParameter {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }

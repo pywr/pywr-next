@@ -1,11 +1,10 @@
 use crate::network::Network;
-use crate::parameters::{Parameter, ParameterIndex, ParameterMeta};
+use crate::parameters::{Parameter, ParameterMeta};
 use crate::scenario::ScenarioIndex;
 use crate::state::{ParameterState, State};
 use crate::timestep::Timestep;
 use crate::PywrError;
-use chrono::{Datelike, NaiveDateTime};
-use std::any::Any;
+use chrono::{Datelike, NaiveDateTime, Timelike};
 
 #[derive(Copy, Clone)]
 pub enum MonthlyInterpDay {
@@ -49,7 +48,9 @@ fn interpolate_first(date: &NaiveDateTime, first_value: f64, last_value: f64) ->
     } else if date.day() > days_in_month {
         last_value
     } else {
-        first_value + (last_value - first_value) * (date.day() - 1) as f64 / days_in_month as f64
+        first_value
+            + (last_value - first_value) * (date.day() as f64 + date.num_seconds_from_midnight() as f64 / 86400.0 - 1.0)
+                / days_in_month as f64
     }
 }
 
@@ -63,14 +64,13 @@ fn interpolate_last(date: &NaiveDateTime, first_value: f64, last_value: f64) -> 
     } else if date.day() >= days_in_month {
         last_value
     } else {
-        first_value + (last_value - first_value) * date.day() as f64 / days_in_month as f64
+        first_value
+            + (last_value - first_value) * (date.day() as f64 + date.num_seconds_from_midnight() as f64 / 86400.0)
+                / days_in_month as f64
     }
 }
 
-impl Parameter for MonthlyProfileParameter {
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
-    }
+impl Parameter<f64> for MonthlyProfileParameter {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }
@@ -103,23 +103,5 @@ impl Parameter for MonthlyProfileParameter {
             None => self.values[timestep.date.month() as usize - 1],
         };
         Ok(v)
-    }
-}
-
-// TODO this is a proof-of-concept of a external "variable"
-#[allow(dead_code)]
-pub struct MonthlyProfileVariable {
-    index: ParameterIndex,
-}
-
-#[allow(dead_code)]
-impl MonthlyProfileVariable {
-    fn update(&self, model: &mut Network, new_values: &[f64]) {
-        let p = model.get_mut_parameter(&self.index).unwrap();
-
-        let profile = p.as_any_mut().downcast_mut::<MonthlyProfileParameter>().unwrap();
-
-        // This panics if the slices are different lengths!
-        profile.values.copy_from_slice(new_values);
     }
 }
