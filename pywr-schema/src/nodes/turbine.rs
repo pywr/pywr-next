@@ -10,19 +10,29 @@ use pywr_core::parameters::HydropowerTargetData;
 use std::collections::HashMap;
 use std::path::Path;
 
+enum TargetType {
+    // set flow derived from the hydropower target as a max_flow
+    MaxFlow,
+    // set flow derived from the hydropower target as a min_flow
+    MinFlow,
+    // set flow derived from the hydropower target as min_flow and max_flow (like a catchment)
+    Both,
+}
+
 /// This turbine node can be used to set a flow constraint based on a hydropower production target.
 /// The turbine elevation, minimum head and efficiency can also be configured.
 #[derive(serde::Deserialize, serde::Serialize, Clone)]
 pub struct TurbineNode {
     #[serde(flatten)]
     pub meta: NodeMeta,
-    pub max_flow: Option<DynamicFloatValue>,
-    pub min_flow: Option<DynamicFloatValue>,
     pub cost: Option<DynamicFloatValue>,
     /// Hydropower production target. If set the node's max flow is limited to the flow
-    /// calculated using the hydropower. equation. If omitted no flow restriction is set.
+    /// calculated using the hydropower equation. If omitted no flow restriction is set.
     /// Units should be in units of energy per day.
     pub target: Option<DynamicFloatValue>,
+    // This can be used to define where to apply the flow calculated from the hydropower production
+    // target using the inverse hydropower equation. Default to [`TargetType::MaxFlow`])
+    pub target_type: TargetType,
     /// The elevation of water entering the turbine. The difference of this value with the
     /// `turbine_elevation` gives the working head of the turbine. This is optional
     /// and can be a constant, a value from a table, a parameter name or an inline parameter
@@ -50,6 +60,7 @@ impl Default for TurbineNode {
     fn default() -> Self {
         Self {
             target: None,
+            target_type: TargetType::MaxFlow,
             water_elevation: None,
             turbine_elevation: 0.0,
             min_head: 0.0,
@@ -106,22 +117,13 @@ impl TurbineNode {
                 .water_elevation
                 .map(|t| t.load(network, schema, domain, tables, data_path, inter_network_transfers))
                 .transpose()?;
-            let max_flow = self
-                .max_flow
-                .map(|t| t.load(network, schema, domain, tables, data_path, inter_network_transfers))
-                .transpose()?;
-            let min_flow = self
-                .min_flow
-                .map(|t| t.load(network, schema, domain, tables, data_path, inter_network_transfers))
-                .transpose()?;
-
             let turbine_data = HydropowerTargetData {
                 target: target_value,
                 water_elevation,
                 elevation: Some(self.turbine_elevation),
                 min_head: Some(self.min_head),
-                max_flow,
-                min_flow,
+                max_flow: None,
+                min_flow: None,
                 efficiency: Some(self.efficiency),
                 water_density: Some(self.water_density),
                 flow_unit_conversion: Some(self.flow_unit_conversion),
@@ -130,7 +132,19 @@ impl TurbineNode {
             let p = pywr_core::parameters::HydropowerTargetParameter::new(&name, turbine_data);
             let power_idx = network.add_parameter(Box::new(p))?;
             let metric = Metric::ParameterValue(power_idx);
-            network.set_node_max_flow(self.meta.name.as_str(), Self::sub_name(), metric.clone().into())?;
+
+            match self.target_type {
+                TargetType::MaxFlow => {
+                    network.set_node_max_flow(self.meta.name.as_str(), Self::sub_name(), metric.clone().into())?;
+                }
+                TargetType::MinFlow => {
+                    network.set_node_min_flow(self.meta.name.as_str(), Self::sub_name(), metric.clone().into())?;
+                }
+                TargetType::Both => {
+                    network.set_node_max_flow(self.meta.name.as_str(), Self::sub_name(), metric.clone().into())?;
+                    network.set_node_min_flow(self.meta.name.as_str(), Self::sub_name(), metric.clone().into())?
+                }
+            }
         }
 
         Ok(())
