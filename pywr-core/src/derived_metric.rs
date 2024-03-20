@@ -1,8 +1,10 @@
 use crate::aggregated_storage_node::AggregatedStorageNodeIndex;
+use crate::metric::Metric;
 use crate::network::Network;
 use crate::node::NodeIndex;
 use crate::state::State;
 use crate::timestep::Timestep;
+use crate::utils::hydropower_calculation;
 use crate::virtual_storage::VirtualStorageIndex;
 use crate::PywrError;
 use std::fmt;
@@ -32,6 +34,23 @@ impl Display for DerivedMetricIndex {
     }
 }
 
+// Turbine data to calculate the power in the `PowerFromNodeFlow` metric.
+#[derive(Clone, Debug, PartialEq)]
+pub struct TurbineData {
+    // The turbine elevation
+    pub elevation: f64,
+    // The turbine relative efficiency (0-1)
+    pub efficiency: f64,
+    // The water elevation above the turbine
+    pub water_elevation: Option<Metric>,
+    // The water density
+    pub water_density: f64,
+    /// A factor used to transform the units of flow to be compatible with the hydropower equation
+    pub flow_unit_conversion: f64,
+    /// A factor used to transform the units of total energy
+    pub energy_unit_conversion: f64,
+}
+
 /// Derived metrics are updated after the model is solved.
 ///
 /// These metrics are "derived" from node states (e.g. volume, flow) and must be updated
@@ -43,6 +62,7 @@ pub enum DerivedMetric {
     NodeProportionalVolume(NodeIndex),
     AggregatedNodeProportionalVolume(AggregatedStorageNodeIndex),
     VirtualStorageProportionalVolume(VirtualStorageIndex),
+    PowerFromNodeFlow(NodeIndex, TurbineData),
 }
 
 impl DerivedMetric {
@@ -90,6 +110,27 @@ impl DerivedMetric {
                 let flow = state.get_network_state().get_node_in_flow(idx)?;
                 let max_flow = node.get_current_max_flow(network, state)?;
                 Ok(max_flow - flow)
+            }
+            Self::PowerFromNodeFlow(idx, turbine_data) => {
+                let flow = state.get_network_state().get_node_in_flow(idx)?;
+
+                // Calculate the head (the head may be negative)
+                let head = if let Some(water_elevation) = &turbine_data.water_elevation {
+                    water_elevation.get_value(network, state)? - turbine_data.elevation
+                } else {
+                    turbine_data.elevation
+                }
+                .max(0.0);
+
+                Ok(hydropower_calculation(
+                    flow,
+                    head,
+                    turbine_data.elevation,
+                    turbine_data.efficiency,
+                    turbine_data.flow_unit_conversion,
+                    turbine_data.energy_unit_conversion,
+                    turbine_data.water_density,
+                ))
             }
         }
     }

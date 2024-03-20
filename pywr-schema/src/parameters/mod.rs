@@ -14,6 +14,7 @@ mod core;
 mod data_frame;
 mod delay;
 mod discount_factor;
+mod hydropower;
 mod indexed_array;
 mod interpolated;
 mod offset;
@@ -49,6 +50,7 @@ use crate::model::PywrMultiNetworkTransfer;
 use crate::nodes::NodeAttribute;
 use crate::parameters::core::DivisionParameter;
 pub use crate::parameters::data_frame::DataFrameParameter;
+pub use crate::parameters::hydropower::HydropowerTargetParameter;
 use crate::parameters::interpolated::InterpolatedParameter;
 pub use offset::OffsetParameter;
 use pywr_core::metric::Metric;
@@ -158,6 +160,7 @@ pub enum Parameter {
     Max(MaxParameter),
     Min(MinParameter),
     Negative(NegativeParameter),
+    HydropowerTarget(HydropowerTargetParameter),
     Polynomial1D(Polynomial1DParameter),
     ParameterThreshold(ParameterThresholdParameter),
     TablesArray(TablesArrayParameter),
@@ -200,6 +203,7 @@ impl Parameter {
             Self::Offset(p) => p.meta.name.as_str(),
             Self::DiscountFactor(p) => p.meta.name.as_str(),
             Self::Interpolated(p) => p.meta.name.as_str(),
+            Self::HydropowerTarget(p) => p.meta.name.as_str(),
             Self::RbfProfile(p) => p.meta.name.as_str(),
         }
     }
@@ -232,6 +236,7 @@ impl Parameter {
             Self::Offset(_) => "Offset",
             Self::DiscountFactor(_) => "DiscountFactor",
             Self::Interpolated(_) => "Interpolated",
+            Self::HydropowerTarget(_) => "HydropowerTarget",
             Self::RbfProfile(_) => "RbfProfile",
         }
     }
@@ -392,6 +397,14 @@ impl Parameter {
                 inter_network_transfers,
             )?),
             Self::RbfProfile(p) => ParameterType::Parameter(p.add_to_model(network)?),
+            Self::HydropowerTarget(p) => ParameterType::Parameter(p.add_to_model(
+                network,
+                schema,
+                domain,
+                tables,
+                data_path,
+                inter_network_transfers,
+            )?),
         };
 
         Ok(ty)
@@ -477,7 +490,9 @@ impl TryFromV1Parameter<ParameterV1> for Parameter {
                 }
                 CoreParameter::NegativeMax(_) => todo!("Implement NegativeMaxParameter"),
                 CoreParameter::NegativeMin(_) => todo!("Implement NegativeMinParameter"),
-                CoreParameter::HydropowerTarget(_) => todo!("Implement HydropowerTargetParameter"),
+                CoreParameter::HydropowerTarget(p) => {
+                    Parameter::HydropowerTarget(p.try_into_v2_parameter(parent_node, unnamed_count)?)
+                }
                 CoreParameter::WeeklyProfile(p) => {
                     Parameter::WeeklyProfile(p.try_into_v2_parameter(parent_node, unnamed_count)?)
                 }
