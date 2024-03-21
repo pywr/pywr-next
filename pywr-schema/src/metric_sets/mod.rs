@@ -44,8 +44,13 @@ impl OutputMetric {
                 node.create_metric(network, Some(NodeAttribute::Deficit))
             }
             OutputMetric::Parameter { name } => {
-                let parameter_idx = network.get_parameter_index_by_name(name)?;
-                Ok(pywr_core::metric::MetricF64::ParameterValue(parameter_idx))
+                if let Ok(idx) = network.get_parameter_index_by_name(name) {
+                    Ok(pywr_core::metric::MetricF64::ParameterValue(idx))
+                } else if let Ok(idx) = network.get_index_parameter_index_by_name(name) {
+                    Ok(pywr_core::metric::MetricF64::IndexParameterValue(idx))
+                } else {
+                    Err(SchemaError::ParameterNotFound(name.to_string()))
+                }
             }
         }
     }
