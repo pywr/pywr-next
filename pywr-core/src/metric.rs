@@ -20,6 +20,7 @@ pub enum MetricF64 {
     AggregatedNodeVolume(AggregatedStorageNodeIndex),
     EdgeFlow(EdgeIndex),
     ParameterValue(ParameterIndex<f64>),
+    IndexParameterValue(ParameterIndex<usize>),
     MultiParameterValue((ParameterIndex<MultiValue>, String)),
     VirtualStorageVolume(VirtualStorageIndex),
     MultiNodeInFlow { indices: Vec<NodeIndex>, name: String },
@@ -55,6 +56,7 @@ impl MetricF64 {
 
             MetricF64::EdgeFlow(idx) => Ok(state.get_network_state().get_edge_flow(idx)?),
             MetricF64::ParameterValue(idx) => Ok(state.get_parameter_value(*idx)?),
+            MetricF64::IndexParameterValue(idx) => Ok(state.get_parameter_index(*idx)? as f64),
             MetricF64::MultiParameterValue((idx, key)) => Ok(state.get_multi_parameter_value(*idx, key)?),
             MetricF64::VirtualStorageVolume(idx) => Ok(state.get_network_state().get_virtual_storage_volume(idx)?),
             MetricF64::DerivedMetric(idx) => state.get_derived_metric_value(*idx),
@@ -98,6 +100,7 @@ impl MetricF64 {
                 network.get_node(&edge.from_node_index).map(|n| n.name())
             }
             Self::ParameterValue(idx) => network.get_parameter(idx).map(|p| p.name()),
+            Self::IndexParameterValue(idx) => network.get_index_parameter(idx).map(|p| p.name()),
             Self::MultiParameterValue((idx, _)) => network.get_multi_valued_parameter(idx).map(|p| p.name()),
             Self::VirtualStorageVolume(idx) => network.get_virtual_storage_node(idx).map(|v| v.name()),
             Self::MultiNodeInFlow { name, .. } | Self::MultiNodeOutFlow { name, .. } => Ok(name),
@@ -120,7 +123,7 @@ impl MetricF64 {
                 let edge = network.get_edge(idx)?;
                 network.get_node(&edge.to_node_index).map(|n| Some(n.name()))
             }
-            Self::ParameterValue(_) | Self::MultiParameterValue(_) => Ok(None),
+            Self::ParameterValue(_) | Self::IndexParameterValue(_) | Self::MultiParameterValue(_) => Ok(None),
             Self::VirtualStorageVolume(idx) => network.get_virtual_storage_node(idx).map(|v| v.sub_name()),
             Self::MultiNodeInFlow { .. } | Self::MultiNodeOutFlow { .. } => Ok(None),
             Self::Constant(_) => Ok(None),
@@ -139,6 +142,7 @@ impl MetricF64 {
             Self::AggregatedNodeVolume(_) => "volume",
             Self::EdgeFlow(_) => "edge_flow",
             Self::ParameterValue(_) => "value",
+            Self::IndexParameterValue(_) => "value",
             Self::MultiParameterValue(_) => "value",
             Self::VirtualStorageVolume(_) => "volume",
             Self::MultiNodeInFlow { .. } => "inflow",
