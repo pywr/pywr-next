@@ -34,7 +34,7 @@ use pywr_v1_schema::nodes::{
     CoreNode as CoreNodeV1, Node as NodeV1, NodeMeta as NodeMetaV1, NodePosition as NodePositionV1,
 };
 use pywr_v1_schema::parameters::{
-    CoreParameter as CoreParameterV1, Parameter as ParameterV1, ParameterValue as ParameterValueV1,
+    CoreParameter as CoreParameterV1, Parameter as ParameterV1, ParameterValue as ParameterValueV1, ParameterValueType,
 };
 pub use river_gauge::RiverGaugeNode;
 pub use river_split_with_gauge::RiverSplitWithGaugeNode;
@@ -688,29 +688,220 @@ impl TryFrom<NodeV1> for NodeAndTimeseries {
 
     fn try_from(v1: NodeV1) -> Result<Self, Self::Error> {
         let mut ts_vec = Vec::new();
+        let mut unnamed_count: usize = 0;
         for param_value in v1.parameters().values() {
-            match param_value {
-                pywr_v1_schema::parameters::ParameterValueType::Single(param) => {
-                    if let ParameterValueV1::Inline(p) = param {
-                        if let ParameterV1::Core(CoreParameterV1::DataFrame(df_param)) = p.as_ref() {
-                            let mut ts_data: TimeseriesV1Data = df_param.clone().into();
-
-                            if ts_data.name.is_none() {
-                                let name = format!("{}.timeseries", v1.name());
-                                ts_data.name = Some(name);
-                            }
-
-                            ts_vec.push(ts_data);
-                        }
-                    }
-                }
-                pywr_v1_schema::parameters::ParameterValueType::List(_) => todo!(),
-            }
+            ts_vec.extend(extract_timeseries(param_value, v1.name(), &mut unnamed_count));
         }
 
         let timeseries = if ts_vec.is_empty() { None } else { Some(ts_vec) };
-
         let node = Node::try_from(v1)?;
         Ok(Self { node, timeseries })
+    }
+}
+
+/// Extract timeseries data from a parameter value.
+///
+/// If the parameter value is a DataFrame, then convert it to timeseries data. If it is another type then recursively
+/// call the function on any inline parameters this parameter may contain to check for other dataframe parameters.
+fn extract_timeseries(
+    param_value: &ParameterValueType,
+    name: &str,
+    unnamed_count: &mut usize,
+) -> Vec<TimeseriesV1Data> {
+    let mut ts_vec = Vec::new();
+    match param_value {
+        ParameterValueType::Single(param) => {
+            if let ParameterValueV1::Inline(p) = param {
+                if let ParameterV1::Core(CoreParameterV1::DataFrame(df_param)) = p.as_ref() {
+                    let mut ts_data: TimeseriesV1Data = df_param.clone().into();
+                    if ts_data.name.is_none() {
+                        let name = format!("{}-p{}.timeseries", name, unnamed_count);
+                        *unnamed_count += 1;
+                        ts_data.name = Some(name);
+                    }
+                    ts_vec.push(ts_data);
+                } else {
+                    // Not a dataframe parameter but the parameter might have child dataframe parameters.
+                    // Update the name and call the function recursively on all child parameters.
+                    let name = if p.name().is_none() {
+                        let n = format!("{}-p{}", name, unnamed_count);
+                        *unnamed_count += 1;
+                        n
+                    } else {
+                        p.name().unwrap().to_string()
+                    };
+                    for nested_param in p.parameters().values() {
+                        ts_vec.extend(extract_timeseries(nested_param, &name, unnamed_count));
+                    }
+                }
+            }
+        }
+        ParameterValueType::List(params) => {
+            for param in params.iter() {
+                if let ParameterValueV1::Inline(p) = param {
+                    if let ParameterV1::Core(CoreParameterV1::DataFrame(df_param)) = p.as_ref() {
+                        let mut ts_data: TimeseriesV1Data = df_param.clone().into();
+                        if ts_data.name.is_none() {
+                            let name = format!("{}-p{}.timeseries", name, unnamed_count);
+                            *unnamed_count += 1;
+                            ts_data.name = Some(name);
+                        }
+                        ts_vec.push(ts_data);
+                    } else {
+                        // Not a dataframe parameter but the parameter might have child dataframe parameters.
+                        // Update the name and call the function recursively on all child parameters.
+                        let name = if p.name().is_none() {
+                            let n = format!("{}-p{}", name, unnamed_count);
+                            *unnamed_count += 1;
+                            n
+                        } else {
+                            p.name().unwrap().to_string()
+                        };
+                        for nested_param in p.parameters().values() {
+                            ts_vec.extend(extract_timeseries(nested_param, &name, unnamed_count));
+                        }
+                    }
+                }
+            }
+        }
+    };
+    ts_vec
+}
+
+#[cfg(test)]
+mod tests {
+    use pywr_v1_schema::nodes::Node as NodeV1;
+
+    use crate::{
+        nodes::{Node, NodeAndTimeseries},
+        parameters::{DynamicFloatValue, MetricFloatValue, Parameter},
+    };
+
+    #[test]
+    fn test_ts_inline() {
+        let node_data = r#"
+        {
+            "name": "catchment1",
+            "type": "Input",
+            "max_flow": {
+                "type": "dataframe",
+                "url" : "timeseries1.csv",
+                "parse_dates": true,
+                "dayfirst": true,
+                "index_col": 0,
+                "column": "Data"
+            }
+        }
+        "#;
+
+        let v1_node: NodeV1 = serde_json::from_str(node_data).unwrap();
+
+        let node_ts: NodeAndTimeseries = v1_node.try_into().unwrap();
+
+        let input_node = match node_ts.node {
+            Node::Input(n) => n,
+            _ => panic!("Expected InputNode"),
+        };
+
+        let expected_name = String::from("catchment1-p0.timeseries");
+
+        match input_node.max_flow {
+            Some(DynamicFloatValue::Dynamic(MetricFloatValue::Timeseries(ts))) => {
+                assert_eq!(ts.name(), &expected_name)
+            }
+            _ => panic!("Expected Timeseries"),
+        };
+
+        match node_ts.timeseries {
+            Some(ts) => {
+                assert_eq!(ts.len(), 1);
+                assert_eq!(ts.first().unwrap().name.as_ref().unwrap().as_str(), &expected_name);
+            }
+            None => panic!("Expected timeseries data"),
+        };
+    }
+
+    #[test]
+    fn test_ts_inline_nested() {
+        let node_data = r#"
+        {
+            "name": "catchment1",
+            "type": "Input",
+            "max_flow": {
+                "type": "aggregated",
+                "agg_func": "product",
+                "parameters": [
+                    {
+                        "type": "constant",
+                        "value": 0.9
+                    },
+                    {
+                        "type": "dataframe",
+                        "url" : "timeseries1.csv",
+                        "parse_dates": true,
+                        "dayfirst": true,
+                        "index_col": 0,
+                        "column": "Data"
+                    },
+                    {
+                        "type": "constant",
+                        "value": 0.9
+                    },
+                    {
+                        "type": "dataframe",
+                        "url" : "timeseries2.csv",
+                        "parse_dates": true,
+                        "dayfirst": true,
+                        "index_col": 0,
+                        "column": "Data"
+                    }
+                ]
+            }
+        }
+        "#;
+
+        let v1_node: NodeV1 = serde_json::from_str(node_data).unwrap();
+
+        let node_ts: NodeAndTimeseries = v1_node.try_into().unwrap();
+
+        let input_node = match node_ts.node {
+            Node::Input(n) => n,
+            _ => panic!("Expected InputNode"),
+        };
+
+        let expected_name1 = String::from("catchment1-p0-p2.timeseries");
+        let expected_name2 = String::from("catchment1-p0-p4.timeseries");
+
+        match input_node.max_flow {
+            Some(DynamicFloatValue::Dynamic(MetricFloatValue::InlineParameter { definition })) => match *definition {
+                Parameter::Aggregated(param) => {
+                    assert_eq!(param.metrics.len(), 4);
+                    match &param.metrics[1] {
+                        DynamicFloatValue::Dynamic(MetricFloatValue::Timeseries(ts)) => {
+                            assert_eq!(ts.name(), &expected_name1)
+                        }
+                        _ => panic!("Expected Timeseries"),
+                    }
+
+                    match &param.metrics[3] {
+                        DynamicFloatValue::Dynamic(MetricFloatValue::Timeseries(ts)) => {
+                            assert_eq!(ts.name(), &expected_name2)
+                        }
+                        _ => panic!("Expected Timeseries"),
+                    }
+                }
+                _ => panic!("Expected Aggregated parameter"),
+            },
+            _ => panic!("Expected Timeseries"),
+        };
+
+        match node_ts.timeseries {
+            Some(ts) => {
+                assert_eq!(ts.len(), 2);
+                assert_eq!(ts[0].name.as_ref().unwrap().as_str(), &expected_name1);
+                assert_eq!(ts[1].name.as_ref().unwrap().as_str(), &expected_name2);
+            }
+            None => panic!("Expected timeseries data"),
+        };
     }
 }

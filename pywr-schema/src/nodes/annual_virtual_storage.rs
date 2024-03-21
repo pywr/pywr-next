@@ -32,7 +32,6 @@ impl Default for AnnualReset {
     }
 }
 
-
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, PywrNode)]
 pub struct AnnualVirtualStorageNode {
     #[serde(flatten)]

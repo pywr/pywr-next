@@ -271,8 +271,9 @@ mod tests {
         let schema = PywrNetwork::default();
         let mut network = Network::default();
         let tables = LoadedTableCollection::from_schema(None, None).unwrap();
+        let ts = LoadedTimeseriesCollection::default();
         param
-            .add_to_model(&mut network, &schema, &domain, &tables, None, &[])
+            .add_to_model(&mut network, &schema, &domain, &tables, None, &[], &ts)
             .unwrap();
 
         assert!(network.get_parameter_by_name("my-float-parameter").is_ok());
@@ -306,8 +307,9 @@ mod tests {
         let schema = PywrNetwork::default();
         let mut network = Network::default();
         let tables = LoadedTableCollection::from_schema(None, None).unwrap();
+        let ts = LoadedTimeseriesCollection::default();
         param
-            .add_to_model(&mut network, &schema, &domain, &tables, None, &[])
+            .add_to_model(&mut network, &schema, &domain, &tables, None, &[], &ts)
             .unwrap();
 
         assert!(network.get_index_parameter_by_name("my-int-parameter").is_ok());

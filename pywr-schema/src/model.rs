@@ -426,7 +426,7 @@ impl TryFrom<pywr_v1_schema::PywrModel> for PywrModel {
             .flatten()
             .collect::<Vec<_>>();
 
-        let mut nodes = nodes_and_ts.into_iter().map(|n| n.node).collect::<Vec<_>>();
+        let nodes = nodes_and_ts.into_iter().map(|n| n.node).collect::<Vec<_>>();
 
         let edges = v1.edges.into_iter().map(|e| e.into()).collect();
 
@@ -442,38 +442,6 @@ impl TryFrom<pywr_v1_schema::PywrModel> for PywrModel {
 
         let timeseries = if !ts_data.is_empty() {
             let ts = convert_from_v1_data(&ts_data, &v1.tables);
-            let ts_names: HashSet<&str> = ts.iter().map(|t| t.name()).collect();
-
-            // Update node param references
-            for n in nodes.iter_mut() {
-                let mut params = n.parameters_mut();
-                for param in params.values_mut() {
-                    if let DynamicFloatValue::Dynamic(MetricFloatValue::Reference(MetricFloatReference::Parameter {
-                        name,
-                        key: _,
-                    })) = param
-                    {
-                        // If the parameter name matches one of the timeseries names, assume parameter reference needs updating to a timeseries reference.
-                        // This should be fine as the sources of all the names is the v1 parameter list which should have unique names.
-                        if ts_names.contains(name.as_str()) {
-                            if let Some(data) = ts_data.iter().find(|t| t.name.as_ref().unwrap() == name) {
-                                let col = match (&data.column, &data.scenario) {
-                                    (Some(col), None) => DataFrameColumns::Column(col.clone()),
-                                    (None, Some(scenario)) => DataFrameColumns::Scenario(scenario.clone()),
-                                    (Some(_), Some(_)) => {
-                                        return Err(ConversionError::AmbiguousColumnAndScenario(name.clone()))
-                                    }
-                                    (None, None) => return Err(ConversionError::MissingColumnOrScenario(name.clone())),
-                                };
-                                let ts_ref = DynamicFloatValue::Dynamic(MetricFloatValue::Timeseries(
-                                    TimeseriesReference::new(name.clone(), col),
-                                ));
-                                **param = ts_ref;
-                            }
-                        }
-                    }
-                }
-            }
             Some(ts)
         } else {
             None

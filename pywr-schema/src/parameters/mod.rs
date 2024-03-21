@@ -777,6 +777,10 @@ impl TimeseriesReference {
         let ty = "Timeseries".to_string();
         Self { ty, name, columns }
     }
+
+    pub fn name(&self) -> &str {
+        self.name.as_str()
+    }
 }
 
 /// A floating-point(f64) value from a metric in the network.
@@ -967,12 +971,12 @@ impl TryFromV1Parameter<ParameterValueV1> for DynamicFloatValue {
                         let name = match t.name {
                             Some(n) => n,
                             None => {
-                                match parent_node {
-                                    // TODO if the node has inline timeseries for more than 1 attribute then this name will not be unique!
-                                    // The attribute name might need passing into the function
-                                    Some(node_name) => format!("{}.timeseries", node_name),
+                                let n = match parent_node {
+                                    Some(node_name) => format!("{}-p{}.timeseries", node_name, *unnamed_count),
                                     None => format!("unnamed-timeseries-{}", *unnamed_count),
-                                }
+                                };
+                                *unnamed_count += 1;
+                                n
                             }
                         };
 
