@@ -5,11 +5,9 @@ use crate::scenario::ScenarioIndex;
 use crate::state::State;
 use crate::timestep::Timestep;
 use crate::PywrError;
-use core::f64;
 use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::ops::Deref;
-use std::slice::Iter;
 
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Debug)]
 pub struct MetricSetIndex(usize);
@@ -69,7 +67,7 @@ impl MetricSet {
     pub fn name(&self) -> &str {
         &self.name
     }
-    pub fn iter_metrics(&self) -> Iter<'_, MetricF64> {
+    pub fn iter_metrics(&self) -> impl Iterator<Item = &MetricF64> + '_ {
         self.metrics.iter()
     }
 

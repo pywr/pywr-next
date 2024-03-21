@@ -1,7 +1,7 @@
 use crate::aggregated_node::{AggregatedNode, AggregatedNodeIndex, AggregatedNodeVec, Factors};
 use crate::aggregated_storage_node::{AggregatedStorageNode, AggregatedStorageNodeIndex, AggregatedStorageNodeVec};
 use crate::derived_metric::{DerivedMetric, DerivedMetricIndex};
-use crate::edge::{EdgeIndex, EdgeVec};
+use crate::edge::{Edge, EdgeIndex, EdgeVec};
 use crate::metric::MetricF64;
 use crate::models::ModelDomain;
 use crate::node::{ConstraintValue, Node, NodeVec, StorageInitialVolume};
@@ -794,6 +794,11 @@ impl Network {
         Ok(())
     }
 
+    /// Get an [`Edge`] from an edge's index
+    pub fn get_edge(&self, index: &EdgeIndex) -> Result<&Edge, PywrError> {
+        self.edges.get(index)
+    }
+
     /// Get a Node from a node's name
     pub fn get_node_index_by_name(&self, name: &str, sub_name: Option<&str>) -> Result<NodeIndex, PywrError> {
         Ok(self.get_node_by_name(name, sub_name)?.index())
@@ -1123,6 +1128,17 @@ impl Network {
         }
     }
 
+    /// Get a [`Parameter<usize>`] from its index.
+    pub fn get_index_parameter(
+        &self,
+        index: &ParameterIndex<usize>,
+    ) -> Result<&dyn parameters::Parameter<usize>, PywrError> {
+        match self.index_parameters.get(*index.deref()) {
+            Some(p) => Ok(p.as_ref()),
+            None => Err(PywrError::IndexParameterIndexNotFound(*index)),
+        }
+    }
+
     /// Get a `IndexParameter` from a parameter's name
     pub fn get_index_parameter_by_name(&self, name: &str) -> Result<&dyn parameters::Parameter<usize>, PywrError> {
         match self.index_parameters.iter().find(|p| p.name() == name) {
@@ -1136,6 +1152,17 @@ impl Network {
         match self.index_parameters.iter().position(|p| p.name() == name) {
             Some(idx) => Ok(ParameterIndex::new(idx)),
             None => Err(PywrError::ParameterNotFound(name.to_string())),
+        }
+    }
+
+    /// Get a `MultiValueParameterIndex` from a parameter's name
+    pub fn get_multi_valued_parameter(
+        &self,
+        index: &ParameterIndex<MultiValue>,
+    ) -> Result<&dyn parameters::Parameter<MultiValue>, PywrError> {
+        match self.multi_parameters.get(*index.deref()) {
+            Some(p) => Ok(p.as_ref()),
+            None => Err(PywrError::MultiValueParameterIndexNotFound(*index)),
         }
     }
 

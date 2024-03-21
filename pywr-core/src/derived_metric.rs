@@ -93,4 +93,33 @@ impl DerivedMetric {
             }
         }
     }
+
+    pub fn name<'a>(&self, network: &'a Network) -> Result<&'a str, PywrError> {
+        match self {
+            Self::NodeInFlowDeficit(idx) | Self::NodeProportionalVolume(idx) => network.get_node(idx).map(|n| n.name()),
+            Self::AggregatedNodeProportionalVolume(idx) => network.get_aggregated_storage_node(idx).map(|n| n.name()),
+            Self::VirtualStorageProportionalVolume(idx) => network.get_virtual_storage_node(idx).map(|v| v.name()),
+        }
+    }
+
+    pub fn sub_name<'a>(&self, network: &'a Network) -> Result<Option<&'a str>, PywrError> {
+        match self {
+            Self::NodeInFlowDeficit(idx) | Self::NodeProportionalVolume(idx) => {
+                network.get_node(idx).map(|n| n.sub_name())
+            }
+            Self::AggregatedNodeProportionalVolume(idx) => {
+                network.get_aggregated_storage_node(idx).map(|n| n.sub_name())
+            }
+            Self::VirtualStorageProportionalVolume(idx) => network.get_virtual_storage_node(idx).map(|v| v.sub_name()),
+        }
+    }
+
+    pub fn attribute(&self) -> &str {
+        match self {
+            Self::NodeInFlowDeficit(_) => "in_flow_deficit",
+            Self::NodeProportionalVolume(_) => "proportional_volume",
+            Self::AggregatedNodeProportionalVolume(_) => "proportional_volume",
+            Self::VirtualStorageProportionalVolume(_) => "proportional_volume",
+        }
+    }
 }

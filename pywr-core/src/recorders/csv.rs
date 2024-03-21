@@ -1,5 +1,4 @@
 use super::{MetricSetState, PywrError, Recorder, RecorderMeta, Timestep};
-use crate::metric::MetricF64;
 use crate::models::ModelDomain;
 use crate::network::Network;
 use crate::recorders::metric_set::MetricSetIndex;
@@ -46,75 +45,11 @@ impl Recorder for CSVRecorder {
         let metric_set = network.get_metric_set(self.metric_set_idx)?;
 
         for metric in metric_set.iter_metrics() {
-            let (name, sub_name, attribute) = match metric {
-                MetricF64::NodeInFlow(idx) => {
-                    let node = network.get_node(idx)?;
-                    let (name, sub_name) = node.full_name();
-                    let sub_name = sub_name.map_or("".to_string(), |sn| sn.to_string());
-
-                    (name.to_string(), sub_name, "inflow".to_string())
-                }
-                MetricF64::NodeOutFlow(idx) => {
-                    let node = network.get_node(idx)?;
-                    let (name, sub_name) = node.full_name();
-                    let sub_name = sub_name.map_or("".to_string(), |sn| sn.to_string());
-
-                    (name.to_string(), sub_name, "outflow".to_string())
-                }
-                MetricF64::NodeVolume(idx) => {
-                    let node = network.get_node(idx)?;
-                    let (name, sub_name) = node.full_name();
-                    let sub_name = sub_name.map_or("".to_string(), |sn| sn.to_string());
-
-                    (name.to_string(), sub_name, "volume".to_string())
-                }
-                MetricF64::DerivedMetric(_idx) => {
-                    todo!("Derived metrics are not yet supported in CSV recorders");
-                }
-                MetricF64::AggregatedNodeVolume(idx) => {
-                    let node = network.get_aggregated_storage_node(idx)?;
-                    let (name, sub_name) = node.full_name();
-                    let sub_name = sub_name.map_or("".to_string(), |sn| sn.to_string());
-
-                    (name.to_string(), sub_name, "volume".to_string())
-                }
-                MetricF64::EdgeFlow(_) => {
-                    continue; // TODO
-                }
-                MetricF64::ParameterValue(idx) => {
-                    let parameter = network.get_parameter(idx)?;
-                    let name = parameter.name();
-                    (name.to_string(), "".to_string(), "parameter".to_string())
-                }
-                MetricF64::VirtualStorageVolume(_) => {
-                    continue; // TODO
-                }
-                MetricF64::Constant(_) => {
-                    continue; // TODO
-                }
-                MetricF64::MultiParameterValue(_) => {
-                    continue; // TODO
-                }
-                MetricF64::AggregatedNodeInFlow(idx) => {
-                    let node = network.get_aggregated_node(idx)?;
-                    let (name, sub_name) = node.full_name();
-                    let sub_name = sub_name.map_or("".to_string(), |sn| sn.to_string());
-
-                    (name.to_string(), sub_name, "inflow".to_string())
-                }
-                MetricF64::AggregatedNodeOutFlow(idx) => {
-                    let node = network.get_aggregated_node(idx)?;
-                    let (name, sub_name) = node.full_name();
-                    let sub_name = sub_name.map_or("".to_string(), |sn| sn.to_string());
-
-                    (name.to_string(), sub_name, "outflow".to_string())
-                }
-                MetricF64::MultiNodeInFlow { name, .. } => (name.to_string(), "".to_string(), "inflow".to_string()),
-                MetricF64::MultiNodeOutFlow { name, .. } => (name.to_string(), "".to_string(), "outflow".to_string()),
-                MetricF64::InterNetworkTransfer(_) => {
-                    continue; // TODO
-                }
-            };
+            let name = metric.name(network)?.to_string();
+            let sub_name = metric
+                .sub_name(network)?
+                .map_or_else(|| "".to_string(), |s| s.to_string());
+            let attribute = metric.attribute().to_string();
 
             // Add entries for each scenario
             names.push(name);
