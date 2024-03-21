@@ -7,7 +7,7 @@ use crate::parameters::{
 };
 use crate::timeseries::LoadedTimeseriesCollection;
 use pywr_core::models::ModelDomain;
-use pywr_core::parameters::{IndexParameterIndex, ParameterIndex};
+use pywr_core::parameters::ParameterIndex;
 use pywr_v1_schema::parameters::{
     AggFunc as AggFuncV1, AggregatedIndexParameter as AggregatedIndexParameterV1,
     AggregatedParameter as AggregatedParameterV1, IndexAggFunc as IndexAggFuncV1,
@@ -101,7 +101,7 @@ impl AggregatedParameter {
         data_path: Option<&Path>,
         inter_network_transfers: &[PywrMultiNetworkTransfer],
         timeseries: &LoadedTimeseriesCollection,
-    ) -> Result<ParameterIndex, SchemaError> {
+    ) -> Result<ParameterIndex<f64>, SchemaError> {
         let metrics = self
             .metrics
             .iter()
@@ -219,7 +219,7 @@ impl AggregatedIndexParameter {
         data_path: Option<&Path>,
         inter_network_transfers: &[PywrMultiNetworkTransfer],
         timeseries: &LoadedTimeseriesCollection,
-    ) -> Result<IndexParameterIndex, SchemaError> {
+    ) -> Result<ParameterIndex<usize>, SchemaError> {
         let parameters = self
             .parameters
             .iter()

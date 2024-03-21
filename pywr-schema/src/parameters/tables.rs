@@ -33,7 +33,7 @@ impl TablesArrayParameter {
         network: &mut pywr_core::network::Network,
         domain: &ModelDomain,
         data_path: Option<&Path>,
-    ) -> Result<ParameterIndex, SchemaError> {
+    ) -> Result<ParameterIndex<f64>, SchemaError> {
         // 1. Load the file from the HDF5 file (NB this is not Pandas format).
 
         // Handle the case of an optional data path with a relative url.

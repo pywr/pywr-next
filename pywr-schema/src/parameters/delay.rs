@@ -41,7 +41,7 @@ impl DelayParameter {
         data_path: Option<&Path>,
         inter_network_transfers: &[PywrMultiNetworkTransfer],
         timeseries: &LoadedTimeseriesCollection,
-    ) -> Result<ParameterIndex, SchemaError> {
+    ) -> Result<ParameterIndex<f64>, SchemaError> {
         let metric = self.metric.load(
             network,
             schema,

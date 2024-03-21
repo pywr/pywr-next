@@ -91,7 +91,7 @@ impl LoadedTimeseriesCollection {
         network: &mut pywr_core::network::Network,
         name: &str,
         col: &str,
-    ) -> Result<ParameterIndex, TimeseriesError> {
+    ) -> Result<ParameterIndex<f64>, TimeseriesError> {
         let df = self
             .timeseries
             .get(name)
@@ -119,7 +119,7 @@ impl LoadedTimeseriesCollection {
         name: &str,
         domain: &ModelDomain,
         scenario: &str,
-    ) -> Result<ParameterIndex, TimeseriesError> {
+    ) -> Result<ParameterIndex<f64>, TimeseriesError> {
         let scenario_group_index = domain
             .scenarios()
             .group_index(scenario)

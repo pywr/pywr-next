@@ -6,7 +6,7 @@ use crate::parameters::{
 };
 use crate::timeseries::LoadedTimeseriesCollection;
 use pywr_core::models::ModelDomain;
-use pywr_core::parameters::IndexParameterIndex;
+use pywr_core::parameters::ParameterIndex;
 use pywr_v1_schema::parameters::AsymmetricSwitchIndexParameter as AsymmetricSwitchIndexParameterV1;
 use std::collections::HashMap;
 use std::path::Path;
@@ -36,7 +36,7 @@ impl AsymmetricSwitchIndexParameter {
         data_path: Option<&Path>,
         inter_network_transfers: &[PywrMultiNetworkTransfer],
         timeseries: &LoadedTimeseriesCollection,
-    ) -> Result<IndexParameterIndex, SchemaError> {
+    ) -> Result<ParameterIndex<usize>, SchemaError> {
         let on_index_parameter = self.on_index_parameter.load(
             network,
             schema,

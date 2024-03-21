@@ -7,7 +7,7 @@ use crate::parameters::{
 };
 use crate::timeseries::{self, LoadedTimeseriesCollection};
 use pywr_core::models::ModelDomain;
-use pywr_core::parameters::{IndexParameterIndex, ParameterIndex};
+use pywr_core::parameters::ParameterIndex;
 use pywr_v1_schema::parameters::{
     ControlCurveIndexParameter as ControlCurveIndexParameterV1,
     ControlCurveInterpolatedParameter as ControlCurveInterpolatedParameterV1,
@@ -35,7 +35,7 @@ impl ControlCurveInterpolatedParameter {
         data_path: Option<&Path>,
         inter_network_transfers: &[PywrMultiNetworkTransfer],
         timeseries: &LoadedTimeseriesCollection,
-    ) -> Result<ParameterIndex, SchemaError> {
+    ) -> Result<ParameterIndex<f64>, SchemaError> {
         let metric = self.storage_node.load(network, schema)?;
 
         let control_curves = self
@@ -159,7 +159,7 @@ impl ControlCurveIndexParameter {
         data_path: Option<&Path>,
         inter_network_transfers: &[PywrMultiNetworkTransfer],
         timeseries: &LoadedTimeseriesCollection,
-    ) -> Result<IndexParameterIndex, SchemaError> {
+    ) -> Result<ParameterIndex<usize>, SchemaError> {
         let metric = self.storage_node.load(network, schema)?;
 
         let control_curves = self
@@ -281,7 +281,7 @@ impl ControlCurveParameter {
         data_path: Option<&Path>,
         inter_network_transfers: &[PywrMultiNetworkTransfer],
         timeseries: &LoadedTimeseriesCollection,
-    ) -> Result<ParameterIndex, SchemaError> {
+    ) -> Result<ParameterIndex<f64>, SchemaError> {
         let metric = self.storage_node.load(network, schema)?;
 
         let control_curves = self
@@ -396,7 +396,7 @@ impl ControlCurvePiecewiseInterpolatedParameter {
         data_path: Option<&Path>,
         inter_network_transfers: &[PywrMultiNetworkTransfer],
         timeseries: &LoadedTimeseriesCollection,
-    ) -> Result<ParameterIndex, SchemaError> {
+    ) -> Result<ParameterIndex<f64>, SchemaError> {
         let metric = self.storage_node.load(network, schema)?;
 
         let control_curves = self

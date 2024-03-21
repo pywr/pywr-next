@@ -54,7 +54,7 @@ use crate::timeseries::LoadedTimeseriesCollection;
 pub use offset::OffsetParameter;
 use pywr_core::metric::Metric;
 use pywr_core::models::{ModelDomain, MultiNetworkTransferIndex};
-use pywr_core::parameters::{IndexParameterIndex, IndexValue, ParameterType};
+use pywr_core::parameters::{IndexValue, ParameterIndex, ParameterType};
 use pywr_v1_schema::parameters::{
     CoreParameter, DataFrameParameter as DataFrameParameterV1, ExternalDataRef as ExternalDataRefV1,
     Parameter as ParameterV1, ParameterMeta as ParameterMetaV1, ParameterValue as ParameterValueV1, ParameterVec,
@@ -429,11 +429,18 @@ impl Parameter {
 pub fn convert_parameter_v1_to_v2(
     v1_parameters: ParameterVec,
     unnamed_count: &mut usize,
-) -> Result<(Vec<Parameter>, Vec<TimeseriesV1Data>), ConversionError> {
+    errors: &mut Vec<ConversionError>,
+) -> (Vec<Parameter>, Vec<TimeseriesV1Data>) {
     let param_or_ts: Vec<ParameterOrTimeseries> = v1_parameters
         .into_iter()
-        .map(|p| p.try_into_v2_parameter(None, unnamed_count))
-        .collect::<Result<Vec<_>, _>>()?;
+        .filter_map(|p| match p.try_into_v2_parameter(None, unnamed_count){
+            Ok(pt) => Some(pt),
+            Err(e) => {
+                errors.push(e);
+                None
+            }
+        })
+        .collect::<Vec<_>>();
 
     let parameters = param_or_ts
         .clone()
@@ -452,7 +459,7 @@ pub fn convert_parameter_v1_to_v2(
         })
         .collect();
 
-    Ok((parameters, timeseries))
+    (parameters, timeseries)
 }
 
 #[derive(Clone)]
@@ -870,7 +877,7 @@ impl ParameterIndexValue {
         data_path: Option<&Path>,
         inter_network_transfers: &[PywrMultiNetworkTransfer],
         timeseries: &LoadedTimeseriesCollection,
-    ) -> Result<IndexParameterIndex, SchemaError> {
+    ) -> Result<ParameterIndex<usize>, SchemaError> {
         match self {
             Self::Reference(name) => {
                 // This should be an existing parameter

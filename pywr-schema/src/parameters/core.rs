@@ -171,7 +171,7 @@ impl ConstantParameter {
         &self,
         network: &mut pywr_core::network::Network,
         tables: &LoadedTableCollection,
-    ) -> Result<ParameterIndex, SchemaError> {
+    ) -> Result<ParameterIndex<f64>, SchemaError> {
         let p = pywr_core::parameters::ConstantParameter::new(&self.meta.name, self.value.load(tables)?);
         Ok(network.add_parameter(Box::new(p))?)
     }
@@ -228,7 +228,7 @@ impl MaxParameter {
         data_path: Option<&Path>,
         inter_network_transfers: &[PywrMultiNetworkTransfer],
         timeseries: &LoadedTimeseriesCollection,
-    ) -> Result<ParameterIndex, SchemaError> {
+    ) -> Result<ParameterIndex<f64>, SchemaError> {
         let idx = self.parameter.load(
             network,
             schema,
@@ -310,7 +310,7 @@ impl DivisionParameter {
         data_path: Option<&Path>,
         inter_network_transfers: &[PywrMultiNetworkTransfer],
         timeseries: &LoadedTimeseriesCollection,
-    ) -> Result<ParameterIndex, SchemaError> {
+    ) -> Result<ParameterIndex<f64>, SchemaError> {
         let n = self.numerator.load(
             network,
             schema,
@@ -398,7 +398,7 @@ impl MinParameter {
         data_path: Option<&Path>,
         inter_network_transfers: &[PywrMultiNetworkTransfer],
         timeseries: &LoadedTimeseriesCollection,
-    ) -> Result<ParameterIndex, SchemaError> {
+    ) -> Result<ParameterIndex<f64>, SchemaError> {
         let idx = self.parameter.load(
             network,
             schema,
@@ -462,7 +462,7 @@ impl NegativeParameter {
         data_path: Option<&Path>,
         inter_network_transfers: &[PywrMultiNetworkTransfer],
         timeseries: &LoadedTimeseriesCollection,
-    ) -> Result<ParameterIndex, SchemaError> {
+    ) -> Result<ParameterIndex<f64>, SchemaError> {
         let idx = self.parameter.load(
             network,
             schema,

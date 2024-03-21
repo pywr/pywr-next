@@ -6,7 +6,7 @@ use crate::parameters::{
 };
 use crate::timeseries::LoadedTimeseriesCollection;
 use pywr_core::models::ModelDomain;
-use pywr_core::parameters::IndexParameterIndex;
+use pywr_core::parameters::ParameterIndex;
 use pywr_v1_schema::parameters::{
     ParameterThresholdParameter as ParameterThresholdParameterV1, Predicate as PredicateV1,
 };
@@ -79,7 +79,7 @@ impl ParameterThresholdParameter {
         data_path: Option<&Path>,
         inter_network_transfers: &[PywrMultiNetworkTransfer],
         timeseries: &LoadedTimeseriesCollection,
-    ) -> Result<IndexParameterIndex, SchemaError> {
+    ) -> Result<ParameterIndex<usize>, SchemaError> {
         let metric = self.parameter.load(
             network,
             schema,
