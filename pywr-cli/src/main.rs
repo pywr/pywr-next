@@ -1,7 +1,8 @@
 mod tracing;
 
 use crate::tracing::setup_tracing;
-use anyhow::{Context, Result};
+use ::tracing::info;
+use anyhow::Result;
 use clap::{Parser, Subcommand, ValueEnum};
 #[cfg(feature = "ipm-ocl")]
 use pywr_core::solvers::{ClIpmF32Solver, ClIpmF64Solver, ClIpmSolverSettings};
@@ -12,7 +13,6 @@ use pywr_core::solvers::{HighsSolver, HighsSolverSettings};
 use pywr_core::solvers::{SimdIpmF64Solver, SimdIpmSolverSettings};
 use pywr_core::test_utils::make_random_model;
 use pywr_schema::model::{PywrModel, PywrMultiNetworkModel};
-use pywr_schema::ConversionError;
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use std::fmt::{Display, Formatter};
@@ -50,16 +50,9 @@ impl Display for Solver {
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
 struct Cli {
-    // /// Optional name to operate on
-    // name: Option<String>,
-    //
-    // /// Sets a custom config file
-    // #[arg(short, long, value_name = "FILE")]
-    // config: Option<PathBuf>,
-    //
-    // /// Turn debugging information on
-    // #[arg(short, long, action = clap::ArgAction::Count)]
-    // debug: u8,
+    /// Turn debugging information on
+    #[arg(long, default_value_t = false)]
+    debug: bool,
     #[command(subcommand)]
     command: Option<Commands>,
 }
@@ -69,6 +62,9 @@ enum Commands {
     Convert {
         /// Path to Pywr v1.x JSON.
         model: PathBuf,
+        /// Stop if there is an error converting the model.
+        #[arg(short, long, default_value_t = false)]
+        stop_on_error: bool,
     },
 
     Run {
@@ -87,8 +83,6 @@ enum Commands {
         /// The number of threads to use in parallel simulation.
         #[arg(short, long, default_value_t = 1)]
         threads: usize,
-        #[arg(long, default_value_t = false)]
-        debug: bool,
     },
     RunMulti {
         /// Path to Pywr model JSON.
@@ -106,8 +100,6 @@ enum Commands {
         /// The number of threads to use in parallel simulation.
         #[arg(short, long, default_value_t = 1)]
         threads: usize,
-        #[arg(long, default_value_t = false)]
-        debug: bool,
     },
     RunRandom {
         num_systems: usize,
@@ -121,10 +113,11 @@ enum Commands {
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
+    setup_tracing(cli.debug).unwrap();
 
     match &cli.command {
         Some(command) => match command {
-            Commands::Convert { model } => convert(model)?,
+            Commands::Convert { model, stop_on_error } => convert(model, *stop_on_error),
             Commands::Run {
                 model,
                 solver,
@@ -132,8 +125,7 @@ fn main() -> Result<()> {
                 output_path,
                 parallel: _,
                 threads: _,
-                debug,
-            } => run(model, solver, data_path.as_deref(), output_path.as_deref(), *debug),
+            } => run(model, solver, data_path.as_deref(), output_path.as_deref()),
             Commands::RunMulti {
                 model,
                 solver,
@@ -141,8 +133,7 @@ fn main() -> Result<()> {
                 output_path,
                 parallel: _,
                 threads: _,
-                debug,
-            } => run_multi(model, solver, data_path.as_deref(), output_path.as_deref(), *debug),
+            } => run_multi(model, solver, data_path.as_deref(), output_path.as_deref()),
             Commands::RunRandom {
                 num_systems,
                 density,
@@ -156,7 +147,7 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn convert(path: &Path) -> Result<()> {
+fn convert(path: &Path, stop_on_error: bool) {
     if path.is_dir() {
         for entry in path.read_dir().expect("read_dir call failed").flatten() {
             let path = entry.path();
@@ -164,22 +155,34 @@ fn convert(path: &Path) -> Result<()> {
                 && (path.extension().unwrap() == "json")
                 && (!path.file_stem().unwrap().to_str().unwrap().contains("_v2"))
             {
-                v1_to_v2(&path).with_context(|| format!("Could not convert model: `{:?}`", &path))?;
+                v1_to_v2(&path, stop_on_error);
             }
         }
     } else {
-        v1_to_v2(path).with_context(|| format!("Could not convert model: `{:?}`", path))?;
+        v1_to_v2(path, stop_on_error);
     }
-
-    Ok(())
 }
 
-fn v1_to_v2(path: &Path) -> std::result::Result<(), ConversionError> {
-    println!("Model: {}", path.display());
+fn v1_to_v2(path: &Path, stop_on_error: bool) {
+    info!("Model: {}", path.display());
 
     let data = std::fs::read_to_string(path).unwrap();
+    // Load the v1 schema
     let schema: pywr_v1_schema::PywrModel = serde_json::from_str(data.as_str()).unwrap();
-    let schema_v2: PywrModel = schema.try_into()?;
+    // Convert to v2 schema and collect any errors
+    let (schema_v2, errors) = PywrModel::from_v1(schema);
+
+    if !errors.is_empty() {
+        info!("Model converted with {} errors:", errors.len());
+        for error in errors {
+            info!("  {}", error);
+        }
+        if stop_on_error {
+            return;
+        }
+    } else {
+        info!("Model converted with zero errors!");
+    }
 
     // There must be a better way to do this!!
     let mut new_file_name = path.file_stem().unwrap().to_os_string();
@@ -189,13 +192,9 @@ fn v1_to_v2(path: &Path) -> std::result::Result<(), ConversionError> {
     let new_file_pth = path.parent().unwrap().join(new_file_name);
 
     std::fs::write(new_file_pth, serde_json::to_string_pretty(&schema_v2).unwrap()).unwrap();
-
-    Ok(())
 }
 
-fn run(path: &Path, solver: &Solver, data_path: Option<&Path>, output_path: Option<&Path>, debug: bool) {
-    setup_tracing(debug).unwrap();
-
+fn run(path: &Path, solver: &Solver, data_path: Option<&Path>, output_path: Option<&Path>) {
     let data = std::fs::read_to_string(path).unwrap();
     let data_path = data_path.or_else(|| path.parent());
     let schema_v2: PywrModel = serde_json::from_str(data.as_str()).unwrap();
@@ -216,9 +215,7 @@ fn run(path: &Path, solver: &Solver, data_path: Option<&Path>, output_path: Opti
     .unwrap();
 }
 
-fn run_multi(path: &Path, solver: &Solver, data_path: Option<&Path>, output_path: Option<&Path>, debug: bool) {
-    setup_tracing(debug).unwrap();
-
+fn run_multi(path: &Path, solver: &Solver, data_path: Option<&Path>, output_path: Option<&Path>) {
     let data = std::fs::read_to_string(path).unwrap();
     let data_path = data_path.or_else(|| path.parent());
 

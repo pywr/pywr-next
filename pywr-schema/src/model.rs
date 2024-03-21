@@ -20,6 +20,16 @@ pub struct Metadata {
     pub minimum_version: Option<String>,
 }
 
+impl Default for Metadata {
+    fn default() -> Self {
+        Self {
+            title: "Untitled model".to_string(),
+            description: None,
+            minimum_version: None,
+        }
+    }
+}
+
 impl TryFrom<pywr_v1_schema::model::Metadata> for Metadata {
     type Error = ConversionError;
 
@@ -62,6 +72,16 @@ pub struct Timestepper {
     pub start: DateType,
     pub end: DateType,
     pub timestep: Timestep,
+}
+
+impl Default for Timestepper {
+    fn default() -> Self {
+        Self {
+            start: DateType::Date(NaiveDate::from_ymd_opt(2000, 1, 1).expect("Invalid date")),
+            end: DateType::Date(NaiveDate::from_ymd_opt(2000, 12, 31).expect("Invalid date")),
+            timestep: Timestep::Days(1),
+        }
+    }
 }
 
 impl TryFrom<pywr_v1_schema::model::Timestepper> for Timestepper {
@@ -371,20 +391,38 @@ impl PywrModel {
 
         Ok(model)
     }
-}
 
-impl TryFrom<pywr_v1_schema::PywrModel> for PywrModel {
-    type Error = ConversionError;
+    /// Convert a v1 model to a v2 model.
+    ///
+    /// This function is used to convert a v1 model to a v2 model. The conversion is not always
+    /// possible and may result in errors. The errors are returned as a vector of [`ConversionError`]s.
+    /// alongside the (partially) converted model. This may result in a model that will not
+    /// function as expected. The user should check the errors and the converted model to ensure
+    /// that the conversion has been successful.
+    pub fn from_v1(v1: pywr_v1_schema::PywrModel) -> (Self, Vec<ConversionError>) {
+        let mut errors = Vec::new();
 
-    fn try_from(v1: pywr_v1_schema::PywrModel) -> Result<Self, Self::Error> {
-        let metadata = v1.metadata.try_into()?;
-        let timestepper = v1.timestepper.try_into()?;
+        let metadata = v1.metadata.try_into().unwrap_or_else(|e| {
+            errors.push(e);
+            Metadata::default()
+        });
+
+        let timestepper = v1.timestepper.try_into().unwrap_or_else(|e| {
+            errors.push(e);
+            Timestepper::default()
+        });
 
         let nodes = v1
             .nodes
             .into_iter()
-            .map(|n| n.try_into())
-            .collect::<Result<Vec<_>, _>>()?;
+            .filter_map(|n| match n.try_into() {
+                Ok(n) => Some(n),
+                Err(e) => {
+                    errors.push(e);
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
 
         let edges = v1.edges.into_iter().map(|e| e.into()).collect();
 
@@ -393,8 +431,14 @@ impl TryFrom<pywr_v1_schema::PywrModel> for PywrModel {
             Some(
                 v1_parameters
                     .into_iter()
-                    .map(|p| p.try_into_v2_parameter(None, &mut unnamed_count))
-                    .collect::<Result<Vec<_>, _>>()?,
+                    .filter_map(|p| match p.try_into_v2_parameter(None, &mut unnamed_count) {
+                        Ok(p) => Some(p),
+                        Err(e) => {
+                            errors.push(e);
+                            None
+                        }
+                    })
+                    .collect::<Vec<_>>(),
             )
         } else {
             None
@@ -413,12 +457,15 @@ impl TryFrom<pywr_v1_schema::PywrModel> for PywrModel {
             outputs,
         };
 
-        Ok(Self {
-            metadata,
-            timestepper,
-            scenarios: None,
-            network,
-        })
+        (
+            Self {
+                metadata,
+                timestepper,
+                scenarios: None,
+                network,
+            },
+            errors,
+        )
     }
 }
 

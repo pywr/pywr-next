@@ -3,7 +3,7 @@ use crate::edge::{Edge, EdgeIndex};
 use crate::models::MultiNetworkTransferIndex;
 use crate::network::Network;
 use crate::node::{Node, NodeIndex};
-use crate::parameters::{IndexParameterIndex, MultiValueParameterIndex, ParameterIndex};
+use crate::parameters::ParameterIndex;
 use crate::timestep::Timestep;
 use crate::virtual_storage::VirtualStorageIndex;
 use crate::PywrError;
@@ -271,27 +271,30 @@ impl ParameterStates {
         }
     }
 
-    pub fn get_value_state(&self, index: ParameterIndex) -> Option<&Option<Box<dyn ParameterState>>> {
+    pub fn get_value_state(&self, index: ParameterIndex<f64>) -> Option<&Option<Box<dyn ParameterState>>> {
         self.values.get(*index.deref())
     }
 
-    pub fn get_mut_value_state(&mut self, index: ParameterIndex) -> Option<&mut Option<Box<dyn ParameterState>>> {
+    pub fn get_mut_value_state(&mut self, index: ParameterIndex<f64>) -> Option<&mut Option<Box<dyn ParameterState>>> {
         self.values.get_mut(*index.deref())
     }
 
-    pub fn get_mut_index_state(&mut self, index: IndexParameterIndex) -> Option<&mut Option<Box<dyn ParameterState>>> {
+    pub fn get_mut_index_state(
+        &mut self,
+        index: ParameterIndex<usize>,
+    ) -> Option<&mut Option<Box<dyn ParameterState>>> {
         self.indices.get_mut(*index.deref())
     }
 
     pub fn get_mut_multi_state(
         &mut self,
-        index: MultiValueParameterIndex,
+        index: ParameterIndex<MultiValue>,
     ) -> Option<&mut Option<Box<dyn ParameterState>>> {
         self.multi.get_mut(*index.deref())
     }
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, PartialEq)]
 pub struct MultiValue {
     values: HashMap<String, f64>,
     indices: HashMap<String, usize>,
@@ -328,14 +331,14 @@ impl ParameterValues {
         }
     }
 
-    fn get_value(&self, idx: ParameterIndex) -> Result<f64, PywrError> {
+    fn get_value(&self, idx: ParameterIndex<f64>) -> Result<f64, PywrError> {
         match self.values.get(*idx.deref()) {
             Some(s) => Ok(*s),
             None => Err(PywrError::ParameterIndexNotFound(idx)),
         }
     }
 
-    fn set_value(&mut self, idx: ParameterIndex, value: f64) -> Result<(), PywrError> {
+    fn set_value(&mut self, idx: ParameterIndex<f64>, value: f64) -> Result<(), PywrError> {
         match self.values.get_mut(*idx.deref()) {
             Some(s) => {
                 *s = value;
@@ -345,14 +348,14 @@ impl ParameterValues {
         }
     }
 
-    fn get_index(&self, idx: IndexParameterIndex) -> Result<usize, PywrError> {
+    fn get_index(&self, idx: ParameterIndex<usize>) -> Result<usize, PywrError> {
         match self.indices.get(*idx.deref()) {
             Some(s) => Ok(*s),
             None => Err(PywrError::IndexParameterIndexNotFound(idx)),
         }
     }
 
-    fn set_index(&mut self, idx: IndexParameterIndex, value: usize) -> Result<(), PywrError> {
+    fn set_index(&mut self, idx: ParameterIndex<usize>, value: usize) -> Result<(), PywrError> {
         match self.indices.get_mut(*idx.deref()) {
             Some(s) => {
                 *s = value;
@@ -362,7 +365,7 @@ impl ParameterValues {
         }
     }
 
-    fn get_multi_value(&self, idx: MultiValueParameterIndex, key: &str) -> Result<f64, PywrError> {
+    fn get_multi_value(&self, idx: ParameterIndex<MultiValue>, key: &str) -> Result<f64, PywrError> {
         match self.multi_values.get(*idx.deref()) {
             Some(s) => match s.get_value(key) {
                 Some(v) => Ok(*v),
@@ -372,7 +375,7 @@ impl ParameterValues {
         }
     }
 
-    fn set_multi_value(&mut self, idx: MultiValueParameterIndex, value: MultiValue) -> Result<(), PywrError> {
+    fn set_multi_value(&mut self, idx: ParameterIndex<MultiValue>, value: MultiValue) -> Result<(), PywrError> {
         match self.multi_values.get_mut(*idx.deref()) {
             Some(s) => {
                 *s = value;
@@ -382,7 +385,7 @@ impl ParameterValues {
         }
     }
 
-    fn get_multi_index(&self, idx: MultiValueParameterIndex, key: &str) -> Result<usize, PywrError> {
+    fn get_multi_index(&self, idx: ParameterIndex<MultiValue>, key: &str) -> Result<usize, PywrError> {
         match self.multi_values.get(*idx.deref()) {
             Some(s) => match s.get_index(key) {
                 Some(v) => Ok(*v),
@@ -637,35 +640,35 @@ impl State {
         &mut self.network
     }
 
-    pub fn get_parameter_value(&self, idx: ParameterIndex) -> Result<f64, PywrError> {
+    pub fn get_parameter_value(&self, idx: ParameterIndex<f64>) -> Result<f64, PywrError> {
         self.parameters.get_value(idx)
     }
 
-    pub fn set_parameter_value(&mut self, idx: ParameterIndex, value: f64) -> Result<(), PywrError> {
+    pub fn set_parameter_value(&mut self, idx: ParameterIndex<f64>, value: f64) -> Result<(), PywrError> {
         self.parameters.set_value(idx, value)
     }
 
-    pub fn get_parameter_index(&self, idx: IndexParameterIndex) -> Result<usize, PywrError> {
+    pub fn get_parameter_index(&self, idx: ParameterIndex<usize>) -> Result<usize, PywrError> {
         self.parameters.get_index(idx)
     }
 
-    pub fn set_parameter_index(&mut self, idx: IndexParameterIndex, value: usize) -> Result<(), PywrError> {
+    pub fn set_parameter_index(&mut self, idx: ParameterIndex<usize>, value: usize) -> Result<(), PywrError> {
         self.parameters.set_index(idx, value)
     }
 
-    pub fn get_multi_parameter_value(&self, idx: MultiValueParameterIndex, key: &str) -> Result<f64, PywrError> {
+    pub fn get_multi_parameter_value(&self, idx: ParameterIndex<MultiValue>, key: &str) -> Result<f64, PywrError> {
         self.parameters.get_multi_value(idx, key)
     }
 
     pub fn set_multi_parameter_value(
         &mut self,
-        idx: MultiValueParameterIndex,
+        idx: ParameterIndex<MultiValue>,
         value: MultiValue,
     ) -> Result<(), PywrError> {
         self.parameters.set_multi_value(idx, value)
     }
 
-    pub fn get_multi_parameter_index(&self, idx: MultiValueParameterIndex, key: &str) -> Result<usize, PywrError> {
+    pub fn get_multi_parameter_index(&self, idx: ParameterIndex<MultiValue>, key: &str) -> Result<usize, PywrError> {
         self.parameters.get_multi_index(idx, key)
     }
 
