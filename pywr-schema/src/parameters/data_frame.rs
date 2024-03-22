@@ -1,4 +1,5 @@
 use crate::error::SchemaError;
+use crate::model::LoadArgs;
 use crate::parameters::python::try_json_value_into_py;
 use crate::parameters::{DynamicFloatValueType, IntoV2Parameter, ParameterMeta, TryFromV1Parameter};
 use crate::ConversionError;
@@ -9,7 +10,6 @@ use pyo3::prelude::PyModule;
 use pyo3::types::{PyDict, PyTuple};
 use pyo3::{IntoPy, PyErr, PyObject, Python, ToPyObject};
 use pyo3_polars::PyDataFrame;
-use pywr_core::models::ModelDomain;
 use pywr_core::parameters::{Array1Parameter, Array2Parameter, ParameterIndex};
 use pywr_v1_schema::parameters::DataFrameParameter as DataFrameParameterV1;
 use std::collections::HashMap;
@@ -73,11 +73,10 @@ impl DataFrameParameter {
     pub fn add_to_model(
         &self,
         network: &mut pywr_core::network::Network,
-        domain: &ModelDomain,
-        data_path: Option<&Path>,
+        args: &LoadArgs,
     ) -> Result<ParameterIndex<f64>, SchemaError> {
         // Handle the case of an optional data path with a relative url.
-        let pth = if let Some(dp) = data_path {
+        let pth = if let Some(dp) = args.data_path {
             if self.url.is_relative() {
                 dp.join(&self.url)
             } else {
@@ -128,7 +127,8 @@ impl DataFrameParameter {
         // 3. Create an ArrayParameter using the loaded array.
         match &self.columns {
             DataFrameColumns::Scenario(scenario) => {
-                let scenario_group_index = domain
+                let scenario_group_index = args
+                    .domain
                     .scenarios()
                     .group_index(scenario)
                     .ok_or(SchemaError::ScenarioGroupNotFound(scenario.to_string()))?;

@@ -1,5 +1,5 @@
-use crate::data_tables::LoadedTableCollection;
 use crate::error::{ConversionError, SchemaError};
+use crate::model::LoadArgs;
 use crate::parameters::{
     ConstantFloatVec, ConstantValue, DynamicFloatValueType, IntoV2Parameter, ParameterMeta, TryFromV1Parameter,
 };
@@ -30,9 +30,9 @@ impl DailyProfileParameter {
     pub fn add_to_model(
         &self,
         network: &mut pywr_core::network::Network,
-        tables: &LoadedTableCollection,
+        args: &LoadArgs,
     ) -> Result<ParameterIndex<f64>, SchemaError> {
-        let values = &self.values.load(tables)?[..366];
+        let values = &self.values.load(args.tables)?[..366];
         let p = pywr_core::parameters::DailyProfileParameter::new(&self.meta.name, values.try_into().expect(""));
         Ok(network.add_parameter(Box::new(p))?)
     }
@@ -100,9 +100,9 @@ impl MonthlyProfileParameter {
     pub fn add_to_model(
         &self,
         network: &mut pywr_core::network::Network,
-        tables: &LoadedTableCollection,
+        args: &LoadArgs,
     ) -> Result<ParameterIndex<f64>, SchemaError> {
-        let values = &self.values.load(tables)?[..12];
+        let values = &self.values.load(args.tables)?[..12];
         let p = pywr_core::parameters::MonthlyProfileParameter::new(
             &self.meta.name,
             values.try_into().expect(""),
@@ -174,18 +174,18 @@ impl UniformDrawdownProfileParameter {
     pub fn add_to_model(
         &self,
         network: &mut pywr_core::network::Network,
-        tables: &LoadedTableCollection,
+        args: &LoadArgs,
     ) -> Result<ParameterIndex<f64>, SchemaError> {
         let reset_day = match &self.reset_day {
-            Some(v) => v.load(tables)? as u32,
+            Some(v) => v.load(args.tables)? as u32,
             None => 1,
         };
         let reset_month = match &self.reset_month {
-            Some(v) => v.load(tables)? as u32,
+            Some(v) => v.load(args.tables)? as u32,
             None => 1,
         };
         let residual_days = match &self.residual_days {
-            Some(v) => v.load(tables)? as u8,
+            Some(v) => v.load(args.tables)? as u8,
             None => 0,
         };
 
@@ -544,11 +544,11 @@ impl WeeklyProfileParameter {
     pub fn add_to_model(
         &self,
         network: &mut pywr_core::network::Network,
-        tables: &LoadedTableCollection,
+        args: &LoadArgs,
     ) -> Result<ParameterIndex<f64>, SchemaError> {
         let p = pywr_core::parameters::WeeklyProfileParameter::new(
             &self.meta.name,
-            WeeklyProfileValues::try_from(self.values.load(tables)?.as_slice()).map_err(
+            WeeklyProfileValues::try_from(self.values.load(args.tables)?.as_slice()).map_err(
                 |err: WeeklyProfileError| SchemaError::LoadParameter {
                     name: self.meta.name.to_string(),
                     error: err.to_string(),

@@ -1,11 +1,9 @@
-use crate::data_tables::LoadedTableCollection;
 use crate::error::{ConversionError, SchemaError};
-use crate::model::PywrMultiNetworkTransfer;
+use crate::model::LoadArgs;
 use crate::nodes::{NodeAttribute, NodeMeta};
 use crate::parameters::{DynamicFloatValue, TryIntoV2Parameter};
 use pywr_core::derived_metric::DerivedMetric;
 use pywr_core::metric::MetricF64;
-use pywr_core::models::ModelDomain;
 use pywr_core::node::{ConstraintValue, StorageInitialVolume};
 use pywr_core::timestep::TimeDomain;
 use pywr_core::virtual_storage::VirtualStorageReset;
@@ -13,7 +11,6 @@ use pywr_schema_macros::PywrNode;
 use pywr_v1_schema::nodes::RollingVirtualStorageNode as RollingVirtualStorageNodeV1;
 use std::collections::HashMap;
 use std::num::NonZeroUsize;
-use std::path::Path;
 
 /// The length of the rolling window.
 ///
@@ -80,15 +77,7 @@ pub struct RollingVirtualStorageNode {
 impl RollingVirtualStorageNode {
     const DEFAULT_ATTRIBUTE: NodeAttribute = NodeAttribute::Volume;
 
-    pub fn add_to_model(
-        &self,
-        network: &mut pywr_core::network::Network,
-        schema: &crate::model::PywrNetwork,
-        domain: &ModelDomain,
-        tables: &LoadedTableCollection,
-        data_path: Option<&Path>,
-        inter_network_transfers: &[PywrMultiNetworkTransfer],
-    ) -> Result<(), SchemaError> {
+    pub fn add_to_model(&self, network: &mut pywr_core::network::Network, args: &LoadArgs) -> Result<(), SchemaError> {
         let initial_volume = if let Some(iv) = self.initial_volume {
             StorageInitialVolume::Absolute(iv)
         } else if let Some(pc) = self.initial_volume_pc {
@@ -98,23 +87,17 @@ impl RollingVirtualStorageNode {
         };
 
         let cost = match &self.cost {
-            Some(v) => v
-                .load(network, schema, domain, tables, data_path, inter_network_transfers)?
-                .into(),
+            Some(v) => v.load(network, args)?.into(),
             None => ConstraintValue::Scalar(0.0),
         };
 
         let min_volume = match &self.min_volume {
-            Some(v) => v
-                .load(network, schema, domain, tables, data_path, inter_network_transfers)?
-                .into(),
+            Some(v) => v.load(network, args)?.into(),
             None => ConstraintValue::Scalar(0.0),
         };
 
         let max_volume = match &self.max_volume {
-            Some(v) => v
-                .load(network, schema, domain, tables, data_path, inter_network_transfers)?
-                .into(),
+            Some(v) => v.load(network, args)?.into(),
             None => ConstraintValue::None,
         };
 
@@ -126,12 +109,12 @@ impl RollingVirtualStorageNode {
 
         // The rolling licence never resets
         let reset = VirtualStorageReset::Never;
-        let timesteps = self
-            .window
-            .as_timesteps(domain.time())
-            .ok_or_else(|| SchemaError::InvalidRollingWindow {
-                name: self.meta.name.clone(),
-            })?;
+        let timesteps =
+            self.window
+                .as_timesteps(args.domain.time())
+                .ok_or_else(|| SchemaError::InvalidRollingWindow {
+                    name: self.meta.name.clone(),
+                })?;
 
         network.add_virtual_storage_node(
             self.meta.name.as_str(),
