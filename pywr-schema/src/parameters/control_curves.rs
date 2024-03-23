@@ -5,7 +5,7 @@ use crate::nodes::NodeAttribute;
 use crate::parameters::{
     DynamicFloatValue, IntoV2Parameter, NodeReference, ParameterMeta, TryFromV1Parameter, TryIntoV2Parameter,
 };
-use crate::timeseries::{self, LoadedTimeseriesCollection};
+use crate::timeseries::LoadedTimeseriesCollection;
 use pywr_core::models::ModelDomain;
 use pywr_core::parameters::ParameterIndex;
 use pywr_v1_schema::parameters::{

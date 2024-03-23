@@ -1,5 +1,5 @@
 use crate::data_tables::LoadedTableCollection;
-use crate::parameters::{ConstantValue, DynamicFloatValue, DynamicFloatValueType, ParameterMeta, VariableSettings};
+use crate::parameters::{ConstantValue, DynamicFloatValue, DynamicFloatValueType, ParameterMeta};
 use crate::timeseries::LoadedTimeseriesCollection;
 use pywr_core::parameters::ParameterIndex;
 

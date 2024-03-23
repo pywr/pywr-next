@@ -6,19 +6,12 @@ use crate::error::{ConversionError, SchemaError};
 use crate::metric_sets::MetricSet;
 use crate::nodes::NodeAndTimeseries;
 use crate::outputs::Output;
-use crate::parameters::{
-    convert_parameter_v1_to_v2, DataFrameColumns, DynamicFloatValue, MetricFloatReference, MetricFloatValue,
-    TimeseriesReference, TryIntoV2Parameter,
-};
+use crate::parameters::{convert_parameter_v1_to_v2, MetricFloatReference};
 use crate::timeseries::{convert_from_v1_data, LoadedTimeseriesCollection, Timeseries};
 use chrono::{NaiveDate, NaiveDateTime, NaiveTime};
-use polars::frame::DataFrame;
 use pywr_core::models::ModelDomain;
 use pywr_core::timestep::TimestepDuration;
 use pywr_core::PywrError;
-use serde::de;
-use std::collections::HashSet;
-use std::hash::Hash;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
@@ -445,6 +438,7 @@ impl PywrModel {
             Timestepper::default()
         });
 
+        // Extract nodes and any timeseries data from the v1 nodes
         let nodes_and_ts: Vec<NodeAndTimeseries> = v1
             .nodes
             .clone()
@@ -468,15 +462,15 @@ impl PywrModel {
 
         let edges = v1.edges.into_iter().map(|e| e.into()).collect();
 
-        let (parameters, param_ts_data) = if let Some(v1_parameters) = v1.parameters {
+        let parameters = if let Some(v1_parameters) = v1.parameters {
             let mut unnamed_count: usize = 0;
-            let (parameters, param_ts_data) = convert_parameter_v1_to_v2(v1_parameters, &mut unnamed_count, &mut errors);
-            (Some(parameters), Some(param_ts_data))
+            let (parameters, param_ts_data) =
+                convert_parameter_v1_to_v2(v1_parameters, &mut unnamed_count, &mut errors);
+            ts_data.extend(param_ts_data);
+            Some(parameters)
         } else {
-            (None, None)
+            None
         };
-
-        ts_data.extend(param_ts_data.into_iter().flatten());
 
         let timeseries = if !ts_data.is_empty() {
             let ts = convert_from_v1_data(&ts_data, &v1.tables);

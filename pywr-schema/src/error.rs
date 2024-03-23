@@ -1,7 +1,6 @@
 use crate::data_tables::TableError;
 use crate::nodes::NodeAttribute;
 use crate::timeseries::TimeseriesError;
-use polars::error::PolarsError;
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::PyErr;
 use thiserror::Error;

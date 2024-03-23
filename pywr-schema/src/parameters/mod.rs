@@ -433,7 +433,7 @@ pub fn convert_parameter_v1_to_v2(
 ) -> (Vec<Parameter>, Vec<TimeseriesV1Data>) {
     let param_or_ts: Vec<ParameterOrTimeseries> = v1_parameters
         .into_iter()
-        .filter_map(|p| match p.try_into_v2_parameter(None, unnamed_count){
+        .filter_map(|p| match p.try_into_v2_parameter(None, unnamed_count) {
             Ok(pt) => Some(pt),
             Err(e) => {
                 errors.push(e);
@@ -472,6 +472,7 @@ enum ParameterOrTimeseries {
 pub struct TimeseriesV1Data {
     pub name: Option<String>,
     pub source: TimeseriesV1Source,
+    pub time_col: Option<String>,
     pub column: Option<String>,
     pub scenario: Option<String>,
 }
@@ -487,10 +488,15 @@ impl From<DataFrameParameterV1> for TimeseriesV1Data {
         };
 
         let name = p.meta.and_then(|m| m.name);
+        let time_col = match p.pandas_kwargs.get("index_col") {
+            Some(v) => v.as_str().map(|s| s.to_string()),
+            None => None,
+        };
 
         Self {
             name,
             source,
+            time_col,
             column: p.column,
             scenario: p.scenario,
         }

@@ -9,7 +9,6 @@ use pywr_core::models::ModelDomain;
 use pywr_core::parameters::{Array1Parameter, Array2Parameter, ParameterIndex};
 use pywr_core::PywrError;
 use pywr_v1_schema::tables::TableVec;
-use std::sync::Arc;
 use std::{collections::HashMap, path::Path};
 use thiserror::Error;
 
@@ -31,6 +30,12 @@ pub enum TimeseriesError {
     TimeseriesUnparsableFileFormat { provider: String, path: String },
     #[error("A scenario group with name '{0}' was not found")]
     ScenarioGroupNotFound(String),
+    #[error("Duration could not be represented as nanoseconds")]
+    NoDurationNanoSeconds,
+    #[error("The length of the resampled timeseries dataframe '{0}' does not match the number of model timesteps.")]
+    DataFrameTimestepMismatch(String),
+    #[error("A timeseries dataframe with the name '{0}' already exists.")]
+    TimeseriesDataframeAlreadyExists(String),
     #[error("Polars error: {0}")]
     PolarsError(#[from] PolarsError),
     #[error("Pywr core error: {0}")]
@@ -79,7 +84,9 @@ impl LoadedTimeseriesCollection {
         if let Some(timeseries_defs) = timeseries_defs {
             for ts in timeseries_defs {
                 let df = ts.load(domain, data_path)?;
-                // TODO error if key already exists
+                if timeseries.contains_key(&ts.meta.name) {
+                    return Err(TimeseriesError::TimeseriesDataframeAlreadyExists(ts.meta.name.clone()));
+                }
                 timeseries.insert(ts.meta.name.clone(), df);
             }
         }

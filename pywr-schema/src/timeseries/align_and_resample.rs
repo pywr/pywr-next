@@ -1,4 +1,3 @@
-use chrono::TimeDelta;
 use polars::{prelude::*, series::ops::NullBehavior};
 use pywr_core::models::ModelDomain;
 use std::{cmp::Ordering, ops::Deref};
@@ -31,8 +30,7 @@ pub fn align_and_resample(
     let durations = durations.column("duration")?.duration()?.deref();
 
     if durations.len() > 1 {
-        // Non-uniform timestep are not yet supported
-        todo!();
+        todo!("Non-uniform timestep are not yet supported");
     }
 
     let timeseries_duration = match durations.get(0) {
@@ -44,7 +42,7 @@ pub fn align_and_resample(
         .time()
         .step_duration()
         .whole_nanoseconds()
-        .expect("Nano seconds could not be extracted from model step duration");
+        .ok_or(TimeseriesError::NoDurationNanoSeconds)?;
 
     let df = match model_duration.cmp(&timeseries_duration) {
         Ordering::Greater => {
@@ -78,7 +76,10 @@ pub fn align_and_resample(
 
     let df = slice_end(df, time_col, domain)?;
 
-    // TODO check df length equals number of model timesteps
+    if df.height() != domain.time().timesteps().len() {
+        return Err(TimeseriesError::DataFrameTimestepMismatch(name.to_string()));
+    }
+
     Ok(df)
 }
 
@@ -96,7 +97,6 @@ fn slice_end(df: DataFrame, time_col: &str, domain: &ModelDomain) -> Result<Data
 
 #[cfg(test)]
 mod tests {
-    //use polars::{datatypes::TimeUnit, time::{ClosedWindow, Duration}};
     use chrono::{NaiveDate, NaiveDateTime};
     use polars::prelude::*;
     use pywr_core::{
@@ -129,7 +129,7 @@ mod tests {
             None,
         )
         .unwrap();
-        //let values: Vec<f64> = vec![1.0; 31];
+
         let values: Vec<f64> = (1..32).map(|x| x as f64).collect();
         let mut df = df!(
             "time" => time,

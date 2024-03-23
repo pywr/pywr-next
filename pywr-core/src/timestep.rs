@@ -54,11 +54,12 @@ impl PywrDuration {
         }
     }
 
-    // Returns the fractional number of days in the duration.
+    /// Returns the fractional number of days in the duration.
     pub fn fractional_days(&self) -> f64 {
         self.0.num_seconds() as f64 / SECS_IN_DAY as f64
     }
 
+    /// Returns the number of nanoseconds in the duration.
     pub fn whole_nanoseconds(&self) -> Option<i64> {
         self.0.num_nanoseconds()
     }

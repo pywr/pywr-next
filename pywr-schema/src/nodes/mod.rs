@@ -677,6 +677,10 @@ impl TryFrom<Box<CoreNodeV1>> for Node {
     }
 }
 
+/// struct that acts as a container for a node and any associated timeseries data.
+///
+/// v1 nodes may contain inline DataFrame parameters from which data needs to be extract
+/// to created timeseries entries in the schema.
 #[derive(Debug)]
 pub struct NodeAndTimeseries {
     pub node: Node,
@@ -689,11 +693,14 @@ impl TryFrom<NodeV1> for NodeAndTimeseries {
     fn try_from(v1: NodeV1) -> Result<Self, Self::Error> {
         let mut ts_vec = Vec::new();
         let mut unnamed_count: usize = 0;
+
+        // extract timeseries data for all inline DataFame parameters included in the node.
         for param_value in v1.parameters().values() {
             ts_vec.extend(extract_timeseries(param_value, v1.name(), &mut unnamed_count));
         }
-
         let timeseries = if ts_vec.is_empty() { None } else { Some(ts_vec) };
+
+        // Now convert the node to the v2 schema representation
         let node = Node::try_from(v1)?;
         Ok(Self { node, timeseries })
     }
@@ -715,6 +722,8 @@ fn extract_timeseries(
                 if let ParameterV1::Core(CoreParameterV1::DataFrame(df_param)) = p.as_ref() {
                     let mut ts_data: TimeseriesV1Data = df_param.clone().into();
                     if ts_data.name.is_none() {
+                        // Because the parameter could contain multiple inline DataFrame parameters use the unnamed_count
+                        // to create a unique name.
                         let name = format!("{}-p{}.timeseries", name, unnamed_count);
                         *unnamed_count += 1;
                         ts_data.name = Some(name);
@@ -742,6 +751,8 @@ fn extract_timeseries(
                     if let ParameterV1::Core(CoreParameterV1::DataFrame(df_param)) = p.as_ref() {
                         let mut ts_data: TimeseriesV1Data = df_param.clone().into();
                         if ts_data.name.is_none() {
+                            // Because the parameter could contain multiple inline DataFrame parameters use the unnamed_count
+                            // to create a unique name.
                             let name = format!("{}-p{}.timeseries", name, unnamed_count);
                             *unnamed_count += 1;
                             ts_data.name = Some(name);
