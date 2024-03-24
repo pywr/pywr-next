@@ -185,7 +185,9 @@ pub fn convert_from_v1_data(
                 let name = match data.name {
                     Some(name) => name,
                     None => {
-                        errors.push(ConversionError::MissingTimeseriesName(url.to_str().unwrap_or("").to_string()));
+                        errors.push(ConversionError::MissingTimeseriesName(
+                            url.to_str().unwrap_or("").to_string(),
+                        ));
                         continue;
                     }
                 };
@@ -214,7 +216,7 @@ mod tests {
 
     use chrono::{Datelike, NaiveDate};
     use ndarray::Array;
-    use pywr_core::{metric::Metric, recorders::AssertionRecorder, test_utils::run_all_solvers};
+    use pywr_core::{metric::MetricF64, recorders::AssertionRecorder, test_utils::run_all_solvers};
 
     use crate::PywrModel;
 
@@ -237,7 +239,7 @@ mod tests {
         });
         let idx = model.network().get_node_by_name("output1", None).unwrap().index();
 
-        let recorder = AssertionRecorder::new("output-flow", Metric::NodeInFlow(idx), expected.clone(), None, None);
+        let recorder = AssertionRecorder::new("output-flow", MetricF64::NodeInFlow(idx), expected.clone(), None, None);
         model.network_mut().add_recorder(Box::new(recorder)).unwrap();
 
         run_all_solvers(&model)

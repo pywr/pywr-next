@@ -1,5 +1,5 @@
 use super::PywrError;
-use crate::metric::Metric;
+use crate::metric::MetricF64;
 use crate::network::Network;
 use crate::parameters::{Parameter, ParameterMeta};
 use crate::scenario::ScenarioIndex;
@@ -9,12 +9,12 @@ use crate::PywrError::InvalidMetricValue;
 
 pub struct DivisionParameter {
     meta: ParameterMeta,
-    numerator: Metric,
-    denominator: Metric,
+    numerator: MetricF64,
+    denominator: MetricF64,
 }
 
 impl DivisionParameter {
-    pub fn new(name: &str, numerator: Metric, denominator: Metric) -> Self {
+    pub fn new(name: &str, numerator: MetricF64, denominator: MetricF64) -> Self {
         Self {
             meta: ParameterMeta::new(name),
             numerator,

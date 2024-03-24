@@ -25,7 +25,7 @@ impl OutputMetric {
         &self,
         network: &mut pywr_core::network::Network,
         schema: &PywrNetwork,
-    ) -> Result<pywr_core::metric::Metric, SchemaError> {
+    ) -> Result<pywr_core::metric::MetricF64, SchemaError> {
         match self {
             OutputMetric::Default { node } => {
                 // Get the node from the schema; not the model itself
@@ -44,8 +44,13 @@ impl OutputMetric {
                 node.create_metric(network, Some(NodeAttribute::Deficit))
             }
             OutputMetric::Parameter { name } => {
-                let parameter_idx = network.get_parameter_index_by_name(name)?;
-                Ok(pywr_core::metric::Metric::ParameterValue(parameter_idx))
+                if let Ok(idx) = network.get_parameter_index_by_name(name) {
+                    Ok(pywr_core::metric::MetricF64::ParameterValue(idx))
+                } else if let Ok(idx) = network.get_index_parameter_index_by_name(name) {
+                    Ok(pywr_core::metric::MetricF64::IndexParameterValue(idx))
+                } else {
+                    Err(SchemaError::ParameterNotFound(name.to_string()))
+                }
             }
         }
     }
@@ -140,7 +145,7 @@ impl MetricSet {
         schema: &PywrNetwork,
     ) -> Result<(), SchemaError> {
         // Convert the schema representation to internal metrics.
-        let metrics: Vec<pywr_core::metric::Metric> = self
+        let metrics: Vec<pywr_core::metric::MetricF64> = self
             .metrics
             .iter()
             .map(|m| m.try_clone_into_metric(network, schema))

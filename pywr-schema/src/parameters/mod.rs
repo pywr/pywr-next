@@ -52,9 +52,9 @@ pub use crate::parameters::data_frame::{DataFrameColumns, DataFrameParameter};
 use crate::parameters::interpolated::InterpolatedParameter;
 use crate::timeseries::LoadedTimeseriesCollection;
 pub use offset::OffsetParameter;
-use pywr_core::metric::Metric;
+use pywr_core::metric::{MetricF64, MetricUsize};
 use pywr_core::models::{ModelDomain, MultiNetworkTransferIndex};
-use pywr_core::parameters::{IndexValue, ParameterIndex, ParameterType};
+use pywr_core::parameters::{ParameterIndex, ParameterType};
 use pywr_v1_schema::parameters::{
     CoreParameter, DataFrameParameter as DataFrameParameterV1, ExternalDataRef as ExternalDataRefV1,
     Parameter as ParameterV1, ParameterMeta as ParameterMetaV1, ParameterValue as ParameterValueV1, ParameterVec,
@@ -722,7 +722,7 @@ impl NodeReference {
         &self,
         network: &mut pywr_core::network::Network,
         schema: &crate::model::PywrNetwork,
-    ) -> Result<Metric, SchemaError> {
+    ) -> Result<MetricF64, SchemaError> {
         // This is the associated node in the schema
         let node = schema
             .get_node_by_name(&self.name)
@@ -748,28 +748,28 @@ impl MetricFloatReference {
         network: &mut pywr_core::network::Network,
         schema: &crate::model::PywrNetwork,
         inter_network_transfers: &[PywrMultiNetworkTransfer],
-    ) -> Result<Metric, SchemaError> {
+    ) -> Result<MetricF64, SchemaError> {
         match self {
             Self::Node(node_ref) => node_ref.load(network, schema),
             Self::Parameter { name, key } => {
                 match key {
                     Some(key) => {
                         // Key given; this should be a multi-valued parameter
-                        Ok(Metric::MultiParameterValue((
+                        Ok(MetricF64::MultiParameterValue((
                             network.get_multi_valued_parameter_index_by_name(name)?,
                             key.clone(),
                         )))
                     }
                     None => {
                         // This should be an existing parameter
-                        Ok(Metric::ParameterValue(network.get_parameter_index_by_name(name)?))
+                        Ok(MetricF64::ParameterValue(network.get_parameter_index_by_name(name)?))
                     }
                 }
             }
             Self::InterNetworkTransfer { name } => {
                 // Find the matching inter model transfer
                 match inter_network_transfers.iter().position(|t| &t.name == name) {
-                    Some(idx) => Ok(Metric::InterNetworkTransfer(MultiNetworkTransferIndex(idx))),
+                    Some(idx) => Ok(MetricF64::InterNetworkTransfer(MultiNetworkTransferIndex(idx))),
                     None => Err(SchemaError::InterNetworkTransferNotFound(name.to_string())),
                 }
             }
@@ -816,7 +816,7 @@ impl MetricFloatValue {
         data_path: Option<&Path>,
         inter_network_transfers: &[PywrMultiNetworkTransfer],
         timeseries: &LoadedTimeseriesCollection,
-    ) -> Result<Metric, SchemaError> {
+    ) -> Result<MetricF64, SchemaError> {
         match self {
             Self::Reference(reference) => Ok(reference.load(network, schema, inter_network_transfers)?),
             Self::InlineParameter { definition } => {
@@ -830,12 +830,12 @@ impl MetricFloatValue {
                 match network.get_parameter_index_by_name(definition.name()) {
                     Ok(p) => {
                         // Found a parameter with the name; assume it is the right one!
-                        Ok(Metric::ParameterValue(p))
+                        Ok(MetricF64::ParameterValue(p))
                     }
                     Err(_) => {
                         // An error retrieving a parameter with this name; assume it needs creating.
                         match definition.add_to_model(network, schema, domain, tables, data_path, inter_network_transfers, timeseries)? {
-                            ParameterType::Parameter(idx) => Ok(Metric::ParameterValue(idx)),
+                            ParameterType::Parameter(idx) => Ok(MetricF64::ParameterValue(idx)),
                             ParameterType::Index(_) => Err(SchemaError::UnexpectedParameterType(format!(
                         "Found index parameter of type '{}' with name '{}' where an float parameter was expected.",
                         definition.ty(),
@@ -859,7 +859,7 @@ impl MetricFloatValue {
                         timeseries.load_column(network, ts_ref.name.as_ref(), col.as_str())?
                     }
                 };
-                Ok(Metric::ParameterValue(param_idx))
+                Ok(MetricF64::ParameterValue(param_idx))
             }
         }
     }
@@ -940,9 +940,9 @@ impl DynamicFloatValue {
         data_path: Option<&Path>,
         inter_network_transfers: &[PywrMultiNetworkTransfer],
         timeseries: &LoadedTimeseriesCollection,
-    ) -> Result<Metric, SchemaError> {
+    ) -> Result<MetricF64, SchemaError> {
         let parameter_ref = match self {
-            DynamicFloatValue::Constant(v) => Metric::Constant(v.load(tables)?),
+            DynamicFloatValue::Constant(v) => MetricF64::Constant(v.load(tables)?),
             DynamicFloatValue::Dynamic(v) => v.load(
                 network,
                 schema,
@@ -1037,10 +1037,10 @@ impl DynamicIndexValue {
         data_path: Option<&Path>,
         inter_network_transfers: &[PywrMultiNetworkTransfer],
         timeseries: &LoadedTimeseriesCollection,
-    ) -> Result<IndexValue, SchemaError> {
+    ) -> Result<MetricUsize, SchemaError> {
         let parameter_ref = match self {
-            DynamicIndexValue::Constant(v) => IndexValue::Constant(v.load(tables)?),
-            DynamicIndexValue::Dynamic(v) => IndexValue::Dynamic(v.load(
+            DynamicIndexValue::Constant(v) => MetricUsize::Constant(v.load(tables)?),
+            DynamicIndexValue::Dynamic(v) => MetricUsize::IndexParameterValue(v.load(
                 network,
                 schema,
                 domain,

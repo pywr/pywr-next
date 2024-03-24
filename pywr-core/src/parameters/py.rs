@@ -1,5 +1,5 @@
-use super::{IndexValue, Parameter, ParameterMeta, PywrError, Timestep};
-use crate::metric::Metric;
+use super::{Parameter, ParameterMeta, PywrError, Timestep};
+use crate::metric::{MetricF64, MetricUsize};
 use crate::network::Network;
 use crate::parameters::downcast_internal_state_mut;
 use crate::scenario::ScenarioIndex;
@@ -13,8 +13,8 @@ pub struct PyParameter {
     object: Py<PyAny>,
     args: Py<PyTuple>,
     kwargs: Py<PyDict>,
-    metrics: HashMap<String, Metric>,
-    indices: HashMap<String, IndexValue>,
+    metrics: HashMap<String, MetricF64>,
+    indices: HashMap<String, MetricUsize>,
 }
 
 #[derive(Clone)]
@@ -34,8 +34,8 @@ impl PyParameter {
         object: Py<PyAny>,
         args: Py<PyTuple>,
         kwargs: Py<PyDict>,
-        metrics: &HashMap<String, Metric>,
-        indices: &HashMap<String, IndexValue>,
+        metrics: &HashMap<String, MetricF64>,
+        indices: &HashMap<String, MetricUsize>,
     ) -> Self {
         Self {
             meta: ParameterMeta::new(name),
@@ -47,21 +47,31 @@ impl PyParameter {
         }
     }
 
-    fn get_metrics_dict<'py>(&self, model: &Network, state: &State, py: Python<'py>) -> Result<&'py PyDict, PywrError> {
+    fn get_metrics_dict<'py>(
+        &self,
+        network: &Network,
+        state: &State,
+        py: Python<'py>,
+    ) -> Result<&'py PyDict, PywrError> {
         let metric_values: Vec<(&str, f64)> = self
             .metrics
             .iter()
-            .map(|(k, value)| Ok((k.as_str(), value.get_value(model, state)?)))
+            .map(|(k, value)| Ok((k.as_str(), value.get_value(network, state)?)))
             .collect::<Result<Vec<_>, PywrError>>()?;
 
         Ok(metric_values.into_py_dict(py))
     }
 
-    fn get_indices_dict<'py>(&self, state: &State, py: Python<'py>) -> Result<&'py PyDict, PywrError> {
+    fn get_indices_dict<'py>(
+        &self,
+        network: &Network,
+        state: &State,
+        py: Python<'py>,
+    ) -> Result<&'py PyDict, PywrError> {
         let index_values: Vec<(&str, usize)> = self
             .indices
             .iter()
-            .map(|(k, value)| Ok((k.as_str(), value.get_index(state)?)))
+            .map(|(k, value)| Ok((k.as_str(), value.get_value(network, state)?)))
             .collect::<Result<Vec<_>, PywrError>>()?;
 
         Ok(index_values.into_py_dict(py))
@@ -86,7 +96,7 @@ impl PyParameter {
         &self,
         timestep: &Timestep,
         scenario_index: &ScenarioIndex,
-        model: &Network,
+        network: &Network,
         state: &State,
         internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<T, PywrError>
@@ -100,8 +110,8 @@ impl PyParameter {
 
             let si = scenario_index.index.into_py(py);
 
-            let metric_dict = self.get_metrics_dict(model, state, py)?;
-            let index_dict = self.get_indices_dict(state, py)?;
+            let metric_dict = self.get_metrics_dict(network, state, py)?;
+            let index_dict = self.get_indices_dict(network, state, py)?;
 
             let args = PyTuple::new(py, [date.as_ref(py), si.as_ref(py), metric_dict, index_dict]);
 
@@ -116,7 +126,7 @@ impl PyParameter {
         &self,
         timestep: &Timestep,
         scenario_index: &ScenarioIndex,
-        model: &Network,
+        network: &Network,
         state: &State,
         internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<(), PywrError> {
@@ -129,8 +139,8 @@ impl PyParameter {
 
                 let si = scenario_index.index.into_py(py);
 
-                let metric_dict = self.get_metrics_dict(model, state, py)?;
-                let index_dict = self.get_indices_dict(state, py)?;
+                let metric_dict = self.get_metrics_dict(network, state, py)?;
+                let index_dict = self.get_indices_dict(network, state, py)?;
 
                 let args = PyTuple::new(py, [date.as_ref(py), si.as_ref(py), metric_dict, index_dict]);
 
@@ -242,7 +252,7 @@ impl Parameter<MultiValue> for PyParameter {
         &self,
         timestep: &Timestep,
         scenario_index: &ScenarioIndex,
-        model: &Network,
+        network: &Network,
         state: &State,
         internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<MultiValue, PywrError> {
@@ -253,8 +263,8 @@ impl Parameter<MultiValue> for PyParameter {
 
             let si = scenario_index.index.into_py(py);
 
-            let metric_dict = self.get_metrics_dict(model, state, py)?;
-            let index_dict = self.get_indices_dict(state, py)?;
+            let metric_dict = self.get_metrics_dict(network, state, py)?;
+            let index_dict = self.get_indices_dict(network, state, py)?;
 
             let args = PyTuple::new(py, [date.as_ref(py), si.as_ref(py), metric_dict, index_dict]);
 

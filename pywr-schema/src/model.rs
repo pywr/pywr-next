@@ -691,7 +691,7 @@ mod tests {
         MetricFloatValue, Parameter, ParameterMeta,
     };
     use ndarray::{Array1, Array2, Axis};
-    use pywr_core::metric::Metric;
+    use pywr_core::metric::MetricF64;
     use pywr_core::recorders::AssertionRecorder;
     use pywr_core::solvers::ClpSolver;
     use pywr_core::test_utils::run_all_solvers;
@@ -727,7 +727,7 @@ mod tests {
 
         let rec = AssertionRecorder::new(
             "assert-demand1",
-            Metric::NodeInFlow(demand1_idx),
+            MetricF64::NodeInFlow(demand1_idx),
             expected_values,
             None,
             None,
@@ -862,7 +862,7 @@ mod tests {
 
         let rec = AssertionRecorder::new(
             "assert-demand1",
-            Metric::NodeInFlow(demand1_idx),
+            MetricF64::NodeInFlow(demand1_idx),
             expected_values,
             None,
             None,
@@ -881,7 +881,7 @@ mod tests {
 
         let rec = AssertionRecorder::new(
             "assert-demand2",
-            Metric::NodeInFlow(demand1_idx),
+            MetricF64::NodeInFlow(demand1_idx),
             expected_values,
             None,
             None,
@@ -913,7 +913,7 @@ mod tests {
 
         let rec = AssertionRecorder::new(
             "assert-demand1",
-            Metric::NodeInFlow(demand1_idx),
+            MetricF64::NodeInFlow(demand1_idx),
             expected_values,
             None,
             None,
@@ -932,7 +932,7 @@ mod tests {
 
         let rec = AssertionRecorder::new(
             "assert-demand2",
-            Metric::NodeInFlow(demand1_idx),
+            MetricF64::NodeInFlow(demand1_idx),
             expected_values,
             None,
             None,

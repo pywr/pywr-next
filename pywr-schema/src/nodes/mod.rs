@@ -28,7 +28,7 @@ pub use loss_link::LossLinkNode;
 pub use monthly_virtual_storage::MonthlyVirtualStorageNode;
 pub use piecewise_link::{PiecewiseLinkNode, PiecewiseLinkStep};
 pub use piecewise_storage::PiecewiseStorageNode;
-use pywr_core::metric::Metric;
+use pywr_core::metric::MetricF64;
 use pywr_core::models::ModelDomain;
 use pywr_v1_schema::nodes::{
     CoreNode as CoreNodeV1, Node as NodeV1, NodeMeta as NodeMetaV1, NodePosition as NodePositionV1,
@@ -602,7 +602,7 @@ impl Node {
         &self,
         network: &mut pywr_core::network::Network,
         attribute: Option<NodeAttribute>,
-    ) -> Result<Metric, SchemaError> {
+    ) -> Result<MetricF64, SchemaError> {
         match self {
             Node::Input(n) => n.create_metric(network, attribute),
             Node::Link(n) => n.create_metric(network, attribute),

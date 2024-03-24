@@ -4,7 +4,7 @@ use crate::model::PywrMultiNetworkTransfer;
 use crate::nodes::{NodeAttribute, NodeMeta};
 use crate::parameters::{DynamicFloatValue, TryIntoV2Parameter};
 use crate::timeseries::LoadedTimeseriesCollection;
-use pywr_core::metric::Metric;
+use pywr_core::metric::MetricF64;
 use pywr_core::models::ModelDomain;
 use pywr_schema_macros::PywrNode;
 use pywr_v1_schema::nodes::LossLinkNode as LossLinkNodeV1;
@@ -128,7 +128,7 @@ impl LossLinkNode {
         &self,
         network: &pywr_core::network::Network,
         attribute: Option<NodeAttribute>,
-    ) -> Result<Metric, SchemaError> {
+    ) -> Result<MetricF64, SchemaError> {
         // Use the default attribute if none is specified
         let attr = attribute.unwrap_or(Self::DEFAULT_ATTRIBUTE);
 
@@ -139,19 +139,19 @@ impl LossLinkNode {
                     network.get_node_index_by_name(self.meta.name.as_str(), Self::loss_sub_name())?,
                 ];
 
-                Metric::MultiNodeInFlow {
+                MetricF64::MultiNodeInFlow {
                     indices,
                     name: self.meta.name.to_string(),
                 }
             }
             NodeAttribute::Outflow => {
                 let idx = network.get_node_index_by_name(self.meta.name.as_str(), Self::net_sub_name())?;
-                Metric::NodeOutFlow(idx)
+                MetricF64::NodeOutFlow(idx)
             }
             NodeAttribute::Loss => {
                 let idx = network.get_node_index_by_name(self.meta.name.as_str(), Self::loss_sub_name())?;
                 // This is an output node that only supports inflow
-                Metric::NodeInFlow(idx)
+                MetricF64::NodeInFlow(idx)
             }
             _ => {
                 return Err(SchemaError::NodeAttributeNotSupported {

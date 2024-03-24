@@ -1,5 +1,5 @@
 use super::PywrError;
-use crate::metric::Metric;
+use crate::metric::MetricF64;
 use crate::network::Network;
 use crate::parameters::{Parameter, ParameterMeta};
 use crate::scenario::ScenarioIndex;
@@ -32,12 +32,12 @@ impl FromStr for AggFunc {
 
 pub struct AggregatedParameter {
     meta: ParameterMeta,
-    metrics: Vec<Metric>,
+    metrics: Vec<MetricF64>,
     agg_func: AggFunc,
 }
 
 impl AggregatedParameter {
-    pub fn new(name: &str, metrics: &[Metric], agg_func: AggFunc) -> Self {
+    pub fn new(name: &str, metrics: &[MetricF64], agg_func: AggFunc) -> Self {
         Self {
             meta: ParameterMeta::new(name),
             metrics: metrics.to_vec(),
