@@ -473,7 +473,7 @@ impl PywrModel {
         };
 
         let timeseries = if !ts_data.is_empty() {
-            let ts = convert_from_v1_data(&ts_data, &v1.tables);
+            let ts = convert_from_v1_data(ts_data, &v1.tables, &mut errors);
             Some(ts)
         } else {
             None

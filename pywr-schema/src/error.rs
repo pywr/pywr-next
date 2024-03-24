@@ -110,4 +110,6 @@ pub enum ConversionError {
     AmbiguousColumnAndScenario(String),
     #[error("The dataframe parameters '{0}' defines both a column and a scenario. Only 1 is allowed.")]
     MissingColumnOrScenario(String),
+    #[error("Unable to create a timeseries for file: '{0}'. No name was found.")]
+    MissingTimeseriesName(String),
 }

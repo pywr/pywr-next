@@ -13,6 +13,7 @@ use std::{collections::HashMap, path::Path};
 use thiserror::Error;
 
 use crate::parameters::{ParameterMeta, TimeseriesV1Data, TimeseriesV1Source};
+use crate::ConversionError;
 
 use self::polars_dataset::PolarsDataset;
 
@@ -153,10 +154,14 @@ impl LoadedTimeseriesCollection {
     }
 }
 
-pub fn convert_from_v1_data(df_data: &[TimeseriesV1Data], v1_tables: &Option<TableVec>) -> Vec<Timeseries> {
+pub fn convert_from_v1_data(
+    df_data: Vec<TimeseriesV1Data>,
+    v1_tables: &Option<TableVec>,
+    errors: &mut Vec<ConversionError>,
+) -> Vec<Timeseries> {
     let mut ts = HashMap::new();
-    for data in df_data.iter() {
-        match &data.source {
+    for data in df_data.into_iter() {
+        match data.source {
             TimeseriesV1Source::Table(name) => {
                 let tables = v1_tables.as_ref().unwrap();
                 let table = tables.iter().find(|t| t.name == *name).unwrap();
@@ -177,14 +182,18 @@ pub fn convert_from_v1_data(df_data: &[TimeseriesV1Data], v1_tables: &Option<Tab
                 );
             }
             TimeseriesV1Source::Url(url) => {
-                let name = data.name.as_ref().unwrap().clone();
+                let name = match data.name {
+                    Some(name) => name,
+                    None => {
+                        errors.push(ConversionError::MissingTimeseriesName(url.to_str().unwrap_or("").to_string()));
+                        continue;
+                    }
+                };
                 if ts.contains_key(&name) {
                     continue;
                 }
 
-                // TODO: time_col should use the index_col from the v1 data?
-                let time_col = None;
-                let provider = PolarsDataset::new(time_col, url.clone());
+                let provider = PolarsDataset::new(data.time_col, url);
 
                 ts.insert(
                     name.clone(),
