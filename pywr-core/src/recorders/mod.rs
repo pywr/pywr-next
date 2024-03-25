@@ -5,7 +5,7 @@ mod memory;
 mod metric_set;
 mod py;
 
-pub use self::csv::CSVRecorder;
+pub use self::csv::{CsvLongFmtOutput, CsvWideFmtOutput};
 use crate::metric::{MetricF64, MetricUsize};
 use crate::models::ModelDomain;
 use crate::network::Network;
@@ -87,6 +87,7 @@ pub trait Recorder: Send + Sync {
     }
     fn finalise(
         &self,
+        _network: &Network,
         _metric_set_states: &[Vec<MetricSetState>],
         _internal_state: &mut Option<Box<dyn Any>>,
     ) -> Result<(), PywrError> {

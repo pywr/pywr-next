@@ -38,8 +38,8 @@ pub enum SchemaError {
     PythonError(String),
     #[error("hdf5 error: {0}")]
     HDF5Error(String),
-    #[error("csv error: {0}")]
-    CSVError(String),
+    #[error("Missing metric set: {0}")]
+    MissingMetricSet(String),
     #[error("unexpected parameter type: {0}")]
     UnexpectedParameterType(String),
     #[error("mismatch in the length of data provided. expected: {expected}, found: {found}")]

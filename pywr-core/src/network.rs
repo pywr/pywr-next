@@ -377,7 +377,7 @@ impl Network {
 
         // Setup recorders
         for (recorder, internal_state) in self.recorders.iter().zip(recorder_internal_states) {
-            recorder.finalise(metric_set_states, internal_state)?;
+            recorder.finalise(self, metric_set_states, internal_state)?;
         }
 
         Ok(())
