@@ -235,8 +235,10 @@ mod tests {
         let mut model = schema.build_model(Some(model_dir.as_path()), None).unwrap();
 
         let expected = Array::from_shape_fn((365, 1), |(x, _)| {
-            (NaiveDate::from_yo_opt(2021, (x + 1) as u32).unwrap().day() + 2) as f64
+            let month_day = NaiveDate::from_yo_opt(2021, (x + 1) as u32).unwrap().day() as f64;
+            month_day + month_day * 0.5
         });
+
         let idx = model.network().get_node_by_name("output1", None).unwrap().index();
 
         let recorder = AssertionRecorder::new("output-flow", MetricF64::NodeInFlow(idx), expected.clone(), None, None);

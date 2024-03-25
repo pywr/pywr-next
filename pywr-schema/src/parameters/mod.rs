@@ -11,7 +11,6 @@ mod aggregated;
 mod asymmetric_switch;
 mod control_curves;
 mod core;
-mod data_frame;
 mod delay;
 mod discount_factor;
 mod indexed_array;
@@ -48,7 +47,6 @@ use crate::error::{ConversionError, SchemaError};
 use crate::model::PywrMultiNetworkTransfer;
 use crate::nodes::NodeAttribute;
 use crate::parameters::core::DivisionParameter;
-pub use crate::parameters::data_frame::{DataFrameColumns, DataFrameParameter};
 use crate::parameters::interpolated::InterpolatedParameter;
 use crate::timeseries::LoadedTimeseriesCollection;
 pub use offset::OffsetParameter;
@@ -164,7 +162,6 @@ pub enum Parameter {
     ParameterThreshold(ParameterThresholdParameter),
     TablesArray(TablesArrayParameter),
     Python(PythonParameter),
-    DataFrame(DataFrameParameter),
     Delay(DelayParameter),
     Division(DivisionParameter),
     Offset(OffsetParameter),
@@ -196,7 +193,6 @@ impl Parameter {
             Self::ParameterThreshold(p) => p.meta.name.as_str(),
             Self::TablesArray(p) => p.meta.name.as_str(),
             Self::Python(p) => p.meta.name.as_str(),
-            Self::DataFrame(p) => p.meta.name.as_str(),
             Self::Division(p) => p.meta.name.as_str(),
             Self::Delay(p) => p.meta.name.as_str(),
             Self::Offset(p) => p.meta.name.as_str(),
@@ -228,7 +224,6 @@ impl Parameter {
             Self::ParameterThreshold(_) => "ParameterThreshold",
             Self::TablesArray(_) => "TablesArray",
             Self::Python(_) => "Python",
-            Self::DataFrame(_) => "DataFrame",
             Self::Delay(_) => "Delay",
             Self::Division(_) => "Division",
             Self::Offset(_) => "Offset",
@@ -373,7 +368,6 @@ impl Parameter {
                 inter_network_transfers,
                 timeseries,
             )?,
-            Self::DataFrame(p) => ParameterType::Parameter(p.add_to_model(network, domain, data_path)?),
             Self::Delay(p) => ParameterType::Parameter(p.add_to_model(
                 network,
                 schema,
@@ -778,15 +772,22 @@ impl MetricFloatReference {
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+#[serde(tag = "type", content = "name")]
+pub enum TimeseriesColumns {
+    Scenario(String),
+    Column(String),
+}
+
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
 pub struct TimeseriesReference {
     #[serde(rename = "type")]
     ty: String,
     name: String,
-    columns: DataFrameColumns,
+    columns: TimeseriesColumns,
 }
 
 impl TimeseriesReference {
-    pub fn new(name: String, columns: DataFrameColumns) -> Self {
+    pub fn new(name: String, columns: TimeseriesColumns) -> Self {
         let ty = "Timeseries".to_string();
         Self { ty, name, columns }
     }
@@ -852,10 +853,10 @@ impl MetricFloatValue {
             }
             Self::Timeseries(ts_ref) => {
                 let param_idx = match &ts_ref.columns {
-                    DataFrameColumns::Scenario(scenario) => {
+                    TimeseriesColumns::Scenario(scenario) => {
                         timeseries.load_df(network, ts_ref.name.as_ref(), domain, scenario.as_str())?
                     }
-                    DataFrameColumns::Column(col) => {
+                    TimeseriesColumns::Column(col) => {
                         timeseries.load_column(network, ts_ref.name.as_ref(), col.as_str())?
                     }
                 };
@@ -994,8 +995,8 @@ impl TryFromV1Parameter<ParameterValueV1> for DynamicFloatValue {
                         };
 
                         let cols = match (&t.column, &t.scenario) {
-                            (Some(col), None) => DataFrameColumns::Column(col.clone()),
-                            (None, Some(scenario)) => DataFrameColumns::Scenario(scenario.clone()),
+                            (Some(col), None) => TimeseriesColumns::Column(col.clone()),
+                            (None, Some(scenario)) => TimeseriesColumns::Scenario(scenario.clone()),
                             (Some(_), Some(_)) => {
                                 return Err(ConversionError::AmbiguousColumnAndScenario(name.clone()))
                             }

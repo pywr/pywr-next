@@ -25,12 +25,8 @@
         "name": "input2",
         "type": "Input",
         "max_flow": {
-          "type": "Timeseries",
-          "name": "inflow",
-          "columns": {
-            "type": "Column",
-            "name": "inflow2"
-          }
+          "type": "Parameter",
+          "name": "factored_flow"
         }
       },
       {
@@ -66,7 +62,24 @@
         "name": "demand",
         "type": "Constant",
         "value": 100.0
+      },
+      {
+        "name": "factored_flow",
+        "type": "Aggregated",
+        "agg_func": "product",
+        "metrics": [
+          {
+            "type": "Timeseries",
+            "name": "inflow",
+            "columns": {
+              "type": "Column",
+              "name": "inflow1"
+            }
+          },
+          0.5
+        ]
       }
+
     ],
     "timeseries": [
       {
