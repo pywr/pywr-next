@@ -265,6 +265,11 @@ impl<T> PeriodValue<T> {
     pub fn new(start: NaiveDateTime, duration: PywrDuration, value: T) -> Self {
         Self { start, duration, value }
     }
+
+    /// The end of the period.
+    pub fn end(&self) -> NaiveDateTime {
+        self.duration + self.start
+    }
 }
 
 impl<T> PeriodValue<Vec<T>> {

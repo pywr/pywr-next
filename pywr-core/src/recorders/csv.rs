@@ -194,6 +194,9 @@ impl Recorder for CsvWideFmtOutput {
 
 /// Output the values from a several [`MetricSet`]s to a CSV file in long format.
 ///
+/// The long format contains a row for each value produced by the metric set. This is useful
+/// for analysis in tools like R or Python which can easily read long format data.
+///
 #[derive(Clone, Debug)]
 pub struct CsvLongFmtOutput {
     meta: RecorderMeta,
@@ -235,6 +238,7 @@ impl CsvLongFmtOutput {
 
                         let row = vec![
                             value.start.to_string(),
+                            value.end().to_string(),
                             format!("{}", scenario_idx),
                             metric_set.name().to_string(),
                             name,
@@ -256,6 +260,17 @@ impl CsvLongFmtOutput {
     }
 }
 
+static HEADER: [&str; 8] = [
+    "time_start",
+    "time_end",
+    "scenario_index",
+    "metric_set",
+    "node",
+    "sub_node",
+    "attribute",
+    "value",
+];
+
 impl Recorder for CsvLongFmtOutput {
     fn meta(&self) -> &RecorderMeta {
         &self.meta
@@ -263,18 +278,8 @@ impl Recorder for CsvLongFmtOutput {
     fn setup(&self, _domain: &ModelDomain, _network: &Network) -> Result<Option<Box<(dyn Any)>>, PywrError> {
         let mut writer = csv::Writer::from_path(&self.filename).map_err(|e| PywrError::CSVError(e.to_string()))?;
 
-        let header = vec![
-            "timestep".to_string(),
-            "scenario_index".to_string(),
-            "metric_set".to_string(),
-            "node".to_string(),
-            "sub_node".to_string(),
-            "attribute".to_string(),
-            "value".to_string(),
-        ];
-
         writer
-            .write_record(header)
+            .write_record(HEADER)
             .map_err(|e| PywrError::CSVError(e.to_string()))?;
 
         let internal = Internal { writer };
