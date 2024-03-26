@@ -4,6 +4,8 @@ use crate::network::Network;
 use crate::recorders::metric_set::MetricSetIndex;
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
+use chrono::NaiveDateTime;
+use serde::{Deserialize, Serialize};
 use std::any::Any;
 use std::fs::File;
 use std::ops::Deref;
@@ -191,6 +193,18 @@ impl Recorder for CsvWideFmtOutput {
     }
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CsvLongFmtRecord {
+    time_start: NaiveDateTime,
+    time_end: NaiveDateTime,
+    scenario_index: usize,
+    metric_set: String,
+    name: String,
+    sub_name: String,
+    attribute: String,
+    value: f64,
+}
+
 /// Output the values from a several [`MetricSet`]s to a CSV file in long format.
 ///
 /// The long format contains a row for each value produced by the metric set. This is useful
@@ -235,20 +249,20 @@ impl CsvLongFmtOutput {
                             .map_or_else(|| "".to_string(), |s| s.to_string());
                         let attribute = metric.attribute().to_string();
 
-                        let row = vec![
-                            value.start.to_string(),
-                            value.end().to_string(),
-                            format!("{}", scenario_idx),
-                            metric_set.name().to_string(),
+                        let record = CsvLongFmtRecord {
+                            time_start: value.start,
+                            time_end: value.end(),
+                            scenario_index: scenario_idx,
+                            metric_set: metric_set.name().to_string(),
                             name,
                             sub_name,
                             attribute,
-                            format!("{:.2}", value.value),
-                        ];
+                            value: value.value,
+                        };
 
                         internal
                             .writer
-                            .write_record(row)
+                            .serialize(record)
                             .map_err(|e| PywrError::CSVError(e.to_string()))?;
                     }
                 }
@@ -259,27 +273,12 @@ impl CsvLongFmtOutput {
     }
 }
 
-static HEADER: [&str; 8] = [
-    "time_start",
-    "time_end",
-    "scenario_index",
-    "metric_set",
-    "node",
-    "sub_node",
-    "attribute",
-    "value",
-];
-
 impl Recorder for CsvLongFmtOutput {
     fn meta(&self) -> &RecorderMeta {
         &self.meta
     }
     fn setup(&self, _domain: &ModelDomain, _network: &Network) -> Result<Option<Box<(dyn Any)>>, PywrError> {
-        let mut writer = csv::Writer::from_path(&self.filename).map_err(|e| PywrError::CSVError(e.to_string()))?;
-
-        writer
-            .write_record(HEADER)
-            .map_err(|e| PywrError::CSVError(e.to_string()))?;
+        let writer = csv::Writer::from_path(&self.filename).map_err(|e| PywrError::CSVError(e.to_string()))?;
 
         let internal = Internal { writer };
 

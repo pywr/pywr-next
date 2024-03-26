@@ -5,7 +5,6 @@ mod memory;
 mod metric_set;
 mod py;
 
-pub use self::csv::{CsvLongFmtOutput, CsvWideFmtOutput};
 use crate::metric::{MetricF64, MetricUsize};
 use crate::models::ModelDomain;
 use crate::network::Network;
@@ -14,6 +13,7 @@ use crate::state::State;
 use crate::timestep::Timestep;
 use crate::PywrError;
 pub use aggregator::{AggregationFrequency, AggregationFunction, Aggregator};
+pub use csv::{CsvLongFmtOutput, CsvLongFmtRecord, CsvWideFmtOutput};
 use float_cmp::{approx_eq, ApproxEq, F64Margin};
 pub use hdf::HDF5Recorder;
 pub use memory::{Aggregation, AggregationError, MemoryRecorder};
