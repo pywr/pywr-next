@@ -168,6 +168,6 @@ mod tests {
         };
         let settings_from_builder = SimdIpmSolverSettingsBuilder::<f64, 4>::default().parallel().build();
 
-        assert_eq!(settings_from_builder, settings_from_builder);
+        assert_eq!(settings_from_builder, settings);
     }
 }

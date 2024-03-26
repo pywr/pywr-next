@@ -10,7 +10,7 @@ env:
 
 jobs:
   build:
-
+    name: Build (stable)
     runs-on: ubuntu-latest
 
     steps:
@@ -32,3 +32,20 @@ jobs:
         run: cargo test --no-default-features --features highs
       - name: Run mdbook tests
         run: mdbook test ./pywr-book
+
+  build_nightly:
+    name: Build (nightly) w/ SIMD and OpenCL
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - uses: dtolnay/rust-toolchain@nightly
+      - name: Install Intel OpenCL
+        run: sudo apt-get install -y intel-opencl-icd ocl-icd-opencl-dev
+      - name: Build
+        run: cargo +nightly build --verbose --no-default-features --features ipm-simd,ipm-ocl
+      - name: Run tests (SIMD only)
+        # Run tests with SIMD only to avoid OpenCL runtime requirement on Github actions.
+        run: cargo +nightly test --no-default-features --features ipm-simd
