@@ -4,9 +4,9 @@ use pywr_core::recorders::MemoryRecorder;
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
 pub struct MemoryAggregation {
-    time: Option<MetricAggFunc>,
-    scenario: Option<MetricAggFunc>,
-    metric: Option<MetricAggFunc>,
+    pub time: Option<MetricAggFunc>,
+    pub scenario: Option<MetricAggFunc>,
+    pub metric: Option<MetricAggFunc>,
 }
 
 impl From<MemoryAggregation> for pywr_core::recorders::Aggregation {
@@ -21,9 +21,9 @@ impl From<MemoryAggregation> for pywr_core::recorders::Aggregation {
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
 pub struct MemoryOutput {
-    name: String,
-    metric_set: String,
-    aggregation: MemoryAggregation,
+    pub name: String,
+    pub metric_set: String,
+    pub aggregation: MemoryAggregation,
 }
 
 impl MemoryOutput {
