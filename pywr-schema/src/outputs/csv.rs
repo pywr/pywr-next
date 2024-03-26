@@ -10,6 +10,13 @@ pub enum CsvFormat {
     Long,
 }
 
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+#[serde(untagged)]
+pub enum CsvMetricSet {
+    Single(String),
+    Multiple(Vec<String>),
+}
+
 /// Output data to a CSV file.
 ///
 /// This output will write the output data to a CSV file. The output data is written in either
@@ -26,8 +33,7 @@ pub struct CsvOutput {
     name: String,
     filename: PathBuf,
     format: CsvFormat,
-    metric_set: Option<String>,
-    metric_sets: Option<Vec<String>>,
+    metric_set: CsvMetricSet,
 }
 
 impl CsvOutput {
@@ -43,29 +49,24 @@ impl CsvOutput {
 
         let recorder: Box<dyn Recorder> = match self.format {
             CsvFormat::Wide => match &self.metric_set {
-                Some(metric_set) => {
+                CsvMetricSet::Single(metric_set) => {
                     let metric_set_idx = network.get_metric_set_index_by_name(metric_set)?;
                     Box::new(CsvWideFmtOutput::new(&self.name, filename, metric_set_idx))
                 }
-                None => {
+                CsvMetricSet::Multiple(_) => {
                     return Err(SchemaError::MissingMetricSet(
                         "Wide format CSV output requires a single `metric_set`".to_string(),
                     ))
                 }
             },
             CsvFormat::Long => {
-                let metric_set_indices =
-                    match (&self.metric_set, &self.metric_sets) {
-                        (Some(metric_set), None) => vec![network.get_metric_set_index_by_name(metric_set)?],
-                        (None, Some(metric_sets)) => metric_sets
-                            .iter()
-                            .map(|ms| network.get_metric_set_index_by_name(ms))
-                            .collect::<Result<Vec<_>, _>>()?,
-                        _ => return Err(SchemaError::MissingMetricSet(
-                            "Long format CSV output requires either a single `metric_set` or a list of `metric_sets`"
-                                .to_string(),
-                        )),
-                    };
+                let metric_set_indices = match &self.metric_set {
+                    CsvMetricSet::Single(metric_set) => vec![network.get_metric_set_index_by_name(metric_set)?],
+                    CsvMetricSet::Multiple(metric_sets) => metric_sets
+                        .iter()
+                        .map(|ms| network.get_metric_set_index_by_name(ms))
+                        .collect::<Result<Vec<_>, _>>()?,
+                };
 
                 Box::new(CsvLongFmtOutput::new(&self.name, filename, &metric_set_indices))
             }
@@ -88,12 +89,32 @@ mod tests {
         include_str!("../test_models/csv1.json")
     }
 
+    fn csv1_outputs_long_str() -> &'static str {
+        include_str!("../test_models/csv1-outputs-long.csv")
+    }
+
+    fn csv1_outputs_wide_str() -> &'static str {
+        include_str!("../test_models/csv1-outputs-wide.csv")
+    }
+
     fn csv2_str() -> &'static str {
         include_str!("../test_models/csv2.json")
     }
 
+    fn csv2_outputs_long_str() -> &'static str {
+        include_str!("../test_models/csv2-outputs-long.csv")
+    }
+
+    fn csv2_outputs_wide_str() -> &'static str {
+        include_str!("../test_models/csv2-outputs-wide.csv")
+    }
+
     fn csv3_str() -> &'static str {
         include_str!("../test_models/csv3.json")
+    }
+
+    fn csv3_outputs_long_str() -> &'static str {
+        include_str!("../test_models/csv3-outputs-long.csv")
     }
 
     #[test]
@@ -120,8 +141,13 @@ mod tests {
         // After model run there should be two output files.
         let expected_long_path = temp_dir.path().join("outputs-long.csv");
         assert!(expected_long_path.exists());
+        let long_content = std::fs::read_to_string(&expected_long_path).unwrap();
+        assert_eq!(&long_content, csv1_outputs_long_str());
+
         let expected_wide_path = temp_dir.path().join("outputs-wide.csv");
         assert!(expected_wide_path.exists());
+        let wide_content = std::fs::read_to_string(&expected_wide_path).unwrap();
+        assert_eq!(&wide_content, csv1_outputs_wide_str());
     }
 
     #[test]
@@ -138,8 +164,13 @@ mod tests {
         // After model run there should be two output files.
         let expected_long_path = temp_dir.path().join("outputs-long.csv");
         assert!(expected_long_path.exists());
+        let long_content = std::fs::read_to_string(&expected_long_path).unwrap();
+        assert_eq!(&long_content, csv2_outputs_long_str());
+
         let expected_wide_path = temp_dir.path().join("outputs-wide.csv");
         assert!(expected_wide_path.exists());
+        let wide_content = std::fs::read_to_string(&expected_wide_path).unwrap();
+        assert_eq!(&wide_content, csv2_outputs_wide_str());
     }
 
     #[test]
@@ -155,5 +186,7 @@ mod tests {
 
         let expected_long_path = temp_dir.path().join("outputs-long.csv");
         assert!(expected_long_path.exists());
+        let long_content = std::fs::read_to_string(&expected_long_path).unwrap();
+        assert_eq!(&long_content, csv3_outputs_long_str());
     }
 }

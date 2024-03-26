@@ -32,7 +32,6 @@ impl CsvWideFmtOutput {
 
     fn write_values(
         &self,
-
         metric_set_states: &[Vec<MetricSetState>],
         internal: &mut Internal,
     ) -> Result<(), PywrError> {
