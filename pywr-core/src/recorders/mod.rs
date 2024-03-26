@@ -5,7 +5,6 @@ mod memory;
 mod metric_set;
 mod py;
 
-pub use self::csv::CSVRecorder;
 use crate::metric::{MetricF64, MetricUsize};
 use crate::models::ModelDomain;
 use crate::network::Network;
@@ -14,6 +13,7 @@ use crate::state::State;
 use crate::timestep::Timestep;
 use crate::PywrError;
 pub use aggregator::{AggregationFrequency, AggregationFunction, Aggregator};
+pub use csv::{CsvLongFmtOutput, CsvLongFmtRecord, CsvWideFmtOutput};
 use float_cmp::{approx_eq, ApproxEq, F64Margin};
 pub use hdf::HDF5Recorder;
 pub use memory::{Aggregation, AggregationError, MemoryRecorder};
@@ -87,6 +87,7 @@ pub trait Recorder: Send + Sync {
     }
     fn finalise(
         &self,
+        _network: &Network,
         _metric_set_states: &[Vec<MetricSetState>],
         _internal_state: &mut Option<Box<dyn Any>>,
     ) -> Result<(), PywrError> {
