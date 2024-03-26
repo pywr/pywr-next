@@ -30,10 +30,10 @@ pub enum CsvMetricSet {
 ///
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
 pub struct CsvOutput {
-    name: String,
-    filename: PathBuf,
-    format: CsvFormat,
-    metric_set: CsvMetricSet,
+    pub name: String,
+    pub filename: PathBuf,
+    pub format: CsvFormat,
+    pub metric_set: CsvMetricSet,
 }
 
 impl CsvOutput {
