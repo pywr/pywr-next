@@ -109,11 +109,11 @@ impl From<MetricAggFrequency> for pywr_core::recorders::AggregationFrequency {
 #[derive(Deserialize, Serialize, Clone)]
 pub struct MetricAggregator {
     /// Optional aggregation frequency.
-    freq: Option<MetricAggFrequency>,
+    pub freq: Option<MetricAggFrequency>,
     /// Aggregation function to apply over metric values.
-    func: MetricAggFunc,
+    pub func: MetricAggFunc,
     /// Optional child aggregator.
-    child: Option<Box<MetricAggregator>>,
+    pub child: Option<Box<MetricAggregator>>,
 }
 
 impl From<MetricAggregator> for pywr_core::recorders::Aggregator {
@@ -133,9 +133,9 @@ impl From<MetricAggregator> for pywr_core::recorders::Aggregator {
 /// in multiple values (i.e. per each period implied by the frequency).
 #[derive(Deserialize, Serialize, Clone)]
 pub struct MetricSet {
-    name: String,
-    metrics: Vec<OutputMetric>,
-    aggregator: Option<MetricAggregator>,
+    pub name: String,
+    pub metrics: Vec<OutputMetric>,
+    pub aggregator: Option<MetricAggregator>,
 }
 
 impl MetricSet {

@@ -4,10 +4,10 @@ use std::path::{Path, PathBuf};
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
 pub struct Hdf5Output {
-    name: String,
-    filename: PathBuf,
+    pub name: String,
+    pub filename: PathBuf,
     /// The metric set to save
-    metric_set: String,
+    pub metric_set: String,
 }
 
 impl Hdf5Output {
