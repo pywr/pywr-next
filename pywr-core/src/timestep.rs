@@ -54,9 +54,14 @@ impl PywrDuration {
         }
     }
 
-    // Returns the fractional number of days in the duration.
+    /// Returns the fractional number of days in the duration.
     pub fn fractional_days(&self) -> f64 {
         self.0.num_seconds() as f64 / SECS_IN_DAY as f64
+    }
+
+    /// Returns the number of nanoseconds in the duration.
+    pub fn whole_nanoseconds(&self) -> Option<i64> {
+        self.0.num_nanoseconds()
     }
 }
 
@@ -187,6 +192,7 @@ impl Timestepper {
 }
 
 /// The time domain that a model will be simulated over.
+#[derive(Debug)]
 pub struct TimeDomain {
     timesteps: Vec<Timestep>,
 }
@@ -207,6 +213,14 @@ impl TimeDomain {
     /// The total number of time-steps in the domain.
     pub fn len(&self) -> usize {
         self.timesteps.len()
+    }
+
+    pub fn first_timestep(&self) -> &Timestep {
+        self.timesteps.first().expect("No time-steps defined.")
+    }
+
+    pub fn last_timestep(&self) -> &Timestep {
+        self.timesteps.last().expect("No time-steps defined.")
     }
 
     pub fn is_empty(&self) -> bool {

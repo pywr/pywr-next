@@ -204,6 +204,7 @@ mod tests {
     use crate::data_tables::LoadedTableCollection;
     use crate::model::{LoadArgs, PywrNetwork};
     use crate::parameters::python::PythonParameter;
+    use crate::timeseries::LoadedTimeseriesCollection;
     use pywr_core::models::ModelDomain;
     use pywr_core::network::Network;
     use pywr_core::test_utils::default_time_domain;
@@ -237,11 +238,13 @@ mod tests {
         let schema = PywrNetwork::default();
         let mut network = Network::default();
         let tables = LoadedTableCollection::from_schema(None, None).unwrap();
+        let ts = LoadedTimeseriesCollection::default();
 
         let args = LoadArgs {
             schema: &schema,
             data_path: None,
             tables: &tables,
+            timeseries: &ts,
             domain: &domain,
             inter_network_transfers: &[],
         };
@@ -279,11 +282,13 @@ mod tests {
         let schema = PywrNetwork::default();
         let mut network = Network::default();
         let tables = LoadedTableCollection::from_schema(None, None).unwrap();
+        let ts = LoadedTimeseriesCollection::default();
 
         let args = LoadArgs {
             schema: &schema,
             data_path: None,
             tables: &tables,
+            timeseries: &ts,
             domain: &domain,
             inter_network_transfers: &[],
         };

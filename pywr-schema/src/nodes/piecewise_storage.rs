@@ -9,7 +9,7 @@ use pywr_core::parameters::VolumeBetweenControlCurvesParameter;
 use pywr_schema_macros::PywrNode;
 use std::collections::HashMap;
 
-#[derive(serde::Deserialize, serde::Serialize, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Debug)]
 pub struct PiecewiseStore {
     pub control_curve: DynamicFloatValue,
     pub cost: Option<DynamicFloatValue>,
@@ -41,7 +41,7 @@ pub struct PiecewiseStore {
 /// ```
 ///
 )]
-#[derive(serde::Deserialize, serde::Serialize, Clone, Default, PywrNode)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, PywrNode)]
 pub struct PiecewiseStorageNode {
     #[serde(flatten)]
     pub meta: NodeMeta,

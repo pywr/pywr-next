@@ -4,8 +4,10 @@ use super::parameters::Parameter;
 use crate::data_tables::{DataTable, LoadedTableCollection};
 use crate::error::{ConversionError, SchemaError};
 use crate::metric_sets::MetricSet;
+use crate::nodes::NodeAndTimeseries;
 use crate::outputs::Output;
-use crate::parameters::{MetricFloatReference, TryIntoV2Parameter};
+use crate::parameters::{convert_parameter_v1_to_v2, MetricFloatReference};
+use crate::timeseries::{convert_from_v1_data, LoadedTimeseriesCollection, Timeseries};
 use chrono::{NaiveDate, NaiveDateTime, NaiveTime};
 use pywr_core::models::ModelDomain;
 use pywr_core::timestep::TimestepDuration;
@@ -139,6 +141,7 @@ pub struct LoadArgs<'a> {
     pub schema: &'a PywrNetwork,
     pub domain: &'a ModelDomain,
     pub tables: &'a LoadedTableCollection,
+    pub timeseries: &'a LoadedTimeseriesCollection,
     pub data_path: Option<&'a Path>,
     pub inter_network_transfers: &'a [PywrMultiNetworkTransfer],
 }
@@ -149,6 +152,7 @@ pub struct PywrNetwork {
     pub edges: Vec<Edge>,
     pub parameters: Option<Vec<Parameter>>,
     pub tables: Option<Vec<DataTable>>,
+    pub timeseries: Option<Vec<Timeseries>>,
     pub metric_sets: Option<Vec<MetricSet>>,
     pub outputs: Option<Vec<Output>>,
 }
@@ -193,12 +197,25 @@ impl PywrNetwork {
         Ok(LoadedTableCollection::from_schema(self.tables.as_deref(), data_path)?)
     }
 
+    pub fn load_timeseries(
+        &self,
+        domain: &ModelDomain,
+        data_path: Option<&Path>,
+    ) -> Result<LoadedTimeseriesCollection, SchemaError> {
+        Ok(LoadedTimeseriesCollection::from_schema(
+            self.timeseries.as_deref(),
+            domain,
+            data_path,
+        )?)
+    }
+
     pub fn build_network(
         &self,
         domain: &ModelDomain,
         data_path: Option<&Path>,
         output_path: Option<&Path>,
         tables: &LoadedTableCollection,
+        timeseries: &LoadedTimeseriesCollection,
         inter_network_transfers: &[PywrMultiNetworkTransfer],
     ) -> Result<pywr_core::network::Network, SchemaError> {
         let mut network = pywr_core::network::Network::default();
@@ -207,6 +224,7 @@ impl PywrNetwork {
             schema: self,
             domain,
             tables,
+            timeseries,
             data_path,
             inter_network_transfers,
         };
@@ -401,9 +419,11 @@ impl PywrModel {
         let domain = ModelDomain::from(timestepper, scenario_collection)?;
 
         let tables = self.network.load_tables(data_path)?;
+        let timeseries = self.network.load_timeseries(&domain, data_path)?;
+
         let network = self
             .network
-            .build_network(&domain, data_path, output_path, &tables, &[])?;
+            .build_network(&domain, data_path, output_path, &tables, &timeseries, &[])?;
 
         let model = pywr_core::models::Model::new(domain, network);
 
@@ -430,8 +450,10 @@ impl PywrModel {
             Timestepper::default()
         });
 
-        let nodes = v1
+        // Extract nodes and any timeseries data from the v1 nodes
+        let nodes_and_ts: Vec<NodeAndTimeseries> = v1
             .nodes
+            .clone()
             .into_iter()
             .filter_map(|n| match n.try_into() {
                 Ok(n) => Some(n),
@@ -442,22 +464,29 @@ impl PywrModel {
             })
             .collect::<Vec<_>>();
 
+        let mut ts_data = nodes_and_ts
+            .iter()
+            .filter_map(|n| n.timeseries.clone())
+            .flatten()
+            .collect::<Vec<_>>();
+
+        let nodes = nodes_and_ts.into_iter().map(|n| n.node).collect::<Vec<_>>();
+
         let edges = v1.edges.into_iter().map(|e| e.into()).collect();
 
         let parameters = if let Some(v1_parameters) = v1.parameters {
             let mut unnamed_count: usize = 0;
-            Some(
-                v1_parameters
-                    .into_iter()
-                    .filter_map(|p| match p.try_into_v2_parameter(None, &mut unnamed_count) {
-                        Ok(p) => Some(p),
-                        Err(e) => {
-                            errors.push(e);
-                            None
-                        }
-                    })
-                    .collect::<Vec<_>>(),
-            )
+            let (parameters, param_ts_data) =
+                convert_parameter_v1_to_v2(v1_parameters, &mut unnamed_count, &mut errors);
+            ts_data.extend(param_ts_data);
+            Some(parameters)
+        } else {
+            None
+        };
+
+        let timeseries = if !ts_data.is_empty() {
+            let ts = convert_from_v1_data(ts_data, &v1.tables, &mut errors);
+            Some(ts)
         } else {
             None
         };
@@ -471,6 +500,7 @@ impl PywrModel {
             edges,
             parameters,
             tables,
+            timeseries,
             metric_sets,
             outputs,
         };
@@ -603,14 +633,15 @@ impl PywrMultiNetworkModel {
         let domain = ModelDomain::from(timestepper, scenario_collection)?;
         let mut networks = Vec::with_capacity(self.networks.len());
         let mut inter_network_transfers = Vec::new();
-        let mut schemas: Vec<(PywrNetwork, LoadedTableCollection)> = Vec::with_capacity(self.networks.len());
+        let mut schemas: Vec<(PywrNetwork, LoadedTableCollection, LoadedTimeseriesCollection)> =
+            Vec::with_capacity(self.networks.len());
 
         // First load all the networks
         // These will contain any parameters that are referenced by the inter-model transfers
         // Because of potential circular references, we need to load all the networks first.
         for network_entry in &self.networks {
             // Load the network itself
-            let (network, schema, tables) = match &network_entry.network {
+            let (network, schema, tables, timeseries) = match &network_entry.network {
                 PywrNetworkRef::Path(path) => {
                     let pth = if let Some(dp) = data_path {
                         if path.is_relative() {
@@ -624,31 +655,35 @@ impl PywrMultiNetworkModel {
 
                     let network_schema = PywrNetwork::from_path(pth)?;
                     let tables = network_schema.load_tables(data_path)?;
+                    let timeseries = network_schema.load_timeseries(&domain, data_path)?;
                     let net = network_schema.build_network(
                         &domain,
                         data_path,
                         output_path,
                         &tables,
+                        &timeseries,
                         &network_entry.transfers,
                     )?;
 
-                    (net, network_schema, tables)
+                    (net, network_schema, tables, timeseries)
                 }
                 PywrNetworkRef::Inline(network_schema) => {
                     let tables = network_schema.load_tables(data_path)?;
+                    let timeseries = network_schema.load_timeseries(&domain, data_path)?;
                     let net = network_schema.build_network(
                         &domain,
                         data_path,
                         output_path,
                         &tables,
+                        &timeseries,
                         &network_entry.transfers,
                     )?;
 
-                    (net, network_schema.clone(), tables)
+                    (net, network_schema.clone(), tables, timeseries)
                 }
             };
 
-            schemas.push((schema, tables));
+            schemas.push((schema, tables, timeseries));
             networks.push((network_entry.name.clone(), network));
         }
 
@@ -670,12 +705,13 @@ impl PywrMultiNetworkModel {
                     .ok_or_else(|| SchemaError::NetworkNotFound(transfer.from_network.clone()))?;
 
                 // The transfer metric will fail to load if it is defined as an inter-model transfer itself.
-                let (from_schema, from_tables) = &schemas[from_network_idx];
+                let (from_schema, from_tables, from_timeseries) = &schemas[from_network_idx];
 
                 let args = LoadArgs {
                     schema: from_schema,
                     domain: &domain,
                     tables: from_tables,
+                    timeseries: from_timeseries,
                     data_path,
                     inter_network_transfers: &[],
                 };

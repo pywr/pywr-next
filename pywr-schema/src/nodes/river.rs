@@ -6,7 +6,7 @@ use pywr_schema_macros::PywrNode;
 use pywr_v1_schema::nodes::LinkNode as LinkNodeV1;
 use std::collections::HashMap;
 
-#[derive(serde::Deserialize, serde::Serialize, Clone, Default, PywrNode)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, PywrNode)]
 pub struct RiverNode {
     #[serde(flatten)]
     pub meta: NodeMeta,
