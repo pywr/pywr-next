@@ -4,6 +4,7 @@ use crate::model::PywrMultiNetworkTransfer;
 use crate::nodes::core::StorageInitialVolume;
 use crate::nodes::{NodeAttribute, NodeMeta};
 use crate::parameters::{DynamicFloatValue, TryIntoV2Parameter};
+use crate::timeseries::LoadedTimeseriesCollection;
 use pywr_core::derived_metric::DerivedMetric;
 use pywr_core::metric::MetricF64;
 use pywr_core::models::ModelDomain;
@@ -14,7 +15,7 @@ use pywr_v1_schema::nodes::MonthlyVirtualStorageNode as MonthlyVirtualStorageNod
 use std::collections::HashMap;
 use std::path::Path;
 
-#[derive(serde::Deserialize, serde::Serialize, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Debug)]
 pub struct NumberOfMonthsReset {
     pub months: u8,
 }
@@ -25,7 +26,7 @@ impl Default for NumberOfMonthsReset {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Clone, Default, PywrNode)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, PywrNode)]
 pub struct MonthlyVirtualStorageNode {
     #[serde(flatten)]
     pub meta: NodeMeta,
@@ -49,24 +50,49 @@ impl MonthlyVirtualStorageNode {
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
         inter_network_transfers: &[PywrMultiNetworkTransfer],
+        timeseries: &LoadedTimeseriesCollection,
     ) -> Result<(), SchemaError> {
         let cost = match &self.cost {
             Some(v) => v
-                .load(network, schema, domain, tables, data_path, inter_network_transfers)?
+                .load(
+                    network,
+                    schema,
+                    domain,
+                    tables,
+                    data_path,
+                    inter_network_transfers,
+                    timeseries,
+                )?
                 .into(),
             None => ConstraintValue::Scalar(0.0),
         };
 
         let min_volume = match &self.min_volume {
             Some(v) => v
-                .load(network, schema, domain, tables, data_path, inter_network_transfers)?
+                .load(
+                    network,
+                    schema,
+                    domain,
+                    tables,
+                    data_path,
+                    inter_network_transfers,
+                    timeseries,
+                )?
                 .into(),
             None => ConstraintValue::Scalar(0.0),
         };
 
         let max_volume = match &self.max_volume {
             Some(v) => v
-                .load(network, schema, domain, tables, data_path, inter_network_transfers)?
+                .load(
+                    network,
+                    schema,
+                    domain,
+                    tables,
+                    data_path,
+                    inter_network_transfers,
+                    timeseries,
+                )?
                 .into(),
             None => ConstraintValue::None,
         };

@@ -1,5 +1,6 @@
 use crate::data_tables::LoadedTableCollection;
 use crate::parameters::{ConstantValue, DynamicFloatValue, DynamicFloatValueType, ParameterMeta};
+use crate::timeseries::LoadedTimeseriesCollection;
 use pywr_core::parameters::ParameterIndex;
 
 use crate::error::SchemaError;
@@ -55,10 +56,17 @@ impl OffsetParameter {
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
         inter_network_transfers: &[PywrMultiNetworkTransfer],
+        timeseries: &LoadedTimeseriesCollection,
     ) -> Result<ParameterIndex<f64>, SchemaError> {
-        let idx = self
-            .metric
-            .load(network, schema, domain, tables, data_path, inter_network_transfers)?;
+        let idx = self.metric.load(
+            network,
+            schema,
+            domain,
+            tables,
+            data_path,
+            inter_network_transfers,
+            timeseries,
+        )?;
 
         let p = pywr_core::parameters::OffsetParameter::new(&self.meta.name, idx, self.offset.load(tables)?);
         Ok(network.add_parameter(Box::new(p))?)

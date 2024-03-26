@@ -3,6 +3,7 @@ use crate::error::{ConversionError, SchemaError};
 use crate::model::PywrMultiNetworkTransfer;
 use crate::nodes::{NodeAttribute, NodeMeta};
 use crate::parameters::{DynamicFloatValue, TryIntoV2Parameter};
+use crate::timeseries::LoadedTimeseriesCollection;
 use pywr_core::derived_metric::DerivedMetric;
 use pywr_core::metric::MetricF64;
 use pywr_core::models::ModelDomain;
@@ -18,7 +19,7 @@ use std::path::Path;
 /// The length of the rolling window.
 ///
 /// This can be specified in either days or time-steps.
-#[derive(serde::Deserialize, serde::Serialize, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Debug)]
 pub enum RollingWindow {
     Days(NonZeroUsize),
     Timesteps(NonZeroUsize),
@@ -63,7 +64,7 @@ impl RollingWindow {
 /// The rolling virtual storage node is useful for representing rolling licences. For example, a 30-day or 90-day
 /// licence on a water abstraction.
 ///
-#[derive(serde::Deserialize, serde::Serialize, Clone, Default, PywrNode)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, PywrNode)]
 pub struct RollingVirtualStorageNode {
     #[serde(flatten)]
     pub meta: NodeMeta,
@@ -88,6 +89,7 @@ impl RollingVirtualStorageNode {
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
         inter_network_transfers: &[PywrMultiNetworkTransfer],
+        timeseries: &LoadedTimeseriesCollection,
     ) -> Result<(), SchemaError> {
         let initial_volume = if let Some(iv) = self.initial_volume {
             StorageInitialVolume::Absolute(iv)
@@ -99,21 +101,45 @@ impl RollingVirtualStorageNode {
 
         let cost = match &self.cost {
             Some(v) => v
-                .load(network, schema, domain, tables, data_path, inter_network_transfers)?
+                .load(
+                    network,
+                    schema,
+                    domain,
+                    tables,
+                    data_path,
+                    inter_network_transfers,
+                    timeseries,
+                )?
                 .into(),
             None => ConstraintValue::Scalar(0.0),
         };
 
         let min_volume = match &self.min_volume {
             Some(v) => v
-                .load(network, schema, domain, tables, data_path, inter_network_transfers)?
+                .load(
+                    network,
+                    schema,
+                    domain,
+                    tables,
+                    data_path,
+                    inter_network_transfers,
+                    timeseries,
+                )?
                 .into(),
             None => ConstraintValue::Scalar(0.0),
         };
 
         let max_volume = match &self.max_volume {
             Some(v) => v
-                .load(network, schema, domain, tables, data_path, inter_network_transfers)?
+                .load(
+                    network,
+                    schema,
+                    domain,
+                    tables,
+                    data_path,
+                    inter_network_transfers,
+                    timeseries,
+                )?
                 .into(),
             None => ConstraintValue::None,
         };

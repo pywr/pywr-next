@@ -3,6 +3,7 @@ use crate::error::{ConversionError, SchemaError};
 use crate::model::PywrMultiNetworkTransfer;
 use crate::nodes::{NodeAttribute, NodeMeta};
 use crate::parameters::{DynamicFloatValue, TryIntoV2Parameter};
+use crate::timeseries::LoadedTimeseriesCollection;
 use pywr_core::aggregated_node::Factors;
 use pywr_core::metric::MetricF64;
 use pywr_core::models::ModelDomain;
@@ -34,7 +35,7 @@ use std::path::Path;
 /// ```
 ///
 )]
-#[derive(serde::Deserialize, serde::Serialize, Clone, Default, PywrNode)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, PywrNode)]
 pub struct RiverSplitWithGaugeNode {
     #[serde(flatten)]
     pub meta: NodeMeta,
@@ -90,15 +91,32 @@ impl RiverSplitWithGaugeNode {
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
         inter_network_transfers: &[PywrMultiNetworkTransfer],
+        timeseries: &LoadedTimeseriesCollection,
     ) -> Result<(), SchemaError> {
         // MRF applies as a maximum on the MRF node.
         if let Some(cost) = &self.mrf_cost {
-            let value = cost.load(network, schema, domain, tables, data_path, inter_network_transfers)?;
+            let value = cost.load(
+                network,
+                schema,
+                domain,
+                tables,
+                data_path,
+                inter_network_transfers,
+                timeseries,
+            )?;
             network.set_node_cost(self.meta.name.as_str(), Self::mrf_sub_name(), value.into())?;
         }
 
         if let Some(mrf) = &self.mrf {
-            let value = mrf.load(network, schema, domain, tables, data_path, inter_network_transfers)?;
+            let value = mrf.load(
+                network,
+                schema,
+                domain,
+                tables,
+                data_path,
+                inter_network_transfers,
+                timeseries,
+            )?;
             network.set_node_max_flow(self.meta.name.as_str(), Self::mrf_sub_name(), value.into())?;
         }
 
@@ -111,6 +129,7 @@ impl RiverSplitWithGaugeNode {
                 tables,
                 data_path,
                 inter_network_transfers,
+                timeseries,
             )?]);
             network.set_aggregated_node_factors(
                 self.meta.name.as_str(),

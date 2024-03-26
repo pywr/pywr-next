@@ -2,6 +2,7 @@ use crate::data_tables::{make_path, LoadedTableCollection};
 use crate::error::SchemaError;
 use crate::model::PywrMultiNetworkTransfer;
 use crate::parameters::{DynamicFloatValue, DynamicFloatValueType, DynamicIndexValue, ParameterMeta};
+use crate::timeseries::LoadedTimeseriesCollection;
 use pyo3::prelude::PyModule;
 use pyo3::types::{PyDict, PyTuple};
 use pyo3::{IntoPy, PyErr, PyObject, Python, ToPyObject};
@@ -141,6 +142,7 @@ impl PythonParameter {
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
         inter_network_transfers: &[PywrMultiNetworkTransfer],
+        timeseries: &LoadedTimeseriesCollection,
     ) -> Result<ParameterType, SchemaError> {
         pyo3::prepare_freethreaded_python();
 
@@ -182,7 +184,15 @@ impl PythonParameter {
                 .map(|(k, v)| {
                     Ok((
                         k.to_string(),
-                        v.load(network, schema, domain, tables, data_path, inter_network_transfers)?,
+                        v.load(
+                            network,
+                            schema,
+                            domain,
+                            tables,
+                            data_path,
+                            inter_network_transfers,
+                            timeseries,
+                        )?,
                     ))
                 })
                 .collect::<Result<HashMap<_, _>, SchemaError>>()?,
@@ -195,7 +205,15 @@ impl PythonParameter {
                 .map(|(k, v)| {
                     Ok((
                         k.to_string(),
-                        v.load(network, schema, domain, tables, data_path, inter_network_transfers)?,
+                        v.load(
+                            network,
+                            schema,
+                            domain,
+                            tables,
+                            data_path,
+                            inter_network_transfers,
+                            timeseries,
+                        )?,
                     ))
                 })
                 .collect::<Result<HashMap<_, _>, SchemaError>>()?,
@@ -219,6 +237,7 @@ mod tests {
     use crate::data_tables::LoadedTableCollection;
     use crate::model::PywrNetwork;
     use crate::parameters::python::PythonParameter;
+    use crate::timeseries::LoadedTimeseriesCollection;
     use pywr_core::models::ModelDomain;
     use pywr_core::network::Network;
     use pywr_core::test_utils::default_time_domain;
@@ -252,8 +271,9 @@ mod tests {
         let schema = PywrNetwork::default();
         let mut network = Network::default();
         let tables = LoadedTableCollection::from_schema(None, None).unwrap();
+        let ts = LoadedTimeseriesCollection::default();
         param
-            .add_to_model(&mut network, &schema, &domain, &tables, None, &[])
+            .add_to_model(&mut network, &schema, &domain, &tables, None, &[], &ts)
             .unwrap();
 
         assert!(network.get_parameter_by_name("my-float-parameter").is_ok());
@@ -287,8 +307,9 @@ mod tests {
         let schema = PywrNetwork::default();
         let mut network = Network::default();
         let tables = LoadedTableCollection::from_schema(None, None).unwrap();
+        let ts = LoadedTimeseriesCollection::default();
         param
-            .add_to_model(&mut network, &schema, &domain, &tables, None, &[])
+            .add_to_model(&mut network, &schema, &domain, &tables, None, &[], &ts)
             .unwrap();
 
         assert!(network.get_index_parameter_by_name("my-int-parameter").is_ok());

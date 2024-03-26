@@ -3,6 +3,7 @@ use crate::error::SchemaError;
 use crate::model::PywrMultiNetworkTransfer;
 use crate::nodes::{NodeAttribute, NodeMeta};
 use crate::parameters::DynamicFloatValue;
+use crate::timeseries::LoadedTimeseriesCollection;
 use pywr_core::derived_metric::DerivedMetric;
 use pywr_core::metric::MetricF64;
 use pywr_core::models::ModelDomain;
@@ -12,7 +13,7 @@ use pywr_schema_macros::PywrNode;
 use std::collections::HashMap;
 use std::path::Path;
 
-#[derive(serde::Deserialize, serde::Serialize, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Debug)]
 pub struct PiecewiseStore {
     pub control_curve: DynamicFloatValue,
     pub cost: Option<DynamicFloatValue>,
@@ -44,7 +45,7 @@ pub struct PiecewiseStore {
 /// ```
 ///
 )]
-#[derive(serde::Deserialize, serde::Serialize, Clone, Default, PywrNode)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, PywrNode)]
 pub struct PiecewiseStorageNode {
     #[serde(flatten)]
     pub meta: NodeMeta,
@@ -76,11 +77,18 @@ impl PiecewiseStorageNode {
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
         inter_network_transfers: &[PywrMultiNetworkTransfer],
+        timeseries: &LoadedTimeseriesCollection,
     ) -> Result<(), SchemaError> {
         // These are the min and max volume of the overall node
-        let max_volume = self
-            .max_volume
-            .load(network, schema, domain, tables, data_path, inter_network_transfers)?;
+        let max_volume = self.max_volume.load(
+            network,
+            schema,
+            domain,
+            tables,
+            data_path,
+            inter_network_transfers,
+            timeseries,
+        )?;
 
         let mut store_node_indices = Vec::new();
 
@@ -96,14 +104,21 @@ impl PiecewiseStorageNode {
                     tables,
                     data_path,
                     inter_network_transfers,
+                    timeseries,
                 )?)
             } else {
                 None
             };
 
-            let upper = step
-                .control_curve
-                .load(network, schema, domain, tables, data_path, inter_network_transfers)?;
+            let upper = step.control_curve.load(
+                network,
+                schema,
+                domain,
+                tables,
+                data_path,
+                inter_network_transfers,
+                timeseries,
+            )?;
 
             let max_volume_parameter = VolumeBetweenControlCurvesParameter::new(
                 format!("{}-{}-max-volume", self.meta.name, Self::step_sub_name(i).unwrap()).as_str(),
@@ -138,12 +153,15 @@ impl PiecewiseStorageNode {
 
         // The volume of this store the remain proportion above the last control curve
         let lower = match self.steps.last() {
-            Some(step) => {
-                Some(
-                    step.control_curve
-                        .load(network, schema, domain, tables, data_path, inter_network_transfers)?,
-                )
-            }
+            Some(step) => Some(step.control_curve.load(
+                network,
+                schema,
+                domain,
+                tables,
+                data_path,
+                inter_network_transfers,
+                timeseries,
+            )?),
             None => None,
         };
 
@@ -199,12 +217,21 @@ impl PiecewiseStorageNode {
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
         inter_network_transfers: &[PywrMultiNetworkTransfer],
+        timeseries: &LoadedTimeseriesCollection,
     ) -> Result<(), SchemaError> {
         for (i, step) in self.steps.iter().enumerate() {
             let sub_name = Self::step_sub_name(i);
 
             if let Some(cost) = &step.cost {
-                let value = cost.load(network, schema, domain, tables, data_path, inter_network_transfers)?;
+                let value = cost.load(
+                    network,
+                    schema,
+                    domain,
+                    tables,
+                    data_path,
+                    inter_network_transfers,
+                    timeseries,
+                )?;
                 network.set_node_cost(self.meta.name.as_str(), sub_name.as_deref(), value.into())?;
             }
         }

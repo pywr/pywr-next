@@ -1,5 +1,6 @@
 use crate::data_tables::TableError;
 use crate::nodes::NodeAttribute;
+use crate::timeseries::TimeseriesError;
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::PyErr;
 use thiserror::Error;
@@ -54,6 +55,8 @@ pub enum SchemaError {
     InvalidRollingWindow { name: String },
     #[error("Failed to load parameter {name}: {error}")]
     LoadParameter { name: String, error: String },
+    #[error("Timeseries error: {0}")]
+    Timeseries(#[from] TimeseriesError),
 }
 
 impl From<SchemaError> for PyErr {
@@ -103,4 +106,10 @@ pub enum ConversionError {
     UnparseableDate(String),
     #[error("Chrono out of range error: {0}")]
     OutOfRange(#[from] chrono::OutOfRange),
+    #[error("The dataframe parameters '{0}' defines both a column and a scenario attribute. Only 1 is allowed.")]
+    AmbiguousColumnAndScenario(String),
+    #[error("The dataframe parameters '{0}' defines both a column and a scenario. Only 1 is allowed.")]
+    MissingColumnOrScenario(String),
+    #[error("Unable to create a timeseries for file: '{0}'. No name was found.")]
+    MissingTimeseriesName(String),
 }

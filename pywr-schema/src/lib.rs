@@ -12,6 +12,7 @@ pub mod model;
 pub mod nodes;
 pub mod outputs;
 pub mod parameters;
+pub mod timeseries;
 
 pub use error::{ConversionError, SchemaError};
 pub use model::PywrModel;

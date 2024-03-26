@@ -5,6 +5,7 @@ use crate::parameters::{
     DynamicFloatValue, DynamicFloatValueType, DynamicIndexValue, IntoV2Parameter, ParameterMeta, TryFromV1Parameter,
     TryIntoV2Parameter,
 };
+use crate::timeseries::LoadedTimeseriesCollection;
 use pywr_core::models::ModelDomain;
 use pywr_core::parameters::ParameterIndex;
 use pywr_v1_schema::parameters::{
@@ -99,11 +100,22 @@ impl AggregatedParameter {
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
         inter_network_transfers: &[PywrMultiNetworkTransfer],
+        timeseries: &LoadedTimeseriesCollection,
     ) -> Result<ParameterIndex<f64>, SchemaError> {
         let metrics = self
             .metrics
             .iter()
-            .map(|v| v.load(network, schema, domain, tables, data_path, inter_network_transfers))
+            .map(|v| {
+                v.load(
+                    network,
+                    schema,
+                    domain,
+                    tables,
+                    data_path,
+                    inter_network_transfers,
+                    timeseries,
+                )
+            })
             .collect::<Result<Vec<_>, _>>()?;
 
         let p = pywr_core::parameters::AggregatedParameter::new(&self.meta.name, &metrics, self.agg_func.into());
@@ -206,11 +218,22 @@ impl AggregatedIndexParameter {
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
         inter_network_transfers: &[PywrMultiNetworkTransfer],
+        timeseries: &LoadedTimeseriesCollection,
     ) -> Result<ParameterIndex<usize>, SchemaError> {
         let parameters = self
             .parameters
             .iter()
-            .map(|v| v.load(network, schema, domain, tables, data_path, inter_network_transfers))
+            .map(|v| {
+                v.load(
+                    network,
+                    schema,
+                    domain,
+                    tables,
+                    data_path,
+                    inter_network_transfers,
+                    timeseries,
+                )
+            })
             .collect::<Result<Vec<_>, _>>()?;
 
         let p = pywr_core::parameters::AggregatedIndexParameter::new(&self.meta.name, parameters, self.agg_func.into());

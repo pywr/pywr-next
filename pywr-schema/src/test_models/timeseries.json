@@ -17,8 +17,16 @@
           "name": "inflow",
           "columns": {
             "type": "Column",
-            "name": "inflow"
+            "name": "inflow1"
           }
+        }
+      },
+      {
+        "name": "input2",
+        "type": "Input",
+        "max_flow": {
+          "type": "Parameter",
+          "name": "factored_flow"
         }
       },
       {
@@ -41,6 +49,10 @@
         "to_node": "link1"
       },
       {
+        "from_node": "input2",
+        "to_node": "link1"
+      },
+      {
         "from_node": "link1",
         "to_node": "output1"
       }
@@ -49,43 +61,34 @@
       {
         "name": "demand",
         "type": "Constant",
-        "value": 10.0
+        "value": 100.0
+      },
+      {
+        "name": "factored_flow",
+        "type": "Aggregated",
+        "agg_func": "product",
+        "metrics": [
+          {
+            "type": "Timeseries",
+            "name": "inflow",
+            "columns": {
+              "type": "Column",
+              "name": "inflow1"
+            }
+          },
+          0.5
+        ]
       }
+
     ],
     "timeseries": [
       {
         "name": "inflow",
         "provider": {
           "type": "Polars",
+          "time_col": "date",
           "url": "inflow.csv"
         }
-      }
-    ],
-    "metric_sets": [
-      {
-        "name": "nodes",
-        "metrics": [
-          {
-            "type": "Default",
-            "node": "input1"
-          },
-          {
-            "type": "Default",
-            "node": "link1"
-          },
-          {
-            "type": "Default",
-            "node": "output1"
-          }
-        ]
-      }
-    ],
-    "outputs": [
-      {
-        "name": "outputs",
-        "type": "HDF5",
-        "filename": "outputs.h5",
-        "metric_set": "nodes"
       }
     ]
   }

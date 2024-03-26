@@ -5,6 +5,7 @@ use crate::nodes::NodeAttribute;
 use crate::parameters::{
     DynamicFloatValue, IntoV2Parameter, NodeReference, ParameterMeta, TryFromV1Parameter, TryIntoV2Parameter,
 };
+use crate::timeseries::LoadedTimeseriesCollection;
 use pywr_core::models::ModelDomain;
 use pywr_core::parameters::ParameterIndex;
 use pywr_v1_schema::parameters::{
@@ -33,19 +34,40 @@ impl ControlCurveInterpolatedParameter {
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
         inter_network_transfers: &[PywrMultiNetworkTransfer],
+        timeseries: &LoadedTimeseriesCollection,
     ) -> Result<ParameterIndex<f64>, SchemaError> {
         let metric = self.storage_node.load(network, schema)?;
 
         let control_curves = self
             .control_curves
             .iter()
-            .map(|cc| cc.load(network, schema, domain, tables, data_path, inter_network_transfers))
+            .map(|cc| {
+                cc.load(
+                    network,
+                    schema,
+                    domain,
+                    tables,
+                    data_path,
+                    inter_network_transfers,
+                    timeseries,
+                )
+            })
             .collect::<Result<_, _>>()?;
 
         let values = self
             .values
             .iter()
-            .map(|val| val.load(network, schema, domain, tables, data_path, inter_network_transfers))
+            .map(|val| {
+                val.load(
+                    network,
+                    schema,
+                    domain,
+                    tables,
+                    data_path,
+                    inter_network_transfers,
+                    timeseries,
+                )
+            })
             .collect::<Result<_, _>>()?;
 
         let p = pywr_core::parameters::ControlCurveInterpolatedParameter::new(
@@ -136,13 +158,24 @@ impl ControlCurveIndexParameter {
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
         inter_network_transfers: &[PywrMultiNetworkTransfer],
+        timeseries: &LoadedTimeseriesCollection,
     ) -> Result<ParameterIndex<usize>, SchemaError> {
         let metric = self.storage_node.load(network, schema)?;
 
         let control_curves = self
             .control_curves
             .iter()
-            .map(|cc| cc.load(network, schema, domain, tables, data_path, inter_network_transfers))
+            .map(|cc| {
+                cc.load(
+                    network,
+                    schema,
+                    domain,
+                    tables,
+                    data_path,
+                    inter_network_transfers,
+                    timeseries,
+                )
+            })
             .collect::<Result<_, _>>()?;
 
         let p = pywr_core::parameters::ControlCurveIndexParameter::new(&self.meta.name, metric, control_curves);
@@ -247,19 +280,40 @@ impl ControlCurveParameter {
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
         inter_network_transfers: &[PywrMultiNetworkTransfer],
+        timeseries: &LoadedTimeseriesCollection,
     ) -> Result<ParameterIndex<f64>, SchemaError> {
         let metric = self.storage_node.load(network, schema)?;
 
         let control_curves = self
             .control_curves
             .iter()
-            .map(|cc| cc.load(network, schema, domain, tables, data_path, inter_network_transfers))
+            .map(|cc| {
+                cc.load(
+                    network,
+                    schema,
+                    domain,
+                    tables,
+                    data_path,
+                    inter_network_transfers,
+                    timeseries,
+                )
+            })
             .collect::<Result<_, _>>()?;
 
         let values = self
             .values
             .iter()
-            .map(|val| val.load(network, schema, domain, tables, data_path, inter_network_transfers))
+            .map(|val| {
+                val.load(
+                    network,
+                    schema,
+                    domain,
+                    tables,
+                    data_path,
+                    inter_network_transfers,
+                    timeseries,
+                )
+            })
             .collect::<Result<_, _>>()?;
 
         let p = pywr_core::parameters::ControlCurveParameter::new(&self.meta.name, metric, control_curves, values);
@@ -341,13 +395,24 @@ impl ControlCurvePiecewiseInterpolatedParameter {
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
         inter_network_transfers: &[PywrMultiNetworkTransfer],
+        timeseries: &LoadedTimeseriesCollection,
     ) -> Result<ParameterIndex<f64>, SchemaError> {
         let metric = self.storage_node.load(network, schema)?;
 
         let control_curves = self
             .control_curves
             .iter()
-            .map(|cc| cc.load(network, schema, domain, tables, data_path, inter_network_transfers))
+            .map(|cc| {
+                cc.load(
+                    network,
+                    schema,
+                    domain,
+                    tables,
+                    data_path,
+                    inter_network_transfers,
+                    timeseries,
+                )
+            })
             .collect::<Result<_, _>>()?;
 
         let values = match &self.values {

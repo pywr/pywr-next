@@ -3,6 +3,7 @@ use crate::error::SchemaError;
 use crate::model::PywrMultiNetworkTransfer;
 use crate::nodes::{NodeAttribute, NodeMeta};
 use crate::parameters::DynamicFloatValue;
+use crate::timeseries::LoadedTimeseriesCollection;
 use num::Zero;
 use pywr_core::aggregated_node::Factors;
 use pywr_core::metric::MetricF64;
@@ -38,7 +39,7 @@ use std::path::Path;
 /// ```
 ///
 )]
-#[derive(serde::Deserialize, serde::Serialize, Clone, Default, PywrNode)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, PywrNode)]
 pub struct WaterTreatmentWorks {
     /// Node metadata
     #[serde(flatten)]
@@ -112,26 +113,59 @@ impl WaterTreatmentWorks {
         tables: &LoadedTableCollection,
         data_path: Option<&Path>,
         inter_network_transfers: &[PywrMultiNetworkTransfer],
+        timeseries: &LoadedTimeseriesCollection,
     ) -> Result<(), SchemaError> {
         if let Some(cost) = &self.cost {
-            let value = cost.load(network, schema, domain, tables, data_path, inter_network_transfers)?;
+            let value = cost.load(
+                network,
+                schema,
+                domain,
+                tables,
+                data_path,
+                inter_network_transfers,
+                timeseries,
+            )?;
             network.set_node_cost(self.meta.name.as_str(), Self::net_sub_name(), value.into())?;
         }
 
         if let Some(max_flow) = &self.max_flow {
-            let value = max_flow.load(network, schema, domain, tables, data_path, inter_network_transfers)?;
+            let value = max_flow.load(
+                network,
+                schema,
+                domain,
+                tables,
+                data_path,
+                inter_network_transfers,
+                timeseries,
+            )?;
             network.set_node_max_flow(self.meta.name.as_str(), Self::net_sub_name(), value.into())?;
         }
 
         if let Some(min_flow) = &self.min_flow {
-            let value = min_flow.load(network, schema, domain, tables, data_path, inter_network_transfers)?;
+            let value = min_flow.load(
+                network,
+                schema,
+                domain,
+                tables,
+                data_path,
+                inter_network_transfers,
+                timeseries,
+            )?;
             network.set_node_min_flow(self.meta.name.as_str(), Self::net_sub_name(), value.into())?;
         }
 
         // soft min flow constraints; This typically applies a negative cost upto a maximum
         // defined by the `soft_min_flow`
         if let Some(cost) = &self.soft_min_flow_cost {
-            let value = cost.load(network, schema, domain, tables, data_path, inter_network_transfers)?;
+            let value = cost.load(
+                network,
+                schema,
+                domain,
+                tables,
+                data_path,
+                inter_network_transfers,
+                timeseries,
+            )?;
             network.set_node_cost(
                 self.meta.name.as_str(),
                 Self::net_soft_min_flow_sub_name(),
@@ -139,7 +173,15 @@ impl WaterTreatmentWorks {
             )?;
         }
         if let Some(min_flow) = &self.soft_min_flow {
-            let value = min_flow.load(network, schema, domain, tables, data_path, inter_network_transfers)?;
+            let value = min_flow.load(
+                network,
+                schema,
+                domain,
+                tables,
+                data_path,
+                inter_network_transfers,
+                timeseries,
+            )?;
             network.set_node_max_flow(
                 self.meta.name.as_str(),
                 Self::net_soft_min_flow_sub_name(),
@@ -150,7 +192,15 @@ impl WaterTreatmentWorks {
         if let Some(loss_factor) = &self.loss_factor {
             // Handle the case where we a given a zero loss factor
             // The aggregated node does not support zero loss factors so filter them here.
-            let lf = match loss_factor.load(network, schema, domain, tables, data_path, inter_network_transfers)? {
+            let lf = match loss_factor.load(
+                network,
+                schema,
+                domain,
+                tables,
+                data_path,
+                inter_network_transfers,
+                timeseries,
+            )? {
                 MetricF64::Constant(f) => {
                     if f.is_zero() {
                         None

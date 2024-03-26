@@ -31,6 +31,10 @@ pub struct ScenarioGroupCollection {
 }
 
 impl ScenarioGroupCollection {
+    pub fn new(groups: Vec<ScenarioGroup>) -> Self {
+        Self { groups }
+    }
+
     /// Number of [`ScenarioGroup`]s in the collection.
     pub fn len(&self) -> usize {
         self.groups.len()
@@ -105,6 +109,7 @@ impl ScenarioIndex {
     }
 }
 
+#[derive(Debug)]
 pub struct ScenarioDomain {
     scenario_indices: Vec<ScenarioIndex>,
     scenario_group_names: Vec<String>,
