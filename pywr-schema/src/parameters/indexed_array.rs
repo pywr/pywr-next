@@ -1,16 +1,12 @@
-use crate::data_tables::LoadedTableCollection;
 use crate::error::{ConversionError, SchemaError};
-use crate::model::PywrMultiNetworkTransfer;
+use crate::model::LoadArgs;
 use crate::parameters::{
     DynamicFloatValue, DynamicFloatValueType, DynamicIndexValue, IntoV2Parameter, ParameterMeta, TryFromV1Parameter,
     TryIntoV2Parameter,
 };
-use crate::timeseries::LoadedTimeseriesCollection;
-use pywr_core::models::ModelDomain;
 use pywr_core::parameters::ParameterIndex;
 use pywr_v1_schema::parameters::IndexedArrayParameter as IndexedArrayParameterV1;
 use std::collections::HashMap;
-use std::path::Path;
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
 pub struct IndexedArrayParameter {
@@ -38,37 +34,14 @@ impl IndexedArrayParameter {
     pub fn add_to_model(
         &self,
         network: &mut pywr_core::network::Network,
-        schema: &crate::model::PywrNetwork,
-        domain: &ModelDomain,
-        tables: &LoadedTableCollection,
-        data_path: Option<&Path>,
-        inter_network_transfers: &[PywrMultiNetworkTransfer],
-        timeseries: &LoadedTimeseriesCollection,
+        args: &LoadArgs,
     ) -> Result<ParameterIndex<f64>, SchemaError> {
-        let index_parameter = self.index_parameter.load(
-            network,
-            schema,
-            domain,
-            tables,
-            data_path,
-            inter_network_transfers,
-            timeseries,
-        )?;
+        let index_parameter = self.index_parameter.load(network, args)?;
 
         let metrics = self
             .metrics
             .iter()
-            .map(|v| {
-                v.load(
-                    network,
-                    schema,
-                    domain,
-                    tables,
-                    data_path,
-                    inter_network_transfers,
-                    timeseries,
-                )
-            })
+            .map(|v| v.load(network, args))
             .collect::<Result<Vec<_>, _>>()?;
 
         let p = pywr_core::parameters::IndexedArrayParameter::new(&self.meta.name, index_parameter, &metrics);

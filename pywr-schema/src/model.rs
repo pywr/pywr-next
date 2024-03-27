@@ -136,6 +136,16 @@ pub struct Scenario {
     pub ensemble_names: Option<Vec<String>>,
 }
 
+#[derive(Clone)]
+pub struct LoadArgs<'a> {
+    pub schema: &'a PywrNetwork,
+    pub domain: &'a ModelDomain,
+    pub tables: &'a LoadedTableCollection,
+    pub timeseries: &'a LoadedTimeseriesCollection,
+    pub data_path: Option<&'a Path>,
+    pub inter_network_transfers: &'a [PywrMultiNetworkTransfer],
+}
+
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default)]
 pub struct PywrNetwork {
     pub nodes: Vec<Node>,
@@ -183,20 +193,41 @@ impl PywrNetwork {
         }
     }
 
+    pub fn load_tables(&self, data_path: Option<&Path>) -> Result<LoadedTableCollection, SchemaError> {
+        Ok(LoadedTableCollection::from_schema(self.tables.as_deref(), data_path)?)
+    }
+
+    pub fn load_timeseries(
+        &self,
+        domain: &ModelDomain,
+        data_path: Option<&Path>,
+    ) -> Result<LoadedTimeseriesCollection, SchemaError> {
+        Ok(LoadedTimeseriesCollection::from_schema(
+            self.timeseries.as_deref(),
+            domain,
+            data_path,
+        )?)
+    }
+
     pub fn build_network(
         &self,
         domain: &ModelDomain,
         data_path: Option<&Path>,
         output_path: Option<&Path>,
+        tables: &LoadedTableCollection,
+        timeseries: &LoadedTimeseriesCollection,
         inter_network_transfers: &[PywrMultiNetworkTransfer],
     ) -> Result<pywr_core::network::Network, SchemaError> {
         let mut network = pywr_core::network::Network::default();
 
-        // Load all the data tables
-        let tables = LoadedTableCollection::from_schema(self.tables.as_deref(), data_path)?;
-
-        // Load all timeseries data
-        let timeseries = LoadedTimeseriesCollection::from_schema(self.timeseries.as_deref(), domain, data_path)?;
+        let args = LoadArgs {
+            schema: self,
+            domain,
+            tables,
+            timeseries,
+            data_path,
+            inter_network_transfers,
+        };
 
         // Create all the nodes
         let mut remaining_nodes = self.nodes.clone();
@@ -205,15 +236,7 @@ impl PywrNetwork {
             let mut failed_nodes: Vec<Node> = Vec::new();
             let n = remaining_nodes.len();
             for node in remaining_nodes.into_iter() {
-                if let Err(e) = node.add_to_model(
-                    &mut network,
-                    &self,
-                    domain,
-                    &tables,
-                    data_path,
-                    inter_network_transfers,
-                    &timeseries,
-                ) {
+                if let Err(e) = node.add_to_model(&mut network, &args) {
                     // Adding the node failed!
                     match e {
                         SchemaError::PywrCore(core_err) => match core_err {
@@ -264,15 +287,7 @@ impl PywrNetwork {
                 let mut failed_parameters: Vec<Parameter> = Vec::new();
                 let n = remaining_parameters.len();
                 for parameter in remaining_parameters.into_iter() {
-                    if let Err(e) = parameter.add_to_model(
-                        &mut network,
-                        self,
-                        domain,
-                        &tables,
-                        data_path,
-                        inter_network_transfers,
-                        &timeseries,
-                    ) {
+                    if let Err(e) = parameter.add_to_model(&mut network, &args) {
                         // Adding the parameter failed!
                         match e {
                             SchemaError::PywrCore(core_err) => match core_err {
@@ -298,15 +313,7 @@ impl PywrNetwork {
 
         // Apply the inline parameters & constraints to the nodes
         for node in &self.nodes {
-            node.set_constraints(
-                &mut network,
-                self,
-                domain,
-                &tables,
-                data_path,
-                inter_network_transfers,
-                &timeseries,
-            )?;
+            node.set_constraints(&mut network, &args)?;
         }
 
         // Create all of the metric sets
@@ -411,7 +418,12 @@ impl PywrModel {
 
         let domain = ModelDomain::from(timestepper, scenario_collection)?;
 
-        let network = self.network.build_network(&domain, data_path, output_path, &[])?;
+        let tables = self.network.load_tables(data_path)?;
+        let timeseries = self.network.load_timeseries(&domain, data_path)?;
+
+        let network = self
+            .network
+            .build_network(&domain, data_path, output_path, &tables, &timeseries, &[])?;
 
         let model = pywr_core::models::Model::new(domain, network);
 
@@ -619,15 +631,17 @@ impl PywrMultiNetworkModel {
         }
 
         let domain = ModelDomain::from(timestepper, scenario_collection)?;
-        let mut model = pywr_core::models::MultiNetworkModel::new(domain);
-        let mut schemas = Vec::with_capacity(self.networks.len());
+        let mut networks = Vec::with_capacity(self.networks.len());
+        let mut inter_network_transfers = Vec::new();
+        let mut schemas: Vec<(PywrNetwork, LoadedTableCollection, LoadedTimeseriesCollection)> =
+            Vec::with_capacity(self.networks.len());
 
         // First load all the networks
         // These will contain any parameters that are referenced by the inter-model transfers
         // Because of potential circular references, we need to load all the networks first.
         for network_entry in &self.networks {
             // Load the network itself
-            let network = match &network_entry.network {
+            let (network, schema, tables, timeseries) = match &network_entry.network {
                 PywrNetworkRef::Path(path) => {
                     let pth = if let Some(dp) = data_path {
                         if path.is_relative() {
@@ -640,42 +654,83 @@ impl PywrMultiNetworkModel {
                     };
 
                     let network_schema = PywrNetwork::from_path(pth)?;
+                    let tables = network_schema.load_tables(data_path)?;
+                    let timeseries = network_schema.load_timeseries(&domain, data_path)?;
                     let net = network_schema.build_network(
-                        model.domain(),
+                        &domain,
                         data_path,
                         output_path,
+                        &tables,
+                        &timeseries,
                         &network_entry.transfers,
                     )?;
-                    schemas.push(network_schema);
-                    net
+
+                    (net, network_schema, tables, timeseries)
                 }
                 PywrNetworkRef::Inline(network_schema) => {
+                    let tables = network_schema.load_tables(data_path)?;
+                    let timeseries = network_schema.load_timeseries(&domain, data_path)?;
                     let net = network_schema.build_network(
-                        model.domain(),
+                        &domain,
                         data_path,
                         output_path,
+                        &tables,
+                        &timeseries,
                         &network_entry.transfers,
                     )?;
-                    schemas.push(network_schema.clone());
-                    net
+
+                    (net, network_schema.clone(), tables, timeseries)
                 }
             };
 
-            model.add_network(&network_entry.name, network);
+            schemas.push((schema, tables, timeseries));
+            networks.push((network_entry.name.clone(), network));
         }
 
         // Now load the inter-model transfers
         for (to_network_idx, network_entry) in self.networks.iter().enumerate() {
             for transfer in &network_entry.transfers {
-                let from_network_idx = model.get_network_index_by_name(&transfer.from_network)?;
-
                 // Load the metric from the "from" network
-                let from_network = model.network_mut(from_network_idx)?;
-                // The transfer metric will fail to load if it is defined as an inter-model transfer itself.
-                let from_metric = transfer.metric.load(from_network, &schemas[from_network_idx], &[])?;
 
-                model.add_inter_network_transfer(from_network_idx, from_metric, to_network_idx, transfer.initial_value);
+                let (from_network_idx, from_network) = networks
+                    .iter_mut()
+                    .enumerate()
+                    .find_map(|(idx, (name, net))| {
+                        if name.as_str() == transfer.from_network.as_str() {
+                            Some((idx, net))
+                        } else {
+                            None
+                        }
+                    })
+                    .ok_or_else(|| SchemaError::NetworkNotFound(transfer.from_network.clone()))?;
+
+                // The transfer metric will fail to load if it is defined as an inter-model transfer itself.
+                let (from_schema, from_tables, from_timeseries) = &schemas[from_network_idx];
+
+                let args = LoadArgs {
+                    schema: from_schema,
+                    domain: &domain,
+                    tables: from_tables,
+                    timeseries: from_timeseries,
+                    data_path,
+                    inter_network_transfers: &[],
+                };
+
+                let from_metric = transfer.metric.load(from_network, &args)?;
+
+                inter_network_transfers.push((from_network_idx, from_metric, to_network_idx, transfer.initial_value));
             }
+        }
+
+        // Now construct the model from the loaded components
+        let mut model = pywr_core::models::MultiNetworkModel::new(domain);
+
+        for (name, network) in networks {
+            model.add_network(&name, network);
+        }
+
+        for (from_network_idx, from_metric, to_network_idx, initial_value) in inter_network_transfers {
+            model.add_inter_network_transfer(from_network_idx, from_metric, to_network_idx, initial_value);
         }
 
         Ok(model)

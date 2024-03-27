@@ -1,15 +1,11 @@
-use crate::data_tables::LoadedTableCollection;
 use crate::error::{ConversionError, SchemaError};
-use crate::model::PywrMultiNetworkTransfer;
+use crate::model::LoadArgs;
 use crate::parameters::{
     DynamicFloatValueType, DynamicIndexValue, IntoV2Parameter, ParameterMeta, TryFromV1Parameter, TryIntoV2Parameter,
 };
-use crate::timeseries::LoadedTimeseriesCollection;
-use pywr_core::models::ModelDomain;
 use pywr_core::parameters::ParameterIndex;
 use pywr_v1_schema::parameters::AsymmetricSwitchIndexParameter as AsymmetricSwitchIndexParameterV1;
 use std::collections::HashMap;
-use std::path::Path;
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
 pub struct AsymmetricSwitchIndexParameter {
@@ -30,31 +26,10 @@ impl AsymmetricSwitchIndexParameter {
     pub fn add_to_model(
         &self,
         network: &mut pywr_core::network::Network,
-        schema: &crate::model::PywrNetwork,
-        domain: &ModelDomain,
-        tables: &LoadedTableCollection,
-        data_path: Option<&Path>,
-        inter_network_transfers: &[PywrMultiNetworkTransfer],
-        timeseries: &LoadedTimeseriesCollection,
+        args: &LoadArgs,
     ) -> Result<ParameterIndex<usize>, SchemaError> {
-        let on_index_parameter = self.on_index_parameter.load(
-            network,
-            schema,
-            domain,
-            tables,
-            data_path,
-            inter_network_transfers,
-            timeseries,
-        )?;
-        let off_index_parameter = self.off_index_parameter.load(
-            network,
-            schema,
-            domain,
-            tables,
-            data_path,
-            inter_network_transfers,
-            timeseries,
-        )?;
+        let on_index_parameter = self.on_index_parameter.load(network, args)?;
+        let off_index_parameter = self.off_index_parameter.load(network, args)?;
 
         let p = pywr_core::parameters::AsymmetricSwitchIndexParameter::new(
             &self.meta.name,

@@ -1,19 +1,15 @@
-use crate::data_tables::LoadedTableCollection;
 use crate::error::{ConversionError, SchemaError};
-use crate::model::PywrMultiNetworkTransfer;
+use crate::model::LoadArgs;
 use crate::parameters::{
     DynamicFloatValue, DynamicFloatValueType, DynamicIndexValue, IntoV2Parameter, ParameterMeta, TryFromV1Parameter,
     TryIntoV2Parameter,
 };
-use crate::timeseries::LoadedTimeseriesCollection;
-use pywr_core::models::ModelDomain;
 use pywr_core::parameters::ParameterIndex;
 use pywr_v1_schema::parameters::{
     AggFunc as AggFuncV1, AggregatedIndexParameter as AggregatedIndexParameterV1,
     AggregatedParameter as AggregatedParameterV1, IndexAggFunc as IndexAggFuncV1,
 };
 use std::collections::HashMap;
-use std::path::Path;
 
 // TODO complete these
 #[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone)]
@@ -95,27 +91,12 @@ impl AggregatedParameter {
     pub fn add_to_model(
         &self,
         network: &mut pywr_core::network::Network,
-        schema: &crate::model::PywrNetwork,
-        domain: &ModelDomain,
-        tables: &LoadedTableCollection,
-        data_path: Option<&Path>,
-        inter_network_transfers: &[PywrMultiNetworkTransfer],
-        timeseries: &LoadedTimeseriesCollection,
+        args: &LoadArgs,
     ) -> Result<ParameterIndex<f64>, SchemaError> {
         let metrics = self
             .metrics
             .iter()
-            .map(|v| {
-                v.load(
-                    network,
-                    schema,
-                    domain,
-                    tables,
-                    data_path,
-                    inter_network_transfers,
-                    timeseries,
-                )
-            })
+            .map(|v| v.load(network, args))
             .collect::<Result<Vec<_>, _>>()?;
 
         let p = pywr_core::parameters::AggregatedParameter::new(&self.meta.name, &metrics, self.agg_func.into());
@@ -213,27 +194,12 @@ impl AggregatedIndexParameter {
     pub fn add_to_model(
         &self,
         network: &mut pywr_core::network::Network,
-        schema: &crate::model::PywrNetwork,
-        domain: &ModelDomain,
-        tables: &LoadedTableCollection,
-        data_path: Option<&Path>,
-        inter_network_transfers: &[PywrMultiNetworkTransfer],
-        timeseries: &LoadedTimeseriesCollection,
+        args: &LoadArgs,
     ) -> Result<ParameterIndex<usize>, SchemaError> {
         let parameters = self
             .parameters
             .iter()
-            .map(|v| {
-                v.load(
-                    network,
-                    schema,
-                    domain,
-                    tables,
-                    data_path,
-                    inter_network_transfers,
-                    timeseries,
-                )
-            })
+            .map(|v| v.load(network, args))
             .collect::<Result<Vec<_>, _>>()?;
 
         let p = pywr_core::parameters::AggregatedIndexParameter::new(&self.meta.name, parameters, self.agg_func.into());

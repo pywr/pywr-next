@@ -1,17 +1,13 @@
-use crate::data_tables::LoadedTableCollection;
 use crate::error::SchemaError;
-use crate::model::PywrMultiNetworkTransfer;
+use crate::model::LoadArgs;
 use crate::nodes::{NodeAttribute, NodeMeta};
 use crate::parameters::DynamicFloatValue;
-use crate::timeseries::LoadedTimeseriesCollection;
 use pywr_core::derived_metric::DerivedMetric;
 use pywr_core::metric::MetricF64;
-use pywr_core::models::ModelDomain;
 use pywr_core::node::{ConstraintValue, StorageInitialVolume};
 use pywr_core::parameters::VolumeBetweenControlCurvesParameter;
 use pywr_schema_macros::PywrNode;
 use std::collections::HashMap;
-use std::path::Path;
 
 #[derive(serde::Deserialize, serde::Serialize, Clone, Debug)]
 pub struct PiecewiseStore {
@@ -69,26 +65,9 @@ impl PiecewiseStorageNode {
         Some("agg-store")
     }
 
-    pub fn add_to_model(
-        &self,
-        network: &mut pywr_core::network::Network,
-        schema: &crate::model::PywrNetwork,
-        domain: &ModelDomain,
-        tables: &LoadedTableCollection,
-        data_path: Option<&Path>,
-        inter_network_transfers: &[PywrMultiNetworkTransfer],
-        timeseries: &LoadedTimeseriesCollection,
-    ) -> Result<(), SchemaError> {
+    pub fn add_to_model(&self, network: &mut pywr_core::network::Network, args: &LoadArgs) -> Result<(), SchemaError> {
         // These are the min and max volume of the overall node
-        let max_volume = self.max_volume.load(
-            network,
-            schema,
-            domain,
-            tables,
-            data_path,
-            inter_network_transfers,
-            timeseries,
-        )?;
+        let max_volume = self.max_volume.load(network, args)?;
 
         let mut store_node_indices = Vec::new();
 
@@ -97,28 +76,12 @@ impl PiecewiseStorageNode {
             // The volume of this step is the proportion between the last control curve
             // (or zero if first) and this control curve.
             let lower = if i > 0 {
-                Some(self.steps[i - 1].control_curve.load(
-                    network,
-                    schema,
-                    domain,
-                    tables,
-                    data_path,
-                    inter_network_transfers,
-                    timeseries,
-                )?)
+                Some(self.steps[i - 1].control_curve.load(network, args)?)
             } else {
                 None
             };
 
-            let upper = step.control_curve.load(
-                network,
-                schema,
-                domain,
-                tables,
-                data_path,
-                inter_network_transfers,
-                timeseries,
-            )?;
+            let upper = step.control_curve.load(network, args)?;
 
             let max_volume_parameter = VolumeBetweenControlCurvesParameter::new(
                 format!("{}-{}-max-volume", self.meta.name, Self::step_sub_name(i).unwrap()).as_str(),
@@ -153,15 +116,7 @@ impl PiecewiseStorageNode {
 
         // The volume of this store the remain proportion above the last control curve
         let lower = match self.steps.last() {
-            Some(step) => Some(step.control_curve.load(
-                network,
-                schema,
-                domain,
-                tables,
-                data_path,
-                inter_network_transfers,
-                timeseries,
-            )?),
+            Some(step) => Some(step.control_curve.load(network, args)?),
             None => None,
         };
 
@@ -212,26 +167,13 @@ impl PiecewiseStorageNode {
     pub fn set_constraints(
         &self,
         network: &mut pywr_core::network::Network,
-        schema: &crate::model::PywrNetwork,
-        domain: &ModelDomain,
-        tables: &LoadedTableCollection,
-        data_path: Option<&Path>,
-        inter_network_transfers: &[PywrMultiNetworkTransfer],
-        timeseries: &LoadedTimeseriesCollection,
+        args: &LoadArgs,
     ) -> Result<(), SchemaError> {
         for (i, step) in self.steps.iter().enumerate() {
             let sub_name = Self::step_sub_name(i);
 
             if let Some(cost) = &step.cost {
-                let value = cost.load(
-                    network,
-                    schema,
-                    domain,
-                    tables,
-                    data_path,
-                    inter_network_transfers,
-                    timeseries,
-                )?;
+                let value = cost.load(network, args)?;
                 network.set_node_cost(self.meta.name.as_str(), sub_name.as_deref(), value.into())?;
             }
         }

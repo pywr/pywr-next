@@ -1,5 +1,5 @@
-use crate::data_tables::LoadedTableCollection;
 use crate::error::{ConversionError, SchemaError};
+use crate::model::LoadArgs;
 use crate::nodes::{NodeAttribute, NodeMeta};
 use crate::parameters::{ConstantValue, DynamicFloatValue};
 use pywr_core::metric::MetricF64;
@@ -55,13 +55,18 @@ impl DelayNode {
     pub fn set_constraints(
         &self,
         network: &mut pywr_core::network::Network,
-        tables: &LoadedTableCollection,
+        args: &LoadArgs,
     ) -> Result<(), SchemaError> {
         // Create the delay parameter
         let name = format!("{}-delay", self.meta.name.as_str());
         let output_idx = network.get_node_index_by_name(self.meta.name.as_str(), Self::output_sub_name())?;
         let metric = MetricF64::NodeInFlow(output_idx);
-        let p = pywr_core::parameters::DelayParameter::new(&name, metric, self.delay, self.initial_value.load(tables)?);
+        let p = pywr_core::parameters::DelayParameter::new(
+            &name,
+            metric,
+            self.delay,
+            self.initial_value.load(args.tables)?,
+        );
         let delay_idx = network.add_parameter(Box::new(p))?;
 
         // Apply it as a constraint on the input node.

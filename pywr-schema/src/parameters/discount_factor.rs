@@ -1,14 +1,10 @@
-use crate::data_tables::LoadedTableCollection;
 use crate::error::SchemaError;
-use crate::model::PywrMultiNetworkTransfer;
+use crate::model::LoadArgs;
 use crate::parameters::{DynamicFloatValue, DynamicFloatValueType, IntoV2Parameter, ParameterMeta, TryFromV1Parameter};
-use crate::timeseries::LoadedTimeseriesCollection;
 use crate::ConversionError;
-use pywr_core::models::ModelDomain;
 use pywr_core::parameters::ParameterIndex;
 use pywr_v1_schema::parameters::DiscountFactorParameter as DiscountFactorParameterV1;
 use std::collections::HashMap;
-use std::path::Path;
 
 /// A parameter that returns the current discount factor for a given time-step.
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
@@ -36,22 +32,9 @@ impl DiscountFactorParameter {
     pub fn add_to_model(
         &self,
         network: &mut pywr_core::network::Network,
-        schema: &crate::model::PywrNetwork,
-        domain: &ModelDomain,
-        tables: &LoadedTableCollection,
-        data_path: Option<&Path>,
-        inter_network_transfers: &[PywrMultiNetworkTransfer],
-        timeseries: &LoadedTimeseriesCollection,
+        args: &LoadArgs,
     ) -> Result<ParameterIndex<f64>, SchemaError> {
-        let discount_rate = self.discount_rate.load(
-            network,
-            schema,
-            domain,
-            tables,
-            data_path,
-            inter_network_transfers,
-            timeseries,
-        )?;
+        let discount_rate = self.discount_rate.load(network, args)?;
         let p = pywr_core::parameters::DiscountFactorParameter::new(&self.meta.name, discount_rate, self.base_year);
         Ok(network.add_parameter(Box::new(p))?)
     }

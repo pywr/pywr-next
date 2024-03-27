@@ -1,20 +1,16 @@
-use crate::data_tables::LoadedTableCollection;
 use crate::error::SchemaError;
-use crate::model::PywrMultiNetworkTransfer;
+use crate::model::LoadArgs;
 use crate::parameters::{
     DynamicFloatValue, DynamicFloatValueType, IntoV2Parameter, MetricFloatReference, MetricFloatValue, NodeReference,
     ParameterMeta, TryFromV1Parameter, TryIntoV2Parameter,
 };
-use crate::timeseries::LoadedTimeseriesCollection;
 use crate::ConversionError;
-use pywr_core::models::ModelDomain;
 use pywr_core::parameters::ParameterIndex;
 use pywr_v1_schema::parameters::{
     InterpolatedFlowParameter as InterpolatedFlowParameterV1,
     InterpolatedVolumeParameter as InterpolatedVolumeParameterV1,
 };
 use std::collections::HashMap;
-use std::path::Path;
 
 /// A parameter that interpolates a value to a function with given discrete data points.
 ///
@@ -54,22 +50,9 @@ impl InterpolatedParameter {
     pub fn add_to_model(
         &self,
         network: &mut pywr_core::network::Network,
-        schema: &crate::model::PywrNetwork,
-        domain: &ModelDomain,
-        tables: &LoadedTableCollection,
-        data_path: Option<&Path>,
-        inter_network_transfers: &[PywrMultiNetworkTransfer],
-        timeseries: &LoadedTimeseriesCollection,
+        args: &LoadArgs,
     ) -> Result<ParameterIndex<f64>, SchemaError> {
-        let x = self.x.load(
-            network,
-            schema,
-            domain,
-            tables,
-            data_path,
-            inter_network_transfers,
-            timeseries,
-        )?;
+        let x = self.x.load(network, args)?;
 
         // Sense check the points
         if self.xp.len() != self.fp.len() {
@@ -82,32 +65,12 @@ impl InterpolatedParameter {
         let xp = self
             .xp
             .iter()
-            .map(|p| {
-                p.load(
-                    network,
-                    schema,
-                    domain,
-                    tables,
-                    data_path,
-                    inter_network_transfers,
-                    timeseries,
-                )
-            })
+            .map(|p| p.load(network, args))
             .collect::<Result<Vec<_>, _>>()?;
         let fp = self
             .fp
             .iter()
-            .map(|p| {
-                p.load(
-                    network,
-                    schema,
-                    domain,
-                    tables,
-                    data_path,
-                    inter_network_transfers,
-                    timeseries,
-                )
-            })
+            .map(|p| p.load(network, args))
             .collect::<Result<Vec<_>, _>>()?;
 
         let points = xp.into_iter().zip(fp).collect::<Vec<_>>();
