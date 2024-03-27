@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 /// Output metrics that can be recorded from a model run.
 #[derive(Deserialize, Serialize, Clone)]
 #[serde(tag = "type")]
-pub enum OutputMetric {
+pub enum Metric {
     /// Output the default metric for a node.
     Default {
         node: String,
@@ -19,7 +19,7 @@ pub enum OutputMetric {
     },
 }
 
-impl OutputMetric {
+impl Metric {
     pub fn try_clone_into_metric(
         &self,
         network: &mut pywr_core::network::Network,
