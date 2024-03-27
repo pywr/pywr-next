@@ -1,5 +1,5 @@
 use crate::error::SchemaError;
-use crate::metric::OutputMetric;
+use crate::metric::Metric;
 use crate::model::PywrNetwork;
 use serde::{Deserialize, Serialize};
 use std::num::NonZeroUsize;
@@ -82,7 +82,7 @@ impl From<MetricAggregator> for pywr_core::recorders::Aggregator {
 #[derive(Deserialize, Serialize, Clone)]
 pub struct MetricSet {
     pub name: String,
-    pub metrics: Vec<OutputMetric>,
+    pub metrics: Vec<Metric>,
     pub aggregator: Option<MetricAggregator>,
 }
 
