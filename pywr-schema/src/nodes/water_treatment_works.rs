@@ -1,7 +1,7 @@
 use crate::error::SchemaError;
+use crate::metric::Metric;
 use crate::model::LoadArgs;
 use crate::nodes::{NodeAttribute, NodeMeta};
-use crate::parameters::DynamicFloatValue;
 use num::Zero;
 use pywr_core::aggregated_node::Factors;
 use pywr_core::metric::MetricF64;
@@ -41,18 +41,18 @@ pub struct WaterTreatmentWorks {
     #[serde(flatten)]
     pub meta: NodeMeta,
     /// The proportion of net flow that is lost to the loss node.
-    pub loss_factor: Option<DynamicFloatValue>,
+    pub loss_factor: Option<Metric>,
     /// The minimum flow through the `net` flow node.
-    pub min_flow: Option<DynamicFloatValue>,
+    pub min_flow: Option<Metric>,
     /// The maximum flow through the `net` flow node.
-    pub max_flow: Option<DynamicFloatValue>,
+    pub max_flow: Option<Metric>,
     /// The maximum flow applied to the `net_soft_min_flow` node which is typically
     /// used as a "soft" minimum flow.
-    pub soft_min_flow: Option<DynamicFloatValue>,
+    pub soft_min_flow: Option<Metric>,
     /// The cost applied to the `net_soft_min_flow` node.
-    pub soft_min_flow_cost: Option<DynamicFloatValue>,
+    pub soft_min_flow_cost: Option<Metric>,
     /// The cost applied to the `net` flow node.
-    pub cost: Option<DynamicFloatValue>,
+    pub cost: Option<Metric>,
 }
 
 impl WaterTreatmentWorks {
@@ -189,6 +189,10 @@ impl WaterTreatmentWorks {
         ]
     }
 
+    pub fn default_metric(&self) -> NodeAttribute {
+        Self::DEFAULT_ATTRIBUTE
+    }
+
     pub fn create_metric(
         &self,
         network: &pywr_core::network::Network,
@@ -249,11 +253,18 @@ mod tests {
                   "comment": null,
                   "position": null,
                   "loss_factor": {
+                    "type": "Table",
                     "index": "My WTW",
                     "table": "loss_factors"
                   },
-                  "soft_min_flow": 105,
-                  "cost": 2.29,
+                  "soft_min_flow":  {
+                     "type": "Constant",
+                     "value": 105.0
+                  },
+                  "cost": {
+                     "type": "Constant",
+                     "value": 2.29
+                  },
                   "max_flow": {
                     "type": "InlineParameter",
                     "definition": {
@@ -270,7 +281,10 @@ mod tests {
                             "type": "Parameter",
                             "name": "a max flow"
                           },
-                          0.0
+                          {
+                            "type": "Constant",
+                            "value": 0.0
+                          }
                         ],
                         "storage_node": {
                           "name": "My reservoir",
@@ -308,19 +322,34 @@ mod tests {
                         {
                             "name": "input1",
                             "type": "Input",
-                            "flow": 15
+                            "flow": {
+                                "type": "Constant",
+                                "value": 15.0
+                            }
                         },
                         {
                             "name": "wtw1",
                             "type": "WaterTreatmentWorks",
-                            "max_flow": 10.0,
-                            "loss_factor": 0.1
+                            "max_flow":  {
+                                "type": "Constant",
+                                "value": 10.0
+                            },
+                            "loss_factor":  {
+                                "type": "Constant",
+                                "value": 0.1
+                            }
                         },
                         {
                             "name": "demand1",
                             "type": "Output",
-                            "max_flow": 15.0,
-                            "cost": -10
+                            "max_flow":  {
+                                "type": "Constant",
+                                "value": 15.0
+                            },
+                            "cost":  {
+                                "type": "Constant",
+                                "value": -10
+                            }
                         }
                     ],
                     "edges": [

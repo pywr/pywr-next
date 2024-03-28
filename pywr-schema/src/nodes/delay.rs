@@ -1,7 +1,8 @@
 use crate::error::{ConversionError, SchemaError};
+use crate::metric::Metric;
 use crate::model::LoadArgs;
 use crate::nodes::{NodeAttribute, NodeMeta};
-use crate::parameters::{ConstantValue, DynamicFloatValue};
+use crate::parameters::ConstantValue;
 use pywr_core::metric::MetricF64;
 use pywr_schema_macros::PywrNode;
 use pywr_v1_schema::nodes::DelayNode as DelayNodeV1;
@@ -85,6 +86,10 @@ impl DelayNode {
     pub fn output_connectors(&self) -> Vec<(&str, Option<String>)> {
         // Outflow goes from the input node
         vec![(self.meta.name.as_str(), Self::input_sub_now().map(|s| s.to_string()))]
+    }
+
+    pub fn default_metric(&self) -> NodeAttribute {
+        Self::DEFAULT_ATTRIBUTE
     }
 
     pub fn create_metric(

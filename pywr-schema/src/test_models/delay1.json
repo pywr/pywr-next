@@ -14,7 +14,10 @@
       {
         "name": "input1",
         "type": "Catchment",
-        "flow": 15
+        "flow": {
+          "type": "Constant",
+          "value": 15
+        }
       },
       {
         "name": "link1",
@@ -25,8 +28,14 @@
       {
         "name": "demand1",
         "type": "Output",
-        "max_flow": 20.0,
-        "cost": 1.0
+        "max_flow": {
+          "type": "Constant",
+          "value": 20.0
+        },
+        "cost": {
+          "type": "Constant",
+          "value": 1.0
+        }
       }
     ],
     "edges": [

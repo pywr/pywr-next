@@ -1,8 +1,8 @@
 use crate::error::{ConversionError, SchemaError};
+use crate::metric::Metric;
 use crate::model::LoadArgs;
 use crate::parameters::{
-    ConstantValue, DynamicFloatValue, DynamicFloatValueType, IntoV2Parameter, ParameterMeta, TryFromV1Parameter,
-    TryIntoV2Parameter,
+    ConstantValue, DynamicFloatValueType, IntoV2Parameter, ParameterMeta, TryFromV1Parameter, TryIntoV2Parameter,
 };
 use pywr_core::parameters::ParameterIndex;
 use pywr_v1_schema::parameters::{
@@ -201,7 +201,7 @@ impl TryFromV1Parameter<ConstantParameterV1> for ConstantParameter {
 pub struct MaxParameter {
     #[serde(flatten)]
     pub meta: ParameterMeta,
-    pub parameter: DynamicFloatValue,
+    pub parameter: Metric,
     pub threshold: Option<f64>,
 }
 
@@ -275,8 +275,8 @@ impl TryFromV1Parameter<MaxParameterV1> for MaxParameter {
 pub struct DivisionParameter {
     #[serde(flatten)]
     pub meta: ParameterMeta,
-    pub numerator: DynamicFloatValue,
-    pub denominator: DynamicFloatValue,
+    pub numerator: Metric,
+    pub denominator: Metric,
 }
 
 impl DivisionParameter {
@@ -342,7 +342,7 @@ impl TryFromV1Parameter<DivisionParameterV1> for DivisionParameter {
 pub struct MinParameter {
     #[serde(flatten)]
     pub meta: ParameterMeta,
-    pub parameter: DynamicFloatValue,
+    pub parameter: Metric,
     pub threshold: Option<f64>,
 }
 
@@ -389,7 +389,7 @@ impl TryFromV1Parameter<MinParameterV1> for MinParameter {
 pub struct NegativeParameter {
     #[serde(flatten)]
     pub meta: ParameterMeta,
-    pub parameter: DynamicFloatValue,
+    pub parameter: Metric,
 }
 
 impl NegativeParameter {

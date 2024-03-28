@@ -9,6 +9,52 @@ use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::ops::Deref;
 
+/// A container for a [`MetricF64`] that retains additional information from the schema.
+///
+/// This is used to store the name and attribute of the metric so that it can be output in
+/// a context that is relevant to the originating schema, and therefore more meaningful to the user.
+#[derive(Clone, Debug)]
+pub struct OutputMetric {
+    name: String,
+    attribute: String,
+    // The originating type of the metric (e.g. node, parameter, etc.)
+    ty: String,
+    // The originating subtype of the metric (e.g. node type, parameter type, etc.)
+    sub_type: Option<String>,
+    metric: MetricF64,
+}
+
+impl OutputMetric {
+    pub fn new(name: &str, attribute: &str, ty: &str, sub_type: Option<&str>, metric: MetricF64) -> Self {
+        Self {
+            name: name.to_string(),
+            attribute: attribute.to_string(),
+            ty: ty.to_string(),
+            sub_type: sub_type.map(|s| s.to_string()),
+            metric,
+        }
+    }
+
+    pub fn get_value(&self, model: &Network, state: &State) -> Result<f64, PywrError> {
+        self.metric.get_value(model, state)
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+    pub fn attribute(&self) -> &str {
+        &self.attribute
+    }
+
+    pub fn ty(&self) -> &str {
+        &self.ty
+    }
+
+    pub fn sub_type(&self) -> Option<&str> {
+        self.sub_type.as_deref()
+    }
+}
+
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Debug)]
 pub struct MetricSetIndex(usize);
 
@@ -51,11 +97,11 @@ impl MetricSetState {
 pub struct MetricSet {
     name: String,
     aggregator: Option<Aggregator>,
-    metrics: Vec<MetricF64>,
+    metrics: Vec<OutputMetric>,
 }
 
 impl MetricSet {
-    pub fn new(name: &str, aggregator: Option<Aggregator>, metrics: Vec<MetricF64>) -> Self {
+    pub fn new(name: &str, aggregator: Option<Aggregator>, metrics: Vec<OutputMetric>) -> Self {
         Self {
             name: name.to_string(),
             aggregator,
@@ -67,7 +113,7 @@ impl MetricSet {
     pub fn name(&self) -> &str {
         &self.name
     }
-    pub fn iter_metrics(&self) -> impl Iterator<Item = &MetricF64> + '_ {
+    pub fn iter_metrics(&self) -> impl Iterator<Item = &OutputMetric> + '_ {
         self.metrics.iter()
     }
 

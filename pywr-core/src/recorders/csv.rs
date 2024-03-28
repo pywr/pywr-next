@@ -80,27 +80,21 @@ impl Recorder for CsvWideFmtOutput {
         let mut writer = csv::Writer::from_path(&self.filename).map_err(|e| PywrError::CSVError(e.to_string()))?;
 
         let mut names = vec![];
-        let mut sub_names = vec![];
         let mut attributes = vec![];
 
         let metric_set = network.get_metric_set(self.metric_set_idx)?;
 
         for metric in metric_set.iter_metrics() {
-            let name = metric.name(network)?.to_string();
-            let sub_name = metric
-                .sub_name(network)?
-                .map_or_else(|| "".to_string(), |s| s.to_string());
+            let name = metric.name().to_string();
             let attribute = metric.attribute().to_string();
 
             // Add entries for each scenario
             names.push(name);
-            sub_names.push(sub_name);
             attributes.push(attribute);
         }
 
         // These are the header rows in the CSV file; we start each
         let mut header_name = vec!["node".to_string()];
-        let mut header_sub_name = vec!["sub-node".to_string()];
         let mut header_attribute = vec!["attribute".to_string()];
         let mut header_scenario = vec!["global-scenario-index".to_string()];
 
@@ -113,7 +107,6 @@ impl Recorder for CsvWideFmtOutput {
         for scenario_index in domain.scenarios().indices().iter() {
             // Repeat the names, sub-names and attributes for every scenario
             header_name.extend(names.clone());
-            header_sub_name.extend(sub_names.clone());
             header_attribute.extend(attributes.clone());
             header_scenario.extend(vec![format!("{}", scenario_index.index); names.len()]);
 
@@ -125,9 +118,7 @@ impl Recorder for CsvWideFmtOutput {
         writer
             .write_record(header_name)
             .map_err(|e| PywrError::CSVError(e.to_string()))?;
-        writer
-            .write_record(header_sub_name)
-            .map_err(|e| PywrError::CSVError(e.to_string()))?;
+
         writer
             .write_record(header_attribute)
             .map_err(|e| PywrError::CSVError(e.to_string()))?;
@@ -200,7 +191,6 @@ pub struct CsvLongFmtRecord {
     scenario_index: usize,
     metric_set: String,
     name: String,
-    sub_name: String,
     attribute: String,
     value: f64,
 }
@@ -243,10 +233,7 @@ impl CsvLongFmtOutput {
                     let metric_set = network.get_metric_set(*metric_set_idx)?;
 
                     for (metric, value) in metric_set.iter_metrics().zip(current_values.iter()) {
-                        let name = metric.name(network)?.to_string();
-                        let sub_name = metric
-                            .sub_name(network)?
-                            .map_or_else(|| "".to_string(), |s| s.to_string());
+                        let name = metric.name().to_string();
                         let attribute = metric.attribute().to_string();
 
                         let record = CsvLongFmtRecord {
@@ -255,7 +242,6 @@ impl CsvLongFmtOutput {
                             scenario_index: scenario_idx,
                             metric_set: metric_set.name().to_string(),
                             name,
-                            sub_name,
                             attribute,
                             value: value.value,
                         };

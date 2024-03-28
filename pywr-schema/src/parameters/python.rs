@@ -1,7 +1,8 @@
 use crate::data_tables::make_path;
 use crate::error::SchemaError;
+use crate::metric::Metric;
 use crate::model::LoadArgs;
-use crate::parameters::{DynamicFloatValue, DynamicFloatValueType, DynamicIndexValue, ParameterMeta};
+use crate::parameters::{DynamicFloatValueType, DynamicIndexValue, ParameterMeta};
 use pyo3::prelude::PyModule;
 use pyo3::types::{PyDict, PyTuple};
 use pyo3::{IntoPy, PyErr, PyObject, Python, ToPyObject};
@@ -86,7 +87,7 @@ pub struct PythonParameter {
     pub kwargs: HashMap<String, serde_json::Value>,
     /// Metric values to pass to the calculation method of the initialised object (i.e.
     /// values that the Python calculation is dependent on).
-    pub metrics: Option<HashMap<String, DynamicFloatValue>>,
+    pub metrics: Option<HashMap<String, Metric>>,
     /// Index values to pass to the calculation method of the initialised object (i.e.
     /// indices that the Python calculation is dependent on).
     pub indices: Option<HashMap<String, DynamicIndexValue>>,

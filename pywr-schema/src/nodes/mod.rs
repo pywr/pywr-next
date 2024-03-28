@@ -13,6 +13,7 @@ mod virtual_storage;
 mod water_treatment_works;
 
 use crate::error::{ConversionError, SchemaError};
+use crate::metric::Metric;
 use crate::model::{LoadArgs, PywrNetwork};
 pub use crate::nodes::core::{
     AggregatedNode, AggregatedStorageNode, CatchmentNode, InputNode, LinkNode, OutputNode, StorageNode,
@@ -20,7 +21,7 @@ pub use crate::nodes::core::{
 pub use crate::nodes::delay::DelayNode;
 pub use crate::nodes::river::RiverNode;
 use crate::nodes::rolling_virtual_storage::RollingVirtualStorageNode;
-use crate::parameters::{DynamicFloatValue, TimeseriesV1Data};
+use crate::parameters::TimeseriesV1Data;
 pub use annual_virtual_storage::AnnualVirtualStorageNode;
 pub use loss_link::LossLinkNode;
 pub use monthly_virtual_storage::MonthlyVirtualStorageNode;
@@ -285,7 +286,7 @@ impl Node {
         }
     }
 
-    pub fn parameters(&self) -> HashMap<&str, &DynamicFloatValue> {
+    pub fn parameters(&self) -> HashMap<&str, &Metric> {
         match self {
             Node::Input(n) => n.parameters(),
             Node::Link(n) => n.parameters(),
@@ -309,7 +310,7 @@ impl Node {
         }
     }
 
-    pub fn parameters_mut(&mut self) -> HashMap<&str, &mut DynamicFloatValue> {
+    pub fn parameters_mut(&mut self) -> HashMap<&str, &mut Metric> {
         match self {
             Node::Input(n) => n.parameters_mut(),
             Node::Link(n) => n.parameters_mut(),
@@ -432,6 +433,30 @@ impl Node {
             Node::PiecewiseStorage(n) => n.output_connectors(),
             Node::Delay(n) => n.output_connectors(),
             Node::RollingVirtualStorage(n) => n.output_connectors(),
+        }
+    }
+
+    pub fn default_metric(&self) -> NodeAttribute {
+        match self {
+            Node::Input(n) => n.default_metric(),
+            Node::Link(n) => n.default_metric(),
+            Node::Output(n) => n.default_metric(),
+            Node::Storage(n) => n.default_metric(),
+            Node::Catchment(n) => n.default_metric(),
+            Node::RiverGauge(n) => n.default_metric(),
+            Node::LossLink(n) => n.default_metric(),
+            Node::River(n) => n.default_metric(),
+            Node::RiverSplitWithGauge(n) => n.default_metric(),
+            Node::WaterTreatmentWorks(n) => n.default_metric(),
+            Node::Aggregated(n) => n.default_metric(),
+            Node::AggregatedStorage(n) => n.default_metric(),
+            Node::VirtualStorage(n) => n.default_metric(),
+            Node::AnnualVirtualStorage(n) => n.default_metric(),
+            Node::MonthlyVirtualStorage(n) => n.default_metric(),
+            Node::PiecewiseLink(n) => n.default_metric(),
+            Node::PiecewiseStorage(n) => n.default_metric(),
+            Node::Delay(n) => n.default_metric(),
+            Node::RollingVirtualStorage(n) => n.default_metric(),
         }
     }
 
@@ -621,9 +646,10 @@ fn extract_timeseries(
 mod tests {
     use pywr_v1_schema::nodes::Node as NodeV1;
 
+    use crate::metric::Metric;
     use crate::{
         nodes::{Node, NodeAndTimeseries},
-        parameters::{DynamicFloatValue, MetricFloatValue, Parameter},
+        parameters::Parameter,
     };
 
     #[test]
@@ -655,7 +681,7 @@ mod tests {
         let expected_name = String::from("catchment1-p0.timeseries");
 
         match input_node.max_flow {
-            Some(DynamicFloatValue::Dynamic(MetricFloatValue::Timeseries(ts))) => {
+            Some(Metric::Timeseries(ts)) => {
                 assert_eq!(ts.name(), &expected_name)
             }
             _ => panic!("Expected Timeseries"),
@@ -722,18 +748,18 @@ mod tests {
         let expected_name2 = String::from("catchment1-p0-p4.timeseries");
 
         match input_node.max_flow {
-            Some(DynamicFloatValue::Dynamic(MetricFloatValue::InlineParameter { definition })) => match *definition {
+            Some(Metric::InlineParameter { definition }) => match *definition {
                 Parameter::Aggregated(param) => {
                     assert_eq!(param.metrics.len(), 4);
                     match &param.metrics[1] {
-                        DynamicFloatValue::Dynamic(MetricFloatValue::Timeseries(ts)) => {
+                        Metric::Timeseries(ts) => {
                             assert_eq!(ts.name(), &expected_name1)
                         }
                         _ => panic!("Expected Timeseries"),
                     }
 
                     match &param.metrics[3] {
-                        DynamicFloatValue::Dynamic(MetricFloatValue::Timeseries(ts)) => {
+                        Metric::Timeseries(ts) => {
                             assert_eq!(ts.name(), &expected_name2)
                         }
                         _ => panic!("Expected Timeseries"),
