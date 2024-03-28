@@ -1,7 +1,8 @@
 use crate::error::{ConversionError, SchemaError};
+use crate::metric::Metric;
 use crate::model::LoadArgs;
 use crate::nodes::{NodeAttribute, NodeMeta};
-use crate::parameters::{DynamicFloatValue, TryIntoV2Parameter};
+use crate::parameters::TryIntoV2Parameter;
 use pywr_core::metric::MetricF64;
 use pywr_schema_macros::PywrNode;
 use pywr_v1_schema::nodes::PiecewiseLinkNode as PiecewiseLinkNodeV1;
@@ -9,9 +10,9 @@ use std::collections::HashMap;
 
 #[derive(serde::Deserialize, serde::Serialize, Clone, Debug)]
 pub struct PiecewiseLinkStep {
-    pub max_flow: Option<DynamicFloatValue>,
-    pub min_flow: Option<DynamicFloatValue>,
-    pub cost: Option<DynamicFloatValue>,
+    pub max_flow: Option<Metric>,
+    pub min_flow: Option<Metric>,
+    pub cost: Option<Metric>,
 }
 
 #[doc = svgbobdoc::transform!(
@@ -98,6 +99,10 @@ impl PiecewiseLinkNode {
             .enumerate()
             .map(|(i, _)| (self.meta.name.as_str(), Self::step_sub_name(i)))
             .collect()
+    }
+
+    pub fn default_metric(&self) -> NodeAttribute {
+        Self::DEFAULT_ATTRIBUTE
     }
 
     pub fn create_metric(

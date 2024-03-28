@@ -1,4 +1,4 @@
-use super::{MetricSetState, PywrError, Recorder, RecorderMeta, Timestep};
+use super::{MetricSetState, OutputMetric, PywrError, Recorder, RecorderMeta, Timestep};
 use crate::models::ModelDomain;
 use crate::network::Network;
 use crate::recorders::MetricSetIndex;
@@ -95,12 +95,7 @@ impl Recorder for HDF5Recorder {
         let mut datasets = Vec::new();
 
         for metric in metric_set.iter_metrics() {
-            let name = metric.name(network)?;
-            let sub_name = metric.sub_name(network)?;
-            let attribute = metric.attribute();
-
-            let ds = require_metric_dataset(root_grp, shape, name, sub_name, attribute)?;
-
+            let ds = require_metric_dataset(root_grp, shape, metric)?;
             datasets.push(ds);
         }
 
@@ -176,21 +171,35 @@ fn require_dataset<S: Into<Extents>>(parent: &Group, shape: S, name: &str) -> Re
 fn require_metric_dataset<S: Into<Extents>>(
     parent: &Group,
     shape: S,
-    name: &str,
-    sub_name: Option<&str>,
-    attribute: &str,
+    metric: &OutputMetric,
 ) -> Result<hdf5::Dataset, PywrError> {
-    match sub_name {
-        None => {
-            let grp = require_group(parent, name)?;
-            require_dataset(&grp, shape, attribute)
-        }
-        Some(sn) => {
-            let grp = require_group(parent, name)?;
-            let grp = require_group(&grp, sn)?;
-            require_dataset(&grp, shape, attribute)
-        }
+    let grp = require_group(parent, metric.name())?;
+    let ds = require_dataset(&grp, shape, metric.attribute())?;
+
+    // Write the type and subtype as attributes
+    let ty = hdf5::types::VarLenUnicode::from_str(metric.ty()).map_err(|e| PywrError::HDF5Error(e.to_string()))?;
+    let attr = ds
+        .new_attr::<hdf5::types::VarLenUnicode>()
+        .shape(())
+        .create("pywr-type")
+        .map_err(|e| PywrError::HDF5Error(e.to_string()))?;
+    attr.as_writer()
+        .write_scalar(&ty)
+        .map_err(|e| PywrError::HDF5Error(e.to_string()))?;
+
+    if let Some(sub_type) = metric.sub_type() {
+        let sub_type =
+            hdf5::types::VarLenUnicode::from_str(sub_type).map_err(|e| PywrError::HDF5Error(e.to_string()))?;
+        let attr = ds
+            .new_attr::<hdf5::types::VarLenUnicode>()
+            .shape(())
+            .create("pywr-subtype")
+            .map_err(|e| PywrError::HDF5Error(e.to_string()))?;
+        attr.as_writer()
+            .write_scalar(&sub_type)
+            .map_err(|e| PywrError::HDF5Error(e.to_string()))?;
     }
+    Ok(ds)
 }
 
 fn require_group(parent: &Group, name: &str) -> Result<Group, PywrError> {
@@ -208,13 +217,10 @@ fn require_group(parent: &Group, name: &str) -> Result<Group, PywrError> {
 fn write_pywr_metadata(file: &hdf5::File) -> Result<(), PywrError> {
     let root = file.deref();
 
-    let grp = require_group(root, "pywr")?;
-
-    // Write the Pywr version as an attribute
     const VERSION: &str = env!("CARGO_PKG_VERSION");
     let version = hdf5::types::VarLenUnicode::from_str(VERSION).map_err(|e| PywrError::HDF5Error(e.to_string()))?;
 
-    let attr = grp
+    let attr = root
         .new_attr::<hdf5::types::VarLenUnicode>()
         .shape(())
         .create("pywr-version")

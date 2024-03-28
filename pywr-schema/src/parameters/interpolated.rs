@@ -1,8 +1,8 @@
 use crate::error::SchemaError;
+use crate::metric::{Metric, NodeReference};
 use crate::model::LoadArgs;
 use crate::parameters::{
-    DynamicFloatValue, DynamicFloatValueType, IntoV2Parameter, MetricFloatReference, MetricFloatValue, NodeReference,
-    ParameterMeta, TryFromV1Parameter, TryIntoV2Parameter,
+    DynamicFloatValueType, IntoV2Parameter, ParameterMeta, TryFromV1Parameter, TryIntoV2Parameter,
 };
 use crate::ConversionError;
 use pywr_core::parameters::ParameterIndex;
@@ -20,9 +20,9 @@ use std::collections::HashMap;
 pub struct InterpolatedParameter {
     #[serde(flatten)]
     pub meta: ParameterMeta,
-    pub x: DynamicFloatValue,
-    pub xp: Vec<DynamicFloatValue>,
-    pub fp: Vec<DynamicFloatValue>,
+    pub x: Metric,
+    pub xp: Vec<Metric>,
+    pub fp: Vec<Metric>,
     /// If not given or true, raise an error if the x value is outside the range of the data points.
     pub error_on_bounds: Option<bool>,
 }
@@ -101,7 +101,7 @@ impl TryFromV1Parameter<InterpolatedFlowParameterV1> for InterpolatedParameter {
             attribute: None,
         };
         // This defaults to v2's default metric
-        let x = DynamicFloatValue::Dynamic(MetricFloatValue::Reference(MetricFloatReference::Node(node_ref)));
+        let x = Metric::Node(node_ref);
 
         let xp = v1
             .flows
@@ -164,7 +164,7 @@ impl TryFromV1Parameter<InterpolatedVolumeParameterV1> for InterpolatedParameter
             attribute: None,
         };
         // This defaults to the node's inflow; not sure if we can do better than that.
-        let x = DynamicFloatValue::Dynamic(MetricFloatValue::Reference(MetricFloatReference::Node(node_ref)));
+        let x = Metric::Node(node_ref);
 
         let xp = v1
             .volumes

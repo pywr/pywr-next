@@ -16,7 +16,7 @@
         "type": "Catchment",
         "flow": {
           "type": "Constant",
-          "value": 15.0
+          "value": -15
         }
       },
       {
@@ -28,7 +28,7 @@
         },
         "mrf_cost": {
           "type": "Constant",
-          "value": -20
+          "value": -20.0
         }
       },
       {
@@ -40,7 +40,7 @@
         "type": "Output",
         "max_flow": {
           "type": "Constant",
-          "value": 15.0
+          "value": 15
         },
         "cost": {
           "type": "Constant",

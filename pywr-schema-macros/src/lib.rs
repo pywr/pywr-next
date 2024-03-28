@@ -17,7 +17,7 @@ enum PywrField {
 /// Generates a [`TokenStream`] containing the implementation of two methods, `parameters`
 /// and `parameters_mut`, for the given struct.
 ///
-/// Both method returns a [`HashMap`] of parameter names to [`DynamicFloatValue`]. This
+/// Both method returns a [`HashMap`] of parameter names to [`Metric`]. This
 /// is intended to be used for nodes and parameter structs in the Pywr schema.
 fn impl_parameter_references_derive(ast: &syn::DeriveInput) -> TokenStream {
     // Name of the node type
@@ -33,7 +33,7 @@ fn impl_parameter_references_derive(ast: &syn::DeriveInput) -> TokenStream {
         }
 
         // Iterate through all fields of the struct. Try to find fields that reference
-        // parameters (e.g. `Option<DynamicFloatValue>` or `ParameterValue`).
+        // parameters (e.g. `Option<Metric>` or `ParameterValue`).
         let parameter_fields: Vec<ParamField> = data
             .fields
             .iter()
@@ -105,7 +105,7 @@ fn impl_parameter_references_derive(ast: &syn::DeriveInput) -> TokenStream {
         // Create the two parameter methods using the insert statements
         let expanded = quote! {
             impl #name {
-                pub fn parameters(&self) -> HashMap<&str, &DynamicFloatValue> {
+                pub fn parameters(&self) -> HashMap<&str, &Metric> {
                     let mut attributes = HashMap::new();
                     #(
                         #inserts
@@ -113,7 +113,7 @@ fn impl_parameter_references_derive(ast: &syn::DeriveInput) -> TokenStream {
                     attributes
                 }
 
-                pub fn parameters_mut(&mut self) -> HashMap<&str, &mut DynamicFloatValue> {
+                pub fn parameters_mut(&mut self) -> HashMap<&str, &mut Metric> {
                     let mut attributes = HashMap::new();
                     #(
                         #inserts_mut
@@ -191,6 +191,6 @@ fn type_to_ident(ty: &syn::Type) -> Option<PywrField> {
 
 fn is_parameter_ident(ident: &syn::Ident) -> bool {
     // TODO this currenty omits more complex attributes, such as `factors` for AggregatedNode
-    // and steps for PiecewiseLinks, that can internally contain `DynamicFloatValue` fields
-    ident == "DynamicFloatValue"
+    // and steps for PiecewiseLinks, that can internally contain `Metric` fields
+    ident == "Metric"
 }

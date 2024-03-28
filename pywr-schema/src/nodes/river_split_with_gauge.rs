@@ -1,7 +1,8 @@
 use crate::error::{ConversionError, SchemaError};
+use crate::metric::Metric;
 use crate::model::LoadArgs;
 use crate::nodes::{NodeAttribute, NodeMeta};
-use crate::parameters::{DynamicFloatValue, TryIntoV2Parameter};
+use crate::parameters::TryIntoV2Parameter;
 use pywr_core::aggregated_node::Factors;
 use pywr_core::metric::MetricF64;
 use pywr_core::node::NodeIndex;
@@ -35,9 +36,9 @@ use std::collections::HashMap;
 pub struct RiverSplitWithGaugeNode {
     #[serde(flatten)]
     pub meta: NodeMeta,
-    pub mrf: Option<DynamicFloatValue>,
-    pub mrf_cost: Option<DynamicFloatValue>,
-    pub splits: Vec<(DynamicFloatValue, String)>,
+    pub mrf: Option<Metric>,
+    pub mrf_cost: Option<Metric>,
+    pub splits: Vec<(Metric, String)>,
 }
 
 impl RiverSplitWithGaugeNode {
@@ -144,6 +145,10 @@ impl RiverSplitWithGaugeNode {
         }
     }
 
+    pub fn default_metric(&self) -> NodeAttribute {
+        Self::DEFAULT_ATTRIBUTE
+    }
+
     pub fn create_metric(
         &self,
         network: &pywr_core::network::Network,
@@ -219,7 +224,7 @@ impl TryFrom<RiverSplitWithGaugeNodeV1> for RiverSplitWithGaugeNode {
                     slot_name,
                 ))
             })
-            .collect::<Result<Vec<(DynamicFloatValue, String)>, Self::Error>>()?;
+            .collect::<Result<Vec<(Metric, String)>, Self::Error>>()?;
 
         let n = Self {
             meta,

@@ -1,8 +1,8 @@
 use crate::error::{ConversionError, SchemaError};
+use crate::metric::Metric;
 use crate::model::LoadArgs;
 use crate::parameters::{
-    DynamicFloatValue, DynamicFloatValueType, DynamicIndexValue, IntoV2Parameter, ParameterMeta, TryFromV1Parameter,
-    TryIntoV2Parameter,
+    DynamicFloatValueType, DynamicIndexValue, IntoV2Parameter, ParameterMeta, TryFromV1Parameter, TryIntoV2Parameter,
 };
 use pywr_core::parameters::ParameterIndex;
 use pywr_v1_schema::parameters::IndexedArrayParameter as IndexedArrayParameterV1;
@@ -13,7 +13,7 @@ pub struct IndexedArrayParameter {
     #[serde(flatten)]
     pub meta: ParameterMeta,
     #[serde(alias = "params")]
-    pub metrics: Vec<DynamicFloatValue>,
+    pub metrics: Vec<Metric>,
     pub index_parameter: DynamicIndexValue,
 }
 

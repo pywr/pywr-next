@@ -1,7 +1,7 @@
 use crate::error::SchemaError;
+use crate::metric::Metric;
 use crate::model::LoadArgs;
 use crate::nodes::{NodeAttribute, NodeMeta};
-use crate::parameters::DynamicFloatValue;
 use pywr_core::derived_metric::DerivedMetric;
 use pywr_core::metric::MetricF64;
 use pywr_core::node::{ConstraintValue, StorageInitialVolume};
@@ -11,8 +11,8 @@ use std::collections::HashMap;
 
 #[derive(serde::Deserialize, serde::Serialize, Clone, Debug)]
 pub struct PiecewiseStore {
-    pub control_curve: DynamicFloatValue,
-    pub cost: Option<DynamicFloatValue>,
+    pub control_curve: Metric,
+    pub cost: Option<Metric>,
 }
 
 #[doc = svgbobdoc::transform!(
@@ -45,7 +45,7 @@ pub struct PiecewiseStore {
 pub struct PiecewiseStorageNode {
     #[serde(flatten)]
     pub meta: NodeMeta,
-    pub max_volume: DynamicFloatValue,
+    pub max_volume: Metric,
     // TODO implement min volume
     // pub min_volume: Option<DynamicFloatValue>,
     pub steps: Vec<PiecewiseStore>,
@@ -186,6 +186,10 @@ impl PiecewiseStorageNode {
     }
     pub fn output_connectors(&self) -> Vec<(&str, Option<String>)> {
         vec![(self.meta.name.as_str(), Self::step_sub_name(self.steps.len()))]
+    }
+
+    pub fn default_metric(&self) -> NodeAttribute {
+        Self::DEFAULT_ATTRIBUTE
     }
 
     pub fn create_metric(

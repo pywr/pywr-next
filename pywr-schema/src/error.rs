@@ -57,6 +57,8 @@ pub enum SchemaError {
     LoadParameter { name: String, error: String },
     #[error("Timeseries error: {0}")]
     Timeseries(#[from] TimeseriesError),
+    #[error("The output of literal constant values is not supported. This is because they do not have a unique identifier such as a name. If you would like to output a constant value please use a `Constant` parameter.")]
+    LiteralConstantOutputNotSupported,
 }
 
 impl From<SchemaError> for PyErr {

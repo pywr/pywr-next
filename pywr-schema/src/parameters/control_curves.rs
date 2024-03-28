@@ -1,9 +1,8 @@
 use crate::error::{ConversionError, SchemaError};
+use crate::metric::{Metric, NodeReference};
 use crate::model::LoadArgs;
 use crate::nodes::NodeAttribute;
-use crate::parameters::{
-    DynamicFloatValue, IntoV2Parameter, NodeReference, ParameterMeta, TryFromV1Parameter, TryIntoV2Parameter,
-};
+use crate::parameters::{IntoV2Parameter, ParameterMeta, TryFromV1Parameter, TryIntoV2Parameter};
 use pywr_core::parameters::ParameterIndex;
 use pywr_v1_schema::parameters::{
     ControlCurveIndexParameter as ControlCurveIndexParameterV1,
@@ -16,9 +15,9 @@ use pywr_v1_schema::parameters::{
 pub struct ControlCurveInterpolatedParameter {
     #[serde(flatten)]
     pub meta: ParameterMeta,
-    pub control_curves: Vec<DynamicFloatValue>,
+    pub control_curves: Vec<Metric>,
     pub storage_node: NodeReference,
-    pub values: Vec<DynamicFloatValue>,
+    pub values: Vec<Metric>,
 }
 
 impl ControlCurveInterpolatedParameter {
@@ -89,7 +88,7 @@ impl TryFromV1Parameter<ControlCurveInterpolatedParameterV1> for ControlCurveInt
                     attrs: vec!["values".to_string(), "parameters".to_string()],
                 });
             }
-            (Some(values), None) => values.into_iter().map(DynamicFloatValue::from_f64).collect(),
+            (Some(values), None) => values.into_iter().map(Metric::from).collect(),
             (None, Some(parameters)) => parameters
                 .into_iter()
                 .map(|p| p.try_into_v2_parameter(Some(&meta.name), unnamed_count))
@@ -116,7 +115,7 @@ impl TryFromV1Parameter<ControlCurveInterpolatedParameterV1> for ControlCurveInt
 pub struct ControlCurveIndexParameter {
     #[serde(flatten)]
     pub meta: ParameterMeta,
-    pub control_curves: Vec<DynamicFloatValue>,
+    pub control_curves: Vec<Metric>,
     pub storage_node: NodeReference,
 }
 
@@ -222,9 +221,9 @@ impl TryFromV1Parameter<ControlCurveParameterV1> for ControlCurveIndexParameter 
 pub struct ControlCurveParameter {
     #[serde(flatten)]
     pub meta: ParameterMeta,
-    pub control_curves: Vec<DynamicFloatValue>,
+    pub control_curves: Vec<Metric>,
     pub storage_node: NodeReference,
-    pub values: Vec<DynamicFloatValue>,
+    pub values: Vec<Metric>,
 }
 
 impl ControlCurveParameter {
@@ -277,7 +276,7 @@ impl TryFromV1Parameter<ControlCurveParameterV1> for ControlCurveParameter {
         };
 
         let values = if let Some(values) = v1.values {
-            values.into_iter().map(DynamicFloatValue::from_f64).collect()
+            values.into_iter().map(Metric::from).collect()
         } else if let Some(parameters) = v1.parameters {
             parameters
                 .into_iter()
@@ -310,7 +309,7 @@ impl TryFromV1Parameter<ControlCurveParameterV1> for ControlCurveParameter {
 pub struct ControlCurvePiecewiseInterpolatedParameter {
     #[serde(flatten)]
     pub meta: ParameterMeta,
-    pub control_curves: Vec<DynamicFloatValue>,
+    pub control_curves: Vec<Metric>,
     pub storage_node: NodeReference,
     pub values: Option<Vec<[f64; 2]>>,
     pub minimum: Option<f64>,
@@ -406,7 +405,7 @@ mod tests {
                 },
                 "control_curves": [
                     {"type": "Parameter", "name": "reservoir_cc"},
-                    0.2
+                    {"type": "Constant", "value": 0.2}
                 ],
                 "comment": "A witty comment",
                 "values": [

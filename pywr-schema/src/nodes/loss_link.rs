@@ -1,7 +1,8 @@
 use crate::error::{ConversionError, SchemaError};
+use crate::metric::Metric;
 use crate::model::LoadArgs;
 use crate::nodes::{NodeAttribute, NodeMeta};
-use crate::parameters::{DynamicFloatValue, TryIntoV2Parameter};
+use crate::parameters::TryIntoV2Parameter;
 use pywr_core::metric::MetricF64;
 use pywr_schema_macros::PywrNode;
 use pywr_v1_schema::nodes::LossLinkNode as LossLinkNodeV1;
@@ -28,10 +29,10 @@ use std::collections::HashMap;
 pub struct LossLinkNode {
     #[serde(flatten)]
     pub meta: NodeMeta,
-    pub loss_factor: Option<DynamicFloatValue>,
-    pub min_net_flow: Option<DynamicFloatValue>,
-    pub max_net_flow: Option<DynamicFloatValue>,
-    pub net_cost: Option<DynamicFloatValue>,
+    pub loss_factor: Option<Metric>,
+    pub min_net_flow: Option<Metric>,
+    pub max_net_flow: Option<Metric>,
+    pub net_cost: Option<Metric>,
 }
 
 impl LossLinkNode {
@@ -89,6 +90,10 @@ impl LossLinkNode {
     pub fn output_connectors(&self) -> Vec<(&str, Option<String>)> {
         // Only net goes to the downstream.
         vec![(self.meta.name.as_str(), Self::net_sub_name().map(|s| s.to_string()))]
+    }
+
+    pub fn default_metric(&self) -> NodeAttribute {
+        Self::DEFAULT_ATTRIBUTE
     }
 
     pub fn create_metric(

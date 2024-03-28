@@ -1,12 +1,12 @@
 use super::edge::Edge;
 use super::nodes::Node;
-use super::parameters::Parameter;
+use super::parameters::{convert_parameter_v1_to_v2, Parameter};
 use crate::data_tables::{DataTable, LoadedTableCollection};
 use crate::error::{ConversionError, SchemaError};
+use crate::metric::Metric;
 use crate::metric_sets::MetricSet;
 use crate::nodes::NodeAndTimeseries;
 use crate::outputs::Output;
-use crate::parameters::{convert_parameter_v1_to_v2, MetricFloatReference};
 use crate::timeseries::{convert_from_v1_data, LoadedTimeseriesCollection, Timeseries};
 use chrono::{NaiveDate, NaiveDateTime, NaiveTime};
 use pywr_core::models::ModelDomain;
@@ -297,6 +297,7 @@ impl PywrNetwork {
                                 PywrError::ParameterNotFound(_) => failed_parameters.push(parameter),
                                 _ => return Err(SchemaError::PywrCore(core_err)),
                             },
+                            SchemaError::ParameterNotFound(_) => failed_parameters.push(parameter),
                             _ => return Err(e),
                         }
                     };
@@ -319,7 +320,7 @@ impl PywrNetwork {
         // Create all of the metric sets
         if let Some(metric_sets) = &self.metric_sets {
             for metric_set in metric_sets {
-                metric_set.add_to_model(&mut network, self)?;
+                metric_set.add_to_model(&mut network, &args)?;
             }
         }
 
@@ -520,7 +521,7 @@ impl PywrModel {
 #[derive(serde::Deserialize, serde::Serialize, Clone)]
 pub struct PywrMultiNetworkTransfer {
     pub from_network: String,
-    pub metric: MetricFloatReference,
+    pub metric: Metric,
     pub name: String,
     pub initial_value: Option<f64>,
 }
@@ -740,11 +741,9 @@ impl PywrMultiNetworkModel {
 #[cfg(test)]
 mod tests {
     use super::{PywrModel, PywrMultiNetworkModel};
+    use crate::metric::{Metric, ParameterReference};
     use crate::model::Timestepper;
-    use crate::parameters::{
-        AggFunc, AggregatedParameter, ConstantParameter, ConstantValue, DynamicFloatValue, MetricFloatReference,
-        MetricFloatValue, Parameter, ParameterMeta,
-    };
+    use crate::parameters::{AggFunc, AggregatedParameter, ConstantParameter, ConstantValue, Parameter, ParameterMeta};
     use ndarray::{Array1, Array2, Axis};
     use pywr_core::metric::MetricF64;
     use pywr_core::recorders::AssertionRecorder;
@@ -809,14 +808,14 @@ mod tests {
                     },
                     agg_func: AggFunc::Sum,
                     metrics: vec![
-                        DynamicFloatValue::Dynamic(MetricFloatValue::Reference(MetricFloatReference::Parameter {
+                        Metric::Parameter(ParameterReference {
                             name: "p1".to_string(),
                             key: None,
-                        })),
-                        DynamicFloatValue::Dynamic(MetricFloatValue::Reference(MetricFloatReference::Parameter {
+                        }),
+                        Metric::Parameter(ParameterReference {
                             name: "agg2".to_string(),
                             key: None,
-                        })),
+                        }),
                     ],
                 }),
                 Parameter::Constant(ConstantParameter {
@@ -833,14 +832,14 @@ mod tests {
                     },
                     agg_func: AggFunc::Sum,
                     metrics: vec![
-                        DynamicFloatValue::Dynamic(MetricFloatValue::Reference(MetricFloatReference::Parameter {
+                        Metric::Parameter(ParameterReference {
                             name: "p1".to_string(),
                             key: None,
-                        })),
-                        DynamicFloatValue::Dynamic(MetricFloatValue::Reference(MetricFloatReference::Parameter {
+                        }),
+                        Metric::Parameter(ParameterReference {
                             name: "agg1".to_string(),
                             key: None,
-                        })),
+                        }),
                     ],
                 }),
             ]);
@@ -865,14 +864,14 @@ mod tests {
                     },
                     agg_func: AggFunc::Sum,
                     metrics: vec![
-                        DynamicFloatValue::Dynamic(MetricFloatValue::Reference(MetricFloatReference::Parameter {
+                        Metric::Parameter(ParameterReference {
                             name: "p1".to_string(),
                             key: None,
-                        })),
-                        DynamicFloatValue::Dynamic(MetricFloatValue::Reference(MetricFloatReference::Parameter {
+                        }),
+                        Metric::Parameter(ParameterReference {
                             name: "p2".to_string(),
                             key: None,
-                        })),
+                        }),
                     ],
                 }),
                 Parameter::Constant(ConstantParameter {
@@ -892,8 +891,7 @@ mod tests {
             ]);
         }
         // TODO this could assert a specific type of error
-        let build_result = schema.build_model(None, None);
-        assert!(build_result.is_ok());
+        let _ = schema.build_model(None, None).unwrap();
     }
 
     /// Test the multi1 model

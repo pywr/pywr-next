@@ -1,6 +1,6 @@
 use crate::error::SchemaError;
 use crate::metric::Metric;
-use crate::model::PywrNetwork;
+use crate::model::LoadArgs;
 use serde::{Deserialize, Serialize};
 use std::num::NonZeroUsize;
 
@@ -87,16 +87,12 @@ pub struct MetricSet {
 }
 
 impl MetricSet {
-    pub fn add_to_model(
-        &self,
-        network: &mut pywr_core::network::Network,
-        schema: &PywrNetwork,
-    ) -> Result<(), SchemaError> {
+    pub fn add_to_model(&self, network: &mut pywr_core::network::Network, args: &LoadArgs) -> Result<(), SchemaError> {
         // Convert the schema representation to internal metrics.
-        let metrics: Vec<pywr_core::metric::MetricF64> = self
+        let metrics: Vec<_> = self
             .metrics
             .iter()
-            .map(|m| m.try_clone_into_metric(network, schema))
+            .map(|m| m.load_as_output(network, args))
             .collect::<Result<_, _>>()?;
 
         let aggregator = self.aggregator.clone().map(|a| a.into());
