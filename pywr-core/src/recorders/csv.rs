@@ -106,8 +106,8 @@ impl Recorder for CsvWideFmtOutput {
 
         // This is a vec of vec for each scenario group
         let mut header_scenario_groups = Vec::new();
-        for group_name in domain.scenarios().group_names() {
-            header_scenario_groups.push(vec![format!("scenario-group: {}", group_name)]);
+        for group in domain.scenarios().groups() {
+            header_scenario_groups.push(vec![format!("scenario-group: {}", group.name())]);
         }
 
         for scenario_index in domain.scenarios().indices().iter() {
