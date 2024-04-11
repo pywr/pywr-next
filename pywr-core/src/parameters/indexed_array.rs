@@ -1,20 +1,19 @@
-use crate::metric::Metric;
+use crate::metric::{MetricF64, MetricUsize};
 use crate::network::Network;
-use crate::parameters::{IndexValue, Parameter, ParameterMeta};
+use crate::parameters::{Parameter, ParameterMeta};
 use crate::scenario::ScenarioIndex;
 use crate::state::{ParameterState, State};
 use crate::timestep::Timestep;
 use crate::PywrError;
-use std::any::Any;
 
 pub struct IndexedArrayParameter {
     meta: ParameterMeta,
-    index_parameter: IndexValue,
-    metrics: Vec<Metric>,
+    index_parameter: MetricUsize,
+    metrics: Vec<MetricF64>,
 }
 
 impl IndexedArrayParameter {
-    pub fn new(name: &str, index_parameter: IndexValue, metrics: &[Metric]) -> Self {
+    pub fn new(name: &str, index_parameter: MetricUsize, metrics: &[MetricF64]) -> Self {
         Self {
             meta: ParameterMeta::new(name),
             index_parameter,
@@ -23,10 +22,7 @@ impl IndexedArrayParameter {
     }
 }
 
-impl Parameter for IndexedArrayParameter {
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
-    }
+impl Parameter<f64> for IndexedArrayParameter {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }
@@ -34,17 +30,14 @@ impl Parameter for IndexedArrayParameter {
         &self,
         _timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
-        model: &Network,
+        network: &Network,
         state: &State,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<f64, PywrError> {
-        let index = match self.index_parameter {
-            IndexValue::Constant(idx) => idx,
-            IndexValue::Dynamic(idx) => state.get_parameter_index(idx)?,
-        };
+        let index = self.index_parameter.get_value(network, state)?;
 
         let metric = self.metrics.get(index).ok_or(PywrError::DataOutOfRange)?;
 
-        metric.get_value(model, state)
+        metric.get_value(network, state)
     }
 }

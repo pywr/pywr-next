@@ -9,7 +9,6 @@ use crate::timestep::Timestep;
 use crate::PywrError;
 use chrono::Datelike;
 use nalgebra::DMatrix;
-use std::any::Any;
 
 pub struct RbfProfileVariableConfig {
     days_of_year_range: Option<u32>,
@@ -101,11 +100,7 @@ impl RbfProfileParameter {
     }
 }
 
-impl Parameter for RbfProfileParameter {
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
-    }
-
+impl Parameter<f64> for RbfProfileParameter {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }

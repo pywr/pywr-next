@@ -1,11 +1,10 @@
 use super::PywrError;
-use crate::metric::Metric;
+use crate::metric::MetricF64;
 use crate::network::Network;
 use crate::parameters::{Parameter, ParameterMeta};
 use crate::scenario::ScenarioIndex;
 use crate::state::{ParameterState, State};
 use crate::timestep::Timestep;
-use std::any::Any;
 use std::str::FromStr;
 
 pub enum AggFunc {
@@ -33,12 +32,12 @@ impl FromStr for AggFunc {
 
 pub struct AggregatedParameter {
     meta: ParameterMeta,
-    metrics: Vec<Metric>,
+    metrics: Vec<MetricF64>,
     agg_func: AggFunc,
 }
 
 impl AggregatedParameter {
-    pub fn new(name: &str, metrics: &[Metric], agg_func: AggFunc) -> Self {
+    pub fn new(name: &str, metrics: &[MetricF64], agg_func: AggFunc) -> Self {
         Self {
             meta: ParameterMeta::new(name),
             metrics: metrics.to_vec(),
@@ -47,10 +46,7 @@ impl AggregatedParameter {
     }
 }
 
-impl Parameter for AggregatedParameter {
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
-    }
+impl Parameter<f64> for AggregatedParameter {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }

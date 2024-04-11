@@ -1,6 +1,6 @@
-use crate::metric::Metric;
+use crate::metric::MetricF64;
 use crate::network::Network;
-use crate::parameters::{downcast_internal_state_mut, IndexParameter, ParameterMeta};
+use crate::parameters::{downcast_internal_state_mut, Parameter, ParameterMeta};
 use crate::scenario::ScenarioIndex;
 use crate::state::{ParameterState, State};
 use crate::timestep::Timestep;
@@ -32,14 +32,14 @@ impl FromStr for Predicate {
 
 pub struct ThresholdParameter {
     meta: ParameterMeta,
-    metric: Metric,
-    threshold: Metric,
+    metric: MetricF64,
+    threshold: MetricF64,
     predicate: Predicate,
     ratchet: bool,
 }
 
 impl ThresholdParameter {
-    pub fn new(name: &str, metric: Metric, threshold: Metric, predicate: Predicate, ratchet: bool) -> Self {
+    pub fn new(name: &str, metric: MetricF64, threshold: MetricF64, predicate: Predicate, ratchet: bool) -> Self {
         Self {
             meta: ParameterMeta::new(name),
             metric,
@@ -50,7 +50,7 @@ impl ThresholdParameter {
     }
 }
 
-impl IndexParameter for ThresholdParameter {
+impl Parameter<usize> for ThresholdParameter {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }

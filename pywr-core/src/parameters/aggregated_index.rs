@@ -1,8 +1,9 @@
 /// AggregatedIndexParameter
 ///
 use super::PywrError;
+use crate::metric::MetricUsize;
 use crate::network::Network;
-use crate::parameters::{IndexParameter, IndexValue, ParameterMeta};
+use crate::parameters::{Parameter, ParameterMeta};
 use crate::scenario::ScenarioIndex;
 use crate::state::{ParameterState, State};
 use crate::timestep::Timestep;
@@ -35,12 +36,12 @@ impl FromStr for AggIndexFunc {
 
 pub struct AggregatedIndexParameter {
     meta: ParameterMeta,
-    values: Vec<IndexValue>,
+    values: Vec<MetricUsize>,
     agg_func: AggIndexFunc,
 }
 
 impl AggregatedIndexParameter {
-    pub fn new(name: &str, values: Vec<IndexValue>, agg_func: AggIndexFunc) -> Self {
+    pub fn new(name: &str, values: Vec<MetricUsize>, agg_func: AggIndexFunc) -> Self {
         Self {
             meta: ParameterMeta::new(name),
             values,
@@ -49,7 +50,7 @@ impl AggregatedIndexParameter {
     }
 }
 
-impl IndexParameter for AggregatedIndexParameter {
+impl Parameter<usize> for AggregatedIndexParameter {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }
@@ -57,7 +58,7 @@ impl IndexParameter for AggregatedIndexParameter {
         &self,
         _timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
-        _model: &Network,
+        network: &Network,
         state: &State,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<usize, PywrError> {
@@ -67,35 +68,35 @@ impl IndexParameter for AggregatedIndexParameter {
             AggIndexFunc::Sum => {
                 let mut total = 0;
                 for p in &self.values {
-                    total += p.get_index(state)?;
+                    total += p.get_value(network, state)?;
                 }
                 total
             }
             AggIndexFunc::Max => {
                 let mut total = usize::MIN;
                 for p in &self.values {
-                    total = total.max(p.get_index(state)?);
+                    total = total.max(p.get_value(network, state)?);
                 }
                 total
             }
             AggIndexFunc::Min => {
                 let mut total = usize::MAX;
                 for p in &self.values {
-                    total = total.min(p.get_index(state)?);
+                    total = total.min(p.get_value(network, state)?);
                 }
                 total
             }
             AggIndexFunc::Product => {
                 let mut total = 1;
                 for p in &self.values {
-                    total *= p.get_index(state)?;
+                    total *= p.get_value(network, state)?;
                 }
                 total
             }
             AggIndexFunc::Any => {
                 let mut any = 0;
                 for p in &self.values {
-                    let value = p.get_index(state)?;
+                    let value = p.get_value(network, state)?;
 
                     if value > 0 {
                         any = 1;
@@ -107,7 +108,7 @@ impl IndexParameter for AggregatedIndexParameter {
             AggIndexFunc::All => {
                 let mut all = 1;
                 for p in &self.values {
-                    let value = p.get_index(state)?;
+                    let value = p.get_value(network, state)?;
 
                     if value == 0 {
                         all = 0;

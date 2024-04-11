@@ -1,4 +1,4 @@
-use crate::metric::Metric;
+use crate::metric::MetricF64;
 use crate::network::Network;
 use crate::node::{Constraint, ConstraintValue, FlowConstraints, NodeMeta};
 use crate::state::State;
@@ -60,8 +60,8 @@ impl AggregatedNodeVec {
 
 #[derive(Debug, PartialEq)]
 pub enum Factors {
-    Proportion(Vec<Metric>),
-    Ratio(Vec<Metric>),
+    Proportion(Vec<MetricF64>),
+    Ratio(Vec<MetricF64>),
 }
 
 #[derive(Debug, PartialEq)]
@@ -70,6 +70,36 @@ pub struct AggregatedNode {
     flow_constraints: FlowConstraints,
     nodes: Vec<NodeIndex>,
     factors: Option<Factors>,
+}
+
+#[derive(Debug, PartialEq, Copy, Clone)]
+pub struct NodeFactor {
+    pub index: NodeIndex,
+    pub factor: f64,
+}
+
+impl NodeFactor {
+    fn new(node: NodeIndex, factor: f64) -> Self {
+        Self { index: node, factor }
+    }
+}
+
+/// A pair of nodes and their factors
+#[derive(Debug, PartialEq, Copy, Clone)]
+pub struct NodeFactorPair {
+    pub node0: NodeFactor,
+    pub node1: NodeFactor,
+}
+
+impl NodeFactorPair {
+    fn new(node0: NodeFactor, node1: NodeFactor) -> Self {
+        Self { node0, node1 }
+    }
+
+    /// Return the ratio of the two factors (node0 / node1)
+    pub fn ratio(&self) -> f64 {
+        self.node0.factor / self.node1.factor
+    }
 }
 
 impl AggregatedNode {
@@ -130,11 +160,7 @@ impl AggregatedNode {
 
     /// Return normalised factor pairs
     ///
-    pub fn get_norm_factor_pairs(
-        &self,
-        model: &Network,
-        state: &State,
-    ) -> Option<Vec<((NodeIndex, f64), (NodeIndex, f64))>> {
+    pub fn get_norm_factor_pairs(&self, model: &Network, state: &State) -> Option<Vec<NodeFactorPair>> {
         if let Some(factors) = &self.factors {
             let pairs = match factors {
                 Factors::Proportion(prop_factors) => {
@@ -194,18 +220,18 @@ impl AggregatedNode {
         }
     }
 
-    pub fn default_metric(&self) -> Metric {
-        Metric::AggregatedNodeInFlow(self.index())
+    pub fn default_metric(&self) -> MetricF64 {
+        MetricF64::AggregatedNodeInFlow(self.index())
     }
 }
 
 /// Proportional factors
 fn get_norm_proportional_factor_pairs(
-    factors: &[Metric],
+    factors: &[MetricF64],
     nodes: &[NodeIndex],
     model: &Network,
     state: &State,
-) -> Vec<((NodeIndex, f64), (NodeIndex, f64))> {
+) -> Vec<NodeFactorPair> {
     if factors.len() != nodes.len() - 1 {
         panic!("Found {} proportional factors and {} nodes in aggregated node. The number of proportional factors should equal one less than the number of nodes.", factors.len(), nodes.len());
     }
@@ -233,17 +259,17 @@ fn get_norm_proportional_factor_pairs(
         .iter()
         .skip(1)
         .zip(values)
-        .map(move |(&n1, f1)| ((n0, f0), (n1, f1)))
+        .map(move |(&n1, f1)| NodeFactorPair::new(NodeFactor::new(n0, f0), NodeFactor::new(n1, f1)))
         .collect::<Vec<_>>()
 }
 
 /// Ratio factors
 fn get_norm_ratio_factor_pairs(
-    factors: &[Metric],
+    factors: &[MetricF64],
     nodes: &[NodeIndex],
     model: &Network,
     state: &State,
-) -> Vec<((NodeIndex, f64), (NodeIndex, f64))> {
+) -> Vec<NodeFactorPair> {
     if factors.len() != nodes.len() {
         panic!("Found {} ratio factors and {} nodes in aggregated node. The number of ratio factors should equal the number of nodes.", factors.len(), nodes.len());
     }
@@ -255,14 +281,19 @@ fn get_norm_ratio_factor_pairs(
         .iter()
         .zip(factors)
         .skip(1)
-        .map(move |(&n1, f1)| ((n0, f0), (n1, f1.get_value(model, state).unwrap())))
+        .map(move |(&n1, f1)| {
+            NodeFactorPair::new(
+                NodeFactor::new(n0, f0),
+                NodeFactor::new(n1, f1.get_value(model, state).unwrap()),
+            )
+        })
         .collect::<Vec<_>>()
 }
 
 #[cfg(test)]
 mod tests {
     use crate::aggregated_node::Factors;
-    use crate::metric::Metric;
+    use crate::metric::MetricF64;
     use crate::models::Model;
     use crate::network::Network;
     use crate::node::ConstraintValue;
@@ -290,7 +321,7 @@ mod tests {
         network.connect_nodes(input_node, link_node1).unwrap();
         network.connect_nodes(link_node1, output_node1).unwrap();
 
-        let factors = Some(Factors::Ratio(vec![Metric::Constant(2.0), Metric::Constant(1.0)]));
+        let factors = Some(Factors::Ratio(vec![MetricF64::Constant(2.0), MetricF64::Constant(1.0)]));
 
         let _agg_node = network.add_aggregated_node("agg-node", None, &[link_node0, link_node1], factors);
 
@@ -305,13 +336,13 @@ mod tests {
         // Set-up assertion for "input" node
         let idx = network.get_node_by_name("link", Some("0")).unwrap().index();
         let expected = Array2::from_elem((366, 10), 100.0);
-        let recorder = AssertionRecorder::new("link-0-flow", Metric::NodeOutFlow(idx), expected, None, None);
+        let recorder = AssertionRecorder::new("link-0-flow", MetricF64::NodeOutFlow(idx), expected, None, None);
         network.add_recorder(Box::new(recorder)).unwrap();
 
         // Set-up assertion for "input" node
         let idx = network.get_node_by_name("link", Some("1")).unwrap().index();
         let expected = Array2::from_elem((366, 10), 50.0);
-        let recorder = AssertionRecorder::new("link-0-flow", Metric::NodeOutFlow(idx), expected, None, None);
+        let recorder = AssertionRecorder::new("link-0-flow", MetricF64::NodeOutFlow(idx), expected, None, None);
         network.add_recorder(Box::new(recorder)).unwrap();
 
         let model = Model::new(default_time_domain().into(), network);

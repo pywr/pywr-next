@@ -1,10 +1,12 @@
 use crate::timestep::PywrDuration;
-use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime};
+use chrono::{Datelike, Duration, NaiveDate, NaiveDateTime, NaiveTime};
+use std::num::NonZeroUsize;
 
 #[derive(Clone, Debug)]
 pub enum AggregationFrequency {
     Monthly,
     Annual,
+    Days(NonZeroUsize),
 }
 
 impl AggregationFrequency {
@@ -12,6 +14,10 @@ impl AggregationFrequency {
         match self {
             Self::Monthly => (period_start.year() == date.year()) && (period_start.month() == date.month()),
             Self::Annual => period_start.year() == date.year(),
+            Self::Days(days) => {
+                let period_end = *period_start + Duration::days(days.get() as i64);
+                (period_start <= date) && (date < &period_end)
+            }
         }
     }
 
@@ -39,12 +45,13 @@ impl AggregationFrequency {
                 let date = NaiveDate::from_ymd_opt(current_date.year() + 1, 1, 1).unwrap();
                 NaiveDateTime::new(date, NaiveTime::default())
             }
+            Self::Days(days) => *current_date + Duration::days(days.get() as i64),
         }
     }
 
     /// Split the value representing a period into multiple ['PeriodValue'] that do not cross the
     /// boundary of the given period.
-    fn split_value_into_periods(&self, value: PeriodValue) -> Vec<PeriodValue> {
+    fn split_value_into_periods(&self, value: PeriodValue<f64>) -> Vec<PeriodValue<f64>> {
         let mut sub_values = Vec::new();
 
         let mut current_date = value.start;
@@ -78,10 +85,13 @@ pub enum AggregationFunction {
     Mean,
     Min,
     Max,
+    CountNonZero,
+    CountFunc { func: fn(f64) -> bool },
 }
 
 impl AggregationFunction {
-    fn calc(&self, values: &[PeriodValue]) -> Option<f64> {
+    /// Calculate the aggregation of the given values.
+    pub fn calc_period_values(&self, values: &[PeriodValue<f64>]) -> Option<f64> {
         match self {
             AggregationFunction::Sum => Some(values.iter().map(|v| v.value * v.duration.fractional_days()).sum()),
             AggregationFunction::Mean => {
@@ -102,22 +112,67 @@ impl AggregationFunction {
                 a.partial_cmp(b)
                     .expect("Failed to calculate maximum of values containing a NaN.")
             }),
+            AggregationFunction::CountNonZero => {
+                let count = values.iter().filter(|v| v.value != 0.0).count();
+                Some(count as f64)
+            }
+            AggregationFunction::CountFunc { func } => {
+                let count = values.iter().filter(|v| func(v.value)).count();
+                Some(count as f64)
+            }
+        }
+    }
+
+    pub fn calc_f64(&self, values: &[f64]) -> Option<f64> {
+        match self {
+            AggregationFunction::Sum => Some(values.iter().sum()),
+            AggregationFunction::Mean => {
+                let ndays: i64 = values.len() as i64;
+                if ndays == 0 {
+                    None
+                } else {
+                    let sum: f64 = values.iter().sum();
+                    Some(sum / ndays as f64)
+                }
+            }
+            AggregationFunction::Min => values
+                .iter()
+                .min_by(|a, b| {
+                    a.partial_cmp(b)
+                        .expect("Failed to calculate minimum of values containing a NaN.")
+                })
+                .copied(),
+            AggregationFunction::Max => values
+                .iter()
+                .max_by(|a, b| {
+                    a.partial_cmp(b)
+                        .expect("Failed to calculate maximum of values containing a NaN.")
+                })
+                .copied(),
+            AggregationFunction::CountNonZero => {
+                let count = values.iter().filter(|v| **v != 0.0).count();
+                Some(count as f64)
+            }
+            AggregationFunction::CountFunc { func } => {
+                let count = values.iter().filter(|v| func(**v)).count();
+                Some(count as f64)
+            }
         }
     }
 }
 
 #[derive(Default, Debug, Clone)]
 struct PeriodicAggregatorState {
-    current_values: Option<Vec<PeriodValue>>,
+    current_values: Option<Vec<PeriodValue<f64>>>,
 }
 
 impl PeriodicAggregatorState {
     fn process_value(
         &mut self,
-        value: PeriodValue,
+        value: PeriodValue<f64>,
         agg_freq: &AggregationFrequency,
         agg_func: &AggregationFunction,
-    ) -> Option<PeriodValue> {
+    ) -> Option<PeriodValue<f64>> {
         if let Some(current_values) = self.current_values.as_mut() {
             // SAFETY: The current_values vector is guaranteed to contain at least one value.
             let current_period_start = current_values
@@ -135,7 +190,7 @@ impl PeriodicAggregatorState {
                 // New value is part of a different period (assume the next one).
 
                 // Calculate the aggregated value of the previous period.
-                let agg_period = if let Some(agg_value) = agg_func.calc(current_values) {
+                let agg_period = if let Some(agg_value) = agg_func.calc_period_values(current_values) {
                     let agg_duration = value.start - current_period_start;
                     Some(PeriodValue::new(current_period_start, agg_duration.into(), agg_value))
                 } else {
@@ -157,7 +212,7 @@ impl PeriodicAggregatorState {
         }
     }
 
-    fn process_value_no_period(&mut self, value: PeriodValue) {
+    fn process_value_no_period(&mut self, value: PeriodValue<f64>) {
         if let Some(current_values) = self.current_values.as_mut() {
             current_values.push(value);
         } else {
@@ -165,9 +220,9 @@ impl PeriodicAggregatorState {
         }
     }
 
-    fn calc_aggregation(&self, agg_func: &AggregationFunction) -> Option<PeriodValue> {
+    fn calc_aggregation(&self, agg_func: &AggregationFunction) -> Option<PeriodValue<f64>> {
         if let Some(current_values) = &self.current_values {
-            if let Some(agg_value) = agg_func.calc(current_values) {
+            if let Some(agg_value) = agg_func.calc_period_values(current_values) {
                 // SAFETY: The current_values vector is guaranteed to contain at least one value.
                 let current_period_start = current_values
                     .first()
@@ -200,14 +255,48 @@ struct PeriodicAggregator {
 }
 
 #[derive(Debug, Copy, Clone)]
-pub struct PeriodValue {
+pub struct PeriodValue<T> {
     pub start: NaiveDateTime,
     pub duration: PywrDuration,
-    pub value: f64,
+    pub value: T,
 }
 
-impl PeriodValue {
-    pub fn new(start: NaiveDateTime, duration: PywrDuration, value: f64) -> Self {
+impl<T> PeriodValue<T> {
+    pub fn new(start: NaiveDateTime, duration: PywrDuration, value: T) -> Self {
+        Self { start, duration, value }
+    }
+
+    /// The end of the period.
+    pub fn end(&self) -> NaiveDateTime {
+        self.duration + self.start
+    }
+}
+
+impl<T> PeriodValue<Vec<T>> {
+    pub fn index(&self, index: usize) -> PeriodValue<T>
+    where
+        T: Copy,
+    {
+        PeriodValue {
+            start: self.start,
+            duration: self.duration,
+            value: self.value[index],
+        }
+    }
+    pub fn len(&self) -> usize {
+        self.value.len()
+    }
+}
+
+impl<T> From<&[PeriodValue<T>]> for PeriodValue<Vec<T>>
+where
+    T: Copy,
+{
+    fn from(values: &[PeriodValue<T>]) -> Self {
+        let start = values.first().expect("Empty vector of period values.").start;
+        let duration = values.last().expect("Empty vector of period values.").duration;
+
+        let value = values.into_iter().map(|v| v.value).collect();
         Self { start, duration, value }
     }
 }
@@ -222,7 +311,11 @@ impl PeriodicAggregator {
     /// The new value should sequentially follow from the previously processed values. If the
     /// value completes a new aggregation period then a value representing that aggregation is
     /// returned.
-    fn process_value(&self, current_state: &mut PeriodicAggregatorState, value: PeriodValue) -> Option<PeriodValue> {
+    fn process_value(
+        &self,
+        current_state: &mut PeriodicAggregatorState,
+        value: PeriodValue<f64>,
+    ) -> Option<PeriodValue<f64>> {
         // Split the given period into separate periods that align with the aggregation period.
         let mut agg_value = None;
 
@@ -242,7 +335,7 @@ impl PeriodicAggregator {
         agg_value
     }
 
-    fn calc_aggregation(&self, state: &PeriodicAggregatorState) -> Option<PeriodValue> {
+    fn calc_aggregation(&self, state: &PeriodicAggregatorState) -> Option<PeriodValue<f64>> {
         state.calc_aggregation(&self.function)
     }
 }
@@ -278,7 +371,7 @@ impl Aggregator {
     }
 
     /// Append a new value to the aggregator.
-    pub fn append_value(&self, state: &mut AggregatorState, value: PeriodValue) -> Option<PeriodValue> {
+    pub fn append_value(&self, state: &mut AggregatorState, value: PeriodValue<f64>) -> Option<PeriodValue<f64>> {
         let agg_value = match (&self.child, state.child.as_mut()) {
             (Some(child), Some(child_state)) => child.append_value(child_state, value),
             (None, None) => Some(value),
@@ -297,7 +390,7 @@ impl Aggregator {
     ///
     /// This will also compute the final aggregation value from the child aggregators if any exists.
     /// This includes aggregation calculations over partial or unfinished periods.
-    pub fn finalise(&self, state: &mut AggregatorState) -> Option<PeriodValue> {
+    pub fn finalise(&self, state: &mut AggregatorState) -> Option<PeriodValue<f64>> {
         let final_child_value = match (&self.child, state.child.as_mut()) {
             (Some(child), Some(child_state)) => child.finalise(child_state),
             (None, None) => None,
@@ -438,10 +531,10 @@ mod tests {
             ),
         ];
 
-        let agg_value = AggregationFunction::Mean.calc(values.as_slice()).unwrap();
+        let agg_value = AggregationFunction::Mean.calc_period_values(values.as_slice()).unwrap();
         assert_approx_eq!(f64, agg_value, 7.0 / 4.0);
 
-        let agg_value = AggregationFunction::Sum.calc(values.as_slice()).unwrap();
+        let agg_value = AggregationFunction::Sum.calc_period_values(values.as_slice()).unwrap();
         let expected = 2.0 * (1.0 / 24.0) + 1.0 * (2.0 / 24.0) + 3.0 * (1.0 / 24.0);
         assert_approx_eq!(f64, agg_value, expected);
     }

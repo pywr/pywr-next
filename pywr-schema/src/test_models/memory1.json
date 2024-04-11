@@ -1,0 +1,97 @@
+{
+  "metadata": {
+    "title": "Simple 1",
+    "description": "A very simple example.",
+    "minimum_version": "0.1"
+  },
+  "timestepper": {
+    "start": "2015-01-01",
+    "end": "2015-12-31",
+    "timestep": 1
+  },
+  "network": {
+    "nodes": [
+      {
+        "name": "supply1",
+        "type": "Input",
+        "max_flow": 15
+      },
+      {
+        "name": "link1",
+        "type": "Link"
+      },
+      {
+        "name": "demand1",
+        "type": "Output",
+        "max_flow": {
+          "type": "Parameter",
+          "name": "demand"
+        },
+        "cost": -10
+      }
+    ],
+    "edges": [
+      {
+        "from_node": "supply1",
+        "to_node": "link1"
+      },
+      {
+        "from_node": "link1",
+        "to_node": "demand1"
+      }
+    ],
+    "parameters": [
+      {
+        "name": "demand",
+        "type": "Constant",
+        "value": 10.0
+      }
+    ],
+    "metric_sets": [
+      {
+        "name": "nodes",
+        "aggregator": {
+          "freq": {
+            "type": "Annual"
+          },
+          "func": {
+            "type": "CountNonZero"
+          },
+          "child": {
+            "freq": {
+              "type": "Days",
+              "days": 4
+            },
+            "func": {
+              "type": "Min"
+            }
+          }
+        },
+        "metrics": [
+          {
+            "type": "Default",
+            "node": "demand1"
+          }
+        ]
+      }
+    ],
+    "outputs": [
+      {
+        "name": "outputs",
+        "type": "Memory",
+        "metric_set": "nodes",
+        "aggregation": {
+          "time": {
+            "type": "CountNonZero"
+          },
+          "metrics": {
+            "type": "Max"
+          },
+          "scenario": {
+            "type": "Sum"
+          }
+        }
+      }
+    ]
+  }
+}

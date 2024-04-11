@@ -1,16 +1,13 @@
-use crate::data_tables::LoadedTableCollection;
 use crate::error::{ConversionError, SchemaError};
-use crate::model::PywrMultiNetworkTransfer;
+use crate::model::LoadArgs;
 use crate::parameters::{
     DynamicFloatValue, DynamicFloatValueType, IntoV2Parameter, ParameterMeta, TryFromV1Parameter, TryIntoV2Parameter,
 };
-use pywr_core::models::ModelDomain;
-use pywr_core::parameters::IndexParameterIndex;
+use pywr_core::parameters::ParameterIndex;
 use pywr_v1_schema::parameters::{
     ParameterThresholdParameter as ParameterThresholdParameterV1, Predicate as PredicateV1,
 };
 use std::collections::HashMap;
-use std::path::Path;
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Copy)]
 pub enum Predicate {
@@ -72,18 +69,10 @@ impl ParameterThresholdParameter {
     pub fn add_to_model(
         &self,
         network: &mut pywr_core::network::Network,
-        schema: &crate::model::PywrNetwork,
-        domain: &ModelDomain,
-        tables: &LoadedTableCollection,
-        data_path: Option<&Path>,
-        inter_network_transfers: &[PywrMultiNetworkTransfer],
-    ) -> Result<IndexParameterIndex, SchemaError> {
-        let metric = self
-            .parameter
-            .load(network, schema, domain, tables, data_path, inter_network_transfers)?;
-        let threshold = self
-            .threshold
-            .load(network, schema, domain, tables, data_path, inter_network_transfers)?;
+        args: &LoadArgs,
+    ) -> Result<ParameterIndex<usize>, SchemaError> {
+        let metric = self.parameter.load(network, args)?;
+        let threshold = self.threshold.load(network, args)?;
 
         let p = pywr_core::parameters::ThresholdParameter::new(
             &self.meta.name,

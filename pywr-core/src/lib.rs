@@ -5,8 +5,9 @@ extern crate core;
 use crate::derived_metric::DerivedMetricIndex;
 use crate::models::MultiNetworkTransferIndex;
 use crate::node::NodeIndex;
-use crate::parameters::{IndexParameterIndex, InterpolationError, MultiValueParameterIndex, ParameterIndex};
-use crate::recorders::{MetricSetIndex, RecorderIndex};
+use crate::parameters::{InterpolationError, ParameterIndex};
+use crate::recorders::{AggregationError, MetricSetIndex, RecorderIndex};
+use crate::state::MultiValue;
 use crate::virtual_storage::VirtualStorageIndex;
 use pyo3::exceptions::{PyException, PyRuntimeError};
 use pyo3::{create_exception, PyErr};
@@ -44,11 +45,11 @@ pub enum PywrError {
     #[error("virtual storage index {0} not found")]
     VirtualStorageIndexNotFound(VirtualStorageIndex),
     #[error("parameter index {0} not found")]
-    ParameterIndexNotFound(ParameterIndex),
+    ParameterIndexNotFound(ParameterIndex<f64>),
     #[error("index parameter index {0} not found")]
-    IndexParameterIndexNotFound(IndexParameterIndex),
+    IndexParameterIndexNotFound(ParameterIndex<usize>),
     #[error("multi1 value parameter index {0} not found")]
-    MultiValueParameterIndexNotFound(MultiValueParameterIndex),
+    MultiValueParameterIndexNotFound(ParameterIndex<MultiValue>),
     #[error("multi1 value parameter key {0} not found")]
     MultiValueParameterKeyNotFound(String),
     #[error("inter-network parameter state not initialised")]
@@ -72,9 +73,9 @@ pub enum PywrError {
     #[error("node name `{0}` already exists")]
     NodeNameAlreadyExists(String),
     #[error("parameter name `{0}` already exists at index {1}")]
-    ParameterNameAlreadyExists(String, ParameterIndex),
+    ParameterNameAlreadyExists(String, ParameterIndex<f64>),
     #[error("index parameter name `{0}` already exists at index {1}")]
-    IndexParameterNameAlreadyExists(String, IndexParameterIndex),
+    IndexParameterNameAlreadyExists(String, ParameterIndex<usize>),
     #[error("metric set name `{0}` already exists")]
     MetricSetNameAlreadyExists(String),
     #[error("recorder name `{0}` already exists at index {1}")]
@@ -123,6 +124,8 @@ pub enum PywrError {
     InvalidMetricValue(String),
     #[error("recorder not initialised")]
     RecorderNotInitialised,
+    #[error("recorder does not supported aggregation")]
+    RecorderDoesNotSupportAggregation,
     #[error("hdf5 error: {0}")]
     HDF5Error(String),
     #[error("csv error: {0}")]
@@ -156,11 +159,13 @@ pub enum PywrError {
     #[error("parameters do not provide an initial value")]
     ParameterNoInitialValue,
     #[error("parameter state not found for parameter index {0}")]
-    ParameterStateNotFound(ParameterIndex),
+    ParameterStateNotFound(ParameterIndex<f64>),
     #[error("Could not create timestep range due to following error: {0}")]
     TimestepRangeGenerationError(String),
     #[error("Could not create timesteps for frequency '{0}'")]
     TimestepGenerationError(String),
+    #[error("aggregation error: {0}")]
+    Aggregation(#[from] AggregationError),
 }
 
 // Python errors

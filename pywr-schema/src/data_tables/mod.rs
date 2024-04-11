@@ -58,11 +58,11 @@ pub enum CsvDataTableLookup {
 /// An external table of data that can be referenced
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
 pub struct CsvDataTable {
-    name: String,
+    pub name: String,
     #[serde(rename = "type")]
-    ty: DataTableType,
-    lookup: CsvDataTableLookup,
-    url: PathBuf,
+    pub ty: DataTableType,
+    pub lookup: CsvDataTableLookup,
+    pub url: PathBuf,
 }
 
 impl CsvDataTable {
@@ -130,7 +130,7 @@ pub enum TableError {
     TableNotFound(String),
     #[error("entry not found")]
     EntryNotFound,
-    #[error("wrong key size; expected: {0}; given: {0}")]
+    #[error("wrong key size; expected: {0}; given: {1}")]
     WrongKeySize(usize, usize),
     #[error("failed to get or parse key")]
     KeyParse,
@@ -226,9 +226,9 @@ impl LoadedTableCollection {
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
 pub struct TableDataRef {
-    table: String,
-    column: Option<TableIndex>,
-    index: Option<TableIndex>,
+    pub table: String,
+    pub column: Option<TableIndex>,
+    pub index: Option<TableIndex>,
 }
 
 impl TableDataRef {

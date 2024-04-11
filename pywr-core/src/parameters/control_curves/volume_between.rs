@@ -1,22 +1,21 @@
-use crate::metric::Metric;
+use crate::metric::MetricF64;
 use crate::network::Network;
 use crate::parameters::{Parameter, ParameterMeta};
 use crate::scenario::ScenarioIndex;
 use crate::state::{ParameterState, State};
 use crate::timestep::Timestep;
 use crate::PywrError;
-use std::any::Any;
 
 /// A parameter that returns the volume that is the proportion between two control curves
 pub struct VolumeBetweenControlCurvesParameter {
     meta: ParameterMeta,
-    total: Metric,
-    upper: Option<Metric>,
-    lower: Option<Metric>,
+    total: MetricF64,
+    upper: Option<MetricF64>,
+    lower: Option<MetricF64>,
 }
 
 impl VolumeBetweenControlCurvesParameter {
-    pub fn new(name: &str, total: Metric, upper: Option<Metric>, lower: Option<Metric>) -> Self {
+    pub fn new(name: &str, total: MetricF64, upper: Option<MetricF64>, lower: Option<MetricF64>) -> Self {
         Self {
             meta: ParameterMeta::new(name),
             total,
@@ -26,11 +25,7 @@ impl VolumeBetweenControlCurvesParameter {
     }
 }
 
-impl Parameter for VolumeBetweenControlCurvesParameter {
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
-    }
-
+impl Parameter<f64> for VolumeBetweenControlCurvesParameter {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }

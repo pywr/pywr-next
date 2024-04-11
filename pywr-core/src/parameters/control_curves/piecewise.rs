@@ -1,4 +1,4 @@
-use crate::metric::Metric;
+use crate::metric::MetricF64;
 use crate::network::Network;
 use crate::parameters::interpolate::interpolate;
 use crate::parameters::{Parameter, ParameterMeta};
@@ -6,12 +6,11 @@ use crate::scenario::ScenarioIndex;
 use crate::state::{ParameterState, State};
 use crate::timestep::Timestep;
 use crate::PywrError;
-use std::any::Any;
 
 pub struct PiecewiseInterpolatedParameter {
     meta: ParameterMeta,
-    metric: Metric,
-    control_curves: Vec<Metric>,
+    metric: MetricF64,
+    control_curves: Vec<MetricF64>,
     values: Vec<[f64; 2]>,
     maximum: f64,
     minimum: f64,
@@ -20,8 +19,8 @@ pub struct PiecewiseInterpolatedParameter {
 impl PiecewiseInterpolatedParameter {
     pub fn new(
         name: &str,
-        metric: Metric,
-        control_curves: Vec<Metric>,
+        metric: MetricF64,
+        control_curves: Vec<MetricF64>,
         values: Vec<[f64; 2]>,
         maximum: f64,
         minimum: f64,
@@ -37,10 +36,7 @@ impl PiecewiseInterpolatedParameter {
     }
 }
 
-impl Parameter for PiecewiseInterpolatedParameter {
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
-    }
+impl Parameter<f64> for PiecewiseInterpolatedParameter {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }
@@ -71,7 +67,7 @@ impl Parameter for PiecewiseInterpolatedParameter {
 
 #[cfg(test)]
 mod test {
-    use crate::metric::Metric;
+    use crate::metric::MetricF64;
     use crate::parameters::{Array1Parameter, PiecewiseInterpolatedParameter};
     use crate::test_utils::{run_and_assert_parameter, simple_model};
     use ndarray::{Array1, Array2, Axis};
@@ -88,8 +84,8 @@ mod test {
 
         let parameter = PiecewiseInterpolatedParameter::new(
             "test-parameter",
-            Metric::ParameterValue(volume_idx), // Interpolate with the parameter based values
-            vec![Metric::Constant(0.8), Metric::Constant(0.5)],
+            MetricF64::ParameterValue(volume_idx), // Interpolate with the parameter based values
+            vec![MetricF64::Constant(0.8), MetricF64::Constant(0.5)],
             vec![[10.0, 1.0], [0.0, 0.0], [-1.0, -10.0]],
             1.0,
             0.0,

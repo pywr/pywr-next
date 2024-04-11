@@ -1,21 +1,19 @@
-use crate::metric::Metric;
+use crate::metric::MetricF64;
 use crate::network::Network;
 use crate::parameters::{Parameter, ParameterMeta};
 use crate::scenario::ScenarioIndex;
-use std::any::Any;
-
 use crate::state::{ParameterState, State};
 use crate::timestep::Timestep;
 use crate::PywrError;
 
 pub struct MinParameter {
     meta: ParameterMeta,
-    metric: Metric,
+    metric: MetricF64,
     threshold: f64,
 }
 
 impl MinParameter {
-    pub fn new(name: &str, metric: Metric, threshold: f64) -> Self {
+    pub fn new(name: &str, metric: MetricF64, threshold: f64) -> Self {
         Self {
             meta: ParameterMeta::new(name),
             metric,
@@ -24,10 +22,7 @@ impl MinParameter {
     }
 }
 
-impl Parameter for MinParameter {
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
-    }
+impl Parameter<f64> for MinParameter {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }

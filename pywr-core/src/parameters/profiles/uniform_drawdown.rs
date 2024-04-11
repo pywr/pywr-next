@@ -5,7 +5,6 @@ use crate::state::{ParameterState, State};
 use crate::timestep::Timestep;
 use crate::PywrError;
 use chrono::{Datelike, NaiveDate};
-use std::any::Any;
 
 fn is_leap_year(year: i32) -> bool {
     (year % 4 == 0) & ((year % 100 != 0) | (year % 400 == 0))
@@ -32,10 +31,7 @@ impl UniformDrawdownProfileParameter {
     }
 }
 
-impl Parameter for UniformDrawdownProfileParameter {
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
-    }
+impl Parameter<f64> for UniformDrawdownProfileParameter {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }

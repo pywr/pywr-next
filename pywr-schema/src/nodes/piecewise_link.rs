@@ -1,14 +1,13 @@
-use crate::data_tables::LoadedTableCollection;
 use crate::error::{ConversionError, SchemaError};
-use crate::model::PywrMultiNetworkTransfer;
+use crate::model::LoadArgs;
 use crate::nodes::{NodeAttribute, NodeMeta};
 use crate::parameters::{DynamicFloatValue, TryIntoV2Parameter};
-use pywr_core::metric::Metric;
-use pywr_core::models::ModelDomain;
+use pywr_core::metric::MetricF64;
+use pywr_schema_macros::PywrNode;
 use pywr_v1_schema::nodes::PiecewiseLinkNode as PiecewiseLinkNodeV1;
-use std::path::Path;
+use std::collections::HashMap;
 
-#[derive(serde::Deserialize, serde::Serialize, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Debug)]
 pub struct PiecewiseLinkStep {
     pub max_flow: Option<DynamicFloatValue>,
     pub min_flow: Option<DynamicFloatValue>,
@@ -37,7 +36,7 @@ pub struct PiecewiseLinkStep {
 /// ```
 ///
 )]
-#[derive(serde::Deserialize, serde::Serialize, Clone, Default)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, PywrNode)]
 pub struct PiecewiseLinkNode {
     #[serde(flatten)]
     pub meta: NodeMeta,
@@ -62,27 +61,23 @@ impl PiecewiseLinkNode {
     pub fn set_constraints(
         &self,
         network: &mut pywr_core::network::Network,
-        schema: &crate::model::PywrNetwork,
-        domain: &ModelDomain,
-        tables: &LoadedTableCollection,
-        data_path: Option<&Path>,
-        inter_network_transfers: &[PywrMultiNetworkTransfer],
+        args: &LoadArgs,
     ) -> Result<(), SchemaError> {
         for (i, step) in self.steps.iter().enumerate() {
             let sub_name = Self::step_sub_name(i);
 
             if let Some(cost) = &step.cost {
-                let value = cost.load(network, schema, domain, tables, data_path, inter_network_transfers)?;
+                let value = cost.load(network, args)?;
                 network.set_node_cost(self.meta.name.as_str(), sub_name.as_deref(), value.into())?;
             }
 
             if let Some(max_flow) = &step.max_flow {
-                let value = max_flow.load(network, schema, domain, tables, data_path, inter_network_transfers)?;
+                let value = max_flow.load(network, args)?;
                 network.set_node_max_flow(self.meta.name.as_str(), sub_name.as_deref(), value.into())?;
             }
 
             if let Some(min_flow) = &step.min_flow {
-                let value = min_flow.load(network, schema, domain, tables, data_path, inter_network_transfers)?;
+                let value = min_flow.load(network, args)?;
                 network.set_node_min_flow(self.meta.name.as_str(), sub_name.as_deref(), value.into())?;
             }
         }
@@ -109,7 +104,7 @@ impl PiecewiseLinkNode {
         &self,
         network: &pywr_core::network::Network,
         attribute: Option<NodeAttribute>,
-    ) -> Result<Metric, SchemaError> {
+    ) -> Result<MetricF64, SchemaError> {
         // Use the default attribute if none is specified
         let attr = attribute.unwrap_or(Self::DEFAULT_ATTRIBUTE);
 
@@ -121,11 +116,11 @@ impl PiecewiseLinkNode {
             .collect::<Result<Vec<_>, _>>()?;
 
         let metric = match attr {
-            NodeAttribute::Inflow => Metric::MultiNodeInFlow {
+            NodeAttribute::Inflow => MetricF64::MultiNodeInFlow {
                 indices,
                 name: self.meta.name.to_string(),
             },
-            NodeAttribute::Outflow => Metric::MultiNodeOutFlow {
+            NodeAttribute::Outflow => MetricF64::MultiNodeOutFlow {
                 indices,
                 name: self.meta.name.to_string(),
             },
@@ -184,7 +179,7 @@ impl TryFrom<PiecewiseLinkNodeV1> for PiecewiseLinkNode {
 mod tests {
     use crate::model::PywrModel;
     use ndarray::Array2;
-    use pywr_core::metric::Metric;
+    use pywr_core::metric::MetricF64;
     use pywr_core::recorders::AssertionRecorder;
     use pywr_core::test_utils::run_all_solvers;
 
@@ -205,17 +200,17 @@ mod tests {
         // TODO put this assertion data in the test model file.
         let idx = network.get_node_by_name("link1", Some("step-00")).unwrap().index();
         let expected = Array2::from_elem((366, 1), 1.0);
-        let recorder = AssertionRecorder::new("link1-s0-flow", Metric::NodeOutFlow(idx), expected, None, None);
+        let recorder = AssertionRecorder::new("link1-s0-flow", MetricF64::NodeOutFlow(idx), expected, None, None);
         network.add_recorder(Box::new(recorder)).unwrap();
 
         let idx = network.get_node_by_name("link1", Some("step-01")).unwrap().index();
         let expected = Array2::from_elem((366, 1), 3.0);
-        let recorder = AssertionRecorder::new("link1-s0-flow", Metric::NodeOutFlow(idx), expected, None, None);
+        let recorder = AssertionRecorder::new("link1-s0-flow", MetricF64::NodeOutFlow(idx), expected, None, None);
         network.add_recorder(Box::new(recorder)).unwrap();
 
         let idx = network.get_node_by_name("link1", Some("step-02")).unwrap().index();
         let expected = Array2::from_elem((366, 1), 0.0);
-        let recorder = AssertionRecorder::new("link1-s0-flow", Metric::NodeOutFlow(idx), expected, None, None);
+        let recorder = AssertionRecorder::new("link1-s0-flow", MetricF64::NodeOutFlow(idx), expected, None, None);
         network.add_recorder(Box::new(recorder)).unwrap();
 
         // Test all solvers

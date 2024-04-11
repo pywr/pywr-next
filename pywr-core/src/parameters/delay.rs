@@ -1,22 +1,21 @@
-use crate::metric::Metric;
+use crate::metric::MetricF64;
 use crate::network::Network;
 use crate::parameters::{downcast_internal_state_mut, Parameter, ParameterMeta};
 use crate::scenario::ScenarioIndex;
 use crate::state::{ParameterState, State};
 use crate::timestep::Timestep;
 use crate::PywrError;
-use std::any::Any;
 use std::collections::VecDeque;
 
 pub struct DelayParameter {
     meta: ParameterMeta,
-    metric: Metric,
+    metric: MetricF64,
     delay: usize,
     initial_value: f64,
 }
 
 impl DelayParameter {
-    pub fn new(name: &str, metric: Metric, delay: usize, initial_value: f64) -> Self {
+    pub fn new(name: &str, metric: MetricF64, delay: usize, initial_value: f64) -> Self {
         Self {
             meta: ParameterMeta::new(name),
             metric,
@@ -26,10 +25,7 @@ impl DelayParameter {
     }
 }
 
-impl Parameter for DelayParameter {
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
-    }
+impl Parameter<f64> for DelayParameter {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }
@@ -85,7 +81,7 @@ impl Parameter for DelayParameter {
 
 #[cfg(test)]
 mod test {
-    use crate::metric::Metric;
+    use crate::metric::MetricF64;
     use crate::parameters::{Array1Parameter, DelayParameter};
     use crate::test_utils::{run_and_assert_parameter, simple_model};
     use ndarray::{concatenate, s, Array1, Array2, Axis};
@@ -104,7 +100,7 @@ mod test {
         const DELAY: usize = 3; // 3 time-step delay
         let parameter = DelayParameter::new(
             "test-parameter",
-            Metric::ParameterValue(volume_idx), // Interpolate with the parameter based values
+            MetricF64::ParameterValue(volume_idx), // Interpolate with the parameter based values
             DELAY,
             0.0,
         );

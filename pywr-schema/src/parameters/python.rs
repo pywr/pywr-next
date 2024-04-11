@@ -1,15 +1,14 @@
-use crate::data_tables::{make_path, LoadedTableCollection};
+use crate::data_tables::make_path;
 use crate::error::SchemaError;
-use crate::model::PywrMultiNetworkTransfer;
+use crate::model::LoadArgs;
 use crate::parameters::{DynamicFloatValue, DynamicFloatValueType, DynamicIndexValue, ParameterMeta};
 use pyo3::prelude::PyModule;
 use pyo3::types::{PyDict, PyTuple};
 use pyo3::{IntoPy, PyErr, PyObject, Python, ToPyObject};
-use pywr_core::models::ModelDomain;
 use pywr_core::parameters::{ParameterType, PyParameter};
 use serde_json::Value;
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
 #[serde(rename_all = "lowercase")]
@@ -18,12 +17,22 @@ pub enum PythonModule {
     Path(PathBuf),
 }
 
+/// The expected return type of the Python parameter.
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum PythonReturnType {
+    #[default]
+    Float,
+    Int,
+    Dict,
+}
+
 /// A Parameter that uses a Python object for its calculations.
 ///
-/// This struct defines a schema for loading a [`crate::parameters::PyParameter`] from external
+/// This struct defines a schema for loading a [`PyParameter`] from external
 /// sources. The user provides the name of an object in the given module. Typically, this object will be
 /// a class the user has written. For more information on the expected format and signature of
-/// this object please refer to the [`crate::parameters::PyParameter`] documentation. The object
+/// this object please refer to the [`PyParameter`] documentation. The object
 /// is initialised with user provided positional and/or keyword arguments that can be provided
 /// here.
 ///
@@ -67,10 +76,10 @@ pub struct PythonParameter {
     pub module: PythonModule,
     /// The name of Python object from the module to use.
     pub object: String,
-    /// Is this a multi-valued parameter or not. If true then the calculation method should
-    /// return a dictionary with string keys and either floats or ints as values.
+    /// The return type of the Python calculation. This is used to convert the Python return value
+    /// to the appropriate type for the Parameter.
     #[serde(default)]
-    pub multi: bool,
+    pub return_type: PythonReturnType,
     /// Position arguments to pass to the object during setup.
     pub args: Vec<serde_json::Value>,
     /// Keyword arguments to pass to the object during setup.
@@ -126,11 +135,7 @@ impl PythonParameter {
     pub fn add_to_model(
         &self,
         network: &mut pywr_core::network::Network,
-        schema: &crate::model::PywrNetwork,
-        domain: &ModelDomain,
-        tables: &LoadedTableCollection,
-        data_path: Option<&Path>,
-        inter_network_transfers: &[PywrMultiNetworkTransfer],
+        args: &LoadArgs,
     ) -> Result<ParameterType, SchemaError> {
         pyo3::prepare_freethreaded_python();
 
@@ -138,7 +143,7 @@ impl PythonParameter {
             let module = match &self.module {
                 PythonModule::Module(module) => PyModule::import(py, module.as_str()),
                 PythonModule::Path(original_path) => {
-                    let path = &make_path(original_path, data_path);
+                    let path = &make_path(original_path, args.data_path);
                     let code = std::fs::read_to_string(path).expect("Could not read Python code from path.");
                     let file_name = path.file_name().unwrap().to_str().unwrap();
                     let module_name = path.file_stem().unwrap().to_str().unwrap();
@@ -151,7 +156,7 @@ impl PythonParameter {
         })
         .map_err(|e: PyErr| SchemaError::PythonError(e.to_string()))?;
 
-        let args = Python::with_gil(|py| {
+        let py_args = Python::with_gil(|py| {
             PyTuple::new(py, self.args.iter().map(|arg| try_json_value_into_py(py, arg).unwrap())).into_py(py)
         });
 
@@ -169,12 +174,7 @@ impl PythonParameter {
         let metrics = match &self.metrics {
             Some(metrics) => metrics
                 .iter()
-                .map(|(k, v)| {
-                    Ok((
-                        k.to_string(),
-                        v.load(network, schema, domain, tables, data_path, inter_network_transfers)?,
-                    ))
-                })
+                .map(|(k, v)| Ok((k.to_string(), v.load(network, args)?)))
                 .collect::<Result<HashMap<_, _>, SchemaError>>()?,
             None => HashMap::new(),
         };
@@ -182,21 +182,17 @@ impl PythonParameter {
         let indices = match &self.indices {
             Some(indices) => indices
                 .iter()
-                .map(|(k, v)| {
-                    Ok((
-                        k.to_string(),
-                        v.load(network, schema, domain, tables, data_path, inter_network_transfers)?,
-                    ))
-                })
+                .map(|(k, v)| Ok((k.to_string(), v.load(network, args)?)))
                 .collect::<Result<HashMap<_, _>, SchemaError>>()?,
             None => HashMap::new(),
         };
 
-        let p = PyParameter::new(&self.meta.name, object, args, kwargs, &metrics, &indices);
-        let pt = if self.multi {
-            ParameterType::Multi(network.add_multi_value_parameter(Box::new(p))?)
-        } else {
-            ParameterType::Parameter(network.add_parameter(Box::new(p))?)
+        let p = PyParameter::new(&self.meta.name, object, py_args, kwargs, &metrics, &indices);
+
+        let pt = match self.return_type {
+            PythonReturnType::Float => ParameterType::Parameter(network.add_parameter(Box::new(p))?),
+            PythonReturnType::Int => ParameterType::Index(network.add_index_parameter(Box::new(p))?),
+            PythonReturnType::Dict => ParameterType::Multi(network.add_multi_value_parameter(Box::new(p))?),
         };
 
         Ok(pt)
@@ -206,48 +202,31 @@ impl PythonParameter {
 #[cfg(test)]
 mod tests {
     use crate::data_tables::LoadedTableCollection;
-    use crate::model::PywrNetwork;
+    use crate::model::{LoadArgs, PywrNetwork};
     use crate::parameters::python::PythonParameter;
+    use crate::timeseries::LoadedTimeseriesCollection;
     use pywr_core::models::ModelDomain;
     use pywr_core::network::Network;
     use pywr_core::test_utils::default_time_domain;
     use serde_json::json;
-    use std::fs::File;
-    use std::io::Write;
-    use tempfile::tempdir;
+    use std::path::PathBuf;
 
     #[test]
-    fn test_python_parameter() {
-        let dir = tempdir().unwrap();
-
-        let file_path = dir.path().join("my_parameter.py");
+    fn test_python_float_parameter() {
+        let mut py_fn = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        py_fn.push("src/test_models/test_parameters.py");
 
         let data = json!(
             {
-                "name": "my-custom-calculation",
+                "name": "my-float-parameter",
                 "type": "Python",
-                "path": file_path,
-                "object": "MyParameter",
+                "path": py_fn,
+                "object": "FloatParameter",
                 "args": [0, ],
                 "kwargs": {},
             }
         )
         .to_string();
-
-        let mut file = File::create(file_path).unwrap();
-        write!(
-            file,
-            r#"
-class MyParameter:
-    def __init__(self, count, *args, **kwargs):
-        self.count = 0
-
-    def calc(self, ts, si, p_values):
-        self.count += si
-        return float(self.count + ts.day)
-"#
-        )
-        .unwrap();
 
         // Init Python
         pyo3::prepare_freethreaded_python();
@@ -259,8 +238,63 @@ class MyParameter:
         let schema = PywrNetwork::default();
         let mut network = Network::default();
         let tables = LoadedTableCollection::from_schema(None, None).unwrap();
-        param
-            .add_to_model(&mut network, &schema, &domain, &tables, None, &[])
-            .unwrap();
+        let ts = LoadedTimeseriesCollection::default();
+
+        let args = LoadArgs {
+            schema: &schema,
+            data_path: None,
+            tables: &tables,
+            timeseries: &ts,
+            domain: &domain,
+            inter_network_transfers: &[],
+        };
+
+        param.add_to_model(&mut network, &args).unwrap();
+
+        assert!(network.get_parameter_by_name("my-float-parameter").is_ok());
+    }
+
+    #[test]
+    fn test_python_int_parameter() {
+        let mut py_fn = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        py_fn.push("src/test_models/test_parameters.py");
+
+        let data = json!(
+            {
+                "name": "my-int-parameter",
+                "type": "Python",
+                "path": py_fn,
+                "return_type": "int",
+                "object": "FloatParameter",
+                "args": [0, ],
+                "kwargs": {},
+            }
+        )
+        .to_string();
+
+        // Init Python
+        pyo3::prepare_freethreaded_python();
+        // Load the schema ...
+        let param: PythonParameter = serde_json::from_str(data.as_str()).unwrap();
+        // ... add it to an empty network
+        // this should trigger loading the module and extracting the class
+        let domain: ModelDomain = default_time_domain().into();
+        let schema = PywrNetwork::default();
+        let mut network = Network::default();
+        let tables = LoadedTableCollection::from_schema(None, None).unwrap();
+        let ts = LoadedTimeseriesCollection::default();
+
+        let args = LoadArgs {
+            schema: &schema,
+            data_path: None,
+            tables: &tables,
+            timeseries: &ts,
+            domain: &domain,
+            inter_network_transfers: &[],
+        };
+
+        param.add_to_model(&mut network, &args).unwrap();
+
+        assert!(network.get_index_parameter_by_name("my-int-parameter").is_ok());
     }
 }

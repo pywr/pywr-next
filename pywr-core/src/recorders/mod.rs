@@ -1,11 +1,11 @@
 mod aggregator;
 mod csv;
 mod hdf;
+mod memory;
 mod metric_set;
 mod py;
 
-pub use self::csv::CSVRecorder;
-use crate::metric::{IndexMetric, Metric};
+use crate::metric::{MetricF64, MetricUsize};
 use crate::models::ModelDomain;
 use crate::network::Network;
 use crate::scenario::ScenarioIndex;
@@ -13,8 +13,10 @@ use crate::state::State;
 use crate::timestep::Timestep;
 use crate::PywrError;
 pub use aggregator::{AggregationFrequency, AggregationFunction, Aggregator};
+pub use csv::{CsvLongFmtOutput, CsvLongFmtRecord, CsvWideFmtOutput};
 use float_cmp::{approx_eq, ApproxEq, F64Margin};
 pub use hdf::HDF5Recorder;
+pub use memory::{Aggregation, AggregationError, MemoryRecorder};
 pub use metric_set::{MetricSet, MetricSetIndex, MetricSetState};
 use ndarray::prelude::*;
 use ndarray::Array2;
@@ -83,18 +85,27 @@ pub trait Recorder: Send + Sync {
     ) -> Result<(), PywrError> {
         Ok(())
     }
-    fn finalise(&self, _internal_state: &mut Option<Box<dyn Any>>) -> Result<(), PywrError> {
+    fn finalise(
+        &self,
+        _network: &Network,
+        _metric_set_states: &[Vec<MetricSetState>],
+        _internal_state: &mut Option<Box<dyn Any>>,
+    ) -> Result<(), PywrError> {
         Ok(())
+    }
+
+    fn aggregated_value(&self, _internal_state: &Option<Box<dyn Any>>) -> Result<f64, PywrError> {
+        Err(PywrError::RecorderDoesNotSupportAggregation)
     }
 }
 
 pub struct Array2Recorder {
     meta: RecorderMeta,
-    metric: Metric,
+    metric: MetricF64,
 }
 
 impl Array2Recorder {
-    pub fn new(name: &str, metric: Metric) -> Self {
+    pub fn new(name: &str, metric: MetricF64) -> Self {
         Self {
             meta: RecorderMeta::new(name),
             metric,
@@ -144,7 +155,7 @@ impl Recorder for Array2Recorder {
 pub struct AssertionRecorder {
     meta: RecorderMeta,
     expected_values: Array2<f64>,
-    metric: Metric,
+    metric: MetricF64,
     ulps: i64,
     epsilon: f64,
 }
@@ -152,7 +163,7 @@ pub struct AssertionRecorder {
 impl AssertionRecorder {
     pub fn new(
         name: &str,
-        metric: Metric,
+        metric: MetricF64,
         expected_values: Array2<f64>,
         ulps: Option<i64>,
         epsilon: Option<f64>,
@@ -217,7 +228,7 @@ expected: `{:?}`"#,
 pub struct AssertionFnRecorder<F> {
     meta: RecorderMeta,
     expected_func: F,
-    metric: Metric,
+    metric: MetricF64,
     ulps: i64,
     epsilon: f64,
 }
@@ -226,7 +237,7 @@ impl<F> AssertionFnRecorder<F>
 where
     F: Fn(&Timestep, &ScenarioIndex) -> f64,
 {
-    pub fn new(name: &str, metric: Metric, expected_func: F, ulps: Option<i64>, epsilon: Option<f64>) -> Self {
+    pub fn new(name: &str, metric: MetricF64, expected_func: F, ulps: Option<i64>, epsilon: Option<f64>) -> Self {
         Self {
             meta: RecorderMeta::new(name),
             expected_func,
@@ -282,11 +293,11 @@ where
 pub struct IndexAssertionRecorder {
     meta: RecorderMeta,
     expected_values: Array2<usize>,
-    metric: IndexMetric,
+    metric: MetricUsize,
 }
 
 impl IndexAssertionRecorder {
-    pub fn new(name: &str, metric: IndexMetric, expected_values: Array2<usize>) -> Self {
+    pub fn new(name: &str, metric: MetricUsize, expected_values: Array2<usize>) -> Self {
         Self {
             meta: RecorderMeta::new(name),
             expected_values,
@@ -347,7 +358,7 @@ mod tests {
 
         let node_idx = model.network().get_node_index_by_name("input", None).unwrap();
 
-        let rec = Array2Recorder::new("test", Metric::NodeOutFlow(node_idx));
+        let rec = Array2Recorder::new("test", MetricF64::NodeOutFlow(node_idx));
 
         let _idx = model.network_mut().add_recorder(Box::new(rec)).unwrap();
         // Test all solvers

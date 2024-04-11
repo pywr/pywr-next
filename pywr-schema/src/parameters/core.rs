@@ -1,11 +1,9 @@
-use crate::data_tables::LoadedTableCollection;
 use crate::error::{ConversionError, SchemaError};
-use crate::model::PywrMultiNetworkTransfer;
+use crate::model::LoadArgs;
 use crate::parameters::{
     ConstantValue, DynamicFloatValue, DynamicFloatValueType, IntoV2Parameter, ParameterMeta, TryFromV1Parameter,
     TryIntoV2Parameter,
 };
-use pywr_core::models::ModelDomain;
 use pywr_core::parameters::ParameterIndex;
 use pywr_v1_schema::parameters::{
     ConstantParameter as ConstantParameterV1, DivisionParameter as DivisionParameterV1, MaxParameter as MaxParameterV1,
@@ -13,7 +11,6 @@ use pywr_v1_schema::parameters::{
     NegativeMinParameter as NegativeMinParameterV1, NegativeParameter as NegativeParameterV1,
 };
 use std::collections::HashMap;
-use std::path::Path;
 
 /// Activation function or transformation to apply to variable value.
 ///
@@ -170,9 +167,9 @@ impl ConstantParameter {
     pub fn add_to_model(
         &self,
         network: &mut pywr_core::network::Network,
-        tables: &LoadedTableCollection,
-    ) -> Result<ParameterIndex, SchemaError> {
-        let p = pywr_core::parameters::ConstantParameter::new(&self.meta.name, self.value.load(tables)?);
+        args: &LoadArgs,
+    ) -> Result<ParameterIndex<f64>, SchemaError> {
+        let p = pywr_core::parameters::ConstantParameter::new(&self.meta.name, self.value.load(args.tables)?);
         Ok(network.add_parameter(Box::new(p))?)
     }
 }
@@ -222,15 +219,9 @@ impl MaxParameter {
     pub fn add_to_model(
         &self,
         network: &mut pywr_core::network::Network,
-        schema: &crate::model::PywrNetwork,
-        domain: &ModelDomain,
-        tables: &LoadedTableCollection,
-        data_path: Option<&Path>,
-        inter_network_transfers: &[PywrMultiNetworkTransfer],
-    ) -> Result<ParameterIndex, SchemaError> {
-        let idx = self
-            .parameter
-            .load(network, schema, domain, tables, data_path, inter_network_transfers)?;
+        args: &LoadArgs,
+    ) -> Result<ParameterIndex<f64>, SchemaError> {
+        let idx = self.parameter.load(network, args)?;
         let threshold = self.threshold.unwrap_or(0.0);
 
         let p = pywr_core::parameters::MaxParameter::new(&self.meta.name, idx, threshold);
@@ -297,18 +288,10 @@ impl DivisionParameter {
     pub fn add_to_model(
         &self,
         network: &mut pywr_core::network::Network,
-        schema: &crate::model::PywrNetwork,
-        domain: &ModelDomain,
-        tables: &LoadedTableCollection,
-        data_path: Option<&Path>,
-        inter_network_transfers: &[PywrMultiNetworkTransfer],
-    ) -> Result<ParameterIndex, SchemaError> {
-        let n = self
-            .numerator
-            .load(network, schema, domain, tables, data_path, inter_network_transfers)?;
-        let d = self
-            .denominator
-            .load(network, schema, domain, tables, data_path, inter_network_transfers)?;
+        args: &LoadArgs,
+    ) -> Result<ParameterIndex<f64>, SchemaError> {
+        let n = self.numerator.load(network, args)?;
+        let d = self.denominator.load(network, args)?;
 
         let p = pywr_core::parameters::DivisionParameter::new(&self.meta.name, n, d);
         Ok(network.add_parameter(Box::new(p))?)
@@ -372,15 +355,9 @@ impl MinParameter {
     pub fn add_to_model(
         &self,
         network: &mut pywr_core::network::Network,
-        schema: &crate::model::PywrNetwork,
-        domain: &ModelDomain,
-        tables: &LoadedTableCollection,
-        data_path: Option<&Path>,
-        inter_network_transfers: &[PywrMultiNetworkTransfer],
-    ) -> Result<ParameterIndex, SchemaError> {
-        let idx = self
-            .parameter
-            .load(network, schema, domain, tables, data_path, inter_network_transfers)?;
+        args: &LoadArgs,
+    ) -> Result<ParameterIndex<f64>, SchemaError> {
+        let idx = self.parameter.load(network, args)?;
         let threshold = self.threshold.unwrap_or(0.0);
 
         let p = pywr_core::parameters::MinParameter::new(&self.meta.name, idx, threshold);
@@ -429,15 +406,9 @@ impl NegativeParameter {
     pub fn add_to_model(
         &self,
         network: &mut pywr_core::network::Network,
-        schema: &crate::model::PywrNetwork,
-        domain: &ModelDomain,
-        tables: &LoadedTableCollection,
-        data_path: Option<&Path>,
-        inter_network_transfers: &[PywrMultiNetworkTransfer],
-    ) -> Result<ParameterIndex, SchemaError> {
-        let idx = self
-            .parameter
-            .load(network, schema, domain, tables, data_path, inter_network_transfers)?;
+        args: &LoadArgs,
+    ) -> Result<ParameterIndex<f64>, SchemaError> {
+        let idx = self.parameter.load(network, args)?;
 
         let p = pywr_core::parameters::NegativeParameter::new(&self.meta.name, idx);
         Ok(network.add_parameter(Box::new(p))?)

@@ -7,7 +7,6 @@ use crate::scenario::ScenarioIndex;
 use crate::state::{ParameterState, State};
 use crate::timestep::Timestep;
 use crate::PywrError;
-use std::any::Any;
 
 pub struct ConstantParameter {
     meta: ParameterMeta,
@@ -37,11 +36,7 @@ impl ConstantParameter {
     }
 }
 
-impl Parameter for ConstantParameter {
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
-    }
-
+impl Parameter<f64> for ConstantParameter {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }

@@ -1,4 +1,4 @@
-use crate::metric::Metric;
+use crate::metric::MetricF64;
 use crate::models::{Model, ModelDomain};
 /// Utilities for unit tests.
 /// TODO move this to its own local crate ("test-utilities") as part of a workspace.
@@ -17,6 +17,7 @@ use crate::solvers::SimdIpmF64Solver;
 use crate::timestep::{TimeDomain, TimestepDuration, Timestepper};
 use crate::PywrError;
 use chrono::{Days, NaiveDate};
+use float_cmp::{approx_eq, F64Margin};
 use ndarray::{Array, Array2};
 use rand::Rng;
 use rand_distr::{Distribution, Normal};
@@ -65,7 +66,7 @@ pub fn simple_network(network: &mut Network, inflow_scenario_index: usize, num_i
     let input_node = network.get_mut_node_by_name("input", None).unwrap();
     input_node
         .set_constraint(
-            ConstraintValue::Metric(Metric::ParameterValue(inflow)),
+            ConstraintValue::Metric(MetricF64::ParameterValue(inflow)),
             Constraint::MaxFlow,
         )
         .unwrap();
@@ -77,7 +78,10 @@ pub fn simple_network(network: &mut Network, inflow_scenario_index: usize, num_i
 
     let total_demand = AggregatedParameter::new(
         "total-demand",
-        &[Metric::Constant(base_demand), Metric::ParameterValue(demand_factor)],
+        &[
+            MetricF64::Constant(base_demand),
+            MetricF64::ParameterValue(demand_factor),
+        ],
         AggFunc::Product,
     );
     let total_demand = network.add_parameter(Box::new(total_demand)).unwrap();
@@ -88,11 +92,11 @@ pub fn simple_network(network: &mut Network, inflow_scenario_index: usize, num_i
     let output_node = network.get_mut_node_by_name("output", None).unwrap();
     output_node
         .set_constraint(
-            ConstraintValue::Metric(Metric::ParameterValue(total_demand)),
+            ConstraintValue::Metric(MetricF64::ParameterValue(total_demand)),
             Constraint::MaxFlow,
         )
         .unwrap();
-    output_node.set_cost(ConstraintValue::Metric(Metric::ParameterValue(demand_cost)));
+    output_node.set_cost(ConstraintValue::Metric(MetricF64::ParameterValue(demand_cost)));
 }
 /// Create a simple test model with three nodes.
 pub fn simple_model(num_scenarios: usize) -> Model {
@@ -139,11 +143,11 @@ pub fn simple_storage_model() -> Model {
     let output_node = network.get_mut_node_by_name("output", None).unwrap();
     output_node
         .set_constraint(
-            ConstraintValue::Metric(Metric::ParameterValue(demand)),
+            ConstraintValue::Metric(MetricF64::ParameterValue(demand)),
             Constraint::MaxFlow,
         )
         .unwrap();
-    output_node.set_cost(ConstraintValue::Metric(Metric::ParameterValue(demand_cost)));
+    output_node.set_cost(ConstraintValue::Metric(MetricF64::ParameterValue(demand_cost)));
 
     Model::new(default_time_domain().into(), network)
 }
@@ -157,7 +161,7 @@ pub fn simple_storage_model() -> Model {
 /// See [`AssertionRecorder`] for more information.
 pub fn run_and_assert_parameter(
     model: &mut Model,
-    parameter: Box<dyn Parameter>,
+    parameter: Box<dyn Parameter<f64>>,
     expected_values: Array2<f64>,
     ulps: Option<i64>,
     epsilon: Option<f64>,
@@ -172,7 +176,13 @@ pub fn run_and_assert_parameter(
         .checked_add_days(Days::new(expected_values.nrows() as u64 - 1))
         .unwrap();
 
-    let rec = AssertionRecorder::new("assert", Metric::ParameterValue(p_idx), expected_values, ulps, epsilon);
+    let rec = AssertionRecorder::new(
+        "assert",
+        MetricF64::ParameterValue(p_idx),
+        expected_values,
+        ulps,
+        epsilon,
+    );
 
     model.network_mut().add_recorder(Box::new(rec)).unwrap();
     run_all_solvers(model)
@@ -244,7 +254,7 @@ fn make_simple_system<R: Rng>(
     network.set_node_max_flow(
         "input",
         Some(suffix),
-        ConstraintValue::Metric(Metric::ParameterValue(idx)),
+        ConstraintValue::Metric(MetricF64::ParameterValue(idx)),
     )?;
 
     let input_cost = rng.gen_range(-20.0..-5.00);
@@ -374,5 +384,22 @@ mod tests {
         model
             .run_multi_scenario::<SimdIpmF64Solver<4>>(&settings)
             .expect("Failed to run model!");
+    }
+}
+
+/// Compare two arrays of f64
+pub fn assert_approx_array_eq(calculated_values: &[f64], expected_values: &[f64]) {
+    let margins = F64Margin {
+        epsilon: 2.0,
+        ulps: (f64::EPSILON * 2.0) as i64,
+    };
+    for (i, (calculated, expected)) in calculated_values.iter().zip(expected_values).enumerate() {
+        if !approx_eq!(f64, *calculated, *expected, margins) {
+            panic!(
+                r#"assertion failed on item #{i:?}
+                    actual: `{calculated:?}`,
+                    expected: `{expected:?}`"#,
+            )
+        }
     }
 }

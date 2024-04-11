@@ -3,7 +3,7 @@ use crate::edge::{Edge, EdgeIndex};
 use crate::models::MultiNetworkTransferIndex;
 use crate::network::Network;
 use crate::node::{Node, NodeIndex};
-use crate::parameters::{IndexParameterIndex, MultiValueParameterIndex, ParameterIndex};
+use crate::parameters::ParameterIndex;
 use crate::timestep::Timestep;
 use crate::virtual_storage::VirtualStorageIndex;
 use crate::PywrError;
@@ -271,27 +271,30 @@ impl ParameterStates {
         }
     }
 
-    pub fn get_value_state(&self, index: ParameterIndex) -> Option<&Option<Box<dyn ParameterState>>> {
+    pub fn get_value_state(&self, index: ParameterIndex<f64>) -> Option<&Option<Box<dyn ParameterState>>> {
         self.values.get(*index.deref())
     }
 
-    pub fn get_mut_value_state(&mut self, index: ParameterIndex) -> Option<&mut Option<Box<dyn ParameterState>>> {
+    pub fn get_mut_value_state(&mut self, index: ParameterIndex<f64>) -> Option<&mut Option<Box<dyn ParameterState>>> {
         self.values.get_mut(*index.deref())
     }
 
-    pub fn get_mut_index_state(&mut self, index: IndexParameterIndex) -> Option<&mut Option<Box<dyn ParameterState>>> {
+    pub fn get_mut_index_state(
+        &mut self,
+        index: ParameterIndex<usize>,
+    ) -> Option<&mut Option<Box<dyn ParameterState>>> {
         self.indices.get_mut(*index.deref())
     }
 
     pub fn get_mut_multi_state(
         &mut self,
-        index: MultiValueParameterIndex,
+        index: ParameterIndex<MultiValue>,
     ) -> Option<&mut Option<Box<dyn ParameterState>>> {
         self.multi.get_mut(*index.deref())
     }
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, PartialEq)]
 pub struct MultiValue {
     values: HashMap<String, f64>,
     indices: HashMap<String, usize>,
@@ -328,14 +331,14 @@ impl ParameterValues {
         }
     }
 
-    fn get_value(&self, idx: ParameterIndex) -> Result<f64, PywrError> {
+    fn get_value(&self, idx: ParameterIndex<f64>) -> Result<f64, PywrError> {
         match self.values.get(*idx.deref()) {
             Some(s) => Ok(*s),
             None => Err(PywrError::ParameterIndexNotFound(idx)),
         }
     }
 
-    fn set_value(&mut self, idx: ParameterIndex, value: f64) -> Result<(), PywrError> {
+    fn set_value(&mut self, idx: ParameterIndex<f64>, value: f64) -> Result<(), PywrError> {
         match self.values.get_mut(*idx.deref()) {
             Some(s) => {
                 *s = value;
@@ -345,14 +348,14 @@ impl ParameterValues {
         }
     }
 
-    fn get_index(&self, idx: IndexParameterIndex) -> Result<usize, PywrError> {
+    fn get_index(&self, idx: ParameterIndex<usize>) -> Result<usize, PywrError> {
         match self.indices.get(*idx.deref()) {
             Some(s) => Ok(*s),
             None => Err(PywrError::IndexParameterIndexNotFound(idx)),
         }
     }
 
-    fn set_index(&mut self, idx: IndexParameterIndex, value: usize) -> Result<(), PywrError> {
+    fn set_index(&mut self, idx: ParameterIndex<usize>, value: usize) -> Result<(), PywrError> {
         match self.indices.get_mut(*idx.deref()) {
             Some(s) => {
                 *s = value;
@@ -362,7 +365,7 @@ impl ParameterValues {
         }
     }
 
-    fn get_multi_value(&self, idx: MultiValueParameterIndex, key: &str) -> Result<f64, PywrError> {
+    fn get_multi_value(&self, idx: ParameterIndex<MultiValue>, key: &str) -> Result<f64, PywrError> {
         match self.multi_values.get(*idx.deref()) {
             Some(s) => match s.get_value(key) {
                 Some(v) => Ok(*v),
@@ -372,7 +375,7 @@ impl ParameterValues {
         }
     }
 
-    fn set_multi_value(&mut self, idx: MultiValueParameterIndex, value: MultiValue) -> Result<(), PywrError> {
+    fn set_multi_value(&mut self, idx: ParameterIndex<MultiValue>, value: MultiValue) -> Result<(), PywrError> {
         match self.multi_values.get_mut(*idx.deref()) {
             Some(s) => {
                 *s = value;
@@ -382,7 +385,7 @@ impl ParameterValues {
         }
     }
 
-    fn get_multi_index(&self, idx: MultiValueParameterIndex, key: &str) -> Result<usize, PywrError> {
+    fn get_multi_index(&self, idx: ParameterIndex<MultiValue>, key: &str) -> Result<usize, PywrError> {
         match self.multi_values.get(*idx.deref()) {
             Some(s) => match s.get_index(key) {
                 Some(v) => Ok(*v),
@@ -611,7 +614,15 @@ impl NetworkState {
     }
 }
 
-/// State of the model simulation
+/// State of the model simulation.
+///
+/// This struct contains the state of the model simulation at a given point in time. The state
+/// contains the current state of the network, the values of the parameters, the values of the
+/// derived metrics, and the values of the inter-network transfers.
+///
+/// This struct can be constructed using the [`StateBuilder`] and then updated using the various
+/// methods to set the values of the parameters, derived metrics, and inter-network transfers.
+///
 #[derive(Debug, Clone)]
 pub struct State {
     network: NetworkState,
@@ -621,24 +632,6 @@ pub struct State {
 }
 
 impl State {
-    pub fn new(
-        initial_node_states: Vec<NodeState>,
-        num_edges: usize,
-        initial_virtual_storage_states: Vec<VirtualStorageState>,
-        num_parameter_values: usize,
-        num_parameter_indices: usize,
-        num_multi_parameters: usize,
-        num_derived_metrics: usize,
-        num_inter_network_values: usize,
-    ) -> Self {
-        Self {
-            network: NetworkState::new(initial_node_states, num_edges, initial_virtual_storage_states),
-            parameters: ParameterValues::new(num_parameter_values, num_parameter_indices, num_multi_parameters),
-            derived_metrics: vec![0.0; num_derived_metrics],
-            inter_network_values: vec![0.0; num_inter_network_values],
-        }
-    }
-
     pub fn get_network_state(&self) -> &NetworkState {
         &self.network
     }
@@ -647,35 +640,35 @@ impl State {
         &mut self.network
     }
 
-    pub fn get_parameter_value(&self, idx: ParameterIndex) -> Result<f64, PywrError> {
+    pub fn get_parameter_value(&self, idx: ParameterIndex<f64>) -> Result<f64, PywrError> {
         self.parameters.get_value(idx)
     }
 
-    pub fn set_parameter_value(&mut self, idx: ParameterIndex, value: f64) -> Result<(), PywrError> {
+    pub fn set_parameter_value(&mut self, idx: ParameterIndex<f64>, value: f64) -> Result<(), PywrError> {
         self.parameters.set_value(idx, value)
     }
 
-    pub fn get_parameter_index(&self, idx: IndexParameterIndex) -> Result<usize, PywrError> {
+    pub fn get_parameter_index(&self, idx: ParameterIndex<usize>) -> Result<usize, PywrError> {
         self.parameters.get_index(idx)
     }
 
-    pub fn set_parameter_index(&mut self, idx: IndexParameterIndex, value: usize) -> Result<(), PywrError> {
+    pub fn set_parameter_index(&mut self, idx: ParameterIndex<usize>, value: usize) -> Result<(), PywrError> {
         self.parameters.set_index(idx, value)
     }
 
-    pub fn get_multi_parameter_value(&self, idx: MultiValueParameterIndex, key: &str) -> Result<f64, PywrError> {
+    pub fn get_multi_parameter_value(&self, idx: ParameterIndex<MultiValue>, key: &str) -> Result<f64, PywrError> {
         self.parameters.get_multi_value(idx, key)
     }
 
     pub fn set_multi_parameter_value(
         &mut self,
-        idx: MultiValueParameterIndex,
+        idx: ParameterIndex<MultiValue>,
         value: MultiValue,
     ) -> Result<(), PywrError> {
         self.parameters.set_multi_value(idx, value)
     }
 
-    pub fn get_multi_parameter_index(&self, idx: MultiValueParameterIndex, key: &str) -> Result<usize, PywrError> {
+    pub fn get_multi_parameter_index(&self, idx: ParameterIndex<MultiValue>, key: &str) -> Result<usize, PywrError> {
         self.parameters.get_multi_index(idx, key)
     }
 
@@ -743,6 +736,98 @@ impl State {
                 Ok(())
             }
             None => Err(PywrError::MultiNetworkTransferIndexNotFound(idx)),
+        }
+    }
+}
+
+/// Builder for the [`State`] struct.
+///
+/// This builder is used to create a new state with the desired initial values. The builder
+/// allows for the creation of a state with a specific number of nodes and edges, and optionally
+/// with initial virtual storage, parameter, derived metric, and inter-network transfer states.
+pub struct StateBuilder {
+    initial_node_states: Vec<NodeState>,
+    num_edges: usize,
+    initial_virtual_storage_states: Option<Vec<VirtualStorageState>>,
+    num_value_parameters: Option<usize>,
+    num_index_parameters: Option<usize>,
+    num_multi_parameters: Option<usize>,
+    num_derived_metrics: Option<usize>,
+    num_inter_network_values: Option<usize>,
+}
+
+impl StateBuilder {
+    /// Create a new state builder with the desired initial node states and number of edges.
+    ///
+    /// # Arguments
+    ///
+    /// * `initial_node_states` - The initial states for the nodes in the network.
+    /// * `num_edges` - The number of edges in the network.
+    pub fn new(initial_node_states: Vec<NodeState>, num_edges: usize) -> Self {
+        Self {
+            initial_node_states,
+            num_edges,
+            initial_virtual_storage_states: None,
+            num_value_parameters: None,
+            num_index_parameters: None,
+            num_multi_parameters: None,
+            num_derived_metrics: None,
+            num_inter_network_values: None,
+        }
+    }
+
+    /// Add initial virtual storage states to the builder.
+    pub fn with_virtual_storage_states(mut self, initial_virtual_storage_states: Vec<VirtualStorageState>) -> Self {
+        self.initial_virtual_storage_states = Some(initial_virtual_storage_states);
+        self
+    }
+
+    /// Add the number of value parameters to the builder.
+    pub fn with_value_parameters(mut self, num_value_parameters: usize) -> Self {
+        self.num_value_parameters = Some(num_value_parameters);
+        self
+    }
+
+    /// Add the number of index parameters to the builder.
+    pub fn with_index_parameters(mut self, num_index_parameters: usize) -> Self {
+        self.num_index_parameters = Some(num_index_parameters);
+
+        self
+    }
+
+    /// Add the number of multivalued parameters to the builder.
+    pub fn with_multi_parameters(mut self, num_multi_parameters: usize) -> Self {
+        self.num_multi_parameters = Some(num_multi_parameters);
+        self
+    }
+
+    /// Add the number of derived metrics to the builder.
+    pub fn with_derived_metrics(mut self, num_derived_metrics: usize) -> Self {
+        self.num_derived_metrics = Some(num_derived_metrics);
+        self
+    }
+
+    /// Add the number of inter-network transfer values to the builder.
+    pub fn with_inter_network_transfers(mut self, num_inter_network_values: usize) -> Self {
+        self.num_inter_network_values = Some(num_inter_network_values);
+        self
+    }
+
+    /// Build the [`State`] from the builder.
+    pub fn build(self) -> State {
+        State {
+            network: NetworkState::new(
+                self.initial_node_states,
+                self.num_edges,
+                self.initial_virtual_storage_states.unwrap_or_default(),
+            ),
+            parameters: ParameterValues::new(
+                self.num_value_parameters.unwrap_or(0),
+                self.num_index_parameters.unwrap_or(0),
+                self.num_multi_parameters.unwrap_or(0),
+            ),
+            derived_metrics: vec![0.0; self.num_derived_metrics.unwrap_or(0)],
+            inter_network_values: vec![0.0; self.num_inter_network_values.unwrap_or(0)],
         }
     }
 }

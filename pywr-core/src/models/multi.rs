@@ -1,4 +1,4 @@
-use crate::metric::Metric;
+use crate::metric::MetricF64;
 use crate::models::ModelDomain;
 use crate::network::{Network, NetworkState, RunTimings};
 use crate::scenario::ScenarioIndex;
@@ -53,7 +53,7 @@ struct MultiNetworkTransfer {
     /// The model to get the value from.
     from_model_idx: OtherNetworkIndex,
     /// The metric to get the value from.
-    from_metric: Metric,
+    from_metric: MetricF64,
     /// Optional initial value to use on the first time-step
     initial_value: Option<f64>,
 }
@@ -130,7 +130,7 @@ impl MultiNetworkModel {
     pub fn add_inter_network_transfer(
         &mut self,
         from_network_idx: usize,
-        from_metric: Metric,
+        from_metric: MetricF64,
         to_network_idx: usize,
         initial_value: Option<f64>,
     ) {
@@ -298,8 +298,9 @@ impl MultiNetworkModel {
         }
 
         for (idx, entry) in self.networks.iter().enumerate() {
+            let sub_model_ms_states = state.states.get_mut(idx).unwrap().all_metric_set_internal_states_mut();
             let sub_model_recorder_states = state.recorder_states.get_mut(idx).unwrap();
-            entry.network.finalise(sub_model_recorder_states)?;
+            entry.network.finalise(sub_model_ms_states, sub_model_recorder_states)?;
         }
         // End the global timer and print the run statistics
         timings.finish(count);

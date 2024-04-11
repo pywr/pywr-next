@@ -1,11 +1,12 @@
 use crate::error::{ConversionError, SchemaError};
 use crate::nodes::{NodeAttribute, NodeMeta};
 use crate::parameters::DynamicFloatValue;
-use pywr_core::metric::Metric;
+use pywr_core::metric::MetricF64;
+use pywr_schema_macros::PywrNode;
 use pywr_v1_schema::nodes::LinkNode as LinkNodeV1;
 use std::collections::HashMap;
 
-#[derive(serde::Deserialize, serde::Serialize, Clone, Default)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, PywrNode)]
 pub struct RiverNode {
     #[serde(flatten)]
     pub meta: NodeMeta,
@@ -13,10 +14,6 @@ pub struct RiverNode {
 
 impl RiverNode {
     const DEFAULT_ATTRIBUTE: NodeAttribute = NodeAttribute::Outflow;
-
-    pub fn parameters(&self) -> HashMap<&str, &DynamicFloatValue> {
-        HashMap::new()
-    }
 
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
         network.add_link_node(self.meta.name.as_str(), None)?;
@@ -34,15 +31,15 @@ impl RiverNode {
         &self,
         network: &pywr_core::network::Network,
         attribute: Option<NodeAttribute>,
-    ) -> Result<Metric, SchemaError> {
+    ) -> Result<MetricF64, SchemaError> {
         // Use the default attribute if none is specified
         let attr = attribute.unwrap_or(Self::DEFAULT_ATTRIBUTE);
 
         let idx = network.get_node_index_by_name(self.meta.name.as_str(), None)?;
 
         let metric = match attr {
-            NodeAttribute::Outflow => Metric::NodeOutFlow(idx),
-            NodeAttribute::Inflow => Metric::NodeInFlow(idx),
+            NodeAttribute::Outflow => MetricF64::NodeOutFlow(idx),
+            NodeAttribute::Inflow => MetricF64::NodeInFlow(idx),
             _ => {
                 return Err(SchemaError::NodeAttributeNotSupported {
                     ty: "RiverNode".to_string(),

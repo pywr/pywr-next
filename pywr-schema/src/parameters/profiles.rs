@@ -1,13 +1,14 @@
-use crate::data_tables::LoadedTableCollection;
 use crate::error::{ConversionError, SchemaError};
+use crate::model::LoadArgs;
 use crate::parameters::{
     ConstantFloatVec, ConstantValue, DynamicFloatValueType, IntoV2Parameter, ParameterMeta, TryFromV1Parameter,
 };
-use pywr_core::parameters::ParameterIndex;
+use pywr_core::parameters::{ParameterIndex, WeeklyProfileError, WeeklyProfileValues};
 use pywr_v1_schema::parameters::{
     DailyProfileParameter as DailyProfileParameterV1, MonthInterpDay as MonthInterpDayV1,
     MonthlyProfileParameter as MonthlyProfileParameterV1, RbfProfileParameter as RbfProfileParameterV1,
     UniformDrawdownProfileParameter as UniformDrawdownProfileParameterV1,
+    WeeklyProfileParameter as WeeklyProfileParameterV1,
 };
 use std::collections::HashMap;
 
@@ -29,9 +30,9 @@ impl DailyProfileParameter {
     pub fn add_to_model(
         &self,
         network: &mut pywr_core::network::Network,
-        tables: &LoadedTableCollection,
-    ) -> Result<ParameterIndex, SchemaError> {
-        let values = &self.values.load(tables)?[..366];
+        args: &LoadArgs,
+    ) -> Result<ParameterIndex<f64>, SchemaError> {
+        let values = &self.values.load(args.tables)?[..366];
         let p = pywr_core::parameters::DailyProfileParameter::new(&self.meta.name, values.try_into().expect(""));
         Ok(network.add_parameter(Box::new(p))?)
     }
@@ -99,9 +100,9 @@ impl MonthlyProfileParameter {
     pub fn add_to_model(
         &self,
         network: &mut pywr_core::network::Network,
-        tables: &LoadedTableCollection,
-    ) -> Result<ParameterIndex, SchemaError> {
-        let values = &self.values.load(tables)?[..12];
+        args: &LoadArgs,
+    ) -> Result<ParameterIndex<f64>, SchemaError> {
+        let values = &self.values.load(args.tables)?[..12];
         let p = pywr_core::parameters::MonthlyProfileParameter::new(
             &self.meta.name,
             values.try_into().expect(""),
@@ -173,18 +174,18 @@ impl UniformDrawdownProfileParameter {
     pub fn add_to_model(
         &self,
         network: &mut pywr_core::network::Network,
-        tables: &LoadedTableCollection,
-    ) -> Result<ParameterIndex, SchemaError> {
+        args: &LoadArgs,
+    ) -> Result<ParameterIndex<f64>, SchemaError> {
         let reset_day = match &self.reset_day {
-            Some(v) => v.load(tables)? as u32,
+            Some(v) => v.load(args.tables)? as u32,
             None => 1,
         };
         let reset_month = match &self.reset_month {
-            Some(v) => v.load(tables)? as u32,
+            Some(v) => v.load(args.tables)? as u32,
             None => 1,
         };
         let residual_days = match &self.residual_days {
-            Some(v) => v.load(tables)? as u8,
+            Some(v) => v.load(args.tables)? as u8,
             None => 0,
         };
 
@@ -362,7 +363,7 @@ impl RbfProfileParameter {
         HashMap::new()
     }
 
-    pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<ParameterIndex, SchemaError> {
+    pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<ParameterIndex<f64>, SchemaError> {
         let function = self.function.into_core_rbf(&self.points)?;
 
         let p = pywr_core::parameters::RbfProfileParameter::new(&self.meta.name, self.points.clone(), function);
@@ -444,6 +445,151 @@ impl TryFromV1Parameter<RbfProfileParameterV1> for RbfProfileParameter {
 
         let p = Self { meta, points, function };
 
+        Ok(p)
+    }
+}
+
+#[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone)]
+pub enum WeeklyInterpDay {
+    First,
+    Last,
+}
+
+impl From<WeeklyInterpDay> for pywr_core::parameters::WeeklyInterpDay {
+    fn from(value: WeeklyInterpDay) -> Self {
+        match value {
+            WeeklyInterpDay::First => Self::First,
+            WeeklyInterpDay::Last => Self::Last,
+        }
+    }
+}
+
+/// A parameter to handle a weekly profile of 52 or 53 weeks.
+///
+/// # Arguments
+///
+/// * `values` - The weekly values; this can be an array of 52 or 53 values. With 52 items,
+///     the value for the 53<sup>rd</sup> week (day 364 - 29<sup>th</sup> Dec or 30<sup>th</sup>
+///     Dec for a leap year) is copied from week 52<sup>nd</sup>.
+/// * `interp_day` - This is an optional field to control the parameter interpolation. When this
+///     is not provided, the profile is piecewise. When this equals "First" or "Last", the values
+///     are linearly interpolated in each week and the string specifies whether the given values are
+///     the first or last day of the week. See the examples below for more information.
+///
+/// ## Interpolation notes
+/// When the profile is interpolated, the following assumptions are made for a 52-week profile due to the missing
+/// values on the 53<sup>rd</sup> week:
+///  - when `interp_day` is First, the upper boundary in the 52<sup>nd</sup> and 53<sup>rd</sup> week is the
+///    same (i.e. the value on 1<sup>st</sup> January)
+///  - when `interp_day` is Last the 1<sup>st</sup> and last week will share the same lower bound (i.e. the
+///    value on the last week).
+///
+/// This does apply to a 53-week profile.
+///
+/// # Examples
+/// ## Without interpolation
+/// This defines a piece-wise weekly profile. Each day of the same week has the same value:
+/// ```json
+/// {
+///     "type": "WeeklyProfile",
+///     "values": [0.4, 4, ... , 12]
+/// }
+/// ```
+/// In the example above, the parameter returns `0.4` from 1<sup>st</sup> to 6<sup>th</sup> January
+/// for week 1, `4` for the week 2 (7<sup>st</sup> to 13<sup>th</sup>) and so on.
+///
+/// ## Interpolation
+/// ### interp_day = "First"
+/// ```json
+/// {
+///     "type": "WeeklyProfile",
+///     "values": [0.4, 4, 9, ... , 10, 12],
+///     "interp_day": "First"
+/// }
+/// ```
+/// This defines an interpolated profile where the values in the 1<sup>st</sup> week are derived by
+/// linearly interpolating between `0.4` and `4`, in the 2<sup>nd</sup> week between `4` and `9`.
+/// The values in the last week are interpolated between `12` and `0.4` (i.e the value on 1<sup>st</sup>
+/// January).
+///
+/// ### interp_day = "Last"
+/// ```json
+/// {
+///     "type": "WeeklyProfile",
+///     "values": [0.4, 4, 9, ... , 10, 12],
+///     "interp_day": "Last"
+/// }
+/// ```
+/// This defines an interpolated profile where the values in the 1<sup>st</sup> week are derived by
+/// linearly interpolating between `12` and `0.4`, in the 2<sup>nd</sup> week between `0.4` and `4`.
+/// The values in the last week are interpolated between `10` and `12` (i.e the value on 31<sup>st</sup>
+/// December).
+///
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+pub struct WeeklyProfileParameter {
+    #[serde(flatten)]
+    pub meta: ParameterMeta,
+    pub values: ConstantFloatVec,
+    pub interp_day: Option<WeeklyInterpDay>,
+}
+
+impl WeeklyProfileParameter {
+    pub fn node_references(&self) -> HashMap<&str, &str> {
+        HashMap::new()
+    }
+    pub fn parameters(&self) -> HashMap<&str, DynamicFloatValueType> {
+        HashMap::new()
+    }
+
+    pub fn add_to_model(
+        &self,
+        network: &mut pywr_core::network::Network,
+        args: &LoadArgs,
+    ) -> Result<ParameterIndex<f64>, SchemaError> {
+        let p = pywr_core::parameters::WeeklyProfileParameter::new(
+            &self.meta.name,
+            WeeklyProfileValues::try_from(self.values.load(args.tables)?.as_slice()).map_err(
+                |err: WeeklyProfileError| SchemaError::LoadParameter {
+                    name: self.meta.name.to_string(),
+                    error: err.to_string(),
+                },
+            )?,
+            self.interp_day.map(|id| id.into()),
+        );
+        Ok(network.add_parameter(Box::new(p))?)
+    }
+}
+
+impl TryFromV1Parameter<WeeklyProfileParameterV1> for WeeklyProfileParameter {
+    type Error = ConversionError;
+
+    fn try_from_v1_parameter(
+        v1: WeeklyProfileParameterV1,
+        parent_node: Option<&str>,
+        unnamed_count: &mut usize,
+    ) -> Result<Self, Self::Error> {
+        let meta: ParameterMeta = v1.meta.into_v2_parameter(parent_node, unnamed_count);
+
+        let values: ConstantFloatVec = if let Some(values) = v1.values {
+            // pywr v1 only accept a 52-week profile
+            ConstantFloatVec::Literal(values)
+        } else if let Some(external) = v1.external {
+            ConstantFloatVec::External(external.try_into()?)
+        } else if let Some(table_ref) = v1.table_ref {
+            ConstantFloatVec::Table(table_ref.try_into()?)
+        } else {
+            return Err(ConversionError::MissingAttribute {
+                name: meta.name,
+                attrs: vec!["values".to_string(), "table".to_string(), "url".to_string()],
+            });
+        };
+
+        // pywr 1 does not support interpolation
+        let p = Self {
+            meta,
+            values,
+            interp_day: None,
+        };
         Ok(p)
     }
 }

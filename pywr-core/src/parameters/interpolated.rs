@@ -1,4 +1,4 @@
-use crate::metric::Metric;
+use crate::metric::MetricF64;
 use crate::network::Network;
 use crate::parameters::interpolate::linear_interpolation;
 use crate::parameters::{Parameter, ParameterMeta};
@@ -6,18 +6,17 @@ use crate::scenario::ScenarioIndex;
 use crate::state::{ParameterState, State};
 use crate::timestep::Timestep;
 use crate::PywrError;
-use std::any::Any;
 
 /// A parameter that interpolates a value to a function with given discrete data points.
 pub struct InterpolatedParameter {
     meta: ParameterMeta,
-    x: Metric,
-    points: Vec<(Metric, Metric)>,
+    x: MetricF64,
+    points: Vec<(MetricF64, MetricF64)>,
     error_on_bounds: bool,
 }
 
 impl InterpolatedParameter {
-    pub fn new(name: &str, x: Metric, points: Vec<(Metric, Metric)>, error_on_bounds: bool) -> Self {
+    pub fn new(name: &str, x: MetricF64, points: Vec<(MetricF64, MetricF64)>, error_on_bounds: bool) -> Self {
         Self {
             meta: ParameterMeta::new(name),
             x,
@@ -27,10 +26,7 @@ impl InterpolatedParameter {
     }
 }
 
-impl Parameter for InterpolatedParameter {
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
-    }
+impl Parameter<f64> for InterpolatedParameter {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }

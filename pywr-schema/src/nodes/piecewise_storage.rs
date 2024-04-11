@@ -1,16 +1,15 @@
-use crate::data_tables::LoadedTableCollection;
 use crate::error::SchemaError;
-use crate::model::PywrMultiNetworkTransfer;
+use crate::model::LoadArgs;
 use crate::nodes::{NodeAttribute, NodeMeta};
 use crate::parameters::DynamicFloatValue;
 use pywr_core::derived_metric::DerivedMetric;
-use pywr_core::metric::Metric;
-use pywr_core::models::ModelDomain;
+use pywr_core::metric::MetricF64;
 use pywr_core::node::{ConstraintValue, StorageInitialVolume};
 use pywr_core::parameters::VolumeBetweenControlCurvesParameter;
-use std::path::Path;
+use pywr_schema_macros::PywrNode;
+use std::collections::HashMap;
 
-#[derive(serde::Deserialize, serde::Serialize, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Debug)]
 pub struct PiecewiseStore {
     pub control_curve: DynamicFloatValue,
     pub cost: Option<DynamicFloatValue>,
@@ -42,7 +41,7 @@ pub struct PiecewiseStore {
 /// ```
 ///
 )]
-#[derive(serde::Deserialize, serde::Serialize, Clone, Default)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, PywrNode)]
 pub struct PiecewiseStorageNode {
     #[serde(flatten)]
     pub meta: NodeMeta,
@@ -66,19 +65,9 @@ impl PiecewiseStorageNode {
         Some("agg-store")
     }
 
-    pub fn add_to_model(
-        &self,
-        network: &mut pywr_core::network::Network,
-        schema: &crate::model::PywrNetwork,
-        domain: &ModelDomain,
-        tables: &LoadedTableCollection,
-        data_path: Option<&Path>,
-        inter_network_transfers: &[PywrMultiNetworkTransfer],
-    ) -> Result<(), SchemaError> {
+    pub fn add_to_model(&self, network: &mut pywr_core::network::Network, args: &LoadArgs) -> Result<(), SchemaError> {
         // These are the min and max volume of the overall node
-        let max_volume = self
-            .max_volume
-            .load(network, schema, domain, tables, data_path, inter_network_transfers)?;
+        let max_volume = self.max_volume.load(network, args)?;
 
         let mut store_node_indices = Vec::new();
 
@@ -87,21 +76,12 @@ impl PiecewiseStorageNode {
             // The volume of this step is the proportion between the last control curve
             // (or zero if first) and this control curve.
             let lower = if i > 0 {
-                Some(self.steps[i - 1].control_curve.load(
-                    network,
-                    schema,
-                    domain,
-                    tables,
-                    data_path,
-                    inter_network_transfers,
-                )?)
+                Some(self.steps[i - 1].control_curve.load(network, args)?)
             } else {
                 None
             };
 
-            let upper = step
-                .control_curve
-                .load(network, schema, domain, tables, data_path, inter_network_transfers)?;
+            let upper = step.control_curve.load(network, args)?;
 
             let max_volume_parameter = VolumeBetweenControlCurvesParameter::new(
                 format!("{}-{}-max-volume", self.meta.name, Self::step_sub_name(i).unwrap()).as_str(),
@@ -110,7 +90,7 @@ impl PiecewiseStorageNode {
                 lower,
             );
             let max_volume_parameter_idx = network.add_parameter(Box::new(max_volume_parameter))?;
-            let max_volume = ConstraintValue::Metric(Metric::ParameterValue(max_volume_parameter_idx));
+            let max_volume = ConstraintValue::Metric(MetricF64::ParameterValue(max_volume_parameter_idx));
 
             // Each store has min volume of zero
             let min_volume = ConstraintValue::Scalar(0.0);
@@ -136,12 +116,7 @@ impl PiecewiseStorageNode {
 
         // The volume of this store the remain proportion above the last control curve
         let lower = match self.steps.last() {
-            Some(step) => {
-                Some(
-                    step.control_curve
-                        .load(network, schema, domain, tables, data_path, inter_network_transfers)?,
-                )
-            }
+            Some(step) => Some(step.control_curve.load(network, args)?),
             None => None,
         };
 
@@ -159,7 +134,7 @@ impl PiecewiseStorageNode {
             lower,
         );
         let max_volume_parameter_idx = network.add_parameter(Box::new(max_volume_parameter))?;
-        let max_volume = ConstraintValue::Metric(Metric::ParameterValue(max_volume_parameter_idx));
+        let max_volume = ConstraintValue::Metric(MetricF64::ParameterValue(max_volume_parameter_idx));
 
         // Each store has min volume of zero
         let min_volume = ConstraintValue::Scalar(0.0);
@@ -192,17 +167,13 @@ impl PiecewiseStorageNode {
     pub fn set_constraints(
         &self,
         network: &mut pywr_core::network::Network,
-        schema: &crate::model::PywrNetwork,
-        domain: &ModelDomain,
-        tables: &LoadedTableCollection,
-        data_path: Option<&Path>,
-        inter_network_transfers: &[PywrMultiNetworkTransfer],
+        args: &LoadArgs,
     ) -> Result<(), SchemaError> {
         for (i, step) in self.steps.iter().enumerate() {
             let sub_name = Self::step_sub_name(i);
 
             if let Some(cost) = &step.cost {
-                let value = cost.load(network, schema, domain, tables, data_path, inter_network_transfers)?;
+                let value = cost.load(network, args)?;
                 network.set_node_cost(self.meta.name.as_str(), sub_name.as_deref(), value.into())?;
             }
         }
@@ -221,18 +192,18 @@ impl PiecewiseStorageNode {
         &self,
         network: &mut pywr_core::network::Network,
         attribute: Option<NodeAttribute>,
-    ) -> Result<Metric, SchemaError> {
+    ) -> Result<MetricF64, SchemaError> {
         // Use the default attribute if none is specified
         let attr = attribute.unwrap_or(Self::DEFAULT_ATTRIBUTE);
 
         let idx = network.get_aggregated_storage_node_index_by_name(self.meta.name.as_str(), Self::agg_sub_name())?;
 
         let metric = match attr {
-            NodeAttribute::Volume => Metric::AggregatedNodeVolume(idx),
+            NodeAttribute::Volume => MetricF64::AggregatedNodeVolume(idx),
             NodeAttribute::ProportionalVolume => {
                 let dm = DerivedMetric::AggregatedNodeProportionalVolume(idx);
                 let derived_metric_idx = network.add_derived_metric(dm);
-                Metric::DerivedMetric(derived_metric_idx)
+                MetricF64::DerivedMetric(derived_metric_idx)
             }
             _ => {
                 return Err(SchemaError::NodeAttributeNotSupported {
@@ -252,7 +223,7 @@ mod tests {
     use crate::model::PywrModel;
     use crate::nodes::PiecewiseStorageNode;
     use ndarray::{concatenate, Array, Array2, Axis};
-    use pywr_core::metric::{IndexMetric, Metric};
+    use pywr_core::metric::{MetricF64, MetricUsize};
     use pywr_core::recorders::{AssertionRecorder, IndexAssertionRecorder};
     use pywr_core::test_utils::run_all_solvers;
 
@@ -295,7 +266,7 @@ mod tests {
 
         let recorder = AssertionRecorder::new(
             "storage1-volume",
-            Metric::AggregatedNodeVolume(idx),
+            MetricF64::AggregatedNodeVolume(idx),
             expected,
             None,
             None,
@@ -359,7 +330,7 @@ mod tests {
 
         let recorder = AssertionRecorder::new(
             "storage1-volume",
-            Metric::AggregatedNodeVolume(idx),
+            MetricF64::AggregatedNodeVolume(idx),
             expected_volume,
             None,
             None,
@@ -372,7 +343,7 @@ mod tests {
 
         let recorder = IndexAssertionRecorder::new(
             "storage1-drought-index",
-            IndexMetric::IndexParameterValue(idx),
+            MetricUsize::IndexParameterValue(idx),
             expected_drought_index,
         );
         network.add_recorder(Box::new(recorder)).unwrap();

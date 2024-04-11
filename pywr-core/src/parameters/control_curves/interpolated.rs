@@ -1,4 +1,4 @@
-use crate::metric::Metric;
+use crate::metric::MetricF64;
 use crate::network::Network;
 use crate::parameters::interpolate::interpolate;
 use crate::parameters::{Parameter, ParameterMeta};
@@ -6,17 +6,16 @@ use crate::scenario::ScenarioIndex;
 use crate::state::{ParameterState, State};
 use crate::timestep::Timestep;
 use crate::PywrError;
-use std::any::Any;
 
 pub struct ControlCurveInterpolatedParameter {
     meta: ParameterMeta,
-    metric: Metric,
-    control_curves: Vec<Metric>,
-    values: Vec<Metric>,
+    metric: MetricF64,
+    control_curves: Vec<MetricF64>,
+    values: Vec<MetricF64>,
 }
 
 impl ControlCurveInterpolatedParameter {
-    pub fn new(name: &str, metric: Metric, control_curves: Vec<Metric>, values: Vec<Metric>) -> Self {
+    pub fn new(name: &str, metric: MetricF64, control_curves: Vec<MetricF64>, values: Vec<MetricF64>) -> Self {
         Self {
             meta: ParameterMeta::new(name),
             metric,
@@ -26,10 +25,7 @@ impl ControlCurveInterpolatedParameter {
     }
 }
 
-impl Parameter for ControlCurveInterpolatedParameter {
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
-    }
+impl Parameter<f64> for ControlCurveInterpolatedParameter {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }

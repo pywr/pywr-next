@@ -1,12 +1,8 @@
-use crate::data_tables::LoadedTableCollection;
+use crate::error::SchemaError;
+use crate::model::LoadArgs;
 use crate::parameters::{ConstantValue, DynamicFloatValue, DynamicFloatValueType, ParameterMeta};
 use pywr_core::parameters::ParameterIndex;
-
-use crate::error::SchemaError;
-use crate::model::PywrMultiNetworkTransfer;
-use pywr_core::models::ModelDomain;
 use std::collections::HashMap;
-use std::path::Path;
 
 /// A parameter that returns a fixed delta from another metric.
 ///
@@ -50,17 +46,11 @@ impl OffsetParameter {
     pub fn add_to_model(
         &self,
         network: &mut pywr_core::network::Network,
-        schema: &crate::model::PywrNetwork,
-        domain: &ModelDomain,
-        tables: &LoadedTableCollection,
-        data_path: Option<&Path>,
-        inter_network_transfers: &[PywrMultiNetworkTransfer],
-    ) -> Result<ParameterIndex, SchemaError> {
-        let idx = self
-            .metric
-            .load(network, schema, domain, tables, data_path, inter_network_transfers)?;
+        args: &LoadArgs,
+    ) -> Result<ParameterIndex<f64>, SchemaError> {
+        let idx = self.metric.load(network, args)?;
 
-        let p = pywr_core::parameters::OffsetParameter::new(&self.meta.name, idx, self.offset.load(tables)?);
+        let p = pywr_core::parameters::OffsetParameter::new(&self.meta.name, idx, self.offset.load(args.tables)?);
         Ok(network.add_parameter(Box::new(p))?)
     }
 }

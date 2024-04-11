@@ -39,14 +39,11 @@ impl HighsSolverSettings {
 ///
 /// ```
 /// use std::num::NonZeroUsize;
-/// use pywr::solvers::ClpSolverSettingsBuilder;
+/// use pywr_core::solvers::HighsSolverSettingsBuilder;
 /// // Settings with parallel enabled and 4 threads.
-/// let settings = ClpSolverSettingsBuilder::default().parallel().threads(4).build();
+/// let settings = HighsSolverSettingsBuilder::default().parallel().threads(4).build();
 ///
-/// let mut builder = ClpSolverSettingsBuilder::default();
-/// builder.chunk_size(NonZeroUsize::new(1024).unwrap());
-/// let settings = builder.build();
-///
+/// let mut builder = HighsSolverSettingsBuilder::default();
 /// builder.parallel();
 /// let settings = builder.build();
 ///
@@ -97,6 +94,6 @@ mod tests {
         };
         let settings_from_builder = HighsSolverSettingsBuilder::default().parallel().build();
 
-        assert_eq!(settings_from_builder, settings_from_builder);
+        assert_eq!(settings_from_builder, settings);
     }
 }

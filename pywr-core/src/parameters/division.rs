@@ -1,21 +1,20 @@
 use super::PywrError;
-use crate::metric::Metric;
+use crate::metric::MetricF64;
 use crate::network::Network;
 use crate::parameters::{Parameter, ParameterMeta};
 use crate::scenario::ScenarioIndex;
 use crate::state::{ParameterState, State};
 use crate::timestep::Timestep;
 use crate::PywrError::InvalidMetricValue;
-use std::any::Any;
 
 pub struct DivisionParameter {
     meta: ParameterMeta,
-    numerator: Metric,
-    denominator: Metric,
+    numerator: MetricF64,
+    denominator: MetricF64,
 }
 
 impl DivisionParameter {
-    pub fn new(name: &str, numerator: Metric, denominator: Metric) -> Self {
+    pub fn new(name: &str, numerator: MetricF64, denominator: MetricF64) -> Self {
         Self {
             meta: ParameterMeta::new(name),
             numerator,
@@ -24,10 +23,7 @@ impl DivisionParameter {
     }
 }
 
-impl Parameter for DivisionParameter {
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
-    }
+impl Parameter<f64> for DivisionParameter {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }

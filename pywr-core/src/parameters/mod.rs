@@ -57,81 +57,65 @@ pub use offset::OffsetParameter;
 pub use polynomial::Polynomial1DParameter;
 pub use profiles::{
     DailyProfileParameter, MonthlyInterpDay, MonthlyProfileParameter, RadialBasisFunction, RbfProfileParameter,
-    RbfProfileVariableConfig, UniformDrawdownProfileParameter,
+    RbfProfileVariableConfig, UniformDrawdownProfileParameter, WeeklyInterpDay, WeeklyProfileError,
+    WeeklyProfileParameter, WeeklyProfileValues,
 };
 pub use py::PyParameter;
 use std::fmt;
 use std::fmt::{Display, Formatter};
+use std::marker::PhantomData;
 use std::ops::Deref;
 pub use threshold::{Predicate, ThresholdParameter};
 pub use vector::VectorParameter;
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
-pub struct ParameterIndex(usize);
+/// Generic parameter index.
+///
+/// This is a wrapper around usize that is used to index parameters in the state. It is
+/// generic over the type of the value that the parameter returns.
+#[derive(Debug)]
+pub struct ParameterIndex<T> {
+    idx: usize,
+    phantom: PhantomData<T>,
+}
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
-pub struct IndexParameterIndex(usize);
-
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
-pub struct MultiValueParameterIndex(usize);
-
-impl ParameterIndex {
-    pub fn new(idx: usize) -> Self {
-        Self(idx)
+// These implementations are required because the derive macro does not work well with PhantomData.
+// See issue: https://github.com/rust-lang/rust/issues/26925
+impl<T> Clone for ParameterIndex<T> {
+    fn clone(&self) -> Self {
+        *self
     }
 }
 
-impl IndexParameterIndex {
-    pub fn new(idx: usize) -> Self {
-        Self(idx)
+impl<T> Copy for ParameterIndex<T> {}
+
+impl<T> PartialEq<Self> for ParameterIndex<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.idx == other.idx
     }
 }
 
-impl MultiValueParameterIndex {
+impl<T> Eq for ParameterIndex<T> {}
+
+impl<T> ParameterIndex<T> {
     pub fn new(idx: usize) -> Self {
-        Self(idx)
+        Self {
+            idx,
+            phantom: PhantomData,
+        }
     }
 }
 
-impl Deref for ParameterIndex {
+impl<T> Deref for ParameterIndex<T> {
     type Target = usize;
 
     fn deref(&self) -> &Self::Target {
-        &self.0
+        &self.idx
     }
 }
 
-impl Deref for IndexParameterIndex {
-    type Target = usize;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl Deref for MultiValueParameterIndex {
-    type Target = usize;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl Display for ParameterIndex {
+impl<T> Display for ParameterIndex<T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl Display for IndexParameterIndex {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl Display for MultiValueParameterIndex {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
+        write!(f, "{}", self.idx)
     }
 }
 
@@ -203,9 +187,10 @@ pub fn downcast_variable_config_ref<T: 'static>(variable_config: &dyn VariableCo
     }
 }
 
-// TODO It might be possible to make these three traits into a single generic trait
-pub trait Parameter: Send + Sync {
-    fn as_any_mut(&mut self) -> &mut dyn Any;
+/// A trait that defines a component that produces a value each time-step.
+///
+/// The trait is generic over the type of the value produced.
+pub trait Parameter<T>: Send + Sync {
     fn meta(&self) -> &ParameterMeta;
     fn name(&self) -> &str {
         self.meta().name.as_str()
@@ -226,7 +211,7 @@ pub trait Parameter: Send + Sync {
         model: &Network,
         state: &State,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<f64, PywrError>;
+    ) -> Result<T, PywrError>;
 
     fn after(
         &self,
@@ -270,94 +255,10 @@ pub trait Parameter: Send + Sync {
     }
 }
 
-pub trait IndexParameter: Send + Sync {
-    fn meta(&self) -> &ParameterMeta;
-    fn name(&self) -> &str {
-        self.meta().name.as_str()
-    }
-
-    fn setup(
-        &self,
-        _timesteps: &[Timestep],
-        _scenario_index: &ScenarioIndex,
-    ) -> Result<Option<Box<dyn ParameterState>>, PywrError> {
-        Ok(None)
-    }
-
-    fn compute(
-        &self,
-        timestep: &Timestep,
-        scenario_index: &ScenarioIndex,
-        model: &Network,
-        state: &State,
-        internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<usize, PywrError>;
-
-    fn after(
-        &self,
-        #[allow(unused_variables)] timestep: &Timestep,
-        #[allow(unused_variables)] scenario_index: &ScenarioIndex,
-        #[allow(unused_variables)] model: &Network,
-        #[allow(unused_variables)] state: &State,
-        #[allow(unused_variables)] internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<(), PywrError> {
-        Ok(())
-    }
-}
-
-pub trait MultiValueParameter: Send + Sync {
-    fn meta(&self) -> &ParameterMeta;
-    fn name(&self) -> &str {
-        self.meta().name.as_str()
-    }
-    fn setup(
-        &self,
-        #[allow(unused_variables)] timesteps: &[Timestep],
-        #[allow(unused_variables)] scenario_index: &ScenarioIndex,
-    ) -> Result<Option<Box<dyn ParameterState>>, PywrError> {
-        Ok(None)
-    }
-
-    fn compute(
-        &self,
-        timestep: &Timestep,
-        scenario_index: &ScenarioIndex,
-        model: &Network,
-        state: &State,
-        internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<MultiValue, PywrError>;
-
-    fn after(
-        &self,
-        #[allow(unused_variables)] timestep: &Timestep,
-        #[allow(unused_variables)] scenario_index: &ScenarioIndex,
-        #[allow(unused_variables)] model: &Network,
-        #[allow(unused_variables)] state: &State,
-        #[allow(unused_variables)] internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<(), PywrError> {
-        Ok(())
-    }
-}
-
-#[derive(Copy, Clone)]
-pub enum IndexValue {
-    Constant(usize),
-    Dynamic(IndexParameterIndex),
-}
-
-impl IndexValue {
-    pub fn get_index(&self, state: &State) -> Result<usize, PywrError> {
-        match self {
-            Self::Constant(v) => Ok(*v),
-            Self::Dynamic(p) => state.get_parameter_index(*p),
-        }
-    }
-}
-
 pub enum ParameterType {
-    Parameter(ParameterIndex),
-    Index(IndexParameterIndex),
-    Multi(MultiValueParameterIndex),
+    Parameter(ParameterIndex<f64>),
+    Index(ParameterIndex<usize>),
+    Multi(ParameterIndex<MultiValue>),
 }
 
 /// A parameter that can be optimised.
