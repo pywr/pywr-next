@@ -62,7 +62,15 @@
       {
         "name": "my-outputs",
         "type": "CSV",
-        "filename": "outputs.csv",
+        "format": "long",
+        "filename": "outputs-long.csv",
+        "metric_set": "nodes"
+      },
+      {
+        "name": "my-outputs",
+        "type": "CSV",
+        "format": "wide",
+        "filename": "outputs-wide.csv",
         "metric_set": "nodes"
       }
     ]

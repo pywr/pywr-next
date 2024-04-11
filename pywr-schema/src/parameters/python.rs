@@ -1,15 +1,14 @@
-use crate::data_tables::{make_path, LoadedTableCollection};
+use crate::data_tables::make_path;
 use crate::error::SchemaError;
-use crate::model::PywrMultiNetworkTransfer;
+use crate::model::LoadArgs;
 use crate::parameters::{DynamicFloatValue, DynamicFloatValueType, DynamicIndexValue, ParameterMeta};
 use pyo3::prelude::PyModule;
 use pyo3::types::{PyDict, PyTuple};
 use pyo3::{IntoPy, PyErr, PyObject, Python, ToPyObject};
-use pywr_core::models::ModelDomain;
 use pywr_core::parameters::{ParameterType, PyParameter};
 use serde_json::Value;
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
 #[serde(rename_all = "lowercase")]
@@ -136,11 +135,7 @@ impl PythonParameter {
     pub fn add_to_model(
         &self,
         network: &mut pywr_core::network::Network,
-        schema: &crate::model::PywrNetwork,
-        domain: &ModelDomain,
-        tables: &LoadedTableCollection,
-        data_path: Option<&Path>,
-        inter_network_transfers: &[PywrMultiNetworkTransfer],
+        args: &LoadArgs,
     ) -> Result<ParameterType, SchemaError> {
         pyo3::prepare_freethreaded_python();
 
@@ -148,7 +143,7 @@ impl PythonParameter {
             let module = match &self.module {
                 PythonModule::Module(module) => PyModule::import(py, module.as_str()),
                 PythonModule::Path(original_path) => {
-                    let path = &make_path(original_path, data_path);
+                    let path = &make_path(original_path, args.data_path);
                     let code = std::fs::read_to_string(path).expect("Could not read Python code from path.");
                     let file_name = path.file_name().unwrap().to_str().unwrap();
                     let module_name = path.file_stem().unwrap().to_str().unwrap();
@@ -161,7 +156,7 @@ impl PythonParameter {
         })
         .map_err(|e: PyErr| SchemaError::PythonError(e.to_string()))?;
 
-        let args = Python::with_gil(|py| {
+        let py_args = Python::with_gil(|py| {
             PyTuple::new(py, self.args.iter().map(|arg| try_json_value_into_py(py, arg).unwrap())).into_py(py)
         });
 
@@ -179,12 +174,7 @@ impl PythonParameter {
         let metrics = match &self.metrics {
             Some(metrics) => metrics
                 .iter()
-                .map(|(k, v)| {
-                    Ok((
-                        k.to_string(),
-                        v.load(network, schema, domain, tables, data_path, inter_network_transfers)?,
-                    ))
-                })
+                .map(|(k, v)| Ok((k.to_string(), v.load(network, args)?)))
                 .collect::<Result<HashMap<_, _>, SchemaError>>()?,
             None => HashMap::new(),
         };
@@ -192,17 +182,12 @@ impl PythonParameter {
         let indices = match &self.indices {
             Some(indices) => indices
                 .iter()
-                .map(|(k, v)| {
-                    Ok((
-                        k.to_string(),
-                        v.load(network, schema, domain, tables, data_path, inter_network_transfers)?,
-                    ))
-                })
+                .map(|(k, v)| Ok((k.to_string(), v.load(network, args)?)))
                 .collect::<Result<HashMap<_, _>, SchemaError>>()?,
             None => HashMap::new(),
         };
 
-        let p = PyParameter::new(&self.meta.name, object, args, kwargs, &metrics, &indices);
+        let p = PyParameter::new(&self.meta.name, object, py_args, kwargs, &metrics, &indices);
 
         let pt = match self.return_type {
             PythonReturnType::Float => ParameterType::Parameter(network.add_parameter(Box::new(p))?),
@@ -217,8 +202,9 @@ impl PythonParameter {
 #[cfg(test)]
 mod tests {
     use crate::data_tables::LoadedTableCollection;
-    use crate::model::PywrNetwork;
+    use crate::model::{LoadArgs, PywrNetwork};
     use crate::parameters::python::PythonParameter;
+    use crate::timeseries::LoadedTimeseriesCollection;
     use pywr_core::models::ModelDomain;
     use pywr_core::network::Network;
     use pywr_core::test_utils::default_time_domain;
@@ -252,9 +238,18 @@ mod tests {
         let schema = PywrNetwork::default();
         let mut network = Network::default();
         let tables = LoadedTableCollection::from_schema(None, None).unwrap();
-        param
-            .add_to_model(&mut network, &schema, &domain, &tables, None, &[])
-            .unwrap();
+        let ts = LoadedTimeseriesCollection::default();
+
+        let args = LoadArgs {
+            schema: &schema,
+            data_path: None,
+            tables: &tables,
+            timeseries: &ts,
+            domain: &domain,
+            inter_network_transfers: &[],
+        };
+
+        param.add_to_model(&mut network, &args).unwrap();
 
         assert!(network.get_parameter_by_name("my-float-parameter").is_ok());
     }
@@ -287,9 +282,18 @@ mod tests {
         let schema = PywrNetwork::default();
         let mut network = Network::default();
         let tables = LoadedTableCollection::from_schema(None, None).unwrap();
-        param
-            .add_to_model(&mut network, &schema, &domain, &tables, None, &[])
-            .unwrap();
+        let ts = LoadedTimeseriesCollection::default();
+
+        let args = LoadArgs {
+            schema: &schema,
+            data_path: None,
+            tables: &tables,
+            timeseries: &ts,
+            domain: &domain,
+            inter_network_transfers: &[],
+        };
+
+        param.add_to_model(&mut network, &args).unwrap();
 
         assert!(network.get_index_parameter_by_name("my-int-parameter").is_ok());
     }

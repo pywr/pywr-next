@@ -1,5 +1,6 @@
+use crate::metric::MetricUsize;
 use crate::network::Network;
-use crate::parameters::{downcast_internal_state_mut, IndexValue, Parameter, ParameterMeta};
+use crate::parameters::{downcast_internal_state_mut, Parameter, ParameterMeta};
 use crate::scenario::ScenarioIndex;
 use crate::state::{ParameterState, State};
 use crate::timestep::Timestep;
@@ -7,12 +8,12 @@ use crate::PywrError;
 
 pub struct AsymmetricSwitchIndexParameter {
     meta: ParameterMeta,
-    on_parameter: IndexValue,
-    off_parameter: IndexValue,
+    on_parameter: MetricUsize,
+    off_parameter: MetricUsize,
 }
 
 impl AsymmetricSwitchIndexParameter {
-    pub fn new(name: &str, on_parameter: IndexValue, off_parameter: IndexValue) -> Self {
+    pub fn new(name: &str, on_parameter: MetricUsize, off_parameter: MetricUsize) -> Self {
         Self {
             meta: ParameterMeta::new(name),
             on_parameter,
@@ -37,14 +38,11 @@ impl Parameter<usize> for AsymmetricSwitchIndexParameter {
         &self,
         _timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
-        _model: &Network,
+        network: &Network,
         state: &State,
         internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<usize, PywrError> {
-        let on_value = match self.on_parameter {
-            IndexValue::Constant(idx) => idx,
-            IndexValue::Dynamic(p) => state.get_parameter_index(p)?,
-        };
+        let on_value = self.on_parameter.get_value(network, state)?;
 
         // Downcast the internal state to the correct type
         let current_state = downcast_internal_state_mut::<usize>(internal_state);
@@ -53,10 +51,7 @@ impl Parameter<usize> for AsymmetricSwitchIndexParameter {
             if on_value > 0 {
                 // No change
             } else {
-                let off_value = match self.off_parameter {
-                    IndexValue::Constant(idx) => idx,
-                    IndexValue::Dynamic(p) => state.get_parameter_index(p)?,
-                };
+                let off_value = self.off_parameter.get_value(network, state)?;
 
                 if off_value == 0 {
                     *current_state = 0;

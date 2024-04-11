@@ -1,4 +1,4 @@
-use crate::metric::Metric;
+use crate::metric::MetricF64;
 use crate::network::Network;
 use crate::parameters::{Parameter, ParameterMeta};
 use crate::scenario::ScenarioIndex;
@@ -9,12 +9,12 @@ use chrono::Datelike;
 
 pub struct DiscountFactorParameter {
     meta: ParameterMeta,
-    discount_rate: Metric,
+    discount_rate: MetricF64,
     base_year: i32,
 }
 
 impl DiscountFactorParameter {
-    pub fn new(name: &str, discount_rate: Metric, base_year: i32) -> Self {
+    pub fn new(name: &str, discount_rate: MetricF64, base_year: i32) -> Self {
         Self {
             meta: ParameterMeta::new(name),
             discount_rate,
@@ -45,7 +45,7 @@ impl Parameter<f64> for DiscountFactorParameter {
 
 #[cfg(test)]
 mod test {
-    use crate::metric::Metric;
+    use crate::metric::MetricF64;
     use crate::parameters::{Array1Parameter, DiscountFactorParameter};
     use crate::test_utils::{run_and_assert_parameter, simple_model};
     use ndarray::{Array1, Array2, Axis};
@@ -64,7 +64,7 @@ mod test {
 
         let parameter = DiscountFactorParameter::new(
             "test-parameter",
-            Metric::Constant(0.03), // Interpolate with the parameter based values
+            MetricF64::Constant(0.03), // Interpolate with the parameter based values
             2020,
         );
 

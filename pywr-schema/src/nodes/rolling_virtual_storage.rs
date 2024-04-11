@@ -1,11 +1,9 @@
-use crate::data_tables::LoadedTableCollection;
 use crate::error::{ConversionError, SchemaError};
-use crate::model::PywrMultiNetworkTransfer;
+use crate::model::LoadArgs;
 use crate::nodes::{NodeAttribute, NodeMeta};
 use crate::parameters::{DynamicFloatValue, TryIntoV2Parameter};
 use pywr_core::derived_metric::DerivedMetric;
-use pywr_core::metric::Metric;
-use pywr_core::models::ModelDomain;
+use pywr_core::metric::MetricF64;
 use pywr_core::node::{ConstraintValue, StorageInitialVolume};
 use pywr_core::timestep::TimeDomain;
 use pywr_core::virtual_storage::VirtualStorageReset;
@@ -13,12 +11,11 @@ use pywr_schema_macros::PywrNode;
 use pywr_v1_schema::nodes::RollingVirtualStorageNode as RollingVirtualStorageNodeV1;
 use std::collections::HashMap;
 use std::num::NonZeroUsize;
-use std::path::Path;
 
 /// The length of the rolling window.
 ///
 /// This can be specified in either days or time-steps.
-#[derive(serde::Deserialize, serde::Serialize, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Debug)]
 pub enum RollingWindow {
     Days(NonZeroUsize),
     Timesteps(NonZeroUsize),
@@ -63,7 +60,7 @@ impl RollingWindow {
 /// The rolling virtual storage node is useful for representing rolling licences. For example, a 30-day or 90-day
 /// licence on a water abstraction.
 ///
-#[derive(serde::Deserialize, serde::Serialize, Clone, Default, PywrNode)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, PywrNode)]
 pub struct RollingVirtualStorageNode {
     #[serde(flatten)]
     pub meta: NodeMeta,
@@ -80,15 +77,7 @@ pub struct RollingVirtualStorageNode {
 impl RollingVirtualStorageNode {
     const DEFAULT_ATTRIBUTE: NodeAttribute = NodeAttribute::Volume;
 
-    pub fn add_to_model(
-        &self,
-        network: &mut pywr_core::network::Network,
-        schema: &crate::model::PywrNetwork,
-        domain: &ModelDomain,
-        tables: &LoadedTableCollection,
-        data_path: Option<&Path>,
-        inter_network_transfers: &[PywrMultiNetworkTransfer],
-    ) -> Result<(), SchemaError> {
+    pub fn add_to_model(&self, network: &mut pywr_core::network::Network, args: &LoadArgs) -> Result<(), SchemaError> {
         let initial_volume = if let Some(iv) = self.initial_volume {
             StorageInitialVolume::Absolute(iv)
         } else if let Some(pc) = self.initial_volume_pc {
@@ -98,23 +87,17 @@ impl RollingVirtualStorageNode {
         };
 
         let cost = match &self.cost {
-            Some(v) => v
-                .load(network, schema, domain, tables, data_path, inter_network_transfers)?
-                .into(),
+            Some(v) => v.load(network, args)?.into(),
             None => ConstraintValue::Scalar(0.0),
         };
 
         let min_volume = match &self.min_volume {
-            Some(v) => v
-                .load(network, schema, domain, tables, data_path, inter_network_transfers)?
-                .into(),
+            Some(v) => v.load(network, args)?.into(),
             None => ConstraintValue::Scalar(0.0),
         };
 
         let max_volume = match &self.max_volume {
-            Some(v) => v
-                .load(network, schema, domain, tables, data_path, inter_network_transfers)?
-                .into(),
+            Some(v) => v.load(network, args)?.into(),
             None => ConstraintValue::None,
         };
 
@@ -126,12 +109,12 @@ impl RollingVirtualStorageNode {
 
         // The rolling licence never resets
         let reset = VirtualStorageReset::Never;
-        let timesteps = self
-            .window
-            .as_timesteps(domain.time())
-            .ok_or_else(|| SchemaError::InvalidRollingWindow {
-                name: self.meta.name.clone(),
-            })?;
+        let timesteps =
+            self.window
+                .as_timesteps(args.domain.time())
+                .ok_or_else(|| SchemaError::InvalidRollingWindow {
+                    name: self.meta.name.clone(),
+                })?;
 
         network.add_virtual_storage_node(
             self.meta.name.as_str(),
@@ -160,18 +143,18 @@ impl RollingVirtualStorageNode {
         &self,
         network: &mut pywr_core::network::Network,
         attribute: Option<NodeAttribute>,
-    ) -> Result<Metric, SchemaError> {
+    ) -> Result<MetricF64, SchemaError> {
         // Use the default attribute if none is specified
         let attr = attribute.unwrap_or(Self::DEFAULT_ATTRIBUTE);
 
         let idx = network.get_virtual_storage_node_index_by_name(self.meta.name.as_str(), None)?;
 
         let metric = match attr {
-            NodeAttribute::Volume => Metric::VirtualStorageVolume(idx),
+            NodeAttribute::Volume => MetricF64::VirtualStorageVolume(idx),
             NodeAttribute::ProportionalVolume => {
                 let dm = DerivedMetric::VirtualStorageProportionalVolume(idx);
                 let derived_metric_idx = network.add_derived_metric(dm);
-                Metric::DerivedMetric(derived_metric_idx)
+                MetricF64::DerivedMetric(derived_metric_idx)
             }
             _ => {
                 return Err(SchemaError::NodeAttributeNotSupported {
@@ -251,7 +234,7 @@ impl TryFrom<RollingVirtualStorageNodeV1> for RollingVirtualStorageNode {
 mod tests {
     use crate::model::PywrModel;
     use ndarray::Array2;
-    use pywr_core::metric::Metric;
+    use pywr_core::metric::MetricF64;
     use pywr_core::recorders::AssertionRecorder;
     use pywr_core::test_utils::run_all_solvers;
 
@@ -272,7 +255,7 @@ mod tests {
         // TODO put this assertion data in the test model file.
         let idx = network.get_node_by_name("link1", None).unwrap().index();
         let expected = Array2::from_elem((366, 1), 10.0);
-        let recorder = AssertionRecorder::new("link1-inflow", Metric::NodeInFlow(idx), expected, None, None);
+        let recorder = AssertionRecorder::new("link1-inflow", MetricF64::NodeInFlow(idx), expected, None, None);
         network.add_recorder(Box::new(recorder)).unwrap();
 
         // Test all solvers

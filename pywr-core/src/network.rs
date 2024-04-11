@@ -1,8 +1,8 @@
 use crate::aggregated_node::{AggregatedNode, AggregatedNodeIndex, AggregatedNodeVec, Factors};
 use crate::aggregated_storage_node::{AggregatedStorageNode, AggregatedStorageNodeIndex, AggregatedStorageNodeVec};
 use crate::derived_metric::{DerivedMetric, DerivedMetricIndex};
-use crate::edge::{EdgeIndex, EdgeVec};
-use crate::metric::Metric;
+use crate::edge::{Edge, EdgeIndex, EdgeVec};
+use crate::metric::MetricF64;
 use crate::models::ModelDomain;
 use crate::node::{ConstraintValue, Node, NodeVec, StorageInitialVolume};
 use crate::parameters::{ParameterType, VariableConfig};
@@ -377,7 +377,7 @@ impl Network {
 
         // Setup recorders
         for (recorder, internal_state) in self.recorders.iter().zip(recorder_internal_states) {
-            recorder.finalise(metric_set_states, internal_state)?;
+            recorder.finalise(self, metric_set_states, internal_state)?;
         }
 
         Ok(())
@@ -794,6 +794,11 @@ impl Network {
         Ok(())
     }
 
+    /// Get an [`Edge`] from an edge's index
+    pub fn get_edge(&self, index: &EdgeIndex) -> Result<&Edge, PywrError> {
+        self.edges.get(index)
+    }
+
     /// Get a Node from a node's name
     pub fn get_node_index_by_name(&self, name: &str, sub_name: Option<&str>) -> Result<NodeIndex, PywrError> {
         Ok(self.get_node_by_name(name, sub_name)?.index())
@@ -1027,31 +1032,31 @@ impl Network {
         name: &str,
         sub_name: Option<&str>,
         proportional: bool,
-    ) -> Result<Metric, PywrError> {
+    ) -> Result<MetricF64, PywrError> {
         if let Ok(idx) = self.get_node_index_by_name(name, sub_name) {
             // A regular node
             if proportional {
                 // Proportional is a derived metric
                 let dm_idx = self.add_derived_metric(DerivedMetric::NodeProportionalVolume(idx));
-                Ok(Metric::DerivedMetric(dm_idx))
+                Ok(MetricF64::DerivedMetric(dm_idx))
             } else {
-                Ok(Metric::NodeVolume(idx))
+                Ok(MetricF64::NodeVolume(idx))
             }
         } else if let Ok(idx) = self.get_aggregated_storage_node_index_by_name(name, sub_name) {
             if proportional {
                 // Proportional is a derived metric
                 let dm_idx = self.add_derived_metric(DerivedMetric::AggregatedNodeProportionalVolume(idx));
-                Ok(Metric::DerivedMetric(dm_idx))
+                Ok(MetricF64::DerivedMetric(dm_idx))
             } else {
-                Ok(Metric::AggregatedNodeVolume(idx))
+                Ok(MetricF64::AggregatedNodeVolume(idx))
             }
         } else if let Ok(node) = self.get_virtual_storage_node_by_name(name, sub_name) {
             if proportional {
                 // Proportional is a derived metric
                 let dm_idx = self.add_derived_metric(DerivedMetric::VirtualStorageProportionalVolume(node.index()));
-                Ok(Metric::DerivedMetric(dm_idx))
+                Ok(MetricF64::DerivedMetric(dm_idx))
             } else {
-                Ok(Metric::VirtualStorageVolume(node.index()))
+                Ok(MetricF64::VirtualStorageVolume(node.index()))
             }
         } else {
             Err(PywrError::NodeNotFound(name.to_string()))
@@ -1123,6 +1128,17 @@ impl Network {
         }
     }
 
+    /// Get a [`Parameter<usize>`] from its index.
+    pub fn get_index_parameter(
+        &self,
+        index: &ParameterIndex<usize>,
+    ) -> Result<&dyn parameters::Parameter<usize>, PywrError> {
+        match self.index_parameters.get(*index.deref()) {
+            Some(p) => Ok(p.as_ref()),
+            None => Err(PywrError::IndexParameterIndexNotFound(*index)),
+        }
+    }
+
     /// Get a `IndexParameter` from a parameter's name
     pub fn get_index_parameter_by_name(&self, name: &str) -> Result<&dyn parameters::Parameter<usize>, PywrError> {
         match self.index_parameters.iter().find(|p| p.name() == name) {
@@ -1136,6 +1152,17 @@ impl Network {
         match self.index_parameters.iter().position(|p| p.name() == name) {
             Some(idx) => Ok(ParameterIndex::new(idx)),
             None => Err(PywrError::ParameterNotFound(name.to_string())),
+        }
+    }
+
+    /// Get a `MultiValueParameterIndex` from a parameter's name
+    pub fn get_multi_valued_parameter(
+        &self,
+        index: &ParameterIndex<MultiValue>,
+    ) -> Result<&dyn parameters::Parameter<MultiValue>, PywrError> {
+        match self.multi_parameters.get(*index.deref()) {
+            Some(p) => Ok(p.as_ref()),
+            None => Err(PywrError::MultiValueParameterIndexNotFound(*index)),
         }
     }
 
@@ -1643,7 +1670,7 @@ impl Network {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::metric::Metric;
+    use crate::metric::MetricF64;
     use crate::network::Network;
     use crate::node::{Constraint, ConstraintValue};
     use crate::parameters::{ActivationFunction, ControlCurveInterpolatedParameter, Parameter};
@@ -1738,7 +1765,7 @@ mod tests {
         // assign the new parameter to one of the nodes.
         let node = network.get_mut_node_by_name("input", None).unwrap();
         node.set_constraint(
-            ConstraintValue::Metric(Metric::ParameterValue(parameter)),
+            ConstraintValue::Metric(MetricF64::ParameterValue(parameter)),
             Constraint::MaxFlow,
         )
         .unwrap();
@@ -1784,20 +1811,20 @@ mod tests {
         let idx = model.network().get_node_by_name("input", None).unwrap().index();
         let expected = Array::from_shape_fn((366, 10), |(i, j)| (1.0 + i as f64 + j as f64).min(12.0));
 
-        let recorder = AssertionRecorder::new("input-flow", Metric::NodeOutFlow(idx), expected.clone(), None, None);
+        let recorder = AssertionRecorder::new("input-flow", MetricF64::NodeOutFlow(idx), expected.clone(), None, None);
         model.network_mut().add_recorder(Box::new(recorder)).unwrap();
 
         let idx = model.network().get_node_by_name("link", None).unwrap().index();
-        let recorder = AssertionRecorder::new("link-flow", Metric::NodeOutFlow(idx), expected.clone(), None, None);
+        let recorder = AssertionRecorder::new("link-flow", MetricF64::NodeOutFlow(idx), expected.clone(), None, None);
         model.network_mut().add_recorder(Box::new(recorder)).unwrap();
 
         let idx = model.network().get_node_by_name("output", None).unwrap().index();
-        let recorder = AssertionRecorder::new("output-flow", Metric::NodeInFlow(idx), expected, None, None);
+        let recorder = AssertionRecorder::new("output-flow", MetricF64::NodeInFlow(idx), expected, None, None);
         model.network_mut().add_recorder(Box::new(recorder)).unwrap();
 
         let idx = model.network().get_parameter_index_by_name("total-demand").unwrap();
         let expected = Array2::from_elem((366, 10), 12.0);
-        let recorder = AssertionRecorder::new("total-demand", Metric::ParameterValue(idx), expected, None, None);
+        let recorder = AssertionRecorder::new("total-demand", MetricF64::ParameterValue(idx), expected, None, None);
         model.network_mut().add_recorder(Box::new(recorder)).unwrap();
 
         // Test all solvers
@@ -1814,14 +1841,14 @@ mod tests {
 
         let expected = Array2::from_shape_fn((15, 10), |(i, _j)| if i < 10 { 10.0 } else { 0.0 });
 
-        let recorder = AssertionRecorder::new("output-flow", Metric::NodeInFlow(idx), expected, None, None);
+        let recorder = AssertionRecorder::new("output-flow", MetricF64::NodeInFlow(idx), expected, None, None);
         network.add_recorder(Box::new(recorder)).unwrap();
 
         let idx = network.get_node_by_name("reservoir", None).unwrap().index();
 
         let expected = Array2::from_shape_fn((15, 10), |(i, _j)| (90.0 - 10.0 * i as f64).max(0.0));
 
-        let recorder = AssertionRecorder::new("reservoir-volume", Metric::NodeVolume(idx), expected, None, None);
+        let recorder = AssertionRecorder::new("reservoir-volume", MetricF64::NodeVolume(idx), expected, None, None);
         network.add_recorder(Box::new(recorder)).unwrap();
 
         // Test all solvers
@@ -1843,7 +1870,7 @@ mod tests {
         let expected = Array2::from_shape_fn((15, 10), |(i, _j)| (90.0 - 10.0 * i as f64).max(0.0) / 100.0);
         let recorder = AssertionRecorder::new(
             "reservoir-proportion-volume",
-            Metric::DerivedMetric(dm_idx),
+            MetricF64::DerivedMetric(dm_idx),
             expected,
             None,
             None,
@@ -1854,14 +1881,14 @@ mod tests {
         // This should be use the initial proportion (100%) on the first time-step, and then the previous day's end value
         let cc = ControlCurveInterpolatedParameter::new(
             "interp",
-            Metric::DerivedMetric(dm_idx),
+            MetricF64::DerivedMetric(dm_idx),
             vec![],
-            vec![Metric::Constant(100.0), Metric::Constant(0.0)],
+            vec![MetricF64::Constant(100.0), MetricF64::Constant(0.0)],
         );
         let p_idx = network.add_parameter(Box::new(cc)).unwrap();
         let expected = Array2::from_shape_fn((15, 10), |(i, _j)| (100.0 - 10.0 * i as f64).max(0.0));
 
-        let recorder = AssertionRecorder::new("reservoir-cc", Metric::ParameterValue(p_idx), expected, None, None);
+        let recorder = AssertionRecorder::new("reservoir-cc", MetricF64::ParameterValue(p_idx), expected, None, None);
         network.add_recorder(Box::new(recorder)).unwrap();
 
         // Test all solvers
@@ -1983,7 +2010,7 @@ mod tests {
         // assign the new parameter to one of the nodes.
         let node = model.network_mut().get_mut_node_by_name("input", None).unwrap();
         node.set_constraint(
-            ConstraintValue::Metric(Metric::ParameterValue(input_max_flow_idx)),
+            ConstraintValue::Metric(MetricF64::ParameterValue(input_max_flow_idx)),
             Constraint::MaxFlow,
         )
         .unwrap();

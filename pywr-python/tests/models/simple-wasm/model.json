@@ -10,8 +10,12 @@
         "name": "input1",
         "type": "input",
         "max_flow": {
-          "type": "Parameter",
-          "name": "inflow"
+          "type": "Timeseries",
+          "name": "inflow",
+          "columns": {
+            "type": "Column",
+            "name": "inflow"
+          }
         }
       },
       {
@@ -63,6 +67,15 @@
         "type": "DataFrame",
         "url": "inflow.csv.gz",
         "column": "inflow"
+      }
+    ],
+    "timeseries": [
+      {
+        "name": "inflow",
+        "provider": {
+          "type": "Polars",
+          "url": "inflow.csv.gz"
+        }
       }
     ]
   }

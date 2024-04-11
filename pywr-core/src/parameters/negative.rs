@@ -1,4 +1,4 @@
-use crate::metric::Metric;
+use crate::metric::MetricF64;
 use crate::network::Network;
 use crate::parameters::{Parameter, ParameterMeta};
 use crate::scenario::ScenarioIndex;
@@ -8,11 +8,11 @@ use crate::PywrError;
 
 pub struct NegativeParameter {
     meta: ParameterMeta,
-    metric: Metric,
+    metric: MetricF64,
 }
 
 impl NegativeParameter {
-    pub fn new(name: &str, metric: Metric) -> Self {
+    pub fn new(name: &str, metric: MetricF64) -> Self {
         Self {
             meta: ParameterMeta::new(name),
             metric,

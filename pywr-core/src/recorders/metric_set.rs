@@ -1,15 +1,13 @@
-use crate::metric::Metric;
+use crate::metric::MetricF64;
 use crate::network::Network;
 use crate::recorders::aggregator::{Aggregator, AggregatorState, PeriodValue};
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
 use crate::timestep::Timestep;
 use crate::PywrError;
-use core::f64;
 use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::ops::Deref;
-use std::slice::Iter;
 
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Debug)]
 pub struct MetricSetIndex(usize);
@@ -53,11 +51,11 @@ impl MetricSetState {
 pub struct MetricSet {
     name: String,
     aggregator: Option<Aggregator>,
-    metrics: Vec<Metric>,
+    metrics: Vec<MetricF64>,
 }
 
 impl MetricSet {
-    pub fn new(name: &str, aggregator: Option<Aggregator>, metrics: Vec<Metric>) -> Self {
+    pub fn new(name: &str, aggregator: Option<Aggregator>, metrics: Vec<MetricF64>) -> Self {
         Self {
             name: name.to_string(),
             aggregator,
@@ -69,7 +67,7 @@ impl MetricSet {
     pub fn name(&self) -> &str {
         &self.name
     }
-    pub fn iter_metrics(&self) -> Iter<'_, Metric> {
+    pub fn iter_metrics(&self) -> impl Iterator<Item = &MetricF64> + '_ {
         self.metrics.iter()
     }
 
@@ -111,11 +109,27 @@ impl MetricSet {
                 .as_mut()
                 .expect("Aggregation state expected for metric set with aggregator!");
 
-            let agg_values = values
-                .into_iter()
-                .zip(aggregation_states.iter_mut())
-                .map(|(value, current_state)| aggregator.append_value(current_state, value))
-                .collect::<Option<Vec<_>>>();
+            // Collect any aggregated values. This will remain empty if the aggregator yields
+            // no values. However, if there are values we will expect the same number of aggregated
+            // values as the input values / metrics.
+            let mut agg_values = Vec::with_capacity(values.len());
+            // Use a for loop instead of using an iterator because we need to execute the
+            // `append_value` method on all aggregators.
+            for (value, current_state) in values.iter().zip(aggregation_states.iter_mut()) {
+                if let Some(agg_value) = aggregator.append_value(current_state, *value) {
+                    agg_values.push(agg_value);
+                }
+            }
+
+            let agg_values = if agg_values.is_empty() {
+                None
+            } else if agg_values.len() == values.len() {
+                Some(agg_values)
+            } else {
+                // This should never happen because the aggregator should either yield no values
+                // or the same number of values as the input metrics.
+                unreachable!("Some values were aggregated and some were not!");
+            };
 
             internal_state.current_values = agg_values;
         } else {

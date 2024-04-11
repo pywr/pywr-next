@@ -253,21 +253,6 @@ pub trait Parameter<T>: Send + Sync {
     }
 }
 
-#[derive(Copy, Clone)]
-pub enum IndexValue {
-    Constant(usize),
-    Dynamic(ParameterIndex<usize>),
-}
-
-impl IndexValue {
-    pub fn get_index(&self, state: &State) -> Result<usize, PywrError> {
-        match self {
-            Self::Constant(v) => Ok(*v),
-            Self::Dynamic(p) => state.get_parameter_index(*p),
-        }
-    }
-}
-
 pub enum ParameterType {
     Parameter(ParameterIndex<f64>),
     Index(ParameterIndex<usize>),

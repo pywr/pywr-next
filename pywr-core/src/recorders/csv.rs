@@ -1,10 +1,11 @@
 use super::{MetricSetState, PywrError, Recorder, RecorderMeta, Timestep};
-use crate::metric::Metric;
 use crate::models::ModelDomain;
 use crate::network::Network;
 use crate::recorders::metric_set::MetricSetIndex;
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
+use chrono::NaiveDateTime;
+use serde::{Deserialize, Serialize};
 use std::any::Any;
 use std::fs::File;
 use std::ops::Deref;
@@ -12,7 +13,7 @@ use std::path::PathBuf;
 
 /// Output the values from a [`MetricSet`] to a CSV file.
 #[derive(Clone, Debug)]
-pub struct CSVRecorder {
+pub struct CsvWideFmtOutput {
     meta: RecorderMeta,
     filename: PathBuf,
     metric_set_idx: MetricSetIndex,
@@ -22,7 +23,7 @@ struct Internal {
     writer: csv::Writer<File>,
 }
 
-impl CSVRecorder {
+impl CsvWideFmtOutput {
     pub fn new<P: Into<PathBuf>>(name: &str, filename: P, metric_set_idx: MetricSetIndex) -> Self {
         Self {
             meta: RecorderMeta::new(name),
@@ -30,9 +31,48 @@ impl CSVRecorder {
             metric_set_idx,
         }
     }
+
+    fn write_values(
+        &self,
+        metric_set_states: &[Vec<MetricSetState>],
+        internal: &mut Internal,
+    ) -> Result<(), PywrError> {
+        let mut row = Vec::new();
+
+        // Iterate through all scenario's state
+        for ms_scenario_states in metric_set_states.iter() {
+            let metric_set_state = ms_scenario_states
+                .get(*self.metric_set_idx.deref())
+                .ok_or(PywrError::MetricSetIndexNotFound(self.metric_set_idx))?;
+
+            if let Some(current_values) = metric_set_state.current_values() {
+                let values = current_values
+                    .iter()
+                    .map(|v| format!("{:.2}", v.value))
+                    .collect::<Vec<_>>();
+
+                // If the row is empty, add the start time
+                if row.is_empty() {
+                    row.push(current_values.first().unwrap().start.to_string())
+                }
+
+                row.extend(values);
+            }
+        }
+
+        // Only write
+        if row.len() > 1 {
+            internal
+                .writer
+                .write_record(row)
+                .map_err(|e| PywrError::CSVError(e.to_string()))?;
+        }
+
+        Ok(())
+    }
 }
 
-impl Recorder for CSVRecorder {
+impl Recorder for CsvWideFmtOutput {
     fn meta(&self) -> &RecorderMeta {
         &self.meta
     }
@@ -46,75 +86,11 @@ impl Recorder for CSVRecorder {
         let metric_set = network.get_metric_set(self.metric_set_idx)?;
 
         for metric in metric_set.iter_metrics() {
-            let (name, sub_name, attribute) = match metric {
-                Metric::NodeInFlow(idx) => {
-                    let node = network.get_node(idx)?;
-                    let (name, sub_name) = node.full_name();
-                    let sub_name = sub_name.map_or("".to_string(), |sn| sn.to_string());
-
-                    (name.to_string(), sub_name, "inflow".to_string())
-                }
-                Metric::NodeOutFlow(idx) => {
-                    let node = network.get_node(idx)?;
-                    let (name, sub_name) = node.full_name();
-                    let sub_name = sub_name.map_or("".to_string(), |sn| sn.to_string());
-
-                    (name.to_string(), sub_name, "outflow".to_string())
-                }
-                Metric::NodeVolume(idx) => {
-                    let node = network.get_node(idx)?;
-                    let (name, sub_name) = node.full_name();
-                    let sub_name = sub_name.map_or("".to_string(), |sn| sn.to_string());
-
-                    (name.to_string(), sub_name, "volume".to_string())
-                }
-                Metric::DerivedMetric(_idx) => {
-                    todo!("Derived metrics are not yet supported in CSV recorders");
-                }
-                Metric::AggregatedNodeVolume(idx) => {
-                    let node = network.get_aggregated_storage_node(idx)?;
-                    let (name, sub_name) = node.full_name();
-                    let sub_name = sub_name.map_or("".to_string(), |sn| sn.to_string());
-
-                    (name.to_string(), sub_name, "volume".to_string())
-                }
-                Metric::EdgeFlow(_) => {
-                    continue; // TODO
-                }
-                Metric::ParameterValue(idx) => {
-                    let parameter = network.get_parameter(idx)?;
-                    let name = parameter.name();
-                    (name.to_string(), "".to_string(), "parameter".to_string())
-                }
-                Metric::VirtualStorageVolume(_) => {
-                    continue; // TODO
-                }
-                Metric::Constant(_) => {
-                    continue; // TODO
-                }
-                Metric::MultiParameterValue(_) => {
-                    continue; // TODO
-                }
-                Metric::AggregatedNodeInFlow(idx) => {
-                    let node = network.get_aggregated_node(idx)?;
-                    let (name, sub_name) = node.full_name();
-                    let sub_name = sub_name.map_or("".to_string(), |sn| sn.to_string());
-
-                    (name.to_string(), sub_name, "inflow".to_string())
-                }
-                Metric::AggregatedNodeOutFlow(idx) => {
-                    let node = network.get_aggregated_node(idx)?;
-                    let (name, sub_name) = node.full_name();
-                    let sub_name = sub_name.map_or("".to_string(), |sn| sn.to_string());
-
-                    (name.to_string(), sub_name, "outflow".to_string())
-                }
-                Metric::MultiNodeInFlow { name, .. } => (name.to_string(), "".to_string(), "inflow".to_string()),
-                Metric::MultiNodeOutFlow { name, .. } => (name.to_string(), "".to_string(), "outflow".to_string()),
-                Metric::InterNetworkTransfer(_) => {
-                    continue; // TODO
-                }
-            };
+            let name = metric.name(network)?.to_string();
+            let sub_name = metric
+                .sub_name(network)?
+                .map_or_else(|| "".to_string(), |s| s.to_string());
+            let attribute = metric.attribute().to_string();
 
             // Add entries for each scenario
             names.push(name);
@@ -175,7 +151,7 @@ impl Recorder for CSVRecorder {
 
     fn save(
         &self,
-        timestep: &Timestep,
+        _timestep: &Timestep,
         _scenario_indices: &[ScenarioIndex],
         _network: &Network,
         _state: &[State],
@@ -190,44 +166,159 @@ impl Recorder for CSVRecorder {
             None => panic!("No internal state defined when one was expected! :("),
         };
 
-        let mut row = vec![timestep.date.to_string()];
+        self.write_values(metric_set_states, internal)?;
 
-        // Iterate through all of the scenario's state
-        for ms_scenario_states in metric_set_states.iter() {
-            let metric_set_state = ms_scenario_states
-                .get(*self.metric_set_idx.deref())
-                .ok_or(PywrError::MetricSetIndexNotFound(self.metric_set_idx))?;
-
-            if let Some(current_values) = metric_set_state.current_values() {
-                let values = current_values
-                    .iter()
-                    .map(|v| format!("{:.2}", v.value))
-                    .collect::<Vec<_>>();
-
-                row.extend(values);
-            }
-        }
-
-        // Only write
-        if row.len() > 1 {
-            internal
-                .writer
-                .write_record(row)
-                .map_err(|e| PywrError::CSVError(e.to_string()))?;
-        }
         Ok(())
     }
 
     fn finalise(
         &self,
-        _metric_set_states: &[Vec<MetricSetState>],
+        _network: &Network,
+        metric_set_states: &[Vec<MetricSetState>],
         internal_state: &mut Option<Box<dyn Any>>,
     ) -> Result<(), PywrError> {
         // This will leave the internal state with a `None` because we need to take
         // ownership of the file handle in order to close it.
         match internal_state.take() {
-            Some(internal) => {
-                if let Ok(_internal) = internal.downcast::<Internal>() {
+            Some(mut internal) => {
+                if let Some(internal) = internal.downcast_mut::<Internal>() {
+                    self.write_values(metric_set_states, internal)?;
+                    Ok(())
+                } else {
+                    panic!("Internal state did not downcast to the correct type! :(");
+                }
+            }
+            None => panic!("No internal state defined when one was expected! :("),
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CsvLongFmtRecord {
+    time_start: NaiveDateTime,
+    time_end: NaiveDateTime,
+    scenario_index: usize,
+    metric_set: String,
+    name: String,
+    sub_name: String,
+    attribute: String,
+    value: f64,
+}
+
+/// Output the values from a several [`MetricSet`]s to a CSV file in long format.
+///
+/// The long format contains a row for each value produced by the metric set. This is useful
+/// for analysis in tools like R or Python which can easily read long format data.
+///
+#[derive(Clone, Debug)]
+pub struct CsvLongFmtOutput {
+    meta: RecorderMeta,
+    filename: PathBuf,
+    metric_set_indices: Vec<MetricSetIndex>,
+}
+
+impl CsvLongFmtOutput {
+    pub fn new<P: Into<PathBuf>>(name: &str, filename: P, metric_set_indices: &[MetricSetIndex]) -> Self {
+        Self {
+            meta: RecorderMeta::new(name),
+            filename: filename.into(),
+            metric_set_indices: metric_set_indices.to_vec(),
+        }
+    }
+
+    fn write_values(
+        &self,
+        network: &Network,
+        metric_set_states: &[Vec<MetricSetState>],
+        internal: &mut Internal,
+    ) -> Result<(), PywrError> {
+        // Iterate through all the scenario's state
+        for (scenario_idx, ms_scenario_states) in metric_set_states.iter().enumerate() {
+            for metric_set_idx in self.metric_set_indices.iter() {
+                let metric_set_state = ms_scenario_states
+                    .get(*metric_set_idx.deref())
+                    .ok_or(PywrError::MetricSetIndexNotFound(*metric_set_idx))?;
+
+                if let Some(current_values) = metric_set_state.current_values() {
+                    let metric_set = network.get_metric_set(*metric_set_idx)?;
+
+                    for (metric, value) in metric_set.iter_metrics().zip(current_values.iter()) {
+                        let name = metric.name(network)?.to_string();
+                        let sub_name = metric
+                            .sub_name(network)?
+                            .map_or_else(|| "".to_string(), |s| s.to_string());
+                        let attribute = metric.attribute().to_string();
+
+                        let record = CsvLongFmtRecord {
+                            time_start: value.start,
+                            time_end: value.end(),
+                            scenario_index: scenario_idx,
+                            metric_set: metric_set.name().to_string(),
+                            name,
+                            sub_name,
+                            attribute,
+                            value: value.value,
+                        };
+
+                        internal
+                            .writer
+                            .serialize(record)
+                            .map_err(|e| PywrError::CSVError(e.to_string()))?;
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
+impl Recorder for CsvLongFmtOutput {
+    fn meta(&self) -> &RecorderMeta {
+        &self.meta
+    }
+    fn setup(&self, _domain: &ModelDomain, _network: &Network) -> Result<Option<Box<(dyn Any)>>, PywrError> {
+        let writer = csv::Writer::from_path(&self.filename).map_err(|e| PywrError::CSVError(e.to_string()))?;
+
+        let internal = Internal { writer };
+
+        Ok(Some(Box::new(internal)))
+    }
+
+    fn save(
+        &self,
+        _timestep: &Timestep,
+        _scenario_indices: &[ScenarioIndex],
+        network: &Network,
+        _state: &[State],
+        metric_set_states: &[Vec<MetricSetState>],
+        internal_state: &mut Option<Box<dyn Any>>,
+    ) -> Result<(), PywrError> {
+        let internal = match internal_state {
+            Some(internal) => match internal.downcast_mut::<Internal>() {
+                Some(pa) => pa,
+                None => panic!("Internal state did not downcast to the correct type! :("),
+            },
+            None => panic!("No internal state defined when one was expected! :("),
+        };
+
+        self.write_values(network, metric_set_states, internal)?;
+
+        Ok(())
+    }
+
+    fn finalise(
+        &self,
+        network: &Network,
+        metric_set_states: &[Vec<MetricSetState>],
+        internal_state: &mut Option<Box<dyn Any>>,
+    ) -> Result<(), PywrError> {
+        // This will leave the internal state with a `None` because we need to take
+        // ownership of the file handle in order to close it.
+        match internal_state.take() {
+            Some(mut internal) => {
+                if let Some(internal) = internal.downcast_mut::<Internal>() {
+                    self.write_values(network, metric_set_states, internal)?;
                     Ok(())
                 } else {
                     panic!("Internal state did not downcast to the correct type! :(");

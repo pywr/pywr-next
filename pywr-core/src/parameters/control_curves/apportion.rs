@@ -1,4 +1,4 @@
-use crate::metric::Metric;
+use crate::metric::MetricF64;
 use crate::network::Network;
 use crate::parameters::{Parameter, ParameterMeta};
 use crate::scenario::ScenarioIndex;
@@ -17,12 +17,12 @@ use std::collections::HashMap;
 ///
 pub struct ApportionParameter {
     meta: ParameterMeta,
-    metric: Metric,
-    control_curve: Metric,
+    metric: MetricF64,
+    control_curve: MetricF64,
 }
 
 impl ApportionParameter {
-    pub fn new(name: &str, metric: Metric, control_curve: Metric) -> Self {
+    pub fn new(name: &str, metric: MetricF64, control_curve: MetricF64) -> Self {
         Self {
             meta: ParameterMeta::new(name),
             metric,

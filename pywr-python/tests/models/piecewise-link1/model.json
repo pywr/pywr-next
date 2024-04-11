@@ -13,12 +13,20 @@
         "name": "input1",
         "type": "Input",
         "max_flow": {
-          "type": "Parameter",
-          "name": "inflow"
+          "type": "Timeseries",
+          "name": "inflow",
+          "columns": {
+            "type": "Column",
+            "name": "inflow"
+          }
         },
         "min_flow": {
-          "type": "Parameter",
-          "name": "inflow"
+          "type": "Timeseries",
+          "name": "inflow",
+          "columns": {
+            "type": "Column",
+            "name": "inflow"
+          }
         }
       },
       {
@@ -74,17 +82,14 @@
         "name": "demand",
         "type": "Constant",
         "value": 10.0
-      },
+      }
+    ],
+    "timeseries": [
       {
         "name": "inflow",
-        "type": "DataFrame",
-        "url": "inflow.csv",
-        "pandas_kwargs": {
-          "index_col": 0
-        },
-        "columns": {
-          "type": "Column",
-          "name": "inflow"
+        "provider": {
+          "type": "Polars",
+          "url": "inflow.csv"
         }
       }
     ],

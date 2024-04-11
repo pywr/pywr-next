@@ -250,7 +250,7 @@ fn months_since_last_reset(current: &NaiveDateTime, last_reset: &NaiveDateTime) 
 
 #[cfg(test)]
 mod tests {
-    use crate::metric::Metric;
+    use crate::metric::MetricF64;
     use crate::models::Model;
     use crate::network::Network;
     use crate::node::{ConstraintValue, StorageInitialVolume};
@@ -360,7 +360,7 @@ mod tests {
                 0.0
             }
         };
-        let recorder = AssertionFnRecorder::new("link-0-flow", Metric::NodeOutFlow(idx), expected, None, None);
+        let recorder = AssertionFnRecorder::new("link-0-flow", MetricF64::NodeOutFlow(idx), expected, None, None);
         network.add_recorder(Box::new(recorder)).unwrap();
 
         // Set-up assertion for "input" node
@@ -372,7 +372,7 @@ mod tests {
                 0.0
             }
         };
-        let recorder = AssertionFnRecorder::new("link-1-flow", Metric::NodeOutFlow(idx), expected, None, None);
+        let recorder = AssertionFnRecorder::new("link-1-flow", MetricF64::NodeOutFlow(idx), expected, None, None);
         network.add_recorder(Box::new(recorder)).unwrap();
 
         let domain = default_timestepper().try_into().unwrap();
@@ -406,7 +406,7 @@ mod tests {
 
         let expected = Array::zeros((366, 1));
         let idx = network.get_node_by_name("output", None).unwrap().index();
-        let recorder = AssertionRecorder::new("output-flow", Metric::NodeInFlow(idx), expected, None, None);
+        let recorder = AssertionRecorder::new("output-flow", MetricF64::NodeInFlow(idx), expected, None, None);
         network.add_recorder(Box::new(recorder)).unwrap();
 
         // Test all solvers
@@ -449,7 +449,7 @@ mod tests {
             }
         };
         let idx = network.get_node_by_name("output", None).unwrap().index();
-        let recorder = AssertionFnRecorder::new("output-flow", Metric::NodeInFlow(idx), expected, None, None);
+        let recorder = AssertionFnRecorder::new("output-flow", MetricF64::NodeInFlow(idx), expected, None, None);
         network.add_recorder(Box::new(recorder)).unwrap();
 
         // Test all solvers
