@@ -319,7 +319,7 @@ impl PywrNetwork {
         // Create all of the metric sets
         if let Some(metric_sets) = &self.metric_sets {
             for metric_set in metric_sets {
-                metric_set.add_to_model(&mut network, self)?;
+                metric_set.add_to_model(&mut network, &args)?;
             }
         }
 

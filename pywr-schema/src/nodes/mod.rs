@@ -315,6 +315,7 @@ impl Node {
             Node::Delay(n) => n.parameters(),
             Node::MonthlyVirtualStorage(n) => n.parameters(),
             Node::RollingVirtualStorage(n) => n.parameters(),
+            Node::Turbine(n) => n.parameters(),
         }
     }
 
@@ -339,6 +340,7 @@ impl Node {
             Node::Delay(n) => n.parameters_mut(),
             Node::MonthlyVirtualStorage(n) => n.parameters_mut(),
             Node::RollingVirtualStorage(n) => n.parameters_mut(),
+            Node::Turbine(n) => n.parameters_mut(),
         }
     }
 
@@ -361,7 +363,7 @@ impl Node {
             Node::PiecewiseLink(n) => n.add_to_model(network),
             Node::PiecewiseStorage(n) => n.add_to_model(network, args),
             Node::Delay(n) => n.add_to_model(network),
-            Node::Turbine(n) => n.add_to_model(network),
+            Node::Turbine(n) => n.add_to_model(network, args),
             Node::MonthlyVirtualStorage(n) => n.add_to_model(network, args),
             Node::RollingVirtualStorage(n) => n.add_to_model(network, args),
         }
@@ -387,20 +389,10 @@ impl Node {
             Node::AggregatedStorage(_) => Ok(()), // No constraints on aggregated storage nodes.
             Node::VirtualStorage(_) => Ok(()),    // TODO
             Node::AnnualVirtualStorage(_) => Ok(()), // TODO
-<<<<<<< HEAD
-            Node::PiecewiseLink(n) => {
-                n.set_constraints(network, schema, domain, tables, data_path, inter_network_transfers)
-            }
-            Node::PiecewiseStorage(n) => {
-                n.set_constraints(network, schema, domain, tables, data_path, inter_network_transfers)
-            }
-            Node::Delay(n) => n.set_constraints(network, tables),
-            Node::Turbine(n) => n.set_constraints(network, schema, domain, tables, data_path, inter_network_transfers),
-=======
             Node::PiecewiseLink(n) => n.set_constraints(network, args),
             Node::PiecewiseStorage(n) => n.set_constraints(network, args),
             Node::Delay(n) => n.set_constraints(network, args),
->>>>>>> main
+            Node::Turbine(n) => n.set_constraints(network, args),
             Node::MonthlyVirtualStorage(_) => Ok(()), // TODO
             Node::RollingVirtualStorage(_) => Ok(()), // TODO
         }
@@ -463,6 +455,7 @@ impl Node {
         &self,
         network: &mut pywr_core::network::Network,
         attribute: Option<NodeAttribute>,
+        args: &LoadArgs,
     ) -> Result<MetricF64, SchemaError> {
         match self {
             Node::Input(n) => n.create_metric(network, attribute),
@@ -484,7 +477,7 @@ impl Node {
             Node::PiecewiseStorage(n) => n.create_metric(network, attribute),
             Node::Delay(n) => n.create_metric(network, attribute),
             Node::RollingVirtualStorage(n) => n.create_metric(network, attribute),
-            Node::Turbine(n) => n.create_metric(network, attribute),
+            Node::Turbine(n) => n.create_metric(network, attribute, args),
         }
     }
 }

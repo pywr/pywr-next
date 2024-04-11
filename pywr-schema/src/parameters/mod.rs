@@ -269,14 +269,7 @@ impl Parameter {
             Self::DiscountFactor(p) => ParameterType::Parameter(p.add_to_model(network, args)?),
             Self::Interpolated(p) => ParameterType::Parameter(p.add_to_model(network, args)?),
             Self::RbfProfile(p) => ParameterType::Parameter(p.add_to_model(network)?),
-            Self::HydropowerTarget(p) => ParameterType::Parameter(p.add_to_model(
-                network,
-                schema,
-                domain,
-                tables,
-                data_path,
-                inter_network_transfers,
-            )?),
+            Self::HydropowerTarget(p) => ParameterType::Parameter(p.add_to_model(network, args)?),
         };
 
         Ok(ty)
@@ -466,7 +459,7 @@ impl TryFromV1Parameter<ParameterV1> for ParameterOrTimeseries {
                 CoreParameter::NegativeMax(_) => todo!("Implement NegativeMaxParameter"),
                 CoreParameter::NegativeMin(_) => todo!("Implement NegativeMinParameter"),
                 CoreParameter::HydropowerTarget(p) => {
-                    Parameter::HydropowerTarget(p.try_into_v2_parameter(parent_node, unnamed_count)?)
+                    Parameter::HydropowerTarget(p.try_into_v2_parameter(parent_node, unnamed_count)?).into()
                 }
                 CoreParameter::WeeklyProfile(p) => {
                     Parameter::WeeklyProfile(p.try_into_v2_parameter(parent_node, unnamed_count)?).into()
@@ -584,7 +577,7 @@ impl NodeReference {
             .get_node_by_name(&self.name)
             .ok_or_else(|| SchemaError::NodeNotFound(self.name.clone()))?;
 
-        node.create_metric(network, self.attribute)
+        node.create_metric(network, self.attribute, args)
     }
 }
 

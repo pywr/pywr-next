@@ -1,5 +1,5 @@
 use crate::error::SchemaError;
-use crate::model::PywrNetwork;
+use crate::model::LoadArgs;
 use crate::nodes::NodeAttribute;
 use serde::{Deserialize, Serialize};
 use std::num::NonZeroUsize;
@@ -24,8 +24,9 @@ impl OutputMetric {
     fn try_clone_into_metric(
         &self,
         network: &mut pywr_core::network::Network,
-        schema: &PywrNetwork,
+        args: &LoadArgs,
     ) -> Result<pywr_core::metric::MetricF64, SchemaError> {
+        let schema = args.schema;
         match self {
             OutputMetric::Default { node } => {
                 // Get the node from the schema; not the model itself
@@ -33,7 +34,7 @@ impl OutputMetric {
                     .get_node_by_name(node)
                     .ok_or_else(|| SchemaError::NodeNotFound(node.to_string()))?;
                 // Create and return the node's default metric
-                node.create_metric(network, None)
+                node.create_metric(network, None, &args)
             }
             OutputMetric::Deficit { node } => {
                 // Get the node from the schema; not the model itself
@@ -41,7 +42,7 @@ impl OutputMetric {
                     .get_node_by_name(node)
                     .ok_or_else(|| SchemaError::NodeNotFound(node.to_string()))?;
                 // Create and return the metric
-                node.create_metric(network, Some(NodeAttribute::Deficit))
+                node.create_metric(network, Some(NodeAttribute::Deficit), &args)
             }
             OutputMetric::Parameter { name } => {
                 if let Ok(idx) = network.get_parameter_index_by_name(name) {
@@ -139,16 +140,12 @@ pub struct MetricSet {
 }
 
 impl MetricSet {
-    pub fn add_to_model(
-        &self,
-        network: &mut pywr_core::network::Network,
-        schema: &PywrNetwork,
-    ) -> Result<(), SchemaError> {
+    pub fn add_to_model(&self, network: &mut pywr_core::network::Network, args: &LoadArgs) -> Result<(), SchemaError> {
         // Convert the schema representation to internal metrics.
         let metrics: Vec<pywr_core::metric::MetricF64> = self
             .metrics
             .iter()
-            .map(|m| m.try_clone_into_metric(network, schema))
+            .map(|m| m.try_clone_into_metric(network, args))
             .collect::<Result<_, _>>()?;
 
         let aggregator = self.aggregator.clone().map(|a| a.into());
