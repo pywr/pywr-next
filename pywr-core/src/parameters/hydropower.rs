@@ -1,4 +1,4 @@
-use crate::metric::Metric;
+use crate::metric::MetricF64;
 use crate::network::Network;
 use crate::parameters::{Parameter, ParameterMeta};
 use crate::scenario::ScenarioIndex;
@@ -6,16 +6,15 @@ use crate::state::{ParameterState, State};
 use crate::timestep::Timestep;
 use crate::utils::inverse_hydropower_calculation;
 use crate::PywrError;
-use std::any::Any;
 
 pub struct HydropowerTargetData {
-    pub target: Metric,
+    pub target: MetricF64,
     pub elevation: Option<f64>,
     pub min_head: Option<f64>,
-    pub max_flow: Option<Metric>,
-    pub min_flow: Option<Metric>,
+    pub max_flow: Option<MetricF64>,
+    pub min_flow: Option<MetricF64>,
     pub efficiency: Option<f64>,
-    pub water_elevation: Option<Metric>,
+    pub water_elevation: Option<MetricF64>,
     pub water_density: Option<f64>,
     pub flow_unit_conversion: Option<f64>,
     pub energy_unit_conversion: Option<f64>,
@@ -23,13 +22,13 @@ pub struct HydropowerTargetData {
 
 pub struct HydropowerTargetParameter {
     pub meta: ParameterMeta,
-    pub target: Metric,
-    pub max_flow: Option<Metric>,
-    pub min_flow: Option<Metric>,
+    pub target: MetricF64,
+    pub max_flow: Option<MetricF64>,
+    pub min_flow: Option<MetricF64>,
     pub turbine_min_head: f64,
     pub turbine_elevation: f64,
     pub turbine_efficiency: f64,
-    pub water_elevation: Option<Metric>,
+    pub water_elevation: Option<MetricF64>,
     pub water_density: f64,
     pub flow_unit_conversion: f64,
     pub energy_unit_conversion: f64,
@@ -53,10 +52,7 @@ impl HydropowerTargetParameter {
     }
 }
 
-impl Parameter for HydropowerTargetParameter {
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
-    }
+impl Parameter<f64> for HydropowerTargetParameter {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }

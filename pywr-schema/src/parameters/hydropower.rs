@@ -1,14 +1,11 @@
-use crate::data_tables::LoadedTableCollection;
-use crate::model::PywrMultiNetworkTransfer;
+use crate::model::LoadArgs;
 use crate::parameters::{
     DynamicFloatValue, DynamicFloatValueType, IntoV2Parameter, ParameterMeta, TryFromV1Parameter, TryIntoV2Parameter,
 };
 use crate::{ConversionError, SchemaError};
-use pywr_core::models::ModelDomain;
 use pywr_core::parameters::{HydropowerTargetData, ParameterIndex};
 use pywr_v1_schema::parameters::HydropowerTargetParameter as HydropowerTargetParameterV1;
 use std::collections::HashMap;
-use std::path::Path;
 
 /// A parameter that returns flow from a hydropower generation target.
 ///
@@ -87,27 +84,16 @@ impl HydropowerTargetParameter {
     pub fn add_to_model(
         &self,
         network: &mut pywr_core::network::Network,
-        schema: &crate::model::PywrNetwork,
-        domain: &ModelDomain,
-        tables: &LoadedTableCollection,
-        data_path: Option<&Path>,
-        inter_network_transfers: &[PywrMultiNetworkTransfer],
-    ) -> Result<ParameterIndex, SchemaError> {
-        let target = self
-            .target
-            .load(network, schema, domain, tables, data_path, inter_network_transfers)?;
+        args: &LoadArgs,
+    ) -> Result<ParameterIndex<f64>, SchemaError> {
+        let target = self.target.load(network, args)?;
         let water_elevation = self
             .water_elevation
-            .map(|t| t.load(network, schema, domain, tables, data_path, inter_network_transfers))
+            .as_ref()
+            .map(|t| t.load(network, args))
             .transpose()?;
-        let max_flow = self
-            .max_flow
-            .map(|t| t.load(network, schema, domain, tables, data_path, inter_network_transfers))
-            .transpose()?;
-        let min_flow = self
-            .min_flow
-            .map(|t| t.load(network, schema, domain, tables, data_path, inter_network_transfers))
-            .transpose()?;
+        let max_flow = self.max_flow.as_ref().map(|t| t.load(network, args)).transpose()?;
+        let min_flow = self.min_flow.as_ref().map(|t| t.load(network, args)).transpose()?;
 
         let turbine_data = HydropowerTargetData {
             target,

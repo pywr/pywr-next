@@ -1,16 +1,15 @@
-use crate::data_tables::LoadedTableCollection;
-use crate::model::PywrMultiNetworkTransfer;
+use crate::model::LoadArgs;
 use crate::nodes::{NodeAttribute, NodeMeta};
 use crate::parameters::DynamicFloatValue;
 use crate::SchemaError;
 use pywr_core::derived_metric::{DerivedMetric, TurbineData};
-use pywr_core::metric::Metric;
-use pywr_core::models::ModelDomain;
+use pywr_core::metric::MetricF64;
 use pywr_core::parameters::HydropowerTargetData;
+use pywr_schema_macros::PywrNode;
 use std::collections::HashMap;
-use std::path::Path;
 
-enum TargetType {
+#[derive(serde::Deserialize, serde::Serialize, Clone, Debug)]
+pub enum TargetType {
     // set flow derived from the hydropower target as a max_flow
     MaxFlow,
     // set flow derived from the hydropower target as a min_flow
@@ -21,7 +20,7 @@ enum TargetType {
 
 /// This turbine node can be used to set a flow constraint based on a hydropower production target.
 /// The turbine elevation, minimum head and efficiency can also be configured.
-#[derive(serde::Deserialize, serde::Serialize, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Debug, PywrNode)]
 pub struct TurbineNode {
     #[serde(flatten)]
     pub meta: NodeMeta,
@@ -30,8 +29,8 @@ pub struct TurbineNode {
     /// calculated using the hydropower equation. If omitted no flow restriction is set.
     /// Units should be in units of energy per day.
     pub target: Option<DynamicFloatValue>,
-    // This can be used to define where to apply the flow calculated from the hydropower production
-    // target using the inverse hydropower equation. Default to [`TargetType::MaxFlow`])
+    /// This can be used to define where to apply the flow calculated from the hydropower production
+    /// target using the inverse hydropower equation. Default to [`TargetType::MaxFlow`])
     pub target_type: TargetType,
     /// The elevation of water entering the turbine. The difference of this value with the
     /// `turbine_elevation` gives the working head of the turbine. This is optional
@@ -59,6 +58,8 @@ pub struct TurbineNode {
 impl Default for TurbineNode {
     fn default() -> Self {
         Self {
+            meta: Default::default(),
+            cost: None,
             target: None,
             target_type: TargetType::MaxFlow,
             water_elevation: None,
@@ -68,7 +69,6 @@ impl Default for TurbineNode {
             water_density: 1000.0,
             flow_unit_conversion: 1.0,
             energy_unit_conversion: 1e-6,
-            ..Default::default()
         }
     }
 }
@@ -76,20 +76,20 @@ impl Default for TurbineNode {
 impl TurbineNode {
     const DEFAULT_ATTRIBUTE: NodeAttribute = NodeAttribute::Outflow;
 
-    pub fn parameters(&self) -> HashMap<&str, &DynamicFloatValue> {
-        let mut attributes = HashMap::new();
-        if let Some(p) = &self.cost {
-            attributes.insert("cost", p);
-        }
-
-        attributes
-    }
+    // pub fn parameters(&self) -> HashMap<&str, &DynamicFloatValue> {
+    //     let mut attributes = HashMap::new();
+    //     if let Some(p) = &self.cost {
+    //         attributes.insert("cost", p);
+    //     }
+    //
+    //     attributes
+    // }
 
     fn sub_name() -> Option<&'static str> {
         Some("turbine")
     }
 
-    pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
+    pub fn add_to_model(&self, network: &mut pywr_core::network::Network, _args: &LoadArgs) -> Result<(), SchemaError> {
         network.add_link_node(self.meta.name.as_str(), None)?;
         Ok(())
     }
@@ -97,25 +97,22 @@ impl TurbineNode {
     pub fn set_constraints(
         &self,
         network: &mut pywr_core::network::Network,
-        schema: &crate::model::PywrNetwork,
-        domain: &ModelDomain,
-        tables: &LoadedTableCollection,
-        data_path: Option<&Path>,
-        inter_network_transfers: &[PywrMultiNetworkTransfer],
+        args: &LoadArgs,
     ) -> Result<(), SchemaError> {
         if let Some(cost) = &self.cost {
-            let value = cost.load(network, schema, domain, tables, data_path, inter_network_transfers)?;
+            let value = cost.load(network, args)?;
             network.set_node_cost(self.meta.name.as_str(), None, value.into())?;
         }
 
         if let Some(target) = &self.target {
             // TODO: address parameter name. See https://github.com/pywr/pywr-next/issues/107#issuecomment-1980957962
             let name = format!("{}-power", self.meta.name.as_str());
-            let target_value = target.load(network, schema, domain, tables, data_path, inter_network_transfers)?;
+            let target_value = target.load(network, args)?;
 
             let water_elevation = self
                 .water_elevation
-                .map(|t| t.load(network, schema, domain, tables, data_path, inter_network_transfers))
+                .as_ref()
+                .map(|t| t.load(network, args))
                 .transpose()?;
             let turbine_data = HydropowerTargetData {
                 target: target_value,
@@ -131,7 +128,7 @@ impl TurbineNode {
             };
             let p = pywr_core::parameters::HydropowerTargetParameter::new(&name, turbine_data);
             let power_idx = network.add_parameter(Box::new(p))?;
-            let metric = Metric::ParameterValue(power_idx);
+            let metric = MetricF64::ParameterValue(power_idx);
 
             match self.target_type {
                 TargetType::MaxFlow => {
@@ -161,20 +158,21 @@ impl TurbineNode {
         &self,
         network: &mut pywr_core::network::Network,
         attribute: Option<NodeAttribute>,
-    ) -> Result<Metric, SchemaError> {
+        args: &LoadArgs,
+    ) -> Result<MetricF64, SchemaError> {
         // Use the default attribute if none is specified
         let attr = attribute.unwrap_or(Self::DEFAULT_ATTRIBUTE);
 
         let idx = network.get_node_index_by_name(self.meta.name.as_str(), None)?;
 
         let metric = match attr {
-            NodeAttribute::Outflow => Metric::NodeOutFlow(idx),
-            NodeAttribute::Inflow => Metric::NodeInFlow(idx),
+            NodeAttribute::Outflow => MetricF64::NodeOutFlow(idx),
+            NodeAttribute::Inflow => MetricF64::NodeInFlow(idx),
             NodeAttribute::Power => {
-                // TODO
                 let water_elevation = self
                     .water_elevation
-                    .map(|t| t.load(network, schema, domain, tables, data_path, inter_network_transfers))
+                    .as_ref()
+                    .map(|t| t.load(network, args))
                     .transpose()?;
 
                 let turbine_data = TurbineData {
@@ -187,7 +185,7 @@ impl TurbineNode {
                 };
                 let dm = DerivedMetric::PowerFromNodeFlow(idx, turbine_data);
                 let dm_idx = network.add_derived_metric(dm);
-                Metric::DerivedMetric(dm_idx)
+                MetricF64::DerivedMetric(dm_idx)
             }
             _ => {
                 return Err(SchemaError::NodeAttributeNotSupported {

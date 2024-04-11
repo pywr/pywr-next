@@ -1,5 +1,5 @@
 use crate::aggregated_storage_node::AggregatedStorageNodeIndex;
-use crate::metric::Metric;
+use crate::metric::MetricF64;
 use crate::network::Network;
 use crate::node::NodeIndex;
 use crate::state::State;
@@ -42,7 +42,7 @@ pub struct TurbineData {
     // The turbine relative efficiency (0-1)
     pub efficiency: f64,
     // The water elevation above the turbine
-    pub water_elevation: Option<Metric>,
+    pub water_elevation: Option<MetricF64>,
     // The water density
     pub water_density: f64,
     /// A factor used to transform the units of flow to be compatible with the hydropower equation
@@ -137,7 +137,9 @@ impl DerivedMetric {
 
     pub fn name<'a>(&self, network: &'a Network) -> Result<&'a str, PywrError> {
         match self {
-            Self::NodeInFlowDeficit(idx) | Self::NodeProportionalVolume(idx) => network.get_node(idx).map(|n| n.name()),
+            Self::NodeInFlowDeficit(idx) | Self::NodeProportionalVolume(idx) | Self::PowerFromNodeFlow(idx, _) => {
+                network.get_node(idx).map(|n| n.name())
+            }
             Self::AggregatedNodeProportionalVolume(idx) => network.get_aggregated_storage_node(idx).map(|n| n.name()),
             Self::VirtualStorageProportionalVolume(idx) => network.get_virtual_storage_node(idx).map(|v| v.name()),
         }
@@ -145,7 +147,7 @@ impl DerivedMetric {
 
     pub fn sub_name<'a>(&self, network: &'a Network) -> Result<Option<&'a str>, PywrError> {
         match self {
-            Self::NodeInFlowDeficit(idx) | Self::NodeProportionalVolume(idx) => {
+            Self::NodeInFlowDeficit(idx) | Self::NodeProportionalVolume(idx) | Self::PowerFromNodeFlow(idx, _) => {
                 network.get_node(idx).map(|n| n.sub_name())
             }
             Self::AggregatedNodeProportionalVolume(idx) => {
@@ -161,6 +163,7 @@ impl DerivedMetric {
             Self::NodeProportionalVolume(_) => "proportional_volume",
             Self::AggregatedNodeProportionalVolume(_) => "proportional_volume",
             Self::VirtualStorageProportionalVolume(_) => "proportional_volume",
+            Self::PowerFromNodeFlow(_, _) => "power_from_flow",
         }
     }
 }
