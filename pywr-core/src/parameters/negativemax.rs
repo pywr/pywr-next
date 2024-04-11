@@ -1,20 +1,19 @@
-use crate::metric::Metric;
+use crate::metric::MetricF64;
 use crate::network::Network;
 use crate::parameters::{Parameter, ParameterMeta};
 use crate::scenario::ScenarioIndex;
 use crate::state::{ParameterState, State};
 use crate::timestep::Timestep;
 use crate::PywrError;
-use std::any::Any;
 
 pub struct NegativeMaxParameter {
     meta: ParameterMeta,
-    metric: Metric,
+    metric: MetricF64,
     threshold: f64,
 }
 
 impl NegativeMaxParameter {
-    pub fn new(name: &str, metric: Metric, threshold: f64) -> Self {
+    pub fn new(name: &str, metric: MetricF64, threshold: f64) -> Self {
         Self {
             meta: ParameterMeta::new(name),
             metric,
@@ -23,10 +22,7 @@ impl NegativeMaxParameter {
     }
 }
 
-impl Parameter for NegativeMaxParameter {
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
-    }
+impl Parameter<f64> for NegativeMaxParameter {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }

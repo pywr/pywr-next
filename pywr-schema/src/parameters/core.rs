@@ -469,15 +469,9 @@ impl NegativeMaxParameter {
     pub fn add_to_model(
         &self,
         network: &mut pywr_core::network::Network,
-        schema: &crate::model::PywrNetwork,
-        domain: &ModelDomain,
-        tables: &LoadedTableCollection,
-        data_path: Option<&Path>,
-        inter_network_transfers: &[PywrMultiNetworkTransfer],
-    ) -> Result<ParameterIndex, SchemaError> {
-        let idx = self
-            .metric
-            .load(network, schema, domain, tables, data_path, inter_network_transfers)?;
+        args: &LoadArgs,
+    ) -> Result<ParameterIndex<f64>, SchemaError> {
+        let idx = self.metric.load(network, args)?;
         let threshold = self.threshold.unwrap_or(0.0);
 
         let p = pywr_core::parameters::NegativeMaxParameter::new(&self.meta.name, idx, threshold);
@@ -541,15 +535,9 @@ impl NegativeMinParameter {
     pub fn add_to_model(
         &self,
         network: &mut pywr_core::network::Network,
-        schema: &crate::model::PywrNetwork,
-        domain: &ModelDomain,
-        tables: &LoadedTableCollection,
-        data_path: Option<&Path>,
-        inter_network_transfers: &[PywrMultiNetworkTransfer],
-    ) -> Result<ParameterIndex, SchemaError> {
-        let idx = self
-            .metric
-            .load(network, schema, domain, tables, data_path, inter_network_transfers)?;
+        args: &LoadArgs,
+    ) -> Result<ParameterIndex<f64>, SchemaError> {
+        let idx = self.metric.load(network, args)?;
         let threshold = self.threshold.unwrap_or(0.0);
 
         let p = pywr_core::parameters::NegativeMinParameter::new(&self.meta.name, idx, threshold);
