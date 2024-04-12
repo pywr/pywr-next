@@ -112,7 +112,7 @@ impl ScenarioIndex {
 #[derive(Debug)]
 pub struct ScenarioDomain {
     scenario_indices: Vec<ScenarioIndex>,
-    scenario_group_names: Vec<String>,
+    scenario_groups: Vec<ScenarioGroup>,
 }
 
 impl ScenarioDomain {
@@ -131,12 +131,11 @@ impl ScenarioDomain {
 
     /// Return the index of a scenario group by name
     pub fn group_index(&self, name: &str) -> Option<usize> {
-        self.scenario_group_names.iter().position(|n| n == name)
+        self.scenario_groups.iter().position(|g| g.name == name)
     }
 
-    /// Return the name of each scenario group
-    pub fn group_names(&self) -> &[String] {
-        &self.scenario_group_names
+    pub fn groups(&self) -> &[ScenarioGroup] {
+        &self.scenario_groups
     }
 }
 
@@ -144,16 +143,14 @@ impl From<ScenarioGroupCollection> for ScenarioDomain {
     fn from(value: ScenarioGroupCollection) -> Self {
         // Handle creating at-least one scenario if the collection is empty.
         if !value.is_empty() {
-            let scenario_group_names = value.groups.iter().map(|g| g.name.clone()).collect();
-
             Self {
                 scenario_indices: value.scenario_indices(),
-                scenario_group_names,
+                scenario_groups: value.groups,
             }
         } else {
             Self {
                 scenario_indices: vec![ScenarioIndex::new(0, vec![0])],
-                scenario_group_names: vec!["default".to_string()],
+                scenario_groups: vec![ScenarioGroup::new("default", 1)],
             }
         }
     }
