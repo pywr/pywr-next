@@ -1,7 +1,8 @@
 {
   "name": "turbine-flow",
-  "type": "HydropowerParameter",
-  "water_elevation": "reservoir1_level",
+  "type": "HydropowerTarget",
+  "target": 320.11,
+  "water_elevation": 1.0,
   "turbine_elevation": 35.0,
   "efficiency": 0.85,
   "flow_unit_conversion": 1e3
