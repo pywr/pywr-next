@@ -1,6 +1,7 @@
 use crate::error::SchemaError;
+use crate::metric::Metric;
 use crate::model::LoadArgs;
-use crate::parameters::{ConstantValue, DynamicFloatValue, DynamicFloatValueType, ParameterMeta};
+use crate::parameters::{ConstantValue, DynamicFloatValueType, ParameterMeta};
 use pywr_core::parameters::ParameterIndex;
 use std::collections::HashMap;
 
@@ -31,7 +32,7 @@ pub struct OffsetParameter {
     /// function is specified this value will be the `x` value for that activation function.
     pub offset: ConstantValue<f64>,
     /// The metric from which to apply the offset.
-    pub metric: DynamicFloatValue,
+    pub metric: Metric,
 }
 
 impl OffsetParameter {

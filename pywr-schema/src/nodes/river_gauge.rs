@@ -1,7 +1,8 @@
 use crate::error::{ConversionError, SchemaError};
+use crate::metric::Metric;
 use crate::model::LoadArgs;
 use crate::nodes::{NodeAttribute, NodeMeta};
-use crate::parameters::{DynamicFloatValue, TryIntoV2Parameter};
+use crate::parameters::TryIntoV2Parameter;
 use pywr_core::metric::MetricF64;
 use pywr_schema_macros::PywrNode;
 use pywr_v1_schema::nodes::RiverGaugeNode as RiverGaugeNodeV1;
@@ -26,8 +27,8 @@ use std::collections::HashMap;
 pub struct RiverGaugeNode {
     #[serde(flatten)]
     pub meta: NodeMeta,
-    pub mrf: Option<DynamicFloatValue>,
-    pub mrf_cost: Option<DynamicFloatValue>,
+    pub mrf: Option<Metric>,
+    pub mrf_cost: Option<Metric>,
 }
 
 impl RiverGaugeNode {
@@ -79,6 +80,10 @@ impl RiverGaugeNode {
             (self.meta.name.as_str(), Self::mrf_sub_name().map(|s| s.to_string())),
             (self.meta.name.as_str(), Self::bypass_sub_name().map(|s| s.to_string())),
         ]
+    }
+
+    pub fn default_metric(&self) -> NodeAttribute {
+        Self::DEFAULT_ATTRIBUTE
     }
 
     pub fn create_metric(
@@ -144,59 +149,7 @@ mod tests {
     use pywr_core::test_utils::run_all_solvers;
 
     fn model_str() -> &'static str {
-        r#"
-            {
-                "metadata": {
-                    "title": "Simple 1",
-                    "description": "A very simple example.",
-                    "minimum_version": "0.1"
-                },
-                "timestepper": {
-                    "start": "2015-01-01",
-                    "end": "2015-12-31",
-                    "timestep": 1
-                },
-                "network": {
-                    "nodes": [
-                        {
-                            "name": "catchment1",
-                            "type": "Catchment",
-                            "flow": 15
-                        },
-                        {
-                            "name": "gauge1",
-                            "type": "RiverGauge",
-                            "mrf": 5.0,
-                            "mrf_cost": -20.0
-                        },
-                        {
-                            "name": "term1",
-                            "type": "Output"
-                        },
-                        {
-                            "name": "demand1",
-                            "type": "Output",
-                            "max_flow": 15.0,
-                            "cost": -10
-                        }
-                    ],
-                    "edges": [
-                        {
-                            "from_node": "catchment1",
-                            "to_node": "gauge1"
-                        },
-                        {
-                            "from_node": "gauge1",
-                            "to_node": "term1"
-                        },
-                        {
-                            "from_node": "gauge1",
-                            "to_node": "demand1"
-                        }
-                    ]
-                }
-            }
-            "#
+        include_str!("../test_models/river_gauge1.json")
     }
 
     #[test]

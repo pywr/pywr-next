@@ -1,9 +1,7 @@
 use crate::error::{ConversionError, SchemaError};
+use crate::metric::Metric;
 use crate::model::LoadArgs;
-use crate::parameters::{
-    DynamicFloatValue, DynamicFloatValueType, DynamicIndexValue, IntoV2Parameter, ParameterMeta, TryFromV1Parameter,
-    TryIntoV2Parameter,
-};
+use crate::parameters::{DynamicIndexValue, IntoV2Parameter, ParameterMeta, TryFromV1Parameter, TryIntoV2Parameter};
 use pywr_core::parameters::ParameterIndex;
 use pywr_v1_schema::parameters::{
     AggFunc as AggFuncV1, AggregatedIndexParameter as AggregatedIndexParameterV1,
@@ -71,23 +69,10 @@ pub struct AggregatedParameter {
     #[serde(flatten)]
     pub meta: ParameterMeta,
     pub agg_func: AggFunc,
-    pub metrics: Vec<DynamicFloatValue>,
+    pub metrics: Vec<Metric>,
 }
 
 impl AggregatedParameter {
-    pub fn node_references(&self) -> HashMap<&str, &str> {
-        HashMap::new()
-    }
-
-    pub fn parameters(&self) -> HashMap<&str, DynamicFloatValueType> {
-        let mut attributes = HashMap::new();
-
-        let metrics = &self.metrics;
-        attributes.insert("parameters", metrics.into());
-
-        attributes
-    }
-
     pub fn add_to_model(
         &self,
         network: &mut pywr_core::network::Network,
@@ -236,7 +221,6 @@ impl TryFromV1Parameter<AggregatedIndexParameterV1> for AggregatedIndexParameter
 #[cfg(test)]
 mod tests {
     use crate::parameters::aggregated::AggregatedParameter;
-    use crate::parameters::{DynamicFloatValue, DynamicFloatValueType, MetricFloatValue, Parameter};
 
     #[test]
     fn test_aggregated() {
@@ -258,7 +242,7 @@ mod tests {
                         },
                         "control_curves": [
                             {"type": "Parameter", "name": "reservoir_cc"},
-                            0.2
+                            {"type": "Constant", "value": 0.2}
                         ],
                         "comment": "A witty comment",
                         "values": [
@@ -280,7 +264,7 @@ mod tests {
                         },
                         "control_curves": [
                             {"type": "Parameter", "name": "reservoir_cc"},
-                            0.2
+                            {"type": "Constant", "value": 0.2}
                         ],
                         "comment": "A witty comment",
                         "values": [
@@ -295,29 +279,6 @@ mod tests {
             }
             "#;
 
-        let param: AggregatedParameter = serde_json::from_str(data).unwrap();
-
-        assert_eq!(param.node_references().len(), 0);
-        assert_eq!(param.parameters().len(), 1);
-        match param.parameters().remove("parameters").unwrap() {
-            DynamicFloatValueType::List(children) => {
-                assert_eq!(children.len(), 2);
-                for p in children {
-                    match p {
-                        DynamicFloatValue::Dynamic(p) => match p {
-                            MetricFloatValue::InlineParameter { definition } => match definition.as_ref() {
-                                Parameter::ControlCurvePiecewiseInterpolated(p) => {
-                                    assert_eq!(p.storage_node.name, "Reservoir")
-                                }
-                                _ => panic!("Incorrect core parameter deserialized."),
-                            },
-                            _ => panic!("Non-core parameter was deserialized."),
-                        },
-                        _ => panic!("Wrong variant for child parameter."),
-                    }
-                }
-            }
-            _ => panic!("Wrong variant for parameters."),
-        };
+        let _: AggregatedParameter = serde_json::from_str(data).unwrap();
     }
 }

@@ -14,7 +14,10 @@
       {
         "name": "supply1",
         "type": "Input",
-        "max_flow": 15
+        "max_flow": {
+          "type": "Constant",
+          "value": 15
+        }
       },
       {
         "name": "link1",
@@ -27,7 +30,10 @@
           "type": "Parameter",
           "name": "demand"
         },
-        "cost": -10
+        "cost": {
+          "type": "Constant",
+          "value": -10
+        }
       }
     ],
     "edges": [
@@ -60,8 +66,8 @@
         },
         "metrics": [
           {
-            "type": "Default",
-            "node": "demand1"
+            "type": "Node",
+            "name": "demand1"
           }
         ]
       },
@@ -77,8 +83,8 @@
         },
         "metrics": [
           {
-            "type": "Default",
-            "node": "demand1"
+            "type": "Node",
+            "name": "demand1"
           }
         ]
       }

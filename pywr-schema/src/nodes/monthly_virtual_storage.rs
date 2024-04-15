@@ -1,8 +1,9 @@
 use crate::error::{ConversionError, SchemaError};
+use crate::metric::Metric;
 use crate::model::LoadArgs;
 use crate::nodes::core::StorageInitialVolume;
 use crate::nodes::{NodeAttribute, NodeMeta};
-use crate::parameters::{DynamicFloatValue, TryIntoV2Parameter};
+use crate::parameters::TryIntoV2Parameter;
 use pywr_core::derived_metric::DerivedMetric;
 use pywr_core::metric::MetricF64;
 use pywr_core::node::ConstraintValue;
@@ -28,9 +29,9 @@ pub struct MonthlyVirtualStorageNode {
     pub meta: NodeMeta,
     pub nodes: Vec<String>,
     pub factors: Option<Vec<f64>>,
-    pub max_volume: Option<DynamicFloatValue>,
-    pub min_volume: Option<DynamicFloatValue>,
-    pub cost: Option<DynamicFloatValue>,
+    pub max_volume: Option<Metric>,
+    pub min_volume: Option<Metric>,
+    pub cost: Option<Metric>,
     pub initial_volume: StorageInitialVolume,
     pub reset: NumberOfMonthsReset,
 }
@@ -86,6 +87,10 @@ impl MonthlyVirtualStorageNode {
 
     pub fn output_connectors(&self) -> Vec<(&str, Option<String>)> {
         vec![]
+    }
+
+    pub fn default_metric(&self) -> NodeAttribute {
+        Self::DEFAULT_ATTRIBUTE
     }
 
     pub fn create_metric(

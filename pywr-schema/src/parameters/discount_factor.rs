@@ -1,6 +1,7 @@
 use crate::error::SchemaError;
+use crate::metric::Metric;
 use crate::model::LoadArgs;
-use crate::parameters::{DynamicFloatValue, DynamicFloatValueType, IntoV2Parameter, ParameterMeta, TryFromV1Parameter};
+use crate::parameters::{DynamicFloatValueType, IntoV2Parameter, ParameterMeta, TryFromV1Parameter};
 use crate::ConversionError;
 use pywr_core::parameters::ParameterIndex;
 use pywr_v1_schema::parameters::DiscountFactorParameter as DiscountFactorParameterV1;
@@ -11,7 +12,7 @@ use std::collections::HashMap;
 pub struct DiscountFactorParameter {
     #[serde(flatten)]
     pub meta: ParameterMeta,
-    pub discount_rate: DynamicFloatValue,
+    pub discount_rate: Metric,
     pub base_year: i32,
 }
 
@@ -49,7 +50,7 @@ impl TryFromV1Parameter<DiscountFactorParameterV1> for DiscountFactorParameter {
         unnamed_count: &mut usize,
     ) -> Result<Self, Self::Error> {
         let meta: ParameterMeta = v1.meta.into_v2_parameter(parent_node, unnamed_count);
-        let discount_rate = DynamicFloatValue::from_f64(v1.rate);
+        let discount_rate = Metric::from(v1.rate);
         Ok(Self {
             meta,
             discount_rate,

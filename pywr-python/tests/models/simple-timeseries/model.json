@@ -28,7 +28,10 @@
       {
         "name": "output1",
         "type": "Output",
-        "cost": -10.0,
+        "cost": {
+          "type": "Constant",
+          "value": -10.0
+        },
         "max_flow": {
           "type": "Parameter",
           "name": "demand"
@@ -66,16 +69,16 @@
         "name": "nodes",
         "metrics": [
           {
-            "type": "Default",
-            "node": "input1"
+            "type": "Node",
+            "name": "input1"
           },
           {
-            "type": "Default",
-            "node": "link1"
+            "type": "Node",
+            "name": "link1"
           },
           {
-            "type": "Default",
-            "node": "output1"
+            "type": "Node",
+            "name": "output1"
           }
         ]
       }

@@ -14,7 +14,10 @@
       {
         "name": "supply1",
         "type": "Input",
-        "max_flow": 15
+        "max_flow": {
+          "type": "Constant",
+          "value": 15
+        }
       },
       {
         "name": "link1",
@@ -27,13 +30,21 @@
           "type": "Parameter",
           "name": "demand"
         },
-        "cost": -10
+        "cost": {
+          "type": "Constant",
+          "value": -10
+        }
       },
       {
         "name": "licence",
         "type": "RollingVirtualStorage",
-        "nodes": ["supply1"],
-        "max_volume": 300,
+        "nodes": [
+          "supply1"
+        ],
+        "max_volume": {
+          "type": "Constant",
+          "value": 300
+        },
         "initial_volume": 0.0,
         "window": {
           "Days": 30

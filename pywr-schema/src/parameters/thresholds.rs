@@ -1,7 +1,8 @@
 use crate::error::{ConversionError, SchemaError};
+use crate::metric::Metric;
 use crate::model::LoadArgs;
 use crate::parameters::{
-    DynamicFloatValue, DynamicFloatValueType, IntoV2Parameter, ParameterMeta, TryFromV1Parameter, TryIntoV2Parameter,
+    DynamicFloatValueType, IntoV2Parameter, ParameterMeta, TryFromV1Parameter, TryIntoV2Parameter,
 };
 use pywr_core::parameters::ParameterIndex;
 use pywr_v1_schema::parameters::{
@@ -51,8 +52,8 @@ impl From<Predicate> for pywr_core::parameters::Predicate {
 pub struct ParameterThresholdParameter {
     #[serde(flatten)]
     pub meta: ParameterMeta,
-    pub parameter: DynamicFloatValue,
-    pub threshold: DynamicFloatValue,
+    pub parameter: Metric,
+    pub threshold: Metric,
     pub predicate: Predicate,
     #[serde(default)]
     pub ratchet: bool,

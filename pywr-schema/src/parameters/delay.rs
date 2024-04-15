@@ -1,6 +1,7 @@
 use crate::error::SchemaError;
+use crate::metric::Metric;
 use crate::model::LoadArgs;
-use crate::parameters::{DynamicFloatValue, DynamicFloatValueType, ParameterMeta};
+use crate::parameters::{DynamicFloatValueType, ParameterMeta};
 use pywr_core::parameters::ParameterIndex;
 use std::collections::HashMap;
 
@@ -9,7 +10,7 @@ use std::collections::HashMap;
 pub struct DelayParameter {
     #[serde(flatten)]
     pub meta: ParameterMeta,
-    pub metric: DynamicFloatValue,
+    pub metric: Metric,
     pub delay: usize,
     pub initial_value: f64,
 }
