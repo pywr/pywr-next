@@ -260,17 +260,7 @@ impl TryFromV1Parameter<MaxParameterV1> for MaxParameter {
 /// # Examples
 ///
 /// ```json
-/// {
-///     "type": "Division",
-///     "numerator": {
-///         "type": "MonthlyProfile",
-///         "values": [1, 4, 5, 9, 1, 5, 10, 8, 11, 9, 11 ,12]
-///     },
-///     "denominator": {
-///         "type": "Constant",
-///         "value": 0.3
-///     }
-/// }
+#[doc = include_str!("doc_examples/division.json")]
 /// ```
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
 pub struct DivisionParameter {
@@ -330,14 +320,7 @@ impl TryFromV1Parameter<DivisionParameterV1> for DivisionParameter {
 /// # Examples
 ///
 /// ```json
-/// {
-///     "type": "Min",
-///     "parameter": {
-///         "type": "MonthlyProfile",
-///         "values": [1, 4, 5, 9, 1, 5, 10, 8, 11, 9, 11 ,12]
-///     },
-///     "threshold": 2
-/// }
+#[doc = include_str!("doc_examples/min.json")]
 /// ```
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
 pub struct MinParameter {
@@ -442,14 +425,7 @@ impl TryFromV1Parameter<NegativeParameterV1> for NegativeParameter {
 /// # Examples
 ///
 /// ```json
-/// {
-///     "type": "NegativeMax",
-///     "metric": {
-///         "type": "MonthlyProfile",
-///         "values": [-1, -4, 5, 9, 1, 5, 10, 8, 11, 9, 11 ,12]
-///     },
-///     "threshold": 2
-/// }
+#[doc = include_str!("doc_examples/negative_max.json")]
 /// ```
 /// In January this parameter returns 2, in February 4.
 ///
@@ -508,14 +484,7 @@ impl TryFromV1Parameter<NegativeMaxParameterV1> for NegativeMaxParameter {
 /// # Examples
 ///
 /// ```json
-/// {
-///     "type": "NegativeMin",
-///     "metric": {
-///         "type": "MonthlyProfile",
-///         "values": [-1, -4, 5, 9, 1, 5, 10, 8, 11, 9, 11 ,12]
-///     },
-///     "threshold": 2
-/// }
+#[doc = include_str!("doc_examples/negative_min.json")]
 /// ```
 /// In January this parameter returns 1, in February 2.
 ///
