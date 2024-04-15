@@ -7,7 +7,8 @@ use crate::parameters::{
 use pywr_core::parameters::ParameterIndex;
 use pywr_v1_schema::parameters::{
     ConstantParameter as ConstantParameterV1, DivisionParameter as DivisionParameterV1, MaxParameter as MaxParameterV1,
-    MinParameter as MinParameterV1, NegativeParameter as NegativeParameterV1,
+    MinParameter as MinParameterV1, NegativeMaxParameter as NegativeMaxParameterV1,
+    NegativeMinParameter as NegativeMinParameterV1, NegativeParameter as NegativeParameterV1,
 };
 use std::collections::HashMap;
 
@@ -427,6 +428,138 @@ impl TryFromV1Parameter<NegativeParameterV1> for NegativeParameter {
         let parameter = v1.parameter.try_into_v2_parameter(Some(&meta.name), unnamed_count)?;
 
         let p = Self { meta, parameter };
+        Ok(p)
+    }
+}
+
+/// This parameter takes the maximum of the negative of a metric and a constant value (threshold).
+///
+/// # Arguments
+///
+/// * `metric` - The metric value to compare with the float.
+/// * `threshold` - The threshold value to compare against the given parameter. Default to 0.0.
+///
+/// # Examples
+///
+/// ```json
+/// {
+///     "type": "NegativeMax",
+///     "metric": {
+///         "type": "MonthlyProfile",
+///         "values": [-1, -4, 5, 9, 1, 5, 10, 8, 11, 9, 11 ,12]
+///     },
+///     "threshold": 2
+/// }
+/// ```
+/// In January this parameter returns 2, in February 4.
+///
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+pub struct NegativeMaxParameter {
+    #[serde(flatten)]
+    pub meta: ParameterMeta,
+    pub metric: Metric,
+    pub threshold: Option<f64>,
+}
+
+impl NegativeMaxParameter {
+    pub fn node_references(&self) -> HashMap<&str, &str> {
+        HashMap::new()
+    }
+
+    pub fn add_to_model(
+        &self,
+        network: &mut pywr_core::network::Network,
+        args: &LoadArgs,
+    ) -> Result<ParameterIndex<f64>, SchemaError> {
+        let idx = self.metric.load(network, args)?;
+        let threshold = self.threshold.unwrap_or(0.0);
+
+        let p = pywr_core::parameters::NegativeMaxParameter::new(&self.meta.name, idx, threshold);
+        Ok(network.add_parameter(Box::new(p))?)
+    }
+}
+
+impl TryFromV1Parameter<NegativeMaxParameterV1> for NegativeMaxParameter {
+    type Error = ConversionError;
+
+    fn try_from_v1_parameter(
+        v1: NegativeMaxParameterV1,
+        parent_node: Option<&str>,
+        unnamed_count: &mut usize,
+    ) -> Result<Self, Self::Error> {
+        let meta: ParameterMeta = v1.meta.into_v2_parameter(parent_node, unnamed_count);
+        let parameter = v1.parameter.try_into_v2_parameter(Some(&meta.name), unnamed_count)?;
+        let p = Self {
+            meta,
+            metric: parameter,
+            threshold: v1.threshold,
+        };
+        Ok(p)
+    }
+}
+
+/// This parameter takes the minimum of the negative of a metric and a constant value (threshold).
+///
+/// # Arguments
+///
+/// * `metric` - The metric value to compare with the float.
+/// * `threshold` - The threshold value to compare against the given parameter. Default to 0.0.
+///
+/// # Examples
+///
+/// ```json
+/// {
+///     "type": "NegativeMin",
+///     "metric": {
+///         "type": "MonthlyProfile",
+///         "values": [-1, -4, 5, 9, 1, 5, 10, 8, 11, 9, 11 ,12]
+///     },
+///     "threshold": 2
+/// }
+/// ```
+/// In January this parameter returns 1, in February 2.
+///
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+pub struct NegativeMinParameter {
+    #[serde(flatten)]
+    pub meta: ParameterMeta,
+    pub metric: Metric,
+    pub threshold: Option<f64>,
+}
+
+impl NegativeMinParameter {
+    pub fn node_references(&self) -> HashMap<&str, &str> {
+        HashMap::new()
+    }
+
+    pub fn add_to_model(
+        &self,
+        network: &mut pywr_core::network::Network,
+        args: &LoadArgs,
+    ) -> Result<ParameterIndex<f64>, SchemaError> {
+        let idx = self.metric.load(network, args)?;
+        let threshold = self.threshold.unwrap_or(0.0);
+
+        let p = pywr_core::parameters::NegativeMinParameter::new(&self.meta.name, idx, threshold);
+        Ok(network.add_parameter(Box::new(p))?)
+    }
+}
+
+impl TryFromV1Parameter<NegativeMinParameterV1> for NegativeMinParameter {
+    type Error = ConversionError;
+
+    fn try_from_v1_parameter(
+        v1: NegativeMinParameterV1,
+        parent_node: Option<&str>,
+        unnamed_count: &mut usize,
+    ) -> Result<Self, Self::Error> {
+        let meta: ParameterMeta = v1.meta.into_v2_parameter(parent_node, unnamed_count);
+        let parameter = v1.parameter.try_into_v2_parameter(Some(&meta.name), unnamed_count)?;
+        let p = Self {
+            meta,
+            metric: parameter,
+            threshold: v1.threshold,
+        };
         Ok(p)
     }
 }

@@ -30,7 +30,8 @@ pub use super::parameters::control_curves::{
     ControlCurvePiecewiseInterpolatedParameter,
 };
 pub use super::parameters::core::{
-    ActivationFunction, ConstantParameter, MaxParameter, MinParameter, NegativeParameter, VariableSettings,
+    ActivationFunction, ConstantParameter, MaxParameter, MinParameter, NegativeMaxParameter, NegativeMinParameter,
+    NegativeParameter, VariableSettings,
 };
 pub use super::parameters::delay::DelayParameter;
 pub use super::parameters::discount_factor::DiscountFactorParameter;
@@ -160,6 +161,8 @@ pub enum Parameter {
     Max(MaxParameter),
     Min(MinParameter),
     Negative(NegativeParameter),
+    NegativeMax(NegativeMaxParameter),
+    NegativeMin(NegativeMinParameter),
     Polynomial1D(Polynomial1DParameter),
     ParameterThreshold(ParameterThresholdParameter),
     TablesArray(TablesArrayParameter),
@@ -201,6 +204,8 @@ impl Parameter {
             Self::DiscountFactor(p) => p.meta.name.as_str(),
             Self::Interpolated(p) => p.meta.name.as_str(),
             Self::RbfProfile(p) => p.meta.name.as_str(),
+            Self::NegativeMax(p) => p.meta.name.as_str(),
+            Self::NegativeMin(p) => p.meta.name.as_str(),
         }
     }
 
@@ -249,6 +254,8 @@ impl Parameter {
             Self::DiscountFactor(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
             Self::Interpolated(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
             Self::RbfProfile(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network)?),
+            Self::NegativeMax(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
+            Self::NegativeMin(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
         };
 
         Ok(ty)
@@ -435,8 +442,6 @@ impl TryFromV1Parameter<ParameterV1> for ParameterOrTimeseries {
                 CoreParameter::InterpolatedFlow(p) => {
                     Parameter::Interpolated(p.try_into_v2_parameter(parent_node, unnamed_count)?).into()
                 }
-                CoreParameter::NegativeMax(_) => todo!("Implement NegativeMaxParameter"),
-                CoreParameter::NegativeMin(_) => todo!("Implement NegativeMinParameter"),
                 CoreParameter::HydropowerTarget(_) => todo!("Implement HydropowerTargetParameter"),
                 CoreParameter::WeeklyProfile(p) => {
                     Parameter::WeeklyProfile(p.try_into_v2_parameter(parent_node, unnamed_count)?).into()
@@ -459,6 +464,12 @@ impl TryFromV1Parameter<ParameterV1> for ParameterOrTimeseries {
                 }
                 CoreParameter::RbfProfile(p) => {
                     Parameter::RbfProfile(p.try_into_v2_parameter(parent_node, unnamed_count)?).into()
+                }
+                CoreParameter::NegativeMax(p) => {
+                    Parameter::NegativeMax(p.try_into_v2_parameter(parent_node, unnamed_count)?).into()
+                }
+                CoreParameter::NegativeMin(p) => {
+                    Parameter::NegativeMin(p.try_into_v2_parameter(parent_node, unnamed_count)?).into()
                 }
             },
             ParameterV1::Custom(p) => {
