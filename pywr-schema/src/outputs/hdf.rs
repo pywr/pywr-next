@@ -1,6 +1,10 @@
+#[cfg(feature = "core")]
 use crate::error::SchemaError;
+#[cfg(feature = "core")]
 use pywr_core::recorders::HDF5Recorder;
-use std::path::{Path, PathBuf};
+#[cfg(feature = "core")]
+use std::path::Path;
+use std::path::PathBuf;
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
 pub struct Hdf5Output {
@@ -10,6 +14,7 @@ pub struct Hdf5Output {
     pub metric_set: String,
 }
 
+#[cfg(feature = "core")]
 impl Hdf5Output {
     pub fn add_to_model(
         &self,
@@ -34,8 +39,10 @@ impl Hdf5Output {
 #[cfg(test)]
 mod tests {
     use crate::PywrModel;
+    #[cfg(feature = "core")]
     use pywr_core::solvers::{ClpSolver, ClpSolverSettings};
     use std::str::FromStr;
+    #[cfg(feature = "core")]
     use tempfile::TempDir;
 
     fn model_str() -> &'static str {
@@ -53,6 +60,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "core")]
     fn test_run() {
         let data = model_str();
         let schema = PywrModel::from_str(data).unwrap();

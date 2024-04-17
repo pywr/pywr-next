@@ -1,8 +1,12 @@
-use crate::error::{ConversionError, SchemaError};
+use crate::error::ConversionError;
+#[cfg(feature = "core")]
+use crate::error::SchemaError;
 use crate::metric::{Metric, NodeReference};
+#[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::nodes::NodeAttribute;
 use crate::parameters::{IntoV2Parameter, ParameterMeta, TryFromV1Parameter, TryIntoV2Parameter};
+#[cfg(feature = "core")]
 use pywr_core::parameters::ParameterIndex;
 use pywr_v1_schema::parameters::{
     ControlCurveIndexParameter as ControlCurveIndexParameterV1,
@@ -20,6 +24,7 @@ pub struct ControlCurveInterpolatedParameter {
     pub values: Vec<Metric>,
 }
 
+#[cfg(feature = "core")]
 impl ControlCurveInterpolatedParameter {
     pub fn add_to_model(
         &self,
@@ -119,6 +124,7 @@ pub struct ControlCurveIndexParameter {
     pub storage_node: NodeReference,
 }
 
+#[cfg(feature = "core")]
 impl ControlCurveIndexParameter {
     pub fn add_to_model(
         &self,
@@ -226,6 +232,7 @@ pub struct ControlCurveParameter {
     pub values: Vec<Metric>,
 }
 
+#[cfg(feature = "core")]
 impl ControlCurveParameter {
     pub fn add_to_model(
         &self,
@@ -316,6 +323,7 @@ pub struct ControlCurvePiecewiseInterpolatedParameter {
     pub maximum: Option<f64>,
 }
 
+#[cfg(feature = "core")]
 impl ControlCurvePiecewiseInterpolatedParameter {
     pub fn add_to_model(
         &self,

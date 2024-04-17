@@ -1,7 +1,11 @@
-use crate::error::{ConversionError, SchemaError};
+use crate::error::ConversionError;
+#[cfg(feature = "core")]
+use crate::error::SchemaError;
 use crate::metric::Metric;
+#[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::parameters::{DynamicIndexValue, IntoV2Parameter, ParameterMeta, TryFromV1Parameter, TryIntoV2Parameter};
+#[cfg(feature = "core")]
 use pywr_core::parameters::ParameterIndex;
 use pywr_v1_schema::parameters::{
     AggFunc as AggFuncV1, AggregatedIndexParameter as AggregatedIndexParameterV1,
@@ -19,6 +23,7 @@ pub enum AggFunc {
     Min,
 }
 
+#[cfg(feature = "core")]
 impl From<AggFunc> for pywr_core::parameters::AggFunc {
     fn from(value: AggFunc) -> Self {
         match value {
@@ -72,6 +77,7 @@ pub struct AggregatedParameter {
     pub metrics: Vec<Metric>,
 }
 
+#[cfg(feature = "core")]
 impl AggregatedParameter {
     pub fn add_to_model(
         &self,
@@ -127,6 +133,7 @@ pub enum IndexAggFunc {
     All,
 }
 
+#[cfg(feature = "core")]
 impl From<IndexAggFunc> for pywr_core::parameters::AggIndexFunc {
     fn from(value: IndexAggFunc) -> Self {
         match value {
@@ -175,7 +182,10 @@ impl AggregatedIndexParameter {
     //
     //     attributes
     // }
+}
 
+#[cfg(feature = "core")]
+impl AggregatedIndexParameter {
     pub fn add_to_model(
         &self,
         network: &mut pywr_core::network::Network,

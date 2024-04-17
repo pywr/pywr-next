@@ -1,6 +1,9 @@
-use crate::error::{ConversionError, SchemaError};
+use crate::error::ConversionError;
+#[cfg(feature = "core")]
+use crate::error::SchemaError;
 use crate::metric::Metric;
 use crate::nodes::{NodeAttribute, NodeMeta};
+#[cfg(feature = "core")]
 use pywr_core::metric::MetricF64;
 use pywr_schema_macros::PywrNode;
 use pywr_v1_schema::nodes::LinkNode as LinkNodeV1;
@@ -15,11 +18,6 @@ pub struct RiverNode {
 impl RiverNode {
     const DEFAULT_ATTRIBUTE: NodeAttribute = NodeAttribute::Outflow;
 
-    pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
-        network.add_link_node(self.meta.name.as_str(), None)?;
-        Ok(())
-    }
-
     pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
         vec![(self.meta.name.as_str(), None)]
     }
@@ -30,7 +28,14 @@ impl RiverNode {
     pub fn default_metric(&self) -> NodeAttribute {
         Self::DEFAULT_ATTRIBUTE
     }
+}
 
+#[cfg(feature = "core")]
+impl RiverNode {
+    pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
+        network.add_link_node(self.meta.name.as_str(), None)?;
+        Ok(())
+    }
     pub fn create_metric(
         &self,
         network: &pywr_core::network::Network,

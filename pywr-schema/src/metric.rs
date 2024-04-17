@@ -1,12 +1,17 @@
 use crate::data_tables::TableDataRef;
+#[cfg(feature = "core")]
 use crate::error::SchemaError;
+#[cfg(feature = "core")]
 use crate::model::LoadArgs;
-use crate::nodes::{NodeAttribute, NodeType};
-use crate::parameters::{Parameter, ParameterOrTimeseries, ParameterType, TryFromV1Parameter, TryIntoV2Parameter};
+use crate::nodes::NodeAttribute;
+#[cfg(feature = "core")]
+use crate::nodes::NodeType;
+#[cfg(feature = "core")]
+use crate::parameters::ParameterType;
+use crate::parameters::{Parameter, ParameterOrTimeseries, TryFromV1Parameter, TryIntoV2Parameter};
 use crate::ConversionError;
-use pywr_core::metric::MetricF64;
-use pywr_core::models::MultiNetworkTransferIndex;
-use pywr_core::recorders::OutputMetric;
+#[cfg(feature = "core")]
+use pywr_core::{metric::MetricF64, models::MultiNetworkTransferIndex, recorders::OutputMetric};
 use pywr_v1_schema::parameters::ParameterValue as ParameterValueV1;
 use serde::{Deserialize, Serialize};
 use strum_macros::Display;
@@ -43,6 +48,7 @@ impl From<f64> for Metric {
     }
 }
 
+#[cfg(feature = "core")]
 impl Metric {
     pub fn load(&self, network: &mut pywr_core::network::Network, args: &LoadArgs) -> Result<MetricF64, SchemaError> {
         match self {
@@ -133,6 +139,7 @@ impl Metric {
     /// Return the subtype of the metric. This is the type of the metric that is being
     /// referenced. For example, if the metric is a node then the subtype is the type of the
     /// node.
+
     fn sub_type(&self, args: &LoadArgs) -> Result<Option<String>, SchemaError> {
         let sub_type = match self {
             Self::Node(node_ref) => Some(node_ref.node_type(args)?.to_string()),
@@ -251,6 +258,7 @@ pub struct NodeReference {
 }
 
 impl NodeReference {
+    #[cfg(feature = "core")]
     pub fn load(&self, network: &mut pywr_core::network::Network, args: &LoadArgs) -> Result<MetricF64, SchemaError> {
         // This is the associated node in the schema
         let node = args
@@ -264,6 +272,7 @@ impl NodeReference {
     /// Return the attribute of the node. If the attribute is not specified then the default
     /// attribute of the node is returned. Note that this does not check if the attribute is
     /// valid for the node.
+    #[cfg(feature = "core")]
     pub fn attribute(&self, args: &LoadArgs) -> Result<NodeAttribute, SchemaError> {
         // This is the associated node in the schema
         let node = args
@@ -274,6 +283,7 @@ impl NodeReference {
         Ok(self.attribute.unwrap_or_else(|| node.default_metric()))
     }
 
+    #[cfg(feature = "core")]
     pub fn node_type(&self, args: &LoadArgs) -> Result<NodeType, SchemaError> {
         // This is the associated node in the schema
         let node = args
@@ -294,6 +304,7 @@ pub struct ParameterReference {
 }
 
 impl ParameterReference {
+    #[cfg(feature = "core")]
     pub fn load(&self, network: &mut pywr_core::network::Network) -> Result<MetricF64, SchemaError> {
         match &self.key {
             Some(key) => {
@@ -315,6 +326,7 @@ impl ParameterReference {
         }
     }
 
+    #[cfg(feature = "core")]
     pub fn parameter_type(&self, args: &LoadArgs) -> Result<ParameterType, SchemaError> {
         let parameter = args
             .schema

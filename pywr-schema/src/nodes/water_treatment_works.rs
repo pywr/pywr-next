@@ -1,10 +1,13 @@
+#[cfg(feature = "core")]
 use crate::error::SchemaError;
 use crate::metric::Metric;
+#[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::nodes::{NodeAttribute, NodeMeta};
+#[cfg(feature = "core")]
 use num::Zero;
-use pywr_core::aggregated_node::Factors;
-use pywr_core::metric::MetricF64;
+#[cfg(feature = "core")]
+use pywr_core::{aggregated_node::Factors, metric::MetricF64};
 use pywr_schema_macros::PywrNode;
 use std::collections::HashMap;
 
@@ -65,9 +68,6 @@ impl WaterTreatmentWorks {
     fn net_sub_name() -> Option<&'static str> {
         Some("net")
     }
-    fn agg_sub_name() -> Option<&'static str> {
-        Some("agg")
-    }
 
     fn net_soft_min_flow_sub_name() -> Option<&'static str> {
         Some("net_soft_min_flow")
@@ -77,6 +77,40 @@ impl WaterTreatmentWorks {
         Some("net_above_soft_min_flow")
     }
 
+    pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
+        // Connect directly to the total net
+        let mut connectors = vec![(self.meta.name.as_str(), Self::net_sub_name().map(|s| s.to_string()))];
+        // Only connect to the loss link if it is created
+        if self.loss_factor.is_some() {
+            connectors.push((self.meta.name.as_str(), Self::loss_sub_name().map(|s| s.to_string())))
+        }
+        connectors
+    }
+
+    pub fn output_connectors(&self) -> Vec<(&str, Option<String>)> {
+        // Connect to the split of the net flow.
+        vec![
+            (
+                self.meta.name.as_str(),
+                Self::net_soft_min_flow_sub_name().map(|s| s.to_string()),
+            ),
+            (
+                self.meta.name.as_str(),
+                Self::net_above_soft_min_flow_sub_name().map(|s| s.to_string()),
+            ),
+        ]
+    }
+
+    pub fn default_metric(&self) -> NodeAttribute {
+        Self::DEFAULT_ATTRIBUTE
+    }
+}
+
+#[cfg(feature = "core")]
+impl WaterTreatmentWorks {
+    fn agg_sub_name() -> Option<&'static str> {
+        Some("agg")
+    }
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
         let idx_net = network.add_link_node(self.meta.name.as_str(), Self::net_sub_name())?;
         let idx_soft_min_flow = network.add_link_node(self.meta.name.as_str(), Self::net_soft_min_flow_sub_name())?;
@@ -164,35 +198,6 @@ impl WaterTreatmentWorks {
 
         Ok(())
     }
-
-    pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
-        // Connect directly to the total net
-        let mut connectors = vec![(self.meta.name.as_str(), Self::net_sub_name().map(|s| s.to_string()))];
-        // Only connect to the loss link if it is created
-        if self.loss_factor.is_some() {
-            connectors.push((self.meta.name.as_str(), Self::loss_sub_name().map(|s| s.to_string())))
-        }
-        connectors
-    }
-
-    pub fn output_connectors(&self) -> Vec<(&str, Option<String>)> {
-        // Connect to the split of the net flow.
-        vec![
-            (
-                self.meta.name.as_str(),
-                Self::net_soft_min_flow_sub_name().map(|s| s.to_string()),
-            ),
-            (
-                self.meta.name.as_str(),
-                Self::net_above_soft_min_flow_sub_name().map(|s| s.to_string()),
-            ),
-        ]
-    }
-
-    pub fn default_metric(&self) -> NodeAttribute {
-        Self::DEFAULT_ATTRIBUTE
-    }
-
     pub fn create_metric(
         &self,
         network: &pywr_core::network::Network,
@@ -239,10 +244,10 @@ impl WaterTreatmentWorks {
 mod tests {
     use crate::model::PywrModel;
     use crate::nodes::WaterTreatmentWorks;
+    #[cfg(feature = "core")]
     use ndarray::Array2;
-    use pywr_core::metric::MetricF64;
-    use pywr_core::recorders::AssertionRecorder;
-    use pywr_core::test_utils::run_all_solvers;
+    #[cfg(feature = "core")]
+    use pywr_core::{metric::MetricF64, recorders::AssertionRecorder, test_utils::run_all_solvers};
 
     #[test]
     fn test_wtw_schema_load() {
@@ -377,6 +382,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "core")]
     fn test_model_run() {
         let data = model_str();
         let schema: PywrModel = serde_json::from_str(data).unwrap();

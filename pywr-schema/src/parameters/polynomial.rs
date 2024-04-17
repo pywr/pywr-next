@@ -1,5 +1,8 @@
-use crate::error::{ConversionError, SchemaError};
+use crate::error::ConversionError;
+#[cfg(feature = "core")]
+use crate::error::SchemaError;
 use crate::parameters::{DynamicFloatValueType, IntoV2Parameter, ParameterMeta, TryFromV1Parameter};
+#[cfg(feature = "core")]
 use pywr_core::parameters::ParameterIndex;
 use pywr_v1_schema::parameters::Polynomial1DParameter as Polynomial1DParameterV1;
 use std::collections::HashMap;
@@ -22,7 +25,10 @@ impl Polynomial1DParameter {
     pub fn parameters(&self) -> HashMap<&str, DynamicFloatValueType> {
         HashMap::new()
     }
+}
 
+#[cfg(feature = "core")]
+impl Polynomial1DParameter {
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<ParameterIndex<f64>, SchemaError> {
         let metric =
             network.get_storage_node_metric(&self.storage_node, None, self.use_proportional_volume.unwrap_or(true))?;

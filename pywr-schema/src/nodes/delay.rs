@@ -1,8 +1,12 @@
-use crate::error::{ConversionError, SchemaError};
+use crate::error::ConversionError;
+#[cfg(feature = "core")]
+use crate::error::SchemaError;
 use crate::metric::Metric;
+#[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::nodes::{NodeAttribute, NodeMeta};
 use crate::parameters::ConstantValue;
+#[cfg(feature = "core")]
 use pywr_core::metric::MetricF64;
 use pywr_schema_macros::PywrNode;
 use pywr_v1_schema::nodes::DelayNode as DelayNodeV1;
@@ -46,6 +50,23 @@ impl DelayNode {
         Some("outflow")
     }
 
+    pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
+        // Inflow goes to the output node
+        vec![(self.meta.name.as_str(), Self::output_sub_name().map(|s| s.to_string()))]
+    }
+
+    pub fn output_connectors(&self) -> Vec<(&str, Option<String>)> {
+        // Outflow goes from the input node
+        vec![(self.meta.name.as_str(), Self::input_sub_now().map(|s| s.to_string()))]
+    }
+
+    pub fn default_metric(&self) -> NodeAttribute {
+        Self::DEFAULT_ATTRIBUTE
+    }
+}
+
+#[cfg(feature = "core")]
+impl DelayNode {
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
         network.add_output_node(self.meta.name.as_str(), Self::output_sub_name())?;
         network.add_input_node(self.meta.name.as_str(), Self::input_sub_now())?;
@@ -76,20 +97,6 @@ impl DelayNode {
         network.set_node_min_flow(self.meta.name.as_str(), Self::input_sub_now(), metric.into())?;
 
         Ok(())
-    }
-
-    pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
-        // Inflow goes to the output node
-        vec![(self.meta.name.as_str(), Self::output_sub_name().map(|s| s.to_string()))]
-    }
-
-    pub fn output_connectors(&self) -> Vec<(&str, Option<String>)> {
-        // Outflow goes from the input node
-        vec![(self.meta.name.as_str(), Self::input_sub_now().map(|s| s.to_string()))]
-    }
-
-    pub fn default_metric(&self) -> NodeAttribute {
-        Self::DEFAULT_ATTRIBUTE
     }
 
     pub fn create_metric(
@@ -154,18 +161,18 @@ impl TryFrom<DelayNodeV1> for DelayNode {
 }
 
 #[cfg(test)]
+#[cfg(feature = "core")]
 mod tests {
     use crate::model::PywrModel;
     use ndarray::{concatenate, Array2, Axis};
-    use pywr_core::metric::MetricF64;
-    use pywr_core::recorders::AssertionRecorder;
-    use pywr_core::test_utils::run_all_solvers;
+    use pywr_core::{metric::MetricF64, recorders::AssertionRecorder, test_utils::run_all_solvers};
 
     fn model_str() -> &'static str {
         include_str!("../test_models/delay1.json")
     }
 
     #[test]
+
     fn test_model_run() {
         let data = model_str();
         let schema: PywrModel = serde_json::from_str(data).unwrap();

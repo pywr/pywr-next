@@ -1,5 +1,7 @@
+#[cfg(feature = "core")]
 use crate::error::SchemaError;
 use crate::metric::Metric;
+#[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use serde::{Deserialize, Serialize};
 use std::num::NonZeroUsize;
@@ -15,6 +17,7 @@ pub enum MetricAggFunc {
     CountNonZero,
 }
 
+#[cfg(feature = "core")]
 impl From<MetricAggFunc> for pywr_core::recorders::AggregationFunction {
     fn from(value: MetricAggFunc) -> Self {
         match value {
@@ -35,6 +38,7 @@ pub enum MetricAggFrequency {
     Days { days: NonZeroUsize },
 }
 
+#[cfg(feature = "core")]
 impl From<MetricAggFrequency> for pywr_core::recorders::AggregationFrequency {
     fn from(value: MetricAggFrequency) -> Self {
         match value {
@@ -64,6 +68,7 @@ pub struct MetricAggregator {
     pub child: Option<Box<MetricAggregator>>,
 }
 
+#[cfg(feature = "core")]
 impl From<MetricAggregator> for pywr_core::recorders::Aggregator {
     fn from(value: MetricAggregator) -> Self {
         pywr_core::recorders::Aggregator::new(
@@ -87,6 +92,7 @@ pub struct MetricSet {
 }
 
 impl MetricSet {
+    #[cfg(feature = "core")]
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network, args: &LoadArgs) -> Result<(), SchemaError> {
         // Convert the schema representation to internal metrics.
         let metrics: Vec<_> = self

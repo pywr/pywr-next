@@ -1,8 +1,12 @@
-use crate::error::{ConversionError, SchemaError};
+use crate::error::ConversionError;
+#[cfg(feature = "core")]
+use crate::error::SchemaError;
+#[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::parameters::{
     DynamicFloatValueType, DynamicIndexValue, IntoV2Parameter, ParameterMeta, TryFromV1Parameter, TryIntoV2Parameter,
 };
+#[cfg(feature = "core")]
 use pywr_core::parameters::ParameterIndex;
 use pywr_v1_schema::parameters::AsymmetricSwitchIndexParameter as AsymmetricSwitchIndexParameterV1;
 use std::collections::HashMap;
@@ -22,7 +26,10 @@ impl AsymmetricSwitchIndexParameter {
     pub fn parameters(&self) -> HashMap<&str, DynamicFloatValueType> {
         todo!()
     }
+}
 
+#[cfg(feature = "core")]
+impl AsymmetricSwitchIndexParameter {
     pub fn add_to_model(
         &self,
         network: &mut pywr_core::network::Network,

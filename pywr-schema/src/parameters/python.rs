@@ -1,12 +1,20 @@
+#[cfg(feature = "core")]
 use crate::data_tables::make_path;
+#[cfg(feature = "core")]
 use crate::error::SchemaError;
 use crate::metric::Metric;
+#[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::parameters::{DynamicFloatValueType, DynamicIndexValue, ParameterMeta};
+#[cfg(feature = "core")]
 use pyo3::prelude::PyModule;
+#[cfg(feature = "core")]
 use pyo3::types::{PyDict, PyTuple};
+#[cfg(feature = "core")]
 use pyo3::{IntoPy, PyErr, PyObject, Python, ToPyObject};
+#[cfg(feature = "core")]
 use pywr_core::parameters::{ParameterType, PyParameter};
+#[cfg(feature = "core")]
 use serde_json::Value;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -93,6 +101,7 @@ pub struct PythonParameter {
     pub indices: Option<HashMap<String, DynamicIndexValue>>,
 }
 
+#[cfg(feature = "core")]
 pub fn try_json_value_into_py(py: Python, value: &serde_json::Value) -> Result<Option<PyObject>, SchemaError> {
     let py_value = match value {
         Value::Null => None,
@@ -132,7 +141,10 @@ impl PythonParameter {
     pub fn parameters(&self) -> HashMap<&str, DynamicFloatValueType> {
         HashMap::new()
     }
+}
 
+#[cfg(feature = "core")]
+impl PythonParameter {
     pub fn add_to_model(
         &self,
         network: &mut pywr_core::network::Network,
@@ -201,6 +213,7 @@ impl PythonParameter {
 }
 
 #[cfg(test)]
+#[cfg(feature = "core")]
 mod tests {
     use crate::data_tables::LoadedTableCollection;
     use crate::model::{LoadArgs, PywrNetwork};

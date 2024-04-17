@@ -1,11 +1,18 @@
-use crate::error::{ConversionError, SchemaError};
+use crate::error::ConversionError;
+#[cfg(feature = "core")]
+use crate::error::SchemaError;
 use crate::metric::Metric;
+#[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::nodes::{NodeAttribute, NodeMeta};
+
 use crate::parameters::TryIntoV2Parameter;
-use pywr_core::derived_metric::DerivedMetric;
-use pywr_core::metric::MetricF64;
-use pywr_core::node::{ConstraintValue, StorageInitialVolume as CoreStorageInitialVolume};
+#[cfg(feature = "core")]
+use pywr_core::{
+    derived_metric::DerivedMetric,
+    metric::MetricF64,
+    node::{ConstraintValue, StorageInitialVolume as CoreStorageInitialVolume},
+};
 use pywr_schema_macros::PywrNode;
 use pywr_v1_schema::nodes::{
     AggregatedNode as AggregatedNodeV1, AggregatedStorageNode as AggregatedStorageNodeV1,
@@ -26,6 +33,20 @@ pub struct InputNode {
 impl InputNode {
     const DEFAULT_ATTRIBUTE: NodeAttribute = NodeAttribute::Outflow;
 
+    pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
+        vec![(self.meta.name.as_str(), None)]
+    }
+    pub fn output_connectors(&self) -> Vec<(&str, Option<String>)> {
+        vec![(self.meta.name.as_str(), None)]
+    }
+
+    pub fn default_metric(&self) -> NodeAttribute {
+        Self::DEFAULT_ATTRIBUTE
+    }
+}
+
+#[cfg(feature = "core")]
+impl InputNode {
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
         network.add_input_node(self.meta.name.as_str(), None)?;
         Ok(())
@@ -54,16 +75,6 @@ impl InputNode {
         Ok(())
     }
 
-    pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
-        vec![(self.meta.name.as_str(), None)]
-    }
-    pub fn output_connectors(&self) -> Vec<(&str, Option<String>)> {
-        vec![(self.meta.name.as_str(), None)]
-    }
-
-    pub fn default_metric(&self) -> NodeAttribute {
-        Self::DEFAULT_ATTRIBUTE
-    }
     pub fn create_metric(
         &self,
         network: &pywr_core::network::Network,
@@ -132,6 +143,20 @@ pub struct LinkNode {
 impl LinkNode {
     const DEFAULT_ATTRIBUTE: NodeAttribute = NodeAttribute::Outflow;
 
+    pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
+        vec![(self.meta.name.as_str(), None)]
+    }
+    pub fn output_connectors(&self) -> Vec<(&str, Option<String>)> {
+        vec![(self.meta.name.as_str(), None)]
+    }
+
+    pub fn default_metric(&self) -> NodeAttribute {
+        Self::DEFAULT_ATTRIBUTE
+    }
+}
+
+#[cfg(feature = "core")]
+impl LinkNode {
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
         network.add_link_node(self.meta.name.as_str(), None)?;
         Ok(())
@@ -158,17 +183,6 @@ impl LinkNode {
         }
 
         Ok(())
-    }
-
-    pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
-        vec![(self.meta.name.as_str(), None)]
-    }
-    pub fn output_connectors(&self) -> Vec<(&str, Option<String>)> {
-        vec![(self.meta.name.as_str(), None)]
-    }
-
-    pub fn default_metric(&self) -> NodeAttribute {
-        Self::DEFAULT_ATTRIBUTE
     }
 
     pub fn create_metric(
@@ -239,34 +253,6 @@ pub struct OutputNode {
 impl OutputNode {
     const DEFAULT_ATTRIBUTE: NodeAttribute = NodeAttribute::Inflow;
 
-    pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
-        network.add_output_node(self.meta.name.as_str(), None)?;
-        Ok(())
-    }
-
-    pub fn set_constraints(
-        &self,
-        network: &mut pywr_core::network::Network,
-        args: &LoadArgs,
-    ) -> Result<(), SchemaError> {
-        if let Some(cost) = &self.cost {
-            let value = cost.load(network, args)?;
-            network.set_node_cost(self.meta.name.as_str(), None, value.into())?;
-        }
-
-        if let Some(max_flow) = &self.max_flow {
-            let value = max_flow.load(network, args)?;
-            network.set_node_max_flow(self.meta.name.as_str(), None, value.into())?;
-        }
-
-        if let Some(min_flow) = &self.min_flow {
-            let value = min_flow.load(network, args)?;
-            network.set_node_min_flow(self.meta.name.as_str(), None, value.into())?;
-        }
-
-        Ok(())
-    }
-
     pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
         vec![(self.meta.name.as_str(), None)]
     }
@@ -278,6 +264,10 @@ impl OutputNode {
     pub fn default_metric(&self) -> NodeAttribute {
         Self::DEFAULT_ATTRIBUTE
     }
+}
+
+#[cfg(feature = "core")]
+impl OutputNode {
     pub fn create_metric(
         &self,
         network: &mut pywr_core::network::Network,
@@ -305,6 +295,34 @@ impl OutputNode {
         };
 
         Ok(metric)
+    }
+
+    pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
+        network.add_output_node(self.meta.name.as_str(), None)?;
+        Ok(())
+    }
+
+    pub fn set_constraints(
+        &self,
+        network: &mut pywr_core::network::Network,
+        args: &LoadArgs,
+    ) -> Result<(), SchemaError> {
+        if let Some(cost) = &self.cost {
+            let value = cost.load(network, args)?;
+            network.set_node_cost(self.meta.name.as_str(), None, value.into())?;
+        }
+
+        if let Some(max_flow) = &self.max_flow {
+            let value = max_flow.load(network, args)?;
+            network.set_node_max_flow(self.meta.name.as_str(), None, value.into())?;
+        }
+
+        if let Some(min_flow) = &self.min_flow {
+            let value = min_flow.load(network, args)?;
+            network.set_node_min_flow(self.meta.name.as_str(), None, value.into())?;
+        }
+
+        Ok(())
     }
 }
 
@@ -350,6 +368,7 @@ impl Default for StorageInitialVolume {
     }
 }
 
+#[cfg(feature = "core")]
 impl From<StorageInitialVolume> for CoreStorageInitialVolume {
     fn from(v: StorageInitialVolume) -> Self {
         match v {
@@ -372,6 +391,21 @@ pub struct StorageNode {
 impl StorageNode {
     const DEFAULT_ATTRIBUTE: NodeAttribute = NodeAttribute::Volume;
 
+    pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
+        vec![(self.meta.name.as_str(), None)]
+    }
+
+    pub fn output_connectors(&self) -> Vec<(&str, Option<String>)> {
+        vec![(self.meta.name.as_str(), None)]
+    }
+
+    pub fn default_metric(&self) -> NodeAttribute {
+        Self::DEFAULT_ATTRIBUTE
+    }
+}
+
+#[cfg(feature = "core")]
+impl StorageNode {
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network, args: &LoadArgs) -> Result<(), SchemaError> {
         let min_volume = match &self.min_volume {
             Some(v) => v.load(network, args)?.into(),
@@ -404,18 +438,6 @@ impl StorageNode {
         }
 
         Ok(())
-    }
-
-    pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
-        vec![(self.meta.name.as_str(), None)]
-    }
-
-    pub fn output_connectors(&self) -> Vec<(&str, Option<String>)> {
-        vec![(self.meta.name.as_str(), None)]
-    }
-
-    pub fn default_metric(&self) -> NodeAttribute {
-        Self::DEFAULT_ATTRIBUTE
     }
 
     pub fn create_metric(
@@ -571,6 +593,21 @@ pub struct CatchmentNode {
 impl CatchmentNode {
     const DEFAULT_ATTRIBUTE: NodeAttribute = NodeAttribute::Outflow;
 
+    pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
+        vec![(self.meta.name.as_str(), None)]
+    }
+
+    pub fn output_connectors(&self) -> Vec<(&str, Option<String>)> {
+        vec![(self.meta.name.as_str(), None)]
+    }
+
+    pub fn default_metric(&self) -> NodeAttribute {
+        Self::DEFAULT_ATTRIBUTE
+    }
+}
+
+#[cfg(feature = "core")]
+impl CatchmentNode {
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
         network.add_input_node(self.meta.name.as_str(), None)?;
         Ok(())
@@ -593,18 +630,6 @@ impl CatchmentNode {
         }
 
         Ok(())
-    }
-
-    pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
-        vec![(self.meta.name.as_str(), None)]
-    }
-
-    pub fn output_connectors(&self) -> Vec<(&str, Option<String>)> {
-        vec![(self.meta.name.as_str(), None)]
-    }
-
-    pub fn default_metric(&self) -> NodeAttribute {
-        Self::DEFAULT_ATTRIBUTE
     }
 
     pub fn create_metric(
@@ -673,6 +698,24 @@ pub struct AggregatedNode {
 impl AggregatedNode {
     const DEFAULT_ATTRIBUTE: NodeAttribute = NodeAttribute::Outflow;
 
+    pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
+        // Not connectable
+        // TODO this should be a trait? And error if you try to connect to a non-connectable node.
+        vec![]
+    }
+
+    pub fn output_connectors(&self) -> Vec<(&str, Option<String>)> {
+        // Not connectable
+        vec![]
+    }
+
+    pub fn default_metric(&self) -> NodeAttribute {
+        Self::DEFAULT_ATTRIBUTE
+    }
+}
+
+#[cfg(feature = "core")]
+impl AggregatedNode {
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
         let nodes = self
             .nodes
@@ -721,21 +764,6 @@ impl AggregatedNode {
         }
 
         Ok(())
-    }
-
-    pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
-        // Not connectable
-        // TODO this should be a trait? And error if you try to connect to a non-connectable node.
-        vec![]
-    }
-
-    pub fn output_connectors(&self) -> Vec<(&str, Option<String>)> {
-        // Not connectable
-        vec![]
-    }
-
-    pub fn default_metric(&self) -> NodeAttribute {
-        Self::DEFAULT_ATTRIBUTE
     }
 
     pub fn create_metric(
@@ -812,17 +840,6 @@ pub struct AggregatedStorageNode {
 impl AggregatedStorageNode {
     const DEFAULT_ATTRIBUTE: NodeAttribute = NodeAttribute::Outflow;
 
-    pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
-        let nodes = self
-            .storage_nodes
-            .iter()
-            .map(|name| network.get_node_index_by_name(name, None))
-            .collect::<Result<_, _>>()?;
-
-        network.add_aggregated_storage_node(self.meta.name.as_str(), None, nodes)?;
-        Ok(())
-    }
-
     pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
         // Not connectable
         // TODO this should be a trait? And error if you try to connect to a non-connectable node.
@@ -836,6 +853,20 @@ impl AggregatedStorageNode {
 
     pub fn default_metric(&self) -> NodeAttribute {
         Self::DEFAULT_ATTRIBUTE
+    }
+}
+
+#[cfg(feature = "core")]
+impl AggregatedStorageNode {
+    pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
+        let nodes = self
+            .storage_nodes
+            .iter()
+            .map(|name| network.get_node_index_by_name(name, None))
+            .collect::<Result<_, _>>()?;
+
+        network.add_aggregated_storage_node(self.meta.name.as_str(), None, nodes)?;
+        Ok(())
     }
 
     pub fn create_metric(

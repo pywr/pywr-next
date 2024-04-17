@@ -1,8 +1,12 @@
-use crate::error::{ConversionError, SchemaError};
+use crate::error::ConversionError;
+#[cfg(feature = "core")]
+use crate::error::SchemaError;
 use crate::metric::Metric;
+#[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::nodes::{NodeAttribute, NodeMeta};
 use crate::parameters::TryIntoV2Parameter;
+#[cfg(feature = "core")]
 use pywr_core::metric::MetricF64;
 use pywr_schema_macros::PywrNode;
 use pywr_v1_schema::nodes::RiverGaugeNode as RiverGaugeNodeV1;
@@ -42,13 +46,33 @@ impl RiverGaugeNode {
         Some("bypass")
     }
 
+    pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
+        vec![
+            (self.meta.name.as_str(), Self::mrf_sub_name().map(|s| s.to_string())),
+            (self.meta.name.as_str(), Self::bypass_sub_name().map(|s| s.to_string())),
+        ]
+    }
+
+    pub fn output_connectors(&self) -> Vec<(&str, Option<String>)> {
+        vec![
+            (self.meta.name.as_str(), Self::mrf_sub_name().map(|s| s.to_string())),
+            (self.meta.name.as_str(), Self::bypass_sub_name().map(|s| s.to_string())),
+        ]
+    }
+
+    pub fn default_metric(&self) -> NodeAttribute {
+        Self::DEFAULT_ATTRIBUTE
+    }
+}
+
+#[cfg(feature = "core")]
+impl RiverGaugeNode {
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
         network.add_link_node(self.meta.name.as_str(), Self::mrf_sub_name())?;
         network.add_link_node(self.meta.name.as_str(), Self::bypass_sub_name())?;
 
         Ok(())
     }
-
     pub fn set_constraints(
         &self,
         network: &mut pywr_core::network::Network,
@@ -67,25 +91,6 @@ impl RiverGaugeNode {
 
         Ok(())
     }
-
-    pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
-        vec![
-            (self.meta.name.as_str(), Self::mrf_sub_name().map(|s| s.to_string())),
-            (self.meta.name.as_str(), Self::bypass_sub_name().map(|s| s.to_string())),
-        ]
-    }
-
-    pub fn output_connectors(&self) -> Vec<(&str, Option<String>)> {
-        vec![
-            (self.meta.name.as_str(), Self::mrf_sub_name().map(|s| s.to_string())),
-            (self.meta.name.as_str(), Self::bypass_sub_name().map(|s| s.to_string())),
-        ]
-    }
-
-    pub fn default_metric(&self) -> NodeAttribute {
-        Self::DEFAULT_ATTRIBUTE
-    }
-
     pub fn create_metric(
         &self,
         network: &pywr_core::network::Network,
@@ -146,6 +151,7 @@ impl TryFrom<RiverGaugeNodeV1> for RiverGaugeNode {
 #[cfg(test)]
 mod tests {
     use crate::model::PywrModel;
+    #[cfg(feature = "core")]
     use pywr_core::test_utils::run_all_solvers;
 
     fn model_str() -> &'static str {
@@ -162,6 +168,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "core")]
     fn test_model_run() {
         let data = model_str();
         let schema: PywrModel = serde_json::from_str(data).unwrap();

@@ -1,8 +1,12 @@
-use crate::error::{ConversionError, SchemaError};
+use crate::error::ConversionError;
+#[cfg(feature = "core")]
+use crate::error::SchemaError;
 use crate::metric::Metric;
+#[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::nodes::{NodeAttribute, NodeMeta};
 use crate::parameters::TryIntoV2Parameter;
+#[cfg(feature = "core")]
 use pywr_core::metric::MetricF64;
 use pywr_schema_macros::PywrNode;
 use pywr_v1_schema::nodes::PiecewiseLinkNode as PiecewiseLinkNodeV1;
@@ -51,6 +55,28 @@ impl PiecewiseLinkNode {
         Some(format!("step-{i:02}"))
     }
 
+    pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
+        self.steps
+            .iter()
+            .enumerate()
+            .map(|(i, _)| (self.meta.name.as_str(), Self::step_sub_name(i)))
+            .collect()
+    }
+    pub fn output_connectors(&self) -> Vec<(&str, Option<String>)> {
+        self.steps
+            .iter()
+            .enumerate()
+            .map(|(i, _)| (self.meta.name.as_str(), Self::step_sub_name(i)))
+            .collect()
+    }
+
+    pub fn default_metric(&self) -> NodeAttribute {
+        Self::DEFAULT_ATTRIBUTE
+    }
+}
+
+#[cfg(feature = "core")]
+impl PiecewiseLinkNode {
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
         // create a link node for each step
         for (i, _) in self.steps.iter().enumerate() {
@@ -58,7 +84,6 @@ impl PiecewiseLinkNode {
         }
         Ok(())
     }
-
     pub fn set_constraints(
         &self,
         network: &mut pywr_core::network::Network,
@@ -85,26 +110,6 @@ impl PiecewiseLinkNode {
 
         Ok(())
     }
-
-    pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
-        self.steps
-            .iter()
-            .enumerate()
-            .map(|(i, _)| (self.meta.name.as_str(), Self::step_sub_name(i)))
-            .collect()
-    }
-    pub fn output_connectors(&self) -> Vec<(&str, Option<String>)> {
-        self.steps
-            .iter()
-            .enumerate()
-            .map(|(i, _)| (self.meta.name.as_str(), Self::step_sub_name(i)))
-            .collect()
-    }
-
-    pub fn default_metric(&self) -> NodeAttribute {
-        Self::DEFAULT_ATTRIBUTE
-    }
-
     pub fn create_metric(
         &self,
         network: &pywr_core::network::Network,
@@ -181,12 +186,11 @@ impl TryFrom<PiecewiseLinkNodeV1> for PiecewiseLinkNode {
 }
 
 #[cfg(test)]
+#[cfg(feature = "core")]
 mod tests {
     use crate::model::PywrModel;
     use ndarray::Array2;
-    use pywr_core::metric::MetricF64;
-    use pywr_core::recorders::AssertionRecorder;
-    use pywr_core::test_utils::run_all_solvers;
+    use pywr_core::{metric::MetricF64, recorders::AssertionRecorder, test_utils::run_all_solvers};
 
     fn model_str() -> &'static str {
         include_str!("../test_models/piecewise_link1.json")
