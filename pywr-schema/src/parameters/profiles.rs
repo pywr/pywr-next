@@ -1,8 +1,12 @@
-use crate::error::{ConversionError, SchemaError};
+use crate::error::ConversionError;
+#[cfg(feature = "core")]
+use crate::error::SchemaError;
+#[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::parameters::{
     ConstantFloatVec, ConstantValue, DynamicFloatValueType, IntoV2Parameter, ParameterMeta, TryFromV1Parameter,
 };
+#[cfg(feature = "core")]
 use pywr_core::parameters::{ParameterIndex, WeeklyProfileError, WeeklyProfileValues};
 use pywr_v1_schema::parameters::{
     DailyProfileParameter as DailyProfileParameterV1, MonthInterpDay as MonthInterpDayV1,
@@ -26,7 +30,10 @@ impl DailyProfileParameter {
     pub fn parameters(&self) -> HashMap<&str, DynamicFloatValueType> {
         HashMap::new()
     }
+}
 
+#[cfg(feature = "core")]
+impl DailyProfileParameter {
     pub fn add_to_model(
         &self,
         network: &mut pywr_core::network::Network,
@@ -72,6 +79,7 @@ pub enum MonthlyInterpDay {
     Last,
 }
 
+#[cfg(feature = "core")]
 impl From<MonthlyInterpDay> for pywr_core::parameters::MonthlyInterpDay {
     fn from(value: MonthlyInterpDay) -> Self {
         match value {
@@ -96,7 +104,10 @@ impl MonthlyProfileParameter {
     pub fn parameters(&self) -> HashMap<&str, DynamicFloatValueType> {
         HashMap::new()
     }
+}
 
+#[cfg(feature = "core")]
+impl MonthlyProfileParameter {
     pub fn add_to_model(
         &self,
         network: &mut pywr_core::network::Network,
@@ -170,7 +181,10 @@ impl UniformDrawdownProfileParameter {
     pub fn parameters(&self) -> HashMap<&str, DynamicFloatValueType> {
         HashMap::new()
     }
+}
 
+#[cfg(feature = "core")]
+impl UniformDrawdownProfileParameter {
     pub fn add_to_model(
         &self,
         network: &mut pywr_core::network::Network,
@@ -232,6 +246,7 @@ pub enum RadialBasisFunction {
     InverseMultiQuadric { epsilon: Option<f64> },
 }
 
+#[cfg(feature = "core")]
 impl RadialBasisFunction {
     /// Convert the schema representation of the RBF into `pywr_core` type.
     ///
@@ -275,6 +290,7 @@ impl RadialBasisFunction {
 /// Compute an estimate for epsilon.
 ///
 /// If there `points` is empty then `None` is returned.
+#[cfg(feature = "core")]
 fn estimate_epsilon(points: &[(u32, f64)]) -> Option<f64> {
     if points.is_empty() {
         return None;
@@ -315,6 +331,7 @@ pub struct RbfProfileVariableSettings {
     pub value_lower_bounds: Option<f64>,
 }
 
+#[cfg(feature = "core")]
 impl From<RbfProfileVariableSettings> for pywr_core::parameters::RbfProfileVariableConfig {
     fn from(settings: RbfProfileVariableSettings) -> Self {
         Self::new(
@@ -362,7 +379,10 @@ impl RbfProfileParameter {
     pub fn parameters(&self) -> HashMap<&str, DynamicFloatValueType> {
         HashMap::new()
     }
+}
 
+#[cfg(feature = "core")]
+impl RbfProfileParameter {
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<ParameterIndex<f64>, SchemaError> {
         let function = self.function.into_core_rbf(&self.points)?;
 
@@ -455,6 +475,7 @@ pub enum WeeklyInterpDay {
     Last,
 }
 
+#[cfg(feature = "core")]
 impl From<WeeklyInterpDay> for pywr_core::parameters::WeeklyInterpDay {
     fn from(value: WeeklyInterpDay) -> Self {
         match value {
@@ -540,7 +561,10 @@ impl WeeklyProfileParameter {
     pub fn parameters(&self) -> HashMap<&str, DynamicFloatValueType> {
         HashMap::new()
     }
+}
 
+#[cfg(feature = "core")]
+impl WeeklyProfileParameter {
     pub fn add_to_model(
         &self,
         network: &mut pywr_core::network::Network,

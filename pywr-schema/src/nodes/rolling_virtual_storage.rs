@@ -1,13 +1,19 @@
-use crate::error::{ConversionError, SchemaError};
+use crate::error::ConversionError;
+#[cfg(feature = "core")]
+use crate::error::SchemaError;
 use crate::metric::Metric;
+#[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::nodes::{NodeAttribute, NodeMeta};
 use crate::parameters::TryIntoV2Parameter;
-use pywr_core::derived_metric::DerivedMetric;
-use pywr_core::metric::MetricF64;
-use pywr_core::node::{ConstraintValue, StorageInitialVolume};
-use pywr_core::timestep::TimeDomain;
-use pywr_core::virtual_storage::VirtualStorageReset;
+#[cfg(feature = "core")]
+use pywr_core::{
+    derived_metric::DerivedMetric,
+    metric::MetricF64,
+    node::{ConstraintValue, StorageInitialVolume},
+    timestep::TimeDomain,
+    virtual_storage::VirtualStorageReset,
+};
 use pywr_schema_macros::PywrNode;
 use pywr_v1_schema::nodes::RollingVirtualStorageNode as RollingVirtualStorageNodeV1;
 use std::collections::HashMap;
@@ -28,6 +34,7 @@ impl Default for RollingWindow {
     }
 }
 
+#[cfg(feature = "core")]
 impl RollingWindow {
     /// Convert the rolling window to a number of time-steps.
     ///
@@ -78,6 +85,21 @@ pub struct RollingVirtualStorageNode {
 impl RollingVirtualStorageNode {
     const DEFAULT_ATTRIBUTE: NodeAttribute = NodeAttribute::Volume;
 
+    pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
+        vec![]
+    }
+
+    pub fn output_connectors(&self) -> Vec<(&str, Option<String>)> {
+        vec![]
+    }
+
+    pub fn default_metric(&self) -> NodeAttribute {
+        Self::DEFAULT_ATTRIBUTE
+    }
+}
+
+#[cfg(feature = "core")]
+impl RollingVirtualStorageNode {
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network, args: &LoadArgs) -> Result<(), SchemaError> {
         let initial_volume = if let Some(iv) = self.initial_volume {
             StorageInitialVolume::Absolute(iv)
@@ -131,19 +153,6 @@ impl RollingVirtualStorageNode {
         )?;
         Ok(())
     }
-
-    pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
-        vec![]
-    }
-
-    pub fn output_connectors(&self) -> Vec<(&str, Option<String>)> {
-        vec![]
-    }
-
-    pub fn default_metric(&self) -> NodeAttribute {
-        Self::DEFAULT_ATTRIBUTE
-    }
-
     pub fn create_metric(
         &self,
         network: &mut pywr_core::network::Network,
@@ -236,6 +245,7 @@ impl TryFrom<RollingVirtualStorageNodeV1> for RollingVirtualStorageNode {
 }
 
 #[cfg(test)]
+#[cfg(feature = "core")]
 mod tests {
     use crate::model::PywrModel;
     use ndarray::Array2;

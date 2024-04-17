@@ -1,17 +1,22 @@
 use super::edge::Edge;
 use super::nodes::Node;
 use super::parameters::{convert_parameter_v1_to_v2, Parameter};
-use crate::data_tables::{DataTable, LoadedTableCollection};
+use crate::data_tables::DataTable;
+#[cfg(feature = "core")]
+use crate::data_tables::LoadedTableCollection;
 use crate::error::{ConversionError, SchemaError};
 use crate::metric::Metric;
 use crate::metric_sets::MetricSet;
 use crate::nodes::NodeAndTimeseries;
 use crate::outputs::Output;
-use crate::timeseries::{convert_from_v1_data, LoadedTimeseriesCollection, Timeseries};
-use chrono::{NaiveDate, NaiveDateTime, NaiveTime};
-use pywr_core::models::ModelDomain;
-use pywr_core::timestep::TimestepDuration;
-use pywr_core::PywrError;
+#[cfg(feature = "core")]
+use crate::timeseries::LoadedTimeseriesCollection;
+use crate::timeseries::{convert_from_v1_data, Timeseries};
+#[cfg(feature = "core")]
+use chrono::NaiveTime;
+use chrono::{NaiveDate, NaiveDateTime};
+#[cfg(feature = "core")]
+use pywr_core::{models::ModelDomain, timestep::TimestepDuration, PywrError};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
@@ -108,6 +113,7 @@ impl TryFrom<pywr_v1_schema::model::Timestepper> for Timestepper {
     }
 }
 
+#[cfg(feature = "core")]
 impl From<Timestepper> for pywr_core::timestep::Timestepper {
     fn from(ts: Timestepper) -> Self {
         let timestep = match ts.timestep {
@@ -136,6 +142,7 @@ pub struct Scenario {
     pub ensemble_names: Option<Vec<String>>,
 }
 
+#[cfg(feature = "core")]
 #[derive(Clone)]
 pub struct LoadArgs<'a> {
     pub schema: &'a PywrNetwork,
@@ -193,10 +200,12 @@ impl PywrNetwork {
         }
     }
 
+    #[cfg(feature = "core")]
     pub fn load_tables(&self, data_path: Option<&Path>) -> Result<LoadedTableCollection, SchemaError> {
         Ok(LoadedTableCollection::from_schema(self.tables.as_deref(), data_path)?)
     }
 
+    #[cfg(feature = "core")]
     pub fn load_timeseries(
         &self,
         domain: &ModelDomain,
@@ -209,6 +218,7 @@ impl PywrNetwork {
         )?)
     }
 
+    #[cfg(feature = "core")]
     pub fn build_network(
         &self,
         domain: &ModelDomain,
@@ -402,6 +412,7 @@ impl PywrModel {
         Ok(serde_json::from_str(data.as_str())?)
     }
 
+    #[cfg(feature = "core")]
     pub fn build_model(
         &self,
         data_path: Option<&Path>,
@@ -616,6 +627,7 @@ impl PywrMultiNetworkModel {
         Ok(serde_json::from_str(data.as_str())?)
     }
 
+    #[cfg(feature = "core")]
     pub fn build_model(
         &self,
         data_path: Option<&Path>,
@@ -740,16 +752,8 @@ impl PywrMultiNetworkModel {
 
 #[cfg(test)]
 mod tests {
-    use super::{PywrModel, PywrMultiNetworkModel};
-    use crate::metric::{Metric, ParameterReference};
+    use super::PywrModel;
     use crate::model::Timestepper;
-    use crate::parameters::{AggFunc, AggregatedParameter, ConstantParameter, ConstantValue, Parameter, ParameterMeta};
-    use ndarray::{Array1, Array2, Axis};
-    use pywr_core::metric::MetricF64;
-    use pywr_core::recorders::AssertionRecorder;
-    use pywr_core::solvers::ClpSolver;
-    use pywr_core::test_utils::run_all_solvers;
-    use std::path::PathBuf;
 
     fn model_str() -> &'static str {
         include_str!("./test_models/simple1.json")
@@ -762,6 +766,87 @@ mod tests {
 
         assert_eq!(schema.network.nodes.len(), 3);
         assert_eq!(schema.network.edges.len(), 2);
+    }
+
+    #[test]
+    fn test_date() {
+        let timestepper_str = r#"
+        {
+            "start": "2015-01-01",
+            "end": "2015-12-31",
+            "timestep": 1
+        }
+        "#;
+
+        let timestep: Timestepper = serde_json::from_str(timestepper_str).unwrap();
+
+        match timestep.start {
+            super::DateType::Date(date) => {
+                assert_eq!(date, chrono::NaiveDate::from_ymd_opt(2015, 1, 1).unwrap());
+            }
+            _ => panic!("Expected a date"),
+        }
+
+        match timestep.end {
+            super::DateType::Date(date) => {
+                assert_eq!(date, chrono::NaiveDate::from_ymd_opt(2015, 12, 31).unwrap());
+            }
+            _ => panic!("Expected a date"),
+        }
+    }
+
+    #[test]
+    fn test_datetime() {
+        let timestepper_str = r#"
+        {
+            "start": "2015-01-01T12:30:00",
+            "end": "2015-01-01T14:30:00",
+            "timestep": 1
+        }
+        "#;
+
+        let timestep: Timestepper = serde_json::from_str(timestepper_str).unwrap();
+
+        match timestep.start {
+            super::DateType::DateTime(date_time) => {
+                assert_eq!(
+                    date_time,
+                    chrono::NaiveDate::from_ymd_opt(2015, 1, 1)
+                        .unwrap()
+                        .and_hms_opt(12, 30, 0)
+                        .unwrap()
+                );
+            }
+            _ => panic!("Expected a date"),
+        }
+
+        match timestep.end {
+            super::DateType::DateTime(date_time) => {
+                assert_eq!(
+                    date_time,
+                    chrono::NaiveDate::from_ymd_opt(2015, 1, 1)
+                        .unwrap()
+                        .and_hms_opt(14, 30, 0)
+                        .unwrap()
+                );
+            }
+            _ => panic!("Expected a date"),
+        }
+    }
+}
+
+#[cfg(test)]
+#[cfg(feature = "core")]
+mod core_tests {
+    use super::{PywrModel, PywrMultiNetworkModel};
+    use crate::metric::{Metric, ParameterReference};
+    use crate::parameters::{AggFunc, AggregatedParameter, ConstantParameter, ConstantValue, Parameter, ParameterMeta};
+    use ndarray::{Array1, Array2, Axis};
+    use pywr_core::{metric::MetricF64, recorders::AssertionRecorder, solvers::ClpSolver, test_utils::run_all_solvers};
+    use std::path::PathBuf;
+
+    fn model_str() -> &'static str {
+        include_str!("./test_models/simple1.json")
     }
 
     #[test]
@@ -993,71 +1078,5 @@ mod tests {
         network_2.add_recorder(Box::new(rec)).unwrap();
 
         model.run::<ClpSolver>(&Default::default()).unwrap();
-    }
-
-    #[test]
-    fn test_date() {
-        let timestepper_str = r#"
-        {
-            "start": "2015-01-01",
-            "end": "2015-12-31",
-            "timestep": 1
-        }
-        "#;
-
-        let timestep: Timestepper = serde_json::from_str(timestepper_str).unwrap();
-
-        match timestep.start {
-            super::DateType::Date(date) => {
-                assert_eq!(date, chrono::NaiveDate::from_ymd_opt(2015, 1, 1).unwrap());
-            }
-            _ => panic!("Expected a date"),
-        }
-
-        match timestep.end {
-            super::DateType::Date(date) => {
-                assert_eq!(date, chrono::NaiveDate::from_ymd_opt(2015, 12, 31).unwrap());
-            }
-            _ => panic!("Expected a date"),
-        }
-    }
-
-    #[test]
-    fn test_datetime() {
-        let timestepper_str = r#"
-        {
-            "start": "2015-01-01T12:30:00",
-            "end": "2015-01-01T14:30:00",
-            "timestep": 1
-        }
-        "#;
-
-        let timestep: Timestepper = serde_json::from_str(timestepper_str).unwrap();
-
-        match timestep.start {
-            super::DateType::DateTime(date_time) => {
-                assert_eq!(
-                    date_time,
-                    chrono::NaiveDate::from_ymd_opt(2015, 1, 1)
-                        .unwrap()
-                        .and_hms_opt(12, 30, 0)
-                        .unwrap()
-                );
-            }
-            _ => panic!("Expected a date"),
-        }
-
-        match timestep.end {
-            super::DateType::DateTime(date_time) => {
-                assert_eq!(
-                    date_time,
-                    chrono::NaiveDate::from_ymd_opt(2015, 1, 1)
-                        .unwrap()
-                        .and_hms_opt(14, 30, 0)
-                        .unwrap()
-                );
-            }
-            _ => panic!("Expected a date"),
-        }
     }
 }

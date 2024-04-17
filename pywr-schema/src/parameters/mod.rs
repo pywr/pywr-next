@@ -22,7 +22,9 @@ mod python;
 mod tables;
 mod thresholds;
 
-pub use super::data_tables::{LoadedTableCollection, TableDataRef};
+#[cfg(feature = "core")]
+pub use super::data_tables::LoadedTableCollection;
+pub use super::data_tables::TableDataRef;
 pub use super::parameters::aggregated::{AggFunc, AggregatedIndexParameter, AggregatedParameter, IndexAggFunc};
 pub use super::parameters::asymmetric_switch::AsymmetricSwitchIndexParameter;
 pub use super::parameters::control_curves::{
@@ -44,14 +46,17 @@ pub use super::parameters::profiles::{
 pub use super::parameters::python::{PythonModule, PythonParameter, PythonReturnType};
 pub use super::parameters::tables::TablesArrayParameter;
 pub use super::parameters::thresholds::ParameterThresholdParameter;
-use crate::error::{ConversionError, SchemaError};
+use crate::error::ConversionError;
+#[cfg(feature = "core")]
+use crate::error::SchemaError;
 use crate::metric::Metric;
+#[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::parameters::core::DivisionParameter;
 use crate::parameters::interpolated::InterpolatedParameter;
 pub use offset::OffsetParameter;
-use pywr_core::metric::MetricUsize;
-use pywr_core::parameters::ParameterIndex;
+#[cfg(feature = "core")]
+use pywr_core::{metric::MetricUsize, parameters::ParameterIndex};
 use pywr_v1_schema::parameters::{
     CoreParameter, DataFrameParameter as DataFrameParameterV1, ExternalDataRef as ExternalDataRefV1,
     Parameter as ParameterV1, ParameterMeta as ParameterMetaV1, ParameterValue as ParameterValueV1, ParameterVec,
@@ -213,7 +218,10 @@ impl Parameter {
         // Implementation provided by the `EnumDiscriminants` derive macro.
         self.into()
     }
+}
 
+#[cfg(feature = "core")]
+impl Parameter {
     pub fn add_to_model(
         &self,
         network: &mut pywr_core::network::Network,
@@ -514,6 +522,7 @@ impl Default for ConstantValue<f64> {
     }
 }
 
+#[cfg(feature = "core")]
 impl ConstantValue<f64> {
     /// Return the value loading from a table if required.
     pub fn load(&self, tables: &LoadedTableCollection) -> Result<f64, SchemaError> {
@@ -525,6 +534,7 @@ impl ConstantValue<f64> {
     }
 }
 
+#[cfg(feature = "core")]
 impl ConstantValue<usize> {
     /// Return the value loading from a table if required.
     pub fn load(&self, tables: &LoadedTableCollection) -> Result<usize, SchemaError> {
@@ -557,6 +567,7 @@ pub enum ParameterIndexValue {
     Inline(Box<Parameter>),
 }
 
+#[cfg(feature = "core")]
 impl ParameterIndexValue {
     pub fn load(
         &self,
@@ -603,7 +614,10 @@ impl DynamicIndexValue {
     pub fn from_usize(v: usize) -> Self {
         Self::Constant(ConstantValue::Literal(v))
     }
+}
 
+#[cfg(feature = "core")]
+impl DynamicIndexValue {
     ///
     pub fn load(&self, network: &mut pywr_core::network::Network, args: &LoadArgs) -> Result<MetricUsize, SchemaError> {
         let parameter_ref = match self {
@@ -654,6 +668,7 @@ pub enum ConstantFloatVec {
     External(ExternalDataRef),
 }
 
+#[cfg(feature = "core")]
 impl ConstantFloatVec {
     /// Return the value loading from a table if required.
     pub fn load(&self, tables: &LoadedTableCollection) -> Result<Vec<f64>, SchemaError> {

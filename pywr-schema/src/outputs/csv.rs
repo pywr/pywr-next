@@ -1,6 +1,10 @@
+#[cfg(feature = "core")]
 use crate::error::SchemaError;
+#[cfg(feature = "core")]
 use pywr_core::recorders::{CsvLongFmtOutput, CsvWideFmtOutput, Recorder};
-use std::path::{Path, PathBuf};
+#[cfg(feature = "core")]
+use std::path::Path;
+use std::path::PathBuf;
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Default)]
 #[serde(rename_all = "lowercase")]
@@ -36,6 +40,7 @@ pub struct CsvOutput {
     pub metric_set: CsvMetricSet,
 }
 
+#[cfg(feature = "core")]
 impl CsvOutput {
     pub fn add_to_model(
         &self,
@@ -81,40 +86,18 @@ impl CsvOutput {
 #[cfg(test)]
 mod tests {
     use crate::PywrModel;
-    use pywr_core::solvers::{ClpSolver, ClpSolverSettings};
     use std::str::FromStr;
-    use tempfile::TempDir;
 
     fn csv1_str() -> &'static str {
         include_str!("../test_models/csv1.json")
-    }
-
-    fn csv1_outputs_long_str() -> &'static str {
-        include_str!("../test_models/csv1-outputs-long.csv")
-    }
-
-    fn csv1_outputs_wide_str() -> &'static str {
-        include_str!("../test_models/csv1-outputs-wide.csv")
     }
 
     fn csv2_str() -> &'static str {
         include_str!("../test_models/csv2.json")
     }
 
-    fn csv2_outputs_long_str() -> &'static str {
-        include_str!("../test_models/csv2-outputs-long.csv")
-    }
-
-    fn csv2_outputs_wide_str() -> &'static str {
-        include_str!("../test_models/csv2-outputs-wide.csv")
-    }
-
     fn csv3_str() -> &'static str {
         include_str!("../test_models/csv3.json")
-    }
-
-    fn csv3_outputs_long_str() -> &'static str {
-        include_str!("../test_models/csv3-outputs-long.csv")
     }
 
     #[test]
@@ -130,63 +113,121 @@ mod tests {
     #[test]
     fn test_csv1_run() {
         let data = csv1_str();
-        let schema = PywrModel::from_str(data).unwrap();
-
-        let temp_dir = TempDir::new().unwrap();
-
-        let model = schema.build_model(None, Some(temp_dir.path())).unwrap();
-
-        model.run::<ClpSolver>(&ClpSolverSettings::default()).unwrap();
-
-        // After model run there should be two output files.
-        let expected_long_path = temp_dir.path().join("outputs-long.csv");
-        assert!(expected_long_path.exists());
-        let long_content = std::fs::read_to_string(&expected_long_path).unwrap();
-        assert_eq!(&long_content, csv1_outputs_long_str());
-
-        let expected_wide_path = temp_dir.path().join("outputs-wide.csv");
-        assert!(expected_wide_path.exists());
-        let wide_content = std::fs::read_to_string(&expected_wide_path).unwrap();
-        assert_eq!(&wide_content, csv1_outputs_wide_str());
+        let _schema = PywrModel::from_str(data).unwrap();
     }
 
     #[test]
     fn test_csv2_run() {
         let data = csv2_str();
-        let schema = PywrModel::from_str(data).unwrap();
-
-        let temp_dir = TempDir::new().unwrap();
-
-        let model = schema.build_model(None, Some(temp_dir.path())).unwrap();
-
-        model.run::<ClpSolver>(&ClpSolverSettings::default()).unwrap();
-
-        // After model run there should be two output files.
-        let expected_long_path = temp_dir.path().join("outputs-long.csv");
-        assert!(expected_long_path.exists());
-        let long_content = std::fs::read_to_string(&expected_long_path).unwrap();
-        assert_eq!(&long_content, csv2_outputs_long_str());
-
-        let expected_wide_path = temp_dir.path().join("outputs-wide.csv");
-        assert!(expected_wide_path.exists());
-        let wide_content = std::fs::read_to_string(&expected_wide_path).unwrap();
-        assert_eq!(&wide_content, csv2_outputs_wide_str());
+        let _schema = PywrModel::from_str(data).unwrap();
     }
 
     #[test]
     fn test_csv3_run() {
         let data = csv3_str();
-        let schema = PywrModel::from_str(data).unwrap();
+        let _schema = PywrModel::from_str(data).unwrap();
+    }
 
-        let temp_dir = TempDir::new().unwrap();
+    #[cfg(test)]
+    #[cfg(feature = "core")]
+    mod core {
+        use super::{csv1_str, csv2_str, csv3_str};
+        use crate::PywrModel;
+        use pywr_core::solvers::{ClpSolver, ClpSolverSettings};
+        use std::str::FromStr;
+        use tempfile::TempDir;
 
-        let model = schema.build_model(None, Some(temp_dir.path())).unwrap();
+        fn csv1_outputs_long_str() -> &'static str {
+            include_str!("../test_models/csv1-outputs-long.csv")
+        }
 
-        model.run::<ClpSolver>(&ClpSolverSettings::default()).unwrap();
+        fn csv1_outputs_wide_str() -> &'static str {
+            include_str!("../test_models/csv1-outputs-wide.csv")
+        }
 
-        let expected_long_path = temp_dir.path().join("outputs-long.csv");
-        assert!(expected_long_path.exists());
-        let long_content = std::fs::read_to_string(&expected_long_path).unwrap();
-        assert_eq!(&long_content, csv3_outputs_long_str());
+        fn csv3_outputs_long_str() -> &'static str {
+            include_str!("../test_models/csv3-outputs-long.csv")
+        }
+
+        fn csv2_outputs_long_str() -> &'static str {
+            include_str!("../test_models/csv2-outputs-long.csv")
+        }
+
+        fn csv2_outputs_wide_str() -> &'static str {
+            include_str!("../test_models/csv2-outputs-wide.csv")
+        }
+
+        #[test]
+        fn test_schema() {
+            let data = csv1_str();
+            let schema = PywrModel::from_str(data).unwrap();
+
+            assert_eq!(schema.network.nodes.len(), 3);
+            assert_eq!(schema.network.edges.len(), 2);
+            assert!(schema.network.outputs.is_some_and(|o| o.len() == 2));
+        }
+
+        #[test]
+        fn test_csv1_run() {
+            let data = csv1_str();
+            let schema = PywrModel::from_str(data).unwrap();
+
+            let temp_dir = TempDir::new().unwrap();
+
+            let model = schema.build_model(None, Some(temp_dir.path())).unwrap();
+
+            model.run::<ClpSolver>(&ClpSolverSettings::default()).unwrap();
+
+            // After model run there should be two output files.
+            let expected_long_path = temp_dir.path().join("outputs-long.csv");
+            assert!(expected_long_path.exists());
+            let long_content = std::fs::read_to_string(&expected_long_path).unwrap();
+            assert_eq!(&long_content, csv1_outputs_long_str());
+
+            let expected_wide_path = temp_dir.path().join("outputs-wide.csv");
+            assert!(expected_wide_path.exists());
+            let wide_content = std::fs::read_to_string(&expected_wide_path).unwrap();
+            assert_eq!(&wide_content, csv1_outputs_wide_str());
+        }
+
+        #[test]
+        fn test_csv2_run() {
+            let data = csv2_str();
+            let schema = PywrModel::from_str(data).unwrap();
+
+            let temp_dir = TempDir::new().unwrap();
+
+            let model = schema.build_model(None, Some(temp_dir.path())).unwrap();
+
+            model.run::<ClpSolver>(&ClpSolverSettings::default()).unwrap();
+
+            // After model run there should be two output files.
+            let expected_long_path = temp_dir.path().join("outputs-long.csv");
+            assert!(expected_long_path.exists());
+            let long_content = std::fs::read_to_string(&expected_long_path).unwrap();
+            assert_eq!(&long_content, csv2_outputs_long_str());
+
+            let expected_wide_path = temp_dir.path().join("outputs-wide.csv");
+            assert!(expected_wide_path.exists());
+            let wide_content = std::fs::read_to_string(&expected_wide_path).unwrap();
+            assert_eq!(&wide_content, csv2_outputs_wide_str());
+        }
+
+        #[test]
+        fn test_csv3_run() {
+            let data = csv3_str();
+            let schema = PywrModel::from_str(data).unwrap();
+
+            let temp_dir = TempDir::new().unwrap();
+
+            let model = schema.build_model(None, Some(temp_dir.path())).unwrap();
+
+            model.run::<ClpSolver>(&ClpSolverSettings::default()).unwrap();
+
+            let expected_long_path = temp_dir.path().join("outputs-long.csv");
+            assert!(expected_long_path.exists());
+            let long_content = std::fs::read_to_string(&expected_long_path).unwrap();
+            assert_eq!(&long_content, csv3_outputs_long_str());
+        }
     }
 }

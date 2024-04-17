@@ -202,6 +202,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "core")]
     fn test_no_resample_slice() {
         let start = NaiveDateTime::parse_from_str("2021-01-01 00:00:00", "%Y-%m-%d %H:%M:%S").unwrap();
         let end = NaiveDateTime::parse_from_str("2021-01-03 00:00:00", "%Y-%m-%d %H:%M:%S").unwrap();

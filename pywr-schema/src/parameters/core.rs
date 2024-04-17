@@ -1,9 +1,13 @@
-use crate::error::{ConversionError, SchemaError};
+use crate::error::ConversionError;
+#[cfg(feature = "core")]
+use crate::error::SchemaError;
 use crate::metric::Metric;
+#[cfg(feature = "core")]
 use crate::model::LoadArgs;
-use crate::parameters::{
-    ConstantValue, DynamicFloatValueType, IntoV2Parameter, ParameterMeta, TryFromV1Parameter, TryIntoV2Parameter,
-};
+#[cfg(feature = "core")]
+use crate::parameters::DynamicFloatValueType;
+use crate::parameters::{ConstantValue, IntoV2Parameter, ParameterMeta, TryFromV1Parameter, TryIntoV2Parameter};
+#[cfg(feature = "core")]
 use pywr_core::parameters::ParameterIndex;
 use pywr_v1_schema::parameters::{
     ConstantParameter as ConstantParameterV1, DivisionParameter as DivisionParameterV1, MaxParameter as MaxParameterV1,
@@ -92,6 +96,7 @@ pub enum ActivationFunction {
     Logistic { growth_rate: f64, max: f64 },
 }
 
+#[cfg(feature = "core")]
 impl From<ActivationFunction> for pywr_core::parameters::ActivationFunction {
     fn from(a: ActivationFunction) -> Self {
         match a {
@@ -155,6 +160,7 @@ pub struct ConstantParameter {
     pub value: ConstantValue<f64>,
 }
 
+#[cfg(feature = "core")]
 impl ConstantParameter {
     pub fn node_references(&self) -> HashMap<&str, &str> {
         HashMap::new()
@@ -206,6 +212,7 @@ pub struct MaxParameter {
     pub threshold: Option<f64>,
 }
 
+#[cfg(feature = "core")]
 impl MaxParameter {
     pub fn node_references(&self) -> HashMap<&str, &str> {
         HashMap::new()
@@ -270,6 +277,7 @@ pub struct DivisionParameter {
     pub denominator: Metric,
 }
 
+#[cfg(feature = "core")]
 impl DivisionParameter {
     pub fn node_references(&self) -> HashMap<&str, &str> {
         HashMap::new()
@@ -334,7 +342,10 @@ impl MinParameter {
     pub fn node_references(&self) -> HashMap<&str, &str> {
         HashMap::new()
     }
+}
 
+#[cfg(feature = "core")]
+impl MinParameter {
     pub fn add_to_model(
         &self,
         network: &mut pywr_core::network::Network,
@@ -385,7 +396,10 @@ impl NegativeParameter {
     //     attributes.insert("parameter", self.parameter.as_ref().into());
     //     attributes
     // }
+}
 
+#[cfg(feature = "core")]
+impl NegativeParameter {
     pub fn add_to_model(
         &self,
         network: &mut pywr_core::network::Network,
@@ -437,6 +451,7 @@ pub struct NegativeMaxParameter {
     pub threshold: Option<f64>,
 }
 
+#[cfg(feature = "core")]
 impl NegativeMaxParameter {
     pub fn node_references(&self) -> HashMap<&str, &str> {
         HashMap::new()
@@ -500,7 +515,10 @@ impl NegativeMinParameter {
     pub fn node_references(&self) -> HashMap<&str, &str> {
         HashMap::new()
     }
+}
 
+#[cfg(feature = "core")]
+impl NegativeMinParameter {
     pub fn add_to_model(
         &self,
         network: &mut pywr_core::network::Network,

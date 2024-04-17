@@ -1,8 +1,12 @@
-use crate::error::{ConversionError, SchemaError};
+use crate::error::ConversionError;
+#[cfg(feature = "core")]
+use crate::error::SchemaError;
 use crate::metric::Metric;
+#[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::nodes::{NodeAttribute, NodeMeta};
 use crate::parameters::TryIntoV2Parameter;
+#[cfg(feature = "core")]
 use pywr_core::metric::MetricF64;
 use pywr_schema_macros::PywrNode;
 use pywr_v1_schema::nodes::LossLinkNode as LossLinkNodeV1;
@@ -46,6 +50,26 @@ impl LossLinkNode {
         Some("net")
     }
 
+    pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
+        // Gross inflow goes to both nodes
+        vec![
+            (self.meta.name.as_str(), Self::loss_sub_name().map(|s| s.to_string())),
+            (self.meta.name.as_str(), Self::net_sub_name().map(|s| s.to_string())),
+        ]
+    }
+
+    pub fn output_connectors(&self) -> Vec<(&str, Option<String>)> {
+        // Only net goes to the downstream.
+        vec![(self.meta.name.as_str(), Self::net_sub_name().map(|s| s.to_string()))]
+    }
+
+    pub fn default_metric(&self) -> NodeAttribute {
+        Self::DEFAULT_ATTRIBUTE
+    }
+}
+
+#[cfg(feature = "core")]
+impl LossLinkNode {
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
         network.add_link_node(self.meta.name.as_str(), Self::net_sub_name())?;
         // TODO make the loss node configurable (i.e. it could be a link if a network wanted to use the loss)
@@ -77,23 +101,6 @@ impl LossLinkNode {
         }
 
         Ok(())
-    }
-
-    pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
-        // Gross inflow goes to both nodes
-        vec![
-            (self.meta.name.as_str(), Self::loss_sub_name().map(|s| s.to_string())),
-            (self.meta.name.as_str(), Self::net_sub_name().map(|s| s.to_string())),
-        ]
-    }
-
-    pub fn output_connectors(&self) -> Vec<(&str, Option<String>)> {
-        // Only net goes to the downstream.
-        vec![(self.meta.name.as_str(), Self::net_sub_name().map(|s| s.to_string()))]
-    }
-
-    pub fn default_metric(&self) -> NodeAttribute {
-        Self::DEFAULT_ATTRIBUTE
     }
 
     pub fn create_metric(

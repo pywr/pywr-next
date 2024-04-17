@@ -3,9 +3,11 @@ mod hdf;
 mod memory;
 
 pub use self::csv::CsvOutput;
+#[cfg(feature = "core")]
 use crate::error::SchemaError;
 pub use hdf::Hdf5Output;
 pub use memory::MemoryOutput;
+#[cfg(feature = "core")]
 use std::path::Path;
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
@@ -16,6 +18,7 @@ pub enum Output {
     Memory(MemoryOutput),
 }
 
+#[cfg(feature = "core")]
 impl Output {
     pub fn add_to_model(
         &self,

@@ -1,7 +1,12 @@
-use crate::error::{ConversionError, SchemaError};
+use crate::error::ConversionError;
+#[cfg(feature = "core")]
+use crate::error::SchemaError;
+#[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::parameters::{DynamicFloatValueType, IntoV2Parameter, ParameterMeta, TryFromV1Parameter};
+#[cfg(feature = "core")]
 use ndarray::s;
+#[cfg(feature = "core")]
 use pywr_core::parameters::ParameterIndex;
 use pywr_v1_schema::parameters::TablesArrayParameter as TablesArrayParameterV1;
 use std::collections::HashMap;
@@ -27,7 +32,10 @@ impl TablesArrayParameter {
     pub fn parameters(&self) -> HashMap<&str, DynamicFloatValueType> {
         HashMap::new()
     }
+}
 
+#[cfg(feature = "core")]
+impl TablesArrayParameter {
     pub fn add_to_model(
         &self,
         network: &mut pywr_core::network::Network,

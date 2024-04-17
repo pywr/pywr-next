@@ -1,11 +1,13 @@
-use crate::error::{ConversionError, SchemaError};
+use crate::error::ConversionError;
+#[cfg(feature = "core")]
+use crate::error::SchemaError;
 use crate::metric::Metric;
+#[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::nodes::{NodeAttribute, NodeMeta};
 use crate::parameters::TryIntoV2Parameter;
-use pywr_core::aggregated_node::Factors;
-use pywr_core::metric::MetricF64;
-use pywr_core::node::NodeIndex;
+#[cfg(feature = "core")]
+use pywr_core::{aggregated_node::Factors, metric::MetricF64, node::NodeIndex};
 use pywr_schema_macros::PywrNode;
 use pywr_v1_schema::nodes::RiverSplitWithGaugeNode as RiverSplitWithGaugeNodeV1;
 use std::collections::HashMap;
@@ -55,10 +57,53 @@ impl RiverSplitWithGaugeNode {
     fn split_sub_name(i: usize) -> Option<String> {
         Some(format!("split-{i}"))
     }
+
+    /// These connectors are used for both incoming and outgoing edges on the default slot.
+    fn default_connectors(&self) -> Vec<(&str, Option<String>)> {
+        let mut connectors = vec![
+            (self.meta.name.as_str(), Self::mrf_sub_name().map(|s| s.to_string())),
+            (self.meta.name.as_str(), Self::bypass_sub_name().map(|s| s.to_string())),
+        ];
+
+        connectors.extend(
+            self.splits
+                .iter()
+                .enumerate()
+                .map(|(i, _)| (self.meta.name.as_str(), Self::split_sub_name(i))),
+        );
+
+        connectors
+    }
+
+    pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
+        self.default_connectors()
+    }
+
+    pub fn output_connectors(&self, slot: Option<&str>) -> Vec<(&str, Option<String>)> {
+        match slot {
+            Some(slot) => {
+                let i = self
+                    .splits
+                    .iter()
+                    .position(|(_, s)| s == slot)
+                    .expect("Invalid slot name!");
+
+                vec![(self.meta.name.as_str(), Self::split_sub_name(i))]
+            }
+            None => self.default_connectors(),
+        }
+    }
+
+    pub fn default_metric(&self) -> NodeAttribute {
+        Self::DEFAULT_ATTRIBUTE
+    }
+}
+
+#[cfg(feature = "core")]
+impl RiverSplitWithGaugeNode {
     fn split_agg_sub_name(i: usize) -> Option<String> {
         Some(format!("split-agg-{i}"))
     }
-
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
         // TODO do this properly
         network.add_link_node(self.meta.name.as_str(), Self::mrf_sub_name())?;
@@ -108,47 +153,6 @@ impl RiverSplitWithGaugeNode {
 
         Ok(())
     }
-
-    /// These connectors are used for both incoming and outgoing edges on the default slot.
-    fn default_connectors(&self) -> Vec<(&str, Option<String>)> {
-        let mut connectors = vec![
-            (self.meta.name.as_str(), Self::mrf_sub_name().map(|s| s.to_string())),
-            (self.meta.name.as_str(), Self::bypass_sub_name().map(|s| s.to_string())),
-        ];
-
-        connectors.extend(
-            self.splits
-                .iter()
-                .enumerate()
-                .map(|(i, _)| (self.meta.name.as_str(), Self::split_sub_name(i))),
-        );
-
-        connectors
-    }
-
-    pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
-        self.default_connectors()
-    }
-
-    pub fn output_connectors(&self, slot: Option<&str>) -> Vec<(&str, Option<String>)> {
-        match slot {
-            Some(slot) => {
-                let i = self
-                    .splits
-                    .iter()
-                    .position(|(_, s)| s == slot)
-                    .expect("Invalid slot name!");
-
-                vec![(self.meta.name.as_str(), Self::split_sub_name(i))]
-            }
-            None => self.default_connectors(),
-        }
-    }
-
-    pub fn default_metric(&self) -> NodeAttribute {
-        Self::DEFAULT_ATTRIBUTE
-    }
-
     pub fn create_metric(
         &self,
         network: &pywr_core::network::Network,
@@ -239,6 +243,7 @@ impl TryFrom<RiverSplitWithGaugeNodeV1> for RiverSplitWithGaugeNode {
 #[cfg(test)]
 mod tests {
     use crate::model::PywrModel;
+    #[cfg(feature = "core")]
     use pywr_core::test_utils::run_all_solvers;
 
     fn model_str() -> &'static str {
@@ -255,6 +260,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "core")]
     fn test_model_run() {
         let data = model_str();
         let schema: PywrModel = serde_json::from_str(data).unwrap();

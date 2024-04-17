@@ -1,7 +1,10 @@
+#[cfg(feature = "core")]
 use crate::error::SchemaError;
 use crate::metric::Metric;
+#[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::parameters::{ConstantValue, DynamicFloatValueType, ParameterMeta};
+#[cfg(feature = "core")]
 use pywr_core::parameters::ParameterIndex;
 use std::collections::HashMap;
 
@@ -43,7 +46,10 @@ impl OffsetParameter {
     pub fn parameters(&self) -> HashMap<&str, DynamicFloatValueType> {
         HashMap::new()
     }
+}
 
+#[cfg(feature = "core")]
+impl OffsetParameter {
     pub fn add_to_model(
         &self,
         network: &mut pywr_core::network::Network,
