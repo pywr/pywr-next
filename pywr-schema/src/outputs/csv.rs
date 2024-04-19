@@ -2,12 +2,13 @@
 use crate::error::SchemaError;
 #[cfg(feature = "core")]
 use pywr_core::recorders::{CsvLongFmtOutput, CsvWideFmtOutput, Recorder};
+use pywr_schema_macros::PywrVisitPaths;
 use schemars::JsonSchema;
 #[cfg(feature = "core")]
 use std::path::Path;
 use std::path::PathBuf;
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Default, JsonSchema)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Default, JsonSchema, PywrVisitPaths)]
 #[serde(rename_all = "lowercase")]
 pub enum CsvFormat {
     Wide,
@@ -15,7 +16,7 @@ pub enum CsvFormat {
     Long,
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitPaths)]
 #[serde(untagged)]
 pub enum CsvMetricSet {
     Single(String),
@@ -33,7 +34,7 @@ pub enum CsvMetricSet {
 /// The long format supports either a single metric set or a list of metric sets. However,
 /// the wide format only supports a single metric set.
 ///
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitPaths)]
 pub struct CsvOutput {
     pub name: String,
     pub filename: PathBuf,
@@ -86,7 +87,9 @@ impl CsvOutput {
 
 #[cfg(test)]
 mod tests {
+    use crate::visit::VisitPaths;
     use crate::PywrModel;
+    use std::path::PathBuf;
     use std::str::FromStr;
 
     fn csv1_str() -> &'static str {
@@ -114,19 +117,46 @@ mod tests {
     #[test]
     fn test_csv1_run() {
         let data = csv1_str();
-        let _schema = PywrModel::from_str(data).unwrap();
+        let schema = PywrModel::from_str(data).unwrap();
+
+        let expected_paths = vec![
+            PathBuf::from_str("outputs-long.csv").unwrap(),
+            PathBuf::from_str("outputs-wide.csv").unwrap(),
+        ];
+        let mut found_paths = Vec::new();
+        schema.visit_paths(&mut |path| {
+            found_paths.push(path.to_path_buf());
+        });
+        assert_eq!(found_paths, expected_paths);
     }
 
     #[test]
     fn test_csv2_run() {
         let data = csv2_str();
-        let _schema = PywrModel::from_str(data).unwrap();
+        let schema = PywrModel::from_str(data).unwrap();
+
+        let expected_paths = vec![
+            PathBuf::from_str("outputs-long.csv").unwrap(),
+            PathBuf::from_str("outputs-wide.csv").unwrap(),
+        ];
+        let mut found_paths = Vec::new();
+        schema.visit_paths(&mut |path| {
+            found_paths.push(path.to_path_buf());
+        });
+        assert_eq!(found_paths, expected_paths);
     }
 
     #[test]
     fn test_csv3_run() {
         let data = csv3_str();
-        let _schema = PywrModel::from_str(data).unwrap();
+        let schema = PywrModel::from_str(data).unwrap();
+
+        let expected_paths = vec![PathBuf::from_str("outputs-long.csv").unwrap()];
+        let mut found_paths = Vec::new();
+        schema.visit_paths(&mut |path| {
+            found_paths.push(path.to_path_buf());
+        });
+        assert_eq!(found_paths, expected_paths);
     }
 
     #[cfg(test)]

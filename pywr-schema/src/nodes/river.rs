@@ -1,16 +1,14 @@
 use crate::error::ConversionError;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
-use crate::metric::Metric;
 use crate::nodes::{NodeAttribute, NodeMeta};
 #[cfg(feature = "core")]
 use pywr_core::metric::MetricF64;
-use pywr_schema_macros::PywrNode;
+use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::nodes::LinkNode as LinkNodeV1;
 use schemars::JsonSchema;
-use std::collections::HashMap;
 
-#[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, PywrNode, JsonSchema)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
 pub struct RiverNode {
     #[serde(flatten)]
     pub meta: NodeMeta,

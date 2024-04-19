@@ -12,6 +12,7 @@ use crate::parameters::{Parameter, ParameterOrTimeseries, TryFromV1Parameter, Tr
 use crate::ConversionError;
 #[cfg(feature = "core")]
 use pywr_core::{metric::MetricF64, models::MultiNetworkTransferIndex, recorders::OutputMetric};
+use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::parameters::ParameterValue as ParameterValueV1;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -250,7 +251,7 @@ impl TimeseriesReference {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 pub struct NodeReference {
     /// The name of the node
     pub name: String,

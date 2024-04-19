@@ -4,18 +4,16 @@ use crate::error::SchemaError;
 use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
-#[cfg(feature = "core")]
-use crate::parameters::DynamicFloatValueType;
 use crate::parameters::{ConstantValue, IntoV2Parameter, ParameterMeta, TryFromV1Parameter, TryIntoV2Parameter};
 #[cfg(feature = "core")]
 use pywr_core::parameters::ParameterIndex;
+use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::parameters::{
     ConstantParameter as ConstantParameterV1, DivisionParameter as DivisionParameterV1, MaxParameter as MaxParameterV1,
     MinParameter as MinParameterV1, NegativeMaxParameter as NegativeMaxParameterV1,
     NegativeMinParameter as NegativeMinParameterV1, NegativeParameter as NegativeParameterV1,
 };
 use schemars::JsonSchema;
-use std::collections::HashMap;
 
 /// Activation function or transformation to apply to variable value.
 ///
@@ -147,7 +145,7 @@ pub struct VariableSettings {
 #[doc = include_str!("doc_examples/constant_variable.json")]
 /// ```
 ///
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 pub struct ConstantParameter {
     /// Meta-data.
     ///
@@ -163,14 +161,6 @@ pub struct ConstantParameter {
 
 #[cfg(feature = "core")]
 impl ConstantParameter {
-    pub fn node_references(&self) -> HashMap<&str, &str> {
-        HashMap::new()
-    }
-
-    pub fn parameters(&self) -> HashMap<&str, DynamicFloatValueType> {
-        HashMap::new()
-    }
-
     pub fn add_to_model(
         &self,
         network: &mut pywr_core::network::Network,
@@ -205,7 +195,7 @@ impl TryFromV1Parameter<ConstantParameterV1> for ConstantParameter {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 pub struct MaxParameter {
     #[serde(flatten)]
     pub meta: ParameterMeta,
@@ -215,15 +205,6 @@ pub struct MaxParameter {
 
 #[cfg(feature = "core")]
 impl MaxParameter {
-    pub fn node_references(&self) -> HashMap<&str, &str> {
-        HashMap::new()
-    }
-    // pub fn parameters(&self) -> HashMap<&str, DynamicFloatValueType> {
-    //     let mut attributes = HashMap::new();
-    //     attributes.insert("parameter", self.parameter.as_ref().into());
-    //     attributes
-    // }
-
     pub fn add_to_model(
         &self,
         network: &mut pywr_core::network::Network,
@@ -270,7 +251,7 @@ impl TryFromV1Parameter<MaxParameterV1> for MaxParameter {
 /// ```json
 #[doc = include_str!("doc_examples/division.json")]
 /// ```
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 pub struct DivisionParameter {
     #[serde(flatten)]
     pub meta: ParameterMeta,
@@ -280,10 +261,6 @@ pub struct DivisionParameter {
 
 #[cfg(feature = "core")]
 impl DivisionParameter {
-    pub fn node_references(&self) -> HashMap<&str, &str> {
-        HashMap::new()
-    }
-
     pub fn add_to_model(
         &self,
         network: &mut pywr_core::network::Network,
@@ -331,18 +308,12 @@ impl TryFromV1Parameter<DivisionParameterV1> for DivisionParameter {
 /// ```json
 #[doc = include_str!("doc_examples/min.json")]
 /// ```
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 pub struct MinParameter {
     #[serde(flatten)]
     pub meta: ParameterMeta,
     pub parameter: Metric,
     pub threshold: Option<f64>,
-}
-
-impl MinParameter {
-    pub fn node_references(&self) -> HashMap<&str, &str> {
-        HashMap::new()
-    }
 }
 
 #[cfg(feature = "core")]
@@ -381,22 +352,11 @@ impl TryFromV1Parameter<MinParameterV1> for MinParameter {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 pub struct NegativeParameter {
     #[serde(flatten)]
     pub meta: ParameterMeta,
     pub parameter: Metric,
-}
-
-impl NegativeParameter {
-    pub fn node_references(&self) -> HashMap<&str, &str> {
-        HashMap::new()
-    }
-    // pub fn parameters(&self) -> HashMap<&str, DynamicFloatValueType> {
-    //     let mut attributes = HashMap::new();
-    //     attributes.insert("parameter", self.parameter.as_ref().into());
-    //     attributes
-    // }
 }
 
 #[cfg(feature = "core")]
@@ -444,7 +404,7 @@ impl TryFromV1Parameter<NegativeParameterV1> for NegativeParameter {
 /// ```
 /// In January this parameter returns 2, in February 4.
 ///
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 pub struct NegativeMaxParameter {
     #[serde(flatten)]
     pub meta: ParameterMeta,
@@ -454,10 +414,6 @@ pub struct NegativeMaxParameter {
 
 #[cfg(feature = "core")]
 impl NegativeMaxParameter {
-    pub fn node_references(&self) -> HashMap<&str, &str> {
-        HashMap::new()
-    }
-
     pub fn add_to_model(
         &self,
         network: &mut pywr_core::network::Network,
@@ -504,18 +460,12 @@ impl TryFromV1Parameter<NegativeMaxParameterV1> for NegativeMaxParameter {
 /// ```
 /// In January this parameter returns 1, in February 2.
 ///
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 pub struct NegativeMinParameter {
     #[serde(flatten)]
     pub meta: ParameterMeta,
     pub metric: Metric,
     pub threshold: Option<f64>,
-}
-
-impl NegativeMinParameter {
-    pub fn node_references(&self) -> HashMap<&str, &str> {
-        HashMap::new()
-    }
 }
 
 #[cfg(feature = "core")]

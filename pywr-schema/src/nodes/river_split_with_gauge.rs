@@ -8,10 +8,9 @@ use crate::nodes::{NodeAttribute, NodeMeta};
 use crate::parameters::TryIntoV2Parameter;
 #[cfg(feature = "core")]
 use pywr_core::{aggregated_node::Factors, metric::MetricF64, node::NodeIndex};
-use pywr_schema_macros::PywrNode;
+use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::nodes::RiverSplitWithGaugeNode as RiverSplitWithGaugeNodeV1;
 use schemars::JsonSchema;
-use std::collections::HashMap;
 
 #[doc = svgbobdoc::transform!(
 /// This is used to represent a proportional split above a minimum residual flow (MRF) at a gauging station.
@@ -35,7 +34,7 @@ use std::collections::HashMap;
 /// ```
 ///
 )]
-#[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, PywrNode, JsonSchema)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
 pub struct RiverSplitWithGaugeNode {
     #[serde(flatten)]
     pub meta: NodeMeta,

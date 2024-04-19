@@ -8,9 +8,8 @@ use crate::nodes::{NodeAttribute, NodeMeta};
 use num::Zero;
 #[cfg(feature = "core")]
 use pywr_core::{aggregated_node::Factors, metric::MetricF64};
-use pywr_schema_macros::PywrNode;
+use pywr_schema_macros::PywrVisitAll;
 use schemars::JsonSchema;
-use std::collections::HashMap;
 
 #[doc = svgbobdoc::transform!(
 /// A node used to represent a water treatment works (WTW) with optional losses.
@@ -39,7 +38,7 @@ use std::collections::HashMap;
 /// ```
 ///
 )]
-#[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, PywrNode, JsonSchema)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
 pub struct WaterTreatmentWorks {
     /// Node metadata
     #[serde(flatten)]

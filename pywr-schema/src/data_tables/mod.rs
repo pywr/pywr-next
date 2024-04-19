@@ -5,6 +5,7 @@ mod vec;
 
 use crate::parameters::TableIndex;
 use crate::ConversionError;
+use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::parameters::TableDataRef as TableDataRefV1;
 #[cfg(feature = "core")]
 use scalar::{
@@ -235,7 +236,7 @@ impl LoadedTableCollection {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 pub struct TableDataRef {
     pub table: String,
     pub column: Option<TableIndex>,

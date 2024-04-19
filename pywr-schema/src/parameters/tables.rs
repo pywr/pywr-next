@@ -3,17 +3,18 @@ use crate::error::ConversionError;
 use crate::error::SchemaError;
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
-use crate::parameters::{DynamicFloatValueType, IntoV2Parameter, ParameterMeta, TryFromV1Parameter};
+use crate::parameters::{IntoV2Parameter, ParameterMeta, TryFromV1Parameter};
 #[cfg(feature = "core")]
 use ndarray::s;
 #[cfg(feature = "core")]
 use pywr_core::parameters::ParameterIndex;
+use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::parameters::TablesArrayParameter as TablesArrayParameterV1;
 use schemars::JsonSchema;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 pub struct TablesArrayParameter {
     #[serde(flatten)]
     pub meta: ParameterMeta,
@@ -24,15 +25,6 @@ pub struct TablesArrayParameter {
     pub checksum: Option<HashMap<String, String>>,
     pub url: PathBuf,
     pub timestep_offset: Option<i32>,
-}
-
-impl TablesArrayParameter {
-    pub fn node_references(&self) -> HashMap<&str, &str> {
-        HashMap::new()
-    }
-    pub fn parameters(&self) -> HashMap<&str, DynamicFloatValueType> {
-        HashMap::new()
-    }
 }
 
 #[cfg(feature = "core")]

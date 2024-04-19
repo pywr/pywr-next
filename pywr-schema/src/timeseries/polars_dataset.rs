@@ -1,10 +1,21 @@
+use crate::visit::VisitPaths;
 use schemars::JsonSchema;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
 pub struct PolarsDataset {
     time_col: Option<String>,
     url: PathBuf,
+}
+
+impl VisitPaths for PolarsDataset {
+    fn visit_paths<F: FnMut(&Path)>(&self, visitor: &mut F) {
+        visitor(&self.url);
+    }
+
+    fn visit_paths_mut<F: FnMut(&mut PathBuf)>(&mut self, visitor: &mut F) {
+        visitor(&mut self.url);
+    }
 }
 
 impl PolarsDataset {

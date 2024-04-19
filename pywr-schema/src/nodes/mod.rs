@@ -26,6 +26,7 @@ pub use crate::nodes::delay::DelayNode;
 pub use crate::nodes::river::RiverNode;
 use crate::nodes::rolling_virtual_storage::RollingVirtualStorageNode;
 use crate::parameters::TimeseriesV1Data;
+use crate::visit::{VisitMetrics, VisitPaths};
 pub use annual_virtual_storage::AnnualVirtualStorageNode;
 pub use loss_link::LossLinkNode;
 pub use monthly_virtual_storage::MonthlyVirtualStorageNode;
@@ -33,6 +34,7 @@ pub use piecewise_link::{PiecewiseLinkNode, PiecewiseLinkStep};
 pub use piecewise_storage::PiecewiseStorageNode;
 #[cfg(feature = "core")]
 use pywr_core::metric::MetricF64;
+use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::nodes::{
     CoreNode as CoreNodeV1, Node as NodeV1, NodeMeta as NodeMetaV1, NodePosition as NodePositionV1,
 };
@@ -42,12 +44,12 @@ use pywr_v1_schema::parameters::{
 pub use river_gauge::RiverGaugeNode;
 pub use river_split_with_gauge::RiverSplitWithGaugeNode;
 use schemars::JsonSchema;
-use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use strum_macros::{Display, EnumDiscriminants, EnumString, IntoStaticStr, VariantNames};
 pub use virtual_storage::VirtualStorageNode;
 pub use water_treatment_works::WaterTreatmentWorks;
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Copy, JsonSchema)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Copy, JsonSchema, PywrVisitAll)]
 pub struct NodePosition {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub schematic: Option<(f32, f32)>,
@@ -64,7 +66,7 @@ impl From<NodePositionV1> for NodePosition {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Default, JsonSchema)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Default, JsonSchema, PywrVisitAll)]
 pub struct NodeMeta {
     pub name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -86,7 +88,7 @@ impl From<NodeMetaV1> for NodeMeta {
 /// All possible attributes that could be produced by a node.
 ///
 ///
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Copy, Display, JsonSchema)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Copy, Display, JsonSchema, PywrVisitAll)]
 pub enum NodeAttribute {
     Inflow,
     Outflow,
@@ -289,54 +291,6 @@ impl Node {
             Node::Delay(n) => &n.meta,
             Node::MonthlyVirtualStorage(n) => &n.meta,
             Node::RollingVirtualStorage(n) => &n.meta,
-        }
-    }
-
-    pub fn parameters(&self) -> HashMap<&str, &Metric> {
-        match self {
-            Node::Input(n) => n.parameters(),
-            Node::Link(n) => n.parameters(),
-            Node::Output(n) => n.parameters(),
-            Node::Storage(n) => n.parameters(),
-            Node::Catchment(n) => n.parameters(),
-            Node::RiverGauge(n) => n.parameters(),
-            Node::LossLink(n) => n.parameters(),
-            Node::River(n) => n.parameters(),
-            Node::RiverSplitWithGauge(n) => n.parameters(),
-            Node::WaterTreatmentWorks(n) => n.parameters(),
-            Node::Aggregated(n) => n.parameters(),
-            Node::AggregatedStorage(n) => n.parameters(),
-            Node::VirtualStorage(n) => n.parameters(),
-            Node::AnnualVirtualStorage(n) => n.parameters(),
-            Node::PiecewiseLink(n) => n.parameters(),
-            Node::PiecewiseStorage(n) => n.parameters(),
-            Node::Delay(n) => n.parameters(),
-            Node::MonthlyVirtualStorage(n) => n.parameters(),
-            Node::RollingVirtualStorage(n) => n.parameters(),
-        }
-    }
-
-    pub fn parameters_mut(&mut self) -> HashMap<&str, &mut Metric> {
-        match self {
-            Node::Input(n) => n.parameters_mut(),
-            Node::Link(n) => n.parameters_mut(),
-            Node::Output(n) => n.parameters_mut(),
-            Node::Storage(n) => n.parameters_mut(),
-            Node::Catchment(n) => n.parameters_mut(),
-            Node::RiverGauge(n) => n.parameters_mut(),
-            Node::LossLink(n) => n.parameters_mut(),
-            Node::River(n) => n.parameters_mut(),
-            Node::RiverSplitWithGauge(n) => n.parameters_mut(),
-            Node::WaterTreatmentWorks(n) => n.parameters_mut(),
-            Node::Aggregated(n) => n.parameters_mut(),
-            Node::AggregatedStorage(n) => n.parameters_mut(),
-            Node::VirtualStorage(n) => n.parameters_mut(),
-            Node::AnnualVirtualStorage(n) => n.parameters_mut(),
-            Node::PiecewiseLink(n) => n.parameters_mut(),
-            Node::PiecewiseStorage(n) => n.parameters_mut(),
-            Node::Delay(n) => n.parameters_mut(),
-            Node::MonthlyVirtualStorage(n) => n.parameters_mut(),
-            Node::RollingVirtualStorage(n) => n.parameters_mut(),
         }
     }
 
@@ -546,6 +500,106 @@ impl TryFrom<Box<CoreNodeV1>> for Node {
         };
 
         Ok(n)
+    }
+}
+
+impl VisitMetrics for Node {
+    fn visit_metrics<F: FnMut(&Metric)>(&self, visitor: &mut F) {
+        match self {
+            Node::Input(n) => n.visit_metrics(visitor),
+            Node::Link(n) => n.visit_metrics(visitor),
+            Node::Output(n) => n.visit_metrics(visitor),
+            Node::Storage(n) => n.visit_metrics(visitor),
+            Node::Catchment(n) => n.visit_metrics(visitor),
+            Node::RiverGauge(n) => n.visit_metrics(visitor),
+            Node::LossLink(n) => n.visit_metrics(visitor),
+            Node::River(n) => n.visit_metrics(visitor),
+            Node::RiverSplitWithGauge(n) => n.visit_metrics(visitor),
+            Node::WaterTreatmentWorks(n) => n.visit_metrics(visitor),
+            Node::Aggregated(n) => n.visit_metrics(visitor),
+            Node::AggregatedStorage(n) => n.visit_metrics(visitor),
+            Node::VirtualStorage(n) => n.visit_metrics(visitor),
+            Node::AnnualVirtualStorage(n) => n.visit_metrics(visitor),
+            Node::PiecewiseLink(n) => n.visit_metrics(visitor),
+            Node::PiecewiseStorage(n) => n.visit_metrics(visitor),
+            Node::Delay(n) => n.visit_metrics(visitor),
+            Node::MonthlyVirtualStorage(n) => n.visit_metrics(visitor),
+            Node::RollingVirtualStorage(n) => n.visit_metrics(visitor),
+        }
+    }
+
+    fn visit_metrics_mut<F: FnMut(&mut Metric)>(&mut self, visitor: &mut F) {
+        match self {
+            Node::Input(n) => n.visit_metrics_mut(visitor),
+            Node::Link(n) => n.visit_metrics_mut(visitor),
+            Node::Output(n) => n.visit_metrics_mut(visitor),
+            Node::Storage(n) => n.visit_metrics_mut(visitor),
+            Node::Catchment(n) => n.visit_metrics_mut(visitor),
+            Node::RiverGauge(n) => n.visit_metrics_mut(visitor),
+            Node::LossLink(n) => n.visit_metrics_mut(visitor),
+            Node::River(n) => n.visit_metrics_mut(visitor),
+            Node::RiverSplitWithGauge(n) => n.visit_metrics_mut(visitor),
+            Node::WaterTreatmentWorks(n) => n.visit_metrics_mut(visitor),
+            Node::Aggregated(n) => n.visit_metrics_mut(visitor),
+            Node::AggregatedStorage(n) => n.visit_metrics_mut(visitor),
+            Node::VirtualStorage(n) => n.visit_metrics_mut(visitor),
+            Node::AnnualVirtualStorage(n) => n.visit_metrics_mut(visitor),
+            Node::PiecewiseLink(n) => n.visit_metrics_mut(visitor),
+            Node::PiecewiseStorage(n) => n.visit_metrics_mut(visitor),
+            Node::Delay(n) => n.visit_metrics_mut(visitor),
+            Node::MonthlyVirtualStorage(n) => n.visit_metrics_mut(visitor),
+            Node::RollingVirtualStorage(n) => n.visit_metrics_mut(visitor),
+        }
+    }
+}
+
+impl VisitPaths for Node {
+    fn visit_paths<F: FnMut(&Path)>(&self, visitor: &mut F) {
+        match self {
+            Node::Input(n) => n.visit_paths(visitor),
+            Node::Link(n) => n.visit_paths(visitor),
+            Node::Output(n) => n.visit_paths(visitor),
+            Node::Storage(n) => n.visit_paths(visitor),
+            Node::Catchment(n) => n.visit_paths(visitor),
+            Node::RiverGauge(n) => n.visit_paths(visitor),
+            Node::LossLink(n) => n.visit_paths(visitor),
+            Node::River(n) => n.visit_paths(visitor),
+            Node::RiverSplitWithGauge(n) => n.visit_paths(visitor),
+            Node::WaterTreatmentWorks(n) => n.visit_paths(visitor),
+            Node::Aggregated(n) => n.visit_paths(visitor),
+            Node::AggregatedStorage(n) => n.visit_paths(visitor),
+            Node::VirtualStorage(n) => n.visit_paths(visitor),
+            Node::AnnualVirtualStorage(n) => n.visit_paths(visitor),
+            Node::PiecewiseLink(n) => n.visit_paths(visitor),
+            Node::PiecewiseStorage(n) => n.visit_paths(visitor),
+            Node::Delay(n) => n.visit_paths(visitor),
+            Node::MonthlyVirtualStorage(n) => n.visit_paths(visitor),
+            Node::RollingVirtualStorage(n) => n.visit_paths(visitor),
+        }
+    }
+
+    fn visit_paths_mut<F: FnMut(&mut PathBuf)>(&mut self, visitor: &mut F) {
+        match self {
+            Node::Input(n) => n.visit_paths_mut(visitor),
+            Node::Link(n) => n.visit_paths_mut(visitor),
+            Node::Output(n) => n.visit_paths_mut(visitor),
+            Node::Storage(n) => n.visit_paths_mut(visitor),
+            Node::Catchment(n) => n.visit_paths_mut(visitor),
+            Node::RiverGauge(n) => n.visit_paths_mut(visitor),
+            Node::LossLink(n) => n.visit_paths_mut(visitor),
+            Node::River(n) => n.visit_paths_mut(visitor),
+            Node::RiverSplitWithGauge(n) => n.visit_paths_mut(visitor),
+            Node::WaterTreatmentWorks(n) => n.visit_paths_mut(visitor),
+            Node::Aggregated(n) => n.visit_paths_mut(visitor),
+            Node::AggregatedStorage(n) => n.visit_paths_mut(visitor),
+            Node::VirtualStorage(n) => n.visit_paths_mut(visitor),
+            Node::AnnualVirtualStorage(n) => n.visit_paths_mut(visitor),
+            Node::PiecewiseLink(n) => n.visit_paths_mut(visitor),
+            Node::PiecewiseStorage(n) => n.visit_paths_mut(visitor),
+            Node::Delay(n) => n.visit_paths_mut(visitor),
+            Node::MonthlyVirtualStorage(n) => n.visit_paths_mut(visitor),
+            Node::RollingVirtualStorage(n) => n.visit_paths_mut(visitor),
+        }
     }
 }
 

@@ -11,12 +11,11 @@ use crate::parameters::TryIntoV2Parameter;
 use pywr_core::{
     derived_metric::DerivedMetric, metric::MetricF64, node::ConstraintValue, virtual_storage::VirtualStorageReset,
 };
-use pywr_schema_macros::PywrNode;
+use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::nodes::MonthlyVirtualStorageNode as MonthlyVirtualStorageNodeV1;
 use schemars::JsonSchema;
-use std::collections::HashMap;
 
-#[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, PywrVisitAll)]
 pub struct NumberOfMonthsReset {
     pub months: u8,
 }
@@ -27,7 +26,7 @@ impl Default for NumberOfMonthsReset {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, PywrNode, JsonSchema)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
 pub struct MonthlyVirtualStorageNode {
     #[serde(flatten)]
     pub meta: NodeMeta,

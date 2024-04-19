@@ -7,11 +7,12 @@ pub use self::csv::CsvOutput;
 use crate::error::SchemaError;
 pub use hdf::Hdf5Output;
 pub use memory::MemoryOutput;
+use pywr_schema_macros::PywrVisitPaths;
 use schemars::JsonSchema;
 #[cfg(feature = "core")]
 use std::path::Path;
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitPaths)]
 #[serde(tag = "type")]
 pub enum Output {
     CSV(CsvOutput),

@@ -3,24 +3,22 @@ use crate::error::SchemaError;
 use crate::metric::{Metric, NodeReference};
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
-use crate::parameters::{
-    DynamicFloatValueType, IntoV2Parameter, ParameterMeta, TryFromV1Parameter, TryIntoV2Parameter,
-};
+use crate::parameters::{IntoV2Parameter, ParameterMeta, TryFromV1Parameter, TryIntoV2Parameter};
 use crate::ConversionError;
 #[cfg(feature = "core")]
 use pywr_core::parameters::ParameterIndex;
+use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::parameters::{
     InterpolatedFlowParameter as InterpolatedFlowParameterV1,
     InterpolatedVolumeParameter as InterpolatedVolumeParameterV1,
 };
 use schemars::JsonSchema;
-use std::collections::HashMap;
 
 /// A parameter that interpolates a value to a function with given discrete data points.
 ///
 /// Internally this is implemented as a piecewise linear interpolation via
 /// [`pywr_core::parameters::InterpolatedParameter`].
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 pub struct InterpolatedParameter {
     #[serde(flatten)]
     pub meta: ParameterMeta,
@@ -29,27 +27,6 @@ pub struct InterpolatedParameter {
     pub fp: Vec<Metric>,
     /// If not given or true, raise an error if the x value is outside the range of the data points.
     pub error_on_bounds: Option<bool>,
-}
-
-impl InterpolatedParameter {
-    pub fn node_references(&self) -> HashMap<&str, &str> {
-        HashMap::new()
-    }
-
-    pub fn parameters(&self) -> HashMap<&str, DynamicFloatValueType> {
-        let mut attributes = HashMap::new();
-
-        let x = &self.x;
-        attributes.insert("x", x.into());
-
-        let xp = &self.xp;
-        attributes.insert("xp", xp.into());
-
-        let fp = &self.fp;
-        attributes.insert("fp", fp.into());
-
-        attributes
-    }
 }
 
 #[cfg(feature = "core")]

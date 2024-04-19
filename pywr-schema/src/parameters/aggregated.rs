@@ -7,6 +7,7 @@ use crate::model::LoadArgs;
 use crate::parameters::{DynamicIndexValue, IntoV2Parameter, ParameterMeta, TryFromV1Parameter, TryIntoV2Parameter};
 #[cfg(feature = "core")]
 use pywr_core::parameters::ParameterIndex;
+use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::parameters::{
     AggFunc as AggFuncV1, AggregatedIndexParameter as AggregatedIndexParameterV1,
     AggregatedParameter as AggregatedParameterV1, IndexAggFunc as IndexAggFuncV1,
@@ -15,7 +16,7 @@ use schemars::JsonSchema;
 use std::collections::HashMap;
 
 // TODO complete these
-#[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone, JsonSchema)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone, JsonSchema, PywrVisitAll)]
 #[serde(rename_all = "lowercase")]
 pub enum AggFunc {
     Sum,
@@ -70,7 +71,7 @@ impl From<AggFuncV1> for AggFunc {
 #[doc = include_str!("doc_examples/aggregated_1.json")]
 /// ```
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 pub struct AggregatedParameter {
     #[serde(flatten)]
     pub meta: ParameterMeta,
@@ -123,7 +124,7 @@ impl TryFromV1Parameter<AggregatedParameterV1> for AggregatedParameter {
 }
 
 // TODO complete these
-#[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone, JsonSchema)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone, JsonSchema, PywrVisitAll)]
 #[serde(rename_all = "lowercase")]
 pub enum IndexAggFunc {
     Sum,
@@ -161,7 +162,7 @@ impl From<IndexAggFuncV1> for IndexAggFunc {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 pub struct AggregatedIndexParameter {
     #[serde(flatten)]
     pub meta: ParameterMeta,
@@ -232,6 +233,7 @@ impl TryFromV1Parameter<AggregatedIndexParameterV1> for AggregatedIndexParameter
 #[cfg(test)]
 mod tests {
     use crate::parameters::aggregated::AggregatedParameter;
+    use crate::visit::VisitMetrics;
 
     #[test]
     fn test_aggregated() {
@@ -290,6 +292,13 @@ mod tests {
             }
             "#;
 
-        let _: AggregatedParameter = serde_json::from_str(data).unwrap();
+        let param: AggregatedParameter = serde_json::from_str(data).unwrap();
+
+        let mut count_metrics = 0;
+        param.visit_metrics(&mut |_metric| {
+            count_metrics += 1;
+        });
+
+        assert_eq!(count_metrics, 6);
     }
 }
