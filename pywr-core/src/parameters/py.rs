@@ -52,14 +52,14 @@ impl PyParameter {
         network: &Network,
         state: &State,
         py: Python<'py>,
-    ) -> Result<&'py PyDict, PywrError> {
+    ) -> Result<Bound<'py, PyDict>, PywrError> {
         let metric_values: Vec<(&str, f64)> = self
             .metrics
             .iter()
             .map(|(k, value)| Ok((k.as_str(), value.get_value(network, state)?)))
             .collect::<Result<Vec<_>, PywrError>>()?;
 
-        Ok(metric_values.into_py_dict(py))
+        Ok(metric_values.into_py_dict_bound(py))
     }
 
     fn get_indices_dict<'py>(
@@ -67,23 +67,23 @@ impl PyParameter {
         network: &Network,
         state: &State,
         py: Python<'py>,
-    ) -> Result<&'py PyDict, PywrError> {
+    ) -> Result<Bound<'py, PyDict>, PywrError> {
         let index_values: Vec<(&str, usize)> = self
             .indices
             .iter()
             .map(|(k, value)| Ok((k.as_str(), value.get_value(network, state)?)))
             .collect::<Result<Vec<_>, PywrError>>()?;
 
-        Ok(index_values.into_py_dict(py))
+        Ok(index_values.into_py_dict_bound(py))
     }
 
     fn setup(&self) -> Result<Option<Box<dyn ParameterState>>, PywrError> {
         pyo3::prepare_freethreaded_python();
 
         let user_obj: PyObject = Python::with_gil(|py| -> PyResult<PyObject> {
-            let args = self.args.as_ref(py);
-            let kwargs = self.kwargs.as_ref(py);
-            self.object.call(py, args, Some(kwargs))
+            let args = self.args.bind(py);
+            let kwargs = self.kwargs.bind(py);
+            self.object.call_bound(py, args, Some(kwargs))
         })
         .unwrap();
 
@@ -113,7 +113,10 @@ impl PyParameter {
             let metric_dict = self.get_metrics_dict(network, state, py)?;
             let index_dict = self.get_indices_dict(network, state, py)?;
 
-            let args = PyTuple::new(py, [date.as_ref(py), si.as_ref(py), metric_dict, index_dict]);
+            let args = PyTuple::new_bound(
+                py,
+                [date.bind(py), si.bind(py), metric_dict.as_any(), index_dict.as_any()],
+            );
 
             internal.user_obj.call_method1(py, "calc", args)?.extract(py)
         })
@@ -142,7 +145,10 @@ impl PyParameter {
                 let metric_dict = self.get_metrics_dict(network, state, py)?;
                 let index_dict = self.get_indices_dict(network, state, py)?;
 
-                let args = PyTuple::new(py, [date.as_ref(py), si.as_ref(py), metric_dict, index_dict]);
+                let args = PyTuple::new_bound(
+                    py,
+                    [date.bind(py), si.bind(py), metric_dict.as_any(), index_dict.as_any()],
+                );
 
                 internal.user_obj.call_method1(py, "after", args)?;
             }
@@ -266,7 +272,10 @@ impl Parameter<MultiValue> for PyParameter {
             let metric_dict = self.get_metrics_dict(network, state, py)?;
             let index_dict = self.get_indices_dict(network, state, py)?;
 
-            let args = PyTuple::new(py, [date.as_ref(py), si.as_ref(py), metric_dict, index_dict]);
+            let args = PyTuple::new_bound(
+                py,
+                [date.bind(py), si.bind(py), metric_dict.as_any(), index_dict.as_any()],
+            );
 
             let py_values: HashMap<String, PyObject> = internal
                 .user_obj
@@ -278,7 +287,7 @@ impl Parameter<MultiValue> for PyParameter {
             // Try to convert the floats
             let values: HashMap<String, f64> = py_values
                 .iter()
-                .filter_map(|(k, v)| match v.downcast::<PyFloat>(py) {
+                .filter_map(|(k, v)| match v.downcast_bound::<PyFloat>(py) {
                     Ok(v) => Some((k.clone(), v.extract().unwrap())),
                     Err(_) => None,
                 })
@@ -286,7 +295,7 @@ impl Parameter<MultiValue> for PyParameter {
 
             let indices: HashMap<String, usize> = py_values
                 .iter()
-                .filter_map(|(k, v)| match v.downcast::<PyLong>(py) {
+                .filter_map(|(k, v)| match v.downcast_bound::<PyLong>(py) {
                     Ok(v) => Some((k.clone(), v.extract().unwrap())),
                     Err(_) => None,
                 })
@@ -332,7 +341,7 @@ mod tests {
         pyo3::prepare_freethreaded_python();
 
         let class = Python::with_gil(|py| {
-            let test_module = PyModule::from_code(
+            let test_module = PyModule::from_code_bound(
                 py,
                 r#"
 class MyParameter:
@@ -351,8 +360,8 @@ class MyParameter:
             test_module.getattr("MyParameter").unwrap().into()
         });
 
-        let args = Python::with_gil(|py| PyTuple::new(py, [0]).into());
-        let kwargs = Python::with_gil(|py| PyDict::new(py).into());
+        let args = Python::with_gil(|py| PyTuple::new_bound(py, [0]).into());
+        let kwargs = Python::with_gil(|py| PyDict::new_bound(py).into());
 
         let param = PyParameter::new("my-parameter", class, args, kwargs, &HashMap::new(), &HashMap::new());
         let timestepper = default_timestepper();
@@ -395,7 +404,7 @@ class MyParameter:
         pyo3::prepare_freethreaded_python();
 
         let class = Python::with_gil(|py| {
-            let test_module = PyModule::from_code(
+            let test_module = PyModule::from_code_bound(
                 py,
                 r#"
 import math
@@ -420,8 +429,8 @@ class MyParameter:
             test_module.getattr("MyParameter").unwrap().into()
         });
 
-        let args = Python::with_gil(|py| PyTuple::new(py, [0]).into());
-        let kwargs = Python::with_gil(|py| PyDict::new(py).into());
+        let args = Python::with_gil(|py| PyTuple::new_bound(py, [0]).into());
+        let kwargs = Python::with_gil(|py| PyDict::new_bound(py).into());
 
         let param = PyParameter::new("my-parameter", class, args, kwargs, &HashMap::new(), &HashMap::new());
         let timestepper = default_timestepper();
