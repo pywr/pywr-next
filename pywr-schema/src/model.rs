@@ -74,6 +74,15 @@ pub enum DateType {
     DateTime(NaiveDateTime),
 }
 
+impl From<pywr_v1_schema::model::DateType> for DateType {
+    fn from(v1: pywr_v1_schema::model::DateType) -> Self {
+        match v1 {
+            pywr_v1_schema::model::DateType::Date(date) => Self::Date(date),
+            pywr_v1_schema::model::DateType::DateTime(date_time) => Self::DateTime(date_time),
+        }
+    }
+}
+
 #[derive(serde::Deserialize, serde::Serialize, Clone, Debug)]
 pub struct Timestepper {
     pub start: DateType,
@@ -91,25 +100,13 @@ impl Default for Timestepper {
     }
 }
 
-impl TryFrom<pywr_v1_schema::model::Timestepper> for Timestepper {
-    type Error = ConversionError;
-
-    fn try_from(v1: pywr_v1_schema::model::Timestepper) -> Result<Self, Self::Error> {
-        let start = DateType::Date(
-            NaiveDate::from_ymd_opt(v1.start.year(), v1.start.month() as u32, v1.start.day() as u32)
-                .ok_or(ConversionError::UnparseableDate(v1.start.to_string()))?,
-        );
-
-        let end = DateType::Date(
-            NaiveDate::from_ymd_opt(v1.end.year(), v1.end.month() as u32, v1.end.day() as u32)
-                .ok_or(ConversionError::UnparseableDate(v1.end.to_string()))?,
-        );
-
-        Ok(Self {
-            start,
-            end,
+impl From<pywr_v1_schema::model::Timestepper> for Timestepper {
+    fn from(v1: pywr_v1_schema::model::Timestepper) -> Self {
+        Self {
+            start: v1.start.into(),
+            end: v1.end.into(),
             timestep: v1.timestep.into(),
-        })
+        }
     }
 }
 
@@ -457,10 +454,7 @@ impl PywrModel {
             Metadata::default()
         });
 
-        let timestepper = v1.timestepper.try_into().unwrap_or_else(|e| {
-            errors.push(e);
-            Timestepper::default()
-        });
+        let timestepper = v1.timestepper.into();
 
         // Extract nodes and any timeseries data from the v1 nodes
         let nodes_and_ts: Vec<NodeAndTimeseries> = v1
