@@ -17,6 +17,18 @@ pub enum Predicate {
     GreaterThanOrEqualTo,
 }
 
+impl Predicate {
+    pub fn apply(&self, a: f64, b: f64) -> bool {
+        match self {
+            Predicate::LessThan => a < b,
+            Predicate::GreaterThan => a > b,
+            Predicate::EqualTo => (a - b).abs() < 1E-6, // TODO make this a global constant
+            Predicate::LessThanOrEqualTo => a <= b,
+            Predicate::GreaterThanOrEqualTo => a >= b,
+        }
+    }
+}
+
 impl FromStr for Predicate {
     type Err = PywrError;
 
@@ -94,13 +106,7 @@ impl GeneralParameter<u64> for ThresholdParameter {
         let threshold = self.threshold.get_value(model, state)?;
         let value = self.metric.get_value(model, state)?;
 
-        let active = match self.predicate {
-            Predicate::LessThan => value < threshold,
-            Predicate::GreaterThan => value > threshold,
-            Predicate::EqualTo => (value - threshold).abs() < 1E-6, // TODO make this a global constant
-            Predicate::LessThanOrEqualTo => value <= threshold,
-            Predicate::GreaterThanOrEqualTo => value >= threshold,
-        };
+        let active = self.predicate.apply(value, threshold);
 
         if active {
             // Update the internal state to remember we've been triggered!
