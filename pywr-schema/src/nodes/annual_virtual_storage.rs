@@ -179,7 +179,7 @@ impl TryFrom<AnnualVirtualStorageNodeV1> for AnnualVirtualStorageNode {
             cost,
             initial_volume,
             reset: AnnualReset {
-                day: v1.reset_day,
+                day: v1.reset_day as u8,
                 month,
                 use_initial_volume: v1.reset_to_initial_volume,
             },
