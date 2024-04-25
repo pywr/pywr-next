@@ -176,6 +176,80 @@ impl PywrNetwork {
         Ok(serde_json::from_str(data.as_str())?)
     }
 
+    /// Convert a v1 network to a v2 network.
+    ///
+    /// This function is used to convert a v1 model to a v2 model. The conversion is not always
+    /// possible and may result in errors. The errors are returned as a vector of [`ConversionError`]s.
+    /// alongside the (partially) converted model. This may result in a model that will not
+    /// function as expected. The user should check the errors and the converted model to ensure
+    /// that the conversion has been successful.
+    pub fn from_v1(v1: pywr_v1_schema::PywrNetwork) -> (Self, Vec<ConversionError>) {
+        let mut errors = Vec::new();
+
+        // Extract nodes and any timeseries data from the v1 nodes
+        let nodes_and_ts: Vec<NodeAndTimeseries> = match v1.nodes {
+            Some(nodes) => nodes
+                .into_iter()
+                .filter_map(|n| match n.try_into() {
+                    Ok(n) => Some(n),
+                    Err(e) => {
+                        errors.push(e);
+                        None
+                    }
+                })
+                .collect::<Vec<_>>(),
+            None => Vec::new(),
+        };
+
+        let mut ts_data = nodes_and_ts
+            .iter()
+            .filter_map(|n| n.timeseries.clone())
+            .flatten()
+            .collect::<Vec<_>>();
+
+        let nodes = nodes_and_ts.into_iter().map(|n| n.node).collect::<Vec<_>>();
+
+        let edges = match v1.edges {
+            Some(edges) => edges.into_iter().map(|e| e.into()).collect(),
+            None => Vec::new(),
+        };
+
+        let parameters = if let Some(v1_parameters) = v1.parameters {
+            let mut unnamed_count: usize = 0;
+            let (parameters, param_ts_data) =
+                convert_parameter_v1_to_v2(v1_parameters, &mut unnamed_count, &mut errors);
+            ts_data.extend(param_ts_data);
+            Some(parameters)
+        } else {
+            None
+        };
+
+        let timeseries = if !ts_data.is_empty() {
+            let ts = convert_from_v1_data(ts_data, &v1.tables, &mut errors);
+            Some(ts)
+        } else {
+            None
+        };
+
+        // TODO convert v1 tables!
+        let tables = None;
+        let outputs = None;
+        let metric_sets = None;
+
+        (
+            Self {
+                nodes,
+                edges,
+                parameters,
+                tables,
+                timeseries,
+                metric_sets,
+                outputs,
+            },
+            errors,
+        )
+    }
+
     pub fn get_node_by_name(&self, name: &str) -> Option<&Node> {
         self.nodes.iter().find(|n| n.name() == name)
     }
@@ -457,60 +531,8 @@ impl PywrModel {
 
         let timestepper = v1.timestepper.into();
 
-        // Extract nodes and any timeseries data from the v1 nodes
-        let nodes_and_ts: Vec<NodeAndTimeseries> = v1
-            .nodes
-            .clone()
-            .into_iter()
-            .filter_map(|n| match n.try_into() {
-                Ok(n) => Some(n),
-                Err(e) => {
-                    errors.push(e);
-                    None
-                }
-            })
-            .collect::<Vec<_>>();
-
-        let mut ts_data = nodes_and_ts
-            .iter()
-            .filter_map(|n| n.timeseries.clone())
-            .flatten()
-            .collect::<Vec<_>>();
-
-        let nodes = nodes_and_ts.into_iter().map(|n| n.node).collect::<Vec<_>>();
-
-        let edges = v1.edges.into_iter().map(|e| e.into()).collect();
-
-        let parameters = if let Some(v1_parameters) = v1.parameters {
-            let mut unnamed_count: usize = 0;
-            let (parameters, param_ts_data) =
-                convert_parameter_v1_to_v2(v1_parameters, &mut unnamed_count, &mut errors);
-            ts_data.extend(param_ts_data);
-            Some(parameters)
-        } else {
-            None
-        };
-
-        let timeseries = if !ts_data.is_empty() {
-            let ts = convert_from_v1_data(ts_data, &v1.tables, &mut errors);
-            Some(ts)
-        } else {
-            None
-        };
-
-        // TODO convert v1 tables!
-        let tables = None;
-        let outputs = None;
-        let metric_sets = None;
-        let network = PywrNetwork {
-            nodes,
-            edges,
-            parameters,
-            tables,
-            timeseries,
-            metric_sets,
-            outputs,
-        };
+        let (network, network_errors) = PywrNetwork::from_v1(v1.network);
+        errors.extend(network_errors);
 
         (
             Self {
