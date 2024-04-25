@@ -14,12 +14,13 @@ use pyo3::types::{PyDict, PyTuple};
 use pyo3::{IntoPy, PyErr, PyObject, Python, ToPyObject};
 #[cfg(feature = "core")]
 use pywr_core::parameters::{ParameterType, PyParameter};
+use schemars::JsonSchema;
 #[cfg(feature = "core")]
 use serde_json::Value;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum PythonModule {
     Module(String),
@@ -27,7 +28,7 @@ pub enum PythonModule {
 }
 
 /// The expected return type of the Python parameter.
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Default)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Default, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum PythonReturnType {
     #[default]
@@ -77,7 +78,7 @@ pub enum PythonReturnType {
 ///
 /// let parameter: Parameter = serde_json::from_str(data).unwrap();
 /// ```
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
 pub struct PythonParameter {
     #[serde(flatten)]
     pub meta: ParameterMeta,

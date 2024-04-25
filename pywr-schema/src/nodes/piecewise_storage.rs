@@ -12,9 +12,10 @@ use pywr_core::{
     parameters::VolumeBetweenControlCurvesParameter,
 };
 use pywr_schema_macros::PywrNode;
+use schemars::JsonSchema;
 use std::collections::HashMap;
 
-#[derive(serde::Deserialize, serde::Serialize, Clone, Debug)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema)]
 pub struct PiecewiseStore {
     pub control_curve: Metric,
     pub cost: Option<Metric>,
@@ -46,7 +47,7 @@ pub struct PiecewiseStore {
 /// ```
 ///
 )]
-#[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, PywrNode)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, PywrNode, JsonSchema)]
 pub struct PiecewiseStorageNode {
     #[serde(flatten)]
     pub meta: NodeMeta,

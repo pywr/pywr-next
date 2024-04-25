@@ -2,11 +2,12 @@
 use crate::error::SchemaError;
 #[cfg(feature = "core")]
 use pywr_core::recorders::HDF5Recorder;
+use schemars::JsonSchema;
 #[cfg(feature = "core")]
 use std::path::Path;
 use std::path::PathBuf;
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
 pub struct Hdf5Output {
     pub name: String,
     pub filename: PathBuf,

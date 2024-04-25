@@ -12,9 +12,10 @@ use pywr_core::parameters::ParameterIndex;
 use pywr_v1_schema::parameters::{
     ParameterThresholdParameter as ParameterThresholdParameterV1, Predicate as PredicateV1,
 };
+use schemars::JsonSchema;
 use std::collections::HashMap;
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Copy)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Copy, JsonSchema)]
 pub enum Predicate {
     #[serde(alias = "<")]
     LT,
@@ -53,7 +54,7 @@ impl From<Predicate> for pywr_core::parameters::Predicate {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
 pub struct ParameterThresholdParameter {
     #[serde(flatten)]
     pub meta: ParameterMeta,

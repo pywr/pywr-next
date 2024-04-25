@@ -14,6 +14,7 @@ use pywr_v1_schema::parameters::{
     MinParameter as MinParameterV1, NegativeMaxParameter as NegativeMaxParameterV1,
     NegativeMinParameter as NegativeMinParameterV1, NegativeParameter as NegativeParameterV1,
 };
+use schemars::JsonSchema;
 use std::collections::HashMap;
 
 /// Activation function or transformation to apply to variable value.
@@ -146,7 +147,7 @@ pub struct VariableSettings {
 #[doc = include_str!("doc_examples/constant_variable.json")]
 /// ```
 ///
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
 pub struct ConstantParameter {
     /// Meta-data.
     ///
@@ -204,7 +205,7 @@ impl TryFromV1Parameter<ConstantParameterV1> for ConstantParameter {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
 pub struct MaxParameter {
     #[serde(flatten)]
     pub meta: ParameterMeta,
@@ -269,7 +270,7 @@ impl TryFromV1Parameter<MaxParameterV1> for MaxParameter {
 /// ```json
 #[doc = include_str!("doc_examples/division.json")]
 /// ```
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
 pub struct DivisionParameter {
     #[serde(flatten)]
     pub meta: ParameterMeta,
@@ -330,7 +331,7 @@ impl TryFromV1Parameter<DivisionParameterV1> for DivisionParameter {
 /// ```json
 #[doc = include_str!("doc_examples/min.json")]
 /// ```
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
 pub struct MinParameter {
     #[serde(flatten)]
     pub meta: ParameterMeta,
@@ -380,7 +381,7 @@ impl TryFromV1Parameter<MinParameterV1> for MinParameter {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
 pub struct NegativeParameter {
     #[serde(flatten)]
     pub meta: ParameterMeta,
@@ -443,7 +444,7 @@ impl TryFromV1Parameter<NegativeParameterV1> for NegativeParameter {
 /// ```
 /// In January this parameter returns 2, in February 4.
 ///
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
 pub struct NegativeMaxParameter {
     #[serde(flatten)]
     pub meta: ParameterMeta,
@@ -503,7 +504,7 @@ impl TryFromV1Parameter<NegativeMaxParameterV1> for NegativeMaxParameter {
 /// ```
 /// In January this parameter returns 1, in February 2.
 ///
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
 pub struct NegativeMinParameter {
     #[serde(flatten)]
     pub meta: ParameterMeta,

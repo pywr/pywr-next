@@ -14,9 +14,10 @@ use pywr_v1_schema::parameters::{
     UniformDrawdownProfileParameter as UniformDrawdownProfileParameterV1,
     WeeklyProfileParameter as WeeklyProfileParameterV1,
 };
+use schemars::JsonSchema;
 use std::collections::HashMap;
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
 pub struct DailyProfileParameter {
     #[serde(flatten)]
     pub meta: ParameterMeta,
@@ -73,7 +74,7 @@ impl TryFromV1Parameter<DailyProfileParameterV1> for DailyProfileParameter {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone, JsonSchema)]
 pub enum MonthlyInterpDay {
     First,
     Last,
@@ -89,7 +90,7 @@ impl From<MonthlyInterpDay> for pywr_core::parameters::MonthlyInterpDay {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
 pub struct MonthlyProfileParameter {
     #[serde(flatten)]
     pub meta: ParameterMeta,
@@ -165,7 +166,7 @@ impl TryFromV1Parameter<MonthlyProfileParameterV1> for MonthlyProfileParameter {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
 pub struct UniformDrawdownProfileParameter {
     #[serde(flatten)]
     pub meta: ParameterMeta,
@@ -235,7 +236,7 @@ impl TryFromV1Parameter<UniformDrawdownProfileParameterV1> for UniformDrawdownPr
 }
 
 /// Distance functions for radial basis function interpolation.
-#[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone, JsonSchema)]
 pub enum RadialBasisFunction {
     Linear,
     Cubic,
@@ -361,7 +362,7 @@ impl From<RbfProfileVariableSettings> for pywr_core::parameters::RbfProfileVaria
 #[doc = include_str!("doc_examples/rbf_2.json")]
 /// ```
 ///
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
 pub struct RbfProfileParameter {
     #[serde(flatten)]
     pub meta: ParameterMeta,
@@ -469,7 +470,7 @@ impl TryFromV1Parameter<RbfProfileParameterV1> for RbfProfileParameter {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone, JsonSchema)]
 pub enum WeeklyInterpDay {
     First,
     Last,
@@ -546,7 +547,7 @@ impl From<WeeklyInterpDay> for pywr_core::parameters::WeeklyInterpDay {
 /// The values in the last week are interpolated between `10` and `12` (i.e the value on 31<sup>st</sup>
 /// December).
 ///
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
 pub struct WeeklyProfileParameter {
     #[serde(flatten)]
     pub meta: ParameterMeta,

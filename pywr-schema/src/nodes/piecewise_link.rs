@@ -10,9 +10,10 @@ use crate::parameters::TryIntoV2Parameter;
 use pywr_core::metric::MetricF64;
 use pywr_schema_macros::PywrNode;
 use pywr_v1_schema::nodes::PiecewiseLinkNode as PiecewiseLinkNodeV1;
+use schemars::JsonSchema;
 use std::collections::HashMap;
 
-#[derive(serde::Deserialize, serde::Serialize, Clone, Debug)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema)]
 pub struct PiecewiseLinkStep {
     pub max_flow: Option<Metric>,
     pub min_flow: Option<Metric>,
@@ -41,7 +42,7 @@ pub struct PiecewiseLinkStep {
 /// ```
 ///
 )]
-#[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, PywrNode)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, PywrNode, JsonSchema)]
 pub struct PiecewiseLinkNode {
     #[serde(flatten)]
     pub meta: NodeMeta,

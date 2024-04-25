@@ -58,6 +58,8 @@ pub enum SchemaError {
     Timeseries(#[from] TimeseriesError),
     #[error("The output of literal constant values is not supported. This is because they do not have a unique identifier such as a name. If you would like to output a constant value please use a `Constant` parameter.")]
     LiteralConstantOutputNotSupported,
+    #[error("Chrono out of range error: {0}")]
+    OutOfRange(#[from] chrono::OutOfRange),
 }
 
 #[cfg(feature = "core")]

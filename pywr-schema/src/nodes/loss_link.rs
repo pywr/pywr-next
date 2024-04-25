@@ -10,6 +10,7 @@ use crate::parameters::TryIntoV2Parameter;
 use pywr_core::metric::MetricF64;
 use pywr_schema_macros::PywrNode;
 use pywr_v1_schema::nodes::LossLinkNode as LossLinkNodeV1;
+use schemars::JsonSchema;
 use std::collections::HashMap;
 
 #[doc = svgbobdoc::transform!(
@@ -29,7 +30,7 @@ use std::collections::HashMap;
 /// ```
 ///
 )]
-#[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, PywrNode)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, PywrNode, JsonSchema)]
 pub struct LossLinkNode {
     #[serde(flatten)]
     pub meta: NodeMeta,

@@ -13,13 +13,14 @@ use pywr_v1_schema::parameters::{
     InterpolatedFlowParameter as InterpolatedFlowParameterV1,
     InterpolatedVolumeParameter as InterpolatedVolumeParameterV1,
 };
+use schemars::JsonSchema;
 use std::collections::HashMap;
 
 /// A parameter that interpolates a value to a function with given discrete data points.
 ///
 /// Internally this is implemented as a piecewise linear interpolation via
 /// [`pywr_core::parameters::InterpolatedParameter`].
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
 pub struct InterpolatedParameter {
     #[serde(flatten)]
     pub meta: ParameterMeta,
