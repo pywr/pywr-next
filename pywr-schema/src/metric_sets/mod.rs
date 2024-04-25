@@ -3,11 +3,12 @@ use crate::error::SchemaError;
 use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::num::NonZeroUsize;
 
 /// Aggregation function to apply over metric values.
-#[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone, JsonSchema)]
 #[serde(tag = "type")]
 pub enum MetricAggFunc {
     Sum,
@@ -30,7 +31,7 @@ impl From<MetricAggFunc> for pywr_core::recorders::AggregationFunction {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone, JsonSchema)]
 #[serde(tag = "type")]
 pub enum MetricAggFrequency {
     Monthly,
@@ -58,7 +59,7 @@ impl From<MetricAggFrequency> for pywr_core::recorders::AggregationFrequency {
 ///
 /// If the metric set has a child aggregator then the aggregation will be performed over the
 /// aggregated values of the child aggregator.
-#[derive(Deserialize, Serialize, Clone)]
+#[derive(Deserialize, Serialize, Clone, JsonSchema)]
 pub struct MetricAggregator {
     /// Optional aggregation frequency.
     pub freq: Option<MetricAggFrequency>,
@@ -84,7 +85,7 @@ impl From<MetricAggregator> for pywr_core::recorders::Aggregator {
 /// A metric set can optionally have an aggregator, which will apply an aggregation function
 /// over metrics set. If the aggregator has a defined frequency then the aggregation will result
 /// in multiple values (i.e. per each period implied by the frequency).
-#[derive(Deserialize, Serialize, Clone)]
+#[derive(Deserialize, Serialize, Clone, JsonSchema)]
 pub struct MetricSet {
     pub name: String,
     pub metrics: Vec<Metric>,

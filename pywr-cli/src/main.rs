@@ -2,7 +2,7 @@ mod tracing;
 
 use crate::tracing::setup_tracing;
 use ::tracing::info;
-use anyhow::Result;
+use anyhow::{Context, Result};
 use clap::{Parser, Subcommand, ValueEnum};
 #[cfg(feature = "ipm-ocl")]
 use pywr_core::solvers::{ClIpmF32Solver, ClIpmF64Solver, ClIpmSolverSettings};
@@ -15,6 +15,7 @@ use pywr_core::test_utils::make_random_model;
 use pywr_schema::model::{PywrModel, PywrMultiNetworkModel};
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
+use schemars::schema_for;
 use std::fmt::{Display, Formatter};
 use std::path::{Path, PathBuf};
 
@@ -109,6 +110,10 @@ enum Commands {
         #[arg(short, long, default_value_t=Solver::Clp)]
         solver: Solver,
     },
+    ExportSchema {
+        /// Path to save the JSON schema.
+        out: PathBuf,
+    },
 }
 
 fn main() -> Result<()> {
@@ -140,6 +145,7 @@ fn main() -> Result<()> {
                 num_scenarios,
                 solver,
             } => run_random(*num_systems, *density, *num_scenarios, solver),
+            Commands::ExportSchema { out } => export_schema(out)?,
         },
         None => {}
     }
@@ -253,4 +259,15 @@ fn run_random(num_systems: usize, density: usize, num_scenarios: usize, solver: 
         Solver::IpmSimd => model.run_multi_scenario::<SimdIpmF64Solver<4>>(&SimdIpmSolverSettings::default()),
     }
     .unwrap();
+}
+
+fn export_schema(out_path: &Path) -> Result<()> {
+    let schema = schema_for!(PywrModel);
+    std::fs::write(
+        out_path,
+        serde_json::to_string_pretty(&schema).with_context(|| "Failed serialise Pywr schema".to_string())?,
+    )
+    .with_context(|| format!("Failed to write file: {:?}", out_path))?;
+
+    Ok(())
 }

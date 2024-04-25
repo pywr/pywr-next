@@ -20,7 +20,7 @@ pyo3 = { workspace = true, optional = true }
 pyo3-polars = { workspace = true, optional = true }
 strum = "0.26"
 strum_macros = "0.26"
-
+schemars = { workspace = true }
 hdf5 = { workspace = true, optional = true }
 csv = { workspace = true, optional = true }
 tracing = { workspace = true, optional = true }

@@ -8,10 +8,11 @@ use crate::ConversionError;
 #[cfg(feature = "core")]
 use pywr_core::parameters::ParameterIndex;
 use pywr_v1_schema::parameters::DiscountFactorParameter as DiscountFactorParameterV1;
+use schemars::JsonSchema;
 use std::collections::HashMap;
 
 /// A parameter that returns the current discount factor for a given time-step.
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
 pub struct DiscountFactorParameter {
     #[serde(flatten)]
     pub meta: ParameterMeta,

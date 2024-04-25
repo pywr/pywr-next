@@ -1,6 +1,7 @@
+use schemars::JsonSchema;
 use std::path::PathBuf;
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
 pub struct PolarsDataset {
     time_col: Option<String>,
     url: PathBuf,

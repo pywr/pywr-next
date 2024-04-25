@@ -17,10 +17,11 @@ use chrono::NaiveTime;
 use chrono::{NaiveDate, NaiveDateTime};
 #[cfg(feature = "core")]
 use pywr_core::{models::ModelDomain, timestep::TimestepDuration, PywrError};
+use schemars::JsonSchema;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
-#[derive(serde::Deserialize, serde::Serialize, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, JsonSchema)]
 pub struct Metadata {
     pub title: String,
     pub description: Option<String>,
@@ -51,7 +52,7 @@ impl TryFrom<pywr_v1_schema::model::Metadata> for Metadata {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Clone, Debug)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema)]
 #[serde(untagged)]
 pub enum Timestep {
     Days(i64),
@@ -67,7 +68,7 @@ impl From<pywr_v1_schema::model::Timestep> for Timestep {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Clone, Copy, Debug)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Copy, Debug, JsonSchema)]
 #[serde(untagged)]
 pub enum DateType {
     Date(NaiveDate),
@@ -83,7 +84,7 @@ impl From<pywr_v1_schema::model::DateType> for DateType {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Clone, Debug)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema)]
 pub struct Timestepper {
     pub start: DateType,
     pub end: DateType,
@@ -132,7 +133,7 @@ impl From<Timestepper> for pywr_core::timestep::Timestepper {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, JsonSchema)]
 pub struct Scenario {
     pub name: String,
     pub size: usize,
@@ -150,7 +151,7 @@ pub struct LoadArgs<'a> {
     pub inter_network_transfers: &'a [PywrMultiNetworkTransfer],
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Clone, Default)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Default, JsonSchema)]
 pub struct PywrNetwork {
     pub nodes: Vec<Node>,
     pub edges: Vec<Edge>,
@@ -370,7 +371,7 @@ pub enum PywrNetworkRef {
 ///
 ///
 ///
-#[derive(serde::Deserialize, serde::Serialize, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, JsonSchema)]
 pub struct PywrModel {
     pub metadata: Metadata,
     pub timestepper: Timestepper,

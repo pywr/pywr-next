@@ -3,8 +3,9 @@ use crate::metric_sets::MetricAggFunc;
 use crate::SchemaError;
 #[cfg(feature = "core")]
 use pywr_core::recorders::MemoryRecorder;
+use schemars::JsonSchema;
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
 pub struct MemoryAggregation {
     pub time: Option<MetricAggFunc>,
     pub scenario: Option<MetricAggFunc>,
@@ -22,7 +23,7 @@ impl From<MemoryAggregation> for pywr_core::recorders::Aggregation {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
 pub struct MemoryOutput {
     pub name: String,
     pub metric_set: String,

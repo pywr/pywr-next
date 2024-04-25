@@ -9,10 +9,11 @@ use ndarray::s;
 #[cfg(feature = "core")]
 use pywr_core::parameters::ParameterIndex;
 use pywr_v1_schema::parameters::TablesArrayParameter as TablesArrayParameterV1;
+use schemars::JsonSchema;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
 pub struct TablesArrayParameter {
     #[serde(flatten)]
     pub meta: ParameterMeta,

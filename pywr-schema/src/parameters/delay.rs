@@ -6,10 +6,11 @@ use crate::model::LoadArgs;
 use crate::parameters::{DynamicFloatValueType, ParameterMeta};
 #[cfg(feature = "core")]
 use pywr_core::parameters::ParameterIndex;
+use schemars::JsonSchema;
 use std::collections::HashMap;
 
 /// A parameter that delays a value from the network by a number of time-steps.
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
 pub struct DelayParameter {
     #[serde(flatten)]
     pub meta: ParameterMeta,

@@ -9,6 +9,7 @@ use num::Zero;
 #[cfg(feature = "core")]
 use pywr_core::{aggregated_node::Factors, metric::MetricF64};
 use pywr_schema_macros::PywrNode;
+use schemars::JsonSchema;
 use std::collections::HashMap;
 
 #[doc = svgbobdoc::transform!(
@@ -38,7 +39,7 @@ use std::collections::HashMap;
 /// ```
 ///
 )]
-#[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, PywrNode)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, PywrNode, JsonSchema)]
 pub struct WaterTreatmentWorks {
     /// Node metadata
     #[serde(flatten)]

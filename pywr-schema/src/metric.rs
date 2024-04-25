@@ -13,11 +13,12 @@ use crate::ConversionError;
 #[cfg(feature = "core")]
 use pywr_core::{metric::MetricF64, models::MultiNetworkTransferIndex, recorders::OutputMetric};
 use pywr_v1_schema::parameters::ParameterValue as ParameterValueV1;
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use strum_macros::Display;
 
 /// Output metrics that can be recorded from a model run.
-#[derive(Deserialize, Serialize, Clone, Debug, Display)]
+#[derive(Deserialize, Serialize, Clone, Debug, Display, JsonSchema)]
 #[serde(tag = "type")]
 pub enum Metric {
     Constant {
@@ -226,14 +227,14 @@ impl TryFromV1Parameter<ParameterValueV1> for Metric {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
 #[serde(tag = "type", content = "name")]
 pub enum TimeseriesColumns {
     Scenario(String),
     Column(String),
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
 pub struct TimeseriesReference {
     name: String,
     columns: TimeseriesColumns,
@@ -249,7 +250,7 @@ impl TimeseriesReference {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
 pub struct NodeReference {
     /// The name of the node
     pub name: String,
@@ -295,7 +296,7 @@ impl NodeReference {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
 pub struct ParameterReference {
     /// The name of the parameter
     pub name: String,
