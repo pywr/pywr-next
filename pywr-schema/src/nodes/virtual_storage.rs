@@ -13,9 +13,10 @@ use pywr_core::{
 };
 use pywr_schema_macros::PywrNode;
 use pywr_v1_schema::nodes::VirtualStorageNode as VirtualStorageNodeV1;
+use schemars::JsonSchema;
 use std::collections::HashMap;
 
-#[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, PywrNode)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, PywrNode, JsonSchema)]
 pub struct VirtualStorageNode {
     #[serde(flatten)]
     pub meta: NodeMeta,

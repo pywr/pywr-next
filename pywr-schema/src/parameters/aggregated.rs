@@ -11,10 +11,11 @@ use pywr_v1_schema::parameters::{
     AggFunc as AggFuncV1, AggregatedIndexParameter as AggregatedIndexParameterV1,
     AggregatedParameter as AggregatedParameterV1, IndexAggFunc as IndexAggFuncV1,
 };
+use schemars::JsonSchema;
 use std::collections::HashMap;
 
 // TODO complete these
-#[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum AggFunc {
     Sum,
@@ -69,7 +70,7 @@ impl From<AggFuncV1> for AggFunc {
 #[doc = include_str!("doc_examples/aggregated_1.json")]
 /// ```
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
 pub struct AggregatedParameter {
     #[serde(flatten)]
     pub meta: ParameterMeta,
@@ -122,7 +123,7 @@ impl TryFromV1Parameter<AggregatedParameterV1> for AggregatedParameter {
 }
 
 // TODO complete these
-#[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum IndexAggFunc {
     Sum,
@@ -160,7 +161,7 @@ impl From<IndexAggFuncV1> for IndexAggFunc {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
 pub struct AggregatedIndexParameter {
     #[serde(flatten)]
     pub meta: ParameterMeta,

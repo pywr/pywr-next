@@ -7,9 +7,10 @@ use crate::nodes::{NodeAttribute, NodeMeta};
 use pywr_core::metric::MetricF64;
 use pywr_schema_macros::PywrNode;
 use pywr_v1_schema::nodes::LinkNode as LinkNodeV1;
+use schemars::JsonSchema;
 use std::collections::HashMap;
 
-#[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, PywrNode)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, PywrNode, JsonSchema)]
 pub struct RiverNode {
     #[serde(flatten)]
     pub meta: NodeMeta,

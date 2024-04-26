@@ -18,6 +18,7 @@ use pywr_core::{
     PywrError,
 };
 use pywr_v1_schema::tables::TableVec;
+use schemars::JsonSchema;
 use std::collections::HashMap;
 #[cfg(feature = "core")]
 use std::path::Path;
@@ -51,14 +52,14 @@ pub enum TimeseriesError {
     PywrCore(#[from] PywrError),
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
 #[serde(tag = "type")]
 enum TimeseriesProvider {
     Pandas,
     Polars(PolarsDataset),
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
 pub struct Timeseries {
     #[serde(flatten)]
     meta: ParameterMeta,

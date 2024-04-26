@@ -13,12 +13,13 @@ use pywr_core::{
 };
 use pywr_schema_macros::PywrNode;
 use pywr_v1_schema::nodes::AnnualVirtualStorageNode as AnnualVirtualStorageNodeV1;
+use schemars::JsonSchema;
 use std::collections::HashMap;
 
-#[derive(serde::Deserialize, serde::Serialize, Clone, Debug)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema)]
 pub struct AnnualReset {
     pub day: u8,
-    pub month: chrono::Month,
+    pub month: u8,
     pub use_initial_volume: bool,
 }
 
@@ -26,13 +27,13 @@ impl Default for AnnualReset {
     fn default() -> Self {
         Self {
             day: 1,
-            month: chrono::Month::January,
+            month: 1,
             use_initial_volume: false,
         }
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, PywrNode)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, PywrNode, JsonSchema)]
 pub struct AnnualVirtualStorageNode {
     #[serde(flatten)]
     pub meta: NodeMeta,
@@ -85,9 +86,10 @@ impl AnnualVirtualStorageNode {
             .map(|name| network.get_node_index_by_name(name.as_str(), None))
             .collect::<Result<Vec<_>, _>>()?;
 
+        let reset_month = self.reset.month.try_into()?;
         let reset = VirtualStorageReset::DayOfYear {
             day: self.reset.day as u32,
-            month: self.reset.month,
+            month: reset_month,
         };
 
         network.add_virtual_storage_node(
@@ -168,8 +170,6 @@ impl TryFrom<AnnualVirtualStorageNodeV1> for AnnualVirtualStorageNode {
             });
         };
 
-        let month = chrono::Month::try_from(v1.reset_month as u8)?;
-
         let n = Self {
             meta,
             nodes: v1.nodes,
@@ -180,7 +180,7 @@ impl TryFrom<AnnualVirtualStorageNodeV1> for AnnualVirtualStorageNode {
             initial_volume,
             reset: AnnualReset {
                 day: v1.reset_day as u8,
-                month,
+                month: v1.reset_month as u8,
                 use_initial_volume: v1.reset_to_initial_volume,
             },
         };

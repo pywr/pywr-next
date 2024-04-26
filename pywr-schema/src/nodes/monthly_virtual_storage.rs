@@ -13,9 +13,10 @@ use pywr_core::{
 };
 use pywr_schema_macros::PywrNode;
 use pywr_v1_schema::nodes::MonthlyVirtualStorageNode as MonthlyVirtualStorageNodeV1;
+use schemars::JsonSchema;
 use std::collections::HashMap;
 
-#[derive(serde::Deserialize, serde::Serialize, Clone, Debug)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema)]
 pub struct NumberOfMonthsReset {
     pub months: u8,
 }
@@ -26,7 +27,7 @@ impl Default for NumberOfMonthsReset {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, PywrNode)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, PywrNode, JsonSchema)]
 pub struct MonthlyVirtualStorageNode {
     #[serde(flatten)]
     pub meta: NodeMeta,

@@ -14,8 +14,9 @@ use pywr_v1_schema::parameters::{
     ControlCurveParameter as ControlCurveParameterV1,
     ControlCurvePiecewiseInterpolatedParameter as ControlCurvePiecewiseInterpolatedParameterV1,
 };
+use schemars::JsonSchema;
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
 pub struct ControlCurveInterpolatedParameter {
     #[serde(flatten)]
     pub meta: ParameterMeta,
@@ -116,7 +117,7 @@ impl TryFromV1Parameter<ControlCurveInterpolatedParameterV1> for ControlCurveInt
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
 pub struct ControlCurveIndexParameter {
     #[serde(flatten)]
     pub meta: ParameterMeta,
@@ -223,7 +224,7 @@ impl TryFromV1Parameter<ControlCurveParameterV1> for ControlCurveIndexParameter 
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
 pub struct ControlCurveParameter {
     #[serde(flatten)]
     pub meta: ParameterMeta,
@@ -312,7 +313,7 @@ impl TryFromV1Parameter<ControlCurveParameterV1> for ControlCurveParameter {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
 pub struct ControlCurvePiecewiseInterpolatedParameter {
     #[serde(flatten)]
     pub meta: ParameterMeta,

@@ -9,9 +9,10 @@ use crate::parameters::{
 #[cfg(feature = "core")]
 use pywr_core::parameters::ParameterIndex;
 use pywr_v1_schema::parameters::AsymmetricSwitchIndexParameter as AsymmetricSwitchIndexParameterV1;
+use schemars::JsonSchema;
 use std::collections::HashMap;
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
 pub struct AsymmetricSwitchIndexParameter {
     #[serde(flatten)]
     pub meta: ParameterMeta,

@@ -6,20 +6,22 @@ use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::parameters::{DynamicFloatValueType, DynamicIndexValue, ParameterMeta};
+use pyo3::prelude::PyAnyMethods;
 #[cfg(feature = "core")]
 use pyo3::prelude::PyModule;
 #[cfg(feature = "core")]
 use pyo3::types::{PyDict, PyTuple};
 #[cfg(feature = "core")]
-use pyo3::{IntoPy, PyErr, PyObject, Python, ToPyObject};
+use pyo3::{IntoPy, PyErr, PyObject, Python};
 #[cfg(feature = "core")]
 use pywr_core::parameters::{ParameterType, PyParameter};
+use schemars::JsonSchema;
 #[cfg(feature = "core")]
 use serde_json::Value;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum PythonModule {
     Module(String),
@@ -27,7 +29,7 @@ pub enum PythonModule {
 }
 
 /// The expected return type of the Python parameter.
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Default)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Default, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum PythonReturnType {
     #[default]
@@ -77,7 +79,7 @@ pub enum PythonReturnType {
 ///
 /// let parameter: Parameter = serde_json::from_str(data).unwrap();
 /// ```
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
 pub struct PythonParameter {
     #[serde(flatten)]
     pub meta: ParameterMeta,
@@ -154,14 +156,14 @@ impl PythonParameter {
 
         let object = Python::with_gil(|py| {
             let module = match &self.module {
-                PythonModule::Module(module) => PyModule::import(py, module.as_str()),
+                PythonModule::Module(module) => PyModule::import_bound(py, module.as_str()),
                 PythonModule::Path(original_path) => {
                     let path = &make_path(original_path, args.data_path);
                     let code = std::fs::read_to_string(path).expect("Could not read Python code from path.");
                     let file_name = path.file_name().unwrap().to_str().unwrap();
                     let module_name = path.file_stem().unwrap().to_str().unwrap();
 
-                    PyModule::from_code(py, &code, file_name, module_name)
+                    PyModule::from_code_bound(py, &code, file_name, module_name)
                 }
             }?;
 
@@ -170,18 +172,18 @@ impl PythonParameter {
         .map_err(|e: PyErr| SchemaError::PythonError(e.to_string()))?;
 
         let py_args = Python::with_gil(|py| {
-            PyTuple::new(py, self.args.iter().map(|arg| try_json_value_into_py(py, arg).unwrap())).into_py(py)
+            PyTuple::new_bound(py, self.args.iter().map(|arg| try_json_value_into_py(py, arg).unwrap())).into_py(py)
         });
 
         let kwargs = Python::with_gil(|py| {
-            let seq = PyTuple::new(
+            let seq = PyTuple::new_bound(
                 py,
                 self.kwargs
                     .iter()
                     .map(|(k, v)| (k.into_py(py), try_json_value_into_py(py, v).unwrap())),
             );
 
-            PyDict::from_sequence(py, seq.to_object(py)).unwrap().into_py(py)
+            PyDict::from_sequence_bound(seq.as_any()).unwrap().unbind()
         });
 
         let metrics = match &self.metrics {

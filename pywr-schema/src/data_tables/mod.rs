@@ -10,6 +10,7 @@ use pywr_v1_schema::parameters::TableDataRef as TableDataRefV1;
 use scalar::{
     load_csv_row2_scalar_table_one, load_csv_row_col_scalar_table_one, load_csv_row_scalar_table_one, LoadedScalarTable,
 };
+use schemars::JsonSchema;
 #[cfg(feature = "core")]
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -19,7 +20,7 @@ use tracing::{debug, info};
 #[cfg(feature = "core")]
 use vec::{load_csv_row2_vec_table_one, load_csv_row_vec_table_one, LoadedVecTable};
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum DataTableType {
     Scalar,
@@ -31,7 +32,7 @@ pub enum DataTableFormat {
     CSV,
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
 #[serde(tag = "format", rename_all = "lowercase")]
 pub enum DataTable {
     CSV(CsvDataTable),
@@ -52,7 +53,7 @@ impl DataTable {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum CsvDataTableLookup {
     Row(usize),
@@ -61,7 +62,7 @@ pub enum CsvDataTableLookup {
 }
 
 /// An external table of data that can be referenced
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
 pub struct CsvDataTable {
     pub name: String,
     #[serde(rename = "type")]
@@ -234,7 +235,7 @@ impl LoadedTableCollection {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
 pub struct TableDataRef {
     pub table: String,
     pub column: Option<TableIndex>,

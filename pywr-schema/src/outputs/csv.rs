@@ -2,11 +2,12 @@
 use crate::error::SchemaError;
 #[cfg(feature = "core")]
 use pywr_core::recorders::{CsvLongFmtOutput, CsvWideFmtOutput, Recorder};
+use schemars::JsonSchema;
 #[cfg(feature = "core")]
 use std::path::Path;
 use std::path::PathBuf;
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Default)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Default, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum CsvFormat {
     Wide,
@@ -14,7 +15,7 @@ pub enum CsvFormat {
     Long,
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
 #[serde(untagged)]
 pub enum CsvMetricSet {
     Single(String),
@@ -32,7 +33,7 @@ pub enum CsvMetricSet {
 /// The long format supports either a single metric set or a list of metric sets. However,
 /// the wide format only supports a single metric set.
 ///
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
 pub struct CsvOutput {
     pub name: String,
     pub filename: PathBuf,
