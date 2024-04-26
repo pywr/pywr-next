@@ -176,10 +176,6 @@ impl VisitPaths for PythonParameter {
                 visitor(path);
             }
         }
-
-        // self.visit_metrics_mut(|metric: &mut Metric| {
-        //     metric.visit_paths_mut(&visitor);
-        // });
     }
 }
 

@@ -210,7 +210,7 @@ fn impl_visit_metrics(ast: &syn::DeriveInput) -> TokenStream {
                 }
             }
         }
-        syn::Data::Union(_) => panic!("Only structs are supported for #[derive(PywrNode)]"),
+        syn::Data::Union(_) => panic!("Union types are not supported."),
     };
     // Hand the output tokens back to the compiler.
     TokenStream::from(expanded)
@@ -394,7 +394,7 @@ fn impl_visit_paths(ast: &syn::DeriveInput) -> TokenStream {
                 }
             }
         }
-        syn::Data::Union(_) => panic!("Only structs are supported for #[derive(PywrNode)]"),
+        syn::Data::Union(_) => panic!("Union types are not supported."),
     };
     // Hand the output tokens back to the compiler.
     TokenStream::from(expanded)
