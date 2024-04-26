@@ -1,7 +1,8 @@
 use nalgebra_sparse::CsrMatrix;
 use std::iter::Sum;
 use std::ops::{Add, AddAssign, Div, Mul, Neg, Sub};
-use std::simd::{LaneCount, Simd, SimdElement, SimdFloat, StdFloat, SupportedLaneCount};
+use std::simd::prelude::SimdFloat;
+use std::simd::{LaneCount, Simd, SimdElement, StdFloat, SupportedLaneCount};
 
 pub struct Matrix<T, const N: usize>
 where
