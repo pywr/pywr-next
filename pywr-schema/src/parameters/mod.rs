@@ -54,19 +54,21 @@ use crate::metric::Metric;
 use crate::model::LoadArgs;
 use crate::parameters::core::DivisionParameter;
 use crate::parameters::interpolated::InterpolatedParameter;
+use crate::visit::{VisitMetrics, VisitPaths};
 pub use offset::OffsetParameter;
 #[cfg(feature = "core")]
 use pywr_core::{metric::MetricUsize, parameters::ParameterIndex};
+use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::parameters::{
-    CoreParameter, DataFrameParameter as DataFrameParameterV1, ExternalDataRef as ExternalDataRefV1,
-    Parameter as ParameterV1, ParameterMeta as ParameterMetaV1, ParameterValue as ParameterValueV1, ParameterVec,
-    TableIndex as TableIndexV1, TableIndexEntry as TableIndexEntryV1,
+    CoreParameter, DataFrameParameter as DataFrameParameterV1, Parameter as ParameterV1,
+    ParameterMeta as ParameterMetaV1, ParameterValue as ParameterValueV1, ParameterVec, TableIndex as TableIndexV1,
+    TableIndexEntry as TableIndexEntryV1,
 };
 use schemars::JsonSchema;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use strum_macros::{Display, EnumDiscriminants, EnumString, IntoStaticStr, VariantNames};
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 pub struct ParameterMeta {
     pub name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -268,6 +270,142 @@ impl Parameter {
         };
 
         Ok(ty)
+    }
+}
+
+impl VisitMetrics for Parameter {
+    fn visit_metrics<F: FnMut(&Metric)>(&self, visitor: &mut F) {
+        match self {
+            Self::Constant(p) => p.visit_metrics(visitor),
+            Self::ControlCurveInterpolated(p) => p.visit_metrics(visitor),
+            Self::Aggregated(p) => p.visit_metrics(visitor),
+            Self::AggregatedIndex(p) => p.visit_metrics(visitor),
+            Self::AsymmetricSwitchIndex(p) => p.visit_metrics(visitor),
+            Self::ControlCurvePiecewiseInterpolated(p) => p.visit_metrics(visitor),
+            Self::ControlCurveIndex(p) => p.visit_metrics(visitor),
+            Self::ControlCurve(p) => p.visit_metrics(visitor),
+            Self::DailyProfile(p) => p.visit_metrics(visitor),
+            Self::IndexedArray(p) => p.visit_metrics(visitor),
+            Self::MonthlyProfile(p) => p.visit_metrics(visitor),
+            Self::WeeklyProfile(p) => p.visit_metrics(visitor),
+            Self::UniformDrawdownProfile(p) => p.visit_metrics(visitor),
+            Self::Max(p) => p.visit_metrics(visitor),
+            Self::Min(p) => p.visit_metrics(visitor),
+            Self::Negative(p) => p.visit_metrics(visitor),
+            Self::Polynomial1D(p) => p.visit_metrics(visitor),
+            Self::ParameterThreshold(p) => p.visit_metrics(visitor),
+            Self::TablesArray(p) => p.visit_metrics(visitor),
+            Self::Python(p) => p.visit_metrics(visitor),
+            Self::Delay(p) => p.visit_metrics(visitor),
+            Self::Division(p) => p.visit_metrics(visitor),
+            Self::Offset(p) => p.visit_metrics(visitor),
+            Self::DiscountFactor(p) => p.visit_metrics(visitor),
+            Self::Interpolated(p) => p.visit_metrics(visitor),
+            Self::RbfProfile(p) => p.visit_metrics(visitor),
+            Self::NegativeMax(p) => p.visit_metrics(visitor),
+            Self::NegativeMin(p) => p.visit_metrics(visitor),
+        }
+    }
+
+    fn visit_metrics_mut<F: FnMut(&mut Metric)>(&mut self, visitor: &mut F) {
+        match self {
+            Self::Constant(p) => p.visit_metrics_mut(visitor),
+            Self::ControlCurveInterpolated(p) => p.visit_metrics_mut(visitor),
+            Self::Aggregated(p) => p.visit_metrics_mut(visitor),
+            Self::AggregatedIndex(p) => p.visit_metrics_mut(visitor),
+            Self::AsymmetricSwitchIndex(p) => p.visit_metrics_mut(visitor),
+            Self::ControlCurvePiecewiseInterpolated(p) => p.visit_metrics_mut(visitor),
+            Self::ControlCurveIndex(p) => p.visit_metrics_mut(visitor),
+            Self::ControlCurve(p) => p.visit_metrics_mut(visitor),
+            Self::DailyProfile(p) => p.visit_metrics_mut(visitor),
+            Self::IndexedArray(p) => p.visit_metrics_mut(visitor),
+            Self::MonthlyProfile(p) => p.visit_metrics_mut(visitor),
+            Self::WeeklyProfile(p) => p.visit_metrics_mut(visitor),
+            Self::UniformDrawdownProfile(p) => p.visit_metrics_mut(visitor),
+            Self::Max(p) => p.visit_metrics_mut(visitor),
+            Self::Min(p) => p.visit_metrics_mut(visitor),
+            Self::Negative(p) => p.visit_metrics_mut(visitor),
+            Self::Polynomial1D(p) => p.visit_metrics_mut(visitor),
+            Self::ParameterThreshold(p) => p.visit_metrics_mut(visitor),
+            Self::TablesArray(p) => p.visit_metrics_mut(visitor),
+            Self::Python(p) => p.visit_metrics_mut(visitor),
+            Self::Delay(p) => p.visit_metrics_mut(visitor),
+            Self::Division(p) => p.visit_metrics_mut(visitor),
+            Self::Offset(p) => p.visit_metrics_mut(visitor),
+            Self::DiscountFactor(p) => p.visit_metrics_mut(visitor),
+            Self::Interpolated(p) => p.visit_metrics_mut(visitor),
+            Self::RbfProfile(p) => p.visit_metrics_mut(visitor),
+            Self::NegativeMax(p) => p.visit_metrics_mut(visitor),
+            Self::NegativeMin(p) => p.visit_metrics_mut(visitor),
+        }
+    }
+}
+
+impl VisitPaths for Parameter {
+    fn visit_paths<F: FnMut(&Path)>(&self, visitor: &mut F) {
+        match self {
+            Self::Constant(p) => p.visit_paths(visitor),
+            Self::ControlCurveInterpolated(p) => p.visit_paths(visitor),
+            Self::Aggregated(p) => p.visit_paths(visitor),
+            Self::AggregatedIndex(p) => p.visit_paths(visitor),
+            Self::AsymmetricSwitchIndex(p) => p.visit_paths(visitor),
+            Self::ControlCurvePiecewiseInterpolated(p) => p.visit_paths(visitor),
+            Self::ControlCurveIndex(p) => p.visit_paths(visitor),
+            Self::ControlCurve(p) => p.visit_paths(visitor),
+            Self::DailyProfile(p) => p.visit_paths(visitor),
+            Self::IndexedArray(p) => p.visit_paths(visitor),
+            Self::MonthlyProfile(p) => p.visit_paths(visitor),
+            Self::WeeklyProfile(p) => p.visit_paths(visitor),
+            Self::UniformDrawdownProfile(p) => p.visit_paths(visitor),
+            Self::Max(p) => p.visit_paths(visitor),
+            Self::Min(p) => p.visit_paths(visitor),
+            Self::Negative(p) => p.visit_paths(visitor),
+            Self::Polynomial1D(p) => p.visit_paths(visitor),
+            Self::ParameterThreshold(p) => p.visit_paths(visitor),
+            Self::TablesArray(p) => p.visit_paths(visitor),
+            Self::Python(p) => p.visit_paths(visitor),
+            Self::Delay(p) => p.visit_paths(visitor),
+            Self::Division(p) => p.visit_paths(visitor),
+            Self::Offset(p) => p.visit_paths(visitor),
+            Self::DiscountFactor(p) => p.visit_paths(visitor),
+            Self::Interpolated(p) => p.visit_paths(visitor),
+            Self::RbfProfile(p) => p.visit_paths(visitor),
+            Self::NegativeMax(p) => p.visit_paths(visitor),
+            Self::NegativeMin(p) => p.visit_paths(visitor),
+        }
+    }
+
+    fn visit_paths_mut<F: FnMut(&mut PathBuf)>(&mut self, visitor: &mut F) {
+        match self {
+            Self::Constant(p) => p.visit_paths_mut(visitor),
+            Self::ControlCurveInterpolated(p) => p.visit_paths_mut(visitor),
+            Self::Aggregated(p) => p.visit_paths_mut(visitor),
+            Self::AggregatedIndex(p) => p.visit_paths_mut(visitor),
+            Self::AsymmetricSwitchIndex(p) => p.visit_paths_mut(visitor),
+            Self::ControlCurvePiecewiseInterpolated(p) => p.visit_paths_mut(visitor),
+            Self::ControlCurveIndex(p) => p.visit_paths_mut(visitor),
+            Self::ControlCurve(p) => p.visit_paths_mut(visitor),
+            Self::DailyProfile(p) => p.visit_paths_mut(visitor),
+            Self::IndexedArray(p) => p.visit_paths_mut(visitor),
+            Self::MonthlyProfile(p) => p.visit_paths_mut(visitor),
+            Self::WeeklyProfile(p) => p.visit_paths_mut(visitor),
+            Self::UniformDrawdownProfile(p) => p.visit_paths_mut(visitor),
+            Self::Max(p) => p.visit_paths_mut(visitor),
+            Self::Min(p) => p.visit_paths_mut(visitor),
+            Self::Negative(p) => p.visit_paths_mut(visitor),
+            Self::Polynomial1D(p) => p.visit_paths_mut(visitor),
+            Self::ParameterThreshold(p) => p.visit_paths_mut(visitor),
+            Self::TablesArray(p) => p.visit_paths_mut(visitor),
+            Self::Python(p) => p.visit_paths_mut(visitor),
+            Self::Delay(p) => p.visit_paths_mut(visitor),
+            Self::Division(p) => p.visit_paths_mut(visitor),
+            Self::Offset(p) => p.visit_paths_mut(visitor),
+            Self::DiscountFactor(p) => p.visit_paths_mut(visitor),
+            Self::Interpolated(p) => p.visit_paths_mut(visitor),
+            Self::RbfProfile(p) => p.visit_paths_mut(visitor),
+            Self::NegativeMax(p) => p.visit_paths_mut(visitor),
+            Self::NegativeMin(p) => p.visit_paths_mut(visitor),
+        }
     }
 }
 
@@ -514,12 +652,57 @@ impl TryFromV1Parameter<ParameterV1> for ParameterOrTimeseries {
 pub enum ConstantValue<T> {
     Literal(T),
     Table(TableDataRef),
-    External(ExternalDataRef),
 }
 
 impl Default for ConstantValue<f64> {
     fn default() -> Self {
         Self::Literal(0.0)
+    }
+}
+
+// The Derive does not work for the generic type T
+mod constant_value_visit_metrics {
+    use super::*;
+    use crate::metric::Metric;
+    use crate::visit::VisitMetrics;
+    impl<T> VisitMetrics for ConstantValue<T>
+    where
+        T: VisitMetrics,
+    {
+        fn visit_metrics<F: FnMut(&Metric)>(&self, visitor: &mut F) {
+            match self {
+                Self::Literal(v) => v.visit_metrics(visitor),
+                Self::Table(v) => v.visit_metrics(visitor),
+            }
+        }
+        fn visit_metrics_mut<F: FnMut(&mut Metric)>(&mut self, visitor: &mut F) {
+            match self {
+                Self::Literal(v) => v.visit_metrics_mut(visitor),
+                Self::Table(v) => v.visit_metrics_mut(visitor),
+            }
+        }
+    }
+}
+mod constant_value_visit_paths {
+    use super::*;
+    use crate::visit::VisitPaths;
+    use std::path::{Path, PathBuf};
+    impl<T> VisitPaths for ConstantValue<T>
+    where
+        T: VisitPaths,
+    {
+        fn visit_paths<F: FnMut(&Path)>(&self, visitor: &mut F) {
+            match self {
+                Self::Literal(v) => v.visit_paths(visitor),
+                Self::Table(v) => v.visit_paths(visitor),
+            }
+        }
+        fn visit_paths_mut<F: FnMut(&mut PathBuf)>(&mut self, visitor: &mut F) {
+            match self {
+                Self::Literal(v) => v.visit_paths_mut(visitor),
+                Self::Table(v) => v.visit_paths_mut(visitor),
+            }
+        }
     }
 }
 
@@ -530,7 +713,6 @@ impl ConstantValue<f64> {
         match self {
             Self::Literal(v) => Ok(*v),
             Self::Table(tbl_ref) => Ok(tables.get_scalar_f64(tbl_ref)?),
-            Self::External(_) => todo!("Load the float from the external source!"),
         }
     }
 }
@@ -542,7 +724,6 @@ impl ConstantValue<usize> {
         match self {
             Self::Literal(v) => Ok(*v),
             Self::Table(tbl_ref) => Ok(tables.get_scalar_usize(tbl_ref)?),
-            Self::External(_) => todo!("Load the float from the external source!"),
         }
     }
 }
@@ -561,7 +742,7 @@ impl TryFrom<ParameterValueV1> for ConstantValue<f64> {
 }
 
 /// An integer (i64) value from another parameter
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 #[serde(untagged)]
 pub enum ParameterIndexValue {
     Reference(String),
@@ -604,7 +785,7 @@ impl ParameterIndexValue {
 ///
 /// This value can be a constant (literal or otherwise) or a dynamic value provided
 /// by another parameter.
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 #[serde(untagged)]
 pub enum DynamicIndexValue {
     Constant(ConstantValue<usize>),
@@ -661,12 +842,11 @@ impl TryFromV1Parameter<ParameterValueV1> for DynamicIndexValue {
 /// An non-variable vector of constant floating-point (f64) values
 ///
 /// This value can be a literal vector of floats or an external reference to an input table.
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 #[serde(untagged)]
 pub enum ConstantFloatVec {
     Literal(Vec<f64>),
     Table(TableDataRef),
-    External(ExternalDataRef),
 }
 
 #[cfg(feature = "core")]
@@ -676,38 +856,11 @@ impl ConstantFloatVec {
         match self {
             Self::Literal(v) => Ok(v.clone()),
             Self::Table(tbl_ref) => Ok(tables.get_vec_f64(tbl_ref)?.clone()),
-            Self::External(_) => todo!("Load the float vector from the external source!"),
         }
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
-pub struct ExternalDataRef {
-    url: PathBuf,
-    column: Option<TableIndex>,
-    index: Option<TableIndex>,
-}
-
-impl TryFrom<ExternalDataRefV1> for ExternalDataRef {
-    type Error = ConversionError;
-    fn try_from(v1: ExternalDataRefV1) -> Result<Self, Self::Error> {
-        let column = match v1.column {
-            None => None,
-            Some(c) => Some(c.try_into()?),
-        };
-        let index = match v1.index {
-            None => None,
-            Some(i) => Some(i.try_into()?),
-        };
-        Ok(Self {
-            url: v1.url,
-            column,
-            index,
-        })
-    }
-}
-
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 #[serde(untagged)]
 pub enum TableIndex {
     Single(String),

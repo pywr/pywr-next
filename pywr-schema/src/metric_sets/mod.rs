@@ -3,12 +3,13 @@ use crate::error::SchemaError;
 use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
+use pywr_schema_macros::PywrVisitPaths;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::num::NonZeroUsize;
 
 /// Aggregation function to apply over metric values.
-#[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone, JsonSchema)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone, JsonSchema, PywrVisitPaths)]
 #[serde(tag = "type")]
 pub enum MetricAggFunc {
     Sum,

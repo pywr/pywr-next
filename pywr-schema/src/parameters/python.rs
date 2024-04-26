@@ -6,6 +6,7 @@ use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::parameters::{DynamicFloatValueType, DynamicIndexValue, ParameterMeta};
+use crate::visit::{VisitMetrics, VisitPaths};
 use pyo3::prelude::PyAnyMethods;
 #[cfg(feature = "core")]
 use pyo3::prelude::PyModule;
@@ -19,7 +20,7 @@ use schemars::JsonSchema;
 #[cfg(feature = "core")]
 use serde_json::Value;
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
 #[serde(rename_all = "lowercase")]
@@ -134,6 +135,48 @@ pub fn try_json_value_into_py(py: Python, value: &serde_json::Value) -> Result<O
     };
 
     Ok(py_value)
+}
+
+impl VisitMetrics for PythonParameter {
+    fn visit_metrics<F: FnMut(&Metric)>(&self, visitor: &mut F) {
+        if let Some(metrics) = &self.metrics {
+            for metric in metrics.values() {
+                visitor(metric);
+            }
+        }
+    }
+
+    fn visit_metrics_mut<F: FnMut(&mut Metric)>(&mut self, visitor: &mut F) {
+        if let Some(metrics) = &mut self.metrics {
+            for metric in metrics.values_mut() {
+                visitor(metric);
+            }
+        }
+    }
+}
+
+impl VisitPaths for PythonParameter {
+    fn visit_paths<F: FnMut(&Path)>(&self, visitor: &mut F) {
+        match &self.module {
+            PythonModule::Module(_) => {}
+            PythonModule::Path(path) => {
+                visitor(path);
+            }
+        }
+
+        self.visit_metrics(&mut |metric| {
+            metric.visit_paths(visitor);
+        });
+    }
+
+    fn visit_paths_mut<F: FnMut(&mut PathBuf)>(&mut self, visitor: &mut F) {
+        match &mut self.module {
+            PythonModule::Module(_) => {}
+            PythonModule::Path(path) => {
+                visitor(path);
+            }
+        }
+    }
 }
 
 impl PythonParameter {

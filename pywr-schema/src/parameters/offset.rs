@@ -3,11 +3,11 @@ use crate::error::SchemaError;
 use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
-use crate::parameters::{ConstantValue, DynamicFloatValueType, ParameterMeta};
+use crate::parameters::{ConstantValue, ParameterMeta};
 #[cfg(feature = "core")]
 use pywr_core::parameters::ParameterIndex;
+use pywr_schema_macros::PywrVisitAll;
 use schemars::JsonSchema;
-use std::collections::HashMap;
 
 /// A parameter that returns a fixed delta from another metric.
 ///
@@ -23,7 +23,7 @@ use std::collections::HashMap;
 #[doc = include_str!("doc_examples/offset_variable.json")]
 /// ```
 ///
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 pub struct OffsetParameter {
     /// Meta-data.
     ///
@@ -37,16 +37,6 @@ pub struct OffsetParameter {
     pub offset: ConstantValue<f64>,
     /// The metric from which to apply the offset.
     pub metric: Metric,
-}
-
-impl OffsetParameter {
-    pub fn node_references(&self) -> HashMap<&str, &str> {
-        HashMap::new()
-    }
-
-    pub fn parameters(&self) -> HashMap<&str, DynamicFloatValueType> {
-        HashMap::new()
-    }
 }
 
 #[cfg(feature = "core")]

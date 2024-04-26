@@ -12,6 +12,7 @@ use crate::outputs::Output;
 #[cfg(feature = "core")]
 use crate::timeseries::LoadedTimeseriesCollection;
 use crate::timeseries::{convert_from_v1_data, Timeseries};
+use crate::visit::{VisitMetrics, VisitPaths};
 #[cfg(feature = "core")]
 use chrono::NaiveTime;
 use chrono::{NaiveDate, NaiveDateTime};
@@ -167,6 +168,81 @@ impl FromStr for PywrNetwork {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Ok(serde_json::from_str(s)?)
+    }
+}
+
+impl VisitPaths for PywrNetwork {
+    fn visit_paths<F: FnMut(&Path)>(&self, visitor: &mut F) {
+        for node in &self.nodes {
+            node.visit_paths(visitor);
+        }
+
+        for parameter in self.parameters.as_deref().into_iter().flatten() {
+            parameter.visit_paths(visitor);
+        }
+
+        for timeseries in self.timeseries.as_deref().into_iter().flatten() {
+            timeseries.visit_paths(visitor);
+        }
+
+        for outputs in self.outputs.as_deref().into_iter().flatten() {
+            outputs.visit_paths(visitor);
+        }
+    }
+    fn visit_paths_mut<F: FnMut(&mut PathBuf)>(&mut self, visitor: &mut F) {
+        for node in self.nodes.iter_mut() {
+            node.visit_paths_mut(visitor);
+        }
+
+        for parameter in self.parameters.as_deref_mut().into_iter().flatten() {
+            parameter.visit_paths_mut(visitor);
+        }
+
+        for timeseries in self.timeseries.as_deref_mut().into_iter().flatten() {
+            timeseries.visit_paths_mut(visitor);
+        }
+
+        for outputs in self.outputs.as_deref_mut().into_iter().flatten() {
+            outputs.visit_paths_mut(visitor);
+        }
+    }
+}
+
+impl VisitMetrics for PywrNetwork {
+    fn visit_metrics<F: FnMut(&Metric)>(&self, visitor: &mut F) {
+        for node in &self.nodes {
+            node.visit_metrics(visitor);
+        }
+
+        for parameter in self.parameters.as_deref().into_iter().flatten() {
+            parameter.visit_metrics(visitor);
+        }
+
+        if let Some(metric_sets) = &self.metric_sets {
+            for metric_set in metric_sets {
+                for metric in &metric_set.metrics {
+                    visitor(metric);
+                }
+            }
+        }
+    }
+
+    fn visit_metrics_mut<F: FnMut(&mut Metric)>(&mut self, visitor: &mut F) {
+        for node in self.nodes.iter_mut() {
+            node.visit_metrics_mut(visitor);
+        }
+
+        for parameter in self.parameters.as_deref_mut().into_iter().flatten() {
+            parameter.visit_metrics_mut(visitor);
+        }
+
+        if let Some(metric_sets) = &mut self.metric_sets {
+            for metric_set in metric_sets {
+                for metric in metric_set.metrics.iter_mut() {
+                    visitor(metric);
+                }
+            }
+        }
     }
 }
 
@@ -458,6 +534,25 @@ impl FromStr for PywrModel {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Ok(serde_json::from_str(s)?)
+    }
+}
+
+impl VisitPaths for PywrModel {
+    fn visit_paths<F: FnMut(&Path)>(&self, visitor: &mut F) {
+        self.network.visit_paths(visitor);
+    }
+    fn visit_paths_mut<F: FnMut(&mut PathBuf)>(&mut self, visitor: &mut F) {
+        self.network.visit_paths_mut(visitor)
+    }
+}
+
+impl VisitMetrics for PywrModel {
+    fn visit_metrics<F: FnMut(&Metric)>(&self, visitor: &mut F) {
+        self.network.visit_metrics(visitor);
+    }
+
+    fn visit_metrics_mut<F: FnMut(&mut Metric)>(&mut self, visitor: &mut F) {
+        self.network.visit_metrics_mut(visitor);
     }
 }
 
@@ -771,6 +866,8 @@ impl PywrMultiNetworkModel {
 mod tests {
     use super::PywrModel;
     use crate::model::Timestepper;
+    use crate::visit::VisitPaths;
+    use std::path::PathBuf;
 
     fn model_str() -> &'static str {
         include_str!("./test_models/simple1.json")
@@ -848,6 +945,36 @@ mod tests {
                 );
             }
             _ => panic!("Expected a date"),
+        }
+    }
+
+    /// Test that the visit_paths functions works as expected.
+    #[test]
+    fn test_visit_paths() {
+        let mut model_fn = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        model_fn.push("src/test_models/timeseries.json");
+
+        let mut schema = PywrModel::from_path(model_fn.as_path()).unwrap();
+
+        let expected_paths = vec![PathBuf::from("inflow.csv")];
+
+        let mut paths: Vec<PathBuf> = Vec::new();
+
+        schema.visit_paths(&mut |p| {
+            paths.push(p.to_path_buf());
+        });
+
+        assert_eq!(&paths, &expected_paths);
+
+        schema.visit_paths_mut(&mut |p: &mut PathBuf| {
+            *p = PathBuf::from("this-file-does-not-exist.csv");
+        });
+
+        // Expect this to file as the path has been updated to a missing file.
+        #[cfg(feature = "core")]
+        if schema.build_model(model_fn.parent(), None).is_ok() {
+            let str = serde_json::to_string_pretty(&schema).unwrap();
+            panic!("Expected an error due to missing file: {str}");
         }
     }
 }

@@ -3,36 +3,21 @@ use crate::error::SchemaError;
 use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
-use crate::parameters::{DynamicFloatValueType, IntoV2Parameter, ParameterMeta, TryFromV1Parameter};
+use crate::parameters::{IntoV2Parameter, ParameterMeta, TryFromV1Parameter};
 use crate::ConversionError;
 #[cfg(feature = "core")]
 use pywr_core::parameters::ParameterIndex;
+use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::parameters::DiscountFactorParameter as DiscountFactorParameterV1;
 use schemars::JsonSchema;
-use std::collections::HashMap;
 
 /// A parameter that returns the current discount factor for a given time-step.
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 pub struct DiscountFactorParameter {
     #[serde(flatten)]
     pub meta: ParameterMeta,
     pub discount_rate: Metric,
     pub base_year: i32,
-}
-
-impl DiscountFactorParameter {
-    pub fn node_references(&self) -> HashMap<&str, &str> {
-        HashMap::new()
-    }
-
-    pub fn parameters(&self) -> HashMap<&str, DynamicFloatValueType> {
-        let mut attributes = HashMap::new();
-
-        let metric = &self.discount_rate;
-        attributes.insert("discount_rate", metric.into());
-
-        attributes
-    }
 }
 
 #[cfg(feature = "core")]

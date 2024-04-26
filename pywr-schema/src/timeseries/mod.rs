@@ -4,6 +4,7 @@ mod polars_dataset;
 
 use self::polars_dataset::PolarsDataset;
 use crate::parameters::{ParameterMeta, TimeseriesV1Data, TimeseriesV1Source};
+use crate::visit::VisitPaths;
 use crate::ConversionError;
 #[cfg(feature = "core")]
 use ndarray::Array2;
@@ -20,8 +21,7 @@ use pywr_core::{
 use pywr_v1_schema::tables::TableVec;
 use schemars::JsonSchema;
 use std::collections::HashMap;
-#[cfg(feature = "core")]
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -77,6 +77,22 @@ impl Timeseries {
 
     pub fn name(&self) -> &str {
         &self.meta.name
+    }
+}
+
+impl VisitPaths for Timeseries {
+    fn visit_paths<F: FnMut(&Path)>(&self, visitor: &mut F) {
+        match &self.provider {
+            TimeseriesProvider::Polars(dataset) => dataset.visit_paths(visitor),
+            TimeseriesProvider::Pandas => todo!(),
+        }
+    }
+
+    fn visit_paths_mut<F: FnMut(&mut PathBuf)>(&mut self, visitor: &mut F) {
+        match &mut self.provider {
+            TimeseriesProvider::Polars(dataset) => dataset.visit_paths_mut(visitor),
+            TimeseriesProvider::Pandas => todo!(),
+        }
     }
 }
 

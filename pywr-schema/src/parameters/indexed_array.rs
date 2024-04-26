@@ -4,37 +4,20 @@ use crate::error::SchemaError;
 use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
-use crate::parameters::{
-    DynamicFloatValueType, DynamicIndexValue, IntoV2Parameter, ParameterMeta, TryFromV1Parameter, TryIntoV2Parameter,
-};
+use crate::parameters::{DynamicIndexValue, IntoV2Parameter, ParameterMeta, TryFromV1Parameter, TryIntoV2Parameter};
 #[cfg(feature = "core")]
 use pywr_core::parameters::ParameterIndex;
+use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::parameters::IndexedArrayParameter as IndexedArrayParameterV1;
 use schemars::JsonSchema;
-use std::collections::HashMap;
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 pub struct IndexedArrayParameter {
     #[serde(flatten)]
     pub meta: ParameterMeta,
     #[serde(alias = "params")]
     pub metrics: Vec<Metric>,
     pub index_parameter: DynamicIndexValue,
-}
-
-impl IndexedArrayParameter {
-    pub fn node_references(&self) -> HashMap<&str, &str> {
-        HashMap::new()
-    }
-
-    pub fn parameters(&self) -> HashMap<&str, DynamicFloatValueType> {
-        let mut attributes = HashMap::new();
-
-        let metrics = &self.metrics;
-        attributes.insert("metrics", metrics.into());
-
-        attributes
-    }
 }
 
 #[cfg(feature = "core")]

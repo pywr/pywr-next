@@ -1,14 +1,14 @@
 use crate::error::ConversionError;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
-use crate::parameters::{DynamicFloatValueType, IntoV2Parameter, ParameterMeta, TryFromV1Parameter};
+use crate::parameters::{IntoV2Parameter, ParameterMeta, TryFromV1Parameter};
 #[cfg(feature = "core")]
 use pywr_core::parameters::ParameterIndex;
+use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::parameters::Polynomial1DParameter as Polynomial1DParameterV1;
 use schemars::JsonSchema;
-use std::collections::HashMap;
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 pub struct Polynomial1DParameter {
     #[serde(flatten)]
     pub meta: ParameterMeta,
@@ -17,15 +17,6 @@ pub struct Polynomial1DParameter {
     pub use_proportional_volume: Option<bool>,
     pub scale: Option<f64>,
     pub offset: Option<f64>,
-}
-
-impl Polynomial1DParameter {
-    pub fn node_references(&self) -> HashMap<&str, &str> {
-        vec![("storage_node", self.storage_node.as_str())].into_iter().collect()
-    }
-    pub fn parameters(&self) -> HashMap<&str, DynamicFloatValueType> {
-        HashMap::new()
-    }
 }
 
 #[cfg(feature = "core")]

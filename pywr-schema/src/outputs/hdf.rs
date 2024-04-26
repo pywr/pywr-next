@@ -2,12 +2,13 @@
 use crate::error::SchemaError;
 #[cfg(feature = "core")]
 use pywr_core::recorders::HDF5Recorder;
+use pywr_schema_macros::PywrVisitPaths;
 use schemars::JsonSchema;
 #[cfg(feature = "core")]
 use std::path::Path;
 use std::path::PathBuf;
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitPaths)]
 pub struct Hdf5Output {
     pub name: String,
     pub filename: PathBuf,
@@ -39,9 +40,11 @@ impl Hdf5Output {
 
 #[cfg(test)]
 mod tests {
+    use crate::visit::VisitPaths;
     use crate::PywrModel;
     #[cfg(feature = "core")]
     use pywr_core::solvers::{ClpSolver, ClpSolverSettings};
+    use std::path::PathBuf;
     use std::str::FromStr;
     #[cfg(feature = "core")]
     use tempfile::TempDir;
@@ -57,7 +60,16 @@ mod tests {
 
         assert_eq!(schema.network.nodes.len(), 3);
         assert_eq!(schema.network.edges.len(), 2);
-        assert!(schema.network.outputs.is_some_and(|o| o.len() == 1));
+
+        let num_outputs = schema.network.outputs.as_ref().map(|o| o.len());
+        assert_eq!(num_outputs, Some(1));
+
+        let expected_paths = vec![PathBuf::from_str("outputs.h5").unwrap()];
+        let mut found_paths = Vec::new();
+        schema.visit_paths(&mut |path| {
+            found_paths.push(path.to_path_buf());
+        });
+        assert_eq!(found_paths, expected_paths);
     }
 
     #[test]
