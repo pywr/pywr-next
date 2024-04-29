@@ -7,9 +7,8 @@ use crate::metric::Metric;
 use crate::model::LoadArgs;
 use crate::parameters::{DynamicFloatValueType, DynamicIndexValue, ParameterMeta};
 use crate::visit::{VisitMetrics, VisitPaths};
-use pyo3::prelude::PyAnyMethods;
 #[cfg(feature = "core")]
-use pyo3::prelude::PyModule;
+use pyo3::prelude::{PyAnyMethods, PyModule};
 #[cfg(feature = "core")]
 use pyo3::types::{PyDict, PyTuple};
 #[cfg(feature = "core")]
