@@ -27,8 +27,21 @@ jobs:
           echo "$(pwd)/bin" >> $GITHUB_PATH
 
       - name: Build
-        run: cargo build --verbose --no-default-features --features highs
+        run: cargo build --verbose --features highs
       - name: Run tests
-        run: cargo test --no-default-features --features highs
+        run: cargo test --features highs
       - name: Run mdbook tests
         run: mdbook test ./pywr-book
+
+  build_schema_only:
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - name: Build
+        run: cargo build --verbose --no-default-features --package pywr-schema@2.0.0-dev
+      - name: Run tests
+        run: cargo test --verbose --no-default-features --package pywr-schema@2.0.0-dev
