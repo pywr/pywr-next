@@ -132,16 +132,14 @@ pub trait VisitPaths {
 
 impl VisitPaths for Metric {
     fn visit_paths<F: FnMut(&Path)>(&self, visitor: &mut F) {
-        match self {
-            Self::InlineParameter { definition } => definition.visit_paths(visitor),
-            _ => {}
+        if let Self::InlineParameter { definition } = self {
+            definition.visit_paths(visitor)
         }
     }
 
     fn visit_paths_mut<F: FnMut(&mut PathBuf)>(&mut self, visitor: &mut F) {
-        match self {
-            Self::InlineParameter { definition } => definition.visit_paths_mut(visitor),
-            _ => {}
+        if let Self::InlineParameter { definition } = self {
+            definition.visit_paths_mut(visitor)
         }
     }
 }

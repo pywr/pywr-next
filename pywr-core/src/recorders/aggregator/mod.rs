@@ -296,7 +296,7 @@ where
         let start = values.first().expect("Empty vector of period values.").start;
         let duration = values.last().expect("Empty vector of period values.").duration;
 
-        let value = values.into_iter().map(|v| v.value).collect();
+        let value = values.iter().map(|v| v.value).collect();
         Self { start, duration, value }
     }
 }

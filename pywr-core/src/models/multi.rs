@@ -334,7 +334,7 @@ fn compute_inter_network_transfers(
             OtherNetworkIndex::After(i) => (&after_models[i.get() - 1], &after_states[i.get() - 1]),
         };
 
-        let value = match timestep.is_first().then(|| parameter.initial_value).flatten() {
+        let value = match timestep.is_first().then_some(parameter.initial_value).flatten() {
             // Use the initial value if it is given and it is the first time-step.
             Some(initial_value) => initial_value,
             // Otherwise, get the value from the other model's state/metric
