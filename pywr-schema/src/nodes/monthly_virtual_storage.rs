@@ -9,7 +9,10 @@ use crate::nodes::{NodeAttribute, NodeMeta};
 use crate::parameters::TryIntoV2Parameter;
 #[cfg(feature = "core")]
 use pywr_core::{
-    derived_metric::DerivedMetric, metric::MetricF64, node::ConstraintValue, virtual_storage::VirtualStorageReset,
+    derived_metric::DerivedMetric,
+    metric::MetricF64,
+    node::ConstraintValue,
+    virtual_storage::{VirtualStorageBuilder, VirtualStorageReset},
 };
 use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::nodes::MonthlyVirtualStorageNode as MonthlyVirtualStorageNodeV1;
@@ -83,19 +86,18 @@ impl MonthlyVirtualStorageNode {
             months: self.reset.months as i32,
         };
 
-        // TODO this should be an annual virtual storage!
-        network.add_virtual_storage_node(
-            self.meta.name.as_str(),
-            None,
-            node_idxs.as_ref(),
-            self.factors.as_deref(),
-            self.initial_volume.into(),
-            min_volume,
-            max_volume,
-            reset,
-            None,
-            cost,
-        )?;
+        let mut builder = VirtualStorageBuilder::new(self.meta.name.as_str(), &node_idxs)
+            .initial_volume(self.initial_volume.into())
+            .min_volume(min_volume)
+            .max_volume(max_volume)
+            .reset(reset)
+            .cost(cost);
+
+        if let Some(factors) = &self.factors {
+            builder = builder.factors(factors);
+        }
+
+        network.add_virtual_storage_node(builder)?;
         Ok(())
     }
 

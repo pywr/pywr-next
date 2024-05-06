@@ -12,7 +12,7 @@ use pywr_core::{
     metric::MetricF64,
     node::{ConstraintValue, StorageInitialVolume},
     timestep::TimeDomain,
-    virtual_storage::VirtualStorageReset,
+    virtual_storage::{VirtualStorageBuilder, VirtualStorageReset},
 };
 use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::nodes::RollingVirtualStorageNode as RollingVirtualStorageNodeV1;
@@ -139,18 +139,19 @@ impl RollingVirtualStorageNode {
                     name: self.meta.name.clone(),
                 })?;
 
-        network.add_virtual_storage_node(
-            self.meta.name.as_str(),
-            None,
-            node_idxs.as_ref(),
-            self.factors.as_deref(),
-            initial_volume,
-            min_volume,
-            max_volume,
-            reset,
-            Some(timesteps),
-            cost,
-        )?;
+        let mut builder = VirtualStorageBuilder::new(self.meta.name.as_str(), &node_idxs)
+            .initial_volume(initial_volume)
+            .min_volume(min_volume)
+            .max_volume(max_volume)
+            .reset(reset)
+            .rolling_window(timesteps)
+            .cost(cost);
+
+        if let Some(factors) = &self.factors {
+            builder = builder.factors(factors);
+        }
+
+        network.add_virtual_storage_node(builder)?;
         Ok(())
     }
     pub fn create_metric(
