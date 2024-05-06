@@ -11,12 +11,11 @@ use crate::scenario::ScenarioIndex;
 use crate::solvers::{MultiStateSolver, Solver, SolverFeatures, SolverTimings};
 use crate::state::{MultiValue, ParameterStates, State, StateBuilder};
 use crate::timestep::Timestep;
-use crate::virtual_storage::{VirtualStorage, VirtualStorageIndex, VirtualStorageReset, VirtualStorageVec};
+use crate::virtual_storage::{VirtualStorage, VirtualStorageBuilder, VirtualStorageIndex, VirtualStorageVec};
 use crate::{parameters, recorders, NodeIndex, ParameterIndex, PywrError, RecorderIndex};
 use rayon::prelude::*;
 use std::any::Any;
 use std::collections::HashSet;
-use std::num::NonZeroUsize;
 use std::ops::Deref;
 use std::slice::{Iter, IterMut};
 use std::time::Duration;
@@ -1302,36 +1301,13 @@ impl Network {
     /// Add a new `VirtualStorage` to the network.
     pub fn add_virtual_storage_node(
         &mut self,
-        name: &str,
-        sub_name: Option<&str>,
-        nodes: &[NodeIndex],
-        factors: Option<&[f64]>,
-        initial_volume: StorageInitialVolume,
-        min_volume: ConstraintValue,
-        max_volume: ConstraintValue,
-        reset: VirtualStorageReset,
-        rolling_window: Option<NonZeroUsize>,
-        cost: ConstraintValue,
+        builder: VirtualStorageBuilder,
     ) -> Result<VirtualStorageIndex, PywrError> {
-        if let Ok(_agg_node) = self.get_virtual_storage_node_by_name(name, sub_name) {
-            return Err(PywrError::NodeNameAlreadyExists(name.to_string()));
-        }
-
-        let vs_node_index = self.virtual_storage_nodes.push_new(
-            name,
-            sub_name,
-            nodes,
-            factors,
-            initial_volume,
-            min_volume,
-            max_volume,
-            reset,
-            rolling_window,
-            cost,
-        );
+        let vs_node_index = self.virtual_storage_nodes.push_new(builder)?;
+        let vs_node = self.virtual_storage_nodes.get(&vs_node_index)?;
 
         // Link the virtual storage node to the nodes it is including
-        for node_idx in nodes {
+        for node_idx in vs_node.nodes.iter() {
             let node = self.nodes.get_mut(node_idx)?;
             node.add_virtual_storage(vs_node_index)?;
         }

@@ -10,7 +10,10 @@ use crate::metric::NodeReference;
 use crate::parameters::TryIntoV2Parameter;
 #[cfg(feature = "core")]
 use pywr_core::{
-    derived_metric::DerivedMetric, metric::MetricF64, node::ConstraintValue, virtual_storage::VirtualStorageReset,
+    derived_metric::DerivedMetric,
+    metric::MetricF64,
+    node::ConstraintValue,
+    virtual_storage::{VirtualStorageBuilder, VirtualStorageReset},
 };
 use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::nodes::VirtualStorageNode as VirtualStorageNodeV1;
@@ -71,18 +74,18 @@ impl VirtualStorageNode {
         // Standard virtual storage node never resets.
         let reset = VirtualStorageReset::Never;
 
-        network.add_virtual_storage_node(
-            self.meta.name.as_str(),
-            None,
-            &node_idxs,
-            self.factors.as_deref(),
-            self.initial_volume.into(),
-            min_volume,
-            max_volume,
-            reset,
-            None,
-            cost,
-        )?;
+        let mut builder = VirtualStorageBuilder::new(self.meta.name.as_str(), &node_idxs)
+            .initial_volume(self.initial_volume.into())
+            .min_volume(min_volume)
+            .max_volume(max_volume)
+            .reset(reset)
+            .cost(cost);
+
+        if let Some(factors) = &self.factors {
+            builder = builder.factors(factors);
+        }
+
+        network.add_virtual_storage_node(builder)?;
         Ok(())
     }
     pub fn create_metric(
