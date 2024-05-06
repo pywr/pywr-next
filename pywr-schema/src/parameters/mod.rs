@@ -813,7 +813,6 @@ impl DynamicIndexValue {
 
 #[cfg(feature = "core")]
 impl DynamicIndexValue {
-    ///
     pub fn load(&self, network: &mut pywr_core::network::Network, args: &LoadArgs) -> Result<MetricUsize, SchemaError> {
         let parameter_ref = match self {
             DynamicIndexValue::Constant(v) => MetricUsize::Constant(v.load(args.tables)?),
