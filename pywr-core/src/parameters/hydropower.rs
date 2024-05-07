@@ -93,7 +93,8 @@ impl Parameter<f64> for HydropowerTargetParameter {
         // Bound the flow if required
         if let Some(max_flow) = &self.max_flow {
             q = q.min(max_flow.get_value(model, state)?);
-        } else if let Some(min_flow) = &self.min_flow {
+        }
+        if let Some(min_flow) = &self.min_flow {
             q = q.max(min_flow.get_value(model, state)?);
         }
 
