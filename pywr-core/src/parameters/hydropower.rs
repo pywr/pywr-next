@@ -75,7 +75,7 @@ impl Parameter<f64> for HydropowerTargetParameter {
         head = head.max(0.0);
 
         // apply the minimum head threshold
-        if head < self.turbine_min_head {
+        if head <= self.turbine_min_head {
             return Ok(0.0);
         }
 
