@@ -125,7 +125,6 @@ impl DerivedMetric {
                 Ok(hydropower_calculation(
                     flow,
                     head,
-                    turbine_data.elevation,
                     turbine_data.efficiency,
                     turbine_data.flow_unit_conversion,
                     turbine_data.energy_unit_conversion,

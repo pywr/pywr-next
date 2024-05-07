@@ -84,7 +84,6 @@ impl Parameter<f64> for HydropowerTargetParameter {
         let mut q = inverse_hydropower_calculation(
             power,
             head,
-            0.0,
             self.turbine_efficiency,
             self.flow_unit_conversion,
             self.energy_unit_conversion,
