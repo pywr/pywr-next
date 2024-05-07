@@ -1,21 +1,28 @@
+#[cfg(feature = "core")]
 mod align_and_resample;
 mod polars_dataset;
 
-use ndarray::Array2;
-use polars::error::PolarsError;
-use polars::prelude::DataType::Float64;
-use polars::prelude::{DataFrame, Float64Type, IndexOrder};
-use pywr_core::models::ModelDomain;
-use pywr_core::parameters::{Array1Parameter, Array2Parameter, ParameterIndex};
-use pywr_core::PywrError;
-use pywr_v1_schema::tables::TableVec;
-use std::{collections::HashMap, path::Path};
-use thiserror::Error;
-
-use crate::parameters::{ParameterMeta, TimeseriesV1Data, TimeseriesV1Source};
-use crate::ConversionError;
-
 use self::polars_dataset::PolarsDataset;
+use crate::parameters::{ParameterMeta, TimeseriesV1Data, TimeseriesV1Source};
+use crate::visit::VisitPaths;
+use crate::ConversionError;
+#[cfg(feature = "core")]
+use ndarray::Array2;
+#[cfg(feature = "core")]
+use polars::error::PolarsError;
+#[cfg(feature = "core")]
+use polars::prelude::{DataFrame, DataType::Float64, Float64Type, IndexOrder};
+#[cfg(feature = "core")]
+use pywr_core::{
+    models::ModelDomain,
+    parameters::{Array1Parameter, Array2Parameter, ParameterIndex},
+    PywrError,
+};
+use pywr_v1_schema::tables::TableVec;
+use schemars::JsonSchema;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum TimeseriesError {
@@ -38,19 +45,21 @@ pub enum TimeseriesError {
     #[error("A timeseries dataframe with the name '{0}' already exists.")]
     TimeseriesDataframeAlreadyExists(String),
     #[error("Polars error: {0}")]
+    #[cfg(feature = "core")]
     PolarsError(#[from] PolarsError),
+    #[cfg(feature = "core")]
     #[error("Pywr core error: {0}")]
-    PywrCore(#[from] pywr_core::PywrError),
+    PywrCore(#[from] PywrError),
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
 #[serde(tag = "type")]
 enum TimeseriesProvider {
     Pandas,
     Polars(PolarsDataset),
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
 pub struct Timeseries {
     #[serde(flatten)]
     meta: ParameterMeta,
@@ -58,6 +67,7 @@ pub struct Timeseries {
 }
 
 impl Timeseries {
+    #[cfg(feature = "core")]
     pub fn load(&self, domain: &ModelDomain, data_path: Option<&Path>) -> Result<DataFrame, TimeseriesError> {
         match &self.provider {
             TimeseriesProvider::Polars(dataset) => dataset.load(self.meta.name.as_str(), data_path, domain),
@@ -70,11 +80,29 @@ impl Timeseries {
     }
 }
 
+impl VisitPaths for Timeseries {
+    fn visit_paths<F: FnMut(&Path)>(&self, visitor: &mut F) {
+        match &self.provider {
+            TimeseriesProvider::Polars(dataset) => dataset.visit_paths(visitor),
+            TimeseriesProvider::Pandas => todo!(),
+        }
+    }
+
+    fn visit_paths_mut<F: FnMut(&mut PathBuf)>(&mut self, visitor: &mut F) {
+        match &mut self.provider {
+            TimeseriesProvider::Polars(dataset) => dataset.visit_paths_mut(visitor),
+            TimeseriesProvider::Pandas => todo!(),
+        }
+    }
+}
+
 #[derive(Default)]
+#[cfg(feature = "core")]
 pub struct LoadedTimeseriesCollection {
     timeseries: HashMap<String, DataFrame>,
 }
 
+#[cfg(feature = "core")]
 impl LoadedTimeseriesCollection {
     pub fn from_schema(
         timeseries_defs: Option<&[Timeseries]>,
@@ -211,14 +239,13 @@ pub fn convert_from_v1_data(
 }
 
 #[cfg(test)]
+#[cfg(feature = "core")]
 mod tests {
-    use std::path::PathBuf;
-
+    use crate::PywrModel;
     use chrono::{Datelike, NaiveDate};
     use ndarray::Array;
     use pywr_core::{metric::MetricF64, recorders::AssertionRecorder, test_utils::run_all_solvers};
-
-    use crate::PywrModel;
+    use std::path::PathBuf;
 
     fn model_str() -> &'static str {
         include_str!("../test_models/timeseries.json")

@@ -1,15 +1,19 @@
-use crate::error::{ConversionError, SchemaError};
+use crate::error::ConversionError;
+#[cfg(feature = "core")]
+use crate::error::SchemaError;
+use crate::metric::Metric;
+#[cfg(feature = "core")]
 use crate::model::LoadArgs;
-use crate::parameters::{
-    DynamicFloatValue, DynamicFloatValueType, IntoV2Parameter, ParameterMeta, TryFromV1Parameter, TryIntoV2Parameter,
-};
+use crate::parameters::{IntoV2Parameter, ParameterMeta, TryFromV1Parameter, TryIntoV2Parameter};
+#[cfg(feature = "core")]
 use pywr_core::parameters::ParameterIndex;
+use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::parameters::{
     ParameterThresholdParameter as ParameterThresholdParameterV1, Predicate as PredicateV1,
 };
-use std::collections::HashMap;
+use schemars::JsonSchema;
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Copy)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Copy, JsonSchema, PywrVisitAll)]
 pub enum Predicate {
     #[serde(alias = "<")]
     LT,
@@ -35,6 +39,7 @@ impl From<PredicateV1> for Predicate {
     }
 }
 
+#[cfg(feature = "core")]
 impl From<Predicate> for pywr_core::parameters::Predicate {
     fn from(p: Predicate) -> Self {
         match p {
@@ -47,25 +52,19 @@ impl From<Predicate> for pywr_core::parameters::Predicate {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 pub struct ParameterThresholdParameter {
     #[serde(flatten)]
     pub meta: ParameterMeta,
-    pub parameter: DynamicFloatValue,
-    pub threshold: DynamicFloatValue,
+    pub parameter: Metric,
+    pub threshold: Metric,
     pub predicate: Predicate,
     #[serde(default)]
     pub ratchet: bool,
 }
 
+#[cfg(feature = "core")]
 impl ParameterThresholdParameter {
-    pub fn node_references(&self) -> HashMap<&str, &str> {
-        HashMap::new()
-    }
-    pub fn parameters(&self) -> HashMap<&str, DynamicFloatValueType> {
-        todo!()
-    }
-
     pub fn add_to_model(
         &self,
         network: &mut pywr_core::network::Network,

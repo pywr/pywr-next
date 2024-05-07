@@ -1,8 +1,14 @@
 {
   "name": "turbine-flow",
   "type": "HydropowerTarget",
-  "target": 320.11,
-  "water_elevation": 1.0,
+  "target": {
+    "type": "Constant",
+    "value": 320.11
+  },
+  "water_elevation": {
+    "type": "Constant",
+    "value": 1.0
+  },
   "turbine_elevation": 35.0,
   "efficiency": 0.85,
   "flow_unit_conversion": 1e3

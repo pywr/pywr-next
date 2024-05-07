@@ -1,11 +1,16 @@
-use crate::error::{ConversionError, SchemaError};
+use crate::error::ConversionError;
+#[cfg(feature = "core")]
+use crate::error::SchemaError;
+use crate::metric::Metric;
+#[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::nodes::{NodeAttribute, NodeMeta};
-use crate::parameters::{DynamicFloatValue, TryIntoV2Parameter};
+use crate::parameters::TryIntoV2Parameter;
+#[cfg(feature = "core")]
 use pywr_core::metric::MetricF64;
-use pywr_schema_macros::PywrNode;
+use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::nodes::RiverGaugeNode as RiverGaugeNodeV1;
-use std::collections::HashMap;
+use schemars::JsonSchema;
 
 #[doc = svgbobdoc::transform!(
 /// This is used to represent a minimum residual flow (MRF) at a gauging station.
@@ -22,12 +27,12 @@ use std::collections::HashMap;
 /// ```
 ///
 )]
-#[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, PywrNode)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
 pub struct RiverGaugeNode {
     #[serde(flatten)]
     pub meta: NodeMeta,
-    pub mrf: Option<DynamicFloatValue>,
-    pub mrf_cost: Option<DynamicFloatValue>,
+    pub mrf: Option<Metric>,
+    pub mrf_cost: Option<Metric>,
 }
 
 impl RiverGaugeNode {
@@ -41,13 +46,33 @@ impl RiverGaugeNode {
         Some("bypass")
     }
 
+    pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
+        vec![
+            (self.meta.name.as_str(), Self::mrf_sub_name().map(|s| s.to_string())),
+            (self.meta.name.as_str(), Self::bypass_sub_name().map(|s| s.to_string())),
+        ]
+    }
+
+    pub fn output_connectors(&self) -> Vec<(&str, Option<String>)> {
+        vec![
+            (self.meta.name.as_str(), Self::mrf_sub_name().map(|s| s.to_string())),
+            (self.meta.name.as_str(), Self::bypass_sub_name().map(|s| s.to_string())),
+        ]
+    }
+
+    pub fn default_metric(&self) -> NodeAttribute {
+        Self::DEFAULT_ATTRIBUTE
+    }
+}
+
+#[cfg(feature = "core")]
+impl RiverGaugeNode {
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
         network.add_link_node(self.meta.name.as_str(), Self::mrf_sub_name())?;
         network.add_link_node(self.meta.name.as_str(), Self::bypass_sub_name())?;
 
         Ok(())
     }
-
     pub fn set_constraints(
         &self,
         network: &mut pywr_core::network::Network,
@@ -66,21 +91,6 @@ impl RiverGaugeNode {
 
         Ok(())
     }
-
-    pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
-        vec![
-            (self.meta.name.as_str(), Self::mrf_sub_name().map(|s| s.to_string())),
-            (self.meta.name.as_str(), Self::bypass_sub_name().map(|s| s.to_string())),
-        ]
-    }
-
-    pub fn output_connectors(&self) -> Vec<(&str, Option<String>)> {
-        vec![
-            (self.meta.name.as_str(), Self::mrf_sub_name().map(|s| s.to_string())),
-            (self.meta.name.as_str(), Self::bypass_sub_name().map(|s| s.to_string())),
-        ]
-    }
-
     pub fn create_metric(
         &self,
         network: &pywr_core::network::Network,
@@ -141,62 +151,11 @@ impl TryFrom<RiverGaugeNodeV1> for RiverGaugeNode {
 #[cfg(test)]
 mod tests {
     use crate::model::PywrModel;
+    #[cfg(feature = "core")]
     use pywr_core::test_utils::run_all_solvers;
 
     fn model_str() -> &'static str {
-        r#"
-            {
-                "metadata": {
-                    "title": "Simple 1",
-                    "description": "A very simple example.",
-                    "minimum_version": "0.1"
-                },
-                "timestepper": {
-                    "start": "2015-01-01",
-                    "end": "2015-12-31",
-                    "timestep": 1
-                },
-                "network": {
-                    "nodes": [
-                        {
-                            "name": "catchment1",
-                            "type": "Catchment",
-                            "flow": 15
-                        },
-                        {
-                            "name": "gauge1",
-                            "type": "RiverGauge",
-                            "mrf": 5.0,
-                            "mrf_cost": -20.0
-                        },
-                        {
-                            "name": "term1",
-                            "type": "Output"
-                        },
-                        {
-                            "name": "demand1",
-                            "type": "Output",
-                            "max_flow": 15.0,
-                            "cost": -10
-                        }
-                    ],
-                    "edges": [
-                        {
-                            "from_node": "catchment1",
-                            "to_node": "gauge1"
-                        },
-                        {
-                            "from_node": "gauge1",
-                            "to_node": "term1"
-                        },
-                        {
-                            "from_node": "gauge1",
-                            "to_node": "demand1"
-                        }
-                    ]
-                }
-            }
-            "#
+        include_str!("../test_models/river_gauge1.json")
     }
 
     #[test]
@@ -209,6 +168,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "core")]
     fn test_model_run() {
         let data = model_str();
         let schema: PywrModel = serde_json::from_str(data).unwrap();

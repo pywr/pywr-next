@@ -1,18 +1,22 @@
-use crate::error::{ConversionError, SchemaError};
+use crate::error::ConversionError;
+#[cfg(feature = "core")]
+use crate::error::SchemaError;
+use crate::metric::Metric;
+#[cfg(feature = "core")]
 use crate::model::LoadArgs;
-use crate::parameters::{
-    DynamicFloatValue, DynamicFloatValueType, DynamicIndexValue, IntoV2Parameter, ParameterMeta, TryFromV1Parameter,
-    TryIntoV2Parameter,
-};
+use crate::parameters::{DynamicIndexValue, IntoV2Parameter, ParameterMeta, TryFromV1Parameter, TryIntoV2Parameter};
+#[cfg(feature = "core")]
 use pywr_core::parameters::ParameterIndex;
+use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::parameters::{
     AggFunc as AggFuncV1, AggregatedIndexParameter as AggregatedIndexParameterV1,
     AggregatedParameter as AggregatedParameterV1, IndexAggFunc as IndexAggFuncV1,
 };
+use schemars::JsonSchema;
 use std::collections::HashMap;
 
 // TODO complete these
-#[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone, JsonSchema, PywrVisitAll)]
 #[serde(rename_all = "lowercase")]
 pub enum AggFunc {
     Sum,
@@ -21,6 +25,7 @@ pub enum AggFunc {
     Min,
 }
 
+#[cfg(feature = "core")]
 impl From<AggFunc> for pywr_core::parameters::AggFunc {
     fn from(value: AggFunc) -> Self {
         match value {
@@ -66,28 +71,16 @@ impl From<AggFuncV1> for AggFunc {
 #[doc = include_str!("doc_examples/aggregated_1.json")]
 /// ```
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 pub struct AggregatedParameter {
     #[serde(flatten)]
     pub meta: ParameterMeta,
     pub agg_func: AggFunc,
-    pub metrics: Vec<DynamicFloatValue>,
+    pub metrics: Vec<Metric>,
 }
 
+#[cfg(feature = "core")]
 impl AggregatedParameter {
-    pub fn node_references(&self) -> HashMap<&str, &str> {
-        HashMap::new()
-    }
-
-    pub fn parameters(&self) -> HashMap<&str, DynamicFloatValueType> {
-        let mut attributes = HashMap::new();
-
-        let metrics = &self.metrics;
-        attributes.insert("parameters", metrics.into());
-
-        attributes
-    }
-
     pub fn add_to_model(
         &self,
         network: &mut pywr_core::network::Network,
@@ -131,7 +124,7 @@ impl TryFromV1Parameter<AggregatedParameterV1> for AggregatedParameter {
 }
 
 // TODO complete these
-#[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone, JsonSchema, PywrVisitAll)]
 #[serde(rename_all = "lowercase")]
 pub enum IndexAggFunc {
     Sum,
@@ -142,6 +135,7 @@ pub enum IndexAggFunc {
     All,
 }
 
+#[cfg(feature = "core")]
 impl From<IndexAggFunc> for pywr_core::parameters::AggIndexFunc {
     fn from(value: IndexAggFunc) -> Self {
         match value {
@@ -168,7 +162,7 @@ impl From<IndexAggFuncV1> for IndexAggFunc {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 pub struct AggregatedIndexParameter {
     #[serde(flatten)]
     pub meta: ParameterMeta,
@@ -190,7 +184,10 @@ impl AggregatedIndexParameter {
     //
     //     attributes
     // }
+}
 
+#[cfg(feature = "core")]
+impl AggregatedIndexParameter {
     pub fn add_to_model(
         &self,
         network: &mut pywr_core::network::Network,
@@ -236,7 +233,7 @@ impl TryFromV1Parameter<AggregatedIndexParameterV1> for AggregatedIndexParameter
 #[cfg(test)]
 mod tests {
     use crate::parameters::aggregated::AggregatedParameter;
-    use crate::parameters::{DynamicFloatValue, DynamicFloatValueType, MetricFloatValue, Parameter};
+    use crate::visit::VisitMetrics;
 
     #[test]
     fn test_aggregated() {
@@ -258,7 +255,7 @@ mod tests {
                         },
                         "control_curves": [
                             {"type": "Parameter", "name": "reservoir_cc"},
-                            0.2
+                            {"type": "Constant", "value": 0.2}
                         ],
                         "comment": "A witty comment",
                         "values": [
@@ -280,7 +277,7 @@ mod tests {
                         },
                         "control_curves": [
                             {"type": "Parameter", "name": "reservoir_cc"},
-                            0.2
+                            {"type": "Constant", "value": 0.2}
                         ],
                         "comment": "A witty comment",
                         "values": [
@@ -297,27 +294,11 @@ mod tests {
 
         let param: AggregatedParameter = serde_json::from_str(data).unwrap();
 
-        assert_eq!(param.node_references().len(), 0);
-        assert_eq!(param.parameters().len(), 1);
-        match param.parameters().remove("parameters").unwrap() {
-            DynamicFloatValueType::List(children) => {
-                assert_eq!(children.len(), 2);
-                for p in children {
-                    match p {
-                        DynamicFloatValue::Dynamic(p) => match p {
-                            MetricFloatValue::InlineParameter { definition } => match definition.as_ref() {
-                                Parameter::ControlCurvePiecewiseInterpolated(p) => {
-                                    assert_eq!(p.storage_node.name, "Reservoir")
-                                }
-                                _ => panic!("Incorrect core parameter deserialized."),
-                            },
-                            _ => panic!("Non-core parameter was deserialized."),
-                        },
-                        _ => panic!("Wrong variant for child parameter."),
-                    }
-                }
-            }
-            _ => panic!("Wrong variant for parameters."),
-        };
+        let mut count_metrics = 0;
+        param.visit_metrics(&mut |_metric| {
+            count_metrics += 1;
+        });
+
+        assert_eq!(count_metrics, 6);
     }
 }

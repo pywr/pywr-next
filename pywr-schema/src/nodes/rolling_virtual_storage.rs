@@ -1,21 +1,28 @@
-use crate::error::{ConversionError, SchemaError};
+use crate::error::ConversionError;
+#[cfg(feature = "core")]
+use crate::error::SchemaError;
+use crate::metric::Metric;
+#[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::nodes::{NodeAttribute, NodeMeta};
-use crate::parameters::{DynamicFloatValue, TryIntoV2Parameter};
-use pywr_core::derived_metric::DerivedMetric;
-use pywr_core::metric::MetricF64;
-use pywr_core::node::{ConstraintValue, StorageInitialVolume};
-use pywr_core::timestep::TimeDomain;
-use pywr_core::virtual_storage::VirtualStorageReset;
-use pywr_schema_macros::PywrNode;
+use crate::parameters::TryIntoV2Parameter;
+#[cfg(feature = "core")]
+use pywr_core::{
+    derived_metric::DerivedMetric,
+    metric::MetricF64,
+    node::{ConstraintValue, StorageInitialVolume},
+    timestep::TimeDomain,
+    virtual_storage::VirtualStorageReset,
+};
+use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::nodes::RollingVirtualStorageNode as RollingVirtualStorageNodeV1;
-use std::collections::HashMap;
+use schemars::JsonSchema;
 use std::num::NonZeroUsize;
 
 /// The length of the rolling window.
 ///
 /// This can be specified in either days or time-steps.
-#[derive(serde::Deserialize, serde::Serialize, Clone, Debug)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, PywrVisitAll)]
 pub enum RollingWindow {
     Days(NonZeroUsize),
     Timesteps(NonZeroUsize),
@@ -27,6 +34,7 @@ impl Default for RollingWindow {
     }
 }
 
+#[cfg(feature = "core")]
 impl RollingWindow {
     /// Convert the rolling window to a number of time-steps.
     ///
@@ -60,15 +68,15 @@ impl RollingWindow {
 /// The rolling virtual storage node is useful for representing rolling licences. For example, a 30-day or 90-day
 /// licence on a water abstraction.
 ///
-#[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, PywrNode)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
 pub struct RollingVirtualStorageNode {
     #[serde(flatten)]
     pub meta: NodeMeta,
     pub nodes: Vec<String>,
     pub factors: Option<Vec<f64>>,
-    pub max_volume: Option<DynamicFloatValue>,
-    pub min_volume: Option<DynamicFloatValue>,
-    pub cost: Option<DynamicFloatValue>,
+    pub max_volume: Option<Metric>,
+    pub min_volume: Option<Metric>,
+    pub cost: Option<Metric>,
     pub initial_volume: Option<f64>,
     pub initial_volume_pc: Option<f64>,
     pub window: RollingWindow,
@@ -77,6 +85,21 @@ pub struct RollingVirtualStorageNode {
 impl RollingVirtualStorageNode {
     const DEFAULT_ATTRIBUTE: NodeAttribute = NodeAttribute::Volume;
 
+    pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
+        vec![]
+    }
+
+    pub fn output_connectors(&self) -> Vec<(&str, Option<String>)> {
+        vec![]
+    }
+
+    pub fn default_metric(&self) -> NodeAttribute {
+        Self::DEFAULT_ATTRIBUTE
+    }
+}
+
+#[cfg(feature = "core")]
+impl RollingVirtualStorageNode {
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network, args: &LoadArgs) -> Result<(), SchemaError> {
         let initial_volume = if let Some(iv) = self.initial_volume {
             StorageInitialVolume::Absolute(iv)
@@ -130,15 +153,6 @@ impl RollingVirtualStorageNode {
         )?;
         Ok(())
     }
-
-    pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
-        vec![]
-    }
-
-    pub fn output_connectors(&self) -> Vec<(&str, Option<String>)> {
-        vec![]
-    }
-
     pub fn create_metric(
         &self,
         network: &mut pywr_core::network::Network,
@@ -231,6 +245,7 @@ impl TryFrom<RollingVirtualStorageNodeV1> for RollingVirtualStorageNode {
 }
 
 #[cfg(test)]
+#[cfg(feature = "core")]
 mod tests {
     use crate::model::PywrModel;
     use ndarray::Array2;

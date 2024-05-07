@@ -1,14 +1,19 @@
+use crate::metric::Metric;
+#[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::nodes::{NodeAttribute, NodeMeta};
-use crate::parameters::DynamicFloatValue;
+#[cfg(feature = "core")]
 use crate::SchemaError;
-use pywr_core::derived_metric::{DerivedMetric, TurbineData};
-use pywr_core::metric::MetricF64;
-use pywr_core::parameters::HydropowerTargetData;
-use pywr_schema_macros::PywrNode;
-use std::collections::HashMap;
+#[cfg(feature = "core")]
+use pywr_core::{
+    derived_metric::{DerivedMetric, TurbineData},
+    metric::MetricF64,
+    parameters::HydropowerTargetData,
+};
+use pywr_schema_macros::PywrVisitAll;
+use schemars::JsonSchema;
 
-#[derive(serde::Deserialize, serde::Serialize, Clone, Debug)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, PywrVisitAll)]
 pub enum TargetType {
     // set flow derived from the hydropower target as a max_flow
     MaxFlow,
@@ -20,15 +25,15 @@ pub enum TargetType {
 
 /// This turbine node can be used to set a flow constraint based on a hydropower production target.
 /// The turbine elevation, minimum head and efficiency can also be configured.
-#[derive(serde::Deserialize, serde::Serialize, Clone, Debug, PywrNode)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, PywrVisitAll)]
 pub struct TurbineNode {
     #[serde(flatten)]
     pub meta: NodeMeta,
-    pub cost: Option<DynamicFloatValue>,
+    pub cost: Option<Metric>,
     /// Hydropower production target. If set the node's max flow is limited to the flow
     /// calculated using the hydropower equation. If omitted no flow restriction is set.
     /// Units should be in units of energy per day.
-    pub target: Option<DynamicFloatValue>,
+    pub target: Option<Metric>,
     /// This can be used to define where to apply the flow calculated from the hydropower production
     /// target using the inverse hydropower equation. Default to [`TargetType::MaxFlow`])
     pub target_type: TargetType,
@@ -36,7 +41,7 @@ pub struct TurbineNode {
     /// `turbine_elevation` gives the working head of the turbine. This is optional
     /// and can be a constant, a value from a table, a parameter name or an inline parameter
     /// (see [`DynamicFloatValue`]).
-    pub water_elevation: Option<DynamicFloatValue>,
+    pub water_elevation: Option<Metric>,
     /// The elevation of the turbine. The difference between the `water_elevation` and this value
     /// gives the working head of the turbine. Default to `0.0`.
     pub turbine_elevation: f64,
@@ -76,19 +81,23 @@ impl Default for TurbineNode {
 impl TurbineNode {
     const DEFAULT_ATTRIBUTE: NodeAttribute = NodeAttribute::Outflow;
 
-    // pub fn parameters(&self) -> HashMap<&str, &DynamicFloatValue> {
-    //     let mut attributes = HashMap::new();
-    //     if let Some(p) = &self.cost {
-    //         attributes.insert("cost", p);
-    //     }
-    //
-    //     attributes
-    // }
+    pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
+        vec![(self.meta.name.as_str(), None)]
+    }
+    pub fn output_connectors(&self) -> Vec<(&str, Option<String>)> {
+        vec![(self.meta.name.as_str(), None)]
+    }
 
+    pub fn default_metric(&self) -> NodeAttribute {
+        Self::DEFAULT_ATTRIBUTE
+    }
+}
+
+#[cfg(feature = "core")]
+impl TurbineNode {
     fn sub_name() -> Option<&'static str> {
         Some("turbine")
     }
-
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network, _args: &LoadArgs) -> Result<(), SchemaError> {
         network.add_link_node(self.meta.name.as_str(), None)?;
         Ok(())
@@ -145,13 +154,6 @@ impl TurbineNode {
         }
 
         Ok(())
-    }
-
-    pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
-        vec![(self.meta.name.as_str(), None)]
-    }
-    pub fn output_connectors(&self) -> Vec<(&str, Option<String>)> {
-        vec![(self.meta.name.as_str(), None)]
     }
 
     pub fn create_metric(

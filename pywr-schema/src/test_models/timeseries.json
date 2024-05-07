@@ -10,6 +10,14 @@
   "network": {
     "nodes": [
       {
+        "name": "input2",
+        "type": "Input",
+        "max_flow": {
+          "type": "Parameter",
+          "name": "factored_flow"
+        }
+      },
+      {
         "name": "input1",
         "type": "Input",
         "max_flow": {
@@ -22,21 +30,16 @@
         }
       },
       {
-        "name": "input2",
-        "type": "Input",
-        "max_flow": {
-          "type": "Parameter",
-          "name": "factored_flow"
-        }
-      },
-      {
         "name": "link1",
         "type": "Link"
       },
       {
         "name": "output1",
         "type": "Output",
-        "cost": -10.0,
+        "cost": {
+          "type": "Constant",
+          "value": -10
+        },
         "max_flow": {
           "type": "Parameter",
           "name": "demand"
@@ -76,10 +79,12 @@
               "name": "inflow1"
             }
           },
-          0.5
+          {
+            "type": "Constant",
+            "value": 0.5
+          }
         ]
       }
-
     ],
     "timeseries": [
       {

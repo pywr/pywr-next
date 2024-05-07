@@ -1,21 +1,28 @@
 use super::edge::Edge;
 use super::nodes::Node;
-use super::parameters::Parameter;
-use crate::data_tables::{DataTable, LoadedTableCollection};
+use super::parameters::{convert_parameter_v1_to_v2, Parameter};
+use crate::data_tables::DataTable;
+#[cfg(feature = "core")]
+use crate::data_tables::LoadedTableCollection;
 use crate::error::{ConversionError, SchemaError};
+use crate::metric::Metric;
 use crate::metric_sets::MetricSet;
 use crate::nodes::NodeAndTimeseries;
 use crate::outputs::Output;
-use crate::parameters::{convert_parameter_v1_to_v2, MetricFloatReference};
-use crate::timeseries::{convert_from_v1_data, LoadedTimeseriesCollection, Timeseries};
-use chrono::{NaiveDate, NaiveDateTime, NaiveTime};
-use pywr_core::models::ModelDomain;
-use pywr_core::timestep::TimestepDuration;
-use pywr_core::PywrError;
+#[cfg(feature = "core")]
+use crate::timeseries::LoadedTimeseriesCollection;
+use crate::timeseries::{convert_from_v1_data, Timeseries};
+use crate::visit::{VisitMetrics, VisitPaths};
+#[cfg(feature = "core")]
+use chrono::NaiveTime;
+use chrono::{NaiveDate, NaiveDateTime};
+#[cfg(feature = "core")]
+use pywr_core::{models::ModelDomain, timestep::TimestepDuration, PywrError};
+use schemars::JsonSchema;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
-#[derive(serde::Deserialize, serde::Serialize, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, JsonSchema)]
 pub struct Metadata {
     pub title: String,
     pub description: Option<String>,
@@ -46,7 +53,7 @@ impl TryFrom<pywr_v1_schema::model::Metadata> for Metadata {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Clone, Debug)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema)]
 #[serde(untagged)]
 pub enum Timestep {
     Days(i64),
@@ -62,14 +69,23 @@ impl From<pywr_v1_schema::model::Timestep> for Timestep {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Clone, Copy, Debug)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Copy, Debug, JsonSchema)]
 #[serde(untagged)]
 pub enum DateType {
     Date(NaiveDate),
     DateTime(NaiveDateTime),
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Clone, Debug)]
+impl From<pywr_v1_schema::model::DateType> for DateType {
+    fn from(v1: pywr_v1_schema::model::DateType) -> Self {
+        match v1 {
+            pywr_v1_schema::model::DateType::Date(date) => Self::Date(date),
+            pywr_v1_schema::model::DateType::DateTime(date_time) => Self::DateTime(date_time),
+        }
+    }
+}
+
+#[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema)]
 pub struct Timestepper {
     pub start: DateType,
     pub end: DateType,
@@ -86,28 +102,17 @@ impl Default for Timestepper {
     }
 }
 
-impl TryFrom<pywr_v1_schema::model::Timestepper> for Timestepper {
-    type Error = ConversionError;
-
-    fn try_from(v1: pywr_v1_schema::model::Timestepper) -> Result<Self, Self::Error> {
-        let start = DateType::Date(
-            NaiveDate::from_ymd_opt(v1.start.year(), v1.start.month() as u32, v1.start.day() as u32)
-                .ok_or(ConversionError::UnparseableDate(v1.start.to_string()))?,
-        );
-
-        let end = DateType::Date(
-            NaiveDate::from_ymd_opt(v1.end.year(), v1.end.month() as u32, v1.end.day() as u32)
-                .ok_or(ConversionError::UnparseableDate(v1.end.to_string()))?,
-        );
-
-        Ok(Self {
-            start,
-            end,
+impl From<pywr_v1_schema::model::Timestepper> for Timestepper {
+    fn from(v1: pywr_v1_schema::model::Timestepper) -> Self {
+        Self {
+            start: v1.start.into(),
+            end: v1.end.into(),
             timestep: v1.timestep.into(),
-        })
+        }
     }
 }
 
+#[cfg(feature = "core")]
 impl From<Timestepper> for pywr_core::timestep::Timestepper {
     fn from(ts: Timestepper) -> Self {
         let timestep = match ts.timestep {
@@ -129,13 +134,14 @@ impl From<Timestepper> for pywr_core::timestep::Timestepper {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, JsonSchema)]
 pub struct Scenario {
     pub name: String,
     pub size: usize,
     pub ensemble_names: Option<Vec<String>>,
 }
 
+#[cfg(feature = "core")]
 #[derive(Clone)]
 pub struct LoadArgs<'a> {
     pub schema: &'a PywrNetwork,
@@ -146,7 +152,7 @@ pub struct LoadArgs<'a> {
     pub inter_network_transfers: &'a [PywrMultiNetworkTransfer],
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Clone, Default)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Default, JsonSchema)]
 pub struct PywrNetwork {
     pub nodes: Vec<Node>,
     pub edges: Vec<Edge>,
@@ -165,10 +171,159 @@ impl FromStr for PywrNetwork {
     }
 }
 
+impl VisitPaths for PywrNetwork {
+    fn visit_paths<F: FnMut(&Path)>(&self, visitor: &mut F) {
+        for node in &self.nodes {
+            node.visit_paths(visitor);
+        }
+
+        for parameter in self.parameters.as_deref().into_iter().flatten() {
+            parameter.visit_paths(visitor);
+        }
+
+        for timeseries in self.timeseries.as_deref().into_iter().flatten() {
+            timeseries.visit_paths(visitor);
+        }
+
+        for outputs in self.outputs.as_deref().into_iter().flatten() {
+            outputs.visit_paths(visitor);
+        }
+    }
+    fn visit_paths_mut<F: FnMut(&mut PathBuf)>(&mut self, visitor: &mut F) {
+        for node in self.nodes.iter_mut() {
+            node.visit_paths_mut(visitor);
+        }
+
+        for parameter in self.parameters.as_deref_mut().into_iter().flatten() {
+            parameter.visit_paths_mut(visitor);
+        }
+
+        for timeseries in self.timeseries.as_deref_mut().into_iter().flatten() {
+            timeseries.visit_paths_mut(visitor);
+        }
+
+        for outputs in self.outputs.as_deref_mut().into_iter().flatten() {
+            outputs.visit_paths_mut(visitor);
+        }
+    }
+}
+
+impl VisitMetrics for PywrNetwork {
+    fn visit_metrics<F: FnMut(&Metric)>(&self, visitor: &mut F) {
+        for node in &self.nodes {
+            node.visit_metrics(visitor);
+        }
+
+        for parameter in self.parameters.as_deref().into_iter().flatten() {
+            parameter.visit_metrics(visitor);
+        }
+
+        if let Some(metric_sets) = &self.metric_sets {
+            for metric_set in metric_sets {
+                for metric in &metric_set.metrics {
+                    visitor(metric);
+                }
+            }
+        }
+    }
+
+    fn visit_metrics_mut<F: FnMut(&mut Metric)>(&mut self, visitor: &mut F) {
+        for node in self.nodes.iter_mut() {
+            node.visit_metrics_mut(visitor);
+        }
+
+        for parameter in self.parameters.as_deref_mut().into_iter().flatten() {
+            parameter.visit_metrics_mut(visitor);
+        }
+
+        if let Some(metric_sets) = &mut self.metric_sets {
+            for metric_set in metric_sets {
+                for metric in metric_set.metrics.iter_mut() {
+                    visitor(metric);
+                }
+            }
+        }
+    }
+}
+
 impl PywrNetwork {
     pub fn from_path<P: AsRef<Path>>(path: P) -> Result<Self, SchemaError> {
         let data = std::fs::read_to_string(path).map_err(|e| SchemaError::IO(e.to_string()))?;
         Ok(serde_json::from_str(data.as_str())?)
+    }
+
+    /// Convert a v1 network to a v2 network.
+    ///
+    /// This function is used to convert a v1 model to a v2 model. The conversion is not always
+    /// possible and may result in errors. The errors are returned as a vector of [`ConversionError`]s.
+    /// alongside the (partially) converted model. This may result in a model that will not
+    /// function as expected. The user should check the errors and the converted model to ensure
+    /// that the conversion has been successful.
+    pub fn from_v1(v1: pywr_v1_schema::PywrNetwork) -> (Self, Vec<ConversionError>) {
+        let mut errors = Vec::new();
+
+        // Extract nodes and any timeseries data from the v1 nodes
+        let nodes_and_ts: Vec<NodeAndTimeseries> = match v1.nodes {
+            Some(nodes) => nodes
+                .into_iter()
+                .filter_map(|n| match n.try_into() {
+                    Ok(n) => Some(n),
+                    Err(e) => {
+                        errors.push(e);
+                        None
+                    }
+                })
+                .collect::<Vec<_>>(),
+            None => Vec::new(),
+        };
+
+        let mut ts_data = nodes_and_ts
+            .iter()
+            .filter_map(|n| n.timeseries.clone())
+            .flatten()
+            .collect::<Vec<_>>();
+
+        let nodes = nodes_and_ts.into_iter().map(|n| n.node).collect::<Vec<_>>();
+
+        let edges = match v1.edges {
+            Some(edges) => edges.into_iter().map(|e| e.into()).collect(),
+            None => Vec::new(),
+        };
+
+        let parameters = if let Some(v1_parameters) = v1.parameters {
+            let mut unnamed_count: usize = 0;
+            let (parameters, param_ts_data) =
+                convert_parameter_v1_to_v2(v1_parameters, &mut unnamed_count, &mut errors);
+            ts_data.extend(param_ts_data);
+            Some(parameters)
+        } else {
+            None
+        };
+
+        let timeseries = if !ts_data.is_empty() {
+            let ts = convert_from_v1_data(ts_data, &v1.tables, &mut errors);
+            Some(ts)
+        } else {
+            None
+        };
+
+        // TODO convert v1 tables!
+        let tables = None;
+        let outputs = None;
+        let metric_sets = None;
+
+        (
+            Self {
+                nodes,
+                edges,
+                parameters,
+                tables,
+                timeseries,
+                metric_sets,
+                outputs,
+            },
+            errors,
+        )
     }
 
     pub fn get_node_by_name(&self, name: &str) -> Option<&Node> {
@@ -193,10 +348,12 @@ impl PywrNetwork {
         }
     }
 
+    #[cfg(feature = "core")]
     pub fn load_tables(&self, data_path: Option<&Path>) -> Result<LoadedTableCollection, SchemaError> {
         Ok(LoadedTableCollection::from_schema(self.tables.as_deref(), data_path)?)
     }
 
+    #[cfg(feature = "core")]
     pub fn load_timeseries(
         &self,
         domain: &ModelDomain,
@@ -209,6 +366,7 @@ impl PywrNetwork {
         )?)
     }
 
+    #[cfg(feature = "core")]
     pub fn build_network(
         &self,
         domain: &ModelDomain,
@@ -297,6 +455,7 @@ impl PywrNetwork {
                                 PywrError::ParameterNotFound(_) => failed_parameters.push(parameter),
                                 _ => return Err(SchemaError::PywrCore(core_err)),
                             },
+                            SchemaError::ParameterNotFound(_) => failed_parameters.push(parameter),
                             _ => return Err(e),
                         }
                     };
@@ -362,7 +521,7 @@ pub enum PywrNetworkRef {
 ///
 ///
 ///
-#[derive(serde::Deserialize, serde::Serialize, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, JsonSchema)]
 pub struct PywrModel {
     pub metadata: Metadata,
     pub timestepper: Timestepper,
@@ -375,6 +534,25 @@ impl FromStr for PywrModel {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Ok(serde_json::from_str(s)?)
+    }
+}
+
+impl VisitPaths for PywrModel {
+    fn visit_paths<F: FnMut(&Path)>(&self, visitor: &mut F) {
+        self.network.visit_paths(visitor);
+    }
+    fn visit_paths_mut<F: FnMut(&mut PathBuf)>(&mut self, visitor: &mut F) {
+        self.network.visit_paths_mut(visitor)
+    }
+}
+
+impl VisitMetrics for PywrModel {
+    fn visit_metrics<F: FnMut(&Metric)>(&self, visitor: &mut F) {
+        self.network.visit_metrics(visitor);
+    }
+
+    fn visit_metrics_mut<F: FnMut(&mut Metric)>(&mut self, visitor: &mut F) {
+        self.network.visit_metrics_mut(visitor);
     }
 }
 
@@ -401,6 +579,7 @@ impl PywrModel {
         Ok(serde_json::from_str(data.as_str())?)
     }
 
+    #[cfg(feature = "core")]
     pub fn build_model(
         &self,
         data_path: Option<&Path>,
@@ -445,65 +624,10 @@ impl PywrModel {
             Metadata::default()
         });
 
-        let timestepper = v1.timestepper.try_into().unwrap_or_else(|e| {
-            errors.push(e);
-            Timestepper::default()
-        });
+        let timestepper = v1.timestepper.into();
 
-        // Extract nodes and any timeseries data from the v1 nodes
-        let nodes_and_ts: Vec<NodeAndTimeseries> = v1
-            .nodes
-            .clone()
-            .into_iter()
-            .filter_map(|n| match n.try_into() {
-                Ok(n) => Some(n),
-                Err(e) => {
-                    errors.push(e);
-                    None
-                }
-            })
-            .collect::<Vec<_>>();
-
-        let mut ts_data = nodes_and_ts
-            .iter()
-            .filter_map(|n| n.timeseries.clone())
-            .flatten()
-            .collect::<Vec<_>>();
-
-        let nodes = nodes_and_ts.into_iter().map(|n| n.node).collect::<Vec<_>>();
-
-        let edges = v1.edges.into_iter().map(|e| e.into()).collect();
-
-        let parameters = if let Some(v1_parameters) = v1.parameters {
-            let mut unnamed_count: usize = 0;
-            let (parameters, param_ts_data) =
-                convert_parameter_v1_to_v2(v1_parameters, &mut unnamed_count, &mut errors);
-            ts_data.extend(param_ts_data);
-            Some(parameters)
-        } else {
-            None
-        };
-
-        let timeseries = if !ts_data.is_empty() {
-            let ts = convert_from_v1_data(ts_data, &v1.tables, &mut errors);
-            Some(ts)
-        } else {
-            None
-        };
-
-        // TODO convert v1 tables!
-        let tables = None;
-        let outputs = None;
-        let metric_sets = None;
-        let network = PywrNetwork {
-            nodes,
-            edges,
-            parameters,
-            tables,
-            timeseries,
-            metric_sets,
-            outputs,
-        };
+        let (network, network_errors) = PywrNetwork::from_v1(v1.network);
+        errors.extend(network_errors);
 
         (
             Self {
@@ -520,7 +644,7 @@ impl PywrModel {
 #[derive(serde::Deserialize, serde::Serialize, Clone)]
 pub struct PywrMultiNetworkTransfer {
     pub from_network: String,
-    pub metric: MetricFloatReference,
+    pub metric: Metric,
     pub name: String,
     pub initial_value: Option<f64>,
 }
@@ -615,6 +739,7 @@ impl PywrMultiNetworkModel {
         Ok(serde_json::from_str(data.as_str())?)
     }
 
+    #[cfg(feature = "core")]
     pub fn build_model(
         &self,
         data_path: Option<&Path>,
@@ -739,17 +864,9 @@ impl PywrMultiNetworkModel {
 
 #[cfg(test)]
 mod tests {
-    use super::{PywrModel, PywrMultiNetworkModel};
+    use super::PywrModel;
     use crate::model::Timestepper;
-    use crate::parameters::{
-        AggFunc, AggregatedParameter, ConstantParameter, ConstantValue, DynamicFloatValue, MetricFloatReference,
-        MetricFloatValue, Parameter, ParameterMeta,
-    };
-    use ndarray::{Array1, Array2, Axis};
-    use pywr_core::metric::MetricF64;
-    use pywr_core::recorders::AssertionRecorder;
-    use pywr_core::solvers::ClpSolver;
-    use pywr_core::test_utils::run_all_solvers;
+    use crate::visit::VisitPaths;
     use std::path::PathBuf;
 
     fn model_str() -> &'static str {
@@ -763,6 +880,117 @@ mod tests {
 
         assert_eq!(schema.network.nodes.len(), 3);
         assert_eq!(schema.network.edges.len(), 2);
+    }
+
+    #[test]
+    fn test_date() {
+        let timestepper_str = r#"
+        {
+            "start": "2015-01-01",
+            "end": "2015-12-31",
+            "timestep": 1
+        }
+        "#;
+
+        let timestep: Timestepper = serde_json::from_str(timestepper_str).unwrap();
+
+        match timestep.start {
+            super::DateType::Date(date) => {
+                assert_eq!(date, chrono::NaiveDate::from_ymd_opt(2015, 1, 1).unwrap());
+            }
+            _ => panic!("Expected a date"),
+        }
+
+        match timestep.end {
+            super::DateType::Date(date) => {
+                assert_eq!(date, chrono::NaiveDate::from_ymd_opt(2015, 12, 31).unwrap());
+            }
+            _ => panic!("Expected a date"),
+        }
+    }
+
+    #[test]
+    fn test_datetime() {
+        let timestepper_str = r#"
+        {
+            "start": "2015-01-01T12:30:00",
+            "end": "2015-01-01T14:30:00",
+            "timestep": 1
+        }
+        "#;
+
+        let timestep: Timestepper = serde_json::from_str(timestepper_str).unwrap();
+
+        match timestep.start {
+            super::DateType::DateTime(date_time) => {
+                assert_eq!(
+                    date_time,
+                    chrono::NaiveDate::from_ymd_opt(2015, 1, 1)
+                        .unwrap()
+                        .and_hms_opt(12, 30, 0)
+                        .unwrap()
+                );
+            }
+            _ => panic!("Expected a date"),
+        }
+
+        match timestep.end {
+            super::DateType::DateTime(date_time) => {
+                assert_eq!(
+                    date_time,
+                    chrono::NaiveDate::from_ymd_opt(2015, 1, 1)
+                        .unwrap()
+                        .and_hms_opt(14, 30, 0)
+                        .unwrap()
+                );
+            }
+            _ => panic!("Expected a date"),
+        }
+    }
+
+    /// Test that the visit_paths functions works as expected.
+    #[test]
+    fn test_visit_paths() {
+        let mut model_fn = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        model_fn.push("src/test_models/timeseries.json");
+
+        let mut schema = PywrModel::from_path(model_fn.as_path()).unwrap();
+
+        let expected_paths = vec![PathBuf::from("inflow.csv")];
+
+        let mut paths: Vec<PathBuf> = Vec::new();
+
+        schema.visit_paths(&mut |p| {
+            paths.push(p.to_path_buf());
+        });
+
+        assert_eq!(&paths, &expected_paths);
+
+        schema.visit_paths_mut(&mut |p: &mut PathBuf| {
+            *p = PathBuf::from("this-file-does-not-exist.csv");
+        });
+
+        // Expect this to file as the path has been updated to a missing file.
+        #[cfg(feature = "core")]
+        if schema.build_model(model_fn.parent(), None).is_ok() {
+            let str = serde_json::to_string_pretty(&schema).unwrap();
+            panic!("Expected an error due to missing file: {str}");
+        }
+    }
+}
+
+#[cfg(test)]
+#[cfg(feature = "core")]
+mod core_tests {
+    use super::{PywrModel, PywrMultiNetworkModel};
+    use crate::metric::{Metric, ParameterReference};
+    use crate::parameters::{AggFunc, AggregatedParameter, ConstantParameter, ConstantValue, Parameter, ParameterMeta};
+    use ndarray::{Array1, Array2, Axis};
+    use pywr_core::{metric::MetricF64, recorders::AssertionRecorder, solvers::ClpSolver, test_utils::run_all_solvers};
+    use std::path::PathBuf;
+
+    fn model_str() -> &'static str {
+        include_str!("./test_models/simple1.json")
     }
 
     #[test]
@@ -809,14 +1037,14 @@ mod tests {
                     },
                     agg_func: AggFunc::Sum,
                     metrics: vec![
-                        DynamicFloatValue::Dynamic(MetricFloatValue::Reference(MetricFloatReference::Parameter {
+                        Metric::Parameter(ParameterReference {
                             name: "p1".to_string(),
                             key: None,
-                        })),
-                        DynamicFloatValue::Dynamic(MetricFloatValue::Reference(MetricFloatReference::Parameter {
+                        }),
+                        Metric::Parameter(ParameterReference {
                             name: "agg2".to_string(),
                             key: None,
-                        })),
+                        }),
                     ],
                 }),
                 Parameter::Constant(ConstantParameter {
@@ -833,14 +1061,14 @@ mod tests {
                     },
                     agg_func: AggFunc::Sum,
                     metrics: vec![
-                        DynamicFloatValue::Dynamic(MetricFloatValue::Reference(MetricFloatReference::Parameter {
+                        Metric::Parameter(ParameterReference {
                             name: "p1".to_string(),
                             key: None,
-                        })),
-                        DynamicFloatValue::Dynamic(MetricFloatValue::Reference(MetricFloatReference::Parameter {
+                        }),
+                        Metric::Parameter(ParameterReference {
                             name: "agg1".to_string(),
                             key: None,
-                        })),
+                        }),
                     ],
                 }),
             ]);
@@ -865,14 +1093,14 @@ mod tests {
                     },
                     agg_func: AggFunc::Sum,
                     metrics: vec![
-                        DynamicFloatValue::Dynamic(MetricFloatValue::Reference(MetricFloatReference::Parameter {
+                        Metric::Parameter(ParameterReference {
                             name: "p1".to_string(),
                             key: None,
-                        })),
-                        DynamicFloatValue::Dynamic(MetricFloatValue::Reference(MetricFloatReference::Parameter {
+                        }),
+                        Metric::Parameter(ParameterReference {
                             name: "p2".to_string(),
                             key: None,
-                        })),
+                        }),
                     ],
                 }),
                 Parameter::Constant(ConstantParameter {
@@ -892,8 +1120,7 @@ mod tests {
             ]);
         }
         // TODO this could assert a specific type of error
-        let build_result = schema.build_model(None, None);
-        assert!(build_result.is_ok());
+        let _ = schema.build_model(None, None).unwrap();
     }
 
     /// Test the multi1 model
@@ -995,71 +1222,5 @@ mod tests {
         network_2.add_recorder(Box::new(rec)).unwrap();
 
         model.run::<ClpSolver>(&Default::default()).unwrap();
-    }
-
-    #[test]
-    fn test_date() {
-        let timestepper_str = r#"
-        {
-            "start": "2015-01-01",
-            "end": "2015-12-31",
-            "timestep": 1
-        }
-        "#;
-
-        let timestep: Timestepper = serde_json::from_str(timestepper_str).unwrap();
-
-        match timestep.start {
-            super::DateType::Date(date) => {
-                assert_eq!(date, chrono::NaiveDate::from_ymd_opt(2015, 1, 1).unwrap());
-            }
-            _ => panic!("Expected a date"),
-        }
-
-        match timestep.end {
-            super::DateType::Date(date) => {
-                assert_eq!(date, chrono::NaiveDate::from_ymd_opt(2015, 12, 31).unwrap());
-            }
-            _ => panic!("Expected a date"),
-        }
-    }
-
-    #[test]
-    fn test_datetime() {
-        let timestepper_str = r#"
-        {
-            "start": "2015-01-01T12:30:00",
-            "end": "2015-01-01T14:30:00",
-            "timestep": 1
-        }
-        "#;
-
-        let timestep: Timestepper = serde_json::from_str(timestepper_str).unwrap();
-
-        match timestep.start {
-            super::DateType::DateTime(date_time) => {
-                assert_eq!(
-                    date_time,
-                    chrono::NaiveDate::from_ymd_opt(2015, 1, 1)
-                        .unwrap()
-                        .and_hms_opt(12, 30, 0)
-                        .unwrap()
-                );
-            }
-            _ => panic!("Expected a date"),
-        }
-
-        match timestep.end {
-            super::DateType::DateTime(date_time) => {
-                assert_eq!(
-                    date_time,
-                    chrono::NaiveDate::from_ymd_opt(2015, 1, 1)
-                        .unwrap()
-                        .and_hms_opt(14, 30, 0)
-                        .unwrap()
-                );
-            }
-            _ => panic!("Expected a date"),
-        }
     }
 }

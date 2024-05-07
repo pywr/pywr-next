@@ -1,18 +1,23 @@
+#[cfg(feature = "core")]
 use crate::error::SchemaError;
+use crate::metric::Metric;
+#[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::nodes::{NodeAttribute, NodeMeta};
-use crate::parameters::DynamicFloatValue;
-use pywr_core::derived_metric::DerivedMetric;
-use pywr_core::metric::MetricF64;
-use pywr_core::node::{ConstraintValue, StorageInitialVolume};
-use pywr_core::parameters::VolumeBetweenControlCurvesParameter;
-use pywr_schema_macros::PywrNode;
-use std::collections::HashMap;
+#[cfg(feature = "core")]
+use pywr_core::{
+    derived_metric::DerivedMetric,
+    metric::MetricF64,
+    node::{ConstraintValue, StorageInitialVolume},
+    parameters::VolumeBetweenControlCurvesParameter,
+};
+use pywr_schema_macros::PywrVisitAll;
+use schemars::JsonSchema;
 
-#[derive(serde::Deserialize, serde::Serialize, Clone, Debug)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, PywrVisitAll)]
 pub struct PiecewiseStore {
-    pub control_curve: DynamicFloatValue,
-    pub cost: Option<DynamicFloatValue>,
+    pub control_curve: Metric,
+    pub cost: Option<Metric>,
 }
 
 #[doc = svgbobdoc::transform!(
@@ -41,11 +46,11 @@ pub struct PiecewiseStore {
 /// ```
 ///
 )]
-#[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, PywrNode)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
 pub struct PiecewiseStorageNode {
     #[serde(flatten)]
     pub meta: NodeMeta,
-    pub max_volume: DynamicFloatValue,
+    pub max_volume: Metric,
     // TODO implement min volume
     // pub min_volume: Option<DynamicFloatValue>,
     pub steps: Vec<PiecewiseStore>,
@@ -61,6 +66,20 @@ impl PiecewiseStorageNode {
         Some(format!("store-{i:02}"))
     }
 
+    pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
+        vec![(self.meta.name.as_str(), Self::step_sub_name(self.steps.len()))]
+    }
+    pub fn output_connectors(&self) -> Vec<(&str, Option<String>)> {
+        vec![(self.meta.name.as_str(), Self::step_sub_name(self.steps.len()))]
+    }
+
+    pub fn default_metric(&self) -> NodeAttribute {
+        Self::DEFAULT_ATTRIBUTE
+    }
+}
+
+#[cfg(feature = "core")]
+impl PiecewiseStorageNode {
     fn agg_sub_name() -> Option<&'static str> {
         Some("agg-store")
     }
@@ -180,14 +199,6 @@ impl PiecewiseStorageNode {
 
         Ok(())
     }
-
-    pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
-        vec![(self.meta.name.as_str(), Self::step_sub_name(self.steps.len()))]
-    }
-    pub fn output_connectors(&self) -> Vec<(&str, Option<String>)> {
-        vec![(self.meta.name.as_str(), Self::step_sub_name(self.steps.len()))]
-    }
-
     pub fn create_metric(
         &self,
         network: &mut pywr_core::network::Network,
@@ -219,6 +230,7 @@ impl PiecewiseStorageNode {
 }
 
 #[cfg(test)]
+#[cfg(feature = "core")]
 mod tests {
     use crate::model::PywrModel;
     use crate::nodes::PiecewiseStorageNode;

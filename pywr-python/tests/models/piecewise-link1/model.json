@@ -38,8 +38,14 @@
         "type": "PiecewiseLink",
         "steps": [
           {
-            "cost": -10.0,
-            "max_flow": 1.0
+            "cost": {
+              "type": "Constant",
+              "value": -10.0
+            },
+            "max_flow": {
+              "type": "Constant",
+              "value": 1.0
+            }
           },
           {
           }
@@ -52,7 +58,10 @@
       {
         "name": "demand1",
         "type": "Output",
-        "cost": -5.0,
+        "cost": {
+          "type": "Constant",
+          "value": -5.0
+        },
         "max_flow": {
           "type": "Parameter",
           "name": "demand"
@@ -98,24 +107,24 @@
         "name": "nodes",
         "metrics": [
           {
-            "type": "Default",
-            "node": "input1"
+            "type": "Node",
+            "name": "input1"
           },
           {
-            "type": "Default",
-            "node": "link1"
+            "type": "Node",
+            "name": "link1"
           },
           {
-            "type": "Default",
-            "node": "mrf1"
+            "type": "Node",
+            "name": "mrf1"
           },
           {
-            "type": "Default",
-            "node": "demand1"
+            "type": "Node",
+            "name": "demand1"
           },
           {
-            "type": "Default",
-            "node": "term1"
+            "type": "Node",
+            "name": "term1"
           }
         ]
       }

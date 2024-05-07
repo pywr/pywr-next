@@ -1,33 +1,26 @@
+#[cfg(feature = "core")]
 use crate::error::SchemaError;
+use crate::metric::Metric;
+#[cfg(feature = "core")]
 use crate::model::LoadArgs;
-use crate::parameters::{DynamicFloatValue, DynamicFloatValueType, ParameterMeta};
+use crate::parameters::ParameterMeta;
+#[cfg(feature = "core")]
 use pywr_core::parameters::ParameterIndex;
-use std::collections::HashMap;
+use pywr_schema_macros::PywrVisitAll;
+use schemars::JsonSchema;
 
 /// A parameter that delays a value from the network by a number of time-steps.
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 pub struct DelayParameter {
     #[serde(flatten)]
     pub meta: ParameterMeta,
-    pub metric: DynamicFloatValue,
+    pub metric: Metric,
     pub delay: usize,
     pub initial_value: f64,
 }
 
+#[cfg(feature = "core")]
 impl DelayParameter {
-    pub fn node_references(&self) -> HashMap<&str, &str> {
-        HashMap::new()
-    }
-
-    pub fn parameters(&self) -> HashMap<&str, DynamicFloatValueType> {
-        let mut attributes = HashMap::new();
-
-        let metric = &self.metric;
-        attributes.insert("metric", metric.into());
-
-        attributes
-    }
-
     pub fn add_to_model(
         &self,
         network: &mut pywr_core::network::Network,

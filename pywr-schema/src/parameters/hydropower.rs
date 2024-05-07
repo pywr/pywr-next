@@ -1,11 +1,15 @@
+use crate::metric::Metric;
+#[cfg(feature = "core")]
 use crate::model::LoadArgs;
-use crate::parameters::{
-    DynamicFloatValue, DynamicFloatValueType, IntoV2Parameter, ParameterMeta, TryFromV1Parameter, TryIntoV2Parameter,
-};
-use crate::{ConversionError, SchemaError};
+use crate::parameters::{IntoV2Parameter, ParameterMeta, TryFromV1Parameter, TryIntoV2Parameter};
+use crate::ConversionError;
+#[cfg(feature = "core")]
+use crate::SchemaError;
+#[cfg(feature = "core")]
 use pywr_core::parameters::{HydropowerTargetData, ParameterIndex};
+use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::parameters::HydropowerTargetParameter as HydropowerTargetParameterV1;
-use std::collections::HashMap;
+use schemars::JsonSchema;
 
 /// A parameter that returns flow from a hydropower generation target.
 ///
@@ -33,19 +37,19 @@ use std::collections::HashMap;
 ///
 /// ```json
 #[doc = include_str!("doc_examples/hydropower.json")]
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 pub struct HydropowerTargetParameter {
     #[serde(flatten)]
     pub meta: ParameterMeta,
     /// Hydropower production target. This can be a constant, a value from a table, a
-    /// parameter name or an inline parameter (see [`DynamicFloatValue`]). Units should be in
+    /// parameter name or an inline parameter (see [`Metric`]). Units should be in
     /// units of energy per day.
-    pub target: DynamicFloatValue,
+    pub target: Metric,
     /// The elevation of water entering the turbine. The difference of this
     /// value with the `turbine_elevation` gives the working head of the turbine. This is optional
     /// and can be a constant, a value from a table, a parameter name or an inline parameter
     /// (see [`DynamicFloatValue`]).
-    pub water_elevation: Option<DynamicFloatValue>,
+    pub water_elevation: Option<Metric>,
     /// The elevation of the turbine. The difference between the `water_elevation` and this value
     /// gives the working head of the turbine. Default to `0.0`.
     pub turbine_elevation: Option<f64>,
@@ -54,12 +58,12 @@ pub struct HydropowerTargetParameter {
     pub min_head: Option<f64>,
     /// The upper bound on the calculated flow. If set the flow returned by this
     /// parameter will be at most this value. This is optional and can be a constant, a value from
-    /// a table, a parameter name or an inline parameter (see [`DynamicFloatValue`]).
-    pub max_flow: Option<DynamicFloatValue>,
+    /// a table, a parameter name or an inline parameter (see [`Metric`]).
+    pub max_flow: Option<Metric>,
     /// The lower bound on the calculated flow. If set the flow returned by this
     /// parameter will be at least this value. This is optional and can be a constant, a value from
-    /// a table, a parameter name or an inline parameter (see [`DynamicFloatValue`]).
-    pub min_flow: Option<DynamicFloatValue>,
+    /// a table, a parameter name or an inline parameter (see [`Metric`]).
+    pub min_flow: Option<Metric>,
     /// The efficiency of the turbine. Default to `1.0`.
     pub efficiency: Option<f64>,
     /// The density of water. Default to `1000.0`.
@@ -72,15 +76,8 @@ pub struct HydropowerTargetParameter {
     pub energy_unit_conversion: Option<f64>,
 }
 
+#[cfg(feature = "core")]
 impl HydropowerTargetParameter {
-    pub fn node_references(&self) -> HashMap<&str, &str> {
-        HashMap::new()
-    }
-
-    pub fn parameters(&self) -> HashMap<&str, DynamicFloatValueType> {
-        HashMap::new()
-    }
-
     pub fn add_to_model(
         &self,
         network: &mut pywr_core::network::Network,

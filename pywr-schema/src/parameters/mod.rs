@@ -23,7 +23,9 @@ mod python;
 mod tables;
 mod thresholds;
 
-pub use super::data_tables::{LoadedTableCollection, TableDataRef};
+#[cfg(feature = "core")]
+pub use super::data_tables::LoadedTableCollection;
+pub use super::data_tables::TableDataRef;
 pub use super::parameters::aggregated::{AggFunc, AggregatedIndexParameter, AggregatedParameter, IndexAggFunc};
 pub use super::parameters::asymmetric_switch::AsymmetricSwitchIndexParameter;
 pub use super::parameters::control_curves::{
@@ -31,7 +33,8 @@ pub use super::parameters::control_curves::{
     ControlCurvePiecewiseInterpolatedParameter,
 };
 pub use super::parameters::core::{
-    ActivationFunction, ConstantParameter, MaxParameter, MinParameter, NegativeParameter, VariableSettings,
+    ActivationFunction, ConstantParameter, MaxParameter, MinParameter, NegativeMaxParameter, NegativeMinParameter,
+    NegativeParameter, VariableSettings,
 };
 pub use super::parameters::delay::DelayParameter;
 pub use super::parameters::discount_factor::DiscountFactorParameter;
@@ -44,24 +47,30 @@ pub use super::parameters::profiles::{
 pub use super::parameters::python::{PythonModule, PythonParameter, PythonReturnType};
 pub use super::parameters::tables::TablesArrayParameter;
 pub use super::parameters::thresholds::ParameterThresholdParameter;
-use crate::error::{ConversionError, SchemaError};
+use crate::error::ConversionError;
+#[cfg(feature = "core")]
+use crate::error::SchemaError;
+use crate::metric::Metric;
+#[cfg(feature = "core")]
 use crate::model::LoadArgs;
-use crate::nodes::NodeAttribute;
 use crate::parameters::core::DivisionParameter;
 pub use crate::parameters::hydropower::HydropowerTargetParameter;
 use crate::parameters::interpolated::InterpolatedParameter;
+use crate::visit::{VisitMetrics, VisitPaths};
 pub use offset::OffsetParameter;
-use pywr_core::metric::{MetricF64, MetricUsize};
-use pywr_core::models::MultiNetworkTransferIndex;
-use pywr_core::parameters::{ParameterIndex, ParameterType};
+#[cfg(feature = "core")]
+use pywr_core::{metric::MetricUsize, parameters::ParameterIndex};
+use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::parameters::{
-    CoreParameter, DataFrameParameter as DataFrameParameterV1, ExternalDataRef as ExternalDataRefV1,
-    Parameter as ParameterV1, ParameterMeta as ParameterMetaV1, ParameterValue as ParameterValueV1, ParameterVec,
-    TableIndex as TableIndexV1, TableIndexEntry as TableIndexEntryV1,
+    CoreParameter, DataFrameParameter as DataFrameParameterV1, Parameter as ParameterV1,
+    ParameterMeta as ParameterMetaV1, ParameterValue as ParameterValueV1, ParameterVec, TableIndex as TableIndexV1,
+    TableIndexEntry as TableIndexEntryV1,
 };
-use std::path::PathBuf;
+use schemars::JsonSchema;
+use std::path::{Path, PathBuf};
+use strum_macros::{Display, EnumDiscriminants, EnumString, IntoStaticStr, VariantNames};
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 pub struct ParameterMeta {
     pub name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -140,8 +149,11 @@ impl FromV1Parameter<Option<ParameterMetaV1>> for ParameterMeta {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, EnumDiscriminants, Clone, JsonSchema)]
 #[serde(tag = "type")]
+#[strum_discriminants(derive(Display, IntoStaticStr, EnumString, VariantNames))]
+// This creates a separate enum called `NodeType` that is available in this module.
+#[strum_discriminants(name(ParameterType))]
 pub enum Parameter {
     Aggregated(AggregatedParameter),
     AggregatedIndex(AggregatedIndexParameter),
@@ -159,6 +171,8 @@ pub enum Parameter {
     Max(MaxParameter),
     Min(MinParameter),
     Negative(NegativeParameter),
+    NegativeMax(NegativeMaxParameter),
+    NegativeMin(NegativeMinParameter),
     HydropowerTarget(HydropowerTargetParameter),
     Polynomial1D(Polynomial1DParameter),
     ParameterThreshold(ParameterThresholdParameter),
@@ -202,77 +216,207 @@ impl Parameter {
             Self::Interpolated(p) => p.meta.name.as_str(),
             Self::HydropowerTarget(p) => p.meta.name.as_str(),
             Self::RbfProfile(p) => p.meta.name.as_str(),
+            Self::NegativeMax(p) => p.meta.name.as_str(),
+            Self::NegativeMin(p) => p.meta.name.as_str(),
         }
     }
 
-    pub fn ty(&self) -> &str {
-        match self {
-            Self::Constant(_) => "Constant",
-            Self::ControlCurveInterpolated(_) => "ControlCurveInterpolated",
-            Self::Aggregated(_) => "Aggregated",
-            Self::AggregatedIndex(_) => "AggregatedIndex",
-            Self::AsymmetricSwitchIndex(_) => "AsymmetricSwitchIndex",
-            Self::ControlCurvePiecewiseInterpolated(_) => "ControlCurvePiecewiseInterpolated",
-            Self::ControlCurveIndex(_) => "ControlCurveIndex",
-            Self::ControlCurve(_) => "ControlCurve",
-            Self::DailyProfile(_) => "DailyProfile",
-            Self::IndexedArray(_) => "IndexedArray",
-            Self::MonthlyProfile(_) => "MonthlyProfile",
-            Self::WeeklyProfile(_) => "WeeklyProfile",
-            Self::UniformDrawdownProfile(_) => "UniformDrawdownProfile",
-            Self::Max(_) => "Max",
-            Self::Min(_) => "Min",
-            Self::Negative(_) => "Negative",
-            Self::Polynomial1D(_) => "Polynomial1D",
-            Self::ParameterThreshold(_) => "ParameterThreshold",
-            Self::TablesArray(_) => "TablesArray",
-            Self::Python(_) => "Python",
-            Self::Delay(_) => "Delay",
-            Self::Division(_) => "Division",
-            Self::Offset(_) => "Offset",
-            Self::DiscountFactor(_) => "DiscountFactor",
-            Self::Interpolated(_) => "Interpolated",
-            Self::HydropowerTarget(_) => "HydropowerTarget",
-            Self::RbfProfile(_) => "RbfProfile",
-        }
+    pub fn parameter_type(&self) -> ParameterType {
+        // Implementation provided by the `EnumDiscriminants` derive macro.
+        self.into()
     }
+}
 
+#[cfg(feature = "core")]
+impl Parameter {
     pub fn add_to_model(
         &self,
         network: &mut pywr_core::network::Network,
         args: &LoadArgs,
-    ) -> Result<ParameterType, SchemaError> {
+    ) -> Result<pywr_core::parameters::ParameterType, SchemaError> {
         let ty = match self {
-            Self::Constant(p) => ParameterType::Parameter(p.add_to_model(network, args)?),
-            Self::ControlCurveInterpolated(p) => ParameterType::Parameter(p.add_to_model(network, args)?),
-            Self::Aggregated(p) => ParameterType::Parameter(p.add_to_model(network, args)?),
-            Self::AggregatedIndex(p) => ParameterType::Index(p.add_to_model(network, args)?),
-            Self::AsymmetricSwitchIndex(p) => ParameterType::Index(p.add_to_model(network, args)?),
-            Self::ControlCurvePiecewiseInterpolated(p) => ParameterType::Parameter(p.add_to_model(network, args)?),
-            Self::ControlCurveIndex(p) => ParameterType::Index(p.add_to_model(network, args)?),
-            Self::ControlCurve(p) => ParameterType::Parameter(p.add_to_model(network, args)?),
-            Self::DailyProfile(p) => ParameterType::Parameter(p.add_to_model(network, args)?),
-            Self::IndexedArray(p) => ParameterType::Parameter(p.add_to_model(network, args)?),
-            Self::MonthlyProfile(p) => ParameterType::Parameter(p.add_to_model(network, args)?),
-            Self::WeeklyProfile(p) => ParameterType::Parameter(p.add_to_model(network, args)?),
-            Self::UniformDrawdownProfile(p) => ParameterType::Parameter(p.add_to_model(network, args)?),
-            Self::Max(p) => ParameterType::Parameter(p.add_to_model(network, args)?),
-            Self::Min(p) => ParameterType::Parameter(p.add_to_model(network, args)?),
-            Self::Negative(p) => ParameterType::Parameter(p.add_to_model(network, args)?),
-            Self::Polynomial1D(p) => ParameterType::Parameter(p.add_to_model(network)?),
-            Self::ParameterThreshold(p) => ParameterType::Index(p.add_to_model(network, args)?),
-            Self::TablesArray(p) => ParameterType::Parameter(p.add_to_model(network, args)?),
+            Self::Constant(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
+            Self::ControlCurveInterpolated(p) => {
+                pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?)
+            }
+            Self::Aggregated(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
+            Self::AggregatedIndex(p) => pywr_core::parameters::ParameterType::Index(p.add_to_model(network, args)?),
+            Self::AsymmetricSwitchIndex(p) => {
+                pywr_core::parameters::ParameterType::Index(p.add_to_model(network, args)?)
+            }
+            Self::ControlCurvePiecewiseInterpolated(p) => {
+                pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?)
+            }
+            Self::ControlCurveIndex(p) => pywr_core::parameters::ParameterType::Index(p.add_to_model(network, args)?),
+            Self::ControlCurve(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
+            Self::DailyProfile(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
+            Self::IndexedArray(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
+            Self::MonthlyProfile(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
+            Self::WeeklyProfile(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
+            Self::UniformDrawdownProfile(p) => {
+                pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?)
+            }
+            Self::Max(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
+            Self::Min(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
+            Self::Negative(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
+            Self::Polynomial1D(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network)?),
+            Self::ParameterThreshold(p) => pywr_core::parameters::ParameterType::Index(p.add_to_model(network, args)?),
+            Self::TablesArray(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
             Self::Python(p) => p.add_to_model(network, args)?,
-            Self::Delay(p) => ParameterType::Parameter(p.add_to_model(network, args)?),
-            Self::Division(p) => ParameterType::Parameter(p.add_to_model(network, args)?),
-            Self::Offset(p) => ParameterType::Parameter(p.add_to_model(network, args)?),
-            Self::DiscountFactor(p) => ParameterType::Parameter(p.add_to_model(network, args)?),
-            Self::Interpolated(p) => ParameterType::Parameter(p.add_to_model(network, args)?),
-            Self::RbfProfile(p) => ParameterType::Parameter(p.add_to_model(network)?),
-            Self::HydropowerTarget(p) => ParameterType::Parameter(p.add_to_model(network, args)?),
+            Self::Delay(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
+            Self::Division(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
+            Self::Offset(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
+            Self::DiscountFactor(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
+            Self::Interpolated(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
+            Self::RbfProfile(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network)?),
+            Self::NegativeMax(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
+            Self::NegativeMin(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
+            Self::HydropowerTarget(p) => {
+                pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?)
+            }
         };
 
         Ok(ty)
+    }
+}
+
+impl VisitMetrics for Parameter {
+    fn visit_metrics<F: FnMut(&Metric)>(&self, visitor: &mut F) {
+        match self {
+            Self::Constant(p) => p.visit_metrics(visitor),
+            Self::ControlCurveInterpolated(p) => p.visit_metrics(visitor),
+            Self::Aggregated(p) => p.visit_metrics(visitor),
+            Self::AggregatedIndex(p) => p.visit_metrics(visitor),
+            Self::AsymmetricSwitchIndex(p) => p.visit_metrics(visitor),
+            Self::ControlCurvePiecewiseInterpolated(p) => p.visit_metrics(visitor),
+            Self::ControlCurveIndex(p) => p.visit_metrics(visitor),
+            Self::ControlCurve(p) => p.visit_metrics(visitor),
+            Self::DailyProfile(p) => p.visit_metrics(visitor),
+            Self::IndexedArray(p) => p.visit_metrics(visitor),
+            Self::MonthlyProfile(p) => p.visit_metrics(visitor),
+            Self::WeeklyProfile(p) => p.visit_metrics(visitor),
+            Self::UniformDrawdownProfile(p) => p.visit_metrics(visitor),
+            Self::Max(p) => p.visit_metrics(visitor),
+            Self::Min(p) => p.visit_metrics(visitor),
+            Self::Negative(p) => p.visit_metrics(visitor),
+            Self::Polynomial1D(p) => p.visit_metrics(visitor),
+            Self::ParameterThreshold(p) => p.visit_metrics(visitor),
+            Self::TablesArray(p) => p.visit_metrics(visitor),
+            Self::Python(p) => p.visit_metrics(visitor),
+            Self::Delay(p) => p.visit_metrics(visitor),
+            Self::Division(p) => p.visit_metrics(visitor),
+            Self::Offset(p) => p.visit_metrics(visitor),
+            Self::DiscountFactor(p) => p.visit_metrics(visitor),
+            Self::Interpolated(p) => p.visit_metrics(visitor),
+            Self::RbfProfile(p) => p.visit_metrics(visitor),
+            Self::NegativeMax(p) => p.visit_metrics(visitor),
+            Self::NegativeMin(p) => p.visit_metrics(visitor),
+            Self::HydropowerTarget(p) => p.visit_metrics(visitor),
+        }
+    }
+
+    fn visit_metrics_mut<F: FnMut(&mut Metric)>(&mut self, visitor: &mut F) {
+        match self {
+            Self::Constant(p) => p.visit_metrics_mut(visitor),
+            Self::ControlCurveInterpolated(p) => p.visit_metrics_mut(visitor),
+            Self::Aggregated(p) => p.visit_metrics_mut(visitor),
+            Self::AggregatedIndex(p) => p.visit_metrics_mut(visitor),
+            Self::AsymmetricSwitchIndex(p) => p.visit_metrics_mut(visitor),
+            Self::ControlCurvePiecewiseInterpolated(p) => p.visit_metrics_mut(visitor),
+            Self::ControlCurveIndex(p) => p.visit_metrics_mut(visitor),
+            Self::ControlCurve(p) => p.visit_metrics_mut(visitor),
+            Self::DailyProfile(p) => p.visit_metrics_mut(visitor),
+            Self::IndexedArray(p) => p.visit_metrics_mut(visitor),
+            Self::MonthlyProfile(p) => p.visit_metrics_mut(visitor),
+            Self::WeeklyProfile(p) => p.visit_metrics_mut(visitor),
+            Self::UniformDrawdownProfile(p) => p.visit_metrics_mut(visitor),
+            Self::Max(p) => p.visit_metrics_mut(visitor),
+            Self::Min(p) => p.visit_metrics_mut(visitor),
+            Self::Negative(p) => p.visit_metrics_mut(visitor),
+            Self::Polynomial1D(p) => p.visit_metrics_mut(visitor),
+            Self::ParameterThreshold(p) => p.visit_metrics_mut(visitor),
+            Self::TablesArray(p) => p.visit_metrics_mut(visitor),
+            Self::Python(p) => p.visit_metrics_mut(visitor),
+            Self::Delay(p) => p.visit_metrics_mut(visitor),
+            Self::Division(p) => p.visit_metrics_mut(visitor),
+            Self::Offset(p) => p.visit_metrics_mut(visitor),
+            Self::DiscountFactor(p) => p.visit_metrics_mut(visitor),
+            Self::Interpolated(p) => p.visit_metrics_mut(visitor),
+            Self::RbfProfile(p) => p.visit_metrics_mut(visitor),
+            Self::NegativeMax(p) => p.visit_metrics_mut(visitor),
+            Self::NegativeMin(p) => p.visit_metrics_mut(visitor),
+            Self::HydropowerTarget(p) => p.visit_metrics_mut(visitor),
+        }
+    }
+}
+
+impl VisitPaths for Parameter {
+    fn visit_paths<F: FnMut(&Path)>(&self, visitor: &mut F) {
+        match self {
+            Self::Constant(p) => p.visit_paths(visitor),
+            Self::ControlCurveInterpolated(p) => p.visit_paths(visitor),
+            Self::Aggregated(p) => p.visit_paths(visitor),
+            Self::AggregatedIndex(p) => p.visit_paths(visitor),
+            Self::AsymmetricSwitchIndex(p) => p.visit_paths(visitor),
+            Self::ControlCurvePiecewiseInterpolated(p) => p.visit_paths(visitor),
+            Self::ControlCurveIndex(p) => p.visit_paths(visitor),
+            Self::ControlCurve(p) => p.visit_paths(visitor),
+            Self::DailyProfile(p) => p.visit_paths(visitor),
+            Self::IndexedArray(p) => p.visit_paths(visitor),
+            Self::MonthlyProfile(p) => p.visit_paths(visitor),
+            Self::WeeklyProfile(p) => p.visit_paths(visitor),
+            Self::UniformDrawdownProfile(p) => p.visit_paths(visitor),
+            Self::Max(p) => p.visit_paths(visitor),
+            Self::Min(p) => p.visit_paths(visitor),
+            Self::Negative(p) => p.visit_paths(visitor),
+            Self::Polynomial1D(p) => p.visit_paths(visitor),
+            Self::ParameterThreshold(p) => p.visit_paths(visitor),
+            Self::TablesArray(p) => p.visit_paths(visitor),
+            Self::Python(p) => p.visit_paths(visitor),
+            Self::Delay(p) => p.visit_paths(visitor),
+            Self::Division(p) => p.visit_paths(visitor),
+            Self::Offset(p) => p.visit_paths(visitor),
+            Self::DiscountFactor(p) => p.visit_paths(visitor),
+            Self::Interpolated(p) => p.visit_paths(visitor),
+            Self::RbfProfile(p) => p.visit_paths(visitor),
+            Self::NegativeMax(p) => p.visit_paths(visitor),
+            Self::NegativeMin(p) => p.visit_paths(visitor),
+            Self::HydropowerTarget(p) => p.visit_paths(visitor),
+        }
+    }
+
+    fn visit_paths_mut<F: FnMut(&mut PathBuf)>(&mut self, visitor: &mut F) {
+        match self {
+            Self::Constant(p) => p.visit_paths_mut(visitor),
+            Self::ControlCurveInterpolated(p) => p.visit_paths_mut(visitor),
+            Self::Aggregated(p) => p.visit_paths_mut(visitor),
+            Self::AggregatedIndex(p) => p.visit_paths_mut(visitor),
+            Self::AsymmetricSwitchIndex(p) => p.visit_paths_mut(visitor),
+            Self::ControlCurvePiecewiseInterpolated(p) => p.visit_paths_mut(visitor),
+            Self::ControlCurveIndex(p) => p.visit_paths_mut(visitor),
+            Self::ControlCurve(p) => p.visit_paths_mut(visitor),
+            Self::DailyProfile(p) => p.visit_paths_mut(visitor),
+            Self::IndexedArray(p) => p.visit_paths_mut(visitor),
+            Self::MonthlyProfile(p) => p.visit_paths_mut(visitor),
+            Self::WeeklyProfile(p) => p.visit_paths_mut(visitor),
+            Self::UniformDrawdownProfile(p) => p.visit_paths_mut(visitor),
+            Self::Max(p) => p.visit_paths_mut(visitor),
+            Self::Min(p) => p.visit_paths_mut(visitor),
+            Self::Negative(p) => p.visit_paths_mut(visitor),
+            Self::Polynomial1D(p) => p.visit_paths_mut(visitor),
+            Self::ParameterThreshold(p) => p.visit_paths_mut(visitor),
+            Self::TablesArray(p) => p.visit_paths_mut(visitor),
+            Self::Python(p) => p.visit_paths_mut(visitor),
+            Self::Delay(p) => p.visit_paths_mut(visitor),
+            Self::Division(p) => p.visit_paths_mut(visitor),
+            Self::Offset(p) => p.visit_paths_mut(visitor),
+            Self::DiscountFactor(p) => p.visit_paths_mut(visitor),
+            Self::Interpolated(p) => p.visit_paths_mut(visitor),
+            Self::RbfProfile(p) => p.visit_paths_mut(visitor),
+            Self::NegativeMax(p) => p.visit_paths_mut(visitor),
+            Self::NegativeMin(p) => p.visit_paths_mut(visitor),
+            Self::HydropowerTarget(p) => p.visit_paths_mut(visitor),
+        }
     }
 }
 
@@ -313,7 +457,7 @@ pub fn convert_parameter_v1_to_v2(
 }
 
 #[derive(Clone)]
-enum ParameterOrTimeseries {
+pub enum ParameterOrTimeseries {
     Parameter(Parameter),
     Timeseries(TimeseriesV1Data),
 }
@@ -456,8 +600,6 @@ impl TryFromV1Parameter<ParameterV1> for ParameterOrTimeseries {
                 CoreParameter::InterpolatedFlow(p) => {
                     Parameter::Interpolated(p.try_into_v2_parameter(parent_node, unnamed_count)?).into()
                 }
-                CoreParameter::NegativeMax(_) => todo!("Implement NegativeMaxParameter"),
-                CoreParameter::NegativeMin(_) => todo!("Implement NegativeMinParameter"),
                 CoreParameter::HydropowerTarget(p) => {
                     Parameter::HydropowerTarget(p.try_into_v2_parameter(parent_node, unnamed_count)?).into()
                 }
@@ -482,6 +624,12 @@ impl TryFromV1Parameter<ParameterV1> for ParameterOrTimeseries {
                 }
                 CoreParameter::RbfProfile(p) => {
                     Parameter::RbfProfile(p.try_into_v2_parameter(parent_node, unnamed_count)?).into()
+                }
+                CoreParameter::NegativeMax(p) => {
+                    Parameter::NegativeMax(p.try_into_v2_parameter(parent_node, unnamed_count)?).into()
+                }
+                CoreParameter::NegativeMin(p) => {
+                    Parameter::NegativeMin(p.try_into_v2_parameter(parent_node, unnamed_count)?).into()
                 }
             },
             ParameterV1::Custom(p) => {
@@ -512,12 +660,11 @@ impl TryFromV1Parameter<ParameterV1> for ParameterOrTimeseries {
 /// An non-variable constant floating-point (f64) value
 ///
 /// This value can be a literal float or an external reference to an input table.
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
 #[serde(untagged)]
 pub enum ConstantValue<T> {
     Literal(T),
     Table(TableDataRef),
-    External(ExternalDataRef),
 }
 
 impl Default for ConstantValue<f64> {
@@ -526,24 +673,70 @@ impl Default for ConstantValue<f64> {
     }
 }
 
+// The Derive does not work for the generic type T
+mod constant_value_visit_metrics {
+    use super::*;
+    use crate::metric::Metric;
+    use crate::visit::VisitMetrics;
+    impl<T> VisitMetrics for ConstantValue<T>
+    where
+        T: VisitMetrics,
+    {
+        fn visit_metrics<F: FnMut(&Metric)>(&self, visitor: &mut F) {
+            match self {
+                Self::Literal(v) => v.visit_metrics(visitor),
+                Self::Table(v) => v.visit_metrics(visitor),
+            }
+        }
+        fn visit_metrics_mut<F: FnMut(&mut Metric)>(&mut self, visitor: &mut F) {
+            match self {
+                Self::Literal(v) => v.visit_metrics_mut(visitor),
+                Self::Table(v) => v.visit_metrics_mut(visitor),
+            }
+        }
+    }
+}
+mod constant_value_visit_paths {
+    use super::*;
+    use crate::visit::VisitPaths;
+    use std::path::{Path, PathBuf};
+    impl<T> VisitPaths for ConstantValue<T>
+    where
+        T: VisitPaths,
+    {
+        fn visit_paths<F: FnMut(&Path)>(&self, visitor: &mut F) {
+            match self {
+                Self::Literal(v) => v.visit_paths(visitor),
+                Self::Table(v) => v.visit_paths(visitor),
+            }
+        }
+        fn visit_paths_mut<F: FnMut(&mut PathBuf)>(&mut self, visitor: &mut F) {
+            match self {
+                Self::Literal(v) => v.visit_paths_mut(visitor),
+                Self::Table(v) => v.visit_paths_mut(visitor),
+            }
+        }
+    }
+}
+
+#[cfg(feature = "core")]
 impl ConstantValue<f64> {
     /// Return the value loading from a table if required.
     pub fn load(&self, tables: &LoadedTableCollection) -> Result<f64, SchemaError> {
         match self {
             Self::Literal(v) => Ok(*v),
             Self::Table(tbl_ref) => Ok(tables.get_scalar_f64(tbl_ref)?),
-            Self::External(_) => todo!("Load the float from the external source!"),
         }
     }
 }
 
+#[cfg(feature = "core")]
 impl ConstantValue<usize> {
     /// Return the value loading from a table if required.
     pub fn load(&self, tables: &LoadedTableCollection) -> Result<usize, SchemaError> {
         match self {
             Self::Literal(v) => Ok(*v),
             Self::Table(tbl_ref) => Ok(tables.get_scalar_usize(tbl_ref)?),
-            Self::External(_) => todo!("Load the float from the external source!"),
         }
     }
 }
@@ -561,162 +754,15 @@ impl TryFrom<ParameterValueV1> for ConstantValue<f64> {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
-pub struct NodeReference {
-    /// The name of the node
-    pub name: String,
-    /// The attribute of the node. If this is `None` then the default attribute is used.
-    pub attribute: Option<NodeAttribute>,
-}
-
-impl NodeReference {
-    pub fn load(&self, network: &mut pywr_core::network::Network, args: &LoadArgs) -> Result<MetricF64, SchemaError> {
-        // This is the associated node in the schema
-        let node = args
-            .schema
-            .get_node_by_name(&self.name)
-            .ok_or_else(|| SchemaError::NodeNotFound(self.name.clone()))?;
-
-        node.create_metric(network, self.attribute, args)
-    }
-}
-
-/// A floating-point(f64) value from a metric in the network.
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
-#[serde(tag = "type")]
-pub enum MetricFloatReference {
-    Node(NodeReference),
-    Parameter { name: String, key: Option<String> },
-    InterNetworkTransfer { name: String },
-}
-
-impl MetricFloatReference {
-    /// Load the metric definition into a `Metric` containing the appropriate internal references.
-    pub fn load(&self, network: &mut pywr_core::network::Network, args: &LoadArgs) -> Result<MetricF64, SchemaError> {
-        match self {
-            Self::Node(node_ref) => node_ref.load(network, args),
-            Self::Parameter { name, key } => {
-                match key {
-                    Some(key) => {
-                        // Key given; this should be a multi-valued parameter
-                        Ok(MetricF64::MultiParameterValue((
-                            network.get_multi_valued_parameter_index_by_name(name)?,
-                            key.clone(),
-                        )))
-                    }
-                    None => {
-                        // This should be an existing parameter
-                        Ok(MetricF64::ParameterValue(network.get_parameter_index_by_name(name)?))
-                    }
-                }
-            }
-            Self::InterNetworkTransfer { name } => {
-                // Find the matching inter model transfer
-                match args.inter_network_transfers.iter().position(|t| &t.name == name) {
-                    Some(idx) => Ok(MetricF64::InterNetworkTransfer(MultiNetworkTransferIndex(idx))),
-                    None => Err(SchemaError::InterNetworkTransferNotFound(name.to_string())),
-                }
-            }
-        }
-    }
-}
-
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
-#[serde(tag = "type", content = "name")]
-pub enum TimeseriesColumns {
-    Scenario(String),
-    Column(String),
-}
-
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
-pub struct TimeseriesReference {
-    #[serde(rename = "type")]
-    ty: String,
-    name: String,
-    columns: TimeseriesColumns,
-}
-
-impl TimeseriesReference {
-    pub fn new(name: String, columns: TimeseriesColumns) -> Self {
-        let ty = "Timeseries".to_string();
-        Self { ty, name, columns }
-    }
-
-    pub fn name(&self) -> &str {
-        self.name.as_str()
-    }
-}
-
-/// A floating-point(f64) value from a metric in the network.
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
-#[serde(untagged)]
-pub enum MetricFloatValue {
-    Reference(MetricFloatReference),
-    InlineParameter { definition: Box<Parameter> },
-    Timeseries(TimeseriesReference),
-}
-
-impl MetricFloatValue {
-    /// Load the metric definition into a `Metric` containing the appropriate internal references.
-    pub fn load(&self, network: &mut pywr_core::network::Network, args: &LoadArgs) -> Result<MetricF64, SchemaError> {
-        match self {
-            Self::Reference(reference) => Ok(reference.load(network, args)?),
-            Self::InlineParameter { definition } => {
-                // This inline parameter could already have been loaded on a previous attempt
-                // Let's see if exists first.
-                // TODO this will create strange issues if there are duplicate names in the
-                // parameter definitions. I.e. we will only ever load the first one and then
-                // assume it is the correct one for future references to that name. This could be
-                // improved by checking the parameter returned by name matches the definition here.
-
-                match network.get_parameter_index_by_name(definition.name()) {
-                    Ok(p) => {
-                        // Found a parameter with the name; assume it is the right one!
-                        Ok(MetricF64::ParameterValue(p))
-                    }
-                    Err(_) => {
-                        // An error retrieving a parameter with this name; assume it needs creating.
-                        match definition.add_to_model(network, args)? {
-                            ParameterType::Parameter(idx) => Ok(MetricF64::ParameterValue(idx)),
-                            ParameterType::Index(_) => Err(SchemaError::UnexpectedParameterType(format!(
-                        "Found index parameter of type '{}' with name '{}' where an float parameter was expected.",
-                        definition.ty(),
-                        definition.name(),
-                    ))),
-                            ParameterType::Multi(_) => Err(SchemaError::UnexpectedParameterType(format!(
-                        "Found an inline definition of a multi valued parameter of type '{}' with name '{}' where an float parameter was expected. Multi valued parameters cannot be defined inline.",
-                        definition.ty(),
-                        definition.name(),
-                    ))),
-                        }
-                    }
-                }
-            }
-            Self::Timeseries(ts_ref) => {
-                let param_idx = match &ts_ref.columns {
-                    TimeseriesColumns::Scenario(scenario) => {
-                        args.timeseries
-                            .load_df(network, ts_ref.name.as_ref(), &args.domain, scenario.as_str())?
-                    }
-                    TimeseriesColumns::Column(col) => {
-                        args.timeseries
-                            .load_column(network, ts_ref.name.as_ref(), col.as_str())?
-                    }
-                };
-                Ok(MetricF64::ParameterValue(param_idx))
-            }
-        }
-    }
-}
-
 /// An integer (i64) value from another parameter
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 #[serde(untagged)]
 pub enum ParameterIndexValue {
     Reference(String),
     Inline(Box<Parameter>),
 }
 
+#[cfg(feature = "core")]
 impl ParameterIndexValue {
     pub fn load(
         &self,
@@ -731,15 +777,15 @@ impl ParameterIndexValue {
             Self::Inline(parameter) => {
                 // Inline parameter needs to be added
                 match parameter.add_to_model(network, args)? {
-                    ParameterType::Index(idx) => Ok(idx),
-                    ParameterType::Parameter(_) => Err(SchemaError::UnexpectedParameterType(format!(
+                    pywr_core::parameters::ParameterType::Index(idx) => Ok(idx),
+                    pywr_core::parameters::ParameterType::Parameter(_) => Err(SchemaError::UnexpectedParameterType(format!(
                         "Found float parameter of type '{}' with name '{}' where an index parameter was expected.",
-                        parameter.ty(),
+                        parameter.parameter_type(),
                         parameter.name(),
                     ))),
-                            ParameterType::Multi(_) => Err(SchemaError::UnexpectedParameterType(format!(
+                    pywr_core::parameters::ParameterType::Multi(_) => Err(SchemaError::UnexpectedParameterType(format!(
                         "Found an inline definition of a multi valued parameter of type '{}' with name '{}' where an index parameter was expected. Multi valued parameters cannot be defined inline.",
-                        parameter.ty(),
+                        parameter.parameter_type(),
                         parameter.name(),
                     ))),
                 }
@@ -748,96 +794,11 @@ impl ParameterIndexValue {
     }
 }
 
-/// A potentially dynamic floating-point (f64) value
-///
-/// This value can be a constant (literal or otherwise) or a dynamic value provided
-/// by another parameter.
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
-#[serde(untagged)]
-pub enum DynamicFloatValue {
-    Constant(ConstantValue<f64>),
-    Dynamic(MetricFloatValue),
-}
-
-impl Default for DynamicFloatValue {
-    fn default() -> Self {
-        Self::Constant(ConstantValue::default())
-    }
-}
-
-impl DynamicFloatValue {
-    pub fn from_f64(v: f64) -> Self {
-        Self::Constant(ConstantValue::Literal(v))
-    }
-
-    pub fn load(&self, network: &mut pywr_core::network::Network, args: &LoadArgs) -> Result<MetricF64, SchemaError> {
-        let parameter_ref = match self {
-            DynamicFloatValue::Constant(v) => MetricF64::Constant(v.load(args.tables)?),
-            DynamicFloatValue::Dynamic(v) => v.load(network, args)?,
-        };
-        Ok(parameter_ref)
-    }
-}
-
-impl TryFromV1Parameter<ParameterValueV1> for DynamicFloatValue {
-    type Error = ConversionError;
-
-    fn try_from_v1_parameter(
-        v1: ParameterValueV1,
-        parent_node: Option<&str>,
-        unnamed_count: &mut usize,
-    ) -> Result<Self, Self::Error> {
-        let p = match v1 {
-            ParameterValueV1::Constant(v) => Self::Constant(ConstantValue::Literal(v)),
-            ParameterValueV1::Reference(p_name) => {
-                Self::Dynamic(MetricFloatValue::Reference(MetricFloatReference::Parameter {
-                    name: p_name,
-                    key: None,
-                }))
-            }
-            ParameterValueV1::Table(tbl) => Self::Constant(ConstantValue::Table(tbl.try_into()?)),
-            ParameterValueV1::Inline(param) => {
-                let definition: ParameterOrTimeseries = (*param).try_into_v2_parameter(parent_node, unnamed_count)?;
-                match definition {
-                    ParameterOrTimeseries::Parameter(p) => Self::Dynamic(MetricFloatValue::InlineParameter {
-                        definition: Box::new(p),
-                    }),
-                    ParameterOrTimeseries::Timeseries(t) => {
-                        let name = match t.name {
-                            Some(n) => n,
-                            None => {
-                                let n = match parent_node {
-                                    Some(node_name) => format!("{}-p{}.timeseries", node_name, *unnamed_count),
-                                    None => format!("unnamed-timeseries-{}", *unnamed_count),
-                                };
-                                *unnamed_count += 1;
-                                n
-                            }
-                        };
-
-                        let cols = match (&t.column, &t.scenario) {
-                            (Some(col), None) => TimeseriesColumns::Column(col.clone()),
-                            (None, Some(scenario)) => TimeseriesColumns::Scenario(scenario.clone()),
-                            (Some(_), Some(_)) => {
-                                return Err(ConversionError::AmbiguousColumnAndScenario(name.clone()))
-                            }
-                            (None, None) => return Err(ConversionError::MissingColumnOrScenario(name.clone())),
-                        };
-
-                        Self::Dynamic(MetricFloatValue::Timeseries(TimeseriesReference::new(name, cols)))
-                    }
-                }
-            }
-        };
-        Ok(p)
-    }
-}
-
 /// A potentially dynamic integer (usize) value
 ///
 /// This value can be a constant (literal or otherwise) or a dynamic value provided
 /// by another parameter.
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 #[serde(untagged)]
 pub enum DynamicIndexValue {
     Constant(ConstantValue<usize>),
@@ -848,7 +809,10 @@ impl DynamicIndexValue {
     pub fn from_usize(v: usize) -> Self {
         Self::Constant(ConstantValue::Literal(v))
     }
+}
 
+#[cfg(feature = "core")]
+impl DynamicIndexValue {
     ///
     pub fn load(&self, network: &mut pywr_core::network::Network, args: &LoadArgs) -> Result<MetricUsize, SchemaError> {
         let parameter_ref = match self {
@@ -891,52 +855,25 @@ impl TryFromV1Parameter<ParameterValueV1> for DynamicIndexValue {
 /// An non-variable vector of constant floating-point (f64) values
 ///
 /// This value can be a literal vector of floats or an external reference to an input table.
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 #[serde(untagged)]
 pub enum ConstantFloatVec {
     Literal(Vec<f64>),
     Table(TableDataRef),
-    External(ExternalDataRef),
 }
 
+#[cfg(feature = "core")]
 impl ConstantFloatVec {
     /// Return the value loading from a table if required.
     pub fn load(&self, tables: &LoadedTableCollection) -> Result<Vec<f64>, SchemaError> {
         match self {
             Self::Literal(v) => Ok(v.clone()),
             Self::Table(tbl_ref) => Ok(tables.get_vec_f64(tbl_ref)?.clone()),
-            Self::External(_) => todo!("Load the float vector from the external source!"),
         }
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
-pub struct ExternalDataRef {
-    url: PathBuf,
-    column: Option<TableIndex>,
-    index: Option<TableIndex>,
-}
-
-impl TryFrom<ExternalDataRefV1> for ExternalDataRef {
-    type Error = ConversionError;
-    fn try_from(v1: ExternalDataRefV1) -> Result<Self, Self::Error> {
-        let column = match v1.column {
-            None => None,
-            Some(c) => Some(c.try_into()?),
-        };
-        let index = match v1.index {
-            None => None,
-            Some(i) => Some(i.try_into()?),
-        };
-        Ok(Self {
-            url: v1.url,
-            column,
-            index,
-        })
-    }
-}
-
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 #[serde(untagged)]
 pub enum TableIndex {
     Single(String),
@@ -967,18 +904,18 @@ impl TryFrom<TableIndexV1> for TableIndex {
 }
 
 pub enum DynamicFloatValueType<'a> {
-    Single(&'a DynamicFloatValue),
-    List(&'a Vec<DynamicFloatValue>),
+    Single(&'a Metric),
+    List(&'a Vec<Metric>),
 }
 
-impl<'a> From<&'a DynamicFloatValue> for DynamicFloatValueType<'a> {
-    fn from(v: &'a DynamicFloatValue) -> Self {
+impl<'a> From<&'a Metric> for DynamicFloatValueType<'a> {
+    fn from(v: &'a Metric) -> Self {
         Self::Single(v)
     }
 }
 
-impl<'a> From<&'a Vec<DynamicFloatValue>> for DynamicFloatValueType<'a> {
-    fn from(v: &'a Vec<DynamicFloatValue>) -> Self {
+impl<'a> From<&'a Vec<Metric>> for DynamicFloatValueType<'a> {
+    fn from(v: &'a Vec<Metric>) -> Self {
         Self::List(v)
     }
 }
@@ -989,7 +926,7 @@ mod tests {
     use std::fs;
     use std::path::PathBuf;
 
-    /// Test all of the documentation examples successfully deserialize.
+    /// Test all the documentation examples successfully deserialize.
     #[test]
     fn test_doc_examples() {
         let mut doc_examples = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -998,8 +935,9 @@ mod tests {
         for entry in fs::read_dir(doc_examples).unwrap() {
             let p = entry.unwrap().path();
             if p.is_file() {
-                let data = fs::read_to_string(p).unwrap();
-                let _: Parameter = serde_json::from_str(&data).unwrap();
+                let data = fs::read_to_string(&p).unwrap_or_else(|_| panic!("Failed to read file: {:?}", p));
+                let _: Parameter =
+                    serde_json::from_str(&data).unwrap_or_else(|_| panic!("Failed to deserialize: {:?}", p));
             }
         }
     }

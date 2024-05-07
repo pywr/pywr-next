@@ -1,8 +1,6 @@
 use crate::data_tables::TableError;
 use crate::nodes::NodeAttribute;
 use crate::timeseries::TimeseriesError;
-use pyo3::exceptions::PyRuntimeError;
-use pyo3::PyErr;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -26,6 +24,7 @@ pub enum SchemaError {
     #[error("missing initial volume for node: {0}")]
     MissingInitialVolume(String),
     #[error("Pywr core error: {0}")]
+    #[cfg(feature = "core")]
     PywrCore(#[from] pywr_core::PywrError),
     #[error("data table error: {0}")]
     DataTable(#[from] TableError),
@@ -57,11 +56,16 @@ pub enum SchemaError {
     LoadParameter { name: String, error: String },
     #[error("Timeseries error: {0}")]
     Timeseries(#[from] TimeseriesError),
+    #[error("The output of literal constant values is not supported. This is because they do not have a unique identifier such as a name. If you would like to output a constant value please use a `Constant` parameter.")]
+    LiteralConstantOutputNotSupported,
+    #[error("Chrono out of range error: {0}")]
+    OutOfRange(#[from] chrono::OutOfRange),
 }
 
-impl From<SchemaError> for PyErr {
-    fn from(err: SchemaError) -> PyErr {
-        PyRuntimeError::new_err(err.to_string())
+#[cfg(feature = "core")]
+impl From<SchemaError> for pyo3::PyErr {
+    fn from(err: SchemaError) -> pyo3::PyErr {
+        pyo3::exceptions::PyRuntimeError::new_err(err.to_string())
     }
 }
 

@@ -11,12 +11,16 @@ pub fn align_and_resample(
     domain: &ModelDomain,
 ) -> Result<DataFrame, TimeseriesError> {
     // Ensure type of time column is datetime and that it is sorted
+    let sort_options = SortMultipleOptions::default()
+        .with_order_descending(false)
+        .with_maintain_order(true);
+
     let df = df
         .clone()
         .lazy()
         .with_columns([col(time_col).cast(DataType::Datetime(TimeUnit::Nanoseconds, None))])
         .collect()?
-        .sort([time_col], false, true)?;
+        .sort([time_col], sort_options)?;
 
     // Ensure that df start aligns with models start for any resampling
     let df = slice_start(df, time_col, domain)?;
@@ -202,6 +206,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "core")]
     fn test_no_resample_slice() {
         let start = NaiveDateTime::parse_from_str("2021-01-01 00:00:00", "%Y-%m-%d %H:%M:%S").unwrap();
         let end = NaiveDateTime::parse_from_str("2021-01-03 00:00:00", "%Y-%m-%d %H:%M:%S").unwrap();

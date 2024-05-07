@@ -1,8 +1,13 @@
+#[cfg(feature = "core")]
 use crate::error::SchemaError;
+use crate::metric::Metric;
+#[cfg(feature = "core")]
 use crate::model::LoadArgs;
-use crate::parameters::{ConstantValue, DynamicFloatValue, DynamicFloatValueType, ParameterMeta};
+use crate::parameters::{ConstantValue, ParameterMeta};
+#[cfg(feature = "core")]
 use pywr_core::parameters::ParameterIndex;
-use std::collections::HashMap;
+use pywr_schema_macros::PywrVisitAll;
+use schemars::JsonSchema;
 
 /// A parameter that returns a fixed delta from another metric.
 ///
@@ -18,7 +23,7 @@ use std::collections::HashMap;
 #[doc = include_str!("doc_examples/offset_variable.json")]
 /// ```
 ///
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 pub struct OffsetParameter {
     /// Meta-data.
     ///
@@ -31,18 +36,11 @@ pub struct OffsetParameter {
     /// function is specified this value will be the `x` value for that activation function.
     pub offset: ConstantValue<f64>,
     /// The metric from which to apply the offset.
-    pub metric: DynamicFloatValue,
+    pub metric: Metric,
 }
 
+#[cfg(feature = "core")]
 impl OffsetParameter {
-    pub fn node_references(&self) -> HashMap<&str, &str> {
-        HashMap::new()
-    }
-
-    pub fn parameters(&self) -> HashMap<&str, DynamicFloatValueType> {
-        HashMap::new()
-    }
-
     pub fn add_to_model(
         &self,
         network: &mut pywr_core::network::Network,

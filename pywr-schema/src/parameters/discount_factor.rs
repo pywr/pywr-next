@@ -1,34 +1,27 @@
+#[cfg(feature = "core")]
 use crate::error::SchemaError;
+use crate::metric::Metric;
+#[cfg(feature = "core")]
 use crate::model::LoadArgs;
-use crate::parameters::{DynamicFloatValue, DynamicFloatValueType, IntoV2Parameter, ParameterMeta, TryFromV1Parameter};
+use crate::parameters::{IntoV2Parameter, ParameterMeta, TryFromV1Parameter};
 use crate::ConversionError;
+#[cfg(feature = "core")]
 use pywr_core::parameters::ParameterIndex;
+use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::parameters::DiscountFactorParameter as DiscountFactorParameterV1;
-use std::collections::HashMap;
+use schemars::JsonSchema;
 
 /// A parameter that returns the current discount factor for a given time-step.
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 pub struct DiscountFactorParameter {
     #[serde(flatten)]
     pub meta: ParameterMeta,
-    pub discount_rate: DynamicFloatValue,
+    pub discount_rate: Metric,
     pub base_year: i32,
 }
 
+#[cfg(feature = "core")]
 impl DiscountFactorParameter {
-    pub fn node_references(&self) -> HashMap<&str, &str> {
-        HashMap::new()
-    }
-
-    pub fn parameters(&self) -> HashMap<&str, DynamicFloatValueType> {
-        let mut attributes = HashMap::new();
-
-        let metric = &self.discount_rate;
-        attributes.insert("discount_rate", metric.into());
-
-        attributes
-    }
-
     pub fn add_to_model(
         &self,
         network: &mut pywr_core::network::Network,
@@ -49,7 +42,7 @@ impl TryFromV1Parameter<DiscountFactorParameterV1> for DiscountFactorParameter {
         unnamed_count: &mut usize,
     ) -> Result<Self, Self::Error> {
         let meta: ParameterMeta = v1.meta.into_v2_parameter(parent_node, unnamed_count);
-        let discount_rate = DynamicFloatValue::from_f64(v1.rate);
+        let discount_rate = Metric::from(v1.rate);
         Ok(Self {
             meta,
             discount_rate,

@@ -14,29 +14,56 @@
       {
         "name": "input1",
         "type": "Input",
-        "max_flow": 5,
-        "cost": 2.0
+        "max_flow": {
+          "type": "Constant",
+          "value": 5
+        },
+        "cost": {
+          "type": "Constant",
+          "value": 2.0
+        }
       },
       {
         "name": "storage1",
         "type": "PiecewiseStorage",
-        "max_volume": 1000.0,
+        "max_volume": {
+          "type": "Constant",
+          "value": 1000.0
+        },
         "steps": [
           {
-            "cost": -15.0,
-            "control_curve": 0.25
+            "cost": {
+              "type": "Constant",
+              "value": -15
+            },
+            "control_curve": {
+              "type": "Constant",
+              "value": 0.25
+            }
           },
           {
-            "cost": -5.0,
-            "control_curve": 0.5
+            "cost": {
+              "type": "Constant",
+              "value": -5
+            },
+            "control_curve": {
+              "type": "Constant",
+              "value": 0.5
+            }
           }
         ]
       },
       {
         "name": "demand1",
         "type": "Output",
-        "max_flow": 15.0,
-        "cost": -10
+        "max_flow": {
+          "type": "Constant",
+          "value": 15
+        },
+        "cost": {
+          "type": "Constant",
+          "value": -10
+        }
       }
     ],
     "edges": [

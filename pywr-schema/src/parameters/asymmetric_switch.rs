@@ -1,13 +1,16 @@
-use crate::error::{ConversionError, SchemaError};
+use crate::error::ConversionError;
+#[cfg(feature = "core")]
+use crate::error::SchemaError;
+#[cfg(feature = "core")]
 use crate::model::LoadArgs;
-use crate::parameters::{
-    DynamicFloatValueType, DynamicIndexValue, IntoV2Parameter, ParameterMeta, TryFromV1Parameter, TryIntoV2Parameter,
-};
+use crate::parameters::{DynamicIndexValue, IntoV2Parameter, ParameterMeta, TryFromV1Parameter, TryIntoV2Parameter};
+#[cfg(feature = "core")]
 use pywr_core::parameters::ParameterIndex;
+use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::parameters::AsymmetricSwitchIndexParameter as AsymmetricSwitchIndexParameterV1;
-use std::collections::HashMap;
+use schemars::JsonSchema;
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 pub struct AsymmetricSwitchIndexParameter {
     #[serde(flatten)]
     pub meta: ParameterMeta,
@@ -15,14 +18,8 @@ pub struct AsymmetricSwitchIndexParameter {
     pub off_index_parameter: DynamicIndexValue,
 }
 
+#[cfg(feature = "core")]
 impl AsymmetricSwitchIndexParameter {
-    pub fn node_references(&self) -> HashMap<&str, &str> {
-        HashMap::new()
-    }
-    pub fn parameters(&self) -> HashMap<&str, DynamicFloatValueType> {
-        todo!()
-    }
-
     pub fn add_to_model(
         &self,
         network: &mut pywr_core::network::Network,

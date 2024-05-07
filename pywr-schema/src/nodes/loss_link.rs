@@ -1,11 +1,16 @@
-use crate::error::{ConversionError, SchemaError};
+use crate::error::ConversionError;
+#[cfg(feature = "core")]
+use crate::error::SchemaError;
+use crate::metric::Metric;
+#[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::nodes::{NodeAttribute, NodeMeta};
-use crate::parameters::{DynamicFloatValue, TryIntoV2Parameter};
+use crate::parameters::TryIntoV2Parameter;
+#[cfg(feature = "core")]
 use pywr_core::metric::MetricF64;
-use pywr_schema_macros::PywrNode;
+use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::nodes::LossLinkNode as LossLinkNodeV1;
-use std::collections::HashMap;
+use schemars::JsonSchema;
 
 #[doc = svgbobdoc::transform!(
 /// This is used to represent link with losses.
@@ -24,14 +29,14 @@ use std::collections::HashMap;
 /// ```
 ///
 )]
-#[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, PywrNode)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
 pub struct LossLinkNode {
     #[serde(flatten)]
     pub meta: NodeMeta,
-    pub loss_factor: Option<DynamicFloatValue>,
-    pub min_net_flow: Option<DynamicFloatValue>,
-    pub max_net_flow: Option<DynamicFloatValue>,
-    pub net_cost: Option<DynamicFloatValue>,
+    pub loss_factor: Option<Metric>,
+    pub min_net_flow: Option<Metric>,
+    pub max_net_flow: Option<Metric>,
+    pub net_cost: Option<Metric>,
 }
 
 impl LossLinkNode {
@@ -45,6 +50,26 @@ impl LossLinkNode {
         Some("net")
     }
 
+    pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
+        // Gross inflow goes to both nodes
+        vec![
+            (self.meta.name.as_str(), Self::loss_sub_name().map(|s| s.to_string())),
+            (self.meta.name.as_str(), Self::net_sub_name().map(|s| s.to_string())),
+        ]
+    }
+
+    pub fn output_connectors(&self) -> Vec<(&str, Option<String>)> {
+        // Only net goes to the downstream.
+        vec![(self.meta.name.as_str(), Self::net_sub_name().map(|s| s.to_string()))]
+    }
+
+    pub fn default_metric(&self) -> NodeAttribute {
+        Self::DEFAULT_ATTRIBUTE
+    }
+}
+
+#[cfg(feature = "core")]
+impl LossLinkNode {
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
         network.add_link_node(self.meta.name.as_str(), Self::net_sub_name())?;
         // TODO make the loss node configurable (i.e. it could be a link if a network wanted to use the loss)
@@ -76,19 +101,6 @@ impl LossLinkNode {
         }
 
         Ok(())
-    }
-
-    pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
-        // Gross inflow goes to both nodes
-        vec![
-            (self.meta.name.as_str(), Self::loss_sub_name().map(|s| s.to_string())),
-            (self.meta.name.as_str(), Self::net_sub_name().map(|s| s.to_string())),
-        ]
-    }
-
-    pub fn output_connectors(&self) -> Vec<(&str, Option<String>)> {
-        // Only net goes to the downstream.
-        vec![(self.meta.name.as_str(), Self::net_sub_name().map(|s| s.to_string()))]
     }
 
     pub fn create_metric(

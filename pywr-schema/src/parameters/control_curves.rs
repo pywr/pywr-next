@@ -1,26 +1,32 @@
-use crate::error::{ConversionError, SchemaError};
+use crate::error::ConversionError;
+#[cfg(feature = "core")]
+use crate::error::SchemaError;
+use crate::metric::{Metric, NodeReference};
+#[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::nodes::NodeAttribute;
-use crate::parameters::{
-    DynamicFloatValue, IntoV2Parameter, NodeReference, ParameterMeta, TryFromV1Parameter, TryIntoV2Parameter,
-};
+use crate::parameters::{IntoV2Parameter, ParameterMeta, TryFromV1Parameter, TryIntoV2Parameter};
+#[cfg(feature = "core")]
 use pywr_core::parameters::ParameterIndex;
+use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::parameters::{
     ControlCurveIndexParameter as ControlCurveIndexParameterV1,
     ControlCurveInterpolatedParameter as ControlCurveInterpolatedParameterV1,
     ControlCurveParameter as ControlCurveParameterV1,
     ControlCurvePiecewiseInterpolatedParameter as ControlCurvePiecewiseInterpolatedParameterV1,
 };
+use schemars::JsonSchema;
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 pub struct ControlCurveInterpolatedParameter {
     #[serde(flatten)]
     pub meta: ParameterMeta,
-    pub control_curves: Vec<DynamicFloatValue>,
+    pub control_curves: Vec<Metric>,
     pub storage_node: NodeReference,
-    pub values: Vec<DynamicFloatValue>,
+    pub values: Vec<Metric>,
 }
 
+#[cfg(feature = "core")]
 impl ControlCurveInterpolatedParameter {
     pub fn add_to_model(
         &self,
@@ -89,7 +95,7 @@ impl TryFromV1Parameter<ControlCurveInterpolatedParameterV1> for ControlCurveInt
                     attrs: vec!["values".to_string(), "parameters".to_string()],
                 });
             }
-            (Some(values), None) => values.into_iter().map(DynamicFloatValue::from_f64).collect(),
+            (Some(values), None) => values.into_iter().map(Metric::from).collect(),
             (None, Some(parameters)) => parameters
                 .into_iter()
                 .map(|p| p.try_into_v2_parameter(Some(&meta.name), unnamed_count))
@@ -112,14 +118,15 @@ impl TryFromV1Parameter<ControlCurveInterpolatedParameterV1> for ControlCurveInt
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 pub struct ControlCurveIndexParameter {
     #[serde(flatten)]
     pub meta: ParameterMeta,
-    pub control_curves: Vec<DynamicFloatValue>,
+    pub control_curves: Vec<Metric>,
     pub storage_node: NodeReference,
 }
 
+#[cfg(feature = "core")]
 impl ControlCurveIndexParameter {
     pub fn add_to_model(
         &self,
@@ -218,15 +225,16 @@ impl TryFromV1Parameter<ControlCurveParameterV1> for ControlCurveIndexParameter 
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 pub struct ControlCurveParameter {
     #[serde(flatten)]
     pub meta: ParameterMeta,
-    pub control_curves: Vec<DynamicFloatValue>,
+    pub control_curves: Vec<Metric>,
     pub storage_node: NodeReference,
-    pub values: Vec<DynamicFloatValue>,
+    pub values: Vec<Metric>,
 }
 
+#[cfg(feature = "core")]
 impl ControlCurveParameter {
     pub fn add_to_model(
         &self,
@@ -277,7 +285,7 @@ impl TryFromV1Parameter<ControlCurveParameterV1> for ControlCurveParameter {
         };
 
         let values = if let Some(values) = v1.values {
-            values.into_iter().map(DynamicFloatValue::from_f64).collect()
+            values.into_iter().map(Metric::from).collect()
         } else if let Some(parameters) = v1.parameters {
             parameters
                 .into_iter()
@@ -306,17 +314,18 @@ impl TryFromV1Parameter<ControlCurveParameterV1> for ControlCurveParameter {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 pub struct ControlCurvePiecewiseInterpolatedParameter {
     #[serde(flatten)]
     pub meta: ParameterMeta,
-    pub control_curves: Vec<DynamicFloatValue>,
+    pub control_curves: Vec<Metric>,
     pub storage_node: NodeReference,
     pub values: Option<Vec<[f64; 2]>>,
     pub minimum: Option<f64>,
     pub maximum: Option<f64>,
 }
 
+#[cfg(feature = "core")]
 impl ControlCurvePiecewiseInterpolatedParameter {
     pub fn add_to_model(
         &self,
@@ -406,7 +415,7 @@ mod tests {
                 },
                 "control_curves": [
                     {"type": "Parameter", "name": "reservoir_cc"},
-                    0.2
+                    {"type": "Constant", "value": 0.2}
                 ],
                 "comment": "A witty comment",
                 "values": [

@@ -1,14 +1,19 @@
 use crate::metric_sets::MetricAggFunc;
+#[cfg(feature = "core")]
 use crate::SchemaError;
+#[cfg(feature = "core")]
 use pywr_core::recorders::MemoryRecorder;
+use pywr_schema_macros::PywrVisitPaths;
+use schemars::JsonSchema;
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitPaths)]
 pub struct MemoryAggregation {
     pub time: Option<MetricAggFunc>,
     pub scenario: Option<MetricAggFunc>,
     pub metric: Option<MetricAggFunc>,
 }
 
+#[cfg(feature = "core")]
 impl From<MemoryAggregation> for pywr_core::recorders::Aggregation {
     fn from(value: MemoryAggregation) -> Self {
         pywr_core::recorders::Aggregation::new(
@@ -19,13 +24,14 @@ impl From<MemoryAggregation> for pywr_core::recorders::Aggregation {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitPaths)]
 pub struct MemoryOutput {
     pub name: String,
     pub metric_set: String,
     pub aggregation: MemoryAggregation,
 }
 
+#[cfg(feature = "core")]
 impl MemoryOutput {
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
         let metric_set_idx = network.get_metric_set_index_by_name(&self.metric_set)?;
@@ -40,9 +46,12 @@ impl MemoryOutput {
 #[cfg(test)]
 mod tests {
     use crate::PywrModel;
+    #[cfg(feature = "core")]
     use float_cmp::assert_approx_eq;
+    #[cfg(feature = "core")]
     use pywr_core::solvers::{ClpSolver, ClpSolverSettings};
     use std::str::FromStr;
+    #[cfg(feature = "core")]
     use tempfile::TempDir;
 
     fn memory1_str() -> &'static str {
@@ -60,6 +69,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "core")]
     fn test_run() {
         let data = memory1_str();
         let schema = PywrModel::from_str(data).unwrap();
