@@ -6,6 +6,7 @@ use crate::metric::Metric;
 use crate::model::LoadArgs;
 use crate::nodes::core::StorageInitialVolume;
 use crate::nodes::{NodeAttribute, NodeMeta};
+use crate::metric::NodeReference;
 use crate::parameters::TryIntoV2Parameter;
 #[cfg(feature = "core")]
 use pywr_core::{
@@ -19,7 +20,7 @@ use schemars::JsonSchema;
 pub struct VirtualStorageNode {
     #[serde(flatten)]
     pub meta: NodeMeta,
-    pub nodes: Vec<String>,
+    pub nodes: Vec<NodeReference>,
     pub factors: Option<Vec<f64>>,
     pub max_volume: Option<Metric>,
     pub min_volume: Option<Metric>,
@@ -64,7 +65,7 @@ impl VirtualStorageNode {
         let node_idxs = self
             .nodes
             .iter()
-            .map(|name| network.get_node_index_by_name(name.as_str(), None))
+            .map(|name| network.get_node_index_by_name(name.name.as_str(), None))
             .collect::<Result<Vec<_>, _>>()?;
 
         // Standard virtual storage node never resets.
@@ -146,10 +147,11 @@ impl TryFrom<VirtualStorageNodeV1> for VirtualStorageNode {
                 attrs: vec!["initial_volume".to_string(), "initial_volume_pc".to_string()],
             });
         };
+        let nodes = v1.nodes.into_iter().map(|v| v.into()).collect();
 
         let n = Self {
             meta,
-            nodes: v1.nodes,
+            nodes,
             factors: v1.factors,
             max_volume,
             min_volume,
