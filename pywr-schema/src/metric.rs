@@ -297,6 +297,15 @@ impl NodeReference {
     }
 }
 
+impl From<String> for NodeReference{
+    fn from (v: String) -> Self {
+        NodeReference {
+            name: v,
+            attribute: None
+        }
+    }
+}
+
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
 pub struct ParameterReference {
     /// The name of the parameter
