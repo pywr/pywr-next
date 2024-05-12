@@ -1,7 +1,8 @@
-use chrono::NaiveDate;
+use chrono::NaiveDateTime;
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
-use pyo3::types::{PyDateAccess, PyDateTime, PyDict, PyTimeAccess, PyType};
+use pyo3::types::{PyDict, PyType};
+
 /// Python API
 ///
 /// The following structures provide a Python API to access the core model structures.
@@ -63,25 +64,9 @@ pub struct Schema {
 #[pymethods]
 impl Schema {
     #[new]
-    fn new(title: &str, start: &Bound<'_, PyDateTime>, end: &Bound<'_, PyDateTime>) -> Self {
-        // SAFETY: We know that the date & month are valid because it is a Python date.
-        let start = DateType::DateTime(
-            NaiveDate::from_ymd_opt(start.get_year(), start.get_month() as u32, start.get_day() as u32)
-                .unwrap()
-                .and_hms_opt(
-                    start.get_hour() as u32,
-                    start.get_minute() as u32,
-                    start.get_second() as u32,
-                )
-                .unwrap(),
-        );
-
-        let end = DateType::DateTime(
-            NaiveDate::from_ymd_opt(end.get_year(), end.get_month() as u32, end.get_day() as u32)
-                .unwrap()
-                .and_hms_opt(end.get_hour() as u32, end.get_minute() as u32, end.get_second() as u32)
-                .unwrap(),
-        );
+    fn new(title: &str, start: NaiveDateTime, end: NaiveDateTime) -> Self {
+        let start = DateType::DateTime(start);
+        let end = DateType::DateTime(end);
 
         Self {
             schema: pywr_schema::PywrModel::new(title, &start, &end),
