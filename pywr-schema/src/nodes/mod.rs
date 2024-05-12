@@ -9,6 +9,7 @@ mod river;
 mod river_gauge;
 mod river_split_with_gauge;
 mod rolling_virtual_storage;
+mod turbine;
 mod virtual_storage;
 mod water_treatment_works;
 
@@ -25,6 +26,7 @@ pub use crate::nodes::core::{
 pub use crate::nodes::delay::DelayNode;
 pub use crate::nodes::river::RiverNode;
 use crate::nodes::rolling_virtual_storage::RollingVirtualStorageNode;
+use crate::nodes::turbine::TurbineNode;
 use crate::parameters::TimeseriesV1Data;
 use crate::visit::{VisitMetrics, VisitPaths};
 pub use annual_virtual_storage::AnnualVirtualStorageNode;
@@ -96,6 +98,7 @@ pub enum NodeAttribute {
     ProportionalVolume,
     Loss,
     Deficit,
+    Power,
 }
 
 pub struct NodeBuilder {
@@ -225,6 +228,10 @@ impl NodeBuilder {
                 meta,
                 ..Default::default()
             }),
+            NodeType::Turbine => Node::Turbine(TurbineNode {
+                meta,
+                ..Default::default()
+            }),
         }
     }
 }
@@ -254,6 +261,7 @@ pub enum Node {
     AnnualVirtualStorage(AnnualVirtualStorageNode),
     MonthlyVirtualStorage(MonthlyVirtualStorageNode),
     RollingVirtualStorage(RollingVirtualStorageNode),
+    Turbine(TurbineNode),
 }
 
 impl Node {
@@ -291,6 +299,7 @@ impl Node {
             Node::Delay(n) => &n.meta,
             Node::MonthlyVirtualStorage(n) => &n.meta,
             Node::RollingVirtualStorage(n) => &n.meta,
+            Node::Turbine(n) => &n.meta,
         }
     }
 
@@ -316,6 +325,7 @@ impl Node {
             Node::PiecewiseStorage(n) => n.input_connectors(),
             Node::Delay(n) => n.input_connectors(),
             Node::RollingVirtualStorage(n) => n.input_connectors(),
+            Node::Turbine(n) => n.input_connectors(),
         }
     }
 
@@ -341,6 +351,7 @@ impl Node {
             Node::PiecewiseStorage(n) => n.output_connectors(),
             Node::Delay(n) => n.output_connectors(),
             Node::RollingVirtualStorage(n) => n.output_connectors(),
+            Node::Turbine(n) => n.output_connectors(),
         }
     }
 
@@ -365,6 +376,7 @@ impl Node {
             Node::PiecewiseStorage(n) => n.default_metric(),
             Node::Delay(n) => n.default_metric(),
             Node::RollingVirtualStorage(n) => n.default_metric(),
+            Node::Turbine(n) => n.default_metric(),
         }
     }
 }
@@ -390,6 +402,7 @@ impl Node {
             Node::PiecewiseLink(n) => n.add_to_model(network),
             Node::PiecewiseStorage(n) => n.add_to_model(network, args),
             Node::Delay(n) => n.add_to_model(network),
+            Node::Turbine(n) => n.add_to_model(network, args),
             Node::MonthlyVirtualStorage(n) => n.add_to_model(network, args),
             Node::RollingVirtualStorage(n) => n.add_to_model(network, args),
         }
@@ -418,6 +431,7 @@ impl Node {
             Node::PiecewiseLink(n) => n.set_constraints(network, args),
             Node::PiecewiseStorage(n) => n.set_constraints(network, args),
             Node::Delay(n) => n.set_constraints(network, args),
+            Node::Turbine(n) => n.set_constraints(network, args),
             Node::MonthlyVirtualStorage(_) => Ok(()), // TODO
             Node::RollingVirtualStorage(_) => Ok(()), // TODO
         }
@@ -428,6 +442,7 @@ impl Node {
         &self,
         network: &mut pywr_core::network::Network,
         attribute: Option<NodeAttribute>,
+        args: &LoadArgs,
     ) -> Result<MetricF64, SchemaError> {
         match self {
             Node::Input(n) => n.create_metric(network, attribute),
@@ -449,6 +464,7 @@ impl Node {
             Node::PiecewiseStorage(n) => n.create_metric(network, attribute),
             Node::Delay(n) => n.create_metric(network, attribute),
             Node::RollingVirtualStorage(n) => n.create_metric(network, attribute),
+            Node::Turbine(n) => n.create_metric(network, attribute, args),
         }
     }
 }
@@ -525,6 +541,7 @@ impl VisitMetrics for Node {
             Node::Delay(n) => n.visit_metrics(visitor),
             Node::MonthlyVirtualStorage(n) => n.visit_metrics(visitor),
             Node::RollingVirtualStorage(n) => n.visit_metrics(visitor),
+            Node::Turbine(n) => n.visit_metrics(visitor),
         }
     }
 
@@ -549,6 +566,7 @@ impl VisitMetrics for Node {
             Node::Delay(n) => n.visit_metrics_mut(visitor),
             Node::MonthlyVirtualStorage(n) => n.visit_metrics_mut(visitor),
             Node::RollingVirtualStorage(n) => n.visit_metrics_mut(visitor),
+            Node::Turbine(n) => n.visit_metrics_mut(visitor),
         }
     }
 }
@@ -575,6 +593,7 @@ impl VisitPaths for Node {
             Node::Delay(n) => n.visit_paths(visitor),
             Node::MonthlyVirtualStorage(n) => n.visit_paths(visitor),
             Node::RollingVirtualStorage(n) => n.visit_paths(visitor),
+            Node::Turbine(n) => n.visit_paths(visitor),
         }
     }
 
@@ -599,6 +618,7 @@ impl VisitPaths for Node {
             Node::Delay(n) => n.visit_paths_mut(visitor),
             Node::MonthlyVirtualStorage(n) => n.visit_paths_mut(visitor),
             Node::RollingVirtualStorage(n) => n.visit_paths_mut(visitor),
+            Node::Turbine(n) => n.visit_paths_mut(visitor),
         }
     }
 }

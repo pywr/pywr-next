@@ -13,6 +13,7 @@ mod control_curves;
 mod core;
 mod delay;
 mod discount_factor;
+mod hydropower;
 mod indexed_array;
 mod interpolated;
 mod offset;
@@ -53,6 +54,7 @@ use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::parameters::core::DivisionParameter;
+pub use crate::parameters::hydropower::HydropowerTargetParameter;
 use crate::parameters::interpolated::InterpolatedParameter;
 use crate::visit::{VisitMetrics, VisitPaths};
 pub use offset::OffsetParameter;
@@ -171,6 +173,7 @@ pub enum Parameter {
     Negative(NegativeParameter),
     NegativeMax(NegativeMaxParameter),
     NegativeMin(NegativeMinParameter),
+    HydropowerTarget(HydropowerTargetParameter),
     Polynomial1D(Polynomial1DParameter),
     ParameterThreshold(ParameterThresholdParameter),
     TablesArray(TablesArrayParameter),
@@ -211,6 +214,7 @@ impl Parameter {
             Self::Offset(p) => p.meta.name.as_str(),
             Self::DiscountFactor(p) => p.meta.name.as_str(),
             Self::Interpolated(p) => p.meta.name.as_str(),
+            Self::HydropowerTarget(p) => p.meta.name.as_str(),
             Self::RbfProfile(p) => p.meta.name.as_str(),
             Self::NegativeMax(p) => p.meta.name.as_str(),
             Self::NegativeMin(p) => p.meta.name.as_str(),
@@ -267,6 +271,9 @@ impl Parameter {
             Self::RbfProfile(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network)?),
             Self::NegativeMax(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
             Self::NegativeMin(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
+            Self::HydropowerTarget(p) => {
+                pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?)
+            }
         };
 
         Ok(ty)
@@ -304,6 +311,7 @@ impl VisitMetrics for Parameter {
             Self::RbfProfile(p) => p.visit_metrics(visitor),
             Self::NegativeMax(p) => p.visit_metrics(visitor),
             Self::NegativeMin(p) => p.visit_metrics(visitor),
+            Self::HydropowerTarget(p) => p.visit_metrics(visitor),
         }
     }
 
@@ -337,6 +345,7 @@ impl VisitMetrics for Parameter {
             Self::RbfProfile(p) => p.visit_metrics_mut(visitor),
             Self::NegativeMax(p) => p.visit_metrics_mut(visitor),
             Self::NegativeMin(p) => p.visit_metrics_mut(visitor),
+            Self::HydropowerTarget(p) => p.visit_metrics_mut(visitor),
         }
     }
 }
@@ -372,6 +381,7 @@ impl VisitPaths for Parameter {
             Self::RbfProfile(p) => p.visit_paths(visitor),
             Self::NegativeMax(p) => p.visit_paths(visitor),
             Self::NegativeMin(p) => p.visit_paths(visitor),
+            Self::HydropowerTarget(p) => p.visit_paths(visitor),
         }
     }
 
@@ -405,6 +415,7 @@ impl VisitPaths for Parameter {
             Self::RbfProfile(p) => p.visit_paths_mut(visitor),
             Self::NegativeMax(p) => p.visit_paths_mut(visitor),
             Self::NegativeMin(p) => p.visit_paths_mut(visitor),
+            Self::HydropowerTarget(p) => p.visit_paths_mut(visitor),
         }
     }
 }
@@ -589,7 +600,9 @@ impl TryFromV1Parameter<ParameterV1> for ParameterOrTimeseries {
                 CoreParameter::InterpolatedFlow(p) => {
                     Parameter::Interpolated(p.try_into_v2_parameter(parent_node, unnamed_count)?).into()
                 }
-                CoreParameter::HydropowerTarget(_) => todo!("Implement HydropowerTargetParameter"),
+                CoreParameter::HydropowerTarget(p) => {
+                    Parameter::HydropowerTarget(p.try_into_v2_parameter(parent_node, unnamed_count)?).into()
+                }
                 CoreParameter::WeeklyProfile(p) => {
                     Parameter::WeeklyProfile(p.try_into_v2_parameter(parent_node, unnamed_count)?).into()
                 }

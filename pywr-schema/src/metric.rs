@@ -268,7 +268,7 @@ impl NodeReference {
             .get_node_by_name(&self.name)
             .ok_or_else(|| SchemaError::NodeNotFound(self.name.clone()))?;
 
-        node.create_metric(network, self.attribute)
+        node.create_metric(network, self.attribute, args)
     }
 
     /// Return the attribute of the node. If the attribute is not specified then the default
