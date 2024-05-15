@@ -1005,6 +1005,26 @@ mod tests {
             panic!("Expected an error due to missing file: {str}");
         }
     }
+
+    #[test]
+    fn test_v1_conversion() {
+        let v1_str = include_str!("./test_models/v1/timeseries.json");
+        let v1: pywr_v1_schema::PywrModel = serde_json::from_str(v1_str).unwrap();
+
+        let (v2, errors) = PywrModel::from_v1(v1);
+
+        assert_eq!(errors.len(), 0);
+
+        std::fs::write("tmp.json", serde_json::to_string_pretty(&v2).unwrap()).unwrap();
+
+        let v2_converted: serde_json::Value =
+            serde_json::from_str(&serde_json::to_string_pretty(&v2).unwrap()).unwrap();
+
+        let v2_expected: serde_json::Value =
+            serde_json::from_str(include_str!("./test_models/timeseries-converted.json")).unwrap();
+
+        assert_eq!(v2_converted, v2_expected);
+    }
 }
 
 #[cfg(test)]
@@ -1251,45 +1271,5 @@ mod core_tests {
         network_2.add_recorder(Box::new(rec)).unwrap();
 
         model.run::<ClpSolver>(&Default::default()).unwrap();
-    }
-
-    #[test]
-    fn test_v1_conversion() {
-        let v1_str = include_str!("./test_models/timeseries_v1.json");
-        let v1: pywr_v1_schema::PywrModel = serde_json::from_str(v1_str).unwrap();
-
-        let (v2, errors) = PywrModel::from_v1(v1);
-
-        assert_eq!(errors.len(), 0);
-        assert_eq!(v2.network.nodes.len(), 6);
-        assert_eq!(v2.network.edges.len(), 5);
-
-        // Check that a timeseries ref has been created for a node attribute
-        if let crate::nodes::Node::Input(n) = v2.network.get_node_by_name("input1").unwrap() {
-            match &n.max_flow {
-                Some(Metric::Timeseries(t)) => {
-                    assert_eq!(t.name(), "flow");
-                }
-                _ => panic!("Expected a timeseries metric reference for 'input1' max_flow"),
-            }
-        }
-
-        if let Parameter::Aggregated(a) = v2.network.get_parameter_by_name("factored_flow").unwrap() {
-            dbg!(&a);
-            match a.metrics.first().unwrap() {
-                Metric::Timeseries(t) => {
-                    assert_eq!(t.name(), "flow");
-                }
-                _ => panic!("Expected a 'factored_flow' parameter to reference a timeseries metric"),
-            }
-        }
-
-        let current_dir = std::env::current_dir().unwrap();
-        println!("Current directory: {:?}", current_dir);
-
-        let data_path = PathBuf::from_str("src/test_models").unwrap();
-
-        let model = v2.build_model(Some(data_path.as_path()), None).unwrap();
-        run_all_solvers(&model);
     }
 }
