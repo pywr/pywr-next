@@ -1021,7 +1021,7 @@ mod tests {
             serde_json::from_str(&serde_json::to_string_pretty(&v2).unwrap()).unwrap();
 
         let v2_expected: serde_json::Value =
-            serde_json::from_str(include_str!("./test_models/timeseries-converted.json")).unwrap();
+            serde_json::from_str(include_str!("./test_models/v1/timeseries-converted.json")).unwrap();
 
         assert_eq!(v2_converted, v2_expected);
     }
