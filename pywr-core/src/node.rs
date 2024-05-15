@@ -5,6 +5,8 @@ use crate::state::{NodeState, State};
 use crate::timestep::Timestep;
 use crate::virtual_storage::VirtualStorageIndex;
 use crate::PywrError;
+use std::fmt;
+use std::fmt::{Display, Formatter};
 use std::ops::{Deref, DerefMut};
 
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Debug)]
@@ -18,6 +20,11 @@ impl Deref for NodeIndex {
     }
 }
 
+impl Display for NodeIndex {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
 #[derive(Debug, PartialEq)]
 pub enum Node {
     Input(InputNode),
@@ -639,8 +646,8 @@ impl FlowConstraints {
 
 #[derive(Debug, PartialEq)]
 pub struct StorageConstraints {
-    pub(crate) min_volume: ConstraintValue,
-    pub(crate) max_volume: ConstraintValue,
+    min_volume: ConstraintValue,
+    max_volume: ConstraintValue,
 }
 
 impl StorageConstraints {
@@ -657,6 +664,11 @@ impl StorageConstraints {
             ConstraintValue::Metric(m) => m.get_value(network, state),
         }
     }
+
+    pub fn set_min_volume(&mut self, value: ConstraintValue) {
+        self.min_volume = value;
+    }
+
     /// Return the current maximum volume from the metric state
     ///
     /// Defaults to f64::MAX if no parameter is defined.
@@ -666,6 +678,10 @@ impl StorageConstraints {
             ConstraintValue::Scalar(v) => Ok(*v),
             ConstraintValue::Metric(m) => m.get_value(network, state),
         }
+    }
+
+    pub fn set_max_volume(&mut self, value: ConstraintValue) {
+        self.max_volume = value;
     }
 }
 
@@ -929,15 +945,13 @@ impl StorageNode {
         }
     }
     fn set_min_volume(&mut self, value: ConstraintValue) {
-        // TODO use a set_min_volume method
-        self.storage_constraints.min_volume = value;
+        self.storage_constraints.set_min_volume(value);
     }
     fn get_min_volume(&self, network: &Network, state: &State) -> Result<f64, PywrError> {
         self.storage_constraints.get_min_volume(network, state)
     }
     fn set_max_volume(&mut self, value: ConstraintValue) {
-        // TODO use a set_min_volume method
-        self.storage_constraints.max_volume = value;
+        self.storage_constraints.set_max_volume(value);
     }
     fn get_max_volume(&self, network: &Network, state: &State) -> Result<f64, PywrError> {
         self.storage_constraints.get_max_volume(network, state)

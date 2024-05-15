@@ -55,8 +55,16 @@ impl VirtualStorageVec {
     }
 
     pub fn push_new(&mut self, builder: VirtualStorageBuilder) -> Result<VirtualStorageIndex, PywrError> {
-        if self.nodes.iter().any(|n| n.name() == builder.name) {
-            return Err(PywrError::NodeNameAlreadyExists(builder.name.to_string()));
+        if let Some(idx) = self
+            .nodes
+            .iter()
+            .position(|n| n.full_name() == (&builder.name, builder.sub_name.as_deref()))
+        {
+            return Err(PywrError::VirtualStorageNodeNameAlreadyExists {
+                name: builder.name.to_string(),
+                sub_name: builder.sub_name.clone(),
+                index: VirtualStorageIndex(idx),
+            });
         }
 
         let node_index = VirtualStorageIndex(self.nodes.len());
@@ -89,7 +97,7 @@ impl VirtualStorageBuilder {
             factors: None,
             initial_volume: StorageInitialVolume::Absolute(0.0),
             min_volume: ConstraintValue::Scalar(0.0),
-            max_volume: ConstraintValue::Scalar(f64::INFINITY),
+            max_volume: ConstraintValue::None,
             reset: VirtualStorageReset::Never,
             rolling_window: None,
             cost: ConstraintValue::None,
@@ -197,12 +205,20 @@ impl VirtualStorage {
         VirtualStorageState::new(0.0, self.rolling_window)
     }
 
+    pub fn set_cost(&mut self, value: ConstraintValue) {
+        self.cost = value;
+    }
+
     pub fn get_cost(&self, network: &Network, state: &State) -> Result<f64, PywrError> {
         match &self.cost {
             ConstraintValue::None => Ok(0.0),
             ConstraintValue::Scalar(v) => Ok(*v),
             ConstraintValue::Metric(m) => m.get_value(network, state),
         }
+    }
+
+    pub fn set_rolling_window(&mut self, value: Option<NonZeroUsize>) {
+        self.rolling_window = value;
     }
 
     pub fn before(&self, timestep: &Timestep, network: &Network, state: &mut State) -> Result<(), PywrError> {
@@ -262,8 +278,16 @@ impl VirtualStorage {
             .map(|factors| self.nodes.iter().zip(factors.iter()).map(|(n, f)| (*n, *f)).collect())
     }
 
+    pub fn set_min_volume(&mut self, value: ConstraintValue) {
+        self.storage_constraints.set_min_volume(value);
+    }
+
     pub fn get_min_volume(&self, model: &Network, state: &State) -> Result<f64, PywrError> {
         self.storage_constraints.get_min_volume(model, state)
+    }
+
+    pub fn set_max_volume(&mut self, value: ConstraintValue) {
+        self.storage_constraints.set_min_volume(value);
     }
 
     pub fn get_max_volume(&self, model: &Network, state: &State) -> Result<f64, PywrError> {
@@ -377,7 +401,7 @@ mod tests {
 
         // Setup a demand on output-0 and output-1
         for sub_name in &["0", "1"] {
-            let output_node = network.get_mut_node_by_name("output", Some(sub_name)).unwrap();
+            let output_node = network.get_node_by_name_mut("output", Some(sub_name)).unwrap();
             output_node
                 .set_max_flow_constraint(ConstraintValue::Scalar(10.0))
                 .unwrap();

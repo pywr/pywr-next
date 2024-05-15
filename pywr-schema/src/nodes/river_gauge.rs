@@ -67,26 +67,21 @@ impl RiverGaugeNode {
 
 #[cfg(feature = "core")]
 impl RiverGaugeNode {
-    pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
-        network.add_link_node(self.meta.name.as_str(), Self::mrf_sub_name())?;
-        network.add_link_node(self.meta.name.as_str(), Self::bypass_sub_name())?;
+    pub fn add_to_model(&self, network: &mut pywr_core::network::Network, args: &LoadArgs) -> Result<(), SchemaError> {
+        network.get_or_add_link_node(self.meta.name.as_str(), Self::mrf_sub_name())?;
+        network.get_or_add_link_node(self.meta.name.as_str(), Self::bypass_sub_name())?;
 
-        Ok(())
-    }
-    pub fn set_constraints(
-        &self,
-        network: &mut pywr_core::network::Network,
-        args: &LoadArgs,
-    ) -> Result<(), SchemaError> {
+        let mrf_cost = self.mrf_cost.as_ref().map(|m| m.load(network, args)).transpose()?;
+        let mrf = self.mrf.as_ref().map(|m| m.load(network, args)).transpose()?;
+
         // MRF applies as a maximum on the MRF node.
-        if let Some(cost) = &self.mrf_cost {
-            let value = cost.load(network, args)?;
-            network.set_node_cost(self.meta.name.as_str(), Self::mrf_sub_name(), value.into())?;
-        }
+        let node = network.get_node_by_name_mut(self.meta.name.as_str(), Self::mrf_sub_name())?;
 
-        if let Some(mrf) = &self.mrf {
-            let value = mrf.load(network, args)?;
-            network.set_node_max_flow(self.meta.name.as_str(), Self::mrf_sub_name(), value.into())?;
+        if let Some(value) = mrf_cost {
+            node.set_cost(value.into());
+        }
+        if let Some(value) = mrf {
+            node.set_max_flow_constraint(value.into())?;
         }
 
         Ok(())

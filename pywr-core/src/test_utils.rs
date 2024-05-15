@@ -63,7 +63,7 @@ pub fn simple_network(network: &mut Network, inflow_scenario_index: usize, num_i
 
     let inflow = network.add_parameter(Box::new(inflow)).unwrap();
 
-    let input_node = network.get_mut_node_by_name("input", None).unwrap();
+    let input_node = network.get_node_by_name_mut("input", None).unwrap();
     input_node
         .set_constraint(
             ConstraintValue::Metric(MetricF64::ParameterValue(inflow)),
@@ -89,7 +89,7 @@ pub fn simple_network(network: &mut Network, inflow_scenario_index: usize, num_i
     let demand_cost = ConstantParameter::new("demand-cost", -10.0);
     let demand_cost = network.add_parameter(Box::new(demand_cost)).unwrap();
 
-    let output_node = network.get_mut_node_by_name("output", None).unwrap();
+    let output_node = network.get_node_by_name_mut("output", None).unwrap();
     output_node
         .set_constraint(
             ConstraintValue::Metric(MetricF64::ParameterValue(total_demand)),
@@ -140,7 +140,7 @@ pub fn simple_storage_model() -> Model {
     let demand_cost = ConstantParameter::new("demand-cost", -10.0);
     let demand_cost = network.add_parameter(Box::new(demand_cost)).unwrap();
 
-    let output_node = network.get_mut_node_by_name("output", None).unwrap();
+    let output_node = network.get_node_by_name_mut("output", None).unwrap();
     output_node
         .set_constraint(
             ConstraintValue::Metric(MetricF64::ParameterValue(demand)),
@@ -251,22 +251,20 @@ fn make_simple_system<R: Rng>(
     let inflow = Array2Parameter::new(&format!("inflow-{suffix}"), inflow, inflow_scenario_group_index, None);
     let idx = network.add_parameter(Box::new(inflow))?;
 
-    network.set_node_max_flow(
-        "input",
-        Some(suffix),
-        ConstraintValue::Metric(MetricF64::ParameterValue(idx)),
-    )?;
+    let input_node = network.get_node_by_name_mut("input", Some(suffix))?;
+
+    input_node.set_max_flow_constraint(ConstraintValue::Metric(MetricF64::ParameterValue(idx)))?;
 
     let input_cost = rng.gen_range(-20.0..-5.00);
-    network.set_node_cost("input", Some(suffix), ConstraintValue::Scalar(input_cost))?;
+    input_node.set_cost(ConstraintValue::Scalar(input_cost));
 
     let outflow_distr = Normal::new(8.0, 3.0).unwrap();
     let mut outflow: f64 = outflow_distr.sample(rng);
     outflow = outflow.max(0.0);
 
-    network.set_node_max_flow("output", Some(suffix), ConstraintValue::Scalar(outflow))?;
-
-    network.set_node_cost("output", Some(suffix), ConstraintValue::Scalar(-500.0))?;
+    let output_node = network.get_node_by_name_mut("output", Some(suffix))?;
+    output_node.set_max_flow_constraint(ConstraintValue::Scalar(outflow))?;
+    output_node.set_cost(ConstraintValue::Scalar(-500.0));
 
     Ok(())
 }
@@ -275,7 +273,7 @@ fn make_simple_system<R: Rng>(
 ///
 ///
 fn make_simple_connections<R: Rng>(
-    model: &mut Network,
+    network: &mut Network,
     num_systems: usize,
     density: usize,
     rng: &mut R,
@@ -294,17 +292,18 @@ fn make_simple_connections<R: Rng>(
 
         let name = format!("{i:04}->{j:04}");
 
-        if let Ok(idx) = model.add_link_node("transfer", Some(&name)) {
+        if let Ok(idx) = network.add_link_node("transfer", Some(&name)) {
             let transfer_cost = rng.gen_range(0.0..1.0);
-            model.set_node_cost("transfer", Some(&name), ConstraintValue::Scalar(transfer_cost))?;
+            let transfer = network.get_node_by_name_mut("transfer", Some(&name))?;
+            transfer.set_cost(ConstraintValue::Scalar(transfer_cost));
 
             let from_suffix = format!("sys-{i:04}");
-            let from_idx = model.get_node_index_by_name("link", Some(&from_suffix))?;
+            let from_idx = network.get_node_index_by_name("link", Some(&from_suffix))?;
             let to_suffix = format!("sys-{j:04}");
-            let to_idx = model.get_node_index_by_name("link", Some(&to_suffix))?;
+            let to_idx = network.get_node_index_by_name("link", Some(&to_suffix))?;
 
-            model.connect_nodes(from_idx, idx)?;
-            model.connect_nodes(idx, to_idx)?;
+            network.connect_nodes(from_idx, idx)?;
+            network.connect_nodes(idx, to_idx)?;
 
             connections_added += 1;
         }

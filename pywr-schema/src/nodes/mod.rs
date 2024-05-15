@@ -383,57 +383,45 @@ impl Node {
 
 #[cfg(feature = "core")]
 impl Node {
+    /// Add the node to the model.
+    ///
+    /// This method will add the node to the `network` and return an error if the node is invalid.
+    /// Returning either [`SchemaError::NodeNotFound`] or [`SchemaError::ParameterNotFound`]
+    /// indicates that the node could be added to the model once the missing nodes or parameters
+    /// are added.
+    ///
+    /// # Arguments
+    ///
+    /// * `network` - The network to add the node to.
+    ///
+    /// # Developer Note
+    ///
+    /// This method should be idempotent and not cause any issues if called multiple times. For example,
+    /// if additional nodes are created they should be checked to see if they already exist before
+    /// creating them again.
+    ///
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network, args: &LoadArgs) -> Result<(), SchemaError> {
         match self {
-            Node::Input(n) => n.add_to_model(network),
-            Node::Link(n) => n.add_to_model(network),
-            Node::Output(n) => n.add_to_model(network),
+            Node::Input(n) => n.add_to_model(network, args),
+            Node::Link(n) => n.add_to_model(network, args),
+            Node::Output(n) => n.add_to_model(network, args),
             Node::Storage(n) => n.add_to_model(network, args),
-            Node::Catchment(n) => n.add_to_model(network),
-            Node::RiverGauge(n) => n.add_to_model(network),
-            Node::LossLink(n) => n.add_to_model(network),
+            Node::Catchment(n) => n.add_to_model(network, args),
+            Node::RiverGauge(n) => n.add_to_model(network, args),
+            Node::LossLink(n) => n.add_to_model(network, args),
             Node::River(n) => n.add_to_model(network),
-            Node::RiverSplitWithGauge(n) => n.add_to_model(network),
-            Node::WaterTreatmentWorks(n) => n.add_to_model(network),
-            Node::Aggregated(n) => n.add_to_model(network),
+            Node::RiverSplitWithGauge(n) => n.add_to_model(network, args),
+            Node::WaterTreatmentWorks(n) => n.add_to_model(network, args),
+            Node::Aggregated(n) => n.add_to_model(network, args),
             Node::AggregatedStorage(n) => n.add_to_model(network),
             Node::VirtualStorage(n) => n.add_to_model(network, args),
             Node::AnnualVirtualStorage(n) => n.add_to_model(network, args),
-            Node::PiecewiseLink(n) => n.add_to_model(network),
+            Node::PiecewiseLink(n) => n.add_to_model(network, args),
             Node::PiecewiseStorage(n) => n.add_to_model(network, args),
-            Node::Delay(n) => n.add_to_model(network),
+            Node::Delay(n) => n.add_to_model(network, args),
             Node::Turbine(n) => n.add_to_model(network, args),
             Node::MonthlyVirtualStorage(n) => n.add_to_model(network, args),
             Node::RollingVirtualStorage(n) => n.add_to_model(network, args),
-        }
-    }
-
-    pub fn set_constraints(
-        &self,
-        network: &mut pywr_core::network::Network,
-        args: &LoadArgs,
-    ) -> Result<(), SchemaError> {
-        match self {
-            Node::Input(n) => n.set_constraints(network, args),
-            Node::Link(n) => n.set_constraints(network, args),
-            Node::Output(n) => n.set_constraints(network, args),
-            Node::Storage(n) => n.set_constraints(network, args),
-            Node::Catchment(n) => n.set_constraints(network, args),
-            Node::RiverGauge(n) => n.set_constraints(network, args),
-            Node::LossLink(n) => n.set_constraints(network, args),
-            Node::River(_) => Ok(()), // No constraints on river node
-            Node::RiverSplitWithGauge(n) => n.set_constraints(network, args),
-            Node::WaterTreatmentWorks(n) => n.set_constraints(network, args),
-            Node::Aggregated(n) => n.set_constraints(network, args),
-            Node::AggregatedStorage(_) => Ok(()), // No constraints on aggregated storage nodes.
-            Node::VirtualStorage(_) => Ok(()),    // TODO
-            Node::AnnualVirtualStorage(_) => Ok(()), // TODO
-            Node::PiecewiseLink(n) => n.set_constraints(network, args),
-            Node::PiecewiseStorage(n) => n.set_constraints(network, args),
-            Node::Delay(n) => n.set_constraints(network, args),
-            Node::Turbine(n) => n.set_constraints(network, args),
-            Node::MonthlyVirtualStorage(_) => Ok(()), // TODO
-            Node::RollingVirtualStorage(_) => Ok(()), // TODO
         }
     }
 

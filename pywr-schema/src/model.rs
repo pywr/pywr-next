@@ -389,10 +389,15 @@ impl PywrNetwork {
 
         // Create all the nodes
         let mut remaining_nodes = self.nodes.clone();
+        let mut remaining_parameters = self.parameters.clone().unwrap_or_default();
 
-        while !remaining_nodes.is_empty() {
+        while !remaining_nodes.is_empty() || !remaining_parameters.is_empty() {
             let mut failed_nodes: Vec<Node> = Vec::new();
-            let n = remaining_nodes.len();
+            let mut failed_parameters: Vec<Parameter> = Vec::new();
+
+            let num_nodes = remaining_nodes.len();
+            let num_parameters = remaining_parameters.len();
+
             for node in remaining_nodes.into_iter() {
                 if let Err(e) = node.add_to_model(&mut network, &args) {
                     // Adding the node failed!
@@ -402,19 +407,40 @@ impl PywrNetwork {
                             // Let's try to load more nodes and see if this one can tried
                             // again later
                             PywrError::NodeNotFound(_) => failed_nodes.push(node),
+                            PywrError::ParameterNotFound(_) => failed_nodes.push(node),
                             _ => return Err(SchemaError::PywrCore(core_err)),
                         },
+                        SchemaError::ParameterNotFound(_) => failed_nodes.push(node),
                         _ => return Err(e),
                     }
                 };
             }
 
-            if failed_nodes.len() == n {
-                // Could not load any nodes; must be a circular reference
+            for parameter in remaining_parameters.into_iter() {
+                if let Err(e) = parameter.add_to_model(&mut network, &args) {
+                    // Adding the parameter failed!
+                    match e {
+                        SchemaError::PywrCore(core_err) => match core_err {
+                            // And it failed because another parameter was not found.
+                            // Let's try to load more parameters and see if this one can tried
+                            // again later
+                            PywrError::NodeNotFound(_) => failed_parameters.push(parameter),
+                            PywrError::ParameterNotFound(_) => failed_parameters.push(parameter),
+                            _ => return Err(SchemaError::PywrCore(core_err)),
+                        },
+                        SchemaError::ParameterNotFound(_) => failed_parameters.push(parameter),
+                        _ => return Err(e),
+                    }
+                };
+            }
+
+            if failed_nodes.len() == num_nodes && failed_parameters.len() == num_parameters {
+                // Could not load any nodes or parameters; must be a circular reference
                 return Err(SchemaError::CircularNodeReference);
             }
 
             remaining_nodes = failed_nodes;
+            remaining_parameters = failed_parameters;
         }
 
         // Create the edges
@@ -437,42 +463,6 @@ impl PywrNetwork {
                     network.connect_nodes(from_node_index, to_node_index)?;
                 }
             }
-        }
-
-        // Create all the parameters
-        if let Some(mut remaining_parameters) = self.parameters.clone() {
-            while !remaining_parameters.is_empty() {
-                let mut failed_parameters: Vec<Parameter> = Vec::new();
-                let n = remaining_parameters.len();
-                for parameter in remaining_parameters.into_iter() {
-                    if let Err(e) = parameter.add_to_model(&mut network, &args) {
-                        // Adding the parameter failed!
-                        match e {
-                            SchemaError::PywrCore(core_err) => match core_err {
-                                // And it failed because another parameter was not found.
-                                // Let's try to load more parameters and see if this one can tried
-                                // again later
-                                PywrError::ParameterNotFound(_) => failed_parameters.push(parameter),
-                                _ => return Err(SchemaError::PywrCore(core_err)),
-                            },
-                            SchemaError::ParameterNotFound(_) => failed_parameters.push(parameter),
-                            _ => return Err(e),
-                        }
-                    };
-                }
-
-                if failed_parameters.len() == n {
-                    // Could not load any parameters; must be a circular reference
-                    return Err(SchemaError::CircularParameterReference);
-                }
-
-                remaining_parameters = failed_parameters;
-            }
-        }
-
-        // Apply the inline parameters & constraints to the nodes
-        for node in &self.nodes {
-            node.set_constraints(&mut network, &args)?;
         }
 
         // Create all of the metric sets
@@ -987,7 +977,7 @@ mod core_tests {
     use crate::parameters::{AggFunc, AggregatedParameter, ConstantParameter, ConstantValue, Parameter, ParameterMeta};
     use ndarray::{Array1, Array2, Axis};
     use pywr_core::{metric::MetricF64, recorders::AssertionRecorder, solvers::ClpSolver, test_utils::run_all_solvers};
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
 
     fn model_str() -> &'static str {
         include_str!("./test_models/simple1.json")
@@ -1223,4 +1213,69 @@ mod core_tests {
 
         model.run::<ClpSolver>(&Default::default()).unwrap();
     }
+
+    /// Helper test function that compares the simulated and expected CSV output.
+    ///
+    /// The function takes a path to a folder which is expected to contain `model.json` and `expected.csv` files.
+    /// The model is expected to produce a CSV file called `outputs.csv` which is compared to the `expected.csv` file.
+    /// The function will load the model, run it and compare the output to the expected CSV file.
+    fn test_model(path: &Path) {
+        let model_fn = path.join("model.json");
+        if !model_fn.is_file() {
+            panic!("Model file not found: {:?}", model_fn);
+        }
+        let expected_fn = path.join("expected.csv");
+        if !expected_fn.is_file() {
+            panic!("Expected output file not found: {:?}", expected_fn);
+        }
+        // Read the expected output
+        let expected = std::fs::read_to_string(&expected_fn)
+            .unwrap_or_else(|_| panic!("Failed to read expected output: {:?}", expected_fn));
+
+        // Location of simulated outputs
+        let output_dir = tempfile::tempdir().expect("Failed to create temp dir");
+
+        let schema = PywrModel::from_path(&model_fn).unwrap_or_else(|_| panic!("Failed to load model: {:?}", model_fn));
+
+        // Build the model
+        let model = schema
+            .build_model(model_fn.parent(), Some(output_dir.path()))
+            .unwrap_or_else(|_| panic!("Failed to build model: {:?}", model_fn));
+
+        // Run the model
+        model
+            .run::<ClpSolver>(&Default::default())
+            .unwrap_or_else(|_| panic!("Failed to run model: {:?}", model_fn));
+
+        // Read the simulated output
+        let actual = std::fs::read_to_string(output_dir.path().join("outputs.csv")).unwrap_or_else(|_| {
+            panic!(
+                "Failed to read simulated output: {:?}",
+                output_dir.path().join("expected.csv")
+            )
+        });
+
+        // Use a custom message to avoid showing the newline characters (the default message
+        // uses the Debug trait which shows the newline characters as '\n')
+        assert_eq!(
+            actual, expected,
+            "\n expanded left: {actual}\nexpanded right: {expected}\n"
+        );
+    }
+
+    /// A macro to generate a test for the given directory name.
+    macro_rules! test_model {
+        ($dir_name:ident) => {
+            #[test]
+            fn $dir_name() {
+                test_model(
+                    &Path::new(env!("CARGO_MANIFEST_DIR"))
+                        .join("src/test_models")
+                        .join(stringify!($dir_name)),
+                );
+            }
+        };
+    }
+
+    test_model!(storage1);
 }

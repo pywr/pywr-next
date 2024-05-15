@@ -95,22 +95,13 @@ impl TurbineNode {
 
 #[cfg(feature = "core")]
 impl TurbineNode {
-    fn sub_name() -> Option<&'static str> {
-        Some("turbine")
-    }
-    pub fn add_to_model(&self, network: &mut pywr_core::network::Network, _args: &LoadArgs) -> Result<(), SchemaError> {
-        network.add_link_node(self.meta.name.as_str(), None)?;
-        Ok(())
-    }
+    pub fn add_to_model(&self, network: &mut pywr_core::network::Network, args: &LoadArgs) -> Result<(), SchemaError> {
+        network.get_or_add_link_node(self.meta.name.as_str(), None)?;
 
-    pub fn set_constraints(
-        &self,
-        network: &mut pywr_core::network::Network,
-        args: &LoadArgs,
-    ) -> Result<(), SchemaError> {
         if let Some(cost) = &self.cost {
             let value = cost.load(network, args)?;
-            network.set_node_cost(self.meta.name.as_str(), None, value.into())?;
+            let node = network.get_node_by_name_mut(self.meta.name.as_str(), None)?;
+            node.set_cost(value.into());
         }
 
         if let Some(target) = &self.target {
@@ -139,16 +130,18 @@ impl TurbineNode {
             let power_idx = network.add_parameter(Box::new(p))?;
             let metric = MetricF64::ParameterValue(power_idx);
 
+            let node = network.get_node_by_name_mut(self.meta.name.as_str(), None)?;
+
             match self.target_type {
                 TargetType::MaxFlow => {
-                    network.set_node_max_flow(self.meta.name.as_str(), Self::sub_name(), metric.clone().into())?;
+                    node.set_max_flow_constraint(metric.into())?;
                 }
                 TargetType::MinFlow => {
-                    network.set_node_min_flow(self.meta.name.as_str(), Self::sub_name(), metric.clone().into())?;
+                    node.set_min_flow_constraint(metric.into())?;
                 }
                 TargetType::Both => {
-                    network.set_node_max_flow(self.meta.name.as_str(), Self::sub_name(), metric.clone().into())?;
-                    network.set_node_min_flow(self.meta.name.as_str(), Self::sub_name(), metric.clone().into())?
+                    node.set_max_flow_constraint(metric.clone().into())?;
+                    node.set_min_flow_constraint(metric.into())?;
                 }
             }
         }

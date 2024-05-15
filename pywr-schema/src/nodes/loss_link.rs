@@ -70,34 +70,28 @@ impl LossLinkNode {
 
 #[cfg(feature = "core")]
 impl LossLinkNode {
-    pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
-        network.add_link_node(self.meta.name.as_str(), Self::net_sub_name())?;
+    pub fn add_to_model(&self, network: &mut pywr_core::network::Network, args: &LoadArgs) -> Result<(), SchemaError> {
+        network.get_or_add_link_node(self.meta.name.as_str(), Self::net_sub_name())?;
         // TODO make the loss node configurable (i.e. it could be a link if a network wanted to use the loss)
         // The above would need to support slots in the connections.
-        network.add_output_node(self.meta.name.as_str(), Self::loss_sub_name())?;
+        network.get_or_add_output_node(self.meta.name.as_str(), Self::loss_sub_name())?;
 
         // TODO add the aggregated node that actually does the losses!
-        Ok(())
-    }
 
-    pub fn set_constraints(
-        &self,
-        network: &mut pywr_core::network::Network,
-        args: &LoadArgs,
-    ) -> Result<(), SchemaError> {
-        if let Some(cost) = &self.net_cost {
-            let value = cost.load(network, args)?;
-            network.set_node_cost(self.meta.name.as_str(), Self::net_sub_name(), value.into())?;
+        let net_cost = self.net_cost.as_ref().map(|m| m.load(network, args)).transpose()?;
+        let max_net_flow = self.max_net_flow.as_ref().map(|m| m.load(network, args)).transpose()?;
+        let min_net_flow = self.min_net_flow.as_ref().map(|m| m.load(network, args)).transpose()?;
+
+        let net_node = network.get_node_by_name_mut(self.meta.name.as_str(), Self::net_sub_name())?;
+
+        if let Some(value) = net_cost {
+            net_node.set_cost(value.into());
         }
-
-        if let Some(max_flow) = &self.max_net_flow {
-            let value = max_flow.load(network, args)?;
-            network.set_node_max_flow(self.meta.name.as_str(), Self::net_sub_name(), value.into())?;
+        if let Some(value) = max_net_flow {
+            net_node.set_max_flow_constraint(value.into())?;
         }
-
-        if let Some(min_flow) = &self.min_net_flow {
-            let value = min_flow.load(network, args)?;
-            network.set_node_min_flow(self.meta.name.as_str(), Self::net_sub_name(), value.into())?;
+        if let Some(value) = min_net_flow {
+            net_node.set_min_flow_constraint(value.into())?;
         }
 
         Ok(())

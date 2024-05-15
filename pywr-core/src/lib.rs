@@ -2,6 +2,8 @@
 
 extern crate core;
 
+use crate::aggregated_node::AggregatedNodeIndex;
+use crate::aggregated_storage_node::AggregatedStorageNodeIndex;
 use crate::derived_metric::DerivedMetricIndex;
 use crate::models::MultiNetworkTransferIndex;
 use crate::node::NodeIndex;
@@ -45,6 +47,26 @@ pub enum PywrError {
     EdgeIndexNotFound,
     #[error("virtual storage index {0} not found")]
     VirtualStorageIndexNotFound(VirtualStorageIndex),
+    #[error("virtual storage node with name `{name}` and sub-name `{sub_name:?}` already exists at index `{index}`")]
+    VirtualStorageNodeNameAlreadyExists {
+        name: String,
+        sub_name: Option<String>,
+        index: VirtualStorageIndex,
+    },
+    #[error("aggregated node with name `{name}` and sub-name `{sub_name:?}` already exists at index `{index}`")]
+    AggregatedNodeNameAlreadyExists {
+        name: String,
+        sub_name: Option<String>,
+        index: AggregatedNodeIndex,
+    },
+    #[error(
+        "aggregated storage node with name `{name}` and sub-name `{sub_name:?}` already exists at index `{index}`"
+    )]
+    AggregatedStorageNodeNameAlreadyExists {
+        name: String,
+        sub_name: Option<String>,
+        index: AggregatedStorageNodeIndex,
+    },
     #[error("parameter index {0} not found")]
     ParameterIndexNotFound(ParameterIndex<f64>),
     #[error("index parameter index {0} not found")]
@@ -71,8 +93,12 @@ pub enum PywrError {
     DerivedMetricNotFound,
     #[error("derived metric index {0} not found")]
     DerivedMetricIndexNotFound(DerivedMetricIndex),
-    #[error("node name `{0}` already exists")]
-    NodeNameAlreadyExists(String),
+    #[error("node with name `{name}` and sub-name `{sub_name:?}` already exists at index `{index}`")]
+    NodeNameAlreadyExists {
+        name: String,
+        sub_name: Option<String>,
+        index: NodeIndex,
+    },
     #[error("parameter name `{0}` already exists at index {1}")]
     ParameterNameAlreadyExists(String, ParameterIndex<f64>),
     #[error("index parameter name `{0}` already exists at index {1}")]

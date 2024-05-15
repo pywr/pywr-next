@@ -104,16 +104,20 @@ impl RiverSplitWithGaugeNode {
     fn split_agg_sub_name(i: usize) -> Option<String> {
         Some(format!("split-agg-{i}"))
     }
-    pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
+    pub fn add_to_model(&self, network: &mut pywr_core::network::Network, args: &LoadArgs) -> Result<(), SchemaError> {
         // TODO do this properly
-        network.add_link_node(self.meta.name.as_str(), Self::mrf_sub_name())?;
-        let bypass_idx = network.add_link_node(self.meta.name.as_str(), Self::bypass_sub_name())?;
+        network.get_or_add_link_node(self.meta.name.as_str(), Self::mrf_sub_name())?;
+        let bypass_idx = network
+            .get_or_add_link_node(self.meta.name.as_str(), Self::bypass_sub_name())?
+            .index();
 
         for (i, _) in self.splits.iter().enumerate() {
             // Each split has a link node and an aggregated node to enforce the factors
-            let split_idx = network.add_link_node(self.meta.name.as_str(), Self::split_sub_name(i).as_deref())?;
+            let split_idx = network
+                .get_or_add_link_node(self.meta.name.as_str(), Self::split_sub_name(i).as_deref())?
+                .index();
 
-            // The factors will be set during the `set_constraints` method
+            // The factors will be set during below
             network.add_aggregated_node(
                 self.meta.name.as_str(),
                 Self::split_agg_sub_name(i).as_deref(),
@@ -122,33 +126,25 @@ impl RiverSplitWithGaugeNode {
             )?;
         }
 
-        Ok(())
-    }
+        let mrf_cost = self.mrf_cost.as_ref().map(|m| m.load(network, args)).transpose()?;
+        let mrf = self.mrf.as_ref().map(|m| m.load(network, args)).transpose()?;
 
-    pub fn set_constraints(
-        &self,
-        network: &mut pywr_core::network::Network,
-        args: &LoadArgs,
-    ) -> Result<(), SchemaError> {
         // MRF applies as a maximum on the MRF node.
-        if let Some(cost) = &self.mrf_cost {
-            let value = cost.load(network, args)?;
-            network.set_node_cost(self.meta.name.as_str(), Self::mrf_sub_name(), value.into())?;
-        }
+        let node = network.get_node_by_name_mut(self.meta.name.as_str(), Self::mrf_sub_name())?;
 
-        if let Some(mrf) = &self.mrf {
-            let value = mrf.load(network, args)?;
-            network.set_node_max_flow(self.meta.name.as_str(), Self::mrf_sub_name(), value.into())?;
+        if let Some(value) = mrf_cost {
+            node.set_cost(value.into());
+        }
+        if let Some(value) = mrf {
+            node.set_max_flow_constraint(value.into())?;
         }
 
         for (i, (factor, _)) in self.splits.iter().enumerate() {
             // Set the factors for each split
             let factors = Factors::Proportion(vec![factor.load(network, args)?]);
-            network.set_aggregated_node_factors(
-                self.meta.name.as_str(),
-                Self::split_agg_sub_name(i).as_deref(),
-                Some(factors),
-            )?;
+            let agg_node = network
+                .get_aggregated_node_by_name_mut(self.meta.name.as_str(), Self::split_agg_sub_name(i).as_deref())?;
+            agg_node.set_factors(Some(factors));
         }
 
         Ok(())

@@ -66,18 +66,10 @@ impl DelayNode {
 
 #[cfg(feature = "core")]
 impl DelayNode {
-    pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
-        network.add_output_node(self.meta.name.as_str(), Self::output_sub_name())?;
-        network.add_input_node(self.meta.name.as_str(), Self::input_sub_now())?;
+    pub fn add_to_model(&self, network: &mut pywr_core::network::Network, args: &LoadArgs) -> Result<(), SchemaError> {
+        network.get_or_add_output_node(self.meta.name.as_str(), Self::output_sub_name())?;
+        network.get_or_add_input_node(self.meta.name.as_str(), Self::input_sub_now())?;
 
-        Ok(())
-    }
-
-    pub fn set_constraints(
-        &self,
-        network: &mut pywr_core::network::Network,
-        args: &LoadArgs,
-    ) -> Result<(), SchemaError> {
         // Create the delay parameter
         let name = format!("{}-delay", self.meta.name.as_str());
         let output_idx = network.get_node_index_by_name(self.meta.name.as_str(), Self::output_sub_name())?;
@@ -92,8 +84,11 @@ impl DelayNode {
 
         // Apply it as a constraint on the input node.
         let metric = MetricF64::ParameterValue(delay_idx);
-        network.set_node_max_flow(self.meta.name.as_str(), Self::input_sub_now(), metric.clone().into())?;
-        network.set_node_min_flow(self.meta.name.as_str(), Self::input_sub_now(), metric.into())?;
+
+        let input = network.get_node_by_name_mut(self.meta.name.as_str(), Self::input_sub_now())?;
+
+        input.set_max_flow_constraint(metric.clone().into())?;
+        input.set_min_flow_constraint(metric.into())?;
 
         Ok(())
     }

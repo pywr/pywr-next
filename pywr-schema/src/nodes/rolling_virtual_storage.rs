@@ -10,7 +10,7 @@ use crate::parameters::TryIntoV2Parameter;
 use pywr_core::{
     derived_metric::DerivedMetric,
     metric::MetricF64,
-    node::{ConstraintValue, StorageInitialVolume},
+    node::StorageInitialVolume,
     timestep::TimeDomain,
     virtual_storage::{VirtualStorageBuilder, VirtualStorageReset},
 };
@@ -109,21 +109,6 @@ impl RollingVirtualStorageNode {
             return Err(SchemaError::MissingInitialVolume(self.meta.name.to_string()));
         };
 
-        let cost = match &self.cost {
-            Some(v) => v.load(network, args)?.into(),
-            None => ConstraintValue::Scalar(0.0),
-        };
-
-        let min_volume = match &self.min_volume {
-            Some(v) => v.load(network, args)?.into(),
-            None => ConstraintValue::Scalar(0.0),
-        };
-
-        let max_volume = match &self.max_volume {
-            Some(v) => v.load(network, args)?.into(),
-            None => ConstraintValue::None,
-        };
-
         let node_idxs = self
             .nodes
             .iter()
@@ -132,6 +117,20 @@ impl RollingVirtualStorageNode {
 
         // The rolling licence never resets
         let reset = VirtualStorageReset::Never;
+
+        let mut builder = VirtualStorageBuilder::new(self.meta.name.as_str(), &node_idxs)
+            .initial_volume(initial_volume)
+            .reset(reset);
+
+        if let Some(factors) = &self.factors {
+            builder = builder.factors(factors);
+        }
+
+        network.add_virtual_storage_node(builder)?;
+
+        let min_volume = self.min_volume.as_ref().map(|v| v.load(network, args)).transpose()?;
+        let max_volume = self.max_volume.as_ref().map(|v| v.load(network, args)).transpose()?;
+        let cost = self.cost.as_ref().map(|v| v.load(network, args)).transpose()?;
         let timesteps =
             self.window
                 .as_timesteps(args.domain.time())
@@ -139,21 +138,23 @@ impl RollingVirtualStorageNode {
                     name: self.meta.name.clone(),
                 })?;
 
-        let mut builder = VirtualStorageBuilder::new(self.meta.name.as_str(), &node_idxs)
-            .initial_volume(initial_volume)
-            .min_volume(min_volume)
-            .max_volume(max_volume)
-            .reset(reset)
-            .rolling_window(timesteps)
-            .cost(cost);
+        let node = network.get_virtual_storage_node_by_name_mut(self.meta.name.as_str(), None)?;
 
-        if let Some(factors) = &self.factors {
-            builder = builder.factors(factors);
+        if let Some(value) = min_volume {
+            node.set_min_volume(value.into());
+        }
+        if let Some(value) = max_volume {
+            node.set_max_volume(value.into());
+        }
+        if let Some(value) = cost {
+            node.set_cost(value.into());
         }
 
-        network.add_virtual_storage_node(builder)?;
+        node.set_rolling_window(Some(timesteps));
+
         Ok(())
     }
+
     pub fn create_metric(
         &self,
         network: &mut pywr_core::network::Network,

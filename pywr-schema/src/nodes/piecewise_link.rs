@@ -77,34 +77,30 @@ impl PiecewiseLinkNode {
 
 #[cfg(feature = "core")]
 impl PiecewiseLinkNode {
-    pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
+    pub fn add_to_model(&self, network: &mut pywr_core::network::Network, args: &LoadArgs) -> Result<(), SchemaError> {
         // create a link node for each step
         for (i, _) in self.steps.iter().enumerate() {
-            network.add_link_node(self.meta.name.as_str(), Self::step_sub_name(i).as_deref())?;
+            network.get_or_add_link_node(self.meta.name.as_str(), Self::step_sub_name(i).as_deref())?;
         }
-        Ok(())
-    }
-    pub fn set_constraints(
-        &self,
-        network: &mut pywr_core::network::Network,
-        args: &LoadArgs,
-    ) -> Result<(), SchemaError> {
+
+        // then apply the constraints
         for (i, step) in self.steps.iter().enumerate() {
             let sub_name = Self::step_sub_name(i);
 
-            if let Some(cost) = &step.cost {
-                let value = cost.load(network, args)?;
-                network.set_node_cost(self.meta.name.as_str(), sub_name.as_deref(), value.into())?;
-            }
+            let cost = step.cost.as_ref().map(|m| m.load(network, args)).transpose()?;
+            let max_flow = step.max_flow.as_ref().map(|m| m.load(network, args)).transpose()?;
+            let min_flow = step.min_flow.as_ref().map(|m| m.load(network, args)).transpose()?;
 
-            if let Some(max_flow) = &step.max_flow {
-                let value = max_flow.load(network, args)?;
-                network.set_node_max_flow(self.meta.name.as_str(), sub_name.as_deref(), value.into())?;
-            }
+            let node = network.get_node_by_name_mut(self.meta.name.as_str(), sub_name.as_deref())?;
 
-            if let Some(min_flow) = &step.min_flow {
-                let value = min_flow.load(network, args)?;
-                network.set_node_min_flow(self.meta.name.as_str(), sub_name.as_deref(), value.into())?;
+            if let Some(value) = cost {
+                node.set_cost(value.into());
+            }
+            if let Some(value) = max_flow {
+                node.set_max_flow_constraint(value.into())?;
+            }
+            if let Some(value) = min_flow {
+                node.set_min_flow_constraint(value.into())?;
             }
         }
 

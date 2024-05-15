@@ -1,6 +1,8 @@
 use crate::metric::MetricF64;
 use crate::node::NodeMeta;
 use crate::{NodeIndex, PywrError};
+use std::fmt;
+use std::fmt::{Display, Formatter};
 use std::ops::{Deref, DerefMut};
 
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Debug)]
@@ -11,6 +13,12 @@ impl Deref for AggregatedStorageNodeIndex {
 
     fn deref(&self) -> &Self::Target {
         &self.0
+    }
+}
+
+impl Display for AggregatedStorageNodeIndex {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
     }
 }
 

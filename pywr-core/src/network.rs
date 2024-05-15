@@ -808,7 +808,7 @@ impl Network {
         self.nodes.get(index)
     }
 
-    /// Get a Node from a node's name
+    /// Get a reference to a [`Node`] from its name
     pub fn get_node_by_name(&self, name: &str, sub_name: Option<&str>) -> Result<&Node, PywrError> {
         match self.nodes.iter().find(|&n| n.full_name() == (name, sub_name)) {
             Some(node) => Ok(node),
@@ -816,43 +816,12 @@ impl Network {
         }
     }
 
-    /// Get a NodeIndex from a node's name
-    pub fn get_mut_node_by_name(&mut self, name: &str, sub_name: Option<&str>) -> Result<&mut Node, PywrError> {
+    /// Get a mutable reference to a [`Node`] from its name
+    pub fn get_node_by_name_mut(&mut self, name: &str, sub_name: Option<&str>) -> Result<&mut Node, PywrError> {
         match self.nodes.iter_mut().find(|n| n.full_name() == (name, sub_name)) {
             Some(node) => Ok(node),
             None => Err(PywrError::NodeNotFound(name.to_string())),
         }
-    }
-
-    pub fn set_node_cost(
-        &mut self,
-        name: &str,
-        sub_name: Option<&str>,
-        value: ConstraintValue,
-    ) -> Result<(), PywrError> {
-        let node = self.get_mut_node_by_name(name, sub_name)?;
-        node.set_cost(value);
-        Ok(())
-    }
-
-    pub fn set_node_max_flow(
-        &mut self,
-        name: &str,
-        sub_name: Option<&str>,
-        value: ConstraintValue,
-    ) -> Result<(), PywrError> {
-        let node = self.get_mut_node_by_name(name, sub_name)?;
-        node.set_max_flow_constraint(value)
-    }
-
-    pub fn set_node_min_flow(
-        &mut self,
-        name: &str,
-        sub_name: Option<&str>,
-        value: ConstraintValue,
-    ) -> Result<(), PywrError> {
-        let node = self.get_mut_node_by_name(name, sub_name)?;
-        node.set_min_flow_constraint(value)
     }
 
     /// Get a `AggregatedNodeIndex` from a node's name
@@ -876,7 +845,7 @@ impl Network {
         }
     }
 
-    pub fn get_mut_aggregated_node_by_name(
+    pub fn get_aggregated_node_by_name_mut(
         &mut self,
         name: &str,
         sub_name: Option<&str>,
@@ -905,39 +874,6 @@ impl Network {
             Some(node) => Ok(node.index()),
             None => Err(PywrError::NodeNotFound(name.to_string())),
         }
-    }
-
-    pub fn set_aggregated_node_max_flow(
-        &mut self,
-        name: &str,
-        sub_name: Option<&str>,
-        value: ConstraintValue,
-    ) -> Result<(), PywrError> {
-        let node = self.get_mut_aggregated_node_by_name(name, sub_name)?;
-        node.set_max_flow_constraint(value);
-        Ok(())
-    }
-
-    pub fn set_aggregated_node_min_flow(
-        &mut self,
-        name: &str,
-        sub_name: Option<&str>,
-        value: ConstraintValue,
-    ) -> Result<(), PywrError> {
-        let node = self.get_mut_aggregated_node_by_name(name, sub_name)?;
-        node.set_min_flow_constraint(value);
-        Ok(())
-    }
-
-    pub fn set_aggregated_node_factors(
-        &mut self,
-        name: &str,
-        sub_name: Option<&str>,
-        factors: Option<Factors>,
-    ) -> Result<(), PywrError> {
-        let node = self.get_mut_aggregated_node_by_name(name, sub_name)?;
-        node.set_factors(factors);
-        Ok(())
     }
 
     /// Get a `&AggregatedStorageNode` from a node's name
@@ -1000,7 +936,7 @@ impl Network {
         self.virtual_storage_nodes.get(index)
     }
 
-    /// Get a `VirtualStorageNode` from a node's name
+    /// Get a reference to a [`VirtualStorageNode`] from its name
     pub fn get_virtual_storage_node_by_name(
         &self,
         name: &str,
@@ -1010,6 +946,22 @@ impl Network {
             .virtual_storage_nodes
             .iter()
             .find(|&n| n.full_name() == (name, sub_name))
+        {
+            Some(node) => Ok(node),
+            None => Err(PywrError::NodeNotFound(name.to_string())),
+        }
+    }
+
+    /// Get a mutable reference to a [`VirtualStorageNode`] from its name
+    pub fn get_virtual_storage_node_by_name_mut(
+        &mut self,
+        name: &str,
+        sub_name: Option<&str>,
+    ) -> Result<&mut VirtualStorage, PywrError> {
+        match self
+            .virtual_storage_nodes
+            .iter_mut()
+            .find(|n| n.full_name() == (name, sub_name))
         {
             Some(node) => Ok(node),
             None => Err(PywrError::NodeNotFound(name.to_string())),
@@ -1198,12 +1150,16 @@ impl Network {
         }
     }
 
-    /// Add a new Node::Input to the network.
+    /// Add a new [`Node::Input`] to the network.
     pub fn add_input_node(&mut self, name: &str, sub_name: Option<&str>) -> Result<NodeIndex, PywrError> {
         // Check for name.
         // TODO move this check to `NodeVec`
-        if let Ok(_node) = self.get_node_by_name(name, sub_name) {
-            return Err(PywrError::NodeNameAlreadyExists(name.to_string()));
+        if let Ok(index) = self.get_node_index_by_name(name, sub_name) {
+            return Err(PywrError::NodeNameAlreadyExists {
+                name: name.to_string(),
+                sub_name: sub_name.map(|s| s.to_string()),
+                index,
+            });
         }
 
         // Now add the node to the network.
@@ -1213,12 +1169,38 @@ impl Network {
         Ok(node_index)
     }
 
+    /// Get an Input node by name or add it if it does not exist.
+    pub fn get_or_add_input_node(&mut self, name: &str, sub_name: Option<&str>) -> Result<&Node, PywrError> {
+        if self.get_node_index_by_name(name, sub_name).is_err() {
+            // Node does not exist
+            let _idx = self.add_input_node(name, sub_name)?;
+        }
+
+        // This should now always succeed
+        self.get_node_by_name(name, sub_name)
+    }
+
+    /// Get an Input node by name or add it if it does not exist.
+    pub fn get_or_add_input_node_mut(&mut self, name: &str, sub_name: Option<&str>) -> Result<&mut Node, PywrError> {
+        if self.get_node_index_by_name(name, sub_name).is_err() {
+            // Node does not exist
+            let _idx = self.add_input_node(name, sub_name)?;
+        }
+
+        // This should now always succeed
+        self.get_node_by_name_mut(name, sub_name)
+    }
+
     /// Add a new Node::Link to the network.
     pub fn add_link_node(&mut self, name: &str, sub_name: Option<&str>) -> Result<NodeIndex, PywrError> {
         // Check for name.
         // TODO move this check to `NodeVec`
-        if let Ok(_node) = self.get_node_by_name(name, sub_name) {
-            return Err(PywrError::NodeNameAlreadyExists(name.to_string()));
+        if let Ok(index) = self.get_node_index_by_name(name, sub_name) {
+            return Err(PywrError::NodeNameAlreadyExists {
+                name: name.to_string(),
+                sub_name: sub_name.map(|s| s.to_string()),
+                index,
+            });
         }
 
         // Now add the node to the network.
@@ -1228,12 +1210,38 @@ impl Network {
         Ok(node_index)
     }
 
+    /// Get a Link node by name or add it if it does not exist.
+    pub fn get_or_add_link_node(&mut self, name: &str, sub_name: Option<&str>) -> Result<&Node, PywrError> {
+        if self.get_node_index_by_name(name, sub_name).is_err() {
+            // Node does not exist
+            let _idx = self.add_link_node(name, sub_name)?;
+        }
+
+        // This should now always succeed
+        self.get_node_by_name(name, sub_name)
+    }
+
+    /// Get a Link node by name or add it if it does not exist.
+    pub fn get_or_add_link_node_mut(&mut self, name: &str, sub_name: Option<&str>) -> Result<&mut Node, PywrError> {
+        if self.get_node_index_by_name(name, sub_name).is_err() {
+            // Node does not exist
+            let _idx = self.add_link_node(name, sub_name)?;
+        }
+
+        // This should now always succeed
+        self.get_node_by_name_mut(name, sub_name)
+    }
+
     /// Add a new Node::Link to the network.
     pub fn add_output_node(&mut self, name: &str, sub_name: Option<&str>) -> Result<NodeIndex, PywrError> {
         // Check for name.
         // TODO move this check to `NodeVec`
-        if let Ok(_node) = self.get_node_by_name(name, sub_name) {
-            return Err(PywrError::NodeNameAlreadyExists(name.to_string()));
+        if let Ok(index) = self.get_node_index_by_name(name, sub_name) {
+            return Err(PywrError::NodeNameAlreadyExists {
+                name: name.to_string(),
+                sub_name: sub_name.map(|s| s.to_string()),
+                index,
+            });
         }
 
         // Now add the node to the network.
@@ -1241,6 +1249,28 @@ impl Network {
         // ... and add it to the resolve order.
         self.resolve_order.push(ComponentType::Node(node_index));
         Ok(node_index)
+    }
+
+    /// Get an Output node by name or add it if it does not exist.
+    pub fn get_or_add_output_node(&mut self, name: &str, sub_name: Option<&str>) -> Result<&Node, PywrError> {
+        if self.get_node_index_by_name(name, sub_name).is_err() {
+            // Node does not exist
+            let _idx = self.add_output_node(name, sub_name)?;
+        }
+
+        // This should now always succeed
+        self.get_node_by_name(name, sub_name)
+    }
+
+    /// Get an Output node by name or add it if it does not exist.
+    pub fn get_or_add_output_node_mut(&mut self, name: &str, sub_name: Option<&str>) -> Result<&mut Node, PywrError> {
+        if self.get_node_index_by_name(name, sub_name).is_err() {
+            // Node does not exist
+            let _idx = self.add_output_node(name, sub_name)?;
+        }
+
+        // This should now always succeed
+        self.get_node_by_name_mut(name, sub_name)
     }
 
     /// Add a new Node::Link to the network.
@@ -1254,8 +1284,12 @@ impl Network {
     ) -> Result<NodeIndex, PywrError> {
         // Check for name.
         // TODO move this check to `NodeVec`
-        if let Ok(_node) = self.get_node_by_name(name, sub_name) {
-            return Err(PywrError::NodeNameAlreadyExists(name.to_string()));
+        if let Ok(index) = self.get_node_index_by_name(name, sub_name) {
+            return Err(PywrError::NodeNameAlreadyExists {
+                name: name.to_string(),
+                sub_name: sub_name.map(|s| s.to_string()),
+                index,
+            });
         }
 
         // Now add the node to the network.
@@ -1267,6 +1301,54 @@ impl Network {
         Ok(node_index)
     }
 
+    /// Get an Output node by name or add it if it does not exist.
+    pub fn get_or_add_storage_node(
+        &mut self,
+        name: &str,
+        sub_name: Option<&str>,
+        initial_volume: StorageInitialVolume,
+        min_volume: ConstraintValue,
+        max_volume: ConstraintValue,
+    ) -> Result<&Node, PywrError> {
+        let idx = match self.add_storage_node(name, sub_name, initial_volume, min_volume, max_volume) {
+            Ok(idx) => idx,
+            Err(e) => {
+                if let PywrError::NodeNameAlreadyExists { index, .. } = e {
+                    index
+                } else {
+                    return Err(e);
+                }
+            }
+        };
+
+        // This should now always succeed
+        self.nodes.get(&idx)
+    }
+
+    /// Get an Output node by name or add it if it does not exist.
+    pub fn get_or_add_storage_node_mut(
+        &mut self,
+        name: &str,
+        sub_name: Option<&str>,
+        initial_volume: StorageInitialVolume,
+        min_volume: ConstraintValue,
+        max_volume: ConstraintValue,
+    ) -> Result<&mut Node, PywrError> {
+        let idx = match self.add_storage_node(name, sub_name, initial_volume, min_volume, max_volume) {
+            Ok(idx) => idx,
+            Err(e) => {
+                if let PywrError::NodeNameAlreadyExists { index, .. } = e {
+                    index
+                } else {
+                    return Err(e);
+                }
+            }
+        };
+
+        // This should now always succeed
+        self.nodes.get_mut(&idx)
+    }
+
     /// Add a new `aggregated_node::AggregatedNode` to the network.
     pub fn add_aggregated_node(
         &mut self,
@@ -1275,12 +1357,61 @@ impl Network {
         nodes: &[NodeIndex],
         factors: Option<Factors>,
     ) -> Result<AggregatedNodeIndex, PywrError> {
-        if let Ok(_agg_node) = self.get_aggregated_node_by_name(name, sub_name) {
-            return Err(PywrError::NodeNameAlreadyExists(name.to_string()));
+        if let Ok(agg_node) = self.get_aggregated_node_by_name(name, sub_name) {
+            return Err(PywrError::AggregatedNodeNameAlreadyExists {
+                name: name.to_string(),
+                sub_name: sub_name.map(|s| s.to_string()),
+                index: agg_node.index(),
+            });
         }
 
-        let node_index = self.aggregated_nodes.push_new(name, sub_name, nodes, factors);
-        Ok(node_index)
+        self.aggregated_nodes.push_new(name, sub_name, nodes, factors)
+    }
+
+    /// Get an aggregated node by name or add it if it does not exist.
+    pub fn get_or_add_aggregated_node(
+        &mut self,
+        name: &str,
+        sub_name: Option<&str>,
+        nodes: &[NodeIndex],
+        factors: Option<Factors>,
+    ) -> Result<&AggregatedNode, PywrError> {
+        let node_index = match self.add_aggregated_node(name, sub_name, nodes, factors) {
+            Ok(idx) => idx,
+            Err(e) => {
+                if let PywrError::AggregatedNodeNameAlreadyExists { index, .. } = e {
+                    index
+                } else {
+                    return Err(e);
+                }
+            }
+        };
+
+        // This should now always succeed
+        self.aggregated_nodes.get(&node_index)
+    }
+
+    /// Get an aggregated node by name or add it if it does not exist.
+    pub fn get_or_add_aggregated_node_mut(
+        &mut self,
+        name: &str,
+        sub_name: Option<&str>,
+        nodes: &[NodeIndex],
+        factors: Option<Factors>,
+    ) -> Result<&mut AggregatedNode, PywrError> {
+        let node_index = match self.add_aggregated_node(name, sub_name, nodes, factors) {
+            Ok(idx) => idx,
+            Err(e) => {
+                if let PywrError::AggregatedNodeNameAlreadyExists { index, .. } = e {
+                    index
+                } else {
+                    return Err(e);
+                }
+            }
+        };
+
+        // This should now always succeed
+        self.aggregated_nodes.get_mut(&node_index)
     }
 
     /// Add a new `aggregated_storage_node::AggregatedStorageNode` to the network.
@@ -1290,8 +1421,12 @@ impl Network {
         sub_name: Option<&str>,
         nodes: Vec<NodeIndex>,
     ) -> Result<AggregatedStorageNodeIndex, PywrError> {
-        if let Ok(_agg_node) = self.get_aggregated_storage_node_by_name(name, sub_name) {
-            return Err(PywrError::NodeNameAlreadyExists(name.to_string()));
+        if let Ok(agg_node) = self.get_aggregated_storage_node_by_name(name, sub_name) {
+            return Err(PywrError::AggregatedStorageNodeNameAlreadyExists {
+                name: name.to_string(),
+                sub_name: sub_name.map(|s| s.to_string()),
+                index: agg_node.index(),
+            });
         }
 
         let node_index = self.aggregated_storage_nodes.push_new(name, sub_name, nodes);
@@ -1317,6 +1452,46 @@ impl Network {
             .push(ComponentType::VirtualStorageNode(vs_node_index));
 
         Ok(vs_node_index)
+    }
+
+    /// Get a virtual storage node by name or add it if it does not exist.
+    pub fn get_or_add_virtual_storage_node(
+        &mut self,
+        builder: VirtualStorageBuilder,
+    ) -> Result<&VirtualStorage, PywrError> {
+        let vs_node_index = match self.add_virtual_storage_node(builder) {
+            Ok(idx) => idx,
+            Err(e) => {
+                if let PywrError::VirtualStorageNodeNameAlreadyExists { index, .. } = e {
+                    index
+                } else {
+                    return Err(e);
+                }
+            }
+        };
+
+        // This should now always succeed
+        self.virtual_storage_nodes.get(&vs_node_index)
+    }
+
+    /// Get a virtual storage node by name or add it if it does not exist.
+    pub fn get_or_add_virtual_storage_node_mut(
+        &mut self,
+        builder: VirtualStorageBuilder,
+    ) -> Result<&mut VirtualStorage, PywrError> {
+        let vs_node_index = match self.add_virtual_storage_node(builder) {
+            Ok(idx) => idx,
+            Err(e) => {
+                if let PywrError::VirtualStorageNodeNameAlreadyExists { index, .. } = e {
+                    index
+                } else {
+                    return Err(e);
+                }
+            }
+        };
+
+        // This should now always succeed
+        self.virtual_storage_nodes.get_mut(&vs_node_index)
     }
 
     /// Add a `parameters::Parameter` to the network
@@ -1739,7 +1914,7 @@ mod tests {
         let parameter = network.add_parameter(Box::new(input_max_flow)).unwrap();
 
         // assign the new parameter to one of the nodes.
-        let node = network.get_mut_node_by_name("input", None).unwrap();
+        let node = network.get_node_by_name_mut("input", None).unwrap();
         node.set_constraint(
             ConstraintValue::Metric(MetricF64::ParameterValue(parameter)),
             Constraint::MaxFlow,
@@ -1984,7 +2159,7 @@ mod tests {
         let input_max_flow_idx = model.network_mut().add_parameter(Box::new(input_max_flow)).unwrap();
 
         // assign the new parameter to one of the nodes.
-        let node = model.network_mut().get_mut_node_by_name("input", None).unwrap();
+        let node = model.network_mut().get_node_by_name_mut("input", None).unwrap();
         node.set_constraint(
             ConstraintValue::Metric(MetricF64::ParameterValue(input_max_flow_idx)),
             Constraint::MaxFlow,

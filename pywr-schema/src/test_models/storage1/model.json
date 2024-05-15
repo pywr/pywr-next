@@ -1,0 +1,84 @@
+{
+  "metadata": {
+    "title": "Storage 1",
+    "description": "Basic usage of a Storage node.",
+    "minimum_version": "0.1"
+  },
+  "timestepper": {
+    "start": "2015-01-01",
+    "end": "2015-12-31",
+    "timestep": 1
+  },
+  "network": {
+    "nodes": [
+      {
+        "name": "supply1",
+        "type": "Input",
+        "max_flow": {
+          "type": "Constant",
+          "value": 15.0
+        }
+      },
+      {
+        "name": "storage1",
+        "type": "Storage",
+        "max_volume": {
+          "type": "Constant",
+          "value": 1000.0
+        },
+        "initial_volume": {
+          "Absolute": 1000.0
+        }
+      },
+      {
+        "name": "demand1",
+        "type": "Output",
+        "max_flow": {
+          "type": "Parameter",
+          "name": "demand"
+        },
+        "cost": {
+          "type": "Constant",
+          "value": -10
+        }
+      }
+    ],
+    "edges": [
+      {
+        "from_node": "supply1",
+        "to_node": "storage1"
+      },
+      {
+        "from_node": "storage1",
+        "to_node": "demand1"
+      }
+    ],
+    "parameters": [
+      {
+        "name": "demand",
+        "type": "Constant",
+        "value": 20.0
+      }
+    ],
+    "metric_sets": [
+      {
+        "name": "nodes",
+        "metrics": [
+          {
+            "type": "Node",
+            "name": "storage1"
+          }
+        ]
+      }
+    ],
+    "outputs": [
+      {
+        "name": "outputs",
+        "type": "CSV",
+        "filename": "outputs.csv",
+        "format": "long",
+        "metric_set": "nodes"
+      }
+    ]
+  }
+}

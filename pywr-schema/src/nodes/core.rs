@@ -47,29 +47,27 @@ impl InputNode {
 
 #[cfg(feature = "core")]
 impl InputNode {
-    pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
-        network.add_input_node(self.meta.name.as_str(), None)?;
-        Ok(())
-    }
+    pub fn add_to_model(&self, network: &mut pywr_core::network::Network, args: &LoadArgs) -> Result<(), SchemaError> {
+        // Add the input node to the network if it doesn't already exist
+        // We have to drop the result here while we load the other fields
+        let _ = network.get_or_add_input_node(self.meta.name.as_str(), None)?;
 
-    pub fn set_constraints(
-        &self,
-        network: &mut pywr_core::network::Network,
-        args: &LoadArgs,
-    ) -> Result<(), SchemaError> {
-        if let Some(cost) = &self.cost {
-            let value = cost.load(network, args)?;
-            network.set_node_cost(self.meta.name.as_str(), None, value.into())?;
+        // Load the parameters / metrics
+        let cost = self.cost.as_ref().map(|m| m.load(network, args)).transpose()?;
+        let max_flow = self.max_flow.as_ref().map(|m| m.load(network, args)).transpose()?;
+        let min_flow = self.min_flow.as_ref().map(|m| m.load(network, args)).transpose()?;
+
+        // Now apply them to the node
+        let node = network.get_node_by_name_mut(self.meta.name.as_str(), None)?; // This should always exist
+
+        if let Some(value) = cost {
+            node.set_cost(value.into());
         }
-
-        if let Some(max_flow) = &self.max_flow {
-            let value = max_flow.load(network, args)?;
-            network.set_node_max_flow(self.meta.name.as_str(), None, value.into())?;
+        if let Some(value) = max_flow {
+            node.set_max_flow_constraint(value.into())?;
         }
-
-        if let Some(min_flow) = &self.min_flow {
-            let value = min_flow.load(network, args)?;
-            network.set_node_min_flow(self.meta.name.as_str(), None, value.into())?;
+        if let Some(value) = min_flow {
+            node.set_min_flow_constraint(value.into())?;
         }
 
         Ok(())
@@ -157,29 +155,27 @@ impl LinkNode {
 
 #[cfg(feature = "core")]
 impl LinkNode {
-    pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
-        network.add_link_node(self.meta.name.as_str(), None)?;
-        Ok(())
-    }
+    pub fn add_to_model(&self, network: &mut pywr_core::network::Network, args: &LoadArgs) -> Result<(), SchemaError> {
+        // Add the input node to the network if it doesn't already exist
+        // We have to drop the result here while we load the other fields
+        let _ = network.get_or_add_link_node(self.meta.name.as_str(), None)?;
 
-    pub fn set_constraints(
-        &self,
-        network: &mut pywr_core::network::Network,
-        args: &LoadArgs,
-    ) -> Result<(), SchemaError> {
-        if let Some(cost) = &self.cost {
-            let value = cost.load(network, args)?;
-            network.set_node_cost(self.meta.name.as_str(), None, value.into())?;
+        // Load the parameters / metrics
+        let cost = self.cost.as_ref().map(|m| m.load(network, args)).transpose()?;
+        let max_flow = self.max_flow.as_ref().map(|m| m.load(network, args)).transpose()?;
+        let min_flow = self.min_flow.as_ref().map(|m| m.load(network, args)).transpose()?;
+
+        // Now apply them to the node
+        let node = network.get_node_by_name_mut(self.meta.name.as_str(), None)?; // This should always exist
+
+        if let Some(value) = cost {
+            node.set_cost(value.into());
         }
-
-        if let Some(max_flow) = &self.max_flow {
-            let value = max_flow.load(network, args)?;
-            network.set_node_max_flow(self.meta.name.as_str(), None, value.into())?;
+        if let Some(value) = max_flow {
+            node.set_max_flow_constraint(value.into())?;
         }
-
-        if let Some(min_flow) = &self.min_flow {
-            let value = min_flow.load(network, args)?;
-            network.set_node_min_flow(self.meta.name.as_str(), None, value.into())?;
+        if let Some(value) = min_flow {
+            node.set_min_flow_constraint(value.into())?;
         }
 
         Ok(())
@@ -297,29 +293,27 @@ impl OutputNode {
         Ok(metric)
     }
 
-    pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
-        network.add_output_node(self.meta.name.as_str(), None)?;
-        Ok(())
-    }
+    pub fn add_to_model(&self, network: &mut pywr_core::network::Network, args: &LoadArgs) -> Result<(), SchemaError> {
+        // Add the input node to the network if it doesn't already exist
+        // We have to drop the result here while we load the other fields
+        let _ = network.get_or_add_output_node(self.meta.name.as_str(), None)?;
 
-    pub fn set_constraints(
-        &self,
-        network: &mut pywr_core::network::Network,
-        args: &LoadArgs,
-    ) -> Result<(), SchemaError> {
-        if let Some(cost) = &self.cost {
-            let value = cost.load(network, args)?;
-            network.set_node_cost(self.meta.name.as_str(), None, value.into())?;
+        // Load the parameters / metrics
+        let cost = self.cost.as_ref().map(|m| m.load(network, args)).transpose()?;
+        let max_flow = self.max_flow.as_ref().map(|m| m.load(network, args)).transpose()?;
+        let min_flow = self.min_flow.as_ref().map(|m| m.load(network, args)).transpose()?;
+
+        // Now apply them to the node
+        let node = network.get_node_by_name_mut(self.meta.name.as_str(), None)?; // This should always exist
+
+        if let Some(value) = cost {
+            node.set_cost(value.into());
         }
-
-        if let Some(max_flow) = &self.max_flow {
-            let value = max_flow.load(network, args)?;
-            network.set_node_max_flow(self.meta.name.as_str(), None, value.into())?;
+        if let Some(value) = max_flow {
+            node.set_max_flow_constraint(value.into())?;
         }
-
-        if let Some(min_flow) = &self.min_flow {
-            let value = min_flow.load(network, args)?;
-            network.set_node_min_flow(self.meta.name.as_str(), None, value.into())?;
+        if let Some(value) = min_flow {
+            node.set_min_flow_constraint(value.into())?;
         }
 
         Ok(())
@@ -407,34 +401,31 @@ impl StorageNode {
 #[cfg(feature = "core")]
 impl StorageNode {
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network, args: &LoadArgs) -> Result<(), SchemaError> {
-        let min_volume = match &self.min_volume {
-            Some(v) => v.load(network, args)?.into(),
-            None => ConstraintValue::Scalar(0.0),
-        };
-
+        // Maximum must be loaded before the storage node is added to ensure that it is resolved
+        // before the storage node during simulation.
         let max_volume = match &self.max_volume {
             Some(v) => v.load(network, args)?.into(),
             None => ConstraintValue::None,
         };
 
-        network.add_storage_node(
+        network.get_or_add_storage_node(
             self.meta.name.as_str(),
             None,
             self.initial_volume.into(),
-            min_volume,
+            ConstraintValue::Scalar(0.0),
             max_volume,
         )?;
-        Ok(())
-    }
 
-    pub fn set_constraints(
-        &self,
-        network: &mut pywr_core::network::Network,
-        args: &LoadArgs,
-    ) -> Result<(), SchemaError> {
-        if let Some(cost) = &self.cost {
-            let value = cost.load(network, args)?;
-            network.set_node_cost(self.meta.name.as_str(), None, value.into())?;
+        let cost = self.cost.as_ref().map(|m| m.load(network, args)).transpose()?;
+        let min_volume = self.min_volume.as_ref().map(|m| m.load(network, args)).transpose()?;
+
+        let node = network.get_node_by_name_mut(self.meta.name.as_str(), None)?;
+
+        if let Some(value) = cost {
+            node.set_cost(value.into());
+        }
+        if let Some(value) = min_volume {
+            node.set_min_volume_constraint(value.into())?;
         }
 
         Ok(())
@@ -608,25 +599,20 @@ impl CatchmentNode {
 
 #[cfg(feature = "core")]
 impl CatchmentNode {
-    pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
-        network.add_input_node(self.meta.name.as_str(), None)?;
-        Ok(())
-    }
+    pub fn add_to_model(&self, network: &mut pywr_core::network::Network, args: &LoadArgs) -> Result<(), SchemaError> {
+        network.get_or_add_input_node(self.meta.name.as_str(), None)?;
 
-    pub fn set_constraints(
-        &self,
-        network: &mut pywr_core::network::Network,
-        args: &LoadArgs,
-    ) -> Result<(), SchemaError> {
-        if let Some(cost) = &self.cost {
-            let value = cost.load(network, args)?;
-            network.set_node_cost(self.meta.name.as_str(), None, value.into())?;
+        let cost = self.cost.as_ref().map(|m| m.load(network, args)).transpose()?;
+        let flow = self.flow.as_ref().map(|m| m.load(network, args)).transpose()?;
+
+        let node = network.get_node_by_name_mut(self.meta.name.as_str(), None)?;
+
+        if let Some(value) = cost {
+            node.set_cost(value.into());
         }
-
-        if let Some(flow) = &self.flow {
-            let value = flow.load(network, args)?;
-            network.set_node_min_flow(self.meta.name.as_str(), None, value.clone().into())?;
-            network.set_node_max_flow(self.meta.name.as_str(), None, value.into())?;
+        if let Some(value) = flow {
+            node.set_max_flow_constraint(value.clone().into())?;
+            node.set_min_flow_constraint(value.into())?;
         }
 
         Ok(())
@@ -716,32 +702,26 @@ impl AggregatedNode {
 
 #[cfg(feature = "core")]
 impl AggregatedNode {
-    pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
+    pub fn add_to_model(&self, network: &mut pywr_core::network::Network, args: &LoadArgs) -> Result<(), SchemaError> {
         let nodes = self
             .nodes
             .iter()
             .map(|name| network.get_node_index_by_name(name, None))
             .collect::<Result<Vec<_>, _>>()?;
 
-        // We initialise with no factors, but will update them in the `set_constraints` method
-        // once all the parameters are loaded.
-        network.add_aggregated_node(self.meta.name.as_str(), None, nodes.as_slice(), None)?;
-        Ok(())
-    }
+        // We initialise with no factors, but will update them below
+        network.get_or_add_aggregated_node(self.meta.name.as_str(), None, nodes.as_slice(), None)?;
 
-    pub fn set_constraints(
-        &self,
-        network: &mut pywr_core::network::Network,
-        args: &LoadArgs,
-    ) -> Result<(), SchemaError> {
-        if let Some(max_flow) = &self.max_flow {
-            let value = max_flow.load(network, args)?;
-            network.set_aggregated_node_max_flow(self.meta.name.as_str(), None, value.into())?;
+        let max_flow = self.max_flow.as_ref().map(|m| m.load(network, args)).transpose()?;
+        let min_flow = self.min_flow.as_ref().map(|m| m.load(network, args)).transpose()?;
+
+        let node = network.get_aggregated_node_by_name_mut(self.meta.name.as_str(), None)?;
+
+        if let Some(value) = max_flow {
+            node.set_max_flow_constraint(value.into());
         }
-
-        if let Some(min_flow) = &self.min_flow {
-            let value = min_flow.load(network, args)?;
-            network.set_aggregated_node_min_flow(self.meta.name.as_str(), None, value.into())?;
+        if let Some(value) = min_flow {
+            node.set_min_flow_constraint(value.into());
         }
 
         if let Some(factors) = &self.factors {
@@ -760,7 +740,8 @@ impl AggregatedNode {
                 ),
             };
 
-            network.set_aggregated_node_factors(self.meta.name.as_str(), None, Some(f))?;
+            let node = network.get_aggregated_node_by_name_mut(self.meta.name.as_str(), None)?;
+            node.set_factors(Some(f));
         }
 
         Ok(())

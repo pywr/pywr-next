@@ -3,6 +3,8 @@ use crate::network::Network;
 use crate::node::{Constraint, ConstraintValue, FlowConstraints, NodeMeta};
 use crate::state::State;
 use crate::{NodeIndex, PywrError};
+use std::fmt;
+use std::fmt::{Display, Formatter};
 use std::ops::{Deref, DerefMut};
 
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Debug)]
@@ -13,6 +15,12 @@ impl Deref for AggregatedNodeIndex {
 
     fn deref(&self) -> &Self::Target {
         &self.0
+    }
+}
+
+impl Display for AggregatedNodeIndex {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
     }
 }
 
@@ -50,11 +58,19 @@ impl AggregatedNodeVec {
         sub_name: Option<&str>,
         nodes: &[NodeIndex],
         factors: Option<Factors>,
-    ) -> AggregatedNodeIndex {
+    ) -> Result<AggregatedNodeIndex, PywrError> {
+        if let Some(idx) = self.nodes.iter().position(|n| n.full_name() == (name, sub_name)) {
+            return Err(PywrError::AggregatedNodeNameAlreadyExists {
+                name: name.to_string(),
+                sub_name: sub_name.map(|s| s.to_string()),
+                index: AggregatedNodeIndex(idx),
+            });
+        }
+
         let node_index = AggregatedNodeIndex(self.nodes.len());
         let node = AggregatedNode::new(&node_index, name, sub_name, nodes, factors);
         self.nodes.push(node);
-        node_index
+        Ok(node_index)
     }
 }
 
@@ -326,7 +342,7 @@ mod tests {
         let _agg_node = network.add_aggregated_node("agg-node", None, &[link_node0, link_node1], factors);
 
         // Setup a demand on output-0
-        let output_node = network.get_mut_node_by_name("output", Some("0")).unwrap();
+        let output_node = network.get_node_by_name_mut("output", Some("0")).unwrap();
         output_node
             .set_max_flow_constraint(ConstraintValue::Scalar(100.0))
             .unwrap();

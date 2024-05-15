@@ -85,13 +85,25 @@ impl PiecewiseStorageNode {
     }
 
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network, args: &LoadArgs) -> Result<(), SchemaError> {
+        let mut store_node_indices = Vec::new();
+
         // These are the min and max volume of the overall node
         let max_volume = self.max_volume.load(network, args)?;
 
-        let mut store_node_indices = Vec::new();
-
         // create a storage node for each step
         for (i, step) in self.steps.iter().enumerate() {
+            // The storage node already exists, skip
+            if let Ok(idx) = network.get_node_index_by_name(self.meta.name.as_str(), Self::step_sub_name(i).as_deref())
+            {
+                store_node_indices.push(idx);
+                continue;
+            }
+
+            // Each store has min volume of zero
+            let min_volume = ConstraintValue::Scalar(0.0);
+            // Assume each store is full to start with
+            let initial_volume = StorageInitialVolume::Proportional(1.0);
+
             // The volume of this step is the proportion between the last control curve
             // (or zero if first) and this control curve.
             let lower = if i > 0 {
@@ -102,23 +114,89 @@ impl PiecewiseStorageNode {
 
             let upper = step.control_curve.load(network, args)?;
 
-            let max_volume_parameter = VolumeBetweenControlCurvesParameter::new(
-                format!("{}-{}-max-volume", self.meta.name, Self::step_sub_name(i).unwrap()).as_str(),
-                max_volume.clone(),
-                Some(upper),
-                lower,
-            );
-            let max_volume_parameter_idx = network.add_parameter(Box::new(max_volume_parameter))?;
+            // Create a parameter for the max volume of this store, but first check that
+            // it doesn't already exist
+            let max_volume_parameter_name =
+                format!("{}-{}-max-volume", self.meta.name, Self::step_sub_name(i).unwrap());
+
+            let max_volume_parameter_idx = match network.get_parameter_index_by_name(&max_volume_parameter_name) {
+                Ok(idx) => idx,
+                Err(_) => {
+                    let max_volume_parameter = VolumeBetweenControlCurvesParameter::new(
+                        &max_volume_parameter_name,
+                        max_volume.clone(),
+                        Some(upper),
+                        lower,
+                    );
+                    network.add_parameter(Box::new(max_volume_parameter))?
+                }
+            };
+
             let max_volume = ConstraintValue::Metric(MetricF64::ParameterValue(max_volume_parameter_idx));
 
+            let idx = network
+                .get_or_add_storage_node(
+                    self.meta.name.as_str(),
+                    Self::step_sub_name(i).as_deref(),
+                    initial_volume,
+                    min_volume,
+                    max_volume,
+                )?
+                .index();
+
+            if let Some(prev_idx) = store_node_indices.last() {
+                // There was a lower store; connect to it in both directions
+                network.connect_nodes(idx, *prev_idx)?;
+                network.connect_nodes(*prev_idx, idx)?;
+            }
+
+            store_node_indices.push(idx);
+        }
+
+        if let Ok(idx) = network.get_node_index_by_name(
+            self.meta.name.as_str(),
+            Self::step_sub_name(self.steps.len()).as_deref(),
+        ) {
+            // The storage node already exists, skip
+            store_node_indices.push(idx);
+        } else {
             // Each store has min volume of zero
             let min_volume = ConstraintValue::Scalar(0.0);
             // Assume each store is full to start with
             let initial_volume = StorageInitialVolume::Proportional(1.0);
 
+            // The volume of this store the remain proportion above the last control curve
+            let lower = match self.steps.last() {
+                Some(step) => Some(step.control_curve.load(network, args)?),
+                None => None,
+            };
+
+            let upper = None;
+            let max_volume_parameter_name = format!(
+                "{}-{}-max-volume",
+                self.meta.name,
+                Self::step_sub_name(self.steps.len()).unwrap()
+            );
+
+            let max_volume_parameter_idx = match network.get_parameter_index_by_name(&max_volume_parameter_name) {
+                Ok(idx) => idx,
+                Err(_) => {
+                    let max_volume_parameter = VolumeBetweenControlCurvesParameter::new(
+                        &max_volume_parameter_name,
+                        max_volume.clone(),
+                        upper,
+                        lower,
+                    );
+                    network.add_parameter(Box::new(max_volume_parameter))?
+                }
+            };
+
+            let max_volume = ConstraintValue::Metric(MetricF64::ParameterValue(max_volume_parameter_idx));
+
+            // And one for the residual part above the less step
             let idx = network.add_storage_node(
                 self.meta.name.as_str(),
-                Self::step_sub_name(i).as_deref(),
+                Self::step_sub_name(self.steps.len()).as_deref(),
                 initial_volume,
                 min_volume,
                 max_volume,
@@ -133,69 +211,26 @@ impl PiecewiseStorageNode {
             store_node_indices.push(idx);
         }
 
-        // The volume of this store the remain proportion above the last control curve
-        let lower = match self.steps.last() {
-            Some(step) => Some(step.control_curve.load(network, args)?),
-            None => None,
-        };
-
-        let upper = None;
-
-        let max_volume_parameter = VolumeBetweenControlCurvesParameter::new(
-            format!(
-                "{}-{}-max-volume",
-                self.meta.name,
-                Self::step_sub_name(self.steps.len()).unwrap()
-            )
-            .as_str(),
-            max_volume.clone(),
-            upper,
-            lower,
-        );
-        let max_volume_parameter_idx = network.add_parameter(Box::new(max_volume_parameter))?;
-        let max_volume = ConstraintValue::Metric(MetricF64::ParameterValue(max_volume_parameter_idx));
-
-        // Each store has min volume of zero
-        let min_volume = ConstraintValue::Scalar(0.0);
-        // Assume each store is full to start with
-        let initial_volume = StorageInitialVolume::Proportional(1.0);
-
-        // And one for the residual part above the less step
-        let idx = network.add_storage_node(
-            self.meta.name.as_str(),
-            Self::step_sub_name(self.steps.len()).as_deref(),
-            initial_volume,
-            min_volume,
-            max_volume,
-        )?;
-
-        if let Some(prev_idx) = store_node_indices.last() {
-            // There was a lower store; connect to it in both directions
-            network.connect_nodes(idx, *prev_idx)?;
-            network.connect_nodes(*prev_idx, idx)?;
-        }
-
-        store_node_indices.push(idx);
-
         // Finally, add an aggregate storage node covering all the individual stores
         network.add_aggregated_storage_node(self.meta.name.as_str(), Self::agg_sub_name(), store_node_indices)?;
 
-        Ok(())
-    }
-
-    pub fn set_constraints(
-        &self,
-        network: &mut pywr_core::network::Network,
-        args: &LoadArgs,
-    ) -> Result<(), SchemaError> {
+        // Now add the cost constraints
         for (i, step) in self.steps.iter().enumerate() {
             let sub_name = Self::step_sub_name(i);
 
             if let Some(cost) = &step.cost {
                 let value = cost.load(network, args)?;
-                network.set_node_cost(self.meta.name.as_str(), sub_name.as_deref(), value.into())?;
+                let node = network.get_node_by_name_mut(self.meta.name.as_str(), sub_name.as_deref())?;
+                node.set_cost(value.into());
             }
         }
+
+        let _node = network.get_node_by_name_mut(
+            self.meta.name.as_str(),
+            Self::step_sub_name(self.steps.len()).as_deref(),
+        )?;
+        // TODO set cost for the last node
+        // node.set_cost(value.into());
 
         Ok(())
     }
@@ -247,6 +282,10 @@ mod tests {
         include_str!("../test_models/piecewise_storage2.json")
     }
 
+    fn piecewise_storage3_str() -> &'static str {
+        include_str!("../test_models/piecewise_storage3.json")
+    }
+
     /// Test running `piecewise_storage1.json`
     #[test]
     fn test_piecewise_storage1() {
@@ -292,7 +331,17 @@ mod tests {
     /// Test running `piecewise_storage2.json`
     #[test]
     fn test_piecewise_storage2() {
-        let data = piecewise_storage2_str();
+        test_piecewise_storage_2_3(piecewise_storage2_str())
+    }
+
+    /// Test running `piecewise_storage3.json`
+    #[test]
+    fn test_piecewise_storage3() {
+        test_piecewise_storage_2_3(piecewise_storage3_str())
+    }
+
+    /// Common test function for `piecewise_storage2.json` and `piecewise_storage3.json`
+    fn test_piecewise_storage_2_3(data: &str) {
         let schema: PywrModel = serde_json::from_str(data).unwrap();
         let mut model = schema.build_model(None, None).unwrap();
 

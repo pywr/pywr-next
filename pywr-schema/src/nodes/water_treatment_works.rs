@@ -111,20 +111,27 @@ impl WaterTreatmentWorks {
     fn agg_sub_name() -> Option<&'static str> {
         Some("agg")
     }
-    pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
-        let idx_net = network.add_link_node(self.meta.name.as_str(), Self::net_sub_name())?;
-        let idx_soft_min_flow = network.add_link_node(self.meta.name.as_str(), Self::net_soft_min_flow_sub_name())?;
-        let idx_above_soft_min_flow =
-            network.add_link_node(self.meta.name.as_str(), Self::net_above_soft_min_flow_sub_name())?;
+    pub fn add_to_model(&self, network: &mut pywr_core::network::Network, args: &LoadArgs) -> Result<(), SchemaError> {
+        let idx_net = network
+            .get_or_add_link_node(self.meta.name.as_str(), Self::net_sub_name())?
+            .index();
+        let idx_soft_min_flow = network
+            .get_or_add_link_node(self.meta.name.as_str(), Self::net_soft_min_flow_sub_name())?
+            .index();
+        let idx_above_soft_min_flow = network
+            .get_or_add_link_node(self.meta.name.as_str(), Self::net_above_soft_min_flow_sub_name())?
+            .index();
 
         // Create the internal connections
         network.connect_nodes(idx_net, idx_soft_min_flow)?;
         network.connect_nodes(idx_net, idx_above_soft_min_flow)?;
 
         if self.loss_factor.is_some() {
-            let idx_loss = network.add_output_node(self.meta.name.as_str(), Self::loss_sub_name())?;
+            let idx_loss = network
+                .get_or_add_output_node(self.meta.name.as_str(), Self::loss_sub_name())?
+                .index();
             // This aggregated node will contain the factors to enforce the loss
-            network.add_aggregated_node(
+            network.get_or_add_aggregated_node(
                 self.meta.name.as_str(),
                 Self::agg_sub_name(),
                 &[idx_net, idx_loss],
@@ -132,50 +139,43 @@ impl WaterTreatmentWorks {
             )?;
         }
 
-        Ok(())
-    }
+        // Main constraints apply to the net flow
+        let cost = self.cost.as_ref().map(|m| m.load(network, args)).transpose()?;
+        let max_flow = self.max_flow.as_ref().map(|m| m.load(network, args)).transpose()?;
+        let min_flow = self.min_flow.as_ref().map(|m| m.load(network, args)).transpose()?;
 
-    pub fn set_constraints(
-        &self,
-        network: &mut pywr_core::network::Network,
-        args: &LoadArgs,
-    ) -> Result<(), SchemaError> {
-        if let Some(cost) = &self.cost {
-            let value = cost.load(network, args)?;
-            network.set_node_cost(self.meta.name.as_str(), Self::net_sub_name(), value.into())?;
+        let node = network.get_node_by_name_mut(self.meta.name.as_str(), Self::net_sub_name())?;
+
+        if let Some(value) = cost {
+            node.set_cost(value.into());
+        }
+        if let Some(value) = max_flow {
+            node.set_max_flow_constraint(value.into())?;
+        }
+        if let Some(value) = min_flow {
+            node.set_min_flow_constraint(value.into())?;
         }
 
-        if let Some(max_flow) = &self.max_flow {
-            let value = max_flow.load(network, args)?;
-            network.set_node_max_flow(self.meta.name.as_str(), Self::net_sub_name(), value.into())?;
-        }
-
-        if let Some(min_flow) = &self.min_flow {
-            let value = min_flow.load(network, args)?;
-            network.set_node_min_flow(self.meta.name.as_str(), Self::net_sub_name(), value.into())?;
-        }
+        let soft_min_flow_cost = self
+            .soft_min_flow_cost
+            .as_ref()
+            .map(|m| m.load(network, args))
+            .transpose()?;
+        let soft_min_flow = self.soft_min_flow.as_ref().map(|m| m.load(network, args)).transpose()?;
+        let net_soft_min_flow =
+            network.get_node_by_name_mut(self.meta.name.as_str(), Self::net_soft_min_flow_sub_name())?;
 
         // soft min flow constraints; This typically applies a negative cost upto a maximum
         // defined by the `soft_min_flow`
-        if let Some(cost) = &self.soft_min_flow_cost {
-            let value = cost.load(network, args)?;
-            network.set_node_cost(
-                self.meta.name.as_str(),
-                Self::net_soft_min_flow_sub_name(),
-                value.into(),
-            )?;
+        if let Some(value) = soft_min_flow_cost {
+            net_soft_min_flow.set_cost(value.into());
         }
-        if let Some(min_flow) = &self.soft_min_flow {
-            let value = min_flow.load(network, args)?;
-            network.set_node_max_flow(
-                self.meta.name.as_str(),
-                Self::net_soft_min_flow_sub_name(),
-                value.into(),
-            )?;
+        if let Some(value) = soft_min_flow {
+            net_soft_min_flow.set_max_flow_constraint(value.into())?;
         }
 
         if let Some(loss_factor) = &self.loss_factor {
-            // Handle the case where we a given a zero loss factor
+            // Handle the case where we are given a zero loss factor
             // The aggregated node does not support zero loss factors so filter them here.
             let lf = match loss_factor.load(network, args)? {
                 MetricF64::Constant(f) => {
@@ -192,7 +192,9 @@ impl WaterTreatmentWorks {
                 // Set the factors for the loss
                 // TODO allow for configuring as proportion of gross.
                 let factors = Factors::Ratio(vec![MetricF64::Constant(1.0), lf]);
-                network.set_aggregated_node_factors(self.meta.name.as_str(), Self::agg_sub_name(), Some(factors))?;
+                let agg_node =
+                    network.get_aggregated_node_by_name_mut(self.meta.name.as_str(), Self::agg_sub_name())?;
+                agg_node.set_factors(Some(factors));
             }
         }
 
