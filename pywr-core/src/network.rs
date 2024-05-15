@@ -1868,28 +1868,44 @@ mod tests {
     fn test_duplicate_node_name() {
         let mut network = Network::default();
 
-        network.add_input_node("my-node", None).unwrap();
+        let my_node_idx = network.add_input_node("my-node", None).unwrap();
         // Second add with the same name
         assert_eq!(
             network.add_input_node("my-node", None),
-            Err(PywrError::NodeNameAlreadyExists("my-node".to_string()))
+            Err(PywrError::NodeNameAlreadyExists {
+                name: "my-node".to_string(),
+                sub_name: None,
+                index: my_node_idx
+            })
         );
 
-        network.add_input_node("my-node", Some("a")).unwrap();
+        let my_node_a_idx = network.add_input_node("my-node", Some("a")).unwrap();
         // Second add with the same name
         assert_eq!(
             network.add_input_node("my-node", Some("a")),
-            Err(PywrError::NodeNameAlreadyExists("my-node".to_string()))
+            Err(PywrError::NodeNameAlreadyExists {
+                name: "my-node".to_string(),
+                sub_name: Some("a".to_string()),
+                index: my_node_a_idx
+            })
         );
 
         assert_eq!(
             network.add_link_node("my-node", None),
-            Err(PywrError::NodeNameAlreadyExists("my-node".to_string()))
+            Err(PywrError::NodeNameAlreadyExists {
+                name: "my-node".to_string(),
+                sub_name: None,
+                index: my_node_idx
+            })
         );
 
         assert_eq!(
             network.add_output_node("my-node", None),
-            Err(PywrError::NodeNameAlreadyExists("my-node".to_string()))
+            Err(PywrError::NodeNameAlreadyExists {
+                name: "my-node".to_string(),
+                sub_name: None,
+                index: my_node_idx
+            })
         );
 
         assert_eq!(
@@ -1900,7 +1916,11 @@ mod tests {
                 ConstraintValue::Scalar(0.0),
                 ConstraintValue::Scalar(10.0)
             ),
-            Err(PywrError::NodeNameAlreadyExists("my-node".to_string()))
+            Err(PywrError::NodeNameAlreadyExists {
+                name: "my-node".to_string(),
+                sub_name: None,
+                index: my_node_idx
+            })
         );
     }
 
