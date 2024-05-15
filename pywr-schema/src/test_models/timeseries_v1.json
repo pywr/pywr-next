@@ -1,0 +1,73 @@
+{
+    "metadata": {
+        "title": "Timeseries example",
+        "description": "A model with a timeseries",
+        "minimum_version": "0.1"
+    },
+    "timestepper": {
+        "start": "2021-01-01",
+        "end": "2021-01-10",
+        "timestep": 1
+    },
+    "nodes": [
+        {
+            "name": "input1",
+            "type": "Input",
+            "max_flow": "flow"
+        },
+        {
+            "name": "input2",
+            "type": "Input",
+            "max_flow": "factored_flow"
+        },
+        {
+            "name": "river1",
+            "type": "Link"
+        },
+        {
+            "name": "abs1",
+            "type": "link",
+            "max_flow": 50
+        },
+        {
+            "name": "demand1",
+            "type": "Output",
+            "max_flow": "demand_profile",
+            "cost": -10
+        },
+        {
+            "name": "term1",
+            "type": "Output",
+            "cost": -5
+        }
+    ],
+    "edges": [
+        ["input1", "river1"],
+        ["input2", "river1"],
+        ["river1", "abs1"],
+        ["abs1", "demand1"],
+        ["river1", "term1"]
+    ],
+    "parameters": {
+        "flow": {
+            "type": "dataframe",
+            "url" : "inflow.csv",
+            "parse_dates": true,
+            "dayfirst": true,
+            "index_col": 0,
+            "column": "inflow1"
+        },
+        "factored_flow": {
+            "type": "aggregated",
+            "agg_func":"product",
+            "parameters": [
+                "flow",
+                0.22
+            ]
+        },
+        "demand_profile": {
+            "type": "monthlyprofile",
+            "values": [23.0, 23.0, 23.0, 24.0, 24.0, 25.0, 25.0, 25.0, 24.0, 24.0, 23.0, 23.0]
+        }
+    }
+}
