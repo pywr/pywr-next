@@ -49,9 +49,9 @@ pub enum PywrError {
     ParameterIndexNotFound(ParameterIndex<f64>),
     #[error("index parameter index {0} not found")]
     IndexParameterIndexNotFound(ParameterIndex<usize>),
-    #[error("multi1 value parameter index {0} not found")]
+    #[error("multi-value parameter index {0} not found")]
     MultiValueParameterIndexNotFound(ParameterIndex<MultiValue>),
-    #[error("multi1 value parameter key {0} not found")]
+    #[error("multi-value parameter key {0} not found")]
     MultiValueParameterKeyNotFound(String),
     #[error("inter-network parameter state not initialised")]
     InterNetworkParameterStateNotInitialised,
@@ -77,6 +77,8 @@ pub enum PywrError {
     ParameterNameAlreadyExists(String, ParameterIndex<f64>),
     #[error("index parameter name `{0}` already exists at index {1}")]
     IndexParameterNameAlreadyExists(String, ParameterIndex<usize>),
+    #[error("multi-value parameter name `{0}` already exists at index {1}")]
+    MultiValueParameterNameAlreadyExists(String, ParameterIndex<MultiValue>),
     #[error("metric set name `{0}` already exists")]
     MetricSetNameAlreadyExists(String),
     #[error("recorder name `{0}` already exists at index {1}")]

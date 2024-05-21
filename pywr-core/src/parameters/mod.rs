@@ -292,6 +292,141 @@ pub trait VariableParameter<T> {
     fn get_upper_bounds(&self, variable_config: &dyn VariableConfig) -> Result<Vec<T>, PywrError>;
 }
 
+/// A collection of parameters that return different types.
+#[derive(Default)]
+pub struct ParameterCollection {
+    f64: Vec<Box<dyn Parameter<f64>>>,
+    usize: Vec<Box<dyn Parameter<usize>>>,
+    multi: Vec<Box<dyn Parameter<MultiValue>>>,
+}
+
+impl ParameterCollection {
+    pub fn initial_states(
+        &self,
+        timesteps: &[Timestep],
+        scenario_index: &ScenarioIndex,
+    ) -> Result<
+        (
+            Vec<Option<Box<dyn ParameterState>>>,
+            Vec<Option<Box<dyn ParameterState>>>,
+            Vec<Option<Box<dyn ParameterState>>>,
+        ),
+        PywrError,
+    > {
+        // Get the initial internal state
+        let values_states = self
+            .f64
+            .iter()
+            .map(|p| p.setup(timesteps, scenario_index))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let initial_indices_states = self
+            .usize
+            .iter()
+            .map(|p| p.setup(timesteps, scenario_index))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let initial_multi_param_states = self
+            .multi
+            .iter()
+            .map(|p| p.setup(timesteps, scenario_index))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok((values_states, initial_indices_states, initial_multi_param_states))
+    }
+
+    /// Add a new parameter to the collection.
+    pub fn add_f64(&mut self, parameter: Box<dyn Parameter<f64>>) -> Result<ParameterIndex<f64>, PywrError> {
+        if let Some(index) = self.get_f64_index_by_name(&parameter.meta().name) {
+            return Err(PywrError::ParameterNameAlreadyExists(
+                parameter.meta().name.to_string(),
+                index,
+            ));
+        }
+
+        let index = ParameterIndex::new(self.f64.len());
+
+        self.f64.push(parameter);
+
+        Ok(index)
+    }
+    pub fn get_f64(&self, index: ParameterIndex<f64>) -> Option<&dyn Parameter<f64>> {
+        self.f64.get(*index.deref()).map(|p| p.as_ref())
+    }
+
+    pub fn get_f64_by_name(&self, name: &str) -> Option<&dyn Parameter<f64>> {
+        self.f64.iter().find(|p| p.meta().name == name).map(|p| p.as_ref())
+    }
+
+    pub fn get_f64_index_by_name(&self, name: &str) -> Option<ParameterIndex<f64>> {
+        self.f64
+            .iter()
+            .position(|p| p.meta().name == name)
+            .map(|idx| ParameterIndex::new(idx))
+    }
+
+    pub fn add_usize(&mut self, parameter: Box<dyn Parameter<usize>>) -> Result<ParameterIndex<usize>, PywrError> {
+        if let Some(index) = self.get_usize_index_by_name(&parameter.meta().name) {
+            return Err(PywrError::IndexParameterNameAlreadyExists(
+                parameter.meta().name.to_string(),
+                index,
+            ));
+        }
+
+        let index = ParameterIndex::new(self.usize.len());
+
+        self.usize.push(parameter);
+
+        Ok(index)
+    }
+    pub fn get_usize(&self, index: ParameterIndex<usize>) -> Option<&dyn Parameter<usize>> {
+        self.usize.get(*index.deref()).map(|p| p.as_ref())
+    }
+
+    pub fn get_usize_by_name(&self, name: &str) -> Option<&dyn Parameter<usize>> {
+        self.usize.iter().find(|p| p.meta().name == name).map(|p| p.as_ref())
+    }
+
+    pub fn get_usize_index_by_name(&self, name: &str) -> Option<ParameterIndex<usize>> {
+        self.usize
+            .iter()
+            .position(|p| p.meta().name == name)
+            .map(|idx| ParameterIndex::new(idx))
+    }
+
+    pub fn add_multi(
+        &mut self,
+        parameter: Box<dyn Parameter<MultiValue>>,
+    ) -> Result<ParameterIndex<MultiValue>, PywrError> {
+        if let Some(index) = self.get_multi_index_by_name(&parameter.meta().name) {
+            return Err(PywrError::MultiValueParameterNameAlreadyExists(
+                parameter.meta().name.to_string(),
+                index,
+            ));
+        }
+
+        let index = ParameterIndex::new(self.usize.len());
+
+        self.multi.push(parameter);
+
+        Ok(index)
+    }
+    pub fn get_multi(&self, index: ParameterIndex<MultiValue>) -> Option<&dyn Parameter<MultiValue>> {
+        self.multi.get(*index.deref()).map(|p| p.as_ref())
+    }
+
+    pub fn get_multi_by_name(&self, name: &str) -> Option<&dyn Parameter<MultiValue>> {
+        self.multi.iter().find(|p| p.meta().name == name).map(|p| p.as_ref())
+    }
+
+    pub fn get_multi_index_by_name(&self, name: &str) -> Option<ParameterIndex<MultiValue>> {
+        self.multi
+            .iter()
+            .position(|p| p.meta().name == name)
+            .map(|idx| ParameterIndex::new(idx))
+    }
+}
+
 #[cfg(test)]
 mod tests {
 

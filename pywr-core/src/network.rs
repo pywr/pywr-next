@@ -5,7 +5,7 @@ use crate::edge::{Edge, EdgeIndex, EdgeVec};
 use crate::metric::MetricF64;
 use crate::models::ModelDomain;
 use crate::node::{ConstraintValue, Node, NodeVec, StorageInitialVolume};
-use crate::parameters::{ParameterType, VariableConfig};
+use crate::parameters::{ParameterCollection, ParameterType, VariableConfig};
 use crate::recorders::{MetricSet, MetricSetIndex, MetricSetState};
 use crate::scenario::ScenarioIndex;
 use crate::solvers::{MultiStateSolver, Solver, SolverFeatures, SolverTimings};
@@ -200,9 +200,7 @@ pub struct Network {
     aggregated_nodes: AggregatedNodeVec,
     aggregated_storage_nodes: AggregatedStorageNodeVec,
     virtual_storage_nodes: VirtualStorageVec,
-    parameters: Vec<Box<dyn parameters::Parameter<f64>>>,
-    index_parameters: Vec<Box<dyn parameters::Parameter<usize>>>,
-    multi_parameters: Vec<Box<dyn parameters::Parameter<MultiValue>>>,
+    parameters: ParameterCollection,
     derived_metrics: Vec<DerivedMetric>,
     metric_sets: Vec<MetricSet>,
     resolve_order: Vec<ComponentType>,
@@ -246,24 +244,8 @@ impl Network {
 
             let initial_virtual_storage_states = self.virtual_storage_nodes.iter().map(|n| n.default_state()).collect();
 
-            // Get the initial internal state
-            let initial_values_states = self
-                .parameters
-                .iter()
-                .map(|p| p.setup(timesteps, scenario_index))
-                .collect::<Result<Vec<_>, _>>()?;
-
-            let initial_indices_states = self
-                .index_parameters
-                .iter()
-                .map(|p| p.setup(timesteps, scenario_index))
-                .collect::<Result<Vec<_>, _>>()?;
-
-            let initial_multi_param_states = self
-                .multi_parameters
-                .iter()
-                .map(|p| p.setup(timesteps, scenario_index))
-                .collect::<Result<Vec<_>, _>>()?;
+            let (initial_values_states, initial_indices_states, initial_multi_param_states) =
+                self.parameters.initial_states(timesteps, scenario_index)?;
 
             let state_builder = StateBuilder::new(initial_node_states, self.edges.len())
                 .with_virtual_storage_states(initial_virtual_storage_states)
@@ -622,7 +604,7 @@ impl Network {
                             // Find the parameter itself
                             let p = self
                                 .parameters
-                                .get(*idx.deref())
+                                .get_f64(*idx)
                                 .ok_or(PywrError::ParameterIndexNotFound(*idx))?;
                             // .. and its internal state
                             let internal_state = internal_states
@@ -639,8 +621,8 @@ impl Network {
                         }
                         ParameterType::Index(idx) => {
                             let p = self
-                                .index_parameters
-                                .get(*idx.deref())
+                                .parameters
+                                .get_usize(*idx)
                                 .ok_or(PywrError::IndexParameterIndexNotFound(*idx))?;
 
                             // .. and its internal state
@@ -654,8 +636,8 @@ impl Network {
                         }
                         ParameterType::Multi(idx) => {
                             let p = self
-                                .multi_parameters
-                                .get(*idx.deref())
+                                .parameters
+                                .get_multi(*idx)
                                 .ok_or(PywrError::MultiValueParameterIndexNotFound(*idx))?;
 
                             // .. and its internal state
@@ -716,7 +698,7 @@ impl Network {
                             // Find the parameter itself
                             let p = self
                                 .parameters
-                                .get(*idx.deref())
+                                .get_f64(*idx)
                                 .ok_or(PywrError::ParameterIndexNotFound(*idx))?;
                             // .. and its internal state
                             let internal_state = internal_states
@@ -727,8 +709,8 @@ impl Network {
                         }
                         ParameterType::Index(idx) => {
                             let p = self
-                                .index_parameters
-                                .get(*idx.deref())
+                                .parameters
+                                .get_usize(*idx)
                                 .ok_or(PywrError::IndexParameterIndexNotFound(*idx))?;
 
                             // .. and its internal state
@@ -740,8 +722,8 @@ impl Network {
                         }
                         ParameterType::Multi(idx) => {
                             let p = self
-                                .multi_parameters
-                                .get(*idx.deref())
+                                .parameters
+                                .get_multi(*idx)
                                 .ok_or(PywrError::MultiValueParameterIndexNotFound(*idx))?;
 
                             // .. and its internal state
@@ -1093,36 +1075,25 @@ impl Network {
     }
 
     /// Get a `Parameter` from a parameter's name
-    pub fn get_parameter(&self, index: &ParameterIndex<f64>) -> Result<&dyn parameters::Parameter<f64>, PywrError> {
-        match self.parameters.get(*index.deref()) {
-            Some(p) => Ok(p.as_ref()),
-            None => Err(PywrError::ParameterIndexNotFound(*index)),
-        }
-    }
-
-    /// Get a `Parameter` from a parameter's name
-    pub fn get_mut_parameter(
-        &mut self,
-        index: &ParameterIndex<f64>,
-    ) -> Result<&mut dyn parameters::Parameter<f64>, PywrError> {
-        match self.parameters.get_mut(*index.deref()) {
-            Some(p) => Ok(p.as_mut()),
-            None => Err(PywrError::ParameterIndexNotFound(*index)),
+    pub fn get_parameter(&self, index: ParameterIndex<f64>) -> Result<&dyn parameters::Parameter<f64>, PywrError> {
+        match self.parameters.get_f64(index) {
+            Some(p) => Ok(p),
+            None => Err(PywrError::ParameterIndexNotFound(index)),
         }
     }
 
     /// Get a `Parameter` from a parameter's name
     pub fn get_parameter_by_name(&self, name: &str) -> Result<&dyn parameters::Parameter<f64>, PywrError> {
-        match self.parameters.iter().find(|p| p.name() == name) {
-            Some(parameter) => Ok(parameter.as_ref()),
+        match self.parameters.get_f64_by_name(name) {
+            Some(parameter) => Ok(parameter),
             None => Err(PywrError::ParameterNotFound(name.to_string())),
         }
     }
 
     /// Get a `ParameterIndex` from a parameter's name
     pub fn get_parameter_index_by_name(&self, name: &str) -> Result<ParameterIndex<f64>, PywrError> {
-        match self.parameters.iter().position(|p| p.name() == name) {
-            Some(idx) => Ok(ParameterIndex::new(idx)),
+        match self.parameters.get_f64_index_by_name(name) {
+            Some(idx) => Ok(idx),
             None => Err(PywrError::ParameterNotFound(name.to_string())),
         }
     }
@@ -1130,26 +1101,26 @@ impl Network {
     /// Get a [`Parameter<usize>`] from its index.
     pub fn get_index_parameter(
         &self,
-        index: &ParameterIndex<usize>,
+        index: ParameterIndex<usize>,
     ) -> Result<&dyn parameters::Parameter<usize>, PywrError> {
-        match self.index_parameters.get(*index.deref()) {
-            Some(p) => Ok(p.as_ref()),
-            None => Err(PywrError::IndexParameterIndexNotFound(*index)),
+        match self.parameters.get_usize(index) {
+            Some(p) => Ok(p),
+            None => Err(PywrError::IndexParameterIndexNotFound(index)),
         }
     }
 
     /// Get a `IndexParameter` from a parameter's name
     pub fn get_index_parameter_by_name(&self, name: &str) -> Result<&dyn parameters::Parameter<usize>, PywrError> {
-        match self.index_parameters.iter().find(|p| p.name() == name) {
-            Some(parameter) => Ok(parameter.as_ref()),
+        match self.parameters.get_usize_by_name(name) {
+            Some(parameter) => Ok(parameter),
             None => Err(PywrError::ParameterNotFound(name.to_string())),
         }
     }
 
     /// Get a `IndexParameterIndex` from a parameter's name
     pub fn get_index_parameter_index_by_name(&self, name: &str) -> Result<ParameterIndex<usize>, PywrError> {
-        match self.index_parameters.iter().position(|p| p.name() == name) {
-            Some(idx) => Ok(ParameterIndex::new(idx)),
+        match self.parameters.get_usize_index_by_name(name) {
+            Some(idx) => Ok(idx),
             None => Err(PywrError::ParameterNotFound(name.to_string())),
         }
     }
@@ -1157,11 +1128,11 @@ impl Network {
     /// Get a `MultiValueParameterIndex` from a parameter's name
     pub fn get_multi_valued_parameter(
         &self,
-        index: &ParameterIndex<MultiValue>,
+        index: ParameterIndex<MultiValue>,
     ) -> Result<&dyn parameters::Parameter<MultiValue>, PywrError> {
-        match self.multi_parameters.get(*index.deref()) {
-            Some(p) => Ok(p.as_ref()),
-            None => Err(PywrError::MultiValueParameterIndexNotFound(*index)),
+        match self.parameters.get_multi(index) {
+            Some(p) => Ok(p),
+            None => Err(PywrError::MultiValueParameterIndexNotFound(index)),
         }
     }
 
@@ -1170,8 +1141,8 @@ impl Network {
         &self,
         name: &str,
     ) -> Result<ParameterIndex<MultiValue>, PywrError> {
-        match self.multi_parameters.iter().position(|p| p.name() == name) {
-            Some(idx) => Ok(ParameterIndex::new(idx)),
+        match self.parameters.get_multi_index_by_name(name) {
+            Some(idx) => Ok(idx),
             None => Err(PywrError::ParameterNotFound(name.to_string())),
         }
     }
@@ -1324,18 +1295,8 @@ impl Network {
         &mut self,
         parameter: Box<dyn parameters::Parameter<f64>>,
     ) -> Result<ParameterIndex<f64>, PywrError> {
-        if let Ok(idx) = self.get_parameter_index_by_name(&parameter.meta().name) {
-            return Err(PywrError::ParameterNameAlreadyExists(
-                parameter.meta().name.to_string(),
-                idx,
-            ));
-        }
-
-        let parameter_index = ParameterIndex::new(self.parameters.len());
-
-        // Add the parameter ...
-        self.parameters.push(parameter);
-        // .. and add it to the resolve order
+        let parameter_index = self.parameters.add_f64(parameter)?;
+        // add it to the resolve order
         self.resolve_order
             .push(ComponentType::Parameter(ParameterType::Parameter(parameter_index)));
         Ok(parameter_index)
@@ -1344,19 +1305,10 @@ impl Network {
     /// Add a `parameters::IndexParameter` to the network
     pub fn add_index_parameter(
         &mut self,
-        index_parameter: Box<dyn parameters::Parameter<usize>>,
+        parameter: Box<dyn parameters::Parameter<usize>>,
     ) -> Result<ParameterIndex<usize>, PywrError> {
-        if let Ok(idx) = self.get_index_parameter_index_by_name(&index_parameter.meta().name) {
-            return Err(PywrError::IndexParameterNameAlreadyExists(
-                index_parameter.meta().name.to_string(),
-                idx,
-            ));
-        }
-
-        let parameter_index = ParameterIndex::new(self.index_parameters.len());
-
-        self.index_parameters.push(index_parameter);
-        // .. and add it to the resolve order
+        let parameter_index = self.parameters.add_usize(parameter)?;
+        // add it to the resolve order
         self.resolve_order
             .push(ComponentType::Parameter(ParameterType::Index(parameter_index)));
         Ok(parameter_index)
@@ -1367,18 +1319,9 @@ impl Network {
         &mut self,
         parameter: Box<dyn parameters::Parameter<MultiValue>>,
     ) -> Result<ParameterIndex<MultiValue>, PywrError> {
-        if let Ok(idx) = self.get_parameter_index_by_name(&parameter.meta().name) {
-            return Err(PywrError::ParameterNameAlreadyExists(
-                parameter.meta().name.to_string(),
-                idx,
-            ));
-        }
+        let parameter_index = self.parameters.add_multi(parameter)?;
 
-        let parameter_index = ParameterIndex::new(self.multi_parameters.len());
-
-        // Add the parameter ...
-        self.multi_parameters.push(parameter);
-        // .. and add it to the resolve order
+        // add it to the resolve order
         self.resolve_order
             .push(ComponentType::Parameter(ParameterType::Multi(parameter_index)));
         Ok(parameter_index)
@@ -1428,7 +1371,7 @@ impl Network {
         //     ));
         // }
 
-        let recorder_index = RecorderIndex::new(self.index_parameters.len());
+        let recorder_index = RecorderIndex::new(self.recorders.len());
         self.recorders.push(recorder);
         Ok(recorder_index)
     }
@@ -1468,7 +1411,7 @@ impl Network {
         variable_config: &dyn VariableConfig,
         state: &mut NetworkState,
     ) -> Result<(), PywrError> {
-        match self.parameters.get(*parameter_index.deref()) {
+        match self.parameters.get_f64(parameter_index) {
             Some(parameter) => match parameter.as_f64_variable() {
                 Some(variable) => {
                     // Iterate over all scenarios and set the variable values
@@ -1499,7 +1442,7 @@ impl Network {
         variable_config: &dyn VariableConfig,
         state: &mut NetworkState,
     ) -> Result<(), PywrError> {
-        match self.parameters.get(*parameter_index.deref()) {
+        match self.parameters.get_f64(parameter_index) {
             Some(parameter) => match parameter.as_f64_variable() {
                 Some(variable) => {
                     let internal_state = state
@@ -1521,7 +1464,7 @@ impl Network {
         scenario_index: ScenarioIndex,
         state: &NetworkState,
     ) -> Result<Option<Vec<f64>>, PywrError> {
-        match self.parameters.get(*parameter_index.deref()) {
+        match self.parameters.get_f64(parameter_index) {
             Some(parameter) => match parameter.as_f64_variable() {
                 Some(variable) => {
                     let internal_state = state
@@ -1542,7 +1485,7 @@ impl Network {
         parameter_index: ParameterIndex<f64>,
         state: &NetworkState,
     ) -> Result<Vec<Option<Vec<f64>>>, PywrError> {
-        match self.parameters.get(*parameter_index.deref()) {
+        match self.parameters.get_f64(parameter_index) {
             Some(parameter) => match parameter.as_f64_variable() {
                 Some(variable) => {
                     let values = state
@@ -1574,7 +1517,7 @@ impl Network {
         variable_config: &dyn VariableConfig,
         state: &mut NetworkState,
     ) -> Result<(), PywrError> {
-        match self.parameters.get(*parameter_index.deref()) {
+        match self.parameters.get_f64(parameter_index) {
             Some(parameter) => match parameter.as_u32_variable() {
                 Some(variable) => {
                     // Iterate over all scenarios and set the variable values
@@ -1605,7 +1548,7 @@ impl Network {
         variable_config: &dyn VariableConfig,
         state: &mut NetworkState,
     ) -> Result<(), PywrError> {
-        match self.parameters.get(*parameter_index.deref()) {
+        match self.parameters.get_f64(parameter_index) {
             Some(parameter) => match parameter.as_u32_variable() {
                 Some(variable) => {
                     let internal_state = state
@@ -1627,7 +1570,7 @@ impl Network {
         scenario_index: ScenarioIndex,
         state: &NetworkState,
     ) -> Result<Option<Vec<u32>>, PywrError> {
-        match self.parameters.get(*parameter_index.deref()) {
+        match self.parameters.get_f64(parameter_index) {
             Some(parameter) => match parameter.as_u32_variable() {
                 Some(variable) => {
                     let internal_state = state

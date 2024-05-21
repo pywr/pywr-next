@@ -104,7 +104,7 @@ impl MetricUsize {
 
     pub fn name<'a>(&'a self, network: &'a Network) -> Result<&'a str, PywrError> {
         match self {
-            Self::IndexParameterValue(idx) => network.get_index_parameter(idx).map(|p| p.name()),
+            Self::IndexParameterValue(idx) => network.get_index_parameter(*idx).map(|p| p.name()),
             Self::Constant(_) => Ok(""),
         }
     }
