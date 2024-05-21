@@ -1,6 +1,6 @@
 use crate::metric::MetricF64;
 use crate::network::Network;
-use crate::parameters::{Parameter, ParameterMeta};
+use crate::parameters::{GeneralParameter, Parameter, ParameterMeta};
 use crate::scenario::ScenarioIndex;
 use crate::state::{MultiValue, ParameterState, State};
 use crate::timestep::Timestep;
@@ -31,10 +31,13 @@ impl ApportionParameter {
     }
 }
 
-impl Parameter<MultiValue> for ApportionParameter {
+impl Parameter for ApportionParameter {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }
+}
+
+impl GeneralParameter<MultiValue> for ApportionParameter {
     fn compute(
         &self,
         _timestep: &Timestep,

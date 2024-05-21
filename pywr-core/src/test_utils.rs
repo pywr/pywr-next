@@ -4,7 +4,7 @@ use crate::models::{Model, ModelDomain};
 /// TODO move this to its own local crate ("test-utilities") as part of a workspace.
 use crate::network::Network;
 use crate::node::{Constraint, ConstraintValue, StorageInitialVolume};
-use crate::parameters::{AggFunc, AggregatedParameter, Array2Parameter, ConstantParameter, Parameter};
+use crate::parameters::{AggFunc, AggregatedParameter, Array2Parameter, ConstantParameter, GeneralParameter};
 use crate::recorders::AssertionRecorder;
 use crate::scenario::ScenarioGroupCollection;
 #[cfg(feature = "ipm-ocl")]
@@ -161,7 +161,7 @@ pub fn simple_storage_model() -> Model {
 /// See [`AssertionRecorder`] for more information.
 pub fn run_and_assert_parameter(
     model: &mut Model,
-    parameter: Box<dyn Parameter<f64>>,
+    parameter: Box<dyn GeneralParameter<f64>>,
     expected_values: Array2<f64>,
     ulps: Option<i64>,
     epsilon: Option<f64>,

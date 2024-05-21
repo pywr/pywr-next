@@ -1,6 +1,6 @@
 use crate::metric::MetricF64;
 use crate::network::Network;
-use crate::parameters::{Parameter, ParameterMeta};
+use crate::parameters::{GeneralParameter, Parameter, ParameterMeta};
 use crate::scenario::ScenarioIndex;
 use crate::state::{ParameterState, State};
 use crate::timestep::Timestep;
@@ -22,10 +22,13 @@ impl ControlCurveIndexParameter {
     }
 }
 
-impl Parameter<usize> for ControlCurveIndexParameter {
+impl Parameter for ControlCurveIndexParameter {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }
+}
+
+impl GeneralParameter<usize> for ControlCurveIndexParameter {
     fn compute(
         &self,
         _timestep: &Timestep,

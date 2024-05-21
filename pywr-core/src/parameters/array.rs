@@ -1,5 +1,5 @@
 use crate::network::Network;
-use crate::parameters::{Parameter, ParameterMeta};
+use crate::parameters::{GeneralParameter, Parameter, ParameterMeta};
 use crate::scenario::ScenarioIndex;
 use crate::state::{ParameterState, State};
 use crate::timestep::Timestep;
@@ -21,11 +21,12 @@ impl Array1Parameter {
         }
     }
 }
-
-impl Parameter<f64> for Array1Parameter {
+impl Parameter for Array1Parameter {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }
+}
+impl GeneralParameter<f64> for Array1Parameter {
     fn compute(
         &self,
         timestep: &Timestep,
@@ -62,11 +63,13 @@ impl Array2Parameter {
     }
 }
 
-impl Parameter<f64> for Array2Parameter {
+impl Parameter for Array2Parameter {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }
+}
 
+impl GeneralParameter<f64> for Array2Parameter {
     fn compute(
         &self,
         timestep: &Timestep,

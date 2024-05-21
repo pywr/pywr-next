@@ -1,4 +1,4 @@
-use super::{Parameter, ParameterMeta, PywrError, Timestep};
+use super::{GeneralParameter, Parameter, ParameterMeta, PywrError, Timestep};
 use crate::metric::{MetricF64, MetricUsize};
 use crate::network::Network;
 use crate::parameters::downcast_internal_state_mut;
@@ -160,7 +160,7 @@ impl PyParameter {
     }
 }
 
-impl Parameter<f64> for PyParameter {
+impl Parameter for PyParameter {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }
@@ -172,7 +172,9 @@ impl Parameter<f64> for PyParameter {
     ) -> Result<Option<Box<dyn ParameterState>>, PywrError> {
         self.setup()
     }
+}
 
+impl GeneralParameter<f64> for PyParameter {
     fn compute(
         &self,
         timestep: &Timestep,
@@ -196,19 +198,7 @@ impl Parameter<f64> for PyParameter {
     }
 }
 
-impl Parameter<usize> for PyParameter {
-    fn meta(&self) -> &ParameterMeta {
-        &self.meta
-    }
-
-    fn setup(
-        &self,
-        _timesteps: &[Timestep],
-        _scenario_index: &ScenarioIndex,
-    ) -> Result<Option<Box<dyn ParameterState>>, PywrError> {
-        self.setup()
-    }
-
+impl GeneralParameter<usize> for PyParameter {
     fn compute(
         &self,
         timestep: &Timestep,
@@ -232,28 +222,7 @@ impl Parameter<usize> for PyParameter {
     }
 }
 
-impl Parameter<MultiValue> for PyParameter {
-    fn meta(&self) -> &ParameterMeta {
-        &self.meta
-    }
-
-    fn setup(
-        &self,
-        _timesteps: &[Timestep],
-        _scenario_index: &ScenarioIndex,
-    ) -> Result<Option<Box<dyn ParameterState>>, PywrError> {
-        self.setup()
-    }
-
-    // fn before(&self, internal_state: &mut Option<Box<dyn ParameterState>>) -> Result<(), PywrError> {
-    //     let internal = downcast_internal_state::<Internal>(internal_state);
-    //
-    //     Python::with_gil(|py| internal.user_obj.call_method0(py, "before"))
-    //         .map_err(|e| PywrError::PythonError(e.to_string()))?;
-    //
-    //     Ok(())
-    // }
-
+impl GeneralParameter<MultiValue> for PyParameter {
     fn compute(
         &self,
         timestep: &Timestep,
@@ -383,14 +352,14 @@ class MyParameter:
 
         let mut internal_p_states: Vec<_> = scenario_indices
             .iter()
-            .map(|si| Parameter::<f64>::setup(&param, &timesteps, si).expect("Could not setup the PyParameter"))
+            .map(|si| Parameter::setup(&param, &timesteps, si).expect("Could not setup the PyParameter"))
             .collect();
 
         let model = Network::default();
 
         for ts in timesteps {
             for (si, internal) in scenario_indices.iter().zip(internal_p_states.iter_mut()) {
-                let value = Parameter::compute(&param, ts, si, &model, &state, internal).unwrap();
+                let value = GeneralParameter::compute(&param, ts, si, &model, &state, internal).unwrap();
 
                 assert_approx_eq!(f64, value, ((ts.index + 1) * si.index + ts.date.day() as usize) as f64);
             }
@@ -452,14 +421,14 @@ class MyParameter:
 
         let mut internal_p_states: Vec<_> = scenario_indices
             .iter()
-            .map(|si| Parameter::<MultiValue>::setup(&param, &timesteps, si).expect("Could not setup the PyParameter"))
+            .map(|si| Parameter::setup(&param, &timesteps, si).expect("Could not setup the PyParameter"))
             .collect();
 
         let model = Network::default();
 
         for ts in timesteps {
             for (si, internal) in scenario_indices.iter().zip(internal_p_states.iter_mut()) {
-                let value = Parameter::<MultiValue>::compute(&param, ts, si, &model, &state, internal).unwrap();
+                let value = GeneralParameter::<MultiValue>::compute(&param, ts, si, &model, &state, internal).unwrap();
 
                 assert_approx_eq!(f64, *value.get_value("a-float").unwrap(), std::f64::consts::PI);
 

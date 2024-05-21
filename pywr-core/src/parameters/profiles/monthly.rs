@@ -1,5 +1,5 @@
 use crate::network::Network;
-use crate::parameters::{Parameter, ParameterMeta};
+use crate::parameters::{GeneralParameter, Parameter, ParameterMeta};
 use crate::scenario::ScenarioIndex;
 use crate::state::{ParameterState, State};
 use crate::timestep::Timestep;
@@ -70,10 +70,12 @@ fn interpolate_last(date: &NaiveDateTime, first_value: f64, last_value: f64) -> 
     }
 }
 
-impl Parameter<f64> for MonthlyProfileParameter {
+impl Parameter for MonthlyProfileParameter {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }
+}
+impl GeneralParameter<f64> for MonthlyProfileParameter {
     fn compute(
         &self,
         timestep: &Timestep,

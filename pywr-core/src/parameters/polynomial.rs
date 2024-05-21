@@ -1,6 +1,6 @@
 use crate::metric::MetricF64;
 use crate::network::Network;
-use crate::parameters::{Parameter, ParameterMeta};
+use crate::parameters::{GeneralParameter, Parameter, ParameterMeta};
 use crate::scenario::ScenarioIndex;
 use crate::state::{ParameterState, State};
 use crate::timestep::Timestep;
@@ -26,10 +26,13 @@ impl Polynomial1DParameter {
     }
 }
 
-impl Parameter<f64> for Polynomial1DParameter {
+impl Parameter for Polynomial1DParameter {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }
+}
+
+impl GeneralParameter<f64> for Polynomial1DParameter {
     fn compute(
         &self,
         _timestep: &Timestep,

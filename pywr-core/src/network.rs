@@ -1075,7 +1075,10 @@ impl Network {
     }
 
     /// Get a `Parameter` from a parameter's name
-    pub fn get_parameter(&self, index: ParameterIndex<f64>) -> Result<&dyn parameters::Parameter<f64>, PywrError> {
+    pub fn get_parameter(
+        &self,
+        index: ParameterIndex<f64>,
+    ) -> Result<&dyn parameters::GeneralParameter<f64>, PywrError> {
         match self.parameters.get_f64(index) {
             Some(p) => Ok(p),
             None => Err(PywrError::ParameterIndexNotFound(index)),
@@ -1083,7 +1086,7 @@ impl Network {
     }
 
     /// Get a `Parameter` from a parameter's name
-    pub fn get_parameter_by_name(&self, name: &str) -> Result<&dyn parameters::Parameter<f64>, PywrError> {
+    pub fn get_parameter_by_name(&self, name: &str) -> Result<&dyn parameters::GeneralParameter<f64>, PywrError> {
         match self.parameters.get_f64_by_name(name) {
             Some(parameter) => Ok(parameter),
             None => Err(PywrError::ParameterNotFound(name.to_string())),
@@ -1102,7 +1105,7 @@ impl Network {
     pub fn get_index_parameter(
         &self,
         index: ParameterIndex<usize>,
-    ) -> Result<&dyn parameters::Parameter<usize>, PywrError> {
+    ) -> Result<&dyn parameters::GeneralParameter<usize>, PywrError> {
         match self.parameters.get_usize(index) {
             Some(p) => Ok(p),
             None => Err(PywrError::IndexParameterIndexNotFound(index)),
@@ -1110,7 +1113,10 @@ impl Network {
     }
 
     /// Get a `IndexParameter` from a parameter's name
-    pub fn get_index_parameter_by_name(&self, name: &str) -> Result<&dyn parameters::Parameter<usize>, PywrError> {
+    pub fn get_index_parameter_by_name(
+        &self,
+        name: &str,
+    ) -> Result<&dyn parameters::GeneralParameter<usize>, PywrError> {
         match self.parameters.get_usize_by_name(name) {
             Some(parameter) => Ok(parameter),
             None => Err(PywrError::ParameterNotFound(name.to_string())),
@@ -1129,7 +1135,7 @@ impl Network {
     pub fn get_multi_valued_parameter(
         &self,
         index: ParameterIndex<MultiValue>,
-    ) -> Result<&dyn parameters::Parameter<MultiValue>, PywrError> {
+    ) -> Result<&dyn parameters::GeneralParameter<MultiValue>, PywrError> {
         match self.parameters.get_multi(index) {
             Some(p) => Ok(p),
             None => Err(PywrError::MultiValueParameterIndexNotFound(index)),
@@ -1293,7 +1299,7 @@ impl Network {
     /// Add a `parameters::Parameter` to the network
     pub fn add_parameter(
         &mut self,
-        parameter: Box<dyn parameters::Parameter<f64>>,
+        parameter: Box<dyn parameters::GeneralParameter<f64>>,
     ) -> Result<ParameterIndex<f64>, PywrError> {
         let parameter_index = self.parameters.add_f64(parameter)?;
         // add it to the resolve order
@@ -1305,7 +1311,7 @@ impl Network {
     /// Add a `parameters::IndexParameter` to the network
     pub fn add_index_parameter(
         &mut self,
-        parameter: Box<dyn parameters::Parameter<usize>>,
+        parameter: Box<dyn parameters::GeneralParameter<usize>>,
     ) -> Result<ParameterIndex<usize>, PywrError> {
         let parameter_index = self.parameters.add_usize(parameter)?;
         // add it to the resolve order
@@ -1317,7 +1323,7 @@ impl Network {
     /// Add a `parameters::MultiValueParameter` to the network
     pub fn add_multi_value_parameter(
         &mut self,
-        parameter: Box<dyn parameters::Parameter<MultiValue>>,
+        parameter: Box<dyn parameters::GeneralParameter<MultiValue>>,
     ) -> Result<ParameterIndex<MultiValue>, PywrError> {
         let parameter_index = self.parameters.add_multi(parameter)?;
 

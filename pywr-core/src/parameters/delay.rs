@@ -1,6 +1,6 @@
 use crate::metric::MetricF64;
 use crate::network::Network;
-use crate::parameters::{downcast_internal_state_mut, Parameter, ParameterMeta};
+use crate::parameters::{downcast_internal_state_mut, GeneralParameter, Parameter, ParameterMeta};
 use crate::scenario::ScenarioIndex;
 use crate::state::{ParameterState, State};
 use crate::timestep::Timestep;
@@ -25,7 +25,7 @@ impl DelayParameter {
     }
 }
 
-impl Parameter<f64> for DelayParameter {
+impl Parameter for DelayParameter {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }
@@ -39,7 +39,9 @@ impl Parameter<f64> for DelayParameter {
         let memory: VecDeque<f64> = (0..self.delay).map(|_| self.initial_value).collect();
         Ok(Some(Box::new(memory)))
     }
+}
 
+impl GeneralParameter<f64> for DelayParameter {
     fn compute(
         &self,
         _timestep: &Timestep,

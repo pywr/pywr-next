@@ -1,7 +1,7 @@
 use crate::metric::MetricF64;
 use crate::network::Network;
 use crate::parameters::interpolate::linear_interpolation;
-use crate::parameters::{Parameter, ParameterMeta};
+use crate::parameters::{GeneralParameter, Parameter, ParameterMeta};
 use crate::scenario::ScenarioIndex;
 use crate::state::{ParameterState, State};
 use crate::timestep::Timestep;
@@ -25,11 +25,12 @@ impl InterpolatedParameter {
         }
     }
 }
-
-impl Parameter<f64> for InterpolatedParameter {
+impl Parameter for InterpolatedParameter {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }
+}
+impl GeneralParameter<f64> for InterpolatedParameter {
     fn compute(
         &self,
         _timestep: &Timestep,

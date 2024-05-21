@@ -1,7 +1,7 @@
-use super::PywrError;
+use super::{Parameter, PywrError};
 use crate::metric::MetricF64;
 use crate::network::Network;
-use crate::parameters::{Parameter, ParameterMeta};
+use crate::parameters::{GeneralParameter, ParameterMeta};
 use crate::scenario::ScenarioIndex;
 use crate::state::{ParameterState, State};
 use crate::timestep::Timestep;
@@ -46,10 +46,13 @@ impl AggregatedParameter {
     }
 }
 
-impl Parameter<f64> for AggregatedParameter {
+impl Parameter for AggregatedParameter {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }
+}
+
+impl GeneralParameter<f64> for AggregatedParameter {
     fn compute(
         &self,
         _timestep: &Timestep,

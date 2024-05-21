@@ -192,7 +192,7 @@ pub fn downcast_variable_config_ref<T: 'static>(variable_config: &dyn VariableCo
 /// A trait that defines a component that produces a value each time-step.
 ///
 /// The trait is generic over the type of the value produced.
-pub trait Parameter<T>: Send + Sync {
+pub trait Parameter: Send + Sync {
     fn meta(&self) -> &ParameterMeta;
     fn name(&self) -> &str {
         self.meta().name.as_str()
@@ -204,26 +204,6 @@ pub trait Parameter<T>: Send + Sync {
         #[allow(unused_variables)] scenario_index: &ScenarioIndex,
     ) -> Result<Option<Box<dyn ParameterState>>, PywrError> {
         Ok(None)
-    }
-
-    fn compute(
-        &self,
-        timestep: &Timestep,
-        scenario_index: &ScenarioIndex,
-        model: &Network,
-        state: &State,
-        internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<T, PywrError>;
-
-    fn after(
-        &self,
-        #[allow(unused_variables)] timestep: &Timestep,
-        #[allow(unused_variables)] scenario_index: &ScenarioIndex,
-        #[allow(unused_variables)] model: &Network,
-        #[allow(unused_variables)] state: &State,
-        #[allow(unused_variables)] internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<(), PywrError> {
-        Ok(())
     }
 
     /// Return the parameter as a [`VariableParameter<f64>`] if it supports being a variable.
@@ -254,6 +234,31 @@ pub trait Parameter<T>: Send + Sync {
     /// Can this parameter be a variable
     fn can_be_u32_variable(&self) -> bool {
         self.as_u32_variable().is_some()
+    }
+}
+
+/// A trait that defines a component that produces a value each time-step.
+///
+/// The trait is generic over the type of the value produced.
+pub trait GeneralParameter<T>: Parameter {
+    fn compute(
+        &self,
+        timestep: &Timestep,
+        scenario_index: &ScenarioIndex,
+        model: &Network,
+        state: &State,
+        internal_state: &mut Option<Box<dyn ParameterState>>,
+    ) -> Result<T, PywrError>;
+
+    fn after(
+        &self,
+        #[allow(unused_variables)] timestep: &Timestep,
+        #[allow(unused_variables)] scenario_index: &ScenarioIndex,
+        #[allow(unused_variables)] model: &Network,
+        #[allow(unused_variables)] state: &State,
+        #[allow(unused_variables)] internal_state: &mut Option<Box<dyn ParameterState>>,
+    ) -> Result<(), PywrError> {
+        Ok(())
     }
 }
 
@@ -295,9 +300,9 @@ pub trait VariableParameter<T> {
 /// A collection of parameters that return different types.
 #[derive(Default)]
 pub struct ParameterCollection {
-    f64: Vec<Box<dyn Parameter<f64>>>,
-    usize: Vec<Box<dyn Parameter<usize>>>,
-    multi: Vec<Box<dyn Parameter<MultiValue>>>,
+    f64: Vec<Box<dyn GeneralParameter<f64>>>,
+    usize: Vec<Box<dyn GeneralParameter<usize>>>,
+    multi: Vec<Box<dyn GeneralParameter<MultiValue>>>,
 }
 
 impl ParameterCollection {
@@ -336,7 +341,7 @@ impl ParameterCollection {
     }
 
     /// Add a new parameter to the collection.
-    pub fn add_f64(&mut self, parameter: Box<dyn Parameter<f64>>) -> Result<ParameterIndex<f64>, PywrError> {
+    pub fn add_f64(&mut self, parameter: Box<dyn GeneralParameter<f64>>) -> Result<ParameterIndex<f64>, PywrError> {
         if let Some(index) = self.get_f64_index_by_name(&parameter.meta().name) {
             return Err(PywrError::ParameterNameAlreadyExists(
                 parameter.meta().name.to_string(),
@@ -350,11 +355,11 @@ impl ParameterCollection {
 
         Ok(index)
     }
-    pub fn get_f64(&self, index: ParameterIndex<f64>) -> Option<&dyn Parameter<f64>> {
+    pub fn get_f64(&self, index: ParameterIndex<f64>) -> Option<&dyn GeneralParameter<f64>> {
         self.f64.get(*index.deref()).map(|p| p.as_ref())
     }
 
-    pub fn get_f64_by_name(&self, name: &str) -> Option<&dyn Parameter<f64>> {
+    pub fn get_f64_by_name(&self, name: &str) -> Option<&dyn GeneralParameter<f64>> {
         self.f64.iter().find(|p| p.meta().name == name).map(|p| p.as_ref())
     }
 
@@ -365,7 +370,10 @@ impl ParameterCollection {
             .map(|idx| ParameterIndex::new(idx))
     }
 
-    pub fn add_usize(&mut self, parameter: Box<dyn Parameter<usize>>) -> Result<ParameterIndex<usize>, PywrError> {
+    pub fn add_usize(
+        &mut self,
+        parameter: Box<dyn GeneralParameter<usize>>,
+    ) -> Result<ParameterIndex<usize>, PywrError> {
         if let Some(index) = self.get_usize_index_by_name(&parameter.meta().name) {
             return Err(PywrError::IndexParameterNameAlreadyExists(
                 parameter.meta().name.to_string(),
@@ -379,11 +387,11 @@ impl ParameterCollection {
 
         Ok(index)
     }
-    pub fn get_usize(&self, index: ParameterIndex<usize>) -> Option<&dyn Parameter<usize>> {
+    pub fn get_usize(&self, index: ParameterIndex<usize>) -> Option<&dyn GeneralParameter<usize>> {
         self.usize.get(*index.deref()).map(|p| p.as_ref())
     }
 
-    pub fn get_usize_by_name(&self, name: &str) -> Option<&dyn Parameter<usize>> {
+    pub fn get_usize_by_name(&self, name: &str) -> Option<&dyn GeneralParameter<usize>> {
         self.usize.iter().find(|p| p.meta().name == name).map(|p| p.as_ref())
     }
 
@@ -396,7 +404,7 @@ impl ParameterCollection {
 
     pub fn add_multi(
         &mut self,
-        parameter: Box<dyn Parameter<MultiValue>>,
+        parameter: Box<dyn GeneralParameter<MultiValue>>,
     ) -> Result<ParameterIndex<MultiValue>, PywrError> {
         if let Some(index) = self.get_multi_index_by_name(&parameter.meta().name) {
             return Err(PywrError::MultiValueParameterNameAlreadyExists(
@@ -411,11 +419,11 @@ impl ParameterCollection {
 
         Ok(index)
     }
-    pub fn get_multi(&self, index: ParameterIndex<MultiValue>) -> Option<&dyn Parameter<MultiValue>> {
+    pub fn get_multi(&self, index: ParameterIndex<MultiValue>) -> Option<&dyn GeneralParameter<MultiValue>> {
         self.multi.get(*index.deref()).map(|p| p.as_ref())
     }
 
-    pub fn get_multi_by_name(&self, name: &str) -> Option<&dyn Parameter<MultiValue>> {
+    pub fn get_multi_by_name(&self, name: &str) -> Option<&dyn GeneralParameter<MultiValue>> {
         self.multi.iter().find(|p| p.meta().name == name).map(|p| p.as_ref())
     }
 

@@ -1,4 +1,4 @@
-use super::{Parameter, ParameterMeta, PywrError, Timestep};
+use super::{GeneralParameter, Parameter, ParameterMeta, PywrError, Timestep};
 use crate::metric::{MetricF64, MetricUsize};
 use crate::network::Network;
 use crate::parameters::downcast_internal_state_mut;
@@ -54,7 +54,7 @@ impl RhaiParameter {
     }
 }
 
-impl Parameter<f64> for RhaiParameter {
+impl Parameter for RhaiParameter {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }
@@ -77,7 +77,9 @@ impl Parameter<f64> for RhaiParameter {
 
         Ok(Some(Box::new(internal)))
     }
+}
 
+impl GeneralParameter<f64> for RhaiParameter {
     fn compute(
         &self,
         timestep: &Timestep,

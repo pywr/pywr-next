@@ -1,7 +1,7 @@
 use crate::network::Network;
 use crate::parameters::{
     downcast_internal_state_mut, downcast_internal_state_ref, downcast_variable_config_ref, ActivationFunction,
-    Parameter, ParameterMeta, VariableConfig, VariableParameter,
+    GeneralParameter, Parameter, ParameterMeta, VariableConfig, VariableParameter,
 };
 use crate::scenario::ScenarioIndex;
 use crate::state::{ParameterState, State};
@@ -36,7 +36,7 @@ impl ConstantParameter {
     }
 }
 
-impl Parameter<f64> for ConstantParameter {
+impl Parameter for ConstantParameter {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }
@@ -49,7 +49,16 @@ impl Parameter<f64> for ConstantParameter {
         let value: Option<f64> = None;
         Ok(Some(Box::new(value)))
     }
+    fn as_f64_variable(&self) -> Option<&dyn VariableParameter<f64>> {
+        Some(self)
+    }
 
+    fn as_f64_variable_mut(&mut self) -> Option<&mut dyn VariableParameter<f64>> {
+        Some(self)
+    }
+}
+
+impl GeneralParameter<f64> for ConstantParameter {
     fn compute(
         &self,
         _timestep: &Timestep,
@@ -59,14 +68,6 @@ impl Parameter<f64> for ConstantParameter {
         internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<f64, PywrError> {
         Ok(self.value(internal_state))
-    }
-
-    fn as_f64_variable(&self) -> Option<&dyn VariableParameter<f64>> {
-        Some(self)
-    }
-
-    fn as_f64_variable_mut(&mut self) -> Option<&mut dyn VariableParameter<f64>> {
-        Some(self)
     }
 }
 

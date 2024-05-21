@@ -1,5 +1,5 @@
 use crate::network::Network;
-use crate::parameters::{Parameter, ParameterMeta};
+use crate::parameters::{GeneralParameter, Parameter, ParameterMeta};
 use crate::scenario::ScenarioIndex;
 use crate::state::{ParameterState, State};
 use crate::timestep::Timestep;
@@ -184,10 +184,13 @@ impl WeeklyProfileParameter {
     }
 }
 
-impl Parameter<f64> for WeeklyProfileParameter {
+impl Parameter for WeeklyProfileParameter {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }
+}
+
+impl GeneralParameter<f64> for WeeklyProfileParameter {
     fn compute(
         &self,
         timestep: &Timestep,
