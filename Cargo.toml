@@ -40,7 +40,7 @@ num = "0.4.0"
 float-cmp = "0.9.0"
 ndarray = "0.15.3"
 polars = { version = "0.39", features = ["lazy", "rows", "ndarray"] }
-pyo3-polars = "0.13"
+pyo3-polars = "0.14"
 pyo3 = { version = "0.21", default-features = false }
 pyo3-log = "0.10"
 tracing = { version = "0.1", features = ["log"] }
