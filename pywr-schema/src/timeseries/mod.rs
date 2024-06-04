@@ -12,10 +12,11 @@ use ndarray::Array2;
 use polars::error::PolarsError;
 #[cfg(feature = "core")]
 use polars::prelude::{DataFrame, DataType::Float64, Float64Type, IndexOrder};
+use pywr_core::parameters::ParameterIndex;
 #[cfg(feature = "core")]
 use pywr_core::{
     models::ModelDomain,
-    parameters::{Array1Parameter, Array2Parameter, ParameterIndex},
+    parameters::{Array1Parameter, Array2Parameter},
     PywrError,
 };
 use pywr_v1_schema::tables::TableVec;

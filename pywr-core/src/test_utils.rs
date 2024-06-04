@@ -3,7 +3,7 @@ use crate::models::{Model, ModelDomain};
 /// Utilities for unit tests.
 /// TODO move this to its own local crate ("test-utilities") as part of a workspace.
 use crate::network::Network;
-use crate::node::{Constraint, ConstraintValue, StorageInitialVolume};
+use crate::node::StorageInitialVolume;
 use crate::parameters::{AggFunc, AggregatedParameter, Array2Parameter, ConstantParameter, GeneralParameter};
 use crate::recorders::AssertionRecorder;
 use crate::scenario::ScenarioGroupCollection;
@@ -64,39 +64,26 @@ pub fn simple_network(network: &mut Network, inflow_scenario_index: usize, num_i
     let inflow = network.add_parameter(Box::new(inflow)).unwrap();
 
     let input_node = network.get_mut_node_by_name("input", None).unwrap();
-    input_node
-        .set_constraint(
-            ConstraintValue::Metric(MetricF64::ParameterValue(inflow)),
-            Constraint::MaxFlow,
-        )
-        .unwrap();
+    input_node.set_max_flow_constraint(Some(inflow.into())).unwrap();
 
     let base_demand = 10.0;
 
     let demand_factor = ConstantParameter::new("demand-factor", 1.2);
-    let demand_factor = network.add_parameter(Box::new(demand_factor)).unwrap();
+    let demand_factor = network.add_simple_parameter(Box::new(demand_factor)).unwrap();
 
-    let total_demand = AggregatedParameter::new(
+    let total_demand: AggregatedParameter<MetricF64> = AggregatedParameter::new(
         "total-demand",
-        &[
-            MetricF64::Constant(base_demand),
-            MetricF64::ParameterValue(demand_factor),
-        ],
+        &[base_demand.into(), demand_factor.into()],
         AggFunc::Product,
     );
     let total_demand = network.add_parameter(Box::new(total_demand)).unwrap();
 
     let demand_cost = ConstantParameter::new("demand-cost", -10.0);
-    let demand_cost = network.add_parameter(Box::new(demand_cost)).unwrap();
+    let demand_cost = network.add_simple_parameter(Box::new(demand_cost)).unwrap();
 
     let output_node = network.get_mut_node_by_name("output", None).unwrap();
-    output_node
-        .set_constraint(
-            ConstraintValue::Metric(MetricF64::ParameterValue(total_demand)),
-            Constraint::MaxFlow,
-        )
-        .unwrap();
-    output_node.set_cost(ConstraintValue::Metric(MetricF64::ParameterValue(demand_cost)));
+    output_node.set_max_flow_constraint(Some(total_demand.into())).unwrap();
+    output_node.set_cost(Some(demand_cost.into()));
 }
 /// Create a simple test model with three nodes.
 pub fn simple_model(num_scenarios: usize) -> Model {
@@ -124,8 +111,8 @@ pub fn simple_storage_model() -> Model {
             "reservoir",
             None,
             StorageInitialVolume::Absolute(100.0),
-            ConstraintValue::Scalar(0.0),
-            ConstraintValue::Scalar(100.0),
+            None,
+            Some(100.0.into()),
         )
         .unwrap();
     let output_node = network.add_output_node("output", None).unwrap();
@@ -135,19 +122,14 @@ pub fn simple_storage_model() -> Model {
     // Apply demand to the model
     // TODO convenience function for adding a constant constraint.
     let demand = ConstantParameter::new("demand", 10.0);
-    let demand = network.add_parameter(Box::new(demand)).unwrap();
+    let demand = network.add_simple_parameter(Box::new(demand)).unwrap();
 
     let demand_cost = ConstantParameter::new("demand-cost", -10.0);
-    let demand_cost = network.add_parameter(Box::new(demand_cost)).unwrap();
+    let demand_cost = network.add_simple_parameter(Box::new(demand_cost)).unwrap();
 
     let output_node = network.get_mut_node_by_name("output", None).unwrap();
-    output_node
-        .set_constraint(
-            ConstraintValue::Metric(MetricF64::ParameterValue(demand)),
-            Constraint::MaxFlow,
-        )
-        .unwrap();
-    output_node.set_cost(ConstraintValue::Metric(MetricF64::ParameterValue(demand_cost)));
+    output_node.set_max_flow_constraint(Some(demand.into())).unwrap();
+    output_node.set_cost(Some(demand_cost.into()));
 
     Model::new(default_time_domain().into(), network)
 }
@@ -176,13 +158,7 @@ pub fn run_and_assert_parameter(
         .checked_add_days(Days::new(expected_values.nrows() as u64 - 1))
         .unwrap();
 
-    let rec = AssertionRecorder::new(
-        "assert",
-        MetricF64::ParameterValue(p_idx),
-        expected_values,
-        ulps,
-        epsilon,
-    );
+    let rec = AssertionRecorder::new("assert", p_idx.into(), expected_values, ulps, epsilon);
 
     model.network_mut().add_recorder(Box::new(rec)).unwrap();
     run_all_solvers(model)
@@ -251,22 +227,18 @@ fn make_simple_system<R: Rng>(
     let inflow = Array2Parameter::new(&format!("inflow-{suffix}"), inflow, inflow_scenario_group_index, None);
     let idx = network.add_parameter(Box::new(inflow))?;
 
-    network.set_node_max_flow(
-        "input",
-        Some(suffix),
-        ConstraintValue::Metric(MetricF64::ParameterValue(idx)),
-    )?;
+    network.set_node_max_flow("input", Some(suffix), Some(idx.into()))?;
 
     let input_cost = rng.gen_range(-20.0..-5.00);
-    network.set_node_cost("input", Some(suffix), ConstraintValue::Scalar(input_cost))?;
+    network.set_node_cost("input", Some(suffix), Some(input_cost.into()))?;
 
     let outflow_distr = Normal::new(8.0, 3.0).unwrap();
     let mut outflow: f64 = outflow_distr.sample(rng);
     outflow = outflow.max(0.0);
 
-    network.set_node_max_flow("output", Some(suffix), ConstraintValue::Scalar(outflow))?;
+    network.set_node_max_flow("output", Some(suffix), Some(outflow.into()))?;
 
-    network.set_node_cost("output", Some(suffix), ConstraintValue::Scalar(-500.0))?;
+    network.set_node_cost("output", Some(suffix), Some((-500.0).into()))?;
 
     Ok(())
 }
@@ -296,7 +268,7 @@ fn make_simple_connections<R: Rng>(
 
         if let Ok(idx) = model.add_link_node("transfer", Some(&name)) {
             let transfer_cost = rng.gen_range(0.0..1.0);
-            model.set_node_cost("transfer", Some(&name), ConstraintValue::Scalar(transfer_cost))?;
+            model.set_node_cost("transfer", Some(&name), Some(transfer_cost.into()))?;
 
             let from_suffix = format!("sys-{i:04}");
             let from_idx = model.get_node_index_by_name("link", Some(&from_suffix))?;

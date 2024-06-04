@@ -1,9 +1,9 @@
 use crate::metric::MetricF64;
 use crate::network::Network;
 use crate::parameters::interpolate::linear_interpolation;
-use crate::parameters::{GeneralParameter, Parameter, ParameterMeta};
+use crate::parameters::{GeneralParameter, Parameter, ParameterMeta, ParameterState};
 use crate::scenario::ScenarioIndex;
-use crate::state::{ParameterState, State};
+use crate::state::State;
 use crate::timestep::Timestep;
 use crate::PywrError;
 
@@ -56,5 +56,12 @@ impl GeneralParameter<f64> for InterpolatedParameter {
         let f = linear_interpolation(x, &points, self.error_on_bounds)?;
 
         Ok(f)
+    }
+
+    fn as_parameter(&self) -> &dyn Parameter
+    where
+        Self: Sized,
+    {
+        self
     }
 }

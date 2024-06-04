@@ -1,8 +1,8 @@
 use crate::metric::{MetricF64, MetricUsize};
 use crate::network::Network;
-use crate::parameters::{GeneralParameter, Parameter, ParameterMeta};
+use crate::parameters::{GeneralParameter, Parameter, ParameterMeta, ParameterState};
 use crate::scenario::ScenarioIndex;
-use crate::state::{ParameterState, State};
+use crate::state::State;
 use crate::timestep::Timestep;
 use crate::PywrError;
 
@@ -42,5 +42,12 @@ impl GeneralParameter<f64> for IndexedArrayParameter {
         let metric = self.metrics.get(index).ok_or(PywrError::DataOutOfRange)?;
 
         metric.get_value(network, state)
+    }
+
+    fn as_parameter(&self) -> &dyn Parameter
+    where
+        Self: Sized,
+    {
+        self
     }
 }

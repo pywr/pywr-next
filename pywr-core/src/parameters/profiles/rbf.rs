@@ -1,10 +1,9 @@
-use crate::network::Network;
 use crate::parameters::{
-    downcast_internal_state_mut, downcast_internal_state_ref, downcast_variable_config_ref, GeneralParameter,
-    Parameter, ParameterMeta, VariableConfig, VariableParameter,
+    downcast_internal_state_mut, downcast_internal_state_ref, downcast_variable_config_ref, Parameter, ParameterMeta,
+    ParameterState, SimpleParameter, VariableConfig, VariableParameter,
 };
 use crate::scenario::ScenarioIndex;
-use crate::state::{ParameterState, State};
+use crate::state::SimpleParameterValues;
 use crate::timestep::Timestep;
 use crate::PywrError;
 use chrono::Datelike;
@@ -130,19 +129,25 @@ impl Parameter for RbfProfileParameter {
     }
 }
 
-impl GeneralParameter<f64> for RbfProfileParameter {
+impl SimpleParameter<f64> for RbfProfileParameter {
     fn compute(
         &self,
         timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
-        _network: &Network,
-        _state: &State,
+        _values: &SimpleParameterValues,
         internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<f64, PywrError> {
         // Get the profile from the internal state
         let internal_state = downcast_internal_state_ref::<RbfProfileInternalState>(internal_state);
         // Return today's value from the profile
         Ok(internal_state.profile[timestep.date.ordinal() as usize - 1])
+    }
+
+    fn as_parameter(&self) -> &dyn Parameter
+    where
+        Self: Sized,
+    {
+        self
     }
 }
 

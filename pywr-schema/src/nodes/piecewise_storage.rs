@@ -4,11 +4,10 @@ use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::nodes::{NodeAttribute, NodeMeta};
+use pywr_core::metric::SimpleMetricF64;
 #[cfg(feature = "core")]
 use pywr_core::{
-    derived_metric::DerivedMetric,
-    metric::MetricF64,
-    node::{ConstraintValue, StorageInitialVolume},
+    derived_metric::DerivedMetric, metric::MetricF64, node::StorageInitialVolume,
     parameters::VolumeBetweenControlCurvesParameter,
 };
 use pywr_schema_macros::PywrVisitAll;
@@ -86,7 +85,7 @@ impl PiecewiseStorageNode {
 
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network, args: &LoadArgs) -> Result<(), SchemaError> {
         // These are the min and max volume of the overall node
-        let max_volume = self.max_volume.load(network, args)?;
+        let max_volume: SimpleMetricF64 = self.max_volume.load(network, args)?.try_into()?;
 
         let mut store_node_indices = Vec::new();
 
@@ -95,7 +94,7 @@ impl PiecewiseStorageNode {
             // The volume of this step is the proportion between the last control curve
             // (or zero if first) and this control curve.
             let lower = if i > 0 {
-                Some(self.steps[i - 1].control_curve.load(network, args)?)
+                Some(self.steps[i - 1].control_curve.load(network, args)?.try_into()?)
             } else {
                 None
             };
@@ -105,14 +104,14 @@ impl PiecewiseStorageNode {
             let max_volume_parameter = VolumeBetweenControlCurvesParameter::new(
                 format!("{}-{}-max-volume", self.meta.name, Self::step_sub_name(i).unwrap()).as_str(),
                 max_volume.clone(),
-                Some(upper),
+                Some(upper.try_into()?),
                 lower,
             );
-            let max_volume_parameter_idx = network.add_parameter(Box::new(max_volume_parameter))?;
-            let max_volume = ConstraintValue::Metric(MetricF64::ParameterValue(max_volume_parameter_idx));
+            let max_volume_parameter_idx = network.add_simple_parameter(Box::new(max_volume_parameter))?;
+            let max_volume = Some(max_volume_parameter_idx.try_into()?);
 
             // Each store has min volume of zero
-            let min_volume = ConstraintValue::Scalar(0.0);
+            let min_volume = None;
             // Assume each store is full to start with
             let initial_volume = StorageInitialVolume::Proportional(1.0);
 
@@ -135,7 +134,7 @@ impl PiecewiseStorageNode {
 
         // The volume of this store the remain proportion above the last control curve
         let lower = match self.steps.last() {
-            Some(step) => Some(step.control_curve.load(network, args)?),
+            Some(step) => Some(step.control_curve.load(network, args)?.try_into()?),
             None => None,
         };
 
@@ -152,11 +151,11 @@ impl PiecewiseStorageNode {
             upper,
             lower,
         );
-        let max_volume_parameter_idx = network.add_parameter(Box::new(max_volume_parameter))?;
-        let max_volume = ConstraintValue::Metric(MetricF64::ParameterValue(max_volume_parameter_idx));
+        let max_volume_parameter_idx = network.add_simple_parameter(Box::new(max_volume_parameter))?;
+        let max_volume = Some(max_volume_parameter_idx.try_into()?);
 
         // Each store has min volume of zero
-        let min_volume = ConstraintValue::Scalar(0.0);
+        let min_volume = None;
         // Assume each store is full to start with
         let initial_volume = StorageInitialVolume::Proportional(1.0);
 

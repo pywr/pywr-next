@@ -1,7 +1,6 @@
-use crate::network::Network;
-use crate::parameters::{GeneralParameter, Parameter, ParameterMeta};
+use crate::parameters::{Parameter, ParameterMeta, ParameterState, SimpleParameter};
 use crate::scenario::ScenarioIndex;
-use crate::state::{ParameterState, State};
+use crate::state::SimpleParameterValues;
 use crate::timestep::Timestep;
 use crate::PywrError;
 use chrono::{Datelike, NaiveDate};
@@ -36,13 +35,12 @@ impl Parameter for UniformDrawdownProfileParameter {
         &self.meta
     }
 }
-impl GeneralParameter<f64> for UniformDrawdownProfileParameter {
+impl SimpleParameter<f64> for UniformDrawdownProfileParameter {
     fn compute(
         &self,
         timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
-        _model: &Network,
-        _state: &State,
+        _values: &SimpleParameterValues,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<f64, PywrError> {
         // Current calendar year (might be adjusted depending on position of reset day)
@@ -78,5 +76,12 @@ impl GeneralParameter<f64> for UniformDrawdownProfileParameter {
         let slope = (residual_proportion - 1.0) / total_days_in_period as f64;
 
         Ok(1.0 + (slope * days_into_period as f64))
+    }
+
+    fn as_parameter(&self) -> &dyn Parameter
+    where
+        Self: Sized,
+    {
+        self
     }
 }

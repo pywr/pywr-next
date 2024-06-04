@@ -1,8 +1,8 @@
 use crate::metric::MetricF64;
 use crate::network::Network;
-use crate::parameters::{GeneralParameter, Parameter, ParameterMeta};
+use crate::parameters::{GeneralParameter, Parameter, ParameterMeta, ParameterState};
 use crate::scenario::ScenarioIndex;
-use crate::state::{ParameterState, State};
+use crate::state::State;
 use crate::timestep::Timestep;
 use crate::utils::inverse_hydropower_calculation;
 use crate::PywrError;
@@ -108,5 +108,12 @@ impl GeneralParameter<f64> for HydropowerTargetParameter {
             )));
         }
         Ok(q)
+    }
+
+    fn as_parameter(&self) -> &dyn Parameter
+    where
+        Self: Sized,
+    {
+        self
     }
 }

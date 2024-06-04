@@ -1,9 +1,9 @@
-use super::{GeneralParameter, Parameter, ParameterMeta, PywrError, Timestep};
+use super::{GeneralParameter, Parameter, ParameterMeta, ParameterState, PywrError, Timestep};
 use crate::metric::{MetricF64, MetricUsize};
 use crate::network::Network;
 use crate::parameters::downcast_internal_state_mut;
 use crate::scenario::ScenarioIndex;
-use crate::state::{MultiValue, ParameterState, State};
+use crate::state::{MultiValue, State};
 use pyo3::prelude::*;
 use pyo3::types::{IntoPyDict, PyDict, PyFloat, PyLong, PyTuple};
 use std::collections::HashMap;
@@ -196,6 +196,13 @@ impl GeneralParameter<f64> for PyParameter {
     ) -> Result<(), PywrError> {
         self.after(timestep, scenario_index, model, state, internal_state)
     }
+
+    fn as_parameter(&self) -> &dyn Parameter
+    where
+        Self: Sized,
+    {
+        self
+    }
 }
 
 impl GeneralParameter<usize> for PyParameter {
@@ -219,6 +226,13 @@ impl GeneralParameter<usize> for PyParameter {
         internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<(), PywrError> {
         self.after(timestep, scenario_index, model, state, internal_state)
+    }
+
+    fn as_parameter(&self) -> &dyn Parameter
+    where
+        Self: Sized,
+    {
+        self
     }
 }
 
@@ -292,6 +306,13 @@ impl GeneralParameter<MultiValue> for PyParameter {
     ) -> Result<(), PywrError> {
         self.after(timestep, scenario_index, model, state, internal_state)
     }
+
+    fn as_parameter(&self) -> &dyn Parameter
+    where
+        Self: Sized,
+    {
+        self
+    }
 }
 
 #[cfg(test)]
@@ -348,7 +369,7 @@ class MyParameter:
             },
         ];
 
-        let state = StateBuilder::new(vec![], 0).with_value_parameters(1).build();
+        let state = StateBuilder::new(vec![], 0).build();
 
         let mut internal_p_states: Vec<_> = scenario_indices
             .iter()
@@ -417,7 +438,7 @@ class MyParameter:
             },
         ];
 
-        let state = StateBuilder::new(vec![], 0).with_value_parameters(1).build();
+        let state = StateBuilder::new(vec![], 0).build();
 
         let mut internal_p_states: Vec<_> = scenario_indices
             .iter()

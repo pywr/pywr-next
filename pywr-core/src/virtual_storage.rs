@@ -1,5 +1,6 @@
+use crate::metric::{MetricF64, SimpleMetricF64};
 use crate::network::Network;
-use crate::node::{ConstraintValue, FlowConstraints, NodeMeta, StorageConstraints, StorageInitialVolume};
+use crate::node::{FlowConstraints, NodeMeta, StorageConstraints, StorageInitialVolume};
 use crate::state::{State, VirtualStorageState};
 use crate::timestep::Timestep;
 use crate::{NodeIndex, PywrError};
@@ -73,11 +74,11 @@ pub struct VirtualStorageBuilder {
     nodes: Vec<NodeIndex>,
     factors: Option<Vec<f64>>,
     initial_volume: StorageInitialVolume,
-    min_volume: ConstraintValue,
-    max_volume: ConstraintValue,
+    min_volume: Option<SimpleMetricF64>,
+    max_volume: Option<SimpleMetricF64>,
     reset: VirtualStorageReset,
     rolling_window: Option<NonZeroUsize>,
-    cost: ConstraintValue,
+    cost: Option<MetricF64>,
 }
 
 impl VirtualStorageBuilder {
@@ -88,11 +89,11 @@ impl VirtualStorageBuilder {
             nodes: nodes.to_vec(),
             factors: None,
             initial_volume: StorageInitialVolume::Absolute(0.0),
-            min_volume: ConstraintValue::Scalar(0.0),
-            max_volume: ConstraintValue::Scalar(f64::INFINITY),
+            min_volume: None,
+            max_volume: None,
             reset: VirtualStorageReset::Never,
             rolling_window: None,
-            cost: ConstraintValue::None,
+            cost: None,
         }
     }
 
@@ -111,12 +112,12 @@ impl VirtualStorageBuilder {
         self
     }
 
-    pub fn min_volume(mut self, min_volume: ConstraintValue) -> Self {
+    pub fn min_volume(mut self, min_volume: Option<SimpleMetricF64>) -> Self {
         self.min_volume = min_volume;
         self
     }
 
-    pub fn max_volume(mut self, max_volume: ConstraintValue) -> Self {
+    pub fn max_volume(mut self, max_volume: Option<SimpleMetricF64>) -> Self {
         self.max_volume = max_volume;
         self
     }
@@ -131,7 +132,7 @@ impl VirtualStorageBuilder {
         self
     }
 
-    pub fn cost(mut self, cost: ConstraintValue) -> Self {
+    pub fn cost(mut self, cost: Option<MetricF64>) -> Self {
         self.cost = cost;
         self
     }
@@ -139,7 +140,7 @@ impl VirtualStorageBuilder {
     pub fn build(self, index: VirtualStorageIndex) -> VirtualStorage {
         VirtualStorage {
             meta: NodeMeta::new(&index, &self.name, self.sub_name.as_deref()),
-            flow_constraints: FlowConstraints::new(),
+            flow_constraints: FlowConstraints::default(),
             nodes: self.nodes,
             factors: self.factors,
             initial_volume: self.initial_volume,
@@ -167,7 +168,7 @@ pub struct VirtualStorage {
     pub storage_constraints: StorageConstraints,
     pub reset: VirtualStorageReset,
     pub rolling_window: Option<NonZeroUsize>,
-    pub cost: ConstraintValue,
+    pub cost: Option<MetricF64>,
 }
 
 impl VirtualStorage {
@@ -199,13 +200,12 @@ impl VirtualStorage {
 
     pub fn get_cost(&self, network: &Network, state: &State) -> Result<f64, PywrError> {
         match &self.cost {
-            ConstraintValue::None => Ok(0.0),
-            ConstraintValue::Scalar(v) => Ok(*v),
-            ConstraintValue::Metric(m) => m.get_value(network, state),
+            None => Ok(0.0),
+            Some(m) => m.get_value(network, state),
         }
     }
 
-    pub fn before(&self, timestep: &Timestep, network: &Network, state: &mut State) -> Result<(), PywrError> {
+    pub fn before(&self, timestep: &Timestep, state: &mut State) -> Result<(), PywrError> {
         let do_reset = if timestep.is_first() {
             // Set the initial volume if it is the first timestep.
             true
@@ -228,7 +228,7 @@ impl VirtualStorage {
         };
 
         if do_reset {
-            let max_volume = self.get_max_volume(network, state)?;
+            let max_volume = self.get_max_volume(state)?;
             // Determine the initial volume
             let volume = match &self.initial_volume {
                 StorageInitialVolume::Absolute(iv) => *iv,
@@ -262,17 +262,19 @@ impl VirtualStorage {
             .map(|factors| self.nodes.iter().zip(factors.iter()).map(|(n, f)| (*n, *f)).collect())
     }
 
-    pub fn get_min_volume(&self, model: &Network, state: &State) -> Result<f64, PywrError> {
-        self.storage_constraints.get_min_volume(model, state)
+    pub fn get_min_volume(&self, state: &State) -> Result<f64, PywrError> {
+        self.storage_constraints
+            .get_min_volume(&state.get_simple_parameter_values())
     }
 
-    pub fn get_max_volume(&self, model: &Network, state: &State) -> Result<f64, PywrError> {
-        self.storage_constraints.get_max_volume(model, state)
+    pub fn get_max_volume(&self, state: &State) -> Result<f64, PywrError> {
+        self.storage_constraints
+            .get_max_volume(&state.get_simple_parameter_values())
     }
 
-    pub fn get_current_available_volume_bounds(&self, model: &Network, state: &State) -> Result<(f64, f64), PywrError> {
-        let min_vol = self.get_min_volume(model, state)?;
-        let max_vol = self.get_max_volume(model, state)?;
+    pub fn get_current_available_volume_bounds(&self, state: &State) -> Result<(f64, f64), PywrError> {
+        let min_vol = self.get_min_volume(state)?;
+        let max_vol = self.get_max_volume(state)?;
 
         let current_volume = state.get_network_state().get_virtual_storage_volume(&self.index())?;
 

@@ -1,9 +1,9 @@
 use super::{Parameter, PywrError};
 use crate::metric::MetricF64;
 use crate::network::Network;
-use crate::parameters::{GeneralParameter, ParameterMeta};
+use crate::parameters::{GeneralParameter, ParameterMeta, ParameterState};
 use crate::scenario::ScenarioIndex;
-use crate::state::{ParameterState, State};
+use crate::state::State;
 use crate::timestep::Timestep;
 use crate::PywrError::InvalidMetricValue;
 
@@ -48,5 +48,12 @@ impl GeneralParameter<f64> for DivisionParameter {
 
         let numerator = self.numerator.get_value(model, state)?;
         Ok(numerator / denominator)
+    }
+
+    fn as_parameter(&self) -> &dyn Parameter
+    where
+        Self: Sized,
+    {
+        self
     }
 }

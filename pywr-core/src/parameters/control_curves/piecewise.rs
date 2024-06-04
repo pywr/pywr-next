@@ -1,9 +1,9 @@
 use crate::metric::MetricF64;
 use crate::network::Network;
 use crate::parameters::interpolate::interpolate;
-use crate::parameters::{GeneralParameter, Parameter, ParameterMeta};
+use crate::parameters::{GeneralParameter, Parameter, ParameterMeta, ParameterState};
 use crate::scenario::ScenarioIndex;
-use crate::state::{ParameterState, State};
+use crate::state::State;
 use crate::timestep::Timestep;
 use crate::PywrError;
 
@@ -64,6 +64,13 @@ impl GeneralParameter<f64> for PiecewiseInterpolatedParameter {
         let v = self.values.last().ok_or(PywrError::DataOutOfRange)?;
         Ok(interpolate(x, self.minimum, cc_previous_value, v[1], v[0]))
     }
+
+    fn as_parameter(&self) -> &dyn Parameter
+    where
+        Self: Sized,
+    {
+        self
+    }
 }
 
 #[cfg(test)]
@@ -85,8 +92,8 @@ mod test {
 
         let parameter = PiecewiseInterpolatedParameter::new(
             "test-parameter",
-            MetricF64::ParameterValue(volume_idx), // Interpolate with the parameter based values
-            vec![MetricF64::Constant(0.8), MetricF64::Constant(0.5)],
+            volume_idx.into(), // Interpolate with the parameter based values
+            vec![0.8.into(), 0.5.into()],
             vec![[10.0, 1.0], [0.0, 0.0], [-1.0, -10.0]],
             1.0,
             0.0,

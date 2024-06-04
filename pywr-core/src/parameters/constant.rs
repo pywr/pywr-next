@@ -1,10 +1,9 @@
-use crate::network::Network;
 use crate::parameters::{
     downcast_internal_state_mut, downcast_internal_state_ref, downcast_variable_config_ref, ActivationFunction,
-    GeneralParameter, Parameter, ParameterMeta, VariableConfig, VariableParameter,
+    Parameter, ParameterMeta, ParameterState, SimpleParameter, VariableConfig, VariableParameter,
 };
 use crate::scenario::ScenarioIndex;
-use crate::state::{ParameterState, State};
+use crate::state::SimpleParameterValues;
 use crate::timestep::Timestep;
 use crate::PywrError;
 
@@ -58,16 +57,23 @@ impl Parameter for ConstantParameter {
     }
 }
 
-impl GeneralParameter<f64> for ConstantParameter {
+// TODO this should only need to implement `ConstantParameter` when that is implemented.
+impl SimpleParameter<f64> for ConstantParameter {
     fn compute(
         &self,
         _timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
-        _model: &Network,
-        _state: &State,
+        _values: &SimpleParameterValues,
         internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<f64, PywrError> {
         Ok(self.value(internal_state))
+    }
+
+    fn as_parameter(&self) -> &dyn Parameter
+    where
+        Self: Sized,
+    {
+        self
     }
 }
 

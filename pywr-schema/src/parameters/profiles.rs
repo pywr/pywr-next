@@ -4,8 +4,9 @@ use crate::error::SchemaError;
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::parameters::{ConstantFloatVec, ConstantValue, IntoV2Parameter, ParameterMeta, TryFromV1Parameter};
+use pywr_core::parameters::ParameterIndex;
 #[cfg(feature = "core")]
-use pywr_core::parameters::{ParameterIndex, WeeklyProfileError, WeeklyProfileValues};
+use pywr_core::parameters::{WeeklyProfileError, WeeklyProfileValues};
 use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::parameters::{
     DailyProfileParameter as DailyProfileParameterV1, MonthInterpDay as MonthInterpDayV1,
@@ -31,7 +32,7 @@ impl DailyProfileParameter {
     ) -> Result<ParameterIndex<f64>, SchemaError> {
         let values = &self.values.load(args.tables)?[..366];
         let p = pywr_core::parameters::DailyProfileParameter::new(&self.meta.name, values.try_into().expect(""));
-        Ok(network.add_parameter(Box::new(p))?)
+        Ok(network.add_simple_parameter(Box::new(p))?)
     }
 }
 
@@ -104,7 +105,7 @@ impl MonthlyProfileParameter {
             values.try_into().expect(""),
             self.interp_day.map(|id| id.into()),
         );
-        Ok(network.add_parameter(Box::new(p))?)
+        Ok(network.add_simple_parameter(Box::new(p))?)
     }
 }
 
@@ -189,7 +190,7 @@ impl UniformDrawdownProfileParameter {
             reset_month,
             residual_days,
         );
-        Ok(network.add_parameter(Box::new(p))?)
+        Ok(network.add_simple_parameter(Box::new(p))?)
     }
 }
 
@@ -358,7 +359,7 @@ impl RbfProfileParameter {
         let function = self.function.into_core_rbf(&self.points)?;
 
         let p = pywr_core::parameters::RbfProfileParameter::new(&self.meta.name, self.points.clone(), function);
-        Ok(network.add_parameter(Box::new(p))?)
+        Ok(network.add_simple_parameter(Box::new(p))?)
     }
 }
 
@@ -542,7 +543,7 @@ impl WeeklyProfileParameter {
             )?,
             self.interp_day.map(|id| id.into()),
         );
-        Ok(network.add_parameter(Box::new(p))?)
+        Ok(network.add_simple_parameter(Box::new(p))?)
     }
 }
 

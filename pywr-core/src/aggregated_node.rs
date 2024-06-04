@@ -1,6 +1,6 @@
 use crate::metric::MetricF64;
 use crate::network::Network;
-use crate::node::{Constraint, ConstraintValue, FlowConstraints, NodeMeta};
+use crate::node::{Constraint, FlowConstraints, NodeMeta};
 use crate::state::State;
 use crate::{NodeIndex, PywrError};
 use std::ops::{Deref, DerefMut};
@@ -112,7 +112,7 @@ impl AggregatedNode {
     ) -> Self {
         Self {
             meta: NodeMeta::new(index, name, sub_name),
-            flow_constraints: FlowConstraints::new(),
+            flow_constraints: FlowConstraints::default(),
             nodes: nodes.to_vec(),
             factors,
         }
@@ -174,13 +174,13 @@ impl AggregatedNode {
         }
     }
 
-    pub fn set_min_flow_constraint(&mut self, value: ConstraintValue) {
+    pub fn set_min_flow_constraint(&mut self, value: Option<MetricF64>) {
         self.flow_constraints.min_flow = value;
     }
     pub fn get_min_flow_constraint(&self, model: &Network, state: &State) -> Result<f64, PywrError> {
         self.flow_constraints.get_min_flow(model, state)
     }
-    pub fn set_max_flow_constraint(&mut self, value: ConstraintValue) {
+    pub fn set_max_flow_constraint(&mut self, value: Option<MetricF64>) {
         self.flow_constraints.max_flow = value;
     }
     pub fn get_max_flow_constraint(&self, model: &Network, state: &State) -> Result<f64, PywrError> {
@@ -188,7 +188,7 @@ impl AggregatedNode {
     }
 
     /// Set a constraint on a node.
-    pub fn set_constraint(&mut self, value: ConstraintValue, constraint: Constraint) -> Result<(), PywrError> {
+    pub fn set_constraint(&mut self, value: Option<MetricF64>, constraint: Constraint) -> Result<(), PywrError> {
         match constraint {
             Constraint::MinFlow => self.set_min_flow_constraint(value),
             Constraint::MaxFlow => self.set_max_flow_constraint(value),
@@ -321,7 +321,7 @@ mod tests {
         network.connect_nodes(input_node, link_node1).unwrap();
         network.connect_nodes(link_node1, output_node1).unwrap();
 
-        let factors = Some(Factors::Ratio(vec![MetricF64::Constant(2.0), MetricF64::Constant(1.0)]));
+        let factors = Some(Factors::Ratio(vec![2.0.into(), 1.0.into()]));
 
         let _agg_node = network.add_aggregated_node("agg-node", None, &[link_node0, link_node1], factors);
 

@@ -2,10 +2,10 @@ use crate::metric::MetricF64;
 use crate::network::Network;
 use crate::parameters::{
     downcast_internal_state_mut, downcast_internal_state_ref, downcast_variable_config_ref, ActivationFunction,
-    GeneralParameter, Parameter, ParameterMeta, VariableConfig, VariableParameter,
+    GeneralParameter, Parameter, ParameterMeta, ParameterState, VariableConfig, VariableParameter,
 };
 use crate::scenario::ScenarioIndex;
-use crate::state::{ParameterState, State};
+use crate::state::State;
 use crate::timestep::Timestep;
 use crate::PywrError;
 
@@ -64,6 +64,13 @@ impl GeneralParameter<f64> for OffsetParameter {
         // Current value
         let x = self.metric.get_value(model, state)?;
         Ok(x + offset)
+    }
+
+    fn as_parameter(&self) -> &dyn Parameter
+    where
+        Self: Sized,
+    {
+        self
     }
 }
 

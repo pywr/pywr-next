@@ -1,8 +1,8 @@
 use crate::metric::MetricF64;
 use crate::network::Network;
-use crate::parameters::{GeneralParameter, Parameter, ParameterMeta};
+use crate::parameters::{GeneralParameter, Parameter, ParameterMeta, ParameterState};
 use crate::scenario::ScenarioIndex;
-use crate::state::{ParameterState, State};
+use crate::state::State;
 use crate::timestep::Timestep;
 use crate::PywrError;
 use chrono::Datelike;
@@ -43,6 +43,13 @@ impl GeneralParameter<f64> for DiscountFactorParameter {
         let factor = 1.0 / (1.0 + rate).powi(year);
         Ok(factor)
     }
+
+    fn as_parameter(&self) -> &dyn Parameter
+    where
+        Self: Sized,
+    {
+        self
+    }
 }
 
 #[cfg(test)]
@@ -66,7 +73,7 @@ mod test {
 
         let parameter = DiscountFactorParameter::new(
             "test-parameter",
-            MetricF64::Constant(0.03), // Interpolate with the parameter based values
+            0.03.into(), // Interpolate with the parameter based values
             2020,
         );
 

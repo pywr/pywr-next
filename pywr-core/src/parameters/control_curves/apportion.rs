@@ -1,8 +1,8 @@
 use crate::metric::MetricF64;
 use crate::network::Network;
-use crate::parameters::{GeneralParameter, Parameter, ParameterMeta};
+use crate::parameters::{GeneralParameter, Parameter, ParameterMeta, ParameterState};
 use crate::scenario::ScenarioIndex;
-use crate::state::{MultiValue, ParameterState, State};
+use crate::state::{MultiValue, State};
 use crate::timestep::Timestep;
 use crate::PywrError;
 use std::collections::HashMap;
@@ -59,5 +59,11 @@ impl GeneralParameter<MultiValue> for ApportionParameter {
 
         let value = MultiValue::new(values, HashMap::new());
         Ok(value)
+    }
+    fn as_parameter(&self) -> &dyn Parameter
+    where
+        Self: Sized,
+    {
+        self
     }
 }

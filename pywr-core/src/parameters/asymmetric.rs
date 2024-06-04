@@ -1,8 +1,8 @@
 use crate::metric::MetricUsize;
 use crate::network::Network;
-use crate::parameters::{downcast_internal_state_mut, GeneralParameter, Parameter, ParameterMeta};
+use crate::parameters::{downcast_internal_state_mut, GeneralParameter, Parameter, ParameterMeta, ParameterState};
 use crate::scenario::ScenarioIndex;
-use crate::state::{ParameterState, State};
+use crate::state::State;
 use crate::timestep::Timestep;
 use crate::PywrError;
 
@@ -64,5 +64,12 @@ impl GeneralParameter<usize> for AsymmetricSwitchIndexParameter {
         }
 
         Ok(*current_state)
+    }
+
+    fn as_parameter(&self) -> &dyn Parameter
+    where
+        Self: Sized,
+    {
+        self
     }
 }

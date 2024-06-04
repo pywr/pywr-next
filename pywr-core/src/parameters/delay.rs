@@ -1,21 +1,23 @@
-use crate::metric::MetricF64;
+use crate::metric::{MetricF64, SimpleMetricF64};
 use crate::network::Network;
-use crate::parameters::{downcast_internal_state_mut, GeneralParameter, Parameter, ParameterMeta};
+use crate::parameters::{
+    downcast_internal_state_mut, GeneralParameter, Parameter, ParameterMeta, ParameterState, SimpleParameter,
+};
 use crate::scenario::ScenarioIndex;
-use crate::state::{ParameterState, State};
+use crate::state::{SimpleParameterValues, State};
 use crate::timestep::Timestep;
 use crate::PywrError;
 use std::collections::VecDeque;
 
-pub struct DelayParameter {
+pub struct DelayParameter<M> {
     meta: ParameterMeta,
-    metric: MetricF64,
+    metric: M,
     delay: usize,
     initial_value: f64,
 }
 
-impl DelayParameter {
-    pub fn new(name: &str, metric: MetricF64, delay: usize, initial_value: f64) -> Self {
+impl<M> DelayParameter<M> {
+    pub fn new(name: &str, metric: M, delay: usize, initial_value: f64) -> Self {
         Self {
             meta: ParameterMeta::new(name),
             metric,
@@ -25,7 +27,23 @@ impl DelayParameter {
     }
 }
 
-impl Parameter for DelayParameter {
+impl TryInto<DelayParameter<SimpleMetricF64>> for &DelayParameter<MetricF64> {
+    type Error = PywrError;
+
+    fn try_into(self) -> Result<DelayParameter<SimpleMetricF64>, Self::Error> {
+        Ok(DelayParameter {
+            meta: self.meta.clone(),
+            metric: self.metric.clone().try_into()?,
+            delay: self.delay,
+            initial_value: self.initial_value,
+        })
+    }
+}
+
+impl<M> Parameter for DelayParameter<M>
+where
+    M: Send + Sync,
+{
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }
@@ -41,7 +59,7 @@ impl Parameter for DelayParameter {
     }
 }
 
-impl GeneralParameter<f64> for DelayParameter {
+impl GeneralParameter<f64> for DelayParameter<MetricF64> {
     fn compute(
         &self,
         _timestep: &Timestep,
@@ -79,6 +97,67 @@ impl GeneralParameter<f64> for DelayParameter {
 
         Ok(())
     }
+
+    fn try_into_simple(&self) -> Option<Box<dyn SimpleParameter<f64>>>
+    where
+        Self: Sized,
+    {
+        self.try_into()
+            .ok()
+            .map(|p: DelayParameter<SimpleMetricF64>| Box::new(p) as Box<dyn SimpleParameter<f64>>)
+    }
+
+    fn as_parameter(&self) -> &dyn Parameter
+    where
+        Self: Sized,
+    {
+        self
+    }
+}
+
+impl SimpleParameter<f64> for DelayParameter<SimpleMetricF64> {
+    fn compute(
+        &self,
+        _timestep: &Timestep,
+        _scenario_index: &ScenarioIndex,
+        _values: &SimpleParameterValues,
+        internal_state: &mut Option<Box<dyn ParameterState>>,
+    ) -> Result<f64, PywrError> {
+        // Downcast the internal state to the correct type
+        let memory = downcast_internal_state_mut::<VecDeque<f64>>(internal_state);
+
+        // Take the oldest value from the queue
+        // It should be guaranteed that the internal memory/queue has self.delay number of values
+        let value = memory
+            .pop_front()
+            .expect("Delay parameter queue did not contain any values. This internal error should not be possible!");
+
+        Ok(value)
+    }
+
+    fn after(
+        &self,
+        _timestep: &Timestep,
+        _scenario_index: &ScenarioIndex,
+        values: &SimpleParameterValues,
+        internal_state: &mut Option<Box<dyn ParameterState>>,
+    ) -> Result<(), PywrError> {
+        // Downcast the internal state to the correct type
+        let memory = downcast_internal_state_mut::<VecDeque<f64>>(internal_state);
+
+        // Get today's value from the metric
+        let value = self.metric.get_value(values)?;
+        memory.push_back(value);
+
+        Ok(())
+    }
+
+    fn as_parameter(&self) -> &dyn Parameter
+    where
+        Self: Sized,
+    {
+        self
+    }
 }
 
 #[cfg(test)]
@@ -102,7 +181,7 @@ mod test {
         const DELAY: usize = 3; // 3 time-step delay
         let parameter = DelayParameter::new(
             "test-parameter",
-            MetricF64::ParameterValue(volume_idx), // Interpolate with the parameter based values
+            volume_idx.into(), // Interpolate with the parameter based values
             DELAY,
             0.0,
         );
