@@ -75,7 +75,6 @@ impl GeneralParameter<f64> for PiecewiseInterpolatedParameter {
 
 #[cfg(test)]
 mod test {
-    use crate::metric::MetricF64;
     use crate::parameters::{Array1Parameter, PiecewiseInterpolatedParameter};
     use crate::test_utils::{run_and_assert_parameter, simple_model};
     use ndarray::{Array1, Array2, Axis};

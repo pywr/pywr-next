@@ -296,7 +296,6 @@ mod tests {
     use crate::metric::MetricF64;
     use crate::models::Model;
     use crate::network::Network;
-    use crate::node::ConstraintValue;
     use crate::recorders::AssertionRecorder;
     use crate::test_utils::{default_time_domain, run_all_solvers};
     use ndarray::Array2;
@@ -327,11 +326,9 @@ mod tests {
 
         // Setup a demand on output-0
         let output_node = network.get_mut_node_by_name("output", Some("0")).unwrap();
-        output_node
-            .set_max_flow_constraint(ConstraintValue::Scalar(100.0))
-            .unwrap();
+        output_node.set_max_flow_constraint(Some(100.0.into())).unwrap();
 
-        output_node.set_cost(ConstraintValue::Scalar(-10.0));
+        output_node.set_cost(Some((-10.0).into()));
 
         // Set-up assertion for "input" node
         let idx = network.get_node_by_name("link", Some("0")).unwrap().index();

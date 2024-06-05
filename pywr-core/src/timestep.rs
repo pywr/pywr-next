@@ -9,7 +9,6 @@ use crate::PywrError;
 const SECS_IN_DAY: i64 = 60 * 60 * 24;
 
 /// A newtype for `chrono::TimeDelta` that provides a couple of useful convenience methods.
-#[pyclass]
 #[derive(Debug, Copy, Clone)]
 pub struct PywrDuration(TimeDelta);
 

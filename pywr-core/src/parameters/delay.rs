@@ -162,7 +162,6 @@ impl SimpleParameter<f64> for DelayParameter<SimpleMetricF64> {
 
 #[cfg(test)]
 mod test {
-    use crate::metric::MetricF64;
     use crate::parameters::{Array1Parameter, DelayParameter};
     use crate::test_utils::{run_and_assert_parameter, simple_model};
     use ndarray::{concatenate, s, Array1, Array2, Axis};

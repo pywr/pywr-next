@@ -294,7 +294,7 @@ mod tests {
     use crate::metric::MetricF64;
     use crate::models::Model;
     use crate::network::Network;
-    use crate::node::{ConstraintValue, StorageInitialVolume};
+    use crate::node::StorageInitialVolume;
     use crate::recorders::{AssertionFnRecorder, AssertionRecorder};
     use crate::scenario::ScenarioIndex;
     use crate::test_utils::{default_timestepper, run_all_solvers, simple_model};
@@ -370,20 +370,18 @@ mod tests {
         let vs_builder = VirtualStorageBuilder::new("virtual-storage", &[link_node0, link_node1])
             .factors(&[2.0, 1.0])
             .initial_volume(StorageInitialVolume::Absolute(100.0))
-            .min_volume(ConstraintValue::Scalar(0.0))
-            .max_volume(ConstraintValue::Scalar(100.0))
+            .min_volume(Some(0.0.into()))
+            .max_volume(Some(100.0.into()))
             .reset(VirtualStorageReset::Never)
-            .cost(ConstraintValue::Scalar(0.0));
+            .cost(None);
 
         let _vs = network.add_virtual_storage_node(vs_builder);
 
         // Setup a demand on output-0 and output-1
         for sub_name in &["0", "1"] {
             let output_node = network.get_mut_node_by_name("output", Some(sub_name)).unwrap();
-            output_node
-                .set_max_flow_constraint(ConstraintValue::Scalar(10.0))
-                .unwrap();
-            output_node.set_cost(ConstraintValue::Scalar(-10.0));
+            output_node.set_max_flow_constraint(Some(10.0.into())).unwrap();
+            output_node.set_cost(Some((-10.0).into()));
         }
 
         // With a demand of 10 on each link node. The virtual storage will depleted at a rate of
@@ -430,10 +428,10 @@ mod tests {
 
         let vs_builder = VirtualStorageBuilder::new("vs", &nodes)
             .initial_volume(StorageInitialVolume::Proportional(1.0))
-            .min_volume(ConstraintValue::Scalar(0.0))
-            .max_volume(ConstraintValue::Scalar(100.0))
+            .min_volume(Some(0.0.into()))
+            .max_volume(Some(100.0.into()))
             .reset(VirtualStorageReset::Never)
-            .cost(ConstraintValue::Scalar(20.0));
+            .cost(Some(20.0.into()));
 
         network.add_virtual_storage_node(vs_builder).unwrap();
 
@@ -459,11 +457,11 @@ mod tests {
         let vs_builder = VirtualStorageBuilder::new("virtual-storage", &nodes)
             .factors(&[1.0])
             .initial_volume(StorageInitialVolume::Absolute(2.5))
-            .min_volume(ConstraintValue::Scalar(0.0))
-            .max_volume(ConstraintValue::Scalar(2.5))
+            .min_volume(Some(0.0.into()))
+            .max_volume(Some(2.5.into()))
             .reset(VirtualStorageReset::Never)
             .rolling_window(NonZeroUsize::new(5).unwrap())
-            .cost(ConstraintValue::Scalar(0.0));
+            .cost(None);
         let _vs = network.add_virtual_storage_node(vs_builder);
 
         // Expected values will follow a pattern set by the first few time-steps

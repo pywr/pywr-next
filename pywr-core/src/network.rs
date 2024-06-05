@@ -1629,7 +1629,6 @@ mod tests {
     use super::*;
     use crate::metric::MetricF64;
     use crate::network::Network;
-    use crate::node::{Constraint, ConstraintValue};
     use crate::parameters::{ActivationFunction, ControlCurveInterpolatedParameter, Parameter};
     use crate::recorders::AssertionRecorder;
     use crate::scenario::{ScenarioDomain, ScenarioGroupCollection, ScenarioIndex};
@@ -1703,8 +1702,8 @@ mod tests {
                 "my-node",
                 None,
                 StorageInitialVolume::Absolute(10.0),
-                ConstraintValue::Scalar(0.0),
-                ConstraintValue::Scalar(10.0)
+                None,
+                Some(10.0.into())
             ),
             Err(PywrError::NodeNameAlreadyExists("my-node".to_string()))
         );
@@ -1717,16 +1716,15 @@ mod tests {
         let _node_index = network.add_input_node("input", None).unwrap();
 
         let input_max_flow = parameters::ConstantParameter::new("my-constant", 10.0);
-        let parameter = network.add_parameter(Box::new(input_max_flow)).unwrap();
+        let parameter = network.add_simple_parameter(Box::new(input_max_flow)).unwrap();
 
         // assign the new parameter to one of the nodes.
         let node = network.get_mut_node_by_name("input", None).unwrap();
-        node.set_constraint(ConstraintValue::Metric(parameter.into()), Constraint::MaxFlow)
-            .unwrap();
+        node.set_max_flow_constraint(Some(parameter.into())).unwrap();
 
         // Try to assign a constraint not defined for particular node type
         assert_eq!(
-            node.set_constraint(ConstraintValue::Scalar(10.0), Constraint::MaxVolume),
+            node.set_max_volume_constraint(Some(10.0.into())),
             Err(PywrError::StorageConstraintsUndefined)
         );
     }
@@ -1959,12 +1957,14 @@ mod tests {
 
         assert!(input_max_flow.can_be_f64_variable());
 
-        let input_max_flow_idx = model.network_mut().add_parameter(Box::new(input_max_flow)).unwrap();
+        let input_max_flow_idx = model
+            .network_mut()
+            .add_simple_parameter(Box::new(input_max_flow))
+            .unwrap();
 
         // assign the new parameter to one of the nodes.
         let node = model.network_mut().get_mut_node_by_name("input", None).unwrap();
-        node.set_constraint(ConstraintValue::Metric(input_max_flow_idx.into()), Constraint::MaxFlow)
-            .unwrap();
+        node.set_max_flow_constraint(Some(input_max_flow_idx.into())).unwrap();
 
         let mut state = model.setup::<ClpSolver>(&ClpSolverSettings::default()).unwrap();
 
