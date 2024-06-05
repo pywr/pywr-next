@@ -909,8 +909,11 @@ mod tests {
     use crate::nodes::core::StorageInitialVolume;
     use crate::nodes::InputNode;
     use crate::nodes::StorageNode;
+    #[cfg(feature = "core")]
     use crate::PywrModel;
+    #[cfg(feature = "core")]
     use pywr_core::test_utils::run_all_solvers;
+    #[cfg(feature = "core")]
     use std::str::FromStr;
 
     #[test]
@@ -967,6 +970,7 @@ mod tests {
         assert_eq!(storage.initial_volume, StorageInitialVolume::Proportional(0.5));
     }
 
+    #[cfg(feature = "core")]
     fn storage_max_volumes_str() -> &'static str {
         include_str!("../test_models/storage_max_volumes.json")
     }

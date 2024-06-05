@@ -4,9 +4,8 @@ use crate::error::SchemaError;
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::parameters::{ConstantFloatVec, ConstantValue, IntoV2Parameter, ParameterMeta, TryFromV1Parameter};
-use pywr_core::parameters::ParameterIndex;
 #[cfg(feature = "core")]
-use pywr_core::parameters::{WeeklyProfileError, WeeklyProfileValues};
+use pywr_core::parameters::{ParameterIndex, WeeklyProfileError, WeeklyProfileValues};
 use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::parameters::{
     DailyProfileParameter as DailyProfileParameterV1, MonthInterpDay as MonthInterpDayV1,

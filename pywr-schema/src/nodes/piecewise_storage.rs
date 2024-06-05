@@ -4,10 +4,11 @@ use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::nodes::{NodeAttribute, NodeMeta};
-use pywr_core::metric::SimpleMetricF64;
 #[cfg(feature = "core")]
 use pywr_core::{
-    derived_metric::DerivedMetric, metric::MetricF64, node::StorageInitialVolume,
+    derived_metric::DerivedMetric,
+    metric::{MetricF64, SimpleMetricF64},
+    node::StorageInitialVolume,
     parameters::VolumeBetweenControlCurvesParameter,
 };
 use pywr_schema_macros::PywrVisitAll;

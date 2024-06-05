@@ -6,9 +6,11 @@ use crate::model::LoadArgs;
 use crate::nodes::{NodeAttribute, NodeMeta};
 #[cfg(feature = "core")]
 use num::Zero;
-use pywr_core::metric::{ConstantMetricF64, SimpleMetricF64};
 #[cfg(feature = "core")]
-use pywr_core::{aggregated_node::Factors, metric::MetricF64};
+use pywr_core::{
+    aggregated_node::Factors,
+    metric::{ConstantMetricF64, MetricF64, SimpleMetricF64},
+};
 use pywr_schema_macros::PywrVisitAll;
 use schemars::JsonSchema;
 
