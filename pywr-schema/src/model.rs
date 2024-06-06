@@ -312,10 +312,10 @@ impl PywrNetwork {
                     };
 
                     let cols = match (&ts_ref.column, &ts_ref.scenario) {
-                        (Some(col), None) => TimeseriesColumns::Column(col.clone()),
-                        (None, Some(scenario)) => TimeseriesColumns::Scenario(scenario.clone()),
+                        (Some(col), None) => Some(TimeseriesColumns::Column(col.clone())),
+                        (None, Some(scenario)) => Some(TimeseriesColumns::Scenario(scenario.clone())),
                         (Some(_), Some(_)) => return,
-                        (None, None) => return,
+                        (None, None) => None,
                     };
 
                     *m = Metric::Timeseries(TimeseriesReference::new(name, cols));

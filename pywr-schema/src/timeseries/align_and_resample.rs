@@ -78,11 +78,14 @@ pub fn align_and_resample(
         Ordering::Equal => df,
     };
 
-    let df = slice_end(df, time_col, domain)?;
+    let mut df = slice_end(df, time_col, domain)?;
 
     if df.height() != domain.time().timesteps().len() {
         return Err(TimeseriesError::DataFrameTimestepMismatch(name.to_string()));
     }
+
+    // time column is no longer needed
+    let _ = df.drop_in_place(time_col)?;
 
     Ok(df)
 }

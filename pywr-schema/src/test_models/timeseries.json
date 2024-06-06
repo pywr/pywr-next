@@ -73,11 +73,7 @@
         "metrics": [
           {
             "type": "Timeseries",
-            "name": "inflow",
-            "columns": {
-              "type": "Column",
-              "name": "inflow1"
-            }
+            "name": "inflow"
           },
           {
             "type": "Constant",
