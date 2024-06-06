@@ -13,5 +13,3 @@ The model can then be used to simulate the operation of a water system, and to e
 
 This version is a major update to the original Pywr model, which was written in Python and Cython.
 The new version is written in Rust, and uses Python bindings to expose the functionality to Python.
-
-HELLO
