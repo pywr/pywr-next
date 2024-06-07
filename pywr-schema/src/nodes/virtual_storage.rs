@@ -2,11 +2,11 @@ use crate::error::ConversionError;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
 use crate::metric::Metric;
+use crate::metric::NodeReference;
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::nodes::core::StorageInitialVolume;
 use crate::nodes::{NodeAttribute, NodeMeta};
-use crate::metric::NodeReference;
 use crate::parameters::TryIntoV2Parameter;
 #[cfg(feature = "core")]
 use pywr_core::{

@@ -297,11 +297,11 @@ impl NodeReference {
     }
 }
 
-impl From<String> for NodeReference{
-    fn from (v: String) -> Self {
+impl From<String> for NodeReference {
+    fn from(v: String) -> Self {
         NodeReference {
             name: v,
-            attribute: None
+            attribute: None,
         }
     }
 }
