@@ -7,7 +7,7 @@ use crate::virtual_storage::VirtualStorageIndex;
 use crate::PywrError;
 use std::ops::{Deref, DerefMut};
 
-#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Debug)]
+#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Debug, Hash)]
 pub struct NodeIndex(usize);
 
 impl Deref for NodeIndex {

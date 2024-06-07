@@ -1,15 +1,16 @@
 mod settings;
 
 use crate::network::Network;
-use crate::solvers::builder::{BuiltSolver, SolverBuilder};
+use crate::solvers::builder::{BuiltSolver, ColType, SolverBuilder};
 use crate::solvers::{Solver, SolverFeatures, SolverTimings};
 use crate::state::{ConstParameterValues, State};
 use crate::timestep::Timestep;
 use crate::PywrError;
 use highs_sys::{
-    HighsInt, Highs_addCols, Highs_addRows, Highs_changeCoeff, Highs_changeColsCostByRange, Highs_changeObjectiveSense,
-    Highs_changeRowsBoundsByMask, Highs_create, Highs_getDoubleInfoValue, Highs_getSolution, Highs_run,
-    Highs_setBoolOptionValue, Highs_setStringOptionValue, OBJECTIVE_SENSE_MINIMIZE, STATUS_OK,
+    kHighsVarTypeContinuous, kHighsVarTypeInteger, Highs_changeCoeff, HighsInt, Highs_addCols, Highs_addRows, Highs_changeCoeff,
+    Highs_changeColIntegrality, Highs_changeColsCostByRange, Highs_changeObjectiveSense, Highs_changeRowsBoundsByMask,
+    Highs_create, Highs_getDoubleInfoValue, Highs_getSolution, Highs_run, Highs_setBoolOptionValue,
+    Highs_setIntOptionValue, Highs_setStringOptionValue, OBJECTIVE_SENSE_MINIMIZE, STATUS_OK,
 };
 use libc::c_void;
 pub use settings::{HighsSolverSettings, HighsSolverSettingsBuilder};
@@ -32,8 +33,11 @@ impl Default for Highs {
             let ptr = Highs_create();
             model = Self { ptr };
             let option_name = CString::new("output_flag").unwrap();
-            Highs_setBoolOptionValue(ptr, option_name.as_ptr(), 0);
-
+            Highs_setBoolOptionValue(ptr, option_name.as_ptr(), 1);
+            let option_name = CString::new("log_to_console").unwrap();
+            Highs_setBoolOptionValue(ptr, option_name.as_ptr(), 1);
+            let option_name = CString::new("log_dev_level").unwrap();
+            Highs_setIntOptionValue(ptr, option_name.as_ptr(), 2);
             // model.presolve("off");
 
             Highs_changeObjectiveSense(ptr, OBJECTIVE_SENSE_MINIMIZE);
@@ -56,7 +60,15 @@ impl Highs {
         }
     }
 
-    pub fn add_cols(&mut self, col_lower: &[f64], col_upper: &[f64], col_obj_coef: &[f64], ncols: HighsInt) {
+    pub fn add_cols(
+        &mut self,
+        col_lower: &[f64],
+        col_upper: &[f64],
+        col_obj_coef: &[f64],
+        col_type: &[ColType],
+        ncols: HighsInt,
+    ) {
+        // Add all of the columns
         unsafe {
             let ret = Highs_addCols(
                 self.ptr,
@@ -70,6 +82,19 @@ impl Highs {
                 null(),
             );
             assert_eq!(ret, STATUS_OK);
+        }
+
+        // Now change the column types
+        for (i, &ctype) in col_type.iter().enumerate() {
+            let ctype_int: HighsInt = match ctype {
+                ColType::Continuous => kHighsVarTypeContinuous,
+                ColType::Integer => kHighsVarTypeInteger,
+            };
+
+            unsafe {
+                let ret = Highs_changeColIntegrality(self.ptr, i as HighsInt, ctype_int);
+                assert_eq!(ret, STATUS_OK);
+            }
         }
     }
 
@@ -111,7 +136,7 @@ impl Highs {
         }
     }
 
-    pub fn change_coeff(&mut self, row: HighsInt, col: HighsInt, value: f64) {
+    pub fn change_coefficient(&mut self, row: HighsInt, col: HighsInt, value: f64) {
         unsafe {
             let ret = Highs_changeCoeff(self.ptr, row, col, value);
             assert_eq!(ret, STATUS_OK);
@@ -193,7 +218,13 @@ impl Solver for HighsSolver {
 
         let mut highs_lp = Highs::default();
 
-        highs_lp.add_cols(built.col_lower(), built.col_upper(), built.col_obj_coef(), num_cols);
+        highs_lp.add_cols(
+            built.col_lower(),
+            built.col_upper(),
+            built.col_obj_coef(),
+            built.col_type(),
+            num_cols,
+        );
 
         highs_lp.add_rows(
             built.row_lower(),
@@ -222,6 +253,7 @@ impl Solver for HighsSolver {
         timings.update_objective += now.elapsed();
 
         let now = Instant::now();
+
         self.highs.change_row_bounds(
             self.builder.row_mask(),
             self.builder.row_lower(),
@@ -229,7 +261,9 @@ impl Solver for HighsSolver {
         );
 
         for (row, column, coefficient) in self.builder.coefficients_to_update() {
-            self.highs.change_coeff(*row, *column, *coefficient);
+            // Highs only accepts coefficients in the range -1e10 to 1e10
+            self.highs
+                .change_coefficient(*row, *column, coefficient.clamp(-1e10, 1e10));
         }
 
         timings.update_constraints += now.elapsed();
@@ -273,8 +307,9 @@ mod tests {
         let col_lower: Vec<f64> = vec![0.0, 0.0];
         let col_upper: Vec<f64> = vec![f64::MAX, f64::MAX];
         let col_obj_coef: Vec<f64> = vec![1.0, 1.0];
+        let col_type = vec![ColType::Continuous, ColType::Continuous];
 
-        lp.add_cols(&col_lower, &col_upper, &col_obj_coef, 2);
+        lp.add_cols(&col_lower, &col_upper, &col_obj_coef, &col_type, 2);
 
         let row_lower: Vec<f64> = vec![0.0];
         let row_upper: Vec<f64> = vec![2.0];
@@ -292,6 +327,7 @@ mod tests {
         let col_lower = vec![0.0, 0.0, 0.0];
         let col_upper = vec![f64::MAX, f64::MAX, f64::MAX];
         let col_obj_coef = vec![-2.0, -3.0, -4.0];
+        let col_type = vec![ColType::Continuous, ColType::Continuous, ColType::Continuous];
         let row_starts = vec![0, 3, 6];
         let columns = vec![0, 1, 2, 0, 1, 2];
         let elements = vec![3.0, 2.0, 1.0, 2.0, 5.0, 3.0];
@@ -301,7 +337,7 @@ mod tests {
         let nrows = row_upper.len() as HighsInt;
         let nnz = elements.len() as HighsInt;
 
-        lp.add_cols(&col_lower, &col_upper, &col_obj_coef, ncols);
+        lp.add_cols(&col_lower, &col_upper, &col_obj_coef, &col_type, ncols);
 
         lp.add_rows(&row_lower, &row_upper, nnz, &row_starts, &columns, &elements);
         lp.run();
@@ -320,6 +356,7 @@ mod tests {
         let col_lower = vec![0.0, 0.0, 0.0];
         let col_upper = vec![f64::MAX, f64::MAX, f64::MAX];
         let col_obj_coef = vec![-2.0, -3.0, -4.0];
+        let col_type = vec![ColType::Continuous, ColType::Continuous, ColType::Continuous];
         let row_starts = vec![0, 3, 6];
         let columns = vec![0, 1, 2, 0, 1, 2];
         let elements = vec![3.0, 2.0, 1.0, 2.0, 5.0, 3.0];
@@ -329,7 +366,7 @@ mod tests {
         let nrows = row_upper.len() as HighsInt;
         let nnz = elements.len() as HighsInt;
 
-        lp.add_cols(&col_lower, &col_upper, &col_obj_coef, ncols);
+        lp.add_cols(&col_lower, &col_upper, &col_obj_coef, &col_type, ncols);
 
         lp.add_rows(&row_lower, &row_upper, nnz, &row_starts, &columns, &elements);
         lp.run();

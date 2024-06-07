@@ -1,13 +1,14 @@
 use crate::aggregated_node::AggregatedNodeIndex;
 use crate::edge::EdgeIndex;
 use crate::network::Network;
-use crate::node::{Node, NodeType};
+use crate::node::{Node, NodeIndex, NodeType};
 use crate::solvers::col_edge_map::{ColumnEdgeMap, ColumnEdgeMapBuilder};
 use crate::solvers::SolverTimings;
 use crate::state::{ConstParameterValues, State};
 use crate::timestep::Timestep;
 use crate::PywrError;
-use std::collections::BTreeMap;
+use num::Zero;
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::Debug;
 use std::ops::Deref;
 use std::time::Instant;
@@ -19,8 +20,15 @@ enum Bounds {
     // Free,
     Lower(f64),
     // Upper(f64),
-    // Double(f64, f64),
+    Double(f64, f64),
     // Fixed(f64),
+}
+
+/// Column type
+#[derive(Copy, Clone, Debug)]
+pub enum ColType {
+    Continuous,
+    Integer,
 }
 
 /// Sparse form of a linear program.
@@ -31,6 +39,7 @@ struct Lp<I> {
     col_lower: Vec<f64>,
     col_upper: Vec<f64>,
     col_obj_coef: Vec<f64>,
+    col_type: Vec<ColType>,
     row_lower: Vec<f64>,
     row_upper: Vec<f64>,
     row_mask: Vec<I>,
@@ -125,6 +134,7 @@ struct LpBuilder<I> {
     col_lower: Vec<f64>,
     col_upper: Vec<f64>,
     col_obj_coef: Vec<f64>,
+    col_type: Vec<ColType>,
     rows: Vec<RowBuilder<I>>,
     fixed_rows: Vec<RowBuilder<I>>,
 }
@@ -138,6 +148,7 @@ where
             col_lower: Vec::new(),
             col_upper: Vec::new(),
             col_obj_coef: Vec::new(),
+            col_type: Vec::new(),
             rows: Vec::new(),
             fixed_rows: Vec::new(),
         }
@@ -148,9 +159,9 @@ impl<I> LpBuilder<I>
 where
     I: num::PrimInt,
 {
-    fn add_column(&mut self, obj_coef: f64, bounds: Bounds) {
+    fn add_column(&mut self, obj_coef: f64, bounds: Bounds, col_type: ColType) -> I {
         let (lb, ub): (f64, f64) = match bounds {
-            // Bounds::Double(lb, ub) => (lb, ub),
+            Bounds::Double(lb, ub) => (lb, ub),
             Bounds::Lower(lb) => (lb, FMAX),
             // Bounds::Fixed(b) => (b, b),
             // Bounds::Free => (f64::MIN, FMAX),
@@ -160,6 +171,8 @@ where
         self.col_lower.push(lb);
         self.col_upper.push(ub);
         self.col_obj_coef.push(obj_coef);
+        self.col_type.push(col_type);
+        I::from(self.col_lower.len() - 1).unwrap()
     }
 
     /// Add a fixed row to the LP.
@@ -181,6 +194,11 @@ where
                 row_id
             }
         }
+    }
+
+    /// Return the number of columns
+    fn num_columns(&self) -> I {
+        I::from(self.col_type.len()).unwrap()
     }
 
     /// Return the number of variable rows
@@ -221,6 +239,7 @@ where
             col_lower: self.col_lower,
             col_upper: self.col_upper,
             col_obj_coef: self.col_obj_coef,
+            col_type: self.col_type,
             row_lower,
             row_upper,
             row_mask,
@@ -276,6 +295,15 @@ where
     }
 }
 
+/// The row id types associated with a node's constraints.
+#[derive(Copy, Clone)]
+enum NodeRowId<I> {
+    /// A regular node constraint bounded by lower and upper bounds.
+    Continuous(I),
+    /// A binary node constraint where the upper bound is controlled by a binary variable.
+    Binary { row_id: I, bin_col_id: I },
+}
+
 struct AggNodeFactorRow<I> {
     agg_node_idx: AggregatedNodeIndex,
     // Row index for each node-pair. If `None` the row is fixed and does not need updating.
@@ -285,7 +313,7 @@ struct AggNodeFactorRow<I> {
 pub struct BuiltSolver<I> {
     builder: Lp<I>,
     col_edge_map: ColumnEdgeMap<I>,
-    node_constraints_row_ids: Vec<usize>,
+    node_constraints_row_ids: Vec<NodeRowId<I>>,
     agg_node_constraint_row_ids: Vec<usize>,
     agg_node_factor_constraint_row_ids: Vec<AggNodeFactorRow<I>>,
     virtual_storage_constraint_row_ids: Vec<usize>,
@@ -317,6 +345,10 @@ where
 
     pub fn col_obj_coef(&self) -> &[f64] {
         &self.builder.col_obj_coef
+    }
+
+    pub fn col_type(&self) -> &[ColType] {
+        &self.builder.col_type
     }
 
     pub fn row_lower(&self) -> &[f64] {
@@ -412,7 +444,22 @@ where
                 Err(e) => return Err(e),
             };
 
-            self.builder.apply_row_bounds(*row_id, lb, ub);
+            match row_id {
+                NodeRowId::Continuous(row_id) => {
+                    // Regular node constraint
+                    self.builder.apply_row_bounds(row_id.to_usize().unwrap(), lb, ub);
+                }
+                NodeRowId::Binary { row_id, bin_col_id } => {
+                    if !lb.is_zero() {
+                        panic!("Binary node constraint with non-zero lower bounds not implemented!");
+                    }
+                    // Update the coefficients for the binary column to be the upper bound
+                    self.builder.coefficients_to_update.push((*row_id, *bin_col_id, -ub));
+
+                    // This row is upper bounded to zero
+                    self.builder.apply_row_bounds(row_id.to_usize().unwrap(), FMIN, 0.0);
+                }
+            }
         }
 
         Ok(())
@@ -498,6 +545,7 @@ where
 pub struct SolverBuilder<I> {
     builder: LpBuilder<I>,
     col_edge_map: ColumnEdgeMapBuilder<I>,
+    bin_col_node_map: HashMap<NodeIndex, I>,
 }
 
 impl<I> Default for SolverBuilder<I>
@@ -508,6 +556,7 @@ where
         Self {
             builder: LpBuilder::default(),
             col_edge_map: ColumnEdgeMapBuilder::default(),
+            bin_col_node_map: HashMap::new(),
         }
     }
 }
@@ -534,6 +583,8 @@ where
         let agg_node_factor_constraint_row_ids = self.create_aggregated_node_factor_constraints(network, values);
         // Create virtual storage constraints
         let virtual_storage_constraint_row_ids = self.create_virtual_storage_constraints(network);
+        // Create mutual exclusivity constraints
+        self.create_mutual_exclusivity_constraints(network);
 
         Ok(BuiltSolver {
             builder: self.builder.build(),
@@ -584,7 +635,23 @@ where
 
         // Add columns set the columns as x >= 0.0 (i.e. no upper bounds)
         for _ in 0..self.col_edge_map.ncols() {
-            self.builder.add_column(0.0, Bounds::Lower(0.0));
+            self.builder.add_column(0.0, Bounds::Lower(0.0), ColType::Continuous);
+        }
+
+        // Determine the set of nodes that are in one or more mutual exclusivity constraints
+        let mut nodes_in_a_mutual_exclusivity = HashSet::new();
+        for me in network.mutual_exclusivity_nodes().deref() {
+            for node_index in me.iter_nodes() {
+                nodes_in_a_mutual_exclusivity.insert(node_index);
+            }
+        }
+
+        // Add any binary columns associated with nodes
+        for node in network.nodes().deref() {
+            if nodes_in_a_mutual_exclusivity.contains(&node.index()) {
+                let col_id = self.builder.add_column(0.0, Bounds::Double(0.0, 1.0), ColType::Integer);
+                self.bin_col_node_map.insert(node.index(), col_id);
+            }
         }
 
         Ok(())
@@ -669,17 +736,32 @@ where
     ///
     /// One constraint is created per node to enforce any constraints (flow or storage)
     /// that it may define. Returns the row_ids associated with each constraint.
-    fn create_node_constraints(&mut self, network: &Network) -> Vec<usize> {
+    fn create_node_constraints(&mut self, network: &Network) -> Vec<NodeRowId<I>> {
         let mut row_ids = Vec::with_capacity(network.nodes().len());
 
         for node in network.nodes().deref() {
             // Create empty arrays to store the matrix data
             let mut row: RowBuilder<I> = RowBuilder::default();
+            let mut bin_col_id = None;
 
             self.add_node(node, 1.0, &mut row);
 
+            // If there is a binary variable associated with this node, then add it to the row
+            if let Some(col) = self.bin_col_node_map.get(&node.index()) {
+                row.add_element(*col, -1.0);
+                bin_col_id = Some(col);
+            }
+
             let row_id = self.builder.add_variable_row(row);
-            row_ids.push(row_id.to_usize().unwrap())
+            let row_id = match bin_col_id {
+                Some(bin_col_id) => NodeRowId::Binary {
+                    row_id,
+                    bin_col_id: *bin_col_id,
+                },
+                None => NodeRowId::Continuous(row_id),
+            };
+
+            row_ids.push(row_id)
         }
         row_ids
     }
@@ -788,6 +870,25 @@ where
         }
         row_ids
     }
+
+    /// Create mutual exclusivity constraints
+    fn create_mutual_exclusivity_constraints(&mut self, network: &Network) {
+        for me in network.mutual_exclusivity_nodes().deref() {
+            let mut row = RowBuilder::default();
+            for node_index in me.iter_nodes() {
+                let bin_col = self
+                    .bin_col_node_map
+                    .get(&node_index)
+                    .expect("Binary column not found for Node in mutual exclusivity constraint!");
+
+                row.add_element(*bin_col, 1.0);
+            }
+            row.set_upper(me.max_active() as f64);
+            row.set_lower(me.min_active() as f64);
+
+            self.builder.add_fixed_row(row);
+        }
+    }
 }
 
 #[cfg(test)]
@@ -814,9 +915,9 @@ mod tests {
     fn builder_solve2() {
         let mut builder = LpBuilder::default();
 
-        builder.add_column(-2.0, Bounds::Lower(0.0));
-        builder.add_column(-3.0, Bounds::Lower(0.0));
-        builder.add_column(-4.0, Bounds::Lower(0.0));
+        builder.add_column(-2.0, Bounds::Lower(0.0), ColType::Continuous);
+        builder.add_column(-3.0, Bounds::Lower(0.0), ColType::Continuous);
+        builder.add_column(-4.0, Bounds::Lower(0.0), ColType::Continuous);
 
         // Row1
         let mut row = RowBuilder::default();
