@@ -18,3 +18,4 @@
   - [Version control](./model-management/version-control.md)
   - [Packaging](./model-management/packaging.md)
   - [Deployment & Docker](./model-management/deployment.md)
+- [Documentation](./building_documentation.md)
