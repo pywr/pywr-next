@@ -9,6 +9,7 @@ pub fn align_and_resample(
     df: DataFrame,
     time_col: &str,
     domain: &ModelDomain,
+    drop_time_col: bool,
 ) -> Result<DataFrame, TimeseriesError> {
     // Ensure type of time column is datetime and that it is sorted
     let sort_options = SortMultipleOptions::default()
@@ -84,8 +85,9 @@ pub fn align_and_resample(
         return Err(TimeseriesError::DataFrameTimestepMismatch(name.to_string()));
     }
 
-    // time column is no longer needed
-    let _ = df.drop_in_place(time_col)?;
+    if drop_time_col {
+        let _ = df.drop_in_place(time_col)?;
+    }
 
     Ok(df)
 }
@@ -144,7 +146,7 @@ mod tests {
         )
         .unwrap();
 
-        df = align_and_resample("test", df, "time", &domain).unwrap();
+        df = align_and_resample("test", df, "time", &domain, false).unwrap();
 
         let expected_dates = Series::new(
             "time",
@@ -198,7 +200,7 @@ mod tests {
         )
         .unwrap();
 
-        df = align_and_resample("test", df, "time", &domain).unwrap();
+        df = align_and_resample("test", df, "time", &domain, false).unwrap();
 
         let expected_values = Series::new(
             "values",
@@ -238,7 +240,7 @@ mod tests {
         )
         .unwrap();
 
-        df = align_and_resample("test", df, "time", &domain).unwrap();
+        df = align_and_resample("test", df, "time", &domain, false).unwrap();
 
         let expected_values = Series::new("values", values);
         let resampled_values = df.column("values").unwrap();
@@ -247,6 +249,7 @@ mod tests {
         let expected_dates = Series::new("time", time)
             .cast(&DataType::Datetime(TimeUnit::Nanoseconds, None))
             .unwrap();
+
         let resampled_dates = df.column("time").unwrap();
         assert!(resampled_dates.equals(&expected_dates));
     }

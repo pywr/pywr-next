@@ -71,10 +71,7 @@ impl Metric {
                         args.timeseries
                             .load_column(network, ts_ref.name.as_ref(), col.as_str())?
                     }
-                    None => {
-                        args.timeseries
-                            .load_single_column(network, ts_ref.name.as_ref())?
-                    }
+                    None => args.timeseries.load_single_column(network, ts_ref.name.as_ref())?,
                 };
                 Ok(MetricF64::ParameterValue(param_idx))
             }
@@ -220,7 +217,7 @@ impl TryFromV1Parameter<ParameterValueV1> for Metric {
                             (Some(_), Some(_)) => {
                                 return Err(ConversionError::AmbiguousColumnAndScenario(name.clone()))
                             }
-                            (None, None) => None
+                            (None, None) => None,
                         };
 
                         Self::Timeseries(TimeseriesReference::new(name, cols))
