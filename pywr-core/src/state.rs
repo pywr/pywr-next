@@ -3,7 +3,9 @@ use crate::edge::{Edge, EdgeIndex};
 use crate::models::MultiNetworkTransferIndex;
 use crate::network::Network;
 use crate::node::{Node, NodeIndex};
-use crate::parameters::{GeneralParameterIndex, ParameterCollection, ParameterCollectionSize, SimpleParameterIndex};
+use crate::parameters::{
+    ConstParameterIndex, GeneralParameterIndex, ParameterCollection, ParameterCollectionSize, SimpleParameterIndex,
+};
 use crate::timestep::Timestep;
 use crate::virtual_storage::VirtualStorageIndex;
 use crate::PywrError;
@@ -353,15 +355,27 @@ pub struct ParameterValuesCollection {
 impl ParameterValuesCollection {
     fn get_simple_parameter_values(&self) -> SimpleParameterValues {
         SimpleParameterValues {
-            constant: ParameterValuesRef {
-                values: &self.constant.values,
-                indices: &self.constant.indices,
-                multi_values: &self.constant.multi_values,
+            constant: ConstParameterValues {
+                constant: ParameterValuesRef {
+                    values: &self.constant.values,
+                    indices: &self.constant.indices,
+                    multi_values: &self.constant.multi_values,
+                },
             },
             simple: ParameterValuesRef {
                 values: &self.simple.values,
                 indices: &self.simple.indices,
                 multi_values: &self.simple.multi_values,
+            },
+        }
+    }
+
+    fn get_const_parameter_values(&self) -> ConstParameterValues {
+        ConstParameterValues {
+            constant: ParameterValuesRef {
+                values: &self.constant.values,
+                indices: &self.constant.indices,
+                multi_values: &self.constant.multi_values,
             },
         }
     }
@@ -388,7 +402,7 @@ impl<'a> ParameterValuesRef<'a> {
 }
 
 pub struct SimpleParameterValues<'a> {
-    constant: ParameterValuesRef<'a>,
+    constant: ConstParameterValues<'a>,
     simple: ParameterValuesRef<'a>,
 }
 
@@ -415,6 +429,41 @@ impl<'a> SimpleParameterValues<'a> {
         self.simple
             .get_multi_value(*idx.deref(), key)
             .ok_or(PywrError::SimpleMultiValueParameterIndexNotFound(idx))
+            .copied()
+    }
+
+    pub fn get_constant_values(&self) -> &ConstParameterValues {
+        &self.constant
+    }
+}
+
+pub struct ConstParameterValues<'a> {
+    constant: ParameterValuesRef<'a>,
+}
+
+impl<'a> ConstParameterValues<'a> {
+    pub fn get_const_parameter_f64(&self, idx: ConstParameterIndex<f64>) -> Result<f64, PywrError> {
+        self.constant
+            .get_value(*idx.deref())
+            .ok_or(PywrError::ConstParameterIndexNotFound(idx))
+            .copied()
+    }
+
+    pub fn get_const_parameter_usize(&self, idx: ConstParameterIndex<usize>) -> Result<usize, PywrError> {
+        self.constant
+            .get_index(*idx.deref())
+            .ok_or(PywrError::ConstIndexParameterIndexNotFound(idx))
+            .copied()
+    }
+
+    pub fn get_const_multi_parameter_f64(
+        &self,
+        idx: ConstParameterIndex<MultiValue>,
+        key: &str,
+    ) -> Result<f64, PywrError> {
+        self.constant
+            .get_multi_value(*idx.deref(), key)
+            .ok_or(PywrError::ConstMultiValueParameterIndexNotFound(idx))
             .copied()
     }
 }
@@ -684,6 +733,13 @@ impl State {
         })
     }
 
+    pub fn set_const_parameter_value(&mut self, idx: ConstParameterIndex<f64>, value: f64) -> Result<(), PywrError> {
+        self.parameters.constant.set_value(*idx, value).map_err(|e| match e {
+            ParameterValuesError::IndexNotFound(_) => PywrError::ConstParameterIndexNotFound(idx),
+            ParameterValuesError::KeyNotFound(key) => PywrError::MultiValueParameterKeyNotFound(key),
+        })
+    }
+
     pub fn get_parameter_index(&self, idx: GeneralParameterIndex<usize>) -> Result<usize, PywrError> {
         self.parameters.general.get_index(*idx).map_err(|e| match e {
             ParameterValuesError::IndexNotFound(_) => PywrError::GeneralIndexParameterIndexNotFound(idx),
@@ -705,6 +761,17 @@ impl State {
     ) -> Result<(), PywrError> {
         self.parameters.simple.set_index(*idx, value).map_err(|e| match e {
             ParameterValuesError::IndexNotFound(_) => PywrError::SimpleIndexParameterIndexNotFound(idx),
+            ParameterValuesError::KeyNotFound(key) => PywrError::MultiValueParameterKeyNotFound(key),
+        })
+    }
+
+    pub fn set_const_parameter_index(
+        &mut self,
+        idx: ConstParameterIndex<usize>,
+        value: usize,
+    ) -> Result<(), PywrError> {
+        self.parameters.constant.set_index(*idx, value).map_err(|e| match e {
+            ParameterValuesError::IndexNotFound(_) => PywrError::ConstIndexParameterIndexNotFound(idx),
             ParameterValuesError::KeyNotFound(key) => PywrError::MultiValueParameterKeyNotFound(key),
         })
     }
@@ -747,6 +814,20 @@ impl State {
             })
     }
 
+    pub fn set_const_multi_parameter_value(
+        &mut self,
+        idx: ConstParameterIndex<MultiValue>,
+        value: MultiValue,
+    ) -> Result<(), PywrError> {
+        self.parameters
+            .constant
+            .set_multi_value(*idx, value)
+            .map_err(|e| match e {
+                ParameterValuesError::IndexNotFound(_) => PywrError::ConstMultiValueParameterIndexNotFound(idx),
+                ParameterValuesError::KeyNotFound(key) => PywrError::MultiValueParameterKeyNotFound(key),
+            })
+    }
+
     pub fn get_multi_parameter_index(
         &self,
         idx: GeneralParameterIndex<MultiValue>,
@@ -760,6 +841,10 @@ impl State {
 
     pub fn get_simple_parameter_values(&self) -> SimpleParameterValues {
         self.parameters.get_simple_parameter_values()
+    }
+
+    pub fn get_const_parameter_values(&self) -> ConstParameterValues {
+        self.parameters.get_const_parameter_values()
     }
 
     pub fn set_node_volume(&mut self, idx: NodeIndex, volume: f64) -> Result<(), PywrError> {
@@ -888,7 +973,12 @@ impl StateBuilder {
 
     /// Build the [`State`] from the builder.
     pub fn build(self) -> State {
-        let constant = ParameterValues::new(0, 0, 0);
+        let constant = ParameterValues::new(
+            self.num_parameters.map(|s| s.const_f64).unwrap_or(0),
+            self.num_parameters.map(|s| s.const_usize).unwrap_or(0),
+            self.num_parameters.map(|s| s.const_multi).unwrap_or(0),
+        );
+
         let simple = ParameterValues::new(
             self.num_parameters.map(|s| s.simple_f64).unwrap_or(0),
             self.num_parameters.map(|s| s.simple_usize).unwrap_or(0),

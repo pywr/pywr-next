@@ -5,7 +5,9 @@ extern crate core;
 use crate::derived_metric::DerivedMetricIndex;
 use crate::models::MultiNetworkTransferIndex;
 use crate::node::NodeIndex;
-use crate::parameters::{GeneralParameterIndex, InterpolationError, ParameterIndex, SimpleParameterIndex};
+use crate::parameters::{
+    ConstParameterIndex, GeneralParameterIndex, InterpolationError, ParameterIndex, SimpleParameterIndex,
+};
 use crate::recorders::{AggregationError, MetricSetIndex, RecorderIndex};
 use crate::state::MultiValue;
 use crate::virtual_storage::VirtualStorageIndex;
@@ -63,6 +65,12 @@ pub enum PywrError {
     SimpleIndexParameterIndexNotFound(SimpleParameterIndex<usize>),
     #[error("multi-value parameter index {0} not found")]
     SimpleMultiValueParameterIndexNotFound(SimpleParameterIndex<MultiValue>),
+    #[error("parameter index {0} not found")]
+    ConstParameterIndexNotFound(ConstParameterIndex<f64>),
+    #[error("index parameter index {0} not found")]
+    ConstIndexParameterIndexNotFound(ConstParameterIndex<usize>),
+    #[error("multi-value parameter index {0} not found")]
+    ConstMultiValueParameterIndexNotFound(ConstParameterIndex<MultiValue>),
     #[error("multi-value parameter key {0} not found")]
     MultiValueParameterKeyNotFound(String),
     #[error("inter-network parameter state not initialised")]

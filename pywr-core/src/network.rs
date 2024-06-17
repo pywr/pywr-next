@@ -250,17 +250,19 @@ impl Network {
                 .with_derived_metrics(self.derived_metrics.len())
                 .with_inter_network_transfers(num_inter_network_transfers);
 
-            let state = state_builder.build();
+            let mut state = state_builder.build();
 
-            states.push(state);
-
-            parameter_internal_states.push(ParameterStates::from_collection(
-                &self.parameters,
-                timesteps,
-                scenario_index,
-            )?);
+            let mut internal_states = ParameterStates::from_collection(&self.parameters, timesteps, scenario_index)?;
 
             metric_set_internal_states.push(self.metric_sets.iter().map(|p| p.setup()).collect::<Vec<_>>());
+
+            // Calculate parameters that implement `ConstParameter`
+            // First we update the simple parameters
+            self.parameters
+                .compute_const(scenario_index, &mut state, &mut internal_states)?;
+
+            states.push(state);
+            parameter_internal_states.push(internal_states);
         }
 
         Ok(NetworkState {
@@ -682,6 +684,9 @@ impl Network {
         metric_set_states: &mut [MetricSetState],
     ) -> Result<(), PywrError> {
         // TODO reset parameter state to zero
+
+        self.parameters
+            .after_simple(timestep, scenario_index, state, internal_states)?;
 
         for c_type in &self.resolve_order {
             match c_type {
@@ -1337,6 +1342,16 @@ impl Network {
         Ok(parameter_index.into())
     }
 
+    /// Add a [`parameters::ConstParameter`] to the network
+    pub fn add_const_parameter(
+        &mut self,
+        parameter: Box<dyn parameters::ConstParameter<f64>>,
+    ) -> Result<ParameterIndex<f64>, PywrError> {
+        let parameter_index = self.parameters.add_const_f64(parameter)?;
+
+        Ok(parameter_index.into())
+    }
+
     /// Add a `parameters::IndexParameter` to the network
     pub fn add_index_parameter(
         &mut self,
@@ -1716,7 +1731,7 @@ mod tests {
         let _node_index = network.add_input_node("input", None).unwrap();
 
         let input_max_flow = parameters::ConstantParameter::new("my-constant", 10.0);
-        let parameter = network.add_simple_parameter(Box::new(input_max_flow)).unwrap();
+        let parameter = network.add_const_parameter(Box::new(input_max_flow)).unwrap();
 
         // assign the new parameter to one of the nodes.
         let node = network.get_mut_node_by_name("input", None).unwrap();
@@ -1959,7 +1974,7 @@ mod tests {
 
         let input_max_flow_idx = model
             .network_mut()
-            .add_simple_parameter(Box::new(input_max_flow))
+            .add_const_parameter(Box::new(input_max_flow))
             .unwrap();
 
         // assign the new parameter to one of the nodes.

@@ -1,9 +1,9 @@
 use crate::parameters::{
     downcast_internal_state_mut, downcast_internal_state_ref, downcast_variable_config_ref, ActivationFunction,
-    Parameter, ParameterMeta, ParameterState, SimpleParameter, VariableConfig, VariableParameter,
+    ConstParameter, Parameter, ParameterMeta, ParameterState, VariableConfig, VariableParameter,
 };
 use crate::scenario::ScenarioIndex;
-use crate::state::SimpleParameterValues;
+use crate::state::ConstParameterValues;
 use crate::timestep::Timestep;
 use crate::PywrError;
 
@@ -58,12 +58,11 @@ impl Parameter for ConstantParameter {
 }
 
 // TODO this should only need to implement `ConstantParameter` when that is implemented.
-impl SimpleParameter<f64> for ConstantParameter {
+impl ConstParameter<f64> for ConstantParameter {
     fn compute(
         &self,
-        _timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
-        _values: &SimpleParameterValues,
+        _values: &ConstParameterValues,
         internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<f64, PywrError> {
         Ok(self.value(internal_state))

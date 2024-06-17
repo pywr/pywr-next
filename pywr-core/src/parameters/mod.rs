@@ -31,7 +31,7 @@ pub use self::rhai::RhaiParameter;
 use super::PywrError;
 use crate::network::Network;
 use crate::scenario::ScenarioIndex;
-use crate::state::{MultiValue, SimpleParameterValues, State};
+use crate::state::{ConstParameterValues, MultiValue, SimpleParameterValues, State};
 use crate::timestep::Timestep;
 pub use activation_function::ActivationFunction;
 pub use aggregated::{AggFunc, AggregatedParameter};
@@ -70,6 +70,56 @@ use std::marker::PhantomData;
 use std::ops::Deref;
 pub use threshold::{Predicate, ThresholdParameter};
 pub use vector::VectorParameter;
+
+/// Simple parameter index.
+///
+/// This is a wrapper around usize that is used to index parameters in the state. It is
+/// generic over the type of the value that the parameter returns.
+#[derive(Debug)]
+pub struct ConstParameterIndex<T> {
+    idx: usize,
+    phantom: PhantomData<T>,
+}
+
+// These implementations are required because the derive macro does not work well with PhantomData.
+// See issue: https://github.com/rust-lang/rust/issues/26925
+impl<T> Clone for ConstParameterIndex<T> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<T> Copy for ConstParameterIndex<T> {}
+impl<T> PartialEq<Self> for ConstParameterIndex<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.idx == other.idx
+    }
+}
+
+impl<T> Eq for ConstParameterIndex<T> {}
+
+impl<T> ConstParameterIndex<T> {
+    pub fn new(idx: usize) -> Self {
+        Self {
+            idx,
+            phantom: PhantomData,
+        }
+    }
+}
+
+impl<T> Deref for ConstParameterIndex<T> {
+    type Target = usize;
+
+    fn deref(&self) -> &Self::Target {
+        &self.idx
+    }
+}
+
+impl<T> Display for ConstParameterIndex<T> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.idx)
+    }
+}
 
 /// Simple parameter index.
 ///
@@ -174,6 +224,7 @@ impl<T> Display for GeneralParameterIndex<T> {
 
 #[derive(Debug, Copy, Clone)]
 pub enum ParameterIndex<T> {
+    Const(ConstParameterIndex<T>),
     Simple(SimpleParameterIndex<T>),
     General(GeneralParameterIndex<T>),
 }
@@ -181,6 +232,7 @@ pub enum ParameterIndex<T> {
 impl<T> PartialEq<Self> for ParameterIndex<T> {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
+            (Self::Const(idx1), Self::Const(idx2)) => idx1 == idx2,
             (Self::Simple(idx1), Self::Simple(idx2)) => idx1 == idx2,
             (Self::General(idx1), Self::General(idx2)) => idx1 == idx2,
             _ => false,
@@ -193,6 +245,7 @@ impl<T> Eq for ParameterIndex<T> {}
 impl<T> Display for ParameterIndex<T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
+            Self::Const(idx) => write!(f, "{}", idx),
             Self::Simple(idx) => write!(f, "{}", idx),
             Self::General(idx) => write!(f, "{}", idx),
         }
@@ -207,6 +260,12 @@ impl<T> From<GeneralParameterIndex<T>> for ParameterIndex<T> {
 impl<T> From<SimpleParameterIndex<T>> for ParameterIndex<T> {
     fn from(idx: SimpleParameterIndex<T>) -> Self {
         Self::Simple(idx)
+    }
+}
+
+impl<T> From<ConstParameterIndex<T>> for ParameterIndex<T> {
+    fn from(idx: ConstParameterIndex<T>) -> Self {
+        Self::Const(idx)
     }
 }
 
@@ -255,6 +314,7 @@ struct ParameterStatesByType {
 
 #[derive(Clone)]
 pub struct ParameterStates {
+    constant: ParameterStatesByType,
     simple: ParameterStatesByType,
     general: ParameterStatesByType,
 }
@@ -266,14 +326,20 @@ impl ParameterStates {
         timesteps: &[Timestep],
         scenario_index: &ScenarioIndex,
     ) -> Result<Self, PywrError> {
+        let constant = collection.const_initial_states(timesteps, scenario_index)?;
         let simple = collection.simple_initial_states(timesteps, scenario_index)?;
         let general = collection.general_initial_states(timesteps, scenario_index)?;
 
-        Ok(Self { simple, general })
+        Ok(Self {
+            constant,
+            simple,
+            general,
+        })
     }
 
     pub fn get_f64_state(&self, index: ParameterIndex<f64>) -> Option<&Option<Box<dyn ParameterState>>> {
         match index {
+            ParameterIndex::Const(idx) => self.constant.f64.get(*idx.deref()),
             ParameterIndex::Simple(idx) => self.simple.f64.get(*idx.deref()),
             ParameterIndex::General(idx) => self.general.f64.get(*idx.deref()),
         }
@@ -286,8 +352,13 @@ impl ParameterStates {
         self.simple.f64.get(*index.deref())
     }
 
+    pub fn get_const_f64_state(&self, index: SimpleParameterIndex<f64>) -> Option<&Option<Box<dyn ParameterState>>> {
+        self.constant.f64.get(*index.deref())
+    }
+
     pub fn get_mut_f64_state(&mut self, index: ParameterIndex<f64>) -> Option<&mut Option<Box<dyn ParameterState>>> {
         match index {
+            ParameterIndex::Const(idx) => self.constant.f64.get_mut(*idx.deref()),
             ParameterIndex::Simple(idx) => self.simple.f64.get_mut(*idx.deref()),
             ParameterIndex::General(idx) => self.general.f64.get_mut(*idx.deref()),
         }
@@ -305,6 +376,12 @@ impl ParameterStates {
     ) -> Option<&mut Option<Box<dyn ParameterState>>> {
         self.simple.f64.get_mut(*index.deref())
     }
+    pub fn get_const_mut_f64_state(
+        &mut self,
+        index: ConstParameterIndex<f64>,
+    ) -> Option<&mut Option<Box<dyn ParameterState>>> {
+        self.constant.f64.get_mut(*index.deref())
+    }
     pub fn get_general_mut_usize_state(
         &mut self,
         index: GeneralParameterIndex<usize>,
@@ -317,6 +394,12 @@ impl ParameterStates {
         index: SimpleParameterIndex<usize>,
     ) -> Option<&mut Option<Box<dyn ParameterState>>> {
         self.simple.usize.get_mut(*index.deref())
+    }
+    pub fn get_const_mut_usize_state(
+        &mut self,
+        index: ConstParameterIndex<usize>,
+    ) -> Option<&mut Option<Box<dyn ParameterState>>> {
+        self.constant.usize.get_mut(*index.deref())
     }
 
     pub fn get_general_mut_multi_state(
@@ -331,6 +414,13 @@ impl ParameterStates {
         index: SimpleParameterIndex<MultiValue>,
     ) -> Option<&mut Option<Box<dyn ParameterState>>> {
         self.simple.multi.get_mut(*index.deref())
+    }
+
+    pub fn get_const_mut_multi_state(
+        &mut self,
+        index: ConstParameterIndex<MultiValue>,
+    ) -> Option<&mut Option<Box<dyn ParameterState>>> {
+        self.constant.multi.get_mut(*index.deref())
     }
 }
 
@@ -488,6 +578,24 @@ pub trait SimpleParameter<T>: Parameter {
     }
 
     fn as_parameter(&self) -> &dyn Parameter;
+
+    fn try_into_const(&self) -> Option<Box<dyn ConstParameter<T>>> {
+        None
+    }
+}
+
+/// A trait that defines a component that produces a value each time-step.
+///
+/// The trait is generic over the type of the value produced.
+pub trait ConstParameter<T>: Parameter {
+    fn compute(
+        &self,
+        scenario_index: &ScenarioIndex,
+        values: &ConstParameterValues,
+        internal_state: &mut Option<Box<dyn ParameterState>>,
+    ) -> Result<T, PywrError>;
+
+    fn as_parameter(&self) -> &dyn Parameter;
 }
 
 pub enum GeneralParameterType {
@@ -534,6 +642,30 @@ impl From<SimpleParameterIndex<usize>> for SimpleParameterType {
 
 impl From<SimpleParameterIndex<MultiValue>> for SimpleParameterType {
     fn from(idx: SimpleParameterIndex<MultiValue>) -> Self {
+        Self::Multi(idx)
+    }
+}
+
+pub enum ConstParameterType {
+    Parameter(ConstParameterIndex<f64>),
+    Index(ConstParameterIndex<usize>),
+    Multi(ConstParameterIndex<MultiValue>),
+}
+
+impl From<ConstParameterIndex<f64>> for ConstParameterType {
+    fn from(idx: ConstParameterIndex<f64>) -> Self {
+        Self::Parameter(idx)
+    }
+}
+
+impl From<ConstParameterIndex<usize>> for ConstParameterType {
+    fn from(idx: ConstParameterIndex<usize>) -> Self {
+        Self::Index(idx)
+    }
+}
+
+impl From<ConstParameterIndex<MultiValue>> for ConstParameterType {
+    fn from(idx: ConstParameterIndex<MultiValue>) -> Self {
         Self::Multi(idx)
     }
 }
@@ -593,6 +725,9 @@ pub trait VariableParameter<T> {
 
 #[derive(Debug, Clone, Copy)]
 pub struct ParameterCollectionSize {
+    pub const_f64: usize,
+    pub const_usize: usize,
+    pub const_multi: usize,
     pub simple_f64: usize,
     pub simple_usize: usize,
     pub simple_multi: usize,
@@ -604,11 +739,18 @@ pub struct ParameterCollectionSize {
 /// A collection of parameters that return different types.
 #[derive(Default)]
 pub struct ParameterCollection {
+    constant_f64: Vec<Box<dyn ConstParameter<f64>>>,
+    constant_usize: Vec<Box<dyn ConstParameter<usize>>>,
+    constant_multi: Vec<Box<dyn ConstParameter<MultiValue>>>,
+    constant_resolve_order: Vec<ConstParameterType>,
+
     simple_f64: Vec<Box<dyn SimpleParameter<f64>>>,
     simple_usize: Vec<Box<dyn SimpleParameter<usize>>>,
     simple_multi: Vec<Box<dyn SimpleParameter<MultiValue>>>,
     simple_resolve_order: Vec<SimpleParameterType>,
 
+    // There is no resolve order for general parameters as they are resolved at a model
+    // level with other component types (e.g. nodes).
     general_f64: Vec<Box<dyn GeneralParameter<f64>>>,
     general_usize: Vec<Box<dyn GeneralParameter<usize>>>,
     general_multi: Vec<Box<dyn GeneralParameter<MultiValue>>>,
@@ -617,6 +759,9 @@ pub struct ParameterCollection {
 impl ParameterCollection {
     pub fn size(&self) -> ParameterCollectionSize {
         ParameterCollectionSize {
+            const_f64: self.constant_f64.len(),
+            const_usize: self.constant_usize.len(),
+            const_multi: self.constant_multi.len(),
             simple_f64: self.simple_f64.len(),
             simple_usize: self.simple_usize.len(),
             simple_multi: self.simple_multi.len(),
@@ -687,7 +832,42 @@ impl ParameterCollection {
         })
     }
 
-    /// Add a new parameter to the collection.
+    fn const_initial_states(
+        &self,
+        timesteps: &[Timestep],
+        scenario_index: &ScenarioIndex,
+    ) -> Result<ParameterStatesByType, PywrError> {
+        // Get the initial internal state
+        let f64_states = self
+            .constant_f64
+            .iter()
+            .map(|p| p.setup(timesteps, scenario_index))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let usize_states = self
+            .constant_usize
+            .iter()
+            .map(|p| p.setup(timesteps, scenario_index))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let multi_states = self
+            .constant_multi
+            .iter()
+            .map(|p| p.setup(timesteps, scenario_index))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(ParameterStatesByType {
+            f64: f64_states,
+            usize: usize_states,
+            multi: multi_states,
+        })
+    }
+
+    /// Add a [`GeneralParameter<f64>`] parameter to the collection.
+    ///
+    /// This function will add attempt to simplify the parameter and add it to the simple or
+    /// constant parameter list. If the parameter cannot be simplified it will be added to the
+    /// general parameter list.
     pub fn add_general_f64(
         &mut self,
         parameter: Box<dyn GeneralParameter<f64>>,
@@ -712,25 +892,46 @@ impl ParameterCollection {
     pub fn add_simple_f64(
         &mut self,
         parameter: Box<dyn SimpleParameter<f64>>,
-    ) -> Result<SimpleParameterIndex<f64>, PywrError> {
-        // TODO Fix this check
-        // if let Some(index) = self.get_f64_index_by_name(&parameter.meta().name) {
-        //     return Err(PywrError::SimpleParameterNameAlreadyExists(
-        //         parameter.meta().name.to_string(),
-        //         index,
-        //     ));
-        // }
+    ) -> Result<ParameterIndex<f64>, PywrError> {
+        if let Some(index) = self.get_f64_index_by_name(&parameter.meta().name) {
+            return Err(PywrError::ParameterNameAlreadyExists(
+                parameter.meta().name.to_string(),
+                index,
+            ));
+        }
 
-        let index = SimpleParameterIndex::new(self.simple_f64.len());
+        match parameter.try_into_const() {
+            Some(constant) => self.add_const_f64(constant).map(|idx| idx.into()),
+            None => {
+                let index = SimpleParameterIndex::new(self.simple_f64.len());
 
-        self.simple_f64.push(parameter);
-        self.simple_resolve_order.push(SimpleParameterType::Parameter(index));
+                self.simple_f64.push(parameter);
+                self.simple_resolve_order.push(SimpleParameterType::Parameter(index));
 
-        Ok(index)
+                Ok(index.into())
+            }
+        }
+    }
+
+    pub fn add_const_f64(&mut self, parameter: Box<dyn ConstParameter<f64>>) -> Result<ParameterIndex<f64>, PywrError> {
+        if let Some(index) = self.get_f64_index_by_name(&parameter.meta().name) {
+            return Err(PywrError::ParameterNameAlreadyExists(
+                parameter.meta().name.to_string(),
+                index,
+            ));
+        }
+
+        let index = ConstParameterIndex::new(self.constant_f64.len());
+
+        self.constant_f64.push(parameter);
+        self.constant_resolve_order.push(ConstParameterType::Parameter(index));
+
+        Ok(index.into())
     }
 
     pub fn get_f64(&self, index: ParameterIndex<f64>) -> Option<&dyn Parameter> {
         match index {
+            ParameterIndex::Const(idx) => self.constant_f64.get(*idx.deref()).map(|p| p.as_parameter()),
             ParameterIndex::Simple(idx) => self.simple_f64.get(*idx.deref()).map(|p| p.as_parameter()),
             ParameterIndex::General(idx) => self.general_f64.get(*idx.deref()).map(|p| p.as_parameter()),
         }
@@ -760,6 +961,13 @@ impl ParameterCollection {
             .iter()
             .position(|p| p.meta().name == name)
             .map(|idx| SimpleParameterIndex::new(idx))
+        {
+            Some(idx.into())
+        } else if let Some(idx) = self
+            .constant_f64
+            .iter()
+            .position(|p| p.meta().name == name)
+            .map(|idx| ConstParameterIndex::new(idx))
         {
             Some(idx.into())
         } else {
@@ -948,6 +1156,133 @@ impl ParameterCollection {
                         internal_state,
                     )?;
                     state.set_simple_multi_parameter_value(*idx, value)?;
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Perform the after step for simple parameters.
+    pub fn after_simple(
+        &self,
+        timestep: &Timestep,
+        scenario_index: &ScenarioIndex,
+        state: &mut State,
+        internal_states: &mut ParameterStates,
+    ) -> Result<(), PywrError> {
+        for p in &self.simple_resolve_order {
+            match p {
+                SimpleParameterType::Parameter(idx) => {
+                    // Find the parameter itself
+                    let p = self
+                        .simple_f64
+                        .get(*idx.deref())
+                        .ok_or(PywrError::SimpleParameterIndexNotFound(*idx))?;
+                    // .. and its internal state
+                    let internal_state = internal_states
+                        .get_simple_mut_f64_state(*idx)
+                        .ok_or(PywrError::SimpleParameterIndexNotFound(*idx))?;
+
+                    p.after(
+                        timestep,
+                        scenario_index,
+                        &state.get_simple_parameter_values(),
+                        internal_state,
+                    )?;
+                }
+                SimpleParameterType::Index(idx) => {
+                    // Find the parameter itself
+                    let p = self
+                        .simple_usize
+                        .get(*idx.deref())
+                        .ok_or(PywrError::SimpleIndexParameterIndexNotFound(*idx))?;
+                    // .. and its internal state
+                    let internal_state = internal_states
+                        .get_simple_mut_usize_state(*idx)
+                        .ok_or(PywrError::SimpleIndexParameterIndexNotFound(*idx))?;
+
+                    p.after(
+                        timestep,
+                        scenario_index,
+                        &state.get_simple_parameter_values(),
+                        internal_state,
+                    )?;
+                }
+                SimpleParameterType::Multi(idx) => {
+                    // Find the parameter itself
+                    let p = self
+                        .simple_multi
+                        .get(*idx.deref())
+                        .ok_or(PywrError::SimpleMultiValueParameterIndexNotFound(*idx))?;
+                    // .. and its internal state
+                    let internal_state = internal_states
+                        .get_simple_mut_multi_state(*idx)
+                        .ok_or(PywrError::SimpleMultiValueParameterIndexNotFound(*idx))?;
+
+                    p.compute(
+                        timestep,
+                        scenario_index,
+                        &state.get_simple_parameter_values(),
+                        internal_state,
+                    )?;
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Compute the constant parameters.
+    pub fn compute_const(
+        &self,
+        scenario_index: &ScenarioIndex,
+        state: &mut State,
+        internal_states: &mut ParameterStates,
+    ) -> Result<(), PywrError> {
+        for p in &self.constant_resolve_order {
+            match p {
+                ConstParameterType::Parameter(idx) => {
+                    // Find the parameter itself
+                    let p = self
+                        .constant_f64
+                        .get(*idx.deref())
+                        .ok_or(PywrError::ConstParameterIndexNotFound(*idx))?;
+                    // .. and its internal state
+                    let internal_state = internal_states
+                        .get_const_mut_f64_state(*idx)
+                        .ok_or(PywrError::ConstParameterIndexNotFound(*idx))?;
+
+                    let value = p.compute(scenario_index, &state.get_const_parameter_values(), internal_state)?;
+                    state.set_const_parameter_value(*idx, value)?;
+                }
+                ConstParameterType::Index(idx) => {
+                    // Find the parameter itself
+                    let p = self
+                        .constant_usize
+                        .get(*idx.deref())
+                        .ok_or(PywrError::ConstIndexParameterIndexNotFound(*idx))?;
+                    // .. and its internal state
+                    let internal_state = internal_states
+                        .get_const_mut_usize_state(*idx)
+                        .ok_or(PywrError::ConstIndexParameterIndexNotFound(*idx))?;
+
+                    let value = p.compute(scenario_index, &state.get_const_parameter_values(), internal_state)?;
+                    state.set_const_parameter_index(*idx, value)?;
+                }
+                ConstParameterType::Multi(idx) => {
+                    // Find the parameter itself
+                    let p = self
+                        .constant_multi
+                        .get(*idx.deref())
+                        .ok_or(PywrError::ConstMultiValueParameterIndexNotFound(*idx))?;
+                    // .. and its internal state
+                    let internal_state = internal_states
+                        .get_const_mut_multi_state(*idx)
+                        .ok_or(PywrError::ConstMultiValueParameterIndexNotFound(*idx))?;
+
+                    let value = p.compute(scenario_index, &state.get_const_parameter_values(), internal_state)?;
+                    state.set_const_multi_parameter_value(*idx, value)?;
                 }
             }
         }

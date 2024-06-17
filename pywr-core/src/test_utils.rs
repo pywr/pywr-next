@@ -69,7 +69,7 @@ pub fn simple_network(network: &mut Network, inflow_scenario_index: usize, num_i
     let base_demand = 10.0;
 
     let demand_factor = ConstantParameter::new("demand-factor", 1.2);
-    let demand_factor = network.add_simple_parameter(Box::new(demand_factor)).unwrap();
+    let demand_factor = network.add_const_parameter(Box::new(demand_factor)).unwrap();
 
     let total_demand: AggregatedParameter<MetricF64> = AggregatedParameter::new(
         "total-demand",
@@ -79,7 +79,7 @@ pub fn simple_network(network: &mut Network, inflow_scenario_index: usize, num_i
     let total_demand = network.add_parameter(Box::new(total_demand)).unwrap();
 
     let demand_cost = ConstantParameter::new("demand-cost", -10.0);
-    let demand_cost = network.add_simple_parameter(Box::new(demand_cost)).unwrap();
+    let demand_cost = network.add_const_parameter(Box::new(demand_cost)).unwrap();
 
     let output_node = network.get_mut_node_by_name("output", None).unwrap();
     output_node.set_max_flow_constraint(Some(total_demand.into())).unwrap();
@@ -122,10 +122,10 @@ pub fn simple_storage_model() -> Model {
     // Apply demand to the model
     // TODO convenience function for adding a constant constraint.
     let demand = ConstantParameter::new("demand", 10.0);
-    let demand = network.add_simple_parameter(Box::new(demand)).unwrap();
+    let demand = network.add_const_parameter(Box::new(demand)).unwrap();
 
     let demand_cost = ConstantParameter::new("demand-cost", -10.0);
-    let demand_cost = network.add_simple_parameter(Box::new(demand_cost)).unwrap();
+    let demand_cost = network.add_const_parameter(Box::new(demand_cost)).unwrap();
 
     let output_node = network.get_mut_node_by_name("output", None).unwrap();
     output_node.set_max_flow_constraint(Some(demand.into())).unwrap();
