@@ -109,14 +109,6 @@ Any major revision to Pywr will have the following feature requirements:
 
 ### Getting started
 
-This repository contains a version of Clp using Git submodules. In order to build those submodules
-must be initialised first.
-
-```bash
-git submodule init
-git submodule update
-```
-
 Rust is required for installation of the Python extension. To create a Python development installation
 requires first compiling the Rust library and then the Python extension. The following example uses
 a virtual environment to install the Python dependencies, compile the Pywr extension and run the Pywr Python CLI.

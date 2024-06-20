@@ -7,7 +7,7 @@ use crate::solvers::{Solver, SolverFeatures, SolverTimings};
 use crate::state::State;
 use crate::timestep::Timestep;
 use crate::PywrError;
-use clp_sys::*;
+use coinclp_sys::*;
 use libc::{c_double, c_int};
 pub use settings::{ClpSolverSettings, ClpSolverSettingsBuilder};
 use std::ffi::CString;
