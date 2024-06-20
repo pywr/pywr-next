@@ -1,7 +1,5 @@
 #![cfg_attr(feature = "ipm-simd", feature(portable_simd))]
 
-extern crate core;
-
 use crate::derived_metric::DerivedMetricIndex;
 use crate::models::MultiNetworkTransferIndex;
 use crate::node::NodeIndex;

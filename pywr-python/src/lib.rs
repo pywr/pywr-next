@@ -12,6 +12,7 @@ use pyo3::types::{PyDict, PyType};
 
 #[cfg(feature = "ipm-ocl")]
 use pywr_core::solvers::{ClIpmF32Solver, ClIpmF64Solver, ClIpmSolverSettings};
+#[cfg(feature = "clp")]
 use pywr_core::solvers::{ClpSolver, ClpSolverSettings, ClpSolverSettingsBuilder};
 #[cfg(feature = "highs")]
 use pywr_core::solvers::{HighsSolver, HighsSolverSettings, HighsSolverSettings, HighsSolverSettingsBuilde};
@@ -111,6 +112,7 @@ pub struct Model {
 impl Model {
     fn run(&self, solver_name: &str, solver_kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<()> {
         match solver_name {
+            #[cfg(feature = "clp")]
             "clp" => {
                 let settings = build_clp_settings(solver_kwargs)?;
                 self.model.run::<ClpSolver>(&settings)?;
@@ -131,6 +133,7 @@ impl Model {
     }
 }
 
+#[cfg(feature = "clp")]
 fn build_clp_settings(kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<ClpSolverSettings> {
     let mut builder = ClpSolverSettingsBuilder::default();
 

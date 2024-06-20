@@ -10,6 +10,7 @@
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 #[cfg(feature = "ipm-ocl")]
 use pywr_core::solvers::{ClIpmF64Solver, ClIpmSolverSettings, ClIpmSolverSettingsBuilder};
+#[cfg(feature = "clp")]
 use pywr_core::solvers::{ClpSolver, ClpSolverSettings, ClpSolverSettingsBuilder};
 #[cfg(feature = "highs")]
 use pywr_core::solvers::{HighsSolver, HighsSolverSettings};
@@ -50,6 +51,7 @@ fn random_benchmark(
 
                 for setup in solver_setups {
                     match &setup.setting {
+                        #[cfg(feature = "clp")]
                         SolverSetting::Clp(settings) => {
                             let parameter_string = format!("clp * {n_sys} * {density} * {n_sc} * {}", &setup.name);
 
@@ -162,6 +164,7 @@ fn random_benchmark(
 }
 
 enum SolverSetting {
+    #[cfg(feature = "clp")]
     Clp(ClpSolverSettings),
     #[cfg(feature = "highs")]
     Highs(HighsSolverSettings),
@@ -187,6 +190,7 @@ fn default_solver_setups() -> Vec<SolverSetup> {
             setting: SolverSetting::Highs(HighsSolverSettings::default()),
             name: "default".to_string(),
         },
+        #[cfg(feature = "clp")]
         SolverSetup {
             setting: SolverSetting::Clp(ClpSolverSettings::default()),
             name: "default".to_string(),

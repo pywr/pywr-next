@@ -26,3 +26,10 @@ schemars = { workspace = true }
 
 pywr-core = { path = "../pywr-core" }
 pywr-schema = { path = "../pywr-schema" }
+
+[features]
+clp = ["pywr-core/clp"]
+highs = ["pywr-core/highs"]
+ipm-ocl = ["pywr-core/ipm-ocl"]
+ipm-simd = ["pywr-core/ipm-simd"]
+default = ["clp"]

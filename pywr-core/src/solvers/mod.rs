@@ -6,6 +6,7 @@ use std::ops::{Add, AddAssign};
 use std::time::Duration;
 
 mod builder;
+#[cfg(feature = "clp")]
 mod clp;
 mod col_edge_map;
 #[cfg(feature = "highs")]
@@ -19,6 +20,7 @@ mod ipm_simd;
 pub use self::ipm_ocl::{ClIpmF32Solver, ClIpmF64Solver, ClIpmSolverSettings, ClIpmSolverSettingsBuilder};
 #[cfg(feature = "ipm-simd")]
 pub use self::ipm_simd::{SimdIpmF64Solver, SimdIpmSolverSettings, SimdIpmSolverSettingsBuilder};
+#[cfg(feature = "clp")]
 pub use clp::{ClpError, ClpSolver, ClpSolverSettings, ClpSolverSettingsBuilder};
 #[cfg(feature = "highs")]
 pub use highs::{HighsSolver, HighsSolverSettings, HighsSolverSettingsBuilder};

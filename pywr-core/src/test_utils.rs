@@ -9,6 +9,7 @@ use crate::recorders::AssertionRecorder;
 use crate::scenario::ScenarioGroupCollection;
 #[cfg(feature = "ipm-ocl")]
 use crate::solvers::ClIpmF64Solver;
+#[cfg(feature = "clp")]
 use crate::solvers::ClpSolver;
 #[cfg(feature = "highs")]
 use crate::solvers::HighsSolver;
@@ -193,10 +194,12 @@ pub fn run_and_assert_parameter(
 /// The model will only be run if the solver has the required solver features (and
 /// is also enabled as a Cargo feature).
 pub fn run_all_solvers(model: &Model) {
-    model
-        .run::<ClpSolver>(&Default::default())
-        .expect("Failed to solve with CLP");
-
+    #[cfg(feature = "clp")]
+    {
+        model
+            .run::<ClpSolver>(&Default::default())
+            .expect("Failed to solve with CLP");
+    }
     #[cfg(feature = "highs")]
     {
         if model.check_solver_features::<HighsSolver>() {

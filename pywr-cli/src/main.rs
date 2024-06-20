@@ -6,6 +6,7 @@ use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand, ValueEnum};
 #[cfg(feature = "ipm-ocl")]
 use pywr_core::solvers::{ClIpmF32Solver, ClIpmF64Solver, ClIpmSolverSettings};
+#[cfg(feature = "clp")]
 use pywr_core::solvers::{ClpSolver, ClpSolverSettings};
 #[cfg(feature = "highs")]
 use pywr_core::solvers::{HighsSolver, HighsSolverSettings};
@@ -22,6 +23,7 @@ use std::path::{Path, PathBuf};
 
 #[derive(Copy, Clone, ValueEnum)]
 enum Solver {
+    #[cfg(feature = "clp")]
     Clp,
     #[cfg(feature = "highs")]
     HIGHS,
@@ -36,6 +38,7 @@ enum Solver {
 impl Display for Solver {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
+            #[cfg(feature = "clp")]
             Solver::Clp => write!(f, "clp"),
             #[cfg(feature = "highs")]
             Solver::HIGHS => write!(f, "highs"),
@@ -79,7 +82,7 @@ enum Commands {
         /// Path to Pywr model JSON.
         model: PathBuf,
         /// Solver to use.
-        #[arg(short, long, default_value_t=Solver::Clp)]
+        #[arg(short, long)]
         solver: Solver,
         #[arg(short, long)]
         data_path: Option<PathBuf>,
@@ -96,7 +99,7 @@ enum Commands {
         /// Path to Pywr model JSON.
         model: PathBuf,
         /// Solver to use.
-        #[arg(short, long, default_value_t=Solver::Clp)]
+        #[arg(short, long)]
         solver: Solver,
         #[arg(short, long)]
         data_path: Option<PathBuf>,
@@ -114,7 +117,7 @@ enum Commands {
         density: usize,
         num_scenarios: usize,
         /// Solver to use.
-        #[arg(short, long, default_value_t=Solver::Clp)]
+        #[arg(short, long)]
         solver: Solver,
     },
     ExportSchema {
@@ -263,6 +266,7 @@ fn run(path: &Path, solver: &Solver, data_path: Option<&Path>, output_path: Opti
     let model = schema_v2.build_model(data_path, output_path).unwrap();
 
     match *solver {
+        #[cfg(feature = "clp")]
         Solver::Clp => model.run::<ClpSolver>(&ClpSolverSettings::default()),
         #[cfg(feature = "highs")]
         Solver::HIGHS => model.run::<HighsSolver>(&HighsSolverSettings::default()),
@@ -285,6 +289,7 @@ fn run_multi(path: &Path, solver: &Solver, data_path: Option<&Path>, output_path
     let model = schema_v2.build_model(data_path, output_path).unwrap();
 
     match *solver {
+        #[cfg(feature = "clp")]
         Solver::Clp => model.run::<ClpSolver>(&ClpSolverSettings::default()),
         #[cfg(feature = "highs")]
         Solver::HIGHS => model.run::<HighsSolver>(&HighsSolverSettings::default()),
@@ -303,6 +308,7 @@ fn run_random(num_systems: usize, density: usize, num_scenarios: usize, solver: 
     let model = make_random_model(num_systems, density, num_scenarios, &mut rng).unwrap();
 
     match *solver {
+        #[cfg(feature = "clp")]
         Solver::Clp => model.run::<ClpSolver>(&ClpSolverSettings::default()),
         #[cfg(feature = "highs")]
         Solver::HIGHS => model.run::<HighsSolver>(&HighsSolverSettings::default()),
