@@ -44,6 +44,10 @@ pub enum TimeseriesError {
     DataFrameTimestepMismatch(String),
     #[error("A timeseries dataframe with the name '{0}' already exists.")]
     TimeseriesDataframeAlreadyExists(String),
+    #[error("The timeseries dataset '{0}' has more than one column of data so a column or scenario name must be provided for any reference")]
+    TimeseriesColumnOrScenarioRequired(String),
+    #[error("The timeseries dataset '{0}' has no columns")]
+    TimeseriesDataframeHasNoColumns(String),
     #[error("Polars error: {0}")]
     #[cfg(feature = "core")]
     PolarsError(#[from] PolarsError),
@@ -132,6 +136,44 @@ impl LoadedTimeseriesCollection {
             .timeseries
             .get(name)
             .ok_or(TimeseriesError::TimeseriesNotFound(name.to_string()))?;
+        let series = df.column(col)?;
+
+        let array = series.cast(&Float64)?.f64()?.to_ndarray()?.to_owned();
+        let name = format!("{}_{}", name, col);
+
+        match network.get_parameter_index_by_name(&name) {
+            Ok(idx) => Ok(idx),
+            Err(e) => match e {
+                PywrError::ParameterNotFound(_) => {
+                    let p = Array1Parameter::new(&name, array, None);
+                    Ok(network.add_parameter(Box::new(p))?)
+                }
+                _ => Err(TimeseriesError::PywrCore(e)),
+            },
+        }
+    }
+
+    pub fn load_single_column(
+        &self,
+        network: &mut pywr_core::network::Network,
+        name: &str,
+    ) -> Result<ParameterIndex<f64>, TimeseriesError> {
+        let df = self
+            .timeseries
+            .get(name)
+            .ok_or(TimeseriesError::TimeseriesNotFound(name.to_string()))?;
+
+        let cols = df.get_column_names();
+
+        if cols.len() > 1 {
+            return Err(TimeseriesError::TimeseriesColumnOrScenarioRequired(name.to_string()));
+        };
+
+        let col = cols.first().ok_or(TimeseriesError::ColumnNotFound {
+            col: "".to_string(),
+            name: name.to_string(),
+        })?;
+
         let series = df.column(col)?;
 
         let array = series.cast(&Float64)?.f64()?.to_ndarray()?.to_owned();
