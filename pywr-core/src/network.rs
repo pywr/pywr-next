@@ -4,6 +4,7 @@ use crate::derived_metric::{DerivedMetric, DerivedMetricIndex};
 use crate::edge::{Edge, EdgeIndex, EdgeVec};
 use crate::metric::MetricF64;
 use crate::models::ModelDomain;
+use crate::mutual_exclusivity::{MutualExclusivityNodeIndex, MutualExclusivityNodeVec};
 use crate::node::{ConstraintValue, Node, NodeVec, StorageInitialVolume};
 use crate::parameters::{ParameterType, VariableConfig};
 use crate::recorders::{MetricSet, MetricSetIndex, MetricSetState};
@@ -200,6 +201,7 @@ pub struct Network {
     aggregated_nodes: AggregatedNodeVec,
     aggregated_storage_nodes: AggregatedStorageNodeVec,
     virtual_storage_nodes: VirtualStorageVec,
+    mutual_exclusivity_nodes: MutualExclusivityNodeVec,
     parameters: Vec<Box<dyn parameters::Parameter<f64>>>,
     index_parameters: Vec<Box<dyn parameters::Parameter<usize>>>,
     multi_parameters: Vec<Box<dyn parameters::Parameter<MultiValue>>>,
@@ -227,6 +229,10 @@ impl Network {
 
     pub fn virtual_storage_nodes(&self) -> &VirtualStorageVec {
         &self.virtual_storage_nodes
+    }
+
+    pub fn mutual_exclusivity_nodes(&self) -> &MutualExclusivityNodeVec {
+        &self.mutual_exclusivity_nodes
     }
 
     /// Setup the network and create the initial state for each scenario.
@@ -1317,6 +1323,25 @@ impl Network {
             .push(ComponentType::VirtualStorageNode(vs_node_index));
 
         Ok(vs_node_index)
+    }
+
+    /// Add a new `aggregated_node::AggregatedNode` to the network.
+    pub fn add_mutual_exclusivity_node(
+        &mut self,
+        name: &str,
+        sub_name: Option<&str>,
+        nodes: &[NodeIndex],
+        min_active: usize,
+        max_active: usize,
+    ) -> Result<MutualExclusivityNodeIndex, PywrError> {
+        // if let Ok(_agg_node) = self.get_aggregated_node_by_name(name, sub_name) {
+        //     return Err(PywrError::NodeNameAlreadyExists(name.to_string()));
+        // }
+
+        let node_index = self
+            .mutual_exclusivity_nodes
+            .push_new(name, sub_name, nodes, min_active, max_active);
+        Ok(node_index)
     }
 
     /// Add a `parameters::Parameter` to the network
