@@ -52,11 +52,16 @@ mod core {
                 Some(ext) => {
                     let ext = ext.to_str().map(|s| s.to_lowercase());
                     match ext.as_deref() {
-                        Some("csv") => CsvReader::from_path(fp)?
-                            .infer_schema(None)
-                            .with_try_parse_dates(true)
-                            .has_header(true)
-                            .finish()?,
+                        Some("csv") => {
+                            let parse_options = CsvParseOptions::default().with_try_parse_dates(true);
+
+                            CsvReadOptions::default()
+                                .with_schema(None)
+                                .with_has_header(true)
+                                .with_parse_options(parse_options)
+                                .try_into_reader_with_file_path(Some(fp))?
+                                .finish()?
+                        }
                         Some("parquet") => {
                             todo!()
                         }

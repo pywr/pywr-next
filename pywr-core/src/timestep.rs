@@ -7,6 +7,10 @@ use std::ops::Add;
 use crate::PywrError;
 
 const SECS_IN_DAY: i64 = 60 * 60 * 24;
+const MILLISECS_IN_DAY: i64 = 1000 * SECS_IN_DAY;
+const MILLISECS_IN_HOUR: i64 = 1000 * 60 * 60;
+const MILLISECS_IN_MINUTE: i64 = 1000 * 60;
+const MILLISECS_IN_SECOND: i64 = 1000;
 
 /// A newtype for `chrono::TimeDelta` that provides a couple of useful convenience methods.
 #[pyclass]
@@ -59,9 +63,37 @@ impl PywrDuration {
         self.0.num_seconds() as f64 / SECS_IN_DAY as f64
     }
 
-    /// Returns the number of nanoseconds in the duration.
-    pub fn whole_nanoseconds(&self) -> Option<i64> {
-        self.0.num_nanoseconds()
+    /// Returns the number of milliseconds in the duration.
+    pub fn milliseconds(&self) -> i64 {
+        self.0.num_milliseconds()
+    }
+
+    /// Convert the duration to a string representation that can be parsed by polars
+    /// see: https://docs.rs/polars/latest/polars/prelude/struct.Duration.html#method.parse
+    pub fn duration_string(&self) -> String {
+        let milliseconds = self.milliseconds();
+        let mut duration = String::new();
+        let days = milliseconds / MILLISECS_IN_DAY;
+        if days > 0 {
+            duration.push_str(&format!("{}d", days));
+        }
+        let hours = (milliseconds % MILLISECS_IN_DAY) / MILLISECS_IN_HOUR;
+        if hours > 0 {
+            duration.push_str(&format!("{}h", hours));
+        }
+        let minutes = (milliseconds % MILLISECS_IN_HOUR) / MILLISECS_IN_MINUTE;
+        if minutes > 0 {
+            duration.push_str(&format!("{}m", minutes));
+        }
+        let seconds = (milliseconds % MILLISECS_IN_MINUTE) / MILLISECS_IN_SECOND;
+        if seconds > 0 {
+            duration.push_str(&format!("{}s", seconds));
+        }
+        let milliseconds = milliseconds % MILLISECS_IN_SECOND;
+        if milliseconds > 0 {
+            duration.push_str(&format!("{}ms", milliseconds));
+        }
+        duration
     }
 }
 
@@ -195,15 +227,13 @@ impl Timestepper {
 #[derive(Debug)]
 pub struct TimeDomain {
     timesteps: Vec<Timestep>,
+    duration: PywrDuration,
 }
 
 impl TimeDomain {
     /// Return the duration of each time-step.
     pub fn step_duration(&self) -> PywrDuration {
-        // This relies on the assumption that all time-steps are the same length.
-        // Ideally, this invariant would be refactored to have the duration stored here in `TimeDomain`,
-        // rather than in `Timestep`.
-        self.timesteps.first().expect("Not time-steps defined.").duration
+        self.duration
     }
 
     pub fn timesteps(&self) -> &[Timestep] {
@@ -233,7 +263,11 @@ impl TryFrom<Timestepper> for TimeDomain {
 
     fn try_from(value: Timestepper) -> Result<Self, Self::Error> {
         let timesteps = value.timesteps()?;
-        Ok(Self { timesteps })
+        let duration = timesteps.first().expect("No time-steps defined.").duration;
+        match timesteps.iter().all(|t| t.duration == duration) {
+            true => Ok(Self { timesteps, duration }),
+            false => Err(PywrError::TimestepDurationMismatch),
+        }
     }
 }
 
@@ -313,23 +347,28 @@ mod test {
         let duration = PywrDuration::days(5);
         assert_eq!(duration.whole_days(), Some(5));
         assert_eq!(duration.fractional_days(), 5.0);
+        assert_eq!(duration.duration_string(), String::from("5d"));
 
         let duration: PywrDuration = TimeDelta::hours(12).into();
         assert_eq!(duration.whole_days(), None);
         assert_eq!(duration.fractional_days(), 0.5);
+        assert_eq!(duration.duration_string(), String::from("12h"));
 
         let duration: PywrDuration = TimeDelta::minutes(30).into();
         assert_eq!(duration.whole_days(), None);
         assert_eq!(duration.fractional_days(), 1.0 / 48.0);
+        assert_eq!(duration.duration_string(), String::from("30m"));
 
         let duration_secs = SECS_IN_DAY + 1;
         let duration: PywrDuration = TimeDelta::seconds(duration_secs).into();
         assert_eq!(duration.whole_days(), None);
         assert_eq!(duration.fractional_days(), duration_secs as f64 / SECS_IN_DAY as f64);
+        assert_eq!(duration.duration_string(), String::from("1d1s"));
 
         let duration_secs = SECS_IN_DAY - 1;
         let duration: PywrDuration = TimeDelta::seconds(duration_secs).into();
         assert_eq!(duration.whole_days(), None);
         assert_eq!(duration.fractional_days(), duration_secs as f64 / SECS_IN_DAY as f64);
+        assert_eq!(duration.duration_string(), String::from("23h59m59s"));
     }
 }
