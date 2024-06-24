@@ -382,7 +382,7 @@ fn compile_cgl() -> Vec<String> {
 
 const CBC_SRC_PATH: &str = "vendor/Cbc/Cbc/src";
 
-const CBC_SRCS: [&str; 74] = [
+const CBC_SRCS: [&str; 75] = [
     // Solver
     "Cbc_C_Interface.cpp",
     "CbcCbcParam.cpp",
@@ -394,6 +394,7 @@ const CBC_SRCS: [&str; 74] = [
     "CbcMipStartIO.cpp",
     "CbcLinked.cpp",
     "CbcLinkedUtils.cpp",
+    "unitTestClp.cpp",
     // Lib
     "CbcBranchAllDifferent.cpp",
     "CbcBranchCut.cpp",
