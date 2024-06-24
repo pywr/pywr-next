@@ -259,6 +259,7 @@ fn compile_cgl() -> Vec<String> {
     {
         let pth = format!("{}/CglClique", CGL_SRC_PATH);
         builder.file(format!("{}/CglClique.cpp", pth));
+        builder.file(format!("{}/CglCliqueHelper.cpp", pth));
         extra_include_dirs.push(pth);
     }
 
@@ -299,6 +300,8 @@ fn compile_cgl() -> Vec<String> {
         builder.file(format!("{}/CglLandPMessages.cpp", pth));
         builder.file(format!("{}/CglLandPSimplex.cpp", pth));
         builder.file(format!("{}/CglLandPTabRow.cpp", pth));
+        builder.file(format!("{}/CglLandPUtils.cpp", pth));
+        builder.file(format!("{}/CglLandPValidator.cpp", pth));
         extra_include_dirs.push(pth);
     }
 
@@ -335,12 +338,14 @@ fn compile_cgl() -> Vec<String> {
     {
         let pth = format!("{}/CglRedSplit", CGL_SRC_PATH);
         builder.file(format!("{}/CglRedSplit.cpp", pth));
+        builder.file(format!("{}/CglRedSplitParam.cpp", pth));
         extra_include_dirs.push(pth);
     }
 
     {
         let pth = format!("{}/CglRedSplit2", CGL_SRC_PATH);
         builder.file(format!("{}/CglRedSplit2.cpp", pth));
+        builder.file(format!("{}/CglRedSplit2Param.cpp", pth));
         extra_include_dirs.push(pth);
     }
 
@@ -377,10 +382,19 @@ fn compile_cgl() -> Vec<String> {
 
 const CBC_SRC_PATH: &str = "vendor/Cbc/Cbc/src";
 
-const CBC_SRCS: [&str; 67] = [
+const CBC_SRCS: [&str; 74] = [
+    // Solver
     "Cbc_C_Interface.cpp",
     "CbcCbcParam.cpp",
+    "Cbc_ampl.cpp",
     "CbcSolver.cpp",
+    "CbcSolverHeuristics.cpp",
+    "CbcSolverAnalyze.cpp",
+    "CbcSolverExpandKnapsack.cpp",
+    "CbcMipStartIO.cpp",
+    "CbcLinked.cpp",
+    "CbcLinkedUtils.cpp",
+    // Lib
     "CbcBranchAllDifferent.cpp",
     "CbcBranchCut.cpp",
     "CbcBranchDecision.cpp",
