@@ -365,6 +365,7 @@ fn compile_cgl() -> Vec<String> {
     {
         let pth = format!("{}/CglZeroHalf", CGL_SRC_PATH);
         builder.file(format!("{}/CglZeroHalf.cpp", pth));
+        builder.file(format!("{}/Cgl012cut.cpp", pth));
         extra_include_dirs.push(pth);
     }
 
