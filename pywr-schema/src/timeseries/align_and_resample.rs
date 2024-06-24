@@ -74,7 +74,6 @@ pub fn align_and_resample(
                     [],
                     "time",
                     Duration::parse(model_duration_string.as_str()),
-                    Duration::parse("0d"),
                 )?
                 .fill_null(FillNullStrategy::Forward(None))?
         }
