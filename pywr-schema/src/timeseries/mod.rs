@@ -38,8 +38,6 @@ pub enum TimeseriesError {
     TimeseriesUnparsableFileFormat { provider: String, path: String },
     #[error("A scenario group with name '{0}' was not found")]
     ScenarioGroupNotFound(String),
-    #[error("Duration could not be represented as nanoseconds")]
-    NoDurationNanoSeconds,
     #[error("The length of the resampled timeseries dataframe '{0}' does not match the number of model timesteps.")]
     DataFrameTimestepMismatch(String),
     #[error("A timeseries dataframe with the name '{0}' already exists.")]
