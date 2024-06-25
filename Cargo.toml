@@ -4,7 +4,7 @@ members = [
     "ipm-common",
     "ipm-ocl",
     "ipm-simd",
-    "clp-sys",
+    "coin-or-sys",
     "pywr-core",
     "pywr-schema",
     "pywr-cli",
@@ -16,7 +16,7 @@ exclude = [
 ]
 # IPM packages are not default because they require nightly (portable_simd).
 default-members = [
-    "clp-sys",
+    "coin-or-sys",
     "pywr-core",
     "pywr-schema",
     "pywr-cli",
