@@ -131,23 +131,102 @@ impl TryFrom<InputNodeV1> for InputNode {
     }
 }
 
+/// Cost and flow metric for soft node's constraints
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
+pub struct SoftConstraint {
+    pub cost: Option<Metric>,
+    pub flow: Option<Metric>,
+}
+
+#[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
+#[doc = svgbobdoc::transform!(
+/// A node with cost, and min and max flow constraints. The node `L`, when connected to an upstream
+/// node `U` and downstream node `D`, will look like this on the model schematic:
+///
+/// ```svgbob
+///
+///          U         L         D
+///    - - ->*-------->*--------->*- - -
+/// ```
+///
+/// # Soft constraints
+/// This node allows setting optional maximum and minimum soft constraints which means the node's `min_flow`
+/// and `max_flow` properties may be breached, as specified by the user in the `soft_max` and `soft_min`
+/// properties. When the two attributes are provided, the internal representation of the link will
+/// look like this:
+///
+/// ```svgbob
+///                <Link>.soft_max
+///              .------>L_max -----.
+///             |                   |
+///          U  |                   |     D
+///     - - -*--|-------->L --------|--->*- - -
+///             |                   |
+///             |                   |
+///             '------>L_min -----'
+///                <Link>.soft_min
+/// ```
+///
+/// Link soft constraints may be used in the following scenarios:
+///  1) If the link represents a works and its `max_flow` is constrained by a reservoir rule curve,
+///   there may be certain circumstances when over-abstracting may be required in a few occasions to
+///   ensure that demand is always met. By setting a high tuned cost via [`SoftConstraint`], this will
+///   ensure that the abstraction is breached only when needed.
+///  2) If the link represents a works and a minimum flow must be guaranteed, `soft_min` may be set
+///   with a negative cost to allow the minimum flow requirement. However when this cannot be met (for
+///   example when the abstraction license or the source runs out), the minimum flow will not
+///   be honoured and the solver will find a solution.
+)]
 pub struct LinkNode {
     #[serde(flatten)]
     pub meta: NodeMeta,
+    /// The optional maximum flow through the node.
     pub max_flow: Option<Metric>,
+    /// The optional minimum flow through the node.
     pub min_flow: Option<Metric>,
+    /// The cost.
     pub cost: Option<Metric>,
+    /// The minimum soft constraints.
+    pub soft_min: Option<SoftConstraint>,
+    /// The maximum soft constraints.
+    pub soft_max: Option<SoftConstraint>,
 }
 
 impl LinkNode {
     const DEFAULT_ATTRIBUTE: NodeAttribute = NodeAttribute::Outflow;
 
     pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
-        vec![(self.meta.name.as_str(), None)]
+        let mut connectors = vec![(self.meta.name.as_str(), None)];
+        if self.soft_min.is_some() {
+            connectors.push((
+                self.meta.name.as_str(),
+                Self::soft_min_node_sub_name().map(|s| s.to_string()),
+            ));
+        }
+        if self.soft_max.is_some() {
+            connectors.push((
+                self.meta.name.as_str(),
+                Self::soft_max_node_sub_name().map(|s| s.to_string()),
+            ));
+        }
+        connectors
     }
+
     pub fn output_connectors(&self) -> Vec<(&str, Option<String>)> {
-        vec![(self.meta.name.as_str(), None)]
+        let mut connectors = vec![(self.meta.name.as_str(), None)];
+        if self.soft_min.is_some() {
+            connectors.push((
+                self.meta.name.as_str(),
+                Self::soft_min_node_sub_name().map(|s| s.to_string()),
+            ));
+        }
+        if self.soft_max.is_some() {
+            connectors.push((
+                self.meta.name.as_str(),
+                Self::soft_max_node_sub_name().map(|s| s.to_string()),
+            ));
+        }
+        connectors
     }
 
     pub fn default_metric(&self) -> NodeAttribute {
@@ -157,8 +236,23 @@ impl LinkNode {
 
 #[cfg(feature = "core")]
 impl LinkNode {
+    fn soft_min_node_sub_name() -> Option<&'static str> {
+        Some("soft_min_node")
+    }
+
+    fn soft_max_node_sub_name() -> Option<&'static str> {
+        Some("soft_max_node")
+    }
+
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
         network.add_link_node(self.meta.name.as_str(), None)?;
+
+        if self.soft_min.is_some() {
+            network.add_link_node(self.meta.name.as_str(), Self::soft_min_node_sub_name())?;
+        }
+        if self.soft_max.is_some() {
+            network.add_link_node(self.meta.name.as_str(), Self::soft_max_node_sub_name())?;
+        }
         Ok(())
     }
 
@@ -180,6 +274,28 @@ impl LinkNode {
         if let Some(min_flow) = &self.min_flow {
             let value = min_flow.load(network, args)?;
             network.set_node_min_flow(self.meta.name.as_str(), None, value.into())?;
+        }
+
+        if let Some(soft_min) = &self.soft_min {
+            if let Some(soft_min_flow) = &soft_min.flow {
+                let value = soft_min_flow.load(network, args)?;
+                network.set_node_min_flow(self.meta.name.as_str(), Self::soft_min_node_sub_name(), value.into())?;
+            }
+            if let Some(soft_min_cost) = &soft_min.cost {
+                let value = soft_min_cost.load(network, args)?;
+                network.set_node_cost(self.meta.name.as_str(), Self::soft_min_node_sub_name(), value.into())?;
+            }
+        }
+
+        if let Some(soft_max) = &self.soft_max {
+            if let Some(soft_max_flow) = &soft_max.flow {
+                let value = soft_max_flow.load(network, args)?;
+                network.set_node_max_flow(self.meta.name.as_str(), Self::soft_max_node_sub_name(), value.into())?;
+            }
+            if let Some(soft_max_cost) = &soft_max.cost {
+                let value = soft_max_cost.load(network, args)?;
+                network.set_node_cost(self.meta.name.as_str(), Self::soft_max_node_sub_name(), value.into())?;
+            }
         }
 
         Ok(())
@@ -230,11 +346,16 @@ impl TryFrom<LinkNodeV1> for LinkNode {
             .cost
             .map(|v| v.try_into_v2_parameter(Some(&meta.name), &mut unnamed_count))
             .transpose()?;
+        // not supported in V1
+        let soft_min = None;
+        let soft_max = None;
 
         let n = Self {
             meta,
             max_flow,
             min_flow,
+            soft_min,
+            soft_max,
             cost,
         };
         Ok(n)
