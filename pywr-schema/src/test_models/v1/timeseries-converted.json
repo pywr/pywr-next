@@ -42,6 +42,8 @@
         "name": "link1",
         "max_flow": null,
         "min_flow": null,
+        "soft_max": null,
+        "soft_min": null,
         "cost": null
       },
       {
