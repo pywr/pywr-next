@@ -7,6 +7,8 @@ use crate::node::{Constraint, ConstraintValue, StorageInitialVolume};
 use crate::parameters::{AggFunc, AggregatedParameter, Array2Parameter, ConstantParameter, Parameter};
 use crate::recorders::AssertionRecorder;
 use crate::scenario::ScenarioGroupCollection;
+#[cfg(feature = "cbc")]
+use crate::solvers::CbcSolver;
 #[cfg(feature = "ipm-ocl")]
 use crate::solvers::ClIpmF64Solver;
 use crate::solvers::ClpSolver;
@@ -196,6 +198,15 @@ pub fn run_all_solvers(model: &Model) {
     model
         .run::<ClpSolver>(&Default::default())
         .expect("Failed to solve with CLP");
+
+    #[cfg(feature = "cbc")]
+    {
+        if model.check_solver_features::<CbcSolver>() {
+            model
+                .run::<CbcSolver>(&Default::default())
+                .expect("Failed to solve with CBC");
+        }
+    }
 
     #[cfg(feature = "highs")]
     {
