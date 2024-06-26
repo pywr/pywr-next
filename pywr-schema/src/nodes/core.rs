@@ -195,6 +195,14 @@ pub struct LinkNode {
 impl LinkNode {
     const DEFAULT_ATTRIBUTE: NodeAttribute = NodeAttribute::Outflow;
 
+    fn soft_min_node_sub_name() -> Option<&'static str> {
+        Some("soft_min_node")
+    }
+
+    fn soft_max_node_sub_name() -> Option<&'static str> {
+        Some("soft_max_node")
+    }
+
     pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
         let mut connectors = vec![(self.meta.name.as_str(), None)];
         if self.soft_min.is_some() {
@@ -236,14 +244,6 @@ impl LinkNode {
 
 #[cfg(feature = "core")]
 impl LinkNode {
-    fn soft_min_node_sub_name() -> Option<&'static str> {
-        Some("soft_min_node")
-    }
-
-    fn soft_max_node_sub_name() -> Option<&'static str> {
-        Some("soft_max_node")
-    }
-
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
         network.add_link_node(self.meta.name.as_str(), None)?;
 
