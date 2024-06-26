@@ -3,7 +3,7 @@ name = "pywr-core"
 version = "2.0.0-dev"
 authors = ["James Tomlinson <tomo.bbe@gmail.com>"]
 edition = "2021"
-rust-version = "1.60"
+rust-version = "1.70"
 description = "A generalised water resource allocation model."
 readme = "../README.md"
 repository = "https://github.com/pywr/pywr-next/"
@@ -21,7 +21,7 @@ num = { workspace = true }
 float-cmp = { workspace = true }
 hdf5 = { workspace = true }
 csv = { workspace = true }
-clp-sys = { path = "../clp-sys", version = "0.1.0" }
+coin-or-sys = { path = "../coin-or-sys", version = "0.1.0" }
 ipm-ocl = { path = "../ipm-ocl", optional = true }
 ipm-simd = { path = "../ipm-simd", optional = true }
 tracing = { workspace = true }
@@ -30,7 +30,7 @@ nalgebra = "0.32.3"
 chrono = { workspace = true }
 polars = { workspace = true }
 
-pyo3 = { workspace = true, features = ["chrono"] }
+pyo3 = { workspace = true, features = ["chrono", "macros"] }
 
 
 rayon = "1.6.1"

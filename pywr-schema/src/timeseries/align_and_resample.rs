@@ -9,6 +9,7 @@ pub fn align_and_resample(
     df: DataFrame,
     time_col: &str,
     domain: &ModelDomain,
+    drop_time_col: bool,
 ) -> Result<DataFrame, TimeseriesError> {
     // Ensure type of time column is datetime and that it is sorted
     let sort_options = SortMultipleOptions::default()
@@ -18,7 +19,7 @@ pub fn align_and_resample(
     let df = df
         .clone()
         .lazy()
-        .with_columns([col(time_col).cast(DataType::Datetime(TimeUnit::Nanoseconds, None))])
+        .with_columns([col(time_col).cast(DataType::Datetime(TimeUnit::Milliseconds, None))])
         .collect()?
         .sort([time_col], sort_options)?;
 
@@ -42,13 +43,10 @@ pub fn align_and_resample(
         None => return Err(TimeseriesError::TimeseriesDurationNotFound(name.to_string())),
     };
 
-    let model_duration = domain
-        .time()
-        .step_duration()
-        .whole_nanoseconds()
-        .ok_or(TimeseriesError::NoDurationNanoSeconds)?;
+    let model_duration = domain.time().step_duration();
+    let model_duration_string = model_duration.duration_string();
 
-    let df = match model_duration.cmp(&timeseries_duration) {
+    let df = match model_duration.milliseconds().cmp(&timeseries_duration) {
         Ordering::Greater => {
             // Downsample
             df.clone()
@@ -57,9 +55,9 @@ pub fn align_and_resample(
                     col(time_col),
                     [],
                     DynamicGroupOptions {
-                        every: Duration::new(model_duration),
-                        period: Duration::new(model_duration),
-                        offset: Duration::new(0),
+                        every: Duration::parse(model_duration_string.as_str()),
+                        period: Duration::parse(model_duration_string.as_str()),
+                        offset: Duration::parse("0d"),
                         start_by: StartBy::DataPoint,
                         ..Default::default()
                     },
@@ -72,16 +70,24 @@ pub fn align_and_resample(
             // TODO: this does not extend the dataframe beyond its original end date. Should it do when using a forward fill strategy?
             // The df could be extend by the length of the duration it is being resampled to.
             df.clone()
-                .upsample::<[String; 0]>([], "time", Duration::new(model_duration), Duration::new(0))?
+                .upsample::<[String; 0]>(
+                    [],
+                    "time",
+                    Duration::parse(model_duration_string.as_str()),
+                )?
                 .fill_null(FillNullStrategy::Forward(None))?
         }
         Ordering::Equal => df,
     };
 
-    let df = slice_end(df, time_col, domain)?;
+    let mut df = slice_end(df, time_col, domain)?;
 
     if df.height() != domain.time().timesteps().len() {
         return Err(TimeseriesError::DataFrameTimestepMismatch(name.to_string()));
+    }
+
+    if drop_time_col {
+        let _ = df.drop_in_place(time_col)?;
     }
 
     Ok(df)
@@ -141,7 +147,7 @@ mod tests {
         )
         .unwrap();
 
-        df = align_and_resample("test", df, "time", &domain).unwrap();
+        df = align_and_resample("test", df, "time", &domain, false).unwrap();
 
         let expected_dates = Series::new(
             "time",
@@ -150,7 +156,7 @@ mod tests {
                 NaiveDateTime::parse_from_str("2021-01-14 00:00:00", "%Y-%m-%d %H:%M:%S").unwrap(),
             ],
         )
-        .cast(&DataType::Datetime(TimeUnit::Nanoseconds, None))
+        .cast(&DataType::Datetime(TimeUnit::Milliseconds, None))
         .unwrap();
         let resampled_dates = df.column("time").unwrap();
         assert!(resampled_dates.equals(&expected_dates));
@@ -195,7 +201,7 @@ mod tests {
         )
         .unwrap();
 
-        df = align_and_resample("test", df, "time", &domain).unwrap();
+        df = align_and_resample("test", df, "time", &domain, false).unwrap();
 
         let expected_values = Series::new(
             "values",
@@ -235,15 +241,16 @@ mod tests {
         )
         .unwrap();
 
-        df = align_and_resample("test", df, "time", &domain).unwrap();
+        df = align_and_resample("test", df, "time", &domain, false).unwrap();
 
         let expected_values = Series::new("values", values);
         let resampled_values = df.column("values").unwrap();
         assert!(resampled_values.equals(&expected_values));
 
         let expected_dates = Series::new("time", time)
-            .cast(&DataType::Datetime(TimeUnit::Nanoseconds, None))
+            .cast(&DataType::Datetime(TimeUnit::Milliseconds, None))
             .unwrap();
+
         let resampled_dates = df.column("time").unwrap();
         assert!(resampled_dates.equals(&expected_dates));
     }

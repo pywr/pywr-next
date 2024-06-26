@@ -28,6 +28,7 @@ pub mod solvers;
 pub mod state;
 pub mod test_utils;
 pub mod timestep;
+pub mod utils;
 pub mod virtual_storage;
 
 #[derive(Error, Debug, PartialEq, Eq)]
@@ -164,6 +165,8 @@ pub enum PywrError {
     TimestepRangeGenerationError(String),
     #[error("Could not create timesteps for frequency '{0}'")]
     TimestepGenerationError(String),
+    #[error("Pywr does not currently support timesteps of varying duration")]
+    TimestepDurationMismatch,
     #[error("aggregation error: {0}")]
     Aggregation(#[from] AggregationError),
 }

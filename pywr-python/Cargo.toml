@@ -2,7 +2,7 @@
 name = "pywr-python"
 version = "2.0.0-dev"
 edition = "2021"
-rust-version = "1.60"
+rust-version = "1.70"
 description = "A generalised water resource allocation model."
 readme = "../README.md"
 repository = "https://github.com/pywr/pywr-next/"
@@ -14,15 +14,17 @@ categories = ["science", "simulation"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-pyo3 = {  workspace = true, features = ["extension-module", "macros"] }
-pyo3-polars = {  workspace = true }
-pyo3-log = {  workspace = true }
+# The Github workflow is configured to use the minimum version corresponding to the `abi3-pyXX` feature enabled here.
+# Please remember to update the workflow if changing the ABI version.
+pyo3 = { workspace = true, features = ["extension-module", "macros", "abi3-py39", "chrono"] }
+pyo3-polars = { workspace = true }
+pyo3-log = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 chrono = { workspace = true }
 
-pywr-core = { path="../pywr-core" }
-pywr-schema = { path="../pywr-schema" }
+pywr-core = { path = "../pywr-core" }
+pywr-schema = { path = "../pywr-schema" }
 
 
 [lib]

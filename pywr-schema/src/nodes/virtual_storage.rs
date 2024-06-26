@@ -2,6 +2,7 @@ use crate::error::ConversionError;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
 use crate::metric::Metric;
+use crate::metric::NodeReference;
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::nodes::core::StorageInitialVolume;
@@ -9,7 +10,10 @@ use crate::nodes::{NodeAttribute, NodeMeta};
 use crate::parameters::TryIntoV2Parameter;
 #[cfg(feature = "core")]
 use pywr_core::{
-    derived_metric::DerivedMetric, metric::MetricF64, node::ConstraintValue, virtual_storage::VirtualStorageReset,
+    derived_metric::DerivedMetric,
+    metric::MetricF64,
+    node::ConstraintValue,
+    virtual_storage::{VirtualStorageBuilder, VirtualStorageReset},
 };
 use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::nodes::VirtualStorageNode as VirtualStorageNodeV1;
@@ -19,7 +23,7 @@ use schemars::JsonSchema;
 pub struct VirtualStorageNode {
     #[serde(flatten)]
     pub meta: NodeMeta,
-    pub nodes: Vec<String>,
+    pub nodes: Vec<NodeReference>,
     pub factors: Option<Vec<f64>>,
     pub max_volume: Option<Metric>,
     pub min_volume: Option<Metric>,
@@ -64,24 +68,24 @@ impl VirtualStorageNode {
         let node_idxs = self
             .nodes
             .iter()
-            .map(|name| network.get_node_index_by_name(name.as_str(), None))
+            .map(|name| network.get_node_index_by_name(name.name.as_str(), None))
             .collect::<Result<Vec<_>, _>>()?;
 
         // Standard virtual storage node never resets.
         let reset = VirtualStorageReset::Never;
 
-        network.add_virtual_storage_node(
-            self.meta.name.as_str(),
-            None,
-            &node_idxs,
-            self.factors.as_deref(),
-            self.initial_volume.into(),
-            min_volume,
-            max_volume,
-            reset,
-            None,
-            cost,
-        )?;
+        let mut builder = VirtualStorageBuilder::new(self.meta.name.as_str(), &node_idxs)
+            .initial_volume(self.initial_volume.into())
+            .min_volume(min_volume)
+            .max_volume(max_volume)
+            .reset(reset)
+            .cost(cost);
+
+        if let Some(factors) = &self.factors {
+            builder = builder.factors(factors);
+        }
+
+        network.add_virtual_storage_node(builder)?;
         Ok(())
     }
     pub fn create_metric(
@@ -146,10 +150,11 @@ impl TryFrom<VirtualStorageNodeV1> for VirtualStorageNode {
                 attrs: vec!["initial_volume".to_string(), "initial_volume_pc".to_string()],
             });
         };
+        let nodes = v1.nodes.into_iter().map(|v| v.into()).collect();
 
         let n = Self {
             meta,
-            nodes: v1.nodes,
+            nodes,
             factors: v1.factors,
             max_volume,
             min_volume,

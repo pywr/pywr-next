@@ -3,7 +3,7 @@ name = "pywr-schema"
 version = "2.0.0-dev"
 authors = ["James Tomlinson <tomo.bbe@gmail.com>"]
 edition = "2021"
-rust-version = "1.60"
+rust-version = "1.70"
 description = "A generalised water resource allocation model."
 readme = "../README.md"
 repository = "https://github.com/pywr/pywr-next/"
@@ -32,7 +32,7 @@ serde_json = { workspace = true }
 thiserror = { workspace = true }
 pywr-v1-schema = { workspace = true }
 pywr-core = { path = "../pywr-core", optional = true }
-chrono = { workspace = true, features = ["serde"] }
+chrono = { workspace = true }
 pywr-schema-macros = { path = "../pywr-schema-macros" }
 
 [dev-dependencies]

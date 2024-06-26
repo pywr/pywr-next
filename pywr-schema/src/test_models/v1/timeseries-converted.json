@@ -1,25 +1,20 @@
 {
   "metadata": {
-    "title": "Simple timeseries"
+    "title": "Simple timeseries",
+    "description": null,
+    "minimum_version": null
   },
   "timestepper": {
     "start": "2021-01-01",
-    "end": "2021-12-31",
+    "end": "2021-01-31",
     "timestep": 1
   },
+  "scenarios": null,
   "network": {
     "nodes": [
       {
-        "name": "input2",
         "type": "Input",
-        "max_flow": {
-          "type": "Parameter",
-          "name": "factored_flow"
-        }
-      },
-      {
         "name": "input1",
-        "type": "Input",
         "max_flow": {
           "type": "Timeseries",
           "name": "inflow",
@@ -27,22 +22,40 @@
             "type": "Column",
             "name": "inflow1"
           }
-        }
-      },
-      {
-        "name": "link1",
-        "type": "Link"
-      },
-      {
-        "name": "output1",
-        "type": "Output",
-        "cost": {
-          "type": "Constant",
-          "value": -10
         },
+        "min_flow": null,
+        "cost": null
+      },
+      {
+        "type": "Input",
+        "name": "input2",
         "max_flow": {
           "type": "Parameter",
-          "name": "demand"
+          "name": "factored_flow",
+          "key": null
+        },
+        "min_flow": null,
+        "cost": null
+      },
+      {
+        "type": "Link",
+        "name": "link1",
+        "max_flow": null,
+        "min_flow": null,
+        "cost": null
+      },
+      {
+        "type": "Output",
+        "name": "output1",
+        "max_flow": {
+          "type": "Parameter",
+          "name": "demand",
+          "key": null
+        },
+        "min_flow": null,
+        "cost": {
+          "type": "Constant",
+          "value": -10.0
         }
       }
     ],
@@ -62,18 +75,22 @@
     ],
     "parameters": [
       {
-        "name": "demand",
         "type": "Constant",
+        "name": "demand",
         "value": 100.0
       },
       {
-        "name": "factored_flow",
         "type": "Aggregated",
+        "name": "factored_flow",
         "agg_func": "product",
         "metrics": [
           {
             "type": "Timeseries",
-            "name": "inflow"
+            "name": "inflow",
+            "columns": {
+              "type": "Column",
+              "name": "inflow1"
+            }
           },
           {
             "type": "Constant",
@@ -82,15 +99,18 @@
         ]
       }
     ],
+    "tables": null,
     "timeseries": [
       {
         "name": "inflow",
         "provider": {
           "type": "Polars",
-          "time_col": "date",
+          "time_col": null,
           "url": "inflow.csv"
         }
       }
-    ]
+    ],
+    "metric_sets": null,
+    "outputs": null
   }
 }
