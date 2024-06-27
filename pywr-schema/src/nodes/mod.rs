@@ -388,7 +388,7 @@ impl Node {
             Node::Input(n) => n.add_to_model(network),
             Node::Link(n) => n.add_to_model(network),
             Node::Output(n) => n.add_to_model(network),
-            Node::Storage(n) => n.add_to_model(network, args),
+            Node::Storage(n) => n.add_to_model(network),
             Node::Catchment(n) => n.add_to_model(network),
             Node::RiverGauge(n) => n.add_to_model(network),
             Node::LossLink(n) => n.add_to_model(network),

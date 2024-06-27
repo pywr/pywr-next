@@ -7,7 +7,10 @@ use crate::nodes::{NodeAttribute, NodeMeta};
 #[cfg(feature = "core")]
 use num::Zero;
 #[cfg(feature = "core")]
-use pywr_core::{aggregated_node::Factors, metric::MetricF64};
+use pywr_core::{
+    aggregated_node::Factors,
+    metric::{ConstantMetricF64, MetricF64, SimpleMetricF64},
+};
 use pywr_schema_macros::PywrVisitAll;
 use schemars::JsonSchema;
 
@@ -178,20 +181,26 @@ impl WaterTreatmentWorks {
             // Handle the case where we a given a zero loss factor
             // The aggregated node does not support zero loss factors so filter them here.
             let lf = match loss_factor.load(network, args)? {
-                MetricF64::Constant(f) => {
-                    if f.is_zero() {
-                        None
-                    } else {
-                        Some(MetricF64::Constant(f))
-                    }
-                }
+                MetricF64::Simple(s) => match s {
+                    SimpleMetricF64::Constant(c) => match c {
+                        ConstantMetricF64::Constant(f) => {
+                            if f.is_zero() {
+                                None
+                            } else {
+                                Some(f.into())
+                            }
+                        }
+                        _ => None,
+                    },
+                    _ => None,
+                },
                 m => Some(m),
             };
 
             if let Some(lf) = lf {
                 // Set the factors for the loss
                 // TODO allow for configuring as proportion of gross.
-                let factors = Factors::Ratio(vec![MetricF64::Constant(1.0), lf]);
+                let factors = Factors::Ratio(vec![1.0.into(), lf]);
                 network.set_aggregated_node_factors(self.meta.name.as_str(), Self::agg_sub_name(), Some(factors))?;
             }
         }

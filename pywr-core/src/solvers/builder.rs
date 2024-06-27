@@ -396,7 +396,7 @@ where
                 Ok(bnds) => bnds,
                 Err(PywrError::FlowConstraintsUndefined) => {
                     // Must be a storage node
-                    let (avail, missing) = match node.get_current_available_volume_bounds(network, state) {
+                    let (avail, missing) = match node.get_current_available_volume_bounds(state) {
                         Ok(bnds) => bnds,
                         Err(e) => return Err(e),
                     };
@@ -466,7 +466,7 @@ where
             .iter()
             .zip(network.virtual_storage_nodes().deref())
         {
-            let (avail, missing) = match node.get_current_available_volume_bounds(network, state) {
+            let (avail, missing) = match node.get_current_available_volume_bounds(state) {
                 Ok(bnds) => bnds,
                 Err(e) => return Err(e),
             };

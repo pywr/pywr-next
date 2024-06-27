@@ -1,10 +1,9 @@
-use crate::network::Network;
 use crate::parameters::{
     downcast_internal_state_mut, downcast_internal_state_ref, downcast_variable_config_ref, Parameter, ParameterMeta,
-    VariableConfig, VariableParameter,
+    ParameterState, SimpleParameter, VariableConfig, VariableParameter,
 };
 use crate::scenario::ScenarioIndex;
-use crate::state::{ParameterState, State};
+use crate::state::SimpleParameterValues;
 use crate::timestep::Timestep;
 use crate::PywrError;
 use chrono::Datelike;
@@ -100,7 +99,7 @@ impl RbfProfileParameter {
     }
 }
 
-impl Parameter<f64> for RbfProfileParameter {
+impl Parameter for RbfProfileParameter {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }
@@ -113,21 +112,6 @@ impl Parameter<f64> for RbfProfileParameter {
         let internal_state = RbfProfileInternalState::new(&self.points, &self.function);
         Ok(Some(Box::new(internal_state)))
     }
-
-    fn compute(
-        &self,
-        timestep: &Timestep,
-        _scenario_index: &ScenarioIndex,
-        _network: &Network,
-        _state: &State,
-        internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<f64, PywrError> {
-        // Get the profile from the internal state
-        let internal_state = downcast_internal_state_ref::<RbfProfileInternalState>(internal_state);
-        // Return today's value from the profile
-        Ok(internal_state.profile[timestep.date.ordinal() as usize - 1])
-    }
-
     fn as_f64_variable(&self) -> Option<&dyn VariableParameter<f64>> {
         Some(self)
     }
@@ -142,6 +126,28 @@ impl Parameter<f64> for RbfProfileParameter {
 
     fn as_u32_variable_mut(&mut self) -> Option<&mut dyn VariableParameter<u32>> {
         Some(self)
+    }
+}
+
+impl SimpleParameter<f64> for RbfProfileParameter {
+    fn compute(
+        &self,
+        timestep: &Timestep,
+        _scenario_index: &ScenarioIndex,
+        _values: &SimpleParameterValues,
+        internal_state: &mut Option<Box<dyn ParameterState>>,
+    ) -> Result<f64, PywrError> {
+        // Get the profile from the internal state
+        let internal_state = downcast_internal_state_ref::<RbfProfileInternalState>(internal_state);
+        // Return today's value from the profile
+        Ok(internal_state.profile[timestep.date.ordinal() as usize - 1])
+    }
+
+    fn as_parameter(&self) -> &dyn Parameter
+    where
+        Self: Sized,
+    {
+        self
     }
 }
 

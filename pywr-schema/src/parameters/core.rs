@@ -167,7 +167,7 @@ impl ConstantParameter {
         args: &LoadArgs,
     ) -> Result<ParameterIndex<f64>, SchemaError> {
         let p = pywr_core::parameters::ConstantParameter::new(&self.meta.name, self.value.load(args.tables)?);
-        Ok(network.add_parameter(Box::new(p))?)
+        Ok(network.add_const_parameter(Box::new(p))?)
     }
 }
 

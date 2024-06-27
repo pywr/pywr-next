@@ -1,9 +1,9 @@
 use crate::metric::MetricF64;
 use crate::network::Network;
 use crate::parameters::interpolate::interpolate;
-use crate::parameters::{Parameter, ParameterMeta};
+use crate::parameters::{GeneralParameter, Parameter, ParameterMeta, ParameterState};
 use crate::scenario::ScenarioIndex;
-use crate::state::{ParameterState, State};
+use crate::state::State;
 use crate::timestep::Timestep;
 use crate::PywrError;
 
@@ -25,10 +25,13 @@ impl ControlCurveInterpolatedParameter {
     }
 }
 
-impl Parameter<f64> for ControlCurveInterpolatedParameter {
+impl Parameter for ControlCurveInterpolatedParameter {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }
+}
+
+impl GeneralParameter<f64> for ControlCurveInterpolatedParameter {
     fn compute(
         &self,
         _timestep: &Timestep,
@@ -61,5 +64,12 @@ impl Parameter<f64> for ControlCurveInterpolatedParameter {
         let upper_value = self.values[n - 2].get_value(model, state)?;
 
         Ok(interpolate(x, cc_value, cc_prev, lower_value, upper_value))
+    }
+
+    fn as_parameter(&self) -> &dyn Parameter
+    where
+        Self: Sized,
+    {
+        self
     }
 }

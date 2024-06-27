@@ -137,7 +137,7 @@ impl TurbineNode {
             };
             let p = pywr_core::parameters::HydropowerTargetParameter::new(&name, turbine_data);
             let power_idx = network.add_parameter(Box::new(p))?;
-            let metric = MetricF64::ParameterValue(power_idx);
+            let metric: MetricF64 = power_idx.into();
 
             match self.target_type {
                 TargetType::MaxFlow => {

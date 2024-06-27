@@ -772,7 +772,7 @@ impl ParameterIndexValue {
         match self {
             Self::Reference(name) => {
                 // This should be an existing parameter
-                Ok(network.get_index_parameter_index_by_name(name)?)
+                Ok(network.get_index_parameter_index_by_name(name)?.into())
             }
             Self::Inline(parameter) => {
                 // Inline parameter needs to be added
@@ -815,8 +815,8 @@ impl DynamicIndexValue {
 impl DynamicIndexValue {
     pub fn load(&self, network: &mut pywr_core::network::Network, args: &LoadArgs) -> Result<MetricUsize, SchemaError> {
         let parameter_ref = match self {
-            DynamicIndexValue::Constant(v) => MetricUsize::Constant(v.load(args.tables)?),
-            DynamicIndexValue::Dynamic(v) => MetricUsize::IndexParameterValue(v.load(network, args)?),
+            DynamicIndexValue::Constant(v) => v.load(args.tables)?.into(),
+            DynamicIndexValue::Dynamic(v) => v.load(network, args)?.into(),
         };
         Ok(parameter_ref)
     }

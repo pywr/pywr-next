@@ -1,8 +1,8 @@
 use crate::metric::MetricF64;
 use crate::network::Network;
-use crate::parameters::{Parameter, ParameterMeta};
+use crate::parameters::{GeneralParameter, Parameter, ParameterMeta, ParameterState};
 use crate::scenario::ScenarioIndex;
-use crate::state::{ParameterState, State};
+use crate::state::State;
 use crate::timestep::Timestep;
 use crate::PywrError;
 
@@ -22,10 +22,12 @@ impl NegativeMinParameter {
     }
 }
 
-impl Parameter<f64> for NegativeMinParameter {
+impl Parameter for NegativeMinParameter {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }
+}
+impl GeneralParameter<f64> for NegativeMinParameter {
     fn compute(
         &self,
         _timestep: &Timestep,
@@ -36,5 +38,12 @@ impl Parameter<f64> for NegativeMinParameter {
     ) -> Result<f64, PywrError> {
         let x = -self.metric.get_value(network, state)?;
         Ok(x.min(self.threshold))
+    }
+
+    fn as_parameter(&self) -> &dyn Parameter
+    where
+        Self: Sized,
+    {
+        self
     }
 }
