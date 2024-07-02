@@ -230,12 +230,20 @@ where
 {
     let has_features = model.check_solver_features::<S>();
     if expect_features {
-        assert!(has_features);
+        assert!(
+            has_features,
+            "Solver `{}` was expected to have the required features",
+            S::name()
+        );
         model
             .run::<S>(&Default::default())
             .expect(&format!("Failed to solve with: {}", S::name()));
     } else {
-        assert!(!has_features);
+        assert!(
+            !has_features,
+            "Solver `{}` was not expected to have the required features",
+            S::name()
+        );
     }
 }
 
