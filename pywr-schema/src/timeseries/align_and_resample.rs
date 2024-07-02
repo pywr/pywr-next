@@ -70,11 +70,7 @@ pub fn align_and_resample(
             // TODO: this does not extend the dataframe beyond its original end date. Should it do when using a forward fill strategy?
             // The df could be extend by the length of the duration it is being resampled to.
             df.clone()
-                .upsample::<[String; 0]>(
-                    [],
-                    "time",
-                    Duration::parse(model_duration_string.as_str()),
-                )?
+                .upsample::<[String; 0]>([], "time", Duration::parse(model_duration_string.as_str()))?
                 .fill_null(FillNullStrategy::Forward(None))?
         }
         Ordering::Equal => df,

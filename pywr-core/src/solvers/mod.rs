@@ -6,6 +6,9 @@ use std::ops::{Add, AddAssign};
 use std::time::Duration;
 
 mod builder;
+
+#[cfg(feature = "cbc")]
+mod cbc;
 mod clp;
 mod col_edge_map;
 #[cfg(feature = "highs")]
@@ -19,6 +22,8 @@ mod ipm_simd;
 pub use self::ipm_ocl::{ClIpmF32Solver, ClIpmF64Solver, ClIpmSolverSettings, ClIpmSolverSettingsBuilder};
 #[cfg(feature = "ipm-simd")]
 pub use self::ipm_simd::{SimdIpmF64Solver, SimdIpmSolverSettings, SimdIpmSolverSettingsBuilder};
+#[cfg(feature = "cbc")]
+pub use cbc::{CbcError, CbcSolver, CbcSolverSettings, CbcSolverSettingsBuilder};
 pub use clp::{ClpError, ClpSolver, ClpSolverSettings, ClpSolverSettingsBuilder};
 #[cfg(feature = "highs")]
 pub use highs::{HighsSolver, HighsSolverSettings, HighsSolverSettingsBuilder};
@@ -79,6 +84,7 @@ pub trait SolverSettings {
 pub trait Solver: Send {
     type Settings;
 
+    fn name() -> &'static str;
     /// An array of features that this solver provides.
     fn features() -> &'static [SolverFeatures];
     fn setup(model: &Network, settings: &Self::Settings) -> Result<Box<Self>, PywrError>;

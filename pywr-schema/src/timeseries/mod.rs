@@ -311,6 +311,6 @@ mod tests {
         let recorder = AssertionRecorder::new("output-flow", MetricF64::NodeInFlow(idx), expected.clone(), None, None);
         model.network_mut().add_recorder(Box::new(recorder)).unwrap();
 
-        run_all_solvers(&model)
+        run_all_solvers(&model, &[])
     }
 }

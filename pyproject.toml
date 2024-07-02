@@ -3,16 +3,16 @@ name = "pywr"
 version = "2.0.0beta"
 description = ""
 authors = [
-    {name="James Tomlinson", email="tomo.bbe@gmail.com>"}
+    { name = "James Tomlinson", email = "tomo.bbe@gmail.com>" }
 ]
 readme = "README.md"
 requires-python = ">=3.9"
 license = "MIT OR Apache-2.0"
 dependencies = [
-  "pandas",
-  "polars",
-  "pyarrow",
-  "click"
+    "pandas",
+    "polars",
+    "pyarrow",
+    "click"
 ]
 
 [build-system]

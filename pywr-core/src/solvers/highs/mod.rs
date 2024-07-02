@@ -162,6 +162,10 @@ pub struct HighsSolver {
 impl Solver for HighsSolver {
     type Settings = HighsSolverSettings;
 
+    fn name() -> &'static str {
+        "highs"
+    }
+
     fn features() -> &'static [SolverFeatures] {
         &[]
     }
