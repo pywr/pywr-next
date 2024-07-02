@@ -347,6 +347,6 @@ mod tests {
 
         let model = Model::new(default_time_domain().into(), network);
 
-        run_all_solvers(&model);
+        run_all_solvers(&model, &["cbc"]);
     }
 }

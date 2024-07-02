@@ -84,6 +84,7 @@ pub trait SolverSettings {
 pub trait Solver: Send {
     type Settings;
 
+    fn name() -> &'static str;
     /// An array of features that this solver provides.
     fn features() -> &'static [SolverFeatures];
     fn setup(model: &Network, settings: &Self::Settings) -> Result<Box<Self>, PywrError>;

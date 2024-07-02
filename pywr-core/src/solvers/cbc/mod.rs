@@ -212,12 +212,12 @@ impl CbcSolver {
 impl Solver for CbcSolver {
     type Settings = CbcSolverSettings;
 
+    fn name() -> &'static str {
+        "cbc"
+    }
+
     fn features() -> &'static [SolverFeatures] {
-        &[
-            SolverFeatures::AggregatedNode,
-            SolverFeatures::AggregatedNodeFactors,
-            SolverFeatures::VirtualStorage,
-        ]
+        &[SolverFeatures::AggregatedNode, SolverFeatures::VirtualStorage]
     }
 
     fn setup(model: &Network, _settings: &Self::Settings) -> Result<Box<Self>, PywrError> {
@@ -240,10 +240,10 @@ impl Solver for CbcSolver {
         self.cbc.change_row_lower(self.builder.row_lower());
         self.cbc.change_row_upper(self.builder.row_upper());
 
-        for (row, column, coefficient) in self.builder.coefficients_to_update() {
-            // TODO raise an error for missing feature
-            // self.cbc.modify_coefficient(*row, *column, *coefficient)
-        }
+        // TODO raise an error for missing feature
+        // for (row, column, coefficient) in self.builder.coefficients_to_update() {
+        //     self.cbc.modify_coefficient(*row, *column, *coefficient)
+        // }
 
         timings.update_constraints += now.elapsed();
 

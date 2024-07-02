@@ -229,6 +229,10 @@ impl ClpSolver {
 impl Solver for ClpSolver {
     type Settings = ClpSolverSettings;
 
+    fn name() -> &'static str {
+        "clp"
+    }
+
     fn features() -> &'static [SolverFeatures] {
         &[
             SolverFeatures::AggregatedNode,

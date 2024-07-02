@@ -414,7 +414,7 @@ mod tests {
         let domain = default_timestepper().try_into().unwrap();
         let model = Model::new(domain, network);
         // Test all solvers
-        run_all_solvers(&model);
+        run_all_solvers(&model, &[]);
     }
 
     #[test]
@@ -441,7 +441,7 @@ mod tests {
         network.add_recorder(Box::new(recorder)).unwrap();
 
         // Test all solvers
-        run_all_solvers(&model);
+        run_all_solvers(&model, &[]);
     }
 
     #[test]
@@ -481,6 +481,6 @@ mod tests {
         network.add_recorder(Box::new(recorder)).unwrap();
 
         // Test all solvers
-        run_all_solvers(&model);
+        run_all_solvers(&model, &[]);
     }
 }
