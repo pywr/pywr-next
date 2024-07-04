@@ -63,14 +63,15 @@ impl Metric {
             }
             Self::Timeseries(ts_ref) => {
                 let param_idx = match &ts_ref.columns {
-                    TimeseriesColumns::Scenario(scenario) => {
+                    Some(TimeseriesColumns::Scenario(scenario)) => {
                         args.timeseries
                             .load_df(network, ts_ref.name.as_ref(), args.domain, scenario.as_str())?
                     }
-                    TimeseriesColumns::Column(col) => {
+                    Some(TimeseriesColumns::Column(col)) => {
                         args.timeseries
                             .load_column(network, ts_ref.name.as_ref(), col.as_str())?
                     }
+                    None => args.timeseries.load_single_column(network, ts_ref.name.as_ref())?,
                 };
                 Ok(MetricF64::ParameterValue(param_idx))
             }
@@ -211,12 +212,12 @@ impl TryFromV1Parameter<ParameterValueV1> for Metric {
                         };
 
                         let cols = match (&t.column, &t.scenario) {
-                            (Some(col), None) => TimeseriesColumns::Column(col.clone()),
-                            (None, Some(scenario)) => TimeseriesColumns::Scenario(scenario.clone()),
+                            (Some(col), None) => Some(TimeseriesColumns::Column(col.clone())),
+                            (None, Some(scenario)) => Some(TimeseriesColumns::Scenario(scenario.clone())),
                             (Some(_), Some(_)) => {
                                 return Err(ConversionError::AmbiguousColumnAndScenario(name.clone()))
                             }
-                            (None, None) => return Err(ConversionError::MissingColumnOrScenario(name.clone())),
+                            (None, None) => None,
                         };
 
                         Self::Timeseries(TimeseriesReference::new(name, cols))
@@ -238,11 +239,11 @@ pub enum TimeseriesColumns {
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
 pub struct TimeseriesReference {
     name: String,
-    columns: TimeseriesColumns,
+    columns: Option<TimeseriesColumns>,
 }
 
 impl TimeseriesReference {
-    pub fn new(name: String, columns: TimeseriesColumns) -> Self {
+    pub fn new(name: String, columns: Option<TimeseriesColumns>) -> Self {
         Self { name, columns }
     }
 
@@ -297,11 +298,11 @@ impl NodeReference {
     }
 }
 
-impl From<String> for NodeReference{
-    fn from (v: String) -> Self {
+impl From<String> for NodeReference {
+    fn from(v: String) -> Self {
         NodeReference {
             name: v,
-            attribute: None
+            attribute: None,
         }
     }
 }
