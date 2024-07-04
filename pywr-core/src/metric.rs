@@ -195,6 +195,18 @@ impl From<ParameterIndex<usize>> for MetricF64 {
     }
 }
 
+impl From<(ParameterIndex<MultiValue>, String)> for MetricF64 {
+    fn from((idx, key): (ParameterIndex<MultiValue>, String)) -> Self {
+        match idx {
+            ParameterIndex::General(idx) => Self::MultiParameterValue((idx, key)),
+            ParameterIndex::Simple(idx) => Self::Simple(SimpleMetricF64::MultiParameterValue((idx, key))),
+            ParameterIndex::Const(idx) => Self::Simple(SimpleMetricF64::Constant(
+                ConstantMetricF64::MultiParameterValue((idx, key)),
+            )),
+        }
+    }
+}
+
 impl TryFrom<ParameterIndex<f64>> for SimpleMetricF64 {
     type Error = PywrError;
     fn try_from(idx: ParameterIndex<f64>) -> Result<Self, Self::Error> {

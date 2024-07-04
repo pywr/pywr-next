@@ -863,6 +863,13 @@ impl ParameterCollection {
         })
     }
 
+    /// Does a parameter with the given name exist in the collection.
+    pub fn has_name(&self, name: &str) -> bool {
+        self.get_f64_index_by_name(name).is_some()
+            || self.get_usize_index_by_name(name).is_some()
+            || self.get_multi_index_by_name(name).is_some()
+    }
+
     /// Add a [`GeneralParameter<f64>`] parameter to the collection.
     ///
     /// This function will add attempt to simplify the parameter and add it to the simple or
@@ -872,11 +879,8 @@ impl ParameterCollection {
         &mut self,
         parameter: Box<dyn GeneralParameter<f64>>,
     ) -> Result<ParameterIndex<f64>, PywrError> {
-        if let Some(index) = self.get_f64_index_by_name(&parameter.meta().name) {
-            return Err(PywrError::ParameterNameAlreadyExists(
-                parameter.meta().name.to_string(),
-                index,
-            ));
+        if self.has_name(parameter.meta().name.as_str()) {
+            return Err(PywrError::ParameterNameAlreadyExists(parameter.meta().name.to_string()));
         }
 
         match parameter.try_into_simple() {
@@ -893,11 +897,8 @@ impl ParameterCollection {
         &mut self,
         parameter: Box<dyn SimpleParameter<f64>>,
     ) -> Result<ParameterIndex<f64>, PywrError> {
-        if let Some(index) = self.get_f64_index_by_name(&parameter.meta().name) {
-            return Err(PywrError::ParameterNameAlreadyExists(
-                parameter.meta().name.to_string(),
-                index,
-            ));
+        if self.has_name(parameter.meta().name.as_str()) {
+            return Err(PywrError::ParameterNameAlreadyExists(parameter.meta().name.to_string()));
         }
 
         match parameter.try_into_const() {
@@ -914,11 +915,8 @@ impl ParameterCollection {
     }
 
     pub fn add_const_f64(&mut self, parameter: Box<dyn ConstParameter<f64>>) -> Result<ParameterIndex<f64>, PywrError> {
-        if let Some(index) = self.get_f64_index_by_name(&parameter.meta().name) {
-            return Err(PywrError::ParameterNameAlreadyExists(
-                parameter.meta().name.to_string(),
-                index,
-            ));
+        if self.has_name(parameter.meta().name.as_str()) {
+            return Err(PywrError::ParameterNameAlreadyExists(parameter.meta().name.to_string()));
         }
 
         let index = ConstParameterIndex::new(self.constant_f64.len());
@@ -979,11 +977,8 @@ impl ParameterCollection {
         &mut self,
         parameter: Box<dyn GeneralParameter<usize>>,
     ) -> Result<ParameterIndex<usize>, PywrError> {
-        if let Some(index) = self.get_usize_index_by_name(&parameter.meta().name) {
-            return Err(PywrError::IndexParameterNameAlreadyExists(
-                parameter.meta().name.to_string(),
-                index,
-            ));
+        if self.has_name(parameter.meta().name.as_str()) {
+            return Err(PywrError::ParameterNameAlreadyExists(parameter.meta().name.to_string()));
         }
 
         match parameter.try_into_simple() {
@@ -1000,13 +995,9 @@ impl ParameterCollection {
         &mut self,
         parameter: Box<dyn SimpleParameter<usize>>,
     ) -> Result<SimpleParameterIndex<usize>, PywrError> {
-        // TODO Fix this check
-        // if let Some(index) = self.get_f64_index_by_name(&parameter.meta().name) {
-        //     return Err(PywrError::SimpleParameterNameAlreadyExists(
-        //         parameter.meta().name.to_string(),
-        //         index,
-        //     ));
-        // }
+        if self.has_name(parameter.meta().name.as_str()) {
+            return Err(PywrError::ParameterNameAlreadyExists(parameter.meta().name.to_string()));
+        }
 
         let index = SimpleParameterIndex::new(self.simple_usize.len());
 
@@ -1015,33 +1006,75 @@ impl ParameterCollection {
 
         Ok(index)
     }
-    pub fn get_usize(&self, index: GeneralParameterIndex<usize>) -> Option<&dyn GeneralParameter<usize>> {
+
+    pub fn add_const_usize(
+        &mut self,
+        parameter: Box<dyn ConstParameter<usize>>,
+    ) -> Result<ParameterIndex<usize>, PywrError> {
+        if self.has_name(parameter.meta().name.as_str()) {
+            return Err(PywrError::ParameterNameAlreadyExists(parameter.meta().name.to_string()));
+        }
+
+        let index = ConstParameterIndex::new(self.constant_usize.len());
+
+        self.constant_usize.push(parameter);
+        self.constant_resolve_order.push(ConstParameterType::Index(index));
+
+        Ok(index.into())
+    }
+
+    pub fn get_usize(&self, index: ParameterIndex<usize>) -> Option<&dyn Parameter> {
+        match index {
+            ParameterIndex::Const(idx) => self.constant_usize.get(*idx.deref()).map(|p| p.as_parameter()),
+            ParameterIndex::Simple(idx) => self.simple_usize.get(*idx.deref()).map(|p| p.as_parameter()),
+            ParameterIndex::General(idx) => self.general_usize.get(*idx.deref()).map(|p| p.as_parameter()),
+        }
+    }
+
+    pub fn get_general_usize(&self, index: GeneralParameterIndex<usize>) -> Option<&dyn GeneralParameter<usize>> {
         self.general_usize.get(*index.deref()).map(|p| p.as_ref())
     }
 
-    pub fn get_usize_by_name(&self, name: &str) -> Option<&dyn GeneralParameter<usize>> {
+    pub fn get_usize_by_name(&self, name: &str) -> Option<&dyn Parameter> {
         self.general_usize
             .iter()
             .find(|p| p.meta().name == name)
-            .map(|p| p.as_ref())
+            .map(|p| p.as_parameter())
     }
 
-    pub fn get_usize_index_by_name(&self, name: &str) -> Option<GeneralParameterIndex<usize>> {
-        self.general_usize
+    pub fn get_usize_index_by_name(&self, name: &str) -> Option<ParameterIndex<usize>> {
+        if let Some(idx) = self
+            .general_usize
             .iter()
             .position(|p| p.meta().name == name)
             .map(|idx| GeneralParameterIndex::new(idx))
+        {
+            Some(idx.into())
+        } else if let Some(idx) = self
+            .simple_usize
+            .iter()
+            .position(|p| p.meta().name == name)
+            .map(|idx| SimpleParameterIndex::new(idx))
+        {
+            Some(idx.into())
+        } else if let Some(idx) = self
+            .constant_usize
+            .iter()
+            .position(|p| p.meta().name == name)
+            .map(|idx| ConstParameterIndex::new(idx))
+        {
+            Some(idx.into())
+        } else {
+            None
+        }
     }
 
     pub fn add_general_multi(
         &mut self,
         parameter: Box<dyn GeneralParameter<MultiValue>>,
     ) -> Result<ParameterIndex<MultiValue>, PywrError> {
-        if let Some(index) = self.get_multi_index_by_name(&parameter.meta().name) {
-            return Err(PywrError::MultiValueParameterNameAlreadyExists(
-                parameter.meta().name.to_string(),
-                index,
-            ));
+        if self.has_name(parameter.meta().name.as_str()) {
+            return Err(PywrError::ParameterNameAlreadyExists(parameter.meta().name.to_string()));
         }
 
         match parameter.try_into_simple() {
@@ -1058,13 +1091,9 @@ impl ParameterCollection {
         &mut self,
         parameter: Box<dyn SimpleParameter<MultiValue>>,
     ) -> Result<SimpleParameterIndex<MultiValue>, PywrError> {
-        // TODO Fix this check
-        // if let Some(index) = self.get_f64_index_by_name(&parameter.meta().name) {
-        //     return Err(PywrError::SimpleParameterNameAlreadyExists(
-        //         parameter.meta().name.to_string(),
-        //         index,
-        //     ));
-        // }
+        if self.has_name(parameter.meta().name.as_str()) {
+            return Err(PywrError::ParameterNameAlreadyExists(parameter.meta().name.to_string()));
+        }
 
         let index = SimpleParameterIndex::new(self.simple_multi.len());
 
@@ -1073,22 +1102,69 @@ impl ParameterCollection {
 
         Ok(index)
     }
-    pub fn get_multi(&self, index: GeneralParameterIndex<MultiValue>) -> Option<&dyn GeneralParameter<MultiValue>> {
+
+    pub fn add_const_multi(
+        &mut self,
+        parameter: Box<dyn ConstParameter<MultiValue>>,
+    ) -> Result<ConstParameterIndex<MultiValue>, PywrError> {
+        if self.has_name(parameter.meta().name.as_str()) {
+            return Err(PywrError::ParameterNameAlreadyExists(parameter.meta().name.to_string()));
+        }
+
+        let index = ConstParameterIndex::new(self.constant_multi.len());
+
+        self.constant_multi.push(parameter);
+        self.constant_resolve_order.push(ConstParameterType::Multi(index));
+
+        Ok(index)
+    }
+    pub fn get_multi(&self, index: &ParameterIndex<MultiValue>) -> Option<&dyn Parameter> {
+        match index {
+            ParameterIndex::Const(idx) => self.constant_multi.get(*idx.deref()).map(|p| p.as_parameter()),
+            ParameterIndex::Simple(idx) => self.simple_multi.get(*idx.deref()).map(|p| p.as_parameter()),
+            ParameterIndex::General(idx) => self.general_multi.get(*idx.deref()).map(|p| p.as_parameter()),
+        }
+    }
+
+    pub fn get_general_multi(
+        &self,
+        index: &GeneralParameterIndex<MultiValue>,
+    ) -> Option<&dyn GeneralParameter<MultiValue>> {
         self.general_multi.get(*index.deref()).map(|p| p.as_ref())
     }
 
-    pub fn get_multi_by_name(&self, name: &str) -> Option<&dyn GeneralParameter<MultiValue>> {
+    pub fn get_multi_by_name(&self, name: &str) -> Option<&dyn Parameter> {
         self.general_multi
             .iter()
             .find(|p| p.meta().name == name)
-            .map(|p| p.as_ref())
+            .map(|p| p.as_parameter())
     }
 
-    pub fn get_multi_index_by_name(&self, name: &str) -> Option<GeneralParameterIndex<MultiValue>> {
-        self.general_multi
+    pub fn get_multi_index_by_name(&self, name: &str) -> Option<ParameterIndex<MultiValue>> {
+        if let Some(idx) = self
+            .general_multi
             .iter()
             .position(|p| p.meta().name == name)
             .map(|idx| GeneralParameterIndex::new(idx))
+        {
+            Some(idx.into())
+        } else if let Some(idx) = self
+            .simple_multi
+            .iter()
+            .position(|p| p.meta().name == name)
+            .map(|idx| SimpleParameterIndex::new(idx))
+        {
+            Some(idx.into())
+        } else if let Some(idx) = self
+            .constant_multi
+            .iter()
+            .position(|p| p.meta().name == name)
+            .map(|idx| ConstParameterIndex::new(idx))
+        {
+            Some(idx.into())
+        } else {
+            None
+        }
     }
 
     pub fn compute_simple(
@@ -1293,8 +1369,14 @@ impl ParameterCollection {
 
 #[cfg(test)]
 mod tests {
-
+    use super::{
+        ConstParameter, GeneralParameter, Parameter, ParameterCollection, ParameterMeta, ParameterState,
+        SimpleParameter,
+    };
+    use crate::scenario::ScenarioIndex;
+    use crate::state::{ConstParameterValues, MultiValue};
     use crate::timestep::{TimestepDuration, Timestepper};
+    use crate::PywrError;
     use chrono::NaiveDateTime;
 
     // TODO tests need re-enabling
@@ -1304,6 +1386,166 @@ mod tests {
         let end = NaiveDateTime::parse_from_str("2020-01-15 00:00:00", "%Y-%m-%d %H:%M:%S").unwrap();
         let duration = TimestepDuration::Days(1);
         Timestepper::new(start, end, duration)
+    }
+
+    /// Parameter for testing purposes
+    struct TestParameter {
+        meta: ParameterMeta,
+    }
+
+    impl Default for TestParameter {
+        fn default() -> Self {
+            Self {
+                meta: ParameterMeta::new("test-parameter"),
+            }
+        }
+    }
+    impl Parameter for TestParameter {
+        fn meta(&self) -> &ParameterMeta {
+            &self.meta
+        }
+    }
+
+    impl<T> ConstParameter<T> for TestParameter
+    where
+        T: From<u8>,
+    {
+        fn compute(
+            &self,
+            _scenario_index: &ScenarioIndex,
+            _values: &ConstParameterValues,
+            _internal_state: &mut Option<Box<dyn ParameterState>>,
+        ) -> Result<T, PywrError> {
+            Ok(T::from(1))
+        }
+
+        fn as_parameter(&self) -> &dyn Parameter {
+            self
+        }
+    }
+
+    impl ConstParameter<MultiValue> for TestParameter {
+        fn compute(
+            &self,
+            _scenario_index: &ScenarioIndex,
+            _values: &ConstParameterValues,
+            _internal_state: &mut Option<Box<dyn ParameterState>>,
+        ) -> Result<MultiValue, PywrError> {
+            Ok(MultiValue::default())
+        }
+
+        fn as_parameter(&self) -> &dyn Parameter {
+            self
+        }
+    }
+    impl<T> SimpleParameter<T> for TestParameter
+    where
+        T: From<u8>,
+    {
+        fn compute(
+            &self,
+            _timestep: &crate::timestep::Timestep,
+            _scenario_index: &ScenarioIndex,
+            _values: &crate::state::SimpleParameterValues,
+            _internal_state: &mut Option<Box<dyn ParameterState>>,
+        ) -> Result<T, PywrError> {
+            Ok(T::from(1))
+        }
+
+        fn as_parameter(&self) -> &dyn Parameter {
+            self
+        }
+    }
+
+    impl SimpleParameter<MultiValue> for TestParameter {
+        fn compute(
+            &self,
+            _timestep: &crate::timestep::Timestep,
+            _scenario_index: &ScenarioIndex,
+            _values: &crate::state::SimpleParameterValues,
+            _internal_state: &mut Option<Box<dyn ParameterState>>,
+        ) -> Result<MultiValue, PywrError> {
+            Ok(MultiValue::default())
+        }
+
+        fn as_parameter(&self) -> &dyn Parameter {
+            self
+        }
+    }
+    impl<T> GeneralParameter<T> for TestParameter
+    where
+        T: From<u8>,
+    {
+        fn compute(
+            &self,
+            _timestep: &crate::timestep::Timestep,
+            _scenario_index: &ScenarioIndex,
+            _model: &crate::network::Network,
+            _state: &crate::state::State,
+            _internal_state: &mut Option<Box<dyn ParameterState>>,
+        ) -> Result<T, PywrError> {
+            Ok(T::from(1))
+        }
+
+        fn as_parameter(&self) -> &dyn Parameter {
+            self
+        }
+    }
+
+    impl GeneralParameter<MultiValue> for TestParameter {
+        fn compute(
+            &self,
+            _timestep: &crate::timestep::Timestep,
+            _scenario_index: &ScenarioIndex,
+            _model: &crate::network::Network,
+            _state: &crate::state::State,
+            _internal_state: &mut Option<Box<dyn ParameterState>>,
+        ) -> Result<MultiValue, PywrError> {
+            Ok(MultiValue::default())
+        }
+
+        fn as_parameter(&self) -> &dyn Parameter {
+            self
+        }
+    }
+
+    /// Test naming constraints on parameter collection.
+    #[test]
+    fn test_parameter_collection_name_constraints() {
+        let mut collection = ParameterCollection::default();
+
+        let ret = collection.add_const_f64(Box::new(TestParameter::default()));
+        assert!(ret.is_ok());
+
+        assert!(collection.has_name("test-parameter"));
+
+        // Try to add a parameter with the same name
+        let ret = collection.add_const_f64(Box::new(TestParameter::default()));
+        assert!(ret.is_err());
+
+        let ret = collection.add_simple_f64(Box::new(TestParameter::default()));
+        assert!(ret.is_err());
+
+        let ret = collection.add_general_f64(Box::new(TestParameter::default()));
+        assert!(ret.is_err());
+
+        let ret = collection.add_const_usize(Box::new(TestParameter::default()));
+        assert!(ret.is_err());
+
+        let ret = collection.add_simple_usize(Box::new(TestParameter::default()));
+        assert!(ret.is_err());
+
+        let ret = collection.add_general_usize(Box::new(TestParameter::default()));
+        assert!(ret.is_err());
+
+        let ret = collection.add_const_multi(Box::new(TestParameter::default()));
+        assert!(ret.is_err());
+
+        let ret = collection.add_simple_multi(Box::new(TestParameter::default()));
+        assert!(ret.is_err());
+
+        let ret = collection.add_general_multi(Box::new(TestParameter::default()));
+        assert!(ret.is_err());
     }
 
     // #[test]

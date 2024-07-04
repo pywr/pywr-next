@@ -12,7 +12,7 @@ use crate::solvers::{MultiStateSolver, Solver, SolverFeatures, SolverTimings};
 use crate::state::{MultiValue, State, StateBuilder};
 use crate::timestep::Timestep;
 use crate::virtual_storage::{VirtualStorage, VirtualStorageBuilder, VirtualStorageIndex, VirtualStorageVec};
-use crate::{parameters, recorders, GeneralParameterIndex, NodeIndex, PywrError, RecorderIndex};
+use crate::{parameters, recorders, NodeIndex, PywrError, RecorderIndex};
 use rayon::prelude::*;
 use std::any::Any;
 use std::collections::HashSet;
@@ -623,7 +623,7 @@ impl Network {
                         GeneralParameterType::Index(idx) => {
                             let p = self
                                 .parameters
-                                .get_usize(*idx)
+                                .get_general_usize(*idx)
                                 .ok_or(PywrError::GeneralIndexParameterIndexNotFound(*idx))?;
 
                             // .. and its internal state
@@ -638,7 +638,7 @@ impl Network {
                         GeneralParameterType::Multi(idx) => {
                             let p = self
                                 .parameters
-                                .get_multi(*idx)
+                                .get_general_multi(idx)
                                 .ok_or(PywrError::GeneralMultiValueParameterIndexNotFound(*idx))?;
 
                             // .. and its internal state
@@ -714,7 +714,7 @@ impl Network {
                         GeneralParameterType::Index(idx) => {
                             let p = self
                                 .parameters
-                                .get_usize(*idx)
+                                .get_general_usize(*idx)
                                 .ok_or(PywrError::GeneralIndexParameterIndexNotFound(*idx))?;
 
                             // .. and its internal state
@@ -727,7 +727,7 @@ impl Network {
                         GeneralParameterType::Multi(idx) => {
                             let p = self
                                 .parameters
-                                .get_multi(*idx)
+                                .get_general_multi(idx)
                                 .ok_or(PywrError::GeneralMultiValueParameterIndexNotFound(*idx))?;
 
                             // .. and its internal state
@@ -1123,21 +1123,15 @@ impl Network {
     }
 
     /// Get a [`Parameter<usize>`] from its index.
-    pub fn get_index_parameter(
-        &self,
-        index: GeneralParameterIndex<usize>,
-    ) -> Result<&dyn parameters::GeneralParameter<usize>, PywrError> {
+    pub fn get_index_parameter(&self, index: ParameterIndex<usize>) -> Result<&dyn parameters::Parameter, PywrError> {
         match self.parameters.get_usize(index) {
             Some(p) => Ok(p),
-            None => Err(PywrError::GeneralIndexParameterIndexNotFound(index)),
+            None => Err(PywrError::IndexParameterIndexNotFound(index)),
         }
     }
 
     /// Get a `IndexParameter` from a parameter's name
-    pub fn get_index_parameter_by_name(
-        &self,
-        name: &str,
-    ) -> Result<&dyn parameters::GeneralParameter<usize>, PywrError> {
+    pub fn get_index_parameter_by_name(&self, name: &str) -> Result<&dyn parameters::Parameter, PywrError> {
         match self.parameters.get_usize_by_name(name) {
             Some(parameter) => Ok(parameter),
             None => Err(PywrError::ParameterNotFound(name.to_string())),
@@ -1145,7 +1139,7 @@ impl Network {
     }
 
     /// Get a `IndexParameterIndex` from a parameter's name
-    pub fn get_index_parameter_index_by_name(&self, name: &str) -> Result<GeneralParameterIndex<usize>, PywrError> {
+    pub fn get_index_parameter_index_by_name(&self, name: &str) -> Result<ParameterIndex<usize>, PywrError> {
         match self.parameters.get_usize_index_by_name(name) {
             Some(idx) => Ok(idx),
             None => Err(PywrError::ParameterNotFound(name.to_string())),
@@ -1155,11 +1149,11 @@ impl Network {
     /// Get a `MultiValueParameterIndex` from a parameter's name
     pub fn get_multi_valued_parameter(
         &self,
-        index: GeneralParameterIndex<MultiValue>,
-    ) -> Result<&dyn parameters::GeneralParameter<MultiValue>, PywrError> {
+        index: &ParameterIndex<MultiValue>,
+    ) -> Result<&dyn parameters::Parameter, PywrError> {
         match self.parameters.get_multi(index) {
             Some(p) => Ok(p),
-            None => Err(PywrError::GeneralMultiValueParameterIndexNotFound(index)),
+            None => Err(PywrError::MultiValueParameterIndexNotFound(index.clone())),
         }
     }
 
@@ -1167,7 +1161,7 @@ impl Network {
     pub fn get_multi_valued_parameter_index_by_name(
         &self,
         name: &str,
-    ) -> Result<GeneralParameterIndex<MultiValue>, PywrError> {
+    ) -> Result<ParameterIndex<MultiValue>, PywrError> {
         match self.parameters.get_multi_index_by_name(name) {
             Some(idx) => Ok(idx),
             None => Err(PywrError::ParameterNotFound(name.to_string())),

@@ -93,12 +93,12 @@ pub enum PywrError {
     DerivedMetricIndexNotFound(DerivedMetricIndex),
     #[error("node name `{0}` already exists")]
     NodeNameAlreadyExists(String),
-    #[error("parameter name `{0}` already exists at index {1}")]
-    ParameterNameAlreadyExists(String, ParameterIndex<f64>),
+    #[error("parameter name `{0}` already exists")]
+    ParameterNameAlreadyExists(String),
     #[error("index parameter name `{0}` already exists at index {1}")]
-    IndexParameterNameAlreadyExists(String, GeneralParameterIndex<usize>),
+    IndexParameterNameAlreadyExists(String, ParameterIndex<usize>),
     #[error("multi-value parameter name `{0}` already exists at index {1}")]
-    MultiValueParameterNameAlreadyExists(String, GeneralParameterIndex<MultiValue>),
+    MultiValueParameterNameAlreadyExists(String, ParameterIndex<MultiValue>),
     #[error("metric set name `{0}` already exists")]
     MetricSetNameAlreadyExists(String),
     #[error("recorder name `{0}` already exists at index {1}")]

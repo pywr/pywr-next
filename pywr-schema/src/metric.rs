@@ -321,16 +321,17 @@ impl ParameterReference {
         match &self.key {
             Some(key) => {
                 // Key given; this should be a multi-valued parameter
-                Ok(MetricF64::MultiParameterValue((
+                Ok((
                     network.get_multi_valued_parameter_index_by_name(&self.name)?,
                     key.clone(),
-                )))
+                )
+                    .into())
             }
             None => {
                 if let Ok(idx) = network.get_parameter_index_by_name(&self.name) {
                     Ok(idx.into())
                 } else if let Ok(idx) = network.get_index_parameter_index_by_name(&self.name) {
-                    Ok(MetricF64::IndexParameterValue(idx))
+                    Ok(idx.into())
                 } else {
                     Err(SchemaError::ParameterNotFound(self.name.to_string()))
                 }

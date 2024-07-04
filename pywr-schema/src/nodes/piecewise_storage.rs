@@ -235,7 +235,7 @@ mod tests {
     use crate::model::PywrModel;
     use crate::nodes::PiecewiseStorageNode;
     use ndarray::{concatenate, Array, Array2, Axis};
-    use pywr_core::metric::{MetricF64, MetricUsize};
+    use pywr_core::metric::MetricF64;
     use pywr_core::recorders::{AssertionRecorder, IndexAssertionRecorder};
     use pywr_core::test_utils::run_all_solvers;
 
@@ -353,11 +353,7 @@ mod tests {
             .get_index_parameter_index_by_name("storage1-drought-index")
             .unwrap();
 
-        let recorder = IndexAssertionRecorder::new(
-            "storage1-drought-index",
-            MetricUsize::IndexParameterValue(idx),
-            expected_drought_index,
-        );
+        let recorder = IndexAssertionRecorder::new("storage1-drought-index", idx.into(), expected_drought_index);
         network.add_recorder(Box::new(recorder)).unwrap();
 
         // Test all solvers
