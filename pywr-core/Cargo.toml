@@ -21,12 +21,12 @@ num = { workspace = true }
 float-cmp = { workspace = true }
 hdf5 = { workspace = true }
 csv = { workspace = true }
-clp-sys = { path = "../clp-sys", version = "0.1.0" }
+coin-or-sys = { path = "../coin-or-sys", version = "0.1.0" }
 ipm-ocl = { path = "../ipm-ocl", optional = true }
 ipm-simd = { path = "../ipm-simd", optional = true }
 tracing = { workspace = true }
 highs-sys = { version = "1.6.2", optional = true }
-nalgebra = "0.32.3"
+nalgebra = "0.33.0"
 chrono = { workspace = true }
 polars = { workspace = true }
 

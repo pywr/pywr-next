@@ -5,7 +5,7 @@ use crate::data_tables::DataTable;
 #[cfg(feature = "core")]
 use crate::data_tables::LoadedTableCollection;
 use crate::error::{ConversionError, SchemaError};
-use crate::metric::Metric;
+use crate::metric::{Metric, TimeseriesColumns, TimeseriesReference};
 use crate::metric_sets::MetricSet;
 use crate::nodes::NodeAndTimeseries;
 use crate::outputs::Output;
@@ -283,14 +283,14 @@ impl PywrNetwork {
             .flatten()
             .collect::<Vec<_>>();
 
-        let nodes = nodes_and_ts.into_iter().map(|n| n.node).collect::<Vec<_>>();
+        let mut nodes = nodes_and_ts.into_iter().map(|n| n.node).collect::<Vec<_>>();
 
         let edges = match v1.edges {
             Some(edges) => edges.into_iter().map(|e| e.into()).collect(),
             None => Vec::new(),
         };
 
-        let parameters = if let Some(v1_parameters) = v1.parameters {
+        let mut parameters = if let Some(v1_parameters) = v1.parameters {
             let mut unnamed_count: usize = 0;
             let (parameters, param_ts_data) =
                 convert_parameter_v1_to_v2(v1_parameters, &mut unnamed_count, &mut errors);
@@ -299,6 +299,34 @@ impl PywrNetwork {
         } else {
             None
         };
+
+        // closure to update a parameter ref with a timeseries ref when names match.
+        let update_to_ts_ref = &mut |m: &mut Metric| {
+            if let Metric::Parameter(p) = m {
+                let ts_ref = ts_data.iter().find(|ts| ts.name == Some(p.name.clone()));
+                if let Some(ts_ref) = ts_ref {
+                    // The timeseries requires a name to be used as a reference
+                    let name = match &ts_ref.name {
+                        Some(n) => n.clone(),
+                        None => return,
+                    };
+
+                    let cols = match (&ts_ref.column, &ts_ref.scenario) {
+                        (Some(col), None) => Some(TimeseriesColumns::Column(col.clone())),
+                        (None, Some(scenario)) => Some(TimeseriesColumns::Scenario(scenario.clone())),
+                        (Some(_), Some(_)) => return,
+                        (None, None) => None,
+                    };
+
+                    *m = Metric::Timeseries(TimeseriesReference::new(name, cols));
+                }
+            }
+        };
+
+        nodes.visit_metrics_mut(update_to_ts_ref);
+        if let Some(p) = parameters.as_mut() {
+            p.visit_metrics_mut(update_to_ts_ref)
+        }
 
         let timeseries = if !ts_data.is_empty() {
             let ts = convert_from_v1_data(ts_data, &v1.tables, &mut errors);
@@ -977,6 +1005,26 @@ mod tests {
             panic!("Expected an error due to missing file: {str}");
         }
     }
+
+    #[test]
+    fn test_v1_conversion() {
+        let v1_str = include_str!("./test_models/v1/timeseries.json");
+        let v1: pywr_v1_schema::PywrModel = serde_json::from_str(v1_str).unwrap();
+
+        let (v2, errors) = PywrModel::from_v1(v1);
+
+        assert_eq!(errors.len(), 0);
+
+        std::fs::write("tmp.json", serde_json::to_string_pretty(&v2).unwrap()).unwrap();
+
+        let v2_converted: serde_json::Value =
+            serde_json::from_str(&serde_json::to_string_pretty(&v2).unwrap()).unwrap();
+
+        let v2_expected: serde_json::Value =
+            serde_json::from_str(include_str!("./test_models/v1/timeseries-converted.json")).unwrap();
+
+        assert_eq!(v2_converted, v2_expected);
+    }
 }
 
 #[cfg(test)]
@@ -988,6 +1036,7 @@ mod core_tests {
     use ndarray::{Array1, Array2, Axis};
     use pywr_core::{metric::MetricF64, recorders::AssertionRecorder, solvers::ClpSolver, test_utils::run_all_solvers};
     use std::path::PathBuf;
+    use std::str::FromStr;
 
     fn model_str() -> &'static str {
         include_str!("./test_models/simple1.json")

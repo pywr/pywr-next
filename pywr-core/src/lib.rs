@@ -189,6 +189,8 @@ pub enum PywrError {
     TimestepRangeGenerationError(String),
     #[error("Could not create timesteps for frequency '{0}'")]
     TimestepGenerationError(String),
+    #[error("Pywr does not currently support timesteps of varying duration")]
+    TimestepDurationMismatch,
     #[error("aggregation error: {0}")]
     Aggregation(#[from] AggregationError),
     #[error("cannot simplify metric")]
