@@ -27,7 +27,7 @@ jobs:
           echo "$(pwd)/bin" >> $GITHUB_PATH
 
       - name: Build
-        run: cargo build --verbose --features highs
+        run: cargo build --verbose --features highs --workspace --exclude ipm-simd --exclude pywr-python
       - name: Run tests
         run: cargo test --features highs
       - name: Run mdbook tests

@@ -37,27 +37,15 @@ The threshold is a constant value that is set when the parameter is created.
 Finally, the `meta` field stores the metadata for the parameter.
 The `ParameterMeta` struct is used to store the metadata for all parameters and can be reused.
 
-```rust
-pub struct MaxParameter {
-    meta: ParameterMeta,
-    metric: MetricF64,
-    threshold: f64,
-}
+```rust,ignore
+{{#rustdoc_include ../../listings/adding-a-parameter/src/main.rs:parameter}}
 ```
 
 To allow the parameter to be used in the model it is helpful to add a `new` function that creates a new instance of the
 parameter. This will be used by the schema to create the parameter when it is loaded from a model file.
 
-```rust
-impl MaxParameter {
-    pub fn new(name: &str, metric: MetricF64, threshold: f64) -> Self {
-        Self {
-            meta: ParameterMeta::new(name),
-            metric,
-            threshold,
-        }
-    }
-}
+```rust,ignore
+{{#rustdoc_include ../../listings/adding-a-parameter/src/main.rs:impl-new}}
 ```
 
 Finally, the minimum implementation of the `Parameter` trait should be added for `MaxParameter`.
@@ -66,24 +54,8 @@ calculate the value of the parameter at a given timestep and scenario.
 In this case the `compute` function calculates the maximum value of the metric and the threshold.
 The value of the metric is obtained from the model using the `get_value` function.
 
-```rust
-impl Parameter<f64> for MaxParameter {
-    fn meta(&self) -> &ParameterMeta {
-        &self.meta
-    }
-    fn compute(
-        &self,
-        _timestep: &Timestep,
-        _scenario_index: &ScenarioIndex,
-        model: &Network,
-        state: &State,
-        _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<f64, PywrError> {
-        // Current value
-        let x = self.metric.get_value(model, state)?;
-        Ok(x.max(self.threshold))
-    }
-}
+```rust,ignore
+{{#rustdoc_include ../../listings/adding-a-parameter/src/main.rs:impl-parameter}}
 ```
 
 ### Adding the schema definition to `pywr-schema`
@@ -98,14 +70,12 @@ types for the fields.
 The struct should also derive `serde::Deserialize`, `serde::Serialize`, `Debug`, `Clone`, `JsonSchema`,
 and `PywrVisitAll` to be compatible with the rest of Pywr.
 
-```rust
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
-pub struct MaxParameter {
-    #[serde(flatten)]
-    pub meta: ParameterMeta,
-    pub parameter: Metric,
-    pub threshold: Option<f64>,
-}
+> Note: The `PywrVisitAll` derive is not shown in the listing as it can not currently be used outside
+> the `pywr-schema` crate.
+
+```rust,ignore
+{{#rustdoc_include ../../listings/adding-a-parameter/src/main.rs:schema}}
+
 ```
 
 Next, the parameter needs a method to add itself to a network.
@@ -117,21 +87,8 @@ The method should load the metric from the model using the `load` method, and th
 the `new` method implemented above.
 Finally, the method should add the parameter to the network using the `add_parameter` method.
 
-```rust
-#[cfg(feature = "core")]
-impl MaxParameter {
-    pub fn add_to_model(
-        &self,
-        network: &mut pywr_core::network::Network,
-        args: &LoadArgs,
-    ) -> Result<ParameterIndex<f64>, SchemaError> {
-        let idx = self.parameter.load(network, args)?;
-        let threshold = self.threshold.unwrap_or(0.0);
-
-        let p = pywr_core::parameters::MaxParameter::new(&self.meta.name, idx, threshold);
-        Ok(network.add_parameter(Box::new(p))?)
-    }
-}
+```rust,ignore
+{{#rustdoc_include ../../listings/adding-a-parameter/src/main.rs:schema-impl}}
 ```
 
 Finally, the schema definition should be added to the `Parameter` enum in the `parameters` module.

@@ -1,0 +1,11 @@
+[package]
+name = "adding-a-parameter"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+pywr-core = { path = "../../../pywr-core" }
+pywr-schema = { path = "../../../pywr-schema" }
+pywr-schema-macros = { path = "../../../pywr-schema-macros" }
+serde = { workspace = true }
+schemars = { workspace = true }
