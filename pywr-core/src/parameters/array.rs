@@ -1,7 +1,7 @@
 use crate::network::Network;
-use crate::parameters::{Parameter, ParameterMeta};
+use crate::parameters::{GeneralParameter, Parameter, ParameterMeta, ParameterState};
 use crate::scenario::ScenarioIndex;
-use crate::state::{ParameterState, State};
+use crate::state::State;
 use crate::timestep::Timestep;
 use crate::PywrError;
 use ndarray::{Array1, Array2, Axis};
@@ -21,11 +21,12 @@ impl Array1Parameter {
         }
     }
 }
-
-impl Parameter<f64> for Array1Parameter {
+impl Parameter for Array1Parameter {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }
+}
+impl GeneralParameter<f64> for Array1Parameter {
     fn compute(
         &self,
         timestep: &Timestep,
@@ -41,6 +42,13 @@ impl Parameter<f64> for Array1Parameter {
         // This panics if out-of-bounds
         let value = self.array[[idx]];
         Ok(value)
+    }
+
+    fn as_parameter(&self) -> &dyn Parameter
+    where
+        Self: Sized,
+    {
+        self
     }
 }
 
@@ -62,11 +70,13 @@ impl Array2Parameter {
     }
 }
 
-impl Parameter<f64> for Array2Parameter {
+impl Parameter for Array2Parameter {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }
+}
 
+impl GeneralParameter<f64> for Array2Parameter {
     fn compute(
         &self,
         timestep: &Timestep,
@@ -85,5 +95,12 @@ impl Parameter<f64> for Array2Parameter {
         let s_idx = scenario_index.indices[self.scenario_group_index];
 
         Ok(self.array[[t_idx, s_idx]])
+    }
+
+    fn as_parameter(&self) -> &dyn Parameter
+    where
+        Self: Sized,
+    {
+        self
     }
 }

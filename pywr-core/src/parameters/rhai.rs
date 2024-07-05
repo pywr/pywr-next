@@ -1,9 +1,9 @@
-use super::{Parameter, ParameterMeta, PywrError, Timestep};
+use super::{GeneralParameter, Parameter, ParameterMeta, ParameterState, PywrError, Timestep};
 use crate::metric::{MetricF64, MetricUsize};
 use crate::network::Network;
 use crate::parameters::downcast_internal_state_mut;
 use crate::scenario::ScenarioIndex;
-use crate::state::{ParameterState, State};
+use crate::state::State;
 use chrono::Datelike;
 use rhai::{Dynamic, Engine, Map, Scope, AST};
 use std::collections::HashMap;
@@ -54,7 +54,7 @@ impl RhaiParameter {
     }
 }
 
-impl Parameter<f64> for RhaiParameter {
+impl Parameter for RhaiParameter {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }
@@ -77,7 +77,9 @@ impl Parameter<f64> for RhaiParameter {
 
         Ok(Some(Box::new(internal)))
     }
+}
 
+impl GeneralParameter<f64> for RhaiParameter {
     fn compute(
         &self,
         timestep: &Timestep,
@@ -110,6 +112,13 @@ impl Parameter<f64> for RhaiParameter {
             .expect("Failed to run Rhai compute function.");
 
         Ok(value)
+    }
+
+    fn as_parameter(&self) -> &dyn Parameter
+    where
+        Self: Sized,
+    {
+        self
     }
 }
 
@@ -162,7 +171,7 @@ mod tests {
             },
         ];
 
-        let state = StateBuilder::new(vec![], 0).with_value_parameters(1).build();
+        let state = StateBuilder::new(vec![], 0).build();
 
         let mut internal_p_states: Vec<_> = scenario_indices
             .iter()

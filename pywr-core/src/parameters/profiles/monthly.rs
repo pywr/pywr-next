@@ -1,7 +1,6 @@
-use crate::network::Network;
-use crate::parameters::{Parameter, ParameterMeta};
+use crate::parameters::{Parameter, ParameterMeta, ParameterState, SimpleParameter};
 use crate::scenario::ScenarioIndex;
-use crate::state::{ParameterState, State};
+use crate::state::SimpleParameterValues;
 use crate::timestep::Timestep;
 use crate::PywrError;
 use chrono::{Datelike, NaiveDateTime, Timelike};
@@ -70,16 +69,17 @@ fn interpolate_last(date: &NaiveDateTime, first_value: f64, last_value: f64) -> 
     }
 }
 
-impl Parameter<f64> for MonthlyProfileParameter {
+impl Parameter for MonthlyProfileParameter {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }
+}
+impl SimpleParameter<f64> for MonthlyProfileParameter {
     fn compute(
         &self,
         timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
-        _model: &Network,
-        _state: &State,
+        _values: &SimpleParameterValues,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<f64, PywrError> {
         let v = match &self.interp_day {
@@ -103,5 +103,12 @@ impl Parameter<f64> for MonthlyProfileParameter {
             None => self.values[timestep.date.month() as usize - 1],
         };
         Ok(v)
+    }
+
+    fn as_parameter(&self) -> &dyn Parameter
+    where
+        Self: Sized,
+    {
+        self
     }
 }

@@ -1,10 +1,9 @@
-use crate::network::Network;
 use crate::parameters::{
     downcast_internal_state_mut, downcast_internal_state_ref, downcast_variable_config_ref, ActivationFunction,
-    Parameter, ParameterMeta, VariableConfig, VariableParameter,
+    ConstParameter, Parameter, ParameterMeta, ParameterState, VariableConfig, VariableParameter,
 };
 use crate::scenario::ScenarioIndex;
-use crate::state::{ParameterState, State};
+use crate::state::ConstParameterValues;
 use crate::timestep::Timestep;
 use crate::PywrError;
 
@@ -36,7 +35,7 @@ impl ConstantParameter {
     }
 }
 
-impl Parameter<f64> for ConstantParameter {
+impl Parameter for ConstantParameter {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }
@@ -49,24 +48,31 @@ impl Parameter<f64> for ConstantParameter {
         let value: Option<f64> = None;
         Ok(Some(Box::new(value)))
     }
-
-    fn compute(
-        &self,
-        _timestep: &Timestep,
-        _scenario_index: &ScenarioIndex,
-        _model: &Network,
-        _state: &State,
-        internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<f64, PywrError> {
-        Ok(self.value(internal_state))
-    }
-
     fn as_f64_variable(&self) -> Option<&dyn VariableParameter<f64>> {
         Some(self)
     }
 
     fn as_f64_variable_mut(&mut self) -> Option<&mut dyn VariableParameter<f64>> {
         Some(self)
+    }
+}
+
+// TODO this should only need to implement `ConstantParameter` when that is implemented.
+impl ConstParameter<f64> for ConstantParameter {
+    fn compute(
+        &self,
+        _scenario_index: &ScenarioIndex,
+        _values: &ConstParameterValues,
+        internal_state: &mut Option<Box<dyn ParameterState>>,
+    ) -> Result<f64, PywrError> {
+        Ok(self.value(internal_state))
+    }
+
+    fn as_parameter(&self) -> &dyn Parameter
+    where
+        Self: Sized,
+    {
+        self
     }
 }
 
