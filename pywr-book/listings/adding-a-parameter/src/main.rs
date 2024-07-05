@@ -1,8 +1,8 @@
 use pywr_core::metric::MetricF64;
 use pywr_core::network::Network;
-use pywr_core::parameters::{Parameter, ParameterMeta};
+use pywr_core::parameters::{GeneralParameter, Parameter, ParameterMeta, ParameterState};
 use pywr_core::scenario::ScenarioIndex;
-use pywr_core::state::{ParameterState, State};
+use pywr_core::state::State;
 use pywr_core::timestep::Timestep;
 use pywr_core::PywrError;
 
@@ -25,10 +25,13 @@ impl MaxParameter {
 }
 // ANCHOR_END: impl-new
 // ANCHOR: impl-parameter
-impl Parameter<f64> for MaxParameter {
+impl Parameter for MaxParameter {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }
+}
+
+impl GeneralParameter<f64> for MaxParameter {
     fn compute(
         &self,
         _timestep: &Timestep,
@@ -41,7 +44,15 @@ impl Parameter<f64> for MaxParameter {
         let x = self.metric.get_value(model, state)?;
         Ok(x.max(self.threshold))
     }
+
+    fn as_parameter(&self) -> &dyn Parameter
+    where
+        Self: Sized,
+    {
+        self
+    }
 }
+
 // ANCHOR_END: impl-parameter
 mod schema {
     use pywr_schema::metric::Metric;

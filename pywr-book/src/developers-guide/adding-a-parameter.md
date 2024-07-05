@@ -48,11 +48,12 @@ parameter. This will be used by the schema to create the parameter when it is lo
 {{#rustdoc_include ../../listings/adding-a-parameter/src/main.rs:impl-new}}
 ```
 
-Finally, the minimum implementation of the `Parameter` trait should be added for `MaxParameter`.
-This trait requires the `meta` function to return the metadata for the parameter, and the `compute` function to
-calculate the value of the parameter at a given timestep and scenario.
+Finally, the minimum implementation of the `Parameter` and one of the three types of parameter compute traits should be
+added for `MaxParameter`. This trait requires the `meta` function to return the metadata for the parameter, and
+the `compute` function to calculate the value of the parameter at a given timestep and scenario.
 In this case the `compute` function calculates the maximum value of the metric and the threshold.
 The value of the metric is obtained from the model using the `get_value` function.
+See the [documentation](parameter-traits.md) about parameter traits and return types for more information.
 
 ```rust,ignore
 {{#rustdoc_include ../../listings/adding-a-parameter/src/main.rs:impl-parameter}}
