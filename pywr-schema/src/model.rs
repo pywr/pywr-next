@@ -1036,7 +1036,6 @@ mod core_tests {
     use ndarray::{Array1, Array2, Axis};
     use pywr_core::{metric::MetricF64, recorders::AssertionRecorder, solvers::ClpSolver, test_utils::run_all_solvers};
     use std::path::PathBuf;
-    use std::str::FromStr;
 
     fn model_str() -> &'static str {
         include_str!("./test_models/simple1.json")

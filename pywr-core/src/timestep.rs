@@ -13,7 +13,6 @@ const MILLISECS_IN_MINUTE: i64 = 1000 * 60;
 const MILLISECS_IN_SECOND: i64 = 1000;
 
 /// A newtype for `chrono::TimeDelta` that provides a couple of useful convenience methods.
-#[pyclass]
 #[derive(Debug, Copy, Clone)]
 pub struct PywrDuration(TimeDelta);
 
