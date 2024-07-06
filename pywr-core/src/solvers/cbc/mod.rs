@@ -119,7 +119,7 @@ impl Cbc {
             let coefs = &elements[start as usize..end as usize];
 
             unsafe {
-                let c_name = CString::new("row").expect("Failed to create CString for column name.");
+                let c_name = CString::new("row").expect("Failed to create CString for row name.");
                 let sense = 'E';
                 Cbc_addRow(
                     self.ptr,

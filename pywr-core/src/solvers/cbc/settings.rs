@@ -1,6 +1,6 @@
 use crate::solvers::SolverSettings;
 
-/// Settings for the OpenCL IPM solvers.
+/// Settings for the CBC solver.
 ///
 /// Create new settings using [`CbcSolverSettingsBuilder`] or use the default implementation;
 #[derive(PartialEq, Debug, Copy, Clone)]
