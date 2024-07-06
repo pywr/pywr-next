@@ -1,11 +1,11 @@
 /// AggregatedIndexParameter
 ///
-use super::PywrError;
+use super::{Parameter, ParameterState, PywrError};
 use crate::metric::MetricUsize;
 use crate::network::Network;
-use crate::parameters::{Parameter, ParameterMeta};
+use crate::parameters::{GeneralParameter, ParameterMeta};
 use crate::scenario::ScenarioIndex;
-use crate::state::{ParameterState, State};
+use crate::state::State;
 use crate::timestep::Timestep;
 use std::str::FromStr;
 
@@ -50,10 +50,13 @@ impl AggregatedIndexParameter {
     }
 }
 
-impl Parameter<usize> for AggregatedIndexParameter {
+impl Parameter for AggregatedIndexParameter {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }
+}
+
+impl GeneralParameter<usize> for AggregatedIndexParameter {
     fn compute(
         &self,
         _timestep: &Timestep,
@@ -120,5 +123,12 @@ impl Parameter<usize> for AggregatedIndexParameter {
         };
 
         Ok(value)
+    }
+
+    fn as_parameter(&self) -> &dyn Parameter
+    where
+        Self: Sized,
+    {
+        self
     }
 }
