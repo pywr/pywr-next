@@ -7,92 +7,97 @@ use crate::solvers::{Solver, SolverFeatures, SolverTimings};
 use crate::state::State;
 use crate::timestep::Timestep;
 use crate::PywrError;
-use coin_or_sys::clp::*;
+use coin_or_sys::cbc::*;
 use libc::{c_double, c_int};
-pub use settings::{ClpSolverSettings, ClpSolverSettingsBuilder};
-use std::ffi::CString;
-use std::slice;
+pub use settings::{CbcSolverSettings, CbcSolverSettingsBuilder};
+use std::ffi::{c_char, CString};
 use std::time::Instant;
+use std::{ptr, slice};
 use thiserror::Error;
 
 #[derive(Error, Debug, PartialEq, Eq)]
-pub enum ClpError {
-    #[error("an unknown error occurred in Clp.")]
+pub enum CbcError {
+    #[error("an unknown error occurred in Cbc.")]
     UnknownError,
-    #[error("the simplex model has not been created")]
-    SimplexNotInitialisedError,
 }
 
 pub type CoinBigIndex = c_int;
 
-struct ClpSimplex {
-    ptr: *mut Clp_Simplex,
+struct Cbc {
+    ptr: *mut Cbc_Model,
 }
 
-unsafe impl Send for ClpSimplex {}
+unsafe impl Send for Cbc {}
 
-impl Default for ClpSimplex {
+impl Default for Cbc {
     fn default() -> Self {
-        let model: ClpSimplex;
+        let model: Cbc;
 
         unsafe {
-            let ptr = Clp_newModel();
-            model = ClpSimplex { ptr };
-            Clp_setLogLevel(ptr, 0);
-            Clp_setObjSense(ptr, 1.0);
+            let ptr = Cbc_newModel();
+            model = Cbc { ptr };
+            Cbc_setLogLevel(ptr, 0);
+            Cbc_setObjSense(ptr, 1.0);
         }
         model
     }
 }
 
-impl ClpSimplex {
+impl Cbc {
     #[allow(dead_code)]
     pub fn print(&mut self) {
         unsafe {
             let prefix = CString::new("  ").expect("CString::new failed");
-            Clp_printModel(self.ptr, prefix.as_ptr());
-        }
-    }
-
-    pub fn resize(&mut self, new_number_rows: c_int, new_number_columns: c_int) {
-        unsafe {
-            Clp_resize(self.ptr, new_number_rows, new_number_columns);
+            Cbc_printModel(self.ptr, prefix.as_ptr());
         }
     }
 
     pub fn change_row_lower(&mut self, row_lower: &[c_double]) {
-        unsafe {
-            Clp_chgRowLower(self.ptr, row_lower.as_ptr());
+        for (i, val) in row_lower.iter().enumerate() {
+            unsafe {
+                Cbc_setRowLower(self.ptr, i as c_int, *val);
+            }
         }
     }
 
     pub fn change_row_upper(&mut self, row_upper: &[c_double]) {
-        unsafe {
-            Clp_chgRowUpper(self.ptr, row_upper.as_ptr());
-        }
-    }
-
-    pub fn change_column_lower(&mut self, column_lower: &[c_double]) {
-        unsafe {
-            Clp_chgColumnLower(self.ptr, column_lower.as_ptr());
-        }
-    }
-
-    pub fn change_column_upper(&mut self, column_upper: &[c_double]) {
-        unsafe {
-            Clp_chgColumnUpper(self.ptr, column_upper.as_ptr());
+        for (i, val) in row_upper.iter().enumerate() {
+            unsafe {
+                Cbc_setRowUpper(self.ptr, i as c_int, *val);
+            }
         }
     }
 
     pub fn change_objective_coefficients(&mut self, obj_coefficients: &[c_double]) {
-        unsafe {
-            Clp_chgObjCoefficients(self.ptr, obj_coefficients.as_ptr());
+        for (i, val) in obj_coefficients.iter().enumerate() {
+            unsafe {
+                Cbc_setObjCoeff(self.ptr, i as c_int, *val);
+            }
         }
     }
 
-    pub fn modify_coefficient(&mut self, row: c_int, column: c_int, new_element: c_double) {
-        unsafe {
-            Clp_modifyCoefficient(self.ptr, row, column, new_element, true);
+    pub fn add_cols(&mut self, col_lower: &[c_double], col_upper: &[c_double], obj_coefs: &[c_double]) {
+        let number: c_int = col_lower.len() as c_int;
+
+        for col_idx in 0..number {
+            let lower = col_lower[col_idx as usize];
+            let upper = col_upper[col_idx as usize];
+            let obj_coef = obj_coefs[col_idx as usize];
+
+            unsafe {
+                let c_name = CString::new("col").expect("Failed to create CString for column name.");
+                Cbc_addCol(
+                    self.ptr,
+                    c_name.as_ptr(),
+                    lower,
+                    upper,
+                    obj_coef,
+                    0 as c_char,
+                    0,
+                    ptr::null_mut(),
+                    ptr::null_mut(),
+                );
+            }
         }
     }
 
@@ -106,56 +111,42 @@ impl ClpSimplex {
     ) {
         let number: c_int = row_lower.len() as c_int;
 
-        unsafe {
-            Clp_addRows(
-                self.ptr,
-                number,
-                row_lower.as_ptr(),
-                row_upper.as_ptr(),
-                row_starts.as_ptr(),
-                columns.as_ptr(),
-                elements.as_ptr(),
-            )
+        for row_idx in 0..number {
+            let start = row_starts[row_idx as usize];
+            let end = row_starts[row_idx as usize + 1];
+            let nz = end - start;
+            let cols = &columns[start as usize..end as usize];
+            let coefs = &elements[start as usize..end as usize];
+
+            unsafe {
+                let c_name = CString::new("row").expect("Failed to create CString for row name.");
+                let sense = 'E';
+                Cbc_addRow(
+                    self.ptr,
+                    c_name.as_ptr(),
+                    nz,
+                    cols.as_ptr(),
+                    coefs.as_ptr(),
+                    sense as c_char,
+                    0.0,
+                );
+
+                Cbc_setRowUpper(self.ptr, row_idx, row_upper[row_idx as usize]);
+                Cbc_setRowLower(self.ptr, row_idx, row_lower[row_idx as usize]);
+            }
         }
     }
 
-    #[allow(dead_code)]
-    fn initial_solve(&mut self) {
+    fn solve(&mut self) {
         unsafe {
-            Clp_initialSolve(self.ptr);
-        }
-    }
-
-    fn initial_dual_solve(&mut self) {
-        unsafe {
-            Clp_initialDualSolve(self.ptr);
-        }
-    }
-
-    #[allow(dead_code)]
-    fn initial_primal_solve(&mut self) {
-        unsafe {
-            Clp_initialPrimalSolve(self.ptr);
-        }
-    }
-
-    fn dual_solve(&mut self) {
-        unsafe {
-            Clp_dual(self.ptr, 0);
-        }
-    }
-
-    #[allow(dead_code)]
-    fn primal_solve(&mut self) {
-        unsafe {
-            Clp_primal(self.ptr, 0);
+            Cbc_solve(self.ptr);
         }
     }
 
     fn primal_column_solution(&mut self, number: usize) -> Vec<c_double> {
         let solution: Vec<c_double>;
         unsafe {
-            let data_ptr = Clp_primalColumnSolution(self.ptr);
+            let data_ptr = Cbc_getColSolution(self.ptr);
             solution = slice::from_raw_parts(data_ptr, number).to_vec()
         }
         solution
@@ -165,7 +156,7 @@ impl ClpSimplex {
     fn get_objective_coefficients(&mut self, number: usize) -> Vec<c_double> {
         let coef: Vec<c_double>;
         unsafe {
-            let data_ptr = Clp_getObjCoefficients(self.ptr);
+            let data_ptr = Cbc_getObjCoefficients(self.ptr);
             coef = slice::from_raw_parts(data_ptr, number).to_vec()
         }
         coef
@@ -175,7 +166,7 @@ impl ClpSimplex {
     fn get_row_upper(&mut self, number: usize) -> Vec<c_double> {
         let ub: Vec<c_double>;
         unsafe {
-            let data_ptr = Clp_getRowUpper(self.ptr);
+            let data_ptr = Cbc_getRowUpper(self.ptr);
             ub = slice::from_raw_parts(data_ptr, number).to_vec()
         }
         ub
@@ -183,28 +174,22 @@ impl ClpSimplex {
 
     #[allow(dead_code)]
     fn objective_value(&self) -> c_double {
-        unsafe { Clp_objectiveValue(self.ptr) }
+        unsafe { Cbc_getObjValue(self.ptr) }
     }
 }
 
-pub struct ClpSolver {
+pub struct CbcSolver {
     builder: BuiltSolver<c_int>,
-    clp_simplex: ClpSimplex,
+    cbc: Cbc,
 }
 
-impl ClpSolver {
+impl CbcSolver {
     fn from_builder(builder: BuiltSolver<c_int>) -> Self {
-        let mut clp_simplex = ClpSimplex::default();
+        let mut cbc = Cbc::default();
 
-        let num_cols = builder.num_cols();
+        cbc.add_cols(builder.col_lower(), builder.col_upper(), builder.col_obj_coef());
 
-        clp_simplex.resize(0, num_cols);
-
-        clp_simplex.change_column_lower(builder.col_lower());
-        clp_simplex.change_column_upper(builder.col_upper());
-        clp_simplex.change_objective_coefficients(builder.col_obj_coef());
-
-        clp_simplex.add_rows(
+        cbc.add_rows(
             builder.row_lower(),
             builder.row_upper(),
             builder.row_starts(),
@@ -212,40 +197,34 @@ impl ClpSolver {
             builder.elements(),
         );
 
-        clp_simplex.initial_dual_solve();
-
-        ClpSolver { builder, clp_simplex }
+        CbcSolver { builder, cbc }
     }
 
     fn solve(&mut self) -> Vec<c_double> {
-        self.clp_simplex.dual_solve();
+        self.cbc.solve();
 
         let num_cols = self.builder.num_cols() as usize;
 
-        self.clp_simplex.primal_column_solution(num_cols)
+        self.cbc.primal_column_solution(num_cols)
     }
 }
 
-impl Solver for ClpSolver {
-    type Settings = ClpSolverSettings;
+impl Solver for CbcSolver {
+    type Settings = CbcSolverSettings;
 
     fn name() -> &'static str {
-        "clp"
+        "cbc"
     }
 
     fn features() -> &'static [SolverFeatures] {
-        &[
-            SolverFeatures::AggregatedNode,
-            SolverFeatures::AggregatedNodeFactors,
-            SolverFeatures::VirtualStorage,
-        ]
+        &[SolverFeatures::AggregatedNode, SolverFeatures::VirtualStorage]
     }
 
     fn setup(model: &Network, _settings: &Self::Settings) -> Result<Box<Self>, PywrError> {
         let builder = SolverBuilder::default();
         let built = builder.create(model)?;
 
-        let solver = ClpSolver::from_builder(built);
+        let solver = CbcSolver::from_builder(built);
         Ok(Box::new(solver))
     }
 
@@ -254,17 +233,17 @@ impl Solver for ClpSolver {
         self.builder.update(model, timestep, state, &mut timings)?;
 
         let now = Instant::now();
-        self.clp_simplex
-            .change_objective_coefficients(self.builder.col_obj_coef());
+        self.cbc.change_objective_coefficients(self.builder.col_obj_coef());
         timings.update_objective += now.elapsed();
 
         let now = Instant::now();
-        self.clp_simplex.change_row_lower(self.builder.row_lower());
-        self.clp_simplex.change_row_upper(self.builder.row_upper());
+        self.cbc.change_row_lower(self.builder.row_lower());
+        self.cbc.change_row_upper(self.builder.row_upper());
 
-        for (row, column, coefficient) in self.builder.coefficients_to_update() {
-            self.clp_simplex.modify_coefficient(*row, *column, *coefficient)
-        }
+        // TODO raise an error for missing feature
+        // for (row, column, coefficient) in self.builder.coefficients_to_update() {
+        //     self.cbc.modify_coefficient(*row, *column, *coefficient)
+        // }
 
         timings.update_constraints += now.elapsed();
 
@@ -280,6 +259,8 @@ impl Solver for ClpSolver {
         for edge in model.edges().iter() {
             let col = self.builder.col_for_edge(&edge.index()) as usize;
             let flow = solution[col];
+            // Round very small values to zero
+            let flow = if flow.abs() < 1e-10 { 0.0 } else { flow };
             network_state.add_flow(edge, timestep, flow)?;
         }
         network_state.complete(model, timestep)?;
@@ -295,14 +276,14 @@ mod tests {
     use float_cmp::approx_eq;
 
     #[test]
-    fn clp_create() {
-        ClpSimplex::default();
+    fn cbc_create() {
+        Cbc::default();
     }
 
     #[test]
-    fn clp_add_rows() {
-        let mut model = ClpSimplex::default();
-        model.resize(0, 2);
+    fn cbc_add_rows() {
+        let mut model = Cbc::default();
+        model.add_cols(&vec![0.0, 0.0], &vec![10.0, 10.0], &vec![0.0, 0.0]);
 
         let row_lower: Vec<c_double> = vec![0.0];
         let row_upper: Vec<c_double> = vec![2.0];
@@ -324,15 +305,11 @@ mod tests {
         let columns = vec![0, 1, 2, 0, 1, 2];
         let elements = vec![3.0, 2.0, 1.0, 2.0, 5.0, 3.0];
 
-        let mut lp = ClpSimplex::default();
-        lp.resize(0, col_upper.len() as c_int);
+        let mut lp = Cbc::default();
 
-        lp.change_column_lower(&col_lower);
-        lp.change_column_upper(&col_upper);
-        lp.change_objective_coefficients(&col_obj_coef);
-
+        lp.add_cols(&col_lower, &col_upper, &col_obj_coef);
         lp.add_rows(&row_lower, &row_upper, &row_starts, &columns, &elements);
-        lp.dual_solve();
+        lp.solve();
 
         assert!(approx_eq!(f64, lp.objective_value(), -20.0));
         assert_eq!(lp.primal_column_solution(3), vec![0.0, 0.0, 5.0]);
@@ -349,15 +326,11 @@ mod tests {
         let columns = vec![0, 1, 2, 0, 1, 2];
         let elements = vec![3.0, 2.0, 1.0, 2.0, 5.0, 3.0];
 
-        let mut lp = ClpSimplex::default();
-        lp.resize(0, col_upper.len() as c_int);
+        let mut lp = Cbc::default();
 
-        lp.change_column_lower(&col_lower);
-        lp.change_column_upper(&col_upper);
-        lp.change_objective_coefficients(&col_obj_coef);
-
+        lp.add_cols(&col_lower, &col_upper, &col_obj_coef);
         lp.add_rows(&row_lower, &row_upper, &row_starts, &columns, &elements);
-        lp.dual_solve();
+        lp.solve();
 
         assert!(approx_eq!(f64, lp.objective_value(), -40.0));
         assert_eq!(lp.primal_column_solution(3), vec![0.0, 0.0, 10.0]);

@@ -51,6 +51,7 @@ serde = { version = "1.0.197", features = ["derive"] }
 criterion = "0.5"
 
 [features]
+cbc = []
 highs = ["dep:highs-sys"]
 ipm-ocl = ["dep:ipm-ocl", "dep:ocl"]
 ipm-simd = ["dep:ipm-simd"]

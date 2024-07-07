@@ -1066,7 +1066,7 @@ mod core_tests {
         network.add_recorder(Box::new(rec)).unwrap();
 
         // Test all solvers
-        run_all_solvers(&model);
+        run_all_solvers(&model, &[]);
     }
 
     /// Test that a cycle in parameter dependencies does not load.

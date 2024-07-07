@@ -1789,7 +1789,7 @@ mod tests {
         model.network_mut().add_recorder(Box::new(recorder)).unwrap();
 
         // Test all solvers
-        run_all_solvers(&model);
+        run_all_solvers(&model, &[]);
     }
 
     #[test]
@@ -1813,7 +1813,7 @@ mod tests {
         network.add_recorder(Box::new(recorder)).unwrap();
 
         // Test all solvers
-        run_all_solvers(&model);
+        run_all_solvers(&model, &[]);
     }
 
     /// Test proportional storage derived metric.
@@ -1853,7 +1853,7 @@ mod tests {
         network.add_recorder(Box::new(recorder)).unwrap();
 
         // Test all solvers
-        run_all_solvers(&model);
+        run_all_solvers(&model, &[]);
     }
 
     #[test]
