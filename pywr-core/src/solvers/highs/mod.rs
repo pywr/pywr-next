@@ -10,7 +10,7 @@ use highs_sys::{
     kHighsVarTypeContinuous, kHighsVarTypeInteger, Highs_changeCoeff, HighsInt, Highs_addCols, Highs_addRows, Highs_changeCoeff,
     Highs_changeColIntegrality, Highs_changeColsCostByRange, Highs_changeObjectiveSense, Highs_changeRowsBoundsByMask,
     Highs_create, Highs_getDoubleInfoValue, Highs_getSolution, Highs_run, Highs_setBoolOptionValue,
-    Highs_setIntOptionValue, Highs_setStringOptionValue, OBJECTIVE_SENSE_MINIMIZE, STATUS_OK,
+    Highs_setStringOptionValue, OBJECTIVE_SENSE_MINIMIZE, STATUS_OK,
 };
 use libc::c_void;
 pub use settings::{HighsSolverSettings, HighsSolverSettingsBuilder};
@@ -33,11 +33,13 @@ impl Default for Highs {
             let ptr = Highs_create();
             model = Self { ptr };
             let option_name = CString::new("output_flag").unwrap();
-            Highs_setBoolOptionValue(ptr, option_name.as_ptr(), 1);
-            let option_name = CString::new("log_to_console").unwrap();
-            Highs_setBoolOptionValue(ptr, option_name.as_ptr(), 1);
-            let option_name = CString::new("log_dev_level").unwrap();
-            Highs_setIntOptionValue(ptr, option_name.as_ptr(), 2);
+            Highs_setBoolOptionValue(ptr, option_name.as_ptr(), 0);
+
+            // TODO - can these be put into the logging system?
+            // let option_name = CString::new("log_to_console").unwrap();
+            // Highs_setBoolOptionValue(ptr, option_name.as_ptr(), 1);
+            // let option_name = CString::new("log_dev_level").unwrap();
+            // Highs_setIntOptionValue(ptr, option_name.as_ptr(), 2);
             // model.presolve("off");
 
             Highs_changeObjectiveSense(ptr, OBJECTIVE_SENSE_MINIMIZE);
@@ -199,9 +201,10 @@ impl Solver for HighsSolver {
 
     fn features() -> &'static [SolverFeatures] {
         &[
+            SolverFeatures::VirtualStorage,
+            SolverFeatures::MutualExclusivity,
             SolverFeatures::AggregatedNode,
             SolverFeatures::AggregatedNodeFactors,
-            SolverFeatures::AggregatedNodeDynamicFactors,
         ]
     }
 

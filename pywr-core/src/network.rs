@@ -583,6 +583,11 @@ impl Network {
             features.insert(SolverFeatures::VirtualStorage);
         }
 
+        // The presence of any mutual exclusivity nodes requires the MutualExclusivity feature.
+        if self.mutual_exclusivity_nodes.len() > 0 {
+            features.insert(SolverFeatures::MutualExclusivity);
+        }
+
         features
     }
 
