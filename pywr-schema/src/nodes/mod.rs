@@ -9,38 +9,49 @@ mod river;
 mod river_gauge;
 mod river_split_with_gauge;
 mod rolling_virtual_storage;
+mod turbine;
 mod virtual_storage;
 mod water_treatment_works;
 
-use crate::data_tables::LoadedTableCollection;
-use crate::error::{ConversionError, SchemaError};
-use crate::model::{PywrMultiNetworkTransfer, PywrNetwork};
+use crate::error::ConversionError;
+#[cfg(feature = "core")]
+use crate::error::SchemaError;
+use crate::metric::Metric;
+#[cfg(feature = "core")]
+use crate::model::LoadArgs;
+use crate::model::PywrNetwork;
 pub use crate::nodes::core::{
     AggregatedNode, AggregatedStorageNode, CatchmentNode, InputNode, LinkNode, OutputNode, StorageNode,
 };
 pub use crate::nodes::delay::DelayNode;
 pub use crate::nodes::river::RiverNode;
 use crate::nodes::rolling_virtual_storage::RollingVirtualStorageNode;
-use crate::parameters::DynamicFloatValue;
+use crate::nodes::turbine::TurbineNode;
+use crate::parameters::TimeseriesV1Data;
+use crate::visit::{VisitMetrics, VisitPaths};
 pub use annual_virtual_storage::AnnualVirtualStorageNode;
 pub use loss_link::LossLinkNode;
 pub use monthly_virtual_storage::MonthlyVirtualStorageNode;
 pub use piecewise_link::{PiecewiseLinkNode, PiecewiseLinkStep};
 pub use piecewise_storage::PiecewiseStorageNode;
-use pywr_core::metric::Metric;
-use pywr_core::models::ModelDomain;
+#[cfg(feature = "core")]
+use pywr_core::metric::MetricF64;
+use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::nodes::{
     CoreNode as CoreNodeV1, Node as NodeV1, NodeMeta as NodeMetaV1, NodePosition as NodePositionV1,
 };
+use pywr_v1_schema::parameters::{
+    CoreParameter as CoreParameterV1, Parameter as ParameterV1, ParameterValue as ParameterValueV1, ParameterValueType,
+};
 pub use river_gauge::RiverGaugeNode;
 pub use river_split_with_gauge::RiverSplitWithGaugeNode;
-use std::collections::HashMap;
-use std::path::Path;
+use schemars::JsonSchema;
+use std::path::{Path, PathBuf};
 use strum_macros::{Display, EnumDiscriminants, EnumString, IntoStaticStr, VariantNames};
 pub use virtual_storage::VirtualStorageNode;
 pub use water_treatment_works::WaterTreatmentWorks;
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Copy)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Copy, JsonSchema, PywrVisitAll)]
 pub struct NodePosition {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub schematic: Option<(f32, f32)>,
@@ -57,7 +68,7 @@ impl From<NodePositionV1> for NodePosition {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Default)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Default, JsonSchema, PywrVisitAll)]
 pub struct NodeMeta {
     pub name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -79,7 +90,7 @@ impl From<NodeMetaV1> for NodeMeta {
 /// All possible attributes that could be produced by a node.
 ///
 ///
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Copy, Display)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Copy, Display, JsonSchema, PywrVisitAll)]
 pub enum NodeAttribute {
     Inflow,
     Outflow,
@@ -87,6 +98,7 @@ pub enum NodeAttribute {
     ProportionalVolume,
     Loss,
     Deficit,
+    Power,
 }
 
 pub struct NodeBuilder {
@@ -216,11 +228,15 @@ impl NodeBuilder {
                 meta,
                 ..Default::default()
             }),
+            NodeType::Turbine => Node::Turbine(TurbineNode {
+                meta,
+                ..Default::default()
+            }),
         }
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Clone, EnumDiscriminants)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, EnumDiscriminants, Debug, JsonSchema)]
 #[serde(tag = "type")]
 #[strum_discriminants(derive(Display, IntoStaticStr, EnumString, VariantNames))]
 // This creates a separate enum called `NodeType` that is available in this module.
@@ -245,6 +261,7 @@ pub enum Node {
     AnnualVirtualStorage(AnnualVirtualStorageNode),
     MonthlyVirtualStorage(MonthlyVirtualStorageNode),
     RollingVirtualStorage(RollingVirtualStorageNode),
+    Turbine(TurbineNode),
 }
 
 impl Node {
@@ -282,142 +299,7 @@ impl Node {
             Node::Delay(n) => &n.meta,
             Node::MonthlyVirtualStorage(n) => &n.meta,
             Node::RollingVirtualStorage(n) => &n.meta,
-        }
-    }
-
-    pub fn parameters(&self) -> HashMap<&str, &DynamicFloatValue> {
-        match self {
-            Node::Input(n) => n.parameters(),
-            Node::Link(n) => n.parameters(),
-            Node::Output(n) => n.parameters(),
-            Node::Storage(n) => n.parameters(),
-            Node::Catchment(n) => n.parameters(),
-            Node::RiverGauge(n) => n.parameters(),
-            Node::LossLink(n) => n.parameters(),
-            Node::River(n) => n.parameters(),
-            Node::RiverSplitWithGauge(n) => n.parameters(),
-            Node::WaterTreatmentWorks(n) => n.parameters(),
-            Node::Aggregated(n) => n.parameters(),
-            Node::AggregatedStorage(n) => n.parameters(),
-            Node::VirtualStorage(n) => n.parameters(),
-            Node::AnnualVirtualStorage(n) => n.parameters(),
-            Node::PiecewiseLink(n) => n.parameters(),
-            Node::PiecewiseStorage(n) => n.parameters(),
-            Node::Delay(n) => n.parameters(),
-            Node::MonthlyVirtualStorage(n) => n.parameters(),
-            Node::RollingVirtualStorage(n) => n.parameters(),
-        }
-    }
-
-    pub fn parameters_mut(&mut self) -> HashMap<&str, &mut DynamicFloatValue> {
-        match self {
-            Node::Input(n) => n.parameters_mut(),
-            Node::Link(n) => n.parameters_mut(),
-            Node::Output(n) => n.parameters_mut(),
-            Node::Storage(n) => n.parameters_mut(),
-            Node::Catchment(n) => n.parameters_mut(),
-            Node::RiverGauge(n) => n.parameters_mut(),
-            Node::LossLink(n) => n.parameters_mut(),
-            Node::River(n) => n.parameters_mut(),
-            Node::RiverSplitWithGauge(n) => n.parameters_mut(),
-            Node::WaterTreatmentWorks(n) => n.parameters_mut(),
-            Node::Aggregated(n) => n.parameters_mut(),
-            Node::AggregatedStorage(n) => n.parameters_mut(),
-            Node::VirtualStorage(n) => n.parameters_mut(),
-            Node::AnnualVirtualStorage(n) => n.parameters_mut(),
-            Node::PiecewiseLink(n) => n.parameters_mut(),
-            Node::PiecewiseStorage(n) => n.parameters_mut(),
-            Node::Delay(n) => n.parameters_mut(),
-            Node::MonthlyVirtualStorage(n) => n.parameters_mut(),
-            Node::RollingVirtualStorage(n) => n.parameters_mut(),
-        }
-    }
-
-    pub fn add_to_model(
-        &self,
-        network: &mut pywr_core::network::Network,
-        schema: &PywrNetwork,
-        domain: &ModelDomain,
-        tables: &LoadedTableCollection,
-        data_path: Option<&Path>,
-        inter_network_transfers: &[PywrMultiNetworkTransfer],
-    ) -> Result<(), SchemaError> {
-        match self {
-            Node::Input(n) => n.add_to_model(network),
-            Node::Link(n) => n.add_to_model(network),
-            Node::Output(n) => n.add_to_model(network),
-            Node::Storage(n) => n.add_to_model(network, schema, domain, tables, data_path, inter_network_transfers),
-            Node::Catchment(n) => n.add_to_model(network),
-            Node::RiverGauge(n) => n.add_to_model(network),
-            Node::LossLink(n) => n.add_to_model(network),
-            Node::River(n) => n.add_to_model(network),
-            Node::RiverSplitWithGauge(n) => n.add_to_model(network),
-            Node::WaterTreatmentWorks(n) => n.add_to_model(network),
-            Node::Aggregated(n) => n.add_to_model(network),
-            Node::AggregatedStorage(n) => n.add_to_model(network),
-            Node::VirtualStorage(n) => {
-                n.add_to_model(network, schema, domain, tables, data_path, inter_network_transfers)
-            }
-            Node::AnnualVirtualStorage(n) => {
-                n.add_to_model(network, schema, domain, tables, data_path, inter_network_transfers)
-            }
-            Node::PiecewiseLink(n) => n.add_to_model(network),
-            Node::PiecewiseStorage(n) => {
-                n.add_to_model(network, schema, domain, tables, data_path, inter_network_transfers)
-            }
-            Node::Delay(n) => n.add_to_model(network),
-            Node::MonthlyVirtualStorage(n) => {
-                n.add_to_model(network, schema, domain, tables, data_path, inter_network_transfers)
-            }
-            Node::RollingVirtualStorage(n) => {
-                n.add_to_model(network, schema, domain, tables, data_path, inter_network_transfers)
-            }
-        }
-    }
-
-    pub fn set_constraints(
-        &self,
-        network: &mut pywr_core::network::Network,
-        schema: &PywrNetwork,
-        domain: &ModelDomain,
-        tables: &LoadedTableCollection,
-        data_path: Option<&Path>,
-        inter_network_transfers: &[PywrMultiNetworkTransfer],
-    ) -> Result<(), SchemaError> {
-        match self {
-            Node::Input(n) => n.set_constraints(network, schema, domain, tables, data_path, inter_network_transfers),
-            Node::Link(n) => n.set_constraints(network, schema, domain, tables, data_path, inter_network_transfers),
-            Node::Output(n) => n.set_constraints(network, schema, domain, tables, data_path, inter_network_transfers),
-            Node::Storage(n) => n.set_constraints(network, schema, domain, tables, data_path, inter_network_transfers),
-            Node::Catchment(n) => {
-                n.set_constraints(network, schema, domain, tables, data_path, inter_network_transfers)
-            }
-            Node::RiverGauge(n) => {
-                n.set_constraints(network, schema, domain, tables, data_path, inter_network_transfers)
-            }
-            Node::LossLink(n) => n.set_constraints(network, schema, domain, tables, data_path, inter_network_transfers),
-            Node::River(_) => Ok(()), // No constraints on river node
-            Node::RiverSplitWithGauge(n) => {
-                n.set_constraints(network, schema, domain, tables, data_path, inter_network_transfers)
-            }
-            Node::WaterTreatmentWorks(n) => {
-                n.set_constraints(network, schema, domain, tables, data_path, inter_network_transfers)
-            }
-            Node::Aggregated(n) => {
-                n.set_constraints(network, schema, domain, tables, data_path, inter_network_transfers)
-            }
-            Node::AggregatedStorage(_) => Ok(()), // No constraints on aggregated storage nodes.
-            Node::VirtualStorage(_) => Ok(()),    // TODO
-            Node::AnnualVirtualStorage(_) => Ok(()), // TODO
-            Node::PiecewiseLink(n) => {
-                n.set_constraints(network, schema, domain, tables, data_path, inter_network_transfers)
-            }
-            Node::PiecewiseStorage(n) => {
-                n.set_constraints(network, schema, domain, tables, data_path, inter_network_transfers)
-            }
-            Node::Delay(n) => n.set_constraints(network, tables),
-            Node::MonthlyVirtualStorage(_) => Ok(()), // TODO
-            Node::RollingVirtualStorage(_) => Ok(()), // TODO
+            Node::Turbine(n) => &n.meta,
         }
     }
 
@@ -443,6 +325,7 @@ impl Node {
             Node::PiecewiseStorage(n) => n.input_connectors(),
             Node::Delay(n) => n.input_connectors(),
             Node::RollingVirtualStorage(n) => n.input_connectors(),
+            Node::Turbine(n) => n.input_connectors(),
         }
     }
 
@@ -468,6 +351,89 @@ impl Node {
             Node::PiecewiseStorage(n) => n.output_connectors(),
             Node::Delay(n) => n.output_connectors(),
             Node::RollingVirtualStorage(n) => n.output_connectors(),
+            Node::Turbine(n) => n.output_connectors(),
+        }
+    }
+
+    pub fn default_metric(&self) -> NodeAttribute {
+        match self {
+            Node::Input(n) => n.default_metric(),
+            Node::Link(n) => n.default_metric(),
+            Node::Output(n) => n.default_metric(),
+            Node::Storage(n) => n.default_metric(),
+            Node::Catchment(n) => n.default_metric(),
+            Node::RiverGauge(n) => n.default_metric(),
+            Node::LossLink(n) => n.default_metric(),
+            Node::River(n) => n.default_metric(),
+            Node::RiverSplitWithGauge(n) => n.default_metric(),
+            Node::WaterTreatmentWorks(n) => n.default_metric(),
+            Node::Aggregated(n) => n.default_metric(),
+            Node::AggregatedStorage(n) => n.default_metric(),
+            Node::VirtualStorage(n) => n.default_metric(),
+            Node::AnnualVirtualStorage(n) => n.default_metric(),
+            Node::MonthlyVirtualStorage(n) => n.default_metric(),
+            Node::PiecewiseLink(n) => n.default_metric(),
+            Node::PiecewiseStorage(n) => n.default_metric(),
+            Node::Delay(n) => n.default_metric(),
+            Node::RollingVirtualStorage(n) => n.default_metric(),
+            Node::Turbine(n) => n.default_metric(),
+        }
+    }
+}
+
+#[cfg(feature = "core")]
+impl Node {
+    pub fn add_to_model(&self, network: &mut pywr_core::network::Network, args: &LoadArgs) -> Result<(), SchemaError> {
+        match self {
+            Node::Input(n) => n.add_to_model(network),
+            Node::Link(n) => n.add_to_model(network),
+            Node::Output(n) => n.add_to_model(network),
+            Node::Storage(n) => n.add_to_model(network),
+            Node::Catchment(n) => n.add_to_model(network),
+            Node::RiverGauge(n) => n.add_to_model(network),
+            Node::LossLink(n) => n.add_to_model(network),
+            Node::River(n) => n.add_to_model(network),
+            Node::RiverSplitWithGauge(n) => n.add_to_model(network),
+            Node::WaterTreatmentWorks(n) => n.add_to_model(network),
+            Node::Aggregated(n) => n.add_to_model(network),
+            Node::AggregatedStorage(n) => n.add_to_model(network),
+            Node::VirtualStorage(n) => n.add_to_model(network, args),
+            Node::AnnualVirtualStorage(n) => n.add_to_model(network, args),
+            Node::PiecewiseLink(n) => n.add_to_model(network),
+            Node::PiecewiseStorage(n) => n.add_to_model(network, args),
+            Node::Delay(n) => n.add_to_model(network),
+            Node::Turbine(n) => n.add_to_model(network, args),
+            Node::MonthlyVirtualStorage(n) => n.add_to_model(network, args),
+            Node::RollingVirtualStorage(n) => n.add_to_model(network, args),
+        }
+    }
+
+    pub fn set_constraints(
+        &self,
+        network: &mut pywr_core::network::Network,
+        args: &LoadArgs,
+    ) -> Result<(), SchemaError> {
+        match self {
+            Node::Input(n) => n.set_constraints(network, args),
+            Node::Link(n) => n.set_constraints(network, args),
+            Node::Output(n) => n.set_constraints(network, args),
+            Node::Storage(n) => n.set_constraints(network, args),
+            Node::Catchment(n) => n.set_constraints(network, args),
+            Node::RiverGauge(n) => n.set_constraints(network, args),
+            Node::LossLink(n) => n.set_constraints(network, args),
+            Node::River(_) => Ok(()), // No constraints on river node
+            Node::RiverSplitWithGauge(n) => n.set_constraints(network, args),
+            Node::WaterTreatmentWorks(n) => n.set_constraints(network, args),
+            Node::Aggregated(n) => n.set_constraints(network, args),
+            Node::AggregatedStorage(_) => Ok(()), // No constraints on aggregated storage nodes.
+            Node::VirtualStorage(_) => Ok(()),    // TODO
+            Node::AnnualVirtualStorage(_) => Ok(()), // TODO
+            Node::PiecewiseLink(n) => n.set_constraints(network, args),
+            Node::PiecewiseStorage(n) => n.set_constraints(network, args),
+            Node::Delay(n) => n.set_constraints(network, args),
+            Node::Turbine(n) => n.set_constraints(network, args),
+            Node::MonthlyVirtualStorage(_) => Ok(()), // TODO
+            Node::RollingVirtualStorage(_) => Ok(()), // TODO
         }
     }
 
@@ -476,7 +442,8 @@ impl Node {
         &self,
         network: &mut pywr_core::network::Network,
         attribute: Option<NodeAttribute>,
-    ) -> Result<Metric, SchemaError> {
+        args: &LoadArgs,
+    ) -> Result<MetricF64, SchemaError> {
         match self {
             Node::Input(n) => n.create_metric(network, attribute),
             Node::Link(n) => n.create_metric(network, attribute),
@@ -497,6 +464,7 @@ impl Node {
             Node::PiecewiseStorage(n) => n.create_metric(network, attribute),
             Node::Delay(n) => n.create_metric(network, attribute),
             Node::RollingVirtualStorage(n) => n.create_metric(network, attribute),
+            Node::Turbine(n) => n.create_metric(network, attribute, args),
         }
     }
 }
@@ -548,5 +516,350 @@ impl TryFrom<Box<CoreNodeV1>> for Node {
         };
 
         Ok(n)
+    }
+}
+
+impl VisitMetrics for Node {
+    fn visit_metrics<F: FnMut(&Metric)>(&self, visitor: &mut F) {
+        match self {
+            Node::Input(n) => n.visit_metrics(visitor),
+            Node::Link(n) => n.visit_metrics(visitor),
+            Node::Output(n) => n.visit_metrics(visitor),
+            Node::Storage(n) => n.visit_metrics(visitor),
+            Node::Catchment(n) => n.visit_metrics(visitor),
+            Node::RiverGauge(n) => n.visit_metrics(visitor),
+            Node::LossLink(n) => n.visit_metrics(visitor),
+            Node::River(n) => n.visit_metrics(visitor),
+            Node::RiverSplitWithGauge(n) => n.visit_metrics(visitor),
+            Node::WaterTreatmentWorks(n) => n.visit_metrics(visitor),
+            Node::Aggregated(n) => n.visit_metrics(visitor),
+            Node::AggregatedStorage(n) => n.visit_metrics(visitor),
+            Node::VirtualStorage(n) => n.visit_metrics(visitor),
+            Node::AnnualVirtualStorage(n) => n.visit_metrics(visitor),
+            Node::PiecewiseLink(n) => n.visit_metrics(visitor),
+            Node::PiecewiseStorage(n) => n.visit_metrics(visitor),
+            Node::Delay(n) => n.visit_metrics(visitor),
+            Node::MonthlyVirtualStorage(n) => n.visit_metrics(visitor),
+            Node::RollingVirtualStorage(n) => n.visit_metrics(visitor),
+            Node::Turbine(n) => n.visit_metrics(visitor),
+        }
+    }
+
+    fn visit_metrics_mut<F: FnMut(&mut Metric)>(&mut self, visitor: &mut F) {
+        match self {
+            Node::Input(n) => n.visit_metrics_mut(visitor),
+            Node::Link(n) => n.visit_metrics_mut(visitor),
+            Node::Output(n) => n.visit_metrics_mut(visitor),
+            Node::Storage(n) => n.visit_metrics_mut(visitor),
+            Node::Catchment(n) => n.visit_metrics_mut(visitor),
+            Node::RiverGauge(n) => n.visit_metrics_mut(visitor),
+            Node::LossLink(n) => n.visit_metrics_mut(visitor),
+            Node::River(n) => n.visit_metrics_mut(visitor),
+            Node::RiverSplitWithGauge(n) => n.visit_metrics_mut(visitor),
+            Node::WaterTreatmentWorks(n) => n.visit_metrics_mut(visitor),
+            Node::Aggregated(n) => n.visit_metrics_mut(visitor),
+            Node::AggregatedStorage(n) => n.visit_metrics_mut(visitor),
+            Node::VirtualStorage(n) => n.visit_metrics_mut(visitor),
+            Node::AnnualVirtualStorage(n) => n.visit_metrics_mut(visitor),
+            Node::PiecewiseLink(n) => n.visit_metrics_mut(visitor),
+            Node::PiecewiseStorage(n) => n.visit_metrics_mut(visitor),
+            Node::Delay(n) => n.visit_metrics_mut(visitor),
+            Node::MonthlyVirtualStorage(n) => n.visit_metrics_mut(visitor),
+            Node::RollingVirtualStorage(n) => n.visit_metrics_mut(visitor),
+            Node::Turbine(n) => n.visit_metrics_mut(visitor),
+        }
+    }
+}
+
+impl VisitPaths for Node {
+    fn visit_paths<F: FnMut(&Path)>(&self, visitor: &mut F) {
+        match self {
+            Node::Input(n) => n.visit_paths(visitor),
+            Node::Link(n) => n.visit_paths(visitor),
+            Node::Output(n) => n.visit_paths(visitor),
+            Node::Storage(n) => n.visit_paths(visitor),
+            Node::Catchment(n) => n.visit_paths(visitor),
+            Node::RiverGauge(n) => n.visit_paths(visitor),
+            Node::LossLink(n) => n.visit_paths(visitor),
+            Node::River(n) => n.visit_paths(visitor),
+            Node::RiverSplitWithGauge(n) => n.visit_paths(visitor),
+            Node::WaterTreatmentWorks(n) => n.visit_paths(visitor),
+            Node::Aggregated(n) => n.visit_paths(visitor),
+            Node::AggregatedStorage(n) => n.visit_paths(visitor),
+            Node::VirtualStorage(n) => n.visit_paths(visitor),
+            Node::AnnualVirtualStorage(n) => n.visit_paths(visitor),
+            Node::PiecewiseLink(n) => n.visit_paths(visitor),
+            Node::PiecewiseStorage(n) => n.visit_paths(visitor),
+            Node::Delay(n) => n.visit_paths(visitor),
+            Node::MonthlyVirtualStorage(n) => n.visit_paths(visitor),
+            Node::RollingVirtualStorage(n) => n.visit_paths(visitor),
+            Node::Turbine(n) => n.visit_paths(visitor),
+        }
+    }
+
+    fn visit_paths_mut<F: FnMut(&mut PathBuf)>(&mut self, visitor: &mut F) {
+        match self {
+            Node::Input(n) => n.visit_paths_mut(visitor),
+            Node::Link(n) => n.visit_paths_mut(visitor),
+            Node::Output(n) => n.visit_paths_mut(visitor),
+            Node::Storage(n) => n.visit_paths_mut(visitor),
+            Node::Catchment(n) => n.visit_paths_mut(visitor),
+            Node::RiverGauge(n) => n.visit_paths_mut(visitor),
+            Node::LossLink(n) => n.visit_paths_mut(visitor),
+            Node::River(n) => n.visit_paths_mut(visitor),
+            Node::RiverSplitWithGauge(n) => n.visit_paths_mut(visitor),
+            Node::WaterTreatmentWorks(n) => n.visit_paths_mut(visitor),
+            Node::Aggregated(n) => n.visit_paths_mut(visitor),
+            Node::AggregatedStorage(n) => n.visit_paths_mut(visitor),
+            Node::VirtualStorage(n) => n.visit_paths_mut(visitor),
+            Node::AnnualVirtualStorage(n) => n.visit_paths_mut(visitor),
+            Node::PiecewiseLink(n) => n.visit_paths_mut(visitor),
+            Node::PiecewiseStorage(n) => n.visit_paths_mut(visitor),
+            Node::Delay(n) => n.visit_paths_mut(visitor),
+            Node::MonthlyVirtualStorage(n) => n.visit_paths_mut(visitor),
+            Node::RollingVirtualStorage(n) => n.visit_paths_mut(visitor),
+            Node::Turbine(n) => n.visit_paths_mut(visitor),
+        }
+    }
+}
+
+/// struct that acts as a container for a node and any associated timeseries data.
+///
+/// v1 nodes may contain inline DataFrame parameters from which data needs to be extract
+/// to created timeseries entries in the schema.
+#[derive(Debug)]
+pub struct NodeAndTimeseries {
+    pub node: Node,
+    pub timeseries: Option<Vec<TimeseriesV1Data>>,
+}
+
+impl TryFrom<NodeV1> for NodeAndTimeseries {
+    type Error = ConversionError;
+
+    fn try_from(v1: NodeV1) -> Result<Self, Self::Error> {
+        let mut ts_vec = Vec::new();
+        let mut unnamed_count: usize = 0;
+
+        // extract timeseries data for all inline DataFame parameters included in the node.
+        for param_value in v1.parameters().values() {
+            ts_vec.extend(extract_timeseries(param_value, v1.name(), &mut unnamed_count));
+        }
+        let timeseries = if ts_vec.is_empty() { None } else { Some(ts_vec) };
+
+        // Now convert the node to the v2 schema representation
+        let node = Node::try_from(v1)?;
+        Ok(Self { node, timeseries })
+    }
+}
+
+/// Extract timeseries data from a parameter value.
+///
+/// If the parameter value is a DataFrame, then convert it to timeseries data. If it is another type then recursively
+/// call the function on any inline parameters this parameter may contain to check for other dataframe parameters.
+fn extract_timeseries(
+    param_value: &ParameterValueType,
+    name: &str,
+    unnamed_count: &mut usize,
+) -> Vec<TimeseriesV1Data> {
+    let mut ts_vec = Vec::new();
+    match param_value {
+        ParameterValueType::Single(param) => {
+            if let ParameterValueV1::Inline(p) = param {
+                if let ParameterV1::Core(CoreParameterV1::DataFrame(df_param)) = p.as_ref() {
+                    let mut ts_data: TimeseriesV1Data = df_param.clone().into();
+                    if ts_data.name.is_none() {
+                        // Because the parameter could contain multiple inline DataFrame parameters use the unnamed_count
+                        // to create a unique name.
+                        let name = format!("{}-p{}.timeseries", name, unnamed_count);
+                        *unnamed_count += 1;
+                        ts_data.name = Some(name);
+                    }
+                    ts_vec.push(ts_data);
+                } else {
+                    // Not a dataframe parameter but the parameter might have child dataframe parameters.
+                    // Update the name and call the function recursively on all child parameters.
+                    let name = if p.name().is_none() {
+                        let n = format!("{}-p{}", name, unnamed_count);
+                        *unnamed_count += 1;
+                        n
+                    } else {
+                        p.name().unwrap().to_string()
+                    };
+                    for nested_param in p.parameters().values() {
+                        ts_vec.extend(extract_timeseries(nested_param, &name, unnamed_count));
+                    }
+                }
+            }
+        }
+        ParameterValueType::List(params) => {
+            for param in params.iter() {
+                if let ParameterValueV1::Inline(p) = param {
+                    if let ParameterV1::Core(CoreParameterV1::DataFrame(df_param)) = p.as_ref() {
+                        let mut ts_data: TimeseriesV1Data = df_param.clone().into();
+                        if ts_data.name.is_none() {
+                            // Because the parameter could contain multiple inline DataFrame parameters use the unnamed_count
+                            // to create a unique name.
+                            let name = format!("{}-p{}.timeseries", name, unnamed_count);
+                            *unnamed_count += 1;
+                            ts_data.name = Some(name);
+                        }
+                        ts_vec.push(ts_data);
+                    } else {
+                        // Not a dataframe parameter but the parameter might have child dataframe parameters.
+                        // Update the name and call the function recursively on all child parameters.
+                        let name = if p.name().is_none() {
+                            let n = format!("{}-p{}", name, unnamed_count);
+                            *unnamed_count += 1;
+                            n
+                        } else {
+                            p.name().unwrap().to_string()
+                        };
+                        for nested_param in p.parameters().values() {
+                            ts_vec.extend(extract_timeseries(nested_param, &name, unnamed_count));
+                        }
+                    }
+                }
+            }
+        }
+    };
+    ts_vec
+}
+
+#[cfg(test)]
+mod tests {
+    use pywr_v1_schema::nodes::Node as NodeV1;
+
+    use crate::metric::Metric;
+    use crate::{
+        nodes::{Node, NodeAndTimeseries},
+        parameters::Parameter,
+    };
+
+    #[test]
+    fn test_ts_inline() {
+        let node_data = r#"
+        {
+            "name": "catchment1",
+            "type": "Input",
+            "max_flow": {
+                "type": "dataframe",
+                "url" : "timeseries1.csv",
+                "parse_dates": true,
+                "dayfirst": true,
+                "index_col": 0,
+                "column": "Data"
+            }
+        }
+        "#;
+
+        let v1_node: NodeV1 = serde_json::from_str(node_data).unwrap();
+
+        let node_ts: NodeAndTimeseries = v1_node.try_into().unwrap();
+
+        let input_node = match node_ts.node {
+            Node::Input(n) => n,
+            _ => panic!("Expected InputNode"),
+        };
+
+        let expected_name = String::from("catchment1-p0.timeseries");
+
+        match input_node.max_flow {
+            Some(Metric::Timeseries(ts)) => {
+                assert_eq!(ts.name(), &expected_name)
+            }
+            _ => panic!("Expected Timeseries"),
+        };
+
+        match node_ts.timeseries {
+            Some(ts) => {
+                assert_eq!(ts.len(), 1);
+                assert_eq!(ts.first().unwrap().name.as_ref().unwrap().as_str(), &expected_name);
+            }
+            None => panic!("Expected timeseries data"),
+        };
+    }
+
+    #[test]
+    fn test_ts_inline_nested() {
+        let node_data = r#"
+        {
+            "name": "catchment1",
+            "type": "Input",
+            "max_flow": {
+                "type": "aggregated",
+                "agg_func": "product",
+                "parameters": [
+                    {
+                        "type": "constant",
+                        "value": 0.9
+                    },
+                    {
+                        "type": "dataframe",
+                        "url" : "timeseries1.csv",
+                        "parse_dates": true,
+                        "dayfirst": true,
+                        "index_col": 0,
+                        "column": "Data"
+                    },
+                    {
+                        "type": "constant",
+                        "value": 0.9
+                    },
+                    {
+                        "type": "dataframe",
+                        "url" : "timeseries2.csv",
+                        "parse_dates": true,
+                        "dayfirst": true,
+                        "index_col": 0,
+                        "column": "Data"
+                    }
+                ]
+            }
+        }
+        "#;
+
+        let v1_node: NodeV1 = serde_json::from_str(node_data).unwrap();
+
+        let node_ts: NodeAndTimeseries = v1_node.try_into().unwrap();
+
+        let input_node = match node_ts.node {
+            Node::Input(n) => n,
+            _ => panic!("Expected InputNode"),
+        };
+
+        let expected_name1 = String::from("catchment1-p0-p2.timeseries");
+        let expected_name2 = String::from("catchment1-p0-p4.timeseries");
+
+        match input_node.max_flow {
+            Some(Metric::InlineParameter { definition }) => match *definition {
+                Parameter::Aggregated(param) => {
+                    assert_eq!(param.metrics.len(), 4);
+                    match &param.metrics[1] {
+                        Metric::Timeseries(ts) => {
+                            assert_eq!(ts.name(), &expected_name1)
+                        }
+                        _ => panic!("Expected Timeseries"),
+                    }
+
+                    match &param.metrics[3] {
+                        Metric::Timeseries(ts) => {
+                            assert_eq!(ts.name(), &expected_name2)
+                        }
+                        _ => panic!("Expected Timeseries"),
+                    }
+                }
+                _ => panic!("Expected Aggregated parameter"),
+            },
+            _ => panic!("Expected Timeseries"),
+        };
+
+        match node_ts.timeseries {
+            Some(ts) => {
+                assert_eq!(ts.len(), 2);
+                assert_eq!(ts[0].name.as_ref().unwrap().as_str(), &expected_name1);
+                assert_eq!(ts[1].name.as_ref().unwrap().as_str(), &expected_name2);
+            }
+            None => panic!("Expected timeseries data"),
+        };
     }
 }

@@ -13,12 +13,20 @@
         "name": "input1",
         "type": "Input",
         "max_flow": {
-          "type": "Parameter",
-          "name": "inflow"
+          "type": "Timeseries",
+          "name": "inflow",
+          "columns": {
+            "type": "Column",
+            "name": "inflow"
+          }
         },
         "min_flow": {
-          "type": "Parameter",
-          "name": "inflow"
+          "type": "Timeseries",
+          "name": "inflow",
+          "columns": {
+            "type": "Column",
+            "name": "inflow"
+          }
         }
       },
       {
@@ -30,8 +38,14 @@
         "type": "PiecewiseLink",
         "steps": [
           {
-            "cost": -10.0,
-            "max_flow": 1.0
+            "cost": {
+              "type": "Constant",
+              "value": -10.0
+            },
+            "max_flow": {
+              "type": "Constant",
+              "value": 1.0
+            }
           },
           {
           }
@@ -44,7 +58,10 @@
       {
         "name": "demand1",
         "type": "Output",
-        "cost": -5.0,
+        "cost": {
+          "type": "Constant",
+          "value": -5.0
+        },
         "max_flow": {
           "type": "Parameter",
           "name": "demand"
@@ -74,17 +91,14 @@
         "name": "demand",
         "type": "Constant",
         "value": 10.0
-      },
+      }
+    ],
+    "timeseries": [
       {
         "name": "inflow",
-        "type": "DataFrame",
-        "url": "inflow.csv",
-        "pandas_kwargs": {
-          "index_col": 0
-        },
-        "columns": {
-          "type": "Column",
-          "name": "inflow"
+        "provider": {
+          "type": "Polars",
+          "url": "inflow.csv"
         }
       }
     ],
@@ -93,24 +107,24 @@
         "name": "nodes",
         "metrics": [
           {
-            "type": "Default",
-            "node": "input1"
+            "type": "Node",
+            "name": "input1"
           },
           {
-            "type": "Default",
-            "node": "link1"
+            "type": "Node",
+            "name": "link1"
           },
           {
-            "type": "Default",
-            "node": "mrf1"
+            "type": "Node",
+            "name": "mrf1"
           },
           {
-            "type": "Default",
-            "node": "demand1"
+            "type": "Node",
+            "name": "demand1"
           },
           {
-            "type": "Default",
-            "node": "term1"
+            "type": "Node",
+            "name": "term1"
           }
         ]
       }

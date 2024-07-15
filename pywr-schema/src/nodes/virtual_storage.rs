@@ -1,87 +1,37 @@
-use crate::data_tables::LoadedTableCollection;
-use crate::error::{ConversionError, SchemaError};
-use crate::model::PywrMultiNetworkTransfer;
+use crate::error::ConversionError;
+#[cfg(feature = "core")]
+use crate::error::SchemaError;
+use crate::metric::Metric;
+use crate::metric::NodeReference;
+#[cfg(feature = "core")]
+use crate::model::LoadArgs;
 use crate::nodes::core::StorageInitialVolume;
 use crate::nodes::{NodeAttribute, NodeMeta};
-use crate::parameters::{DynamicFloatValue, TryIntoV2Parameter};
-use pywr_core::derived_metric::DerivedMetric;
-use pywr_core::metric::Metric;
-use pywr_core::models::ModelDomain;
-use pywr_core::node::ConstraintValue;
-use pywr_core::virtual_storage::VirtualStorageReset;
-use pywr_schema_macros::PywrNode;
+use crate::parameters::TryIntoV2Parameter;
+#[cfg(feature = "core")]
+use pywr_core::{
+    derived_metric::DerivedMetric,
+    metric::MetricF64,
+    virtual_storage::{VirtualStorageBuilder, VirtualStorageReset},
+};
+use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::nodes::VirtualStorageNode as VirtualStorageNodeV1;
-use std::collections::HashMap;
-use std::path::Path;
+use schemars::JsonSchema;
 
-#[derive(serde::Deserialize, serde::Serialize, Clone, Default, PywrNode)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
 pub struct VirtualStorageNode {
     #[serde(flatten)]
     pub meta: NodeMeta,
-    pub nodes: Vec<String>,
+    pub nodes: Vec<NodeReference>,
     pub factors: Option<Vec<f64>>,
-    pub max_volume: Option<DynamicFloatValue>,
-    pub min_volume: Option<DynamicFloatValue>,
-    pub cost: Option<DynamicFloatValue>,
+    pub max_volume: Option<Metric>,
+    pub min_volume: Option<Metric>,
+    pub cost: Option<Metric>,
     pub initial_volume: StorageInitialVolume,
 }
 
 impl VirtualStorageNode {
     const DEFAULT_ATTRIBUTE: NodeAttribute = NodeAttribute::Volume;
-
-    pub fn add_to_model(
-        &self,
-        network: &mut pywr_core::network::Network,
-        schema: &crate::model::PywrNetwork,
-        domain: &ModelDomain,
-        tables: &LoadedTableCollection,
-        data_path: Option<&Path>,
-        inter_network_transfers: &[PywrMultiNetworkTransfer],
-    ) -> Result<(), SchemaError> {
-        let cost = match &self.cost {
-            Some(v) => v
-                .load(network, schema, domain, tables, data_path, inter_network_transfers)?
-                .into(),
-            None => ConstraintValue::Scalar(0.0),
-        };
-
-        let min_volume = match &self.min_volume {
-            Some(v) => v
-                .load(network, schema, domain, tables, data_path, inter_network_transfers)?
-                .into(),
-            None => ConstraintValue::Scalar(0.0),
-        };
-
-        let max_volume = match &self.max_volume {
-            Some(v) => v
-                .load(network, schema, domain, tables, data_path, inter_network_transfers)?
-                .into(),
-            None => ConstraintValue::None,
-        };
-
-        let node_idxs = self
-            .nodes
-            .iter()
-            .map(|name| network.get_node_index_by_name(name.as_str(), None))
-            .collect::<Result<Vec<_>, _>>()?;
-
-        // Standard virtual storage node never resets.
-        let reset = VirtualStorageReset::Never;
-
-        network.add_virtual_storage_node(
-            self.meta.name.as_str(),
-            None,
-            &node_idxs,
-            self.factors.as_deref(),
-            self.initial_volume.into(),
-            min_volume,
-            max_volume,
-            reset,
-            None,
-            cost,
-        )?;
-        Ok(())
-    }
 
     pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
         vec![]
@@ -91,22 +41,68 @@ impl VirtualStorageNode {
         vec![]
     }
 
+    pub fn default_metric(&self) -> NodeAttribute {
+        Self::DEFAULT_ATTRIBUTE
+    }
+}
+
+#[cfg(feature = "core")]
+impl VirtualStorageNode {
+    pub fn add_to_model(&self, network: &mut pywr_core::network::Network, args: &LoadArgs) -> Result<(), SchemaError> {
+        let cost = match &self.cost {
+            Some(v) => v.load(network, args)?.into(),
+            None => None,
+        };
+
+        let min_volume = match &self.min_volume {
+            Some(v) => Some(v.load(network, args)?.try_into()?),
+            None => None,
+        };
+
+        let max_volume = match &self.max_volume {
+            Some(v) => Some(v.load(network, args)?.try_into()?),
+            None => None,
+        };
+
+        let node_idxs = self
+            .nodes
+            .iter()
+            .map(|name| network.get_node_index_by_name(name.name.as_str(), None))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        // Standard virtual storage node never resets.
+        let reset = VirtualStorageReset::Never;
+
+        let mut builder = VirtualStorageBuilder::new(self.meta.name.as_str(), &node_idxs)
+            .initial_volume(self.initial_volume.into())
+            .min_volume(min_volume)
+            .max_volume(max_volume)
+            .reset(reset)
+            .cost(cost);
+
+        if let Some(factors) = &self.factors {
+            builder = builder.factors(factors);
+        }
+
+        network.add_virtual_storage_node(builder)?;
+        Ok(())
+    }
     pub fn create_metric(
         &self,
         network: &mut pywr_core::network::Network,
         attribute: Option<NodeAttribute>,
-    ) -> Result<Metric, SchemaError> {
+    ) -> Result<MetricF64, SchemaError> {
         // Use the default attribute if none is specified
         let attr = attribute.unwrap_or(Self::DEFAULT_ATTRIBUTE);
 
         let idx = network.get_virtual_storage_node_index_by_name(self.meta.name.as_str(), None)?;
 
         let metric = match attr {
-            NodeAttribute::Volume => Metric::VirtualStorageVolume(idx),
+            NodeAttribute::Volume => MetricF64::VirtualStorageVolume(idx),
             NodeAttribute::ProportionalVolume => {
                 let dm = DerivedMetric::VirtualStorageProportionalVolume(idx);
                 let derived_metric_idx = network.add_derived_metric(dm);
-                Metric::DerivedMetric(derived_metric_idx)
+                MetricF64::DerivedMetric(derived_metric_idx)
             }
             _ => {
                 return Err(SchemaError::NodeAttributeNotSupported {
@@ -153,10 +149,11 @@ impl TryFrom<VirtualStorageNodeV1> for VirtualStorageNode {
                 attrs: vec!["initial_volume".to_string(), "initial_volume_pc".to_string()],
             });
         };
+        let nodes = v1.nodes.into_iter().map(|v| v.into()).collect();
 
         let n = Self {
             meta,
-            nodes: v1.nodes,
+            nodes,
             factors: v1.factors,
             max_volume,
             min_volume,

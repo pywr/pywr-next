@@ -1,23 +1,26 @@
-use crate::data_tables::LoadedTableCollection;
-use crate::error::{ConversionError, SchemaError};
-use crate::model::PywrMultiNetworkTransfer;
+use crate::error::ConversionError;
+#[cfg(feature = "core")]
+use crate::error::SchemaError;
+use crate::metric::Metric;
+#[cfg(feature = "core")]
+use crate::model::LoadArgs;
 use crate::nodes::core::StorageInitialVolume;
 use crate::nodes::{NodeAttribute, NodeMeta};
-use crate::parameters::{DynamicFloatValue, TryIntoV2Parameter};
-use pywr_core::derived_metric::DerivedMetric;
-use pywr_core::metric::Metric;
-use pywr_core::models::ModelDomain;
-use pywr_core::node::ConstraintValue;
-use pywr_core::virtual_storage::VirtualStorageReset;
-use pywr_schema_macros::PywrNode;
+use crate::parameters::TryIntoV2Parameter;
+#[cfg(feature = "core")]
+use pywr_core::{
+    derived_metric::DerivedMetric,
+    metric::MetricF64,
+    virtual_storage::{VirtualStorageBuilder, VirtualStorageReset},
+};
+use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::nodes::AnnualVirtualStorageNode as AnnualVirtualStorageNodeV1;
-use std::collections::HashMap;
-use std::path::Path;
+use schemars::JsonSchema;
 
-#[derive(serde::Deserialize, serde::Serialize, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, PywrVisitAll)]
 pub struct AnnualReset {
     pub day: u8,
-    pub month: chrono::Month,
+    pub month: u8,
     pub use_initial_volume: bool,
 }
 
@@ -25,83 +28,27 @@ impl Default for AnnualReset {
     fn default() -> Self {
         Self {
             day: 1,
-            month: chrono::Month::January,
+            month: 1,
             use_initial_volume: false,
         }
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Clone, Default, PywrNode)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
 pub struct AnnualVirtualStorageNode {
     #[serde(flatten)]
     pub meta: NodeMeta,
     pub nodes: Vec<String>,
     pub factors: Option<Vec<f64>>,
-    pub max_volume: Option<DynamicFloatValue>,
-    pub min_volume: Option<DynamicFloatValue>,
-    pub cost: Option<DynamicFloatValue>,
+    pub max_volume: Option<Metric>,
+    pub min_volume: Option<Metric>,
+    pub cost: Option<Metric>,
     pub initial_volume: StorageInitialVolume,
     pub reset: AnnualReset,
 }
 
 impl AnnualVirtualStorageNode {
     pub const DEFAULT_ATTRIBUTE: NodeAttribute = NodeAttribute::Volume;
-
-    pub fn add_to_model(
-        &self,
-        network: &mut pywr_core::network::Network,
-        schema: &crate::model::PywrNetwork,
-        domain: &ModelDomain,
-        tables: &LoadedTableCollection,
-        data_path: Option<&Path>,
-        inter_network_transfers: &[PywrMultiNetworkTransfer],
-    ) -> Result<(), SchemaError> {
-        let cost = match &self.cost {
-            Some(v) => v
-                .load(network, schema, domain, tables, data_path, inter_network_transfers)?
-                .into(),
-            None => ConstraintValue::Scalar(0.0),
-        };
-
-        let min_volume = match &self.min_volume {
-            Some(v) => v
-                .load(network, schema, domain, tables, data_path, inter_network_transfers)?
-                .into(),
-            None => ConstraintValue::Scalar(0.0),
-        };
-
-        let max_volume = match &self.max_volume {
-            Some(v) => v
-                .load(network, schema, domain, tables, data_path, inter_network_transfers)?
-                .into(),
-            None => ConstraintValue::None,
-        };
-
-        let node_idxs = self
-            .nodes
-            .iter()
-            .map(|name| network.get_node_index_by_name(name.as_str(), None))
-            .collect::<Result<Vec<_>, _>>()?;
-
-        let reset = VirtualStorageReset::DayOfYear {
-            day: self.reset.day as u32,
-            month: self.reset.month,
-        };
-
-        network.add_virtual_storage_node(
-            self.meta.name.as_str(),
-            None,
-            node_idxs.as_ref(),
-            self.factors.as_deref(),
-            self.initial_volume.into(),
-            min_volume,
-            max_volume,
-            reset,
-            None,
-            cost,
-        )?;
-        Ok(())
-    }
 
     pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
         vec![]
@@ -111,22 +58,73 @@ impl AnnualVirtualStorageNode {
         vec![]
     }
 
+    pub fn default_metric(&self) -> NodeAttribute {
+        Self::DEFAULT_ATTRIBUTE
+    }
+}
+
+impl AnnualVirtualStorageNode {
+    #[cfg(feature = "core")]
+    pub fn add_to_model(&self, network: &mut pywr_core::network::Network, args: &LoadArgs) -> Result<(), SchemaError> {
+        let cost = match &self.cost {
+            Some(v) => v.load(network, args)?.into(),
+            None => None,
+        };
+
+        let min_volume = match &self.min_volume {
+            Some(v) => Some(v.load(network, args)?.try_into()?),
+            None => None,
+        };
+
+        let max_volume = match &self.max_volume {
+            Some(v) => Some(v.load(network, args)?.try_into()?),
+            None => None,
+        };
+
+        let node_idxs = self
+            .nodes
+            .iter()
+            .map(|name| network.get_node_index_by_name(name.as_str(), None))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let reset_month = self.reset.month.try_into()?;
+        let reset = VirtualStorageReset::DayOfYear {
+            day: self.reset.day as u32,
+            month: reset_month,
+        };
+
+        let mut builder = VirtualStorageBuilder::new(self.meta.name.as_str(), &node_idxs)
+            .initial_volume(self.initial_volume.into())
+            .min_volume(min_volume)
+            .max_volume(max_volume)
+            .reset(reset)
+            .cost(cost);
+
+        if let Some(factors) = &self.factors {
+            builder = builder.factors(factors);
+        }
+
+        network.add_virtual_storage_node(builder)?;
+        Ok(())
+    }
+
+    #[cfg(feature = "core")]
     pub fn create_metric(
         &self,
         network: &mut pywr_core::network::Network,
         attribute: Option<NodeAttribute>,
-    ) -> Result<Metric, SchemaError> {
+    ) -> Result<MetricF64, SchemaError> {
         // Use the default attribute if none is specified
         let attr = attribute.unwrap_or(Self::DEFAULT_ATTRIBUTE);
 
         let idx = network.get_virtual_storage_node_index_by_name(self.meta.name.as_str(), None)?;
 
         let metric = match attr {
-            NodeAttribute::Volume => Metric::VirtualStorageVolume(idx),
+            NodeAttribute::Volume => MetricF64::VirtualStorageVolume(idx),
             NodeAttribute::ProportionalVolume => {
                 let dm = DerivedMetric::VirtualStorageProportionalVolume(idx);
                 let derived_metric_idx = network.add_derived_metric(dm);
-                Metric::DerivedMetric(derived_metric_idx)
+                MetricF64::DerivedMetric(derived_metric_idx)
             }
             _ => {
                 return Err(SchemaError::NodeAttributeNotSupported {
@@ -173,8 +171,6 @@ impl TryFrom<AnnualVirtualStorageNodeV1> for AnnualVirtualStorageNode {
             });
         };
 
-        let month = chrono::Month::try_from(v1.reset_month as u8)?;
-
         let n = Self {
             meta,
             nodes: v1.nodes,
@@ -184,8 +180,8 @@ impl TryFrom<AnnualVirtualStorageNodeV1> for AnnualVirtualStorageNode {
             cost,
             initial_volume,
             reset: AnnualReset {
-                day: v1.reset_day,
-                month,
+                day: v1.reset_day as u8,
+                month: v1.reset_month as u8,
                 use_initial_volume: v1.reset_to_initial_volume,
             },
         };

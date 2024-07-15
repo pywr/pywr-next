@@ -1,40 +1,37 @@
-use crate::data_tables::LoadedTableCollection;
-use crate::error::{ConversionError, SchemaError};
-use crate::parameters::{
-    ConstantFloatVec, ConstantValue, DynamicFloatValueType, IntoV2Parameter, ParameterMeta, TryFromV1Parameter,
-};
+use crate::error::ConversionError;
+#[cfg(feature = "core")]
+use crate::error::SchemaError;
+#[cfg(feature = "core")]
+use crate::model::LoadArgs;
+use crate::parameters::{ConstantFloatVec, ConstantValue, IntoV2Parameter, ParameterMeta, TryFromV1Parameter};
+#[cfg(feature = "core")]
 use pywr_core::parameters::{ParameterIndex, WeeklyProfileError, WeeklyProfileValues};
+use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::parameters::{
     DailyProfileParameter as DailyProfileParameterV1, MonthInterpDay as MonthInterpDayV1,
     MonthlyProfileParameter as MonthlyProfileParameterV1, RbfProfileParameter as RbfProfileParameterV1,
     UniformDrawdownProfileParameter as UniformDrawdownProfileParameterV1,
     WeeklyProfileParameter as WeeklyProfileParameterV1,
 };
-use std::collections::HashMap;
+use schemars::JsonSchema;
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 pub struct DailyProfileParameter {
     #[serde(flatten)]
     pub meta: ParameterMeta,
     pub values: ConstantFloatVec,
 }
 
+#[cfg(feature = "core")]
 impl DailyProfileParameter {
-    pub fn node_references(&self) -> HashMap<&str, &str> {
-        HashMap::new()
-    }
-    pub fn parameters(&self) -> HashMap<&str, DynamicFloatValueType> {
-        HashMap::new()
-    }
-
     pub fn add_to_model(
         &self,
         network: &mut pywr_core::network::Network,
-        tables: &LoadedTableCollection,
+        args: &LoadArgs,
     ) -> Result<ParameterIndex<f64>, SchemaError> {
-        let values = &self.values.load(tables)?[..366];
+        let values = &self.values.load(args.tables)?[..366];
         let p = pywr_core::parameters::DailyProfileParameter::new(&self.meta.name, values.try_into().expect(""));
-        Ok(network.add_parameter(Box::new(p))?)
+        Ok(network.add_simple_parameter(Box::new(p))?)
     }
 }
 
@@ -50,8 +47,12 @@ impl TryFromV1Parameter<DailyProfileParameterV1> for DailyProfileParameter {
 
         let values: ConstantFloatVec = if let Some(values) = v1.values {
             ConstantFloatVec::Literal(values)
-        } else if let Some(external) = v1.external {
-            ConstantFloatVec::External(external.try_into()?)
+        } else if let Some(_external) = v1.external {
+            return Err(ConversionError::UnsupportedFeature {
+                feature: "External data references are not supported in Pywr v2. Please use a table instead."
+                    .to_string(),
+                name: meta.name,
+            });
         } else if let Some(table_ref) = v1.table_ref {
             ConstantFloatVec::Table(table_ref.try_into()?)
         } else {
@@ -66,12 +67,13 @@ impl TryFromV1Parameter<DailyProfileParameterV1> for DailyProfileParameter {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone, JsonSchema, PywrVisitAll)]
 pub enum MonthlyInterpDay {
     First,
     Last,
 }
 
+#[cfg(feature = "core")]
 impl From<MonthlyInterpDay> for pywr_core::parameters::MonthlyInterpDay {
     fn from(value: MonthlyInterpDay) -> Self {
         match value {
@@ -81,7 +83,7 @@ impl From<MonthlyInterpDay> for pywr_core::parameters::MonthlyInterpDay {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 pub struct MonthlyProfileParameter {
     #[serde(flatten)]
     pub meta: ParameterMeta,
@@ -89,26 +91,20 @@ pub struct MonthlyProfileParameter {
     pub interp_day: Option<MonthlyInterpDay>,
 }
 
+#[cfg(feature = "core")]
 impl MonthlyProfileParameter {
-    pub fn node_references(&self) -> HashMap<&str, &str> {
-        HashMap::new()
-    }
-    pub fn parameters(&self) -> HashMap<&str, DynamicFloatValueType> {
-        HashMap::new()
-    }
-
     pub fn add_to_model(
         &self,
         network: &mut pywr_core::network::Network,
-        tables: &LoadedTableCollection,
+        args: &LoadArgs,
     ) -> Result<ParameterIndex<f64>, SchemaError> {
-        let values = &self.values.load(tables)?[..12];
+        let values = &self.values.load(args.tables)?[..12];
         let p = pywr_core::parameters::MonthlyProfileParameter::new(
             &self.meta.name,
             values.try_into().expect(""),
             self.interp_day.map(|id| id.into()),
         );
-        Ok(network.add_parameter(Box::new(p))?)
+        Ok(network.add_simple_parameter(Box::new(p))?)
     }
 }
 
@@ -134,8 +130,12 @@ impl TryFromV1Parameter<MonthlyProfileParameterV1> for MonthlyProfileParameter {
 
         let values: ConstantFloatVec = if let Some(values) = v1.values {
             ConstantFloatVec::Literal(values.to_vec())
-        } else if let Some(external) = v1.external {
-            ConstantFloatVec::External(external.try_into()?)
+        } else if let Some(_external) = v1.external {
+            return Err(ConversionError::UnsupportedFeature {
+                feature: "External data references are not supported in Pywr v2. Please use a table instead."
+                    .to_string(),
+                name: meta.name,
+            });
         } else if let Some(table_ref) = v1.table_ref {
             ConstantFloatVec::Table(table_ref.try_into()?)
         } else {
@@ -154,7 +154,7 @@ impl TryFromV1Parameter<MonthlyProfileParameterV1> for MonthlyProfileParameter {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 pub struct UniformDrawdownProfileParameter {
     #[serde(flatten)]
     pub meta: ParameterMeta,
@@ -163,29 +163,23 @@ pub struct UniformDrawdownProfileParameter {
     pub residual_days: Option<ConstantValue<usize>>,
 }
 
+#[cfg(feature = "core")]
 impl UniformDrawdownProfileParameter {
-    pub fn node_references(&self) -> HashMap<&str, &str> {
-        HashMap::new()
-    }
-    pub fn parameters(&self) -> HashMap<&str, DynamicFloatValueType> {
-        HashMap::new()
-    }
-
     pub fn add_to_model(
         &self,
         network: &mut pywr_core::network::Network,
-        tables: &LoadedTableCollection,
+        args: &LoadArgs,
     ) -> Result<ParameterIndex<f64>, SchemaError> {
         let reset_day = match &self.reset_day {
-            Some(v) => v.load(tables)? as u32,
+            Some(v) => v.load(args.tables)? as u32,
             None => 1,
         };
         let reset_month = match &self.reset_month {
-            Some(v) => v.load(tables)? as u32,
+            Some(v) => v.load(args.tables)? as u32,
             None => 1,
         };
         let residual_days = match &self.residual_days {
-            Some(v) => v.load(tables)? as u8,
+            Some(v) => v.load(args.tables)? as u8,
             None => 0,
         };
 
@@ -195,7 +189,7 @@ impl UniformDrawdownProfileParameter {
             reset_month,
             residual_days,
         );
-        Ok(network.add_parameter(Box::new(p))?)
+        Ok(network.add_simple_parameter(Box::new(p))?)
     }
 }
 
@@ -221,7 +215,7 @@ impl TryFromV1Parameter<UniformDrawdownProfileParameterV1> for UniformDrawdownPr
 }
 
 /// Distance functions for radial basis function interpolation.
-#[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone, JsonSchema, PywrVisitAll)]
 pub enum RadialBasisFunction {
     Linear,
     Cubic,
@@ -232,6 +226,7 @@ pub enum RadialBasisFunction {
     InverseMultiQuadric { epsilon: Option<f64> },
 }
 
+#[cfg(feature = "core")]
 impl RadialBasisFunction {
     /// Convert the schema representation of the RBF into `pywr_core` type.
     ///
@@ -275,6 +270,7 @@ impl RadialBasisFunction {
 /// Compute an estimate for epsilon.
 ///
 /// If there `points` is empty then `None` is returned.
+#[cfg(feature = "core")]
 fn estimate_epsilon(points: &[(u32, f64)]) -> Option<f64> {
     if points.is_empty() {
         return None;
@@ -315,6 +311,7 @@ pub struct RbfProfileVariableSettings {
     pub value_lower_bounds: Option<f64>,
 }
 
+#[cfg(feature = "core")]
 impl From<RbfProfileVariableSettings> for pywr_core::parameters::RbfProfileVariableConfig {
     fn from(settings: RbfProfileVariableSettings) -> Self {
         Self::new(
@@ -344,7 +341,7 @@ impl From<RbfProfileVariableSettings> for pywr_core::parameters::RbfProfileVaria
 #[doc = include_str!("doc_examples/rbf_2.json")]
 /// ```
 ///
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 pub struct RbfProfileParameter {
     #[serde(flatten)]
     pub meta: ParameterMeta,
@@ -355,19 +352,13 @@ pub struct RbfProfileParameter {
     pub function: RadialBasisFunction,
 }
 
+#[cfg(feature = "core")]
 impl RbfProfileParameter {
-    pub fn node_references(&self) -> HashMap<&str, &str> {
-        HashMap::new()
-    }
-    pub fn parameters(&self) -> HashMap<&str, DynamicFloatValueType> {
-        HashMap::new()
-    }
-
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<ParameterIndex<f64>, SchemaError> {
         let function = self.function.into_core_rbf(&self.points)?;
 
         let p = pywr_core::parameters::RbfProfileParameter::new(&self.meta.name, self.points.clone(), function);
-        Ok(network.add_parameter(Box::new(p))?)
+        Ok(network.add_simple_parameter(Box::new(p))?)
     }
 }
 
@@ -449,12 +440,13 @@ impl TryFromV1Parameter<RbfProfileParameterV1> for RbfProfileParameter {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone, JsonSchema, PywrVisitAll)]
 pub enum WeeklyInterpDay {
     First,
     Last,
 }
 
+#[cfg(feature = "core")]
 impl From<WeeklyInterpDay> for pywr_core::parameters::WeeklyInterpDay {
     fn from(value: WeeklyInterpDay) -> Self {
         match value {
@@ -525,7 +517,7 @@ impl From<WeeklyInterpDay> for pywr_core::parameters::WeeklyInterpDay {
 /// The values in the last week are interpolated between `10` and `12` (i.e the value on 31<sup>st</sup>
 /// December).
 ///
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 pub struct WeeklyProfileParameter {
     #[serde(flatten)]
     pub meta: ParameterMeta,
@@ -533,22 +525,16 @@ pub struct WeeklyProfileParameter {
     pub interp_day: Option<WeeklyInterpDay>,
 }
 
+#[cfg(feature = "core")]
 impl WeeklyProfileParameter {
-    pub fn node_references(&self) -> HashMap<&str, &str> {
-        HashMap::new()
-    }
-    pub fn parameters(&self) -> HashMap<&str, DynamicFloatValueType> {
-        HashMap::new()
-    }
-
     pub fn add_to_model(
         &self,
         network: &mut pywr_core::network::Network,
-        tables: &LoadedTableCollection,
+        args: &LoadArgs,
     ) -> Result<ParameterIndex<f64>, SchemaError> {
         let p = pywr_core::parameters::WeeklyProfileParameter::new(
             &self.meta.name,
-            WeeklyProfileValues::try_from(self.values.load(tables)?.as_slice()).map_err(
+            WeeklyProfileValues::try_from(self.values.load(args.tables)?.as_slice()).map_err(
                 |err: WeeklyProfileError| SchemaError::LoadParameter {
                     name: self.meta.name.to_string(),
                     error: err.to_string(),
@@ -556,7 +542,7 @@ impl WeeklyProfileParameter {
             )?,
             self.interp_day.map(|id| id.into()),
         );
-        Ok(network.add_parameter(Box::new(p))?)
+        Ok(network.add_simple_parameter(Box::new(p))?)
     }
 }
 
@@ -573,8 +559,12 @@ impl TryFromV1Parameter<WeeklyProfileParameterV1> for WeeklyProfileParameter {
         let values: ConstantFloatVec = if let Some(values) = v1.values {
             // pywr v1 only accept a 52-week profile
             ConstantFloatVec::Literal(values)
-        } else if let Some(external) = v1.external {
-            ConstantFloatVec::External(external.try_into()?)
+        } else if let Some(_external) = v1.external {
+            return Err(ConversionError::UnsupportedFeature {
+                feature: "External data references are not supported in Pywr v2. Please use a table instead."
+                    .to_string(),
+                name: meta.name,
+            });
         } else if let Some(table_ref) = v1.table_ref {
             ConstantFloatVec::Table(table_ref.try_into()?)
         } else {

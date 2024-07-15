@@ -1,24 +1,28 @@
-use crate::data_tables::LoadedTableCollection;
-use crate::error::{ConversionError, SchemaError};
-use crate::model::PywrMultiNetworkTransfer;
+use crate::error::ConversionError;
+#[cfg(feature = "core")]
+use crate::error::SchemaError;
+use crate::metric::Metric;
+#[cfg(feature = "core")]
+use crate::model::LoadArgs;
 use crate::nodes::{NodeAttribute, NodeMeta};
-use crate::parameters::{DynamicFloatValue, TryIntoV2Parameter};
-use pywr_core::derived_metric::DerivedMetric;
-use pywr_core::metric::Metric;
-use pywr_core::models::ModelDomain;
-use pywr_core::node::{ConstraintValue, StorageInitialVolume};
-use pywr_core::timestep::TimeDomain;
-use pywr_core::virtual_storage::VirtualStorageReset;
-use pywr_schema_macros::PywrNode;
+use crate::parameters::TryIntoV2Parameter;
+#[cfg(feature = "core")]
+use pywr_core::{
+    derived_metric::DerivedMetric,
+    metric::MetricF64,
+    node::StorageInitialVolume,
+    timestep::TimeDomain,
+    virtual_storage::{VirtualStorageBuilder, VirtualStorageReset},
+};
+use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::nodes::RollingVirtualStorageNode as RollingVirtualStorageNodeV1;
-use std::collections::HashMap;
+use schemars::JsonSchema;
 use std::num::NonZeroUsize;
-use std::path::Path;
 
 /// The length of the rolling window.
 ///
 /// This can be specified in either days or time-steps.
-#[derive(serde::Deserialize, serde::Serialize, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, PywrVisitAll)]
 pub enum RollingWindow {
     Days(NonZeroUsize),
     Timesteps(NonZeroUsize),
@@ -30,6 +34,7 @@ impl Default for RollingWindow {
     }
 }
 
+#[cfg(feature = "core")]
 impl RollingWindow {
     /// Convert the rolling window to a number of time-steps.
     ///
@@ -63,15 +68,15 @@ impl RollingWindow {
 /// The rolling virtual storage node is useful for representing rolling licences. For example, a 30-day or 90-day
 /// licence on a water abstraction.
 ///
-#[derive(serde::Deserialize, serde::Serialize, Clone, Default, PywrNode)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
 pub struct RollingVirtualStorageNode {
     #[serde(flatten)]
     pub meta: NodeMeta,
     pub nodes: Vec<String>,
     pub factors: Option<Vec<f64>>,
-    pub max_volume: Option<DynamicFloatValue>,
-    pub min_volume: Option<DynamicFloatValue>,
-    pub cost: Option<DynamicFloatValue>,
+    pub max_volume: Option<Metric>,
+    pub min_volume: Option<Metric>,
+    pub cost: Option<Metric>,
     pub initial_volume: Option<f64>,
     pub initial_volume_pc: Option<f64>,
     pub window: RollingWindow,
@@ -80,15 +85,22 @@ pub struct RollingVirtualStorageNode {
 impl RollingVirtualStorageNode {
     const DEFAULT_ATTRIBUTE: NodeAttribute = NodeAttribute::Volume;
 
-    pub fn add_to_model(
-        &self,
-        network: &mut pywr_core::network::Network,
-        schema: &crate::model::PywrNetwork,
-        domain: &ModelDomain,
-        tables: &LoadedTableCollection,
-        data_path: Option<&Path>,
-        inter_network_transfers: &[PywrMultiNetworkTransfer],
-    ) -> Result<(), SchemaError> {
+    pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
+        vec![]
+    }
+
+    pub fn output_connectors(&self) -> Vec<(&str, Option<String>)> {
+        vec![]
+    }
+
+    pub fn default_metric(&self) -> NodeAttribute {
+        Self::DEFAULT_ATTRIBUTE
+    }
+}
+
+#[cfg(feature = "core")]
+impl RollingVirtualStorageNode {
+    pub fn add_to_model(&self, network: &mut pywr_core::network::Network, args: &LoadArgs) -> Result<(), SchemaError> {
         let initial_volume = if let Some(iv) = self.initial_volume {
             StorageInitialVolume::Absolute(iv)
         } else if let Some(pc) = self.initial_volume_pc {
@@ -98,24 +110,18 @@ impl RollingVirtualStorageNode {
         };
 
         let cost = match &self.cost {
-            Some(v) => v
-                .load(network, schema, domain, tables, data_path, inter_network_transfers)?
-                .into(),
-            None => ConstraintValue::Scalar(0.0),
+            Some(v) => v.load(network, args)?.into(),
+            None => None,
         };
 
         let min_volume = match &self.min_volume {
-            Some(v) => v
-                .load(network, schema, domain, tables, data_path, inter_network_transfers)?
-                .into(),
-            None => ConstraintValue::Scalar(0.0),
+            Some(v) => Some(v.load(network, args)?.try_into()?),
+            None => None,
         };
 
         let max_volume = match &self.max_volume {
-            Some(v) => v
-                .load(network, schema, domain, tables, data_path, inter_network_transfers)?
-                .into(),
-            None => ConstraintValue::None,
+            Some(v) => Some(v.load(network, args)?.try_into()?),
+            None => None,
         };
 
         let node_idxs = self
@@ -126,52 +132,44 @@ impl RollingVirtualStorageNode {
 
         // The rolling licence never resets
         let reset = VirtualStorageReset::Never;
-        let timesteps = self
-            .window
-            .as_timesteps(domain.time())
-            .ok_or_else(|| SchemaError::InvalidRollingWindow {
-                name: self.meta.name.clone(),
-            })?;
+        let timesteps =
+            self.window
+                .as_timesteps(args.domain.time())
+                .ok_or_else(|| SchemaError::InvalidRollingWindow {
+                    name: self.meta.name.clone(),
+                })?;
 
-        network.add_virtual_storage_node(
-            self.meta.name.as_str(),
-            None,
-            node_idxs.as_ref(),
-            self.factors.as_deref(),
-            initial_volume,
-            min_volume,
-            max_volume,
-            reset,
-            Some(timesteps),
-            cost,
-        )?;
+        let mut builder = VirtualStorageBuilder::new(self.meta.name.as_str(), &node_idxs)
+            .initial_volume(initial_volume)
+            .min_volume(min_volume)
+            .max_volume(max_volume)
+            .reset(reset)
+            .rolling_window(timesteps)
+            .cost(cost);
+
+        if let Some(factors) = &self.factors {
+            builder = builder.factors(factors);
+        }
+
+        network.add_virtual_storage_node(builder)?;
         Ok(())
     }
-
-    pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
-        vec![]
-    }
-
-    pub fn output_connectors(&self) -> Vec<(&str, Option<String>)> {
-        vec![]
-    }
-
     pub fn create_metric(
         &self,
         network: &mut pywr_core::network::Network,
         attribute: Option<NodeAttribute>,
-    ) -> Result<Metric, SchemaError> {
+    ) -> Result<MetricF64, SchemaError> {
         // Use the default attribute if none is specified
         let attr = attribute.unwrap_or(Self::DEFAULT_ATTRIBUTE);
 
         let idx = network.get_virtual_storage_node_index_by_name(self.meta.name.as_str(), None)?;
 
         let metric = match attr {
-            NodeAttribute::Volume => Metric::VirtualStorageVolume(idx),
+            NodeAttribute::Volume => MetricF64::VirtualStorageVolume(idx),
             NodeAttribute::ProportionalVolume => {
                 let dm = DerivedMetric::VirtualStorageProportionalVolume(idx);
                 let derived_metric_idx = network.add_derived_metric(dm);
-                Metric::DerivedMetric(derived_metric_idx)
+                MetricF64::DerivedMetric(derived_metric_idx)
             }
             _ => {
                 return Err(SchemaError::NodeAttributeNotSupported {
@@ -248,10 +246,11 @@ impl TryFrom<RollingVirtualStorageNodeV1> for RollingVirtualStorageNode {
 }
 
 #[cfg(test)]
+#[cfg(feature = "core")]
 mod tests {
     use crate::model::PywrModel;
     use ndarray::Array2;
-    use pywr_core::metric::Metric;
+    use pywr_core::metric::MetricF64;
     use pywr_core::recorders::AssertionRecorder;
     use pywr_core::test_utils::run_all_solvers;
 
@@ -272,10 +271,10 @@ mod tests {
         // TODO put this assertion data in the test model file.
         let idx = network.get_node_by_name("link1", None).unwrap().index();
         let expected = Array2::from_elem((366, 1), 10.0);
-        let recorder = AssertionRecorder::new("link1-inflow", Metric::NodeInFlow(idx), expected, None, None);
+        let recorder = AssertionRecorder::new("link1-inflow", MetricF64::NodeInFlow(idx), expected, None, None);
         network.add_recorder(Box::new(recorder)).unwrap();
 
         // Test all solvers
-        run_all_solvers(&model);
+        run_all_solvers(&model, &["highs"]);
     }
 }

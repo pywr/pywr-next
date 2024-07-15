@@ -19,7 +19,10 @@
         "type": "Parameter",
         "name": "demand"
       },
-      "cost": -10
+      "cost": {
+        "type": "Constant",
+        "value": -10
+      }
     }
   ],
   "edges": [

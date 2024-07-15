@@ -1,58 +1,15 @@
+#[cfg(feature = "core")]
 use crate::error::SchemaError;
-use crate::model::PywrNetwork;
-use crate::nodes::NodeAttribute;
+use crate::metric::Metric;
+#[cfg(feature = "core")]
+use crate::model::LoadArgs;
+use pywr_schema_macros::PywrVisitPaths;
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::num::NonZeroUsize;
 
-/// Output metrics that can be recorded from a model run.
-#[derive(Deserialize, Serialize, Clone)]
-#[serde(tag = "type")]
-pub enum OutputMetric {
-    /// Output the default metric for a node.
-    Default {
-        node: String,
-    },
-    Deficit {
-        node: String,
-    },
-    Parameter {
-        name: String,
-    },
-}
-
-impl OutputMetric {
-    fn try_clone_into_metric(
-        &self,
-        network: &mut pywr_core::network::Network,
-        schema: &PywrNetwork,
-    ) -> Result<pywr_core::metric::Metric, SchemaError> {
-        match self {
-            OutputMetric::Default { node } => {
-                // Get the node from the schema; not the model itself
-                let node = schema
-                    .get_node_by_name(node)
-                    .ok_or_else(|| SchemaError::NodeNotFound(node.to_string()))?;
-                // Create and return the node's default metric
-                node.create_metric(network, None)
-            }
-            OutputMetric::Deficit { node } => {
-                // Get the node from the schema; not the model itself
-                let node = schema
-                    .get_node_by_name(node)
-                    .ok_or_else(|| SchemaError::NodeNotFound(node.to_string()))?;
-                // Create and return the metric
-                node.create_metric(network, Some(NodeAttribute::Deficit))
-            }
-            OutputMetric::Parameter { name } => {
-                let parameter_idx = network.get_parameter_index_by_name(name)?;
-                Ok(pywr_core::metric::Metric::ParameterValue(parameter_idx))
-            }
-        }
-    }
-}
-
 /// Aggregation function to apply over metric values.
-#[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone, JsonSchema, PywrVisitPaths)]
 #[serde(tag = "type")]
 pub enum MetricAggFunc {
     Sum,
@@ -62,6 +19,7 @@ pub enum MetricAggFunc {
     CountNonZero,
 }
 
+#[cfg(feature = "core")]
 impl From<MetricAggFunc> for pywr_core::recorders::AggregationFunction {
     fn from(value: MetricAggFunc) -> Self {
         match value {
@@ -74,7 +32,7 @@ impl From<MetricAggFunc> for pywr_core::recorders::AggregationFunction {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone, JsonSchema)]
 #[serde(tag = "type")]
 pub enum MetricAggFrequency {
     Monthly,
@@ -82,6 +40,7 @@ pub enum MetricAggFrequency {
     Days { days: NonZeroUsize },
 }
 
+#[cfg(feature = "core")]
 impl From<MetricAggFrequency> for pywr_core::recorders::AggregationFrequency {
     fn from(value: MetricAggFrequency) -> Self {
         match value {
@@ -101,16 +60,17 @@ impl From<MetricAggFrequency> for pywr_core::recorders::AggregationFrequency {
 ///
 /// If the metric set has a child aggregator then the aggregation will be performed over the
 /// aggregated values of the child aggregator.
-#[derive(Deserialize, Serialize, Clone)]
+#[derive(Deserialize, Serialize, Clone, JsonSchema)]
 pub struct MetricAggregator {
     /// Optional aggregation frequency.
-    freq: Option<MetricAggFrequency>,
+    pub freq: Option<MetricAggFrequency>,
     /// Aggregation function to apply over metric values.
-    func: MetricAggFunc,
+    pub func: MetricAggFunc,
     /// Optional child aggregator.
-    child: Option<Box<MetricAggregator>>,
+    pub child: Option<Box<MetricAggregator>>,
 }
 
+#[cfg(feature = "core")]
 impl From<MetricAggregator> for pywr_core::recorders::Aggregator {
     fn from(value: MetricAggregator) -> Self {
         pywr_core::recorders::Aggregator::new(
@@ -126,24 +86,21 @@ impl From<MetricAggregator> for pywr_core::recorders::Aggregator {
 /// A metric set can optionally have an aggregator, which will apply an aggregation function
 /// over metrics set. If the aggregator has a defined frequency then the aggregation will result
 /// in multiple values (i.e. per each period implied by the frequency).
-#[derive(Deserialize, Serialize, Clone)]
+#[derive(Deserialize, Serialize, Clone, JsonSchema)]
 pub struct MetricSet {
-    name: String,
-    metrics: Vec<OutputMetric>,
-    aggregator: Option<MetricAggregator>,
+    pub name: String,
+    pub metrics: Vec<Metric>,
+    pub aggregator: Option<MetricAggregator>,
 }
 
 impl MetricSet {
-    pub fn add_to_model(
-        &self,
-        network: &mut pywr_core::network::Network,
-        schema: &PywrNetwork,
-    ) -> Result<(), SchemaError> {
+    #[cfg(feature = "core")]
+    pub fn add_to_model(&self, network: &mut pywr_core::network::Network, args: &LoadArgs) -> Result<(), SchemaError> {
         // Convert the schema representation to internal metrics.
-        let metrics: Vec<pywr_core::metric::Metric> = self
+        let metrics: Vec<_> = self
             .metrics
             .iter()
-            .map(|m| m.try_clone_into_metric(network, schema))
+            .map(|m| m.load_as_output(network, args))
             .collect::<Result<_, _>>()?;
 
         let aggregator = self.aggregator.clone().map(|a| a.into());

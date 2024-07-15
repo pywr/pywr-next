@@ -1,6 +1,15 @@
 [submodule "clp-sys/vendor/Clp"]
-	path = clp-sys/vendor/Clp
+	path = coin-or-sys/vendor/Clp
 	url = https://github.com/coin-or/Clp
 [submodule "clp-sys/vendor/CoinUtils"]
-	path = clp-sys/vendor/CoinUtils
+	path = coin-or-sys/vendor/CoinUtils
 	url = https://github.com/coin-or/CoinUtils.git
+[submodule "coin-or-sys/vendor/Cgl"]
+	path = coin-or-sys/vendor/Cgl
+	url = https://github.com/coin-or/Cgl.git
+[submodule "coin-or-sys/vendor/Cbc"]
+	path = coin-or-sys/vendor/Cbc
+	url = https://github.com/coin-or/Cbc.git
+[submodule "coin-or-sys/vendor/Osi"]
+	path = coin-or-sys/vendor/Osi
+	url = https://github.com/coin-or/Osi

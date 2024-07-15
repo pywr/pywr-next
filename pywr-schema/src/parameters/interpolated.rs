@@ -1,67 +1,42 @@
-use crate::data_tables::LoadedTableCollection;
+#[cfg(feature = "core")]
 use crate::error::SchemaError;
-use crate::model::PywrMultiNetworkTransfer;
-use crate::parameters::{
-    DynamicFloatValue, DynamicFloatValueType, IntoV2Parameter, MetricFloatReference, MetricFloatValue, NodeReference,
-    ParameterMeta, TryFromV1Parameter, TryIntoV2Parameter,
-};
+use crate::metric::{Metric, NodeReference};
+#[cfg(feature = "core")]
+use crate::model::LoadArgs;
+use crate::parameters::{IntoV2Parameter, ParameterMeta, TryFromV1Parameter, TryIntoV2Parameter};
 use crate::ConversionError;
-use pywr_core::models::ModelDomain;
+#[cfg(feature = "core")]
 use pywr_core::parameters::ParameterIndex;
+use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::parameters::{
     InterpolatedFlowParameter as InterpolatedFlowParameterV1,
     InterpolatedVolumeParameter as InterpolatedVolumeParameterV1,
 };
-use std::collections::HashMap;
-use std::path::Path;
+use schemars::JsonSchema;
 
 /// A parameter that interpolates a value to a function with given discrete data points.
 ///
 /// Internally this is implemented as a piecewise linear interpolation via
 /// [`pywr_core::parameters::InterpolatedParameter`].
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 pub struct InterpolatedParameter {
     #[serde(flatten)]
     pub meta: ParameterMeta,
-    pub x: DynamicFloatValue,
-    pub xp: Vec<DynamicFloatValue>,
-    pub fp: Vec<DynamicFloatValue>,
+    pub x: Metric,
+    pub xp: Vec<Metric>,
+    pub fp: Vec<Metric>,
     /// If not given or true, raise an error if the x value is outside the range of the data points.
     pub error_on_bounds: Option<bool>,
 }
 
+#[cfg(feature = "core")]
 impl InterpolatedParameter {
-    pub fn node_references(&self) -> HashMap<&str, &str> {
-        HashMap::new()
-    }
-
-    pub fn parameters(&self) -> HashMap<&str, DynamicFloatValueType> {
-        let mut attributes = HashMap::new();
-
-        let x = &self.x;
-        attributes.insert("x", x.into());
-
-        let xp = &self.xp;
-        attributes.insert("xp", xp.into());
-
-        let fp = &self.fp;
-        attributes.insert("fp", fp.into());
-
-        attributes
-    }
-
     pub fn add_to_model(
         &self,
         network: &mut pywr_core::network::Network,
-        schema: &crate::model::PywrNetwork,
-        domain: &ModelDomain,
-        tables: &LoadedTableCollection,
-        data_path: Option<&Path>,
-        inter_network_transfers: &[PywrMultiNetworkTransfer],
+        args: &LoadArgs,
     ) -> Result<ParameterIndex<f64>, SchemaError> {
-        let x = self
-            .x
-            .load(network, schema, domain, tables, data_path, inter_network_transfers)?;
+        let x = self.x.load(network, args)?;
 
         // Sense check the points
         if self.xp.len() != self.fp.len() {
@@ -74,12 +49,12 @@ impl InterpolatedParameter {
         let xp = self
             .xp
             .iter()
-            .map(|p| p.load(network, schema, domain, tables, data_path, inter_network_transfers))
+            .map(|p| p.load(network, args))
             .collect::<Result<Vec<_>, _>>()?;
         let fp = self
             .fp
             .iter()
-            .map(|p| p.load(network, schema, domain, tables, data_path, inter_network_transfers))
+            .map(|p| p.load(network, args))
             .collect::<Result<Vec<_>, _>>()?;
 
         let points = xp.into_iter().zip(fp).collect::<Vec<_>>();
@@ -110,7 +85,7 @@ impl TryFromV1Parameter<InterpolatedFlowParameterV1> for InterpolatedParameter {
             attribute: None,
         };
         // This defaults to v2's default metric
-        let x = DynamicFloatValue::Dynamic(MetricFloatValue::Reference(MetricFloatReference::Node(node_ref)));
+        let x = Metric::Node(node_ref);
 
         let xp = v1
             .flows
@@ -173,7 +148,7 @@ impl TryFromV1Parameter<InterpolatedVolumeParameterV1> for InterpolatedParameter
             attribute: None,
         };
         // This defaults to the node's inflow; not sure if we can do better than that.
-        let x = DynamicFloatValue::Dynamic(MetricFloatValue::Reference(MetricFloatReference::Node(node_ref)));
+        let x = Metric::Node(node_ref);
 
         let xp = v1
             .volumes

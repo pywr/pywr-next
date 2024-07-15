@@ -1,14 +1,16 @@
-use crate::data_tables::LoadedTableCollection;
-use crate::error::{ConversionError, SchemaError};
-use crate::model::PywrMultiNetworkTransfer;
+use crate::error::ConversionError;
+#[cfg(feature = "core")]
+use crate::error::SchemaError;
+use crate::metric::Metric;
+#[cfg(feature = "core")]
+use crate::model::LoadArgs;
 use crate::nodes::{NodeAttribute, NodeMeta};
-use crate::parameters::{DynamicFloatValue, TryIntoV2Parameter};
-use pywr_core::metric::Metric;
-use pywr_core::models::ModelDomain;
-use pywr_schema_macros::PywrNode;
+use crate::parameters::TryIntoV2Parameter;
+#[cfg(feature = "core")]
+use pywr_core::metric::MetricF64;
+use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::nodes::LossLinkNode as LossLinkNodeV1;
-use std::collections::HashMap;
-use std::path::Path;
+use schemars::JsonSchema;
 
 #[doc = svgbobdoc::transform!(
 /// This is used to represent link with losses.
@@ -27,14 +29,14 @@ use std::path::Path;
 /// ```
 ///
 )]
-#[derive(serde::Deserialize, serde::Serialize, Clone, Default, PywrNode)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
 pub struct LossLinkNode {
     #[serde(flatten)]
     pub meta: NodeMeta,
-    pub loss_factor: Option<DynamicFloatValue>,
-    pub min_net_flow: Option<DynamicFloatValue>,
-    pub max_net_flow: Option<DynamicFloatValue>,
-    pub net_cost: Option<DynamicFloatValue>,
+    pub loss_factor: Option<Metric>,
+    pub min_net_flow: Option<Metric>,
+    pub max_net_flow: Option<Metric>,
+    pub net_cost: Option<Metric>,
 }
 
 impl LossLinkNode {
@@ -46,43 +48,6 @@ impl LossLinkNode {
 
     fn net_sub_name() -> Option<&'static str> {
         Some("net")
-    }
-
-    pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
-        network.add_link_node(self.meta.name.as_str(), Self::net_sub_name())?;
-        // TODO make the loss node configurable (i.e. it could be a link if a network wanted to use the loss)
-        // The above would need to support slots in the connections.
-        network.add_output_node(self.meta.name.as_str(), Self::loss_sub_name())?;
-
-        // TODO add the aggregated node that actually does the losses!
-        Ok(())
-    }
-
-    pub fn set_constraints(
-        &self,
-        network: &mut pywr_core::network::Network,
-        schema: &crate::model::PywrNetwork,
-        domain: &ModelDomain,
-        tables: &LoadedTableCollection,
-        data_path: Option<&Path>,
-        inter_network_transfers: &[PywrMultiNetworkTransfer],
-    ) -> Result<(), SchemaError> {
-        if let Some(cost) = &self.net_cost {
-            let value = cost.load(network, schema, domain, tables, data_path, inter_network_transfers)?;
-            network.set_node_cost(self.meta.name.as_str(), Self::net_sub_name(), value.into())?;
-        }
-
-        if let Some(max_flow) = &self.max_net_flow {
-            let value = max_flow.load(network, schema, domain, tables, data_path, inter_network_transfers)?;
-            network.set_node_max_flow(self.meta.name.as_str(), Self::net_sub_name(), value.into())?;
-        }
-
-        if let Some(min_flow) = &self.min_net_flow {
-            let value = min_flow.load(network, schema, domain, tables, data_path, inter_network_transfers)?;
-            network.set_node_min_flow(self.meta.name.as_str(), Self::net_sub_name(), value.into())?;
-        }
-
-        Ok(())
     }
 
     pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
@@ -98,11 +63,51 @@ impl LossLinkNode {
         vec![(self.meta.name.as_str(), Self::net_sub_name().map(|s| s.to_string()))]
     }
 
+    pub fn default_metric(&self) -> NodeAttribute {
+        Self::DEFAULT_ATTRIBUTE
+    }
+}
+
+#[cfg(feature = "core")]
+impl LossLinkNode {
+    pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
+        network.add_link_node(self.meta.name.as_str(), Self::net_sub_name())?;
+        // TODO make the loss node configurable (i.e. it could be a link if a network wanted to use the loss)
+        // The above would need to support slots in the connections.
+        network.add_output_node(self.meta.name.as_str(), Self::loss_sub_name())?;
+
+        // TODO add the aggregated node that actually does the losses!
+        Ok(())
+    }
+
+    pub fn set_constraints(
+        &self,
+        network: &mut pywr_core::network::Network,
+        args: &LoadArgs,
+    ) -> Result<(), SchemaError> {
+        if let Some(cost) = &self.net_cost {
+            let value = cost.load(network, args)?;
+            network.set_node_cost(self.meta.name.as_str(), Self::net_sub_name(), value.into())?;
+        }
+
+        if let Some(max_flow) = &self.max_net_flow {
+            let value = max_flow.load(network, args)?;
+            network.set_node_max_flow(self.meta.name.as_str(), Self::net_sub_name(), value.into())?;
+        }
+
+        if let Some(min_flow) = &self.min_net_flow {
+            let value = min_flow.load(network, args)?;
+            network.set_node_min_flow(self.meta.name.as_str(), Self::net_sub_name(), value.into())?;
+        }
+
+        Ok(())
+    }
+
     pub fn create_metric(
         &self,
         network: &pywr_core::network::Network,
         attribute: Option<NodeAttribute>,
-    ) -> Result<Metric, SchemaError> {
+    ) -> Result<MetricF64, SchemaError> {
         // Use the default attribute if none is specified
         let attr = attribute.unwrap_or(Self::DEFAULT_ATTRIBUTE);
 
@@ -113,19 +118,19 @@ impl LossLinkNode {
                     network.get_node_index_by_name(self.meta.name.as_str(), Self::loss_sub_name())?,
                 ];
 
-                Metric::MultiNodeInFlow {
+                MetricF64::MultiNodeInFlow {
                     indices,
                     name: self.meta.name.to_string(),
                 }
             }
             NodeAttribute::Outflow => {
                 let idx = network.get_node_index_by_name(self.meta.name.as_str(), Self::net_sub_name())?;
-                Metric::NodeOutFlow(idx)
+                MetricF64::NodeOutFlow(idx)
             }
             NodeAttribute::Loss => {
                 let idx = network.get_node_index_by_name(self.meta.name.as_str(), Self::loss_sub_name())?;
                 // This is an output node that only supports inflow
-                Metric::NodeInFlow(idx)
+                MetricF64::NodeInFlow(idx)
             }
             _ => {
                 return Err(SchemaError::NodeAttributeNotSupported {

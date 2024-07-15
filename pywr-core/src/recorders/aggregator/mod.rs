@@ -265,6 +265,11 @@ impl<T> PeriodValue<T> {
     pub fn new(start: NaiveDateTime, duration: PywrDuration, value: T) -> Self {
         Self { start, duration, value }
     }
+
+    /// The end of the period.
+    pub fn end(&self) -> NaiveDateTime {
+        self.duration + self.start
+    }
 }
 
 impl<T> PeriodValue<Vec<T>> {
@@ -291,7 +296,7 @@ where
         let start = values.first().expect("Empty vector of period values.").start;
         let duration = values.last().expect("Empty vector of period values.").duration;
 
-        let value = values.into_iter().map(|v| v.value).collect();
+        let value = values.iter().map(|v| v.value).collect();
         Self { start, duration, value }
     }
 }

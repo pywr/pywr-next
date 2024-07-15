@@ -1,15 +1,59 @@
-use crate::metric::Metric;
+use crate::metric::MetricF64;
 use crate::network::Network;
 use crate::recorders::aggregator::{Aggregator, AggregatorState, PeriodValue};
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
 use crate::timestep::Timestep;
 use crate::PywrError;
-use core::f64;
 use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::ops::Deref;
-use std::slice::Iter;
+
+/// A container for a [`MetricF64`] that retains additional information from the schema.
+///
+/// This is used to store the name and attribute of the metric so that it can be output in
+/// a context that is relevant to the originating schema, and therefore more meaningful to the user.
+#[derive(Clone, Debug)]
+pub struct OutputMetric {
+    name: String,
+    attribute: String,
+    // The originating type of the metric (e.g. node, parameter, etc.)
+    ty: String,
+    // The originating subtype of the metric (e.g. node type, parameter type, etc.)
+    sub_type: Option<String>,
+    metric: MetricF64,
+}
+
+impl OutputMetric {
+    pub fn new(name: &str, attribute: &str, ty: &str, sub_type: Option<&str>, metric: MetricF64) -> Self {
+        Self {
+            name: name.to_string(),
+            attribute: attribute.to_string(),
+            ty: ty.to_string(),
+            sub_type: sub_type.map(|s| s.to_string()),
+            metric,
+        }
+    }
+
+    pub fn get_value(&self, model: &Network, state: &State) -> Result<f64, PywrError> {
+        self.metric.get_value(model, state)
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+    pub fn attribute(&self) -> &str {
+        &self.attribute
+    }
+
+    pub fn ty(&self) -> &str {
+        &self.ty
+    }
+
+    pub fn sub_type(&self) -> Option<&str> {
+        self.sub_type.as_deref()
+    }
+}
 
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Debug)]
 pub struct MetricSetIndex(usize);
@@ -53,11 +97,11 @@ impl MetricSetState {
 pub struct MetricSet {
     name: String,
     aggregator: Option<Aggregator>,
-    metrics: Vec<Metric>,
+    metrics: Vec<OutputMetric>,
 }
 
 impl MetricSet {
-    pub fn new(name: &str, aggregator: Option<Aggregator>, metrics: Vec<Metric>) -> Self {
+    pub fn new(name: &str, aggregator: Option<Aggregator>, metrics: Vec<OutputMetric>) -> Self {
         Self {
             name: name.to_string(),
             aggregator,
@@ -69,7 +113,7 @@ impl MetricSet {
     pub fn name(&self) -> &str {
         &self.name
     }
-    pub fn iter_metrics(&self) -> Iter<'_, Metric> {
+    pub fn iter_metrics(&self) -> impl Iterator<Item = &OutputMetric> + '_ {
         self.metrics.iter()
     }
 
@@ -111,11 +155,27 @@ impl MetricSet {
                 .as_mut()
                 .expect("Aggregation state expected for metric set with aggregator!");
 
-            let agg_values = values
-                .into_iter()
-                .zip(aggregation_states.iter_mut())
-                .map(|(value, current_state)| aggregator.append_value(current_state, value))
-                .collect::<Option<Vec<_>>>();
+            // Collect any aggregated values. This will remain empty if the aggregator yields
+            // no values. However, if there are values we will expect the same number of aggregated
+            // values as the input values / metrics.
+            let mut agg_values = Vec::with_capacity(values.len());
+            // Use a for loop instead of using an iterator because we need to execute the
+            // `append_value` method on all aggregators.
+            for (value, current_state) in values.iter().zip(aggregation_states.iter_mut()) {
+                if let Some(agg_value) = aggregator.append_value(current_state, *value) {
+                    agg_values.push(agg_value);
+                }
+            }
+
+            let agg_values = if agg_values.is_empty() {
+                None
+            } else if agg_values.len() == values.len() {
+                Some(agg_values)
+            } else {
+                // This should never happen because the aggregator should either yield no values
+                // or the same number of values as the input metrics.
+                unreachable!("Some values were aggregated and some were not!");
+            };
 
             internal_state.current_values = agg_values;
         } else {

@@ -1,11 +1,15 @@
-use crate::data_tables::LoadedTableCollection;
-use crate::error::{ConversionError, SchemaError};
+use crate::error::ConversionError;
+#[cfg(feature = "core")]
+use crate::error::SchemaError;
+#[cfg(feature = "core")]
+use crate::model::LoadArgs;
 use crate::nodes::{NodeAttribute, NodeMeta};
-use crate::parameters::{ConstantValue, DynamicFloatValue};
-use pywr_core::metric::Metric;
-use pywr_schema_macros::PywrNode;
+use crate::parameters::ConstantValue;
+#[cfg(feature = "core")]
+use pywr_core::metric::MetricF64;
+use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::nodes::DelayNode as DelayNodeV1;
-use std::collections::HashMap;
+use schemars::JsonSchema;
 
 #[doc = svgbobdoc::transform!(
 /// This node is used to introduce a delay between flows entering and leaving the node.
@@ -26,7 +30,7 @@ use std::collections::HashMap;
 /// ```
 ///
 )]
-#[derive(serde::Deserialize, serde::Serialize, Clone, Default, PywrNode)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
 pub struct DelayNode {
     #[serde(flatten)]
     pub meta: NodeMeta,
@@ -45,33 +49,6 @@ impl DelayNode {
         Some("outflow")
     }
 
-    pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
-        network.add_output_node(self.meta.name.as_str(), Self::output_sub_name())?;
-        network.add_input_node(self.meta.name.as_str(), Self::input_sub_now())?;
-
-        Ok(())
-    }
-
-    pub fn set_constraints(
-        &self,
-        network: &mut pywr_core::network::Network,
-        tables: &LoadedTableCollection,
-    ) -> Result<(), SchemaError> {
-        // Create the delay parameter
-        let name = format!("{}-delay", self.meta.name.as_str());
-        let output_idx = network.get_node_index_by_name(self.meta.name.as_str(), Self::output_sub_name())?;
-        let metric = Metric::NodeInFlow(output_idx);
-        let p = pywr_core::parameters::DelayParameter::new(&name, metric, self.delay, self.initial_value.load(tables)?);
-        let delay_idx = network.add_parameter(Box::new(p))?;
-
-        // Apply it as a constraint on the input node.
-        let metric = Metric::ParameterValue(delay_idx);
-        network.set_node_max_flow(self.meta.name.as_str(), Self::input_sub_now(), metric.clone().into())?;
-        network.set_node_min_flow(self.meta.name.as_str(), Self::input_sub_now(), metric.into())?;
-
-        Ok(())
-    }
-
     pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
         // Inflow goes to the output node
         vec![(self.meta.name.as_str(), Self::output_sub_name().map(|s| s.to_string()))]
@@ -82,22 +59,61 @@ impl DelayNode {
         vec![(self.meta.name.as_str(), Self::input_sub_now().map(|s| s.to_string()))]
     }
 
+    pub fn default_metric(&self) -> NodeAttribute {
+        Self::DEFAULT_ATTRIBUTE
+    }
+}
+
+#[cfg(feature = "core")]
+impl DelayNode {
+    pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
+        network.add_output_node(self.meta.name.as_str(), Self::output_sub_name())?;
+        network.add_input_node(self.meta.name.as_str(), Self::input_sub_now())?;
+
+        Ok(())
+    }
+
+    pub fn set_constraints(
+        &self,
+        network: &mut pywr_core::network::Network,
+        args: &LoadArgs,
+    ) -> Result<(), SchemaError> {
+        // Create the delay parameter
+        let name = format!("{}-delay", self.meta.name.as_str());
+        let output_idx = network.get_node_index_by_name(self.meta.name.as_str(), Self::output_sub_name())?;
+        let metric = MetricF64::NodeInFlow(output_idx);
+        let p = pywr_core::parameters::DelayParameter::new(
+            &name,
+            metric,
+            self.delay,
+            self.initial_value.load(args.tables)?,
+        );
+        let delay_idx = network.add_parameter(Box::new(p))?;
+
+        // Apply it as a constraint on the input node.
+        let metric: MetricF64 = delay_idx.into();
+        network.set_node_max_flow(self.meta.name.as_str(), Self::input_sub_now(), metric.clone().into())?;
+        network.set_node_min_flow(self.meta.name.as_str(), Self::input_sub_now(), metric.into())?;
+
+        Ok(())
+    }
+
     pub fn create_metric(
         &self,
         network: &pywr_core::network::Network,
         attribute: Option<NodeAttribute>,
-    ) -> Result<Metric, SchemaError> {
+    ) -> Result<MetricF64, SchemaError> {
         // Use the default attribute if none is specified
         let attr = attribute.unwrap_or(Self::DEFAULT_ATTRIBUTE);
 
         let metric = match attr {
             NodeAttribute::Outflow => {
                 let idx = network.get_node_index_by_name(self.meta.name.as_str(), Self::input_sub_now())?;
-                Metric::NodeOutFlow(idx)
+                MetricF64::NodeOutFlow(idx)
             }
             NodeAttribute::Inflow => {
                 let idx = network.get_node_index_by_name(self.meta.name.as_str(), Self::output_sub_name())?;
-                Metric::NodeInFlow(idx)
+                MetricF64::NodeInFlow(idx)
             }
             _ => {
                 return Err(SchemaError::NodeAttributeNotSupported {
@@ -144,18 +160,18 @@ impl TryFrom<DelayNodeV1> for DelayNode {
 }
 
 #[cfg(test)]
+#[cfg(feature = "core")]
 mod tests {
     use crate::model::PywrModel;
     use ndarray::{concatenate, Array2, Axis};
-    use pywr_core::metric::Metric;
-    use pywr_core::recorders::AssertionRecorder;
-    use pywr_core::test_utils::run_all_solvers;
+    use pywr_core::{metric::MetricF64, recorders::AssertionRecorder, test_utils::run_all_solvers};
 
     fn model_str() -> &'static str {
         include_str!("../test_models/delay1.json")
     }
 
     #[test]
+
     fn test_model_run() {
         let data = model_str();
         let schema: PywrModel = serde_json::from_str(data).unwrap();
@@ -168,7 +184,7 @@ mod tests {
         // TODO put this assertion data in the test model file.
         let idx = network.get_node_by_name("link1", Some("inflow")).unwrap().index();
         let expected = Array2::from_elem((366, 1), 15.0);
-        let recorder = AssertionRecorder::new("link1-inflow", Metric::NodeInFlow(idx), expected, None, None);
+        let recorder = AssertionRecorder::new("link1-inflow", MetricF64::NodeInFlow(idx), expected, None, None);
         network.add_recorder(Box::new(recorder)).unwrap();
 
         let idx = network.get_node_by_name("link1", Some("outflow")).unwrap().index();
@@ -177,10 +193,10 @@ mod tests {
             Array2::from_elem((3, 1), 0.0),
             Array2::from_elem((363, 1), 15.0)
         ];
-        let recorder = AssertionRecorder::new("link1-outflow", Metric::NodeOutFlow(idx), expected, None, None);
+        let recorder = AssertionRecorder::new("link1-outflow", MetricF64::NodeOutFlow(idx), expected, None, None);
         network.add_recorder(Box::new(recorder)).unwrap();
 
         // Test all solvers
-        run_all_solvers(&model);
+        run_all_solvers(&model, &[]);
     }
 }

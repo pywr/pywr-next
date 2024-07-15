@@ -4,7 +4,7 @@ members = [
     "ipm-common",
     "ipm-ocl",
     "ipm-simd",
-    "clp-sys",
+    "coin-or-sys",
     "pywr-core",
     "pywr-schema",
     "pywr-cli",
@@ -16,7 +16,7 @@ exclude = [
 ]
 # IPM packages are not default because they require nightly (portable_simd).
 default-members = [
-    "clp-sys",
+    "coin-or-sys",
     "pywr-core",
     "pywr-schema",
     "pywr-cli",
@@ -39,12 +39,13 @@ thiserror = "1.0.25"
 num = "0.4.0"
 float-cmp = "0.9.0"
 ndarray = "0.15.3"
-polars = { version = "0.38.1", features = ["lazy", "rows", "ndarray"] }
-pyo3-polars = "0.12.0"
-pyo3 = { version = "0.20.2", default-features = false }
-pyo3-log = "0.9.0"
+polars = { version = "0.41.2", features = ["lazy", "rows", "ndarray"] }
+pyo3-polars = "0.15"
+pyo3 = { version = "0.21", default-features = false }
+pyo3-log = "0.10"
 tracing = { version = "0.1", features = ["log"] }
 csv = "1.1"
 hdf5 = { git = "https://github.com/aldanor/hdf5-rust.git", package = "hdf5", features = ["static", "zlib"] }
-pywr-v1-schema = { git = "https://github.com/pywr/pywr-schema/", tag = "v0.11.0", package = "pywr-schema" }
-chrono = { version = "0.4.34" }
+pywr-v1-schema = { git = "https://github.com/pywr/pywr-schema/", tag = "v0.13.0", package = "pywr-schema" }
+chrono = { version = "0.4.34", features = ["serde"] }
+schemars = { version = "0.8.16", features = ["chrono"] }

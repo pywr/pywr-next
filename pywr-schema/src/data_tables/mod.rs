@@ -1,21 +1,27 @@
+#[cfg(feature = "core")]
 mod scalar;
+#[cfg(feature = "core")]
 mod vec;
 
-use crate::data_tables::scalar::{
-    load_csv_row2_scalar_table_one, load_csv_row_col_scalar_table_one, load_csv_row_scalar_table_one,
-};
-use crate::data_tables::vec::{load_csv_row2_vec_table_one, load_csv_row_vec_table_one};
 use crate::parameters::TableIndex;
 use crate::ConversionError;
+use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::parameters::TableDataRef as TableDataRefV1;
-pub use scalar::LoadedScalarTable;
+#[cfg(feature = "core")]
+use scalar::{
+    load_csv_row2_scalar_table_one, load_csv_row_col_scalar_table_one, load_csv_row_scalar_table_one, LoadedScalarTable,
+};
+use schemars::JsonSchema;
+#[cfg(feature = "core")]
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
+#[cfg(feature = "core")]
 use tracing::{debug, info};
-use vec::LoadedVecTable;
+#[cfg(feature = "core")]
+use vec::{load_csv_row2_vec_table_one, load_csv_row_vec_table_one, LoadedVecTable};
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum DataTableType {
     Scalar,
@@ -27,7 +33,7 @@ pub enum DataTableFormat {
     CSV,
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
 #[serde(tag = "format", rename_all = "lowercase")]
 pub enum DataTable {
     CSV(CsvDataTable),
@@ -40,6 +46,7 @@ impl DataTable {
         }
     }
 
+    #[cfg(feature = "core")]
     pub fn load(&self, data_path: Option<&Path>) -> Result<LoadedTable, TableError> {
         match self {
             DataTable::CSV(tbl) => tbl.load_f64(data_path),
@@ -47,7 +54,7 @@ impl DataTable {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum CsvDataTableLookup {
     Row(usize),
@@ -56,15 +63,16 @@ pub enum CsvDataTableLookup {
 }
 
 /// An external table of data that can be referenced
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
 pub struct CsvDataTable {
-    name: String,
+    pub name: String,
     #[serde(rename = "type")]
-    ty: DataTableType,
-    lookup: CsvDataTableLookup,
-    url: PathBuf,
+    pub ty: DataTableType,
+    pub lookup: CsvDataTableLookup,
+    pub url: PathBuf,
 }
 
+#[cfg(feature = "core")]
 impl CsvDataTable {
     fn load_f64(&self, data_path: Option<&Path>) -> Result<LoadedTable, TableError> {
         match &self.ty {
@@ -150,11 +158,13 @@ pub enum TableError {
     IndexOutOfBounds(usize),
 }
 
+#[cfg(feature = "core")]
 pub enum LoadedTable {
     FloatVec(LoadedVecTable<f64>),
     FloatScalar(LoadedScalarTable<f64>),
 }
 
+#[cfg(feature = "core")]
 impl LoadedTable {
     pub fn get_vec_f64(&self, key: &[&str]) -> Result<&Vec<f64>, TableError> {
         match self {
@@ -175,10 +185,12 @@ impl LoadedTable {
     }
 }
 
+#[cfg(feature = "core")]
 pub struct LoadedTableCollection {
     tables: HashMap<String, LoadedTable>,
 }
 
+#[cfg(feature = "core")]
 impl LoadedTableCollection {
     pub fn from_schema(table_defs: Option<&[DataTable]>, data_path: Option<&Path>) -> Result<Self, TableError> {
         let mut tables = HashMap::new();
@@ -224,13 +236,14 @@ impl LoadedTableCollection {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 pub struct TableDataRef {
-    table: String,
-    column: Option<TableIndex>,
-    index: Option<TableIndex>,
+    pub table: String,
+    pub column: Option<TableIndex>,
+    pub index: Option<TableIndex>,
 }
 
+#[cfg(feature = "core")]
 impl TableDataRef {
     fn key(&self) -> Vec<&str> {
         let mut key: Vec<&str> = Vec::new();
@@ -270,6 +283,7 @@ impl TryFrom<TableDataRefV1> for TableDataRef {
 }
 
 #[cfg(test)]
+#[cfg(feature = "core")]
 mod tests {
     use super::*;
     use std::fs::File;

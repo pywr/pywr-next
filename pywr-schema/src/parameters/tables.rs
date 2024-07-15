@@ -1,13 +1,20 @@
-use crate::error::{ConversionError, SchemaError};
-use crate::parameters::{DynamicFloatValueType, IntoV2Parameter, ParameterMeta, TryFromV1Parameter};
+use crate::error::ConversionError;
+#[cfg(feature = "core")]
+use crate::error::SchemaError;
+#[cfg(feature = "core")]
+use crate::model::LoadArgs;
+use crate::parameters::{IntoV2Parameter, ParameterMeta, TryFromV1Parameter};
+#[cfg(feature = "core")]
 use ndarray::s;
-use pywr_core::models::ModelDomain;
+#[cfg(feature = "core")]
 use pywr_core::parameters::ParameterIndex;
+use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::parameters::TablesArrayParameter as TablesArrayParameterV1;
+use schemars::JsonSchema;
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 pub struct TablesArrayParameter {
     #[serde(flatten)]
     pub meta: ParameterMeta,
@@ -20,24 +27,17 @@ pub struct TablesArrayParameter {
     pub timestep_offset: Option<i32>,
 }
 
+#[cfg(feature = "core")]
 impl TablesArrayParameter {
-    pub fn node_references(&self) -> HashMap<&str, &str> {
-        HashMap::new()
-    }
-    pub fn parameters(&self) -> HashMap<&str, DynamicFloatValueType> {
-        HashMap::new()
-    }
-
     pub fn add_to_model(
         &self,
         network: &mut pywr_core::network::Network,
-        domain: &ModelDomain,
-        data_path: Option<&Path>,
+        args: &LoadArgs,
     ) -> Result<ParameterIndex<f64>, SchemaError> {
         // 1. Load the file from the HDF5 file (NB this is not Pandas format).
 
         // Handle the case of an optional data path with a relative url.
-        let pth = if let Some(dp) = data_path {
+        let pth = if let Some(dp) = args.data_path {
             if self.url.is_relative() {
                 dp.join(&self.url)
             } else {
@@ -62,7 +62,8 @@ impl TablesArrayParameter {
 
         // 3. Create an ArrayParameter using the loaded array.
         if let Some(scenario) = &self.scenario {
-            let scenario_group_index = domain
+            let scenario_group_index = args
+                .domain
                 .scenarios()
                 .group_index(scenario)
                 .ok_or(SchemaError::ScenarioGroupNotFound(scenario.to_string()))?;

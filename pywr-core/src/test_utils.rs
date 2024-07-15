@@ -1,19 +1,21 @@
-use crate::metric::Metric;
+use crate::metric::MetricF64;
 use crate::models::{Model, ModelDomain};
 /// Utilities for unit tests.
 /// TODO move this to its own local crate ("test-utilities") as part of a workspace.
 use crate::network::Network;
-use crate::node::{Constraint, ConstraintValue, StorageInitialVolume};
-use crate::parameters::{AggFunc, AggregatedParameter, Array2Parameter, ConstantParameter, Parameter};
+use crate::node::StorageInitialVolume;
+use crate::parameters::{AggFunc, AggregatedParameter, Array2Parameter, ConstantParameter, GeneralParameter};
 use crate::recorders::AssertionRecorder;
 use crate::scenario::ScenarioGroupCollection;
+#[cfg(feature = "cbc")]
+use crate::solvers::CbcSolver;
 #[cfg(feature = "ipm-ocl")]
 use crate::solvers::ClIpmF64Solver;
-use crate::solvers::ClpSolver;
 #[cfg(feature = "highs")]
 use crate::solvers::HighsSolver;
 #[cfg(feature = "ipm-simd")]
 use crate::solvers::SimdIpmF64Solver;
+use crate::solvers::{ClpSolver, Solver, SolverSettings};
 use crate::timestep::{TimeDomain, TimestepDuration, Timestepper};
 use crate::PywrError;
 use chrono::{Days, NaiveDate};
@@ -64,36 +66,26 @@ pub fn simple_network(network: &mut Network, inflow_scenario_index: usize, num_i
     let inflow = network.add_parameter(Box::new(inflow)).unwrap();
 
     let input_node = network.get_mut_node_by_name("input", None).unwrap();
-    input_node
-        .set_constraint(
-            ConstraintValue::Metric(Metric::ParameterValue(inflow)),
-            Constraint::MaxFlow,
-        )
-        .unwrap();
+    input_node.set_max_flow_constraint(Some(inflow.into())).unwrap();
 
     let base_demand = 10.0;
 
     let demand_factor = ConstantParameter::new("demand-factor", 1.2);
-    let demand_factor = network.add_parameter(Box::new(demand_factor)).unwrap();
+    let demand_factor = network.add_const_parameter(Box::new(demand_factor)).unwrap();
 
-    let total_demand = AggregatedParameter::new(
+    let total_demand: AggregatedParameter<MetricF64> = AggregatedParameter::new(
         "total-demand",
-        &[Metric::Constant(base_demand), Metric::ParameterValue(demand_factor)],
+        &[base_demand.into(), demand_factor.into()],
         AggFunc::Product,
     );
     let total_demand = network.add_parameter(Box::new(total_demand)).unwrap();
 
     let demand_cost = ConstantParameter::new("demand-cost", -10.0);
-    let demand_cost = network.add_parameter(Box::new(demand_cost)).unwrap();
+    let demand_cost = network.add_const_parameter(Box::new(demand_cost)).unwrap();
 
     let output_node = network.get_mut_node_by_name("output", None).unwrap();
-    output_node
-        .set_constraint(
-            ConstraintValue::Metric(Metric::ParameterValue(total_demand)),
-            Constraint::MaxFlow,
-        )
-        .unwrap();
-    output_node.set_cost(ConstraintValue::Metric(Metric::ParameterValue(demand_cost)));
+    output_node.set_max_flow_constraint(Some(total_demand.into())).unwrap();
+    output_node.set_cost(Some(demand_cost.into()));
 }
 /// Create a simple test model with three nodes.
 pub fn simple_model(num_scenarios: usize) -> Model {
@@ -121,8 +113,8 @@ pub fn simple_storage_model() -> Model {
             "reservoir",
             None,
             StorageInitialVolume::Absolute(100.0),
-            ConstraintValue::Scalar(0.0),
-            ConstraintValue::Scalar(100.0),
+            None,
+            Some(100.0.into()),
         )
         .unwrap();
     let output_node = network.add_output_node("output", None).unwrap();
@@ -132,19 +124,14 @@ pub fn simple_storage_model() -> Model {
     // Apply demand to the model
     // TODO convenience function for adding a constant constraint.
     let demand = ConstantParameter::new("demand", 10.0);
-    let demand = network.add_parameter(Box::new(demand)).unwrap();
+    let demand = network.add_const_parameter(Box::new(demand)).unwrap();
 
     let demand_cost = ConstantParameter::new("demand-cost", -10.0);
-    let demand_cost = network.add_parameter(Box::new(demand_cost)).unwrap();
+    let demand_cost = network.add_const_parameter(Box::new(demand_cost)).unwrap();
 
     let output_node = network.get_mut_node_by_name("output", None).unwrap();
-    output_node
-        .set_constraint(
-            ConstraintValue::Metric(Metric::ParameterValue(demand)),
-            Constraint::MaxFlow,
-        )
-        .unwrap();
-    output_node.set_cost(ConstraintValue::Metric(Metric::ParameterValue(demand_cost)));
+    output_node.set_max_flow_constraint(Some(demand.into())).unwrap();
+    output_node.set_cost(Some(demand_cost.into()));
 
     Model::new(default_time_domain().into(), network)
 }
@@ -158,7 +145,7 @@ pub fn simple_storage_model() -> Model {
 /// See [`AssertionRecorder`] for more information.
 pub fn run_and_assert_parameter(
     model: &mut Model,
-    parameter: Box<dyn Parameter<f64>>,
+    parameter: Box<dyn GeneralParameter<f64>>,
     expected_values: Array2<f64>,
     ulps: Option<i64>,
     epsilon: Option<f64>,
@@ -173,29 +160,24 @@ pub fn run_and_assert_parameter(
         .checked_add_days(Days::new(expected_values.nrows() as u64 - 1))
         .unwrap();
 
-    let rec = AssertionRecorder::new("assert", Metric::ParameterValue(p_idx), expected_values, ulps, epsilon);
+    let rec = AssertionRecorder::new("assert", p_idx.into(), expected_values, ulps, epsilon);
 
     model.network_mut().add_recorder(Box::new(rec)).unwrap();
-    run_all_solvers(model)
+    run_all_solvers(model, &[])
 }
 
 /// Run a model using each of the in-built solvers.
 ///
 /// The model will only be run if the solver has the required solver features (and
 /// is also enabled as a Cargo feature).
-pub fn run_all_solvers(model: &Model) {
-    model
-        .run::<ClpSolver>(&Default::default())
-        .expect("Failed to solve with CLP");
+pub fn run_all_solvers(model: &Model, solvers_without_features: &[&str]) {
+    check_features_and_run::<ClpSolver>(model, !solvers_without_features.contains(&"clp"));
+
+    #[cfg(feature = "cbc")]
+    check_features_and_run::<CbcSolver>(model, !solvers_without_features.contains(&"cbc"));
 
     #[cfg(feature = "highs")]
-    {
-        if model.check_solver_features::<HighsSolver>() {
-            model
-                .run::<HighsSolver>(&Default::default())
-                .expect("Failed to solve with Highs");
-        }
-    }
+    check_features_and_run::<HighsSolver>(model, !solvers_without_features.contains(&"highs"));
 
     #[cfg(feature = "ipm-simd")]
     {
@@ -213,6 +195,31 @@ pub fn run_all_solvers(model: &Model) {
                 .run_multi_scenario::<ClIpmF64Solver>(&Default::default())
                 .expect("Failed to solve with OpenCl IPM");
         }
+    }
+}
+
+/// Check features and
+fn check_features_and_run<S>(model: &Model, expect_features: bool)
+where
+    S: Solver,
+    <S as Solver>::Settings: SolverSettings + Default,
+{
+    let has_features = model.check_solver_features::<S>();
+    if expect_features {
+        assert!(
+            has_features,
+            "Solver `{}` was expected to have the required features",
+            S::name()
+        );
+        model
+            .run::<S>(&Default::default())
+            .expect(&format!("Failed to solve with: {}", S::name()));
+    } else {
+        assert!(
+            !has_features,
+            "Solver `{}` was not expected to have the required features",
+            S::name()
+        );
     }
 }
 
@@ -242,22 +249,18 @@ fn make_simple_system<R: Rng>(
     let inflow = Array2Parameter::new(&format!("inflow-{suffix}"), inflow, inflow_scenario_group_index, None);
     let idx = network.add_parameter(Box::new(inflow))?;
 
-    network.set_node_max_flow(
-        "input",
-        Some(suffix),
-        ConstraintValue::Metric(Metric::ParameterValue(idx)),
-    )?;
+    network.set_node_max_flow("input", Some(suffix), Some(idx.into()))?;
 
     let input_cost = rng.gen_range(-20.0..-5.00);
-    network.set_node_cost("input", Some(suffix), ConstraintValue::Scalar(input_cost))?;
+    network.set_node_cost("input", Some(suffix), Some(input_cost.into()))?;
 
     let outflow_distr = Normal::new(8.0, 3.0).unwrap();
     let mut outflow: f64 = outflow_distr.sample(rng);
     outflow = outflow.max(0.0);
 
-    network.set_node_max_flow("output", Some(suffix), ConstraintValue::Scalar(outflow))?;
+    network.set_node_max_flow("output", Some(suffix), Some(outflow.into()))?;
 
-    network.set_node_cost("output", Some(suffix), ConstraintValue::Scalar(-500.0))?;
+    network.set_node_cost("output", Some(suffix), Some((-500.0).into()))?;
 
     Ok(())
 }
@@ -287,7 +290,7 @@ fn make_simple_connections<R: Rng>(
 
         if let Ok(idx) = model.add_link_node("transfer", Some(&name)) {
             let transfer_cost = rng.gen_range(0.0..1.0);
-            model.set_node_cost("transfer", Some(&name), ConstraintValue::Scalar(transfer_cost))?;
+            model.set_node_cost("transfer", Some(&name), Some(transfer_cost.into()))?;
 
             let from_suffix = format!("sys-{i:04}");
             let from_idx = model.get_node_index_by_name("link", Some(&from_suffix))?;

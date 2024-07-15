@@ -12,21 +12,33 @@
       {
         "name": "input1",
         "type": "Input",
-        "max_flow": 9.0
+        "max_flow": {
+          "type": "Constant",
+          "value": 9.0
+        }
       },
       {
         "name": "storage1",
         "type": "Storage",
-        "cost": -1.0,
+        "cost": {
+          "type": "Constant",
+          "value": -1.0
+        },
         "initial_volume": {
           "Absolute": 500.0
         },
-        "max_volume": 1000.0
+        "max_volume": {
+          "type": "Constant",
+          "value": 1000.0
+        }
       },
       {
         "name": "output1",
         "type": "Output",
-        "cost": -10.0,
+        "cost": {
+          "type": "Constant",
+          "value": -10.0
+        },
         "max_flow": {
           "type": "Parameter",
           "name": "demand"
@@ -55,16 +67,16 @@
         "name": "nodes",
         "metrics": [
           {
-            "type": "Default",
-            "node": "input1"
+            "type": "Node",
+            "name": "input1"
           },
           {
-            "type": "Default",
-            "node": "storage1"
+            "type": "Node",
+            "name": "storage1"
           },
           {
-            "type": "Default",
-            "node": "output1"
+            "type": "Node",
+            "name": "output1"
           }
         ]
       }

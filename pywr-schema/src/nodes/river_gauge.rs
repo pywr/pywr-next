@@ -1,14 +1,16 @@
-use crate::data_tables::LoadedTableCollection;
-use crate::error::{ConversionError, SchemaError};
-use crate::model::PywrMultiNetworkTransfer;
+use crate::error::ConversionError;
+#[cfg(feature = "core")]
+use crate::error::SchemaError;
+use crate::metric::Metric;
+#[cfg(feature = "core")]
+use crate::model::LoadArgs;
 use crate::nodes::{NodeAttribute, NodeMeta};
-use crate::parameters::{DynamicFloatValue, TryIntoV2Parameter};
-use pywr_core::metric::Metric;
-use pywr_core::models::ModelDomain;
-use pywr_schema_macros::PywrNode;
+use crate::parameters::TryIntoV2Parameter;
+#[cfg(feature = "core")]
+use pywr_core::metric::MetricF64;
+use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::nodes::RiverGaugeNode as RiverGaugeNodeV1;
-use std::collections::HashMap;
-use std::path::Path;
+use schemars::JsonSchema;
 
 #[doc = svgbobdoc::transform!(
 /// This is used to represent a minimum residual flow (MRF) at a gauging station.
@@ -25,12 +27,12 @@ use std::path::Path;
 /// ```
 ///
 )]
-#[derive(serde::Deserialize, serde::Serialize, Clone, Default, PywrNode)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
 pub struct RiverGaugeNode {
     #[serde(flatten)]
     pub meta: NodeMeta,
-    pub mrf: Option<DynamicFloatValue>,
-    pub mrf_cost: Option<DynamicFloatValue>,
+    pub mrf: Option<Metric>,
+    pub mrf_cost: Option<Metric>,
 }
 
 impl RiverGaugeNode {
@@ -42,36 +44,6 @@ impl RiverGaugeNode {
 
     fn bypass_sub_name() -> Option<&'static str> {
         Some("bypass")
-    }
-
-    pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
-        network.add_link_node(self.meta.name.as_str(), Self::mrf_sub_name())?;
-        network.add_link_node(self.meta.name.as_str(), Self::bypass_sub_name())?;
-
-        Ok(())
-    }
-
-    pub fn set_constraints(
-        &self,
-        network: &mut pywr_core::network::Network,
-        schema: &crate::model::PywrNetwork,
-        domain: &ModelDomain,
-        tables: &LoadedTableCollection,
-        data_path: Option<&Path>,
-        inter_network_transfers: &[PywrMultiNetworkTransfer],
-    ) -> Result<(), SchemaError> {
-        // MRF applies as a maximum on the MRF node.
-        if let Some(cost) = &self.mrf_cost {
-            let value = cost.load(network, schema, domain, tables, data_path, inter_network_transfers)?;
-            network.set_node_cost(self.meta.name.as_str(), Self::mrf_sub_name(), value.into())?;
-        }
-
-        if let Some(mrf) = &self.mrf {
-            let value = mrf.load(network, schema, domain, tables, data_path, inter_network_transfers)?;
-            network.set_node_max_flow(self.meta.name.as_str(), Self::mrf_sub_name(), value.into())?;
-        }
-
-        Ok(())
     }
 
     pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
@@ -88,11 +60,42 @@ impl RiverGaugeNode {
         ]
     }
 
+    pub fn default_metric(&self) -> NodeAttribute {
+        Self::DEFAULT_ATTRIBUTE
+    }
+}
+
+#[cfg(feature = "core")]
+impl RiverGaugeNode {
+    pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
+        network.add_link_node(self.meta.name.as_str(), Self::mrf_sub_name())?;
+        network.add_link_node(self.meta.name.as_str(), Self::bypass_sub_name())?;
+
+        Ok(())
+    }
+    pub fn set_constraints(
+        &self,
+        network: &mut pywr_core::network::Network,
+        args: &LoadArgs,
+    ) -> Result<(), SchemaError> {
+        // MRF applies as a maximum on the MRF node.
+        if let Some(cost) = &self.mrf_cost {
+            let value = cost.load(network, args)?;
+            network.set_node_cost(self.meta.name.as_str(), Self::mrf_sub_name(), value.into())?;
+        }
+
+        if let Some(mrf) = &self.mrf {
+            let value = mrf.load(network, args)?;
+            network.set_node_max_flow(self.meta.name.as_str(), Self::mrf_sub_name(), value.into())?;
+        }
+
+        Ok(())
+    }
     pub fn create_metric(
         &self,
         network: &pywr_core::network::Network,
         attribute: Option<NodeAttribute>,
-    ) -> Result<Metric, SchemaError> {
+    ) -> Result<MetricF64, SchemaError> {
         // Use the default attribute if none is specified
         let attr = attribute.unwrap_or(Self::DEFAULT_ATTRIBUTE);
 
@@ -102,11 +105,11 @@ impl RiverGaugeNode {
         ];
 
         let metric = match attr {
-            NodeAttribute::Inflow => Metric::MultiNodeInFlow {
+            NodeAttribute::Inflow => MetricF64::MultiNodeInFlow {
                 indices,
                 name: self.meta.name.to_string(),
             },
-            NodeAttribute::Outflow => Metric::MultiNodeOutFlow {
+            NodeAttribute::Outflow => MetricF64::MultiNodeOutFlow {
                 indices,
                 name: self.meta.name.to_string(),
             },
@@ -148,62 +151,11 @@ impl TryFrom<RiverGaugeNodeV1> for RiverGaugeNode {
 #[cfg(test)]
 mod tests {
     use crate::model::PywrModel;
+    #[cfg(feature = "core")]
     use pywr_core::test_utils::run_all_solvers;
 
     fn model_str() -> &'static str {
-        r#"
-            {
-                "metadata": {
-                    "title": "Simple 1",
-                    "description": "A very simple example.",
-                    "minimum_version": "0.1"
-                },
-                "timestepper": {
-                    "start": "2015-01-01",
-                    "end": "2015-12-31",
-                    "timestep": 1
-                },
-                "network": {
-                    "nodes": [
-                        {
-                            "name": "catchment1",
-                            "type": "Catchment",
-                            "flow": 15
-                        },
-                        {
-                            "name": "gauge1",
-                            "type": "RiverGauge",
-                            "mrf": 5.0,
-                            "mrf_cost": -20.0
-                        },
-                        {
-                            "name": "term1",
-                            "type": "Output"
-                        },
-                        {
-                            "name": "demand1",
-                            "type": "Output",
-                            "max_flow": 15.0,
-                            "cost": -10
-                        }
-                    ],
-                    "edges": [
-                        {
-                            "from_node": "catchment1",
-                            "to_node": "gauge1"
-                        },
-                        {
-                            "from_node": "gauge1",
-                            "to_node": "term1"
-                        },
-                        {
-                            "from_node": "gauge1",
-                            "to_node": "demand1"
-                        }
-                    ]
-                }
-            }
-            "#
+        include_str!("../test_models/river_gauge1.json")
     }
 
     #[test]
@@ -216,6 +168,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "core")]
     fn test_model_run() {
         let data = model_str();
         let schema: PywrModel = serde_json::from_str(data).unwrap();
@@ -226,7 +179,7 @@ mod tests {
         assert_eq!(network.edges().len(), 6);
 
         // Test all solvers
-        run_all_solvers(&model);
+        run_all_solvers(&model, &[]);
 
         // TODO assert the results!
     }

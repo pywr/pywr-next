@@ -1,12 +1,13 @@
-use crate::data_tables::LoadedTableCollection;
-use crate::parameters::{ConstantValue, DynamicFloatValue, DynamicFloatValueType, ParameterMeta};
-use pywr_core::parameters::ParameterIndex;
-
+#[cfg(feature = "core")]
 use crate::error::SchemaError;
-use crate::model::PywrMultiNetworkTransfer;
-use pywr_core::models::ModelDomain;
-use std::collections::HashMap;
-use std::path::Path;
+use crate::metric::Metric;
+#[cfg(feature = "core")]
+use crate::model::LoadArgs;
+use crate::parameters::{ConstantValue, ParameterMeta};
+#[cfg(feature = "core")]
+use pywr_core::parameters::ParameterIndex;
+use pywr_schema_macros::PywrVisitAll;
+use schemars::JsonSchema;
 
 /// A parameter that returns a fixed delta from another metric.
 ///
@@ -22,7 +23,7 @@ use std::path::Path;
 #[doc = include_str!("doc_examples/offset_variable.json")]
 /// ```
 ///
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 pub struct OffsetParameter {
     /// Meta-data.
     ///
@@ -35,32 +36,19 @@ pub struct OffsetParameter {
     /// function is specified this value will be the `x` value for that activation function.
     pub offset: ConstantValue<f64>,
     /// The metric from which to apply the offset.
-    pub metric: DynamicFloatValue,
+    pub metric: Metric,
 }
 
+#[cfg(feature = "core")]
 impl OffsetParameter {
-    pub fn node_references(&self) -> HashMap<&str, &str> {
-        HashMap::new()
-    }
-
-    pub fn parameters(&self) -> HashMap<&str, DynamicFloatValueType> {
-        HashMap::new()
-    }
-
     pub fn add_to_model(
         &self,
         network: &mut pywr_core::network::Network,
-        schema: &crate::model::PywrNetwork,
-        domain: &ModelDomain,
-        tables: &LoadedTableCollection,
-        data_path: Option<&Path>,
-        inter_network_transfers: &[PywrMultiNetworkTransfer],
+        args: &LoadArgs,
     ) -> Result<ParameterIndex<f64>, SchemaError> {
-        let idx = self
-            .metric
-            .load(network, schema, domain, tables, data_path, inter_network_transfers)?;
+        let idx = self.metric.load(network, args)?;
 
-        let p = pywr_core::parameters::OffsetParameter::new(&self.meta.name, idx, self.offset.load(tables)?);
+        let p = pywr_core::parameters::OffsetParameter::new(&self.meta.name, idx, self.offset.load(args.tables)?);
         Ok(network.add_parameter(Box::new(p))?)
     }
 }

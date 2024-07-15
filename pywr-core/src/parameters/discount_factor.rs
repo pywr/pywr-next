@@ -1,20 +1,20 @@
-use crate::metric::Metric;
+use crate::metric::MetricF64;
 use crate::network::Network;
-use crate::parameters::{Parameter, ParameterMeta};
+use crate::parameters::{GeneralParameter, Parameter, ParameterMeta, ParameterState};
 use crate::scenario::ScenarioIndex;
-use crate::state::{ParameterState, State};
+use crate::state::State;
 use crate::timestep::Timestep;
 use crate::PywrError;
 use chrono::Datelike;
 
 pub struct DiscountFactorParameter {
     meta: ParameterMeta,
-    discount_rate: Metric,
+    discount_rate: MetricF64,
     base_year: i32,
 }
 
 impl DiscountFactorParameter {
-    pub fn new(name: &str, discount_rate: Metric, base_year: i32) -> Self {
+    pub fn new(name: &str, discount_rate: MetricF64, base_year: i32) -> Self {
         Self {
             meta: ParameterMeta::new(name),
             discount_rate,
@@ -23,10 +23,12 @@ impl DiscountFactorParameter {
     }
 }
 
-impl Parameter<f64> for DiscountFactorParameter {
+impl Parameter for DiscountFactorParameter {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }
+}
+impl GeneralParameter<f64> for DiscountFactorParameter {
     fn compute(
         &self,
         timestep: &Timestep,
@@ -41,11 +43,17 @@ impl Parameter<f64> for DiscountFactorParameter {
         let factor = 1.0 / (1.0 + rate).powi(year);
         Ok(factor)
     }
+
+    fn as_parameter(&self) -> &dyn Parameter
+    where
+        Self: Sized,
+    {
+        self
+    }
 }
 
 #[cfg(test)]
 mod test {
-    use crate::metric::Metric;
     use crate::parameters::{Array1Parameter, DiscountFactorParameter};
     use crate::test_utils::{run_and_assert_parameter, simple_model};
     use ndarray::{Array1, Array2, Axis};
@@ -64,7 +72,7 @@ mod test {
 
         let parameter = DiscountFactorParameter::new(
             "test-parameter",
-            Metric::Constant(0.03), // Interpolate with the parameter based values
+            0.03.into(), // Interpolate with the parameter based values
             2020,
         );
 

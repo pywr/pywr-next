@@ -1,9 +1,8 @@
-use super::{MetricSetState, PywrError, Recorder, RecorderMeta, Timestep};
-use crate::metric::Metric;
+use super::{MetricSetState, OutputMetric, PywrError, Recorder, RecorderMeta, Timestep};
 use crate::models::ModelDomain;
 use crate::network::Network;
 use crate::recorders::MetricSetIndex;
-use crate::scenario::ScenarioIndex;
+use crate::scenario::{ScenarioDomain, ScenarioIndex};
 use crate::state::State;
 use chrono::{Datelike, Timelike};
 use hdf5::{Extents, Group};
@@ -11,7 +10,14 @@ use ndarray::{s, Array1};
 use std::any::Any;
 use std::ops::Deref;
 use std::path::PathBuf;
+use std::str::FromStr;
 
+/// A recorder that saves model outputs to an HDF5 file.
+///
+/// This recorder saves the model outputs to an HDF5 file. The file will contain a number of groups
+/// and datasets that correspond to the metrics in the metric set. Additionally, the file will
+/// contain metadata about the time steps and scenarios that were used in the model simulation.
+///
 #[derive(Clone, Debug)]
 pub struct HDF5Recorder {
     meta: RecorderMeta,
@@ -65,12 +71,14 @@ impl Recorder for HDF5Recorder {
     fn meta(&self) -> &RecorderMeta {
         &self.meta
     }
-    fn setup(&self, domain: &ModelDomain, model: &Network) -> Result<Option<Box<(dyn Any)>>, PywrError> {
+    fn setup(&self, domain: &ModelDomain, network: &Network) -> Result<Option<Box<(dyn Any)>>, PywrError> {
         let file = match hdf5::File::create(&self.filename) {
             Ok(f) => f,
             Err(e) => return Err(PywrError::HDF5Error(e.to_string())),
         };
-        let mut datasets = Vec::new();
+
+        write_pywr_metadata(&file)?;
+        write_scenarios_metadata(&file, domain.scenarios())?;
 
         // Create the time table
         let dates: Array1<_> = domain.time().timesteps().iter().map(DateTime::from_timestamp).collect();
@@ -82,61 +90,12 @@ impl Recorder for HDF5Recorder {
 
         let root_grp = file.deref();
 
-        let metric_set = model.get_metric_set(self.metric_set_idx)?;
+        let metric_set = network.get_metric_set(self.metric_set_idx)?;
+
+        let mut datasets = Vec::new();
 
         for metric in metric_set.iter_metrics() {
-            let ds = match metric {
-                Metric::NodeInFlow(idx) => {
-                    let node = model.get_node(idx)?;
-                    require_node_dataset(root_grp, shape, node.name(), node.sub_name(), "inflow")?
-                }
-                Metric::NodeOutFlow(idx) => {
-                    let node = model.get_node(idx)?;
-                    require_node_dataset(root_grp, shape, node.name(), node.sub_name(), "outflow")?
-                }
-                Metric::NodeVolume(idx) => {
-                    let node = model.get_node(idx)?;
-                    require_node_dataset(root_grp, shape, node.name(), node.sub_name(), "volume")?
-                }
-                Metric::DerivedMetric(_idx) => {
-                    todo!("Derived metrics are not yet supported in HDF recorders");
-                }
-                Metric::AggregatedNodeVolume(idx) => {
-                    let node = model.get_aggregated_storage_node(idx)?;
-                    require_node_dataset(root_grp, shape, node.name(), node.sub_name(), "volume")?
-                }
-                Metric::EdgeFlow(_) => {
-                    continue; // TODO
-                }
-                Metric::ParameterValue(idx) => {
-                    let parameter = model.get_parameter(idx)?;
-                    let parameter_group = require_group(root_grp, "parameters")?;
-                    require_dataset(&parameter_group, shape, parameter.name())?
-                }
-                Metric::VirtualStorageVolume(_) => {
-                    continue; // TODO
-                }
-                Metric::Constant(_) => {
-                    continue; // TODO
-                }
-                Metric::MultiParameterValue(_) => {
-                    continue; // TODO
-                }
-                Metric::AggregatedNodeInFlow(idx) => {
-                    let node = model.get_aggregated_node(idx)?;
-                    require_node_dataset(root_grp, shape, node.name(), node.sub_name(), "inflow")?
-                }
-                Metric::AggregatedNodeOutFlow(idx) => {
-                    let node = model.get_aggregated_node(idx)?;
-                    require_node_dataset(root_grp, shape, node.name(), node.sub_name(), "outflow")?
-                }
-                Metric::MultiNodeInFlow { name, .. } => require_node_dataset(root_grp, shape, name, None, "inflow")?,
-                Metric::MultiNodeOutFlow { name, .. } => require_node_dataset(root_grp, shape, name, None, "outflow")?,
-                Metric::InterNetworkTransfer(_) => {
-                    continue; // TODO
-                }
-            };
-
+            let ds = require_metric_dataset(root_grp, shape, metric)?;
             datasets.push(ds);
         }
 
@@ -181,6 +140,7 @@ impl Recorder for HDF5Recorder {
 
     fn finalise(
         &self,
+        _network: &Network,
         _metric_set_states: &[Vec<MetricSetState>],
         internal_state: &mut Option<Box<dyn Any>>,
     ) -> Result<(), PywrError> {
@@ -208,24 +168,38 @@ fn require_dataset<S: Into<Extents>>(parent: &Group, shape: S, name: &str) -> Re
 }
 
 /// Create a node dataset in /parent/name/sub_name/attribute
-fn require_node_dataset<S: Into<Extents>>(
+fn require_metric_dataset<S: Into<Extents>>(
     parent: &Group,
     shape: S,
-    name: &str,
-    sub_name: Option<&str>,
-    attribute: &str,
+    metric: &OutputMetric,
 ) -> Result<hdf5::Dataset, PywrError> {
-    match sub_name {
-        None => {
-            let grp = require_group(parent, name)?;
-            require_dataset(&grp, shape, attribute)
-        }
-        Some(sn) => {
-            let grp = require_group(parent, name)?;
-            let grp = require_group(&grp, sn)?;
-            require_dataset(&grp, shape, attribute)
-        }
+    let grp = require_group(parent, metric.name())?;
+    let ds = require_dataset(&grp, shape, metric.attribute())?;
+
+    // Write the type and subtype as attributes
+    let ty = hdf5::types::VarLenUnicode::from_str(metric.ty()).map_err(|e| PywrError::HDF5Error(e.to_string()))?;
+    let attr = ds
+        .new_attr::<hdf5::types::VarLenUnicode>()
+        .shape(())
+        .create("pywr-type")
+        .map_err(|e| PywrError::HDF5Error(e.to_string()))?;
+    attr.as_writer()
+        .write_scalar(&ty)
+        .map_err(|e| PywrError::HDF5Error(e.to_string()))?;
+
+    if let Some(sub_type) = metric.sub_type() {
+        let sub_type =
+            hdf5::types::VarLenUnicode::from_str(sub_type).map_err(|e| PywrError::HDF5Error(e.to_string()))?;
+        let attr = ds
+            .new_attr::<hdf5::types::VarLenUnicode>()
+            .shape(())
+            .create("pywr-subtype")
+            .map_err(|e| PywrError::HDF5Error(e.to_string()))?;
+        attr.as_writer()
+            .write_scalar(&sub_type)
+            .map_err(|e| PywrError::HDF5Error(e.to_string()))?;
     }
+    Ok(ds)
 }
 
 fn require_group(parent: &Group, name: &str) -> Result<Group, PywrError> {
@@ -238,4 +212,79 @@ fn require_group(parent: &Group, name: &str) -> Result<Group, PywrError> {
                 .map_err(|e| PywrError::HDF5Error(e.to_string()))
         }
     }
+}
+
+fn write_pywr_metadata(file: &hdf5::File) -> Result<(), PywrError> {
+    let root = file.deref();
+
+    const VERSION: &str = env!("CARGO_PKG_VERSION");
+    let version = hdf5::types::VarLenUnicode::from_str(VERSION).map_err(|e| PywrError::HDF5Error(e.to_string()))?;
+
+    let attr = root
+        .new_attr::<hdf5::types::VarLenUnicode>()
+        .shape(())
+        .create("pywr-version")
+        .map_err(|e| PywrError::HDF5Error(e.to_string()))?;
+    attr.as_writer()
+        .write_scalar(&version)
+        .map_err(|e| PywrError::HDF5Error(e.to_string()))?;
+
+    Ok(())
+}
+
+#[derive(hdf5::H5Type, Clone, PartialEq, Debug)]
+#[repr(C)]
+pub struct ScenarioGroupEntry {
+    pub name: hdf5::types::VarLenUnicode,
+    pub size: usize,
+}
+
+#[derive(hdf5::H5Type, Clone, PartialEq, Debug)]
+#[repr(C)]
+pub struct H5ScenarioIndex {
+    index: usize,
+    indices: hdf5::types::VarLenArray<usize>,
+}
+
+/// Write scenario metadata to the HDF5 file.
+///
+/// This function will create the `/scenarios` group in the HDF5 file and write the scenario
+/// groups and indices into `/scenarios/groups` and `/scenarios/indices` respectively.
+fn write_scenarios_metadata(file: &hdf5::File, domain: &ScenarioDomain) -> Result<(), PywrError> {
+    // Create the scenario group and associated datasets
+    let grp = require_group(file.deref(), "scenarios")?;
+
+    let scenario_groups: Array1<ScenarioGroupEntry> = domain
+        .groups()
+        .iter()
+        .map(|s| {
+            let name =
+                hdf5::types::VarLenUnicode::from_str(s.name()).map_err(|e| PywrError::HDF5Error(e.to_string()))?;
+
+            Ok(ScenarioGroupEntry { name, size: s.size() })
+        })
+        .collect::<Result<_, PywrError>>()?;
+
+    if let Err(e) = grp.new_dataset_builder().with_data(&scenario_groups).create("groups") {
+        return Err(PywrError::HDF5Error(e.to_string()));
+    }
+
+    let scenarios: Array1<H5ScenarioIndex> = domain
+        .indices()
+        .iter()
+        .map(|s| {
+            let indices = hdf5::types::VarLenArray::from_slice(&s.indices);
+
+            Ok(H5ScenarioIndex {
+                index: s.index,
+                indices,
+            })
+        })
+        .collect::<Result<_, PywrError>>()?;
+
+    if let Err(e) = grp.new_dataset_builder().with_data(&scenarios).create("indices") {
+        return Err(PywrError::HDF5Error(e.to_string()));
+    }
+
+    Ok(())
 }

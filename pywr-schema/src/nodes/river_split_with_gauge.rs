@@ -1,16 +1,16 @@
-use crate::data_tables::LoadedTableCollection;
-use crate::error::{ConversionError, SchemaError};
-use crate::model::PywrMultiNetworkTransfer;
+use crate::error::ConversionError;
+#[cfg(feature = "core")]
+use crate::error::SchemaError;
+use crate::metric::Metric;
+#[cfg(feature = "core")]
+use crate::model::LoadArgs;
 use crate::nodes::{NodeAttribute, NodeMeta};
-use crate::parameters::{DynamicFloatValue, TryIntoV2Parameter};
-use pywr_core::aggregated_node::Factors;
-use pywr_core::metric::Metric;
-use pywr_core::models::ModelDomain;
-use pywr_core::node::NodeIndex;
-use pywr_schema_macros::PywrNode;
+use crate::parameters::TryIntoV2Parameter;
+#[cfg(feature = "core")]
+use pywr_core::{aggregated_node::Factors, metric::MetricF64, node::NodeIndex};
+use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::nodes::RiverSplitWithGaugeNode as RiverSplitWithGaugeNodeV1;
-use std::collections::HashMap;
-use std::path::Path;
+use schemars::JsonSchema;
 
 #[doc = svgbobdoc::transform!(
 /// This is used to represent a proportional split above a minimum residual flow (MRF) at a gauging station.
@@ -34,13 +34,13 @@ use std::path::Path;
 /// ```
 ///
 )]
-#[derive(serde::Deserialize, serde::Serialize, Clone, Default, PywrNode)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
 pub struct RiverSplitWithGaugeNode {
     #[serde(flatten)]
     pub meta: NodeMeta,
-    pub mrf: Option<DynamicFloatValue>,
-    pub mrf_cost: Option<DynamicFloatValue>,
-    pub splits: Vec<(DynamicFloatValue, String)>,
+    pub mrf: Option<Metric>,
+    pub mrf_cost: Option<Metric>,
+    pub splits: Vec<(Metric, String)>,
 }
 
 impl RiverSplitWithGaugeNode {
@@ -56,70 +56,6 @@ impl RiverSplitWithGaugeNode {
 
     fn split_sub_name(i: usize) -> Option<String> {
         Some(format!("split-{i}"))
-    }
-    fn split_agg_sub_name(i: usize) -> Option<String> {
-        Some(format!("split-agg-{i}"))
-    }
-
-    pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
-        // TODO do this properly
-        network.add_link_node(self.meta.name.as_str(), Self::mrf_sub_name())?;
-        let bypass_idx = network.add_link_node(self.meta.name.as_str(), Self::bypass_sub_name())?;
-
-        for (i, _) in self.splits.iter().enumerate() {
-            // Each split has a link node and an aggregated node to enforce the factors
-            let split_idx = network.add_link_node(self.meta.name.as_str(), Self::split_sub_name(i).as_deref())?;
-
-            // The factors will be set during the `set_constraints` method
-            network.add_aggregated_node(
-                self.meta.name.as_str(),
-                Self::split_agg_sub_name(i).as_deref(),
-                &[bypass_idx, split_idx],
-                None,
-            )?;
-        }
-
-        Ok(())
-    }
-
-    pub fn set_constraints(
-        &self,
-        network: &mut pywr_core::network::Network,
-        schema: &crate::model::PywrNetwork,
-        domain: &ModelDomain,
-        tables: &LoadedTableCollection,
-        data_path: Option<&Path>,
-        inter_network_transfers: &[PywrMultiNetworkTransfer],
-    ) -> Result<(), SchemaError> {
-        // MRF applies as a maximum on the MRF node.
-        if let Some(cost) = &self.mrf_cost {
-            let value = cost.load(network, schema, domain, tables, data_path, inter_network_transfers)?;
-            network.set_node_cost(self.meta.name.as_str(), Self::mrf_sub_name(), value.into())?;
-        }
-
-        if let Some(mrf) = &self.mrf {
-            let value = mrf.load(network, schema, domain, tables, data_path, inter_network_transfers)?;
-            network.set_node_max_flow(self.meta.name.as_str(), Self::mrf_sub_name(), value.into())?;
-        }
-
-        for (i, (factor, _)) in self.splits.iter().enumerate() {
-            // Set the factors for each split
-            let factors = Factors::Proportion(vec![factor.load(
-                network,
-                schema,
-                domain,
-                tables,
-                data_path,
-                inter_network_transfers,
-            )?]);
-            network.set_aggregated_node_factors(
-                self.meta.name.as_str(),
-                Self::split_agg_sub_name(i).as_deref(),
-                Some(factors),
-            )?;
-        }
-
-        Ok(())
     }
 
     /// These connectors are used for both incoming and outgoing edges on the default slot.
@@ -158,11 +94,70 @@ impl RiverSplitWithGaugeNode {
         }
     }
 
+    pub fn default_metric(&self) -> NodeAttribute {
+        Self::DEFAULT_ATTRIBUTE
+    }
+}
+
+#[cfg(feature = "core")]
+impl RiverSplitWithGaugeNode {
+    fn split_agg_sub_name(i: usize) -> Option<String> {
+        Some(format!("split-agg-{i}"))
+    }
+    pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
+        // TODO do this properly
+        network.add_link_node(self.meta.name.as_str(), Self::mrf_sub_name())?;
+        let bypass_idx = network.add_link_node(self.meta.name.as_str(), Self::bypass_sub_name())?;
+
+        for (i, _) in self.splits.iter().enumerate() {
+            // Each split has a link node and an aggregated node to enforce the factors
+            let split_idx = network.add_link_node(self.meta.name.as_str(), Self::split_sub_name(i).as_deref())?;
+
+            // The factors will be set during the `set_constraints` method
+            network.add_aggregated_node(
+                self.meta.name.as_str(),
+                Self::split_agg_sub_name(i).as_deref(),
+                &[bypass_idx, split_idx],
+                None,
+            )?;
+        }
+
+        Ok(())
+    }
+
+    pub fn set_constraints(
+        &self,
+        network: &mut pywr_core::network::Network,
+        args: &LoadArgs,
+    ) -> Result<(), SchemaError> {
+        // MRF applies as a maximum on the MRF node.
+        if let Some(cost) = &self.mrf_cost {
+            let value = cost.load(network, args)?;
+            network.set_node_cost(self.meta.name.as_str(), Self::mrf_sub_name(), value.into())?;
+        }
+
+        if let Some(mrf) = &self.mrf {
+            let value = mrf.load(network, args)?;
+            network.set_node_max_flow(self.meta.name.as_str(), Self::mrf_sub_name(), value.into())?;
+        }
+
+        for (i, (factor, _)) in self.splits.iter().enumerate() {
+            // Set the factors for each split
+            let factors = Factors::Proportion(vec![factor.load(network, args)?]);
+            network.set_aggregated_node_factors(
+                self.meta.name.as_str(),
+                Self::split_agg_sub_name(i).as_deref(),
+                Some(factors),
+            )?;
+        }
+
+        Ok(())
+    }
     pub fn create_metric(
         &self,
         network: &pywr_core::network::Network,
         attribute: Option<NodeAttribute>,
-    ) -> Result<Metric, SchemaError> {
+    ) -> Result<MetricF64, SchemaError> {
         // Use the default attribute if none is specified
         let attr = attribute.unwrap_or(Self::DEFAULT_ATTRIBUTE);
 
@@ -184,11 +179,11 @@ impl RiverSplitWithGaugeNode {
         indices.extend(split_idx);
 
         let metric = match attr {
-            NodeAttribute::Inflow => Metric::MultiNodeInFlow {
+            NodeAttribute::Inflow => MetricF64::MultiNodeInFlow {
                 indices,
                 name: self.meta.name.to_string(),
             },
-            NodeAttribute::Outflow => Metric::MultiNodeOutFlow {
+            NodeAttribute::Outflow => MetricF64::MultiNodeOutFlow {
                 indices,
                 name: self.meta.name.to_string(),
             },
@@ -233,7 +228,7 @@ impl TryFrom<RiverSplitWithGaugeNodeV1> for RiverSplitWithGaugeNode {
                     slot_name,
                 ))
             })
-            .collect::<Result<Vec<(DynamicFloatValue, String)>, Self::Error>>()?;
+            .collect::<Result<Vec<(Metric, String)>, Self::Error>>()?;
 
         let n = Self {
             meta,
@@ -248,6 +243,7 @@ impl TryFrom<RiverSplitWithGaugeNodeV1> for RiverSplitWithGaugeNode {
 #[cfg(test)]
 mod tests {
     use crate::model::PywrModel;
+    #[cfg(feature = "core")]
     use pywr_core::test_utils::run_all_solvers;
 
     fn model_str() -> &'static str {
@@ -264,6 +260,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "core")]
     fn test_model_run() {
         let data = model_str();
         let schema: PywrModel = serde_json::from_str(data).unwrap();
@@ -274,7 +271,7 @@ mod tests {
         assert_eq!(network.edges().len(), 6);
 
         // Test all solvers
-        run_all_solvers(&model);
+        run_all_solvers(&model, &[]);
 
         // TODO assert the results!
     }

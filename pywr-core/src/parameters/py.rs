@@ -1,9 +1,9 @@
-use super::{IndexValue, Parameter, ParameterMeta, PywrError, Timestep};
-use crate::metric::Metric;
+use super::{GeneralParameter, Parameter, ParameterMeta, ParameterState, PywrError, Timestep};
+use crate::metric::{MetricF64, MetricUsize};
 use crate::network::Network;
 use crate::parameters::downcast_internal_state_mut;
 use crate::scenario::ScenarioIndex;
-use crate::state::{MultiValue, ParameterState, State};
+use crate::state::{MultiValue, State};
 use pyo3::prelude::*;
 use pyo3::types::{IntoPyDict, PyDict, PyFloat, PyLong, PyTuple};
 use std::collections::HashMap;
@@ -13,8 +13,8 @@ pub struct PyParameter {
     object: Py<PyAny>,
     args: Py<PyTuple>,
     kwargs: Py<PyDict>,
-    metrics: HashMap<String, Metric>,
-    indices: HashMap<String, IndexValue>,
+    metrics: HashMap<String, MetricF64>,
+    indices: HashMap<String, MetricUsize>,
 }
 
 #[derive(Clone)]
@@ -34,8 +34,8 @@ impl PyParameter {
         object: Py<PyAny>,
         args: Py<PyTuple>,
         kwargs: Py<PyDict>,
-        metrics: &HashMap<String, Metric>,
-        indices: &HashMap<String, IndexValue>,
+        metrics: &HashMap<String, MetricF64>,
+        indices: &HashMap<String, MetricUsize>,
     ) -> Self {
         Self {
             meta: ParameterMeta::new(name),
@@ -47,33 +47,43 @@ impl PyParameter {
         }
     }
 
-    fn get_metrics_dict<'py>(&self, model: &Network, state: &State, py: Python<'py>) -> Result<&'py PyDict, PywrError> {
+    fn get_metrics_dict<'py>(
+        &self,
+        network: &Network,
+        state: &State,
+        py: Python<'py>,
+    ) -> Result<Bound<'py, PyDict>, PywrError> {
         let metric_values: Vec<(&str, f64)> = self
             .metrics
             .iter()
-            .map(|(k, value)| Ok((k.as_str(), value.get_value(model, state)?)))
+            .map(|(k, value)| Ok((k.as_str(), value.get_value(network, state)?)))
             .collect::<Result<Vec<_>, PywrError>>()?;
 
-        Ok(metric_values.into_py_dict(py))
+        Ok(metric_values.into_py_dict_bound(py))
     }
 
-    fn get_indices_dict<'py>(&self, state: &State, py: Python<'py>) -> Result<&'py PyDict, PywrError> {
+    fn get_indices_dict<'py>(
+        &self,
+        network: &Network,
+        state: &State,
+        py: Python<'py>,
+    ) -> Result<Bound<'py, PyDict>, PywrError> {
         let index_values: Vec<(&str, usize)> = self
             .indices
             .iter()
-            .map(|(k, value)| Ok((k.as_str(), value.get_index(state)?)))
+            .map(|(k, value)| Ok((k.as_str(), value.get_value(network, state)?)))
             .collect::<Result<Vec<_>, PywrError>>()?;
 
-        Ok(index_values.into_py_dict(py))
+        Ok(index_values.into_py_dict_bound(py))
     }
 
     fn setup(&self) -> Result<Option<Box<dyn ParameterState>>, PywrError> {
         pyo3::prepare_freethreaded_python();
 
         let user_obj: PyObject = Python::with_gil(|py| -> PyResult<PyObject> {
-            let args = self.args.as_ref(py);
-            let kwargs = self.kwargs.as_ref(py);
-            self.object.call(py, args, Some(kwargs))
+            let args = self.args.bind(py);
+            let kwargs = self.kwargs.bind(py);
+            self.object.call_bound(py, args, Some(kwargs))
         })
         .unwrap();
 
@@ -86,7 +96,7 @@ impl PyParameter {
         &self,
         timestep: &Timestep,
         scenario_index: &ScenarioIndex,
-        model: &Network,
+        network: &Network,
         state: &State,
         internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<T, PywrError>
@@ -100,10 +110,13 @@ impl PyParameter {
 
             let si = scenario_index.index.into_py(py);
 
-            let metric_dict = self.get_metrics_dict(model, state, py)?;
-            let index_dict = self.get_indices_dict(state, py)?;
+            let metric_dict = self.get_metrics_dict(network, state, py)?;
+            let index_dict = self.get_indices_dict(network, state, py)?;
 
-            let args = PyTuple::new(py, [date.as_ref(py), si.as_ref(py), metric_dict, index_dict]);
+            let args = PyTuple::new_bound(
+                py,
+                [date.bind(py), si.bind(py), metric_dict.as_any(), index_dict.as_any()],
+            );
 
             internal.user_obj.call_method1(py, "calc", args)?.extract(py)
         })
@@ -116,7 +129,7 @@ impl PyParameter {
         &self,
         timestep: &Timestep,
         scenario_index: &ScenarioIndex,
-        model: &Network,
+        network: &Network,
         state: &State,
         internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<(), PywrError> {
@@ -129,10 +142,13 @@ impl PyParameter {
 
                 let si = scenario_index.index.into_py(py);
 
-                let metric_dict = self.get_metrics_dict(model, state, py)?;
-                let index_dict = self.get_indices_dict(state, py)?;
+                let metric_dict = self.get_metrics_dict(network, state, py)?;
+                let index_dict = self.get_indices_dict(network, state, py)?;
 
-                let args = PyTuple::new(py, [date.as_ref(py), si.as_ref(py), metric_dict, index_dict]);
+                let args = PyTuple::new_bound(
+                    py,
+                    [date.bind(py), si.bind(py), metric_dict.as_any(), index_dict.as_any()],
+                );
 
                 internal.user_obj.call_method1(py, "after", args)?;
             }
@@ -144,7 +160,7 @@ impl PyParameter {
     }
 }
 
-impl Parameter<f64> for PyParameter {
+impl Parameter for PyParameter {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }
@@ -156,7 +172,9 @@ impl Parameter<f64> for PyParameter {
     ) -> Result<Option<Box<dyn ParameterState>>, PywrError> {
         self.setup()
     }
+}
 
+impl GeneralParameter<f64> for PyParameter {
     fn compute(
         &self,
         timestep: &Timestep,
@@ -178,21 +196,16 @@ impl Parameter<f64> for PyParameter {
     ) -> Result<(), PywrError> {
         self.after(timestep, scenario_index, model, state, internal_state)
     }
+
+    fn as_parameter(&self) -> &dyn Parameter
+    where
+        Self: Sized,
+    {
+        self
+    }
 }
 
-impl Parameter<usize> for PyParameter {
-    fn meta(&self) -> &ParameterMeta {
-        &self.meta
-    }
-
-    fn setup(
-        &self,
-        _timesteps: &[Timestep],
-        _scenario_index: &ScenarioIndex,
-    ) -> Result<Option<Box<dyn ParameterState>>, PywrError> {
-        self.setup()
-    }
-
+impl GeneralParameter<usize> for PyParameter {
     fn compute(
         &self,
         timestep: &Timestep,
@@ -214,35 +227,21 @@ impl Parameter<usize> for PyParameter {
     ) -> Result<(), PywrError> {
         self.after(timestep, scenario_index, model, state, internal_state)
     }
+
+    fn as_parameter(&self) -> &dyn Parameter
+    where
+        Self: Sized,
+    {
+        self
+    }
 }
 
-impl Parameter<MultiValue> for PyParameter {
-    fn meta(&self) -> &ParameterMeta {
-        &self.meta
-    }
-
-    fn setup(
-        &self,
-        _timesteps: &[Timestep],
-        _scenario_index: &ScenarioIndex,
-    ) -> Result<Option<Box<dyn ParameterState>>, PywrError> {
-        self.setup()
-    }
-
-    // fn before(&self, internal_state: &mut Option<Box<dyn ParameterState>>) -> Result<(), PywrError> {
-    //     let internal = downcast_internal_state::<Internal>(internal_state);
-    //
-    //     Python::with_gil(|py| internal.user_obj.call_method0(py, "before"))
-    //         .map_err(|e| PywrError::PythonError(e.to_string()))?;
-    //
-    //     Ok(())
-    // }
-
+impl GeneralParameter<MultiValue> for PyParameter {
     fn compute(
         &self,
         timestep: &Timestep,
         scenario_index: &ScenarioIndex,
-        model: &Network,
+        network: &Network,
         state: &State,
         internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<MultiValue, PywrError> {
@@ -253,10 +252,13 @@ impl Parameter<MultiValue> for PyParameter {
 
             let si = scenario_index.index.into_py(py);
 
-            let metric_dict = self.get_metrics_dict(model, state, py)?;
-            let index_dict = self.get_indices_dict(state, py)?;
+            let metric_dict = self.get_metrics_dict(network, state, py)?;
+            let index_dict = self.get_indices_dict(network, state, py)?;
 
-            let args = PyTuple::new(py, [date.as_ref(py), si.as_ref(py), metric_dict, index_dict]);
+            let args = PyTuple::new_bound(
+                py,
+                [date.bind(py), si.bind(py), metric_dict.as_any(), index_dict.as_any()],
+            );
 
             let py_values: HashMap<String, PyObject> = internal
                 .user_obj
@@ -268,7 +270,7 @@ impl Parameter<MultiValue> for PyParameter {
             // Try to convert the floats
             let values: HashMap<String, f64> = py_values
                 .iter()
-                .filter_map(|(k, v)| match v.downcast::<PyFloat>(py) {
+                .filter_map(|(k, v)| match v.downcast_bound::<PyFloat>(py) {
                     Ok(v) => Some((k.clone(), v.extract().unwrap())),
                     Err(_) => None,
                 })
@@ -276,7 +278,7 @@ impl Parameter<MultiValue> for PyParameter {
 
             let indices: HashMap<String, usize> = py_values
                 .iter()
-                .filter_map(|(k, v)| match v.downcast::<PyLong>(py) {
+                .filter_map(|(k, v)| match v.downcast_bound::<PyLong>(py) {
                     Ok(v) => Some((k.clone(), v.extract().unwrap())),
                     Err(_) => None,
                 })
@@ -304,6 +306,13 @@ impl Parameter<MultiValue> for PyParameter {
     ) -> Result<(), PywrError> {
         self.after(timestep, scenario_index, model, state, internal_state)
     }
+
+    fn as_parameter(&self) -> &dyn Parameter
+    where
+        Self: Sized,
+    {
+        self
+    }
 }
 
 #[cfg(test)]
@@ -322,7 +331,7 @@ mod tests {
         pyo3::prepare_freethreaded_python();
 
         let class = Python::with_gil(|py| {
-            let test_module = PyModule::from_code(
+            let test_module = PyModule::from_code_bound(
                 py,
                 r#"
 class MyParameter:
@@ -341,8 +350,8 @@ class MyParameter:
             test_module.getattr("MyParameter").unwrap().into()
         });
 
-        let args = Python::with_gil(|py| PyTuple::new(py, [0]).into());
-        let kwargs = Python::with_gil(|py| PyDict::new(py).into());
+        let args = Python::with_gil(|py| PyTuple::new_bound(py, [0]).into());
+        let kwargs = Python::with_gil(|py| PyDict::new_bound(py).into());
 
         let param = PyParameter::new("my-parameter", class, args, kwargs, &HashMap::new(), &HashMap::new());
         let timestepper = default_timestepper();
@@ -360,18 +369,18 @@ class MyParameter:
             },
         ];
 
-        let state = StateBuilder::new(vec![], 0).with_value_parameters(1).build();
+        let state = StateBuilder::new(vec![], 0).build();
 
         let mut internal_p_states: Vec<_> = scenario_indices
             .iter()
-            .map(|si| Parameter::<f64>::setup(&param, &timesteps, si).expect("Could not setup the PyParameter"))
+            .map(|si| Parameter::setup(&param, &timesteps, si).expect("Could not setup the PyParameter"))
             .collect();
 
         let model = Network::default();
 
         for ts in timesteps {
             for (si, internal) in scenario_indices.iter().zip(internal_p_states.iter_mut()) {
-                let value = Parameter::compute(&param, ts, si, &model, &state, internal).unwrap();
+                let value = GeneralParameter::compute(&param, ts, si, &model, &state, internal).unwrap();
 
                 assert_approx_eq!(f64, value, ((ts.index + 1) * si.index + ts.date.day() as usize) as f64);
             }
@@ -385,7 +394,7 @@ class MyParameter:
         pyo3::prepare_freethreaded_python();
 
         let class = Python::with_gil(|py| {
-            let test_module = PyModule::from_code(
+            let test_module = PyModule::from_code_bound(
                 py,
                 r#"
 import math
@@ -410,8 +419,8 @@ class MyParameter:
             test_module.getattr("MyParameter").unwrap().into()
         });
 
-        let args = Python::with_gil(|py| PyTuple::new(py, [0]).into());
-        let kwargs = Python::with_gil(|py| PyDict::new(py).into());
+        let args = Python::with_gil(|py| PyTuple::new_bound(py, [0]).into());
+        let kwargs = Python::with_gil(|py| PyDict::new_bound(py).into());
 
         let param = PyParameter::new("my-parameter", class, args, kwargs, &HashMap::new(), &HashMap::new());
         let timestepper = default_timestepper();
@@ -429,18 +438,18 @@ class MyParameter:
             },
         ];
 
-        let state = StateBuilder::new(vec![], 0).with_value_parameters(1).build();
+        let state = StateBuilder::new(vec![], 0).build();
 
         let mut internal_p_states: Vec<_> = scenario_indices
             .iter()
-            .map(|si| Parameter::<MultiValue>::setup(&param, &timesteps, si).expect("Could not setup the PyParameter"))
+            .map(|si| Parameter::setup(&param, &timesteps, si).expect("Could not setup the PyParameter"))
             .collect();
 
         let model = Network::default();
 
         for ts in timesteps {
             for (si, internal) in scenario_indices.iter().zip(internal_p_states.iter_mut()) {
-                let value = Parameter::<MultiValue>::compute(&param, ts, si, &model, &state, internal).unwrap();
+                let value = GeneralParameter::<MultiValue>::compute(&param, ts, si, &model, &state, internal).unwrap();
 
                 assert_approx_eq!(f64, *value.get_value("a-float").unwrap(), std::f64::consts::PI);
 

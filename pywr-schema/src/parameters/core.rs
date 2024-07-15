@@ -1,18 +1,19 @@
-use crate::data_tables::LoadedTableCollection;
-use crate::error::{ConversionError, SchemaError};
-use crate::model::PywrMultiNetworkTransfer;
-use crate::parameters::{
-    ConstantValue, DynamicFloatValue, DynamicFloatValueType, IntoV2Parameter, ParameterMeta, TryFromV1Parameter,
-    TryIntoV2Parameter,
-};
-use pywr_core::models::ModelDomain;
+use crate::error::ConversionError;
+#[cfg(feature = "core")]
+use crate::error::SchemaError;
+use crate::metric::Metric;
+#[cfg(feature = "core")]
+use crate::model::LoadArgs;
+use crate::parameters::{ConstantValue, IntoV2Parameter, ParameterMeta, TryFromV1Parameter, TryIntoV2Parameter};
+#[cfg(feature = "core")]
 use pywr_core::parameters::ParameterIndex;
+use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::parameters::{
     ConstantParameter as ConstantParameterV1, DivisionParameter as DivisionParameterV1, MaxParameter as MaxParameterV1,
-    MinParameter as MinParameterV1, NegativeParameter as NegativeParameterV1,
+    MinParameter as MinParameterV1, NegativeMaxParameter as NegativeMaxParameterV1,
+    NegativeMinParameter as NegativeMinParameterV1, NegativeParameter as NegativeParameterV1,
 };
-use std::collections::HashMap;
-use std::path::Path;
+use schemars::JsonSchema;
 
 /// Activation function or transformation to apply to variable value.
 ///
@@ -94,6 +95,7 @@ pub enum ActivationFunction {
     Logistic { growth_rate: f64, max: f64 },
 }
 
+#[cfg(feature = "core")]
 impl From<ActivationFunction> for pywr_core::parameters::ActivationFunction {
     fn from(a: ActivationFunction) -> Self {
         match a {
@@ -143,7 +145,7 @@ pub struct VariableSettings {
 #[doc = include_str!("doc_examples/constant_variable.json")]
 /// ```
 ///
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 pub struct ConstantParameter {
     /// Meta-data.
     ///
@@ -157,22 +159,15 @@ pub struct ConstantParameter {
     pub value: ConstantValue<f64>,
 }
 
+#[cfg(feature = "core")]
 impl ConstantParameter {
-    pub fn node_references(&self) -> HashMap<&str, &str> {
-        HashMap::new()
-    }
-
-    pub fn parameters(&self) -> HashMap<&str, DynamicFloatValueType> {
-        HashMap::new()
-    }
-
     pub fn add_to_model(
         &self,
         network: &mut pywr_core::network::Network,
-        tables: &LoadedTableCollection,
+        args: &LoadArgs,
     ) -> Result<ParameterIndex<f64>, SchemaError> {
-        let p = pywr_core::parameters::ConstantParameter::new(&self.meta.name, self.value.load(tables)?);
-        Ok(network.add_parameter(Box::new(p))?)
+        let p = pywr_core::parameters::ConstantParameter::new(&self.meta.name, self.value.load(args.tables)?);
+        Ok(network.add_const_parameter(Box::new(p))?)
     }
 }
 
@@ -200,36 +195,22 @@ impl TryFromV1Parameter<ConstantParameterV1> for ConstantParameter {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 pub struct MaxParameter {
     #[serde(flatten)]
     pub meta: ParameterMeta,
-    pub parameter: DynamicFloatValue,
+    pub parameter: Metric,
     pub threshold: Option<f64>,
 }
 
+#[cfg(feature = "core")]
 impl MaxParameter {
-    pub fn node_references(&self) -> HashMap<&str, &str> {
-        HashMap::new()
-    }
-    // pub fn parameters(&self) -> HashMap<&str, DynamicFloatValueType> {
-    //     let mut attributes = HashMap::new();
-    //     attributes.insert("parameter", self.parameter.as_ref().into());
-    //     attributes
-    // }
-
     pub fn add_to_model(
         &self,
         network: &mut pywr_core::network::Network,
-        schema: &crate::model::PywrNetwork,
-        domain: &ModelDomain,
-        tables: &LoadedTableCollection,
-        data_path: Option<&Path>,
-        inter_network_transfers: &[PywrMultiNetworkTransfer],
+        args: &LoadArgs,
     ) -> Result<ParameterIndex<f64>, SchemaError> {
-        let idx = self
-            .parameter
-            .load(network, schema, domain, tables, data_path, inter_network_transfers)?;
+        let idx = self.parameter.load(network, args)?;
         let threshold = self.threshold.unwrap_or(0.0);
 
         let p = pywr_core::parameters::MaxParameter::new(&self.meta.name, idx, threshold);
@@ -268,46 +249,25 @@ impl TryFromV1Parameter<MaxParameterV1> for MaxParameter {
 /// # Examples
 ///
 /// ```json
-/// {
-///     "type": "Division",
-///     "numerator": {
-///         "type": "MonthlyProfile",
-///         "values": [1, 4, 5, 9, 1, 5, 10, 8, 11, 9, 11 ,12]
-///     },
-///     "denominator": {
-///         "type": "Constant",
-///         "value": 0.3
-///     }
-/// }
+#[doc = include_str!("doc_examples/division.json")]
 /// ```
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 pub struct DivisionParameter {
     #[serde(flatten)]
     pub meta: ParameterMeta,
-    pub numerator: DynamicFloatValue,
-    pub denominator: DynamicFloatValue,
+    pub numerator: Metric,
+    pub denominator: Metric,
 }
 
+#[cfg(feature = "core")]
 impl DivisionParameter {
-    pub fn node_references(&self) -> HashMap<&str, &str> {
-        HashMap::new()
-    }
-
     pub fn add_to_model(
         &self,
         network: &mut pywr_core::network::Network,
-        schema: &crate::model::PywrNetwork,
-        domain: &ModelDomain,
-        tables: &LoadedTableCollection,
-        data_path: Option<&Path>,
-        inter_network_transfers: &[PywrMultiNetworkTransfer],
+        args: &LoadArgs,
     ) -> Result<ParameterIndex<f64>, SchemaError> {
-        let n = self
-            .numerator
-            .load(network, schema, domain, tables, data_path, inter_network_transfers)?;
-        let d = self
-            .denominator
-            .load(network, schema, domain, tables, data_path, inter_network_transfers)?;
+        let n = self.numerator.load(network, args)?;
+        let d = self.denominator.load(network, args)?;
 
         let p = pywr_core::parameters::DivisionParameter::new(&self.meta.name, n, d);
         Ok(network.add_parameter(Box::new(p))?)
@@ -346,40 +306,24 @@ impl TryFromV1Parameter<DivisionParameterV1> for DivisionParameter {
 /// # Examples
 ///
 /// ```json
-/// {
-///     "type": "Min",
-///     "parameter": {
-///         "type": "MonthlyProfile",
-///         "values": [1, 4, 5, 9, 1, 5, 10, 8, 11, 9, 11 ,12]
-///     },
-///     "threshold": 2
-/// }
+#[doc = include_str!("doc_examples/min.json")]
 /// ```
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 pub struct MinParameter {
     #[serde(flatten)]
     pub meta: ParameterMeta,
-    pub parameter: DynamicFloatValue,
+    pub parameter: Metric,
     pub threshold: Option<f64>,
 }
 
+#[cfg(feature = "core")]
 impl MinParameter {
-    pub fn node_references(&self) -> HashMap<&str, &str> {
-        HashMap::new()
-    }
-
     pub fn add_to_model(
         &self,
         network: &mut pywr_core::network::Network,
-        schema: &crate::model::PywrNetwork,
-        domain: &ModelDomain,
-        tables: &LoadedTableCollection,
-        data_path: Option<&Path>,
-        inter_network_transfers: &[PywrMultiNetworkTransfer],
+        args: &LoadArgs,
     ) -> Result<ParameterIndex<f64>, SchemaError> {
-        let idx = self
-            .parameter
-            .load(network, schema, domain, tables, data_path, inter_network_transfers)?;
+        let idx = self.parameter.load(network, args)?;
         let threshold = self.threshold.unwrap_or(0.0);
 
         let p = pywr_core::parameters::MinParameter::new(&self.meta.name, idx, threshold);
@@ -408,35 +352,21 @@ impl TryFromV1Parameter<MinParameterV1> for MinParameter {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 pub struct NegativeParameter {
     #[serde(flatten)]
     pub meta: ParameterMeta,
-    pub parameter: DynamicFloatValue,
+    pub parameter: Metric,
 }
 
+#[cfg(feature = "core")]
 impl NegativeParameter {
-    pub fn node_references(&self) -> HashMap<&str, &str> {
-        HashMap::new()
-    }
-    // pub fn parameters(&self) -> HashMap<&str, DynamicFloatValueType> {
-    //     let mut attributes = HashMap::new();
-    //     attributes.insert("parameter", self.parameter.as_ref().into());
-    //     attributes
-    // }
-
     pub fn add_to_model(
         &self,
         network: &mut pywr_core::network::Network,
-        schema: &crate::model::PywrNetwork,
-        domain: &ModelDomain,
-        tables: &LoadedTableCollection,
-        data_path: Option<&Path>,
-        inter_network_transfers: &[PywrMultiNetworkTransfer],
+        args: &LoadArgs,
     ) -> Result<ParameterIndex<f64>, SchemaError> {
-        let idx = self
-            .parameter
-            .load(network, schema, domain, tables, data_path, inter_network_transfers)?;
+        let idx = self.parameter.load(network, args)?;
 
         let p = pywr_core::parameters::NegativeParameter::new(&self.meta.name, idx);
         Ok(network.add_parameter(Box::new(p))?)
@@ -456,6 +386,118 @@ impl TryFromV1Parameter<NegativeParameterV1> for NegativeParameter {
         let parameter = v1.parameter.try_into_v2_parameter(Some(&meta.name), unnamed_count)?;
 
         let p = Self { meta, parameter };
+        Ok(p)
+    }
+}
+
+/// This parameter takes the maximum of the negative of a metric and a constant value (threshold).
+///
+/// # Arguments
+///
+/// * `metric` - The metric value to compare with the float.
+/// * `threshold` - The threshold value to compare against the given parameter. Default to 0.0.
+///
+/// # Examples
+///
+/// ```json
+#[doc = include_str!("doc_examples/negative_max.json")]
+/// ```
+/// In January this parameter returns 2, in February 4.
+///
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
+pub struct NegativeMaxParameter {
+    #[serde(flatten)]
+    pub meta: ParameterMeta,
+    pub metric: Metric,
+    pub threshold: Option<f64>,
+}
+
+#[cfg(feature = "core")]
+impl NegativeMaxParameter {
+    pub fn add_to_model(
+        &self,
+        network: &mut pywr_core::network::Network,
+        args: &LoadArgs,
+    ) -> Result<ParameterIndex<f64>, SchemaError> {
+        let idx = self.metric.load(network, args)?;
+        let threshold = self.threshold.unwrap_or(0.0);
+
+        let p = pywr_core::parameters::NegativeMaxParameter::new(&self.meta.name, idx, threshold);
+        Ok(network.add_parameter(Box::new(p))?)
+    }
+}
+
+impl TryFromV1Parameter<NegativeMaxParameterV1> for NegativeMaxParameter {
+    type Error = ConversionError;
+
+    fn try_from_v1_parameter(
+        v1: NegativeMaxParameterV1,
+        parent_node: Option<&str>,
+        unnamed_count: &mut usize,
+    ) -> Result<Self, Self::Error> {
+        let meta: ParameterMeta = v1.meta.into_v2_parameter(parent_node, unnamed_count);
+        let parameter = v1.parameter.try_into_v2_parameter(Some(&meta.name), unnamed_count)?;
+        let p = Self {
+            meta,
+            metric: parameter,
+            threshold: v1.threshold,
+        };
+        Ok(p)
+    }
+}
+
+/// This parameter takes the minimum of the negative of a metric and a constant value (threshold).
+///
+/// # Arguments
+///
+/// * `metric` - The metric value to compare with the float.
+/// * `threshold` - The threshold value to compare against the given parameter. Default to 0.0.
+///
+/// # Examples
+///
+/// ```json
+#[doc = include_str!("doc_examples/negative_min.json")]
+/// ```
+/// In January this parameter returns 1, in February 2.
+///
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
+pub struct NegativeMinParameter {
+    #[serde(flatten)]
+    pub meta: ParameterMeta,
+    pub metric: Metric,
+    pub threshold: Option<f64>,
+}
+
+#[cfg(feature = "core")]
+impl NegativeMinParameter {
+    pub fn add_to_model(
+        &self,
+        network: &mut pywr_core::network::Network,
+        args: &LoadArgs,
+    ) -> Result<ParameterIndex<f64>, SchemaError> {
+        let idx = self.metric.load(network, args)?;
+        let threshold = self.threshold.unwrap_or(0.0);
+
+        let p = pywr_core::parameters::NegativeMinParameter::new(&self.meta.name, idx, threshold);
+        Ok(network.add_parameter(Box::new(p))?)
+    }
+}
+
+impl TryFromV1Parameter<NegativeMinParameterV1> for NegativeMinParameter {
+    type Error = ConversionError;
+
+    fn try_from_v1_parameter(
+        v1: NegativeMinParameterV1,
+        parent_node: Option<&str>,
+        unnamed_count: &mut usize,
+    ) -> Result<Self, Self::Error> {
+        let meta: ParameterMeta = v1.meta.into_v2_parameter(parent_node, unnamed_count);
+        let parameter = v1.parameter.try_into_v2_parameter(Some(&meta.name), unnamed_count)?;
+        let p = Self {
+            meta,
+            metric: parameter,
+            threshold: v1.threshold,
+        };
         Ok(p)
     }
 }

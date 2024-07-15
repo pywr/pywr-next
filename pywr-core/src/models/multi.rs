@@ -1,4 +1,4 @@
-use crate::metric::Metric;
+use crate::metric::MetricF64;
 use crate::models::ModelDomain;
 use crate::network::{Network, NetworkState, RunTimings};
 use crate::scenario::ScenarioIndex;
@@ -53,7 +53,7 @@ struct MultiNetworkTransfer {
     /// The model to get the value from.
     from_model_idx: OtherNetworkIndex,
     /// The metric to get the value from.
-    from_metric: Metric,
+    from_metric: MetricF64,
     /// Optional initial value to use on the first time-step
     initial_value: Option<f64>,
 }
@@ -130,7 +130,7 @@ impl MultiNetworkModel {
     pub fn add_inter_network_transfer(
         &mut self,
         from_network_idx: usize,
-        from_metric: Metric,
+        from_metric: MetricF64,
         to_network_idx: usize,
         initial_value: Option<f64>,
     ) {
@@ -334,7 +334,7 @@ fn compute_inter_network_transfers(
             OtherNetworkIndex::After(i) => (&after_models[i.get() - 1], &after_states[i.get() - 1]),
         };
 
-        let value = match timestep.is_first().then(|| parameter.initial_value).flatten() {
+        let value = match timestep.is_first().then_some(parameter.initial_value).flatten() {
             // Use the initial value if it is given and it is the first time-step.
             Some(initial_value) => initial_value,
             // Otherwise, get the value from the other model's state/metric

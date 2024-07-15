@@ -1,7 +1,8 @@
-use chrono::NaiveDate;
+use chrono::NaiveDateTime;
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
-use pyo3::types::{PyDateAccess, PyDateTime, PyDict, PyTimeAccess, PyType};
+use pyo3::types::{PyDict, PyType};
+
 /// Python API
 ///
 /// The following structures provide a Python API to access the core model structures.
@@ -63,25 +64,9 @@ pub struct Schema {
 #[pymethods]
 impl Schema {
     #[new]
-    fn new(title: &str, start: &PyDateTime, end: &PyDateTime) -> Self {
-        // SAFETY: We know that the date & month are valid because it is a Python date.
-        let start = DateType::DateTime(
-            NaiveDate::from_ymd_opt(start.get_year(), start.get_month() as u32, start.get_day() as u32)
-                .unwrap()
-                .and_hms_opt(
-                    start.get_hour() as u32,
-                    start.get_minute() as u32,
-                    start.get_second() as u32,
-                )
-                .unwrap(),
-        );
-
-        let end = DateType::DateTime(
-            NaiveDate::from_ymd_opt(end.get_year(), end.get_month() as u32, end.get_day() as u32)
-                .unwrap()
-                .and_hms_opt(end.get_hour() as u32, end.get_minute() as u32, end.get_second() as u32)
-                .unwrap(),
-        );
+    fn new(title: &str, start: NaiveDateTime, end: NaiveDateTime) -> Self {
+        let start = DateType::DateTime(start);
+        let end = DateType::DateTime(end);
 
         Self {
             schema: pywr_schema::PywrModel::new(title, &start, &end),
@@ -90,7 +75,7 @@ impl Schema {
 
     /// Create a new schema object from a file path.
     #[classmethod]
-    fn from_path(_cls: &PyType, path: PathBuf) -> PyResult<Self> {
+    fn from_path(_cls: &Bound<'_, PyType>, path: PathBuf) -> PyResult<Self> {
         Ok(Self {
             schema: pywr_schema::PywrModel::from_path(path)?,
         })
@@ -98,7 +83,7 @@ impl Schema {
 
     ///  Create a new schema object from a JSON string.
     #[classmethod]
-    fn from_json_string(_cls: &PyType, data: &str) -> PyResult<Self> {
+    fn from_json_string(_cls: &Bound<'_, PyType>, data: &str) -> PyResult<Self> {
         Ok(Self {
             schema: pywr_schema::PywrModel::from_str(data)?,
         })
@@ -124,7 +109,7 @@ pub struct Model {
 
 #[pymethods]
 impl Model {
-    fn run(&self, solver_name: &str, solver_kwargs: Option<&PyDict>) -> PyResult<()> {
+    fn run(&self, solver_name: &str, solver_kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<()> {
         match solver_name {
             "clp" => {
                 let settings = build_clp_settings(solver_kwargs)?;
@@ -146,7 +131,7 @@ impl Model {
     }
 }
 
-fn build_clp_settings(kwargs: Option<&PyDict>) -> PyResult<ClpSolverSettings> {
+fn build_clp_settings(kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<ClpSolverSettings> {
     let mut builder = ClpSolverSettingsBuilder::default();
 
     if let Some(kwargs) = kwargs {
@@ -211,7 +196,7 @@ fn build_highs_settings(kwargs: Option<&PyDict>) -> PyResult<HighsSolverSettings
 
 /// A Python module implemented in Rust.
 #[pymodule]
-fn pywr(_py: Python, m: &PyModule) -> PyResult<()> {
+fn pywr(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     pyo3_log::init();
 
     m.add_class::<Schema>()?;

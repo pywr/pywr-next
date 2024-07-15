@@ -13,19 +13,29 @@
         "name": "input1",
         "type": "Input",
         "max_flow": {
-          "type": "Parameter",
-          "name": "inflow"
+          "type": "Timeseries",
+          "name": "inflow",
+          "columns": {
+            "type": "Column",
+            "name": "inflow"
+          }
         }
       },
       {
         "name": "link1",
         "type": "Link",
-        "max_flow": 2.0
+        "max_flow": {
+          "type": "Constant",
+          "value": 2.0
+        }
       },
       {
         "name": "link2",
         "type": "Link",
-        "cost": 1.0
+        "cost": {
+          "type": "Constant",
+          "value": 1.0
+        }
       },
       {
         "name": "agg-node",
@@ -34,12 +44,18 @@
           "link1",
           "link2"
         ],
-        "max_flow": 5.0
+        "max_flow": {
+          "type": "Constant",
+          "value": 5.0
+        }
       },
       {
         "name": "output1",
         "type": "Output",
-        "cost": -10.0,
+        "cost": {
+          "type": "Constant",
+          "value": -10.0
+        },
         "max_flow": {
           "type": "Parameter",
           "name": "demand"
@@ -69,17 +85,14 @@
         "name": "demand",
         "type": "Constant",
         "value": 10.0
-      },
+      }
+    ],
+    "timeseries": [
       {
         "name": "inflow",
-        "type": "DataFrame",
-        "url": "inflow.csv",
-        "pandas_kwargs": {
-          "index_col": 0
-        },
-        "columns": {
-          "type": "Column",
-          "name": "inflow"
+        "provider": {
+          "type": "Polars",
+          "url": "inflow.csv"
         }
       }
     ],
@@ -88,24 +101,24 @@
         "name": "nodes",
         "metrics": [
           {
-            "type": "Default",
-            "node": "input1"
+            "type": "Node",
+            "name": "input1"
           },
           {
-            "type": "Default",
-            "node": "link1"
+            "type": "Node",
+            "name": "link1"
           },
           {
-            "type": "Default",
-            "node": "link2"
+            "type": "Node",
+            "name": "link2"
           },
           {
-            "type": "Default",
-            "node": "output1"
+            "type": "Node",
+            "name": "output1"
           },
           {
-            "type": "Default",
-            "node": "agg-node"
+            "type": "Node",
+            "name": "agg-node"
           }
         ]
       }

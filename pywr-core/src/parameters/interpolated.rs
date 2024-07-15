@@ -1,22 +1,22 @@
-use crate::metric::Metric;
+use crate::metric::MetricF64;
 use crate::network::Network;
 use crate::parameters::interpolate::linear_interpolation;
-use crate::parameters::{Parameter, ParameterMeta};
+use crate::parameters::{GeneralParameter, Parameter, ParameterMeta, ParameterState};
 use crate::scenario::ScenarioIndex;
-use crate::state::{ParameterState, State};
+use crate::state::State;
 use crate::timestep::Timestep;
 use crate::PywrError;
 
 /// A parameter that interpolates a value to a function with given discrete data points.
 pub struct InterpolatedParameter {
     meta: ParameterMeta,
-    x: Metric,
-    points: Vec<(Metric, Metric)>,
+    x: MetricF64,
+    points: Vec<(MetricF64, MetricF64)>,
     error_on_bounds: bool,
 }
 
 impl InterpolatedParameter {
-    pub fn new(name: &str, x: Metric, points: Vec<(Metric, Metric)>, error_on_bounds: bool) -> Self {
+    pub fn new(name: &str, x: MetricF64, points: Vec<(MetricF64, MetricF64)>, error_on_bounds: bool) -> Self {
         Self {
             meta: ParameterMeta::new(name),
             x,
@@ -25,11 +25,12 @@ impl InterpolatedParameter {
         }
     }
 }
-
-impl Parameter<f64> for InterpolatedParameter {
+impl Parameter for InterpolatedParameter {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }
+}
+impl GeneralParameter<f64> for InterpolatedParameter {
     fn compute(
         &self,
         _timestep: &Timestep,
@@ -55,5 +56,12 @@ impl Parameter<f64> for InterpolatedParameter {
         let f = linear_interpolation(x, &points, self.error_on_bounds)?;
 
         Ok(f)
+    }
+
+    fn as_parameter(&self) -> &dyn Parameter
+    where
+        Self: Sized,
+    {
+        self
     }
 }

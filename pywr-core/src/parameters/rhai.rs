@@ -1,9 +1,9 @@
-use super::{IndexValue, Parameter, ParameterMeta, PywrError, Timestep};
-use crate::metric::Metric;
+use super::{GeneralParameter, Parameter, ParameterMeta, ParameterState, PywrError, Timestep};
+use crate::metric::{MetricF64, MetricUsize};
 use crate::network::Network;
 use crate::parameters::downcast_internal_state_mut;
 use crate::scenario::ScenarioIndex;
-use crate::state::{ParameterState, State};
+use crate::state::State;
 use chrono::Datelike;
 use rhai::{Dynamic, Engine, Map, Scope, AST};
 use std::collections::HashMap;
@@ -13,8 +13,8 @@ pub struct RhaiParameter {
     engine: Engine,
     ast: AST,
     initial_state: Map,
-    metrics: HashMap<String, Metric>,
-    indices: HashMap<String, IndexValue>,
+    metrics: HashMap<String, MetricF64>,
+    indices: HashMap<String, MetricUsize>,
 }
 
 #[derive(Clone)]
@@ -27,8 +27,8 @@ impl RhaiParameter {
         name: &str,
         script: &str,
         initial_state: Map,
-        metrics: &HashMap<String, Metric>,
-        indices: &HashMap<String, IndexValue>,
+        metrics: &HashMap<String, MetricF64>,
+        indices: &HashMap<String, MetricUsize>,
     ) -> Self {
         let mut engine = Engine::new();
 
@@ -54,7 +54,7 @@ impl RhaiParameter {
     }
 }
 
-impl Parameter<f64> for RhaiParameter {
+impl Parameter for RhaiParameter {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }
@@ -77,12 +77,14 @@ impl Parameter<f64> for RhaiParameter {
 
         Ok(Some(Box::new(internal)))
     }
+}
 
+impl GeneralParameter<f64> for RhaiParameter {
     fn compute(
         &self,
         timestep: &Timestep,
         scenario_index: &ScenarioIndex,
-        model: &Network,
+        network: &Network,
         state: &State,
         internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<f64, PywrError> {
@@ -91,13 +93,13 @@ impl Parameter<f64> for RhaiParameter {
         let metric_values = self
             .metrics
             .iter()
-            .map(|(k, value)| Ok((k.into(), value.get_value(model, state)?.into())))
+            .map(|(k, value)| Ok((k.into(), value.get_value(network, state)?.into())))
             .collect::<Result<rhai::Map, PywrError>>()?;
 
         let index_values = self
             .indices
             .iter()
-            .map(|(k, value)| Ok((k.into(), (value.get_index(state)? as i64).into())))
+            .map(|(k, value)| Ok((k.into(), (value.get_value(network, state)? as i64).into())))
             .collect::<Result<rhai::Map, PywrError>>()?;
 
         let args = (*timestep, scenario_index.index as i64, metric_values, index_values);
@@ -110,6 +112,13 @@ impl Parameter<f64> for RhaiParameter {
             .expect("Failed to run Rhai compute function.");
 
         Ok(value)
+    }
+
+    fn as_parameter(&self) -> &dyn Parameter
+    where
+        Self: Sized,
+    {
+        self
     }
 }
 
@@ -162,7 +171,7 @@ mod tests {
             },
         ];
 
-        let state = StateBuilder::new(vec![], 0).with_value_parameters(1).build();
+        let state = StateBuilder::new(vec![], 0).build();
 
         let mut internal_p_states: Vec<_> = scenario_indices
             .iter()

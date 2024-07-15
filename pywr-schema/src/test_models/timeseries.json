@@ -1,0 +1,96 @@
+{
+  "metadata": {
+    "title": "Simple timeseries"
+  },
+  "timestepper": {
+    "start": "2021-01-01",
+    "end": "2021-12-31",
+    "timestep": 1
+  },
+  "network": {
+    "nodes": [
+      {
+        "name": "input2",
+        "type": "Input",
+        "max_flow": {
+          "type": "Parameter",
+          "name": "factored_flow"
+        }
+      },
+      {
+        "name": "input1",
+        "type": "Input",
+        "max_flow": {
+          "type": "Timeseries",
+          "name": "inflow",
+          "columns": {
+            "type": "Column",
+            "name": "inflow1"
+          }
+        }
+      },
+      {
+        "name": "link1",
+        "type": "Link"
+      },
+      {
+        "name": "output1",
+        "type": "Output",
+        "cost": {
+          "type": "Constant",
+          "value": -10
+        },
+        "max_flow": {
+          "type": "Parameter",
+          "name": "demand"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "from_node": "input1",
+        "to_node": "link1"
+      },
+      {
+        "from_node": "input2",
+        "to_node": "link1"
+      },
+      {
+        "from_node": "link1",
+        "to_node": "output1"
+      }
+    ],
+    "parameters": [
+      {
+        "name": "demand",
+        "type": "Constant",
+        "value": 100.0
+      },
+      {
+        "name": "factored_flow",
+        "type": "Aggregated",
+        "agg_func": "product",
+        "metrics": [
+          {
+            "type": "Timeseries",
+            "name": "inflow"
+          },
+          {
+            "type": "Constant",
+            "value": 0.5
+          }
+        ]
+      }
+    ],
+    "timeseries": [
+      {
+        "name": "inflow",
+        "provider": {
+          "type": "Polars",
+          "time_col": "date",
+          "url": "inflow.csv"
+        }
+      }
+    ]
+  }
+}

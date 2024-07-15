@@ -1,17 +1,17 @@
-use crate::metric::Metric;
+use crate::metric::MetricF64;
 use crate::network::Network;
 use crate::parameters::{
     downcast_internal_state_mut, downcast_internal_state_ref, downcast_variable_config_ref, ActivationFunction,
-    Parameter, ParameterMeta, VariableConfig, VariableParameter,
+    GeneralParameter, Parameter, ParameterMeta, ParameterState, VariableConfig, VariableParameter,
 };
 use crate::scenario::ScenarioIndex;
-use crate::state::{ParameterState, State};
+use crate::state::State;
 use crate::timestep::Timestep;
 use crate::PywrError;
 
 pub struct OffsetParameter {
     meta: ParameterMeta,
-    metric: Metric,
+    metric: MetricF64,
     offset: f64,
 }
 
@@ -19,7 +19,7 @@ pub struct OffsetParameter {
 type InternalValue = Option<f64>;
 
 impl OffsetParameter {
-    pub fn new(name: &str, metric: Metric, offset: f64) -> Self {
+    pub fn new(name: &str, metric: MetricF64, offset: f64) -> Self {
         Self {
             meta: ParameterMeta::new(name),
             metric,
@@ -38,11 +38,20 @@ impl OffsetParameter {
         }
     }
 }
-
-impl Parameter<f64> for OffsetParameter {
+impl Parameter for OffsetParameter {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }
+
+    fn as_f64_variable(&self) -> Option<&dyn VariableParameter<f64>> {
+        Some(self)
+    }
+
+    fn as_f64_variable_mut(&mut self) -> Option<&mut dyn VariableParameter<f64>> {
+        Some(self)
+    }
+}
+impl GeneralParameter<f64> for OffsetParameter {
     fn compute(
         &self,
         _timestep: &Timestep,
@@ -56,12 +65,12 @@ impl Parameter<f64> for OffsetParameter {
         let x = self.metric.get_value(model, state)?;
         Ok(x + offset)
     }
-    fn as_f64_variable(&self) -> Option<&dyn VariableParameter<f64>> {
-        Some(self)
-    }
 
-    fn as_f64_variable_mut(&mut self) -> Option<&mut dyn VariableParameter<f64>> {
-        Some(self)
+    fn as_parameter(&self) -> &dyn Parameter
+    where
+        Self: Sized,
+    {
+        self
     }
 }
 

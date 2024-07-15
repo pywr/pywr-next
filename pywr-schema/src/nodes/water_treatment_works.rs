@@ -1,15 +1,18 @@
-use crate::data_tables::LoadedTableCollection;
+#[cfg(feature = "core")]
 use crate::error::SchemaError;
-use crate::model::PywrMultiNetworkTransfer;
+use crate::metric::Metric;
+#[cfg(feature = "core")]
+use crate::model::LoadArgs;
 use crate::nodes::{NodeAttribute, NodeMeta};
-use crate::parameters::DynamicFloatValue;
+#[cfg(feature = "core")]
 use num::Zero;
-use pywr_core::aggregated_node::Factors;
-use pywr_core::metric::Metric;
-use pywr_core::models::ModelDomain;
-use pywr_schema_macros::PywrNode;
-use std::collections::HashMap;
-use std::path::Path;
+#[cfg(feature = "core")]
+use pywr_core::{
+    aggregated_node::Factors,
+    metric::{ConstantMetricF64, MetricF64, SimpleMetricF64},
+};
+use pywr_schema_macros::PywrVisitAll;
+use schemars::JsonSchema;
 
 #[doc = svgbobdoc::transform!(
 /// A node used to represent a water treatment works (WTW) with optional losses.
@@ -38,24 +41,24 @@ use std::path::Path;
 /// ```
 ///
 )]
-#[derive(serde::Deserialize, serde::Serialize, Clone, Default, PywrNode)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
 pub struct WaterTreatmentWorks {
     /// Node metadata
     #[serde(flatten)]
     pub meta: NodeMeta,
     /// The proportion of net flow that is lost to the loss node.
-    pub loss_factor: Option<DynamicFloatValue>,
+    pub loss_factor: Option<Metric>,
     /// The minimum flow through the `net` flow node.
-    pub min_flow: Option<DynamicFloatValue>,
+    pub min_flow: Option<Metric>,
     /// The maximum flow through the `net` flow node.
-    pub max_flow: Option<DynamicFloatValue>,
+    pub max_flow: Option<Metric>,
     /// The maximum flow applied to the `net_soft_min_flow` node which is typically
     /// used as a "soft" minimum flow.
-    pub soft_min_flow: Option<DynamicFloatValue>,
+    pub soft_min_flow: Option<Metric>,
     /// The cost applied to the `net_soft_min_flow` node.
-    pub soft_min_flow_cost: Option<DynamicFloatValue>,
+    pub soft_min_flow_cost: Option<Metric>,
     /// The cost applied to the `net` flow node.
-    pub cost: Option<DynamicFloatValue>,
+    pub cost: Option<Metric>,
 }
 
 impl WaterTreatmentWorks {
@@ -68,9 +71,6 @@ impl WaterTreatmentWorks {
     fn net_sub_name() -> Option<&'static str> {
         Some("net")
     }
-    fn agg_sub_name() -> Option<&'static str> {
-        Some("agg")
-    }
 
     fn net_soft_min_flow_sub_name() -> Option<&'static str> {
         Some("net_soft_min_flow")
@@ -80,6 +80,40 @@ impl WaterTreatmentWorks {
         Some("net_above_soft_min_flow")
     }
 
+    pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
+        // Connect directly to the total net
+        let mut connectors = vec![(self.meta.name.as_str(), Self::net_sub_name().map(|s| s.to_string()))];
+        // Only connect to the loss link if it is created
+        if self.loss_factor.is_some() {
+            connectors.push((self.meta.name.as_str(), Self::loss_sub_name().map(|s| s.to_string())))
+        }
+        connectors
+    }
+
+    pub fn output_connectors(&self) -> Vec<(&str, Option<String>)> {
+        // Connect to the split of the net flow.
+        vec![
+            (
+                self.meta.name.as_str(),
+                Self::net_soft_min_flow_sub_name().map(|s| s.to_string()),
+            ),
+            (
+                self.meta.name.as_str(),
+                Self::net_above_soft_min_flow_sub_name().map(|s| s.to_string()),
+            ),
+        ]
+    }
+
+    pub fn default_metric(&self) -> NodeAttribute {
+        Self::DEFAULT_ATTRIBUTE
+    }
+}
+
+#[cfg(feature = "core")]
+impl WaterTreatmentWorks {
+    fn agg_sub_name() -> Option<&'static str> {
+        Some("agg")
+    }
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
         let idx_net = network.add_link_node(self.meta.name.as_str(), Self::net_sub_name())?;
         let idx_soft_min_flow = network.add_link_node(self.meta.name.as_str(), Self::net_soft_min_flow_sub_name())?;
@@ -107,31 +141,27 @@ impl WaterTreatmentWorks {
     pub fn set_constraints(
         &self,
         network: &mut pywr_core::network::Network,
-        schema: &crate::model::PywrNetwork,
-        domain: &ModelDomain,
-        tables: &LoadedTableCollection,
-        data_path: Option<&Path>,
-        inter_network_transfers: &[PywrMultiNetworkTransfer],
+        args: &LoadArgs,
     ) -> Result<(), SchemaError> {
         if let Some(cost) = &self.cost {
-            let value = cost.load(network, schema, domain, tables, data_path, inter_network_transfers)?;
+            let value = cost.load(network, args)?;
             network.set_node_cost(self.meta.name.as_str(), Self::net_sub_name(), value.into())?;
         }
 
         if let Some(max_flow) = &self.max_flow {
-            let value = max_flow.load(network, schema, domain, tables, data_path, inter_network_transfers)?;
+            let value = max_flow.load(network, args)?;
             network.set_node_max_flow(self.meta.name.as_str(), Self::net_sub_name(), value.into())?;
         }
 
         if let Some(min_flow) = &self.min_flow {
-            let value = min_flow.load(network, schema, domain, tables, data_path, inter_network_transfers)?;
+            let value = min_flow.load(network, args)?;
             network.set_node_min_flow(self.meta.name.as_str(), Self::net_sub_name(), value.into())?;
         }
 
         // soft min flow constraints; This typically applies a negative cost upto a maximum
         // defined by the `soft_min_flow`
         if let Some(cost) = &self.soft_min_flow_cost {
-            let value = cost.load(network, schema, domain, tables, data_path, inter_network_transfers)?;
+            let value = cost.load(network, args)?;
             network.set_node_cost(
                 self.meta.name.as_str(),
                 Self::net_soft_min_flow_sub_name(),
@@ -139,7 +169,7 @@ impl WaterTreatmentWorks {
             )?;
         }
         if let Some(min_flow) = &self.soft_min_flow {
-            let value = min_flow.load(network, schema, domain, tables, data_path, inter_network_transfers)?;
+            let value = min_flow.load(network, args)?;
             network.set_node_max_flow(
                 self.meta.name.as_str(),
                 Self::net_soft_min_flow_sub_name(),
@@ -150,57 +180,38 @@ impl WaterTreatmentWorks {
         if let Some(loss_factor) = &self.loss_factor {
             // Handle the case where we a given a zero loss factor
             // The aggregated node does not support zero loss factors so filter them here.
-            let lf = match loss_factor.load(network, schema, domain, tables, data_path, inter_network_transfers)? {
-                Metric::Constant(f) => {
-                    if f.is_zero() {
-                        None
-                    } else {
-                        Some(Metric::Constant(f))
-                    }
-                }
+            let lf = match loss_factor.load(network, args)? {
+                MetricF64::Simple(s) => match s {
+                    SimpleMetricF64::Constant(c) => match c {
+                        ConstantMetricF64::Constant(f) => {
+                            if f.is_zero() {
+                                None
+                            } else {
+                                Some(f.into())
+                            }
+                        }
+                        _ => None,
+                    },
+                    _ => None,
+                },
                 m => Some(m),
             };
 
             if let Some(lf) = lf {
                 // Set the factors for the loss
                 // TODO allow for configuring as proportion of gross.
-                let factors = Factors::Ratio(vec![Metric::Constant(1.0), lf]);
+                let factors = Factors::Ratio(vec![1.0.into(), lf]);
                 network.set_aggregated_node_factors(self.meta.name.as_str(), Self::agg_sub_name(), Some(factors))?;
             }
         }
 
         Ok(())
     }
-
-    pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
-        // Connect directly to the total net
-        let mut connectors = vec![(self.meta.name.as_str(), Self::net_sub_name().map(|s| s.to_string()))];
-        // Only connect to the loss link if it is created
-        if self.loss_factor.is_some() {
-            connectors.push((self.meta.name.as_str(), Self::loss_sub_name().map(|s| s.to_string())))
-        }
-        connectors
-    }
-
-    pub fn output_connectors(&self) -> Vec<(&str, Option<String>)> {
-        // Connect to the split of the net flow.
-        vec![
-            (
-                self.meta.name.as_str(),
-                Self::net_soft_min_flow_sub_name().map(|s| s.to_string()),
-            ),
-            (
-                self.meta.name.as_str(),
-                Self::net_above_soft_min_flow_sub_name().map(|s| s.to_string()),
-            ),
-        ]
-    }
-
     pub fn create_metric(
         &self,
         network: &pywr_core::network::Network,
         attribute: Option<NodeAttribute>,
-    ) -> Result<Metric, SchemaError> {
+    ) -> Result<MetricF64, SchemaError> {
         // Use the default attribute if none is specified
         let attr = attribute.unwrap_or(Self::DEFAULT_ATTRIBUTE);
 
@@ -211,19 +222,19 @@ impl WaterTreatmentWorks {
                     network.get_node_index_by_name(self.meta.name.as_str(), Self::loss_sub_name())?,
                 ];
 
-                Metric::MultiNodeInFlow {
+                MetricF64::MultiNodeInFlow {
                     indices,
                     name: self.meta.name.to_string(),
                 }
             }
             NodeAttribute::Outflow => {
                 let idx = network.get_node_index_by_name(self.meta.name.as_str(), Self::net_sub_name())?;
-                Metric::NodeOutFlow(idx)
+                MetricF64::NodeOutFlow(idx)
             }
             NodeAttribute::Loss => {
                 let idx = network.get_node_index_by_name(self.meta.name.as_str(), Self::loss_sub_name())?;
                 // This is an output node that only supports inflow
-                Metric::NodeInFlow(idx)
+                MetricF64::NodeInFlow(idx)
             }
             _ => {
                 return Err(SchemaError::NodeAttributeNotSupported {
@@ -242,10 +253,10 @@ impl WaterTreatmentWorks {
 mod tests {
     use crate::model::PywrModel;
     use crate::nodes::WaterTreatmentWorks;
+    #[cfg(feature = "core")]
     use ndarray::Array2;
-    use pywr_core::metric::Metric;
-    use pywr_core::recorders::AssertionRecorder;
-    use pywr_core::test_utils::run_all_solvers;
+    #[cfg(feature = "core")]
+    use pywr_core::{metric::MetricF64, recorders::AssertionRecorder, test_utils::run_all_solvers};
 
     #[test]
     fn test_wtw_schema_load() {
@@ -256,11 +267,18 @@ mod tests {
                   "comment": null,
                   "position": null,
                   "loss_factor": {
+                    "type": "Table",
                     "index": "My WTW",
                     "table": "loss_factors"
                   },
-                  "soft_min_flow": 105,
-                  "cost": 2.29,
+                  "soft_min_flow":  {
+                     "type": "Constant",
+                     "value": 105.0
+                  },
+                  "cost": {
+                     "type": "Constant",
+                     "value": 2.29
+                  },
                   "max_flow": {
                     "type": "InlineParameter",
                     "definition": {
@@ -277,7 +295,10 @@ mod tests {
                             "type": "Parameter",
                             "name": "a max flow"
                           },
-                          0.0
+                          {
+                            "type": "Constant",
+                            "value": 0.0
+                          }
                         ],
                         "storage_node": {
                           "name": "My reservoir",
@@ -315,19 +336,34 @@ mod tests {
                         {
                             "name": "input1",
                             "type": "Input",
-                            "flow": 15
+                            "flow": {
+                                "type": "Constant",
+                                "value": 15.0
+                            }
                         },
                         {
                             "name": "wtw1",
                             "type": "WaterTreatmentWorks",
-                            "max_flow": 10.0,
-                            "loss_factor": 0.1
+                            "max_flow":  {
+                                "type": "Constant",
+                                "value": 10.0
+                            },
+                            "loss_factor":  {
+                                "type": "Constant",
+                                "value": 0.1
+                            }
                         },
                         {
                             "name": "demand1",
                             "type": "Output",
-                            "max_flow": 15.0,
-                            "cost": -10
+                            "max_flow":  {
+                                "type": "Constant",
+                                "value": 15.0
+                            },
+                            "cost":  {
+                                "type": "Constant",
+                                "value": -10
+                            }
                         }
                     ],
                     "edges": [
@@ -355,6 +391,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "core")]
     fn test_model_run() {
         let data = model_str();
         let schema: PywrModel = serde_json::from_str(data).unwrap();
@@ -371,15 +408,15 @@ mod tests {
         // TODO write some helper functions for adding these assertion recorders
         let idx = network.get_node_by_name("input1", None).unwrap().index();
         let expected = Array2::from_elem(shape, 11.0);
-        let recorder = AssertionRecorder::new("input-flow", Metric::NodeOutFlow(idx), expected, None, None);
+        let recorder = AssertionRecorder::new("input-flow", MetricF64::NodeOutFlow(idx), expected, None, None);
         network.add_recorder(Box::new(recorder)).unwrap();
 
         let idx = network.get_node_by_name("demand1", None).unwrap().index();
         let expected = Array2::from_elem(shape, 10.0);
-        let recorder = AssertionRecorder::new("demand-flow", Metric::NodeInFlow(idx), expected, None, None);
+        let recorder = AssertionRecorder::new("demand-flow", MetricF64::NodeInFlow(idx), expected, None, None);
         network.add_recorder(Box::new(recorder)).unwrap();
 
         // Test all solvers
-        run_all_solvers(&model);
+        run_all_solvers(&model, &["cbc", "highs"]);
     }
 }

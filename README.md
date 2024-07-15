@@ -69,6 +69,7 @@
 
 
 <!-- ABOUT THE PROJECT -->
+
 ## About The Project
 
 Pywr-1.x is a Python library which utilises Cython for performance. Over time this has resulted in a "core"
@@ -82,18 +83,17 @@ possibly offers the benefits of (1) greater performance than Cython, and (2) eas
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
-
 ### Requirements
 
 Any major revision to Pywr will have the following feature requirements:
 
- - Retain the "Parameter" system from Pywr-1.x - this is core functionality that makes Pywr really flexible.
- - Extendable in Python space.
- - An improved approach for outputting data and metrics.
- - Better error handling.
- - Cross-platform.
- - Faster!
- - Strong input file (JSON) schema.
+- Retain the "Parameter" system from Pywr-1.x - this is core functionality that makes Pywr really flexible.
+- Extendable in Python space.
+- An improved approach for outputting data and metrics.
+- Better error handling.
+- Cross-platform.
+- Faster!
+- Strong input file (JSON) schema.
 
 ### Built With
 
@@ -121,7 +121,6 @@ Rust is required for installation of the Python extension. To create a Python de
 requires first compiling the Rust library and then the Python extension. The following example uses
 a virtual environment to install the Python dependencies, compile the Pywr extension and run the Pywr Python CLI.
 
-
 ```bash
 python -m venv .venv # create a new virtual environment
 source .venv/bin/activate # activate the virtual environment (linux)
@@ -136,8 +135,8 @@ python -m pywr  # run the Pywr Python CLI
 
 
 <!-- USAGE EXAMPLES -->
-## Usage
 
+## Usage
 
 ### Rust CLI
 
@@ -173,7 +172,7 @@ repository. Therefore, v1.x JSON files must be converted to the v2.x JSON schema
 manually, but there is also a work-in-progress conversion tool. The conversion tool uses a v1.x schema defined in
 the [pywr-schema](https://github.com/pywr/pywr-schema) project.
 
-**Please note that conversion  from Pywr v1.x to v2.x is experimental and not all features of Pywr are implemented
+**Please note that conversion from Pywr v1.x to v2.x is experimental and not all features of Pywr are implemented
 in `pywr-schema` or have been implemented in Pywr v2.x yet. Due to the changes between these versions it is very
 likely an automatic conversion will not completely convert your model, and it _WILL_ require manual testing and
 checking.**
@@ -190,16 +189,45 @@ Feedback on porting models is very welcome, so please open an issue with any que
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 <!-- CRATES -->
+
 ## Crates
+
 This repository contains the following crates:
 
-- `pywr-core`: A low-level Rust library for constructing network models. This crate interfaces with linear program solvers.
-- `pywr-schema`: A Rust library for validating Pywr JSON files against a schema, and then building a model from the schema using `pywr-core`.
-- `pywr-cli`: A command line interface for running Pywr models.
-- `pywr-python`: A Python package (and extension) for constructing and running Pywr models.
+### Pywr-core
+
+A low-level Rust library for constructing network models. This crate interfaces with linear program solvers.
+
+Feature flags:
+
+| Feature    | Description                                      | Default |
+|------------|--------------------------------------------------|---------|
+| `highs`    | Enable the HiGHS LP solver.                      | False   |
+| `ipm-ocl`  | Enable the OpenCL IPM solver (requires nightly). | False   |
+| `ipm-simd` | Enable the AVX IPM solver (requires nightly).    | False   |
+
+### Pywr-schema
+
+A Rust library for validating Pywr JSON files against a schema, and then building a model from the schema
+using `pywr-core`.
+
+Feature flags:
+
+| Feature | Description                                                                                                                                                                                                                                          | Default |
+|---------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------|
+| `core`  | Enable building models from the schema with `pywr-core`. This feature is enabled by default, but requires a lot of dependencies. If you only require schema validation and manipulation consider building this crate with `default-features = false` | True    |
+
+### Pywr-cli
+
+A command line interface for running Pywr models.
+
+### Pywr-python
+
+A Python extension (and package) for constructing and running Pywr models.
 
 
 <!-- ROADMAP -->
+
 ## Roadmap
 
 - [x] Proof-of-concept - demonstrate the benefits of the RIIR approach.
@@ -216,11 +244,14 @@ See the [open issues](https://github.com/pywr/pywr-next/issues) for a full list 
 
 
 <!-- CONTRIBUTING -->
+
 ## Contributing
 
-Contributions are what make the open source community such an amazing place to learn, inspire, and create. Any contributions you make are **greatly appreciated**.
+Contributions are what make the open source community such an amazing place to learn, inspire, and create. Any
+contributions you make are **greatly appreciated**.
 
-If you have a suggestion that would make this better, please fork the repo and create a pull request. You can also simply open an issue with the tag "enhancement".
+If you have a suggestion that would make this better, please fork the repo and create a pull request. You can also
+simply open an issue with the tag "enhancement".
 Don't forget to give the project a star! Thanks again!
 
 1. Fork the Project
@@ -233,6 +264,7 @@ Don't forget to give the project a star! Thanks again!
 
 
 <!-- LICENSE -->
+
 ## License
 
 Distributed under the Apache 2.0 or MIT License. See `LICENSE.txt` for more information.
@@ -240,6 +272,7 @@ Distributed under the Apache 2.0 or MIT License. See `LICENSE.txt` for more info
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 <!-- CONTACT -->
+
 ## Contact
 
 James Tomlinson - tomo.bbe@gmail.com
@@ -252,21 +285,37 @@ Project Link: [https://github.com/pywr/pywr-next](https://github.com/pywr/pywr-n
 
 <!-- MARKDOWN LINKS & IMAGES -->
 <!-- https://www.markdownguide.org/basic-syntax/#reference-style-links -->
+
 [contributors-shield]: https://img.shields.io/github/contributors/pywr/pywr-next.svg?style=for-the-badge
+
 [contributors-url]: https://github.com/pywr/pywr-next/graphs/contributors
+
 [forks-shield]: https://img.shields.io/github/forks/pywr/pywr-next.svg?style=for-the-badge
+
 [forks-url]: https://github.com/pywr/pywr-next/network/members
+
 [stars-shield]: https://img.shields.io/github/stars/pywr/pywr-next.svg?style=for-the-badge
+
 [stars-url]: https://github.com/pywr/pywr-next/stargazers
+
 [issues-shield]: https://img.shields.io/github/issues/pywr/pywr-next.svg?style=for-the-badge
+
 [issues-url]: https://github.com/pywr/pywr-next/issues
+
 [license-shield]: https://img.shields.io/github/license/pywr/pywr-next.svg?style=for-the-badge
+
 [license-url]: https://github.com/pywr/pywr-next/blob/master/LICENSE.txt
+
 [linkedin-shield]: https://img.shields.io/badge/-LinkedIn-black.svg?style=for-the-badge&logo=linkedin&colorB=555
+
 [linkedin-url]: https://linkedin.com/in/james-tomlinson-a465352b
+
 [Rust]: https://img.shields.io/badge/rust-ef4a23?style=for-the-badge&logo=rust&logoColor=white
+
 [Rust-url]: https://www.rust-lang.org/
+
 [Python]: https://img.shields.io/badge/python-275277?style=for-the-badge&logo=python&logoColor=white
+
 [Python-url]: https://www.python.org/
 
 Copyright (C) 2020-2023 James Tomlinson Associates Ltd.

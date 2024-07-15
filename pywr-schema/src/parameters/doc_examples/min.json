@@ -1,0 +1,26 @@
+{
+  "name": "my-min",
+  "type": "Min",
+  "parameter": {
+    "type": "InlineParameter",
+    "definition": {
+      "name": "my-monthly-profile",
+      "type": "MonthlyProfile",
+      "values": [
+        1,
+        4,
+        5,
+        9,
+        1,
+        5,
+        10,
+        8,
+        11,
+        9,
+        11,
+        12
+      ]
+    }
+  },
+  "threshold": 2
+}

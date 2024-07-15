@@ -14,13 +14,22 @@
       {
         "name": "catchment1",
         "type": "Catchment",
-        "flow": 15
+        "flow": {
+          "type": "Constant",
+          "value": 15.0
+        }
       },
       {
         "name": "gauge1",
         "type": "RiverGauge",
-        "mrf": 5.0,
-        "mrf_cost": -20.0
+        "mrf": {
+          "type": "Constant",
+          "value": 5.0
+        },
+        "mrf_cost": {
+          "type": "Constant",
+          "value": -20
+        }
       },
       {
         "name": "term1",
@@ -29,8 +38,14 @@
       {
         "name": "demand1",
         "type": "Output",
-        "max_flow": 15.0,
-        "cost": -10
+        "max_flow": {
+          "type": "Constant",
+          "value": 15.0
+        },
+        "cost": {
+          "type": "Constant",
+          "value": -10
+        }
       }
     ],
     "edges": [

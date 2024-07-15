@@ -1,20 +1,20 @@
-use super::PywrError;
-use crate::metric::Metric;
+use super::{Parameter, PywrError};
+use crate::metric::MetricF64;
 use crate::network::Network;
-use crate::parameters::{Parameter, ParameterMeta};
+use crate::parameters::{GeneralParameter, ParameterMeta, ParameterState};
 use crate::scenario::ScenarioIndex;
-use crate::state::{ParameterState, State};
+use crate::state::State;
 use crate::timestep::Timestep;
 use crate::PywrError::InvalidMetricValue;
 
 pub struct DivisionParameter {
     meta: ParameterMeta,
-    numerator: Metric,
-    denominator: Metric,
+    numerator: MetricF64,
+    denominator: MetricF64,
 }
 
 impl DivisionParameter {
-    pub fn new(name: &str, numerator: Metric, denominator: Metric) -> Self {
+    pub fn new(name: &str, numerator: MetricF64, denominator: MetricF64) -> Self {
         Self {
             meta: ParameterMeta::new(name),
             numerator,
@@ -22,11 +22,12 @@ impl DivisionParameter {
         }
     }
 }
-
-impl Parameter<f64> for DivisionParameter {
+impl Parameter for DivisionParameter {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }
+}
+impl GeneralParameter<f64> for DivisionParameter {
     fn compute(
         &self,
         _timestep: &Timestep,
@@ -47,5 +48,12 @@ impl Parameter<f64> for DivisionParameter {
 
         let numerator = self.numerator.get_value(model, state)?;
         Ok(numerator / denominator)
+    }
+
+    fn as_parameter(&self) -> &dyn Parameter
+    where
+        Self: Sized,
+    {
+        self
     }
 }

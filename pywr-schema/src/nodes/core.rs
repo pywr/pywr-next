@@ -1,64 +1,35 @@
-use crate::data_tables::LoadedTableCollection;
-use crate::error::{ConversionError, SchemaError};
-use crate::model::PywrMultiNetworkTransfer;
+use crate::error::ConversionError;
+#[cfg(feature = "core")]
+use crate::error::SchemaError;
+use crate::metric::Metric;
+#[cfg(feature = "core")]
+use crate::model::LoadArgs;
 use crate::nodes::{NodeAttribute, NodeMeta};
-use crate::parameters::{DynamicFloatValue, TryIntoV2Parameter};
-use pywr_core::derived_metric::DerivedMetric;
-use pywr_core::metric::Metric;
-use pywr_core::models::ModelDomain;
-use pywr_core::node::{ConstraintValue, StorageInitialVolume as CoreStorageInitialVolume};
-use pywr_schema_macros::PywrNode;
+
+use crate::parameters::TryIntoV2Parameter;
+#[cfg(feature = "core")]
+use pywr_core::{
+    derived_metric::DerivedMetric, metric::MetricF64, node::StorageInitialVolume as CoreStorageInitialVolume,
+};
+use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::nodes::{
     AggregatedNode as AggregatedNodeV1, AggregatedStorageNode as AggregatedStorageNodeV1,
     CatchmentNode as CatchmentNodeV1, InputNode as InputNodeV1, LinkNode as LinkNodeV1, OutputNode as OutputNodeV1,
     ReservoirNode as ReservoirNodeV1, StorageNode as StorageNodeV1,
 };
-use std::collections::HashMap;
-use std::path::Path;
+use schemars::JsonSchema;
 
-#[derive(serde::Deserialize, serde::Serialize, Clone, Default, PywrNode)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
 pub struct InputNode {
     #[serde(flatten)]
     pub meta: NodeMeta,
-    pub max_flow: Option<DynamicFloatValue>,
-    pub min_flow: Option<DynamicFloatValue>,
-    pub cost: Option<DynamicFloatValue>,
+    pub max_flow: Option<Metric>,
+    pub min_flow: Option<Metric>,
+    pub cost: Option<Metric>,
 }
 
 impl InputNode {
-    pub const DEFAULT_ATTRIBUTE: NodeAttribute = NodeAttribute::Outflow;
-
-    pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
-        network.add_input_node(self.meta.name.as_str(), None)?;
-        Ok(())
-    }
-
-    pub fn set_constraints(
-        &self,
-        network: &mut pywr_core::network::Network,
-        schema: &crate::model::PywrNetwork,
-        domain: &ModelDomain,
-        tables: &LoadedTableCollection,
-        data_path: Option<&Path>,
-        inter_network_transfers: &[PywrMultiNetworkTransfer],
-    ) -> Result<(), SchemaError> {
-        if let Some(cost) = &self.cost {
-            let value = cost.load(network, schema, domain, tables, data_path, inter_network_transfers)?;
-            network.set_node_cost(self.meta.name.as_str(), None, value.into())?;
-        }
-
-        if let Some(max_flow) = &self.max_flow {
-            let value = max_flow.load(network, schema, domain, tables, data_path, inter_network_transfers)?;
-            network.set_node_max_flow(self.meta.name.as_str(), None, value.into())?;
-        }
-
-        if let Some(min_flow) = &self.min_flow {
-            let value = min_flow.load(network, schema, domain, tables, data_path, inter_network_transfers)?;
-            network.set_node_min_flow(self.meta.name.as_str(), None, value.into())?;
-        }
-
-        Ok(())
-    }
+    const DEFAULT_ATTRIBUTE: NodeAttribute = NodeAttribute::Outflow;
 
     pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
         vec![(self.meta.name.as_str(), None)]
@@ -67,18 +38,53 @@ impl InputNode {
         vec![(self.meta.name.as_str(), None)]
     }
 
+    pub fn default_metric(&self) -> NodeAttribute {
+        Self::DEFAULT_ATTRIBUTE
+    }
+}
+
+#[cfg(feature = "core")]
+impl InputNode {
+    pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
+        network.add_input_node(self.meta.name.as_str(), None)?;
+        Ok(())
+    }
+
+    pub fn set_constraints(
+        &self,
+        network: &mut pywr_core::network::Network,
+        args: &LoadArgs,
+    ) -> Result<(), SchemaError> {
+        if let Some(cost) = &self.cost {
+            let value = cost.load(network, args)?;
+            network.set_node_cost(self.meta.name.as_str(), None, value.into())?;
+        }
+
+        if let Some(max_flow) = &self.max_flow {
+            let value = max_flow.load(network, args)?;
+            network.set_node_max_flow(self.meta.name.as_str(), None, value.into())?;
+        }
+
+        if let Some(min_flow) = &self.min_flow {
+            let value = min_flow.load(network, args)?;
+            network.set_node_min_flow(self.meta.name.as_str(), None, value.into())?;
+        }
+
+        Ok(())
+    }
+
     pub fn create_metric(
         &self,
         network: &pywr_core::network::Network,
         attribute: Option<NodeAttribute>,
-    ) -> Result<Metric, SchemaError> {
+    ) -> Result<MetricF64, SchemaError> {
         // Use the default attribute if none is specified
         let attr = attribute.unwrap_or(Self::DEFAULT_ATTRIBUTE);
 
         let idx = network.get_node_index_by_name(self.meta.name.as_str(), None)?;
 
         let metric = match attr {
-            NodeAttribute::Outflow => Metric::NodeOutFlow(idx),
+            NodeAttribute::Outflow => MetricF64::NodeOutFlow(idx),
             _ => {
                 return Err(SchemaError::NodeAttributeNotSupported {
                     ty: "InputNode".to_string(),
@@ -123,49 +129,17 @@ impl TryFrom<InputNodeV1> for InputNode {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Clone, Default, PywrNode)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
 pub struct LinkNode {
     #[serde(flatten)]
     pub meta: NodeMeta,
-    pub max_flow: Option<DynamicFloatValue>,
-    pub min_flow: Option<DynamicFloatValue>,
-    pub cost: Option<DynamicFloatValue>,
+    pub max_flow: Option<Metric>,
+    pub min_flow: Option<Metric>,
+    pub cost: Option<Metric>,
 }
 
 impl LinkNode {
     const DEFAULT_ATTRIBUTE: NodeAttribute = NodeAttribute::Outflow;
-
-    pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
-        network.add_link_node(self.meta.name.as_str(), None)?;
-        Ok(())
-    }
-
-    pub fn set_constraints(
-        &self,
-        network: &mut pywr_core::network::Network,
-        schema: &crate::model::PywrNetwork,
-        domain: &ModelDomain,
-        tables: &LoadedTableCollection,
-        data_path: Option<&Path>,
-        inter_network_transfers: &[PywrMultiNetworkTransfer],
-    ) -> Result<(), SchemaError> {
-        if let Some(cost) = &self.cost {
-            let value = cost.load(network, schema, domain, tables, data_path, inter_network_transfers)?;
-            network.set_node_cost(self.meta.name.as_str(), None, value.into())?;
-        }
-
-        if let Some(max_flow) = &self.max_flow {
-            let value = max_flow.load(network, schema, domain, tables, data_path, inter_network_transfers)?;
-            network.set_node_max_flow(self.meta.name.as_str(), None, value.into())?;
-        }
-
-        if let Some(min_flow) = &self.min_flow {
-            let value = min_flow.load(network, schema, domain, tables, data_path, inter_network_transfers)?;
-            network.set_node_min_flow(self.meta.name.as_str(), None, value.into())?;
-        }
-
-        Ok(())
-    }
 
     pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
         vec![(self.meta.name.as_str(), None)]
@@ -174,19 +148,54 @@ impl LinkNode {
         vec![(self.meta.name.as_str(), None)]
     }
 
+    pub fn default_metric(&self) -> NodeAttribute {
+        Self::DEFAULT_ATTRIBUTE
+    }
+}
+
+#[cfg(feature = "core")]
+impl LinkNode {
+    pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
+        network.add_link_node(self.meta.name.as_str(), None)?;
+        Ok(())
+    }
+
+    pub fn set_constraints(
+        &self,
+        network: &mut pywr_core::network::Network,
+        args: &LoadArgs,
+    ) -> Result<(), SchemaError> {
+        if let Some(cost) = &self.cost {
+            let value = cost.load(network, args)?;
+            network.set_node_cost(self.meta.name.as_str(), None, value.into())?;
+        }
+
+        if let Some(max_flow) = &self.max_flow {
+            let value = max_flow.load(network, args)?;
+            network.set_node_max_flow(self.meta.name.as_str(), None, value.into())?;
+        }
+
+        if let Some(min_flow) = &self.min_flow {
+            let value = min_flow.load(network, args)?;
+            network.set_node_min_flow(self.meta.name.as_str(), None, value.into())?;
+        }
+
+        Ok(())
+    }
+
     pub fn create_metric(
         &self,
         network: &pywr_core::network::Network,
         attribute: Option<NodeAttribute>,
-    ) -> Result<Metric, SchemaError> {
+    ) -> Result<MetricF64, SchemaError> {
         // Use the default attribute if none is specified
         let attr = attribute.unwrap_or(Self::DEFAULT_ATTRIBUTE);
 
         let idx = network.get_node_index_by_name(self.meta.name.as_str(), None)?;
 
         let metric = match attr {
-            NodeAttribute::Outflow => Metric::NodeOutFlow(idx),
-            NodeAttribute::Inflow => Metric::NodeInFlow(idx),
+            NodeAttribute::Outflow => MetricF64::NodeOutFlow(idx),
+            NodeAttribute::Inflow => MetricF64::NodeInFlow(idx),
             _ => {
                 return Err(SchemaError::NodeAttributeNotSupported {
                     ty: "LinkNode".to_string(),
@@ -230,49 +239,17 @@ impl TryFrom<LinkNodeV1> for LinkNode {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Clone, Default, PywrNode)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
 pub struct OutputNode {
     #[serde(flatten)]
     pub meta: NodeMeta,
-    pub max_flow: Option<DynamicFloatValue>,
-    pub min_flow: Option<DynamicFloatValue>,
-    pub cost: Option<DynamicFloatValue>,
+    pub max_flow: Option<Metric>,
+    pub min_flow: Option<Metric>,
+    pub cost: Option<Metric>,
 }
 
 impl OutputNode {
     const DEFAULT_ATTRIBUTE: NodeAttribute = NodeAttribute::Inflow;
-
-    pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
-        network.add_output_node(self.meta.name.as_str(), None)?;
-        Ok(())
-    }
-
-    pub fn set_constraints(
-        &self,
-        network: &mut pywr_core::network::Network,
-        schema: &crate::model::PywrNetwork,
-        domain: &ModelDomain,
-        tables: &LoadedTableCollection,
-        data_path: Option<&Path>,
-        inter_network_transfers: &[PywrMultiNetworkTransfer],
-    ) -> Result<(), SchemaError> {
-        if let Some(cost) = &self.cost {
-            let value = cost.load(network, schema, domain, tables, data_path, inter_network_transfers)?;
-            network.set_node_cost(self.meta.name.as_str(), None, value.into())?;
-        }
-
-        if let Some(max_flow) = &self.max_flow {
-            let value = max_flow.load(network, schema, domain, tables, data_path, inter_network_transfers)?;
-            network.set_node_max_flow(self.meta.name.as_str(), None, value.into())?;
-        }
-
-        if let Some(min_flow) = &self.min_flow {
-            let value = min_flow.load(network, schema, domain, tables, data_path, inter_network_transfers)?;
-            network.set_node_min_flow(self.meta.name.as_str(), None, value.into())?;
-        }
-
-        Ok(())
-    }
 
     pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
         vec![(self.meta.name.as_str(), None)]
@@ -282,22 +259,29 @@ impl OutputNode {
         vec![(self.meta.name.as_str(), None)]
     }
 
+    pub fn default_metric(&self) -> NodeAttribute {
+        Self::DEFAULT_ATTRIBUTE
+    }
+}
+
+#[cfg(feature = "core")]
+impl OutputNode {
     pub fn create_metric(
         &self,
         network: &mut pywr_core::network::Network,
         attribute: Option<NodeAttribute>,
-    ) -> Result<Metric, SchemaError> {
+    ) -> Result<MetricF64, SchemaError> {
         // Use the default attribute if none is specified
         let attr = attribute.unwrap_or(Self::DEFAULT_ATTRIBUTE);
 
         let idx = network.get_node_index_by_name(self.meta.name.as_str(), None)?;
 
         let metric = match attr {
-            NodeAttribute::Inflow => Metric::NodeInFlow(idx),
+            NodeAttribute::Inflow => MetricF64::NodeInFlow(idx),
             NodeAttribute::Deficit => {
                 let dm = DerivedMetric::NodeInFlowDeficit(idx);
                 let dm_idx = network.add_derived_metric(dm);
-                Metric::DerivedMetric(dm_idx)
+                MetricF64::DerivedMetric(dm_idx)
             }
             _ => {
                 return Err(SchemaError::NodeAttributeNotSupported {
@@ -309,6 +293,34 @@ impl OutputNode {
         };
 
         Ok(metric)
+    }
+
+    pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
+        network.add_output_node(self.meta.name.as_str(), None)?;
+        Ok(())
+    }
+
+    pub fn set_constraints(
+        &self,
+        network: &mut pywr_core::network::Network,
+        args: &LoadArgs,
+    ) -> Result<(), SchemaError> {
+        if let Some(cost) = &self.cost {
+            let value = cost.load(network, args)?;
+            network.set_node_cost(self.meta.name.as_str(), None, value.into())?;
+        }
+
+        if let Some(max_flow) = &self.max_flow {
+            let value = max_flow.load(network, args)?;
+            network.set_node_max_flow(self.meta.name.as_str(), None, value.into())?;
+        }
+
+        if let Some(min_flow) = &self.min_flow {
+            let value = min_flow.load(network, args)?;
+            network.set_node_min_flow(self.meta.name.as_str(), None, value.into())?;
+        }
+
+        Ok(())
     }
 }
 
@@ -342,7 +354,7 @@ impl TryFrom<OutputNodeV1> for OutputNode {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Clone, PartialEq, Copy, Debug)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, PartialEq, Copy, Debug, JsonSchema, PywrVisitAll)]
 pub enum StorageInitialVolume {
     Absolute(f64),
     Proportional(f64),
@@ -354,6 +366,7 @@ impl Default for StorageInitialVolume {
     }
 }
 
+#[cfg(feature = "core")]
 impl From<StorageInitialVolume> for CoreStorageInitialVolume {
     fn from(v: StorageInitialVolume) -> Self {
         match v {
@@ -363,68 +376,18 @@ impl From<StorageInitialVolume> for CoreStorageInitialVolume {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, PywrNode)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
 pub struct StorageNode {
     #[serde(flatten)]
     pub meta: NodeMeta,
-    pub max_volume: Option<DynamicFloatValue>,
-    pub min_volume: Option<DynamicFloatValue>,
-    pub cost: Option<DynamicFloatValue>,
+    pub max_volume: Option<Metric>,
+    pub min_volume: Option<Metric>,
+    pub cost: Option<Metric>,
     pub initial_volume: StorageInitialVolume,
 }
 
 impl StorageNode {
     const DEFAULT_ATTRIBUTE: NodeAttribute = NodeAttribute::Volume;
-
-    pub fn add_to_model(
-        &self,
-        network: &mut pywr_core::network::Network,
-        schema: &crate::model::PywrNetwork,
-        domain: &ModelDomain,
-        tables: &LoadedTableCollection,
-        data_path: Option<&Path>,
-        inter_network_transfers: &[PywrMultiNetworkTransfer],
-    ) -> Result<(), SchemaError> {
-        let min_volume = match &self.min_volume {
-            Some(v) => v
-                .load(network, schema, domain, tables, data_path, inter_network_transfers)?
-                .into(),
-            None => ConstraintValue::Scalar(0.0),
-        };
-
-        let max_volume = match &self.max_volume {
-            Some(v) => v
-                .load(network, schema, domain, tables, data_path, inter_network_transfers)?
-                .into(),
-            None => ConstraintValue::None,
-        };
-
-        network.add_storage_node(
-            self.meta.name.as_str(),
-            None,
-            self.initial_volume.into(),
-            min_volume,
-            max_volume,
-        )?;
-        Ok(())
-    }
-
-    pub fn set_constraints(
-        &self,
-        network: &mut pywr_core::network::Network,
-        schema: &crate::model::PywrNetwork,
-        domain: &ModelDomain,
-        tables: &LoadedTableCollection,
-        data_path: Option<&Path>,
-        inter_network_transfers: &[PywrMultiNetworkTransfer],
-    ) -> Result<(), SchemaError> {
-        if let Some(cost) = &self.cost {
-            let value = cost.load(network, schema, domain, tables, data_path, inter_network_transfers)?;
-            network.set_node_cost(self.meta.name.as_str(), None, value.into())?;
-        }
-
-        Ok(())
-    }
 
     pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
         vec![(self.meta.name.as_str(), None)]
@@ -434,22 +397,58 @@ impl StorageNode {
         vec![(self.meta.name.as_str(), None)]
     }
 
+    pub fn default_metric(&self) -> NodeAttribute {
+        Self::DEFAULT_ATTRIBUTE
+    }
+}
+
+#[cfg(feature = "core")]
+impl StorageNode {
+    pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
+        // Add the node with no constraints
+        network.add_storage_node(self.meta.name.as_str(), None, self.initial_volume.into(), None, None)?;
+        Ok(())
+    }
+
+    pub fn set_constraints(
+        &self,
+        network: &mut pywr_core::network::Network,
+        args: &LoadArgs,
+    ) -> Result<(), SchemaError> {
+        if let Some(cost) = &self.cost {
+            let value = cost.load(network, args)?;
+            network.set_node_cost(self.meta.name.as_str(), None, value.into())?;
+        }
+
+        if let Some(min_volume) = &self.min_volume {
+            let value = min_volume.load(network, args)?;
+            network.set_node_min_volume(self.meta.name.as_str(), None, Some(value.try_into()?))?;
+        }
+
+        if let Some(max_volume) = &self.max_volume {
+            let value = max_volume.load(network, args)?;
+            network.set_node_max_volume(self.meta.name.as_str(), None, Some(value.try_into()?))?;
+        }
+
+        Ok(())
+    }
+
     pub fn create_metric(
         &self,
         network: &mut pywr_core::network::Network,
         attribute: Option<NodeAttribute>,
-    ) -> Result<Metric, SchemaError> {
+    ) -> Result<MetricF64, SchemaError> {
         // Use the default attribute if none is specified
         let attr = attribute.unwrap_or(Self::DEFAULT_ATTRIBUTE);
 
         let idx = network.get_node_index_by_name(self.meta.name.as_str(), None)?;
 
         let metric = match attr {
-            NodeAttribute::Volume => Metric::NodeVolume(idx),
+            NodeAttribute::Volume => MetricF64::NodeVolume(idx),
             NodeAttribute::ProportionalVolume => {
                 let dm = DerivedMetric::NodeProportionalVolume(idx);
                 let derived_metric_idx = network.add_derived_metric(dm);
-                Metric::DerivedMetric(derived_metric_idx)
+                MetricF64::DerivedMetric(derived_metric_idx)
             }
             _ => {
                 return Err(SchemaError::NodeAttributeNotSupported {
@@ -576,44 +575,16 @@ impl TryFrom<ReservoirNodeV1> for StorageNode {
 /// ```
 ///
 )]
-#[derive(serde::Deserialize, serde::Serialize, Clone, Default, PywrNode)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
 pub struct CatchmentNode {
     #[serde(flatten)]
     pub meta: NodeMeta,
-    pub flow: Option<DynamicFloatValue>,
-    pub cost: Option<DynamicFloatValue>,
+    pub flow: Option<Metric>,
+    pub cost: Option<Metric>,
 }
 
 impl CatchmentNode {
     const DEFAULT_ATTRIBUTE: NodeAttribute = NodeAttribute::Outflow;
-
-    pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
-        network.add_input_node(self.meta.name.as_str(), None)?;
-        Ok(())
-    }
-
-    pub fn set_constraints(
-        &self,
-        network: &mut pywr_core::network::Network,
-        schema: &crate::model::PywrNetwork,
-        domain: &ModelDomain,
-        tables: &LoadedTableCollection,
-        data_path: Option<&Path>,
-        inter_network_transfers: &[PywrMultiNetworkTransfer],
-    ) -> Result<(), SchemaError> {
-        if let Some(cost) = &self.cost {
-            let value = cost.load(network, schema, domain, tables, data_path, inter_network_transfers)?;
-            network.set_node_cost(self.meta.name.as_str(), None, value.into())?;
-        }
-
-        if let Some(flow) = &self.flow {
-            let value = flow.load(network, schema, domain, tables, data_path, inter_network_transfers)?;
-            network.set_node_min_flow(self.meta.name.as_str(), None, value.clone().into())?;
-            network.set_node_max_flow(self.meta.name.as_str(), None, value.into())?;
-        }
-
-        Ok(())
-    }
 
     pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
         vec![(self.meta.name.as_str(), None)]
@@ -623,18 +594,49 @@ impl CatchmentNode {
         vec![(self.meta.name.as_str(), None)]
     }
 
+    pub fn default_metric(&self) -> NodeAttribute {
+        Self::DEFAULT_ATTRIBUTE
+    }
+}
+
+#[cfg(feature = "core")]
+impl CatchmentNode {
+    pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
+        network.add_input_node(self.meta.name.as_str(), None)?;
+        Ok(())
+    }
+
+    pub fn set_constraints(
+        &self,
+        network: &mut pywr_core::network::Network,
+        args: &LoadArgs,
+    ) -> Result<(), SchemaError> {
+        if let Some(cost) = &self.cost {
+            let value = cost.load(network, args)?;
+            network.set_node_cost(self.meta.name.as_str(), None, value.into())?;
+        }
+
+        if let Some(flow) = &self.flow {
+            let value = flow.load(network, args)?;
+            network.set_node_min_flow(self.meta.name.as_str(), None, value.clone().into())?;
+            network.set_node_max_flow(self.meta.name.as_str(), None, value.into())?;
+        }
+
+        Ok(())
+    }
+
     pub fn create_metric(
         &self,
         network: &pywr_core::network::Network,
         attribute: Option<NodeAttribute>,
-    ) -> Result<Metric, SchemaError> {
+    ) -> Result<MetricF64, SchemaError> {
         // Use the default attribute if none is specified
         let attr = attribute.unwrap_or(Self::DEFAULT_ATTRIBUTE);
 
         let idx = network.get_node_index_by_name(self.meta.name.as_str(), None)?;
 
         let metric = match attr {
-            NodeAttribute::Outflow => Metric::NodeOutFlow(idx),
+            NodeAttribute::Outflow => MetricF64::NodeOutFlow(idx),
             _ => {
                 return Err(SchemaError::NodeAttributeNotSupported {
                     ty: "CatchmentNode".to_string(),
@@ -669,26 +671,44 @@ impl TryFrom<CatchmentNodeV1> for CatchmentNode {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, PywrVisitAll)]
 #[serde(tag = "type")]
 pub enum Factors {
-    Proportion { factors: Vec<DynamicFloatValue> },
-    Ratio { factors: Vec<DynamicFloatValue> },
+    Proportion { factors: Vec<Metric> },
+    Ratio { factors: Vec<Metric> },
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Clone, Default, PywrNode)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
 pub struct AggregatedNode {
     #[serde(flatten)]
     pub meta: NodeMeta,
     pub nodes: Vec<String>,
-    pub max_flow: Option<DynamicFloatValue>,
-    pub min_flow: Option<DynamicFloatValue>,
+    pub max_flow: Option<Metric>,
+    pub min_flow: Option<Metric>,
     pub factors: Option<Factors>,
 }
 
 impl AggregatedNode {
     const DEFAULT_ATTRIBUTE: NodeAttribute = NodeAttribute::Outflow;
 
+    pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
+        // Not connectable
+        // TODO this should be a trait? And error if you try to connect to a non-connectable node.
+        vec![]
+    }
+
+    pub fn output_connectors(&self) -> Vec<(&str, Option<String>)> {
+        // Not connectable
+        vec![]
+    }
+
+    pub fn default_metric(&self) -> NodeAttribute {
+        Self::DEFAULT_ATTRIBUTE
+    }
+}
+
+#[cfg(feature = "core")]
+impl AggregatedNode {
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
         let nodes = self
             .nodes
@@ -705,19 +725,15 @@ impl AggregatedNode {
     pub fn set_constraints(
         &self,
         network: &mut pywr_core::network::Network,
-        schema: &crate::model::PywrNetwork,
-        domain: &ModelDomain,
-        tables: &LoadedTableCollection,
-        data_path: Option<&Path>,
-        inter_network_transfers: &[PywrMultiNetworkTransfer],
+        args: &LoadArgs,
     ) -> Result<(), SchemaError> {
         if let Some(max_flow) = &self.max_flow {
-            let value = max_flow.load(network, schema, domain, tables, data_path, inter_network_transfers)?;
+            let value = max_flow.load(network, args)?;
             network.set_aggregated_node_max_flow(self.meta.name.as_str(), None, value.into())?;
         }
 
         if let Some(min_flow) = &self.min_flow {
-            let value = min_flow.load(network, schema, domain, tables, data_path, inter_network_transfers)?;
+            let value = min_flow.load(network, args)?;
             network.set_aggregated_node_min_flow(self.meta.name.as_str(), None, value.into())?;
         }
 
@@ -726,13 +742,13 @@ impl AggregatedNode {
                 Factors::Proportion { factors } => pywr_core::aggregated_node::Factors::Proportion(
                     factors
                         .iter()
-                        .map(|f| f.load(network, schema, domain, tables, data_path, inter_network_transfers))
+                        .map(|f| f.load(network, args))
                         .collect::<Result<Vec<_>, _>>()?,
                 ),
                 Factors::Ratio { factors } => pywr_core::aggregated_node::Factors::Ratio(
                     factors
                         .iter()
-                        .map(|f| f.load(network, schema, domain, tables, data_path, inter_network_transfers))
+                        .map(|f| f.load(network, args))
                         .collect::<Result<Vec<_>, _>>()?,
                 ),
             };
@@ -743,30 +759,19 @@ impl AggregatedNode {
         Ok(())
     }
 
-    pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
-        // Not connectable
-        // TODO this should be a trait? And error if you try to connect to a non-connectable node.
-        vec![]
-    }
-
-    pub fn output_connectors(&self) -> Vec<(&str, Option<String>)> {
-        // Not connectable
-        vec![]
-    }
-
     pub fn create_metric(
         &self,
         network: &pywr_core::network::Network,
         attribute: Option<NodeAttribute>,
-    ) -> Result<Metric, SchemaError> {
+    ) -> Result<MetricF64, SchemaError> {
         // Use the default attribute if none is specified
         let attr = attribute.unwrap_or(Self::DEFAULT_ATTRIBUTE);
 
         let idx = network.get_aggregated_node_index_by_name(self.meta.name.as_str(), None)?;
 
         let metric = match attr {
-            NodeAttribute::Outflow => Metric::AggregatedNodeOutFlow(idx),
-            NodeAttribute::Inflow => Metric::AggregatedNodeInFlow(idx),
+            NodeAttribute::Outflow => MetricF64::AggregatedNodeOutFlow(idx),
+            NodeAttribute::Inflow => MetricF64::AggregatedNodeInFlow(idx),
             _ => {
                 return Err(SchemaError::NodeAttributeNotSupported {
                     ty: "AggregatedNode".to_string(),
@@ -818,7 +823,7 @@ impl TryFrom<AggregatedNodeV1> for AggregatedNode {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Clone, Default, PywrNode)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
 pub struct AggregatedStorageNode {
     #[serde(flatten)]
     pub meta: NodeMeta,
@@ -827,17 +832,6 @@ pub struct AggregatedStorageNode {
 
 impl AggregatedStorageNode {
     const DEFAULT_ATTRIBUTE: NodeAttribute = NodeAttribute::Outflow;
-
-    pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
-        let nodes = self
-            .storage_nodes
-            .iter()
-            .map(|name| network.get_node_index_by_name(name, None))
-            .collect::<Result<_, _>>()?;
-
-        network.add_aggregated_storage_node(self.meta.name.as_str(), None, nodes)?;
-        Ok(())
-    }
 
     pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
         // Not connectable
@@ -850,22 +844,40 @@ impl AggregatedStorageNode {
         vec![]
     }
 
+    pub fn default_metric(&self) -> NodeAttribute {
+        Self::DEFAULT_ATTRIBUTE
+    }
+}
+
+#[cfg(feature = "core")]
+impl AggregatedStorageNode {
+    pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
+        let nodes = self
+            .storage_nodes
+            .iter()
+            .map(|name| network.get_node_index_by_name(name, None))
+            .collect::<Result<_, _>>()?;
+
+        network.add_aggregated_storage_node(self.meta.name.as_str(), None, nodes)?;
+        Ok(())
+    }
+
     pub fn create_metric(
         &self,
         network: &mut pywr_core::network::Network,
         attribute: Option<NodeAttribute>,
-    ) -> Result<Metric, SchemaError> {
+    ) -> Result<MetricF64, SchemaError> {
         // Use the default attribute if none is specified
         let attr = attribute.unwrap_or(Self::DEFAULT_ATTRIBUTE);
 
         let idx = network.get_aggregated_storage_node_index_by_name(self.meta.name.as_str(), None)?;
 
         let metric = match attr {
-            NodeAttribute::Volume => Metric::AggregatedNodeVolume(idx),
+            NodeAttribute::Volume => MetricF64::AggregatedNodeVolume(idx),
             NodeAttribute::ProportionalVolume => {
                 let dm = DerivedMetric::AggregatedNodeProportionalVolume(idx);
                 let derived_metric_idx = network.add_derived_metric(dm);
-                Metric::DerivedMetric(derived_metric_idx)
+                MetricF64::DerivedMetric(derived_metric_idx)
             }
             _ => {
                 return Err(SchemaError::NodeAttributeNotSupported {
@@ -897,6 +909,12 @@ mod tests {
     use crate::nodes::core::StorageInitialVolume;
     use crate::nodes::InputNode;
     use crate::nodes::StorageNode;
+    #[cfg(feature = "core")]
+    use crate::PywrModel;
+    #[cfg(feature = "core")]
+    use pywr_core::test_utils::run_all_solvers;
+    #[cfg(feature = "core")]
+    use std::str::FromStr;
 
     #[test]
     fn test_input() {
@@ -904,7 +922,10 @@ mod tests {
             {
                 "name": "supply1",
                 "type": "Input",
-                "max_flow": 15.0
+                "max_flow": {
+                    "type": "Constant",
+                    "value": 15.0
+                }
             }
             "#;
 
@@ -947,5 +968,20 @@ mod tests {
         let storage: StorageNode = serde_json::from_str(data).unwrap();
 
         assert_eq!(storage.initial_volume, StorageInitialVolume::Proportional(0.5));
+    }
+
+    #[cfg(feature = "core")]
+    fn storage_max_volumes_str() -> &'static str {
+        include_str!("../test_models/storage_max_volumes.json")
+    }
+
+    #[test]
+    #[cfg(feature = "core")]
+    fn test_storage_max_volumes_run() {
+        let data = storage_max_volumes_str();
+        let schema = PywrModel::from_str(data).unwrap();
+        let model: pywr_core::models::Model = schema.build_model(None, None).unwrap();
+        // Test all solvers
+        run_all_solvers(&model, &[]);
     }
 }

@@ -1,19 +1,19 @@
-use crate::metric::Metric;
+use crate::metric::MetricF64;
 use crate::network::Network;
-use crate::parameters::{Parameter, ParameterMeta};
+use crate::parameters::{GeneralParameter, Parameter, ParameterMeta, ParameterState};
 use crate::scenario::ScenarioIndex;
-use crate::state::{ParameterState, State};
+use crate::state::State;
 use crate::timestep::Timestep;
 use crate::PywrError;
 
 pub struct ControlCurveIndexParameter {
     meta: ParameterMeta,
-    metric: Metric,
-    control_curves: Vec<Metric>,
+    metric: MetricF64,
+    control_curves: Vec<MetricF64>,
 }
 
 impl ControlCurveIndexParameter {
-    pub fn new(name: &str, metric: Metric, control_curves: Vec<Metric>) -> Self {
+    pub fn new(name: &str, metric: MetricF64, control_curves: Vec<MetricF64>) -> Self {
         Self {
             meta: ParameterMeta::new(name),
             metric,
@@ -22,10 +22,13 @@ impl ControlCurveIndexParameter {
     }
 }
 
-impl Parameter<usize> for ControlCurveIndexParameter {
+impl Parameter for ControlCurveIndexParameter {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }
+}
+
+impl GeneralParameter<usize> for ControlCurveIndexParameter {
     fn compute(
         &self,
         _timestep: &Timestep,
@@ -44,5 +47,11 @@ impl Parameter<usize> for ControlCurveIndexParameter {
             }
         }
         Ok(self.control_curves.len())
+    }
+    fn as_parameter(&self) -> &dyn Parameter
+    where
+        Self: Sized,
+    {
+        self
     }
 }

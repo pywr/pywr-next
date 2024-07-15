@@ -58,7 +58,9 @@ jobs:
     runs-on: windows-latest
     strategy:
       matrix:
-        python-version: [ '3.9', '3.10', '3.11', '3.12' ]
+        # We produce abi3-py39 wheels for Python 3.9 later.
+        # If this is changed, then the PyO3 feature in the pywr-python/Cargo.toml file must also be updated.
+        python-version: [ '3.9' ]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -89,7 +91,9 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: [ '3.9', '3.10', '3.11', '3.12' ]
+        # We produce abi3-py39 wheels for Python 3.9 later.
+        # If this is changed, then the PyO3 feature in the pywr-python/Cargo.toml file must also be updated.
+        python-version: [ '3.9' ]
     steps:
       - uses: actions/checkout@v4
         with:

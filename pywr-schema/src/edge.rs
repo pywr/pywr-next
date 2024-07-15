@@ -1,4 +1,6 @@
-#[derive(serde::Deserialize, serde::Serialize, Clone)]
+use schemars::JsonSchema;
+
+#[derive(serde::Deserialize, serde::Serialize, Clone, JsonSchema)]
 pub struct Edge {
     pub from_node: String,
     pub to_node: String,

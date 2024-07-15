@@ -1,5 +1,6 @@
+use crate::metric::{MetricF64, SimpleMetricF64};
 use crate::network::Network;
-use crate::node::{ConstraintValue, FlowConstraints, NodeMeta, StorageConstraints, StorageInitialVolume};
+use crate::node::{FlowConstraints, NodeMeta, StorageConstraints, StorageInitialVolume};
 use crate::state::{State, VirtualStorageState};
 use crate::timestep::Timestep;
 use crate::{NodeIndex, PywrError};
@@ -54,35 +55,100 @@ impl VirtualStorageVec {
         self.nodes.get_mut(index.0).ok_or(PywrError::NodeIndexNotFound)
     }
 
-    pub fn push_new(
-        &mut self,
-        name: &str,
-        sub_name: Option<&str>,
-        nodes: &[NodeIndex],
-        factors: Option<&[f64]>,
-        initial_volume: StorageInitialVolume,
-        min_volume: ConstraintValue,
-        max_volume: ConstraintValue,
-        reset: VirtualStorageReset,
-        rolling_window: Option<NonZeroUsize>,
-        cost: ConstraintValue,
-    ) -> VirtualStorageIndex {
+    pub fn push_new(&mut self, builder: VirtualStorageBuilder) -> Result<VirtualStorageIndex, PywrError> {
+        if self.nodes.iter().any(|n| n.name() == builder.name) {
+            return Err(PywrError::NodeNameAlreadyExists(builder.name.to_string()));
+        }
+
         let node_index = VirtualStorageIndex(self.nodes.len());
-        let node = VirtualStorage::new(
-            &node_index,
-            name,
-            sub_name,
-            nodes,
-            factors,
-            initial_volume,
-            min_volume,
-            max_volume,
-            reset,
-            rolling_window,
-            cost,
-        );
+        let node = builder.build(node_index);
         self.nodes.push(node);
-        node_index
+        Ok(node_index)
+    }
+}
+
+/// Builder for creating a [`VirtualStorage`] node.
+pub struct VirtualStorageBuilder {
+    name: String,
+    sub_name: Option<String>,
+    nodes: Vec<NodeIndex>,
+    factors: Option<Vec<f64>>,
+    initial_volume: StorageInitialVolume,
+    min_volume: Option<SimpleMetricF64>,
+    max_volume: Option<SimpleMetricF64>,
+    reset: VirtualStorageReset,
+    rolling_window: Option<NonZeroUsize>,
+    cost: Option<MetricF64>,
+}
+
+impl VirtualStorageBuilder {
+    pub fn new(name: &str, nodes: &[NodeIndex]) -> Self {
+        Self {
+            name: name.to_string(),
+            sub_name: None,
+            nodes: nodes.to_vec(),
+            factors: None,
+            initial_volume: StorageInitialVolume::Absolute(0.0),
+            min_volume: None,
+            max_volume: None,
+            reset: VirtualStorageReset::Never,
+            rolling_window: None,
+            cost: None,
+        }
+    }
+
+    pub fn sub_name(mut self, sub_name: &str) -> Self {
+        self.sub_name = Some(sub_name.to_string());
+        self
+    }
+
+    pub fn factors(mut self, factors: &[f64]) -> Self {
+        self.factors = Some(factors.to_vec());
+        self
+    }
+
+    pub fn initial_volume(mut self, initial_volume: StorageInitialVolume) -> Self {
+        self.initial_volume = initial_volume;
+        self
+    }
+
+    pub fn min_volume(mut self, min_volume: Option<SimpleMetricF64>) -> Self {
+        self.min_volume = min_volume;
+        self
+    }
+
+    pub fn max_volume(mut self, max_volume: Option<SimpleMetricF64>) -> Self {
+        self.max_volume = max_volume;
+        self
+    }
+
+    pub fn reset(mut self, reset: VirtualStorageReset) -> Self {
+        self.reset = reset;
+        self
+    }
+
+    pub fn rolling_window(mut self, rolling_window: NonZeroUsize) -> Self {
+        self.rolling_window = Some(rolling_window);
+        self
+    }
+
+    pub fn cost(mut self, cost: Option<MetricF64>) -> Self {
+        self.cost = cost;
+        self
+    }
+
+    pub fn build(self, index: VirtualStorageIndex) -> VirtualStorage {
+        VirtualStorage {
+            meta: NodeMeta::new(&index, &self.name, self.sub_name.as_deref()),
+            flow_constraints: FlowConstraints::default(),
+            nodes: self.nodes,
+            factors: self.factors,
+            initial_volume: self.initial_volume,
+            storage_constraints: StorageConstraints::new(self.min_volume, self.max_volume),
+            reset: self.reset,
+            rolling_window: self.rolling_window,
+            cost: self.cost,
+        }
     }
 }
 
@@ -102,36 +168,10 @@ pub struct VirtualStorage {
     pub storage_constraints: StorageConstraints,
     pub reset: VirtualStorageReset,
     pub rolling_window: Option<NonZeroUsize>,
-    pub cost: ConstraintValue,
+    pub cost: Option<MetricF64>,
 }
 
 impl VirtualStorage {
-    pub fn new(
-        index: &VirtualStorageIndex,
-        name: &str,
-        sub_name: Option<&str>,
-        nodes: &[NodeIndex],
-        factors: Option<&[f64]>,
-        initial_volume: StorageInitialVolume,
-        min_volume: ConstraintValue,
-        max_volume: ConstraintValue,
-        reset: VirtualStorageReset,
-        rolling_window: Option<NonZeroUsize>,
-        cost: ConstraintValue,
-    ) -> Self {
-        Self {
-            meta: NodeMeta::new(index, name, sub_name),
-            flow_constraints: FlowConstraints::new(),
-            nodes: nodes.to_vec(),
-            factors: factors.map(|f| f.to_vec()),
-            initial_volume,
-            storage_constraints: StorageConstraints::new(min_volume, max_volume),
-            reset,
-            rolling_window,
-            cost,
-        }
-    }
-
     pub fn name(&self) -> &str {
         self.meta.name()
     }
@@ -160,13 +200,12 @@ impl VirtualStorage {
 
     pub fn get_cost(&self, network: &Network, state: &State) -> Result<f64, PywrError> {
         match &self.cost {
-            ConstraintValue::None => Ok(0.0),
-            ConstraintValue::Scalar(v) => Ok(*v),
-            ConstraintValue::Metric(m) => m.get_value(network, state),
+            None => Ok(0.0),
+            Some(m) => m.get_value(network, state),
         }
     }
 
-    pub fn before(&self, timestep: &Timestep, network: &Network, state: &mut State) -> Result<(), PywrError> {
+    pub fn before(&self, timestep: &Timestep, state: &mut State) -> Result<(), PywrError> {
         let do_reset = if timestep.is_first() {
             // Set the initial volume if it is the first timestep.
             true
@@ -189,7 +228,7 @@ impl VirtualStorage {
         };
 
         if do_reset {
-            let max_volume = self.get_max_volume(network, state)?;
+            let max_volume = self.get_max_volume(state)?;
             // Determine the initial volume
             let volume = match &self.initial_volume {
                 StorageInitialVolume::Absolute(iv) => *iv,
@@ -223,17 +262,19 @@ impl VirtualStorage {
             .map(|factors| self.nodes.iter().zip(factors.iter()).map(|(n, f)| (*n, *f)).collect())
     }
 
-    pub fn get_min_volume(&self, model: &Network, state: &State) -> Result<f64, PywrError> {
-        self.storage_constraints.get_min_volume(model, state)
+    pub fn get_min_volume(&self, state: &State) -> Result<f64, PywrError> {
+        self.storage_constraints
+            .get_min_volume(&state.get_simple_parameter_values())
     }
 
-    pub fn get_max_volume(&self, model: &Network, state: &State) -> Result<f64, PywrError> {
-        self.storage_constraints.get_max_volume(model, state)
+    pub fn get_max_volume(&self, state: &State) -> Result<f64, PywrError> {
+        self.storage_constraints
+            .get_max_volume(&state.get_simple_parameter_values())
     }
 
-    pub fn get_current_available_volume_bounds(&self, model: &Network, state: &State) -> Result<(f64, f64), PywrError> {
-        let min_vol = self.get_min_volume(model, state)?;
-        let max_vol = self.get_max_volume(model, state)?;
+    pub fn get_current_available_volume_bounds(&self, state: &State) -> Result<(f64, f64), PywrError> {
+        let min_vol = self.get_min_volume(state)?;
+        let max_vol = self.get_max_volume(state)?;
 
         let current_volume = state.get_network_state().get_virtual_storage_volume(&self.index())?;
 
@@ -250,15 +291,15 @@ fn months_since_last_reset(current: &NaiveDateTime, last_reset: &NaiveDateTime) 
 
 #[cfg(test)]
 mod tests {
-    use crate::metric::Metric;
+    use crate::metric::MetricF64;
     use crate::models::Model;
     use crate::network::Network;
-    use crate::node::{ConstraintValue, StorageInitialVolume};
+    use crate::node::StorageInitialVolume;
     use crate::recorders::{AssertionFnRecorder, AssertionRecorder};
     use crate::scenario::ScenarioIndex;
     use crate::test_utils::{default_timestepper, run_all_solvers, simple_model};
     use crate::timestep::Timestep;
-    use crate::virtual_storage::{months_since_last_reset, VirtualStorageReset};
+    use crate::virtual_storage::{months_since_last_reset, VirtualStorageBuilder, VirtualStorageReset};
     use chrono::NaiveDate;
     use ndarray::Array;
     use std::num::NonZeroUsize;
@@ -326,26 +367,21 @@ mod tests {
         network.connect_nodes(link_node1, output_node1).unwrap();
 
         // Virtual storage with contributions from link-node0 than link-node1
-        let _vs = network.add_virtual_storage_node(
-            "virtual-storage",
-            None,
-            &[link_node0, link_node1],
-            Some(&[2.0, 1.0]),
-            StorageInitialVolume::Absolute(100.0),
-            ConstraintValue::Scalar(0.0),
-            ConstraintValue::Scalar(100.0),
-            VirtualStorageReset::Never,
-            None,
-            ConstraintValue::Scalar(0.0),
-        );
+        let vs_builder = VirtualStorageBuilder::new("virtual-storage", &[link_node0, link_node1])
+            .factors(&[2.0, 1.0])
+            .initial_volume(StorageInitialVolume::Absolute(100.0))
+            .min_volume(Some(0.0.into()))
+            .max_volume(Some(100.0.into()))
+            .reset(VirtualStorageReset::Never)
+            .cost(None);
+
+        let _vs = network.add_virtual_storage_node(vs_builder);
 
         // Setup a demand on output-0 and output-1
         for sub_name in &["0", "1"] {
             let output_node = network.get_mut_node_by_name("output", Some(sub_name)).unwrap();
-            output_node
-                .set_max_flow_constraint(ConstraintValue::Scalar(10.0))
-                .unwrap();
-            output_node.set_cost(ConstraintValue::Scalar(-10.0));
+            output_node.set_max_flow_constraint(Some(10.0.into())).unwrap();
+            output_node.set_cost(Some((-10.0).into()));
         }
 
         // With a demand of 10 on each link node. The virtual storage will depleted at a rate of
@@ -360,7 +396,7 @@ mod tests {
                 0.0
             }
         };
-        let recorder = AssertionFnRecorder::new("link-0-flow", Metric::NodeOutFlow(idx), expected, None, None);
+        let recorder = AssertionFnRecorder::new("link-0-flow", MetricF64::NodeOutFlow(idx), expected, None, None);
         network.add_recorder(Box::new(recorder)).unwrap();
 
         // Set-up assertion for "input" node
@@ -372,13 +408,13 @@ mod tests {
                 0.0
             }
         };
-        let recorder = AssertionFnRecorder::new("link-1-flow", Metric::NodeOutFlow(idx), expected, None, None);
+        let recorder = AssertionFnRecorder::new("link-1-flow", MetricF64::NodeOutFlow(idx), expected, None, None);
         network.add_recorder(Box::new(recorder)).unwrap();
 
         let domain = default_timestepper().try_into().unwrap();
         let model = Model::new(domain, network);
         // Test all solvers
-        run_all_solvers(&model);
+        run_all_solvers(&model, &["highs"]);
     }
 
     #[test]
@@ -389,28 +425,23 @@ mod tests {
 
         let nodes = vec![network.get_node_index_by_name("input", None).unwrap()];
         // Virtual storage node cost is high enough to prevent any flow
-        network
-            .add_virtual_storage_node(
-                "vs",
-                None,
-                &nodes,
-                None,
-                StorageInitialVolume::Proportional(1.0),
-                ConstraintValue::Scalar(0.0),
-                ConstraintValue::Scalar(100.0),
-                VirtualStorageReset::Never,
-                None,
-                ConstraintValue::Scalar(20.0),
-            )
-            .unwrap();
+
+        let vs_builder = VirtualStorageBuilder::new("vs", &nodes)
+            .initial_volume(StorageInitialVolume::Proportional(1.0))
+            .min_volume(Some(0.0.into()))
+            .max_volume(Some(100.0.into()))
+            .reset(VirtualStorageReset::Never)
+            .cost(Some(20.0.into()));
+
+        network.add_virtual_storage_node(vs_builder).unwrap();
 
         let expected = Array::zeros((366, 1));
         let idx = network.get_node_by_name("output", None).unwrap().index();
-        let recorder = AssertionRecorder::new("output-flow", Metric::NodeInFlow(idx), expected, None, None);
+        let recorder = AssertionRecorder::new("output-flow", MetricF64::NodeInFlow(idx), expected, None, None);
         network.add_recorder(Box::new(recorder)).unwrap();
 
         // Test all solvers
-        run_all_solvers(&model);
+        run_all_solvers(&model, &["highs"]);
     }
 
     #[test]
@@ -423,18 +454,15 @@ mod tests {
 
         // Virtual storage with contributions from input
         // Max volume is 2.5 and is assumed to start full
-        let _vs = network.add_virtual_storage_node(
-            "virtual-storage",
-            None,
-            &nodes,
-            Some(&[1.0]),
-            StorageInitialVolume::Absolute(2.5),
-            ConstraintValue::Scalar(0.0),
-            ConstraintValue::Scalar(2.5),
-            VirtualStorageReset::Never,
-            Some(NonZeroUsize::new(5).unwrap()),
-            ConstraintValue::Scalar(0.0),
-        );
+        let vs_builder = VirtualStorageBuilder::new("virtual-storage", &nodes)
+            .factors(&[1.0])
+            .initial_volume(StorageInitialVolume::Absolute(2.5))
+            .min_volume(Some(0.0.into()))
+            .max_volume(Some(2.5.into()))
+            .reset(VirtualStorageReset::Never)
+            .rolling_window(NonZeroUsize::new(5).unwrap())
+            .cost(None);
+        let _vs = network.add_virtual_storage_node(vs_builder);
 
         // Expected values will follow a pattern set by the first few time-steps
         let expected = |ts: &Timestep, _si: &ScenarioIndex| {
@@ -449,10 +477,10 @@ mod tests {
             }
         };
         let idx = network.get_node_by_name("output", None).unwrap().index();
-        let recorder = AssertionFnRecorder::new("output-flow", Metric::NodeInFlow(idx), expected, None, None);
+        let recorder = AssertionFnRecorder::new("output-flow", MetricF64::NodeInFlow(idx), expected, None, None);
         network.add_recorder(Box::new(recorder)).unwrap();
 
         // Test all solvers
-        run_all_solvers(&model);
+        run_all_solvers(&model, &["highs"]);
     }
 }
