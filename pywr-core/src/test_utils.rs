@@ -171,13 +171,20 @@ pub fn run_and_assert_parameter(
 /// The model will only be run if the solver has the required solver features (and
 /// is also enabled as a Cargo feature).
 pub fn run_all_solvers(model: &Model, solvers_without_features: &[&str]) {
+    println!("Running CLP");
     check_features_and_run::<ClpSolver>(model, !solvers_without_features.contains(&"clp"));
 
     #[cfg(feature = "cbc")]
-    check_features_and_run::<CbcSolver>(model, !solvers_without_features.contains(&"cbc"));
+    {
+        println!("Running CBC");
+        check_features_and_run::<CbcSolver>(model, !solvers_without_features.contains(&"cbc"));
+    }
 
     #[cfg(feature = "highs")]
-    check_features_and_run::<HighsSolver>(model, !solvers_without_features.contains(&"highs"));
+    {
+        println!("Running Highs");
+        check_features_and_run::<HighsSolver>(model, !solvers_without_features.contains(&"highs"));
+    }
 
     #[cfg(feature = "ipm-simd")]
     {

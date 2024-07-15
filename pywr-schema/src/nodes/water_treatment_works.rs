@@ -417,6 +417,6 @@ mod tests {
         network.add_recorder(Box::new(recorder)).unwrap();
 
         // Test all solvers
-        run_all_solvers(&model, &["cbc", "highs"]);
+        run_all_solvers(&model, &[]);
     }
 }
