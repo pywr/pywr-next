@@ -1641,8 +1641,6 @@ mod tests {
     use crate::parameters::{ActivationFunction, ControlCurveInterpolatedParameter, Parameter};
     use crate::recorders::AssertionRecorder;
     use crate::scenario::{ScenarioDomain, ScenarioGroupCollection, ScenarioIndex};
-    #[cfg(feature = "clipm")]
-    use crate::solvers::{ClIpmF64Solver, SimdIpmF64Solver};
     use crate::solvers::{ClpSolver, ClpSolverSettings};
     use crate::test_utils::{run_all_solvers, simple_model, simple_storage_model};
     use float_cmp::assert_approx_eq;

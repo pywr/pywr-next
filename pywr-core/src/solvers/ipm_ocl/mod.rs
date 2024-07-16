@@ -354,7 +354,7 @@ impl BuiltSolver {
                         .iter()
                         .map(|state| {
                             let (avail, missing) = node
-                                .get_current_available_volume_bounds(network, state)
+                                .get_current_available_volume_bounds(state)
                                 .expect("Volumes bounds expected for Storage nodes.");
                             (avail / dt, missing / dt)
                         })
@@ -573,6 +573,10 @@ pub struct ClIpmF32Solver {
 
 impl MultiStateSolver for ClIpmF32Solver {
     type Settings = ClIpmSolverSettings;
+
+    fn name() -> &'static str {
+        "ipm-ocl"
+    }
 
     fn features() -> &'static [SolverFeatures] {
         &[]

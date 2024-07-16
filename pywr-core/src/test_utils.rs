@@ -15,7 +15,7 @@ use crate::solvers::ClIpmF64Solver;
 use crate::solvers::HighsSolver;
 #[cfg(feature = "ipm-simd")]
 use crate::solvers::SimdIpmF64Solver;
-use crate::solvers::{ClpSolver, Solver, SolverSettings};
+use crate::solvers::{ClpSolver, MultiStateSolver, Solver, SolverSettings};
 use crate::timestep::{TimeDomain, TimestepDuration, Timestepper};
 use crate::PywrError;
 use chrono::{Days, NaiveDate};
@@ -180,22 +180,10 @@ pub fn run_all_solvers(model: &Model, solvers_without_features: &[&str]) {
     check_features_and_run::<HighsSolver>(model, !solvers_without_features.contains(&"highs"));
 
     #[cfg(feature = "ipm-simd")]
-    {
-        if model.check_multi_scenario_solver_features::<SimdIpmF64Solver<4>>() {
-            model
-                .run_multi_scenario::<SimdIpmF64Solver<4>>(&Default::default())
-                .expect("Failed to solve with SIMD IPM");
-        }
-    }
+    check_features_and_run_multi::<SimdIpmF64Solver<4>>(model, !solvers_without_features.contains(&"ipm-simd"));
 
     #[cfg(feature = "ipm-ocl")]
-    {
-        if model.check_multi_scenario_solver_features::<ClIpmF64Solver>() {
-            model
-                .run_multi_scenario::<ClIpmF64Solver>(&Default::default())
-                .expect("Failed to solve with OpenCl IPM");
-        }
-    }
+    check_features_and_run_multi::<ClIpmF64Solver>(&Default::default(), !solvers_without_features.contains(&"ipm-ocl"));
 }
 
 /// Check features and
@@ -213,6 +201,31 @@ where
         );
         model
             .run::<S>(&Default::default())
+            .expect(&format!("Failed to solve with: {}", S::name()));
+    } else {
+        assert!(
+            !has_features,
+            "Solver `{}` was not expected to have the required features",
+            S::name()
+        );
+    }
+}
+
+/// Check features and run with a multi-scenario solver
+fn check_features_and_run_multi<S>(model: &Model, expect_features: bool)
+where
+    S: MultiStateSolver,
+    <S as MultiStateSolver>::Settings: SolverSettings + Default,
+{
+    let has_features = model.check_multi_scenario_solver_features::<S>();
+    if expect_features {
+        assert!(
+            has_features,
+            "Solver `{}` was expected to have the required features",
+            S::name()
+        );
+        model
+            .run_multi_scenario::<S>(&Default::default())
             .expect(&format!("Failed to solve with: {}", S::name()));
     } else {
         assert!(
