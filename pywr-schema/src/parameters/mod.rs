@@ -772,7 +772,7 @@ impl ParameterIndexValue {
         match self {
             Self::Reference(name) => {
                 // This should be an existing parameter
-                Ok(network.get_index_parameter_index_by_name(name)?.into())
+                Ok(network.get_index_parameter_index_by_name(name)?)
             }
             Self::Inline(parameter) => {
                 // Inline parameter needs to be added

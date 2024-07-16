@@ -42,7 +42,7 @@ impl SimpleMetricF64 {
             SimpleMetricF64::ParameterValue(idx) => Ok(values.get_simple_parameter_f64(*idx)?),
             SimpleMetricF64::IndexParameterValue(idx) => Ok(values.get_simple_parameter_usize(*idx)? as f64),
             SimpleMetricF64::MultiParameterValue((idx, key)) => Ok(values.get_simple_multi_parameter_f64(*idx, key)?),
-            SimpleMetricF64::Constant(m) => m.get_value(&values.get_constant_values()),
+            SimpleMetricF64::Constant(m) => m.get_value(values.get_constant_values()),
         }
     }
 }

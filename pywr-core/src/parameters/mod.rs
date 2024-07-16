@@ -884,7 +884,7 @@ impl ParameterCollection {
         }
 
         match parameter.try_into_simple() {
-            Some(simple) => self.add_simple_f64(simple).map(|idx| idx.into()),
+            Some(simple) => self.add_simple_f64(simple),
             None => {
                 let index = GeneralParameterIndex::new(self.general_f64.len());
                 self.general_f64.push(parameter);
@@ -902,7 +902,7 @@ impl ParameterCollection {
         }
 
         match parameter.try_into_const() {
-            Some(constant) => self.add_const_f64(constant).map(|idx| idx.into()),
+            Some(constant) => self.add_const_f64(constant),
             None => {
                 let index = SimpleParameterIndex::new(self.simple_f64.len());
 
@@ -951,25 +951,22 @@ impl ParameterCollection {
             .general_f64
             .iter()
             .position(|p| p.meta().name == name)
-            .map(|idx| GeneralParameterIndex::new(idx))
+            .map(GeneralParameterIndex::new)
         {
             Some(idx.into())
         } else if let Some(idx) = self
             .simple_f64
             .iter()
             .position(|p| p.meta().name == name)
-            .map(|idx| SimpleParameterIndex::new(idx))
-        {
-            Some(idx.into())
-        } else if let Some(idx) = self
-            .constant_f64
-            .iter()
-            .position(|p| p.meta().name == name)
-            .map(|idx| ConstParameterIndex::new(idx))
+            .map(SimpleParameterIndex::new)
         {
             Some(idx.into())
         } else {
-            None
+            self.constant_f64
+                .iter()
+                .position(|p| p.meta().name == name)
+                .map(ConstParameterIndex::new)
+                .map(|idx| idx.into())
         }
     }
 
@@ -1047,25 +1044,22 @@ impl ParameterCollection {
             .general_usize
             .iter()
             .position(|p| p.meta().name == name)
-            .map(|idx| GeneralParameterIndex::new(idx))
+            .map(GeneralParameterIndex::new)
         {
             Some(idx.into())
         } else if let Some(idx) = self
             .simple_usize
             .iter()
             .position(|p| p.meta().name == name)
-            .map(|idx| SimpleParameterIndex::new(idx))
-        {
-            Some(idx.into())
-        } else if let Some(idx) = self
-            .constant_usize
-            .iter()
-            .position(|p| p.meta().name == name)
-            .map(|idx| ConstParameterIndex::new(idx))
+            .map(SimpleParameterIndex::new)
         {
             Some(idx.into())
         } else {
-            None
+            self.constant_usize
+                .iter()
+                .position(|p| p.meta().name == name)
+                .map(ConstParameterIndex::new)
+                .map(|idx| idx.into())
         }
     }
 
@@ -1145,25 +1139,22 @@ impl ParameterCollection {
             .general_multi
             .iter()
             .position(|p| p.meta().name == name)
-            .map(|idx| GeneralParameterIndex::new(idx))
+            .map(GeneralParameterIndex::new)
         {
             Some(idx.into())
         } else if let Some(idx) = self
             .simple_multi
             .iter()
             .position(|p| p.meta().name == name)
-            .map(|idx| SimpleParameterIndex::new(idx))
-        {
-            Some(idx.into())
-        } else if let Some(idx) = self
-            .constant_multi
-            .iter()
-            .position(|p| p.meta().name == name)
-            .map(|idx| ConstParameterIndex::new(idx))
+            .map(SimpleParameterIndex::new)
         {
             Some(idx.into())
         } else {
-            None
+            self.constant_multi
+                .iter()
+                .position(|p| p.meta().name == name)
+                .map(ConstParameterIndex::new)
+                .map(|idx| idx.into())
         }
     }
 
