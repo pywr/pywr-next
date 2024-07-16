@@ -146,7 +146,7 @@ impl InternalState {
     /// Aggregate over the saved data to a single value using the provided aggregation functions.
     ///
     /// This method will first aggregation over the metrics, then over time, and finally over the scenarios.
-    fn aggregate_scenario_time_metric(&self, aggregation: &Aggregation) -> Result<f64, AggregationError> {
+    fn aggregate_metric_time_scenario(&self, aggregation: &Aggregation) -> Result<f64, AggregationError> {
         let scenario_data: Vec<f64> = self
             .data
             .iter()
@@ -168,7 +168,7 @@ impl InternalState {
     /// Aggregate over the saved data to a single value using the provided aggregation functions.
     ///
     /// This method will first aggregation over time, then over the metrics, and finally over the scenarios.
-    fn aggregate_scenario_metric_time(&self, aggregation: &Aggregation) -> Result<f64, AggregationError> {
+    fn aggregate_time_metric_scenario(&self, aggregation: &Aggregation) -> Result<f64, AggregationError> {
         let scenario_data: Vec<f64> = self
             .data
             .iter()
@@ -192,6 +192,13 @@ impl InternalState {
     }
 }
 
+#[derive(Default, Copy, Clone)]
+pub enum AggregationOrder {
+    #[default]
+    MetricTimeScenario,
+    TimeMetricScenario,
+}
+
 /// A recorder that saves the metric values to memory.
 ///
 /// This recorder saves data into memory and can be used to provide aggregated data for external
@@ -204,14 +211,16 @@ pub struct MemoryRecorder {
     meta: RecorderMeta,
     metric_set_idx: MetricSetIndex,
     aggregation: Aggregation,
+    order: AggregationOrder,
 }
 
 impl MemoryRecorder {
-    pub fn new(name: &str, metric_set_idx: MetricSetIndex, aggregation: Aggregation) -> Self {
+    pub fn new(name: &str, metric_set_idx: MetricSetIndex, aggregation: Aggregation, order: AggregationOrder) -> Self {
         Self {
             meta: RecorderMeta::new(name),
             metric_set_idx,
             aggregation,
+            order,
         }
     }
 }
@@ -298,8 +307,11 @@ impl Recorder for MemoryRecorder {
             None => panic!("No internal state defined when one was expected! :("),
         };
 
-        // TODO allow the user to choose the order of aggregation
-        let agg_value = internal_state.aggregate_scenario_time_metric(&self.aggregation)?;
+        let agg_value = match self.order {
+            AggregationOrder::MetricTimeScenario => internal_state.aggregate_metric_time_scenario(&self.aggregation)?,
+            AggregationOrder::TimeMetricScenario => internal_state.aggregate_time_metric_scenario(&self.aggregation)?,
+        };
+
         Ok(agg_value)
     }
 }
@@ -356,10 +368,10 @@ mod tests {
             Some(AggregationFunction::CountFunc { func: |v: f64| v > 0.0 }),
             Some(AggregationFunction::Sum),
         );
-        let agg_value = state.aggregate_scenario_time_metric(&agg).expect("Aggregation failed");
+        let agg_value = state.aggregate_metric_time_scenario(&agg).expect("Aggregation failed");
         assert_approx_eq!(f64, agg_value, count_non_zero_max);
 
-        let agg_value = state.aggregate_scenario_metric_time(&agg).expect("Aggregation failed");
+        let agg_value = state.aggregate_time_metric_scenario(&agg).expect("Aggregation failed");
         assert_approx_eq!(f64, agg_value, count_non_zero_by_metric.iter().sum());
     }
 }
