@@ -375,7 +375,7 @@ mod tests {
             .reset(VirtualStorageReset::Never)
             .cost(None);
 
-        let _vs = network.add_virtual_storage_node(vs_builder);
+        let vs_idx = network.add_virtual_storage_node(vs_builder).unwrap();
 
         // Setup a demand on output-0 and output-1
         for sub_name in &["0", "1"] {
@@ -384,9 +384,17 @@ mod tests {
             output_node.set_cost(Some((-10.0).into()));
         }
 
-        // With a demand of 10 on each link node. The virtual storage will depleted at a rate of
+        // With a demand of 10 on each link node. The virtual storage will deplete at a rate of
         // 30 per day.
-        // TODO assert let expected_vol = |ts: &Timestep, _si| (70.0 - ts.index as f64 * 30.0).max(0.0);
+        let expected_vol = |ts: &Timestep, _si: &ScenarioIndex| (70.0 - ts.index as f64 * 30.0).max(0.0);
+        let recorder = AssertionFnRecorder::new(
+            "vs-volume",
+            MetricF64::VirtualStorageVolume(vs_idx),
+            expected_vol,
+            None,
+            None,
+        );
+        network.add_recorder(Box::new(recorder)).unwrap();
         // Set-up assertion for "link" node
         let idx = network.get_node_by_name("link", Some("0")).unwrap().index();
         let expected = |ts: &Timestep, _si: &ScenarioIndex| {
