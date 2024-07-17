@@ -313,6 +313,7 @@ impl MultiNetworkModel {
 /// Calculate inter-model parameters for the given scenario index.
 ///
 ///
+#[allow(clippy::too_many_arguments)] // This function is not too unreadable with 8 arguments.
 fn compute_inter_network_transfers(
     timestep: &Timestep,
     scenario_index: &ScenarioIndex,
