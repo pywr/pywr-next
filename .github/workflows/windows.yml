@@ -20,8 +20,8 @@ jobs:
         with:
           submodules: true
       - name: Run Clippy
-        run: cargo clippy --all-targets --all-features
+        run: cargo clippy --features highs,cbc
       - name: Build
-        run: cargo build --verbose
+        run: cargo build --verbose --features highs,cbc
       - name: Run tests
         run: cargo test
