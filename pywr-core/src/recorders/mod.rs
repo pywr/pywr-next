@@ -16,7 +16,7 @@ pub use aggregator::{AggregationFrequency, AggregationFunction, Aggregator};
 pub use csv::{CsvLongFmtOutput, CsvLongFmtRecord, CsvWideFmtOutput};
 use float_cmp::{approx_eq, ApproxEq, F64Margin};
 pub use hdf::HDF5Recorder;
-pub use memory::{Aggregation, AggregationError, MemoryRecorder};
+pub use memory::{Aggregation, AggregationError, AggregationOrder, MemoryRecorder};
 pub use metric_set::{MetricSet, MetricSetIndex, MetricSetState, OutputMetric};
 use ndarray::prelude::*;
 use ndarray::Array2;
