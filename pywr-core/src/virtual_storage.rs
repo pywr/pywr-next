@@ -327,7 +327,7 @@ mod tests {
             .unwrap();
         assert_eq!(months_since_last_reset(&current, &last_reset), 12);
 
-        let current = NaiveDate::from_ymd_opt(2023, 01, 1)
+        let current = NaiveDate::from_ymd_opt(2023, 1, 1)
             .unwrap()
             .and_hms_opt(0, 0, 0)
             .unwrap();
