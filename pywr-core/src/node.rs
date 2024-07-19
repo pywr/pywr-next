@@ -575,7 +575,7 @@ impl FlowConstraints {
     /// Defaults to f64::MAX if no parameter is defined.
     pub fn get_max_flow(&self, network: &Network, state: &State) -> Result<f64, PywrError> {
         match &self.max_flow {
-            None => Ok(f64::MAX), // TODO should this return infinity?
+            None => Ok(f64::MAX),
             Some(m) => m.get_value(network, state),
         }
     }
