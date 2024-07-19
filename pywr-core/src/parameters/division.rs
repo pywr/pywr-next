@@ -36,7 +36,6 @@ impl GeneralParameter<f64> for DivisionParameter {
         state: &State,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<f64, PywrError> {
-        // TODO handle scenarios
         let denominator = self.denominator.get_value(model, state)?;
 
         if denominator == 0.0 {

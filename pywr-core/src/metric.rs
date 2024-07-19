@@ -76,7 +76,6 @@ impl MetricF64 {
             MetricF64::NodeVolume(idx) => Ok(state.get_network_state().get_node_volume(idx)?),
             MetricF64::AggregatedNodeInFlow(idx) => {
                 let node = model.get_aggregated_node(idx)?;
-                // TODO this could be more efficient with an iterator method? I.e. avoid the `Vec<_>` allocation
                 node.get_nodes()
                     .iter()
                     .map(|idx| state.get_network_state().get_node_in_flow(idx))
@@ -84,7 +83,6 @@ impl MetricF64 {
             }
             MetricF64::AggregatedNodeOutFlow(idx) => {
                 let node = model.get_aggregated_node(idx)?;
-                // TODO this could be more efficient with an iterator method? I.e. avoid the `Vec<_>` allocation
                 node.get_nodes()
                     .iter()
                     .map(|idx| state.get_network_state().get_node_out_flow(idx))

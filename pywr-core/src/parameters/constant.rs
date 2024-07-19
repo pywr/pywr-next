@@ -57,7 +57,6 @@ impl Parameter for ConstantParameter {
     }
 }
 
-// TODO this should only need to implement `ConstantParameter` when that is implemented.
 impl ConstParameter<f64> for ConstantParameter {
     fn compute(
         &self,
