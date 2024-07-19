@@ -24,4 +24,4 @@ jobs:
       - name: Build
         run: cargo build --verbose --features highs,cbc
       - name: Run tests
-        run: cargo test
+        run: cargo test --features highs,cbc

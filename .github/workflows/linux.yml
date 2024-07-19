@@ -32,7 +32,7 @@ jobs:
       - name: Build
         run: cargo build --verbose --features highs,cbc
       - name: Run tests
-        run: cargo test --features highs
+        run: cargo test --features highs,cbc
       - name: Run mdbook tests
         run: mdbook test ./pywr-book
 
