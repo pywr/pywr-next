@@ -175,7 +175,7 @@ mod tests {
 
         let mut internal_p_states: Vec<_> = scenario_indices
             .iter()
-            .map(|si| param.setup(&timesteps, si).expect("Could not setup the PyParameter"))
+            .map(|si| param.setup(timesteps, si).expect("Could not setup the PyParameter"))
             .collect();
 
         let model = Network::default();

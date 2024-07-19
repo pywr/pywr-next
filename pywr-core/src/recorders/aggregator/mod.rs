@@ -490,7 +490,7 @@ mod tests {
         for _i in 0..365 * 3 {
             let value = PeriodValue::new(date, TimeDelta::days(1).into(), date.year() as f64);
             let _agg_value = max_annual_min.append_value(&mut state, value);
-            date = date + TimeDelta::days(1);
+            date += TimeDelta::days(1);
         }
 
         let final_value = max_annual_min.finalise(&mut state);
