@@ -179,6 +179,8 @@ pub enum PywrError {
     NetworkNotFound(String),
     #[error("network index ({0}) not found")]
     NetworkIndexNotFound(usize),
+    #[error("network name `{0}` already exists.")]
+    NetworkNameAlreadyExists(String),
     #[error("parameters do not provide an initial value")]
     ParameterNoInitialValue,
     #[error("parameter state not found for parameter index {0}")]
