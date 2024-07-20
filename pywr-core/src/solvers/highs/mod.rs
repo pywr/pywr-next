@@ -75,7 +75,6 @@ impl Highs {
 
     pub fn add_rows(
         &mut self,
-        nrows: HighsInt,
         row_lower: &[f64],
         row_upper: &[f64],
         nnz: HighsInt,
@@ -86,7 +85,7 @@ impl Highs {
         unsafe {
             let ret = Highs_addRows(
                 self.ptr,
-                nrows,
+                row_upper.len() as HighsInt,
                 row_lower.as_ptr(),
                 row_upper.as_ptr(),
                 nnz,
@@ -184,13 +183,12 @@ impl Solver for HighsSolver {
     fn setup(
         network: &Network,
         values: &ConstParameterValues,
-        settings: &Self::Settings,
+        _settings: &Self::Settings,
     ) -> Result<Box<Self>, PywrError> {
         let builder: SolverBuilder<HighsInt> = SolverBuilder::default();
         let built = builder.create(network, values)?;
 
         let num_cols = built.num_cols();
-        let num_rows = built.num_rows();
         let num_nz = built.num_non_zero();
 
         let mut highs_lp = Highs::default();
@@ -198,7 +196,6 @@ impl Solver for HighsSolver {
         highs_lp.add_cols(built.col_lower(), built.col_upper(), built.col_obj_coef(), num_cols);
 
         highs_lp.add_rows(
-            num_rows,
             built.row_lower(),
             built.row_upper(),
             num_nz,
@@ -285,7 +282,7 @@ mod tests {
         let columns: Vec<HighsInt> = vec![0, 1];
         let elements: Vec<f64> = vec![1.0, 1.0];
 
-        lp.add_rows(1, &row_lower, &row_upper, 2, &row_starts, &columns, &elements);
+        lp.add_rows(&row_lower, &row_upper, 2, &row_starts, &columns, &elements);
     }
 
     #[test]
@@ -306,7 +303,7 @@ mod tests {
 
         lp.add_cols(&col_lower, &col_upper, &col_obj_coef, ncols);
 
-        lp.add_rows(nrows, &row_lower, &row_upper, nnz, &row_starts, &columns, &elements);
+        lp.add_rows(&row_lower, &row_upper, nnz, &row_starts, &columns, &elements);
         lp.run();
 
         assert!(approx_eq!(f64, lp.objective_value(), -20.0));
@@ -334,7 +331,7 @@ mod tests {
 
         lp.add_cols(&col_lower, &col_upper, &col_obj_coef, ncols);
 
-        lp.add_rows(nrows, &row_lower, &row_upper, nnz, &row_starts, &columns, &elements);
+        lp.add_rows(&row_lower, &row_upper, nnz, &row_starts, &columns, &elements);
         lp.run();
 
         assert!(approx_eq!(f64, lp.objective_value(), -40.0));

@@ -291,7 +291,7 @@ mod tests {
     #[test]
     fn cbc_add_rows() {
         let mut model = Cbc::default();
-        model.add_cols(&vec![0.0, 0.0], &vec![10.0, 10.0], &vec![0.0, 0.0]);
+        model.add_cols(&[0.0, 0.0], &[10.0, 10.0], &[0.0, 0.0]);
 
         let row_lower: Vec<c_double> = vec![0.0];
         let row_upper: Vec<c_double> = vec![2.0];

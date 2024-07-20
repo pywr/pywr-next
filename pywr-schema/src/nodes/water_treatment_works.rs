@@ -182,16 +182,13 @@ impl WaterTreatmentWorks {
             // The aggregated node does not support zero loss factors so filter them here.
             let lf = match loss_factor.load(network, args)? {
                 MetricF64::Simple(s) => match s {
-                    SimpleMetricF64::Constant(c) => match c {
-                        ConstantMetricF64::Constant(f) => {
-                            if f.is_zero() {
-                                None
-                            } else {
-                                Some(f.into())
-                            }
+                    SimpleMetricF64::Constant(ConstantMetricF64::Constant(f)) => {
+                        if f.is_zero() {
+                            None
+                        } else {
+                            Some(f.into())
                         }
-                        _ => None,
-                    },
+                    }
                     _ => None,
                 },
                 m => Some(m),

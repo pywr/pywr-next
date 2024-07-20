@@ -373,7 +373,7 @@ class MyParameter:
 
         let mut internal_p_states: Vec<_> = scenario_indices
             .iter()
-            .map(|si| Parameter::setup(&param, &timesteps, si).expect("Could not setup the PyParameter"))
+            .map(|si| Parameter::setup(&param, timesteps, si).expect("Could not setup the PyParameter"))
             .collect();
 
         let model = Network::default();
@@ -442,7 +442,7 @@ class MyParameter:
 
         let mut internal_p_states: Vec<_> = scenario_indices
             .iter()
-            .map(|si| Parameter::setup(&param, &timesteps, si).expect("Could not setup the PyParameter"))
+            .map(|si| Parameter::setup(&param, timesteps, si).expect("Could not setup the PyParameter"))
             .collect();
 
         let model = Network::default();

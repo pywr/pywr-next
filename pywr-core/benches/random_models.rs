@@ -59,9 +59,9 @@ fn random_benchmark(
                                 |b, _n| {
                                     // Do the setup here outside of the time-step loop
                                     let mut state =
-                                        model.setup::<ClpSolver>(&settings).expect("Failed to setup the model.");
+                                        model.setup::<ClpSolver>(settings).expect("Failed to setup the model.");
 
-                                    b.iter(|| model.run_with_state(&mut state, &settings))
+                                    b.iter(|| model.run_with_state(&mut state, settings))
                                 },
                             );
                         }
@@ -74,10 +74,10 @@ fn random_benchmark(
                                 &(n_sys, density, n_sc),
                                 |b, _n| {
                                     let mut state = model
-                                        .setup::<HighsSolver>(&settings)
+                                        .setup::<HighsSolver>(settings)
                                         .expect("Failed to setup the model.");
 
-                                    b.iter(|| model.run_with_state(&mut state, &settings))
+                                    b.iter(|| model.run_with_state(&mut state, settings))
                                 },
                             );
                         }
@@ -313,6 +313,7 @@ fn bench_threads(c: &mut Criterion) {
 }
 
 fn bench_ipm_convergence(c: &mut Criterion) {
+    #[cfg(any(feature = "ipm-simd", feature = "ipm-ocl"))]
     const N_THREADS: usize = 0;
 
     let solver_setups = Vec::new();
@@ -354,6 +355,7 @@ fn bench_ipm_convergence(c: &mut Criterion) {
 }
 
 fn bench_ocl_chunks(c: &mut Criterion) {
+    #[cfg(feature = "ipm-ocl")]
     const N_THREADS: usize = 0;
 
     let solver_setups = Vec::new();
@@ -388,7 +390,7 @@ fn bench_ocl_chunks(c: &mut Criterion) {
 /// Benchmark a large number of scenarios using various solvers
 fn bench_hyper_scenarios(c: &mut Criterion) {
     // Go from largest to smallest
-    let scenarios: Vec<usize> = (10..21).into_iter().map(|p| 2_usize.pow(p)).rev().collect();
+    let scenarios: Vec<usize> = (10..21).map(|p| 2_usize.pow(p)).rev().collect();
 
     const N_THREADS: usize = 0;
 

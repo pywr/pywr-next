@@ -397,7 +397,7 @@ impl<'a> ParameterValuesRef<'a> {
     }
 
     fn get_multi_value(&self, idx: usize, key: &str) -> Option<&f64> {
-        self.multi_values.get(idx).map(|s| s.get_value(key)).flatten()
+        self.multi_values.get(idx).and_then(|s| s.get_value(key))
     }
 }
 

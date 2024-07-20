@@ -1342,9 +1342,7 @@ impl Network {
         &mut self,
         parameter: Box<dyn parameters::SimpleParameter<f64>>,
     ) -> Result<ParameterIndex<f64>, PywrError> {
-        let parameter_index = self.parameters.add_simple_f64(parameter)?;
-
-        Ok(parameter_index.into())
+        self.parameters.add_simple_f64(parameter)
     }
 
     /// Add a [`parameters::ConstParameter`] to the network
@@ -1352,9 +1350,7 @@ impl Network {
         &mut self,
         parameter: Box<dyn parameters::ConstParameter<f64>>,
     ) -> Result<ParameterIndex<f64>, PywrError> {
-        let parameter_index = self.parameters.add_const_f64(parameter)?;
-
-        Ok(parameter_index.into())
+        self.parameters.add_const_f64(parameter)
     }
 
     /// Add a `parameters::IndexParameter` to the network

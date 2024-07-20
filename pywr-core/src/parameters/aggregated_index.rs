@@ -65,8 +65,6 @@ impl GeneralParameter<usize> for AggregatedIndexParameter {
         state: &State,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<usize, PywrError> {
-        // TODO scenarios!
-
         let value: usize = match self.agg_func {
             AggIndexFunc::Sum => {
                 let mut total = 0;
