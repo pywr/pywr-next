@@ -56,10 +56,7 @@ impl SimpleMetricF64 {
 
     /// Returns true if the metric is a constant value.
     pub fn is_constant(&self) -> bool {
-        match self {
-            SimpleMetricF64::Constant(_) => true,
-            _ => false,
-        }
+        matches!(self, SimpleMetricF64::Constant(_))
     }
 }
 
