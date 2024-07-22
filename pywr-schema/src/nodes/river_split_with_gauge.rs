@@ -271,7 +271,7 @@ mod tests {
         assert_eq!(network.edges().len(), 6);
 
         // Test all solvers
-        run_all_solvers(&model, &[]);
+        run_all_solvers(&model, &[], &[]);
 
         // TODO assert the results!
     }

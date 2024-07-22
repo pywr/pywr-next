@@ -23,6 +23,7 @@ use float_cmp::{approx_eq, F64Margin};
 use ndarray::{Array, Array2};
 use rand::Rng;
 use rand_distr::{Distribution, Normal};
+use std::path::PathBuf;
 
 pub fn default_timestepper() -> Timestepper {
     let start = NaiveDate::from_ymd_opt(2020, 1, 1)
@@ -163,21 +164,42 @@ pub fn run_and_assert_parameter(
     let rec = AssertionRecorder::new("assert", p_idx.into(), expected_values, ulps, epsilon);
 
     model.network_mut().add_recorder(Box::new(rec)).unwrap();
-    run_all_solvers(model, &[])
+    run_all_solvers(model, &[], &[])
+}
+
+/// A struct to hold the expected outputs for a test.
+pub struct ExpectedOutputs {
+    actual_path: PathBuf,
+    expected_str: &'static str,
+}
+
+impl ExpectedOutputs {
+    pub fn new(actual_path: PathBuf, expected_str: &'static str) -> Self {
+        Self {
+            actual_path,
+            expected_str,
+        }
+    }
+
+    fn verify(&self) {
+        assert!(self.actual_path.exists());
+        let actual_str = std::fs::read_to_string(&self.actual_path).unwrap();
+        assert_eq!(actual_str, self.expected_str);
+    }
 }
 
 /// Run a model using each of the in-built solvers.
 ///
 /// The model will only be run if the solver has the required solver features (and
 /// is also enabled as a Cargo feature).
-pub fn run_all_solvers(model: &Model, solvers_without_features: &[&str]) {
-    check_features_and_run::<ClpSolver>(model, !solvers_without_features.contains(&"clp"));
+pub fn run_all_solvers(model: &Model, solvers_without_features: &[&str], expected_outputs: &[ExpectedOutputs]) {
+    check_features_and_run::<ClpSolver>(model, !solvers_without_features.contains(&"clp"), expected_outputs);
 
     #[cfg(feature = "cbc")]
-    check_features_and_run::<CbcSolver>(model, !solvers_without_features.contains(&"cbc"));
+    check_features_and_run::<CbcSolver>(model, !solvers_without_features.contains(&"cbc"), expected_outputs);
 
     #[cfg(feature = "highs")]
-    check_features_and_run::<HighsSolver>(model, !solvers_without_features.contains(&"highs"));
+    check_features_and_run::<HighsSolver>(model, !solvers_without_features.contains(&"highs"), expected_outputs);
 
     #[cfg(feature = "ipm-simd")]
     {
@@ -199,7 +221,7 @@ pub fn run_all_solvers(model: &Model, solvers_without_features: &[&str]) {
 }
 
 /// Check features and
-fn check_features_and_run<S>(model: &Model, expect_features: bool)
+fn check_features_and_run<S>(model: &Model, expect_features: bool, expected_outputs: &[ExpectedOutputs])
 where
     S: Solver,
     <S as Solver>::Settings: SolverSettings + Default,
@@ -214,6 +236,11 @@ where
         model
             .run::<S>(&Default::default())
             .unwrap_or_else(|_| panic!("Failed to solve with: {}", S::name()));
+
+        // Verify any expected outputs
+        for expected_output in expected_outputs {
+            expected_output.verify();
+        }
     } else {
         assert!(
             !has_features,

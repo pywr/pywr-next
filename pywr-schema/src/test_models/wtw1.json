@@ -1,0 +1,95 @@
+{
+  "metadata": {
+    "title": "WTW Test 1",
+    "description": "Test WTW work",
+    "minimum_version": "0.1"
+  },
+  "timestepper": {
+    "start": "2015-01-01",
+    "end": "2015-01-03",
+    "timestep": 1
+  },
+  "network": {
+    "nodes": [
+      {
+        "name": "input1",
+        "type": "Input",
+        "flow": {
+          "type": "Constant",
+          "value": 15.0
+        }
+      },
+      {
+        "name": "wtw1",
+        "type": "WaterTreatmentWorks",
+        "max_flow": {
+          "type": "Constant",
+          "value": 10.0
+        },
+        "loss_factor": {
+          "type": "Net",
+          "factor": {
+            "type": "Constant",
+            "value": 0.1
+          }
+        }
+      },
+      {
+        "name": "demand1",
+        "type": "Output",
+        "max_flow": {
+          "type": "Constant",
+          "value": 15.0
+        },
+        "cost": {
+          "type": "Constant",
+          "value": -10
+        }
+      }
+    ],
+    "edges": [
+      {
+        "from_node": "input1",
+        "to_node": "wtw1"
+      },
+      {
+        "from_node": "wtw1",
+        "to_node": "demand1"
+      }
+    ],
+    "metric_sets": [
+      {
+        "name": "nodes",
+        "metrics": [
+          {
+            "type": "Node",
+            "name": "wtw1",
+            "attribute": "Inflow"
+          },
+          {
+            "type": "Node",
+            "name": "wtw1",
+            "attribute": "Outflow"
+          },
+          {
+            "type": "Node",
+            "name": "wtw1",
+            "attribute": "Loss"
+          }
+        ]
+      }
+    ],
+    "outputs": [
+      {
+        "name": "node-outputs",
+        "type": "CSV",
+        "format": "long",
+        "filename": "wtw1.csv",
+        "metric_set": [
+          "nodes"
+        ],
+        "decimal_places": 1
+      }
+    ]
+  }
+}
