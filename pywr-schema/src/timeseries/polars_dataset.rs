@@ -59,6 +59,7 @@ mod core {
                                 .with_schema(None)
                                 .with_has_header(true)
                                 .with_parse_options(parse_options)
+                                .with_infer_schema_length(None)
                                 .try_into_reader_with_file_path(Some(fp))?
                                 .finish()?
                         }
