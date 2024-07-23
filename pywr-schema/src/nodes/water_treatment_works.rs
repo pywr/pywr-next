@@ -224,14 +224,15 @@ impl WaterTreatmentWorks {
 mod tests {
     use crate::model::PywrModel;
     #[cfg(feature = "core")]
-    use pywr_core::test_utils::run_all_solvers;
-    use pywr_core::test_utils::ExpectedOutputs;
+    use pywr_core::test_utils::{run_all_solvers, ExpectedOutputs};
+    #[cfg(feature = "core")]
     use tempfile::TempDir;
 
     fn wtw1_str() -> &'static str {
         include_str!("../test_models/wtw1.json")
     }
 
+    #[cfg(feature = "core")]
     fn wtw1_outputs_str() -> &'static str {
         include_str!("../test_models/wtw1-expected.csv")
     }

@@ -4,6 +4,7 @@ use crate::error::SchemaError;
 use pywr_core::recorders::{CsvLongFmtOutput, CsvWideFmtOutput, Recorder};
 use pywr_schema_macros::PywrVisitPaths;
 use schemars::JsonSchema;
+#[cfg(feature = "core")]
 use std::num::NonZeroU32;
 #[cfg(feature = "core")]
 use std::path::Path;

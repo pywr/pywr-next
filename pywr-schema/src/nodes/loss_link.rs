@@ -6,9 +6,8 @@ use crate::metric::Metric;
 use crate::model::LoadArgs;
 use crate::nodes::{NodeAttribute, NodeMeta};
 use crate::parameters::TryIntoV2Parameter;
-use pywr_core::aggregated_node::Factors;
 #[cfg(feature = "core")]
-use pywr_core::metric::MetricF64;
+use pywr_core::{aggregated_node::Factors, metric::MetricF64};
 use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::nodes::LossLinkNode as LossLinkNodeV1;
 use schemars::JsonSchema;
@@ -25,6 +24,7 @@ pub enum LossFactor {
     Net { factor: Metric },
 }
 
+#[cfg(feature = "core")]
 impl LossFactor {
     pub fn load(
         &self,
@@ -254,14 +254,15 @@ impl TryFrom<LossLinkNodeV1> for LossLinkNode {
 mod tests {
     use crate::model::PywrModel;
     #[cfg(feature = "core")]
-    use pywr_core::test_utils::run_all_solvers;
-    use pywr_core::test_utils::ExpectedOutputs;
+    use pywr_core::test_utils::{run_all_solvers, ExpectedOutputs};
+    #[cfg(feature = "core")]
     use tempfile::TempDir;
 
     fn loss_link1_str() -> &'static str {
         include_str!("../test_models/loss_link1.json")
     }
 
+    #[cfg(feature = "core")]
     fn loss_link1_outputs_str() -> &'static str {
         include_str!("../test_models/loss_link1-expected.csv")
     }
