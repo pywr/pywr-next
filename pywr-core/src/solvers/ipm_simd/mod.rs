@@ -16,7 +16,8 @@ pub use settings::{SimdIpmSolverSettings, SimdIpmSolverSettingsBuilder};
 use std::collections::BTreeMap;
 use std::num::NonZeroUsize;
 use std::ops::Deref;
-use std::simd::{LaneCount, Simd, SimdFloat, SupportedLaneCount};
+use std::simd::prelude::SimdFloat;
+use std::simd::{LaneCount, Simd, SupportedLaneCount};
 use std::time::Instant;
 
 const B_MAX: f64 = 999999.0;
@@ -382,7 +383,7 @@ where
                         .iter()
                         .map(|state| {
                             let (avail, missing) = node
-                                .get_current_available_volume_bounds(network, state)
+                                .get_current_available_volume_bounds(state)
                                 .expect("Volumes bounds expected for Storage nodes.");
                             (avail / dt, missing / dt)
                         })
@@ -609,6 +610,10 @@ where
     LaneCount<N>: SupportedLaneCount,
 {
     type Settings = SimdIpmSolverSettings<f64, N>;
+
+    fn name() -> &'static str {
+        "ipm-simd"
+    }
 
     fn features() -> &'static [SolverFeatures] {
         &[]

@@ -93,6 +93,8 @@ pub trait Solver: Send {
 
 pub trait MultiStateSolver: Send {
     type Settings;
+
+    fn name() -> &'static str;
     /// An array of features that this solver provides.
     fn features() -> &'static [SolverFeatures];
     fn setup(model: &Network, num_scenarios: usize, settings: &Self::Settings) -> Result<Box<Self>, PywrError>;
