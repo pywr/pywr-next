@@ -553,7 +553,7 @@ mod tests {
 
         let model = Model::new(default_time_domain().into(), network);
 
-        run_all_solvers(&model, &[]);
+        run_all_solvers(&model, &[], &[]);
     }
 
     /// Test the factors forcing a simple ratio of flow that varies over time
@@ -603,6 +603,6 @@ mod tests {
 
         let model = Model::new(default_time_domain().into(), network);
 
-        run_all_solvers(&model, &["cbc"]);
+        run_all_solvers(&model, &["cbc"], &[]);
     }
 }

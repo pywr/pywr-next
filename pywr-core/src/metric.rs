@@ -27,6 +27,14 @@ impl ConstantMetricF64 {
             ConstantMetricF64::Constant(v) => Ok(*v),
         }
     }
+
+    /// Returns true if the constant value is a [`ConstantMetricF64::Constant`] with a value of zero.
+    pub fn is_constant_zero(&self) -> bool {
+        match self {
+            ConstantMetricF64::Constant(v) => *v == 0.0,
+            _ => false,
+        }
+    }
 }
 #[derive(Clone, Debug, PartialEq)]
 pub enum SimpleMetricF64 {
@@ -57,6 +65,14 @@ impl SimpleMetricF64 {
     /// Returns true if the metric is a constant value.
     pub fn is_constant(&self) -> bool {
         matches!(self, SimpleMetricF64::Constant(_))
+    }
+
+    /// Returns true if the constant value is a [`ConstantMetricF64::Constant`] with a value of zero.
+    pub fn is_constant_zero(&self) -> bool {
+        match self {
+            SimpleMetricF64::Constant(c) => c.is_constant_zero(),
+            _ => false,
+        }
     }
 }
 
@@ -147,6 +163,14 @@ impl MetricF64 {
     pub fn is_constant(&self) -> bool {
         match self {
             MetricF64::Simple(s) => s.is_constant(),
+            _ => false,
+        }
+    }
+
+    /// Returns true if the constant value is a [`ConstantMetricF64::Constant`] with a value of zero.
+    pub fn is_constant_zero(&self) -> bool {
+        match self {
+            MetricF64::Simple(s) => s.is_constant_zero(),
             _ => false,
         }
     }
