@@ -33,6 +33,7 @@ pub struct RiverGaugeNode {
     pub meta: NodeMeta,
     pub mrf: Option<Metric>,
     pub mrf_cost: Option<Metric>,
+    pub bypass_cost: Option<Metric>,
 }
 
 impl RiverGaugeNode {
@@ -89,6 +90,11 @@ impl RiverGaugeNode {
             network.set_node_max_flow(self.meta.name.as_str(), Self::mrf_sub_name(), value.into())?;
         }
 
+        if let Some(cost) = &self.bypass_cost {
+            let value = cost.load(network, args)?;
+            network.set_node_cost(self.meta.name.as_str(), Self::bypass_sub_name(), value.into())?;
+        }
+
         Ok(())
     }
     pub fn create_metric(
@@ -143,7 +149,17 @@ impl TryFrom<RiverGaugeNodeV1> for RiverGaugeNode {
             .map(|v| v.try_into_v2_parameter(Some(&meta.name), &mut unnamed_count))
             .transpose()?;
 
-        let n = Self { meta, mrf, mrf_cost };
+        let bypass_cost = v1
+            .cost
+            .map(|v| v.try_into_v2_parameter(Some(&meta.name), &mut unnamed_count))
+            .transpose()?;
+
+        let n = Self {
+            meta,
+            mrf,
+            mrf_cost,
+            bypass_cost,
+        };
         Ok(n)
     }
 }
