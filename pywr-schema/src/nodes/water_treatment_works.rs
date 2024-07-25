@@ -188,14 +188,22 @@ impl WaterTreatmentWorks {
 
         let metric = match attr {
             NodeAttribute::Inflow => {
-                let indices = vec![
-                    network.get_node_index_by_name(self.meta.name.as_str(), Self::net_sub_name())?,
-                    network.get_node_index_by_name(self.meta.name.as_str(), Self::loss_sub_name())?,
-                ];
-
-                MetricF64::MultiNodeInFlow {
-                    indices,
-                    name: self.meta.name.to_string(),
+                match network.get_node_index_by_name(self.meta.name.as_str(), Self::loss_sub_name()) {
+                    // Loss node is defined. The total inflow is the sum of the net and loss nodes;
+                    Ok(loss_idx) => {
+                        let indices = vec![
+                            network.get_node_index_by_name(self.meta.name.as_str(), Self::net_sub_name())?,
+                            loss_idx,
+                        ];
+                        MetricF64::MultiNodeInFlow {
+                            indices,
+                            name: self.meta.name.to_string(),
+                        }
+                    }
+                    // No loss node defined, so just use the net node
+                    Err(_) => MetricF64::NodeInFlow(
+                        network.get_node_index_by_name(self.meta.name.as_str(), Self::net_sub_name())?,
+                    ),
                 }
             }
             NodeAttribute::Outflow => {
@@ -203,9 +211,10 @@ impl WaterTreatmentWorks {
                 MetricF64::NodeOutFlow(idx)
             }
             NodeAttribute::Loss => {
-                let idx = network.get_node_index_by_name(self.meta.name.as_str(), Self::loss_sub_name())?;
-                // This is an output node that only supports inflow
-                MetricF64::NodeInFlow(idx)
+                match network.get_node_index_by_name(self.meta.name.as_str(), Self::loss_sub_name()) {
+                    Ok(idx) => MetricF64::NodeInFlow(idx),
+                    Err(_) => 0.0.into(),
+                }
             }
             _ => {
                 return Err(SchemaError::NodeAttributeNotSupported {
@@ -242,8 +251,8 @@ mod tests {
         let data = wtw1_str();
         let schema: PywrModel = serde_json::from_str(data).unwrap();
 
-        assert_eq!(schema.network.nodes.len(), 3);
-        assert_eq!(schema.network.edges.len(), 2);
+        assert_eq!(schema.network.nodes.len(), 5);
+        assert_eq!(schema.network.edges.len(), 4);
     }
 
     #[test]
@@ -256,8 +265,8 @@ mod tests {
         let mut model = schema.build_model(None, Some(temp_dir.path())).unwrap();
 
         let network = model.network_mut();
-        assert_eq!(network.nodes().len(), 6);
-        assert_eq!(network.edges().len(), 6);
+        assert_eq!(network.nodes().len(), 10);
+        assert_eq!(network.edges().len(), 11);
 
         // After model run there should be an output file.
         let expected_outputs = [ExpectedOutputs::new(

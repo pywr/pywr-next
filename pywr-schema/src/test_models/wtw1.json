@@ -13,11 +13,7 @@
     "nodes": [
       {
         "name": "input1",
-        "type": "Input",
-        "flow": {
-          "type": "Constant",
-          "value": 15.0
-        }
+        "type": "Input"
       },
       {
         "name": "wtw1",
@@ -45,6 +41,26 @@
           "type": "Constant",
           "value": -10
         }
+      },
+      {
+        "name": "wtw2",
+        "type": "WaterTreatmentWorks",
+        "max_flow": {
+          "type": "Constant",
+          "value": 10.0
+        }
+      },
+      {
+        "name": "demand2",
+        "type": "Output",
+        "max_flow": {
+          "type": "Constant",
+          "value": 15.0
+        },
+        "cost": {
+          "type": "Constant",
+          "value": -10
+        }
       }
     ],
     "edges": [
@@ -55,6 +71,14 @@
       {
         "from_node": "wtw1",
         "to_node": "demand1"
+      },
+      {
+        "from_node": "input1",
+        "to_node": "wtw2"
+      },
+      {
+        "from_node": "wtw2",
+        "to_node": "demand2"
       }
     ],
     "metric_sets": [
@@ -74,6 +98,21 @@
           {
             "type": "Node",
             "name": "wtw1",
+            "attribute": "Loss"
+          },
+          {
+            "type": "Node",
+            "name": "wtw2",
+            "attribute": "Inflow"
+          },
+          {
+            "type": "Node",
+            "name": "wtw2",
+            "attribute": "Outflow"
+          },
+          {
+            "type": "Node",
+            "name": "wtw2",
             "attribute": "Loss"
           }
         ]

@@ -99,11 +99,15 @@ impl LossLinkNode {
     }
 
     pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
-        // Gross inflow goes to both nodes
-        vec![
-            (self.meta.name.as_str(), Self::loss_sub_name().map(|s| s.to_string())),
-            (self.meta.name.as_str(), Self::net_sub_name().map(|s| s.to_string())),
-        ]
+        // Gross inflow always goes to the net node ...
+        let mut input_connectors = vec![(self.meta.name.as_str(), Self::net_sub_name().map(|s| s.to_string()))];
+
+        // ... but only to the loss node if a loss is defined
+        if self.loss_factor.is_some() {
+            input_connectors.push((self.meta.name.as_str(), Self::loss_sub_name().map(|s| s.to_string())));
+        }
+
+        input_connectors
     }
 
     pub fn output_connectors(&self) -> Vec<(&str, Option<String>)> {
@@ -177,14 +181,22 @@ impl LossLinkNode {
 
         let metric = match attr {
             NodeAttribute::Inflow => {
-                let indices = vec![
-                    network.get_node_index_by_name(self.meta.name.as_str(), Self::net_sub_name())?,
-                    network.get_node_index_by_name(self.meta.name.as_str(), Self::loss_sub_name())?,
-                ];
-
-                MetricF64::MultiNodeInFlow {
-                    indices,
-                    name: self.meta.name.to_string(),
+                match network.get_node_index_by_name(self.meta.name.as_str(), Self::loss_sub_name()) {
+                    // Loss node is defined. The total inflow is the sum of the net and loss nodes;
+                    Ok(loss_idx) => {
+                        let indices = vec![
+                            network.get_node_index_by_name(self.meta.name.as_str(), Self::net_sub_name())?,
+                            loss_idx,
+                        ];
+                        MetricF64::MultiNodeInFlow {
+                            indices,
+                            name: self.meta.name.to_string(),
+                        }
+                    }
+                    // No loss node defined, so just use the net node
+                    Err(_) => MetricF64::NodeInFlow(
+                        network.get_node_index_by_name(self.meta.name.as_str(), Self::net_sub_name())?,
+                    ),
                 }
             }
             NodeAttribute::Outflow => {
@@ -192,9 +204,10 @@ impl LossLinkNode {
                 MetricF64::NodeOutFlow(idx)
             }
             NodeAttribute::Loss => {
-                let idx = network.get_node_index_by_name(self.meta.name.as_str(), Self::loss_sub_name())?;
-                // This is an output node that only supports inflow
-                MetricF64::NodeInFlow(idx)
+                match network.get_node_index_by_name(self.meta.name.as_str(), Self::loss_sub_name()) {
+                    Ok(idx) => MetricF64::NodeInFlow(idx),
+                    Err(_) => 0.0.into(),
+                }
             }
             _ => {
                 return Err(SchemaError::NodeAttributeNotSupported {
@@ -272,8 +285,8 @@ mod tests {
         let data = loss_link1_str();
         let schema: PywrModel = serde_json::from_str(data).unwrap();
 
-        assert_eq!(schema.network.nodes.len(), 5);
-        assert_eq!(schema.network.edges.len(), 4);
+        assert_eq!(schema.network.nodes.len(), 7);
+        assert_eq!(schema.network.edges.len(), 6);
     }
 
     #[test]
