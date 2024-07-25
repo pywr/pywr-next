@@ -313,11 +313,17 @@ fn get_norm_proportional_factor_pairs(
     // First get the current factor values
     let values: Vec<f64> = factors
         .iter()
-        .map(|f| f.get_value(model, state))
+        .map(|f| {
+            let v = f.get_value(model, state)?;
+            if v < 0.0 {
+                Err(PywrError::NegativeFactor)
+            } else {
+                Ok(v)
+            }
+        })
         .collect::<Result<Vec<_>, PywrError>>()
-        .expect("Failed to get current factor values.");
+        .expect("Failed to get current factor values. Ensure that all factors are not negative.");
 
-    // TODO do we need to assert that each individual factor is positive?
     let total: f64 = values.iter().sum();
     if total < 0.0 {
         panic!("Proportional factors are too small or negative.");
@@ -352,12 +358,23 @@ fn get_const_norm_proportional_factor_pairs(
         panic!("Found {} proportional factors and {} nodes in aggregated node. The number of proportional factors should equal one less than the number of nodes.", factors.len(), nodes.len());
     }
 
-    // First get the current factor values
+    // First get the current factor values, ensuring they are all non-negative
     let values: Vec<Option<f64>> = factors
         .iter()
-        .map(|f| f.try_get_constant_value(values))
+        .map(|f| {
+            let v = f.try_get_constant_value(values)?;
+            if let Some(v) = v {
+                if v < 0.0 {
+                    Err(PywrError::NegativeFactor)
+                } else {
+                    Ok(Some(v))
+                }
+            } else {
+                Ok(None)
+            }
+        })
         .collect::<Result<Vec<_>, PywrError>>()
-        .expect("Failed to get current factor values.");
+        .expect("Failed to get current factor values. Ensure that all factors are not negative.");
 
     let n0 = nodes[0];
 
@@ -374,7 +391,6 @@ fn get_const_norm_proportional_factor_pairs(
             .collect::<Vec<_>>()
     } else {
         // All factors are available; therefore we can calculate "f0"
-        // TODO do we need to assert that each individual factor is positive?
         let total: f64 = values
             .iter()
             .map(|v| v.expect("Factor is `None`; this should be impossible."))
@@ -414,18 +430,24 @@ fn get_norm_ratio_factor_pairs(
 
     let n0 = nodes[0];
     let f0 = factors[0].get_value(model, state).unwrap();
+    if f0 < 0.0 {
+        panic!("Negative factor is not allowed");
+    }
 
     nodes
         .iter()
         .zip(factors)
         .skip(1)
         .map(move |(&n1, f1)| {
-            NodeFactorPair::new(
-                NodeFactor::new(n0, f0),
-                NodeFactor::new(n1, f1.get_value(model, state).unwrap()),
-            )
+            let v1 = f1.get_value(model, state)?;
+            if v1 < 0.0 {
+                Err(PywrError::NegativeFactor)
+            } else {
+                Ok(NodeFactorPair::new(NodeFactor::new(n0, f0), NodeFactor::new(n1, v1)))
+            }
         })
-        .collect::<Vec<_>>()
+        .collect::<Result<Vec<_>, PywrError>>()
+        .expect("Failed to get current factor values. Ensure that all factors are not negative.")
 }
 
 /// Constant ratio factors using constant values if they are available. If they are not available,
@@ -446,6 +468,12 @@ fn get_const_norm_ratio_factor_pairs(
         .try_get_constant_value(values)
         .unwrap_or_else(|e| panic!("Failed to get constant value for factor: {}", e));
 
+    if let Some(v0) = f0 {
+        if v0 < 0.0 {
+            panic!("Negative factor is not allowed");
+        }
+    }
+
     nodes
         .iter()
         .zip(factors)
@@ -455,9 +483,19 @@ fn get_const_norm_ratio_factor_pairs(
                 .try_get_constant_value(values)
                 .unwrap_or_else(|e| panic!("Failed to get constant value for factor: {}", e));
 
-            NodeConstFactorPair::new(NodeConstFactor::new(n0, f0), NodeConstFactor::new(n1, v1))
+            if let Some(v) = v1 {
+                if v < 0.0 {
+                    return Err(PywrError::NegativeFactor);
+                }
+            }
+
+            Ok(NodeConstFactorPair::new(
+                NodeConstFactor::new(n0, f0),
+                NodeConstFactor::new(n1, v1),
+            ))
         })
-        .collect::<Vec<_>>()
+        .collect::<Result<Vec<_>, PywrError>>()
+        .expect("Failed to get current factor values. Ensure that all factors are not negative.")
 }
 
 #[cfg(test)]
