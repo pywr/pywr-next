@@ -239,7 +239,7 @@ pub fn convert_from_v1_data(
                 }
 
                 let time_col = None;
-                let provider = PolarsDataset::new(time_col, table.url.clone());
+                let provider = PolarsDataset::new(time_col, table.url.clone(), None);
 
                 ts.insert(
                     name.clone(),
@@ -263,7 +263,7 @@ pub fn convert_from_v1_data(
                     continue;
                 }
 
-                let provider = PolarsDataset::new(data.time_col, url);
+                let provider = PolarsDataset::new(data.time_col, url, None);
 
                 ts.insert(
                     name.clone(),
