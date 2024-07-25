@@ -27,6 +27,14 @@ impl ConstantMetricF64 {
             ConstantMetricF64::Constant(v) => Ok(*v),
         }
     }
+
+    /// Returns true if the constant value is a [`ConstantMetricF64::Constant`] with a value of zero.
+    pub fn is_constant_zero(&self) -> bool {
+        match self {
+            ConstantMetricF64::Constant(v) => *v == 0.0,
+            _ => false,
+        }
+    }
 }
 #[derive(Clone, Debug, PartialEq)]
 pub enum SimpleMetricF64 {
@@ -43,6 +51,14 @@ impl SimpleMetricF64 {
             SimpleMetricF64::IndexParameterValue(idx) => Ok(values.get_simple_parameter_usize(*idx)? as f64),
             SimpleMetricF64::MultiParameterValue((idx, key)) => Ok(values.get_simple_multi_parameter_f64(*idx, key)?),
             SimpleMetricF64::Constant(m) => m.get_value(values.get_constant_values()),
+        }
+    }
+
+    /// Returns true if the constant value is a [`ConstantMetricF64::Constant`] with a value of zero.
+    pub fn is_constant_zero(&self) -> bool {
+        match self {
+            SimpleMetricF64::Constant(c) => c.is_constant_zero(),
+            _ => false,
         }
     }
 }
@@ -120,6 +136,14 @@ impl MetricF64 {
             }
             MetricF64::InterNetworkTransfer(idx) => state.get_inter_network_transfer_value(*idx),
             MetricF64::Simple(s) => s.get_value(&state.get_simple_parameter_values()),
+        }
+    }
+
+    /// Returns true if the constant value is a [`ConstantMetricF64::Constant`] with a value of zero.
+    pub fn is_constant_zero(&self) -> bool {
+        match self {
+            MetricF64::Simple(s) => s.is_constant_zero(),
+            _ => false,
         }
     }
 }
