@@ -193,13 +193,20 @@ impl ExpectedOutputs {
 /// The model will only be run if the solver has the required solver features (and
 /// is also enabled as a Cargo feature).
 pub fn run_all_solvers(model: &Model, solvers_without_features: &[&str], expected_outputs: &[ExpectedOutputs]) {
+    println!("Running CLP");
     check_features_and_run::<ClpSolver>(model, !solvers_without_features.contains(&"clp"), expected_outputs);
 
     #[cfg(feature = "cbc")]
-    check_features_and_run::<CbcSolver>(model, !solvers_without_features.contains(&"cbc"), expected_outputs);
+    {
+        println!("Running CBC");
+        check_features_and_run::<CbcSolver>(model, !solvers_without_features.contains(&"cbc"), expected_outputs);
+    }
 
     #[cfg(feature = "highs")]
-    check_features_and_run::<HighsSolver>(model, !solvers_without_features.contains(&"highs"), expected_outputs);
+    {
+        println!("Running Highs");
+        check_features_and_run::<HighsSolver>(model, !solvers_without_features.contains(&"highs"), expected_outputs);
+    }
 
     #[cfg(feature = "ipm-simd")]
     {

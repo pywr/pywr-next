@@ -304,6 +304,6 @@ mod tests {
         )];
 
         // Test all solvers
-        run_all_solvers(&model, &["cbc", "highs"], &expected_outputs);
+        run_all_solvers(&model, &[], &expected_outputs);
     }
 }
