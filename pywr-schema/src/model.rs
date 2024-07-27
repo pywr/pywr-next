@@ -667,6 +667,15 @@ impl PywrModel {
             errors,
         )
     }
+
+    /// Convert a v1 JSON string to a v2 model.
+    ///
+    /// See [`PywrModel::from_v1`] for more information.
+    pub fn from_v1_str(v1: &str) -> Result<(Self, Vec<ConversionError>), pywr_v1_schema::model::PywrSchemaError> {
+        let v1_model: pywr_v1_schema::PywrModel = serde_json::from_str(v1)?;
+
+        Ok(Self::from_v1(v1_model))
+    }
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Clone)]
