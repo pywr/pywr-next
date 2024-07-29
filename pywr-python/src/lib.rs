@@ -14,7 +14,7 @@ use pyo3::types::{PyDict, PyType};
 use pywr_core::solvers::{ClIpmF32Solver, ClIpmF64Solver, ClIpmSolverSettings};
 use pywr_core::solvers::{ClpSolver, ClpSolverSettings, ClpSolverSettingsBuilder};
 #[cfg(feature = "highs")]
-use pywr_core::solvers::{HighsSolver, HighsSolverSettings, HighsSolverSettings, HighsSolverSettingsBuilde};
+use pywr_core::solvers::{HighsSolver, HighsSolverSettings, HighsSolverSettingsBuilder};
 use pywr_schema::model::DateType;
 use std::fmt;
 use std::path::PathBuf;
@@ -118,12 +118,16 @@ impl Model {
             #[cfg(feature = "highs")]
             "highs" => {
                 let settings = build_highs_settings(solver_kwargs)?;
-                model.run::<HighsSolver>(&HighsSolverSettings::default())?;
+                self.model.run::<HighsSolver>(&settings)?;
             }
             #[cfg(feature = "ipm-ocl")]
-            "clipm-f32" => model.run_multi_scenario::<ClIpmF32Solver>(&ClIpmSolverSettings::default()),
+            "clipm-f32" => self
+                .model
+                .run_multi_scenario::<ClIpmF32Solver>(&ClIpmSolverSettings::default()),
             #[cfg(feature = "ipm-ocl")]
-            "clipm-f64" => model.run_multi_scenario::<ClIpmF64Solver>(&ClIpmSolverSettings::default()),
+            "clipm-f64" => self
+                .model
+                .run_multi_scenario::<ClIpmF64Solver>(&ClIpmSolverSettings::default()),
             _ => return Err(PyRuntimeError::new_err(format!("Unknown solver: {}", solver_name))),
         }
 
@@ -163,7 +167,7 @@ fn build_clp_settings(kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<ClpSolverS
 }
 
 #[cfg(feature = "highs")]
-fn build_highs_settings(kwargs: Option<&PyDict>) -> PyResult<HighsSolverSettings> {
+fn build_highs_settings(kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<HighsSolverSettings> {
     let mut builder = HighsSolverSettingsBuilder::default();
 
     if let Some(kwargs) = kwargs {
