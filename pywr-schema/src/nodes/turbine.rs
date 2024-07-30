@@ -4,12 +4,11 @@ use crate::model::LoadArgs;
 use crate::nodes::{NodeAttribute, NodeMeta};
 #[cfg(feature = "core")]
 use crate::SchemaError;
-use pywr_core::parameters::ParameterName;
 #[cfg(feature = "core")]
 use pywr_core::{
     derived_metric::{DerivedMetric, TurbineData},
     metric::MetricF64,
-    parameters::HydropowerTargetData,
+    parameters::{HydropowerTargetData, ParameterName},
 };
 use pywr_schema_macros::PywrVisitAll;
 use schemars::JsonSchema;

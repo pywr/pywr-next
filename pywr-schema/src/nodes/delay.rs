@@ -6,8 +6,7 @@ use crate::model::LoadArgs;
 use crate::nodes::{NodeAttribute, NodeMeta};
 use crate::parameters::ConstantValue;
 #[cfg(feature = "core")]
-use pywr_core::metric::MetricF64;
-use pywr_core::parameters::ParameterName;
+use pywr_core::{metric::MetricF64, parameters::ParameterName};
 use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::nodes::DelayNode as DelayNodeV1;
 use schemars::JsonSchema;
