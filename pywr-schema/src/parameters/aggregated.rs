@@ -92,7 +92,11 @@ impl AggregatedParameter {
             .map(|v| v.load(network, args))
             .collect::<Result<Vec<_>, _>>()?;
 
-        let p = pywr_core::parameters::AggregatedParameter::new(&self.meta.name, &metrics, self.agg_func.into());
+        let p = pywr_core::parameters::AggregatedParameter::new(
+            self.meta.name.as_str().into(),
+            &metrics,
+            self.agg_func.into(),
+        );
 
         Ok(network.add_parameter(Box::new(p))?)
     }
@@ -199,7 +203,11 @@ impl AggregatedIndexParameter {
             .map(|v| v.load(network, args))
             .collect::<Result<Vec<_>, _>>()?;
 
-        let p = pywr_core::parameters::AggregatedIndexParameter::new(&self.meta.name, parameters, self.agg_func.into());
+        let p = pywr_core::parameters::AggregatedIndexParameter::new(
+            self.meta.name.as_str().into(),
+            parameters,
+            self.agg_func.into(),
+        );
 
         Ok(network.add_index_parameter(Box::new(p))?)
     }

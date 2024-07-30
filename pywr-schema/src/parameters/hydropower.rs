@@ -104,7 +104,7 @@ impl HydropowerTargetParameter {
             flow_unit_conversion: self.flow_unit_conversion,
             energy_unit_conversion: self.energy_unit_conversion,
         };
-        let p = pywr_core::parameters::HydropowerTargetParameter::new(&self.meta.name, turbine_data);
+        let p = pywr_core::parameters::HydropowerTargetParameter::new(self.meta.name.as_str().into(), turbine_data);
         Ok(network.add_parameter(Box::new(p))?)
     }
 }

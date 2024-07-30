@@ -83,7 +83,7 @@ impl Metric {
                 // assume it is the correct one for future references to that name. This could be
                 // improved by checking the parameter returned by name matches the definition here.
 
-                match network.get_parameter_index_by_name(definition.name()) {
+                match network.get_parameter_index_by_name(&definition.name().into()) {
                     Ok(p) => {
                         // Found a parameter with the name; assume it is the right one!
                         Ok(p.into())
@@ -318,19 +318,17 @@ pub struct ParameterReference {
 impl ParameterReference {
     #[cfg(feature = "core")]
     pub fn load(&self, network: &mut pywr_core::network::Network) -> Result<MetricF64, SchemaError> {
+        let name = self.name.as_str().into();
+
         match &self.key {
             Some(key) => {
                 // Key given; this should be a multi-valued parameter
-                Ok((
-                    network.get_multi_valued_parameter_index_by_name(&self.name)?,
-                    key.clone(),
-                )
-                    .into())
+                Ok((network.get_multi_valued_parameter_index_by_name(&name)?, key.clone()).into())
             }
             None => {
-                if let Ok(idx) = network.get_parameter_index_by_name(&self.name) {
+                if let Ok(idx) = network.get_parameter_index_by_name(&name) {
                     Ok(idx.into())
-                } else if let Ok(idx) = network.get_index_parameter_index_by_name(&self.name) {
+                } else if let Ok(idx) = network.get_index_parameter_index_by_name(&name) {
                     Ok(idx.into())
                 } else {
                     Err(SchemaError::ParameterNotFound(self.name.to_string()))

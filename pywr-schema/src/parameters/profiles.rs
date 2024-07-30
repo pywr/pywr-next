@@ -30,7 +30,10 @@ impl DailyProfileParameter {
         args: &LoadArgs,
     ) -> Result<ParameterIndex<f64>, SchemaError> {
         let values = &self.values.load(args.tables)?[..366];
-        let p = pywr_core::parameters::DailyProfileParameter::new(&self.meta.name, values.try_into().expect(""));
+        let p = pywr_core::parameters::DailyProfileParameter::new(
+            self.meta.name.as_str().into(),
+            values.try_into().expect(""),
+        );
         Ok(network.add_simple_parameter(Box::new(p))?)
     }
 }
@@ -100,7 +103,7 @@ impl MonthlyProfileParameter {
     ) -> Result<ParameterIndex<f64>, SchemaError> {
         let values = &self.values.load(args.tables)?[..12];
         let p = pywr_core::parameters::MonthlyProfileParameter::new(
-            &self.meta.name,
+            self.meta.name.as_str().into(),
             values.try_into().expect(""),
             self.interp_day.map(|id| id.into()),
         );
@@ -184,7 +187,7 @@ impl UniformDrawdownProfileParameter {
         };
 
         let p = pywr_core::parameters::UniformDrawdownProfileParameter::new(
-            &self.meta.name,
+            self.meta.name.as_str().into(),
             reset_day,
             reset_month,
             residual_days,
@@ -357,7 +360,11 @@ impl RbfProfileParameter {
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<ParameterIndex<f64>, SchemaError> {
         let function = self.function.into_core_rbf(&self.points)?;
 
-        let p = pywr_core::parameters::RbfProfileParameter::new(&self.meta.name, self.points.clone(), function);
+        let p = pywr_core::parameters::RbfProfileParameter::new(
+            self.meta.name.as_str().into(),
+            self.points.clone(),
+            function,
+        );
         Ok(network.add_simple_parameter(Box::new(p))?)
     }
 }
@@ -533,7 +540,7 @@ impl WeeklyProfileParameter {
         args: &LoadArgs,
     ) -> Result<ParameterIndex<f64>, SchemaError> {
         let p = pywr_core::parameters::WeeklyProfileParameter::new(
-            &self.meta.name,
+            self.meta.name.as_str().into(),
             WeeklyProfileValues::try_from(self.values.load(args.tables)?.as_slice()).map_err(
                 |err: WeeklyProfileError| SchemaError::LoadParameter {
                     name: self.meta.name.to_string(),

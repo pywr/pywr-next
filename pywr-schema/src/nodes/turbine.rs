@@ -4,6 +4,7 @@ use crate::model::LoadArgs;
 use crate::nodes::{NodeAttribute, NodeMeta};
 #[cfg(feature = "core")]
 use crate::SchemaError;
+use pywr_core::parameters::ParameterName;
 #[cfg(feature = "core")]
 use pywr_core::{
     derived_metric::{DerivedMetric, TurbineData},
@@ -114,8 +115,7 @@ impl TurbineNode {
         }
 
         if let Some(target) = &self.target {
-            // TODO: address parameter name. See https://github.com/pywr/pywr-next/issues/107#issuecomment-1980957962
-            let name = format!("{}-power", self.meta.name.as_str());
+            let name = ParameterName::new("power", Some(self.meta.name.as_str()));
             let target_value = target.load(network, args)?;
 
             let water_elevation = self
@@ -135,7 +135,7 @@ impl TurbineNode {
                 flow_unit_conversion: Some(self.flow_unit_conversion),
                 energy_unit_conversion: Some(self.energy_unit_conversion),
             };
-            let p = pywr_core::parameters::HydropowerTargetParameter::new(&name, turbine_data);
+            let p = pywr_core::parameters::HydropowerTargetParameter::new(name, turbine_data);
             let power_idx = network.add_parameter(Box::new(p))?;
             let metric: MetricF64 = power_idx.into();
 

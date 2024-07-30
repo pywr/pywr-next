@@ -1,7 +1,7 @@
 use crate::metric::MetricF64;
 use crate::network::Network;
 use crate::parameters::interpolate::interpolate;
-use crate::parameters::{GeneralParameter, Parameter, ParameterMeta, ParameterState};
+use crate::parameters::{GeneralParameter, Parameter, ParameterMeta, ParameterName, ParameterState};
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
 use crate::timestep::Timestep;
@@ -18,7 +18,7 @@ pub struct PiecewiseInterpolatedParameter {
 
 impl PiecewiseInterpolatedParameter {
     pub fn new(
-        name: &str,
+        name: ParameterName,
         metric: MetricF64,
         control_curves: Vec<MetricF64>,
         values: Vec<[f64; 2]>,
@@ -85,12 +85,12 @@ mod test {
         let mut model = simple_model(1);
 
         // Create an artificial volume series to use for the interpolation test
-        let volume = Array1Parameter::new("test-x", Array1::linspace(1.0, 0.0, 21), None);
+        let volume = Array1Parameter::new("test-x".into(), Array1::linspace(1.0, 0.0, 21), None);
 
         let volume_idx = model.network_mut().add_parameter(Box::new(volume)).unwrap();
 
         let parameter = PiecewiseInterpolatedParameter::new(
-            "test-parameter",
+            "test-parameter".into(),
             volume_idx.into(), // Interpolate with the parameter based values
             vec![0.8.into(), 0.5.into()],
             vec![[10.0, 1.0], [0.0, 0.0], [-1.0, -10.0]],

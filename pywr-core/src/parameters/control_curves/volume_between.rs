@@ -1,5 +1,5 @@
 use crate::metric::SimpleMetricF64;
-use crate::parameters::{Parameter, ParameterMeta, ParameterState, SimpleParameter};
+use crate::parameters::{Parameter, ParameterMeta, ParameterName, ParameterState, SimpleParameter};
 use crate::scenario::ScenarioIndex;
 use crate::state::SimpleParameterValues;
 use crate::timestep::Timestep;
@@ -14,7 +14,7 @@ pub struct VolumeBetweenControlCurvesParameter<M> {
 }
 
 impl<M> VolumeBetweenControlCurvesParameter<M> {
-    pub fn new(name: &str, total: M, upper: Option<M>, lower: Option<M>) -> Self {
+    pub fn new(name: ParameterName, total: M, upper: Option<M>, lower: Option<M>) -> Self {
         Self {
             meta: ParameterMeta::new(name),
             total,
