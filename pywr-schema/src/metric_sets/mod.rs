@@ -81,6 +81,46 @@ impl From<MetricAggregator> for pywr_core::recorders::Aggregator {
     }
 }
 
+#[derive(Deserialize, Serialize, Clone, JsonSchema, Default)]
+struct MetricSetFilters {
+    #[serde(default)]
+    all_nodes: bool,
+    #[serde(default)]
+    all_parameters: bool,
+}
+
+#[cfg(feature = "core")]
+impl MetricSetFilters {
+    fn create_metrics(&self, args: &LoadArgs) -> Option<Vec<Metric>> {
+        use crate::metric::{NodeReference, ParameterReference};
+
+        if !self.all_nodes && !self.all_parameters {
+            return None;
+        }
+
+        let mut metrics = vec![];
+
+        if self.all_nodes {
+            for node in args.schema.nodes.iter() {
+                metrics.push(Metric::Node(NodeReference::new(node.name().to_string(), None)));
+            }
+        }
+
+        if self.all_parameters {
+            if let Some(parameters) = args.schema.parameters.as_ref() {
+                for parameter in parameters.iter() {
+                    metrics.push(Metric::Parameter(ParameterReference::new(
+                        parameter.name().to_string(),
+                        None,
+                    )));
+                }
+            }
+        }
+
+        Some(metrics)
+    }
+}
+
 /// A set of metrics that can be output from a model run.
 ///
 /// A metric set can optionally have an aggregator, which will apply an aggregation function
@@ -91,17 +131,45 @@ pub struct MetricSet {
     pub name: String,
     pub metrics: Vec<Metric>,
     pub aggregator: Option<MetricAggregator>,
+    #[serde(default)]
+    filters: MetricSetFilters,
 }
 
 impl MetricSet {
     #[cfg(feature = "core")]
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network, args: &LoadArgs) -> Result<(), SchemaError> {
-        // Convert the schema representation to internal metrics.
-        let metrics: Vec<_> = self
+        use pywr_core::recorders::OutputMetric;
+
+        let mut metrics: Vec<OutputMetric> = self
             .metrics
             .iter()
+            //.chain(additional_metric.iter())
             .map(|m| m.load_as_output(network, args))
             .collect::<Result<_, _>>()?;
+
+        if let Some(additional_metrics) = self.filters.create_metrics(args) {
+            for m in additional_metrics.iter() {
+                match m {
+                    Metric::Node(n) => {
+                        if !self.metrics.iter().any(|m| match m {
+                            Metric::Node(n2) => n2.name == n.name,
+                            _ => false,
+                        }) {
+                            metrics.push(m.load_as_output(network, args)?);
+                        }
+                    }
+                    Metric::Parameter(p) => {
+                        if !self.metrics.iter().any(|m| match m {
+                            Metric::Parameter(p2) => p2.name == p.name,
+                            _ => false,
+                        }) {
+                            metrics.push(m.load_as_output(network, args)?);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
 
         let aggregator = self.aggregator.clone().map(|a| a.into());
 
