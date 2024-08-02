@@ -196,11 +196,6 @@ where
         }
     }
 
-    /// Return the number of columns
-    fn num_columns(&self) -> I {
-        I::from(self.col_type.len()).unwrap()
-    }
-
     /// Return the number of variable rows
     fn num_variable_rows(&self) -> I {
         I::from(self.rows.len()).unwrap()
