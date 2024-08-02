@@ -1,7 +1,7 @@
 use crate::aggregated_node::AggregatedNodeIndex;
 use crate::edge::EdgeIndex;
 use crate::network::Network;
-use crate::node::{Node, NodeIndex, NodeType};
+use crate::node::{Node, NodeBounds, NodeIndex, NodeType};
 use crate::solvers::col_edge_map::{ColumnEdgeMap, ColumnEdgeMapBuilder};
 use crate::solvers::SolverTimings;
 use crate::state::{ConstParameterValues, State};
@@ -297,11 +297,20 @@ where
 
 /// The row id types associated with a node's constraints.
 #[derive(Copy, Clone)]
-enum NodeRowId<I> {
+struct NodeRowId<I> {
     /// A regular node constraint bounded by lower and upper bounds.
-    Continuous(I),
+    row_id: I,
+    node_idx: NodeIndex,
+    row_type: NodeRowType<I>,
+}
+
+/// The row id types associated with a node's constraints.
+#[derive(Copy, Clone)]
+enum NodeRowType<I> {
+    /// A regular node constraint bounded by lower and upper bounds.
+    Continuous,
     /// A binary node constraint where the upper bound is controlled by a binary variable.
-    Binary { row_id: I, bin_col_id: I },
+    Binary { bin_col_id: I },
 }
 
 struct AggNodeFactorRow<I> {
@@ -429,35 +438,27 @@ where
     ) -> Result<(), PywrError> {
         let dt = timestep.days();
 
-        for (row_id, node) in self.node_constraints_row_ids.iter().zip(network.nodes().deref()) {
-            let (lb, ub): (f64, f64) = match node.get_current_flow_bounds(network, state) {
-                Ok(bnds) => bnds,
-                Err(PywrError::FlowConstraintsUndefined) => {
-                    // Must be a storage node
-                    let (avail, missing) = match node.get_current_available_volume_bounds(state) {
-                        Ok(bnds) => bnds,
-                        Err(e) => return Err(e),
-                    };
-
-                    (-avail / dt, missing / dt)
-                }
-                Err(e) => return Err(e),
+        for row in self.node_constraints_row_ids.iter() {
+            let node = network.get_node(&row.node_idx)?;
+            let (lb, ub): (f64, f64) = match node.get_bounds(network, state)? {
+                NodeBounds::Flow(bounds) => (bounds.min_flow, bounds.max_flow),
+                NodeBounds::Volume(bounds) => (-bounds.available / dt, bounds.missing / dt),
             };
 
-            match row_id {
-                NodeRowId::Continuous(row_id) => {
+            match row.row_type {
+                NodeRowType::Continuous => {
                     // Regular node constraint
-                    self.builder.apply_row_bounds(row_id.to_usize().unwrap(), lb, ub);
+                    self.builder.apply_row_bounds(row.row_id.to_usize().unwrap(), lb, ub);
                 }
-                NodeRowId::Binary { row_id, bin_col_id } => {
+                NodeRowType::Binary { bin_col_id } => {
                     if !lb.is_zero() {
                         panic!("Binary node constraint with non-zero lower bounds not implemented!");
                     }
                     // Update the coefficients for the binary column to be the upper bound
-                    self.builder.coefficients_to_update.push((*row_id, *bin_col_id, -ub));
+                    self.builder.coefficients_to_update.push((row.row_id, bin_col_id, -ub));
 
                     // This row is upper bounded to zero
-                    self.builder.apply_row_bounds(row_id.to_usize().unwrap(), FMIN, 0.0);
+                    self.builder.apply_row_bounds(row.row_id.to_usize().unwrap(), FMIN, 0.0);
                 }
             }
         }
@@ -483,13 +484,21 @@ where
                         // Modify the constraint matrix coefficients for the nodes
                         // TODO error handling?
                         let nodes = network.nodes();
-                        let node0 = nodes.get(&node_pair.node0.index).expect("Node index not found!");
-                        let node1 = nodes.get(&node_pair.node1.index).expect("Node index not found!");
+                        for node0_idx in node_pair.node0.indices {
+                            let node0 = nodes.get(node0_idx).expect("Node index not found!");
+                            self.builder
+                                .update_row_coefficients(*row_idx, node0, 1.0, &self.col_edge_map);
+                        }
 
-                        self.builder
-                            .update_row_coefficients(*row_idx, node0, 1.0, &self.col_edge_map);
-                        self.builder
-                            .update_row_coefficients(*row_idx, node1, -node_pair.ratio(), &self.col_edge_map);
+                        for node1_idx in node_pair.node1.indices {
+                            let node1 = nodes.get(node1_idx).expect("Node index not found!");
+                            self.builder.update_row_coefficients(
+                                *row_idx,
+                                node1,
+                                -node_pair.ratio(),
+                                &self.col_edge_map,
+                            );
+                        }
 
                         self.builder.apply_row_bounds(row_idx.to_usize().unwrap(), 0.0, 0.0);
                     }
@@ -545,7 +554,8 @@ where
 pub struct SolverBuilder<I> {
     builder: LpBuilder<I>,
     col_edge_map: ColumnEdgeMapBuilder<I>,
-    bin_col_node_map: HashMap<NodeIndex, I>,
+    node_bin_col_map: HashMap<NodeIndex, Vec<I>>,
+    node_set_bin_col_map: HashMap<Vec<NodeIndex>, I>,
 }
 
 impl<I> Default for SolverBuilder<I>
@@ -556,7 +566,8 @@ where
         Self {
             builder: LpBuilder::default(),
             col_edge_map: ColumnEdgeMapBuilder::default(),
-            bin_col_node_map: HashMap::new(),
+            node_bin_col_map: HashMap::new(),
+            node_set_bin_col_map: HashMap::new(),
         }
     }
 }
@@ -576,7 +587,7 @@ where
         // Create edge mass balance constraints
         self.create_mass_balance_constraints(network);
         // Create the nodal constraints
-        let node_constraints_row_ids = self.create_node_constraints(network);
+        let node_constraints_row_ids = self.create_node_constraints(network, values)?;
         // Create the aggregated node constraints
         let agg_node_constraint_row_ids = self.create_aggregated_node_constraints(network);
         // Create the aggregated node factor constraints
@@ -639,19 +650,26 @@ where
         }
 
         // Determine the set of nodes that are in one or more mutual exclusivity constraints
-        let mut nodes_in_a_mutual_exclusivity = HashSet::new();
-        for me in network.mutual_exclusivity_nodes().deref() {
-            for node_index in me.iter_nodes() {
-                nodes_in_a_mutual_exclusivity.insert(node_index);
+        // We only want to create one binary variable for each unique set of nodes. For the
+        // majority of cases the nodes will only be in one set. However, if a node is in different
+        // sets then we need to create separate binary variables and associated them with that node.
+        let mut node_sets_in_a_mutual_exclusivity = HashSet::new();
+        for agg_node in network.aggregated_nodes().deref() {
+            if agg_node.has_exclusivity() {
+                for node_set in agg_node.iter_nodes() {
+                    node_sets_in_a_mutual_exclusivity.insert(node_set);
+                }
             }
         }
 
-        // Add any binary columns associated with nodes
-        for node in network.nodes().deref() {
-            if nodes_in_a_mutual_exclusivity.contains(&node.index()) {
-                let col_id = self.builder.add_column(0.0, Bounds::Double(0.0, 1.0), ColType::Integer);
-                self.bin_col_node_map.insert(node.index(), col_id);
+        // Add any binary columns associated with each set of nodes
+        for node_set in node_sets_in_a_mutual_exclusivity.into_iter() {
+            let col_id = self.builder.add_column(0.0, Bounds::Double(0.0, 1.0), ColType::Integer);
+            for node_idx in node_set.iter() {
+                self.node_bin_col_map.entry(*node_idx).or_default().push(col_id);
             }
+
+            self.node_set_bin_col_map.insert(node_set.to_vec(), col_id);
         }
 
         Ok(())
@@ -699,7 +717,7 @@ where
         }
     }
 
-    fn add_node(&mut self, node: &Node, factor: f64, row: &mut RowBuilder<I>) {
+    fn add_node(&self, node: &Node, factor: f64, row: &mut RowBuilder<I>) {
         match node.node_type() {
             NodeType::Link => {
                 for edge in node.get_outgoing_edges().unwrap() {
@@ -736,34 +754,86 @@ where
     ///
     /// One constraint is created per node to enforce any constraints (flow or storage)
     /// that it may define. Returns the row_ids associated with each constraint.
-    fn create_node_constraints(&mut self, network: &Network) -> Vec<NodeRowId<I>> {
+    fn create_node_constraints(
+        &mut self,
+        network: &Network,
+        values: &ConstParameterValues,
+    ) -> Result<Vec<NodeRowId<I>>, PywrError> {
         let mut row_ids = Vec::with_capacity(network.nodes().len());
 
         for node in network.nodes().deref() {
-            // Create empty arrays to store the matrix data
-            let mut row: RowBuilder<I> = RowBuilder::default();
-            let mut bin_col_id = None;
-
-            self.add_node(node, 1.0, &mut row);
-
-            // If there is a binary variable associated with this node, then add it to the row
-            if let Some(col) = self.bin_col_node_map.get(&node.index()) {
-                row.add_element(*col, -1.0);
-                bin_col_id = Some(col);
-            }
-
-            let row_id = self.builder.add_variable_row(row);
-            let row_id = match bin_col_id {
-                Some(bin_col_id) => NodeRowId::Binary {
-                    row_id,
-                    bin_col_id: *bin_col_id,
-                },
-                None => NodeRowId::Continuous(row_id),
+            // Get the node's flow bounds if they are constants
+            // Storage nodes cannot have constant bounds
+            let bounds = match node.get_const_bounds(values)? {
+                Some(NodeBounds::Flow(bounds)) => Some(bounds),
+                _ => None,
             };
 
-            row_ids.push(row_id)
+            // If there are binary variables associated with this node, then we need to add a row
+            // that enforces each binary variable's constraints
+            if let Some(cols) = self.node_bin_col_map.get(&node.index()) {
+                for col in cols {
+                    let mut row: RowBuilder<I> = RowBuilder::default();
+                    self.add_node(node, 1.0, &mut row);
+                    let mut is_fixed = false;
+
+                    match bounds {
+                        Some(bounds) => {
+                            if bounds.min_flow != 0.0 {
+                                panic!("Binary node constraint with non-zero lower bounds not implemented!");
+                            }
+                            // If the bounds are constant then the binary variable is used to control the upper bound
+                            row.add_element(*col, -bounds.max_flow.min(1e8));
+                            row.set_lower(FMIN);
+                            row.set_upper(0.0);
+                            is_fixed = true;
+                        }
+                        None => {
+                            // If the bounds are not constant then the binary variable coefficient is updated later
+                            // Use a placeholder of -1.0 for now
+                            row.add_element(*col, -1.0);
+                        }
+                    }
+
+                    if is_fixed {
+                        self.builder.add_fixed_row(row);
+                    } else {
+                        let row_id = self.builder.add_variable_row(row);
+                        let row_type = NodeRowType::Binary { bin_col_id: *col };
+
+                        row_ids.push(NodeRowId {
+                            row_id,
+                            node_idx: node.index(),
+                            row_type,
+                        });
+                    }
+                }
+            } else {
+                let mut row: RowBuilder<I> = RowBuilder::default();
+                self.add_node(node, 1.0, &mut row);
+                let mut is_fixed = false;
+
+                // Apply the bounds if they are constant; otherwise the bounds are updated later
+                if let Some(bounds) = bounds {
+                    row.set_lower(bounds.min_flow);
+                    row.set_upper(bounds.max_flow);
+                    is_fixed = true;
+                }
+
+                if is_fixed {
+                    self.builder.add_fixed_row(row);
+                } else {
+                    let row_id = self.builder.add_variable_row(row);
+
+                    row_ids.push(NodeRowId {
+                        row_id,
+                        node_idx: node.index(),
+                        row_type: NodeRowType::Continuous,
+                    });
+                }
+            }
         }
-        row_ids
+        Ok(row_ids)
     }
 
     /// Create aggregated node factor constraints
@@ -788,13 +858,17 @@ where
 
                     // TODO error handling?
                     let nodes = network.nodes();
-                    let node0 = nodes.get(&node_pair.node0.index).expect("Node index not found!");
-                    let node1 = nodes.get(&node_pair.node1.index).expect("Node index not found!");
+                    for node0_idx in node_pair.node0.indices {
+                        let node0 = nodes.get(node0_idx).expect("Node index not found!");
+                        self.add_node(node0, 1.0, &mut row);
+                    }
 
                     let ratio = node_pair.ratio();
 
-                    self.add_node(node0, 1.0, &mut row);
-                    self.add_node(node1, -ratio.unwrap_or(1.0), &mut row);
+                    for node1_idx in node_pair.node1.indices {
+                        let node1 = nodes.get(node1_idx).expect("Node index not found!");
+                        self.add_node(node1, -ratio.unwrap_or(1.0), &mut row);
+                    }
                     // Make the row fixed at zero RHS
                     row.set_lower(0.0);
                     row.set_upper(0.0);
@@ -832,10 +906,12 @@ where
             // Create empty arrays to store the matrix data
             let mut row: RowBuilder<I> = RowBuilder::default();
 
-            for node_index in agg_node.get_nodes() {
+            for node_indices in agg_node.iter_nodes() {
                 // TODO error handling?
-                let node = network.nodes().get(&node_index).expect("Node index not found!");
-                self.add_node(node, 1.0, &mut row);
+                for node_idx in node_indices {
+                    let node = network.nodes().get(node_idx).expect("Node index not found!");
+                    self.add_node(node, 1.0, &mut row);
+                }
             }
 
             let row_id = self.builder.add_variable_row(row);
@@ -873,20 +949,22 @@ where
 
     /// Create mutual exclusivity constraints
     fn create_mutual_exclusivity_constraints(&mut self, network: &Network) {
-        for me in network.mutual_exclusivity_nodes().deref() {
-            let mut row = RowBuilder::default();
-            for node_index in me.iter_nodes() {
-                let bin_col = self
-                    .bin_col_node_map
-                    .get(&node_index)
-                    .expect("Binary column not found for Node in mutual exclusivity constraint!");
+        for agg_node in network.aggregated_nodes().iter() {
+            if let Some(exclusivity) = agg_node.get_exclusivity() {
+                let mut row = RowBuilder::default();
+                for node_index in agg_node.iter_nodes() {
+                    let bin_col = self
+                        .node_set_bin_col_map
+                        .get(node_index)
+                        .expect("Binary column not found for Node in mutual exclusivity constraint!");
 
-                row.add_element(*bin_col, 1.0);
+                    row.add_element(*bin_col, 1.0);
+                }
+                row.set_upper(exclusivity.max_active() as f64);
+                row.set_lower(exclusivity.min_active() as f64);
+
+                self.builder.add_fixed_row(row);
             }
-            row.set_upper(me.max_active() as f64);
-            row.set_lower(me.min_active() as f64);
-
-            self.builder.add_fixed_row(row);
         }
     }
 }

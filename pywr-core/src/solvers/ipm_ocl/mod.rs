@@ -338,7 +338,7 @@ impl BuiltSolver {
                             .iter()
                             .map(|state| {
                                 // TODO check for non-zero lower bounds and error?
-                                node.get_current_flow_bounds(network, state)
+                                node.get_flow_bounds(network, state)
                                     .expect("Flow bounds expected for Input, Output and Link nodes.")
                                     .1
                                     .min(B_MAX)

@@ -7,7 +7,7 @@ use crate::model::LoadArgs;
 use crate::nodes::{NodeAttribute, NodeMeta};
 use crate::parameters::TryIntoV2Parameter;
 #[cfg(feature = "core")]
-use pywr_core::{aggregated_node::Factors, metric::MetricF64};
+use pywr_core::{aggregated_node::Relationship, metric::MetricF64};
 use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::nodes::LossLinkNode as LossLinkNodeV1;
 use schemars::JsonSchema;
@@ -30,7 +30,7 @@ impl LossFactor {
         &self,
         network: &mut pywr_core::network::Network,
         args: &LoadArgs,
-    ) -> Result<Option<Factors>, SchemaError> {
+    ) -> Result<Option<Relationship>, SchemaError> {
         match self {
             LossFactor::Gross { factor } => {
                 let lf = factor.load(network, args)?;
@@ -40,17 +40,17 @@ impl LossFactor {
                     return Ok(None);
                 }
                 // Gross losses are configured as a proportion of the net flow
-                Ok(Some(Factors::Proportion(vec![lf])))
+                Ok(Some(Relationship::new_proportion_factors(&[lf])))
             }
             LossFactor::Net { factor } => {
                 let lf = factor.load(network, args)?;
-                // Handle the case where we a given a zero loss factor
+                // Handle the case where we are given a zero loss factor
                 // The aggregated node does not support zero loss factors so filter them here.
                 if lf.is_constant_zero() {
                     return Ok(None);
                 }
                 // Net losses are configured as a ratio of the net flow
-                Ok(Some(Factors::Ratio(vec![1.0.into(), lf])))
+                Ok(Some(Relationship::new_ratio_factors(&[1.0.into(), lf])))
             }
         }
     }
@@ -125,6 +125,14 @@ impl LossLinkNode {
     fn agg_sub_name() -> Option<&'static str> {
         Some("agg")
     }
+
+    pub fn node_indices_for_constraints(
+        &self,
+        network: &pywr_core::network::Network,
+    ) -> Result<Vec<pywr_core::node::NodeIndex>, SchemaError> {
+        let indices = vec![network.get_node_index_by_name(self.meta.name.as_str(), Self::net_sub_name())?];
+        Ok(indices)
+    }
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
         let idx_net = network.add_link_node(self.meta.name.as_str(), Self::net_sub_name())?;
         // TODO make the loss node configurable (i.e. it could be a link if a network wanted to use the loss)
@@ -136,7 +144,7 @@ impl LossLinkNode {
             network.add_aggregated_node(
                 self.meta.name.as_str(),
                 Self::agg_sub_name(),
-                &[idx_net, idx_loss],
+                &[vec![idx_net], vec![idx_loss]],
                 None,
             )?;
         }
@@ -165,7 +173,7 @@ impl LossLinkNode {
 
         if let Some(loss_factor) = &self.loss_factor {
             let factors = loss_factor.load(network, args)?;
-            network.set_aggregated_node_factors(self.meta.name.as_str(), Self::agg_sub_name(), factors)?;
+            network.set_aggregated_node_relationship(self.meta.name.as_str(), Self::agg_sub_name(), factors)?;
         }
 
         Ok(())

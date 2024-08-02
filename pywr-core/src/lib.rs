@@ -21,7 +21,6 @@ pub mod derived_metric;
 pub mod edge;
 pub mod metric;
 pub mod models;
-mod mutual_exclusivity;
 pub mod network;
 pub mod node;
 pub mod parameters;

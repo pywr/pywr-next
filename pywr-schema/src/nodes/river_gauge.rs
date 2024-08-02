@@ -68,6 +68,16 @@ impl RiverGaugeNode {
 
 #[cfg(feature = "core")]
 impl RiverGaugeNode {
+    pub fn node_indices_for_constraints(
+        &self,
+        network: &pywr_core::network::Network,
+    ) -> Result<Vec<pywr_core::node::NodeIndex>, SchemaError> {
+        let indices = vec![
+            network.get_node_index_by_name(self.meta.name.as_str(), Self::mrf_sub_name())?,
+            network.get_node_index_by_name(self.meta.name.as_str(), Self::bypass_sub_name())?,
+        ];
+        Ok(indices)
+    }
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
         network.add_link_node(self.meta.name.as_str(), Self::mrf_sub_name())?;
         network.add_link_node(self.meta.name.as_str(), Self::bypass_sub_name())?;

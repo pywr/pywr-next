@@ -7,7 +7,7 @@ use crate::state::{ConstParameterValues, State};
 use crate::timestep::Timestep;
 use crate::PywrError;
 use highs_sys::{
-    kHighsVarTypeContinuous, kHighsVarTypeInteger, Highs_changeCoeff, HighsInt, Highs_addCols, Highs_addRows, Highs_changeCoeff,
+    kHighsVarTypeContinuous, kHighsVarTypeInteger, HighsInt, Highs_addCols, Highs_addRows, Highs_changeCoeff,
     Highs_changeColIntegrality, Highs_changeColsCostByRange, Highs_changeObjectiveSense, Highs_changeRowsBoundsByMask,
     Highs_create, Highs_getDoubleInfoValue, Highs_getSolution, Highs_run, Highs_setBoolOptionValue,
     Highs_setStringOptionValue, OBJECTIVE_SENSE_MINIMIZE, STATUS_OK,
@@ -205,6 +205,7 @@ impl Solver for HighsSolver {
             SolverFeatures::MutualExclusivity,
             SolverFeatures::AggregatedNode,
             SolverFeatures::AggregatedNodeFactors,
+            SolverFeatures::AggregatedNodeDynamicFactors,
         ]
     }
 
