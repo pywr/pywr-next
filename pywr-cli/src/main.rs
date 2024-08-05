@@ -24,7 +24,7 @@ use std::path::{Path, PathBuf};
 enum Solver {
     Clp,
     #[cfg(feature = "highs")]
-    HIGHS,
+    Highs,
     #[cfg(feature = "ipm-ocl")]
     CLIPMF32,
     #[cfg(feature = "ipm-ocl")]
@@ -38,7 +38,7 @@ impl Display for Solver {
         match self {
             Solver::Clp => write!(f, "clp"),
             #[cfg(feature = "highs")]
-            Solver::HIGHS => write!(f, "highs"),
+            Solver::Highs => write!(f, "highs"),
             #[cfg(feature = "ipm-ocl")]
             Solver::CLIPMF32 => write!(f, "clipmf32"),
             #[cfg(feature = "ipm-ocl")]
@@ -265,7 +265,7 @@ fn run(path: &Path, solver: &Solver, data_path: Option<&Path>, output_path: Opti
     match *solver {
         Solver::Clp => model.run::<ClpSolver>(&ClpSolverSettings::default()),
         #[cfg(feature = "highs")]
-        Solver::HIGHS => model.run::<HighsSolver>(&HighsSolverSettings::default()),
+        Solver::Highs => model.run::<HighsSolver>(&HighsSolverSettings::default()),
         #[cfg(feature = "ipm-ocl")]
         Solver::CLIPMF32 => model.run_multi_scenario::<ClIpmF32Solver>(&ClIpmSolverSettings::default()),
         #[cfg(feature = "ipm-ocl")]
@@ -287,7 +287,7 @@ fn run_multi(path: &Path, solver: &Solver, data_path: Option<&Path>, output_path
     match *solver {
         Solver::Clp => model.run::<ClpSolver>(&ClpSolverSettings::default()),
         #[cfg(feature = "highs")]
-        Solver::HIGHS => model.run::<HighsSolver>(&HighsSolverSettings::default()),
+        Solver::Highs => model.run::<HighsSolver>(&HighsSolverSettings::default()),
         #[cfg(feature = "ipm-ocl")]
         Solver::CLIPMF32 => model.run_multi_scenario::<ClIpmF32Solver>(&ClIpmSolverSettings::default()),
         #[cfg(feature = "ipm-ocl")]
@@ -305,7 +305,7 @@ fn run_random(num_systems: usize, density: usize, num_scenarios: usize, solver: 
     match *solver {
         Solver::Clp => model.run::<ClpSolver>(&ClpSolverSettings::default()),
         #[cfg(feature = "highs")]
-        Solver::HIGHS => model.run::<HighsSolver>(&HighsSolverSettings::default()),
+        Solver::Highs => model.run::<HighsSolver>(&HighsSolverSettings::default()),
         #[cfg(feature = "ipm-ocl")]
         Solver::CLIPMF32 => model.run_multi_scenario::<ClIpmF32Solver>(&ClIpmSolverSettings::default()),
         #[cfg(feature = "ipm-ocl")]

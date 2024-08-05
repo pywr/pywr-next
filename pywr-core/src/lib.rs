@@ -5,7 +5,9 @@ extern crate core;
 use crate::derived_metric::DerivedMetricIndex;
 use crate::models::MultiNetworkTransferIndex;
 use crate::node::NodeIndex;
-use crate::parameters::{InterpolationError, ParameterIndex};
+use crate::parameters::{
+    ConstParameterIndex, GeneralParameterIndex, InterpolationError, ParameterIndex, SimpleParameterIndex,
+};
 use crate::recorders::{AggregationError, MetricSetIndex, RecorderIndex};
 use crate::state::MultiValue;
 use crate::virtual_storage::VirtualStorageIndex;
@@ -49,9 +51,27 @@ pub enum PywrError {
     ParameterIndexNotFound(ParameterIndex<f64>),
     #[error("index parameter index {0} not found")]
     IndexParameterIndexNotFound(ParameterIndex<usize>),
-    #[error("multi1 value parameter index {0} not found")]
+    #[error("multi-value parameter index {0} not found")]
     MultiValueParameterIndexNotFound(ParameterIndex<MultiValue>),
-    #[error("multi1 value parameter key {0} not found")]
+    #[error("parameter index {0} not found")]
+    GeneralParameterIndexNotFound(GeneralParameterIndex<f64>),
+    #[error("index parameter index {0} not found")]
+    GeneralIndexParameterIndexNotFound(GeneralParameterIndex<usize>),
+    #[error("multi-value parameter index {0} not found")]
+    GeneralMultiValueParameterIndexNotFound(GeneralParameterIndex<MultiValue>),
+    #[error("parameter index {0} not found")]
+    SimpleParameterIndexNotFound(SimpleParameterIndex<f64>),
+    #[error("index parameter index {0} not found")]
+    SimpleIndexParameterIndexNotFound(SimpleParameterIndex<usize>),
+    #[error("multi-value parameter index {0} not found")]
+    SimpleMultiValueParameterIndexNotFound(SimpleParameterIndex<MultiValue>),
+    #[error("parameter index {0} not found")]
+    ConstParameterIndexNotFound(ConstParameterIndex<f64>),
+    #[error("index parameter index {0} not found")]
+    ConstIndexParameterIndexNotFound(ConstParameterIndex<usize>),
+    #[error("multi-value parameter index {0} not found")]
+    ConstMultiValueParameterIndexNotFound(ConstParameterIndex<MultiValue>),
+    #[error("multi-value parameter key {0} not found")]
     MultiValueParameterKeyNotFound(String),
     #[error("inter-network parameter state not initialised")]
     InterNetworkParameterStateNotInitialised,
@@ -73,10 +93,12 @@ pub enum PywrError {
     DerivedMetricIndexNotFound(DerivedMetricIndex),
     #[error("node name `{0}` already exists")]
     NodeNameAlreadyExists(String),
-    #[error("parameter name `{0}` already exists at index {1}")]
-    ParameterNameAlreadyExists(String, ParameterIndex<f64>),
+    #[error("parameter name `{0}` already exists")]
+    ParameterNameAlreadyExists(String),
     #[error("index parameter name `{0}` already exists at index {1}")]
     IndexParameterNameAlreadyExists(String, ParameterIndex<usize>),
+    #[error("multi-value parameter name `{0}` already exists at index {1}")]
+    MultiValueParameterNameAlreadyExists(String, ParameterIndex<MultiValue>),
     #[error("metric set name `{0}` already exists")]
     MetricSetNameAlreadyExists(String),
     #[error("recorder name `{0}` already exists at index {1}")]
@@ -157,10 +179,14 @@ pub enum PywrError {
     NetworkNotFound(String),
     #[error("network index ({0}) not found")]
     NetworkIndexNotFound(usize),
+    #[error("network name `{0}` already exists.")]
+    NetworkNameAlreadyExists(String),
     #[error("parameters do not provide an initial value")]
     ParameterNoInitialValue,
     #[error("parameter state not found for parameter index {0}")]
     ParameterStateNotFound(ParameterIndex<f64>),
+    #[error("parameter state not found for parameter index {0}")]
+    GeneralParameterStateNotFound(GeneralParameterIndex<f64>),
     #[error("Could not create timestep range due to following error: {0}")]
     TimestepRangeGenerationError(String),
     #[error("Could not create timesteps for frequency '{0}'")]
@@ -169,6 +195,10 @@ pub enum PywrError {
     TimestepDurationMismatch,
     #[error("aggregation error: {0}")]
     Aggregation(#[from] AggregationError),
+    #[error("cannot simplify metric")]
+    CannotSimplifyMetric,
+    #[error("Negative factor is not allowed")]
+    NegativeFactor,
 }
 
 // Python errors

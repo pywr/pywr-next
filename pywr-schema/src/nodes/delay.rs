@@ -91,7 +91,7 @@ impl DelayNode {
         let delay_idx = network.add_parameter(Box::new(p))?;
 
         // Apply it as a constraint on the input node.
-        let metric = MetricF64::ParameterValue(delay_idx);
+        let metric: MetricF64 = delay_idx.into();
         network.set_node_max_flow(self.meta.name.as_str(), Self::input_sub_now(), metric.clone().into())?;
         network.set_node_min_flow(self.meta.name.as_str(), Self::input_sub_now(), metric.into())?;
 
@@ -197,6 +197,6 @@ mod tests {
         network.add_recorder(Box::new(recorder)).unwrap();
 
         // Test all solvers
-        run_all_solvers(&model);
+        run_all_solvers(&model, &[], &[]);
     }
 }

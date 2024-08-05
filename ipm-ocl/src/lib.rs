@@ -108,26 +108,14 @@ where
         let row_offsets = ocl::Buffer::<u32>::builder()
             .queue(queue.clone())
             .flags(ocl::flags::MEM_READ_WRITE)
-            .copy_host_slice(
-                a.row_offsets()
-                    .into_iter()
-                    .map(|r| *r as u32)
-                    .collect::<Vec<_>>()
-                    .as_slice(),
-            )
+            .copy_host_slice(a.row_offsets().iter().map(|r| *r as u32).collect::<Vec<_>>().as_slice())
             .len(a.row_offsets().len())
             .build()?;
 
         let col_indices = ocl::Buffer::<u32>::builder()
             .queue(queue.clone())
             .flags(ocl::flags::MEM_READ_WRITE)
-            .copy_host_slice(
-                a.col_indices()
-                    .into_iter()
-                    .map(|r| *r as u32)
-                    .collect::<Vec<_>>()
-                    .as_slice(),
-            )
+            .copy_host_slice(a.col_indices().iter().map(|r| *r as u32).collect::<Vec<_>>().as_slice())
             .len(a.col_indices().len())
             .build()?;
 
@@ -439,6 +427,7 @@ impl<T> PathFollowingDirectClSolver<T>
 where
     T: ocl::OclPrm + GetClProgram,
 {
+    #[allow(clippy::too_many_arguments)]
     pub fn from_data(
         queue: &ocl::Queue,
         program: &ocl::Program,
@@ -456,7 +445,7 @@ where
         let buffers = PathFollowingDirectClBuffers::from_data(&a, num_lps, queue)?;
 
         let kernel_normal_init = ocl::Kernel::builder()
-            .program(&program)
+            .program(program)
             .name("normal_eqn_init")
             .queue(queue.clone())
             .global_work_size(num_lps)
@@ -470,7 +459,7 @@ where
             .build()?;
 
         let kernel_normal_eq_step = ocl::Kernel::builder()
-            .program(&program)
+            .program(program)
             .name("normal_eqn_step")
             .queue(queue.clone())
             .global_work_size(num_lps)
@@ -619,6 +608,6 @@ mod tests {
         let queue = ocl::Queue::new(&context, device, None).unwrap();
 
         let a = test_matrx();
-        let pf = PathFollowingDirectClBuffers::from_data(&a, 10, &queue).unwrap();
+        let _pf = PathFollowingDirectClBuffers::from_data(&a, 10, &queue).unwrap();
     }
 }

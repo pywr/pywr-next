@@ -10,7 +10,7 @@ use crate::parameters::TryIntoV2Parameter;
 use pywr_core::{
     derived_metric::DerivedMetric,
     metric::MetricF64,
-    node::{ConstraintValue, StorageInitialVolume},
+    node::StorageInitialVolume,
     timestep::TimeDomain,
     virtual_storage::{VirtualStorageBuilder, VirtualStorageReset},
 };
@@ -111,17 +111,17 @@ impl RollingVirtualStorageNode {
 
         let cost = match &self.cost {
             Some(v) => v.load(network, args)?.into(),
-            None => ConstraintValue::Scalar(0.0),
+            None => None,
         };
 
         let min_volume = match &self.min_volume {
-            Some(v) => v.load(network, args)?.into(),
-            None => ConstraintValue::Scalar(0.0),
+            Some(v) => Some(v.load(network, args)?.try_into()?),
+            None => None,
         };
 
         let max_volume = match &self.max_volume {
-            Some(v) => v.load(network, args)?.into(),
-            None => ConstraintValue::None,
+            Some(v) => Some(v.load(network, args)?.try_into()?),
+            None => None,
         };
 
         let node_idxs = self
@@ -275,6 +275,6 @@ mod tests {
         network.add_recorder(Box::new(recorder)).unwrap();
 
         // Test all solvers
-        run_all_solvers(&model);
+        run_all_solvers(&model, &[], &[]);
     }
 }

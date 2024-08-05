@@ -247,7 +247,7 @@ impl PythonParameter {
         let p = PyParameter::new(&self.meta.name, object, py_args, kwargs, &metrics, &indices);
 
         let pt = match self.return_type {
-            PythonReturnType::Float => ParameterType::Parameter(network.add_parameter(Box::new(p))?),
+            PythonReturnType::Float => network.add_parameter(Box::new(p))?.into(),
             PythonReturnType::Int => ParameterType::Index(network.add_index_parameter(Box::new(p))?),
             PythonReturnType::Dict => ParameterType::Multi(network.add_multi_value_parameter(Box::new(p))?),
         };
