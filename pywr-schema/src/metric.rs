@@ -261,6 +261,10 @@ pub struct NodeReference {
 }
 
 impl NodeReference {
+    pub fn new(name: String, attribute: Option<NodeAttribute>) -> Self {
+        Self { name, attribute }
+    }
+
     #[cfg(feature = "core")]
     pub fn load(&self, network: &mut pywr_core::network::Network, args: &LoadArgs) -> Result<MetricF64, SchemaError> {
         // This is the associated node in the schema
@@ -316,6 +320,10 @@ pub struct ParameterReference {
 }
 
 impl ParameterReference {
+    pub fn new(name: String, key: Option<String>) -> Self {
+        Self { name, key }
+    }
+
     #[cfg(feature = "core")]
     pub fn load(&self, network: &mut pywr_core::network::Network) -> Result<MetricF64, SchemaError> {
         match &self.key {
