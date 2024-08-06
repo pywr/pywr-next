@@ -54,6 +54,19 @@ impl SimpleMetricF64 {
         }
     }
 
+    /// Try to get the constant value of the metric, if it is a constant value.
+    pub fn try_get_constant_value(&self, values: &ConstParameterValues) -> Result<Option<f64>, PywrError> {
+        match self {
+            SimpleMetricF64::Constant(c) => c.get_value(values).map(Some),
+            _ => Ok(None),
+        }
+    }
+
+    /// Returns true if the metric is a constant value.
+    pub fn is_constant(&self) -> bool {
+        matches!(self, SimpleMetricF64::Constant(_))
+    }
+
     /// Returns true if the constant value is a [`ConstantMetricF64::Constant`] with a value of zero.
     pub fn is_constant_zero(&self) -> bool {
         match self {
@@ -136,6 +149,21 @@ impl MetricF64 {
             }
             MetricF64::InterNetworkTransfer(idx) => state.get_inter_network_transfer_value(*idx),
             MetricF64::Simple(s) => s.get_value(&state.get_simple_parameter_values()),
+        }
+    }
+
+    /// Try to get the constant value of the metric, if it is a constant value.
+    pub fn try_get_constant_value(&self, values: &ConstParameterValues) -> Result<Option<f64>, PywrError> {
+        match self {
+            MetricF64::Simple(s) => s.try_get_constant_value(values),
+            _ => Ok(None),
+        }
+    }
+
+    pub fn is_constant(&self) -> bool {
+        match self {
+            MetricF64::Simple(s) => s.is_constant(),
+            _ => false,
         }
     }
 

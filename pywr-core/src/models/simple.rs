@@ -78,7 +78,7 @@ impl Model {
 
         let state = self.network.setup_network(timesteps, scenario_indices, 0)?;
         let recorder_state = self.network.setup_recorders(&self.domain)?;
-        let solvers = self.network.setup_solver::<S>(scenario_indices, settings)?;
+        let solvers = self.network.setup_solver::<S>(scenario_indices, &state, settings)?;
 
         Ok(ModelState {
             current_time_step_idx: 0,

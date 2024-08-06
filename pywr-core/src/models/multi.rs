@@ -163,7 +163,7 @@ impl MultiNetworkModel {
                 .network
                 .setup_network(timesteps, scenario_indices, entry.parameters.len())?;
             let recorder_state = entry.network.setup_recorders(&self.domain)?;
-            let solver = entry.network.setup_solver::<S>(scenario_indices, settings)?;
+            let solver = entry.network.setup_solver::<S>(scenario_indices, &state, settings)?;
 
             states.push(state);
             recorder_states.push(recorder_state);

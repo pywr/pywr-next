@@ -4,7 +4,7 @@ use super::builder::SolverBuilder;
 use crate::network::Network;
 use crate::solvers::builder::BuiltSolver;
 use crate::solvers::{Solver, SolverFeatures, SolverTimings};
-use crate::state::State;
+use crate::state::{ConstParameterValues, State};
 use crate::timestep::Timestep;
 use crate::PywrError;
 use coin_or_sys::clp::*;
@@ -237,13 +237,18 @@ impl Solver for ClpSolver {
         &[
             SolverFeatures::AggregatedNode,
             SolverFeatures::AggregatedNodeFactors,
+            SolverFeatures::AggregatedNodeDynamicFactors,
             SolverFeatures::VirtualStorage,
         ]
     }
 
-    fn setup(model: &Network, _settings: &Self::Settings) -> Result<Box<Self>, PywrError> {
+    fn setup(
+        model: &Network,
+        values: &ConstParameterValues,
+        _settings: &Self::Settings,
+    ) -> Result<Box<Self>, PywrError> {
         let builder = SolverBuilder::default();
-        let built = builder.create(model)?;
+        let built = builder.create(model, values)?;
 
         let solver = ClpSolver::from_builder(built);
         Ok(Box::new(solver))

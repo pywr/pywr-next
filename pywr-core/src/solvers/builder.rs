@@ -4,7 +4,7 @@ use crate::network::Network;
 use crate::node::{Node, NodeType};
 use crate::solvers::col_edge_map::{ColumnEdgeMap, ColumnEdgeMapBuilder};
 use crate::solvers::SolverTimings;
-use crate::state::State;
+use crate::state::{ConstParameterValues, State};
 use crate::timestep::Timestep;
 use crate::PywrError;
 use std::collections::BTreeMap;
@@ -276,12 +276,18 @@ where
     }
 }
 
+struct AggNodeFactorRow<I> {
+    agg_node_idx: AggregatedNodeIndex,
+    // Row index for each node-pair. If `None` the row is fixed and does not need updating.
+    row_indices: Vec<Option<I>>,
+}
+
 pub struct BuiltSolver<I> {
     builder: Lp<I>,
     col_edge_map: ColumnEdgeMap<I>,
     node_constraints_row_ids: Vec<usize>,
     agg_node_constraint_row_ids: Vec<usize>,
-    agg_node_factor_constraint_row_ids: Vec<(AggregatedNodeIndex, I)>,
+    agg_node_factor_constraint_row_ids: Vec<AggNodeFactorRow<I>>,
     virtual_storage_constraint_row_ids: Vec<usize>,
 }
 
@@ -413,23 +419,33 @@ where
     }
 
     fn update_aggregated_node_factor_constraints(&mut self, network: &Network, state: &State) -> Result<(), PywrError> {
-        for (agg_node_id, row_id) in self.agg_node_factor_constraint_row_ids.iter() {
-            let agg_node = network.get_aggregated_node(agg_node_id)?;
+        // Update the aggregated node factor constraints which are *not* constant
+        for agg_node_row in self.agg_node_factor_constraint_row_ids.iter() {
+            let agg_node = network.get_aggregated_node(&agg_node_row.agg_node_idx)?;
             // Only create row for nodes that have factors
             if let Some(node_pairs) = agg_node.get_norm_factor_pairs(network, state) {
-                for node_pair in node_pairs {
-                    // Modify the constraint matrix coefficients for the nodes
-                    // TODO error handling?
-                    let nodes = network.nodes();
-                    let node0 = nodes.get(&node_pair.node0.index).expect("Node index not found!");
-                    let node1 = nodes.get(&node_pair.node1.index).expect("Node index not found!");
+                assert_eq!(
+                    agg_node_row.row_indices.len(),
+                    node_pairs.len(),
+                    "Row indices and node pairs do not match!"
+                );
 
-                    self.builder
-                        .update_row_coefficients(*row_id, node0, 1.0, &self.col_edge_map);
-                    self.builder
-                        .update_row_coefficients(*row_id, node1, -node_pair.ratio(), &self.col_edge_map);
+                for (node_pair, row_idx) in node_pairs.iter().zip(agg_node_row.row_indices.iter()) {
+                    // Only update pairs with a row index (i.e. not fixed)
+                    if let Some(row_idx) = row_idx {
+                        // Modify the constraint matrix coefficients for the nodes
+                        // TODO error handling?
+                        let nodes = network.nodes();
+                        let node0 = nodes.get(&node_pair.node0.index).expect("Node index not found!");
+                        let node1 = nodes.get(&node_pair.node1.index).expect("Node index not found!");
 
-                    self.builder.apply_row_bounds(row_id.to_usize().unwrap(), 0.0, 0.0);
+                        self.builder
+                            .update_row_coefficients(*row_idx, node0, 1.0, &self.col_edge_map);
+                        self.builder
+                            .update_row_coefficients(*row_idx, node1, -node_pair.ratio(), &self.col_edge_map);
+
+                        self.builder.apply_row_bounds(row_idx.to_usize().unwrap(), 0.0, 0.0);
+                    }
                 }
             } else {
                 panic!("No factor pairs found for an aggregated node that was setup with factors?!");
@@ -504,7 +520,7 @@ where
         self.col_edge_map.col_for_edge(edge_index)
     }
 
-    pub fn create(mut self, network: &Network) -> Result<BuiltSolver<I>, PywrError> {
+    pub fn create(mut self, network: &Network, values: &ConstParameterValues) -> Result<BuiltSolver<I>, PywrError> {
         // Create the columns
         self.create_columns(network)?;
 
@@ -515,7 +531,7 @@ where
         // Create the aggregated node constraints
         let agg_node_constraint_row_ids = self.create_aggregated_node_constraints(network);
         // Create the aggregated node factor constraints
-        let agg_node_factor_constraint_row_ids = self.create_aggregated_node_factor_constraints(network);
+        let agg_node_factor_constraint_row_ids = self.create_aggregated_node_factor_constraints(network, values);
         // Create virtual storage constraints
         let virtual_storage_constraint_row_ids = self.create_virtual_storage_constraints(network);
 
@@ -671,31 +687,51 @@ where
     /// Create aggregated node factor constraints
     ///
     /// One constraint is created per node to enforce any factor constraints.
-    fn create_aggregated_node_factor_constraints(&mut self, network: &Network) -> Vec<(AggregatedNodeIndex, I)> {
+    fn create_aggregated_node_factor_constraints(
+        &mut self,
+        network: &Network,
+        values: &ConstParameterValues,
+    ) -> Vec<AggNodeFactorRow<I>> {
         let mut row_ids = Vec::new();
 
         for agg_node in network.aggregated_nodes().deref() {
             // Only create row for nodes that have factors
-            if let Some(node_pairs) = agg_node.get_factor_node_pairs() {
-                for (n0, n1) in node_pairs {
+            if let Some(node_pairs) = agg_node.get_const_norm_factor_pairs(values) {
+                let mut row_indices_for_agg_node = Vec::with_capacity(node_pairs.len());
+
+                for node_pair in node_pairs {
                     // Create rows for each node in the aggregated node pair with the first one.
 
                     let mut row = RowBuilder::default();
 
                     // TODO error handling?
                     let nodes = network.nodes();
-                    let node0 = nodes.get(&n0).expect("Node index not found!");
-                    let node1 = nodes.get(&n1).expect("Node index not found!");
+                    let node0 = nodes.get(&node_pair.node0.index).expect("Node index not found!");
+                    let node1 = nodes.get(&node_pair.node1.index).expect("Node index not found!");
+
+                    let ratio = node_pair.ratio();
 
                     self.add_node(node0, 1.0, &mut row);
-                    self.add_node(node1, -1.0, &mut row);
+                    self.add_node(node1, -ratio.unwrap_or(1.0), &mut row);
                     // Make the row fixed at zero RHS
                     row.set_lower(0.0);
                     row.set_upper(0.0);
 
-                    let row_id = self.builder.add_variable_row(row);
-                    row_ids.push((agg_node.index(), row_id))
+                    // Row is fixed if we can compute the ratio now
+                    if ratio.is_some() {
+                        self.builder.add_fixed_row(row);
+                        row_indices_for_agg_node.push(None)
+                    } else {
+                        // These rows will be updated with the correct ratio later
+                        let row_idx = self.builder.add_variable_row(row);
+                        row_indices_for_agg_node.push(Some(row_idx));
+                    }
                 }
+
+                row_ids.push(AggNodeFactorRow {
+                    agg_node_idx: agg_node.index(),
+                    row_indices: row_indices_for_agg_node,
+                })
             }
         }
 

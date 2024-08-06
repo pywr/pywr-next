@@ -30,3 +30,9 @@ pywr-schema = { path = "../pywr-schema" }
 [lib]
 name = "pywr"
 crate-type = ["cdylib"]
+
+[features]
+cbc = ["pywr-core/cbc", "pywr-schema/cbc"]
+highs = ["pywr-core/highs", "pywr-schema/highs"]
+ipm-ocl = ["pywr-core/ipm-ocl", "pywr-schema/ipm-ocl"]
+ipm-simd = ["pywr-core/ipm-simd", "pywr-schema/ipm-simd"]
