@@ -57,7 +57,6 @@ impl Parameter for ConstantParameter {
     }
 }
 
-// TODO this should only need to implement `ConstantParameter` when that is implemented.
 impl ConstParameter<f64> for ConstantParameter {
     fn compute(
         &self,
@@ -132,10 +131,7 @@ mod tests {
         let var = ActivationFunction::Unit { min: 0.0, max: 2.0 };
         let p = ConstantParameter::new("test", 1.0);
         let mut state = p
-            .setup(
-                &domain.time().timesteps(),
-                domain.scenarios().indices().first().unwrap(),
-            )
+            .setup(domain.time().timesteps(), domain.scenarios().indices().first().unwrap())
             .unwrap();
 
         // No value set initially

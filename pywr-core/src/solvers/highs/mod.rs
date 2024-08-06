@@ -3,11 +3,11 @@ mod settings;
 use crate::network::Network;
 use crate::solvers::builder::{BuiltSolver, SolverBuilder};
 use crate::solvers::{Solver, SolverFeatures, SolverTimings};
-use crate::state::State;
+use crate::state::{ConstParameterValues, State};
 use crate::timestep::Timestep;
 use crate::PywrError;
 use highs_sys::{
-    HighsInt, Highs_addCols, Highs_addRows, Highs_changeColsCostByRange, Highs_changeObjectiveSense,
+    HighsInt, Highs_addCols, Highs_addRows, Highs_changeCoeff, Highs_changeColsCostByRange, Highs_changeObjectiveSense,
     Highs_changeRowsBoundsByMask, Highs_create, Highs_getDoubleInfoValue, Highs_getSolution, Highs_run,
     Highs_setBoolOptionValue, Highs_setStringOptionValue, OBJECTIVE_SENSE_MINIMIZE, STATUS_OK,
 };
@@ -75,7 +75,6 @@ impl Highs {
 
     pub fn add_rows(
         &mut self,
-        nrows: HighsInt,
         row_lower: &[f64],
         row_upper: &[f64],
         nnz: HighsInt,
@@ -86,7 +85,7 @@ impl Highs {
         unsafe {
             let ret = Highs_addRows(
                 self.ptr,
-                nrows,
+                row_upper.len() as HighsInt,
                 row_lower.as_ptr(),
                 row_upper.as_ptr(),
                 nnz,
@@ -108,6 +107,13 @@ impl Highs {
     pub fn change_row_bounds(&mut self, mask: &[HighsInt], lower: &[f64], upper: &[f64]) {
         unsafe {
             let ret = Highs_changeRowsBoundsByMask(self.ptr, mask.as_ptr(), lower.as_ptr(), upper.as_ptr());
+            assert_eq!(ret, STATUS_OK);
+        }
+    }
+
+    pub fn change_coeff(&mut self, row: HighsInt, col: HighsInt, value: f64) {
+        unsafe {
+            let ret = Highs_changeCoeff(self.ptr, row, col, value);
             assert_eq!(ret, STATUS_OK);
         }
     }
@@ -162,16 +168,28 @@ pub struct HighsSolver {
 impl Solver for HighsSolver {
     type Settings = HighsSolverSettings;
 
-    fn features() -> &'static [SolverFeatures] {
-        &[]
+    fn name() -> &'static str {
+        "highs"
     }
 
-    fn setup(network: &Network, settings: &Self::Settings) -> Result<Box<Self>, PywrError> {
+    fn features() -> &'static [SolverFeatures] {
+        &[
+            SolverFeatures::AggregatedNode,
+            SolverFeatures::AggregatedNodeFactors,
+            SolverFeatures::AggregatedNodeDynamicFactors,
+            SolverFeatures::VirtualStorage,
+        ]
+    }
+
+    fn setup(
+        network: &Network,
+        values: &ConstParameterValues,
+        _settings: &Self::Settings,
+    ) -> Result<Box<Self>, PywrError> {
         let builder: SolverBuilder<HighsInt> = SolverBuilder::default();
-        let built = builder.create(network)?;
+        let built = builder.create(network, values)?;
 
         let num_cols = built.num_cols();
-        let num_rows = built.num_rows();
         let num_nz = built.num_non_zero();
 
         let mut highs_lp = Highs::default();
@@ -179,7 +197,6 @@ impl Solver for HighsSolver {
         highs_lp.add_cols(built.col_lower(), built.col_upper(), built.col_obj_coef(), num_cols);
 
         highs_lp.add_rows(
-            num_rows,
             built.row_lower(),
             built.row_upper(),
             num_nz,
@@ -211,6 +228,11 @@ impl Solver for HighsSolver {
             self.builder.row_lower(),
             self.builder.row_upper(),
         );
+
+        for (row, column, coefficient) in self.builder.coefficients_to_update() {
+            self.highs.change_coeff(*row, *column, *coefficient);
+        }
+
         timings.update_constraints += now.elapsed();
 
         let now = Instant::now();
@@ -261,7 +283,7 @@ mod tests {
         let columns: Vec<HighsInt> = vec![0, 1];
         let elements: Vec<f64> = vec![1.0, 1.0];
 
-        lp.add_rows(1, &row_lower, &row_upper, 2, &row_starts, &columns, &elements);
+        lp.add_rows(&row_lower, &row_upper, 2, &row_starts, &columns, &elements);
     }
 
     #[test]
@@ -282,7 +304,7 @@ mod tests {
 
         lp.add_cols(&col_lower, &col_upper, &col_obj_coef, ncols);
 
-        lp.add_rows(nrows, &row_lower, &row_upper, nnz, &row_starts, &columns, &elements);
+        lp.add_rows(&row_lower, &row_upper, nnz, &row_starts, &columns, &elements);
         lp.run();
 
         assert!(approx_eq!(f64, lp.objective_value(), -20.0));
@@ -310,7 +332,7 @@ mod tests {
 
         lp.add_cols(&col_lower, &col_upper, &col_obj_coef, ncols);
 
-        lp.add_rows(nrows, &row_lower, &row_upper, nnz, &row_starts, &columns, &elements);
+        lp.add_rows(&row_lower, &row_upper, nnz, &row_starts, &columns, &elements);
         lp.run();
 
         assert!(approx_eq!(f64, lp.objective_value(), -40.0));

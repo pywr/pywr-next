@@ -306,6 +306,7 @@ impl Network {
     pub fn setup_solver<S>(
         &self,
         scenario_indices: &[ScenarioIndex],
+        state: &NetworkState,
         settings: &S::Settings,
     ) -> Result<Vec<Box<S>>, PywrError>
     where
@@ -317,9 +318,10 @@ impl Network {
 
         let mut solvers = Vec::with_capacity(scenario_indices.len());
 
-        for _scenario_index in scenario_indices {
+        for scenario_index in scenario_indices {
             // Create a solver for each scenario
-            let solver = S::setup(self, settings)?;
+            let const_values = state.state(scenario_index).get_const_parameter_values();
+            let solver = S::setup(self, &const_values, settings)?;
             solvers.push(solver);
         }
 
@@ -557,8 +559,17 @@ impl Network {
         }
 
         // Aggregated node factors required if any aggregated node has factors defined.
-        if self.aggregated_nodes.iter().any(|n| n.get_factors().is_some()) {
+        if self.aggregated_nodes.iter().any(|n| n.has_factors()) {
             features.insert(SolverFeatures::AggregatedNodeFactors);
+        }
+
+        // Aggregated node dynamic factors required if any aggregated node has dynamic factors defined.
+        if self
+            .aggregated_nodes
+            .iter()
+            .any(|n| n.has_factors() && !n.has_const_factors())
+        {
+            features.insert(SolverFeatures::AggregatedNodeDynamicFactors);
         }
 
         // The presence of any virtual storage node requires the VirtualStorage feature.
@@ -1331,9 +1342,7 @@ impl Network {
         &mut self,
         parameter: Box<dyn parameters::SimpleParameter<f64>>,
     ) -> Result<ParameterIndex<f64>, PywrError> {
-        let parameter_index = self.parameters.add_simple_f64(parameter)?;
-
-        Ok(parameter_index.into())
+        self.parameters.add_simple_f64(parameter)
     }
 
     /// Add a [`parameters::ConstParameter`] to the network
@@ -1341,9 +1350,7 @@ impl Network {
         &mut self,
         parameter: Box<dyn parameters::ConstParameter<f64>>,
     ) -> Result<ParameterIndex<f64>, PywrError> {
-        let parameter_index = self.parameters.add_const_f64(parameter)?;
-
-        Ok(parameter_index.into())
+        self.parameters.add_const_f64(parameter)
     }
 
     /// Add a `parameters::IndexParameter` to the network
@@ -1641,8 +1648,6 @@ mod tests {
     use crate::parameters::{ActivationFunction, ControlCurveInterpolatedParameter, Parameter};
     use crate::recorders::AssertionRecorder;
     use crate::scenario::{ScenarioDomain, ScenarioGroupCollection, ScenarioIndex};
-    #[cfg(feature = "clipm")]
-    use crate::solvers::{ClIpmF64Solver, SimdIpmF64Solver};
     use crate::solvers::{ClpSolver, ClpSolverSettings};
     use crate::test_utils::{run_all_solvers, simple_model, simple_storage_model};
     use float_cmp::assert_approx_eq;
@@ -1789,7 +1794,7 @@ mod tests {
         model.network_mut().add_recorder(Box::new(recorder)).unwrap();
 
         // Test all solvers
-        run_all_solvers(&model);
+        run_all_solvers(&model, &[], &[]);
     }
 
     #[test]
@@ -1813,7 +1818,7 @@ mod tests {
         network.add_recorder(Box::new(recorder)).unwrap();
 
         // Test all solvers
-        run_all_solvers(&model);
+        run_all_solvers(&model, &[], &[]);
     }
 
     /// Test proportional storage derived metric.
@@ -1853,7 +1858,7 @@ mod tests {
         network.add_recorder(Box::new(recorder)).unwrap();
 
         // Test all solvers
-        run_all_solvers(&model);
+        run_all_solvers(&model, &[], &[]);
     }
 
     #[test]

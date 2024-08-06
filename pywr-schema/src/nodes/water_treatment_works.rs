@@ -3,29 +3,23 @@ use crate::error::SchemaError;
 use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
+use crate::nodes::loss_link::LossFactor;
 use crate::nodes::{NodeAttribute, NodeMeta};
 #[cfg(feature = "core")]
-use num::Zero;
-#[cfg(feature = "core")]
-use pywr_core::{
-    aggregated_node::Factors,
-    metric::{ConstantMetricF64, MetricF64, SimpleMetricF64},
-};
+use pywr_core::metric::MetricF64;
 use pywr_schema_macros::PywrVisitAll;
 use schemars::JsonSchema;
 
 #[doc = svgbobdoc::transform!(
 /// A node used to represent a water treatment works (WTW) with optional losses.
 ///
-/// This nodes comprises an internal structure that allows specifying a minimum and
-/// maximum total net flow, an optional loss factor applied as a proportion of *net*
-/// flow, and an optional "soft" minimum flow.
+/// This node comprises an internal structure that allows specifying a minimum and
+/// maximum total net flow, an optional loss factor applied as a proportion of either net
+/// or gross flow, and an optional "soft" minimum flow.
 ///
 /// When a loss factor is not given the `loss` node is not created. When a non-zero loss
-/// factor is provided `Output` and `Aggregated` nodes are created. The aggregated node
-/// is given factors that require the flow through the output node to be equal to
-/// loss factor mulitplied by the net flow. I.e. total gross flow will become
-/// (1 + loss factor) * net flow.
+/// factor is provided [`pywr_core::nodes::Output`] and [`pywr_core::nodes::Aggregated`] nodes
+/// are created.
 ///
 ///
 /// ```svgbob
@@ -47,7 +41,7 @@ pub struct WaterTreatmentWorks {
     #[serde(flatten)]
     pub meta: NodeMeta,
     /// The proportion of net flow that is lost to the loss node.
-    pub loss_factor: Option<Metric>,
+    pub loss_factor: Option<LossFactor>,
     /// The minimum flow through the `net` flow node.
     pub min_flow: Option<Metric>,
     /// The maximum flow through the `net` flow node.
@@ -178,31 +172,8 @@ impl WaterTreatmentWorks {
         }
 
         if let Some(loss_factor) = &self.loss_factor {
-            // Handle the case where we a given a zero loss factor
-            // The aggregated node does not support zero loss factors so filter them here.
-            let lf = match loss_factor.load(network, args)? {
-                MetricF64::Simple(s) => match s {
-                    SimpleMetricF64::Constant(c) => match c {
-                        ConstantMetricF64::Constant(f) => {
-                            if f.is_zero() {
-                                None
-                            } else {
-                                Some(f.into())
-                            }
-                        }
-                        _ => None,
-                    },
-                    _ => None,
-                },
-                m => Some(m),
-            };
-
-            if let Some(lf) = lf {
-                // Set the factors for the loss
-                // TODO allow for configuring as proportion of gross.
-                let factors = Factors::Ratio(vec![1.0.into(), lf]);
-                network.set_aggregated_node_factors(self.meta.name.as_str(), Self::agg_sub_name(), Some(factors))?;
-            }
+            let factors = loss_factor.load(network, args)?;
+            network.set_aggregated_node_factors(self.meta.name.as_str(), Self::agg_sub_name(), factors)?;
         }
 
         Ok(())
@@ -217,14 +188,22 @@ impl WaterTreatmentWorks {
 
         let metric = match attr {
             NodeAttribute::Inflow => {
-                let indices = vec![
-                    network.get_node_index_by_name(self.meta.name.as_str(), Self::net_sub_name())?,
-                    network.get_node_index_by_name(self.meta.name.as_str(), Self::loss_sub_name())?,
-                ];
-
-                MetricF64::MultiNodeInFlow {
-                    indices,
-                    name: self.meta.name.to_string(),
+                match network.get_node_index_by_name(self.meta.name.as_str(), Self::loss_sub_name()) {
+                    // Loss node is defined. The total inflow is the sum of the net and loss nodes;
+                    Ok(loss_idx) => {
+                        let indices = vec![
+                            network.get_node_index_by_name(self.meta.name.as_str(), Self::net_sub_name())?,
+                            loss_idx,
+                        ];
+                        MetricF64::MultiNodeInFlow {
+                            indices,
+                            name: self.meta.name.to_string(),
+                        }
+                    }
+                    // No loss node defined, so just use the net node
+                    Err(_) => MetricF64::NodeInFlow(
+                        network.get_node_index_by_name(self.meta.name.as_str(), Self::net_sub_name())?,
+                    ),
                 }
             }
             NodeAttribute::Outflow => {
@@ -232,9 +211,10 @@ impl WaterTreatmentWorks {
                 MetricF64::NodeOutFlow(idx)
             }
             NodeAttribute::Loss => {
-                let idx = network.get_node_index_by_name(self.meta.name.as_str(), Self::loss_sub_name())?;
-                // This is an output node that only supports inflow
-                MetricF64::NodeInFlow(idx)
+                match network.get_node_index_by_name(self.meta.name.as_str(), Self::loss_sub_name()) {
+                    Ok(idx) => MetricF64::NodeInFlow(idx),
+                    Err(_) => 0.0.into(),
+                }
             }
             _ => {
                 return Err(SchemaError::NodeAttributeNotSupported {
@@ -252,171 +232,49 @@ impl WaterTreatmentWorks {
 #[cfg(test)]
 mod tests {
     use crate::model::PywrModel;
-    use crate::nodes::WaterTreatmentWorks;
     #[cfg(feature = "core")]
-    use ndarray::Array2;
+    use pywr_core::test_utils::{run_all_solvers, ExpectedOutputs};
     #[cfg(feature = "core")]
-    use pywr_core::{metric::MetricF64, recorders::AssertionRecorder, test_utils::run_all_solvers};
+    use tempfile::TempDir;
 
-    #[test]
-    fn test_wtw_schema_load() {
-        let data = r#"
-                {
-                  "type": "WaterTreatmentWorks",
-                  "name": "My WTW",
-                  "comment": null,
-                  "position": null,
-                  "loss_factor": {
-                    "type": "Table",
-                    "index": "My WTW",
-                    "table": "loss_factors"
-                  },
-                  "soft_min_flow":  {
-                     "type": "Constant",
-                     "value": 105.0
-                  },
-                  "cost": {
-                     "type": "Constant",
-                     "value": 2.29
-                  },
-                  "max_flow": {
-                    "type": "InlineParameter",
-                    "definition": {
-                        "type": "ControlCurve",
-                        "name": "My WTW max flow",
-                        "control_curves": [
-                          {
-                            "type": "Parameter",
-                            "name": "A control curve"
-                          }
-                        ],
-                        "values": [
-                          {
-                            "type": "Parameter",
-                            "name": "a max flow"
-                          },
-                          {
-                            "type": "Constant",
-                            "value": 0.0
-                          }
-                        ],
-                        "storage_node": {
-                          "name": "My reservoir",
-                          "attribute": "ProportionalVolume"
-                        }
-                    }
-                  },
-                  "soft_min_flow_cost": {
-                    "type": "Parameter",
-                    "name": "my_min_flow_cost"
-                  }
-                }
-            "#;
-
-        let node: WaterTreatmentWorks = serde_json::from_str(data).unwrap();
-
-        assert_eq!(node.meta.name, "My WTW");
+    fn wtw1_str() -> &'static str {
+        include_str!("../test_models/wtw1.json")
     }
 
-    fn model_str() -> &'static str {
-        r#"
-            {
-                "metadata": {
-                    "title": "WTW Test 1",
-                    "description": "Test WTW work",
-                    "minimum_version": "0.1"
-                },
-                "timestepper": {
-                    "start": "2015-01-01",
-                    "end": "2015-12-31",
-                    "timestep": 1
-                },
-                "network": {
-                    "nodes": [
-                        {
-                            "name": "input1",
-                            "type": "Input",
-                            "flow": {
-                                "type": "Constant",
-                                "value": 15.0
-                            }
-                        },
-                        {
-                            "name": "wtw1",
-                            "type": "WaterTreatmentWorks",
-                            "max_flow":  {
-                                "type": "Constant",
-                                "value": 10.0
-                            },
-                            "loss_factor":  {
-                                "type": "Constant",
-                                "value": 0.1
-                            }
-                        },
-                        {
-                            "name": "demand1",
-                            "type": "Output",
-                            "max_flow":  {
-                                "type": "Constant",
-                                "value": 15.0
-                            },
-                            "cost":  {
-                                "type": "Constant",
-                                "value": -10
-                            }
-                        }
-                    ],
-                    "edges": [
-                        {
-                            "from_node": "input1",
-                            "to_node": "wtw1"
-                        },
-                        {
-                            "from_node": "wtw1",
-                            "to_node": "demand1"
-                        }
-                    ]
-                }
-            }
-            "#
+    #[cfg(feature = "core")]
+    fn wtw1_outputs_str() -> &'static str {
+        include_str!("../test_models/wtw1-expected.csv")
     }
 
     #[test]
     fn test_model_schema() {
-        let data = model_str();
+        let data = wtw1_str();
         let schema: PywrModel = serde_json::from_str(data).unwrap();
 
-        assert_eq!(schema.network.nodes.len(), 3);
-        assert_eq!(schema.network.edges.len(), 2);
+        assert_eq!(schema.network.nodes.len(), 5);
+        assert_eq!(schema.network.edges.len(), 4);
     }
 
     #[test]
     #[cfg(feature = "core")]
     fn test_model_run() {
-        let data = model_str();
+        let data = wtw1_str();
         let schema: PywrModel = serde_json::from_str(data).unwrap();
-        let mut model = schema.build_model(None, None).unwrap();
+        let temp_dir = TempDir::new().unwrap();
 
-        let shape = model.domain().shape();
+        let mut model = schema.build_model(None, Some(temp_dir.path())).unwrap();
 
         let network = model.network_mut();
-        assert_eq!(network.nodes().len(), 6);
-        assert_eq!(network.edges().len(), 6);
+        assert_eq!(network.nodes().len(), 10);
+        assert_eq!(network.edges().len(), 11);
 
-        // Setup expected results
-        // Set-up assertion for "input" node
-        // TODO write some helper functions for adding these assertion recorders
-        let idx = network.get_node_by_name("input1", None).unwrap().index();
-        let expected = Array2::from_elem(shape, 11.0);
-        let recorder = AssertionRecorder::new("input-flow", MetricF64::NodeOutFlow(idx), expected, None, None);
-        network.add_recorder(Box::new(recorder)).unwrap();
-
-        let idx = network.get_node_by_name("demand1", None).unwrap().index();
-        let expected = Array2::from_elem(shape, 10.0);
-        let recorder = AssertionRecorder::new("demand-flow", MetricF64::NodeInFlow(idx), expected, None, None);
-        network.add_recorder(Box::new(recorder)).unwrap();
+        // After model run there should be an output file.
+        let expected_outputs = [ExpectedOutputs::new(
+            temp_dir.path().join("wtw1.csv"),
+            wtw1_outputs_str(),
+        )];
 
         // Test all solvers
-        run_all_solvers(&model);
+        run_all_solvers(&model, &[], &expected_outputs);
     }
 }

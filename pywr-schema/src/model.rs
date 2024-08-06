@@ -879,7 +879,7 @@ impl PywrMultiNetworkModel {
         let mut model = pywr_core::models::MultiNetworkModel::new(domain);
 
         for (name, network) in networks {
-            model.add_network(&name, network);
+            model.add_network(&name, network)?;
         }
 
         for (from_network_idx, from_metric, to_network_idx, initial_value) in inter_network_transfers {
@@ -1066,7 +1066,7 @@ mod core_tests {
         network.add_recorder(Box::new(rec)).unwrap();
 
         // Test all solvers
-        run_all_solvers(&model);
+        run_all_solvers(&model, &[], &[]);
     }
 
     /// Test that a cycle in parameter dependencies does not load.

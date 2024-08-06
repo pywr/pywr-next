@@ -982,6 +982,6 @@ mod tests {
         let schema = PywrModel::from_str(data).unwrap();
         let model: pywr_core::models::Model = schema.build_model(None, None).unwrap();
         // Test all solvers
-        run_all_solvers(&model);
+        run_all_solvers(&model, &[], &[]);
     }
 }

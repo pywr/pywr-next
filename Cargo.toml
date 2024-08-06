@@ -44,10 +44,10 @@ ndarray = "0.15.3"
 polars = { version = "0.41.2", features = ["lazy", "rows", "ndarray"] }
 pyo3-polars = "0.15"
 pyo3 = { version = "0.21", default-features = false }
-pyo3-log = "0.10"
+pyo3-log = "0.11"
 tracing = { version = "0.1", features = ["log"] }
 csv = "1.1"
 hdf5 = { git = "https://github.com/aldanor/hdf5-rust.git", package = "hdf5", features = ["static", "zlib"] }
-pywr-v1-schema = { git = "https://github.com/pywr/pywr-schema/", tag = "v0.13.0", package = "pywr-schema" }
+pywr-v1-schema = "0.14"
 chrono = { version = "0.4.34", features = ["serde"] }
 schemars = { version = "0.8.16", features = ["chrono"] }

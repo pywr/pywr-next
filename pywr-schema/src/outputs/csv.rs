@@ -5,6 +5,8 @@ use pywr_core::recorders::{CsvLongFmtOutput, CsvWideFmtOutput, Recorder};
 use pywr_schema_macros::PywrVisitPaths;
 use schemars::JsonSchema;
 #[cfg(feature = "core")]
+use std::num::NonZeroU32;
+#[cfg(feature = "core")]
 use std::path::Path;
 use std::path::PathBuf;
 
@@ -40,6 +42,7 @@ pub struct CsvOutput {
     pub filename: PathBuf,
     pub format: CsvFormat,
     pub metric_set: CsvMetricSet,
+    pub decimal_places: Option<u32>,
 }
 
 #[cfg(feature = "core")]
@@ -75,7 +78,12 @@ impl CsvOutput {
                         .collect::<Result<Vec<_>, _>>()?,
                 };
 
-                Box::new(CsvLongFmtOutput::new(&self.name, filename, &metric_set_indices))
+                Box::new(CsvLongFmtOutput::new(
+                    &self.name,
+                    filename,
+                    &metric_set_indices,
+                    self.decimal_places.and_then(NonZeroU32::new),
+                ))
             }
         };
 

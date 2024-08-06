@@ -105,6 +105,7 @@
         "name": "inflow",
         "provider": {
           "type": "Polars",
+          "infer_schema_length": null,
           "time_col": null,
           "url": "inflow.csv"
         }

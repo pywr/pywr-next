@@ -7,13 +7,15 @@ use crate::node::StorageInitialVolume;
 use crate::parameters::{AggFunc, AggregatedParameter, Array2Parameter, ConstantParameter, GeneralParameter};
 use crate::recorders::AssertionRecorder;
 use crate::scenario::ScenarioGroupCollection;
+#[cfg(feature = "cbc")]
+use crate::solvers::CbcSolver;
 #[cfg(feature = "ipm-ocl")]
 use crate::solvers::ClIpmF64Solver;
-use crate::solvers::ClpSolver;
 #[cfg(feature = "highs")]
 use crate::solvers::HighsSolver;
 #[cfg(feature = "ipm-simd")]
 use crate::solvers::SimdIpmF64Solver;
+use crate::solvers::{ClpSolver, Solver, SolverSettings};
 use crate::timestep::{TimeDomain, TimestepDuration, Timestepper};
 use crate::PywrError;
 use chrono::{Days, NaiveDate};
@@ -21,6 +23,7 @@ use float_cmp::{approx_eq, F64Margin};
 use ndarray::{Array, Array2};
 use rand::Rng;
 use rand_distr::{Distribution, Normal};
+use std::path::PathBuf;
 
 pub fn default_timestepper() -> Timestepper {
     let start = NaiveDate::from_ymd_opt(2020, 1, 1)
@@ -161,25 +164,48 @@ pub fn run_and_assert_parameter(
     let rec = AssertionRecorder::new("assert", p_idx.into(), expected_values, ulps, epsilon);
 
     model.network_mut().add_recorder(Box::new(rec)).unwrap();
-    run_all_solvers(model)
+    run_all_solvers(model, &[], &[])
+}
+
+/// A struct to hold the expected outputs for a test.
+pub struct ExpectedOutputs {
+    actual_path: PathBuf,
+    expected_str: &'static str,
+}
+
+impl ExpectedOutputs {
+    pub fn new(actual_path: PathBuf, expected_str: &'static str) -> Self {
+        Self {
+            actual_path,
+            expected_str,
+        }
+    }
+
+    fn verify(&self) {
+        assert!(self.actual_path.exists());
+        let actual_str = std::fs::read_to_string(&self.actual_path).unwrap();
+        assert_eq!(actual_str, self.expected_str);
+    }
 }
 
 /// Run a model using each of the in-built solvers.
 ///
 /// The model will only be run if the solver has the required solver features (and
 /// is also enabled as a Cargo feature).
-pub fn run_all_solvers(model: &Model) {
-    model
-        .run::<ClpSolver>(&Default::default())
-        .expect("Failed to solve with CLP");
+pub fn run_all_solvers(model: &Model, solvers_without_features: &[&str], expected_outputs: &[ExpectedOutputs]) {
+    println!("Running CLP");
+    check_features_and_run::<ClpSolver>(model, !solvers_without_features.contains(&"clp"), expected_outputs);
+
+    #[cfg(feature = "cbc")]
+    {
+        println!("Running CBC");
+        check_features_and_run::<CbcSolver>(model, !solvers_without_features.contains(&"cbc"), expected_outputs);
+    }
 
     #[cfg(feature = "highs")]
     {
-        if model.check_solver_features::<HighsSolver>() {
-            model
-                .run::<HighsSolver>(&Default::default())
-                .expect("Failed to solve with Highs");
-        }
+        println!("Running Highs");
+        check_features_and_run::<HighsSolver>(model, !solvers_without_features.contains(&"highs"), expected_outputs);
     }
 
     #[cfg(feature = "ipm-simd")]
@@ -198,6 +224,36 @@ pub fn run_all_solvers(model: &Model) {
                 .run_multi_scenario::<ClIpmF64Solver>(&Default::default())
                 .expect("Failed to solve with OpenCl IPM");
         }
+    }
+}
+
+/// Check features and
+fn check_features_and_run<S>(model: &Model, expect_features: bool, expected_outputs: &[ExpectedOutputs])
+where
+    S: Solver,
+    <S as Solver>::Settings: SolverSettings + Default,
+{
+    let has_features = model.check_solver_features::<S>();
+    if expect_features {
+        assert!(
+            has_features,
+            "Solver `{}` was expected to have the required features",
+            S::name()
+        );
+        model
+            .run::<S>(&Default::default())
+            .unwrap_or_else(|_| panic!("Failed to solve with: {}", S::name()));
+
+        // Verify any expected outputs
+        for expected_output in expected_outputs {
+            expected_output.verify();
+        }
+    } else {
+        assert!(
+            !has_features,
+            "Solver `{}` was not expected to have the required features",
+            S::name()
+        );
     }
 }
 

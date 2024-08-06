@@ -7,6 +7,10 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  # Make sure CI fails on all warnings, including Clippy lints
+  RUSTFLAGS: "-Dwarnings"
+  ACTIONS_RUNNER_DEBUG: true
+  ACTIONS_STEP_DEBUG: true
 
 jobs:
   build:
@@ -17,7 +21,12 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: true
+      - uses: swatinem/rust-cache@v2
+      - name: Run Clippy
+        run: cargo clippy --all-targets --features highs,cbc
       - name: Build
-        run: cargo build --verbose --workspace --exclude ipm-simd --exclude pywr-python
+        run: cargo build --verbose --features highs,cbc --workspace --exclude ipm-simd --exclude pywr-python
       - name: Run tests
-        run: cargo test
+        # Only test the library and binaries, not the docs
+        # There were some issues with the docs tests timing out on Windows CI
+        run: cargo test --features highs,cbc --verbose --lib --bins -- --test-threads=1
