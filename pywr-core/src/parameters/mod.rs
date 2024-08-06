@@ -277,7 +277,7 @@ pub struct ParameterMeta {
 }
 
 impl ParameterMeta {
-    fn new(name: &str) -> Self {
+    pub fn new(name: &str) -> Self {
         Self {
             name: name.to_string(),
             comment: "".to_string(),
