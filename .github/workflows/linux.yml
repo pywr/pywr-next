@@ -19,6 +19,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: true
+      - uses: swatinem/rust-cache@v2
       - name: Run Clippy
         run: cargo clippy --all-targets --features highs,cbc --all --exclude ipm-simd
       - name: Install latest mdbook
@@ -44,6 +45,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: true
+      - uses: swatinem/rust-cache@v2
       - name: Build
         run: cargo build --verbose --no-default-features --package pywr-schema@2.0.0-dev
       - name: Run tests

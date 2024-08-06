@@ -206,6 +206,7 @@ impl Solver for HighsSolver {
             SolverFeatures::AggregatedNode,
             SolverFeatures::AggregatedNodeFactors,
             SolverFeatures::AggregatedNodeDynamicFactors,
+            SolverFeatures::VirtualStorage,
         ]
     }
 
