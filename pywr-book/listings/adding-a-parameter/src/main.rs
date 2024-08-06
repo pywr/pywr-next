@@ -55,8 +55,12 @@ impl GeneralParameter<f64> for MaxParameter {
 
 // ANCHOR_END: impl-parameter
 mod schema {
+    #[cfg(feature = "core")]
+    use pywr_core::parameters::ParameterIndex;
     use pywr_schema::metric::Metric;
     use pywr_schema::parameters::ParameterMeta;
+    #[cfg(feature = "core")]
+    use pywr_schema::{model::LoadArgs, SchemaError};
     use schemars::JsonSchema;
 
     // ANCHOR: schema

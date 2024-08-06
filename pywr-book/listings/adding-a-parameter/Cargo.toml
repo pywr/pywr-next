@@ -9,3 +9,7 @@ pywr-schema = { path = "../../../pywr-schema" }
 pywr-schema-macros = { path = "../../../pywr-schema-macros" }
 serde = { workspace = true }
 schemars = { workspace = true }
+
+[features]
+core = ["pywr-schema/core"]
+default = ["core"]
