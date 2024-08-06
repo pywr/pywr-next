@@ -831,7 +831,7 @@ pub struct AggregatedStorageNode {
 }
 
 impl AggregatedStorageNode {
-    const DEFAULT_ATTRIBUTE: NodeAttribute = NodeAttribute::Outflow;
+    const DEFAULT_ATTRIBUTE: NodeAttribute = NodeAttribute::Volume;
 
     pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
         // Not connectable
