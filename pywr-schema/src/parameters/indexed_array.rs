@@ -35,7 +35,11 @@ impl IndexedArrayParameter {
             .map(|v| v.load(network, args))
             .collect::<Result<Vec<_>, _>>()?;
 
-        let p = pywr_core::parameters::IndexedArrayParameter::new(&self.meta.name, index_parameter, &metrics);
+        let p = pywr_core::parameters::IndexedArrayParameter::new(
+            self.meta.name.as_str().into(),
+            index_parameter,
+            &metrics,
+        );
 
         Ok(network.add_parameter(Box::new(p))?)
     }

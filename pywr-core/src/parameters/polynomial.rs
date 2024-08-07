@@ -1,6 +1,6 @@
 use crate::metric::MetricF64;
 use crate::network::Network;
-use crate::parameters::{GeneralParameter, Parameter, ParameterMeta, ParameterState};
+use crate::parameters::{GeneralParameter, Parameter, ParameterMeta, ParameterName, ParameterState};
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
 use crate::timestep::Timestep;
@@ -15,7 +15,7 @@ pub struct Polynomial1DParameter {
 }
 
 impl Polynomial1DParameter {
-    pub fn new(name: &str, metric: MetricF64, coefficients: Vec<f64>, scale: f64, offset: f64) -> Self {
+    pub fn new(name: ParameterName, metric: MetricF64, coefficients: Vec<f64>, scale: f64, offset: f64) -> Self {
         Self {
             meta: ParameterMeta::new(name),
             metric,

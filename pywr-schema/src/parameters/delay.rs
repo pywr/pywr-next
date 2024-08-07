@@ -27,7 +27,12 @@ impl DelayParameter {
         args: &LoadArgs,
     ) -> Result<ParameterIndex<f64>, SchemaError> {
         let metric = self.metric.load(network, args)?;
-        let p = pywr_core::parameters::DelayParameter::new(&self.meta.name, metric, self.delay, self.initial_value);
+        let p = pywr_core::parameters::DelayParameter::new(
+            self.meta.name.as_str().into(),
+            metric,
+            self.delay,
+            self.initial_value,
+        );
         Ok(network.add_parameter(Box::new(p))?)
     }
 }
