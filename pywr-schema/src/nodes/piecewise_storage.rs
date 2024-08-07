@@ -84,6 +84,19 @@ impl PiecewiseStorageNode {
         Some("agg-store")
     }
 
+    pub fn node_indices_for_constraints(
+        &self,
+        network: &pywr_core::network::Network,
+    ) -> Result<Vec<pywr_core::node::NodeIndex>, SchemaError> {
+        let indices = self
+            .steps
+            .iter()
+            .enumerate()
+            .map(|(i, _)| network.get_node_index_by_name(self.meta.name.as_str(), Self::step_sub_name(i).as_deref()))
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(indices)
+    }
+
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network, args: &LoadArgs) -> Result<(), SchemaError> {
         // These are the min and max volume of the overall node
         let max_volume: SimpleMetricF64 = self.max_volume.load(network, args)?.try_into()?;

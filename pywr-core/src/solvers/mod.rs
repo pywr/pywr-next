@@ -74,6 +74,7 @@ pub enum SolverFeatures {
     AggregatedNodeFactors,
     AggregatedNodeDynamicFactors,
     VirtualStorage,
+    MutualExclusivity,
 }
 
 /// Solver settings that are common to all solvers.

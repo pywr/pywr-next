@@ -105,15 +105,15 @@ impl MetricF64 {
             MetricF64::NodeVolume(idx) => Ok(state.get_network_state().get_node_volume(idx)?),
             MetricF64::AggregatedNodeInFlow(idx) => {
                 let node = model.get_aggregated_node(idx)?;
-                node.get_nodes()
-                    .iter()
+                node.iter_nodes()
+                    .flat_map(|indices| indices.iter())
                     .map(|idx| state.get_network_state().get_node_in_flow(idx))
                     .sum::<Result<_, _>>()
             }
             MetricF64::AggregatedNodeOutFlow(idx) => {
                 let node = model.get_aggregated_node(idx)?;
-                node.get_nodes()
-                    .iter()
+                node.iter_nodes()
+                    .flat_map(|indices| indices.iter())
                     .map(|idx| state.get_network_state().get_node_out_flow(idx))
                     .sum::<Result<_, _>>()
             }

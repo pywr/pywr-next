@@ -395,7 +395,7 @@ impl Node {
             Node::River(n) => n.add_to_model(network),
             Node::RiverSplitWithGauge(n) => n.add_to_model(network),
             Node::WaterTreatmentWorks(n) => n.add_to_model(network),
-            Node::Aggregated(n) => n.add_to_model(network),
+            Node::Aggregated(n) => n.add_to_model(network, args),
             Node::AggregatedStorage(n) => n.add_to_model(network),
             Node::VirtualStorage(n) => n.add_to_model(network, args),
             Node::AnnualVirtualStorage(n) => n.add_to_model(network, args),
@@ -405,6 +405,36 @@ impl Node {
             Node::Turbine(n) => n.add_to_model(network, args),
             Node::MonthlyVirtualStorage(n) => n.add_to_model(network, args),
             Node::RollingVirtualStorage(n) => n.add_to_model(network, args),
+        }
+    }
+
+    /// Get the node indices for the constraints that this node has added to the network.
+    pub fn node_indices_for_constraints(
+        &self,
+        network: &pywr_core::network::Network,
+        args: &LoadArgs,
+    ) -> Result<Vec<pywr_core::node::NodeIndex>, SchemaError> {
+        match self {
+            Node::Input(n) => n.node_indices_for_constraints(network),
+            Node::Link(n) => n.node_indices_for_constraints(network),
+            Node::Output(n) => n.node_indices_for_constraints(network),
+            Node::Storage(n) => n.node_indices_for_constraints(network),
+            Node::Catchment(n) => n.node_indices_for_constraints(network),
+            Node::RiverGauge(n) => n.node_indices_for_constraints(network),
+            Node::LossLink(n) => n.node_indices_for_constraints(network),
+            Node::River(n) => n.node_indices_for_constraints(network),
+            Node::RiverSplitWithGauge(n) => n.node_indices_for_constraints(network),
+            Node::WaterTreatmentWorks(n) => n.node_indices_for_constraints(network),
+            Node::Aggregated(n) => n.node_indices_for_constraints(network, args),
+            Node::AggregatedStorage(n) => n.node_indices_for_constraints(network, args),
+            Node::VirtualStorage(n) => n.node_indices_for_constraints(network, args),
+            Node::AnnualVirtualStorage(n) => n.node_indices_for_constraints(network, args),
+            Node::PiecewiseLink(n) => n.node_indices_for_constraints(network),
+            Node::PiecewiseStorage(n) => n.node_indices_for_constraints(network),
+            Node::Delay(n) => n.node_indices_for_constraints(network),
+            Node::Turbine(n) => n.node_indices_for_constraints(network),
+            Node::MonthlyVirtualStorage(n) => n.node_indices_for_constraints(network, args),
+            Node::RollingVirtualStorage(n) => n.node_indices_for_constraints(network, args),
         }
     }
 

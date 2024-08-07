@@ -108,6 +108,14 @@ impl WaterTreatmentWorks {
     fn agg_sub_name() -> Option<&'static str> {
         Some("agg")
     }
+
+    pub fn node_indices_for_constraints(
+        &self,
+        network: &pywr_core::network::Network,
+    ) -> Result<Vec<pywr_core::node::NodeIndex>, SchemaError> {
+        let idx = network.get_node_index_by_name(self.meta.name.as_str(), Self::net_sub_name())?;
+        Ok(vec![idx])
+    }
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
         let idx_net = network.add_link_node(self.meta.name.as_str(), Self::net_sub_name())?;
         let idx_soft_min_flow = network.add_link_node(self.meta.name.as_str(), Self::net_soft_min_flow_sub_name())?;
@@ -124,7 +132,7 @@ impl WaterTreatmentWorks {
             network.add_aggregated_node(
                 self.meta.name.as_str(),
                 Self::agg_sub_name(),
-                &[idx_net, idx_loss],
+                &[vec![idx_net], vec![idx_loss]],
                 None,
             )?;
         }
@@ -173,7 +181,7 @@ impl WaterTreatmentWorks {
 
         if let Some(loss_factor) = &self.loss_factor {
             let factors = loss_factor.load(network, args)?;
-            network.set_aggregated_node_factors(self.meta.name.as_str(), Self::agg_sub_name(), factors)?;
+            network.set_aggregated_node_relationship(self.meta.name.as_str(), Self::agg_sub_name(), factors)?;
         }
 
         Ok(())

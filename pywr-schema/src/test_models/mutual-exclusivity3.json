@@ -1,0 +1,148 @@
+{
+  "metadata": {
+    "title": "Mutual exclusivity test 1",
+    "description": "Test mutual exclusivities work with simple link node types",
+    "minimum_version": "0.1"
+  },
+  "timestepper": {
+    "start": "2015-01-01",
+    "end": "2015-01-03",
+    "timestep": 1
+  },
+  "network": {
+    "nodes": [
+      {
+        "name": "input1",
+        "type": "Input"
+      },
+      {
+        "name": "link1",
+        "type": "PiecewiseLink",
+        "steps": [
+          {
+            "max_flow": {
+              "type": "Constant",
+              "value": 5.0
+            }
+          },
+          {
+            "max_flow": {
+              "type": "Constant",
+              "value": 5.0
+            }
+          }
+        ]
+      },
+      {
+        "name": "demand1",
+        "type": "Output",
+        "max_flow": {
+          "type": "Constant",
+          "value": 15.0
+        },
+        "cost": {
+          "type": "Constant",
+          "value": -15
+        }
+      },
+      {
+        "name": "link2",
+        "type": "PiecewiseLink",
+        "steps": [
+          {
+            "max_flow": {
+              "type": "Constant",
+              "value": 5.0
+            }
+          },
+          {
+            "max_flow": {
+              "type": "Constant",
+              "value": 5.0
+            }
+          }
+        ]
+      },
+      {
+        "name": "demand2",
+        "type": "Output",
+        "max_flow": {
+          "type": "Constant",
+          "value": 15.0
+        },
+        "cost": {
+          "type": "Constant",
+          "value": -10
+        }
+      },
+      {
+        "name": "me",
+        "type": "Aggregated",
+        "nodes": [
+          "link1",
+          "link2"
+        ],
+        "factors": {
+          "type": "Exclusive"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "from_node": "input1",
+        "to_node": "link1"
+      },
+      {
+        "from_node": "link1",
+        "to_node": "demand1"
+      },
+      {
+        "from_node": "input1",
+        "to_node": "link2"
+      },
+      {
+        "from_node": "link2",
+        "to_node": "demand2"
+      }
+    ],
+    "metric_sets": [
+      {
+        "name": "nodes",
+        "metrics": [
+          {
+            "type": "Node",
+            "name": "link1",
+            "attribute": "Inflow"
+          },
+          {
+            "type": "Node",
+            "name": "link1",
+            "attribute": "Outflow"
+          },
+          {
+            "type": "Node",
+            "name": "link2",
+            "attribute": "Inflow"
+          },
+          {
+            "type": "Node",
+            "name": "link2",
+            "attribute": "Outflow"
+          }
+        ]
+      }
+    ],
+    "outputs": [
+      {
+        "name": "node-outputs",
+        "type": "CSV",
+        "format": "long",
+        "filename": "output.csv",
+        "metric_set": [
+          "nodes"
+        ],
+        "decimal_places": 1
+      }
+    ]
+  }
+}

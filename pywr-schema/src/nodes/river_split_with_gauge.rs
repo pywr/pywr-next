@@ -7,7 +7,7 @@ use crate::model::LoadArgs;
 use crate::nodes::{NodeAttribute, NodeMeta};
 use crate::parameters::TryIntoV2Parameter;
 #[cfg(feature = "core")]
-use pywr_core::{aggregated_node::Factors, metric::MetricF64, node::NodeIndex};
+use pywr_core::{aggregated_node::Relationship, metric::MetricF64, node::NodeIndex};
 use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::nodes::RiverSplitWithGaugeNode as RiverSplitWithGaugeNodeV1;
 use schemars::JsonSchema;
@@ -104,6 +104,29 @@ impl RiverSplitWithGaugeNode {
     fn split_agg_sub_name(i: usize) -> Option<String> {
         Some(format!("split-agg-{i}"))
     }
+
+    pub fn node_indices_for_constraints(
+        &self,
+        network: &pywr_core::network::Network,
+    ) -> Result<Vec<pywr_core::node::NodeIndex>, SchemaError> {
+        // This gets the indices of all the link nodes
+        // There's currently no way to isolate the flows to the individual splits
+        // Therefore, the only metrics are gross inflow and outflow
+        let mut indices = vec![
+            network.get_node_index_by_name(self.meta.name.as_str(), Self::mrf_sub_name())?,
+            network.get_node_index_by_name(self.meta.name.as_str(), Self::bypass_sub_name())?,
+        ];
+
+        let split_idx: Vec<NodeIndex> = self
+            .splits
+            .iter()
+            .enumerate()
+            .map(|(i, _)| network.get_node_index_by_name(self.meta.name.as_str(), Self::split_sub_name(i).as_deref()))
+            .collect::<Result<_, _>>()?;
+
+        indices.extend(split_idx);
+        Ok(indices)
+    }
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
         // TODO do this properly
         network.add_link_node(self.meta.name.as_str(), Self::mrf_sub_name())?;
@@ -117,7 +140,7 @@ impl RiverSplitWithGaugeNode {
             network.add_aggregated_node(
                 self.meta.name.as_str(),
                 Self::split_agg_sub_name(i).as_deref(),
-                &[bypass_idx, split_idx],
+                &[vec![bypass_idx], vec![split_idx]],
                 None,
             )?;
         }
@@ -143,11 +166,11 @@ impl RiverSplitWithGaugeNode {
 
         for (i, (factor, _)) in self.splits.iter().enumerate() {
             // Set the factors for each split
-            let factors = Factors::Proportion(vec![factor.load(network, args)?]);
-            network.set_aggregated_node_factors(
+            let r = Relationship::new_proportion_factors(&[factor.load(network, args)?]);
+            network.set_aggregated_node_relationship(
                 self.meta.name.as_str(),
                 Self::split_agg_sub_name(i).as_deref(),
-                Some(factors),
+                Some(r),
             )?;
         }
 

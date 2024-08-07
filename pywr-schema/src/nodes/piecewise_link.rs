@@ -77,6 +77,18 @@ impl PiecewiseLinkNode {
 
 #[cfg(feature = "core")]
 impl PiecewiseLinkNode {
+    pub fn node_indices_for_constraints(
+        &self,
+        network: &pywr_core::network::Network,
+    ) -> Result<Vec<pywr_core::node::NodeIndex>, SchemaError> {
+        let indices = self
+            .steps
+            .iter()
+            .enumerate()
+            .map(|(i, _)| network.get_node_index_by_name(self.meta.name.as_str(), Self::step_sub_name(i).as_deref()))
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(indices)
+    }
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
         // create a link node for each step
         for (i, _) in self.steps.iter().enumerate() {

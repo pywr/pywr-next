@@ -98,6 +98,14 @@ impl TurbineNode {
     fn sub_name() -> Option<&'static str> {
         Some("turbine")
     }
+
+    pub fn node_indices_for_constraints(
+        &self,
+        network: &pywr_core::network::Network,
+    ) -> Result<Vec<pywr_core::node::NodeIndex>, SchemaError> {
+        let idx = network.get_node_index_by_name(self.meta.name.as_str(), None)?;
+        Ok(vec![idx])
+    }
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network, _args: &LoadArgs) -> Result<(), SchemaError> {
         network.add_link_node(self.meta.name.as_str(), None)?;
         Ok(())
