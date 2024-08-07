@@ -1,9 +1,11 @@
 #[cfg(feature = "core")]
 mod align_and_resample;
+mod pandas;
 mod polars_dataset;
 
 use self::polars_dataset::PolarsDataset;
 use crate::parameters::{ParameterMeta, TimeseriesV1Data, TimeseriesV1Source};
+use crate::timeseries::pandas::PandasDataset;
 use crate::visit::VisitPaths;
 use crate::ConversionError;
 #[cfg(feature = "core")]
@@ -57,7 +59,7 @@ pub enum TimeseriesError {
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
 #[serde(tag = "type")]
 enum TimeseriesProvider {
-    Pandas,
+    Pandas(PandasDataset),
     Polars(PolarsDataset),
 }
 
@@ -73,7 +75,7 @@ impl Timeseries {
     pub fn load(&self, domain: &ModelDomain, data_path: Option<&Path>) -> Result<DataFrame, TimeseriesError> {
         match &self.provider {
             TimeseriesProvider::Polars(dataset) => dataset.load(self.meta.name.as_str(), data_path, domain),
-            TimeseriesProvider::Pandas => todo!(),
+            TimeseriesProvider::Pandas(dataset) => dataset.load(self.meta.name.as_str(), data_path, domain),
         }
     }
 
@@ -86,14 +88,14 @@ impl VisitPaths for Timeseries {
     fn visit_paths<F: FnMut(&Path)>(&self, visitor: &mut F) {
         match &self.provider {
             TimeseriesProvider::Polars(dataset) => dataset.visit_paths(visitor),
-            TimeseriesProvider::Pandas => todo!(),
+            TimeseriesProvider::Pandas(dataset) => dataset.visit_paths(visitor),
         }
     }
 
     fn visit_paths_mut<F: FnMut(&mut PathBuf)>(&mut self, visitor: &mut F) {
         match &mut self.provider {
             TimeseriesProvider::Polars(dataset) => dataset.visit_paths_mut(visitor),
-            TimeseriesProvider::Pandas => todo!(),
+            TimeseriesProvider::Pandas(dataset) => dataset.visit_paths_mut(visitor),
         }
     }
 }
@@ -298,6 +300,33 @@ mod tests {
         let model_dir = PathBuf::from(cargo_manifest_dir).join("src/test_models");
 
         let data = model_str();
+        let schema: PywrModel = serde_json::from_str(data).unwrap();
+        let mut model = schema.build_model(Some(model_dir.as_path()), None).unwrap();
+
+        let expected = Array::from_shape_fn((365, 1), |(x, _)| {
+            let month_day = NaiveDate::from_yo_opt(2021, (x + 1) as u32).unwrap().day() as f64;
+            month_day + month_day * 0.5
+        });
+
+        let idx = model.network().get_node_by_name("output1", None).unwrap().index();
+
+        let recorder = AssertionRecorder::new("output-flow", MetricF64::NodeInFlow(idx), expected.clone(), None, None);
+        model.network_mut().add_recorder(Box::new(recorder)).unwrap();
+
+        run_all_solvers(&model, &[], &[])
+    }
+
+    fn model_pandas_str() -> &'static str {
+        include_str!("../test_models/timeseries_pandas.json")
+    }
+
+    #[test]
+    fn test_timeseries_pandas() {
+        let cargo_manifest_dir = env!("CARGO_MANIFEST_DIR");
+
+        let model_dir = PathBuf::from(cargo_manifest_dir).join("src/test_models");
+
+        let data = model_pandas_str();
         let schema: PywrModel = serde_json::from_str(data).unwrap();
         let mut model = schema.build_model(Some(model_dir.as_path()), None).unwrap();
 

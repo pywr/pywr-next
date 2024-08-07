@@ -44,6 +44,8 @@ pub use super::parameters::profiles::{
     DailyProfileParameter, MonthlyProfileParameter, RadialBasisFunction, RbfProfileParameter,
     RbfProfileVariableSettings, UniformDrawdownProfileParameter, WeeklyProfileParameter,
 };
+#[cfg(feature = "core")]
+pub use super::parameters::python::try_json_value_into_py;
 pub use super::parameters::python::{PythonModule, PythonParameter, PythonReturnType};
 pub use super::parameters::tables::TablesArrayParameter;
 pub use super::parameters::thresholds::ParameterThresholdParameter;
