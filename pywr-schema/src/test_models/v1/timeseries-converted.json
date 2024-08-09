@@ -104,10 +104,13 @@
       {
         "name": "inflow",
         "provider": {
-          "type": "Polars",
-          "infer_schema_length": null,
+          "type": "Pandas",
           "time_col": null,
-          "url": "inflow.csv"
+          "url": "inflow.csv",
+          "kwargs": {
+            "parse_dates": true,
+            "dayfirst": true
+          }
         }
       }
     ],

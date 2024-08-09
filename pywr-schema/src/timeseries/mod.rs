@@ -44,7 +44,8 @@ pub enum TimeseriesError {
     DataFrameTimestepMismatch(String),
     #[error("A timeseries dataframe with the name '{0}' already exists.")]
     TimeseriesDataframeAlreadyExists(String),
-    #[error("The timeseries dataset '{0}' has more than one column of data so a column or scenario name must be provided for any reference")]
+    #[error("The timeseries dataset '{0}' has more than one column of data so a column or scenario name must be provided for any reference"
+    )]
     TimeseriesColumnOrScenarioRequired(String),
     #[error("The timeseries dataset '{0}' has no columns")]
     TimeseriesDataframeHasNoColumns(String),
@@ -241,13 +242,13 @@ pub fn convert_from_v1_data(
                 }
 
                 let time_col = None;
-                let provider = PolarsDataset::new(time_col, table.url.clone(), None);
+                let provider = PandasDataset::new(time_col, table.url.clone(), Some(data.pandas_kwargs));
 
                 ts.insert(
                     name.clone(),
                     Timeseries {
                         meta: ParameterMeta { name, comment: None },
-                        provider: TimeseriesProvider::Polars(provider),
+                        provider: TimeseriesProvider::Pandas(provider),
                     },
                 );
             }
@@ -265,13 +266,13 @@ pub fn convert_from_v1_data(
                     continue;
                 }
 
-                let provider = PolarsDataset::new(data.time_col, url, None);
+                let provider = PandasDataset::new(data.time_col, url, Some(data.pandas_kwargs));
 
                 ts.insert(
                     name.clone(),
                     Timeseries {
                         meta: ParameterMeta { name, comment: None },
-                        provider: TimeseriesProvider::Polars(provider),
+                        provider: TimeseriesProvider::Pandas(provider),
                     },
                 );
             }

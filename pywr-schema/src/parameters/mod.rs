@@ -69,6 +69,7 @@ use pywr_v1_schema::parameters::{
     TableIndexEntry as TableIndexEntryV1,
 };
 use schemars::JsonSchema;
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use strum_macros::{Display, EnumDiscriminants, EnumString, IntoStaticStr, VariantNames};
 
@@ -471,6 +472,7 @@ pub struct TimeseriesV1Data {
     pub time_col: Option<String>,
     pub column: Option<String>,
     pub scenario: Option<String>,
+    pub pandas_kwargs: HashMap<String, serde_json::Value>,
 }
 
 impl From<DataFrameParameterV1> for TimeseriesV1Data {
@@ -484,7 +486,10 @@ impl From<DataFrameParameterV1> for TimeseriesV1Data {
         };
 
         let name = p.meta.and_then(|m| m.name);
-        let time_col = match p.pandas_kwargs.get("index_col") {
+
+        let mut pandas_kwargs = p.pandas_kwargs;
+
+        let time_col = match pandas_kwargs.remove("index_col") {
             Some(v) => v.as_str().map(|s| s.to_string()),
             None => None,
         };
@@ -495,6 +500,7 @@ impl From<DataFrameParameterV1> for TimeseriesV1Data {
             time_col,
             column: p.column,
             scenario: p.scenario,
+            pandas_kwargs,
         }
     }
 }

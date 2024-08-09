@@ -27,6 +27,12 @@ impl VisitPaths for PandasDataset {
     }
 }
 
+impl PandasDataset {
+    pub fn new(time_col: Option<String>, url: PathBuf, kwargs: Option<HashMap<String, Value>>) -> Self {
+        Self { time_col, url, kwargs }
+    }
+}
+
 #[cfg(feature = "core")]
 mod core {
     const PANDAS_LOAD_SCRIPT: &str = include_str!("pandas_load.py");
