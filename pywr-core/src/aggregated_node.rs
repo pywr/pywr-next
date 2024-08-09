@@ -576,7 +576,7 @@ mod tests {
         network.connect_nodes(input_node, link_node1).unwrap();
         network.connect_nodes(link_node1, output_node1).unwrap();
 
-        let factor_profile = MonthlyProfileParameter::new("factor-profile", [2.0; 12], None);
+        let factor_profile = MonthlyProfileParameter::new("factor-profile".into(), [2.0; 12], None);
         let factor_profile_idx = network.add_simple_parameter(Box::new(factor_profile)).unwrap();
 
         let factors = Some(Factors::Ratio(vec![factor_profile_idx.into(), 1.0.into()]));

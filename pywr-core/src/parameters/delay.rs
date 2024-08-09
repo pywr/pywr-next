@@ -1,7 +1,8 @@
 use crate::metric::{MetricF64, SimpleMetricF64};
 use crate::network::Network;
 use crate::parameters::{
-    downcast_internal_state_mut, GeneralParameter, Parameter, ParameterMeta, ParameterState, SimpleParameter,
+    downcast_internal_state_mut, GeneralParameter, Parameter, ParameterMeta, ParameterName, ParameterState,
+    SimpleParameter,
 };
 use crate::scenario::ScenarioIndex;
 use crate::state::{SimpleParameterValues, State};
@@ -17,7 +18,7 @@ pub struct DelayParameter<M> {
 }
 
 impl<M> DelayParameter<M> {
-    pub fn new(name: &str, metric: M, delay: usize, initial_value: f64) -> Self {
+    pub fn new(name: ParameterName, metric: M, delay: usize, initial_value: f64) -> Self {
         Self {
             meta: ParameterMeta::new(name),
             metric,
@@ -173,13 +174,13 @@ mod test {
 
         // Create an artificial volume series to use for the delay test
         let volumes = Array1::linspace(1.0, 0.0, 21);
-        let volume = Array1Parameter::new("test-x", volumes.clone(), None);
+        let volume = Array1Parameter::new("test-x".into(), volumes.clone(), None);
 
         let volume_idx = model.network_mut().add_parameter(Box::new(volume)).unwrap();
 
         const DELAY: usize = 3; // 3 time-step delay
         let parameter = DelayParameter::new(
-            "test-parameter",
+            "test-parameter".into(),
             volume_idx.into(), // Interpolate with the parameter based values
             DELAY,
             0.0,

@@ -1,6 +1,8 @@
 use crate::metric::MetricF64;
 use crate::network::Network;
-use crate::parameters::{downcast_internal_state_mut, GeneralParameter, Parameter, ParameterMeta, ParameterState};
+use crate::parameters::{
+    downcast_internal_state_mut, GeneralParameter, Parameter, ParameterMeta, ParameterName, ParameterState,
+};
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
 use crate::timestep::Timestep;
@@ -39,7 +41,13 @@ pub struct ThresholdParameter {
 }
 
 impl ThresholdParameter {
-    pub fn new(name: &str, metric: MetricF64, threshold: MetricF64, predicate: Predicate, ratchet: bool) -> Self {
+    pub fn new(
+        name: ParameterName,
+        metric: MetricF64,
+        threshold: MetricF64,
+        predicate: Predicate,
+        ratchet: bool,
+    ) -> Self {
         Self {
             meta: ParameterMeta::new(name),
             metric,

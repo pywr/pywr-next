@@ -1,4 +1,4 @@
-use super::{GeneralParameter, Parameter, ParameterMeta, ParameterState, PywrError, Timestep};
+use super::{GeneralParameter, Parameter, ParameterMeta, ParameterName, ParameterState, PywrError, Timestep};
 use crate::metric::{MetricF64, MetricUsize};
 use crate::network::Network;
 use crate::parameters::downcast_internal_state_mut;
@@ -24,7 +24,7 @@ struct Internal {
 
 impl RhaiParameter {
     pub fn new(
-        name: &str,
+        name: ParameterName,
         script: &str,
         initial_state: Map,
         metrics: &HashMap<String, MetricF64>,
@@ -149,7 +149,7 @@ mod tests {
         let initial_state = rhai::Map::new();
 
         let param = RhaiParameter::new(
-            "my-counter",
+            "my-counter".into(),
             script,
             initial_state,
             &Default::default(),

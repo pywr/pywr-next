@@ -74,7 +74,7 @@ impl ParameterThresholdParameter {
         let threshold = self.threshold.load(network, args)?;
 
         let p = pywr_core::parameters::ThresholdParameter::new(
-            &self.meta.name,
+            self.meta.name.as_str().into(),
             metric,
             threshold,
             self.predicate.into(),

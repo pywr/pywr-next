@@ -28,7 +28,11 @@ impl DiscountFactorParameter {
         args: &LoadArgs,
     ) -> Result<ParameterIndex<f64>, SchemaError> {
         let discount_rate = self.discount_rate.load(network, args)?;
-        let p = pywr_core::parameters::DiscountFactorParameter::new(&self.meta.name, discount_rate, self.base_year);
+        let p = pywr_core::parameters::DiscountFactorParameter::new(
+            self.meta.name.as_str().into(),
+            discount_rate,
+            self.base_year,
+        );
         Ok(network.add_parameter(Box::new(p))?)
     }
 }

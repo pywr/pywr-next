@@ -1,4 +1,4 @@
-use super::{Parameter, ParameterState, PywrError, SimpleParameter};
+use super::{Parameter, ParameterName, ParameterState, PywrError, SimpleParameter};
 use crate::metric::{MetricF64, SimpleMetricF64};
 use crate::network::Network;
 use crate::parameters::{GeneralParameter, ParameterMeta};
@@ -41,7 +41,7 @@ impl<M> AggregatedParameter<M>
 where
     M: Send + Sync + Clone,
 {
-    pub fn new(name: &str, metrics: &[M], agg_func: AggFunc) -> Self {
+    pub fn new(name: ParameterName, metrics: &[M], agg_func: AggFunc) -> Self {
         Self {
             meta: ParameterMeta::new(name),
             metrics: metrics.to_vec(),

@@ -60,7 +60,7 @@ impl InterpolatedParameter {
         let points = xp.into_iter().zip(fp).collect::<Vec<_>>();
 
         let p = pywr_core::parameters::InterpolatedParameter::new(
-            &self.meta.name,
+            self.meta.name.as_str().into(),
             x,
             points,
             self.error_on_bounds.unwrap_or(true),

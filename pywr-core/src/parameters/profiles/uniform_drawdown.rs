@@ -1,4 +1,4 @@
-use crate::parameters::{Parameter, ParameterMeta, ParameterState, SimpleParameter};
+use crate::parameters::{Parameter, ParameterMeta, ParameterName, ParameterState, SimpleParameter};
 use crate::scenario::ScenarioIndex;
 use crate::state::SimpleParameterValues;
 use crate::timestep::Timestep;
@@ -16,7 +16,7 @@ pub struct UniformDrawdownProfileParameter {
 }
 
 impl UniformDrawdownProfileParameter {
-    pub fn new(name: &str, reset_day: u32, reset_month: u32, residual_days: u8) -> Self {
+    pub fn new(name: ParameterName, reset_day: u32, reset_month: u32, residual_days: u8) -> Self {
         // Calculate the reset day of year in a known leap year.
         let reset_doy = NaiveDate::from_ymd_opt(2016, reset_month, reset_day)
             .expect("Invalid reset day")

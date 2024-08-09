@@ -17,7 +17,7 @@ use polars::prelude::{DataFrame, DataType::Float64, Float64Type, IndexOrder};
 #[cfg(feature = "core")]
 use pywr_core::{
     models::ModelDomain,
-    parameters::{Array1Parameter, Array2Parameter, ParameterIndex},
+    parameters::{Array1Parameter, Array2Parameter, ParameterIndex, ParameterName},
     PywrError,
 };
 use pywr_v1_schema::tables::TableVec;
@@ -140,13 +140,13 @@ impl LoadedTimeseriesCollection {
         let series = df.column(col)?;
 
         let array = series.cast(&Float64)?.f64()?.to_ndarray()?.to_owned();
-        let name = format!("{}_{}", name, col);
+        let name = ParameterName::new(col, Some(name));
 
         match network.get_parameter_index_by_name(&name) {
             Ok(idx) => Ok(idx),
             Err(e) => match e {
                 PywrError::ParameterNotFound(_) => {
-                    let p = Array1Parameter::new(&name, array, None);
+                    let p = Array1Parameter::new(name, array, None);
                     Ok(network.add_parameter(Box::new(p))?)
                 }
                 _ => Err(TimeseriesError::PywrCore(e)),
@@ -178,13 +178,13 @@ impl LoadedTimeseriesCollection {
         let series = df.column(col)?;
 
         let array = series.cast(&Float64)?.f64()?.to_ndarray()?.to_owned();
-        let name = format!("{}_{}", name, col);
+        let name = ParameterName::new(col, Some(name));
 
         match network.get_parameter_index_by_name(&name) {
             Ok(idx) => Ok(idx),
             Err(e) => match e {
                 PywrError::ParameterNotFound(_) => {
-                    let p = Array1Parameter::new(&name, array, None);
+                    let p = Array1Parameter::new(name, array, None);
                     Ok(network.add_parameter(Box::new(p))?)
                 }
                 _ => Err(TimeseriesError::PywrCore(e)),
@@ -210,13 +210,13 @@ impl LoadedTimeseriesCollection {
             .ok_or(TimeseriesError::TimeseriesNotFound(name.to_string()))?;
 
         let array: Array2<f64> = df.to_ndarray::<Float64Type>(IndexOrder::default()).unwrap();
-        let name = format!("timeseries.{}_{}", name, scenario);
+        let name = ParameterName::new(scenario, Some(name));
 
         match network.get_parameter_index_by_name(&name) {
             Ok(idx) => Ok(idx),
             Err(e) => match e {
                 PywrError::ParameterNotFound(_) => {
-                    let p = Array2Parameter::new(&name, array, scenario_group_index, None);
+                    let p = Array2Parameter::new(name, array, scenario_group_index, None);
                     Ok(network.add_parameter(Box::new(p))?)
                 }
                 _ => Err(TimeseriesError::PywrCore(e)),
