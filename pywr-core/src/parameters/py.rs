@@ -17,7 +17,6 @@ pub struct PyParameter {
     indices: HashMap<String, MetricUsize>,
 }
 
-#[derive(Clone)]
 struct Internal {
     user_obj: PyObject,
 }

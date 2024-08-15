@@ -144,7 +144,6 @@ enum ComponentType {
     DerivedMetric(DerivedMetricIndex),
 }
 
-#[derive(Clone)]
 /// Internal states for each scenario and recorder.
 pub struct NetworkState {
     // State by scenario
