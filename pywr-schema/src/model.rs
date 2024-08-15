@@ -491,7 +491,8 @@ impl PywrNetwork {
 
                 if failed_parameters.len() == n {
                     // Could not load any parameters; must be a circular reference
-                    return Err(SchemaError::CircularParameterReference);
+                    let failed_names = failed_parameters.iter().map(|p| p.name().to_string()).collect();
+                    return Err(SchemaError::CircularParameterReference(failed_names));
                 }
 
                 remaining_parameters = failed_parameters;
