@@ -98,6 +98,7 @@ impl Schema {
     }
 
     /// Build the schema in to a Pywr model.
+    #[pyo3(signature = (data_path=None, output_path=None))]
     fn build(&mut self, data_path: Option<PathBuf>, output_path: Option<PathBuf>) -> PyResult<Model> {
         let model = self.schema.build_model(data_path.as_deref(), output_path.as_deref())?;
         Ok(Model { model })
@@ -154,6 +155,7 @@ pub struct Model {
 
 #[pymethods]
 impl Model {
+    #[pyo3(signature = (solver_name, solver_kwargs=None))]
     fn run(&self, solver_name: &str, solver_kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<()> {
         match solver_name {
             "clp" => {
