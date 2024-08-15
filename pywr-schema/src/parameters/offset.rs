@@ -48,7 +48,11 @@ impl OffsetParameter {
     ) -> Result<ParameterIndex<f64>, SchemaError> {
         let idx = self.metric.load(network, args)?;
 
-        let p = pywr_core::parameters::OffsetParameter::new(&self.meta.name, idx, self.offset.load(args.tables)?);
+        let p = pywr_core::parameters::OffsetParameter::new(
+            self.meta.name.as_str().into(),
+            idx,
+            self.offset.load(args.tables)?,
+        );
         Ok(network.add_parameter(Box::new(p))?)
     }
 }

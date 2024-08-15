@@ -23,6 +23,7 @@ use float_cmp::{approx_eq, F64Margin};
 use ndarray::{Array, Array2};
 use rand::Rng;
 use rand_distr::{Distribution, Normal};
+use std::path::PathBuf;
 
 pub fn default_timestepper() -> Timestepper {
     let start = NaiveDate::from_ymd_opt(2020, 1, 1)
@@ -61,7 +62,7 @@ pub fn simple_network(network: &mut Network, inflow_scenario_index: usize, num_i
     network.connect_nodes(link_node, output_node).unwrap();
 
     let inflow = Array::from_shape_fn((366, num_inflow_scenarios), |(i, j)| 1.0 + i as f64 + j as f64);
-    let inflow = Array2Parameter::new("inflow", inflow, inflow_scenario_index, None);
+    let inflow = Array2Parameter::new("inflow".into(), inflow, inflow_scenario_index, None);
 
     let inflow = network.add_parameter(Box::new(inflow)).unwrap();
 
@@ -70,17 +71,17 @@ pub fn simple_network(network: &mut Network, inflow_scenario_index: usize, num_i
 
     let base_demand = 10.0;
 
-    let demand_factor = ConstantParameter::new("demand-factor", 1.2);
+    let demand_factor = ConstantParameter::new("demand-factor".into(), 1.2);
     let demand_factor = network.add_const_parameter(Box::new(demand_factor)).unwrap();
 
     let total_demand: AggregatedParameter<MetricF64> = AggregatedParameter::new(
-        "total-demand",
+        "total-demand".into(),
         &[base_demand.into(), demand_factor.into()],
         AggFunc::Product,
     );
     let total_demand = network.add_parameter(Box::new(total_demand)).unwrap();
 
-    let demand_cost = ConstantParameter::new("demand-cost", -10.0);
+    let demand_cost = ConstantParameter::new("demand-cost".into(), -10.0);
     let demand_cost = network.add_const_parameter(Box::new(demand_cost)).unwrap();
 
     let output_node = network.get_mut_node_by_name("output", None).unwrap();
@@ -123,10 +124,10 @@ pub fn simple_storage_model() -> Model {
 
     // Apply demand to the model
     // TODO convenience function for adding a constant constraint.
-    let demand = ConstantParameter::new("demand", 10.0);
+    let demand = ConstantParameter::new("demand".into(), 10.0);
     let demand = network.add_const_parameter(Box::new(demand)).unwrap();
 
-    let demand_cost = ConstantParameter::new("demand-cost", -10.0);
+    let demand_cost = ConstantParameter::new("demand-cost".into(), -10.0);
     let demand_cost = network.add_const_parameter(Box::new(demand_cost)).unwrap();
 
     let output_node = network.get_mut_node_by_name("output", None).unwrap();
@@ -163,21 +164,49 @@ pub fn run_and_assert_parameter(
     let rec = AssertionRecorder::new("assert", p_idx.into(), expected_values, ulps, epsilon);
 
     model.network_mut().add_recorder(Box::new(rec)).unwrap();
-    run_all_solvers(model, &[])
+    run_all_solvers(model, &[], &[])
+}
+
+/// A struct to hold the expected outputs for a test.
+pub struct ExpectedOutputs {
+    actual_path: PathBuf,
+    expected_str: &'static str,
+}
+
+impl ExpectedOutputs {
+    pub fn new(actual_path: PathBuf, expected_str: &'static str) -> Self {
+        Self {
+            actual_path,
+            expected_str,
+        }
+    }
+
+    fn verify(&self) {
+        assert!(self.actual_path.exists());
+        let actual_str = std::fs::read_to_string(&self.actual_path).unwrap();
+        assert_eq!(actual_str, self.expected_str);
+    }
 }
 
 /// Run a model using each of the in-built solvers.
 ///
 /// The model will only be run if the solver has the required solver features (and
 /// is also enabled as a Cargo feature).
-pub fn run_all_solvers(model: &Model, solvers_without_features: &[&str]) {
-    check_features_and_run::<ClpSolver>(model, !solvers_without_features.contains(&"clp"));
+pub fn run_all_solvers(model: &Model, solvers_without_features: &[&str], expected_outputs: &[ExpectedOutputs]) {
+    println!("Running CLP");
+    check_features_and_run::<ClpSolver>(model, !solvers_without_features.contains(&"clp"), expected_outputs);
 
     #[cfg(feature = "cbc")]
-    check_features_and_run::<CbcSolver>(model, !solvers_without_features.contains(&"cbc"));
+    {
+        println!("Running CBC");
+        check_features_and_run::<CbcSolver>(model, !solvers_without_features.contains(&"cbc"), expected_outputs);
+    }
 
     #[cfg(feature = "highs")]
-    check_features_and_run::<HighsSolver>(model, !solvers_without_features.contains(&"highs"));
+    {
+        println!("Running Highs");
+        check_features_and_run::<HighsSolver>(model, !solvers_without_features.contains(&"highs"), expected_outputs);
+    }
 
     #[cfg(feature = "ipm-simd")]
     {
@@ -199,7 +228,7 @@ pub fn run_all_solvers(model: &Model, solvers_without_features: &[&str]) {
 }
 
 /// Check features and
-fn check_features_and_run<S>(model: &Model, expect_features: bool)
+fn check_features_and_run<S>(model: &Model, expect_features: bool, expected_outputs: &[ExpectedOutputs])
 where
     S: Solver,
     <S as Solver>::Settings: SolverSettings + Default,
@@ -214,6 +243,11 @@ where
         model
             .run::<S>(&Default::default())
             .unwrap_or_else(|_| panic!("Failed to solve with: {}", S::name()));
+
+        // Verify any expected outputs
+        for expected_output in expected_outputs {
+            expected_output.verify();
+        }
     } else {
         assert!(
             !has_features,
@@ -246,7 +280,12 @@ fn make_simple_system<R: Rng>(
     for x in inflow.iter_mut() {
         *x = inflow_distr.sample(rng).max(0.0);
     }
-    let inflow = Array2Parameter::new(&format!("inflow-{suffix}"), inflow, inflow_scenario_group_index, None);
+    let inflow = Array2Parameter::new(
+        format!("inflow-{suffix}").as_str().into(),
+        inflow,
+        inflow_scenario_group_index,
+        None,
+    );
     let idx = network.add_parameter(Box::new(inflow))?;
 
     network.set_node_max_flow("input", Some(suffix), Some(idx.into()))?;

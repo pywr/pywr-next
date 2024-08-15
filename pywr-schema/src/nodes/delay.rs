@@ -6,7 +6,7 @@ use crate::model::LoadArgs;
 use crate::nodes::{NodeAttribute, NodeMeta};
 use crate::parameters::ConstantValue;
 #[cfg(feature = "core")]
-use pywr_core::metric::MetricF64;
+use pywr_core::{metric::MetricF64, parameters::ParameterName};
 use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::nodes::DelayNode as DelayNodeV1;
 use schemars::JsonSchema;
@@ -78,16 +78,12 @@ impl DelayNode {
         network: &mut pywr_core::network::Network,
         args: &LoadArgs,
     ) -> Result<(), SchemaError> {
-        // Create the delay parameter
-        let name = format!("{}-delay", self.meta.name.as_str());
+        // Create the delay parameter using the node's name as the parent identifier
+        let name = ParameterName::new("delay", Some(self.meta.name.as_str()));
         let output_idx = network.get_node_index_by_name(self.meta.name.as_str(), Self::output_sub_name())?;
         let metric = MetricF64::NodeInFlow(output_idx);
-        let p = pywr_core::parameters::DelayParameter::new(
-            &name,
-            metric,
-            self.delay,
-            self.initial_value.load(args.tables)?,
-        );
+        let p =
+            pywr_core::parameters::DelayParameter::new(name, metric, self.delay, self.initial_value.load(args.tables)?);
         let delay_idx = network.add_parameter(Box::new(p))?;
 
         // Apply it as a constraint on the input node.
@@ -197,6 +193,6 @@ mod tests {
         network.add_recorder(Box::new(recorder)).unwrap();
 
         // Test all solvers
-        run_all_solvers(&model, &[]);
+        run_all_solvers(&model, &[], &[]);
     }
 }

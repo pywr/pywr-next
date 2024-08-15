@@ -166,7 +166,10 @@ impl ConstantParameter {
         network: &mut pywr_core::network::Network,
         args: &LoadArgs,
     ) -> Result<ParameterIndex<f64>, SchemaError> {
-        let p = pywr_core::parameters::ConstantParameter::new(&self.meta.name, self.value.load(args.tables)?);
+        let p = pywr_core::parameters::ConstantParameter::new(
+            self.meta.name.as_str().into(),
+            self.value.load(args.tables)?,
+        );
         Ok(network.add_const_parameter(Box::new(p))?)
     }
 }
@@ -213,7 +216,7 @@ impl MaxParameter {
         let idx = self.parameter.load(network, args)?;
         let threshold = self.threshold.unwrap_or(0.0);
 
-        let p = pywr_core::parameters::MaxParameter::new(&self.meta.name, idx, threshold);
+        let p = pywr_core::parameters::MaxParameter::new(self.meta.name.as_str().into(), idx, threshold);
         Ok(network.add_parameter(Box::new(p))?)
     }
 }
@@ -269,7 +272,7 @@ impl DivisionParameter {
         let n = self.numerator.load(network, args)?;
         let d = self.denominator.load(network, args)?;
 
-        let p = pywr_core::parameters::DivisionParameter::new(&self.meta.name, n, d);
+        let p = pywr_core::parameters::DivisionParameter::new(self.meta.name.as_str().into(), n, d);
         Ok(network.add_parameter(Box::new(p))?)
     }
 }
@@ -326,7 +329,7 @@ impl MinParameter {
         let idx = self.parameter.load(network, args)?;
         let threshold = self.threshold.unwrap_or(0.0);
 
-        let p = pywr_core::parameters::MinParameter::new(&self.meta.name, idx, threshold);
+        let p = pywr_core::parameters::MinParameter::new(self.meta.name.as_str().into(), idx, threshold);
         Ok(network.add_parameter(Box::new(p))?)
     }
 }
@@ -368,7 +371,7 @@ impl NegativeParameter {
     ) -> Result<ParameterIndex<f64>, SchemaError> {
         let idx = self.parameter.load(network, args)?;
 
-        let p = pywr_core::parameters::NegativeParameter::new(&self.meta.name, idx);
+        let p = pywr_core::parameters::NegativeParameter::new(self.meta.name.as_str().into(), idx);
         Ok(network.add_parameter(Box::new(p))?)
     }
 }
@@ -422,7 +425,7 @@ impl NegativeMaxParameter {
         let idx = self.metric.load(network, args)?;
         let threshold = self.threshold.unwrap_or(0.0);
 
-        let p = pywr_core::parameters::NegativeMaxParameter::new(&self.meta.name, idx, threshold);
+        let p = pywr_core::parameters::NegativeMaxParameter::new(self.meta.name.as_str().into(), idx, threshold);
         Ok(network.add_parameter(Box::new(p))?)
     }
 }
@@ -478,7 +481,7 @@ impl NegativeMinParameter {
         let idx = self.metric.load(network, args)?;
         let threshold = self.threshold.unwrap_or(0.0);
 
-        let p = pywr_core::parameters::NegativeMinParameter::new(&self.meta.name, idx, threshold);
+        let p = pywr_core::parameters::NegativeMinParameter::new(self.meta.name.as_str().into(), idx, threshold);
         Ok(network.add_parameter(Box::new(p))?)
     }
 }

@@ -3,11 +3,11 @@ mod settings;
 use crate::network::Network;
 use crate::solvers::builder::{BuiltSolver, SolverBuilder};
 use crate::solvers::{Solver, SolverFeatures, SolverTimings};
-use crate::state::State;
+use crate::state::{ConstParameterValues, State};
 use crate::timestep::Timestep;
 use crate::PywrError;
 use highs_sys::{
-    HighsInt, Highs_addCols, Highs_addRows, Highs_changeColsCostByRange, Highs_changeObjectiveSense,
+    HighsInt, Highs_addCols, Highs_addRows, Highs_changeCoeff, Highs_changeColsCostByRange, Highs_changeObjectiveSense,
     Highs_changeRowsBoundsByMask, Highs_create, Highs_getDoubleInfoValue, Highs_getSolution, Highs_run,
     Highs_setBoolOptionValue, Highs_setStringOptionValue, OBJECTIVE_SENSE_MINIMIZE, STATUS_OK,
 };
@@ -111,6 +111,13 @@ impl Highs {
         }
     }
 
+    pub fn change_coeff(&mut self, row: HighsInt, col: HighsInt, value: f64) {
+        unsafe {
+            let ret = Highs_changeCoeff(self.ptr, row, col, value);
+            assert_eq!(ret, STATUS_OK);
+        }
+    }
+
     pub fn run(&mut self) {
         unsafe {
             let status = Highs_run(self.ptr);
@@ -166,12 +173,21 @@ impl Solver for HighsSolver {
     }
 
     fn features() -> &'static [SolverFeatures] {
-        &[]
+        &[
+            SolverFeatures::AggregatedNode,
+            SolverFeatures::AggregatedNodeFactors,
+            SolverFeatures::AggregatedNodeDynamicFactors,
+            SolverFeatures::VirtualStorage,
+        ]
     }
 
-    fn setup(network: &Network, _settings: &Self::Settings) -> Result<Box<Self>, PywrError> {
+    fn setup(
+        network: &Network,
+        values: &ConstParameterValues,
+        _settings: &Self::Settings,
+    ) -> Result<Box<Self>, PywrError> {
         let builder: SolverBuilder<HighsInt> = SolverBuilder::default();
-        let built = builder.create(network)?;
+        let built = builder.create(network, values)?;
 
         let num_cols = built.num_cols();
         let num_nz = built.num_non_zero();
@@ -212,6 +228,11 @@ impl Solver for HighsSolver {
             self.builder.row_lower(),
             self.builder.row_upper(),
         );
+
+        for (row, column, coefficient) in self.builder.coefficients_to_update() {
+            self.highs.change_coeff(*row, *column, *coefficient);
+        }
+
         timings.update_constraints += now.elapsed();
 
         let now = Instant::now();

@@ -33,8 +33,8 @@ pub use super::parameters::control_curves::{
     ControlCurvePiecewiseInterpolatedParameter,
 };
 pub use super::parameters::core::{
-    ActivationFunction, ConstantParameter, MaxParameter, MinParameter, NegativeMaxParameter, NegativeMinParameter,
-    NegativeParameter, VariableSettings,
+    ActivationFunction, ConstantParameter, DivisionParameter, MaxParameter, MinParameter, NegativeMaxParameter,
+    NegativeMinParameter, NegativeParameter, VariableSettings,
 };
 pub use super::parameters::delay::DelayParameter;
 pub use super::parameters::discount_factor::DiscountFactorParameter;
@@ -53,7 +53,6 @@ use crate::error::SchemaError;
 use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
-use crate::parameters::core::DivisionParameter;
 pub use crate::parameters::hydropower::HydropowerTargetParameter;
 use crate::parameters::interpolated::InterpolatedParameter;
 use crate::visit::{VisitMetrics, VisitPaths};
@@ -772,7 +771,7 @@ impl ParameterIndexValue {
         match self {
             Self::Reference(name) => {
                 // This should be an existing parameter
-                Ok(network.get_index_parameter_index_by_name(name)?)
+                Ok(network.get_index_parameter_index_by_name(&name.as_str().into())?)
             }
             Self::Inline(parameter) => {
                 // Inline parameter needs to be added

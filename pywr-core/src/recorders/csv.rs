@@ -8,6 +8,7 @@ use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 use std::any::Any;
 use std::fs::File;
+use std::num::NonZeroU32;
 use std::ops::Deref;
 use std::path::PathBuf;
 
@@ -205,14 +206,21 @@ pub struct CsvLongFmtOutput {
     meta: RecorderMeta,
     filename: PathBuf,
     metric_set_indices: Vec<MetricSetIndex>,
+    decimal_places: Option<NonZeroU32>,
 }
 
 impl CsvLongFmtOutput {
-    pub fn new<P: Into<PathBuf>>(name: &str, filename: P, metric_set_indices: &[MetricSetIndex]) -> Self {
+    pub fn new<P: Into<PathBuf>>(
+        name: &str,
+        filename: P,
+        metric_set_indices: &[MetricSetIndex],
+        decimal_places: Option<NonZeroU32>,
+    ) -> Self {
         Self {
             meta: RecorderMeta::new(name),
             filename: filename.into(),
             metric_set_indices: metric_set_indices.to_vec(),
+            decimal_places,
         }
     }
 
@@ -236,6 +244,13 @@ impl CsvLongFmtOutput {
                         let name = metric.name().to_string();
                         let attribute = metric.attribute().to_string();
 
+                        let value_scaled = if let Some(decimal_places) = self.decimal_places {
+                            let scale = 10.0_f64.powi(decimal_places.get() as i32);
+                            (value.value * scale).round() / scale
+                        } else {
+                            value.value
+                        };
+
                         let record = CsvLongFmtRecord {
                             time_start: value.start,
                             time_end: value.end(),
@@ -243,7 +258,7 @@ impl CsvLongFmtOutput {
                             metric_set: metric_set.name().to_string(),
                             name,
                             attribute,
-                            value: value.value,
+                            value: value_scaled,
                         };
 
                         internal

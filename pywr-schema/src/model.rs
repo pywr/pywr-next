@@ -491,7 +491,8 @@ impl PywrNetwork {
 
                 if failed_parameters.len() == n {
                     // Could not load any parameters; must be a circular reference
-                    return Err(SchemaError::CircularParameterReference);
+                    let failed_names = failed_parameters.iter().map(|p| p.name().to_string()).collect();
+                    return Err(SchemaError::CircularParameterReference(failed_names));
                 }
 
                 remaining_parameters = failed_parameters;
@@ -666,6 +667,15 @@ impl PywrModel {
             },
             errors,
         )
+    }
+
+    /// Convert a v1 JSON string to a v2 model.
+    ///
+    /// See [`PywrModel::from_v1`] for more information.
+    pub fn from_v1_str(v1: &str) -> Result<(Self, Vec<ConversionError>), pywr_v1_schema::model::PywrSchemaError> {
+        let v1_model: pywr_v1_schema::PywrModel = serde_json::from_str(v1)?;
+
+        Ok(Self::from_v1(v1_model))
     }
 }
 
@@ -1066,7 +1076,7 @@ mod core_tests {
         network.add_recorder(Box::new(rec)).unwrap();
 
         // Test all solvers
-        run_all_solvers(&model, &[]);
+        run_all_solvers(&model, &[], &[]);
     }
 
     /// Test that a cycle in parameter dependencies does not load.

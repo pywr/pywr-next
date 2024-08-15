@@ -831,7 +831,7 @@ pub struct AggregatedStorageNode {
 }
 
 impl AggregatedStorageNode {
-    const DEFAULT_ATTRIBUTE: NodeAttribute = NodeAttribute::Outflow;
+    const DEFAULT_ATTRIBUTE: NodeAttribute = NodeAttribute::Volume;
 
     pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
         // Not connectable
@@ -982,6 +982,6 @@ mod tests {
         let schema = PywrModel::from_str(data).unwrap();
         let model: pywr_core::models::Model = schema.build_model(None, None).unwrap();
         // Test all solvers
-        run_all_solvers(&model, &[]);
+        run_all_solvers(&model, &[], &[]);
     }
 }

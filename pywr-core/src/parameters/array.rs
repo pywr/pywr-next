@@ -1,5 +1,5 @@
 use crate::network::Network;
-use crate::parameters::{GeneralParameter, Parameter, ParameterMeta, ParameterState};
+use crate::parameters::{GeneralParameter, Parameter, ParameterMeta, ParameterName, ParameterState};
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
 use crate::timestep::Timestep;
@@ -13,7 +13,7 @@ pub struct Array1Parameter {
 }
 
 impl Array1Parameter {
-    pub fn new(name: &str, array: Array1<f64>, timestep_offset: Option<i32>) -> Self {
+    pub fn new(name: ParameterName, array: Array1<f64>, timestep_offset: Option<i32>) -> Self {
         Self {
             meta: ParameterMeta::new(name),
             array,
@@ -60,7 +60,12 @@ pub struct Array2Parameter {
 }
 
 impl Array2Parameter {
-    pub fn new(name: &str, array: Array2<f64>, scenario_group_index: usize, timestep_offset: Option<i32>) -> Self {
+    pub fn new(
+        name: ParameterName,
+        array: Array2<f64>,
+        scenario_group_index: usize,
+        timestep_offset: Option<i32>,
+    ) -> Self {
         Self {
             meta: ParameterMeta::new(name),
             array,

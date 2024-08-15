@@ -197,6 +197,8 @@ pub enum PywrError {
     Aggregation(#[from] AggregationError),
     #[error("cannot simplify metric")]
     CannotSimplifyMetric,
+    #[error("Negative factor is not allowed")]
+    NegativeFactor,
 }
 
 // Python errors

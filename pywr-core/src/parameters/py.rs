@@ -1,4 +1,4 @@
-use super::{GeneralParameter, Parameter, ParameterMeta, ParameterState, PywrError, Timestep};
+use super::{GeneralParameter, Parameter, ParameterMeta, ParameterName, ParameterState, PywrError, Timestep};
 use crate::metric::{MetricF64, MetricUsize};
 use crate::network::Network;
 use crate::parameters::downcast_internal_state_mut;
@@ -29,7 +29,7 @@ impl Internal {
 
 impl PyParameter {
     pub fn new(
-        name: &str,
+        name: ParameterName,
         object: Py<PyAny>,
         args: Py<PyTuple>,
         kwargs: Py<PyDict>,
@@ -352,7 +352,14 @@ class MyParameter:
         let args = Python::with_gil(|py| PyTuple::new_bound(py, [0]).into());
         let kwargs = Python::with_gil(|py| PyDict::new_bound(py).into());
 
-        let param = PyParameter::new("my-parameter", class, args, kwargs, &HashMap::new(), &HashMap::new());
+        let param = PyParameter::new(
+            "my-parameter".into(),
+            class,
+            args,
+            kwargs,
+            &HashMap::new(),
+            &HashMap::new(),
+        );
         let timestepper = default_timestepper();
         let time: TimeDomain = TimeDomain::try_from(timestepper).unwrap();
         let timesteps = time.timesteps();
@@ -421,7 +428,14 @@ class MyParameter:
         let args = Python::with_gil(|py| PyTuple::new_bound(py, [0]).into());
         let kwargs = Python::with_gil(|py| PyDict::new_bound(py).into());
 
-        let param = PyParameter::new("my-parameter", class, args, kwargs, &HashMap::new(), &HashMap::new());
+        let param = PyParameter::new(
+            "my-parameter".into(),
+            class,
+            args,
+            kwargs,
+            &HashMap::new(),
+            &HashMap::new(),
+        );
         let timestepper = default_timestepper();
         let time: TimeDomain = TimeDomain::try_from(timestepper).unwrap();
         let timesteps = time.timesteps();

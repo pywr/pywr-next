@@ -4,7 +4,7 @@ use super::builder::SolverBuilder;
 use crate::network::Network;
 use crate::solvers::builder::BuiltSolver;
 use crate::solvers::{Solver, SolverFeatures, SolverTimings};
-use crate::state::State;
+use crate::state::{ConstParameterValues, State};
 use crate::timestep::Timestep;
 use crate::PywrError;
 use coin_or_sys::cbc::*;
@@ -217,12 +217,20 @@ impl Solver for CbcSolver {
     }
 
     fn features() -> &'static [SolverFeatures] {
-        &[SolverFeatures::AggregatedNode, SolverFeatures::VirtualStorage]
+        &[
+            SolverFeatures::AggregatedNode,
+            SolverFeatures::VirtualStorage,
+            SolverFeatures::AggregatedNodeFactors,
+        ]
     }
 
-    fn setup(model: &Network, _settings: &Self::Settings) -> Result<Box<Self>, PywrError> {
+    fn setup(
+        model: &Network,
+        values: &ConstParameterValues,
+        _settings: &Self::Settings,
+    ) -> Result<Box<Self>, PywrError> {
         let builder = SolverBuilder::default();
-        let built = builder.create(model)?;
+        let built = builder.create(model, values)?;
 
         let solver = CbcSolver::from_builder(built);
         Ok(Box::new(solver))

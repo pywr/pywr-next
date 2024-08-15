@@ -1,5 +1,5 @@
 use crate::network::Network;
-use crate::state::State;
+use crate::state::{ConstParameterValues, State};
 use crate::timestep::Timestep;
 use crate::PywrError;
 use std::ops::{Add, AddAssign};
@@ -72,6 +72,7 @@ impl AddAssign for SolverTimings {
 pub enum SolverFeatures {
     AggregatedNode,
     AggregatedNodeFactors,
+    AggregatedNodeDynamicFactors,
     VirtualStorage,
 }
 
@@ -87,7 +88,8 @@ pub trait Solver: Send {
     fn name() -> &'static str;
     /// An array of features that this solver provides.
     fn features() -> &'static [SolverFeatures];
-    fn setup(model: &Network, settings: &Self::Settings) -> Result<Box<Self>, PywrError>;
+    fn setup(model: &Network, values: &ConstParameterValues, settings: &Self::Settings)
+        -> Result<Box<Self>, PywrError>;
     fn solve(&mut self, model: &Network, timestep: &Timestep, state: &mut State) -> Result<SolverTimings, PywrError>;
 }
 
