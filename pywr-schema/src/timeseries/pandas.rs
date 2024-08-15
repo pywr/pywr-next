@@ -96,8 +96,6 @@ mod core {
 
             let mut df = df.0;
 
-            println!("Loaded Pandas dataset: {}", df);
-
             df = match self.time_col {
                 Some(ref col) => align_and_resample(name, df, col, domain, true)?,
                 None => {
