@@ -1,11 +1,11 @@
 /// AggregatedIndexParameter
 ///
-use super::PywrError;
+use super::{Parameter, ParameterName, ParameterState, PywrError};
 use crate::metric::MetricUsize;
 use crate::network::Network;
-use crate::parameters::{Parameter, ParameterMeta};
+use crate::parameters::{GeneralParameter, ParameterMeta};
 use crate::scenario::ScenarioIndex;
-use crate::state::{ParameterState, State};
+use crate::state::State;
 use crate::timestep::Timestep;
 use std::str::FromStr;
 
@@ -41,7 +41,7 @@ pub struct AggregatedIndexParameter {
 }
 
 impl AggregatedIndexParameter {
-    pub fn new(name: &str, values: Vec<MetricUsize>, agg_func: AggIndexFunc) -> Self {
+    pub fn new(name: ParameterName, values: Vec<MetricUsize>, agg_func: AggIndexFunc) -> Self {
         Self {
             meta: ParameterMeta::new(name),
             values,
@@ -50,10 +50,13 @@ impl AggregatedIndexParameter {
     }
 }
 
-impl Parameter<usize> for AggregatedIndexParameter {
+impl Parameter for AggregatedIndexParameter {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }
+}
+
+impl GeneralParameter<usize> for AggregatedIndexParameter {
     fn compute(
         &self,
         _timestep: &Timestep,
@@ -62,8 +65,6 @@ impl Parameter<usize> for AggregatedIndexParameter {
         state: &State,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<usize, PywrError> {
-        // TODO scenarios!
-
         let value: usize = match self.agg_func {
             AggIndexFunc::Sum => {
                 let mut total = 0;
@@ -120,5 +121,12 @@ impl Parameter<usize> for AggregatedIndexParameter {
         };
 
         Ok(value)
+    }
+
+    fn as_parameter(&self) -> &dyn Parameter
+    where
+        Self: Sized,
+    {
+        self
     }
 }

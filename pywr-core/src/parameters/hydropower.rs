@@ -1,8 +1,8 @@
 use crate::metric::MetricF64;
 use crate::network::Network;
-use crate::parameters::{Parameter, ParameterMeta};
+use crate::parameters::{GeneralParameter, Parameter, ParameterMeta, ParameterName, ParameterState};
 use crate::scenario::ScenarioIndex;
-use crate::state::{ParameterState, State};
+use crate::state::State;
 use crate::timestep::Timestep;
 use crate::utils::inverse_hydropower_calculation;
 use crate::PywrError;
@@ -35,7 +35,7 @@ pub struct HydropowerTargetParameter {
 }
 
 impl HydropowerTargetParameter {
-    pub fn new(name: &str, turbine_data: HydropowerTargetData) -> Self {
+    pub fn new(name: ParameterName, turbine_data: HydropowerTargetData) -> Self {
         Self {
             meta: ParameterMeta::new(name),
             target: turbine_data.target,
@@ -52,10 +52,13 @@ impl HydropowerTargetParameter {
     }
 }
 
-impl Parameter<f64> for HydropowerTargetParameter {
+impl Parameter for HydropowerTargetParameter {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }
+}
+
+impl GeneralParameter<f64> for HydropowerTargetParameter {
     fn compute(
         &self,
         _timestep: &Timestep,
@@ -105,5 +108,12 @@ impl Parameter<f64> for HydropowerTargetParameter {
             )));
         }
         Ok(q)
+    }
+
+    fn as_parameter(&self) -> &dyn Parameter
+    where
+        Self: Sized,
+    {
+        self
     }
 }

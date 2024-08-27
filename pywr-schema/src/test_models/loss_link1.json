@@ -1,0 +1,172 @@
+{
+  "metadata": {
+    "title": "Loss Link Test 1",
+    "description": "Test LossLink nodes",
+    "minimum_version": "0.1"
+  },
+  "timestepper": {
+    "start": "2015-01-01",
+    "end": "2015-01-03",
+    "timestep": 1
+  },
+  "network": {
+    "nodes": [
+      {
+        "name": "input1",
+        "type": "Input"
+      },
+      {
+        "name": "loss1",
+        "type": "LossLink",
+        "loss_factor": {
+          "type": "Net",
+          "factor": {
+            "type": "Constant",
+            "value": 0.1
+          }
+        }
+      },
+      {
+        "name": "demand1",
+        "type": "Output",
+        "max_flow": {
+          "type": "Constant",
+          "value": 10.0
+        },
+        "cost": {
+          "type": "Constant",
+          "value": -10
+        }
+      },
+      {
+        "name": "loss2",
+        "type": "LossLink",
+        "loss_factor": {
+          "type": "Gross",
+          "factor": {
+            "type": "Constant",
+            "value": 0.1
+          }
+        }
+      },
+      {
+        "name": "demand2",
+        "type": "Output",
+        "max_flow": {
+          "type": "Constant",
+          "value": 10.0
+        },
+        "cost": {
+          "type": "Constant",
+          "value": -10
+        }
+      },
+      {
+        "name": "loss3",
+        "type": "LossLink"
+      },
+      {
+        "name": "demand3",
+        "type": "Output",
+        "max_flow": {
+          "type": "Constant",
+          "value": 10.0
+        },
+        "cost": {
+          "type": "Constant",
+          "value": -10
+        }
+      }
+    ],
+    "edges": [
+      {
+        "from_node": "input1",
+        "to_node": "loss1"
+      },
+      {
+        "from_node": "loss1",
+        "to_node": "demand1"
+      },
+      {
+        "from_node": "input1",
+        "to_node": "loss2"
+      },
+      {
+        "from_node": "loss2",
+        "to_node": "demand2"
+      },
+      {
+        "from_node": "input1",
+        "to_node": "loss3"
+      },
+      {
+        "from_node": "loss3",
+        "to_node": "demand3"
+      }
+    ],
+    "metric_sets": [
+      {
+        "name": "nodes",
+        "metrics": [
+          {
+            "type": "Node",
+            "name": "loss1",
+            "attribute": "Inflow"
+          },
+          {
+            "type": "Node",
+            "name": "loss1",
+            "attribute": "Outflow"
+          },
+          {
+            "type": "Node",
+            "name": "loss1",
+            "attribute": "Loss"
+          },
+          {
+            "type": "Node",
+            "name": "loss2",
+            "attribute": "Inflow"
+          },
+          {
+            "type": "Node",
+            "name": "loss2",
+            "attribute": "Outflow"
+          },
+          {
+            "type": "Node",
+            "name": "loss2",
+            "attribute": "Loss"
+          },
+          {
+            "type": "Node",
+            "name": "loss3",
+            "attribute": "Inflow"
+          },
+          {
+            "type": "Node",
+            "name": "loss3",
+            "attribute": "Outflow"
+          },
+          {
+            "type": "Node",
+            "name": "loss3",
+            "attribute": "Loss"
+          }
+        ]
+      }
+    ],
+    "outputs": [
+      {
+        "name": "node-outputs",
+        "type": "CSV",
+        "format": "long",
+        "filename": "loss_link1.csv",
+        "metric_set": [
+          "nodes"
+        ],
+        "decimal_places": 1
+      }
+    ]
+  }
+}

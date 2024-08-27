@@ -244,10 +244,17 @@ impl PythonParameter {
             None => HashMap::new(),
         };
 
-        let p = PyParameter::new(&self.meta.name, object, py_args, kwargs, &metrics, &indices);
+        let p = PyParameter::new(
+            self.meta.name.as_str().into(),
+            object,
+            py_args,
+            kwargs,
+            &metrics,
+            &indices,
+        );
 
         let pt = match self.return_type {
-            PythonReturnType::Float => ParameterType::Parameter(network.add_parameter(Box::new(p))?),
+            PythonReturnType::Float => network.add_parameter(Box::new(p))?.into(),
             PythonReturnType::Int => ParameterType::Index(network.add_index_parameter(Box::new(p))?),
             PythonReturnType::Dict => ParameterType::Multi(network.add_multi_value_parameter(Box::new(p))?),
         };
@@ -309,7 +316,7 @@ mod tests {
 
         param.add_to_model(&mut network, &args).unwrap();
 
-        assert!(network.get_parameter_by_name("my-float-parameter").is_ok());
+        assert!(network.get_parameter_by_name(&"my-float-parameter".into()).is_ok());
     }
 
     #[test]
@@ -353,6 +360,6 @@ mod tests {
 
         param.add_to_model(&mut network, &args).unwrap();
 
-        assert!(network.get_index_parameter_by_name("my-int-parameter").is_ok());
+        assert!(network.get_index_parameter_by_name(&"my-int-parameter".into()).is_ok());
     }
 }

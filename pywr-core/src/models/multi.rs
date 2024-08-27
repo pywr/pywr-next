@@ -114,8 +114,12 @@ impl MultiNetworkModel {
             .ok_or(PywrError::NetworkNotFound(name.to_string()))
     }
 
-    pub fn add_network(&mut self, name: &str, network: Network) -> usize {
-        // TODO check for duplicate names
+    /// Add a [`Network`] to the model. The name must be unique.
+    pub fn add_network(&mut self, name: &str, network: Network) -> Result<usize, PywrError> {
+        if self.get_network_index_by_name(name).is_ok() {
+            return Err(PywrError::NetworkNameAlreadyExists(name.to_string()));
+        }
+
         let idx = self.networks.len();
         self.networks.push(MultiNetworkEntry {
             name: name.to_string(),
@@ -123,7 +127,7 @@ impl MultiNetworkModel {
             parameters: Vec::new(),
         });
 
-        idx
+        Ok(idx)
     }
 
     /// Add a transfer of data from one network to another.
@@ -159,7 +163,7 @@ impl MultiNetworkModel {
                 .network
                 .setup_network(timesteps, scenario_indices, entry.parameters.len())?;
             let recorder_state = entry.network.setup_recorders(&self.domain)?;
-            let solver = entry.network.setup_solver::<S>(scenario_indices, settings)?;
+            let solver = entry.network.setup_solver::<S>(scenario_indices, &state, settings)?;
 
             states.push(state);
             recorder_states.push(recorder_state);
@@ -313,6 +317,7 @@ impl MultiNetworkModel {
 /// Calculate inter-model parameters for the given scenario index.
 ///
 ///
+#[allow(clippy::too_many_arguments)] // This function is not too unreadable with 8 arguments.
 fn compute_inter_network_transfers(
     timestep: &Timestep,
     scenario_index: &ScenarioIndex,
@@ -390,5 +395,20 @@ mod tests {
             .expect("Failed to setup multi1-model.");
 
         multi_model.step(&mut state).expect("Failed to step multi1-model.")
+    }
+
+    #[test]
+    fn test_duplicate_network_names() {
+        let timestepper = default_timestepper();
+        let scenario_collection = ScenarioGroupCollection::default();
+
+        let mut multi_model = MultiNetworkModel::new(ModelDomain::from(timestepper, scenario_collection).unwrap());
+
+        let network = Network::default();
+        let _network1_idx = multi_model.add_network("network1", network);
+        let network = Network::default();
+        let result = multi_model.add_network("network1", network);
+
+        assert!(result.is_err());
     }
 }

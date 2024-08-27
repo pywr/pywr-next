@@ -56,10 +56,10 @@ impl Metric {
         match self {
             Self::Node(node_ref) => node_ref.load(network, args),
             Self::Parameter(parameter_ref) => parameter_ref.load(network),
-            Self::Constant { value } => Ok(MetricF64::Constant(*value)),
+            Self::Constant { value } => Ok((*value).into()),
             Self::Table(table_ref) => {
                 let value = args.tables.get_scalar_f64(table_ref)?;
-                Ok(MetricF64::Constant(value))
+                Ok(value.into())
             }
             Self::Timeseries(ts_ref) => {
                 let param_idx = match &ts_ref.columns {
@@ -73,7 +73,7 @@ impl Metric {
                     }
                     None => args.timeseries.load_single_column(network, ts_ref.name.as_ref())?,
                 };
-                Ok(MetricF64::ParameterValue(param_idx))
+                Ok(param_idx.into())
             }
             Self::InlineParameter { definition } => {
                 // This inline parameter could already have been loaded on a previous attempt
@@ -83,16 +83,16 @@ impl Metric {
                 // assume it is the correct one for future references to that name. This could be
                 // improved by checking the parameter returned by name matches the definition here.
 
-                match network.get_parameter_index_by_name(definition.name()) {
+                match network.get_parameter_index_by_name(&definition.name().into()) {
                     Ok(p) => {
                         // Found a parameter with the name; assume it is the right one!
-                        Ok(MetricF64::ParameterValue(p))
+                        Ok(p.into())
                     }
                     Err(_) => {
                         // An error retrieving a parameter with this name; assume it needs creating.
                         match definition.add_to_model(network, args)? {
-                            pywr_core::parameters::ParameterType::Parameter(idx) => Ok(MetricF64::ParameterValue(idx)),
-                            pywr_core::parameters::ParameterType::Index(idx) => Ok(MetricF64::IndexParameterValue(idx)),
+                            pywr_core::parameters::ParameterType::Parameter(idx) => Ok(idx.into()),
+                            pywr_core::parameters::ParameterType::Index(idx) => Ok(idx.into()),
                             pywr_core::parameters::ParameterType::Multi(_) => Err(SchemaError::UnexpectedParameterType(format!(
                                 "Found an inline definition of a multi valued parameter of type '{}' with name '{}' where a float parameter was expected. Multi valued parameters cannot be defined inline.",
                                 definition.parameter_type(),
@@ -318,19 +318,18 @@ pub struct ParameterReference {
 impl ParameterReference {
     #[cfg(feature = "core")]
     pub fn load(&self, network: &mut pywr_core::network::Network) -> Result<MetricF64, SchemaError> {
+        let name = self.name.as_str().into();
+
         match &self.key {
             Some(key) => {
                 // Key given; this should be a multi-valued parameter
-                Ok(MetricF64::MultiParameterValue((
-                    network.get_multi_valued_parameter_index_by_name(&self.name)?,
-                    key.clone(),
-                )))
+                Ok((network.get_multi_valued_parameter_index_by_name(&name)?, key.clone()).into())
             }
             None => {
-                if let Ok(idx) = network.get_parameter_index_by_name(&self.name) {
-                    Ok(MetricF64::ParameterValue(idx))
-                } else if let Ok(idx) = network.get_index_parameter_index_by_name(&self.name) {
-                    Ok(MetricF64::IndexParameterValue(idx))
+                if let Ok(idx) = network.get_parameter_index_by_name(&name) {
+                    Ok(idx.into())
+                } else if let Ok(idx) = network.get_index_parameter_index_by_name(&name) {
+                    Ok(idx.into())
                 } else {
                     Err(SchemaError::ParameterNotFound(self.name.to_string()))
                 }

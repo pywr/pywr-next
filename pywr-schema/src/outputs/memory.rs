@@ -24,18 +24,40 @@ impl From<MemoryAggregation> for pywr_core::recorders::Aggregation {
     }
 }
 
+#[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone, JsonSchema, PywrVisitPaths)]
+pub enum MemoryAggregationOrder {
+    MetricTimeScenario,
+    TimeMetricScenario,
+}
+
+#[cfg(feature = "core")]
+impl From<MemoryAggregationOrder> for pywr_core::recorders::AggregationOrder {
+    fn from(value: MemoryAggregationOrder) -> Self {
+        match value {
+            MemoryAggregationOrder::MetricTimeScenario => pywr_core::recorders::AggregationOrder::MetricTimeScenario,
+            MemoryAggregationOrder::TimeMetricScenario => pywr_core::recorders::AggregationOrder::TimeMetricScenario,
+        }
+    }
+}
+
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitPaths)]
 pub struct MemoryOutput {
     pub name: String,
     pub metric_set: String,
     pub aggregation: MemoryAggregation,
+    pub order: Option<MemoryAggregationOrder>,
 }
 
 #[cfg(feature = "core")]
 impl MemoryOutput {
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
         let metric_set_idx = network.get_metric_set_index_by_name(&self.metric_set)?;
-        let recorder = MemoryRecorder::new(&self.name, metric_set_idx, self.aggregation.clone().into());
+        let recorder = MemoryRecorder::new(
+            &self.name,
+            metric_set_idx,
+            self.aggregation.clone().into(),
+            self.order.map(|o| o.into()).unwrap_or_default(),
+        );
 
         network.add_recorder(Box::new(recorder))?;
 

@@ -1,21 +1,20 @@
-use crate::metric::MetricF64;
-use crate::network::Network;
-use crate::parameters::{Parameter, ParameterMeta};
+use crate::metric::SimpleMetricF64;
+use crate::parameters::{Parameter, ParameterMeta, ParameterName, ParameterState, SimpleParameter};
 use crate::scenario::ScenarioIndex;
-use crate::state::{ParameterState, State};
+use crate::state::SimpleParameterValues;
 use crate::timestep::Timestep;
 use crate::PywrError;
 
 /// A parameter that returns the volume that is the proportion between two control curves
-pub struct VolumeBetweenControlCurvesParameter {
+pub struct VolumeBetweenControlCurvesParameter<M> {
     meta: ParameterMeta,
-    total: MetricF64,
-    upper: Option<MetricF64>,
-    lower: Option<MetricF64>,
+    total: M,
+    upper: Option<M>,
+    lower: Option<M>,
 }
 
-impl VolumeBetweenControlCurvesParameter {
-    pub fn new(name: &str, total: MetricF64, upper: Option<MetricF64>, lower: Option<MetricF64>) -> Self {
+impl<M> VolumeBetweenControlCurvesParameter<M> {
+    pub fn new(name: ParameterName, total: M, upper: Option<M>, lower: Option<M>) -> Self {
         Self {
             meta: ParameterMeta::new(name),
             total,
@@ -25,29 +24,35 @@ impl VolumeBetweenControlCurvesParameter {
     }
 }
 
-impl Parameter<f64> for VolumeBetweenControlCurvesParameter {
+impl<M> Parameter for VolumeBetweenControlCurvesParameter<M>
+where
+    M: Send + Sync,
+{
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }
+}
+
+impl SimpleParameter<f64> for VolumeBetweenControlCurvesParameter<SimpleMetricF64> {
     fn compute(
         &self,
         _timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
-        network: &Network,
-        state: &State,
+        values: &SimpleParameterValues,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<f64, PywrError> {
-        let total = self.total.get_value(network, state)?;
+        let total = self.total.get_value(values)?;
 
-        let lower = self
-            .lower
-            .as_ref()
-            .map_or(Ok(0.0), |metric| metric.get_value(network, state))?;
-        let upper = self
-            .upper
-            .as_ref()
-            .map_or(Ok(1.0), |metric| metric.get_value(network, state))?;
+        let lower = self.lower.as_ref().map_or(Ok(0.0), |metric| metric.get_value(values))?;
+        let upper = self.upper.as_ref().map_or(Ok(1.0), |metric| metric.get_value(values))?;
 
         Ok(total * (upper - lower))
+    }
+
+    fn as_parameter(&self) -> &dyn Parameter
+    where
+        Self: Sized,
+    {
+        self
     }
 }

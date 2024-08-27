@@ -1,9 +1,9 @@
 use crate::metric::MetricF64;
 use crate::network::Network;
 use crate::parameters::interpolate::interpolate;
-use crate::parameters::{Parameter, ParameterMeta};
+use crate::parameters::{GeneralParameter, Parameter, ParameterMeta, ParameterName, ParameterState};
 use crate::scenario::ScenarioIndex;
-use crate::state::{ParameterState, State};
+use crate::state::State;
 use crate::timestep::Timestep;
 use crate::PywrError;
 
@@ -18,7 +18,7 @@ pub struct PiecewiseInterpolatedParameter {
 
 impl PiecewiseInterpolatedParameter {
     pub fn new(
-        name: &str,
+        name: ParameterName,
         metric: MetricF64,
         control_curves: Vec<MetricF64>,
         values: Vec<[f64; 2]>,
@@ -35,11 +35,12 @@ impl PiecewiseInterpolatedParameter {
         }
     }
 }
-
-impl Parameter<f64> for PiecewiseInterpolatedParameter {
+impl Parameter for PiecewiseInterpolatedParameter {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }
+}
+impl GeneralParameter<f64> for PiecewiseInterpolatedParameter {
     fn compute(
         &self,
         _timestep: &Timestep,
@@ -63,11 +64,17 @@ impl Parameter<f64> for PiecewiseInterpolatedParameter {
         let v = self.values.last().ok_or(PywrError::DataOutOfRange)?;
         Ok(interpolate(x, self.minimum, cc_previous_value, v[1], v[0]))
     }
+
+    fn as_parameter(&self) -> &dyn Parameter
+    where
+        Self: Sized,
+    {
+        self
+    }
 }
 
 #[cfg(test)]
 mod test {
-    use crate::metric::MetricF64;
     use crate::parameters::{Array1Parameter, PiecewiseInterpolatedParameter};
     use crate::test_utils::{run_and_assert_parameter, simple_model};
     use ndarray::{Array1, Array2, Axis};
@@ -78,14 +85,14 @@ mod test {
         let mut model = simple_model(1);
 
         // Create an artificial volume series to use for the interpolation test
-        let volume = Array1Parameter::new("test-x", Array1::linspace(1.0, 0.0, 21), None);
+        let volume = Array1Parameter::new("test-x".into(), Array1::linspace(1.0, 0.0, 21), None);
 
         let volume_idx = model.network_mut().add_parameter(Box::new(volume)).unwrap();
 
         let parameter = PiecewiseInterpolatedParameter::new(
-            "test-parameter",
-            MetricF64::ParameterValue(volume_idx), // Interpolate with the parameter based values
-            vec![MetricF64::Constant(0.8), MetricF64::Constant(0.5)],
+            "test-parameter".into(),
+            volume_idx.into(), // Interpolate with the parameter based values
+            vec![0.8.into(), 0.5.into()],
             vec![[10.0, 1.0], [0.0, 0.0], [-1.0, -10.0]],
             1.0,
             0.0,

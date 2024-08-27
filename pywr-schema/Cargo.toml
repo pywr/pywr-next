@@ -42,3 +42,7 @@ tempfile = "3.3.0"
 # Core feature requires additional dependencies
 core = ["dep:pywr-core", "dep:hdf5", "dep:csv", "dep:polars", "dep:pyo3", "dep:pyo3-polars", "dep:ndarray", "dep:tracing"]
 default = ["core"]
+cbc = ["pywr-core/cbc"]
+highs = ["pywr-core/highs"]
+ipm-ocl = ["pywr-core/ipm-ocl"]
+ipm-simd = ["pywr-core/ipm-simd"]

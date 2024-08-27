@@ -1,7 +1,6 @@
-use crate::network::Network;
-use crate::parameters::{Parameter, ParameterMeta};
+use crate::parameters::{Parameter, ParameterMeta, ParameterName, ParameterState, SimpleParameter};
 use crate::scenario::ScenarioIndex;
-use crate::state::{ParameterState, State};
+use crate::state::SimpleParameterValues;
 use crate::timestep::Timestep;
 use crate::PywrError;
 use chrono::{Datelike, NaiveDate, NaiveDateTime, Timelike};
@@ -175,7 +174,7 @@ pub struct WeeklyProfileParameter {
 }
 
 impl WeeklyProfileParameter {
-    pub fn new(name: &str, values: WeeklyProfileValues, interp_day: Option<WeeklyInterpDay>) -> Self {
+    pub fn new(name: ParameterName, values: WeeklyProfileValues, interp_day: Option<WeeklyInterpDay>) -> Self {
         Self {
             meta: ParameterMeta::new(name),
             values,
@@ -184,19 +183,28 @@ impl WeeklyProfileParameter {
     }
 }
 
-impl Parameter<f64> for WeeklyProfileParameter {
+impl Parameter for WeeklyProfileParameter {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }
+}
+
+impl SimpleParameter<f64> for WeeklyProfileParameter {
     fn compute(
         &self,
         timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
-        _model: &Network,
-        _state: &State,
+        _values: &SimpleParameterValues,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<f64, PywrError> {
         Ok(self.values.value(&timestep.date, &self.interp_day))
+    }
+
+    fn as_parameter(&self) -> &dyn Parameter
+    where
+        Self: Sized,
+    {
+        self
     }
 }
 

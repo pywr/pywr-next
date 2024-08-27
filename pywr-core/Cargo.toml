@@ -26,7 +26,7 @@ ipm-ocl = { path = "../ipm-ocl", optional = true }
 ipm-simd = { path = "../ipm-simd", optional = true }
 tracing = { workspace = true }
 highs-sys = { version = "1.6.2", optional = true }
-nalgebra = "0.32.3"
+nalgebra = "0.33.0"
 chrono = { workspace = true }
 polars = { workspace = true }
 
@@ -51,6 +51,7 @@ serde = { version = "1.0.197", features = ["derive"] }
 criterion = "0.5"
 
 [features]
+cbc = []
 highs = ["dep:highs-sys"]
 ipm-ocl = ["dep:ipm-ocl", "dep:ocl"]
 ipm-simd = ["dep:ipm-simd"]

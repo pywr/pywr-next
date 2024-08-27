@@ -1,8 +1,10 @@
 use crate::metric::MetricF64;
 use crate::network::Network;
-use crate::parameters::{downcast_internal_state_mut, Parameter, ParameterMeta};
+use crate::parameters::{
+    downcast_internal_state_mut, GeneralParameter, Parameter, ParameterMeta, ParameterName, ParameterState,
+};
 use crate::scenario::ScenarioIndex;
-use crate::state::{ParameterState, State};
+use crate::state::State;
 use crate::timestep::Timestep;
 use crate::PywrError;
 use std::str::FromStr;
@@ -39,7 +41,13 @@ pub struct ThresholdParameter {
 }
 
 impl ThresholdParameter {
-    pub fn new(name: &str, metric: MetricF64, threshold: MetricF64, predicate: Predicate, ratchet: bool) -> Self {
+    pub fn new(
+        name: ParameterName,
+        metric: MetricF64,
+        threshold: MetricF64,
+        predicate: Predicate,
+        ratchet: bool,
+    ) -> Self {
         Self {
             meta: ParameterMeta::new(name),
             metric,
@@ -50,7 +58,7 @@ impl ThresholdParameter {
     }
 }
 
-impl Parameter<usize> for ThresholdParameter {
+impl Parameter for ThresholdParameter {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }
@@ -64,7 +72,9 @@ impl Parameter<usize> for ThresholdParameter {
         // Initially this is false.
         Ok(Some(Box::new(false)))
     }
+}
 
+impl GeneralParameter<usize> for ThresholdParameter {
     fn compute(
         &self,
         _timestep: &Timestep,
@@ -99,5 +109,12 @@ impl Parameter<usize> for ThresholdParameter {
         } else {
             Ok(0)
         }
+    }
+
+    fn as_parameter(&self) -> &dyn Parameter
+    where
+        Self: Sized,
+    {
+        self
     }
 }

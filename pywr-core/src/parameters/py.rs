@@ -1,9 +1,9 @@
-use super::{Parameter, ParameterMeta, PywrError, Timestep};
+use super::{GeneralParameter, Parameter, ParameterMeta, ParameterName, ParameterState, PywrError, Timestep};
 use crate::metric::{MetricF64, MetricUsize};
 use crate::network::Network;
 use crate::parameters::downcast_internal_state_mut;
 use crate::scenario::ScenarioIndex;
-use crate::state::{MultiValue, ParameterState, State};
+use crate::state::{MultiValue, State};
 use pyo3::prelude::*;
 use pyo3::types::{IntoPyDict, PyDict, PyFloat, PyLong, PyTuple};
 use std::collections::HashMap;
@@ -30,7 +30,7 @@ impl Internal {
 
 impl PyParameter {
     pub fn new(
-        name: &str,
+        name: ParameterName,
         object: Py<PyAny>,
         args: Py<PyTuple>,
         kwargs: Py<PyDict>,
@@ -160,7 +160,7 @@ impl PyParameter {
     }
 }
 
-impl Parameter<f64> for PyParameter {
+impl Parameter for PyParameter {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }
@@ -172,7 +172,9 @@ impl Parameter<f64> for PyParameter {
     ) -> Result<Option<Box<dyn ParameterState>>, PywrError> {
         self.setup()
     }
+}
 
+impl GeneralParameter<f64> for PyParameter {
     fn compute(
         &self,
         timestep: &Timestep,
@@ -194,21 +196,16 @@ impl Parameter<f64> for PyParameter {
     ) -> Result<(), PywrError> {
         self.after(timestep, scenario_index, model, state, internal_state)
     }
+
+    fn as_parameter(&self) -> &dyn Parameter
+    where
+        Self: Sized,
+    {
+        self
+    }
 }
 
-impl Parameter<usize> for PyParameter {
-    fn meta(&self) -> &ParameterMeta {
-        &self.meta
-    }
-
-    fn setup(
-        &self,
-        _timesteps: &[Timestep],
-        _scenario_index: &ScenarioIndex,
-    ) -> Result<Option<Box<dyn ParameterState>>, PywrError> {
-        self.setup()
-    }
-
+impl GeneralParameter<usize> for PyParameter {
     fn compute(
         &self,
         timestep: &Timestep,
@@ -230,30 +227,16 @@ impl Parameter<usize> for PyParameter {
     ) -> Result<(), PywrError> {
         self.after(timestep, scenario_index, model, state, internal_state)
     }
+
+    fn as_parameter(&self) -> &dyn Parameter
+    where
+        Self: Sized,
+    {
+        self
+    }
 }
 
-impl Parameter<MultiValue> for PyParameter {
-    fn meta(&self) -> &ParameterMeta {
-        &self.meta
-    }
-
-    fn setup(
-        &self,
-        _timesteps: &[Timestep],
-        _scenario_index: &ScenarioIndex,
-    ) -> Result<Option<Box<dyn ParameterState>>, PywrError> {
-        self.setup()
-    }
-
-    // fn before(&self, internal_state: &mut Option<Box<dyn ParameterState>>) -> Result<(), PywrError> {
-    //     let internal = downcast_internal_state::<Internal>(internal_state);
-    //
-    //     Python::with_gil(|py| internal.user_obj.call_method0(py, "before"))
-    //         .map_err(|e| PywrError::PythonError(e.to_string()))?;
-    //
-    //     Ok(())
-    // }
-
+impl GeneralParameter<MultiValue> for PyParameter {
     fn compute(
         &self,
         timestep: &Timestep,
@@ -323,6 +306,13 @@ impl Parameter<MultiValue> for PyParameter {
     ) -> Result<(), PywrError> {
         self.after(timestep, scenario_index, model, state, internal_state)
     }
+
+    fn as_parameter(&self) -> &dyn Parameter
+    where
+        Self: Sized,
+    {
+        self
+    }
 }
 
 #[cfg(test)]
@@ -363,7 +353,14 @@ class MyParameter:
         let args = Python::with_gil(|py| PyTuple::new_bound(py, [0]).into());
         let kwargs = Python::with_gil(|py| PyDict::new_bound(py).into());
 
-        let param = PyParameter::new("my-parameter", class, args, kwargs, &HashMap::new(), &HashMap::new());
+        let param = PyParameter::new(
+            "my-parameter".into(),
+            class,
+            args,
+            kwargs,
+            &HashMap::new(),
+            &HashMap::new(),
+        );
         let timestepper = default_timestepper();
         let time: TimeDomain = TimeDomain::try_from(timestepper).unwrap();
         let timesteps = time.timesteps();
@@ -379,18 +376,18 @@ class MyParameter:
             },
         ];
 
-        let state = StateBuilder::new(vec![], 0).with_value_parameters(1).build();
+        let state = StateBuilder::new(vec![], 0).build();
 
         let mut internal_p_states: Vec<_> = scenario_indices
             .iter()
-            .map(|si| Parameter::<f64>::setup(&param, &timesteps, si).expect("Could not setup the PyParameter"))
+            .map(|si| Parameter::setup(&param, timesteps, si).expect("Could not setup the PyParameter"))
             .collect();
 
         let model = Network::default();
 
         for ts in timesteps {
             for (si, internal) in scenario_indices.iter().zip(internal_p_states.iter_mut()) {
-                let value = Parameter::compute(&param, ts, si, &model, &state, internal).unwrap();
+                let value = GeneralParameter::compute(&param, ts, si, &model, &state, internal).unwrap();
 
                 assert_approx_eq!(f64, value, ((ts.index + 1) * si.index + ts.date.day() as usize) as f64);
             }
@@ -432,7 +429,14 @@ class MyParameter:
         let args = Python::with_gil(|py| PyTuple::new_bound(py, [0]).into());
         let kwargs = Python::with_gil(|py| PyDict::new_bound(py).into());
 
-        let param = PyParameter::new("my-parameter", class, args, kwargs, &HashMap::new(), &HashMap::new());
+        let param = PyParameter::new(
+            "my-parameter".into(),
+            class,
+            args,
+            kwargs,
+            &HashMap::new(),
+            &HashMap::new(),
+        );
         let timestepper = default_timestepper();
         let time: TimeDomain = TimeDomain::try_from(timestepper).unwrap();
         let timesteps = time.timesteps();
@@ -448,18 +452,18 @@ class MyParameter:
             },
         ];
 
-        let state = StateBuilder::new(vec![], 0).with_value_parameters(1).build();
+        let state = StateBuilder::new(vec![], 0).build();
 
         let mut internal_p_states: Vec<_> = scenario_indices
             .iter()
-            .map(|si| Parameter::<MultiValue>::setup(&param, &timesteps, si).expect("Could not setup the PyParameter"))
+            .map(|si| Parameter::setup(&param, timesteps, si).expect("Could not setup the PyParameter"))
             .collect();
 
         let model = Network::default();
 
         for ts in timesteps {
             for (si, internal) in scenario_indices.iter().zip(internal_p_states.iter_mut()) {
-                let value = Parameter::<MultiValue>::compute(&param, ts, si, &model, &state, internal).unwrap();
+                let value = GeneralParameter::<MultiValue>::compute(&param, ts, si, &model, &state, internal).unwrap();
 
                 assert_approx_eq!(f64, *value.get_value("a-float").unwrap(), std::f64::consts::PI);
 

@@ -9,9 +9,7 @@ use crate::nodes::{NodeAttribute, NodeMeta};
 use crate::parameters::TryIntoV2Parameter;
 #[cfg(feature = "core")]
 use pywr_core::{
-    derived_metric::DerivedMetric,
-    metric::MetricF64,
-    node::{ConstraintValue, StorageInitialVolume as CoreStorageInitialVolume},
+    derived_metric::DerivedMetric, metric::MetricF64, node::StorageInitialVolume as CoreStorageInitialVolume,
 };
 use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::nodes::{
@@ -527,24 +525,9 @@ impl StorageNode {
 
 #[cfg(feature = "core")]
 impl StorageNode {
-    pub fn add_to_model(&self, network: &mut pywr_core::network::Network, args: &LoadArgs) -> Result<(), SchemaError> {
-        let min_volume = match &self.min_volume {
-            Some(v) => v.load(network, args)?.into(),
-            None => ConstraintValue::Scalar(0.0),
-        };
-
-        let max_volume = match &self.max_volume {
-            Some(v) => v.load(network, args)?.into(),
-            None => ConstraintValue::None,
-        };
-
-        network.add_storage_node(
-            self.meta.name.as_str(),
-            None,
-            self.initial_volume.into(),
-            min_volume,
-            max_volume,
-        )?;
+    pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
+        // Add the node with no constraints
+        network.add_storage_node(self.meta.name.as_str(), None, self.initial_volume.into(), None, None)?;
         Ok(())
     }
 
@@ -556,6 +539,16 @@ impl StorageNode {
         if let Some(cost) = &self.cost {
             let value = cost.load(network, args)?;
             network.set_node_cost(self.meta.name.as_str(), None, value.into())?;
+        }
+
+        if let Some(min_volume) = &self.min_volume {
+            let value = min_volume.load(network, args)?;
+            network.set_node_min_volume(self.meta.name.as_str(), None, Some(value.try_into()?))?;
+        }
+
+        if let Some(max_volume) = &self.max_volume {
+            let value = max_volume.load(network, args)?;
+            network.set_node_max_volume(self.meta.name.as_str(), None, Some(value.try_into()?))?;
         }
 
         Ok(())
@@ -959,7 +952,7 @@ pub struct AggregatedStorageNode {
 }
 
 impl AggregatedStorageNode {
-    const DEFAULT_ATTRIBUTE: NodeAttribute = NodeAttribute::Outflow;
+    const DEFAULT_ATTRIBUTE: NodeAttribute = NodeAttribute::Volume;
 
     pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
         // Not connectable
@@ -1037,6 +1030,12 @@ mod tests {
     use crate::nodes::core::StorageInitialVolume;
     use crate::nodes::InputNode;
     use crate::nodes::StorageNode;
+    #[cfg(feature = "core")]
+    use crate::PywrModel;
+    #[cfg(feature = "core")]
+    use pywr_core::test_utils::run_all_solvers;
+    #[cfg(feature = "core")]
+    use std::str::FromStr;
 
     #[test]
     fn test_input() {
@@ -1090,5 +1089,20 @@ mod tests {
         let storage: StorageNode = serde_json::from_str(data).unwrap();
 
         assert_eq!(storage.initial_volume, StorageInitialVolume::Proportional(0.5));
+    }
+
+    #[cfg(feature = "core")]
+    fn storage_max_volumes_str() -> &'static str {
+        include_str!("../test_models/storage_max_volumes.json")
+    }
+
+    #[test]
+    #[cfg(feature = "core")]
+    fn test_storage_max_volumes_run() {
+        let data = storage_max_volumes_str();
+        let schema = PywrModel::from_str(data).unwrap();
+        let model: pywr_core::models::Model = schema.build_model(None, None).unwrap();
+        // Test all solvers
+        run_all_solvers(&model, &[], &[]);
     }
 }
