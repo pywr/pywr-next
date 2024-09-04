@@ -5,7 +5,7 @@ use crate::recorders::MetricSetIndex;
 use crate::scenario::{ScenarioDomain, ScenarioIndex};
 use crate::state::State;
 use chrono::{Datelike, Timelike};
-use hdf5::{Extents, Group};
+use hdf5_metno::{Extents, Group};
 use ndarray::{s, Array1};
 use std::any::Any;
 use std::ops::Deref;
@@ -27,11 +27,11 @@ pub struct HDF5Recorder {
 }
 
 struct Internal {
-    file: hdf5::File,
-    datasets: Vec<hdf5::Dataset>,
+    file: hdf5_metno::File,
+    datasets: Vec<hdf5_metno::Dataset>,
 }
 
-#[derive(hdf5::H5Type, Copy, Clone, Debug)]
+#[derive(hdf5_metno::H5Type, Copy, Clone, Debug)]
 #[repr(C)]
 pub struct DateTime {
     index: usize,
@@ -72,7 +72,7 @@ impl Recorder for HDF5Recorder {
         &self.meta
     }
     fn setup(&self, domain: &ModelDomain, network: &Network) -> Result<Option<Box<(dyn Any)>>, PywrError> {
-        let file = match hdf5::File::create(&self.filename) {
+        let file = match hdf5_metno::File::create(&self.filename) {
             Ok(f) => f,
             Err(e) => return Err(PywrError::HDF5Error(e.to_string())),
         };
@@ -159,7 +159,7 @@ impl Recorder for HDF5Recorder {
     }
 }
 
-fn require_dataset<S: Into<Extents>>(parent: &Group, shape: S, name: &str) -> Result<hdf5::Dataset, PywrError> {
+fn require_dataset<S: Into<Extents>>(parent: &Group, shape: S, name: &str) -> Result<hdf5_metno::Dataset, PywrError> {
     parent
         .new_dataset::<f64>()
         .shape(shape)
@@ -172,14 +172,15 @@ fn require_metric_dataset<S: Into<Extents>>(
     parent: &Group,
     shape: S,
     metric: &OutputMetric,
-) -> Result<hdf5::Dataset, PywrError> {
+) -> Result<hdf5_metno::Dataset, PywrError> {
     let grp = require_group(parent, metric.name())?;
     let ds = require_dataset(&grp, shape, metric.attribute())?;
 
     // Write the type and subtype as attributes
-    let ty = hdf5::types::VarLenUnicode::from_str(metric.ty()).map_err(|e| PywrError::HDF5Error(e.to_string()))?;
+    let ty =
+        hdf5_metno::types::VarLenUnicode::from_str(metric.ty()).map_err(|e| PywrError::HDF5Error(e.to_string()))?;
     let attr = ds
-        .new_attr::<hdf5::types::VarLenUnicode>()
+        .new_attr::<hdf5_metno::types::VarLenUnicode>()
         .shape(())
         .create("pywr-type")
         .map_err(|e| PywrError::HDF5Error(e.to_string()))?;
@@ -189,9 +190,9 @@ fn require_metric_dataset<S: Into<Extents>>(
 
     if let Some(sub_type) = metric.sub_type() {
         let sub_type =
-            hdf5::types::VarLenUnicode::from_str(sub_type).map_err(|e| PywrError::HDF5Error(e.to_string()))?;
+            hdf5_metno::types::VarLenUnicode::from_str(sub_type).map_err(|e| PywrError::HDF5Error(e.to_string()))?;
         let attr = ds
-            .new_attr::<hdf5::types::VarLenUnicode>()
+            .new_attr::<hdf5_metno::types::VarLenUnicode>()
             .shape(())
             .create("pywr-subtype")
             .map_err(|e| PywrError::HDF5Error(e.to_string()))?;
@@ -214,14 +215,15 @@ fn require_group(parent: &Group, name: &str) -> Result<Group, PywrError> {
     }
 }
 
-fn write_pywr_metadata(file: &hdf5::File) -> Result<(), PywrError> {
+fn write_pywr_metadata(file: &hdf5_metno::File) -> Result<(), PywrError> {
     let root = file.deref();
 
     const VERSION: &str = env!("CARGO_PKG_VERSION");
-    let version = hdf5::types::VarLenUnicode::from_str(VERSION).map_err(|e| PywrError::HDF5Error(e.to_string()))?;
+    let version =
+        hdf5_metno::types::VarLenUnicode::from_str(VERSION).map_err(|e| PywrError::HDF5Error(e.to_string()))?;
 
     let attr = root
-        .new_attr::<hdf5::types::VarLenUnicode>()
+        .new_attr::<hdf5_metno::types::VarLenUnicode>()
         .shape(())
         .create("pywr-version")
         .map_err(|e| PywrError::HDF5Error(e.to_string()))?;
@@ -232,25 +234,25 @@ fn write_pywr_metadata(file: &hdf5::File) -> Result<(), PywrError> {
     Ok(())
 }
 
-#[derive(hdf5::H5Type, Clone, PartialEq, Debug)]
+#[derive(hdf5_metno::H5Type, Clone, PartialEq, Debug)]
 #[repr(C)]
 pub struct ScenarioGroupEntry {
-    pub name: hdf5::types::VarLenUnicode,
+    pub name: hdf5_metno::types::VarLenUnicode,
     pub size: usize,
 }
 
-#[derive(hdf5::H5Type, Clone, PartialEq, Debug)]
+#[derive(hdf5_metno::H5Type, Clone, PartialEq, Debug)]
 #[repr(C)]
 pub struct H5ScenarioIndex {
     index: usize,
-    indices: hdf5::types::VarLenArray<usize>,
+    indices: hdf5_metno::types::VarLenArray<usize>,
 }
 
 /// Write scenario metadata to the HDF5 file.
 ///
 /// This function will create the `/scenarios` group in the HDF5 file and write the scenario
 /// groups and indices into `/scenarios/groups` and `/scenarios/indices` respectively.
-fn write_scenarios_metadata(file: &hdf5::File, domain: &ScenarioDomain) -> Result<(), PywrError> {
+fn write_scenarios_metadata(file: &hdf5_metno::File, domain: &ScenarioDomain) -> Result<(), PywrError> {
     // Create the scenario group and associated datasets
     let grp = require_group(file.deref(), "scenarios")?;
 
@@ -258,8 +260,8 @@ fn write_scenarios_metadata(file: &hdf5::File, domain: &ScenarioDomain) -> Resul
         .groups()
         .iter()
         .map(|s| {
-            let name =
-                hdf5::types::VarLenUnicode::from_str(s.name()).map_err(|e| PywrError::HDF5Error(e.to_string()))?;
+            let name = hdf5_metno::types::VarLenUnicode::from_str(s.name())
+                .map_err(|e| PywrError::HDF5Error(e.to_string()))?;
 
             Ok(ScenarioGroupEntry { name, size: s.size() })
         })
@@ -273,7 +275,7 @@ fn write_scenarios_metadata(file: &hdf5::File, domain: &ScenarioDomain) -> Resul
         .indices()
         .iter()
         .map(|s| {
-            let indices = hdf5::types::VarLenArray::from_slice(&s.indices);
+            let indices = hdf5_metno::types::VarLenArray::from_slice(&s.indices);
 
             Ok(H5ScenarioIndex {
                 index: s.index,
