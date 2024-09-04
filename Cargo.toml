@@ -40,7 +40,8 @@ num = "0.4.0"
 float-cmp = "0.9.0"
 ndarray = "0.15.3"
 polars = { version = "0.41.2", features = ["lazy", "rows", "ndarray"] }
-pyo3-polars = "0.16.1"
+# pyo3-polars = "0.16.1"
+pyo3-polars = { git = "https://github.com/jetuk/pyo3-polars.git", package = "pyo3-polars", branch = "fix-windows-libc-write-count-type" }
 pyo3 = { version = "0.22", default-features = false }
 pyo3-log = "0.11"
 tracing = { version = "0.1", features = ["log"] }
