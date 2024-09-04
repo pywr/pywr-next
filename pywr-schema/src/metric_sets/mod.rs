@@ -2,10 +2,9 @@
 use crate::error::SchemaError;
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
-use crate::{
-    metric::Metric,
-    parameters::{Parameter, PythonReturnType},
-};
+use crate::metric::Metric;
+#[cfg(feature = "core")]
+use crate::parameters::{Parameter, PythonReturnType};
 use pywr_schema_macros::PywrVisitPaths;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
