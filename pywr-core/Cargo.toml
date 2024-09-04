@@ -19,7 +19,7 @@ thiserror = { workspace = true }
 ndarray = { workspace = true }
 num = { workspace = true }
 float-cmp = { workspace = true }
-hdf5 = { workspace = true }
+hdf5-metno = { workspace = true }
 csv = { workspace = true }
 coin-or-sys = { path = "../coin-or-sys", version = "0.1.0" }
 ipm-ocl = { path = "../ipm-ocl", optional = true }
