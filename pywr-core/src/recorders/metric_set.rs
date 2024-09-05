@@ -13,7 +13,7 @@ use std::ops::Deref;
 ///
 /// This is used to store the name and attribute of the metric so that it can be output in
 /// a context that is relevant to the originating schema, and therefore more meaningful to the user.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct OutputMetric {
     name: String,
     attribute: String,
