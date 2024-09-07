@@ -26,8 +26,8 @@ pub enum TargetType {
 /// This turbine node can be used to set a flow constraint based on a hydropower production target.
 /// The turbine elevation, minimum head and efficiency can also be configured.
 #[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, PywrVisitAll)]
+#[serde(deny_unknown_fields)]
 pub struct TurbineNode {
-    #[serde(flatten)]
     pub meta: NodeMeta,
     pub cost: Option<Metric>,
     /// Hydropower production target. If set the node's max flow is limited to the flow

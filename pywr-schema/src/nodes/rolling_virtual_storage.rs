@@ -69,8 +69,8 @@ impl RollingWindow {
 /// licence on a water abstraction.
 ///
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
+#[serde(deny_unknown_fields)]
 pub struct RollingVirtualStorageNode {
-    #[serde(flatten)]
     pub meta: NodeMeta,
     pub nodes: Vec<String>,
     pub factors: Option<Vec<f64>>,

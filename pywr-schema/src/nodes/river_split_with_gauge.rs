@@ -35,8 +35,8 @@ use schemars::JsonSchema;
 ///
 )]
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
+#[serde(deny_unknown_fields)]
 pub struct RiverSplitWithGaugeNode {
-    #[serde(flatten)]
     pub meta: NodeMeta,
     pub mrf: Option<Metric>,
     pub mrf_cost: Option<Metric>,

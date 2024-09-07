@@ -18,7 +18,7 @@ use schemars::JsonSchema;
 /// net losses are applied as a proportion of the net flow. Please see the documentation for
 /// specific nodes (e.g. [`LossLinkNode`]) to understand how the loss factor is applied.
 #[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, PywrVisitAll)]
-#[serde(tag = "type")]
+#[serde(tag = "type", deny_unknown_fields)]
 pub enum LossFactor {
     Gross { factor: Metric },
     Net { factor: Metric },
@@ -78,8 +78,8 @@ impl LossFactor {
 ///
 )]
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
+#[serde(deny_unknown_fields)]
 pub struct LossLinkNode {
-    #[serde(flatten)]
     pub meta: NodeMeta,
     pub loss_factor: Option<LossFactor>,
     pub min_net_flow: Option<Metric>,

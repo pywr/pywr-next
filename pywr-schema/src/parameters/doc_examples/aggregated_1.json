@@ -1,5 +1,7 @@
 {
-  "name": "my-aggregated-value",
+  "meta": {
+    "name": "my-aggregated-value"
+  },
   "type": "Aggregated",
   "agg_func": "sum",
   "metrics": [
@@ -24,7 +26,9 @@
     {
       "type": "InlineParameter",
       "definition": {
-        "name": "my-monthly-profile",
+        "meta": {
+          "name": "my-monthly-profile"
+        },
         "type": "MonthlyProfile",
         "values": [
           1.0,

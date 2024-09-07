@@ -44,7 +44,7 @@ pub use super::parameters::profiles::{
     DailyProfileParameter, MonthlyProfileParameter, RadialBasisFunction, RbfProfileParameter,
     RbfProfileVariableSettings, UniformDrawdownProfileParameter, WeeklyProfileParameter,
 };
-pub use super::parameters::python::{PythonModule, PythonParameter, PythonReturnType};
+pub use super::parameters::python::{PythonParameter, PythonReturnType, PythonSource};
 pub use super::parameters::tables::TablesArrayParameter;
 pub use super::parameters::thresholds::ParameterThresholdParameter;
 use crate::error::ConversionError;
@@ -647,6 +647,7 @@ impl TryFromV1Parameter<ParameterV1> for ParameterOrTimeseries {
                         comment: Some(comment),
                     },
                     value: ConstantValue::Literal(0.0),
+                    variable: None,
                 })
                 .into()
             }

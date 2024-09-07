@@ -3,7 +3,7 @@ use crate::error::SchemaError;
 use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
-use crate::parameters::{ConstantValue, ParameterMeta};
+use crate::parameters::{ConstantValue, ParameterMeta, VariableSettings};
 #[cfg(feature = "core")]
 use pywr_core::parameters::ParameterIndex;
 use pywr_schema_macros::PywrVisitAll;
@@ -24,11 +24,9 @@ use schemars::JsonSchema;
 /// ```
 ///
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
+#[serde(deny_unknown_fields)]
 pub struct OffsetParameter {
     /// Meta-data.
-    ///
-    /// This field is flattened in the serialised format.
-    #[serde(flatten)]
     pub meta: ParameterMeta,
     /// The offset value applied to the metric.
     ///
@@ -37,6 +35,9 @@ pub struct OffsetParameter {
     pub offset: ConstantValue<f64>,
     /// The metric from which to apply the offset.
     pub metric: Metric,
+    /// Optional settings for configuring how the value of this parameter can be varied. This
+    /// is used by, for example, external algorithms to optimise the value of the parameter.
+    pub variable: Option<VariableSettings>,
 }
 
 #[cfg(feature = "core")]

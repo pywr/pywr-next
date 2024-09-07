@@ -12,7 +12,9 @@
   "network": {
     "nodes": [
       {
-        "name": "input1",
+        "meta": {
+          "name": "input1"
+        },
         "type": "Input",
         "max_flow": {
           "type": "Constant",
@@ -20,7 +22,9 @@
         }
       },
       {
-        "name": "link1",
+        "meta": {
+          "name": "link1"
+        },
         "type": "PiecewiseLink",
         "steps": [
           {
@@ -52,7 +56,9 @@
         ]
       },
       {
-        "name": "demand1",
+        "meta": {
+          "name": "demand1"
+        },
         "type": "Output",
         "max_flow": {
           "type": "Constant",

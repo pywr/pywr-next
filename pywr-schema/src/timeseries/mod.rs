@@ -62,8 +62,8 @@ enum TimeseriesProvider {
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct Timeseries {
-    #[serde(flatten)]
     meta: ParameterMeta,
     provider: TimeseriesProvider,
 }

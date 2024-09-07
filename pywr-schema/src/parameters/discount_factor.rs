@@ -13,8 +13,8 @@ use schemars::JsonSchema;
 
 /// A parameter that returns the current discount factor for a given time-step.
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
+#[serde(deny_unknown_fields)]
 pub struct DiscountFactorParameter {
-    #[serde(flatten)]
     pub meta: ParameterMeta,
     pub discount_rate: Metric,
     pub base_year: i32,
