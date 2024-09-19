@@ -708,10 +708,17 @@ impl TryFrom<CatchmentNodeV1> for CatchmentNode {
 
 #[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, PywrVisitAll)]
 #[serde(tag = "type")]
-pub enum Factors {
-    Proportion { factors: Vec<Metric> },
-    Ratio { factors: Vec<Metric> },
-    Exclusive,
+pub enum Relationship {
+    Proportion {
+        factors: Vec<Metric>,
+    },
+    Ratio {
+        factors: Vec<Metric>,
+    },
+    Exclusive {
+        min_active: Option<usize>,
+        max_active: Option<usize>,
+    },
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
@@ -721,7 +728,7 @@ pub struct AggregatedNode {
     pub nodes: Vec<String>,
     pub max_flow: Option<Metric>,
     pub min_flow: Option<Metric>,
-    pub factors: Option<Factors>,
+    pub factors: Option<Relationship>,
 }
 
 impl AggregatedNode {
@@ -801,19 +808,26 @@ impl AggregatedNode {
 
         if let Some(factors) = &self.factors {
             let r = match factors {
-                Factors::Proportion { factors } => pywr_core::aggregated_node::Relationship::new_proportion_factors(
+                Relationship::Proportion { factors } => {
+                    pywr_core::aggregated_node::Relationship::new_proportion_factors(
+                        &factors
+                            .iter()
+                            .map(|f| f.load(network, args))
+                            .collect::<Result<Vec<_>, _>>()?,
+                    )
+                }
+                Relationship::Ratio { factors } => pywr_core::aggregated_node::Relationship::new_ratio_factors(
                     &factors
                         .iter()
                         .map(|f| f.load(network, args))
                         .collect::<Result<Vec<_>, _>>()?,
                 ),
-                Factors::Ratio { factors } => pywr_core::aggregated_node::Relationship::new_ratio_factors(
-                    &factors
-                        .iter()
-                        .map(|f| f.load(network, args))
-                        .collect::<Result<Vec<_>, _>>()?,
-                ),
-                Factors::Exclusive => pywr_core::aggregated_node::Relationship::new_exclusive(0, 1),
+                Relationship::Exclusive { min_active, max_active } => {
+                    pywr_core::aggregated_node::Relationship::new_exclusive(
+                        min_active.unwrap_or(0),
+                        max_active.unwrap_or(1),
+                    )
+                }
             };
 
             network.set_aggregated_node_relationship(self.meta.name.as_str(), None, Some(r))?;
@@ -856,7 +870,7 @@ impl TryFrom<AggregatedNodeV1> for AggregatedNode {
         let mut unnamed_count = 0;
 
         let factors = match v1.factors {
-            Some(f) => Some(Factors::Ratio {
+            Some(f) => Some(Relationship::Ratio {
                 factors: f
                     .into_iter()
                     .map(|v| v.try_into_v2_parameter(Some(&meta.name), &mut unnamed_count))
