@@ -15,8 +15,8 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
+#[serde(deny_unknown_fields)]
 pub struct TablesArrayParameter {
-    #[serde(flatten)]
     pub meta: ParameterMeta,
     pub node: String,
     #[serde(rename = "where")]

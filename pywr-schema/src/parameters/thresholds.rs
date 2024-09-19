@@ -53,8 +53,8 @@ impl From<Predicate> for pywr_core::parameters::Predicate {
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
+#[serde(deny_unknown_fields)]
 pub struct ParameterThresholdParameter {
-    #[serde(flatten)]
     pub meta: ParameterMeta,
     pub parameter: Metric,
     pub threshold: Metric,

@@ -11,8 +11,8 @@ use schemars::JsonSchema;
 
 /// A parameter that delays a value from the network by a number of time-steps.
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
+#[serde(deny_unknown_fields)]
 pub struct DelayParameter {
-    #[serde(flatten)]
     pub meta: ParameterMeta,
     pub metric: Metric,
     pub delay: usize,

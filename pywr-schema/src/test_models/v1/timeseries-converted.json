@@ -14,7 +14,6 @@
     "nodes": [
       {
         "type": "Input",
-        "name": "input1",
         "max_flow": {
           "type": "Timeseries",
           "name": "inflow",
@@ -23,34 +22,43 @@
             "name": "inflow1"
           }
         },
+        "meta": {
+          "name": "input1"
+        },
         "min_flow": null,
         "cost": null
       },
       {
         "type": "Input",
-        "name": "input2",
         "max_flow": {
           "type": "Parameter",
           "name": "factored_flow",
           "key": null
+        },
+        "meta": {
+          "name": "input2"
         },
         "min_flow": null,
         "cost": null
       },
       {
         "type": "Link",
-        "name": "link1",
         "max_flow": null,
+        "meta": {
+          "name": "link1"
+        },
         "min_flow": null,
         "cost": null
       },
       {
         "type": "Output",
-        "name": "output1",
         "max_flow": {
           "type": "Parameter",
           "name": "demand",
           "key": null
+        },
+        "meta": {
+          "name": "output1"
         },
         "min_flow": null,
         "cost": {
@@ -76,12 +84,17 @@
     "parameters": [
       {
         "type": "Constant",
-        "name": "demand",
-        "value": 100.0
+        "meta": {
+          "name": "demand"
+        },
+        "value": 100.0,
+        "variable": null
       },
       {
         "type": "Aggregated",
-        "name": "factored_flow",
+        "meta": {
+          "name": "factored_flow"
+        },
         "agg_func": "product",
         "metrics": [
           {
@@ -102,7 +115,9 @@
     "tables": null,
     "timeseries": [
       {
-        "name": "inflow",
+        "meta": {
+          "name": "inflow"
+        },
         "provider": {
           "type": "Polars",
           "infer_schema_length": null,

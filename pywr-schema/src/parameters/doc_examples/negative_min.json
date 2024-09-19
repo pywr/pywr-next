@@ -1,10 +1,14 @@
 {
-  "name": "my-negative-min",
+  "meta": {
+    "name": "my-negative-min"
+  },
   "type": "NegativeMin",
   "metric": {
     "type": "InlineParameter",
     "definition": {
-      "name": "my-monthly-profile",
+      "meta": {
+        "name": "my-monthly-profile"
+      },
       "type": "MonthlyProfile",
       "values": [
         -1,

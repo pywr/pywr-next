@@ -72,8 +72,8 @@ impl From<AggFuncV1> for AggFunc {
 /// ```
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
+#[serde(deny_unknown_fields)]
 pub struct AggregatedParameter {
-    #[serde(flatten)]
     pub meta: ParameterMeta,
     pub agg_func: AggFunc,
     pub metrics: Vec<Metric>,
@@ -167,8 +167,8 @@ impl From<IndexAggFuncV1> for IndexAggFunc {
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
+#[serde(deny_unknown_fields)]
 pub struct AggregatedIndexParameter {
-    #[serde(flatten)]
     pub meta: ParameterMeta,
     pub agg_func: IndexAggFunc,
     // TODO this should be `DynamicIntValues`
@@ -247,15 +247,19 @@ mod tests {
     fn test_aggregated() {
         let data = r#"
             {
-                "name": "my-agg-param",
-                "type": "aggregated",
+                "meta": {
+                    "name": "my-agg-param",
+                    "comment": "Take the minimum of two parameters"
+                },
                 "agg_func": "min",
-                "comment": "Take the minimum of two parameters",
                 "metrics": [
                   {
                     "type": "InlineParameter",
                     "definition": {
-                        "name": "First parameter",
+                        "meta": {
+                            "name": "First parameter",
+                            "comment": "A witty comment"
+                        },
                         "type": "ControlCurvePiecewiseInterpolated",
                         "storage_node": {
                           "name": "Reservoir",
@@ -265,7 +269,6 @@ mod tests {
                             {"type": "Parameter", "name": "reservoir_cc"},
                             {"type": "Constant", "value": 0.2}
                         ],
-                        "comment": "A witty comment",
                         "values": [
                             [-0.1, -1.0],
                             [-100, -200],
@@ -277,7 +280,10 @@ mod tests {
                   {
                     "type": "InlineParameter",
                     "definition": {
-                        "name": "Second parameter",
+                        "meta": {
+                            "name": "Second parameter",
+                            "comment": "A witty comment"
+                        },
                         "type": "ControlCurvePiecewiseInterpolated",
                         "storage_node": {
                           "name": "Reservoir",
@@ -287,7 +293,6 @@ mod tests {
                             {"type": "Parameter", "name": "reservoir_cc"},
                             {"type": "Constant", "value": 0.2}
                         ],
-                        "comment": "A witty comment",
                         "values": [
                             [-0.1, -1.0],
                             [-100, -200],

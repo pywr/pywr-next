@@ -36,9 +36,9 @@ use schemars::JsonSchema;
 ///
 )]
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
+#[serde(deny_unknown_fields)]
 pub struct WaterTreatmentWorks {
     /// Node metadata
-    #[serde(flatten)]
     pub meta: NodeMeta,
     /// The proportion of net flow that is lost to the loss node.
     pub loss_factor: Option<LossFactor>,

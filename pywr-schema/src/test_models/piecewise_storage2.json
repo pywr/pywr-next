@@ -12,7 +12,9 @@
   "network": {
     "nodes": [
       {
-        "name": "input1",
+        "meta": {
+          "name": "input1"
+        },
         "type": "Input",
         "max_flow": {
           "type": "Constant",
@@ -24,7 +26,9 @@
         }
       },
       {
-        "name": "storage1",
+        "meta": {
+          "name": "storage1"
+        },
         "type": "PiecewiseStorage",
         "max_volume": {
           "type": "Constant",
@@ -50,7 +54,9 @@
               "type": "InlineParameter",
               "definition": {
                 "type": "MonthlyProfile",
-                "name": "storage1-control-curve",
+                "meta": {
+                  "name": "storage1-control-curve"
+                },
                 "values": [
                   0.75,
                   0.75,
@@ -71,7 +77,9 @@
         ]
       },
       {
-        "name": "demand1",
+        "meta": {
+          "name": "demand1"
+        },
         "type": "Output",
         "max_flow": {
           "type": "Constant",
@@ -95,12 +103,16 @@
     ],
     "parameters": [
       {
-        "name": "storage1-drought-curve",
+        "meta": {
+          "name": "storage1-drought-curve"
+        },
         "type": "Constant",
         "value": 0.5
       },
       {
-        "name": "storage1-drought-index",
+        "meta": {
+          "name": "storage1-drought-index"
+        },
         "type": "ControlCurveIndex",
         "storage_node": {
           "name": "storage1",

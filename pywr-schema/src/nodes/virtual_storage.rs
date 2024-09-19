@@ -19,8 +19,8 @@ use pywr_v1_schema::nodes::VirtualStorageNode as VirtualStorageNodeV1;
 use schemars::JsonSchema;
 
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
+#[serde(deny_unknown_fields)]
 pub struct VirtualStorageNode {
-    #[serde(flatten)]
     pub meta: NodeMeta,
     pub nodes: Vec<NodeReference>,
     pub factors: Option<Vec<f64>>,

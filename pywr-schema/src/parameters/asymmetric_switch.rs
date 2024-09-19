@@ -11,8 +11,8 @@ use pywr_v1_schema::parameters::AsymmetricSwitchIndexParameter as AsymmetricSwit
 use schemars::JsonSchema;
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
+#[serde(deny_unknown_fields)]
 pub struct AsymmetricSwitchIndexParameter {
-    #[serde(flatten)]
     pub meta: ParameterMeta,
     pub on_index_parameter: DynamicIndexValue,
     pub off_index_parameter: DynamicIndexValue,

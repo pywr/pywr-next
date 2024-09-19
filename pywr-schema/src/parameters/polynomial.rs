@@ -9,8 +9,8 @@ use pywr_v1_schema::parameters::Polynomial1DParameter as Polynomial1DParameterV1
 use schemars::JsonSchema;
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
+#[serde(deny_unknown_fields)]
 pub struct Polynomial1DParameter {
-    #[serde(flatten)]
     pub meta: ParameterMeta,
     pub storage_node: String,
     pub coefficients: Vec<f64>,

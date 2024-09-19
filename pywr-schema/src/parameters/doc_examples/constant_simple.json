@@ -1,5 +1,7 @@
 {
   "type": "Constant",
-  "name": "my-constant",
+  "meta": {
+    "name": "my-constant"
+  },
   "value": 10.0
 }

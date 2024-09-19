@@ -237,6 +237,7 @@ pub enum TimeseriesColumns {
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct TimeseriesReference {
     name: String,
     columns: Option<TimeseriesColumns>,
@@ -253,6 +254,7 @@ impl TimeseriesReference {
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
+#[serde(deny_unknown_fields)]
 pub struct NodeReference {
     /// The name of the node
     pub name: String,
@@ -312,6 +314,7 @@ impl From<String> for NodeReference {
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct ParameterReference {
     /// The name of the parameter
     pub name: String,

@@ -15,6 +15,7 @@ use pywr_schema_macros::PywrVisitAll;
 use schemars::JsonSchema;
 
 #[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, PywrVisitAll)]
+#[serde(deny_unknown_fields)]
 pub struct PiecewiseStore {
     pub control_curve: Metric,
     pub cost: Option<Metric>,
@@ -47,8 +48,8 @@ pub struct PiecewiseStore {
 ///
 )]
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
+#[serde(deny_unknown_fields)]
 pub struct PiecewiseStorageNode {
-    #[serde(flatten)]
     pub meta: NodeMeta,
     pub max_volume: Metric,
     // TODO implement min volume

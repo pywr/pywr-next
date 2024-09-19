@@ -18,6 +18,7 @@ use pywr_v1_schema::nodes::MonthlyVirtualStorageNode as MonthlyVirtualStorageNod
 use schemars::JsonSchema;
 
 #[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, PywrVisitAll)]
+#[serde(deny_unknown_fields)]
 pub struct NumberOfMonthsReset {
     pub months: u8,
 }
@@ -29,8 +30,8 @@ impl Default for NumberOfMonthsReset {
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
+#[serde(deny_unknown_fields)]
 pub struct MonthlyVirtualStorageNode {
-    #[serde(flatten)]
     pub meta: NodeMeta,
     pub nodes: Vec<String>,
     pub factors: Option<Vec<f64>>,

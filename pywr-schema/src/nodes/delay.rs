@@ -31,8 +31,8 @@ use schemars::JsonSchema;
 ///
 )]
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
+#[serde(deny_unknown_fields)]
 pub struct DelayNode {
-    #[serde(flatten)]
     pub meta: NodeMeta,
     pub delay: usize,
     pub initial_value: ConstantValue<f64>,
