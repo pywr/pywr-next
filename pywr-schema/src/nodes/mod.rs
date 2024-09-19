@@ -20,20 +20,18 @@ use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::model::PywrNetwork;
-pub use crate::nodes::core::{
-    AggregatedNode, AggregatedStorageNode, CatchmentNode, InputNode, LinkNode, OutputNode, StorageNode,
-};
-pub use crate::nodes::delay::DelayNode;
-pub use crate::nodes::river::RiverNode;
-use crate::nodes::rolling_virtual_storage::RollingVirtualStorageNode;
-use crate::nodes::turbine::TurbineNode;
 use crate::parameters::TimeseriesV1Data;
 use crate::visit::{VisitMetrics, VisitPaths};
-pub use annual_virtual_storage::AnnualVirtualStorageNode;
-pub use loss_link::LossLinkNode;
+pub use annual_virtual_storage::{AnnualReset, AnnualVirtualStorageNode};
+pub use core::{
+    AggregatedNode, AggregatedStorageNode, CatchmentNode, Factors, InputNode, LinkNode, OutputNode,
+    StorageInitialVolume, StorageNode,
+};
+pub use delay::DelayNode;
+pub use loss_link::{LossFactor, LossLinkNode};
 pub use monthly_virtual_storage::MonthlyVirtualStorageNode;
 pub use piecewise_link::{PiecewiseLinkNode, PiecewiseLinkStep};
-pub use piecewise_storage::PiecewiseStorageNode;
+pub use piecewise_storage::{PiecewiseStorageNode, PiecewiseStore};
 #[cfg(feature = "core")]
 use pywr_core::metric::MetricF64;
 use pywr_schema_macros::PywrVisitAll;
@@ -43,11 +41,14 @@ use pywr_v1_schema::nodes::{
 use pywr_v1_schema::parameters::{
     CoreParameter as CoreParameterV1, Parameter as ParameterV1, ParameterValue as ParameterValueV1, ParameterValueType,
 };
+pub use river::RiverNode;
 pub use river_gauge::RiverGaugeNode;
-pub use river_split_with_gauge::RiverSplitWithGaugeNode;
+pub use river_split_with_gauge::{RiverSplit, RiverSplitWithGaugeNode};
+pub use rolling_virtual_storage::{RollingVirtualStorageNode, RollingWindow};
 use schemars::JsonSchema;
 use std::path::{Path, PathBuf};
 use strum_macros::{Display, EnumDiscriminants, EnumString, IntoStaticStr, VariantNames};
+pub use turbine::{TargetType, TurbineNode};
 pub use virtual_storage::VirtualStorageNode;
 pub use water_treatment_works::WaterTreatmentWorks;
 

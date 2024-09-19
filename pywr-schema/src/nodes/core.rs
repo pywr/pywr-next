@@ -1,7 +1,7 @@
 use crate::error::ConversionError;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
-use crate::metric::Metric;
+use crate::metric::{Metric, SimpleNodeReference};
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::nodes::{NodeAttribute, NodeMeta};
@@ -682,7 +682,7 @@ pub enum Factors {
 #[serde(deny_unknown_fields)]
 pub struct AggregatedNode {
     pub meta: NodeMeta,
-    pub nodes: Vec<String>,
+    pub nodes: Vec<SimpleNodeReference>,
     pub max_flow: Option<Metric>,
     pub min_flow: Option<Metric>,
     pub factors: Option<Factors>,
@@ -713,7 +713,7 @@ impl AggregatedNode {
         let nodes = self
             .nodes
             .iter()
-            .map(|name| network.get_node_index_by_name(name, None))
+            .map(|node_ref| network.get_node_index_by_name(&node_ref.name, None))
             .collect::<Result<Vec<_>, _>>()?;
 
         // We initialise with no factors, but will update them in the `set_constraints` method
@@ -812,9 +812,11 @@ impl TryFrom<AggregatedNodeV1> for AggregatedNode {
             .map(|v| v.try_into_v2_parameter(Some(&meta.name), &mut unnamed_count))
             .transpose()?;
 
+        let nodes = v1.nodes.into_iter().map(|n| n.into()).collect();
+
         let n = Self {
             meta,
-            nodes: v1.nodes,
+            nodes,
             max_flow,
             min_flow,
             factors,
@@ -827,7 +829,7 @@ impl TryFrom<AggregatedNodeV1> for AggregatedNode {
 #[serde(deny_unknown_fields)]
 pub struct AggregatedStorageNode {
     pub meta: NodeMeta,
-    pub storage_nodes: Vec<String>,
+    pub storage_nodes: Vec<SimpleNodeReference>,
 }
 
 impl AggregatedStorageNode {
@@ -855,7 +857,7 @@ impl AggregatedStorageNode {
         let nodes = self
             .storage_nodes
             .iter()
-            .map(|name| network.get_node_index_by_name(name, None))
+            .map(|node_ref| network.get_node_index_by_name(&node_ref.name, None))
             .collect::<Result<_, _>>()?;
 
         network.add_aggregated_storage_node(self.meta.name.as_str(), None, nodes)?;
@@ -896,9 +898,11 @@ impl TryFrom<AggregatedStorageNodeV1> for AggregatedStorageNode {
     type Error = ConversionError;
 
     fn try_from(v1: AggregatedStorageNodeV1) -> Result<Self, Self::Error> {
+        let storage_nodes = v1.storage_nodes.into_iter().map(|n| n.into()).collect();
+
         let n = Self {
             meta: v1.meta.into(),
-            storage_nodes: v1.storage_nodes,
+            storage_nodes,
         };
         Ok(n)
     }

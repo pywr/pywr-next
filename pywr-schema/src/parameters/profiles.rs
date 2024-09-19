@@ -70,7 +70,7 @@ impl TryFromV1Parameter<DailyProfileParameterV1> for DailyProfileParameter {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone, JsonSchema, PywrVisitAll)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone, strum_macros::Display, JsonSchema, PywrVisitAll)]
 pub enum MonthlyInterpDay {
     First,
     Last,
