@@ -1,8 +1,8 @@
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
+use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
-use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::parameters::{Parameter, PythonReturnType};
 use pywr_schema_macros::PywrVisitPaths;
