@@ -451,9 +451,7 @@ where
                     }
                     // Update the coefficients for the binary column to be the upper bound
                     self.builder.coefficients_to_update.push((row.row_id, bin_col_id, -ub));
-
-                    // This row is upper bounded to zero
-                    self.builder.apply_row_bounds(row.row_id.to_usize().unwrap(), FMIN, 0.0);
+                    // This row is already upper bounded to zero in `create_node_constraints`.
                 }
             }
         }
