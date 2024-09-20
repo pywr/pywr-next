@@ -9,12 +9,13 @@ use pywr_core::{
     derived_metric::DerivedMetric,
     metric::{MetricF64, SimpleMetricF64},
     node::StorageInitialVolume,
-    parameters::VolumeBetweenControlCurvesParameter,
+    parameters::{ParameterName, VolumeBetweenControlCurvesParameter},
 };
 use pywr_schema_macros::PywrVisitAll;
 use schemars::JsonSchema;
 
 #[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, PywrVisitAll)]
+#[serde(deny_unknown_fields)]
 pub struct PiecewiseStore {
     pub control_curve: Metric,
     pub cost: Option<Metric>,
@@ -47,8 +48,8 @@ pub struct PiecewiseStore {
 ///
 )]
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
+#[serde(deny_unknown_fields)]
 pub struct PiecewiseStorageNode {
-    #[serde(flatten)]
     pub meta: NodeMeta,
     pub max_volume: Metric,
     // TODO implement min volume
@@ -116,7 +117,11 @@ impl PiecewiseStorageNode {
             let upper = step.control_curve.load(network, args)?;
 
             let max_volume_parameter = VolumeBetweenControlCurvesParameter::new(
-                format!("{}-{}-max-volume", self.meta.name, Self::step_sub_name(i).unwrap()).as_str(),
+                // Node's name is the parent identifier
+                ParameterName::new(
+                    format!("{}-max-volume", Self::step_sub_name(i).unwrap()).as_str(),
+                    Some(&self.meta.name),
+                ),
                 max_volume.clone(),
                 Some(upper.try_into()?),
                 lower,
@@ -155,12 +160,10 @@ impl PiecewiseStorageNode {
         let upper = None;
 
         let max_volume_parameter = VolumeBetweenControlCurvesParameter::new(
-            format!(
-                "{}-{}-max-volume",
-                self.meta.name,
-                Self::step_sub_name(self.steps.len()).unwrap()
-            )
-            .as_str(),
+            ParameterName::new(
+                format!("{}-max-volume", Self::step_sub_name(self.steps.len()).unwrap()).as_str(),
+                Some(&self.meta.name),
+            ),
             max_volume.clone(),
             upper,
             lower,
@@ -363,7 +366,7 @@ mod tests {
         network.add_recorder(Box::new(recorder)).unwrap();
 
         let idx = network
-            .get_index_parameter_index_by_name("storage1-drought-index")
+            .get_index_parameter_index_by_name(&"storage1-drought-index".into())
             .unwrap();
 
         let recorder = IndexAssertionRecorder::new("storage1-drought-index", idx.into(), expected_drought_index);

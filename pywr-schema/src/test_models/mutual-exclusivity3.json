@@ -12,11 +12,15 @@
   "network": {
     "nodes": [
       {
-        "name": "input1",
+        "meta": {
+          "name": "input1"
+        },
         "type": "Input"
       },
       {
-        "name": "link1",
+        "meta": {
+          "name": "link1"
+        },
         "type": "PiecewiseLink",
         "steps": [
           {
@@ -34,7 +38,9 @@
         ]
       },
       {
-        "name": "demand1",
+        "meta": {
+          "name": "demand1"
+        },
         "type": "Output",
         "max_flow": {
           "type": "Constant",
@@ -46,7 +52,9 @@
         }
       },
       {
-        "name": "link2",
+        "meta": {
+          "name": "link2"
+        },
         "type": "PiecewiseLink",
         "steps": [
           {
@@ -64,7 +72,9 @@
         ]
       },
       {
-        "name": "demand2",
+        "meta": {
+          "name": "demand2"
+        },
         "type": "Output",
         "max_flow": {
           "type": "Constant",
@@ -76,7 +86,9 @@
         }
       },
       {
-        "name": "me",
+        "meta": {
+          "name": "me"
+        },
         "type": "Aggregated",
         "nodes": [
           "link1",

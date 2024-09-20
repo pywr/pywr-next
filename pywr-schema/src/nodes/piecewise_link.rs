@@ -13,6 +13,7 @@ use pywr_v1_schema::nodes::PiecewiseLinkNode as PiecewiseLinkNodeV1;
 use schemars::JsonSchema;
 
 #[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, PywrVisitAll)]
+#[serde(deny_unknown_fields)]
 pub struct PiecewiseLinkStep {
     pub max_flow: Option<Metric>,
     pub min_flow: Option<Metric>,
@@ -42,8 +43,8 @@ pub struct PiecewiseLinkStep {
 ///
 )]
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
+#[serde(deny_unknown_fields)]
 pub struct PiecewiseLinkNode {
-    #[serde(flatten)]
     pub meta: NodeMeta,
     pub steps: Vec<PiecewiseLinkStep>,
 }

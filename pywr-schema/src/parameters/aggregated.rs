@@ -72,8 +72,8 @@ impl From<AggFuncV1> for AggFunc {
 /// ```
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
+#[serde(deny_unknown_fields)]
 pub struct AggregatedParameter {
-    #[serde(flatten)]
     pub meta: ParameterMeta,
     pub agg_func: AggFunc,
     pub metrics: Vec<Metric>,
@@ -92,7 +92,11 @@ impl AggregatedParameter {
             .map(|v| v.load(network, args))
             .collect::<Result<Vec<_>, _>>()?;
 
-        let p = pywr_core::parameters::AggregatedParameter::new(&self.meta.name, &metrics, self.agg_func.into());
+        let p = pywr_core::parameters::AggregatedParameter::new(
+            self.meta.name.as_str().into(),
+            &metrics,
+            self.agg_func.into(),
+        );
 
         Ok(network.add_parameter(Box::new(p))?)
     }
@@ -163,8 +167,8 @@ impl From<IndexAggFuncV1> for IndexAggFunc {
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
+#[serde(deny_unknown_fields)]
 pub struct AggregatedIndexParameter {
-    #[serde(flatten)]
     pub meta: ParameterMeta,
     pub agg_func: IndexAggFunc,
     // TODO this should be `DynamicIntValues`
@@ -199,7 +203,11 @@ impl AggregatedIndexParameter {
             .map(|v| v.load(network, args))
             .collect::<Result<Vec<_>, _>>()?;
 
-        let p = pywr_core::parameters::AggregatedIndexParameter::new(&self.meta.name, parameters, self.agg_func.into());
+        let p = pywr_core::parameters::AggregatedIndexParameter::new(
+            self.meta.name.as_str().into(),
+            parameters,
+            self.agg_func.into(),
+        );
 
         Ok(network.add_index_parameter(Box::new(p))?)
     }
@@ -239,15 +247,19 @@ mod tests {
     fn test_aggregated() {
         let data = r#"
             {
-                "name": "my-agg-param",
-                "type": "aggregated",
+                "meta": {
+                    "name": "my-agg-param",
+                    "comment": "Take the minimum of two parameters"
+                },
                 "agg_func": "min",
-                "comment": "Take the minimum of two parameters",
                 "metrics": [
                   {
                     "type": "InlineParameter",
                     "definition": {
-                        "name": "First parameter",
+                        "meta": {
+                            "name": "First parameter",
+                            "comment": "A witty comment"
+                        },
                         "type": "ControlCurvePiecewiseInterpolated",
                         "storage_node": {
                           "name": "Reservoir",
@@ -257,7 +269,6 @@ mod tests {
                             {"type": "Parameter", "name": "reservoir_cc"},
                             {"type": "Constant", "value": 0.2}
                         ],
-                        "comment": "A witty comment",
                         "values": [
                             [-0.1, -1.0],
                             [-100, -200],
@@ -269,7 +280,10 @@ mod tests {
                   {
                     "type": "InlineParameter",
                     "definition": {
-                        "name": "Second parameter",
+                        "meta": {
+                            "name": "Second parameter",
+                            "comment": "A witty comment"
+                        },
                         "type": "ControlCurvePiecewiseInterpolated",
                         "storage_node": {
                           "name": "Reservoir",
@@ -279,7 +293,6 @@ mod tests {
                             {"type": "Parameter", "name": "reservoir_cc"},
                             {"type": "Constant", "value": 0.2}
                         ],
-                        "comment": "A witty comment",
                         "values": [
                             [-0.1, -1.0],
                             [-100, -200],

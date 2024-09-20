@@ -18,6 +18,7 @@ use pywr_v1_schema::nodes::AnnualVirtualStorageNode as AnnualVirtualStorageNodeV
 use schemars::JsonSchema;
 
 #[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, PywrVisitAll)]
+#[serde(deny_unknown_fields)]
 pub struct AnnualReset {
     pub day: u8,
     pub month: u8,
@@ -35,8 +36,8 @@ impl Default for AnnualReset {
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
+#[serde(deny_unknown_fields)]
 pub struct AnnualVirtualStorageNode {
-    #[serde(flatten)]
     pub meta: NodeMeta,
     pub nodes: Vec<String>,
     pub factors: Option<Vec<f64>>,

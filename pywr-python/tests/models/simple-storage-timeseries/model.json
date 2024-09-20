@@ -10,7 +10,9 @@
   "network": {
     "nodes": [
       {
-        "name": "input1",
+        "meta": {
+          "name": "input1"
+        },
         "type": "Input",
         "max_flow": {
           "type": "Constant",
@@ -18,7 +20,9 @@
         }
       },
       {
-        "name": "storage1",
+        "meta": {
+          "name": "storage1"
+        },
         "type": "Storage",
         "cost": {
           "type": "Constant",
@@ -33,7 +37,9 @@
         }
       },
       {
-        "name": "output1",
+        "meta": {
+          "name": "output1"
+        },
         "type": "Output",
         "cost": {
           "type": "Constant",
@@ -57,7 +63,9 @@
     ],
     "parameters": [
       {
-        "name": "demand",
+        "meta": {
+          "name": "demand"
+        },
         "type": "Constant",
         "value": 10.0
       }

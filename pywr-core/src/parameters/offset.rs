@@ -2,7 +2,7 @@ use crate::metric::MetricF64;
 use crate::network::Network;
 use crate::parameters::{
     downcast_internal_state_mut, downcast_internal_state_ref, downcast_variable_config_ref, ActivationFunction,
-    GeneralParameter, Parameter, ParameterMeta, ParameterState, VariableConfig, VariableParameter,
+    GeneralParameter, Parameter, ParameterMeta, ParameterName, ParameterState, VariableConfig, VariableParameter,
 };
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
@@ -19,7 +19,7 @@ pub struct OffsetParameter {
 type InternalValue = Option<f64>;
 
 impl OffsetParameter {
-    pub fn new(name: &str, metric: MetricF64, offset: f64) -> Self {
+    pub fn new(name: ParameterName, metric: MetricF64, offset: f64) -> Self {
         Self {
             meta: ParameterMeta::new(name),
             metric,
