@@ -20,8 +20,8 @@ use pywr_v1_schema::nodes::{
 use schemars::JsonSchema;
 
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
+#[serde(deny_unknown_fields)]
 pub struct InputNode {
-    #[serde(flatten)]
     pub meta: NodeMeta,
     pub max_flow: Option<Metric>,
     pub min_flow: Option<Metric>,
@@ -136,7 +136,6 @@ pub struct SoftConstraint {
     pub flow: Option<Metric>,
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
 #[doc = svgbobdoc::transform!(
 /// A node with cost, and min and max flow constraints. The node `L`, when connected to an upstream
 /// node `U` and downstream node `D`, will look like this on the model schematic:
@@ -241,8 +240,9 @@ pub struct SoftConstraint {
 ///   (for example when the abstraction license or the source runs out), the minimum flow will not
 ///   be honoured and the solver will find a solution.
 )]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
+#[serde(deny_unknown_fields)]
 pub struct LinkNode {
-    #[serde(flatten)]
     pub meta: NodeMeta,
     /// The optional maximum flow through the node.
     pub max_flow: Option<Metric>,
@@ -574,8 +574,8 @@ impl TryFrom<LinkNodeV1> for LinkNode {
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
+#[serde(deny_unknown_fields)]
 pub struct OutputNode {
-    #[serde(flatten)]
     pub meta: NodeMeta,
     pub max_flow: Option<Metric>,
     pub min_flow: Option<Metric>,
@@ -711,8 +711,8 @@ impl From<StorageInitialVolume> for CoreStorageInitialVolume {
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
+#[serde(deny_unknown_fields)]
 pub struct StorageNode {
-    #[serde(flatten)]
     pub meta: NodeMeta,
     pub max_volume: Option<Metric>,
     pub min_volume: Option<Metric>,
@@ -910,8 +910,8 @@ impl TryFrom<ReservoirNodeV1> for StorageNode {
 ///
 )]
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
+#[serde(deny_unknown_fields)]
 pub struct CatchmentNode {
-    #[serde(flatten)]
     pub meta: NodeMeta,
     pub flow: Option<Metric>,
     pub cost: Option<Metric>,
@@ -1006,15 +1006,15 @@ impl TryFrom<CatchmentNodeV1> for CatchmentNode {
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, PywrVisitAll)]
-#[serde(tag = "type")]
+#[serde(tag = "type", deny_unknown_fields)]
 pub enum Factors {
     Proportion { factors: Vec<Metric> },
     Ratio { factors: Vec<Metric> },
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
+#[serde(deny_unknown_fields)]
 pub struct AggregatedNode {
-    #[serde(flatten)]
     pub meta: NodeMeta,
     pub nodes: Vec<String>,
     pub max_flow: Option<Metric>,
@@ -1158,8 +1158,8 @@ impl TryFrom<AggregatedNodeV1> for AggregatedNode {
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
+#[serde(deny_unknown_fields)]
 pub struct AggregatedStorageNode {
-    #[serde(flatten)]
     pub meta: NodeMeta,
     pub storage_nodes: Vec<String>,
 }
@@ -1254,8 +1254,9 @@ mod tests {
     fn test_input() {
         let data = r#"
             {
-                "name": "supply1",
-                "type": "Input",
+                "meta": {
+                    "name": "supply1"
+                },
                 "max_flow": {
                     "type": "Constant",
                     "value": 15.0
@@ -1272,9 +1273,13 @@ mod tests {
     fn test_storage_initial_volume_absolute() {
         let data = r#"
             {
-                "name": "storage1",
-                "type": "Storage",
-                "volume": 15.0,
+                "meta": {
+                    "name": "storage1"
+                },
+                "max_volume": {
+                  "type": "Constant",
+                  "value": 10.0
+                },
                 "initial_volume": {
                     "Absolute": 12.0
                 }
@@ -1290,9 +1295,13 @@ mod tests {
     fn test_storage_initial_volume_proportional() {
         let data = r#"
             {
-                "name": "storage1",
-                "type": "Storage",
-                "volume": 15.0,
+                "meta": {
+                    "name": "storage1"
+                },
+                "max_volume": {
+                  "type": "Constant",
+                  "value": 15.0
+                },
                 "initial_volume": {
                     "Proportional": 0.5
                 }

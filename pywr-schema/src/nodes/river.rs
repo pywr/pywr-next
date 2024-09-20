@@ -9,8 +9,8 @@ use pywr_v1_schema::nodes::LinkNode as LinkNodeV1;
 use schemars::JsonSchema;
 
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
+#[serde(deny_unknown_fields)]
 pub struct RiverNode {
-    #[serde(flatten)]
     pub meta: NodeMeta,
 }
 

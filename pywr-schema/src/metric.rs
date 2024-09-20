@@ -237,6 +237,7 @@ pub enum TimeseriesColumns {
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct TimeseriesReference {
     name: String,
     columns: Option<TimeseriesColumns>,
@@ -253,6 +254,7 @@ impl TimeseriesReference {
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
+#[serde(deny_unknown_fields)]
 pub struct NodeReference {
     /// The name of the node
     pub name: String,
@@ -261,6 +263,10 @@ pub struct NodeReference {
 }
 
 impl NodeReference {
+    pub fn new(name: String, attribute: Option<NodeAttribute>) -> Self {
+        Self { name, attribute }
+    }
+
     #[cfg(feature = "core")]
     pub fn load(&self, network: &mut pywr_core::network::Network, args: &LoadArgs) -> Result<MetricF64, SchemaError> {
         // This is the associated node in the schema
@@ -308,6 +314,7 @@ impl From<String> for NodeReference {
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct ParameterReference {
     /// The name of the parameter
     pub name: String,
@@ -316,6 +323,10 @@ pub struct ParameterReference {
 }
 
 impl ParameterReference {
+    pub fn new(name: String, key: Option<String>) -> Self {
+        Self { name, key }
+    }
+
     #[cfg(feature = "core")]
     pub fn load(&self, network: &mut pywr_core::network::Network) -> Result<MetricF64, SchemaError> {
         let name = self.name.as_str().into();

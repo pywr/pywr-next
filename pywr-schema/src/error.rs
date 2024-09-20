@@ -61,6 +61,8 @@ pub enum SchemaError {
     LiteralConstantOutputNotSupported,
     #[error("Chrono out of range error: {0}")]
     OutOfRange(#[from] chrono::OutOfRange),
+    #[error("The metric set with name '{0}' contains no metrics")]
+    EmptyMetricSet(String),
 }
 
 #[cfg(feature = "core")]

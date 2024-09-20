@@ -1,6 +1,8 @@
 {
   "type": "Offset",
-  "name": "my-offset",
+  "meta": {
+    "name": "my-offset"
+  },
   "offset": 3.14,
   "metric": {
     "type": "Parameter",

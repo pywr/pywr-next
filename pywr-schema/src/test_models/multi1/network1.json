@@ -1,7 +1,9 @@
 {
   "nodes": [
     {
-      "name": "supply1",
+      "meta": {
+        "name": "supply1"
+      },
       "type": "Input",
       "max_flow": {
         "type": "Constant",
@@ -9,11 +11,15 @@
       }
     },
     {
-      "name": "link1",
+      "meta": {
+        "name": "link1"
+      },
       "type": "Link"
     },
     {
-      "name": "demand1",
+      "meta": {
+        "name": "demand1"
+      },
       "type": "Output",
       "max_flow": {
         "type": "Parameter",
@@ -37,7 +43,9 @@
   ],
   "parameters": [
     {
-      "name": "demand",
+      "meta": {
+        "name": "demand"
+      },
       "type": "Constant",
       "value": 10.0
     }

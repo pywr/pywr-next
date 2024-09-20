@@ -12,11 +12,15 @@
   "network": {
     "nodes": [
       {
-        "name": "input",
+        "meta": {
+          "name": "input"
+        },
         "type": "Input"
       },
       {
-        "name": "link",
+        "meta": {
+          "name": "link"
+        },
         "type": "Link",
         "soft_max": {
           "cost": {
@@ -30,7 +34,9 @@
         }
       },
       {
-        "name": "demand",
+        "meta": {
+          "name": "demand"
+        },
         "type": "Output",
         "max_flow": {
           "type": "Constant",
