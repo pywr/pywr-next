@@ -48,7 +48,7 @@ pub struct HydropowerTargetParameter {
     /// The elevation of water entering the turbine. The difference of this
     /// value with the `turbine_elevation` gives the working head of the turbine. This is optional
     /// and can be a constant, a value from a table, a parameter name or an inline parameter
-    /// (see [`Metric`]).
+    /// (see [`DynamicFloatValue`]).
     pub water_elevation: Option<Metric>,
     /// The elevation of the turbine. The difference between the `water_elevation` and this value
     /// gives the working head of the turbine. Default to `0.0`.
