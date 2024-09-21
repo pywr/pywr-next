@@ -102,7 +102,7 @@ const COIN_UTILS_SRCS: [&str; 57] = [
 fn compile_coin_utils() {
     let mut builder = make_builder();
 
-    builder.flag(&format!("-I{}", COIN_UTILS_PATH));
+    builder.flag(format!("-I{}", COIN_UTILS_PATH));
 
     for src in COIN_UTILS_SRCS.iter() {
         builder.file(format!("{}/{}", COIN_UTILS_PATH, src));
@@ -134,8 +134,8 @@ fn compile_osi() {
     let mut builder = make_builder();
 
     builder
-        .flag(&format!("-I{}", COIN_UTILS_PATH))
-        .flag(&format!("-I{}", OSI_SRC_PATH));
+        .flag(format!("-I{}", COIN_UTILS_PATH))
+        .flag(format!("-I{}", OSI_SRC_PATH));
 
     for src in OSI_SRCS.iter() {
         builder.file(format!("{}/{}", OSI_SRC_PATH, src));
