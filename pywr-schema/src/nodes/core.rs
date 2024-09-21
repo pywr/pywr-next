@@ -566,7 +566,7 @@ impl TryFrom<ReservoirNodeV1> for StorageNode {
 #[doc = svgbobdoc::transform!(
 /// This is used to represent a catchment inflow.
 ///
-/// Catchment nodes create a single [`crate::node::InputNode`] node in the network, but
+/// Catchment nodes create a single [`InputNode`] node in the network, but
 /// ensure that the maximum and minimum flow are equal to [`Self::flow`].
 ///
 /// ```svgbob
