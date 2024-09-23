@@ -1,0 +1,144 @@
+{
+  "metadata": {
+    "title": "Mutual exclusivity test 1",
+    "description": "Test mutual exclusivities work with simple link node types",
+    "minimum_version": "0.1"
+  },
+  "timestepper": {
+    "start": "2015-01-01",
+    "end": "2015-01-03",
+    "timestep": 1
+  },
+  "network": {
+    "nodes": [
+      {
+        "meta": {
+          "name": "input1"
+        },
+        "type": "Input"
+      },
+      {
+        "meta": {
+          "name": "link1"
+        },
+        "type": "Link",
+        "max_flow": {
+          "type": "Constant",
+          "value": 10.0
+        }
+      },
+      {
+        "meta": {
+          "name": "demand1"
+        },
+        "type": "Output",
+        "max_flow": {
+          "type": "Constant",
+          "value": 15.0
+        },
+        "cost": {
+          "type": "Constant",
+          "value": -15
+        }
+      },
+      {
+        "meta": {
+          "name": "link2"
+        },
+        "type": "Link",
+        "max_flow": {
+          "type": "Constant",
+          "value": 10.0
+        }
+      },
+      {
+        "meta": {
+          "name": "demand2"
+        },
+        "type": "Output",
+        "max_flow": {
+          "type": "Constant",
+          "value": 15.0
+        },
+        "cost": {
+          "type": "Constant",
+          "value": -10
+        }
+      },
+      {
+        "meta": {
+          "name": "me"
+        },
+        "type": "Aggregated",
+        "nodes": [
+          {
+            "name": "link1"
+          },
+          {
+            "name": "link2"
+          }
+        ],
+        "factors": {
+          "type": "Exclusive"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "from_node": "input1",
+        "to_node": "link1"
+      },
+      {
+        "from_node": "link1",
+        "to_node": "demand1"
+      },
+      {
+        "from_node": "input1",
+        "to_node": "link2"
+      },
+      {
+        "from_node": "link2",
+        "to_node": "demand2"
+      }
+    ],
+    "metric_sets": [
+      {
+        "name": "nodes",
+        "metrics": [
+          {
+            "type": "Node",
+            "name": "link1",
+            "attribute": "Inflow"
+          },
+          {
+            "type": "Node",
+            "name": "link1",
+            "attribute": "Outflow"
+          },
+          {
+            "type": "Node",
+            "name": "link2",
+            "attribute": "Inflow"
+          },
+          {
+            "type": "Node",
+            "name": "link2",
+            "attribute": "Outflow"
+          }
+        ]
+      }
+    ],
+    "outputs": [
+      {
+        "name": "node-outputs",
+        "type": "CSV",
+        "format": "long",
+        "filename": "output.csv",
+        "metric_set": [
+          "nodes"
+        ],
+        "decimal_places": 1
+      }
+    ]
+  }
+}

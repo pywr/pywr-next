@@ -98,6 +98,26 @@ impl RollingVirtualStorageNode {
 
 #[cfg(feature = "core")]
 impl RollingVirtualStorageNode {
+    pub fn node_indices_for_constraints(
+        &self,
+        network: &pywr_core::network::Network,
+        args: &LoadArgs,
+    ) -> Result<Vec<pywr_core::node::NodeIndex>, SchemaError> {
+        let indices = self
+            .nodes
+            .iter()
+            .map(|node_ref| {
+                args.schema
+                    .get_node_by_name(&node_ref.name)
+                    .ok_or_else(|| SchemaError::NodeNotFound(node_ref.name.to_string()))?
+                    .node_indices_for_constraints(network, args)
+            })
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .flatten()
+            .collect();
+        Ok(indices)
+    }
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network, args: &LoadArgs) -> Result<(), SchemaError> {
         let cost = match &self.cost {
             Some(v) => v.load(network, args)?.into(),
@@ -114,12 +134,7 @@ impl RollingVirtualStorageNode {
             None => None,
         };
 
-        let node_idxs = self
-            .nodes
-            .iter()
-            .map(|node_ref| network.get_node_index_by_name(&node_ref.name, None))
-            .collect::<Result<Vec<_>, _>>()?;
-
+        let node_idxs = self.node_indices_for_constraints(network, args)?;
         // The rolling licence never resets
         let reset = VirtualStorageReset::Never;
         let timesteps =
