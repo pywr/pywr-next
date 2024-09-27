@@ -1,7 +1,7 @@
 use crate::error::ConversionError;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
-use crate::metric::Metric;
+use crate::metric::{Metric, SimpleNodeReference};
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::nodes::core::StorageInitialVolume;
@@ -39,7 +39,7 @@ impl Default for AnnualReset {
 #[serde(deny_unknown_fields)]
 pub struct AnnualVirtualStorageNode {
     pub meta: NodeMeta,
-    pub nodes: Vec<String>,
+    pub nodes: Vec<SimpleNodeReference>,
     pub factors: Option<Vec<f64>>,
     pub max_volume: Option<Metric>,
     pub min_volume: Option<Metric>,
@@ -74,10 +74,10 @@ impl AnnualVirtualStorageNode {
         let indices = self
             .nodes
             .iter()
-            .map(|name| {
+            .map(|node_ref| {
                 args.schema
-                    .get_node_by_name(name)
-                    .ok_or_else(|| SchemaError::NodeNotFound(name.to_string()))?
+                    .get_node_by_name(&node_ref.name)
+                    .ok_or_else(|| SchemaError::NodeNotFound(node_ref.name.to_string()))?
                     .node_indices_for_constraints(network, args)
             })
             .collect::<Result<Vec<_>, _>>()?
@@ -188,9 +188,11 @@ impl TryFrom<AnnualVirtualStorageNodeV1> for AnnualVirtualStorageNode {
             });
         };
 
+        let nodes = v1.nodes.into_iter().map(|n| n.into()).collect();
+
         let n = Self {
             meta,
-            nodes: v1.nodes,
+            nodes,
             factors: v1.factors,
             max_volume,
             min_volume,

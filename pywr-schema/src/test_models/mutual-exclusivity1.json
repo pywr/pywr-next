@@ -71,8 +71,12 @@
         },
         "type": "Aggregated",
         "nodes": [
-          "link1",
-          "link2"
+          {
+            "name": "link1"
+          },
+          {
+            "name": "link2"
+          }
         ],
         "factors": {
           "type": "Exclusive"

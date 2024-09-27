@@ -1,7 +1,7 @@
 use crate::error::ConversionError;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
-use crate::metric::Metric;
+use crate::metric::{Metric, SimpleNodeReference};
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::nodes::{NodeAttribute, NodeMeta};
@@ -725,7 +725,7 @@ pub enum Relationship {
 #[serde(deny_unknown_fields)]
 pub struct AggregatedNode {
     pub meta: NodeMeta,
-    pub nodes: Vec<String>,
+    pub nodes: Vec<SimpleNodeReference>,
     pub max_flow: Option<Metric>,
     pub min_flow: Option<Metric>,
     pub factors: Option<Relationship>,
@@ -760,10 +760,10 @@ impl AggregatedNode {
         let indices = self
             .nodes
             .iter()
-            .map(|name| {
+            .map(|node_ref| {
                 args.schema
-                    .get_node_by_name(name)
-                    .ok_or_else(|| SchemaError::NodeNotFound(name.to_string()))?
+                    .get_node_by_name(&node_ref.name)
+                    .ok_or_else(|| SchemaError::NodeNotFound(node_ref.name.to_string()))?
                     .node_indices_for_constraints(network, args)
             })
             .collect::<Result<Vec<_>, _>>()?
@@ -776,11 +776,11 @@ impl AggregatedNode {
         let nodes: Vec<Vec<_>> = self
             .nodes
             .iter()
-            .map(|name| {
+            .map(|node_ref| {
                 let node = args
                     .schema
-                    .get_node_by_name(name)
-                    .ok_or_else(|| SchemaError::NodeNotFound(name.to_string()))?;
+                    .get_node_by_name(&node_ref.name)
+                    .ok_or_else(|| SchemaError::NodeNotFound(node_ref.name.to_string()))?;
                 node.node_indices_for_constraints(network, args)
             })
             .collect::<Result<Vec<_>, _>>()?;
@@ -889,9 +889,11 @@ impl TryFrom<AggregatedNodeV1> for AggregatedNode {
             .map(|v| v.try_into_v2_parameter(Some(&meta.name), &mut unnamed_count))
             .transpose()?;
 
+        let nodes = v1.nodes.into_iter().map(|n| n.into()).collect();
+
         let n = Self {
             meta,
-            nodes: v1.nodes,
+            nodes,
             max_flow,
             min_flow,
             factors,
@@ -904,7 +906,7 @@ impl TryFrom<AggregatedNodeV1> for AggregatedNode {
 #[serde(deny_unknown_fields)]
 pub struct AggregatedStorageNode {
     pub meta: NodeMeta,
-    pub storage_nodes: Vec<String>,
+    pub storage_nodes: Vec<SimpleNodeReference>,
 }
 
 impl AggregatedStorageNode {
@@ -936,10 +938,10 @@ impl AggregatedStorageNode {
         let indices = self
             .storage_nodes
             .iter()
-            .map(|name| {
+            .map(|node_ref| {
                 args.schema
-                    .get_node_by_name(name)
-                    .ok_or_else(|| SchemaError::NodeNotFound(name.to_string()))?
+                    .get_node_by_name(&node_ref.name)
+                    .ok_or_else(|| SchemaError::NodeNotFound(node_ref.name.to_string()))?
                     .node_indices_for_constraints(network, args)
             })
             .collect::<Result<Vec<_>, _>>()?
@@ -952,7 +954,7 @@ impl AggregatedStorageNode {
         let nodes = self
             .storage_nodes
             .iter()
-            .map(|name| network.get_node_index_by_name(name, None))
+            .map(|node_ref| network.get_node_index_by_name(&node_ref.name, None))
             .collect::<Result<_, _>>()?;
 
         network.add_aggregated_storage_node(self.meta.name.as_str(), None, nodes)?;
@@ -993,9 +995,11 @@ impl TryFrom<AggregatedStorageNodeV1> for AggregatedStorageNode {
     type Error = ConversionError;
 
     fn try_from(v1: AggregatedStorageNodeV1) -> Result<Self, Self::Error> {
+        let storage_nodes = v1.storage_nodes.into_iter().map(|n| n.into()).collect();
+
         let n = Self {
             meta: v1.meta.into(),
-            storage_nodes: v1.storage_nodes,
+            storage_nodes,
         };
         Ok(n)
     }

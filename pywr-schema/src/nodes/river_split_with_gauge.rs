@@ -12,6 +12,12 @@ use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::nodes::RiverSplitWithGaugeNode as RiverSplitWithGaugeNodeV1;
 use schemars::JsonSchema;
 
+#[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, PywrVisitAll)]
+pub struct RiverSplit {
+    pub factor: Metric,
+    pub slot_name: String,
+}
+
 #[doc = svgbobdoc::transform!(
 /// This is used to represent a proportional split above a minimum residual flow (MRF) at a gauging station.
 ///
@@ -40,7 +46,7 @@ pub struct RiverSplitWithGaugeNode {
     pub meta: NodeMeta,
     pub mrf: Option<Metric>,
     pub mrf_cost: Option<Metric>,
-    pub splits: Vec<(Metric, String)>,
+    pub splits: Vec<RiverSplit>,
 }
 
 impl RiverSplitWithGaugeNode {
@@ -85,7 +91,7 @@ impl RiverSplitWithGaugeNode {
                 let i = self
                     .splits
                     .iter()
-                    .position(|(_, s)| s == slot)
+                    .position(|split| split.slot_name == slot)
                     .expect("Invalid slot name!");
 
                 vec![(self.meta.name.as_str(), Self::split_sub_name(i))]
@@ -164,9 +170,9 @@ impl RiverSplitWithGaugeNode {
             network.set_node_max_flow(self.meta.name.as_str(), Self::mrf_sub_name(), value.into())?;
         }
 
-        for (i, (factor, _)) in self.splits.iter().enumerate() {
+        for (i, split) in self.splits.iter().enumerate() {
             // Set the factors for each split
-            let r = Relationship::new_proportion_factors(&[factor.load(network, args)?]);
+            let r = Relationship::new_proportion_factors(&[split.factor.load(network, args)?]);
             network.set_aggregated_node_relationship(
                 self.meta.name.as_str(),
                 Self::split_agg_sub_name(i).as_deref(),
@@ -246,12 +252,12 @@ impl TryFrom<RiverSplitWithGaugeNodeV1> for RiverSplitWithGaugeNode {
             .skip(1)
             .zip(v1.slot_names.into_iter().skip(1))
             .map(|(f, slot_name)| {
-                Ok((
-                    f.try_into_v2_parameter(Some(&meta.name), &mut unnamed_count)?,
+                Ok(RiverSplit {
+                    factor: f.try_into_v2_parameter(Some(&meta.name), &mut unnamed_count)?,
                     slot_name,
-                ))
+                })
             })
-            .collect::<Result<Vec<(Metric, String)>, Self::Error>>()?;
+            .collect::<Result<Vec<_>, Self::Error>>()?;
 
         let n = Self {
             meta,

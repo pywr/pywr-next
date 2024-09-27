@@ -1,8 +1,7 @@
 use crate::error::ConversionError;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
-use crate::metric::Metric;
-use crate::metric::NodeReference;
+use crate::metric::{Metric, SimpleNodeReference};
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::nodes::core::StorageInitialVolume;
@@ -22,7 +21,7 @@ use schemars::JsonSchema;
 #[serde(deny_unknown_fields)]
 pub struct VirtualStorageNode {
     pub meta: NodeMeta,
-    pub nodes: Vec<NodeReference>,
+    pub nodes: Vec<SimpleNodeReference>,
     pub factors: Option<Vec<f64>>,
     pub max_volume: Option<Metric>,
     pub min_volume: Option<Metric>,

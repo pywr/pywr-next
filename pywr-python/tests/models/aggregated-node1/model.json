@@ -49,8 +49,12 @@
         },
         "type": "Aggregated",
         "nodes": [
-          "link1",
-          "link2"
+          {
+            "name": "link1"
+          },
+          {
+            "name": "link2"
+          }
         ],
         "max_flow": {
           "type": "Constant",

@@ -1,16 +1,15 @@
 use crate::error::ConversionError;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
-use crate::metric::Metric;
+use crate::metric::{Metric, SimpleNodeReference};
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
-use crate::nodes::{NodeAttribute, NodeMeta};
+use crate::nodes::{NodeAttribute, NodeMeta, StorageInitialVolume};
 use crate::parameters::TryIntoV2Parameter;
 #[cfg(feature = "core")]
 use pywr_core::{
     derived_metric::DerivedMetric,
     metric::MetricF64,
-    node::StorageInitialVolume,
     timestep::TimeDomain,
     virtual_storage::{VirtualStorageBuilder, VirtualStorageReset},
 };
@@ -72,13 +71,12 @@ impl RollingWindow {
 #[serde(deny_unknown_fields)]
 pub struct RollingVirtualStorageNode {
     pub meta: NodeMeta,
-    pub nodes: Vec<String>,
+    pub nodes: Vec<SimpleNodeReference>,
     pub factors: Option<Vec<f64>>,
     pub max_volume: Option<Metric>,
     pub min_volume: Option<Metric>,
     pub cost: Option<Metric>,
-    pub initial_volume: Option<f64>,
-    pub initial_volume_pc: Option<f64>,
+    pub initial_volume: StorageInitialVolume,
     pub window: RollingWindow,
 }
 
@@ -108,10 +106,10 @@ impl RollingVirtualStorageNode {
         let indices = self
             .nodes
             .iter()
-            .map(|name| {
+            .map(|node_ref| {
                 args.schema
-                    .get_node_by_name(name)
-                    .ok_or_else(|| SchemaError::NodeNotFound(name.to_string()))?
+                    .get_node_by_name(&node_ref.name)
+                    .ok_or_else(|| SchemaError::NodeNotFound(node_ref.name.to_string()))?
                     .node_indices_for_constraints(network, args)
             })
             .collect::<Result<Vec<_>, _>>()?
@@ -121,14 +119,6 @@ impl RollingVirtualStorageNode {
         Ok(indices)
     }
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network, args: &LoadArgs) -> Result<(), SchemaError> {
-        let initial_volume = if let Some(iv) = self.initial_volume {
-            StorageInitialVolume::Absolute(iv)
-        } else if let Some(pc) = self.initial_volume_pc {
-            StorageInitialVolume::Proportional(pc)
-        } else {
-            return Err(SchemaError::MissingInitialVolume(self.meta.name.to_string()));
-        };
-
         let cost = match &self.cost {
             Some(v) => v.load(network, args)?.into(),
             None => None,
@@ -155,7 +145,7 @@ impl RollingVirtualStorageNode {
                 })?;
 
         let mut builder = VirtualStorageBuilder::new(self.meta.name.as_str(), &node_idxs)
-            .initial_volume(initial_volume)
+            .initial_volume(self.initial_volume.into())
             .min_volume(min_volume)
             .max_volume(max_volume)
             .reset(reset)
@@ -220,6 +210,17 @@ impl TryFrom<RollingVirtualStorageNodeV1> for RollingVirtualStorageNode {
             .map(|v| v.try_into_v2_parameter(Some(&meta.name), &mut unnamed_count))
             .transpose()?;
 
+        let initial_volume = if let Some(v) = v1.initial_volume {
+            StorageInitialVolume::Absolute(v)
+        } else if let Some(v) = v1.initial_volume_pc {
+            StorageInitialVolume::Proportional(v)
+        } else {
+            return Err(ConversionError::MissingAttribute {
+                name: meta.name,
+                attrs: vec!["initial_volume".to_string(), "initial_volume_pc".to_string()],
+            });
+        };
+
         let window = if let Some(days) = v1.days {
             if let Some(days) = NonZeroUsize::new(days as usize) {
                 RollingWindow::Days(days)
@@ -245,15 +246,16 @@ impl TryFrom<RollingVirtualStorageNodeV1> for RollingVirtualStorageNode {
             });
         };
 
+        let nodes = v1.nodes.into_iter().map(|n| n.into()).collect();
+
         let n = Self {
             meta,
-            nodes: v1.nodes,
+            nodes,
             factors: v1.factors,
             max_volume,
             min_volume,
             cost,
-            initial_volume: v1.initial_volume,
-            initial_volume_pc: v1.initial_volume_pc,
+            initial_volume,
             window,
         };
         Ok(n)

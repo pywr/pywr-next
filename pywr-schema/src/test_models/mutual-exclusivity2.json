@@ -78,8 +78,12 @@
         },
         "type": "Aggregated",
         "nodes": [
-          "wtw1",
-          "wtw2"
+          {
+            "name": "wtw1"
+          },
+          {
+            "name": "wtw2"
+          }
         ],
         "factors": {
           "type": "Exclusive"

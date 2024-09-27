@@ -13,7 +13,7 @@ use pywr_core::{
 use pywr_schema_macros::PywrVisitAll;
 use schemars::JsonSchema;
 
-#[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, PywrVisitAll)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Debug, strum_macros::Display, JsonSchema, PywrVisitAll)]
 pub enum TargetType {
     // set flow derived from the hydropower target as a max_flow
     MaxFlow,
