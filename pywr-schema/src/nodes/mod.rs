@@ -5,6 +5,7 @@ mod loss_link;
 mod monthly_virtual_storage;
 mod piecewise_link;
 mod piecewise_storage;
+mod reservoir;
 mod river;
 mod river_gauge;
 mod river_split_with_gauge;
@@ -24,6 +25,9 @@ pub use crate::nodes::core::{
     AggregatedNode, AggregatedStorageNode, CatchmentNode, InputNode, LinkNode, OutputNode, StorageNode,
 };
 pub use crate::nodes::delay::DelayNode;
+pub use crate::nodes::reservoir::{
+    Bathymetry, BathymetryType, Evaporation, Leakage, Rainfall, ReservoirNode, SpillNodeType,
+};
 pub use crate::nodes::river::RiverNode;
 use crate::nodes::rolling_virtual_storage::RollingVirtualStorageNode;
 use crate::nodes::turbine::TurbineNode;
@@ -99,6 +103,12 @@ pub enum NodeAttribute {
     Loss,
     Deficit,
     Power,
+    /// The compensation flow out of a [`ReservoirNode`]
+    Compensation,
+    /// The rainfall volume into a [`ReservoirNode`]
+    Rainfall,
+    /// The evaporation volume out of a [`ReservoirNode`]
+    Evaporation,
 }
 
 pub struct NodeBuilder {
@@ -232,6 +242,7 @@ impl NodeBuilder {
                 meta,
                 ..Default::default()
             }),
+            NodeType::Reservoir => Node::Reservoir(ReservoirNode { ..Default::default() }),
         }
     }
 }
@@ -262,6 +273,7 @@ pub enum Node {
     MonthlyVirtualStorage(MonthlyVirtualStorageNode),
     RollingVirtualStorage(RollingVirtualStorageNode),
     Turbine(TurbineNode),
+    Reservoir(ReservoirNode),
 }
 
 impl Node {
@@ -300,10 +312,11 @@ impl Node {
             Node::MonthlyVirtualStorage(n) => &n.meta,
             Node::RollingVirtualStorage(n) => &n.meta,
             Node::Turbine(n) => &n.meta,
+            Node::Reservoir(n) => &n.meta(),
         }
     }
 
-    pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
+    pub fn input_connectors(&self, slot: Option<&str>) -> Vec<(&str, Option<String>)> {
         match self {
             Node::Input(n) => n.input_connectors(),
             Node::Link(n) => n.input_connectors(),
@@ -326,6 +339,7 @@ impl Node {
             Node::Delay(n) => n.input_connectors(),
             Node::RollingVirtualStorage(n) => n.input_connectors(),
             Node::Turbine(n) => n.input_connectors(),
+            Node::Reservoir(n) => n.input_connectors(slot),
         }
     }
 
@@ -352,6 +366,7 @@ impl Node {
             Node::Delay(n) => n.output_connectors(),
             Node::RollingVirtualStorage(n) => n.output_connectors(),
             Node::Turbine(n) => n.output_connectors(),
+            Node::Reservoir(n) => n.output_connectors(slot),
         }
     }
 
@@ -377,6 +392,7 @@ impl Node {
             Node::Delay(n) => n.default_metric(),
             Node::RollingVirtualStorage(n) => n.default_metric(),
             Node::Turbine(n) => n.default_metric(),
+            Node::Reservoir(n) => n.default_metric(),
         }
     }
 }
@@ -405,6 +421,7 @@ impl Node {
             Node::Turbine(n) => n.add_to_model(network, args),
             Node::MonthlyVirtualStorage(n) => n.add_to_model(network, args),
             Node::RollingVirtualStorage(n) => n.add_to_model(network, args),
+            Node::Reservoir(n) => n.add_to_model(network),
         }
     }
 
@@ -432,6 +449,7 @@ impl Node {
             Node::PiecewiseStorage(n) => n.set_constraints(network, args),
             Node::Delay(n) => n.set_constraints(network, args),
             Node::Turbine(n) => n.set_constraints(network, args),
+            Node::Reservoir(n) => n.set_constraints(network, args),
             Node::MonthlyVirtualStorage(_) => Ok(()), // TODO
             Node::RollingVirtualStorage(_) => Ok(()), // TODO
         }
@@ -465,6 +483,7 @@ impl Node {
             Node::Delay(n) => n.create_metric(network, attribute),
             Node::RollingVirtualStorage(n) => n.create_metric(network, attribute),
             Node::Turbine(n) => n.create_metric(network, attribute, args),
+            Node::Reservoir(n) => n.create_metric(network, attribute),
         }
     }
 }
@@ -542,6 +561,7 @@ impl VisitMetrics for Node {
             Node::MonthlyVirtualStorage(n) => n.visit_metrics(visitor),
             Node::RollingVirtualStorage(n) => n.visit_metrics(visitor),
             Node::Turbine(n) => n.visit_metrics(visitor),
+            Node::Reservoir(n) => n.visit_metrics(visitor),
         }
     }
 
@@ -567,6 +587,7 @@ impl VisitMetrics for Node {
             Node::MonthlyVirtualStorage(n) => n.visit_metrics_mut(visitor),
             Node::RollingVirtualStorage(n) => n.visit_metrics_mut(visitor),
             Node::Turbine(n) => n.visit_metrics_mut(visitor),
+            Node::Reservoir(n) => n.visit_metrics_mut(visitor),
         }
     }
 }
@@ -594,6 +615,7 @@ impl VisitPaths for Node {
             Node::MonthlyVirtualStorage(n) => n.visit_paths(visitor),
             Node::RollingVirtualStorage(n) => n.visit_paths(visitor),
             Node::Turbine(n) => n.visit_paths(visitor),
+            Node::Reservoir(n) => n.visit_paths(visitor),
         }
     }
 
@@ -619,6 +641,7 @@ impl VisitPaths for Node {
             Node::MonthlyVirtualStorage(n) => n.visit_paths_mut(visitor),
             Node::RollingVirtualStorage(n) => n.visit_paths_mut(visitor),
             Node::Turbine(n) => n.visit_paths_mut(visitor),
+            Node::Reservoir(n) => n.visit_paths_mut(visitor),
         }
     }
 }

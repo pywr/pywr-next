@@ -459,10 +459,11 @@ impl PywrNetwork {
                 .ok_or_else(|| SchemaError::NodeNotFound(edge.to_node.clone()))?;
 
             let from_slot = edge.from_slot.as_deref();
+            let to_slot = edge.to_slot.as_deref();
 
             // Connect each "from" connector to each "to" connector
             for from_connector in from_node.output_connectors(from_slot) {
-                for to_connector in to_node.input_connectors() {
+                for to_connector in to_node.input_connectors(to_slot) {
                     let from_node_index =
                         network.get_node_index_by_name(from_connector.0, from_connector.1.as_deref())?;
                     let to_node_index = network.get_node_index_by_name(to_connector.0, to_connector.1.as_deref())?;

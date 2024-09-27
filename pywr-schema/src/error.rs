@@ -63,6 +63,8 @@ pub enum SchemaError {
     OutOfRange(#[from] chrono::OutOfRange),
     #[error("The metric set with name '{0}' contains no metrics")]
     EmptyMetricSet(String),
+    #[error("Missing the following attribute {attr:?} on node {name:?}.")]
+    MissingNodeAttribute { attr: String, name: String },
 }
 
 #[cfg(feature = "core")]

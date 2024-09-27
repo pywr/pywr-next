@@ -213,6 +213,7 @@ impl Network {
     pub fn nodes(&self) -> &NodeVec {
         &self.nodes
     }
+
     pub fn edges(&self) -> &EdgeVec {
         &self.edges
     }
