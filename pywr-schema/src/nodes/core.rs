@@ -728,7 +728,7 @@ pub struct AggregatedNode {
     pub nodes: Vec<String>,
     pub max_flow: Option<Metric>,
     pub min_flow: Option<Metric>,
-    pub factors: Option<Relationship>,
+    pub relationship: Option<Relationship>,
 }
 
 impl AggregatedNode {
@@ -806,8 +806,8 @@ impl AggregatedNode {
             network.set_aggregated_node_min_flow(self.meta.name.as_str(), None, value.into())?;
         }
 
-        if let Some(factors) = &self.factors {
-            let r = match factors {
+        if let Some(relationship) = &self.relationship {
+            let r = match relationship {
                 Relationship::Proportion { factors } => {
                     pywr_core::aggregated_node::Relationship::new_proportion_factors(
                         &factors
@@ -869,7 +869,7 @@ impl TryFrom<AggregatedNodeV1> for AggregatedNode {
         let meta: NodeMeta = v1.meta.into();
         let mut unnamed_count = 0;
 
-        let factors = match v1.factors {
+        let relationship = match v1.factors {
             Some(f) => Some(Relationship::Ratio {
                 factors: f
                     .into_iter()
@@ -894,7 +894,7 @@ impl TryFrom<AggregatedNodeV1> for AggregatedNode {
             nodes: v1.nodes,
             max_flow,
             min_flow,
-            factors,
+            relationship,
         };
         Ok(n)
     }

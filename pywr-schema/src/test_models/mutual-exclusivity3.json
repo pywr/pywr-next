@@ -94,7 +94,7 @@
           "link1",
           "link2"
         ],
-        "factors": {
+        "relationship": {
           "type": "Exclusive"
         }
       }

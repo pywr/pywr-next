@@ -81,7 +81,7 @@
           "wtw1",
           "wtw2"
         ],
-        "factors": {
+        "relationship": {
           "type": "Exclusive"
         }
       }
