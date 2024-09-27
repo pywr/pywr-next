@@ -78,7 +78,7 @@
             "name": "link2"
           }
         ],
-        "factors": {
+        "relationship": {
           "type": "Exclusive"
         }
       }

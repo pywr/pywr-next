@@ -85,7 +85,7 @@
             "name": "wtw2"
           }
         ],
-        "factors": {
+        "relationship": {
           "type": "Exclusive"
         }
       }
