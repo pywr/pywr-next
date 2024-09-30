@@ -4,7 +4,9 @@ use crate::nodes::{NodeAttribute, NodeMeta, StorageNode};
 use crate::SchemaError;
 use pywr_core::derived_metric::DerivedMetric;
 use pywr_core::metric::MetricF64;
+use pywr_core::node::NodeIndex;
 use pywr_core::parameters::{AggFunc, ParameterName};
+use pywr_core::PywrError;
 use pywr_schema_macros::PywrVisitAll;
 use schemars::JsonSchema;
 
@@ -487,28 +489,35 @@ impl ReservoirNode {
             Ok(m) => Ok(m),
             Err(SchemaError::NodeAttributeNotSupported { .. }) => {
                 let attr = attribute.unwrap();
-                match attr {
-                    NodeAttribute::Compensation => {
-                        let idx = network
-                            .get_node_index_by_name(self.meta().name.as_str(), Self::compensation_node_sub_name())?;
-                        Ok(MetricF64::NodeInFlow(idx))
+                let metric = match attr {
+                    NodeAttribute::Compensation => match network
+                        .get_node_index_by_name(self.meta().name.as_str(), Self::compensation_node_sub_name())
+                    {
+                        Ok(idx) => MetricF64::NodeInFlow(idx),
+                        Err(_) => 0.0.into(),
+                    },
+                    NodeAttribute::Rainfall => match network
+                        .get_node_index_by_name(self.meta().name.as_str(), Self::rainfall_node_sub_name())
+                    {
+                        Ok(idx) => MetricF64::NodeInFlow(idx),
+                        Err(_) => 0.0.into(),
+                    },
+                    NodeAttribute::Evaporation => match network
+                        .get_node_index_by_name(self.meta().name.as_str(), Self::rainfall_node_sub_name())
+                    {
+                        Ok(idx) => MetricF64::NodeInFlow(idx),
+                        Err(_) => 0.0.into(),
+                    },
+                    _ => {
+                        return Err(SchemaError::NodeAttributeNotSupported {
+                            ty: "ReservoirNode".to_string(),
+                            name: self.meta().name.clone(),
+                            attr,
+                        })
                     }
-                    NodeAttribute::Rainfall => {
-                        let idx = network
-                            .get_node_index_by_name(self.meta().name.as_str(), Self::rainfall_node_sub_name())?;
-                        Ok(MetricF64::NodeInFlow(idx))
-                    }
-                    NodeAttribute::Evaporation => {
-                        let idx = network
-                            .get_node_index_by_name(self.meta().name.as_str(), Self::rainfall_node_sub_name())?;
-                        Ok(MetricF64::NodeInFlow(idx))
-                    }
-                    _ => Err(SchemaError::NodeAttributeNotSupported {
-                        ty: "ReservoirNode".to_string(),
-                        name: self.meta().name.clone(),
-                        attr,
-                    }),
-                }
+                };
+
+                Ok(metric)
             }
             Err(e) => Err(e),
         }
