@@ -342,7 +342,7 @@ impl LinkNode {
                 network.add_aggregated_node(
                     node_name,
                     Self::aggregated_node_sub_name(),
-                    &[link, soft_min_node],
+                    &[vec![link], vec![soft_min_node]],
                     None,
                 )?;
             }
@@ -352,7 +352,7 @@ impl LinkNode {
                 network.add_aggregated_node(
                     node_name,
                     Self::aggregated_node_sub_name(),
-                    &[link, soft_max_node],
+                    &[vec![link], vec![soft_max_node]],
                     None,
                 )?;
             }
@@ -363,13 +363,13 @@ impl LinkNode {
                 network.add_aggregated_node(
                     node_name,
                     Self::aggregated_node_sub_name(),
-                    &[link, soft_min_node, soft_max_node],
+                    &[vec![link], vec![soft_min_node], vec![soft_max_node]],
                     None,
                 )?;
                 network.add_aggregated_node(
                     node_name,
                     Self::aggregated_node_l_l_min_sub_name(),
-                    &[link, soft_min_node],
+                    &[vec![link], vec![soft_min_node]],
                     None,
                 )?;
             }
