@@ -274,15 +274,6 @@ impl LinkNode {
         Some("soft_max_node")
     }
 
-    fn aggregated_node_sub_name() -> Option<&'static str> {
-        Some("aggregate_node")
-    }
-
-    /// The aggregated node name of `L` and `L_min` when both soft constraints are provided.
-    fn aggregated_node_l_l_min_sub_name() -> Option<&'static str> {
-        Some("aggregate_node_l_l_min")
-    }
-
     pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
         let mut connectors = vec![(self.meta.name.as_str(), None)];
         if self.soft_min.is_some() {
@@ -324,6 +315,15 @@ impl LinkNode {
 
 #[cfg(feature = "core")]
 impl LinkNode {
+    fn aggregated_node_sub_name() -> Option<&'static str> {
+        Some("aggregate_node")
+    }
+
+    /// The aggregated node name of `L` and `L_min` when both soft constraints are provided.
+    fn aggregated_node_l_l_min_sub_name() -> Option<&'static str> {
+        Some("aggregate_node_l_l_min")
+    }
+
     pub fn node_indices_for_constraints(
         &self,
         network: &pywr_core::network::Network,
