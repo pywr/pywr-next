@@ -2,10 +2,12 @@ use crate::error::ConversionError;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
 use crate::metric::Metric;
+#[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::nodes::{NodeAttribute, NodeMeta};
 #[cfg(feature = "core")]
 use pywr_core::metric::MetricF64;
+#[cfg(feature = "core")]
 use pywr_core::parameters::{AggFunc, ParameterName};
 use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::nodes::LinkNode as LinkNodeV1;
@@ -90,7 +92,7 @@ impl RiverNode {
         network.add_link_node(self.meta.name.as_str(), None)?;
 
         // add output node and edge
-        if let Some(_) = &self.loss {
+        if self.loss.is_some() {
             network.add_output_node(self.meta.name.as_str(), Self::loss_node_sub_name())?;
 
             let river = network.get_node_index_by_name(self.meta.name.as_str(), None)?;
@@ -134,15 +136,11 @@ impl RiverNode {
                     );
                     let loss_idx = network.add_parameter(Box::new(interpolated_loss_parameter))?;
                     let interpolated_loss_metric: MetricF64 = loss_idx.into();
-                    interpolated_loss_metric.into()
+                    interpolated_loss_metric
                 }
             };
 
-            network.set_node_max_flow(
-                self.meta.name.as_str(),
-                Self::loss_node_sub_name(),
-                Some(loss_metric.into()),
-            )?;
+            network.set_node_max_flow(self.meta.name.as_str(), Self::loss_node_sub_name(), Some(loss_metric))?;
 
             // add the optional cost
             if let Some(cost) = &loss.cost {
