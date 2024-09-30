@@ -41,7 +41,7 @@ use pywr_v1_schema::nodes::{
 use pywr_v1_schema::parameters::{
     CoreParameter as CoreParameterV1, Parameter as ParameterV1, ParameterValue as ParameterValueV1, ParameterValueType,
 };
-pub use river::RiverNode;
+pub use river::{RiverLoss, RiverLossData, RiverNode};
 pub use river_gauge::RiverGaugeNode;
 pub use river_split_with_gauge::{RiverSplit, RiverSplitWithGaugeNode};
 pub use rolling_virtual_storage::{RollingVirtualStorageNode, RollingWindow};
@@ -196,7 +196,10 @@ impl NodeBuilder {
                 meta,
                 ..Default::default()
             }),
-            NodeType::River => Node::River(RiverNode { meta }),
+            NodeType::River => Node::River(RiverNode {
+                meta,
+                ..Default::default()
+            }),
             NodeType::RiverSplitWithGauge => Node::RiverSplitWithGauge(RiverSplitWithGaugeNode {
                 meta,
                 ..Default::default()
