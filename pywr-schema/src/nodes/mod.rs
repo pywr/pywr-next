@@ -237,7 +237,7 @@ impl NodeBuilder {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Clone, EnumDiscriminants, Debug, JsonSchema)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, EnumDiscriminants, Debug, JsonSchema, strum_macros::Display)]
 #[serde(tag = "type")]
 #[strum_discriminants(derive(Display, IntoStaticStr, EnumString, VariantNames))]
 // This creates a separate enum called `NodeType` that is available in this module.

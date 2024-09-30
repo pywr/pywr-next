@@ -710,7 +710,9 @@ impl TryFrom<OutputNodeV1> for OutputNode {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Clone, PartialEq, Copy, Debug, JsonSchema, PywrVisitAll)]
+#[derive(
+    serde::Deserialize, serde::Serialize, Clone, PartialEq, Copy, Debug, JsonSchema, PywrVisitAll, strum_macros::Display,
+)]
 pub enum StorageInitialVolume {
     Absolute(f64),
     Proportional(f64),
@@ -1041,7 +1043,7 @@ impl TryFrom<CatchmentNodeV1> for CatchmentNode {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, PywrVisitAll)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, PywrVisitAll, strum_macros::Display)]
 #[serde(tag = "type", deny_unknown_fields)]
 pub enum Relationship {
     Proportion {

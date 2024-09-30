@@ -17,7 +17,7 @@ use schemars::JsonSchema;
 /// Gross losses are typically applied as a proportion of the total flow into a node, whereas
 /// net losses are applied as a proportion of the net flow. Please see the documentation for
 /// specific nodes (e.g. [`LossLinkNode`]) to understand how the loss factor is applied.
-#[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, PywrVisitAll)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, PywrVisitAll, strum_macros::Display)]
 #[serde(tag = "type", deny_unknown_fields)]
 pub enum LossFactor {
     Gross { factor: Metric },

@@ -21,7 +21,7 @@ use std::num::NonZeroUsize;
 /// The length of the rolling window.
 ///
 /// This can be specified in either days or time-steps.
-#[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, PywrVisitAll)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, PywrVisitAll, strum_macros::Display)]
 pub enum RollingWindow {
     Days(NonZeroUsize),
     Timesteps(NonZeroUsize),

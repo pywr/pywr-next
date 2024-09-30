@@ -13,7 +13,7 @@ use pywr_v1_schema::parameters::{
 };
 use schemars::JsonSchema;
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Copy, JsonSchema, PywrVisitAll)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Copy, JsonSchema, PywrVisitAll, strum_macros::Display)]
 pub enum Predicate {
     #[serde(alias = "<")]
     LT,

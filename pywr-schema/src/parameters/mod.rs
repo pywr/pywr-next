@@ -148,7 +148,7 @@ impl FromV1Parameter<Option<ParameterMetaV1>> for ParameterMeta {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, EnumDiscriminants, Clone, JsonSchema)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, EnumDiscriminants, Clone, JsonSchema, Display)]
 #[serde(tag = "type")]
 #[strum_discriminants(derive(Display, IntoStaticStr, EnumString, VariantNames))]
 // This creates a separate enum called `NodeType` that is available in this module.
@@ -660,7 +660,7 @@ impl TryFromV1Parameter<ParameterV1> for ParameterOrTimeseries {
 /// An non-variable constant floating-point (f64) value
 ///
 /// This value can be a literal float or an external reference to an input table.
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, Display)]
 #[serde(untagged)]
 pub enum ConstantValue<T> {
     Literal(T),
@@ -755,7 +755,7 @@ impl TryFrom<ParameterValueV1> for ConstantValue<f64> {
 }
 
 /// An integer (i64) value from another parameter
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll, Display)]
 #[serde(untagged)]
 pub enum ParameterIndexValue {
     Reference(String),
@@ -798,7 +798,7 @@ impl ParameterIndexValue {
 ///
 /// This value can be a constant (literal or otherwise) or a dynamic value provided
 /// by another parameter.
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll, Display)]
 #[serde(untagged)]
 pub enum DynamicIndexValue {
     Constant(ConstantValue<usize>),
@@ -854,7 +854,7 @@ impl TryFromV1Parameter<ParameterValueV1> for DynamicIndexValue {
 /// An non-variable vector of constant floating-point (f64) values
 ///
 /// This value can be a literal vector of floats or an external reference to an input table.
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll, Display)]
 #[serde(untagged)]
 pub enum ConstantFloatVec {
     Literal(Vec<f64>),
@@ -872,7 +872,7 @@ impl ConstantFloatVec {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll, Display)]
 #[serde(untagged)]
 pub enum TableIndex {
     Single(String),

@@ -10,7 +10,9 @@ use std::num::NonZeroU32;
 use std::path::Path;
 use std::path::PathBuf;
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Default, JsonSchema, PywrVisitPaths)]
+#[derive(
+    serde::Deserialize, serde::Serialize, Debug, Clone, Default, JsonSchema, PywrVisitPaths, strum_macros::Display,
+)]
 #[serde(rename_all = "lowercase")]
 pub enum CsvFormat {
     Wide,
@@ -18,7 +20,7 @@ pub enum CsvFormat {
     Long,
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitPaths)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitPaths, strum_macros::Display)]
 #[serde(untagged)]
 pub enum CsvMetricSet {
     Single(String),
