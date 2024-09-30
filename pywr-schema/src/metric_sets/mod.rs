@@ -11,7 +11,9 @@ use serde::{Deserialize, Serialize};
 use std::num::NonZeroUsize;
 
 /// Aggregation function to apply over metric values.
-#[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone, JsonSchema, PywrVisitPaths)]
+#[derive(
+    serde::Deserialize, serde::Serialize, Debug, Copy, Clone, JsonSchema, PywrVisitPaths, strum_macros::Display,
+)]
 #[serde(tag = "type")]
 pub enum MetricAggFunc {
     Sum,
@@ -34,7 +36,7 @@ impl From<MetricAggFunc> for pywr_core::recorders::AggregationFunction {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone, JsonSchema)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone, JsonSchema, strum_macros::Display)]
 #[serde(tag = "type")]
 pub enum MetricAggFrequency {
     Monthly,

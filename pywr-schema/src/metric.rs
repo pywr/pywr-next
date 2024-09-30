@@ -229,7 +229,7 @@ impl TryFromV1Parameter<ParameterValueV1> for Metric {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, strum_macros::Display)]
 #[serde(tag = "type", content = "name")]
 pub enum TimeseriesColumns {
     Scenario(String),

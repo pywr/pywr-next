@@ -21,19 +21,19 @@ use tracing::{debug, info};
 #[cfg(feature = "core")]
 use vec::{load_csv_row2_vec_table_one, load_csv_row_vec_table_one, LoadedVecTable};
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, strum_macros::Display)]
 #[serde(rename_all = "lowercase")]
 pub enum DataTableType {
     Scalar,
     Array,
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, strum_macros::Display)]
 pub enum DataTableFormat {
     CSV,
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, strum_macros::Display)]
 #[serde(tag = "format", rename_all = "lowercase")]
 pub enum DataTable {
     CSV(CsvDataTable),
@@ -54,7 +54,7 @@ impl DataTable {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, strum_macros::Display)]
 #[serde(rename_all = "lowercase")]
 pub enum CsvDataTableLookup {
     Row(usize),
