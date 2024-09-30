@@ -1,9 +1,14 @@
 use crate::metric::Metric;
+#[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::nodes::{NodeAttribute, NodeMeta, StorageNode};
+#[cfg(feature = "core")]
 use crate::SchemaError;
+#[cfg(feature = "core")]
 use pywr_core::derived_metric::DerivedMetric;
+#[cfg(feature = "core")]
 use pywr_core::metric::MetricF64;
+#[cfg(feature = "core")]
 use pywr_core::parameters::{AggFunc, ParameterName};
 use pywr_schema_macros::PywrVisitAll;
 use schemars::JsonSchema;
@@ -184,21 +189,6 @@ impl ReservoirNode {
         Some("spill")
     }
 
-    /// The sub-name of the rainfall node.
-    fn rainfall_node_sub_name() -> Option<&'static str> {
-        Some("rainfall")
-    }
-
-    /// The sub-name of the evaporation node.
-    fn evaporation_node_sub_name() -> Option<&'static str> {
-        Some("evaporation")
-    }
-
-    /// The sub-name of the leakage node.
-    fn leakage_node_sub_name() -> Option<&'static str> {
-        Some("leakage")
-    }
-
     /// The name of the compensation slot.
     fn compensation_slot_name() -> &'static str {
         "compensation"
@@ -259,6 +249,21 @@ impl ReservoirNode {
 
 #[cfg(feature = "core")]
 impl ReservoirNode {
+    /// The sub-name of the rainfall node.
+    fn rainfall_node_sub_name() -> Option<&'static str> {
+        Some("rainfall")
+    }
+
+    /// The sub-name of the evaporation node.
+    fn evaporation_node_sub_name() -> Option<&'static str> {
+        Some("evaporation")
+    }
+
+    /// The sub-name of the leakage node.
+    fn leakage_node_sub_name() -> Option<&'static str> {
+        Some("leakage")
+    }
+
     pub fn node_indices_for_constraints(
         &self,
         network: &pywr_core::network::Network,
