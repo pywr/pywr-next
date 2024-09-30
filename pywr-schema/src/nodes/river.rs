@@ -68,11 +68,6 @@ impl RiverNode {
         vec![(self.meta.name.as_str(), None)]
     }
 
-    /// The sub-name of the output node.
-    fn loss_node_sub_name() -> Option<&'static str> {
-        Some("loss")
-    }
-
     pub fn default_metric(&self) -> NodeAttribute {
         Self::DEFAULT_ATTRIBUTE
     }
@@ -80,6 +75,11 @@ impl RiverNode {
 
 #[cfg(feature = "core")]
 impl RiverNode {
+    /// The sub-name of the output node.
+    fn loss_node_sub_name() -> Option<&'static str> {
+        Some("loss")
+    }
+
     pub fn node_indices_for_constraints(
         &self,
         network: &pywr_core::network::Network,
