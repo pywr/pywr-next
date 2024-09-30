@@ -29,7 +29,7 @@ pub use core::{
 };
 pub use delay::DelayNode;
 pub use loss_link::{LossFactor, LossLinkNode};
-pub use monthly_virtual_storage::MonthlyVirtualStorageNode;
+pub use monthly_virtual_storage::{MonthlyVirtualStorageNode, NumberOfMonthsReset};
 pub use piecewise_link::{PiecewiseLinkNode, PiecewiseLinkStep};
 pub use piecewise_storage::{PiecewiseStorageNode, PiecewiseStore};
 #[cfg(feature = "core")]
