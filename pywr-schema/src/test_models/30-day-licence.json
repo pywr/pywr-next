@@ -47,13 +47,17 @@
         },
         "type": "RollingVirtualStorage",
         "nodes": [
-          "supply1"
+          {
+            "name": "supply1"
+          }
         ],
         "max_volume": {
           "type": "Constant",
           "value": 300
         },
-        "initial_volume": 0.0,
+        "initial_volume": {
+          "Proportional": 0.0
+        },
         "window": {
           "Days": 30
         }

@@ -26,37 +26,35 @@ mod thresholds;
 #[cfg(feature = "core")]
 pub use super::data_tables::LoadedTableCollection;
 pub use super::data_tables::TableDataRef;
-pub use super::parameters::aggregated::{AggFunc, AggregatedIndexParameter, AggregatedParameter, IndexAggFunc};
-pub use super::parameters::asymmetric_switch::AsymmetricSwitchIndexParameter;
-pub use super::parameters::control_curves::{
-    ControlCurveIndexParameter, ControlCurveInterpolatedParameter, ControlCurveParameter,
-    ControlCurvePiecewiseInterpolatedParameter,
-};
-pub use super::parameters::core::{
-    ActivationFunction, ConstantParameter, DivisionParameter, MaxParameter, MinParameter, NegativeMaxParameter,
-    NegativeMinParameter, NegativeParameter, VariableSettings,
-};
-pub use super::parameters::delay::DelayParameter;
-pub use super::parameters::discount_factor::DiscountFactorParameter;
-pub use super::parameters::indexed_array::IndexedArrayParameter;
-pub use super::parameters::polynomial::Polynomial1DParameter;
-pub use super::parameters::profiles::{
-    DailyProfileParameter, MonthlyProfileParameter, RadialBasisFunction, RbfProfileParameter,
-    RbfProfileVariableSettings, UniformDrawdownProfileParameter, WeeklyProfileParameter,
-};
-pub use super::parameters::python::{PythonParameter, PythonReturnType, PythonSource};
-pub use super::parameters::tables::TablesArrayParameter;
-pub use super::parameters::thresholds::ParameterThresholdParameter;
 use crate::error::ConversionError;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
 use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
-pub use crate::parameters::hydropower::HydropowerTargetParameter;
-use crate::parameters::interpolated::InterpolatedParameter;
 use crate::visit::{VisitMetrics, VisitPaths};
+pub use aggregated::{AggFunc, AggregatedIndexParameter, AggregatedParameter, IndexAggFunc};
+pub use asymmetric_switch::AsymmetricSwitchIndexParameter;
+pub use control_curves::{
+    ControlCurveIndexParameter, ControlCurveInterpolatedParameter, ControlCurveParameter,
+    ControlCurvePiecewiseInterpolatedParameter,
+};
+pub use core::{
+    ActivationFunction, ConstantParameter, DivisionParameter, MaxParameter, MinParameter, NegativeMaxParameter,
+    NegativeMinParameter, NegativeParameter, VariableSettings,
+};
+pub use delay::DelayParameter;
+pub use discount_factor::DiscountFactorParameter;
+pub use hydropower::HydropowerTargetParameter;
+pub use indexed_array::IndexedArrayParameter;
+pub use interpolated::InterpolatedParameter;
 pub use offset::OffsetParameter;
+pub use polynomial::Polynomial1DParameter;
+pub use profiles::{
+    DailyProfileParameter, MonthlyInterpDay, MonthlyProfileParameter, RadialBasisFunction, RbfProfileParameter,
+    RbfProfileVariableSettings, UniformDrawdownProfileParameter, WeeklyProfileParameter,
+};
+pub use python::{PythonParameter, PythonReturnType, PythonSource};
 #[cfg(feature = "core")]
 use pywr_core::{metric::MetricUsize, parameters::ParameterIndex};
 use pywr_schema_macros::PywrVisitAll;
@@ -68,6 +66,8 @@ use pywr_v1_schema::parameters::{
 use schemars::JsonSchema;
 use std::path::{Path, PathBuf};
 use strum_macros::{Display, EnumDiscriminants, EnumString, IntoStaticStr, VariantNames};
+pub use tables::TablesArrayParameter;
+pub use thresholds::ParameterThresholdParameter;
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 pub struct ParameterMeta {

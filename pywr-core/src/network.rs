@@ -1,4 +1,4 @@
-use crate::aggregated_node::{AggregatedNode, AggregatedNodeIndex, AggregatedNodeVec, Factors};
+use crate::aggregated_node::{AggregatedNode, AggregatedNodeIndex, AggregatedNodeVec, Relationship};
 use crate::aggregated_storage_node::{AggregatedStorageNode, AggregatedStorageNodeIndex, AggregatedStorageNodeVec};
 use crate::derived_metric::{DerivedMetric, DerivedMetricIndex};
 use crate::edge::{Edge, EdgeIndex, EdgeVec};
@@ -574,6 +574,11 @@ impl Network {
             features.insert(SolverFeatures::AggregatedNodeDynamicFactors);
         }
 
+        // Aggregated nodes with exclusivities require the MutualExclusivity feature.
+        if self.aggregated_nodes.iter().any(|n| n.has_exclusivity()) {
+            features.insert(SolverFeatures::MutualExclusivity);
+        }
+
         // The presence of any virtual storage node requires the VirtualStorage feature.
         if self.virtual_storage_nodes.len() > 0 {
             features.insert(SolverFeatures::VirtualStorage);
@@ -948,14 +953,14 @@ impl Network {
         Ok(())
     }
 
-    pub fn set_aggregated_node_factors(
+    pub fn set_aggregated_node_relationship(
         &mut self,
         name: &str,
         sub_name: Option<&str>,
-        factors: Option<Factors>,
+        relationship: Option<Relationship>,
     ) -> Result<(), PywrError> {
         let node = self.get_mut_aggregated_node_by_name(name, sub_name)?;
-        node.set_factors(factors);
+        node.set_relationship(relationship);
         Ok(())
     }
 
@@ -1277,14 +1282,14 @@ impl Network {
         &mut self,
         name: &str,
         sub_name: Option<&str>,
-        nodes: &[NodeIndex],
-        factors: Option<Factors>,
+        nodes: &[Vec<NodeIndex>],
+        relationship: Option<Relationship>,
     ) -> Result<AggregatedNodeIndex, PywrError> {
         if let Ok(_agg_node) = self.get_aggregated_node_by_name(name, sub_name) {
             return Err(PywrError::NodeNameAlreadyExists(name.to_string()));
         }
 
-        let node_index = self.aggregated_nodes.push_new(name, sub_name, nodes, factors);
+        let node_index = self.aggregated_nodes.push_new(name, sub_name, nodes, relationship);
         Ok(node_index)
     }
 

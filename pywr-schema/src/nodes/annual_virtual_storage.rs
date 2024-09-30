@@ -1,7 +1,7 @@
 use crate::error::ConversionError;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
-use crate::metric::Metric;
+use crate::metric::{Metric, SimpleNodeReference};
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::nodes::core::StorageInitialVolume;
@@ -39,7 +39,7 @@ impl Default for AnnualReset {
 #[serde(deny_unknown_fields)]
 pub struct AnnualVirtualStorageNode {
     pub meta: NodeMeta,
-    pub nodes: Vec<String>,
+    pub nodes: Vec<SimpleNodeReference>,
     pub factors: Option<Vec<f64>>,
     pub max_volume: Option<Metric>,
     pub min_volume: Option<Metric>,
@@ -64,8 +64,29 @@ impl AnnualVirtualStorageNode {
     }
 }
 
+#[cfg(feature = "core")]
 impl AnnualVirtualStorageNode {
-    #[cfg(feature = "core")]
+    pub fn node_indices_for_constraints(
+        &self,
+        network: &pywr_core::network::Network,
+        args: &LoadArgs,
+    ) -> Result<Vec<pywr_core::node::NodeIndex>, SchemaError> {
+        let indices = self
+            .nodes
+            .iter()
+            .map(|node_ref| {
+                args.schema
+                    .get_node_by_name(&node_ref.name)
+                    .ok_or_else(|| SchemaError::NodeNotFound(node_ref.name.to_string()))?
+                    .node_indices_for_constraints(network, args)
+            })
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .flatten()
+            .collect();
+        Ok(indices)
+    }
+
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network, args: &LoadArgs) -> Result<(), SchemaError> {
         let cost = match &self.cost {
             Some(v) => v.load(network, args)?.into(),
@@ -82,11 +103,7 @@ impl AnnualVirtualStorageNode {
             None => None,
         };
 
-        let node_idxs = self
-            .nodes
-            .iter()
-            .map(|name| network.get_node_index_by_name(name.as_str(), None))
-            .collect::<Result<Vec<_>, _>>()?;
+        let node_idxs = self.node_indices_for_constraints(network, args)?;
 
         let reset_month = self.reset.month.try_into()?;
         let reset = VirtualStorageReset::DayOfYear {
@@ -109,7 +126,6 @@ impl AnnualVirtualStorageNode {
         Ok(())
     }
 
-    #[cfg(feature = "core")]
     pub fn create_metric(
         &self,
         network: &mut pywr_core::network::Network,
@@ -172,9 +188,11 @@ impl TryFrom<AnnualVirtualStorageNodeV1> for AnnualVirtualStorageNode {
             });
         };
 
+        let nodes = v1.nodes.into_iter().map(|n| n.into()).collect();
+
         let n = Self {
             meta,
-            nodes: v1.nodes,
+            nodes,
             factors: v1.factors,
             max_volume,
             min_volume,
