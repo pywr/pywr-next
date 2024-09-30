@@ -16,7 +16,7 @@ use schemars::JsonSchema;
 use std::collections::HashMap;
 
 // TODO complete these
-#[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone, JsonSchema, PywrVisitAll)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone, strum_macros::Display, JsonSchema, PywrVisitAll)]
 #[serde(rename_all = "lowercase")]
 pub enum AggFunc {
     Sum,
@@ -128,7 +128,7 @@ impl TryFromV1Parameter<AggregatedParameterV1> for AggregatedParameter {
 }
 
 // TODO complete these
-#[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone, JsonSchema, PywrVisitAll)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone, strum_macros::Display, JsonSchema, PywrVisitAll)]
 #[serde(rename_all = "lowercase")]
 pub enum IndexAggFunc {
     Sum,

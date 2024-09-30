@@ -1,7 +1,7 @@
 use crate::error::ConversionError;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
-use crate::metric::Metric;
+use crate::metric::{Metric, SimpleNodeReference};
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::nodes::{NodeAttribute, NodeMeta};
@@ -45,6 +45,13 @@ impl InputNode {
 
 #[cfg(feature = "core")]
 impl InputNode {
+    pub fn node_indices_for_constraints(
+        &self,
+        network: &pywr_core::network::Network,
+    ) -> Result<Vec<pywr_core::node::NodeIndex>, SchemaError> {
+        let idx = network.get_node_index_by_name(self.meta.name.as_str(), None)?;
+        Ok(vec![idx])
+    }
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
         network.add_input_node(self.meta.name.as_str(), None)?;
         Ok(())
@@ -155,6 +162,13 @@ impl LinkNode {
 
 #[cfg(feature = "core")]
 impl LinkNode {
+    pub fn node_indices_for_constraints(
+        &self,
+        network: &pywr_core::network::Network,
+    ) -> Result<Vec<pywr_core::node::NodeIndex>, SchemaError> {
+        let idx = network.get_node_index_by_name(self.meta.name.as_str(), None)?;
+        Ok(vec![idx])
+    }
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
         network.add_link_node(self.meta.name.as_str(), None)?;
         Ok(())
@@ -266,6 +280,13 @@ impl OutputNode {
 
 #[cfg(feature = "core")]
 impl OutputNode {
+    pub fn node_indices_for_constraints(
+        &self,
+        network: &pywr_core::network::Network,
+    ) -> Result<Vec<pywr_core::node::NodeIndex>, SchemaError> {
+        let idx = network.get_node_index_by_name(self.meta.name.as_str(), None)?;
+        Ok(vec![idx])
+    }
     pub fn create_metric(
         &self,
         network: &mut pywr_core::network::Network,
@@ -404,6 +425,13 @@ impl StorageNode {
 
 #[cfg(feature = "core")]
 impl StorageNode {
+    pub fn node_indices_for_constraints(
+        &self,
+        network: &pywr_core::network::Network,
+    ) -> Result<Vec<pywr_core::node::NodeIndex>, SchemaError> {
+        let idx = network.get_node_index_by_name(self.meta.name.as_str(), None)?;
+        Ok(vec![idx])
+    }
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
         // Add the node with no constraints
         network.add_storage_node(self.meta.name.as_str(), None, self.initial_volume.into(), None, None)?;
@@ -601,6 +629,13 @@ impl CatchmentNode {
 
 #[cfg(feature = "core")]
 impl CatchmentNode {
+    pub fn node_indices_for_constraints(
+        &self,
+        network: &pywr_core::network::Network,
+    ) -> Result<Vec<pywr_core::node::NodeIndex>, SchemaError> {
+        let idx = network.get_node_index_by_name(self.meta.name.as_str(), None)?;
+        Ok(vec![idx])
+    }
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
         network.add_input_node(self.meta.name.as_str(), None)?;
         Ok(())
@@ -673,19 +708,27 @@ impl TryFrom<CatchmentNodeV1> for CatchmentNode {
 
 #[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, PywrVisitAll)]
 #[serde(tag = "type", deny_unknown_fields)]
-pub enum Factors {
-    Proportion { factors: Vec<Metric> },
-    Ratio { factors: Vec<Metric> },
+pub enum Relationship {
+    Proportion {
+        factors: Vec<Metric>,
+    },
+    Ratio {
+        factors: Vec<Metric>,
+    },
+    Exclusive {
+        min_active: Option<usize>,
+        max_active: Option<usize>,
+    },
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct AggregatedNode {
     pub meta: NodeMeta,
-    pub nodes: Vec<String>,
+    pub nodes: Vec<SimpleNodeReference>,
     pub max_flow: Option<Metric>,
     pub min_flow: Option<Metric>,
-    pub factors: Option<Factors>,
+    pub relationship: Option<Relationship>,
 }
 
 impl AggregatedNode {
@@ -709,11 +752,37 @@ impl AggregatedNode {
 
 #[cfg(feature = "core")]
 impl AggregatedNode {
-    pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
-        let nodes = self
+    pub fn node_indices_for_constraints(
+        &self,
+        network: &pywr_core::network::Network,
+        args: &LoadArgs,
+    ) -> Result<Vec<pywr_core::node::NodeIndex>, SchemaError> {
+        let indices = self
             .nodes
             .iter()
-            .map(|name| network.get_node_index_by_name(name, None))
+            .map(|node_ref| {
+                args.schema
+                    .get_node_by_name(&node_ref.name)
+                    .ok_or_else(|| SchemaError::NodeNotFound(node_ref.name.to_string()))?
+                    .node_indices_for_constraints(network, args)
+            })
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .flatten()
+            .collect();
+        Ok(indices)
+    }
+    pub fn add_to_model(&self, network: &mut pywr_core::network::Network, args: &LoadArgs) -> Result<(), SchemaError> {
+        let nodes: Vec<Vec<_>> = self
+            .nodes
+            .iter()
+            .map(|node_ref| {
+                let node = args
+                    .schema
+                    .get_node_by_name(&node_ref.name)
+                    .ok_or_else(|| SchemaError::NodeNotFound(node_ref.name.to_string()))?;
+                node.node_indices_for_constraints(network, args)
+            })
             .collect::<Result<Vec<_>, _>>()?;
 
         // We initialise with no factors, but will update them in the `set_constraints` method
@@ -737,23 +806,31 @@ impl AggregatedNode {
             network.set_aggregated_node_min_flow(self.meta.name.as_str(), None, value.into())?;
         }
 
-        if let Some(factors) = &self.factors {
-            let f = match factors {
-                Factors::Proportion { factors } => pywr_core::aggregated_node::Factors::Proportion(
-                    factors
+        if let Some(relationship) = &self.relationship {
+            let r = match relationship {
+                Relationship::Proportion { factors } => {
+                    pywr_core::aggregated_node::Relationship::new_proportion_factors(
+                        &factors
+                            .iter()
+                            .map(|f| f.load(network, args))
+                            .collect::<Result<Vec<_>, _>>()?,
+                    )
+                }
+                Relationship::Ratio { factors } => pywr_core::aggregated_node::Relationship::new_ratio_factors(
+                    &factors
                         .iter()
                         .map(|f| f.load(network, args))
                         .collect::<Result<Vec<_>, _>>()?,
                 ),
-                Factors::Ratio { factors } => pywr_core::aggregated_node::Factors::Ratio(
-                    factors
-                        .iter()
-                        .map(|f| f.load(network, args))
-                        .collect::<Result<Vec<_>, _>>()?,
-                ),
+                Relationship::Exclusive { min_active, max_active } => {
+                    pywr_core::aggregated_node::Relationship::new_exclusive(
+                        min_active.unwrap_or(0),
+                        max_active.unwrap_or(1),
+                    )
+                }
             };
 
-            network.set_aggregated_node_factors(self.meta.name.as_str(), None, Some(f))?;
+            network.set_aggregated_node_relationship(self.meta.name.as_str(), None, Some(r))?;
         }
 
         Ok(())
@@ -792,8 +869,8 @@ impl TryFrom<AggregatedNodeV1> for AggregatedNode {
         let meta: NodeMeta = v1.meta.into();
         let mut unnamed_count = 0;
 
-        let factors = match v1.factors {
-            Some(f) => Some(Factors::Ratio {
+        let relationship = match v1.factors {
+            Some(f) => Some(Relationship::Ratio {
                 factors: f
                     .into_iter()
                     .map(|v| v.try_into_v2_parameter(Some(&meta.name), &mut unnamed_count))
@@ -812,12 +889,14 @@ impl TryFrom<AggregatedNodeV1> for AggregatedNode {
             .map(|v| v.try_into_v2_parameter(Some(&meta.name), &mut unnamed_count))
             .transpose()?;
 
+        let nodes = v1.nodes.into_iter().map(|n| n.into()).collect();
+
         let n = Self {
             meta,
-            nodes: v1.nodes,
+            nodes,
             max_flow,
             min_flow,
-            factors,
+            relationship,
         };
         Ok(n)
     }
@@ -827,7 +906,7 @@ impl TryFrom<AggregatedNodeV1> for AggregatedNode {
 #[serde(deny_unknown_fields)]
 pub struct AggregatedStorageNode {
     pub meta: NodeMeta,
-    pub storage_nodes: Vec<String>,
+    pub storage_nodes: Vec<SimpleNodeReference>,
 }
 
 impl AggregatedStorageNode {
@@ -851,11 +930,31 @@ impl AggregatedStorageNode {
 
 #[cfg(feature = "core")]
 impl AggregatedStorageNode {
+    pub fn node_indices_for_constraints(
+        &self,
+        network: &pywr_core::network::Network,
+        args: &LoadArgs,
+    ) -> Result<Vec<pywr_core::node::NodeIndex>, SchemaError> {
+        let indices = self
+            .storage_nodes
+            .iter()
+            .map(|node_ref| {
+                args.schema
+                    .get_node_by_name(&node_ref.name)
+                    .ok_or_else(|| SchemaError::NodeNotFound(node_ref.name.to_string()))?
+                    .node_indices_for_constraints(network, args)
+            })
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .flatten()
+            .collect();
+        Ok(indices)
+    }
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
         let nodes = self
             .storage_nodes
             .iter()
-            .map(|name| network.get_node_index_by_name(name, None))
+            .map(|node_ref| network.get_node_index_by_name(&node_ref.name, None))
             .collect::<Result<_, _>>()?;
 
         network.add_aggregated_storage_node(self.meta.name.as_str(), None, nodes)?;
@@ -896,9 +995,11 @@ impl TryFrom<AggregatedStorageNodeV1> for AggregatedStorageNode {
     type Error = ConversionError;
 
     fn try_from(v1: AggregatedStorageNodeV1) -> Result<Self, Self::Error> {
+        let storage_nodes = v1.storage_nodes.into_iter().map(|n| n.into()).collect();
+
         let n = Self {
             meta: v1.meta.into(),
-            storage_nodes: v1.storage_nodes,
+            storage_nodes,
         };
         Ok(n)
     }
@@ -909,12 +1010,13 @@ mod tests {
     use crate::nodes::core::StorageInitialVolume;
     use crate::nodes::InputNode;
     use crate::nodes::StorageNode;
-    #[cfg(feature = "core")]
     use crate::PywrModel;
     #[cfg(feature = "core")]
-    use pywr_core::test_utils::run_all_solvers;
+    use pywr_core::test_utils::{run_all_solvers, ExpectedOutputs};
     #[cfg(feature = "core")]
     use std::str::FromStr;
+    #[cfg(feature = "core")]
+    use tempfile::TempDir;
 
     #[test]
     fn test_input() {
@@ -992,5 +1094,112 @@ mod tests {
         let model: pywr_core::models::Model = schema.build_model(None, None).unwrap();
         // Test all solvers
         run_all_solvers(&model, &[], &[]);
+    }
+
+    fn me1_str() -> &'static str {
+        include_str!("../test_models/mutual-exclusivity1.json")
+    }
+    fn me2_str() -> &'static str {
+        include_str!("../test_models/mutual-exclusivity2.json")
+    }
+
+    #[cfg(feature = "core")]
+    fn me3_str() -> &'static str {
+        include_str!("../test_models/mutual-exclusivity3.json")
+    }
+    #[cfg(feature = "core")]
+    fn me1_outputs_str() -> &'static str {
+        include_str!("../test_models/mutual-exclusivity1.csv")
+    }
+    #[cfg(feature = "core")]
+    fn me2_outputs_str() -> &'static str {
+        include_str!("../test_models/mutual-exclusivity2.csv")
+    }
+    #[cfg(feature = "core")]
+    fn me3_outputs_str() -> &'static str {
+        include_str!("../test_models/mutual-exclusivity3.csv")
+    }
+    #[test]
+    fn test_me1_model_schema() {
+        let data = me1_str();
+        let schema: PywrModel = serde_json::from_str(data).unwrap();
+
+        assert_eq!(schema.network.nodes.len(), 6);
+        assert_eq!(schema.network.edges.len(), 4);
+    }
+    #[test]
+    fn test_me2_model_schema() {
+        let data = me2_str();
+        let schema: PywrModel = serde_json::from_str(data).unwrap();
+
+        assert_eq!(schema.network.nodes.len(), 6);
+        assert_eq!(schema.network.edges.len(), 4);
+    }
+    #[test]
+    #[cfg(feature = "core")]
+    fn test_me1_model_run() {
+        let data = me1_str();
+        let schema: PywrModel = serde_json::from_str(data).unwrap();
+        let temp_dir = TempDir::new().unwrap();
+
+        let mut model = schema.build_model(None, Some(temp_dir.path())).unwrap();
+
+        let network = model.network_mut();
+        assert_eq!(network.nodes().len(), 5);
+        assert_eq!(network.edges().len(), 4);
+
+        // After model run there should be an output file.
+        let expected_outputs = [ExpectedOutputs::new(
+            temp_dir.path().join("output.csv"),
+            me1_outputs_str(),
+        )];
+
+        // Test all solvers
+        run_all_solvers(&model, &["clp"], &expected_outputs);
+    }
+    #[test]
+    #[cfg(feature = "core")]
+    fn test_me2_model_run() {
+        let data = me2_str();
+        let schema: PywrModel = serde_json::from_str(data).unwrap();
+        let temp_dir = TempDir::new().unwrap();
+
+        let mut model = schema.build_model(None, Some(temp_dir.path())).unwrap();
+
+        let network = model.network_mut();
+        assert_eq!(network.nodes().len(), 10);
+        assert_eq!(network.edges().len(), 11);
+
+        // After model run there should be an output file.
+        let expected_outputs = [ExpectedOutputs::new(
+            temp_dir.path().join("output.csv"),
+            me2_outputs_str(),
+        )];
+
+        // Test all solvers
+        run_all_solvers(&model, &["clp"], &expected_outputs);
+    }
+
+    #[test]
+    #[cfg(feature = "core")]
+    fn test_me3_model_run() {
+        let data = me3_str();
+        let schema: PywrModel = serde_json::from_str(data).unwrap();
+        let temp_dir = TempDir::new().unwrap();
+
+        let mut model = schema.build_model(None, Some(temp_dir.path())).unwrap();
+
+        let network = model.network_mut();
+        assert_eq!(network.nodes().len(), 7);
+        assert_eq!(network.edges().len(), 8);
+
+        // After model run there should be an output file.
+        let expected_outputs = [ExpectedOutputs::new(
+            temp_dir.path().join("output.csv"),
+            me3_outputs_str(),
+        )];
+
+        // Test all solvers
+        run_all_solvers(&model, &["clp"], &expected_outputs);
     }
 }
