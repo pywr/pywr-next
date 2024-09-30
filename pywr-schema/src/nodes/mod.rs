@@ -21,16 +21,9 @@ use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::model::PywrNetwork;
-pub use crate::nodes::core::{
-    AggregatedNode, AggregatedStorageNode, CatchmentNode, InputNode, LinkNode, OutputNode, StorageNode,
-};
-pub use crate::nodes::delay::DelayNode;
 pub use crate::nodes::reservoir::{
     Bathymetry, BathymetryType, Evaporation, Leakage, Rainfall, ReservoirNode, SpillNodeType,
 };
-pub use crate::nodes::river::RiverNode;
-use crate::nodes::rolling_virtual_storage::RollingVirtualStorageNode;
-use crate::nodes::turbine::TurbineNode;
 
 use crate::parameters::TimeseriesV1Data;
 use crate::visit::{VisitMetrics, VisitPaths};
@@ -321,7 +314,7 @@ impl Node {
             Node::MonthlyVirtualStorage(n) => &n.meta,
             Node::RollingVirtualStorage(n) => &n.meta,
             Node::Turbine(n) => &n.meta,
-            Node::Reservoir(n) => &n.meta(),
+            Node::Reservoir(n) => n.meta(),
         }
     }
 
@@ -461,6 +454,7 @@ impl Node {
             Node::Turbine(n) => n.node_indices_for_constraints(network),
             Node::MonthlyVirtualStorage(n) => n.node_indices_for_constraints(network, args),
             Node::RollingVirtualStorage(n) => n.node_indices_for_constraints(network, args),
+            Node::Reservoir(n) => n.node_indices_for_constraints(network),
         }
     }
 

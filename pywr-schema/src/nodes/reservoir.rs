@@ -4,9 +4,7 @@ use crate::nodes::{NodeAttribute, NodeMeta, StorageNode};
 use crate::SchemaError;
 use pywr_core::derived_metric::DerivedMetric;
 use pywr_core::metric::MetricF64;
-use pywr_core::node::NodeIndex;
 use pywr_core::parameters::{AggFunc, ParameterName};
-use pywr_core::PywrError;
 use pywr_schema_macros::PywrVisitAll;
 use schemars::JsonSchema;
 
@@ -261,6 +259,19 @@ impl ReservoirNode {
 
 #[cfg(feature = "core")]
 impl ReservoirNode {
+    pub fn node_indices_for_constraints(
+        &self,
+        network: &pywr_core::network::Network,
+    ) -> Result<Vec<pywr_core::node::NodeIndex>, SchemaError> {
+        let indices = vec![
+            network.get_node_index_by_name(self.meta().name.as_str(), Self::compensation_node_sub_name())?,
+            network.get_node_index_by_name(self.meta().name.as_str(), Self::leakage_node_sub_name())?,
+            network.get_node_index_by_name(self.meta().name.as_str(), Self::rainfall_node_sub_name())?,
+            network.get_node_index_by_name(self.meta().name.as_str(), Self::evaporation_node_sub_name())?,
+        ];
+        Ok(indices)
+    }
+
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
         // add storage and spill
         self.storage.add_to_model(network)?;
@@ -304,7 +315,7 @@ impl ReservoirNode {
             }
         }
         // add rainfall node and edge
-        if let Some(_) = &self.rainfall {
+        if self.rainfall.is_some() {
             network.add_input_node(self.meta().name.as_str(), Self::rainfall_node_sub_name())?;
             let rainfall = network.get_node_index_by_name(self.meta().name.as_str(), Self::rainfall_node_sub_name())?;
             network.connect_nodes(rainfall, storage)?;
@@ -318,7 +329,7 @@ impl ReservoirNode {
         }
 
         // add evaporation node and edge
-        if let Some(_) = &self.evaporation {
+        if self.evaporation.is_some() {
             network.add_output_node(self.meta().name.as_str(), Self::evaporation_node_sub_name())?;
             let evaporation =
                 network.get_node_index_by_name(self.meta().name.as_str(), Self::evaporation_node_sub_name())?;
@@ -326,7 +337,7 @@ impl ReservoirNode {
         }
 
         // add leakage node and edge
-        if let Some(_) = &self.leakage {
+        if self.leakage.is_some() {
             network.add_output_node(self.meta().name.as_str(), Self::leakage_node_sub_name())?;
             let leakage = network.get_node_index_by_name(self.meta().name.as_str(), Self::leakage_node_sub_name())?;
             network.connect_nodes(storage, leakage)?;
