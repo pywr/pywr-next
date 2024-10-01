@@ -154,10 +154,11 @@ pub struct SoftConstraint {
 /// ```
 ///
 /// # Soft constraints
-/// This node allows setting optional maximum and minimum soft constraints which means the node's `min_flow`
-/// and `max_flow` properties may be breached, as specified by the user in the `soft_max` and `soft_min`
-/// properties. When the two attributes are provided, the internal representation of the link will
-/// look like this:
+/// This node allows setting optional maximum and minimum soft constraints via the `soft_min.flow`
+/// and `soft_max.flow` properties. These may be breached depending on the costs set on the
+/// optional nodes. However, the combined flow through the internal nodes will always be bound
+/// between the `min_flow` and `max_flow` attributes. When the two attributes are provided, the
+/// internal representation of the link will look like this:
 ///
 /// ```svgbob
 ///                <Link>.soft_max
@@ -373,7 +374,7 @@ impl LinkNode {
                     None,
                 )?;
             }
-            _ => {}
+            (None, None) => {}
         };
         Ok(())
     }
