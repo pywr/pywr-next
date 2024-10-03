@@ -49,7 +49,7 @@ parameter. This will be used by the schema to create the parameter when it is lo
 ```
 
 Finally, the minimum implementation of the `Parameter` and one of the three types of parameter compute traits should be
-added for `MaxParameter`. This trait requires the `meta` function to return the metadata for the parameter, and
+added for `MaxParameter`. These traits require the `meta` function to return the metadata for the parameter, and
 the `compute` function to calculate the value of the parameter at a given timestep and scenario.
 In this case the `compute` function calculates the maximum value of the metric and the threshold.
 The value of the metric is obtained from the model using the `get_value` function.
