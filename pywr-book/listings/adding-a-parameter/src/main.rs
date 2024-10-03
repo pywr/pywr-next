@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use pywr_core::metric::MetricF64;
 use pywr_core::network::Network;
 use pywr_core::parameters::{GeneralParameter, Parameter, ParameterMeta, ParameterName, ParameterState};
