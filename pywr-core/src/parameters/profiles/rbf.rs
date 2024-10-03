@@ -1,6 +1,6 @@
 use crate::parameters::{
     downcast_internal_state_mut, downcast_internal_state_ref, downcast_variable_config_ref, Parameter, ParameterMeta,
-    ParameterState, SimpleParameter, VariableConfig, VariableParameter,
+    ParameterName, ParameterState, SimpleParameter, VariableConfig, VariableParameter,
 };
 use crate::scenario::ScenarioIndex;
 use crate::state::SimpleParameterValues;
@@ -90,7 +90,7 @@ impl RbfProfileInternalState {
 }
 
 impl RbfProfileParameter {
-    pub fn new(name: &str, points: Vec<(u32, f64)>, function: RadialBasisFunction) -> Self {
+    pub fn new(name: ParameterName, points: Vec<(u32, f64)>, function: RadialBasisFunction) -> Self {
         Self {
             meta: ParameterMeta::new(name),
             points,

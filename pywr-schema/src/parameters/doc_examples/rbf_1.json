@@ -1,10 +1,25 @@
 {
-    "name": "my-interpolated-profile",
-    "type": "RbfProfile",
-    "points": [
-        [90, 0.5],
-        [180, 0.3],
-        [270, 0.7]
+  "meta": {
+    "name": "my-interpolated-profile"
+  },
+  "type": "RbfProfile",
+  "points": [
+    [
+      90,
+      0.5
     ],
-    "function": {"Gaussian": { "epsilon":  3.0 }}
+    [
+      180,
+      0.3
+    ],
+    [
+      270,
+      0.7
+    ]
+  ],
+  "function": {
+    "Gaussian": {
+      "epsilon": 3.0
+    }
+  }
 }

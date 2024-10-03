@@ -12,8 +12,8 @@ use pywr_v1_schema::parameters::IndexedArrayParameter as IndexedArrayParameterV1
 use schemars::JsonSchema;
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
+#[serde(deny_unknown_fields)]
 pub struct IndexedArrayParameter {
-    #[serde(flatten)]
     pub meta: ParameterMeta,
     #[serde(alias = "params")]
     pub metrics: Vec<Metric>,
@@ -35,7 +35,11 @@ impl IndexedArrayParameter {
             .map(|v| v.load(network, args))
             .collect::<Result<Vec<_>, _>>()?;
 
-        let p = pywr_core::parameters::IndexedArrayParameter::new(&self.meta.name, index_parameter, &metrics);
+        let p = pywr_core::parameters::IndexedArrayParameter::new(
+            self.meta.name.as_str().into(),
+            index_parameter,
+            &metrics,
+        );
 
         Ok(network.add_parameter(Box::new(p))?)
     }

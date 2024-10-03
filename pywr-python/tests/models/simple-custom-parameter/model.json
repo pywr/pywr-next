@@ -10,7 +10,9 @@
   "network": {
     "nodes": [
       {
-        "name": "input1",
+        "meta": {
+          "name": "input1"
+        },
         "type": "Input",
         "max_flow": {
           "type": "Timeseries",
@@ -22,11 +24,15 @@
         }
       },
       {
-        "name": "link1",
+        "meta": {
+          "name": "link1"
+        },
         "type": "Link"
       },
       {
-        "name": "output1",
+        "meta": {
+          "name": "output1"
+        },
         "type": "Output",
         "cost": {
           "type": "Constant",
@@ -50,9 +56,13 @@
     ],
     "parameters": [
       {
-        "name": "demand",
+        "meta": {
+          "name": "demand"
+        },
         "type": "Python",
-        "path": "custom.py",
+        "source": {
+          "path": "custom.py"
+        },
         "object": "CustomParameter",
         "args": [
           5.0
@@ -64,7 +74,9 @@
     ],
     "timeseries": [
       {
-        "name": "inflow",
+        "meta": {
+          "name": "inflow"
+        },
         "provider": {
           "type": "Polars",
           "url": "inflow.csv"

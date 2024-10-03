@@ -12,7 +12,9 @@
   "network": {
     "nodes": [
       {
-        "name": "supply1",
+        "meta": {
+          "name": "supply1"
+        },
         "type": "Input",
         "max_flow": {
           "type": "Constant",
@@ -20,7 +22,9 @@
         }
       },
       {
-        "name": "storage1",
+        "meta": {
+          "name": "storage1"
+        },
         "type": "Storage",
         "initial_volume": {
           "Proportional": 0.5
@@ -31,7 +35,9 @@
         }
       },
       {
-        "name": "storage2",
+        "meta": {
+          "name": "storage2"
+        },
         "type": "Storage",
         "initial_volume": {
           "Proportional": 0.5
@@ -42,7 +48,9 @@
         }
       },
       {
-        "name": "storage3",
+        "meta": {
+          "name": "storage3"
+        },
         "type": "Storage",
         "initial_volume": {
           "Proportional": 0.5
@@ -53,7 +61,9 @@
         }
       },
       {
-        "name": "output1",
+        "meta": {
+          "name": "output1"
+        },
         "type": "Output"
       }
     ],
@@ -85,17 +95,23 @@
     ],
     "parameters": [
       {
-        "name": "ten",
+        "meta": {
+          "name": "ten"
+        },
         "type": "Constant",
         "value": 10.0
       },
       {
-        "name": "five",
+        "meta": {
+          "name": "five"
+        },
         "type": "Constant",
         "value": 5.0
       },
       {
-        "name": "fifteen",
+        "meta": {
+          "name": "fifteen"
+        },
         "type": "Aggregated",
         "agg_func": "sum",
         "metrics": [

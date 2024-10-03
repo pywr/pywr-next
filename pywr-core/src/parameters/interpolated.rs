@@ -1,7 +1,7 @@
 use crate::metric::MetricF64;
 use crate::network::Network;
 use crate::parameters::interpolate::linear_interpolation;
-use crate::parameters::{GeneralParameter, Parameter, ParameterMeta, ParameterState};
+use crate::parameters::{GeneralParameter, Parameter, ParameterMeta, ParameterName, ParameterState};
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
 use crate::timestep::Timestep;
@@ -16,7 +16,7 @@ pub struct InterpolatedParameter {
 }
 
 impl InterpolatedParameter {
-    pub fn new(name: &str, x: MetricF64, points: Vec<(MetricF64, MetricF64)>, error_on_bounds: bool) -> Self {
+    pub fn new(name: ParameterName, x: MetricF64, points: Vec<(MetricF64, MetricF64)>, error_on_bounds: bool) -> Self {
         Self {
             meta: ParameterMeta::new(name),
             x,

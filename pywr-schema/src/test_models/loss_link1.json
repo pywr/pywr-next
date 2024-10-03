@@ -12,11 +12,15 @@
   "network": {
     "nodes": [
       {
-        "name": "input1",
+        "meta": {
+          "name": "input1"
+        },
         "type": "Input"
       },
       {
-        "name": "loss1",
+        "meta": {
+          "name": "loss1"
+        },
         "type": "LossLink",
         "loss_factor": {
           "type": "Net",
@@ -27,7 +31,9 @@
         }
       },
       {
-        "name": "demand1",
+        "meta": {
+          "name": "demand1"
+        },
         "type": "Output",
         "max_flow": {
           "type": "Constant",
@@ -39,7 +45,9 @@
         }
       },
       {
-        "name": "loss2",
+        "meta": {
+          "name": "loss2"
+        },
         "type": "LossLink",
         "loss_factor": {
           "type": "Gross",
@@ -50,7 +58,9 @@
         }
       },
       {
-        "name": "demand2",
+        "meta": {
+          "name": "demand2"
+        },
         "type": "Output",
         "max_flow": {
           "type": "Constant",
@@ -62,11 +72,15 @@
         }
       },
       {
-        "name": "loss3",
+        "meta": {
+          "name": "loss3"
+        },
         "type": "LossLink"
       },
       {
-        "name": "demand3",
+        "meta": {
+          "name": "demand3"
+        },
         "type": "Output",
         "max_flow": {
           "type": "Constant",

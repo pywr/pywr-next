@@ -15,8 +15,8 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
+#[serde(deny_unknown_fields)]
 pub struct TablesArrayParameter {
-    #[serde(flatten)]
     pub meta: ParameterMeta,
     pub node: String,
     #[serde(rename = "where")]
@@ -69,7 +69,7 @@ impl TablesArrayParameter {
                 .ok_or(SchemaError::ScenarioGroupNotFound(scenario.to_string()))?;
 
             let p = pywr_core::parameters::Array2Parameter::new(
-                &self.meta.name,
+                self.meta.name.as_str().into(),
                 array,
                 scenario_group_index,
                 self.timestep_offset,
@@ -77,7 +77,11 @@ impl TablesArrayParameter {
             Ok(network.add_parameter(Box::new(p))?)
         } else {
             let array = array.slice_move(s![.., 0]);
-            let p = pywr_core::parameters::Array1Parameter::new(&self.meta.name, array, self.timestep_offset);
+            let p = pywr_core::parameters::Array1Parameter::new(
+                self.meta.name.as_str().into(),
+                array,
+                self.timestep_offset,
+            );
             Ok(network.add_parameter(Box::new(p))?)
         }
     }

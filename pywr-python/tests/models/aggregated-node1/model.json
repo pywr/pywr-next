@@ -10,7 +10,9 @@
   "network": {
     "nodes": [
       {
-        "name": "input1",
+        "meta": {
+          "name": "input1"
+        },
         "type": "Input",
         "max_flow": {
           "type": "Timeseries",
@@ -22,7 +24,9 @@
         }
       },
       {
-        "name": "link1",
+        "meta": {
+          "name": "link1"
+        },
         "type": "Link",
         "max_flow": {
           "type": "Constant",
@@ -30,7 +34,9 @@
         }
       },
       {
-        "name": "link2",
+        "meta": {
+          "name": "link2"
+        },
         "type": "Link",
         "cost": {
           "type": "Constant",
@@ -38,11 +44,17 @@
         }
       },
       {
-        "name": "agg-node",
+        "meta": {
+          "name": "agg-node"
+        },
         "type": "Aggregated",
         "nodes": [
-          "link1",
-          "link2"
+          {
+            "name": "link1"
+          },
+          {
+            "name": "link2"
+          }
         ],
         "max_flow": {
           "type": "Constant",
@@ -50,7 +62,9 @@
         }
       },
       {
-        "name": "output1",
+        "meta": {
+          "name": "output1"
+        },
         "type": "Output",
         "cost": {
           "type": "Constant",
@@ -82,14 +96,18 @@
     ],
     "parameters": [
       {
-        "name": "demand",
+        "meta": {
+          "name": "demand"
+        },
         "type": "Constant",
         "value": 10.0
       }
     ],
     "timeseries": [
       {
-        "name": "inflow",
+        "meta": {
+          "name": "inflow"
+        },
         "provider": {
           "type": "Polars",
           "url": "inflow.csv"

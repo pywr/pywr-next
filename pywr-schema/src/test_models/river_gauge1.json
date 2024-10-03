@@ -12,7 +12,9 @@
   "network": {
     "nodes": [
       {
-        "name": "catchment1",
+        "meta": {
+          "name": "catchment1"
+        },
         "type": "Catchment",
         "flow": {
           "type": "Constant",
@@ -20,7 +22,9 @@
         }
       },
       {
-        "name": "gauge1",
+        "meta": {
+          "name": "gauge1"
+        },
         "type": "RiverGauge",
         "mrf": {
           "type": "Constant",
@@ -32,11 +36,15 @@
         }
       },
       {
-        "name": "term1",
+        "meta": {
+          "name": "term1"
+        },
         "type": "Output"
       },
       {
-        "name": "demand1",
+        "meta": {
+          "name": "demand1"
+        },
         "type": "Output",
         "max_flow": {
           "type": "Constant",

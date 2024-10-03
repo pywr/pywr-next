@@ -1,5 +1,7 @@
 {
-  "name": "turbine-flow",
+  "meta": {
+    "name": "turbine-flow"
+  },
   "type": "HydropowerTarget",
   "target": {
     "type": "Constant",

@@ -1,4 +1,4 @@
-use crate::parameters::{Parameter, ParameterMeta, ParameterState, SimpleParameter};
+use crate::parameters::{Parameter, ParameterMeta, ParameterName, ParameterState, SimpleParameter};
 use crate::scenario::ScenarioIndex;
 use crate::state::SimpleParameterValues;
 use crate::timestep::Timestep;
@@ -174,7 +174,7 @@ pub struct WeeklyProfileParameter {
 }
 
 impl WeeklyProfileParameter {
-    pub fn new(name: &str, values: WeeklyProfileValues, interp_day: Option<WeeklyInterpDay>) -> Self {
+    pub fn new(name: ParameterName, values: WeeklyProfileValues, interp_day: Option<WeeklyInterpDay>) -> Self {
         Self {
             meta: ParameterMeta::new(name),
             values,

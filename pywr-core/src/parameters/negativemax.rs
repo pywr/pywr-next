@@ -1,6 +1,6 @@
 use crate::metric::MetricF64;
 use crate::network::Network;
-use crate::parameters::{GeneralParameter, Parameter, ParameterMeta, ParameterState};
+use crate::parameters::{GeneralParameter, Parameter, ParameterMeta, ParameterName, ParameterState};
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
 use crate::timestep::Timestep;
@@ -13,7 +13,7 @@ pub struct NegativeMaxParameter {
 }
 
 impl NegativeMaxParameter {
-    pub fn new(name: &str, metric: MetricF64, threshold: f64) -> Self {
+    pub fn new(name: ParameterName, metric: MetricF64, threshold: f64) -> Self {
         Self {
             meta: ParameterMeta::new(name),
             metric,

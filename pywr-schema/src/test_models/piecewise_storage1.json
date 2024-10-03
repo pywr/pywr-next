@@ -12,7 +12,9 @@
   "network": {
     "nodes": [
       {
-        "name": "input1",
+        "meta": {
+          "name": "input1"
+        },
         "type": "Input",
         "max_flow": {
           "type": "Constant",
@@ -24,7 +26,9 @@
         }
       },
       {
-        "name": "storage1",
+        "meta": {
+          "name": "storage1"
+        },
         "type": "PiecewiseStorage",
         "max_volume": {
           "type": "Constant",
@@ -54,7 +58,9 @@
         ]
       },
       {
-        "name": "demand1",
+        "meta": {
+          "name": "demand1"
+        },
         "type": "Output",
         "max_flow": {
           "type": "Constant",

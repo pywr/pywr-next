@@ -9,8 +9,8 @@ use pywr_v1_schema::nodes::LinkNode as LinkNodeV1;
 use schemars::JsonSchema;
 
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
+#[serde(deny_unknown_fields)]
 pub struct RiverNode {
-    #[serde(flatten)]
     pub meta: NodeMeta,
 }
 
@@ -31,6 +31,13 @@ impl RiverNode {
 
 #[cfg(feature = "core")]
 impl RiverNode {
+    pub fn node_indices_for_constraints(
+        &self,
+        network: &pywr_core::network::Network,
+    ) -> Result<Vec<pywr_core::node::NodeIndex>, SchemaError> {
+        let idx = network.get_node_index_by_name(self.meta.name.as_str(), None)?;
+        Ok(vec![idx])
+    }
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
         network.add_link_node(self.meta.name.as_str(), None)?;
         Ok(())

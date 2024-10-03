@@ -6,7 +6,7 @@ use crate::model::LoadArgs;
 use crate::nodes::{NodeAttribute, NodeMeta};
 use crate::parameters::ConstantValue;
 #[cfg(feature = "core")]
-use pywr_core::metric::MetricF64;
+use pywr_core::{metric::MetricF64, parameters::ParameterName};
 use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::nodes::DelayNode as DelayNodeV1;
 use schemars::JsonSchema;
@@ -31,8 +31,8 @@ use schemars::JsonSchema;
 ///
 )]
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
+#[serde(deny_unknown_fields)]
 pub struct DelayNode {
-    #[serde(flatten)]
     pub meta: NodeMeta,
     pub delay: usize,
     pub initial_value: ConstantValue<f64>,
@@ -66,6 +66,13 @@ impl DelayNode {
 
 #[cfg(feature = "core")]
 impl DelayNode {
+    pub fn node_indices_for_constraints(
+        &self,
+        network: &pywr_core::network::Network,
+    ) -> Result<Vec<pywr_core::node::NodeIndex>, SchemaError> {
+        let indices = vec![network.get_node_index_by_name(self.meta.name.as_str(), Self::input_sub_now())?];
+        Ok(indices)
+    }
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
         network.add_output_node(self.meta.name.as_str(), Self::output_sub_name())?;
         network.add_input_node(self.meta.name.as_str(), Self::input_sub_now())?;
@@ -78,16 +85,12 @@ impl DelayNode {
         network: &mut pywr_core::network::Network,
         args: &LoadArgs,
     ) -> Result<(), SchemaError> {
-        // Create the delay parameter
-        let name = format!("{}-delay", self.meta.name.as_str());
+        // Create the delay parameter using the node's name as the parent identifier
+        let name = ParameterName::new("delay", Some(self.meta.name.as_str()));
         let output_idx = network.get_node_index_by_name(self.meta.name.as_str(), Self::output_sub_name())?;
         let metric = MetricF64::NodeInFlow(output_idx);
-        let p = pywr_core::parameters::DelayParameter::new(
-            &name,
-            metric,
-            self.delay,
-            self.initial_value.load(args.tables)?,
-        );
+        let p =
+            pywr_core::parameters::DelayParameter::new(name, metric, self.delay, self.initial_value.load(args.tables)?);
         let delay_idx = network.add_parameter(Box::new(p))?;
 
         // Apply it as a constraint on the input node.
