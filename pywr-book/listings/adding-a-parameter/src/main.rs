@@ -1,6 +1,6 @@
 use pywr_core::metric::MetricF64;
 use pywr_core::network::Network;
-use pywr_core::parameters::{GeneralParameter, Parameter, ParameterMeta, ParameterState};
+use pywr_core::parameters::{GeneralParameter, Parameter, ParameterMeta, ParameterName, ParameterState};
 use pywr_core::scenario::ScenarioIndex;
 use pywr_core::state::State;
 use pywr_core::timestep::Timestep;
@@ -15,7 +15,7 @@ pub struct MaxParameter {
 // ANCHOR_END: parameter
 // ANCHOR: impl-new
 impl MaxParameter {
-    pub fn new(name: &str, metric: MetricF64, threshold: f64) -> Self {
+    pub fn new(name: ParameterName, metric: MetricF64, threshold: f64) -> Self {
         Self {
             meta: ParameterMeta::new(name),
             metric,
@@ -84,7 +84,7 @@ mod schema {
             let idx = self.parameter.load(network, args)?;
             let threshold = self.threshold.unwrap_or(0.0);
 
-            let p = pywr_core::parameters::MaxParameter::new(&self.meta.name, idx, threshold);
+            let p = pywr_core::parameters::MaxParameter::new(self.meta.name.as_str().into(), idx, threshold);
             Ok(network.add_parameter(Box::new(p))?)
         }
     }
