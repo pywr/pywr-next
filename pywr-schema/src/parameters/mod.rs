@@ -67,7 +67,7 @@ use schemars::JsonSchema;
 use std::path::{Path, PathBuf};
 use strum_macros::{Display, EnumDiscriminants, EnumString, IntoStaticStr, VariantNames};
 pub use tables::TablesArrayParameter;
-pub use thresholds::ParameterThresholdParameter;
+pub use thresholds::ThresholdParameter;
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 pub struct ParameterMeta {
@@ -174,7 +174,7 @@ pub enum Parameter {
     NegativeMin(NegativeMinParameter),
     HydropowerTarget(HydropowerTargetParameter),
     Polynomial1D(Polynomial1DParameter),
-    ParameterThreshold(ParameterThresholdParameter),
+    Threshold(ThresholdParameter),
     TablesArray(TablesArrayParameter),
     Python(PythonParameter),
     Delay(DelayParameter),
@@ -205,7 +205,7 @@ impl Parameter {
             Self::Min(p) => p.meta.name.as_str(),
             Self::Negative(p) => p.meta.name.as_str(),
             Self::Polynomial1D(p) => p.meta.name.as_str(),
-            Self::ParameterThreshold(p) => p.meta.name.as_str(),
+            Self::Threshold(p) => p.meta.name.as_str(),
             Self::TablesArray(p) => p.meta.name.as_str(),
             Self::Python(p) => p.meta.name.as_str(),
             Self::Division(p) => p.meta.name.as_str(),
@@ -259,7 +259,7 @@ impl Parameter {
             Self::Min(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
             Self::Negative(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
             Self::Polynomial1D(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network)?),
-            Self::ParameterThreshold(p) => pywr_core::parameters::ParameterType::Index(p.add_to_model(network, args)?),
+            Self::Threshold(p) => pywr_core::parameters::ParameterType::Index(p.add_to_model(network, args)?),
             Self::TablesArray(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
             Self::Python(p) => p.add_to_model(network, args)?,
             Self::Delay(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
@@ -299,7 +299,7 @@ impl VisitMetrics for Parameter {
             Self::Min(p) => p.visit_metrics(visitor),
             Self::Negative(p) => p.visit_metrics(visitor),
             Self::Polynomial1D(p) => p.visit_metrics(visitor),
-            Self::ParameterThreshold(p) => p.visit_metrics(visitor),
+            Self::Threshold(p) => p.visit_metrics(visitor),
             Self::TablesArray(p) => p.visit_metrics(visitor),
             Self::Python(p) => p.visit_metrics(visitor),
             Self::Delay(p) => p.visit_metrics(visitor),
@@ -333,7 +333,7 @@ impl VisitMetrics for Parameter {
             Self::Min(p) => p.visit_metrics_mut(visitor),
             Self::Negative(p) => p.visit_metrics_mut(visitor),
             Self::Polynomial1D(p) => p.visit_metrics_mut(visitor),
-            Self::ParameterThreshold(p) => p.visit_metrics_mut(visitor),
+            Self::Threshold(p) => p.visit_metrics_mut(visitor),
             Self::TablesArray(p) => p.visit_metrics_mut(visitor),
             Self::Python(p) => p.visit_metrics_mut(visitor),
             Self::Delay(p) => p.visit_metrics_mut(visitor),
@@ -369,7 +369,7 @@ impl VisitPaths for Parameter {
             Self::Min(p) => p.visit_paths(visitor),
             Self::Negative(p) => p.visit_paths(visitor),
             Self::Polynomial1D(p) => p.visit_paths(visitor),
-            Self::ParameterThreshold(p) => p.visit_paths(visitor),
+            Self::Threshold(p) => p.visit_paths(visitor),
             Self::TablesArray(p) => p.visit_paths(visitor),
             Self::Python(p) => p.visit_paths(visitor),
             Self::Delay(p) => p.visit_paths(visitor),
@@ -403,7 +403,7 @@ impl VisitPaths for Parameter {
             Self::Min(p) => p.visit_paths_mut(visitor),
             Self::Negative(p) => p.visit_paths_mut(visitor),
             Self::Polynomial1D(p) => p.visit_paths_mut(visitor),
-            Self::ParameterThreshold(p) => p.visit_paths_mut(visitor),
+            Self::Threshold(p) => p.visit_paths_mut(visitor),
             Self::TablesArray(p) => p.visit_paths_mut(visitor),
             Self::Python(p) => p.visit_paths_mut(visitor),
             Self::Delay(p) => p.visit_paths_mut(visitor),
@@ -570,7 +570,7 @@ impl TryFromV1Parameter<ParameterV1> for ParameterOrTimeseries {
                     Parameter::Polynomial1D(p.try_into_v2_parameter(parent_node, unnamed_count)?).into()
                 }
                 CoreParameter::ParameterThreshold(p) => {
-                    Parameter::ParameterThreshold(p.try_into_v2_parameter(parent_node, unnamed_count)?).into()
+                    Parameter::Threshold(p.try_into_v2_parameter(parent_node, unnamed_count)?).into()
                 }
                 CoreParameter::TablesArray(p) => {
                     Parameter::TablesArray(p.try_into_v2_parameter(parent_node, unnamed_count)?).into()
