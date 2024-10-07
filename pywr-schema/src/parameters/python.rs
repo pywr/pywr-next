@@ -23,7 +23,7 @@ use std::path::{Path, PathBuf};
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
 #[serde(rename_all = "lowercase")]
-pub enum PythonModule {
+pub enum PythonSource {
     Module(String),
     Path(PathBuf),
 }
@@ -59,8 +59,12 @@ pub enum PythonReturnType {
 /// // `my_parameter.py` should contain a Python class.
 /// let data = r#"{
 ///     "type": "Python",
-///     "name": "my-custom-calculation",
-///     "path": "my_parameter.py",
+///     "meta": {
+///         "name": "my-custom-calculation"
+///     },
+///     "source": {
+///         "path": "my_parameter.py"
+///     },
 ///     "object": "MyParameter",
 ///     "args": [],
 ///     "kwargs": {},
@@ -80,11 +84,10 @@ pub enum PythonReturnType {
 /// let parameter: Parameter = serde_json::from_str(data).unwrap();
 /// ```
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct PythonParameter {
-    #[serde(flatten)]
     pub meta: ParameterMeta,
-    #[serde(flatten)]
-    pub module: PythonModule,
+    pub source: PythonSource,
     /// The name of Python object from the module to use.
     pub object: String,
     /// The return type of the Python calculation. This is used to convert the Python return value
@@ -156,9 +159,9 @@ impl VisitMetrics for PythonParameter {
 
 impl VisitPaths for PythonParameter {
     fn visit_paths<F: FnMut(&Path)>(&self, visitor: &mut F) {
-        match &self.module {
-            PythonModule::Module(_) => {}
-            PythonModule::Path(path) => {
+        match &self.source {
+            PythonSource::Module(_) => {}
+            PythonSource::Path(path) => {
                 visitor(path);
             }
         }
@@ -169,9 +172,9 @@ impl VisitPaths for PythonParameter {
     }
 
     fn visit_paths_mut<F: FnMut(&mut PathBuf)>(&mut self, visitor: &mut F) {
-        match &mut self.module {
-            PythonModule::Module(_) => {}
-            PythonModule::Path(path) => {
+        match &mut self.source {
+            PythonSource::Module(_) => {}
+            PythonSource::Path(path) => {
                 visitor(path);
             }
         }
@@ -197,9 +200,9 @@ impl PythonParameter {
         pyo3::prepare_freethreaded_python();
 
         let object = Python::with_gil(|py| {
-            let module = match &self.module {
-                PythonModule::Module(module) => PyModule::import_bound(py, module.as_str()),
-                PythonModule::Path(original_path) => {
+            let module = match &self.source {
+                PythonSource::Module(module) => PyModule::import_bound(py, module.as_str()),
+                PythonSource::Path(original_path) => {
                     let path = &make_path(original_path, args.data_path);
                     let code = std::fs::read_to_string(path).expect("Could not read Python code from path.");
                     let file_name = path.file_name().unwrap().to_str().unwrap();
@@ -283,9 +286,12 @@ mod tests {
 
         let data = json!(
             {
-                "name": "my-float-parameter",
-                "type": "Python",
-                "path": py_fn,
+                "meta": {
+                    "name": "my-float-parameter"
+                },
+                "source": {
+                    "path": py_fn
+                },
                 "object": "FloatParameter",
                 "args": [0, ],
                 "kwargs": {},
@@ -326,9 +332,12 @@ mod tests {
 
         let data = json!(
             {
-                "name": "my-int-parameter",
-                "type": "Python",
-                "path": py_fn,
+                "meta": {
+                    "name": "my-int-parameter"
+                },
+                "source": {
+                    "path": py_fn
+                },
                 "return_type": "int",
                 "object": "FloatParameter",
                 "args": [0, ],

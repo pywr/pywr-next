@@ -220,8 +220,10 @@ impl VisitMetrics for PywrNetwork {
 
         if let Some(metric_sets) = &self.metric_sets {
             for metric_set in metric_sets {
-                for metric in &metric_set.metrics {
-                    visitor(metric);
+                if let Some(metrics) = &metric_set.metrics {
+                    for metric in metrics {
+                        visitor(metric);
+                    }
                 }
             }
         }
@@ -238,8 +240,10 @@ impl VisitMetrics for PywrNetwork {
 
         if let Some(metric_sets) = &mut self.metric_sets {
             for metric_set in metric_sets {
-                for metric in metric_set.metrics.iter_mut() {
-                    visitor(metric);
+                if let Some(metrics) = &mut metric_set.metrics {
+                    for metric in metrics {
+                        visitor(metric);
+                    }
                 }
             }
         }
@@ -491,7 +495,8 @@ impl PywrNetwork {
 
                 if failed_parameters.len() == n {
                     // Could not load any parameters; must be a circular reference
-                    return Err(SchemaError::CircularParameterReference);
+                    let failed_names = failed_parameters.iter().map(|p| p.name().to_string()).collect();
+                    return Err(SchemaError::CircularParameterReference(failed_names));
                 }
 
                 remaining_parameters = failed_parameters;
@@ -671,7 +676,7 @@ impl PywrModel {
     /// Convert a v1 JSON string to a v2 model.
     ///
     /// See [`PywrModel::from_v1`] for more information.
-    pub fn from_v1_str(v1: &str) -> Result<(Self, Vec<ConversionError>), pywr_v1_schema::model::PywrSchemaError> {
+    pub fn from_v1_str(v1: &str) -> Result<(Self, Vec<ConversionError>), pywr_v1_schema::PywrSchemaError> {
         let v1_model: pywr_v1_schema::PywrModel = serde_json::from_str(v1)?;
 
         Ok(Self::from_v1(v1_model))
@@ -1110,6 +1115,7 @@ mod core_tests {
                         comment: None,
                     },
                     value: ConstantValue::Literal(10.0),
+                    variable: None,
                 }),
                 Parameter::Aggregated(AggregatedParameter {
                     meta: ParameterMeta {
@@ -1166,6 +1172,7 @@ mod core_tests {
                         comment: None,
                     },
                     value: ConstantValue::Literal(10.0),
+                    variable: None,
                 }),
                 Parameter::Constant(ConstantParameter {
                     meta: ParameterMeta {
@@ -1173,6 +1180,7 @@ mod core_tests {
                         comment: None,
                     },
                     value: ConstantValue::Literal(10.0),
+                    variable: None,
                 }),
             ]);
         }

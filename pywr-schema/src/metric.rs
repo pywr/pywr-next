@@ -237,6 +237,7 @@ pub enum TimeseriesColumns {
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct TimeseriesReference {
     name: String,
     columns: Option<TimeseriesColumns>,
@@ -252,7 +253,9 @@ impl TimeseriesReference {
     }
 }
 
+/// A reference to a node with an optional attribute.
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
+#[serde(deny_unknown_fields)]
 pub struct NodeReference {
     /// The name of the node
     pub name: String,
@@ -261,6 +264,10 @@ pub struct NodeReference {
 }
 
 impl NodeReference {
+    pub fn new(name: String, attribute: Option<NodeAttribute>) -> Self {
+        Self { name, attribute }
+    }
+
     #[cfg(feature = "core")]
     pub fn load(&self, network: &mut pywr_core::network::Network, args: &LoadArgs) -> Result<MetricF64, SchemaError> {
         // This is the associated node in the schema
@@ -298,16 +305,61 @@ impl NodeReference {
     }
 }
 
-impl From<String> for NodeReference {
+/// A reference to a node without an attribute.
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
+pub struct SimpleNodeReference {
+    /// The name of the node
+    pub name: String,
+}
+
+impl SimpleNodeReference {
+    pub fn new(name: String) -> Self {
+        Self { name }
+    }
+
+    #[cfg(feature = "core")]
+    pub fn load(&self, network: &mut pywr_core::network::Network, args: &LoadArgs) -> Result<MetricF64, SchemaError> {
+        // This is the associated node in the schema
+        let node = args
+            .schema
+            .get_node_by_name(&self.name)
+            .ok_or_else(|| SchemaError::NodeNotFound(self.name.clone()))?;
+
+        node.create_metric(network, None, args)
+    }
+
+    /// Return the default attribute of the node.
+    #[cfg(feature = "core")]
+    pub fn attribute(&self, args: &LoadArgs) -> Result<NodeAttribute, SchemaError> {
+        // This is the associated node in the schema
+        let node = args
+            .schema
+            .get_node_by_name(&self.name)
+            .ok_or_else(|| SchemaError::NodeNotFound(self.name.clone()))?;
+
+        Ok(node.default_metric())
+    }
+
+    #[cfg(feature = "core")]
+    pub fn node_type(&self, args: &LoadArgs) -> Result<NodeType, SchemaError> {
+        // This is the associated node in the schema
+        let node = args
+            .schema
+            .get_node_by_name(&self.name)
+            .ok_or_else(|| SchemaError::NodeNotFound(self.name.clone()))?;
+
+        Ok(node.node_type())
+    }
+}
+
+impl From<String> for SimpleNodeReference {
     fn from(v: String) -> Self {
-        NodeReference {
-            name: v,
-            attribute: None,
-        }
+        SimpleNodeReference { name: v }
     }
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct ParameterReference {
     /// The name of the parameter
     pub name: String,
@@ -316,6 +368,10 @@ pub struct ParameterReference {
 }
 
 impl ParameterReference {
+    pub fn new(name: String, key: Option<String>) -> Self {
+        Self { name, key }
+    }
+
     #[cfg(feature = "core")]
     pub fn load(&self, network: &mut pywr_core::network::Network) -> Result<MetricF64, SchemaError> {
         let name = self.name.as_str().into();

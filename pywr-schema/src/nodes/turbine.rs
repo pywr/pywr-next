@@ -13,7 +13,7 @@ use pywr_core::{
 use pywr_schema_macros::PywrVisitAll;
 use schemars::JsonSchema;
 
-#[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, PywrVisitAll)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Debug, strum_macros::Display, JsonSchema, PywrVisitAll)]
 pub enum TargetType {
     // set flow derived from the hydropower target as a max_flow
     MaxFlow,
@@ -26,8 +26,8 @@ pub enum TargetType {
 /// This turbine node can be used to set a flow constraint based on a hydropower production target.
 /// The turbine elevation, minimum head and efficiency can also be configured.
 #[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, PywrVisitAll)]
+#[serde(deny_unknown_fields)]
 pub struct TurbineNode {
-    #[serde(flatten)]
     pub meta: NodeMeta,
     pub cost: Option<Metric>,
     /// Hydropower production target. If set the node's max flow is limited to the flow
@@ -97,6 +97,14 @@ impl TurbineNode {
 impl TurbineNode {
     fn sub_name() -> Option<&'static str> {
         Some("turbine")
+    }
+
+    pub fn node_indices_for_constraints(
+        &self,
+        network: &pywr_core::network::Network,
+    ) -> Result<Vec<pywr_core::node::NodeIndex>, SchemaError> {
+        let idx = network.get_node_index_by_name(self.meta.name.as_str(), None)?;
+        Ok(vec![idx])
     }
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network, _args: &LoadArgs) -> Result<(), SchemaError> {
         network.add_link_node(self.meta.name.as_str(), None)?;

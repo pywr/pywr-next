@@ -108,7 +108,7 @@ impl DerivedMetric {
             Self::NodeInFlowDeficit(idx) => {
                 let node = network.get_node(idx)?;
                 let flow = state.get_network_state().get_node_in_flow(idx)?;
-                let max_flow = node.get_current_max_flow(network, state)?;
+                let max_flow = node.get_max_flow(network, state)?;
                 Ok(max_flow - flow)
             }
             Self::PowerFromNodeFlow(idx, turbine_data) => {

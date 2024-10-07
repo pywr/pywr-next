@@ -26,40 +26,37 @@ mod thresholds;
 #[cfg(feature = "core")]
 pub use super::data_tables::LoadedTableCollection;
 pub use super::data_tables::TableDataRef;
-pub use super::parameters::aggregated::{AggFunc, AggregatedIndexParameter, AggregatedParameter, IndexAggFunc};
-pub use super::parameters::asymmetric_switch::AsymmetricSwitchIndexParameter;
-pub use super::parameters::control_curves::{
-    ControlCurveIndexParameter, ControlCurveInterpolatedParameter, ControlCurveParameter,
-    ControlCurvePiecewiseInterpolatedParameter,
-};
-pub use super::parameters::core::{
-    ActivationFunction, ConstantParameter, MaxParameter, MinParameter, NegativeMaxParameter, NegativeMinParameter,
-    NegativeParameter, VariableSettings,
-};
-pub use super::parameters::delay::DelayParameter;
-pub use super::parameters::discount_factor::DiscountFactorParameter;
-pub use super::parameters::indexed_array::IndexedArrayParameter;
-pub use super::parameters::polynomial::Polynomial1DParameter;
-pub use super::parameters::profiles::{
-    DailyProfileParameter, MonthlyProfileParameter, RadialBasisFunction, RbfProfileParameter,
-    RbfProfileVariableSettings, UniformDrawdownProfileParameter, WeeklyProfileParameter,
-};
-#[cfg(feature = "core")]
-pub use super::parameters::python::try_json_value_into_py;
-pub use super::parameters::python::{PythonModule, PythonParameter, PythonReturnType};
-pub use super::parameters::tables::TablesArrayParameter;
-pub use super::parameters::thresholds::ParameterThresholdParameter;
 use crate::error::ConversionError;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
 use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
-use crate::parameters::core::DivisionParameter;
-pub use crate::parameters::hydropower::HydropowerTargetParameter;
-use crate::parameters::interpolated::InterpolatedParameter;
 use crate::visit::{VisitMetrics, VisitPaths};
+pub use aggregated::{AggFunc, AggregatedIndexParameter, AggregatedParameter, IndexAggFunc};
+pub use asymmetric_switch::AsymmetricSwitchIndexParameter;
+pub use control_curves::{
+    ControlCurveIndexParameter, ControlCurveInterpolatedParameter, ControlCurveParameter,
+    ControlCurvePiecewiseInterpolatedParameter,
+};
+pub use core::{
+    ActivationFunction, ConstantParameter, DivisionParameter, MaxParameter, MinParameter, NegativeMaxParameter,
+    NegativeMinParameter, NegativeParameter, VariableSettings,
+};
+pub use delay::DelayParameter;
+pub use discount_factor::DiscountFactorParameter;
+pub use hydropower::HydropowerTargetParameter;
+pub use indexed_array::IndexedArrayParameter;
+pub use interpolated::InterpolatedParameter;
 pub use offset::OffsetParameter;
+pub use polynomial::Polynomial1DParameter;
+pub use profiles::{
+    DailyProfileParameter, MonthlyInterpDay, MonthlyProfileParameter, RadialBasisFunction, RbfProfileParameter,
+    RbfProfileVariableSettings, UniformDrawdownProfileParameter, WeeklyProfileParameter,
+};
+#[cfg(feature = "core")]
+pub use python::try_json_value_into_py;
+pub use python::{PythonParameter, PythonReturnType, PythonSource};
 #[cfg(feature = "core")]
 use pywr_core::{metric::MetricUsize, parameters::ParameterIndex};
 use pywr_schema_macros::PywrVisitAll;
@@ -72,6 +69,8 @@ use schemars::JsonSchema;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use strum_macros::{Display, EnumDiscriminants, EnumString, IntoStaticStr, VariantNames};
+pub use tables::TablesArrayParameter;
+pub use thresholds::ThresholdParameter;
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 pub struct ParameterMeta {
@@ -178,7 +177,7 @@ pub enum Parameter {
     NegativeMin(NegativeMinParameter),
     HydropowerTarget(HydropowerTargetParameter),
     Polynomial1D(Polynomial1DParameter),
-    ParameterThreshold(ParameterThresholdParameter),
+    Threshold(ThresholdParameter),
     TablesArray(TablesArrayParameter),
     Python(PythonParameter),
     Delay(DelayParameter),
@@ -209,7 +208,7 @@ impl Parameter {
             Self::Min(p) => p.meta.name.as_str(),
             Self::Negative(p) => p.meta.name.as_str(),
             Self::Polynomial1D(p) => p.meta.name.as_str(),
-            Self::ParameterThreshold(p) => p.meta.name.as_str(),
+            Self::Threshold(p) => p.meta.name.as_str(),
             Self::TablesArray(p) => p.meta.name.as_str(),
             Self::Python(p) => p.meta.name.as_str(),
             Self::Division(p) => p.meta.name.as_str(),
@@ -263,7 +262,7 @@ impl Parameter {
             Self::Min(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
             Self::Negative(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
             Self::Polynomial1D(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network)?),
-            Self::ParameterThreshold(p) => pywr_core::parameters::ParameterType::Index(p.add_to_model(network, args)?),
+            Self::Threshold(p) => pywr_core::parameters::ParameterType::Index(p.add_to_model(network, args)?),
             Self::TablesArray(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
             Self::Python(p) => p.add_to_model(network, args)?,
             Self::Delay(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
@@ -303,7 +302,7 @@ impl VisitMetrics for Parameter {
             Self::Min(p) => p.visit_metrics(visitor),
             Self::Negative(p) => p.visit_metrics(visitor),
             Self::Polynomial1D(p) => p.visit_metrics(visitor),
-            Self::ParameterThreshold(p) => p.visit_metrics(visitor),
+            Self::Threshold(p) => p.visit_metrics(visitor),
             Self::TablesArray(p) => p.visit_metrics(visitor),
             Self::Python(p) => p.visit_metrics(visitor),
             Self::Delay(p) => p.visit_metrics(visitor),
@@ -337,7 +336,7 @@ impl VisitMetrics for Parameter {
             Self::Min(p) => p.visit_metrics_mut(visitor),
             Self::Negative(p) => p.visit_metrics_mut(visitor),
             Self::Polynomial1D(p) => p.visit_metrics_mut(visitor),
-            Self::ParameterThreshold(p) => p.visit_metrics_mut(visitor),
+            Self::Threshold(p) => p.visit_metrics_mut(visitor),
             Self::TablesArray(p) => p.visit_metrics_mut(visitor),
             Self::Python(p) => p.visit_metrics_mut(visitor),
             Self::Delay(p) => p.visit_metrics_mut(visitor),
@@ -373,7 +372,7 @@ impl VisitPaths for Parameter {
             Self::Min(p) => p.visit_paths(visitor),
             Self::Negative(p) => p.visit_paths(visitor),
             Self::Polynomial1D(p) => p.visit_paths(visitor),
-            Self::ParameterThreshold(p) => p.visit_paths(visitor),
+            Self::Threshold(p) => p.visit_paths(visitor),
             Self::TablesArray(p) => p.visit_paths(visitor),
             Self::Python(p) => p.visit_paths(visitor),
             Self::Delay(p) => p.visit_paths(visitor),
@@ -407,7 +406,7 @@ impl VisitPaths for Parameter {
             Self::Min(p) => p.visit_paths_mut(visitor),
             Self::Negative(p) => p.visit_paths_mut(visitor),
             Self::Polynomial1D(p) => p.visit_paths_mut(visitor),
-            Self::ParameterThreshold(p) => p.visit_paths_mut(visitor),
+            Self::Threshold(p) => p.visit_paths_mut(visitor),
             Self::TablesArray(p) => p.visit_paths_mut(visitor),
             Self::Python(p) => p.visit_paths_mut(visitor),
             Self::Delay(p) => p.visit_paths_mut(visitor),
@@ -579,7 +578,7 @@ impl TryFromV1Parameter<ParameterV1> for ParameterOrTimeseries {
                     Parameter::Polynomial1D(p.try_into_v2_parameter(parent_node, unnamed_count)?).into()
                 }
                 CoreParameter::ParameterThreshold(p) => {
-                    Parameter::ParameterThreshold(p.try_into_v2_parameter(parent_node, unnamed_count)?).into()
+                    Parameter::Threshold(p.try_into_v2_parameter(parent_node, unnamed_count)?).into()
                 }
                 CoreParameter::TablesArray(p) => {
                     Parameter::TablesArray(p.try_into_v2_parameter(parent_node, unnamed_count)?).into()
@@ -656,6 +655,7 @@ impl TryFromV1Parameter<ParameterV1> for ParameterOrTimeseries {
                         comment: Some(comment),
                     },
                     value: ConstantValue::Literal(0.0),
+                    variable: None,
                 })
                 .into()
             }

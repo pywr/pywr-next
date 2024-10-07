@@ -18,8 +18,8 @@ use pywr_v1_schema::parameters::{
 use schemars::JsonSchema;
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
+#[serde(deny_unknown_fields)]
 pub struct ControlCurveInterpolatedParameter {
-    #[serde(flatten)]
     pub meta: ParameterMeta,
     pub control_curves: Vec<Metric>,
     pub storage_node: NodeReference,
@@ -119,8 +119,8 @@ impl TryFromV1Parameter<ControlCurveInterpolatedParameterV1> for ControlCurveInt
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
+#[serde(deny_unknown_fields)]
 pub struct ControlCurveIndexParameter {
-    #[serde(flatten)]
     pub meta: ParameterMeta,
     pub control_curves: Vec<Metric>,
     pub storage_node: NodeReference,
@@ -230,8 +230,8 @@ impl TryFromV1Parameter<ControlCurveParameterV1> for ControlCurveIndexParameter 
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
+#[serde(deny_unknown_fields)]
 pub struct ControlCurveParameter {
-    #[serde(flatten)]
     pub meta: ParameterMeta,
     pub control_curves: Vec<Metric>,
     pub storage_node: NodeReference,
@@ -324,8 +324,8 @@ impl TryFromV1Parameter<ControlCurveParameterV1> for ControlCurveParameter {
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
+#[serde(deny_unknown_fields)]
 pub struct ControlCurvePiecewiseInterpolatedParameter {
-    #[serde(flatten)]
     pub meta: ParameterMeta,
     pub control_curves: Vec<Metric>,
     pub storage_node: NodeReference,
@@ -416,8 +416,10 @@ mod tests {
     fn test_control_curve_piecewise_interpolated() {
         let data = r#"
             {
-                "name": "My control curve",
-                "type": "ControlCurvePiecewiseInterpolated",
+                "meta": {
+                    "name": "My control curve",
+                    "comment": "A witty comment"
+                },
                 "storage_node": {
                   "name": "Reservoir",
                   "attribute": "ProportionalVolume"
@@ -426,7 +428,6 @@ mod tests {
                     {"type": "Parameter", "name": "reservoir_cc"},
                     {"type": "Constant", "value": 0.2}
                 ],
-                "comment": "A witty comment",
                 "values": [
                     [-0.1, -1.0],
                     [-100, -200],

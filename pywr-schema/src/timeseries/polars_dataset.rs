@@ -19,16 +19,6 @@ impl VisitPaths for PolarsDataset {
     }
 }
 
-impl PolarsDataset {
-    pub fn new(time_col: Option<String>, url: PathBuf, infer_schema_length: Option<usize>) -> Self {
-        Self {
-            time_col,
-            url,
-            infer_schema_length,
-        }
-    }
-}
-
 #[cfg(feature = "core")]
 mod core {
     use super::PolarsDataset;

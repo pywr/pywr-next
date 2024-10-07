@@ -30,8 +30,8 @@ pub enum SchemaError {
     DataTable(#[from] TableError),
     #[error("Circular node reference(s) found.")]
     CircularNodeReference,
-    #[error("Circular parameters reference(s) found.")]
-    CircularParameterReference,
+    #[error("Circular parameters reference(s) found. Unable to load the following parameters: {0:?}")]
+    CircularParameterReference(Vec<String>),
     #[error("unsupported file format")]
     UnsupportedFileFormat,
     #[error("Python error: {0}")]
@@ -56,10 +56,13 @@ pub enum SchemaError {
     LoadParameter { name: String, error: String },
     #[error("Timeseries error: {0}")]
     Timeseries(#[from] TimeseriesError),
-    #[error("The output of literal constant values is not supported. This is because they do not have a unique identifier such as a name. If you would like to output a constant value please use a `Constant` parameter.")]
+    #[error("The output of literal constant values is not supported. This is because they do not have a unique identifier such as a name. If you would like to output a constant value please use a `Constant` parameter."
+    )]
     LiteralConstantOutputNotSupported,
     #[error("Chrono out of range error: {0}")]
     OutOfRange(#[from] chrono::OutOfRange),
+    #[error("The metric set with name '{0}' contains no metrics")]
+    EmptyMetricSet(String),
 }
 
 #[cfg(feature = "core")]

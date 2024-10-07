@@ -10,7 +10,9 @@
   "network": {
     "nodes": [
       {
-        "name": "input2",
+        "meta": {
+          "name": "input2"
+        },
         "type": "Input",
         "max_flow": {
           "type": "Parameter",
@@ -18,7 +20,9 @@
         }
       },
       {
-        "name": "input1",
+        "meta": {
+          "name": "input1"
+        },
         "type": "Input",
         "max_flow": {
           "type": "Timeseries",
@@ -30,11 +34,15 @@
         }
       },
       {
-        "name": "link1",
+        "meta": {
+          "name": "link1"
+        },
         "type": "Link"
       },
       {
-        "name": "output1",
+        "meta": {
+          "name": "output1"
+        },
         "type": "Output",
         "cost": {
           "type": "Constant",
@@ -62,12 +70,16 @@
     ],
     "parameters": [
       {
-        "name": "demand",
+        "meta": {
+          "name": "demand"
+        },
         "type": "Constant",
         "value": 100.0
       },
       {
-        "name": "factored_flow",
+        "meta": {
+          "name": "factored_flow"
+        },
         "type": "Aggregated",
         "agg_func": "product",
         "metrics": [
@@ -84,7 +96,9 @@
     ],
     "timeseries": [
       {
-        "name": "inflow",
+        "meta": {
+          "name": "inflow"
+        },
         "provider": {
           "type": "Pandas",
           "time_col": "date",

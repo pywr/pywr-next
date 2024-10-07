@@ -1,10 +1,14 @@
 {
-  "name": "my-division",
+  "meta": {
+    "name": "my-division"
+  },
   "type": "Division",
   "numerator": {
     "type": "InlineParameter",
     "definition": {
-      "name": "my-monthly-profile",
+      "meta": {
+        "name": "my-monthly-profile"
+      },
       "type": "MonthlyProfile",
       "values": [
         1,

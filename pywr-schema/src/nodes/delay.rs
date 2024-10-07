@@ -31,8 +31,8 @@ use schemars::JsonSchema;
 ///
 )]
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
+#[serde(deny_unknown_fields)]
 pub struct DelayNode {
-    #[serde(flatten)]
     pub meta: NodeMeta,
     pub delay: usize,
     pub initial_value: ConstantValue<f64>,
@@ -66,6 +66,13 @@ impl DelayNode {
 
 #[cfg(feature = "core")]
 impl DelayNode {
+    pub fn node_indices_for_constraints(
+        &self,
+        network: &pywr_core::network::Network,
+    ) -> Result<Vec<pywr_core::node::NodeIndex>, SchemaError> {
+        let indices = vec![network.get_node_index_by_name(self.meta.name.as_str(), Self::input_sub_now())?];
+        Ok(indices)
+    }
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
         network.add_output_node(self.meta.name.as_str(), Self::output_sub_name())?;
         network.add_input_node(self.meta.name.as_str(), Self::input_sub_now())?;

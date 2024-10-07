@@ -12,8 +12,8 @@ use pywr_v1_schema::parameters::IndexedArrayParameter as IndexedArrayParameterV1
 use schemars::JsonSchema;
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
+#[serde(deny_unknown_fields)]
 pub struct IndexedArrayParameter {
-    #[serde(flatten)]
     pub meta: ParameterMeta,
     #[serde(alias = "params")]
     pub metrics: Vec<Metric>,

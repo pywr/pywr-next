@@ -15,6 +15,7 @@ use pywr_schema_macros::PywrVisitAll;
 use schemars::JsonSchema;
 
 #[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, PywrVisitAll)]
+#[serde(deny_unknown_fields)]
 pub struct PiecewiseStore {
     pub control_curve: Metric,
     pub cost: Option<Metric>,
@@ -47,8 +48,8 @@ pub struct PiecewiseStore {
 ///
 )]
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
+#[serde(deny_unknown_fields)]
 pub struct PiecewiseStorageNode {
-    #[serde(flatten)]
     pub meta: NodeMeta,
     pub max_volume: Metric,
     // TODO implement min volume
@@ -82,6 +83,19 @@ impl PiecewiseStorageNode {
 impl PiecewiseStorageNode {
     fn agg_sub_name() -> Option<&'static str> {
         Some("agg-store")
+    }
+
+    pub fn node_indices_for_constraints(
+        &self,
+        network: &pywr_core::network::Network,
+    ) -> Result<Vec<pywr_core::node::NodeIndex>, SchemaError> {
+        let indices = self
+            .steps
+            .iter()
+            .enumerate()
+            .map(|(i, _)| network.get_node_index_by_name(self.meta.name.as_str(), Self::step_sub_name(i).as_deref()))
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(indices)
     }
 
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network, args: &LoadArgs) -> Result<(), SchemaError> {

@@ -12,7 +12,9 @@
   "network": {
     "nodes": [
       {
-        "name": "supply1",
+        "meta": {
+          "name": "supply1"
+        },
         "type": "Input",
         "max_flow": {
           "type": "Constant",
@@ -20,11 +22,15 @@
         }
       },
       {
-        "name": "link1",
+        "meta": {
+          "name": "link1"
+        },
         "type": "Link"
       },
       {
-        "name": "demand1",
+        "meta": {
+          "name": "demand1"
+        },
         "type": "Output",
         "max_flow": {
           "type": "Parameter",
@@ -36,16 +42,22 @@
         }
       },
       {
-        "name": "licence",
+        "meta": {
+          "name": "licence"
+        },
         "type": "RollingVirtualStorage",
         "nodes": [
-          "supply1"
+          {
+            "name": "supply1"
+          }
         ],
         "max_volume": {
           "type": "Constant",
           "value": 300
         },
-        "initial_volume": 0.0,
+        "initial_volume": {
+          "Proportional": 0.0
+        },
         "window": {
           "Days": 30
         }
@@ -63,7 +75,9 @@
     ],
     "parameters": [
       {
-        "name": "demand",
+        "meta": {
+          "name": "demand"
+        },
         "type": "Constant",
         "value": 10.0
       }
