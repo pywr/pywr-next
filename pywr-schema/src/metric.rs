@@ -58,7 +58,13 @@ impl Metric {
             Self::Parameter(parameter_ref) => parameter_ref.load(network),
             Self::Constant { value } => Ok((*value).into()),
             Self::Table(table_ref) => {
-                let value = args.tables.get_scalar_f64(table_ref)?;
+                let value = args
+                    .tables
+                    .get_scalar_f64(table_ref)
+                    .map_err(|error| SchemaError::TableRefLoad {
+                        table_ref: table_ref.clone(),
+                        error,
+                    })?;
                 Ok(value.into())
             }
             Self::Timeseries(ts_ref) => {

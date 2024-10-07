@@ -112,3 +112,112 @@ where
 
     Ok(LoadedVecTable::Two(tbl))
 }
+
+pub fn load_csv_col1_vec_table_one<T>(
+    table_path: &Path,
+    data_path: Option<&Path>,
+) -> Result<LoadedVecTable<T>, TableError>
+where
+    T: FromStr,
+    TableError: From<T::Err>,
+{
+    let path = make_path(table_path, data_path);
+
+    let file = File::open(path).map_err(|e| TableError::IO(e.to_string()))?;
+    let buf_reader = BufReader::new(file);
+    let mut rdr = csv::Reader::from_reader(buf_reader);
+
+    let mut tbl: HashMap<String, Vec<T>> = HashMap::new();
+
+    // Read the headers
+    let headers: Vec<String> = rdr
+        .headers()
+        .map_err(|e| TableError::Csv(e.to_string()))?
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+
+    for header in headers.iter() {
+        tbl.insert(header.clone(), Vec::new());
+    }
+
+    for result in rdr.records() {
+        // The iterator yields Result<StringRecord, Error>, so we check the
+        // error here.
+        let record = result.map_err(|e| TableError::Csv(e.to_string()))?;
+
+        for (col_idx, value) in record.iter().enumerate() {
+            let value: T = value.parse()?;
+            let key = headers.get(col_idx).ok_or_else(|| {
+                TableError::InvalidFormat(format!(
+                    "Value index ({}) is out of bounds for a table with {} headers.",
+                    col_idx,
+                    headers.len()
+                ))
+            })?;
+            tbl.get_mut(key).unwrap().push(value);
+        }
+    }
+
+    Ok(LoadedVecTable::One(tbl))
+}
+
+pub fn load_csv_col2_vec_table_two<T>(
+    table_path: &Path,
+    data_path: Option<&Path>,
+) -> Result<LoadedVecTable<T>, TableError>
+where
+    T: FromStr,
+    TableError: From<T::Err>,
+{
+    let path = make_path(table_path, data_path);
+
+    let file = File::open(path).map_err(|e| TableError::IO(e.to_string()))?;
+    let buf_reader = BufReader::new(file);
+    let mut rdr = csv::Reader::from_reader(buf_reader);
+
+    let mut tbl: HashMap<(String, String), Vec<T>> = HashMap::new();
+
+    // Read the headers
+    let headers1: Vec<String> = rdr
+        .headers()
+        .map_err(|e| TableError::Csv(e.to_string()))?
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+
+    let mut records = rdr.records();
+    // Read the second row as the second headers
+    let headers2: Vec<String> = records
+        .next()
+        .ok_or_else(|| TableError::WrongTableFormat("Second row of headers found".to_string()))?
+        .map_err(|e| TableError::Csv(e.to_string()))?
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+
+    let headers: Vec<_> = headers1.into_iter().zip(headers2.into_iter()).collect();
+    for header in &headers {
+        tbl.insert(header.clone(), Vec::new());
+    }
+
+    for result in records {
+        // The iterator yields Result<StringRecord, Error>, so we check the
+        // error here.
+        let record = result.map_err(|e| TableError::Csv(e.to_string()))?;
+
+        for (col_idx, value) in record.iter().enumerate() {
+            let value: T = value.parse()?;
+            let key = headers.get(col_idx).ok_or_else(|| {
+                TableError::InvalidFormat(format!(
+                    "Value index ({}) is out of bounds for a table with {} headers.",
+                    col_idx,
+                    headers.len()
+                ))
+            })?;
+            tbl.get_mut(key).unwrap().push(value);
+        }
+    }
+
+    Ok(LoadedVecTable::Two(tbl))
+}
