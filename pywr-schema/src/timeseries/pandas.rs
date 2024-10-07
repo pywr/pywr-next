@@ -11,10 +11,10 @@ use std::path::{Path, PathBuf};
 ///
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
 pub struct PandasDataset {
-    time_col: Option<String>,
-    url: PathBuf,
+    pub time_col: Option<String>,
+    pub url: PathBuf,
     /// Keyword arguments to pass to the relevant Pandas load function.
-    kwargs: Option<HashMap<String, Value>>,
+    pub kwargs: Option<HashMap<String, Value>>,
 }
 
 impl VisitPaths for PandasDataset {
@@ -24,12 +24,6 @@ impl VisitPaths for PandasDataset {
 
     fn visit_paths_mut<F: FnMut(&mut PathBuf)>(&mut self, visitor: &mut F) {
         visitor(&mut self.url);
-    }
-}
-
-impl PandasDataset {
-    pub fn new(time_col: Option<String>, url: PathBuf, kwargs: Option<HashMap<String, Value>>) -> Self {
-        Self { time_col, url, kwargs }
     }
 }
 

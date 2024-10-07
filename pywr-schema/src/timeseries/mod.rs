@@ -1,19 +1,20 @@
 #[cfg(feature = "core")]
 mod align_and_resample;
+
 mod pandas;
 mod polars_dataset;
 
-use self::polars_dataset::PolarsDataset;
 use crate::parameters::{ParameterMeta, TimeseriesV1Data, TimeseriesV1Source};
-use crate::timeseries::pandas::PandasDataset;
 use crate::visit::VisitPaths;
 use crate::ConversionError;
 #[cfg(feature = "core")]
 use ndarray::Array2;
+pub use pandas::PandasDataset;
 #[cfg(feature = "core")]
 use polars::error::PolarsError;
 #[cfg(feature = "core")]
 use polars::prelude::{DataFrame, DataType::Float64, Float64Type, IndexOrder};
+pub use polars_dataset::PolarsDataset;
 #[cfg(feature = "core")]
 use pywr_core::{
     models::ModelDomain,
@@ -225,6 +226,9 @@ impl LoadedTimeseriesCollection {
     }
 }
 
+/// Convert timeseries inputs to this schema.
+///
+/// The conversions
 pub fn convert_from_v1_data(
     df_data: Vec<TimeseriesV1Data>,
     v1_tables: &Option<TableVec>,
@@ -242,7 +246,12 @@ pub fn convert_from_v1_data(
                 }
 
                 let time_col = None;
-                let provider = PandasDataset::new(time_col, table.url.clone(), Some(data.pandas_kwargs));
+
+                let provider = PandasDataset {
+                    time_col,
+                    url: table.url.clone(),
+                    kwargs: Some(data.pandas_kwargs),
+                };
 
                 ts.insert(
                     name.clone(),
@@ -266,12 +275,17 @@ pub fn convert_from_v1_data(
                     continue;
                 }
 
-                let provider = PandasDataset::new(data.time_col, url, Some(data.pandas_kwargs));
+                let provider = PandasDataset {
+                    time_col: data.time_col,
+                    url,
+                    kwargs: Some(data.pandas_kwargs),
+                };
 
                 ts.insert(
                     name.clone(),
                     Timeseries {
                         meta: ParameterMeta { name, comment: None },
+
                         provider: TimeseriesProvider::Pandas(provider),
                     },
                 );
@@ -323,24 +337,30 @@ mod tests {
 
     #[test]
     fn test_timeseries_pandas() {
-        let cargo_manifest_dir = env!("CARGO_MANIFEST_DIR");
-
-        let model_dir = PathBuf::from(cargo_manifest_dir).join("src/test_models");
-
         let data = model_pandas_str();
-        let schema: PywrModel = serde_json::from_str(data).unwrap();
-        let mut model = schema.build_model(Some(model_dir.as_path()), None).unwrap();
+        #[cfg(not(feature = "test-python"))]
+        let _: PywrModel = serde_json::from_str(data).unwrap();
 
-        let expected = Array::from_shape_fn((365, 1), |(x, _)| {
-            let month_day = NaiveDate::from_yo_opt(2021, (x + 1) as u32).unwrap().day() as f64;
-            month_day + month_day * 0.5
-        });
+        // Can only build this model within a Python environment that has pandas.
+        #[cfg(feature = "test-python")]
+        {
+            let cargo_manifest_dir = env!("CARGO_MANIFEST_DIR");
+            let schema: PywrModel = serde_json::from_str(data).unwrap();
+            let model_dir = PathBuf::from(cargo_manifest_dir).join("src/test_models");
+            let mut model = schema.build_model(Some(model_dir.as_path()), None).unwrap();
 
-        let idx = model.network().get_node_by_name("output1", None).unwrap().index();
+            let expected = Array::from_shape_fn((365, 1), |(x, _)| {
+                let month_day = NaiveDate::from_yo_opt(2021, (x + 1) as u32).unwrap().day() as f64;
+                month_day + month_day * 0.5
+            });
 
-        let recorder = AssertionRecorder::new("output-flow", MetricF64::NodeInFlow(idx), expected.clone(), None, None);
-        model.network_mut().add_recorder(Box::new(recorder)).unwrap();
+            let idx = model.network().get_node_by_name("output1", None).unwrap().index();
 
-        run_all_solvers(&model, &[], &[])
+            let recorder =
+                AssertionRecorder::new("output-flow", MetricF64::NodeInFlow(idx), expected.clone(), None, None);
+            model.network_mut().add_recorder(Box::new(recorder)).unwrap();
+
+            run_all_solvers(&model, &[], &[])
+        }
     }
 }
