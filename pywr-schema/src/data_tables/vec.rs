@@ -196,7 +196,7 @@ where
         .map(|s| s.to_string())
         .collect();
 
-    let headers: Vec<_> = headers1.into_iter().zip(headers2.into_iter()).collect();
+    let headers: Vec<_> = headers1.into_iter().zip(headers2).collect();
     for header in &headers {
         tbl.insert(header.clone(), Vec::new());
     }
