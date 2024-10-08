@@ -25,7 +25,7 @@ use crate::visit::{VisitMetrics, VisitPaths};
 pub use annual_virtual_storage::{AnnualReset, AnnualVirtualStorageNode};
 pub use core::{
     AggregatedNode, AggregatedStorageNode, CatchmentNode, InputNode, LinkNode, OutputNode, Relationship,
-    StorageInitialVolume, StorageNode,
+    SoftConstraint, StorageInitialVolume, StorageNode,
 };
 pub use delay::DelayNode;
 pub use loss_link::{LossFactor, LossLinkNode};
