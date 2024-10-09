@@ -41,7 +41,7 @@ use pywr_v1_schema::nodes::{
 use pywr_v1_schema::parameters::{
     CoreParameter as CoreParameterV1, Parameter as ParameterV1, ParameterValue as ParameterValueV1, ParameterValueType,
 };
-pub use river::{RiverLoss, RiverLossData, RiverNode};
+pub use river::RiverNode;
 pub use river_gauge::RiverGaugeNode;
 pub use river_split_with_gauge::{RiverSplit, RiverSplitWithGaugeNode};
 pub use rolling_virtual_storage::{RollingVirtualStorageNode, RollingWindow};
@@ -455,7 +455,7 @@ impl Node {
             Node::Catchment(n) => n.set_constraints(network, args),
             Node::RiverGauge(n) => n.set_constraints(network, args),
             Node::LossLink(n) => n.set_constraints(network, args),
-            Node::River(_) => Ok(()), // No constraints on river node
+            Node::River(n) => n.set_constraints(network, args),
             Node::RiverSplitWithGauge(n) => n.set_constraints(network, args),
             Node::WaterTreatmentWorks(n) => n.set_constraints(network, args),
             Node::Aggregated(n) => n.set_constraints(network, args),
