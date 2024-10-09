@@ -382,7 +382,7 @@ impl PywrNetwork {
 
     #[cfg(feature = "core")]
     pub fn load_tables(&self, data_path: Option<&Path>) -> Result<LoadedTableCollection, SchemaError> {
-        Ok(LoadedTableCollection::from_schema(self.tables.as_deref(), data_path)?)
+        LoadedTableCollection::from_schema(self.tables.as_deref(), data_path)
     }
 
     #[cfg(feature = "core")]

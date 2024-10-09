@@ -5,6 +5,8 @@ mod vec;
 
 use crate::parameters::TableIndex;
 use crate::ConversionError;
+#[cfg(feature = "core")]
+use crate::SchemaError;
 use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::parameters::TableDataRef as TableDataRefV1;
 #[cfg(feature = "core")]
@@ -19,7 +21,10 @@ use thiserror::Error;
 #[cfg(feature = "core")]
 use tracing::{debug, info};
 #[cfg(feature = "core")]
-use vec::{load_csv_row2_vec_table_one, load_csv_row_vec_table_one, LoadedVecTable};
+use vec::{
+    load_csv_col1_vec_table_one, load_csv_col2_vec_table_two, load_csv_row2_vec_table_one, load_csv_row_vec_table_one,
+    LoadedVecTable,
+};
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, strum_macros::Display)]
 #[serde(rename_all = "lowercase")]
@@ -108,7 +113,17 @@ impl CsvDataTable {
                         "CSV row array table with more than two index columns is not supported.".to_string(),
                     )),
                 },
-                CsvDataTableLookup::Col(_) => todo!(),
+                CsvDataTableLookup::Col(i) => match i {
+                    1 => Ok(LoadedTable::FloatVec(load_csv_col1_vec_table_one(
+                        &self.url, data_path,
+                    )?)),
+                    2 => Ok(LoadedTable::FloatVec(load_csv_col2_vec_table_two(
+                        &self.url, data_path,
+                    )?)),
+                    _ => Err(TableError::FormatNotSupported(
+                        "CSV column array table with more than two index columns is not supported.".to_string(),
+                    )),
+                },
                 CsvDataTableLookup::Both(_, _) => todo!(),
             },
         }
@@ -156,6 +171,8 @@ pub enum TableError {
     TooManyValues(PathBuf),
     #[error("table index out of bounds: {0}")]
     IndexOutOfBounds(usize),
+    #[error("Table format invalid: {0}")]
+    InvalidFormat(String),
 }
 
 #[cfg(feature = "core")]
@@ -192,13 +209,16 @@ pub struct LoadedTableCollection {
 
 #[cfg(feature = "core")]
 impl LoadedTableCollection {
-    pub fn from_schema(table_defs: Option<&[DataTable]>, data_path: Option<&Path>) -> Result<Self, TableError> {
+    pub fn from_schema(table_defs: Option<&[DataTable]>, data_path: Option<&Path>) -> Result<Self, SchemaError> {
         let mut tables = HashMap::new();
         if let Some(table_defs) = table_defs {
             for table_def in table_defs {
                 let name = table_def.name().to_string();
                 info!("Loading table: {}", &name);
-                let table = table_def.load(data_path)?;
+                let table = table_def.load(data_path).map_err(|error| SchemaError::TableLoad {
+                    table_def: table_def.clone(),
+                    error,
+                })?;
                 // TODO handle duplicate table names!
                 tables.insert(name, table);
             }
@@ -215,7 +235,6 @@ impl LoadedTableCollection {
 
     /// Return a single scalar value from a table collection.
     pub fn get_scalar_f64(&self, table_ref: &TableDataRef) -> Result<f64, TableError> {
-        debug!("Looking-up float scalar with reference: {:?}", table_ref);
         let tbl = self.get_table(&table_ref.table)?;
         let key = table_ref.key();
         tbl.get_scalar_f64(&key)

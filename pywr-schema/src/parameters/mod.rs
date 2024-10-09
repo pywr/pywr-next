@@ -725,7 +725,12 @@ impl ConstantValue<f64> {
     pub fn load(&self, tables: &LoadedTableCollection) -> Result<f64, SchemaError> {
         match self {
             Self::Literal(v) => Ok(*v),
-            Self::Table(tbl_ref) => Ok(tables.get_scalar_f64(tbl_ref)?),
+            Self::Table(tbl_ref) => tables
+                .get_scalar_f64(tbl_ref)
+                .map_err(|error| SchemaError::TableRefLoad {
+                    table_ref: tbl_ref.clone(),
+                    error,
+                }),
         }
     }
 }
@@ -736,7 +741,12 @@ impl ConstantValue<usize> {
     pub fn load(&self, tables: &LoadedTableCollection) -> Result<usize, SchemaError> {
         match self {
             Self::Literal(v) => Ok(*v),
-            Self::Table(tbl_ref) => Ok(tables.get_scalar_usize(tbl_ref)?),
+            Self::Table(tbl_ref) => tables
+                .get_scalar_usize(tbl_ref)
+                .map_err(|error| SchemaError::TableRefLoad {
+                    table_ref: tbl_ref.clone(),
+                    error,
+                }),
         }
     }
 }
@@ -867,7 +877,13 @@ impl ConstantFloatVec {
     pub fn load(&self, tables: &LoadedTableCollection) -> Result<Vec<f64>, SchemaError> {
         match self {
             Self::Literal(v) => Ok(v.clone()),
-            Self::Table(tbl_ref) => Ok(tables.get_vec_f64(tbl_ref)?.clone()),
+            Self::Table(tbl_ref) => tables
+                .get_vec_f64(tbl_ref)
+                .cloned()
+                .map_err(|error| SchemaError::TableRefLoad {
+                    table_ref: tbl_ref.clone(),
+                    error,
+                }),
         }
     }
 }
