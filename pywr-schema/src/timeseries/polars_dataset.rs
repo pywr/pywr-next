@@ -4,9 +4,9 @@ use std::path::{Path, PathBuf};
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
 pub struct PolarsDataset {
-    time_col: Option<String>,
-    url: PathBuf,
-    infer_schema_length: Option<usize>,
+    pub time_col: Option<String>,
+    pub url: PathBuf,
+    pub infer_schema_length: Option<usize>,
 }
 
 impl VisitPaths for PolarsDataset {
@@ -16,16 +16,6 @@ impl VisitPaths for PolarsDataset {
 
     fn visit_paths_mut<F: FnMut(&mut PathBuf)>(&mut self, visitor: &mut F) {
         visitor(&mut self.url);
-    }
-}
-
-impl PolarsDataset {
-    pub fn new(time_col: Option<String>, url: PathBuf, infer_schema_length: Option<usize>) -> Self {
-        Self {
-            time_col,
-            url,
-            infer_schema_length,
-        }
     }
 }
 

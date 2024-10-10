@@ -218,7 +218,7 @@ impl TryFromV1Parameter<UniformDrawdownProfileParameterV1> for UniformDrawdownPr
 }
 
 /// Distance functions for radial basis function interpolation.
-#[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone, JsonSchema, PywrVisitAll)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone, JsonSchema, PywrVisitAll, strum_macros::Display)]
 #[serde(deny_unknown_fields)]
 pub enum RadialBasisFunction {
     Linear,
@@ -457,7 +457,7 @@ impl TryFromV1Parameter<RbfProfileParameterV1> for RbfProfileParameter {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone, JsonSchema, PywrVisitAll)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone, JsonSchema, PywrVisitAll, strum_macros::Display)]
 pub enum WeeklyInterpDay {
     First,
     Last,

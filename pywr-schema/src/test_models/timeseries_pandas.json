@@ -1,18 +1,28 @@
 {
   "metadata": {
-    "title": "Simple timeseries",
-    "description": null,
-    "minimum_version": null
+    "title": "Simple timeseries"
   },
   "timestepper": {
     "start": "2021-01-01",
-    "end": "2021-01-31",
+    "end": "2021-12-31",
     "timestep": 1
   },
-  "scenarios": null,
   "network": {
     "nodes": [
       {
+        "meta": {
+          "name": "input2"
+        },
+        "type": "Input",
+        "max_flow": {
+          "type": "Parameter",
+          "name": "factored_flow"
+        }
+      },
+      {
+        "meta": {
+          "name": "input1"
+        },
         "type": "Input",
         "max_flow": {
           "type": "Timeseries",
@@ -21,51 +31,26 @@
             "type": "Column",
             "name": "inflow1"
           }
-        },
-        "meta": {
-          "name": "input1"
-        },
-        "min_flow": null,
-        "cost": null
+        }
       },
       {
-        "type": "Input",
-        "max_flow": {
-          "type": "Parameter",
-          "name": "factored_flow",
-          "key": null
-        },
-        "meta": {
-          "name": "input2"
-        },
-        "min_flow": null,
-        "cost": null
-      },
-      {
-        "type": "Link",
-        "max_flow": null,
         "meta": {
           "name": "link1"
         },
-        "min_flow": null,
-        "soft_max": null,
-        "soft_min": null,
-        "cost": null
+        "type": "Link"
       },
       {
-        "type": "Output",
-        "max_flow": {
-          "type": "Parameter",
-          "name": "demand",
-          "key": null
-        },
         "meta": {
           "name": "output1"
         },
-        "min_flow": null,
+        "type": "Output",
         "cost": {
           "type": "Constant",
-          "value": -10.0
+          "value": -10
+        },
+        "max_flow": {
+          "type": "Parameter",
+          "name": "demand"
         }
       }
     ],
@@ -85,27 +70,22 @@
     ],
     "parameters": [
       {
-        "type": "Constant",
         "meta": {
           "name": "demand"
         },
-        "value": 100.0,
-        "variable": null
+        "type": "Constant",
+        "value": 100.0
       },
       {
-        "type": "Aggregated",
         "meta": {
           "name": "factored_flow"
         },
+        "type": "Aggregated",
         "agg_func": "product",
         "metrics": [
           {
             "type": "Timeseries",
-            "name": "inflow",
-            "columns": {
-              "type": "Column",
-              "name": "inflow1"
-            }
+            "name": "inflow"
           },
           {
             "type": "Constant",
@@ -114,7 +94,6 @@
         ]
       }
     ],
-    "tables": null,
     "timeseries": [
       {
         "meta": {
@@ -122,16 +101,13 @@
         },
         "provider": {
           "type": "Pandas",
-          "time_col": null,
+          "time_col": "date",
           "url": "inflow.csv",
           "kwargs": {
-            "parse_dates": true,
             "dayfirst": true
           }
         }
       }
-    ],
-    "metric_sets": null,
-    "outputs": null
+    ]
   }
 }

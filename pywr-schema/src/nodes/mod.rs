@@ -30,11 +30,11 @@ use crate::visit::{VisitMetrics, VisitPaths};
 pub use annual_virtual_storage::{AnnualReset, AnnualVirtualStorageNode};
 pub use core::{
     AggregatedNode, AggregatedStorageNode, CatchmentNode, InputNode, LinkNode, OutputNode, Relationship,
-    StorageInitialVolume, StorageNode,
+    SoftConstraint, StorageInitialVolume, StorageNode,
 };
 pub use delay::DelayNode;
 pub use loss_link::{LossFactor, LossLinkNode};
-pub use monthly_virtual_storage::MonthlyVirtualStorageNode;
+pub use monthly_virtual_storage::{MonthlyVirtualStorageNode, NumberOfMonthsReset};
 pub use piecewise_link::{PiecewiseLinkNode, PiecewiseLinkStep};
 pub use piecewise_storage::{PiecewiseStorageNode, PiecewiseStore};
 #[cfg(feature = "core")]
@@ -249,7 +249,7 @@ impl NodeBuilder {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Clone, EnumDiscriminants, Debug, JsonSchema)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, EnumDiscriminants, Debug, JsonSchema, strum_macros::Display)]
 #[serde(tag = "type")]
 #[strum_discriminants(derive(Display, IntoStaticStr, EnumString, VariantNames))]
 // This creates a separate enum called `NodeType` that is available in this module.

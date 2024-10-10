@@ -17,7 +17,7 @@ use schemars::JsonSchema;
 /// Gross losses are typically applied as a proportion of the total flow into a node, whereas
 /// net losses are applied as a proportion of the net flow. Please see the documentation for
 /// specific nodes (e.g. [`LossLinkNode`]) to understand how the loss factor is applied.
-#[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, PywrVisitAll)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, PywrVisitAll, strum_macros::Display)]
 #[serde(tag = "type", deny_unknown_fields)]
 pub enum LossFactor {
     Gross { factor: Metric },
@@ -26,6 +26,8 @@ pub enum LossFactor {
 
 #[cfg(feature = "core")]
 impl LossFactor {
+    /// Load the loss factor and return a corresponding [`Relationship`] if the loss factor is
+    /// not a constant zero. If a zero is loaded, then `None` is returned.
     pub fn load(
         &self,
         network: &mut pywr_core::network::Network,
@@ -34,7 +36,7 @@ impl LossFactor {
         match self {
             LossFactor::Gross { factor } => {
                 let lf = factor.load(network, args)?;
-                // Handle the case where we a given a zero loss factor
+                // Handle the case where we are given a zero loss factor
                 // The aggregated node does not support zero loss factors so filter them here.
                 if lf.is_constant_zero() {
                     return Ok(None);
@@ -173,6 +175,11 @@ impl LossLinkNode {
 
         if let Some(loss_factor) = &self.loss_factor {
             let factors = loss_factor.load(network, args)?;
+
+            if factors.is_none() {
+                // Loaded a constant zero factor; ensure that the loss node has zero flow
+                network.set_node_max_flow(self.meta.name.as_str(), Self::loss_sub_name(), Some(0.0.into()))?;
+            }
             network.set_aggregated_node_relationship(self.meta.name.as_str(), Self::agg_sub_name(), factors)?;
         }
 
@@ -289,7 +296,7 @@ mod tests {
     }
 
     #[test]
-    fn test_model_schema() {
+    fn test_loss_link1_schema() {
         let data = loss_link1_str();
         let schema: PywrModel = serde_json::from_str(data).unwrap();
 
@@ -299,7 +306,7 @@ mod tests {
 
     #[test]
     #[cfg(feature = "core")]
-    fn test_model_run() {
+    fn test_loss_link1_run() {
         let data = loss_link1_str();
         let schema: PywrModel = serde_json::from_str(data).unwrap();
         let temp_dir = TempDir::new().unwrap();
@@ -309,6 +316,42 @@ mod tests {
         let expected_outputs = [ExpectedOutputs::new(
             temp_dir.path().join("loss_link1.csv"),
             loss_link1_outputs_str(),
+        )];
+
+        // Test all solvers
+        run_all_solvers(&model, &[], &expected_outputs);
+    }
+
+    fn loss_link2_str() -> &'static str {
+        include_str!("../test_models/loss_link2.json")
+    }
+
+    #[cfg(feature = "core")]
+    fn loss_link2_outputs_str() -> &'static str {
+        include_str!("../test_models/loss_link2-expected.csv")
+    }
+
+    #[test]
+    fn test_loss_link2_schema() {
+        let data = loss_link2_str();
+        let schema: PywrModel = serde_json::from_str(data).unwrap();
+
+        assert_eq!(schema.network.nodes.len(), 4);
+        assert_eq!(schema.network.edges.len(), 3);
+    }
+
+    #[test]
+    #[cfg(feature = "core")]
+    fn test_loss_link2_run() {
+        let data = loss_link2_str();
+        let schema: PywrModel = serde_json::from_str(data).unwrap();
+        let temp_dir = TempDir::new().unwrap();
+
+        let model = schema.build_model(None, Some(temp_dir.path())).unwrap();
+        // After model run there should be an output file.
+        let expected_outputs = [ExpectedOutputs::new(
+            temp_dir.path().join("loss_link2.csv"),
+            loss_link2_outputs_str(),
         )];
 
         // Test all solvers

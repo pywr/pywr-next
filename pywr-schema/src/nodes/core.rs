@@ -136,23 +136,177 @@ impl TryFrom<InputNodeV1> for InputNode {
     }
 }
 
+/// Cost and flow metric for soft node's constraints
+#[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
+pub struct SoftConstraint {
+    pub cost: Option<Metric>,
+    pub flow: Option<Metric>,
+}
+
+#[doc = svgbobdoc::transform!(
+/// A node with cost, and min and max flow constraints. The node `L`, when connected to an upstream
+/// node `U` and downstream node `D`, will look like this on the model schematic:
+///
+/// ```svgbob
+///
+///          U         L         D
+///    - - ->*-------->*--------->*- - -
+/// ```
+///
+/// # Soft constraints
+/// This node allows setting optional maximum and minimum soft constraints via the `soft_min.flow`
+/// and `soft_max.flow` properties. These may be breached depending on the costs set on the
+/// optional nodes. However, the combined flow through the internal nodes will always be bound
+/// between the `min_flow` and `max_flow` attributes. When the two attributes are provided, the
+/// internal representation of the link will look like this:
+///
+/// ```svgbob
+///                <Link>.soft_max
+///              .------>L_max -----.
+///             |                   |
+///          U  |                   |     D
+///     - - -*--|-------->L --------|--->*- - -
+///             |                   |
+///             |                   |
+///             '------>L_min -----'
+///                <Link>.soft_min
+/// ```
+/// ## Implementation
+///
+/// 
+/// ### Only `soft_min` is defined
+/// Normally the minimum flow is delivered through `L_min` depending on the cost `soft_min.cost`. Any
+/// additional flow goes through `L`. Depending on the network demand and the value of `soft_min.cost`,
+/// the delivered flow via `L_min` may go below `soft_min.flow`.
+/// ```svgbob
+///          U                            D
+///     - - -*----------->L ------------>*- - -
+///             |                   |                 
+///             |                   |                () <Link>.aggregated_node  
+///             '------>L_min -----'                         [ L_min, L ]  
+///                <Link>.soft_min
+/// ```
+/// 
+/// The network is set up as follows:
+///  - `L_max` is not added to the network
+///  - `L_min` is added with `soft_min` data
+///  - `L` is added with `cost`, `min_flow` is set to 0 and `max_flow` is unconstrained.
+///  - An aggregated node is added to ensure that combined flow in `L_min` and `L` never exceeds
+///    the hard constraints `min_flow` and `max_flow`. 
+///
+/// ### Only `soft_max` is defined
+/// Normally the maximum flow `soft_max.max` is delivered through the `L_max` node and no flow
+/// goes through `L`. When needed, based on the value of `soft_max.cost`, the maximum `soft_max.max`
+/// value can be breached up to a combined flow of `max_flow`. 
+/// ```svgbob
+///          U                            D
+///     - - -*----------->L ------------>*- - -
+///             |                   |                 
+///             |                   |                () <Link>.aggregated_node  
+///             '------>L_max -----'                         [ L_max, L ]  
+///                <Link>.soft_max
+/// ```
+/// 
+/// The network is set up as follows:
+///  - `L_min` is not added to the network.
+///  - `L` is added with the cost in `soft_max.cost` (i.e. cost of going above soft max).
+///  - `L_max` is added with max flow of `soft_max.max` and cost of `cost`.
+///  - An aggregated node is added to ensure that combined flow in `L_max` and `L` never exceeds
+///    the hard constraints `min_flow` and `max_flow`. 
+///
+/// ### Both `soft_min` and `soft_max` are defined
+///
+/// ```svgbob
+///                <Link>.soft_max
+///              .------>L_max -----.
+///             |                   |                    () <Link>.aggregated_node  
+///          U  |                   |     D                   [ L_max, L_min, L ]
+///     - - -*--|-------->L --------|--->*- - -
+///             |                   |                    () <Link>.aggregate_node_l_l_min  
+///             |                   |                            [ L_min, L ]
+///             '------>L_min -----'
+///                <Link>.soft_min
+/// ```
+/// 
+/// The network is set up as follows:
+/// - `L_max`'s flow is unconstrained with a cost equal to `soft_max.cost`.
+/// - `L`'s flow is unconstrained with a cost equal to `cost`.
+/// - `L_min`'s max flow is constrained to `soft_min.flow` with a cost equal to `soft_min.cost`.
+/// - An aggregated node is added with `L` and `L_min` to ensure the max flow does not exceed
+///   `soft_max.flow`.
+/// - An aggregated node is added with `L`, `L_max` and `L_min` to ensure the flow is between
+///   `min_flow` and `max_flow`.
+/// 
+/// ## Examples
+/// Link soft constraints may be used in the following scenarios:
+///  1) If the link represents a works and its `max_flow` is constrained by a reservoir rule curve,
+///   there may be certain circumstances when over-abstracting may be required in a few occasions to
+///   ensure that demand is always met. By setting a high tuned cost via [`SoftConstraint`], this will
+///   ensure that the abstraction is breached only when needed.
+///  2) If the link represents a works and a minimum flow must be guaranteed, `soft_min` may be set
+///   with a negative cost to allow the minimum flow requirement. However, when this cannot be met 
+///   (for example when the abstraction license or the source runs out), the minimum flow will not
+///   be honoured and the solver will find a solution.
+)]
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct LinkNode {
     pub meta: NodeMeta,
+    /// The optional maximum flow through the node.
     pub max_flow: Option<Metric>,
+    /// The optional minimum flow through the node.
     pub min_flow: Option<Metric>,
+    /// The cost.
     pub cost: Option<Metric>,
+    /// The minimum soft constraints.
+    pub soft_min: Option<SoftConstraint>,
+    /// The maximum soft constraints.
+    pub soft_max: Option<SoftConstraint>,
 }
 
 impl LinkNode {
     const DEFAULT_ATTRIBUTE: NodeAttribute = NodeAttribute::Outflow;
 
-    pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
-        vec![(self.meta.name.as_str(), None)]
+    fn soft_min_node_sub_name() -> Option<&'static str> {
+        Some("soft_min_node")
     }
+
+    fn soft_max_node_sub_name() -> Option<&'static str> {
+        Some("soft_max_node")
+    }
+
+    pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
+        let mut connectors = vec![(self.meta.name.as_str(), None)];
+        if self.soft_min.is_some() {
+            connectors.push((
+                self.meta.name.as_str(),
+                Self::soft_min_node_sub_name().map(|s| s.to_string()),
+            ));
+        }
+        if self.soft_max.is_some() {
+            connectors.push((
+                self.meta.name.as_str(),
+                Self::soft_max_node_sub_name().map(|s| s.to_string()),
+            ));
+        }
+        connectors
+    }
+
     pub fn output_connectors(&self) -> Vec<(&str, Option<String>)> {
-        vec![(self.meta.name.as_str(), None)]
+        let mut connectors = vec![(self.meta.name.as_str(), None)];
+        if self.soft_min.is_some() {
+            connectors.push((
+                self.meta.name.as_str(),
+                Self::soft_min_node_sub_name().map(|s| s.to_string()),
+            ));
+        }
+        if self.soft_max.is_some() {
+            connectors.push((
+                self.meta.name.as_str(),
+                Self::soft_max_node_sub_name().map(|s| s.to_string()),
+            ));
+        }
+        connectors
     }
 
     pub fn default_metric(&self) -> NodeAttribute {
@@ -162,6 +316,15 @@ impl LinkNode {
 
 #[cfg(feature = "core")]
 impl LinkNode {
+    fn aggregated_node_sub_name() -> Option<&'static str> {
+        Some("aggregate_node")
+    }
+
+    /// The aggregated node name of `L` and `L_min` when both soft constraints are provided.
+    fn aggregated_node_l_l_min_sub_name() -> Option<&'static str> {
+        Some("aggregate_node_l_l_min")
+    }
+
     pub fn node_indices_for_constraints(
         &self,
         network: &pywr_core::network::Network,
@@ -170,7 +333,49 @@ impl LinkNode {
         Ok(vec![idx])
     }
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
-        network.add_link_node(self.meta.name.as_str(), None)?;
+        let node_name = self.meta.name.as_str();
+        let link = network.add_link_node(node_name, None)?;
+        // add soft constrained nodes and aggregated node
+        match (&self.soft_min, &self.soft_max) {
+            (Some(_), None) => {
+                // add L_min and aggregated node for L and L_min
+                let soft_min_node = network.add_link_node(node_name, Self::soft_min_node_sub_name())?;
+                network.add_aggregated_node(
+                    node_name,
+                    Self::aggregated_node_sub_name(),
+                    &[vec![link], vec![soft_min_node]],
+                    None,
+                )?;
+            }
+            (None, Some(_)) => {
+                // add L_max and aggregated node for L and L_max
+                let soft_max_node = network.add_link_node(node_name, Self::soft_max_node_sub_name())?;
+                network.add_aggregated_node(
+                    node_name,
+                    Self::aggregated_node_sub_name(),
+                    &[vec![link], vec![soft_max_node]],
+                    None,
+                )?;
+            }
+            (Some(_), Some(_)) => {
+                // add L_min and L_max, and aggregated node for L, L_min and L_max
+                let soft_min_node = network.add_link_node(node_name, Self::soft_min_node_sub_name())?;
+                let soft_max_node = network.add_link_node(node_name, Self::soft_max_node_sub_name())?;
+                network.add_aggregated_node(
+                    node_name,
+                    Self::aggregated_node_sub_name(),
+                    &[vec![link], vec![soft_min_node], vec![soft_max_node]],
+                    None,
+                )?;
+                network.add_aggregated_node(
+                    node_name,
+                    Self::aggregated_node_l_l_min_sub_name(),
+                    &[vec![link], vec![soft_min_node]],
+                    None,
+                )?;
+            }
+            (None, None) => {}
+        };
         Ok(())
     }
 
@@ -179,20 +384,121 @@ impl LinkNode {
         network: &mut pywr_core::network::Network,
         args: &LoadArgs,
     ) -> Result<(), SchemaError> {
-        if let Some(cost) = &self.cost {
-            let value = cost.load(network, args)?;
-            network.set_node_cost(self.meta.name.as_str(), None, value.into())?;
-        }
+        let node_name = self.meta.name.as_str();
+        match (&self.soft_min, &self.soft_max) {
+            (None, None) => {
+                // soft constraints not added. Set constraints for L only
+                if let Some(cost) = &self.cost {
+                    let value = cost.load(network, args)?;
+                    network.set_node_cost(node_name, None, value.into())?;
+                }
 
-        if let Some(max_flow) = &self.max_flow {
-            let value = max_flow.load(network, args)?;
-            network.set_node_max_flow(self.meta.name.as_str(), None, value.into())?;
-        }
+                if let Some(max_flow) = &self.max_flow {
+                    let value = max_flow.load(network, args)?;
+                    network.set_node_max_flow(node_name, None, value.into())?;
+                }
 
-        if let Some(min_flow) = &self.min_flow {
-            let value = min_flow.load(network, args)?;
-            network.set_node_min_flow(self.meta.name.as_str(), None, value.into())?;
-        }
+                if let Some(min_flow) = &self.min_flow {
+                    let value = min_flow.load(network, args)?;
+                    network.set_node_min_flow(node_name, None, value.into())?;
+                }
+            }
+            (Some(soft_min), None) => {
+                // add L_min constraints
+                if let Some(soft_min_flow) = &soft_min.flow {
+                    let value = soft_min_flow.load(network, args)?;
+                    network.set_node_max_flow(node_name, Self::soft_min_node_sub_name(), value.into())?;
+                }
+                if let Some(soft_min_cost) = &soft_min.cost {
+                    let value = soft_min_cost.load(network, args)?;
+                    network.set_node_cost(node_name, Self::soft_min_node_sub_name(), value.into())?;
+                }
+
+                // add cost on L
+                if let Some(cost) = &self.cost {
+                    let value = cost.load(network, args)?;
+                    network.set_node_cost(node_name, None, value.into())?;
+                }
+
+                // add constraints on aggregated node
+                if let Some(max_flow) = &self.max_flow {
+                    let value = max_flow.load(network, args)?;
+                    network.set_aggregated_node_max_flow(node_name, Self::aggregated_node_sub_name(), value.into())?;
+                }
+                if let Some(min_flow) = &self.min_flow {
+                    let value = min_flow.load(network, args)?;
+                    network.set_aggregated_node_min_flow(node_name, Self::aggregated_node_sub_name(), value.into())?;
+                }
+            }
+            (None, Some(soft_max)) => {
+                // add L_max constraints
+                if let Some(cost) = &self.cost {
+                    let value = cost.load(network, args)?;
+                    network.set_node_cost(node_name, Self::soft_max_node_sub_name(), value.into())?;
+                }
+                if let Some(soft_max_flow) = &soft_max.flow {
+                    let value = soft_max_flow.load(network, args)?;
+                    network.set_node_max_flow(node_name, Self::soft_max_node_sub_name(), value.into())?;
+                }
+
+                // add constraints on L
+                if let Some(soft_max_cost) = &soft_max.cost {
+                    let value = soft_max_cost.load(network, args)?;
+                    network.set_node_cost(node_name, None, value.into())?;
+                }
+
+                // add constraints on aggregated node
+                if let Some(max_flow) = &self.max_flow {
+                    let value = max_flow.load(network, args)?;
+                    network.set_aggregated_node_max_flow(node_name, Self::aggregated_node_sub_name(), value.into())?;
+                }
+                if let Some(min_flow) = &self.min_flow {
+                    let value = min_flow.load(network, args)?;
+                    network.set_aggregated_node_min_flow(node_name, Self::aggregated_node_sub_name(), value.into())?;
+                }
+            }
+            (Some(soft_min), Some(soft_max)) => {
+                // set L_max constraint
+                if let Some(soft_max_cost) = &soft_max.cost {
+                    let value = soft_max_cost.load(network, args)?;
+                    network.set_node_cost(node_name, Self::soft_max_node_sub_name(), value.into())?;
+                }
+                // set L constraint
+                if let Some(cost) = &self.cost {
+                    let value = cost.load(network, args)?;
+                    network.set_node_cost(node_name, None, value.into())?;
+                }
+                // set L_min constraints
+                if let Some(soft_min_flow) = &soft_min.flow {
+                    let value = soft_min_flow.load(network, args)?;
+                    network.set_node_max_flow(node_name, Self::soft_min_node_sub_name(), value.into())?;
+                }
+                if let Some(soft_min_cost) = &soft_min.cost {
+                    let value = soft_min_cost.load(network, args)?;
+                    network.set_node_cost(node_name, Self::soft_min_node_sub_name(), value.into())?;
+                }
+
+                // add constraints on node aggregating all three nodes
+                if let Some(max_flow) = &self.max_flow {
+                    let value = max_flow.load(network, args)?;
+                    network.set_aggregated_node_max_flow(node_name, Self::aggregated_node_sub_name(), value.into())?;
+                }
+                if let Some(min_flow) = &self.min_flow {
+                    let value = min_flow.load(network, args)?;
+                    network.set_aggregated_node_min_flow(node_name, Self::aggregated_node_sub_name(), value.into())?;
+                }
+
+                // add constraints on node aggregating `L` and `L_min`
+                if let Some(soft_max_flow) = &soft_max.flow {
+                    let value = soft_max_flow.load(network, args)?;
+                    network.set_aggregated_node_max_flow(
+                        node_name,
+                        Self::aggregated_node_l_l_min_sub_name(),
+                        value.into(),
+                    )?;
+                }
+            }
+        };
 
         Ok(())
     }
@@ -204,12 +510,36 @@ impl LinkNode {
     ) -> Result<MetricF64, SchemaError> {
         // Use the default attribute if none is specified
         let attr = attribute.unwrap_or(Self::DEFAULT_ATTRIBUTE);
+        let node_name = self.meta.name.as_str();
+        let link_node = network.get_node_index_by_name(node_name, None)?;
 
-        let idx = network.get_node_index_by_name(self.meta.name.as_str(), None)?;
+        // combine the flow through the nodes
+        let indices = match (&self.soft_min, &self.soft_max) {
+            (Some(_), None) => {
+                let soft_min_node = network.get_node_index_by_name(node_name, Self::soft_min_node_sub_name())?;
+                vec![link_node, soft_min_node]
+            }
+            (None, Some(_)) => {
+                let soft_max_node = network.get_node_index_by_name(node_name, Self::soft_max_node_sub_name())?;
+                vec![link_node, soft_max_node]
+            }
+            (Some(_), Some(_)) => {
+                let soft_min_node = network.get_node_index_by_name(node_name, Self::soft_min_node_sub_name())?;
+                let soft_max_node = network.get_node_index_by_name(node_name, Self::soft_max_node_sub_name())?;
+                vec![link_node, soft_min_node, soft_max_node]
+            }
+            (None, None) => vec![link_node],
+        };
 
         let metric = match attr {
-            NodeAttribute::Outflow => MetricF64::NodeOutFlow(idx),
-            NodeAttribute::Inflow => MetricF64::NodeInFlow(idx),
+            NodeAttribute::Outflow => MetricF64::MultiNodeInFlow {
+                indices,
+                name: self.meta.name.to_string(),
+            },
+            NodeAttribute::Inflow => MetricF64::MultiNodeOutFlow {
+                indices,
+                name: self.meta.name.to_string(),
+            },
             _ => {
                 return Err(SchemaError::NodeAttributeNotSupported {
                     ty: "LinkNode".to_string(),
@@ -242,11 +572,16 @@ impl TryFrom<LinkNodeV1> for LinkNode {
             .cost
             .map(|v| v.try_into_v2_parameter(Some(&meta.name), &mut unnamed_count))
             .transpose()?;
+        // not supported in V1
+        let soft_min = None;
+        let soft_max = None;
 
         let n = Self {
             meta,
             max_flow,
             min_flow,
+            soft_min,
+            soft_max,
             cost,
         };
         Ok(n)
@@ -375,7 +710,9 @@ impl TryFrom<OutputNodeV1> for OutputNode {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Clone, PartialEq, Copy, Debug, JsonSchema, PywrVisitAll)]
+#[derive(
+    serde::Deserialize, serde::Serialize, Clone, PartialEq, Copy, Debug, JsonSchema, PywrVisitAll, strum_macros::Display,
+)]
 pub enum StorageInitialVolume {
     Absolute(f64),
     Proportional(f64),
@@ -706,7 +1043,7 @@ impl TryFrom<CatchmentNodeV1> for CatchmentNode {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, PywrVisitAll)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, PywrVisitAll, strum_macros::Display)]
 #[serde(tag = "type", deny_unknown_fields)]
 pub enum Relationship {
     Proportion {
@@ -1178,6 +1515,38 @@ mod tests {
 
         // Test all solvers
         run_all_solvers(&model, &["clp"], &expected_outputs);
+    }
+
+    #[cfg(feature = "core")]
+    fn link_with_soft_min_str() -> &'static str {
+        include_str!("../test_models/link_with_soft_min.json")
+    }
+
+    #[test]
+    #[cfg(feature = "core")]
+    fn test_link_with_soft_min() {
+        let data = link_with_soft_min_str();
+        let schema = PywrModel::from_str(data).unwrap();
+        let model: pywr_core::models::Model = schema.build_model(None, None).unwrap();
+
+        // Test all solvers
+        run_all_solvers(&model, &[], &[]);
+    }
+
+    #[cfg(feature = "core")]
+    fn link_with_soft_max_str() -> &'static str {
+        include_str!("../test_models/link_with_soft_max.json")
+    }
+
+    #[test]
+    #[cfg(feature = "core")]
+    fn test_link_with_soft_max() {
+        let data = link_with_soft_max_str();
+        let schema = PywrModel::from_str(data).unwrap();
+        let model: pywr_core::models::Model = schema.build_model(None, None).unwrap();
+
+        // Test all solvers
+        run_all_solvers(&model, &[], &[]);
     }
 
     #[test]

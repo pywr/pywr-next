@@ -53,7 +53,7 @@ impl TryFrom<pywr_v1_schema::model::Metadata> for Metadata {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, strum_macros::Display)]
 #[serde(untagged)]
 pub enum Timestep {
     Days(i64),
@@ -69,7 +69,7 @@ impl From<pywr_v1_schema::model::Timestep> for Timestep {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Clone, Copy, Debug, JsonSchema)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Copy, Debug, JsonSchema, strum_macros::Display)]
 #[serde(untagged)]
 pub enum DateType {
     Date(NaiveDate),
@@ -382,7 +382,7 @@ impl PywrNetwork {
 
     #[cfg(feature = "core")]
     pub fn load_tables(&self, data_path: Option<&Path>) -> Result<LoadedTableCollection, SchemaError> {
-        Ok(LoadedTableCollection::from_schema(self.tables.as_deref(), data_path)?)
+        LoadedTableCollection::from_schema(self.tables.as_deref(), data_path)
     }
 
     #[cfg(feature = "core")]
@@ -527,7 +527,7 @@ impl PywrNetwork {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, strum_macros::Display)]
 #[serde(untagged)]
 pub enum PywrNetworkRef {
     Path(PathBuf),

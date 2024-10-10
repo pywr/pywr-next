@@ -309,7 +309,7 @@ pub struct ParameterMeta {
 }
 
 impl ParameterMeta {
-    fn new(name: ParameterName) -> Self {
+    pub fn new(name: ParameterName) -> Self {
         Self { name }
     }
 }

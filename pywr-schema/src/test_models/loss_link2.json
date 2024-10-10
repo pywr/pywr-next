@@ -1,0 +1,116 @@
+{
+  "metadata": {
+    "title": "Loss Link Test 1",
+    "description": "Test LossLink with zero loss",
+    "minimum_version": "0.1"
+  },
+  "timestepper": {
+    "start": "2015-01-01",
+    "end": "2015-01-03",
+    "timestep": 1
+  },
+  "network": {
+    "nodes": [
+      {
+        "meta": {
+          "name": "input1"
+        },
+        "type": "Catchment",
+        "flow": {
+          "type": "Constant",
+          "value": 15.0
+        }
+      },
+      {
+        "meta": {
+          "name": "loss1"
+        },
+        "type": "LossLink",
+        "loss_factor": {
+          "type": "Net",
+          "factor": {
+            "type": "Constant",
+            "value": 0.0
+          }
+        }
+      },
+      {
+        "meta": {
+          "name": "demand1"
+        },
+        "type": "Output",
+        "max_flow": {
+          "type": "Constant",
+          "value": 10.0
+        },
+        "cost": {
+          "type": "Constant",
+          "value": -10
+        }
+      },
+      {
+        "meta": {
+          "name": "spill1"
+        },
+        "type": "Output",
+        "cost": {
+          "type": "Constant",
+          "value": 10
+        }
+      }
+    ],
+    "edges": [
+      {
+        "from_node": "input1",
+        "to_node": "loss1"
+      },
+      {
+        "from_node": "loss1",
+        "to_node": "demand1"
+      },
+      {
+        "from_node": "input1",
+        "to_node": "spill1"
+      }
+    ],
+    "metric_sets": [
+      {
+        "name": "nodes",
+        "metrics": [
+          {
+            "type": "Node",
+            "name": "loss1",
+            "attribute": "Inflow"
+          },
+          {
+            "type": "Node",
+            "name": "loss1",
+            "attribute": "Outflow"
+          },
+          {
+            "type": "Node",
+            "name": "loss1",
+            "attribute": "Loss"
+          },
+          {
+            "type": "Node",
+            "name": "spill1",
+            "attribute": "Inflow"
+          }
+        ]
+      }
+    ],
+    "outputs": [
+      {
+        "name": "node-outputs",
+        "type": "CSV",
+        "format": "long",
+        "filename": "loss_link2.csv",
+        "metric_set": [
+          "nodes"
+        ],
+        "decimal_places": 1
+      }
+    ]
+  }
+}

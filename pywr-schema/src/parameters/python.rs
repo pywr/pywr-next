@@ -21,7 +21,7 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, strum_macros::Display)]
 #[serde(rename_all = "lowercase")]
 pub enum PythonSource {
     Module(String),
@@ -29,7 +29,7 @@ pub enum PythonSource {
 }
 
 /// The expected return type of the Python parameter.
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Default, JsonSchema)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Default, JsonSchema, strum_macros::Display)]
 #[serde(rename_all = "lowercase")]
 pub enum PythonReturnType {
     #[default]

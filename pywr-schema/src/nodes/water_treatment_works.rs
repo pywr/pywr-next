@@ -181,6 +181,10 @@ impl WaterTreatmentWorks {
 
         if let Some(loss_factor) = &self.loss_factor {
             let factors = loss_factor.load(network, args)?;
+            if factors.is_none() {
+                // Loaded a constant zero factor; ensure that the loss node has zero flow
+                network.set_node_max_flow(self.meta.name.as_str(), Self::loss_sub_name(), Some(0.0.into()))?;
+            }
             network.set_aggregated_node_relationship(self.meta.name.as_str(), Self::agg_sub_name(), factors)?;
         }
 
@@ -255,7 +259,7 @@ mod tests {
     }
 
     #[test]
-    fn test_model_schema() {
+    fn test_wtw1_schema() {
         let data = wtw1_str();
         let schema: PywrModel = serde_json::from_str(data).unwrap();
 
@@ -265,7 +269,7 @@ mod tests {
 
     #[test]
     #[cfg(feature = "core")]
-    fn test_model_run() {
+    fn test_wtw1_run() {
         let data = wtw1_str();
         let schema: PywrModel = serde_json::from_str(data).unwrap();
         let temp_dir = TempDir::new().unwrap();
@@ -280,6 +284,47 @@ mod tests {
         let expected_outputs = [ExpectedOutputs::new(
             temp_dir.path().join("wtw1.csv"),
             wtw1_outputs_str(),
+        )];
+
+        // Test all solvers
+        run_all_solvers(&model, &[], &expected_outputs);
+    }
+
+    fn wtw2_str() -> &'static str {
+        include_str!("../test_models/wtw2.json")
+    }
+
+    #[cfg(feature = "core")]
+    fn wtw2_outputs_str() -> &'static str {
+        include_str!("../test_models/wtw2-expected.csv")
+    }
+
+    #[test]
+    fn test_wtw2_schema() {
+        let data = wtw2_str();
+        let schema: PywrModel = serde_json::from_str(data).unwrap();
+
+        assert_eq!(schema.network.nodes.len(), 4);
+        assert_eq!(schema.network.edges.len(), 3);
+    }
+
+    #[test]
+    #[cfg(feature = "core")]
+    fn test_wtw2_run() {
+        let data = wtw2_str();
+        let schema: PywrModel = serde_json::from_str(data).unwrap();
+        let temp_dir = TempDir::new().unwrap();
+
+        let mut model = schema.build_model(None, Some(temp_dir.path())).unwrap();
+
+        let network = model.network_mut();
+        assert_eq!(network.nodes().len(), 7);
+        assert_eq!(network.edges().len(), 7);
+
+        // After model run there should be an output file.
+        let expected_outputs = [ExpectedOutputs::new(
+            temp_dir.path().join("wtw2.csv"),
+            wtw2_outputs_str(),
         )];
 
         // Test all solvers

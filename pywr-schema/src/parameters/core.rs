@@ -22,7 +22,7 @@ use schemars::JsonSchema;
 /// algorithms to represent a, for example, binary-like variable in a continuous domain. Each
 /// activation function requires different data to parameterize the function's behaviour.
 ///
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Copy, JsonSchema, PywrVisitAll)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Copy, JsonSchema, PywrVisitAll, strum_macros::Display)]
 #[serde(tag = "type", deny_unknown_fields)]
 pub enum ActivationFunction {
     /// A unit or null transformation.

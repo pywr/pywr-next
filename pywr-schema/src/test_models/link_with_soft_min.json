@@ -1,0 +1,82 @@
+{
+  "metadata": {
+    "title": "Link with a soft min constraint",
+    "description": "Test LinkNode with soft_min",
+    "minimum_version": "0.1"
+  },
+  "timestepper": {
+    "start": "2015-01-01",
+    "end": "2015-01-03",
+    "timestep": 1
+  },
+  "network": {
+    "nodes": [
+      {
+        "meta": {
+          "name": "input"
+        },
+        "type": "Input"
+      },
+      {
+        "meta": {
+          "name": "link"
+        },
+        "type": "Link",
+        "max_flow": {
+          "type": "Constant",
+          "value": 20.0
+        },
+        "cost": {
+          "type": "Constant",
+          "value": -50
+        },
+        "soft_min": {
+          "cost": {
+            "type": "Constant",
+            "value": 50
+          },
+          "flow": {
+            "type": "Constant",
+            "value": 5
+          }
+        }
+      },
+      {
+        "meta": {
+          "name": "demand"
+        },
+        "type": "Output",
+        "max_flow": {
+          "type": "Constant",
+          "value": 10.0
+        },
+        "cost": {
+          "type": "Constant",
+          "value": -10
+        }
+      }
+    ],
+    "edges": [
+      {
+        "from_node": "input",
+        "to_node": "link"
+      },
+      {
+        "from_node": "link",
+        "to_node": "demand"
+      }
+    ]
+  },
+  "metric_sets": [
+    {
+      "name": "nodes",
+      "metrics": [
+        {
+          "type": "Node",
+          "name": "link",
+          "attribute": "Inflow"
+        }
+      ]
+    }
+  ]
+}
