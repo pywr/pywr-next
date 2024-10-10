@@ -111,6 +111,10 @@ impl RiverNode {
     ) -> Result<(), SchemaError> {
         if let Some(loss_factor) = &self.loss_factor {
             let factors = loss_factor.load(network, args)?;
+            if factors.is_none() {
+                // Loaded a constant zero factor; ensure that the loss node has zero flow
+                network.set_node_max_flow(self.meta.name.as_str(), Self::loss_node_sub_name(), Some(0.0.into()))?;
+            }
             network.set_aggregated_node_relationship(self.meta.name.as_str(), Self::agg_sub_name(), factors)?;
         }
 
