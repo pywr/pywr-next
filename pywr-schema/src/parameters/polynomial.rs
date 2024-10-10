@@ -1,6 +1,10 @@
 use crate::error::ConversionError;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
+use crate::metric::{Metric, NodeReference};
+#[cfg(feature = "core")]
+use crate::model::LoadArgs;
+use crate::nodes::NodeAttribute;
 use crate::parameters::{IntoV2Parameter, ParameterMeta, TryFromV1Parameter};
 #[cfg(feature = "core")]
 use pywr_core::parameters::ParameterIndex;
@@ -12,18 +16,20 @@ use schemars::JsonSchema;
 #[serde(deny_unknown_fields)]
 pub struct Polynomial1DParameter {
     pub meta: ParameterMeta,
-    pub storage_node: String,
+    pub metric: Metric,
     pub coefficients: Vec<f64>,
-    pub use_proportional_volume: Option<bool>,
     pub scale: Option<f64>,
     pub offset: Option<f64>,
 }
 
 #[cfg(feature = "core")]
 impl Polynomial1DParameter {
-    pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<ParameterIndex<f64>, SchemaError> {
-        let metric =
-            network.get_storage_node_metric(&self.storage_node, None, self.use_proportional_volume.unwrap_or(true))?;
+    pub fn add_to_model(
+        &self,
+        network: &mut pywr_core::network::Network,
+        args: &LoadArgs,
+    ) -> Result<ParameterIndex<f64>, SchemaError> {
+        let metric = self.metric.load(network, args)?;
 
         let p = pywr_core::parameters::Polynomial1DParameter::new(
             self.meta.name.as_str().into(),
@@ -44,11 +50,20 @@ impl TryFromV1Parameter<Polynomial1DParameterV1> for Polynomial1DParameter {
         parent_node: Option<&str>,
         unnamed_count: &mut usize,
     ) -> Result<Self, Self::Error> {
+        let attribute = match v1.use_proportional_volume.unwrap_or(true) {
+            true => Some(NodeAttribute::ProportionalVolume),
+            false => Some(NodeAttribute::Volume),
+        };
+
+        let metric = Metric::Node(NodeReference {
+            name: v1.storage_node,
+            attribute,
+        });
+
         let p = Self {
             meta: v1.meta.into_v2_parameter(parent_node, unnamed_count),
-            storage_node: v1.storage_node,
+            metric,
             coefficients: v1.coefficients,
-            use_proportional_volume: v1.use_proportional_volume,
             scale: v1.scale,
             offset: v1.offset,
         };

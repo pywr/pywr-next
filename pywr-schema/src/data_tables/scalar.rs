@@ -32,7 +32,7 @@ where
 pub struct ScalarTableR1C1<T> {
     index: (Vec<String>, Vec<String>),
     // Could this be flattened for a small performance gain?
-    values: Vec<Vec<T>>,
+    values: Vec<Vec<Option<T>>>,
 }
 
 impl<T> ScalarTableR1C1<T>
@@ -44,12 +44,15 @@ where
             let idx0 = table_key_to_position(index[0], &self.index.0)?;
             let idx1 = table_key_to_position(index[1], &self.index.1)?;
 
-            self.values
+            let value = self
+                .values
                 .get(idx0)
                 .ok_or(TableError::IndexOutOfBounds(idx0))?
                 .get(idx1)
-                .ok_or(TableError::IndexOutOfBounds(idx1))
-                .copied()
+                .ok_or(TableError::IndexOutOfBounds(idx1))?
+                .ok_or_else(|| TableError::EntryNotFound)?;
+
+            Ok(value)
         } else {
             Err(TableError::WrongKeySize(2, index.len()))
         }
@@ -149,7 +152,7 @@ where
         .collect();
 
     let mut row_headers: Vec<String> = Vec::new();
-    let values: Vec<Vec<T>> = rdr
+    let values: Vec<Vec<Option<T>>> = rdr
         .records()
         .map(|result| {
             // The iterator yields Result<StringRecord, Error>, so we check the
@@ -158,7 +161,7 @@ where
 
             let key = record.get(0).ok_or(TableError::KeyParse)?.to_string();
 
-            let values: Vec<T> = record.iter().skip(1).map(|v| v.parse()).collect::<Result<_, _>>()?;
+            let values: Vec<Option<T>> = record.iter().skip(1).map(|v| v.parse::<T>().ok()).collect();
 
             row_headers.push(key.clone());
 

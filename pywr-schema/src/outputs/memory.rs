@@ -24,7 +24,9 @@ impl From<MemoryAggregation> for pywr_core::recorders::Aggregation {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone, JsonSchema, PywrVisitPaths)]
+#[derive(
+    serde::Deserialize, serde::Serialize, Debug, Copy, Clone, JsonSchema, PywrVisitPaths, strum_macros::Display,
+)]
 pub enum MemoryAggregationOrder {
     MetricTimeScenario,
     TimeMetricScenario,

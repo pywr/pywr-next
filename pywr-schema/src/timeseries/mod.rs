@@ -1,17 +1,20 @@
 #[cfg(feature = "core")]
 mod align_and_resample;
+
+mod pandas;
 mod polars_dataset;
 
-use self::polars_dataset::PolarsDataset;
 use crate::parameters::{ParameterMeta, TimeseriesV1Data, TimeseriesV1Source};
 use crate::visit::VisitPaths;
 use crate::ConversionError;
 #[cfg(feature = "core")]
 use ndarray::Array2;
+pub use pandas::PandasDataset;
 #[cfg(feature = "core")]
 use polars::error::PolarsError;
 #[cfg(feature = "core")]
 use polars::prelude::{DataFrame, DataType::Float64, Float64Type, IndexOrder};
+pub use polars_dataset::PolarsDataset;
 #[cfg(feature = "core")]
 use pywr_core::{
     models::ModelDomain,
@@ -42,7 +45,8 @@ pub enum TimeseriesError {
     DataFrameTimestepMismatch(String),
     #[error("A timeseries dataframe with the name '{0}' already exists.")]
     TimeseriesDataframeAlreadyExists(String),
-    #[error("The timeseries dataset '{0}' has more than one column of data so a column or scenario name must be provided for any reference")]
+    #[error("The timeseries dataset '{0}' has more than one column of data so a column or scenario name must be provided for any reference"
+    )]
     TimeseriesColumnOrScenarioRequired(String),
     #[error("The timeseries dataset '{0}' has no columns")]
     TimeseriesDataframeHasNoColumns(String),
@@ -57,7 +61,7 @@ pub enum TimeseriesError {
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
 #[serde(tag = "type")]
 enum TimeseriesProvider {
-    Pandas,
+    Pandas(PandasDataset),
     Polars(PolarsDataset),
 }
 
@@ -73,7 +77,7 @@ impl Timeseries {
     pub fn load(&self, domain: &ModelDomain, data_path: Option<&Path>) -> Result<DataFrame, TimeseriesError> {
         match &self.provider {
             TimeseriesProvider::Polars(dataset) => dataset.load(self.meta.name.as_str(), data_path, domain),
-            TimeseriesProvider::Pandas => todo!(),
+            TimeseriesProvider::Pandas(dataset) => dataset.load(self.meta.name.as_str(), data_path, domain),
         }
     }
 
@@ -86,14 +90,14 @@ impl VisitPaths for Timeseries {
     fn visit_paths<F: FnMut(&Path)>(&self, visitor: &mut F) {
         match &self.provider {
             TimeseriesProvider::Polars(dataset) => dataset.visit_paths(visitor),
-            TimeseriesProvider::Pandas => todo!(),
+            TimeseriesProvider::Pandas(dataset) => dataset.visit_paths(visitor),
         }
     }
 
     fn visit_paths_mut<F: FnMut(&mut PathBuf)>(&mut self, visitor: &mut F) {
         match &mut self.provider {
             TimeseriesProvider::Polars(dataset) => dataset.visit_paths_mut(visitor),
-            TimeseriesProvider::Pandas => todo!(),
+            TimeseriesProvider::Pandas(dataset) => dataset.visit_paths_mut(visitor),
         }
     }
 }
@@ -222,6 +226,9 @@ impl LoadedTimeseriesCollection {
     }
 }
 
+/// Convert timeseries inputs to this schema.
+///
+/// The conversions
 pub fn convert_from_v1_data(
     df_data: Vec<TimeseriesV1Data>,
     v1_tables: &Option<TableVec>,
@@ -239,13 +246,18 @@ pub fn convert_from_v1_data(
                 }
 
                 let time_col = None;
-                let provider = PolarsDataset::new(time_col, table.url.clone(), None);
+
+                let provider = PandasDataset {
+                    time_col,
+                    url: table.url.clone(),
+                    kwargs: Some(data.pandas_kwargs),
+                };
 
                 ts.insert(
                     name.clone(),
                     Timeseries {
                         meta: ParameterMeta { name, comment: None },
-                        provider: TimeseriesProvider::Polars(provider),
+                        provider: TimeseriesProvider::Pandas(provider),
                     },
                 );
             }
@@ -263,13 +275,18 @@ pub fn convert_from_v1_data(
                     continue;
                 }
 
-                let provider = PolarsDataset::new(data.time_col, url, None);
+                let provider = PandasDataset {
+                    time_col: data.time_col,
+                    url,
+                    kwargs: Some(data.pandas_kwargs),
+                };
 
                 ts.insert(
                     name.clone(),
                     Timeseries {
                         meta: ParameterMeta { name, comment: None },
-                        provider: TimeseriesProvider::Polars(provider),
+
+                        provider: TimeseriesProvider::Pandas(provider),
                     },
                 );
             }
@@ -312,5 +329,38 @@ mod tests {
         model.network_mut().add_recorder(Box::new(recorder)).unwrap();
 
         run_all_solvers(&model, &[], &[])
+    }
+
+    fn model_pandas_str() -> &'static str {
+        include_str!("../test_models/timeseries_pandas.json")
+    }
+
+    #[test]
+    fn test_timeseries_pandas() {
+        let data = model_pandas_str();
+        #[cfg(not(feature = "test-python"))]
+        let _: PywrModel = serde_json::from_str(data).unwrap();
+
+        // Can only build this model within a Python environment that has pandas.
+        #[cfg(feature = "test-python")]
+        {
+            let cargo_manifest_dir = env!("CARGO_MANIFEST_DIR");
+            let schema: PywrModel = serde_json::from_str(data).unwrap();
+            let model_dir = PathBuf::from(cargo_manifest_dir).join("src/test_models");
+            let mut model = schema.build_model(Some(model_dir.as_path()), None).unwrap();
+
+            let expected = Array::from_shape_fn((365, 1), |(x, _)| {
+                let month_day = NaiveDate::from_yo_opt(2021, (x + 1) as u32).unwrap().day() as f64;
+                month_day + month_day * 0.5
+            });
+
+            let idx = model.network().get_node_by_name("output1", None).unwrap().index();
+
+            let recorder =
+                AssertionRecorder::new("output-flow", MetricF64::NodeInFlow(idx), expected.clone(), None, None);
+            model.network_mut().add_recorder(Box::new(recorder)).unwrap();
+
+            run_all_solvers(&model, &[], &[])
+        }
     }
 }
