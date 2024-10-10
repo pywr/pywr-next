@@ -196,7 +196,10 @@ impl NodeBuilder {
                 meta,
                 ..Default::default()
             }),
-            NodeType::River => Node::River(RiverNode { meta }),
+            NodeType::River => Node::River(RiverNode {
+                meta,
+                ..Default::default()
+            }),
             NodeType::RiverSplitWithGauge => Node::RiverSplitWithGauge(RiverSplitWithGaugeNode {
                 meta,
                 ..Default::default()
@@ -452,7 +455,7 @@ impl Node {
             Node::Catchment(n) => n.set_constraints(network, args),
             Node::RiverGauge(n) => n.set_constraints(network, args),
             Node::LossLink(n) => n.set_constraints(network, args),
-            Node::River(_) => Ok(()), // No constraints on river node
+            Node::River(n) => n.set_constraints(network, args),
             Node::RiverSplitWithGauge(n) => n.set_constraints(network, args),
             Node::WaterTreatmentWorks(n) => n.set_constraints(network, args),
             Node::Aggregated(n) => n.set_constraints(network, args),
