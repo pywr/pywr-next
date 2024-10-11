@@ -63,6 +63,12 @@ impl NodeState {
             Self::Storage(s) => s.add_out_flow(flow, timestep),
         };
     }
+
+    fn clamp_volume(&mut self, min_volume: f64, max_volume: f64) {
+        if let Self::Storage(s) = self {
+            s.clamp(min_volume, max_volume);
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -123,6 +129,11 @@ impl StorageState {
     fn proportional_volume(&self, max_volume: f64) -> f64 {
         // TODO handle divide by zero (is it full or empty?)
         self.volume / max_volume
+    }
+
+    /// Ensure the volume is within the min and max volume range (inclusive).
+    fn clamp(&mut self, min_volume: f64, max_volume: f64) {
+        self.volume = self.volume.clamp(min_volume, max_volume);
     }
 }
 
@@ -214,6 +225,10 @@ impl VirtualStorageState {
 
     fn proportional_volume(&self, max_volume: f64) -> f64 {
         self.storage.proportional_volume(max_volume)
+    }
+
+    fn clamp_volume(&mut self, min_volume: f64, max_volume: f64) {
+        self.storage.clamp(min_volume, max_volume);
     }
 }
 
@@ -530,8 +545,8 @@ impl NetworkState {
     /// Complete a timestep after all the flow has been added.
     ///
     /// This final step ensures that derived states (e.g. virtual storage volume) are updated
-    /// once all of the flows have been updated.
-    pub fn complete(&mut self, model: &Network, timestep: &Timestep) -> Result<(), PywrError> {
+    /// once all the flows have been updated.
+    fn update_derived_states(&mut self, model: &Network, timestep: &Timestep) -> Result<(), PywrError> {
         // Update virtual storage node states
         for (state, node) in self
             .virtual_storage_states
@@ -562,6 +577,32 @@ impl NetworkState {
         Ok(())
     }
 
+    /// Clamp the volume of `node_index` to be within the bounds provided.
+    fn clamp_node_volume(&mut self, node_index: &NodeIndex, min_volume: f64, max_volume: f64) -> Result<(), PywrError> {
+        match self.node_states.get_mut(*node_index.deref()) {
+            Some(s) => {
+                s.clamp_volume(min_volume, max_volume);
+                Ok(())
+            }
+            None => Err(PywrError::NodeIndexNotFound),
+        }
+    }
+
+    /// Clamp the volume of `node_index` to be within the bounds provided.
+    fn clamp_virtual_storage_node_volume(
+        &mut self,
+        node_index: &VirtualStorageIndex,
+        min_volume: f64,
+        max_volume: f64,
+    ) -> Result<(), PywrError> {
+        match self.virtual_storage_states.get_mut(*node_index.deref()) {
+            Some(s) => {
+                s.clamp_volume(min_volume, max_volume);
+                Ok(())
+            }
+            None => Err(PywrError::VirtualStorageIndexNotFound(*node_index)),
+        }
+    }
     pub fn get_node_in_flow(&self, node_index: &NodeIndex) -> Result<f64, PywrError> {
         match self.node_states.get(*node_index.deref()) {
             Some(s) => Ok(s.get_in_flow()),
@@ -912,6 +953,32 @@ impl State {
             }
             None => Err(PywrError::MultiNetworkTransferIndexNotFound(idx)),
         }
+    }
+
+    /// Complete a timestep after all the flow has been added.
+    ///
+    /// This final step ensures, once all the flows have been updated, that:
+    ///   - Derived states (e.g. virtual storage volume) are updated
+    ///   - Volumes are within bounds
+    pub fn complete(&mut self, model: &Network, timestep: &Timestep) -> Result<(), PywrError> {
+        for node in model.nodes().iter() {
+            if let Node::Storage(_) = node {
+                let node_index = node.index();
+                let min_volume = node.get_min_volume(self)?;
+                let max_volume = node.get_max_volume(self)?;
+                self.network.clamp_node_volume(&node_index, min_volume, max_volume)?;
+            }
+        }
+
+        for node in model.virtual_storage_nodes().iter() {
+            let node_index = node.index();
+            let min_volume = node.get_min_volume(self)?;
+            let max_volume = node.get_max_volume(self)?;
+            self.network
+                .clamp_virtual_storage_node_volume(&node_index, min_volume, max_volume)?;
+        }
+
+        self.network.update_derived_states(model, timestep)
     }
 }
 

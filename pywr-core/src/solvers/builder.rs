@@ -531,7 +531,7 @@ where
             .iter()
             .zip(network.virtual_storage_nodes().deref())
         {
-            let (avail, missing) = match node.get_current_available_volume_bounds(state) {
+            let (avail, missing) = match node.get_available_volume_bounds(state) {
                 Ok(bnds) => bnds,
                 Err(e) => return Err(e),
             };

@@ -418,7 +418,7 @@ impl Node {
         }
     }
 
-    pub fn get_current_min_volume(&self, state: &State) -> Result<f64, PywrError> {
+    pub fn get_min_volume(&self, state: &State) -> Result<f64, PywrError> {
         match self {
             Self::Input(_) => Err(PywrError::StorageConstraintsUndefined),
             Self::Link(_) => Err(PywrError::StorageConstraintsUndefined),
@@ -439,7 +439,7 @@ impl Node {
         }
     }
 
-    pub fn get_current_max_volume(&self, state: &State) -> Result<f64, PywrError> {
+    pub fn get_max_volume(&self, state: &State) -> Result<f64, PywrError> {
         match self {
             Self::Input(_) => Err(PywrError::StorageConstraintsUndefined),
             Self::Link(_) => Err(PywrError::StorageConstraintsUndefined),
@@ -448,10 +448,11 @@ impl Node {
         }
     }
 
-    pub fn get_current_volume_bounds(&self, state: &State) -> Result<(f64, f64), PywrError> {
-        match (self.get_current_min_volume(state), self.get_current_max_volume(state)) {
+    /// Return the current min and max volumes as a tuple.
+    pub fn get_volume_bounds(&self, state: &State) -> Result<(f64, f64), PywrError> {
+        match (self.get_min_volume(state), self.get_max_volume(state)) {
             (Ok(min_vol), Ok(max_vol)) => Ok((min_vol, max_vol)),
-            _ => Err(PywrError::FlowConstraintsUndefined),
+            _ => Err(PywrError::StorageConstraintsUndefined),
         }
     }
 
