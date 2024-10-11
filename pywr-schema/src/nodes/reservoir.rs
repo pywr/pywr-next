@@ -495,7 +495,6 @@ impl ReservoirNode {
                 let storage_metric = storage.load(network, args)?;
                 let area_metric = area.load(network, args)?;
 
-                // todo!() TODO param name must be unique!
                 let interpolated_area_parameter = pywr_core::parameters::InterpolatedParameter::new(
                     ParameterName::new(name, Some(self.meta().name.as_str())),
                     current_storage,
