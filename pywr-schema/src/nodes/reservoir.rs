@@ -7,7 +7,11 @@ use crate::SchemaError;
 #[cfg(feature = "core")]
 use pywr_core::derived_metric::DerivedMetric;
 #[cfg(feature = "core")]
+use pywr_core::metric::ConstantMetricF64::Constant;
+#[cfg(feature = "core")]
 use pywr_core::metric::MetricF64;
+#[cfg(feature = "core")]
+use pywr_core::metric::SimpleMetricF64;
 #[cfg(feature = "core")]
 use pywr_core::parameters::{AggFunc, ParameterName};
 use pywr_schema_macros::PywrVisitAll;
@@ -47,6 +51,9 @@ pub struct Evaporation {
     data: Metric,
     /// The cost to assign to the [`crate::nodes::OutputNode`].
     cost: Option<Metric>,
+    /// If `true` the maximum surface area will be used to calculate the evaporation volume. When
+    /// `false`, the area is calculated from the bathymetric data. This defaults to `false`.
+    use_max_area: Option<bool>,
 }
 
 /// The leakage data
@@ -65,7 +72,7 @@ pub struct Rainfall {
     data: Metric,
     /// If `true` the maximum surface area will be used to calculate the rainfall volume. When
     /// `false`, the area is calculated from the bathymetric data. This defaults to `false`.
-    use_max_area: Option<bool>, // TODO not implemented yet
+    use_max_area: Option<bool>,
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
@@ -380,12 +387,11 @@ impl ReservoirNode {
 
         // add rainfall and evaporation
         if let Some(bathymetry) = &self.bathymetry {
-            let area_metric = self.register_area_metric(network, args, bathymetry)?;
-
             // add the rainfall
             if let Some(rainfall) = &self.rainfall {
                 let use_max_area = rainfall.use_max_area.unwrap_or(false);
-                let rainfall_area_metric = if use_max_area { todo!() } else { area_metric.clone() };
+                let rainfall_area_metric =
+                    self.get_area_metric(network, args, "rainfall_area", bathymetry, use_max_area)?;
                 let rainfall_metric = rainfall.data.load(network, args)?;
 
                 let rainfall_volume_parameter = pywr_core::parameters::AggregatedParameter::new(
@@ -410,11 +416,15 @@ impl ReservoirNode {
 
             // add the evaporation
             if let Some(evaporation) = &self.evaporation {
+                let use_max_area = evaporation.use_max_area.unwrap_or(false);
+                let evaporation_area_metric =
+                    self.get_area_metric(network, args, "evaporation_area", bathymetry, use_max_area)?;
+
                 // add volume to output node
                 let evaporation_metric = evaporation.data.load(network, args)?;
                 let evaporation_volume_parameter = pywr_core::parameters::AggregatedParameter::new(
                     ParameterName::new("evaporation", Some(self.meta().name.as_str())),
-                    &[evaporation_metric, area_metric],
+                    &[evaporation_metric, evaporation_area_metric],
                     AggFunc::Product,
                 );
                 let evaporation_idx = network.add_parameter(Box::new(evaporation_volume_parameter))?;
@@ -441,26 +451,42 @@ impl ReservoirNode {
         Ok(())
     }
 
-    /// Add the `MetricF64` for the variable reservoir surface area. This can be either an
-    /// [`pywr_core::parameters::InterpolatedParameter`] or
-    /// [`pywr_core::parameters::Polynomial1DParameter`] and allows calculating the current area
-    /// from the reservoir's current volume.
+    /// Get the `MetricF64` for the reservoir surface area. The area is calculated either using
+    /// a [`pywr_core::parameters::InterpolatedParameter`] or a
+    /// [`pywr_core::parameters::Polynomial1DParameter`] from the storage's volume. When the
+    /// `use_max_area` parameter is `true`, the area is calculated using the storage's max volume
+    /// from the state instead of the current reservoir's volume.
+    ///
+    /// # Arguments
+    ///
+    /// * `network`: The network.
+    /// * `args`: The arguments.
+    /// * `name`: The unique name to assign to the created parameters.
+    /// * `bathymetry`: The bathymetric data.
+    /// * `use_max_area`: Whether to get the max area from the reservoir's max volume.
     ///
     /// returns: `Result<MetricF64, SchemaError>`
-    fn register_area_metric(
+    fn get_area_metric(
         &self,
         network: &mut pywr_core::network::Network,
         args: &LoadArgs,
+        name: &str,
         bathymetry: &Bathymetry,
+        use_max_area: bool,
     ) -> Result<MetricF64, SchemaError> {
         // get the current storage
         let storage_node = network.get_node_index_by_name(self.meta().name.as_str(), None)?;
-        let current_storage = if bathymetry.is_storage_relative {
-            let dm = DerivedMetric::NodeProportionalVolume(storage_node);
-            let derived_metric_idx = network.add_derived_metric(dm);
-            MetricF64::DerivedMetric(derived_metric_idx)
-        } else {
-            MetricF64::NodeVolume(storage_node)
+
+        // the storage (absolute or relative) can be the current or max volume
+        let current_storage = match (bathymetry.is_storage_relative, use_max_area) {
+            (false, false) => MetricF64::NodeVolume(storage_node),
+            (true, false) => {
+                let dm = DerivedMetric::NodeProportionalVolume(storage_node);
+                let derived_metric_idx = network.add_derived_metric(dm);
+                MetricF64::DerivedMetric(derived_metric_idx)
+            }
+            (false, true) => MetricF64::NodeMaxVolume(storage_node),
+            (true, true) => MetricF64::Simple(SimpleMetricF64::Constant(Constant(1.0))),
         };
 
         // get the variable area metric
@@ -469,8 +495,9 @@ impl ReservoirNode {
                 let storage_metric = storage.load(network, args)?;
                 let area_metric = area.load(network, args)?;
 
+                // todo!() TODO param name must be unique!
                 let interpolated_area_parameter = pywr_core::parameters::InterpolatedParameter::new(
-                    ParameterName::new("area", Some(self.meta().name.as_str())),
+                    ParameterName::new(name, Some(self.meta().name.as_str())),
                     current_storage,
                     vec![(storage_metric, area_metric.clone())],
                     true,
@@ -481,7 +508,7 @@ impl ReservoirNode {
             }
             BathymetryType::Polynomial(coeffs) => {
                 let poly_area_parameter = pywr_core::parameters::Polynomial1DParameter::new(
-                    ParameterName::new("area", Some(self.meta().name.as_str())),
+                    ParameterName::new(name, Some(self.meta().name.as_str())),
                     current_storage,
                     coeffs.clone(),
                     1.0,
