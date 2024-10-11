@@ -213,6 +213,7 @@ impl Network {
     pub fn nodes(&self) -> &NodeVec {
         &self.nodes
     }
+
     pub fn edges(&self) -> &EdgeVec {
         &self.edges
     }
@@ -285,7 +286,7 @@ impl Network {
         Ok(recorder_internal_states)
     }
 
-    /// Check whether a solver [`S`] has the required features to run this network.
+    /// Check whether a solver `S` has the required features to run this network.
     pub fn check_solver_features<S>(&self) -> bool
     where
         S: Solver,
@@ -295,7 +296,7 @@ impl Network {
         required_features.iter().all(|f| S::features().contains(f))
     }
 
-    /// Check whether a solver [`S`] has the required features to run this network.
+    /// Check whether a solver `S` has the required features to run this network.
     pub fn check_multi_scenario_solver_features<S>(&self) -> bool
     where
         S: MultiStateSolver,
@@ -1140,7 +1141,7 @@ impl Network {
         }
     }
 
-    /// Get a [`Parameter<usize>`] from its index.
+    /// Get a `Parameter<usize>` from its index.
     pub fn get_index_parameter(&self, index: ParameterIndex<usize>) -> Result<&dyn parameters::Parameter, PywrError> {
         match self.parameters.get_usize(index) {
             Some(p) => Ok(p),
@@ -1462,7 +1463,7 @@ impl Network {
         Ok(edge_index)
     }
 
-    /// Set the variable values on the parameter [`parameter_index`].
+    /// Set the variable values on the parameter `parameter_index`.
     ///
     /// This will update the internal state of the parameter with the new values for all scenarios.
     pub fn set_f64_parameter_variable_values(
@@ -1492,7 +1493,7 @@ impl Network {
         }
     }
 
-    /// Set the variable values on the parameter [`parameter_index`] and scenario [`scenario_index`].
+    /// Set the variable values on the parameter `parameter_index` and scenario `scenario_index`.
     ///
     /// Only the internal state of the parameter for the given scenario will be updated.
     pub fn set_f64_parameter_variable_values_for_scenario(
@@ -1568,7 +1569,7 @@ impl Network {
         }
     }
 
-    /// Set the variable values on the parameter [`parameter_index`].
+    /// Set the variable values on the parameter `parameter_index`.
     ///
     /// This will update the internal state of the parameter with the new values for scenarios.
     pub fn set_u32_parameter_variable_values(
@@ -1598,7 +1599,7 @@ impl Network {
         }
     }
 
-    /// Set the variable values on the parameter [`parameter_index`] and scenario [`scenario_index`].
+    /// Set the variable values on the parameter `parameter_index` and scenario `scenario_index`.
     ///
     /// Only the internal state of the parameter for the given scenario will be updated.
     pub fn set_u32_parameter_variable_values_for_scenario(
