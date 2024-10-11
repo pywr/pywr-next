@@ -101,6 +101,7 @@ pub enum NodeAttribute {
     Inflow,
     Outflow,
     Volume,
+    MaxVolume,
     ProportionalVolume,
     Loss,
     Deficit,

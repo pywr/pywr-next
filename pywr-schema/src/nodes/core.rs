@@ -810,6 +810,7 @@ impl StorageNode {
 
         let metric = match attr {
             NodeAttribute::Volume => MetricF64::NodeVolume(idx),
+            NodeAttribute::MaxVolume => MetricF64::NodeMaxVolume(idx),
             NodeAttribute::ProportionalVolume => {
                 let dm = DerivedMetric::NodeProportionalVolume(idx);
                 let derived_metric_idx = network.add_derived_metric(dm);
