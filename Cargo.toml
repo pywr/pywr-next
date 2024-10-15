@@ -25,9 +25,14 @@ default-members = [
     # "pywr-python",
 ]
 
+[profile.dev]
+# Disabling debug info speeds up builds a bunch,
+# and we don't rely on it for debugging that much.
+debug = 0
 
 [profile.release]
-opt-level = 3 # fast and small wasm
+debug = 0 # Set this to 1 or 2 to get more useful backtraces in debugger.
+opt-level = 3
 # lto = true
 # strip = true
 # Turn this on for profiling
