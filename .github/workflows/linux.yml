@@ -6,6 +6,7 @@ on:
   pull_request:
 
 env:
+  CARGO_INCREMENTAL: 0
   CARGO_TERM_COLOR: always
   # Make sure CI fails on all warnings, including Clippy lints
   RUSTFLAGS: "-Dwarnings"
@@ -33,7 +34,7 @@ jobs:
       - name: Build
         run: cargo build --verbose --features highs,cbc --workspace --exclude ipm-simd --exclude pywr-python
       - name: Run tests
-        run: cargo test --features highs,cbc
+        run: cargo test --features highs,cbc --verbose --lib --bins -- --test-threads=1
       - name: Run mdbook tests
         run: mdbook test ./pywr-book
 
