@@ -131,8 +131,22 @@ impl StorageState {
         self.volume / max_volume
     }
 
-    /// Ensure the volume is within the min and max volume range (inclusive).
+    /// Ensure the volume is within the min and max volume range (inclusive). If the volume
+    /// is more than 1E6 outside the min or max volume then this function will panic,
+    /// reporting a mass-balance message.
     fn clamp(&mut self, min_volume: f64, max_volume: f64) {
+        if (self.volume - min_volume) < -1e-6 {
+            panic!(
+                "Mass-balance error detected. Volume ({}) is smaller than minimum volume ({}).",
+                self.volume, min_volume
+            );
+        }
+        if (self.volume - max_volume) > 1e-6 {
+            panic!(
+                "Mass-balance error detected. Volume ({}) is greater than maximum volume ({}).",
+                self.volume, max_volume,
+            );
+        }
         self.volume = self.volume.clamp(min_volume, max_volume);
     }
 }
