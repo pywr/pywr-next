@@ -85,6 +85,7 @@ pub enum MetricF64 {
     AggregatedNodeOutFlow(AggregatedNodeIndex),
     AggregatedNodeVolume(AggregatedStorageNodeIndex),
     EdgeFlow(EdgeIndex),
+    MultiEdgeFlow { indices: Vec<EdgeIndex>, name: String },
     ParameterValue(GeneralParameterIndex<f64>),
     IndexParameterValue(GeneralParameterIndex<usize>),
     MultiParameterValue((GeneralParameterIndex<MultiValue>, String)),
@@ -119,6 +120,13 @@ impl MetricF64 {
             }
 
             MetricF64::EdgeFlow(idx) => Ok(state.get_network_state().get_edge_flow(idx)?),
+            MetricF64::MultiEdgeFlow { indices, .. } => {
+                let flow = indices
+                    .iter()
+                    .map(|idx| state.get_network_state().get_edge_flow(idx))
+                    .sum::<Result<_, _>>()?;
+                Ok(flow)
+            }
             MetricF64::ParameterValue(idx) => Ok(state.get_parameter_value(*idx)?),
             MetricF64::IndexParameterValue(idx) => Ok(state.get_parameter_index(*idx)? as f64),
             MetricF64::MultiParameterValue((idx, key)) => Ok(state.get_multi_parameter_value(*idx, key)?),
