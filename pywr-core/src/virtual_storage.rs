@@ -272,7 +272,7 @@ impl VirtualStorage {
             .get_max_volume(&state.get_simple_parameter_values())
     }
 
-    pub fn get_current_available_volume_bounds(&self, state: &State) -> Result<(f64, f64), PywrError> {
+    pub fn get_available_volume_bounds(&self, state: &State) -> Result<(f64, f64), PywrError> {
         let min_vol = self.get_min_volume(state)?;
         let max_vol = self.get_max_volume(state)?;
 
