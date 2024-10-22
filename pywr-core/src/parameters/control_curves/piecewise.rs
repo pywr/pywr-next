@@ -55,7 +55,7 @@ impl GeneralParameter<f64> for PiecewiseInterpolatedParameter {
         let mut cc_previous_value = self.maximum;
         for (idx, control_curve) in self.control_curves.iter().enumerate() {
             let cc_value = control_curve.get_value(model, state)?;
-            if x > cc_value {
+            if x >= cc_value {
                 let v = self.values.get(idx).ok_or(PywrError::DataOutOfRange)?;
                 return Ok(interpolate(x, cc_value, cc_previous_value, v[1], v[0]));
             }
