@@ -203,23 +203,34 @@ impl TryFrom<PiecewiseLinkNodeV1> for PiecewiseLinkNode {
 mod tests {
     use crate::model::PywrModel;
     use ndarray::Array2;
+    use pywr_core::test_utils::ExpectedOutputs;
     use pywr_core::{metric::MetricF64, recorders::AssertionRecorder, test_utils::run_all_solvers};
+    use tempfile::TempDir;
 
     fn model_str() -> &'static str {
         include_str!("../test_models/piecewise_link1.json")
+    }
+
+    fn pwl_node_outputs_str() -> &'static str {
+        include_str!("../test_models/piecewise-link1-nodes.csv")
+    }
+
+    fn pwl_edges_outputs_str() -> &'static str {
+        include_str!("../test_models/piecewise-link1-edges.csv")
     }
 
     #[test]
     fn test_model_run() {
         let data = model_str();
         let schema: PywrModel = serde_json::from_str(data).unwrap();
-        let mut model = schema.build_model(None, None).unwrap();
+        let temp_dir = TempDir::new().unwrap();
+
+        let mut model = schema.build_model(None, Some(temp_dir.path())).unwrap();
 
         let network = model.network_mut();
         assert_eq!(network.nodes().len(), 5);
         assert_eq!(network.edges().len(), 6);
 
-        // TODO put this assertion data in the test model file.
         let idx = network.get_node_by_name("link1", Some("step-00")).unwrap().index();
         let expected = Array2::from_elem((366, 1), 1.0);
         let recorder = AssertionRecorder::new("link1-s0-flow", MetricF64::NodeOutFlow(idx), expected, None, None);
@@ -235,7 +246,18 @@ mod tests {
         let recorder = AssertionRecorder::new("link1-s0-flow", MetricF64::NodeOutFlow(idx), expected, None, None);
         network.add_recorder(Box::new(recorder)).unwrap();
 
+        let expected_outputs = [
+            ExpectedOutputs::new(
+                temp_dir.path().join("piecewise-link1-nodes.csv"),
+                pwl_node_outputs_str(),
+            ),
+            ExpectedOutputs::new(
+                temp_dir.path().join("piecewise-link1-edges.csv"),
+                pwl_edges_outputs_str(),
+            ),
+        ];
+
         // Test all solvers
-        run_all_solvers(&model, &[], &[]);
+        run_all_solvers(&model, &[], &expected_outputs);
     }
 }
