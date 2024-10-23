@@ -81,6 +81,7 @@ pub enum MetricF64 {
     NodeInFlow(NodeIndex),
     NodeOutFlow(NodeIndex),
     NodeVolume(NodeIndex),
+    NodeMaxVolume(NodeIndex),
     AggregatedNodeInFlow(AggregatedNodeIndex),
     AggregatedNodeOutFlow(AggregatedNodeIndex),
     AggregatedNodeVolume(AggregatedStorageNodeIndex),
@@ -103,6 +104,7 @@ impl MetricF64 {
             MetricF64::NodeInFlow(idx) => Ok(state.get_network_state().get_node_in_flow(idx)?),
             MetricF64::NodeOutFlow(idx) => Ok(state.get_network_state().get_node_out_flow(idx)?),
             MetricF64::NodeVolume(idx) => Ok(state.get_network_state().get_node_volume(idx)?),
+            MetricF64::NodeMaxVolume(idx) => Ok(model.get_node(idx)?.get_current_max_volume(state)?),
             MetricF64::AggregatedNodeInFlow(idx) => {
                 let node = model.get_aggregated_node(idx)?;
                 node.iter_nodes()

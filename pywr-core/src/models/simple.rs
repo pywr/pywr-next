@@ -53,7 +53,7 @@ impl Model {
         &mut self.network
     }
 
-    /// Check whether a solver [`S`] has the required features to run this model.
+    /// Check whether a solver `S` has the required features to run this model.
     pub fn check_solver_features<S>(&self) -> bool
     where
         S: Solver,
@@ -61,7 +61,7 @@ impl Model {
         self.network.check_solver_features::<S>()
     }
 
-    /// Check whether a solver [`S`] has the required features to run this model.
+    /// Check whether a solver `S` has the required features to run this model.
     pub fn check_multi_scenario_solver_features<S>(&self) -> bool
     where
         S: MultiStateSolver,
