@@ -1317,7 +1317,7 @@ impl Network {
         let vs_node = self.virtual_storage_nodes.get(&vs_node_index)?;
 
         // Link the virtual storage node to the nodes it is including
-        for node_idx in vs_node.nodes.iter() {
+        for node_idx in vs_node.nodes() {
             let node = self.nodes.get_mut(node_idx)?;
             node.add_virtual_storage(vs_node_index)?;
         }
