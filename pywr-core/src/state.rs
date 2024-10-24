@@ -567,25 +567,23 @@ impl NetworkState {
             .iter_mut()
             .zip(model.virtual_storage_nodes().iter())
         {
-            if let Some(node_factors) = node.get_nodes_with_factors() {
-                let flow = node_factors
-                    .iter()
-                    .map(|(idx, factor)| match self.node_states.get(*idx.deref()) {
-                        None => Err(PywrError::NodeIndexNotFound),
-                        Some(s) => {
-                            let node = model.nodes().get(idx)?;
-                            match node {
-                                Node::Input(_) => Ok(factor * s.get_out_flow()),
-                                Node::Output(_) => Ok(factor * s.get_in_flow()),
-                                Node::Link(_) => Ok(factor * s.get_in_flow()),
-                                Node::Storage(_) => panic!("Storage node not supported on virtual storage."),
-                            }
+            let flow = node
+                .iter_nodes_with_factors()
+                .map(|(idx, factor)| match self.node_states.get(*idx.deref()) {
+                    None => Err(PywrError::NodeIndexNotFound),
+                    Some(s) => {
+                        let node = model.nodes().get(idx)?;
+                        match node {
+                            Node::Input(_) => Ok(factor * s.get_out_flow()),
+                            Node::Output(_) => Ok(factor * s.get_in_flow()),
+                            Node::Link(_) => Ok(factor * s.get_in_flow()),
+                            Node::Storage(_) => panic!("Storage node not supported on virtual storage."),
                         }
-                    })
-                    .sum::<Result<f64, _>>()?;
+                    }
+                })
+                .sum::<Result<f64, _>>()?;
 
-                state.add_out_flow(flow, timestep);
-            }
+            state.add_out_flow(flow, timestep);
         }
 
         Ok(())
