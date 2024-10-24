@@ -929,7 +929,7 @@ where
                         virtual_storage.full_name()
                     );
                 }
-                let node = network.nodes().get(&node_index).expect("Node index not found!");
+                let node = network.nodes().get(node_index).expect("Node index not found!");
                 self.add_node(node, -factor, &mut row);
             }
             let row_id = self.builder.add_variable_row(row);
