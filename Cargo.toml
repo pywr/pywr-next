@@ -31,12 +31,13 @@ default-members = [
 debug = 0
 
 [profile.release]
-debug = 0 # Set this to 1 or 2 to get more useful backtraces in debugger.
 opt-level = 3
 # lto = true
 # strip = true
-# Turn this on for profiling
-# debug = true
+
+[profile.profiling]
+inherits = "release"
+debug = true
 
 
 [workspace.dependencies]
