@@ -263,7 +263,7 @@ impl VirtualStorage {
         &self.nodes
     }
 
-    pub fn iter_nodes_with_factors(&self) -> impl Iterator<Item = (&NodeIndex, f64)> + use<'_> {
+    pub fn iter_nodes_with_factors(&self) -> impl Iterator<Item = (&NodeIndex, f64)> + '_ {
         self.nodes.iter().zip(self.factors.iter()).map(|(n, f)| (n, *f))
     }
 
