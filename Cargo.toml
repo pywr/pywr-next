@@ -43,17 +43,19 @@ debug = true
 [workspace.dependencies]
 serde = { version = "1", features = ["derive", ] }
 serde_json = "1.0"
-thiserror = "1.0.25"
-num = "0.4.0"
-float-cmp = "0.10.0"
+thiserror = "1.0"
+num = "0.4"
+float-cmp = "0.10"
 ndarray = "0.15"
-polars = { version = "0.41.2", features = ["lazy", "rows", "ndarray"] }
+polars = { version = "0.41", features = ["lazy", "rows", "ndarray"] }
 pyo3-polars = "0.15"
 pyo3 = { version = "0.21", default-features = false }
 pyo3-log = "0.11"
 tracing = { version = "0.1", features = ["log"] }
 csv = "1.1"
-hdf5-metno = { version = "0.9.0", features = ["static", "zlib"] }
+hdf5-metno = { version = "0.9", features = ["static", "zlib"] }
 pywr-v1-schema = "0.15"
-chrono = { version = "0.4.34", features = ["serde"] }
-schemars = { version = "0.8.16", features = ["chrono"] }
+chrono = { version = "0.4", features = ["serde"] }
+schemars = { version = "0.8", features = ["chrono"] }
+rand = "0.8"
+rand_chacha = "0.3"

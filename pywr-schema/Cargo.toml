@@ -14,7 +14,7 @@ categories = ["science", "simulation"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-svgbobdoc = { version = "0.3.0", features = ["enable"] }
+svgbobdoc = { git = "https://github.com/jetuk/svgbobdoc.git", branch = "syn-v2", features = ["enable"] }
 polars = { workspace = true, features = ["csv", "diff", "dtype-datetime", "dtype-date", "dynamic_group_by"], optional = true }
 pyo3 = { workspace = true, optional = true }
 pyo3-polars = { workspace = true, optional = true }
@@ -36,7 +36,7 @@ chrono = { workspace = true }
 pywr-schema-macros = { path = "../pywr-schema-macros" }
 
 [dev-dependencies]
-tempfile = "3.3.0"
+tempfile = "3.13"
 
 [features]
 # Core feature requires additional dependencies
