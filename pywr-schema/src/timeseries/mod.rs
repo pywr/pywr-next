@@ -1,10 +1,10 @@
 #[cfg(feature = "core")]
 mod align_and_resample;
-
 mod pandas;
 mod polars_dataset;
 
-use crate::parameters::{ParameterMeta, TimeseriesV1Data, TimeseriesV1Source};
+use crate::parameters::ParameterMeta;
+use crate::v1::{ConversionData, IntoV1, TryFromV1};
 use crate::visit::VisitPaths;
 use crate::ConversionError;
 #[cfg(feature = "core")]
@@ -21,7 +21,7 @@ use pywr_core::{
     parameters::{Array1Parameter, Array2Parameter, ParameterIndex, ParameterName},
     PywrError,
 };
-use pywr_v1_schema::tables::TableVec;
+use pywr_v1_schema::parameters::DataFrameParameter as DataFrameParameterV1;
 use schemars::JsonSchema;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -60,7 +60,7 @@ pub enum TimeseriesError {
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
 #[serde(tag = "type")]
-enum TimeseriesProvider {
+pub enum TimeseriesProvider {
     Pandas(PandasDataset),
     Polars(PolarsDataset),
 }
@@ -68,8 +68,8 @@ enum TimeseriesProvider {
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Timeseries {
-    meta: ParameterMeta,
-    provider: TimeseriesProvider,
+    pub meta: ParameterMeta,
+    pub provider: TimeseriesProvider,
 }
 
 impl Timeseries {
@@ -229,70 +229,154 @@ impl LoadedTimeseriesCollection {
 /// Convert timeseries inputs to this schema.
 ///
 /// The conversions
-pub fn convert_from_v1_data(
-    df_data: Vec<TimeseriesV1Data>,
-    v1_tables: &Option<TableVec>,
-    errors: &mut Vec<ConversionError>,
-) -> Vec<Timeseries> {
-    let mut ts = HashMap::new();
-    for data in df_data.into_iter() {
-        match data.source {
-            TimeseriesV1Source::Table(name) => {
-                let tables = v1_tables.as_ref().unwrap();
-                let table = tables.iter().find(|t| t.name == *name).unwrap();
-                let name = table.name.clone();
-                if ts.contains_key(&name) {
-                    continue;
-                }
+// pub fn __convert_from_v1_data(
+//     df_data: Vec<TimeseriesV1Data>,
+//     v1_tables: &Option<TableVec>,
+//     errors: &mut Vec<ConversionError>,
+// ) -> Vec<Timeseries> {
+//     let mut ts = HashMap::new();
+//     for data in df_data.into_iter() {
+//         match data.source {
+//             TimeseriesV1Source::Table(name) => {
+//                 let tables = v1_tables.as_ref().unwrap();
+//                 let table = tables.iter().find(|t| t.name == *name).unwrap();
+//                 let name = table.name.clone();
+//                 if ts.contains_key(&name) {
+//                     continue;
+//                 }
+//
+//                 let time_col = None;
+//
+//                 let provider = PandasDataset {
+//                     time_col,
+//                     url: table.url.clone(),
+//                     kwargs: Some(data.pandas_kwargs),
+//                 };
+//
+//                 ts.insert(
+//                     name.clone(),
+//                     Timeseries {
+//                         meta: ParameterMeta { name, comment: None },
+//                         provider: TimeseriesProvider::Pandas(provider),
+//                     },
+//                 );
+//             }
+//             TimeseriesV1Source::Url(url) => {
+//                 let name = match data.name {
+//                     Some(name) => name,
+//                     None => {
+//                         errors.push(ConversionError::MissingTimeseriesName(
+//                             url.to_str().unwrap_or("").to_string(),
+//                         ));
+//                         continue;
+//                     }
+//                 };
+//                 if ts.contains_key(&name) {
+//                     continue;
+//                 }
+//
+//                 let provider = PandasDataset {
+//                     time_col: data.time_col,
+//                     url,
+//                     kwargs: Some(data.pandas_kwargs),
+//                 };
+//
+//                 ts.insert(
+//                     name.clone(),
+//                     Timeseries {
+//                         meta: ParameterMeta { name, comment: None },
+//                         provider: TimeseriesProvider::Pandas(provider),
+//                     },
+//                 );
+//             }
+//         }
+//     }
+//     ts.into_values().collect::<Vec<Timeseries>>()
+// }
 
-                let time_col = None;
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, strum_macros::Display)]
+#[serde(tag = "type", content = "name")]
+pub enum TimeseriesColumns {
+    Scenario(String),
+    Column(String),
+}
 
-                let provider = PandasDataset {
-                    time_col,
-                    url: table.url.clone(),
-                    kwargs: Some(data.pandas_kwargs),
-                };
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct TimeseriesReference {
+    pub name: String,
+    pub columns: Option<TimeseriesColumns>,
+}
 
-                ts.insert(
-                    name.clone(),
-                    Timeseries {
-                        meta: ParameterMeta { name, comment: None },
-                        provider: TimeseriesProvider::Pandas(provider),
-                    },
-                );
-            }
-            TimeseriesV1Source::Url(url) => {
-                let name = match data.name {
-                    Some(name) => name,
-                    None => {
-                        errors.push(ConversionError::MissingTimeseriesName(
-                            url.to_str().unwrap_or("").to_string(),
-                        ));
-                        continue;
-                    }
-                };
-                if ts.contains_key(&name) {
-                    continue;
-                }
-
-                let provider = PandasDataset {
-                    time_col: data.time_col,
-                    url,
-                    kwargs: Some(data.pandas_kwargs),
-                };
-
-                ts.insert(
-                    name.clone(),
-                    Timeseries {
-                        meta: ParameterMeta { name, comment: None },
-
-                        provider: TimeseriesProvider::Pandas(provider),
-                    },
-                );
-            }
-        }
+impl TimeseriesReference {
+    pub fn new(name: String, columns: Option<TimeseriesColumns>) -> Self {
+        Self { name, columns }
     }
-    ts.into_values().collect::<Vec<Timeseries>>()
+
+    pub fn name(&self) -> &str {
+        self.name.as_str()
+    }
+}
+
+impl TryFromV1<DataFrameParameterV1> for TimeseriesReference {
+    type Error = ConversionError;
+
+    fn try_from_v1(
+        v1: DataFrameParameterV1,
+        parent_node: Option<&str>,
+        conversion_data: &mut ConversionData,
+    ) -> Result<Self, Self::Error> {
+        let meta: ParameterMeta = v1.meta.into_v2(parent_node, conversion_data);
+
+        if let Some(url) = v1.url {
+            // If there is a URL then this entry must be converted into a timeseries
+            let mut pandas_kwargs = v1.pandas_kwargs;
+
+            let time_col = match pandas_kwargs.remove("index_col") {
+                Some(v) => v.as_str().map(|s| s.to_string()),
+                None => None,
+            };
+
+            let provider = PandasDataset {
+                time_col,
+                url,
+                kwargs: Some(pandas_kwargs),
+            };
+
+            // The timeseries data that is extracted
+            let timeseries = Timeseries {
+                meta: meta.clone(),
+                provider: TimeseriesProvider::Pandas(provider),
+            };
+
+            // Only add if the timeseries does not already exist
+            if !conversion_data.timeseries.iter().any(|ts| ts.meta.name == meta.name) {
+                conversion_data.timeseries.push(timeseries);
+            }
+        } else if v1.table.is_some() {
+            // Nothing to do here; The table will be converted separately
+        } else {
+            return Err(ConversionError::MissingAttribute {
+                attrs: vec!["url".to_string(), "table".to_string()],
+                name: meta.name,
+            });
+        };
+
+        // Create the reference to the timeseries data
+        let columns = match (v1.column, v1.scenario) {
+            (Some(col), None) => Some(TimeseriesColumns::Column(col)),
+            (None, Some(scenario)) => Some(TimeseriesColumns::Scenario(scenario)),
+            (Some(_), Some(_)) => return Err(ConversionError::AmbiguousColumnAndScenario(meta.name)),
+            (None, None) => None,
+        };
+        // The reference that is returned
+        let reference = TimeseriesReference {
+            name: meta.name,
+            columns,
+        };
+
+        Ok(reference)
+    }
 }
 
 #[cfg(test)]

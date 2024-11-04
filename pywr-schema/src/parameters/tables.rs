@@ -3,7 +3,8 @@ use crate::error::ConversionError;
 use crate::error::SchemaError;
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
-use crate::parameters::{IntoV2Parameter, ParameterMeta, TryFromV1Parameter};
+use crate::parameters::{ConversionData, ParameterMeta};
+use crate::v1::{IntoV1, TryFromV1};
 #[cfg(feature = "core")]
 use ndarray::s;
 #[cfg(feature = "core")]
@@ -87,16 +88,16 @@ impl TablesArrayParameter {
     }
 }
 
-impl TryFromV1Parameter<TablesArrayParameterV1> for TablesArrayParameter {
+impl TryFromV1<TablesArrayParameterV1> for TablesArrayParameter {
     type Error = ConversionError;
 
-    fn try_from_v1_parameter(
+    fn try_from_v1(
         v1: TablesArrayParameterV1,
         parent_node: Option<&str>,
-        unnamed_count: &mut usize,
+        conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
         let p = Self {
-            meta: v1.meta.into_v2_parameter(parent_node, unnamed_count),
+            meta: v1.meta.into_v2(parent_node, conversion_data),
             node: v1.node,
             wh: v1.wh,
             scenario: v1.scenario,

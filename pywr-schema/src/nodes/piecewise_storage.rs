@@ -98,39 +98,11 @@ impl PiecewiseStorageNode {
         Ok(indices)
     }
 
-    pub fn add_to_model(&self, network: &mut pywr_core::network::Network, args: &LoadArgs) -> Result<(), SchemaError> {
-        // These are the min and max volume of the overall node
-        let max_volume: SimpleMetricF64 = self.max_volume.load(network, args)?.try_into()?;
-
+    pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
         let mut store_node_indices = Vec::new();
 
         // create a storage node for each step
-        for (i, step) in self.steps.iter().enumerate() {
-            // The volume of this step is the proportion between the last control curve
-            // (or zero if first) and this control curve.
-            let lower = if i > 0 {
-                Some(self.steps[i - 1].control_curve.load(network, args)?.try_into()?)
-            } else {
-                None
-            };
-
-            let upper = step.control_curve.load(network, args)?;
-
-            let max_volume_parameter = VolumeBetweenControlCurvesParameter::new(
-                // Node's name is the parent identifier
-                ParameterName::new(
-                    format!("{}-max-volume", Self::step_sub_name(i).unwrap()).as_str(),
-                    Some(&self.meta.name),
-                ),
-                max_volume.clone(),
-                Some(upper.try_into()?),
-                lower,
-            );
-            let max_volume_parameter_idx = network.add_simple_parameter(Box::new(max_volume_parameter))?;
-            let max_volume = Some(max_volume_parameter_idx.try_into()?);
-
-            // Each store has min volume of zero
-            let min_volume = None;
+        for (i, _step) in self.steps.iter().enumerate() {
             // Assume each store is full to start with
             let initial_volume = StorageInitialVolume::Proportional(1.0);
 
@@ -138,8 +110,8 @@ impl PiecewiseStorageNode {
                 self.meta.name.as_str(),
                 Self::step_sub_name(i).as_deref(),
                 initial_volume,
-                min_volume,
-                max_volume,
+                None,
+                None,
             )?;
 
             if let Some(prev_idx) = store_node_indices.last() {
@@ -151,28 +123,6 @@ impl PiecewiseStorageNode {
             store_node_indices.push(idx);
         }
 
-        // The volume of this store the remain proportion above the last control curve
-        let lower = match self.steps.last() {
-            Some(step) => Some(step.control_curve.load(network, args)?.try_into()?),
-            None => None,
-        };
-
-        let upper = None;
-
-        let max_volume_parameter = VolumeBetweenControlCurvesParameter::new(
-            ParameterName::new(
-                format!("{}-max-volume", Self::step_sub_name(self.steps.len()).unwrap()).as_str(),
-                Some(&self.meta.name),
-            ),
-            max_volume.clone(),
-            upper,
-            lower,
-        );
-        let max_volume_parameter_idx = network.add_simple_parameter(Box::new(max_volume_parameter))?;
-        let max_volume = Some(max_volume_parameter_idx.try_into()?);
-
-        // Each store has min volume of zero
-        let min_volume = None;
         // Assume each store is full to start with
         let initial_volume = StorageInitialVolume::Proportional(1.0);
 
@@ -181,8 +131,8 @@ impl PiecewiseStorageNode {
             self.meta.name.as_str(),
             Self::step_sub_name(self.steps.len()).as_deref(),
             initial_volume,
-            min_volume,
-            max_volume,
+            None,
+            None,
         )?;
 
         if let Some(prev_idx) = store_node_indices.last() {
@@ -204,14 +154,66 @@ impl PiecewiseStorageNode {
         network: &mut pywr_core::network::Network,
         args: &LoadArgs,
     ) -> Result<(), SchemaError> {
+        // These are the min and max volume of the overall node
+        let total_volume: SimpleMetricF64 = self.max_volume.load(network, args)?.try_into()?;
+
         for (i, step) in self.steps.iter().enumerate() {
             let sub_name = Self::step_sub_name(i);
+
+            // The volume of this step is the proportion between the last control curve
+            // (or zero if first) and this control curve.
+            let lower = if i > 0 {
+                Some(self.steps[i - 1].control_curve.load(network, args)?.try_into()?)
+            } else {
+                None
+            };
+
+            let upper = step.control_curve.load(network, args)?;
+
+            let max_volume_parameter = VolumeBetweenControlCurvesParameter::new(
+                // Node's name is the parent identifier
+                ParameterName::new(
+                    format!("{}-max-volume", Self::step_sub_name(i).unwrap()).as_str(),
+                    Some(&self.meta.name),
+                ),
+                total_volume.clone(),
+                Some(upper.try_into()?),
+                lower,
+            );
+            let max_volume_parameter_idx = network.add_simple_parameter(Box::new(max_volume_parameter))?;
+            let max_volume = Some(max_volume_parameter_idx.try_into()?);
+            network.set_node_max_volume(self.meta.name.as_str(), sub_name.as_deref(), max_volume)?;
 
             if let Some(cost) = &step.cost {
                 let value = cost.load(network, args)?;
                 network.set_node_cost(self.meta.name.as_str(), sub_name.as_deref(), value.into())?;
             }
         }
+
+        // The volume of this store the remain proportion above the last control curve
+        let lower = match self.steps.last() {
+            Some(step) => Some(step.control_curve.load(network, args)?.try_into()?),
+            None => None,
+        };
+
+        let upper = None;
+
+        let max_volume_parameter = VolumeBetweenControlCurvesParameter::new(
+            ParameterName::new(
+                format!("{}-max-volume", Self::step_sub_name(self.steps.len()).unwrap()).as_str(),
+                Some(&self.meta.name),
+            ),
+            total_volume.clone(),
+            upper,
+            lower,
+        );
+        let max_volume_parameter_idx = network.add_simple_parameter(Box::new(max_volume_parameter))?;
+        let max_volume = Some(max_volume_parameter_idx.try_into()?);
+        network.set_node_max_volume(
+            self.meta.name.as_str(),
+            Self::step_sub_name(self.steps.len()).as_deref(),
+            max_volume,
+        )?;
 
         Ok(())
     }

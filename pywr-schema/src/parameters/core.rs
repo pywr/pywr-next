@@ -4,7 +4,8 @@ use crate::error::SchemaError;
 use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
-use crate::parameters::{ConstantValue, IntoV2Parameter, ParameterMeta, TryFromV1Parameter, TryIntoV2Parameter};
+use crate::parameters::{ConstantValue, ConversionData, ParameterMeta};
+use crate::v1::{IntoV1, TryFromV1, TryIntoV2};
 #[cfg(feature = "core")]
 use pywr_core::parameters::ParameterIndex;
 use pywr_schema_macros::PywrVisitAll;
@@ -176,13 +177,13 @@ impl ConstantParameter {
     }
 }
 
-impl TryFromV1Parameter<ConstantParameterV1> for ConstantParameter {
+impl TryFromV1<ConstantParameterV1> for ConstantParameter {
     type Error = ConversionError;
 
-    fn try_from_v1_parameter(
+    fn try_from_v1(
         v1: ConstantParameterV1,
         parent_node: Option<&str>,
-        unnamed_count: &mut usize,
+        conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
         let value = if let Some(v) = v1.value {
             ConstantValue::Literal(v)
@@ -193,7 +194,7 @@ impl TryFromV1Parameter<ConstantParameterV1> for ConstantParameter {
         };
 
         let p = Self {
-            meta: v1.meta.into_v2_parameter(parent_node, unnamed_count),
+            meta: v1.meta.into_v2(parent_node, conversion_data),
             value,
             variable: None, // TODO convert variable settings
         };
@@ -224,17 +225,17 @@ impl MaxParameter {
     }
 }
 
-impl TryFromV1Parameter<MaxParameterV1> for MaxParameter {
+impl TryFromV1<MaxParameterV1> for MaxParameter {
     type Error = ConversionError;
 
-    fn try_from_v1_parameter(
+    fn try_from_v1(
         v1: MaxParameterV1,
         parent_node: Option<&str>,
-        unnamed_count: &mut usize,
+        conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.into_v2_parameter(parent_node, unnamed_count);
+        let meta: ParameterMeta = v1.meta.into_v2(parent_node, conversion_data);
 
-        let parameter = v1.parameter.try_into_v2_parameter(Some(&meta.name), unnamed_count)?;
+        let parameter = v1.parameter.try_into_v2(parent_node, conversion_data)?;
 
         let p = Self {
             meta,
@@ -280,18 +281,18 @@ impl DivisionParameter {
     }
 }
 
-impl TryFromV1Parameter<DivisionParameterV1> for DivisionParameter {
+impl TryFromV1<DivisionParameterV1> for DivisionParameter {
     type Error = ConversionError;
 
-    fn try_from_v1_parameter(
+    fn try_from_v1(
         v1: DivisionParameterV1,
         parent_node: Option<&str>,
-        unnamed_count: &mut usize,
+        conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.into_v2_parameter(parent_node, unnamed_count);
+        let meta: ParameterMeta = v1.meta.into_v2(parent_node, conversion_data);
 
-        let numerator = v1.numerator.try_into_v2_parameter(Some(&meta.name), unnamed_count)?;
-        let denominator = v1.denominator.try_into_v2_parameter(Some(&meta.name), unnamed_count)?;
+        let numerator = v1.numerator.try_into_v2(parent_node, conversion_data)?;
+        let denominator = v1.denominator.try_into_v2(parent_node, conversion_data)?;
 
         let p = Self {
             meta,
@@ -337,17 +338,17 @@ impl MinParameter {
     }
 }
 
-impl TryFromV1Parameter<MinParameterV1> for MinParameter {
+impl TryFromV1<MinParameterV1> for MinParameter {
     type Error = ConversionError;
 
-    fn try_from_v1_parameter(
+    fn try_from_v1(
         v1: MinParameterV1,
         parent_node: Option<&str>,
-        unnamed_count: &mut usize,
+        conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.into_v2_parameter(parent_node, unnamed_count);
+        let meta: ParameterMeta = v1.meta.into_v2(parent_node, conversion_data);
 
-        let parameter = v1.parameter.try_into_v2_parameter(Some(&meta.name), unnamed_count)?;
+        let parameter = v1.parameter.try_into_v2(parent_node, conversion_data)?;
 
         let p = Self {
             meta,
@@ -379,17 +380,17 @@ impl NegativeParameter {
     }
 }
 
-impl TryFromV1Parameter<NegativeParameterV1> for NegativeParameter {
+impl TryFromV1<NegativeParameterV1> for NegativeParameter {
     type Error = ConversionError;
 
-    fn try_from_v1_parameter(
+    fn try_from_v1(
         v1: NegativeParameterV1,
         parent_node: Option<&str>,
-        unnamed_count: &mut usize,
+        conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.into_v2_parameter(parent_node, unnamed_count);
+        let meta: ParameterMeta = v1.meta.into_v2(parent_node, conversion_data);
 
-        let parameter = v1.parameter.try_into_v2_parameter(Some(&meta.name), unnamed_count)?;
+        let parameter = v1.parameter.try_into_v2(parent_node, conversion_data)?;
 
         let p = Self { meta, parameter };
         Ok(p)
@@ -433,16 +434,16 @@ impl NegativeMaxParameter {
     }
 }
 
-impl TryFromV1Parameter<NegativeMaxParameterV1> for NegativeMaxParameter {
+impl TryFromV1<NegativeMaxParameterV1> for NegativeMaxParameter {
     type Error = ConversionError;
 
-    fn try_from_v1_parameter(
+    fn try_from_v1(
         v1: NegativeMaxParameterV1,
         parent_node: Option<&str>,
-        unnamed_count: &mut usize,
+        conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.into_v2_parameter(parent_node, unnamed_count);
-        let parameter = v1.parameter.try_into_v2_parameter(Some(&meta.name), unnamed_count)?;
+        let meta: ParameterMeta = v1.meta.into_v2(parent_node, conversion_data);
+        let parameter = v1.parameter.try_into_v2(parent_node, conversion_data)?;
         let p = Self {
             meta,
             metric: parameter,
@@ -489,16 +490,16 @@ impl NegativeMinParameter {
     }
 }
 
-impl TryFromV1Parameter<NegativeMinParameterV1> for NegativeMinParameter {
+impl TryFromV1<NegativeMinParameterV1> for NegativeMinParameter {
     type Error = ConversionError;
 
-    fn try_from_v1_parameter(
+    fn try_from_v1(
         v1: NegativeMinParameterV1,
         parent_node: Option<&str>,
-        unnamed_count: &mut usize,
+        conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.into_v2_parameter(parent_node, unnamed_count);
-        let parameter = v1.parameter.try_into_v2_parameter(Some(&meta.name), unnamed_count)?;
+        let meta: ParameterMeta = v1.meta.into_v2(parent_node, conversion_data);
+        let parameter = v1.parameter.try_into_v2(parent_node, conversion_data)?;
         let p = Self {
             meta,
             metric: parameter,

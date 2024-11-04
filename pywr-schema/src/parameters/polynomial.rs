@@ -5,7 +5,8 @@ use crate::metric::{Metric, NodeReference};
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::nodes::NodeAttribute;
-use crate::parameters::{IntoV2Parameter, ParameterMeta, TryFromV1Parameter};
+use crate::parameters::{ConversionData, ParameterMeta};
+use crate::v1::{IntoV1, TryFromV1};
 #[cfg(feature = "core")]
 use pywr_core::parameters::ParameterIndex;
 use pywr_schema_macros::PywrVisitAll;
@@ -42,13 +43,13 @@ impl Polynomial1DParameter {
     }
 }
 
-impl TryFromV1Parameter<Polynomial1DParameterV1> for Polynomial1DParameter {
+impl TryFromV1<Polynomial1DParameterV1> for Polynomial1DParameter {
     type Error = ConversionError;
 
-    fn try_from_v1_parameter(
+    fn try_from_v1(
         v1: Polynomial1DParameterV1,
         parent_node: Option<&str>,
-        unnamed_count: &mut usize,
+        conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
         let attribute = match v1.use_proportional_volume.unwrap_or(true) {
             true => Some(NodeAttribute::ProportionalVolume),
@@ -61,7 +62,7 @@ impl TryFromV1Parameter<Polynomial1DParameterV1> for Polynomial1DParameter {
         });
 
         let p = Self {
-            meta: v1.meta.into_v2_parameter(parent_node, unnamed_count),
+            meta: v1.meta.into_v2(parent_node, conversion_data),
             metric,
             coefficients: v1.coefficients,
             scale: v1.scale,

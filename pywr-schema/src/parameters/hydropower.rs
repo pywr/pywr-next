@@ -1,7 +1,8 @@
 use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
-use crate::parameters::{IntoV2Parameter, ParameterMeta, TryFromV1Parameter, TryIntoV2Parameter};
+use crate::parameters::{ConversionData, ParameterMeta};
+use crate::v1::{IntoV1, TryFromV1, TryIntoV2};
 use crate::ConversionError;
 #[cfg(feature = "core")]
 use crate::SchemaError;
@@ -109,27 +110,27 @@ impl HydropowerTargetParameter {
     }
 }
 
-impl TryFromV1Parameter<HydropowerTargetParameterV1> for HydropowerTargetParameter {
+impl TryFromV1<HydropowerTargetParameterV1> for HydropowerTargetParameter {
     type Error = ConversionError;
 
-    fn try_from_v1_parameter(
+    fn try_from_v1(
         v1: HydropowerTargetParameterV1,
         parent_node: Option<&str>,
-        unnamed_count: &mut usize,
+        conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.into_v2_parameter(parent_node, unnamed_count);
-        let target = v1.target.try_into_v2_parameter(Some(&meta.name), unnamed_count)?;
+        let meta: ParameterMeta = v1.meta.into_v2(parent_node, conversion_data);
+        let target = v1.target.try_into_v2(parent_node, conversion_data)?;
         let water_elevation = v1
             .water_elevation_parameter
-            .map(|f| f.try_into_v2_parameter(Some(&meta.name), unnamed_count))
+            .map(|f| f.try_into_v2(parent_node, conversion_data))
             .transpose()?;
         let min_flow = v1
             .min_flow
-            .map(|f| f.try_into_v2_parameter(Some(&meta.name), unnamed_count))
+            .map(|f| f.try_into_v2(parent_node, conversion_data))
             .transpose()?;
         let max_flow = v1
             .max_flow
-            .map(|f| f.try_into_v2_parameter(Some(&meta.name), unnamed_count))
+            .map(|f| f.try_into_v2(parent_node, conversion_data))
             .transpose()?;
 
         Ok(Self {
