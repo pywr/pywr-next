@@ -23,6 +23,7 @@ use pywr_core::{
 };
 use pywr_v1_schema::parameters::DataFrameParameter as DataFrameParameterV1;
 use schemars::JsonSchema;
+#[cfg(feature = "core")]
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use thiserror::Error;

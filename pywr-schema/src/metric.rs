@@ -10,7 +10,9 @@ use crate::nodes::NodeType;
 use crate::parameters::ParameterOrTimeseriesRef;
 #[cfg(feature = "core")]
 use crate::parameters::ParameterType;
-use crate::timeseries::{TimeseriesColumns, TimeseriesReference};
+#[cfg(feature = "core")]
+use crate::timeseries::TimeseriesColumns;
+use crate::timeseries::TimeseriesReference;
 use crate::v1::{ConversionData, TryFromV1, TryIntoV2};
 use crate::ConversionError;
 #[cfg(feature = "core")]
