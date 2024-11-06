@@ -1,7 +1,9 @@
 use crate::error::ConversionError;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
-use crate::nodes::{NodeAttribute, NodeMeta};
+#[cfg(feature = "core")]
+use crate::model::LoadArgs;
+use crate::nodes::{LossFactor, NodeAttribute, NodeMeta};
 #[cfg(feature = "core")]
 use pywr_core::metric::MetricF64;
 use pywr_schema_macros::PywrVisitAll;
@@ -10,18 +12,61 @@ use schemars::JsonSchema;
 
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
+#[doc = svgbobdoc::transform!(
+/// A link node representing a river with an optional proportional loss.
+///
+/// ```svgbob
+///
+///             <RiverNode>.net    D
+///          .-------->L---------->*
+///      U  |
+///     -*--|
+///         !
+///         '-.-.-.-.->O
+///               <RiverNode>.loss
+///
+/// ```
+)]
 pub struct RiverNode {
     pub meta: NodeMeta,
+    /// An optional loss. This internally creates an [`crate::nodes::OutputNode`] and
+    /// [`pywr_core::nodes::Aggregated`] to handle the loss.
+    pub loss_factor: Option<LossFactor>,
 }
 
 impl RiverNode {
     const DEFAULT_ATTRIBUTE: NodeAttribute = NodeAttribute::Outflow;
 
+    /// The sub-name of the output node.
+    fn loss_node_sub_name() -> Option<&'static str> {
+        Some("loss")
+    }
+
+    /// The name of net flow node.
+    fn net_node_sub_name() -> Option<&'static str> {
+        Some("net")
+    }
+
     pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
-        vec![(self.meta.name.as_str(), None)]
+        let mut connectors = vec![(
+            self.meta.name.as_str(),
+            Self::net_node_sub_name().map(|s| s.to_string()),
+        )];
+
+        // add the optional loss link
+        if self.loss_factor.is_some() {
+            connectors.push((
+                self.meta.name.as_str(),
+                Self::loss_node_sub_name().map(|s| s.to_string()),
+            ))
+        }
+        connectors
     }
     pub fn output_connectors(&self) -> Vec<(&str, Option<String>)> {
-        vec![(self.meta.name.as_str(), None)]
+        vec![(
+            self.meta.name.as_str(),
+            Self::net_node_sub_name().map(|s| s.to_string()),
+        )]
     }
 
     pub fn default_metric(&self) -> NodeAttribute {
@@ -31,17 +76,54 @@ impl RiverNode {
 
 #[cfg(feature = "core")]
 impl RiverNode {
+    /// The name of the aggregated node to handle the proportional loss.
+    fn agg_sub_name() -> Option<&'static str> {
+        Some("aggregated_node")
+    }
+
     pub fn node_indices_for_constraints(
         &self,
         network: &pywr_core::network::Network,
     ) -> Result<Vec<pywr_core::node::NodeIndex>, SchemaError> {
-        let idx = network.get_node_index_by_name(self.meta.name.as_str(), None)?;
+        let idx = network.get_node_index_by_name(self.meta.name.as_str(), Self::net_node_sub_name())?;
         Ok(vec![idx])
     }
+
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
-        network.add_link_node(self.meta.name.as_str(), None)?;
+        let river_idx = network.add_link_node(self.meta.name.as_str(), Self::net_node_sub_name())?;
+
+        // add nodes and edge
+        if self.loss_factor.is_some() {
+            let loss_idx = network.add_output_node(self.meta.name.as_str(), Self::loss_node_sub_name())?;
+            // The aggregated node factors to handle the loss
+            network.add_aggregated_node(
+                self.meta.name.as_str(),
+                Self::agg_sub_name(),
+                &[vec![river_idx], vec![loss_idx]],
+                None,
+            )?;
+        }
+
         Ok(())
     }
+
+    pub fn set_constraints(
+        &self,
+        network: &mut pywr_core::network::Network,
+        args: &LoadArgs,
+    ) -> Result<(), SchemaError> {
+        if let Some(loss_factor) = &self.loss_factor {
+            let factors = loss_factor.load(network, args)?;
+            if factors.is_none() {
+                // Loaded a constant zero factor; ensure that the loss node has zero flow
+                network.set_node_max_flow(self.meta.name.as_str(), Self::loss_node_sub_name(), Some(0.0.into()))?;
+            }
+            network.set_aggregated_node_relationship(self.meta.name.as_str(), Self::agg_sub_name(), factors)?;
+        }
+
+        Ok(())
+    }
+
     pub fn create_metric(
         &self,
         network: &pywr_core::network::Network,
@@ -50,11 +132,36 @@ impl RiverNode {
         // Use the default attribute if none is specified
         let attr = attribute.unwrap_or(Self::DEFAULT_ATTRIBUTE);
 
-        let idx = network.get_node_index_by_name(self.meta.name.as_str(), None)?;
-
         let metric = match attr {
-            NodeAttribute::Outflow => MetricF64::NodeOutFlow(idx),
-            NodeAttribute::Inflow => MetricF64::NodeInFlow(idx),
+            NodeAttribute::Inflow => {
+                match network.get_node_index_by_name(self.meta.name.as_str(), Self::loss_node_sub_name()) {
+                    // The total inflow with the loss is the sum of the net and loss node
+                    Ok(loss_idx) => {
+                        let indices = vec![
+                            network.get_node_index_by_name(self.meta.name.as_str(), Self::net_node_sub_name())?,
+                            loss_idx,
+                        ];
+                        MetricF64::MultiNodeInFlow {
+                            indices,
+                            name: self.meta.name.to_string(),
+                        }
+                    }
+                    // Loss is None
+                    Err(_) => MetricF64::NodeInFlow(
+                        network.get_node_index_by_name(self.meta.name.as_str(), Self::net_node_sub_name())?,
+                    ),
+                }
+            }
+            NodeAttribute::Outflow => {
+                let idx = network.get_node_index_by_name(self.meta.name.as_str(), Self::net_node_sub_name())?;
+                MetricF64::NodeOutFlow(idx)
+            }
+            NodeAttribute::Loss => {
+                match network.get_node_index_by_name(self.meta.name.as_str(), Self::loss_node_sub_name()) {
+                    Ok(loss_idx) => MetricF64::NodeInFlow(loss_idx),
+                    Err(_) => 0.0.into(),
+                }
+            }
             _ => {
                 return Err(SchemaError::NodeAttributeNotSupported {
                     ty: "RiverNode".to_string(),
@@ -93,7 +200,55 @@ impl TryFrom<LinkNodeV1> for RiverNode {
             });
         }
 
-        let n = Self { meta };
+        let n = Self {
+            meta,
+            loss_factor: None,
+        };
         Ok(n)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::model::PywrModel;
+    #[cfg(feature = "core")]
+    use pywr_core::test_utils::{run_all_solvers, ExpectedOutputs};
+    #[cfg(feature = "core")]
+    use tempfile::TempDir;
+
+    fn river_loss1_str() -> &'static str {
+        include_str!("../test_models/river_loss1.json")
+    }
+
+    #[cfg(feature = "core")]
+    fn river_loss1_outputs_str() -> &'static str {
+        include_str!("../test_models/river_loss1-expected.csv")
+    }
+
+    #[test]
+    fn test_river_loss1_schema() {
+        let data = river_loss1_str();
+        let schema: PywrModel = serde_json::from_str(data).unwrap();
+
+        assert_eq!(schema.network.nodes.len(), 4);
+        assert_eq!(schema.network.edges.len(), 3);
+    }
+
+    #[test]
+    #[cfg(feature = "core")]
+    fn test_river_loss1_run() {
+        let data = river_loss1_str();
+        let schema: PywrModel = serde_json::from_str(data).unwrap();
+        let temp_dir = TempDir::new().unwrap();
+
+        let model = schema.build_model(None, Some(temp_dir.path())).unwrap();
+        // After model run there should be an output file.
+        let expected_outputs = [ExpectedOutputs::new(
+            temp_dir.path().join("river_loss1.csv"),
+            river_loss1_outputs_str(),
+        )];
+
+        // Test all solvers
+        run_all_solvers(&model, &[], &expected_outputs);
     }
 }
