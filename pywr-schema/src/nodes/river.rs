@@ -48,7 +48,10 @@ impl RiverNode {
     }
 
     pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
-        let mut connectors = vec![(self.meta.name.as_str(), None)];
+        let mut connectors = vec![(
+            self.meta.name.as_str(),
+            Self::net_node_sub_name().map(|s| s.to_string()),
+        )];
 
         // add the optional loss link
         if self.loss_factor.is_some() {
@@ -82,12 +85,12 @@ impl RiverNode {
         &self,
         network: &pywr_core::network::Network,
     ) -> Result<Vec<pywr_core::node::NodeIndex>, SchemaError> {
-        let idx = network.get_node_index_by_name(self.meta.name.as_str(), None)?;
+        let idx = network.get_node_index_by_name(self.meta.name.as_str(), Self::net_node_sub_name())?;
         Ok(vec![idx])
     }
 
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
-        let river_idx = network.add_link_node(self.meta.name.as_str(), None)?;
+        let river_idx = network.add_link_node(self.meta.name.as_str(), Self::net_node_sub_name())?;
 
         // add nodes and edge
         if self.loss_factor.is_some() {
@@ -202,5 +205,50 @@ impl TryFrom<LinkNodeV1> for RiverNode {
             loss_factor: None,
         };
         Ok(n)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::model::PywrModel;
+    #[cfg(feature = "core")]
+    use pywr_core::test_utils::{run_all_solvers, ExpectedOutputs};
+    #[cfg(feature = "core")]
+    use tempfile::TempDir;
+
+    fn river_loss1_str() -> &'static str {
+        include_str!("../test_models/river_loss1.json")
+    }
+
+    #[cfg(feature = "core")]
+    fn river_loss1_outputs_str() -> &'static str {
+        include_str!("../test_models/river_loss1-expected.csv")
+    }
+
+    #[test]
+    fn test_river_loss1_schema() {
+        let data = river_loss1_str();
+        let schema: PywrModel = serde_json::from_str(data).unwrap();
+
+        assert_eq!(schema.network.nodes.len(), 4);
+        assert_eq!(schema.network.edges.len(), 3);
+    }
+
+    #[test]
+    #[cfg(feature = "core")]
+    fn test_river_loss1_run() {
+        let data = river_loss1_str();
+        let schema: PywrModel = serde_json::from_str(data).unwrap();
+        let temp_dir = TempDir::new().unwrap();
+
+        let model = schema.build_model(None, Some(temp_dir.path())).unwrap();
+        // After model run there should be an output file.
+        let expected_outputs = [ExpectedOutputs::new(
+            temp_dir.path().join("river_loss1.csv"),
+            river_loss1_outputs_str(),
+        )];
+
+        // Test all solvers
+        run_all_solvers(&model, &[], &expected_outputs);
     }
 }
