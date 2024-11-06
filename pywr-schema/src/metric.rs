@@ -1,4 +1,5 @@
 use crate::data_tables::TableDataRef;
+use crate::edge::Edge;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
 #[cfg(feature = "core")]
@@ -28,6 +29,7 @@ pub enum Metric {
     Table(TableDataRef),
     /// An attribute of a node.
     Node(NodeReference),
+    Edge(EdgeReference),
     Timeseries(TimeseriesReference),
     Parameter(ParameterReference),
     InlineParameter {
@@ -116,18 +118,20 @@ impl Metric {
                     None => Err(SchemaError::InterNetworkTransferNotFound(name.to_string())),
                 }
             }
+            Self::Edge(edge_ref) => edge_ref.load(network, args),
         }
     }
 
-    fn name(&self) -> Result<&str, SchemaError> {
+    fn name(&self) -> Result<String, SchemaError> {
         match self {
-            Self::Node(node_ref) => Ok(&node_ref.name),
-            Self::Parameter(parameter_ref) => Ok(&parameter_ref.name),
+            Self::Node(node_ref) => Ok(node_ref.name.to_string()),
+            Self::Parameter(parameter_ref) => Ok(parameter_ref.name.clone()),
             Self::Constant { .. } => Err(SchemaError::LiteralConstantOutputNotSupported),
-            Self::Table(table_ref) => Ok(&table_ref.table),
-            Self::Timeseries(ts_ref) => Ok(&ts_ref.name),
-            Self::InlineParameter { definition } => Ok(definition.name()),
-            Self::InterNetworkTransfer { name } => Ok(name),
+            Self::Table(table_ref) => Ok(table_ref.table.clone()),
+            Self::Timeseries(ts_ref) => Ok(ts_ref.name.clone()),
+            Self::InlineParameter { definition } => Ok(definition.name().to_string()),
+            Self::InterNetworkTransfer { name } => Ok(name.clone()),
+            Self::Edge(edge_ref) => Ok(edge_ref.edge.to_string()),
         }
     }
 
@@ -140,6 +144,7 @@ impl Metric {
             Self::Timeseries(_) => "value".to_string(),
             Self::InlineParameter { .. } => "value".to_string(),
             Self::InterNetworkTransfer { .. } => "value".to_string(),
+            Self::Edge { .. } => "Flow".to_string(),
         };
 
         Ok(attribute)
@@ -158,6 +163,7 @@ impl Metric {
             Self::Timeseries(_) => None,
             Self::InlineParameter { definition } => Some(definition.parameter_type().to_string()),
             Self::InterNetworkTransfer { .. } => None,
+            Self::Edge { .. } => None,
         };
 
         Ok(sub_type)
@@ -174,7 +180,7 @@ impl Metric {
         let sub_type = self.sub_type(args)?;
 
         Ok(OutputMetric::new(
-            self.name()?,
+            self.name()?.as_str(),
             &self.attribute(args)?,
             &ty,
             sub_type.as_deref(),
@@ -407,5 +413,20 @@ impl ParameterReference {
             .ok_or_else(|| SchemaError::ParameterNotFound(self.name.clone()))?;
 
         Ok(parameter.parameter_type())
+    }
+}
+
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct EdgeReference {
+    /// The edge referred to by this reference.
+    pub edge: Edge,
+}
+
+#[cfg(feature = "core")]
+impl EdgeReference {
+    pub fn load(&self, network: &mut pywr_core::network::Network, args: &LoadArgs) -> Result<MetricF64, SchemaError> {
+        // This is the associated node in the schema
+        self.edge.create_metric(network, args)
     }
 }

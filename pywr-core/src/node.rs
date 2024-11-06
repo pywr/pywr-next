@@ -418,7 +418,7 @@ impl Node {
         }
     }
 
-    pub fn get_current_min_volume(&self, state: &State) -> Result<f64, PywrError> {
+    pub fn get_min_volume(&self, state: &State) -> Result<f64, PywrError> {
         match self {
             Self::Input(_) => Err(PywrError::StorageConstraintsUndefined),
             Self::Link(_) => Err(PywrError::StorageConstraintsUndefined),
@@ -439,7 +439,7 @@ impl Node {
         }
     }
 
-    pub fn get_current_max_volume(&self, state: &State) -> Result<f64, PywrError> {
+    pub fn get_max_volume(&self, state: &State) -> Result<f64, PywrError> {
         match self {
             Self::Input(_) => Err(PywrError::StorageConstraintsUndefined),
             Self::Link(_) => Err(PywrError::StorageConstraintsUndefined),
@@ -448,10 +448,11 @@ impl Node {
         }
     }
 
-    pub fn get_current_volume_bounds(&self, state: &State) -> Result<(f64, f64), PywrError> {
-        match (self.get_current_min_volume(state), self.get_current_max_volume(state)) {
+    /// Return the current min and max volumes as a tuple.
+    pub fn get_volume_bounds(&self, state: &State) -> Result<(f64, f64), PywrError> {
+        match (self.get_min_volume(state), self.get_max_volume(state)) {
             (Ok(min_vol), Ok(max_vol)) => Ok((min_vol, max_vol)),
-            _ => Err(PywrError::FlowConstraintsUndefined),
+            _ => Err(PywrError::StorageConstraintsUndefined),
         }
     }
 
@@ -693,34 +694,33 @@ impl Default for NodeCost {
 
 impl NodeCost {
     fn get_cost(&self, network: &Network, state: &State) -> Result<f64, PywrError> {
-        let local_cost = match &self.local {
+        // Initial local cost that has any virtual storage cost applied
+        let mut cost = match &self.local {
             None => Ok(0.0),
             Some(m) => m.get_value(network, state),
         }?;
 
-        let vs_costs: Vec<f64> = self
-            .virtual_storage_nodes
-            .iter()
-            .map(|idx| {
-                let vs = network.get_virtual_storage_node(idx)?;
-                vs.get_cost(network, state)
-            })
-            .collect::<Result<_, _>>()?;
+        let vs_costs = self.virtual_storage_nodes.iter().map(|idx| {
+            let vs = network.get_virtual_storage_node(idx)?;
+            vs.get_cost(network, state)
+        });
 
-        let cost = match self.agg_func {
-            CostAggFunc::Sum => local_cost + vs_costs.iter().sum::<f64>(),
-            CostAggFunc::Max => local_cost.max(
-                vs_costs
-                    .into_iter()
-                    .max_by(|a, b| a.total_cmp(b))
-                    .unwrap_or(f64::NEG_INFINITY),
-            ),
-            CostAggFunc::Min => local_cost.min(
-                vs_costs
-                    .into_iter()
-                    .min_by(|a, b| a.total_cmp(b))
-                    .unwrap_or(f64::INFINITY),
-            ),
+        match self.agg_func {
+            CostAggFunc::Sum => {
+                for vs_cost in vs_costs {
+                    cost += vs_cost?;
+                }
+            }
+            CostAggFunc::Max => {
+                for vs_cost in vs_costs {
+                    cost = cost.max(vs_cost?);
+                }
+            }
+            CostAggFunc::Min => {
+                for vs_cost in vs_costs {
+                    cost = cost.min(vs_cost?);
+                }
+            }
         };
 
         Ok(cost)

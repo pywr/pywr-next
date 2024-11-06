@@ -531,7 +531,7 @@ where
             .iter()
             .zip(network.virtual_storage_nodes().deref())
         {
-            let (avail, missing) = match node.get_current_available_volume_bounds(state) {
+            let (avail, missing) = match node.get_available_volume_bounds(state) {
                 Ok(bnds) => bnds,
                 Err(e) => return Err(e),
             };
@@ -921,21 +921,19 @@ where
         for virtual_storage in network.virtual_storage_nodes().deref() {
             // Create empty arrays to store the matrix data
 
-            if let Some(nodes) = virtual_storage.get_nodes_with_factors() {
-                let mut row: RowBuilder<I> = RowBuilder::default();
-                for (node_index, factor) in nodes {
-                    if !factor.is_finite() {
-                        panic!(
-                            "Virtual storage node {:?} contains a non-finite factor.",
-                            virtual_storage.full_name()
-                        );
-                    }
-                    let node = network.nodes().get(&node_index).expect("Node index not found!");
-                    self.add_node(node, -factor, &mut row);
+            let mut row: RowBuilder<I> = RowBuilder::default();
+            for (node_index, factor) in virtual_storage.iter_nodes_with_factors() {
+                if !factor.is_finite() {
+                    panic!(
+                        "Virtual storage node {:?} contains a non-finite factor.",
+                        virtual_storage.full_name()
+                    );
                 }
-                let row_id = self.builder.add_variable_row(row);
-                row_ids.push(row_id.to_usize().unwrap());
+                let node = network.nodes().get(node_index).expect("Node index not found!");
+                self.add_node(node, -factor, &mut row);
             }
+            let row_id = self.builder.add_variable_row(row);
+            row_ids.push(row_id.to_usize().unwrap());
         }
         row_ids
     }

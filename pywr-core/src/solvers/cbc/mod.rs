@@ -288,7 +288,7 @@ impl Solver for CbcSolver {
             let flow = if flow.abs() < 1e-10 { 0.0 } else { flow };
             network_state.add_flow(edge, timestep, flow)?;
         }
-        network_state.complete(model, timestep)?;
+        state.complete(model, timestep)?;
         timings.save_solution += start_save_solution.elapsed();
 
         Ok(timings)

@@ -451,24 +451,7 @@ impl PywrNetwork {
 
         // Create the edges
         for edge in &self.edges {
-            let from_node = self
-                .get_node_by_name(edge.from_node.as_str())
-                .ok_or_else(|| SchemaError::NodeNotFound(edge.from_node.clone()))?;
-            let to_node = self
-                .get_node_by_name(edge.to_node.as_str())
-                .ok_or_else(|| SchemaError::NodeNotFound(edge.to_node.clone()))?;
-
-            let from_slot = edge.from_slot.as_deref();
-
-            // Connect each "from" connector to each "to" connector
-            for from_connector in from_node.output_connectors(from_slot) {
-                for to_connector in to_node.input_connectors() {
-                    let from_node_index =
-                        network.get_node_index_by_name(from_connector.0, from_connector.1.as_deref())?;
-                    let to_node_index = network.get_node_index_by_name(to_connector.0, to_connector.1.as_deref())?;
-                    network.connect_nodes(from_node_index, to_node_index)?;
-                }
-            }
+            edge.add_to_model(&mut network, &args)?;
         }
 
         // Create all the parameters

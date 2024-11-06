@@ -802,6 +802,17 @@ impl Network {
         self.edges.get(index)
     }
 
+    /// Get an [`EdgeIndex`] from connecting node indices.
+    pub fn get_edge_index(&self, from_node_index: NodeIndex, to_node_index: NodeIndex) -> Result<EdgeIndex, PywrError> {
+        match self
+            .edges
+            .iter()
+            .find(|edge| edge.from_node_index == from_node_index && edge.to_node_index == to_node_index)
+        {
+            Some(edge) => Ok(edge.index),
+            None => Err(PywrError::EdgeIndexNotFound),
+        }
+    }
     /// Get a Node from a node's name
     pub fn get_node_index_by_name(&self, name: &str, sub_name: Option<&str>) -> Result<NodeIndex, PywrError> {
         Ok(self.get_node_by_name(name, sub_name)?.index())
@@ -1317,7 +1328,7 @@ impl Network {
         let vs_node = self.virtual_storage_nodes.get(&vs_node_index)?;
 
         // Link the virtual storage node to the nodes it is including
-        for node_idx in vs_node.nodes.iter() {
+        for node_idx in vs_node.nodes() {
             let node = self.nodes.get_mut(node_idx)?;
             node.add_virtual_storage(vs_node_index)?;
         }
