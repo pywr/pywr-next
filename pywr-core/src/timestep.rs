@@ -196,7 +196,7 @@ impl Timestepper {
         };
 
         let dates = polars::time::date_range(
-            "timesteps",
+            "timesteps".into(),
             self.start,
             end,
             duration,
