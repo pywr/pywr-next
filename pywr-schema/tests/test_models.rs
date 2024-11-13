@@ -1,7 +1,11 @@
+#[cfg(feature = "core")]
 use pywr_core::test_utils::{run_all_solvers, ExpectedOutputs};
 use pywr_schema::PywrModel;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
+#[cfg(feature = "core")]
+use std::path::PathBuf;
+#[cfg(feature = "core")]
 use tempfile::TempDir;
 
 macro_rules! model_tests {
@@ -9,11 +13,24 @@ macro_rules! model_tests {
     $(
         #[test]
         fn $test_func() {
-            let (input, expected, solvers_without_features): (&str, Vec<&str>, Vec<&str>) = $value;
-            let input_pth = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join(input);
-            let expected_paths = expected.iter().map(|p| Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join(p)).collect::<Vec<_>>();
-            let schema = deserialise_test_model(&input_pth);
-            run_test_model(&schema, &expected_paths, &solvers_without_features);
+
+            // Deserialise the schema and run it
+            #[cfg(feature = "core")]
+            {
+                let (input, expected, solvers_without_features): (&str, Vec<&str>, Vec<&str>) = $value;
+                let input_pth = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join(input);
+                let expected_paths = expected.iter().map(|p| Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join(p)).collect::<Vec<_>>();
+                let schema = deserialise_test_model(&input_pth);
+                run_test_model(&schema, &expected_paths, &solvers_without_features);
+            }
+
+            // Just deserialise the schema
+            #[cfg(not(feature = "core"))]
+            {
+                let (input, _expected, _solvers_without_features): (&str, Vec<&str>, Vec<&str>) = $value;
+                let input_pth = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join(input);
+                let _schema = deserialise_test_model(&input_pth);
+            }
         }
     )*
     }
@@ -70,6 +87,7 @@ fn deserialise_test_model(model_path: &Path) -> PywrModel {
     serde_json::from_str(&data).expect("Failed to deserialize model")
 }
 
+#[cfg(feature = "core")]
 fn run_test_model(schema: &PywrModel, result_paths: &[PathBuf], solvers_without_features: &[&str]) {
     let temp_dir = TempDir::new().unwrap();
     let data_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests");
