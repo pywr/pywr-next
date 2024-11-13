@@ -15,7 +15,11 @@
         "meta": {
           "name": "input1"
         },
-        "type": "Input"
+        "type": "Catchment",
+        "flow": {
+          "type": "Constant",
+          "value": 20.0
+        }
       },
       {
         "meta": {
@@ -30,7 +34,7 @@
           "type": "Net",
           "factor": {
             "type": "Constant",
-            "value": 0.1
+            "value": 0.0
           }
         }
       },
@@ -39,10 +43,6 @@
           "name": "demand1"
         },
         "type": "Output",
-        "max_flow": {
-          "type": "Constant",
-          "value": 15.0
-        },
         "cost": {
           "type": "Constant",
           "value": -10
@@ -50,26 +50,12 @@
       },
       {
         "meta": {
-          "name": "wtw2"
-        },
-        "type": "WaterTreatmentWorks",
-        "max_flow": {
-          "type": "Constant",
-          "value": 10.0
-        }
-      },
-      {
-        "meta": {
-          "name": "demand2"
+          "name": "spill1"
         },
         "type": "Output",
-        "max_flow": {
-          "type": "Constant",
-          "value": 15.0
-        },
         "cost": {
           "type": "Constant",
-          "value": -10
+          "value": 10
         }
       }
     ],
@@ -84,11 +70,7 @@
       },
       {
         "from_node": "input1",
-        "to_node": "wtw2"
-      },
-      {
-        "from_node": "wtw2",
-        "to_node": "demand2"
+        "to_node": "spill1"
       }
     ],
     "metric_sets": [
@@ -112,18 +94,8 @@
           },
           {
             "type": "Node",
-            "name": "wtw2",
+            "name": "spill1",
             "attribute": "Inflow"
-          },
-          {
-            "type": "Node",
-            "name": "wtw2",
-            "attribute": "Outflow"
-          },
-          {
-            "type": "Node",
-            "name": "wtw2",
-            "attribute": "Loss"
           }
         ]
       }
@@ -133,7 +105,7 @@
         "name": "node-outputs",
         "type": "CSV",
         "format": "long",
-        "filename": "wtw1.csv",
+        "filename": "wtw2-expected.csv",
         "metric_set": [
           "nodes"
         ],

@@ -282,7 +282,7 @@ mod tests {
     #[test]
     fn test_python_float_parameter() {
         let mut py_fn = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        py_fn.push("src/test_models/test_parameters.py");
+        py_fn.push("tests/test_parameters.py");
 
         let data = json!(
             {
@@ -328,7 +328,7 @@ mod tests {
     #[test]
     fn test_python_int_parameter() {
         let mut py_fn = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        py_fn.push("src/test_models/test_parameters.py");
+        py_fn.push("tests/test_parameters.py");
 
         let data = json!(
             {

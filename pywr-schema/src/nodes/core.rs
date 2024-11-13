@@ -173,7 +173,7 @@ pub struct SoftConstraint {
 /// ```
 /// ## Implementation
 ///
-/// 
+///
 /// ### Only `soft_min` is defined
 /// Normally the minimum flow is delivered through `L_min` depending on the cost `soft_min.cost`. Any
 /// additional flow goes through `L`. Depending on the network demand and the value of `soft_min.cost`,
@@ -181,53 +181,53 @@ pub struct SoftConstraint {
 /// ```svgbob
 ///          U                            D
 ///     - - -*----------->L ------------>*- - -
-///             |                   |                 
-///             |                   |                () <Link>.aggregated_node  
-///             '------>L_min -----'                         [ L_min, L ]  
+///             |                   |
+///             |                   |                () <Link>.aggregated_node
+///             '------>L_min -----'                         [ L_min, L ]
 ///                <Link>.soft_min
 /// ```
-/// 
+///
 /// The network is set up as follows:
 ///  - `L_max` is not added to the network
 ///  - `L_min` is added with `soft_min` data
 ///  - `L` is added with `cost`, `min_flow` is set to 0 and `max_flow` is unconstrained.
 ///  - An aggregated node is added to ensure that combined flow in `L_min` and `L` never exceeds
-///    the hard constraints `min_flow` and `max_flow`. 
+///    the hard constraints `min_flow` and `max_flow`.
 ///
 /// ### Only `soft_max` is defined
 /// Normally the maximum flow `soft_max.max` is delivered through the `L_max` node and no flow
 /// goes through `L`. When needed, based on the value of `soft_max.cost`, the maximum `soft_max.max`
-/// value can be breached up to a combined flow of `max_flow`. 
+/// value can be breached up to a combined flow of `max_flow`.
 /// ```svgbob
 ///          U                            D
 ///     - - -*----------->L ------------>*- - -
-///             |                   |                 
-///             |                   |                () <Link>.aggregated_node  
-///             '------>L_max -----'                         [ L_max, L ]  
+///             |                   |
+///             |                   |                () <Link>.aggregated_node
+///             '------>L_max -----'                         [ L_max, L ]
 ///                <Link>.soft_max
 /// ```
-/// 
+///
 /// The network is set up as follows:
 ///  - `L_min` is not added to the network.
 ///  - `L` is added with the cost in `soft_max.cost` (i.e. cost of going above soft max).
 ///  - `L_max` is added with max flow of `soft_max.max` and cost of `cost`.
 ///  - An aggregated node is added to ensure that combined flow in `L_max` and `L` never exceeds
-///    the hard constraints `min_flow` and `max_flow`. 
+///    the hard constraints `min_flow` and `max_flow`.
 ///
 /// ### Both `soft_min` and `soft_max` are defined
 ///
 /// ```svgbob
 ///                <Link>.soft_max
 ///              .------>L_max -----.
-///             |                   |                    () <Link>.aggregated_node  
+///             |                   |                    () <Link>.aggregated_node
 ///          U  |                   |     D                   [ L_max, L_min, L ]
 ///     - - -*--|-------->L --------|--->*- - -
-///             |                   |                    () <Link>.aggregate_node_l_l_min  
+///             |                   |                    () <Link>.aggregate_node_l_l_min
 ///             |                   |                            [ L_min, L ]
 ///             '------>L_min -----'
 ///                <Link>.soft_min
 /// ```
-/// 
+///
 /// The network is set up as follows:
 /// - `L_max`'s flow is unconstrained with a cost equal to `soft_max.cost`.
 /// - `L`'s flow is unconstrained with a cost equal to `cost`.
@@ -236,7 +236,7 @@ pub struct SoftConstraint {
 ///   `soft_max.flow`.
 /// - An aggregated node is added with `L`, `L_max` and `L_min` to ensure the flow is between
 ///   `min_flow` and `max_flow`.
-/// 
+///
 /// ## Examples
 /// Link soft constraints may be used in the following scenarios:
 ///  1) If the link represents a works and its `max_flow` is constrained by a reservoir rule curve,
@@ -244,7 +244,7 @@ pub struct SoftConstraint {
 ///   ensure that demand is always met. By setting a high tuned cost via [`SoftConstraint`], this will
 ///   ensure that the abstraction is breached only when needed.
 ///  2) If the link represents a works and a minimum flow must be guaranteed, `soft_min` may be set
-///   with a negative cost to allow the minimum flow requirement. However, when this cannot be met 
+///   with a negative cost to allow the minimum flow requirement. However, when this cannot be met
 ///   (for example when the abstraction license or the source runs out), the minimum flow will not
 ///   be honoured and the solver will find a solution.
 )]
@@ -1347,13 +1347,6 @@ mod tests {
     use crate::nodes::core::StorageInitialVolume;
     use crate::nodes::InputNode;
     use crate::nodes::StorageNode;
-    use crate::PywrModel;
-    #[cfg(feature = "core")]
-    use pywr_core::test_utils::{run_all_solvers, ExpectedOutputs};
-    #[cfg(feature = "core")]
-    use std::str::FromStr;
-    #[cfg(feature = "core")]
-    use tempfile::TempDir;
 
     #[test]
     fn test_input() {
@@ -1416,159 +1409,5 @@ mod tests {
         let storage: StorageNode = serde_json::from_str(data).unwrap();
 
         assert_eq!(storage.initial_volume, StorageInitialVolume::Proportional(0.5));
-    }
-
-    #[cfg(feature = "core")]
-    fn storage_max_volumes_str() -> &'static str {
-        include_str!("../test_models/storage_max_volumes.json")
-    }
-
-    #[test]
-    #[cfg(feature = "core")]
-    fn test_storage_max_volumes_run() {
-        let data = storage_max_volumes_str();
-        let schema = PywrModel::from_str(data).unwrap();
-        let model: pywr_core::models::Model = schema.build_model(None, None).unwrap();
-        // Test all solvers
-        run_all_solvers(&model, &[], &[]);
-    }
-
-    fn me1_str() -> &'static str {
-        include_str!("../test_models/mutual-exclusivity1.json")
-    }
-    fn me2_str() -> &'static str {
-        include_str!("../test_models/mutual-exclusivity2.json")
-    }
-
-    #[cfg(feature = "core")]
-    fn me3_str() -> &'static str {
-        include_str!("../test_models/mutual-exclusivity3.json")
-    }
-    #[cfg(feature = "core")]
-    fn me1_outputs_str() -> &'static str {
-        include_str!("../test_models/mutual-exclusivity1.csv")
-    }
-    #[cfg(feature = "core")]
-    fn me2_outputs_str() -> &'static str {
-        include_str!("../test_models/mutual-exclusivity2.csv")
-    }
-    #[cfg(feature = "core")]
-    fn me3_outputs_str() -> &'static str {
-        include_str!("../test_models/mutual-exclusivity3.csv")
-    }
-    #[test]
-    fn test_me1_model_schema() {
-        let data = me1_str();
-        let schema: PywrModel = serde_json::from_str(data).unwrap();
-
-        assert_eq!(schema.network.nodes.len(), 6);
-        assert_eq!(schema.network.edges.len(), 4);
-    }
-    #[test]
-    fn test_me2_model_schema() {
-        let data = me2_str();
-        let schema: PywrModel = serde_json::from_str(data).unwrap();
-
-        assert_eq!(schema.network.nodes.len(), 6);
-        assert_eq!(schema.network.edges.len(), 4);
-    }
-    #[test]
-    #[cfg(feature = "core")]
-    fn test_me1_model_run() {
-        let data = me1_str();
-        let schema: PywrModel = serde_json::from_str(data).unwrap();
-        let temp_dir = TempDir::new().unwrap();
-
-        let mut model = schema.build_model(None, Some(temp_dir.path())).unwrap();
-
-        let network = model.network_mut();
-        assert_eq!(network.nodes().len(), 5);
-        assert_eq!(network.edges().len(), 4);
-
-        // After model run there should be an output file.
-        let expected_outputs = [ExpectedOutputs::new(
-            temp_dir.path().join("output.csv"),
-            me1_outputs_str(),
-        )];
-
-        // Test all solvers
-        run_all_solvers(&model, &["clp"], &expected_outputs);
-    }
-    #[test]
-    #[cfg(feature = "core")]
-    fn test_me2_model_run() {
-        let data = me2_str();
-        let schema: PywrModel = serde_json::from_str(data).unwrap();
-        let temp_dir = TempDir::new().unwrap();
-
-        let mut model = schema.build_model(None, Some(temp_dir.path())).unwrap();
-
-        let network = model.network_mut();
-        assert_eq!(network.nodes().len(), 10);
-        assert_eq!(network.edges().len(), 11);
-
-        // After model run there should be an output file.
-        let expected_outputs = [ExpectedOutputs::new(
-            temp_dir.path().join("output.csv"),
-            me2_outputs_str(),
-        )];
-
-        // Test all solvers
-        run_all_solvers(&model, &["clp"], &expected_outputs);
-    }
-
-    #[cfg(feature = "core")]
-    fn link_with_soft_min_str() -> &'static str {
-        include_str!("../test_models/link_with_soft_min.json")
-    }
-
-    #[test]
-    #[cfg(feature = "core")]
-    fn test_link_with_soft_min() {
-        let data = link_with_soft_min_str();
-        let schema = PywrModel::from_str(data).unwrap();
-        let model: pywr_core::models::Model = schema.build_model(None, None).unwrap();
-
-        // Test all solvers
-        run_all_solvers(&model, &[], &[]);
-    }
-
-    #[cfg(feature = "core")]
-    fn link_with_soft_max_str() -> &'static str {
-        include_str!("../test_models/link_with_soft_max.json")
-    }
-
-    #[test]
-    #[cfg(feature = "core")]
-    fn test_link_with_soft_max() {
-        let data = link_with_soft_max_str();
-        let schema = PywrModel::from_str(data).unwrap();
-        let model: pywr_core::models::Model = schema.build_model(None, None).unwrap();
-
-        // Test all solvers
-        run_all_solvers(&model, &[], &[]);
-    }
-
-    #[test]
-    #[cfg(feature = "core")]
-    fn test_me3_model_run() {
-        let data = me3_str();
-        let schema: PywrModel = serde_json::from_str(data).unwrap();
-        let temp_dir = TempDir::new().unwrap();
-
-        let mut model = schema.build_model(None, Some(temp_dir.path())).unwrap();
-
-        let network = model.network_mut();
-        assert_eq!(network.nodes().len(), 7);
-        assert_eq!(network.edges().len(), 8);
-
-        // After model run there should be an output file.
-        let expected_outputs = [ExpectedOutputs::new(
-            temp_dir.path().join("output.csv"),
-            me3_outputs_str(),
-        )];
-
-        // Test all solvers
-        run_all_solvers(&model, &["clp"], &expected_outputs);
     }
 }

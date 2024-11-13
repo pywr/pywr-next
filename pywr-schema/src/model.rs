@@ -532,7 +532,7 @@ pub enum PywrNetworkRef {
 /// The simplest model is given in the example below:
 ///
 /// ```json
-#[doc = include_str!("test_models/simple1.json")]
+#[doc = include_str!("../tests/simple1.json")]
 /// ```
 ///
 ///
@@ -733,11 +733,11 @@ pub struct PywrMultiNetworkEntry {
 ///
 /// ```json5
 /// // model.json
-#[doc = include_str!("test_models/multi1/model.json")]
+#[doc = include_str!("../tests/multi1/model.json")]
 /// // network1.json
-#[doc = include_str!("test_models/multi1/network1.json")]
+#[doc = include_str!("../tests/multi1/network1.json")]
 /// // network2.json
-#[doc = include_str!("test_models/multi1/network2.json")]
+#[doc = include_str!("../tests/multi1/network2.json")]
 /// ```
 ///
 ///
@@ -892,16 +892,17 @@ mod tests {
     use super::PywrModel;
     use crate::model::Timestepper;
     use crate::visit::VisitPaths;
+    use std::fs::read_to_string;
     use std::path::PathBuf;
 
-    fn model_str() -> &'static str {
-        include_str!("./test_models/simple1.json")
+    fn model_str() -> String {
+        read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/simple1.json")).unwrap()
     }
 
     #[test]
     fn test_simple1_schema() {
         let data = model_str();
-        let schema: PywrModel = serde_json::from_str(data).unwrap();
+        let schema: PywrModel = serde_json::from_str(&data).unwrap();
 
         assert_eq!(schema.network.nodes.len(), 3);
         assert_eq!(schema.network.edges.len(), 2);
@@ -977,11 +978,11 @@ mod tests {
     #[test]
     fn test_visit_paths() {
         let mut model_fn = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        model_fn.push("src/test_models/timeseries.json");
+        model_fn.push("tests/timeseries.json");
 
         let mut schema = PywrModel::from_path(model_fn.as_path()).unwrap();
 
-        let expected_paths = vec![PathBuf::from("inflow.csv")];
+        let expected_paths = vec![PathBuf::from("inflow.csv"), PathBuf::from("timeseries-expected.csv")];
 
         let mut paths: Vec<PathBuf> = Vec::new();
 
@@ -1002,26 +1003,6 @@ mod tests {
             panic!("Expected an error due to missing file: {str}");
         }
     }
-
-    #[test]
-    fn test_v1_conversion() {
-        let v1_str = include_str!("./test_models/v1/timeseries.json");
-        let v1: pywr_v1_schema::PywrModel = serde_json::from_str(v1_str).unwrap();
-
-        let (v2, errors) = PywrModel::from_v1(v1);
-
-        assert_eq!(errors.len(), 0);
-
-        std::fs::write("tmp.json", serde_json::to_string_pretty(&v2).unwrap()).unwrap();
-
-        let v2_converted: serde_json::Value =
-            serde_json::from_str(&serde_json::to_string_pretty(&v2).unwrap()).unwrap();
-
-        let v2_expected: serde_json::Value =
-            serde_json::from_str(include_str!("./test_models/v1/timeseries-converted.json")).unwrap();
-
-        assert_eq!(v2_converted, v2_expected);
-    }
 }
 
 #[cfg(test)]
@@ -1032,16 +1013,17 @@ mod core_tests {
     use crate::parameters::{AggFunc, AggregatedParameter, ConstantParameter, ConstantValue, Parameter, ParameterMeta};
     use ndarray::{Array1, Array2, Axis};
     use pywr_core::{metric::MetricF64, recorders::AssertionRecorder, solvers::ClpSolver, test_utils::run_all_solvers};
+    use std::fs::read_to_string;
     use std::path::PathBuf;
 
-    fn model_str() -> &'static str {
-        include_str!("./test_models/simple1.json")
+    fn model_str() -> String {
+        read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/simple1.json")).unwrap()
     }
 
     #[test]
     fn test_simple1_run() {
         let data = model_str();
-        let schema: PywrModel = serde_json::from_str(data).unwrap();
+        let schema: PywrModel = serde_json::from_str(&data).unwrap();
         let mut model = schema.build_model(None, None).unwrap();
 
         let network = model.network_mut();
@@ -1070,7 +1052,7 @@ mod core_tests {
     #[test]
     fn test_cycle_error() {
         let data = model_str();
-        let mut schema: PywrModel = serde_json::from_str(data).unwrap();
+        let mut schema: PywrModel = serde_json::from_str(&data).unwrap();
 
         // Add additional parameters for the test
         if let Some(parameters) = &mut schema.network.parameters {
@@ -1128,7 +1110,7 @@ mod core_tests {
     #[test]
     fn test_ordering() {
         let data = model_str();
-        let mut schema: PywrModel = serde_json::from_str(data).unwrap();
+        let mut schema: PywrModel = serde_json::from_str(&data).unwrap();
 
         if let Some(parameters) = &mut schema.network.parameters {
             parameters.extend(vec![
@@ -1175,7 +1157,7 @@ mod core_tests {
     #[test]
     fn test_multi1_model() {
         let mut model_fn = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        model_fn.push("src/test_models/multi1/model.json");
+        model_fn.push("tests/multi1/model.json");
 
         let schema = PywrMultiNetworkModel::from_path(model_fn.as_path()).unwrap();
         let mut model = schema.build_model(model_fn.parent(), None).unwrap();
@@ -1225,7 +1207,7 @@ mod core_tests {
     #[test]
     fn test_multi2_model() {
         let mut model_fn = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        model_fn.push("src/test_models/multi2/model.json");
+        model_fn.push("tests/multi2/model.json");
 
         let schema = PywrMultiNetworkModel::from_path(model_fn.as_path()).unwrap();
         let mut model = schema.build_model(model_fn.parent(), None).unwrap();
