@@ -105,6 +105,26 @@
           "url": "inflow.csv"
         }
       }
+    ],
+    "metric_sets": [
+      {
+        "name": "nodes",
+        "metrics": [
+          {
+            "type": "Node",
+            "name": "output1"
+          }
+        ]
+      }
+    ],
+    "outputs": [
+      {
+        "name": "nodes",
+        "type": "CSV",
+        "format": "long",
+        "filename": "timeseries-expected.csv",
+        "metric_set": "nodes"
+      }
     ]
   }
 }

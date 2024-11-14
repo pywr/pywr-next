@@ -261,37 +261,3 @@ impl TryFrom<RollingVirtualStorageNodeV1> for RollingVirtualStorageNode {
         Ok(n)
     }
 }
-
-#[cfg(test)]
-#[cfg(feature = "core")]
-mod tests {
-    use crate::model::PywrModel;
-    use ndarray::Array2;
-    use pywr_core::metric::MetricF64;
-    use pywr_core::recorders::AssertionRecorder;
-    use pywr_core::test_utils::run_all_solvers;
-
-    fn model_str() -> &'static str {
-        include_str!("../test_models/30-day-licence.json")
-    }
-
-    #[test]
-    fn test_model_run() {
-        let data = model_str();
-        let schema: PywrModel = serde_json::from_str(data).unwrap();
-        let mut model: pywr_core::models::Model = schema.build_model(None, None).unwrap();
-
-        let network = model.network_mut();
-        assert_eq!(network.nodes().len(), 3);
-        assert_eq!(network.edges().len(), 2);
-
-        // TODO put this assertion data in the test model file.
-        let idx = network.get_node_by_name("link1", None).unwrap().index();
-        let expected = Array2::from_elem((366, 1), 10.0);
-        let recorder = AssertionRecorder::new("link1-inflow", MetricF64::NodeInFlow(idx), expected, None, None);
-        network.add_recorder(Box::new(recorder)).unwrap();
-
-        // Test all solvers
-        run_all_solvers(&model, &[], &[]);
-    }
-}

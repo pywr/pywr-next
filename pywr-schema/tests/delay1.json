@@ -5,8 +5,8 @@
     "minimum_version": "0.1"
   },
   "timestepper": {
-    "start": "2015-01-01",
-    "end": "2015-12-31",
+    "start": "2021-01-01",
+    "end": "2021-01-31",
     "timestep": 1
   },
   "network": {
@@ -52,6 +52,32 @@
       {
         "from_node": "link1",
         "to_node": "demand1"
+      }
+    ],
+    "metric_sets": [
+      {
+        "name": "nodes",
+        "metrics": [
+          {
+            "type": "Node",
+            "name": "link1",
+            "attribute": "Inflow"
+          },
+          {
+            "type": "Node",
+            "name": "link1",
+            "attribute": "Outflow"
+          }
+        ]
+      }
+    ],
+    "outputs": [
+      {
+        "name": "nodes",
+        "type": "CSV",
+        "format": "long",
+        "filename": "delay1-expected.csv",
+        "metric_set": "nodes"
       }
     ]
   }

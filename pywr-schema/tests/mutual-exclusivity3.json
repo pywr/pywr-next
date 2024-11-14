@@ -21,11 +21,21 @@
         "meta": {
           "name": "link1"
         },
-        "type": "Link",
-        "max_flow": {
-          "type": "Constant",
-          "value": 10.0
-        }
+        "type": "PiecewiseLink",
+        "steps": [
+          {
+            "max_flow": {
+              "type": "Constant",
+              "value": 5.0
+            }
+          },
+          {
+            "max_flow": {
+              "type": "Constant",
+              "value": 5.0
+            }
+          }
+        ]
       },
       {
         "meta": {
@@ -45,11 +55,21 @@
         "meta": {
           "name": "link2"
         },
-        "type": "Link",
-        "max_flow": {
-          "type": "Constant",
-          "value": 10.0
-        }
+        "type": "PiecewiseLink",
+        "steps": [
+          {
+            "max_flow": {
+              "type": "Constant",
+              "value": 5.0
+            }
+          },
+          {
+            "max_flow": {
+              "type": "Constant",
+              "value": 5.0
+            }
+          }
+        ]
       },
       {
         "meta": {
@@ -133,7 +153,7 @@
         "name": "node-outputs",
         "type": "CSV",
         "format": "long",
-        "filename": "output.csv",
+        "filename": "mutual-exclusivity3.csv",
         "metric_set": [
           "nodes"
         ],

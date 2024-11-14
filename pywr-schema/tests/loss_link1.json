@@ -175,7 +175,7 @@
         "name": "node-outputs",
         "type": "CSV",
         "format": "long",
-        "filename": "loss_link1.csv",
+        "filename": "loss_link1-expected.csv",
         "metric_set": [
           "nodes"
         ],

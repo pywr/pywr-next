@@ -1,7 +1,7 @@
 {
   "metadata": {
-    "title": "WTW Test 1",
-    "description": "Test WTW work",
+    "title": "Loss Link Test 1",
+    "description": "Test LossLink with zero loss",
     "minimum_version": "0.1"
   },
   "timestepper": {
@@ -18,18 +18,14 @@
         "type": "Catchment",
         "flow": {
           "type": "Constant",
-          "value": 20.0
+          "value": 15.0
         }
       },
       {
         "meta": {
-          "name": "wtw1"
+          "name": "loss1"
         },
-        "type": "WaterTreatmentWorks",
-        "max_flow": {
-          "type": "Constant",
-          "value": 10.0
-        },
+        "type": "LossLink",
         "loss_factor": {
           "type": "Net",
           "factor": {
@@ -43,6 +39,10 @@
           "name": "demand1"
         },
         "type": "Output",
+        "max_flow": {
+          "type": "Constant",
+          "value": 10.0
+        },
         "cost": {
           "type": "Constant",
           "value": -10
@@ -62,10 +62,10 @@
     "edges": [
       {
         "from_node": "input1",
-        "to_node": "wtw1"
+        "to_node": "loss1"
       },
       {
-        "from_node": "wtw1",
+        "from_node": "loss1",
         "to_node": "demand1"
       },
       {
@@ -79,17 +79,17 @@
         "metrics": [
           {
             "type": "Node",
-            "name": "wtw1",
+            "name": "loss1",
             "attribute": "Inflow"
           },
           {
             "type": "Node",
-            "name": "wtw1",
+            "name": "loss1",
             "attribute": "Outflow"
           },
           {
             "type": "Node",
-            "name": "wtw1",
+            "name": "loss1",
             "attribute": "Loss"
           },
           {
@@ -105,7 +105,7 @@
         "name": "node-outputs",
         "type": "CSV",
         "format": "long",
-        "filename": "wtw2.csv",
+        "filename": "loss_link2-expected.csv",
         "metric_set": [
           "nodes"
         ],
