@@ -1,4 +1,4 @@
-use super::{Parameter, PywrError};
+use super::{Parameter, ParameterName, PywrError};
 use crate::metric::MetricF64;
 use crate::network::Network;
 use crate::parameters::{GeneralParameter, ParameterMeta, ParameterState};
@@ -14,7 +14,7 @@ pub struct DivisionParameter {
 }
 
 impl DivisionParameter {
-    pub fn new(name: &str, numerator: MetricF64, denominator: MetricF64) -> Self {
+    pub fn new(name: ParameterName, numerator: MetricF64, denominator: MetricF64) -> Self {
         Self {
             meta: ParameterMeta::new(name),
             numerator,
@@ -36,7 +36,6 @@ impl GeneralParameter<f64> for DivisionParameter {
         state: &State,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<f64, PywrError> {
-        // TODO handle scenarios
         let denominator = self.denominator.get_value(model, state)?;
 
         if denominator == 0.0 {

@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::env;
 
 fn make_builder() -> cc::Build {
@@ -102,7 +103,7 @@ const COIN_UTILS_SRCS: [&str; 57] = [
 fn compile_coin_utils() {
     let mut builder = make_builder();
 
-    builder.flag(&format!("-I{}", COIN_UTILS_PATH));
+    builder.flag(format!("-I{}", COIN_UTILS_PATH));
 
     for src in COIN_UTILS_SRCS.iter() {
         builder.file(format!("{}/{}", COIN_UTILS_PATH, src));
@@ -134,8 +135,8 @@ fn compile_osi() {
     let mut builder = make_builder();
 
     builder
-        .flag(&format!("-I{}", COIN_UTILS_PATH))
-        .flag(&format!("-I{}", OSI_SRC_PATH));
+        .flag(format!("-I{}", COIN_UTILS_PATH))
+        .flag(format!("-I{}", OSI_SRC_PATH));
 
     for src in OSI_SRCS.iter() {
         builder.file(format!("{}/{}", OSI_SRC_PATH, src));
@@ -226,18 +227,60 @@ fn compile_clp() {
 }
 
 const CGL_SRC_PATH: &str = "vendor/Cgl/Cgl/src";
-const CGL_SRCS: [&str; 5] = [
+const CGL_SRCS: [&str; 34] = [
     "CglCutGenerator.cpp",
     "CglMessage.cpp",
     "CglParam.cpp",
     "CglStored.cpp",
     "CglTreeInfo.cpp",
+    "CglAllDifferent/CglAllDifferent.cpp",
+    "CglClique/CglClique.cpp",
+    "CglClique/CglCliqueHelper.cpp",
+    "CglDuplicateRow/CglDuplicateRow.cpp",
+    "CglFlowCover/CglFlowCover.cpp",
+    "CglGMI/CglGMI.cpp",
+    "CglGMI/CglGMIParam.cpp",
+    "CglGomory/CglGomory.cpp",
+    "CglKnapsackCover/CglKnapsackCover.cpp",
+    "CglLandP/CglLandP.cpp",
+    "CglLandP/CglLandPMessages.cpp",
+    "CglLandP/CglLandPSimplex.cpp",
+    "CglLandP/CglLandPTabRow.cpp",
+    "CglLandP/CglLandPUtils.cpp",
+    "CglLandP/CglLandPValidator.cpp",
+    "CglMixedIntegerRounding/CglMixedIntegerRounding.cpp",
+    "CglMixedIntegerRounding2/CglMixedIntegerRounding2.cpp",
+    "CglOddHole/CglOddHole.cpp",
+    "CglPreProcess/CglPreProcess.cpp",
+    "CglProbing/CglProbing.cpp",
+    "CglRedSplit/CglRedSplit.cpp",
+    "CglRedSplit/CglRedSplitParam.cpp",
+    "CglRedSplit2/CglRedSplit2.cpp",
+    "CglRedSplit2/CglRedSplit2Param.cpp",
+    "CglResidualCapacity/CglResidualCapacity.cpp",
+    "CglSimpleRounding/CglSimpleRounding.cpp",
+    "CglTwomir/CglTwomir.cpp",
+    "CglZeroHalf/CglZeroHalf.cpp",
+    "CglZeroHalf/Cgl012cut.cpp",
 ];
 
-fn compile_cgl() -> Vec<String> {
-    let mut builder = make_builder();
+/// Returns the include directories for Cgl.
+fn cgl_include_dirs() -> Vec<String> {
+    let mut include_dirs: HashSet<String> = HashSet::new();
 
-    let mut extra_include_dirs = vec![];
+    include_dirs.insert(CGL_SRC_PATH.to_string());
+    for src in CGL_SRCS.iter() {
+        let split: Vec<_> = src.split("/").collect();
+        if split.len() == 2 {
+            include_dirs.insert(format!("{}/{}", CGL_SRC_PATH, split[0]));
+        }
+    }
+
+    include_dirs.into_iter().collect()
+}
+
+fn compile_cgl() {
+    let mut builder = make_builder();
 
     builder
         .include(COIN_UTILS_PATH)
@@ -250,134 +293,8 @@ fn compile_cgl() -> Vec<String> {
         builder.file(format!("{}/{}", CGL_SRC_PATH, src));
     }
 
-    {
-        let pth = format!("{}/CglAllDifferent", CGL_SRC_PATH);
-        builder.file(format!("{}/CglAllDifferent.cpp", pth));
-        extra_include_dirs.push(pth);
-    }
-
-    {
-        let pth = format!("{}/CglClique", CGL_SRC_PATH);
-        builder.file(format!("{}/CglClique.cpp", pth));
-        builder.file(format!("{}/CglCliqueHelper.cpp", pth));
-        extra_include_dirs.push(pth);
-    }
-
-    {
-        let pth = format!("{}/CglDuplicateRow", CGL_SRC_PATH);
-        builder.file(format!("{}/CglDuplicateRow.cpp", pth));
-        extra_include_dirs.push(pth);
-    }
-
-    {
-        let pth = format!("{}/CglFlowCover", CGL_SRC_PATH);
-        builder.file(format!("{}/CglFlowCover.cpp", pth));
-        extra_include_dirs.push(pth);
-    }
-
-    {
-        let pth = format!("{}/CglGMI", CGL_SRC_PATH);
-        builder.file(format!("{}/CglGMI.cpp", pth));
-        builder.file(format!("{}/CglGMIParam.cpp", pth));
-        extra_include_dirs.push(pth);
-    }
-
-    {
-        let pth = format!("{}/CglGomory", CGL_SRC_PATH);
-        builder.file(format!("{}/CglGomory.cpp", pth));
-        extra_include_dirs.push(pth);
-    }
-
-    {
-        let pth = format!("{}/CglKnapsackCover", CGL_SRC_PATH);
-        builder.file(format!("{}/CglKnapsackCover.cpp", pth));
-        extra_include_dirs.push(pth);
-    }
-
-    {
-        let pth = format!("{}/CglLandP", CGL_SRC_PATH);
-        builder.file(format!("{}/CglLandP.cpp", pth));
-        builder.file(format!("{}/CglLandPMessages.cpp", pth));
-        builder.file(format!("{}/CglLandPSimplex.cpp", pth));
-        builder.file(format!("{}/CglLandPTabRow.cpp", pth));
-        builder.file(format!("{}/CglLandPUtils.cpp", pth));
-        builder.file(format!("{}/CglLandPValidator.cpp", pth));
-        extra_include_dirs.push(pth);
-    }
-
-    {
-        let pth = format!("{}/CglMixedIntegerRounding", CGL_SRC_PATH);
-        builder.file(format!("{}/CglMixedIntegerRounding.cpp", pth));
-        extra_include_dirs.push(pth);
-    }
-
-    {
-        let pth = format!("{}/CglMixedIntegerRounding2", CGL_SRC_PATH);
-        builder.file(format!("{}/CglMixedIntegerRounding2.cpp", pth));
-        extra_include_dirs.push(pth);
-    }
-
-    {
-        let pth = format!("{}/CglOddHole", CGL_SRC_PATH);
-        builder.file(format!("{}/CglOddHole.cpp", pth));
-        extra_include_dirs.push(pth);
-    }
-
-    {
-        let pth = format!("{}/CglPreProcess", CGL_SRC_PATH);
-        builder.file(format!("{}/CglPreProcess.cpp", pth));
-        extra_include_dirs.push(pth);
-    }
-
-    {
-        let pth = format!("{}/CglProbing", CGL_SRC_PATH);
-        builder.file(format!("{}/CglProbing.cpp", pth));
-        extra_include_dirs.push(pth);
-    }
-
-    {
-        let pth = format!("{}/CglRedSplit", CGL_SRC_PATH);
-        builder.file(format!("{}/CglRedSplit.cpp", pth));
-        builder.file(format!("{}/CglRedSplitParam.cpp", pth));
-        extra_include_dirs.push(pth);
-    }
-
-    {
-        let pth = format!("{}/CglRedSplit2", CGL_SRC_PATH);
-        builder.file(format!("{}/CglRedSplit2.cpp", pth));
-        builder.file(format!("{}/CglRedSplit2Param.cpp", pth));
-        extra_include_dirs.push(pth);
-    }
-
-    {
-        let pth = format!("{}/CglResidualCapacity", CGL_SRC_PATH);
-        builder.file(format!("{}/CglResidualCapacity.cpp", pth));
-        extra_include_dirs.push(pth);
-    }
-
-    {
-        let pth = format!("{}/CglSimpleRounding", CGL_SRC_PATH);
-        builder.file(format!("{}/CglSimpleRounding.cpp", pth));
-        extra_include_dirs.push(pth);
-    }
-
-    {
-        let pth = format!("{}/CglTwomir", CGL_SRC_PATH);
-        builder.file(format!("{}/CglTwomir.cpp", pth));
-        extra_include_dirs.push(pth);
-    }
-
-    {
-        let pth = format!("{}/CglZeroHalf", CGL_SRC_PATH);
-        builder.file(format!("{}/CglZeroHalf.cpp", pth));
-        builder.file(format!("{}/Cgl012cut.cpp", pth));
-        extra_include_dirs.push(pth);
-    }
-
-    builder.includes(&extra_include_dirs);
+    builder.includes(cgl_include_dirs());
     builder.compile("Cgl");
-
-    extra_include_dirs
 }
 
 const CBC_SRC_PATH: &str = "vendor/Cbc/Cbc/src";
@@ -462,7 +379,7 @@ const CBC_SRCS: [&str; 75] = [
     "CbcTreeLocal.cpp",
 ];
 
-fn compile_cbc(cgl_include_dirs: &[String]) {
+fn compile_cbc() {
     let mut builder = make_builder();
 
     builder
@@ -470,10 +387,9 @@ fn compile_cbc(cgl_include_dirs: &[String]) {
         .include(OSI_SRC_PATH)
         .include(CLP_SRC_PATH)
         .include(CLP_OSI_SRC_PATH)
-        .include(CGL_SRC_PATH)
         .include(CBC_SRC_PATH);
 
-    builder.includes(cgl_include_dirs);
+    builder.includes(cgl_include_dirs());
 
     for src in CBC_SRCS.iter() {
         builder.file(format!("{}/{}", CBC_SRC_PATH, src));
@@ -484,9 +400,9 @@ fn compile_cbc(cgl_include_dirs: &[String]) {
 }
 
 fn main() {
-    compile_coin_utils();
-    compile_clp();
+    compile_cbc();
+    compile_cgl();
     compile_osi();
-    let cgl_include_dirs = compile_cgl();
-    compile_cbc(&cgl_include_dirs);
+    compile_clp();
+    compile_coin_utils();
 }

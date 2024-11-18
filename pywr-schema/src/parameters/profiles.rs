@@ -16,8 +16,8 @@ use pywr_v1_schema::parameters::{
 use schemars::JsonSchema;
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
+#[serde(deny_unknown_fields)]
 pub struct DailyProfileParameter {
-    #[serde(flatten)]
     pub meta: ParameterMeta,
     pub values: ConstantFloatVec,
 }
@@ -30,7 +30,10 @@ impl DailyProfileParameter {
         args: &LoadArgs,
     ) -> Result<ParameterIndex<f64>, SchemaError> {
         let values = &self.values.load(args.tables)?[..366];
-        let p = pywr_core::parameters::DailyProfileParameter::new(&self.meta.name, values.try_into().expect(""));
+        let p = pywr_core::parameters::DailyProfileParameter::new(
+            self.meta.name.as_str().into(),
+            values.try_into().expect(""),
+        );
         Ok(network.add_simple_parameter(Box::new(p))?)
     }
 }
@@ -67,7 +70,7 @@ impl TryFromV1Parameter<DailyProfileParameterV1> for DailyProfileParameter {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone, JsonSchema, PywrVisitAll)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone, strum_macros::Display, JsonSchema, PywrVisitAll)]
 pub enum MonthlyInterpDay {
     First,
     Last,
@@ -84,8 +87,8 @@ impl From<MonthlyInterpDay> for pywr_core::parameters::MonthlyInterpDay {
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
+#[serde(deny_unknown_fields)]
 pub struct MonthlyProfileParameter {
-    #[serde(flatten)]
     pub meta: ParameterMeta,
     pub values: ConstantFloatVec,
     pub interp_day: Option<MonthlyInterpDay>,
@@ -100,7 +103,7 @@ impl MonthlyProfileParameter {
     ) -> Result<ParameterIndex<f64>, SchemaError> {
         let values = &self.values.load(args.tables)?[..12];
         let p = pywr_core::parameters::MonthlyProfileParameter::new(
-            &self.meta.name,
+            self.meta.name.as_str().into(),
             values.try_into().expect(""),
             self.interp_day.map(|id| id.into()),
         );
@@ -155,8 +158,8 @@ impl TryFromV1Parameter<MonthlyProfileParameterV1> for MonthlyProfileParameter {
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
+#[serde(deny_unknown_fields)]
 pub struct UniformDrawdownProfileParameter {
-    #[serde(flatten)]
     pub meta: ParameterMeta,
     pub reset_day: Option<ConstantValue<usize>>,
     pub reset_month: Option<ConstantValue<usize>>,
@@ -184,7 +187,7 @@ impl UniformDrawdownProfileParameter {
         };
 
         let p = pywr_core::parameters::UniformDrawdownProfileParameter::new(
-            &self.meta.name,
+            self.meta.name.as_str().into(),
             reset_day,
             reset_month,
             residual_days,
@@ -215,7 +218,8 @@ impl TryFromV1Parameter<UniformDrawdownProfileParameterV1> for UniformDrawdownPr
 }
 
 /// Distance functions for radial basis function interpolation.
-#[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone, JsonSchema, PywrVisitAll)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone, JsonSchema, PywrVisitAll, strum_macros::Display)]
+#[serde(deny_unknown_fields)]
 pub enum RadialBasisFunction {
     Linear,
     Cubic,
@@ -295,7 +299,8 @@ fn estimate_epsilon(points: &[(u32, f64)]) -> Option<f64> {
 }
 
 /// Settings for a variable RBF profile.
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Copy)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Copy, JsonSchema, PywrVisitAll)]
+#[serde(deny_unknown_fields)]
 pub struct RbfProfileVariableSettings {
     /// Is this parameter an active variable?
     pub is_active: bool,
@@ -342,14 +347,17 @@ impl From<RbfProfileVariableSettings> for pywr_core::parameters::RbfProfileVaria
 /// ```
 ///
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
+#[serde(deny_unknown_fields)]
 pub struct RbfProfileParameter {
-    #[serde(flatten)]
     pub meta: ParameterMeta,
     /// The points are the profile positions defined by an ordinal day of the year and a value.
     /// Radial basis function interpolation is used to create a daily profile from these points.
     pub points: Vec<(u32, f64)>,
     /// The distance function used for interpolation.
     pub function: RadialBasisFunction,
+    /// Optional settings for configuring how the value of this parameter can be varied. This
+    /// is used by, for example, external algorithms to optimise the value of the parameter.
+    pub variable: Option<RbfProfileVariableSettings>,
 }
 
 #[cfg(feature = "core")]
@@ -357,7 +365,11 @@ impl RbfProfileParameter {
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<ParameterIndex<f64>, SchemaError> {
         let function = self.function.into_core_rbf(&self.points)?;
 
-        let p = pywr_core::parameters::RbfProfileParameter::new(&self.meta.name, self.points.clone(), function);
+        let p = pywr_core::parameters::RbfProfileParameter::new(
+            self.meta.name.as_str().into(),
+            self.points.clone(),
+            function,
+        );
         Ok(network.add_simple_parameter(Box::new(p))?)
     }
 }
@@ -434,13 +446,18 @@ impl TryFromV1Parameter<RbfProfileParameterV1> for RbfProfileParameter {
             RadialBasisFunction::MultiQuadric { epsilon }
         };
 
-        let p = Self { meta, points, function };
+        let p = Self {
+            meta,
+            points,
+            function,
+            variable: None, // TODO convert variable settings
+        };
 
         Ok(p)
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone, JsonSchema, PywrVisitAll)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone, JsonSchema, PywrVisitAll, strum_macros::Display)]
 pub enum WeeklyInterpDay {
     First,
     Last,
@@ -518,8 +535,8 @@ impl From<WeeklyInterpDay> for pywr_core::parameters::WeeklyInterpDay {
 /// December).
 ///
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
+#[serde(deny_unknown_fields)]
 pub struct WeeklyProfileParameter {
-    #[serde(flatten)]
     pub meta: ParameterMeta,
     pub values: ConstantFloatVec,
     pub interp_day: Option<WeeklyInterpDay>,
@@ -533,7 +550,7 @@ impl WeeklyProfileParameter {
         args: &LoadArgs,
     ) -> Result<ParameterIndex<f64>, SchemaError> {
         let p = pywr_core::parameters::WeeklyProfileParameter::new(
-            &self.meta.name,
+            self.meta.name.as_str().into(),
             WeeklyProfileValues::try_from(self.values.load(args.tables)?.as_slice()).map_err(
                 |err: WeeklyProfileError| SchemaError::LoadParameter {
                     name: self.meta.name.to_string(),

@@ -24,7 +24,7 @@ use std::path::{Path, PathBuf};
 enum Solver {
     Clp,
     #[cfg(feature = "highs")]
-    HIGHS,
+    Highs,
     #[cfg(feature = "ipm-ocl")]
     CLIPMF32,
     #[cfg(feature = "ipm-ocl")]
@@ -38,7 +38,7 @@ impl Display for Solver {
         match self {
             Solver::Clp => write!(f, "clp"),
             #[cfg(feature = "highs")]
-            Solver::HIGHS => write!(f, "highs"),
+            Solver::Highs => write!(f, "highs"),
             #[cfg(feature = "ipm-ocl")]
             Solver::CLIPMF32 => write!(f, "clipmf32"),
             #[cfg(feature = "ipm-ocl")]
@@ -56,7 +56,7 @@ struct Cli {
     #[arg(long, default_value_t = false)]
     debug: bool,
     #[command(subcommand)]
-    command: Option<Commands>,
+    command: Commands,
 }
 
 #[derive(Subcommand)]
@@ -125,41 +125,38 @@ enum Commands {
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
-    setup_tracing(cli.debug).unwrap();
+    setup_tracing(cli.debug)?;
 
     match &cli.command {
-        Some(command) => match command {
-            Commands::Convert {
-                input,
-                output,
-                stop_on_error,
-                network_only,
-            } => convert(input, output, *stop_on_error, *network_only)?,
-            Commands::Run {
-                model,
-                solver,
-                data_path,
-                output_path,
-                parallel: _,
-                threads: _,
-            } => run(model, solver, data_path.as_deref(), output_path.as_deref()),
-            Commands::RunMulti {
-                model,
-                solver,
-                data_path,
-                output_path,
-                parallel: _,
-                threads: _,
-            } => run_multi(model, solver, data_path.as_deref(), output_path.as_deref()),
-            Commands::RunRandom {
-                num_systems,
-                density,
-                num_scenarios,
-                solver,
-            } => run_random(*num_systems, *density, *num_scenarios, solver),
-            Commands::ExportSchema { out } => export_schema(out)?,
-        },
-        None => {}
+        Commands::Convert {
+            input,
+            output,
+            stop_on_error,
+            network_only,
+        } => convert(input, output, *stop_on_error, *network_only)?,
+        Commands::Run {
+            model,
+            solver,
+            data_path,
+            output_path,
+            parallel: _,
+            threads: _,
+        } => run(model, solver, data_path.as_deref(), output_path.as_deref()),
+        Commands::RunMulti {
+            model,
+            solver,
+            data_path,
+            output_path,
+            parallel: _,
+            threads: _,
+        } => run_multi(model, solver, data_path.as_deref(), output_path.as_deref()),
+        Commands::RunRandom {
+            num_systems,
+            density,
+            num_scenarios,
+            solver,
+        } => run_random(*num_systems, *density, *num_scenarios, solver),
+        Commands::ExportSchema { out } => export_schema(out)?,
     }
 
     Ok(())
@@ -265,7 +262,7 @@ fn run(path: &Path, solver: &Solver, data_path: Option<&Path>, output_path: Opti
     match *solver {
         Solver::Clp => model.run::<ClpSolver>(&ClpSolverSettings::default()),
         #[cfg(feature = "highs")]
-        Solver::HIGHS => model.run::<HighsSolver>(&HighsSolverSettings::default()),
+        Solver::Highs => model.run::<HighsSolver>(&HighsSolverSettings::default()),
         #[cfg(feature = "ipm-ocl")]
         Solver::CLIPMF32 => model.run_multi_scenario::<ClIpmF32Solver>(&ClIpmSolverSettings::default()),
         #[cfg(feature = "ipm-ocl")]
@@ -287,7 +284,7 @@ fn run_multi(path: &Path, solver: &Solver, data_path: Option<&Path>, output_path
     match *solver {
         Solver::Clp => model.run::<ClpSolver>(&ClpSolverSettings::default()),
         #[cfg(feature = "highs")]
-        Solver::HIGHS => model.run::<HighsSolver>(&HighsSolverSettings::default()),
+        Solver::Highs => model.run::<HighsSolver>(&HighsSolverSettings::default()),
         #[cfg(feature = "ipm-ocl")]
         Solver::CLIPMF32 => model.run_multi_scenario::<ClIpmF32Solver>(&ClIpmSolverSettings::default()),
         #[cfg(feature = "ipm-ocl")]
@@ -305,7 +302,7 @@ fn run_random(num_systems: usize, density: usize, num_scenarios: usize, solver: 
     match *solver {
         Solver::Clp => model.run::<ClpSolver>(&ClpSolverSettings::default()),
         #[cfg(feature = "highs")]
-        Solver::HIGHS => model.run::<HighsSolver>(&HighsSolverSettings::default()),
+        Solver::Highs => model.run::<HighsSolver>(&HighsSolverSettings::default()),
         #[cfg(feature = "ipm-ocl")]
         Solver::CLIPMF32 => model.run_multi_scenario::<ClIpmF32Solver>(&ClIpmSolverSettings::default()),
         #[cfg(feature = "ipm-ocl")]

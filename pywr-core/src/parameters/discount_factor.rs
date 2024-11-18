@@ -1,6 +1,6 @@
 use crate::metric::MetricF64;
 use crate::network::Network;
-use crate::parameters::{GeneralParameter, Parameter, ParameterMeta, ParameterState};
+use crate::parameters::{GeneralParameter, Parameter, ParameterMeta, ParameterName, ParameterState};
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
 use crate::timestep::Timestep;
@@ -14,7 +14,7 @@ pub struct DiscountFactorParameter {
 }
 
 impl DiscountFactorParameter {
-    pub fn new(name: &str, discount_rate: MetricF64, base_year: i32) -> Self {
+    pub fn new(name: ParameterName, discount_rate: MetricF64, base_year: i32) -> Self {
         Self {
             meta: ParameterMeta::new(name),
             discount_rate,
@@ -66,12 +66,12 @@ mod test {
 
         // Create an artificial volume series to use for the delay test
         let volumes = Array1::linspace(1.0, 0.0, 21);
-        let volume = Array1Parameter::new("test-x", volumes.clone(), None);
+        let volume = Array1Parameter::new("test-x".into(), volumes.clone(), None);
 
         let _volume_idx = network.add_parameter(Box::new(volume)).unwrap();
 
         let parameter = DiscountFactorParameter::new(
-            "test-parameter",
+            "test-parameter".into(),
             0.03.into(), // Interpolate with the parameter based values
             2020,
         );

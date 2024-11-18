@@ -78,7 +78,7 @@ impl DerivedMetric {
     pub fn compute(&self, network: &Network, state: &State) -> Result<f64, PywrError> {
         match self {
             Self::NodeProportionalVolume(idx) => {
-                let max_volume = network.get_node(idx)?.get_current_max_volume(state)?;
+                let max_volume = network.get_node(idx)?.get_max_volume(state)?;
                 Ok(state
                     .get_network_state()
                     .get_node_proportional_volume(idx, max_volume)?)
@@ -100,7 +100,7 @@ impl DerivedMetric {
                 let max_volume: f64 = node
                     .nodes
                     .iter()
-                    .map(|idx| network.get_node(idx)?.get_current_max_volume(state))
+                    .map(|idx| network.get_node(idx)?.get_max_volume(state))
                     .sum::<Result<_, _>>()?;
                 // TODO handle divide by zero
                 Ok(volume / max_volume)
@@ -108,7 +108,7 @@ impl DerivedMetric {
             Self::NodeInFlowDeficit(idx) => {
                 let node = network.get_node(idx)?;
                 let flow = state.get_network_state().get_node_in_flow(idx)?;
-                let max_flow = node.get_current_max_flow(network, state)?;
+                let max_flow = node.get_max_flow(network, state)?;
                 Ok(max_flow - flow)
             }
             Self::PowerFromNodeFlow(idx, turbine_data) => {

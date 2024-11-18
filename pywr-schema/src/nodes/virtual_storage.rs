@@ -1,8 +1,7 @@
 use crate::error::ConversionError;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
-use crate::metric::Metric;
-use crate::metric::NodeReference;
+use crate::metric::{Metric, SimpleNodeReference};
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::nodes::core::StorageInitialVolume;
@@ -19,10 +18,10 @@ use pywr_v1_schema::nodes::VirtualStorageNode as VirtualStorageNodeV1;
 use schemars::JsonSchema;
 
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
+#[serde(deny_unknown_fields)]
 pub struct VirtualStorageNode {
-    #[serde(flatten)]
     pub meta: NodeMeta,
-    pub nodes: Vec<NodeReference>,
+    pub nodes: Vec<SimpleNodeReference>,
     pub factors: Option<Vec<f64>>,
     pub max_volume: Option<Metric>,
     pub min_volume: Option<Metric>,
@@ -48,6 +47,26 @@ impl VirtualStorageNode {
 
 #[cfg(feature = "core")]
 impl VirtualStorageNode {
+    pub fn node_indices_for_constraints(
+        &self,
+        network: &pywr_core::network::Network,
+        args: &LoadArgs,
+    ) -> Result<Vec<pywr_core::node::NodeIndex>, SchemaError> {
+        let indices = self
+            .nodes
+            .iter()
+            .map(|name_ref| {
+                args.schema
+                    .get_node_by_name(&name_ref.name)
+                    .ok_or_else(|| SchemaError::NodeNotFound(name_ref.name.to_string()))?
+                    .node_indices_for_constraints(network, args)
+            })
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .flatten()
+            .collect();
+        Ok(indices)
+    }
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network, args: &LoadArgs) -> Result<(), SchemaError> {
         let cost = match &self.cost {
             Some(v) => v.load(network, args)?.into(),
@@ -64,11 +83,7 @@ impl VirtualStorageNode {
             None => None,
         };
 
-        let node_idxs = self
-            .nodes
-            .iter()
-            .map(|name| network.get_node_index_by_name(name.name.as_str(), None))
-            .collect::<Result<Vec<_>, _>>()?;
+        let node_idxs = self.node_indices_for_constraints(network, args)?;
 
         // Standard virtual storage node never resets.
         let reset = VirtualStorageReset::Never;

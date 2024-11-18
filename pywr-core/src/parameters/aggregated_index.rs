@@ -1,6 +1,6 @@
 /// AggregatedIndexParameter
 ///
-use super::{Parameter, ParameterState, PywrError};
+use super::{Parameter, ParameterName, ParameterState, PywrError};
 use crate::metric::MetricUsize;
 use crate::network::Network;
 use crate::parameters::{GeneralParameter, ParameterMeta};
@@ -41,7 +41,7 @@ pub struct AggregatedIndexParameter {
 }
 
 impl AggregatedIndexParameter {
-    pub fn new(name: &str, values: Vec<MetricUsize>, agg_func: AggIndexFunc) -> Self {
+    pub fn new(name: ParameterName, values: Vec<MetricUsize>, agg_func: AggIndexFunc) -> Self {
         Self {
             meta: ParameterMeta::new(name),
             values,
@@ -65,8 +65,6 @@ impl GeneralParameter<usize> for AggregatedIndexParameter {
         state: &State,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<usize, PywrError> {
-        // TODO scenarios!
-
         let value: usize = match self.agg_func {
             AggIndexFunc::Sum => {
                 let mut total = 0;

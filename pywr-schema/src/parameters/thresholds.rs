@@ -13,7 +13,7 @@ use pywr_v1_schema::parameters::{
 };
 use schemars::JsonSchema;
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Copy, JsonSchema, PywrVisitAll)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Copy, JsonSchema, PywrVisitAll, strum_macros::Display)]
 pub enum Predicate {
     #[serde(alias = "<")]
     LT,
@@ -53,10 +53,10 @@ impl From<Predicate> for pywr_core::parameters::Predicate {
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
-pub struct ParameterThresholdParameter {
-    #[serde(flatten)]
+#[serde(deny_unknown_fields)]
+pub struct ThresholdParameter {
     pub meta: ParameterMeta,
-    pub parameter: Metric,
+    pub value: Metric,
     pub threshold: Metric,
     pub predicate: Predicate,
     #[serde(default)]
@@ -64,17 +64,17 @@ pub struct ParameterThresholdParameter {
 }
 
 #[cfg(feature = "core")]
-impl ParameterThresholdParameter {
+impl ThresholdParameter {
     pub fn add_to_model(
         &self,
         network: &mut pywr_core::network::Network,
         args: &LoadArgs,
     ) -> Result<ParameterIndex<usize>, SchemaError> {
-        let metric = self.parameter.load(network, args)?;
+        let metric = self.value.load(network, args)?;
         let threshold = self.threshold.load(network, args)?;
 
         let p = pywr_core::parameters::ThresholdParameter::new(
-            &self.meta.name,
+            self.meta.name.as_str().into(),
             metric,
             threshold,
             self.predicate.into(),
@@ -84,7 +84,7 @@ impl ParameterThresholdParameter {
     }
 }
 
-impl TryFromV1Parameter<ParameterThresholdParameterV1> for ParameterThresholdParameter {
+impl TryFromV1Parameter<ParameterThresholdParameterV1> for ThresholdParameter {
     type Error = ConversionError;
 
     fn try_from_v1_parameter(
@@ -94,14 +94,14 @@ impl TryFromV1Parameter<ParameterThresholdParameterV1> for ParameterThresholdPar
     ) -> Result<Self, Self::Error> {
         let meta: ParameterMeta = v1.meta.into_v2_parameter(parent_node, unnamed_count);
 
-        let parameter = v1.parameter.try_into_v2_parameter(Some(&meta.name), unnamed_count)?;
+        let value = v1.parameter.try_into_v2_parameter(Some(&meta.name), unnamed_count)?;
         let threshold = v1.threshold.try_into_v2_parameter(Some(&meta.name), unnamed_count)?;
 
         // TODO warn or something about the lack of using the values here!!
 
         let p = Self {
             meta,
-            parameter,
+            value,
             threshold,
             predicate: v1.predicate.into(),
             ratchet: false,

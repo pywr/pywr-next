@@ -4,8 +4,9 @@ use std::path::{Path, PathBuf};
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
 pub struct PolarsDataset {
-    time_col: Option<String>,
-    url: PathBuf,
+    pub time_col: Option<String>,
+    pub url: PathBuf,
+    pub infer_schema_length: Option<usize>,
 }
 
 impl VisitPaths for PolarsDataset {
@@ -15,12 +16,6 @@ impl VisitPaths for PolarsDataset {
 
     fn visit_paths_mut<F: FnMut(&mut PathBuf)>(&mut self, visitor: &mut F) {
         visitor(&mut self.url);
-    }
-}
-
-impl PolarsDataset {
-    pub fn new(time_col: Option<String>, url: PathBuf) -> Self {
-        Self { time_col, url }
     }
 }
 
@@ -55,12 +50,16 @@ mod core {
                         Some("csv") => {
                             let parse_options = CsvParseOptions::default().with_try_parse_dates(true);
 
-                            CsvReadOptions::default()
+                            let mut read_options = CsvReadOptions::default()
                                 .with_schema(None)
                                 .with_has_header(true)
-                                .with_parse_options(parse_options)
-                                .try_into_reader_with_file_path(Some(fp))?
-                                .finish()?
+                                .with_parse_options(parse_options);
+
+                            if self.infer_schema_length.is_some() {
+                                read_options = read_options.with_infer_schema_length(self.infer_schema_length);
+                            };
+
+                            read_options.try_into_reader_with_file_path(Some(fp))?.finish()?
                         }
                         Some("parquet") => {
                             todo!()

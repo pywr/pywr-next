@@ -18,8 +18,8 @@ use pywr_v1_schema::parameters::{
 use schemars::JsonSchema;
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
+#[serde(deny_unknown_fields)]
 pub struct ControlCurveInterpolatedParameter {
-    #[serde(flatten)]
     pub meta: ParameterMeta,
     pub control_curves: Vec<Metric>,
     pub storage_node: NodeReference,
@@ -48,7 +48,7 @@ impl ControlCurveInterpolatedParameter {
             .collect::<Result<_, _>>()?;
 
         let p = pywr_core::parameters::ControlCurveInterpolatedParameter::new(
-            &self.meta.name,
+            self.meta.name.as_str().into(),
             metric,
             control_curves,
             values,
@@ -119,8 +119,8 @@ impl TryFromV1Parameter<ControlCurveInterpolatedParameterV1> for ControlCurveInt
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
+#[serde(deny_unknown_fields)]
 pub struct ControlCurveIndexParameter {
-    #[serde(flatten)]
     pub meta: ParameterMeta,
     pub control_curves: Vec<Metric>,
     pub storage_node: NodeReference,
@@ -141,7 +141,11 @@ impl ControlCurveIndexParameter {
             .map(|cc| cc.load(network, args))
             .collect::<Result<_, _>>()?;
 
-        let p = pywr_core::parameters::ControlCurveIndexParameter::new(&self.meta.name, metric, control_curves);
+        let p = pywr_core::parameters::ControlCurveIndexParameter::new(
+            self.meta.name.as_str().into(),
+            metric,
+            control_curves,
+        );
         Ok(network.add_index_parameter(Box::new(p))?)
     }
 }
@@ -226,8 +230,8 @@ impl TryFromV1Parameter<ControlCurveParameterV1> for ControlCurveIndexParameter 
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
+#[serde(deny_unknown_fields)]
 pub struct ControlCurveParameter {
-    #[serde(flatten)]
     pub meta: ParameterMeta,
     pub control_curves: Vec<Metric>,
     pub storage_node: NodeReference,
@@ -255,7 +259,12 @@ impl ControlCurveParameter {
             .map(|val| val.load(network, args))
             .collect::<Result<_, _>>()?;
 
-        let p = pywr_core::parameters::ControlCurveParameter::new(&self.meta.name, metric, control_curves, values);
+        let p = pywr_core::parameters::ControlCurveParameter::new(
+            self.meta.name.as_str().into(),
+            metric,
+            control_curves,
+            values,
+        );
         Ok(network.add_parameter(Box::new(p))?)
     }
 }
@@ -315,8 +324,8 @@ impl TryFromV1Parameter<ControlCurveParameterV1> for ControlCurveParameter {
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
+#[serde(deny_unknown_fields)]
 pub struct ControlCurvePiecewiseInterpolatedParameter {
-    #[serde(flatten)]
     pub meta: ParameterMeta,
     pub control_curves: Vec<Metric>,
     pub storage_node: NodeReference,
@@ -346,7 +355,7 @@ impl ControlCurvePiecewiseInterpolatedParameter {
         };
 
         let p = pywr_core::parameters::PiecewiseInterpolatedParameter::new(
-            &self.meta.name,
+            self.meta.name.as_str().into(),
             metric,
             control_curves,
             values,
@@ -407,8 +416,10 @@ mod tests {
     fn test_control_curve_piecewise_interpolated() {
         let data = r#"
             {
-                "name": "My control curve",
-                "type": "ControlCurvePiecewiseInterpolated",
+                "meta": {
+                    "name": "My control curve",
+                    "comment": "A witty comment"
+                },
                 "storage_node": {
                   "name": "Reservoir",
                   "attribute": "ProportionalVolume"
@@ -417,7 +428,6 @@ mod tests {
                     {"type": "Parameter", "name": "reservoir_cc"},
                     {"type": "Constant", "value": 0.2}
                 ],
-                "comment": "A witty comment",
                 "values": [
                     [-0.1, -1.0],
                     [-100, -200],

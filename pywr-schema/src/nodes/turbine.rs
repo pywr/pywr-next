@@ -8,12 +8,12 @@ use crate::SchemaError;
 use pywr_core::{
     derived_metric::{DerivedMetric, TurbineData},
     metric::MetricF64,
-    parameters::HydropowerTargetData,
+    parameters::{HydropowerTargetData, ParameterName},
 };
 use pywr_schema_macros::PywrVisitAll;
 use schemars::JsonSchema;
 
-#[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, PywrVisitAll)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Debug, strum_macros::Display, JsonSchema, PywrVisitAll)]
 pub enum TargetType {
     // set flow derived from the hydropower target as a max_flow
     MaxFlow,
@@ -26,8 +26,8 @@ pub enum TargetType {
 /// This turbine node can be used to set a flow constraint based on a hydropower production target.
 /// The turbine elevation, minimum head and efficiency can also be configured.
 #[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, PywrVisitAll)]
+#[serde(deny_unknown_fields)]
 pub struct TurbineNode {
-    #[serde(flatten)]
     pub meta: NodeMeta,
     pub cost: Option<Metric>,
     /// Hydropower production target. If set the node's max flow is limited to the flow
@@ -98,6 +98,14 @@ impl TurbineNode {
     fn sub_name() -> Option<&'static str> {
         Some("turbine")
     }
+
+    pub fn node_indices_for_constraints(
+        &self,
+        network: &pywr_core::network::Network,
+    ) -> Result<Vec<pywr_core::node::NodeIndex>, SchemaError> {
+        let idx = network.get_node_index_by_name(self.meta.name.as_str(), None)?;
+        Ok(vec![idx])
+    }
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network, _args: &LoadArgs) -> Result<(), SchemaError> {
         network.add_link_node(self.meta.name.as_str(), None)?;
         Ok(())
@@ -114,8 +122,7 @@ impl TurbineNode {
         }
 
         if let Some(target) = &self.target {
-            // TODO: address parameter name. See https://github.com/pywr/pywr-next/issues/107#issuecomment-1980957962
-            let name = format!("{}-power", self.meta.name.as_str());
+            let name = ParameterName::new("power", Some(self.meta.name.as_str()));
             let target_value = target.load(network, args)?;
 
             let water_elevation = self
@@ -135,7 +142,7 @@ impl TurbineNode {
                 flow_unit_conversion: Some(self.flow_unit_conversion),
                 energy_unit_conversion: Some(self.energy_unit_conversion),
             };
-            let p = pywr_core::parameters::HydropowerTargetParameter::new(&name, turbine_data);
+            let p = pywr_core::parameters::HydropowerTargetParameter::new(name, turbine_data);
             let power_idx = network.add_parameter(Box::new(p))?;
             let metric: MetricF64 = power_idx.into();
 

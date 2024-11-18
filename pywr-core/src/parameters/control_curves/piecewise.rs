@@ -1,7 +1,7 @@
 use crate::metric::MetricF64;
 use crate::network::Network;
 use crate::parameters::interpolate::interpolate;
-use crate::parameters::{GeneralParameter, Parameter, ParameterMeta, ParameterState};
+use crate::parameters::{GeneralParameter, Parameter, ParameterMeta, ParameterName, ParameterState};
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
 use crate::timestep::Timestep;
@@ -18,7 +18,7 @@ pub struct PiecewiseInterpolatedParameter {
 
 impl PiecewiseInterpolatedParameter {
     pub fn new(
-        name: &str,
+        name: ParameterName,
         metric: MetricF64,
         control_curves: Vec<MetricF64>,
         values: Vec<[f64; 2]>,
@@ -55,7 +55,7 @@ impl GeneralParameter<f64> for PiecewiseInterpolatedParameter {
         let mut cc_previous_value = self.maximum;
         for (idx, control_curve) in self.control_curves.iter().enumerate() {
             let cc_value = control_curve.get_value(model, state)?;
-            if x > cc_value {
+            if x >= cc_value {
                 let v = self.values.get(idx).ok_or(PywrError::DataOutOfRange)?;
                 return Ok(interpolate(x, cc_value, cc_previous_value, v[1], v[0]));
             }
@@ -85,12 +85,12 @@ mod test {
         let mut model = simple_model(1);
 
         // Create an artificial volume series to use for the interpolation test
-        let volume = Array1Parameter::new("test-x", Array1::linspace(1.0, 0.0, 21), None);
+        let volume = Array1Parameter::new("test-x".into(), Array1::linspace(1.0, 0.0, 21), None);
 
         let volume_idx = model.network_mut().add_parameter(Box::new(volume)).unwrap();
 
         let parameter = PiecewiseInterpolatedParameter::new(
-            "test-parameter",
+            "test-parameter".into(),
             volume_idx.into(), // Interpolate with the parameter based values
             vec![0.8.into(), 0.5.into()],
             vec![[10.0, 1.0], [0.0, 0.0], [-1.0, -10.0]],
@@ -103,13 +103,13 @@ mod test {
             1.0 + 9.0 * 0.15 / 0.2,  // 95%
             1.0 + 9.0 * 0.10 / 0.2,  // 90%
             1.0 + 9.0 * 0.05 / 0.2,  // 85%
-            0.0,                     // 80%
+            1.0,                     // 80%
             0.0,                     // 75%
             0.0,                     // 70%
             0.0,                     // 65%
             0.0,                     // 60%
             0.0,                     // 55%
-            -1.0,                    // 50%
+            0.0,                     // 50%
             -1.0 - 9.0 * 0.05 / 0.5, // 45%
             -1.0 - 9.0 * 0.10 / 0.5, // 40%
             -1.0 - 9.0 * 0.15 / 0.5, // 35%

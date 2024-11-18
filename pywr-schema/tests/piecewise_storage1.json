@@ -1,0 +1,107 @@
+{
+  "metadata": {
+    "title": "PiecewiseStorage 1",
+    "description": "A test of PiecewiseStorageNode.",
+    "minimum_version": "0.1"
+  },
+  "timestepper": {
+    "start": "2021-01-01",
+    "end": "2021-03-31",
+    "timestep": 1
+  },
+  "network": {
+    "nodes": [
+      {
+        "meta": {
+          "name": "input1"
+        },
+        "type": "Input",
+        "max_flow": {
+          "type": "Constant",
+          "value": 5
+        },
+        "cost": {
+          "type": "Constant",
+          "value": 2.0
+        }
+      },
+      {
+        "meta": {
+          "name": "storage1"
+        },
+        "type": "PiecewiseStorage",
+        "max_volume": {
+          "type": "Constant",
+          "value": 1000.0
+        },
+        "steps": [
+          {
+            "cost": {
+              "type": "Constant",
+              "value": -15
+            },
+            "control_curve": {
+              "type": "Constant",
+              "value": 0.25
+            }
+          },
+          {
+            "cost": {
+              "type": "Constant",
+              "value": -5
+            },
+            "control_curve": {
+              "type": "Constant",
+              "value": 0.5
+            }
+          }
+        ]
+      },
+      {
+        "meta": {
+          "name": "demand1"
+        },
+        "type": "Output",
+        "max_flow": {
+          "type": "Constant",
+          "value": 15
+        },
+        "cost": {
+          "type": "Constant",
+          "value": -10
+        }
+      }
+    ],
+    "edges": [
+      {
+        "from_node": "input1",
+        "to_node": "storage1"
+      },
+      {
+        "from_node": "storage1",
+        "to_node": "demand1"
+      }
+    ],
+    "metric_sets": [
+      {
+        "name": "nodes",
+        "metrics": [
+          {
+            "type": "Node",
+            "name": "storage1"
+          }
+        ]
+      }
+    ],
+    "outputs": [
+      {
+        "name": "nodes",
+        "type": "CSV",
+        "format": "long",
+        "filename": "piecewise_storage1-expected.csv",
+        "metric_set": "nodes",
+        "decimal_places": 1
+      }
+    ]
+  }
+}

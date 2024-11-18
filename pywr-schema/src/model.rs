@@ -53,7 +53,7 @@ impl TryFrom<pywr_v1_schema::model::Metadata> for Metadata {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, strum_macros::Display)]
 #[serde(untagged)]
 pub enum Timestep {
     Days(i64),
@@ -69,7 +69,7 @@ impl From<pywr_v1_schema::model::Timestep> for Timestep {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Clone, Copy, Debug, JsonSchema)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Copy, Debug, JsonSchema, strum_macros::Display)]
 #[serde(untagged)]
 pub enum DateType {
     Date(NaiveDate),
@@ -220,8 +220,10 @@ impl VisitMetrics for PywrNetwork {
 
         if let Some(metric_sets) = &self.metric_sets {
             for metric_set in metric_sets {
-                for metric in &metric_set.metrics {
-                    visitor(metric);
+                if let Some(metrics) = &metric_set.metrics {
+                    for metric in metrics {
+                        visitor(metric);
+                    }
                 }
             }
         }
@@ -238,8 +240,10 @@ impl VisitMetrics for PywrNetwork {
 
         if let Some(metric_sets) = &mut self.metric_sets {
             for metric_set in metric_sets {
-                for metric in metric_set.metrics.iter_mut() {
-                    visitor(metric);
+                if let Some(metrics) = &mut metric_set.metrics {
+                    for metric in metrics {
+                        visitor(metric);
+                    }
                 }
             }
         }
@@ -378,7 +382,7 @@ impl PywrNetwork {
 
     #[cfg(feature = "core")]
     pub fn load_tables(&self, data_path: Option<&Path>) -> Result<LoadedTableCollection, SchemaError> {
-        Ok(LoadedTableCollection::from_schema(self.tables.as_deref(), data_path)?)
+        LoadedTableCollection::from_schema(self.tables.as_deref(), data_path)
     }
 
     #[cfg(feature = "core")]
@@ -447,24 +451,7 @@ impl PywrNetwork {
 
         // Create the edges
         for edge in &self.edges {
-            let from_node = self
-                .get_node_by_name(edge.from_node.as_str())
-                .ok_or_else(|| SchemaError::NodeNotFound(edge.from_node.clone()))?;
-            let to_node = self
-                .get_node_by_name(edge.to_node.as_str())
-                .ok_or_else(|| SchemaError::NodeNotFound(edge.to_node.clone()))?;
-
-            let from_slot = edge.from_slot.as_deref();
-
-            // Connect each "from" connector to each "to" connector
-            for from_connector in from_node.output_connectors(from_slot) {
-                for to_connector in to_node.input_connectors() {
-                    let from_node_index =
-                        network.get_node_index_by_name(from_connector.0, from_connector.1.as_deref())?;
-                    let to_node_index = network.get_node_index_by_name(to_connector.0, to_connector.1.as_deref())?;
-                    network.connect_nodes(from_node_index, to_node_index)?;
-                }
-            }
+            edge.add_to_model(&mut network, &args)?;
         }
 
         // Create all the parameters
@@ -491,7 +478,8 @@ impl PywrNetwork {
 
                 if failed_parameters.len() == n {
                     // Could not load any parameters; must be a circular reference
-                    return Err(SchemaError::CircularParameterReference);
+                    let failed_names = failed_parameters.iter().map(|p| p.name().to_string()).collect();
+                    return Err(SchemaError::CircularParameterReference(failed_names));
                 }
 
                 remaining_parameters = failed_parameters;
@@ -521,7 +509,7 @@ impl PywrNetwork {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, strum_macros::Display)]
 #[serde(untagged)]
 pub enum PywrNetworkRef {
     Path(PathBuf),
@@ -544,7 +532,7 @@ pub enum PywrNetworkRef {
 /// The simplest model is given in the example below:
 ///
 /// ```json
-#[doc = include_str!("test_models/simple1.json")]
+#[doc = include_str!("../tests/simple1.json")]
 /// ```
 ///
 ///
@@ -667,6 +655,15 @@ impl PywrModel {
             errors,
         )
     }
+
+    /// Convert a v1 JSON string to a v2 model.
+    ///
+    /// See [`PywrModel::from_v1`] for more information.
+    pub fn from_v1_str(v1: &str) -> Result<(Self, Vec<ConversionError>), pywr_v1_schema::PywrSchemaError> {
+        let v1_model: pywr_v1_schema::PywrModel = serde_json::from_str(v1)?;
+
+        Ok(Self::from_v1(v1_model))
+    }
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Clone)]
@@ -736,11 +733,11 @@ pub struct PywrMultiNetworkEntry {
 ///
 /// ```json5
 /// // model.json
-#[doc = include_str!("test_models/multi1/model.json")]
+#[doc = include_str!("../tests/multi1/model.json")]
 /// // network1.json
-#[doc = include_str!("test_models/multi1/network1.json")]
+#[doc = include_str!("../tests/multi1/network1.json")]
 /// // network2.json
-#[doc = include_str!("test_models/multi1/network2.json")]
+#[doc = include_str!("../tests/multi1/network2.json")]
 /// ```
 ///
 ///
@@ -879,7 +876,7 @@ impl PywrMultiNetworkModel {
         let mut model = pywr_core::models::MultiNetworkModel::new(domain);
 
         for (name, network) in networks {
-            model.add_network(&name, network);
+            model.add_network(&name, network)?;
         }
 
         for (from_network_idx, from_metric, to_network_idx, initial_value) in inter_network_transfers {
@@ -895,16 +892,17 @@ mod tests {
     use super::PywrModel;
     use crate::model::Timestepper;
     use crate::visit::VisitPaths;
+    use std::fs::read_to_string;
     use std::path::PathBuf;
 
-    fn model_str() -> &'static str {
-        include_str!("./test_models/simple1.json")
+    fn model_str() -> String {
+        read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/simple1.json")).unwrap()
     }
 
     #[test]
     fn test_simple1_schema() {
         let data = model_str();
-        let schema: PywrModel = serde_json::from_str(data).unwrap();
+        let schema: PywrModel = serde_json::from_str(&data).unwrap();
 
         assert_eq!(schema.network.nodes.len(), 3);
         assert_eq!(schema.network.edges.len(), 2);
@@ -980,11 +978,11 @@ mod tests {
     #[test]
     fn test_visit_paths() {
         let mut model_fn = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        model_fn.push("src/test_models/timeseries.json");
+        model_fn.push("tests/timeseries.json");
 
         let mut schema = PywrModel::from_path(model_fn.as_path()).unwrap();
 
-        let expected_paths = vec![PathBuf::from("inflow.csv")];
+        let expected_paths = vec![PathBuf::from("inflow.csv"), PathBuf::from("timeseries-expected.csv")];
 
         let mut paths: Vec<PathBuf> = Vec::new();
 
@@ -1005,26 +1003,6 @@ mod tests {
             panic!("Expected an error due to missing file: {str}");
         }
     }
-
-    #[test]
-    fn test_v1_conversion() {
-        let v1_str = include_str!("./test_models/v1/timeseries.json");
-        let v1: pywr_v1_schema::PywrModel = serde_json::from_str(v1_str).unwrap();
-
-        let (v2, errors) = PywrModel::from_v1(v1);
-
-        assert_eq!(errors.len(), 0);
-
-        std::fs::write("tmp.json", serde_json::to_string_pretty(&v2).unwrap()).unwrap();
-
-        let v2_converted: serde_json::Value =
-            serde_json::from_str(&serde_json::to_string_pretty(&v2).unwrap()).unwrap();
-
-        let v2_expected: serde_json::Value =
-            serde_json::from_str(include_str!("./test_models/v1/timeseries-converted.json")).unwrap();
-
-        assert_eq!(v2_converted, v2_expected);
-    }
 }
 
 #[cfg(test)]
@@ -1035,16 +1013,17 @@ mod core_tests {
     use crate::parameters::{AggFunc, AggregatedParameter, ConstantParameter, ConstantValue, Parameter, ParameterMeta};
     use ndarray::{Array1, Array2, Axis};
     use pywr_core::{metric::MetricF64, recorders::AssertionRecorder, solvers::ClpSolver, test_utils::run_all_solvers};
+    use std::fs::read_to_string;
     use std::path::PathBuf;
 
-    fn model_str() -> &'static str {
-        include_str!("./test_models/simple1.json")
+    fn model_str() -> String {
+        read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/simple1.json")).unwrap()
     }
 
     #[test]
     fn test_simple1_run() {
         let data = model_str();
-        let schema: PywrModel = serde_json::from_str(data).unwrap();
+        let schema: PywrModel = serde_json::from_str(&data).unwrap();
         let mut model = schema.build_model(None, None).unwrap();
 
         let network = model.network_mut();
@@ -1066,14 +1045,14 @@ mod core_tests {
         network.add_recorder(Box::new(rec)).unwrap();
 
         // Test all solvers
-        run_all_solvers(&model, &[]);
+        run_all_solvers(&model, &[], &[]);
     }
 
     /// Test that a cycle in parameter dependencies does not load.
     #[test]
     fn test_cycle_error() {
         let data = model_str();
-        let mut schema: PywrModel = serde_json::from_str(data).unwrap();
+        let mut schema: PywrModel = serde_json::from_str(&data).unwrap();
 
         // Add additional parameters for the test
         if let Some(parameters) = &mut schema.network.parameters {
@@ -1101,6 +1080,7 @@ mod core_tests {
                         comment: None,
                     },
                     value: ConstantValue::Literal(10.0),
+                    variable: None,
                 }),
                 Parameter::Aggregated(AggregatedParameter {
                     meta: ParameterMeta {
@@ -1130,7 +1110,7 @@ mod core_tests {
     #[test]
     fn test_ordering() {
         let data = model_str();
-        let mut schema: PywrModel = serde_json::from_str(data).unwrap();
+        let mut schema: PywrModel = serde_json::from_str(&data).unwrap();
 
         if let Some(parameters) = &mut schema.network.parameters {
             parameters.extend(vec![
@@ -1157,6 +1137,7 @@ mod core_tests {
                         comment: None,
                     },
                     value: ConstantValue::Literal(10.0),
+                    variable: None,
                 }),
                 Parameter::Constant(ConstantParameter {
                     meta: ParameterMeta {
@@ -1164,6 +1145,7 @@ mod core_tests {
                         comment: None,
                     },
                     value: ConstantValue::Literal(10.0),
+                    variable: None,
                 }),
             ]);
         }
@@ -1175,7 +1157,7 @@ mod core_tests {
     #[test]
     fn test_multi1_model() {
         let mut model_fn = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        model_fn.push("src/test_models/multi1/model.json");
+        model_fn.push("tests/multi1/model.json");
 
         let schema = PywrMultiNetworkModel::from_path(model_fn.as_path()).unwrap();
         let mut model = schema.build_model(model_fn.parent(), None).unwrap();
@@ -1225,7 +1207,7 @@ mod core_tests {
     #[test]
     fn test_multi2_model() {
         let mut model_fn = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        model_fn.push("src/test_models/multi2/model.json");
+        model_fn.push("tests/multi2/model.json");
 
         let schema = PywrMultiNetworkModel::from_path(model_fn.as_path()).unwrap();
         let mut model = schema.build_model(model_fn.parent(), None).unwrap();

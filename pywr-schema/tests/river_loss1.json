@@ -1,0 +1,114 @@
+{
+  "metadata": {
+    "title": "River losses Test 1",
+    "description": "Test River node",
+    "minimum_version": "0.1"
+  },
+  "timestepper": {
+    "start": "2015-01-01",
+    "end": "2015-01-03",
+    "timestep": 1
+  },
+  "network": {
+    "nodes": [
+      {
+        "meta": {
+          "name": "catchment1"
+        },
+        "type": "Catchment",
+        "flow": {
+          "type": "Constant",
+          "value": 10.0
+        }
+      },
+      {
+        "meta": {
+          "name": "reach1"
+        },
+        "type": "River"
+      },
+      {
+        "meta": {
+          "name": "reach2"
+        },
+        "type": "River",
+        "loss_factor": {
+          "type": "Gross",
+          "factor": {
+            "type": "Constant",
+            "value": 0.1
+          }
+        }
+      },
+      {
+        "meta": {
+          "name": "term1"
+        },
+        "type": "Output"
+      }
+    ],
+    "edges": [
+      {
+        "from_node": "catchment1",
+        "to_node": "reach1"
+      },
+      {
+        "from_node": "reach1",
+        "to_node": "reach2"
+      },
+      {
+        "from_node": "reach2",
+        "to_node": "term1"
+      }
+    ],
+    "metric_sets": [
+      {
+        "name": "nodes",
+        "metrics": [
+          {
+            "type": "Node",
+            "name": "reach1",
+            "attribute": "Inflow"
+          },
+          {
+            "type": "Node",
+            "name": "reach1",
+            "attribute": "Outflow"
+          },
+          {
+            "type": "Node",
+            "name": "reach1",
+            "attribute": "Loss"
+          },
+          {
+            "type": "Node",
+            "name": "reach2",
+            "attribute": "Inflow"
+          },
+          {
+            "type": "Node",
+            "name": "reach2",
+            "attribute": "Outflow"
+          },
+          {
+            "type": "Node",
+            "name": "reach2",
+            "attribute": "Loss"
+          }
+        ]
+      }
+    ],
+    "outputs": [
+      {
+        "name": "node-outputs",
+        "type": "CSV",
+        "format": "long",
+        "filename": "river_loss1-expected.csv",
+        "metric_set": [
+          "nodes"
+        ],
+        "decimal_places": 1
+      }
+    ]
+  }
+}

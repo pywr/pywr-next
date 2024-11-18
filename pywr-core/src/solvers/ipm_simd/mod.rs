@@ -2,7 +2,7 @@ mod settings;
 
 use crate::edge::EdgeIndex;
 use crate::network::Network;
-use crate::node::{Node, NodeType};
+use crate::node::{Node, NodeBounds, NodeType};
 use crate::solvers::col_edge_map::{ColumnEdgeMap, ColumnEdgeMapBuilder};
 use crate::solvers::{MultiStateSolver, SolverFeatures, SolverTimings};
 use crate::state::State;
@@ -367,10 +367,10 @@ where
                             .iter()
                             .map(|state| {
                                 // TODO check for non-zero lower bounds and error?
-                                node.get_current_flow_bounds(network, state)
-                                    .expect("Flow bounds expected for Input, Output and Link nodes.")
-                                    .1
-                                    .min(B_MAX)
+                                match node.get_bounds(network, state).expect("Failed to get node bounds.") {
+                                    NodeBounds::Flow(bounds) => bounds.max_flow.min(B_MAX),
+                                    _ => panic!("Flow bounds expected for Input, Output and Link nodes."),
+                                }
                             })
                             .collect();
                         // Apply the bounds to LP
@@ -381,12 +381,12 @@ where
                     // Storage nodes instead have two constraints for available and missing volume.
                     let (avail, missing): (Vec<_>, Vec<_>) = states
                         .iter()
-                        .map(|state| {
-                            let (avail, missing) = node
-                                .get_current_available_volume_bounds(state)
-                                .expect("Volumes bounds expected for Storage nodes.");
-                            (avail / dt, missing / dt)
-                        })
+                        .map(
+                            |state| match node.get_bounds(network, state).expect("Failed to get node bounds.") {
+                                NodeBounds::Volume(bounds) => (bounds.available / dt, bounds.missing / dt),
+                                _ => panic!("Volume bounds expected for Storage nodes."),
+                            },
+                        )
                         .unzip();
                     // Storage nodes add two rows the LP. First is the bounds on increase
                     // in volume. The second is the bounds on decrease in volume.

@@ -13,6 +13,7 @@ use pywr_v1_schema::nodes::PiecewiseLinkNode as PiecewiseLinkNodeV1;
 use schemars::JsonSchema;
 
 #[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, PywrVisitAll)]
+#[serde(deny_unknown_fields)]
 pub struct PiecewiseLinkStep {
     pub max_flow: Option<Metric>,
     pub min_flow: Option<Metric>,
@@ -42,8 +43,8 @@ pub struct PiecewiseLinkStep {
 ///
 )]
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
+#[serde(deny_unknown_fields)]
 pub struct PiecewiseLinkNode {
-    #[serde(flatten)]
     pub meta: NodeMeta,
     pub steps: Vec<PiecewiseLinkStep>,
 }
@@ -77,6 +78,18 @@ impl PiecewiseLinkNode {
 
 #[cfg(feature = "core")]
 impl PiecewiseLinkNode {
+    pub fn node_indices_for_constraints(
+        &self,
+        network: &pywr_core::network::Network,
+    ) -> Result<Vec<pywr_core::node::NodeIndex>, SchemaError> {
+        let indices = self
+            .steps
+            .iter()
+            .enumerate()
+            .map(|(i, _)| network.get_node_index_by_name(self.meta.name.as_str(), Self::step_sub_name(i).as_deref()))
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(indices)
+    }
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
         // create a link node for each step
         for (i, _) in self.steps.iter().enumerate() {
@@ -182,47 +195,5 @@ impl TryFrom<PiecewiseLinkNodeV1> for PiecewiseLinkNode {
 
         let n = Self { meta, steps };
         Ok(n)
-    }
-}
-
-#[cfg(test)]
-#[cfg(feature = "core")]
-mod tests {
-    use crate::model::PywrModel;
-    use ndarray::Array2;
-    use pywr_core::{metric::MetricF64, recorders::AssertionRecorder, test_utils::run_all_solvers};
-
-    fn model_str() -> &'static str {
-        include_str!("../test_models/piecewise_link1.json")
-    }
-
-    #[test]
-    fn test_model_run() {
-        let data = model_str();
-        let schema: PywrModel = serde_json::from_str(data).unwrap();
-        let mut model = schema.build_model(None, None).unwrap();
-
-        let network = model.network_mut();
-        assert_eq!(network.nodes().len(), 5);
-        assert_eq!(network.edges().len(), 6);
-
-        // TODO put this assertion data in the test model file.
-        let idx = network.get_node_by_name("link1", Some("step-00")).unwrap().index();
-        let expected = Array2::from_elem((366, 1), 1.0);
-        let recorder = AssertionRecorder::new("link1-s0-flow", MetricF64::NodeOutFlow(idx), expected, None, None);
-        network.add_recorder(Box::new(recorder)).unwrap();
-
-        let idx = network.get_node_by_name("link1", Some("step-01")).unwrap().index();
-        let expected = Array2::from_elem((366, 1), 3.0);
-        let recorder = AssertionRecorder::new("link1-s0-flow", MetricF64::NodeOutFlow(idx), expected, None, None);
-        network.add_recorder(Box::new(recorder)).unwrap();
-
-        let idx = network.get_node_by_name("link1", Some("step-02")).unwrap().index();
-        let expected = Array2::from_elem((366, 1), 0.0);
-        let recorder = AssertionRecorder::new("link1-s0-flow", MetricF64::NodeOutFlow(idx), expected, None, None);
-        network.add_recorder(Box::new(recorder)).unwrap();
-
-        // Test all solvers
-        run_all_solvers(&model, &[]);
     }
 }

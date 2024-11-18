@@ -1,0 +1,137 @@
+{
+  "metadata": {
+    "title": "Simple timeseries",
+    "description": null,
+    "minimum_version": null
+  },
+  "timestepper": {
+    "start": "2021-01-01",
+    "end": "2021-01-31",
+    "timestep": 1
+  },
+  "scenarios": null,
+  "network": {
+    "nodes": [
+      {
+        "type": "Input",
+        "max_flow": {
+          "type": "Timeseries",
+          "name": "inflow",
+          "columns": {
+            "type": "Column",
+            "name": "inflow1"
+          }
+        },
+        "meta": {
+          "name": "input1"
+        },
+        "min_flow": null,
+        "cost": null
+      },
+      {
+        "type": "Input",
+        "max_flow": {
+          "type": "Parameter",
+          "name": "factored_flow",
+          "key": null
+        },
+        "meta": {
+          "name": "input2"
+        },
+        "min_flow": null,
+        "cost": null
+      },
+      {
+        "type": "Link",
+        "max_flow": null,
+        "meta": {
+          "name": "link1"
+        },
+        "min_flow": null,
+        "soft_max": null,
+        "soft_min": null,
+        "cost": null
+      },
+      {
+        "type": "Output",
+        "max_flow": {
+          "type": "Parameter",
+          "name": "demand",
+          "key": null
+        },
+        "meta": {
+          "name": "output1"
+        },
+        "min_flow": null,
+        "cost": {
+          "type": "Constant",
+          "value": -10.0
+        }
+      }
+    ],
+    "edges": [
+      {
+        "from_node": "input1",
+        "to_node": "link1"
+      },
+      {
+        "from_node": "input2",
+        "to_node": "link1"
+      },
+      {
+        "from_node": "link1",
+        "to_node": "output1"
+      }
+    ],
+    "parameters": [
+      {
+        "type": "Constant",
+        "meta": {
+          "name": "demand"
+        },
+        "value": 100.0,
+        "variable": null
+      },
+      {
+        "type": "Aggregated",
+        "meta": {
+          "name": "factored_flow"
+        },
+        "agg_func": "product",
+        "metrics": [
+          {
+            "type": "Timeseries",
+            "name": "inflow",
+            "columns": {
+              "type": "Column",
+              "name": "inflow1"
+            }
+          },
+          {
+            "type": "Constant",
+            "value": 0.5
+          }
+        ]
+      }
+    ],
+    "tables": null,
+    "timeseries": [
+      {
+        "meta": {
+          "name": "inflow"
+        },
+        "provider": {
+          "type": "Pandas",
+          "time_col": null,
+          "url": "inflow.csv",
+          "kwargs": {
+            "parse_dates": true,
+            "dayfirst": true
+          }
+        }
+      }
+    ],
+    "metric_sets": null,
+    "outputs": null
+  }
+}

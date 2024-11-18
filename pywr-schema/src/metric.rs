@@ -1,4 +1,5 @@
 use crate::data_tables::TableDataRef;
+use crate::edge::Edge;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
 #[cfg(feature = "core")]
@@ -28,6 +29,7 @@ pub enum Metric {
     Table(TableDataRef),
     /// An attribute of a node.
     Node(NodeReference),
+    Edge(EdgeReference),
     Timeseries(TimeseriesReference),
     Parameter(ParameterReference),
     InlineParameter {
@@ -58,7 +60,13 @@ impl Metric {
             Self::Parameter(parameter_ref) => parameter_ref.load(network),
             Self::Constant { value } => Ok((*value).into()),
             Self::Table(table_ref) => {
-                let value = args.tables.get_scalar_f64(table_ref)?;
+                let value = args
+                    .tables
+                    .get_scalar_f64(table_ref)
+                    .map_err(|error| SchemaError::TableRefLoad {
+                        table_ref: table_ref.clone(),
+                        error,
+                    })?;
                 Ok(value.into())
             }
             Self::Timeseries(ts_ref) => {
@@ -83,7 +91,7 @@ impl Metric {
                 // assume it is the correct one for future references to that name. This could be
                 // improved by checking the parameter returned by name matches the definition here.
 
-                match network.get_parameter_index_by_name(definition.name()) {
+                match network.get_parameter_index_by_name(&definition.name().into()) {
                     Ok(p) => {
                         // Found a parameter with the name; assume it is the right one!
                         Ok(p.into())
@@ -110,18 +118,20 @@ impl Metric {
                     None => Err(SchemaError::InterNetworkTransferNotFound(name.to_string())),
                 }
             }
+            Self::Edge(edge_ref) => edge_ref.load(network, args),
         }
     }
 
-    fn name(&self) -> Result<&str, SchemaError> {
+    fn name(&self) -> Result<String, SchemaError> {
         match self {
-            Self::Node(node_ref) => Ok(&node_ref.name),
-            Self::Parameter(parameter_ref) => Ok(&parameter_ref.name),
+            Self::Node(node_ref) => Ok(node_ref.name.to_string()),
+            Self::Parameter(parameter_ref) => Ok(parameter_ref.name.clone()),
             Self::Constant { .. } => Err(SchemaError::LiteralConstantOutputNotSupported),
-            Self::Table(table_ref) => Ok(&table_ref.table),
-            Self::Timeseries(ts_ref) => Ok(&ts_ref.name),
-            Self::InlineParameter { definition } => Ok(definition.name()),
-            Self::InterNetworkTransfer { name } => Ok(name),
+            Self::Table(table_ref) => Ok(table_ref.table.clone()),
+            Self::Timeseries(ts_ref) => Ok(ts_ref.name.clone()),
+            Self::InlineParameter { definition } => Ok(definition.name().to_string()),
+            Self::InterNetworkTransfer { name } => Ok(name.clone()),
+            Self::Edge(edge_ref) => Ok(edge_ref.edge.to_string()),
         }
     }
 
@@ -134,6 +144,7 @@ impl Metric {
             Self::Timeseries(_) => "value".to_string(),
             Self::InlineParameter { .. } => "value".to_string(),
             Self::InterNetworkTransfer { .. } => "value".to_string(),
+            Self::Edge { .. } => "Flow".to_string(),
         };
 
         Ok(attribute)
@@ -152,6 +163,7 @@ impl Metric {
             Self::Timeseries(_) => None,
             Self::InlineParameter { definition } => Some(definition.parameter_type().to_string()),
             Self::InterNetworkTransfer { .. } => None,
+            Self::Edge { .. } => None,
         };
 
         Ok(sub_type)
@@ -168,7 +180,7 @@ impl Metric {
         let sub_type = self.sub_type(args)?;
 
         Ok(OutputMetric::new(
-            self.name()?,
+            self.name()?.as_str(),
             &self.attribute(args)?,
             &ty,
             sub_type.as_deref(),
@@ -229,7 +241,7 @@ impl TryFromV1Parameter<ParameterValueV1> for Metric {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, strum_macros::Display)]
 #[serde(tag = "type", content = "name")]
 pub enum TimeseriesColumns {
     Scenario(String),
@@ -237,6 +249,7 @@ pub enum TimeseriesColumns {
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct TimeseriesReference {
     name: String,
     columns: Option<TimeseriesColumns>,
@@ -252,7 +265,9 @@ impl TimeseriesReference {
     }
 }
 
+/// A reference to a node with an optional attribute.
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
+#[serde(deny_unknown_fields)]
 pub struct NodeReference {
     /// The name of the node
     pub name: String,
@@ -261,6 +276,10 @@ pub struct NodeReference {
 }
 
 impl NodeReference {
+    pub fn new(name: String, attribute: Option<NodeAttribute>) -> Self {
+        Self { name, attribute }
+    }
+
     #[cfg(feature = "core")]
     pub fn load(&self, network: &mut pywr_core::network::Network, args: &LoadArgs) -> Result<MetricF64, SchemaError> {
         // This is the associated node in the schema
@@ -298,16 +317,61 @@ impl NodeReference {
     }
 }
 
-impl From<String> for NodeReference {
+/// A reference to a node without an attribute.
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
+pub struct SimpleNodeReference {
+    /// The name of the node
+    pub name: String,
+}
+
+impl SimpleNodeReference {
+    pub fn new(name: String) -> Self {
+        Self { name }
+    }
+
+    #[cfg(feature = "core")]
+    pub fn load(&self, network: &mut pywr_core::network::Network, args: &LoadArgs) -> Result<MetricF64, SchemaError> {
+        // This is the associated node in the schema
+        let node = args
+            .schema
+            .get_node_by_name(&self.name)
+            .ok_or_else(|| SchemaError::NodeNotFound(self.name.clone()))?;
+
+        node.create_metric(network, None, args)
+    }
+
+    /// Return the default attribute of the node.
+    #[cfg(feature = "core")]
+    pub fn attribute(&self, args: &LoadArgs) -> Result<NodeAttribute, SchemaError> {
+        // This is the associated node in the schema
+        let node = args
+            .schema
+            .get_node_by_name(&self.name)
+            .ok_or_else(|| SchemaError::NodeNotFound(self.name.clone()))?;
+
+        Ok(node.default_metric())
+    }
+
+    #[cfg(feature = "core")]
+    pub fn node_type(&self, args: &LoadArgs) -> Result<NodeType, SchemaError> {
+        // This is the associated node in the schema
+        let node = args
+            .schema
+            .get_node_by_name(&self.name)
+            .ok_or_else(|| SchemaError::NodeNotFound(self.name.clone()))?;
+
+        Ok(node.node_type())
+    }
+}
+
+impl From<String> for SimpleNodeReference {
     fn from(v: String) -> Self {
-        NodeReference {
-            name: v,
-            attribute: None,
-        }
+        SimpleNodeReference { name: v }
     }
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct ParameterReference {
     /// The name of the parameter
     pub name: String,
@@ -316,21 +380,23 @@ pub struct ParameterReference {
 }
 
 impl ParameterReference {
+    pub fn new(name: String, key: Option<String>) -> Self {
+        Self { name, key }
+    }
+
     #[cfg(feature = "core")]
     pub fn load(&self, network: &mut pywr_core::network::Network) -> Result<MetricF64, SchemaError> {
+        let name = self.name.as_str().into();
+
         match &self.key {
             Some(key) => {
                 // Key given; this should be a multi-valued parameter
-                Ok((
-                    network.get_multi_valued_parameter_index_by_name(&self.name)?,
-                    key.clone(),
-                )
-                    .into())
+                Ok((network.get_multi_valued_parameter_index_by_name(&name)?, key.clone()).into())
             }
             None => {
-                if let Ok(idx) = network.get_parameter_index_by_name(&self.name) {
+                if let Ok(idx) = network.get_parameter_index_by_name(&name) {
                     Ok(idx.into())
-                } else if let Ok(idx) = network.get_index_parameter_index_by_name(&self.name) {
+                } else if let Ok(idx) = network.get_index_parameter_index_by_name(&name) {
                     Ok(idx.into())
                 } else {
                     Err(SchemaError::ParameterNotFound(self.name.to_string()))
@@ -347,5 +413,20 @@ impl ParameterReference {
             .ok_or_else(|| SchemaError::ParameterNotFound(self.name.clone()))?;
 
         Ok(parameter.parameter_type())
+    }
+}
+
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct EdgeReference {
+    /// The edge referred to by this reference.
+    pub edge: Edge,
+}
+
+#[cfg(feature = "core")]
+impl EdgeReference {
+    pub fn load(&self, network: &mut pywr_core::network::Network, args: &LoadArgs) -> Result<MetricF64, SchemaError> {
+        // This is the associated node in the schema
+        self.edge.create_metric(network, args)
     }
 }

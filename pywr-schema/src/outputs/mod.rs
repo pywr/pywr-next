@@ -12,7 +12,7 @@ use schemars::JsonSchema;
 #[cfg(feature = "core")]
 use std::path::Path;
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitPaths)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitPaths, strum_macros::Display)]
 #[serde(tag = "type")]
 pub enum Output {
     CSV(CsvOutput),

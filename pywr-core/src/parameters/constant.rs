@@ -1,6 +1,6 @@
 use crate::parameters::{
     downcast_internal_state_mut, downcast_internal_state_ref, downcast_variable_config_ref, ActivationFunction,
-    ConstParameter, Parameter, ParameterMeta, ParameterState, VariableConfig, VariableParameter,
+    ConstParameter, Parameter, ParameterMeta, ParameterName, ParameterState, VariableConfig, VariableParameter,
 };
 use crate::scenario::ScenarioIndex;
 use crate::state::ConstParameterValues;
@@ -16,7 +16,7 @@ pub struct ConstantParameter {
 type InternalValue = Option<f64>;
 
 impl ConstantParameter {
-    pub fn new(name: &str, value: f64) -> Self {
+    pub fn new(name: ParameterName, value: f64) -> Self {
         Self {
             meta: ParameterMeta::new(name),
             value,
@@ -57,7 +57,6 @@ impl Parameter for ConstantParameter {
     }
 }
 
-// TODO this should only need to implement `ConstantParameter` when that is implemented.
 impl ConstParameter<f64> for ConstantParameter {
     fn compute(
         &self,
@@ -130,12 +129,9 @@ mod tests {
         let domain = default_domain();
 
         let var = ActivationFunction::Unit { min: 0.0, max: 2.0 };
-        let p = ConstantParameter::new("test", 1.0);
+        let p = ConstantParameter::new("test".into(), 1.0);
         let mut state = p
-            .setup(
-                &domain.time().timesteps(),
-                domain.scenarios().indices().first().unwrap(),
-            )
+            .setup(domain.time().timesteps(), domain.scenarios().indices().first().unwrap())
             .unwrap();
 
         // No value set initially

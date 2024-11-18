@@ -1,6 +1,6 @@
 use crate::metric::MetricF64;
 use crate::network::Network;
-use crate::parameters::{GeneralParameter, Parameter, ParameterMeta, ParameterState};
+use crate::parameters::{GeneralParameter, Parameter, ParameterMeta, ParameterName, ParameterState};
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
 use crate::timestep::Timestep;
@@ -35,7 +35,7 @@ pub struct HydropowerTargetParameter {
 }
 
 impl HydropowerTargetParameter {
-    pub fn new(name: &str, turbine_data: HydropowerTargetData) -> Self {
+    pub fn new(name: ParameterName, turbine_data: HydropowerTargetData) -> Self {
         Self {
             meta: ParameterMeta::new(name),
             target: turbine_data.target,

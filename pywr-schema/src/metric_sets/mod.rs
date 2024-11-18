@@ -3,13 +3,17 @@ use crate::error::SchemaError;
 use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
+#[cfg(feature = "core")]
+use crate::parameters::{Parameter, PythonReturnType};
 use pywr_schema_macros::PywrVisitPaths;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::num::NonZeroUsize;
 
 /// Aggregation function to apply over metric values.
-#[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone, JsonSchema, PywrVisitPaths)]
+#[derive(
+    serde::Deserialize, serde::Serialize, Debug, Copy, Clone, JsonSchema, PywrVisitPaths, strum_macros::Display,
+)]
 #[serde(tag = "type")]
 pub enum MetricAggFunc {
     Sum,
@@ -32,7 +36,7 @@ impl From<MetricAggFunc> for pywr_core::recorders::AggregationFunction {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone, JsonSchema)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone, JsonSchema, strum_macros::Display)]
 #[serde(tag = "type")]
 pub enum MetricAggFrequency {
     Monthly,
@@ -81,31 +85,112 @@ impl From<MetricAggregator> for pywr_core::recorders::Aggregator {
     }
 }
 
+/// Filters that allow multiple metrics to be added to a metric set.
+///
+/// The filters allow the default metrics for all nodes and/or parameters in a model
+/// to be added to a metric set.
+#[derive(Deserialize, Serialize, Clone, JsonSchema, Default)]
+pub struct MetricSetFilters {
+    #[serde(default)]
+    all_nodes: bool,
+    #[serde(default)]
+    all_parameters: bool,
+}
+
+#[cfg(feature = "core")]
+impl MetricSetFilters {
+    fn create_metrics(&self, args: &LoadArgs) -> Option<Vec<Metric>> {
+        use crate::metric::{NodeReference, ParameterReference};
+
+        if !self.all_nodes && !self.all_parameters {
+            return None;
+        }
+
+        let mut metrics = vec![];
+
+        if self.all_nodes {
+            for node in args.schema.nodes.iter() {
+                metrics.push(Metric::Node(NodeReference::new(node.name().to_string(), None)));
+            }
+        }
+
+        if self.all_parameters {
+            if let Some(parameters) = args.schema.parameters.as_ref() {
+                for parameter in parameters.iter() {
+                    // Skip Python parameters that return multiple values as the type or keys of these values is not
+                    // known at this point.
+                    if let Parameter::Python(param) = parameter {
+                        if matches!(param.return_type, PythonReturnType::Dict) {
+                            continue;
+                        }
+                    }
+
+                    metrics.push(Metric::Parameter(ParameterReference::new(
+                        parameter.name().to_string(),
+                        None,
+                    )));
+                }
+            }
+        }
+
+        Some(metrics)
+    }
+}
+
 /// A set of metrics that can be output from a model run.
 ///
 /// A metric set can optionally have an aggregator, which will apply an aggregation function
 /// over metrics set. If the aggregator has a defined frequency then the aggregation will result
 /// in multiple values (i.e. per each period implied by the frequency).
+///
+/// Metrics added by the filters will be appended to any metrics specified for the metric attribute,
+/// if they are not a duplication.
 #[derive(Deserialize, Serialize, Clone, JsonSchema)]
 pub struct MetricSet {
     pub name: String,
-    pub metrics: Vec<Metric>,
+    pub metrics: Option<Vec<Metric>>,
     pub aggregator: Option<MetricAggregator>,
+    #[serde(default)]
+    pub filters: MetricSetFilters,
 }
 
 impl MetricSet {
     #[cfg(feature = "core")]
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network, args: &LoadArgs) -> Result<(), SchemaError> {
-        // Convert the schema representation to internal metrics.
-        let metrics: Vec<_> = self
-            .metrics
-            .iter()
-            .map(|m| m.load_as_output(network, args))
-            .collect::<Result<_, _>>()?;
+        use pywr_core::recorders::OutputMetric;
+
+        let output_metrics = match self.metrics {
+            Some(ref metrics) => {
+                let mut output_metrics: Vec<OutputMetric> = metrics
+                    .iter()
+                    .map(|m| m.load_as_output(network, args))
+                    .collect::<Result<_, _>>()?;
+
+                if let Some(additional_metrics) = self.filters.create_metrics(args) {
+                    for m in additional_metrics.iter() {
+                        let output_metric = m.load_as_output(network, args)?;
+                        if !output_metrics.contains(&output_metric) {
+                            output_metrics.push(output_metric);
+                        }
+                    }
+                }
+                output_metrics
+            }
+            None => {
+                if let Some(metrics) = self.filters.create_metrics(args) {
+                    metrics
+                        .iter()
+                        .map(|m| m.load_as_output(network, args))
+                        .collect::<Result<_, _>>()?
+                } else {
+                    return Err(SchemaError::EmptyMetricSet(self.name.clone()));
+                }
+            }
+        };
 
         let aggregator = self.aggregator.clone().map(|a| a.into());
 
-        let metric_set = pywr_core::recorders::MetricSet::new(&self.name, aggregator, metrics);
+        let metric_set = pywr_core::recorders::MetricSet::new(&self.name, aggregator, output_metrics);
         let _ = network.add_metric_set(metric_set)?;
 
         Ok(())

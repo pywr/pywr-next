@@ -19,8 +19,8 @@ use schemars::JsonSchema;
 /// Internally this is implemented as a piecewise linear interpolation via
 /// [`pywr_core::parameters::InterpolatedParameter`].
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
+#[serde(deny_unknown_fields)]
 pub struct InterpolatedParameter {
-    #[serde(flatten)]
     pub meta: ParameterMeta,
     pub x: Metric,
     pub xp: Vec<Metric>,
@@ -60,7 +60,7 @@ impl InterpolatedParameter {
         let points = xp.into_iter().zip(fp).collect::<Vec<_>>();
 
         let p = pywr_core::parameters::InterpolatedParameter::new(
-            &self.meta.name,
+            self.meta.name.as_str().into(),
             x,
             points,
             self.error_on_bounds.unwrap_or(true),

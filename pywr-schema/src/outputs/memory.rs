@@ -24,18 +24,42 @@ impl From<MemoryAggregation> for pywr_core::recorders::Aggregation {
     }
 }
 
+#[derive(
+    serde::Deserialize, serde::Serialize, Debug, Copy, Clone, JsonSchema, PywrVisitPaths, strum_macros::Display,
+)]
+pub enum MemoryAggregationOrder {
+    MetricTimeScenario,
+    TimeMetricScenario,
+}
+
+#[cfg(feature = "core")]
+impl From<MemoryAggregationOrder> for pywr_core::recorders::AggregationOrder {
+    fn from(value: MemoryAggregationOrder) -> Self {
+        match value {
+            MemoryAggregationOrder::MetricTimeScenario => pywr_core::recorders::AggregationOrder::MetricTimeScenario,
+            MemoryAggregationOrder::TimeMetricScenario => pywr_core::recorders::AggregationOrder::TimeMetricScenario,
+        }
+    }
+}
+
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitPaths)]
 pub struct MemoryOutput {
     pub name: String,
     pub metric_set: String,
     pub aggregation: MemoryAggregation,
+    pub order: Option<MemoryAggregationOrder>,
 }
 
 #[cfg(feature = "core")]
 impl MemoryOutput {
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
         let metric_set_idx = network.get_metric_set_index_by_name(&self.metric_set)?;
-        let recorder = MemoryRecorder::new(&self.name, metric_set_idx, self.aggregation.clone().into());
+        let recorder = MemoryRecorder::new(
+            &self.name,
+            metric_set_idx,
+            self.aggregation.clone().into(),
+            self.order.map(|o| o.into()).unwrap_or_default(),
+        );
 
         network.add_recorder(Box::new(recorder))?;
 
@@ -50,18 +74,19 @@ mod tests {
     use float_cmp::assert_approx_eq;
     #[cfg(feature = "core")]
     use pywr_core::solvers::{ClpSolver, ClpSolverSettings};
+    use std::fs::read_to_string;
     use std::str::FromStr;
     #[cfg(feature = "core")]
     use tempfile::TempDir;
 
-    fn memory1_str() -> &'static str {
-        include_str!("../test_models/memory1.json")
+    fn memory1_str() -> String {
+        read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/memory1.json")).expect("Failed to read memory1.json")
     }
 
     #[test]
     fn test_schema() {
         let data = memory1_str();
-        let schema = PywrModel::from_str(data).unwrap();
+        let schema = PywrModel::from_str(&data).unwrap();
 
         assert_eq!(schema.network.nodes.len(), 3);
         assert_eq!(schema.network.edges.len(), 2);
@@ -72,7 +97,7 @@ mod tests {
     #[cfg(feature = "core")]
     fn test_run() {
         let data = memory1_str();
-        let schema = PywrModel::from_str(data).unwrap();
+        let schema = PywrModel::from_str(&data).unwrap();
 
         let temp_dir = TempDir::new().unwrap();
 

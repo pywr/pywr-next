@@ -1,0 +1,130 @@
+{
+  "metadata": {
+    "title": "PiecewiseLink 1",
+    "description": "A test of PiecewiseLinkNode.",
+    "minimum_version": "0.1"
+  },
+  "timestepper": {
+    "start": "2015-01-01",
+    "end": "2015-01-03",
+    "timestep": 1
+  },
+  "network": {
+    "nodes": [
+      {
+        "meta": {
+          "name": "input1"
+        },
+        "type": "Input",
+        "max_flow": {
+          "type": "Constant",
+          "value": 15
+        }
+      },
+      {
+        "meta": {
+          "name": "link1"
+        },
+        "type": "PiecewiseLink",
+        "steps": [
+          {
+            "cost": {
+              "type": "Constant",
+              "value": 1.0
+            },
+            "max_flow": {
+              "type": "Constant",
+              "value": 1.0
+            }
+          },
+          {
+            "cost": {
+              "type": "Constant",
+              "value": 5.0
+            },
+            "max_flow": {
+              "type": "Constant",
+              "value": 3.0
+            }
+          },
+          {
+            "cost": {
+              "type": "Constant",
+              "value": 15.0
+            }
+          }
+        ]
+      },
+      {
+        "meta": {
+          "name": "demand1"
+        },
+        "type": "Output",
+        "max_flow": {
+          "type": "Constant",
+          "value": 15.0
+        },
+        "cost": {
+          "type": "Constant",
+          "value": -10
+        }
+      }
+    ],
+    "edges": [
+      {
+        "from_node": "input1",
+        "to_node": "link1"
+      },
+      {
+        "from_node": "link1",
+        "to_node": "demand1"
+      }
+    ],
+    "metric_sets": [
+      {
+        "name": "nodes",
+        "metrics": [
+          {
+            "type": "Node",
+            "name": "link1",
+            "attribute": "Inflow"
+          }
+        ]
+      },
+      {
+        "name": "edges",
+        "metrics": [
+          {
+            "type": "Edge",
+            "edge": {
+              "from_node": "input1",
+              "to_node": "link1"
+            }
+          }
+        ]
+      }
+    ],
+    "outputs": [
+      {
+        "name": "node-outputs",
+        "type": "CSV",
+        "format": "long",
+        "filename": "piecewise-link1-nodes.csv",
+        "metric_set": [
+          "nodes"
+        ],
+        "decimal_places": 1
+      },
+      {
+        "name": "edge-outputs",
+        "type": "CSV",
+        "format": "long",
+        "filename": "piecewise-link1-edges.csv",
+        "metric_set": [
+          "edges"
+        ],
+        "decimal_places": 1
+      }
+    ]
+  }
+}

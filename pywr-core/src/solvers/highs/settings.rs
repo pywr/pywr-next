@@ -48,18 +48,10 @@ impl HighsSolverSettings {
 /// let settings = builder.build();
 ///
 /// ```
+#[derive(Default)]
 pub struct HighsSolverSettingsBuilder {
     parallel: bool,
     threads: usize,
-}
-
-impl Default for HighsSolverSettingsBuilder {
-    fn default() -> Self {
-        Self {
-            parallel: false,
-            threads: 0,
-        }
-    }
 }
 
 impl HighsSolverSettingsBuilder {

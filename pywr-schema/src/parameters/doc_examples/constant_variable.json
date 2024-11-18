@@ -1,6 +1,8 @@
 {
   "type": "Constant",
-  "name": "my-variable",
+  "meta": {
+    "name": "my-variable"
+  },
   "value": 5.0,
   "variable": {
     "is_active": true,

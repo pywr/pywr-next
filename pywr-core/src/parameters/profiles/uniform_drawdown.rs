@@ -1,4 +1,4 @@
-use crate::parameters::{Parameter, ParameterMeta, ParameterState, SimpleParameter};
+use crate::parameters::{Parameter, ParameterMeta, ParameterName, ParameterState, SimpleParameter};
 use crate::scenario::ScenarioIndex;
 use crate::state::SimpleParameterValues;
 use crate::timestep::Timestep;
@@ -16,7 +16,7 @@ pub struct UniformDrawdownProfileParameter {
 }
 
 impl UniformDrawdownProfileParameter {
-    pub fn new(name: &str, reset_day: u32, reset_month: u32, residual_days: u8) -> Self {
+    pub fn new(name: ParameterName, reset_day: u32, reset_month: u32, residual_days: u8) -> Self {
         // Calculate the reset day of year in a known leap year.
         let reset_doy = NaiveDate::from_ymd_opt(2016, reset_month, reset_day)
             .expect("Invalid reset day")
@@ -46,7 +46,7 @@ impl SimpleParameter<f64> for UniformDrawdownProfileParameter {
         // Current calendar year (might be adjusted depending on position of reset day)
         let mut year = timestep.date.year();
 
-        // Zero-base current day of the year.
+        // Current day of the year.
         let current_doy = timestep.date.ordinal();
         let mut days_into_period: i32 = current_doy as i32 - self.reset_doy as i32;
         if days_into_period < 0 {
@@ -54,7 +54,7 @@ impl SimpleParameter<f64> for UniformDrawdownProfileParameter {
             year -= 1
         }
 
-        if self.reset_doy > 59 {
+        if self.reset_doy > 60 {
             year += 1
         }
 
@@ -66,8 +66,8 @@ impl SimpleParameter<f64> for UniformDrawdownProfileParameter {
         if days_into_period < 0 {
             days_into_period += 366;
             // Need to adjust for post 29th Feb in non-leap years.
-            // Recall `current_doy` was incremented by 1 if it is a non-leap already (hence comparison to 59)
-            if !is_leap_year(timestep.date.year()) && current_doy > 59 {
+            // Recall `current_doy` was incremented by 1 if it is a non-leap already (hence comparison to 60)
+            if !is_leap_year(timestep.date.year()) && current_doy > 60 {
                 days_into_period -= 1;
             }
         }

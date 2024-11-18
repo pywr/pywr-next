@@ -1,10 +1,10 @@
 mod settings;
 
-use super::builder::SolverBuilder;
+use super::builder::{ColType, SolverBuilder};
 use crate::network::Network;
 use crate::solvers::builder::BuiltSolver;
 use crate::solvers::{Solver, SolverFeatures, SolverTimings};
-use crate::state::State;
+use crate::state::{ConstParameterValues, State};
 use crate::timestep::Timestep;
 use crate::PywrError;
 use coin_or_sys::cbc::*;
@@ -76,12 +76,22 @@ impl Cbc {
         }
     }
 
-    pub fn add_cols(&mut self, col_lower: &[c_double], col_upper: &[c_double], obj_coefs: &[c_double]) {
+    pub fn add_cols(
+        &mut self,
+        col_lower: &[c_double],
+        col_upper: &[c_double],
+        col_type: &[ColType],
+        obj_coefs: &[c_double],
+    ) {
         let number: c_int = col_lower.len() as c_int;
 
         for col_idx in 0..number {
             let lower = col_lower[col_idx as usize];
             let upper = col_upper[col_idx as usize];
+            let is_integer = match col_type[col_idx as usize] {
+                ColType::Continuous => 0,
+                ColType::Integer => 1,
+            };
             let obj_coef = obj_coefs[col_idx as usize];
 
             unsafe {
@@ -92,7 +102,7 @@ impl Cbc {
                     lower,
                     upper,
                     obj_coef,
-                    0 as c_char,
+                    is_integer as c_char,
                     0,
                     ptr::null_mut(),
                     ptr::null_mut(),
@@ -187,7 +197,12 @@ impl CbcSolver {
     fn from_builder(builder: BuiltSolver<c_int>) -> Self {
         let mut cbc = Cbc::default();
 
-        cbc.add_cols(builder.col_lower(), builder.col_upper(), builder.col_obj_coef());
+        cbc.add_cols(
+            builder.col_lower(),
+            builder.col_upper(),
+            builder.col_type(),
+            builder.col_obj_coef(),
+        );
 
         cbc.add_rows(
             builder.row_lower(),
@@ -217,12 +232,21 @@ impl Solver for CbcSolver {
     }
 
     fn features() -> &'static [SolverFeatures] {
-        &[SolverFeatures::AggregatedNode, SolverFeatures::VirtualStorage]
+        &[
+            SolverFeatures::AggregatedNode,
+            SolverFeatures::VirtualStorage,
+            SolverFeatures::AggregatedNodeFactors,
+            SolverFeatures::MutualExclusivity,
+        ]
     }
 
-    fn setup(model: &Network, _settings: &Self::Settings) -> Result<Box<Self>, PywrError> {
+    fn setup(
+        model: &Network,
+        values: &ConstParameterValues,
+        _settings: &Self::Settings,
+    ) -> Result<Box<Self>, PywrError> {
         let builder = SolverBuilder::default();
-        let built = builder.create(model)?;
+        let built = builder.create(model, values)?;
 
         let solver = CbcSolver::from_builder(built);
         Ok(Box::new(solver))
@@ -240,10 +264,11 @@ impl Solver for CbcSolver {
         self.cbc.change_row_lower(self.builder.row_lower());
         self.cbc.change_row_upper(self.builder.row_upper());
 
-        // TODO raise an error for missing feature
-        // for (row, column, coefficient) in self.builder.coefficients_to_update() {
-        //     self.cbc.modify_coefficient(*row, *column, *coefficient)
-        // }
+        if !self.builder.coefficients_to_update().is_empty() {
+            return Err(PywrError::MissingSolverFeatures);
+            // TODO waiting for support in CBC's C API: https://github.com/coin-or/Cbc/pull/656
+            // self.cbc.modify_coefficient(*row, *column, *coefficient)
+        }
 
         timings.update_constraints += now.elapsed();
 
@@ -263,7 +288,7 @@ impl Solver for CbcSolver {
             let flow = if flow.abs() < 1e-10 { 0.0 } else { flow };
             network_state.add_flow(edge, timestep, flow)?;
         }
-        network_state.complete(model, timestep)?;
+        state.complete(model, timestep)?;
         timings.save_solution += start_save_solution.elapsed();
 
         Ok(timings)
@@ -283,7 +308,12 @@ mod tests {
     #[test]
     fn cbc_add_rows() {
         let mut model = Cbc::default();
-        model.add_cols(&vec![0.0, 0.0], &vec![10.0, 10.0], &vec![0.0, 0.0]);
+        model.add_cols(
+            &[0.0, 0.0],
+            &[10.0, 10.0],
+            &[ColType::Continuous, ColType::Continuous],
+            &[0.0, 0.0],
+        );
 
         let row_lower: Vec<c_double> = vec![0.0];
         let row_upper: Vec<c_double> = vec![2.0];
@@ -300,6 +330,7 @@ mod tests {
         let row_lower = vec![0.0, 0.0];
         let col_lower = vec![0.0, 0.0, 0.0];
         let col_upper = vec![f64::MAX, f64::MAX, f64::MAX];
+        let col_type = vec![ColType::Continuous, ColType::Continuous, ColType::Continuous];
         let col_obj_coef = vec![-2.0, -3.0, -4.0];
         let row_starts = vec![0, 3, 6];
         let columns = vec![0, 1, 2, 0, 1, 2];
@@ -307,7 +338,7 @@ mod tests {
 
         let mut lp = Cbc::default();
 
-        lp.add_cols(&col_lower, &col_upper, &col_obj_coef);
+        lp.add_cols(&col_lower, &col_upper, &col_type, &col_obj_coef);
         lp.add_rows(&row_lower, &row_upper, &row_starts, &columns, &elements);
         lp.solve();
 
@@ -321,6 +352,7 @@ mod tests {
         let row_lower = vec![0.0, 0.0];
         let col_lower = vec![0.0, 0.0, 0.0];
         let col_upper = vec![f64::MAX, f64::MAX, f64::MAX];
+        let col_type = vec![ColType::Continuous, ColType::Continuous, ColType::Continuous];
         let col_obj_coef = vec![-2.0, -3.0, -4.0];
         let row_starts = vec![0, 3, 6];
         let columns = vec![0, 1, 2, 0, 1, 2];
@@ -328,7 +360,7 @@ mod tests {
 
         let mut lp = Cbc::default();
 
-        lp.add_cols(&col_lower, &col_upper, &col_obj_coef);
+        lp.add_cols(&col_lower, &col_upper, &col_type, &col_obj_coef);
         lp.add_rows(&row_lower, &row_upper, &row_starts, &columns, &elements);
         lp.solve();
 

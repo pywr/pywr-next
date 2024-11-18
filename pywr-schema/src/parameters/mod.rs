@@ -26,38 +26,37 @@ mod thresholds;
 #[cfg(feature = "core")]
 pub use super::data_tables::LoadedTableCollection;
 pub use super::data_tables::TableDataRef;
-pub use super::parameters::aggregated::{AggFunc, AggregatedIndexParameter, AggregatedParameter, IndexAggFunc};
-pub use super::parameters::asymmetric_switch::AsymmetricSwitchIndexParameter;
-pub use super::parameters::control_curves::{
-    ControlCurveIndexParameter, ControlCurveInterpolatedParameter, ControlCurveParameter,
-    ControlCurvePiecewiseInterpolatedParameter,
-};
-pub use super::parameters::core::{
-    ActivationFunction, ConstantParameter, MaxParameter, MinParameter, NegativeMaxParameter, NegativeMinParameter,
-    NegativeParameter, VariableSettings,
-};
-pub use super::parameters::delay::DelayParameter;
-pub use super::parameters::discount_factor::DiscountFactorParameter;
-pub use super::parameters::indexed_array::IndexedArrayParameter;
-pub use super::parameters::polynomial::Polynomial1DParameter;
-pub use super::parameters::profiles::{
-    DailyProfileParameter, MonthlyProfileParameter, RadialBasisFunction, RbfProfileParameter,
-    RbfProfileVariableSettings, UniformDrawdownProfileParameter, WeeklyProfileParameter,
-};
-pub use super::parameters::python::{PythonModule, PythonParameter, PythonReturnType};
-pub use super::parameters::tables::TablesArrayParameter;
-pub use super::parameters::thresholds::ParameterThresholdParameter;
 use crate::error::ConversionError;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
 use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
-use crate::parameters::core::DivisionParameter;
-pub use crate::parameters::hydropower::HydropowerTargetParameter;
-use crate::parameters::interpolated::InterpolatedParameter;
 use crate::visit::{VisitMetrics, VisitPaths};
+pub use aggregated::{AggFunc, AggregatedIndexParameter, AggregatedParameter, IndexAggFunc};
+pub use asymmetric_switch::AsymmetricSwitchIndexParameter;
+pub use control_curves::{
+    ControlCurveIndexParameter, ControlCurveInterpolatedParameter, ControlCurveParameter,
+    ControlCurvePiecewiseInterpolatedParameter,
+};
+pub use core::{
+    ActivationFunction, ConstantParameter, DivisionParameter, MaxParameter, MinParameter, NegativeMaxParameter,
+    NegativeMinParameter, NegativeParameter, VariableSettings,
+};
+pub use delay::DelayParameter;
+pub use discount_factor::DiscountFactorParameter;
+pub use hydropower::HydropowerTargetParameter;
+pub use indexed_array::IndexedArrayParameter;
+pub use interpolated::InterpolatedParameter;
 pub use offset::OffsetParameter;
+pub use polynomial::Polynomial1DParameter;
+pub use profiles::{
+    DailyProfileParameter, MonthlyInterpDay, MonthlyProfileParameter, RadialBasisFunction, RbfProfileParameter,
+    RbfProfileVariableSettings, UniformDrawdownProfileParameter, WeeklyProfileParameter,
+};
+#[cfg(feature = "core")]
+pub use python::try_json_value_into_py;
+pub use python::{PythonParameter, PythonReturnType, PythonSource};
 #[cfg(feature = "core")]
 use pywr_core::{metric::MetricUsize, parameters::ParameterIndex};
 use pywr_schema_macros::PywrVisitAll;
@@ -67,8 +66,11 @@ use pywr_v1_schema::parameters::{
     TableIndexEntry as TableIndexEntryV1,
 };
 use schemars::JsonSchema;
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use strum_macros::{Display, EnumDiscriminants, EnumString, IntoStaticStr, VariantNames};
+pub use tables::TablesArrayParameter;
+pub use thresholds::ThresholdParameter;
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 pub struct ParameterMeta {
@@ -149,7 +151,7 @@ impl FromV1Parameter<Option<ParameterMetaV1>> for ParameterMeta {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, EnumDiscriminants, Clone, JsonSchema)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, EnumDiscriminants, Clone, JsonSchema, Display)]
 #[serde(tag = "type")]
 #[strum_discriminants(derive(Display, IntoStaticStr, EnumString, VariantNames))]
 // This creates a separate enum called `NodeType` that is available in this module.
@@ -175,7 +177,7 @@ pub enum Parameter {
     NegativeMin(NegativeMinParameter),
     HydropowerTarget(HydropowerTargetParameter),
     Polynomial1D(Polynomial1DParameter),
-    ParameterThreshold(ParameterThresholdParameter),
+    Threshold(ThresholdParameter),
     TablesArray(TablesArrayParameter),
     Python(PythonParameter),
     Delay(DelayParameter),
@@ -206,7 +208,7 @@ impl Parameter {
             Self::Min(p) => p.meta.name.as_str(),
             Self::Negative(p) => p.meta.name.as_str(),
             Self::Polynomial1D(p) => p.meta.name.as_str(),
-            Self::ParameterThreshold(p) => p.meta.name.as_str(),
+            Self::Threshold(p) => p.meta.name.as_str(),
             Self::TablesArray(p) => p.meta.name.as_str(),
             Self::Python(p) => p.meta.name.as_str(),
             Self::Division(p) => p.meta.name.as_str(),
@@ -259,8 +261,8 @@ impl Parameter {
             Self::Max(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
             Self::Min(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
             Self::Negative(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
-            Self::Polynomial1D(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network)?),
-            Self::ParameterThreshold(p) => pywr_core::parameters::ParameterType::Index(p.add_to_model(network, args)?),
+            Self::Polynomial1D(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
+            Self::Threshold(p) => pywr_core::parameters::ParameterType::Index(p.add_to_model(network, args)?),
             Self::TablesArray(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
             Self::Python(p) => p.add_to_model(network, args)?,
             Self::Delay(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
@@ -300,7 +302,7 @@ impl VisitMetrics for Parameter {
             Self::Min(p) => p.visit_metrics(visitor),
             Self::Negative(p) => p.visit_metrics(visitor),
             Self::Polynomial1D(p) => p.visit_metrics(visitor),
-            Self::ParameterThreshold(p) => p.visit_metrics(visitor),
+            Self::Threshold(p) => p.visit_metrics(visitor),
             Self::TablesArray(p) => p.visit_metrics(visitor),
             Self::Python(p) => p.visit_metrics(visitor),
             Self::Delay(p) => p.visit_metrics(visitor),
@@ -334,7 +336,7 @@ impl VisitMetrics for Parameter {
             Self::Min(p) => p.visit_metrics_mut(visitor),
             Self::Negative(p) => p.visit_metrics_mut(visitor),
             Self::Polynomial1D(p) => p.visit_metrics_mut(visitor),
-            Self::ParameterThreshold(p) => p.visit_metrics_mut(visitor),
+            Self::Threshold(p) => p.visit_metrics_mut(visitor),
             Self::TablesArray(p) => p.visit_metrics_mut(visitor),
             Self::Python(p) => p.visit_metrics_mut(visitor),
             Self::Delay(p) => p.visit_metrics_mut(visitor),
@@ -370,7 +372,7 @@ impl VisitPaths for Parameter {
             Self::Min(p) => p.visit_paths(visitor),
             Self::Negative(p) => p.visit_paths(visitor),
             Self::Polynomial1D(p) => p.visit_paths(visitor),
-            Self::ParameterThreshold(p) => p.visit_paths(visitor),
+            Self::Threshold(p) => p.visit_paths(visitor),
             Self::TablesArray(p) => p.visit_paths(visitor),
             Self::Python(p) => p.visit_paths(visitor),
             Self::Delay(p) => p.visit_paths(visitor),
@@ -404,7 +406,7 @@ impl VisitPaths for Parameter {
             Self::Min(p) => p.visit_paths_mut(visitor),
             Self::Negative(p) => p.visit_paths_mut(visitor),
             Self::Polynomial1D(p) => p.visit_paths_mut(visitor),
-            Self::ParameterThreshold(p) => p.visit_paths_mut(visitor),
+            Self::Threshold(p) => p.visit_paths_mut(visitor),
             Self::TablesArray(p) => p.visit_paths_mut(visitor),
             Self::Python(p) => p.visit_paths_mut(visitor),
             Self::Delay(p) => p.visit_paths_mut(visitor),
@@ -469,6 +471,7 @@ pub struct TimeseriesV1Data {
     pub time_col: Option<String>,
     pub column: Option<String>,
     pub scenario: Option<String>,
+    pub pandas_kwargs: HashMap<String, serde_json::Value>,
 }
 
 impl From<DataFrameParameterV1> for TimeseriesV1Data {
@@ -482,7 +485,10 @@ impl From<DataFrameParameterV1> for TimeseriesV1Data {
         };
 
         let name = p.meta.and_then(|m| m.name);
-        let time_col = match p.pandas_kwargs.get("index_col") {
+
+        let mut pandas_kwargs = p.pandas_kwargs;
+
+        let time_col = match pandas_kwargs.remove("index_col") {
             Some(v) => v.as_str().map(|s| s.to_string()),
             None => None,
         };
@@ -493,6 +499,7 @@ impl From<DataFrameParameterV1> for TimeseriesV1Data {
             time_col,
             column: p.column,
             scenario: p.scenario,
+            pandas_kwargs,
         }
     }
 }
@@ -571,7 +578,7 @@ impl TryFromV1Parameter<ParameterV1> for ParameterOrTimeseries {
                     Parameter::Polynomial1D(p.try_into_v2_parameter(parent_node, unnamed_count)?).into()
                 }
                 CoreParameter::ParameterThreshold(p) => {
-                    Parameter::ParameterThreshold(p.try_into_v2_parameter(parent_node, unnamed_count)?).into()
+                    Parameter::Threshold(p.try_into_v2_parameter(parent_node, unnamed_count)?).into()
                 }
                 CoreParameter::TablesArray(p) => {
                     Parameter::TablesArray(p.try_into_v2_parameter(parent_node, unnamed_count)?).into()
@@ -648,6 +655,7 @@ impl TryFromV1Parameter<ParameterV1> for ParameterOrTimeseries {
                         comment: Some(comment),
                     },
                     value: ConstantValue::Literal(0.0),
+                    variable: None,
                 })
                 .into()
             }
@@ -660,7 +668,7 @@ impl TryFromV1Parameter<ParameterV1> for ParameterOrTimeseries {
 /// An non-variable constant floating-point (f64) value
 ///
 /// This value can be a literal float or an external reference to an input table.
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, Display)]
 #[serde(untagged)]
 pub enum ConstantValue<T> {
     Literal(T),
@@ -725,7 +733,12 @@ impl ConstantValue<f64> {
     pub fn load(&self, tables: &LoadedTableCollection) -> Result<f64, SchemaError> {
         match self {
             Self::Literal(v) => Ok(*v),
-            Self::Table(tbl_ref) => Ok(tables.get_scalar_f64(tbl_ref)?),
+            Self::Table(tbl_ref) => tables
+                .get_scalar_f64(tbl_ref)
+                .map_err(|error| SchemaError::TableRefLoad {
+                    table_ref: tbl_ref.clone(),
+                    error,
+                }),
         }
     }
 }
@@ -736,7 +749,12 @@ impl ConstantValue<usize> {
     pub fn load(&self, tables: &LoadedTableCollection) -> Result<usize, SchemaError> {
         match self {
             Self::Literal(v) => Ok(*v),
-            Self::Table(tbl_ref) => Ok(tables.get_scalar_usize(tbl_ref)?),
+            Self::Table(tbl_ref) => tables
+                .get_scalar_usize(tbl_ref)
+                .map_err(|error| SchemaError::TableRefLoad {
+                    table_ref: tbl_ref.clone(),
+                    error,
+                }),
         }
     }
 }
@@ -755,7 +773,7 @@ impl TryFrom<ParameterValueV1> for ConstantValue<f64> {
 }
 
 /// An integer (i64) value from another parameter
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll, Display)]
 #[serde(untagged)]
 pub enum ParameterIndexValue {
     Reference(String),
@@ -772,7 +790,7 @@ impl ParameterIndexValue {
         match self {
             Self::Reference(name) => {
                 // This should be an existing parameter
-                Ok(network.get_index_parameter_index_by_name(name)?.into())
+                Ok(network.get_index_parameter_index_by_name(&name.as_str().into())?)
             }
             Self::Inline(parameter) => {
                 // Inline parameter needs to be added
@@ -798,7 +816,7 @@ impl ParameterIndexValue {
 ///
 /// This value can be a constant (literal or otherwise) or a dynamic value provided
 /// by another parameter.
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll, Display)]
 #[serde(untagged)]
 pub enum DynamicIndexValue {
     Constant(ConstantValue<usize>),
@@ -854,7 +872,7 @@ impl TryFromV1Parameter<ParameterValueV1> for DynamicIndexValue {
 /// An non-variable vector of constant floating-point (f64) values
 ///
 /// This value can be a literal vector of floats or an external reference to an input table.
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll, Display)]
 #[serde(untagged)]
 pub enum ConstantFloatVec {
     Literal(Vec<f64>),
@@ -867,12 +885,18 @@ impl ConstantFloatVec {
     pub fn load(&self, tables: &LoadedTableCollection) -> Result<Vec<f64>, SchemaError> {
         match self {
             Self::Literal(v) => Ok(v.clone()),
-            Self::Table(tbl_ref) => Ok(tables.get_vec_f64(tbl_ref)?.clone()),
+            Self::Table(tbl_ref) => tables
+                .get_vec_f64(tbl_ref)
+                .cloned()
+                .map_err(|error| SchemaError::TableRefLoad {
+                    table_ref: tbl_ref.clone(),
+                    error,
+                }),
         }
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll, Display)]
 #[serde(untagged)]
 pub enum TableIndex {
     Single(String),

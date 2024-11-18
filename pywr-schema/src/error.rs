@@ -1,4 +1,4 @@
-use crate::data_tables::TableError;
+use crate::data_tables::{DataTable, TableDataRef, TableError};
 use crate::nodes::NodeAttribute;
 use crate::timeseries::TimeseriesError;
 use thiserror::Error;
@@ -26,12 +26,14 @@ pub enum SchemaError {
     #[error("Pywr core error: {0}")]
     #[cfg(feature = "core")]
     PywrCore(#[from] pywr_core::PywrError),
-    #[error("data table error: {0}")]
-    DataTable(#[from] TableError),
+    #[error("Error loading data from table `{0}` (column: `{1:?}`, index: `{2:?}`) error: {error}", table_ref.table, table_ref.column, table_ref.index)]
+    TableRefLoad { table_ref: TableDataRef, error: TableError },
+    #[error("Error loading table `{table_def:?}` error: {error}")]
+    TableLoad { table_def: DataTable, error: TableError },
     #[error("Circular node reference(s) found.")]
     CircularNodeReference,
-    #[error("Circular parameters reference(s) found.")]
-    CircularParameterReference,
+    #[error("Circular parameters reference(s) found. Unable to load the following parameters: {0:?}")]
+    CircularParameterReference(Vec<String>),
     #[error("unsupported file format")]
     UnsupportedFileFormat,
     #[error("Python error: {0}")]
@@ -56,10 +58,13 @@ pub enum SchemaError {
     LoadParameter { name: String, error: String },
     #[error("Timeseries error: {0}")]
     Timeseries(#[from] TimeseriesError),
-    #[error("The output of literal constant values is not supported. This is because they do not have a unique identifier such as a name. If you would like to output a constant value please use a `Constant` parameter.")]
+    #[error("The output of literal constant values is not supported. This is because they do not have a unique identifier such as a name. If you would like to output a constant value please use a `Constant` parameter."
+    )]
     LiteralConstantOutputNotSupported,
     #[error("Chrono out of range error: {0}")]
     OutOfRange(#[from] chrono::OutOfRange),
+    #[error("The metric set with name '{0}' contains no metrics")]
+    EmptyMetricSet(String),
 }
 
 #[cfg(feature = "core")]

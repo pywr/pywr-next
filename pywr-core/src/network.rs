@@ -1,11 +1,13 @@
-use crate::aggregated_node::{AggregatedNode, AggregatedNodeIndex, AggregatedNodeVec, Factors};
+use crate::aggregated_node::{AggregatedNode, AggregatedNodeIndex, AggregatedNodeVec, Relationship};
 use crate::aggregated_storage_node::{AggregatedStorageNode, AggregatedStorageNodeIndex, AggregatedStorageNodeVec};
 use crate::derived_metric::{DerivedMetric, DerivedMetricIndex};
 use crate::edge::{Edge, EdgeIndex, EdgeVec};
 use crate::metric::{MetricF64, SimpleMetricF64};
 use crate::models::ModelDomain;
 use crate::node::{Node, NodeVec, StorageInitialVolume};
-use crate::parameters::{GeneralParameterType, ParameterCollection, ParameterIndex, ParameterStates, VariableConfig};
+use crate::parameters::{
+    GeneralParameterType, ParameterCollection, ParameterIndex, ParameterName, ParameterStates, VariableConfig,
+};
 use crate::recorders::{MetricSet, MetricSetIndex, MetricSetState};
 use crate::scenario::ScenarioIndex;
 use crate::solvers::{MultiStateSolver, Solver, SolverFeatures, SolverTimings};
@@ -306,6 +308,7 @@ impl Network {
     pub fn setup_solver<S>(
         &self,
         scenario_indices: &[ScenarioIndex],
+        state: &NetworkState,
         settings: &S::Settings,
     ) -> Result<Vec<Box<S>>, PywrError>
     where
@@ -317,9 +320,10 @@ impl Network {
 
         let mut solvers = Vec::with_capacity(scenario_indices.len());
 
-        for _scenario_index in scenario_indices {
+        for scenario_index in scenario_indices {
             // Create a solver for each scenario
-            let solver = S::setup(self, settings)?;
+            let const_values = state.state(scenario_index).get_const_parameter_values();
+            let solver = S::setup(self, &const_values, settings)?;
             solvers.push(solver);
         }
 
@@ -557,8 +561,22 @@ impl Network {
         }
 
         // Aggregated node factors required if any aggregated node has factors defined.
-        if self.aggregated_nodes.iter().any(|n| n.get_factors().is_some()) {
+        if self.aggregated_nodes.iter().any(|n| n.has_factors()) {
             features.insert(SolverFeatures::AggregatedNodeFactors);
+        }
+
+        // Aggregated node dynamic factors required if any aggregated node has dynamic factors defined.
+        if self
+            .aggregated_nodes
+            .iter()
+            .any(|n| n.has_factors() && !n.has_const_factors())
+        {
+            features.insert(SolverFeatures::AggregatedNodeDynamicFactors);
+        }
+
+        // Aggregated nodes with exclusivities require the MutualExclusivity feature.
+        if self.aggregated_nodes.iter().any(|n| n.has_exclusivity()) {
+            features.insert(SolverFeatures::MutualExclusivity);
         }
 
         // The presence of any virtual storage node requires the VirtualStorage feature.
@@ -784,6 +802,17 @@ impl Network {
         self.edges.get(index)
     }
 
+    /// Get an [`EdgeIndex`] from connecting node indices.
+    pub fn get_edge_index(&self, from_node_index: NodeIndex, to_node_index: NodeIndex) -> Result<EdgeIndex, PywrError> {
+        match self
+            .edges
+            .iter()
+            .find(|edge| edge.from_node_index == from_node_index && edge.to_node_index == to_node_index)
+        {
+            Some(edge) => Ok(edge.index),
+            None => Err(PywrError::EdgeIndexNotFound),
+        }
+    }
     /// Get a Node from a node's name
     pub fn get_node_index_by_name(&self, name: &str, sub_name: Option<&str>) -> Result<NodeIndex, PywrError> {
         Ok(self.get_node_by_name(name, sub_name)?.index())
@@ -935,14 +964,14 @@ impl Network {
         Ok(())
     }
 
-    pub fn set_aggregated_node_factors(
+    pub fn set_aggregated_node_relationship(
         &mut self,
         name: &str,
         sub_name: Option<&str>,
-        factors: Option<Factors>,
+        relationship: Option<Relationship>,
     ) -> Result<(), PywrError> {
         let node = self.get_mut_aggregated_node_by_name(name, sub_name)?;
-        node.set_factors(factors);
+        node.set_relationship(relationship);
         Ok(())
     }
 
@@ -1107,7 +1136,7 @@ impl Network {
     }
 
     /// Get a `Parameter` from a parameter's name
-    pub fn get_parameter_by_name(&self, name: &str) -> Result<&dyn parameters::Parameter, PywrError> {
+    pub fn get_parameter_by_name(&self, name: &ParameterName) -> Result<&dyn parameters::Parameter, PywrError> {
         match self.parameters.get_f64_by_name(name) {
             Some(parameter) => Ok(parameter),
             None => Err(PywrError::ParameterNotFound(name.to_string())),
@@ -1115,7 +1144,7 @@ impl Network {
     }
 
     /// Get a `ParameterIndex` from a parameter's name
-    pub fn get_parameter_index_by_name(&self, name: &str) -> Result<ParameterIndex<f64>, PywrError> {
+    pub fn get_parameter_index_by_name(&self, name: &ParameterName) -> Result<ParameterIndex<f64>, PywrError> {
         match self.parameters.get_f64_index_by_name(name) {
             Some(idx) => Ok(idx),
             None => Err(PywrError::ParameterNotFound(name.to_string())),
@@ -1131,7 +1160,7 @@ impl Network {
     }
 
     /// Get a `IndexParameter` from a parameter's name
-    pub fn get_index_parameter_by_name(&self, name: &str) -> Result<&dyn parameters::Parameter, PywrError> {
+    pub fn get_index_parameter_by_name(&self, name: &ParameterName) -> Result<&dyn parameters::Parameter, PywrError> {
         match self.parameters.get_usize_by_name(name) {
             Some(parameter) => Ok(parameter),
             None => Err(PywrError::ParameterNotFound(name.to_string())),
@@ -1139,7 +1168,7 @@ impl Network {
     }
 
     /// Get a `IndexParameterIndex` from a parameter's name
-    pub fn get_index_parameter_index_by_name(&self, name: &str) -> Result<ParameterIndex<usize>, PywrError> {
+    pub fn get_index_parameter_index_by_name(&self, name: &ParameterName) -> Result<ParameterIndex<usize>, PywrError> {
         match self.parameters.get_usize_index_by_name(name) {
             Some(idx) => Ok(idx),
             None => Err(PywrError::ParameterNotFound(name.to_string())),
@@ -1160,7 +1189,7 @@ impl Network {
     /// Get a `MultiValueParameterIndex` from a parameter's name
     pub fn get_multi_valued_parameter_index_by_name(
         &self,
-        name: &str,
+        name: &ParameterName,
     ) -> Result<ParameterIndex<MultiValue>, PywrError> {
         match self.parameters.get_multi_index_by_name(name) {
             Some(idx) => Ok(idx),
@@ -1264,14 +1293,14 @@ impl Network {
         &mut self,
         name: &str,
         sub_name: Option<&str>,
-        nodes: &[NodeIndex],
-        factors: Option<Factors>,
+        nodes: &[Vec<NodeIndex>],
+        relationship: Option<Relationship>,
     ) -> Result<AggregatedNodeIndex, PywrError> {
         if let Ok(_agg_node) = self.get_aggregated_node_by_name(name, sub_name) {
             return Err(PywrError::NodeNameAlreadyExists(name.to_string()));
         }
 
-        let node_index = self.aggregated_nodes.push_new(name, sub_name, nodes, factors);
+        let node_index = self.aggregated_nodes.push_new(name, sub_name, nodes, relationship);
         Ok(node_index)
     }
 
@@ -1299,7 +1328,7 @@ impl Network {
         let vs_node = self.virtual_storage_nodes.get(&vs_node_index)?;
 
         // Link the virtual storage node to the nodes it is including
-        for node_idx in vs_node.nodes.iter() {
+        for node_idx in vs_node.nodes() {
             let node = self.nodes.get_mut(node_idx)?;
             node.add_virtual_storage(vs_node_index)?;
         }
@@ -1331,9 +1360,7 @@ impl Network {
         &mut self,
         parameter: Box<dyn parameters::SimpleParameter<f64>>,
     ) -> Result<ParameterIndex<f64>, PywrError> {
-        let parameter_index = self.parameters.add_simple_f64(parameter)?;
-
-        Ok(parameter_index.into())
+        self.parameters.add_simple_f64(parameter)
     }
 
     /// Add a [`parameters::ConstParameter`] to the network
@@ -1341,9 +1368,7 @@ impl Network {
         &mut self,
         parameter: Box<dyn parameters::ConstParameter<f64>>,
     ) -> Result<ParameterIndex<f64>, PywrError> {
-        let parameter_index = self.parameters.add_const_f64(parameter)?;
-
-        Ok(parameter_index.into())
+        self.parameters.add_const_f64(parameter)
     }
 
     /// Add a `parameters::IndexParameter` to the network
@@ -1722,7 +1747,7 @@ mod tests {
         let mut network = Network::default();
         let _node_index = network.add_input_node("input", None).unwrap();
 
-        let input_max_flow = parameters::ConstantParameter::new("my-constant", 10.0);
+        let input_max_flow = parameters::ConstantParameter::new("my-constant".into(), 10.0);
         let parameter = network.add_const_parameter(Box::new(input_max_flow)).unwrap();
 
         // assign the new parameter to one of the nodes.
@@ -1781,13 +1806,16 @@ mod tests {
         let recorder = AssertionRecorder::new("output-flow", MetricF64::NodeInFlow(idx), expected, None, None);
         model.network_mut().add_recorder(Box::new(recorder)).unwrap();
 
-        let idx = model.network().get_parameter_index_by_name("total-demand").unwrap();
+        let idx = model
+            .network()
+            .get_parameter_index_by_name(&"total-demand".into())
+            .unwrap();
         let expected = Array2::from_elem((366, 10), 12.0);
         let recorder = AssertionRecorder::new("total-demand", idx.into(), expected, None, None);
         model.network_mut().add_recorder(Box::new(recorder)).unwrap();
 
         // Test all solvers
-        run_all_solvers(&model, &[]);
+        run_all_solvers(&model, &[], &[]);
     }
 
     #[test]
@@ -1811,7 +1839,7 @@ mod tests {
         network.add_recorder(Box::new(recorder)).unwrap();
 
         // Test all solvers
-        run_all_solvers(&model, &[]);
+        run_all_solvers(&model, &[], &[]);
     }
 
     /// Test proportional storage derived metric.
@@ -1839,7 +1867,7 @@ mod tests {
         // Set-up a control curve that uses the proportional volume
         // This should be use the initial proportion (100%) on the first time-step, and then the previous day's end value
         let cc = ControlCurveInterpolatedParameter::new(
-            "interp",
+            "interp".into(),
             MetricF64::DerivedMetric(dm_idx),
             vec![],
             vec![100.0.into(), 0.0.into()],
@@ -1851,7 +1879,7 @@ mod tests {
         network.add_recorder(Box::new(recorder)).unwrap();
 
         // Test all solvers
-        run_all_solvers(&model, &[]);
+        run_all_solvers(&model, &[], &[]);
     }
 
     #[test]
@@ -1960,7 +1988,7 @@ mod tests {
         let mut model = simple_model(1);
 
         let variable = ActivationFunction::Unit { min: 0.0, max: 10.0 };
-        let input_max_flow = parameters::ConstantParameter::new("my-constant", 10.0);
+        let input_max_flow = parameters::ConstantParameter::new("my-constant".into(), 10.0);
 
         assert!(input_max_flow.can_be_f64_variable());
 

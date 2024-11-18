@@ -1,6 +1,6 @@
 use crate::metric::{MetricF64, SimpleMetricF64};
 use crate::network::Network;
-use crate::node::{FlowConstraints, NodeMeta, StorageConstraints, StorageInitialVolume};
+use crate::node::{NodeMeta, StorageConstraints, StorageInitialVolume};
 use crate::state::{State, VirtualStorageState};
 use crate::timestep::Timestep;
 use crate::{NodeIndex, PywrError};
@@ -138,11 +138,13 @@ impl VirtualStorageBuilder {
     }
 
     pub fn build(self, index: VirtualStorageIndex) -> VirtualStorage {
+        // Default to unit factors if none provided
+        let factors = self.factors.unwrap_or(vec![1.0; self.nodes.len()]);
+
         VirtualStorage {
             meta: NodeMeta::new(&index, &self.name, self.sub_name.as_deref()),
-            flow_constraints: FlowConstraints::default(),
             nodes: self.nodes,
-            factors: self.factors,
+            factors,
             initial_volume: self.initial_volume,
             storage_constraints: StorageConstraints::new(self.min_volume, self.max_volume),
             reset: self.reset,
@@ -158,17 +160,26 @@ pub enum VirtualStorageReset {
     NumberOfMonths { months: i32 },
 }
 
-// #[derive(Debug)]
+/// A component that represents a virtual storage constraint.
+///
+/// Virtual storage are not part of the main network but can have their volume "used" by
+/// association with real nodes. Flow through one or more nodes lowers the virtual storage
+/// volume by a corresponding factor (default 1.0). Flow can be constrained in those nodes
+/// if it were to violate the virtual storage's min or max volume limits.
+///
+/// Virtual storage volume can be reset at different frequencies. See [`VirtualStorageReset`]
+/// for the choices. In addition, a rolling window can be provided as a number of time-steps.
+/// Volume is recovered into the virtual storage after this number of time-steps once per time-step
+/// with the oldest value added back to the volume.
 pub struct VirtualStorage {
-    pub meta: NodeMeta<VirtualStorageIndex>,
-    pub flow_constraints: FlowConstraints,
-    pub nodes: Vec<NodeIndex>,
-    pub factors: Option<Vec<f64>>,
-    pub initial_volume: StorageInitialVolume,
-    pub storage_constraints: StorageConstraints,
-    pub reset: VirtualStorageReset,
-    pub rolling_window: Option<NonZeroUsize>,
-    pub cost: Option<MetricF64>,
+    meta: NodeMeta<VirtualStorageIndex>,
+    nodes: Vec<NodeIndex>,
+    factors: Vec<f64>,
+    initial_volume: StorageInitialVolume,
+    storage_constraints: StorageConstraints,
+    reset: VirtualStorageReset,
+    rolling_window: Option<NonZeroUsize>,
+    cost: Option<MetricF64>,
 }
 
 impl VirtualStorage {
@@ -188,10 +199,6 @@ impl VirtualStorage {
 
     pub fn index(&self) -> VirtualStorageIndex {
         *self.meta.index()
-    }
-
-    pub fn has_factors(&self) -> bool {
-        self.factors.is_some()
     }
 
     pub fn default_state(&self) -> VirtualStorageState {
@@ -252,14 +259,12 @@ impl VirtualStorage {
         Ok(())
     }
 
-    pub fn get_nodes(&self) -> Vec<NodeIndex> {
-        self.nodes.to_vec()
+    pub fn nodes(&self) -> &[NodeIndex] {
+        &self.nodes
     }
 
-    pub fn get_nodes_with_factors(&self) -> Option<Vec<(NodeIndex, f64)>> {
-        self.factors
-            .as_ref()
-            .map(|factors| self.nodes.iter().zip(factors.iter()).map(|(n, f)| (*n, *f)).collect())
+    pub fn iter_nodes_with_factors(&self) -> impl Iterator<Item = (&NodeIndex, f64)> + '_ {
+        self.nodes.iter().zip(self.factors.iter()).map(|(n, f)| (n, *f))
     }
 
     pub fn get_min_volume(&self, state: &State) -> Result<f64, PywrError> {
@@ -272,7 +277,7 @@ impl VirtualStorage {
             .get_max_volume(&state.get_simple_parameter_values())
     }
 
-    pub fn get_current_available_volume_bounds(&self, state: &State) -> Result<(f64, f64), PywrError> {
+    pub fn get_available_volume_bounds(&self, state: &State) -> Result<(f64, f64), PywrError> {
         let min_vol = self.get_min_volume(state)?;
         let max_vol = self.get_max_volume(state)?;
 
@@ -327,7 +332,7 @@ mod tests {
             .unwrap();
         assert_eq!(months_since_last_reset(&current, &last_reset), 12);
 
-        let current = NaiveDate::from_ymd_opt(2023, 01, 1)
+        let current = NaiveDate::from_ymd_opt(2023, 1, 1)
             .unwrap()
             .and_hms_opt(0, 0, 0)
             .unwrap();
@@ -375,7 +380,7 @@ mod tests {
             .reset(VirtualStorageReset::Never)
             .cost(None);
 
-        let _vs = network.add_virtual_storage_node(vs_builder);
+        let vs_idx = network.add_virtual_storage_node(vs_builder).unwrap();
 
         // Setup a demand on output-0 and output-1
         for sub_name in &["0", "1"] {
@@ -384,9 +389,17 @@ mod tests {
             output_node.set_cost(Some((-10.0).into()));
         }
 
-        // With a demand of 10 on each link node. The virtual storage will depleted at a rate of
+        // With a demand of 10 on each link node. The virtual storage will deplete at a rate of
         // 30 per day.
-        // TODO assert let expected_vol = |ts: &Timestep, _si| (70.0 - ts.index as f64 * 30.0).max(0.0);
+        let expected_vol = |ts: &Timestep, _si: &ScenarioIndex| (70.0 - ts.index as f64 * 30.0).max(0.0);
+        let recorder = AssertionFnRecorder::new(
+            "vs-volume",
+            MetricF64::VirtualStorageVolume(vs_idx),
+            expected_vol,
+            None,
+            None,
+        );
+        network.add_recorder(Box::new(recorder)).unwrap();
         // Set-up assertion for "link" node
         let idx = network.get_node_by_name("link", Some("0")).unwrap().index();
         let expected = |ts: &Timestep, _si: &ScenarioIndex| {
@@ -414,7 +427,7 @@ mod tests {
         let domain = default_timestepper().try_into().unwrap();
         let model = Model::new(domain, network);
         // Test all solvers
-        run_all_solvers(&model, &["highs", "ipm-ocl", "ipm-simd"]);
+        run_all_solvers(&model, &["ipm-ocl", "ipm-simd"], &[]);
     }
 
     #[test]
@@ -441,7 +454,7 @@ mod tests {
         network.add_recorder(Box::new(recorder)).unwrap();
 
         // Test all solvers
-        run_all_solvers(&model, &["highs", "ipm-ocl", "ipm-simd"]);
+        run_all_solvers(&model, &["ipm-ocl", "ipm-simd"], &[]);
     }
 
     #[test]
@@ -481,6 +494,6 @@ mod tests {
         network.add_recorder(Box::new(recorder)).unwrap();
 
         // Test all solvers
-        run_all_solvers(&model, &["highs", "ipm-ocl", "ipm-simd"]);
+        run_all_solvers(&model, &["ipm-ocl", "ipm-simd"], &[]);
     }
 }

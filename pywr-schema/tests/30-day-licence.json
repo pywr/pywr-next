@@ -1,0 +1,86 @@
+{
+  "metadata": {
+    "title": "30-day licence",
+    "description": "An example of a 30-day rolling licence",
+    "minimum_version": "0.1"
+  },
+  "timestepper": {
+    "start": "2015-01-01",
+    "end": "2015-12-31",
+    "timestep": 1
+  },
+  "network": {
+    "nodes": [
+      {
+        "meta": {
+          "name": "supply1"
+        },
+        "type": "Input",
+        "max_flow": {
+          "type": "Constant",
+          "value": 15
+        }
+      },
+      {
+        "meta": {
+          "name": "link1"
+        },
+        "type": "Link"
+      },
+      {
+        "meta": {
+          "name": "demand1"
+        },
+        "type": "Output",
+        "max_flow": {
+          "type": "Parameter",
+          "name": "demand"
+        },
+        "cost": {
+          "type": "Constant",
+          "value": -10
+        }
+      },
+      {
+        "meta": {
+          "name": "licence"
+        },
+        "type": "RollingVirtualStorage",
+        "nodes": [
+          {
+            "name": "supply1"
+          }
+        ],
+        "max_volume": {
+          "type": "Constant",
+          "value": 300
+        },
+        "initial_volume": {
+          "Proportional": 0.0
+        },
+        "window": {
+          "Days": 30
+        }
+      }
+    ],
+    "edges": [
+      {
+        "from_node": "supply1",
+        "to_node": "link1"
+      },
+      {
+        "from_node": "link1",
+        "to_node": "demand1"
+      }
+    ],
+    "parameters": [
+      {
+        "meta": {
+          "name": "demand"
+        },
+        "type": "Constant",
+        "value": 10.0
+      }
+    ]
+  }
+}

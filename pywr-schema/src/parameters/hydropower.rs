@@ -38,8 +38,8 @@ use schemars::JsonSchema;
 /// ```json
 #[doc = include_str!("doc_examples/hydropower.json")]
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
+#[serde(deny_unknown_fields)]
 pub struct HydropowerTargetParameter {
-    #[serde(flatten)]
     pub meta: ParameterMeta,
     /// Hydropower production target. This can be a constant, a value from a table, a
     /// parameter name or an inline parameter (see [`Metric`]). Units should be in
@@ -104,7 +104,7 @@ impl HydropowerTargetParameter {
             flow_unit_conversion: self.flow_unit_conversion,
             energy_unit_conversion: self.energy_unit_conversion,
         };
-        let p = pywr_core::parameters::HydropowerTargetParameter::new(&self.meta.name, turbine_data);
+        let p = pywr_core::parameters::HydropowerTargetParameter::new(self.meta.name.as_str().into(), turbine_data);
         Ok(network.add_parameter(Box::new(p))?)
     }
 }
