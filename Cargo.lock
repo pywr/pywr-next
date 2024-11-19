@@ -1198,7 +1198,7 @@ dependencies = [
  "hdf5-metno-types",
  "lazy_static",
  "libc",
- "ndarray",
+ "ndarray 0.16.1",
  "paste",
 ]
 
@@ -1980,6 +1980,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "ndarray"
+version = "0.16.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "882ed72dce9365842bf196bdeedf5055305f11fc8c03dee7bb0194a6cad34841"
+dependencies = [
+ "matrixmultiply",
+ "num-complex",
+ "num-integer",
+ "num-traits 0.2.19",
+ "portable-atomic",
+ "portable-atomic-util",
+ "rawpointer",
+]
+
+[[package]]
 name = "no-std-compat"
 version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2503,7 +2518,7 @@ dependencies = [
  "hashbrown 0.14.5",
  "hashbrown 0.15.0",
  "indexmap",
- "ndarray",
+ "ndarray 0.15.6",
  "num-traits 0.2.19",
  "once_cell",
  "polars-arrow",
@@ -2951,6 +2966,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cc9c68a3f6da06753e9335d63e27f6b9754dd1920d941135b7ea8224f141adb2"
 
 [[package]]
+name = "portable-atomic-util"
+version = "0.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "90a7d5beecc52a491b54d6dd05c7a45ba1801666a5baad9fdbfc6fef8d2d206c"
+dependencies = [
+ "portable-atomic",
+]
+
+[[package]]
 name = "ppv-lite86"
 version = "0.2.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3155,7 +3179,7 @@ dependencies = [
  "ipm-simd",
  "libc",
  "nalgebra 0.33.1",
- "ndarray",
+ "ndarray 0.16.1",
  "num",
  "ocl",
  "polars",
@@ -3193,7 +3217,7 @@ dependencies = [
  "csv",
  "float-cmp",
  "hdf5-metno",
- "ndarray",
+ "ndarray 0.16.1",
  "num",
  "polars",
  "pyo3",
