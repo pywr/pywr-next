@@ -4159,7 +4159,7 @@ dependencies = [
 [[package]]
 name = "svgbobdoc"
 version = "0.3.0"
-source = "git+https://github.com/jetuk/svgbobdoc.git?branch=syn-v2#242893b1ea31f2ad139ece75cc6d428e7dfbe11a"
+source = "git+https://github.com/jetuk/svgbobdoc.git?branch=syn-v2#b29d1e40152e13813d90dd8868777c1afff3a059"
 dependencies = [
  "base64",
  "proc-macro2",
