@@ -77,14 +77,14 @@
         "name": "my-outputs",
         "type": "CSV",
         "format": "long",
-        "filename": "outputs-long.csv",
+        "filename": "csv1-outputs-long.csv",
         "metric_set": "nodes"
       },
       {
         "name": "my-outputs",
         "type": "CSV",
         "format": "wide",
-        "filename": "outputs-wide.csv",
+        "filename": "csv1-outputs-wide.csv",
         "metric_set": "nodes"
       }
     ]

@@ -1,7 +1,7 @@
 {
   "metadata": {
-    "title": "Mutual exclusivity test 2",
-    "description": "Test mutual exclusivities work with compound node types",
+    "title": "Mutual exclusivity test 1",
+    "description": "Test mutual exclusivities work with simple link node types",
     "minimum_version": "0.1"
   },
   "timestepper": {
@@ -19,19 +19,12 @@
       },
       {
         "meta": {
-          "name": "wtw1"
+          "name": "link1"
         },
-        "type": "WaterTreatmentWorks",
+        "type": "Link",
         "max_flow": {
           "type": "Constant",
           "value": 10.0
-        },
-        "loss_factor": {
-          "type": "Net",
-          "factor": {
-            "type": "Constant",
-            "value": 0.1
-          }
         }
       },
       {
@@ -50,9 +43,9 @@
       },
       {
         "meta": {
-          "name": "wtw2"
+          "name": "link2"
         },
-        "type": "WaterTreatmentWorks",
+        "type": "Link",
         "max_flow": {
           "type": "Constant",
           "value": 10.0
@@ -79,10 +72,10 @@
         "type": "Aggregated",
         "nodes": [
           {
-            "name": "wtw1"
+            "name": "link1"
           },
           {
-            "name": "wtw2"
+            "name": "link2"
           }
         ],
         "relationship": {
@@ -93,18 +86,18 @@
     "edges": [
       {
         "from_node": "input1",
-        "to_node": "wtw1"
+        "to_node": "link1"
       },
       {
-        "from_node": "wtw1",
+        "from_node": "link1",
         "to_node": "demand1"
       },
       {
         "from_node": "input1",
-        "to_node": "wtw2"
+        "to_node": "link2"
       },
       {
-        "from_node": "wtw2",
+        "from_node": "link2",
         "to_node": "demand2"
       }
     ],
@@ -114,33 +107,23 @@
         "metrics": [
           {
             "type": "Node",
-            "name": "wtw1",
+            "name": "link1",
             "attribute": "Inflow"
           },
           {
             "type": "Node",
-            "name": "wtw1",
+            "name": "link1",
             "attribute": "Outflow"
           },
           {
             "type": "Node",
-            "name": "wtw1",
-            "attribute": "Loss"
-          },
-          {
-            "type": "Node",
-            "name": "wtw2",
+            "name": "link2",
             "attribute": "Inflow"
           },
           {
             "type": "Node",
-            "name": "wtw2",
+            "name": "link2",
             "attribute": "Outflow"
-          },
-          {
-            "type": "Node",
-            "name": "wtw2",
-            "attribute": "Loss"
           }
         ]
       }
@@ -150,7 +133,7 @@
         "name": "node-outputs",
         "type": "CSV",
         "format": "long",
-        "filename": "output.csv",
+        "filename": "mutual-exclusivity1.csv",
         "metric_set": [
           "nodes"
         ],

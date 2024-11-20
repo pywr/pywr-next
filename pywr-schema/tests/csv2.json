@@ -63,27 +63,10 @@
     ],
     "metric_sets": [
       {
-        "name": "nodes-monthly-mean",
+        "name": "nodes",
         "aggregator": {
           "freq": {
             "type": "Monthly"
-          },
-          "func": {
-            "type": "Mean"
-          }
-        },
-        "metrics": [
-          {
-            "type": "Node",
-            "name": "demand1"
-          }
-        ]
-      },
-      {
-        "name": "nodes-annual-mean",
-        "aggregator": {
-          "freq": {
-            "type": "Annual"
           },
           "func": {
             "type": "Mean"
@@ -102,11 +85,15 @@
         "name": "monthly-avg-outputs",
         "type": "CSV",
         "format": "long",
-        "filename": "outputs-long.csv",
-        "metric_set": [
-          "nodes-monthly-mean",
-          "nodes-annual-mean"
-        ]
+        "filename": "csv2-outputs-long.csv",
+        "metric_set": "nodes"
+      },
+      {
+        "name": "monthly-avg-outputs",
+        "type": "CSV",
+        "format": "wide",
+        "filename": "csv2-outputs-wide.csv",
+        "metric_set": "nodes"
       }
     ]
   }

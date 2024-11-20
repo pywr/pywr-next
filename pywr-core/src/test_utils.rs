@@ -169,22 +169,26 @@ pub fn run_and_assert_parameter(
 
 /// A struct to hold the expected outputs for a test.
 pub struct ExpectedOutputs {
-    actual_path: PathBuf,
-    expected_str: &'static str,
+    output_path: PathBuf,
+    expected_str: String,
 }
 
 impl ExpectedOutputs {
-    pub fn new(actual_path: PathBuf, expected_str: &'static str) -> Self {
+    pub fn new(output_path: PathBuf, expected_str: String) -> Self {
         Self {
-            actual_path,
+            output_path,
             expected_str,
         }
     }
 
     fn verify(&self) {
-        assert!(self.actual_path.exists());
-        let actual_str = std::fs::read_to_string(&self.actual_path).unwrap();
-        assert_eq!(actual_str, self.expected_str);
+        assert!(
+            self.output_path.exists(),
+            "Output file does not exist: {:?}",
+            self.output_path
+        );
+        let actual_str = std::fs::read_to_string(&self.output_path).unwrap();
+        assert_eq!(actual_str, self.expected_str, "Output file contents do not match");
     }
 }
 
@@ -193,18 +197,15 @@ impl ExpectedOutputs {
 /// The model will only be run if the solver has the required solver features (and
 /// is also enabled as a Cargo feature).
 pub fn run_all_solvers(model: &Model, solvers_without_features: &[&str], expected_outputs: &[ExpectedOutputs]) {
-    println!("Running CLP");
     check_features_and_run::<ClpSolver>(model, !solvers_without_features.contains(&"clp"), expected_outputs);
 
     #[cfg(feature = "cbc")]
     {
-        println!("Running CBC");
         check_features_and_run::<CbcSolver>(model, !solvers_without_features.contains(&"cbc"), expected_outputs);
     }
 
     #[cfg(feature = "highs")]
     {
-        println!("Running Highs");
         check_features_and_run::<HighsSolver>(model, !solvers_without_features.contains(&"highs"), expected_outputs);
     }
 
