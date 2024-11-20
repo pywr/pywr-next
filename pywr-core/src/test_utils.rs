@@ -13,9 +13,11 @@ use crate::solvers::CbcSolver;
 use crate::solvers::ClIpmF64Solver;
 #[cfg(feature = "highs")]
 use crate::solvers::HighsSolver;
+#[cfg(any(feature = "ipm-simd", feature = "ipm-ocl"))]
+use crate::solvers::MultiStateSolver;
 #[cfg(feature = "ipm-simd")]
 use crate::solvers::SimdIpmF64Solver;
-use crate::solvers::{ClpSolver, MultiStateSolver, Solver, SolverSettings};
+use crate::solvers::{ClpSolver, Solver, SolverSettings};
 use crate::timestep::{TimeDomain, TimestepDuration, Timestepper};
 use crate::PywrError;
 use chrono::{Days, NaiveDate};
@@ -213,7 +215,7 @@ pub fn run_all_solvers(model: &Model, solvers_without_features: &[&str], expecte
     check_features_and_run_multi::<SimdIpmF64Solver<4>>(model, !solvers_without_features.contains(&"ipm-simd"));
 
     #[cfg(feature = "ipm-ocl")]
-    check_features_and_run_multi::<ClIpmF64Solver>(&Default::default(), !solvers_without_features.contains(&"ipm-ocl"));
+    check_features_and_run_multi::<ClIpmF64Solver>(model, !solvers_without_features.contains(&"ipm-ocl"));
 }
 
 /// Check features and
@@ -247,6 +249,7 @@ where
 }
 
 /// Check features and run with a multi-scenario solver
+#[cfg(any(feature = "ipm-simd", feature = "ipm-ocl"))]
 fn check_features_and_run_multi<S>(model: &Model, expect_features: bool)
 where
     S: MultiStateSolver,

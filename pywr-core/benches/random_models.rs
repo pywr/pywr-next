@@ -392,6 +392,9 @@ fn bench_ocl_chunks(c: &mut Criterion) {
 #[cfg(not(feature = "ipm-ocl"))]
 fn bench_ocl_chunks(_c: &mut Criterion) {}
 
+#[cfg(not(any(feature = "ipm-simd", feature = "ipm-ocl")))]
+fn bench_ipm_convergence(_c: &mut Criterion) {}
+
 /// Benchmark a large number of scenarios using various solvers
 fn bench_hyper_scenarios(c: &mut Criterion) {
     // Go from largest to smallest
