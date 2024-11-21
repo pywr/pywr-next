@@ -16,7 +16,9 @@ use crate::timeseries::TimeseriesReference;
 use crate::v1::{ConversionData, TryFromV1, TryIntoV2};
 use crate::ConversionError;
 #[cfg(feature = "core")]
-use pywr_core::{metric::MetricF64, models::MultiNetworkTransferIndex, recorders::OutputMetric};
+use pywr_core::{
+    metric::MetricF64, models::MultiNetworkTransferIndex, parameters::ParameterName, recorders::OutputMetric,
+};
 use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::parameters::ParameterValue as ParameterValueV1;
 use schemars::JsonSchema;
@@ -36,6 +38,7 @@ pub enum Metric {
     Edge(EdgeReference),
     Timeseries(TimeseriesReference),
     Parameter(ParameterReference),
+    LocalParameter(ParameterReference),
     InterNetworkTransfer {
         name: String,
     },
@@ -55,10 +58,26 @@ impl From<f64> for Metric {
 
 #[cfg(feature = "core")]
 impl Metric {
-    pub fn load(&self, network: &mut pywr_core::network::Network, args: &LoadArgs) -> Result<MetricF64, SchemaError> {
+    pub fn load(
+        &self,
+        network: &mut pywr_core::network::Network,
+        args: &LoadArgs,
+        parent: Option<&str>,
+    ) -> Result<MetricF64, SchemaError> {
         match self {
             Self::Node(node_ref) => node_ref.load(network, args),
-            Self::Parameter(parameter_ref) => parameter_ref.load(network),
+            // Global parameter with no parent
+            Self::Parameter(parameter_ref) => parameter_ref.load(network, None),
+            // Local parameter loaded from parent's namespace
+            Self::LocalParameter(parameter_ref) => {
+                if parent.is_none() {
+                    return Err(SchemaError::LocalParameterReferenceRequiresParent(
+                        parameter_ref.name.clone(),
+                    ));
+                }
+
+                parameter_ref.load(network, parent)
+            }
             Self::Constant { value } => Ok((*value).into()),
             Self::Table(table_ref) => {
                 let value = args
@@ -99,6 +118,7 @@ impl Metric {
         match self {
             Self::Node(node_ref) => Ok(node_ref.name.to_string()),
             Self::Parameter(parameter_ref) => Ok(parameter_ref.name.clone()),
+            Self::LocalParameter(parameter_ref) => Ok(parameter_ref.name.clone()),
             Self::Constant { .. } => Err(SchemaError::LiteralConstantOutputNotSupported),
             Self::Table(table_ref) => Ok(table_ref.table.clone()),
             Self::Timeseries(ts_ref) => Ok(ts_ref.name.clone()),
@@ -111,6 +131,7 @@ impl Metric {
         let attribute = match self {
             Self::Node(node_ref) => node_ref.attribute(args)?.to_string(),
             Self::Parameter(_) => "value".to_string(),
+            Self::LocalParameter(_) => "value".to_string(),
             Self::Constant { .. } => "value".to_string(),
             Self::Table(_) => "value".to_string(),
             Self::Timeseries(_) => "value".to_string(),
@@ -124,11 +145,11 @@ impl Metric {
     /// Return the subtype of the metric. This is the type of the metric that is being
     /// referenced. For example, if the metric is a node then the subtype is the type of the
     /// node.
-
     fn sub_type(&self, args: &LoadArgs) -> Result<Option<String>, SchemaError> {
         let sub_type = match self {
             Self::Node(node_ref) => Some(node_ref.node_type(args)?.to_string()),
             Self::Parameter(parameter_ref) => Some(parameter_ref.parameter_type(args)?.to_string()),
+            Self::LocalParameter(parameter_ref) => Some(parameter_ref.parameter_type(args)?.to_string()),
             Self::Constant { .. } => None,
             Self::Table(_) => None,
             Self::Timeseries(_) => None,
@@ -143,8 +164,9 @@ impl Metric {
         &self,
         network: &mut pywr_core::network::Network,
         args: &LoadArgs,
+        parent: Option<&str>,
     ) -> Result<OutputMetric, SchemaError> {
-        let metric = self.load(network, args)?;
+        let metric = self.load(network, args, parent)?;
 
         let ty = self.to_string();
         let sub_type = self.sub_type(args)?;
@@ -319,9 +341,16 @@ impl ParameterReference {
         }
     }
 
+    /// Load a parameter reference into a [`MetricF64`] by attempting to retrieve the parameter
+    /// from the `network`. If `parent` is the optional parameter name space from which to load
+    /// the parameter.
     #[cfg(feature = "core")]
-    pub fn load(&self, network: &mut pywr_core::network::Network) -> Result<MetricF64, SchemaError> {
-        let name = self.name.as_str().into();
+    pub fn load(
+        &self,
+        network: &mut pywr_core::network::Network,
+        parent: Option<&str>,
+    ) -> Result<MetricF64, SchemaError> {
+        let name = ParameterName::new(&self.name, parent);
 
         match &self.key {
             Some(key) => {

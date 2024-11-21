@@ -4,6 +4,7 @@ use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::nodes::{NodeAttribute, NodeMeta};
+use crate::parameters::Parameter;
 #[cfg(feature = "core")]
 use pywr_core::{
     derived_metric::DerivedMetric,
@@ -51,6 +52,8 @@ pub struct PiecewiseStore {
 #[serde(deny_unknown_fields)]
 pub struct PiecewiseStorageNode {
     pub meta: NodeMeta,
+    /// Optional local parameters.
+    pub parameters: Option<Vec<Parameter>>,
     pub max_volume: Metric,
     // TODO implement min volume
     // pub min_volume: Option<DynamicFloatValue>,
@@ -155,7 +158,7 @@ impl PiecewiseStorageNode {
         args: &LoadArgs,
     ) -> Result<(), SchemaError> {
         // These are the min and max volume of the overall node
-        let total_volume: SimpleMetricF64 = self.max_volume.load(network, args)?.try_into()?;
+        let total_volume: SimpleMetricF64 = self.max_volume.load(network, args, Some(&self.meta.name))?.try_into()?;
 
         for (i, step) in self.steps.iter().enumerate() {
             let sub_name = Self::step_sub_name(i);
@@ -163,12 +166,17 @@ impl PiecewiseStorageNode {
             // The volume of this step is the proportion between the last control curve
             // (or zero if first) and this control curve.
             let lower = if i > 0 {
-                Some(self.steps[i - 1].control_curve.load(network, args)?.try_into()?)
+                Some(
+                    self.steps[i - 1]
+                        .control_curve
+                        .load(network, args, Some(&self.meta.name))?
+                        .try_into()?,
+                )
             } else {
                 None
             };
 
-            let upper = step.control_curve.load(network, args)?;
+            let upper = step.control_curve.load(network, args, Some(&self.meta.name))?;
 
             let max_volume_parameter = VolumeBetweenControlCurvesParameter::new(
                 // Node's name is the parent identifier
@@ -185,14 +193,18 @@ impl PiecewiseStorageNode {
             network.set_node_max_volume(self.meta.name.as_str(), sub_name.as_deref(), max_volume)?;
 
             if let Some(cost) = &step.cost {
-                let value = cost.load(network, args)?;
+                let value = cost.load(network, args, Some(&self.meta.name))?;
                 network.set_node_cost(self.meta.name.as_str(), sub_name.as_deref(), value.into())?;
             }
         }
 
         // The volume of this store the remain proportion above the last control curve
         let lower = match self.steps.last() {
-            Some(step) => Some(step.control_curve.load(network, args)?.try_into()?),
+            Some(step) => Some(
+                step.control_curve
+                    .load(network, args, Some(&self.meta.name))?
+                    .try_into()?,
+            ),
             None => None,
         };
 

@@ -20,6 +20,7 @@ use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::model::PywrNetwork;
+use crate::parameters::Parameter;
 use crate::v1::{ConversionData, TryFromV1, TryIntoV2};
 use crate::visit::{VisitMetrics, VisitPaths};
 pub use annual_virtual_storage::{AnnualReset, AnnualVirtualStorageNode};
@@ -355,7 +356,6 @@ impl Node {
             Node::Turbine(n) => n.output_connectors(),
         }
     }
-
     pub fn default_metric(&self) -> NodeAttribute {
         match self {
             Node::Input(n) => n.default_metric(),
@@ -378,6 +378,35 @@ impl Node {
             Node::Delay(n) => n.default_metric(),
             Node::RollingVirtualStorage(n) => n.default_metric(),
             Node::Turbine(n) => n.default_metric(),
+        }
+    }
+
+    /// Get the locally defined parameters for this node.
+    ///
+    /// This does **not** return which parameters this node might reference, but rather
+    /// the parameters that are defined on this node itself.
+    pub fn local_parameters(&self) -> Option<&[Parameter]> {
+        match self {
+            Node::Input(n) => n.parameters.as_deref(),
+            Node::Link(n) => n.parameters.as_deref(),
+            Node::Output(n) => n.parameters.as_deref(),
+            Node::Storage(n) => n.parameters.as_deref(),
+            Node::Catchment(n) => n.parameters.as_deref(),
+            Node::RiverGauge(n) => n.parameters.as_deref(),
+            Node::LossLink(n) => n.parameters.as_deref(),
+            Node::River(n) => n.parameters.as_deref(),
+            Node::RiverSplitWithGauge(n) => n.parameters.as_deref(),
+            Node::WaterTreatmentWorks(n) => n.parameters.as_deref(),
+            Node::Aggregated(n) => n.parameters.as_deref(),
+            Node::AggregatedStorage(n) => n.parameters.as_deref(),
+            Node::VirtualStorage(n) => n.parameters.as_deref(),
+            Node::AnnualVirtualStorage(n) => n.parameters.as_deref(),
+            Node::MonthlyVirtualStorage(n) => n.parameters.as_deref(),
+            Node::PiecewiseLink(n) => n.parameters.as_deref(),
+            Node::PiecewiseStorage(n) => n.parameters.as_deref(),
+            Node::Delay(n) => n.parameters.as_deref(),
+            Node::RollingVirtualStorage(n) => n.parameters.as_deref(),
+            Node::Turbine(n) => n.parameters.as_deref(),
         }
     }
 }

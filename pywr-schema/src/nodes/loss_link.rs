@@ -5,6 +5,7 @@ use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::nodes::{NodeAttribute, NodeMeta};
+use crate::parameters::Parameter;
 use crate::v1::{ConversionData, TryFromV1, TryIntoV2};
 #[cfg(feature = "core")]
 use pywr_core::{aggregated_node::Relationship, metric::MetricF64};
@@ -32,10 +33,11 @@ impl LossFactor {
         &self,
         network: &mut pywr_core::network::Network,
         args: &LoadArgs,
+        parent: Option<&str>,
     ) -> Result<Option<Relationship>, SchemaError> {
         match self {
             LossFactor::Gross { factor } => {
-                let lf = factor.load(network, args)?;
+                let lf = factor.load(network, args, parent)?;
                 // Handle the case where we are given a zero loss factor
                 // The aggregated node does not support zero loss factors so filter them here.
                 if lf.is_constant_zero() {
@@ -45,7 +47,7 @@ impl LossFactor {
                 Ok(Some(Relationship::new_proportion_factors(&[lf])))
             }
             LossFactor::Net { factor } => {
-                let lf = factor.load(network, args)?;
+                let lf = factor.load(network, args, parent)?;
                 // Handle the case where we are given a zero loss factor
                 // The aggregated node does not support zero loss factors so filter them here.
                 if lf.is_constant_zero() {
@@ -83,6 +85,8 @@ impl LossFactor {
 #[serde(deny_unknown_fields)]
 pub struct LossLinkNode {
     pub meta: NodeMeta,
+    /// Optional local parameters.
+    pub parameters: Option<Vec<Parameter>>,
     pub loss_factor: Option<LossFactor>,
     pub min_net_flow: Option<Metric>,
     pub max_net_flow: Option<Metric>,
@@ -159,22 +163,22 @@ impl LossLinkNode {
         args: &LoadArgs,
     ) -> Result<(), SchemaError> {
         if let Some(cost) = &self.net_cost {
-            let value = cost.load(network, args)?;
+            let value = cost.load(network, args, Some(&self.meta.name))?;
             network.set_node_cost(self.meta.name.as_str(), Self::net_sub_name(), value.into())?;
         }
 
         if let Some(max_flow) = &self.max_net_flow {
-            let value = max_flow.load(network, args)?;
+            let value = max_flow.load(network, args, Some(&self.meta.name))?;
             network.set_node_max_flow(self.meta.name.as_str(), Self::net_sub_name(), value.into())?;
         }
 
         if let Some(min_flow) = &self.min_net_flow {
-            let value = min_flow.load(network, args)?;
+            let value = min_flow.load(network, args, Some(&self.meta.name))?;
             network.set_node_min_flow(self.meta.name.as_str(), Self::net_sub_name(), value.into())?;
         }
 
         if let Some(loss_factor) = &self.loss_factor {
-            let factors = loss_factor.load(network, args)?;
+            let factors = loss_factor.load(network, args, Some(&self.meta.name))?;
 
             if factors.is_none() {
                 // Loaded a constant zero factor; ensure that the loss node has zero flow
@@ -272,6 +276,7 @@ impl TryFromV1<LossLinkNodeV1> for LossLinkNode {
 
         let n = Self {
             meta,
+            parameters: None,
             loss_factor,
             min_net_flow,
             max_net_flow,

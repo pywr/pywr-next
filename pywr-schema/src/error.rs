@@ -19,6 +19,8 @@ pub enum SchemaError {
     },
     #[error("parameter {0} not found")]
     ParameterNotFound(String),
+    #[error("Loading a local parameter reference (name: {0}) requires a parent name space.")]
+    LocalParameterReferenceRequiresParent(String),
     #[error("network {0} not found")]
     NetworkNotFound(String),
     #[error("missing initial volume for node: {0}")]

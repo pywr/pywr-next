@@ -160,12 +160,12 @@ impl MetricSet {
             Some(ref metrics) => {
                 let mut output_metrics: Vec<OutputMetric> = metrics
                     .iter()
-                    .map(|m| m.load_as_output(network, args))
+                    .map(|m| m.load_as_output(network, args, None))
                     .collect::<Result<_, _>>()?;
 
                 if let Some(additional_metrics) = self.filters.create_metrics(args) {
                     for m in additional_metrics.iter() {
-                        let output_metric = m.load_as_output(network, args)?;
+                        let output_metric = m.load_as_output(network, args, None)?;
                         if !output_metrics.contains(&output_metric) {
                             output_metrics.push(output_metric);
                         }
@@ -177,7 +177,7 @@ impl MetricSet {
                 if let Some(metrics) = self.filters.create_metrics(args) {
                     metrics
                         .iter()
-                        .map(|m| m.load_as_output(network, args))
+                        .map(|m| m.load_as_output(network, args, None))
                         .collect::<Result<_, _>>()?
                 } else {
                     return Err(SchemaError::EmptyMetricSet(self.name.clone()));

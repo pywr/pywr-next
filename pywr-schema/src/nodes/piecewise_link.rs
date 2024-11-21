@@ -5,6 +5,7 @@ use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::nodes::{NodeAttribute, NodeMeta};
+use crate::parameters::Parameter;
 use crate::v1::{ConversionData, TryFromV1, TryIntoV2};
 #[cfg(feature = "core")]
 use pywr_core::metric::MetricF64;
@@ -46,6 +47,8 @@ pub struct PiecewiseLinkStep {
 #[serde(deny_unknown_fields)]
 pub struct PiecewiseLinkNode {
     pub meta: NodeMeta,
+    /// Optional local parameters.
+    pub parameters: Option<Vec<Parameter>>,
     pub steps: Vec<PiecewiseLinkStep>,
 }
 
@@ -106,17 +109,17 @@ impl PiecewiseLinkNode {
             let sub_name = Self::step_sub_name(i);
 
             if let Some(cost) = &step.cost {
-                let value = cost.load(network, args)?;
+                let value = cost.load(network, args, Some(&self.meta.name))?;
                 network.set_node_cost(self.meta.name.as_str(), sub_name.as_deref(), value.into())?;
             }
 
             if let Some(max_flow) = &step.max_flow {
-                let value = max_flow.load(network, args)?;
+                let value = max_flow.load(network, args, Some(&self.meta.name))?;
                 network.set_node_max_flow(self.meta.name.as_str(), sub_name.as_deref(), value.into())?;
             }
 
             if let Some(min_flow) = &step.min_flow {
-                let value = min_flow.load(network, args)?;
+                let value = min_flow.load(network, args, Some(&self.meta.name))?;
                 network.set_node_min_flow(self.meta.name.as_str(), sub_name.as_deref(), value.into())?;
             }
         }
@@ -202,7 +205,11 @@ impl TryFromV1<PiecewiseLinkNodeV1> for PiecewiseLinkNode {
             })
             .collect::<Vec<_>>();
 
-        let n = Self { meta, steps };
+        let n = Self {
+            meta,
+            parameters: None,
+            steps,
+        };
         Ok(n)
     }
 }

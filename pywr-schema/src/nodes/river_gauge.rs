@@ -5,6 +5,7 @@ use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::nodes::{NodeAttribute, NodeMeta};
+use crate::parameters::Parameter;
 use crate::v1::{ConversionData, TryFromV1, TryIntoV2};
 #[cfg(feature = "core")]
 use pywr_core::metric::MetricF64;
@@ -31,6 +32,8 @@ use schemars::JsonSchema;
 #[serde(deny_unknown_fields)]
 pub struct RiverGaugeNode {
     pub meta: NodeMeta,
+    /// Optional local parameters.
+    pub parameters: Option<Vec<Parameter>>,
     pub mrf: Option<Metric>,
     pub mrf_cost: Option<Metric>,
     pub bypass_cost: Option<Metric>,
@@ -91,17 +94,17 @@ impl RiverGaugeNode {
     ) -> Result<(), SchemaError> {
         // MRF applies as a maximum on the MRF node.
         if let Some(cost) = &self.mrf_cost {
-            let value = cost.load(network, args)?;
+            let value = cost.load(network, args, Some(&self.meta.name))?;
             network.set_node_cost(self.meta.name.as_str(), Self::mrf_sub_name(), value.into())?;
         }
 
         if let Some(mrf) = &self.mrf {
-            let value = mrf.load(network, args)?;
+            let value = mrf.load(network, args, Some(&self.meta.name))?;
             network.set_node_max_flow(self.meta.name.as_str(), Self::mrf_sub_name(), value.into())?;
         }
 
         if let Some(cost) = &self.bypass_cost {
-            let value = cost.load(network, args)?;
+            let value = cost.load(network, args, Some(&self.meta.name))?;
             network.set_node_cost(self.meta.name.as_str(), Self::bypass_sub_name(), value.into())?;
         }
 
@@ -169,6 +172,7 @@ impl TryFromV1<RiverGaugeNodeV1> for RiverGaugeNode {
 
         let n = Self {
             meta,
+            parameters: None,
             mrf,
             mrf_cost,
             bypass_cost,
