@@ -29,7 +29,7 @@ pub use super::data_tables::TableDataRef;
 use crate::error::ConversionError;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
-use crate::metric::Metric;
+use crate::metric::{Metric, ParameterReference};
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::timeseries::TimeseriesReference;
@@ -352,13 +352,14 @@ impl VisitPaths for Parameter {
 
 #[derive(Clone)]
 pub enum ParameterOrTimeseriesRef {
-    Parameter(Parameter),
+    // Boxed due to large size difference.
+    Parameter(Box<Parameter>),
     Timeseries(TimeseriesReference),
 }
 
 impl From<Parameter> for ParameterOrTimeseriesRef {
     fn from(p: Parameter) -> Self {
-        Self::Parameter(p)
+        Self::Parameter(Box::new(p))
     }
 }
 
@@ -618,36 +619,15 @@ impl TryFrom<ParameterValueV1> for ConstantValue<f64> {
 #[serde(untagged)]
 pub enum ParameterIndexValue {
     Reference(String),
-    Inline(Box<Parameter>),
 }
 
 #[cfg(feature = "core")]
 impl ParameterIndexValue {
-    pub fn load(
-        &self,
-        network: &mut pywr_core::network::Network,
-        args: &LoadArgs,
-    ) -> Result<ParameterIndex<usize>, SchemaError> {
+    pub fn load(&self, network: &mut pywr_core::network::Network) -> Result<ParameterIndex<usize>, SchemaError> {
         match self {
             Self::Reference(name) => {
                 // This should be an existing parameter
                 Ok(network.get_index_parameter_index_by_name(&name.as_str().into())?)
-            }
-            Self::Inline(parameter) => {
-                // Inline parameter needs to be added
-                match parameter.add_to_model(network, args)? {
-                    pywr_core::parameters::ParameterType::Index(idx) => Ok(idx),
-                    pywr_core::parameters::ParameterType::Parameter(_) => Err(SchemaError::UnexpectedParameterType(format!(
-                        "Found float parameter of type '{}' with name '{}' where an index parameter was expected.",
-                        parameter.parameter_type(),
-                        parameter.name(),
-                    ))),
-                    pywr_core::parameters::ParameterType::Multi(_) => Err(SchemaError::UnexpectedParameterType(format!(
-                        "Found an inline definition of a multi valued parameter of type '{}' with name '{}' where an index parameter was expected. Multi valued parameters cannot be defined inline.",
-                        parameter.parameter_type(),
-                        parameter.name(),
-                    ))),
-                }
             }
         }
     }
@@ -675,7 +655,7 @@ impl DynamicIndexValue {
     pub fn load(&self, network: &mut pywr_core::network::Network, args: &LoadArgs) -> Result<MetricUsize, SchemaError> {
         let parameter_ref = match self {
             DynamicIndexValue::Constant(v) => v.load(args.tables)?.into(),
-            DynamicIndexValue::Dynamic(v) => v.load(network, args)?.into(),
+            DynamicIndexValue::Dynamic(v) => v.load(network)?.into(),
         };
         Ok(parameter_ref)
     }
@@ -696,9 +676,20 @@ impl TryFromV1<ParameterValueV1> for DynamicIndexValue {
             ParameterValueV1::Reference(p_name) => Self::Dynamic(ParameterIndexValue::Reference(p_name)),
             ParameterValueV1::Table(tbl) => Self::Constant(ConstantValue::Table(tbl.try_into()?)),
             ParameterValueV1::Inline(param) => {
+                // Inline parameters are converted to either a parameter or a timeseries
+                // The actual component is extracted into the conversion data leaving a reference
+                // to the component in the metric.
                 let definition: ParameterOrTimeseriesRef = (*param).try_into_v2(parent_node, conversion_data)?;
                 match definition {
-                    ParameterOrTimeseriesRef::Parameter(p) => Self::Dynamic(ParameterIndexValue::Inline(Box::new(p))),
+                    ParameterOrTimeseriesRef::Parameter(p) => {
+                        let reference = ParameterReference {
+                            name: p.name().to_string(),
+                            key: None,
+                        };
+                        conversion_data.parameters.push(*p);
+
+                        Self::Dynamic(ParameterIndexValue::Reference(reference.name))
+                    }
                     ParameterOrTimeseriesRef::Timeseries(_) => {
                         // TODO create an error for this
                         panic!("Timeseries do not support indexes yet")

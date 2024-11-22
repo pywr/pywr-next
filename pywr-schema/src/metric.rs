@@ -185,7 +185,7 @@ impl TryFromV1<ParameterValueV1> for Metric {
                             name: p.name().to_string(),
                             key: None,
                         };
-                        conversion_data.parameters.push(p);
+                        conversion_data.parameters.push(*p);
 
                         Self::Parameter(reference)
                     }

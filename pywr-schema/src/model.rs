@@ -305,7 +305,7 @@ impl PywrNetwork {
                 let result: Result<ParameterOrTimeseriesRef, _> = p.try_into_v2(None, &mut conversion_data);
                 match result {
                     Ok(p_or_t) => match p_or_t {
-                        ParameterOrTimeseriesRef::Parameter(p) => parameters.push(p),
+                        ParameterOrTimeseriesRef::Parameter(p) => parameters.push(*p),
                         ParameterOrTimeseriesRef::Timeseries(t) => timeseries_refs.push(t),
                     },
                     Err(e) => errors.push(e),
