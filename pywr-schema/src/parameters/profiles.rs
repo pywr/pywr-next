@@ -3,7 +3,8 @@ use crate::error::ConversionError;
 use crate::error::SchemaError;
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
-use crate::parameters::{ConstantFloatVec, ConstantValue, IntoV2Parameter, ParameterMeta, TryFromV1Parameter};
+use crate::parameters::{ConstantFloatVec, ConstantValue, ConversionData, ParameterMeta};
+use crate::v1::{IntoV2, TryFromV1};
 #[cfg(feature = "core")]
 use pywr_core::parameters::{ParameterIndex, WeeklyProfileError, WeeklyProfileValues};
 use pywr_schema_macros::PywrVisitAll;
@@ -38,15 +39,15 @@ impl DailyProfileParameter {
     }
 }
 
-impl TryFromV1Parameter<DailyProfileParameterV1> for DailyProfileParameter {
+impl TryFromV1<DailyProfileParameterV1> for DailyProfileParameter {
     type Error = ConversionError;
 
-    fn try_from_v1_parameter(
+    fn try_from_v1(
         v1: DailyProfileParameterV1,
         parent_node: Option<&str>,
-        unnamed_count: &mut usize,
+        conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.into_v2_parameter(parent_node, unnamed_count);
+        let meta: ParameterMeta = v1.meta.into_v2(parent_node, conversion_data);
 
         let values: ConstantFloatVec = if let Some(values) = v1.values {
             ConstantFloatVec::Literal(values)
@@ -120,15 +121,15 @@ impl From<MonthInterpDayV1> for MonthlyInterpDay {
     }
 }
 
-impl TryFromV1Parameter<MonthlyProfileParameterV1> for MonthlyProfileParameter {
+impl TryFromV1<MonthlyProfileParameterV1> for MonthlyProfileParameter {
     type Error = ConversionError;
 
-    fn try_from_v1_parameter(
+    fn try_from_v1(
         v1: MonthlyProfileParameterV1,
         parent_node: Option<&str>,
-        unnamed_count: &mut usize,
+        conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.into_v2_parameter(parent_node, unnamed_count);
+        let meta: ParameterMeta = v1.meta.into_v2(parent_node, conversion_data);
         let interp_day = v1.interp_day.map(|id| id.into());
 
         let values: ConstantFloatVec = if let Some(values) = v1.values {
@@ -196,15 +197,15 @@ impl UniformDrawdownProfileParameter {
     }
 }
 
-impl TryFromV1Parameter<UniformDrawdownProfileParameterV1> for UniformDrawdownProfileParameter {
+impl TryFromV1<UniformDrawdownProfileParameterV1> for UniformDrawdownProfileParameter {
     type Error = ConversionError;
 
-    fn try_from_v1_parameter(
+    fn try_from_v1(
         v1: UniformDrawdownProfileParameterV1,
         parent_node: Option<&str>,
-        unnamed_count: &mut usize,
+        conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.into_v2_parameter(parent_node, unnamed_count);
+        let meta: ParameterMeta = v1.meta.into_v2(parent_node, conversion_data);
 
         let p = Self {
             meta,
@@ -374,15 +375,15 @@ impl RbfProfileParameter {
     }
 }
 
-impl TryFromV1Parameter<RbfProfileParameterV1> for RbfProfileParameter {
+impl TryFromV1<RbfProfileParameterV1> for RbfProfileParameter {
     type Error = ConversionError;
 
-    fn try_from_v1_parameter(
+    fn try_from_v1(
         v1: RbfProfileParameterV1,
         parent_node: Option<&str>,
-        unnamed_count: &mut usize,
+        conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.into_v2_parameter(parent_node, unnamed_count);
+        let meta: ParameterMeta = v1.meta.into_v2(parent_node, conversion_data);
 
         let points = v1.days_of_year.into_iter().zip(v1.values).collect();
 
@@ -563,15 +564,15 @@ impl WeeklyProfileParameter {
     }
 }
 
-impl TryFromV1Parameter<WeeklyProfileParameterV1> for WeeklyProfileParameter {
+impl TryFromV1<WeeklyProfileParameterV1> for WeeklyProfileParameter {
     type Error = ConversionError;
 
-    fn try_from_v1_parameter(
+    fn try_from_v1(
         v1: WeeklyProfileParameterV1,
         parent_node: Option<&str>,
-        unnamed_count: &mut usize,
+        conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.into_v2_parameter(parent_node, unnamed_count);
+        let meta: ParameterMeta = v1.meta.into_v2(parent_node, conversion_data);
 
         let values: ConstantFloatVec = if let Some(values) = v1.values {
             // pywr v1 only accept a 52-week profile

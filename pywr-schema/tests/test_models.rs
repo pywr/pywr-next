@@ -124,6 +124,7 @@ macro_rules! convert_tests {
 
 convert_tests! {
     test_convert_timeseries: ("v1/timeseries.json", "v1/timeseries-converted.json"),
+    test_convert_inline_parameter: ("v1/inline-parameter.json", "v1/inline-parameter-converted.json"),
 }
 
 fn convert_model(v1_path: &Path, v2_path: &Path) {

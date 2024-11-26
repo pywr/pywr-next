@@ -5,7 +5,8 @@ use crate::metric::{Metric, NodeReference};
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::nodes::NodeAttribute;
-use crate::parameters::{IntoV2Parameter, ParameterMeta, TryFromV1Parameter, TryIntoV2Parameter};
+use crate::parameters::{ConversionData, ParameterMeta};
+use crate::v1::{IntoV2, TryFromV1, TryIntoV2};
 #[cfg(feature = "core")]
 use pywr_core::parameters::ParameterIndex;
 use pywr_schema_macros::PywrVisitAll;
@@ -57,23 +58,23 @@ impl ControlCurveInterpolatedParameter {
     }
 }
 
-impl TryFromV1Parameter<ControlCurveInterpolatedParameterV1> for ControlCurveInterpolatedParameter {
+impl TryFromV1<ControlCurveInterpolatedParameterV1> for ControlCurveInterpolatedParameter {
     type Error = ConversionError;
 
-    fn try_from_v1_parameter(
+    fn try_from_v1(
         v1: ControlCurveInterpolatedParameterV1,
         parent_node: Option<&str>,
-        unnamed_count: &mut usize,
+        conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.into_v2_parameter(parent_node, unnamed_count);
+        let meta: ParameterMeta = v1.meta.into_v2(parent_node, conversion_data);
 
         let control_curves = if let Some(control_curves) = v1.control_curves {
             control_curves
                 .into_iter()
-                .map(|p| p.try_into_v2_parameter(Some(&meta.name), unnamed_count))
+                .map(|p| p.try_into_v2(parent_node, conversion_data))
                 .collect::<Result<Vec<_>, _>>()?
         } else if let Some(control_curve) = v1.control_curve {
-            vec![control_curve.try_into_v2_parameter(Some(&meta.name), unnamed_count)?]
+            vec![control_curve.try_into_v2(parent_node, conversion_data)?]
         } else {
             return Err(ConversionError::MissingAttribute {
                 name: meta.name,
@@ -98,7 +99,7 @@ impl TryFromV1Parameter<ControlCurveInterpolatedParameterV1> for ControlCurveInt
             (Some(values), None) => values.into_iter().map(Metric::from).collect(),
             (None, Some(parameters)) => parameters
                 .into_iter()
-                .map(|p| p.try_into_v2_parameter(Some(&meta.name), unnamed_count))
+                .map(|p| p.try_into_v2(parent_node, conversion_data))
                 .collect::<Result<Vec<_>, _>>()?,
         };
 
@@ -150,20 +151,20 @@ impl ControlCurveIndexParameter {
     }
 }
 
-impl TryFromV1Parameter<ControlCurveIndexParameterV1> for ControlCurveIndexParameter {
+impl TryFromV1<ControlCurveIndexParameterV1> for ControlCurveIndexParameter {
     type Error = ConversionError;
 
-    fn try_from_v1_parameter(
+    fn try_from_v1(
         v1: ControlCurveIndexParameterV1,
         parent_node: Option<&str>,
-        unnamed_count: &mut usize,
+        conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.into_v2_parameter(parent_node, unnamed_count);
+        let meta: ParameterMeta = v1.meta.into_v2(parent_node, conversion_data);
 
         let control_curves = v1
             .control_curves
             .into_iter()
-            .map(|p| p.try_into_v2_parameter(Some(&meta.name), unnamed_count))
+            .map(|p| p.try_into_v2(parent_node, conversion_data))
             .collect::<Result<Vec<_>, _>>()?;
 
         // v1 uses proportional volume for control curves
@@ -183,23 +184,23 @@ impl TryFromV1Parameter<ControlCurveIndexParameterV1> for ControlCurveIndexParam
 
 /// Pywr v1.x ControlCurveParameter can be an index parameter if it is not given "values"
 /// or "parameters" keys.
-impl TryFromV1Parameter<ControlCurveParameterV1> for ControlCurveIndexParameter {
+impl TryFromV1<ControlCurveParameterV1> for ControlCurveIndexParameter {
     type Error = ConversionError;
 
-    fn try_from_v1_parameter(
+    fn try_from_v1(
         v1: ControlCurveParameterV1,
         parent_node: Option<&str>,
-        unnamed_count: &mut usize,
+        conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.into_v2_parameter(parent_node, unnamed_count);
+        let meta: ParameterMeta = v1.meta.into_v2(parent_node, conversion_data);
 
         let control_curves = if let Some(control_curves) = v1.control_curves {
             control_curves
                 .into_iter()
-                .map(|p| p.try_into_v2_parameter(Some(&meta.name), unnamed_count))
+                .map(|p| p.try_into_v2(parent_node, conversion_data))
                 .collect::<Result<Vec<_>, _>>()?
         } else if let Some(control_curve) = v1.control_curve {
-            vec![control_curve.try_into_v2_parameter(Some(&meta.name), unnamed_count)?]
+            vec![control_curve.try_into_v2(parent_node, conversion_data)?]
         } else {
             return Err(ConversionError::MissingAttribute {
                 name: meta.name,
@@ -269,23 +270,23 @@ impl ControlCurveParameter {
     }
 }
 
-impl TryFromV1Parameter<ControlCurveParameterV1> for ControlCurveParameter {
+impl TryFromV1<ControlCurveParameterV1> for ControlCurveParameter {
     type Error = ConversionError;
 
-    fn try_from_v1_parameter(
+    fn try_from_v1(
         v1: ControlCurveParameterV1,
         parent_node: Option<&str>,
-        unnamed_count: &mut usize,
+        conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.into_v2_parameter(parent_node, unnamed_count);
+        let meta: ParameterMeta = v1.meta.into_v2(parent_node, conversion_data);
 
         let control_curves = if let Some(control_curves) = v1.control_curves {
             control_curves
                 .into_iter()
-                .map(|p| p.try_into_v2_parameter(Some(&meta.name), unnamed_count))
+                .map(|p| p.try_into_v2(parent_node, conversion_data))
                 .collect::<Result<Vec<_>, _>>()?
         } else if let Some(control_curve) = v1.control_curve {
-            vec![control_curve.try_into_v2_parameter(Some(&meta.name), unnamed_count)?]
+            vec![control_curve.try_into_v2(parent_node, conversion_data)?]
         } else {
             return Err(ConversionError::MissingAttribute {
                 name: meta.name,
@@ -298,7 +299,7 @@ impl TryFromV1Parameter<ControlCurveParameterV1> for ControlCurveParameter {
         } else if let Some(parameters) = v1.parameters {
             parameters
                 .into_iter()
-                .map(|p| p.try_into_v2_parameter(Some(&meta.name), unnamed_count))
+                .map(|p| p.try_into_v2(parent_node, conversion_data))
                 .collect::<Result<Vec<_>, _>>()?
         } else {
             return Err(ConversionError::MissingAttribute {
@@ -366,23 +367,23 @@ impl ControlCurvePiecewiseInterpolatedParameter {
     }
 }
 
-impl TryFromV1Parameter<ControlCurvePiecewiseInterpolatedParameterV1> for ControlCurvePiecewiseInterpolatedParameter {
+impl TryFromV1<ControlCurvePiecewiseInterpolatedParameterV1> for ControlCurvePiecewiseInterpolatedParameter {
     type Error = ConversionError;
 
-    fn try_from_v1_parameter(
+    fn try_from_v1(
         v1: ControlCurvePiecewiseInterpolatedParameterV1,
         parent_node: Option<&str>,
-        unnamed_count: &mut usize,
+        conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.into_v2_parameter(parent_node, unnamed_count);
+        let meta: ParameterMeta = v1.meta.into_v2(parent_node, conversion_data);
 
         let control_curves = if let Some(control_curves) = v1.control_curves {
             control_curves
                 .into_iter()
-                .map(|p| p.try_into_v2_parameter(Some(&meta.name), unnamed_count))
+                .map(|p| p.try_into_v2(parent_node, conversion_data))
                 .collect::<Result<Vec<_>, _>>()?
         } else if let Some(control_curve) = v1.control_curve {
-            vec![control_curve.try_into_v2_parameter(Some(&meta.name), unnamed_count)?]
+            vec![control_curve.try_into_v2(parent_node, conversion_data)?]
         } else {
             return Err(ConversionError::MissingAttribute {
                 name: meta.name,

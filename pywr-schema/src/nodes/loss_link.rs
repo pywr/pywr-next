@@ -5,7 +5,7 @@ use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::nodes::{NodeAttribute, NodeMeta};
-use crate::parameters::TryIntoV2Parameter;
+use crate::v1::{ConversionData, TryFromV1, TryIntoV2};
 #[cfg(feature = "core")]
 use pywr_core::{aggregated_node::Relationship, metric::MetricF64};
 use pywr_schema_macros::PywrVisitAll;
@@ -237,34 +237,37 @@ impl LossLinkNode {
     }
 }
 
-impl TryFrom<LossLinkNodeV1> for LossLinkNode {
+impl TryFromV1<LossLinkNodeV1> for LossLinkNode {
     type Error = ConversionError;
 
-    fn try_from(v1: LossLinkNodeV1) -> Result<Self, Self::Error> {
+    fn try_from_v1(
+        v1: LossLinkNodeV1,
+        parent_node: Option<&str>,
+        conversion_data: &mut ConversionData,
+    ) -> Result<Self, Self::Error> {
         let meta: NodeMeta = v1.meta.into();
-        let mut unnamed_count = 0;
 
         let loss_factor = v1
             .loss_factor
             .map(|v| {
-                let factor = v.try_into_v2_parameter(Some(&meta.name), &mut unnamed_count)?;
+                let factor = v.try_into_v2(parent_node.or(Some(&meta.name)), conversion_data)?;
                 Ok::<_, Self::Error>(LossFactor::Net { factor })
             })
             .transpose()?;
 
         let min_net_flow = v1
             .min_flow
-            .map(|v| v.try_into_v2_parameter(Some(&meta.name), &mut unnamed_count))
+            .map(|v| v.try_into_v2(parent_node.or(Some(&meta.name)), conversion_data))
             .transpose()?;
 
         let max_net_flow = v1
             .max_flow
-            .map(|v| v.try_into_v2_parameter(Some(&meta.name), &mut unnamed_count))
+            .map(|v| v.try_into_v2(parent_node.or(Some(&meta.name)), conversion_data))
             .transpose()?;
 
         let net_cost = v1
             .cost
-            .map(|v| v.try_into_v2_parameter(Some(&meta.name), &mut unnamed_count))
+            .map(|v| v.try_into_v2(parent_node.or(Some(&meta.name)), conversion_data))
             .transpose()?;
 
         let n = Self {

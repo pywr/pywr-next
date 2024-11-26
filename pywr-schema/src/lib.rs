@@ -14,8 +14,10 @@ pub mod nodes;
 pub mod outputs;
 pub mod parameters;
 pub mod timeseries;
+mod v1;
 mod visit;
 
 pub use error::{ConversionError, SchemaError};
 pub use model::PywrModel;
+pub use v1::{ConversionData, TryFromV1, TryIntoV2};
 pub use visit::{VisitMetrics, VisitPaths};

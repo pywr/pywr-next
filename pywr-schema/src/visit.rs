@@ -19,16 +19,10 @@ pub trait VisitMetrics {
 impl VisitMetrics for Metric {
     fn visit_metrics<F: FnMut(&Metric)>(&self, visitor: &mut F) {
         visitor(self);
-        if let Self::InlineParameter { definition } = self {
-            definition.visit_metrics(visitor);
-        }
     }
 
     fn visit_metrics_mut<F: FnMut(&mut Metric)>(&mut self, visitor: &mut F) {
         visitor(self);
-        if let Self::InlineParameter { definition } = self {
-            definition.visit_metrics_mut(visitor);
-        }
     }
 }
 
@@ -130,19 +124,7 @@ pub trait VisitPaths {
     fn visit_paths_mut<F: FnMut(&mut PathBuf)>(&mut self, _visitor: &mut F) {}
 }
 
-impl VisitPaths for Metric {
-    fn visit_paths<F: FnMut(&Path)>(&self, visitor: &mut F) {
-        if let Self::InlineParameter { definition } = self {
-            definition.visit_paths(visitor)
-        }
-    }
-
-    fn visit_paths_mut<F: FnMut(&mut PathBuf)>(&mut self, visitor: &mut F) {
-        if let Self::InlineParameter { definition } = self {
-            definition.visit_paths_mut(visitor)
-        }
-    }
-}
+impl VisitPaths for Metric {}
 
 impl<T> VisitPaths for Option<T>
 where

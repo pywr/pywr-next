@@ -1,0 +1,84 @@
+{
+  "metadata": {
+    "title": "Inline parameter",
+    "description": "An example with an inline parameter",
+    "minimum_version": "0.1"
+  },
+  "timestepper": {
+    "start": "2015-01-01",
+    "end": "2015-12-31",
+    "timestep": 1
+  },
+  "nodes": [
+    {
+      "name": "supply1",
+      "type": "Input",
+      "max_flow": {
+        "type": "monthlyprofile",
+        "values": [
+          10,
+          20,
+          30,
+          40,
+          50,
+          60,
+          70,
+          80,
+          90,
+          100,
+          110,
+          120
+        ]
+      }
+    },
+    {
+      "name": "link1",
+      "type": "Link"
+    },
+    {
+      "name": "demand1",
+      "type": "Output",
+      "max_flow": {
+        "type": "aggregated",
+        "agg_func": "product",
+        "parameters": [
+          {
+            "type": "constant",
+            "value": 0.9
+          },
+          {
+            "type": "dataframe",
+            "url": "timeseries1.csv",
+            "parse_dates": true,
+            "dayfirst": true,
+            "index_col": 0,
+            "column": "Data"
+          },
+          {
+            "type": "constant",
+            "value": 0.9
+          },
+          {
+            "type": "dataframe",
+            "url": "timeseries2.csv",
+            "parse_dates": true,
+            "dayfirst": true,
+            "index_col": 0,
+            "column": "Data"
+          }
+        ]
+      },
+      "cost": -10
+    }
+  ],
+  "edges": [
+    [
+      "supply1",
+      "link1"
+    ],
+    [
+      "link1",
+      "demand1"
+    ]
+  ]
+}

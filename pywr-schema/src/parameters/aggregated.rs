@@ -4,7 +4,8 @@ use crate::error::SchemaError;
 use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
-use crate::parameters::{DynamicIndexValue, IntoV2Parameter, ParameterMeta, TryFromV1Parameter, TryIntoV2Parameter};
+use crate::parameters::{ConversionData, DynamicIndexValue, ParameterMeta};
+use crate::v1::{IntoV2, TryFromV1, TryIntoV2};
 #[cfg(feature = "core")]
 use pywr_core::parameters::ParameterIndex;
 use pywr_schema_macros::PywrVisitAll;
@@ -102,20 +103,20 @@ impl AggregatedParameter {
     }
 }
 
-impl TryFromV1Parameter<AggregatedParameterV1> for AggregatedParameter {
+impl TryFromV1<AggregatedParameterV1> for AggregatedParameter {
     type Error = ConversionError;
 
-    fn try_from_v1_parameter(
+    fn try_from_v1(
         v1: AggregatedParameterV1,
         parent_node: Option<&str>,
-        unnamed_count: &mut usize,
+        conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.into_v2_parameter(parent_node, unnamed_count);
+        let meta: ParameterMeta = v1.meta.into_v2(parent_node, conversion_data);
 
         let parameters = v1
             .parameters
             .into_iter()
-            .map(|p| p.try_into_v2_parameter(Some(&meta.name), unnamed_count))
+            .map(|p| p.try_into_v2(parent_node, conversion_data))
             .collect::<Result<Vec<_>, _>>()?;
 
         let p = Self {
@@ -213,20 +214,20 @@ impl AggregatedIndexParameter {
     }
 }
 
-impl TryFromV1Parameter<AggregatedIndexParameterV1> for AggregatedIndexParameter {
+impl TryFromV1<AggregatedIndexParameterV1> for AggregatedIndexParameter {
     type Error = ConversionError;
 
-    fn try_from_v1_parameter(
+    fn try_from_v1(
         v1: AggregatedIndexParameterV1,
         parent_node: Option<&str>,
-        unnamed_count: &mut usize,
+        conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.into_v2_parameter(parent_node, unnamed_count);
+        let meta: ParameterMeta = v1.meta.into_v2(parent_node, conversion_data);
 
         let parameters = v1
             .parameters
             .into_iter()
-            .map(|p| p.try_into_v2_parameter(Some(&meta.name), unnamed_count))
+            .map(|p| p.try_into_v2(parent_node, conversion_data))
             .collect::<Result<Vec<_>, _>>()?;
 
         let p = Self {
@@ -254,52 +255,12 @@ mod tests {
                 "agg_func": "min",
                 "metrics": [
                   {
-                    "type": "InlineParameter",
-                    "definition": {
-                        "meta": {
-                            "name": "First parameter",
-                            "comment": "A witty comment"
-                        },
-                        "type": "ControlCurvePiecewiseInterpolated",
-                        "storage_node": {
-                          "name": "Reservoir",
-                          "attribute": "ProportionalVolume"
-                        },
-                        "control_curves": [
-                            {"type": "Parameter", "name": "reservoir_cc"},
-                            {"type": "Constant", "value": 0.2}
-                        ],
-                        "values": [
-                            [-0.1, -1.0],
-                            [-100, -200],
-                            [-300, -400]
-                        ],
-                        "minimum": 0.05
-                    }
+                    "type": "Parameter",
+                    "name": "First parameter"
                   },
                   {
-                    "type": "InlineParameter",
-                    "definition": {
-                        "meta": {
-                            "name": "Second parameter",
-                            "comment": "A witty comment"
-                        },
-                        "type": "ControlCurvePiecewiseInterpolated",
-                        "storage_node": {
-                          "name": "Reservoir",
-                          "attribute": "ProportionalVolume"
-                        },
-                        "control_curves": [
-                            {"type": "Parameter", "name": "reservoir_cc"},
-                            {"type": "Constant", "value": 0.2}
-                        ],
-                        "values": [
-                            [-0.1, -1.0],
-                            [-100, -200],
-                            [-300, -400]
-                        ],
-                        "minimum": 0.05
-                    }
+                    "type": "Parameter",
+                    "name":"Second parameter"
                   }
                 ]
             }
@@ -312,6 +273,6 @@ mod tests {
             count_metrics += 1;
         });
 
-        assert_eq!(count_metrics, 6);
+        assert_eq!(count_metrics, 2);
     }
 }

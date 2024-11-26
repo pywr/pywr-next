@@ -5,7 +5,7 @@ use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::nodes::{NodeAttribute, NodeMeta};
-use crate::parameters::TryIntoV2Parameter;
+use crate::v1::{ConversionData, TryFromV1, TryIntoV2};
 #[cfg(feature = "core")]
 use pywr_core::{aggregated_node::Relationship, metric::MetricF64, node::NodeIndex};
 use pywr_schema_macros::PywrVisitAll;
@@ -229,21 +229,24 @@ impl RiverSplitWithGaugeNode {
     }
 }
 
-impl TryFrom<RiverSplitWithGaugeNodeV1> for RiverSplitWithGaugeNode {
+impl TryFromV1<RiverSplitWithGaugeNodeV1> for RiverSplitWithGaugeNode {
     type Error = ConversionError;
 
-    fn try_from(v1: RiverSplitWithGaugeNodeV1) -> Result<Self, Self::Error> {
+    fn try_from_v1(
+        v1: RiverSplitWithGaugeNodeV1,
+        parent_node: Option<&str>,
+        conversion_data: &mut ConversionData,
+    ) -> Result<Self, Self::Error> {
         let meta: NodeMeta = v1.meta.into();
-        let mut unnamed_count = 0;
 
         let mrf = v1
             .mrf
-            .map(|v| v.try_into_v2_parameter(Some(&meta.name), &mut unnamed_count))
+            .map(|v| v.try_into_v2(parent_node.or(Some(&meta.name)), conversion_data))
             .transpose()?;
 
         let mrf_cost = v1
             .mrf_cost
-            .map(|v| v.try_into_v2_parameter(Some(&meta.name), &mut unnamed_count))
+            .map(|v| v.try_into_v2(parent_node.or(Some(&meta.name)), conversion_data))
             .transpose()?;
 
         let splits = v1
@@ -253,7 +256,7 @@ impl TryFrom<RiverSplitWithGaugeNodeV1> for RiverSplitWithGaugeNode {
             .zip(v1.slot_names.into_iter().skip(1))
             .map(|(f, slot_name)| {
                 Ok(RiverSplit {
-                    factor: f.try_into_v2_parameter(Some(&meta.name), &mut unnamed_count)?,
+                    factor: f.try_into_v2(parent_node.or(Some(&meta.name)), conversion_data)?,
                     slot_name,
                 })
             })

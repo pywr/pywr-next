@@ -125,10 +125,7 @@ impl MetricSetFilters {
                         }
                     }
 
-                    metrics.push(Metric::Parameter(ParameterReference::new(
-                        parameter.name().to_string(),
-                        None,
-                    )));
+                    metrics.push(Metric::Parameter(ParameterReference::new(parameter.name(), None)));
                 }
             }
         }
