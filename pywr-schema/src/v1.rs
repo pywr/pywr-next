@@ -7,7 +7,7 @@
 //! inline (and unnamed) parameters, and includes a separate timeseries section.
 //!
 //! The struct [`ConversionData`] is used to store these extracted parameters and timeseries.
-//! It also tacks a count of unnamed parameters and timeseries. This is used during conversion
+//! It also tracks a count of unnamed parameters and timeseries. This is used during conversion
 //! of meta-data to provide a unique name for unnamed parameters and timeseries.
 
 use crate::parameters::{Parameter, ParameterMeta};
@@ -32,12 +32,12 @@ pub trait FromV1<T>: Sized {
     fn from_v1(v1: T, parent_node: Option<&str>, conversion_data: &mut ConversionData) -> Self;
 }
 
-pub trait IntoV1<T> {
+pub trait IntoV2<T> {
     fn into_v2(self, parent_node: Option<&str>, conversion_data: &mut ConversionData) -> T;
 }
 
 // FromV1Parameter implies IntoV2Parameter
-impl<T, U> IntoV1<U> for T
+impl<T, U> IntoV2<U> for T
 where
     U: FromV1<T>,
 {

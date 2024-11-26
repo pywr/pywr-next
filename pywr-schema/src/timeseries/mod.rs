@@ -4,7 +4,7 @@ mod pandas;
 mod polars_dataset;
 
 use crate::parameters::ParameterMeta;
-use crate::v1::{ConversionData, IntoV1, TryFromV1};
+use crate::v1::{ConversionData, IntoV2, TryFromV1};
 use crate::visit::VisitPaths;
 use crate::ConversionError;
 #[cfg(feature = "core")]
