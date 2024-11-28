@@ -163,9 +163,12 @@ impl Parameter {
         &self,
         network: &mut pywr_core::network::Network,
         args: &LoadArgs,
+        parent: Option<&str>,
     ) -> Result<pywr_core::parameters::ParameterType, SchemaError> {
         let ty = match self {
-            Self::Constant(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
+            Self::Constant(p) => {
+                pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args, parent)?)
+            }
             Self::ControlCurveInterpolated(p) => {
                 pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?)
             }

@@ -39,13 +39,13 @@ impl ControlCurveInterpolatedParameter {
         let control_curves = self
             .control_curves
             .iter()
-            .map(|cc| cc.load(network, args))
+            .map(|cc| cc.load(network, args, None))
             .collect::<Result<_, _>>()?;
 
         let values = self
             .values
             .iter()
-            .map(|val| val.load(network, args))
+            .map(|val| val.load(network, args, None))
             .collect::<Result<_, _>>()?;
 
         let p = pywr_core::parameters::ControlCurveInterpolatedParameter::new(
@@ -139,7 +139,7 @@ impl ControlCurveIndexParameter {
         let control_curves = self
             .control_curves
             .iter()
-            .map(|cc| cc.load(network, args))
+            .map(|cc| cc.load(network, args, None))
             .collect::<Result<_, _>>()?;
 
         let p = pywr_core::parameters::ControlCurveIndexParameter::new(
@@ -251,13 +251,13 @@ impl ControlCurveParameter {
         let control_curves = self
             .control_curves
             .iter()
-            .map(|cc| cc.load(network, args))
+            .map(|cc| cc.load(network, args, None))
             .collect::<Result<_, _>>()?;
 
         let values = self
             .values
             .iter()
-            .map(|val| val.load(network, args))
+            .map(|val| val.load(network, args, None))
             .collect::<Result<_, _>>()?;
 
         let p = pywr_core::parameters::ControlCurveParameter::new(
@@ -347,7 +347,7 @@ impl ControlCurvePiecewiseInterpolatedParameter {
         let control_curves = self
             .control_curves
             .iter()
-            .map(|cc| cc.load(network, args))
+            .map(|cc| cc.load(network, args, None))
             .collect::<Result<_, _>>()?;
 
         let values = match &self.values {

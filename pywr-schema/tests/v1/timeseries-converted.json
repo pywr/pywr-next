@@ -26,6 +26,7 @@
           "name": "input1"
         },
         "min_flow": null,
+        "parameters": null,
         "cost": null
       },
       {
@@ -39,6 +40,7 @@
           "name": "input2"
         },
         "min_flow": null,
+        "parameters": null,
         "cost": null
       },
       {
@@ -48,6 +50,7 @@
           "name": "link1"
         },
         "min_flow": null,
+        "parameters": null,
         "soft_max": null,
         "soft_min": null,
         "cost": null
@@ -63,6 +66,7 @@
           "name": "output1"
         },
         "min_flow": null,
+        "parameters": null,
         "cost": {
           "type": "Constant",
           "value": -10.0

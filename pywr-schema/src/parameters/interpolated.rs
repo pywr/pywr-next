@@ -37,7 +37,7 @@ impl InterpolatedParameter {
         network: &mut pywr_core::network::Network,
         args: &LoadArgs,
     ) -> Result<ParameterIndex<f64>, SchemaError> {
-        let x = self.x.load(network, args)?;
+        let x = self.x.load(network, args, None)?;
 
         // Sense check the points
         if self.xp.len() != self.fp.len() {
@@ -50,12 +50,12 @@ impl InterpolatedParameter {
         let xp = self
             .xp
             .iter()
-            .map(|p| p.load(network, args))
+            .map(|p| p.load(network, args, None))
             .collect::<Result<Vec<_>, _>>()?;
         let fp = self
             .fp
             .iter()
-            .map(|p| p.load(network, args))
+            .map(|p| p.load(network, args, None))
             .collect::<Result<Vec<_>, _>>()?;
 
         let points = xp.into_iter().zip(fp).collect::<Vec<_>>();

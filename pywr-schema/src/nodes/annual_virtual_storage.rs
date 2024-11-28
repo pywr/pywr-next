@@ -6,6 +6,7 @@ use crate::metric::{Metric, SimpleNodeReference};
 use crate::model::LoadArgs;
 use crate::nodes::core::StorageInitialVolume;
 use crate::nodes::{NodeAttribute, NodeMeta};
+use crate::parameters::Parameter;
 use crate::v1::{ConversionData, TryFromV1, TryIntoV2};
 #[cfg(feature = "core")]
 use pywr_core::{
@@ -39,6 +40,8 @@ impl Default for AnnualReset {
 #[serde(deny_unknown_fields)]
 pub struct AnnualVirtualStorageNode {
     pub meta: NodeMeta,
+    /// Optional local parameters.
+    pub parameters: Option<Vec<Parameter>>,
     pub nodes: Vec<SimpleNodeReference>,
     pub factors: Option<Vec<f64>>,
     pub max_volume: Option<Metric>,
@@ -89,17 +92,17 @@ impl AnnualVirtualStorageNode {
 
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network, args: &LoadArgs) -> Result<(), SchemaError> {
         let cost = match &self.cost {
-            Some(v) => v.load(network, args)?.into(),
+            Some(v) => v.load(network, args, Some(&self.meta.name))?.into(),
             None => None,
         };
 
         let min_volume = match &self.min_volume {
-            Some(v) => Some(v.load(network, args)?.try_into()?),
+            Some(v) => Some(v.load(network, args, Some(&self.meta.name))?.try_into()?),
             None => None,
         };
 
         let max_volume = match &self.max_volume {
-            Some(v) => Some(v.load(network, args)?.try_into()?),
+            Some(v) => Some(v.load(network, args, Some(&self.meta.name))?.try_into()?),
             None => None,
         };
 
@@ -195,6 +198,7 @@ impl TryFromV1<AnnualVirtualStorageNodeV1> for AnnualVirtualStorageNode {
 
         let n = Self {
             meta,
+            parameters: None,
             nodes,
             factors: v1.factors,
             max_volume,

@@ -446,36 +446,46 @@ impl PywrNetwork {
             edge.add_to_model(&mut network, &args)?;
         }
 
-        // Create all the parameters
-        if let Some(mut remaining_parameters) = self.parameters.clone() {
-            while !remaining_parameters.is_empty() {
-                let mut failed_parameters: Vec<Parameter> = Vec::new();
-                let n = remaining_parameters.len();
-                for parameter in remaining_parameters.into_iter() {
-                    if let Err(e) = parameter.add_to_model(&mut network, &args) {
-                        // Adding the parameter failed!
-                        match e {
-                            SchemaError::PywrCore(core_err) => match core_err {
-                                // And it failed because another parameter was not found.
-                                // Let's try to load more parameters and see if this one can tried
-                                // again later
-                                PywrError::ParameterNotFound(_) => failed_parameters.push(parameter),
-                                _ => return Err(SchemaError::PywrCore(core_err)),
-                            },
-                            SchemaError::ParameterNotFound(_) => failed_parameters.push(parameter),
-                            _ => return Err(e),
-                        }
-                    };
-                }
-
-                if failed_parameters.len() == n {
-                    // Could not load any parameters; must be a circular reference
-                    let failed_names = failed_parameters.iter().map(|p| p.name().to_string()).collect();
-                    return Err(SchemaError::CircularParameterReference(failed_names));
-                }
-
-                remaining_parameters = failed_parameters;
+        // Gather all the parameters from the nodes
+        let mut remaining_parameters: Vec<(Option<&str>, Parameter)> = Vec::new();
+        for node in &self.nodes {
+            if let Some(local_parameters) = node.local_parameters() {
+                remaining_parameters.extend(local_parameters.iter().map(|p| (Some(node.name()), p.clone())));
             }
+        }
+        // Add any global parameters
+        if let Some(parameters) = self.parameters.as_deref() {
+            remaining_parameters.extend(parameters.iter().map(|p| (None, p.clone())));
+        }
+
+        // Create all the parameters
+        while !remaining_parameters.is_empty() {
+            let mut failed_parameters: Vec<(Option<&str>, Parameter)> = Vec::new();
+            let n = remaining_parameters.len();
+            for (parent, parameter) in remaining_parameters.into_iter() {
+                if let Err(e) = parameter.add_to_model(&mut network, &args, parent) {
+                    // Adding the parameter failed!
+                    match e {
+                        SchemaError::PywrCore(core_err) => match core_err {
+                            // And it failed because another parameter was not found.
+                            // Let's try to load more parameters and see if this one can tried
+                            // again later
+                            PywrError::ParameterNotFound(_) => failed_parameters.push((parent, parameter)),
+                            _ => return Err(SchemaError::PywrCore(core_err)),
+                        },
+                        SchemaError::ParameterNotFound(_) => failed_parameters.push((parent, parameter)),
+                        _ => return Err(e),
+                    }
+                };
+            }
+
+            if failed_parameters.len() == n {
+                // Could not load any parameters; must be a circular reference
+                let failed_names = failed_parameters.iter().map(|(_n, p)| p.name().to_string()).collect();
+                return Err(SchemaError::CircularParameterReference(failed_names));
+            }
+
+            remaining_parameters = failed_parameters;
         }
 
         // Apply the inline parameters & constraints to the nodes
@@ -858,7 +868,7 @@ impl PywrMultiNetworkModel {
                     inter_network_transfers: &[],
                 };
 
-                let from_metric = transfer.metric.load(from_network, &args)?;
+                let from_metric = transfer.metric.load(from_network, &args, None)?;
 
                 inter_network_transfers.push((from_network_idx, from_metric, to_network_idx, transfer.initial_value));
             }

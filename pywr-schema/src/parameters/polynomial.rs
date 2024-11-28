@@ -30,7 +30,7 @@ impl Polynomial1DParameter {
         network: &mut pywr_core::network::Network,
         args: &LoadArgs,
     ) -> Result<ParameterIndex<f64>, SchemaError> {
-        let metric = self.metric.load(network, args)?;
+        let metric = self.metric.load(network, args, None)?;
 
         let p = pywr_core::parameters::Polynomial1DParameter::new(
             self.meta.name.as_str().into(),

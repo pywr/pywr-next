@@ -33,7 +33,7 @@ impl IndexedArrayParameter {
         let metrics = self
             .metrics
             .iter()
-            .map(|v| v.load(network, args))
+            .map(|v| v.load(network, args, None))
             .collect::<Result<Vec<_>, _>>()?;
 
         let p = pywr_core::parameters::IndexedArrayParameter::new(

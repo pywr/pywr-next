@@ -28,6 +28,7 @@
           "name": "supply1"
         },
         "min_flow": null,
+        "parameters": null,
         "type": "Input"
       },
       {
@@ -37,6 +38,7 @@
           "name": "link1"
         },
         "min_flow": null,
+        "parameters": null,
         "soft_max": null,
         "soft_min": null,
         "type": "Link"
@@ -55,6 +57,7 @@
           "name": "demand1"
         },
         "min_flow": null,
+        "parameters": null,
         "type": "Output"
       }
     ],

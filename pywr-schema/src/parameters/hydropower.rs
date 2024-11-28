@@ -84,14 +84,22 @@ impl HydropowerTargetParameter {
         network: &mut pywr_core::network::Network,
         args: &LoadArgs,
     ) -> Result<ParameterIndex<f64>, SchemaError> {
-        let target = self.target.load(network, args)?;
+        let target = self.target.load(network, args, None)?;
         let water_elevation = self
             .water_elevation
             .as_ref()
-            .map(|t| t.load(network, args))
+            .map(|t| t.load(network, args, None))
             .transpose()?;
-        let max_flow = self.max_flow.as_ref().map(|t| t.load(network, args)).transpose()?;
-        let min_flow = self.min_flow.as_ref().map(|t| t.load(network, args)).transpose()?;
+        let max_flow = self
+            .max_flow
+            .as_ref()
+            .map(|t| t.load(network, args, None))
+            .transpose()?;
+        let min_flow = self
+            .min_flow
+            .as_ref()
+            .map(|t| t.load(network, args, None))
+            .transpose()?;
 
         let turbine_data = HydropowerTargetData {
             target,

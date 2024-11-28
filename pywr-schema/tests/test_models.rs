@@ -63,7 +63,7 @@ model_tests! {
     test_thirty_day_licence: ("30-day-licence.json", vec![], vec![]),
     test_wtw1: ("wtw1.json", vec!["wtw1-expected.csv"], vec![]),
     test_wtw2: ("wtw2.json", vec!["wtw2-expected.csv"], vec![]),
-
+    test_local_parameter1: ("local-parameter1.json", vec!["local-parameter1-expected.csv"], vec![]),
 }
 
 /// Test Pandas backend for reading timeseries data.
