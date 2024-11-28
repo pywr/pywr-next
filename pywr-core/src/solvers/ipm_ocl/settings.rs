@@ -154,6 +154,6 @@ mod tests {
         };
         let settings_from_builder = ClIpmSolverSettingsBuilder::default().parallel().build();
 
-        assert_eq!(settings_from_builder, settings_from_builder);
+        assert_eq!(settings, settings_from_builder);
     }
 }
