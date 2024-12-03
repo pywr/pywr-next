@@ -1,4 +1,4 @@
-use crate::error::ConversionError;
+use crate::error::ComponentConversionError;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
 use crate::metric::Metric;
@@ -6,7 +6,7 @@ use crate::metric::Metric;
 use crate::model::LoadArgs;
 use crate::nodes::{NodeAttribute, NodeMeta};
 use crate::parameters::Parameter;
-use crate::v1::{ConversionData, TryFromV1, TryIntoV2};
+use crate::v1::{try_convert_node_attr, ConversionData, TryFromV1};
 #[cfg(feature = "core")]
 use pywr_core::{aggregated_node::Relationship, metric::MetricF64, node::NodeIndex};
 use pywr_schema_macros::PywrVisitAll;
@@ -233,7 +233,7 @@ impl RiverSplitWithGaugeNode {
 }
 
 impl TryFromV1<RiverSplitWithGaugeNodeV1> for RiverSplitWithGaugeNode {
-    type Error = ConversionError;
+    type Error = ComponentConversionError;
 
     fn try_from_v1(
         v1: RiverSplitWithGaugeNodeV1,
@@ -242,15 +242,8 @@ impl TryFromV1<RiverSplitWithGaugeNodeV1> for RiverSplitWithGaugeNode {
     ) -> Result<Self, Self::Error> {
         let meta: NodeMeta = v1.meta.into();
 
-        let mrf = v1
-            .mrf
-            .map(|v| v.try_into_v2(parent_node.or(Some(&meta.name)), conversion_data))
-            .transpose()?;
-
-        let mrf_cost = v1
-            .mrf_cost
-            .map(|v| v.try_into_v2(parent_node.or(Some(&meta.name)), conversion_data))
-            .transpose()?;
+        let mrf = try_convert_node_attr(&meta.name, "mrf", v1.mrf, parent_node, conversion_data)?;
+        let mrf_cost = try_convert_node_attr(&meta.name, "mrf_cost", v1.mrf_cost, parent_node, conversion_data)?;
 
         let splits = v1
             .factors
@@ -258,10 +251,8 @@ impl TryFromV1<RiverSplitWithGaugeNodeV1> for RiverSplitWithGaugeNode {
             .skip(1)
             .zip(v1.slot_names.into_iter().skip(1))
             .map(|(f, slot_name)| {
-                Ok(RiverSplit {
-                    factor: f.try_into_v2(parent_node.or(Some(&meta.name)), conversion_data)?,
-                    slot_name,
-                })
+                let factor = try_convert_node_attr(&meta.name, "factors", f, parent_node, conversion_data)?;
+                Ok(RiverSplit { factor, slot_name })
             })
             .collect::<Result<Vec<_>, Self::Error>>()?;
 

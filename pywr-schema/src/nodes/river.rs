@@ -1,6 +1,6 @@
-use crate::error::ConversionError;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
+use crate::error::{ComponentConversionError, ConversionError};
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::nodes::{LossFactor, NodeAttribute, NodeMeta};
@@ -179,27 +179,36 @@ impl RiverNode {
 }
 
 impl TryFrom<LinkNodeV1> for RiverNode {
-    type Error = ConversionError;
+    type Error = ComponentConversionError;
 
     fn try_from(v1: LinkNodeV1) -> Result<Self, Self::Error> {
         let meta: NodeMeta = v1.meta.into();
 
         if v1.max_flow.is_some() {
-            return Err(ConversionError::ExtraNodeAttribute {
+            return Err(ComponentConversionError::Node {
                 name: meta.name,
                 attr: "max_flow".to_string(),
+                error: ConversionError::ExtraAttribute {
+                    attr: "max_flow".to_string(),
+                },
             });
         }
         if v1.min_flow.is_some() {
-            return Err(ConversionError::ExtraNodeAttribute {
+            return Err(ComponentConversionError::Node {
                 name: meta.name,
                 attr: "min_flow".to_string(),
+                error: ConversionError::ExtraAttribute {
+                    attr: "min_flow".to_string(),
+                },
             });
         }
         if v1.cost.is_some() {
-            return Err(ConversionError::ExtraNodeAttribute {
+            return Err(ComponentConversionError::Node {
                 name: meta.name,
                 attr: "cost".to_string(),
+                error: ConversionError::ExtraAttribute {
+                    attr: "cost".to_string(),
+                },
             });
         }
 

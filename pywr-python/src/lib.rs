@@ -16,7 +16,7 @@ use pywr_core::solvers::{ClpSolver, ClpSolverSettings, ClpSolverSettingsBuilder}
 #[cfg(feature = "highs")]
 use pywr_core::solvers::{HighsSolver, HighsSolverSettings, HighsSolverSettingsBuilder};
 use pywr_schema::model::DateType;
-use pywr_schema::{ConversionData, ConversionError, TryIntoV2};
+use pywr_schema::{ComponentConversionError, ConversionData, ConversionError, TryIntoV2};
 use std::fmt;
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -112,7 +112,7 @@ fn convert_model_from_v1_json_string(py: Python, data: &str) -> PyResult<Py<PyTu
 
     // Create a new schema object
     let py_schema = Schema { schema };
-    let py_errors = errors.into_iter().map(|e| e.to_string()).collect::<Vec<_>>();
+    let py_errors = errors.into_iter().map(|e| e.into_py(py)).collect::<Vec<_>>();
 
     let result = PyTuple::new_bound(py, &[py_schema.into_py(py), py_errors.into_py(py)]).into();
     Ok(result)
@@ -252,6 +252,10 @@ fn pywr(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Schema>()?;
     m.add_class::<Model>()?;
     m.add_class::<Metric>()?;
+
+    // Error classes
+    m.add_class::<ComponentConversionError>()?;
+    m.add_class::<ConversionError>()?;
 
     Ok(())
 }

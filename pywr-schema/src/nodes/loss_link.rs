@@ -1,4 +1,4 @@
-use crate::error::ConversionError;
+use crate::error::ComponentConversionError;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
 use crate::metric::Metric;
@@ -6,7 +6,7 @@ use crate::metric::Metric;
 use crate::model::LoadArgs;
 use crate::nodes::{NodeAttribute, NodeMeta};
 use crate::parameters::Parameter;
-use crate::v1::{ConversionData, TryFromV1, TryIntoV2};
+use crate::v1::{try_convert_node_attr, ConversionData, TryFromV1};
 #[cfg(feature = "core")]
 use pywr_core::{aggregated_node::Relationship, metric::MetricF64};
 use pywr_schema_macros::PywrVisitAll;
@@ -242,7 +242,7 @@ impl LossLinkNode {
 }
 
 impl TryFromV1<LossLinkNodeV1> for LossLinkNode {
-    type Error = ConversionError;
+    type Error = ComponentConversionError;
 
     fn try_from_v1(
         v1: LossLinkNodeV1,
@@ -251,28 +251,13 @@ impl TryFromV1<LossLinkNodeV1> for LossLinkNode {
     ) -> Result<Self, Self::Error> {
         let meta: NodeMeta = v1.meta.into();
 
-        let loss_factor = v1
-            .loss_factor
-            .map(|v| {
-                let factor = v.try_into_v2(parent_node.or(Some(&meta.name)), conversion_data)?;
-                Ok::<_, Self::Error>(LossFactor::Net { factor })
-            })
-            .transpose()?;
+        let loss_factor: Option<Metric> =
+            try_convert_node_attr(&meta.name, "loss_factor", v1.loss_factor, parent_node, conversion_data)?;
+        let loss_factor = loss_factor.map(|factor| LossFactor::Net { factor });
 
-        let min_net_flow = v1
-            .min_flow
-            .map(|v| v.try_into_v2(parent_node.or(Some(&meta.name)), conversion_data))
-            .transpose()?;
-
-        let max_net_flow = v1
-            .max_flow
-            .map(|v| v.try_into_v2(parent_node.or(Some(&meta.name)), conversion_data))
-            .transpose()?;
-
-        let net_cost = v1
-            .cost
-            .map(|v| v.try_into_v2(parent_node.or(Some(&meta.name)), conversion_data))
-            .transpose()?;
+        let net_cost = try_convert_node_attr(&meta.name, "cost", v1.cost, parent_node, conversion_data)?;
+        let max_net_flow = try_convert_node_attr(&meta.name, "max_flow", v1.max_flow, parent_node, conversion_data)?;
+        let min_net_flow = try_convert_node_attr(&meta.name, "min_flow", v1.min_flow, parent_node, conversion_data)?;
 
         let n = Self {
             meta,

@@ -204,7 +204,10 @@ impl PythonParameter {
                 PythonSource::Module(module) => PyModule::import_bound(py, module.as_str()),
                 PythonSource::Path(original_path) => {
                     let path = &make_path(original_path, args.data_path);
-                    let code = std::fs::read_to_string(path).expect("Could not read Python code from path.");
+                    let code = std::fs::read_to_string(path).map_err(|error| SchemaError::IO {
+                        path: path.to_path_buf(),
+                        error,
+                    })?;
                     let file_name = path.file_name().unwrap().to_str().unwrap();
                     let module_name = path.file_stem().unwrap().to_str().unwrap();
 

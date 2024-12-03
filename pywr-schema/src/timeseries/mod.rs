@@ -3,6 +3,7 @@ mod align_and_resample;
 mod pandas;
 mod polars_dataset;
 
+use crate::error::ComponentConversionError;
 use crate::parameters::ParameterMeta;
 use crate::v1::{ConversionData, IntoV2, TryFromV1};
 use crate::visit::VisitPaths;
@@ -320,7 +321,7 @@ impl TimeseriesReference {
 }
 
 impl TryFromV1<DataFrameParameterV1> for TimeseriesReference {
-    type Error = ConversionError;
+    type Error = ComponentConversionError;
 
     fn try_from_v1(
         v1: DataFrameParameterV1,
@@ -357,9 +358,12 @@ impl TryFromV1<DataFrameParameterV1> for TimeseriesReference {
         } else if v1.table.is_some() {
             // Nothing to do here; The table will be converted separately
         } else {
-            return Err(ConversionError::MissingAttribute {
-                attrs: vec!["url".to_string(), "table".to_string()],
+            return Err(ComponentConversionError::Parameter {
                 name: meta.name,
+                attr: "url".to_string(),
+                error: ConversionError::MissingAttribute {
+                    attrs: vec!["url".to_string(), "table".to_string()],
+                },
             });
         };
 
@@ -367,7 +371,15 @@ impl TryFromV1<DataFrameParameterV1> for TimeseriesReference {
         let columns = match (v1.column, v1.scenario) {
             (Some(col), None) => Some(TimeseriesColumns::Column(col)),
             (None, Some(scenario)) => Some(TimeseriesColumns::Scenario(scenario)),
-            (Some(_), Some(_)) => return Err(ConversionError::AmbiguousColumnAndScenario(meta.name)),
+            (Some(_), Some(_)) => {
+                return Err(ComponentConversionError::Parameter {
+                    name: meta.name.clone(),
+                    attr: "column".to_string(),
+                    error: ConversionError::AmbiguousAttributes {
+                        attrs: vec!["column".to_string(), "scenario".to_string()],
+                    },
+                })
+            }
             (None, None) => None,
         };
         // The reference that is returned
