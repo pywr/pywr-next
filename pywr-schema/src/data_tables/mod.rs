@@ -288,11 +288,19 @@ impl TryFrom<TableDataRefV1> for TableDataRef {
     fn try_from(v1: TableDataRefV1) -> Result<Self, Self::Error> {
         let column = match v1.column {
             None => None,
-            Some(c) => Some(c.try_into()?),
+            Some(c) => Some(c.try_into().map_err(|e| ConversionError::TableRef {
+                attr: "column".to_string(),
+                name: v1.table.clone(),
+                error: e,
+            })?),
         };
         let index = match v1.index {
             None => None,
-            Some(i) => Some(i.try_into()?),
+            Some(i) => Some(i.try_into().map_err(|e| ConversionError::TableRef {
+                attr: "index".to_string(),
+                name: v1.table.clone(),
+                error: e,
+            })?),
         };
         Ok(Self {
             table: v1.table,

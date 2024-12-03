@@ -1,10 +1,10 @@
-use crate::error::ConversionError;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
+use crate::error::{ComponentConversionError, ConversionError};
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::parameters::{ConstantFloatVec, ConstantValue, ConversionData, ParameterMeta};
-use crate::v1::{IntoV2, TryFromV1};
+use crate::v1::{try_convert_values, FromV1, IntoV2, TryFromV1};
 #[cfg(feature = "core")]
 use pywr_core::parameters::{ParameterIndex, WeeklyProfileError, WeeklyProfileValues};
 use pywr_schema_macros::PywrVisitAll;
@@ -40,7 +40,7 @@ impl DailyProfileParameter {
 }
 
 impl TryFromV1<DailyProfileParameterV1> for DailyProfileParameter {
-    type Error = ConversionError;
+    type Error = ComponentConversionError;
 
     fn try_from_v1(
         v1: DailyProfileParameterV1,
@@ -49,22 +49,7 @@ impl TryFromV1<DailyProfileParameterV1> for DailyProfileParameter {
     ) -> Result<Self, Self::Error> {
         let meta: ParameterMeta = v1.meta.into_v2(parent_node, conversion_data);
 
-        let values: ConstantFloatVec = if let Some(values) = v1.values {
-            ConstantFloatVec::Literal(values)
-        } else if let Some(_external) = v1.external {
-            return Err(ConversionError::UnsupportedFeature {
-                feature: "External data references are not supported in Pywr v2. Please use a table instead."
-                    .to_string(),
-                name: meta.name,
-            });
-        } else if let Some(table_ref) = v1.table_ref {
-            ConstantFloatVec::Table(table_ref.try_into()?)
-        } else {
-            return Err(ConversionError::MissingAttribute {
-                name: meta.name,
-                attrs: vec!["values".to_string(), "table".to_string(), "url".to_string()],
-            });
-        };
+        let values = try_convert_values(&meta.name, v1.values, v1.external, v1.table_ref)?;
 
         let p = Self { meta, values };
         Ok(p)
@@ -122,7 +107,7 @@ impl From<MonthInterpDayV1> for MonthlyInterpDay {
 }
 
 impl TryFromV1<MonthlyProfileParameterV1> for MonthlyProfileParameter {
-    type Error = ConversionError;
+    type Error = ComponentConversionError;
 
     fn try_from_v1(
         v1: MonthlyProfileParameterV1,
@@ -132,22 +117,7 @@ impl TryFromV1<MonthlyProfileParameterV1> for MonthlyProfileParameter {
         let meta: ParameterMeta = v1.meta.into_v2(parent_node, conversion_data);
         let interp_day = v1.interp_day.map(|id| id.into());
 
-        let values: ConstantFloatVec = if let Some(values) = v1.values {
-            ConstantFloatVec::Literal(values.to_vec())
-        } else if let Some(_external) = v1.external {
-            return Err(ConversionError::UnsupportedFeature {
-                feature: "External data references are not supported in Pywr v2. Please use a table instead."
-                    .to_string(),
-                name: meta.name,
-            });
-        } else if let Some(table_ref) = v1.table_ref {
-            ConstantFloatVec::Table(table_ref.try_into()?)
-        } else {
-            return Err(ConversionError::MissingAttribute {
-                name: meta.name,
-                attrs: vec!["values".to_string(), "table".to_string(), "url".to_string()],
-            });
-        };
+        let values = try_convert_values(&meta.name, v1.values.map(|v| v.to_vec()), v1.external, v1.table_ref)?;
 
         let p = Self {
             meta,
@@ -197,24 +167,20 @@ impl UniformDrawdownProfileParameter {
     }
 }
 
-impl TryFromV1<UniformDrawdownProfileParameterV1> for UniformDrawdownProfileParameter {
-    type Error = ConversionError;
-
-    fn try_from_v1(
+impl FromV1<UniformDrawdownProfileParameterV1> for UniformDrawdownProfileParameter {
+    fn from_v1(
         v1: UniformDrawdownProfileParameterV1,
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
-    ) -> Result<Self, Self::Error> {
+    ) -> Self {
         let meta: ParameterMeta = v1.meta.into_v2(parent_node, conversion_data);
 
-        let p = Self {
+        Self {
             meta,
             reset_day: v1.reset_day.map(|v| ConstantValue::Literal(v as usize)),
             reset_month: v1.reset_day.map(|v| ConstantValue::Literal(v as usize)),
             residual_days: v1.reset_day.map(|v| ConstantValue::Literal(v as usize)),
-        };
-
-        Ok(p)
+        }
     }
 }
 
@@ -376,7 +342,7 @@ impl RbfProfileParameter {
 }
 
 impl TryFromV1<RbfProfileParameterV1> for RbfProfileParameter {
-    type Error = ConversionError;
+    type Error = ComponentConversionError;
 
     fn try_from_v1(
         v1: RbfProfileParameterV1,
@@ -388,16 +354,22 @@ impl TryFromV1<RbfProfileParameterV1> for RbfProfileParameter {
         let points = v1.days_of_year.into_iter().zip(v1.values).collect();
 
         if v1.rbf_kwargs.contains_key("smooth") {
-            return Err(ConversionError::UnsupportedFeature {
-                feature: "The RBF `smooth` keyword argument is not supported.".to_string(),
+            return Err(ComponentConversionError::Parameter {
                 name: meta.name,
+                attr: "smooth".to_string(),
+                error: ConversionError::UnsupportedFeature {
+                    feature: "The RBF `smooth` keyword argument is not supported.".to_string(),
+                },
             });
         }
 
         if v1.rbf_kwargs.contains_key("norm") {
-            return Err(ConversionError::UnsupportedFeature {
-                feature: "The RBF `norm` keyword argument is not supported.".to_string(),
+            return Err(ComponentConversionError::Parameter {
                 name: meta.name,
+                attr: "norm".to_string(),
+                error: ConversionError::UnsupportedFeature {
+                    feature: "The RBF `norm` keyword argument is not supported.".to_string(),
+                },
             });
         }
 
@@ -406,11 +378,13 @@ impl TryFromV1<RbfProfileParameterV1> for RbfProfileParameter {
             if let Some(epsilon_f64) = epsilon_value.as_f64() {
                 Some(epsilon_f64)
             } else {
-                return Err(ConversionError::UnexpectedType {
-                    attr: "epsilon".to_string(),
+                return Err(ComponentConversionError::Parameter {
                     name: meta.name,
-                    expected: "float".to_string(),
-                    actual: format!("{}", epsilon_value),
+                    attr: "epsilon".to_string(),
+                    error: ConversionError::UnexpectedType {
+                        expected: "float".to_string(),
+                        actual: format!("{}", epsilon_value),
+                    },
                 });
             }
         } else {
@@ -428,18 +402,23 @@ impl TryFromV1<RbfProfileParameterV1> for RbfProfileParameter {
                     "cubic" => RadialBasisFunction::Cubic,
                     "thin_plate" => RadialBasisFunction::ThinPlateSpline,
                     _ => {
-                        return Err(ConversionError::UnsupportedFeature {
-                            feature: format!("Radial basis function `{}` not supported.", function_str),
-                            name: meta.name.clone(),
-                        })
+                        return Err(ComponentConversionError::Parameter {
+                            name: meta.name,
+                            attr: "rbf_kwargs".to_string(),
+                            error: ConversionError::UnsupportedFeature {
+                                feature: format!("Radial basis function `{}` not supported.", function_str),
+                            },
+                        });
                     }
                 }
             } else {
-                return Err(ConversionError::UnexpectedType {
-                    attr: "function".to_string(),
+                return Err(ComponentConversionError::Parameter {
                     name: meta.name,
-                    expected: "string".to_string(),
-                    actual: format!("{}", function_value),
+                    attr: "rbf_kwargs".to_string(),
+                    error: ConversionError::UnexpectedType {
+                        expected: "string".to_string(),
+                        actual: format!("{}", function_value),
+                    },
                 });
             }
         } else {
@@ -565,7 +544,7 @@ impl WeeklyProfileParameter {
 }
 
 impl TryFromV1<WeeklyProfileParameterV1> for WeeklyProfileParameter {
-    type Error = ConversionError;
+    type Error = ComponentConversionError;
 
     fn try_from_v1(
         v1: WeeklyProfileParameterV1,
@@ -574,23 +553,7 @@ impl TryFromV1<WeeklyProfileParameterV1> for WeeklyProfileParameter {
     ) -> Result<Self, Self::Error> {
         let meta: ParameterMeta = v1.meta.into_v2(parent_node, conversion_data);
 
-        let values: ConstantFloatVec = if let Some(values) = v1.values {
-            // pywr v1 only accept a 52-week profile
-            ConstantFloatVec::Literal(values)
-        } else if let Some(_external) = v1.external {
-            return Err(ConversionError::UnsupportedFeature {
-                feature: "External data references are not supported in Pywr v2. Please use a table instead."
-                    .to_string(),
-                name: meta.name,
-            });
-        } else if let Some(table_ref) = v1.table_ref {
-            ConstantFloatVec::Table(table_ref.try_into()?)
-        } else {
-            return Err(ConversionError::MissingAttribute {
-                name: meta.name,
-                attrs: vec!["values".to_string(), "table".to_string(), "url".to_string()],
-            });
-        };
+        let values = try_convert_values(&meta.name, v1.values, v1.external, v1.table_ref)?;
 
         // pywr 1 does not support interpolation
         let p = Self {

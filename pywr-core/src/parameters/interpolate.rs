@@ -58,14 +58,14 @@ pub fn linear_interpolation(
         }
     }
 
-    return if error_on_bounds {
+    if error_on_bounds {
         Err(InterpolationError::AboveUpperBounds)
     } else {
         Ok(points
             .last()
             .expect("This should be impossible because fp has been checked for a length of at least 2")
             .1)
-    };
+    }
 }
 
 #[cfg(test)]

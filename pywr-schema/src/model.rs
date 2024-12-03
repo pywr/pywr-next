@@ -4,7 +4,7 @@ use super::parameters::{Parameter, ParameterOrTimeseriesRef};
 use crate::data_tables::DataTable;
 #[cfg(feature = "core")]
 use crate::data_tables::LoadedTableCollection;
-use crate::error::{ConversionError, SchemaError};
+use crate::error::{ComponentConversionError, SchemaError};
 use crate::metric::Metric;
 use crate::metric_sets::MetricSet;
 use crate::outputs::Output;
@@ -16,6 +16,7 @@ use crate::visit::{VisitMetrics, VisitPaths};
 #[cfg(feature = "core")]
 use chrono::NaiveTime;
 use chrono::{NaiveDate, NaiveDateTime};
+use pyo3::pyclass;
 #[cfg(feature = "core")]
 use pywr_core::{models::ModelDomain, timestep::TimestepDuration, PywrError};
 use schemars::JsonSchema;
@@ -39,17 +40,15 @@ impl Default for Metadata {
     }
 }
 
-impl TryFrom<pywr_v1_schema::model::Metadata> for Metadata {
-    type Error = ConversionError;
-
-    fn try_from(v1: pywr_v1_schema::model::Metadata) -> Result<Self, Self::Error> {
-        Ok(Self {
+impl From<pywr_v1_schema::model::Metadata> for Metadata {
+    fn from(v1: pywr_v1_schema::model::Metadata) -> Self {
+        Self {
             title: v1
                 .title
                 .unwrap_or("Model converted from Pywr v1.x with no title.".to_string()),
             description: v1.description,
             minimum_version: v1.minimum_version,
-        })
+        }
     }
 }
 
@@ -153,6 +152,7 @@ pub struct LoadArgs<'a> {
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, JsonSchema)]
+#[pyclass]
 pub struct PywrNetwork {
     pub nodes: Vec<Node>,
     pub edges: Vec<Edge>,
@@ -252,18 +252,21 @@ impl VisitMetrics for PywrNetwork {
 
 impl PywrNetwork {
     pub fn from_path<P: AsRef<Path>>(path: P) -> Result<Self, SchemaError> {
-        let data = std::fs::read_to_string(path).map_err(|e| SchemaError::IO(e.to_string()))?;
+        let data = std::fs::read_to_string(&path).map_err(|error| SchemaError::IO {
+            path: path.as_ref().to_path_buf(),
+            error,
+        })?;
         Ok(serde_json::from_str(data.as_str())?)
     }
 
     /// Convert a v1 network to a v2 network.
     ///
     /// This function is used to convert a v1 model to a v2 model. The conversion is not always
-    /// possible and may result in errors. The errors are returned as a vector of [`ConversionError`]s.
+    /// possible and may result in errors. The errors are returned as a vector of [`ComponentConversionError`]s.
     /// alongside the (partially) converted model. This may result in a model that will not
     /// function as expected. The user should check the errors and the converted model to ensure
     /// that the conversion has been successful.
-    pub fn from_v1(v1: pywr_v1_schema::PywrNetwork) -> (Self, Vec<ConversionError>) {
+    pub fn from_v1(v1: pywr_v1_schema::PywrNetwork) -> (Self, Vec<ComponentConversionError>) {
         let mut errors = Vec::new();
         // We will use this to store any timeseries or parameters that are extracted from the v1 nodes
         let mut conversion_data = ConversionData::default();
@@ -593,7 +596,10 @@ impl PywrModel {
     }
 
     pub fn from_path<P: AsRef<Path>>(path: P) -> Result<Self, SchemaError> {
-        let data = std::fs::read_to_string(path).map_err(|e| SchemaError::IO(e.to_string()))?;
+        let data = std::fs::read_to_string(&path).map_err(|error| SchemaError::IO {
+            path: path.as_ref().to_path_buf(),
+            error,
+        })?;
         Ok(serde_json::from_str(data.as_str())?)
     }
 
@@ -630,18 +636,14 @@ impl PywrModel {
     /// Convert a v1 model to a v2 model.
     ///
     /// This function is used to convert a v1 model to a v2 model. The conversion is not always
-    /// possible and may result in errors. The errors are returned as a vector of [`ConversionError`]s.
+    /// possible and may result in errors. The errors are returned as a vector of [`ComponentConversionError`]s.
     /// alongside the (partially) converted model. This may result in a model that will not
     /// function as expected. The user should check the errors and the converted model to ensure
     /// that the conversion has been successful.
-    pub fn from_v1(v1: pywr_v1_schema::PywrModel) -> (Self, Vec<ConversionError>) {
+    pub fn from_v1(v1: pywr_v1_schema::PywrModel) -> (Self, Vec<ComponentConversionError>) {
         let mut errors = Vec::new();
 
-        let metadata = v1.metadata.try_into().unwrap_or_else(|e| {
-            errors.push(e);
-            Metadata::default()
-        });
-
+        let metadata = v1.metadata.into();
         let timestepper = v1.timestepper.into();
 
         let (network, network_errors) = PywrNetwork::from_v1(v1.network);
@@ -661,7 +663,7 @@ impl PywrModel {
     /// Convert a v1 JSON string to a v2 model.
     ///
     /// See [`PywrModel::from_v1`] for more information.
-    pub fn from_v1_str(v1: &str) -> Result<(Self, Vec<ConversionError>), pywr_v1_schema::PywrSchemaError> {
+    pub fn from_v1_str(v1: &str) -> Result<(Self, Vec<ComponentConversionError>), pywr_v1_schema::PywrSchemaError> {
         let v1_model: pywr_v1_schema::PywrModel = serde_json::from_str(v1)?;
 
         Ok(Self::from_v1(v1_model))
@@ -762,7 +764,10 @@ impl FromStr for PywrMultiNetworkModel {
 
 impl PywrMultiNetworkModel {
     pub fn from_path<P: AsRef<Path>>(path: P) -> Result<Self, SchemaError> {
-        let data = std::fs::read_to_string(path).map_err(|e| SchemaError::IO(e.to_string()))?;
+        let data = std::fs::read_to_string(&path).map_err(|error| SchemaError::IO {
+            path: path.as_ref().to_path_buf(),
+            error,
+        })?;
         Ok(serde_json::from_str(data.as_str())?)
     }
 

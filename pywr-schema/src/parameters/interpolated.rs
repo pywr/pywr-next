@@ -1,10 +1,11 @@
+use crate::error::ComponentConversionError;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
 use crate::metric::{Metric, NodeReference};
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::parameters::{ConversionData, ParameterMeta};
-use crate::v1::{IntoV2, TryFromV1, TryIntoV2};
+use crate::v1::{try_convert_parameter_attr, IntoV2, TryFromV1};
 use crate::ConversionError;
 #[cfg(feature = "core")]
 use pywr_core::parameters::ParameterIndex;
@@ -71,7 +72,7 @@ impl InterpolatedParameter {
 }
 
 impl TryFromV1<InterpolatedFlowParameterV1> for InterpolatedParameter {
-    type Error = ConversionError;
+    type Error = ComponentConversionError;
 
     fn try_from_v1(
         v1: InterpolatedFlowParameterV1,
@@ -91,13 +92,13 @@ impl TryFromV1<InterpolatedFlowParameterV1> for InterpolatedParameter {
         let xp = v1
             .flows
             .into_iter()
-            .map(|p| p.try_into_v2(parent_node, conversion_data))
+            .map(|p| try_convert_parameter_attr(&meta.name, "flows", p, parent_node, conversion_data))
             .collect::<Result<Vec<_>, _>>()?;
 
         let fp = v1
             .values
             .into_iter()
-            .map(|p| p.try_into_v2(parent_node, conversion_data))
+            .map(|p| try_convert_parameter_attr(&meta.name, "values", p, parent_node, conversion_data))
             .collect::<Result<Vec<_>, _>>()?;
 
         // Default values
@@ -114,9 +115,12 @@ impl TryFromV1<InterpolatedFlowParameterV1> for InterpolatedParameter {
             if let Some(kind) = interp_kwargs.get("kind") {
                 if let Some(kind_str) = kind.as_str() {
                     if kind_str != "linear" {
-                        return Err(ConversionError::UnsupportedFeature {
-                            feature: "Interpolation with `kind` other than `linear` is not supported.".to_string(),
+                        return Err(ComponentConversionError::Parameter {
                             name: meta.name.clone(),
+                            attr: "interp_kwargs".to_string(),
+                            error: ConversionError::UnsupportedFeature {
+                                feature: "Interpolation with `kind` other than `linear` is not supported.".to_string(),
+                            },
                         });
                     }
                 }
@@ -134,7 +138,7 @@ impl TryFromV1<InterpolatedFlowParameterV1> for InterpolatedParameter {
 }
 
 impl TryFromV1<InterpolatedVolumeParameterV1> for InterpolatedParameter {
-    type Error = ConversionError;
+    type Error = ComponentConversionError;
 
     fn try_from_v1(
         v1: InterpolatedVolumeParameterV1,
@@ -154,13 +158,13 @@ impl TryFromV1<InterpolatedVolumeParameterV1> for InterpolatedParameter {
         let xp = v1
             .volumes
             .into_iter()
-            .map(|p| p.try_into_v2(parent_node, conversion_data))
+            .map(|p| try_convert_parameter_attr(&meta.name, "volumes", p, parent_node, conversion_data))
             .collect::<Result<Vec<_>, _>>()?;
 
         let fp = v1
             .values
             .into_iter()
-            .map(|p| p.try_into_v2(parent_node, conversion_data))
+            .map(|p| try_convert_parameter_attr(&meta.name, "values", p, parent_node, conversion_data))
             .collect::<Result<Vec<_>, _>>()?;
 
         // Default values
@@ -177,9 +181,12 @@ impl TryFromV1<InterpolatedVolumeParameterV1> for InterpolatedParameter {
             if let Some(kind) = interp_kwargs.get("kind") {
                 if let Some(kind_str) = kind.as_str() {
                     if kind_str != "linear" {
-                        return Err(ConversionError::UnsupportedFeature {
-                            feature: "Interpolation with `kind` other than `linear` is not supported.".to_string(),
+                        return Err(ComponentConversionError::Parameter {
                             name: meta.name.clone(),
+                            attr: "interp_kwargs".to_string(),
+                            error: ConversionError::UnsupportedFeature {
+                                feature: "Interpolation with `kind` other than `linear` is not supported.".to_string(),
+                            },
                         });
                     }
                 }

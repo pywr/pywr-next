@@ -1,4 +1,4 @@
-use crate::error::ConversionError;
+use crate::error::ComponentConversionError;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
 use crate::metric::{Metric, SimpleNodeReference};
@@ -6,7 +6,9 @@ use crate::metric::{Metric, SimpleNodeReference};
 use crate::model::LoadArgs;
 use crate::nodes::{NodeAttribute, NodeMeta};
 use crate::parameters::Parameter;
-use crate::v1::{ConversionData, TryFromV1, TryIntoV2};
+use crate::v1::{
+    try_convert_initial_storage, try_convert_node_attr, try_convert_parameter_attr, ConversionData, TryFromV1,
+};
 #[cfg(feature = "core")]
 use pywr_core::{
     derived_metric::DerivedMetric, metric::MetricF64, node::StorageInitialVolume as CoreStorageInitialVolume,
@@ -108,7 +110,7 @@ impl InputNode {
 }
 
 impl TryFromV1<InputNodeV1> for InputNode {
-    type Error = ConversionError;
+    type Error = ComponentConversionError;
 
     fn try_from_v1(
         v1: InputNodeV1,
@@ -117,19 +119,9 @@ impl TryFromV1<InputNodeV1> for InputNode {
     ) -> Result<Self, Self::Error> {
         let meta: NodeMeta = v1.meta.into();
 
-        let max_flow = v1
-            .max_flow
-            .map(|v| v.try_into_v2(parent_node.or(Some(&meta.name)), conversion_data))
-            .transpose()?;
-
-        let min_flow = v1
-            .min_flow
-            .map(|v| v.try_into_v2(parent_node.or(Some(&meta.name)), conversion_data))
-            .transpose()?;
-        let cost = v1
-            .cost
-            .map(|v| v.try_into_v2(parent_node.or(Some(&meta.name)), conversion_data))
-            .transpose()?;
+        let cost = try_convert_node_attr(&meta.name, "cost", v1.cost, parent_node, conversion_data)?;
+        let max_flow = try_convert_node_attr(&meta.name, "max_flow", v1.max_flow, parent_node, conversion_data)?;
+        let min_flow = try_convert_node_attr(&meta.name, "min_flow", v1.min_flow, parent_node, conversion_data)?;
 
         let n = Self {
             meta,
@@ -562,7 +554,7 @@ impl LinkNode {
 }
 
 impl TryFromV1<LinkNodeV1> for LinkNode {
-    type Error = ConversionError;
+    type Error = ComponentConversionError;
 
     fn try_from_v1(
         v1: LinkNodeV1,
@@ -571,18 +563,9 @@ impl TryFromV1<LinkNodeV1> for LinkNode {
     ) -> Result<Self, Self::Error> {
         let meta: NodeMeta = v1.meta.into();
 
-        let max_flow = v1
-            .max_flow
-            .map(|v| v.try_into_v2(parent_node.or(Some(&meta.name)), conversion_data))
-            .transpose()?;
-        let min_flow = v1
-            .min_flow
-            .map(|v| v.try_into_v2(parent_node.or(Some(&meta.name)), conversion_data))
-            .transpose()?;
-        let cost = v1
-            .cost
-            .map(|v| v.try_into_v2(parent_node.or(Some(&meta.name)), conversion_data))
-            .transpose()?;
+        let cost = try_convert_node_attr(&meta.name, "cost", v1.cost, parent_node, conversion_data)?;
+        let max_flow = try_convert_node_attr(&meta.name, "max_flow", v1.max_flow, parent_node, conversion_data)?;
+        let min_flow = try_convert_node_attr(&meta.name, "min_flow", v1.min_flow, parent_node, conversion_data)?;
         // not supported in V1
         let soft_min = None;
         let soft_max = None;
@@ -695,7 +678,7 @@ impl OutputNode {
 }
 
 impl TryFromV1<OutputNodeV1> for OutputNode {
-    type Error = ConversionError;
+    type Error = ComponentConversionError;
 
     fn try_from_v1(
         v1: OutputNodeV1,
@@ -704,18 +687,9 @@ impl TryFromV1<OutputNodeV1> for OutputNode {
     ) -> Result<Self, Self::Error> {
         let meta: NodeMeta = v1.meta.into();
 
-        let max_flow = v1
-            .max_flow
-            .map(|v| v.try_into_v2(parent_node.or(Some(&meta.name)), conversion_data))
-            .transpose()?;
-        let min_flow = v1
-            .min_flow
-            .map(|v| v.try_into_v2(parent_node.or(Some(&meta.name)), conversion_data))
-            .transpose()?;
-        let cost = v1
-            .cost
-            .map(|v| v.try_into_v2(parent_node.or(Some(&meta.name)), conversion_data))
-            .transpose()?;
+        let cost = try_convert_node_attr(&meta.name, "cost", v1.cost, parent_node, conversion_data)?;
+        let max_flow = try_convert_node_attr(&meta.name, "max_flow", v1.max_flow, parent_node, conversion_data)?;
+        let min_flow = try_convert_node_attr(&meta.name, "min_flow", v1.min_flow, parent_node, conversion_data)?;
 
         let n = Self {
             meta,
@@ -849,7 +823,7 @@ impl StorageNode {
 }
 
 impl TryFromV1<StorageNodeV1> for StorageNode {
-    type Error = ConversionError;
+    type Error = ComponentConversionError;
 
     fn try_from_v1(
         v1: StorageNodeV1,
@@ -858,46 +832,12 @@ impl TryFromV1<StorageNodeV1> for StorageNode {
     ) -> Result<Self, Self::Error> {
         let meta: NodeMeta = v1.meta.into();
 
-        let cost = v1
-            .cost
-            .map(|v| v.try_into_v2(parent_node.or(Some(&meta.name)), conversion_data))
-            .transpose()
-            .map_err(|source| ConversionError::NodeAttribute {
-                attr: "cost".to_string(),
-                name: meta.name.clone(),
-                source: Box::new(source),
-            })?;
+        let cost = try_convert_node_attr(&meta.name, "cost", v1.cost, parent_node, conversion_data)?;
+        let max_volume = try_convert_node_attr(&meta.name, "max_volume", v1.max_volume, parent_node, conversion_data)?;
+        let min_volume = try_convert_node_attr(&meta.name, "min_volume", v1.min_volume, parent_node, conversion_data)?;
 
-        let max_volume = v1
-            .max_volume
-            .map(|v| v.try_into_v2(parent_node.or(Some(&meta.name)), conversion_data))
-            .transpose()
-            .map_err(|source| ConversionError::NodeAttribute {
-                attr: "max_volume".to_string(),
-                name: meta.name.clone(),
-                source: Box::new(source),
-            })?;
-
-        let min_volume = v1
-            .min_volume
-            .map(|v| v.try_into_v2(parent_node.or(Some(&meta.name)), conversion_data))
-            .transpose()
-            .map_err(|source| ConversionError::NodeAttribute {
-                attr: "min_volume".to_string(),
-                name: meta.name.clone(),
-                source: Box::new(source),
-            })?;
-
-        let initial_volume = if let Some(v) = v1.initial_volume {
-            StorageInitialVolume::Absolute(v)
-        } else if let Some(v) = v1.initial_volume_pc {
-            StorageInitialVolume::Proportional(v)
-        } else {
-            return Err(ConversionError::MissingAttribute {
-                name: meta.name,
-                attrs: vec!["initial_volume".to_string(), "initial_volume_pc".to_string()],
-            });
-        };
+        let initial_volume =
+            try_convert_initial_storage(&meta.name, "initial_volume", v1.initial_volume, v1.initial_volume_pc)?;
 
         let n = Self {
             meta,
@@ -912,7 +852,7 @@ impl TryFromV1<StorageNodeV1> for StorageNode {
 }
 
 impl TryFromV1<ReservoirNodeV1> for StorageNode {
-    type Error = ConversionError;
+    type Error = ComponentConversionError;
 
     fn try_from_v1(
         v1: ReservoirNodeV1,
@@ -921,28 +861,12 @@ impl TryFromV1<ReservoirNodeV1> for StorageNode {
     ) -> Result<Self, Self::Error> {
         let meta: NodeMeta = v1.meta.into();
 
-        let cost = v1
-            .cost
-            .map(|v| v.try_into_v2(parent_node.or(Some(&meta.name)), conversion_data))
-            .transpose()?;
+        let cost = try_convert_node_attr(&meta.name, "cost", v1.cost, parent_node, conversion_data)?;
+        let max_volume = try_convert_node_attr(&meta.name, "max_volume", v1.max_volume, parent_node, conversion_data)?;
+        let min_volume = try_convert_node_attr(&meta.name, "min_volume", v1.min_volume, parent_node, conversion_data)?;
 
-        let max_volume = v1
-            .max_volume
-            .map(|v| v.try_into_v2(parent_node.or(Some(&meta.name)), conversion_data))
-            .transpose()?;
-
-        let min_volume = v1
-            .min_volume
-            .map(|v| v.try_into_v2(parent_node.or(Some(&meta.name)), conversion_data))
-            .transpose()?;
-
-        let initial_volume = if let Some(v) = v1.initial_volume {
-            StorageInitialVolume::Absolute(v)
-        } else if let Some(v) = v1.initial_volume_pc {
-            StorageInitialVolume::Proportional(v)
-        } else {
-            StorageInitialVolume::default()
-        };
+        let initial_volume =
+            try_convert_initial_storage(&meta.name, "initial_volume", v1.initial_volume, v1.initial_volume_pc)?;
 
         let n = Self {
             meta,
@@ -1053,7 +977,7 @@ impl CatchmentNode {
 }
 
 impl TryFromV1<CatchmentNodeV1> for CatchmentNode {
-    type Error = ConversionError;
+    type Error = ComponentConversionError;
 
     fn try_from_v1(
         v1: CatchmentNodeV1,
@@ -1062,14 +986,8 @@ impl TryFromV1<CatchmentNodeV1> for CatchmentNode {
     ) -> Result<Self, Self::Error> {
         let meta: NodeMeta = v1.meta.into();
 
-        let flow = v1
-            .flow
-            .map(|v| v.try_into_v2(parent_node.or(Some(&meta.name)), conversion_data))
-            .transpose()?;
-        let cost = v1
-            .cost
-            .map(|v| v.try_into_v2(parent_node.or(Some(&meta.name)), conversion_data))
-            .transpose()?;
+        let cost = try_convert_node_attr(&meta.name, "cost", v1.cost, parent_node, conversion_data)?;
+        let flow = try_convert_node_attr(&meta.name, "min_flow", v1.flow, parent_node, conversion_data)?;
 
         let n = Self {
             meta,
@@ -1240,7 +1158,7 @@ impl AggregatedNode {
 }
 
 impl TryFromV1<AggregatedNodeV1> for AggregatedNode {
-    type Error = ConversionError;
+    type Error = ComponentConversionError;
 
     fn try_from_v1(
         v1: AggregatedNodeV1,
@@ -1253,21 +1171,22 @@ impl TryFromV1<AggregatedNodeV1> for AggregatedNode {
             Some(f) => Some(Relationship::Ratio {
                 factors: f
                     .into_iter()
-                    .map(|v| v.try_into_v2(parent_node.or(Some(&meta.name)), conversion_data))
+                    .map(|v| {
+                        try_convert_parameter_attr(
+                            &meta.name,
+                            "factors",
+                            v,
+                            parent_node.or(Some(&meta.name)),
+                            conversion_data,
+                        )
+                    })
                     .collect::<Result<_, _>>()?,
             }),
             None => None,
         };
 
-        let max_flow = v1
-            .max_flow
-            .map(|v| v.try_into_v2(parent_node.or(Some(&meta.name)), conversion_data))
-            .transpose()?;
-
-        let min_flow = v1
-            .min_flow
-            .map(|v| v.try_into_v2(parent_node.or(Some(&meta.name)), conversion_data))
-            .transpose()?;
+        let max_flow = try_convert_node_attr(&meta.name, "max_flow", v1.max_flow, parent_node, conversion_data)?;
+        let min_flow = try_convert_node_attr(&meta.name, "min_flow", v1.min_flow, parent_node, conversion_data)?;
 
         let nodes = v1.nodes.into_iter().map(|n| n.into()).collect();
 
