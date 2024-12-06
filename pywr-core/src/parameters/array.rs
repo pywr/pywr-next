@@ -1,44 +1,55 @@
-use crate::network::Network;
-use crate::parameters::{GeneralParameter, Parameter, ParameterMeta, ParameterName, ParameterState};
+use crate::parameters::{Parameter, ParameterMeta, ParameterName, ParameterState, SimpleParameter};
 use crate::scenario::ScenarioIndex;
-use crate::state::State;
-use crate::timestep::Timestep;
+use crate::state::SimpleParameterValues;
+use crate::timestep::{Timestep, TimestepIndex};
 use crate::PywrError;
 use ndarray::{Array1, Array2, Axis};
 
-pub struct Array1Parameter {
+pub struct Array1Parameter<T> {
     meta: ParameterMeta,
-    array: Array1<f64>,
+    array: Array1<T>,
     timestep_offset: Option<i32>,
 }
 
-impl Array1Parameter {
-    pub fn new(name: ParameterName, array: Array1<f64>, timestep_offset: Option<i32>) -> Self {
+impl<T> Array1Parameter<T> {
+    pub fn new(name: ParameterName, array: Array1<T>, timestep_offset: Option<i32>) -> Self {
         Self {
             meta: ParameterMeta::new(name),
             array,
             timestep_offset,
         }
     }
+
+    /// Compute the time-step index to use accounting for any defined offset.
+    ///
+    /// The offset is applied to the time-step index and then clamped to the bounds of the array.
+    /// This ensures that the time-step index is always within the bounds of the array.
+    fn timestep_index(&self, timestep: &Timestep) -> TimestepIndex {
+        match self.timestep_offset {
+            None => timestep.index,
+            Some(offset) => (timestep.index as i32 + offset)
+                .max(0)
+                .min(self.array.len_of(Axis(0)) as i32 - 1) as usize,
+        }
+    }
 }
-impl Parameter for Array1Parameter {
+impl<T> Parameter for Array1Parameter<T>
+where
+    T: Send + Sync + Clone,
+{
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }
 }
-impl GeneralParameter<f64> for Array1Parameter {
+impl SimpleParameter<f64> for Array1Parameter<f64> {
     fn compute(
         &self,
         timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
-        _model: &Network,
-        _state: &State,
+        _values: &SimpleParameterValues,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<f64, PywrError> {
-        let idx = match self.timestep_offset {
-            None => timestep.index,
-            Some(offset) => (timestep.index as i32 + offset).max(0).min(self.array.len() as i32 - 1) as usize,
-        };
+        let idx = self.timestep_index(timestep);
         // This panics if out-of-bounds
         let value = self.array[[idx]];
         Ok(value)
@@ -52,17 +63,39 @@ impl GeneralParameter<f64> for Array1Parameter {
     }
 }
 
-pub struct Array2Parameter {
+impl SimpleParameter<usize> for Array1Parameter<u64> {
+    fn compute(
+        &self,
+        timestep: &Timestep,
+        _scenario_index: &ScenarioIndex,
+        _values: &SimpleParameterValues,
+        _internal_state: &mut Option<Box<dyn ParameterState>>,
+    ) -> Result<usize, PywrError> {
+        let idx = self.timestep_index(timestep);
+        // This panics if out-of-bounds
+        let value = self.array[[idx]];
+        Ok(value as usize)
+    }
+
+    fn as_parameter(&self) -> &dyn Parameter
+    where
+        Self: Sized,
+    {
+        self
+    }
+}
+
+pub struct Array2Parameter<T> {
     meta: ParameterMeta,
-    array: Array2<f64>,
+    array: Array2<T>,
     scenario_group_index: usize,
     timestep_offset: Option<i32>,
 }
 
-impl Array2Parameter {
+impl<T> Array2Parameter<T> {
     pub fn new(
         name: ParameterName,
-        array: Array2<f64>,
+        array: Array2<T>,
         scenario_group_index: usize,
         timestep_offset: Option<i32>,
     ) -> Self {
@@ -73,33 +106,66 @@ impl Array2Parameter {
             timestep_offset,
         }
     }
+
+    /// Compute the time-step index to use accounting for any defined offset.
+    ///
+    /// The offset is applied to the time-step index and then clamped to the bounds of the array.
+    /// This ensures that the time-step index is always within the bounds of the array.
+    fn timestep_index(&self, timestep: &Timestep) -> TimestepIndex {
+        match self.timestep_offset {
+            None => timestep.index,
+            Some(offset) => (timestep.index as i32 + offset)
+                .max(0)
+                .min(self.array.len_of(Axis(0)) as i32 - 1) as usize,
+        }
+    }
 }
 
-impl Parameter for Array2Parameter {
+impl<T> Parameter for Array2Parameter<T>
+where
+    T: Send + Sync + Clone,
+{
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }
 }
 
-impl GeneralParameter<f64> for Array2Parameter {
+impl SimpleParameter<f64> for Array2Parameter<f64> {
     fn compute(
         &self,
         timestep: &Timestep,
         scenario_index: &ScenarioIndex,
-        _model: &Network,
-        _state: &State,
+        _values: &SimpleParameterValues,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<f64, PywrError> {
         // This panics if out-of-bounds
-        let t_idx = match self.timestep_offset {
-            None => timestep.index,
-            Some(offset) => (timestep.index as i32 + offset)
-                .max(0)
-                .min(self.array.len_of(Axis(0)) as i32 - 1) as usize,
-        };
+        let t_idx = self.timestep_index(timestep);
         let s_idx = scenario_index.indices[self.scenario_group_index];
 
         Ok(self.array[[t_idx, s_idx]])
+    }
+
+    fn as_parameter(&self) -> &dyn Parameter
+    where
+        Self: Sized,
+    {
+        self
+    }
+}
+
+impl SimpleParameter<usize> for Array2Parameter<u64> {
+    fn compute(
+        &self,
+        timestep: &Timestep,
+        scenario_index: &ScenarioIndex,
+        _values: &SimpleParameterValues,
+        _internal_state: &mut Option<Box<dyn ParameterState>>,
+    ) -> Result<usize, PywrError> {
+        // This panics if out-of-bounds
+        let t_idx = self.timestep_index(timestep);
+        let s_idx = scenario_index.indices[self.scenario_group_index];
+
+        Ok(self.array[[t_idx, s_idx]] as usize)
     }
 
     fn as_parameter(&self) -> &dyn Parameter

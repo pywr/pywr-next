@@ -75,7 +75,7 @@ impl TablesArrayParameter {
                 scenario_group_index,
                 self.timestep_offset,
             );
-            Ok(network.add_parameter(Box::new(p))?)
+            Ok(network.add_simple_parameter(Box::new(p))?)
         } else {
             let array = array.slice_move(s![.., 0]);
             let p = pywr_core::parameters::Array1Parameter::new(
@@ -83,7 +83,7 @@ impl TablesArrayParameter {
                 array,
                 self.timestep_offset,
             );
-            Ok(network.add_parameter(Box::new(p))?)
+            Ok(network.add_simple_parameter(Box::new(p))?)
         }
     }
 }

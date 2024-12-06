@@ -1,9 +1,10 @@
 use crate::error::ConversionError;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
+use crate::metric::IndexMetric;
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
-use crate::parameters::{ConversionData, DynamicIndexValue, ParameterMeta};
+use crate::parameters::{ConversionData, ParameterMeta};
 use crate::v1::{IntoV2, TryFromV1, TryIntoV2};
 #[cfg(feature = "core")]
 use pywr_core::parameters::ParameterIndex;
@@ -15,8 +16,8 @@ use schemars::JsonSchema;
 #[serde(deny_unknown_fields)]
 pub struct AsymmetricSwitchIndexParameter {
     pub meta: ParameterMeta,
-    pub on_index_parameter: DynamicIndexValue,
-    pub off_index_parameter: DynamicIndexValue,
+    pub on_index_parameter: IndexMetric,
+    pub off_index_parameter: IndexMetric,
 }
 
 #[cfg(feature = "core")]
@@ -26,8 +27,8 @@ impl AsymmetricSwitchIndexParameter {
         network: &mut pywr_core::network::Network,
         args: &LoadArgs,
     ) -> Result<ParameterIndex<usize>, SchemaError> {
-        let on_index_parameter = self.on_index_parameter.load(network, args)?;
-        let off_index_parameter = self.off_index_parameter.load(network, args)?;
+        let on_index_parameter = self.on_index_parameter.load(network, args, None)?;
+        let off_index_parameter = self.off_index_parameter.load(network, args, None)?;
 
         let p = pywr_core::parameters::AsymmetricSwitchIndexParameter::new(
             self.meta.name.as_str().into(),

@@ -1,10 +1,10 @@
 use crate::error::ConversionError;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
-use crate::metric::Metric;
+use crate::metric::{IndexMetric, Metric};
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
-use crate::parameters::{ConversionData, DynamicIndexValue, ParameterMeta};
+use crate::parameters::{ConversionData, ParameterMeta};
 use crate::v1::{IntoV2, TryFromV1, TryIntoV2};
 #[cfg(feature = "core")]
 use pywr_core::parameters::ParameterIndex;
@@ -173,7 +173,7 @@ pub struct AggregatedIndexParameter {
     pub meta: ParameterMeta,
     pub agg_func: IndexAggFunc,
     // TODO this should be `DynamicIntValues`
-    pub parameters: Vec<DynamicIndexValue>,
+    pub parameters: Vec<IndexMetric>,
 }
 
 impl AggregatedIndexParameter {
@@ -201,7 +201,7 @@ impl AggregatedIndexParameter {
         let parameters = self
             .parameters
             .iter()
-            .map(|v| v.load(network, args))
+            .map(|v| v.load(network, args, None))
             .collect::<Result<Vec<_>, _>>()?;
 
         let p = pywr_core::parameters::AggregatedIndexParameter::new(

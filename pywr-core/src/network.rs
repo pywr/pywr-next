@@ -1363,6 +1363,14 @@ impl Network {
         self.parameters.add_simple_f64(parameter)
     }
 
+    /// Add a [`parameters::SimpleParameter`] to the network
+    pub fn add_simple_index_parameter(
+        &mut self,
+        parameter: Box<dyn parameters::SimpleParameter<usize>>,
+    ) -> Result<ParameterIndex<usize>, PywrError> {
+        self.parameters.add_simple_usize(parameter)
+    }
+
     /// Add a [`parameters::ConstParameter`] to the network
     pub fn add_const_parameter(
         &mut self,

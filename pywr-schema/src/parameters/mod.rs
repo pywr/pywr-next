@@ -29,7 +29,7 @@ pub use super::data_tables::TableDataRef;
 use crate::error::ConversionError;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
-use crate::metric::{Metric, ParameterReference};
+use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::timeseries::TimeseriesReference;
@@ -59,8 +59,6 @@ pub use profiles::{
 #[cfg(feature = "core")]
 pub use python::try_json_value_into_py;
 pub use python::{PythonParameter, PythonReturnType, PythonSource};
-#[cfg(feature = "core")]
-use pywr_core::{metric::MetricUsize, parameters::ParameterIndex};
 use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::parameters::{
     CoreParameter, DataFrameParameter as DataFrameParameterV1, Parameter as ParameterV1,
@@ -614,93 +612,6 @@ impl TryFrom<ParameterValueV1> for ConstantValue<f64> {
             ParameterValueV1::Table(tbl) => Ok(Self::Table(tbl.try_into()?)),
             ParameterValueV1::Inline(_) => Err(ConversionError::ConstantFloatInlineParameter),
         }
-    }
-}
-
-/// An integer (i64) value from another parameter
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll, Display)]
-#[serde(untagged)]
-pub enum ParameterIndexValue {
-    Reference(String),
-}
-
-#[cfg(feature = "core")]
-impl ParameterIndexValue {
-    pub fn load(&self, network: &mut pywr_core::network::Network) -> Result<ParameterIndex<usize>, SchemaError> {
-        match self {
-            Self::Reference(name) => {
-                // This should be an existing parameter
-                Ok(network.get_index_parameter_index_by_name(&name.as_str().into())?)
-            }
-        }
-    }
-}
-
-/// A potentially dynamic integer (usize) value
-///
-/// This value can be a constant (literal or otherwise) or a dynamic value provided
-/// by another parameter.
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll, Display)]
-#[serde(untagged)]
-pub enum DynamicIndexValue {
-    Constant(ConstantValue<usize>),
-    Dynamic(ParameterIndexValue),
-}
-
-impl DynamicIndexValue {
-    pub fn from_usize(v: usize) -> Self {
-        Self::Constant(ConstantValue::Literal(v))
-    }
-}
-
-#[cfg(feature = "core")]
-impl DynamicIndexValue {
-    pub fn load(&self, network: &mut pywr_core::network::Network, args: &LoadArgs) -> Result<MetricUsize, SchemaError> {
-        let parameter_ref = match self {
-            DynamicIndexValue::Constant(v) => v.load(args.tables)?.into(),
-            DynamicIndexValue::Dynamic(v) => v.load(network)?.into(),
-        };
-        Ok(parameter_ref)
-    }
-}
-
-impl TryFromV1<ParameterValueV1> for DynamicIndexValue {
-    type Error = ConversionError;
-
-    fn try_from_v1(
-        v1: ParameterValueV1,
-        parent_node: Option<&str>,
-        conversion_data: &mut ConversionData,
-    ) -> Result<Self, Self::Error> {
-        let p = match v1 {
-            // There was no such thing as s constant index in Pywr v1
-            // TODO this could print a warning and do a cast to usize instead.
-            ParameterValueV1::Constant(_) => return Err(ConversionError::FloatToIndex),
-            ParameterValueV1::Reference(p_name) => Self::Dynamic(ParameterIndexValue::Reference(p_name)),
-            ParameterValueV1::Table(tbl) => Self::Constant(ConstantValue::Table(tbl.try_into()?)),
-            ParameterValueV1::Inline(param) => {
-                // Inline parameters are converted to either a parameter or a timeseries
-                // The actual component is extracted into the conversion data leaving a reference
-                // to the component in the metric.
-                let definition: ParameterOrTimeseriesRef = (*param).try_into_v2(parent_node, conversion_data)?;
-                match definition {
-                    ParameterOrTimeseriesRef::Parameter(p) => {
-                        let reference = ParameterReference {
-                            name: p.name().to_string(),
-                            key: None,
-                        };
-                        conversion_data.parameters.push(*p);
-
-                        Self::Dynamic(ParameterIndexValue::Reference(reference.name))
-                    }
-                    ParameterOrTimeseriesRef::Timeseries(_) => {
-                        // TODO create an error for this
-                        panic!("Timeseries do not support indexes yet")
-                    }
-                }
-            }
-        };
-        Ok(p)
     }
 }
 
