@@ -319,7 +319,18 @@ impl TimeseriesReference {
     }
 }
 
-impl TryFromV1<DataFrameParameterV1> for TimeseriesReference {
+/// Helper struct to convert references to timeseries.
+///
+/// Keeps a reference to the original parameter name and the new timeseries reference. If the
+/// timeseries refers to a table then the original parameter name is no longer required in the
+/// final model, but is needed during conversion to ensure that the table is correctly referenced.
+#[derive(Clone)]
+pub struct ConvertedTimeseriesReference {
+    pub original_parameter_name: String,
+    pub ts_ref: TimeseriesReference,
+}
+
+impl TryFromV1<DataFrameParameterV1> for ConvertedTimeseriesReference {
     type Error = ConversionError;
 
     fn try_from_v1(
@@ -328,6 +339,7 @@ impl TryFromV1<DataFrameParameterV1> for TimeseriesReference {
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
         let meta: ParameterMeta = v1.meta.into_v2(parent_node, conversion_data);
+        let mut ts_name = meta.name.clone();
 
         if let Some(url) = v1.url {
             // If there is a URL then this entry must be converted into a timeseries
@@ -354,8 +366,10 @@ impl TryFromV1<DataFrameParameterV1> for TimeseriesReference {
             if !conversion_data.timeseries.iter().any(|ts| ts.meta.name == meta.name) {
                 conversion_data.timeseries.push(timeseries);
             }
-        } else if v1.table.is_some() {
-            // Nothing to do here; The table will be converted separately
+        } else if let Some(table) = v1.table {
+            // If this is a reference to a table then we need to point to the table by name, and
+            // ignore the original parameter's name entirely.
+            ts_name = table;
         } else {
             return Err(ConversionError::MissingAttribute {
                 attrs: vec!["url".to_string(), "table".to_string()],
@@ -371,11 +385,10 @@ impl TryFromV1<DataFrameParameterV1> for TimeseriesReference {
             (None, None) => None,
         };
         // The reference that is returned
-        let reference = TimeseriesReference {
-            name: meta.name,
-            columns,
-        };
-
-        Ok(reference)
+        let reference = TimeseriesReference { name: ts_name, columns };
+        Ok(ConvertedTimeseriesReference {
+            original_parameter_name: meta.name,
+            ts_ref: reference,
+        })
     }
 }
