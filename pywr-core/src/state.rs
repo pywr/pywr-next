@@ -416,7 +416,7 @@ pub struct ParameterValuesRef<'a> {
     multi_values: &'a [MultiValue],
 }
 
-impl<'a> ParameterValuesRef<'a> {
+impl ParameterValuesRef<'_> {
     fn get_value(&self, idx: usize) -> Option<&f64> {
         self.values.get(idx)
     }
@@ -435,7 +435,7 @@ pub struct SimpleParameterValues<'a> {
     simple: ParameterValuesRef<'a>,
 }
 
-impl<'a> SimpleParameterValues<'a> {
+impl SimpleParameterValues<'_> {
     pub fn get_simple_parameter_f64(&self, idx: SimpleParameterIndex<f64>) -> Result<f64, PywrError> {
         self.simple
             .get_value(*idx.deref())
@@ -470,7 +470,7 @@ pub struct ConstParameterValues<'a> {
     constant: ParameterValuesRef<'a>,
 }
 
-impl<'a> ConstParameterValues<'a> {
+impl ConstParameterValues<'_> {
     pub fn get_const_parameter_f64(&self, idx: ConstParameterIndex<f64>) -> Result<f64, PywrError> {
         self.constant
             .get_value(*idx.deref())
