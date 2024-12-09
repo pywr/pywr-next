@@ -44,6 +44,23 @@
         "cost": null
       },
       {
+        "type": "Input",
+        "max_flow": {
+          "type": "Timeseries",
+          "name": "inflow-tbl",
+          "columns": {
+            "type": "Column",
+            "name": "inflow1"
+          }
+        },
+        "meta": {
+          "name": "input3"
+        },
+        "min_flow": null,
+        "parameters": null,
+        "cost": null
+      },
+      {
         "type": "Link",
         "max_flow": null,
         "meta": {
@@ -80,6 +97,10 @@
       },
       {
         "from_node": "input2",
+        "to_node": "link1"
+      },
+      {
+        "from_node": "input3",
         "to_node": "link1"
       },
       {
