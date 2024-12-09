@@ -1,9 +1,9 @@
+use crate::error::ComponentConversionError;
 use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::parameters::{ConversionData, ParameterMeta};
-use crate::v1::{IntoV2, TryFromV1, TryIntoV2};
-use crate::ConversionError;
+use crate::v1::{try_convert_parameter_attr, IntoV2, TryFromV1};
 #[cfg(feature = "core")]
 use crate::SchemaError;
 #[cfg(feature = "core")]
@@ -119,7 +119,7 @@ impl HydropowerTargetParameter {
 }
 
 impl TryFromV1<HydropowerTargetParameterV1> for HydropowerTargetParameter {
-    type Error = ConversionError;
+    type Error = ComponentConversionError;
 
     fn try_from_v1(
         v1: HydropowerTargetParameterV1,
@@ -127,19 +127,17 @@ impl TryFromV1<HydropowerTargetParameterV1> for HydropowerTargetParameter {
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
         let meta: ParameterMeta = v1.meta.into_v2(parent_node, conversion_data);
-        let target = v1.target.try_into_v2(parent_node, conversion_data)?;
-        let water_elevation = v1
-            .water_elevation_parameter
-            .map(|f| f.try_into_v2(parent_node, conversion_data))
-            .transpose()?;
-        let min_flow = v1
-            .min_flow
-            .map(|f| f.try_into_v2(parent_node, conversion_data))
-            .transpose()?;
-        let max_flow = v1
-            .max_flow
-            .map(|f| f.try_into_v2(parent_node, conversion_data))
-            .transpose()?;
+        let target = try_convert_parameter_attr(&meta.name, "target", v1.target, parent_node, conversion_data)?;
+        let water_elevation = try_convert_parameter_attr(
+            &meta.name,
+            "water_elevation_parameter",
+            v1.water_elevation_parameter,
+            parent_node,
+            conversion_data,
+        )?;
+
+        let min_flow = try_convert_parameter_attr(&meta.name, "min_flow", v1.min_flow, parent_node, conversion_data)?;
+        let max_flow = try_convert_parameter_attr(&meta.name, "max_flow", v1.max_flow, parent_node, conversion_data)?;
 
         Ok(Self {
             meta,

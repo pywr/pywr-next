@@ -4,8 +4,7 @@ use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::parameters::{ConversionData, ParameterMeta};
-use crate::v1::{IntoV2, TryFromV1};
-use crate::ConversionError;
+use crate::v1::{FromV1, IntoV2};
 #[cfg(feature = "core")]
 use pywr_core::parameters::ParameterIndex;
 use pywr_schema_macros::PywrVisitAll;
@@ -38,20 +37,14 @@ impl DiscountFactorParameter {
     }
 }
 
-impl TryFromV1<DiscountFactorParameterV1> for DiscountFactorParameter {
-    type Error = ConversionError;
-
-    fn try_from_v1(
-        v1: DiscountFactorParameterV1,
-        parent_node: Option<&str>,
-        conversion_data: &mut ConversionData,
-    ) -> Result<Self, Self::Error> {
+impl FromV1<DiscountFactorParameterV1> for DiscountFactorParameter {
+    fn from_v1(v1: DiscountFactorParameterV1, parent_node: Option<&str>, conversion_data: &mut ConversionData) -> Self {
         let meta: ParameterMeta = v1.meta.into_v2(parent_node, conversion_data);
         let discount_rate = Metric::from(v1.rate);
-        Ok(Self {
+        Self {
             meta,
             discount_rate,
             base_year: v1.base_year as i32,
-        })
+        }
     }
 }

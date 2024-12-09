@@ -1,11 +1,11 @@
-use crate::error::ConversionError;
+use crate::error::ComponentConversionError;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
 use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::parameters::{ConstantValue, ConversionData, ParameterMeta};
-use crate::v1::{IntoV2, TryFromV1, TryIntoV2};
+use crate::v1::{try_convert_parameter_attr, IntoV2, TryFromV1};
 #[cfg(feature = "core")]
 use pywr_core::parameters::{ParameterIndex, ParameterName};
 use pywr_schema_macros::PywrVisitAll;
@@ -177,23 +177,29 @@ impl ConstantParameter {
 }
 
 impl TryFromV1<ConstantParameterV1> for ConstantParameter {
-    type Error = ConversionError;
+    type Error = ComponentConversionError;
 
     fn try_from_v1(
         v1: ConstantParameterV1,
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
+        let meta: ParameterMeta = v1.meta.into_v2(parent_node, conversion_data);
+
         let value = if let Some(v) = v1.value {
             ConstantValue::Literal(v)
         } else if let Some(tbl) = v1.table {
-            ConstantValue::Table(tbl.try_into()?)
+            ConstantValue::Table(tbl.try_into().map_err(|error| ComponentConversionError::Parameter {
+                name: meta.name.clone(),
+                attr: "table".to_string(),
+                error,
+            })?)
         } else {
             ConstantValue::Literal(0.0)
         };
 
         let p = Self {
-            meta: v1.meta.into_v2(parent_node, conversion_data),
+            meta,
             value,
             variable: None, // TODO convert variable settings
         };
@@ -225,7 +231,7 @@ impl MaxParameter {
 }
 
 impl TryFromV1<MaxParameterV1> for MaxParameter {
-    type Error = ConversionError;
+    type Error = ComponentConversionError;
 
     fn try_from_v1(
         v1: MaxParameterV1,
@@ -234,7 +240,8 @@ impl TryFromV1<MaxParameterV1> for MaxParameter {
     ) -> Result<Self, Self::Error> {
         let meta: ParameterMeta = v1.meta.into_v2(parent_node, conversion_data);
 
-        let parameter = v1.parameter.try_into_v2(parent_node, conversion_data)?;
+        let parameter =
+            try_convert_parameter_attr(&meta.name, "parameter", v1.parameter, parent_node, conversion_data)?;
 
         let p = Self {
             meta,
@@ -281,7 +288,7 @@ impl DivisionParameter {
 }
 
 impl TryFromV1<DivisionParameterV1> for DivisionParameter {
-    type Error = ConversionError;
+    type Error = ComponentConversionError;
 
     fn try_from_v1(
         v1: DivisionParameterV1,
@@ -290,8 +297,10 @@ impl TryFromV1<DivisionParameterV1> for DivisionParameter {
     ) -> Result<Self, Self::Error> {
         let meta: ParameterMeta = v1.meta.into_v2(parent_node, conversion_data);
 
-        let numerator = v1.numerator.try_into_v2(parent_node, conversion_data)?;
-        let denominator = v1.denominator.try_into_v2(parent_node, conversion_data)?;
+        let numerator =
+            try_convert_parameter_attr(&meta.name, "numerator", v1.numerator, parent_node, conversion_data)?;
+        let denominator =
+            try_convert_parameter_attr(&meta.name, "denominator", v1.denominator, parent_node, conversion_data)?;
 
         let p = Self {
             meta,
@@ -338,7 +347,7 @@ impl MinParameter {
 }
 
 impl TryFromV1<MinParameterV1> for MinParameter {
-    type Error = ConversionError;
+    type Error = ComponentConversionError;
 
     fn try_from_v1(
         v1: MinParameterV1,
@@ -347,7 +356,8 @@ impl TryFromV1<MinParameterV1> for MinParameter {
     ) -> Result<Self, Self::Error> {
         let meta: ParameterMeta = v1.meta.into_v2(parent_node, conversion_data);
 
-        let parameter = v1.parameter.try_into_v2(parent_node, conversion_data)?;
+        let parameter =
+            try_convert_parameter_attr(&meta.name, "parameter", v1.parameter, parent_node, conversion_data)?;
 
         let p = Self {
             meta,
@@ -380,7 +390,7 @@ impl NegativeParameter {
 }
 
 impl TryFromV1<NegativeParameterV1> for NegativeParameter {
-    type Error = ConversionError;
+    type Error = ComponentConversionError;
 
     fn try_from_v1(
         v1: NegativeParameterV1,
@@ -389,7 +399,8 @@ impl TryFromV1<NegativeParameterV1> for NegativeParameter {
     ) -> Result<Self, Self::Error> {
         let meta: ParameterMeta = v1.meta.into_v2(parent_node, conversion_data);
 
-        let parameter = v1.parameter.try_into_v2(parent_node, conversion_data)?;
+        let parameter =
+            try_convert_parameter_attr(&meta.name, "parameter", v1.parameter, parent_node, conversion_data)?;
 
         let p = Self { meta, parameter };
         Ok(p)
@@ -434,7 +445,7 @@ impl NegativeMaxParameter {
 }
 
 impl TryFromV1<NegativeMaxParameterV1> for NegativeMaxParameter {
-    type Error = ConversionError;
+    type Error = ComponentConversionError;
 
     fn try_from_v1(
         v1: NegativeMaxParameterV1,
@@ -442,7 +453,10 @@ impl TryFromV1<NegativeMaxParameterV1> for NegativeMaxParameter {
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
         let meta: ParameterMeta = v1.meta.into_v2(parent_node, conversion_data);
-        let parameter = v1.parameter.try_into_v2(parent_node, conversion_data)?;
+
+        let parameter =
+            try_convert_parameter_attr(&meta.name, "parameter", v1.parameter, parent_node, conversion_data)?;
+
         let p = Self {
             meta,
             metric: parameter,
@@ -490,7 +504,7 @@ impl NegativeMinParameter {
 }
 
 impl TryFromV1<NegativeMinParameterV1> for NegativeMinParameter {
-    type Error = ConversionError;
+    type Error = ComponentConversionError;
 
     fn try_from_v1(
         v1: NegativeMinParameterV1,
@@ -498,7 +512,9 @@ impl TryFromV1<NegativeMinParameterV1> for NegativeMinParameter {
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
         let meta: ParameterMeta = v1.meta.into_v2(parent_node, conversion_data);
-        let parameter = v1.parameter.try_into_v2(parent_node, conversion_data)?;
+        let parameter =
+            try_convert_parameter_attr(&meta.name, "parameter", v1.parameter, parent_node, conversion_data)?;
+
         let p = Self {
             meta,
             metric: parameter,

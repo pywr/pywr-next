@@ -13,7 +13,7 @@ use pywr_core::solvers::{HighsSolver, HighsSolverSettings};
 use pywr_core::solvers::{SimdIpmF64Solver, SimdIpmSolverSettings};
 use pywr_core::test_utils::make_random_model;
 use pywr_schema::model::{PywrModel, PywrMultiNetworkModel, PywrNetwork};
-use pywr_schema::ConversionError;
+use pywr_schema::ComponentConversionError;
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use schemars::schema_for;
@@ -236,7 +236,7 @@ fn v1_to_v2(in_path: &Path, out_path: &Path, stop_on_error: bool, network_only: 
     Ok(())
 }
 
-fn handle_conversion_errors(errors: &[ConversionError], stop_on_error: bool) -> Result<()> {
+fn handle_conversion_errors(errors: &[ComponentConversionError], stop_on_error: bool) -> Result<()> {
     if !errors.is_empty() {
         info!("File converted with {} errors:", errors.len());
         for error in errors {

@@ -1,12 +1,12 @@
-use crate::error::ConversionError;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
+use crate::error::{ComponentConversionError, ConversionError};
 use crate::metric::{Metric, SimpleNodeReference};
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::nodes::{NodeAttribute, NodeMeta, StorageInitialVolume};
 use crate::parameters::Parameter;
-use crate::v1::{ConversionData, TryFromV1, TryIntoV2};
+use crate::v1::{try_convert_initial_storage, try_convert_node_attr, ConversionData, TryFromV1};
 #[cfg(feature = "core")]
 use pywr_core::{
     derived_metric::DerivedMetric,
@@ -193,7 +193,7 @@ impl RollingVirtualStorageNode {
 }
 
 impl TryFromV1<RollingVirtualStorageNodeV1> for RollingVirtualStorageNode {
-    type Error = ConversionError;
+    type Error = ComponentConversionError;
 
     fn try_from_v1(
         v1: RollingVirtualStorageNodeV1,
@@ -202,53 +202,44 @@ impl TryFromV1<RollingVirtualStorageNodeV1> for RollingVirtualStorageNode {
     ) -> Result<Self, Self::Error> {
         let meta: NodeMeta = v1.meta.into();
 
-        let cost = v1
-            .cost
-            .map(|v| v.try_into_v2(parent_node.or(Some(&meta.name)), conversion_data))
-            .transpose()?;
-        let max_volume = v1
-            .max_volume
-            .map(|v| v.try_into_v2(parent_node.or(Some(&meta.name)), conversion_data))
-            .transpose()?;
+        let cost = try_convert_node_attr(&meta.name, "cost", v1.cost, parent_node, conversion_data)?;
+        let max_volume = try_convert_node_attr(&meta.name, "max_volume", v1.max_volume, parent_node, conversion_data)?;
+        let min_volume = try_convert_node_attr(&meta.name, "min_volume", v1.min_volume, parent_node, conversion_data)?;
 
-        let min_volume = v1
-            .min_volume
-            .map(|v| v.try_into_v2(parent_node.or(Some(&meta.name)), conversion_data))
-            .transpose()?;
-
-        let initial_volume = if let Some(v) = v1.initial_volume {
-            StorageInitialVolume::Absolute(v)
-        } else if let Some(v) = v1.initial_volume_pc {
-            StorageInitialVolume::Proportional(v)
-        } else {
-            return Err(ConversionError::MissingAttribute {
-                name: meta.name,
-                attrs: vec!["initial_volume".to_string(), "initial_volume_pc".to_string()],
-            });
-        };
+        let initial_volume =
+            try_convert_initial_storage(&meta.name, "initial_volume", v1.initial_volume, v1.initial_volume_pc)?;
 
         let window = if let Some(days) = v1.days {
             if let Some(days) = NonZeroUsize::new(days as usize) {
                 RollingWindow::Days(days)
             } else {
-                return Err(ConversionError::UnsupportedFeature {
-                    feature: "Rolling window with zero `days` is not supported".to_string(),
+                return Err(ComponentConversionError::Node {
                     name: meta.name.clone(),
+                    attr: "window".to_string(),
+                    error: ConversionError::UnsupportedFeature {
+                        feature: "Rolling window with zero `days` is not supported".to_string(),
+                    },
                 });
             }
         } else if let Some(timesteps) = v1.timesteps {
             if let Some(timesteps) = NonZeroUsize::new(timesteps as usize) {
                 RollingWindow::Timesteps(timesteps)
             } else {
-                return Err(ConversionError::UnsupportedFeature {
-                    feature: "Rolling window with zero `timesteps` is not supported".to_string(),
+                return Err(ComponentConversionError::Node {
                     name: meta.name.clone(),
+                    attr: "window".to_string(),
+                    error: ConversionError::UnsupportedFeature {
+                        feature: "Rolling window with zero `timesteps` is not supported".to_string(),
+                    },
                 });
             }
         } else {
-            return Err(ConversionError::MissingAttribute {
-                attrs: vec!["days".to_string(), "timesteps".to_string()],
+            return Err(ComponentConversionError::Node {
                 name: meta.name.clone(),
+                attr: "window".to_string(),
+                error: ConversionError::MissingAttribute {
+                    attrs: vec!["days".to_string(), "timesteps".to_string()],
+                },
             });
         };
 
