@@ -2656,7 +2656,7 @@ dependencies = [
  "rayon",
  "rhai",
  "serde",
- "thiserror 1.0.69",
+ "thiserror 2.0.6",
  "tracing",
 ]
 
@@ -2698,7 +2698,7 @@ dependencies = [
  "strum_macros",
  "svgbobdoc",
  "tempfile",
- "thiserror 1.0.69",
+ "thiserror 2.0.6",
  "tracing",
 ]
 
