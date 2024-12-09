@@ -1463,9 +1463,9 @@ dependencies = [
 
 [[package]]
 name = "nalgebra"
-version = "0.33.1"
+version = "0.33.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3bf139e93ad757869338ad85239cb1d6c067b23b94e5846e637ca6328ee4be60"
+checksum = "26aecdf64b707efd1310e3544d709c5c0ac61c13756046aaaba41be5c4f66a3b"
 dependencies = [
  "approx",
  "matrixmultiply",
@@ -1505,7 +1505,7 @@ version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1107e2587bc373090389bd5b54e05ac3184fd02d7c102decf5d76b8feb84b2d0"
 dependencies = [
- "nalgebra 0.33.1",
+ "nalgebra 0.33.2",
  "num-traits 0.2.19",
 ]
 
@@ -2644,7 +2644,7 @@ dependencies = [
  "ipm-ocl",
  "ipm-simd",
  "libc",
- "nalgebra 0.33.1",
+ "nalgebra 0.33.2",
  "ndarray",
  "num",
  "ocl",
