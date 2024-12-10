@@ -211,7 +211,7 @@ impl TryFromV1<ParameterValueV1> for Metric {
 
                         Self::Parameter(reference)
                     }
-                    ParameterOrTimeseriesRef::Timeseries(t) => Self::Timeseries(t),
+                    ParameterOrTimeseriesRef::Timeseries(t) => Self::Timeseries(t.ts_ref),
                 }
             }
         };
