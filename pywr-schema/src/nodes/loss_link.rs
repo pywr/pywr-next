@@ -60,7 +60,7 @@ impl LossFactor {
                     return Ok(None);
                 }
                 // Net losses are configured as a ratio of the net flow
-                Ok(Some(Relationship::new_ratio_factors(&[1.0.into(), lf])))
+                Ok(Some(Relationship::new_ratio_factors(&[1.0.into(), lf], None)))
             }
         }
     }

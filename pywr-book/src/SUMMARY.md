@@ -12,6 +12,7 @@
     - [Scenarios](./concepts/scenarios.md)
     - [Input data](./concepts/input-data.md)
 - [Custom parameters](./custom_parameters.md)
+- [River routing and attenuation](./river-routing.md)
 - [Multi-models](./multi_models.md)
 - [Migration guide](./migration_guide.md)
 - [Model management](./model-management/README.md)

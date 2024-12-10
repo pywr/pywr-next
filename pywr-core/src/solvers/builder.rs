@@ -557,7 +557,12 @@ where
                             );
                         }
 
-                        self.builder.apply_row_bounds(row_idx.to_usize().unwrap(), 0.0, 0.0);
+                        // Apply the bounds to the row
+                        self.builder.apply_row_bounds(
+                            row_idx.to_usize().unwrap(),
+                            node_pair.rhs_ratio(),
+                            node_pair.rhs_ratio(),
+                        );
                     }
                 }
             } else {

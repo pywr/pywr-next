@@ -140,7 +140,10 @@ impl ClpSimplex {
 
     fn dual_solve(&mut self) {
         unsafe {
-            Clp_dual(self.ptr, 0);
+            let ret = Clp_dual(self.ptr, 0);
+            if ret != 0 {
+                panic!("Clp primal solve failed with error code: {ret}");
+            }
         }
     }
 
@@ -187,6 +190,14 @@ impl ClpSimplex {
     fn objective_value(&self) -> c_double {
         unsafe { Clp_objectiveValue(self.ptr) }
     }
+
+    #[allow(dead_code)]
+    fn write_mps(&mut self, filename: &str) {
+        let c_filename = CString::new(filename).expect("CString::new failed");
+        unsafe {
+            Clp_writeMps(self.ptr, c_filename.as_ptr(), 0, 1, 0.0);
+        }
+    }
 }
 
 pub struct ClpSolver {
@@ -225,6 +236,10 @@ impl ClpSolver {
         let num_cols = self.builder.num_cols() as usize;
 
         self.clp_simplex.primal_column_solution(num_cols)
+    }
+
+    fn write_mps(&mut self, filename: &str) {
+        self.clp_simplex.write_mps(filename);
     }
 }
 
@@ -280,7 +295,10 @@ impl Solver for ClpSolver {
 
         timings.update_constraints += now.elapsed();
 
+        // self.write_mps(&format!("model_{}.mps", timestep.index));
+
         let now = Instant::now();
+
         let solution = self.solve();
         timings.solve = now.elapsed();
 
