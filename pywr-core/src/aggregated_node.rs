@@ -631,7 +631,7 @@ mod tests {
 
         let model = Model::new(default_time_domain().into(), network);
 
-        run_all_solvers(&model, &["ipm-simd", "ipm-ocl"], &[]);
+        run_all_solvers(&model, &["ipm-simd", "ipm-ocl"], &[], &[]);
     }
 
     /// Test the factors forcing a simple ratio of flow that varies over time
@@ -685,7 +685,7 @@ mod tests {
 
         let model = Model::new(default_time_domain().into(), network);
 
-        run_all_solvers(&model, &["cbc", "ipm-simd", "ipm-ocl"], &[]);
+        run_all_solvers(&model, &["cbc", "ipm-simd", "ipm-ocl"], &[], &[]);
     }
 
     /// Test mutual exclusive flows
@@ -741,7 +741,7 @@ mod tests {
 
         let model = Model::new(default_time_domain().into(), network);
 
-        run_all_solvers(&model, &["clp", "ipm-simd", "ipm-ocl"], &[]);
+        run_all_solvers(&model, &["clp", "ipm-simd", "ipm-ocl"], &[], &[]);
     }
 
     /// Test double mutual exclusive flows
@@ -822,6 +822,6 @@ mod tests {
 
         let model = Model::new(default_time_domain().into(), network);
 
-        run_all_solvers(&model, &["clp", "ipm-ocl", "ipm-simd"], &[]);
+        run_all_solvers(&model, &["clp", "ipm-ocl", "ipm-simd"], &[], &[]);
     }
 }

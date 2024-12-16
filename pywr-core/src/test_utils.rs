@@ -166,7 +166,7 @@ pub fn run_and_assert_parameter(
     let rec = AssertionRecorder::new("assert", p_idx.into(), expected_values, ulps, epsilon);
 
     model.network_mut().add_recorder(Box::new(rec)).unwrap();
-    run_all_solvers(model, &[], &[])
+    run_all_solvers(model, &[], &[], &[])
 }
 
 /// A struct to hold the expected outputs for a test.
@@ -198,24 +198,47 @@ impl ExpectedOutputs {
 ///
 /// The model will only be run if the solver has the required solver features (and
 /// is also enabled as a Cargo feature).
-pub fn run_all_solvers(model: &Model, solvers_without_features: &[&str], expected_outputs: &[ExpectedOutputs]) {
-    check_features_and_run::<ClpSolver>(model, !solvers_without_features.contains(&"clp"), expected_outputs);
+pub fn run_all_solvers(
+    model: &Model,
+    solvers_without_features: &[&str],
+    solvers_to_skip: &[&str],
+    expected_outputs: &[ExpectedOutputs],
+) {
+    if !solvers_to_skip.contains(&"clp") {
+        check_features_and_run::<ClpSolver>(model, !solvers_without_features.contains(&"clp"), expected_outputs);
+    }
 
     #[cfg(feature = "cbc")]
     {
-        check_features_and_run::<CbcSolver>(model, !solvers_without_features.contains(&"cbc"), expected_outputs);
+        if !solvers_to_skip.contains(&"cbc") {
+            check_features_and_run::<CbcSolver>(model, !solvers_without_features.contains(&"cbc"), expected_outputs);
+        }
     }
 
     #[cfg(feature = "highs")]
     {
-        check_features_and_run::<HighsSolver>(model, !solvers_without_features.contains(&"highs"), expected_outputs);
+        if !solvers_to_skip.contains(&"highs") {
+            check_features_and_run::<HighsSolver>(
+                model,
+                !solvers_without_features.contains(&"highs"),
+                expected_outputs,
+            );
+        }
     }
 
     #[cfg(feature = "ipm-simd")]
-    check_features_and_run_multi::<SimdIpmF64Solver<4>>(model, !solvers_without_features.contains(&"ipm-simd"));
+    {
+        if !solvers_to_skip.contains(&"ipm-simd") {
+            check_features_and_run_multi::<SimdIpmF64Solver<4>>(model, !solvers_without_features.contains(&"ipm-simd"));
+        }
+    }
 
     #[cfg(feature = "ipm-ocl")]
-    check_features_and_run_multi::<ClIpmF64Solver>(model, !solvers_without_features.contains(&"ipm-ocl"));
+    {
+        if !solvers_to_skip.contains(&"ipm-ocl") {
+            check_features_and_run_multi::<ClIpmF64Solver>(model, !solvers_without_features.contains(&"ipm-ocl"));
+        }
+    }
 }
 
 /// Check features and

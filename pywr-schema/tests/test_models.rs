@@ -17,11 +17,11 @@ macro_rules! model_tests {
             // Deserialise the schema and run it
             #[cfg(feature = "core")]
             {
-                let (input, expected, solvers_without_features): (&str, Vec<&str>, Vec<&str>) = $value;
+                let (input, expected, solvers_without_features, solvers_to_skip): (&str, Vec<&str>, Vec<&str>, Vec<&str>) = $value;
                 let input_pth = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join(input);
                 let expected_paths = expected.iter().map(|p| Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join(p)).collect::<Vec<_>>();
                 let schema = deserialise_test_model(&input_pth);
-                run_test_model(&schema, &expected_paths, &solvers_without_features);
+                run_test_model(&schema, &expected_paths, &solvers_without_features, &solvers_to_skip);
             }
 
             // Just deserialise the schema
@@ -37,36 +37,36 @@ macro_rules! model_tests {
 }
 
 model_tests! {
-    test_simple1: ("simple1.json", vec![], vec![]),
-    test_csv1: ("csv1.json", vec!["csv1-outputs-long.csv", "csv1-outputs-wide.csv"], vec![]),
-    test_csv2: ("csv2.json", vec!["csv2-outputs-long.csv", "csv2-outputs-wide.csv"], vec![]),
-    test_csv3: ("csv3.json", vec!["csv3-outputs-long.csv"], vec![]),
-    test_hdf1: ("hdf1.json", vec![], vec![]), // TODO asserting h5 results not possible with this framework
-    test_memory1: ("memory1.json", vec![], vec![]),  // TODO asserting memory results not possible with this framework
-    test_timeseries: ("timeseries.json", vec!["timeseries-expected.csv"], vec![]),
-    test_storage_max_volumes: ("storage_max_volumes.json", vec![], vec![]),
-    test_mutual_exclusivity1: ("mutual-exclusivity1.json", vec!["mutual-exclusivity1.csv"], vec!["clp", "ipm-simd", "ipm-ocl"]),
-    test_mutual_exclusivity2: ("mutual-exclusivity2.json", vec!["mutual-exclusivity2.csv"], vec!["clp", "ipm-simd", "ipm-ocl"]),
-    test_mutual_exclusivity3: ("mutual-exclusivity3.json", vec!["mutual-exclusivity3.csv"], vec!["clp", "ipm-simd", "ipm-ocl"]),
-    test_link_with_soft_min: ("link_with_soft_min.json", vec![], vec!["ipm-simd", "ipm-ocl"]),
-    test_link_with_soft_max: ("link_with_soft_max.json", vec![], vec!["ipm-simd", "ipm-ocl"]),
-    test_delay1: ("delay1.json", vec!["delay1-expected.csv"], vec![]),
-    test_loss_link1: ("loss_link1.json", vec!["loss_link1-expected.csv"], vec!["ipm-simd", "ipm-ocl"]),
-    test_loss_link2: ("loss_link2.json", vec!["loss_link2-expected.csv"], vec!["ipm-simd", "ipm-ocl"]),
+    test_simple1: ("simple1.json", vec![], vec![], vec![]),
+    test_csv1: ("csv1.json", vec!["csv1-outputs-long.csv", "csv1-outputs-wide.csv"], vec![], vec![]),
+    test_csv2: ("csv2.json", vec!["csv2-outputs-long.csv", "csv2-outputs-wide.csv"], vec![], vec![]),
+    test_csv3: ("csv3.json", vec!["csv3-outputs-long.csv"], vec![], vec![]),
+    test_hdf1: ("hdf1.json", vec![], vec![], vec![]), // TODO asserting h5 results not possible with this framework
+    test_memory1: ("memory1.json", vec![], vec![], vec![]),  // TODO asserting memory results not possible with this framework
+    test_timeseries: ("timeseries.json", vec!["timeseries-expected.csv"], vec![], vec![]),
+    test_storage_max_volumes: ("storage_max_volumes.json", vec![], vec![], vec![]),
+    test_mutual_exclusivity1: ("mutual-exclusivity1.json", vec!["mutual-exclusivity1.csv"], vec!["clp", "ipm-simd", "ipm-ocl"], vec![]),
+    test_mutual_exclusivity2: ("mutual-exclusivity2.json", vec!["mutual-exclusivity2.csv"], vec!["clp", "ipm-simd", "ipm-ocl"], vec![]),
+    test_mutual_exclusivity3: ("mutual-exclusivity3.json", vec!["mutual-exclusivity3.csv"], vec!["clp", "ipm-simd", "ipm-ocl"], vec![]),
+    test_link_with_soft_min: ("link_with_soft_min.json", vec![], vec!["ipm-simd", "ipm-ocl"], vec![]),
+    test_link_with_soft_max: ("link_with_soft_max.json", vec![], vec!["ipm-simd", "ipm-ocl"], vec![]),
+    test_delay1: ("delay1.json", vec!["delay1-expected.csv"], vec![], vec![]),
+    test_loss_link1: ("loss_link1.json", vec!["loss_link1-expected.csv"], vec!["ipm-simd", "ipm-ocl"], vec![]),
+    test_loss_link2: ("loss_link2.json", vec!["loss_link2-expected.csv"], vec!["ipm-simd", "ipm-ocl"], vec![]),
     // TODO this asserted internal flows in the previous test
-    test_piecewise_link1: ("piecewise_link1.json", vec!["piecewise-link1-nodes.csv", "piecewise-link1-edges.csv"], vec![]),
+    test_piecewise_link1: ("piecewise_link1.json", vec!["piecewise-link1-nodes.csv", "piecewise-link1-edges.csv"], vec![], vec![]),
     // TODO not sure why this is failing in IPM solvers (https://github.com/pywr/pywr-next/issues/293)
-    test_piecewise_storage1: ("piecewise_storage1.json", vec!["piecewise_storage1-expected.csv"], vec!["ipm-simd", "ipm-ocl"]),
+    test_piecewise_storage1: ("piecewise_storage1.json", vec!["piecewise_storage1-expected.csv"], vec![], vec!["ipm-simd", "ipm-ocl"]),
     // TODO not sure why this is failing in IPM solvers (https://github.com/pywr/pywr-next/issues/293)
-    test_piecewise_storage2: ("piecewise_storage2.json", vec!["piecewise_storage2-expected.csv"], vec!["ipm-simd", "ipm-ocl"]),
-    test_river_loss1: ("river_loss1.json", vec!["river_loss1-expected.csv"], vec!["ipm-simd", "ipm-ocl"]),
+    test_piecewise_storage2: ("piecewise_storage2.json", vec!["piecewise_storage2-expected.csv"], vec![], vec!["ipm-simd", "ipm-ocl"]),
+    test_river_loss1: ("river_loss1.json", vec!["river_loss1-expected.csv"], vec!["ipm-simd", "ipm-ocl"], vec![]),
     // TODO not sure why this is failing in IPM solvers (https://github.com/pywr/pywr-next/issues/293)
-    test_river_gauge1: ("river_gauge1.json", vec![], vec!["ipm-simd", "ipm-ocl"]),
-    test_river_split_with_gauge1: ("river_split_with_gauge1.json", vec![], vec![]),
-    test_thirty_day_licence: ("30-day-licence.json", vec![], vec!["ipm-simd", "ipm-ocl"]),
-    test_wtw1: ("wtw1.json", vec!["wtw1-expected.csv"], vec!["ipm-simd", "ipm-ocl"]),
-    test_wtw2: ("wtw2.json", vec!["wtw2-expected.csv"], vec!["ipm-simd", "ipm-ocl"]),
-    test_local_parameter1: ("local-parameter1.json", vec!["local-parameter1-expected.csv"], vec![]),
+    test_river_gauge1: ("river_gauge1.json", vec![], vec![], vec!["ipm-simd", "ipm-ocl"]),
+    test_river_split_with_gauge1: ("river_split_with_gauge1.json", vec![], vec![], vec![]),
+    test_thirty_day_licence: ("30-day-licence.json", vec![], vec!["ipm-simd", "ipm-ocl"], vec![]),
+    test_wtw1: ("wtw1.json", vec!["wtw1-expected.csv"], vec!["ipm-simd", "ipm-ocl"], vec![]),
+    test_wtw2: ("wtw2.json", vec!["wtw2-expected.csv"], vec!["ipm-simd", "ipm-ocl"], vec![]),
+    test_local_parameter1: ("local-parameter1.json", vec!["local-parameter1-expected.csv"], vec![], vec![]),
 }
 
 /// Test Pandas backend for reading timeseries data.
@@ -82,7 +82,7 @@ fn test_timeseries_pandas() {
         .map(|p| Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join(p))
         .collect::<Vec<_>>();
     let schema = deserialise_test_model(&input_pth);
-    run_test_model(&schema, &expected_paths, &[]);
+    run_test_model(&schema, &expected_paths, &[], &[]);
 }
 
 fn deserialise_test_model(model_path: &Path) -> PywrModel {
@@ -91,7 +91,12 @@ fn deserialise_test_model(model_path: &Path) -> PywrModel {
 }
 
 #[cfg(feature = "core")]
-fn run_test_model(schema: &PywrModel, result_paths: &[PathBuf], solvers_without_features: &[&str]) {
+fn run_test_model(
+    schema: &PywrModel,
+    result_paths: &[PathBuf],
+    solvers_without_features: &[&str],
+    solvers_to_skip: &[&str],
+) {
     let temp_dir = TempDir::new().unwrap();
     let data_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests");
     let model = schema.build_model(Some(&data_dir), Some(temp_dir.path())).unwrap();
@@ -107,7 +112,7 @@ fn run_test_model(schema: &PywrModel, result_paths: &[PathBuf], solvers_without_
         .collect();
 
     // Test all solvers
-    run_all_solvers(&model, solvers_without_features, &expected_outputs);
+    run_all_solvers(&model, solvers_without_features, solvers_to_skip, &expected_outputs);
 }
 
 macro_rules! convert_tests {
