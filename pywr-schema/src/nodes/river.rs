@@ -4,6 +4,7 @@ use crate::error::SchemaError;
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::nodes::{LossFactor, NodeAttribute, NodeMeta};
+use crate::parameters::Parameter;
 #[cfg(feature = "core")]
 use pywr_core::metric::MetricF64;
 use pywr_schema_macros::PywrVisitAll;
@@ -29,6 +30,8 @@ use schemars::JsonSchema;
 )]
 pub struct RiverNode {
     pub meta: NodeMeta,
+    /// Optional local parameters.
+    pub parameters: Option<Vec<Parameter>>,
     /// An optional loss. This internally creates an [`crate::nodes::OutputNode`] and
     /// [`pywr_core::nodes::Aggregated`] to handle the loss.
     pub loss_factor: Option<LossFactor>,
@@ -113,7 +116,7 @@ impl RiverNode {
         args: &LoadArgs,
     ) -> Result<(), SchemaError> {
         if let Some(loss_factor) = &self.loss_factor {
-            let factors = loss_factor.load(network, args)?;
+            let factors = loss_factor.load(network, args, Some(&self.meta.name))?;
             if factors.is_none() {
                 // Loaded a constant zero factor; ensure that the loss node has zero flow
                 network.set_node_max_flow(self.meta.name.as_str(), Self::loss_node_sub_name(), Some(0.0.into()))?;
@@ -202,6 +205,7 @@ impl TryFrom<LinkNodeV1> for RiverNode {
 
         let n = Self {
             meta,
+            parameters: None,
             loss_factor: None,
         };
         Ok(n)

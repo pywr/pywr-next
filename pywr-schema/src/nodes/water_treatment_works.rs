@@ -5,6 +5,7 @@ use crate::metric::Metric;
 use crate::model::LoadArgs;
 use crate::nodes::loss_link::LossFactor;
 use crate::nodes::{NodeAttribute, NodeMeta};
+use crate::parameters::Parameter;
 #[cfg(feature = "core")]
 use pywr_core::metric::MetricF64;
 use pywr_schema_macros::PywrVisitAll;
@@ -40,6 +41,8 @@ use schemars::JsonSchema;
 pub struct WaterTreatmentWorks {
     /// Node metadata
     pub meta: NodeMeta,
+    /// Optional local parameters.
+    pub parameters: Option<Vec<Parameter>>,
     /// The proportion of net flow that is lost to the loss node.
     pub loss_factor: Option<LossFactor>,
     /// The minimum flow through the `net` flow node.
@@ -146,24 +149,24 @@ impl WaterTreatmentWorks {
         args: &LoadArgs,
     ) -> Result<(), SchemaError> {
         if let Some(cost) = &self.cost {
-            let value = cost.load(network, args)?;
+            let value = cost.load(network, args, Some(&self.meta.name))?;
             network.set_node_cost(self.meta.name.as_str(), Self::net_sub_name(), value.into())?;
         }
 
         if let Some(max_flow) = &self.max_flow {
-            let value = max_flow.load(network, args)?;
+            let value = max_flow.load(network, args, Some(&self.meta.name))?;
             network.set_node_max_flow(self.meta.name.as_str(), Self::net_sub_name(), value.into())?;
         }
 
         if let Some(min_flow) = &self.min_flow {
-            let value = min_flow.load(network, args)?;
+            let value = min_flow.load(network, args, Some(&self.meta.name))?;
             network.set_node_min_flow(self.meta.name.as_str(), Self::net_sub_name(), value.into())?;
         }
 
         // soft min flow constraints; This typically applies a negative cost upto a maximum
         // defined by the `soft_min_flow`
         if let Some(cost) = &self.soft_min_flow_cost {
-            let value = cost.load(network, args)?;
+            let value = cost.load(network, args, Some(&self.meta.name))?;
             network.set_node_cost(
                 self.meta.name.as_str(),
                 Self::net_soft_min_flow_sub_name(),
@@ -171,7 +174,7 @@ impl WaterTreatmentWorks {
             )?;
         }
         if let Some(min_flow) = &self.soft_min_flow {
-            let value = min_flow.load(network, args)?;
+            let value = min_flow.load(network, args, Some(&self.meta.name))?;
             network.set_node_max_flow(
                 self.meta.name.as_str(),
                 Self::net_soft_min_flow_sub_name(),
@@ -180,7 +183,7 @@ impl WaterTreatmentWorks {
         }
 
         if let Some(loss_factor) = &self.loss_factor {
-            let factors = loss_factor.load(network, args)?;
+            let factors = loss_factor.load(network, args, Some(&self.meta.name))?;
             if factors.is_none() {
                 // Loaded a constant zero factor; ensure that the loss node has zero flow
                 network.set_node_max_flow(self.meta.name.as_str(), Self::loss_sub_name(), Some(0.0.into()))?;

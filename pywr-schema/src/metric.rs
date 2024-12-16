@@ -7,12 +7,18 @@ use crate::model::LoadArgs;
 use crate::nodes::NodeAttribute;
 #[cfg(feature = "core")]
 use crate::nodes::NodeType;
+use crate::parameters::ParameterOrTimeseriesRef;
 #[cfg(feature = "core")]
 use crate::parameters::ParameterType;
-use crate::parameters::{Parameter, ParameterOrTimeseries, TryFromV1Parameter, TryIntoV2Parameter};
+#[cfg(feature = "core")]
+use crate::timeseries::TimeseriesColumns;
+use crate::timeseries::TimeseriesReference;
+use crate::v1::{ConversionData, TryFromV1, TryIntoV2};
 use crate::ConversionError;
 #[cfg(feature = "core")]
-use pywr_core::{metric::MetricF64, models::MultiNetworkTransferIndex, recorders::OutputMetric};
+use pywr_core::{
+    metric::MetricF64, models::MultiNetworkTransferIndex, parameters::ParameterName, recorders::OutputMetric,
+};
 use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::parameters::ParameterValue as ParameterValueV1;
 use schemars::JsonSchema;
@@ -32,9 +38,7 @@ pub enum Metric {
     Edge(EdgeReference),
     Timeseries(TimeseriesReference),
     Parameter(ParameterReference),
-    InlineParameter {
-        definition: Box<Parameter>,
-    },
+    LocalParameter(ParameterReference),
     InterNetworkTransfer {
         name: String,
     },
@@ -54,10 +58,26 @@ impl From<f64> for Metric {
 
 #[cfg(feature = "core")]
 impl Metric {
-    pub fn load(&self, network: &mut pywr_core::network::Network, args: &LoadArgs) -> Result<MetricF64, SchemaError> {
+    pub fn load(
+        &self,
+        network: &mut pywr_core::network::Network,
+        args: &LoadArgs,
+        parent: Option<&str>,
+    ) -> Result<MetricF64, SchemaError> {
         match self {
             Self::Node(node_ref) => node_ref.load(network, args),
-            Self::Parameter(parameter_ref) => parameter_ref.load(network),
+            // Global parameter with no parent
+            Self::Parameter(parameter_ref) => parameter_ref.load(network, None),
+            // Local parameter loaded from parent's namespace
+            Self::LocalParameter(parameter_ref) => {
+                if parent.is_none() {
+                    return Err(SchemaError::LocalParameterReferenceRequiresParent(
+                        parameter_ref.name.clone(),
+                    ));
+                }
+
+                parameter_ref.load(network, parent)
+            }
             Self::Constant { value } => Ok((*value).into()),
             Self::Table(table_ref) => {
                 let value = args
@@ -83,34 +103,6 @@ impl Metric {
                 };
                 Ok(param_idx.into())
             }
-            Self::InlineParameter { definition } => {
-                // This inline parameter could already have been loaded on a previous attempt
-                // Let's see if exists first.
-                // TODO this will create strange issues if there are duplicate names in the
-                // parameter definitions. I.e. we will only ever load the first one and then
-                // assume it is the correct one for future references to that name. This could be
-                // improved by checking the parameter returned by name matches the definition here.
-
-                match network.get_parameter_index_by_name(&definition.name().into()) {
-                    Ok(p) => {
-                        // Found a parameter with the name; assume it is the right one!
-                        Ok(p.into())
-                    }
-                    Err(_) => {
-                        // An error retrieving a parameter with this name; assume it needs creating.
-                        match definition.add_to_model(network, args)? {
-                            pywr_core::parameters::ParameterType::Parameter(idx) => Ok(idx.into()),
-                            pywr_core::parameters::ParameterType::Index(idx) => Ok(idx.into()),
-                            pywr_core::parameters::ParameterType::Multi(_) => Err(SchemaError::UnexpectedParameterType(format!(
-                                "Found an inline definition of a multi valued parameter of type '{}' with name '{}' where a float parameter was expected. Multi valued parameters cannot be defined inline.",
-                                definition.parameter_type(),
-                                definition.name(),
-                            ))),
-                        }
-                    }
-                }
-            }
-
             Self::InterNetworkTransfer { name } => {
                 // Find the matching inter model transfer
                 match args.inter_network_transfers.iter().position(|t| &t.name == name) {
@@ -126,10 +118,10 @@ impl Metric {
         match self {
             Self::Node(node_ref) => Ok(node_ref.name.to_string()),
             Self::Parameter(parameter_ref) => Ok(parameter_ref.name.clone()),
+            Self::LocalParameter(parameter_ref) => Ok(parameter_ref.name.clone()),
             Self::Constant { .. } => Err(SchemaError::LiteralConstantOutputNotSupported),
             Self::Table(table_ref) => Ok(table_ref.table.clone()),
             Self::Timeseries(ts_ref) => Ok(ts_ref.name.clone()),
-            Self::InlineParameter { definition } => Ok(definition.name().to_string()),
             Self::InterNetworkTransfer { name } => Ok(name.clone()),
             Self::Edge(edge_ref) => Ok(edge_ref.edge.to_string()),
         }
@@ -139,10 +131,10 @@ impl Metric {
         let attribute = match self {
             Self::Node(node_ref) => node_ref.attribute(args)?.to_string(),
             Self::Parameter(_) => "value".to_string(),
+            Self::LocalParameter(_) => "value".to_string(),
             Self::Constant { .. } => "value".to_string(),
             Self::Table(_) => "value".to_string(),
             Self::Timeseries(_) => "value".to_string(),
-            Self::InlineParameter { .. } => "value".to_string(),
             Self::InterNetworkTransfer { .. } => "value".to_string(),
             Self::Edge { .. } => "Flow".to_string(),
         };
@@ -153,15 +145,14 @@ impl Metric {
     /// Return the subtype of the metric. This is the type of the metric that is being
     /// referenced. For example, if the metric is a node then the subtype is the type of the
     /// node.
-
     fn sub_type(&self, args: &LoadArgs) -> Result<Option<String>, SchemaError> {
         let sub_type = match self {
             Self::Node(node_ref) => Some(node_ref.node_type(args)?.to_string()),
             Self::Parameter(parameter_ref) => Some(parameter_ref.parameter_type(args)?.to_string()),
+            Self::LocalParameter(parameter_ref) => Some(parameter_ref.parameter_type(args)?.to_string()),
             Self::Constant { .. } => None,
             Self::Table(_) => None,
             Self::Timeseries(_) => None,
-            Self::InlineParameter { definition } => Some(definition.parameter_type().to_string()),
             Self::InterNetworkTransfer { .. } => None,
             Self::Edge { .. } => None,
         };
@@ -173,8 +164,9 @@ impl Metric {
         &self,
         network: &mut pywr_core::network::Network,
         args: &LoadArgs,
+        parent: Option<&str>,
     ) -> Result<OutputMetric, SchemaError> {
-        let metric = self.load(network, args)?;
+        let metric = self.load(network, args, parent)?;
 
         let ty = self.to_string();
         let sub_type = self.sub_type(args)?;
@@ -189,13 +181,13 @@ impl Metric {
     }
 }
 
-impl TryFromV1Parameter<ParameterValueV1> for Metric {
+impl TryFromV1<ParameterValueV1> for Metric {
     type Error = ConversionError;
 
-    fn try_from_v1_parameter(
+    fn try_from_v1(
         v1: ParameterValueV1,
         parent_node: Option<&str>,
-        unnamed_count: &mut usize,
+        conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
         let p = match v1 {
             ParameterValueV1::Constant(value) => Self::Constant { value },
@@ -205,63 +197,25 @@ impl TryFromV1Parameter<ParameterValueV1> for Metric {
             }),
             ParameterValueV1::Table(tbl) => Self::Table(tbl.try_into()?),
             ParameterValueV1::Inline(param) => {
-                let definition: ParameterOrTimeseries = (*param).try_into_v2_parameter(parent_node, unnamed_count)?;
+                // Inline parameters are converted to either a parameter or a timeseries
+                // The actual component is extracted into the conversion data leaving a reference
+                // to the component in the metric.
+                let definition: ParameterOrTimeseriesRef = (*param).try_into_v2(parent_node, conversion_data)?;
                 match definition {
-                    ParameterOrTimeseries::Parameter(p) => Self::InlineParameter {
-                        definition: Box::new(p),
-                    },
-                    ParameterOrTimeseries::Timeseries(t) => {
-                        let name = match t.name {
-                            Some(n) => n,
-                            None => {
-                                let n = match parent_node {
-                                    Some(node_name) => format!("{}-p{}.timeseries", node_name, *unnamed_count),
-                                    None => format!("unnamed-timeseries-{}", *unnamed_count),
-                                };
-                                *unnamed_count += 1;
-                                n
-                            }
+                    ParameterOrTimeseriesRef::Parameter(p) => {
+                        let reference = ParameterReference {
+                            name: p.name().to_string(),
+                            key: None,
                         };
+                        conversion_data.parameters.push(*p);
 
-                        let cols = match (&t.column, &t.scenario) {
-                            (Some(col), None) => Some(TimeseriesColumns::Column(col.clone())),
-                            (None, Some(scenario)) => Some(TimeseriesColumns::Scenario(scenario.clone())),
-                            (Some(_), Some(_)) => {
-                                return Err(ConversionError::AmbiguousColumnAndScenario(name.clone()))
-                            }
-                            (None, None) => None,
-                        };
-
-                        Self::Timeseries(TimeseriesReference::new(name, cols))
+                        Self::Parameter(reference)
                     }
+                    ParameterOrTimeseriesRef::Timeseries(t) => Self::Timeseries(t.ts_ref),
                 }
             }
         };
         Ok(p)
-    }
-}
-
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, strum_macros::Display)]
-#[serde(tag = "type", content = "name")]
-pub enum TimeseriesColumns {
-    Scenario(String),
-    Column(String),
-}
-
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct TimeseriesReference {
-    name: String,
-    columns: Option<TimeseriesColumns>,
-}
-
-impl TimeseriesReference {
-    pub fn new(name: String, columns: Option<TimeseriesColumns>) -> Self {
-        Self { name, columns }
-    }
-
-    pub fn name(&self) -> &str {
-        self.name.as_str()
     }
 }
 
@@ -380,13 +334,23 @@ pub struct ParameterReference {
 }
 
 impl ParameterReference {
-    pub fn new(name: String, key: Option<String>) -> Self {
-        Self { name, key }
+    pub fn new(name: &str, key: Option<String>) -> Self {
+        Self {
+            name: name.to_string(),
+            key,
+        }
     }
 
+    /// Load a parameter reference into a [`MetricF64`] by attempting to retrieve the parameter
+    /// from the `network`. If `parent` is the optional parameter name space from which to load
+    /// the parameter.
     #[cfg(feature = "core")]
-    pub fn load(&self, network: &mut pywr_core::network::Network) -> Result<MetricF64, SchemaError> {
-        let name = self.name.as_str().into();
+    pub fn load(
+        &self,
+        network: &mut pywr_core::network::Network,
+        parent: Option<&str>,
+    ) -> Result<MetricF64, SchemaError> {
+        let name = ParameterName::new(&self.name, parent);
 
         match &self.key {
             Some(key) => {

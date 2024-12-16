@@ -32,6 +32,8 @@
     is currently not ready for use beyond development and experimentation. Comments and discussions are welcome.
     <br />
     <br />
+    <a href="https://pywr.github.io/pywr-next/">User Guide</a>
+    ·
     <a href="https://github.com/pywr/pywr-next/issues">Report Bug</a>
     ·
     <a href="https://github.com/pywr/pywr-next/issues">Request Feature</a>
@@ -304,7 +306,7 @@ Project Link: [https://github.com/pywr/pywr-next](https://github.com/pywr/pywr-n
 
 [license-shield]: https://img.shields.io/github/license/pywr/pywr-next.svg?style=for-the-badge
 
-[license-url]: https://github.com/pywr/pywr-next/blob/master/LICENSE.txt
+[license-url]: https://github.com/pywr/pywr-next/blob/main/LICENSE
 
 [linkedin-shield]: https://img.shields.io/badge/-LinkedIn-black.svg?style=for-the-badge&logo=linkedin&colorB=555
 

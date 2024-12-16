@@ -51,27 +51,8 @@
               "value": -5.0
             },
             "control_curve": {
-              "type": "InlineParameter",
-              "definition": {
-                "type": "MonthlyProfile",
-                "meta": {
-                  "name": "storage1-control-curve"
-                },
-                "values": [
-                  0.75,
-                  0.75,
-                  0.75,
-                  0.5,
-                  0.5,
-                  0.5,
-                  0.3,
-                  0.3,
-                  0.3,
-                  0.5,
-                  0.5,
-                  0.5
-                ]
-              }
+              "type": "Parameter",
+              "name": "storage1-control-curve"
             }
           }
         ]
@@ -108,6 +89,26 @@
         },
         "type": "Constant",
         "value": 0.5
+      },
+      {
+        "type": "MonthlyProfile",
+        "meta": {
+          "name": "storage1-control-curve"
+        },
+        "values": [
+          0.75,
+          0.75,
+          0.75,
+          0.5,
+          0.5,
+          0.5,
+          0.3,
+          0.3,
+          0.3,
+          0.5,
+          0.5,
+          0.5
+        ]
       },
       {
         "meta": {

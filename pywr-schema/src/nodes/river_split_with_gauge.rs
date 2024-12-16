@@ -5,7 +5,8 @@ use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::nodes::{NodeAttribute, NodeMeta};
-use crate::parameters::TryIntoV2Parameter;
+use crate::parameters::Parameter;
+use crate::v1::{ConversionData, TryFromV1, TryIntoV2};
 #[cfg(feature = "core")]
 use pywr_core::{aggregated_node::Relationship, metric::MetricF64, node::NodeIndex};
 use pywr_schema_macros::PywrVisitAll;
@@ -44,6 +45,8 @@ pub struct RiverSplit {
 #[serde(deny_unknown_fields)]
 pub struct RiverSplitWithGaugeNode {
     pub meta: NodeMeta,
+    /// Optional local parameters.
+    pub parameters: Option<Vec<Parameter>>,
     pub mrf: Option<Metric>,
     pub mrf_cost: Option<Metric>,
     pub splits: Vec<RiverSplit>,
@@ -161,18 +164,18 @@ impl RiverSplitWithGaugeNode {
     ) -> Result<(), SchemaError> {
         // MRF applies as a maximum on the MRF node.
         if let Some(cost) = &self.mrf_cost {
-            let value = cost.load(network, args)?;
+            let value = cost.load(network, args, Some(&self.meta.name))?;
             network.set_node_cost(self.meta.name.as_str(), Self::mrf_sub_name(), value.into())?;
         }
 
         if let Some(mrf) = &self.mrf {
-            let value = mrf.load(network, args)?;
+            let value = mrf.load(network, args, Some(&self.meta.name))?;
             network.set_node_max_flow(self.meta.name.as_str(), Self::mrf_sub_name(), value.into())?;
         }
 
         for (i, split) in self.splits.iter().enumerate() {
             // Set the factors for each split
-            let r = Relationship::new_proportion_factors(&[split.factor.load(network, args)?]);
+            let r = Relationship::new_proportion_factors(&[split.factor.load(network, args, Some(&self.meta.name))?]);
             network.set_aggregated_node_relationship(
                 self.meta.name.as_str(),
                 Self::split_agg_sub_name(i).as_deref(),
@@ -229,21 +232,24 @@ impl RiverSplitWithGaugeNode {
     }
 }
 
-impl TryFrom<RiverSplitWithGaugeNodeV1> for RiverSplitWithGaugeNode {
+impl TryFromV1<RiverSplitWithGaugeNodeV1> for RiverSplitWithGaugeNode {
     type Error = ConversionError;
 
-    fn try_from(v1: RiverSplitWithGaugeNodeV1) -> Result<Self, Self::Error> {
+    fn try_from_v1(
+        v1: RiverSplitWithGaugeNodeV1,
+        parent_node: Option<&str>,
+        conversion_data: &mut ConversionData,
+    ) -> Result<Self, Self::Error> {
         let meta: NodeMeta = v1.meta.into();
-        let mut unnamed_count = 0;
 
         let mrf = v1
             .mrf
-            .map(|v| v.try_into_v2_parameter(Some(&meta.name), &mut unnamed_count))
+            .map(|v| v.try_into_v2(parent_node.or(Some(&meta.name)), conversion_data))
             .transpose()?;
 
         let mrf_cost = v1
             .mrf_cost
-            .map(|v| v.try_into_v2_parameter(Some(&meta.name), &mut unnamed_count))
+            .map(|v| v.try_into_v2(parent_node.or(Some(&meta.name)), conversion_data))
             .transpose()?;
 
         let splits = v1
@@ -253,7 +259,7 @@ impl TryFrom<RiverSplitWithGaugeNodeV1> for RiverSplitWithGaugeNode {
             .zip(v1.slot_names.into_iter().skip(1))
             .map(|(f, slot_name)| {
                 Ok(RiverSplit {
-                    factor: f.try_into_v2_parameter(Some(&meta.name), &mut unnamed_count)?,
+                    factor: f.try_into_v2(parent_node.or(Some(&meta.name)), conversion_data)?,
                     slot_name,
                 })
             })
@@ -261,6 +267,7 @@ impl TryFrom<RiverSplitWithGaugeNodeV1> for RiverSplitWithGaugeNode {
 
         let n = Self {
             meta,
+            parameters: None,
             mrf,
             mrf_cost,
             splits,

@@ -3,7 +3,8 @@ use crate::error::ConversionError;
 use crate::error::SchemaError;
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
-use crate::parameters::{DynamicIndexValue, IntoV2Parameter, ParameterMeta, TryFromV1Parameter, TryIntoV2Parameter};
+use crate::parameters::{ConversionData, DynamicIndexValue, ParameterMeta};
+use crate::v1::{IntoV2, TryFromV1, TryIntoV2};
 #[cfg(feature = "core")]
 use pywr_core::parameters::ParameterIndex;
 use pywr_schema_macros::PywrVisitAll;
@@ -38,22 +39,18 @@ impl AsymmetricSwitchIndexParameter {
     }
 }
 
-impl TryFromV1Parameter<AsymmetricSwitchIndexParameterV1> for AsymmetricSwitchIndexParameter {
+impl TryFromV1<AsymmetricSwitchIndexParameterV1> for AsymmetricSwitchIndexParameter {
     type Error = ConversionError;
 
-    fn try_from_v1_parameter(
+    fn try_from_v1(
         v1: AsymmetricSwitchIndexParameterV1,
         parent_node: Option<&str>,
-        unnamed_count: &mut usize,
+        conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.into_v2_parameter(parent_node, unnamed_count);
+        let meta: ParameterMeta = v1.meta.into_v2(parent_node, conversion_data);
 
-        let on_index_parameter = v1
-            .on_index_parameter
-            .try_into_v2_parameter(Some(&meta.name), unnamed_count)?;
-        let off_index_parameter = v1
-            .off_index_parameter
-            .try_into_v2_parameter(Some(&meta.name), unnamed_count)?;
+        let on_index_parameter = v1.on_index_parameter.try_into_v2(parent_node, conversion_data)?;
+        let off_index_parameter = v1.off_index_parameter.try_into_v2(parent_node, conversion_data)?;
 
         let p = Self {
             meta,

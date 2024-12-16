@@ -31,12 +31,11 @@ chrono = { workspace = true }
 polars = { workspace = true }
 pyo3 = { workspace = true, features = ["chrono", "macros"] }
 rayon = "1.6"
-rhai = { version = "1.19", features = ["sync"] }
+rhai = { version = "1.20", features = ["sync"] }
 ocl = { version = "0.19", optional = true }
 rand = { workspace = true }
 rand_distr = "0.4"
 rand_chacha = { workspace = true }
-dyn-clone = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 
 [dev-dependencies]

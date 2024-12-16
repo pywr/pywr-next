@@ -16,8 +16,7 @@ use pywr_core::solvers::{ClpSolver, ClpSolverSettings, ClpSolverSettingsBuilder}
 #[cfg(feature = "highs")]
 use pywr_core::solvers::{HighsSolver, HighsSolverSettings, HighsSolverSettingsBuilder};
 use pywr_schema::model::DateType;
-use pywr_schema::parameters::TryIntoV2Parameter;
-use pywr_schema::ConversionError;
+use pywr_schema::{ConversionData, ConversionError, TryIntoV2};
 use std::fmt;
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -98,6 +97,7 @@ impl Schema {
     }
 
     /// Build the schema in to a Pywr model.
+    #[pyo3(signature = (data_path=None, output_path=None))]
     fn build(&mut self, data_path: Option<PathBuf>, output_path: Option<PathBuf>) -> PyResult<Model> {
         let model = self.schema.build_model(data_path.as_deref(), output_path.as_deref())?;
         Ok(Model { model })
@@ -140,7 +140,7 @@ fn convert_metric_from_v1_json_string(_py: Python, data: &str) -> PyResult<Metri
         serde_json::from_str(data).map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
 
     let metric = v1
-        .try_into_v2_parameter(None, &mut 0)
+        .try_into_v2(None, &mut ConversionData::default())
         .map_err(|e: ConversionError| PyRuntimeError::new_err(e.to_string()))?;
 
     let py_metric = Metric { metric };
@@ -154,6 +154,7 @@ pub struct Model {
 
 #[pymethods]
 impl Model {
+    #[pyo3(signature = (solver_name, solver_kwargs=None))]
     fn run(&self, solver_name: &str, solver_kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<()> {
         match solver_name {
             "clp" => {

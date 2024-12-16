@@ -66,7 +66,7 @@ model_tests! {
     test_thirty_day_licence: ("30-day-licence.json", vec![], vec!["ipm-simd", "ipm-ocl"]),
     test_wtw1: ("wtw1.json", vec!["wtw1-expected.csv"], vec!["ipm-simd", "ipm-ocl"]),
     test_wtw2: ("wtw2.json", vec!["wtw2-expected.csv"], vec!["ipm-simd", "ipm-ocl"]),
-
+    test_local_parameter1: ("local-parameter1.json", vec!["local-parameter1-expected.csv"], vec![]),
 }
 
 /// Test Pandas backend for reading timeseries data.
@@ -127,6 +127,7 @@ macro_rules! convert_tests {
 
 convert_tests! {
     test_convert_timeseries: ("v1/timeseries.json", "v1/timeseries-converted.json"),
+    test_convert_inline_parameter: ("v1/inline-parameter.json", "v1/inline-parameter-converted.json"),
 }
 
 fn convert_model(v1_path: &Path, v2_path: &Path) {
@@ -141,6 +142,5 @@ fn convert_model(v1_path: &Path, v2_path: &Path) {
 
     let v2_expected_str = fs::read_to_string(v2_path).unwrap();
     let v2_expected: serde_json::Value = serde_json::from_str(&v2_expected_str).unwrap();
-
     assert_eq!(v2_converted, v2_expected);
 }

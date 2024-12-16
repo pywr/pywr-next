@@ -13,4 +13,4 @@ repository = "https://github.com/pywr/pywr-next/"
 [dependencies]
 
 [build-dependencies]
-cc = { version = "1.0", features = ["parallel"] }
+cc = { version = "1.2", features = ["parallel"] }

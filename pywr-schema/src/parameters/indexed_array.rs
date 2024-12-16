@@ -4,7 +4,8 @@ use crate::error::SchemaError;
 use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
-use crate::parameters::{DynamicIndexValue, IntoV2Parameter, ParameterMeta, TryFromV1Parameter, TryIntoV2Parameter};
+use crate::parameters::{ConversionData, DynamicIndexValue, ParameterMeta};
+use crate::v1::{IntoV2, TryFromV1, TryIntoV2};
 #[cfg(feature = "core")]
 use pywr_core::parameters::ParameterIndex;
 use pywr_schema_macros::PywrVisitAll;
@@ -32,7 +33,7 @@ impl IndexedArrayParameter {
         let metrics = self
             .metrics
             .iter()
-            .map(|v| v.load(network, args))
+            .map(|v| v.load(network, args, None))
             .collect::<Result<Vec<_>, _>>()?;
 
         let p = pywr_core::parameters::IndexedArrayParameter::new(
@@ -45,25 +46,23 @@ impl IndexedArrayParameter {
     }
 }
 
-impl TryFromV1Parameter<IndexedArrayParameterV1> for IndexedArrayParameter {
+impl TryFromV1<IndexedArrayParameterV1> for IndexedArrayParameter {
     type Error = ConversionError;
 
-    fn try_from_v1_parameter(
+    fn try_from_v1(
         v1: IndexedArrayParameterV1,
         parent_node: Option<&str>,
-        unnamed_count: &mut usize,
+        conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.into_v2_parameter(parent_node, unnamed_count);
+        let meta: ParameterMeta = v1.meta.into_v2(parent_node, conversion_data);
 
         let metrics = v1
             .parameters
             .into_iter()
-            .map(|p| p.try_into_v2_parameter(Some(&meta.name), unnamed_count))
+            .map(|p| p.try_into_v2(parent_node, conversion_data))
             .collect::<Result<Vec<_>, _>>()?;
 
-        let index_parameter = v1
-            .index_parameter
-            .try_into_v2_parameter(Some(&meta.name), unnamed_count)?;
+        let index_parameter = v1.index_parameter.try_into_v2(parent_node, conversion_data)?;
 
         let p = Self {
             meta,

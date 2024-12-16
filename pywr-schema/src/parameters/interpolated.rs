@@ -3,7 +3,8 @@ use crate::error::SchemaError;
 use crate::metric::{Metric, NodeReference};
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
-use crate::parameters::{IntoV2Parameter, ParameterMeta, TryFromV1Parameter, TryIntoV2Parameter};
+use crate::parameters::{ConversionData, ParameterMeta};
+use crate::v1::{IntoV2, TryFromV1, TryIntoV2};
 use crate::ConversionError;
 #[cfg(feature = "core")]
 use pywr_core::parameters::ParameterIndex;
@@ -36,7 +37,7 @@ impl InterpolatedParameter {
         network: &mut pywr_core::network::Network,
         args: &LoadArgs,
     ) -> Result<ParameterIndex<f64>, SchemaError> {
-        let x = self.x.load(network, args)?;
+        let x = self.x.load(network, args, None)?;
 
         // Sense check the points
         if self.xp.len() != self.fp.len() {
@@ -49,12 +50,12 @@ impl InterpolatedParameter {
         let xp = self
             .xp
             .iter()
-            .map(|p| p.load(network, args))
+            .map(|p| p.load(network, args, None))
             .collect::<Result<Vec<_>, _>>()?;
         let fp = self
             .fp
             .iter()
-            .map(|p| p.load(network, args))
+            .map(|p| p.load(network, args, None))
             .collect::<Result<Vec<_>, _>>()?;
 
         let points = xp.into_iter().zip(fp).collect::<Vec<_>>();
@@ -69,15 +70,15 @@ impl InterpolatedParameter {
     }
 }
 
-impl TryFromV1Parameter<InterpolatedFlowParameterV1> for InterpolatedParameter {
+impl TryFromV1<InterpolatedFlowParameterV1> for InterpolatedParameter {
     type Error = ConversionError;
 
-    fn try_from_v1_parameter(
+    fn try_from_v1(
         v1: InterpolatedFlowParameterV1,
         parent_node: Option<&str>,
-        unnamed_count: &mut usize,
+        conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.into_v2_parameter(parent_node, unnamed_count);
+        let meta: ParameterMeta = v1.meta.into_v2(parent_node, conversion_data);
 
         // Convert the node reference to a metric
         let node_ref = NodeReference {
@@ -90,13 +91,13 @@ impl TryFromV1Parameter<InterpolatedFlowParameterV1> for InterpolatedParameter {
         let xp = v1
             .flows
             .into_iter()
-            .map(|p| p.try_into_v2_parameter(Some(&meta.name), unnamed_count))
+            .map(|p| p.try_into_v2(parent_node, conversion_data))
             .collect::<Result<Vec<_>, _>>()?;
 
         let fp = v1
             .values
             .into_iter()
-            .map(|p| p.try_into_v2_parameter(Some(&meta.name), unnamed_count))
+            .map(|p| p.try_into_v2(parent_node, conversion_data))
             .collect::<Result<Vec<_>, _>>()?;
 
         // Default values
@@ -132,15 +133,15 @@ impl TryFromV1Parameter<InterpolatedFlowParameterV1> for InterpolatedParameter {
     }
 }
 
-impl TryFromV1Parameter<InterpolatedVolumeParameterV1> for InterpolatedParameter {
+impl TryFromV1<InterpolatedVolumeParameterV1> for InterpolatedParameter {
     type Error = ConversionError;
 
-    fn try_from_v1_parameter(
+    fn try_from_v1(
         v1: InterpolatedVolumeParameterV1,
         parent_node: Option<&str>,
-        unnamed_count: &mut usize,
+        conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.into_v2_parameter(parent_node, unnamed_count);
+        let meta: ParameterMeta = v1.meta.into_v2(parent_node, conversion_data);
 
         // Convert the node reference to a metric
         let node_ref = NodeReference {
@@ -153,13 +154,13 @@ impl TryFromV1Parameter<InterpolatedVolumeParameterV1> for InterpolatedParameter
         let xp = v1
             .volumes
             .into_iter()
-            .map(|p| p.try_into_v2_parameter(Some(&meta.name), unnamed_count))
+            .map(|p| p.try_into_v2(parent_node, conversion_data))
             .collect::<Result<Vec<_>, _>>()?;
 
         let fp = v1
             .values
             .into_iter()
-            .map(|p| p.try_into_v2_parameter(Some(&meta.name), unnamed_count))
+            .map(|p| p.try_into_v2(parent_node, conversion_data))
             .collect::<Result<Vec<_>, _>>()?;
 
         // Default values

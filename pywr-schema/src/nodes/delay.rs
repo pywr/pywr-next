@@ -4,7 +4,7 @@ use crate::error::SchemaError;
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::nodes::{NodeAttribute, NodeMeta};
-use crate::parameters::ConstantValue;
+use crate::parameters::{ConstantValue, Parameter};
 #[cfg(feature = "core")]
 use pywr_core::{metric::MetricF64, parameters::ParameterName};
 use pywr_schema_macros::PywrVisitAll;
@@ -34,6 +34,8 @@ use schemars::JsonSchema;
 #[serde(deny_unknown_fields)]
 pub struct DelayNode {
     pub meta: NodeMeta,
+    /// Optional local parameters.
+    pub parameters: Option<Vec<Parameter>>,
     pub delay: usize,
     pub initial_value: ConstantValue<f64>,
 }
@@ -155,6 +157,7 @@ impl TryFrom<DelayNodeV1> for DelayNode {
 
         let n = Self {
             meta,
+            parameters: None,
             delay,
             initial_value,
         };

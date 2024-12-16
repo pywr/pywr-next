@@ -47,7 +47,7 @@ impl OffsetParameter {
         network: &mut pywr_core::network::Network,
         args: &LoadArgs,
     ) -> Result<ParameterIndex<f64>, SchemaError> {
-        let idx = self.metric.load(network, args)?;
+        let idx = self.metric.load(network, args, None)?;
 
         let p = pywr_core::parameters::OffsetParameter::new(
             self.meta.name.as_str().into(),

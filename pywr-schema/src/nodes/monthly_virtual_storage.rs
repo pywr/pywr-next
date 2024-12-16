@@ -6,7 +6,8 @@ use crate::metric::{Metric, SimpleNodeReference};
 use crate::model::LoadArgs;
 use crate::nodes::core::StorageInitialVolume;
 use crate::nodes::{NodeAttribute, NodeMeta};
-use crate::parameters::TryIntoV2Parameter;
+use crate::parameters::Parameter;
+use crate::v1::{ConversionData, TryFromV1, TryIntoV2};
 #[cfg(feature = "core")]
 use pywr_core::{
     derived_metric::DerivedMetric,
@@ -33,6 +34,8 @@ impl Default for NumberOfMonthsReset {
 #[serde(deny_unknown_fields)]
 pub struct MonthlyVirtualStorageNode {
     pub meta: NodeMeta,
+    /// Optional local parameters.
+    pub parameters: Option<Vec<Parameter>>,
     pub nodes: Vec<SimpleNodeReference>,
     pub factors: Option<Vec<f64>>,
     pub max_volume: Option<Metric>,
@@ -82,17 +85,17 @@ impl MonthlyVirtualStorageNode {
     }
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network, args: &LoadArgs) -> Result<(), SchemaError> {
         let cost = match &self.cost {
-            Some(v) => v.load(network, args)?.into(),
+            Some(v) => v.load(network, args, Some(&self.meta.name))?.into(),
             None => None,
         };
 
         let min_volume = match &self.min_volume {
-            Some(v) => Some(v.load(network, args)?.try_into()?),
+            Some(v) => Some(v.load(network, args, Some(&self.meta.name))?.try_into()?),
             None => None,
         };
 
         let max_volume = match &self.max_volume {
-            Some(v) => Some(v.load(network, args)?.try_into()?),
+            Some(v) => Some(v.load(network, args, Some(&self.meta.name))?.try_into()?),
             None => None,
         };
 
@@ -147,25 +150,28 @@ impl MonthlyVirtualStorageNode {
     }
 }
 
-impl TryFrom<MonthlyVirtualStorageNodeV1> for MonthlyVirtualStorageNode {
+impl TryFromV1<MonthlyVirtualStorageNodeV1> for MonthlyVirtualStorageNode {
     type Error = ConversionError;
 
-    fn try_from(v1: MonthlyVirtualStorageNodeV1) -> Result<Self, Self::Error> {
+    fn try_from_v1(
+        v1: MonthlyVirtualStorageNodeV1,
+        parent_node: Option<&str>,
+        conversion_data: &mut ConversionData,
+    ) -> Result<Self, Self::Error> {
         let meta: NodeMeta = v1.meta.into();
-        let mut unnamed_count = 0;
 
         let cost = v1
             .cost
-            .map(|v| v.try_into_v2_parameter(Some(&meta.name), &mut unnamed_count))
+            .map(|v| v.try_into_v2(parent_node.or(Some(&meta.name)), conversion_data))
             .transpose()?;
         let max_volume = v1
             .max_volume
-            .map(|v| v.try_into_v2_parameter(Some(&meta.name), &mut unnamed_count))
+            .map(|v| v.try_into_v2(parent_node.or(Some(&meta.name)), conversion_data))
             .transpose()?;
 
         let min_volume = v1
             .min_volume
-            .map(|v| v.try_into_v2_parameter(Some(&meta.name), &mut unnamed_count))
+            .map(|v| v.try_into_v2(parent_node.or(Some(&meta.name)), conversion_data))
             .transpose()?;
 
         let initial_volume = if let Some(v) = v1.initial_volume {
@@ -183,6 +189,7 @@ impl TryFrom<MonthlyVirtualStorageNodeV1> for MonthlyVirtualStorageNode {
 
         let n = Self {
             meta,
+            parameters: None,
             nodes,
             factors: v1.factors,
             max_volume,

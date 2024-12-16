@@ -5,7 +5,8 @@ use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::nodes::{NodeAttribute, NodeMeta};
-use crate::parameters::TryIntoV2Parameter;
+use crate::parameters::Parameter;
+use crate::v1::{ConversionData, TryFromV1, TryIntoV2};
 #[cfg(feature = "core")]
 use pywr_core::{aggregated_node::Relationship, metric::MetricF64};
 use pywr_schema_macros::PywrVisitAll;
@@ -32,10 +33,11 @@ impl LossFactor {
         &self,
         network: &mut pywr_core::network::Network,
         args: &LoadArgs,
+        parent: Option<&str>,
     ) -> Result<Option<Relationship>, SchemaError> {
         match self {
             LossFactor::Gross { factor } => {
-                let lf = factor.load(network, args)?;
+                let lf = factor.load(network, args, parent)?;
                 // Handle the case where we are given a zero loss factor
                 // The aggregated node does not support zero loss factors so filter them here.
                 if lf.is_constant_zero() {
@@ -45,7 +47,7 @@ impl LossFactor {
                 Ok(Some(Relationship::new_proportion_factors(&[lf])))
             }
             LossFactor::Net { factor } => {
-                let lf = factor.load(network, args)?;
+                let lf = factor.load(network, args, parent)?;
                 // Handle the case where we are given a zero loss factor
                 // The aggregated node does not support zero loss factors so filter them here.
                 if lf.is_constant_zero() {
@@ -83,6 +85,8 @@ impl LossFactor {
 #[serde(deny_unknown_fields)]
 pub struct LossLinkNode {
     pub meta: NodeMeta,
+    /// Optional local parameters.
+    pub parameters: Option<Vec<Parameter>>,
     pub loss_factor: Option<LossFactor>,
     pub min_net_flow: Option<Metric>,
     pub max_net_flow: Option<Metric>,
@@ -159,22 +163,22 @@ impl LossLinkNode {
         args: &LoadArgs,
     ) -> Result<(), SchemaError> {
         if let Some(cost) = &self.net_cost {
-            let value = cost.load(network, args)?;
+            let value = cost.load(network, args, Some(&self.meta.name))?;
             network.set_node_cost(self.meta.name.as_str(), Self::net_sub_name(), value.into())?;
         }
 
         if let Some(max_flow) = &self.max_net_flow {
-            let value = max_flow.load(network, args)?;
+            let value = max_flow.load(network, args, Some(&self.meta.name))?;
             network.set_node_max_flow(self.meta.name.as_str(), Self::net_sub_name(), value.into())?;
         }
 
         if let Some(min_flow) = &self.min_net_flow {
-            let value = min_flow.load(network, args)?;
+            let value = min_flow.load(network, args, Some(&self.meta.name))?;
             network.set_node_min_flow(self.meta.name.as_str(), Self::net_sub_name(), value.into())?;
         }
 
         if let Some(loss_factor) = &self.loss_factor {
-            let factors = loss_factor.load(network, args)?;
+            let factors = loss_factor.load(network, args, Some(&self.meta.name))?;
 
             if factors.is_none() {
                 // Loaded a constant zero factor; ensure that the loss node has zero flow
@@ -237,38 +241,42 @@ impl LossLinkNode {
     }
 }
 
-impl TryFrom<LossLinkNodeV1> for LossLinkNode {
+impl TryFromV1<LossLinkNodeV1> for LossLinkNode {
     type Error = ConversionError;
 
-    fn try_from(v1: LossLinkNodeV1) -> Result<Self, Self::Error> {
+    fn try_from_v1(
+        v1: LossLinkNodeV1,
+        parent_node: Option<&str>,
+        conversion_data: &mut ConversionData,
+    ) -> Result<Self, Self::Error> {
         let meta: NodeMeta = v1.meta.into();
-        let mut unnamed_count = 0;
 
         let loss_factor = v1
             .loss_factor
             .map(|v| {
-                let factor = v.try_into_v2_parameter(Some(&meta.name), &mut unnamed_count)?;
+                let factor = v.try_into_v2(parent_node.or(Some(&meta.name)), conversion_data)?;
                 Ok::<_, Self::Error>(LossFactor::Net { factor })
             })
             .transpose()?;
 
         let min_net_flow = v1
             .min_flow
-            .map(|v| v.try_into_v2_parameter(Some(&meta.name), &mut unnamed_count))
+            .map(|v| v.try_into_v2(parent_node.or(Some(&meta.name)), conversion_data))
             .transpose()?;
 
         let max_net_flow = v1
             .max_flow
-            .map(|v| v.try_into_v2_parameter(Some(&meta.name), &mut unnamed_count))
+            .map(|v| v.try_into_v2(parent_node.or(Some(&meta.name)), conversion_data))
             .transpose()?;
 
         let net_cost = v1
             .cost
-            .map(|v| v.try_into_v2_parameter(Some(&meta.name), &mut unnamed_count))
+            .map(|v| v.try_into_v2(parent_node.or(Some(&meta.name)), conversion_data))
             .transpose()?;
 
         let n = Self {
             meta,
+            parameters: None,
             loss_factor,
             min_net_flow,
             max_net_flow,

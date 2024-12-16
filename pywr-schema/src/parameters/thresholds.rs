@@ -4,7 +4,8 @@ use crate::error::SchemaError;
 use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
-use crate::parameters::{IntoV2Parameter, ParameterMeta, TryFromV1Parameter, TryIntoV2Parameter};
+use crate::parameters::{ConversionData, ParameterMeta};
+use crate::v1::{IntoV2, TryFromV1, TryIntoV2};
 #[cfg(feature = "core")]
 use pywr_core::parameters::ParameterIndex;
 use pywr_schema_macros::PywrVisitAll;
@@ -70,8 +71,8 @@ impl ThresholdParameter {
         network: &mut pywr_core::network::Network,
         args: &LoadArgs,
     ) -> Result<ParameterIndex<usize>, SchemaError> {
-        let metric = self.value.load(network, args)?;
-        let threshold = self.threshold.load(network, args)?;
+        let metric = self.value.load(network, args, None)?;
+        let threshold = self.threshold.load(network, args, None)?;
 
         let p = pywr_core::parameters::ThresholdParameter::new(
             self.meta.name.as_str().into(),
@@ -84,18 +85,18 @@ impl ThresholdParameter {
     }
 }
 
-impl TryFromV1Parameter<ParameterThresholdParameterV1> for ThresholdParameter {
+impl TryFromV1<ParameterThresholdParameterV1> for ThresholdParameter {
     type Error = ConversionError;
 
-    fn try_from_v1_parameter(
+    fn try_from_v1(
         v1: ParameterThresholdParameterV1,
         parent_node: Option<&str>,
-        unnamed_count: &mut usize,
+        conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.into_v2_parameter(parent_node, unnamed_count);
+        let meta: ParameterMeta = v1.meta.into_v2(parent_node, conversion_data);
 
-        let value = v1.parameter.try_into_v2_parameter(Some(&meta.name), unnamed_count)?;
-        let threshold = v1.threshold.try_into_v2_parameter(Some(&meta.name), unnamed_count)?;
+        let value = v1.parameter.try_into_v2(parent_node, conversion_data)?;
+        let threshold = v1.threshold.try_into_v2(parent_node, conversion_data)?;
 
         // TODO warn or something about the lack of using the values here!!
 

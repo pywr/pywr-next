@@ -1,17 +1,17 @@
 use super::edge::Edge;
 use super::nodes::Node;
-use super::parameters::{convert_parameter_v1_to_v2, Parameter};
+use super::parameters::{Parameter, ParameterOrTimeseriesRef};
 use crate::data_tables::DataTable;
 #[cfg(feature = "core")]
 use crate::data_tables::LoadedTableCollection;
 use crate::error::{ConversionError, SchemaError};
-use crate::metric::{Metric, TimeseriesColumns, TimeseriesReference};
+use crate::metric::Metric;
 use crate::metric_sets::MetricSet;
-use crate::nodes::NodeAndTimeseries;
 use crate::outputs::Output;
 #[cfg(feature = "core")]
 use crate::timeseries::LoadedTimeseriesCollection;
-use crate::timeseries::{convert_from_v1_data, Timeseries};
+use crate::timeseries::Timeseries;
+use crate::v1::{ConversionData, TryIntoV2};
 use crate::visit::{VisitMetrics, VisitPaths};
 #[cfg(feature = "core")]
 use chrono::NaiveTime;
@@ -265,84 +265,77 @@ impl PywrNetwork {
     /// that the conversion has been successful.
     pub fn from_v1(v1: pywr_v1_schema::PywrNetwork) -> (Self, Vec<ConversionError>) {
         let mut errors = Vec::new();
+        // We will use this to store any timeseries or parameters that are extracted from the v1 nodes
+        let mut conversion_data = ConversionData::default();
+
+        let mut nodes = Vec::with_capacity(v1.nodes.as_ref().map(|n| n.len()).unwrap_or_default());
+        let mut parameters = Vec::new();
+        let mut timeseries = Vec::new();
 
         // Extract nodes and any timeseries data from the v1 nodes
-        let nodes_and_ts: Vec<NodeAndTimeseries> = match v1.nodes {
-            Some(nodes) => nodes
-                .into_iter()
-                .filter_map(|n| match n.try_into() {
-                    Ok(n) => Some(n),
+        if let Some(v1_nodes) = v1.nodes {
+            for v1_node in v1_nodes.into_iter() {
+                // Reset the unnamed count for each node because they are named by the parent node.
+                conversion_data.reset_count();
+                let result: Result<Node, _> = v1_node.try_into_v2(None, &mut conversion_data);
+                match result {
+                    Ok(node) => {
+                        nodes.push(node);
+                    }
                     Err(e) => {
                         errors.push(e);
-                        None
                     }
-                })
-                .collect::<Vec<_>>(),
-            None => Vec::new(),
-        };
-
-        let mut ts_data = nodes_and_ts
-            .iter()
-            .filter_map(|n| n.timeseries.clone())
-            .flatten()
-            .collect::<Vec<_>>();
-
-        let mut nodes = nodes_and_ts.into_iter().map(|n| n.node).collect::<Vec<_>>();
+                }
+            }
+        }
 
         let edges = match v1.edges {
             Some(edges) => edges.into_iter().map(|e| e.into()).collect(),
             None => Vec::new(),
         };
 
-        let mut parameters = if let Some(v1_parameters) = v1.parameters {
-            let mut unnamed_count: usize = 0;
-            let (parameters, param_ts_data) =
-                convert_parameter_v1_to_v2(v1_parameters, &mut unnamed_count, &mut errors);
-            ts_data.extend(param_ts_data);
-            Some(parameters)
-        } else {
-            None
-        };
+        // Collect any parameters that have been replaced by timeseries
+        // These references will be referred to by ParameterReferences elsewhere in the schema
+        // We will update these references to TimeseriesReferences later
+        let mut timeseries_refs = Vec::new();
+        if let Some(params) = v1.parameters {
+            // Reset the unnamed count for global parameters
+            conversion_data.reset_count();
+            for p in params {
+                let result: Result<ParameterOrTimeseriesRef, _> = p.try_into_v2(None, &mut conversion_data);
+                match result {
+                    Ok(p_or_t) => match p_or_t {
+                        ParameterOrTimeseriesRef::Parameter(p) => parameters.push(*p),
+                        ParameterOrTimeseriesRef::Timeseries(t) => timeseries_refs.push(t),
+                    },
+                    Err(e) => errors.push(e),
+                }
+            }
+        }
 
-        // closure to update a parameter ref with a timeseries ref when names match.
+        // Finally add any extracted timeseries data to the timeseries list
+        timeseries.extend(conversion_data.timeseries);
+        parameters.extend(conversion_data.parameters);
+
+        // Closure to update a parameter ref with a timeseries ref when names match.
+        // We match on the original parameter name because the parameter name may have been changed
         let update_to_ts_ref = &mut |m: &mut Metric| {
             if let Metric::Parameter(p) = m {
-                let ts_ref = ts_data.iter().find(|ts| ts.name == Some(p.name.clone()));
-                if let Some(ts_ref) = ts_ref {
-                    // The timeseries requires a name to be used as a reference
-                    let name = match &ts_ref.name {
-                        Some(n) => n.clone(),
-                        None => return,
-                    };
-
-                    let cols = match (&ts_ref.column, &ts_ref.scenario) {
-                        (Some(col), None) => Some(TimeseriesColumns::Column(col.clone())),
-                        (None, Some(scenario)) => Some(TimeseriesColumns::Scenario(scenario.clone())),
-                        (Some(_), Some(_)) => return,
-                        (None, None) => None,
-                    };
-
-                    *m = Metric::Timeseries(TimeseriesReference::new(name, cols));
+                if let Some(converted_ts_ref) = timeseries_refs.iter().find(|ts| ts.original_parameter_name == p.name) {
+                    *m = Metric::Timeseries(converted_ts_ref.ts_ref.clone());
                 }
             }
         };
 
         nodes.visit_metrics_mut(update_to_ts_ref);
-        if let Some(p) = parameters.as_mut() {
-            p.visit_metrics_mut(update_to_ts_ref)
-        }
-
-        let timeseries = if !ts_data.is_empty() {
-            let ts = convert_from_v1_data(ts_data, &v1.tables, &mut errors);
-            Some(ts)
-        } else {
-            None
-        };
+        parameters.visit_metrics_mut(update_to_ts_ref);
 
         // TODO convert v1 tables!
         let tables = None;
         let outputs = None;
         let metric_sets = None;
+        let parameters = if !parameters.is_empty() { Some(parameters) } else { None };
+        let timeseries = if !timeseries.is_empty() { Some(timeseries) } else { None };
 
         (
             Self {
@@ -454,36 +447,46 @@ impl PywrNetwork {
             edge.add_to_model(&mut network, &args)?;
         }
 
-        // Create all the parameters
-        if let Some(mut remaining_parameters) = self.parameters.clone() {
-            while !remaining_parameters.is_empty() {
-                let mut failed_parameters: Vec<Parameter> = Vec::new();
-                let n = remaining_parameters.len();
-                for parameter in remaining_parameters.into_iter() {
-                    if let Err(e) = parameter.add_to_model(&mut network, &args) {
-                        // Adding the parameter failed!
-                        match e {
-                            SchemaError::PywrCore(core_err) => match core_err {
-                                // And it failed because another parameter was not found.
-                                // Let's try to load more parameters and see if this one can tried
-                                // again later
-                                PywrError::ParameterNotFound(_) => failed_parameters.push(parameter),
-                                _ => return Err(SchemaError::PywrCore(core_err)),
-                            },
-                            SchemaError::ParameterNotFound(_) => failed_parameters.push(parameter),
-                            _ => return Err(e),
-                        }
-                    };
-                }
-
-                if failed_parameters.len() == n {
-                    // Could not load any parameters; must be a circular reference
-                    let failed_names = failed_parameters.iter().map(|p| p.name().to_string()).collect();
-                    return Err(SchemaError::CircularParameterReference(failed_names));
-                }
-
-                remaining_parameters = failed_parameters;
+        // Gather all the parameters from the nodes
+        let mut remaining_parameters: Vec<(Option<&str>, Parameter)> = Vec::new();
+        for node in &self.nodes {
+            if let Some(local_parameters) = node.local_parameters() {
+                remaining_parameters.extend(local_parameters.iter().map(|p| (Some(node.name()), p.clone())));
             }
+        }
+        // Add any global parameters
+        if let Some(parameters) = self.parameters.as_deref() {
+            remaining_parameters.extend(parameters.iter().map(|p| (None, p.clone())));
+        }
+
+        // Create all the parameters
+        while !remaining_parameters.is_empty() {
+            let mut failed_parameters: Vec<(Option<&str>, Parameter)> = Vec::new();
+            let n = remaining_parameters.len();
+            for (parent, parameter) in remaining_parameters.into_iter() {
+                if let Err(e) = parameter.add_to_model(&mut network, &args, parent) {
+                    // Adding the parameter failed!
+                    match e {
+                        SchemaError::PywrCore(core_err) => match core_err {
+                            // And it failed because another parameter was not found.
+                            // Let's try to load more parameters and see if this one can tried
+                            // again later
+                            PywrError::ParameterNotFound(_) => failed_parameters.push((parent, parameter)),
+                            _ => return Err(SchemaError::PywrCore(core_err)),
+                        },
+                        SchemaError::ParameterNotFound(_) => failed_parameters.push((parent, parameter)),
+                        _ => return Err(e),
+                    }
+                };
+            }
+
+            if failed_parameters.len() == n {
+                // Could not load any parameters; must be a circular reference
+                let failed_names = failed_parameters.iter().map(|(_n, p)| p.name().to_string()).collect();
+                return Err(SchemaError::CircularParameterReference(failed_names));
+            }
+
+            remaining_parameters = failed_parameters;
         }
 
         // Apply the inline parameters & constraints to the nodes
@@ -866,7 +869,7 @@ impl PywrMultiNetworkModel {
                     inter_network_transfers: &[],
                 };
 
-                let from_metric = transfer.metric.load(from_network, &args)?;
+                let from_metric = transfer.metric.load(from_network, &args, None)?;
 
                 inter_network_transfers.push((from_network_idx, from_metric, to_network_idx, transfer.initial_value));
             }

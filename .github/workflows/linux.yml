@@ -35,8 +35,17 @@ jobs:
         run: cargo build --verbose --features highs,cbc --workspace --exclude ipm-simd --exclude pywr-python
       - name: Run tests
         run: cargo test --features highs,cbc --verbose --lib --bins -- --test-threads=1
-      - name: Run mdbook tests
-        run: mdbook test ./pywr-book
+      - name: Run mdbook test & build
+        run: |
+          output=$(mdbook test ./pywr-book 2>&1)
+          if echo "$output" | grep -q "\[ERROR\]" ; then
+              exit 1
+          fi
+
+          output=$(mdbook build ./pywr-book 2>&1)
+          if echo "$output" | grep -q "\[ERROR\]" ; then
+              exit 1
+          fi
 
   build_schema_only:
 
