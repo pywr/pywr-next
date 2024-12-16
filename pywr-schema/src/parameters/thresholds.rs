@@ -1,11 +1,11 @@
-use crate::error::ConversionError;
+use crate::error::ComponentConversionError;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
 use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::parameters::{ConversionData, ParameterMeta};
-use crate::v1::{IntoV2, TryFromV1, TryIntoV2};
+use crate::v1::{try_convert_parameter_attr, IntoV2, TryFromV1};
 #[cfg(feature = "core")]
 use pywr_core::parameters::ParameterIndex;
 use pywr_schema_macros::PywrVisitAll;
@@ -86,7 +86,7 @@ impl ThresholdParameter {
 }
 
 impl TryFromV1<ParameterThresholdParameterV1> for ThresholdParameter {
-    type Error = ConversionError;
+    type Error = ComponentConversionError;
 
     fn try_from_v1(
         v1: ParameterThresholdParameterV1,
@@ -95,8 +95,9 @@ impl TryFromV1<ParameterThresholdParameterV1> for ThresholdParameter {
     ) -> Result<Self, Self::Error> {
         let meta: ParameterMeta = v1.meta.into_v2(parent_node, conversion_data);
 
-        let value = v1.parameter.try_into_v2(parent_node, conversion_data)?;
-        let threshold = v1.threshold.try_into_v2(parent_node, conversion_data)?;
+        let value = try_convert_parameter_attr(&meta.name, "parameter", v1.parameter, parent_node, conversion_data)?;
+        let threshold =
+            try_convert_parameter_attr(&meta.name, "threshold", v1.threshold, parent_node, conversion_data)?;
 
         // TODO warn or something about the lack of using the values here!!
 

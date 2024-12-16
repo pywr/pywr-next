@@ -26,9 +26,12 @@ Pywr is a modelling system for simulating water resources systems.
 Models are defined using a JSON schema, and can be run using the `pywr` command line tool.
 Below is an example of a simple model definition `simple1.json`:
 
+[//]: # (@formatter:off)
+
 ```json
 {{#include ../../pywr-schema/tests/simple1.json}}
 ```
+[//]: # (@formatter:on)
 
 To run the model, use the `pywr` command line tool:
 

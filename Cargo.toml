@@ -49,7 +49,7 @@ float-cmp = "0.10"
 ndarray = "0.16"
 polars = { version = "0.45", features = ["lazy", "rows", "ndarray"] }
 pyo3-polars = "0.19"
-pyo3 = { version = "0.22", default-features = false }
+pyo3 = { version = "0.22" }
 pyo3-log = "0.11"
 tracing = { version = "0.1", features = ["log"] }
 csv = "1.3"
