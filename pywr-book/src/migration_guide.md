@@ -8,6 +8,7 @@ new API and new features. This guide will help you update your models to this ne
 Pywr v2.x includes a more strict schema for defining models. This schema, along with the
 [pywr-v1-schema](https://crates.io/crates/pywr-v1-schema) crate, provide a way to convert models from v1.x to v2.x.
 However, this process is not perfect and will more than likely require manual intervention to complete the migration.
+The migration of larger and/or more complex models will require an iterative process of conversion and testing.
 
 The overall process will follow these steps:
 
@@ -28,12 +29,14 @@ the model at runtime, and does not replace the existing v1.x model with a v2.x d
 > it is not a complete generic solution.
 
 The function in the listing below is an example of the overall conversion process.
-The function takes a path to a JSON file containing a v1 Pywr model.
-The function reads the JSON, and applies the conversion function (`convert_model_from_v1_json_string`).
-The conversion function that takes a JSON string and returns a tuple of the converted JSON string and a list of errors.
-The function then handles these errors using the `handle_conversion_error` function.
-After the errors are handled other arbitrary changes are applied using the `patch_model` function.
-Finally, the converted JSON can be saved to a new file and run using Pywr v2.x.
+The function takes a path to a JSON file containing a v1 Pywr model, and then converts it to v2.x.
+
+1. The function reads the JSON, and applies the conversion function (`convert_model_from_v1_json_string`).
+2. The conversion function that takes a JSON string and returns a tuple of the converted JSON string and a list of
+   errors.
+3. The function then handles these errors using the `handle_conversion_error` function.
+4. After the errors are handled other arbitrary changes are applied using the `patch_model` function.
+5. Finally, the converted JSON can be saved to a new file and run using Pywr v2.x.
 
 [//]: # (@formatter:off)
 
@@ -50,7 +53,7 @@ These errors can be handled in a variety of ways, such as modifying the model de
 ignoring them.
 It is suggested to implement a function that can handle these errors in a way that is appropriate for your use case.
 Begin by matching a few types of errors and then expand the matching as needed. By raising exceptions
-for unhandled errors, you can ensure that all errors are eventually accounted, and that new errors are not missed.
+for unhandled errors, you can ensure that all errors are eventually accounted for, and that new errors are not missed.
 
 The example handles the `ComponentConversionError` by matching on the error subclass (either `Parameter()` or `Node()`),
 and then handling each case separately.

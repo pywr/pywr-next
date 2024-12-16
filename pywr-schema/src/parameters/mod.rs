@@ -32,7 +32,7 @@ use crate::error::{ComponentConversionError, ConversionError};
 use crate::metric::{Metric, ParameterReference};
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
-use crate::timeseries::TimeseriesReference;
+use crate::timeseries::ConvertedTimeseriesReference;
 use crate::v1::{ConversionData, IntoV2, TryFromV1, TryIntoV2};
 use crate::visit::{VisitMetrics, VisitPaths};
 pub use aggregated::{AggFunc, AggregatedIndexParameter, AggregatedParameter, IndexAggFunc};
@@ -357,7 +357,7 @@ impl VisitPaths for Parameter {
 pub enum ParameterOrTimeseriesRef {
     // Boxed due to large size difference.
     Parameter(Box<Parameter>),
-    Timeseries(TimeseriesReference),
+    Timeseries(ConvertedTimeseriesReference),
 }
 
 impl From<Parameter> for ParameterOrTimeseriesRef {
@@ -366,8 +366,8 @@ impl From<Parameter> for ParameterOrTimeseriesRef {
     }
 }
 
-impl From<TimeseriesReference> for ParameterOrTimeseriesRef {
-    fn from(t: TimeseriesReference) -> Self {
+impl From<ConvertedTimeseriesReference> for ParameterOrTimeseriesRef {
+    fn from(t: ConvertedTimeseriesReference) -> Self {
         Self::Timeseries(t)
     }
 }
@@ -428,12 +428,14 @@ impl TryFromV1<ParameterV1> for ParameterOrTimeseriesRef {
                 CoreParameter::TablesArray(p) => Parameter::TablesArray(p.into_v2(parent_node, conversion_data)).into(),
                 CoreParameter::Min(p) => Parameter::Min(p.try_into_v2(parent_node, conversion_data)?).into(),
                 CoreParameter::Division(p) => Parameter::Division(p.try_into_v2(parent_node, conversion_data)?).into(),
-                CoreParameter::DataFrame(p) => <DataFrameParameterV1 as TryIntoV2<TimeseriesReference>>::try_into_v2(
-                    p,
-                    parent_node,
-                    conversion_data,
-                )?
-                .into(),
+                CoreParameter::DataFrame(p) => {
+                    <DataFrameParameterV1 as TryIntoV2<ConvertedTimeseriesReference>>::try_into_v2(
+                        p,
+                        parent_node,
+                        conversion_data,
+                    )?
+                    .into()
+                }
                 CoreParameter::Deficit(p) => {
                     return Err(ComponentConversionError::Parameter {
                         name: p.meta.and_then(|m| m.name).unwrap_or("unnamed".to_string()),

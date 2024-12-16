@@ -46,7 +46,6 @@ pub use control_curves::{
 pub use delay::DelayParameter;
 pub use discount_factor::DiscountFactorParameter;
 pub use division::DivisionParameter;
-use dyn_clone::DynClone;
 pub use hydropower::{HydropowerTargetData, HydropowerTargetParameter};
 pub use indexed_array::IndexedArrayParameter;
 pub use interpolate::{interpolate, linear_interpolation, InterpolationError};
@@ -314,14 +313,14 @@ impl ParameterMeta {
     }
 }
 
-pub trait ParameterState: Any + Send + DynClone {
+pub trait ParameterState: Any + Send {
     fn as_any(&self) -> &dyn Any;
     fn as_any_mut(&mut self) -> &mut dyn Any;
 }
 
 impl<T> ParameterState for T
 where
-    T: Any + Send + Clone,
+    T: Any + Send,
 {
     fn as_any(&self) -> &dyn Any {
         self
@@ -330,18 +329,13 @@ where
         self
     }
 }
-// impl ParameterState for f64 {}
 
-dyn_clone::clone_trait_object!(ParameterState);
-
-#[derive(Clone)]
 struct ParameterStatesByType {
     f64: Vec<Option<Box<dyn ParameterState>>>,
     usize: Vec<Option<Box<dyn ParameterState>>>,
     multi: Vec<Option<Box<dyn ParameterState>>>,
 }
 
-#[derive(Clone)]
 pub struct ParameterStates {
     constant: ParameterStatesByType,
     simple: ParameterStatesByType,

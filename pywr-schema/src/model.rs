@@ -320,11 +320,12 @@ impl PywrNetwork {
         timeseries.extend(conversion_data.timeseries);
         parameters.extend(conversion_data.parameters);
 
-        // closure to update a parameter ref with a timeseries ref when names match.
+        // Closure to update a parameter ref with a timeseries ref when names match.
+        // We match on the original parameter name because the parameter name may have been changed
         let update_to_ts_ref = &mut |m: &mut Metric| {
             if let Metric::Parameter(p) = m {
-                if let Some(ts_ref) = timeseries_refs.iter().find(|ts| ts.name() == p.name) {
-                    *m = Metric::Timeseries(ts_ref.clone());
+                if let Some(converted_ts_ref) = timeseries_refs.iter().find(|ts| ts.original_parameter_name == p.name) {
+                    *m = Metric::Timeseries(converted_ts_ref.ts_ref.clone());
                 }
             }
         };
