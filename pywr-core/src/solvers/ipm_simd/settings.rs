@@ -67,17 +67,17 @@ where
 /// # Examples
 ///
 /// ```
-/// use std::num::NonZeroUsize;
-/// use pywr::solvers::SimdIpmSolverSettingsBuilder;
+/// use std::num::NonZero;
+/// use pywr_core::solvers::{SimdIpmSolverSettings, SimdIpmSolverSettingsBuilder};
 /// // Settings with parallel enabled and 4 threads.
-/// let settings = SimdIpmSolverSettingsBuilder::default().parallel().threads(4).build();
+/// let settings: SimdIpmSolverSettings<f64, 4> = SimdIpmSolverSettingsBuilder::default().parallel().threads(4).build();
 ///
 /// let mut builder = SimdIpmSolverSettingsBuilder::default();
-/// builder.max_iterations(NonZeroUsize(50).unwrap());
-/// let settings = builder.build();
+/// builder.max_iterations(NonZero::new(50).unwrap());
+/// let settings: SimdIpmSolverSettings<f64, 4> = builder.build();
 ///
 /// builder.parallel();
-/// let settings = builder.build();
+/// let settings: SimdIpmSolverSettings<f64, 4> = builder.build();
 ///
 /// ```
 pub struct SimdIpmSolverSettingsBuilder<T, const N: usize>
@@ -168,6 +168,6 @@ mod tests {
         };
         let settings_from_builder = SimdIpmSolverSettingsBuilder::<f64, 4>::default().parallel().build();
 
-        assert_eq!(settings_from_builder, settings_from_builder);
+        assert_eq!(settings_from_builder, settings);
     }
 }

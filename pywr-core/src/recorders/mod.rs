@@ -362,7 +362,7 @@ mod tests {
 
         let _idx = model.network_mut().add_recorder(Box::new(rec)).unwrap();
         // Test all solvers
-        run_all_solvers(&model, &[], &[]);
+        run_all_solvers(&model, &[], &[], &[]);
 
         // TODO fix this with respect to the trait.
         // let array = rec.data_view2().unwrap();
