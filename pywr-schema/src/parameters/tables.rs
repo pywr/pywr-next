@@ -1,10 +1,9 @@
-use crate::error::ConversionError;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::parameters::{ConversionData, ParameterMeta};
-use crate::v1::{IntoV2, TryFromV1};
+use crate::v1::{FromV1, IntoV2};
 #[cfg(feature = "core")]
 use ndarray::s;
 #[cfg(feature = "core")]
@@ -88,15 +87,9 @@ impl TablesArrayParameter {
     }
 }
 
-impl TryFromV1<TablesArrayParameterV1> for TablesArrayParameter {
-    type Error = ConversionError;
-
-    fn try_from_v1(
-        v1: TablesArrayParameterV1,
-        parent_node: Option<&str>,
-        conversion_data: &mut ConversionData,
-    ) -> Result<Self, Self::Error> {
-        let p = Self {
+impl FromV1<TablesArrayParameterV1> for TablesArrayParameter {
+    fn from_v1(v1: TablesArrayParameterV1, parent_node: Option<&str>, conversion_data: &mut ConversionData) -> Self {
+        Self {
             meta: v1.meta.into_v2(parent_node, conversion_data),
             node: v1.node,
             wh: v1.wh,
@@ -104,7 +97,6 @@ impl TryFromV1<TablesArrayParameterV1> for TablesArrayParameter {
             checksum: v1.checksum,
             url: v1.url,
             timestep_offset: None,
-        };
-        Ok(p)
+        }
     }
 }

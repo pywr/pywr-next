@@ -43,13 +43,13 @@ debug = true
 [workspace.dependencies]
 serde = { version = "1", features = ["derive", ] }
 serde_json = "1.0"
-thiserror = "1.0"
+thiserror = "2.0"
 num = "0.4"
 float-cmp = "0.10"
-ndarray = "0.15"
-polars = { version = "0.44", features = ["lazy", "rows", "ndarray"] }
-pyo3-polars = "0.18"
-pyo3 = { version = "0.21", default-features = false }
+ndarray = "0.16"
+polars = { version = "0.45", features = ["lazy", "rows", "ndarray"] }
+pyo3-polars = "0.19"
+pyo3 = { version = "0.22" }
 pyo3-log = "0.11"
 tracing = { version = "0.1", features = ["log"] }
 csv = "1.3"

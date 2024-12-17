@@ -14,9 +14,9 @@ categories = ["science", "simulation"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-svgbobdoc = { version = "0.3.0", features = ["enable"] }
+svgbobdoc = { git = "https://github.com/yvt/svgbobdoc.git", features = ["enable"] }
 polars = { workspace = true, features = ["csv", "diff", "dtype-datetime", "dtype-date", "dynamic_group_by"], optional = true }
-pyo3 = { workspace = true, optional = true }
+pyo3 = { workspace = true }
 pyo3-polars = { workspace = true, optional = true }
 strum = "0.26"
 strum_macros = "0.26"
@@ -40,7 +40,7 @@ tempfile = "3.14"
 
 [features]
 # Core feature requires additional dependencies
-core = ["dep:pywr-core", "dep:hdf5-metno", "dep:csv", "dep:polars", "dep:pyo3", "dep:pyo3-polars", "dep:ndarray", "dep:tracing"]
+core = ["dep:pywr-core", "dep:hdf5-metno", "dep:csv", "dep:polars", "dep:pyo3-polars", "dep:ndarray", "dep:tracing"]
 default = ["core"]
 cbc = ["pywr-core/cbc"]
 highs = ["pywr-core/highs"]

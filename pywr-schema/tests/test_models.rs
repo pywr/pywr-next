@@ -139,6 +139,5 @@ fn convert_model(v1_path: &Path, v2_path: &Path) {
 
     let v2_expected_str = fs::read_to_string(v2_path).unwrap();
     let v2_expected: serde_json::Value = serde_json::from_str(&v2_expected_str).unwrap();
-
     assert_eq!(v2_converted, v2_expected);
 }

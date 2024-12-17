@@ -1,6 +1,6 @@
-use crate::error::ConversionError;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
+use crate::error::{ComponentConversionError, ConversionError};
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::nodes::{NodeAttribute, NodeMeta};
@@ -134,7 +134,7 @@ impl DelayNode {
 }
 
 impl TryFrom<DelayNodeV1> for DelayNode {
-    type Error = ConversionError;
+    type Error = ComponentConversionError;
 
     fn try_from(v1: DelayNodeV1) -> Result<Self, Self::Error> {
         let meta: NodeMeta = v1.meta.into();
@@ -145,9 +145,12 @@ impl TryFrom<DelayNodeV1> for DelayNode {
             None => match v1.timesteps {
                 Some(ts) => ts,
                 None => {
-                    return Err(ConversionError::MissingAttribute {
+                    return Err(ComponentConversionError::Node {
                         name: meta.name,
-                        attrs: vec!["days".to_string(), "timesteps".to_string()],
+                        attr: "delay".to_string(),
+                        error: ConversionError::MissingAttribute {
+                            attrs: vec!["days".to_string(), "timesteps".to_string()],
+                        },
                     })
                 }
             },

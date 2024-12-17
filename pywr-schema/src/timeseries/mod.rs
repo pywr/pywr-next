@@ -3,6 +3,7 @@ mod align_and_resample;
 mod pandas;
 mod polars_dataset;
 
+use crate::error::ComponentConversionError;
 use crate::parameters::ParameterMeta;
 use crate::v1::{ConversionData, IntoV2, TryFromV1};
 use crate::visit::VisitPaths;
@@ -422,8 +423,19 @@ impl TimeseriesReference {
     }
 }
 
-impl TryFromV1<DataFrameParameterV1> for TimeseriesReference {
-    type Error = ConversionError;
+/// Helper struct to convert references to timeseries.
+///
+/// Keeps a reference to the original parameter name and the new timeseries reference. If the
+/// timeseries refers to a table then the original parameter name is no longer required in the
+/// final model, but is needed during conversion to ensure that the table is correctly referenced.
+#[derive(Clone)]
+pub struct ConvertedTimeseriesReference {
+    pub original_parameter_name: String,
+    pub ts_ref: TimeseriesReference,
+}
+
+impl TryFromV1<DataFrameParameterV1> for ConvertedTimeseriesReference {
+    type Error = ComponentConversionError;
 
     fn try_from_v1(
         v1: DataFrameParameterV1,
@@ -431,6 +443,7 @@ impl TryFromV1<DataFrameParameterV1> for TimeseriesReference {
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
         let meta: ParameterMeta = v1.meta.into_v2(parent_node, conversion_data);
+        let mut ts_name = meta.name.clone();
 
         if let Some(url) = v1.url {
             // If there is a URL then this entry must be converted into a timeseries
@@ -457,12 +470,17 @@ impl TryFromV1<DataFrameParameterV1> for TimeseriesReference {
             if !conversion_data.timeseries.iter().any(|ts| ts.meta.name == meta.name) {
                 conversion_data.timeseries.push(timeseries);
             }
-        } else if v1.table.is_some() {
-            // Nothing to do here; The table will be converted separately
+        } else if let Some(table) = v1.table {
+            // If this is a reference to a table then we need to point to the table by name, and
+            // ignore the original parameter's name entirely.
+            ts_name = table;
         } else {
-            return Err(ConversionError::MissingAttribute {
-                attrs: vec!["url".to_string(), "table".to_string()],
+            return Err(ComponentConversionError::Parameter {
                 name: meta.name,
+                attr: "url".to_string(),
+                error: ConversionError::MissingAttribute {
+                    attrs: vec!["url".to_string(), "table".to_string()],
+                },
             });
         };
 
@@ -470,15 +488,22 @@ impl TryFromV1<DataFrameParameterV1> for TimeseriesReference {
         let columns = match (v1.column, v1.scenario) {
             (Some(col), None) => Some(TimeseriesColumns::Column(col)),
             (None, Some(scenario)) => Some(TimeseriesColumns::Scenario(scenario)),
-            (Some(_), Some(_)) => return Err(ConversionError::AmbiguousColumnAndScenario(meta.name)),
+            (Some(_), Some(_)) => {
+                return Err(ComponentConversionError::Parameter {
+                    name: meta.name.clone(),
+                    attr: "column".to_string(),
+                    error: ConversionError::AmbiguousAttributes {
+                        attrs: vec!["column".to_string(), "scenario".to_string()],
+                    },
+                })
+            }
             (None, None) => None,
         };
         // The reference that is returned
-        let reference = TimeseriesReference {
-            name: meta.name,
-            columns,
-        };
-
-        Ok(reference)
+        let reference = TimeseriesReference { name: ts_name, columns };
+        Ok(ConvertedTimeseriesReference {
+            original_parameter_name: meta.name,
+            ts_ref: reference,
+        })
     }
 }

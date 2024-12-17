@@ -1,5 +1,6 @@
 use crate::data_tables::TableDataRef;
 use crate::edge::Edge;
+use crate::error::ComponentConversionError;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
 #[cfg(feature = "core")]
@@ -213,7 +214,13 @@ impl TryFromV1<ParameterValueV1> for Metric {
                 // Inline parameters are converted to either a parameter or a timeseries
                 // The actual component is extracted into the conversion data leaving a reference
                 // to the component in the metric.
-                let definition: ParameterOrTimeseriesRef = (*param).try_into_v2(parent_node, conversion_data)?;
+                let definition: ParameterOrTimeseriesRef =
+                    (*param)
+                        .try_into_v2(parent_node, conversion_data)
+                        .map_err(|e| match e {
+                            ComponentConversionError::Parameter { error, .. } => error,
+                            ComponentConversionError::Node { error, .. } => error,
+                        })?;
                 match definition {
                     ParameterOrTimeseriesRef::Parameter(p) => {
                         let reference = ParameterReference {
@@ -224,7 +231,7 @@ impl TryFromV1<ParameterValueV1> for Metric {
 
                         Self::Parameter(reference)
                     }
-                    ParameterOrTimeseriesRef::Timeseries(t) => Self::Timeseries(t),
+                    ParameterOrTimeseriesRef::Timeseries(t) => Self::Timeseries(t.ts_ref),
                 }
             }
         };
@@ -555,7 +562,14 @@ impl TryFromV1<ParameterValueV1> for IndexMetric {
         let p = match v1 {
             // There was no such thing as s constant index in Pywr v1
             // TODO this could print a warning and do a cast to usize instead.
-            ParameterValueV1::Constant(_) => return Err(ConversionError::FloatToIndex),
+            ParameterValueV1::Constant(value) => {
+                // Check if the value is not a whole non-negative number
+                if value.fract() != 0.0 && value >= 0.0 {
+                    return Err(ConversionError::FloatToIndex {});
+                }
+
+                Self::Constant { value: value as usize }
+            }
             ParameterValueV1::Reference(p_name) => Self::Parameter(ParameterReference {
                 name: p_name,
                 key: None,
@@ -565,7 +579,13 @@ impl TryFromV1<ParameterValueV1> for IndexMetric {
                 // Inline parameters are converted to either a parameter or a timeseries
                 // The actual component is extracted into the conversion data leaving a reference
                 // to the component in the metric.
-                let definition: ParameterOrTimeseriesRef = (*param).try_into_v2(parent_node, conversion_data)?;
+                let definition: ParameterOrTimeseriesRef =
+                    (*param)
+                        .try_into_v2(parent_node, conversion_data)
+                        .map_err(|e| match e {
+                            ComponentConversionError::Parameter { error, .. } => error,
+                            ComponentConversionError::Node { error, .. } => error,
+                        })?;
                 match definition {
                     ParameterOrTimeseriesRef::Parameter(p) => {
                         let reference = ParameterReference {
@@ -576,7 +596,7 @@ impl TryFromV1<ParameterValueV1> for IndexMetric {
 
                         Self::Parameter(reference)
                     }
-                    ParameterOrTimeseriesRef::Timeseries(t) => Self::Timeseries(t),
+                    ParameterOrTimeseriesRef::Timeseries(t) => Self::Timeseries(t.ts_ref),
                 }
             }
         };

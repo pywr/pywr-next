@@ -26,14 +26,14 @@ mod thresholds;
 #[cfg(feature = "core")]
 pub use super::data_tables::LoadedTableCollection;
 pub use super::data_tables::TableDataRef;
-use crate::error::ConversionError;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
+use crate::error::{ComponentConversionError, ConversionError};
 use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
-use crate::timeseries::TimeseriesReference;
-use crate::v1::{ConversionData, TryFromV1, TryIntoV2};
+use crate::timeseries::ConvertedTimeseriesReference;
+use crate::v1::{ConversionData, IntoV2, TryFromV1, TryIntoV2};
 use crate::visit::{VisitMetrics, VisitPaths};
 pub use aggregated::{AggFunc, AggregatedIndexParameter, AggregatedParameter, IndexAggFunc};
 pub use asymmetric_switch::AsymmetricSwitchIndexParameter;
@@ -355,7 +355,7 @@ impl VisitPaths for Parameter {
 pub enum ParameterOrTimeseriesRef {
     // Boxed due to large size difference.
     Parameter(Box<Parameter>),
-    Timeseries(TimeseriesReference),
+    Timeseries(ConvertedTimeseriesReference),
 }
 
 impl From<Parameter> for ParameterOrTimeseriesRef {
@@ -364,14 +364,14 @@ impl From<Parameter> for ParameterOrTimeseriesRef {
     }
 }
 
-impl From<TimeseriesReference> for ParameterOrTimeseriesRef {
-    fn from(t: TimeseriesReference) -> Self {
+impl From<ConvertedTimeseriesReference> for ParameterOrTimeseriesRef {
+    fn from(t: ConvertedTimeseriesReference) -> Self {
         Self::Timeseries(t)
     }
 }
 
 impl TryFromV1<ParameterV1> for ParameterOrTimeseriesRef {
-    type Error = ConversionError;
+    type Error = ComponentConversionError;
 
     fn try_from_v1(
         v1: ParameterV1,
@@ -413,36 +413,39 @@ impl TryFromV1<ParameterV1> for ParameterOrTimeseriesRef {
                     Parameter::MonthlyProfile(p.try_into_v2(parent_node, conversion_data)?).into()
                 }
                 CoreParameter::UniformDrawdownProfile(p) => {
-                    Parameter::UniformDrawdownProfile(p.try_into_v2(parent_node, conversion_data)?).into()
+                    Parameter::UniformDrawdownProfile(p.into_v2(parent_node, conversion_data)).into()
                 }
                 CoreParameter::Max(p) => Parameter::Max(p.try_into_v2(parent_node, conversion_data)?).into(),
                 CoreParameter::Negative(p) => Parameter::Negative(p.try_into_v2(parent_node, conversion_data)?).into(),
                 CoreParameter::Polynomial1D(p) => {
-                    Parameter::Polynomial1D(p.try_into_v2(parent_node, conversion_data)?).into()
+                    Parameter::Polynomial1D(p.into_v2(parent_node, conversion_data)).into()
                 }
                 CoreParameter::ParameterThreshold(p) => {
                     Parameter::Threshold(p.try_into_v2(parent_node, conversion_data)?).into()
                 }
-                CoreParameter::TablesArray(p) => {
-                    Parameter::TablesArray(p.try_into_v2(parent_node, conversion_data)?).into()
-                }
+                CoreParameter::TablesArray(p) => Parameter::TablesArray(p.into_v2(parent_node, conversion_data)).into(),
                 CoreParameter::Min(p) => Parameter::Min(p.try_into_v2(parent_node, conversion_data)?).into(),
                 CoreParameter::Division(p) => Parameter::Division(p.try_into_v2(parent_node, conversion_data)?).into(),
-                CoreParameter::DataFrame(p) => <DataFrameParameterV1 as TryIntoV2<TimeseriesReference>>::try_into_v2(
-                    p,
-                    parent_node,
-                    conversion_data,
-                )?
-                .into(),
+                CoreParameter::DataFrame(p) => {
+                    <DataFrameParameterV1 as TryIntoV2<ConvertedTimeseriesReference>>::try_into_v2(
+                        p,
+                        parent_node,
+                        conversion_data,
+                    )?
+                    .into()
+                }
                 CoreParameter::Deficit(p) => {
-                    return Err(ConversionError::DeprecatedParameter {
-                        ty: "DeficitParameter".to_string(),
+                    return Err(ComponentConversionError::Parameter {
                         name: p.meta.and_then(|m| m.name).unwrap_or("unnamed".to_string()),
-                        instead: "Use a derived metric instead.".to_string(),
-                    })
+                        attr: "".to_string(),
+                        error: ConversionError::DeprecatedParameter {
+                            ty: "DeficitParameter".to_string(),
+                            instead: "Use a derived metric instead.".to_string(),
+                        },
+                    });
                 }
                 CoreParameter::DiscountFactor(p) => {
-                    Parameter::DiscountFactor(p.try_into_v2(parent_node, conversion_data)?).into()
+                    Parameter::DiscountFactor(p.into_v2(parent_node, conversion_data)).into()
                 }
                 CoreParameter::InterpolatedVolume(p) => {
                     Parameter::Interpolated(p.try_into_v2(parent_node, conversion_data)?).into()
@@ -457,20 +460,26 @@ impl TryFromV1<ParameterV1> for ParameterOrTimeseriesRef {
                     Parameter::WeeklyProfile(p.try_into_v2(parent_node, conversion_data)?).into()
                 }
                 CoreParameter::Storage(p) => {
-                    return Err(ConversionError::DeprecatedParameter {
-                        ty: "StorageParameter".to_string(),
+                    return Err(ComponentConversionError::Parameter {
                         name: p.meta.and_then(|m| m.name).unwrap_or("unnamed".to_string()),
-                        instead: "Use a derived metric instead.".to_string(),
-                    })
+                        attr: "".to_string(),
+                        error: ConversionError::DeprecatedParameter {
+                            ty: "DeficitParameter".to_string(),
+                            instead: "Use a derived metric instead.".to_string(),
+                        },
+                    });
                 }
                 CoreParameter::RollingMeanFlowNode(_) => todo!("Implement RollingMeanFlowNodeParameter"),
                 CoreParameter::ScenarioWrapper(_) => todo!("Implement ScenarioWrapperParameter"),
                 CoreParameter::Flow(p) => {
-                    return Err(ConversionError::DeprecatedParameter {
-                        ty: "FlowParameter".to_string(),
+                    return Err(ComponentConversionError::Parameter {
                         name: p.meta.and_then(|m| m.name).unwrap_or("unnamed".to_string()),
-                        instead: "Use a derived metric instead.".to_string(),
-                    })
+                        attr: "".to_string(),
+                        error: ConversionError::DeprecatedParameter {
+                            ty: "FlowParameter".to_string(),
+                            instead: "Use a derived metric instead.".to_string(),
+                        },
+                    });
                 }
                 CoreParameter::RbfProfile(p) => {
                     Parameter::RbfProfile(p.try_into_v2(parent_node, conversion_data)?).into()
@@ -483,24 +492,11 @@ impl TryFromV1<ParameterV1> for ParameterOrTimeseriesRef {
                 }
             },
             ParameterV1::Custom(p) => {
-                println!("Custom parameter: {:?} ({})", p.meta.name, p.ty);
-                // TODO do something better with custom parameters
-
-                let mut comment = format!("V1 CUSTOM PARAMETER ({}) UNCONVERTED!", p.ty);
-                if let Some(c) = p.meta.comment {
-                    comment.push_str(" ORIGINAL COMMENT: ");
-                    comment.push_str(c.as_str());
-                }
-
-                Parameter::Constant(ConstantParameter {
-                    meta: ParameterMeta {
-                        name: p.meta.name.unwrap_or_else(|| "unnamed-custom-parameter".to_string()),
-                        comment: Some(comment),
-                    },
-                    value: ConstantValue::Literal(0.0),
-                    variable: None,
-                })
-                .into()
+                return Err(ComponentConversionError::Parameter {
+                    name: p.meta.name.unwrap_or_else(|| "unnamed".to_string()),
+                    attr: "".to_string(),
+                    error: ConversionError::UnrecognisedType { ty: p.ty },
+                });
             }
         };
 
@@ -608,9 +604,9 @@ impl TryFrom<ParameterValueV1> for ConstantValue<f64> {
     fn try_from(v1: ParameterValueV1) -> Result<Self, Self::Error> {
         match v1 {
             ParameterValueV1::Constant(v) => Ok(Self::Literal(v)),
-            ParameterValueV1::Reference(_) => Err(ConversionError::ConstantFloatReferencesParameter),
+            ParameterValueV1::Reference(_) => Err(ConversionError::ConstantFloatReferencesParameter {}),
             ParameterValueV1::Table(tbl) => Ok(Self::Table(tbl.try_into()?)),
-            ParameterValueV1::Inline(_) => Err(ConversionError::ConstantFloatInlineParameter),
+            ParameterValueV1::Inline(_) => Err(ConversionError::ConstantFloatInlineParameter {}),
         }
     }
 }
@@ -650,20 +646,20 @@ pub enum TableIndex {
 }
 
 impl TryFrom<TableIndexV1> for TableIndex {
-    type Error = ConversionError;
+    type Error = String;
 
     fn try_from(v1: TableIndexV1) -> Result<Self, Self::Error> {
         match v1 {
             TableIndexV1::Single(s) => match s {
                 TableIndexEntryV1::Name(s) => Ok(TableIndex::Single(s)),
-                TableIndexEntryV1::Index(_) => Err(ConversionError::IntegerTableIndicesNotSupported),
+                TableIndexEntryV1::Index(_) => Err("Integer table indices not supported".to_string()),
             },
             TableIndexV1::Multi(s) => {
                 let names = s
                     .into_iter()
                     .map(|e| match e {
                         TableIndexEntryV1::Name(s) => Ok(s),
-                        TableIndexEntryV1::Index(_) => Err(ConversionError::IntegerTableIndicesNotSupported),
+                        TableIndexEntryV1::Index(_) => Err("Integer table indices not supported".to_string()),
                     })
                     .collect::<Result<Vec<_>, _>>()?;
                 Ok(Self::Multi(names))
