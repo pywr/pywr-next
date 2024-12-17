@@ -265,6 +265,18 @@ impl From<(ParameterIndex<MultiValue>, String)> for MetricF64 {
     }
 }
 
+impl From<(ParameterIndex<MultiValue>, String)> for MetricUsize {
+    fn from((idx, key): (ParameterIndex<MultiValue>, String)) -> Self {
+        match idx {
+            ParameterIndex::General(idx) => Self::MultiParameterValue((idx, key)),
+            ParameterIndex::Simple(idx) => Self::Simple(SimpleMetricUsize::MultiParameterValue((idx, key))),
+            ParameterIndex::Const(idx) => Self::Simple(SimpleMetricUsize::Constant(
+                ConstantMetricUsize::MultiParameterValue((idx, key)),
+            )),
+        }
+    }
+}
+
 impl TryFrom<ParameterIndex<f64>> for SimpleMetricF64 {
     type Error = PywrError;
     fn try_from(idx: ParameterIndex<f64>) -> Result<Self, Self::Error> {
@@ -288,6 +300,7 @@ impl TryFrom<ParameterIndex<usize>> for SimpleMetricUsize {
 #[derive(Clone, Debug, PartialEq)]
 pub enum ConstantMetricUsize {
     IndexParameterValue(ConstParameterIndex<usize>),
+    MultiParameterValue((ConstParameterIndex<MultiValue>, String)),
     Constant(usize),
 }
 
@@ -295,6 +308,9 @@ impl ConstantMetricUsize {
     pub fn get_value(&self, values: &ConstParameterValues) -> Result<usize, PywrError> {
         match self {
             ConstantMetricUsize::IndexParameterValue(idx) => values.get_const_parameter_usize(*idx),
+            ConstantMetricUsize::MultiParameterValue((idx, key)) => {
+                Ok(values.get_const_multi_parameter_usize(*idx, key)?)
+            }
             ConstantMetricUsize::Constant(v) => Ok(*v),
         }
     }
@@ -303,6 +319,7 @@ impl ConstantMetricUsize {
 #[derive(Clone, Debug, PartialEq)]
 pub enum SimpleMetricUsize {
     IndexParameterValue(SimpleParameterIndex<usize>),
+    MultiParameterValue((SimpleParameterIndex<MultiValue>, String)),
     Constant(ConstantMetricUsize),
 }
 
@@ -310,6 +327,9 @@ impl SimpleMetricUsize {
     pub fn get_value(&self, values: &SimpleParameterValues) -> Result<usize, PywrError> {
         match self {
             SimpleMetricUsize::IndexParameterValue(idx) => values.get_simple_parameter_usize(*idx),
+            SimpleMetricUsize::MultiParameterValue((idx, key)) => {
+                Ok(values.get_simple_multi_parameter_usize(*idx, key)?)
+            }
             SimpleMetricUsize::Constant(m) => m.get_value(values.get_constant_values()),
         }
     }
@@ -319,13 +339,17 @@ impl SimpleMetricUsize {
 pub enum MetricUsize {
     IndexParameterValue(GeneralParameterIndex<usize>),
     Simple(SimpleMetricUsize),
+    MultiParameterValue((GeneralParameterIndex<MultiValue>, String)),
+    InterNetworkTransfer(MultiNetworkTransferIndex),
 }
 
 impl MetricUsize {
     pub fn get_value(&self, _network: &Network, state: &State) -> Result<usize, PywrError> {
         match self {
             Self::IndexParameterValue(idx) => state.get_parameter_index(*idx),
+            Self::MultiParameterValue((idx, key)) => Ok(state.get_multi_parameter_index(*idx, key)?),
             Self::Simple(s) => s.get_value(&state.get_simple_parameter_values()),
+            Self::InterNetworkTransfer(_idx) => todo!("Support usize for inter-network transfers"),
         }
     }
 }
