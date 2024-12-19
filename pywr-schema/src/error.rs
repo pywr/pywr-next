@@ -126,4 +126,6 @@ pub enum ConversionError {
     TableRef { attr: String, name: String, error: String },
     #[error("Unrecognised type: {ty}")]
     UnrecognisedType { ty: String },
+    #[error("Non-constant value cannot be converted automatically.")]
+    NonConstantValue {},
 }
