@@ -425,6 +425,16 @@ impl TryFromV1<ParameterV1> for ParameterOrTimeseriesRef {
                 CoreParameter::ParameterThreshold(p) => {
                     Parameter::Threshold(p.try_into_v2(parent_node, conversion_data)?).into()
                 }
+                CoreParameter::NodeThreshold(p) => {
+                    Parameter::Threshold(p.try_into_v2(parent_node, conversion_data)?).into()
+                }
+                CoreParameter::StorageThreshold(p) => {
+                    Parameter::Threshold(p.try_into_v2(parent_node, conversion_data)?).into()
+                }
+                CoreParameter::MultipleThresholdIndex(_) => todo!(),
+                CoreParameter::MultipleThresholdParameterIndex(_) => todo!(),
+                CoreParameter::CurrentYearThreshold(_) => todo!(),
+                CoreParameter::CurrentOrdinalDayThreshold(_) => todo!(),
                 CoreParameter::TablesArray(p) => Parameter::TablesArray(p.into_v2(parent_node, conversion_data)).into(),
                 CoreParameter::Min(p) => Parameter::Min(p.try_into_v2(parent_node, conversion_data)?).into(),
                 CoreParameter::Division(p) => Parameter::Division(p.try_into_v2(parent_node, conversion_data)?).into(),
