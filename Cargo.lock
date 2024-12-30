@@ -2689,9 +2689,9 @@ dependencies = [
 
 [[package]]
 name = "pywr-v1-schema"
-version = "0.15.3"
+version = "0.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "018056c5ca206e3cecad0b88d2718942c8032d52f92cf3d346e00f10d63d1899"
+checksum = "57921fc52ff4ab988f6dc32b0a73673499028a3b457f82d3c638002f7dd10c68"
 dependencies = [
  "chrono",
  "pywr-v1-schema-macros",
@@ -2699,14 +2699,14 @@ dependencies = [
  "serde_json",
  "strum",
  "strum_macros",
- "thiserror 1.0.69",
+ "thiserror 2.0.7",
 ]
 
 [[package]]
 name = "pywr-v1-schema-macros"
-version = "0.15.1"
+version = "0.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ba8dff91780fd75b609a70bae1bc08d1d33c22a1ecc4c851dcd621b8a6e3a495"
+checksum = "fe86b1c85abc9ca4f163bc9a52ef813520de0aeb1ceb3bf216fdc78cbb93b148"
 dependencies = [
  "quote",
  "syn 2.0.91",

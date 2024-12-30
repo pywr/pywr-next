@@ -194,7 +194,12 @@ impl TryFromV1<PiecewiseLinkNodeV1> for PiecewiseLinkNode {
             None => vec![None; v1.nsteps],
             Some(v1_max_flows) => v1_max_flows
                 .into_iter()
-                .map(|v| try_convert_node_attr(&meta.name, "max_flows", v, parent_node, conversion_data).map(Some))
+                .map(|v| match v {
+                    None => Ok(None),
+                    Some(v) => {
+                        try_convert_node_attr(&meta.name, "max_flows", v, parent_node, conversion_data).map(Some)
+                    }
+                })
                 .collect::<Result<Vec<_>, _>>()?,
         };
 

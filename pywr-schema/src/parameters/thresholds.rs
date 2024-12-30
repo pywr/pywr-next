@@ -1,7 +1,7 @@
 use crate::error::ComponentConversionError;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
-use crate::metric::Metric;
+use crate::metric::{Metric, NodeReference};
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::parameters::{ConversionData, ParameterMeta};
@@ -10,7 +10,8 @@ use crate::v1::{try_convert_parameter_attr, IntoV2, TryFromV1};
 use pywr_core::parameters::ParameterIndex;
 use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::parameters::{
-    ParameterThresholdParameter as ParameterThresholdParameterV1, Predicate as PredicateV1,
+    NodeThresholdParameter as NodeThresholdParameterV1, ParameterThresholdParameter as ParameterThresholdParameterV1,
+    Predicate as PredicateV1, StorageThresholdParameter as StorageThresholdParameterV1,
 };
 use schemars::JsonSchema;
 
@@ -100,6 +101,58 @@ impl TryFromV1<ParameterThresholdParameterV1> for ThresholdParameter {
             try_convert_parameter_attr(&meta.name, "threshold", v1.threshold, parent_node, conversion_data)?;
 
         // TODO warn or something about the lack of using the values here!!
+
+        let p = Self {
+            meta,
+            value,
+            threshold,
+            predicate: v1.predicate.into(),
+            ratchet: false,
+        };
+        Ok(p)
+    }
+}
+
+impl TryFromV1<NodeThresholdParameterV1> for ThresholdParameter {
+    type Error = ComponentConversionError;
+
+    fn try_from_v1(
+        v1: NodeThresholdParameterV1,
+        parent_node: Option<&str>,
+        conversion_data: &mut ConversionData,
+    ) -> Result<Self, Self::Error> {
+        let meta: ParameterMeta = v1.meta.into_v2(parent_node, conversion_data);
+
+        let value = Metric::Node(NodeReference::new(v1.node, None));
+
+        let threshold =
+            try_convert_parameter_attr(&meta.name, "threshold", v1.threshold, parent_node, conversion_data)?;
+
+        let p = Self {
+            meta,
+            value,
+            threshold,
+            predicate: v1.predicate.into(),
+            ratchet: false,
+        };
+        Ok(p)
+    }
+}
+
+impl TryFromV1<StorageThresholdParameterV1> for ThresholdParameter {
+    type Error = ComponentConversionError;
+
+    fn try_from_v1(
+        v1: StorageThresholdParameterV1,
+        parent_node: Option<&str>,
+        conversion_data: &mut ConversionData,
+    ) -> Result<Self, Self::Error> {
+        let meta: ParameterMeta = v1.meta.into_v2(parent_node, conversion_data);
+
+        let value = Metric::Node(NodeReference::new(v1.storage_node, None));
+
+        let threshold =
+            try_convert_parameter_attr(&meta.name, "threshold", v1.threshold, parent_node, conversion_data)?;
 
         let p = Self {
             meta,
