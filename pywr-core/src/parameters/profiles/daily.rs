@@ -33,7 +33,7 @@ impl SimpleParameter<f64> for DailyProfileParameter {
         _values: &SimpleParameterValues,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<f64, PywrError> {
-        Ok(self.values[timestep.date.ordinal() as usize - 1])
+        Ok(self.values[timestep.day_of_year_index()])
     }
 
     fn as_parameter(&self) -> &dyn Parameter
