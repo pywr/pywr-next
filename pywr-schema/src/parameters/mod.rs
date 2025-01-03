@@ -60,7 +60,7 @@ pub use profiles::{
 pub use python::try_json_value_into_py;
 pub use python::{PythonParameter, PythonReturnType, PythonSource};
 #[cfg(feature = "core")]
-use pywr_core::{metric::MetricUsize, parameters::ParameterIndex};
+use pywr_core::{metric::MetricU64, parameters::ParameterIndex};
 use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::parameters::{
     CoreParameter, DataFrameParameter as DataFrameParameterV1, Parameter as ParameterV1,
@@ -595,13 +595,13 @@ impl ConstantValue<f64> {
 }
 
 #[cfg(feature = "core")]
-impl ConstantValue<usize> {
+impl ConstantValue<u64> {
     /// Return the value loading from a table if required.
-    pub fn load(&self, tables: &LoadedTableCollection) -> Result<usize, SchemaError> {
+    pub fn load(&self, tables: &LoadedTableCollection) -> Result<u64, SchemaError> {
         match self {
             Self::Literal(v) => Ok(*v),
             Self::Table(tbl_ref) => tables
-                .get_scalar_usize(tbl_ref)
+                .get_scalar_u64(tbl_ref)
                 .map_err(|error| SchemaError::TableRefLoad {
                     table_ref: tbl_ref.clone(),
                     error,
@@ -632,7 +632,7 @@ pub enum ParameterIndexValue {
 
 #[cfg(feature = "core")]
 impl ParameterIndexValue {
-    pub fn load(&self, network: &mut pywr_core::network::Network) -> Result<ParameterIndex<usize>, SchemaError> {
+    pub fn load(&self, network: &mut pywr_core::network::Network) -> Result<ParameterIndex<u64>, SchemaError> {
         match self {
             Self::Reference(name) => {
                 // This should be an existing parameter
@@ -649,19 +649,13 @@ impl ParameterIndexValue {
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll, Display)]
 #[serde(untagged)]
 pub enum DynamicIndexValue {
-    Constant(ConstantValue<usize>),
+    Constant(ConstantValue<u64>),
     Dynamic(ParameterIndexValue),
-}
-
-impl DynamicIndexValue {
-    pub fn from_usize(v: usize) -> Self {
-        Self::Constant(ConstantValue::Literal(v))
-    }
 }
 
 #[cfg(feature = "core")]
 impl DynamicIndexValue {
-    pub fn load(&self, network: &mut pywr_core::network::Network, args: &LoadArgs) -> Result<MetricUsize, SchemaError> {
+    pub fn load(&self, network: &mut pywr_core::network::Network, args: &LoadArgs) -> Result<MetricU64, SchemaError> {
         let parameter_ref = match self {
             DynamicIndexValue::Constant(v) => v.load(args.tables)?.into(),
             DynamicIndexValue::Dynamic(v) => v.load(network)?.into(),

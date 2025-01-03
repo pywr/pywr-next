@@ -5,7 +5,7 @@ mod memory;
 mod metric_set;
 mod py;
 
-use crate::metric::{MetricF64, MetricUsize};
+use crate::metric::{MetricF64, MetricU64};
 use crate::models::ModelDomain;
 use crate::network::Network;
 use crate::scenario::ScenarioIndex;
@@ -292,12 +292,12 @@ where
 
 pub struct IndexAssertionRecorder {
     meta: RecorderMeta,
-    expected_values: Array2<usize>,
-    metric: MetricUsize,
+    expected_values: Array2<u64>,
+    metric: MetricU64,
 }
 
 impl IndexAssertionRecorder {
-    pub fn new(name: &str, metric: MetricUsize, expected_values: Array2<usize>) -> Self {
+    pub fn new(name: &str, metric: MetricU64, expected_values: Array2<u64>) -> Self {
         Self {
             meta: RecorderMeta::new(name),
             expected_values,

@@ -1,5 +1,5 @@
 use super::{GeneralParameter, Parameter, ParameterMeta, ParameterName, ParameterState, PywrError, Timestep};
-use crate::metric::{MetricF64, MetricUsize};
+use crate::metric::{MetricF64, MetricU64};
 use crate::network::Network;
 use crate::parameters::downcast_internal_state_mut;
 use crate::scenario::ScenarioIndex;
@@ -14,7 +14,7 @@ pub struct RhaiParameter {
     ast: AST,
     initial_state: Map,
     metrics: HashMap<String, MetricF64>,
-    indices: HashMap<String, MetricUsize>,
+    indices: HashMap<String, MetricU64>,
 }
 
 #[derive(Clone)]
@@ -28,7 +28,7 @@ impl RhaiParameter {
         script: &str,
         initial_state: Map,
         metrics: &HashMap<String, MetricF64>,
-        indices: &HashMap<String, MetricUsize>,
+        indices: &HashMap<String, MetricU64>,
     ) -> Self {
         let mut engine = Engine::new();
 

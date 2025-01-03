@@ -197,7 +197,7 @@ impl AggregatedIndexParameter {
         &self,
         network: &mut pywr_core::network::Network,
         args: &LoadArgs,
-    ) -> Result<ParameterIndex<usize>, SchemaError> {
+    ) -> Result<ParameterIndex<u64>, SchemaError> {
         let parameters = self
             .parameters
             .iter()

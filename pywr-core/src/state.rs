@@ -292,7 +292,7 @@ pub enum ParameterValuesError {
 #[derive(Debug, Clone)]
 struct ParameterValues {
     values: Vec<f64>,
-    indices: Vec<usize>,
+    indices: Vec<u64>,
     multi_values: Vec<MultiValue>,
 }
 
@@ -322,14 +322,14 @@ impl ParameterValues {
         }
     }
 
-    fn get_index(&self, idx: usize) -> Result<usize, ParameterValuesError> {
+    fn get_index(&self, idx: usize) -> Result<u64, ParameterValuesError> {
         self.indices
             .get(idx)
             .ok_or(ParameterValuesError::IndexNotFound(idx))
             .copied()
     }
 
-    fn set_index(&mut self, idx: usize, value: usize) -> Result<(), ParameterValuesError> {
+    fn set_index(&mut self, idx: usize, value: u64) -> Result<(), ParameterValuesError> {
         match self.indices.get_mut(idx) {
             Some(s) => {
                 *s = value;
@@ -412,7 +412,7 @@ impl ParameterValuesCollection {
 
 pub struct ParameterValuesRef<'a> {
     values: &'a [f64],
-    indices: &'a [usize],
+    indices: &'a [u64],
     multi_values: &'a [MultiValue],
 }
 
@@ -421,7 +421,7 @@ impl ParameterValuesRef<'_> {
         self.values.get(idx)
     }
 
-    fn get_index(&self, idx: usize) -> Option<&usize> {
+    fn get_index(&self, idx: usize) -> Option<&u64> {
         self.indices.get(idx)
     }
 
@@ -443,7 +443,7 @@ impl SimpleParameterValues<'_> {
             .copied()
     }
 
-    pub fn get_simple_parameter_usize(&self, idx: SimpleParameterIndex<usize>) -> Result<usize, PywrError> {
+    pub fn get_simple_parameter_usize(&self, idx: SimpleParameterIndex<u64>) -> Result<u64, PywrError> {
         self.simple
             .get_index(*idx.deref())
             .ok_or(PywrError::SimpleIndexParameterIndexNotFound(idx))
@@ -478,7 +478,7 @@ impl ConstParameterValues<'_> {
             .copied()
     }
 
-    pub fn get_const_parameter_usize(&self, idx: ConstParameterIndex<usize>) -> Result<usize, PywrError> {
+    pub fn get_const_parameter_u64(&self, idx: ConstParameterIndex<u64>) -> Result<u64, PywrError> {
         self.constant
             .get_index(*idx.deref())
             .ok_or(PywrError::ConstIndexParameterIndexNotFound(idx))
@@ -793,36 +793,28 @@ impl State {
         })
     }
 
-    pub fn get_parameter_index(&self, idx: GeneralParameterIndex<usize>) -> Result<usize, PywrError> {
+    pub fn get_parameter_index(&self, idx: GeneralParameterIndex<u64>) -> Result<u64, PywrError> {
         self.parameters.general.get_index(*idx).map_err(|e| match e {
             ParameterValuesError::IndexNotFound(_) => PywrError::GeneralIndexParameterIndexNotFound(idx),
             ParameterValuesError::KeyNotFound(key) => PywrError::MultiValueParameterKeyNotFound(key),
         })
     }
 
-    pub fn set_parameter_index(&mut self, idx: GeneralParameterIndex<usize>, value: usize) -> Result<(), PywrError> {
+    pub fn set_parameter_index(&mut self, idx: GeneralParameterIndex<u64>, value: u64) -> Result<(), PywrError> {
         self.parameters.general.set_index(*idx, value).map_err(|e| match e {
             ParameterValuesError::IndexNotFound(_) => PywrError::GeneralIndexParameterIndexNotFound(idx),
             ParameterValuesError::KeyNotFound(key) => PywrError::MultiValueParameterKeyNotFound(key),
         })
     }
 
-    pub fn set_simple_parameter_index(
-        &mut self,
-        idx: SimpleParameterIndex<usize>,
-        value: usize,
-    ) -> Result<(), PywrError> {
+    pub fn set_simple_parameter_index(&mut self, idx: SimpleParameterIndex<u64>, value: u64) -> Result<(), PywrError> {
         self.parameters.simple.set_index(*idx, value).map_err(|e| match e {
             ParameterValuesError::IndexNotFound(_) => PywrError::SimpleIndexParameterIndexNotFound(idx),
             ParameterValuesError::KeyNotFound(key) => PywrError::MultiValueParameterKeyNotFound(key),
         })
     }
 
-    pub fn set_const_parameter_index(
-        &mut self,
-        idx: ConstParameterIndex<usize>,
-        value: usize,
-    ) -> Result<(), PywrError> {
+    pub fn set_const_parameter_index(&mut self, idx: ConstParameterIndex<u64>, value: u64) -> Result<(), PywrError> {
         self.parameters.constant.set_index(*idx, value).map_err(|e| match e {
             ParameterValuesError::IndexNotFound(_) => PywrError::ConstIndexParameterIndexNotFound(idx),
             ParameterValuesError::KeyNotFound(key) => PywrError::MultiValueParameterKeyNotFound(key),
