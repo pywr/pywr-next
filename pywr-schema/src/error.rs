@@ -19,8 +19,10 @@ pub enum SchemaError {
         name: String,
         attr: NodeAttribute,
     },
-    #[error("parameter {0} not found")]
+    #[error("Parameter `{0}` not found")]
     ParameterNotFound(String),
+    #[error("Expected an index parameter, but found a regular parameter: {0}")]
+    IndexParameterExpected(String),
     #[error("Loading a local parameter reference (name: {0}) requires a parent name space.")]
     LocalParameterReferenceRequiresParent(String),
     #[error("network {0} not found")]
@@ -46,8 +48,6 @@ pub enum SchemaError {
     HDF5Error(String),
     #[error("Missing metric set: {0}")]
     MissingMetricSet(String),
-    #[error("unexpected parameter type: {0}")]
-    UnexpectedParameterType(String),
     #[error("mismatch in the length of data provided. expected: {expected}, found: {found}")]
     DataLengthMismatch { expected: usize, found: usize },
     #[error("Failed to estimate epsilon for use in the radial basis function.")]

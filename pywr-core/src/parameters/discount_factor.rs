@@ -68,7 +68,7 @@ mod test {
         let volumes = Array1::linspace(1.0, 0.0, 21);
         let volume = Array1Parameter::new("test-x".into(), volumes.clone(), None);
 
-        let _volume_idx = network.add_parameter(Box::new(volume)).unwrap();
+        let _volume_idx = network.add_simple_parameter(Box::new(volume)).unwrap();
 
         let parameter = DiscountFactorParameter::new(
             "test-parameter".into(),

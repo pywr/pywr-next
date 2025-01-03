@@ -1002,7 +1002,7 @@ impl ParameterCollection {
         }
 
         match parameter.try_into_simple() {
-            Some(simple) => self.add_simple_usize(simple).map(|idx| idx.into()),
+            Some(simple) => self.add_simple_usize(simple),
             None => {
                 let index = GeneralParameterIndex::new(self.general_usize.len());
                 self.general_usize.push(parameter);
@@ -1014,17 +1014,22 @@ impl ParameterCollection {
     pub fn add_simple_usize(
         &mut self,
         parameter: Box<dyn SimpleParameter<usize>>,
-    ) -> Result<SimpleParameterIndex<usize>, PywrError> {
+    ) -> Result<ParameterIndex<usize>, PywrError> {
         if self.has_name(parameter.name()) {
             return Err(PywrError::ParameterNameAlreadyExists(parameter.meta().name.to_string()));
         }
 
-        let index = SimpleParameterIndex::new(self.simple_usize.len());
+        match parameter.try_into_const() {
+            Some(constant) => self.add_const_usize(constant),
+            None => {
+                let index = SimpleParameterIndex::new(self.simple_f64.len());
 
-        self.simple_usize.push(parameter);
-        self.simple_resolve_order.push(SimpleParameterType::Index(index));
+                self.simple_usize.push(parameter);
+                self.simple_resolve_order.push(SimpleParameterType::Index(index));
 
-        Ok(index)
+                Ok(index.into())
+            }
+        }
     }
 
     pub fn add_const_usize(

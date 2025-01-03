@@ -176,7 +176,7 @@ mod test {
         let volumes = Array1::linspace(1.0, 0.0, 21);
         let volume = Array1Parameter::new("test-x".into(), volumes.clone(), None);
 
-        let volume_idx = model.network_mut().add_parameter(Box::new(volume)).unwrap();
+        let volume_idx = model.network_mut().add_simple_parameter(Box::new(volume)).unwrap();
 
         const DELAY: usize = 3; // 3 time-step delay
         let parameter = DelayParameter::new(
