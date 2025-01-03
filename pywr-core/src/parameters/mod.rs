@@ -405,22 +405,22 @@ impl ParameterStates {
     ) -> Option<&mut Option<Box<dyn ParameterState>>> {
         self.constant.f64.get_mut(*index.deref())
     }
-    pub fn get_general_mut_usize_state(
+    pub fn get_general_mut_u64_state(
         &mut self,
-        index: GeneralParameterIndex<usize>,
+        index: GeneralParameterIndex<u64>,
     ) -> Option<&mut Option<Box<dyn ParameterState>>> {
         self.general.usize.get_mut(*index.deref())
     }
 
-    pub fn get_simple_mut_usize_state(
+    pub fn get_simple_mut_u64_state(
         &mut self,
-        index: SimpleParameterIndex<usize>,
+        index: SimpleParameterIndex<u64>,
     ) -> Option<&mut Option<Box<dyn ParameterState>>> {
         self.simple.usize.get_mut(*index.deref())
     }
-    pub fn get_const_mut_usize_state(
+    pub fn get_const_mut_u64_state(
         &mut self,
-        index: ConstParameterIndex<usize>,
+        index: ConstParameterIndex<u64>,
     ) -> Option<&mut Option<Box<dyn ParameterState>>> {
         self.constant.usize.get_mut(*index.deref())
     }
@@ -623,7 +623,7 @@ pub trait ConstParameter<T>: Parameter {
 
 pub enum GeneralParameterType {
     Parameter(GeneralParameterIndex<f64>),
-    Index(GeneralParameterIndex<usize>),
+    Index(GeneralParameterIndex<u64>),
     Multi(GeneralParameterIndex<MultiValue>),
 }
 
@@ -633,8 +633,8 @@ impl From<GeneralParameterIndex<f64>> for GeneralParameterType {
     }
 }
 
-impl From<GeneralParameterIndex<usize>> for GeneralParameterType {
-    fn from(idx: GeneralParameterIndex<usize>) -> Self {
+impl From<GeneralParameterIndex<u64>> for GeneralParameterType {
+    fn from(idx: GeneralParameterIndex<u64>) -> Self {
         Self::Index(idx)
     }
 }
@@ -647,7 +647,7 @@ impl From<GeneralParameterIndex<MultiValue>> for GeneralParameterType {
 
 pub enum SimpleParameterType {
     Parameter(SimpleParameterIndex<f64>),
-    Index(SimpleParameterIndex<usize>),
+    Index(SimpleParameterIndex<u64>),
     Multi(SimpleParameterIndex<MultiValue>),
 }
 
@@ -657,8 +657,8 @@ impl From<SimpleParameterIndex<f64>> for SimpleParameterType {
     }
 }
 
-impl From<SimpleParameterIndex<usize>> for SimpleParameterType {
-    fn from(idx: SimpleParameterIndex<usize>) -> Self {
+impl From<SimpleParameterIndex<u64>> for SimpleParameterType {
+    fn from(idx: SimpleParameterIndex<u64>) -> Self {
         Self::Index(idx)
     }
 }
@@ -671,7 +671,7 @@ impl From<SimpleParameterIndex<MultiValue>> for SimpleParameterType {
 
 pub enum ConstParameterType {
     Parameter(ConstParameterIndex<f64>),
-    Index(ConstParameterIndex<usize>),
+    Index(ConstParameterIndex<u64>),
     Multi(ConstParameterIndex<MultiValue>),
 }
 
@@ -681,8 +681,8 @@ impl From<ConstParameterIndex<f64>> for ConstParameterType {
     }
 }
 
-impl From<ConstParameterIndex<usize>> for ConstParameterType {
-    fn from(idx: ConstParameterIndex<usize>) -> Self {
+impl From<ConstParameterIndex<u64>> for ConstParameterType {
+    fn from(idx: ConstParameterIndex<u64>) -> Self {
         Self::Index(idx)
     }
 }
@@ -695,7 +695,7 @@ impl From<ConstParameterIndex<MultiValue>> for ConstParameterType {
 
 pub enum ParameterType {
     Parameter(ParameterIndex<f64>),
-    Index(ParameterIndex<usize>),
+    Index(ParameterIndex<u64>),
     Multi(ParameterIndex<MultiValue>),
 }
 
@@ -705,8 +705,8 @@ impl From<ParameterIndex<f64>> for ParameterType {
     }
 }
 
-impl From<ParameterIndex<usize>> for ParameterType {
-    fn from(idx: ParameterIndex<usize>) -> Self {
+impl From<ParameterIndex<u64>> for ParameterType {
+    fn from(idx: ParameterIndex<u64>) -> Self {
         Self::Index(idx)
     }
 }
@@ -763,19 +763,19 @@ pub struct ParameterCollectionSize {
 #[derive(Default)]
 pub struct ParameterCollection {
     constant_f64: Vec<Box<dyn ConstParameter<f64>>>,
-    constant_usize: Vec<Box<dyn ConstParameter<usize>>>,
+    constant_usize: Vec<Box<dyn ConstParameter<u64>>>,
     constant_multi: Vec<Box<dyn ConstParameter<MultiValue>>>,
     constant_resolve_order: Vec<ConstParameterType>,
 
     simple_f64: Vec<Box<dyn SimpleParameter<f64>>>,
-    simple_usize: Vec<Box<dyn SimpleParameter<usize>>>,
+    simple_usize: Vec<Box<dyn SimpleParameter<u64>>>,
     simple_multi: Vec<Box<dyn SimpleParameter<MultiValue>>>,
     simple_resolve_order: Vec<SimpleParameterType>,
 
     // There is no resolve order for general parameters as they are resolved at a model
     // level with other component types (e.g. nodes).
     general_f64: Vec<Box<dyn GeneralParameter<f64>>>,
-    general_usize: Vec<Box<dyn GeneralParameter<usize>>>,
+    general_usize: Vec<Box<dyn GeneralParameter<u64>>>,
     general_multi: Vec<Box<dyn GeneralParameter<MultiValue>>>,
 }
 
@@ -993,16 +993,16 @@ impl ParameterCollection {
         }
     }
 
-    pub fn add_general_usize(
+    pub fn add_general_u64(
         &mut self,
-        parameter: Box<dyn GeneralParameter<usize>>,
-    ) -> Result<ParameterIndex<usize>, PywrError> {
+        parameter: Box<dyn GeneralParameter<u64>>,
+    ) -> Result<ParameterIndex<u64>, PywrError> {
         if self.has_name(parameter.name()) {
             return Err(PywrError::ParameterNameAlreadyExists(parameter.meta().name.to_string()));
         }
 
         match parameter.try_into_simple() {
-            Some(simple) => self.add_simple_usize(simple),
+            Some(simple) => self.add_simple_u64(simple),
             None => {
                 let index = GeneralParameterIndex::new(self.general_usize.len());
                 self.general_usize.push(parameter);
@@ -1011,16 +1011,16 @@ impl ParameterCollection {
         }
     }
 
-    pub fn add_simple_usize(
+    pub fn add_simple_u64(
         &mut self,
-        parameter: Box<dyn SimpleParameter<usize>>,
-    ) -> Result<ParameterIndex<usize>, PywrError> {
+        parameter: Box<dyn SimpleParameter<u64>>,
+    ) -> Result<ParameterIndex<u64>, PywrError> {
         if self.has_name(parameter.name()) {
             return Err(PywrError::ParameterNameAlreadyExists(parameter.meta().name.to_string()));
         }
 
         match parameter.try_into_const() {
-            Some(constant) => self.add_const_usize(constant),
+            Some(constant) => self.add_const_u64(constant),
             None => {
                 let index = SimpleParameterIndex::new(self.simple_f64.len());
 
@@ -1032,10 +1032,7 @@ impl ParameterCollection {
         }
     }
 
-    pub fn add_const_usize(
-        &mut self,
-        parameter: Box<dyn ConstParameter<usize>>,
-    ) -> Result<ParameterIndex<usize>, PywrError> {
+    pub fn add_const_u64(&mut self, parameter: Box<dyn ConstParameter<u64>>) -> Result<ParameterIndex<u64>, PywrError> {
         if self.has_name(parameter.name()) {
             return Err(PywrError::ParameterNameAlreadyExists(parameter.meta().name.to_string()));
         }
@@ -1048,7 +1045,7 @@ impl ParameterCollection {
         Ok(index.into())
     }
 
-    pub fn get_usize(&self, index: ParameterIndex<usize>) -> Option<&dyn Parameter> {
+    pub fn get_u64(&self, index: ParameterIndex<u64>) -> Option<&dyn Parameter> {
         match index {
             ParameterIndex::Const(idx) => self.constant_usize.get(*idx.deref()).map(|p| p.as_parameter()),
             ParameterIndex::Simple(idx) => self.simple_usize.get(*idx.deref()).map(|p| p.as_parameter()),
@@ -1056,7 +1053,7 @@ impl ParameterCollection {
         }
     }
 
-    pub fn get_general_usize(&self, index: GeneralParameterIndex<usize>) -> Option<&dyn GeneralParameter<usize>> {
+    pub fn get_general_usize(&self, index: GeneralParameterIndex<u64>) -> Option<&dyn GeneralParameter<u64>> {
         self.general_usize.get(*index.deref()).map(|p| p.as_ref())
     }
 
@@ -1067,7 +1064,7 @@ impl ParameterCollection {
             .map(|p| p.as_parameter())
     }
 
-    pub fn get_usize_index_by_name(&self, name: &ParameterName) -> Option<ParameterIndex<usize>> {
+    pub fn get_usize_index_by_name(&self, name: &ParameterName) -> Option<ParameterIndex<u64>> {
         if let Some(idx) = self
             .general_usize
             .iter()
@@ -1222,7 +1219,7 @@ impl ParameterCollection {
                         .ok_or(PywrError::SimpleIndexParameterIndexNotFound(*idx))?;
                     // .. and its internal state
                     let internal_state = internal_states
-                        .get_simple_mut_usize_state(*idx)
+                        .get_simple_mut_u64_state(*idx)
                         .ok_or(PywrError::SimpleIndexParameterIndexNotFound(*idx))?;
 
                     let value = p.compute(
@@ -1294,7 +1291,7 @@ impl ParameterCollection {
                         .ok_or(PywrError::SimpleIndexParameterIndexNotFound(*idx))?;
                     // .. and its internal state
                     let internal_state = internal_states
-                        .get_simple_mut_usize_state(*idx)
+                        .get_simple_mut_u64_state(*idx)
                         .ok_or(PywrError::SimpleIndexParameterIndexNotFound(*idx))?;
 
                     p.after(
@@ -1359,7 +1356,7 @@ impl ParameterCollection {
                         .ok_or(PywrError::ConstIndexParameterIndexNotFound(*idx))?;
                     // .. and its internal state
                     let internal_state = internal_states
-                        .get_const_mut_usize_state(*idx)
+                        .get_const_mut_u64_state(*idx)
                         .ok_or(PywrError::ConstIndexParameterIndexNotFound(*idx))?;
 
                     let value = p.compute(scenario_index, &state.get_const_parameter_values(), internal_state)?;
@@ -1548,13 +1545,13 @@ mod tests {
         let ret = collection.add_general_f64(Box::new(TestParameter::default()));
         assert!(ret.is_err());
 
-        let ret = collection.add_const_usize(Box::new(TestParameter::default()));
+        let ret = collection.add_const_u64(Box::new(TestParameter::default()));
         assert!(ret.is_err());
 
-        let ret = collection.add_simple_usize(Box::new(TestParameter::default()));
+        let ret = collection.add_simple_u64(Box::new(TestParameter::default()));
         assert!(ret.is_err());
 
-        let ret = collection.add_general_usize(Box::new(TestParameter::default()));
+        let ret = collection.add_general_u64(Box::new(TestParameter::default()));
         assert!(ret.is_err());
 
         let ret = collection.add_const_multi(Box::new(TestParameter::default()));

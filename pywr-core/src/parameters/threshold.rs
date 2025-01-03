@@ -74,7 +74,7 @@ impl Parameter for ThresholdParameter {
     }
 }
 
-impl GeneralParameter<usize> for ThresholdParameter {
+impl GeneralParameter<u64> for ThresholdParameter {
     fn compute(
         &self,
         _timestep: &Timestep,
@@ -82,7 +82,7 @@ impl GeneralParameter<usize> for ThresholdParameter {
         model: &Network,
         state: &State,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<usize, PywrError> {
+    ) -> Result<u64, PywrError> {
         // Downcast the internal state to the correct type
         let previously_activated = downcast_internal_state_mut::<bool>(internal_state);
 

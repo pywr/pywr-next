@@ -645,7 +645,7 @@ impl Network {
 
                             // .. and its internal state
                             let internal_state = internal_states
-                                .get_general_mut_usize_state(*idx)
+                                .get_general_mut_u64_state(*idx)
                                 .ok_or(PywrError::GeneralIndexParameterIndexNotFound(*idx))?;
 
                             let value = p.compute(timestep, scenario_index, self, state, internal_state)?;
@@ -736,7 +736,7 @@ impl Network {
 
                             // .. and its internal state
                             let internal_state = internal_states
-                                .get_general_mut_usize_state(*idx)
+                                .get_general_mut_u64_state(*idx)
                                 .ok_or(PywrError::GeneralIndexParameterIndexNotFound(*idx))?;
 
                             p.after(timestep, scenario_index, self, state, internal_state)?;
@@ -1151,8 +1151,8 @@ impl Network {
     }
 
     /// Get a [`Parameter<usize>`] from its index.
-    pub fn get_index_parameter(&self, index: ParameterIndex<usize>) -> Result<&dyn parameters::Parameter, PywrError> {
-        match self.parameters.get_usize(index) {
+    pub fn get_index_parameter(&self, index: ParameterIndex<u64>) -> Result<&dyn parameters::Parameter, PywrError> {
+        match self.parameters.get_u64(index) {
             Some(p) => Ok(p),
             None => Err(PywrError::IndexParameterIndexNotFound(index)),
         }
@@ -1167,7 +1167,7 @@ impl Network {
     }
 
     /// Get a `IndexParameterIndex` from a parameter's name
-    pub fn get_index_parameter_index_by_name(&self, name: &ParameterName) -> Result<ParameterIndex<usize>, PywrError> {
+    pub fn get_index_parameter_index_by_name(&self, name: &ParameterName) -> Result<ParameterIndex<u64>, PywrError> {
         match self.parameters.get_usize_index_by_name(name) {
             Some(idx) => Ok(idx),
             None => Err(PywrError::ParameterNotFound(name.to_string())),
@@ -1365,9 +1365,9 @@ impl Network {
     /// Add a [`parameters::SimpleParameter`] to the network
     pub fn add_simple_index_parameter(
         &mut self,
-        parameter: Box<dyn parameters::SimpleParameter<usize>>,
-    ) -> Result<ParameterIndex<usize>, PywrError> {
-        self.parameters.add_simple_usize(parameter)
+        parameter: Box<dyn parameters::SimpleParameter<u64>>,
+    ) -> Result<ParameterIndex<u64>, PywrError> {
+        self.parameters.add_simple_u64(parameter)
     }
 
     /// Add a [`parameters::ConstParameter`] to the network
@@ -1381,9 +1381,9 @@ impl Network {
     /// Add a `parameters::IndexParameter` to the network
     pub fn add_index_parameter(
         &mut self,
-        parameter: Box<dyn parameters::GeneralParameter<usize>>,
-    ) -> Result<ParameterIndex<usize>, PywrError> {
-        let parameter_index = self.parameters.add_general_usize(parameter)?;
+        parameter: Box<dyn parameters::GeneralParameter<u64>>,
+    ) -> Result<ParameterIndex<u64>, PywrError> {
+        let parameter_index = self.parameters.add_general_u64(parameter)?;
         // add it to the general resolve order (simple and constant parameters are resolved separately)
         if let ParameterIndex::General(idx) = parameter_index {
             self.resolve_order.push(ComponentType::Parameter(idx.into()));

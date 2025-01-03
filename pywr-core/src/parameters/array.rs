@@ -63,18 +63,18 @@ impl SimpleParameter<f64> for Array1Parameter<f64> {
     }
 }
 
-impl SimpleParameter<usize> for Array1Parameter<u64> {
+impl SimpleParameter<u64> for Array1Parameter<u64> {
     fn compute(
         &self,
         timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
         _values: &SimpleParameterValues,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<usize, PywrError> {
+    ) -> Result<u64, PywrError> {
         let idx = self.timestep_index(timestep);
         // This panics if out-of-bounds
         let value = self.array[[idx]];
-        Ok(value as usize)
+        Ok(value)
     }
 
     fn as_parameter(&self) -> &dyn Parameter
@@ -153,19 +153,19 @@ impl SimpleParameter<f64> for Array2Parameter<f64> {
     }
 }
 
-impl SimpleParameter<usize> for Array2Parameter<u64> {
+impl SimpleParameter<u64> for Array2Parameter<u64> {
     fn compute(
         &self,
         timestep: &Timestep,
         scenario_index: &ScenarioIndex,
         _values: &SimpleParameterValues,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<usize, PywrError> {
+    ) -> Result<u64, PywrError> {
         // This panics if out-of-bounds
         let t_idx = self.timestep_index(timestep);
         let s_idx = scenario_index.indices[self.scenario_group_index];
 
-        Ok(self.array[[t_idx, s_idx]] as usize)
+        Ok(self.array[[t_idx, s_idx]])
     }
 
     fn as_parameter(&self) -> &dyn Parameter

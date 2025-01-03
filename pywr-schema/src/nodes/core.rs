@@ -1009,8 +1009,8 @@ pub enum Relationship {
         factors: Vec<Metric>,
     },
     Exclusive {
-        min_active: Option<usize>,
-        max_active: Option<usize>,
+        min_active: Option<u64>,
+        max_active: Option<u64>,
     },
 }
 

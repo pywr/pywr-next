@@ -112,7 +112,7 @@ impl VisitMetrics for f32 {}
 impl VisitMetrics for f64 {}
 impl<const N: usize> VisitMetrics for [f64; N] {}
 impl VisitMetrics for bool {}
-impl VisitMetrics for usize {}
+impl VisitMetrics for u64 {}
 impl VisitMetrics for String {}
 impl VisitMetrics for PathBuf {}
 impl VisitMetrics for NonZeroUsize {}
@@ -214,7 +214,7 @@ impl VisitPaths for f32 {}
 impl VisitPaths for f64 {}
 impl<const N: usize> VisitPaths for [f64; N] {}
 impl VisitPaths for bool {}
-impl VisitPaths for usize {}
+impl VisitPaths for u64 {}
 impl VisitPaths for String {}
 impl VisitPaths for PathBuf {
     fn visit_paths<F: FnMut(&Path)>(&self, visitor: &mut F) {
