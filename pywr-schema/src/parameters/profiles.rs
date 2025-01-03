@@ -132,9 +132,9 @@ impl TryFromV1<MonthlyProfileParameterV1> for MonthlyProfileParameter {
 #[serde(deny_unknown_fields)]
 pub struct UniformDrawdownProfileParameter {
     pub meta: ParameterMeta,
-    pub reset_day: Option<ConstantValue<usize>>,
-    pub reset_month: Option<ConstantValue<usize>>,
-    pub residual_days: Option<ConstantValue<usize>>,
+    pub reset_day: Option<ConstantValue<u64>>,
+    pub reset_month: Option<ConstantValue<u64>>,
+    pub residual_days: Option<ConstantValue<u64>>,
 }
 
 #[cfg(feature = "core")]
@@ -177,9 +177,9 @@ impl FromV1<UniformDrawdownProfileParameterV1> for UniformDrawdownProfileParamet
 
         Self {
             meta,
-            reset_day: v1.reset_day.map(|v| ConstantValue::Literal(v as usize)),
-            reset_month: v1.reset_day.map(|v| ConstantValue::Literal(v as usize)),
-            residual_days: v1.reset_day.map(|v| ConstantValue::Literal(v as usize)),
+            reset_day: v1.reset_day.map(|v| ConstantValue::Literal(v as u64)),
+            reset_month: v1.reset_day.map(|v| ConstantValue::Literal(v as u64)),
+            residual_days: v1.reset_day.map(|v| ConstantValue::Literal(v as u64)),
         }
     }
 }

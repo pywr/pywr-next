@@ -77,16 +77,16 @@ impl Factors {
 #[derive(Debug, PartialEq)]
 pub struct Exclusivity {
     // The minimum number of nodes that must be active
-    min_active: usize,
+    min_active: u64,
     // The maximum number of nodes that can be active
-    max_active: usize,
+    max_active: u64,
 }
 
 impl Exclusivity {
-    pub fn min_active(&self) -> usize {
+    pub fn min_active(&self) -> u64 {
         self.min_active
     }
-    pub fn max_active(&self) -> usize {
+    pub fn max_active(&self) -> u64 {
         self.max_active
     }
 }
@@ -108,7 +108,7 @@ impl Relationship {
         Relationship::Factored(Factors::Proportion(factors.to_vec()))
     }
 
-    pub fn new_exclusive(min_active: usize, max_active: usize) -> Self {
+    pub fn new_exclusive(min_active: u64, max_active: u64) -> Self {
         Relationship::Exclusive(Exclusivity { min_active, max_active })
     }
 }

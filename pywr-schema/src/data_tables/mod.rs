@@ -241,7 +241,7 @@ impl LoadedTableCollection {
     }
 
     /// Return a single scalar value from a table collection.
-    pub fn get_scalar_usize(&self, _table_ref: &TableDataRef) -> Result<usize, TableError> {
+    pub fn get_scalar_u64(&self, _table_ref: &TableDataRef) -> Result<u64, TableError> {
         // let tbl = self.get_table(&table_ref.table)?;
         todo!()
     }

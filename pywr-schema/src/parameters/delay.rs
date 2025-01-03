@@ -15,7 +15,7 @@ use schemars::JsonSchema;
 pub struct DelayParameter {
     pub meta: ParameterMeta,
     pub metric: Metric,
-    pub delay: usize,
+    pub delay: u64,
     pub initial_value: f64,
 }
 

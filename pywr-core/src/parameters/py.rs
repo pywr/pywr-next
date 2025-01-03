@@ -1,5 +1,5 @@
 use super::{GeneralParameter, Parameter, ParameterMeta, ParameterName, ParameterState, PywrError, Timestep};
-use crate::metric::{MetricF64, MetricUsize};
+use crate::metric::{MetricF64, MetricU64};
 use crate::network::Network;
 use crate::parameters::downcast_internal_state_mut;
 use crate::scenario::ScenarioIndex;
@@ -14,7 +14,7 @@ pub struct PyParameter {
     args: Py<PyTuple>,
     kwargs: Py<PyDict>,
     metrics: HashMap<String, MetricF64>,
-    indices: HashMap<String, MetricUsize>,
+    indices: HashMap<String, MetricU64>,
 }
 
 struct Internal {
@@ -34,7 +34,7 @@ impl PyParameter {
         args: Py<PyTuple>,
         kwargs: Py<PyDict>,
         metrics: &HashMap<String, MetricF64>,
-        indices: &HashMap<String, MetricUsize>,
+        indices: &HashMap<String, MetricU64>,
     ) -> Self {
         Self {
             meta: ParameterMeta::new(name),
@@ -67,7 +67,7 @@ impl PyParameter {
         state: &State,
         py: Python<'py>,
     ) -> Result<Bound<'py, PyDict>, PywrError> {
-        let index_values: Vec<(&str, usize)> = self
+        let index_values: Vec<(&str, u64)> = self
             .indices
             .iter()
             .map(|(k, value)| Ok((k.as_str(), value.get_value(network, state)?)))
@@ -204,7 +204,7 @@ impl GeneralParameter<f64> for PyParameter {
     }
 }
 
-impl GeneralParameter<usize> for PyParameter {
+impl GeneralParameter<u64> for PyParameter {
     fn compute(
         &self,
         timestep: &Timestep,
@@ -212,7 +212,7 @@ impl GeneralParameter<usize> for PyParameter {
         model: &Network,
         state: &State,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<usize, PywrError> {
+    ) -> Result<u64, PywrError> {
         self.compute(timestep, scenario_index, model, state, internal_state)
     }
 
