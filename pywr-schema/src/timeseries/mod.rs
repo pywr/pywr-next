@@ -62,6 +62,9 @@ pub enum TimeseriesError {
     #[cfg(feature = "core")]
     #[error("Pywr core error: {0}")]
     PywrCore(#[from] PywrError),
+    #[cfg(feature = "core")]
+    #[error("Python not enabled.")]
+    PythonNotEnabled,
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]

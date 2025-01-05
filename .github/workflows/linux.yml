@@ -30,7 +30,13 @@ jobs:
           mkdir bin
           curl -sSL $url | tar -xz --directory=bin
           echo "$(pwd)/bin" >> $GITHUB_PATH
-
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-hack@0.5
+      - name: Check (pywr-core)
+        run: cargo hack check --feature-powerset --no-dev-deps -p pywr-core --exclude-features ipm-simd,ipm-ocl
+      - name: Check (pywr-schema)
+        run: cargo hack check --feature-powerset --no-dev-deps -p pywr-schema --exclude-features ipm-simd,ipm-ocl
       - name: Build
         run: cargo build --verbose --features highs,cbc --workspace --exclude ipm-simd --exclude pywr-python
       - name: Run tests
@@ -46,17 +52,3 @@ jobs:
           if echo "$output" | grep -q "\[ERROR\]" ; then
               exit 1
           fi
-
-  build_schema_only:
-
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: true
-      - uses: swatinem/rust-cache@v2
-      - name: Build
-        run: cargo build --verbose --no-default-features --package pywr-schema@2.0.0-dev
-      - name: Run tests
-        run: cargo test --verbose --no-default-features --package pywr-schema@2.0.0-dev

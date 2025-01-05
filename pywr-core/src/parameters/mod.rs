@@ -20,6 +20,8 @@ mod negativemin;
 mod offset;
 mod polynomial;
 mod profiles;
+
+#[cfg(feature = "pyo3")]
 mod py;
 mod rhai;
 mod threshold;
@@ -62,6 +64,7 @@ pub use profiles::{
     RbfProfileVariableConfig, UniformDrawdownProfileParameter, WeeklyInterpDay, WeeklyProfileError,
     WeeklyProfileParameter, WeeklyProfileValues,
 };
+#[cfg(feature = "pyo3")]
 pub use py::PyParameter;
 use std::fmt;
 use std::fmt::{Display, Formatter};

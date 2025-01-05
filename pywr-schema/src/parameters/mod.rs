@@ -56,7 +56,7 @@ pub use profiles::{
     DailyProfileParameter, MonthlyInterpDay, MonthlyProfileParameter, RadialBasisFunction, RbfProfileParameter,
     RbfProfileVariableSettings, UniformDrawdownProfileParameter, WeeklyProfileParameter,
 };
-#[cfg(feature = "core")]
+#[cfg(all(feature = "core", feature = "pyo3"))]
 pub use python::try_json_value_into_py;
 pub use python::{PythonParameter, PythonReturnType, PythonSource};
 use pywr_schema_macros::PywrVisitAll;
