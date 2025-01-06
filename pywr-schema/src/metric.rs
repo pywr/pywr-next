@@ -37,7 +37,7 @@ use strum_macros::Display;
 /// dynamic behaviour is created.
 ///
 /// See also [`IndexMetric`] for integer values.
-#[derive(Deserialize, Serialize, Clone, Debug, Display, JsonSchema)]
+#[derive(Deserialize, Serialize, Clone, Debug, Display, JsonSchema, PartialEq)]
 #[serde(tag = "type")]
 pub enum Metric {
     /// A constant floating point value.
@@ -240,7 +240,7 @@ impl TryFromV1<ParameterValueV1> for Metric {
 }
 
 /// A reference to a node with an optional attribute.
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct NodeReference {
     /// The name of the node
@@ -365,7 +365,7 @@ impl From<String> for SimpleNodeReference {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct ParameterReference {
     /// The name of the parameter
@@ -449,7 +449,7 @@ impl ParameterReference {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct EdgeReference {
     /// The edge referred to by this reference.
@@ -468,7 +468,7 @@ impl EdgeReference {
 ///
 /// This struct is the integer equivalent of [`Metric`] and is used in places where an integer
 /// value is required. See [`Metric`] for more information.
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, Display)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, Display, PartialEq)]
 #[serde(untagged)]
 pub enum IndexMetric {
     Constant {
@@ -564,7 +564,7 @@ impl TryFromV1<ParameterValueV1> for IndexMetric {
             // TODO this could print a warning and do a cast to usize instead.
             ParameterValueV1::Constant(value) => {
                 // Check if the value is not a whole non-negative number
-                if value.fract() != 0.0 && value >= 0.0 {
+                if value.fract() != 0.0 || value < 0.0 {
                     return Err(ConversionError::FloatToIndex {});
                 }
 
@@ -601,5 +601,30 @@ impl TryFromV1<ParameterValueV1> for IndexMetric {
             }
         };
         Ok(p)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::{ConversionError, IndexMetric, ParameterValueV1, TryFromV1};
+
+    /// Test conversion of `ParameterValueV1::Constant` to `IndexMetric`.
+    #[test]
+    fn test_index_metric_try_from_v1_constant() {
+        let v1 = ParameterValueV1::Constant(0.0);
+        let result = IndexMetric::try_from_v1(v1, None, &mut Default::default());
+        assert_eq!(result, Ok(IndexMetric::Constant { value: 0 }));
+
+        let v1 = ParameterValueV1::Constant(1.0);
+        let result = IndexMetric::try_from_v1(v1, None, &mut Default::default());
+        assert_eq!(result, Ok(IndexMetric::Constant { value: 1 }));
+
+        let v1 = ParameterValueV1::Constant(1.5);
+        let result = IndexMetric::try_from_v1(v1, None, &mut Default::default());
+        assert_eq!(result, Err(ConversionError::FloatToIndex {}));
+
+        let v1 = ParameterValueV1::Constant(-1.0);
+        let result = IndexMetric::try_from_v1(v1, None, &mut Default::default());
+        assert_eq!(result, Err(ConversionError::FloatToIndex {}));
     }
 }

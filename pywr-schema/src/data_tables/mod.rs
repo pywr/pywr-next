@@ -255,7 +255,7 @@ impl LoadedTableCollection {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct TableDataRef {
     pub table: String,

@@ -399,14 +399,14 @@ impl LoadedTimeseriesCollection {
 //     ts.into_values().collect::<Vec<Timeseries>>()
 // }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, strum_macros::Display)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, strum_macros::Display, PartialEq)]
 #[serde(tag = "type", content = "name")]
 pub enum TimeseriesColumns {
     Scenario(String),
     Column(String),
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct TimeseriesReference {
     pub name: String,

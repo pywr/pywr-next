@@ -638,7 +638,7 @@ impl ConstantFloatVec {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll, Display)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll, Display, PartialEq)]
 #[serde(untagged)]
 pub enum TableIndex {
     Single(String),

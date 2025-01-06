@@ -89,7 +89,7 @@ impl From<NodeMetaV1> for NodeMeta {
 /// All possible attributes that could be produced by a node.
 ///
 ///
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Copy, Display, JsonSchema, PywrVisitAll)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Copy, Display, JsonSchema, PywrVisitAll, PartialEq)]
 pub enum NodeAttribute {
     Inflow,
     Outflow,
