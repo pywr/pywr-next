@@ -125,6 +125,10 @@ impl Timestep {
         self.duration.fractional_days()
     }
 
+    /// Returns the day of the year index of the timestep.
+    ///
+    /// The index is zero-based and accounts for leaps days. In non-leap years, 1 is added is added to the index for
+    /// days after Feb 28th.
     pub fn day_of_year_index(&self) -> usize {
         let mut i = self.date.ordinal() as usize - 1;
         if !is_leap_year(self.date.year()) && i > 58 {

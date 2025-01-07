@@ -6,7 +6,6 @@ use crate::scenario::ScenarioIndex;
 use crate::state::SimpleParameterValues;
 use crate::timestep::Timestep;
 use crate::PywrError;
-use chrono::Datelike;
 use nalgebra::DMatrix;
 
 pub struct RbfProfileVariableConfig {
