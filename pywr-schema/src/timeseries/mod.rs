@@ -14,7 +14,11 @@ pub use pandas::PandasDataset;
 #[cfg(feature = "core")]
 use polars::error::PolarsError;
 #[cfg(feature = "core")]
-use polars::prelude::{DataFrame, DataType::Float64, Float64Type, IndexOrder};
+use polars::prelude::{
+    DataFrame,
+    DataType::{Float64, UInt64},
+    Float64Type, IndexOrder, UInt64Type,
+};
 pub use polars_dataset::PolarsDataset;
 #[cfg(feature = "core")]
 use pywr_core::{
@@ -130,7 +134,7 @@ impl LoadedTimeseriesCollection {
         Ok(Self { timeseries })
     }
 
-    pub fn load_column(
+    pub fn load_column_f64(
         &self,
         network: &mut pywr_core::network::Network,
         name: &str,
@@ -150,14 +154,41 @@ impl LoadedTimeseriesCollection {
             Err(e) => match e {
                 PywrError::ParameterNotFound(_) => {
                     let p = Array1Parameter::new(name, array, None);
-                    Ok(network.add_parameter(Box::new(p))?)
+                    Ok(network.add_simple_parameter(Box::new(p))?)
                 }
                 _ => Err(TimeseriesError::PywrCore(e)),
             },
         }
     }
 
-    pub fn load_single_column(
+    pub fn load_column_usize(
+        &self,
+        network: &mut pywr_core::network::Network,
+        name: &str,
+        col: &str,
+    ) -> Result<ParameterIndex<usize>, TimeseriesError> {
+        let df = self
+            .timeseries
+            .get(name)
+            .ok_or(TimeseriesError::TimeseriesNotFound(name.to_string()))?;
+        let series = df.column(col)?;
+
+        let array = series.cast(&UInt64)?.u64()?.to_ndarray()?.to_owned();
+        let name = ParameterName::new(col, Some(name));
+
+        match network.get_index_parameter_index_by_name(&name) {
+            Ok(idx) => Ok(idx),
+            Err(e) => match e {
+                PywrError::ParameterNotFound(_) => {
+                    let p = Array1Parameter::new(name, array, None);
+                    Ok(network.add_simple_index_parameter(Box::new(p))?)
+                }
+                _ => Err(TimeseriesError::PywrCore(e)),
+            },
+        }
+    }
+
+    pub fn load_single_column_f64(
         &self,
         network: &mut pywr_core::network::Network,
         name: &str,
@@ -188,14 +219,53 @@ impl LoadedTimeseriesCollection {
             Err(e) => match e {
                 PywrError::ParameterNotFound(_) => {
                     let p = Array1Parameter::new(name, array, None);
-                    Ok(network.add_parameter(Box::new(p))?)
+                    Ok(network.add_simple_parameter(Box::new(p))?)
                 }
                 _ => Err(TimeseriesError::PywrCore(e)),
             },
         }
     }
 
-    pub fn load_df(
+    pub fn load_single_column_usize(
+        &self,
+        network: &mut pywr_core::network::Network,
+        name: &str,
+    ) -> Result<ParameterIndex<usize>, TimeseriesError> {
+        let df = self
+            .timeseries
+            .get(name)
+            .ok_or(TimeseriesError::TimeseriesNotFound(name.to_string()))?;
+
+        let cols = df.get_column_names();
+
+        if cols.len() > 1 {
+            return Err(TimeseriesError::TimeseriesColumnOrScenarioRequired(name.to_string()));
+        };
+
+        let col = cols.first().ok_or(TimeseriesError::ColumnNotFound {
+            col: "".to_string(),
+            name: name.to_string(),
+        })?;
+
+        let series = df.column(col)?;
+
+        let array = series.cast(&UInt64)?.u64()?.to_ndarray()?.to_owned();
+        let name = ParameterName::new(col, Some(name));
+
+        match network.get_index_parameter_index_by_name(&name) {
+            Ok(idx) => Ok(idx),
+            Err(e) => match e {
+                PywrError::ParameterNotFound(_) => {
+                    let p = Array1Parameter::new(name, array, None);
+                    Ok(network.add_simple_index_parameter(Box::new(p))?)
+                }
+                _ => Err(TimeseriesError::PywrCore(e)),
+            },
+        }
+    }
+
+    /// Load a timeseries dataframe as a 2D array F64 parameter.
+    pub fn load_df_f64(
         &self,
         network: &mut pywr_core::network::Network,
         name: &str,
@@ -220,7 +290,40 @@ impl LoadedTimeseriesCollection {
             Err(e) => match e {
                 PywrError::ParameterNotFound(_) => {
                     let p = Array2Parameter::new(name, array, scenario_group_index, None);
-                    Ok(network.add_parameter(Box::new(p))?)
+                    Ok(network.add_simple_parameter(Box::new(p))?)
+                }
+                _ => Err(TimeseriesError::PywrCore(e)),
+            },
+        }
+    }
+
+    /// Load a timeseries dataframe as a 2D array Usize parameter.
+    pub fn load_df_usize(
+        &self,
+        network: &mut pywr_core::network::Network,
+        name: &str,
+        domain: &ModelDomain,
+        scenario: &str,
+    ) -> Result<ParameterIndex<usize>, TimeseriesError> {
+        let scenario_group_index = domain
+            .scenarios()
+            .group_index(scenario)
+            .ok_or(TimeseriesError::ScenarioGroupNotFound(scenario.to_string()))?;
+
+        let df = self
+            .timeseries
+            .get(name)
+            .ok_or(TimeseriesError::TimeseriesNotFound(name.to_string()))?;
+
+        let array: Array2<u64> = df.to_ndarray::<UInt64Type>(IndexOrder::default()).unwrap();
+        let name = ParameterName::new(scenario, Some(name));
+
+        match network.get_index_parameter_index_by_name(&name) {
+            Ok(idx) => Ok(idx),
+            Err(e) => match e {
+                PywrError::ParameterNotFound(_) => {
+                    let p = Array2Parameter::new(name, array, scenario_group_index, None);
+                    Ok(network.add_simple_index_parameter(Box::new(p))?)
                 }
                 _ => Err(TimeseriesError::PywrCore(e)),
             },
@@ -296,14 +399,14 @@ impl LoadedTimeseriesCollection {
 //     ts.into_values().collect::<Vec<Timeseries>>()
 // }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, strum_macros::Display)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, strum_macros::Display, PartialEq)]
 #[serde(tag = "type", content = "name")]
 pub enum TimeseriesColumns {
     Scenario(String),
     Column(String),
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct TimeseriesReference {
     pub name: String,

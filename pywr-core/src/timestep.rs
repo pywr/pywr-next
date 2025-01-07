@@ -96,7 +96,7 @@ impl PywrDuration {
     }
 }
 
-type TimestepIndex = usize;
+pub type TimestepIndex = usize;
 
 #[pyclass]
 #[derive(Debug, Copy, Clone)]

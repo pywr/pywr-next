@@ -7,7 +7,7 @@ use pywr_core::{edge::EdgeIndex, metric::MetricF64, node::NodeIndex};
 use schemars::JsonSchema;
 use std::fmt::{Display, Formatter};
 
-#[derive(serde::Deserialize, serde::Serialize, Clone, JsonSchema, Debug)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, JsonSchema, Debug, PartialEq)]
 pub struct Edge {
     pub from_node: String,
     pub to_node: String,

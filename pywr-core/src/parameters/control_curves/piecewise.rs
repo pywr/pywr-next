@@ -87,7 +87,7 @@ mod test {
         // Create an artificial volume series to use for the interpolation test
         let volume = Array1Parameter::new("test-x".into(), Array1::linspace(1.0, 0.0, 21), None);
 
-        let volume_idx = model.network_mut().add_parameter(Box::new(volume)).unwrap();
+        let volume_idx = model.network_mut().add_simple_parameter(Box::new(volume)).unwrap();
 
         let parameter = PiecewiseInterpolatedParameter::new(
             "test-parameter".into(),

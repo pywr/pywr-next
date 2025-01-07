@@ -1,10 +1,10 @@
 use crate::error::ComponentConversionError;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
-use crate::metric::Metric;
+use crate::metric::{IndexMetric, Metric};
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
-use crate::parameters::{ConversionData, DynamicIndexValue, ParameterMeta};
+use crate::parameters::{ConversionData, ParameterMeta};
 use crate::v1::{try_convert_parameter_attr, IntoV2, TryFromV1};
 #[cfg(feature = "core")]
 use pywr_core::parameters::ParameterIndex;
@@ -18,7 +18,7 @@ pub struct IndexedArrayParameter {
     pub meta: ParameterMeta,
     #[serde(alias = "params")]
     pub metrics: Vec<Metric>,
-    pub index_parameter: DynamicIndexValue,
+    pub index_parameter: IndexMetric,
 }
 
 #[cfg(feature = "core")]
@@ -28,7 +28,7 @@ impl IndexedArrayParameter {
         network: &mut pywr_core::network::Network,
         args: &LoadArgs,
     ) -> Result<ParameterIndex<f64>, SchemaError> {
-        let index_parameter = self.index_parameter.load(network, args)?;
+        let index_parameter = self.index_parameter.load(network, args, None)?;
 
         let metrics = self
             .metrics

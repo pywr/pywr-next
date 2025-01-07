@@ -34,7 +34,7 @@ impl ControlCurveInterpolatedParameter {
         network: &mut pywr_core::network::Network,
         args: &LoadArgs,
     ) -> Result<ParameterIndex<f64>, SchemaError> {
-        let metric = self.storage_node.load(network, args)?;
+        let metric = self.storage_node.load_f64(network, args)?;
 
         let control_curves = self
             .control_curves
@@ -134,7 +134,7 @@ impl ControlCurveIndexParameter {
         network: &mut pywr_core::network::Network,
         args: &LoadArgs,
     ) -> Result<ParameterIndex<usize>, SchemaError> {
-        let metric = self.storage_node.load(network, args)?;
+        let metric = self.storage_node.load_f64(network, args)?;
 
         let control_curves = self
             .control_curves
@@ -243,7 +243,7 @@ impl ControlCurveParameter {
         network: &mut pywr_core::network::Network,
         args: &LoadArgs,
     ) -> Result<ParameterIndex<f64>, SchemaError> {
-        let metric = self.storage_node.load(network, args)?;
+        let metric = self.storage_node.load_f64(network, args)?;
 
         let control_curves = self
             .control_curves
@@ -336,7 +336,7 @@ impl ControlCurvePiecewiseInterpolatedParameter {
         network: &mut pywr_core::network::Network,
         args: &LoadArgs,
     ) -> Result<ParameterIndex<f64>, SchemaError> {
-        let metric = self.storage_node.load(network, args)?;
+        let metric = self.storage_node.load_f64(network, args)?;
 
         let control_curves = self
             .control_curves

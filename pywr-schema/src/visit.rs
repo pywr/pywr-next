@@ -1,4 +1,4 @@
-use crate::metric::Metric;
+use crate::metric::{IndexMetric, Metric};
 use std::collections::HashMap;
 use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
@@ -24,6 +24,12 @@ impl VisitMetrics for Metric {
     fn visit_metrics_mut<F: FnMut(&mut Metric)>(&mut self, visitor: &mut F) {
         visitor(self);
     }
+}
+
+impl VisitMetrics for IndexMetric {
+    fn visit_metrics<F: FnMut(&Metric)>(&self, _visitor: &mut F) {}
+
+    fn visit_metrics_mut<F: FnMut(&mut Metric)>(&mut self, _visitor: &mut F) {}
 }
 
 impl<T> VisitMetrics for Option<T>
@@ -125,6 +131,7 @@ pub trait VisitPaths {
 }
 
 impl VisitPaths for Metric {}
+impl VisitPaths for IndexMetric {}
 
 impl<T> VisitPaths for Option<T>
 where
