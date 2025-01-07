@@ -3,6 +3,7 @@ mod align_and_resample;
 mod pandas;
 mod polars_dataset;
 
+use crate::error::ComponentConversionError;
 use crate::parameters::ParameterMeta;
 use crate::v1::{ConversionData, IntoV2, TryFromV1};
 use crate::visit::VisitPaths;
@@ -13,7 +14,11 @@ pub use pandas::PandasDataset;
 #[cfg(feature = "core")]
 use polars::error::PolarsError;
 #[cfg(feature = "core")]
-use polars::prelude::{DataFrame, DataType::Float64, Float64Type, IndexOrder};
+use polars::prelude::{
+    DataFrame,
+    DataType::{Float64, UInt64},
+    Float64Type, IndexOrder, UInt64Type,
+};
 pub use polars_dataset::PolarsDataset;
 #[cfg(feature = "core")]
 use pywr_core::{
@@ -129,7 +134,7 @@ impl LoadedTimeseriesCollection {
         Ok(Self { timeseries })
     }
 
-    pub fn load_column(
+    pub fn load_column_f64(
         &self,
         network: &mut pywr_core::network::Network,
         name: &str,
@@ -149,14 +154,41 @@ impl LoadedTimeseriesCollection {
             Err(e) => match e {
                 PywrError::ParameterNotFound(_) => {
                     let p = Array1Parameter::new(name, array, None);
-                    Ok(network.add_parameter(Box::new(p))?)
+                    Ok(network.add_simple_parameter(Box::new(p))?)
                 }
                 _ => Err(TimeseriesError::PywrCore(e)),
             },
         }
     }
 
-    pub fn load_single_column(
+    pub fn load_column_usize(
+        &self,
+        network: &mut pywr_core::network::Network,
+        name: &str,
+        col: &str,
+    ) -> Result<ParameterIndex<usize>, TimeseriesError> {
+        let df = self
+            .timeseries
+            .get(name)
+            .ok_or(TimeseriesError::TimeseriesNotFound(name.to_string()))?;
+        let series = df.column(col)?;
+
+        let array = series.cast(&UInt64)?.u64()?.to_ndarray()?.to_owned();
+        let name = ParameterName::new(col, Some(name));
+
+        match network.get_index_parameter_index_by_name(&name) {
+            Ok(idx) => Ok(idx),
+            Err(e) => match e {
+                PywrError::ParameterNotFound(_) => {
+                    let p = Array1Parameter::new(name, array, None);
+                    Ok(network.add_simple_index_parameter(Box::new(p))?)
+                }
+                _ => Err(TimeseriesError::PywrCore(e)),
+            },
+        }
+    }
+
+    pub fn load_single_column_f64(
         &self,
         network: &mut pywr_core::network::Network,
         name: &str,
@@ -187,14 +219,53 @@ impl LoadedTimeseriesCollection {
             Err(e) => match e {
                 PywrError::ParameterNotFound(_) => {
                     let p = Array1Parameter::new(name, array, None);
-                    Ok(network.add_parameter(Box::new(p))?)
+                    Ok(network.add_simple_parameter(Box::new(p))?)
                 }
                 _ => Err(TimeseriesError::PywrCore(e)),
             },
         }
     }
 
-    pub fn load_df(
+    pub fn load_single_column_usize(
+        &self,
+        network: &mut pywr_core::network::Network,
+        name: &str,
+    ) -> Result<ParameterIndex<usize>, TimeseriesError> {
+        let df = self
+            .timeseries
+            .get(name)
+            .ok_or(TimeseriesError::TimeseriesNotFound(name.to_string()))?;
+
+        let cols = df.get_column_names();
+
+        if cols.len() > 1 {
+            return Err(TimeseriesError::TimeseriesColumnOrScenarioRequired(name.to_string()));
+        };
+
+        let col = cols.first().ok_or(TimeseriesError::ColumnNotFound {
+            col: "".to_string(),
+            name: name.to_string(),
+        })?;
+
+        let series = df.column(col)?;
+
+        let array = series.cast(&UInt64)?.u64()?.to_ndarray()?.to_owned();
+        let name = ParameterName::new(col, Some(name));
+
+        match network.get_index_parameter_index_by_name(&name) {
+            Ok(idx) => Ok(idx),
+            Err(e) => match e {
+                PywrError::ParameterNotFound(_) => {
+                    let p = Array1Parameter::new(name, array, None);
+                    Ok(network.add_simple_index_parameter(Box::new(p))?)
+                }
+                _ => Err(TimeseriesError::PywrCore(e)),
+            },
+        }
+    }
+
+    /// Load a timeseries dataframe as a 2D array F64 parameter.
+    pub fn load_df_f64(
         &self,
         network: &mut pywr_core::network::Network,
         name: &str,
@@ -219,7 +290,40 @@ impl LoadedTimeseriesCollection {
             Err(e) => match e {
                 PywrError::ParameterNotFound(_) => {
                     let p = Array2Parameter::new(name, array, scenario_group_index, None);
-                    Ok(network.add_parameter(Box::new(p))?)
+                    Ok(network.add_simple_parameter(Box::new(p))?)
+                }
+                _ => Err(TimeseriesError::PywrCore(e)),
+            },
+        }
+    }
+
+    /// Load a timeseries dataframe as a 2D array Usize parameter.
+    pub fn load_df_usize(
+        &self,
+        network: &mut pywr_core::network::Network,
+        name: &str,
+        domain: &ModelDomain,
+        scenario: &str,
+    ) -> Result<ParameterIndex<usize>, TimeseriesError> {
+        let scenario_group_index = domain
+            .scenarios()
+            .group_index(scenario)
+            .ok_or(TimeseriesError::ScenarioGroupNotFound(scenario.to_string()))?;
+
+        let df = self
+            .timeseries
+            .get(name)
+            .ok_or(TimeseriesError::TimeseriesNotFound(name.to_string()))?;
+
+        let array: Array2<u64> = df.to_ndarray::<UInt64Type>(IndexOrder::default()).unwrap();
+        let name = ParameterName::new(scenario, Some(name));
+
+        match network.get_index_parameter_index_by_name(&name) {
+            Ok(idx) => Ok(idx),
+            Err(e) => match e {
+                PywrError::ParameterNotFound(_) => {
+                    let p = Array2Parameter::new(name, array, scenario_group_index, None);
+                    Ok(network.add_simple_index_parameter(Box::new(p))?)
                 }
                 _ => Err(TimeseriesError::PywrCore(e)),
             },
@@ -295,14 +399,14 @@ impl LoadedTimeseriesCollection {
 //     ts.into_values().collect::<Vec<Timeseries>>()
 // }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, strum_macros::Display)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, strum_macros::Display, PartialEq)]
 #[serde(tag = "type", content = "name")]
 pub enum TimeseriesColumns {
     Scenario(String),
     Column(String),
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct TimeseriesReference {
     pub name: String,
@@ -331,7 +435,7 @@ pub struct ConvertedTimeseriesReference {
 }
 
 impl TryFromV1<DataFrameParameterV1> for ConvertedTimeseriesReference {
-    type Error = ConversionError;
+    type Error = ComponentConversionError;
 
     fn try_from_v1(
         v1: DataFrameParameterV1,
@@ -371,9 +475,12 @@ impl TryFromV1<DataFrameParameterV1> for ConvertedTimeseriesReference {
             // ignore the original parameter's name entirely.
             ts_name = table;
         } else {
-            return Err(ConversionError::MissingAttribute {
-                attrs: vec!["url".to_string(), "table".to_string()],
+            return Err(ComponentConversionError::Parameter {
                 name: meta.name,
+                attr: "url".to_string(),
+                error: ConversionError::MissingAttribute {
+                    attrs: vec!["url".to_string(), "table".to_string()],
+                },
             });
         };
 
@@ -381,7 +488,15 @@ impl TryFromV1<DataFrameParameterV1> for ConvertedTimeseriesReference {
         let columns = match (v1.column, v1.scenario) {
             (Some(col), None) => Some(TimeseriesColumns::Column(col)),
             (None, Some(scenario)) => Some(TimeseriesColumns::Scenario(scenario)),
-            (Some(_), Some(_)) => return Err(ConversionError::AmbiguousColumnAndScenario(meta.name)),
+            (Some(_), Some(_)) => {
+                return Err(ComponentConversionError::Parameter {
+                    name: meta.name.clone(),
+                    attr: "column".to_string(),
+                    error: ConversionError::AmbiguousAttributes {
+                        attrs: vec!["column".to_string(), "scenario".to_string()],
+                    },
+                })
+            }
             (None, None) => None,
         };
         // The reference that is returned

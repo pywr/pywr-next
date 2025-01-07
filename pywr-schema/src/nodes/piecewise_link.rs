@@ -1,4 +1,4 @@
-use crate::error::ConversionError;
+use crate::error::ComponentConversionError;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
 use crate::metric::Metric;
@@ -6,7 +6,7 @@ use crate::metric::Metric;
 use crate::model::LoadArgs;
 use crate::nodes::{NodeAttribute, NodeMeta};
 use crate::parameters::Parameter;
-use crate::v1::{ConversionData, TryFromV1, TryIntoV2};
+use crate::v1::{try_convert_node_attr, ConversionData, TryFromV1};
 #[cfg(feature = "core")]
 use pywr_core::metric::MetricF64;
 use pywr_schema_macros::PywrVisitAll;
@@ -164,7 +164,7 @@ impl PiecewiseLinkNode {
 }
 
 impl TryFromV1<PiecewiseLinkNodeV1> for PiecewiseLinkNode {
-    type Error = ConversionError;
+    type Error = ComponentConversionError;
 
     fn try_from_v1(
         v1: PiecewiseLinkNodeV1,
@@ -178,8 +178,14 @@ impl TryFromV1<PiecewiseLinkNodeV1> for PiecewiseLinkNode {
             Some(v1_costs) => v1_costs
                 .into_iter()
                 .map(|v| {
-                    v.try_into_v2(parent_node.or(Some(&meta.name)), conversion_data)
-                        .map(Some)
+                    try_convert_node_attr(
+                        &meta.name,
+                        "costs",
+                        v,
+                        parent_node.or(Some(&meta.name)),
+                        conversion_data,
+                    )
+                    .map(Some)
                 })
                 .collect::<Result<Vec<_>, _>>()?,
         };
@@ -188,9 +194,11 @@ impl TryFromV1<PiecewiseLinkNodeV1> for PiecewiseLinkNode {
             None => vec![None; v1.nsteps],
             Some(v1_max_flows) => v1_max_flows
                 .into_iter()
-                .map(|v| {
-                    v.try_into_v2(parent_node.or(Some(&meta.name)), conversion_data)
-                        .map(Some)
+                .map(|v| match v {
+                    None => Ok(None),
+                    Some(v) => {
+                        try_convert_node_attr(&meta.name, "max_flows", v, parent_node, conversion_data).map(Some)
+                    }
                 })
                 .collect::<Result<Vec<_>, _>>()?,
         };

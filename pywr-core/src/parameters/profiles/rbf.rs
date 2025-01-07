@@ -6,7 +6,6 @@ use crate::scenario::ScenarioIndex;
 use crate::state::SimpleParameterValues;
 use crate::timestep::Timestep;
 use crate::PywrError;
-use chrono::Datelike;
 use nalgebra::DMatrix;
 
 pub struct RbfProfileVariableConfig {
@@ -140,7 +139,7 @@ impl SimpleParameter<f64> for RbfProfileParameter {
         // Get the profile from the internal state
         let internal_state = downcast_internal_state_ref::<RbfProfileInternalState>(internal_state);
         // Return today's value from the profile
-        Ok(internal_state.profile[timestep.date.ordinal() as usize - 1])
+        Ok(internal_state.profile[timestep.day_of_year_index()])
     }
 
     fn as_parameter(&self) -> &dyn Parameter

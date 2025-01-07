@@ -428,6 +428,10 @@ impl ParameterValuesRef<'_> {
     fn get_multi_value(&self, idx: usize, key: &str) -> Option<&f64> {
         self.multi_values.get(idx).and_then(|s| s.get_value(key))
     }
+
+    fn get_multi_index(&self, idx: usize, key: &str) -> Option<&usize> {
+        self.multi_values.get(idx).and_then(|s| s.get_index(key))
+    }
 }
 
 pub struct SimpleParameterValues<'a> {
@@ -457,6 +461,17 @@ impl SimpleParameterValues<'_> {
     ) -> Result<f64, PywrError> {
         self.simple
             .get_multi_value(*idx.deref(), key)
+            .ok_or(PywrError::SimpleMultiValueParameterIndexNotFound(idx))
+            .copied()
+    }
+
+    pub fn get_simple_multi_parameter_usize(
+        &self,
+        idx: SimpleParameterIndex<MultiValue>,
+        key: &str,
+    ) -> Result<usize, PywrError> {
+        self.simple
+            .get_multi_index(*idx.deref(), key)
             .ok_or(PywrError::SimpleMultiValueParameterIndexNotFound(idx))
             .copied()
     }
@@ -492,6 +507,17 @@ impl ConstParameterValues<'_> {
     ) -> Result<f64, PywrError> {
         self.constant
             .get_multi_value(*idx.deref(), key)
+            .ok_or(PywrError::ConstMultiValueParameterIndexNotFound(idx))
+            .copied()
+    }
+
+    pub fn get_const_multi_parameter_usize(
+        &self,
+        idx: ConstParameterIndex<MultiValue>,
+        key: &str,
+    ) -> Result<usize, PywrError> {
+        self.constant
+            .get_multi_index(*idx.deref(), key)
             .ok_or(PywrError::ConstMultiValueParameterIndexNotFound(idx))
             .copied()
     }

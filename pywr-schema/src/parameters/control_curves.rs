@@ -1,12 +1,12 @@
-use crate::error::ConversionError;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
+use crate::error::{ComponentConversionError, ConversionError};
 use crate::metric::{Metric, NodeReference};
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::nodes::NodeAttribute;
 use crate::parameters::{ConversionData, ParameterMeta};
-use crate::v1::{IntoV2, TryFromV1, TryIntoV2};
+use crate::v1::{try_convert_control_curves, try_convert_parameter_attr, IntoV2, TryFromV1};
 #[cfg(feature = "core")]
 use pywr_core::parameters::ParameterIndex;
 use pywr_schema_macros::PywrVisitAll;
@@ -34,7 +34,7 @@ impl ControlCurveInterpolatedParameter {
         network: &mut pywr_core::network::Network,
         args: &LoadArgs,
     ) -> Result<ParameterIndex<f64>, SchemaError> {
-        let metric = self.storage_node.load(network, args)?;
+        let metric = self.storage_node.load_f64(network, args)?;
 
         let control_curves = self
             .control_curves
@@ -59,7 +59,7 @@ impl ControlCurveInterpolatedParameter {
 }
 
 impl TryFromV1<ControlCurveInterpolatedParameterV1> for ControlCurveInterpolatedParameter {
-    type Error = ConversionError;
+    type Error = ComponentConversionError;
 
     fn try_from_v1(
         v1: ControlCurveInterpolatedParameterV1,
@@ -68,38 +68,38 @@ impl TryFromV1<ControlCurveInterpolatedParameterV1> for ControlCurveInterpolated
     ) -> Result<Self, Self::Error> {
         let meta: ParameterMeta = v1.meta.into_v2(parent_node, conversion_data);
 
-        let control_curves = if let Some(control_curves) = v1.control_curves {
-            control_curves
-                .into_iter()
-                .map(|p| p.try_into_v2(parent_node, conversion_data))
-                .collect::<Result<Vec<_>, _>>()?
-        } else if let Some(control_curve) = v1.control_curve {
-            vec![control_curve.try_into_v2(parent_node, conversion_data)?]
-        } else {
-            return Err(ConversionError::MissingAttribute {
-                name: meta.name,
-                attrs: vec!["control_curves".to_string(), "control_curve".to_string()],
-            });
-        };
+        let control_curves = try_convert_control_curves(
+            &meta.name,
+            v1.control_curves,
+            v1.control_curve,
+            parent_node,
+            conversion_data,
+        )?;
 
         // Handle the case where neither or both "values" and "parameters" are defined.
         let values = match (v1.values, v1.parameters) {
             (None, None) => {
-                return Err(ConversionError::MissingAttribute {
+                return Err(ComponentConversionError::Parameter {
                     name: meta.name,
-                    attrs: vec!["values".to_string(), "parameters".to_string()],
+                    attr: "control_curves".to_string(),
+                    error: ConversionError::MissingAttribute {
+                        attrs: vec!["values".to_string(), "parameters".to_string()],
+                    },
                 });
             }
             (Some(_), Some(_)) => {
-                return Err(ConversionError::UnexpectedAttribute {
+                return Err(ComponentConversionError::Parameter {
                     name: meta.name,
-                    attrs: vec!["values".to_string(), "parameters".to_string()],
+                    attr: "control_curves".to_string(),
+                    error: ConversionError::UnexpectedAttribute {
+                        attrs: vec!["values".to_string(), "parameters".to_string()],
+                    },
                 });
             }
             (Some(values), None) => values.into_iter().map(Metric::from).collect(),
             (None, Some(parameters)) => parameters
                 .into_iter()
-                .map(|p| p.try_into_v2(parent_node, conversion_data))
+                .map(|p| try_convert_parameter_attr(&meta.name, "parameters", p, parent_node, conversion_data))
                 .collect::<Result<Vec<_>, _>>()?,
         };
 
@@ -134,7 +134,7 @@ impl ControlCurveIndexParameter {
         network: &mut pywr_core::network::Network,
         args: &LoadArgs,
     ) -> Result<ParameterIndex<usize>, SchemaError> {
-        let metric = self.storage_node.load(network, args)?;
+        let metric = self.storage_node.load_f64(network, args)?;
 
         let control_curves = self
             .control_curves
@@ -152,7 +152,7 @@ impl ControlCurveIndexParameter {
 }
 
 impl TryFromV1<ControlCurveIndexParameterV1> for ControlCurveIndexParameter {
-    type Error = ConversionError;
+    type Error = ComponentConversionError;
 
     fn try_from_v1(
         v1: ControlCurveIndexParameterV1,
@@ -164,7 +164,7 @@ impl TryFromV1<ControlCurveIndexParameterV1> for ControlCurveIndexParameter {
         let control_curves = v1
             .control_curves
             .into_iter()
-            .map(|p| p.try_into_v2(parent_node, conversion_data))
+            .map(|p| try_convert_parameter_attr(&meta.name, "control_curves", p, parent_node, conversion_data))
             .collect::<Result<Vec<_>, _>>()?;
 
         // v1 uses proportional volume for control curves
@@ -185,7 +185,7 @@ impl TryFromV1<ControlCurveIndexParameterV1> for ControlCurveIndexParameter {
 /// Pywr v1.x ControlCurveParameter can be an index parameter if it is not given "values"
 /// or "parameters" keys.
 impl TryFromV1<ControlCurveParameterV1> for ControlCurveIndexParameter {
-    type Error = ConversionError;
+    type Error = ComponentConversionError;
 
     fn try_from_v1(
         v1: ControlCurveParameterV1,
@@ -194,24 +194,21 @@ impl TryFromV1<ControlCurveParameterV1> for ControlCurveIndexParameter {
     ) -> Result<Self, Self::Error> {
         let meta: ParameterMeta = v1.meta.into_v2(parent_node, conversion_data);
 
-        let control_curves = if let Some(control_curves) = v1.control_curves {
-            control_curves
-                .into_iter()
-                .map(|p| p.try_into_v2(parent_node, conversion_data))
-                .collect::<Result<Vec<_>, _>>()?
-        } else if let Some(control_curve) = v1.control_curve {
-            vec![control_curve.try_into_v2(parent_node, conversion_data)?]
-        } else {
-            return Err(ConversionError::MissingAttribute {
-                name: meta.name,
-                attrs: vec!["control_curves".to_string(), "control_curve".to_string()],
-            });
-        };
+        let control_curves = try_convert_control_curves(
+            &meta.name,
+            v1.control_curves,
+            v1.control_curve,
+            parent_node,
+            conversion_data,
+        )?;
 
         if v1.values.is_some() || v1.parameters.is_some() {
-            return Err(ConversionError::UnexpectedAttribute {
+            return Err(ComponentConversionError::Parameter {
                 name: meta.name,
-                attrs: vec!["values".to_string(), "parameters".to_string()],
+                attr: "values".to_string(),
+                error: ConversionError::UnexpectedAttribute {
+                    attrs: vec!["values".to_string(), "parameters".to_string()],
+                },
             });
         };
 
@@ -246,7 +243,7 @@ impl ControlCurveParameter {
         network: &mut pywr_core::network::Network,
         args: &LoadArgs,
     ) -> Result<ParameterIndex<f64>, SchemaError> {
-        let metric = self.storage_node.load(network, args)?;
+        let metric = self.storage_node.load_f64(network, args)?;
 
         let control_curves = self
             .control_curves
@@ -271,7 +268,7 @@ impl ControlCurveParameter {
 }
 
 impl TryFromV1<ControlCurveParameterV1> for ControlCurveParameter {
-    type Error = ConversionError;
+    type Error = ComponentConversionError;
 
     fn try_from_v1(
         v1: ControlCurveParameterV1,
@@ -280,31 +277,28 @@ impl TryFromV1<ControlCurveParameterV1> for ControlCurveParameter {
     ) -> Result<Self, Self::Error> {
         let meta: ParameterMeta = v1.meta.into_v2(parent_node, conversion_data);
 
-        let control_curves = if let Some(control_curves) = v1.control_curves {
-            control_curves
-                .into_iter()
-                .map(|p| p.try_into_v2(parent_node, conversion_data))
-                .collect::<Result<Vec<_>, _>>()?
-        } else if let Some(control_curve) = v1.control_curve {
-            vec![control_curve.try_into_v2(parent_node, conversion_data)?]
-        } else {
-            return Err(ConversionError::MissingAttribute {
-                name: meta.name,
-                attrs: vec!["control_curves".to_string(), "control_curve".to_string()],
-            });
-        };
+        let control_curves = try_convert_control_curves(
+            &meta.name,
+            v1.control_curves,
+            v1.control_curve,
+            parent_node,
+            conversion_data,
+        )?;
 
         let values = if let Some(values) = v1.values {
             values.into_iter().map(Metric::from).collect()
         } else if let Some(parameters) = v1.parameters {
             parameters
                 .into_iter()
-                .map(|p| p.try_into_v2(parent_node, conversion_data))
+                .map(|p| try_convert_parameter_attr(&meta.name, "parameters", p, parent_node, conversion_data))
                 .collect::<Result<Vec<_>, _>>()?
         } else {
-            return Err(ConversionError::MissingAttribute {
+            return Err(ComponentConversionError::Parameter {
                 name: meta.name,
-                attrs: vec!["values".to_string(), "parameters".to_string()],
+                attr: "values".to_string(),
+                error: ConversionError::MissingAttribute {
+                    attrs: vec!["values".to_string(), "parameters".to_string()],
+                },
             });
         };
 
@@ -342,7 +336,7 @@ impl ControlCurvePiecewiseInterpolatedParameter {
         network: &mut pywr_core::network::Network,
         args: &LoadArgs,
     ) -> Result<ParameterIndex<f64>, SchemaError> {
-        let metric = self.storage_node.load(network, args)?;
+        let metric = self.storage_node.load_f64(network, args)?;
 
         let control_curves = self
             .control_curves
@@ -368,7 +362,7 @@ impl ControlCurvePiecewiseInterpolatedParameter {
 }
 
 impl TryFromV1<ControlCurvePiecewiseInterpolatedParameterV1> for ControlCurvePiecewiseInterpolatedParameter {
-    type Error = ConversionError;
+    type Error = ComponentConversionError;
 
     fn try_from_v1(
         v1: ControlCurvePiecewiseInterpolatedParameterV1,
@@ -377,19 +371,13 @@ impl TryFromV1<ControlCurvePiecewiseInterpolatedParameterV1> for ControlCurvePie
     ) -> Result<Self, Self::Error> {
         let meta: ParameterMeta = v1.meta.into_v2(parent_node, conversion_data);
 
-        let control_curves = if let Some(control_curves) = v1.control_curves {
-            control_curves
-                .into_iter()
-                .map(|p| p.try_into_v2(parent_node, conversion_data))
-                .collect::<Result<Vec<_>, _>>()?
-        } else if let Some(control_curve) = v1.control_curve {
-            vec![control_curve.try_into_v2(parent_node, conversion_data)?]
-        } else {
-            return Err(ConversionError::MissingAttribute {
-                name: meta.name,
-                attrs: vec!["control_curves".to_string(), "control_curve".to_string()],
-            });
-        };
+        let control_curves = try_convert_control_curves(
+            &meta.name,
+            v1.control_curves,
+            v1.control_curve,
+            parent_node,
+            conversion_data,
+        )?;
 
         // v1 uses proportional volume for control curves
         let storage_node = NodeReference {

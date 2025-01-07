@@ -1,5 +1,6 @@
 use crate::data_tables::TableDataRef;
 use crate::edge::Edge;
+use crate::error::ComponentConversionError;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
 #[cfg(feature = "core")]
@@ -17,7 +18,10 @@ use crate::v1::{ConversionData, TryFromV1, TryIntoV2};
 use crate::ConversionError;
 #[cfg(feature = "core")]
 use pywr_core::{
-    metric::MetricF64, models::MultiNetworkTransferIndex, parameters::ParameterName, recorders::OutputMetric,
+    metric::{MetricF64, MetricUsize},
+    models::MultiNetworkTransferIndex,
+    parameters::ParameterName,
+    recorders::OutputMetric,
 };
 use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::parameters::ParameterValue as ParameterValueV1;
@@ -25,23 +29,33 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use strum_macros::Display;
 
-/// Output metrics that can be recorded from a model run.
-#[derive(Deserialize, Serialize, Clone, Debug, Display, JsonSchema)]
+/// A floating point value representing different model metrics.
+///
+/// Metrics can be used in various places in a model to create dynamic behaviour. For example,
+/// parameter can use an arbitrary [`Metric`] for its calculation giving the user the ability
+/// to configure the source of that value. Therefore, metrics are the primary way in which
+/// dynamic behaviour is created.
+///
+/// See also [`IndexMetric`] for integer values.
+#[derive(Deserialize, Serialize, Clone, Debug, Display, JsonSchema, PartialEq)]
 #[serde(tag = "type")]
 pub enum Metric {
-    Constant {
-        value: f64,
-    },
+    /// A constant floating point value.
+    Constant { value: f64 },
+    /// A reference to a constant value in a table.
     Table(TableDataRef),
     /// An attribute of a node.
     Node(NodeReference),
+    /// An attribute of an edge.
     Edge(EdgeReference),
+    /// A reference to a value from a timeseries.
     Timeseries(TimeseriesReference),
+    /// A reference to a global parameter.
     Parameter(ParameterReference),
+    /// A reference to a local parameter.
     LocalParameter(ParameterReference),
-    InterNetworkTransfer {
-        name: String,
-    },
+    /// A reference to an inter-network transfer by name.
+    InterNetworkTransfer { name: String },
 }
 
 impl Default for Metric {
@@ -65,9 +79,9 @@ impl Metric {
         parent: Option<&str>,
     ) -> Result<MetricF64, SchemaError> {
         match self {
-            Self::Node(node_ref) => node_ref.load(network, args),
+            Self::Node(node_ref) => node_ref.load_f64(network, args),
             // Global parameter with no parent
-            Self::Parameter(parameter_ref) => parameter_ref.load(network, None),
+            Self::Parameter(parameter_ref) => parameter_ref.load_f64(network, None),
             // Local parameter loaded from parent's namespace
             Self::LocalParameter(parameter_ref) => {
                 if parent.is_none() {
@@ -76,7 +90,7 @@ impl Metric {
                     ));
                 }
 
-                parameter_ref.load(network, parent)
+                parameter_ref.load_f64(network, parent)
             }
             Self::Constant { value } => Ok((*value).into()),
             Self::Table(table_ref) => {
@@ -93,13 +107,13 @@ impl Metric {
                 let param_idx = match &ts_ref.columns {
                     Some(TimeseriesColumns::Scenario(scenario)) => {
                         args.timeseries
-                            .load_df(network, ts_ref.name.as_ref(), args.domain, scenario.as_str())?
+                            .load_df_f64(network, ts_ref.name.as_ref(), args.domain, scenario.as_str())?
                     }
                     Some(TimeseriesColumns::Column(col)) => {
                         args.timeseries
-                            .load_column(network, ts_ref.name.as_ref(), col.as_str())?
+                            .load_column_f64(network, ts_ref.name.as_ref(), col.as_str())?
                     }
-                    None => args.timeseries.load_single_column(network, ts_ref.name.as_ref())?,
+                    None => args.timeseries.load_single_column_f64(network, ts_ref.name.as_ref())?,
                 };
                 Ok(param_idx.into())
             }
@@ -200,7 +214,13 @@ impl TryFromV1<ParameterValueV1> for Metric {
                 // Inline parameters are converted to either a parameter or a timeseries
                 // The actual component is extracted into the conversion data leaving a reference
                 // to the component in the metric.
-                let definition: ParameterOrTimeseriesRef = (*param).try_into_v2(parent_node, conversion_data)?;
+                let definition: ParameterOrTimeseriesRef =
+                    (*param)
+                        .try_into_v2(parent_node, conversion_data)
+                        .map_err(|e| match e {
+                            ComponentConversionError::Parameter { error, .. } => error,
+                            ComponentConversionError::Node { error, .. } => error,
+                        })?;
                 match definition {
                     ParameterOrTimeseriesRef::Parameter(p) => {
                         let reference = ParameterReference {
@@ -220,7 +240,7 @@ impl TryFromV1<ParameterValueV1> for Metric {
 }
 
 /// A reference to a node with an optional attribute.
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct NodeReference {
     /// The name of the node
@@ -234,8 +254,13 @@ impl NodeReference {
         Self { name, attribute }
     }
 
+    /// Load a node reference into a [`MetricF64`].
     #[cfg(feature = "core")]
-    pub fn load(&self, network: &mut pywr_core::network::Network, args: &LoadArgs) -> Result<MetricF64, SchemaError> {
+    pub fn load_f64(
+        &self,
+        network: &mut pywr_core::network::Network,
+        args: &LoadArgs,
+    ) -> Result<MetricF64, SchemaError> {
         // This is the associated node in the schema
         let node = args
             .schema
@@ -243,6 +268,22 @@ impl NodeReference {
             .ok_or_else(|| SchemaError::NodeNotFound(self.name.clone()))?;
 
         node.create_metric(network, self.attribute, args)
+    }
+
+    /// Load a node reference into a [`MetricUsize`].
+    #[cfg(feature = "core")]
+    pub fn load_usize(
+        &self,
+        _network: &mut pywr_core::network::Network,
+        args: &LoadArgs,
+    ) -> Result<MetricUsize, SchemaError> {
+        // This is the associated node in the schema
+        let _node = args
+            .schema
+            .get_node_by_name(&self.name)
+            .ok_or_else(|| SchemaError::NodeNotFound(self.name.clone()))?;
+
+        todo!("Support usize attributes on nodes.")
     }
 
     /// Return the attribute of the node. If the attribute is not specified then the default
@@ -324,7 +365,7 @@ impl From<String> for SimpleNodeReference {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct ParameterReference {
     /// The name of the parameter
@@ -345,7 +386,7 @@ impl ParameterReference {
     /// from the `network`. If `parent` is the optional parameter name space from which to load
     /// the parameter.
     #[cfg(feature = "core")]
-    pub fn load(
+    pub fn load_f64(
         &self,
         network: &mut pywr_core::network::Network,
         parent: Option<&str>,
@@ -369,6 +410,34 @@ impl ParameterReference {
         }
     }
 
+    /// Load a parameter reference into a [`MetricUsize`] by attempting to retrieve the parameter
+    /// from the `network`. If `parent` is the optional parameter name space from which to load
+    /// the parameter.
+    #[cfg(feature = "core")]
+    pub fn load_usize(
+        &self,
+        network: &mut pywr_core::network::Network,
+        parent: Option<&str>,
+    ) -> Result<MetricUsize, SchemaError> {
+        let name = ParameterName::new(&self.name, parent);
+
+        match &self.key {
+            Some(key) => {
+                // Key given; this should be a multi-valued parameter
+                Ok((network.get_multi_valued_parameter_index_by_name(&name)?, key.clone()).into())
+            }
+            None => {
+                if let Ok(idx) = network.get_index_parameter_index_by_name(&name) {
+                    Ok(idx.into())
+                } else if network.get_parameter_index_by_name(&name).is_ok() {
+                    // Inform the user we found the parameter, but it was the wrong type
+                    Err(SchemaError::IndexParameterExpected(self.name.to_string()))
+                } else {
+                    Err(SchemaError::ParameterNotFound(self.name.to_string()))
+                }
+            }
+        }
+    }
     #[cfg(feature = "core")]
     pub fn parameter_type(&self, args: &LoadArgs) -> Result<ParameterType, SchemaError> {
         let parameter = args
@@ -380,7 +449,7 @@ impl ParameterReference {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct EdgeReference {
     /// The edge referred to by this reference.
@@ -392,5 +461,170 @@ impl EdgeReference {
     pub fn load(&self, network: &mut pywr_core::network::Network, args: &LoadArgs) -> Result<MetricF64, SchemaError> {
         // This is the associated node in the schema
         self.edge.create_metric(network, args)
+    }
+}
+
+/// An unsigned integer value representing different model metrics.
+///
+/// This struct is the integer equivalent of [`Metric`] and is used in places where an integer
+/// value is required. See [`Metric`] for more information.
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, Display, PartialEq)]
+#[serde(untagged)]
+pub enum IndexMetric {
+    Constant {
+        value: usize,
+    },
+    Table(TableDataRef),
+    /// An attribute of a node.
+    Node(NodeReference),
+    Timeseries(TimeseriesReference),
+    Parameter(ParameterReference),
+    LocalParameter(ParameterReference),
+    InterNetworkTransfer {
+        name: String,
+    },
+}
+
+impl IndexMetric {
+    pub fn from_usize(v: usize) -> Self {
+        Self::Constant { value: v }
+    }
+}
+
+#[cfg(feature = "core")]
+impl IndexMetric {
+    pub fn load(
+        &self,
+        network: &mut pywr_core::network::Network,
+        args: &LoadArgs,
+        parent: Option<&str>,
+    ) -> Result<MetricUsize, SchemaError> {
+        match self {
+            Self::Node(node_ref) => node_ref.load_usize(network, args),
+            // Global parameter with no parent
+            Self::Parameter(parameter_ref) => parameter_ref.load_usize(network, None),
+            // Local parameter loaded from parent's namespace
+            Self::LocalParameter(parameter_ref) => {
+                if parent.is_none() {
+                    return Err(SchemaError::LocalParameterReferenceRequiresParent(
+                        parameter_ref.name.clone(),
+                    ));
+                }
+
+                parameter_ref.load_usize(network, parent)
+            }
+            Self::Constant { value } => Ok((*value).into()),
+            Self::Table(table_ref) => {
+                let value = args
+                    .tables
+                    .get_scalar_usize(table_ref)
+                    .map_err(|error| SchemaError::TableRefLoad {
+                        table_ref: table_ref.clone(),
+                        error,
+                    })?;
+                Ok(value.into())
+            }
+            Self::Timeseries(ts_ref) => {
+                let param_idx = match &ts_ref.columns {
+                    Some(TimeseriesColumns::Scenario(scenario)) => {
+                        args.timeseries
+                            .load_df_usize(network, ts_ref.name.as_ref(), args.domain, scenario.as_str())?
+                    }
+                    Some(TimeseriesColumns::Column(col)) => {
+                        args.timeseries
+                            .load_column_usize(network, ts_ref.name.as_ref(), col.as_str())?
+                    }
+                    None => args
+                        .timeseries
+                        .load_single_column_usize(network, ts_ref.name.as_ref())?,
+                };
+                Ok(param_idx.into())
+            }
+            Self::InterNetworkTransfer { name } => {
+                // Find the matching inter model transfer
+                match args.inter_network_transfers.iter().position(|t| &t.name == name) {
+                    Some(idx) => Ok(MetricUsize::InterNetworkTransfer(MultiNetworkTransferIndex(idx))),
+                    None => Err(SchemaError::InterNetworkTransferNotFound(name.to_string())),
+                }
+            }
+        }
+    }
+}
+
+impl TryFromV1<ParameterValueV1> for IndexMetric {
+    type Error = ConversionError;
+
+    fn try_from_v1(
+        v1: ParameterValueV1,
+        parent_node: Option<&str>,
+        conversion_data: &mut ConversionData,
+    ) -> Result<Self, Self::Error> {
+        let p = match v1 {
+            // There was no such thing as s constant index in Pywr v1
+            // TODO this could print a warning and do a cast to usize instead.
+            ParameterValueV1::Constant(value) => {
+                // Check if the value is not a whole non-negative number
+                if value.fract() != 0.0 || value < 0.0 {
+                    return Err(ConversionError::FloatToIndex {});
+                }
+
+                Self::Constant { value: value as usize }
+            }
+            ParameterValueV1::Reference(p_name) => Self::Parameter(ParameterReference {
+                name: p_name,
+                key: None,
+            }),
+            ParameterValueV1::Table(tbl) => Self::Table(tbl.try_into()?),
+            ParameterValueV1::Inline(param) => {
+                // Inline parameters are converted to either a parameter or a timeseries
+                // The actual component is extracted into the conversion data leaving a reference
+                // to the component in the metric.
+                let definition: ParameterOrTimeseriesRef =
+                    (*param)
+                        .try_into_v2(parent_node, conversion_data)
+                        .map_err(|e| match e {
+                            ComponentConversionError::Parameter { error, .. } => error,
+                            ComponentConversionError::Node { error, .. } => error,
+                        })?;
+                match definition {
+                    ParameterOrTimeseriesRef::Parameter(p) => {
+                        let reference = ParameterReference {
+                            name: p.name().to_string(),
+                            key: None,
+                        };
+                        conversion_data.parameters.push(*p);
+
+                        Self::Parameter(reference)
+                    }
+                    ParameterOrTimeseriesRef::Timeseries(t) => Self::Timeseries(t.ts_ref),
+                }
+            }
+        };
+        Ok(p)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::{ConversionError, IndexMetric, ParameterValueV1, TryFromV1};
+
+    /// Test conversion of `ParameterValueV1::Constant` to `IndexMetric`.
+    #[test]
+    fn test_index_metric_try_from_v1_constant() {
+        let v1 = ParameterValueV1::Constant(0.0);
+        let result = IndexMetric::try_from_v1(v1, None, &mut Default::default());
+        assert_eq!(result, Ok(IndexMetric::Constant { value: 0 }));
+
+        let v1 = ParameterValueV1::Constant(1.0);
+        let result = IndexMetric::try_from_v1(v1, None, &mut Default::default());
+        assert_eq!(result, Ok(IndexMetric::Constant { value: 1 }));
+
+        let v1 = ParameterValueV1::Constant(1.5);
+        let result = IndexMetric::try_from_v1(v1, None, &mut Default::default());
+        assert_eq!(result, Err(ConversionError::FloatToIndex {}));
+
+        let v1 = ParameterValueV1::Constant(-1.0);
+        let result = IndexMetric::try_from_v1(v1, None, &mut Default::default());
+        assert_eq!(result, Err(ConversionError::FloatToIndex {}));
     }
 }

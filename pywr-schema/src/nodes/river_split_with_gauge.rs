@@ -1,4 +1,4 @@
-use crate::error::ConversionError;
+use crate::error::ComponentConversionError;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
 use crate::metric::Metric;
@@ -6,22 +6,32 @@ use crate::metric::Metric;
 use crate::model::LoadArgs;
 use crate::nodes::{NodeAttribute, NodeMeta};
 use crate::parameters::Parameter;
-use crate::v1::{ConversionData, TryFromV1, TryIntoV2};
+use crate::v1::{try_convert_node_attr, ConversionData, TryFromV1};
+use crate::{ConversionError, TryIntoV2};
 #[cfg(feature = "core")]
 use pywr_core::{aggregated_node::Relationship, metric::MetricF64, node::NodeIndex};
 use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::nodes::RiverSplitWithGaugeNode as RiverSplitWithGaugeNodeV1;
+use pywr_v1_schema::parameters::ParameterValues;
 use schemars::JsonSchema;
 
 #[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, PywrVisitAll)]
 pub struct RiverSplit {
+    /// Proportion of flow not going via the mrf route.
     pub factor: Metric,
+    /// Name of the slot when connecting to this split.
     pub slot_name: String,
 }
 
 #[doc = svgbobdoc::transform!(
-/// This is used to represent a proportional split above a minimum residual flow (MRF) at a gauging station.
+/// A node used to represent a proportional split above a minimum residual flow (MRF) at a gauging station.
 ///
+/// The maximum flow along each split is controlled by a factor. Internally an aggregated node
+/// is created to enforce proportional flows along the splits and bypass.
+///
+/// **Note**: The behaviour of the factors is different to this in the equivalent Pywr v1.x node.
+/// Here the split factors are defined as a proportion of the flow not going via the mrf route.
+/// Whereas in Pywr v1.x the factors are defined as ratios.
 ///
 /// ```svgbob
 ///           <node>.mrf
@@ -117,7 +127,7 @@ impl RiverSplitWithGaugeNode {
     pub fn node_indices_for_constraints(
         &self,
         network: &pywr_core::network::Network,
-    ) -> Result<Vec<pywr_core::node::NodeIndex>, SchemaError> {
+    ) -> Result<Vec<NodeIndex>, SchemaError> {
         // This gets the indices of all the link nodes
         // There's currently no way to isolate the flows to the individual splits
         // Therefore, the only metrics are gross inflow and outflow
@@ -233,7 +243,7 @@ impl RiverSplitWithGaugeNode {
 }
 
 impl TryFromV1<RiverSplitWithGaugeNodeV1> for RiverSplitWithGaugeNode {
-    type Error = ConversionError;
+    type Error = ComponentConversionError;
 
     fn try_from_v1(
         v1: RiverSplitWithGaugeNodeV1,
@@ -242,27 +252,20 @@ impl TryFromV1<RiverSplitWithGaugeNodeV1> for RiverSplitWithGaugeNode {
     ) -> Result<Self, Self::Error> {
         let meta: NodeMeta = v1.meta.into();
 
-        let mrf = v1
-            .mrf
-            .map(|v| v.try_into_v2(parent_node.or(Some(&meta.name)), conversion_data))
-            .transpose()?;
+        let mrf = try_convert_node_attr(&meta.name, "mrf", v1.mrf, parent_node, conversion_data)?;
+        let mrf_cost = try_convert_node_attr(&meta.name, "mrf_cost", v1.mrf_cost, parent_node, conversion_data)?;
 
-        let mrf_cost = v1
-            .mrf_cost
-            .map(|v| v.try_into_v2(parent_node.or(Some(&meta.name)), conversion_data))
-            .transpose()?;
-
-        let splits = v1
-            .factors
+        let factors = convert_factors(v1.factors, parent_node, conversion_data).map_err(|error| {
+            ComponentConversionError::Node {
+                attr: "factors".to_string(),
+                name: meta.name.to_string(),
+                error,
+            }
+        })?;
+        let splits = factors
             .into_iter()
-            .skip(1)
             .zip(v1.slot_names.into_iter().skip(1))
-            .map(|(f, slot_name)| {
-                Ok(RiverSplit {
-                    factor: f.try_into_v2(parent_node.or(Some(&meta.name)), conversion_data)?,
-                    slot_name,
-                })
-            })
+            .map(|(factor, slot_name)| Ok(RiverSplit { factor, slot_name }))
             .collect::<Result<Vec<_>, Self::Error>>()?;
 
         let n = Self {
@@ -273,5 +276,42 @@ impl TryFromV1<RiverSplitWithGaugeNodeV1> for RiverSplitWithGaugeNode {
             splits,
         };
         Ok(n)
+    }
+}
+
+/// Try to convert ratio factors to proprtional factors.
+fn convert_factors(
+    factors: ParameterValues,
+    parent_node: Option<&str>,
+    conversion_data: &mut ConversionData,
+) -> Result<Vec<Metric>, ConversionError> {
+    let mut iter = factors.into_iter();
+    if let Some(first_factor) = iter.next() {
+        if let Metric::Constant { value } = first_factor.try_into_v2(parent_node, conversion_data)? {
+            // First Metric is a constant; we can proceed with the conversion
+
+            let split_factors = iter
+                .map(|f| {
+                    if let Metric::Constant { value } = f.try_into_v2(parent_node, conversion_data)? {
+                        Ok(value)
+                    } else {
+                        Err(ConversionError::NonConstantValue {})
+                    }
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+
+            // Convert the factors to proportional factors
+            let sum: f64 = split_factors.iter().sum::<f64>() + value;
+            Ok(split_factors
+                .into_iter()
+                .map(|f| Metric::Constant { value: f / sum })
+                .collect())
+        } else {
+            // Non-constant metric can not be easily converted to proportional factors
+            Err(ConversionError::NonConstantValue {})
+        }
+    } else {
+        // No factors
+        Ok(vec![])
     }
 }

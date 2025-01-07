@@ -1,0 +1,123 @@
+{
+  "metadata": {
+    "title": "RiverSplitWithGauge",
+    "description": "Example of an abstraction with an MRF of form y=mx+c",
+    "minimum_version": "0.1"
+  },
+  "timestepper": {
+    "start": "2015-01-01",
+    "end": "2015-12-31",
+    "timestep": 1
+  },
+  "scenarios": null,
+  "network": {
+    "nodes": [
+      {
+        "meta": {
+          "name": "Catchment"
+        },
+        "type": "Catchment",
+        "cost": null,
+        "flow": {
+          "type": "Constant",
+          "value": 100.0
+        },
+        "parameters": null
+      },
+      {
+        "meta": {
+          "name": "Gauge"
+        },
+        "type": "RiverSplitWithGauge",
+        "mrf": {
+          "type": "Parameter",
+          "name": "Gauge-p0",
+          "key": null
+        },
+        "mrf_cost": {
+          "type": "Constant",
+          "value": -1000.0
+        },
+        "parameters": null,
+        "splits": [
+          {
+            "factor": {
+              "type": "Constant",
+              "value": 0.25
+            },
+            "slot_name": "abstraction"
+          }
+        ]
+      },
+      {
+        "meta": {
+          "name": "Estuary"
+        },
+        "type": "Output",
+        "cost": null,
+        "max_flow": null,
+        "min_flow": null,
+        "parameters": null
+      },
+      {
+        "meta": {
+          "name": "Demand"
+        },
+        "type": "Output",
+        "max_flow": {
+          "type": "Constant",
+          "value": 50.0
+        },
+        "cost": {
+          "type": "Constant",
+          "value": -10.0
+        },
+        "min_flow": null,
+        "parameters": null
+      }
+    ],
+    "edges": [
+      {
+        "from_node": "Catchment",
+        "to_node": "Gauge"
+      },
+      {
+        "from_node": "Gauge",
+        "from_slot": "river",
+        "to_node": "Estuary"
+      },
+      {
+        "from_node": "Gauge",
+        "from_slot": "abstraction",
+        "to_node": "Demand"
+      }
+    ],
+    "metric_sets": null,
+    "parameters": [
+      {
+        "meta": {
+          "name": "Gauge-p0"
+        },
+        "type": "MonthlyProfile",
+        "interp_day": null,
+        "values": [
+          40.0,
+          40.0,
+          40.0,
+          40.0,
+          40.0,
+          40.0,
+          40.0,
+          40.0,
+          40.0,
+          40.0,
+          40.0,
+          40.0
+        ]
+      }
+    ],
+    "outputs": null,
+    "tables": null,
+    "timeseries": null
+  }
+}

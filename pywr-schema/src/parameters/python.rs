@@ -2,10 +2,10 @@
 use crate::data_tables::make_path;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
-use crate::metric::Metric;
+use crate::metric::{IndexMetric, Metric};
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
-use crate::parameters::{DynamicFloatValueType, DynamicIndexValue, ParameterMeta};
+use crate::parameters::{DynamicFloatValueType, ParameterMeta};
 use crate::visit::{VisitMetrics, VisitPaths};
 #[cfg(feature = "core")]
 use pyo3::prelude::{PyAnyMethods, PyModule};
@@ -103,7 +103,7 @@ pub struct PythonParameter {
     pub metrics: Option<HashMap<String, Metric>>,
     /// Index values to pass to the calculation method of the initialised object (i.e.
     /// indices that the Python calculation is dependent on).
-    pub indices: Option<HashMap<String, DynamicIndexValue>>,
+    pub indices: Option<HashMap<String, IndexMetric>>,
 }
 
 #[cfg(feature = "core")]
@@ -204,7 +204,10 @@ impl PythonParameter {
                 PythonSource::Module(module) => PyModule::import_bound(py, module.as_str()),
                 PythonSource::Path(original_path) => {
                     let path = &make_path(original_path, args.data_path);
-                    let code = std::fs::read_to_string(path).expect("Could not read Python code from path.");
+                    let code = std::fs::read_to_string(path).map_err(|error| SchemaError::IO {
+                        path: path.to_path_buf(),
+                        error,
+                    })?;
                     let file_name = path.file_name().unwrap().to_str().unwrap();
                     let module_name = path.file_stem().unwrap().to_str().unwrap();
 
@@ -242,7 +245,7 @@ impl PythonParameter {
         let indices = match &self.indices {
             Some(indices) => indices
                 .iter()
-                .map(|(k, v)| Ok((k.to_string(), v.load(network, args)?)))
+                .map(|(k, v)| Ok((k.to_string(), v.load(network, args, None)?)))
                 .collect::<Result<HashMap<_, _>, SchemaError>>()?,
             None => HashMap::new(),
         };

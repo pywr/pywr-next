@@ -16,7 +16,7 @@ categories = ["science", "simulation"]
 [dependencies]
 # The Github workflow is configured to use the minimum version corresponding to the `abi3-pyXX` feature enabled here.
 # Please remember to update the workflow if changing the ABI version.
-pyo3 = { workspace = true, features = ["extension-module", "macros", "abi3-py39", "chrono"] }
+pyo3 = { workspace = true, features = ["extension-module", "macros", "chrono"] }
 pyo3-polars = { workspace = true }
 pyo3-log = { workspace = true }
 serde = { workspace = true }

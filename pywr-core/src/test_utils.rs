@@ -66,7 +66,7 @@ pub fn simple_network(network: &mut Network, inflow_scenario_index: usize, num_i
     let inflow = Array::from_shape_fn((366, num_inflow_scenarios), |(i, j)| 1.0 + i as f64 + j as f64);
     let inflow = Array2Parameter::new("inflow".into(), inflow, inflow_scenario_index, None);
 
-    let inflow = network.add_parameter(Box::new(inflow)).unwrap();
+    let inflow = network.add_simple_parameter(Box::new(inflow)).unwrap();
 
     let input_node = network.get_mut_node_by_name("input", None).unwrap();
     input_node.set_max_flow_constraint(Some(inflow.into())).unwrap();
@@ -326,7 +326,7 @@ fn make_simple_system<R: Rng>(
         inflow_scenario_group_index,
         None,
     );
-    let idx = network.add_parameter(Box::new(inflow))?;
+    let idx = network.add_simple_parameter(Box::new(inflow))?;
 
     network.set_node_max_flow("input", Some(suffix), Some(idx.into()))?;
 

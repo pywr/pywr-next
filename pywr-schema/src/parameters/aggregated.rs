@@ -1,11 +1,11 @@
-use crate::error::ConversionError;
+use crate::error::ComponentConversionError;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
-use crate::metric::Metric;
+use crate::metric::{IndexMetric, Metric};
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
-use crate::parameters::{ConversionData, DynamicIndexValue, ParameterMeta};
-use crate::v1::{IntoV2, TryFromV1, TryIntoV2};
+use crate::parameters::{ConversionData, ParameterMeta};
+use crate::v1::{try_convert_parameter_attr, IntoV2, TryFromV1};
 #[cfg(feature = "core")]
 use pywr_core::parameters::ParameterIndex;
 use pywr_schema_macros::PywrVisitAll;
@@ -104,7 +104,7 @@ impl AggregatedParameter {
 }
 
 impl TryFromV1<AggregatedParameterV1> for AggregatedParameter {
-    type Error = ConversionError;
+    type Error = ComponentConversionError;
 
     fn try_from_v1(
         v1: AggregatedParameterV1,
@@ -116,7 +116,7 @@ impl TryFromV1<AggregatedParameterV1> for AggregatedParameter {
         let parameters = v1
             .parameters
             .into_iter()
-            .map(|p| p.try_into_v2(parent_node, conversion_data))
+            .map(|p| try_convert_parameter_attr(&meta.name, "parameters", p, parent_node, conversion_data))
             .collect::<Result<Vec<_>, _>>()?;
 
         let p = Self {
@@ -173,7 +173,7 @@ pub struct AggregatedIndexParameter {
     pub meta: ParameterMeta,
     pub agg_func: IndexAggFunc,
     // TODO this should be `DynamicIntValues`
-    pub parameters: Vec<DynamicIndexValue>,
+    pub parameters: Vec<IndexMetric>,
 }
 
 impl AggregatedIndexParameter {
@@ -201,7 +201,7 @@ impl AggregatedIndexParameter {
         let parameters = self
             .parameters
             .iter()
-            .map(|v| v.load(network, args))
+            .map(|v| v.load(network, args, None))
             .collect::<Result<Vec<_>, _>>()?;
 
         let p = pywr_core::parameters::AggregatedIndexParameter::new(
@@ -215,7 +215,7 @@ impl AggregatedIndexParameter {
 }
 
 impl TryFromV1<AggregatedIndexParameterV1> for AggregatedIndexParameter {
-    type Error = ConversionError;
+    type Error = ComponentConversionError;
 
     fn try_from_v1(
         v1: AggregatedIndexParameterV1,
@@ -227,7 +227,7 @@ impl TryFromV1<AggregatedIndexParameterV1> for AggregatedIndexParameter {
         let parameters = v1
             .parameters
             .into_iter()
-            .map(|p| p.try_into_v2(parent_node, conversion_data))
+            .map(|p| try_convert_parameter_attr(&meta.name, "parameters", p, parent_node, conversion_data))
             .collect::<Result<Vec<_>, _>>()?;
 
         let p = Self {

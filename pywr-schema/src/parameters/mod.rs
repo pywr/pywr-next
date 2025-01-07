@@ -26,14 +26,14 @@ mod thresholds;
 #[cfg(feature = "core")]
 pub use super::data_tables::LoadedTableCollection;
 pub use super::data_tables::TableDataRef;
-use crate::error::ConversionError;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
-use crate::metric::{Metric, ParameterReference};
+use crate::error::{ComponentConversionError, ConversionError};
+use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::timeseries::ConvertedTimeseriesReference;
-use crate::v1::{ConversionData, TryFromV1, TryIntoV2};
+use crate::v1::{ConversionData, IntoV2, TryFromV1, TryIntoV2};
 use crate::visit::{VisitMetrics, VisitPaths};
 pub use aggregated::{AggFunc, AggregatedIndexParameter, AggregatedParameter, IndexAggFunc};
 pub use asymmetric_switch::AsymmetricSwitchIndexParameter;
@@ -59,8 +59,6 @@ pub use profiles::{
 #[cfg(feature = "core")]
 pub use python::try_json_value_into_py;
 pub use python::{PythonParameter, PythonReturnType, PythonSource};
-#[cfg(feature = "core")]
-use pywr_core::{metric::MetricUsize, parameters::ParameterIndex};
 use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::parameters::{
     CoreParameter, DataFrameParameter as DataFrameParameterV1, Parameter as ParameterV1,
@@ -373,7 +371,7 @@ impl From<ConvertedTimeseriesReference> for ParameterOrTimeseriesRef {
 }
 
 impl TryFromV1<ParameterV1> for ParameterOrTimeseriesRef {
-    type Error = ConversionError;
+    type Error = ComponentConversionError;
 
     fn try_from_v1(
         v1: ParameterV1,
@@ -415,19 +413,27 @@ impl TryFromV1<ParameterV1> for ParameterOrTimeseriesRef {
                     Parameter::MonthlyProfile(p.try_into_v2(parent_node, conversion_data)?).into()
                 }
                 CoreParameter::UniformDrawdownProfile(p) => {
-                    Parameter::UniformDrawdownProfile(p.try_into_v2(parent_node, conversion_data)?).into()
+                    Parameter::UniformDrawdownProfile(p.into_v2(parent_node, conversion_data)).into()
                 }
                 CoreParameter::Max(p) => Parameter::Max(p.try_into_v2(parent_node, conversion_data)?).into(),
                 CoreParameter::Negative(p) => Parameter::Negative(p.try_into_v2(parent_node, conversion_data)?).into(),
                 CoreParameter::Polynomial1D(p) => {
-                    Parameter::Polynomial1D(p.try_into_v2(parent_node, conversion_data)?).into()
+                    Parameter::Polynomial1D(p.into_v2(parent_node, conversion_data)).into()
                 }
                 CoreParameter::ParameterThreshold(p) => {
                     Parameter::Threshold(p.try_into_v2(parent_node, conversion_data)?).into()
                 }
-                CoreParameter::TablesArray(p) => {
-                    Parameter::TablesArray(p.try_into_v2(parent_node, conversion_data)?).into()
+                CoreParameter::NodeThreshold(p) => {
+                    Parameter::Threshold(p.try_into_v2(parent_node, conversion_data)?).into()
                 }
+                CoreParameter::StorageThreshold(p) => {
+                    Parameter::Threshold(p.try_into_v2(parent_node, conversion_data)?).into()
+                }
+                CoreParameter::MultipleThresholdIndex(_) => todo!(),
+                CoreParameter::MultipleThresholdParameterIndex(_) => todo!(),
+                CoreParameter::CurrentYearThreshold(_) => todo!(),
+                CoreParameter::CurrentOrdinalDayThreshold(_) => todo!(),
+                CoreParameter::TablesArray(p) => Parameter::TablesArray(p.into_v2(parent_node, conversion_data)).into(),
                 CoreParameter::Min(p) => Parameter::Min(p.try_into_v2(parent_node, conversion_data)?).into(),
                 CoreParameter::Division(p) => Parameter::Division(p.try_into_v2(parent_node, conversion_data)?).into(),
                 CoreParameter::DataFrame(p) => {
@@ -439,14 +445,17 @@ impl TryFromV1<ParameterV1> for ParameterOrTimeseriesRef {
                     .into()
                 }
                 CoreParameter::Deficit(p) => {
-                    return Err(ConversionError::DeprecatedParameter {
-                        ty: "DeficitParameter".to_string(),
+                    return Err(ComponentConversionError::Parameter {
                         name: p.meta.and_then(|m| m.name).unwrap_or("unnamed".to_string()),
-                        instead: "Use a derived metric instead.".to_string(),
-                    })
+                        attr: "".to_string(),
+                        error: ConversionError::DeprecatedParameter {
+                            ty: "DeficitParameter".to_string(),
+                            instead: "Use a derived metric instead.".to_string(),
+                        },
+                    });
                 }
                 CoreParameter::DiscountFactor(p) => {
-                    Parameter::DiscountFactor(p.try_into_v2(parent_node, conversion_data)?).into()
+                    Parameter::DiscountFactor(p.into_v2(parent_node, conversion_data)).into()
                 }
                 CoreParameter::InterpolatedVolume(p) => {
                     Parameter::Interpolated(p.try_into_v2(parent_node, conversion_data)?).into()
@@ -461,20 +470,26 @@ impl TryFromV1<ParameterV1> for ParameterOrTimeseriesRef {
                     Parameter::WeeklyProfile(p.try_into_v2(parent_node, conversion_data)?).into()
                 }
                 CoreParameter::Storage(p) => {
-                    return Err(ConversionError::DeprecatedParameter {
-                        ty: "StorageParameter".to_string(),
+                    return Err(ComponentConversionError::Parameter {
                         name: p.meta.and_then(|m| m.name).unwrap_or("unnamed".to_string()),
-                        instead: "Use a derived metric instead.".to_string(),
-                    })
+                        attr: "".to_string(),
+                        error: ConversionError::DeprecatedParameter {
+                            ty: "DeficitParameter".to_string(),
+                            instead: "Use a derived metric instead.".to_string(),
+                        },
+                    });
                 }
                 CoreParameter::RollingMeanFlowNode(_) => todo!("Implement RollingMeanFlowNodeParameter"),
                 CoreParameter::ScenarioWrapper(_) => todo!("Implement ScenarioWrapperParameter"),
                 CoreParameter::Flow(p) => {
-                    return Err(ConversionError::DeprecatedParameter {
-                        ty: "FlowParameter".to_string(),
+                    return Err(ComponentConversionError::Parameter {
                         name: p.meta.and_then(|m| m.name).unwrap_or("unnamed".to_string()),
-                        instead: "Use a derived metric instead.".to_string(),
-                    })
+                        attr: "".to_string(),
+                        error: ConversionError::DeprecatedParameter {
+                            ty: "FlowParameter".to_string(),
+                            instead: "Use a derived metric instead.".to_string(),
+                        },
+                    });
                 }
                 CoreParameter::RbfProfile(p) => {
                     Parameter::RbfProfile(p.try_into_v2(parent_node, conversion_data)?).into()
@@ -487,24 +502,11 @@ impl TryFromV1<ParameterV1> for ParameterOrTimeseriesRef {
                 }
             },
             ParameterV1::Custom(p) => {
-                println!("Custom parameter: {:?} ({})", p.meta.name, p.ty);
-                // TODO do something better with custom parameters
-
-                let mut comment = format!("V1 CUSTOM PARAMETER ({}) UNCONVERTED!", p.ty);
-                if let Some(c) = p.meta.comment {
-                    comment.push_str(" ORIGINAL COMMENT: ");
-                    comment.push_str(c.as_str());
-                }
-
-                Parameter::Constant(ConstantParameter {
-                    meta: ParameterMeta {
-                        name: p.meta.name.unwrap_or_else(|| "unnamed-custom-parameter".to_string()),
-                        comment: Some(comment),
-                    },
-                    value: ConstantValue::Literal(0.0),
-                    variable: None,
-                })
-                .into()
+                return Err(ComponentConversionError::Parameter {
+                    name: p.meta.name.unwrap_or_else(|| "unnamed".to_string()),
+                    attr: "".to_string(),
+                    error: ConversionError::UnrecognisedType { ty: p.ty },
+                });
             }
         };
 
@@ -612,97 +614,10 @@ impl TryFrom<ParameterValueV1> for ConstantValue<f64> {
     fn try_from(v1: ParameterValueV1) -> Result<Self, Self::Error> {
         match v1 {
             ParameterValueV1::Constant(v) => Ok(Self::Literal(v)),
-            ParameterValueV1::Reference(_) => Err(ConversionError::ConstantFloatReferencesParameter),
+            ParameterValueV1::Reference(_) => Err(ConversionError::ConstantFloatReferencesParameter {}),
             ParameterValueV1::Table(tbl) => Ok(Self::Table(tbl.try_into()?)),
-            ParameterValueV1::Inline(_) => Err(ConversionError::ConstantFloatInlineParameter),
+            ParameterValueV1::Inline(_) => Err(ConversionError::ConstantFloatInlineParameter {}),
         }
-    }
-}
-
-/// An integer (i64) value from another parameter
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll, Display)]
-#[serde(untagged)]
-pub enum ParameterIndexValue {
-    Reference(String),
-}
-
-#[cfg(feature = "core")]
-impl ParameterIndexValue {
-    pub fn load(&self, network: &mut pywr_core::network::Network) -> Result<ParameterIndex<usize>, SchemaError> {
-        match self {
-            Self::Reference(name) => {
-                // This should be an existing parameter
-                Ok(network.get_index_parameter_index_by_name(&name.as_str().into())?)
-            }
-        }
-    }
-}
-
-/// A potentially dynamic integer (usize) value
-///
-/// This value can be a constant (literal or otherwise) or a dynamic value provided
-/// by another parameter.
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll, Display)]
-#[serde(untagged)]
-pub enum DynamicIndexValue {
-    Constant(ConstantValue<usize>),
-    Dynamic(ParameterIndexValue),
-}
-
-impl DynamicIndexValue {
-    pub fn from_usize(v: usize) -> Self {
-        Self::Constant(ConstantValue::Literal(v))
-    }
-}
-
-#[cfg(feature = "core")]
-impl DynamicIndexValue {
-    pub fn load(&self, network: &mut pywr_core::network::Network, args: &LoadArgs) -> Result<MetricUsize, SchemaError> {
-        let parameter_ref = match self {
-            DynamicIndexValue::Constant(v) => v.load(args.tables)?.into(),
-            DynamicIndexValue::Dynamic(v) => v.load(network)?.into(),
-        };
-        Ok(parameter_ref)
-    }
-}
-
-impl TryFromV1<ParameterValueV1> for DynamicIndexValue {
-    type Error = ConversionError;
-
-    fn try_from_v1(
-        v1: ParameterValueV1,
-        parent_node: Option<&str>,
-        conversion_data: &mut ConversionData,
-    ) -> Result<Self, Self::Error> {
-        let p = match v1 {
-            // There was no such thing as s constant index in Pywr v1
-            // TODO this could print a warning and do a cast to usize instead.
-            ParameterValueV1::Constant(_) => return Err(ConversionError::FloatToIndex),
-            ParameterValueV1::Reference(p_name) => Self::Dynamic(ParameterIndexValue::Reference(p_name)),
-            ParameterValueV1::Table(tbl) => Self::Constant(ConstantValue::Table(tbl.try_into()?)),
-            ParameterValueV1::Inline(param) => {
-                // Inline parameters are converted to either a parameter or a timeseries
-                // The actual component is extracted into the conversion data leaving a reference
-                // to the component in the metric.
-                let definition: ParameterOrTimeseriesRef = (*param).try_into_v2(parent_node, conversion_data)?;
-                match definition {
-                    ParameterOrTimeseriesRef::Parameter(p) => {
-                        let reference = ParameterReference {
-                            name: p.name().to_string(),
-                            key: None,
-                        };
-                        conversion_data.parameters.push(*p);
-
-                        Self::Dynamic(ParameterIndexValue::Reference(reference.name))
-                    }
-                    ParameterOrTimeseriesRef::Timeseries(_) => {
-                        // TODO create an error for this
-                        panic!("Timeseries do not support indexes yet")
-                    }
-                }
-            }
-        };
-        Ok(p)
     }
 }
 
@@ -733,7 +648,7 @@ impl ConstantFloatVec {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll, Display)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll, Display, PartialEq)]
 #[serde(untagged)]
 pub enum TableIndex {
     Single(String),
@@ -741,20 +656,20 @@ pub enum TableIndex {
 }
 
 impl TryFrom<TableIndexV1> for TableIndex {
-    type Error = ConversionError;
+    type Error = String;
 
     fn try_from(v1: TableIndexV1) -> Result<Self, Self::Error> {
         match v1 {
             TableIndexV1::Single(s) => match s {
                 TableIndexEntryV1::Name(s) => Ok(TableIndex::Single(s)),
-                TableIndexEntryV1::Index(_) => Err(ConversionError::IntegerTableIndicesNotSupported),
+                TableIndexEntryV1::Index(_) => Err("Integer table indices not supported".to_string()),
             },
             TableIndexV1::Multi(s) => {
                 let names = s
                     .into_iter()
                     .map(|e| match e {
                         TableIndexEntryV1::Name(s) => Ok(s),
-                        TableIndexEntryV1::Index(_) => Err(ConversionError::IntegerTableIndicesNotSupported),
+                        TableIndexEntryV1::Index(_) => Err("Integer table indices not supported".to_string()),
                     })
                     .collect::<Result<Vec<_>, _>>()?;
                 Ok(Self::Multi(names))

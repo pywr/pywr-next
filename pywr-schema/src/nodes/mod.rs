@@ -13,9 +13,9 @@ mod turbine;
 mod virtual_storage;
 mod water_treatment_works;
 
-use crate::error::ConversionError;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
+use crate::error::{ComponentConversionError, ConversionError};
 use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
@@ -89,7 +89,7 @@ impl From<NodeMetaV1> for NodeMeta {
 /// All possible attributes that could be produced by a node.
 ///
 ///
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Copy, Display, JsonSchema, PywrVisitAll)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Copy, Display, JsonSchema, PywrVisitAll, PartialEq)]
 pub enum NodeAttribute {
     Inflow,
     Outflow,
@@ -530,7 +530,7 @@ impl Node {
 }
 
 impl TryFromV1<NodeV1> for Node {
-    type Error = ConversionError;
+    type Error = ComponentConversionError;
 
     fn try_from_v1(
         v1: NodeV1,
@@ -542,16 +542,17 @@ impl TryFromV1<NodeV1> for Node {
                 let nv2: Node = n.try_into_v2(parent_node, conversion_data)?;
                 Ok(nv2)
             }
-            NodeV1::Custom(n) => Err(ConversionError::CustomNodeNotSupported {
+            NodeV1::Custom(n) => Err(ComponentConversionError::Node {
                 name: n.meta.name,
-                ty: n.ty,
+                attr: "".to_string(),
+                error: ConversionError::CustomTypeNotSupported { ty: n.ty },
             }),
         }
     }
 }
 
 impl TryFromV1<Box<CoreNodeV1>> for Node {
-    type Error = ConversionError;
+    type Error = ComponentConversionError;
 
     fn try_from_v1(
         v1: Box<CoreNodeV1>,
