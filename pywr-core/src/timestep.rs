@@ -1,3 +1,4 @@
+use chrono::Datelike;
 use chrono::{Months, NaiveDateTime, TimeDelta};
 use polars::datatypes::TimeUnit;
 use polars::time::ClosedWindow;
@@ -11,6 +12,11 @@ const MILLISECS_IN_DAY: i64 = 1000 * SECS_IN_DAY;
 const MILLISECS_IN_HOUR: i64 = 1000 * 60 * 60;
 const MILLISECS_IN_MINUTE: i64 = 1000 * 60;
 const MILLISECS_IN_SECOND: i64 = 1000;
+
+fn is_leap_year(year: i32) -> bool {
+    // see http://stackoverflow.com/a/11595914/1300519
+    (year & 3) == 0 && ((year % 25) != 0 || (year & 15) == 0)
+}
 
 /// A newtype for `chrono::TimeDelta` that provides a couple of useful convenience methods.
 #[derive(Debug, Copy, Clone)]
@@ -117,6 +123,18 @@ impl Timestep {
 
     pub(crate) fn days(&self) -> f64 {
         self.duration.fractional_days()
+    }
+
+    /// Returns the day of the year index of the timestep.
+    ///
+    /// The index is zero-based and accounts for leaps days. In non-leap years, 1 is added is added to the index for
+    /// days after Feb 28th.
+    pub fn day_of_year_index(&self) -> usize {
+        let mut i = self.date.ordinal() as usize - 1;
+        if !is_leap_year(self.date.year()) && i > 58 {
+            i += 1;
+        }
+        i
     }
 }
 
@@ -274,7 +292,7 @@ impl TryFrom<Timestepper> for TimeDomain {
 mod test {
     use chrono::{NaiveDateTime, TimeDelta};
 
-    use crate::timestep::{PywrDuration, SECS_IN_DAY};
+    use crate::timestep::{is_leap_year, PywrDuration, SECS_IN_DAY};
 
     use super::{TimestepDuration, Timestepper};
 
@@ -369,5 +387,13 @@ mod test {
         assert_eq!(duration.whole_days(), None);
         assert_eq!(duration.fractional_days(), duration_secs as f64 / SECS_IN_DAY as f64);
         assert_eq!(duration.duration_string(), String::from("23h59m59s"));
+    }
+
+    #[test]
+    fn test_is_leap_year() {
+        assert!(is_leap_year(2016));
+        assert!(!is_leap_year(2017));
+        assert!(is_leap_year(2000));
+        assert!(!is_leap_year(1900));
     }
 }
