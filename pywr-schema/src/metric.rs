@@ -272,7 +272,7 @@ impl NodeReference {
 
     /// Load a node reference into a [`MetricUsize`].
     #[cfg(feature = "core")]
-    pub fn load_usize(
+    pub fn load_u64(
         &self,
         _network: &mut pywr_core::network::Network,
         args: &LoadArgs,
@@ -414,7 +414,7 @@ impl ParameterReference {
     /// from the `network`. If `parent` is the optional parameter name space from which to load
     /// the parameter.
     #[cfg(feature = "core")]
-    pub fn load_usize(
+    pub fn load_u64(
         &self,
         network: &mut pywr_core::network::Network,
         parent: Option<&str>,
@@ -506,9 +506,9 @@ impl IndexMetric {
         parent: Option<&str>,
     ) -> Result<MetricU64, SchemaError> {
         match self {
-            Self::Node(node_ref) => node_ref.load_usize(network, args),
+            Self::Node(node_ref) => node_ref.load_u64(network, args),
             // Global parameter with no parent
-            Self::Parameter(parameter_ref) => parameter_ref.load_usize(network, None),
+            Self::Parameter(parameter_ref) => parameter_ref.load_u64(network, None),
             // Local parameter loaded from parent's namespace
             Self::LocalParameter(parameter_ref) => {
                 if parent.is_none() {
@@ -517,7 +517,7 @@ impl IndexMetric {
                     ));
                 }
 
-                parameter_ref.load_usize(network, parent)
+                parameter_ref.load_u64(network, parent)
             }
             Self::Constant { value } => Ok((*value).into()),
             Self::Table(table_ref) => {

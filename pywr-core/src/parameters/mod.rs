@@ -332,7 +332,7 @@ where
 
 struct ParameterStatesByType {
     f64: Vec<Option<Box<dyn ParameterState>>>,
-    usize: Vec<Option<Box<dyn ParameterState>>>,
+    u64: Vec<Option<Box<dyn ParameterState>>>,
     multi: Vec<Option<Box<dyn ParameterState>>>,
 }
 
@@ -409,20 +409,20 @@ impl ParameterStates {
         &mut self,
         index: GeneralParameterIndex<u64>,
     ) -> Option<&mut Option<Box<dyn ParameterState>>> {
-        self.general.usize.get_mut(*index.deref())
+        self.general.u64.get_mut(*index.deref())
     }
 
     pub fn get_simple_mut_u64_state(
         &mut self,
         index: SimpleParameterIndex<u64>,
     ) -> Option<&mut Option<Box<dyn ParameterState>>> {
-        self.simple.usize.get_mut(*index.deref())
+        self.simple.u64.get_mut(*index.deref())
     }
     pub fn get_const_mut_u64_state(
         &mut self,
         index: ConstParameterIndex<u64>,
     ) -> Option<&mut Option<Box<dyn ParameterState>>> {
-        self.constant.usize.get_mut(*index.deref())
+        self.constant.u64.get_mut(*index.deref())
     }
 
     pub fn get_general_mut_multi_state(
@@ -763,19 +763,19 @@ pub struct ParameterCollectionSize {
 #[derive(Default)]
 pub struct ParameterCollection {
     constant_f64: Vec<Box<dyn ConstParameter<f64>>>,
-    constant_usize: Vec<Box<dyn ConstParameter<u64>>>,
+    constant_u64: Vec<Box<dyn ConstParameter<u64>>>,
     constant_multi: Vec<Box<dyn ConstParameter<MultiValue>>>,
     constant_resolve_order: Vec<ConstParameterType>,
 
     simple_f64: Vec<Box<dyn SimpleParameter<f64>>>,
-    simple_usize: Vec<Box<dyn SimpleParameter<u64>>>,
+    simple_u64: Vec<Box<dyn SimpleParameter<u64>>>,
     simple_multi: Vec<Box<dyn SimpleParameter<MultiValue>>>,
     simple_resolve_order: Vec<SimpleParameterType>,
 
     // There is no resolve order for general parameters as they are resolved at a model
     // level with other component types (e.g. nodes).
     general_f64: Vec<Box<dyn GeneralParameter<f64>>>,
-    general_usize: Vec<Box<dyn GeneralParameter<u64>>>,
+    general_u64: Vec<Box<dyn GeneralParameter<u64>>>,
     general_multi: Vec<Box<dyn GeneralParameter<MultiValue>>>,
 }
 
@@ -783,13 +783,13 @@ impl ParameterCollection {
     pub fn size(&self) -> ParameterCollectionSize {
         ParameterCollectionSize {
             const_f64: self.constant_f64.len(),
-            const_usize: self.constant_usize.len(),
+            const_usize: self.constant_u64.len(),
             const_multi: self.constant_multi.len(),
             simple_f64: self.simple_f64.len(),
-            simple_usize: self.simple_usize.len(),
+            simple_usize: self.simple_u64.len(),
             simple_multi: self.simple_multi.len(),
             general_f64: self.general_f64.len(),
-            general_usize: self.general_usize.len(),
+            general_usize: self.general_u64.len(),
             general_multi: self.general_multi.len(),
         }
     }
@@ -806,7 +806,7 @@ impl ParameterCollection {
             .collect::<Result<Vec<_>, _>>()?;
 
         let usize_states = self
-            .general_usize
+            .general_u64
             .iter()
             .map(|p| p.setup(timesteps, scenario_index))
             .collect::<Result<Vec<_>, _>>()?;
@@ -819,7 +819,7 @@ impl ParameterCollection {
 
         Ok(ParameterStatesByType {
             f64: f64_states,
-            usize: usize_states,
+            u64: usize_states,
             multi: multi_states,
         })
     }
@@ -837,7 +837,7 @@ impl ParameterCollection {
             .collect::<Result<Vec<_>, _>>()?;
 
         let usize_states = self
-            .simple_usize
+            .simple_u64
             .iter()
             .map(|p| p.setup(timesteps, scenario_index))
             .collect::<Result<Vec<_>, _>>()?;
@@ -850,7 +850,7 @@ impl ParameterCollection {
 
         Ok(ParameterStatesByType {
             f64: f64_states,
-            usize: usize_states,
+            u64: usize_states,
             multi: multi_states,
         })
     }
@@ -868,7 +868,7 @@ impl ParameterCollection {
             .collect::<Result<Vec<_>, _>>()?;
 
         let usize_states = self
-            .constant_usize
+            .constant_u64
             .iter()
             .map(|p| p.setup(timesteps, scenario_index))
             .collect::<Result<Vec<_>, _>>()?;
@@ -881,7 +881,7 @@ impl ParameterCollection {
 
         Ok(ParameterStatesByType {
             f64: f64_states,
-            usize: usize_states,
+            u64: usize_states,
             multi: multi_states,
         })
     }
@@ -889,7 +889,7 @@ impl ParameterCollection {
     /// Does a parameter with the given name exist in the collection.
     pub fn has_name(&self, name: &ParameterName) -> bool {
         self.get_f64_index_by_name(name).is_some()
-            || self.get_usize_index_by_name(name).is_some()
+            || self.get_u64_index_by_name(name).is_some()
             || self.get_multi_index_by_name(name).is_some()
     }
 
@@ -1004,8 +1004,8 @@ impl ParameterCollection {
         match parameter.try_into_simple() {
             Some(simple) => self.add_simple_u64(simple),
             None => {
-                let index = GeneralParameterIndex::new(self.general_usize.len());
-                self.general_usize.push(parameter);
+                let index = GeneralParameterIndex::new(self.general_u64.len());
+                self.general_u64.push(parameter);
                 Ok(index.into())
             }
         }
@@ -1024,7 +1024,7 @@ impl ParameterCollection {
             None => {
                 let index = SimpleParameterIndex::new(self.simple_f64.len());
 
-                self.simple_usize.push(parameter);
+                self.simple_u64.push(parameter);
                 self.simple_resolve_order.push(SimpleParameterType::Index(index));
 
                 Ok(index.into())
@@ -1037,9 +1037,9 @@ impl ParameterCollection {
             return Err(PywrError::ParameterNameAlreadyExists(parameter.meta().name.to_string()));
         }
 
-        let index = ConstParameterIndex::new(self.constant_usize.len());
+        let index = ConstParameterIndex::new(self.constant_u64.len());
 
-        self.constant_usize.push(parameter);
+        self.constant_u64.push(parameter);
         self.constant_resolve_order.push(ConstParameterType::Index(index));
 
         Ok(index.into())
@@ -1047,40 +1047,40 @@ impl ParameterCollection {
 
     pub fn get_u64(&self, index: ParameterIndex<u64>) -> Option<&dyn Parameter> {
         match index {
-            ParameterIndex::Const(idx) => self.constant_usize.get(*idx.deref()).map(|p| p.as_parameter()),
-            ParameterIndex::Simple(idx) => self.simple_usize.get(*idx.deref()).map(|p| p.as_parameter()),
-            ParameterIndex::General(idx) => self.general_usize.get(*idx.deref()).map(|p| p.as_parameter()),
+            ParameterIndex::Const(idx) => self.constant_u64.get(*idx.deref()).map(|p| p.as_parameter()),
+            ParameterIndex::Simple(idx) => self.simple_u64.get(*idx.deref()).map(|p| p.as_parameter()),
+            ParameterIndex::General(idx) => self.general_u64.get(*idx.deref()).map(|p| p.as_parameter()),
         }
     }
 
-    pub fn get_general_usize(&self, index: GeneralParameterIndex<u64>) -> Option<&dyn GeneralParameter<u64>> {
-        self.general_usize.get(*index.deref()).map(|p| p.as_ref())
+    pub fn get_general_u64(&self, index: GeneralParameterIndex<u64>) -> Option<&dyn GeneralParameter<u64>> {
+        self.general_u64.get(*index.deref()).map(|p| p.as_ref())
     }
 
-    pub fn get_usize_by_name(&self, name: &ParameterName) -> Option<&dyn Parameter> {
-        self.general_usize
+    pub fn get_u64_by_name(&self, name: &ParameterName) -> Option<&dyn Parameter> {
+        self.general_u64
             .iter()
             .find(|p| p.name() == name)
             .map(|p| p.as_parameter())
     }
 
-    pub fn get_usize_index_by_name(&self, name: &ParameterName) -> Option<ParameterIndex<u64>> {
+    pub fn get_u64_index_by_name(&self, name: &ParameterName) -> Option<ParameterIndex<u64>> {
         if let Some(idx) = self
-            .general_usize
+            .general_u64
             .iter()
             .position(|p| p.name() == name)
             .map(GeneralParameterIndex::new)
         {
             Some(idx.into())
         } else if let Some(idx) = self
-            .simple_usize
+            .simple_u64
             .iter()
             .position(|p| p.name() == name)
             .map(SimpleParameterIndex::new)
         {
             Some(idx.into())
         } else {
-            self.constant_usize
+            self.constant_u64
                 .iter()
                 .position(|p| p.name() == name)
                 .map(ConstParameterIndex::new)
@@ -1214,7 +1214,7 @@ impl ParameterCollection {
                 SimpleParameterType::Index(idx) => {
                     // Find the parameter itself
                     let p = self
-                        .simple_usize
+                        .simple_u64
                         .get(*idx.deref())
                         .ok_or(PywrError::SimpleIndexParameterIndexNotFound(*idx))?;
                     // .. and its internal state
@@ -1286,7 +1286,7 @@ impl ParameterCollection {
                 SimpleParameterType::Index(idx) => {
                     // Find the parameter itself
                     let p = self
-                        .simple_usize
+                        .simple_u64
                         .get(*idx.deref())
                         .ok_or(PywrError::SimpleIndexParameterIndexNotFound(*idx))?;
                     // .. and its internal state
@@ -1351,7 +1351,7 @@ impl ParameterCollection {
                 ConstParameterType::Index(idx) => {
                     // Find the parameter itself
                     let p = self
-                        .constant_usize
+                        .constant_u64
                         .get(*idx.deref())
                         .ok_or(PywrError::ConstIndexParameterIndexNotFound(*idx))?;
                     // .. and its internal state

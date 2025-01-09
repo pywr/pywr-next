@@ -640,7 +640,7 @@ impl Network {
                         GeneralParameterType::Index(idx) => {
                             let p = self
                                 .parameters
-                                .get_general_usize(*idx)
+                                .get_general_u64(*idx)
                                 .ok_or(PywrError::GeneralIndexParameterIndexNotFound(*idx))?;
 
                             // .. and its internal state
@@ -731,7 +731,7 @@ impl Network {
                         GeneralParameterType::Index(idx) => {
                             let p = self
                                 .parameters
-                                .get_general_usize(*idx)
+                                .get_general_u64(*idx)
                                 .ok_or(PywrError::GeneralIndexParameterIndexNotFound(*idx))?;
 
                             // .. and its internal state
@@ -1160,7 +1160,7 @@ impl Network {
 
     /// Get a `IndexParameter` from a parameter's name
     pub fn get_index_parameter_by_name(&self, name: &ParameterName) -> Result<&dyn parameters::Parameter, PywrError> {
-        match self.parameters.get_usize_by_name(name) {
+        match self.parameters.get_u64_by_name(name) {
             Some(parameter) => Ok(parameter),
             None => Err(PywrError::ParameterNotFound(name.to_string())),
         }
@@ -1168,7 +1168,7 @@ impl Network {
 
     /// Get a `IndexParameterIndex` from a parameter's name
     pub fn get_index_parameter_index_by_name(&self, name: &ParameterName) -> Result<ParameterIndex<u64>, PywrError> {
-        match self.parameters.get_usize_index_by_name(name) {
+        match self.parameters.get_u64_index_by_name(name) {
             Some(idx) => Ok(idx),
             None => Err(PywrError::ParameterNotFound(name.to_string())),
         }
