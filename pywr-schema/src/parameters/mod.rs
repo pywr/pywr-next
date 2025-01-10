@@ -80,7 +80,7 @@ pub struct ParameterMeta {
 #[derive(serde::Deserialize, serde::Serialize, Debug, EnumDiscriminants, Clone, JsonSchema, Display)]
 #[serde(tag = "type")]
 #[strum_discriminants(derive(Display, IntoStaticStr, EnumString, VariantNames))]
-// This creates a separate enum called `NodeType` that is available in this module.
+// This creates a separate enum called `ParameterType` that is available in this module.
 #[strum_discriminants(name(ParameterType))]
 pub enum Parameter {
     Aggregated(AggregatedParameter),
