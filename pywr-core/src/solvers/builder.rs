@@ -331,10 +331,12 @@ where
         I::from(self.builder.col_upper.len()).unwrap()
     }
 
+    #[allow(dead_code)]
     pub fn num_rows(&self) -> I {
         I::from(self.builder.row_upper.len()).unwrap()
     }
 
+    #[allow(dead_code)]
     pub fn num_non_zero(&self) -> I {
         I::from(self.builder.elements.len()).unwrap()
     }
@@ -351,6 +353,7 @@ where
         &self.builder.col_obj_coef
     }
 
+    #[allow(dead_code)]
     pub fn col_type(&self) -> &[ColType] {
         &self.builder.col_type
     }
@@ -363,6 +366,7 @@ where
         &self.builder.row_upper
     }
 
+    #[allow(dead_code)]
     pub fn row_mask(&self) -> &[I] {
         &self.builder.row_mask
     }

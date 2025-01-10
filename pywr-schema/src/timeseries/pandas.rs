@@ -27,7 +27,27 @@ impl VisitPaths for PandasDataset {
     }
 }
 
-#[cfg(feature = "core")]
+#[cfg(all(feature = "core", not(feature = "pyo3")))]
+mod core {
+    use super::PandasDataset;
+    use crate::timeseries::TimeseriesError;
+    use polars::frame::DataFrame;
+    use pywr_core::models::ModelDomain;
+    use std::path::Path;
+
+    impl PandasDataset {
+        pub fn load(
+            &self,
+            _name: &str,
+            _data_path: Option<&Path>,
+            _domain: &ModelDomain,
+        ) -> Result<DataFrame, TimeseriesError> {
+            Err(TimeseriesError::PythonNotEnabled)
+        }
+    }
+}
+
+#[cfg(all(feature = "core", feature = "pyo3"))]
 mod core {
     const PANDAS_LOAD_SCRIPT: &str = include_str!("pandas_load.py");
 

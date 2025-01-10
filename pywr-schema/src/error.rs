@@ -1,6 +1,7 @@
 use crate::data_tables::{DataTable, TableDataRef, TableError};
 use crate::nodes::NodeAttribute;
 use crate::timeseries::TimeseriesError;
+#[cfg(feature = "pyo3")]
 use pyo3::prelude::*;
 use std::path::PathBuf;
 use thiserror::Error;
@@ -69,9 +70,11 @@ pub enum SchemaError {
     OutOfRange(#[from] chrono::OutOfRange),
     #[error("The metric set with name '{0}' contains no metrics")]
     EmptyMetricSet(String),
+    #[error("The feature '{0}' must be enabled to use this functionality.")]
+    FeatureNotEnabled(String),
 }
 
-#[cfg(feature = "core")]
+#[cfg(all(feature = "core", feature = "pyo3"))]
 impl From<SchemaError> for PyErr {
     fn from(err: SchemaError) -> PyErr {
         pyo3::exceptions::PyRuntimeError::new_err(err.to_string())
@@ -79,7 +82,7 @@ impl From<SchemaError> for PyErr {
 }
 
 #[derive(Error, Debug, PartialEq, Eq, Clone)]
-#[pyclass]
+#[cfg_attr(feature = "pyo3", pyclass)]
 pub enum ComponentConversionError {
     #[error("Failed to convert `{attr}` on node `{name}`: {error}")]
     Node {
@@ -96,7 +99,7 @@ pub enum ComponentConversionError {
 }
 
 #[derive(Error, Debug, PartialEq, Eq, Clone)]
-#[pyclass]
+#[cfg_attr(feature = "pyo3", pyclass)]
 pub enum ConversionError {
     #[error("Constant float value cannot be a parameter reference.")]
     ConstantFloatReferencesParameter {},

@@ -11,8 +11,12 @@ use crate::parameters::{
 use crate::recorders::{AggregationError, MetricSetIndex, RecorderIndex};
 use crate::state::MultiValue;
 use crate::virtual_storage::VirtualStorageIndex;
-use pyo3::exceptions::{PyException, PyRuntimeError};
-use pyo3::{create_exception, PyErr};
+#[cfg(feature = "pyo3")]
+use pyo3::{
+    create_exception,
+    exceptions::{PyException, PyRuntimeError},
+    PyErr,
+};
 use thiserror::Error;
 
 pub mod aggregated_node;
@@ -202,8 +206,10 @@ pub enum PywrError {
 }
 
 // Python errors
+#[cfg(feature = "pyo3")]
 create_exception!(pywr, ParameterNotFoundError, PyException);
 
+#[cfg(feature = "pyo3")]
 impl From<PywrError> for PyErr {
     fn from(err: PywrError) -> PyErr {
         match err {

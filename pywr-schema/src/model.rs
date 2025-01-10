@@ -16,6 +16,7 @@ use crate::visit::{VisitMetrics, VisitPaths};
 #[cfg(feature = "core")]
 use chrono::NaiveTime;
 use chrono::{NaiveDate, NaiveDateTime};
+#[cfg(feature = "pyo3")]
 use pyo3::pyclass;
 #[cfg(feature = "core")]
 use pywr_core::{models::ModelDomain, timestep::TimestepDuration, PywrError};
@@ -152,7 +153,7 @@ pub struct LoadArgs<'a> {
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, JsonSchema)]
-#[pyclass]
+#[cfg_attr(feature = "pyo3", pyclass)]
 pub struct PywrNetwork {
     pub nodes: Vec<Node>,
     pub edges: Vec<Edge>,

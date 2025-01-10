@@ -1,11 +1,11 @@
+use crate::PywrError;
 use chrono::Datelike;
 use chrono::{Months, NaiveDateTime, TimeDelta};
 use polars::datatypes::TimeUnit;
 use polars::time::ClosedWindow;
-use pyo3::prelude::*;
+#[cfg(feature = "pyo3")]
+use pyo3::pyclass;
 use std::ops::Add;
-
-use crate::PywrError;
 
 const SECS_IN_DAY: i64 = 60 * 60 * 24;
 const MILLISECS_IN_DAY: i64 = 1000 * SECS_IN_DAY;
@@ -104,7 +104,7 @@ impl PywrDuration {
 
 pub type TimestepIndex = usize;
 
-#[pyclass]
+#[cfg_attr(feature = "pyo3", pyclass)]
 #[derive(Debug, Copy, Clone)]
 pub struct Timestep {
     pub date: NaiveDateTime,
