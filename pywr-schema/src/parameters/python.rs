@@ -1,4 +1,4 @@
-#[cfg(feature = "core")]
+#[cfg(all(feature = "core", feature = "pyo3"))]
 use crate::data_tables::make_path;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
@@ -7,16 +7,18 @@ use crate::metric::{IndexMetric, Metric};
 use crate::model::LoadArgs;
 use crate::parameters::{DynamicFloatValueType, ParameterMeta};
 use crate::visit::{VisitMetrics, VisitPaths};
+#[cfg(all(feature = "core", feature = "pyo3"))]
+use pyo3::{
+    prelude::{PyAnyMethods, PyModule},
+    types::{PyDict, PyTuple},
+    IntoPy, PyErr, PyObject, Python,
+};
 #[cfg(feature = "core")]
-use pyo3::prelude::{PyAnyMethods, PyModule};
-#[cfg(feature = "core")]
-use pyo3::types::{PyDict, PyTuple};
-#[cfg(feature = "core")]
-use pyo3::{IntoPy, PyErr, PyObject, Python};
-#[cfg(feature = "core")]
-use pywr_core::parameters::{ParameterType, PyParameter};
+use pywr_core::parameters::ParameterType;
+#[cfg(all(feature = "core", feature = "pyo3"))]
+use pywr_core::parameters::PyParameter;
 use schemars::JsonSchema;
-#[cfg(feature = "core")]
+#[cfg(all(feature = "core", feature = "pyo3"))]
 use serde_json::Value;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -106,7 +108,7 @@ pub struct PythonParameter {
     pub indices: Option<HashMap<String, IndexMetric>>,
 }
 
-#[cfg(feature = "core")]
+#[cfg(all(feature = "core", feature = "pyo3"))]
 pub fn try_json_value_into_py(py: Python, value: &serde_json::Value) -> Result<Option<PyObject>, SchemaError> {
     let py_value = match value {
         Value::Null => None,
@@ -190,7 +192,17 @@ impl PythonParameter {
     }
 }
 
-#[cfg(feature = "core")]
+#[cfg(all(feature = "core", not(feature = "pyo3")))]
+impl PythonParameter {
+    pub fn add_to_model(
+        &self,
+        _network: &mut pywr_core::network::Network,
+        _args: &LoadArgs,
+    ) -> Result<ParameterType, SchemaError> {
+        Err(SchemaError::FeatureNotEnabled("pyo3".to_string()))
+    }
+}
+#[cfg(all(feature = "core", feature = "pyo3"))]
 impl PythonParameter {
     pub fn add_to_model(
         &self,
@@ -270,7 +282,7 @@ impl PythonParameter {
 }
 
 #[cfg(test)]
-#[cfg(feature = "core")]
+#[cfg(all(feature = "core", feature = "pyo3"))]
 mod tests {
     use crate::data_tables::LoadedTableCollection;
     use crate::model::{LoadArgs, PywrNetwork};

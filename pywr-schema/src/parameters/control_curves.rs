@@ -133,7 +133,7 @@ impl ControlCurveIndexParameter {
         &self,
         network: &mut pywr_core::network::Network,
         args: &LoadArgs,
-    ) -> Result<ParameterIndex<usize>, SchemaError> {
+    ) -> Result<ParameterIndex<u64>, SchemaError> {
         let metric = self.storage_node.load_f64(network, args)?;
 
         let control_curves = self

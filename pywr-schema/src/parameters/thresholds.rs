@@ -71,7 +71,7 @@ impl ThresholdParameter {
         &self,
         network: &mut pywr_core::network::Network,
         args: &LoadArgs,
-    ) -> Result<ParameterIndex<usize>, SchemaError> {
+    ) -> Result<ParameterIndex<u64>, SchemaError> {
         let metric = self.value.load(network, args, None)?;
         let threshold = self.threshold.load(network, args, None)?;
 

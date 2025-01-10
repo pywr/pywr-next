@@ -331,10 +331,12 @@ where
         I::from(self.builder.col_upper.len()).unwrap()
     }
 
+    #[allow(dead_code)]
     pub fn num_rows(&self) -> I {
         I::from(self.builder.row_upper.len()).unwrap()
     }
 
+    #[allow(dead_code)]
     pub fn num_non_zero(&self) -> I {
         I::from(self.builder.elements.len()).unwrap()
     }
@@ -351,6 +353,7 @@ where
         &self.builder.col_obj_coef
     }
 
+    #[allow(dead_code)]
     pub fn col_type(&self) -> &[ColType] {
         &self.builder.col_type
     }
@@ -363,6 +366,7 @@ where
         &self.builder.row_upper
     }
 
+    #[allow(dead_code)]
     pub fn row_mask(&self) -> &[I] {
         &self.builder.row_mask
     }
@@ -531,10 +535,7 @@ where
             .iter()
             .zip(network.virtual_storage_nodes().deref())
         {
-            let (avail, missing) = match node.get_available_volume_bounds(state) {
-                Ok(bnds) => bnds,
-                Err(e) => return Err(e),
-            };
+            let (avail, missing) = node.get_available_volume_bounds(state)?;
 
             let (lb, ub) = (-avail / dt, missing / dt);
             self.builder.apply_row_bounds(*row_id, lb, ub);

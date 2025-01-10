@@ -36,7 +36,7 @@ pub struct DelayNode {
     pub meta: NodeMeta,
     /// Optional local parameters.
     pub parameters: Option<Vec<Parameter>>,
-    pub delay: usize,
+    pub delay: u64,
     pub initial_value: ConstantValue<f64>,
 }
 
@@ -154,7 +154,7 @@ impl TryFrom<DelayNodeV1> for DelayNode {
                     })
                 }
             },
-        } as usize;
+        } as u64;
 
         let initial_value = ConstantValue::Literal(v1.initial_flow.unwrap_or_default());
 

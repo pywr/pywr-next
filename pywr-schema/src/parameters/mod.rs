@@ -56,7 +56,7 @@ pub use profiles::{
     DailyProfileParameter, MonthlyInterpDay, MonthlyProfileParameter, RadialBasisFunction, RbfProfileParameter,
     RbfProfileVariableSettings, UniformDrawdownProfileParameter, WeeklyProfileParameter,
 };
-#[cfg(feature = "core")]
+#[cfg(all(feature = "core", feature = "pyo3"))]
 pub use python::try_json_value_into_py;
 pub use python::{PythonParameter, PythonReturnType, PythonSource};
 use pywr_schema_macros::PywrVisitAll;
@@ -80,7 +80,7 @@ pub struct ParameterMeta {
 #[derive(serde::Deserialize, serde::Serialize, Debug, EnumDiscriminants, Clone, JsonSchema, Display)]
 #[serde(tag = "type")]
 #[strum_discriminants(derive(Display, IntoStaticStr, EnumString, VariantNames))]
-// This creates a separate enum called `NodeType` that is available in this module.
+// This creates a separate enum called `ParameterType` that is available in this module.
 #[strum_discriminants(name(ParameterType))]
 pub enum Parameter {
     Aggregated(AggregatedParameter),
@@ -593,13 +593,13 @@ impl ConstantValue<f64> {
 }
 
 #[cfg(feature = "core")]
-impl ConstantValue<usize> {
+impl ConstantValue<u64> {
     /// Return the value loading from a table if required.
-    pub fn load(&self, tables: &LoadedTableCollection) -> Result<usize, SchemaError> {
+    pub fn load(&self, tables: &LoadedTableCollection) -> Result<u64, SchemaError> {
         match self {
             Self::Literal(v) => Ok(*v),
             Self::Table(tbl_ref) => tables
-                .get_scalar_usize(tbl_ref)
+                .get_scalar_u64(tbl_ref)
                 .map_err(|error| SchemaError::TableRefLoad {
                     table_ref: tbl_ref.clone(),
                     error,

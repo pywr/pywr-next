@@ -13,7 +13,7 @@ use crate::PywrError;
 #[derive(Clone, Debug, PartialEq)]
 pub enum ConstantMetricF64 {
     ParameterValue(ConstParameterIndex<f64>),
-    IndexParameterValue(ConstParameterIndex<usize>),
+    IndexParameterValue(ConstParameterIndex<u64>),
     MultiParameterValue((ConstParameterIndex<MultiValue>, String)),
     Constant(f64),
 }
@@ -22,7 +22,7 @@ impl ConstantMetricF64 {
     pub fn get_value(&self, values: &ConstParameterValues) -> Result<f64, PywrError> {
         match self {
             ConstantMetricF64::ParameterValue(idx) => Ok(values.get_const_parameter_f64(*idx)?),
-            ConstantMetricF64::IndexParameterValue(idx) => Ok(values.get_const_parameter_usize(*idx)? as f64),
+            ConstantMetricF64::IndexParameterValue(idx) => Ok(values.get_const_parameter_u64(*idx)? as f64),
             ConstantMetricF64::MultiParameterValue((idx, key)) => Ok(values.get_const_multi_parameter_f64(*idx, key)?),
             ConstantMetricF64::Constant(v) => Ok(*v),
         }
@@ -39,7 +39,7 @@ impl ConstantMetricF64 {
 #[derive(Clone, Debug, PartialEq)]
 pub enum SimpleMetricF64 {
     ParameterValue(SimpleParameterIndex<f64>),
-    IndexParameterValue(SimpleParameterIndex<usize>),
+    IndexParameterValue(SimpleParameterIndex<u64>),
     MultiParameterValue((SimpleParameterIndex<MultiValue>, String)),
     Constant(ConstantMetricF64),
 }
@@ -48,7 +48,7 @@ impl SimpleMetricF64 {
     pub fn get_value(&self, values: &SimpleParameterValues) -> Result<f64, PywrError> {
         match self {
             SimpleMetricF64::ParameterValue(idx) => Ok(values.get_simple_parameter_f64(*idx)?),
-            SimpleMetricF64::IndexParameterValue(idx) => Ok(values.get_simple_parameter_usize(*idx)? as f64),
+            SimpleMetricF64::IndexParameterValue(idx) => Ok(values.get_simple_parameter_u64(*idx)? as f64),
             SimpleMetricF64::MultiParameterValue((idx, key)) => Ok(values.get_simple_multi_parameter_f64(*idx, key)?),
             SimpleMetricF64::Constant(m) => m.get_value(values.get_constant_values()),
         }
@@ -87,7 +87,7 @@ pub enum MetricF64 {
     EdgeFlow(EdgeIndex),
     MultiEdgeFlow { indices: Vec<EdgeIndex>, name: String },
     ParameterValue(GeneralParameterIndex<f64>),
-    IndexParameterValue(GeneralParameterIndex<usize>),
+    IndexParameterValue(GeneralParameterIndex<u64>),
     MultiParameterValue((GeneralParameterIndex<MultiValue>, String)),
     VirtualStorageVolume(VirtualStorageIndex),
     MultiNodeInFlow { indices: Vec<NodeIndex>, name: String },
@@ -241,8 +241,8 @@ impl From<ParameterIndex<f64>> for MetricF64 {
     }
 }
 
-impl From<ParameterIndex<usize>> for MetricF64 {
-    fn from(idx: ParameterIndex<usize>) -> Self {
+impl From<ParameterIndex<u64>> for MetricF64 {
+    fn from(idx: ParameterIndex<u64>) -> Self {
         match idx {
             ParameterIndex::General(idx) => Self::IndexParameterValue(idx),
             ParameterIndex::Simple(idx) => Self::Simple(SimpleMetricF64::IndexParameterValue(idx)),
@@ -265,13 +265,13 @@ impl From<(ParameterIndex<MultiValue>, String)> for MetricF64 {
     }
 }
 
-impl From<(ParameterIndex<MultiValue>, String)> for MetricUsize {
+impl From<(ParameterIndex<MultiValue>, String)> for MetricU64 {
     fn from((idx, key): (ParameterIndex<MultiValue>, String)) -> Self {
         match idx {
             ParameterIndex::General(idx) => Self::MultiParameterValue((idx, key)),
-            ParameterIndex::Simple(idx) => Self::Simple(SimpleMetricUsize::MultiParameterValue((idx, key))),
-            ParameterIndex::Const(idx) => Self::Simple(SimpleMetricUsize::Constant(
-                ConstantMetricUsize::MultiParameterValue((idx, key)),
+            ParameterIndex::Simple(idx) => Self::Simple(SimpleMetricU64::MultiParameterValue((idx, key))),
+            ParameterIndex::Const(idx) => Self::Simple(SimpleMetricU64::Constant(
+                ConstantMetricU64::MultiParameterValue((idx, key)),
             )),
         }
     }
@@ -287,9 +287,9 @@ impl TryFrom<ParameterIndex<f64>> for SimpleMetricF64 {
     }
 }
 
-impl TryFrom<ParameterIndex<usize>> for SimpleMetricUsize {
+impl TryFrom<ParameterIndex<u64>> for SimpleMetricU64 {
     type Error = PywrError;
-    fn try_from(idx: ParameterIndex<usize>) -> Result<Self, Self::Error> {
+    fn try_from(idx: ParameterIndex<u64>) -> Result<Self, Self::Error> {
         match idx {
             ParameterIndex::Simple(idx) => Ok(Self::IndexParameterValue(idx)),
             _ => Err(PywrError::CannotSimplifyMetric),
@@ -298,53 +298,49 @@ impl TryFrom<ParameterIndex<usize>> for SimpleMetricUsize {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum ConstantMetricUsize {
-    IndexParameterValue(ConstParameterIndex<usize>),
+pub enum ConstantMetricU64 {
+    IndexParameterValue(ConstParameterIndex<u64>),
     MultiParameterValue((ConstParameterIndex<MultiValue>, String)),
-    Constant(usize),
+    Constant(u64),
 }
 
-impl ConstantMetricUsize {
-    pub fn get_value(&self, values: &ConstParameterValues) -> Result<usize, PywrError> {
+impl ConstantMetricU64 {
+    pub fn get_value(&self, values: &ConstParameterValues) -> Result<u64, PywrError> {
         match self {
-            ConstantMetricUsize::IndexParameterValue(idx) => values.get_const_parameter_usize(*idx),
-            ConstantMetricUsize::MultiParameterValue((idx, key)) => {
-                Ok(values.get_const_multi_parameter_usize(*idx, key)?)
-            }
-            ConstantMetricUsize::Constant(v) => Ok(*v),
+            ConstantMetricU64::IndexParameterValue(idx) => values.get_const_parameter_u64(*idx),
+            ConstantMetricU64::MultiParameterValue((idx, key)) => Ok(values.get_const_multi_parameter_u64(*idx, key)?),
+            ConstantMetricU64::Constant(v) => Ok(*v),
         }
     }
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum SimpleMetricUsize {
-    IndexParameterValue(SimpleParameterIndex<usize>),
+pub enum SimpleMetricU64 {
+    IndexParameterValue(SimpleParameterIndex<u64>),
     MultiParameterValue((SimpleParameterIndex<MultiValue>, String)),
-    Constant(ConstantMetricUsize),
+    Constant(ConstantMetricU64),
 }
 
-impl SimpleMetricUsize {
-    pub fn get_value(&self, values: &SimpleParameterValues) -> Result<usize, PywrError> {
+impl SimpleMetricU64 {
+    pub fn get_value(&self, values: &SimpleParameterValues) -> Result<u64, PywrError> {
         match self {
-            SimpleMetricUsize::IndexParameterValue(idx) => values.get_simple_parameter_usize(*idx),
-            SimpleMetricUsize::MultiParameterValue((idx, key)) => {
-                Ok(values.get_simple_multi_parameter_usize(*idx, key)?)
-            }
-            SimpleMetricUsize::Constant(m) => m.get_value(values.get_constant_values()),
+            SimpleMetricU64::IndexParameterValue(idx) => values.get_simple_parameter_u64(*idx),
+            SimpleMetricU64::MultiParameterValue((idx, key)) => Ok(values.get_simple_multi_parameter_u64(*idx, key)?),
+            SimpleMetricU64::Constant(m) => m.get_value(values.get_constant_values()),
         }
     }
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum MetricUsize {
-    IndexParameterValue(GeneralParameterIndex<usize>),
-    Simple(SimpleMetricUsize),
+pub enum MetricU64 {
+    IndexParameterValue(GeneralParameterIndex<u64>),
+    Simple(SimpleMetricU64),
     MultiParameterValue((GeneralParameterIndex<MultiValue>, String)),
     InterNetworkTransfer(MultiNetworkTransferIndex),
 }
 
-impl MetricUsize {
-    pub fn get_value(&self, _network: &Network, state: &State) -> Result<usize, PywrError> {
+impl MetricU64 {
+    pub fn get_value(&self, _network: &Network, state: &State) -> Result<u64, PywrError> {
         match self {
             Self::IndexParameterValue(idx) => state.get_parameter_index(*idx),
             Self::MultiParameterValue((idx, key)) => Ok(state.get_multi_parameter_index(*idx, key)?),
@@ -354,37 +350,37 @@ impl MetricUsize {
     }
 }
 
-impl From<ParameterIndex<usize>> for MetricUsize {
-    fn from(idx: ParameterIndex<usize>) -> Self {
+impl From<ParameterIndex<u64>> for MetricU64 {
+    fn from(idx: ParameterIndex<u64>) -> Self {
         match idx {
             ParameterIndex::General(idx) => Self::IndexParameterValue(idx),
-            ParameterIndex::Simple(idx) => Self::Simple(SimpleMetricUsize::IndexParameterValue(idx)),
-            ParameterIndex::Const(idx) => Self::Simple(SimpleMetricUsize::Constant(
-                ConstantMetricUsize::IndexParameterValue(idx),
-            )),
+            ParameterIndex::Simple(idx) => Self::Simple(SimpleMetricU64::IndexParameterValue(idx)),
+            ParameterIndex::Const(idx) => {
+                Self::Simple(SimpleMetricU64::Constant(ConstantMetricU64::IndexParameterValue(idx)))
+            }
         }
     }
 }
-impl From<usize> for ConstantMetricUsize {
-    fn from(v: usize) -> Self {
-        ConstantMetricUsize::Constant(v)
+impl From<u64> for ConstantMetricU64 {
+    fn from(v: u64) -> Self {
+        ConstantMetricU64::Constant(v)
     }
 }
 
-impl<T> From<T> for SimpleMetricUsize
+impl<T> From<T> for SimpleMetricU64
 where
-    T: Into<ConstantMetricUsize>,
+    T: Into<ConstantMetricU64>,
 {
     fn from(v: T) -> Self {
-        SimpleMetricUsize::Constant(v.into())
+        SimpleMetricU64::Constant(v.into())
     }
 }
 
-impl<T> From<T> for MetricUsize
+impl<T> From<T> for MetricU64
 where
-    T: Into<SimpleMetricUsize>,
+    T: Into<SimpleMetricU64>,
 {
     fn from(v: T) -> Self {
-        MetricUsize::Simple(v.into())
+        MetricU64::Simple(v.into())
     }
 }

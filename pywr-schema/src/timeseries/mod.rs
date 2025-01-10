@@ -62,6 +62,9 @@ pub enum TimeseriesError {
     #[cfg(feature = "core")]
     #[error("Pywr core error: {0}")]
     PywrCore(#[from] PywrError),
+    #[cfg(feature = "core")]
+    #[error("Python not enabled.")]
+    PythonNotEnabled,
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
@@ -166,7 +169,7 @@ impl LoadedTimeseriesCollection {
         network: &mut pywr_core::network::Network,
         name: &str,
         col: &str,
-    ) -> Result<ParameterIndex<usize>, TimeseriesError> {
+    ) -> Result<ParameterIndex<u64>, TimeseriesError> {
         let df = self
             .timeseries
             .get(name)
@@ -230,7 +233,7 @@ impl LoadedTimeseriesCollection {
         &self,
         network: &mut pywr_core::network::Network,
         name: &str,
-    ) -> Result<ParameterIndex<usize>, TimeseriesError> {
+    ) -> Result<ParameterIndex<u64>, TimeseriesError> {
         let df = self
             .timeseries
             .get(name)
@@ -304,7 +307,7 @@ impl LoadedTimeseriesCollection {
         name: &str,
         domain: &ModelDomain,
         scenario: &str,
-    ) -> Result<ParameterIndex<usize>, TimeseriesError> {
+    ) -> Result<ParameterIndex<u64>, TimeseriesError> {
         let scenario_group_index = domain
             .scenarios()
             .group_index(scenario)

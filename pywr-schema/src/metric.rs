@@ -18,7 +18,7 @@ use crate::v1::{ConversionData, TryFromV1, TryIntoV2};
 use crate::ConversionError;
 #[cfg(feature = "core")]
 use pywr_core::{
-    metric::{MetricF64, MetricUsize},
+    metric::{MetricF64, MetricU64},
     models::MultiNetworkTransferIndex,
     parameters::ParameterName,
     recorders::OutputMetric,
@@ -27,7 +27,7 @@ use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::parameters::ParameterValue as ParameterValueV1;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use strum_macros::Display;
+use strum_macros::{Display, EnumDiscriminants, EnumString, IntoStaticStr, VariantNames};
 
 /// A floating point value representing different model metrics.
 ///
@@ -37,8 +37,11 @@ use strum_macros::Display;
 /// dynamic behaviour is created.
 ///
 /// See also [`IndexMetric`] for integer values.
-#[derive(Deserialize, Serialize, Clone, Debug, Display, JsonSchema, PartialEq)]
+#[derive(Deserialize, Serialize, Clone, Debug, Display, JsonSchema, PartialEq, EnumDiscriminants)]
 #[serde(tag = "type")]
+#[strum_discriminants(derive(Display, IntoStaticStr, EnumString, VariantNames))]
+// This creates a separate enum called `MetricType` that is available in this module.
+#[strum_discriminants(name(MetricType))]
 pub enum Metric {
     /// A constant floating point value.
     Constant { value: f64 },
@@ -272,11 +275,11 @@ impl NodeReference {
 
     /// Load a node reference into a [`MetricUsize`].
     #[cfg(feature = "core")]
-    pub fn load_usize(
+    pub fn load_u64(
         &self,
         _network: &mut pywr_core::network::Network,
         args: &LoadArgs,
-    ) -> Result<MetricUsize, SchemaError> {
+    ) -> Result<MetricU64, SchemaError> {
         // This is the associated node in the schema
         let _node = args
             .schema
@@ -414,11 +417,11 @@ impl ParameterReference {
     /// from the `network`. If `parent` is the optional parameter name space from which to load
     /// the parameter.
     #[cfg(feature = "core")]
-    pub fn load_usize(
+    pub fn load_u64(
         &self,
         network: &mut pywr_core::network::Network,
         parent: Option<&str>,
-    ) -> Result<MetricUsize, SchemaError> {
+    ) -> Result<MetricU64, SchemaError> {
         let name = ParameterName::new(&self.name, parent);
 
         match &self.key {
@@ -472,7 +475,7 @@ impl EdgeReference {
 #[serde(untagged)]
 pub enum IndexMetric {
     Constant {
-        value: usize,
+        value: u64,
     },
     Table(TableDataRef),
     /// An attribute of a node.
@@ -485,8 +488,14 @@ pub enum IndexMetric {
     },
 }
 
-impl IndexMetric {
-    pub fn from_usize(v: usize) -> Self {
+impl From<usize> for IndexMetric {
+    fn from(v: usize) -> Self {
+        Self::Constant { value: v as u64 }
+    }
+}
+
+impl From<u64> for IndexMetric {
+    fn from(v: u64) -> Self {
         Self::Constant { value: v }
     }
 }
@@ -498,11 +507,11 @@ impl IndexMetric {
         network: &mut pywr_core::network::Network,
         args: &LoadArgs,
         parent: Option<&str>,
-    ) -> Result<MetricUsize, SchemaError> {
+    ) -> Result<MetricU64, SchemaError> {
         match self {
-            Self::Node(node_ref) => node_ref.load_usize(network, args),
+            Self::Node(node_ref) => node_ref.load_u64(network, args),
             // Global parameter with no parent
-            Self::Parameter(parameter_ref) => parameter_ref.load_usize(network, None),
+            Self::Parameter(parameter_ref) => parameter_ref.load_u64(network, None),
             // Local parameter loaded from parent's namespace
             Self::LocalParameter(parameter_ref) => {
                 if parent.is_none() {
@@ -511,13 +520,13 @@ impl IndexMetric {
                     ));
                 }
 
-                parameter_ref.load_usize(network, parent)
+                parameter_ref.load_u64(network, parent)
             }
             Self::Constant { value } => Ok((*value).into()),
             Self::Table(table_ref) => {
                 let value = args
                     .tables
-                    .get_scalar_usize(table_ref)
+                    .get_scalar_u64(table_ref)
                     .map_err(|error| SchemaError::TableRefLoad {
                         table_ref: table_ref.clone(),
                         error,
@@ -543,7 +552,7 @@ impl IndexMetric {
             Self::InterNetworkTransfer { name } => {
                 // Find the matching inter model transfer
                 match args.inter_network_transfers.iter().position(|t| &t.name == name) {
-                    Some(idx) => Ok(MetricUsize::InterNetworkTransfer(MultiNetworkTransferIndex(idx))),
+                    Some(idx) => Ok(MetricU64::InterNetworkTransfer(MultiNetworkTransferIndex(idx))),
                     None => Err(SchemaError::InterNetworkTransferNotFound(name.to_string())),
                 }
             }
@@ -568,7 +577,7 @@ impl TryFromV1<ParameterValueV1> for IndexMetric {
                     return Err(ConversionError::FloatToIndex {});
                 }
 
-                Self::Constant { value: value as usize }
+                Self::Constant { value: value as u64 }
             }
             ParameterValueV1::Reference(p_name) => Self::Parameter(ParameterReference {
                 name: p_name,
