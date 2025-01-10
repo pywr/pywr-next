@@ -50,25 +50,25 @@ pub enum PywrError {
     #[error("parameter index {0} not found")]
     ParameterIndexNotFound(ParameterIndex<f64>),
     #[error("index parameter index {0} not found")]
-    IndexParameterIndexNotFound(ParameterIndex<usize>),
+    IndexParameterIndexNotFound(ParameterIndex<u64>),
     #[error("multi-value parameter index {0} not found")]
     MultiValueParameterIndexNotFound(ParameterIndex<MultiValue>),
     #[error("parameter index {0} not found")]
     GeneralParameterIndexNotFound(GeneralParameterIndex<f64>),
     #[error("index parameter index {0} not found")]
-    GeneralIndexParameterIndexNotFound(GeneralParameterIndex<usize>),
+    GeneralIndexParameterIndexNotFound(GeneralParameterIndex<u64>),
     #[error("multi-value parameter index {0} not found")]
     GeneralMultiValueParameterIndexNotFound(GeneralParameterIndex<MultiValue>),
     #[error("parameter index {0} not found")]
     SimpleParameterIndexNotFound(SimpleParameterIndex<f64>),
     #[error("index parameter index {0} not found")]
-    SimpleIndexParameterIndexNotFound(SimpleParameterIndex<usize>),
+    SimpleIndexParameterIndexNotFound(SimpleParameterIndex<u64>),
     #[error("multi-value parameter index {0} not found")]
     SimpleMultiValueParameterIndexNotFound(SimpleParameterIndex<MultiValue>),
     #[error("parameter index {0} not found")]
     ConstParameterIndexNotFound(ConstParameterIndex<f64>),
     #[error("index parameter index {0} not found")]
-    ConstIndexParameterIndexNotFound(ConstParameterIndex<usize>),
+    ConstIndexParameterIndexNotFound(ConstParameterIndex<u64>),
     #[error("multi-value parameter index {0} not found")]
     ConstMultiValueParameterIndexNotFound(ConstParameterIndex<MultiValue>),
     #[error("multi-value parameter key {0} not found")]
@@ -96,7 +96,7 @@ pub enum PywrError {
     #[error("parameter name `{0}` already exists")]
     ParameterNameAlreadyExists(String),
     #[error("index parameter name `{0}` already exists at index {1}")]
-    IndexParameterNameAlreadyExists(String, ParameterIndex<usize>),
+    IndexParameterNameAlreadyExists(String, ParameterIndex<u64>),
     #[error("multi-value parameter name `{0}` already exists at index {1}")]
     MultiValueParameterNameAlreadyExists(String, ParameterIndex<MultiValue>),
     #[error("metric set name `{0}` already exists")]

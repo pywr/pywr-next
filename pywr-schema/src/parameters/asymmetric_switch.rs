@@ -26,7 +26,7 @@ impl AsymmetricSwitchIndexParameter {
         &self,
         network: &mut pywr_core::network::Network,
         args: &LoadArgs,
-    ) -> Result<ParameterIndex<usize>, SchemaError> {
+    ) -> Result<ParameterIndex<u64>, SchemaError> {
         let on_index_parameter = self.on_index_parameter.load(network, args, None)?;
         let off_index_parameter = self.off_index_parameter.load(network, args, None)?;
 
