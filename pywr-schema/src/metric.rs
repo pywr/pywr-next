@@ -27,7 +27,7 @@ use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::parameters::ParameterValue as ParameterValueV1;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use strum_macros::Display;
+use strum_macros::{Display, EnumDiscriminants, EnumString, IntoStaticStr, VariantNames};
 
 /// A floating point value representing different model metrics.
 ///
@@ -37,8 +37,11 @@ use strum_macros::Display;
 /// dynamic behaviour is created.
 ///
 /// See also [`IndexMetric`] for integer values.
-#[derive(Deserialize, Serialize, Clone, Debug, Display, JsonSchema, PartialEq)]
+#[derive(Deserialize, Serialize, Clone, Debug, Display, JsonSchema, PartialEq, EnumDiscriminants)]
 #[serde(tag = "type")]
+#[strum_discriminants(derive(Display, IntoStaticStr, EnumString, VariantNames))]
+// This creates a separate enum called `MetricType` that is available in this module.
+#[strum_discriminants(name(MetricType))]
 pub enum Metric {
     /// A constant floating point value.
     Constant { value: f64 },

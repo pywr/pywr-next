@@ -535,10 +535,7 @@ where
             .iter()
             .zip(network.virtual_storage_nodes().deref())
         {
-            let (avail, missing) = match node.get_available_volume_bounds(state) {
-                Ok(bnds) => bnds,
-                Err(e) => return Err(e),
-            };
+            let (avail, missing) = node.get_available_volume_bounds(state)?;
 
             let (lb, ub) = (-avail / dt, missing / dt);
             self.builder.apply_row_bounds(*row_id, lb, ub);
