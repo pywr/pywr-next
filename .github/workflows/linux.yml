@@ -13,7 +13,7 @@ env:
 
 jobs:
   build:
-
+    name: Build (stable)
     runs-on: ubuntu-latest
 
     steps:
@@ -52,3 +52,20 @@ jobs:
           if echo "$output" | grep -q "\[ERROR\]" ; then
               exit 1
           fi
+
+  build_nightly:
+    name: Build (nightly) w/ SIMD and OpenCL
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - uses: dtolnay/rust-toolchain@nightly
+      - name: Install Intel OpenCL
+        run: sudo apt-get install -y intel-opencl-icd ocl-icd-opencl-dev
+      - name: Build
+        run: cargo +nightly build --verbose --features highs,cbc,ipm-simd,ipm-ocl
+      - name: Run tests (SIMD only)
+        # Run tests with SIMD only to avoid OpenCL runtime requirement on Github actions.
+        run: cargo +nightly test --features highs,cbc,ipm-simd

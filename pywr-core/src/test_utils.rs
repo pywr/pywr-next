@@ -13,6 +13,8 @@ use crate::solvers::CbcSolver;
 use crate::solvers::ClIpmF64Solver;
 #[cfg(feature = "highs")]
 use crate::solvers::HighsSolver;
+#[cfg(any(feature = "ipm-simd", feature = "ipm-ocl"))]
+use crate::solvers::MultiStateSolver;
 #[cfg(feature = "ipm-simd")]
 use crate::solvers::SimdIpmF64Solver;
 use crate::solvers::{ClpSolver, Solver, SolverSettings};
@@ -164,7 +166,7 @@ pub fn run_and_assert_parameter(
     let rec = AssertionRecorder::new("assert", p_idx.into(), expected_values, ulps, epsilon);
 
     model.network_mut().add_recorder(Box::new(rec)).unwrap();
-    run_all_solvers(model, &[], &[])
+    run_all_solvers(model, &[], &[], &[])
 }
 
 /// A struct to hold the expected outputs for a test.
@@ -196,34 +198,45 @@ impl ExpectedOutputs {
 ///
 /// The model will only be run if the solver has the required solver features (and
 /// is also enabled as a Cargo feature).
-pub fn run_all_solvers(model: &Model, solvers_without_features: &[&str], expected_outputs: &[ExpectedOutputs]) {
-    check_features_and_run::<ClpSolver>(model, !solvers_without_features.contains(&"clp"), expected_outputs);
+pub fn run_all_solvers(
+    model: &Model,
+    solvers_without_features: &[&str],
+    solvers_to_skip: &[&str],
+    expected_outputs: &[ExpectedOutputs],
+) {
+    if !solvers_to_skip.contains(&"clp") {
+        check_features_and_run::<ClpSolver>(model, !solvers_without_features.contains(&"clp"), expected_outputs);
+    }
 
     #[cfg(feature = "cbc")]
     {
-        check_features_and_run::<CbcSolver>(model, !solvers_without_features.contains(&"cbc"), expected_outputs);
+        if !solvers_to_skip.contains(&"cbc") {
+            check_features_and_run::<CbcSolver>(model, !solvers_without_features.contains(&"cbc"), expected_outputs);
+        }
     }
 
     #[cfg(feature = "highs")]
     {
-        check_features_and_run::<HighsSolver>(model, !solvers_without_features.contains(&"highs"), expected_outputs);
+        if !solvers_to_skip.contains(&"highs") {
+            check_features_and_run::<HighsSolver>(
+                model,
+                !solvers_without_features.contains(&"highs"),
+                expected_outputs,
+            );
+        }
     }
 
     #[cfg(feature = "ipm-simd")]
     {
-        if model.check_multi_scenario_solver_features::<SimdIpmF64Solver<4>>() {
-            model
-                .run_multi_scenario::<SimdIpmF64Solver<4>>(&Default::default())
-                .expect("Failed to solve with SIMD IPM");
+        if !solvers_to_skip.contains(&"ipm-simd") {
+            check_features_and_run_multi::<SimdIpmF64Solver<4>>(model, !solvers_without_features.contains(&"ipm-simd"));
         }
     }
 
     #[cfg(feature = "ipm-ocl")]
     {
-        if model.check_multi_scenario_solver_features::<ClIpmF64Solver>() {
-            model
-                .run_multi_scenario::<ClIpmF64Solver>(&Default::default())
-                .expect("Failed to solve with OpenCl IPM");
+        if !solvers_to_skip.contains(&"ipm-ocl") {
+            check_features_and_run_multi::<ClIpmF64Solver>(model, !solvers_without_features.contains(&"ipm-ocl"));
         }
     }
 }
@@ -249,6 +262,32 @@ where
         for expected_output in expected_outputs {
             expected_output.verify();
         }
+    } else {
+        assert!(
+            !has_features,
+            "Solver `{}` was not expected to have the required features",
+            S::name()
+        );
+    }
+}
+
+/// Check features and run with a multi-scenario solver
+#[cfg(any(feature = "ipm-simd", feature = "ipm-ocl"))]
+fn check_features_and_run_multi<S>(model: &Model, expect_features: bool)
+where
+    S: MultiStateSolver,
+    <S as MultiStateSolver>::Settings: SolverSettings + Default,
+{
+    let has_features = model.check_multi_scenario_solver_features::<S>();
+    if expect_features {
+        assert!(
+            has_features,
+            "Solver `{}` was expected to have the required features",
+            S::name()
+        );
+        model
+            .run_multi_scenario::<S>(&Default::default())
+            .expect(&format!("Failed to solve with: {}", S::name()));
     } else {
         assert!(
             !has_features,

@@ -4,9 +4,8 @@ use crate::Tolerances;
 use ipm_common::SparseNormalCholeskyIndices;
 use std::iter::Sum;
 use std::ops::{Add, AddAssign, Div, Mul, Neg, Sub};
-use std::simd::{
-    LaneCount, Mask, Simd, SimdElement, SimdFloat, SimdPartialEq, SimdPartialOrd, StdFloat, SupportedLaneCount,
-};
+use std::simd::prelude::{SimdFloat, SimdPartialEq, SimdPartialOrd};
+use std::simd::{LaneCount, Mask, Simd, SimdElement, StdFloat, SupportedLaneCount};
 
 pub struct ANormIndices {
     indptr: Vec<usize>,
