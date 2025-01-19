@@ -6,8 +6,9 @@ use crate::metric::{Metric, NodeReference};
 use crate::model::LoadArgs;
 use crate::parameters::{ConversionData, ParameterMeta};
 use crate::v1::{try_convert_parameter_attr, IntoV2, TryFromV1};
+use crate::ConversionError;
 #[cfg(feature = "core")]
-use pywr_core::parameters::ParameterIndex;
+use pywr_core::parameters::{ParameterName, ParameterType};
 use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::parameters::{
     NodeThresholdParameter as NodeThresholdParameterV1, ParameterThresholdParameter as ParameterThresholdParameterV1,
@@ -54,13 +55,37 @@ impl From<Predicate> for pywr_core::parameters::Predicate {
     }
 }
 
+/// A parameter that compares a metric against a threshold metric
+///
+/// The metrics are compared using the given predicate and the result is returned as an index. If the comparison
+/// evaluates to true the index is 1, otherwise it is 0.
+///
+/// The parameter has different representations in core depending on the `returned_metrics` attribute. If values are
+/// given then two parameters are added to the model. The first a [`pywr_core::parameters::ThresholdParameter`], which
+/// is set as the index parameter of a [`pywr_core::parameters::IndexedArrayParameter`] containing the `returned_metrics`
+/// values.
+///
+/// An equivalent representation could be achieved by defining the two parameters in the schema directly:
+/// ```JSON
+#[doc = include_str!("doc_examples/threshold_returned_values.json")]
+/// ```
+///
+///
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct ThresholdParameter {
     pub meta: ParameterMeta,
-    pub value: Metric,
+    /// The metric to compare against the threshold.
+    pub metric: Metric,
+    /// The threshold to compare against.
     pub threshold: Metric,
+    /// The comparison predicate. Should be one of `LT`, `GT`, `EQ`, `LE`, or `GE` or their equivalents `<`, `>`, `==`,
+    /// `<=` or `>=`.
     pub predicate: Predicate,
+    /// Optional metrics returned by the parameter. If the metric comparison evaluates to false the parameter returns
+    /// the first metric, if it is true the second metric is returned.
+    pub returned_metrics: Option<[Metric; 2]>,
+    /// If true, the threshold comparison remains true once it has evaluated to true once.
     #[serde(default)]
     pub ratchet: bool,
 }
@@ -71,18 +96,41 @@ impl ThresholdParameter {
         &self,
         network: &mut pywr_core::network::Network,
         args: &LoadArgs,
-    ) -> Result<ParameterIndex<u64>, SchemaError> {
-        let metric = self.value.load(network, args, None)?;
+    ) -> Result<ParameterType, SchemaError> {
+        let metric = self.metric.load(network, args, None)?;
         let threshold = self.threshold.load(network, args, None)?;
 
+        let name = if self.returned_metrics.is_some() {
+            ParameterName::new("threshold", Some(&self.meta.name))
+        } else {
+            self.meta.name.as_str().into()
+        };
+
         let p = pywr_core::parameters::ThresholdParameter::new(
-            self.meta.name.as_str().into(),
+            name,
             metric,
             threshold,
             self.predicate.into(),
             self.ratchet,
         );
-        Ok(network.add_index_parameter(Box::new(p))?)
+
+        let p_idx = network.add_index_parameter(Box::new(p))?;
+
+        match self.returned_metrics {
+            Some(ref values) => {
+                let metrics = values
+                    .iter()
+                    .map(|v| v.load(network, args, None))
+                    .collect::<Result<Vec<_>, _>>()?;
+                let values_param = pywr_core::parameters::IndexedArrayParameter::new(
+                    self.meta.name.as_str().into(),
+                    p_idx.into(),
+                    &metrics,
+                );
+                Ok(network.add_parameter(Box::new(values_param))?.into())
+            }
+            None => Ok(p_idx.into()),
+        }
     }
 }
 
@@ -96,15 +144,34 @@ impl TryFromV1<ParameterThresholdParameterV1> for ThresholdParameter {
     ) -> Result<Self, Self::Error> {
         let meta: ParameterMeta = v1.meta.into_v2(parent_node, conversion_data);
 
-        let value = try_convert_parameter_attr(&meta.name, "parameter", v1.parameter, parent_node, conversion_data)?;
+        let metric = try_convert_parameter_attr(&meta.name, "parameter", v1.parameter, parent_node, conversion_data)?;
         let threshold =
             try_convert_parameter_attr(&meta.name, "threshold", v1.threshold, parent_node, conversion_data)?;
 
-        // TODO warn or something about the lack of using the values here!!
+        let returned_metrics: Option<[Metric; 2]> = match v1.values {
+            Some(v) => {
+                let values: Vec<Metric> = v.into_iter().map(Metric::from).collect();
+                match values.try_into() {
+                    Ok(array) => Some(array),
+                    Err(v) => {
+                        return Err(ComponentConversionError::Parameter {
+                            name: meta.name.to_string(),
+                            attr: "values".to_string(),
+                            error: ConversionError::IncorrectNumberOfValues {
+                                expected: 2,
+                                found: v.len(),
+                            },
+                        })
+                    }
+                }
+            }
+            None => None,
+        };
 
         let p = Self {
             meta,
-            value,
+            metric,
+            returned_metrics,
             threshold,
             predicate: v1.predicate.into(),
             ratchet: false,
@@ -123,14 +190,35 @@ impl TryFromV1<NodeThresholdParameterV1> for ThresholdParameter {
     ) -> Result<Self, Self::Error> {
         let meta: ParameterMeta = v1.meta.into_v2(parent_node, conversion_data);
 
-        let value = Metric::Node(NodeReference::new(v1.node, None));
+        let metric = Metric::Node(NodeReference::new(v1.node, None));
 
         let threshold =
             try_convert_parameter_attr(&meta.name, "threshold", v1.threshold, parent_node, conversion_data)?;
 
+        let returned_metrics: Option<[Metric; 2]> = match v1.values {
+            Some(v) => {
+                let values: Vec<Metric> = v.into_iter().map(Metric::from).collect();
+                match values.try_into() {
+                    Ok(array) => Some(array),
+                    Err(v) => {
+                        return Err(ComponentConversionError::Parameter {
+                            name: meta.name.to_string(),
+                            attr: "values".to_string(),
+                            error: ConversionError::IncorrectNumberOfValues {
+                                expected: 2,
+                                found: v.len(),
+                            },
+                        })
+                    }
+                }
+            }
+            None => None,
+        };
+
         let p = Self {
             meta,
-            value,
+            metric,
+            returned_metrics,
             threshold,
             predicate: v1.predicate.into(),
             ratchet: false,
@@ -149,14 +237,35 @@ impl TryFromV1<StorageThresholdParameterV1> for ThresholdParameter {
     ) -> Result<Self, Self::Error> {
         let meta: ParameterMeta = v1.meta.into_v2(parent_node, conversion_data);
 
-        let value = Metric::Node(NodeReference::new(v1.storage_node, None));
+        let metric = Metric::Node(NodeReference::new(v1.storage_node, None));
+
+        let returned_metrics: Option<[Metric; 2]> = match v1.values {
+            Some(v) => {
+                let values: Vec<Metric> = v.into_iter().map(Metric::from).collect();
+                match values.try_into() {
+                    Ok(array) => Some(array),
+                    Err(v) => {
+                        return Err(ComponentConversionError::Parameter {
+                            name: meta.name.to_string(),
+                            attr: "values".to_string(),
+                            error: ConversionError::IncorrectNumberOfValues {
+                                expected: 2,
+                                found: v.len(),
+                            },
+                        })
+                    }
+                }
+            }
+            None => None,
+        };
 
         let threshold =
             try_convert_parameter_attr(&meta.name, "threshold", v1.threshold, parent_node, conversion_data)?;
 
         let p = Self {
             meta,
-            value,
+            metric,
+            returned_metrics,
             threshold,
             predicate: v1.predicate.into(),
             ratchet: false,

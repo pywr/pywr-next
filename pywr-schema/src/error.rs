@@ -131,4 +131,6 @@ pub enum ConversionError {
     UnrecognisedType { ty: String },
     #[error("Non-constant value cannot be converted automatically.")]
     NonConstantValue {},
+    #[error("{found:?} value(s) found, {expected:?} were expected")]
+    IncorrectNumberOfValues { expected: usize, found: usize },
 }

@@ -191,7 +191,18 @@ impl Parameter {
             Self::Min(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
             Self::Negative(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
             Self::Polynomial1D(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
-            Self::Threshold(p) => pywr_core::parameters::ParameterType::Index(p.add_to_model(network, args)?),
+            Self::Threshold(p) => match p.add_to_model(network, args)? {
+                pywr_core::parameters::ParameterType::Index(i) => pywr_core::parameters::ParameterType::Index(i),
+                pywr_core::parameters::ParameterType::Parameter(p) => {
+                    pywr_core::parameters::ParameterType::Parameter(p)
+                }
+                pywr_core::parameters::ParameterType::Multi(_) => {
+                    return Err(SchemaError::LoadParameter {
+                        name: p.meta.name.to_string(),
+                        error: String::from("Threshold parameter cannot be a multi-parameter."),
+                    })
+                }
+            },
             Self::TablesArray(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
             Self::Python(p) => p.add_to_model(network, args)?,
             Self::Delay(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),

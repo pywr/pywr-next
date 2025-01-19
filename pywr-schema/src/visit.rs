@@ -111,6 +111,7 @@ impl VisitMetrics for chrono::Month {}
 impl VisitMetrics for f32 {}
 impl VisitMetrics for f64 {}
 impl<const N: usize> VisitMetrics for [f64; N] {}
+impl<const N: usize> VisitMetrics for [Metric; N] {}
 impl VisitMetrics for bool {}
 impl VisitMetrics for u64 {}
 impl VisitMetrics for String {}
@@ -213,6 +214,7 @@ impl VisitPaths for chrono::Month {}
 impl VisitPaths for f32 {}
 impl VisitPaths for f64 {}
 impl<const N: usize> VisitPaths for [f64; N] {}
+impl<const N: usize> VisitPaths for [Metric; N] {}
 impl VisitPaths for bool {}
 impl VisitPaths for u64 {}
 impl VisitPaths for String {}

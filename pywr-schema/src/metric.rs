@@ -472,7 +472,7 @@ impl EdgeReference {
 /// This struct is the integer equivalent of [`Metric`] and is used in places where an integer
 /// value is required. See [`Metric`] for more information.
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, Display, PartialEq)]
-#[serde(untagged)]
+#[serde(tag = "type")]
 pub enum IndexMetric {
     Constant {
         value: u64,
