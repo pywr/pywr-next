@@ -91,11 +91,11 @@ pub fn simple_network(network: &mut Network, inflow_scenario_index: usize, num_i
     output_node.set_cost(Some(demand_cost.into()));
 }
 /// Create a simple test model with three nodes.
-pub fn simple_model(num_scenarios: usize) -> Model {
+pub fn simple_model(num_scenarios: usize, timestepper: Option<Timestepper>) -> Model {
     let mut scenario_collection = ScenarioGroupCollection::default();
     scenario_collection.add_group("test-scenario", num_scenarios);
 
-    let domain = ModelDomain::from(default_timestepper(), scenario_collection).unwrap();
+    let domain = ModelDomain::from(timestepper.unwrap_or_else(default_timestepper), scenario_collection).unwrap();
     let mut network = Network::default();
 
     let idx = domain

@@ -212,6 +212,10 @@ impl VirtualStorage {
         }
     }
 
+    pub fn set_cost(&mut self, cost: Option<MetricF64>) {
+        self.cost = cost;
+    }
+
     pub fn before(&self, timestep: &Timestep, state: &mut State) -> Result<(), PywrError> {
         let do_reset = if timestep.is_first() {
             // Set the initial volume if it is the first timestep.
@@ -296,16 +300,18 @@ fn months_since_last_reset(current: &NaiveDateTime, last_reset: &NaiveDateTime) 
 
 #[cfg(test)]
 mod tests {
+    use crate::derived_metric::DerivedMetric;
     use crate::metric::MetricF64;
     use crate::models::Model;
     use crate::network::Network;
     use crate::node::StorageInitialVolume;
+    use crate::parameters::ControlCurveInterpolatedParameter;
     use crate::recorders::{AssertionFnRecorder, AssertionRecorder};
     use crate::scenario::ScenarioIndex;
     use crate::test_utils::{default_timestepper, run_all_solvers, simple_model};
-    use crate::timestep::Timestep;
+    use crate::timestep::{Timestep, TimestepDuration, Timestepper};
     use crate::virtual_storage::{months_since_last_reset, VirtualStorageBuilder, VirtualStorageReset};
-    use chrono::NaiveDate;
+    use chrono::{Datelike, NaiveDate};
     use ndarray::Array;
     use std::num::NonZeroUsize;
 
@@ -433,7 +439,7 @@ mod tests {
     #[test]
     /// Test virtual storage node costs
     fn test_virtual_storage_node_costs() {
-        let mut model = simple_model(1);
+        let mut model = simple_model(1, None);
         let network = model.network_mut();
 
         let nodes = vec![network.get_node_index_by_name("input", None).unwrap()];
@@ -449,6 +455,7 @@ mod tests {
         network.add_virtual_storage_node(vs_builder).unwrap();
 
         let expected = Array::zeros((366, 1));
+
         let idx = network.get_node_by_name("output", None).unwrap().index();
         let recorder = AssertionRecorder::new("output-flow", MetricF64::NodeInFlow(idx), expected, None, None);
         network.add_recorder(Box::new(recorder)).unwrap();
@@ -458,9 +465,76 @@ mod tests {
     }
 
     #[test]
+    /// Virtual storage node resets every month. This test will check that a parameter which
+    /// uses the derived proportional volume receives the correct value after each reset.
+    fn test_virtual_storage_node_cost_dynamic() {
+        // This test needs to be run over a period of time to see the cost change
+        let start = NaiveDate::from_ymd_opt(2020, 1, 1)
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap();
+        let end = NaiveDate::from_ymd_opt(2020, 12, 31)
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap();
+        let duration = TimestepDuration::Days(1);
+
+        let mut model = simple_model(1, Some(Timestepper::new(start, end, duration)));
+        let network = model.network_mut();
+
+        let nodes = vec![network.get_node_index_by_name("input", None).unwrap()];
+
+        let vs_builder = VirtualStorageBuilder::new("vs", &nodes)
+            .initial_volume(StorageInitialVolume::Proportional(1.0))
+            .min_volume(Some(0.0.into()))
+            .max_volume(Some(100.0.into()))
+            .reset(VirtualStorageReset::NumberOfMonths { months: 1 });
+
+        let vs_idx = network.add_virtual_storage_node(vs_builder).unwrap();
+        let vs_vol_metric = network.add_derived_metric(DerivedMetric::VirtualStorageProportionalVolume(vs_idx));
+
+        // Virtual storage node cost increases with decreasing volume
+        let cost_param = ControlCurveInterpolatedParameter::new(
+            "cost".into(),
+            vs_vol_metric.into(),
+            vec![],
+            vec![0.0.into(), 20.0.into()],
+        );
+
+        let cost_param = network.add_parameter(Box::new(cost_param)).unwrap();
+
+        network
+            .set_virtual_storage_node_cost("vs", None, Some(cost_param.into()))
+            .unwrap();
+
+        let expected = |ts: &Timestep, _si: &ScenarioIndex| {
+            // Calculate the current volume within each month
+            // This should be the absolute volume at the start of each, which is then used
+            // to calculate the cost.
+            let mut volume = 100.0;
+            for dom in 1..ts.date.day() {
+                let demand_met = (1.0 + ts.index as f64 - (ts.date.day() - dom) as f64).min(12.0);
+                volume -= demand_met;
+            }
+
+            if volume >= 50.0 {
+                (1.0 + ts.index as f64).min(12.0)
+            } else {
+                0.0
+            }
+        };
+        let idx = network.get_node_by_name("output", None).unwrap().index();
+        let recorder = AssertionFnRecorder::new("output-flow", MetricF64::NodeInFlow(idx), expected, None, None);
+        network.add_recorder(Box::new(recorder)).unwrap();
+
+        // Test all solvers
+        run_all_solvers(&model, &["ipm-ocl", "ipm-simd"], &[], &[]);
+    }
+
+    #[test]
     /// Test virtual storage rolling window constraint
     fn test_virtual_storage_node_rolling_constraint() {
-        let mut model = simple_model(1);
+        let mut model = simple_model(1, None);
         let network = model.network_mut();
 
         let nodes = vec![network.get_node_index_by_name("input", None).unwrap()];

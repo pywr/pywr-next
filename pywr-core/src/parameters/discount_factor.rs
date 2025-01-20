@@ -61,7 +61,7 @@ mod test {
     /// Basic functional test of the delay parameter.
     #[test]
     fn test_basic() {
-        let mut model = simple_model(1);
+        let mut model = simple_model(1, None);
         let network = model.network_mut();
 
         // Create an artificial volume series to use for the delay test

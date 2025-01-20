@@ -354,7 +354,7 @@ mod tests {
 
     #[test]
     fn test_array2_recorder() {
-        let mut model = simple_model(2);
+        let mut model = simple_model(2, None);
 
         let node_idx = model.network().get_node_index_by_name("input", None).unwrap();
 
