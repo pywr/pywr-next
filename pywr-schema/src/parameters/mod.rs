@@ -191,7 +191,7 @@ impl Parameter {
             Self::Min(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
             Self::Negative(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
             Self::Polynomial1D(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
-            Self::Threshold(p) => pywr_core::parameters::ParameterType::Index(p.add_to_model(network, args)?),
+            Self::Threshold(p) => p.add_to_model(network, args)?,
             Self::TablesArray(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
             Self::Python(p) => p.add_to_model(network, args)?,
             Self::Delay(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
@@ -711,8 +711,21 @@ mod tests {
             let p = entry.unwrap().path();
             if p.is_file() {
                 let data = fs::read_to_string(&p).unwrap_or_else(|_| panic!("Failed to read file: {:?}", p));
-                let _: Parameter =
+
+                let value: serde_json::Value =
                     serde_json::from_str(&data).unwrap_or_else(|_| panic!("Failed to deserialize: {:?}", p));
+
+                match value {
+                    serde_json::Value::Object(_) => {
+                        let _ = serde_json::from_value::<Parameter>(value)
+                            .unwrap_or_else(|_| panic!("Failed to deserialize: {:?}", p));
+                    }
+                    serde_json::Value::Array(_) => {
+                        let _ = serde_json::from_value::<Vec<Parameter>>(value)
+                            .unwrap_or_else(|_| panic!("Failed to deserialize: {:?}", p));
+                    }
+                    _ => panic!("Expected JSON object or array: {:?}", p),
+                }
             }
         }
     }

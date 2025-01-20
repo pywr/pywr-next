@@ -1,0 +1,37 @@
+[
+  {
+    "type": "Threshold",
+    "meta": {
+        "name": "my-threshold-param"
+    },
+    "metric": {
+        "type": "Node",
+        "name": "river-1"
+    },
+    "threshold": {
+        "type": "Constant",
+        "value": 5.0
+    },
+    "predicate": "LT"
+  },
+  {
+    "type": "IndexedArray",
+    "meta": {
+        "name": "my-indexed-array-param"
+    },
+    "index_parameter": {
+      "type": "Parameter",
+      "name": "my-threshold-param"
+    },
+    "metrics": [
+      {
+        "type": "Constant",
+        "value": 1.5
+      },
+      {
+        "type": "Constant",
+        "value": 0.5
+      }
+    ]
+  }
+]
