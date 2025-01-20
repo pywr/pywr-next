@@ -4,11 +4,13 @@ use crate::tracing::setup_tracing;
 use ::tracing::info;
 use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand, ValueEnum};
+#[cfg(feature = "cbc")]
+use pywr_core::solvers::{CbcSolver, CbcSolverSettings, CbcSolverSettingsBuilder};
 #[cfg(feature = "ipm-ocl")]
 use pywr_core::solvers::{ClIpmF32Solver, ClIpmF64Solver, ClIpmSolverSettings};
-use pywr_core::solvers::{ClpSolver, ClpSolverSettings};
+use pywr_core::solvers::{ClpSolver, ClpSolverSettings, ClpSolverSettingsBuilder};
 #[cfg(feature = "highs")]
-use pywr_core::solvers::{HighsSolver, HighsSolverSettings};
+use pywr_core::solvers::{HighsSolver, HighsSolverSettings, HighsSolverSettingsBuilder};
 #[cfg(feature = "ipm-simd")]
 use pywr_core::solvers::{SimdIpmF64Solver, SimdIpmSolverSettings};
 use pywr_core::test_utils::make_random_model;
@@ -25,6 +27,8 @@ enum Solver {
     Clp,
     #[cfg(feature = "highs")]
     Highs,
+    #[cfg(feature = "cbc")]
+    Cbc,
     #[cfg(feature = "ipm-ocl")]
     CLIPMF32,
     #[cfg(feature = "ipm-ocl")]
@@ -39,6 +43,8 @@ impl Display for Solver {
             Solver::Clp => write!(f, "clp"),
             #[cfg(feature = "highs")]
             Solver::Highs => write!(f, "highs"),
+            #[cfg(feature = "cbc")]
+            Solver::Cbc => write!(f, "cbc"),
             #[cfg(feature = "ipm-ocl")]
             Solver::CLIPMF32 => write!(f, "clipmf32"),
             #[cfg(feature = "ipm-ocl")]
@@ -85,9 +91,6 @@ enum Commands {
         data_path: Option<PathBuf>,
         #[arg(short, long)]
         output_path: Option<PathBuf>,
-        /// Use multiple threads for simulation.
-        #[arg(short, long, default_value_t = false)]
-        parallel: bool,
         /// The number of threads to use in parallel simulation.
         #[arg(short, long, default_value_t = 1)]
         threads: usize,
@@ -102,9 +105,6 @@ enum Commands {
         data_path: Option<PathBuf>,
         #[arg(short, long)]
         output_path: Option<PathBuf>,
-        /// Use multiple threads for simulation.
-        #[arg(short, long, default_value_t = false)]
-        parallel: bool,
         /// The number of threads to use in parallel simulation.
         #[arg(short, long, default_value_t = 1)]
         threads: usize,
@@ -139,15 +139,13 @@ fn main() -> Result<()> {
             solver,
             data_path,
             output_path,
-            parallel: _,
-            threads: _,
-        } => run(model, solver, data_path.as_deref(), output_path.as_deref()),
+            threads,
+        } => run(model, solver, data_path.as_deref(), output_path.as_deref(), *threads),
         Commands::RunMulti {
             model,
             solver,
             data_path,
             output_path,
-            parallel: _,
             threads: _,
         } => run_multi(model, solver, data_path.as_deref(), output_path.as_deref()),
         Commands::RunRandom {
@@ -252,7 +250,7 @@ fn handle_conversion_errors(errors: &[ComponentConversionError], stop_on_error: 
     Ok(())
 }
 
-fn run(path: &Path, solver: &Solver, data_path: Option<&Path>, output_path: Option<&Path>) {
+fn run(path: &Path, solver: &Solver, data_path: Option<&Path>, output_path: Option<&Path>, threads: usize) {
     let data = std::fs::read_to_string(path).unwrap();
     let data_path = data_path.or_else(|| path.parent());
     let schema_v2: PywrModel = serde_json::from_str(data.as_str()).unwrap();
@@ -260,9 +258,35 @@ fn run(path: &Path, solver: &Solver, data_path: Option<&Path>, output_path: Opti
     let model = schema_v2.build_model(data_path, output_path).unwrap();
 
     match *solver {
-        Solver::Clp => model.run::<ClpSolver>(&ClpSolverSettings::default()),
+        Solver::Clp => {
+            let mut settings_builder = ClpSolverSettingsBuilder::default();
+            if threads > 1 {
+                settings_builder = settings_builder.parallel();
+                settings_builder = settings_builder.threads(threads);
+            }
+            let settings = settings_builder.build();
+            model.run::<ClpSolver>(&settings)
+        }
+        #[cfg(feature = "cbc")]
+        Solver::Cbc => {
+            let mut settings_builder = CbcSolverSettingsBuilder::default();
+            if threads > 1 {
+                settings_builder = settings_builder.parallel();
+                settings_builder = settings_builder.threads(threads);
+            }
+            let settings = settings_builder.build();
+            model.run::<CbcSolver>(&settings)
+        }
         #[cfg(feature = "highs")]
-        Solver::Highs => model.run::<HighsSolver>(&HighsSolverSettings::default()),
+        Solver::Highs => {
+            let mut settings_builder = HighsSolverSettingsBuilder::default();
+            if threads > 1 {
+                settings_builder = settings_builder.parallel();
+                settings_builder = settings_builder.threads(threads);
+            }
+            let settings = settings_builder.build();
+            model.run::<HighsSolver>(&settings)
+        }
         #[cfg(feature = "ipm-ocl")]
         Solver::CLIPMF32 => model.run_multi_scenario::<ClIpmF32Solver>(&ClIpmSolverSettings::default()),
         #[cfg(feature = "ipm-ocl")]
@@ -285,6 +309,8 @@ fn run_multi(path: &Path, solver: &Solver, data_path: Option<&Path>, output_path
         Solver::Clp => model.run::<ClpSolver>(&ClpSolverSettings::default()),
         #[cfg(feature = "highs")]
         Solver::Highs => model.run::<HighsSolver>(&HighsSolverSettings::default()),
+        #[cfg(feature = "cbc")]
+        Solver::Cbc => model.run::<CbcSolver>(&CbcSolverSettings::default()),
         #[cfg(feature = "ipm-ocl")]
         Solver::CLIPMF32 => model.run_multi_scenario::<ClIpmF32Solver>(&ClIpmSolverSettings::default()),
         #[cfg(feature = "ipm-ocl")]
@@ -303,6 +329,8 @@ fn run_random(num_systems: usize, density: usize, num_scenarios: usize, solver: 
         Solver::Clp => model.run::<ClpSolver>(&ClpSolverSettings::default()),
         #[cfg(feature = "highs")]
         Solver::Highs => model.run::<HighsSolver>(&HighsSolverSettings::default()),
+        #[cfg(feature = "cbc")]
+        Solver::Cbc => model.run::<CbcSolver>(&CbcSolverSettings::default()),
         #[cfg(feature = "ipm-ocl")]
         Solver::CLIPMF32 => model.run_multi_scenario::<ClIpmF32Solver>(&ClIpmSolverSettings::default()),
         #[cfg(feature = "ipm-ocl")]
