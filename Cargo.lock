@@ -724,6 +724,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "derive-where"
+version = "1.2.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "62d671cc41a825ebabc75757b62d3d168c577f9149b2d49ece1dad1f72119d25"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.96",
+]
+
+[[package]]
 name = "doc-comment"
 version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1400,15 +1411,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "mt-dom"
-version = "0.59.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6d9add2bc13d876029af62a1082409a658ffa8d029c442226515e099994acb41"
-dependencies = [
- "longest-increasing-subsequence",
-]
-
-[[package]]
 name = "multiversion"
 version = "0.7.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1811,9 +1813,9 @@ dependencies = [
 
 [[package]]
 name = "phf_macros"
-version = "0.11.2"
+version = "0.11.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3444646e286606587e49f3bcf1679b8cef1dc2c5ecc29ddacaffc305180d464b"
+checksum = "f84ac04429c13a7ff43785d75ad27569f2951ce0ffd30a3321230db2fc727216"
 dependencies = [
  "phf_generator",
  "phf_shared",
@@ -2994,9 +2996,9 @@ dependencies = [
 
 [[package]]
 name = "sauron"
-version = "0.60.7"
+version = "0.61.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fe6af589283e59ab1eaa7ce85a362e97f8479bee13a29038d4fbc2d77eeb3cc1"
+checksum = "1ae1e6099fdd837e98f78b1365637aaf81e737a9441058b0c6a5f7cb1ec69f21"
 dependencies = [
  "sauron-core",
  "sauron-macro",
@@ -3004,15 +3006,18 @@ dependencies = [
 
 [[package]]
 name = "sauron-core"
-version = "0.60.7"
+version = "0.61.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "234c15a59efffbf4ad1ab77f7b2375f3b7ada9587e776e30a68791aa76685c02"
+checksum = "af4146cee7056509846bad75dc3ee5d49af3eb22725723a2ebada4977a309888"
 dependencies = [
  "cfg-if",
+ "derive-where",
  "doc-comment",
+ "futures 0.3.30",
+ "indexmap",
  "js-sys",
  "log",
- "mt-dom",
+ "longest-increasing-subsequence",
  "once_cell",
  "phf",
  "serde-wasm-bindgen",
@@ -3024,9 +3029,9 @@ dependencies = [
 
 [[package]]
 name = "sauron-macro"
-version = "0.60.7"
+version = "0.61.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "69b79cfc63bae10d77025e053552475e51a69176f2f4262e5250db4a5204db1b"
+checksum = "cd37ab91758f25ea92a216dfed0e2f9103bdf7357d3af148b744cb8941e19d28"
 dependencies = [
  "once_cell",
  "phf",
@@ -3320,9 +3325,9 @@ dependencies = [
 
 [[package]]
 name = "svgbob"
-version = "0.7.2"
+version = "0.7.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fac14c89bc594525da479ab9333340fb7912c36bab40286461676f31379d2d43"
+checksum = "a1803cdff2a5f9fedbbcadbfa149d9f9ed99fcf82b5f0bc741cfa21f82fbf0fe"
 dependencies = [
  "indexmap",
  "itertools 0.11.0",
@@ -3338,7 +3343,7 @@ dependencies = [
 [[package]]
 name = "svgbobdoc"
 version = "0.3.0"
-source = "git+https://github.com/yvt/svgbobdoc.git#d47195ad53e64a163f9c80905eabb59deb605512"
+source = "git+https://github.com/jetuk/svgbobdoc.git?branch=svgbob-0_7_5#f717c6d062302a51642778ba7a65580faf2c9c9d"
 dependencies = [
  "base64",
  "proc-macro2",
@@ -3699,8 +3704,6 @@ checksum = "128d1e363af62632b8eb57219c8fd7877144af57558fb2ef0368d0087bddeb2e"
 dependencies = [
  "cfg-if",
  "once_cell",
- "serde",
- "serde_json",
  "wasm-bindgen-macro",
 ]
 
