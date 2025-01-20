@@ -1714,29 +1714,25 @@ mod tests {
 
         network.add_input_node("my-node", None).unwrap();
         // Second add with the same name
-        assert_eq!(
+        assert!(matches!(
             network.add_input_node("my-node", None),
-            Err(PywrError::NodeNameAlreadyExists("my-node".to_string()))
-        );
+            Err(PywrError::NodeNameAlreadyExists(n)) if n == "my-node"));
 
         network.add_input_node("my-node", Some("a")).unwrap();
         // Second add with the same name
-        assert_eq!(
+        assert!(matches!(
             network.add_input_node("my-node", Some("a")),
-            Err(PywrError::NodeNameAlreadyExists("my-node".to_string()))
-        );
+            Err(PywrError::NodeNameAlreadyExists(n)) if n == "my-node"));
 
-        assert_eq!(
+        assert!(matches!(
             network.add_link_node("my-node", None),
-            Err(PywrError::NodeNameAlreadyExists("my-node".to_string()))
-        );
+            Err(PywrError::NodeNameAlreadyExists(n)) if n == "my-node"));
 
-        assert_eq!(
+        assert!(matches!(
             network.add_output_node("my-node", None),
-            Err(PywrError::NodeNameAlreadyExists("my-node".to_string()))
-        );
+            Err(PywrError::NodeNameAlreadyExists(n)) if n == "my-node"));
 
-        assert_eq!(
+        assert!(matches!(
             network.add_storage_node(
                 "my-node",
                 None,
@@ -1744,8 +1740,7 @@ mod tests {
                 None,
                 Some(10.0.into())
             ),
-            Err(PywrError::NodeNameAlreadyExists("my-node".to_string()))
-        );
+            Err(PywrError::NodeNameAlreadyExists(n)) if n == "my-node"));
     }
 
     #[test]
@@ -1762,10 +1757,10 @@ mod tests {
         node.set_max_flow_constraint(Some(parameter.into())).unwrap();
 
         // Try to assign a constraint not defined for particular node type
-        assert_eq!(
+        assert!(matches!(
             node.set_max_volume_constraint(Some(10.0.into())),
             Err(PywrError::StorageConstraintsUndefined)
-        );
+        ));
     }
 
     #[test]

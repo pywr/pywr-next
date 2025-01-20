@@ -40,7 +40,7 @@ pub mod timestep;
 pub mod utils;
 pub mod virtual_storage;
 
-#[derive(Error, Debug, PartialEq, Eq)]
+#[derive(Error, Debug)]
 pub enum PywrError {
     #[error("invalid node connect")]
     InvalidNodeConnection,
@@ -157,7 +157,9 @@ pub enum PywrError {
     #[error("recorder does not supported aggregation")]
     RecorderDoesNotSupportAggregation,
     #[error("hdf5 error: {0}")]
-    HDF5Error(String),
+    HDF5Error(#[from] hdf5_metno::Error),
+    #[error("could not create unicode variable name from: {0}")]
+    HDF5VarLenUnicode(String),
     #[error("csv error: {0}")]
     CSVError(String),
     #[error("not implemented by recorder")]
