@@ -716,15 +716,15 @@ mod tests {
                     serde_json::from_str(&data).unwrap_or_else(|_| panic!("Failed to deserialize: {:?}", p));
 
                 match value {
-                    serde_json::Value::Object(o) => {
-                        let _ = serde_json::from_value::<Parameter>(serde_json::Value::Object(o))
+                    serde_json::Value::Object(_) => {
+                        let _ = serde_json::from_value::<Parameter>(value)
                             .unwrap_or_else(|_| panic!("Failed to deserialize: {:?}", p));
                     }
                     serde_json::Value::Array(_) => {
                         let _ = serde_json::from_value::<Vec<Parameter>>(value)
                             .unwrap_or_else(|_| panic!("Failed to deserialize: {:?}", p));
                     }
-                    _ => panic!("Expected JSON object: {:?}", p),
+                    _ => panic!("Expected JSON object or array: {:?}", p),
                 }
             }
         }
