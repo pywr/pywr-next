@@ -58,19 +58,28 @@ impl From<Predicate> for pywr_core::parameters::Predicate {
 /// A parameter that compares a metric against a threshold metric
 ///
 /// The metrics are compared using the given predicate and the result is returned as an index. If the comparison
-/// evaluates to true the index is 1, otherwise it is 0.
+/// evaluates to true the index is 1, otherwise it is 0. When values are provided for the `returned_metrics` attribute,
+/// these values are returned instead of the index. If the predicate comparison evaluates to false the first value is
+/// returned, if it is true the second value is returned.
 ///
 /// The parameter has different representations in core depending on the `returned_metrics` attribute. If values are
-/// given then two parameters are added to the model. The first a [`pywr_core::parameters::ThresholdParameter`], which
-/// is set as the index parameter of a [`pywr_core::parameters::IndexedArrayParameter`] containing the `returned_metrics`
+/// set for `returned_metrics` then two parameters are added to the model. The first a
+/// [`pywr_core::parameters::ThresholdParameter`], which is set as the index parameter of a
+/// [`pywr_core::parameters::IndexedArrayParameter`] containing the `returned_metrics`
 /// values.
 ///
-/// An equivalent representation could be achieved by defining the two parameters in the schema directly:
+/// # Examples
+///
 /// ```JSON
-#[doc = include_str!("doc_examples/threshold_returned_values.json")]
+#[doc = include_str!("doc_examples/threshold_returned_values1.json")]
 /// ```
+/// Note that the name specified in the model JSON for the parameter in this example is assigned to the core
+/// `IndexedArrayParameter`. The core `ThresholdParameter` is given an additional sub-name of `threshold`.
 ///
-///
+/// An equivalent representation could be achieved by defining the two parameters separately in the model JSON:
+/// ```JSON
+#[doc = include_str!("doc_examples/threshold_returned_values2.json")]
+/// ```
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct ThresholdParameter {
