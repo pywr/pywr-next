@@ -45,7 +45,7 @@ impl ClpSolverSettings {
 ///
 /// let mut builder = ClpSolverSettingsBuilder::default();
 ///
-/// builder.parallel();
+/// builder = builder.parallel();
 /// let settings = builder.build();
 ///
 /// ```
@@ -56,18 +56,18 @@ pub struct ClpSolverSettingsBuilder {
 }
 
 impl ClpSolverSettingsBuilder {
-    pub fn parallel(&mut self) -> &mut Self {
+    pub fn parallel(mut self) -> Self {
         self.parallel = true;
         self
     }
 
-    pub fn threads(&mut self, threads: usize) -> &mut Self {
+    pub fn threads(mut self, threads: usize) -> Self {
         self.threads = threads;
         self
     }
 
     /// Construct a [`ClpSolverSettings`] from the builder.
-    pub fn build(&self) -> ClpSolverSettings {
+    pub fn build(self) -> ClpSolverSettings {
         ClpSolverSettings {
             parallel: self.parallel,
             threads: self.threads,

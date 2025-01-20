@@ -187,7 +187,7 @@ fn build_clp_settings(kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<ClpSolverS
     if let Some(kwargs) = kwargs {
         if let Ok(value) = kwargs.get_item("threads") {
             if let Some(threads) = value {
-                builder.threads(threads.extract::<usize>()?);
+                builder = builder.threads(threads.extract::<usize>()?);
             }
             kwargs.del_item("threads")?;
         }
@@ -195,7 +195,7 @@ fn build_clp_settings(kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<ClpSolverS
         if let Ok(value) = kwargs.get_item("parallel") {
             if let Some(parallel) = value {
                 if parallel.extract::<bool>()? {
-                    builder.parallel();
+                    builder = builder.parallel();
                 }
             }
             kwargs.del_item("parallel")?;
@@ -219,7 +219,7 @@ fn build_highs_settings(kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<HighsSol
     if let Some(kwargs) = kwargs {
         if let Ok(value) = kwargs.get_item("threads") {
             if let Some(threads) = value {
-                builder.threads(threads.extract::<usize>()?);
+                builder = builder.threads(threads.extract::<usize>()?);
             }
             kwargs.del_item("threads")?;
         }
@@ -227,7 +227,7 @@ fn build_highs_settings(kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<HighsSol
         if let Ok(value) = kwargs.get_item("parallel") {
             if let Some(parallel) = value {
                 if parallel.extract::<bool>()? {
-                    builder.parallel();
+                    builder = builder.parallel();
                 }
             }
             kwargs.del_item("parallel")?;

@@ -90,43 +90,43 @@ impl Default for ClIpmSolverSettingsBuilder {
 }
 
 impl ClIpmSolverSettingsBuilder {
-    pub fn num_chunks(&mut self, num_chunks: NonZeroUsize) -> &mut Self {
+    pub fn num_chunks(mut self, num_chunks: NonZeroUsize) -> Self {
         self.num_chunks = num_chunks;
         self
     }
 
-    pub fn parallel(&mut self) -> &mut Self {
+    pub fn parallel(mut self) -> Self {
         self.parallel = true;
         self
     }
 
-    pub fn threads(&mut self, threads: usize) -> &mut Self {
+    pub fn threads(mut self, threads: usize) -> Self {
         self.threads = threads;
         self
     }
 
-    pub fn primal_feasibility(&mut self, tolerance: f64) -> &mut Self {
+    pub fn primal_feasibility(mut self, tolerance: f64) -> Self {
         self.tolerances.primal_feasibility = tolerance;
         self
     }
 
-    pub fn dual_feasibility(&mut self, tolerance: f64) -> &mut Self {
+    pub fn dual_feasibility(mut self, tolerance: f64) -> Self {
         self.tolerances.dual_feasibility = tolerance;
         self
     }
 
-    pub fn optimality(&mut self, tolerance: f64) -> &mut Self {
+    pub fn optimality(mut self, tolerance: f64) -> Self {
         self.tolerances.optimality = tolerance;
         self
     }
 
-    pub fn max_iterations(&mut self, max_iterations: NonZeroUsize) -> &mut Self {
+    pub fn max_iterations(mut self, max_iterations: NonZeroUsize) -> Self {
         self.max_iterations = max_iterations;
         self
     }
 
     /// Construct a [`ClIpmSolverSettings`] from the builder.
-    pub fn build(&self) -> ClIpmSolverSettings {
+    pub fn build(self) -> ClIpmSolverSettings {
         ClIpmSolverSettings {
             parallel: self.parallel,
             threads: self.threads,
