@@ -229,6 +229,12 @@ where
     }
 }
 
+impl From<DerivedMetricIndex> for MetricF64 {
+    fn from(idx: DerivedMetricIndex) -> Self {
+        Self::DerivedMetric(idx)
+    }
+}
+
 impl From<ParameterIndex<f64>> for MetricF64 {
     fn from(idx: ParameterIndex<f64>) -> Self {
         match idx {

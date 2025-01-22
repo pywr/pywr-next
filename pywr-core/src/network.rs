@@ -1051,6 +1051,22 @@ impl Network {
     }
 
     /// Get a `VirtualStorageNode` from a node's name
+    pub fn get_mut_virtual_storage_node_by_name(
+        &mut self,
+        name: &str,
+        sub_name: Option<&str>,
+    ) -> Result<&mut VirtualStorage, PywrError> {
+        match self
+            .virtual_storage_nodes
+            .iter_mut()
+            .find(|n| n.full_name() == (name, sub_name))
+        {
+            Some(node) => Ok(node),
+            None => Err(PywrError::NodeNotFound(name.to_string())),
+        }
+    }
+
+    /// Get a `VirtualStorageNode` from a node's name
     pub fn get_virtual_storage_node_index_by_name(
         &self,
         name: &str,
@@ -1337,6 +1353,17 @@ impl Network {
             .push(ComponentType::VirtualStorageNode(vs_node_index));
 
         Ok(vs_node_index)
+    }
+
+    pub fn set_virtual_storage_node_cost(
+        &mut self,
+        name: &str,
+        sub_name: Option<&str>,
+        value: Option<MetricF64>,
+    ) -> Result<(), PywrError> {
+        let node = self.get_mut_virtual_storage_node_by_name(name, sub_name)?;
+        node.set_cost(value);
+        Ok(())
     }
 
     /// Add a [`parameters::GeneralParameter`] to the network
@@ -1766,7 +1793,7 @@ mod tests {
     #[test]
     fn test_step() {
         const NUM_SCENARIOS: usize = 2;
-        let model = simple_model(NUM_SCENARIOS);
+        let model = simple_model(NUM_SCENARIOS, None);
 
         let mut timings = RunTimings::default();
 
@@ -1791,7 +1818,7 @@ mod tests {
     #[test]
     /// Test running a simple model
     fn test_run() {
-        let mut model = simple_model(10);
+        let mut model = simple_model(10, None);
 
         // Set-up assertion for "input" node
         let idx = model.network().get_node_by_name("input", None).unwrap().index();
@@ -1987,7 +2014,7 @@ mod tests {
     #[test]
     /// Test the variable API
     fn test_variable_api() {
-        let mut model = simple_model(1);
+        let mut model = simple_model(1, None);
 
         let variable = ActivationFunction::Unit { min: 0.0, max: 10.0 };
         let input_max_flow = parameters::ConstantParameter::new("my-constant".into(), 10.0);

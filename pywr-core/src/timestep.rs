@@ -105,7 +105,7 @@ impl PywrDuration {
 pub type TimestepIndex = usize;
 
 #[cfg_attr(feature = "pyo3", pyclass)]
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub struct Timestep {
     pub date: NaiveDateTime,
     pub index: TimestepIndex,

@@ -170,7 +170,7 @@ mod test {
     /// Basic functional test of the delay parameter.
     #[test]
     fn test_basic() {
-        let mut model = simple_model(1);
+        let mut model = simple_model(1, None);
 
         // Create an artificial volume series to use for the delay test
         let volumes = Array1::linspace(1.0, 0.0, 21);
