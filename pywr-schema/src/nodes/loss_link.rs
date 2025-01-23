@@ -1,11 +1,12 @@
-use crate::error::ConversionError;
+use crate::error::ComponentConversionError;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
 use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::nodes::{NodeAttribute, NodeMeta};
-use crate::parameters::TryIntoV2Parameter;
+use crate::parameters::Parameter;
+use crate::v1::{try_convert_node_attr, ConversionData, TryFromV1};
 #[cfg(feature = "core")]
 use pywr_core::{aggregated_node::Relationship, metric::MetricF64};
 use pywr_schema_macros::PywrVisitAll;
@@ -32,10 +33,11 @@ impl LossFactor {
         &self,
         network: &mut pywr_core::network::Network,
         args: &LoadArgs,
+        parent: Option<&str>,
     ) -> Result<Option<Relationship>, SchemaError> {
         match self {
             LossFactor::Gross { factor } => {
-                let lf = factor.load(network, args)?;
+                let lf = factor.load(network, args, parent)?;
                 // Handle the case where we are given a zero loss factor
                 // The aggregated node does not support zero loss factors so filter them here.
                 if lf.is_constant_zero() {
@@ -45,7 +47,7 @@ impl LossFactor {
                 Ok(Some(Relationship::new_proportion_factors(&[lf])))
             }
             LossFactor::Net { factor } => {
-                let lf = factor.load(network, args)?;
+                let lf = factor.load(network, args, parent)?;
                 // Handle the case where we are given a zero loss factor
                 // The aggregated node does not support zero loss factors so filter them here.
                 if lf.is_constant_zero() {
@@ -83,6 +85,8 @@ impl LossFactor {
 #[serde(deny_unknown_fields)]
 pub struct LossLinkNode {
     pub meta: NodeMeta,
+    /// Optional local parameters.
+    pub parameters: Option<Vec<Parameter>>,
     pub loss_factor: Option<LossFactor>,
     pub min_net_flow: Option<Metric>,
     pub max_net_flow: Option<Metric>,
@@ -159,22 +163,22 @@ impl LossLinkNode {
         args: &LoadArgs,
     ) -> Result<(), SchemaError> {
         if let Some(cost) = &self.net_cost {
-            let value = cost.load(network, args)?;
+            let value = cost.load(network, args, Some(&self.meta.name))?;
             network.set_node_cost(self.meta.name.as_str(), Self::net_sub_name(), value.into())?;
         }
 
         if let Some(max_flow) = &self.max_net_flow {
-            let value = max_flow.load(network, args)?;
+            let value = max_flow.load(network, args, Some(&self.meta.name))?;
             network.set_node_max_flow(self.meta.name.as_str(), Self::net_sub_name(), value.into())?;
         }
 
         if let Some(min_flow) = &self.min_net_flow {
-            let value = min_flow.load(network, args)?;
+            let value = min_flow.load(network, args, Some(&self.meta.name))?;
             network.set_node_min_flow(self.meta.name.as_str(), Self::net_sub_name(), value.into())?;
         }
 
         if let Some(loss_factor) = &self.loss_factor {
-            let factors = loss_factor.load(network, args)?;
+            let factors = loss_factor.load(network, args, Some(&self.meta.name))?;
 
             if factors.is_none() {
                 // Loaded a constant zero factor; ensure that the loss node has zero flow
@@ -237,124 +241,32 @@ impl LossLinkNode {
     }
 }
 
-impl TryFrom<LossLinkNodeV1> for LossLinkNode {
-    type Error = ConversionError;
+impl TryFromV1<LossLinkNodeV1> for LossLinkNode {
+    type Error = ComponentConversionError;
 
-    fn try_from(v1: LossLinkNodeV1) -> Result<Self, Self::Error> {
+    fn try_from_v1(
+        v1: LossLinkNodeV1,
+        parent_node: Option<&str>,
+        conversion_data: &mut ConversionData,
+    ) -> Result<Self, Self::Error> {
         let meta: NodeMeta = v1.meta.into();
-        let mut unnamed_count = 0;
 
-        let loss_factor = v1
-            .loss_factor
-            .map(|v| {
-                let factor = v.try_into_v2_parameter(Some(&meta.name), &mut unnamed_count)?;
-                Ok::<_, Self::Error>(LossFactor::Net { factor })
-            })
-            .transpose()?;
+        let loss_factor: Option<Metric> =
+            try_convert_node_attr(&meta.name, "loss_factor", v1.loss_factor, parent_node, conversion_data)?;
+        let loss_factor = loss_factor.map(|factor| LossFactor::Net { factor });
 
-        let min_net_flow = v1
-            .min_flow
-            .map(|v| v.try_into_v2_parameter(Some(&meta.name), &mut unnamed_count))
-            .transpose()?;
-
-        let max_net_flow = v1
-            .max_flow
-            .map(|v| v.try_into_v2_parameter(Some(&meta.name), &mut unnamed_count))
-            .transpose()?;
-
-        let net_cost = v1
-            .cost
-            .map(|v| v.try_into_v2_parameter(Some(&meta.name), &mut unnamed_count))
-            .transpose()?;
+        let net_cost = try_convert_node_attr(&meta.name, "cost", v1.cost, parent_node, conversion_data)?;
+        let max_net_flow = try_convert_node_attr(&meta.name, "max_flow", v1.max_flow, parent_node, conversion_data)?;
+        let min_net_flow = try_convert_node_attr(&meta.name, "min_flow", v1.min_flow, parent_node, conversion_data)?;
 
         let n = Self {
             meta,
+            parameters: None,
             loss_factor,
             min_net_flow,
             max_net_flow,
             net_cost,
         };
         Ok(n)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::model::PywrModel;
-    #[cfg(feature = "core")]
-    use pywr_core::test_utils::{run_all_solvers, ExpectedOutputs};
-    #[cfg(feature = "core")]
-    use tempfile::TempDir;
-
-    fn loss_link1_str() -> &'static str {
-        include_str!("../test_models/loss_link1.json")
-    }
-
-    #[cfg(feature = "core")]
-    fn loss_link1_outputs_str() -> &'static str {
-        include_str!("../test_models/loss_link1-expected.csv")
-    }
-
-    #[test]
-    fn test_loss_link1_schema() {
-        let data = loss_link1_str();
-        let schema: PywrModel = serde_json::from_str(data).unwrap();
-
-        assert_eq!(schema.network.nodes.len(), 7);
-        assert_eq!(schema.network.edges.len(), 6);
-    }
-
-    #[test]
-    #[cfg(feature = "core")]
-    fn test_loss_link1_run() {
-        let data = loss_link1_str();
-        let schema: PywrModel = serde_json::from_str(data).unwrap();
-        let temp_dir = TempDir::new().unwrap();
-
-        let model = schema.build_model(None, Some(temp_dir.path())).unwrap();
-        // After model run there should be an output file.
-        let expected_outputs = [ExpectedOutputs::new(
-            temp_dir.path().join("loss_link1.csv"),
-            loss_link1_outputs_str(),
-        )];
-
-        // Test all solvers
-        run_all_solvers(&model, &[], &expected_outputs);
-    }
-
-    fn loss_link2_str() -> &'static str {
-        include_str!("../test_models/loss_link2.json")
-    }
-
-    #[cfg(feature = "core")]
-    fn loss_link2_outputs_str() -> &'static str {
-        include_str!("../test_models/loss_link2-expected.csv")
-    }
-
-    #[test]
-    fn test_loss_link2_schema() {
-        let data = loss_link2_str();
-        let schema: PywrModel = serde_json::from_str(data).unwrap();
-
-        assert_eq!(schema.network.nodes.len(), 4);
-        assert_eq!(schema.network.edges.len(), 3);
-    }
-
-    #[test]
-    #[cfg(feature = "core")]
-    fn test_loss_link2_run() {
-        let data = loss_link2_str();
-        let schema: PywrModel = serde_json::from_str(data).unwrap();
-        let temp_dir = TempDir::new().unwrap();
-
-        let model = schema.build_model(None, Some(temp_dir.path())).unwrap();
-        // After model run there should be an output file.
-        let expected_outputs = [ExpectedOutputs::new(
-            temp_dir.path().join("loss_link2.csv"),
-            loss_link2_outputs_str(),
-        )];
-
-        // Test all solvers
-        run_all_solvers(&model, &[], &expected_outputs);
     }
 }

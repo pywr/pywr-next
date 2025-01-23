@@ -1,8 +1,9 @@
+use crate::error::ComponentConversionError;
 use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
-use crate::parameters::{IntoV2Parameter, ParameterMeta, TryFromV1Parameter, TryIntoV2Parameter};
-use crate::ConversionError;
+use crate::parameters::{ConversionData, ParameterMeta};
+use crate::v1::{try_convert_parameter_attr, IntoV2, TryFromV1};
 #[cfg(feature = "core")]
 use crate::SchemaError;
 #[cfg(feature = "core")]
@@ -83,14 +84,22 @@ impl HydropowerTargetParameter {
         network: &mut pywr_core::network::Network,
         args: &LoadArgs,
     ) -> Result<ParameterIndex<f64>, SchemaError> {
-        let target = self.target.load(network, args)?;
+        let target = self.target.load(network, args, None)?;
         let water_elevation = self
             .water_elevation
             .as_ref()
-            .map(|t| t.load(network, args))
+            .map(|t| t.load(network, args, None))
             .transpose()?;
-        let max_flow = self.max_flow.as_ref().map(|t| t.load(network, args)).transpose()?;
-        let min_flow = self.min_flow.as_ref().map(|t| t.load(network, args)).transpose()?;
+        let max_flow = self
+            .max_flow
+            .as_ref()
+            .map(|t| t.load(network, args, None))
+            .transpose()?;
+        let min_flow = self
+            .min_flow
+            .as_ref()
+            .map(|t| t.load(network, args, None))
+            .transpose()?;
 
         let turbine_data = HydropowerTargetData {
             target,
@@ -109,28 +118,26 @@ impl HydropowerTargetParameter {
     }
 }
 
-impl TryFromV1Parameter<HydropowerTargetParameterV1> for HydropowerTargetParameter {
-    type Error = ConversionError;
+impl TryFromV1<HydropowerTargetParameterV1> for HydropowerTargetParameter {
+    type Error = ComponentConversionError;
 
-    fn try_from_v1_parameter(
+    fn try_from_v1(
         v1: HydropowerTargetParameterV1,
         parent_node: Option<&str>,
-        unnamed_count: &mut usize,
+        conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.into_v2_parameter(parent_node, unnamed_count);
-        let target = v1.target.try_into_v2_parameter(Some(&meta.name), unnamed_count)?;
-        let water_elevation = v1
-            .water_elevation_parameter
-            .map(|f| f.try_into_v2_parameter(Some(&meta.name), unnamed_count))
-            .transpose()?;
-        let min_flow = v1
-            .min_flow
-            .map(|f| f.try_into_v2_parameter(Some(&meta.name), unnamed_count))
-            .transpose()?;
-        let max_flow = v1
-            .max_flow
-            .map(|f| f.try_into_v2_parameter(Some(&meta.name), unnamed_count))
-            .transpose()?;
+        let meta: ParameterMeta = v1.meta.into_v2(parent_node, conversion_data);
+        let target = try_convert_parameter_attr(&meta.name, "target", v1.target, parent_node, conversion_data)?;
+        let water_elevation = try_convert_parameter_attr(
+            &meta.name,
+            "water_elevation_parameter",
+            v1.water_elevation_parameter,
+            parent_node,
+            conversion_data,
+        )?;
+
+        let min_flow = try_convert_parameter_attr(&meta.name, "min_flow", v1.min_flow, parent_node, conversion_data)?;
+        let max_flow = try_convert_parameter_attr(&meta.name, "max_flow", v1.max_flow, parent_node, conversion_data)?;
 
         Ok(Self {
             meta,

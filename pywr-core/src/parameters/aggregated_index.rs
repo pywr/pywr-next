@@ -1,7 +1,7 @@
 /// AggregatedIndexParameter
 ///
 use super::{Parameter, ParameterName, ParameterState, PywrError};
-use crate::metric::MetricUsize;
+use crate::metric::MetricU64;
 use crate::network::Network;
 use crate::parameters::{GeneralParameter, ParameterMeta};
 use crate::scenario::ScenarioIndex;
@@ -36,12 +36,12 @@ impl FromStr for AggIndexFunc {
 
 pub struct AggregatedIndexParameter {
     meta: ParameterMeta,
-    values: Vec<MetricUsize>,
+    values: Vec<MetricU64>,
     agg_func: AggIndexFunc,
 }
 
 impl AggregatedIndexParameter {
-    pub fn new(name: ParameterName, values: Vec<MetricUsize>, agg_func: AggIndexFunc) -> Self {
+    pub fn new(name: ParameterName, values: Vec<MetricU64>, agg_func: AggIndexFunc) -> Self {
         Self {
             meta: ParameterMeta::new(name),
             values,
@@ -56,7 +56,7 @@ impl Parameter for AggregatedIndexParameter {
     }
 }
 
-impl GeneralParameter<usize> for AggregatedIndexParameter {
+impl GeneralParameter<u64> for AggregatedIndexParameter {
     fn compute(
         &self,
         _timestep: &Timestep,
@@ -64,8 +64,8 @@ impl GeneralParameter<usize> for AggregatedIndexParameter {
         network: &Network,
         state: &State,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<usize, PywrError> {
-        let value: usize = match self.agg_func {
+    ) -> Result<u64, PywrError> {
+        let value: u64 = match self.agg_func {
             AggIndexFunc::Sum => {
                 let mut total = 0;
                 for p in &self.values {
@@ -74,14 +74,14 @@ impl GeneralParameter<usize> for AggregatedIndexParameter {
                 total
             }
             AggIndexFunc::Max => {
-                let mut total = usize::MIN;
+                let mut total = u64::MIN;
                 for p in &self.values {
                     total = total.max(p.get_value(network, state)?);
                 }
                 total
             }
             AggIndexFunc::Min => {
-                let mut total = usize::MAX;
+                let mut total = u64::MAX;
                 for p in &self.values {
                     total = total.min(p.get_value(network, state)?);
                 }

@@ -146,7 +146,6 @@ enum ComponentType {
     DerivedMetric(DerivedMetricIndex),
 }
 
-#[derive(Clone)]
 /// Internal states for each scenario and recorder.
 pub struct NetworkState {
     // State by scenario
@@ -642,12 +641,12 @@ impl Network {
                         GeneralParameterType::Index(idx) => {
                             let p = self
                                 .parameters
-                                .get_general_usize(*idx)
+                                .get_general_u64(*idx)
                                 .ok_or(PywrError::GeneralIndexParameterIndexNotFound(*idx))?;
 
                             // .. and its internal state
                             let internal_state = internal_states
-                                .get_general_mut_usize_state(*idx)
+                                .get_general_mut_u64_state(*idx)
                                 .ok_or(PywrError::GeneralIndexParameterIndexNotFound(*idx))?;
 
                             let value = p.compute(timestep, scenario_index, self, state, internal_state)?;
@@ -733,12 +732,12 @@ impl Network {
                         GeneralParameterType::Index(idx) => {
                             let p = self
                                 .parameters
-                                .get_general_usize(*idx)
+                                .get_general_u64(*idx)
                                 .ok_or(PywrError::GeneralIndexParameterIndexNotFound(*idx))?;
 
                             // .. and its internal state
                             let internal_state = internal_states
-                                .get_general_mut_usize_state(*idx)
+                                .get_general_mut_u64_state(*idx)
                                 .ok_or(PywrError::GeneralIndexParameterIndexNotFound(*idx))?;
 
                             p.after(timestep, scenario_index, self, state, internal_state)?;
@@ -803,6 +802,17 @@ impl Network {
         self.edges.get(index)
     }
 
+    /// Get an [`EdgeIndex`] from connecting node indices.
+    pub fn get_edge_index(&self, from_node_index: NodeIndex, to_node_index: NodeIndex) -> Result<EdgeIndex, PywrError> {
+        match self
+            .edges
+            .iter()
+            .find(|edge| edge.from_node_index == from_node_index && edge.to_node_index == to_node_index)
+        {
+            Some(edge) => Ok(edge.index),
+            None => Err(PywrError::EdgeIndexNotFound),
+        }
+    }
     /// Get a Node from a node's name
     pub fn get_node_index_by_name(&self, name: &str, sub_name: Option<&str>) -> Result<NodeIndex, PywrError> {
         Ok(self.get_node_by_name(name, sub_name)?.index())
@@ -1042,6 +1052,22 @@ impl Network {
     }
 
     /// Get a `VirtualStorageNode` from a node's name
+    pub fn get_mut_virtual_storage_node_by_name(
+        &mut self,
+        name: &str,
+        sub_name: Option<&str>,
+    ) -> Result<&mut VirtualStorage, PywrError> {
+        match self
+            .virtual_storage_nodes
+            .iter_mut()
+            .find(|n| n.full_name() == (name, sub_name))
+        {
+            Some(node) => Ok(node),
+            None => Err(PywrError::NodeNotFound(name.to_string())),
+        }
+    }
+
+    /// Get a `VirtualStorageNode` from a node's name
     pub fn get_virtual_storage_node_index_by_name(
         &self,
         name: &str,
@@ -1142,8 +1168,8 @@ impl Network {
     }
 
     /// Get a `Parameter<usize>` from its index.
-    pub fn get_index_parameter(&self, index: ParameterIndex<usize>) -> Result<&dyn parameters::Parameter, PywrError> {
-        match self.parameters.get_usize(index) {
+    pub fn get_index_parameter(&self, index: ParameterIndex<u64>) -> Result<&dyn parameters::Parameter, PywrError> {
+        match self.parameters.get_u64(index) {
             Some(p) => Ok(p),
             None => Err(PywrError::IndexParameterIndexNotFound(index)),
         }
@@ -1151,15 +1177,15 @@ impl Network {
 
     /// Get a `IndexParameter` from a parameter's name
     pub fn get_index_parameter_by_name(&self, name: &ParameterName) -> Result<&dyn parameters::Parameter, PywrError> {
-        match self.parameters.get_usize_by_name(name) {
+        match self.parameters.get_u64_by_name(name) {
             Some(parameter) => Ok(parameter),
             None => Err(PywrError::ParameterNotFound(name.to_string())),
         }
     }
 
     /// Get a `IndexParameterIndex` from a parameter's name
-    pub fn get_index_parameter_index_by_name(&self, name: &ParameterName) -> Result<ParameterIndex<usize>, PywrError> {
-        match self.parameters.get_usize_index_by_name(name) {
+    pub fn get_index_parameter_index_by_name(&self, name: &ParameterName) -> Result<ParameterIndex<u64>, PywrError> {
+        match self.parameters.get_u64_index_by_name(name) {
             Some(idx) => Ok(idx),
             None => Err(PywrError::ParameterNotFound(name.to_string())),
         }
@@ -1318,7 +1344,7 @@ impl Network {
         let vs_node = self.virtual_storage_nodes.get(&vs_node_index)?;
 
         // Link the virtual storage node to the nodes it is including
-        for node_idx in vs_node.nodes.iter() {
+        for node_idx in vs_node.nodes() {
             let node = self.nodes.get_mut(node_idx)?;
             node.add_virtual_storage(vs_node_index)?;
         }
@@ -1328,6 +1354,17 @@ impl Network {
             .push(ComponentType::VirtualStorageNode(vs_node_index));
 
         Ok(vs_node_index)
+    }
+
+    pub fn set_virtual_storage_node_cost(
+        &mut self,
+        name: &str,
+        sub_name: Option<&str>,
+        value: Option<MetricF64>,
+    ) -> Result<(), PywrError> {
+        let node = self.get_mut_virtual_storage_node_by_name(name, sub_name)?;
+        node.set_cost(value);
+        Ok(())
     }
 
     /// Add a [`parameters::GeneralParameter`] to the network
@@ -1353,6 +1390,14 @@ impl Network {
         self.parameters.add_simple_f64(parameter)
     }
 
+    /// Add a [`parameters::SimpleParameter`] to the network
+    pub fn add_simple_index_parameter(
+        &mut self,
+        parameter: Box<dyn parameters::SimpleParameter<u64>>,
+    ) -> Result<ParameterIndex<u64>, PywrError> {
+        self.parameters.add_simple_u64(parameter)
+    }
+
     /// Add a [`parameters::ConstParameter`] to the network
     pub fn add_const_parameter(
         &mut self,
@@ -1364,9 +1409,9 @@ impl Network {
     /// Add a `parameters::IndexParameter` to the network
     pub fn add_index_parameter(
         &mut self,
-        parameter: Box<dyn parameters::GeneralParameter<usize>>,
-    ) -> Result<ParameterIndex<usize>, PywrError> {
-        let parameter_index = self.parameters.add_general_usize(parameter)?;
+        parameter: Box<dyn parameters::GeneralParameter<u64>>,
+    ) -> Result<ParameterIndex<u64>, PywrError> {
+        let parameter_index = self.parameters.add_general_u64(parameter)?;
         // add it to the general resolve order (simple and constant parameters are resolved separately)
         if let ParameterIndex::General(idx) = parameter_index {
             self.resolve_order.push(ComponentType::Parameter(idx.into()));
@@ -1697,29 +1742,25 @@ mod tests {
 
         network.add_input_node("my-node", None).unwrap();
         // Second add with the same name
-        assert_eq!(
+        assert!(matches!(
             network.add_input_node("my-node", None),
-            Err(PywrError::NodeNameAlreadyExists("my-node".to_string()))
-        );
+            Err(PywrError::NodeNameAlreadyExists(n)) if n == "my-node"));
 
         network.add_input_node("my-node", Some("a")).unwrap();
         // Second add with the same name
-        assert_eq!(
+        assert!(matches!(
             network.add_input_node("my-node", Some("a")),
-            Err(PywrError::NodeNameAlreadyExists("my-node".to_string()))
-        );
+            Err(PywrError::NodeNameAlreadyExists(n)) if n == "my-node"));
 
-        assert_eq!(
+        assert!(matches!(
             network.add_link_node("my-node", None),
-            Err(PywrError::NodeNameAlreadyExists("my-node".to_string()))
-        );
+            Err(PywrError::NodeNameAlreadyExists(n)) if n == "my-node"));
 
-        assert_eq!(
+        assert!(matches!(
             network.add_output_node("my-node", None),
-            Err(PywrError::NodeNameAlreadyExists("my-node".to_string()))
-        );
+            Err(PywrError::NodeNameAlreadyExists(n)) if n == "my-node"));
 
-        assert_eq!(
+        assert!(matches!(
             network.add_storage_node(
                 "my-node",
                 None,
@@ -1727,8 +1768,7 @@ mod tests {
                 None,
                 Some(10.0.into())
             ),
-            Err(PywrError::NodeNameAlreadyExists("my-node".to_string()))
-        );
+            Err(PywrError::NodeNameAlreadyExists(n)) if n == "my-node"));
     }
 
     #[test]
@@ -1745,16 +1785,16 @@ mod tests {
         node.set_max_flow_constraint(Some(parameter.into())).unwrap();
 
         // Try to assign a constraint not defined for particular node type
-        assert_eq!(
+        assert!(matches!(
             node.set_max_volume_constraint(Some(10.0.into())),
             Err(PywrError::StorageConstraintsUndefined)
-        );
+        ));
     }
 
     #[test]
     fn test_step() {
         const NUM_SCENARIOS: usize = 2;
-        let model = simple_model(NUM_SCENARIOS);
+        let model = simple_model(NUM_SCENARIOS, None);
 
         let mut timings = RunTimings::default();
 
@@ -1779,7 +1819,7 @@ mod tests {
     #[test]
     /// Test running a simple model
     fn test_run() {
-        let mut model = simple_model(10);
+        let mut model = simple_model(10, None);
 
         // Set-up assertion for "input" node
         let idx = model.network().get_node_by_name("input", None).unwrap().index();
@@ -1805,7 +1845,7 @@ mod tests {
         model.network_mut().add_recorder(Box::new(recorder)).unwrap();
 
         // Test all solvers
-        run_all_solvers(&model, &[], &[]);
+        run_all_solvers(&model, &[], &[], &[]);
     }
 
     #[test]
@@ -1829,7 +1869,7 @@ mod tests {
         network.add_recorder(Box::new(recorder)).unwrap();
 
         // Test all solvers
-        run_all_solvers(&model, &[], &[]);
+        run_all_solvers(&model, &[], &[], &[]);
     }
 
     /// Test proportional storage derived metric.
@@ -1869,7 +1909,7 @@ mod tests {
         network.add_recorder(Box::new(recorder)).unwrap();
 
         // Test all solvers
-        run_all_solvers(&model, &[], &[]);
+        run_all_solvers(&model, &[], &[], &[]);
     }
 
     #[test]
@@ -1975,7 +2015,7 @@ mod tests {
     #[test]
     /// Test the variable API
     fn test_variable_api() {
-        let mut model = simple_model(1);
+        let mut model = simple_model(1, None);
 
         let variable = ActivationFunction::Unit { min: 0.0, max: 10.0 };
         let input_max_flow = parameters::ConstantParameter::new("my-constant".into(), 10.0);

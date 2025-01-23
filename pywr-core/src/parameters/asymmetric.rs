@@ -1,4 +1,4 @@
-use crate::metric::MetricUsize;
+use crate::metric::MetricU64;
 use crate::network::Network;
 use crate::parameters::{
     downcast_internal_state_mut, GeneralParameter, Parameter, ParameterMeta, ParameterName, ParameterState,
@@ -10,12 +10,12 @@ use crate::PywrError;
 
 pub struct AsymmetricSwitchIndexParameter {
     meta: ParameterMeta,
-    on_parameter: MetricUsize,
-    off_parameter: MetricUsize,
+    on_parameter: MetricU64,
+    off_parameter: MetricU64,
 }
 
 impl AsymmetricSwitchIndexParameter {
-    pub fn new(name: ParameterName, on_parameter: MetricUsize, off_parameter: MetricUsize) -> Self {
+    pub fn new(name: ParameterName, on_parameter: MetricU64, off_parameter: MetricU64) -> Self {
         Self {
             meta: ParameterMeta::new(name),
             on_parameter,
@@ -33,11 +33,11 @@ impl Parameter for AsymmetricSwitchIndexParameter {
         _timesteps: &[Timestep],
         _scenario_index: &ScenarioIndex,
     ) -> Result<Option<Box<dyn ParameterState>>, PywrError> {
-        Ok(Some(Box::new(0_usize)))
+        Ok(Some(Box::new(0_u64)))
     }
 }
 
-impl GeneralParameter<usize> for AsymmetricSwitchIndexParameter {
+impl GeneralParameter<u64> for AsymmetricSwitchIndexParameter {
     fn compute(
         &self,
         _timestep: &Timestep,
@@ -45,11 +45,11 @@ impl GeneralParameter<usize> for AsymmetricSwitchIndexParameter {
         network: &Network,
         state: &State,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<usize, PywrError> {
+    ) -> Result<u64, PywrError> {
         let on_value = self.on_parameter.get_value(network, state)?;
 
         // Downcast the internal state to the correct type
-        let current_state = downcast_internal_state_mut::<usize>(internal_state);
+        let current_state = downcast_internal_state_mut::<u64>(internal_state);
 
         if *current_state > 0 {
             if on_value > 0 {

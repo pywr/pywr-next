@@ -55,7 +55,7 @@ impl GeneralParameter<f64> for PiecewiseInterpolatedParameter {
         let mut cc_previous_value = self.maximum;
         for (idx, control_curve) in self.control_curves.iter().enumerate() {
             let cc_value = control_curve.get_value(model, state)?;
-            if x > cc_value {
+            if x >= cc_value {
                 let v = self.values.get(idx).ok_or(PywrError::DataOutOfRange)?;
                 return Ok(interpolate(x, cc_value, cc_previous_value, v[1], v[0]));
             }
@@ -82,12 +82,12 @@ mod test {
     /// Basic functional test of the piecewise interpolation.
     #[test]
     fn test_basic() {
-        let mut model = simple_model(1);
+        let mut model = simple_model(1, None);
 
         // Create an artificial volume series to use for the interpolation test
         let volume = Array1Parameter::new("test-x".into(), Array1::linspace(1.0, 0.0, 21), None);
 
-        let volume_idx = model.network_mut().add_parameter(Box::new(volume)).unwrap();
+        let volume_idx = model.network_mut().add_simple_parameter(Box::new(volume)).unwrap();
 
         let parameter = PiecewiseInterpolatedParameter::new(
             "test-parameter".into(),
@@ -103,13 +103,13 @@ mod test {
             1.0 + 9.0 * 0.15 / 0.2,  // 95%
             1.0 + 9.0 * 0.10 / 0.2,  // 90%
             1.0 + 9.0 * 0.05 / 0.2,  // 85%
-            0.0,                     // 80%
+            1.0,                     // 80%
             0.0,                     // 75%
             0.0,                     // 70%
             0.0,                     // 65%
             0.0,                     // 60%
             0.0,                     // 55%
-            -1.0,                    // 50%
+            0.0,                     // 50%
             -1.0 - 9.0 * 0.05 / 0.5, // 45%
             -1.0 - 9.0 * 0.10 / 0.5, // 40%
             -1.0 - 9.0 * 0.15 / 0.5, // 35%

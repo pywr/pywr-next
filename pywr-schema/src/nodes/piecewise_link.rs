@@ -1,11 +1,12 @@
-use crate::error::ConversionError;
+use crate::error::ComponentConversionError;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
 use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::nodes::{NodeAttribute, NodeMeta};
-use crate::parameters::TryIntoV2Parameter;
+use crate::parameters::Parameter;
+use crate::v1::{try_convert_node_attr, ConversionData, TryFromV1};
 #[cfg(feature = "core")]
 use pywr_core::metric::MetricF64;
 use pywr_schema_macros::PywrVisitAll;
@@ -46,6 +47,8 @@ pub struct PiecewiseLinkStep {
 #[serde(deny_unknown_fields)]
 pub struct PiecewiseLinkNode {
     pub meta: NodeMeta,
+    /// Optional local parameters.
+    pub parameters: Option<Vec<Parameter>>,
     pub steps: Vec<PiecewiseLinkStep>,
 }
 
@@ -106,17 +109,17 @@ impl PiecewiseLinkNode {
             let sub_name = Self::step_sub_name(i);
 
             if let Some(cost) = &step.cost {
-                let value = cost.load(network, args)?;
+                let value = cost.load(network, args, Some(&self.meta.name))?;
                 network.set_node_cost(self.meta.name.as_str(), sub_name.as_deref(), value.into())?;
             }
 
             if let Some(max_flow) = &step.max_flow {
-                let value = max_flow.load(network, args)?;
+                let value = max_flow.load(network, args, Some(&self.meta.name))?;
                 network.set_node_max_flow(self.meta.name.as_str(), sub_name.as_deref(), value.into())?;
             }
 
             if let Some(min_flow) = &step.min_flow {
-                let value = min_flow.load(network, args)?;
+                let value = min_flow.load(network, args, Some(&self.meta.name))?;
                 network.set_node_min_flow(self.meta.name.as_str(), sub_name.as_deref(), value.into())?;
             }
         }
@@ -160,18 +163,30 @@ impl PiecewiseLinkNode {
     }
 }
 
-impl TryFrom<PiecewiseLinkNodeV1> for PiecewiseLinkNode {
-    type Error = ConversionError;
+impl TryFromV1<PiecewiseLinkNodeV1> for PiecewiseLinkNode {
+    type Error = ComponentConversionError;
 
-    fn try_from(v1: PiecewiseLinkNodeV1) -> Result<Self, Self::Error> {
+    fn try_from_v1(
+        v1: PiecewiseLinkNodeV1,
+        parent_node: Option<&str>,
+        conversion_data: &mut ConversionData,
+    ) -> Result<Self, Self::Error> {
         let meta: NodeMeta = v1.meta.into();
-        let mut unnamed_count = 0;
 
         let costs = match v1.costs {
             None => vec![None; v1.nsteps],
             Some(v1_costs) => v1_costs
                 .into_iter()
-                .map(|v| v.try_into_v2_parameter(Some(&meta.name), &mut unnamed_count).map(Some))
+                .map(|v| {
+                    try_convert_node_attr(
+                        &meta.name,
+                        "costs",
+                        v,
+                        parent_node.or(Some(&meta.name)),
+                        conversion_data,
+                    )
+                    .map(Some)
+                })
                 .collect::<Result<Vec<_>, _>>()?,
         };
 
@@ -179,7 +194,12 @@ impl TryFrom<PiecewiseLinkNodeV1> for PiecewiseLinkNode {
             None => vec![None; v1.nsteps],
             Some(v1_max_flows) => v1_max_flows
                 .into_iter()
-                .map(|v| v.try_into_v2_parameter(Some(&meta.name), &mut unnamed_count).map(Some))
+                .map(|v| match v {
+                    None => Ok(None),
+                    Some(v) => {
+                        try_convert_node_attr(&meta.name, "max_flows", v, parent_node, conversion_data).map(Some)
+                    }
+                })
                 .collect::<Result<Vec<_>, _>>()?,
         };
 
@@ -193,49 +213,11 @@ impl TryFrom<PiecewiseLinkNodeV1> for PiecewiseLinkNode {
             })
             .collect::<Vec<_>>();
 
-        let n = Self { meta, steps };
+        let n = Self {
+            meta,
+            parameters: None,
+            steps,
+        };
         Ok(n)
-    }
-}
-
-#[cfg(test)]
-#[cfg(feature = "core")]
-mod tests {
-    use crate::model::PywrModel;
-    use ndarray::Array2;
-    use pywr_core::{metric::MetricF64, recorders::AssertionRecorder, test_utils::run_all_solvers};
-
-    fn model_str() -> &'static str {
-        include_str!("../test_models/piecewise_link1.json")
-    }
-
-    #[test]
-    fn test_model_run() {
-        let data = model_str();
-        let schema: PywrModel = serde_json::from_str(data).unwrap();
-        let mut model = schema.build_model(None, None).unwrap();
-
-        let network = model.network_mut();
-        assert_eq!(network.nodes().len(), 5);
-        assert_eq!(network.edges().len(), 6);
-
-        // TODO put this assertion data in the test model file.
-        let idx = network.get_node_by_name("link1", Some("step-00")).unwrap().index();
-        let expected = Array2::from_elem((366, 1), 1.0);
-        let recorder = AssertionRecorder::new("link1-s0-flow", MetricF64::NodeOutFlow(idx), expected, None, None);
-        network.add_recorder(Box::new(recorder)).unwrap();
-
-        let idx = network.get_node_by_name("link1", Some("step-01")).unwrap().index();
-        let expected = Array2::from_elem((366, 1), 3.0);
-        let recorder = AssertionRecorder::new("link1-s0-flow", MetricF64::NodeOutFlow(idx), expected, None, None);
-        network.add_recorder(Box::new(recorder)).unwrap();
-
-        let idx = network.get_node_by_name("link1", Some("step-02")).unwrap().index();
-        let expected = Array2::from_elem((366, 1), 0.0);
-        let recorder = AssertionRecorder::new("link1-s0-flow", MetricF64::NodeOutFlow(idx), expected, None, None);
-        network.add_recorder(Box::new(recorder)).unwrap();
-
-        // Test all solvers
-        run_all_solvers(&model, &[], &[]);
     }
 }

@@ -1,11 +1,12 @@
-use crate::error::ConversionError;
+use crate::error::ComponentConversionError;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
 use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::nodes::{NodeAttribute, NodeMeta};
-use crate::parameters::TryIntoV2Parameter;
+use crate::parameters::Parameter;
+use crate::v1::{try_convert_node_attr, ConversionData, TryFromV1};
 #[cfg(feature = "core")]
 use pywr_core::metric::MetricF64;
 use pywr_schema_macros::PywrVisitAll;
@@ -31,6 +32,8 @@ use schemars::JsonSchema;
 #[serde(deny_unknown_fields)]
 pub struct RiverGaugeNode {
     pub meta: NodeMeta,
+    /// Optional local parameters.
+    pub parameters: Option<Vec<Parameter>>,
     pub mrf: Option<Metric>,
     pub mrf_cost: Option<Metric>,
     pub bypass_cost: Option<Metric>,
@@ -91,17 +94,17 @@ impl RiverGaugeNode {
     ) -> Result<(), SchemaError> {
         // MRF applies as a maximum on the MRF node.
         if let Some(cost) = &self.mrf_cost {
-            let value = cost.load(network, args)?;
+            let value = cost.load(network, args, Some(&self.meta.name))?;
             network.set_node_cost(self.meta.name.as_str(), Self::mrf_sub_name(), value.into())?;
         }
 
         if let Some(mrf) = &self.mrf {
-            let value = mrf.load(network, args)?;
+            let value = mrf.load(network, args, Some(&self.meta.name))?;
             network.set_node_max_flow(self.meta.name.as_str(), Self::mrf_sub_name(), value.into())?;
         }
 
         if let Some(cost) = &self.bypass_cost {
-            let value = cost.load(network, args)?;
+            let value = cost.load(network, args, Some(&self.meta.name))?;
             network.set_node_cost(self.meta.name.as_str(), Self::bypass_sub_name(), value.into())?;
         }
 
@@ -142,71 +145,27 @@ impl RiverGaugeNode {
     }
 }
 
-impl TryFrom<RiverGaugeNodeV1> for RiverGaugeNode {
-    type Error = ConversionError;
+impl TryFromV1<RiverGaugeNodeV1> for RiverGaugeNode {
+    type Error = ComponentConversionError;
 
-    fn try_from(v1: RiverGaugeNodeV1) -> Result<Self, Self::Error> {
+    fn try_from_v1(
+        v1: RiverGaugeNodeV1,
+        parent_node: Option<&str>,
+        conversion_data: &mut ConversionData,
+    ) -> Result<Self, Self::Error> {
         let meta: NodeMeta = v1.meta.into();
-        let mut unnamed_count = 0;
 
-        let mrf = v1
-            .mrf
-            .map(|v| v.try_into_v2_parameter(Some(&meta.name), &mut unnamed_count))
-            .transpose()?;
-
-        let mrf_cost = v1
-            .mrf_cost
-            .map(|v| v.try_into_v2_parameter(Some(&meta.name), &mut unnamed_count))
-            .transpose()?;
-
-        let bypass_cost = v1
-            .cost
-            .map(|v| v.try_into_v2_parameter(Some(&meta.name), &mut unnamed_count))
-            .transpose()?;
+        let mrf = try_convert_node_attr(&meta.name, "mrf", v1.mrf, parent_node, conversion_data)?;
+        let mrf_cost = try_convert_node_attr(&meta.name, "mrf_cost", v1.mrf_cost, parent_node, conversion_data)?;
+        let bypass_cost = try_convert_node_attr(&meta.name, "cost", v1.cost, parent_node, conversion_data)?;
 
         let n = Self {
             meta,
+            parameters: None,
             mrf,
             mrf_cost,
             bypass_cost,
         };
         Ok(n)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::model::PywrModel;
-    #[cfg(feature = "core")]
-    use pywr_core::test_utils::run_all_solvers;
-
-    fn model_str() -> &'static str {
-        include_str!("../test_models/river_gauge1.json")
-    }
-
-    #[test]
-    fn test_model_schema() {
-        let data = model_str();
-        let schema: PywrModel = serde_json::from_str(data).unwrap();
-
-        assert_eq!(schema.network.nodes.len(), 4);
-        assert_eq!(schema.network.edges.len(), 3);
-    }
-
-    #[test]
-    #[cfg(feature = "core")]
-    fn test_model_run() {
-        let data = model_str();
-        let schema: PywrModel = serde_json::from_str(data).unwrap();
-        let model = schema.build_model(None, None).unwrap();
-
-        let network = model.network();
-        assert_eq!(network.nodes().len(), 5);
-        assert_eq!(network.edges().len(), 6);
-
-        // Test all solvers
-        run_all_solvers(&model, &[], &[]);
-
-        // TODO assert the results!
     }
 }

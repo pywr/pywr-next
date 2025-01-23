@@ -261,7 +261,7 @@ impl Model {
     /// Run a network through the given time-steps with [`MultiStateSolver`].
     ///
     /// This method will setup state and the solver, and then run the network through the time-steps.
-    pub fn run_multi_scenario<S>(&self, settings: &S::Settings) -> Result<(), PywrError>
+    pub fn run_multi_scenario<S>(&self, settings: &S::Settings) -> Result<Vec<Option<Box<dyn Any>>>, PywrError>
     where
         S: MultiStateSolver,
         <S as MultiStateSolver>::Settings: SolverSettings,
@@ -269,7 +269,9 @@ impl Model {
         // Setup the network and create the initial state
         let mut state = self.setup_multi_scenario(settings)?;
 
-        self.run_multi_scenario_with_state::<S>(&mut state, settings)
+        self.run_multi_scenario_with_state::<S>(&mut state, settings)?;
+
+        Ok(state.recorder_state)
     }
 
     /// Run the network with the provided states and [`MultiStateSolver`] solver.

@@ -1,4 +1,4 @@
-use crate::metric::{MetricF64, MetricUsize};
+use crate::metric::{MetricF64, MetricU64};
 use crate::network::Network;
 use crate::parameters::{GeneralParameter, Parameter, ParameterMeta, ParameterName, ParameterState};
 use crate::scenario::ScenarioIndex;
@@ -8,12 +8,12 @@ use crate::PywrError;
 
 pub struct IndexedArrayParameter {
     meta: ParameterMeta,
-    index_parameter: MetricUsize,
+    index_parameter: MetricU64,
     metrics: Vec<MetricF64>,
 }
 
 impl IndexedArrayParameter {
-    pub fn new(name: ParameterName, index_parameter: MetricUsize, metrics: &[MetricF64]) -> Self {
+    pub fn new(name: ParameterName, index_parameter: MetricU64, metrics: &[MetricF64]) -> Self {
         Self {
             meta: ParameterMeta::new(name),
             index_parameter,
@@ -37,7 +37,7 @@ impl GeneralParameter<f64> for IndexedArrayParameter {
         state: &State,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<f64, PywrError> {
-        let index = self.index_parameter.get_value(network, state)?;
+        let index = self.index_parameter.get_value(network, state)? as usize;
 
         let metric = self.metrics.get(index).ok_or(PywrError::DataOutOfRange)?;
 

@@ -14,14 +14,14 @@ categories = ["science", "simulation"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-svgbobdoc = { version = "0.3.0", features = ["enable"] }
+svgbobdoc = { git = "https://github.com/jetuk/svgbobdoc.git", features = ["enable"], branch = "svgbob-0_7_5" }
 polars = { workspace = true, features = ["csv", "diff", "dtype-datetime", "dtype-date", "dynamic_group_by"], optional = true }
 pyo3 = { workspace = true, optional = true }
 pyo3-polars = { workspace = true, optional = true }
 strum = "0.26"
 strum_macros = "0.26"
 schemars = { workspace = true }
-hdf5 = { workspace = true, optional = true }
+hdf5-metno = { workspace = true, optional = true }
 csv = { workspace = true, optional = true }
 tracing = { workspace = true, optional = true }
 num = { workspace = true }
@@ -36,14 +36,15 @@ chrono = { workspace = true }
 pywr-schema-macros = { path = "../pywr-schema-macros" }
 
 [dev-dependencies]
-tempfile = "3.3.0"
+tempfile = "3.15"
 
 [features]
 # Core feature requires additional dependencies
-core = ["dep:pywr-core", "dep:hdf5", "dep:csv", "dep:polars", "dep:pyo3", "dep:pyo3-polars", "dep:ndarray", "dep:tracing"]
-default = ["core"]
+core = ["dep:pywr-core", "dep:hdf5-metno", "dep:csv", "dep:polars", "dep:pyo3-polars", "dep:ndarray", "dep:tracing"]
+default = ["core", "pyo3"]
 cbc = ["pywr-core/cbc"]
 highs = ["pywr-core/highs"]
 ipm-ocl = ["pywr-core/ipm-ocl"]
 ipm-simd = ["pywr-core/ipm-simd"]
 test-python = []
+pyo3 = ["dep:pyo3", "pywr-core/pyo3"]

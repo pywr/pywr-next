@@ -1,0 +1,3 @@
+# Parameter enum has a variant size threshold of ~210
+# Slightly increased the threshold to permit this.
+enum-variant-size-threshold = 250

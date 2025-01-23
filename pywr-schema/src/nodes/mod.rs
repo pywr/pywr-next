@@ -14,9 +14,9 @@ mod turbine;
 mod virtual_storage;
 mod water_treatment_works;
 
-use crate::error::ConversionError;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
+use crate::error::{ComponentConversionError, ConversionError};
 use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
@@ -25,7 +25,8 @@ pub use crate::nodes::reservoir::{
     Bathymetry, BathymetryType, Evaporation, Leakage, Rainfall, ReservoirNode, SpillNodeType,
 };
 
-use crate::parameters::TimeseriesV1Data;
+use crate::parameters::Parameter;
+use crate::v1::{ConversionData, TryFromV1, TryIntoV2};
 use crate::visit::{VisitMetrics, VisitPaths};
 pub use annual_virtual_storage::{AnnualReset, AnnualVirtualStorageNode};
 pub use core::{
@@ -42,9 +43,6 @@ use pywr_core::metric::MetricF64;
 use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::nodes::{
     CoreNode as CoreNodeV1, Node as NodeV1, NodeMeta as NodeMetaV1, NodePosition as NodePositionV1,
-};
-use pywr_v1_schema::parameters::{
-    CoreParameter as CoreParameterV1, Parameter as ParameterV1, ParameterValue as ParameterValueV1, ParameterValueType,
 };
 pub use river::RiverNode;
 pub use river_gauge::RiverGaugeNode;
@@ -96,7 +94,7 @@ impl From<NodeMetaV1> for NodeMeta {
 /// All possible attributes that could be produced by a node.
 ///
 ///
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Copy, Display, JsonSchema, PywrVisitAll)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Copy, Display, JsonSchema, PywrVisitAll, PartialEq)]
 pub enum NodeAttribute {
     Inflow,
     Outflow,
@@ -208,7 +206,10 @@ impl NodeBuilder {
                 meta,
                 ..Default::default()
             }),
-            NodeType::River => Node::River(RiverNode { meta }),
+            NodeType::River => Node::River(RiverNode {
+                meta,
+                ..Default::default()
+            }),
             NodeType::RiverSplitWithGauge => Node::RiverSplitWithGauge(RiverSplitWithGaugeNode {
                 meta,
                 ..Default::default()
@@ -255,6 +256,8 @@ impl NodeBuilder {
 #[strum_discriminants(derive(Display, IntoStaticStr, EnumString, VariantNames))]
 // This creates a separate enum called `NodeType` that is available in this module.
 #[strum_discriminants(name(NodeType))]
+// This is currently required by the `Reservoir` node. Rather than box it
+#[allow(clippy::large_enum_variant)]
 pub enum Node {
     Input(InputNode),
     Link(LinkNode),
@@ -372,7 +375,6 @@ impl Node {
             Node::Reservoir(n) => n.output_connectors(slot),
         }
     }
-
     pub fn default_metric(&self) -> NodeAttribute {
         match self {
             Node::Input(n) => n.default_metric(),
@@ -398,6 +400,36 @@ impl Node {
             Node::Reservoir(n) => n.default_metric(),
         }
     }
+
+    /// Get the locally defined parameters for this node.
+    ///
+    /// This does **not** return which parameters this node might reference, but rather
+    /// the parameters that are defined on this node itself.
+    pub fn local_parameters(&self) -> Option<&[Parameter]> {
+        match self {
+            Node::Input(n) => n.parameters.as_deref(),
+            Node::Link(n) => n.parameters.as_deref(),
+            Node::Output(n) => n.parameters.as_deref(),
+            Node::Storage(n) => n.parameters.as_deref(),
+            Node::Catchment(n) => n.parameters.as_deref(),
+            Node::RiverGauge(n) => n.parameters.as_deref(),
+            Node::LossLink(n) => n.parameters.as_deref(),
+            Node::River(n) => n.parameters.as_deref(),
+            Node::RiverSplitWithGauge(n) => n.parameters.as_deref(),
+            Node::WaterTreatmentWorks(n) => n.parameters.as_deref(),
+            Node::Aggregated(n) => n.parameters.as_deref(),
+            Node::AggregatedStorage(n) => n.parameters.as_deref(),
+            Node::VirtualStorage(n) => n.parameters.as_deref(),
+            Node::AnnualVirtualStorage(n) => n.parameters.as_deref(),
+            Node::MonthlyVirtualStorage(n) => n.parameters.as_deref(),
+            Node::PiecewiseLink(n) => n.parameters.as_deref(),
+            Node::PiecewiseStorage(n) => n.parameters.as_deref(),
+            Node::Delay(n) => n.parameters.as_deref(),
+            Node::RollingVirtualStorage(n) => n.parameters.as_deref(),
+            Node::Turbine(n) => n.parameters.as_deref(),
+            Node::Reservoir(n) => n.storage.parameters.as_deref(),
+        }
+    }
 }
 
 #[cfg(feature = "core")]
@@ -419,7 +451,7 @@ impl Node {
             Node::VirtualStorage(n) => n.add_to_model(network, args),
             Node::AnnualVirtualStorage(n) => n.add_to_model(network, args),
             Node::PiecewiseLink(n) => n.add_to_model(network),
-            Node::PiecewiseStorage(n) => n.add_to_model(network, args),
+            Node::PiecewiseStorage(n) => n.add_to_model(network),
             Node::Delay(n) => n.add_to_model(network),
             Node::Turbine(n) => n.add_to_model(network, args),
             Node::MonthlyVirtualStorage(n) => n.add_to_model(network, args),
@@ -472,7 +504,7 @@ impl Node {
             Node::Catchment(n) => n.set_constraints(network, args),
             Node::RiverGauge(n) => n.set_constraints(network, args),
             Node::LossLink(n) => n.set_constraints(network, args),
-            Node::River(_) => Ok(()), // No constraints on river node
+            Node::River(n) => n.set_constraints(network, args),
             Node::RiverSplitWithGauge(n) => n.set_constraints(network, args),
             Node::WaterTreatmentWorks(n) => n.set_constraints(network, args),
             Node::Aggregated(n) => n.set_constraints(network, args),
@@ -522,50 +554,67 @@ impl Node {
     }
 }
 
-impl TryFrom<NodeV1> for Node {
-    type Error = ConversionError;
+impl TryFromV1<NodeV1> for Node {
+    type Error = ComponentConversionError;
 
-    fn try_from(v1: NodeV1) -> Result<Self, Self::Error> {
+    fn try_from_v1(
+        v1: NodeV1,
+        parent_node: Option<&str>,
+        conversion_data: &mut ConversionData,
+    ) -> Result<Self, Self::Error> {
         match v1 {
             NodeV1::Core(n) => {
-                let nv2: Node = n.try_into()?;
+                let nv2: Node = n.try_into_v2(parent_node, conversion_data)?;
                 Ok(nv2)
             }
-            NodeV1::Custom(n) => Err(ConversionError::CustomNodeNotSupported {
+            NodeV1::Custom(n) => Err(ComponentConversionError::Node {
                 name: n.meta.name,
-                ty: n.ty,
+                attr: "".to_string(),
+                error: ConversionError::CustomTypeNotSupported { ty: n.ty },
             }),
         }
     }
 }
 
-impl TryFrom<Box<CoreNodeV1>> for Node {
-    type Error = ConversionError;
+impl TryFromV1<Box<CoreNodeV1>> for Node {
+    type Error = ComponentConversionError;
 
-    fn try_from(v1: Box<CoreNodeV1>) -> Result<Self, Self::Error> {
+    fn try_from_v1(
+        v1: Box<CoreNodeV1>,
+        parent_node: Option<&str>,
+        conversion_data: &mut ConversionData,
+    ) -> Result<Self, Self::Error> {
         let n = match *v1 {
-            CoreNodeV1::Input(n) => Self::Input(n.try_into()?),
-            CoreNodeV1::Link(n) => Self::Link(n.try_into()?),
-            CoreNodeV1::Output(n) => Self::Output(n.try_into()?),
-            CoreNodeV1::Storage(n) => Self::Storage(n.try_into()?),
-            CoreNodeV1::Reservoir(n) => Self::Storage(n.try_into()?),
-            CoreNodeV1::Catchment(n) => Self::Catchment(n.try_into()?),
-            CoreNodeV1::RiverGauge(n) => Self::RiverGauge(n.try_into()?),
-            CoreNodeV1::LossLink(n) => Self::LossLink(n.try_into()?),
-            CoreNodeV1::River(n) => Self::River(n.try_into()?),
-            CoreNodeV1::RiverSplitWithGauge(n) => Self::RiverSplitWithGauge(n.try_into()?),
-            CoreNodeV1::Aggregated(n) => Self::Aggregated(n.try_into()?),
-            CoreNodeV1::AggregatedStorage(n) => Self::AggregatedStorage(n.try_into()?),
-            CoreNodeV1::VirtualStorage(n) => Self::VirtualStorage(n.try_into()?),
-            CoreNodeV1::AnnualVirtualStorage(n) => Self::AnnualVirtualStorage(n.try_into()?),
-            CoreNodeV1::PiecewiseLink(n) => Self::PiecewiseLink(n.try_into()?),
+            CoreNodeV1::Input(n) => Node::Input(n.try_into_v2(parent_node, conversion_data)?),
+            CoreNodeV1::Link(n) => Node::Link(n.try_into_v2(parent_node, conversion_data)?),
+            CoreNodeV1::Output(n) => Node::Output(n.try_into_v2(parent_node, conversion_data)?),
+            CoreNodeV1::Storage(n) => Node::Storage(n.try_into_v2(parent_node, conversion_data)?),
+            CoreNodeV1::Reservoir(n) => Node::Storage(n.try_into_v2(parent_node, conversion_data)?),
+            CoreNodeV1::Catchment(n) => Node::Catchment(n.try_into_v2(parent_node, conversion_data)?),
+            CoreNodeV1::RiverGauge(n) => Node::RiverGauge(n.try_into_v2(parent_node, conversion_data)?),
+            CoreNodeV1::LossLink(n) => Node::LossLink(n.try_into_v2(parent_node, conversion_data)?),
+            CoreNodeV1::River(n) => Node::River(n.try_into()?),
+            CoreNodeV1::RiverSplitWithGauge(n) => {
+                Node::RiverSplitWithGauge(n.try_into_v2(parent_node, conversion_data)?)
+            }
+            CoreNodeV1::Aggregated(n) => Node::Aggregated(n.try_into_v2(parent_node, conversion_data)?),
+            CoreNodeV1::AggregatedStorage(n) => Node::AggregatedStorage(n.into()),
+            CoreNodeV1::VirtualStorage(n) => Node::VirtualStorage(n.try_into_v2(parent_node, conversion_data)?),
+            CoreNodeV1::AnnualVirtualStorage(n) => {
+                Node::AnnualVirtualStorage(n.try_into_v2(parent_node, conversion_data)?)
+            }
+            CoreNodeV1::PiecewiseLink(n) => Node::PiecewiseLink(n.try_into_v2(parent_node, conversion_data)?),
             CoreNodeV1::MultiSplitLink(_) => todo!(),
             CoreNodeV1::BreakLink(_) => todo!(),
-            CoreNodeV1::Delay(n) => Self::Delay(n.try_into()?),
+            CoreNodeV1::Delay(n) => Node::Delay(n.try_into()?),
             CoreNodeV1::RiverSplit(_) => todo!("Conversion of RiverSplit nodes"),
-            CoreNodeV1::MonthlyVirtualStorage(n) => Self::MonthlyVirtualStorage(n.try_into()?),
+            CoreNodeV1::MonthlyVirtualStorage(n) => {
+                Node::MonthlyVirtualStorage(n.try_into_v2(parent_node, conversion_data)?)
+            }
             CoreNodeV1::SeasonalVirtualStorage(_) => todo!("Conversion of SeasonalVirtualStorage nodes"),
-            CoreNodeV1::RollingVirtualStorage(n) => Self::RollingVirtualStorage(n.try_into()?),
+            CoreNodeV1::RollingVirtualStorage(n) => {
+                Node::RollingVirtualStorage(n.try_into_v2(parent_node, conversion_data)?)
+            }
         };
 
         Ok(n)
@@ -680,117 +729,12 @@ impl VisitPaths for Node {
     }
 }
 
-/// struct that acts as a container for a node and any associated timeseries data.
-///
-/// v1 nodes may contain inline DataFrame parameters from which data needs to be extract
-/// to created timeseries entries in the schema.
-#[derive(Debug)]
-pub struct NodeAndTimeseries {
-    pub node: Node,
-    pub timeseries: Option<Vec<TimeseriesV1Data>>,
-}
-
-impl TryFrom<NodeV1> for NodeAndTimeseries {
-    type Error = ConversionError;
-
-    fn try_from(v1: NodeV1) -> Result<Self, Self::Error> {
-        let mut ts_vec = Vec::new();
-        let mut unnamed_count: usize = 0;
-
-        // extract timeseries data for all inline DataFame parameters included in the node.
-        for param_value in v1.parameters().values() {
-            ts_vec.extend(extract_timeseries(param_value, v1.name(), &mut unnamed_count));
-        }
-        let timeseries = if ts_vec.is_empty() { None } else { Some(ts_vec) };
-
-        // Now convert the node to the v2 schema representation
-        let node = Node::try_from(v1)?;
-        Ok(Self { node, timeseries })
-    }
-}
-
-/// Extract timeseries data from a parameter value.
-///
-/// If the parameter value is a DataFrame, then convert it to timeseries data. If it is another type then recursively
-/// call the function on any inline parameters this parameter may contain to check for other dataframe parameters.
-fn extract_timeseries(
-    param_value: &ParameterValueType,
-    name: &str,
-    unnamed_count: &mut usize,
-) -> Vec<TimeseriesV1Data> {
-    let mut ts_vec = Vec::new();
-    match param_value {
-        ParameterValueType::Single(param) => {
-            if let ParameterValueV1::Inline(p) = param {
-                if let ParameterV1::Core(CoreParameterV1::DataFrame(df_param)) = p.as_ref() {
-                    let mut ts_data: TimeseriesV1Data = df_param.clone().into();
-                    if ts_data.name.is_none() {
-                        // Because the parameter could contain multiple inline DataFrame parameters use the unnamed_count
-                        // to create a unique name.
-                        let name = format!("{}-p{}.timeseries", name, unnamed_count);
-                        *unnamed_count += 1;
-                        ts_data.name = Some(name);
-                    }
-                    ts_vec.push(ts_data);
-                } else {
-                    // Not a dataframe parameter but the parameter might have child dataframe parameters.
-                    // Update the name and call the function recursively on all child parameters.
-                    let name = if p.name().is_none() {
-                        let n = format!("{}-p{}", name, unnamed_count);
-                        *unnamed_count += 1;
-                        n
-                    } else {
-                        p.name().unwrap().to_string()
-                    };
-                    for nested_param in p.parameters().values() {
-                        ts_vec.extend(extract_timeseries(nested_param, &name, unnamed_count));
-                    }
-                }
-            }
-        }
-        ParameterValueType::List(params) => {
-            for param in params.iter() {
-                if let ParameterValueV1::Inline(p) = param {
-                    if let ParameterV1::Core(CoreParameterV1::DataFrame(df_param)) = p.as_ref() {
-                        let mut ts_data: TimeseriesV1Data = df_param.clone().into();
-                        if ts_data.name.is_none() {
-                            // Because the parameter could contain multiple inline DataFrame parameters use the unnamed_count
-                            // to create a unique name.
-                            let name = format!("{}-p{}.timeseries", name, unnamed_count);
-                            *unnamed_count += 1;
-                            ts_data.name = Some(name);
-                        }
-                        ts_vec.push(ts_data);
-                    } else {
-                        // Not a dataframe parameter but the parameter might have child dataframe parameters.
-                        // Update the name and call the function recursively on all child parameters.
-                        let name = if p.name().is_none() {
-                            let n = format!("{}-p{}", name, unnamed_count);
-                            *unnamed_count += 1;
-                            n
-                        } else {
-                            p.name().unwrap().to_string()
-                        };
-                        for nested_param in p.parameters().values() {
-                            ts_vec.extend(extract_timeseries(nested_param, &name, unnamed_count));
-                        }
-                    }
-                }
-            }
-        }
-    };
-    ts_vec
-}
-
 #[cfg(test)]
 mod tests {
-    use pywr_v1_schema::nodes::Node as NodeV1;
-
     use crate::metric::Metric;
-    use crate::{
-        nodes::{Node, NodeAndTimeseries},
-        parameters::Parameter,
-    };
+    use crate::nodes::Node;
+    use crate::v1::{ConversionData, TryIntoV2};
+    use pywr_v1_schema::nodes::Node as NodeV1;
 
     #[test]
     fn test_ts_inline() {
@@ -811,14 +755,16 @@ mod tests {
 
         let v1_node: NodeV1 = serde_json::from_str(node_data).unwrap();
 
-        let node_ts: NodeAndTimeseries = v1_node.try_into().unwrap();
+        let mut conversion_data = ConversionData::default();
 
-        let input_node = match node_ts.node {
+        let node_ts: Node = v1_node.try_into_v2(None, &mut conversion_data).unwrap();
+
+        let input_node = match node_ts {
             Node::Input(n) => n,
             _ => panic!("Expected InputNode"),
         };
 
-        let expected_name = String::from("catchment1-p0.timeseries");
+        let expected_name = String::from("catchment1-p0");
 
         match input_node.max_flow {
             Some(Metric::Timeseries(ts)) => {
@@ -827,13 +773,8 @@ mod tests {
             _ => panic!("Expected Timeseries"),
         };
 
-        match node_ts.timeseries {
-            Some(ts) => {
-                assert_eq!(ts.len(), 1);
-                assert_eq!(ts.first().unwrap().name.as_ref().unwrap().as_str(), &expected_name);
-            }
-            None => panic!("Expected timeseries data"),
-        };
+        assert_eq!(conversion_data.timeseries.len(), 1);
+        assert_eq!(conversion_data.timeseries[0].name(), &expected_name);
     }
 
     #[test]
@@ -877,46 +818,26 @@ mod tests {
 
         let v1_node: NodeV1 = serde_json::from_str(node_data).unwrap();
 
-        let node_ts: NodeAndTimeseries = v1_node.try_into().unwrap();
+        let mut conversion_data = ConversionData::default();
+        let node_ts: Node = v1_node.try_into_v2(None, &mut conversion_data).unwrap();
 
-        let input_node = match node_ts.node {
+        let input_node = match node_ts {
             Node::Input(n) => n,
             _ => panic!("Expected InputNode"),
         };
 
-        let expected_name1 = String::from("catchment1-p0-p2.timeseries");
-        let expected_name2 = String::from("catchment1-p0-p4.timeseries");
+        let expected_name1 = "catchment1-p2";
+        let expected_name2 = "catchment1-p4";
 
         match input_node.max_flow {
-            Some(Metric::InlineParameter { definition }) => match *definition {
-                Parameter::Aggregated(param) => {
-                    assert_eq!(param.metrics.len(), 4);
-                    match &param.metrics[1] {
-                        Metric::Timeseries(ts) => {
-                            assert_eq!(ts.name(), &expected_name1)
-                        }
-                        _ => panic!("Expected Timeseries"),
-                    }
-
-                    match &param.metrics[3] {
-                        Metric::Timeseries(ts) => {
-                            assert_eq!(ts.name(), &expected_name2)
-                        }
-                        _ => panic!("Expected Timeseries"),
-                    }
-                }
-                _ => panic!("Expected Aggregated parameter"),
-            },
+            Some(Metric::Parameter(parameter_ref)) => assert_eq!(&parameter_ref.name, "catchment1-p0"),
             _ => panic!("Expected Timeseries"),
         };
 
-        match node_ts.timeseries {
-            Some(ts) => {
-                assert_eq!(ts.len(), 2);
-                assert_eq!(ts[0].name.as_ref().unwrap().as_str(), &expected_name1);
-                assert_eq!(ts[1].name.as_ref().unwrap().as_str(), &expected_name2);
-            }
-            None => panic!("Expected timeseries data"),
-        };
+        assert_eq!(conversion_data.parameters.len(), 3);
+
+        assert_eq!(conversion_data.timeseries.len(), 2);
+        assert_eq!(conversion_data.timeseries[0].name(), expected_name1);
+        assert_eq!(conversion_data.timeseries[1].name(), expected_name2);
     }
 }

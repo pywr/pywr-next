@@ -1,11 +1,12 @@
-use crate::error::ConversionError;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
+use crate::error::{ComponentConversionError, ConversionError};
 use crate::metric::{Metric, SimpleNodeReference};
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::nodes::{NodeAttribute, NodeMeta, StorageInitialVolume};
-use crate::parameters::TryIntoV2Parameter;
+use crate::parameters::Parameter;
+use crate::v1::{try_convert_initial_storage, try_convert_node_attr, ConversionData, TryFromV1};
 #[cfg(feature = "core")]
 use pywr_core::{
     derived_metric::DerivedMetric,
@@ -71,6 +72,8 @@ impl RollingWindow {
 #[serde(deny_unknown_fields)]
 pub struct RollingVirtualStorageNode {
     pub meta: NodeMeta,
+    /// Optional local parameters.
+    pub parameters: Option<Vec<Parameter>>,
     pub nodes: Vec<SimpleNodeReference>,
     pub factors: Option<Vec<f64>>,
     pub max_volume: Option<Metric>,
@@ -120,17 +123,17 @@ impl RollingVirtualStorageNode {
     }
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network, args: &LoadArgs) -> Result<(), SchemaError> {
         let cost = match &self.cost {
-            Some(v) => v.load(network, args)?.into(),
+            Some(v) => v.load(network, args, Some(&self.meta.name))?.into(),
             None => None,
         };
 
         let min_volume = match &self.min_volume {
-            Some(v) => Some(v.load(network, args)?.try_into()?),
+            Some(v) => Some(v.load(network, args, Some(&self.meta.name))?.try_into()?),
             None => None,
         };
 
         let max_volume = match &self.max_volume {
-            Some(v) => Some(v.load(network, args)?.try_into()?),
+            Some(v) => Some(v.load(network, args, Some(&self.meta.name))?.try_into()?),
             None => None,
         };
 
@@ -189,60 +192,54 @@ impl RollingVirtualStorageNode {
     }
 }
 
-impl TryFrom<RollingVirtualStorageNodeV1> for RollingVirtualStorageNode {
-    type Error = ConversionError;
+impl TryFromV1<RollingVirtualStorageNodeV1> for RollingVirtualStorageNode {
+    type Error = ComponentConversionError;
 
-    fn try_from(v1: RollingVirtualStorageNodeV1) -> Result<Self, Self::Error> {
+    fn try_from_v1(
+        v1: RollingVirtualStorageNodeV1,
+        parent_node: Option<&str>,
+        conversion_data: &mut ConversionData,
+    ) -> Result<Self, Self::Error> {
         let meta: NodeMeta = v1.meta.into();
-        let mut unnamed_count = 0;
 
-        let cost = v1
-            .cost
-            .map(|v| v.try_into_v2_parameter(Some(&meta.name), &mut unnamed_count))
-            .transpose()?;
-        let max_volume = v1
-            .max_volume
-            .map(|v| v.try_into_v2_parameter(Some(&meta.name), &mut unnamed_count))
-            .transpose()?;
+        let cost = try_convert_node_attr(&meta.name, "cost", v1.cost, parent_node, conversion_data)?;
+        let max_volume = try_convert_node_attr(&meta.name, "max_volume", v1.max_volume, parent_node, conversion_data)?;
+        let min_volume = try_convert_node_attr(&meta.name, "min_volume", v1.min_volume, parent_node, conversion_data)?;
 
-        let min_volume = v1
-            .min_volume
-            .map(|v| v.try_into_v2_parameter(Some(&meta.name), &mut unnamed_count))
-            .transpose()?;
-
-        let initial_volume = if let Some(v) = v1.initial_volume {
-            StorageInitialVolume::Absolute(v)
-        } else if let Some(v) = v1.initial_volume_pc {
-            StorageInitialVolume::Proportional(v)
-        } else {
-            return Err(ConversionError::MissingAttribute {
-                name: meta.name,
-                attrs: vec!["initial_volume".to_string(), "initial_volume_pc".to_string()],
-            });
-        };
+        let initial_volume =
+            try_convert_initial_storage(&meta.name, "initial_volume", v1.initial_volume, v1.initial_volume_pc)?;
 
         let window = if let Some(days) = v1.days {
             if let Some(days) = NonZeroUsize::new(days as usize) {
                 RollingWindow::Days(days)
             } else {
-                return Err(ConversionError::UnsupportedFeature {
-                    feature: "Rolling window with zero `days` is not supported".to_string(),
+                return Err(ComponentConversionError::Node {
                     name: meta.name.clone(),
+                    attr: "window".to_string(),
+                    error: ConversionError::UnsupportedFeature {
+                        feature: "Rolling window with zero `days` is not supported".to_string(),
+                    },
                 });
             }
         } else if let Some(timesteps) = v1.timesteps {
             if let Some(timesteps) = NonZeroUsize::new(timesteps as usize) {
                 RollingWindow::Timesteps(timesteps)
             } else {
-                return Err(ConversionError::UnsupportedFeature {
-                    feature: "Rolling window with zero `timesteps` is not supported".to_string(),
+                return Err(ComponentConversionError::Node {
                     name: meta.name.clone(),
+                    attr: "window".to_string(),
+                    error: ConversionError::UnsupportedFeature {
+                        feature: "Rolling window with zero `timesteps` is not supported".to_string(),
+                    },
                 });
             }
         } else {
-            return Err(ConversionError::MissingAttribute {
-                attrs: vec!["days".to_string(), "timesteps".to_string()],
+            return Err(ComponentConversionError::Node {
                 name: meta.name.clone(),
+                attr: "window".to_string(),
+                error: ConversionError::MissingAttribute {
+                    attrs: vec!["days".to_string(), "timesteps".to_string()],
+                },
             });
         };
 
@@ -250,6 +247,7 @@ impl TryFrom<RollingVirtualStorageNodeV1> for RollingVirtualStorageNode {
 
         let n = Self {
             meta,
+            parameters: None,
             nodes,
             factors: v1.factors,
             max_volume,
@@ -259,39 +257,5 @@ impl TryFrom<RollingVirtualStorageNodeV1> for RollingVirtualStorageNode {
             window,
         };
         Ok(n)
-    }
-}
-
-#[cfg(test)]
-#[cfg(feature = "core")]
-mod tests {
-    use crate::model::PywrModel;
-    use ndarray::Array2;
-    use pywr_core::metric::MetricF64;
-    use pywr_core::recorders::AssertionRecorder;
-    use pywr_core::test_utils::run_all_solvers;
-
-    fn model_str() -> &'static str {
-        include_str!("../test_models/30-day-licence.json")
-    }
-
-    #[test]
-    fn test_model_run() {
-        let data = model_str();
-        let schema: PywrModel = serde_json::from_str(data).unwrap();
-        let mut model: pywr_core::models::Model = schema.build_model(None, None).unwrap();
-
-        let network = model.network_mut();
-        assert_eq!(network.nodes().len(), 3);
-        assert_eq!(network.edges().len(), 2);
-
-        // TODO put this assertion data in the test model file.
-        let idx = network.get_node_by_name("link1", None).unwrap().index();
-        let expected = Array2::from_elem((366, 1), 10.0);
-        let recorder = AssertionRecorder::new("link1-inflow", MetricF64::NodeInFlow(idx), expected, None, None);
-        network.add_recorder(Box::new(recorder)).unwrap();
-
-        // Test all solvers
-        run_all_solvers(&model, &[], &[]);
     }
 }

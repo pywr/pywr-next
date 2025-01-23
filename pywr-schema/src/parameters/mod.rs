@@ -26,12 +26,14 @@ mod thresholds;
 #[cfg(feature = "core")]
 pub use super::data_tables::LoadedTableCollection;
 pub use super::data_tables::TableDataRef;
-use crate::error::ConversionError;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
+use crate::error::{ComponentConversionError, ConversionError};
 use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
+use crate::timeseries::ConvertedTimeseriesReference;
+use crate::v1::{ConversionData, IntoV2, TryFromV1, TryIntoV2};
 use crate::visit::{VisitMetrics, VisitPaths};
 pub use aggregated::{AggFunc, AggregatedIndexParameter, AggregatedParameter, IndexAggFunc};
 pub use asymmetric_switch::AsymmetricSwitchIndexParameter;
@@ -54,19 +56,15 @@ pub use profiles::{
     DailyProfileParameter, MonthlyInterpDay, MonthlyProfileParameter, RadialBasisFunction, RbfProfileParameter,
     RbfProfileVariableSettings, UniformDrawdownProfileParameter, WeeklyProfileParameter,
 };
-#[cfg(feature = "core")]
+#[cfg(all(feature = "core", feature = "pyo3"))]
 pub use python::try_json_value_into_py;
 pub use python::{PythonParameter, PythonReturnType, PythonSource};
-#[cfg(feature = "core")]
-use pywr_core::{metric::MetricUsize, parameters::ParameterIndex};
 use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::parameters::{
     CoreParameter, DataFrameParameter as DataFrameParameterV1, Parameter as ParameterV1,
-    ParameterMeta as ParameterMetaV1, ParameterValue as ParameterValueV1, ParameterVec, TableIndex as TableIndexV1,
-    TableIndexEntry as TableIndexEntryV1,
+    ParameterValue as ParameterValueV1, TableIndex as TableIndexV1, TableIndexEntry as TableIndexEntryV1,
 };
 use schemars::JsonSchema;
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use strum_macros::{Display, EnumDiscriminants, EnumString, IntoStaticStr, VariantNames};
 pub use tables::TablesArrayParameter;
@@ -79,82 +77,10 @@ pub struct ParameterMeta {
     pub comment: Option<String>,
 }
 
-pub trait FromV1Parameter<T>: Sized {
-    fn from_v1_parameter(v1: T, parent_node: Option<&str>, unnamed_count: &mut usize) -> Self;
-}
-
-pub trait IntoV2Parameter<T> {
-    fn into_v2_parameter(self, parent_node: Option<&str>, unnamed_count: &mut usize) -> T;
-}
-
-// FromV1Parameter implies IntoV2Parameter
-impl<T, U> IntoV2Parameter<U> for T
-where
-    U: FromV1Parameter<T>,
-{
-    fn into_v2_parameter(self, parent_node: Option<&str>, unnamed_count: &mut usize) -> U {
-        U::from_v1_parameter(self, parent_node, unnamed_count)
-    }
-}
-
-pub trait TryFromV1Parameter<T>: Sized {
-    type Error;
-    fn try_from_v1_parameter(v1: T, parent_node: Option<&str>, unnamed_count: &mut usize) -> Result<Self, Self::Error>;
-}
-
-pub trait TryIntoV2Parameter<T> {
-    type Error;
-    fn try_into_v2_parameter(self, parent_node: Option<&str>, unnamed_count: &mut usize) -> Result<T, Self::Error>;
-}
-
-// TryFromV1Parameter implies TryIntoV2Parameter
-impl<T, U> TryIntoV2Parameter<U> for T
-where
-    U: TryFromV1Parameter<T>,
-{
-    type Error = U::Error;
-
-    fn try_into_v2_parameter(self, parent_node: Option<&str>, unnamed_count: &mut usize) -> Result<U, Self::Error> {
-        U::try_from_v1_parameter(self, parent_node, unnamed_count)
-    }
-}
-
-impl FromV1Parameter<ParameterMetaV1> for ParameterMeta {
-    fn from_v1_parameter(v1: ParameterMetaV1, parent_node: Option<&str>, unnamed_count: &mut usize) -> Self {
-        Self {
-            name: v1.name.unwrap_or_else(|| {
-                let pname = match parent_node {
-                    Some(pn) => format!("{pn}-p{unnamed_count}"),
-                    None => format!("unnamed-{unnamed_count}"),
-                };
-                *unnamed_count += 1;
-                pname
-            }),
-            comment: v1.comment,
-        }
-    }
-}
-
-impl FromV1Parameter<Option<ParameterMetaV1>> for ParameterMeta {
-    fn from_v1_parameter(v1: Option<ParameterMetaV1>, parent_node: Option<&str>, unnamed_count: &mut usize) -> Self {
-        match v1 {
-            Some(meta) => meta.into_v2_parameter(parent_node, unnamed_count),
-            None => {
-                let meta = Self {
-                    name: format!("unnamed-{unnamed_count}"),
-                    comment: None,
-                };
-                *unnamed_count += 1;
-                meta
-            }
-        }
-    }
-}
-
 #[derive(serde::Deserialize, serde::Serialize, Debug, EnumDiscriminants, Clone, JsonSchema, Display)]
 #[serde(tag = "type")]
 #[strum_discriminants(derive(Display, IntoStaticStr, EnumString, VariantNames))]
-// This creates a separate enum called `NodeType` that is available in this module.
+// This creates a separate enum called `ParameterType` that is available in this module.
 #[strum_discriminants(name(ParameterType))]
 pub enum Parameter {
     Aggregated(AggregatedParameter),
@@ -235,9 +161,12 @@ impl Parameter {
         &self,
         network: &mut pywr_core::network::Network,
         args: &LoadArgs,
+        parent: Option<&str>,
     ) -> Result<pywr_core::parameters::ParameterType, SchemaError> {
         let ty = match self {
-            Self::Constant(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
+            Self::Constant(p) => {
+                pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args, parent)?)
+            }
             Self::ControlCurveInterpolated(p) => {
                 pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?)
             }
@@ -262,7 +191,7 @@ impl Parameter {
             Self::Min(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
             Self::Negative(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
             Self::Polynomial1D(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
-            Self::Threshold(p) => pywr_core::parameters::ParameterType::Index(p.add_to_model(network, args)?),
+            Self::Threshold(p) => p.add_to_model(network, args)?,
             Self::TablesArray(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
             Self::Python(p) => p.add_to_model(network, args)?,
             Self::Delay(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
@@ -422,242 +351,162 @@ impl VisitPaths for Parameter {
     }
 }
 
-pub fn convert_parameter_v1_to_v2(
-    v1_parameters: ParameterVec,
-    unnamed_count: &mut usize,
-    errors: &mut Vec<ConversionError>,
-) -> (Vec<Parameter>, Vec<TimeseriesV1Data>) {
-    let param_or_ts: Vec<ParameterOrTimeseries> = v1_parameters
-        .into_iter()
-        .filter_map(|p| match p.try_into_v2_parameter(None, unnamed_count) {
-            Ok(pt) => Some(pt),
-            Err(e) => {
-                errors.push(e);
-                None
-            }
-        })
-        .collect::<Vec<_>>();
-
-    let parameters = param_or_ts
-        .clone()
-        .into_iter()
-        .filter_map(|pot| match pot {
-            ParameterOrTimeseries::Parameter(p) => Some(p),
-            ParameterOrTimeseries::Timeseries(_) => None,
-        })
-        .collect();
-
-    let timeseries = param_or_ts
-        .into_iter()
-        .filter_map(|pot| match pot {
-            ParameterOrTimeseries::Parameter(_) => None,
-            ParameterOrTimeseries::Timeseries(t) => Some(t),
-        })
-        .collect();
-
-    (parameters, timeseries)
-}
-
 #[derive(Clone)]
-pub enum ParameterOrTimeseries {
-    Parameter(Parameter),
-    Timeseries(TimeseriesV1Data),
+pub enum ParameterOrTimeseriesRef {
+    // Boxed due to large size difference.
+    Parameter(Box<Parameter>),
+    Timeseries(ConvertedTimeseriesReference),
 }
 
-#[derive(Clone, Debug)]
-pub struct TimeseriesV1Data {
-    pub name: Option<String>,
-    pub source: TimeseriesV1Source,
-    pub time_col: Option<String>,
-    pub column: Option<String>,
-    pub scenario: Option<String>,
-    pub pandas_kwargs: HashMap<String, serde_json::Value>,
-}
-
-impl From<DataFrameParameterV1> for TimeseriesV1Data {
-    fn from(p: DataFrameParameterV1) -> Self {
-        let source = if let Some(url) = p.url {
-            TimeseriesV1Source::Url(url)
-        } else if let Some(tbl) = p.table {
-            TimeseriesV1Source::Table(tbl)
-        } else {
-            panic!("DataFrameParameter must have a url or table attribute.")
-        };
-
-        let name = p.meta.and_then(|m| m.name);
-
-        let mut pandas_kwargs = p.pandas_kwargs;
-
-        let time_col = match pandas_kwargs.remove("index_col") {
-            Some(v) => v.as_str().map(|s| s.to_string()),
-            None => None,
-        };
-
-        Self {
-            name,
-            source,
-            time_col,
-            column: p.column,
-            scenario: p.scenario,
-            pandas_kwargs,
-        }
-    }
-}
-
-#[derive(Clone, Debug)]
-pub enum TimeseriesV1Source {
-    Url(PathBuf),
-    Table(String),
-}
-
-impl From<Parameter> for ParameterOrTimeseries {
+impl From<Parameter> for ParameterOrTimeseriesRef {
     fn from(p: Parameter) -> Self {
-        Self::Parameter(p)
+        Self::Parameter(Box::new(p))
     }
 }
 
-impl From<TimeseriesV1Data> for ParameterOrTimeseries {
-    fn from(t: TimeseriesV1Data) -> Self {
+impl From<ConvertedTimeseriesReference> for ParameterOrTimeseriesRef {
+    fn from(t: ConvertedTimeseriesReference) -> Self {
         Self::Timeseries(t)
     }
 }
 
-impl TryFromV1Parameter<ParameterV1> for ParameterOrTimeseries {
-    type Error = ConversionError;
+impl TryFromV1<ParameterV1> for ParameterOrTimeseriesRef {
+    type Error = ComponentConversionError;
 
-    fn try_from_v1_parameter(
+    fn try_from_v1(
         v1: ParameterV1,
         parent_node: Option<&str>,
-        unnamed_count: &mut usize,
+        conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let p: ParameterOrTimeseries = match v1 {
+        let p: ParameterOrTimeseriesRef = match v1 {
             ParameterV1::Core(v1) => match v1 {
                 CoreParameter::Aggregated(p) => {
-                    Parameter::Aggregated(p.try_into_v2_parameter(parent_node, unnamed_count)?).into()
+                    Parameter::Aggregated(p.try_into_v2(parent_node, conversion_data)?).into()
                 }
                 CoreParameter::AggregatedIndex(p) => {
-                    Parameter::AggregatedIndex(p.try_into_v2_parameter(parent_node, unnamed_count)?).into()
+                    Parameter::AggregatedIndex(p.try_into_v2(parent_node, conversion_data)?).into()
                 }
                 CoreParameter::AsymmetricSwitchIndex(p) => {
-                    Parameter::AsymmetricSwitchIndex(p.try_into_v2_parameter(parent_node, unnamed_count)?).into()
+                    Parameter::AsymmetricSwitchIndex(p.try_into_v2(parent_node, conversion_data)?).into()
                 }
-                CoreParameter::Constant(p) => {
-                    Parameter::Constant(p.try_into_v2_parameter(parent_node, unnamed_count)?).into()
-                }
+                CoreParameter::Constant(p) => Parameter::Constant(p.try_into_v2(parent_node, conversion_data)?).into(),
                 CoreParameter::ControlCurvePiecewiseInterpolated(p) => {
-                    Parameter::ControlCurvePiecewiseInterpolated(p.try_into_v2_parameter(parent_node, unnamed_count)?)
-                        .into()
+                    Parameter::ControlCurvePiecewiseInterpolated(p.try_into_v2(parent_node, conversion_data)?).into()
                 }
                 CoreParameter::ControlCurveInterpolated(p) => {
-                    Parameter::ControlCurveInterpolated(p.try_into_v2_parameter(parent_node, unnamed_count)?).into()
+                    Parameter::ControlCurveInterpolated(p.try_into_v2(parent_node, conversion_data)?).into()
                 }
                 CoreParameter::ControlCurveIndex(p) => {
-                    Parameter::ControlCurveIndex(p.try_into_v2_parameter(parent_node, unnamed_count)?).into()
+                    Parameter::ControlCurveIndex(p.try_into_v2(parent_node, conversion_data)?).into()
                 }
-                CoreParameter::ControlCurve(p) => match p.clone().try_into_v2_parameter(parent_node, unnamed_count) {
+                CoreParameter::ControlCurve(p) => match p.clone().try_into_v2(parent_node, conversion_data) {
                     Ok(p) => Parameter::ControlCurve(p).into(),
-                    Err(_) => Parameter::ControlCurveIndex(p.try_into_v2_parameter(parent_node, unnamed_count)?).into(),
+                    Err(_) => Parameter::ControlCurveIndex(p.try_into_v2(parent_node, conversion_data)?).into(),
                 },
                 CoreParameter::DailyProfile(p) => {
-                    Parameter::DailyProfile(p.try_into_v2_parameter(parent_node, unnamed_count)?).into()
+                    Parameter::DailyProfile(p.try_into_v2(parent_node, conversion_data)?).into()
                 }
                 CoreParameter::IndexedArray(p) => {
-                    Parameter::IndexedArray(p.try_into_v2_parameter(parent_node, unnamed_count)?).into()
+                    Parameter::IndexedArray(p.try_into_v2(parent_node, conversion_data)?).into()
                 }
                 CoreParameter::MonthlyProfile(p) => {
-                    Parameter::MonthlyProfile(p.try_into_v2_parameter(parent_node, unnamed_count)?).into()
+                    Parameter::MonthlyProfile(p.try_into_v2(parent_node, conversion_data)?).into()
                 }
                 CoreParameter::UniformDrawdownProfile(p) => {
-                    Parameter::UniformDrawdownProfile(p.try_into_v2_parameter(parent_node, unnamed_count)?).into()
+                    Parameter::UniformDrawdownProfile(p.into_v2(parent_node, conversion_data)).into()
                 }
-                CoreParameter::Max(p) => Parameter::Max(p.try_into_v2_parameter(parent_node, unnamed_count)?).into(),
-                CoreParameter::Negative(p) => {
-                    Parameter::Negative(p.try_into_v2_parameter(parent_node, unnamed_count)?).into()
-                }
+                CoreParameter::Max(p) => Parameter::Max(p.try_into_v2(parent_node, conversion_data)?).into(),
+                CoreParameter::Negative(p) => Parameter::Negative(p.try_into_v2(parent_node, conversion_data)?).into(),
                 CoreParameter::Polynomial1D(p) => {
-                    Parameter::Polynomial1D(p.try_into_v2_parameter(parent_node, unnamed_count)?).into()
+                    Parameter::Polynomial1D(p.into_v2(parent_node, conversion_data)).into()
                 }
                 CoreParameter::ParameterThreshold(p) => {
-                    Parameter::Threshold(p.try_into_v2_parameter(parent_node, unnamed_count)?).into()
+                    Parameter::Threshold(p.try_into_v2(parent_node, conversion_data)?).into()
                 }
-                CoreParameter::TablesArray(p) => {
-                    Parameter::TablesArray(p.try_into_v2_parameter(parent_node, unnamed_count)?).into()
+                CoreParameter::NodeThreshold(p) => {
+                    Parameter::Threshold(p.try_into_v2(parent_node, conversion_data)?).into()
                 }
-                CoreParameter::Min(p) => Parameter::Min(p.try_into_v2_parameter(parent_node, unnamed_count)?).into(),
-                CoreParameter::Division(p) => {
-                    Parameter::Division(p.try_into_v2_parameter(parent_node, unnamed_count)?).into()
+                CoreParameter::StorageThreshold(p) => {
+                    Parameter::Threshold(p.try_into_v2(parent_node, conversion_data)?).into()
                 }
+                CoreParameter::MultipleThresholdIndex(_) => todo!(),
+                CoreParameter::MultipleThresholdParameterIndex(_) => todo!(),
+                CoreParameter::CurrentYearThreshold(_) => todo!(),
+                CoreParameter::CurrentOrdinalDayThreshold(_) => todo!(),
+                CoreParameter::TablesArray(p) => Parameter::TablesArray(p.into_v2(parent_node, conversion_data)).into(),
+                CoreParameter::Min(p) => Parameter::Min(p.try_into_v2(parent_node, conversion_data)?).into(),
+                CoreParameter::Division(p) => Parameter::Division(p.try_into_v2(parent_node, conversion_data)?).into(),
                 CoreParameter::DataFrame(p) => {
-                    let ts_data: TimeseriesV1Data = p.into();
-                    ts_data.into()
+                    <DataFrameParameterV1 as TryIntoV2<ConvertedTimeseriesReference>>::try_into_v2(
+                        p,
+                        parent_node,
+                        conversion_data,
+                    )?
+                    .into()
                 }
                 CoreParameter::Deficit(p) => {
-                    return Err(ConversionError::DeprecatedParameter {
-                        ty: "DeficitParameter".to_string(),
+                    return Err(ComponentConversionError::Parameter {
                         name: p.meta.and_then(|m| m.name).unwrap_or("unnamed".to_string()),
-                        instead: "Use a derived metric instead.".to_string(),
-                    })
+                        attr: "".to_string(),
+                        error: ConversionError::DeprecatedParameter {
+                            ty: "DeficitParameter".to_string(),
+                            instead: "Use a derived metric instead.".to_string(),
+                        },
+                    });
                 }
                 CoreParameter::DiscountFactor(p) => {
-                    Parameter::DiscountFactor(p.try_into_v2_parameter(parent_node, unnamed_count)?).into()
+                    Parameter::DiscountFactor(p.into_v2(parent_node, conversion_data)).into()
                 }
                 CoreParameter::InterpolatedVolume(p) => {
-                    Parameter::Interpolated(p.try_into_v2_parameter(parent_node, unnamed_count)?).into()
+                    Parameter::Interpolated(p.try_into_v2(parent_node, conversion_data)?).into()
                 }
                 CoreParameter::InterpolatedFlow(p) => {
-                    Parameter::Interpolated(p.try_into_v2_parameter(parent_node, unnamed_count)?).into()
+                    Parameter::Interpolated(p.try_into_v2(parent_node, conversion_data)?).into()
                 }
                 CoreParameter::HydropowerTarget(p) => {
-                    Parameter::HydropowerTarget(p.try_into_v2_parameter(parent_node, unnamed_count)?).into()
+                    Parameter::HydropowerTarget(p.try_into_v2(parent_node, conversion_data)?).into()
                 }
                 CoreParameter::WeeklyProfile(p) => {
-                    Parameter::WeeklyProfile(p.try_into_v2_parameter(parent_node, unnamed_count)?).into()
+                    Parameter::WeeklyProfile(p.try_into_v2(parent_node, conversion_data)?).into()
                 }
                 CoreParameter::Storage(p) => {
-                    return Err(ConversionError::DeprecatedParameter {
-                        ty: "StorageParameter".to_string(),
+                    return Err(ComponentConversionError::Parameter {
                         name: p.meta.and_then(|m| m.name).unwrap_or("unnamed".to_string()),
-                        instead: "Use a derived metric instead.".to_string(),
-                    })
+                        attr: "".to_string(),
+                        error: ConversionError::DeprecatedParameter {
+                            ty: "DeficitParameter".to_string(),
+                            instead: "Use a derived metric instead.".to_string(),
+                        },
+                    });
                 }
                 CoreParameter::RollingMeanFlowNode(_) => todo!("Implement RollingMeanFlowNodeParameter"),
                 CoreParameter::ScenarioWrapper(_) => todo!("Implement ScenarioWrapperParameter"),
                 CoreParameter::Flow(p) => {
-                    return Err(ConversionError::DeprecatedParameter {
-                        ty: "FlowParameter".to_string(),
+                    return Err(ComponentConversionError::Parameter {
                         name: p.meta.and_then(|m| m.name).unwrap_or("unnamed".to_string()),
-                        instead: "Use a derived metric instead.".to_string(),
-                    })
+                        attr: "".to_string(),
+                        error: ConversionError::DeprecatedParameter {
+                            ty: "FlowParameter".to_string(),
+                            instead: "Use a derived metric instead.".to_string(),
+                        },
+                    });
                 }
                 CoreParameter::RbfProfile(p) => {
-                    Parameter::RbfProfile(p.try_into_v2_parameter(parent_node, unnamed_count)?).into()
+                    Parameter::RbfProfile(p.try_into_v2(parent_node, conversion_data)?).into()
                 }
                 CoreParameter::NegativeMax(p) => {
-                    Parameter::NegativeMax(p.try_into_v2_parameter(parent_node, unnamed_count)?).into()
+                    Parameter::NegativeMax(p.try_into_v2(parent_node, conversion_data)?).into()
                 }
                 CoreParameter::NegativeMin(p) => {
-                    Parameter::NegativeMin(p.try_into_v2_parameter(parent_node, unnamed_count)?).into()
+                    Parameter::NegativeMin(p.try_into_v2(parent_node, conversion_data)?).into()
                 }
             },
             ParameterV1::Custom(p) => {
-                println!("Custom parameter: {:?} ({})", p.meta.name, p.ty);
-                // TODO do something better with custom parameters
-
-                let mut comment = format!("V1 CUSTOM PARAMETER ({}) UNCONVERTED!", p.ty);
-                if let Some(c) = p.meta.comment {
-                    comment.push_str(" ORIGINAL COMMENT: ");
-                    comment.push_str(c.as_str());
-                }
-
-                Parameter::Constant(ConstantParameter {
-                    meta: ParameterMeta {
-                        name: p.meta.name.unwrap_or_else(|| "unnamed-custom-parameter".to_string()),
-                        comment: Some(comment),
-                    },
-                    value: ConstantValue::Literal(0.0),
-                    variable: None,
-                })
-                .into()
+                return Err(ComponentConversionError::Parameter {
+                    name: p.meta.name.unwrap_or_else(|| "unnamed".to_string()),
+                    attr: "".to_string(),
+                    error: ConversionError::UnrecognisedType { ty: p.ty },
+                });
             }
         };
 
@@ -744,13 +593,13 @@ impl ConstantValue<f64> {
 }
 
 #[cfg(feature = "core")]
-impl ConstantValue<usize> {
+impl ConstantValue<u64> {
     /// Return the value loading from a table if required.
-    pub fn load(&self, tables: &LoadedTableCollection) -> Result<usize, SchemaError> {
+    pub fn load(&self, tables: &LoadedTableCollection) -> Result<u64, SchemaError> {
         match self {
             Self::Literal(v) => Ok(*v),
             Self::Table(tbl_ref) => tables
-                .get_scalar_usize(tbl_ref)
+                .get_scalar_u64(tbl_ref)
                 .map_err(|error| SchemaError::TableRefLoad {
                     table_ref: tbl_ref.clone(),
                     error,
@@ -765,107 +614,10 @@ impl TryFrom<ParameterValueV1> for ConstantValue<f64> {
     fn try_from(v1: ParameterValueV1) -> Result<Self, Self::Error> {
         match v1 {
             ParameterValueV1::Constant(v) => Ok(Self::Literal(v)),
-            ParameterValueV1::Reference(_) => Err(ConversionError::ConstantFloatReferencesParameter),
+            ParameterValueV1::Reference(_) => Err(ConversionError::ConstantFloatReferencesParameter {}),
             ParameterValueV1::Table(tbl) => Ok(Self::Table(tbl.try_into()?)),
-            ParameterValueV1::Inline(_) => Err(ConversionError::ConstantFloatInlineParameter),
+            ParameterValueV1::Inline(_) => Err(ConversionError::ConstantFloatInlineParameter {}),
         }
-    }
-}
-
-/// An integer (i64) value from another parameter
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll, Display)]
-#[serde(untagged)]
-pub enum ParameterIndexValue {
-    Reference(String),
-    Inline(Box<Parameter>),
-}
-
-#[cfg(feature = "core")]
-impl ParameterIndexValue {
-    pub fn load(
-        &self,
-        network: &mut pywr_core::network::Network,
-        args: &LoadArgs,
-    ) -> Result<ParameterIndex<usize>, SchemaError> {
-        match self {
-            Self::Reference(name) => {
-                // This should be an existing parameter
-                Ok(network.get_index_parameter_index_by_name(&name.as_str().into())?)
-            }
-            Self::Inline(parameter) => {
-                // Inline parameter needs to be added
-                match parameter.add_to_model(network, args)? {
-                    pywr_core::parameters::ParameterType::Index(idx) => Ok(idx),
-                    pywr_core::parameters::ParameterType::Parameter(_) => Err(SchemaError::UnexpectedParameterType(format!(
-                        "Found float parameter of type '{}' with name '{}' where an index parameter was expected.",
-                        parameter.parameter_type(),
-                        parameter.name(),
-                    ))),
-                    pywr_core::parameters::ParameterType::Multi(_) => Err(SchemaError::UnexpectedParameterType(format!(
-                        "Found an inline definition of a multi valued parameter of type '{}' with name '{}' where an index parameter was expected. Multi valued parameters cannot be defined inline.",
-                        parameter.parameter_type(),
-                        parameter.name(),
-                    ))),
-                }
-            }
-        }
-    }
-}
-
-/// A potentially dynamic integer (usize) value
-///
-/// This value can be a constant (literal or otherwise) or a dynamic value provided
-/// by another parameter.
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll, Display)]
-#[serde(untagged)]
-pub enum DynamicIndexValue {
-    Constant(ConstantValue<usize>),
-    Dynamic(ParameterIndexValue),
-}
-
-impl DynamicIndexValue {
-    pub fn from_usize(v: usize) -> Self {
-        Self::Constant(ConstantValue::Literal(v))
-    }
-}
-
-#[cfg(feature = "core")]
-impl DynamicIndexValue {
-    pub fn load(&self, network: &mut pywr_core::network::Network, args: &LoadArgs) -> Result<MetricUsize, SchemaError> {
-        let parameter_ref = match self {
-            DynamicIndexValue::Constant(v) => v.load(args.tables)?.into(),
-            DynamicIndexValue::Dynamic(v) => v.load(network, args)?.into(),
-        };
-        Ok(parameter_ref)
-    }
-}
-
-impl TryFromV1Parameter<ParameterValueV1> for DynamicIndexValue {
-    type Error = ConversionError;
-
-    fn try_from_v1_parameter(
-        v1: ParameterValueV1,
-        parent_node: Option<&str>,
-        unnamed_count: &mut usize,
-    ) -> Result<Self, Self::Error> {
-        let p = match v1 {
-            // There was no such thing as s constant index in Pywr v1
-            // TODO this could print a warning and do a cast to usize instead.
-            ParameterValueV1::Constant(_) => return Err(ConversionError::FloatToIndex),
-            ParameterValueV1::Reference(p_name) => Self::Dynamic(ParameterIndexValue::Reference(p_name)),
-            ParameterValueV1::Table(tbl) => Self::Constant(ConstantValue::Table(tbl.try_into()?)),
-            ParameterValueV1::Inline(param) => {
-                let definition: ParameterOrTimeseries = (*param).try_into_v2_parameter(parent_node, unnamed_count)?;
-                match definition {
-                    ParameterOrTimeseries::Parameter(p) => Self::Dynamic(ParameterIndexValue::Inline(Box::new(p))),
-                    ParameterOrTimeseries::Timeseries(_) => {
-                        // TODO create an error for this
-                        panic!("Timeseries do not support indexes yet")
-                    }
-                }
-            }
-        };
-        Ok(p)
     }
 }
 
@@ -896,7 +648,7 @@ impl ConstantFloatVec {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll, Display)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll, Display, PartialEq)]
 #[serde(untagged)]
 pub enum TableIndex {
     Single(String),
@@ -904,20 +656,20 @@ pub enum TableIndex {
 }
 
 impl TryFrom<TableIndexV1> for TableIndex {
-    type Error = ConversionError;
+    type Error = String;
 
     fn try_from(v1: TableIndexV1) -> Result<Self, Self::Error> {
         match v1 {
             TableIndexV1::Single(s) => match s {
                 TableIndexEntryV1::Name(s) => Ok(TableIndex::Single(s)),
-                TableIndexEntryV1::Index(_) => Err(ConversionError::IntegerTableIndicesNotSupported),
+                TableIndexEntryV1::Index(_) => Err("Integer table indices not supported".to_string()),
             },
             TableIndexV1::Multi(s) => {
                 let names = s
                     .into_iter()
                     .map(|e| match e {
                         TableIndexEntryV1::Name(s) => Ok(s),
-                        TableIndexEntryV1::Index(_) => Err(ConversionError::IntegerTableIndicesNotSupported),
+                        TableIndexEntryV1::Index(_) => Err("Integer table indices not supported".to_string()),
                     })
                     .collect::<Result<Vec<_>, _>>()?;
                 Ok(Self::Multi(names))
@@ -959,8 +711,21 @@ mod tests {
             let p = entry.unwrap().path();
             if p.is_file() {
                 let data = fs::read_to_string(&p).unwrap_or_else(|_| panic!("Failed to read file: {:?}", p));
-                let _: Parameter =
+
+                let value: serde_json::Value =
                     serde_json::from_str(&data).unwrap_or_else(|_| panic!("Failed to deserialize: {:?}", p));
+
+                match value {
+                    serde_json::Value::Object(_) => {
+                        let _ = serde_json::from_value::<Parameter>(value)
+                            .unwrap_or_else(|_| panic!("Failed to deserialize: {:?}", p));
+                    }
+                    serde_json::Value::Array(_) => {
+                        let _ = serde_json::from_value::<Vec<Parameter>>(value)
+                            .unwrap_or_else(|_| panic!("Failed to deserialize: {:?}", p));
+                    }
+                    _ => panic!("Expected JSON object or array: {:?}", p),
+                }
             }
         }
     }

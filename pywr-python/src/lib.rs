@@ -16,8 +16,7 @@ use pywr_core::solvers::{ClpSolver, ClpSolverSettings, ClpSolverSettingsBuilder}
 #[cfg(feature = "highs")]
 use pywr_core::solvers::{HighsSolver, HighsSolverSettings, HighsSolverSettingsBuilder};
 use pywr_schema::model::DateType;
-use pywr_schema::parameters::TryIntoV2Parameter;
-use pywr_schema::ConversionError;
+use pywr_schema::{ComponentConversionError, ConversionData, ConversionError, TryIntoV2};
 use std::fmt;
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -98,6 +97,7 @@ impl Schema {
     }
 
     /// Build the schema in to a Pywr model.
+    #[pyo3(signature = (data_path=None, output_path=None))]
     fn build(&mut self, data_path: Option<PathBuf>, output_path: Option<PathBuf>) -> PyResult<Model> {
         let model = self.schema.build_model(data_path.as_deref(), output_path.as_deref())?;
         Ok(Model { model })
@@ -113,7 +113,7 @@ fn convert_model_from_v1_json_string(py: Python, data: &str) -> PyResult<Py<PyTu
 
     // Create a new schema object
     let py_schema = Schema { schema };
-    let py_errors = errors.into_iter().map(|e| e.to_string()).collect::<Vec<_>>();
+    let py_errors = errors.into_iter().map(|e| e.into_py(py)).collect::<Vec<_>>();
 
     let result = PyTuple::new_bound(py, &[py_schema.into_py(py), py_errors.into_py(py)]).into();
     Ok(result)
@@ -140,7 +140,7 @@ fn convert_metric_from_v1_json_string(_py: Python, data: &str) -> PyResult<Metri
         serde_json::from_str(data).map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
 
     let metric = v1
-        .try_into_v2_parameter(None, &mut 0)
+        .try_into_v2(None, &mut ConversionData::default())
         .map_err(|e: ConversionError| PyRuntimeError::new_err(e.to_string()))?;
 
     let py_metric = Metric { metric };
@@ -154,6 +154,7 @@ pub struct Model {
 
 #[pymethods]
 impl Model {
+    #[pyo3(signature = (solver_name, solver_kwargs=None))]
     fn run(&self, solver_name: &str, solver_kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<()> {
         match solver_name {
             "clp" => {
@@ -186,7 +187,7 @@ fn build_clp_settings(kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<ClpSolverS
     if let Some(kwargs) = kwargs {
         if let Ok(value) = kwargs.get_item("threads") {
             if let Some(threads) = value {
-                builder.threads(threads.extract::<usize>()?);
+                builder = builder.threads(threads.extract::<usize>()?);
             }
             kwargs.del_item("threads")?;
         }
@@ -194,7 +195,7 @@ fn build_clp_settings(kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<ClpSolverS
         if let Ok(value) = kwargs.get_item("parallel") {
             if let Some(parallel) = value {
                 if parallel.extract::<bool>()? {
-                    builder.parallel();
+                    builder = builder.parallel();
                 }
             }
             kwargs.del_item("parallel")?;
@@ -218,7 +219,7 @@ fn build_highs_settings(kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<HighsSol
     if let Some(kwargs) = kwargs {
         if let Ok(value) = kwargs.get_item("threads") {
             if let Some(threads) = value {
-                builder.threads(threads.extract::<usize>()?);
+                builder = builder.threads(threads.extract::<usize>()?);
             }
             kwargs.del_item("threads")?;
         }
@@ -226,7 +227,7 @@ fn build_highs_settings(kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<HighsSol
         if let Ok(value) = kwargs.get_item("parallel") {
             if let Some(parallel) = value {
                 if parallel.extract::<bool>()? {
-                    builder.parallel();
+                    builder = builder.parallel();
                 }
             }
             kwargs.del_item("parallel")?;
@@ -253,6 +254,10 @@ fn pywr(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Schema>()?;
     m.add_class::<Model>()?;
     m.add_class::<Metric>()?;
+
+    // Error classes
+    m.add_class::<ComponentConversionError>()?;
+    m.add_class::<ConversionError>()?;
 
     Ok(())
 }

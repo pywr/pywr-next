@@ -1,4 +1,7 @@
 #![cfg_attr(feature = "ipm-simd", feature(portable_simd))]
+// Requires upgrading to PyO3 v0.23 which is blocked by updating Polars
+// See also: https://github.com/PyO3/pyo3/issues/4743
+#![allow(unexpected_cfgs)]
 
 extern crate core;
 
@@ -11,8 +14,12 @@ use crate::parameters::{
 use crate::recorders::{AggregationError, MetricSetIndex, RecorderIndex};
 use crate::state::MultiValue;
 use crate::virtual_storage::VirtualStorageIndex;
-use pyo3::exceptions::{PyException, PyRuntimeError};
-use pyo3::{create_exception, PyErr};
+#[cfg(feature = "pyo3")]
+use pyo3::{
+    create_exception,
+    exceptions::{PyException, PyRuntimeError},
+    PyErr,
+};
 use thiserror::Error;
 
 pub mod aggregated_node;
@@ -33,7 +40,7 @@ pub mod timestep;
 pub mod utils;
 pub mod virtual_storage;
 
-#[derive(Error, Debug, PartialEq, Eq)]
+#[derive(Error, Debug)]
 pub enum PywrError {
     #[error("invalid node connect")]
     InvalidNodeConnection,
@@ -50,25 +57,25 @@ pub enum PywrError {
     #[error("parameter index {0} not found")]
     ParameterIndexNotFound(ParameterIndex<f64>),
     #[error("index parameter index {0} not found")]
-    IndexParameterIndexNotFound(ParameterIndex<usize>),
+    IndexParameterIndexNotFound(ParameterIndex<u64>),
     #[error("multi-value parameter index {0} not found")]
     MultiValueParameterIndexNotFound(ParameterIndex<MultiValue>),
     #[error("parameter index {0} not found")]
     GeneralParameterIndexNotFound(GeneralParameterIndex<f64>),
     #[error("index parameter index {0} not found")]
-    GeneralIndexParameterIndexNotFound(GeneralParameterIndex<usize>),
+    GeneralIndexParameterIndexNotFound(GeneralParameterIndex<u64>),
     #[error("multi-value parameter index {0} not found")]
     GeneralMultiValueParameterIndexNotFound(GeneralParameterIndex<MultiValue>),
     #[error("parameter index {0} not found")]
     SimpleParameterIndexNotFound(SimpleParameterIndex<f64>),
     #[error("index parameter index {0} not found")]
-    SimpleIndexParameterIndexNotFound(SimpleParameterIndex<usize>),
+    SimpleIndexParameterIndexNotFound(SimpleParameterIndex<u64>),
     #[error("multi-value parameter index {0} not found")]
     SimpleMultiValueParameterIndexNotFound(SimpleParameterIndex<MultiValue>),
     #[error("parameter index {0} not found")]
     ConstParameterIndexNotFound(ConstParameterIndex<f64>),
     #[error("index parameter index {0} not found")]
-    ConstIndexParameterIndexNotFound(ConstParameterIndex<usize>),
+    ConstIndexParameterIndexNotFound(ConstParameterIndex<u64>),
     #[error("multi-value parameter index {0} not found")]
     ConstMultiValueParameterIndexNotFound(ConstParameterIndex<MultiValue>),
     #[error("multi-value parameter key {0} not found")]
@@ -96,7 +103,7 @@ pub enum PywrError {
     #[error("parameter name `{0}` already exists")]
     ParameterNameAlreadyExists(String),
     #[error("index parameter name `{0}` already exists at index {1}")]
-    IndexParameterNameAlreadyExists(String, ParameterIndex<usize>),
+    IndexParameterNameAlreadyExists(String, ParameterIndex<u64>),
     #[error("multi-value parameter name `{0}` already exists at index {1}")]
     MultiValueParameterNameAlreadyExists(String, ParameterIndex<MultiValue>),
     #[error("metric set name `{0}` already exists")]
@@ -150,7 +157,9 @@ pub enum PywrError {
     #[error("recorder does not supported aggregation")]
     RecorderDoesNotSupportAggregation,
     #[error("hdf5 error: {0}")]
-    HDF5Error(String),
+    HDF5Error(#[from] hdf5_metno::Error),
+    #[error("could not create unicode variable name from: {0}")]
+    HDF5VarLenUnicode(String),
     #[error("csv error: {0}")]
     CSVError(String),
     #[error("not implemented by recorder")]
@@ -202,8 +211,10 @@ pub enum PywrError {
 }
 
 // Python errors
+#[cfg(feature = "pyo3")]
 create_exception!(pywr, ParameterNotFoundError, PyException);
 
+#[cfg(feature = "pyo3")]
 impl From<PywrError> for PyErr {
     fn from(err: PywrError) -> PyErr {
         match err {

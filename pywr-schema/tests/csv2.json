@@ -64,6 +64,14 @@
     "metric_sets": [
       {
         "name": "nodes",
+        "aggregator": {
+          "freq": {
+            "type": "Monthly"
+          },
+          "func": {
+            "type": "Mean"
+          }
+        },
         "metrics": [
           {
             "type": "Node",
@@ -74,17 +82,17 @@
     ],
     "outputs": [
       {
-        "name": "my-outputs",
+        "name": "monthly-avg-outputs",
         "type": "CSV",
         "format": "long",
-        "filename": "outputs-long.csv",
+        "filename": "csv2-outputs-long.csv",
         "metric_set": "nodes"
       },
       {
-        "name": "my-outputs",
+        "name": "monthly-avg-outputs",
         "type": "CSV",
         "format": "wide",
-        "filename": "outputs-wide.csv",
+        "filename": "csv2-outputs-wide.csv",
         "metric_set": "nodes"
       }
     ]

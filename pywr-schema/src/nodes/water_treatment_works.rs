@@ -5,6 +5,7 @@ use crate::metric::Metric;
 use crate::model::LoadArgs;
 use crate::nodes::loss_link::LossFactor;
 use crate::nodes::{NodeAttribute, NodeMeta};
+use crate::parameters::Parameter;
 #[cfg(feature = "core")]
 use pywr_core::metric::MetricF64;
 use pywr_schema_macros::PywrVisitAll;
@@ -18,7 +19,7 @@ use schemars::JsonSchema;
 /// or gross flow, and an optional "soft" minimum flow.
 ///
 /// When a loss factor is not given the `loss` node is not created. When a non-zero loss
-/// factor is provided [`pywr_core::node::OutputNode`] and [`pywr_core::aggregated_node::AggregatedNode`] 
+/// factor is provided [`pywr_core::node::OutputNode`] and [`pywr_core::aggregated_node::AggregatedNode`]
 /// nodes are created.
 ///
 ///
@@ -40,6 +41,8 @@ use schemars::JsonSchema;
 pub struct WaterTreatmentWorks {
     /// Node metadata
     pub meta: NodeMeta,
+    /// Optional local parameters.
+    pub parameters: Option<Vec<Parameter>>,
     /// The proportion of net flow that is lost to the loss node.
     pub loss_factor: Option<LossFactor>,
     /// The minimum flow through the `net` flow node.
@@ -146,24 +149,24 @@ impl WaterTreatmentWorks {
         args: &LoadArgs,
     ) -> Result<(), SchemaError> {
         if let Some(cost) = &self.cost {
-            let value = cost.load(network, args)?;
+            let value = cost.load(network, args, Some(&self.meta.name))?;
             network.set_node_cost(self.meta.name.as_str(), Self::net_sub_name(), value.into())?;
         }
 
         if let Some(max_flow) = &self.max_flow {
-            let value = max_flow.load(network, args)?;
+            let value = max_flow.load(network, args, Some(&self.meta.name))?;
             network.set_node_max_flow(self.meta.name.as_str(), Self::net_sub_name(), value.into())?;
         }
 
         if let Some(min_flow) = &self.min_flow {
-            let value = min_flow.load(network, args)?;
+            let value = min_flow.load(network, args, Some(&self.meta.name))?;
             network.set_node_min_flow(self.meta.name.as_str(), Self::net_sub_name(), value.into())?;
         }
 
         // soft min flow constraints; This typically applies a negative cost upto a maximum
         // defined by the `soft_min_flow`
         if let Some(cost) = &self.soft_min_flow_cost {
-            let value = cost.load(network, args)?;
+            let value = cost.load(network, args, Some(&self.meta.name))?;
             network.set_node_cost(
                 self.meta.name.as_str(),
                 Self::net_soft_min_flow_sub_name(),
@@ -171,7 +174,7 @@ impl WaterTreatmentWorks {
             )?;
         }
         if let Some(min_flow) = &self.soft_min_flow {
-            let value = min_flow.load(network, args)?;
+            let value = min_flow.load(network, args, Some(&self.meta.name))?;
             network.set_node_max_flow(
                 self.meta.name.as_str(),
                 Self::net_soft_min_flow_sub_name(),
@@ -180,7 +183,7 @@ impl WaterTreatmentWorks {
         }
 
         if let Some(loss_factor) = &self.loss_factor {
-            let factors = loss_factor.load(network, args)?;
+            let factors = loss_factor.load(network, args, Some(&self.meta.name))?;
             if factors.is_none() {
                 // Loaded a constant zero factor; ensure that the loss node has zero flow
                 network.set_node_max_flow(self.meta.name.as_str(), Self::loss_sub_name(), Some(0.0.into()))?;
@@ -238,96 +241,5 @@ impl WaterTreatmentWorks {
         };
 
         Ok(metric)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::model::PywrModel;
-    #[cfg(feature = "core")]
-    use pywr_core::test_utils::{run_all_solvers, ExpectedOutputs};
-    #[cfg(feature = "core")]
-    use tempfile::TempDir;
-
-    fn wtw1_str() -> &'static str {
-        include_str!("../test_models/wtw1.json")
-    }
-
-    #[cfg(feature = "core")]
-    fn wtw1_outputs_str() -> &'static str {
-        include_str!("../test_models/wtw1-expected.csv")
-    }
-
-    #[test]
-    fn test_wtw1_schema() {
-        let data = wtw1_str();
-        let schema: PywrModel = serde_json::from_str(data).unwrap();
-
-        assert_eq!(schema.network.nodes.len(), 5);
-        assert_eq!(schema.network.edges.len(), 4);
-    }
-
-    #[test]
-    #[cfg(feature = "core")]
-    fn test_wtw1_run() {
-        let data = wtw1_str();
-        let schema: PywrModel = serde_json::from_str(data).unwrap();
-        let temp_dir = TempDir::new().unwrap();
-
-        let mut model = schema.build_model(None, Some(temp_dir.path())).unwrap();
-
-        let network = model.network_mut();
-        assert_eq!(network.nodes().len(), 10);
-        assert_eq!(network.edges().len(), 11);
-
-        // After model run there should be an output file.
-        let expected_outputs = [ExpectedOutputs::new(
-            temp_dir.path().join("wtw1.csv"),
-            wtw1_outputs_str(),
-        )];
-
-        // Test all solvers
-        run_all_solvers(&model, &[], &expected_outputs);
-    }
-
-    fn wtw2_str() -> &'static str {
-        include_str!("../test_models/wtw2.json")
-    }
-
-    #[cfg(feature = "core")]
-    fn wtw2_outputs_str() -> &'static str {
-        include_str!("../test_models/wtw2-expected.csv")
-    }
-
-    #[test]
-    fn test_wtw2_schema() {
-        let data = wtw2_str();
-        let schema: PywrModel = serde_json::from_str(data).unwrap();
-
-        assert_eq!(schema.network.nodes.len(), 4);
-        assert_eq!(schema.network.edges.len(), 3);
-    }
-
-    #[test]
-    #[cfg(feature = "core")]
-    fn test_wtw2_run() {
-        let data = wtw2_str();
-        let schema: PywrModel = serde_json::from_str(data).unwrap();
-        let temp_dir = TempDir::new().unwrap();
-
-        let mut model = schema.build_model(None, Some(temp_dir.path())).unwrap();
-
-        let network = model.network_mut();
-        assert_eq!(network.nodes().len(), 7);
-        assert_eq!(network.edges().len(), 7);
-
-        // After model run there should be an output file.
-        let expected_outputs = [ExpectedOutputs::new(
-            temp_dir.path().join("wtw2.csv"),
-            wtw2_outputs_str(),
-        )];
-
-        // Test all solvers
-        run_all_solvers(&model, &[], &expected_outputs);
     }
 }

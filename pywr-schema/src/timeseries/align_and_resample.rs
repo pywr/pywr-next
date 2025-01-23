@@ -125,8 +125,8 @@ mod tests {
 
         let domain = ModelDomain::new(time_domain, scenario_domain);
 
-        let time = polars::time::date_range(
-            "time",
+        let time = date_range(
+            "time".into(),
             NaiveDate::from_ymd_opt(2021, 1, 1).unwrap().into(),
             NaiveDate::from_ymd_opt(2021, 1, 31).unwrap().into(),
             Duration::parse("1d"),
@@ -145,8 +145,8 @@ mod tests {
 
         df = align_and_resample("test", df, "time", &domain, false).unwrap();
 
-        let expected_dates = Series::new(
-            "time",
+        let expected_dates = Column::new(
+            "time".into(),
             vec![
                 NaiveDateTime::parse_from_str("2021-01-07 00:00:00", "%Y-%m-%d %H:%M:%S").unwrap(),
                 NaiveDateTime::parse_from_str("2021-01-14 00:00:00", "%Y-%m-%d %H:%M:%S").unwrap(),
@@ -157,8 +157,8 @@ mod tests {
         let resampled_dates = df.column("time").unwrap();
         assert!(resampled_dates.equals(&expected_dates));
 
-        let expected_values = Series::new(
-            "values",
+        let expected_values = Column::new(
+            "values".into(),
             vec![
                 10.0, // mean of 7, 8, 9, 10, 11, 12, 13
                 17.0, // mean of 14, 15, 16, 17, 18, 19, 20
@@ -179,8 +179,8 @@ mod tests {
         let scenario_domain: ScenarioDomain = ScenarioGroupCollection::new(vec![]).into();
         let domain = ModelDomain::new(time_domain, scenario_domain);
 
-        let time = polars::time::date_range(
-            "time",
+        let time = date_range(
+            "time".into(),
             NaiveDate::from_ymd_opt(2021, 1, 1).unwrap().into(),
             NaiveDate::from_ymd_opt(2021, 1, 15).unwrap().into(),
             Duration::parse("7d"),
@@ -199,8 +199,8 @@ mod tests {
 
         df = align_and_resample("test", df, "time", &domain, false).unwrap();
 
-        let expected_values = Series::new(
-            "values",
+        let expected_values = Column::new(
+            "values".into(),
             vec![1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0],
         );
         let resampled_values = df.column("values").unwrap();
@@ -219,8 +219,8 @@ mod tests {
         let scenario_domain: ScenarioDomain = ScenarioGroupCollection::new(vec![]).into();
         let domain = ModelDomain::new(time_domain, scenario_domain);
 
-        let time = polars::time::date_range(
-            "time",
+        let time = date_range(
+            "time".into(),
             NaiveDate::from_ymd_opt(2021, 1, 1).unwrap().into(),
             NaiveDate::from_ymd_opt(2021, 1, 3).unwrap().into(),
             Duration::parse("1d"),
@@ -239,11 +239,11 @@ mod tests {
 
         df = align_and_resample("test", df, "time", &domain, false).unwrap();
 
-        let expected_values = Series::new("values", values);
+        let expected_values = Column::new("values".into(), values);
         let resampled_values = df.column("values").unwrap();
         assert!(resampled_values.equals(&expected_values));
 
-        let expected_dates = Series::new("time", time)
+        let expected_dates = Column::new("time".into(), time)
             .cast(&DataType::Datetime(TimeUnit::Milliseconds, None))
             .unwrap();
 

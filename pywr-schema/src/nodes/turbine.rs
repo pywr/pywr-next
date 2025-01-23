@@ -2,6 +2,7 @@ use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::nodes::{NodeAttribute, NodeMeta};
+use crate::parameters::Parameter;
 #[cfg(feature = "core")]
 use crate::SchemaError;
 #[cfg(feature = "core")]
@@ -29,6 +30,8 @@ pub enum TargetType {
 #[serde(deny_unknown_fields)]
 pub struct TurbineNode {
     pub meta: NodeMeta,
+    /// Optional local parameters.
+    pub parameters: Option<Vec<Parameter>>,
     pub cost: Option<Metric>,
     /// Hydropower production target. If set the node's max flow is limited to the flow
     /// calculated using the hydropower equation. If omitted no flow restriction is set.
@@ -64,6 +67,7 @@ impl Default for TurbineNode {
     fn default() -> Self {
         Self {
             meta: Default::default(),
+            parameters: None,
             cost: None,
             target: None,
             target_type: TargetType::MaxFlow,
@@ -117,18 +121,18 @@ impl TurbineNode {
         args: &LoadArgs,
     ) -> Result<(), SchemaError> {
         if let Some(cost) = &self.cost {
-            let value = cost.load(network, args)?;
+            let value = cost.load(network, args, Some(&self.meta.name))?;
             network.set_node_cost(self.meta.name.as_str(), None, value.into())?;
         }
 
         if let Some(target) = &self.target {
             let name = ParameterName::new("power", Some(self.meta.name.as_str()));
-            let target_value = target.load(network, args)?;
+            let target_value = target.load(network, args, Some(&self.meta.name))?;
 
             let water_elevation = self
                 .water_elevation
                 .as_ref()
-                .map(|t| t.load(network, args))
+                .map(|t| t.load(network, args, Some(&self.meta.name)))
                 .transpose()?;
             let turbine_data = HydropowerTargetData {
                 target: target_value,
@@ -181,7 +185,7 @@ impl TurbineNode {
                 let water_elevation = self
                     .water_elevation
                     .as_ref()
-                    .map(|t| t.load(network, args))
+                    .map(|t| t.load(network, args, Some(&self.meta.name)))
                     .transpose()?;
 
                 let turbine_data = TurbineData {

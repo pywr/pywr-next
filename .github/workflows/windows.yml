@@ -6,11 +6,10 @@ on:
   pull_request:
 
 env:
+  CARGO_INCREMENTAL: 0
   CARGO_TERM_COLOR: always
   # Make sure CI fails on all warnings, including Clippy lints
   RUSTFLAGS: "-Dwarnings"
-  ACTIONS_RUNNER_DEBUG: true
-  ACTIONS_STEP_DEBUG: true
 
 jobs:
   build:

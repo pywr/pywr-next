@@ -1,6 +1,6 @@
 use crate::metric::{MetricF64, SimpleMetricF64};
 use crate::network::Network;
-use crate::node::{FlowConstraints, NodeMeta, StorageConstraints, StorageInitialVolume};
+use crate::node::{NodeMeta, StorageConstraints, StorageInitialVolume};
 use crate::state::{State, VirtualStorageState};
 use crate::timestep::Timestep;
 use crate::{NodeIndex, PywrError};
@@ -138,11 +138,13 @@ impl VirtualStorageBuilder {
     }
 
     pub fn build(self, index: VirtualStorageIndex) -> VirtualStorage {
+        // Default to unit factors if none provided
+        let factors = self.factors.unwrap_or(vec![1.0; self.nodes.len()]);
+
         VirtualStorage {
             meta: NodeMeta::new(&index, &self.name, self.sub_name.as_deref()),
-            flow_constraints: FlowConstraints::default(),
             nodes: self.nodes,
-            factors: self.factors,
+            factors,
             initial_volume: self.initial_volume,
             storage_constraints: StorageConstraints::new(self.min_volume, self.max_volume),
             reset: self.reset,
@@ -158,17 +160,26 @@ pub enum VirtualStorageReset {
     NumberOfMonths { months: i32 },
 }
 
-// #[derive(Debug)]
+/// A component that represents a virtual storage constraint.
+///
+/// Virtual storage are not part of the main network but can have their volume "used" by
+/// association with real nodes. Flow through one or more nodes lowers the virtual storage
+/// volume by a corresponding factor (default 1.0). Flow can be constrained in those nodes
+/// if it were to violate the virtual storage's min or max volume limits.
+///
+/// Virtual storage volume can be reset at different frequencies. See [`VirtualStorageReset`]
+/// for the choices. In addition, a rolling window can be provided as a number of time-steps.
+/// Volume is recovered into the virtual storage after this number of time-steps once per time-step
+/// with the oldest value added back to the volume.
 pub struct VirtualStorage {
-    pub meta: NodeMeta<VirtualStorageIndex>,
-    pub flow_constraints: FlowConstraints,
-    pub nodes: Vec<NodeIndex>,
-    pub factors: Option<Vec<f64>>,
-    pub initial_volume: StorageInitialVolume,
-    pub storage_constraints: StorageConstraints,
-    pub reset: VirtualStorageReset,
-    pub rolling_window: Option<NonZeroUsize>,
-    pub cost: Option<MetricF64>,
+    meta: NodeMeta<VirtualStorageIndex>,
+    nodes: Vec<NodeIndex>,
+    factors: Vec<f64>,
+    initial_volume: StorageInitialVolume,
+    storage_constraints: StorageConstraints,
+    reset: VirtualStorageReset,
+    rolling_window: Option<NonZeroUsize>,
+    cost: Option<MetricF64>,
 }
 
 impl VirtualStorage {
@@ -190,10 +201,6 @@ impl VirtualStorage {
         *self.meta.index()
     }
 
-    pub fn has_factors(&self) -> bool {
-        self.factors.is_some()
-    }
-
     pub fn default_state(&self) -> VirtualStorageState {
         VirtualStorageState::new(0.0, self.rolling_window)
     }
@@ -203,6 +210,10 @@ impl VirtualStorage {
             None => Ok(0.0),
             Some(m) => m.get_value(network, state),
         }
+    }
+
+    pub fn set_cost(&mut self, cost: Option<MetricF64>) {
+        self.cost = cost;
     }
 
     pub fn before(&self, timestep: &Timestep, state: &mut State) -> Result<(), PywrError> {
@@ -252,14 +263,12 @@ impl VirtualStorage {
         Ok(())
     }
 
-    pub fn get_nodes(&self) -> Vec<NodeIndex> {
-        self.nodes.to_vec()
+    pub fn nodes(&self) -> &[NodeIndex] {
+        &self.nodes
     }
 
-    pub fn get_nodes_with_factors(&self) -> Option<Vec<(NodeIndex, f64)>> {
-        self.factors
-            .as_ref()
-            .map(|factors| self.nodes.iter().zip(factors.iter()).map(|(n, f)| (*n, *f)).collect())
+    pub fn iter_nodes_with_factors(&self) -> impl Iterator<Item = (&NodeIndex, f64)> + '_ {
+        self.nodes.iter().zip(self.factors.iter()).map(|(n, f)| (n, *f))
     }
 
     pub fn get_min_volume(&self, state: &State) -> Result<f64, PywrError> {
@@ -272,7 +281,7 @@ impl VirtualStorage {
             .get_max_volume(&state.get_simple_parameter_values())
     }
 
-    pub fn get_current_available_volume_bounds(&self, state: &State) -> Result<(f64, f64), PywrError> {
+    pub fn get_available_volume_bounds(&self, state: &State) -> Result<(f64, f64), PywrError> {
         let min_vol = self.get_min_volume(state)?;
         let max_vol = self.get_max_volume(state)?;
 
@@ -291,16 +300,18 @@ fn months_since_last_reset(current: &NaiveDateTime, last_reset: &NaiveDateTime) 
 
 #[cfg(test)]
 mod tests {
+    use crate::derived_metric::DerivedMetric;
     use crate::metric::MetricF64;
     use crate::models::Model;
     use crate::network::Network;
     use crate::node::StorageInitialVolume;
+    use crate::parameters::ControlCurveInterpolatedParameter;
     use crate::recorders::{AssertionFnRecorder, AssertionRecorder};
     use crate::scenario::ScenarioIndex;
     use crate::test_utils::{default_timestepper, run_all_solvers, simple_model};
-    use crate::timestep::Timestep;
+    use crate::timestep::{Timestep, TimestepDuration, Timestepper};
     use crate::virtual_storage::{months_since_last_reset, VirtualStorageBuilder, VirtualStorageReset};
-    use chrono::NaiveDate;
+    use chrono::{Datelike, NaiveDate};
     use ndarray::Array;
     use std::num::NonZeroUsize;
 
@@ -422,13 +433,13 @@ mod tests {
         let domain = default_timestepper().try_into().unwrap();
         let model = Model::new(domain, network);
         // Test all solvers
-        run_all_solvers(&model, &[], &[]);
+        run_all_solvers(&model, &["ipm-ocl", "ipm-simd"], &[], &[]);
     }
 
     #[test]
     /// Test virtual storage node costs
     fn test_virtual_storage_node_costs() {
-        let mut model = simple_model(1);
+        let mut model = simple_model(1, None);
         let network = model.network_mut();
 
         let nodes = vec![network.get_node_index_by_name("input", None).unwrap()];
@@ -444,18 +455,86 @@ mod tests {
         network.add_virtual_storage_node(vs_builder).unwrap();
 
         let expected = Array::zeros((366, 1));
+
         let idx = network.get_node_by_name("output", None).unwrap().index();
         let recorder = AssertionRecorder::new("output-flow", MetricF64::NodeInFlow(idx), expected, None, None);
         network.add_recorder(Box::new(recorder)).unwrap();
 
         // Test all solvers
-        run_all_solvers(&model, &[], &[]);
+        run_all_solvers(&model, &["ipm-ocl", "ipm-simd"], &[], &[]);
+    }
+
+    #[test]
+    /// Virtual storage node resets every month. This test will check that a parameter which
+    /// uses the derived proportional volume receives the correct value after each reset.
+    fn test_virtual_storage_node_cost_dynamic() {
+        // This test needs to be run over a period of time to see the cost change
+        let start = NaiveDate::from_ymd_opt(2020, 1, 1)
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap();
+        let end = NaiveDate::from_ymd_opt(2020, 12, 31)
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap();
+        let duration = TimestepDuration::Days(1);
+
+        let mut model = simple_model(1, Some(Timestepper::new(start, end, duration)));
+        let network = model.network_mut();
+
+        let nodes = vec![network.get_node_index_by_name("input", None).unwrap()];
+
+        let vs_builder = VirtualStorageBuilder::new("vs", &nodes)
+            .initial_volume(StorageInitialVolume::Proportional(1.0))
+            .min_volume(Some(0.0.into()))
+            .max_volume(Some(100.0.into()))
+            .reset(VirtualStorageReset::NumberOfMonths { months: 1 });
+
+        let vs_idx = network.add_virtual_storage_node(vs_builder).unwrap();
+        let vs_vol_metric = network.add_derived_metric(DerivedMetric::VirtualStorageProportionalVolume(vs_idx));
+
+        // Virtual storage node cost increases with decreasing volume
+        let cost_param = ControlCurveInterpolatedParameter::new(
+            "cost".into(),
+            vs_vol_metric.into(),
+            vec![],
+            vec![0.0.into(), 20.0.into()],
+        );
+
+        let cost_param = network.add_parameter(Box::new(cost_param)).unwrap();
+
+        network
+            .set_virtual_storage_node_cost("vs", None, Some(cost_param.into()))
+            .unwrap();
+
+        let expected = |ts: &Timestep, _si: &ScenarioIndex| {
+            // Calculate the current volume within each month
+            // This should be the absolute volume at the start of each, which is then used
+            // to calculate the cost.
+            let mut volume = 100.0;
+            for dom in 1..ts.date.day() {
+                let demand_met = (1.0 + ts.index as f64 - (ts.date.day() - dom) as f64).min(12.0);
+                volume -= demand_met;
+            }
+
+            if volume >= 50.0 {
+                (1.0 + ts.index as f64).min(12.0)
+            } else {
+                0.0
+            }
+        };
+        let idx = network.get_node_by_name("output", None).unwrap().index();
+        let recorder = AssertionFnRecorder::new("output-flow", MetricF64::NodeInFlow(idx), expected, None, None);
+        network.add_recorder(Box::new(recorder)).unwrap();
+
+        // Test all solvers
+        run_all_solvers(&model, &["ipm-ocl", "ipm-simd"], &[], &[]);
     }
 
     #[test]
     /// Test virtual storage rolling window constraint
     fn test_virtual_storage_node_rolling_constraint() {
-        let mut model = simple_model(1);
+        let mut model = simple_model(1, None);
         let network = model.network_mut();
 
         let nodes = vec![network.get_node_index_by_name("input", None).unwrap()];
@@ -489,6 +568,6 @@ mod tests {
         network.add_recorder(Box::new(recorder)).unwrap();
 
         // Test all solvers
-        run_all_solvers(&model, &[], &[]);
+        run_all_solvers(&model, &["ipm-ocl", "ipm-simd"], &[], &[]);
     }
 }

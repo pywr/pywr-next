@@ -241,7 +241,7 @@ impl LoadedTableCollection {
     }
 
     /// Return a single scalar value from a table collection.
-    pub fn get_scalar_usize(&self, _table_ref: &TableDataRef) -> Result<usize, TableError> {
+    pub fn get_scalar_u64(&self, _table_ref: &TableDataRef) -> Result<u64, TableError> {
         // let tbl = self.get_table(&table_ref.table)?;
         todo!()
     }
@@ -255,7 +255,7 @@ impl LoadedTableCollection {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct TableDataRef {
     pub table: String,
@@ -288,11 +288,19 @@ impl TryFrom<TableDataRefV1> for TableDataRef {
     fn try_from(v1: TableDataRefV1) -> Result<Self, Self::Error> {
         let column = match v1.column {
             None => None,
-            Some(c) => Some(c.try_into()?),
+            Some(c) => Some(c.try_into().map_err(|e| ConversionError::TableRef {
+                attr: "column".to_string(),
+                name: v1.table.clone(),
+                error: e,
+            })?),
         };
         let index = match v1.index {
             None => None,
-            Some(i) => Some(i.try_into()?),
+            Some(i) => Some(i.try_into().map_err(|e| ConversionError::TableRef {
+                attr: "index".to_string(),
+                name: v1.table.clone(),
+                error: e,
+            })?),
         };
         Ok(Self {
             table: v1.table,

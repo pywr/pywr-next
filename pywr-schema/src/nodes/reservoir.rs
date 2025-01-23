@@ -150,13 +150,13 @@ pub struct Rainfall {
 /// # JSON Examples
 /// ## Reservoir with output spill
 /// ```json
-#[doc = include_str!("../test_models/reservoir_with_spill.json")]
+#[doc = include_str!("../../tests/reservoir_with_spill.json")]
 /// ```
 ///
 /// ## Reservoir with link spill
 /// The compensation goes into the spill which routes water to the "River termination" node.
 /// ```json
-#[doc = include_str!("../test_models/reservoir_with_river.json")]
+#[doc = include_str!("../../tests/reservoir_with_river.json")]
 /// ```
 pub struct ReservoirNode {
     #[serde(flatten)]
@@ -367,7 +367,7 @@ impl ReservoirNode {
 
         // Set compensation
         if let Some(compensation) = &self.compensation {
-            let value = compensation.load(network, args)?;
+            let value = compensation.load(network, args, Some(&self.meta().name))?;
             network.set_node_min_flow(
                 self.meta().name.as_str(),
                 Self::compensation_node_sub_name(),
@@ -377,10 +377,10 @@ impl ReservoirNode {
 
         // add leakage
         if let Some(leakage) = &self.leakage {
-            let value = leakage.loss.load(network, args)?;
+            let value = leakage.loss.load(network, args, Some(&self.meta().name))?;
             network.set_node_max_flow(self.meta().name.as_str(), Self::leakage_node_sub_name(), value.into())?;
             if let Some(cost) = &leakage.cost {
-                let value = cost.load(network, args)?;
+                let value = cost.load(network, args, Some(&self.meta().name))?;
                 network.set_node_cost(self.meta().name.as_str(), Self::leakage_node_sub_name(), value.into())?;
             }
         }
@@ -392,7 +392,7 @@ impl ReservoirNode {
                 let use_max_area = rainfall.use_max_area.unwrap_or(false);
                 let rainfall_area_metric =
                     self.get_area_metric(network, args, "rainfall_area", bathymetry, use_max_area)?;
-                let rainfall_metric = rainfall.data.load(network, args)?;
+                let rainfall_metric = rainfall.data.load(network, args, Some(&self.meta().name))?;
 
                 let rainfall_volume_parameter = pywr_core::parameters::AggregatedParameter::new(
                     ParameterName::new("rainfall", Some(self.meta().name.as_str())),
@@ -421,7 +421,7 @@ impl ReservoirNode {
                     self.get_area_metric(network, args, "evaporation_area", bathymetry, use_max_area)?;
 
                 // add volume to output node
-                let evaporation_metric = evaporation.data.load(network, args)?;
+                let evaporation_metric = evaporation.data.load(network, args, Some(&self.meta().name))?;
                 let evaporation_volume_parameter = pywr_core::parameters::AggregatedParameter::new(
                     ParameterName::new("evaporation", Some(self.meta().name.as_str())),
                     &[evaporation_metric, evaporation_area_metric],
@@ -438,7 +438,7 @@ impl ReservoirNode {
 
                 // set optional cost
                 if let Some(cost) = &evaporation.cost {
-                    let value = cost.load(network, args)?;
+                    let value = cost.load(network, args, Some(&self.meta().name))?;
                     network.set_node_cost(
                         self.meta().name.as_str(),
                         Self::evaporation_node_sub_name(),
@@ -492,8 +492,8 @@ impl ReservoirNode {
         // get the variable area metric
         let area_metric = match &bathymetry.data {
             BathymetryType::Interpolated { storage, area } => {
-                let storage_metric = storage.load(network, args)?;
-                let area_metric = area.load(network, args)?;
+                let storage_metric = storage.load(network, args, Some(&self.meta().name))?;
+                let area_metric = area.load(network, args, Some(&self.meta().name))?;
 
                 let interpolated_area_parameter = pywr_core::parameters::InterpolatedParameter::new(
                     ParameterName::new(name, Some(self.meta().name.as_str())),
@@ -572,7 +572,7 @@ mod tests {
     use crate::model::PywrModel;
 
     fn reservoir_with_spill_str() -> &'static str {
-        include_str!("../test_models/reservoir_with_spill.json")
+        include_str!("../../tests/reservoir_with_spill.json")
     }
 
     #[test]

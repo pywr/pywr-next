@@ -1,10 +1,10 @@
-use crate::error::ConversionError;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
+use crate::error::{ComponentConversionError, ConversionError};
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::nodes::{NodeAttribute, NodeMeta};
-use crate::parameters::ConstantValue;
+use crate::parameters::{ConstantValue, Parameter};
 #[cfg(feature = "core")]
 use pywr_core::{metric::MetricF64, parameters::ParameterName};
 use pywr_schema_macros::PywrVisitAll;
@@ -34,7 +34,9 @@ use schemars::JsonSchema;
 #[serde(deny_unknown_fields)]
 pub struct DelayNode {
     pub meta: NodeMeta,
-    pub delay: usize,
+    /// Optional local parameters.
+    pub parameters: Option<Vec<Parameter>>,
+    pub delay: u64,
     pub initial_value: ConstantValue<f64>,
 }
 
@@ -132,7 +134,7 @@ impl DelayNode {
 }
 
 impl TryFrom<DelayNodeV1> for DelayNode {
-    type Error = ConversionError;
+    type Error = ComponentConversionError;
 
     fn try_from(v1: DelayNodeV1) -> Result<Self, Self::Error> {
         let meta: NodeMeta = v1.meta.into();
@@ -143,63 +145,25 @@ impl TryFrom<DelayNodeV1> for DelayNode {
             None => match v1.timesteps {
                 Some(ts) => ts,
                 None => {
-                    return Err(ConversionError::MissingAttribute {
+                    return Err(ComponentConversionError::Node {
                         name: meta.name,
-                        attrs: vec!["days".to_string(), "timesteps".to_string()],
+                        attr: "delay".to_string(),
+                        error: ConversionError::MissingAttribute {
+                            attrs: vec!["days".to_string(), "timesteps".to_string()],
+                        },
                     })
                 }
             },
-        } as usize;
+        } as u64;
 
         let initial_value = ConstantValue::Literal(v1.initial_flow.unwrap_or_default());
 
         let n = Self {
             meta,
+            parameters: None,
             delay,
             initial_value,
         };
         Ok(n)
-    }
-}
-
-#[cfg(test)]
-#[cfg(feature = "core")]
-mod tests {
-    use crate::model::PywrModel;
-    use ndarray::{concatenate, Array2, Axis};
-    use pywr_core::{metric::MetricF64, recorders::AssertionRecorder, test_utils::run_all_solvers};
-
-    fn model_str() -> &'static str {
-        include_str!("../test_models/delay1.json")
-    }
-
-    #[test]
-
-    fn test_model_run() {
-        let data = model_str();
-        let schema: PywrModel = serde_json::from_str(data).unwrap();
-        let mut model: pywr_core::models::Model = schema.build_model(None, None).unwrap();
-
-        let network = model.network_mut();
-        assert_eq!(network.nodes().len(), 4);
-        assert_eq!(network.edges().len(), 2);
-
-        // TODO put this assertion data in the test model file.
-        let idx = network.get_node_by_name("link1", Some("inflow")).unwrap().index();
-        let expected = Array2::from_elem((366, 1), 15.0);
-        let recorder = AssertionRecorder::new("link1-inflow", MetricF64::NodeInFlow(idx), expected, None, None);
-        network.add_recorder(Box::new(recorder)).unwrap();
-
-        let idx = network.get_node_by_name("link1", Some("outflow")).unwrap().index();
-        let expected = concatenate![
-            Axis(0),
-            Array2::from_elem((3, 1), 0.0),
-            Array2::from_elem((363, 1), 15.0)
-        ];
-        let recorder = AssertionRecorder::new("link1-outflow", MetricF64::NodeOutFlow(idx), expected, None, None);
-        network.add_recorder(Box::new(recorder)).unwrap();
-
-        // Test all solvers
-        run_all_solvers(&model, &[], &[]);
     }
 }
