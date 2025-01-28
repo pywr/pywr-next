@@ -42,6 +42,10 @@ pub mod virtual_storage;
 
 #[derive(Error, Debug)]
 pub enum PywrError {
+    // Catch infallible errors here rather than unwrapping at call site. This should be safer
+    // in the long run if an infallible error is changed to a fallible one.
+    #[error("Infallible error: {0}")]
+    Infallible(#[from] std::convert::Infallible),
     #[error("invalid node connect")]
     InvalidNodeConnection,
     #[error("connection to node is already defined")]
@@ -128,8 +132,9 @@ pub enum PywrError {
     SolverNotSetup,
     #[error("no edges defined")]
     NoEdgesDefined,
+    #[cfg(feature = "pyo3")]
     #[error("Python error: {0}")]
-    PythonError(String),
+    PythonError(#[from] PyErr),
     #[error("Unrecognised metric")]
     UnrecognisedMetric,
     #[error("Unrecognised solver")]

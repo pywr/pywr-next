@@ -49,18 +49,20 @@ mod core {
 
 #[cfg(all(feature = "core", feature = "pyo3"))]
 mod core {
-    const PANDAS_LOAD_SCRIPT: &str = include_str!("pandas_load.py");
+    const PANDAS_LOAD_SCRIPT: &CStr = c_str!(include_str!("pandas_load.py"));
 
     use super::PandasDataset;
     use crate::parameters::try_json_value_into_py;
     use crate::timeseries::align_and_resample::align_and_resample;
     use crate::timeseries::TimeseriesError;
     use polars::frame::DataFrame;
+    use pyo3::ffi::c_str;
     use pyo3::prelude::{PyAnyMethods, PyModule};
-    use pyo3::types::IntoPyDict;
-    use pyo3::{IntoPy, PyResult, Python};
+    use pyo3::types::{PyDict, PyString, PyTuple};
+    use pyo3::{IntoPyObject, IntoPyObjectExt, Py, PyAny, PyErr, PyResult, Python};
     use pyo3_polars::PyDataFrame;
     use pywr_core::models::ModelDomain;
+    use std::ffi::CStr;
     use std::path::Path;
 
     impl PandasDataset {
@@ -82,22 +84,34 @@ mod core {
             };
 
             let df: PyDataFrame = Python::with_gil(|py| -> PyResult<PyDataFrame> {
-                let pandas_load = PyModule::from_code_bound(py, PANDAS_LOAD_SCRIPT, "pandas_load.py", "pandas_load")?;
+                let pandas_load =
+                    PyModule::from_code(py, PANDAS_LOAD_SCRIPT, c_str!("pandas_load.py"), c_str!("pandas_load"))?;
 
-                let kwargs = self.kwargs.as_ref().map(|kwargs| {
-                    let seq = kwargs
-                        .iter()
-                        .map(|(k, v)| (k.into_py(py), try_json_value_into_py(py, v).unwrap()));
+                let kwargs = self
+                    .kwargs
+                    .as_ref()
+                    .map(|kwargs| {
+                        let kwargs: Vec<(Py<PyString>, Option<Py<PyAny>>)> = kwargs
+                            .iter()
+                            .map(|(k, v)| {
+                                let key = k.into_pyobject(py)?.unbind();
+                                let value = try_json_value_into_py(py, v)?;
+                                Ok((key, value))
+                            })
+                            .collect::<Result<Vec<_>, PyErr>>()?;
 
-                    seq.into_py_dict_bound(py)
-                });
+                        let seq = PyTuple::new(py, kwargs)?;
+
+                        PyDict::from_sequence(seq.as_any())
+                    })
+                    .transpose()?;
 
                 // Time column used as the index, and then Pandas will parse the dates.
                 let index_col = self
                     .time_col
                     .as_ref()
-                    .map(|col| col.into_py(py))
-                    .unwrap_or_else(|| 0.into_py(py));
+                    .map(|col| col.into_bound_py_any(py))
+                    .unwrap_or_else(|| 0.into_bound_py_any(py))?;
 
                 let df: PyDataFrame = pandas_load
                     .getattr("load_pandas")?
