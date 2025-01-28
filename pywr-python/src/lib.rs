@@ -3,6 +3,7 @@ use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyTuple, PyType};
 
+use pyo3::IntoPyObjectExt;
 /// Python API
 ///
 /// The following structures provide a Python API to access the core model structures.
@@ -113,10 +114,16 @@ fn convert_model_from_v1_json_string(py: Python, data: &str) -> PyResult<Py<PyTu
 
     // Create a new schema object
     let py_schema = Schema { schema };
-    let py_errors = errors.into_iter().map(|e| e.into_py(py)).collect::<Vec<_>>();
+    let py_errors = errors
+        .into_iter()
+        .map(|e| e.into_pyobject(py))
+        .collect::<Result<Vec<_>, _>>()?;
 
-    let result = PyTuple::new_bound(py, &[py_schema.into_py(py), py_errors.into_py(py)]).into();
-    Ok(result)
+    Ok(PyTuple::new(
+        py,
+        &[py_schema.into_bound_py_any(py)?, py_errors.into_bound_py_any(py)?],
+    )?
+    .unbind())
 }
 
 #[pyclass]

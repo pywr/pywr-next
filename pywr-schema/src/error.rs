@@ -8,6 +8,10 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum SchemaError {
+    // Catch infallible errors here rather than unwrapping at call site. This should be safer
+    // in the long run if an infallible error is changed to a fallible one.
+    #[error("Infallible error: {0}")]
+    Infallible(#[from] std::convert::Infallible),
     #[error("IO error on path `{path}`: {error}")]
     IO { path: PathBuf, error: std::io::Error },
     #[error("JSON error: {0}")]
@@ -43,8 +47,9 @@ pub enum SchemaError {
     CircularParameterReference(Vec<String>),
     #[error("unsupported file format")]
     UnsupportedFileFormat,
+    #[cfg(feature = "pyo3")]
     #[error("Python error: {0}")]
-    PythonError(String),
+    PythonError(#[from] PyErr),
     #[error("hdf5 error: {0}")]
     HDF5Error(String),
     #[error("Missing metric set: {0}")]
