@@ -36,7 +36,7 @@ chrono = { workspace = true }
 pywr-schema-macros = { path = "../pywr-schema-macros" }
 
 [dev-dependencies]
-tempfile = "3.15"
+tempfile = "3.16"
 
 [features]
 # Core feature requires additional dependencies
