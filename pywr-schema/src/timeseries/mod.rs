@@ -20,6 +20,8 @@ use polars::prelude::{
     Float64Type, IndexOrder, UInt64Type,
 };
 pub use polars_dataset::PolarsDataset;
+#[cfg(feature = "pyo3")]
+use pyo3::PyErr;
 #[cfg(feature = "core")]
 use pywr_core::{
     models::ModelDomain,
@@ -56,6 +58,9 @@ pub enum TimeseriesError {
     TimeseriesColumnOrScenarioRequired(String),
     #[error("The timeseries dataset '{0}' has no columns")]
     TimeseriesDataframeHasNoColumns(String),
+    #[cfg(feature = "pyo3")]
+    #[error("Python error: {0}")]
+    PythonError(#[from] PyErr),
     #[error("Polars error: {0}")]
     #[cfg(feature = "core")]
     PolarsError(#[from] PolarsError),
