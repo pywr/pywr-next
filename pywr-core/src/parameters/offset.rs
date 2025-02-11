@@ -43,11 +43,7 @@ impl Parameter for OffsetParameter {
         &self.meta
     }
 
-    fn as_f64_variable(&self) -> Option<&dyn VariableParameter<f64>> {
-        Some(self)
-    }
-
-    fn as_f64_variable_mut(&mut self) -> Option<&mut dyn VariableParameter<f64>> {
+    fn as_variable(&self) -> Option<&dyn VariableParameter> {
         Some(self)
     }
 }
@@ -74,45 +70,50 @@ impl GeneralParameter<f64> for OffsetParameter {
     }
 }
 
-impl VariableParameter<f64> for OffsetParameter {
+impl VariableParameter for OffsetParameter {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }
 
-    fn size(&self, _variable_config: &dyn VariableConfig) -> usize {
-        1
+    fn size(&self, _variable_config: &dyn VariableConfig) -> (usize, usize) {
+        (1, 0)
     }
 
     fn set_variables(
         &self,
-        values: &[f64],
+        values_f64: &[f64],
+        values_u64: &[u64],
         variable_config: &dyn VariableConfig,
         internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<(), PywrError> {
         let activation_function = downcast_variable_config_ref::<ActivationFunction>(variable_config);
 
-        if values.len() == 1 {
+        if !values_u64.is_empty() {
+            return Err(PywrError::ParameterVariableValuesIncorrectLength);
+        }
+
+        if values_f64.len() == 1 {
             let value = downcast_internal_state_mut::<InternalValue>(internal_state);
-            *value = Some(activation_function.apply(values[0]));
+            *value = Some(activation_function.apply(values_f64[0]));
             Ok(())
         } else {
             Err(PywrError::ParameterVariableValuesIncorrectLength)
         }
     }
 
-    fn get_variables(&self, internal_state: &Option<Box<dyn ParameterState>>) -> Option<Vec<f64>> {
+    fn get_variables(&self, internal_state: &Option<Box<dyn ParameterState>>) -> Option<(Vec<f64>, Vec<u64>)> {
         downcast_internal_state_ref::<InternalValue>(internal_state)
             .as_ref()
-            .map(|value| vec![*value])
+            .map(|value| (vec![*value], vec![]))
     }
 
-    fn get_lower_bounds(&self, variable_config: &dyn VariableConfig) -> Result<Vec<f64>, PywrError> {
+    fn get_lower_bounds(&self, variable_config: &dyn VariableConfig) -> Result<(Vec<f64>, Vec<u64>), PywrError> {
         let activation_function = downcast_variable_config_ref::<ActivationFunction>(variable_config);
-        Ok(vec![activation_function.lower_bound()])
+        Ok((vec![activation_function.lower_bound()], vec![]))
     }
 
-    fn get_upper_bounds(&self, variable_config: &dyn VariableConfig) -> Result<Vec<f64>, PywrError> {
+    fn get_upper_bounds(&self, variable_config: &dyn VariableConfig) -> Result<(Vec<f64>, Vec<u64>), PywrError> {
         let activation_function = downcast_variable_config_ref::<ActivationFunction>(variable_config);
-        Ok(vec![activation_function.upper_bound()])
+        Ok((vec![activation_function.upper_bound()], vec![]))
     }
 }

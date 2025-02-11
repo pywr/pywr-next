@@ -9,11 +9,12 @@ use crate::derived_metric::DerivedMetricIndex;
 use crate::models::MultiNetworkTransferIndex;
 use crate::node::NodeIndex;
 use crate::parameters::{
-    ConstParameterIndex, GeneralParameterIndex, InterpolationError, ParameterIndex, SimpleParameterIndex,
+    ConstParameterIndex, GeneralParameterIndex, InterpolationError, ParameterIndex, ParameterName, SimpleParameterIndex,
 };
 use crate::recorders::{AggregationError, MetricSetIndex, RecorderIndex};
 use crate::state::MultiValue;
 use crate::virtual_storage::VirtualStorageIndex;
+pub use network_variable_config::{NetworkVariableConfig, NetworkVariableConfigBuilder};
 #[cfg(feature = "pyo3")]
 use pyo3::{
     create_exception,
@@ -29,6 +30,7 @@ pub mod edge;
 pub mod metric;
 pub mod models;
 pub mod network;
+mod network_variable_config;
 pub mod node;
 pub mod parameters;
 pub mod recorders;
@@ -89,7 +91,7 @@ pub enum PywrError {
     #[error("inter-network parameter index {0} not found")]
     MultiNetworkTransferIndexNotFound(MultiNetworkTransferIndex),
     #[error("parameter {0} not found")]
-    ParameterNotFound(String),
+    ParameterNotFound(ParameterName),
     #[error("metric set index {0} not found")]
     MetricSetIndexNotFound(MetricSetIndex),
     #[error("metric set with name {0} not found")]
@@ -199,6 +201,8 @@ pub enum PywrError {
     ParameterNoInitialValue,
     #[error("parameter state not found for parameter index {0}")]
     ParameterStateNotFound(ParameterIndex<f64>),
+    #[error("index parameter state not found for parameter index {0}")]
+    IndexParameterStateNotFound(ParameterIndex<u64>),
     #[error("parameter state not found for parameter index {0}")]
     GeneralParameterStateNotFound(GeneralParameterIndex<f64>),
     #[error("Could not create timestep range due to following error: {0}")]

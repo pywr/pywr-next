@@ -202,7 +202,7 @@ impl RadialBasisFunction {
     /// Convert the schema representation of the RBF into `pywr_core` type.
     ///
     /// If required this will estimate values of from the provided points.
-    fn into_core_rbf(self, points: &[(u32, f64)]) -> Result<pywr_core::parameters::RadialBasisFunction, SchemaError> {
+    fn into_core_rbf(self, points: &[(u64, f64)]) -> Result<pywr_core::parameters::RadialBasisFunction, SchemaError> {
         let rbf = match self {
             Self::Linear => pywr_core::parameters::RadialBasisFunction::Linear,
             Self::Cubic => pywr_core::parameters::RadialBasisFunction::Cubic,
@@ -242,7 +242,7 @@ impl RadialBasisFunction {
 ///
 /// If there `points` is empty then `None` is returned.
 #[cfg(feature = "core")]
-fn estimate_epsilon(points: &[(u32, f64)]) -> Option<f64> {
+fn estimate_epsilon(points: &[(u64, f64)]) -> Option<f64> {
     if points.is_empty() {
         return None;
     }
@@ -268,13 +268,13 @@ fn estimate_epsilon(points: &[(u32, f64)]) -> Option<f64> {
 /// Settings for a variable RBF profile.
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Copy, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
-pub struct RbfProfileVariableSettings {
+pub struct RbfProfileVariableConfig {
     /// Is this parameter an active variable?
     pub is_active: bool,
     /// Optional maximum number of days that the interpolation points can be moved from their
     ///  original position. If this is `None` then the points can not be moved from their
     ///  original day of the year.
-    pub days_of_year_range: Option<u32>,
+    pub days_of_year_range: Option<u64>,
     /// Optional upper bound for the value of each interpolation point. If this is `None` then
     ///  there is no upper bound.
     pub value_upper_bounds: Option<f64>,
@@ -284,8 +284,8 @@ pub struct RbfProfileVariableSettings {
 }
 
 #[cfg(feature = "core")]
-impl From<RbfProfileVariableSettings> for pywr_core::parameters::RbfProfileVariableConfig {
-    fn from(settings: RbfProfileVariableSettings) -> Self {
+impl From<RbfProfileVariableConfig> for pywr_core::parameters::RbfProfileVariableConfig {
+    fn from(settings: RbfProfileVariableConfig) -> Self {
         Self::new(
             settings.days_of_year_range,
             settings.value_upper_bounds.unwrap_or(f64::INFINITY),
@@ -319,12 +319,12 @@ pub struct RbfProfileParameter {
     pub meta: ParameterMeta,
     /// The points are the profile positions defined by an ordinal day of the year and a value.
     /// Radial basis function interpolation is used to create a daily profile from these points.
-    pub points: Vec<(u32, f64)>,
+    pub points: Vec<(u64, f64)>,
     /// The distance function used for interpolation.
     pub function: RadialBasisFunction,
     /// Optional settings for configuring how the value of this parameter can be varied. This
     /// is used by, for example, external algorithms to optimise the value of the parameter.
-    pub variable: Option<RbfProfileVariableSettings>,
+    pub variable: Option<RbfProfileVariableConfig>,
 }
 
 #[cfg(feature = "core")]
@@ -351,7 +351,12 @@ impl TryFromV1<RbfProfileParameterV1> for RbfProfileParameter {
     ) -> Result<Self, Self::Error> {
         let meta: ParameterMeta = v1.meta.into_v2(parent_node, conversion_data);
 
-        let points = v1.days_of_year.into_iter().zip(v1.values).collect();
+        let points = v1
+            .days_of_year
+            .into_iter()
+            .map(|doy| doy as u64)
+            .zip(v1.values)
+            .collect();
 
         if v1.rbf_kwargs.contains_key("smooth") {
             return Err(ComponentConversionError::Parameter {

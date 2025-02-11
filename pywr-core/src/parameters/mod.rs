@@ -66,6 +66,7 @@ pub use profiles::{
 };
 #[cfg(feature = "pyo3")]
 pub use py::PyParameter;
+use pyo3::pyclass;
 use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::marker::PhantomData;
@@ -272,6 +273,7 @@ impl<T> From<ConstParameterIndex<T>> for ParameterIndex<T> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "pyo3", pyclass)]
 pub struct ParameterName {
     name: String,
     parent: Option<String>,
@@ -370,6 +372,14 @@ impl ParameterStates {
             ParameterIndex::General(idx) => self.general.f64.get(*idx.deref()),
         }
     }
+
+    pub fn get_u64_state(&self, index: ParameterIndex<u64>) -> Option<&Option<Box<dyn ParameterState>>> {
+        match index {
+            ParameterIndex::Const(idx) => self.constant.u64.get(*idx.deref()),
+            ParameterIndex::Simple(idx) => self.simple.u64.get(*idx.deref()),
+            ParameterIndex::General(idx) => self.general.u64.get(*idx.deref()),
+        }
+    }
     pub fn get_general_f64_state(&self, index: GeneralParameterIndex<f64>) -> Option<&Option<Box<dyn ParameterState>>> {
         self.general.f64.get(*index.deref())
     }
@@ -387,6 +397,14 @@ impl ParameterStates {
             ParameterIndex::Const(idx) => self.constant.f64.get_mut(*idx.deref()),
             ParameterIndex::Simple(idx) => self.simple.f64.get_mut(*idx.deref()),
             ParameterIndex::General(idx) => self.general.f64.get_mut(*idx.deref()),
+        }
+    }
+
+    pub fn get_mut_u64_state(&mut self, index: ParameterIndex<u64>) -> Option<&mut Option<Box<dyn ParameterState>>> {
+        match index {
+            ParameterIndex::Const(idx) => self.constant.u64.get_mut(*idx.deref()),
+            ParameterIndex::Simple(idx) => self.simple.u64.get_mut(*idx.deref()),
+            ParameterIndex::General(idx) => self.general.u64.get_mut(*idx.deref()),
         }
     }
 
@@ -478,19 +496,10 @@ pub fn downcast_internal_state_ref<T: 'static>(internal_state: &Option<Box<dyn P
 
 pub trait VariableConfig: Any + Send {
     fn as_any(&self) -> &dyn Any;
-    fn as_any_mut(&mut self) -> &mut dyn Any;
-}
-
-impl<T> VariableConfig for T
-where
-    T: Any + Send,
-{
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
-    }
+    /// The total number of f64 variables required by this config.
+    fn size_f64(&self) -> usize;
+    /// The total number of u64 variables required by this config.
+    fn size_u64(&self) -> usize;
 }
 
 /// Helper function to downcast to variable config and print a helpful panic message if this fails.
@@ -519,34 +528,19 @@ pub trait Parameter: Send + Sync {
         Ok(None)
     }
 
-    /// Return the parameter as a [`VariableParameter<f64>`] if it supports being a variable.
-    fn as_f64_variable(&self) -> Option<&dyn VariableParameter<f64>> {
+    /// Return the parameter as a [`VariableParameter`] if it supports being a variable.
+    fn as_variable(&self) -> Option<&dyn VariableParameter> {
         None
     }
 
-    /// Return the parameter as a [`VariableParameter<f64>`] if it supports being a variable.
-    fn as_f64_variable_mut(&mut self) -> Option<&mut dyn VariableParameter<f64>> {
-        None
-    }
+    // /// Return the parameter as a [`VariableParameter`] if it supports being a variable.
+    // fn as_variable_mut(&mut self) -> Option<&mut dyn VariableParameter> {
+    //     None
+    // }
 
     /// Can this parameter be a variable
-    fn can_be_f64_variable(&self) -> bool {
-        self.as_f64_variable().is_some()
-    }
-
-    /// Return the parameter as a [`VariableParameter<u32>`] if it supports being a variable.
-    fn as_u32_variable(&self) -> Option<&dyn VariableParameter<u32>> {
-        None
-    }
-
-    /// Return the parameter as a [`VariableParameter<u32>`] if it supports being a variable.
-    fn as_u32_variable_mut(&mut self) -> Option<&mut dyn VariableParameter<u32>> {
-        None
-    }
-
-    /// Can this parameter be a variable
-    fn can_be_u32_variable(&self) -> bool {
-        self.as_u32_variable().is_some()
+    fn can_be_variable(&self) -> bool {
+        self.as_variable().is_some()
     }
 }
 
@@ -724,29 +718,29 @@ impl From<ParameterIndex<MultiValue>> for ParameterType {
 ///
 /// This trait is used to allow parameter's internal values to be accessed and altered by
 /// external algorithms. It is primarily designed to be used by the optimisation algorithms
-/// such as multi-objective evolutionary algorithms. The trait is generic to the type of
-/// the variable values being optimised but these will typically by `f64` and `u32`.
-pub trait VariableParameter<T> {
+/// such as multi-objective evolutionary algorithms.
+pub trait VariableParameter {
     fn meta(&self) -> &ParameterMeta;
     fn name(&self) -> &ParameterName {
         &self.meta().name
     }
 
     /// Return the number of variables required
-    fn size(&self, variable_config: &dyn VariableConfig) -> usize;
+    fn size(&self, variable_config: &dyn VariableConfig) -> (usize, usize);
     /// Apply new variable values to the parameter's state
     fn set_variables(
         &self,
-        values: &[T],
+        values_f64: &[f64],
+        values_u64: &[u64],
         variable_config: &dyn VariableConfig,
         internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<(), PywrError>;
     /// Get the current variable values
-    fn get_variables(&self, internal_state: &Option<Box<dyn ParameterState>>) -> Option<Vec<T>>;
+    fn get_variables(&self, internal_state: &Option<Box<dyn ParameterState>>) -> Option<(Vec<f64>, Vec<u64>)>;
     /// Get variable lower bounds
-    fn get_lower_bounds(&self, variable_config: &dyn VariableConfig) -> Result<Vec<T>, PywrError>;
+    fn get_lower_bounds(&self, variable_config: &dyn VariableConfig) -> Result<(Vec<f64>, Vec<u64>), PywrError>;
     /// Get variable upper bounds
-    fn get_upper_bounds(&self, variable_config: &dyn VariableConfig) -> Result<Vec<T>, PywrError>;
+    fn get_upper_bounds(&self, variable_config: &dyn VariableConfig) -> Result<(Vec<f64>, Vec<u64>), PywrError>;
 }
 
 #[derive(Debug, Clone, Copy)]
