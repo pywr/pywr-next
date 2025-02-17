@@ -2,7 +2,7 @@ use crate::parameters::Predicate;
 use crate::recorders::aggregator::PeriodValue;
 use chrono::NaiveDateTime;
 
-#[derive(Default)]
+#[derive(Default, Clone, Debug)]
 enum EventState {
     #[default]
     Ended,
@@ -14,23 +14,24 @@ pub struct Event {
     end: Option<NaiveDateTime>,
 }
 
-#[derive(Default)]
+#[derive(Default, Debug, Clone)]
 pub struct EventAggregatorState {
     current: EventState,
 }
 
+#[derive(Debug, Clone)]
 pub struct EventAggregator {
     predicate: Predicate,
     threshold: f64,
 }
 
 impl EventAggregator {
-    fn setup(&self) -> EventAggregatorState {
+    pub fn setup(&self) -> EventAggregatorState {
         EventAggregatorState::default()
     }
 
     /// Process a new value and return an event if one has completed.
-    fn process_value(&self, current_state: &mut EventAggregatorState, value: PeriodValue<f64>) -> Option<Event> {
+    pub fn process_value(&self, current_state: &mut EventAggregatorState, value: PeriodValue<f64>) -> Option<Event> {
         let active_now = self.predicate.apply(value.value, self.threshold);
 
         let (new_current, event) = match (&current_state.current, active_now) {
@@ -71,7 +72,7 @@ mod tests {
     use chrono::{NaiveDate, TimeDelta};
 
     #[test]
-    fn test_periodic_aggregator() {
+    fn test_event_aggregator() {
         let agg = EventAggregator {
             predicate: Predicate::GreaterThan,
             threshold: 1.0,

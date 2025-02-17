@@ -75,9 +75,9 @@ pub struct MetricAggregator {
 }
 
 #[cfg(feature = "core")]
-impl From<MetricAggregator> for pywr_core::recorders::Aggregator {
+impl From<MetricAggregator> for pywr_core::recorders::NestedAggregator {
     fn from(value: MetricAggregator) -> Self {
-        pywr_core::recorders::Aggregator::new(
+        pywr_core::recorders::NestedAggregator::new(
             value.freq.map(|p| p.into()),
             value.func.into(),
             value.child.map(|a| (*a).into()),

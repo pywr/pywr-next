@@ -9,6 +9,7 @@ use crate::timestep::Timestep;
 use crate::PywrError;
 use std::str::FromStr;
 
+#[derive(Debug, Clone)]
 pub enum Predicate {
     LessThan,
     GreaterThan,

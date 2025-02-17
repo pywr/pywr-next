@@ -162,7 +162,7 @@ impl AggregationFunction {
 }
 
 #[derive(Default, Debug, Clone)]
-struct PeriodicAggregatorState {
+pub struct PeriodicAggregatorState {
     current_values: Option<Vec<PeriodValue<f64>>>,
 }
 
@@ -248,12 +248,6 @@ impl PeriodicAggregatorState {
     }
 }
 
-#[derive(Clone, Debug)]
-struct PeriodicAggregator {
-    frequency: Option<AggregationFrequency>,
-    function: AggregationFunction,
-}
-
 #[derive(Debug, Copy, Clone)]
 pub struct PeriodValue<T> {
     pub start: NaiveDateTime,
@@ -296,14 +290,20 @@ where
         let start = values.first().expect("Empty vector of period values.").start;
         let duration = values.last().expect("Empty vector of period values.").duration;
 
-        let value = values.into_iter().map(|v| v.value).collect();
+        let value = values.iter().map(|v| v.value).collect();
         Self { start, duration, value }
     }
 }
 
+#[derive(Clone, Debug)]
+pub struct PeriodicAggregator {
+    frequency: Option<AggregationFrequency>,
+    function: AggregationFunction,
+}
+
 impl PeriodicAggregator {
-    fn setup(&self) -> PeriodicAggregatorState {
-        PeriodicAggregatorState::default()
+    pub fn new(frequency: Option<AggregationFrequency>, function: AggregationFunction) -> Self {
+        Self { frequency, function }
     }
 
     /// Append a new value to the aggregator.
@@ -311,7 +311,7 @@ impl PeriodicAggregator {
     /// The new value should sequentially follow from the previously processed values. If the
     /// value completes a new aggregation period then a value representing that aggregation is
     /// returned.
-    fn process_value(
+    pub fn process_value(
         &self,
         current_state: &mut PeriodicAggregatorState,
         value: PeriodValue<f64>,
@@ -335,91 +335,16 @@ impl PeriodicAggregator {
         agg_value
     }
 
-    fn calc_aggregation(&self, state: &PeriodicAggregatorState) -> Option<PeriodValue<f64>> {
+    pub fn calc_aggregation(&self, state: &PeriodicAggregatorState) -> Option<PeriodValue<f64>> {
         state.calc_aggregation(&self.function)
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct AggregatorState {
-    state: PeriodicAggregatorState,
-    child: Option<Box<AggregatorState>>,
-}
-
-#[derive(Clone, Debug)]
-pub struct Aggregator {
-    agg: PeriodicAggregator,
-    child: Option<Box<Aggregator>>,
-}
-
-impl Aggregator {
-    pub fn new(period: Option<AggregationFrequency>, function: AggregationFunction, child: Option<Aggregator>) -> Self {
-        Self {
-            agg: PeriodicAggregator {
-                frequency: period,
-                function,
-            },
-            child: child.map(Box::new),
-        }
-    }
-
-    pub fn setup(&self) -> AggregatorState {
-        AggregatorState {
-            state: self.agg.setup(),
-            child: self.child.as_ref().map(|c| Box::new(c.setup())),
-        }
-    }
-
-    /// Append a new value to the aggregator.
-    pub fn append_value(&self, state: &mut AggregatorState, value: PeriodValue<f64>) -> Option<PeriodValue<f64>> {
-        let agg_value = match (&self.child, state.child.as_mut()) {
-            (Some(child), Some(child_state)) => child.append_value(child_state, value),
-            (None, None) => Some(value),
-            (None, Some(_)) => panic!("Aggregator state contains a child state when none is expected."),
-            (Some(_), None) => panic!("Aggregator state does not contain a child state when one is expected."),
-        };
-
-        if let Some(agg_value) = agg_value {
-            self.agg.process_value(&mut state.state, agg_value)
-        } else {
-            None
-        }
-    }
-
-    /// Compute the final aggregation value from the current state.
-    ///
-    /// This will also compute the final aggregation value from the child aggregators if any exists.
-    /// This includes aggregation calculations over partial or unfinished periods.
-    pub fn finalise(&self, state: &mut AggregatorState) -> Option<PeriodValue<f64>> {
-        let final_child_value = match (&self.child, state.child.as_mut()) {
-            (Some(child), Some(child_state)) => child.finalise(child_state),
-            (None, None) => None,
-            (None, Some(_)) => panic!("Aggregator state contains a child state when none is expected."),
-            (Some(_), None) => panic!("Aggregator state does not contain a child state when one is expected."),
-        };
-
-        // If there is a final value from the child aggregator then process it
-        if let Some(final_child_value) = final_child_value {
-            let _ = self.agg.process_value(&mut state.state, final_child_value);
-        }
-
-        // Finally, compute the aggregation of the current state
-        self.agg.calc_aggregation(&state.state)
-    }
-
-    /// Create the initial default state for the aggregator.
-    pub fn default_state(&self) -> AggregatorState {
-        let state = PeriodicAggregatorState::default();
-        let child = self.child.as_ref().map(|c| Box::new(c.default_state()));
-        AggregatorState { state, child }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{AggregationFrequency, AggregationFunction, Aggregator, PeriodicAggregator, PeriodicAggregatorState};
+    use super::{AggregationFrequency, AggregationFunction, PeriodicAggregator, PeriodicAggregatorState};
     use crate::recorders::aggregator::PeriodValue;
-    use chrono::{Datelike, NaiveDate, TimeDelta};
+    use chrono::{NaiveDate, TimeDelta};
     use float_cmp::assert_approx_eq;
 
     #[test]
@@ -458,48 +383,6 @@ mod tests {
             .unwrap();
         let agg_value = agg.process_value(&mut state, PeriodValue::new(start, TimeDelta::days(1).into(), 1.0));
         assert!(agg_value.is_none());
-    }
-
-    #[test]
-    fn test_nested_aggregator() {
-        let model_agg = PeriodicAggregator {
-            frequency: None,
-            function: AggregationFunction::Max,
-        };
-
-        let annual_agg = PeriodicAggregator {
-            frequency: Some(AggregationFrequency::Annual),
-            function: AggregationFunction::Min,
-        };
-
-        // Setup an aggregator to calculate the max of the annual minimum values
-        let max_annual_min = Aggregator {
-            agg: model_agg,
-            child: Some(Box::new(Aggregator {
-                agg: annual_agg,
-                child: None,
-            })),
-        };
-
-        let mut state = max_annual_min.default_state();
-
-        let mut date = NaiveDate::from_ymd_opt(2023, 1, 1)
-            .unwrap()
-            .and_hms_opt(0, 0, 0)
-            .unwrap();
-        for _i in 0..365 * 3 {
-            let value = PeriodValue::new(date, TimeDelta::days(1).into(), date.year() as f64);
-            let _agg_value = max_annual_min.append_value(&mut state, value);
-            date = date + TimeDelta::days(1);
-        }
-
-        let final_value = max_annual_min.finalise(&mut state);
-
-        if let Some(final_value) = final_value {
-            assert_approx_eq!(f64, final_value.value, 2025.0);
-        } else {
-            panic!("Final value is None!")
-        }
     }
 
     #[test]

@@ -1,6 +1,6 @@
 use crate::metric::MetricF64;
 use crate::network::Network;
-use crate::recorders::aggregator::{Aggregator, AggregatorState, PeriodValue};
+use crate::recorders::aggregator::{NestedAggregator, NestedAggregatorState, PeriodValue};
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
 use crate::timestep::Timestep;
@@ -83,7 +83,7 @@ pub struct MetricSetState {
     // Populated with any yielded values from the last processing.
     current_values: Option<Vec<PeriodValue<f64>>>,
     // If the metric set aggregates then this state tracks the aggregation of each metric
-    aggregation_states: Option<Vec<AggregatorState>>,
+    aggregation_states: Option<Vec<NestedAggregatorState>>,
 }
 
 impl MetricSetState {
@@ -96,12 +96,12 @@ impl MetricSetState {
 #[derive(Clone, Debug)]
 pub struct MetricSet {
     name: String,
-    aggregator: Option<Aggregator>,
+    aggregator: Option<NestedAggregator>,
     metrics: Vec<OutputMetric>,
 }
 
 impl MetricSet {
-    pub fn new(name: &str, aggregator: Option<Aggregator>, metrics: Vec<OutputMetric>) -> Self {
+    pub fn new(name: &str, aggregator: Option<NestedAggregator>, metrics: Vec<OutputMetric>) -> Self {
         Self {
             name: name.to_string(),
             aggregator,
