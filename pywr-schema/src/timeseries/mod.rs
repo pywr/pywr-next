@@ -290,7 +290,7 @@ impl LoadedTimeseriesCollection {
             .get(name)
             .ok_or(TimeseriesError::TimeseriesNotFound(name.to_string()))?;
 
-        let array: Array2<f64> = df.to_ndarray::<Float64Type>(IndexOrder::default()).unwrap();
+        let array: Array2<f64> = df.to_ndarray::<Float64Type>(IndexOrder::default())?;
         let name = ParameterName::new(scenario, Some(name));
 
         match network.get_parameter_index_by_name(&name) {
@@ -323,7 +323,7 @@ impl LoadedTimeseriesCollection {
             .get(name)
             .ok_or(TimeseriesError::TimeseriesNotFound(name.to_string()))?;
 
-        let array: Array2<u64> = df.to_ndarray::<UInt64Type>(IndexOrder::default()).unwrap();
+        let array: Array2<u64> = df.to_ndarray::<UInt64Type>(IndexOrder::default())?;
         let name = ParameterName::new(scenario, Some(name));
 
         match network.get_index_parameter_index_by_name(&name) {
