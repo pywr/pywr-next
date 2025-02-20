@@ -506,7 +506,7 @@ mod tests {
         // Create two simple models
         let timestepper = default_timestepper();
         let mut scenario_builder = ScenarioDomainBuilder::default();
-        scenario_builder = scenario_builder.add_group("test-scenario", 2);
+        scenario_builder = scenario_builder.add_group("test-scenario", 2).unwrap();
 
         let mut multi_model = MultiNetworkModel::new(ModelDomain::from(timestepper, scenario_builder).unwrap());
 

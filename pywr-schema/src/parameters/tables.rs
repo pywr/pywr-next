@@ -62,11 +62,7 @@ impl TablesArrayParameter {
 
         // 3. Create an ArrayParameter using the loaded array.
         if let Some(scenario) = &self.scenario {
-            let scenario_group_index = args
-                .domain
-                .scenarios()
-                .group_index(scenario)
-                .ok_or(SchemaError::ScenarioGroupNotFound(scenario.to_string()))?;
+            let scenario_group_index = args.domain.scenarios().group_index(scenario)?;
 
             let p = pywr_core::parameters::Array2Parameter::new(
                 self.meta.name.as_str().into(),

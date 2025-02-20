@@ -617,7 +617,7 @@ impl PywrModel {
 
         if let Some(scenarios) = &self.scenarios {
             for scenario in scenarios {
-                scenario_builder = scenario_builder.add_group(&scenario.name, scenario.size);
+                scenario_builder = scenario_builder.add_group(&scenario.name, scenario.size)?;
             }
         }
 
@@ -785,7 +785,7 @@ impl PywrMultiNetworkModel {
 
         if let Some(scenarios) = &self.scenarios {
             for scenario in scenarios {
-                scenario_builder = scenario_builder.add_group(&scenario.name, scenario.size);
+                scenario_builder = scenario_builder.add_group(&scenario.name, scenario.size)?;
             }
         }
 

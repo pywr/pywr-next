@@ -58,8 +58,8 @@ pub enum SchemaError {
     DataLengthMismatch { expected: usize, found: usize },
     #[error("Failed to estimate epsilon for use in the radial basis function.")]
     RbfEpsilonEstimation,
-    #[error("Scenario group with name {0} not found")]
-    ScenarioGroupNotFound(String),
+    #[error("Scenario error: {0}")]
+    Scenario(#[from] pywr_core::scenario::ScenarioError),
     #[error("Inter-network transfer with name {0} not found")]
     InterNetworkTransferNotFound(String),
     #[error("Invalid rolling window definition on parameter {name}. Must convert to a positive integer.")]

@@ -143,12 +143,8 @@ pub enum PywrError {
     SolveFailed,
     #[error("atleast one parameter is required")]
     AtleastOneParameterRequired,
-    #[error("scenario state not found")]
-    ScenarioStateNotFound,
-    #[error("scenario not found: {0}")]
-    ScenarioNotFound(String),
-    #[error("scenario group index not found: {0}")]
-    ScenarioGroupIndexNotFound(usize),
+    #[error("scenario error: {0}")]
+    Scenario(#[from] scenario::ScenarioError),
     #[error("clp error")]
     ClpError(#[from] solvers::ClpError),
     #[error("metric not defined")]

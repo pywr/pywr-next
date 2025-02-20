@@ -70,6 +70,8 @@ pub enum TimeseriesError {
     #[cfg(feature = "core")]
     #[error("Python not enabled.")]
     PythonNotEnabled,
+    #[error("Scenario error: {0}")]
+    Scenario(#[from] pywr_core::scenario::ScenarioError),
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
@@ -280,10 +282,7 @@ impl LoadedTimeseriesCollection {
         domain: &ModelDomain,
         scenario: &str,
     ) -> Result<ParameterIndex<f64>, TimeseriesError> {
-        let scenario_group_index = domain
-            .scenarios()
-            .group_index(scenario)
-            .ok_or(TimeseriesError::ScenarioGroupNotFound(scenario.to_string()))?;
+        let scenario_group_index = domain.scenarios().group_index(scenario)?;
 
         let df = self
             .timeseries
@@ -313,10 +312,7 @@ impl LoadedTimeseriesCollection {
         domain: &ModelDomain,
         scenario: &str,
     ) -> Result<ParameterIndex<u64>, TimeseriesError> {
-        let scenario_group_index = domain
-            .scenarios()
-            .group_index(scenario)
-            .ok_or(TimeseriesError::ScenarioGroupNotFound(scenario.to_string()))?;
+        let scenario_group_index = domain.scenarios().group_index(scenario)?;
 
         let df = self
             .timeseries

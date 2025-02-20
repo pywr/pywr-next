@@ -1,3 +1,13 @@
+use thiserror::Error;
+
+#[derive(Error, Debug)]
+pub enum ScenarioError {
+    #[error("Scenario group name `{0}` already exists")]
+    DuplicateGroupName(String),
+    #[error("Scenario group name `{0}` not found")]
+    GroupNameNotFound(String),
+}
+
 #[derive(Clone, Debug)]
 pub struct ScenarioGroup {
     name: String,
@@ -31,11 +41,16 @@ pub struct ScenarioDomainBuilder {
 
 impl ScenarioDomainBuilder {
     /// Add a [`ScenarioGroup`] to the collection
-    pub fn add_group(mut self, name: &str, size: usize) -> Self {
-        // TODO error with duplicate names
+    pub fn add_group(mut self, name: &str, size: usize) -> Result<Self, ScenarioError> {
+        for group in self.groups.iter() {
+            if group.name == name {
+                return Err(ScenarioError::DuplicateGroupName(name.to_string()));
+            }
+        }
+
         self.groups.push(ScenarioGroup::new(name, size));
 
-        self
+        Ok(self)
     }
 
     pub fn build(self) -> ScenarioDomain {
@@ -146,8 +161,11 @@ impl ScenarioDomain {
     }
 
     /// Return the index of a scenario group by name
-    pub fn group_index(&self, name: &str) -> Option<usize> {
-        self.groups.iter().position(|g| g.name == name)
+    pub fn group_index(&self, name: &str) -> Result<usize, ScenarioError> {
+        self.groups
+            .iter()
+            .position(|g| g.name == name)
+            .ok_or_else(|| ScenarioError::GroupNameNotFound(name.to_string()))
     }
 
     pub fn groups(&self) -> &[ScenarioGroup] {
@@ -157,15 +175,30 @@ impl ScenarioDomain {
 
 #[cfg(test)]
 mod tests {
-    use crate::scenario::{ScenarioDomain, ScenarioDomainBuilder, ScenarioIndex};
+    use super::{ScenarioDomain, ScenarioDomainBuilder, ScenarioError, ScenarioIndex};
+
+    #[test]
+    /// Test duplicate scenario group names
+    fn test_duplicate_scenario_group_names() {
+        let result = ScenarioDomainBuilder::default()
+            .add_group("A", 1)
+            .unwrap()
+            .add_group("A", 1);
+
+        assert!(result.is_err());
+        assert!(matches!(result.err().unwrap(), ScenarioError::DuplicateGroupName(_)));
+    }
 
     #[test]
     /// Test [`ScenarioDomain`] iteration
     fn test_scenario_iteration() {
-        let mut builder = ScenarioDomainBuilder::default();
-        builder = builder.add_group("Scenarion A", 10);
-        builder = builder.add_group("Scenarion B", 2);
-        builder = builder.add_group("Scenarion C", 5);
+        let builder = ScenarioDomainBuilder::default()
+            .add_group("Scenarion A", 10)
+            .unwrap()
+            .add_group("Scenarion B", 2)
+            .unwrap()
+            .add_group("Scenarion C", 5)
+            .unwrap();
 
         let domain: ScenarioDomain = builder.build();
         let mut iter = domain.indices().iter();
