@@ -102,7 +102,12 @@ impl GeneralParameter<f64> for RhaiParameter {
             .map(|(k, value)| Ok((k.into(), (value.get_value(network, state)? as i64).into())))
             .collect::<Result<rhai::Map, PywrError>>()?;
 
-        let args = (*timestep, scenario_index.index as i64, metric_values, index_values);
+        let args = (
+            *timestep,
+            scenario_index.simulation_id() as i64,
+            metric_values,
+            index_values,
+        );
 
         let options = rhai::CallFnOptions::new().bind_this_ptr(&mut internal.state);
         let mut scope = Scope::new();
@@ -161,14 +166,8 @@ mod tests {
         let timesteps = time.timesteps();
 
         let scenario_indices = [
-            ScenarioIndex {
-                index: 0,
-                indices: vec![0],
-            },
-            ScenarioIndex {
-                index: 1,
-                indices: vec![1],
-            },
+            ScenarioIndex::new_same_as_schema(0, vec![0]),
+            ScenarioIndex::new_same_as_schema(1, vec![1]),
         ];
 
         let state = StateBuilder::new(vec![], 0).build();
@@ -184,7 +183,11 @@ mod tests {
             for (si, internal) in scenario_indices.iter().zip(internal_p_states.iter_mut()) {
                 let value = param.compute(ts, si, &model, &state, internal).unwrap();
 
-                assert_approx_eq!(f64, value, ((ts.index + 1) * si.index + ts.date.day() as usize) as f64);
+                assert_approx_eq!(
+                    f64,
+                    value,
+                    ((ts.index + 1) * si.simulation_id() + ts.date.day() as usize) as f64
+                );
             }
         }
     }

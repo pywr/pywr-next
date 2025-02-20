@@ -158,19 +158,19 @@ pub struct NetworkState {
 
 impl NetworkState {
     pub fn state(&self, scenario_index: &ScenarioIndex) -> &State {
-        &self.states[scenario_index.index]
+        &self.states[scenario_index.simulation_id()]
     }
 
     pub fn state_mut(&mut self, scenario_index: &ScenarioIndex) -> &mut State {
-        &mut self.states[scenario_index.index]
+        &mut self.states[scenario_index.simulation_id()]
     }
 
     pub fn parameter_states(&self, scenario_index: &ScenarioIndex) -> &ParameterStates {
-        &self.parameter_internal_states[scenario_index.index]
+        &self.parameter_internal_states[scenario_index.simulation_id()]
     }
 
     pub fn parameter_states_mut(&mut self, scenario_index: &ScenarioIndex) -> &mut ParameterStates {
-        &mut self.parameter_internal_states[scenario_index.index]
+        &mut self.parameter_internal_states[scenario_index.simulation_id()]
     }
 
     /// Returns an iterator of immutable parameter states for each scenario.
@@ -1699,7 +1699,6 @@ mod tests {
     use crate::network::Network;
     use crate::parameters::{ActivationFunction, ControlCurveInterpolatedParameter, Parameter};
     use crate::recorders::AssertionRecorder;
-    use crate::scenario::{ScenarioDomain, ScenarioGroupCollection, ScenarioIndex};
     use crate::solvers::{ClpSolver, ClpSolverSettings};
     use crate::test_utils::{run_all_solvers, simple_model, simple_storage_model};
     use float_cmp::assert_approx_eq;
@@ -1909,106 +1908,6 @@ mod tests {
 
         // Test all solvers
         run_all_solvers(&model, &[], &[], &[]);
-    }
-
-    #[test]
-    /// Test `ScenarioGroupCollection` iteration
-    fn test_scenario_iteration() {
-        let mut collection = ScenarioGroupCollection::default();
-        collection.add_group("Scenarion A", 10);
-        collection.add_group("Scenarion B", 2);
-        collection.add_group("Scenarion C", 5);
-
-        let domain: ScenarioDomain = collection.into();
-        let mut iter = domain.indices().iter();
-
-        // Test generation of scenario indices
-        assert_eq!(
-            iter.next(),
-            Some(&ScenarioIndex {
-                index: 0,
-                indices: vec![0, 0, 0]
-            })
-        );
-        assert_eq!(
-            iter.next(),
-            Some(&ScenarioIndex {
-                index: 1,
-                indices: vec![0, 0, 1]
-            })
-        );
-        assert_eq!(
-            iter.next(),
-            Some(&ScenarioIndex {
-                index: 2,
-                indices: vec![0, 0, 2]
-            })
-        );
-        assert_eq!(
-            iter.next(),
-            Some(&ScenarioIndex {
-                index: 3,
-                indices: vec![0, 0, 3]
-            })
-        );
-        assert_eq!(
-            iter.next(),
-            Some(&ScenarioIndex {
-                index: 4,
-                indices: vec![0, 0, 4]
-            })
-        );
-        assert_eq!(
-            iter.next(),
-            Some(&ScenarioIndex {
-                index: 5,
-                indices: vec![0, 1, 0]
-            })
-        );
-        assert_eq!(
-            iter.next(),
-            Some(&ScenarioIndex {
-                index: 6,
-                indices: vec![0, 1, 1]
-            })
-        );
-        assert_eq!(
-            iter.next(),
-            Some(&ScenarioIndex {
-                index: 7,
-                indices: vec![0, 1, 2]
-            })
-        );
-        assert_eq!(
-            iter.next(),
-            Some(&ScenarioIndex {
-                index: 8,
-                indices: vec![0, 1, 3]
-            })
-        );
-        assert_eq!(
-            iter.next(),
-            Some(&ScenarioIndex {
-                index: 9,
-                indices: vec![0, 1, 4]
-            })
-        );
-        assert_eq!(
-            iter.next(),
-            Some(&ScenarioIndex {
-                index: 10,
-                indices: vec![1, 0, 0]
-            })
-        );
-
-        // Test final index
-        assert_eq!(
-            iter.last(),
-            Some(&ScenarioIndex {
-                index: 99,
-                indices: vec![9, 1, 4]
-            })
-        );
     }
 
     #[test]

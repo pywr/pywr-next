@@ -613,15 +613,15 @@ impl PywrModel {
     ) -> Result<pywr_core::models::Model, SchemaError> {
         let timestepper = self.timestepper.clone().into();
 
-        let mut scenario_collection = pywr_core::scenario::ScenarioGroupCollection::default();
+        let mut scenario_builder = pywr_core::scenario::ScenarioDomainBuilder::default();
 
         if let Some(scenarios) = &self.scenarios {
             for scenario in scenarios {
-                scenario_collection.add_group(&scenario.name, scenario.size);
+                scenario_builder = scenario_builder.add_group(&scenario.name, scenario.size);
             }
         }
 
-        let domain = ModelDomain::from(timestepper, scenario_collection)?;
+        let domain = ModelDomain::from(timestepper, scenario_builder)?;
 
         let tables = self.network.load_tables(data_path)?;
         let timeseries = self.network.load_timeseries(&domain, data_path)?;
@@ -781,15 +781,15 @@ impl PywrMultiNetworkModel {
     ) -> Result<pywr_core::models::MultiNetworkModel, SchemaError> {
         let timestepper = self.timestepper.clone().into();
 
-        let mut scenario_collection = pywr_core::scenario::ScenarioGroupCollection::default();
+        let mut scenario_builder = pywr_core::scenario::ScenarioDomainBuilder::default();
 
         if let Some(scenarios) = &self.scenarios {
             for scenario in scenarios {
-                scenario_collection.add_group(&scenario.name, scenario.size);
+                scenario_builder = scenario_builder.add_group(&scenario.name, scenario.size);
             }
         }
 
-        let domain = ModelDomain::from(timestepper, scenario_collection)?;
+        let domain = ModelDomain::from(timestepper, scenario_builder)?;
         let mut networks = Vec::with_capacity(self.networks.len());
         let mut inter_network_transfers = Vec::new();
         let mut schemas: Vec<(PywrNetwork, LoadedTableCollection, LoadedTimeseriesCollection)> =

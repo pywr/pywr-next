@@ -251,10 +251,10 @@ fn write_scenarios_metadata(file: &hdf5_metno::File, domain: &ScenarioDomain) ->
         .indices()
         .iter()
         .map(|s| {
-            let indices = hdf5_metno::types::VarLenArray::from_slice(&s.indices);
+            let indices = hdf5_metno::types::VarLenArray::from_slice(&s.simulation_indices());
 
             Ok(H5ScenarioIndex {
-                index: s.index,
+                index: s.simulation_id(),
                 indices,
             })
         })

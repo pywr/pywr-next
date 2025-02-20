@@ -1,5 +1,3 @@
-use crate::PywrError;
-
 #[derive(Clone, Debug)]
 pub struct ScenarioGroup {
     name: String,
@@ -25,133 +23,167 @@ impl ScenarioGroup {
     }
 }
 
+/// A builder for creating a [`ScenarioDomain`].
 #[derive(Clone, Debug, Default)]
-pub struct ScenarioGroupCollection {
+pub struct ScenarioDomainBuilder {
     groups: Vec<ScenarioGroup>,
 }
 
-impl ScenarioGroupCollection {
-    pub fn new(groups: Vec<ScenarioGroup>) -> Self {
-        Self { groups }
-    }
-
-    /// Number of [`ScenarioGroup`]s in the collection.
-    pub fn len(&self) -> usize {
-        self.groups.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.groups.is_empty()
-    }
-
-    /// Find a [`ScenarioGroup`]s index in the collection by name
-    /// Find a `ScenarioGroup` in the collection by its index
-    pub fn get_group(&self, idx: usize) -> Result<&ScenarioGroup, PywrError> {
-        self.groups.get(idx).ok_or(PywrError::ScenarioGroupIndexNotFound(idx))
-    }
-
-    /// Get all `ScenarioGroup`s in the collection
-    pub fn get_groups(&self) -> &[ScenarioGroup] {
-        &self.groups
-    }
-
-    /// Find a `ScenarioGroup`'s index in the collection by name
-    pub fn get_group_index_by_name(&self, name: &str) -> Result<usize, PywrError> {
-        self.groups
-            .iter()
-            .position(|g| g.name == name)
-            .ok_or_else(|| PywrError::ScenarioNotFound(name.to_string()))
-    }
-
-    /// Find a [`ScenarioGroup`]s index in the collection by name
-    pub fn get_group_by_name(&self, name: &str) -> Result<&ScenarioGroup, PywrError> {
-        self.groups
-            .iter()
-            .find(|g| g.name == name)
-            .ok_or_else(|| PywrError::ScenarioNotFound(name.to_string()))
-    }
-
+impl ScenarioDomainBuilder {
     /// Add a [`ScenarioGroup`] to the collection
-    pub fn add_group(&mut self, name: &str, size: usize) {
+    pub fn add_group(mut self, name: &str, size: usize) -> Self {
         // TODO error with duplicate names
         self.groups.push(ScenarioGroup::new(name, size));
+
+        self
     }
 
-    /// Return a vector of `ScenarioIndex`s for all combinations of the groups.
-    fn scenario_indices(&self) -> Vec<ScenarioIndex> {
-        let num: usize = self.groups.iter().map(|grp| grp.size).product();
-        let mut scenario_indices: Vec<ScenarioIndex> = Vec::with_capacity(num);
+    pub fn build(self) -> ScenarioDomain {
+        let (indices, groups) = if self.groups.is_empty() {
+            // Default to a single scenario if no groups are defined.
+            (
+                vec![ScenarioIndex::new_same_as_schema(0, vec![0])],
+                vec![ScenarioGroup::new("default", 1)],
+            )
+        } else {
+            let num: usize = self.groups.iter().map(|grp| grp.size).product();
+            let mut scenario_indices: Vec<ScenarioIndex> = Vec::with_capacity(num);
 
-        for scenario_id in 0..num {
-            let mut remaining = scenario_id;
-            let mut indices: Vec<usize> = Vec::with_capacity(self.groups.len());
-            for grp in self.groups.iter().rev() {
-                let idx = remaining % grp.size;
-                remaining /= grp.size;
-                indices.push(idx);
+            for scenario_id in 0..num {
+                let mut remaining = scenario_id;
+                let mut indices: Vec<usize> = Vec::with_capacity(self.groups.len());
+                for grp in self.groups.iter().rev() {
+                    let idx = remaining % grp.size;
+                    remaining /= grp.size;
+                    indices.push(idx);
+                }
+                indices.reverse();
+                scenario_indices.push(ScenarioIndex::new_same_as_schema(scenario_id, indices));
             }
-            indices.reverse();
-            scenario_indices.push(ScenarioIndex::new(scenario_id, indices));
-        }
-        scenario_indices
+            (scenario_indices, self.groups)
+        };
+
+        ScenarioDomain { indices, groups }
+    }
+}
+
+/// A scenario index and its indices for each group.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ScenarioIndices {
+    /// The global index of the scenario.
+    pub index: usize,
+    /// The index of the scenario in each group.
+    pub indices: Vec<usize>,
+}
+
+impl ScenarioIndices {
+    pub fn new(index: usize, indices: Vec<usize>) -> Self {
+        Self { index, indices }
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ScenarioIndex {
-    pub(crate) index: usize,
-    pub(crate) indices: Vec<usize>,
+    /// The indices of the scenarios run in the model.
+    core: ScenarioIndices,
+    /// The indices as defined in the original schema. When running a sub-set of the
+    /// schema's scenarios this will contain the original indices. Otherwise, it will
+    /// be `None`.
+    schema: Option<ScenarioIndices>,
 }
 
 impl ScenarioIndex {
-    pub(crate) fn new(index: usize, indices: Vec<usize>) -> Self {
-        Self { index, indices }
+    /// Create a new scenario index with identical core and schema indices.
+    pub fn new_same_as_schema(index: usize, indices: Vec<usize>) -> Self {
+        Self {
+            core: ScenarioIndices::new(index, indices.clone()),
+            schema: None,
+        }
+    }
+
+    /// The global index of the scenario for this simulation. This may be different
+    /// from the global index of the scenario in the schema.
+    pub fn simulation_id(&self) -> usize {
+        self.core.index
+    }
+
+    pub fn simulation_indices(&self) -> &[usize] {
+        &self.core.indices
+    }
+
+    pub fn simulation_index_for_group(&self, group_index: usize) -> usize {
+        self.core.indices[group_index]
+    }
+
+    pub fn core(&self) -> &ScenarioIndices {
+        &self.core
+    }
+
+    pub fn schema(&self) -> Option<&ScenarioIndices> {
+        self.schema.as_ref()
     }
 }
 
+/// The scenario domain for a model.
 #[derive(Debug)]
 pub struct ScenarioDomain {
-    scenario_indices: Vec<ScenarioIndex>,
-    scenario_groups: Vec<ScenarioGroup>,
+    indices: Vec<ScenarioIndex>,
+    groups: Vec<ScenarioGroup>,
 }
 
 impl ScenarioDomain {
     /// The total number of scenario combinations in the domain.
     pub fn len(&self) -> usize {
-        self.scenario_indices.len()
+        self.indices.len()
     }
 
     pub fn is_empty(&self) -> bool {
-        self.scenario_indices.is_empty()
+        self.indices.is_empty()
     }
 
     pub fn indices(&self) -> &[ScenarioIndex] {
-        &self.scenario_indices
+        &self.indices
     }
 
     /// Return the index of a scenario group by name
     pub fn group_index(&self, name: &str) -> Option<usize> {
-        self.scenario_groups.iter().position(|g| g.name == name)
+        self.groups.iter().position(|g| g.name == name)
     }
 
     pub fn groups(&self) -> &[ScenarioGroup] {
-        &self.scenario_groups
+        &self.groups
     }
 }
 
-impl From<ScenarioGroupCollection> for ScenarioDomain {
-    fn from(value: ScenarioGroupCollection) -> Self {
-        // Handle creating at-least one scenario if the collection is empty.
-        if !value.is_empty() {
-            Self {
-                scenario_indices: value.scenario_indices(),
-                scenario_groups: value.groups,
-            }
-        } else {
-            Self {
-                scenario_indices: vec![ScenarioIndex::new(0, vec![0])],
-                scenario_groups: vec![ScenarioGroup::new("default", 1)],
-            }
-        }
+#[cfg(test)]
+mod tests {
+    use crate::scenario::{ScenarioDomain, ScenarioDomainBuilder, ScenarioIndex};
+
+    #[test]
+    /// Test [`ScenarioDomain`] iteration
+    fn test_scenario_iteration() {
+        let mut builder = ScenarioDomainBuilder::default();
+        builder = builder.add_group("Scenarion A", 10);
+        builder = builder.add_group("Scenarion B", 2);
+        builder = builder.add_group("Scenarion C", 5);
+
+        let domain: ScenarioDomain = builder.build();
+        let mut iter = domain.indices().iter();
+
+        // Test generation of scenario indices
+        assert_eq!(iter.next(), Some(&ScenarioIndex::new_same_as_schema(0, vec![0, 0, 0])));
+        assert_eq!(iter.next(), Some(&ScenarioIndex::new_same_as_schema(1, vec![0, 0, 1])));
+        assert_eq!(iter.next(), Some(&ScenarioIndex::new_same_as_schema(2, vec![0, 0, 2])));
+        assert_eq!(iter.next(), Some(&ScenarioIndex::new_same_as_schema(3, vec![0, 0, 3])));
+        assert_eq!(iter.next(), Some(&ScenarioIndex::new_same_as_schema(4, vec![0, 0, 4])));
+        assert_eq!(iter.next(), Some(&ScenarioIndex::new_same_as_schema(5, vec![0, 1, 0])));
+        assert_eq!(iter.next(), Some(&ScenarioIndex::new_same_as_schema(6, vec![0, 1, 1])));
+        assert_eq!(iter.next(), Some(&ScenarioIndex::new_same_as_schema(7, vec![0, 1, 2])));
+        assert_eq!(iter.next(), Some(&ScenarioIndex::new_same_as_schema(8, vec![0, 1, 3])));
+        assert_eq!(iter.next(), Some(&ScenarioIndex::new_same_as_schema(9, vec![0, 1, 4])));
+        assert_eq!(iter.next(), Some(&ScenarioIndex::new_same_as_schema(10, vec![1, 0, 0])));
+
+        // Test final index
+        assert_eq!(iter.last(), Some(&ScenarioIndex::new_same_as_schema(99, vec![9, 1, 4])));
     }
 }

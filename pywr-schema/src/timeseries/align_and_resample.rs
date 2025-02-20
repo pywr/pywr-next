@@ -106,7 +106,7 @@ mod tests {
     use polars::prelude::*;
     use pywr_core::{
         models::ModelDomain,
-        scenario::{ScenarioDomain, ScenarioGroupCollection},
+        scenario::{ScenarioDomain, ScenarioDomainBuilder},
         timestep::{TimeDomain, TimestepDuration, Timestepper},
     };
 
@@ -120,7 +120,7 @@ mod tests {
         let timestepper = Timestepper::new(start, end, timestep);
         let time_domain = TimeDomain::try_from(timestepper).unwrap();
 
-        let scenario_domain: ScenarioDomain = ScenarioGroupCollection::new(vec![]).into();
+        let scenario_domain: ScenarioDomain = ScenarioDomainBuilder::default().build();
 
         let domain = ModelDomain::new(time_domain, scenario_domain);
 
@@ -175,7 +175,7 @@ mod tests {
         let timestepper = Timestepper::new(start, end, timestep);
         let time_domain = TimeDomain::try_from(timestepper).unwrap();
 
-        let scenario_domain: ScenarioDomain = ScenarioGroupCollection::new(vec![]).into();
+        let scenario_domain: ScenarioDomain = ScenarioDomainBuilder::default().build();
         let domain = ModelDomain::new(time_domain, scenario_domain);
 
         let time = date_range(
@@ -215,7 +215,7 @@ mod tests {
         let timestepper = Timestepper::new(start, end, timestep);
         let time_domain = TimeDomain::try_from(timestepper).unwrap();
 
-        let scenario_domain: ScenarioDomain = ScenarioGroupCollection::new(vec![]).into();
+        let scenario_domain: ScenarioDomain = ScenarioDomainBuilder::default().build();
         let domain = ModelDomain::new(time_domain, scenario_domain);
 
         let time = date_range(

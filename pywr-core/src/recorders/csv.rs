@@ -109,9 +109,9 @@ impl Recorder for CsvWideFmtOutput {
             // Repeat the names, sub-names and attributes for every scenario
             header_name.extend(names.clone());
             header_attribute.extend(attributes.clone());
-            header_scenario.extend(vec![format!("{}", scenario_index.index); names.len()]);
+            header_scenario.extend(vec![format!("{}", scenario_index.simulation_id()); names.len()]);
 
-            for (group_idx, idx) in scenario_index.indices.iter().enumerate() {
+            for (group_idx, idx) in scenario_index.simulation_indices().iter().enumerate() {
                 header_scenario_groups[group_idx].extend(vec![format!("{}", idx); names.len()]);
             }
         }
