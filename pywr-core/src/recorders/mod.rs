@@ -88,6 +88,7 @@ pub trait Recorder: Send + Sync {
     fn finalise(
         &self,
         _network: &Network,
+        _scenario_indices: &[ScenarioIndex],
         _metric_set_states: &[Vec<MetricSetState>],
         _internal_state: &mut Option<Box<dyn Any>>,
     ) -> Result<(), PywrError> {

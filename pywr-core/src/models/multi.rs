@@ -387,7 +387,11 @@ impl MultiNetworkModel {
         for (idx, entry) in self.networks.iter().enumerate() {
             let sub_model_ms_states = state.states.get_mut(idx).unwrap().all_metric_set_internal_states_mut();
             let sub_model_recorder_states = state.recorder_states.get_mut(idx).unwrap();
-            entry.network.finalise(sub_model_ms_states, sub_model_recorder_states)?;
+            entry.network.finalise(
+                self.domain.scenarios.indices(),
+                sub_model_ms_states,
+                sub_model_recorder_states,
+            )?;
         }
         // End the global timer and print the run statistics
         timings.finish(count);
@@ -439,7 +443,11 @@ impl MultiNetworkModel {
         for (idx, entry) in self.networks.iter().enumerate() {
             let sub_model_ms_states = state.states.get_mut(idx).unwrap().all_metric_set_internal_states_mut();
             let sub_model_recorder_states = state.recorder_states.get_mut(idx).unwrap();
-            entry.network.finalise(sub_model_ms_states, sub_model_recorder_states)?;
+            entry.network.finalise(
+                self.domain.scenarios.indices(),
+                sub_model_ms_states,
+                sub_model_recorder_states,
+            )?;
         }
         // End the global timer and print the run statistics
         timings.finish(count);
@@ -506,7 +514,7 @@ mod tests {
         // Create two simple models
         let timestepper = default_timestepper();
         let mut scenario_builder = ScenarioDomainBuilder::default();
-        scenario_builder = scenario_builder.add_group("test-scenario", 2).unwrap();
+        scenario_builder = scenario_builder.with_group("test-scenario", 2, None, None).unwrap();
 
         let mut multi_model = MultiNetworkModel::new(ModelDomain::from(timestepper, scenario_builder).unwrap());
 

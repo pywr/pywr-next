@@ -18,10 +18,10 @@ impl ModelDomain {
         Self { time, scenarios }
     }
 
-    pub fn from(timestepper: Timestepper, scenario_collection: ScenarioDomainBuilder) -> Result<Self, PywrError> {
+    pub fn from(timestepper: Timestepper, scenario_builder: ScenarioDomainBuilder) -> Result<Self, PywrError> {
         Ok(Self {
             time: TimeDomain::try_from(timestepper)?,
-            scenarios: scenario_collection.build(),
+            scenarios: scenario_builder.build()?,
         })
     }
 
@@ -45,7 +45,7 @@ impl TryFrom<Timestepper> for ModelDomain {
         let time = TimeDomain::try_from(value)?;
         Ok(Self {
             time,
-            scenarios: ScenarioDomainBuilder::default().build(),
+            scenarios: ScenarioDomainBuilder::default().build()?,
         })
     }
 }
@@ -54,7 +54,7 @@ impl From<TimeDomain> for ModelDomain {
     fn from(value: TimeDomain) -> Self {
         Self {
             time: value,
-            scenarios: ScenarioDomainBuilder::default().build(),
+            scenarios: ScenarioDomainBuilder::default().build().unwrap(),
         }
     }
 }

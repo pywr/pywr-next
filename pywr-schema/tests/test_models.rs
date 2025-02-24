@@ -44,6 +44,9 @@ model_tests! {
     test_hdf1: ("hdf1.json", vec![], vec![], vec![]), // TODO asserting h5 results not possible with this framework
     test_memory1: ("memory1.json", vec![], vec![], vec![]),  // TODO asserting memory results not possible with this framework
     test_timeseries: ("timeseries.json", vec!["timeseries-expected.csv"], vec![], vec![]),
+    test_timeseries2: ("timeseries2.json", vec!["timeseries2-expected.csv"], vec![], vec![]),
+    test_timeseries3: ("timeseries3.json", vec!["timeseries3-expected.csv"], vec![], vec![]),
+    test_timeseries4: ("timeseries4.json", vec!["timeseries4-expected.csv"], vec![], vec![]),
     test_storage_max_volumes: ("storage_max_volumes.json", vec![], vec![], vec![]),
     test_mutual_exclusivity1: ("mutual-exclusivity1.json", vec!["mutual-exclusivity1.csv"], vec!["clp", "ipm-simd", "ipm-ocl"], vec![]),
     test_mutual_exclusivity2: ("mutual-exclusivity2.json", vec!["mutual-exclusivity2.csv"], vec!["clp", "ipm-simd", "ipm-ocl"], vec![]),

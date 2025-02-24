@@ -309,6 +309,7 @@ impl GeneralParameter<MultiValue> for PyParameter {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::scenario::ScenarioIndexBuilder;
     use crate::state::StateBuilder;
     use crate::test_utils::default_timestepper;
     use crate::timestep::TimeDomain;
@@ -360,8 +361,8 @@ class MyParameter:
         let timesteps = time.timesteps();
 
         let scenario_indices = [
-            ScenarioIndex::new_same_as_schema(0, vec![0]),
-            ScenarioIndex::new_same_as_schema(1, vec![1]),
+            ScenarioIndexBuilder::new(0, vec![0], vec!["0"]).build(),
+            ScenarioIndexBuilder::new(1, vec![1], vec!["1"]).build(),
         ];
 
         let state = StateBuilder::new(vec![], 0).build();
@@ -436,8 +437,8 @@ class MyParameter:
         let timesteps = time.timesteps();
 
         let scenario_indices = [
-            ScenarioIndex::new_same_as_schema(0, vec![0]),
-            ScenarioIndex::new_same_as_schema(1, vec![1]),
+            ScenarioIndexBuilder::new(0, vec![0], vec!["0"]).build(),
+            ScenarioIndexBuilder::new(1, vec![1], vec!["1"]).build(),
         ];
 
         let state = StateBuilder::new(vec![], 0).build();

@@ -120,7 +120,7 @@ mod tests {
         let timestepper = Timestepper::new(start, end, timestep);
         let time_domain = TimeDomain::try_from(timestepper).unwrap();
 
-        let scenario_domain: ScenarioDomain = ScenarioDomainBuilder::default().build();
+        let scenario_domain: ScenarioDomain = ScenarioDomainBuilder::default().build().unwrap();
 
         let domain = ModelDomain::new(time_domain, scenario_domain);
 
@@ -175,7 +175,7 @@ mod tests {
         let timestepper = Timestepper::new(start, end, timestep);
         let time_domain = TimeDomain::try_from(timestepper).unwrap();
 
-        let scenario_domain: ScenarioDomain = ScenarioDomainBuilder::default().build();
+        let scenario_domain: ScenarioDomain = ScenarioDomainBuilder::default().build().unwrap();
         let domain = ModelDomain::new(time_domain, scenario_domain);
 
         let time = date_range(
@@ -215,7 +215,7 @@ mod tests {
         let timestepper = Timestepper::new(start, end, timestep);
         let time_domain = TimeDomain::try_from(timestepper).unwrap();
 
-        let scenario_domain: ScenarioDomain = ScenarioDomainBuilder::default().build();
+        let scenario_domain: ScenarioDomain = ScenarioDomainBuilder::default().build().unwrap();
         let domain = ModelDomain::new(time_domain, scenario_domain);
 
         let time = date_range(

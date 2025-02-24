@@ -93,7 +93,9 @@ pub fn simple_network(network: &mut Network, inflow_scenario_index: usize, num_i
 /// Create a simple test model with three nodes.
 pub fn simple_model(num_scenarios: usize, timestepper: Option<Timestepper>) -> Model {
     let mut scenario_builder = ScenarioDomainBuilder::default();
-    scenario_builder = scenario_builder.add_group("test-scenario", num_scenarios).unwrap();
+    scenario_builder = scenario_builder
+        .with_group("test-scenario", num_scenarios, None, None)
+        .unwrap();
 
     let domain = ModelDomain::from(timestepper.unwrap_or_else(default_timestepper), scenario_builder).unwrap();
     let mut network = Network::default();
@@ -404,7 +406,7 @@ pub fn make_random_model<R: Rng>(
     let timestepper = Timestepper::new(start, end, duration);
 
     let mut scenario_builder = ScenarioDomainBuilder::default();
-    scenario_builder = scenario_builder.add_group("test-scenario", num_scenarios)?;
+    scenario_builder = scenario_builder.with_group("test-scenario", num_scenarios, None, None)?;
 
     let domain = ModelDomain::from(timestepper, scenario_builder)?;
 

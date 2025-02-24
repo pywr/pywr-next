@@ -59,6 +59,7 @@ pub enum SchemaError {
     #[error("Failed to estimate epsilon for use in the radial basis function.")]
     RbfEpsilonEstimation,
     #[error("Scenario error: {0}")]
+    #[cfg(feature = "core")]
     Scenario(#[from] pywr_core::scenario::ScenarioError),
     #[error("Inter-network transfer with name {0} not found")]
     InterNetworkTransferNotFound(String),
