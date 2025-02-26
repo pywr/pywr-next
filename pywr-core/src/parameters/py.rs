@@ -107,7 +107,7 @@ impl PyParameter {
         let value: T = Python::with_gil(|py| {
             let date = timestep.date.into_pyobject(py)?;
 
-            let si = scenario_index.index.into_pyobject(py)?;
+            let si = scenario_index.simulation_id().into_pyobject(py)?;
 
             let metric_dict = self.get_metrics_dict(network, state, py)?;
             let index_dict = self.get_indices_dict(network, state, py)?;
@@ -137,7 +137,7 @@ impl PyParameter {
             // Only do this if the object has an "after" method defined.
             if internal.user_obj.getattr(py, "after").is_ok() {
                 let date = timestep.date.into_pyobject(py)?;
-                let si = scenario_index.index.into_pyobject(py)?;
+                let si = scenario_index.simulation_id().into_pyobject(py)?;
 
                 let metric_dict = self.get_metrics_dict(network, state, py)?;
                 let index_dict = self.get_indices_dict(network, state, py)?;
@@ -246,7 +246,7 @@ impl GeneralParameter<MultiValue> for PyParameter {
         let value: MultiValue = Python::with_gil(|py| {
             let date = timestep.date.into_pyobject(py)?;
 
-            let si = scenario_index.index.into_pyobject(py)?;
+            let si = scenario_index.simulation_id().into_pyobject(py)?;
 
             let metric_dict = self.get_metrics_dict(network, state, py)?;
             let index_dict = self.get_indices_dict(network, state, py)?;
@@ -309,6 +309,7 @@ impl GeneralParameter<MultiValue> for PyParameter {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::scenario::ScenarioIndexBuilder;
     use crate::state::StateBuilder;
     use crate::test_utils::default_timestepper;
     use crate::timestep::TimeDomain;
@@ -360,14 +361,8 @@ class MyParameter:
         let timesteps = time.timesteps();
 
         let scenario_indices = [
-            ScenarioIndex {
-                index: 0,
-                indices: vec![0],
-            },
-            ScenarioIndex {
-                index: 1,
-                indices: vec![1],
-            },
+            ScenarioIndexBuilder::new(0, vec![0], vec!["0"]).build(),
+            ScenarioIndexBuilder::new(1, vec![1], vec!["1"]).build(),
         ];
 
         let state = StateBuilder::new(vec![], 0).build();
@@ -383,7 +378,11 @@ class MyParameter:
             for (si, internal) in scenario_indices.iter().zip(internal_p_states.iter_mut()) {
                 let value = GeneralParameter::compute(&param, ts, si, &model, &state, internal).unwrap();
 
-                assert_approx_eq!(f64, value, ((ts.index + 1) * si.index + ts.date.day() as usize) as f64);
+                assert_approx_eq!(
+                    f64,
+                    value,
+                    ((ts.index + 1) * si.simulation_id() + ts.date.day() as usize) as f64
+                );
             }
         }
     }
@@ -438,14 +437,8 @@ class MyParameter:
         let timesteps = time.timesteps();
 
         let scenario_indices = [
-            ScenarioIndex {
-                index: 0,
-                indices: vec![0],
-            },
-            ScenarioIndex {
-                index: 1,
-                indices: vec![1],
-            },
+            ScenarioIndexBuilder::new(0, vec![0], vec!["0"]).build(),
+            ScenarioIndexBuilder::new(1, vec![1], vec!["1"]).build(),
         ];
 
         let state = StateBuilder::new(vec![], 0).build();
@@ -465,7 +458,7 @@ class MyParameter:
 
                 assert_eq!(
                     *value.get_index("count").unwrap() as usize,
-                    ((ts.index + 1) * si.index + ts.date.day() as usize)
+                    ((ts.index + 1) * si.simulation_id() + ts.date.day() as usize)
                 );
             }
         }

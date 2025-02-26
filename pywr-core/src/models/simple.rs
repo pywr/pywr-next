@@ -248,6 +248,7 @@ impl Model {
         }
 
         self.network.finalise(
+            self.domain.scenarios.indices(),
             state.state.all_metric_set_internal_states_mut(),
             &mut state.recorder_state,
         )?;
@@ -306,6 +307,7 @@ impl Model {
         }
 
         self.network.finalise(
+            self.domain.scenarios.indices(),
             state.state.all_metric_set_internal_states_mut(),
             &mut state.recorder_state,
         )?;

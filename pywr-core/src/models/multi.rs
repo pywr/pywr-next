@@ -387,7 +387,11 @@ impl MultiNetworkModel {
         for (idx, entry) in self.networks.iter().enumerate() {
             let sub_model_ms_states = state.states.get_mut(idx).unwrap().all_metric_set_internal_states_mut();
             let sub_model_recorder_states = state.recorder_states.get_mut(idx).unwrap();
-            entry.network.finalise(sub_model_ms_states, sub_model_recorder_states)?;
+            entry.network.finalise(
+                self.domain.scenarios.indices(),
+                sub_model_ms_states,
+                sub_model_recorder_states,
+            )?;
         }
         // End the global timer and print the run statistics
         timings.finish(count);
@@ -439,7 +443,11 @@ impl MultiNetworkModel {
         for (idx, entry) in self.networks.iter().enumerate() {
             let sub_model_ms_states = state.states.get_mut(idx).unwrap().all_metric_set_internal_states_mut();
             let sub_model_recorder_states = state.recorder_states.get_mut(idx).unwrap();
-            entry.network.finalise(sub_model_ms_states, sub_model_recorder_states)?;
+            entry.network.finalise(
+                self.domain.scenarios.indices(),
+                sub_model_ms_states,
+                sub_model_recorder_states,
+            )?;
         }
         // End the global timer and print the run statistics
         timings.finish(count);
@@ -496,7 +504,7 @@ mod tests {
     use super::MultiNetworkModel;
     use crate::models::ModelDomain;
     use crate::network::Network;
-    use crate::scenario::ScenarioGroupCollection;
+    use crate::scenario::ScenarioDomainBuilder;
     use crate::solvers::ClpSolver;
     use crate::test_utils::{default_timestepper, simple_network};
 
@@ -505,10 +513,10 @@ mod tests {
     fn test_multi_model_step() {
         // Create two simple models
         let timestepper = default_timestepper();
-        let mut scenario_collection = ScenarioGroupCollection::default();
-        scenario_collection.add_group("test-scenario", 2);
+        let mut scenario_builder = ScenarioDomainBuilder::default();
+        scenario_builder = scenario_builder.with_group("test-scenario", 2, None, None).unwrap();
 
-        let mut multi_model = MultiNetworkModel::new(ModelDomain::from(timestepper, scenario_collection).unwrap());
+        let mut multi_model = MultiNetworkModel::new(ModelDomain::from(timestepper, scenario_builder).unwrap());
 
         let test_scenario_group_idx = multi_model
             .domain()
@@ -535,7 +543,7 @@ mod tests {
     #[test]
     fn test_duplicate_network_names() {
         let timestepper = default_timestepper();
-        let scenario_collection = ScenarioGroupCollection::default();
+        let scenario_collection = ScenarioDomainBuilder::default();
 
         let mut multi_model = MultiNetworkModel::new(ModelDomain::from(timestepper, scenario_collection).unwrap());
 
