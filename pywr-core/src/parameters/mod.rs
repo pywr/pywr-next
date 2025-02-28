@@ -23,13 +23,11 @@ mod profiles;
 
 #[cfg(feature = "pyo3")]
 mod py;
-mod rhai;
 mod threshold;
 mod vector;
 
 use std::any::Any;
 // Re-imports
-pub use self::rhai::RhaiParameter;
 use super::PywrError;
 use crate::network::Network;
 use crate::scenario::ScenarioIndex;
