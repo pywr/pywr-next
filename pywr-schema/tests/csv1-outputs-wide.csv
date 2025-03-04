@@ -1,6 +1,7 @@
 node,demand1
 attribute,Inflow
-global-scenario-index,0
+simulation_id,0
+label,0
 2015-01-01 00:00:00,10.00
 2015-01-02 00:00:00,10.00
 2015-01-03 00:00:00,10.00
