@@ -217,6 +217,10 @@ impl Network {
         &self.edges
     }
 
+    pub fn recorders(&self) -> &Vec<Box<dyn recorders::Recorder>> {
+        &self.recorders
+    }
+
     pub fn aggregated_nodes(&self) -> &AggregatedNodeVec {
         &self.aggregated_nodes
     }

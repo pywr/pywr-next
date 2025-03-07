@@ -271,8 +271,8 @@ impl<T> From<ConstParameterIndex<T>> for ParameterIndex<T> {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParameterName {
-    name: String,
-    parent: Option<String>,
+    pub name: String,
+    pub parent: Option<String>,
 }
 
 impl ParameterName {
@@ -479,14 +479,14 @@ pub fn downcast_internal_state_ref<T: 'static>(internal_state: &Option<Box<dyn P
     }
 }
 
-pub trait VariableConfig: Any + Send {
+pub trait VariableConfig: Any + Send + Sync {
     fn as_any(&self) -> &dyn Any;
     fn as_any_mut(&mut self) -> &mut dyn Any;
 }
 
 impl<T> VariableConfig for T
 where
-    T: Any + Send,
+    T: Any + Send + Sync,
 {
     fn as_any(&self) -> &dyn Any {
         self
