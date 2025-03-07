@@ -5,8 +5,8 @@
     "minimum_version": "0.1"
   },
   "timestepper": {
-    "start": "2015-01-01",
-    "end": "2015-12-31",
+    "start": "2021-01-01",
+    "end": "2021-03-31",
     "timestep": 1
   },
   "network": {
@@ -80,6 +80,27 @@
       {
         "from_node": "storage1",
         "to_node": "demand1"
+      }
+    ],
+    "metric_sets": [
+      {
+        "name": "nodes",
+        "metrics": [
+          {
+            "type": "Node",
+            "name": "storage1"
+          }
+        ]
+      }
+    ],
+    "outputs": [
+      {
+        "name": "nodes",
+        "type": "CSV",
+        "format": "long",
+        "filename": "piecewise_storage1-expected.csv",
+        "metric_set": "nodes",
+        "decimal_places": 1
       }
     ]
   }

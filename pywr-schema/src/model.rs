@@ -1,21 +1,23 @@
 use super::edge::Edge;
 use super::nodes::Node;
-use super::parameters::{convert_parameter_v1_to_v2, Parameter};
+use super::parameters::{Parameter, ParameterOrTimeseriesRef};
 use crate::data_tables::DataTable;
 #[cfg(feature = "core")]
 use crate::data_tables::LoadedTableCollection;
-use crate::error::{ConversionError, SchemaError};
-use crate::metric::{Metric, TimeseriesColumns, TimeseriesReference};
+use crate::error::{ComponentConversionError, SchemaError};
+use crate::metric::Metric;
 use crate::metric_sets::MetricSet;
-use crate::nodes::NodeAndTimeseries;
 use crate::outputs::Output;
 #[cfg(feature = "core")]
 use crate::timeseries::LoadedTimeseriesCollection;
-use crate::timeseries::{convert_from_v1_data, Timeseries};
+use crate::timeseries::Timeseries;
+use crate::v1::{ConversionData, TryIntoV2};
 use crate::visit::{VisitMetrics, VisitPaths};
 #[cfg(feature = "core")]
 use chrono::NaiveTime;
 use chrono::{NaiveDate, NaiveDateTime};
+#[cfg(feature = "pyo3")]
+use pyo3::pyclass;
 #[cfg(feature = "core")]
 use pywr_core::{models::ModelDomain, timestep::TimestepDuration, PywrError};
 use schemars::JsonSchema;
@@ -39,17 +41,15 @@ impl Default for Metadata {
     }
 }
 
-impl TryFrom<pywr_v1_schema::model::Metadata> for Metadata {
-    type Error = ConversionError;
-
-    fn try_from(v1: pywr_v1_schema::model::Metadata) -> Result<Self, Self::Error> {
-        Ok(Self {
+impl From<pywr_v1_schema::model::Metadata> for Metadata {
+    fn from(v1: pywr_v1_schema::model::Metadata) -> Self {
+        Self {
             title: v1
                 .title
                 .unwrap_or("Model converted from Pywr v1.x with no title.".to_string()),
             description: v1.description,
             minimum_version: v1.minimum_version,
-        })
+        }
     }
 }
 
@@ -153,6 +153,7 @@ pub struct LoadArgs<'a> {
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, JsonSchema)]
+#[cfg_attr(feature = "pyo3", pyclass)]
 pub struct PywrNetwork {
     pub nodes: Vec<Node>,
     pub edges: Vec<Edge>,
@@ -252,97 +253,93 @@ impl VisitMetrics for PywrNetwork {
 
 impl PywrNetwork {
     pub fn from_path<P: AsRef<Path>>(path: P) -> Result<Self, SchemaError> {
-        let data = std::fs::read_to_string(path).map_err(|e| SchemaError::IO(e.to_string()))?;
+        let data = std::fs::read_to_string(&path).map_err(|error| SchemaError::IO {
+            path: path.as_ref().to_path_buf(),
+            error,
+        })?;
         Ok(serde_json::from_str(data.as_str())?)
     }
 
     /// Convert a v1 network to a v2 network.
     ///
     /// This function is used to convert a v1 model to a v2 model. The conversion is not always
-    /// possible and may result in errors. The errors are returned as a vector of [`ConversionError`]s.
+    /// possible and may result in errors. The errors are returned as a vector of [`ComponentConversionError`]s.
     /// alongside the (partially) converted model. This may result in a model that will not
     /// function as expected. The user should check the errors and the converted model to ensure
     /// that the conversion has been successful.
-    pub fn from_v1(v1: pywr_v1_schema::PywrNetwork) -> (Self, Vec<ConversionError>) {
+    pub fn from_v1(v1: pywr_v1_schema::PywrNetwork) -> (Self, Vec<ComponentConversionError>) {
         let mut errors = Vec::new();
+        // We will use this to store any timeseries or parameters that are extracted from the v1 nodes
+        let mut conversion_data = ConversionData::default();
+
+        let mut nodes = Vec::with_capacity(v1.nodes.as_ref().map(|n| n.len()).unwrap_or_default());
+        let mut parameters = Vec::new();
+        let mut timeseries = Vec::new();
 
         // Extract nodes and any timeseries data from the v1 nodes
-        let nodes_and_ts: Vec<NodeAndTimeseries> = match v1.nodes {
-            Some(nodes) => nodes
-                .into_iter()
-                .filter_map(|n| match n.try_into() {
-                    Ok(n) => Some(n),
+        if let Some(v1_nodes) = v1.nodes {
+            for v1_node in v1_nodes.into_iter() {
+                // Reset the unnamed count for each node because they are named by the parent node.
+                conversion_data.reset_count();
+                let result: Result<Node, _> = v1_node.try_into_v2(None, &mut conversion_data);
+                match result {
+                    Ok(node) => {
+                        nodes.push(node);
+                    }
                     Err(e) => {
                         errors.push(e);
-                        None
                     }
-                })
-                .collect::<Vec<_>>(),
-            None => Vec::new(),
-        };
-
-        let mut ts_data = nodes_and_ts
-            .iter()
-            .filter_map(|n| n.timeseries.clone())
-            .flatten()
-            .collect::<Vec<_>>();
-
-        let mut nodes = nodes_and_ts.into_iter().map(|n| n.node).collect::<Vec<_>>();
+                }
+            }
+        }
 
         let edges = match v1.edges {
             Some(edges) => edges.into_iter().map(|e| e.into()).collect(),
             None => Vec::new(),
         };
 
-        let mut parameters = if let Some(v1_parameters) = v1.parameters {
-            let mut unnamed_count: usize = 0;
-            let (parameters, param_ts_data) =
-                convert_parameter_v1_to_v2(v1_parameters, &mut unnamed_count, &mut errors);
-            ts_data.extend(param_ts_data);
-            Some(parameters)
-        } else {
-            None
-        };
+        // Collect any parameters that have been replaced by timeseries
+        // These references will be referred to by ParameterReferences elsewhere in the schema
+        // We will update these references to TimeseriesReferences later
+        let mut timeseries_refs = Vec::new();
+        if let Some(params) = v1.parameters {
+            // Reset the unnamed count for global parameters
+            conversion_data.reset_count();
+            for p in params {
+                let result: Result<ParameterOrTimeseriesRef, _> = p.try_into_v2(None, &mut conversion_data);
+                match result {
+                    Ok(p_or_t) => match p_or_t {
+                        ParameterOrTimeseriesRef::Parameter(p) => parameters.push(*p),
+                        ParameterOrTimeseriesRef::Timeseries(t) => timeseries_refs.push(t),
+                    },
+                    Err(e) => errors.push(e),
+                }
+            }
+        }
 
-        // closure to update a parameter ref with a timeseries ref when names match.
+        // Finally add any extracted timeseries data to the timeseries list
+        timeseries.extend(conversion_data.timeseries);
+        parameters.extend(conversion_data.parameters);
+
+        // Closure to update a parameter ref with a timeseries ref when names match.
+        // We match on the original parameter name because the parameter name may have been changed
         let update_to_ts_ref = &mut |m: &mut Metric| {
             if let Metric::Parameter(p) = m {
-                let ts_ref = ts_data.iter().find(|ts| ts.name == Some(p.name.clone()));
-                if let Some(ts_ref) = ts_ref {
-                    // The timeseries requires a name to be used as a reference
-                    let name = match &ts_ref.name {
-                        Some(n) => n.clone(),
-                        None => return,
-                    };
-
-                    let cols = match (&ts_ref.column, &ts_ref.scenario) {
-                        (Some(col), None) => Some(TimeseriesColumns::Column(col.clone())),
-                        (None, Some(scenario)) => Some(TimeseriesColumns::Scenario(scenario.clone())),
-                        (Some(_), Some(_)) => return,
-                        (None, None) => None,
-                    };
-
-                    *m = Metric::Timeseries(TimeseriesReference::new(name, cols));
+                if let Some(converted_ts_ref) = timeseries_refs.iter().find(|ts| ts.original_parameter_name == p.name) {
+                    *m = Metric::Timeseries(converted_ts_ref.ts_ref.clone());
                 }
             }
         };
 
         nodes.visit_metrics_mut(update_to_ts_ref);
-        if let Some(p) = parameters.as_mut() {
-            p.visit_metrics_mut(update_to_ts_ref)
-        }
-
-        let timeseries = if !ts_data.is_empty() {
-            let ts = convert_from_v1_data(ts_data, &v1.tables, &mut errors);
-            Some(ts)
-        } else {
-            None
-        };
+        parameters.visit_metrics_mut(update_to_ts_ref);
 
         // TODO convert v1 tables!
         let tables = None;
         let outputs = None;
         let metric_sets = None;
+        let parameters = if !parameters.is_empty() { Some(parameters) } else { None };
+        let timeseries = if !timeseries.is_empty() { Some(timeseries) } else { None };
 
         (
             Self {
@@ -451,56 +448,49 @@ impl PywrNetwork {
 
         // Create the edges
         for edge in &self.edges {
-            let from_node = self
-                .get_node_by_name(edge.from_node.as_str())
-                .ok_or_else(|| SchemaError::NodeNotFound(edge.from_node.clone()))?;
-            let to_node = self
-                .get_node_by_name(edge.to_node.as_str())
-                .ok_or_else(|| SchemaError::NodeNotFound(edge.to_node.clone()))?;
+            edge.add_to_model(&mut network, &args)?;
+        }
 
-            let from_slot = edge.from_slot.as_deref();
-
-            // Connect each "from" connector to each "to" connector
-            for from_connector in from_node.output_connectors(from_slot) {
-                for to_connector in to_node.input_connectors() {
-                    let from_node_index =
-                        network.get_node_index_by_name(from_connector.0, from_connector.1.as_deref())?;
-                    let to_node_index = network.get_node_index_by_name(to_connector.0, to_connector.1.as_deref())?;
-                    network.connect_nodes(from_node_index, to_node_index)?;
-                }
+        // Gather all the parameters from the nodes
+        let mut remaining_parameters: Vec<(Option<&str>, Parameter)> = Vec::new();
+        for node in &self.nodes {
+            if let Some(local_parameters) = node.local_parameters() {
+                remaining_parameters.extend(local_parameters.iter().map(|p| (Some(node.name()), p.clone())));
             }
+        }
+        // Add any global parameters
+        if let Some(parameters) = self.parameters.as_deref() {
+            remaining_parameters.extend(parameters.iter().map(|p| (None, p.clone())));
         }
 
         // Create all the parameters
-        if let Some(mut remaining_parameters) = self.parameters.clone() {
-            while !remaining_parameters.is_empty() {
-                let mut failed_parameters: Vec<Parameter> = Vec::new();
-                let n = remaining_parameters.len();
-                for parameter in remaining_parameters.into_iter() {
-                    if let Err(e) = parameter.add_to_model(&mut network, &args) {
-                        // Adding the parameter failed!
-                        match e {
-                            SchemaError::PywrCore(core_err) => match core_err {
-                                // And it failed because another parameter was not found.
-                                // Let's try to load more parameters and see if this one can tried
-                                // again later
-                                PywrError::ParameterNotFound(_) => failed_parameters.push(parameter),
-                                _ => return Err(SchemaError::PywrCore(core_err)),
-                            },
-                            SchemaError::ParameterNotFound(_) => failed_parameters.push(parameter),
-                            _ => return Err(e),
-                        }
-                    };
-                }
-
-                if failed_parameters.len() == n {
-                    // Could not load any parameters; must be a circular reference
-                    let failed_names = failed_parameters.iter().map(|p| p.name().to_string()).collect();
-                    return Err(SchemaError::CircularParameterReference(failed_names));
-                }
-
-                remaining_parameters = failed_parameters;
+        while !remaining_parameters.is_empty() {
+            let mut failed_parameters: Vec<(Option<&str>, Parameter)> = Vec::new();
+            let n = remaining_parameters.len();
+            for (parent, parameter) in remaining_parameters.into_iter() {
+                if let Err(e) = parameter.add_to_model(&mut network, &args, parent) {
+                    // Adding the parameter failed!
+                    match e {
+                        SchemaError::PywrCore(core_err) => match core_err {
+                            // And it failed because another parameter was not found.
+                            // Let's try to load more parameters and see if this one can tried
+                            // again later
+                            PywrError::ParameterNotFound(_) => failed_parameters.push((parent, parameter)),
+                            _ => return Err(SchemaError::PywrCore(core_err)),
+                        },
+                        SchemaError::ParameterNotFound(_) => failed_parameters.push((parent, parameter)),
+                        _ => return Err(e),
+                    }
+                };
             }
+
+            if failed_parameters.len() == n {
+                // Could not load any parameters; must be a circular reference
+                let failed_names = failed_parameters.iter().map(|(_n, p)| p.name().to_string()).collect();
+                return Err(SchemaError::CircularParameterReference(failed_names));
+            }
+
+            remaining_parameters = failed_parameters;
         }
 
         // Apply the inline parameters & constraints to the nodes
@@ -549,7 +539,7 @@ pub enum PywrNetworkRef {
 /// The simplest model is given in the example below:
 ///
 /// ```json
-#[doc = include_str!("test_models/simple1.json")]
+#[doc = include_str!("../tests/simple1.json")]
 /// ```
 ///
 ///
@@ -608,7 +598,10 @@ impl PywrModel {
     }
 
     pub fn from_path<P: AsRef<Path>>(path: P) -> Result<Self, SchemaError> {
-        let data = std::fs::read_to_string(path).map_err(|e| SchemaError::IO(e.to_string()))?;
+        let data = std::fs::read_to_string(&path).map_err(|error| SchemaError::IO {
+            path: path.as_ref().to_path_buf(),
+            error,
+        })?;
         Ok(serde_json::from_str(data.as_str())?)
     }
 
@@ -645,18 +638,14 @@ impl PywrModel {
     /// Convert a v1 model to a v2 model.
     ///
     /// This function is used to convert a v1 model to a v2 model. The conversion is not always
-    /// possible and may result in errors. The errors are returned as a vector of [`ConversionError`]s.
+    /// possible and may result in errors. The errors are returned as a vector of [`ComponentConversionError`]s.
     /// alongside the (partially) converted model. This may result in a model that will not
     /// function as expected. The user should check the errors and the converted model to ensure
     /// that the conversion has been successful.
-    pub fn from_v1(v1: pywr_v1_schema::PywrModel) -> (Self, Vec<ConversionError>) {
+    pub fn from_v1(v1: pywr_v1_schema::PywrModel) -> (Self, Vec<ComponentConversionError>) {
         let mut errors = Vec::new();
 
-        let metadata = v1.metadata.try_into().unwrap_or_else(|e| {
-            errors.push(e);
-            Metadata::default()
-        });
-
+        let metadata = v1.metadata.into();
         let timestepper = v1.timestepper.into();
 
         let (network, network_errors) = PywrNetwork::from_v1(v1.network);
@@ -676,7 +665,7 @@ impl PywrModel {
     /// Convert a v1 JSON string to a v2 model.
     ///
     /// See [`PywrModel::from_v1`] for more information.
-    pub fn from_v1_str(v1: &str) -> Result<(Self, Vec<ConversionError>), pywr_v1_schema::PywrSchemaError> {
+    pub fn from_v1_str(v1: &str) -> Result<(Self, Vec<ComponentConversionError>), pywr_v1_schema::PywrSchemaError> {
         let v1_model: pywr_v1_schema::PywrModel = serde_json::from_str(v1)?;
 
         Ok(Self::from_v1(v1_model))
@@ -750,11 +739,11 @@ pub struct PywrMultiNetworkEntry {
 ///
 /// ```json5
 /// // model.json
-#[doc = include_str!("test_models/multi1/model.json")]
+#[doc = include_str!("../tests/multi1/model.json")]
 /// // network1.json
-#[doc = include_str!("test_models/multi1/network1.json")]
+#[doc = include_str!("../tests/multi1/network1.json")]
 /// // network2.json
-#[doc = include_str!("test_models/multi1/network2.json")]
+#[doc = include_str!("../tests/multi1/network2.json")]
 /// ```
 ///
 ///
@@ -777,7 +766,10 @@ impl FromStr for PywrMultiNetworkModel {
 
 impl PywrMultiNetworkModel {
     pub fn from_path<P: AsRef<Path>>(path: P) -> Result<Self, SchemaError> {
-        let data = std::fs::read_to_string(path).map_err(|e| SchemaError::IO(e.to_string()))?;
+        let data = std::fs::read_to_string(&path).map_err(|error| SchemaError::IO {
+            path: path.as_ref().to_path_buf(),
+            error,
+        })?;
         Ok(serde_json::from_str(data.as_str())?)
     }
 
@@ -883,7 +875,7 @@ impl PywrMultiNetworkModel {
                     inter_network_transfers: &[],
                 };
 
-                let from_metric = transfer.metric.load(from_network, &args)?;
+                let from_metric = transfer.metric.load(from_network, &args, None)?;
 
                 inter_network_transfers.push((from_network_idx, from_metric, to_network_idx, transfer.initial_value));
             }
@@ -909,16 +901,17 @@ mod tests {
     use super::PywrModel;
     use crate::model::Timestepper;
     use crate::visit::VisitPaths;
+    use std::fs::read_to_string;
     use std::path::PathBuf;
 
-    fn model_str() -> &'static str {
-        include_str!("./test_models/simple1.json")
+    fn model_str() -> String {
+        read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/simple1.json")).unwrap()
     }
 
     #[test]
     fn test_simple1_schema() {
         let data = model_str();
-        let schema: PywrModel = serde_json::from_str(data).unwrap();
+        let schema: PywrModel = serde_json::from_str(&data).unwrap();
 
         assert_eq!(schema.network.nodes.len(), 3);
         assert_eq!(schema.network.edges.len(), 2);
@@ -994,11 +987,11 @@ mod tests {
     #[test]
     fn test_visit_paths() {
         let mut model_fn = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        model_fn.push("src/test_models/timeseries.json");
+        model_fn.push("tests/timeseries.json");
 
         let mut schema = PywrModel::from_path(model_fn.as_path()).unwrap();
 
-        let expected_paths = vec![PathBuf::from("inflow.csv")];
+        let expected_paths = vec![PathBuf::from("inflow.csv"), PathBuf::from("timeseries-expected.csv")];
 
         let mut paths: Vec<PathBuf> = Vec::new();
 
@@ -1019,26 +1012,6 @@ mod tests {
             panic!("Expected an error due to missing file: {str}");
         }
     }
-
-    #[test]
-    fn test_v1_conversion() {
-        let v1_str = include_str!("./test_models/v1/timeseries.json");
-        let v1: pywr_v1_schema::PywrModel = serde_json::from_str(v1_str).unwrap();
-
-        let (v2, errors) = PywrModel::from_v1(v1);
-
-        assert_eq!(errors.len(), 0);
-
-        std::fs::write("tmp.json", serde_json::to_string_pretty(&v2).unwrap()).unwrap();
-
-        let v2_converted: serde_json::Value =
-            serde_json::from_str(&serde_json::to_string_pretty(&v2).unwrap()).unwrap();
-
-        let v2_expected: serde_json::Value =
-            serde_json::from_str(include_str!("./test_models/v1/timeseries-converted.json")).unwrap();
-
-        assert_eq!(v2_converted, v2_expected);
-    }
 }
 
 #[cfg(test)]
@@ -1049,16 +1022,17 @@ mod core_tests {
     use crate::parameters::{AggFunc, AggregatedParameter, ConstantParameter, ConstantValue, Parameter, ParameterMeta};
     use ndarray::{Array1, Array2, Axis};
     use pywr_core::{metric::MetricF64, recorders::AssertionRecorder, solvers::ClpSolver, test_utils::run_all_solvers};
+    use std::fs::read_to_string;
     use std::path::PathBuf;
 
-    fn model_str() -> &'static str {
-        include_str!("./test_models/simple1.json")
+    fn model_str() -> String {
+        read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/simple1.json")).unwrap()
     }
 
     #[test]
     fn test_simple1_run() {
         let data = model_str();
-        let schema: PywrModel = serde_json::from_str(data).unwrap();
+        let schema: PywrModel = serde_json::from_str(&data).unwrap();
         let mut model = schema.build_model(None, None).unwrap();
 
         let network = model.network_mut();
@@ -1080,14 +1054,14 @@ mod core_tests {
         network.add_recorder(Box::new(rec)).unwrap();
 
         // Test all solvers
-        run_all_solvers(&model, &[], &[]);
+        run_all_solvers(&model, &[], &[], &[]);
     }
 
     /// Test that a cycle in parameter dependencies does not load.
     #[test]
     fn test_cycle_error() {
         let data = model_str();
-        let mut schema: PywrModel = serde_json::from_str(data).unwrap();
+        let mut schema: PywrModel = serde_json::from_str(&data).unwrap();
 
         // Add additional parameters for the test
         if let Some(parameters) = &mut schema.network.parameters {
@@ -1145,7 +1119,7 @@ mod core_tests {
     #[test]
     fn test_ordering() {
         let data = model_str();
-        let mut schema: PywrModel = serde_json::from_str(data).unwrap();
+        let mut schema: PywrModel = serde_json::from_str(&data).unwrap();
 
         if let Some(parameters) = &mut schema.network.parameters {
             parameters.extend(vec![
@@ -1192,7 +1166,7 @@ mod core_tests {
     #[test]
     fn test_multi1_model() {
         let mut model_fn = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        model_fn.push("src/test_models/multi1/model.json");
+        model_fn.push("tests/multi1/model.json");
 
         let schema = PywrMultiNetworkModel::from_path(model_fn.as_path()).unwrap();
         let mut model = schema.build_model(model_fn.parent(), None).unwrap();
@@ -1242,7 +1216,7 @@ mod core_tests {
     #[test]
     fn test_multi2_model() {
         let mut model_fn = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        model_fn.push("src/test_models/multi2/model.json");
+        model_fn.push("tests/multi2/model.json");
 
         let schema = PywrMultiNetworkModel::from_path(model_fn.as_path()).unwrap();
         let mut model = schema.build_model(model_fn.parent(), None).unwrap();

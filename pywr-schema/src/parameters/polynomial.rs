@@ -1,11 +1,11 @@
-use crate::error::ConversionError;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
 use crate::metric::{Metric, NodeReference};
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::nodes::NodeAttribute;
-use crate::parameters::{IntoV2Parameter, ParameterMeta, TryFromV1Parameter};
+use crate::parameters::{ConversionData, ParameterMeta};
+use crate::v1::{FromV1, IntoV2};
 #[cfg(feature = "core")]
 use pywr_core::parameters::ParameterIndex;
 use pywr_schema_macros::PywrVisitAll;
@@ -29,7 +29,7 @@ impl Polynomial1DParameter {
         network: &mut pywr_core::network::Network,
         args: &LoadArgs,
     ) -> Result<ParameterIndex<f64>, SchemaError> {
-        let metric = self.metric.load(network, args)?;
+        let metric = self.metric.load(network, args, None)?;
 
         let p = pywr_core::parameters::Polynomial1DParameter::new(
             self.meta.name.as_str().into(),
@@ -42,14 +42,8 @@ impl Polynomial1DParameter {
     }
 }
 
-impl TryFromV1Parameter<Polynomial1DParameterV1> for Polynomial1DParameter {
-    type Error = ConversionError;
-
-    fn try_from_v1_parameter(
-        v1: Polynomial1DParameterV1,
-        parent_node: Option<&str>,
-        unnamed_count: &mut usize,
-    ) -> Result<Self, Self::Error> {
+impl FromV1<Polynomial1DParameterV1> for Polynomial1DParameter {
+    fn from_v1(v1: Polynomial1DParameterV1, parent_node: Option<&str>, conversion_data: &mut ConversionData) -> Self {
         let attribute = match v1.use_proportional_volume.unwrap_or(true) {
             true => Some(NodeAttribute::ProportionalVolume),
             false => Some(NodeAttribute::Volume),
@@ -60,13 +54,12 @@ impl TryFromV1Parameter<Polynomial1DParameterV1> for Polynomial1DParameter {
             attribute,
         });
 
-        let p = Self {
-            meta: v1.meta.into_v2_parameter(parent_node, unnamed_count),
+        Self {
+            meta: v1.meta.into_v2(parent_node, conversion_data),
             metric,
             coefficients: v1.coefficients,
             scale: v1.scale,
             offset: v1.offset,
-        };
-        Ok(p)
+        }
     }
 }

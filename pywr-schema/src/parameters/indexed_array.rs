@@ -1,10 +1,11 @@
-use crate::error::ConversionError;
+use crate::error::ComponentConversionError;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
-use crate::metric::Metric;
+use crate::metric::{IndexMetric, Metric};
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
-use crate::parameters::{DynamicIndexValue, IntoV2Parameter, ParameterMeta, TryFromV1Parameter, TryIntoV2Parameter};
+use crate::parameters::{ConversionData, ParameterMeta};
+use crate::v1::{try_convert_parameter_attr, IntoV2, TryFromV1};
 #[cfg(feature = "core")]
 use pywr_core::parameters::ParameterIndex;
 use pywr_schema_macros::PywrVisitAll;
@@ -17,7 +18,7 @@ pub struct IndexedArrayParameter {
     pub meta: ParameterMeta,
     #[serde(alias = "params")]
     pub metrics: Vec<Metric>,
-    pub index_parameter: DynamicIndexValue,
+    pub index_parameter: IndexMetric,
 }
 
 #[cfg(feature = "core")]
@@ -27,12 +28,12 @@ impl IndexedArrayParameter {
         network: &mut pywr_core::network::Network,
         args: &LoadArgs,
     ) -> Result<ParameterIndex<f64>, SchemaError> {
-        let index_parameter = self.index_parameter.load(network, args)?;
+        let index_parameter = self.index_parameter.load(network, args, None)?;
 
         let metrics = self
             .metrics
             .iter()
-            .map(|v| v.load(network, args))
+            .map(|v| v.load(network, args, None))
             .collect::<Result<Vec<_>, _>>()?;
 
         let p = pywr_core::parameters::IndexedArrayParameter::new(
@@ -45,25 +46,29 @@ impl IndexedArrayParameter {
     }
 }
 
-impl TryFromV1Parameter<IndexedArrayParameterV1> for IndexedArrayParameter {
-    type Error = ConversionError;
+impl TryFromV1<IndexedArrayParameterV1> for IndexedArrayParameter {
+    type Error = ComponentConversionError;
 
-    fn try_from_v1_parameter(
+    fn try_from_v1(
         v1: IndexedArrayParameterV1,
         parent_node: Option<&str>,
-        unnamed_count: &mut usize,
+        conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.into_v2_parameter(parent_node, unnamed_count);
+        let meta: ParameterMeta = v1.meta.into_v2(parent_node, conversion_data);
 
         let metrics = v1
             .parameters
             .into_iter()
-            .map(|p| p.try_into_v2_parameter(Some(&meta.name), unnamed_count))
+            .map(|p| try_convert_parameter_attr(&meta.name, "parameters", p, parent_node, conversion_data))
             .collect::<Result<Vec<_>, _>>()?;
 
-        let index_parameter = v1
-            .index_parameter
-            .try_into_v2_parameter(Some(&meta.name), unnamed_count)?;
+        let index_parameter = try_convert_parameter_attr(
+            &meta.name,
+            "index_parameter",
+            v1.index_parameter,
+            parent_node,
+            conversion_data,
+        )?;
 
         let p = Self {
             meta,

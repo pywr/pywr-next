@@ -1,24 +1,28 @@
-#[cfg(feature = "core")]
+#[cfg(all(feature = "core", feature = "pyo3"))]
 use crate::data_tables::make_path;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
-use crate::metric::Metric;
+use crate::metric::{IndexMetric, Metric};
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
-use crate::parameters::{DynamicFloatValueType, DynamicIndexValue, ParameterMeta};
+use crate::parameters::{DynamicFloatValueType, ParameterMeta};
 use crate::visit::{VisitMetrics, VisitPaths};
+#[cfg(all(feature = "core", feature = "pyo3"))]
+use pyo3::{
+    prelude::{IntoPyObject, Py, PyAny, PyAnyMethods, PyModule},
+    types::{PyDict, PyString, PyTuple},
+    IntoPyObjectExt, PyObject, Python,
+};
 #[cfg(feature = "core")]
-use pyo3::prelude::{PyAnyMethods, PyModule};
-#[cfg(feature = "core")]
-use pyo3::types::{PyDict, PyTuple};
-#[cfg(feature = "core")]
-use pyo3::{IntoPy, PyErr, PyObject, Python};
-#[cfg(feature = "core")]
-use pywr_core::parameters::{ParameterType, PyParameter};
+use pywr_core::parameters::ParameterType;
+#[cfg(all(feature = "core", feature = "pyo3"))]
+use pywr_core::parameters::PyParameter;
 use schemars::JsonSchema;
-#[cfg(feature = "core")]
+#[cfg(all(feature = "core", feature = "pyo3"))]
 use serde_json::Value;
 use std::collections::HashMap;
+#[cfg(all(feature = "core", feature = "pyo3"))]
+use std::ffi::CString;
 use std::path::{Path, PathBuf};
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, strum_macros::Display)]
@@ -103,36 +107,36 @@ pub struct PythonParameter {
     pub metrics: Option<HashMap<String, Metric>>,
     /// Index values to pass to the calculation method of the initialised object (i.e.
     /// indices that the Python calculation is dependent on).
-    pub indices: Option<HashMap<String, DynamicIndexValue>>,
+    pub indices: Option<HashMap<String, IndexMetric>>,
 }
 
-#[cfg(feature = "core")]
+#[cfg(all(feature = "core", feature = "pyo3"))]
 pub fn try_json_value_into_py(py: Python, value: &serde_json::Value) -> Result<Option<PyObject>, SchemaError> {
-    let py_value = match value {
+    let py_value: Option<PyObject> = match value {
         Value::Null => None,
-        Value::Bool(v) => Some(v.into_py(py)),
+        Value::Bool(v) => Some(v.into_py_any(py)?),
         Value::Number(v) => {
             if let Some(i) = v.as_i64() {
-                Some(i.into_py(py))
+                Some(i.into_py_any(py)?)
             } else if let Some(f) = v.as_f64() {
-                Some(f.into_py(py))
+                Some(f.into_py_any(py)?)
             } else {
                 panic!("Could not convert JSON number to Python type.");
             }
         }
-        Value::String(v) => Some(v.into_py(py)),
+        Value::String(v) => Some(v.into_py_any(py)?),
         Value::Array(array) => Some(
             array
                 .iter()
                 .map(|v| try_json_value_into_py(py, v).unwrap())
                 .collect::<Vec<_>>()
-                .into_py(py),
+                .into_py_any(py)?,
         ),
         Value::Object(map) => Some(
             map.iter()
                 .map(|(k, v)| (k, try_json_value_into_py(py, v).unwrap()))
                 .collect::<HashMap<_, _>>()
-                .into_py(py),
+                .into_py_any(py)?,
         ),
     };
 
@@ -190,7 +194,17 @@ impl PythonParameter {
     }
 }
 
-#[cfg(feature = "core")]
+#[cfg(all(feature = "core", not(feature = "pyo3")))]
+impl PythonParameter {
+    pub fn add_to_model(
+        &self,
+        _network: &mut pywr_core::network::Network,
+        _args: &LoadArgs,
+    ) -> Result<ParameterType, SchemaError> {
+        Err(SchemaError::FeatureNotEnabled("pyo3".to_string()))
+    }
+}
+#[cfg(all(feature = "core", feature = "pyo3"))]
 impl PythonParameter {
     pub fn add_to_model(
         &self,
@@ -201,40 +215,54 @@ impl PythonParameter {
 
         let object = Python::with_gil(|py| {
             let module = match &self.source {
-                PythonSource::Module(module) => PyModule::import_bound(py, module.as_str()),
+                PythonSource::Module(module) => PyModule::import(py, module.as_str()),
                 PythonSource::Path(original_path) => {
                     let path = &make_path(original_path, args.data_path);
-                    let code = std::fs::read_to_string(path).expect("Could not read Python code from path.");
-                    let file_name = path.file_name().unwrap().to_str().unwrap();
-                    let module_name = path.file_stem().unwrap().to_str().unwrap();
+                    let code = CString::new(std::fs::read_to_string(path).map_err(|error| SchemaError::IO {
+                        path: path.to_path_buf(),
+                        error,
+                    })?)
+                    .unwrap();
 
-                    PyModule::from_code_bound(py, &code, file_name, module_name)
+                    let file_name = CString::new(path.file_name().unwrap().to_str().unwrap()).unwrap();
+                    let module_name = CString::new(path.file_stem().unwrap().to_str().unwrap()).unwrap();
+                    PyModule::from_code(py, &code, &file_name, &module_name)
                 }
             }?;
 
-            Ok(module.getattr(self.object.as_str())?.into())
-        })
-        .map_err(|e: PyErr| SchemaError::PythonError(e.to_string()))?;
+            Ok::<_, SchemaError>(module.getattr(self.object.as_str())?.into())
+        })?;
 
         let py_args = Python::with_gil(|py| {
-            PyTuple::new_bound(py, self.args.iter().map(|arg| try_json_value_into_py(py, arg).unwrap())).into_py(py)
-        });
+            let args: Vec<_> = self
+                .args
+                .iter()
+                .map(|arg| try_json_value_into_py(py, arg))
+                .collect::<Result<Vec<_>, SchemaError>>()?;
+
+            Ok::<_, SchemaError>(PyTuple::new(py, args)?.unbind())
+        })?;
 
         let kwargs = Python::with_gil(|py| {
-            let seq = PyTuple::new_bound(
-                py,
-                self.kwargs
-                    .iter()
-                    .map(|(k, v)| (k.into_py(py), try_json_value_into_py(py, v).unwrap())),
-            );
+            let kwargs: Vec<(Py<PyString>, Option<Py<PyAny>>)> = self
+                .kwargs
+                .iter()
+                .map(|(k, v)| {
+                    let key = k.into_pyobject(py)?.unbind();
+                    let value = try_json_value_into_py(py, v)?;
+                    Ok((key, value))
+                })
+                .collect::<Result<Vec<_>, SchemaError>>()?;
 
-            PyDict::from_sequence_bound(seq.as_any()).unwrap().unbind()
-        });
+            let seq = PyTuple::new(py, kwargs)?;
+
+            Ok::<_, SchemaError>(PyDict::from_sequence(seq.as_any())?.unbind())
+        })?;
 
         let metrics = match &self.metrics {
             Some(metrics) => metrics
                 .iter()
-                .map(|(k, v)| Ok((k.to_string(), v.load(network, args)?)))
+                .map(|(k, v)| Ok((k.to_string(), v.load(network, args, None)?)))
                 .collect::<Result<HashMap<_, _>, SchemaError>>()?,
             None => HashMap::new(),
         };
@@ -242,7 +270,7 @@ impl PythonParameter {
         let indices = match &self.indices {
             Some(indices) => indices
                 .iter()
-                .map(|(k, v)| Ok((k.to_string(), v.load(network, args)?)))
+                .map(|(k, v)| Ok((k.to_string(), v.load(network, args, None)?)))
                 .collect::<Result<HashMap<_, _>, SchemaError>>()?,
             None => HashMap::new(),
         };
@@ -267,7 +295,7 @@ impl PythonParameter {
 }
 
 #[cfg(test)]
-#[cfg(feature = "core")]
+#[cfg(all(feature = "core", feature = "pyo3"))]
 mod tests {
     use crate::data_tables::LoadedTableCollection;
     use crate::model::{LoadArgs, PywrNetwork};
@@ -282,7 +310,7 @@ mod tests {
     #[test]
     fn test_python_float_parameter() {
         let mut py_fn = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        py_fn.push("src/test_models/test_parameters.py");
+        py_fn.push("tests/test_parameters.py");
 
         let data = json!(
             {
@@ -328,7 +356,7 @@ mod tests {
     #[test]
     fn test_python_int_parameter() {
         let mut py_fn = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        py_fn.push("src/test_models/test_parameters.py");
+        py_fn.push("tests/test_parameters.py");
 
         let data = json!(
             {

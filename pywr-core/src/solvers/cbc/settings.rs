@@ -45,7 +45,7 @@ impl CbcSolverSettings {
 ///
 /// let mut builder = CbcSolverSettingsBuilder::default();
 ///
-/// builder.parallel();
+/// builder = builder.parallel();
 /// let settings = builder.build();
 ///
 /// ```
@@ -56,18 +56,18 @@ pub struct CbcSolverSettingsBuilder {
 }
 
 impl CbcSolverSettingsBuilder {
-    pub fn parallel(&mut self) -> &mut Self {
+    pub fn parallel(mut self) -> Self {
         self.parallel = true;
         self
     }
 
-    pub fn threads(&mut self, threads: usize) -> &mut Self {
+    pub fn threads(mut self, threads: usize) -> Self {
         self.threads = threads;
         self
     }
 
     /// Construct a [`CbcSolverSettings`] from the builder.
-    pub fn build(&self) -> CbcSolverSettings {
+    pub fn build(self) -> CbcSolverSettings {
         CbcSolverSettings {
             parallel: self.parallel,
             threads: self.threads,

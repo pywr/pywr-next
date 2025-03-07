@@ -1,7 +1,7 @@
 {
   "metadata": {
-    "title": "WTW Test 1",
-    "description": "Test WTW work",
+    "title": "River losses Test 1",
+    "description": "Test River node",
     "minimum_version": "0.1"
   },
   "timestepper": {
@@ -13,64 +13,52 @@
     "nodes": [
       {
         "meta": {
-          "name": "input1"
+          "name": "catchment1"
         },
         "type": "Catchment",
         "flow": {
           "type": "Constant",
-          "value": 20.0
+          "value": 10.0
         }
       },
       {
         "meta": {
-          "name": "wtw1"
+          "name": "reach1"
         },
-        "type": "WaterTreatmentWorks",
-        "max_flow": {
-          "type": "Constant",
-          "value": 10.0
+        "type": "River"
+      },
+      {
+        "meta": {
+          "name": "reach2"
         },
+        "type": "River",
         "loss_factor": {
-          "type": "Net",
+          "type": "Gross",
           "factor": {
             "type": "Constant",
-            "value": 0.0
+            "value": 0.1
           }
         }
       },
       {
         "meta": {
-          "name": "demand1"
+          "name": "term1"
         },
-        "type": "Output",
-        "cost": {
-          "type": "Constant",
-          "value": -10
-        }
-      },
-      {
-        "meta": {
-          "name": "spill1"
-        },
-        "type": "Output",
-        "cost": {
-          "type": "Constant",
-          "value": 10
-        }
+        "type": "Output"
       }
     ],
     "edges": [
       {
-        "from_node": "input1",
-        "to_node": "wtw1"
+        "from_node": "catchment1",
+        "to_node": "reach1"
       },
       {
-        "from_node": "wtw1",
-        "to_node": "demand1"
+        "from_node": "reach1",
+        "to_node": "reach2"
       },
       {
-        "from_node": "input1",
-        "to_node": "spill1"
+        "from_node": "reach2",
+        "to_node": "term1"
       }
     ],
     "metric_sets": [
@@ -79,23 +67,33 @@
         "metrics": [
           {
             "type": "Node",
-            "name": "wtw1",
+            "name": "reach1",
             "attribute": "Inflow"
           },
           {
             "type": "Node",
-            "name": "wtw1",
+            "name": "reach1",
             "attribute": "Outflow"
           },
           {
             "type": "Node",
-            "name": "wtw1",
+            "name": "reach1",
             "attribute": "Loss"
           },
           {
             "type": "Node",
-            "name": "spill1",
+            "name": "reach2",
             "attribute": "Inflow"
+          },
+          {
+            "type": "Node",
+            "name": "reach2",
+            "attribute": "Outflow"
+          },
+          {
+            "type": "Node",
+            "name": "reach2",
+            "attribute": "Loss"
           }
         ]
       }
@@ -105,7 +103,7 @@
         "name": "node-outputs",
         "type": "CSV",
         "format": "long",
-        "filename": "wtw2.csv",
+        "filename": "river_loss1-expected.csv",
         "metric_set": [
           "nodes"
         ],

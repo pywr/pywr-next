@@ -82,7 +82,7 @@ mod schema {
             network: &mut pywr_core::network::Network,
             args: &LoadArgs,
         ) -> Result<ParameterIndex<f64>, SchemaError> {
-            let idx = self.parameter.load(network, args)?;
+            let idx = self.parameter.load(network, args, Some(&self.meta.name))?;
             let threshold = self.threshold.unwrap_or(0.0);
 
             let p = pywr_core::parameters::MaxParameter::new(self.meta.name.as_str().into(), idx, threshold);

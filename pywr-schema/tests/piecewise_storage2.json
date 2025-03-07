@@ -5,8 +5,8 @@
     "minimum_version": "0.1"
   },
   "timestepper": {
-    "start": "2015-01-01",
-    "end": "2015-12-31",
+    "start": "2021-01-01",
+    "end": "2021-08-31",
     "timestep": 1
   },
   "network": {
@@ -51,27 +51,8 @@
               "value": -5.0
             },
             "control_curve": {
-              "type": "InlineParameter",
-              "definition": {
-                "type": "MonthlyProfile",
-                "meta": {
-                  "name": "storage1-control-curve"
-                },
-                "values": [
-                  0.75,
-                  0.75,
-                  0.75,
-                  0.5,
-                  0.5,
-                  0.5,
-                  0.3,
-                  0.3,
-                  0.3,
-                  0.5,
-                  0.5,
-                  0.5
-                ]
-              }
+              "type": "Parameter",
+              "name": "storage1-control-curve"
             }
           }
         ]
@@ -110,6 +91,26 @@
         "value": 0.5
       },
       {
+        "type": "MonthlyProfile",
+        "meta": {
+          "name": "storage1-control-curve"
+        },
+        "values": [
+          0.75,
+          0.75,
+          0.75,
+          0.5,
+          0.5,
+          0.5,
+          0.3,
+          0.3,
+          0.3,
+          0.5,
+          0.5,
+          0.5
+        ]
+      },
+      {
         "meta": {
           "name": "storage1-drought-index"
         },
@@ -124,6 +125,31 @@
             "name": "storage1-drought-curve"
           }
         ]
+      }
+    ],
+    "metric_sets": [
+      {
+        "name": "nodes",
+        "metrics": [
+          {
+            "type": "Node",
+            "name": "storage1"
+          },
+          {
+            "type": "Parameter",
+            "name": "storage1-drought-index"
+          }
+        ]
+      }
+    ],
+    "outputs": [
+      {
+        "name": "nodes",
+        "type": "CSV",
+        "format": "long",
+        "filename": "piecewise_storage2-expected.csv",
+        "metric_set": "nodes",
+        "decimal_places": 1
       }
     ]
   }

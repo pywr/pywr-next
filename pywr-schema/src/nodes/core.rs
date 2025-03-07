@@ -1,12 +1,14 @@
-use crate::error::ConversionError;
+use crate::error::ComponentConversionError;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
 use crate::metric::{Metric, SimpleNodeReference};
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::nodes::{NodeAttribute, NodeMeta};
-
-use crate::parameters::TryIntoV2Parameter;
+use crate::parameters::Parameter;
+use crate::v1::{
+    try_convert_initial_storage, try_convert_node_attr, try_convert_parameter_attr, ConversionData, TryFromV1,
+};
 #[cfg(feature = "core")]
 use pywr_core::{
     derived_metric::DerivedMetric, metric::MetricF64, node::StorageInitialVolume as CoreStorageInitialVolume,
@@ -23,6 +25,8 @@ use schemars::JsonSchema;
 #[serde(deny_unknown_fields)]
 pub struct InputNode {
     pub meta: NodeMeta,
+    /// Optional local parameters.
+    pub parameters: Option<Vec<Parameter>>,
     pub max_flow: Option<Metric>,
     pub min_flow: Option<Metric>,
     pub cost: Option<Metric>,
@@ -63,17 +67,17 @@ impl InputNode {
         args: &LoadArgs,
     ) -> Result<(), SchemaError> {
         if let Some(cost) = &self.cost {
-            let value = cost.load(network, args)?;
+            let value = cost.load(network, args, Some(&self.meta.name))?;
             network.set_node_cost(self.meta.name.as_str(), None, value.into())?;
         }
 
         if let Some(max_flow) = &self.max_flow {
-            let value = max_flow.load(network, args)?;
+            let value = max_flow.load(network, args, Some(&self.meta.name))?;
             network.set_node_max_flow(self.meta.name.as_str(), None, value.into())?;
         }
 
         if let Some(min_flow) = &self.min_flow {
-            let value = min_flow.load(network, args)?;
+            let value = min_flow.load(network, args, Some(&self.meta.name))?;
             network.set_node_min_flow(self.meta.name.as_str(), None, value.into())?;
         }
 
@@ -105,29 +109,23 @@ impl InputNode {
     }
 }
 
-impl TryFrom<InputNodeV1> for InputNode {
-    type Error = ConversionError;
+impl TryFromV1<InputNodeV1> for InputNode {
+    type Error = ComponentConversionError;
 
-    fn try_from(v1: InputNodeV1) -> Result<Self, Self::Error> {
+    fn try_from_v1(
+        v1: InputNodeV1,
+        parent_node: Option<&str>,
+        conversion_data: &mut ConversionData,
+    ) -> Result<Self, Self::Error> {
         let meta: NodeMeta = v1.meta.into();
-        let mut unnamed_count = 0;
 
-        let max_flow = v1
-            .max_flow
-            .map(|v| v.try_into_v2_parameter(Some(&meta.name), &mut unnamed_count))
-            .transpose()?;
-
-        let min_flow = v1
-            .min_flow
-            .map(|v| v.try_into_v2_parameter(Some(&meta.name), &mut unnamed_count))
-            .transpose()?;
-        let cost = v1
-            .cost
-            .map(|v| v.try_into_v2_parameter(Some(&meta.name), &mut unnamed_count))
-            .transpose()?;
+        let cost = try_convert_node_attr(&meta.name, "cost", v1.cost, parent_node, conversion_data)?;
+        let max_flow = try_convert_node_attr(&meta.name, "max_flow", v1.max_flow, parent_node, conversion_data)?;
+        let min_flow = try_convert_node_attr(&meta.name, "min_flow", v1.min_flow, parent_node, conversion_data)?;
 
         let n = Self {
             meta,
+            parameters: None,
             max_flow,
             min_flow,
             cost,
@@ -173,7 +171,7 @@ pub struct SoftConstraint {
 /// ```
 /// ## Implementation
 ///
-/// 
+///
 /// ### Only `soft_min` is defined
 /// Normally the minimum flow is delivered through `L_min` depending on the cost `soft_min.cost`. Any
 /// additional flow goes through `L`. Depending on the network demand and the value of `soft_min.cost`,
@@ -181,53 +179,53 @@ pub struct SoftConstraint {
 /// ```svgbob
 ///          U                            D
 ///     - - -*----------->L ------------>*- - -
-///             |                   |                 
-///             |                   |                () <Link>.aggregated_node  
-///             '------>L_min -----'                         [ L_min, L ]  
+///             |                   |
+///             |                   |                () <Link>.aggregated_node
+///             '------>L_min -----'                         [ L_min, L ]
 ///                <Link>.soft_min
 /// ```
-/// 
+///
 /// The network is set up as follows:
 ///  - `L_max` is not added to the network
 ///  - `L_min` is added with `soft_min` data
 ///  - `L` is added with `cost`, `min_flow` is set to 0 and `max_flow` is unconstrained.
 ///  - An aggregated node is added to ensure that combined flow in `L_min` and `L` never exceeds
-///    the hard constraints `min_flow` and `max_flow`. 
+///    the hard constraints `min_flow` and `max_flow`.
 ///
 /// ### Only `soft_max` is defined
 /// Normally the maximum flow `soft_max.max` is delivered through the `L_max` node and no flow
 /// goes through `L`. When needed, based on the value of `soft_max.cost`, the maximum `soft_max.max`
-/// value can be breached up to a combined flow of `max_flow`. 
+/// value can be breached up to a combined flow of `max_flow`.
 /// ```svgbob
 ///          U                            D
 ///     - - -*----------->L ------------>*- - -
-///             |                   |                 
-///             |                   |                () <Link>.aggregated_node  
-///             '------>L_max -----'                         [ L_max, L ]  
+///             |                   |
+///             |                   |                () <Link>.aggregated_node
+///             '------>L_max -----'                         [ L_max, L ]
 ///                <Link>.soft_max
 /// ```
-/// 
+///
 /// The network is set up as follows:
 ///  - `L_min` is not added to the network.
 ///  - `L` is added with the cost in `soft_max.cost` (i.e. cost of going above soft max).
 ///  - `L_max` is added with max flow of `soft_max.max` and cost of `cost`.
 ///  - An aggregated node is added to ensure that combined flow in `L_max` and `L` never exceeds
-///    the hard constraints `min_flow` and `max_flow`. 
+///    the hard constraints `min_flow` and `max_flow`.
 ///
 /// ### Both `soft_min` and `soft_max` are defined
 ///
 /// ```svgbob
 ///                <Link>.soft_max
 ///              .------>L_max -----.
-///             |                   |                    () <Link>.aggregated_node  
+///             |                   |                    () <Link>.aggregated_node
 ///          U  |                   |     D                   [ L_max, L_min, L ]
 ///     - - -*--|-------->L --------|--->*- - -
-///             |                   |                    () <Link>.aggregate_node_l_l_min  
+///             |                   |                    () <Link>.aggregate_node_l_l_min
 ///             |                   |                            [ L_min, L ]
 ///             '------>L_min -----'
 ///                <Link>.soft_min
 /// ```
-/// 
+///
 /// The network is set up as follows:
 /// - `L_max`'s flow is unconstrained with a cost equal to `soft_max.cost`.
 /// - `L`'s flow is unconstrained with a cost equal to `cost`.
@@ -236,7 +234,7 @@ pub struct SoftConstraint {
 ///   `soft_max.flow`.
 /// - An aggregated node is added with `L`, `L_max` and `L_min` to ensure the flow is between
 ///   `min_flow` and `max_flow`.
-/// 
+///
 /// ## Examples
 /// Link soft constraints may be used in the following scenarios:
 ///  1) If the link represents a works and its `max_flow` is constrained by a reservoir rule curve,
@@ -244,7 +242,7 @@ pub struct SoftConstraint {
 ///   ensure that demand is always met. By setting a high tuned cost via [`SoftConstraint`], this will
 ///   ensure that the abstraction is breached only when needed.
 ///  2) If the link represents a works and a minimum flow must be guaranteed, `soft_min` may be set
-///   with a negative cost to allow the minimum flow requirement. However, when this cannot be met 
+///   with a negative cost to allow the minimum flow requirement. However, when this cannot be met
 ///   (for example when the abstraction license or the source runs out), the minimum flow will not
 ///   be honoured and the solver will find a solution.
 )]
@@ -252,6 +250,8 @@ pub struct SoftConstraint {
 #[serde(deny_unknown_fields)]
 pub struct LinkNode {
     pub meta: NodeMeta,
+    /// Optional local parameters.
+    pub parameters: Option<Vec<Parameter>>,
     /// The optional maximum flow through the node.
     pub max_flow: Option<Metric>,
     /// The optional minimum flow through the node.
@@ -389,108 +389,108 @@ impl LinkNode {
             (None, None) => {
                 // soft constraints not added. Set constraints for L only
                 if let Some(cost) = &self.cost {
-                    let value = cost.load(network, args)?;
+                    let value = cost.load(network, args, Some(&self.meta.name))?;
                     network.set_node_cost(node_name, None, value.into())?;
                 }
 
                 if let Some(max_flow) = &self.max_flow {
-                    let value = max_flow.load(network, args)?;
+                    let value = max_flow.load(network, args, Some(&self.meta.name))?;
                     network.set_node_max_flow(node_name, None, value.into())?;
                 }
 
                 if let Some(min_flow) = &self.min_flow {
-                    let value = min_flow.load(network, args)?;
+                    let value = min_flow.load(network, args, Some(&self.meta.name))?;
                     network.set_node_min_flow(node_name, None, value.into())?;
                 }
             }
             (Some(soft_min), None) => {
                 // add L_min constraints
                 if let Some(soft_min_flow) = &soft_min.flow {
-                    let value = soft_min_flow.load(network, args)?;
+                    let value = soft_min_flow.load(network, args, Some(&self.meta.name))?;
                     network.set_node_max_flow(node_name, Self::soft_min_node_sub_name(), value.into())?;
                 }
                 if let Some(soft_min_cost) = &soft_min.cost {
-                    let value = soft_min_cost.load(network, args)?;
+                    let value = soft_min_cost.load(network, args, Some(&self.meta.name))?;
                     network.set_node_cost(node_name, Self::soft_min_node_sub_name(), value.into())?;
                 }
 
                 // add cost on L
                 if let Some(cost) = &self.cost {
-                    let value = cost.load(network, args)?;
+                    let value = cost.load(network, args, Some(&self.meta.name))?;
                     network.set_node_cost(node_name, None, value.into())?;
                 }
 
                 // add constraints on aggregated node
                 if let Some(max_flow) = &self.max_flow {
-                    let value = max_flow.load(network, args)?;
+                    let value = max_flow.load(network, args, Some(&self.meta.name))?;
                     network.set_aggregated_node_max_flow(node_name, Self::aggregated_node_sub_name(), value.into())?;
                 }
                 if let Some(min_flow) = &self.min_flow {
-                    let value = min_flow.load(network, args)?;
+                    let value = min_flow.load(network, args, Some(&self.meta.name))?;
                     network.set_aggregated_node_min_flow(node_name, Self::aggregated_node_sub_name(), value.into())?;
                 }
             }
             (None, Some(soft_max)) => {
                 // add L_max constraints
                 if let Some(cost) = &self.cost {
-                    let value = cost.load(network, args)?;
+                    let value = cost.load(network, args, Some(&self.meta.name))?;
                     network.set_node_cost(node_name, Self::soft_max_node_sub_name(), value.into())?;
                 }
                 if let Some(soft_max_flow) = &soft_max.flow {
-                    let value = soft_max_flow.load(network, args)?;
+                    let value = soft_max_flow.load(network, args, Some(&self.meta.name))?;
                     network.set_node_max_flow(node_name, Self::soft_max_node_sub_name(), value.into())?;
                 }
 
                 // add constraints on L
                 if let Some(soft_max_cost) = &soft_max.cost {
-                    let value = soft_max_cost.load(network, args)?;
+                    let value = soft_max_cost.load(network, args, Some(&self.meta.name))?;
                     network.set_node_cost(node_name, None, value.into())?;
                 }
 
                 // add constraints on aggregated node
                 if let Some(max_flow) = &self.max_flow {
-                    let value = max_flow.load(network, args)?;
+                    let value = max_flow.load(network, args, Some(&self.meta.name))?;
                     network.set_aggregated_node_max_flow(node_name, Self::aggregated_node_sub_name(), value.into())?;
                 }
                 if let Some(min_flow) = &self.min_flow {
-                    let value = min_flow.load(network, args)?;
+                    let value = min_flow.load(network, args, Some(&self.meta.name))?;
                     network.set_aggregated_node_min_flow(node_name, Self::aggregated_node_sub_name(), value.into())?;
                 }
             }
             (Some(soft_min), Some(soft_max)) => {
                 // set L_max constraint
                 if let Some(soft_max_cost) = &soft_max.cost {
-                    let value = soft_max_cost.load(network, args)?;
+                    let value = soft_max_cost.load(network, args, Some(&self.meta.name))?;
                     network.set_node_cost(node_name, Self::soft_max_node_sub_name(), value.into())?;
                 }
                 // set L constraint
                 if let Some(cost) = &self.cost {
-                    let value = cost.load(network, args)?;
+                    let value = cost.load(network, args, Some(&self.meta.name))?;
                     network.set_node_cost(node_name, None, value.into())?;
                 }
                 // set L_min constraints
                 if let Some(soft_min_flow) = &soft_min.flow {
-                    let value = soft_min_flow.load(network, args)?;
+                    let value = soft_min_flow.load(network, args, Some(&self.meta.name))?;
                     network.set_node_max_flow(node_name, Self::soft_min_node_sub_name(), value.into())?;
                 }
                 if let Some(soft_min_cost) = &soft_min.cost {
-                    let value = soft_min_cost.load(network, args)?;
+                    let value = soft_min_cost.load(network, args, Some(&self.meta.name))?;
                     network.set_node_cost(node_name, Self::soft_min_node_sub_name(), value.into())?;
                 }
 
                 // add constraints on node aggregating all three nodes
                 if let Some(max_flow) = &self.max_flow {
-                    let value = max_flow.load(network, args)?;
+                    let value = max_flow.load(network, args, Some(&self.meta.name))?;
                     network.set_aggregated_node_max_flow(node_name, Self::aggregated_node_sub_name(), value.into())?;
                 }
                 if let Some(min_flow) = &self.min_flow {
-                    let value = min_flow.load(network, args)?;
+                    let value = min_flow.load(network, args, Some(&self.meta.name))?;
                     network.set_aggregated_node_min_flow(node_name, Self::aggregated_node_sub_name(), value.into())?;
                 }
 
                 // add constraints on node aggregating `L` and `L_min`
                 if let Some(soft_max_flow) = &soft_max.flow {
-                    let value = soft_max_flow.load(network, args)?;
+                    let value = soft_max_flow.load(network, args, Some(&self.meta.name))?;
                     network.set_aggregated_node_max_flow(
                         node_name,
                         Self::aggregated_node_l_l_min_sub_name(),
@@ -553,31 +553,26 @@ impl LinkNode {
     }
 }
 
-impl TryFrom<LinkNodeV1> for LinkNode {
-    type Error = ConversionError;
+impl TryFromV1<LinkNodeV1> for LinkNode {
+    type Error = ComponentConversionError;
 
-    fn try_from(v1: LinkNodeV1) -> Result<Self, Self::Error> {
+    fn try_from_v1(
+        v1: LinkNodeV1,
+        parent_node: Option<&str>,
+        conversion_data: &mut ConversionData,
+    ) -> Result<Self, Self::Error> {
         let meta: NodeMeta = v1.meta.into();
-        let mut unnamed_count = 0;
 
-        let max_flow = v1
-            .max_flow
-            .map(|v| v.try_into_v2_parameter(Some(&meta.name), &mut unnamed_count))
-            .transpose()?;
-        let min_flow = v1
-            .min_flow
-            .map(|v| v.try_into_v2_parameter(Some(&meta.name), &mut unnamed_count))
-            .transpose()?;
-        let cost = v1
-            .cost
-            .map(|v| v.try_into_v2_parameter(Some(&meta.name), &mut unnamed_count))
-            .transpose()?;
+        let cost = try_convert_node_attr(&meta.name, "cost", v1.cost, parent_node, conversion_data)?;
+        let max_flow = try_convert_node_attr(&meta.name, "max_flow", v1.max_flow, parent_node, conversion_data)?;
+        let min_flow = try_convert_node_attr(&meta.name, "min_flow", v1.min_flow, parent_node, conversion_data)?;
         // not supported in V1
         let soft_min = None;
         let soft_max = None;
 
         let n = Self {
             meta,
+            parameters: None,
             max_flow,
             min_flow,
             soft_min,
@@ -592,6 +587,8 @@ impl TryFrom<LinkNodeV1> for LinkNode {
 #[serde(deny_unknown_fields)]
 pub struct OutputNode {
     pub meta: NodeMeta,
+    /// Optional local parameters.
+    pub parameters: Option<Vec<Parameter>>,
     pub max_flow: Option<Metric>,
     pub min_flow: Option<Metric>,
     pub cost: Option<Metric>,
@@ -662,17 +659,17 @@ impl OutputNode {
         args: &LoadArgs,
     ) -> Result<(), SchemaError> {
         if let Some(cost) = &self.cost {
-            let value = cost.load(network, args)?;
+            let value = cost.load(network, args, Some(&self.meta.name))?;
             network.set_node_cost(self.meta.name.as_str(), None, value.into())?;
         }
 
         if let Some(max_flow) = &self.max_flow {
-            let value = max_flow.load(network, args)?;
+            let value = max_flow.load(network, args, Some(&self.meta.name))?;
             network.set_node_max_flow(self.meta.name.as_str(), None, value.into())?;
         }
 
         if let Some(min_flow) = &self.min_flow {
-            let value = min_flow.load(network, args)?;
+            let value = min_flow.load(network, args, Some(&self.meta.name))?;
             network.set_node_min_flow(self.meta.name.as_str(), None, value.into())?;
         }
 
@@ -680,28 +677,23 @@ impl OutputNode {
     }
 }
 
-impl TryFrom<OutputNodeV1> for OutputNode {
-    type Error = ConversionError;
+impl TryFromV1<OutputNodeV1> for OutputNode {
+    type Error = ComponentConversionError;
 
-    fn try_from(v1: OutputNodeV1) -> Result<Self, Self::Error> {
+    fn try_from_v1(
+        v1: OutputNodeV1,
+        parent_node: Option<&str>,
+        conversion_data: &mut ConversionData,
+    ) -> Result<Self, Self::Error> {
         let meta: NodeMeta = v1.meta.into();
-        let mut unnamed_count = 0;
 
-        let max_flow = v1
-            .max_flow
-            .map(|v| v.try_into_v2_parameter(Some(&meta.name), &mut unnamed_count))
-            .transpose()?;
-        let min_flow = v1
-            .min_flow
-            .map(|v| v.try_into_v2_parameter(Some(&meta.name), &mut unnamed_count))
-            .transpose()?;
-        let cost = v1
-            .cost
-            .map(|v| v.try_into_v2_parameter(Some(&meta.name), &mut unnamed_count))
-            .transpose()?;
+        let cost = try_convert_node_attr(&meta.name, "cost", v1.cost, parent_node, conversion_data)?;
+        let max_flow = try_convert_node_attr(&meta.name, "max_flow", v1.max_flow, parent_node, conversion_data)?;
+        let min_flow = try_convert_node_attr(&meta.name, "min_flow", v1.min_flow, parent_node, conversion_data)?;
 
         let n = Self {
             meta,
+            parameters: None,
             max_flow,
             min_flow,
             cost,
@@ -738,6 +730,8 @@ impl From<StorageInitialVolume> for CoreStorageInitialVolume {
 #[serde(deny_unknown_fields)]
 pub struct StorageNode {
     pub meta: NodeMeta,
+    /// Optional local parameters.
+    pub parameters: Option<Vec<Parameter>>,
     pub max_volume: Option<Metric>,
     pub min_volume: Option<Metric>,
     pub cost: Option<Metric>,
@@ -781,17 +775,17 @@ impl StorageNode {
         args: &LoadArgs,
     ) -> Result<(), SchemaError> {
         if let Some(cost) = &self.cost {
-            let value = cost.load(network, args)?;
+            let value = cost.load(network, args, Some(&self.meta.name))?;
             network.set_node_cost(self.meta.name.as_str(), None, value.into())?;
         }
 
         if let Some(min_volume) = &self.min_volume {
-            let value = min_volume.load(network, args)?;
+            let value = min_volume.load(network, args, Some(&self.meta.name))?;
             network.set_node_min_volume(self.meta.name.as_str(), None, Some(value.try_into()?))?;
         }
 
         if let Some(max_volume) = &self.max_volume {
-            let value = max_volume.load(network, args)?;
+            let value = max_volume.load(network, args, Some(&self.meta.name))?;
             network.set_node_max_volume(self.meta.name.as_str(), None, Some(value.try_into()?))?;
         }
 
@@ -828,56 +822,26 @@ impl StorageNode {
     }
 }
 
-impl TryFrom<StorageNodeV1> for StorageNode {
-    type Error = ConversionError;
+impl TryFromV1<StorageNodeV1> for StorageNode {
+    type Error = ComponentConversionError;
 
-    fn try_from(v1: StorageNodeV1) -> Result<Self, Self::Error> {
+    fn try_from_v1(
+        v1: StorageNodeV1,
+        parent_node: Option<&str>,
+        conversion_data: &mut ConversionData,
+    ) -> Result<Self, Self::Error> {
         let meta: NodeMeta = v1.meta.into();
-        let mut unnamed_count = 0;
 
-        let cost = v1
-            .cost
-            .map(|v| v.try_into_v2_parameter(Some(&meta.name), &mut unnamed_count))
-            .transpose()
-            .map_err(|source| ConversionError::NodeAttribute {
-                attr: "cost".to_string(),
-                name: meta.name.clone(),
-                source: Box::new(source),
-            })?;
+        let cost = try_convert_node_attr(&meta.name, "cost", v1.cost, parent_node, conversion_data)?;
+        let max_volume = try_convert_node_attr(&meta.name, "max_volume", v1.max_volume, parent_node, conversion_data)?;
+        let min_volume = try_convert_node_attr(&meta.name, "min_volume", v1.min_volume, parent_node, conversion_data)?;
 
-        let max_volume = v1
-            .max_volume
-            .map(|v| v.try_into_v2_parameter(Some(&meta.name), &mut unnamed_count))
-            .transpose()
-            .map_err(|source| ConversionError::NodeAttribute {
-                attr: "max_volume".to_string(),
-                name: meta.name.clone(),
-                source: Box::new(source),
-            })?;
-
-        let min_volume = v1
-            .min_volume
-            .map(|v| v.try_into_v2_parameter(Some(&meta.name), &mut unnamed_count))
-            .transpose()
-            .map_err(|source| ConversionError::NodeAttribute {
-                attr: "min_volume".to_string(),
-                name: meta.name.clone(),
-                source: Box::new(source),
-            })?;
-
-        let initial_volume = if let Some(v) = v1.initial_volume {
-            StorageInitialVolume::Absolute(v)
-        } else if let Some(v) = v1.initial_volume_pc {
-            StorageInitialVolume::Proportional(v)
-        } else {
-            return Err(ConversionError::MissingAttribute {
-                name: meta.name,
-                attrs: vec!["initial_volume".to_string(), "initial_volume_pc".to_string()],
-            });
-        };
+        let initial_volume =
+            try_convert_initial_storage(&meta.name, "initial_volume", v1.initial_volume, v1.initial_volume_pc)?;
 
         let n = Self {
             meta,
+            parameters: None,
             max_volume,
             min_volume,
             cost,
@@ -887,38 +851,26 @@ impl TryFrom<StorageNodeV1> for StorageNode {
     }
 }
 
-impl TryFrom<ReservoirNodeV1> for StorageNode {
-    type Error = ConversionError;
+impl TryFromV1<ReservoirNodeV1> for StorageNode {
+    type Error = ComponentConversionError;
 
-    fn try_from(v1: ReservoirNodeV1) -> Result<Self, Self::Error> {
+    fn try_from_v1(
+        v1: ReservoirNodeV1,
+        parent_node: Option<&str>,
+        conversion_data: &mut ConversionData,
+    ) -> Result<Self, Self::Error> {
         let meta: NodeMeta = v1.meta.into();
-        let mut unnamed_count = 0;
 
-        let cost = v1
-            .cost
-            .map(|v| v.try_into_v2_parameter(Some(&meta.name), &mut unnamed_count))
-            .transpose()?;
+        let cost = try_convert_node_attr(&meta.name, "cost", v1.cost, parent_node, conversion_data)?;
+        let max_volume = try_convert_node_attr(&meta.name, "max_volume", v1.max_volume, parent_node, conversion_data)?;
+        let min_volume = try_convert_node_attr(&meta.name, "min_volume", v1.min_volume, parent_node, conversion_data)?;
 
-        let max_volume = v1
-            .max_volume
-            .map(|v| v.try_into_v2_parameter(Some(&meta.name), &mut unnamed_count))
-            .transpose()?;
-
-        let min_volume = v1
-            .min_volume
-            .map(|v| v.try_into_v2_parameter(Some(&meta.name), &mut unnamed_count))
-            .transpose()?;
-
-        let initial_volume = if let Some(v) = v1.initial_volume {
-            StorageInitialVolume::Absolute(v)
-        } else if let Some(v) = v1.initial_volume_pc {
-            StorageInitialVolume::Proportional(v)
-        } else {
-            StorageInitialVolume::default()
-        };
+        let initial_volume =
+            try_convert_initial_storage(&meta.name, "initial_volume", v1.initial_volume, v1.initial_volume_pc)?;
 
         let n = Self {
             meta,
+            parameters: None,
             max_volume,
             min_volume,
             cost,
@@ -944,6 +896,8 @@ impl TryFrom<ReservoirNodeV1> for StorageNode {
 #[serde(deny_unknown_fields)]
 pub struct CatchmentNode {
     pub meta: NodeMeta,
+    /// Optional local parameters.
+    pub parameters: Option<Vec<Parameter>>,
     pub flow: Option<Metric>,
     pub cost: Option<Metric>,
 }
@@ -984,12 +938,12 @@ impl CatchmentNode {
         args: &LoadArgs,
     ) -> Result<(), SchemaError> {
         if let Some(cost) = &self.cost {
-            let value = cost.load(network, args)?;
+            let value = cost.load(network, args, Some(&self.meta.name))?;
             network.set_node_cost(self.meta.name.as_str(), None, value.into())?;
         }
 
         if let Some(flow) = &self.flow {
-            let value = flow.load(network, args)?;
+            let value = flow.load(network, args, Some(&self.meta.name))?;
             network.set_node_min_flow(self.meta.name.as_str(), None, value.clone().into())?;
             network.set_node_max_flow(self.meta.name.as_str(), None, value.into())?;
         }
@@ -1022,23 +976,25 @@ impl CatchmentNode {
     }
 }
 
-impl TryFrom<CatchmentNodeV1> for CatchmentNode {
-    type Error = ConversionError;
+impl TryFromV1<CatchmentNodeV1> for CatchmentNode {
+    type Error = ComponentConversionError;
 
-    fn try_from(v1: CatchmentNodeV1) -> Result<Self, Self::Error> {
+    fn try_from_v1(
+        v1: CatchmentNodeV1,
+        parent_node: Option<&str>,
+        conversion_data: &mut ConversionData,
+    ) -> Result<Self, Self::Error> {
         let meta: NodeMeta = v1.meta.into();
-        let mut unnamed_count = 0;
 
-        let flow = v1
-            .flow
-            .map(|v| v.try_into_v2_parameter(Some(&meta.name), &mut unnamed_count))
-            .transpose()?;
-        let cost = v1
-            .cost
-            .map(|v| v.try_into_v2_parameter(Some(&meta.name), &mut unnamed_count))
-            .transpose()?;
+        let cost = try_convert_node_attr(&meta.name, "cost", v1.cost, parent_node, conversion_data)?;
+        let flow = try_convert_node_attr(&meta.name, "min_flow", v1.flow, parent_node, conversion_data)?;
 
-        let n = Self { meta, flow, cost };
+        let n = Self {
+            meta,
+            parameters: None,
+            flow,
+            cost,
+        };
         Ok(n)
     }
 }
@@ -1053,8 +1009,8 @@ pub enum Relationship {
         factors: Vec<Metric>,
     },
     Exclusive {
-        min_active: Option<usize>,
-        max_active: Option<usize>,
+        min_active: Option<u64>,
+        max_active: Option<u64>,
     },
 }
 
@@ -1062,6 +1018,8 @@ pub enum Relationship {
 #[serde(deny_unknown_fields)]
 pub struct AggregatedNode {
     pub meta: NodeMeta,
+    /// Optional local parameters.
+    pub parameters: Option<Vec<Parameter>>,
     pub nodes: Vec<SimpleNodeReference>,
     pub max_flow: Option<Metric>,
     pub min_flow: Option<Metric>,
@@ -1134,12 +1092,12 @@ impl AggregatedNode {
         args: &LoadArgs,
     ) -> Result<(), SchemaError> {
         if let Some(max_flow) = &self.max_flow {
-            let value = max_flow.load(network, args)?;
+            let value = max_flow.load(network, args, Some(&self.meta.name))?;
             network.set_aggregated_node_max_flow(self.meta.name.as_str(), None, value.into())?;
         }
 
         if let Some(min_flow) = &self.min_flow {
-            let value = min_flow.load(network, args)?;
+            let value = min_flow.load(network, args, Some(&self.meta.name))?;
             network.set_aggregated_node_min_flow(self.meta.name.as_str(), None, value.into())?;
         }
 
@@ -1149,14 +1107,14 @@ impl AggregatedNode {
                     pywr_core::aggregated_node::Relationship::new_proportion_factors(
                         &factors
                             .iter()
-                            .map(|f| f.load(network, args))
+                            .map(|f| f.load(network, args, Some(&self.meta.name)))
                             .collect::<Result<Vec<_>, _>>()?,
                     )
                 }
                 Relationship::Ratio { factors } => pywr_core::aggregated_node::Relationship::new_ratio_factors(
                     &factors
                         .iter()
-                        .map(|f| f.load(network, args))
+                        .map(|f| f.load(network, args, Some(&self.meta.name)))
                         .collect::<Result<Vec<_>, _>>()?,
                 ),
                 Relationship::Exclusive { min_active, max_active } => {
@@ -1199,37 +1157,42 @@ impl AggregatedNode {
     }
 }
 
-impl TryFrom<AggregatedNodeV1> for AggregatedNode {
-    type Error = ConversionError;
+impl TryFromV1<AggregatedNodeV1> for AggregatedNode {
+    type Error = ComponentConversionError;
 
-    fn try_from(v1: AggregatedNodeV1) -> Result<Self, Self::Error> {
+    fn try_from_v1(
+        v1: AggregatedNodeV1,
+        parent_node: Option<&str>,
+        conversion_data: &mut ConversionData,
+    ) -> Result<Self, Self::Error> {
         let meta: NodeMeta = v1.meta.into();
-        let mut unnamed_count = 0;
 
         let relationship = match v1.factors {
             Some(f) => Some(Relationship::Ratio {
                 factors: f
                     .into_iter()
-                    .map(|v| v.try_into_v2_parameter(Some(&meta.name), &mut unnamed_count))
+                    .map(|v| {
+                        try_convert_parameter_attr(
+                            &meta.name,
+                            "factors",
+                            v,
+                            parent_node.or(Some(&meta.name)),
+                            conversion_data,
+                        )
+                    })
                     .collect::<Result<_, _>>()?,
             }),
             None => None,
         };
 
-        let max_flow = v1
-            .max_flow
-            .map(|v| v.try_into_v2_parameter(Some(&meta.name), &mut unnamed_count))
-            .transpose()?;
-
-        let min_flow = v1
-            .min_flow
-            .map(|v| v.try_into_v2_parameter(Some(&meta.name), &mut unnamed_count))
-            .transpose()?;
+        let max_flow = try_convert_node_attr(&meta.name, "max_flow", v1.max_flow, parent_node, conversion_data)?;
+        let min_flow = try_convert_node_attr(&meta.name, "min_flow", v1.min_flow, parent_node, conversion_data)?;
 
         let nodes = v1.nodes.into_iter().map(|n| n.into()).collect();
 
         let n = Self {
             meta,
+            parameters: None,
             nodes,
             max_flow,
             min_flow,
@@ -1243,6 +1206,8 @@ impl TryFrom<AggregatedNodeV1> for AggregatedNode {
 #[serde(deny_unknown_fields)]
 pub struct AggregatedStorageNode {
     pub meta: NodeMeta,
+    /// Optional local parameters.
+    pub parameters: Option<Vec<Parameter>>,
     pub storage_nodes: Vec<SimpleNodeReference>,
 }
 
@@ -1328,17 +1293,15 @@ impl AggregatedStorageNode {
     }
 }
 
-impl TryFrom<AggregatedStorageNodeV1> for AggregatedStorageNode {
-    type Error = ConversionError;
-
-    fn try_from(v1: AggregatedStorageNodeV1) -> Result<Self, Self::Error> {
+impl From<AggregatedStorageNodeV1> for AggregatedStorageNode {
+    fn from(v1: AggregatedStorageNodeV1) -> Self {
         let storage_nodes = v1.storage_nodes.into_iter().map(|n| n.into()).collect();
 
-        let n = Self {
+        Self {
             meta: v1.meta.into(),
+            parameters: None,
             storage_nodes,
-        };
-        Ok(n)
+        }
     }
 }
 
@@ -1347,13 +1310,6 @@ mod tests {
     use crate::nodes::core::StorageInitialVolume;
     use crate::nodes::InputNode;
     use crate::nodes::StorageNode;
-    use crate::PywrModel;
-    #[cfg(feature = "core")]
-    use pywr_core::test_utils::{run_all_solvers, ExpectedOutputs};
-    #[cfg(feature = "core")]
-    use std::str::FromStr;
-    #[cfg(feature = "core")]
-    use tempfile::TempDir;
 
     #[test]
     fn test_input() {
@@ -1416,159 +1372,5 @@ mod tests {
         let storage: StorageNode = serde_json::from_str(data).unwrap();
 
         assert_eq!(storage.initial_volume, StorageInitialVolume::Proportional(0.5));
-    }
-
-    #[cfg(feature = "core")]
-    fn storage_max_volumes_str() -> &'static str {
-        include_str!("../test_models/storage_max_volumes.json")
-    }
-
-    #[test]
-    #[cfg(feature = "core")]
-    fn test_storage_max_volumes_run() {
-        let data = storage_max_volumes_str();
-        let schema = PywrModel::from_str(data).unwrap();
-        let model: pywr_core::models::Model = schema.build_model(None, None).unwrap();
-        // Test all solvers
-        run_all_solvers(&model, &[], &[]);
-    }
-
-    fn me1_str() -> &'static str {
-        include_str!("../test_models/mutual-exclusivity1.json")
-    }
-    fn me2_str() -> &'static str {
-        include_str!("../test_models/mutual-exclusivity2.json")
-    }
-
-    #[cfg(feature = "core")]
-    fn me3_str() -> &'static str {
-        include_str!("../test_models/mutual-exclusivity3.json")
-    }
-    #[cfg(feature = "core")]
-    fn me1_outputs_str() -> &'static str {
-        include_str!("../test_models/mutual-exclusivity1.csv")
-    }
-    #[cfg(feature = "core")]
-    fn me2_outputs_str() -> &'static str {
-        include_str!("../test_models/mutual-exclusivity2.csv")
-    }
-    #[cfg(feature = "core")]
-    fn me3_outputs_str() -> &'static str {
-        include_str!("../test_models/mutual-exclusivity3.csv")
-    }
-    #[test]
-    fn test_me1_model_schema() {
-        let data = me1_str();
-        let schema: PywrModel = serde_json::from_str(data).unwrap();
-
-        assert_eq!(schema.network.nodes.len(), 6);
-        assert_eq!(schema.network.edges.len(), 4);
-    }
-    #[test]
-    fn test_me2_model_schema() {
-        let data = me2_str();
-        let schema: PywrModel = serde_json::from_str(data).unwrap();
-
-        assert_eq!(schema.network.nodes.len(), 6);
-        assert_eq!(schema.network.edges.len(), 4);
-    }
-    #[test]
-    #[cfg(feature = "core")]
-    fn test_me1_model_run() {
-        let data = me1_str();
-        let schema: PywrModel = serde_json::from_str(data).unwrap();
-        let temp_dir = TempDir::new().unwrap();
-
-        let mut model = schema.build_model(None, Some(temp_dir.path())).unwrap();
-
-        let network = model.network_mut();
-        assert_eq!(network.nodes().len(), 5);
-        assert_eq!(network.edges().len(), 4);
-
-        // After model run there should be an output file.
-        let expected_outputs = [ExpectedOutputs::new(
-            temp_dir.path().join("output.csv"),
-            me1_outputs_str(),
-        )];
-
-        // Test all solvers
-        run_all_solvers(&model, &["clp"], &expected_outputs);
-    }
-    #[test]
-    #[cfg(feature = "core")]
-    fn test_me2_model_run() {
-        let data = me2_str();
-        let schema: PywrModel = serde_json::from_str(data).unwrap();
-        let temp_dir = TempDir::new().unwrap();
-
-        let mut model = schema.build_model(None, Some(temp_dir.path())).unwrap();
-
-        let network = model.network_mut();
-        assert_eq!(network.nodes().len(), 10);
-        assert_eq!(network.edges().len(), 11);
-
-        // After model run there should be an output file.
-        let expected_outputs = [ExpectedOutputs::new(
-            temp_dir.path().join("output.csv"),
-            me2_outputs_str(),
-        )];
-
-        // Test all solvers
-        run_all_solvers(&model, &["clp"], &expected_outputs);
-    }
-
-    #[cfg(feature = "core")]
-    fn link_with_soft_min_str() -> &'static str {
-        include_str!("../test_models/link_with_soft_min.json")
-    }
-
-    #[test]
-    #[cfg(feature = "core")]
-    fn test_link_with_soft_min() {
-        let data = link_with_soft_min_str();
-        let schema = PywrModel::from_str(data).unwrap();
-        let model: pywr_core::models::Model = schema.build_model(None, None).unwrap();
-
-        // Test all solvers
-        run_all_solvers(&model, &[], &[]);
-    }
-
-    #[cfg(feature = "core")]
-    fn link_with_soft_max_str() -> &'static str {
-        include_str!("../test_models/link_with_soft_max.json")
-    }
-
-    #[test]
-    #[cfg(feature = "core")]
-    fn test_link_with_soft_max() {
-        let data = link_with_soft_max_str();
-        let schema = PywrModel::from_str(data).unwrap();
-        let model: pywr_core::models::Model = schema.build_model(None, None).unwrap();
-
-        // Test all solvers
-        run_all_solvers(&model, &[], &[]);
-    }
-
-    #[test]
-    #[cfg(feature = "core")]
-    fn test_me3_model_run() {
-        let data = me3_str();
-        let schema: PywrModel = serde_json::from_str(data).unwrap();
-        let temp_dir = TempDir::new().unwrap();
-
-        let mut model = schema.build_model(None, Some(temp_dir.path())).unwrap();
-
-        let network = model.network_mut();
-        assert_eq!(network.nodes().len(), 7);
-        assert_eq!(network.edges().len(), 8);
-
-        // After model run there should be an output file.
-        let expected_outputs = [ExpectedOutputs::new(
-            temp_dir.path().join("output.csv"),
-            me3_outputs_str(),
-        )];
-
-        // Test all solvers
-        run_all_solvers(&model, &["clp"], &expected_outputs);
     }
 }

@@ -61,14 +61,14 @@ mod test {
     /// Basic functional test of the delay parameter.
     #[test]
     fn test_basic() {
-        let mut model = simple_model(1);
+        let mut model = simple_model(1, None);
         let network = model.network_mut();
 
         // Create an artificial volume series to use for the delay test
         let volumes = Array1::linspace(1.0, 0.0, 21);
         let volume = Array1Parameter::new("test-x".into(), volumes.clone(), None);
 
-        let _volume_idx = network.add_parameter(Box::new(volume)).unwrap();
+        let _volume_idx = network.add_simple_parameter(Box::new(volume)).unwrap();
 
         let parameter = DiscountFactorParameter::new(
             "test-parameter".into(),

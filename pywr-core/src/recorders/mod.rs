@@ -5,7 +5,7 @@ mod memory;
 mod metric_set;
 mod py;
 
-use crate::metric::{MetricF64, MetricUsize};
+use crate::metric::{MetricF64, MetricU64};
 use crate::models::ModelDomain;
 use crate::network::Network;
 use crate::scenario::ScenarioIndex;
@@ -292,12 +292,12 @@ where
 
 pub struct IndexAssertionRecorder {
     meta: RecorderMeta,
-    expected_values: Array2<usize>,
-    metric: MetricUsize,
+    expected_values: Array2<u64>,
+    metric: MetricU64,
 }
 
 impl IndexAssertionRecorder {
-    pub fn new(name: &str, metric: MetricUsize, expected_values: Array2<usize>) -> Self {
+    pub fn new(name: &str, metric: MetricU64, expected_values: Array2<u64>) -> Self {
         Self {
             meta: RecorderMeta::new(name),
             expected_values,
@@ -354,7 +354,7 @@ mod tests {
 
     #[test]
     fn test_array2_recorder() {
-        let mut model = simple_model(2);
+        let mut model = simple_model(2, None);
 
         let node_idx = model.network().get_node_index_by_name("input", None).unwrap();
 
@@ -362,7 +362,7 @@ mod tests {
 
         let _idx = model.network_mut().add_recorder(Box::new(rec)).unwrap();
         // Test all solvers
-        run_all_solvers(&model, &[], &[]);
+        run_all_solvers(&model, &[], &[], &[]);
 
         // TODO fix this with respect to the trait.
         // let array = rec.data_view2().unwrap();

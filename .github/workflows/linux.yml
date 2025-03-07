@@ -6,13 +6,14 @@ on:
   pull_request:
 
 env:
+  CARGO_INCREMENTAL: 0
   CARGO_TERM_COLOR: always
   # Make sure CI fails on all warnings, including Clippy lints
   RUSTFLAGS: "-Dwarnings"
 
 jobs:
   build:
-
+    name: Build (stable)
     runs-on: ubuntu-latest
 
     steps:
@@ -29,24 +30,42 @@ jobs:
           mkdir bin
           curl -sSL $url | tar -xz --directory=bin
           echo "$(pwd)/bin" >> $GITHUB_PATH
-
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-hack@0.5
+      - name: Check (pywr-core)
+        run: cargo hack check --feature-powerset --no-dev-deps -p pywr-core --exclude-features ipm-simd,ipm-ocl
+      - name: Check (pywr-schema)
+        run: cargo hack check --feature-powerset --no-dev-deps -p pywr-schema --exclude-features ipm-simd,ipm-ocl
       - name: Build
         run: cargo build --verbose --features highs,cbc --workspace --exclude ipm-simd --exclude pywr-python
       - name: Run tests
-        run: cargo test --features highs,cbc
-      - name: Run mdbook tests
-        run: mdbook test ./pywr-book
+        run: cargo test --features highs,cbc --verbose --lib --bins -- --test-threads=1
+      - name: Run mdbook test & build
+        run: |
+          output=$(mdbook test ./pywr-book 2>&1)
+          if echo "$output" | grep -q "\[ERROR\]" ; then
+              exit 1
+          fi
 
-  build_schema_only:
+          output=$(mdbook build ./pywr-book 2>&1)
+          if echo "$output" | grep -q "\[ERROR\]" ; then
+              exit 1
+          fi
 
+  build_nightly:
+    name: Build (nightly) w/ SIMD and OpenCL
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: true
-      - uses: swatinem/rust-cache@v2
+      - uses: dtolnay/rust-toolchain@nightly
+      - name: Install Intel OpenCL
+        run: sudo apt-get install -y intel-opencl-icd ocl-icd-opencl-dev
       - name: Build
-        run: cargo build --verbose --no-default-features --package pywr-schema@2.0.0-dev
-      - name: Run tests
-        run: cargo test --verbose --no-default-features --package pywr-schema@2.0.0-dev
+        run: cargo +nightly build --verbose --features highs,cbc,ipm-simd,ipm-ocl
+      - name: Run tests (SIMD only)
+        # Run tests with SIMD only to avoid OpenCL runtime requirement on Github actions.
+        run: cargo +nightly test --features highs,cbc,ipm-simd

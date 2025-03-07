@@ -1,0 +1,89 @@
+{
+  "metadata": {
+    "title": "Simple timeseries"
+  },
+  "timestepper": {
+    "start": "2021-01-01",
+    "end": "2021-01-31",
+    "timestep": 1
+  },
+  "nodes": [
+    {
+      "name": "input1",
+      "type": "Input",
+      "max_flow": "inflow"
+    },
+    {
+      "name": "input2",
+      "type": "Input",
+      "max_flow": "factored_flow"
+    },
+    {
+      "name": "input3",
+      "type": "Input",
+      "max_flow": "inflow3"
+    },
+    {
+      "name": "link1",
+      "type": "Link"
+    },
+    {
+      "name": "output1",
+      "type": "Output",
+      "max_flow": "demand",
+      "cost": -10
+    }
+  ],
+  "edges": [
+    [
+      "input1",
+      "link1"
+    ],
+    [
+      "input2",
+      "link1"
+    ],
+    [
+      "input3",
+      "link1"
+    ],
+    [
+      "link1",
+      "output1"
+    ]
+  ],
+  "parameters": {
+    "demand": {
+      "type": "constant",
+      "value": 100.0
+    },
+    "inflow": {
+      "type": "dataframe",
+      "url": "inflow.csv",
+      "parse_dates": true,
+      "dayfirst": true,
+      "index_col": 0,
+      "column": "inflow1"
+    },
+    "inflow3": {
+      "type": "dataframe",
+      "table": "inflow-tbl",
+      "column": "inflow1"
+    },
+    "factored_flow": {
+      "type": "aggregated",
+      "agg_func": "product",
+      "parameters": [
+        "inflow",
+        0.5
+      ]
+    }
+  },
+  "tables": {
+    "inflow-tbl": {
+      "url": "inflow.csv",
+      "parse_dates": true,
+      "dayfirst": true
+    }
+  }
+}

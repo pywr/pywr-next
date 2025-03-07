@@ -1,9 +1,9 @@
-use crate::error::ConversionError;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
-use crate::parameters::{IntoV2Parameter, ParameterMeta, TryFromV1Parameter};
+use crate::parameters::{ConversionData, ParameterMeta};
+use crate::v1::{FromV1, IntoV2};
 #[cfg(feature = "core")]
 use ndarray::s;
 #[cfg(feature = "core")]
@@ -47,7 +47,7 @@ impl TablesArrayParameter {
             self.url.clone()
         };
 
-        let file = hdf5::File::open(pth).map_err(|e| SchemaError::HDF5Error(e.to_string()))?; // open for reading
+        let file = hdf5_metno::File::open(pth).map_err(|e| SchemaError::HDF5Error(e.to_string()))?; // open for reading
 
         let grp = file
             .group(&self.wh)
@@ -74,7 +74,7 @@ impl TablesArrayParameter {
                 scenario_group_index,
                 self.timestep_offset,
             );
-            Ok(network.add_parameter(Box::new(p))?)
+            Ok(network.add_simple_parameter(Box::new(p))?)
         } else {
             let array = array.slice_move(s![.., 0]);
             let p = pywr_core::parameters::Array1Parameter::new(
@@ -82,28 +82,21 @@ impl TablesArrayParameter {
                 array,
                 self.timestep_offset,
             );
-            Ok(network.add_parameter(Box::new(p))?)
+            Ok(network.add_simple_parameter(Box::new(p))?)
         }
     }
 }
 
-impl TryFromV1Parameter<TablesArrayParameterV1> for TablesArrayParameter {
-    type Error = ConversionError;
-
-    fn try_from_v1_parameter(
-        v1: TablesArrayParameterV1,
-        parent_node: Option<&str>,
-        unnamed_count: &mut usize,
-    ) -> Result<Self, Self::Error> {
-        let p = Self {
-            meta: v1.meta.into_v2_parameter(parent_node, unnamed_count),
+impl FromV1<TablesArrayParameterV1> for TablesArrayParameter {
+    fn from_v1(v1: TablesArrayParameterV1, parent_node: Option<&str>, conversion_data: &mut ConversionData) -> Self {
+        Self {
+            meta: v1.meta.into_v2(parent_node, conversion_data),
             node: v1.node,
             wh: v1.wh,
             scenario: v1.scenario,
             checksum: v1.checksum,
             url: v1.url,
             timestep_offset: None,
-        };
-        Ok(p)
+        }
     }
 }

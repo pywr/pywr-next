@@ -1,4 +1,4 @@
-use crate::error::ConversionError;
+use crate::error::ComponentConversionError;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
 use crate::metric::{Metric, SimpleNodeReference};
@@ -6,7 +6,8 @@ use crate::metric::{Metric, SimpleNodeReference};
 use crate::model::LoadArgs;
 use crate::nodes::core::StorageInitialVolume;
 use crate::nodes::{NodeAttribute, NodeMeta};
-use crate::parameters::TryIntoV2Parameter;
+use crate::parameters::Parameter;
+use crate::v1::{try_convert_initial_storage, try_convert_node_attr, ConversionData, TryFromV1};
 #[cfg(feature = "core")]
 use pywr_core::{
     derived_metric::DerivedMetric,
@@ -39,6 +40,8 @@ impl Default for AnnualReset {
 #[serde(deny_unknown_fields)]
 pub struct AnnualVirtualStorageNode {
     pub meta: NodeMeta,
+    /// Optional local parameters.
+    pub parameters: Option<Vec<Parameter>>,
     pub nodes: Vec<SimpleNodeReference>,
     pub factors: Option<Vec<f64>>,
     pub max_volume: Option<Metric>,
@@ -89,17 +92,17 @@ impl AnnualVirtualStorageNode {
 
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network, args: &LoadArgs) -> Result<(), SchemaError> {
         let cost = match &self.cost {
-            Some(v) => v.load(network, args)?.into(),
+            Some(v) => v.load(network, args, Some(&self.meta.name))?.into(),
             None => None,
         };
 
         let min_volume = match &self.min_volume {
-            Some(v) => Some(v.load(network, args)?.try_into()?),
+            Some(v) => Some(v.load(network, args, Some(&self.meta.name))?.try_into()?),
             None => None,
         };
 
         let max_volume = match &self.max_volume {
-            Some(v) => Some(v.load(network, args)?.try_into()?),
+            Some(v) => Some(v.load(network, args, Some(&self.meta.name))?.try_into()?),
             None => None,
         };
 
@@ -156,42 +159,28 @@ impl AnnualVirtualStorageNode {
     }
 }
 
-impl TryFrom<AnnualVirtualStorageNodeV1> for AnnualVirtualStorageNode {
-    type Error = ConversionError;
+impl TryFromV1<AnnualVirtualStorageNodeV1> for AnnualVirtualStorageNode {
+    type Error = ComponentConversionError;
 
-    fn try_from(v1: AnnualVirtualStorageNodeV1) -> Result<Self, Self::Error> {
+    fn try_from_v1(
+        v1: AnnualVirtualStorageNodeV1,
+        parent_node: Option<&str>,
+        conversion_data: &mut ConversionData,
+    ) -> Result<Self, Self::Error> {
         let meta: NodeMeta = v1.meta.into();
-        let mut unnamed_count = 0;
 
-        let cost = v1
-            .cost
-            .map(|v| v.try_into_v2_parameter(Some(&meta.name), &mut unnamed_count))
-            .transpose()?;
-        let max_volume = v1
-            .max_volume
-            .map(|v| v.try_into_v2_parameter(Some(&meta.name), &mut unnamed_count))
-            .transpose()?;
+        let cost = try_convert_node_attr(&meta.name, "cost", v1.cost, parent_node, conversion_data)?;
+        let max_volume = try_convert_node_attr(&meta.name, "max_volume", v1.max_volume, parent_node, conversion_data)?;
+        let min_volume = try_convert_node_attr(&meta.name, "min_volume", v1.min_volume, parent_node, conversion_data)?;
 
-        let min_volume = v1
-            .min_volume
-            .map(|v| v.try_into_v2_parameter(Some(&meta.name), &mut unnamed_count))
-            .transpose()?;
-
-        let initial_volume = if let Some(v) = v1.initial_volume {
-            StorageInitialVolume::Absolute(v)
-        } else if let Some(v) = v1.initial_volume_pc {
-            StorageInitialVolume::Proportional(v)
-        } else {
-            return Err(ConversionError::MissingAttribute {
-                name: meta.name,
-                attrs: vec!["initial_volume".to_string(), "initial_volume_pc".to_string()],
-            });
-        };
+        let initial_volume =
+            try_convert_initial_storage(&meta.name, "initial_volume", v1.initial_volume, v1.initial_volume_pc)?;
 
         let nodes = v1.nodes.into_iter().map(|n| n.into()).collect();
 
         let n = Self {
             meta,
+            parameters: None,
             nodes,
             factors: v1.factors,
             max_volume,

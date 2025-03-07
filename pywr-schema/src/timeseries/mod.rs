@@ -1,10 +1,11 @@
 #[cfg(feature = "core")]
 mod align_and_resample;
-
 mod pandas;
 mod polars_dataset;
 
-use crate::parameters::{ParameterMeta, TimeseriesV1Data, TimeseriesV1Source};
+use crate::error::ComponentConversionError;
+use crate::parameters::ParameterMeta;
+use crate::v1::{ConversionData, IntoV2, TryFromV1};
 use crate::visit::VisitPaths;
 use crate::ConversionError;
 #[cfg(feature = "core")]
@@ -13,16 +14,23 @@ pub use pandas::PandasDataset;
 #[cfg(feature = "core")]
 use polars::error::PolarsError;
 #[cfg(feature = "core")]
-use polars::prelude::{DataFrame, DataType::Float64, Float64Type, IndexOrder};
+use polars::prelude::{
+    DataFrame,
+    DataType::{Float64, UInt64},
+    Float64Type, IndexOrder, UInt64Type,
+};
 pub use polars_dataset::PolarsDataset;
+#[cfg(feature = "pyo3")]
+use pyo3::PyErr;
 #[cfg(feature = "core")]
 use pywr_core::{
     models::ModelDomain,
     parameters::{Array1Parameter, Array2Parameter, ParameterIndex, ParameterName},
     PywrError,
 };
-use pywr_v1_schema::tables::TableVec;
+use pywr_v1_schema::parameters::DataFrameParameter as DataFrameParameterV1;
 use schemars::JsonSchema;
+#[cfg(feature = "core")]
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
@@ -50,17 +58,23 @@ pub enum TimeseriesError {
     TimeseriesColumnOrScenarioRequired(String),
     #[error("The timeseries dataset '{0}' has no columns")]
     TimeseriesDataframeHasNoColumns(String),
+    #[cfg(feature = "pyo3")]
+    #[error("Python error: {0}")]
+    PythonError(#[from] PyErr),
     #[error("Polars error: {0}")]
     #[cfg(feature = "core")]
     PolarsError(#[from] PolarsError),
     #[cfg(feature = "core")]
     #[error("Pywr core error: {0}")]
     PywrCore(#[from] PywrError),
+    #[cfg(feature = "core")]
+    #[error("Python not enabled.")]
+    PythonNotEnabled,
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
 #[serde(tag = "type")]
-enum TimeseriesProvider {
+pub enum TimeseriesProvider {
     Pandas(PandasDataset),
     Polars(PolarsDataset),
 }
@@ -68,8 +82,8 @@ enum TimeseriesProvider {
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Timeseries {
-    meta: ParameterMeta,
-    provider: TimeseriesProvider,
+    pub meta: ParameterMeta,
+    pub provider: TimeseriesProvider,
 }
 
 impl Timeseries {
@@ -128,7 +142,7 @@ impl LoadedTimeseriesCollection {
         Ok(Self { timeseries })
     }
 
-    pub fn load_column(
+    pub fn load_column_f64(
         &self,
         network: &mut pywr_core::network::Network,
         name: &str,
@@ -148,14 +162,41 @@ impl LoadedTimeseriesCollection {
             Err(e) => match e {
                 PywrError::ParameterNotFound(_) => {
                     let p = Array1Parameter::new(name, array, None);
-                    Ok(network.add_parameter(Box::new(p))?)
+                    Ok(network.add_simple_parameter(Box::new(p))?)
                 }
                 _ => Err(TimeseriesError::PywrCore(e)),
             },
         }
     }
 
-    pub fn load_single_column(
+    pub fn load_column_usize(
+        &self,
+        network: &mut pywr_core::network::Network,
+        name: &str,
+        col: &str,
+    ) -> Result<ParameterIndex<u64>, TimeseriesError> {
+        let df = self
+            .timeseries
+            .get(name)
+            .ok_or(TimeseriesError::TimeseriesNotFound(name.to_string()))?;
+        let series = df.column(col)?;
+
+        let array = series.cast(&UInt64)?.u64()?.to_ndarray()?.to_owned();
+        let name = ParameterName::new(col, Some(name));
+
+        match network.get_index_parameter_index_by_name(&name) {
+            Ok(idx) => Ok(idx),
+            Err(e) => match e {
+                PywrError::ParameterNotFound(_) => {
+                    let p = Array1Parameter::new(name, array, None);
+                    Ok(network.add_simple_index_parameter(Box::new(p))?)
+                }
+                _ => Err(TimeseriesError::PywrCore(e)),
+            },
+        }
+    }
+
+    pub fn load_single_column_f64(
         &self,
         network: &mut pywr_core::network::Network,
         name: &str,
@@ -186,14 +227,53 @@ impl LoadedTimeseriesCollection {
             Err(e) => match e {
                 PywrError::ParameterNotFound(_) => {
                     let p = Array1Parameter::new(name, array, None);
-                    Ok(network.add_parameter(Box::new(p))?)
+                    Ok(network.add_simple_parameter(Box::new(p))?)
                 }
                 _ => Err(TimeseriesError::PywrCore(e)),
             },
         }
     }
 
-    pub fn load_df(
+    pub fn load_single_column_usize(
+        &self,
+        network: &mut pywr_core::network::Network,
+        name: &str,
+    ) -> Result<ParameterIndex<u64>, TimeseriesError> {
+        let df = self
+            .timeseries
+            .get(name)
+            .ok_or(TimeseriesError::TimeseriesNotFound(name.to_string()))?;
+
+        let cols = df.get_column_names();
+
+        if cols.len() > 1 {
+            return Err(TimeseriesError::TimeseriesColumnOrScenarioRequired(name.to_string()));
+        };
+
+        let col = cols.first().ok_or(TimeseriesError::ColumnNotFound {
+            col: "".to_string(),
+            name: name.to_string(),
+        })?;
+
+        let series = df.column(col)?;
+
+        let array = series.cast(&UInt64)?.u64()?.to_ndarray()?.to_owned();
+        let name = ParameterName::new(col, Some(name));
+
+        match network.get_index_parameter_index_by_name(&name) {
+            Ok(idx) => Ok(idx),
+            Err(e) => match e {
+                PywrError::ParameterNotFound(_) => {
+                    let p = Array1Parameter::new(name, array, None);
+                    Ok(network.add_simple_index_parameter(Box::new(p))?)
+                }
+                _ => Err(TimeseriesError::PywrCore(e)),
+            },
+        }
+    }
+
+    /// Load a timeseries dataframe as a 2D array F64 parameter.
+    pub fn load_df_f64(
         &self,
         network: &mut pywr_core::network::Network,
         name: &str,
@@ -218,7 +298,40 @@ impl LoadedTimeseriesCollection {
             Err(e) => match e {
                 PywrError::ParameterNotFound(_) => {
                     let p = Array2Parameter::new(name, array, scenario_group_index, None);
-                    Ok(network.add_parameter(Box::new(p))?)
+                    Ok(network.add_simple_parameter(Box::new(p))?)
+                }
+                _ => Err(TimeseriesError::PywrCore(e)),
+            },
+        }
+    }
+
+    /// Load a timeseries dataframe as a 2D array Usize parameter.
+    pub fn load_df_usize(
+        &self,
+        network: &mut pywr_core::network::Network,
+        name: &str,
+        domain: &ModelDomain,
+        scenario: &str,
+    ) -> Result<ParameterIndex<u64>, TimeseriesError> {
+        let scenario_group_index = domain
+            .scenarios()
+            .group_index(scenario)
+            .ok_or(TimeseriesError::ScenarioGroupNotFound(scenario.to_string()))?;
+
+        let df = self
+            .timeseries
+            .get(name)
+            .ok_or(TimeseriesError::TimeseriesNotFound(name.to_string()))?;
+
+        let array: Array2<u64> = df.to_ndarray::<UInt64Type>(IndexOrder::default()).unwrap();
+        let name = ParameterName::new(scenario, Some(name));
+
+        match network.get_index_parameter_index_by_name(&name) {
+            Ok(idx) => Ok(idx),
+            Err(e) => match e {
+                PywrError::ParameterNotFound(_) => {
+                    let p = Array2Parameter::new(name, array, scenario_group_index, None);
+                    Ok(network.add_simple_index_parameter(Box::new(p))?)
                 }
                 _ => Err(TimeseriesError::PywrCore(e)),
             },
@@ -229,138 +342,176 @@ impl LoadedTimeseriesCollection {
 /// Convert timeseries inputs to this schema.
 ///
 /// The conversions
-pub fn convert_from_v1_data(
-    df_data: Vec<TimeseriesV1Data>,
-    v1_tables: &Option<TableVec>,
-    errors: &mut Vec<ConversionError>,
-) -> Vec<Timeseries> {
-    let mut ts = HashMap::new();
-    for data in df_data.into_iter() {
-        match data.source {
-            TimeseriesV1Source::Table(name) => {
-                let tables = v1_tables.as_ref().unwrap();
-                let table = tables.iter().find(|t| t.name == *name).unwrap();
-                let name = table.name.clone();
-                if ts.contains_key(&name) {
-                    continue;
-                }
+// pub fn __convert_from_v1_data(
+//     df_data: Vec<TimeseriesV1Data>,
+//     v1_tables: &Option<TableVec>,
+//     errors: &mut Vec<ConversionError>,
+// ) -> Vec<Timeseries> {
+//     let mut ts = HashMap::new();
+//     for data in df_data.into_iter() {
+//         match data.source {
+//             TimeseriesV1Source::Table(name) => {
+//                 let tables = v1_tables.as_ref().unwrap();
+//                 let table = tables.iter().find(|t| t.name == *name).unwrap();
+//                 let name = table.name.clone();
+//                 if ts.contains_key(&name) {
+//                     continue;
+//                 }
+//
+//                 let time_col = None;
+//
+//                 let provider = PandasDataset {
+//                     time_col,
+//                     url: table.url.clone(),
+//                     kwargs: Some(data.pandas_kwargs),
+//                 };
+//
+//                 ts.insert(
+//                     name.clone(),
+//                     Timeseries {
+//                         meta: ParameterMeta { name, comment: None },
+//                         provider: TimeseriesProvider::Pandas(provider),
+//                     },
+//                 );
+//             }
+//             TimeseriesV1Source::Url(url) => {
+//                 let name = match data.name {
+//                     Some(name) => name,
+//                     None => {
+//                         errors.push(ConversionError::MissingTimeseriesName(
+//                             url.to_str().unwrap_or("").to_string(),
+//                         ));
+//                         continue;
+//                     }
+//                 };
+//                 if ts.contains_key(&name) {
+//                     continue;
+//                 }
+//
+//                 let provider = PandasDataset {
+//                     time_col: data.time_col,
+//                     url,
+//                     kwargs: Some(data.pandas_kwargs),
+//                 };
+//
+//                 ts.insert(
+//                     name.clone(),
+//                     Timeseries {
+//                         meta: ParameterMeta { name, comment: None },
+//                         provider: TimeseriesProvider::Pandas(provider),
+//                     },
+//                 );
+//             }
+//         }
+//     }
+//     ts.into_values().collect::<Vec<Timeseries>>()
+// }
 
-                let time_col = None;
-
-                let provider = PandasDataset {
-                    time_col,
-                    url: table.url.clone(),
-                    kwargs: Some(data.pandas_kwargs),
-                };
-
-                ts.insert(
-                    name.clone(),
-                    Timeseries {
-                        meta: ParameterMeta { name, comment: None },
-                        provider: TimeseriesProvider::Pandas(provider),
-                    },
-                );
-            }
-            TimeseriesV1Source::Url(url) => {
-                let name = match data.name {
-                    Some(name) => name,
-                    None => {
-                        errors.push(ConversionError::MissingTimeseriesName(
-                            url.to_str().unwrap_or("").to_string(),
-                        ));
-                        continue;
-                    }
-                };
-                if ts.contains_key(&name) {
-                    continue;
-                }
-
-                let provider = PandasDataset {
-                    time_col: data.time_col,
-                    url,
-                    kwargs: Some(data.pandas_kwargs),
-                };
-
-                ts.insert(
-                    name.clone(),
-                    Timeseries {
-                        meta: ParameterMeta { name, comment: None },
-
-                        provider: TimeseriesProvider::Pandas(provider),
-                    },
-                );
-            }
-        }
-    }
-    ts.into_values().collect::<Vec<Timeseries>>()
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, strum_macros::Display, PartialEq)]
+#[serde(tag = "type", content = "name")]
+pub enum TimeseriesColumns {
+    Scenario(String),
+    Column(String),
 }
 
-#[cfg(test)]
-#[cfg(feature = "core")]
-mod tests {
-    use crate::PywrModel;
-    use chrono::{Datelike, NaiveDate};
-    use ndarray::Array;
-    use pywr_core::{metric::MetricF64, recorders::AssertionRecorder, test_utils::run_all_solvers};
-    use std::path::PathBuf;
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct TimeseriesReference {
+    pub name: String,
+    pub columns: Option<TimeseriesColumns>,
+}
 
-    fn model_str() -> &'static str {
-        include_str!("../test_models/timeseries.json")
+impl TimeseriesReference {
+    pub fn new(name: String, columns: Option<TimeseriesColumns>) -> Self {
+        Self { name, columns }
     }
 
-    #[test]
-    fn test_timeseries_polars() {
-        let cargo_manifest_dir = env!("CARGO_MANIFEST_DIR");
-
-        let model_dir = PathBuf::from(cargo_manifest_dir).join("src/test_models");
-
-        let data = model_str();
-        let schema: PywrModel = serde_json::from_str(data).unwrap();
-        let mut model = schema.build_model(Some(model_dir.as_path()), None).unwrap();
-
-        let expected = Array::from_shape_fn((365, 1), |(x, _)| {
-            let month_day = NaiveDate::from_yo_opt(2021, (x + 1) as u32).unwrap().day() as f64;
-            month_day + month_day * 0.5
-        });
-
-        let idx = model.network().get_node_by_name("output1", None).unwrap().index();
-
-        let recorder = AssertionRecorder::new("output-flow", MetricF64::NodeInFlow(idx), expected.clone(), None, None);
-        model.network_mut().add_recorder(Box::new(recorder)).unwrap();
-
-        run_all_solvers(&model, &[], &[])
+    pub fn name(&self) -> &str {
+        self.name.as_str()
     }
+}
 
-    fn model_pandas_str() -> &'static str {
-        include_str!("../test_models/timeseries_pandas.json")
-    }
+/// Helper struct to convert references to timeseries.
+///
+/// Keeps a reference to the original parameter name and the new timeseries reference. If the
+/// timeseries refers to a table then the original parameter name is no longer required in the
+/// final model, but is needed during conversion to ensure that the table is correctly referenced.
+#[derive(Clone)]
+pub struct ConvertedTimeseriesReference {
+    pub original_parameter_name: String,
+    pub ts_ref: TimeseriesReference,
+}
 
-    #[test]
-    fn test_timeseries_pandas() {
-        let data = model_pandas_str();
-        #[cfg(not(feature = "test-python"))]
-        let _: PywrModel = serde_json::from_str(data).unwrap();
+impl TryFromV1<DataFrameParameterV1> for ConvertedTimeseriesReference {
+    type Error = ComponentConversionError;
 
-        // Can only build this model within a Python environment that has pandas.
-        #[cfg(feature = "test-python")]
-        {
-            let cargo_manifest_dir = env!("CARGO_MANIFEST_DIR");
-            let schema: PywrModel = serde_json::from_str(data).unwrap();
-            let model_dir = PathBuf::from(cargo_manifest_dir).join("src/test_models");
-            let mut model = schema.build_model(Some(model_dir.as_path()), None).unwrap();
+    fn try_from_v1(
+        v1: DataFrameParameterV1,
+        parent_node: Option<&str>,
+        conversion_data: &mut ConversionData,
+    ) -> Result<Self, Self::Error> {
+        let meta: ParameterMeta = v1.meta.into_v2(parent_node, conversion_data);
+        let mut ts_name = meta.name.clone();
 
-            let expected = Array::from_shape_fn((365, 1), |(x, _)| {
-                let month_day = NaiveDate::from_yo_opt(2021, (x + 1) as u32).unwrap().day() as f64;
-                month_day + month_day * 0.5
+        if let Some(url) = v1.url {
+            // If there is a URL then this entry must be converted into a timeseries
+            let mut pandas_kwargs = v1.pandas_kwargs;
+
+            let time_col = match pandas_kwargs.remove("index_col") {
+                Some(v) => v.as_str().map(|s| s.to_string()),
+                None => None,
+            };
+
+            let provider = PandasDataset {
+                time_col,
+                url,
+                kwargs: Some(pandas_kwargs),
+            };
+
+            // The timeseries data that is extracted
+            let timeseries = Timeseries {
+                meta: meta.clone(),
+                provider: TimeseriesProvider::Pandas(provider),
+            };
+
+            // Only add if the timeseries does not already exist
+            if !conversion_data.timeseries.iter().any(|ts| ts.meta.name == meta.name) {
+                conversion_data.timeseries.push(timeseries);
+            }
+        } else if let Some(table) = v1.table {
+            // If this is a reference to a table then we need to point to the table by name, and
+            // ignore the original parameter's name entirely.
+            ts_name = table;
+        } else {
+            return Err(ComponentConversionError::Parameter {
+                name: meta.name,
+                attr: "url".to_string(),
+                error: ConversionError::MissingAttribute {
+                    attrs: vec!["url".to_string(), "table".to_string()],
+                },
             });
+        };
 
-            let idx = model.network().get_node_by_name("output1", None).unwrap().index();
-
-            let recorder =
-                AssertionRecorder::new("output-flow", MetricF64::NodeInFlow(idx), expected.clone(), None, None);
-            model.network_mut().add_recorder(Box::new(recorder)).unwrap();
-
-            run_all_solvers(&model, &[], &[])
-        }
+        // Create the reference to the timeseries data
+        let columns = match (v1.column, v1.scenario) {
+            (Some(col), None) => Some(TimeseriesColumns::Column(col)),
+            (None, Some(scenario)) => Some(TimeseriesColumns::Scenario(scenario)),
+            (Some(_), Some(_)) => {
+                return Err(ComponentConversionError::Parameter {
+                    name: meta.name.clone(),
+                    attr: "column".to_string(),
+                    error: ConversionError::AmbiguousAttributes {
+                        attrs: vec!["column".to_string(), "scenario".to_string()],
+                    },
+                })
+            }
+            (None, None) => None,
+        };
+        // The reference that is returned
+        let reference = TimeseriesReference { name: ts_name, columns };
+        Ok(ConvertedTimeseriesReference {
+            original_parameter_name: meta.name,
+            ts_ref: reference,
+        })
     }
 }

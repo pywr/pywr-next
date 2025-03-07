@@ -67,17 +67,19 @@ where
 /// # Examples
 ///
 /// ```
-/// use std::num::NonZeroUsize;
-/// use pywr::solvers::SimdIpmSolverSettingsBuilder;
+/// use std::num::NonZero;
+/// use pywr_core::solvers::{SimdIpmSolverSettings, SimdIpmSolverSettingsBuilder};
 /// // Settings with parallel enabled and 4 threads.
-/// let settings = SimdIpmSolverSettingsBuilder::default().parallel().threads(4).build();
+/// let settings: SimdIpmSolverSettings<f64, 4> = SimdIpmSolverSettingsBuilder::default().parallel().threads(4).build();
 ///
 /// let mut builder = SimdIpmSolverSettingsBuilder::default();
-/// builder.max_iterations(NonZeroUsize(50).unwrap());
-/// let settings = builder.build();
+/// builder = builder.max_iterations(NonZero::new(50).unwrap());
+/// let settings: SimdIpmSolverSettings<f64, 4> = builder.build();
 ///
-/// builder.parallel();
-/// let settings = builder.build();
+/// let mut builder = SimdIpmSolverSettingsBuilder::default();
+/// builder = builder.max_iterations(NonZero::new(50).unwrap());
+/// builder = builder.parallel();
+/// let settings: SimdIpmSolverSettings<f64, 4> = builder.build();
 ///
 /// ```
 pub struct SimdIpmSolverSettingsBuilder<T, const N: usize>
@@ -112,37 +114,37 @@ where
     LaneCount<N>: SupportedLaneCount,
     T: SimdElement + From<f64>,
 {
-    pub fn parallel(&mut self) -> &mut Self {
+    pub fn parallel(mut self) -> Self {
         self.parallel = true;
         self
     }
 
-    pub fn threads(&mut self, threads: usize) -> &mut Self {
+    pub fn threads(mut self, threads: usize) -> Self {
         self.threads = threads;
         self
     }
 
-    pub fn primal_feasibility(&mut self, tolerance: f64) -> &mut Self {
+    pub fn primal_feasibility(mut self, tolerance: f64) -> Self {
         self.tolerances.primal_feasibility = Simd::<T, N>::splat(tolerance.into());
         self
     }
 
-    pub fn dual_feasibility(&mut self, tolerance: f64) -> &mut Self {
+    pub fn dual_feasibility(mut self, tolerance: f64) -> Self {
         self.tolerances.dual_feasibility = Simd::<T, N>::splat(tolerance.into());
         self
     }
 
-    pub fn optimality(&mut self, tolerance: f64) -> &mut Self {
+    pub fn optimality(mut self, tolerance: f64) -> Self {
         self.tolerances.optimality = Simd::<T, N>::splat(tolerance.into());
         self
     }
 
-    pub fn max_iterations(&mut self, max_iterations: NonZeroUsize) -> &mut Self {
+    pub fn max_iterations(mut self, max_iterations: NonZeroUsize) -> Self {
         self.max_iterations = max_iterations;
         self
     }
     /// Construct a [`SimdIpmSolverSettings`] from the builder.
-    pub fn build(&self) -> SimdIpmSolverSettings<T, N> {
+    pub fn build(self) -> SimdIpmSolverSettings<T, N> {
         SimdIpmSolverSettings {
             parallel: self.parallel,
             threads: self.threads,
@@ -168,6 +170,6 @@ mod tests {
         };
         let settings_from_builder = SimdIpmSolverSettingsBuilder::<f64, 4>::default().parallel().build();
 
-        assert_eq!(settings_from_builder, settings_from_builder);
+        assert_eq!(settings_from_builder, settings);
     }
 }

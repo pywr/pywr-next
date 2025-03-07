@@ -44,19 +44,20 @@ mod tests {
     use crate::PywrModel;
     #[cfg(feature = "core")]
     use pywr_core::solvers::{ClpSolver, ClpSolverSettings};
+    use std::fs::read_to_string;
     use std::path::PathBuf;
     use std::str::FromStr;
     #[cfg(feature = "core")]
     use tempfile::TempDir;
 
-    fn model_str() -> &'static str {
-        include_str!("../test_models/hdf1.json")
+    fn model_str() -> String {
+        read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/hdf1.json")).expect("Failed to read hdf1.json")
     }
 
     #[test]
     fn test_schema() {
         let data = model_str();
-        let schema = PywrModel::from_str(data).unwrap();
+        let schema = PywrModel::from_str(&data).unwrap();
 
         assert_eq!(schema.network.nodes.len(), 3);
         assert_eq!(schema.network.edges.len(), 2);
@@ -76,7 +77,7 @@ mod tests {
     #[cfg(feature = "core")]
     fn test_run() {
         let data = model_str();
-        let schema = PywrModel::from_str(data).unwrap();
+        let schema = PywrModel::from_str(&data).unwrap();
 
         let temp_dir = TempDir::new().unwrap();
 

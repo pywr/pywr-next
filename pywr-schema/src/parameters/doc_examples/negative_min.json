@@ -4,27 +4,8 @@
   },
   "type": "NegativeMin",
   "metric": {
-    "type": "InlineParameter",
-    "definition": {
-      "meta": {
-        "name": "my-monthly-profile"
-      },
-      "type": "MonthlyProfile",
-      "values": [
-        -1,
-        -4,
-        5,
-        9,
-        1,
-        5,
-        10,
-        8,
-        11,
-        9,
-        11,
-        12
-      ]
-    }
+    "type": "Parameter",
+    "name": "my-monthly-profile"
   },
   "threshold": 2
 }

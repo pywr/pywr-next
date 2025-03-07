@@ -1,4 +1,4 @@
-use crate::metric::Metric;
+use crate::metric::{IndexMetric, Metric};
 use std::collections::HashMap;
 use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
@@ -19,17 +19,17 @@ pub trait VisitMetrics {
 impl VisitMetrics for Metric {
     fn visit_metrics<F: FnMut(&Metric)>(&self, visitor: &mut F) {
         visitor(self);
-        if let Self::InlineParameter { definition } = self {
-            definition.visit_metrics(visitor);
-        }
     }
 
     fn visit_metrics_mut<F: FnMut(&mut Metric)>(&mut self, visitor: &mut F) {
         visitor(self);
-        if let Self::InlineParameter { definition } = self {
-            definition.visit_metrics_mut(visitor);
-        }
     }
+}
+
+impl VisitMetrics for IndexMetric {
+    fn visit_metrics<F: FnMut(&Metric)>(&self, _visitor: &mut F) {}
+
+    fn visit_metrics_mut<F: FnMut(&mut Metric)>(&mut self, _visitor: &mut F) {}
 }
 
 impl<T> VisitMetrics for Option<T>
@@ -111,8 +111,9 @@ impl VisitMetrics for chrono::Month {}
 impl VisitMetrics for f32 {}
 impl VisitMetrics for f64 {}
 impl<const N: usize> VisitMetrics for [f64; N] {}
+impl<const N: usize> VisitMetrics for [Metric; N] {}
 impl VisitMetrics for bool {}
-impl VisitMetrics for usize {}
+impl VisitMetrics for u64 {}
 impl VisitMetrics for String {}
 impl VisitMetrics for PathBuf {}
 impl VisitMetrics for NonZeroUsize {}
@@ -130,19 +131,8 @@ pub trait VisitPaths {
     fn visit_paths_mut<F: FnMut(&mut PathBuf)>(&mut self, _visitor: &mut F) {}
 }
 
-impl VisitPaths for Metric {
-    fn visit_paths<F: FnMut(&Path)>(&self, visitor: &mut F) {
-        if let Self::InlineParameter { definition } = self {
-            definition.visit_paths(visitor)
-        }
-    }
-
-    fn visit_paths_mut<F: FnMut(&mut PathBuf)>(&mut self, visitor: &mut F) {
-        if let Self::InlineParameter { definition } = self {
-            definition.visit_paths_mut(visitor)
-        }
-    }
-}
+impl VisitPaths for Metric {}
+impl VisitPaths for IndexMetric {}
 
 impl<T> VisitPaths for Option<T>
 where
@@ -224,8 +214,9 @@ impl VisitPaths for chrono::Month {}
 impl VisitPaths for f32 {}
 impl VisitPaths for f64 {}
 impl<const N: usize> VisitPaths for [f64; N] {}
+impl<const N: usize> VisitPaths for [Metric; N] {}
 impl VisitPaths for bool {}
-impl VisitPaths for usize {}
+impl VisitPaths for u64 {}
 impl VisitPaths for String {}
 impl VisitPaths for PathBuf {
     fn visit_paths<F: FnMut(&Path)>(&self, visitor: &mut F) {

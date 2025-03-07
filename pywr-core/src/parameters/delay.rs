@@ -13,12 +13,12 @@ use std::collections::VecDeque;
 pub struct DelayParameter<M> {
     meta: ParameterMeta,
     metric: M,
-    delay: usize,
+    delay: u64,
     initial_value: f64,
 }
 
 impl<M> DelayParameter<M> {
-    pub fn new(name: ParameterName, metric: M, delay: usize, initial_value: f64) -> Self {
+    pub fn new(name: ParameterName, metric: M, delay: u64, initial_value: f64) -> Self {
         Self {
             meta: ParameterMeta::new(name),
             metric,
@@ -170,15 +170,15 @@ mod test {
     /// Basic functional test of the delay parameter.
     #[test]
     fn test_basic() {
-        let mut model = simple_model(1);
+        let mut model = simple_model(1, None);
 
         // Create an artificial volume series to use for the delay test
         let volumes = Array1::linspace(1.0, 0.0, 21);
         let volume = Array1Parameter::new("test-x".into(), volumes.clone(), None);
 
-        let volume_idx = model.network_mut().add_parameter(Box::new(volume)).unwrap();
+        let volume_idx = model.network_mut().add_simple_parameter(Box::new(volume)).unwrap();
 
-        const DELAY: usize = 3; // 3 time-step delay
+        const DELAY: u64 = 3; // 3 time-step delay
         let parameter = DelayParameter::new(
             "test-parameter".into(),
             volume_idx.into(), // Interpolate with the parameter based values
@@ -189,12 +189,16 @@ mod test {
         // We should have DELAY number of initial values to start with, and then follow the
         // values in the `volumes` array.
         let expected_values: Array1<f64> = [
-            0.0; DELAY // initial values
+            0.0; DELAY as usize // initial values
         ]
             .to_vec()
             .into();
 
-        let expected_values = concatenate![Axis(0), expected_values, volumes.slice(s![..volumes.len() - DELAY])];
+        let expected_values = concatenate![
+            Axis(0),
+            expected_values,
+            volumes.slice(s![..volumes.len() - DELAY as usize])
+        ];
 
         let expected_values: Array2<f64> = expected_values.insert_axis(Axis(1));
 

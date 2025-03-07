@@ -32,6 +32,8 @@
     is currently not ready for use beyond development and experimentation. Comments and discussions are welcome.
     <br />
     <br />
+    <a href="https://pywr.github.io/pywr-next/">User Guide</a>
+    ·
     <a href="https://github.com/pywr/pywr-next/issues">Report Bug</a>
     ·
     <a href="https://github.com/pywr/pywr-next/issues">Request Feature</a>
@@ -202,9 +204,11 @@ Feature flags:
 
 | Feature    | Description                                      | Default |
 |------------|--------------------------------------------------|---------|
+| `pyo3`     | Enable the Python bindings.                      | True    |
 | `highs`    | Enable the HiGHS LP solver.                      | False   |
 | `ipm-ocl`  | Enable the OpenCL IPM solver (requires nightly). | False   |
 | `ipm-simd` | Enable the AVX IPM solver (requires nightly).    | False   |
+| `cbc`      | Enable the CBC MILP solver.                      | False   |
 
 ### Pywr-schema
 
@@ -213,9 +217,14 @@ using `pywr-core`.
 
 Feature flags:
 
-| Feature | Description                                                                                                                                                                                                                                          | Default |
-|---------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------|
-| `core`  | Enable building models from the schema with `pywr-core`. This feature is enabled by default, but requires a lot of dependencies. If you only require schema validation and manipulation consider building this crate with `default-features = false` | True    |
+| Feature    | Description                                                                                                                                                                                                                                          | Default |
+|------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------|
+| `core`     | Enable building models from the schema with `pywr-core`. This feature is enabled by default, but requires a lot of dependencies. If you only require schema validation and manipulation consider building this crate with `default-features = false` | True    |
+| `pyo3`     | Enable the Python bindings.                                                                                                                                                                                                                          | True    |
+| `highs`    | Enable the HiGHS LP solver.                                                                                                                                                                                                                          | False   |
+| `ipm-ocl`  | Enable the OpenCL IPM solver (requires nightly).                                                                                                                                                                                                     | False   |
+| `ipm-simd` | Enable the AVX IPM solver (requires nightly).                                                                                                                                                                                                        | False   |
+| `cbc`      | Enable the CBC MILP solver.                                                                                                                                                                                                                          | False   |
 
 ### Pywr-cli
 
@@ -304,7 +313,7 @@ Project Link: [https://github.com/pywr/pywr-next](https://github.com/pywr/pywr-n
 
 [license-shield]: https://img.shields.io/github/license/pywr/pywr-next.svg?style=for-the-badge
 
-[license-url]: https://github.com/pywr/pywr-next/blob/master/LICENSE.txt
+[license-url]: https://github.com/pywr/pywr-next/blob/main/LICENSE
 
 [linkedin-shield]: https://img.shields.io/badge/-LinkedIn-black.svg?style=for-the-badge&logo=linkedin&colorB=555
 

@@ -44,7 +44,7 @@ impl HighsSolverSettings {
 /// let settings = HighsSolverSettingsBuilder::default().parallel().threads(4).build();
 ///
 /// let mut builder = HighsSolverSettingsBuilder::default();
-/// builder.parallel();
+/// builder = builder.parallel();
 /// let settings = builder.build();
 ///
 /// ```
@@ -55,18 +55,18 @@ pub struct HighsSolverSettingsBuilder {
 }
 
 impl HighsSolverSettingsBuilder {
-    pub fn parallel(&mut self) -> &mut Self {
+    pub fn parallel(mut self) -> Self {
         self.parallel = true;
         self
     }
 
-    pub fn threads(&mut self, threads: usize) -> &mut Self {
+    pub fn threads(mut self, threads: usize) -> Self {
         self.threads = threads;
         self
     }
 
     /// Construct a [`HighsSolverSettings`] from the builder.
-    pub fn build(&self) -> HighsSolverSettings {
+    pub fn build(self) -> HighsSolverSettings {
         HighsSolverSettings {
             parallel: self.parallel,
             threads: self.threads,

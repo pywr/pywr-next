@@ -63,6 +63,12 @@ impl NodeState {
             Self::Storage(s) => s.add_out_flow(flow, timestep),
         };
     }
+
+    fn clamp_volume(&mut self, min_volume: f64, max_volume: f64) {
+        if let Self::Storage(s) = self {
+            s.clamp(min_volume, max_volume);
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -123,6 +129,25 @@ impl StorageState {
     fn proportional_volume(&self, max_volume: f64) -> f64 {
         // TODO handle divide by zero (is it full or empty?)
         self.volume / max_volume
+    }
+
+    /// Ensure the volume is within the min and max volume range (inclusive). If the volume
+    /// is more than 1E6 outside the min or max volume then this function will panic,
+    /// reporting a mass-balance message.
+    fn clamp(&mut self, min_volume: f64, max_volume: f64) {
+        if (self.volume - min_volume) < -1e-6 {
+            panic!(
+                "Mass-balance error detected. Volume ({}) is smaller than minimum volume ({}).",
+                self.volume, min_volume
+            );
+        }
+        if (self.volume - max_volume) > 1e-6 {
+            panic!(
+                "Mass-balance error detected. Volume ({}) is greater than maximum volume ({}).",
+                self.volume, max_volume,
+            );
+        }
+        self.volume = self.volume.clamp(min_volume, max_volume);
     }
 }
 
@@ -215,6 +240,10 @@ impl VirtualStorageState {
     fn proportional_volume(&self, max_volume: f64) -> f64 {
         self.storage.proportional_volume(max_volume)
     }
+
+    fn clamp_volume(&mut self, min_volume: f64, max_volume: f64) {
+        self.storage.clamp(min_volume, max_volume);
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -234,11 +263,11 @@ impl EdgeState {
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct MultiValue {
     values: HashMap<String, f64>,
-    indices: HashMap<String, usize>,
+    indices: HashMap<String, u64>,
 }
 
 impl MultiValue {
-    pub fn new(values: HashMap<String, f64>, indices: HashMap<String, usize>) -> Self {
+    pub fn new(values: HashMap<String, f64>, indices: HashMap<String, u64>) -> Self {
         Self { values, indices }
     }
 
@@ -246,7 +275,7 @@ impl MultiValue {
         self.values.get(key)
     }
 
-    pub fn get_index(&self, key: &str) -> Option<&usize> {
+    pub fn get_index(&self, key: &str) -> Option<&u64> {
         self.indices.get(key)
     }
 }
@@ -263,7 +292,7 @@ pub enum ParameterValuesError {
 #[derive(Debug, Clone)]
 struct ParameterValues {
     values: Vec<f64>,
-    indices: Vec<usize>,
+    indices: Vec<u64>,
     multi_values: Vec<MultiValue>,
 }
 
@@ -293,14 +322,14 @@ impl ParameterValues {
         }
     }
 
-    fn get_index(&self, idx: usize) -> Result<usize, ParameterValuesError> {
+    fn get_index(&self, idx: usize) -> Result<u64, ParameterValuesError> {
         self.indices
             .get(idx)
             .ok_or(ParameterValuesError::IndexNotFound(idx))
             .copied()
     }
 
-    fn set_index(&mut self, idx: usize, value: usize) -> Result<(), ParameterValuesError> {
+    fn set_index(&mut self, idx: usize, value: u64) -> Result<(), ParameterValuesError> {
         match self.indices.get_mut(idx) {
             Some(s) => {
                 *s = value;
@@ -332,7 +361,7 @@ impl ParameterValues {
         }
     }
 
-    fn get_multi_index(&self, idx: usize, key: &str) -> Result<usize, ParameterValuesError> {
+    fn get_multi_index(&self, idx: usize, key: &str) -> Result<u64, ParameterValuesError> {
         let value = self
             .multi_values
             .get(idx)
@@ -383,21 +412,25 @@ impl ParameterValuesCollection {
 
 pub struct ParameterValuesRef<'a> {
     values: &'a [f64],
-    indices: &'a [usize],
+    indices: &'a [u64],
     multi_values: &'a [MultiValue],
 }
 
-impl<'a> ParameterValuesRef<'a> {
+impl ParameterValuesRef<'_> {
     fn get_value(&self, idx: usize) -> Option<&f64> {
         self.values.get(idx)
     }
 
-    fn get_index(&self, idx: usize) -> Option<&usize> {
+    fn get_index(&self, idx: usize) -> Option<&u64> {
         self.indices.get(idx)
     }
 
     fn get_multi_value(&self, idx: usize, key: &str) -> Option<&f64> {
         self.multi_values.get(idx).and_then(|s| s.get_value(key))
+    }
+
+    fn get_multi_index(&self, idx: usize, key: &str) -> Option<&u64> {
+        self.multi_values.get(idx).and_then(|s| s.get_index(key))
     }
 }
 
@@ -406,7 +439,7 @@ pub struct SimpleParameterValues<'a> {
     simple: ParameterValuesRef<'a>,
 }
 
-impl<'a> SimpleParameterValues<'a> {
+impl SimpleParameterValues<'_> {
     pub fn get_simple_parameter_f64(&self, idx: SimpleParameterIndex<f64>) -> Result<f64, PywrError> {
         self.simple
             .get_value(*idx.deref())
@@ -414,7 +447,7 @@ impl<'a> SimpleParameterValues<'a> {
             .copied()
     }
 
-    pub fn get_simple_parameter_usize(&self, idx: SimpleParameterIndex<usize>) -> Result<usize, PywrError> {
+    pub fn get_simple_parameter_u64(&self, idx: SimpleParameterIndex<u64>) -> Result<u64, PywrError> {
         self.simple
             .get_index(*idx.deref())
             .ok_or(PywrError::SimpleIndexParameterIndexNotFound(idx))
@@ -432,6 +465,17 @@ impl<'a> SimpleParameterValues<'a> {
             .copied()
     }
 
+    pub fn get_simple_multi_parameter_u64(
+        &self,
+        idx: SimpleParameterIndex<MultiValue>,
+        key: &str,
+    ) -> Result<u64, PywrError> {
+        self.simple
+            .get_multi_index(*idx.deref(), key)
+            .ok_or(PywrError::SimpleMultiValueParameterIndexNotFound(idx))
+            .copied()
+    }
+
     pub fn get_constant_values(&self) -> &ConstParameterValues {
         &self.constant
     }
@@ -441,7 +485,7 @@ pub struct ConstParameterValues<'a> {
     constant: ParameterValuesRef<'a>,
 }
 
-impl<'a> ConstParameterValues<'a> {
+impl ConstParameterValues<'_> {
     pub fn get_const_parameter_f64(&self, idx: ConstParameterIndex<f64>) -> Result<f64, PywrError> {
         self.constant
             .get_value(*idx.deref())
@@ -449,7 +493,7 @@ impl<'a> ConstParameterValues<'a> {
             .copied()
     }
 
-    pub fn get_const_parameter_usize(&self, idx: ConstParameterIndex<usize>) -> Result<usize, PywrError> {
+    pub fn get_const_parameter_u64(&self, idx: ConstParameterIndex<u64>) -> Result<u64, PywrError> {
         self.constant
             .get_index(*idx.deref())
             .ok_or(PywrError::ConstIndexParameterIndexNotFound(idx))
@@ -463,6 +507,17 @@ impl<'a> ConstParameterValues<'a> {
     ) -> Result<f64, PywrError> {
         self.constant
             .get_multi_value(*idx.deref(), key)
+            .ok_or(PywrError::ConstMultiValueParameterIndexNotFound(idx))
+            .copied()
+    }
+
+    pub fn get_const_multi_parameter_u64(
+        &self,
+        idx: ConstParameterIndex<MultiValue>,
+        key: &str,
+    ) -> Result<u64, PywrError> {
+        self.constant
+            .get_multi_index(*idx.deref(), key)
             .ok_or(PywrError::ConstMultiValueParameterIndexNotFound(idx))
             .copied()
     }
@@ -530,38 +585,62 @@ impl NetworkState {
     /// Complete a timestep after all the flow has been added.
     ///
     /// This final step ensures that derived states (e.g. virtual storage volume) are updated
-    /// once all of the flows have been updated.
-    pub fn complete(&mut self, model: &Network, timestep: &Timestep) -> Result<(), PywrError> {
+    /// once all the flows have been updated.
+    fn update_derived_states(&mut self, model: &Network, timestep: &Timestep) -> Result<(), PywrError> {
         // Update virtual storage node states
         for (state, node) in self
             .virtual_storage_states
             .iter_mut()
             .zip(model.virtual_storage_nodes().iter())
         {
-            if let Some(node_factors) = node.get_nodes_with_factors() {
-                let flow = node_factors
-                    .iter()
-                    .map(|(idx, factor)| match self.node_states.get(*idx.deref()) {
-                        None => Err(PywrError::NodeIndexNotFound),
-                        Some(s) => {
-                            let node = model.nodes().get(idx)?;
-                            match node {
-                                Node::Input(_) => Ok(factor * s.get_out_flow()),
-                                Node::Output(_) => Ok(factor * s.get_in_flow()),
-                                Node::Link(_) => Ok(factor * s.get_in_flow()),
-                                Node::Storage(_) => panic!("Storage node not supported on virtual storage."),
-                            }
+            let flow = node
+                .iter_nodes_with_factors()
+                .map(|(idx, factor)| match self.node_states.get(*idx.deref()) {
+                    None => Err(PywrError::NodeIndexNotFound),
+                    Some(s) => {
+                        let node = model.nodes().get(idx)?;
+                        match node {
+                            Node::Input(_) => Ok(factor * s.get_out_flow()),
+                            Node::Output(_) => Ok(factor * s.get_in_flow()),
+                            Node::Link(_) => Ok(factor * s.get_in_flow()),
+                            Node::Storage(_) => panic!("Storage node not supported on virtual storage."),
                         }
-                    })
-                    .sum::<Result<f64, _>>()?;
+                    }
+                })
+                .sum::<Result<f64, _>>()?;
 
-                state.add_out_flow(flow, timestep);
-            }
+            state.add_out_flow(flow, timestep);
         }
 
         Ok(())
     }
 
+    /// Clamp the volume of `node_index` to be within the bounds provided.
+    fn clamp_node_volume(&mut self, node_index: &NodeIndex, min_volume: f64, max_volume: f64) -> Result<(), PywrError> {
+        match self.node_states.get_mut(*node_index.deref()) {
+            Some(s) => {
+                s.clamp_volume(min_volume, max_volume);
+                Ok(())
+            }
+            None => Err(PywrError::NodeIndexNotFound),
+        }
+    }
+
+    /// Clamp the volume of `node_index` to be within the bounds provided.
+    fn clamp_virtual_storage_node_volume(
+        &mut self,
+        node_index: &VirtualStorageIndex,
+        min_volume: f64,
+        max_volume: f64,
+    ) -> Result<(), PywrError> {
+        match self.virtual_storage_states.get_mut(*node_index.deref()) {
+            Some(s) => {
+                s.clamp_volume(min_volume, max_volume);
+                Ok(())
+            }
+            None => Err(PywrError::VirtualStorageIndexNotFound(*node_index)),
+        }
+    }
     pub fn get_node_in_flow(&self, node_index: &NodeIndex) -> Result<f64, PywrError> {
         match self.node_states.get(*node_index.deref()) {
             Some(s) => Ok(s.get_in_flow()),
@@ -740,36 +819,28 @@ impl State {
         })
     }
 
-    pub fn get_parameter_index(&self, idx: GeneralParameterIndex<usize>) -> Result<usize, PywrError> {
+    pub fn get_parameter_index(&self, idx: GeneralParameterIndex<u64>) -> Result<u64, PywrError> {
         self.parameters.general.get_index(*idx).map_err(|e| match e {
             ParameterValuesError::IndexNotFound(_) => PywrError::GeneralIndexParameterIndexNotFound(idx),
             ParameterValuesError::KeyNotFound(key) => PywrError::MultiValueParameterKeyNotFound(key),
         })
     }
 
-    pub fn set_parameter_index(&mut self, idx: GeneralParameterIndex<usize>, value: usize) -> Result<(), PywrError> {
+    pub fn set_parameter_index(&mut self, idx: GeneralParameterIndex<u64>, value: u64) -> Result<(), PywrError> {
         self.parameters.general.set_index(*idx, value).map_err(|e| match e {
             ParameterValuesError::IndexNotFound(_) => PywrError::GeneralIndexParameterIndexNotFound(idx),
             ParameterValuesError::KeyNotFound(key) => PywrError::MultiValueParameterKeyNotFound(key),
         })
     }
 
-    pub fn set_simple_parameter_index(
-        &mut self,
-        idx: SimpleParameterIndex<usize>,
-        value: usize,
-    ) -> Result<(), PywrError> {
+    pub fn set_simple_parameter_index(&mut self, idx: SimpleParameterIndex<u64>, value: u64) -> Result<(), PywrError> {
         self.parameters.simple.set_index(*idx, value).map_err(|e| match e {
             ParameterValuesError::IndexNotFound(_) => PywrError::SimpleIndexParameterIndexNotFound(idx),
             ParameterValuesError::KeyNotFound(key) => PywrError::MultiValueParameterKeyNotFound(key),
         })
     }
 
-    pub fn set_const_parameter_index(
-        &mut self,
-        idx: ConstParameterIndex<usize>,
-        value: usize,
-    ) -> Result<(), PywrError> {
+    pub fn set_const_parameter_index(&mut self, idx: ConstParameterIndex<u64>, value: u64) -> Result<(), PywrError> {
         self.parameters.constant.set_index(*idx, value).map_err(|e| match e {
             ParameterValuesError::IndexNotFound(_) => PywrError::ConstIndexParameterIndexNotFound(idx),
             ParameterValuesError::KeyNotFound(key) => PywrError::MultiValueParameterKeyNotFound(key),
@@ -832,7 +903,7 @@ impl State {
         &self,
         idx: GeneralParameterIndex<MultiValue>,
         key: &str,
-    ) -> Result<usize, PywrError> {
+    ) -> Result<u64, PywrError> {
         self.parameters.general.get_multi_index(*idx, key).map_err(|e| match e {
             ParameterValuesError::IndexNotFound(_) => PywrError::GeneralMultiValueParameterIndexNotFound(idx),
             ParameterValuesError::KeyNotFound(key) => PywrError::MultiValueParameterKeyNotFound(key),
@@ -912,6 +983,32 @@ impl State {
             }
             None => Err(PywrError::MultiNetworkTransferIndexNotFound(idx)),
         }
+    }
+
+    /// Complete a timestep after all the flow has been added.
+    ///
+    /// This final step ensures, once all the flows have been updated, that:
+    ///   - Derived states (e.g. virtual storage volume) are updated
+    ///   - Volumes are within bounds
+    pub fn complete(&mut self, model: &Network, timestep: &Timestep) -> Result<(), PywrError> {
+        for node in model.nodes().iter() {
+            if let Node::Storage(_) = node {
+                let node_index = node.index();
+                let min_volume = node.get_min_volume(self)?;
+                let max_volume = node.get_max_volume(self)?;
+                self.network.clamp_node_volume(&node_index, min_volume, max_volume)?;
+            }
+        }
+
+        for node in model.virtual_storage_nodes().iter() {
+            let node_index = node.index();
+            let min_volume = node.get_min_volume(self)?;
+            let max_volume = node.get_max_volume(self)?;
+            self.network
+                .clamp_virtual_storage_node_volume(&node_index, min_volume, max_volume)?;
+        }
+
+        self.network.update_derived_states(model, timestep)
     }
 }
 

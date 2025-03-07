@@ -15,7 +15,7 @@ use schemars::JsonSchema;
 pub struct DelayParameter {
     pub meta: ParameterMeta,
     pub metric: Metric,
-    pub delay: usize,
+    pub delay: u64,
     pub initial_value: f64,
 }
 
@@ -26,7 +26,7 @@ impl DelayParameter {
         network: &mut pywr_core::network::Network,
         args: &LoadArgs,
     ) -> Result<ParameterIndex<f64>, SchemaError> {
-        let metric = self.metric.load(network, args)?;
+        let metric = self.metric.load(network, args, None)?;
         let p = pywr_core::parameters::DelayParameter::new(
             self.meta.name.as_str().into(),
             metric,

@@ -13,6 +13,8 @@ use crate::solvers::CbcSolver;
 use crate::solvers::ClIpmF64Solver;
 #[cfg(feature = "highs")]
 use crate::solvers::HighsSolver;
+#[cfg(any(feature = "ipm-simd", feature = "ipm-ocl"))]
+use crate::solvers::MultiStateSolver;
 #[cfg(feature = "ipm-simd")]
 use crate::solvers::SimdIpmF64Solver;
 use crate::solvers::{ClpSolver, Solver, SolverSettings};
@@ -64,7 +66,7 @@ pub fn simple_network(network: &mut Network, inflow_scenario_index: usize, num_i
     let inflow = Array::from_shape_fn((366, num_inflow_scenarios), |(i, j)| 1.0 + i as f64 + j as f64);
     let inflow = Array2Parameter::new("inflow".into(), inflow, inflow_scenario_index, None);
 
-    let inflow = network.add_parameter(Box::new(inflow)).unwrap();
+    let inflow = network.add_simple_parameter(Box::new(inflow)).unwrap();
 
     let input_node = network.get_mut_node_by_name("input", None).unwrap();
     input_node.set_max_flow_constraint(Some(inflow.into())).unwrap();
@@ -89,11 +91,11 @@ pub fn simple_network(network: &mut Network, inflow_scenario_index: usize, num_i
     output_node.set_cost(Some(demand_cost.into()));
 }
 /// Create a simple test model with three nodes.
-pub fn simple_model(num_scenarios: usize) -> Model {
+pub fn simple_model(num_scenarios: usize, timestepper: Option<Timestepper>) -> Model {
     let mut scenario_collection = ScenarioGroupCollection::default();
     scenario_collection.add_group("test-scenario", num_scenarios);
 
-    let domain = ModelDomain::from(default_timestepper(), scenario_collection).unwrap();
+    let domain = ModelDomain::from(timestepper.unwrap_or_else(default_timestepper), scenario_collection).unwrap();
     let mut network = Network::default();
 
     let idx = domain
@@ -164,27 +166,31 @@ pub fn run_and_assert_parameter(
     let rec = AssertionRecorder::new("assert", p_idx.into(), expected_values, ulps, epsilon);
 
     model.network_mut().add_recorder(Box::new(rec)).unwrap();
-    run_all_solvers(model, &[], &[])
+    run_all_solvers(model, &[], &[], &[])
 }
 
 /// A struct to hold the expected outputs for a test.
 pub struct ExpectedOutputs {
-    actual_path: PathBuf,
-    expected_str: &'static str,
+    output_path: PathBuf,
+    expected_str: String,
 }
 
 impl ExpectedOutputs {
-    pub fn new(actual_path: PathBuf, expected_str: &'static str) -> Self {
+    pub fn new(output_path: PathBuf, expected_str: String) -> Self {
         Self {
-            actual_path,
+            output_path,
             expected_str,
         }
     }
 
     fn verify(&self) {
-        assert!(self.actual_path.exists());
-        let actual_str = std::fs::read_to_string(&self.actual_path).unwrap();
-        assert_eq!(actual_str, self.expected_str);
+        assert!(
+            self.output_path.exists(),
+            "Output file does not exist: {:?}",
+            self.output_path
+        );
+        let actual_str = std::fs::read_to_string(&self.output_path).unwrap();
+        assert_eq!(actual_str, self.expected_str, "Output file contents do not match");
     }
 }
 
@@ -192,37 +198,45 @@ impl ExpectedOutputs {
 ///
 /// The model will only be run if the solver has the required solver features (and
 /// is also enabled as a Cargo feature).
-pub fn run_all_solvers(model: &Model, solvers_without_features: &[&str], expected_outputs: &[ExpectedOutputs]) {
-    println!("Running CLP");
-    check_features_and_run::<ClpSolver>(model, !solvers_without_features.contains(&"clp"), expected_outputs);
+pub fn run_all_solvers(
+    model: &Model,
+    solvers_without_features: &[&str],
+    solvers_to_skip: &[&str],
+    expected_outputs: &[ExpectedOutputs],
+) {
+    if !solvers_to_skip.contains(&"clp") {
+        check_features_and_run::<ClpSolver>(model, !solvers_without_features.contains(&"clp"), expected_outputs);
+    }
 
     #[cfg(feature = "cbc")]
     {
-        println!("Running CBC");
-        check_features_and_run::<CbcSolver>(model, !solvers_without_features.contains(&"cbc"), expected_outputs);
+        if !solvers_to_skip.contains(&"cbc") {
+            check_features_and_run::<CbcSolver>(model, !solvers_without_features.contains(&"cbc"), expected_outputs);
+        }
     }
 
     #[cfg(feature = "highs")]
     {
-        println!("Running Highs");
-        check_features_and_run::<HighsSolver>(model, !solvers_without_features.contains(&"highs"), expected_outputs);
+        if !solvers_to_skip.contains(&"highs") {
+            check_features_and_run::<HighsSolver>(
+                model,
+                !solvers_without_features.contains(&"highs"),
+                expected_outputs,
+            );
+        }
     }
 
     #[cfg(feature = "ipm-simd")]
     {
-        if model.check_multi_scenario_solver_features::<SimdIpmF64Solver<4>>() {
-            model
-                .run_multi_scenario::<SimdIpmF64Solver<4>>(&Default::default())
-                .expect("Failed to solve with SIMD IPM");
+        if !solvers_to_skip.contains(&"ipm-simd") {
+            check_features_and_run_multi::<SimdIpmF64Solver<4>>(model, !solvers_without_features.contains(&"ipm-simd"));
         }
     }
 
     #[cfg(feature = "ipm-ocl")]
     {
-        if model.check_multi_scenario_solver_features::<ClIpmF64Solver>() {
-            model
-                .run_multi_scenario::<ClIpmF64Solver>(&Default::default())
-                .expect("Failed to solve with OpenCl IPM");
+        if !solvers_to_skip.contains(&"ipm-ocl") {
+            check_features_and_run_multi::<ClIpmF64Solver>(model, !solvers_without_features.contains(&"ipm-ocl"));
         }
     }
 }
@@ -248,6 +262,32 @@ where
         for expected_output in expected_outputs {
             expected_output.verify();
         }
+    } else {
+        assert!(
+            !has_features,
+            "Solver `{}` was not expected to have the required features",
+            S::name()
+        );
+    }
+}
+
+/// Check features and run with a multi-scenario solver
+#[cfg(any(feature = "ipm-simd", feature = "ipm-ocl"))]
+fn check_features_and_run_multi<S>(model: &Model, expect_features: bool)
+where
+    S: MultiStateSolver,
+    <S as MultiStateSolver>::Settings: SolverSettings + Default,
+{
+    let has_features = model.check_multi_scenario_solver_features::<S>();
+    if expect_features {
+        assert!(
+            has_features,
+            "Solver `{}` was expected to have the required features",
+            S::name()
+        );
+        model
+            .run_multi_scenario::<S>(&Default::default())
+            .expect(&format!("Failed to solve with: {}", S::name()));
     } else {
         assert!(
             !has_features,
@@ -286,7 +326,7 @@ fn make_simple_system<R: Rng>(
         inflow_scenario_group_index,
         None,
     );
-    let idx = network.add_parameter(Box::new(inflow))?;
+    let idx = network.add_simple_parameter(Box::new(inflow))?;
 
     network.set_node_max_flow("input", Some(suffix), Some(idx.into()))?;
 
