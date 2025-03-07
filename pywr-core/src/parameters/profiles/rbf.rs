@@ -22,6 +22,18 @@ impl RbfProfileVariableConfig {
             value_lower_bounds,
         }
     }
+
+    pub fn days_of_year_range(&self) -> Option<u32> {
+        self.days_of_year_range
+    }
+
+    pub fn value_lower_bounds(&self) -> f64 {
+        self.value_lower_bounds
+    }
+
+    pub fn value_upper_bounds(&self) -> f64 {
+        self.value_upper_bounds
+    }
 }
 
 /// A parameter that interpolates between a set of points using a radial basis function to
@@ -161,16 +173,31 @@ impl VariableParameter<f64> for RbfProfileParameter {
     }
 
     /// The f64 values update the profile value of each point.
+    ///
+    /// # Arguments
+    ///
+    /// * `values`: The value to set for the points. This is an array of size equal to twice the
+    /// number of points in the RBF profile. The first set of values contain the x values followed
+    /// by the y points. For example, if you have a 3-point RBF profile, the size of the array is 6
+    /// with the first 3 items being the  x values and last 3 the y values.
+    /// * `_variable_config`:
+    /// * `internal_state`:
+    ///
+    /// returns: Result<(), PywrError>
     fn set_variables(
         &self,
         values: &[f64],
         _variable_config: &dyn VariableConfig,
         internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<(), PywrError> {
-        if values.len() == self.points.len() {
+        let rbf_len = self.points.len();
+        if values.len() == rbf_len {
             let value = downcast_internal_state_mut::<RbfProfileInternalState>(internal_state);
 
-            value.update_y(values.to_vec());
+            let x: Vec<_> = values[0..rbf_len].iter().map(|n| *n as u32).collect();
+            let y = values[rbf_len..].to_vec();
+            value.update_x(x);
+            value.update_y(y);
             value.update_profile(&self.points, &self.function);
 
             Ok(())
