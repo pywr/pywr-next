@@ -504,7 +504,7 @@ mod tests {
     use super::MultiNetworkModel;
     use crate::models::ModelDomain;
     use crate::network::Network;
-    use crate::scenario::ScenarioDomainBuilder;
+    use crate::scenario::{ScenarioDomainBuilder, ScenarioGroupBuilder};
     use crate::solvers::ClpSolver;
     use crate::test_utils::{default_timestepper, simple_network};
 
@@ -513,8 +513,10 @@ mod tests {
     fn test_multi_model_step() {
         // Create two simple models
         let timestepper = default_timestepper();
+
         let mut scenario_builder = ScenarioDomainBuilder::default();
-        scenario_builder = scenario_builder.with_group("test-scenario", 2, None, None).unwrap();
+        let scenario_group = ScenarioGroupBuilder::new("test-scenario", 2).build().unwrap();
+        scenario_builder = scenario_builder.with_group(scenario_group).unwrap();
 
         let mut multi_model = MultiNetworkModel::new(ModelDomain::from(timestepper, scenario_builder).unwrap());
 

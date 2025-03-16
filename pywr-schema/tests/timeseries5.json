@@ -8,9 +8,33 @@
         "name": "scenario1",
         "size": 10,
         "subset": {
-          "type": "Slice",
-          "start": 2,
-          "end": 8
+          "type": "Indices",
+          "indices": [
+            2,
+            3,
+            4,
+            5,
+            6,
+            7
+          ]
+        }
+      },
+      {
+        "name": "scenario2",
+        "size": 5,
+        "labels": [
+          "A",
+          "B",
+          "C",
+          "D",
+          "E"
+        ],
+        "subset": {
+          "type": "Labels",
+          "labels": [
+            "B",
+            "D"
+          ]
         }
       }
     ]
@@ -139,7 +163,7 @@
         "name": "nodes",
         "type": "CSV",
         "format": "long",
-        "filename": "timeseries3-expected.csv",
+        "filename": "timeseries5-expected.csv",
         "metric_set": "nodes"
       }
     ]
