@@ -124,14 +124,14 @@ impl ScenarioGroupBuilder {
     /// be defined using the [`with_labels`] method.
     pub fn with_subset_labels<T: AsRef<str>>(mut self, labels: &[T]) -> Self {
         self.subset = Some(ScenarioGroupSubsetBuilder::Labels(
-            labels.into_iter().map(|l| l.as_ref().to_string()).collect(),
+            labels.iter().map(|l| l.as_ref().to_string()).collect(),
         ));
         self
     }
 
     /// Set the labels for the group
     pub fn with_labels<T: AsRef<str>>(mut self, labels: &[T]) -> Self {
-        self.labels = Some(labels.into_iter().map(|l| l.as_ref().to_string()).collect());
+        self.labels = Some(labels.iter().map(|l| l.as_ref().to_string()).collect());
         self
     }
 
@@ -330,13 +330,13 @@ impl ScenarioDomainBuilder {
             let scenario_map = if let Some(combinations) = &self.combinations {
                 // First turn all the maybe labels into indices
                 let combinations = combinations
-                    .into_iter()
+                    .iter()
                     .map(|combination| {
                         combination
-                            .into_iter()
+                            .iter()
                             .zip(&self.groups)
                             .map(|(c, group)| match c {
-                                ScenarioLabelOrIndex::Label(label) => group.label_position(&label),
+                                ScenarioLabelOrIndex::Label(label) => group.label_position(label),
                                 ScenarioLabelOrIndex::Index(index) => Ok(*index),
                             })
                             .collect::<Result<Vec<usize>, ScenarioError>>()

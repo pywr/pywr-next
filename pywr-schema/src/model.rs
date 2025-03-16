@@ -214,9 +214,9 @@ pub enum ScenarioLabelOrIndex {
 }
 
 #[cfg(feature = "core")]
-impl Into<pywr_core::scenario::ScenarioLabelOrIndex> for ScenarioLabelOrIndex {
-    fn into(self) -> pywr_core::scenario::ScenarioLabelOrIndex {
-        match self {
+impl From<ScenarioLabelOrIndex> for pywr_core::scenario::ScenarioLabelOrIndex {
+    fn from(val: ScenarioLabelOrIndex) -> pywr_core::scenario::ScenarioLabelOrIndex {
+        match val {
             ScenarioLabelOrIndex::Label(label) => pywr_core::scenario::ScenarioLabelOrIndex::Label(label),
             ScenarioLabelOrIndex::Index(index) => pywr_core::scenario::ScenarioLabelOrIndex::Index(index),
         }
@@ -279,7 +279,7 @@ impl TryInto<pywr_core::scenario::ScenarioDomainBuilder> for ScenarioDomain {
         }
 
         if let Some(combinations) = self.combinations {
-            builder = builder.with_combinations(combinations.into_iter().map(Into::into).collect());
+            builder = builder.with_combinations(combinations.into_iter().collect());
         }
 
         Ok(builder)
