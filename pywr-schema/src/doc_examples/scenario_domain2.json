@@ -1,0 +1,15 @@
+{
+  "groups": [
+    {
+      "name": "Scenario A",
+      "size": 5,
+      "labels": [
+        "I",
+        "II",
+        "III",
+        "IV",
+        "V"
+      ]
+    }
+  ]
+}

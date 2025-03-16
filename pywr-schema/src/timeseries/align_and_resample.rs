@@ -1,14 +1,13 @@
-use polars::{prelude::*, series::ops::NullBehavior};
-use pywr_core::models::ModelDomain;
-use std::{cmp::Ordering, ops::Deref};
-
 use crate::timeseries::TimeseriesError;
+use polars::{prelude::*, series::ops::NullBehavior};
+use pywr_core::timestep::TimeDomain;
+use std::{cmp::Ordering, ops::Deref};
 
 pub fn align_and_resample(
     name: &str,
     df: DataFrame,
     time_col: &str,
-    domain: &ModelDomain,
+    domain: &TimeDomain,
     drop_time_col: bool,
 ) -> Result<DataFrame, TimeseriesError> {
     // Ensure type of time column is datetime and that it is sorted
@@ -43,7 +42,7 @@ pub fn align_and_resample(
         None => return Err(TimeseriesError::TimeseriesDurationNotFound(name.to_string())),
     };
 
-    let model_duration = domain.time().step_duration();
+    let model_duration = domain.step_duration();
     let model_duration_string = model_duration.duration_string();
 
     let df = match model_duration.milliseconds().cmp(&timeseries_duration) {
@@ -78,7 +77,7 @@ pub fn align_and_resample(
 
     let mut df = slice_end(df, time_col, domain)?;
 
-    if df.height() != domain.time().timesteps().len() {
+    if df.height() != domain.timesteps().len() {
         return Err(TimeseriesError::DataFrameTimestepMismatch(name.to_string()));
     }
 
@@ -89,14 +88,14 @@ pub fn align_and_resample(
     Ok(df)
 }
 
-fn slice_start(df: DataFrame, time_col: &str, domain: &ModelDomain) -> Result<DataFrame, TimeseriesError> {
-    let start = domain.time().first_timestep().date;
+fn slice_start(df: DataFrame, time_col: &str, domain: &TimeDomain) -> Result<DataFrame, TimeseriesError> {
+    let start = domain.first_timestep().date;
     let df = df.clone().lazy().filter(col(time_col).gt_eq(lit(start))).collect()?;
     Ok(df)
 }
 
-fn slice_end(df: DataFrame, time_col: &str, domain: &ModelDomain) -> Result<DataFrame, TimeseriesError> {
-    let end = domain.time().last_timestep().date;
+fn slice_end(df: DataFrame, time_col: &str, domain: &TimeDomain) -> Result<DataFrame, TimeseriesError> {
+    let end = domain.last_timestep().date;
     let df = df.clone().lazy().filter(col(time_col).lt_eq(lit(end))).collect()?;
     Ok(df)
 }
@@ -107,7 +106,7 @@ mod tests {
     use polars::prelude::*;
     use pywr_core::{
         models::ModelDomain,
-        scenario::{ScenarioDomain, ScenarioGroupCollection},
+        scenario::{ScenarioDomain, ScenarioDomainBuilder},
         timestep::{TimeDomain, TimestepDuration, Timestepper},
     };
 
@@ -121,7 +120,7 @@ mod tests {
         let timestepper = Timestepper::new(start, end, timestep);
         let time_domain = TimeDomain::try_from(timestepper).unwrap();
 
-        let scenario_domain: ScenarioDomain = ScenarioGroupCollection::new(vec![]).into();
+        let scenario_domain: ScenarioDomain = ScenarioDomainBuilder::default().build().unwrap();
 
         let domain = ModelDomain::new(time_domain, scenario_domain);
 
@@ -143,7 +142,7 @@ mod tests {
         )
         .unwrap();
 
-        df = align_and_resample("test", df, "time", &domain, false).unwrap();
+        df = align_and_resample("test", df, "time", domain.time(), false).unwrap();
 
         let expected_dates = Column::new(
             "time".into(),
@@ -176,7 +175,7 @@ mod tests {
         let timestepper = Timestepper::new(start, end, timestep);
         let time_domain = TimeDomain::try_from(timestepper).unwrap();
 
-        let scenario_domain: ScenarioDomain = ScenarioGroupCollection::new(vec![]).into();
+        let scenario_domain: ScenarioDomain = ScenarioDomainBuilder::default().build().unwrap();
         let domain = ModelDomain::new(time_domain, scenario_domain);
 
         let time = date_range(
@@ -197,7 +196,7 @@ mod tests {
         )
         .unwrap();
 
-        df = align_and_resample("test", df, "time", &domain, false).unwrap();
+        df = align_and_resample("test", df, "time", domain.time(), false).unwrap();
 
         let expected_values = Column::new(
             "values".into(),
@@ -216,7 +215,7 @@ mod tests {
         let timestepper = Timestepper::new(start, end, timestep);
         let time_domain = TimeDomain::try_from(timestepper).unwrap();
 
-        let scenario_domain: ScenarioDomain = ScenarioGroupCollection::new(vec![]).into();
+        let scenario_domain: ScenarioDomain = ScenarioDomainBuilder::default().build().unwrap();
         let domain = ModelDomain::new(time_domain, scenario_domain);
 
         let time = date_range(
@@ -237,7 +236,7 @@ mod tests {
         )
         .unwrap();
 
-        df = align_and_resample("test", df, "time", &domain, false).unwrap();
+        df = align_and_resample("test", df, "time", domain.time(), false).unwrap();
 
         let expected_values = Column::new("values".into(), values);
         let resampled_values = df.column("values").unwrap();
