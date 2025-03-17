@@ -7,7 +7,7 @@ use clap::{Parser, Subcommand, ValueEnum};
 #[cfg(feature = "cbc")]
 use pywr_core::solvers::{CbcSolver, CbcSolverSettings, CbcSolverSettingsBuilder};
 #[cfg(feature = "ipm-ocl")]
-use pywr_core::solvers::{ClIpmF32Solver, ClIpmF64Solver, ClIpmSolverSettings};
+use pywr_core::solvers::{ClIpmF32Solver, ClIpmF64Solver, ClIpmSolverSettings, ClIpmSolverSettingsBuilder};
 use pywr_core::solvers::{ClpSolver, ClpSolverSettings, ClpSolverSettingsBuilder};
 #[cfg(feature = "highs")]
 use pywr_core::solvers::{HighsSolver, HighsSolverSettings, HighsSolverSettingsBuilder};
@@ -315,9 +315,33 @@ fn run(
             model.run::<HighsSolver>(&settings)
         }
         #[cfg(feature = "ipm-ocl")]
-        Solver::CLIPMF32 => model.run_multi_scenario::<ClIpmF32Solver>(&ClIpmSolverSettings::default()),
+        Solver::CLIPMF32 => {
+            let mut settings_builder = ClIpmSolverSettingsBuilder::default();
+            if threads > 1 {
+                settings_builder = settings_builder.parallel();
+                settings_builder = settings_builder.threads(threads);
+            }
+            if ignore_feature_requirements {
+                settings_builder = settings_builder.ignore_feature_requirements();
+            }
+
+            let settings = settings_builder.build();
+            model.run_multi_scenario::<ClIpmF32Solver>(&settings)
+        }
         #[cfg(feature = "ipm-ocl")]
-        Solver::CLIPMF64 => model.run_multi_scenario::<ClIpmF64Solver>(&ClIpmSolverSettings::default()),
+        Solver::CLIPMF64 => {
+            let mut settings_builder = ClIpmSolverSettingsBuilder::default();
+            if threads > 1 {
+                settings_builder = settings_builder.parallel();
+                settings_builder = settings_builder.threads(threads);
+            }
+            if ignore_feature_requirements {
+                settings_builder = settings_builder.ignore_feature_requirements();
+            }
+
+            let settings = settings_builder.build();
+            model.run_multi_scenario::<ClIpmF64Solver>(&settings)
+        }
         #[cfg(feature = "ipm-simd")]
         Solver::IpmSimd => {
             let mut settings_builder = SimdIpmSolverSettingsBuilder::default();

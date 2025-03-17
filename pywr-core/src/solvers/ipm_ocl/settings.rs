@@ -133,7 +133,7 @@ impl ClIpmSolverSettingsBuilder {
         self
     }
 
-    fn ignore_feature_requirements(mut self) -> Self {
+    pub fn ignore_feature_requirements(mut self) -> Self {
         self.ignore_feature_requirements = true;
         self
     }
