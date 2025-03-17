@@ -10,7 +10,7 @@ use crate::parameters::{
 };
 use crate::recorders::{MetricSet, MetricSetIndex, MetricSetState};
 use crate::scenario::ScenarioIndex;
-use crate::solvers::{MultiStateSolver, Solver, SolverFeatures, SolverTimings};
+use crate::solvers::{MultiStateSolver, Solver, SolverFeatures, SolverSettings, SolverTimings};
 use crate::state::{MultiValue, State, StateBuilder};
 use crate::timestep::Timestep;
 use crate::virtual_storage::{VirtualStorage, VirtualStorageBuilder, VirtualStorageIndex, VirtualStorageVec};
@@ -312,8 +312,9 @@ impl Network {
     ) -> Result<Vec<Box<S>>, PywrError>
     where
         S: Solver,
+        <S as Solver>::Settings: SolverSettings,
     {
-        if !self.check_solver_features::<S>() {
+        if !settings.ignore_feature_requirements() && !self.check_solver_features::<S>() {
             return Err(PywrError::MissingSolverFeatures);
         }
 
@@ -336,8 +337,9 @@ impl Network {
     ) -> Result<Box<S>, PywrError>
     where
         S: MultiStateSolver,
+        <S as MultiStateSolver>::Settings: SolverSettings,
     {
-        if !self.check_multi_scenario_solver_features::<S>() {
+        if !settings.ignore_feature_requirements() && !self.check_multi_scenario_solver_features::<S>() {
             return Err(PywrError::MissingSolverFeatures);
         }
         S::setup(self, scenario_indices.len(), settings)
@@ -555,7 +557,7 @@ impl Network {
         let mut features = HashSet::new();
 
         // Aggregated node feature required if there are any aggregated nodes
-        if self.aggregated_nodes.len() > 0 {
+        if !self.aggregated_nodes.is_empty() {
             features.insert(SolverFeatures::AggregatedNode);
         }
 
@@ -579,7 +581,7 @@ impl Network {
         }
 
         // The presence of any virtual storage node requires the VirtualStorage feature.
-        if self.virtual_storage_nodes.len() > 0 {
+        if !self.virtual_storage_nodes.is_empty() {
             features.insert(SolverFeatures::VirtualStorage);
         }
 

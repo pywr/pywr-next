@@ -7,6 +7,7 @@ use crate::solvers::SolverSettings;
 pub struct CbcSolverSettings {
     parallel: bool,
     threads: usize,
+    ignore_feature_requirements: bool,
 }
 
 // Default implementation is a convenience that defers to the builder.
@@ -23,6 +24,10 @@ impl SolverSettings for CbcSolverSettings {
 
     fn threads(&self) -> usize {
         self.threads
+    }
+
+    fn ignore_feature_requirements(&self) -> bool {
+        self.ignore_feature_requirements
     }
 }
 
@@ -53,6 +58,7 @@ impl CbcSolverSettings {
 pub struct CbcSolverSettingsBuilder {
     parallel: bool,
     threads: usize,
+    ignore_feature_requirements: bool,
 }
 
 impl CbcSolverSettingsBuilder {
@@ -66,11 +72,17 @@ impl CbcSolverSettingsBuilder {
         self
     }
 
+    pub fn ignore_feature_requirements(mut self) -> Self {
+        self.ignore_feature_requirements = true;
+        self
+    }
+
     /// Construct a [`CbcSolverSettings`] from the builder.
     pub fn build(self) -> CbcSolverSettings {
         CbcSolverSettings {
             parallel: self.parallel,
             threads: self.threads,
+            ignore_feature_requirements: self.ignore_feature_requirements,
         }
     }
 }
@@ -84,6 +96,7 @@ mod tests {
         let _settings = CbcSolverSettings {
             parallel: true,
             threads: 0,
+            ignore_feature_requirements: false,
         };
         let settings_from_builder = CbcSolverSettingsBuilder::default().parallel().build();
 
