@@ -17,7 +17,7 @@ dependencies = [
 
 [project.optional-dependencies]
 excel = ["openpyxl"]
-hdf = ["pytables"]
+hdf = ["tables"]
 
 
 [build-system]
