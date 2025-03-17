@@ -7,12 +7,12 @@ use clap::{Parser, Subcommand, ValueEnum};
 #[cfg(feature = "cbc")]
 use pywr_core::solvers::{CbcSolver, CbcSolverSettings, CbcSolverSettingsBuilder};
 #[cfg(feature = "ipm-ocl")]
-use pywr_core::solvers::{ClIpmF32Solver, ClIpmF64Solver, ClIpmSolverSettings};
+use pywr_core::solvers::{ClIpmF32Solver, ClIpmF64Solver, ClIpmSolverSettings, ClIpmSolverSettingsBuilder};
 use pywr_core::solvers::{ClpSolver, ClpSolverSettings, ClpSolverSettingsBuilder};
 #[cfg(feature = "highs")]
 use pywr_core::solvers::{HighsSolver, HighsSolverSettings, HighsSolverSettingsBuilder};
 #[cfg(feature = "ipm-simd")]
-use pywr_core::solvers::{SimdIpmF64Solver, SimdIpmSolverSettings};
+use pywr_core::solvers::{SimdIpmF64Solver, SimdIpmSolverSettings, SimdIpmSolverSettingsBuilder};
 use pywr_core::test_utils::make_random_model;
 use pywr_schema::model::{PywrModel, PywrMultiNetworkModel, PywrNetwork};
 use pywr_schema::ComponentConversionError;
@@ -94,6 +94,9 @@ enum Commands {
         /// The number of threads to use in parallel simulation.
         #[arg(short, long, default_value_t = 1)]
         threads: usize,
+        /// Ignore the feature requirements of a solver.
+        #[arg(short, long, default_value_t = false)]
+        ignore_feature_requirements: bool,
     },
     RunMulti {
         /// Path to Pywr model JSON.
@@ -140,7 +143,15 @@ fn main() -> Result<()> {
             data_path,
             output_path,
             threads,
-        } => run(model, solver, data_path.as_deref(), output_path.as_deref(), *threads),
+            ignore_feature_requirements,
+        } => run(
+            model,
+            solver,
+            data_path.as_deref(),
+            output_path.as_deref(),
+            *threads,
+            *ignore_feature_requirements,
+        ),
         Commands::RunMulti {
             model,
             solver,
@@ -250,7 +261,14 @@ fn handle_conversion_errors(errors: &[ComponentConversionError], stop_on_error: 
     Ok(())
 }
 
-fn run(path: &Path, solver: &Solver, data_path: Option<&Path>, output_path: Option<&Path>, threads: usize) {
+fn run(
+    path: &Path,
+    solver: &Solver,
+    data_path: Option<&Path>,
+    output_path: Option<&Path>,
+    threads: usize,
+    ignore_feature_requirements: bool,
+) {
     let data = std::fs::read_to_string(path).unwrap();
     let data_path = data_path.or_else(|| path.parent());
     let schema_v2: PywrModel = serde_json::from_str(data.as_str()).unwrap();
@@ -264,6 +282,9 @@ fn run(path: &Path, solver: &Solver, data_path: Option<&Path>, output_path: Opti
                 settings_builder = settings_builder.parallel();
                 settings_builder = settings_builder.threads(threads);
             }
+            if ignore_feature_requirements {
+                settings_builder = settings_builder.ignore_feature_requirements();
+            }
             let settings = settings_builder.build();
             model.run::<ClpSolver>(&settings)
         }
@@ -273,6 +294,9 @@ fn run(path: &Path, solver: &Solver, data_path: Option<&Path>, output_path: Opti
             if threads > 1 {
                 settings_builder = settings_builder.parallel();
                 settings_builder = settings_builder.threads(threads);
+            }
+            if ignore_feature_requirements {
+                settings_builder = settings_builder.ignore_feature_requirements();
             }
             let settings = settings_builder.build();
             model.run::<CbcSolver>(&settings)
@@ -284,15 +308,54 @@ fn run(path: &Path, solver: &Solver, data_path: Option<&Path>, output_path: Opti
                 settings_builder = settings_builder.parallel();
                 settings_builder = settings_builder.threads(threads);
             }
+            if ignore_feature_requirements {
+                settings_builder = settings_builder.ignore_feature_requirements();
+            }
             let settings = settings_builder.build();
             model.run::<HighsSolver>(&settings)
         }
         #[cfg(feature = "ipm-ocl")]
-        Solver::CLIPMF32 => model.run_multi_scenario::<ClIpmF32Solver>(&ClIpmSolverSettings::default()),
+        Solver::CLIPMF32 => {
+            let mut settings_builder = ClIpmSolverSettingsBuilder::default();
+            if threads > 1 {
+                settings_builder = settings_builder.parallel();
+                settings_builder = settings_builder.threads(threads);
+            }
+            if ignore_feature_requirements {
+                settings_builder = settings_builder.ignore_feature_requirements();
+            }
+
+            let settings = settings_builder.build();
+            model.run_multi_scenario::<ClIpmF32Solver>(&settings)
+        }
         #[cfg(feature = "ipm-ocl")]
-        Solver::CLIPMF64 => model.run_multi_scenario::<ClIpmF64Solver>(&ClIpmSolverSettings::default()),
+        Solver::CLIPMF64 => {
+            let mut settings_builder = ClIpmSolverSettingsBuilder::default();
+            if threads > 1 {
+                settings_builder = settings_builder.parallel();
+                settings_builder = settings_builder.threads(threads);
+            }
+            if ignore_feature_requirements {
+                settings_builder = settings_builder.ignore_feature_requirements();
+            }
+
+            let settings = settings_builder.build();
+            model.run_multi_scenario::<ClIpmF64Solver>(&settings)
+        }
         #[cfg(feature = "ipm-simd")]
-        Solver::IpmSimd => model.run_multi_scenario::<SimdIpmF64Solver<4>>(&SimdIpmSolverSettings::default()),
+        Solver::IpmSimd => {
+            let mut settings_builder = SimdIpmSolverSettingsBuilder::default();
+            if threads > 1 {
+                settings_builder = settings_builder.parallel();
+                settings_builder = settings_builder.threads(threads);
+            }
+            if ignore_feature_requirements {
+                settings_builder = settings_builder.ignore_feature_requirements();
+            }
+
+            let settings = settings_builder.build();
+            model.run_multi_scenario::<SimdIpmF64Solver<4>>(&settings)
+        }
     }
     .unwrap();
 }

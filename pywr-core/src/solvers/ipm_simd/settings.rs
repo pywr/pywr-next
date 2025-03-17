@@ -16,6 +16,7 @@ where
     threads: usize,
     tolerances: Tolerances<T, N>,
     max_iterations: NonZeroUsize,
+    ignore_feature_requirements: bool,
 }
 
 // Default implementation is a convenience that defers to the builder.
@@ -40,6 +41,10 @@ where
 
     fn threads(&self) -> usize {
         self.threads
+    }
+
+    fn ignore_feature_requirements(&self) -> bool {
+        self.ignore_feature_requirements
     }
 }
 
@@ -91,6 +96,7 @@ where
     threads: usize,
     tolerances: Tolerances<T, N>,
     max_iterations: NonZeroUsize,
+    ignore_feature_requirements: bool,
 }
 
 impl<T, const N: usize> Default for SimdIpmSolverSettingsBuilder<T, N>
@@ -105,6 +111,7 @@ where
             tolerances: Tolerances::default(),
             // Unwrap is safe as the value is non-zero!
             max_iterations: NonZeroUsize::new(200).unwrap(),
+            ignore_feature_requirements: false,
         }
     }
 }
@@ -143,6 +150,12 @@ where
         self.max_iterations = max_iterations;
         self
     }
+
+    pub fn ignore_feature_requirements(mut self) -> Self {
+        self.ignore_feature_requirements = true;
+        self
+    }
+
     /// Construct a [`SimdIpmSolverSettings`] from the builder.
     pub fn build(self) -> SimdIpmSolverSettings<T, N> {
         SimdIpmSolverSettings {
@@ -150,6 +163,7 @@ where
             threads: self.threads,
             tolerances: self.tolerances,
             max_iterations: self.max_iterations,
+            ignore_feature_requirements: self.ignore_feature_requirements,
         }
     }
 }
@@ -167,6 +181,7 @@ mod tests {
             threads: 0,
             tolerances: Tolerances::default(),
             max_iterations: NonZeroUsize::new(200).unwrap(),
+            ignore_feature_requirements: false,
         };
         let settings_from_builder = SimdIpmSolverSettingsBuilder::<f64, 4>::default().parallel().build();
 

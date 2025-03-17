@@ -12,6 +12,7 @@ pub struct ClIpmSolverSettings {
     num_chunks: NonZeroUsize,
     tolerances: Tolerances,
     max_iterations: NonZeroUsize,
+    ignore_feature_requirements: bool,
 }
 
 // Default implementation is a convenience that defers to the builder.
@@ -28,6 +29,10 @@ impl SolverSettings for ClIpmSolverSettings {
 
     fn threads(&self) -> usize {
         self.threads
+    }
+
+    fn ignore_feature_requirements(&self) -> bool {
+        self.ignore_feature_requirements
     }
 }
 
@@ -56,15 +61,16 @@ impl ClIpmSolverSettings {
 ///
 /// ```
 /// use std::num::NonZeroUsize;
-/// use pywr::solvers::ClIpmSolverSettingsBuilder;
+/// use pywr_core::solvers::ClIpmSolverSettingsBuilder;
 /// // Settings with parallel enabled and 4 threads.
 /// let settings = ClIpmSolverSettingsBuilder::default().parallel().threads(4).build();
 ///
-/// let mut builder = ClIpmSolverSettingsBuilder::default();
-/// builder.num_chunks(NonZeroUsize::new(8).unwrap());
+/// let builder = ClIpmSolverSettingsBuilder::default()
+///     .num_chunks(NonZeroUsize::new(8).unwrap());
 /// let settings = builder.build();
 ///
-/// builder.parallel();
+/// let builder = ClIpmSolverSettingsBuilder::default()
+///     .parallel();
 /// let settings = builder.build();
 ///
 /// ```
@@ -74,6 +80,7 @@ pub struct ClIpmSolverSettingsBuilder {
     num_chunks: NonZeroUsize,
     tolerances: Tolerances,
     max_iterations: NonZeroUsize,
+    ignore_feature_requirements: bool,
 }
 
 impl Default for ClIpmSolverSettingsBuilder {
@@ -85,6 +92,7 @@ impl Default for ClIpmSolverSettingsBuilder {
             num_chunks: NonZeroUsize::new(4).unwrap(),
             tolerances: Tolerances::default(),
             max_iterations: NonZeroUsize::new(200).unwrap(),
+            ignore_feature_requirements: false,
         }
     }
 }
@@ -125,6 +133,11 @@ impl ClIpmSolverSettingsBuilder {
         self
     }
 
+    pub fn ignore_feature_requirements(mut self) -> Self {
+        self.ignore_feature_requirements = true;
+        self
+    }
+
     /// Construct a [`ClIpmSolverSettings`] from the builder.
     pub fn build(self) -> ClIpmSolverSettings {
         ClIpmSolverSettings {
@@ -133,6 +146,7 @@ impl ClIpmSolverSettingsBuilder {
             num_chunks: self.num_chunks,
             tolerances: self.tolerances,
             max_iterations: self.max_iterations,
+            ignore_feature_requirements: self.ignore_feature_requirements,
         }
     }
 }
@@ -151,6 +165,7 @@ mod tests {
             num_chunks: NonZeroUsize::new(4).unwrap(),
             max_iterations: NonZeroUsize::new(200).unwrap(),
             tolerances: Tolerances::default(),
+            ignore_feature_requirements: false,
         };
         let settings_from_builder = ClIpmSolverSettingsBuilder::default().parallel().build();
 

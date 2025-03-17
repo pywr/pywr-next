@@ -7,6 +7,7 @@ use crate::solvers::SolverSettings;
 pub struct ClpSolverSettings {
     parallel: bool,
     threads: usize,
+    ignore_feature_requirements: bool,
 }
 
 // Default implementation is a convenience that defers to the builder.
@@ -23,6 +24,10 @@ impl SolverSettings for ClpSolverSettings {
 
     fn threads(&self) -> usize {
         self.threads
+    }
+
+    fn ignore_feature_requirements(&self) -> bool {
+        self.ignore_feature_requirements
     }
 }
 
@@ -53,6 +58,7 @@ impl ClpSolverSettings {
 pub struct ClpSolverSettingsBuilder {
     parallel: bool,
     threads: usize,
+    ignore_feature_requirements: bool,
 }
 
 impl ClpSolverSettingsBuilder {
@@ -66,11 +72,17 @@ impl ClpSolverSettingsBuilder {
         self
     }
 
+    pub fn ignore_feature_requirements(mut self) -> Self {
+        self.ignore_feature_requirements = true;
+        self
+    }
+
     /// Construct a [`ClpSolverSettings`] from the builder.
     pub fn build(self) -> ClpSolverSettings {
         ClpSolverSettings {
             parallel: self.parallel,
             threads: self.threads,
+            ignore_feature_requirements: self.ignore_feature_requirements,
         }
     }
 }
@@ -84,6 +96,7 @@ mod tests {
         let _settings = ClpSolverSettings {
             parallel: true,
             threads: 0,
+            ignore_feature_requirements: false,
         };
         let settings_from_builder = ClpSolverSettingsBuilder::default().parallel().build();
 
