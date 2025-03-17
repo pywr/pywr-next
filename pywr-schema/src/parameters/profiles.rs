@@ -178,8 +178,8 @@ impl FromV1<UniformDrawdownProfileParameterV1> for UniformDrawdownProfileParamet
         Self {
             meta,
             reset_day: v1.reset_day.map(|v| ConstantValue::Literal(v as u64)),
-            reset_month: v1.reset_day.map(|v| ConstantValue::Literal(v as u64)),
-            residual_days: v1.reset_day.map(|v| ConstantValue::Literal(v as u64)),
+            reset_month: v1.reset_month.map(|v| ConstantValue::Literal(v as u64)),
+            residual_days: v1.residual_days.map(|v| ConstantValue::Literal(v as u64)),
         }
     }
 }
