@@ -47,7 +47,7 @@ impl SimpleParameter<f64> for UniformDrawdownProfileParameter {
         let mut year = timestep.date.year();
 
         // Current day of the year.
-        let current_doy = timestep.date.ordinal();
+        let current_doy = timestep.day_of_year_index() + 1;
         let mut days_into_period: i32 = current_doy as i32 - self.reset_doy as i32;
         if days_into_period < 0 {
             // We're not past the reset day yet; use the previous year

@@ -147,8 +147,8 @@ impl Metric {
     fn attribute(&self, args: &LoadArgs) -> Result<String, SchemaError> {
         let attribute = match self {
             Self::Node(node_ref) => node_ref.attribute(args)?.to_string(),
-            Self::Parameter(_) => "value".to_string(),
-            Self::LocalParameter(_) => "value".to_string(),
+            Self::Parameter(p_ref) => p_ref.key.clone().unwrap_or_else(|| "value".to_string()),
+            Self::LocalParameter(p_ref) => p_ref.key.clone().unwrap_or_else(|| "value".to_string()),
             Self::Constant { .. } => "value".to_string(),
             Self::Table(_) => "value".to_string(),
             Self::Timeseries(_) => "value".to_string(),

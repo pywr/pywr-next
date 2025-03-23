@@ -152,7 +152,7 @@ impl LoadedTimeseriesCollection {
             .timeseries
             .get(name)
             .ok_or(TimeseriesError::TimeseriesNotFound(name.to_string()))?;
-        let series = df.column(col)?;
+        let series = df.column(col)?.rechunk();
 
         let array = series.cast(&Float64)?.f64()?.to_ndarray()?.to_owned();
         let name = ParameterName::new(col, Some(name));
@@ -179,7 +179,7 @@ impl LoadedTimeseriesCollection {
             .timeseries
             .get(name)
             .ok_or(TimeseriesError::TimeseriesNotFound(name.to_string()))?;
-        let series = df.column(col)?;
+        let series = df.column(col)?.rechunk();
 
         let array = series.cast(&UInt64)?.u64()?.to_ndarray()?.to_owned();
         let name = ParameterName::new(col, Some(name));
@@ -217,7 +217,7 @@ impl LoadedTimeseriesCollection {
             name: name.to_string(),
         })?;
 
-        let series = df.column(col)?;
+        let series = df.column(col)?.rechunk();
 
         let array = series.cast(&Float64)?.f64()?.to_ndarray()?.to_owned();
         let name = ParameterName::new(col, Some(name));
@@ -255,7 +255,7 @@ impl LoadedTimeseriesCollection {
             name: name.to_string(),
         })?;
 
-        let series = df.column(col)?;
+        let series = df.column(col)?.rechunk();
 
         let array = series.cast(&UInt64)?.u64()?.to_ndarray()?.to_owned();
         let name = ParameterName::new(col, Some(name));

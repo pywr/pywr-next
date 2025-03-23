@@ -9,4 +9,4 @@ edition = "2021"
 ipm-common = { path = "../ipm-common" }
 nalgebra-sparse = "0.10.0"
 ocl = "0.19"
-log = "0.4.25"
+log = "0.4.26"
