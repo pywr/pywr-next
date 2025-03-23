@@ -461,6 +461,13 @@ impl TryFromV1<DataFrameParameterV1> for ConvertedTimeseriesReference {
                 Some(v) => v.as_str().map(|s| s.to_string()),
                 None => None,
             };
+            // remove the parse_dates for CSV files as this is already passed to read_csv in
+            // pandas_load.py. This prevents from raising a multiple keyword error.
+            if let Some(ext) = url.extension() {
+                if ext == "csv" && pandas_kwargs.contains_key("parse_dates") {
+                    pandas_kwargs.remove("parse_dates");
+                }
+            }
 
             let provider = PandasDataset {
                 time_col,
