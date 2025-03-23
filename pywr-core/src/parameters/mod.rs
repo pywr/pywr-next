@@ -271,8 +271,8 @@ impl<T> From<ConstParameterIndex<T>> for ParameterIndex<T> {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParameterName {
-    pub name: String,
-    pub parent: Option<String>,
+    name: String,
+    parent: Option<String>,
 }
 
 impl ParameterName {
@@ -281,6 +281,16 @@ impl ParameterName {
             name: name.to_string(),
             parent: parent.map(|p| p.to_string()),
         }
+    }
+
+    /// Get the parameter name.
+    pub fn name(&self) -> String {
+        self.name.clone()
+    }
+
+    /// Get the parameter optional parent's name.
+    pub fn parent(&self) -> Option<String> {
+        self.parent.clone()
     }
 }
 
