@@ -8,5 +8,5 @@ edition = "2021"
 [dependencies]
 ipm-common = { path = "../ipm-common" }
 nalgebra-sparse = "0.10.0"
-log = "0.4.26"
+log = "0.4.27"
 colamd = "0.1.0"
