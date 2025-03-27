@@ -1,6 +1,7 @@
 use crate::data_tables::{DataTable, TableDataRef, TableError};
 use crate::nodes::NodeAttribute;
 use crate::timeseries::TimeseriesError;
+use ndarray::ShapeError;
 #[cfg(feature = "pyo3")]
 use pyo3::prelude::*;
 use std::path::PathBuf;
@@ -78,6 +79,8 @@ pub enum SchemaError {
     EmptyMetricSet(String),
     #[error("The feature '{0}' must be enabled to use this functionality.")]
     FeatureNotEnabled(String),
+    #[error("Shape error: {0}")]
+    NdarrayShape(#[from] ShapeError),
 }
 
 #[cfg(all(feature = "core", feature = "pyo3"))]

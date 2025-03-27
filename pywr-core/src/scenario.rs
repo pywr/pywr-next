@@ -250,7 +250,7 @@ impl ScenarioDomainBuilder {
     }
 
     /// Build a map of simulation indices to schema indices for each group
-    fn build_scenario_map_from_slices(&self) -> Vec<Option<Vec<usize>>> {
+    fn build_scenario_map_from_subsets(&self) -> Vec<Option<Vec<usize>>> {
         let mut scenario_map: Vec<Option<Vec<usize>>> = vec![None; self.groups.len()];
 
         for (group_index, group) in self.groups.iter().enumerate() {
@@ -376,7 +376,7 @@ impl ScenarioDomainBuilder {
                 scenario_map_from_combinations
             } else {
                 // Case with either all scenarios or a subset of scenarios via slices
-                let scenario_map_from_slices = self.build_scenario_map_from_slices();
+                let scenario_map_from_slices = self.build_scenario_map_from_subsets();
 
                 let is_sliced = scenario_map_from_slices.iter().any(|s| s.is_some());
 

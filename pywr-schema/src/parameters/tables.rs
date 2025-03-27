@@ -69,7 +69,7 @@ impl TablesArrayParameter {
             // If there is a scenario subset then we can reduce the data to align with the scenarios
             // that are actually used in the model.
             if let Some(subset) = args.domain.scenarios().group_scenario_subset(scenario)? {
-                array = subset_array2(&array, subset);
+                array = subset_array2(&array, subset)?;
             }
 
             let p = pywr_core::parameters::Array2Parameter::new(

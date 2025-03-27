@@ -165,7 +165,7 @@ pub enum ScenarioGroupSubset {
 ///
 /// A scenario group is defined by a name and a size. The size is the number of scenarios in the group.
 /// Optional labels can be defined for the group. These labels are used in output data
-/// to identify the scenario group. A slice can be defined to subset the group for simulation purposes.
+/// to identify the scenario group. A subset can be defined to simulate only part of the group.
 ///
 /// See also the examples in the [`ScenarioDomain`] documentation.
 #[derive(serde::Deserialize, serde::Serialize, Clone, JsonSchema)]
@@ -228,7 +228,8 @@ impl From<ScenarioLabelOrIndex> for pywr_core::scenario::ScenarioLabelOrIndex {
 ///
 /// Each scenario group has a name and size. The full space of the domain is defined as the
 /// cartesian product of the sizes of each group. For simulation purposes, the domain can be
-/// constrained (or "subsetted") by defining a slice for each group. The slice is a contiguous
+/// constrained (or "subsetted") by defining a subset for each group. A subset can be defined
+/// using specific labels or indices of the group, or using slice of the group. The slice is a contiguous
 /// subset of the group that will be used in the simulation. The slice is defined by the `start`
 /// and `end` indices of the group. The `start` index is inclusive and the `end` index is exclusive.
 ///
