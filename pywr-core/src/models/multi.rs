@@ -150,6 +150,7 @@ impl MultiNetworkModel {
     pub fn setup<S>(&self, settings: &S::Settings) -> Result<MultiNetworkModelState<Vec<Box<S>>>, PywrError>
     where
         S: Solver,
+        <S as Solver>::Settings: SolverSettings,
     {
         let timesteps = self.domain.time.timesteps();
         let scenario_indices = self.domain.scenarios.indices();
@@ -181,6 +182,7 @@ impl MultiNetworkModel {
     pub fn setup_multi_scenario<S>(&self, settings: &S::Settings) -> Result<MultiNetworkModelState<Box<S>>, PywrError>
     where
         S: MultiStateSolver,
+        <S as MultiStateSolver>::Settings: SolverSettings,
     {
         let timesteps = self.domain.time.timesteps();
         let scenario_indices = self.domain.scenarios.indices();

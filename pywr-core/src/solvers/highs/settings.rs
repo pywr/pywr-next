@@ -7,6 +7,7 @@ use crate::solvers::SolverSettings;
 pub struct HighsSolverSettings {
     parallel: bool,
     threads: usize,
+    ignore_feature_requirements: bool,
 }
 
 // Default implementation is a convenience that defers to the builder.
@@ -23,6 +24,10 @@ impl SolverSettings for HighsSolverSettings {
 
     fn threads(&self) -> usize {
         self.threads
+    }
+
+    fn ignore_feature_requirements(&self) -> bool {
+        self.ignore_feature_requirements
     }
 }
 
@@ -52,6 +57,7 @@ impl HighsSolverSettings {
 pub struct HighsSolverSettingsBuilder {
     parallel: bool,
     threads: usize,
+    ignore_feature_requirements: bool,
 }
 
 impl HighsSolverSettingsBuilder {
@@ -65,11 +71,17 @@ impl HighsSolverSettingsBuilder {
         self
     }
 
+    pub fn ignore_feature_requirements(mut self) -> Self {
+        self.ignore_feature_requirements = true;
+        self
+    }
+
     /// Construct a [`HighsSolverSettings`] from the builder.
     pub fn build(self) -> HighsSolverSettings {
         HighsSolverSettings {
             parallel: self.parallel,
             threads: self.threads,
+            ignore_feature_requirements: self.ignore_feature_requirements,
         }
     }
 }
@@ -83,6 +95,7 @@ mod tests {
         let settings = HighsSolverSettings {
             parallel: true,
             threads: 0,
+            ignore_feature_requirements: false,
         };
         let settings_from_builder = HighsSolverSettingsBuilder::default().parallel().build();
 
