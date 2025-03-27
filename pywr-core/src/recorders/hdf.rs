@@ -133,6 +133,7 @@ impl Recorder for HDF5Recorder {
 
     fn finalise(
         &self,
+        _scenario_indices: &[ScenarioIndex],
         _network: &Network,
         _metric_set_states: &[Vec<MetricSetState>],
         internal_state: &mut Option<Box<dyn Any>>,

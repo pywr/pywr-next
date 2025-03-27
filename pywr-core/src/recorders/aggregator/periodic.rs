@@ -1,4 +1,4 @@
-use crate::timestep::PywrDuration;
+use crate::timestep::{PywrDuration, TimeDomain};
 use chrono::{Datelike, Duration, NaiveDate, NaiveDateTime, NaiveTime};
 use std::num::NonZeroUsize;
 
@@ -10,6 +10,29 @@ pub enum AggregationFrequency {
 }
 
 impl AggregationFrequency {
+    /// Number of periods in the given time domain.
+    fn number_of_periods(&self, time_domain: &TimeDomain) -> usize {
+        match self {
+            Self::Monthly => {
+                let start = time_domain.first().date;
+                let end = time_domain.last().date;
+                let n_years = (end.year() - start.year()) as u32;
+                (n_years * 12 + end.month() - start.month()) as usize
+            }
+            Self::Annual => {
+                let start = time_domain.first().date;
+                let end = time_domain.last().date;
+                (end.year() - start.year()) as usize
+            }
+            Self::Days(days) => {
+                let start = time_domain.first().date;
+                let end = time_domain.last().date;
+                let n_days = end.signed_duration_since(start).num_days();
+                (n_days / days.get() as i64) as usize
+            }
+        }
+    }
+
     fn is_date_in_period(&self, period_start: &NaiveDateTime, date: &NaiveDateTime) -> bool {
         match self {
             Self::Monthly => (period_start.year() == date.year()) && (period_start.month() == date.month()),
@@ -161,6 +184,12 @@ impl AggregationFunction {
     }
 }
 
+/// State of the periodic aggregator.
+///
+/// This state stores the current values, if any, that are yielded from the aggregation on the
+/// given time-step. Periodic output is consistent for each metric, and therefore is stored
+/// as a vec of [`PeriodValue`]s that represents the aggregated value over a period of time for all
+/// metrics.
 #[derive(Default, Debug, Clone)]
 pub struct PeriodicAggregatorState {
     current_values: Option<Vec<PeriodValue<f64>>>,
@@ -337,6 +366,14 @@ impl PeriodicAggregator {
 
     pub fn calc_aggregation(&self, state: &PeriodicAggregatorState) -> Option<PeriodValue<f64>> {
         state.calc_aggregation(&self.function)
+    }
+
+    /// Expected number of periods in the given time domain.
+    pub fn number_of_periods(&self, time_domain: &TimeDomain) -> usize {
+        match &self.frequency {
+            Some(frequency) => frequency.number_of_periods(time_domain),
+            None => 1,
+        }
     }
 }
 

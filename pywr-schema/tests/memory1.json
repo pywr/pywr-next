@@ -65,19 +65,25 @@
       {
         "name": "nodes",
         "aggregator": {
-          "freq": {
-            "type": "Annual"
-          },
-          "func": {
-            "type": "CountNonZero"
-          },
-          "child": {
+          "parent": {
+            "type": "Periodic",
             "freq": {
-              "type": "Days",
-              "days": 4
+              "type": "Annual"
             },
             "func": {
-              "type": "Min"
+              "type": "CountNonZero"
+            }
+          },
+          "child": {
+            "parent": {
+              "type": "Periodic",
+              "freq": {
+                "type": "Days",
+                "days": 4
+              },
+              "func": {
+                "type": "Min"
+              }
             }
           }
         },

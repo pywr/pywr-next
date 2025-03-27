@@ -65,11 +65,14 @@
       {
         "name": "nodes-monthly-mean",
         "aggregator": {
-          "freq": {
-            "type": "Monthly"
-          },
-          "func": {
-            "type": "Mean"
+          "parent": {
+            "type": "Periodic",
+            "freq": {
+              "type": "Monthly"
+            },
+            "func": {
+              "type": "Mean"
+            }
           }
         },
         "metrics": [
@@ -82,11 +85,14 @@
       {
         "name": "nodes-annual-mean",
         "aggregator": {
-          "freq": {
-            "type": "Annual"
-          },
-          "func": {
-            "type": "Mean"
+          "parent": {
+            "type": "Periodic",
+            "freq": {
+              "type": "Annual"
+            },
+            "func": {
+              "type": "Mean"
+            }
           }
         },
         "metrics": [

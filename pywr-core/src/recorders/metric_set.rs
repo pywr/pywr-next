@@ -1,9 +1,9 @@
 use crate::metric::MetricF64;
 use crate::network::Network;
-use crate::recorders::aggregator::{NestedAggregator, NestedAggregatorState, PeriodValue};
+use crate::recorders::aggregator::{AggregatorValue, NestedAggregator, NestedAggregatorState, PeriodValue};
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
-use crate::timestep::Timestep;
+use crate::timestep::{TimeDomain, Timestep};
 use crate::PywrError;
 use std::fmt;
 use std::fmt::{Display, Formatter};
@@ -80,16 +80,33 @@ impl Display for MetricSetIndex {
 
 #[derive(Debug, Clone)]
 pub struct MetricSetState {
-    // Populated with any yielded values from the last processing.
-    current_values: Option<Vec<PeriodValue<f64>>>,
-    // If the metric set aggregates then this state tracks the aggregation of each metric
+    /// Populated with any yielded values from the last processing. One entry per
+    /// metric in the set.
+    current_values: Vec<Option<AggregatorValue>>,
+    /// If the metric set aggregates then this state tracks the aggregation of each metric
     aggregation_states: Option<Vec<NestedAggregatorState>>,
 }
 
 impl MetricSetState {
-    pub fn current_values(&self) -> Option<&[PeriodValue<f64>]> {
-        self.current_values.as_deref()
+    /// Returns the current values for the metrics in the set. There is an entry for each metric
+    /// in the set, which will be `None` if no value was yielded for that metric.
+    pub fn current_values(&self) -> &[Option<AggregatorValue>] {
+        self.current_values.as_slice()
     }
+
+    /// Helper method to determine if there are any values in the current state.
+    pub fn has_some_values(&self) -> bool {
+        self.current_values.iter().any(|v| v.is_some())
+    }
+}
+
+/// Information about the type of output expected from a [`MetricSet`].
+pub enum MetricSetOutputInfo {
+    Periodic {
+        // The number of time periods expected in the output
+        num_periods: usize,
+    },
+    Event,
 }
 
 /// A set of metrics with an optional aggregator
@@ -120,11 +137,21 @@ impl MetricSet {
     /// Setup a new [`MetricSetState`] for this [`MetricSet`].
     pub fn setup(&self) -> MetricSetState {
         MetricSetState {
-            current_values: None,
+            current_values: vec![None; self.metrics.len()],
             aggregation_states: self
                 .aggregator
                 .as_ref()
                 .map(|a| self.metrics.iter().map(|_| a.setup()).collect()),
+        }
+    }
+
+    pub fn output_info(&self, time_domain: &TimeDomain) -> MetricSetOutputInfo {
+        match &self.aggregator {
+            Some(aggregator) => aggregator.output_info(time_domain),
+            None => MetricSetOutputInfo::Periodic {
+                // Without an aggregator the output will be on per time-step.
+                num_periods: time_domain.len(),
+            },
         }
     }
 
@@ -162,24 +189,14 @@ impl MetricSet {
             // Use a for loop instead of using an iterator because we need to execute the
             // `append_value` method on all aggregators.
             for (value, current_state) in values.iter().zip(aggregation_states.iter_mut()) {
-                if let Some(agg_value) = aggregator.append_value(current_state, *value) {
-                    agg_values.push(agg_value);
-                }
-            }
+                let agg_value = (*value).into();
 
-            let agg_values = if agg_values.is_empty() {
-                None
-            } else if agg_values.len() == values.len() {
-                Some(agg_values)
-            } else {
-                // This should never happen because the aggregator should either yield no values
-                // or the same number of values as the input metrics.
-                unreachable!("Some values were aggregated and some were not!");
-            };
+                agg_values.push(aggregator.append_value(current_state, agg_value));
+            }
 
             internal_state.current_values = agg_values;
         } else {
-            internal_state.current_values = Some(values);
+            internal_state.current_values = values.into_iter().map(|v| Some(v.into())).collect();
         }
 
         Ok(())
@@ -195,11 +212,11 @@ impl MetricSet {
             let final_values = aggregation_states
                 .iter_mut()
                 .map(|current_state| aggregator.finalise(current_state))
-                .collect::<Option<Vec<_>>>();
+                .collect::<Vec<_>>();
 
             internal_state.current_values = final_values;
         } else {
-            internal_state.current_values = None;
+            internal_state.current_values = vec![None; self.metrics.len()];
         }
     }
 }

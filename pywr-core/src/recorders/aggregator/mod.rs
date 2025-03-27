@@ -1,9 +1,11 @@
 mod event;
 mod periodic;
 
-use event::{Event, EventAggregator, EventAggregatorState};
-pub use periodic::{AggregationFrequency, AggregationFunction, PeriodValue};
-use periodic::{PeriodicAggregator, PeriodicAggregatorState};
+use crate::recorders::metric_set::MetricSetOutputInfo;
+use crate::timestep::TimeDomain;
+pub use event::{Event, EventAggregator, EventAggregatorState};
+use periodic::PeriodicAggregatorState;
+pub use periodic::{AggregationFrequency, AggregationFunction, PeriodValue, PeriodicAggregator};
 
 #[derive(Debug, Clone)]
 pub enum AggregatorState {
@@ -26,13 +28,6 @@ impl AggregatorState {
         }
     }
 
-    fn as_event(&self) -> Option<&EventAggregatorState> {
-        match self {
-            AggregatorState::Event(state) => Some(state),
-            _ => None,
-        }
-    }
-
     fn as_event_mut(&mut self) -> Option<&mut EventAggregatorState> {
         match self {
             AggregatorState::Event(state) => Some(state),
@@ -47,6 +42,7 @@ pub struct NestedAggregatorState {
     child: Option<Box<NestedAggregatorState>>,
 }
 
+#[derive(Debug, Clone)]
 pub enum AggregatorValue {
     Periodic(PeriodValue<f64>),
     Event(Event),
@@ -68,6 +64,18 @@ impl From<PeriodValue<f64>> for AggregatorValue {
 pub enum Aggregator {
     Periodic(PeriodicAggregator),
     Event(EventAggregator),
+}
+
+impl From<PeriodicAggregator> for Aggregator {
+    fn from(agg: PeriodicAggregator) -> Self {
+        Aggregator::Periodic(agg)
+    }
+}
+
+impl From<EventAggregator> for Aggregator {
+    fn from(agg: EventAggregator) -> Self {
+        Aggregator::Event(agg)
+    }
 }
 
 impl From<PeriodicAggregatorState> for AggregatorState {
@@ -92,15 +100,28 @@ impl Aggregator {
 
     fn process_value(&self, state: &mut AggregatorState, value: PeriodValue<f64>) -> Option<AggregatorValue> {
         match self {
-            Aggregator::Periodic(agg) => agg.process_value(state.as_periodic_mut().unwrap(), value).into(),
-            Aggregator::Event(agg) => agg.process_value(state.as_event_mut().unwrap(), value).into(),
+            Aggregator::Periodic(agg) => agg
+                .process_value(state.as_periodic_mut().unwrap(), value)
+                .map(|v| v.into()),
+            Aggregator::Event(agg) => agg
+                .process_value(state.as_event_mut().unwrap(), value)
+                .map(|v| v.into()),
         }
     }
 
-    fn calc_aggregation(&self, state: &AggregatorState) -> Option<PeriodValue<f64>> {
+    fn calc_aggregation(&self, state: &AggregatorState) -> Option<AggregatorValue> {
         match self {
-            Aggregator::Periodic(agg) => agg.calc_aggregation(state.as_periodic().unwrap()),
+            Aggregator::Periodic(agg) => agg.calc_aggregation(state.as_periodic().unwrap()).map(|v| v.into()),
             Aggregator::Event(_) => None,
+        }
+    }
+
+    fn output_info(&self, time_domain: &TimeDomain) -> MetricSetOutputInfo {
+        match self {
+            Aggregator::Periodic(agg) => MetricSetOutputInfo::Periodic {
+                num_periods: agg.number_of_periods(time_domain),
+            },
+            Aggregator::Event(_) => MetricSetOutputInfo::Event,
         }
     }
 }
@@ -119,6 +140,10 @@ impl NestedAggregator {
         }
     }
 
+    pub fn output_info(&self, time_domain: &TimeDomain) -> MetricSetOutputInfo {
+        self.aggregator.output_info(time_domain)
+    }
+
     /// Create the initial default state for the aggregator.
     pub fn setup(&self) -> NestedAggregatorState {
         NestedAggregatorState {
@@ -128,7 +153,7 @@ impl NestedAggregator {
     }
 
     /// Append a new value to the aggregator.
-    pub fn append_value(&self, state: &mut NestedAggregatorState, value: AggregatorValue) -> Option<PeriodValue<f64>> {
+    pub fn append_value(&self, state: &mut NestedAggregatorState, value: AggregatorValue) -> Option<AggregatorValue> {
         let agg_value = match (&self.child, state.child.as_mut()) {
             (Some(child), Some(child_state)) => child.append_value(child_state, value),
             (None, None) => Some(value),
@@ -137,7 +162,12 @@ impl NestedAggregator {
         };
 
         if let Some(agg_value) = agg_value {
-            self.aggregator.process_value(&mut state.state, agg_value)
+            match agg_value {
+                AggregatorValue::Periodic(value) => self.aggregator.process_value(&mut state.state, value),
+                AggregatorValue::Event(_event) => {
+                    panic!("It is not possible to process an event value in a nested aggregator. The event aggregator should be the top level aggregator.")
+                }
+            }
         } else {
             None
         }
@@ -147,7 +177,7 @@ impl NestedAggregator {
     ///
     /// This will also compute the final aggregation value from the child aggregators if any exists.
     /// This includes aggregation calculations over partial or unfinished periods.
-    pub fn finalise(&self, state: &mut NestedAggregatorState) -> Option<PeriodValue<f64>> {
+    pub fn finalise(&self, state: &mut NestedAggregatorState) -> Option<AggregatorValue> {
         let final_child_value = match (&self.child, state.child.as_mut()) {
             (Some(child), Some(child_state)) => child.finalise(child_state),
             (None, None) => None,
@@ -156,8 +186,15 @@ impl NestedAggregator {
         };
 
         // If there is a final value from the child aggregator then process it
-        if let Some(final_child_value) = final_child_value {
-            let _ = self.aggregator.process_value(&mut state.state, final_child_value);
+        if let Some(agg_value) = final_child_value {
+            match agg_value {
+                AggregatorValue::Periodic(value) => {
+                    let _ = self.aggregator.process_value(&mut state.state, value);
+                }
+                AggregatorValue::Event(_event) => {
+                    panic!("It is not possible to process an event value in a nested aggregator. The event aggregator should be the top level aggregator.")
+                }
+            }
         }
 
         // Finally, compute the aggregation of the current state
@@ -167,7 +204,9 @@ impl NestedAggregator {
 
 #[cfg(test)]
 mod tests {
-    use super::{AggregationFrequency, AggregationFunction, Aggregator, NestedAggregator, PeriodicAggregator};
+    use super::{
+        AggregationFrequency, AggregationFunction, Aggregator, AggregatorValue, NestedAggregator, PeriodicAggregator,
+    };
     use crate::recorders::aggregator::PeriodValue;
     use chrono::{Datelike, NaiveDate, TimeDelta};
     use float_cmp::assert_approx_eq;
@@ -195,14 +234,17 @@ mod tests {
             .unwrap();
         for _i in 0..365 * 3 {
             let value = PeriodValue::new(date, TimeDelta::days(1).into(), date.year() as f64);
-            let _agg_value = max_annual_min.append_value(&mut state, value);
+            let _agg_value = max_annual_min.append_value(&mut state, value.into());
             date += TimeDelta::days(1);
         }
 
         let final_value = max_annual_min.finalise(&mut state);
 
         if let Some(final_value) = final_value {
-            assert_approx_eq!(f64, final_value.value, 2025.0);
+            match final_value {
+                AggregatorValue::Periodic(value) => assert_approx_eq!(f64, value.value, 2025.0),
+                _ => panic!("Final value is not a PeriodValue!"),
+            }
         } else {
             panic!("Final value is None!")
         }

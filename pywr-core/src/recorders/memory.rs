@@ -1,11 +1,13 @@
 use crate::models::ModelDomain;
 use crate::network::Network;
-use crate::recorders::aggregator::PeriodValue;
+use crate::recorders::aggregator::{AggregatorValue, Event, PeriodValue};
+use crate::recorders::metric_set::MetricSetOutputInfo;
 use crate::recorders::{AggregationFunction, MetricSetIndex, MetricSetState, Recorder, RecorderMeta};
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
 use crate::timestep::Timestep;
 use crate::PywrError;
+use chrono::NaiveDateTime;
 use std::any::Any;
 use std::ops::Deref;
 use thiserror::Error;
@@ -122,27 +124,16 @@ impl Aggregation {
     }
 }
 
-/// Internal state for the memory recorder.
+/// Periodic internal state for the memory recorder.
 ///
 /// This is a 3D array, where the first dimension is the scenario, the second dimension is the time,
-/// and the third dimension is the metric.
-struct InternalState {
+/// and the third dimension is the metric. It is used for storing periodic output data which
+/// produces a value for every scenario at the same time.
+struct PeriodicInternalState {
     data: Vec<Vec<PeriodValue<Vec<f64>>>>,
 }
 
-impl InternalState {
-    fn new(num_scenarios: usize) -> Self {
-        let mut data: Vec<Vec<PeriodValue<Vec<f64>>>> = Vec::with_capacity(num_scenarios);
-
-        for _ in 0..num_scenarios {
-            // We can't use `Vec::with_capacity` here because we don't know the number of
-            // periods that will be recorded.
-            data.push(Vec::new())
-        }
-
-        Self { data }
-    }
-
+impl PeriodicInternalState {
     /// Aggregate over the saved data to a single value using the provided aggregation functions.
     ///
     /// This method will first aggregation over the metrics, then over time, and finally over the scenarios.
@@ -192,6 +183,125 @@ impl InternalState {
     }
 }
 
+struct MemoryEvent {
+    start: NaiveDateTime,
+    end: Option<NaiveDateTime>,
+    metric_index: usize,
+}
+
+impl MemoryEvent {
+    fn from_event(event: Event, metric_index: usize) -> MemoryEvent {
+        MemoryEvent {
+            start: event.start,
+            end: event.end,
+            metric_index,
+        }
+    }
+}
+
+/// Event internal state for the memory recorder.
+///
+/// This is a nested vector of events where the outer vec is the length of the scenarios,
+/// and the inner vector are the events for that scenario.
+struct EventInternalState {
+    events: Vec<Vec<MemoryEvent>>,
+}
+
+/// Internal state for the memory recorder.
+///
+/// The variant used depends on the type of data produced by the aggregator.
+enum InternalState {
+    Periodic(PeriodicInternalState),
+    Events(EventInternalState),
+}
+
+impl InternalState {
+    fn new_periodic(num_scenarios: usize, num_periods: Option<usize>) -> Self {
+        let mut data: Vec<Vec<PeriodValue<Vec<f64>>>> = Vec::with_capacity(num_scenarios);
+
+        for _ in 0..num_scenarios {
+            data.push(Vec::with_capacity(num_periods.unwrap_or_default()))
+        }
+
+        Self::Periodic(PeriodicInternalState { data })
+    }
+
+    fn new_event(num_scenarios: usize) -> Self {
+        let events: Vec<_> = Vec::with_capacity(num_scenarios);
+
+        Self::Events(EventInternalState { events })
+    }
+
+    /// Aggregate over the saved data to a single value using the provided aggregation functions.
+    ///
+    /// This method will first aggregation over the metrics, then over time, and finally over the scenarios.
+    fn aggregate_metric_time_scenario(&self, aggregation: &Aggregation) -> Result<f64, AggregationError> {
+        match self {
+            Self::Periodic(state) => state.aggregate_metric_time_scenario(aggregation),
+            Self::Events(_) => todo!("Cannot aggregate events over time and scenarios."),
+        }
+    }
+
+    /// Aggregate over the saved data to a single value using the provided aggregation functions.
+    ///
+    /// This method will first aggregation over time, then over the metrics, and finally over the scenarios.
+    fn aggregate_time_metric_scenario(&self, aggregation: &Aggregation) -> Result<f64, AggregationError> {
+        match self {
+            Self::Periodic(state) => state.aggregate_time_metric_scenario(aggregation),
+            Self::Events(_) => todo!("Cannot aggregate events over time and scenarios."),
+        }
+    }
+
+    fn append_value(&mut self, scenario_index: &ScenarioIndex, values: &[Option<AggregatorValue>]) {
+        match self {
+            Self::Periodic(state) => {
+                let scenario_data = state
+                    .data
+                    .get_mut(scenario_index.index)
+                    .expect("No scenario data found");
+
+                // Find the first non-None value and use that as the start time
+                let (start, duration) = values
+                    .iter()
+                    .find_map(|maybe_v| {
+                        maybe_v.as_ref().and_then(|v| match v {
+                            AggregatorValue::Periodic(p) => Some((p.start, p.duration)),
+                            AggregatorValue::Event(_) => None,
+                        })
+                    })
+                    .unwrap_or_else(|| panic!("Could not determine time-step information."));
+
+                let period_values = values
+                    .iter()
+                    .map(|maybe_v| match maybe_v {
+                        Some(v) => match v {
+                            AggregatorValue::Periodic(v) => v.value,
+                            AggregatorValue::Event(_) => panic!("Cannot append event values to periodic data."),
+                        },
+                        None => panic!("No value found for metric."),
+                    })
+                    .collect::<Vec<_>>();
+
+                scenario_data.push(PeriodValue::new(start, duration, period_values));
+            }
+            Self::Events(state) => {
+                let scenario_data = state
+                    .events
+                    .get_mut(scenario_index.index)
+                    .expect("No scenario data found");
+
+                for (metric_idx, value) in values.iter().enumerate() {
+                    match value {
+                        Some(AggregatorValue::Event(e)) => scenario_data.push(MemoryEvent::from_event(*e, metric_idx)),
+                        Some(AggregatorValue::Periodic(_)) => panic!("Cannot append periodic values to event data."),
+                        None => panic!("No value found for metric."),
+                    }
+                }
+            }
+        }
+    }
+}
+
 #[derive(Default, Copy, Clone)]
 pub enum AggregationOrder {
     #[default]
@@ -230,16 +340,23 @@ impl Recorder for MemoryRecorder {
         &self.meta
     }
 
-    fn setup(&self, domain: &ModelDomain, _network: &Network) -> Result<Option<Box<(dyn Any)>>, PywrError> {
-        let data = InternalState::new(domain.scenarios().len());
+    fn setup(&self, domain: &ModelDomain, network: &Network) -> Result<Option<Box<(dyn Any)>>, PywrError> {
+        let metric_set = network.get_metric_set(self.metric_set_idx)?;
 
-        Ok(Some(Box::new(data)))
+        let state = match metric_set.output_info(domain.time()) {
+            MetricSetOutputInfo::Periodic { num_periods } => {
+                InternalState::new_periodic(domain.scenarios().len(), Some(num_periods))
+            }
+            MetricSetOutputInfo::Event => InternalState::new_event(domain.scenarios().len()),
+        };
+
+        Ok(Some(Box::new(state)))
     }
 
     fn save(
         &self,
         _timestep: &Timestep,
-        _scenario_indices: &[ScenarioIndex],
+        scenario_indices: &[ScenarioIndex],
         _model: &Network,
         _state: &[State],
         metric_set_states: &[Vec<MetricSetState>],
@@ -253,14 +370,14 @@ impl Recorder for MemoryRecorder {
             None => panic!("No internal state defined when one was expected! :("),
         };
 
-        // Iterate through all of the scenario's state
-        for (ms_scenario_states, scenario_data) in metric_set_states.iter().zip(internal_state.data.iter_mut()) {
+        // Iterate through all the scenario's state
+        for (scenario_index, ms_scenario_states) in scenario_indices.iter().zip(metric_set_states.iter()) {
             let metric_set_state = ms_scenario_states
                 .get(*self.metric_set_idx.deref())
                 .ok_or(PywrError::MetricSetIndexNotFound(self.metric_set_idx))?;
 
-            if let Some(current_values) = metric_set_state.current_values() {
-                scenario_data.push(current_values.into());
+            if metric_set_state.has_some_values() {
+                internal_state.append_value(scenario_index, metric_set_state.current_values());
             }
         }
 
@@ -269,6 +386,7 @@ impl Recorder for MemoryRecorder {
 
     fn finalise(
         &self,
+        scenario_indices: &[ScenarioIndex],
         _network: &Network,
         metric_set_states: &[Vec<MetricSetState>],
         internal_state: &mut Option<Box<dyn Any>>,
@@ -281,14 +399,14 @@ impl Recorder for MemoryRecorder {
             None => panic!("No internal state defined when one was expected! :("),
         };
 
-        // Iterate through all of the scenario's state
-        for (ms_scenario_states, scenario_data) in metric_set_states.iter().zip(internal_state.data.iter_mut()) {
+        // Iterate through all the scenario's state
+        for (scenario_index, ms_scenario_states) in scenario_indices.iter().zip(metric_set_states.iter()) {
             let metric_set_state = ms_scenario_states
                 .get(*self.metric_set_idx.deref())
                 .ok_or(PywrError::MetricSetIndexNotFound(self.metric_set_idx))?;
 
-            if let Some(current_values) = metric_set_state.current_values() {
-                scenario_data.push(current_values.into());
+            if metric_set_state.has_some_values() {
+                internal_state.append_value(scenario_index, metric_set_state.current_values());
             }
         }
 
@@ -332,7 +450,7 @@ mod tests {
     fn test_aggregation_orders() {
         let num_scenarios = 2;
         let num_metrics = 3;
-        let mut state = InternalState::new(num_scenarios);
+        let mut state = InternalState::new_periodic(num_scenarios, None);
 
         let mut rng = ChaCha8Rng::seed_from_u64(0);
         let dist: Normal<f64> = Normal::new(0.0, 1.0).unwrap();
@@ -343,24 +461,26 @@ mod tests {
         let mut count_non_zero_by_metric = vec![0.0; num_metrics];
 
         time_domain.timesteps().iter().for_each(|timestep| {
-            state.data.iter_mut().for_each(|scenario_data| {
-                let metric_data = (&mut rng).sample_iter(&dist).take(num_metrics).collect::<Vec<f64>>();
+            if let InternalState::Periodic(state) = &mut state {
+                state.data.iter_mut().for_each(|scenario_data| {
+                    let metric_data = (&mut rng).sample_iter(&dist).take(num_metrics).collect::<Vec<f64>>();
 
-                // Compute the expected values
-                if metric_data.iter().sum::<f64>() > 0.0 {
-                    count_non_zero_max += 1.0;
-                }
-                // ... and by metric
-                metric_data.iter().enumerate().for_each(|(i, v)| {
-                    if *v > 0.0 {
-                        count_non_zero_by_metric[i] += 1.0;
+                    // Compute the expected values
+                    if metric_data.iter().sum::<f64>() > 0.0 {
+                        count_non_zero_max += 1.0;
                     }
+                    // ... and by metric
+                    metric_data.iter().enumerate().for_each(|(i, v)| {
+                        if *v > 0.0 {
+                            count_non_zero_by_metric[i] += 1.0;
+                        }
+                    });
+
+                    let metric_data = PeriodValue::new(timestep.date, timestep.duration, metric_data);
+
+                    scenario_data.push(metric_data);
                 });
-
-                let metric_data = PeriodValue::new(timestep.date, timestep.duration, metric_data);
-
-                scenario_data.push(metric_data);
-            });
+            }
         });
 
         let agg = Aggregation::new(

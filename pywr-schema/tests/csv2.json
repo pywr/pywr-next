@@ -65,11 +65,14 @@
       {
         "name": "nodes",
         "aggregator": {
-          "freq": {
-            "type": "Monthly"
-          },
-          "func": {
-            "type": "Mean"
+          "parent": {
+            "type": "Periodic",
+            "freq": {
+              "type": "Monthly"
+            },
+            "func": {
+              "type": "Mean"
+            }
           }
         },
         "metrics": [

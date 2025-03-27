@@ -5,6 +5,7 @@ use crate::metric::Metric;
 use crate::model::LoadArgs;
 #[cfg(feature = "core")]
 use crate::parameters::{Parameter, PythonReturnType};
+use crate::predicate::Predicate;
 use pywr_schema_macros::PywrVisitPaths;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -65,23 +66,64 @@ impl From<MetricAggFrequency> for pywr_core::recorders::AggregationFrequency {
 /// If the metric set has a child aggregator then the aggregation will be performed over the
 /// aggregated values of the child aggregator.
 #[derive(Deserialize, Serialize, Clone, JsonSchema)]
-pub struct MetricAggregator {
+#[serde(deny_unknown_fields)]
+pub struct PeriodicMetricAggregator {
     /// Optional aggregation frequency.
     pub freq: Option<MetricAggFrequency>,
     /// Aggregation function to apply over metric values.
     pub func: MetricAggFunc,
-    /// Optional child aggregator.
-    pub child: Option<Box<MetricAggregator>>,
 }
 
 #[cfg(feature = "core")]
-impl From<MetricAggregator> for pywr_core::recorders::NestedAggregator {
+impl From<PeriodicMetricAggregator> for pywr_core::recorders::PeriodicAggregator {
+    fn from(value: PeriodicMetricAggregator) -> Self {
+        pywr_core::recorders::PeriodicAggregator::new(value.freq.map(|p| p.into()), value.func.into())
+    }
+}
+
+#[derive(Deserialize, Serialize, Clone, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct EventMetricAggregator {
+    pub predicate: Predicate,
+    pub threshold: f64,
+}
+
+#[cfg(feature = "core")]
+impl From<EventMetricAggregator> for pywr_core::recorders::EventAggregator {
+    fn from(value: EventMetricAggregator) -> Self {
+        pywr_core::recorders::EventAggregator::new(value.predicate.into(), value.threshold)
+    }
+}
+
+#[derive(Deserialize, Serialize, Clone, JsonSchema)]
+#[serde(tag = "type")]
+pub enum MetricAggregator {
+    Periodic(PeriodicMetricAggregator),
+    Event(EventMetricAggregator),
+}
+
+#[cfg(feature = "core")]
+impl From<MetricAggregator> for pywr_core::recorders::Aggregator {
     fn from(value: MetricAggregator) -> Self {
-        pywr_core::recorders::NestedAggregator::new(
-            value.freq.map(|p| p.into()),
-            value.func.into(),
-            value.child.map(|a| (*a).into()),
-        )
+        match value {
+            MetricAggregator::Periodic(p) => pywr_core::recorders::Aggregator::Periodic(p.into()),
+            MetricAggregator::Event(e) => pywr_core::recorders::Aggregator::Event(e.into()),
+        }
+    }
+}
+
+#[derive(Deserialize, Serialize, Clone, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct NestedMetricAggregator {
+    pub parent: MetricAggregator,
+    /// Optional child aggregator.
+    pub child: Option<Box<NestedMetricAggregator>>,
+}
+
+#[cfg(feature = "core")]
+impl From<NestedMetricAggregator> for pywr_core::recorders::NestedAggregator {
+    fn from(value: NestedMetricAggregator) -> Self {
+        pywr_core::recorders::NestedAggregator::new(value.parent.into(), value.child.map(|a| (*a).into()))
     }
 }
 
@@ -90,6 +132,7 @@ impl From<MetricAggregator> for pywr_core::recorders::NestedAggregator {
 /// The filters allow the default metrics for all nodes and/or parameters in a model
 /// to be added to a metric set.
 #[derive(Deserialize, Serialize, Clone, JsonSchema, Default)]
+#[serde(deny_unknown_fields)]
 pub struct MetricSetFilters {
     #[serde(default)]
     all_nodes: bool,
@@ -143,10 +186,11 @@ impl MetricSetFilters {
 /// Metrics added by the filters will be appended to any metrics specified for the metric attribute,
 /// if they are not a duplication.
 #[derive(Deserialize, Serialize, Clone, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct MetricSet {
     pub name: String,
     pub metrics: Option<Vec<Metric>>,
-    pub aggregator: Option<MetricAggregator>,
+    pub aggregator: Option<NestedMetricAggregator>,
     #[serde(default)]
     pub filters: MetricSetFilters,
 }

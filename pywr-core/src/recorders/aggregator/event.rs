@@ -1,4 +1,4 @@
-use crate::parameters::Predicate;
+use crate::predicate::Predicate;
 use crate::recorders::aggregator::PeriodValue;
 use chrono::NaiveDateTime;
 
@@ -9,9 +9,10 @@ enum EventState {
     Started(NaiveDateTime),
 }
 
+#[derive(Debug, Clone, Copy)]
 pub struct Event {
-    start: NaiveDateTime,
-    end: Option<NaiveDateTime>,
+    pub start: NaiveDateTime,
+    pub end: Option<NaiveDateTime>,
 }
 
 #[derive(Default, Debug, Clone)]
@@ -26,6 +27,10 @@ pub struct EventAggregator {
 }
 
 impl EventAggregator {
+    pub fn new(predicate: Predicate, threshold: f64) -> Self {
+        Self { predicate, threshold }
+    }
+
     pub fn setup(&self) -> EventAggregatorState {
         EventAggregatorState::default()
     }
@@ -67,8 +72,8 @@ impl EventAggregator {
 #[cfg(test)]
 mod tests {
     use super::{EventAggregator, EventAggregatorState};
-    use crate::parameters::Predicate;
     use crate::recorders::aggregator::PeriodValue;
+    use crate::Predicate;
     use chrono::{NaiveDate, TimeDelta};
 
     #[test]
