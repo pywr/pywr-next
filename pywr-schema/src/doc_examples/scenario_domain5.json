@@ -1,0 +1,40 @@
+{
+  "groups": [
+    {
+      "name": "Scenario A",
+      "size": 5,
+      "labels": [
+        "I",
+        "II",
+        "III",
+        "IV",
+        "V"
+      ]
+    },
+    {
+      "name": "Scenario B",
+      "size": 5
+    },
+    {
+      "name": "Scenario C",
+      "size": 5
+    }
+  ],
+  "combinations": [
+    [
+      "I",
+      0,
+      0
+    ],
+    [
+      "III",
+      2,
+      2
+    ],
+    [
+      "V",
+      4,
+      4
+    ]
+  ]
+}

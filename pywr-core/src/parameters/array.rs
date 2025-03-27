@@ -140,7 +140,7 @@ impl SimpleParameter<f64> for Array2Parameter<f64> {
     ) -> Result<f64, PywrError> {
         // This panics if out-of-bounds
         let t_idx = self.timestep_index(timestep);
-        let s_idx = scenario_index.indices[self.scenario_group_index];
+        let s_idx = scenario_index.simulation_index_for_group(self.scenario_group_index);
 
         Ok(self.array[[t_idx, s_idx]])
     }
@@ -163,7 +163,7 @@ impl SimpleParameter<u64> for Array2Parameter<u64> {
     ) -> Result<u64, PywrError> {
         // This panics if out-of-bounds
         let t_idx = self.timestep_index(timestep);
-        let s_idx = scenario_index.indices[self.scenario_group_index];
+        let s_idx = scenario_index.simulation_index_for_group(self.scenario_group_index);
 
         Ok(self.array[[t_idx, s_idx]])
     }

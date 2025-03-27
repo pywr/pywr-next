@@ -1,0 +1,44 @@
+{
+  "groups": [
+    {
+      "name": "Scenario A",
+      "size": 5,
+      "labels": [
+        "I",
+        "II",
+        "III",
+        "IV",
+        "V"
+      ],
+      "subset": {
+        "type": "Labels",
+        "labels": [
+          "II",
+          "III",
+          "IV"
+        ]
+      }
+    },
+    {
+      "name": "Scenario B",
+      "size": 5,
+      "subset": {
+        "type": "Indices",
+        "indices": [
+          1,
+          2,
+          3
+        ]
+      }
+    },
+    {
+      "name": "Scenario C",
+      "size": 5,
+      "subset": {
+        "type": "Slice",
+        "start": 1,
+        "end": 4
+      }
+    }
+  ]
+}
