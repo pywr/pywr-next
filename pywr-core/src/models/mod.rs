@@ -1,7 +1,7 @@
 mod multi;
 mod simple;
 
-use crate::scenario::{ScenarioDomain, ScenarioGroupCollection};
+use crate::scenario::{ScenarioDomain, ScenarioDomainBuilder};
 use crate::timestep::{TimeDomain, Timestepper};
 use crate::PywrError;
 pub use multi::{MultiNetworkModel, MultiNetworkTransferIndex};
@@ -18,10 +18,10 @@ impl ModelDomain {
         Self { time, scenarios }
     }
 
-    pub fn from(timestepper: Timestepper, scenario_collection: ScenarioGroupCollection) -> Result<Self, PywrError> {
+    pub fn from(timestepper: Timestepper, scenario_builder: ScenarioDomainBuilder) -> Result<Self, PywrError> {
         Ok(Self {
             time: TimeDomain::try_from(timestepper)?,
-            scenarios: scenario_collection.into(),
+            scenarios: scenario_builder.build()?,
         })
     }
 
@@ -45,7 +45,7 @@ impl TryFrom<Timestepper> for ModelDomain {
         let time = TimeDomain::try_from(value)?;
         Ok(Self {
             time,
-            scenarios: ScenarioGroupCollection::default().into(),
+            scenarios: ScenarioDomainBuilder::default().build()?,
         })
     }
 }
@@ -54,7 +54,7 @@ impl From<TimeDomain> for ModelDomain {
     fn from(value: TimeDomain) -> Self {
         Self {
             time: value,
-            scenarios: ScenarioGroupCollection::default().into(),
+            scenarios: ScenarioDomainBuilder::default().build().unwrap(),
         }
     }
 }
