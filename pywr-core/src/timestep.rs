@@ -262,11 +262,11 @@ impl TimeDomain {
         self.timesteps.len()
     }
 
-    pub fn first_timestep(&self) -> &Timestep {
+    pub fn first(&self) -> &Timestep {
         self.timesteps.first().expect("No time-steps defined.")
     }
 
-    pub fn last_timestep(&self) -> &Timestep {
+    pub fn last(&self) -> &Timestep {
         self.timesteps.last().expect("No time-steps defined.")
     }
 
