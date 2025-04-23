@@ -92,9 +92,9 @@ impl From<MetricAggregator> for pywr_core::recorders::Aggregator {
 #[derive(Deserialize, Serialize, Clone, JsonSchema, Default)]
 pub struct MetricSetFilters {
     #[serde(default)]
-    all_nodes: bool,
+    pub all_nodes: bool,
     #[serde(default)]
-    all_parameters: bool,
+    pub all_parameters: bool,
 }
 
 #[cfg(feature = "core")]
