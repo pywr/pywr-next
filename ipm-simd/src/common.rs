@@ -1,27 +1,16 @@
 use nalgebra_sparse::CsrMatrix;
-use std::iter::Sum;
-use std::ops::{Add, AddAssign, Div, Mul, Neg, Sub};
-use std::simd::prelude::SimdFloat;
-use std::simd::{LaneCount, Simd, SimdElement, StdFloat, SupportedLaneCount};
+use wide::f64x4;
 
-pub struct Matrix<T, const N: usize>
-where
-    LaneCount<N>: SupportedLaneCount,
-    T: SimdElement,
-{
+pub struct Matrix {
     pub indptr: Vec<usize>,
     pub indices: Vec<usize>,
-    pub data: Vec<Simd<T, N>>,
+    pub data: Vec<f64x4>,
     pub size: usize,
 }
 
-impl<T, const N: usize> Matrix<T, N>
-where
-    LaneCount<N>: SupportedLaneCount,
-    T: SimdElement + From<f64>,
-{
+impl Matrix {
     pub fn from_sparse_matrix(a: &CsrMatrix<f64>) -> Self {
-        let data = a.values().iter().map(|&v| Simd::splat(v.into())).collect();
+        let data = a.values().iter().map(|&v| f64x4::splat(v)).collect();
         let indptr = a.row_offsets().to_vec();
         let indices = a.col_indices().to_vec();
 
@@ -35,14 +24,9 @@ where
 }
 
 /// Compute `out = Ax`
-pub fn matrix_vector_product<T, const N: usize>(matrix: &Matrix<T, N>, x: &[Simd<T, N>], out: &mut [Simd<T, N>])
-where
-    LaneCount<N>: SupportedLaneCount,
-    T: SimdElement + From<f64>,
-    Simd<T, N>: Mul<Simd<T, N>, Output = Simd<T, N>> + AddAssign,
-{
-    for row in 0..matrix.size {
-        let mut val: Simd<T, N> = Simd::splat(0.0.into());
+pub fn matrix_vector_product(matrix: &Matrix, x: &[f64x4], out: &mut [f64x4]) {
+    for (row, o) in out.iter_mut().enumerate().take(matrix.size) {
+        let mut val = f64x4::splat(0.0);
 
         let first_index = matrix.indptr[row];
         let last_index = matrix.indptr[row + 1];
@@ -52,79 +36,49 @@ where
             val += matrix.data[index] * x[col];
         }
 
-        out[row] = val;
+        *o = val;
     }
 }
 
 /// Return dot product of x and y
-pub fn dot_product<T, const N: usize>(x: &[Simd<T, N>], y: &[Simd<T, N>]) -> Simd<T, N>
-where
-    LaneCount<N>: SupportedLaneCount,
-    T: SimdElement,
-    Simd<T, N>: Mul<Simd<T, N>, Output = Simd<T, N>> + Sum,
-{
-    x.iter().zip(y.iter()).map(|(a, b)| a * b).sum()
+pub fn dot_product(x: &[f64x4], y: &[f64x4]) -> f64x4 {
+    x.iter().zip(y.iter()).map(|(&a, &b)| a * b).sum()
 }
 
 /// `x = x*xscale + y*yscale`
-pub fn vector_update<T, const N: usize>(x: &mut [Simd<T, N>], y: &[Simd<T, N>], xscale: Simd<T, N>, yscale: Simd<T, N>)
-where
-    LaneCount<N>: SupportedLaneCount,
-    T: SimdElement,
-    Simd<T, N>: Mul<Simd<T, N>, Output = Simd<T, N>> + Add<Output = Simd<T, N>>,
-{
+pub fn vector_update(x: &mut [f64x4], y: &[f64x4], xscale: f64x4, yscale: f64x4) {
     for i in 0..x.len() {
         x[i] = xscale * x[i] + yscale * y[i];
     }
 }
 
 /// `x = scalar`
-pub fn vector_set<T, const N: usize>(x: &mut [Simd<T, N>], scalar: Simd<T, N>)
-where
-    LaneCount<N>: SupportedLaneCount,
-    T: SimdElement,
-{
+pub fn vector_set(x: &mut [f64x4], scalar: f64x4) {
     x.iter_mut().for_each(|a| *a = scalar)
 }
 
 /// return max(x)
-pub fn vector_norm<T, const N: usize>(x: &[Simd<T, N>]) -> Simd<T, N>
-where
-    LaneCount<N>: SupportedLaneCount,
-    T: SimdElement,
-    Simd<T, N>: Mul<Simd<T, N>, Output = Simd<T, N>> + Sum + StdFloat,
-{
-    x.iter().map(|a| a * a).sum::<Simd<T, N>>().sqrt()
+pub fn vector_norm(x: &[f64x4]) -> f64x4 {
+    x.iter().map(|&a| a * a).sum::<f64x4>().sqrt()
 }
 
 /// Compute the right-hand side of the system of primal normal equations
 ///
 /// `rhs = -(b - A.dot(x) - mu/y - A.dot(x * (c - At.dot(y) + mu/x)/z))`
 ///
-pub fn normal_eqn_rhs<T, const N: usize>(
-    a: &Matrix<T, N>,  // Sparse A matrix
-    at: &Matrix<T, N>, // Sparse transpose of A matrix
-    x: &[Simd<T, N>],
-    z: &[Simd<T, N>],
-    y: &[Simd<T, N>],
-    b: &[Simd<T, N>],
-    c: &[Simd<T, N>],
-    mu: Simd<T, N>,
+pub fn normal_eqn_rhs(
+    a: &Matrix,  // Sparse A matrix
+    at: &Matrix, // Sparse transpose of A matrix
+    x: &[f64x4],
+    z: &[f64x4],
+    y: &[f64x4],
+    b: &[f64x4],
+    c: &[f64x4],
+    mu: f64x4,
     wsize: usize,
-    tmp: &mut [Simd<T, N>], // work array size of x
-    out: &mut [Simd<T, N>], // work array size of b
-) where
-    LaneCount<N>: SupportedLaneCount,
-    T: SimdElement + From<f64>,
-    Simd<T, N>: AddAssign
-        + Sum
-        + StdFloat
-        + Mul<Output = Simd<T, N>>
-        + Add<Output = Simd<T, N>>
-        + Sub<Output = Simd<T, N>>
-        + Div<Output = Simd<T, N>>
-        + Neg<Output = Simd<T, N>>,
-{
+    tmp: &mut [f64x4], // work array size of x
+    out: &mut [f64x4], // work array size of b
+) {
     // Calculate tmp = At.dot(y)
     matrix_vector_product(at, y, tmp);
 
@@ -138,11 +92,7 @@ pub fn normal_eqn_rhs<T, const N: usize>(
     // Compute out = -(b - A.dot(x) - mu/y -out)
     for row in 0..a.size {
         // The mu/y term is only applied to rows where w is defined.
-        let mut val = if row < wsize {
-            mu / y[row]
-        } else {
-            Simd::<T, N>::splat(0.0.into())
-        };
+        let mut val = if row < wsize { mu / y[row] } else { f64x4::splat(0.0) };
 
         let first_index = a.indptr[row];
         let last_index = a.indptr[row + 1];
@@ -160,29 +110,17 @@ pub fn normal_eqn_rhs<T, const N: usize>(
 ///
 /// `normr = || b - A.dot(x) - w || / max(|| b ||, 1)`
 ///
-pub fn primal_feasibility<T, const N: usize>(
-    a: &Matrix<T, N>, // Sparse A matrix
-    x: &[Simd<T, N>],
-    w: &[Simd<T, N>],
-    b: &[Simd<T, N>],
-) -> Simd<T, N>
-where
-    LaneCount<N>: SupportedLaneCount,
-    T: SimdElement + From<f64>,
-    Simd<T, N>: AddAssign
-        + Sum
-        + StdFloat
-        + Mul<Output = Simd<T, N>>
-        + Add<Output = Simd<T, N>>
-        + Sub<Output = Simd<T, N>>
-        + Div<Output = Simd<T, N>>
-        + Neg<Output = Simd<T, N>>,
-{
+pub fn primal_feasibility(
+    a: &Matrix, // Sparse A matrix
+    x: &[f64x4],
+    w: &[f64x4],
+    b: &[f64x4],
+) -> f64x4 {
     // Compute ||x||
-    let normx: Simd<T, N> = x.iter().map(|a| a * a).sum();
+    let normx: f64x4 = x.iter().map(|&a| a * a).sum();
 
     // Compute primal feasibility
-    let mut normr = Simd::<T, N>::splat(0.0.into());
+    let mut normr = f64x4::splat(0.0);
     for row in 0..a.size {
         let mut val = b[row];
 
@@ -201,33 +139,21 @@ where
         normr += val * val;
     }
 
-    normr.sqrt() / (Simd::<T, N>::splat(1.0.into()) + normx.sqrt())
+    normr.sqrt() / (1.0 + normx.sqrt())
 }
 
 /// Calculate dual-feasibility
 ///     `norms = || c - AT.dot(y) + z || / max(|| c ||, 1)`
 ///
-pub fn dual_feasibility<T, const N: usize>(
-    at: &Matrix<T, N>, // Sparse A matrix
-    y: &[Simd<T, N>],
-    c: &[Simd<T, N>],
-    z: &[Simd<T, N>],
-) -> Simd<T, N>
-where
-    LaneCount<N>: SupportedLaneCount,
-    T: SimdElement + From<f64>,
-    Simd<T, N>: AddAssign
-        + Sum
-        + StdFloat
-        + Mul<Output = Simd<T, N>>
-        + Add<Output = Simd<T, N>>
-        + Sub<Output = Simd<T, N>>
-        + Div<Output = Simd<T, N>>
-        + Neg<Output = Simd<T, N>>,
-{
-    let normy: Simd<T, N> = y.iter().map(|a| a * a).sum();
+pub fn dual_feasibility(
+    at: &Matrix, // Sparse A matrix
+    y: &[f64x4],
+    c: &[f64x4],
+    z: &[f64x4],
+) -> f64x4 {
+    let normy: f64x4 = y.iter().map(|&a| a * a).sum();
 
-    let mut norms = Simd::<T, N>::splat(0.0.into());
+    let mut norms = f64x4::splat(0.0);
     // Compute primal feasibility
     for row in 0..at.size {
         let mut val = z[row];
@@ -244,7 +170,7 @@ where
         norms += val * val;
     }
 
-    norms.sqrt() / (Simd::<T, N>::splat(1.0.into()) + normy.sqrt())
+    norms.sqrt() / (1.0 + normy.sqrt())
 }
 
 /// Compute the path step changes given known dy and return maximum value of theta.
@@ -255,38 +181,25 @@ where
 ///     dz = (mu - z*dx)/x - z
 ///     dw = (mu - w*dy)/y - w
 ///
-pub fn compute_dx_dz_dw<T, const N: usize>(
-    at: &Matrix<T, N>, // Sparse A matrix
-    x: &[Simd<T, N>],
-    z: &[Simd<T, N>],
-    y: &[Simd<T, N>],
-    w: &[Simd<T, N>],
-    c: &[Simd<T, N>],
-    dy: &[Simd<T, N>],
-    mu: Simd<T, N>,
-    dx: &mut [Simd<T, N>],
-    dz: &mut [Simd<T, N>],
-    dw: &mut [Simd<T, N>],
-) -> Simd<T, N>
-where
-    LaneCount<N>: SupportedLaneCount,
-    T: SimdElement + From<f64>,
-    Simd<T, N>: AddAssign
-        + Sum
-        + StdFloat
-        + SimdFloat
-        + Mul<Output = Simd<T, N>>
-        + Add<Output = Simd<T, N>>
-        + Sub<Output = Simd<T, N>>
-        + Div<Output = Simd<T, N>>
-        + Neg<Output = Simd<T, N>>,
-{
-    let mut theta_xz = Simd::<T, N>::splat(0.0.into());
-    let mut theta_wy = Simd::<T, N>::splat(0.0.into());
+pub fn compute_dx_dz_dw(
+    at: &Matrix, // Sparse A matrix
+    x: &[f64x4],
+    z: &[f64x4],
+    y: &[f64x4],
+    w: &[f64x4],
+    c: &[f64x4],
+    dy: &[f64x4],
+    mu: f64x4,
+    dx: &mut [f64x4],
+    dz: &mut [f64x4],
+    dw: &mut [f64x4],
+) -> f64x4 {
+    let mut theta_xz = f64x4::splat(0.0);
+    let mut theta_wy = f64x4::splat(0.0);
 
     for row in 0..at.size {
-        let mut val = Simd::<T, N>::splat(0.0.into());
-        let mut val2 = Simd::<T, N>::splat(0.0.into());
+        let mut val = f64x4::splat(0.0);
+        let mut val2 = f64x4::splat(0.0);
 
         let first_index = at.indptr[row];
         let last_index = at.indptr[row + 1];
@@ -300,14 +213,14 @@ where
         dx[row] = (c[row] - val - val2 + mu / x[row]) * x[row] / z[row];
         dz[row] = (mu - z[row] * dx[row]) / x[row] - z[row];
 
-        theta_xz = theta_xz.simd_max(-dx[row] / x[row]).simd_max(-dz[row] / z[row]);
+        theta_xz = theta_xz.max(-dx[row] / x[row]).max(-dz[row] / z[row]);
     }
 
     // dw is only defined for rows with w (i.e. inequality rows with a slack variable)
     for row in 0..w.len() {
         dw[row] = (mu - w[row] * dy[row]) / y[row] - w[row];
-        theta_wy = theta_wy.simd_max(-dw[row] / w[row]).simd_max(-dy[row] / y[row]);
+        theta_wy = theta_wy.max(-dw[row] / w[row]).max(-dy[row] / y[row]);
     }
 
-    theta_xz.simd_max(theta_wy)
+    theta_xz.max(theta_wy)
 }

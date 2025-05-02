@@ -1,40 +1,28 @@
 use crate::solvers::SolverSettings;
 use ipm_simd::Tolerances;
 use std::num::NonZeroUsize;
-use std::simd::{LaneCount, Simd, SimdElement, SupportedLaneCount};
+use wide::f64x4;
 
 /// Settings for the OpenCL IPM solvers.
 ///
 /// Create new settings using [`SimdIpmSolverSettingsBuilder`] or use the default implementation;
 #[derive(PartialEq, Debug)]
-pub struct SimdIpmSolverSettings<T, const N: usize>
-where
-    LaneCount<N>: SupportedLaneCount,
-    T: SimdElement,
-{
+pub struct SimdIpmSolverSettings {
     parallel: bool,
     threads: usize,
-    tolerances: Tolerances<T, N>,
+    tolerances: Tolerances,
     max_iterations: NonZeroUsize,
     ignore_feature_requirements: bool,
 }
 
 // Default implementation is a convenience that defers to the builder.
-impl<T, const N: usize> Default for SimdIpmSolverSettings<T, N>
-where
-    LaneCount<N>: SupportedLaneCount,
-    T: SimdElement + From<f64>,
-{
+impl Default for SimdIpmSolverSettings {
     fn default() -> Self {
         SimdIpmSolverSettingsBuilder::default().build()
     }
 }
 
-impl<T, const N: usize> SolverSettings for SimdIpmSolverSettings<T, N>
-where
-    LaneCount<N>: SupportedLaneCount,
-    T: SimdElement + From<f64>,
-{
+impl SolverSettings for SimdIpmSolverSettings {
     fn parallel(&self) -> bool {
         self.parallel
     }
@@ -48,17 +36,13 @@ where
     }
 }
 
-impl<T, const N: usize> SimdIpmSolverSettings<T, N>
-where
-    LaneCount<N>: SupportedLaneCount,
-    T: SimdElement + From<f64>,
-{
+impl SimdIpmSolverSettings {
     /// Create a new builder for the settings
-    pub fn builder() -> SimdIpmSolverSettingsBuilder<T, N> {
+    pub fn builder() -> SimdIpmSolverSettingsBuilder {
         SimdIpmSolverSettingsBuilder::default()
     }
 
-    pub fn tolerances(&self) -> Tolerances<T, N> {
+    pub fn tolerances(&self) -> Tolerances {
         self.tolerances
     }
 
@@ -75,35 +59,27 @@ where
 /// use std::num::NonZero;
 /// use pywr_core::solvers::{SimdIpmSolverSettings, SimdIpmSolverSettingsBuilder};
 /// // Settings with parallel enabled and 4 threads.
-/// let settings: SimdIpmSolverSettings<f64, 4> = SimdIpmSolverSettingsBuilder::default().parallel().threads(4).build();
+/// let settings = SimdIpmSolverSettingsBuilder::default().parallel().threads(4).build();
 ///
 /// let mut builder = SimdIpmSolverSettingsBuilder::default();
 /// builder = builder.max_iterations(NonZero::new(50).unwrap());
-/// let settings: SimdIpmSolverSettings<f64, 4> = builder.build();
+/// let settings = builder.build();
 ///
 /// let mut builder = SimdIpmSolverSettingsBuilder::default();
 /// builder = builder.max_iterations(NonZero::new(50).unwrap());
 /// builder = builder.parallel();
-/// let settings: SimdIpmSolverSettings<f64, 4> = builder.build();
+/// let settings = builder.build();
 ///
 /// ```
-pub struct SimdIpmSolverSettingsBuilder<T, const N: usize>
-where
-    LaneCount<N>: SupportedLaneCount,
-    T: SimdElement + From<f64>,
-{
+pub struct SimdIpmSolverSettingsBuilder {
     parallel: bool,
     threads: usize,
-    tolerances: Tolerances<T, N>,
+    tolerances: Tolerances,
     max_iterations: NonZeroUsize,
     ignore_feature_requirements: bool,
 }
 
-impl<T, const N: usize> Default for SimdIpmSolverSettingsBuilder<T, N>
-where
-    LaneCount<N>: SupportedLaneCount,
-    T: SimdElement + From<f64>,
-{
+impl Default for SimdIpmSolverSettingsBuilder {
     fn default() -> Self {
         Self {
             parallel: false,
@@ -116,11 +92,7 @@ where
     }
 }
 
-impl<T, const N: usize> SimdIpmSolverSettingsBuilder<T, N>
-where
-    LaneCount<N>: SupportedLaneCount,
-    T: SimdElement + From<f64>,
-{
+impl SimdIpmSolverSettingsBuilder {
     pub fn parallel(mut self) -> Self {
         self.parallel = true;
         self
@@ -132,17 +104,17 @@ where
     }
 
     pub fn primal_feasibility(mut self, tolerance: f64) -> Self {
-        self.tolerances.primal_feasibility = Simd::<T, N>::splat(tolerance.into());
+        self.tolerances.primal_feasibility = f64x4::splat(tolerance.into());
         self
     }
 
     pub fn dual_feasibility(mut self, tolerance: f64) -> Self {
-        self.tolerances.dual_feasibility = Simd::<T, N>::splat(tolerance.into());
+        self.tolerances.dual_feasibility = f64x4::splat(tolerance.into());
         self
     }
 
     pub fn optimality(mut self, tolerance: f64) -> Self {
-        self.tolerances.optimality = Simd::<T, N>::splat(tolerance.into());
+        self.tolerances.optimality = f64x4::splat(tolerance.into());
         self
     }
 
@@ -157,7 +129,7 @@ where
     }
 
     /// Construct a [`SimdIpmSolverSettings`] from the builder.
-    pub fn build(self) -> SimdIpmSolverSettings<T, N> {
+    pub fn build(self) -> SimdIpmSolverSettings {
         SimdIpmSolverSettings {
             parallel: self.parallel,
             threads: self.threads,
@@ -176,14 +148,14 @@ mod tests {
 
     #[test]
     fn builder_test() {
-        let settings = SimdIpmSolverSettings::<f64, 4> {
+        let settings = SimdIpmSolverSettings {
             parallel: true,
             threads: 0,
             tolerances: Tolerances::default(),
             max_iterations: NonZeroUsize::new(200).unwrap(),
             ignore_feature_requirements: false,
         };
-        let settings_from_builder = SimdIpmSolverSettingsBuilder::<f64, 4>::default().parallel().build();
+        let settings_from_builder = SimdIpmSolverSettingsBuilder::default().parallel().build();
 
         assert_eq!(settings_from_builder, settings);
     }

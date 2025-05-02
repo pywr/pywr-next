@@ -59,3 +59,4 @@ chrono = { version = "0.4", features = ["serde"] }
 schemars = { version = "0.8", features = ["chrono"] }
 rand = "0.8"
 rand_chacha = "0.3"
+wide = "0.7.32"

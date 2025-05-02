@@ -511,12 +511,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "colamd"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6d154256680a4b4440234dca8f8c0ef3d22133ad7b6942c505f291e3ac61f297"
-
-[[package]]
 name = "colorchoice"
 version = "1.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1149,10 +1143,9 @@ dependencies = [
 name = "ipm-simd"
 version = "0.1.0"
 dependencies = [
- "colamd",
  "ipm-common",
- "log",
  "nalgebra-sparse",
+ "wide",
 ]
 
 [[package]]
@@ -2573,6 +2566,7 @@ dependencies = [
  "serde",
  "thiserror 2.0.12",
  "tracing",
+ "wide",
 ]
 
 [[package]]
@@ -3686,9 +3680,9 @@ dependencies = [
 
 [[package]]
 name = "wide"
-version = "0.7.28"
+version = "0.7.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b828f995bf1e9622031f8009f8481a85406ce1f4d4588ff746d872043e855690"
+checksum = "41b5576b9a81633f3e8df296ce0063042a73507636cbe956c61133dd7034ab22"
 dependencies = [
  "bytemuck",
  "safe_arch",
