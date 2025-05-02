@@ -1,5 +1,5 @@
 #[cfg(feature = "core")]
-use pywr_core::test_utils::{run_all_solvers, ExpectedOutputs};
+use pywr_core::test_utils::{ExpectedOutputs, run_all_solvers};
 use pywr_schema::PywrModel;
 use std::fs;
 use std::path::Path;

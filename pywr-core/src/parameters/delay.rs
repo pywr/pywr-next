@@ -1,13 +1,13 @@
+use crate::PywrError;
 use crate::metric::{MetricF64, SimpleMetricF64};
 use crate::network::Network;
 use crate::parameters::{
-    downcast_internal_state_mut, GeneralParameter, Parameter, ParameterMeta, ParameterName, ParameterState,
-    SimpleParameter,
+    GeneralParameter, Parameter, ParameterMeta, ParameterName, ParameterState, SimpleParameter,
+    downcast_internal_state_mut,
 };
 use crate::scenario::ScenarioIndex;
 use crate::state::{SimpleParameterValues, State};
 use crate::timestep::Timestep;
-use crate::PywrError;
 use std::collections::VecDeque;
 
 pub struct DelayParameter<M> {
@@ -165,7 +165,7 @@ impl SimpleParameter<f64> for DelayParameter<SimpleMetricF64> {
 mod test {
     use crate::parameters::{Array1Parameter, DelayParameter};
     use crate::test_utils::{run_and_assert_parameter, simple_model};
-    use ndarray::{concatenate, s, Array1, Array2, Axis};
+    use ndarray::{Array1, Array2, Axis, concatenate, s};
 
     /// Basic functional test of the delay parameter.
     #[test]

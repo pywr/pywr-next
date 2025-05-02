@@ -292,7 +292,7 @@ impl TryFrom<Timestepper> for TimeDomain {
 mod test {
     use chrono::{NaiveDateTime, TimeDelta};
 
-    use crate::timestep::{is_leap_year, PywrDuration, SECS_IN_DAY};
+    use crate::timestep::{PywrDuration, SECS_IN_DAY, is_leap_year};
 
     use super::{TimestepDuration, Timestepper};
 

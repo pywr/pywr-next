@@ -1,10 +1,10 @@
+#[cfg(feature = "core")]
+use crate::SchemaError;
 use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::nodes::{NodeAttribute, NodeMeta};
 use crate::parameters::Parameter;
-#[cfg(feature = "core")]
-use crate::SchemaError;
 #[cfg(feature = "core")]
 use pywr_core::{
     derived_metric::{DerivedMetric, TurbineData},
@@ -205,7 +205,7 @@ impl TurbineNode {
                     ty: "TurbineNode".to_string(),
                     name: self.meta.name.clone(),
                     attr,
-                })
+                });
             }
         };
 

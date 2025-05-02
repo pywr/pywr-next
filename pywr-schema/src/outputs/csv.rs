@@ -68,7 +68,7 @@ impl CsvOutput {
                 CsvMetricSet::Multiple(_) => {
                     return Err(SchemaError::MissingMetricSet(
                         "Wide format CSV output requires a single `metric_set`".to_string(),
-                    ))
+                    ));
                 }
             },
             CsvFormat::Long => {

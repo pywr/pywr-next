@@ -3,15 +3,15 @@ mod scalar;
 #[cfg(feature = "core")]
 mod vec;
 
-use crate::parameters::TableIndex;
 use crate::ConversionError;
 #[cfg(feature = "core")]
 use crate::SchemaError;
+use crate::parameters::TableIndex;
 use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::parameters::TableDataRef as TableDataRefV1;
 #[cfg(feature = "core")]
 use scalar::{
-    load_csv_row2_scalar_table_one, load_csv_row_col_scalar_table_one, load_csv_row_scalar_table_one, LoadedScalarTable,
+    LoadedScalarTable, load_csv_row_col_scalar_table_one, load_csv_row_scalar_table_one, load_csv_row2_scalar_table_one,
 };
 use schemars::JsonSchema;
 #[cfg(feature = "core")]
@@ -22,8 +22,8 @@ use thiserror::Error;
 use tracing::{debug, info};
 #[cfg(feature = "core")]
 use vec::{
-    load_csv_col1_vec_table_one, load_csv_col2_vec_table_two, load_csv_row2_vec_table_one, load_csv_row_vec_table_one,
-    LoadedVecTable,
+    LoadedVecTable, load_csv_col1_vec_table_one, load_csv_col2_vec_table_two, load_csv_row_vec_table_one,
+    load_csv_row2_vec_table_one,
 };
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, strum_macros::Display)]

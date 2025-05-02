@@ -310,7 +310,7 @@ mod tests {
     use crate::scenario::ScenarioIndex;
     use crate::test_utils::{default_timestepper, run_all_solvers, simple_model};
     use crate::timestep::{Timestep, TimestepDuration, Timestepper};
-    use crate::virtual_storage::{months_since_last_reset, VirtualStorageBuilder, VirtualStorageReset};
+    use crate::virtual_storage::{VirtualStorageBuilder, VirtualStorageReset, months_since_last_reset};
     use chrono::{Datelike, NaiveDate};
     use ndarray::Array;
     use std::num::NonZeroUsize;
@@ -409,11 +409,7 @@ mod tests {
         // Set-up assertion for "link" node
         let idx = network.get_node_by_name("link", Some("0")).unwrap().index();
         let expected = |ts: &Timestep, _si: &ScenarioIndex| {
-            if ts.index < 3 {
-                10.0
-            } else {
-                0.0
-            }
+            if ts.index < 3 { 10.0 } else { 0.0 }
         };
         let recorder = AssertionFnRecorder::new("link-0-flow", MetricF64::NodeOutFlow(idx), expected, None, None);
         network.add_recorder(Box::new(recorder)).unwrap();
@@ -421,11 +417,7 @@ mod tests {
         // Set-up assertion for "input" node
         let idx = network.get_node_by_name("link", Some("1")).unwrap().index();
         let expected = |ts: &Timestep, _si: &ScenarioIndex| {
-            if ts.index < 4 {
-                10.0
-            } else {
-                0.0
-            }
+            if ts.index < 4 { 10.0 } else { 0.0 }
         };
         let recorder = AssertionFnRecorder::new("link-1-flow", MetricF64::NodeOutFlow(idx), expected, None, None);
         network.add_recorder(Box::new(recorder)).unwrap();

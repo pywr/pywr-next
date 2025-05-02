@@ -1,12 +1,12 @@
 mod settings;
 
 use super::builder::SolverBuilder;
+use crate::PywrError;
 use crate::network::Network;
 use crate::solvers::builder::BuiltSolver;
 use crate::solvers::{Solver, SolverFeatures, SolverTimings};
 use crate::state::{ConstParameterValues, State};
 use crate::timestep::Timestep;
-use crate::PywrError;
 use coin_or_sys::clp::*;
 use libc::{c_double, c_int};
 pub use settings::{ClpSolverSettings, ClpSolverSettingsBuilder};

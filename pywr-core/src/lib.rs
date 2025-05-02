@@ -15,9 +15,8 @@ use crate::state::MultiValue;
 use crate::virtual_storage::VirtualStorageIndex;
 #[cfg(feature = "pyo3")]
 use pyo3::{
-    create_exception,
+    PyErr, create_exception,
     exceptions::{PyException, PyRuntimeError},
-    PyErr,
 };
 use thiserror::Error;
 

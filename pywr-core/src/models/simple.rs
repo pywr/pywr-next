@@ -1,7 +1,7 @@
+use crate::PywrError;
 use crate::models::ModelDomain;
 use crate::network::{Network, NetworkState, RunTimings};
 use crate::solvers::{MultiStateSolver, Solver, SolverSettings};
-use crate::PywrError;
 use rayon::ThreadPool;
 use std::any::Any;
 use std::time::Instant;

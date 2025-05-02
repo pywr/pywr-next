@@ -1,9 +1,9 @@
+use crate::PywrError;
 use crate::network::Network;
 use crate::parameters::{GeneralParameter, Parameter, ParameterMeta, ParameterName, ParameterState};
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
 use crate::timestep::Timestep;
-use crate::PywrError;
 
 pub struct VectorParameter {
     meta: ParameterMeta,

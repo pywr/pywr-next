@@ -236,7 +236,7 @@ impl WaterTreatmentWorks {
                     ty: "WaterTreatmentWorksNode".to_string(),
                     name: self.meta.name.clone(),
                     attr,
-                })
+                });
             }
         };
 
