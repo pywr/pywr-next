@@ -66,6 +66,7 @@ pub fn vector_norm(x: &[f64x4]) -> f64x4 {
 ///
 /// `rhs = -(b - A.dot(x) - mu/y - A.dot(x * (c - At.dot(y) + mu/x)/z))`
 ///
+#[allow(clippy::too_many_arguments)]
 pub fn normal_eqn_rhs(
     a: &Matrix,  // Sparse A matrix
     at: &Matrix, // Sparse transpose of A matrix
@@ -181,6 +182,7 @@ pub fn dual_feasibility(
 ///     dz = (mu - z*dx)/x - z
 ///     dw = (mu - w*dy)/y - w
 ///
+#[allow(clippy::too_many_arguments)]
 pub fn compute_dx_dz_dw(
     at: &Matrix, // Sparse A matrix
     x: &[f64x4],

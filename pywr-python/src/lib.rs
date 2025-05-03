@@ -208,7 +208,7 @@ impl Model {
             #[cfg(feature = "ipm-simd")]
             "ipm-simd" => {
                 let settings = build_ipm_simd_settings(solver_kwargs)?;
-                run_multi_allowing_threads::<SimdIpmF64Solver<4>>(py, &self.model, &settings)?;
+                run_multi_allowing_threads::<SimdIpmF64Solver>(py, &self.model, &settings)?;
             }
             #[cfg(feature = "ipm-ocl")]
             "clipm-f32" => {
@@ -290,7 +290,7 @@ fn build_highs_settings(kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<HighsSol
 }
 
 #[cfg(feature = "ipm-simd")]
-fn build_ipm_simd_settings(kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<SimdIpmSolverSettings<f64, 4>> {
+fn build_ipm_simd_settings(kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<SimdIpmSolverSettings> {
     let mut builder = SimdIpmSolverSettingsBuilder::default();
 
     if let Some(kwargs) = kwargs {

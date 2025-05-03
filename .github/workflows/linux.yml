@@ -22,7 +22,7 @@ jobs:
           submodules: true
       - uses: swatinem/rust-cache@v2
       - name: Run Clippy
-        run: cargo clippy --all-targets --features highs,cbc --all --exclude ipm-simd
+        run: cargo clippy --all-targets --all-features --all
       - name: Install latest mdbook
         run: |
           tag=$(curl 'https://api.github.com/repos/rust-lang/mdbook/releases/latest' | jq -r '.tag_name')
@@ -34,13 +34,13 @@ jobs:
         with:
           tool: cargo-hack@0.5
       - name: Check (pywr-core)
-        run: cargo hack check --feature-powerset --no-dev-deps -p pywr-core --exclude-features ipm-simd,ipm-ocl
+        run: cargo hack check --feature-powerset --no-dev-deps -p pywr-core
       - name: Check (pywr-schema)
-        run: cargo hack check --feature-powerset --no-dev-deps -p pywr-schema --exclude-features ipm-simd,ipm-ocl
+        run: cargo hack check --feature-powerset --no-dev-deps -p pywr-schema
       - name: Build
-        run: cargo build --verbose --features highs,cbc --workspace --exclude ipm-simd --exclude pywr-python
+        run: cargo build --verbose --features highs,cbc,ipm-simd,ipm-ocl --workspace --exclude pywr-python
       - name: Run tests
-        run: cargo test --features highs,cbc --verbose --lib --bins -- --test-threads=1
+        run: cargo test --features highs,cbc,ipm-simd,ipm-ocl --verbose --lib --bins -- --test-threads=1
       - name: Run mdbook test & build
         run: |
           output=$(mdbook test ./pywr-book 2>&1)
@@ -52,20 +52,3 @@ jobs:
           if echo "$output" | grep -q "\[ERROR\]" ; then
               exit 1
           fi
-
-  build_nightly:
-    name: Build (nightly) w/ SIMD and OpenCL
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: true
-      - uses: dtolnay/rust-toolchain@nightly
-      - name: Install Intel OpenCL
-        run: sudo apt-get install -y intel-opencl-icd ocl-icd-opencl-dev
-      - name: Build
-        run: cargo +nightly build --verbose --features highs,cbc,ipm-simd,ipm-ocl
-      - name: Run tests (SIMD only)
-        # Run tests with SIMD only to avoid OpenCL runtime requirement on Github actions.
-        run: cargo +nightly test --features highs,cbc,ipm-simd

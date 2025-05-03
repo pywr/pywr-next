@@ -104,17 +104,17 @@ impl SimdIpmSolverSettingsBuilder {
     }
 
     pub fn primal_feasibility(mut self, tolerance: f64) -> Self {
-        self.tolerances.primal_feasibility = f64x4::splat(tolerance.into());
+        self.tolerances.primal_feasibility = f64x4::splat(tolerance);
         self
     }
 
     pub fn dual_feasibility(mut self, tolerance: f64) -> Self {
-        self.tolerances.dual_feasibility = f64x4::splat(tolerance.into());
+        self.tolerances.dual_feasibility = f64x4::splat(tolerance);
         self
     }
 
     pub fn optimality(mut self, tolerance: f64) -> Self {
-        self.tolerances.optimality = f64x4::splat(tolerance.into());
+        self.tolerances.optimality = f64x4::splat(tolerance);
         self
     }
 

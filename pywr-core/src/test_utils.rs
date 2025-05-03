@@ -287,7 +287,7 @@ where
         );
         model
             .run_multi_scenario::<S>(&Default::default())
-            .expect(&format!("Failed to solve with: {}", S::name()));
+            .unwrap_or_else(|_| panic!("Failed to solve with: {}", S::name()));
     } else {
         assert!(
             !has_features,

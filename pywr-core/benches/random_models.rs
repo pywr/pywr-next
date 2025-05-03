@@ -93,10 +93,10 @@ fn random_benchmark(
                                 |b, _n| {
                                     // Do the setup here outside of the time-step loop
                                     let mut state = model
-                                        .setup_multi_scenario::<SimdIpmF64Solver>(&settings)
+                                        .setup_multi_scenario::<SimdIpmF64Solver>(settings)
                                         .expect("Failed to setup the model.");
 
-                                    b.iter(|| model.run_multi_scenario_with_state(&mut state, &settings))
+                                    b.iter(|| model.run_multi_scenario_with_state(&mut state, settings))
                                 },
                             );
                         }
@@ -111,10 +111,10 @@ fn random_benchmark(
                                 |b, _n| {
                                     // Do the setup here outside of the time-step loop
                                     let mut state = model
-                                        .setup_multi_scenario::<ClIpmF64Solver>(&settings)
+                                        .setup_multi_scenario::<ClIpmF64Solver>(settings)
                                         .expect("Failed to setup the model.");
 
-                                    b.iter(|| model.run_multi_scenario_with_state(&mut state, &settings))
+                                    b.iter(|| model.run_multi_scenario_with_state(&mut state, settings))
                                 },
                             );
                         }

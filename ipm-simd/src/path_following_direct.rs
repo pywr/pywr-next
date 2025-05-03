@@ -71,6 +71,7 @@ impl LTIndices {
 }
 
 /// Compute the Cholesky decomposition of the normal matrix
+#[allow(clippy::too_many_arguments)]
 pub fn normal_matrix_cholesky_decomposition(
     a: &Matrix,
     a_norm_ptr: &ANormIndices,
@@ -165,6 +166,7 @@ fn cholesky_solve(a_size: usize, l_ptr: &LIndices, lt_ptr: &LTIndices, l_data: &
 }
 
 /// Perform a single step of the path-following algorithm.
+#[allow(clippy::too_many_arguments)]
 pub fn normal_eqn_step(
     a: &Matrix,  // Sparse A matrix
     at: &Matrix, // Sparse transpose of A matrix

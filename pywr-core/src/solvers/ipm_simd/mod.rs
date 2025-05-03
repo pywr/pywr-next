@@ -64,7 +64,7 @@ struct Lp {
 impl Lp {
     /// Zero all objective coefficients.
     fn zero_obj_coefficients(&mut self) {
-        self.col_obj_coef.fill(f64x4::splat(0.0.into()));
+        self.col_obj_coef.fill(f64x4::splat(0.0));
     }
 
     pub fn add_obj_coefficient(&mut self, col: usize, obj_coef: &[f64]) {
@@ -320,7 +320,7 @@ impl BuiltSolver {
             let cost = states
                 .iter()
                 .map(|s| {
-                    edge.cost(&network.nodes(), network, s)
+                    edge.cost(network.nodes(), network, s)
                         .map(|c| if c != 0.0 { -c } else { 0.0 })
                 })
                 .collect::<Result<Vec<f64>, _>>()?;

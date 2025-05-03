@@ -22,10 +22,10 @@ jobs:
           submodules: true
       - uses: swatinem/rust-cache@v2
       - name: Run Clippy
-        run: cargo clippy --all-targets --features highs,cbc
+        run: cargo clippy --all-targets --all-features
       - name: Build
-        run: cargo build --verbose --features highs,cbc --workspace --exclude ipm-simd --exclude pywr-python
+        run: cargo build --verbose --all-features --workspace --exclude pywr-python
       - name: Run tests
         # Only test the library and binaries, not the docs
         # There were some issues with the docs tests timing out on Windows CI
-        run: cargo test --features highs,cbc --verbose --lib --bins -- --test-threads=1
+        run: cargo test --all-features --verbose --lib --bins -- --test-threads=1
