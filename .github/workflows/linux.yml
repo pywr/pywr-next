@@ -21,6 +21,8 @@ jobs:
         with:
           submodules: true
       - uses: swatinem/rust-cache@v2
+      - name: Install Intel OpenCL
+        run: sudo apt-get install -y intel-opencl-icd ocl-icd-opencl-dev
       - name: Run Clippy
         run: cargo clippy --all-targets --all-features --all
       - name: Install latest mdbook
@@ -38,9 +40,9 @@ jobs:
       - name: Check (pywr-schema)
         run: cargo hack check --feature-powerset --no-dev-deps -p pywr-schema
       - name: Build
-        run: cargo build --verbose --features highs,cbc,ipm-simd,ipm-ocl --workspace --exclude pywr-python
+        run: cargo build --verbose  --all-features --workspace --exclude pywr-python
       - name: Run tests
-        run: cargo test --features highs,cbc,ipm-simd,ipm-ocl --verbose --lib --bins -- --test-threads=1
+        run: cargo test  --all-features --verbose --lib --bins -- --test-threads=1
       - name: Run mdbook test & build
         run: |
           output=$(mdbook test ./pywr-book 2>&1)
