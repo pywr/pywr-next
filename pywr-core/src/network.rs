@@ -347,6 +347,7 @@ impl Network {
 
     pub fn finalise(
         &self,
+        scenario_indices: &[ScenarioIndex],
         metric_set_states: &mut [Vec<MetricSetState>],
         recorder_internal_states: &mut [Option<Box<dyn Any>>],
     ) -> Result<(), PywrError> {
@@ -360,7 +361,7 @@ impl Network {
 
         // Setup recorders
         for (recorder, internal_state) in self.recorders.iter().zip(recorder_internal_states) {
-            recorder.finalise(self, metric_set_states, internal_state)?;
+            recorder.finalise(scenario_indices, self, metric_set_states, internal_state)?;
         }
 
         Ok(())

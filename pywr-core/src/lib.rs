@@ -14,6 +14,7 @@ use crate::parameters::{
 use crate::recorders::{AggregationError, MetricSetIndex, RecorderIndex};
 use crate::state::MultiValue;
 use crate::virtual_storage::VirtualStorageIndex;
+pub use predicate::Predicate;
 #[cfg(feature = "pyo3")]
 use pyo3::{
     create_exception,
@@ -31,6 +32,7 @@ pub mod models;
 pub mod network;
 pub mod node;
 pub mod parameters;
+mod predicate;
 pub mod recorders;
 pub mod scenario;
 pub mod solvers;
@@ -213,6 +215,8 @@ pub enum PywrError {
     CannotSimplifyMetric,
     #[error("Negative factor is not allowed")]
     NegativeFactor,
+    #[error("Event value is not supported in wide format")]
+    EventValueInWideFormat,
 }
 
 // Python errors

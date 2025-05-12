@@ -5,6 +5,7 @@ use crate::metric::{Metric, NodeReference};
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::parameters::{ConversionData, ParameterMeta};
+use crate::predicate::Predicate;
 use crate::v1::{try_convert_parameter_attr, IntoV2, TryFromV1};
 use crate::ConversionError;
 #[cfg(feature = "core")]
@@ -12,48 +13,9 @@ use pywr_core::parameters::{ParameterName, ParameterType};
 use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::parameters::{
     NodeThresholdParameter as NodeThresholdParameterV1, ParameterThresholdParameter as ParameterThresholdParameterV1,
-    Predicate as PredicateV1, StorageThresholdParameter as StorageThresholdParameterV1,
+    StorageThresholdParameter as StorageThresholdParameterV1,
 };
 use schemars::JsonSchema;
-
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Copy, JsonSchema, PywrVisitAll, strum_macros::Display)]
-pub enum Predicate {
-    #[serde(alias = "<")]
-    LT,
-    #[serde(alias = ">")]
-    GT,
-    #[serde(alias = "==")]
-    EQ,
-    #[serde(alias = "<=")]
-    LE,
-    #[serde(alias = ">=")]
-    GE,
-}
-
-impl From<PredicateV1> for Predicate {
-    fn from(v1: PredicateV1) -> Self {
-        match v1 {
-            PredicateV1::LT => Predicate::LT,
-            PredicateV1::GT => Predicate::GT,
-            PredicateV1::EQ => Predicate::EQ,
-            PredicateV1::LE => Predicate::LE,
-            PredicateV1::GE => Predicate::GE,
-        }
-    }
-}
-
-#[cfg(feature = "core")]
-impl From<Predicate> for pywr_core::parameters::Predicate {
-    fn from(p: Predicate) -> Self {
-        match p {
-            Predicate::LT => pywr_core::parameters::Predicate::LessThan,
-            Predicate::GT => pywr_core::parameters::Predicate::GreaterThan,
-            Predicate::EQ => pywr_core::parameters::Predicate::EqualTo,
-            Predicate::LE => pywr_core::parameters::Predicate::LessThanOrEqualTo,
-            Predicate::GE => pywr_core::parameters::Predicate::GreaterThanOrEqualTo,
-        }
-    }
-}
 
 /// A parameter that compares a metric against a threshold metric
 ///
