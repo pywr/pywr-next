@@ -79,6 +79,7 @@ pub enum SchemaError {
     EmptyMetricSet(String),
     #[error("The feature '{0}' must be enabled to use this functionality.")]
     FeatureNotEnabled(String),
+    #[cfg(feature = "core")]
     #[error("Shape error: {0}")]
     NdarrayShape(#[from] ShapeError),
 }

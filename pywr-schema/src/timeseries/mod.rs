@@ -74,6 +74,7 @@ pub enum TimeseriesError {
     #[cfg(feature = "core")]
     #[error("Scenario error: {0}")]
     Scenario(#[from] pywr_core::scenario::ScenarioError),
+    #[cfg(feature = "core")]
     #[error("Shape error: {0}")]
     NdarrayShape(#[from] ShapeError),
 }
