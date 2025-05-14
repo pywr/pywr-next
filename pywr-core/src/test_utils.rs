@@ -6,7 +6,7 @@ use crate::network::Network;
 use crate::node::StorageInitialVolume;
 use crate::parameters::{AggFunc, AggregatedParameter, Array2Parameter, ConstantParameter, GeneralParameter};
 use crate::recorders::AssertionRecorder;
-use crate::scenario::ScenarioGroupCollection;
+use crate::scenario::{ScenarioDomainBuilder, ScenarioGroupBuilder};
 #[cfg(feature = "cbc")]
 use crate::solvers::CbcSolver;
 #[cfg(feature = "ipm-ocl")]
@@ -92,10 +92,13 @@ pub fn simple_network(network: &mut Network, inflow_scenario_index: usize, num_i
 }
 /// Create a simple test model with three nodes.
 pub fn simple_model(num_scenarios: usize, timestepper: Option<Timestepper>) -> Model {
-    let mut scenario_collection = ScenarioGroupCollection::default();
-    scenario_collection.add_group("test-scenario", num_scenarios);
+    let mut scenario_builder = ScenarioDomainBuilder::default();
+    let scenario_group = ScenarioGroupBuilder::new("test-scenario", num_scenarios)
+        .build()
+        .unwrap();
+    scenario_builder = scenario_builder.with_group(scenario_group).unwrap();
 
-    let domain = ModelDomain::from(timestepper.unwrap_or_else(default_timestepper), scenario_collection).unwrap();
+    let domain = ModelDomain::from(timestepper.unwrap_or_else(default_timestepper), scenario_builder).unwrap();
     let mut network = Network::default();
 
     let idx = domain
@@ -403,10 +406,11 @@ pub fn make_random_model<R: Rng>(
     let duration = TimestepDuration::Days(1);
     let timestepper = Timestepper::new(start, end, duration);
 
-    let mut scenario_collection = ScenarioGroupCollection::default();
-    scenario_collection.add_group("test-scenario", num_scenarios);
+    let mut scenario_builder = ScenarioDomainBuilder::default();
+    let scenario_group = ScenarioGroupBuilder::new("test-scenario", num_scenarios).build()?;
+    scenario_builder = scenario_builder.with_group(scenario_group)?;
 
-    let domain = ModelDomain::from(timestepper, scenario_collection).unwrap();
+    let domain = ModelDomain::from(timestepper, scenario_builder)?;
 
     let inflow_scenario_group_index = domain
         .scenarios()

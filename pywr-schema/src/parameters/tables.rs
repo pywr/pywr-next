@@ -3,6 +3,8 @@ use crate::error::SchemaError;
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::parameters::{ConversionData, ParameterMeta};
+#[cfg(feature = "core")]
+use crate::timeseries::subset_array2;
 use crate::v1::{FromV1, IntoV2};
 #[cfg(feature = "core")]
 use ndarray::s;
@@ -56,17 +58,19 @@ impl TablesArrayParameter {
             .dataset(&self.node)
             .map_err(|e| SchemaError::HDF5Error(e.to_string()))?; // find the dataset
 
-        let array = ds.read_2d::<f64>().map_err(|e| SchemaError::HDF5Error(e.to_string()))?;
+        let mut array = ds.read_2d::<f64>().map_err(|e| SchemaError::HDF5Error(e.to_string()))?;
         // 2. TODO Validate the shape of the data array. I.e. check number of columns matches scenario
         //    and number of rows matches time-steps.
 
         // 3. Create an ArrayParameter using the loaded array.
         if let Some(scenario) = &self.scenario {
-            let scenario_group_index = args
-                .domain
-                .scenarios()
-                .group_index(scenario)
-                .ok_or(SchemaError::ScenarioGroupNotFound(scenario.to_string()))?;
+            let scenario_group_index = args.domain.scenarios().group_index(scenario)?;
+
+            // If there is a scenario subset then we can reduce the data to align with the scenarios
+            // that are actually used in the model.
+            if let Some(subset) = args.domain.scenarios().group_scenario_subset(scenario)? {
+                array = subset_array2(&array, subset)?;
+            }
 
             let p = pywr_core::parameters::Array2Parameter::new(
                 self.meta.name.as_str().into(),

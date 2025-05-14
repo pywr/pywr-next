@@ -135,10 +135,156 @@ impl From<Timestepper> for pywr_core::timestep::Timestepper {
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Clone, JsonSchema)]
-pub struct Scenario {
+#[serde(deny_unknown_fields)]
+pub struct ScenarioGroupSlice {
+    pub start: usize,
+    pub end: usize,
+}
+
+#[derive(serde::Deserialize, serde::Serialize, Clone, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ScenarioGroupIndices {
+    pub indices: Vec<usize>,
+}
+
+#[derive(serde::Deserialize, serde::Serialize, Clone, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ScenarioGroupLabels {
+    pub labels: Vec<String>,
+}
+
+#[derive(serde::Deserialize, serde::Serialize, Clone, JsonSchema)]
+#[serde(tag = "type")]
+pub enum ScenarioGroupSubset {
+    Slice(ScenarioGroupSlice),
+    Indices(ScenarioGroupIndices),
+    Labels(ScenarioGroupLabels),
+}
+
+/// A scenario group defines a set of scenarios that can be run in a model.
+///
+/// A scenario group is defined by a name and a size. The size is the number of scenarios in the group.
+/// Optional labels can be defined for the group. These labels are used in output data
+/// to identify the scenario group. A subset can be defined to simulate only part of the group.
+///
+/// See also the examples in the [`ScenarioDomain`] documentation.
+#[derive(serde::Deserialize, serde::Serialize, Clone, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ScenarioGroup {
     pub name: String,
     pub size: usize,
-    pub ensemble_names: Option<Vec<String>>,
+    pub labels: Option<Vec<String>>,
+    pub subset: Option<ScenarioGroupSubset>,
+}
+
+#[cfg(feature = "core")]
+impl TryInto<pywr_core::scenario::ScenarioGroup> for ScenarioGroup {
+    type Error = SchemaError;
+
+    fn try_into(self) -> Result<pywr_core::scenario::ScenarioGroup, Self::Error> {
+        let mut builder = pywr_core::scenario::ScenarioGroupBuilder::new(&self.name, self.size);
+
+        if let Some(labels) = self.labels {
+            builder = builder.with_labels(&labels);
+        }
+
+        if let Some(subset) = self.subset {
+            match subset {
+                ScenarioGroupSubset::Slice(slice) => {
+                    builder = builder.with_subset_slice(slice.start, slice.end);
+                }
+                ScenarioGroupSubset::Indices(indices) => {
+                    builder = builder.with_subset_indices(indices.indices);
+                }
+                ScenarioGroupSubset::Labels(labels) => {
+                    builder = builder.with_subset_labels(&labels.labels);
+                }
+            }
+        }
+
+        Ok(builder.build()?)
+    }
+}
+
+#[derive(serde::Deserialize, serde::Serialize, Clone, JsonSchema)]
+#[serde(untagged)]
+pub enum ScenarioLabelOrIndex {
+    Label(String),
+    Index(usize),
+}
+
+#[cfg(feature = "core")]
+impl From<ScenarioLabelOrIndex> for pywr_core::scenario::ScenarioLabelOrIndex {
+    fn from(val: ScenarioLabelOrIndex) -> pywr_core::scenario::ScenarioLabelOrIndex {
+        match val {
+            ScenarioLabelOrIndex::Label(label) => pywr_core::scenario::ScenarioLabelOrIndex::Label(label),
+            ScenarioLabelOrIndex::Index(index) => pywr_core::scenario::ScenarioLabelOrIndex::Index(index),
+        }
+    }
+}
+
+/// A scenario domain is a collection of scenario groups that define the possible scenarios that
+/// can be run in a model.
+///
+/// Each scenario group has a name and size. The full space of the domain is defined as the
+/// cartesian product of the sizes of each group. For simulation purposes, the domain can be
+/// constrained (or "subsetted") by defining a subset for each group. A subset can be defined
+/// using specific labels or indices of the group, or using slice of the group. The slice is a contiguous
+/// subset of the group that will be used in the simulation. The slice is defined by the `start`
+/// and `end` indices of the group. The `start` index is inclusive and the `end` index is exclusive.
+///
+/// Alternatively, the domain can be constrained by defining a list of combinations of the groups
+/// that will be used in the simulation. The combinations are defined as a list of lists of indices
+/// of the groups.
+///
+/// It is an error if both a `slice`(s) and `combinations` are defined.
+///
+/// # JSON Examples
+///
+/// The examples below show how a scenario group can be defined in JSON.
+///
+/// ```json
+#[doc = include_str!("doc_examples/scenario_domain1.json")]
+/// ```
+///
+/// The example below shows how a scenario group can be defined with custom labels. In this
+/// case Roman numerals are used to identify the individual scenarios.
+///
+/// ```json
+#[doc = include_str!("doc_examples/scenario_domain2.json")]
+/// ```
+///
+/// The example below shows how to define two scenario groups.
+///
+/// ```json
+#[doc = include_str!("doc_examples/scenario_domain3.json")]
+/// ```
+#[derive(serde::Deserialize, serde::Serialize, Clone, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ScenarioDomain {
+    /// The groups that define the scenario domain.
+    pub groups: Vec<ScenarioGroup>,
+    /// Optional combinations of the groups that allow simulation of specific scenarios.
+    pub combinations: Option<Vec<Vec<ScenarioLabelOrIndex>>>,
+}
+
+#[cfg(feature = "core")]
+impl TryInto<pywr_core::scenario::ScenarioDomainBuilder> for ScenarioDomain {
+    type Error = SchemaError;
+
+    fn try_into(self) -> Result<pywr_core::scenario::ScenarioDomainBuilder, Self::Error> {
+        let mut builder = pywr_core::scenario::ScenarioDomainBuilder::default();
+
+        for group in self.groups {
+            builder = builder.with_group(group.try_into()?)?;
+        }
+
+        if let Some(combinations) = self.combinations {
+            builder = builder.with_combinations(combinations.into_iter().collect());
+        }
+
+        Ok(builder)
+    }
 }
 
 #[cfg(feature = "core")]
@@ -548,7 +694,7 @@ pub enum PywrNetworkRef {
 pub struct PywrModel {
     pub metadata: Metadata,
     pub timestepper: Timestepper,
-    pub scenarios: Option<Vec<Scenario>>,
+    pub scenarios: Option<ScenarioDomain>,
     pub network: PywrNetwork,
 }
 
@@ -613,15 +759,12 @@ impl PywrModel {
     ) -> Result<pywr_core::models::Model, SchemaError> {
         let timestepper = self.timestepper.clone().into();
 
-        let mut scenario_collection = pywr_core::scenario::ScenarioGroupCollection::default();
+        let scenario_builder = match &self.scenarios {
+            Some(scenarios) => scenarios.clone().try_into()?,
+            None => pywr_core::scenario::ScenarioDomainBuilder::default(),
+        };
 
-        if let Some(scenarios) = &self.scenarios {
-            for scenario in scenarios {
-                scenario_collection.add_group(&scenario.name, scenario.size);
-            }
-        }
-
-        let domain = ModelDomain::from(timestepper, scenario_collection)?;
+        let domain = ModelDomain::from(timestepper, scenario_builder)?;
 
         let tables = self.network.load_tables(data_path)?;
         let timeseries = self.network.load_timeseries(&domain, data_path)?;
@@ -752,7 +895,7 @@ pub struct PywrMultiNetworkEntry {
 pub struct PywrMultiNetworkModel {
     pub metadata: Metadata,
     pub timestepper: Timestepper,
-    pub scenarios: Option<Vec<Scenario>>,
+    pub scenarios: Option<ScenarioDomain>,
     pub networks: Vec<PywrMultiNetworkEntry>,
 }
 
@@ -781,15 +924,12 @@ impl PywrMultiNetworkModel {
     ) -> Result<pywr_core::models::MultiNetworkModel, SchemaError> {
         let timestepper = self.timestepper.clone().into();
 
-        let mut scenario_collection = pywr_core::scenario::ScenarioGroupCollection::default();
+        let scenario_builder = match &self.scenarios {
+            Some(scenarios) => scenarios.clone().try_into()?,
+            None => pywr_core::scenario::ScenarioDomainBuilder::default(),
+        };
 
-        if let Some(scenarios) = &self.scenarios {
-            for scenario in scenarios {
-                scenario_collection.add_group(&scenario.name, scenario.size);
-            }
-        }
-
-        let domain = ModelDomain::from(timestepper, scenario_collection)?;
+        let domain = ModelDomain::from(timestepper, scenario_builder)?;
         let mut networks = Vec::with_capacity(self.networks.len());
         let mut inter_network_transfers = Vec::new();
         let mut schemas: Vec<(PywrNetwork, LoadedTableCollection, LoadedTimeseriesCollection)> =
@@ -898,9 +1038,10 @@ impl PywrMultiNetworkModel {
 
 #[cfg(test)]
 mod tests {
-    use super::PywrModel;
+    use super::{PywrModel, ScenarioDomain};
     use crate::model::Timestepper;
     use crate::visit::VisitPaths;
+    use std::fs;
     use std::fs::read_to_string;
     use std::path::PathBuf;
 
@@ -1010,6 +1151,22 @@ mod tests {
         if schema.build_model(model_fn.parent(), None).is_ok() {
             let str = serde_json::to_string_pretty(&schema).unwrap();
             panic!("Expected an error due to missing file: {str}");
+        }
+    }
+
+    #[test]
+    fn test_scenario_domain_doc_examples() {
+        let mut doc_examples = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        doc_examples.push("src/doc_examples");
+
+        for entry in fs::read_dir(doc_examples).unwrap() {
+            let p = entry.unwrap().path();
+            if p.is_file() && p.file_name().unwrap().to_str().unwrap().starts_with("scenario_domain") {
+                let data = read_to_string(&p).unwrap_or_else(|e| panic!("Failed to read file: {:?}: {}", p, e));
+
+                let _value: ScenarioDomain =
+                    serde_json::from_str(&data).unwrap_or_else(|e| panic!("Failed to deserialize {:?}: {}", p, e));
+            }
         }
     }
 }

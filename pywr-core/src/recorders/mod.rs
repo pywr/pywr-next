@@ -88,6 +88,7 @@ pub trait Recorder: Send + Sync {
     fn finalise(
         &self,
         _network: &Network,
+        _scenario_indices: &[ScenarioIndex],
         _metric_set_states: &[Vec<MetricSetState>],
         _internal_state: &mut Option<Box<dyn Any>>,
     ) -> Result<(), PywrError> {
@@ -144,8 +145,8 @@ impl Recorder for Array2Recorder {
 
         // This panics if out-of-bounds
         for scenario_index in scenario_indices {
-            let value = self.metric.get_value(model, &state[scenario_index.index])?;
-            array[[timestep.index, scenario_index.index]] = value
+            let value = self.metric.get_value(model, &state[scenario_index.simulation_id()])?;
+            array[[timestep.index, scenario_index.simulation_id()]] = value
         }
 
         Ok(())
@@ -195,12 +196,15 @@ impl Recorder for AssertionRecorder {
         // This panics if out-of-bounds
 
         for scenario_index in scenario_indices {
-            let expected_value = match self.expected_values.get([timestep.index, scenario_index.index]) {
+            let expected_value = match self
+                .expected_values
+                .get([timestep.index, scenario_index.simulation_id()])
+            {
                 Some(v) => *v,
                 None => panic!("Simulation produced results out of range."),
             };
 
-            let actual_value = self.metric.get_value(model, &state[scenario_index.index])?;
+            let actual_value = self.metric.get_value(model, &state[scenario_index.simulation_id()])?;
 
             if !actual_value.approx_eq(
                 expected_value,
@@ -216,7 +220,12 @@ timestep: `{:?}` ({})
 scenario: `{:?}`
 actual: `{:?}`
 expected: `{:?}`"#,
-                    self.meta.name, timestep.date, timestep.index, scenario_index.index, actual_value, expected_value
+                    self.meta.name,
+                    timestep.date,
+                    timestep.index,
+                    scenario_index.simulation_id(),
+                    actual_value,
+                    expected_value
                 )
             }
         }
@@ -269,7 +278,7 @@ where
 
         for scenario_index in scenario_indices {
             let expected_value = (self.expected_func)(timestep, scenario_index);
-            let actual_value = self.metric.get_value(model, &state[scenario_index.index])?;
+            let actual_value = self.metric.get_value(model, &state[scenario_index.simulation_id()])?;
 
             if !approx_eq!(
                 f64,
@@ -323,12 +332,15 @@ impl Recorder for IndexAssertionRecorder {
         // This panics if out-of-bounds
 
         for scenario_index in scenario_indices {
-            let expected_value = match self.expected_values.get([timestep.index, scenario_index.index]) {
+            let expected_value = match self
+                .expected_values
+                .get([timestep.index, scenario_index.simulation_id()])
+            {
                 Some(v) => *v,
                 None => panic!("Simulation produced results out of range."),
             };
 
-            let actual_value = self.metric.get_value(network, &state[scenario_index.index])?;
+            let actual_value = self.metric.get_value(network, &state[scenario_index.simulation_id()])?;
 
             if actual_value != expected_value {
                 panic!(
@@ -338,7 +350,12 @@ timestep: `{:?}` ({})
 scenario: `{:?}`
 actual: `{:?}`
 expected: `{:?}`"#,
-                    self.meta.name, timestep.date, timestep.index, scenario_index.index, actual_value, expected_value
+                    self.meta.name,
+                    timestep.date,
+                    timestep.index,
+                    scenario_index.simulation_id(),
+                    actual_value,
+                    expected_value
                 )
             }
         }
