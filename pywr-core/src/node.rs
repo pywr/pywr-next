@@ -1,10 +1,10 @@
+use crate::PywrError;
 use crate::edge::EdgeIndex;
 use crate::metric::{MetricF64, SimpleMetricF64};
 use crate::network::Network;
 use crate::state::{ConstParameterValues, NodeState, SimpleParameterValues, State};
 use crate::timestep::Timestep;
 use crate::virtual_storage::VirtualStorageIndex;
-use crate::PywrError;
 use std::ops::{Deref, DerefMut};
 
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Debug, Hash)]

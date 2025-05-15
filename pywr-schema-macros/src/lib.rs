@@ -1,9 +1,9 @@
 use heck::ToSnakeCase;
 use proc_macro::TokenStream;
 use quote::quote;
+use syn::Fields;
 use syn::punctuated::Punctuated;
 use syn::token::Comma;
-use syn::Fields;
 
 /// A derive macro for Pywr components that implement the `VisitMetrics`
 /// and `VisitPaths` traits.

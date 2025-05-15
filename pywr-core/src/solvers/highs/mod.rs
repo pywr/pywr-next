@@ -1,16 +1,16 @@
 mod settings;
 
+use crate::PywrError;
 use crate::network::Network;
 use crate::solvers::builder::{BuiltSolver, ColType, SolverBuilder};
 use crate::solvers::{Solver, SolverFeatures, SolverTimings};
 use crate::state::{ConstParameterValues, State};
 use crate::timestep::Timestep;
-use crate::PywrError;
 use highs_sys::{
-    kHighsVarTypeContinuous, kHighsVarTypeInteger, HighsInt, Highs_addCols, Highs_addRows, Highs_changeCoeff,
-    Highs_changeColIntegrality, Highs_changeColsCostByRange, Highs_changeObjectiveSense, Highs_changeRowsBoundsByMask,
-    Highs_create, Highs_getDoubleInfoValue, Highs_getSolution, Highs_run, Highs_setBoolOptionValue,
-    Highs_setStringOptionValue, OBJECTIVE_SENSE_MINIMIZE, STATUS_OK,
+    Highs_addCols, Highs_addRows, Highs_changeCoeff, Highs_changeColIntegrality, Highs_changeColsCostByRange,
+    Highs_changeObjectiveSense, Highs_changeRowsBoundsByMask, Highs_create, Highs_getDoubleInfoValue,
+    Highs_getSolution, Highs_run, Highs_setBoolOptionValue, Highs_setStringOptionValue, HighsInt,
+    OBJECTIVE_SENSE_MINIMIZE, STATUS_OK, kHighsVarTypeContinuous, kHighsVarTypeInteger,
 };
 use libc::c_void;
 pub use settings::{HighsSolverSettings, HighsSolverSettingsBuilder};

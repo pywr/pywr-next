@@ -1,10 +1,10 @@
+use crate::PywrError;
 use crate::metric::MetricF64;
 use crate::models::ModelDomain;
 use crate::network::{Network, NetworkState, RunTimings};
 use crate::scenario::ScenarioIndex;
 use crate::solvers::{MultiStateSolver, Solver, SolverSettings};
 use crate::timestep::Timestep;
-use crate::PywrError;
 use std::any::Any;
 use std::cmp::Ordering;
 use std::fmt;

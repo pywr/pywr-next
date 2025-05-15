@@ -170,7 +170,7 @@ impl RiverNode {
                     ty: "RiverNode".to_string(),
                     name: self.meta.name.clone(),
                     attr,
-                })
+                });
             }
         };
 

@@ -19,7 +19,7 @@ use chrono::{NaiveDate, NaiveDateTime};
 #[cfg(feature = "pyo3")]
 use pyo3::pyclass;
 #[cfg(feature = "core")]
-use pywr_core::{models::ModelDomain, timestep::TimestepDuration, PywrError};
+use pywr_core::{PywrError, models::ModelDomain, timestep::TimestepDuration};
 use schemars::JsonSchema;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;

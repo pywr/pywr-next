@@ -251,7 +251,7 @@ impl PiecewiseStorageNode {
                     ty: "PiecewiseStorageNode".to_string(),
                     name: self.meta.name.clone(),
                     attr,
-                })
+                });
             }
         };
 

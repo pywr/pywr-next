@@ -1,3 +1,4 @@
+use crate::PywrError;
 use crate::aggregated_storage_node::AggregatedStorageNodeIndex;
 use crate::metric::MetricF64;
 use crate::network::Network;
@@ -6,7 +7,6 @@ use crate::state::State;
 use crate::timestep::Timestep;
 use crate::utils::hydropower_calculation;
 use crate::virtual_storage::VirtualStorageIndex;
-use crate::PywrError;
 use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::ops::Deref;

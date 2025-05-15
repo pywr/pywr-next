@@ -1,3 +1,4 @@
+use crate::PywrError;
 use crate::metric::MetricF64;
 use crate::models::{Model, ModelDomain};
 /// Utilities for unit tests.
@@ -19,9 +20,8 @@ use crate::solvers::MultiStateSolver;
 use crate::solvers::SimdIpmF64Solver;
 use crate::solvers::{ClpSolver, Solver, SolverSettings};
 use crate::timestep::{TimeDomain, TimestepDuration, Timestepper};
-use crate::PywrError;
 use chrono::{Days, NaiveDate};
-use float_cmp::{approx_eq, F64Margin};
+use float_cmp::{F64Margin, approx_eq};
 use ndarray::{Array, Array2};
 use rand::Rng;
 use rand_distr::{Distribution, Normal};
