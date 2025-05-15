@@ -177,9 +177,9 @@ impl VariableParameter<f64> for RbfProfileParameter {
     /// # Arguments
     ///
     /// * `values`: The value to set for the points. This is an array of size equal to twice the
-    /// number of points in the RBF profile. The first set of values contain the x values followed
-    /// by the y points. For example, if you have a 3-point RBF profile, the size of the array is 6
-    /// with the first 3 items being the  x values and last 3 the y values.
+    ///   number of points in the RBF profile. The first set of values contain the x values followed
+    ///   by the y points. For example, if you have a 3-point RBF profile, the size of the array is 6
+    ///   with the first 3 items being the  x values and last 3 the y values.
     /// * `_variable_config`:
     /// * `internal_state`:
     ///
