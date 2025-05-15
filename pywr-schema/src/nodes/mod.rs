@@ -246,7 +246,13 @@ impl NodeBuilder {
                 meta,
                 ..Default::default()
             }),
-            NodeType::Reservoir => Node::Reservoir(ReservoirNode { ..Default::default() }),
+            NodeType::Reservoir => Node::Reservoir(ReservoirNode {
+                storage: StorageNode {
+                    meta,
+                    ..Default::default()
+                },
+                ..Default::default()
+            }),
         }
     }
 }

@@ -2,6 +2,7 @@ use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::nodes::{NodeAttribute, NodeMeta, StorageNode};
+use crate::parameters::ConstantFloatVec;
 #[cfg(feature = "core")]
 use crate::SchemaError;
 #[cfg(feature = "core")]
@@ -30,7 +31,10 @@ pub enum SpillNodeType {
 #[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, PywrVisitAll)]
 pub enum BathymetryType {
     /// The bathymetry is calculated by interpolating the storage and area data piecewise.
-    Interpolated { storage: Metric, area: Metric },
+    Interpolated {
+        storage: ConstantFloatVec,
+        area: ConstantFloatVec,
+    },
     /// The bathymetry is calculated using a polynomial expressions and the provided coefficients.
     Polynomial(Vec<f64>),
 }
@@ -40,26 +44,26 @@ pub enum BathymetryType {
 pub struct Bathymetry {
     /// The bathymetric data and type.
     pub data: BathymetryType,
-    /// Whether the `storage` provided by the [`BathymetryType`] is relative (0-1).
-    pub is_storage_relative: bool,
+    /// Whether the `storage` provided to the [`BathymetryType`] is proportional (0-1) or not.
+    pub is_storage_proportional: bool,
 }
 
 /// The evaporation data
 #[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, PywrVisitAll)]
 pub struct Evaporation {
     /// The [`Metric`] containing the evaporation height.
-    data: Metric,
+    pub data: Metric,
     /// The cost to assign to the [`crate::nodes::OutputNode`].
-    cost: Option<Metric>,
+    pub cost: Option<Metric>,
     /// If `true` the maximum surface area will be used to calculate the evaporation volume. When
     /// `false`, the area is calculated from the bathymetric data. This defaults to `false`.
-    use_max_area: Option<bool>,
+    pub use_max_area: Option<bool>,
 }
 
 /// The leakage data
 #[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, PywrVisitAll)]
 pub struct Leakage {
-    /// The [`Metric`] containing the lost volume.
+    /// The [`Metric`] containing the lost flow.
     loss: Metric,
     /// The cost to assign to the [`crate::nodes::OutputNode`].
     cost: Option<Metric>,
@@ -84,10 +88,10 @@ pub struct Rainfall {
 /// ```svgbob
 ///
 ///             <Reservoir>.Rainfall
-///                      * 
+///                      *
 ///     U                |            if OutputNode                if LinkNode
 /// - - *--.             |                                         D[from_spill]
-///        |             |           <Reservoir>.Spill   -or-    <Reservoir>.Spill
+///        |             |           <Reservoir>.Spill   - or -     <Reservoir>.Spill
 ///        V             V             D[to_spill]                 D[to_spill]
 ///        .----------------+----------------->o               --------->*- - -
 ///        |                |
@@ -105,7 +109,7 @@ pub struct Rainfall {
 )]
 ///
 /// This is a [`StorageNode`] connected to an upstream node `U` and downstream network node `D`. When
-/// and edge to this component is created without slots, the target nodes are directly connected to
+/// an edge to this component is created without slots, the target nodes are directly connected to
 /// `D[<default>]`.
 ///
 /// This component has the following internal nodes, which the modeller still needs to connect to
@@ -121,7 +125,7 @@ pub struct Rainfall {
 ///   Use `None` if you don't want to create the spill and to manually route the water.
 /// - Rainfall: this is a [`pywr_core::node::InputNode`] with a `min_flow` and `max_flow` equal to
 ///   the product of the surface area and the rainfall height.
-/// - Evaporation: this is am optional [`pywr_core::node::OutputNode`] with a `max_flow` equal to
+/// - Evaporation: this is an optional [`pywr_core::node::OutputNode`] with a `max_flow` equal to
 ///   the product of the surface area and the evaporation level. A cost can be also added to control
 ///   the node's behaviour.
 /// - Leakage: this is an optional [`pywr_core::node::OutputNode`] with a `max_flow` equal to the
@@ -136,16 +140,26 @@ pub struct Rainfall {
 ///    [`Bathymetry`]'s `storage` and `area` fields.
 /// - when [`BathymetryType::Polynomial`], the area is calculated from the polynomial expression
 ///   using the [`pywr_core::parameters::Polynomial1DParameter`].
+///
+///
 /// If `rainfall.use_max_area` is set to `true`, then the rainfall volume is calculated using the
 /// maximum surface area only.
+/// It is up to the user to ensure that the units for these calculations are consistent. The
+/// units for the rainfall and evaporation depth ($D$) must be consistent with those of the area ($A$)
+/// to produce a flow ($Q$) consistent with the model's inflows
+///
+/// $$
+/// D [\frac{L}{T}] * A [L^2] == Q [\frac{L^3}{T}]
+/// $$
+///
 ///
 /// # Available metrics
 /// The following metrics are available:
 /// - Volume: to get the reservoir volume.
 /// - ProportionalVolume: to get the reservoir relative volume (0-1).
 /// - Compensation: to get the minimum residual flow when the `compensation` field is provided.
-/// - Rainfall: to get the rainfall volume when the `rainfall` field is provided.
-/// - Evaporation: to get the evaporation volume when the `rainfall` field is provided.
+/// - Rainfall: to get the rainfall flow when the `rainfall` field is provided.
+/// - Evaporation: to get the evaporation flow when the `evaporation` field is provided.
 ///
 /// # JSON Examples
 /// ## Reservoir with output spill
@@ -171,7 +185,7 @@ pub struct ReservoirNode {
     pub connect_compensation_to_spill: Option<bool>,
     /// The storage table with the relationship between storage and reservoir surface area. This must
     /// be provided for the calculations of the precipitation and evaporation volumes.
-    pub bathymetry: Option<Bathymetry>,
+    pub surface_area: Option<Bathymetry>,
     /// The rainfall data. Use `None` not to add the rainfall node.
     pub rainfall: Option<Rainfall>,
     /// The evaporation data. Use `None` not to add the evaporation node.
@@ -292,9 +306,8 @@ impl ReservoirNode {
         // add compensation node and edge
         let comp_node = match &self.compensation {
             Some(_) => {
-                network.add_link_node(self.meta().name.as_str(), Self::compensation_node_sub_name())?;
-                let comp =
-                    network.get_node_index_by_name(self.meta().name.as_str(), Self::compensation_node_sub_name())?;
+                let comp = network.add_link_node(self.meta().name.as_str(), Self::compensation_node_sub_name())?;
+
                 network.connect_nodes(storage, comp)?;
                 Some(comp)
             }
@@ -305,15 +318,15 @@ impl ReservoirNode {
         let spill_node = match &self.spill {
             None => None,
             Some(node_type) => {
-                match node_type {
+                let spill = match node_type {
                     SpillNodeType::OutputNode => {
-                        network.add_output_node(self.meta().name.as_str(), Self::spill_node_sub_name())?;
+                        network.add_output_node(self.meta().name.as_str(), Self::spill_node_sub_name())?
                     }
                     SpillNodeType::LinkNode => {
-                        network.add_link_node(self.meta().name.as_str(), Self::spill_node_sub_name())?;
+                        network.add_link_node(self.meta().name.as_str(), Self::spill_node_sub_name())?
                     }
-                }
-                let spill = network.get_node_index_by_name(self.meta().name.as_str(), Self::spill_node_sub_name())?;
+                };
+
                 network.connect_nodes(storage, spill)?;
                 Some(spill)
             }
@@ -328,30 +341,33 @@ impl ReservoirNode {
         }
         // add rainfall node and edge
         if self.rainfall.is_some() {
-            network.add_input_node(self.meta().name.as_str(), Self::rainfall_node_sub_name())?;
-            let rainfall = network.get_node_index_by_name(self.meta().name.as_str(), Self::rainfall_node_sub_name())?;
-            network.connect_nodes(rainfall, storage)?;
-
-            if self.bathymetry.is_none() {
+            if self.surface_area.is_none() {
                 return Err(SchemaError::MissingNodeAttribute {
-                    attr: "bathymetry".to_string(),
+                    attr: "surface_area".to_string(),
                     name: self.meta().name.clone(),
                 });
             }
+
+            let rainfall = network.add_input_node(self.meta().name.as_str(), Self::rainfall_node_sub_name())?;
+            network.connect_nodes(rainfall, storage)?;
         }
 
         // add evaporation node and edge
         if self.evaporation.is_some() {
-            network.add_output_node(self.meta().name.as_str(), Self::evaporation_node_sub_name())?;
-            let evaporation =
-                network.get_node_index_by_name(self.meta().name.as_str(), Self::evaporation_node_sub_name())?;
+            if self.surface_area.is_none() {
+                return Err(SchemaError::MissingNodeAttribute {
+                    attr: "surface_area".to_string(),
+                    name: self.meta().name.clone(),
+                });
+            }
+
+            let evaporation = network.add_output_node(self.meta().name.as_str(), Self::evaporation_node_sub_name())?;
             network.connect_nodes(storage, evaporation)?;
         }
 
         // add leakage node and edge
         if self.leakage.is_some() {
-            network.add_output_node(self.meta().name.as_str(), Self::leakage_node_sub_name())?;
-            let leakage = network.get_node_index_by_name(self.meta().name.as_str(), Self::leakage_node_sub_name())?;
+            let leakage = network.add_output_node(self.meta().name.as_str(), Self::leakage_node_sub_name())?;
             network.connect_nodes(storage, leakage)?;
         }
 
@@ -386,7 +402,7 @@ impl ReservoirNode {
         }
 
         // add rainfall and evaporation
-        if let Some(bathymetry) = &self.bathymetry {
+        if let Some(bathymetry) = &self.surface_area {
             // add the rainfall
             if let Some(rainfall) = &self.rainfall {
                 let use_max_area = rainfall.use_max_area.unwrap_or(false);
@@ -394,23 +410,23 @@ impl ReservoirNode {
                     self.get_area_metric(network, args, "rainfall_area", bathymetry, use_max_area)?;
                 let rainfall_metric = rainfall.data.load(network, args, Some(&self.meta().name))?;
 
-                let rainfall_volume_parameter = pywr_core::parameters::AggregatedParameter::new(
+                let rainfall_flow_parameter = pywr_core::parameters::AggregatedParameter::new(
                     ParameterName::new("rainfall", Some(self.meta().name.as_str())),
                     &[rainfall_metric, rainfall_area_metric],
                     AggFunc::Product,
                 );
-                let rainfall_idx = network.add_parameter(Box::new(rainfall_volume_parameter))?;
-                let rainfall_volume_metric: MetricF64 = rainfall_idx.into();
+                let rainfall_idx = network.add_parameter(Box::new(rainfall_flow_parameter))?;
+                let rainfall_flow_metric: MetricF64 = rainfall_idx.into();
 
                 network.set_node_min_flow(
                     self.meta().name.as_str(),
                     Self::rainfall_node_sub_name(),
-                    Some(rainfall_volume_metric.clone()),
+                    Some(rainfall_flow_metric.clone()),
                 )?;
                 network.set_node_max_flow(
                     self.meta().name.as_str(),
                     Self::rainfall_node_sub_name(),
-                    Some(rainfall_volume_metric),
+                    Some(rainfall_flow_metric),
                 )?;
             }
 
@@ -422,18 +438,18 @@ impl ReservoirNode {
 
                 // add volume to output node
                 let evaporation_metric = evaporation.data.load(network, args, Some(&self.meta().name))?;
-                let evaporation_volume_parameter = pywr_core::parameters::AggregatedParameter::new(
+                let evaporation_flow_parameter = pywr_core::parameters::AggregatedParameter::new(
                     ParameterName::new("evaporation", Some(self.meta().name.as_str())),
                     &[evaporation_metric, evaporation_area_metric],
                     AggFunc::Product,
                 );
-                let evaporation_idx = network.add_parameter(Box::new(evaporation_volume_parameter))?;
-                let evaporation_volume_metric: MetricF64 = evaporation_idx.into();
+                let evaporation_idx = network.add_parameter(Box::new(evaporation_flow_parameter))?;
+                let evaporation_flow_metric: MetricF64 = evaporation_idx.into();
 
                 network.set_node_max_flow(
                     self.meta().name.as_str(),
                     Self::evaporation_node_sub_name(),
-                    Some(evaporation_volume_metric),
+                    Some(evaporation_flow_metric),
                 )?;
 
                 // set optional cost
@@ -478,7 +494,7 @@ impl ReservoirNode {
         let storage_node = network.get_node_index_by_name(self.meta().name.as_str(), None)?;
 
         // the storage (absolute or relative) can be the current or max volume
-        let current_storage = match (bathymetry.is_storage_relative, use_max_area) {
+        let current_storage = match (bathymetry.is_storage_proportional, use_max_area) {
             (false, false) => MetricF64::NodeVolume(storage_node),
             (true, false) => {
                 let dm = DerivedMetric::NodeProportionalVolume(storage_node);
@@ -492,13 +508,19 @@ impl ReservoirNode {
         // get the variable area metric
         let area_metric = match &bathymetry.data {
             BathymetryType::Interpolated { storage, area } => {
-                let storage_metric = storage.load(network, args, Some(&self.meta().name))?;
-                let area_metric = area.load(network, args, Some(&self.meta().name))?;
+                let storage_metric = storage.load(args.tables)?;
+                let area_metric = area.load(args.tables)?;
+
+                let points = storage_metric
+                    .into_iter()
+                    .zip(area_metric)
+                    .map(|(s, a)| (s.into(), a.into()))
+                    .collect::<Vec<_>>();
 
                 let interpolated_area_parameter = pywr_core::parameters::InterpolatedParameter::new(
                     ParameterName::new(name, Some(self.meta().name.as_str())),
                     current_storage,
-                    vec![(storage_metric, area_metric.clone())],
+                    points,
                     true,
                 );
                 let area_idx = network.add_parameter(Box::new(interpolated_area_parameter))?;
