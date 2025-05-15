@@ -75,12 +75,13 @@ model_tests! {
 
 /// Test Pandas backend for reading timeseries data.
 ///
-/// This test requires Python environment with Pandas#[test]
+/// This test requires Python environment with Pandas
+#[test]
 #[cfg(feature = "test-python")]
 fn test_timeseries_pandas() {
     let input = "timeseries_pandas.json";
     let input_pth = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join(input);
-    let expected = vec!["timeseries-expected.csv"];
+    let expected = ["timeseries-expected.csv"];
     let expected_paths = expected
         .iter()
         .map(|p| Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join(p))

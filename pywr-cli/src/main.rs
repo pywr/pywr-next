@@ -354,7 +354,7 @@ fn run(
             }
 
             let settings = settings_builder.build();
-            model.run_multi_scenario::<SimdIpmF64Solver<4>>(&settings)
+            model.run_multi_scenario::<SimdIpmF64Solver>(&settings)
         }
     }
     .unwrap();
@@ -379,7 +379,7 @@ fn run_multi(path: &Path, solver: &Solver, data_path: Option<&Path>, output_path
         #[cfg(feature = "ipm-ocl")]
         Solver::CLIPMF64 => model.run_multi_scenario::<ClIpmF64Solver>(&ClIpmSolverSettings::default()),
         #[cfg(feature = "ipm-simd")]
-        Solver::IpmSimd => model.run_multi_scenario::<SimdIpmF64Solver<4>>(&SimdIpmSolverSettings::default()),
+        Solver::IpmSimd => model.run_multi_scenario::<SimdIpmF64Solver>(&SimdIpmSolverSettings::default()),
     }
     .unwrap();
 }
@@ -399,7 +399,7 @@ fn run_random(num_systems: usize, density: usize, num_scenarios: usize, solver: 
         #[cfg(feature = "ipm-ocl")]
         Solver::CLIPMF64 => model.run_multi_scenario::<ClIpmF64Solver>(&ClIpmSolverSettings::default()),
         #[cfg(feature = "ipm-simd")]
-        Solver::IpmSimd => model.run_multi_scenario::<SimdIpmF64Solver<4>>(&SimdIpmSolverSettings::default()),
+        Solver::IpmSimd => model.run_multi_scenario::<SimdIpmF64Solver>(&SimdIpmSolverSettings::default()),
     }
     .unwrap();
 }
