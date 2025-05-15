@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 /// It is then converted to a Polars DataFrame and returned.
 ///
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct PandasDataset {
     pub time_col: Option<String>,
     pub url: PathBuf,

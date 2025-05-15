@@ -3,6 +3,7 @@ use schemars::JsonSchema;
 use std::path::{Path, PathBuf};
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct PolarsDataset {
     pub time_col: Option<String>,
     pub url: PathBuf,
