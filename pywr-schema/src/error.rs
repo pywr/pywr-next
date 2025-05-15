@@ -1,6 +1,7 @@
 use crate::data_tables::{DataTable, TableDataRef, TableError};
 use crate::nodes::NodeAttribute;
 use crate::timeseries::TimeseriesError;
+use ndarray::ShapeError;
 #[cfg(feature = "pyo3")]
 use pyo3::prelude::*;
 use std::path::PathBuf;
@@ -8,6 +9,10 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum SchemaError {
+    // Catch infallible errors here rather than unwrapping at call site. This should be safer
+    // in the long run if an infallible error is changed to a fallible one.
+    #[error("Infallible error: {0}")]
+    Infallible(#[from] std::convert::Infallible),
     #[error("IO error on path `{path}`: {error}")]
     IO { path: PathBuf, error: std::io::Error },
     #[error("JSON error: {0}")]
@@ -43,8 +48,9 @@ pub enum SchemaError {
     CircularParameterReference(Vec<String>),
     #[error("unsupported file format")]
     UnsupportedFileFormat,
+    #[cfg(feature = "pyo3")]
     #[error("Python error: {0}")]
-    PythonError(String),
+    PythonError(#[from] PyErr),
     #[error("hdf5 error: {0}")]
     HDF5Error(String),
     #[error("Missing metric set: {0}")]
@@ -53,8 +59,9 @@ pub enum SchemaError {
     DataLengthMismatch { expected: usize, found: usize },
     #[error("Failed to estimate epsilon for use in the radial basis function.")]
     RbfEpsilonEstimation,
-    #[error("Scenario group with name {0} not found")]
-    ScenarioGroupNotFound(String),
+    #[error("Scenario error: {0}")]
+    #[cfg(feature = "core")]
+    Scenario(#[from] pywr_core::scenario::ScenarioError),
     #[error("Inter-network transfer with name {0} not found")]
     InterNetworkTransferNotFound(String),
     #[error("Invalid rolling window definition on parameter {name}. Must convert to a positive integer.")]
@@ -74,6 +81,9 @@ pub enum SchemaError {
     MissingNodeAttribute { attr: String, name: String },
     #[error("The feature '{0}' must be enabled to use this functionality.")]
     FeatureNotEnabled(String),
+    #[cfg(feature = "core")]
+    #[error("Shape error: {0}")]
+    NdarrayShape(#[from] ShapeError),
 }
 
 #[cfg(all(feature = "core", feature = "pyo3"))]

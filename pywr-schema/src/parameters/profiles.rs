@@ -178,8 +178,8 @@ impl FromV1<UniformDrawdownProfileParameterV1> for UniformDrawdownProfileParamet
         Self {
             meta,
             reset_day: v1.reset_day.map(|v| ConstantValue::Literal(v as u64)),
-            reset_month: v1.reset_day.map(|v| ConstantValue::Literal(v as u64)),
-            residual_days: v1.reset_day.map(|v| ConstantValue::Literal(v as u64)),
+            reset_month: v1.reset_month.map(|v| ConstantValue::Literal(v as u64)),
+            residual_days: v1.residual_days.map(|v| ConstantValue::Literal(v as u64)),
         }
     }
 }
@@ -458,12 +458,12 @@ impl From<WeeklyInterpDay> for pywr_core::parameters::WeeklyInterpDay {
 /// # Arguments
 ///
 /// * `values` - The weekly values; this can be an array of 52 or 53 values. With 52 items,
-///     the value for the 53<sup>rd</sup> week (day 364 - 29<sup>th</sup> Dec or 30<sup>th</sup>
-///     Dec for a leap year) is copied from week 52<sup>nd</sup>.
+///   the value for the 53<sup>rd</sup> week (day 364 - 29<sup>th</sup> Dec or 30<sup>th</sup>
+///   Dec for a leap year) is copied from week 52<sup>nd</sup>.
 /// * `interp_day` - This is an optional field to control the parameter interpolation. When this
-///     is not provided, the profile is piecewise. When this equals "First" or "Last", the values
-///     are linearly interpolated in each week and the string specifies whether the given values are
-///     the first or last day of the week. See the examples below for more information.
+///   is not provided, the profile is piecewise. When this equals "First" or "Last", the values
+///   are linearly interpolated in each week and the string specifies whether the given values are
+///   the first or last day of the week. See the examples below for more information.
 ///
 /// ## Interpolation notes
 /// When the profile is interpolated, the following assumptions are made for a 52-week profile due to the missing

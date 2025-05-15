@@ -134,6 +134,7 @@ impl Recorder for HDF5Recorder {
     fn finalise(
         &self,
         _network: &Network,
+        _scenario_indices: &[ScenarioIndex],
         _metric_set_states: &[Vec<MetricSetState>],
         internal_state: &mut Option<Box<dyn Any>>,
     ) -> Result<(), PywrError> {
@@ -224,6 +225,7 @@ pub struct ScenarioGroupEntry {
 pub struct H5ScenarioIndex {
     index: usize,
     indices: hdf5_metno::types::VarLenArray<usize>,
+    label: hdf5_metno::types::VarLenUnicode,
 }
 
 /// Write scenario metadata to the HDF5 file.
@@ -251,11 +253,14 @@ fn write_scenarios_metadata(file: &hdf5_metno::File, domain: &ScenarioDomain) ->
         .indices()
         .iter()
         .map(|s| {
-            let indices = hdf5_metno::types::VarLenArray::from_slice(&s.indices);
+            let indices = hdf5_metno::types::VarLenArray::from_slice(s.simulation_indices());
+            let label = hdf5_metno::types::VarLenUnicode::from_str(&s.label())
+                .map_err(|e| PywrError::HDF5VarLenUnicode(e.to_string()))?;
 
             Ok(H5ScenarioIndex {
-                index: s.index,
+                index: s.simulation_id(),
                 indices,
+                label,
             })
         })
         .collect::<Result<_, PywrError>>()?;

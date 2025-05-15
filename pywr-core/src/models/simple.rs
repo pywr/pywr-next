@@ -72,6 +72,7 @@ impl Model {
     pub fn setup<S>(&self, settings: &S::Settings) -> Result<ModelState<Vec<Box<S>>>, PywrError>
     where
         S: Solver,
+        <S as Solver>::Settings: SolverSettings,
     {
         let timesteps = self.domain.time.timesteps();
         let scenario_indices = self.domain.scenarios.indices();
@@ -91,6 +92,7 @@ impl Model {
     pub fn setup_multi_scenario<S>(&self, settings: &S::Settings) -> Result<ModelState<Box<S>>, PywrError>
     where
         S: MultiStateSolver,
+        <S as MultiStateSolver>::Settings: SolverSettings,
     {
         let timesteps = self.domain.time.timesteps();
         let scenario_indices = self.domain.scenarios.indices();
@@ -248,6 +250,7 @@ impl Model {
         }
 
         self.network.finalise(
+            self.domain.scenarios.indices(),
             state.state.all_metric_set_internal_states_mut(),
             &mut state.recorder_state,
         )?;
@@ -306,6 +309,7 @@ impl Model {
         }
 
         self.network.finalise(
+            self.domain.scenarios.indices(),
             state.state.all_metric_set_internal_states_mut(),
             &mut state.recorder_state,
         )?;
