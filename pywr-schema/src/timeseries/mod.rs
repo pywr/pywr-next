@@ -8,6 +8,7 @@ use crate::parameters::ParameterMeta;
 use crate::v1::{ConversionData, IntoV2, TryFromV1};
 use crate::visit::VisitPaths;
 use crate::ConversionError;
+#[cfg(feature = "core")]
 use ndarray::ShapeError;
 #[cfg(feature = "core")]
 use ndarray::{s, Array2};

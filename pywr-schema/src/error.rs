@@ -1,6 +1,7 @@
 use crate::data_tables::{DataTable, TableDataRef, TableError};
 use crate::nodes::NodeAttribute;
 use crate::timeseries::TimeseriesError;
+#[cfg(feature = "core")]
 use ndarray::ShapeError;
 #[cfg(feature = "pyo3")]
 use pyo3::prelude::*;

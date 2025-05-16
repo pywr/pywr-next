@@ -232,7 +232,7 @@ pub fn run_all_solvers(
     #[cfg(feature = "ipm-simd")]
     {
         if !solvers_to_skip.contains(&"ipm-simd") {
-            check_features_and_run_multi::<SimdIpmF64Solver<4>>(model, !solvers_without_features.contains(&"ipm-simd"));
+            check_features_and_run_multi::<SimdIpmF64Solver>(model, !solvers_without_features.contains(&"ipm-simd"));
         }
     }
 
@@ -290,7 +290,7 @@ where
         );
         model
             .run_multi_scenario::<S>(&Default::default())
-            .expect(&format!("Failed to solve with: {}", S::name()));
+            .unwrap_or_else(|_| panic!("Failed to solve with: {}", S::name()));
     } else {
         assert!(
             !has_features,
@@ -459,7 +459,7 @@ mod tests {
 
         let settings = SimdIpmSolverSettings::default();
         model
-            .run_multi_scenario::<SimdIpmF64Solver<4>>(&settings)
+            .run_multi_scenario::<SimdIpmF64Solver>(&settings)
             .expect("Failed to run model!");
     }
 }

@@ -307,7 +307,7 @@ impl BuiltSolver {
             let cost = states
                 .iter()
                 .map(|s| {
-                    edge.cost(&network.nodes(), network, s)
+                    edge.cost(network.nodes(), network, s)
                         .map(|c| if c != 0.0 { -c } else { 0.0 })
                 })
                 .collect::<Result<Vec<f64>, _>>()?;
