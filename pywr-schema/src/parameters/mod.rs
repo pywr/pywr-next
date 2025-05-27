@@ -20,6 +20,7 @@ mod offset;
 mod polynomial;
 mod profiles;
 mod python;
+mod rolling;
 mod tables;
 mod thresholds;
 
@@ -64,6 +65,7 @@ use pywr_v1_schema::parameters::{
     CoreParameter, DataFrameParameter as DataFrameParameterV1, Parameter as ParameterV1,
     ParameterValue as ParameterValueV1, TableIndex as TableIndexV1, TableIndexEntry as TableIndexEntryV1,
 };
+pub use rolling::{RollingIndexParameter, RollingParameter};
 use schemars::JsonSchema;
 use std::path::{Path, PathBuf};
 use strum_macros::{Display, EnumDiscriminants, EnumString, IntoStaticStr, VariantNames};
@@ -112,6 +114,8 @@ pub enum Parameter {
     DiscountFactor(DiscountFactorParameter),
     Interpolated(InterpolatedParameter),
     RbfProfile(RbfProfileParameter),
+    Rolling(RollingParameter),
+    RollingIndex(RollingIndexParameter),
 }
 
 impl Parameter {
@@ -146,6 +150,8 @@ impl Parameter {
             Self::RbfProfile(p) => p.meta.name.as_str(),
             Self::NegativeMax(p) => p.meta.name.as_str(),
             Self::NegativeMin(p) => p.meta.name.as_str(),
+            Self::Rolling(p) => p.meta.name.as_str(),
+            Self::RollingIndex(p) => p.meta.name.as_str(),
         }
     }
 
@@ -205,6 +211,8 @@ impl Parameter {
             Self::HydropowerTarget(p) => {
                 pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?)
             }
+            Self::Rolling(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
+            Self::RollingIndex(p) => pywr_core::parameters::ParameterType::Index(p.add_to_model(network, args)?),
         };
 
         Ok(ty)
@@ -243,6 +251,8 @@ impl VisitMetrics for Parameter {
             Self::NegativeMax(p) => p.visit_metrics(visitor),
             Self::NegativeMin(p) => p.visit_metrics(visitor),
             Self::HydropowerTarget(p) => p.visit_metrics(visitor),
+            Self::Rolling(p) => p.visit_metrics(visitor),
+            Self::RollingIndex(p) => p.visit_metrics(visitor),
         }
     }
 
@@ -277,6 +287,8 @@ impl VisitMetrics for Parameter {
             Self::NegativeMax(p) => p.visit_metrics_mut(visitor),
             Self::NegativeMin(p) => p.visit_metrics_mut(visitor),
             Self::HydropowerTarget(p) => p.visit_metrics_mut(visitor),
+            Self::Rolling(p) => p.visit_metrics_mut(visitor),
+            Self::RollingIndex(p) => p.visit_metrics_mut(visitor),
         }
     }
 }
@@ -313,6 +325,8 @@ impl VisitPaths for Parameter {
             Self::NegativeMax(p) => p.visit_paths(visitor),
             Self::NegativeMin(p) => p.visit_paths(visitor),
             Self::HydropowerTarget(p) => p.visit_paths(visitor),
+            Self::Rolling(p) => p.visit_paths(visitor),
+            Self::RollingIndex(p) => p.visit_paths(visitor),
         }
     }
 
@@ -347,6 +361,8 @@ impl VisitPaths for Parameter {
             Self::NegativeMax(p) => p.visit_paths_mut(visitor),
             Self::NegativeMin(p) => p.visit_paths_mut(visitor),
             Self::HydropowerTarget(p) => p.visit_paths_mut(visitor),
+            Self::Rolling(p) => p.visit_paths_mut(visitor),
+            Self::RollingIndex(p) => p.visit_paths_mut(visitor),
         }
     }
 }
@@ -479,7 +495,9 @@ impl TryFromV1<ParameterV1> for ParameterOrTimeseriesRef {
                         },
                     });
                 }
-                CoreParameter::RollingMeanFlowNode(_) => todo!("Implement RollingMeanFlowNodeParameter"),
+                CoreParameter::RollingMeanFlowNode(p) => {
+                    Parameter::Rolling(p.try_into_v2(parent_node, conversion_data)?).into()
+                }
                 CoreParameter::ScenarioWrapper(_) => todo!("Implement ScenarioWrapperParameter"),
                 CoreParameter::Flow(p) => {
                     return Err(ComponentConversionError::Parameter {

@@ -153,7 +153,7 @@ impl Recorder for Array2Recorder {
     }
 }
 
-pub struct AssertionRecorder {
+pub struct AssertionF64Recorder {
     meta: RecorderMeta,
     expected_values: Array2<f64>,
     metric: MetricF64,
@@ -161,7 +161,7 @@ pub struct AssertionRecorder {
     epsilon: f64,
 }
 
-impl AssertionRecorder {
+impl AssertionF64Recorder {
     pub fn new(
         name: &str,
         metric: MetricF64,
@@ -179,7 +179,7 @@ impl AssertionRecorder {
     }
 }
 
-impl Recorder for AssertionRecorder {
+impl Recorder for AssertionF64Recorder {
     fn meta(&self) -> &RecorderMeta {
         &self.meta
     }
@@ -213,6 +213,70 @@ impl Recorder for AssertionRecorder {
                     ulps: self.ulps,
                 },
             ) {
+                panic!(
+                    r#"assertion failed: (actual approx_eq expected)
+recorder: `{}`
+timestep: `{:?}` ({})
+scenario: `{:?}`
+actual: `{:?}`
+expected: `{:?}`"#,
+                    self.meta.name,
+                    timestep.date,
+                    timestep.index,
+                    scenario_index.simulation_id(),
+                    actual_value,
+                    expected_value
+                )
+            }
+        }
+
+        Ok(())
+    }
+}
+
+pub struct AssertionU64Recorder {
+    meta: RecorderMeta,
+    expected_values: Array2<u64>,
+    metric: MetricU64,
+}
+
+impl AssertionU64Recorder {
+    pub fn new(name: &str, metric: MetricU64, expected_values: Array2<u64>) -> Self {
+        Self {
+            meta: RecorderMeta::new(name),
+            expected_values,
+            metric,
+        }
+    }
+}
+impl Recorder for AssertionU64Recorder {
+    fn meta(&self) -> &RecorderMeta {
+        &self.meta
+    }
+
+    fn save(
+        &self,
+        timestep: &Timestep,
+        scenario_indices: &[ScenarioIndex],
+        model: &Network,
+        state: &[State],
+        _metric_set_states: &[Vec<MetricSetState>],
+        _internal_state: &mut Option<Box<dyn Any>>,
+    ) -> Result<(), PywrError> {
+        // This panics if out-of-bounds
+
+        for scenario_index in scenario_indices {
+            let expected_value = match self
+                .expected_values
+                .get([timestep.index, scenario_index.simulation_id()])
+            {
+                Some(v) => *v,
+                None => panic!("Simulation produced results out of range."),
+            };
+
+            let actual_value = self.metric.get_value(model, &state[scenario_index.simulation_id()])?;
+
+            if actual_value != expected_value {
                 panic!(
                     r#"assertion failed: (actual approx_eq expected)
 recorder: `{}`

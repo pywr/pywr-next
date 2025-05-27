@@ -9,6 +9,7 @@ use crate::state::State;
 use crate::timestep::Timestep;
 use std::str::FromStr;
 
+#[derive(Debug, Clone, Copy)]
 pub enum AggIndexFunc {
     Sum,
     Product,

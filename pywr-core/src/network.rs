@@ -389,19 +389,18 @@ impl Network {
             .zip(state.parameter_internal_states.iter_mut())
             .zip(state.metric_set_internal_states.iter_mut())
             .zip(solvers)
-            .for_each(
+            .try_for_each(
                 |((((scenario_index, current_state), p_internal_states), ms_internal_states), solver)| {
                     // TODO clear the current parameter values state (i.e. set them all to zero).
 
                     let start_p_calc = Instant::now();
-                    self.compute_components(timestep, scenario_index, current_state, p_internal_states)
-                        .unwrap();
+                    self.compute_components(timestep, scenario_index, current_state, p_internal_states)?;
 
                     // State now contains updated parameter values BUT original network state
                     timings.parameter_calculation += start_p_calc.elapsed();
 
                     // Solve determines the new network state
-                    let solve_timings = solver.solve(self, timestep, current_state).unwrap();
+                    let solve_timings = solver.solve(self, timestep, current_state)?;
                     // State now contains updated parameter values AND updated network state
                     timings.solve += solve_timings;
 
@@ -413,12 +412,13 @@ impl Network {
                         current_state,
                         p_internal_states,
                         ms_internal_states,
-                    )
-                    .unwrap();
+                    )?;
 
                     timings.parameter_calculation += start_p_after.elapsed();
+
+                    Ok::<(), PywrError>(())
                 },
-            );
+            )?;
 
         Ok(())
     }
@@ -1705,7 +1705,7 @@ mod tests {
     use crate::metric::MetricF64;
     use crate::network::Network;
     use crate::parameters::{ActivationFunction, ControlCurveInterpolatedParameter, Parameter};
-    use crate::recorders::AssertionRecorder;
+    use crate::recorders::AssertionF64Recorder;
     use crate::solvers::{ClpSolver, ClpSolverSettings};
     use crate::test_utils::{run_all_solvers, simple_model, simple_storage_model};
     use float_cmp::assert_approx_eq;
@@ -1830,15 +1830,17 @@ mod tests {
         let idx = model.network().get_node_by_name("input", None).unwrap().index();
         let expected = Array::from_shape_fn((366, 10), |(i, j)| (1.0 + i as f64 + j as f64).min(12.0));
 
-        let recorder = AssertionRecorder::new("input-flow", MetricF64::NodeOutFlow(idx), expected.clone(), None, None);
+        let recorder =
+            AssertionF64Recorder::new("input-flow", MetricF64::NodeOutFlow(idx), expected.clone(), None, None);
         model.network_mut().add_recorder(Box::new(recorder)).unwrap();
 
         let idx = model.network().get_node_by_name("link", None).unwrap().index();
-        let recorder = AssertionRecorder::new("link-flow", MetricF64::NodeOutFlow(idx), expected.clone(), None, None);
+        let recorder =
+            AssertionF64Recorder::new("link-flow", MetricF64::NodeOutFlow(idx), expected.clone(), None, None);
         model.network_mut().add_recorder(Box::new(recorder)).unwrap();
 
         let idx = model.network().get_node_by_name("output", None).unwrap().index();
-        let recorder = AssertionRecorder::new("output-flow", MetricF64::NodeInFlow(idx), expected, None, None);
+        let recorder = AssertionF64Recorder::new("output-flow", MetricF64::NodeInFlow(idx), expected, None, None);
         model.network_mut().add_recorder(Box::new(recorder)).unwrap();
 
         let idx = model
@@ -1846,7 +1848,7 @@ mod tests {
             .get_parameter_index_by_name(&"total-demand".into())
             .unwrap();
         let expected = Array2::from_elem((366, 10), 12.0);
-        let recorder = AssertionRecorder::new("total-demand", idx.into(), expected, None, None);
+        let recorder = AssertionF64Recorder::new("total-demand", idx.into(), expected, None, None);
         model.network_mut().add_recorder(Box::new(recorder)).unwrap();
 
         // Test all solvers
@@ -1863,14 +1865,14 @@ mod tests {
 
         let expected = Array2::from_shape_fn((15, 10), |(i, _j)| if i < 10 { 10.0 } else { 0.0 });
 
-        let recorder = AssertionRecorder::new("output-flow", MetricF64::NodeInFlow(idx), expected, None, None);
+        let recorder = AssertionF64Recorder::new("output-flow", MetricF64::NodeInFlow(idx), expected, None, None);
         network.add_recorder(Box::new(recorder)).unwrap();
 
         let idx = network.get_node_by_name("reservoir", None).unwrap().index();
 
         let expected = Array2::from_shape_fn((15, 10), |(i, _j)| (90.0 - 10.0 * i as f64).max(0.0));
 
-        let recorder = AssertionRecorder::new("reservoir-volume", MetricF64::NodeVolume(idx), expected, None, None);
+        let recorder = AssertionF64Recorder::new("reservoir-volume", MetricF64::NodeVolume(idx), expected, None, None);
         network.add_recorder(Box::new(recorder)).unwrap();
 
         // Test all solvers
@@ -1890,7 +1892,7 @@ mod tests {
 
         // These are the expected values for the proportional volume at the end of the time-step
         let expected = Array2::from_shape_fn((15, 10), |(i, _j)| (90.0 - 10.0 * i as f64).max(0.0) / 100.0);
-        let recorder = AssertionRecorder::new(
+        let recorder = AssertionF64Recorder::new(
             "reservoir-proportion-volume",
             MetricF64::DerivedMetric(dm_idx),
             expected,
@@ -1910,7 +1912,7 @@ mod tests {
         let p_idx = network.add_parameter(Box::new(cc)).unwrap();
         let expected = Array2::from_shape_fn((15, 10), |(i, _j)| (100.0 - 10.0 * i as f64).max(0.0));
 
-        let recorder = AssertionRecorder::new("reservoir-cc", p_idx.into(), expected, None, None);
+        let recorder = AssertionF64Recorder::new("reservoir-cc", p_idx.into(), expected, None, None);
         network.add_recorder(Box::new(recorder)).unwrap();
 
         // Test all solvers

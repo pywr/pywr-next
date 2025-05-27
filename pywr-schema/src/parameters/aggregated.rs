@@ -22,8 +22,9 @@ use std::collections::HashMap;
 pub enum AggFunc {
     Sum,
     Product,
-    Max,
+    Mean,
     Min,
+    Max,
 }
 
 #[cfg(feature = "core")]
@@ -34,6 +35,7 @@ impl From<AggFunc> for pywr_core::parameters::AggFunc {
             AggFunc::Product => pywr_core::parameters::AggFunc::Product,
             AggFunc::Max => pywr_core::parameters::AggFunc::Max,
             AggFunc::Min => pywr_core::parameters::AggFunc::Min,
+            AggFunc::Mean => pywr_core::parameters::AggFunc::Mean,
         }
     }
 }
