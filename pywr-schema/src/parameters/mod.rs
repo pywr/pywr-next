@@ -33,6 +33,7 @@ use crate::error::{ComponentConversionError, ConversionError};
 use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
+use crate::parameters::delay::DelayIndexParameter;
 use crate::timeseries::ConvertedTimeseriesReference;
 use crate::v1::{ConversionData, IntoV2, TryFromV1, TryIntoV2};
 use crate::visit::{VisitMetrics, VisitPaths};
@@ -109,6 +110,7 @@ pub enum Parameter {
     TablesArray(TablesArrayParameter),
     Python(PythonParameter),
     Delay(DelayParameter),
+    DelayIndex(DelayIndexParameter),
     Division(DivisionParameter),
     Offset(OffsetParameter),
     DiscountFactor(DiscountFactorParameter),
@@ -143,6 +145,7 @@ impl Parameter {
             Self::Python(p) => p.meta.name.as_str(),
             Self::Division(p) => p.meta.name.as_str(),
             Self::Delay(p) => p.meta.name.as_str(),
+            Self::DelayIndex(p) => p.meta.name.as_str(),
             Self::Offset(p) => p.meta.name.as_str(),
             Self::DiscountFactor(p) => p.meta.name.as_str(),
             Self::Interpolated(p) => p.meta.name.as_str(),
@@ -201,6 +204,7 @@ impl Parameter {
             Self::TablesArray(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
             Self::Python(p) => p.add_to_model(network, args)?,
             Self::Delay(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
+            Self::DelayIndex(p) => pywr_core::parameters::ParameterType::Index(p.add_to_model(network, args)?),
             Self::Division(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
             Self::Offset(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
             Self::DiscountFactor(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
@@ -243,6 +247,7 @@ impl VisitMetrics for Parameter {
             Self::TablesArray(p) => p.visit_metrics(visitor),
             Self::Python(p) => p.visit_metrics(visitor),
             Self::Delay(p) => p.visit_metrics(visitor),
+            Self::DelayIndex(p) => p.visit_metrics(visitor),
             Self::Division(p) => p.visit_metrics(visitor),
             Self::Offset(p) => p.visit_metrics(visitor),
             Self::DiscountFactor(p) => p.visit_metrics(visitor),
@@ -279,6 +284,7 @@ impl VisitMetrics for Parameter {
             Self::TablesArray(p) => p.visit_metrics_mut(visitor),
             Self::Python(p) => p.visit_metrics_mut(visitor),
             Self::Delay(p) => p.visit_metrics_mut(visitor),
+            Self::DelayIndex(p) => p.visit_metrics_mut(visitor),
             Self::Division(p) => p.visit_metrics_mut(visitor),
             Self::Offset(p) => p.visit_metrics_mut(visitor),
             Self::DiscountFactor(p) => p.visit_metrics_mut(visitor),
@@ -317,6 +323,7 @@ impl VisitPaths for Parameter {
             Self::TablesArray(p) => p.visit_paths(visitor),
             Self::Python(p) => p.visit_paths(visitor),
             Self::Delay(p) => p.visit_paths(visitor),
+            Self::DelayIndex(p) => p.visit_paths(visitor),
             Self::Division(p) => p.visit_paths(visitor),
             Self::Offset(p) => p.visit_paths(visitor),
             Self::DiscountFactor(p) => p.visit_paths(visitor),
@@ -353,6 +360,7 @@ impl VisitPaths for Parameter {
             Self::TablesArray(p) => p.visit_paths_mut(visitor),
             Self::Python(p) => p.visit_paths_mut(visitor),
             Self::Delay(p) => p.visit_paths_mut(visitor),
+            Self::DelayIndex(p) => p.visit_paths_mut(visitor),
             Self::Division(p) => p.visit_paths_mut(visitor),
             Self::Offset(p) => p.visit_paths_mut(visitor),
             Self::DiscountFactor(p) => p.visit_paths_mut(visitor),
