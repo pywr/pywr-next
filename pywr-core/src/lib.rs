@@ -1,4 +1,3 @@
-#![cfg_attr(feature = "ipm-simd", feature(portable_simd))]
 // Requires upgrading to PyO3 v0.23 which is blocked by updating Polars
 // See also: https://github.com/PyO3/pyo3/issues/4743
 #![allow(unexpected_cfgs)]
@@ -145,12 +144,8 @@ pub enum PywrError {
     SolveFailed,
     #[error("atleast one parameter is required")]
     AtleastOneParameterRequired,
-    #[error("scenario state not found")]
-    ScenarioStateNotFound,
-    #[error("scenario not found: {0}")]
-    ScenarioNotFound(String),
-    #[error("scenario group index not found: {0}")]
-    ScenarioGroupIndexNotFound(usize),
+    #[error("scenario error: {0}")]
+    Scenario(#[from] scenario::ScenarioError),
     #[error("clp error")]
     ClpError(#[from] solvers::ClpError),
     #[error("metric not defined")]

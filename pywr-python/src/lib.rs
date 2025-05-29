@@ -2,20 +2,17 @@ use chrono::NaiveDateTime;
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyTuple, PyType};
-
 use pyo3::IntoPyObjectExt;
-/// Python API
-///
-/// The following structures provide a Python API to access the core model structures.
-///
-///
-///
-
+#[cfg(any(feature = "ipm-ocl", feature = "ipm-simd"))]
+use pywr_core::solvers::MultiStateSolver;
 #[cfg(feature = "ipm-ocl")]
 use pywr_core::solvers::{ClIpmF32Solver, ClIpmF64Solver, ClIpmSolverSettings};
-use pywr_core::solvers::{ClpSolver, ClpSolverSettings, ClpSolverSettingsBuilder};
+use pywr_core::solvers::{ClpSolver, ClpSolverSettings, ClpSolverSettingsBuilder, Solver, SolverSettings};
 #[cfg(feature = "highs")]
 use pywr_core::solvers::{HighsSolver, HighsSolverSettings, HighsSolverSettingsBuilder};
+#[cfg(feature = "ipm-simd")]
+use pywr_core::solvers::{SimdIpmF64Solver, SimdIpmSolverSettings, SimdIpmSolverSettingsBuilder};
+use pywr_core::PywrError;
 use pywr_schema::model::DateType;
 use pywr_schema::{ComponentConversionError, ConversionData, ConversionError, TryIntoV2};
 use std::fmt;
@@ -154,6 +151,41 @@ fn convert_metric_from_v1_json_string(_py: Python, data: &str) -> PyResult<Metri
     Ok(py_metric)
 }
 
+/// Run a model using the specified solver unlocking the GIL
+fn run_allowing_threads<S>(
+    py: Python<'_>,
+    model: &pywr_core::models::Model,
+    settings: &S::Settings,
+) -> Result<(), PyErr>
+where
+    S: Solver,
+    <S as Solver>::Settings: SolverSettings + Sync,
+{
+    py.allow_threads(|| {
+        let _results = model.run::<S>(settings)?;
+        Ok::<(), PywrError>(())
+    })?;
+    Ok(())
+}
+
+/// Run a model using the specified multi solver unlocking the GIL
+#[cfg(any(feature = "ipm-ocl", feature = "ipm-simd"))]
+fn run_multi_allowing_threads<S>(
+    py: Python<'_>,
+    model: &pywr_core::models::Model,
+    settings: &S::Settings,
+) -> Result<(), PyErr>
+where
+    S: MultiStateSolver,
+    <S as MultiStateSolver>::Settings: SolverSettings + Sync,
+{
+    py.allow_threads(|| {
+        let _results = model.run_multi_scenario::<S>(settings)?;
+        Ok::<(), PywrError>(())
+    })?;
+    Ok(())
+}
+
 #[pyclass]
 pub struct Model {
     model: pywr_core::models::Model,
@@ -162,25 +194,31 @@ pub struct Model {
 #[pymethods]
 impl Model {
     #[pyo3(signature = (solver_name, solver_kwargs=None))]
-    fn run(&self, solver_name: &str, solver_kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<()> {
+    fn run(&self, py: Python<'_>, solver_name: &str, solver_kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<()> {
         match solver_name {
             "clp" => {
                 let settings = build_clp_settings(solver_kwargs)?;
-                self.model.run::<ClpSolver>(&settings)?;
+                run_allowing_threads::<ClpSolver>(py, &self.model, &settings)?;
             }
             #[cfg(feature = "highs")]
             "highs" => {
                 let settings = build_highs_settings(solver_kwargs)?;
-                self.model.run::<HighsSolver>(&settings)?;
+                run_allowing_threads::<HighsSolver>(py, &self.model, &settings)?;
+            }
+            #[cfg(feature = "ipm-simd")]
+            "ipm-simd" => {
+                let settings = build_ipm_simd_settings(solver_kwargs)?;
+                run_multi_allowing_threads::<SimdIpmF64Solver>(py, &self.model, &settings)?;
             }
             #[cfg(feature = "ipm-ocl")]
-            "clipm-f32" => self
-                .model
-                .run_multi_scenario::<ClIpmF32Solver>(&ClIpmSolverSettings::default()),
+            "clipm-f32" => {
+                run_multi_allowing_threads::<ClIpmF32Solver>(py, &self.model, &ClIpmSolverSettings::default())?
+            }
+
             #[cfg(feature = "ipm-ocl")]
-            "clipm-f64" => self
-                .model
-                .run_multi_scenario::<ClIpmF64Solver>(&ClIpmSolverSettings::default()),
+            "clipm-f64" => {
+                run_multi_allowing_threads::<ClIpmF64Solver>(py, &self.model, &ClIpmSolverSettings::default())?
+            }
             _ => return Err(PyRuntimeError::new_err(format!("Unknown solver: {}", solver_name))),
         }
 
@@ -238,6 +276,47 @@ fn build_highs_settings(kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<HighsSol
                 }
             }
             kwargs.del_item("parallel")?;
+        }
+
+        if !kwargs.is_empty() {
+            return Err(PyRuntimeError::new_err(format!(
+                "Unknown keyword arguments: {:?}",
+                kwargs
+            )));
+        }
+    }
+
+    Ok(builder.build())
+}
+
+#[cfg(feature = "ipm-simd")]
+fn build_ipm_simd_settings(kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<SimdIpmSolverSettings> {
+    let mut builder = SimdIpmSolverSettingsBuilder::default();
+
+    if let Some(kwargs) = kwargs {
+        if let Ok(value) = kwargs.get_item("threads") {
+            if let Some(threads) = value {
+                builder = builder.threads(threads.extract::<usize>()?);
+            }
+            kwargs.del_item("threads")?;
+        }
+
+        if let Ok(value) = kwargs.get_item("parallel") {
+            if let Some(parallel) = value {
+                if parallel.extract::<bool>()? {
+                    builder = builder.parallel();
+                }
+            }
+            kwargs.del_item("parallel")?;
+        }
+
+        if let Ok(value) = kwargs.get_item("ignore_feature_requirements") {
+            if let Some(ignore) = value {
+                if ignore.extract::<bool>()? {
+                    builder = builder.ignore_feature_requirements();
+                }
+            }
+            kwargs.del_item("ignore_feature_requirements")?;
         }
 
         if !kwargs.is_empty() {

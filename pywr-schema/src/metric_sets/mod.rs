@@ -135,9 +135,9 @@ impl From<NestedMetricAggregator> for pywr_core::recorders::NestedAggregator {
 #[serde(deny_unknown_fields)]
 pub struct MetricSetFilters {
     #[serde(default)]
-    all_nodes: bool,
+    pub all_nodes: bool,
     #[serde(default)]
-    all_parameters: bool,
+    pub all_parameters: bool,
 }
 
 #[cfg(feature = "core")]

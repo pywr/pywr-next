@@ -144,8 +144,7 @@
         },
         "provider": {
           "kwargs": {
-            "dayfirst": true,
-            "parse_dates": true
+            "dayfirst": true
           },
           "time_col": null,
           "type": "Pandas",
@@ -158,8 +157,7 @@
         },
         "provider": {
           "kwargs": {
-            "dayfirst": true,
-            "parse_dates": true
+            "dayfirst": true
           },
           "time_col": null,
           "type": "Pandas",

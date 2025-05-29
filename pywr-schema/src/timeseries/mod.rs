@@ -9,7 +9,9 @@ use crate::v1::{ConversionData, IntoV2, TryFromV1};
 use crate::visit::VisitPaths;
 use crate::ConversionError;
 #[cfg(feature = "core")]
-use ndarray::Array2;
+use ndarray::ShapeError;
+#[cfg(feature = "core")]
+use ndarray::{s, Array2};
 pub use pandas::PandasDataset;
 #[cfg(feature = "core")]
 use polars::error::PolarsError;
@@ -70,6 +72,12 @@ pub enum TimeseriesError {
     #[cfg(feature = "core")]
     #[error("Python not enabled.")]
     PythonNotEnabled,
+    #[cfg(feature = "core")]
+    #[error("Scenario error: {0}")]
+    Scenario(#[from] pywr_core::scenario::ScenarioError),
+    #[cfg(feature = "core")]
+    #[error("Shape error: {0}")]
+    NdarrayShape(#[from] ShapeError),
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
@@ -280,17 +288,21 @@ impl LoadedTimeseriesCollection {
         domain: &ModelDomain,
         scenario: &str,
     ) -> Result<ParameterIndex<f64>, TimeseriesError> {
-        let scenario_group_index = domain
-            .scenarios()
-            .group_index(scenario)
-            .ok_or(TimeseriesError::ScenarioGroupNotFound(scenario.to_string()))?;
-
+        let scenario_group_index = domain.scenarios().group_index(scenario)?;
         let df = self
             .timeseries
             .get(name)
             .ok_or(TimeseriesError::TimeseriesNotFound(name.to_string()))?;
 
-        let array: Array2<f64> = df.to_ndarray::<Float64Type>(IndexOrder::default()).unwrap();
+        // Original array as loaded from the timeseries
+        let mut array: Array2<f64> = df.to_ndarray::<Float64Type>(IndexOrder::default())?;
+
+        // If there is a scenario subset then we can reduce the data to align with the scenarios
+        // that are actually used in the model.
+        if let Some(subset) = domain.scenarios().group_scenario_subset(scenario)? {
+            array = subset_array2(&array, subset)?;
+        }
+
         let name = ParameterName::new(scenario, Some(name));
 
         match network.get_parameter_index_by_name(&name) {
@@ -313,17 +325,21 @@ impl LoadedTimeseriesCollection {
         domain: &ModelDomain,
         scenario: &str,
     ) -> Result<ParameterIndex<u64>, TimeseriesError> {
-        let scenario_group_index = domain
-            .scenarios()
-            .group_index(scenario)
-            .ok_or(TimeseriesError::ScenarioGroupNotFound(scenario.to_string()))?;
+        let scenario_group_index = domain.scenarios().group_index(scenario)?;
 
         let df = self
             .timeseries
             .get(name)
             .ok_or(TimeseriesError::TimeseriesNotFound(name.to_string()))?;
 
-        let array: Array2<u64> = df.to_ndarray::<UInt64Type>(IndexOrder::default()).unwrap();
+        let mut array: Array2<u64> = df.to_ndarray::<UInt64Type>(IndexOrder::default())?;
+
+        // If there is a scenario subset then we can reduce the data to align with the scenarios
+        // that are actually used in the model.
+        if let Some(subset) = domain.scenarios().group_scenario_subset(scenario)? {
+            array = subset_array2(&array, subset)?;
+        }
+
         let name = ParameterName::new(scenario, Some(name));
 
         match network.get_index_parameter_index_by_name(&name) {
@@ -337,6 +353,22 @@ impl LoadedTimeseriesCollection {
             },
         }
     }
+}
+
+/// Create a subset of a 2D array based on the column indices.
+///
+/// This function is used to reduce the size of a timeseries dataframe to only include the columns
+/// that are used in a simulation.
+#[cfg(feature = "core")]
+pub fn subset_array2<T>(array: &Array2<T>, subset: &[usize]) -> Result<Array2<T>, ShapeError>
+where
+    T: Copy,
+{
+    // Slice the array to only include the columns that are used in the scenario
+    let slices = subset.iter().map(|c| array.slice(s![.., *c])).collect::<Vec<_>>();
+    // Stack the slices to create a new array; this should be infallible because
+    // the slices are all the same length.
+    ndarray::stack(ndarray::Axis(1), &slices)
 }
 
 /// Convert timeseries inputs to this schema.
@@ -461,6 +493,13 @@ impl TryFromV1<DataFrameParameterV1> for ConvertedTimeseriesReference {
                 Some(v) => v.as_str().map(|s| s.to_string()),
                 None => None,
             };
+            // remove the parse_dates for CSV files as this is already passed to read_csv in
+            // pandas_load.py. This prevents from raising a multiple keyword error.
+            if let Some(ext) = url.extension() {
+                if ext == "csv" && pandas_kwargs.contains_key("parse_dates") {
+                    pandas_kwargs.remove("parse_dates");
+                }
+            }
 
             let provider = PandasDataset {
                 time_col,

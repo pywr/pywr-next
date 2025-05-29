@@ -388,6 +388,7 @@ impl Recorder for MemoryRecorder {
         &self,
         scenario_indices: &[ScenarioIndex],
         _network: &Network,
+        _scenario_indices: &[ScenarioIndex],
         metric_set_states: &[Vec<MetricSetState>],
         internal_state: &mut Option<Box<dyn Any>>,
     ) -> Result<(), PywrError> {

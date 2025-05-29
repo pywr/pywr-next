@@ -16,9 +16,8 @@ pub use settings::{SimdIpmSolverSettings, SimdIpmSolverSettingsBuilder};
 use std::collections::BTreeMap;
 use std::num::NonZeroUsize;
 use std::ops::Deref;
-use std::simd::prelude::SimdFloat;
-use std::simd::{LaneCount, Simd, SupportedLaneCount};
 use std::time::Instant;
+use wide::f64x4;
 
 const B_MAX: f64 = 999999.0;
 
@@ -54,38 +53,32 @@ impl Matrix {
     }
 }
 
-struct Lp<const N: usize>
-where
-    LaneCount<N>: SupportedLaneCount,
-{
+struct Lp {
     inequality: Matrix,
     equality: Matrix,
     num_cols: usize,
-    row_upper: Vec<Simd<f64, N>>,
-    col_obj_coef: Vec<Simd<f64, N>>,
+    row_upper: Vec<f64x4>,
+    col_obj_coef: Vec<f64x4>,
 }
 
-impl<const N: usize> Lp<N>
-where
-    LaneCount<N>: SupportedLaneCount,
-{
+impl Lp {
     /// Zero all objective coefficients.
     fn zero_obj_coefficients(&mut self) {
-        self.col_obj_coef.fill(Simd::<f64, N>::splat(0.0.into()));
+        self.col_obj_coef.fill(f64x4::splat(0.0));
     }
 
     pub fn add_obj_coefficient(&mut self, col: usize, obj_coef: &[f64]) {
         let value = if obj_coef.is_empty() {
             panic!("Row bound vector is empty!")
-        } else if obj_coef.len() > N {
+        } else if obj_coef.len() > 4 {
             panic!("Row bound vector is larger than the number of SIMD lanes.")
-        } else if obj_coef.len() == N {
-            Simd::<f64, N>::from_slice(obj_coef)
+        } else if obj_coef.len() == 4 {
+            f64x4::from(obj_coef)
         } else {
             // Pad the last entry to ensure it is the full width
-            let pad: Vec<_> = (0..N - obj_coef.len()).map(|_| *obj_coef.last().unwrap()).collect();
+            let pad: Vec<_> = (0..4 - obj_coef.len()).map(|_| *obj_coef.last().unwrap()).collect();
             let values = [obj_coef, &pad].concat();
-            Simd::<f64, N>::from_slice(values.as_slice())
+            f64x4::from(values.as_slice())
         };
 
         self.col_obj_coef[col] += value;
@@ -94,25 +87,25 @@ where
     /// Reset the row bounds to `FMIN` and `FMAX` for all rows with a mask.
     fn reset_row_bounds(&mut self) {
         for ub in self.row_upper.iter_mut().take(self.inequality.nrows()) {
-            *ub = Simd::<f64, N>::splat(B_MAX)
+            *ub = f64x4::splat(B_MAX)
         }
     }
 
     pub fn apply_row_bounds(&mut self, row: usize, ub: &[f64]) {
         let value = if ub.is_empty() {
             panic!("Row bound vector is empty!")
-        } else if ub.len() > N {
+        } else if ub.len() > 4 {
             panic!("Row bound vector is larger than the number of SIMD lanes.")
-        } else if ub.len() == N {
-            Simd::<f64, N>::from_slice(ub)
+        } else if ub.len() == 4 {
+            f64x4::from(ub)
         } else {
             // Pad the last entry to ensure it is the full width
-            let pad: Vec<_> = (0..N - ub.len()).map(|_| *ub.last().unwrap()).collect();
+            let pad: Vec<_> = (0..4 - ub.len()).map(|_| *ub.last().unwrap()).collect();
             let values = [ub, &pad].concat();
-            Simd::<f64, N>::from_slice(values.as_slice())
+            f64x4::from(values.as_slice())
         };
 
-        self.row_upper[row] = self.row_upper[row].simd_min(value);
+        self.row_upper[row] = self.row_upper[row].min(value);
     }
 
     fn get_full_matrix(&self) -> Matrix {
@@ -184,19 +177,16 @@ impl LpBuilder {
     }
 
     /// Build the LP into a final sparse form
-    fn build<const N: usize>(self) -> Lp<N>
-    where
-        LaneCount<N>: SupportedLaneCount,
-    {
+    fn build(self) -> Lp {
         let num_rows = self.equality.len() + self.inequality.len();
 
         // By using chunks we make sure any scenarios that do not divide in to the number
         // of lanes are padded at the end.
         // let row_range: Vec<_> = (0..num_rows).collect();
-        let row_upper = (0..num_rows).map(|_| Simd::<f64, N>::splat(0.0)).collect();
+        let row_upper = (0..num_rows).map(|_| f64x4::splat(0.0)).collect();
 
         // let col_range: Vec<_> = (0..self.num_cols).collect();
-        let col_obj_coef = (0..self.num_cols).map(|_| Simd::<f64, N>::splat(0.0)).collect();
+        let col_obj_coef = (0..self.num_cols).map(|_| f64x4::splat(0.0)).collect();
 
         // println!("Number of columns: {}", self.num_cols);
         // println!("Number of rows: {num_rows}");
@@ -282,24 +272,18 @@ impl RowBuilder {
     }
 }
 
-struct BuiltSolver<const N: usize>
-where
-    LaneCount<N>: SupportedLaneCount,
-{
-    lp: Lp<N>,
+struct BuiltSolver {
+    lp: Lp,
     col_edge_map: ColumnEdgeMap<usize>,
     node_constraints_row_ids: Vec<usize>,
 }
 
-impl<const N: usize> BuiltSolver<N>
-where
-    LaneCount<N>: SupportedLaneCount,
-{
-    pub fn col_obj_coef(&self) -> &[Simd<f64, N>] {
+impl BuiltSolver {
+    pub fn col_obj_coef(&self) -> &[f64x4] {
         &self.lp.col_obj_coef
     }
 
-    pub fn row_upper(&self) -> &[Simd<f64, N>] {
+    pub fn row_upper(&self) -> &[f64x4] {
         &self.lp.row_upper
     }
 
@@ -336,7 +320,7 @@ where
             let cost = states
                 .iter()
                 .map(|s| {
-                    edge.cost(&network.nodes(), network, s)
+                    edge.cost(network.nodes(), network, s)
                         .map(|c| if c != 0.0 { -c } else { 0.0 })
                 })
                 .collect::<Result<Vec<f64>, _>>()?;
@@ -422,10 +406,7 @@ impl SolverBuilder {
         self.col_edge_map.col_for_edge(edge_index)
     }
 
-    fn create<const N: usize>(mut self, network: &Network) -> Result<BuiltSolver<N>, PywrError>
-    where
-        LaneCount<N>: SupportedLaneCount,
-    {
+    fn create(mut self, network: &Network) -> Result<BuiltSolver, PywrError> {
         // Create the columns
         self.create_columns(network)?;
 
@@ -595,21 +576,15 @@ impl SolverBuilder {
     }
 }
 
-pub struct SimdIpmF64Solver<const N: usize>
-where
-    LaneCount<N>: SupportedLaneCount,
-{
-    built: Vec<BuiltSolver<N>>,
-    ipm: Vec<PathFollowingDirectSimdSolver<f64, N>>,
-    tolerances: Tolerances<f64, N>,
+pub struct SimdIpmF64Solver {
+    built: Vec<BuiltSolver>,
+    ipm: Vec<PathFollowingDirectSimdSolver>,
+    tolerances: Tolerances,
     max_iterations: NonZeroUsize,
 }
 
-impl<const N: usize> MultiStateSolver for SimdIpmF64Solver<N>
-where
-    LaneCount<N>: SupportedLaneCount,
-{
-    type Settings = SimdIpmSolverSettings<f64, N>;
+impl MultiStateSolver for SimdIpmF64Solver {
+    type Settings = SimdIpmSolverSettings;
 
     fn name() -> &'static str {
         "ipm-simd"
@@ -623,7 +598,7 @@ where
         let mut built_solvers = Vec::new();
         let mut ipms = Vec::new();
 
-        for _ in (0..num_scenarios).collect::<Vec<_>>().chunks(N) {
+        for _ in (0..num_scenarios).collect::<Vec<_>>().chunks(4) {
             let builder = SolverBuilder::new();
             let built = builder.create(network)?;
 
@@ -663,7 +638,7 @@ where
 
         // TODO this will miss off anything that doesn't divide in to 4
         states
-            .par_chunks_mut(N)
+            .par_chunks_mut(4)
             .zip(&mut self.built)
             .zip(&mut self.ipm)
             .for_each(|((chunk_states, built), ipm)| {
@@ -693,7 +668,7 @@ where
                     let col = built.col_for_edge(&edge.index());
                     let flows = solution[col];
 
-                    for (state, flow) in chunk_states.iter_mut().zip(flows.as_array()) {
+                    for (state, flow) in chunk_states.iter_mut().zip(flows.as_array_ref()) {
                         if !flow.is_finite() {
                             panic!(
                                 "Non-finite flow encountered from solver. Edge: {:#?}, value: {}",

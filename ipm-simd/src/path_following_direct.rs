@@ -2,10 +2,7 @@ use super::{dual_feasibility, primal_feasibility, Matrix};
 use crate::common::{compute_dx_dz_dw, dot_product, normal_eqn_rhs, vector_norm, vector_set, vector_update};
 use crate::Tolerances;
 use ipm_common::SparseNormalCholeskyIndices;
-use std::iter::Sum;
-use std::ops::{Add, AddAssign, Div, Mul, Neg, Sub};
-use std::simd::prelude::{SimdFloat, SimdPartialEq, SimdPartialOrd};
-use std::simd::{LaneCount, Mask, Simd, SimdElement, StdFloat, SupportedLaneCount};
+use wide::{f64x4, CmpLt};
 
 pub struct ANormIndices {
     indptr: Vec<usize>,
@@ -74,29 +71,18 @@ impl LTIndices {
 }
 
 /// Compute the Cholesky decomposition of the normal matrix
-pub fn normal_matrix_cholesky_decomposition<T, const N: usize>(
-    a: &Matrix<T, N>,
+#[allow(clippy::too_many_arguments)]
+pub fn normal_matrix_cholesky_decomposition(
+    a: &Matrix,
     a_norm_ptr: &ANormIndices,
     l_decomp_ptr: &LDecompositionIndices,
-    x: &[Simd<T, N>],
-    z: &[Simd<T, N>],
-    y: &[Simd<T, N>],
-    w: &[Simd<T, N>],
+    x: &[f64x4],
+    z: &[f64x4],
+    y: &[f64x4],
+    w: &[f64x4],
     l_ptr: &LIndices,
-    l_data: &mut [Simd<T, N>],
-) where
-    LaneCount<N>: SupportedLaneCount,
-    T: SimdElement + From<f64>,
-    Simd<T, N>: AddAssign
-        + Sum
-        + StdFloat
-        + SimdFloat
-        + Mul<Output = Simd<T, N>>
-        + Add<Output = Simd<T, N>>
-        + Sub<Output = Simd<T, N>>
-        + Div<Output = Simd<T, N>>
-        + Neg<Output = Simd<T, N>>,
-{
+    l_data: &mut [f64x4],
+) {
     let mut l_entry = 0;
     for row in 0..a.size {
         let row_ind_start = l_ptr.indptr[row];
@@ -110,7 +96,7 @@ pub fn normal_matrix_cholesky_decomposition<T, const N: usize>(
             let mut val = if (row == col) && (row < w.len()) {
                 w[row] / y[row]
             } else {
-                Simd::<T, N>::splat(0.0.into())
+                f64x4::splat(0.0)
             };
 
             let ind_start = a_norm_ptr.indptr[l_entry];
@@ -131,7 +117,7 @@ pub fn normal_matrix_cholesky_decomposition<T, const N: usize>(
             if row == col {
                 val = val.abs().sqrt();
             } else {
-                val = val / l_data[l_ptr.diag_indptr[col]];
+                val /= l_data[l_ptr.diag_indptr[col]];
             }
             l_data[l_entry] = val;
             l_entry += 1;
@@ -144,26 +130,7 @@ pub fn normal_matrix_cholesky_decomposition<T, const N: usize>(
 /// L is a lower triangular matrix. Entries are stored such that the lth
 /// entry of L is the i(i + 1)/2 + j entry in dense i, j  coordinates.
 ///
-fn cholesky_solve<T, const N: usize>(
-    a_size: usize,
-    l_ptr: &LIndices,
-    lt_ptr: &LTIndices,
-    l_data: &[Simd<T, N>],
-    b: &[Simd<T, N>],
-    x: &mut [Simd<T, N>],
-) where
-    LaneCount<N>: SupportedLaneCount,
-    T: SimdElement + From<f64>,
-    Simd<T, N>: AddAssign
-        + Sum
-        + StdFloat
-        + SimdFloat
-        + Mul<Output = Simd<T, N>>
-        + Add<Output = Simd<T, N>>
-        + Sub<Output = Simd<T, N>>
-        + Div<Output = Simd<T, N>>
-        + Neg<Output = Simd<T, N>>,
-{
+fn cholesky_solve(a_size: usize, l_ptr: &LIndices, lt_ptr: &LTIndices, l_data: &[f64x4], b: &[f64x4], x: &mut [f64x4]) {
     // Forward substitution
     for i in 0..a_size {
         x[i] = b[i];
@@ -199,44 +166,30 @@ fn cholesky_solve<T, const N: usize>(
 }
 
 /// Perform a single step of the path-following algorithm.
-pub fn normal_eqn_step<T, const N: usize>(
-    a: &Matrix<T, N>,  // Sparse A matrix
-    at: &Matrix<T, N>, // Sparse transpose of A matrix
+#[allow(clippy::too_many_arguments)]
+pub fn normal_eqn_step(
+    a: &Matrix,  // Sparse A matrix
+    at: &Matrix, // Sparse transpose of A matrix
     a_norm_ptr: &ANormIndices,
     l_decomp_ptr: &LDecompositionIndices,
     l_ptr: &LIndices,
     lt_ptr: &LTIndices,
-    l_data: &mut [Simd<T, N>],
-    x: &mut [Simd<T, N>],
-    z: &mut [Simd<T, N>],
-    y: &mut [Simd<T, N>],
-    w: &mut [Simd<T, N>],
-    b: &[Simd<T, N>],
-    c: &[Simd<T, N>],
-    delta: Simd<T, N>,
-    dx: &mut [Simd<T, N>],
-    dz: &mut [Simd<T, N>],
-    dy: &mut [Simd<T, N>],
-    dw: &mut [Simd<T, N>],
-    tmp: &mut [Simd<T, N>],
-    tmp2: &mut [Simd<T, N>],
-    tolerances: &Tolerances<T, N>,
-) -> Mask<i64, N>
-where
-    LaneCount<N>: SupportedLaneCount,
-    T: SimdElement<Mask = i64> + From<f64>,
-    Simd<T, N>: AddAssign
-        + Sum
-        + StdFloat
-        + SimdFloat<Mask = Mask<i64, N>>
-        + SimdPartialOrd
-        + SimdPartialEq<Mask = Mask<i64, N>>
-        + Mul<Output = Simd<T, N>>
-        + Add<Output = Simd<T, N>>
-        + Sub<Output = Simd<T, N>>
-        + Div<Output = Simd<T, N>>
-        + Neg<Output = Simd<T, N>>,
-{
+    l_data: &mut [f64x4],
+    x: &mut [f64x4],
+    z: &mut [f64x4],
+    y: &mut [f64x4],
+    w: &mut [f64x4],
+    b: &[f64x4],
+    c: &[f64x4],
+    delta: f64x4,
+    dx: &mut [f64x4],
+    dz: &mut [f64x4],
+    dy: &mut [f64x4],
+    dw: &mut [f64x4],
+    tmp: &mut [f64x4],
+    tmp2: &mut [f64x4],
+    tolerances: &Tolerances,
+) -> f64x4 {
     // printf("%d %d", gid, wsize);
 
     // Compute feasibilities
@@ -246,11 +199,11 @@ where
     // Compute optimality
     let mut gamma = dot_product(z, x) + dot_product(w, y);
 
-    let mu = delta * gamma / Simd::<T, N>::splat(((at.size + w.len()) as f64).into());
+    let mu = delta * gamma / (at.size + w.len()) as f64;
     // update relative tolerance
-    gamma = gamma / (Simd::<T, N>::splat(1.0.into()) + vector_norm(x) + vector_norm(y));
+    gamma /= 1.0 + vector_norm(x) + vector_norm(y);
 
-    let is_nan: Mask<i64, N> = gamma.is_nan();
+    let is_nan = gamma.is_nan();
     if is_nan.any() {
         panic!("NaN encountered during IPM solve!")
     }
@@ -261,9 +214,9 @@ where
     // }
     // #endif
 
-    let status: Mask<i64, N> = normr.simd_lt(tolerances.primal_feasibility)
-        & norms.simd_lt(tolerances.dual_feasibility)
-        & gamma.simd_lt(tolerances.optimality);
+    let status = normr.cmp_lt(tolerances.primal_feasibility)
+        & norms.cmp_lt(tolerances.dual_feasibility)
+        & gamma.cmp_lt(tolerances.optimality);
 
     if status.all() {
         // Feasible and optimal; no further work!
@@ -290,34 +243,26 @@ where
     // println!("dx: {:?}, dz: {:?}, dy: {:?}, dw: {:?}", dx, dz, dy, dw);
     // println!("Theta: {:?}", theta);
 
-    theta = (Simd::<T, N>::splat(0.9995.into()) / theta).simd_min(Simd::<T, N>::splat(1.0.into()));
+    theta = (0.9995 / theta).min(f64x4::splat(1.0));
     // if (gid == 0) {
     //     printf("%d theta: %g", gid, theta);
     // }
 
     // println!("Theta: {:?}", theta);
     // Set theta to zero for lanes that have completed (status == True)
-    theta = status.select(Simd::<T, N>::splat(0.0.into()), theta);
+    theta = status.blend(f64x4::splat(0.0), theta);
 
-    vector_update(x, dx, Simd::<T, N>::splat(1.0.into()), theta);
-    vector_update(z, dz, Simd::<T, N>::splat(1.0.into()), theta);
-    vector_update(y, dy, Simd::<T, N>::splat(1.0.into()), theta);
-    vector_update(w, dw, Simd::<T, N>::splat(1.0.into()), theta);
+    vector_update(x, dx, f64x4::splat(1.0), theta);
+    vector_update(z, dz, f64x4::splat(1.0), theta);
+    vector_update(y, dy, f64x4::splat(1.0), theta);
+    vector_update(w, dw, f64x4::splat(1.0), theta);
 
-    return status;
+    status
 }
 
-pub fn normal_eqn_init<T, const N: usize>(
-    x: &mut [Simd<T, N>],
-    z: &mut [Simd<T, N>],
-    y: &mut [Simd<T, N>],
-    w: &mut [Simd<T, N>],
-) where
-    LaneCount<N>: SupportedLaneCount,
-    T: SimdElement + From<f64>,
-{
-    vector_set(x, Simd::<T, N>::splat(1000.0.into()));
-    vector_set(z, Simd::<T, N>::splat(1000.0.into()));
-    vector_set(y, Simd::<T, N>::splat(1000.0.into()));
-    vector_set(w, Simd::<T, N>::splat(1000.0.into()));
+pub fn normal_eqn_init(x: &mut [f64x4], z: &mut [f64x4], y: &mut [f64x4], w: &mut [f64x4]) {
+    vector_set(x, f64x4::splat(1000.0));
+    vector_set(z, f64x4::splat(1000.0));
+    vector_set(y, f64x4::splat(1000.0));
+    vector_set(w, f64x4::splat(1000.0));
 }

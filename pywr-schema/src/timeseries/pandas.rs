@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 /// It is then converted to a Polars DataFrame and returned.
 ///
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct PandasDataset {
     pub time_col: Option<String>,
     pub url: PathBuf,
@@ -125,11 +126,11 @@ mod core {
             let mut df = df.0;
 
             df = match self.time_col {
-                Some(ref col) => align_and_resample(name, df, col, domain, true)?,
+                Some(ref col) => align_and_resample(name, df, col, domain.time(), true)?,
                 None => {
                     // If a time col has not been provided assume it is the first column
                     let first_col = df.get_column_names()[0].to_string();
-                    align_and_resample(name, df, first_col.as_str(), domain, true)?
+                    align_and_resample(name, df, first_col.as_str(), domain.time(), true)?
                 }
             };
 

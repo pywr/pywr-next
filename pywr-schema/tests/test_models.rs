@@ -44,6 +44,10 @@ model_tests! {
     test_hdf1: ("hdf1.json", vec![], vec![], vec![]), // TODO asserting h5 results not possible with this framework
     test_memory1: ("memory1.json", vec![], vec![], vec![]),  // TODO asserting memory results not possible with this framework
     test_timeseries: ("timeseries.json", vec!["timeseries-expected.csv"], vec![], vec![]),
+    test_timeseries2: ("timeseries2.json", vec!["timeseries2-expected.csv"], vec![], vec![]),
+    test_timeseries3: ("timeseries3.json", vec!["timeseries3-expected.csv"], vec![], vec![]),
+    test_timeseries4: ("timeseries4.json", vec!["timeseries4-expected.csv"], vec![], vec![]),
+    test_timeseries5: ("timeseries5.json", vec!["timeseries5-expected.csv"], vec![], vec![]),
     test_storage_max_volumes: ("storage_max_volumes.json", vec![], vec![], vec![]),
     test_mutual_exclusivity1: ("mutual-exclusivity1.json", vec!["mutual-exclusivity1.csv"], vec!["clp", "ipm-simd", "ipm-ocl"], vec![]),
     test_mutual_exclusivity2: ("mutual-exclusivity2.json", vec!["mutual-exclusivity2.csv"], vec!["clp", "ipm-simd", "ipm-ocl"], vec![]),
@@ -71,12 +75,13 @@ model_tests! {
 
 /// Test Pandas backend for reading timeseries data.
 ///
-/// This test requires Python environment with Pandas#[test]
+/// This test requires Python environment with Pandas
+#[test]
 #[cfg(feature = "test-python")]
 fn test_timeseries_pandas() {
     let input = "timeseries_pandas.json";
     let input_pth = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join(input);
-    let expected = vec!["timeseries-expected.csv"];
+    let expected = ["timeseries-expected.csv"];
     let expected_paths = expected
         .iter()
         .map(|p| Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join(p))

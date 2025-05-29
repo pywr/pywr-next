@@ -81,6 +81,7 @@ pub enum SolverFeatures {
 pub trait SolverSettings {
     fn parallel(&self) -> bool;
     fn threads(&self) -> usize;
+    fn ignore_feature_requirements(&self) -> bool;
 }
 
 pub trait Solver: Send {

@@ -282,6 +282,16 @@ impl ParameterName {
             parent: parent.map(|p| p.to_string()),
         }
     }
+
+    /// Get the parameter name.
+    pub fn name(&self) -> String {
+        self.name.clone()
+    }
+
+    /// Get the parameter optional parent's name.
+    pub fn parent(&self) -> Option<String> {
+        self.parent.clone()
+    }
 }
 
 impl Display for ParameterName {
@@ -474,14 +484,14 @@ pub fn downcast_internal_state_ref<T: 'static>(internal_state: &Option<Box<dyn P
     }
 }
 
-pub trait VariableConfig: Any + Send {
+pub trait VariableConfig: Any + Send + Sync {
     fn as_any(&self) -> &dyn Any;
     fn as_any_mut(&mut self) -> &mut dyn Any;
 }
 
 impl<T> VariableConfig for T
 where
-    T: Any + Send,
+    T: Any + Send + Sync,
 {
     fn as_any(&self) -> &dyn Any {
         self
