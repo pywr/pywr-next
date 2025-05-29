@@ -7,7 +7,7 @@
 /// Benchmarks test the performance the solvers with different sized models (numbers of
 /// systems and density of transfers between them), numbers of scenarios (which vary the
 /// input flows) and number of CPU threads.
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 #[cfg(feature = "ipm-ocl")]
 use pywr_core::solvers::{ClIpmF64Solver, ClIpmSolverSettings, ClIpmSolverSettingsBuilder};
 use pywr_core::solvers::{ClpSolver, ClpSolverSettings, ClpSolverSettingsBuilder};

@@ -1,9 +1,9 @@
 mod multi;
 mod simple;
 
+use crate::PywrError;
 use crate::scenario::{ScenarioDomain, ScenarioDomainBuilder};
 use crate::timestep::{TimeDomain, Timestepper};
-use crate::PywrError;
 pub use multi::{MultiNetworkModel, MultiNetworkTransferIndex};
 pub use simple::{Model, ModelState};
 

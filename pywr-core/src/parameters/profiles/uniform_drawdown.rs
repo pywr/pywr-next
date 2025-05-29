@@ -1,8 +1,8 @@
+use crate::PywrError;
 use crate::parameters::{Parameter, ParameterMeta, ParameterName, ParameterState, SimpleParameter};
 use crate::scenario::ScenarioIndex;
 use crate::state::SimpleParameterValues;
 use crate::timestep::Timestep;
-use crate::PywrError;
 use chrono::{Datelike, NaiveDate};
 
 fn is_leap_year(year: i32) -> bool {

@@ -324,7 +324,9 @@ impl PeriodicAggregator {
                 let av = current_state.process_value(v, period, &self.function);
                 if av.is_some() {
                     if agg_value.is_some() {
-                        panic!("Multiple aggregated values yielded from aggregator. This indicates that the given value spans multiple aggregation periods which is not supported.")
+                        panic!(
+                            "Multiple aggregated values yielded from aggregator. This indicates that the given value spans multiple aggregation periods which is not supported."
+                        )
                     }
                     agg_value = av;
                 }

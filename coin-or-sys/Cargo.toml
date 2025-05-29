@@ -1,11 +1,11 @@
 [package]
 name = "coin-or-sys"
 version = "0.1.0"
-authors = ["James Tomlinson <tomo.bbe@gmail.com>"]
-edition = "2021"
+authors.workspace = true
+edition.workspace = true
 description = "Low-level bindings to COIN-OR CLP (Coin-or linear programming) and CBC (Coin-or branch and cut)."
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/pywr/pywr-next/"
+repository.workspace = true
 
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html

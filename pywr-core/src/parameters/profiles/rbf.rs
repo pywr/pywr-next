@@ -1,11 +1,11 @@
+use crate::PywrError;
 use crate::parameters::{
-    downcast_internal_state_mut, downcast_internal_state_ref, downcast_variable_config_ref, Parameter, ParameterMeta,
-    ParameterName, ParameterState, SimpleParameter, VariableConfig, VariableParameter,
+    Parameter, ParameterMeta, ParameterName, ParameterState, SimpleParameter, VariableConfig, VariableParameter,
+    downcast_internal_state_mut, downcast_internal_state_ref, downcast_variable_config_ref,
 };
 use crate::scenario::ScenarioIndex;
 use crate::state::SimpleParameterValues;
 use crate::timestep::Timestep;
-use crate::PywrError;
 use nalgebra::DMatrix;
 
 pub struct RbfProfileVariableConfig {
@@ -387,8 +387,8 @@ fn interpolate_rbf_profile(points: &[(u32, f64)], function: &RadialBasisFunction
 
 #[cfg(test)]
 mod tests {
-    use crate::parameters::profiles::rbf::{interpolate_rbf, interpolate_rbf_profile, RadialBasisFunction};
-    use float_cmp::{assert_approx_eq, F64Margin};
+    use crate::parameters::profiles::rbf::{RadialBasisFunction, interpolate_rbf, interpolate_rbf_profile};
+    use float_cmp::{F64Margin, assert_approx_eq};
     use std::f64::consts::PI;
 
     /// Test example from Wikipedia on Rbf interpolation

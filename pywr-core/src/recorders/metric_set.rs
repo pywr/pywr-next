@@ -1,10 +1,10 @@
+use crate::PywrError;
 use crate::metric::MetricF64;
 use crate::network::Network;
 use crate::recorders::aggregator::{Aggregator, AggregatorState, PeriodValue};
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
 use crate::timestep::Timestep;
-use crate::PywrError;
 use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::ops::Deref;

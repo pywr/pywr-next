@@ -1,8 +1,8 @@
+use crate::PywrError;
 use crate::parameters::{Parameter, ParameterMeta, ParameterName, ParameterState, SimpleParameter};
 use crate::scenario::ScenarioIndex;
 use crate::state::SimpleParameterValues;
 use crate::timestep::Timestep;
-use crate::PywrError;
 
 pub struct DailyProfileParameter {
     meta: ParameterMeta,

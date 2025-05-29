@@ -1,5 +1,6 @@
 mod settings;
 
+use crate::PywrError;
 use crate::edge::EdgeIndex;
 use crate::network::Network;
 use crate::node::{Node, NodeBounds, NodeType};
@@ -7,7 +8,6 @@ use crate::solvers::col_edge_map::{ColumnEdgeMap, ColumnEdgeMapBuilder};
 use crate::solvers::{MultiStateSolver, SolverFeatures, SolverTimings};
 use crate::state::State;
 use crate::timestep::Timestep;
-use crate::PywrError;
 use ipm_ocl::{GetClProgram, PathFollowingDirectClSolver};
 use rayon::iter::IndexedParallelIterator;
 use rayon::iter::ParallelIterator;

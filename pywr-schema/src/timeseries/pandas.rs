@@ -54,8 +54,8 @@ mod core {
 
     use super::PandasDataset;
     use crate::parameters::try_json_value_into_py;
-    use crate::timeseries::align_and_resample::align_and_resample;
     use crate::timeseries::TimeseriesError;
+    use crate::timeseries::align_and_resample::align_and_resample;
     use polars::frame::DataFrame;
     use pyo3::ffi::c_str;
     use pyo3::prelude::{PyAnyMethods, PyModule};

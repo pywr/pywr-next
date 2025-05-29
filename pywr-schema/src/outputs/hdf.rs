@@ -40,8 +40,8 @@ impl Hdf5Output {
 
 #[cfg(test)]
 mod tests {
-    use crate::visit::VisitPaths;
     use crate::PywrModel;
+    use crate::visit::VisitPaths;
     #[cfg(feature = "core")]
     use pywr_core::solvers::{ClpSolver, ClpSolverSettings};
     use std::fs::read_to_string;

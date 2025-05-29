@@ -1,16 +1,16 @@
 mod settings;
 
 use super::builder::{ColType, SolverBuilder};
+use crate::PywrError;
 use crate::network::Network;
 use crate::solvers::builder::BuiltSolver;
 use crate::solvers::{Solver, SolverFeatures, SolverTimings};
 use crate::state::{ConstParameterValues, State};
 use crate::timestep::Timestep;
-use crate::PywrError;
 use coin_or_sys::cbc::*;
 use libc::{c_double, c_int};
 pub use settings::{CbcSolverSettings, CbcSolverSettingsBuilder};
-use std::ffi::{c_char, CString};
+use std::ffi::{CString, c_char};
 use std::time::Instant;
 use std::{ptr, slice};
 use thiserror::Error;

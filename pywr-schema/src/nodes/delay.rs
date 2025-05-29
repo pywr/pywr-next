@@ -125,7 +125,7 @@ impl DelayNode {
                     ty: "DelayNode".to_string(),
                     name: self.meta.name.clone(),
                     attr,
-                })
+                });
             }
         };
 
@@ -151,7 +151,7 @@ impl TryFrom<DelayNodeV1> for DelayNode {
                         error: ConversionError::MissingAttribute {
                             attrs: vec!["days".to_string(), "timesteps".to_string()],
                         },
-                    })
+                    });
                 }
             },
         } as u64;

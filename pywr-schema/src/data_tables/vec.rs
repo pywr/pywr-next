@@ -1,4 +1,4 @@
-use crate::data_tables::{make_path, TableError};
+use crate::data_tables::{TableError, make_path};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::BufReader;
