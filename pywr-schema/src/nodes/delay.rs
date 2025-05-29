@@ -16,9 +16,9 @@ use schemars::JsonSchema;
 ///
 /// This is often useful in long river reaches as a simply way to model time-of-travel. Internally
 /// an `Output` node is used to terminate flows entering the node and an `Input` node is created
-/// with flow constraints set by a [DelayParameter]. These constraints set the minimum and
+/// with flow constraints set by a [`pywr_core::parameters::DelayParameter`]. These constraints set the minimum and
 /// maximum flow on the `Input` node equal to the flow reaching the `Output` node N time-steps
-/// ago. The internally created [DelayParameter] is created with this node's name and the suffix
+/// ago. The internally created [`pywr_core::parameters::DelayParameter`] is created with this node's name and the suffix
 /// "-delay".
 ///
 ///
