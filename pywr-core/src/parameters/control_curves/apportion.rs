@@ -1,10 +1,10 @@
+use crate::PywrError;
 use crate::metric::MetricF64;
 use crate::network::Network;
 use crate::parameters::{GeneralParameter, Parameter, ParameterMeta, ParameterName, ParameterState};
 use crate::scenario::ScenarioIndex;
 use crate::state::{MultiValue, State};
 use crate::timestep::Timestep;
-use crate::PywrError;
 use std::collections::HashMap;
 
 /// A parameter which divides a apportions a metric to an upper and lower amount based

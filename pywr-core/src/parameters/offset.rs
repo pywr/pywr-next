@@ -1,13 +1,13 @@
+use crate::PywrError;
 use crate::metric::MetricF64;
 use crate::network::Network;
 use crate::parameters::{
-    downcast_internal_state_mut, downcast_internal_state_ref, downcast_variable_config_ref, ActivationFunction,
-    GeneralParameter, Parameter, ParameterMeta, ParameterName, ParameterState, VariableConfig, VariableParameter,
+    ActivationFunction, GeneralParameter, Parameter, ParameterMeta, ParameterName, ParameterState, VariableConfig,
+    VariableParameter, downcast_internal_state_mut, downcast_internal_state_ref, downcast_variable_config_ref,
 };
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
 use crate::timestep::Timestep;
-use crate::PywrError;
 
 pub struct OffsetParameter {
     meta: ParameterMeta,

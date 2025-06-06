@@ -1,3 +1,4 @@
+use crate::PywrError;
 use crate::metric::MetricF64;
 use crate::network::Network;
 use crate::parameters::{GeneralParameter, Parameter, ParameterMeta, ParameterName, ParameterState};
@@ -5,7 +6,6 @@ use crate::scenario::ScenarioIndex;
 use crate::state::State;
 use crate::timestep::Timestep;
 use crate::utils::inverse_hydropower_calculation;
-use crate::PywrError;
 
 pub struct HydropowerTargetData {
     pub target: MetricF64,

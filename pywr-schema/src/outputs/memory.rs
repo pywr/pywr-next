@@ -1,6 +1,6 @@
-use crate::metric_sets::MetricAggFunc;
 #[cfg(feature = "core")]
 use crate::SchemaError;
+use crate::metric_sets::MetricAggFunc;
 #[cfg(feature = "core")]
 use pywr_core::recorders::MemoryRecorder;
 use pywr_schema_macros::PywrVisitPaths;

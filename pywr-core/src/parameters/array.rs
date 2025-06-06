@@ -1,8 +1,8 @@
+use crate::PywrError;
 use crate::parameters::{Parameter, ParameterMeta, ParameterName, ParameterState, SimpleParameter};
 use crate::scenario::ScenarioIndex;
 use crate::state::SimpleParameterValues;
 use crate::timestep::{Timestep, TimestepIndex};
-use crate::PywrError;
 use ndarray::{Array1, Array2, Axis};
 
 pub struct Array1Parameter<T> {

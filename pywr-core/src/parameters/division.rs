@@ -1,11 +1,11 @@
 use super::{Parameter, ParameterName, PywrError};
+use crate::PywrError::InvalidMetricValue;
 use crate::metric::MetricF64;
 use crate::network::Network;
 use crate::parameters::{GeneralParameter, ParameterMeta, ParameterState};
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
 use crate::timestep::Timestep;
-use crate::PywrError::InvalidMetricValue;
 
 pub struct DivisionParameter {
     meta: ParameterMeta,

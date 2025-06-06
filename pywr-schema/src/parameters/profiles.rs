@@ -4,7 +4,7 @@ use crate::error::{ComponentConversionError, ConversionError};
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::parameters::{ConstantFloatVec, ConstantValue, ConversionData, ParameterMeta};
-use crate::v1::{try_convert_values, FromV1, IntoV2, TryFromV1};
+use crate::v1::{FromV1, IntoV2, TryFromV1, try_convert_values};
 #[cfg(feature = "core")]
 use pywr_core::parameters::{ParameterIndex, WeeklyProfileError, WeeklyProfileValues};
 use pywr_schema_macros::PywrVisitAll;

@@ -1,3 +1,4 @@
+use crate::PywrError;
 use crate::aggregated_node::AggregatedNodeIndex;
 use crate::aggregated_storage_node::AggregatedStorageNodeIndex;
 use crate::derived_metric::DerivedMetricIndex;
@@ -8,7 +9,6 @@ use crate::node::NodeIndex;
 use crate::parameters::{ConstParameterIndex, GeneralParameterIndex, ParameterIndex, SimpleParameterIndex};
 use crate::state::{ConstParameterValues, MultiValue, SimpleParameterValues, State};
 use crate::virtual_storage::VirtualStorageIndex;
-use crate::PywrError;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum ConstantMetricF64 {

@@ -1,9 +1,9 @@
+use crate::PywrError;
 use crate::metric::SimpleMetricF64;
 use crate::parameters::{Parameter, ParameterMeta, ParameterName, ParameterState, SimpleParameter};
 use crate::scenario::ScenarioIndex;
 use crate::state::SimpleParameterValues;
 use crate::timestep::Timestep;
-use crate::PywrError;
 
 /// A parameter that returns the volume that is the proportion between two control curves
 pub struct VolumeBetweenControlCurvesParameter<M> {
