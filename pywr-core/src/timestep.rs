@@ -241,7 +241,7 @@ impl Timestepper {
 }
 
 /// The time domain that a model will be simulated over.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TimeDomain {
     timesteps: Vec<Timestep>,
     duration: PywrDuration,

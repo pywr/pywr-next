@@ -573,7 +573,7 @@ impl ScenarioIndex {
 }
 
 /// The scenario domain for a model.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ScenarioDomain {
     indices: Vec<ScenarioIndex>,
     groups: Vec<ScenarioGroup>,
