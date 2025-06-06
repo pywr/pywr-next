@@ -29,7 +29,10 @@ pub fn align_and_resample(
     let durations = df
         .clone()
         .lazy()
-        .select([col(time_col).diff(1, NullBehavior::Drop).unique().alias("duration")])
+        .select([col(time_col)
+            .diff(1.into(), NullBehavior::Drop)
+            .unique()
+            .alias("duration")])
         .collect()?;
     let durations = durations.column("duration")?.duration()?.deref();
 
