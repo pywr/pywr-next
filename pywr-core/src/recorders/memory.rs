@@ -9,6 +9,7 @@ use crate::timestep::Timestep;
 use crate::PywrError;
 use chrono::NaiveDateTime;
 use std::any::Any;
+use std::collections::HashMap;
 use std::ops::Deref;
 use thiserror::Error;
 use tracing::warn;
@@ -19,6 +20,8 @@ pub enum AggregationError {
     AggregationFunctionNotDefined,
     #[error("Aggregation function failed.")]
     AggregationFunctionFailed,
+    #[error("Invalid aggregation order: {0}")]
+    InvalidOrder(String),
 }
 
 pub struct Aggregation {
@@ -122,6 +125,29 @@ impl Aggregation {
 
         Ok(agg_value)
     }
+
+    /// Apply the time aggregation function to the provided events.
+    fn apply_time_func_events(&self, events: &[Event]) -> Result<f64, AggregationError> {
+        let agg_value = if events.len() == 1 {
+            if self.time.is_some() {
+                warn!("Aggregation function defined for time, but not used.")
+            }
+            events
+                .first()
+                .expect("No events found in time series")
+                .duration()
+                .map(|d| d.fractional_days())
+                .ok_or(AggregationError::AggregationFunctionFailed)?
+        } else {
+            self.time
+                .as_ref()
+                .ok_or(AggregationError::AggregationFunctionNotDefined)?
+                .calc_events(events)
+                .ok_or(AggregationError::AggregationFunctionFailed)?
+        };
+
+        Ok(agg_value)
+    }
 }
 
 /// Periodic internal state for the memory recorder.
@@ -183,6 +209,7 @@ impl PeriodicInternalState {
     }
 }
 
+#[derive(Copy, Clone)]
 struct MemoryEvent {
     start: NaiveDateTime,
     end: Option<NaiveDateTime>,
@@ -199,12 +226,57 @@ impl MemoryEvent {
     }
 }
 
+impl From<MemoryEvent> for Event {
+    fn from(me: MemoryEvent) -> Self {
+        Event {
+            start: me.start,
+            end: me.end,
+        }
+    }
+}
+
 /// Event internal state for the memory recorder.
 ///
 /// This is a nested vector of events where the outer vec is the length of the scenarios,
 /// and the inner vector are the events for that scenario.
 struct EventInternalState {
     events: Vec<Vec<MemoryEvent>>,
+}
+
+impl EventInternalState {
+    /// Aggregate over the saved data to a single value using the provided aggregation functions.
+    ///
+    /// This method will first aggregation over time, then over the metrics, and finally over the scenarios.
+    fn aggregate_time_metric_scenario(&self, aggregation: &Aggregation) -> Result<f64, AggregationError> {
+        let scenario_data: Vec<f64> = self
+            .events
+            .iter()
+            .map(|events| {
+                // Accumulate the events for each metric
+                let mut events_by_metric: HashMap<usize, Vec<Event>> = HashMap::new();
+
+                for event in events {
+                    events_by_metric
+                        .entry(event.metric_index)
+                        .or_default()
+                        .push((*event).into());
+                }
+
+                // Aggregate each metric over time first.
+                // NB, these are not necessarily in order of the metric index.
+                // Some metrics may not have any events.
+                let metric_ts: Vec<f64> = events_by_metric
+                    .values()
+                    .map(|metric_events| aggregation.apply_time_func_events(metric_events))
+                    .collect::<Result<_, _>>()?;
+
+                // Now aggregate over the metrics
+                aggregation.apply_metric_func_f64(&metric_ts)
+            })
+            .collect::<Result<_, _>>()?;
+
+        aggregation.apply_scenario_func(&scenario_data)
+    }
 }
 
 /// Internal state for the memory recorder.
@@ -227,7 +299,11 @@ impl InternalState {
     }
 
     fn new_event(num_scenarios: usize) -> Self {
-        let events: Vec<_> = Vec::with_capacity(num_scenarios);
+        let mut events: Vec<_> = Vec::with_capacity(num_scenarios);
+
+        for _ in 0..num_scenarios {
+            events.push(Vec::new());
+        }
 
         Self::Events(EventInternalState { events })
     }
@@ -238,7 +314,9 @@ impl InternalState {
     fn aggregate_metric_time_scenario(&self, aggregation: &Aggregation) -> Result<f64, AggregationError> {
         match self {
             Self::Periodic(state) => state.aggregate_metric_time_scenario(aggregation),
-            Self::Events(_) => todo!("Cannot aggregate events over time and scenarios."),
+            Self::Events(_) => Err(AggregationError::InvalidOrder(
+                "Cannot aggregate over events by metric first. Events must be aggregated by time first.".to_string(),
+            )),
         }
     }
 
@@ -248,7 +326,7 @@ impl InternalState {
     fn aggregate_time_metric_scenario(&self, aggregation: &Aggregation) -> Result<f64, AggregationError> {
         match self {
             Self::Periodic(state) => state.aggregate_time_metric_scenario(aggregation),
-            Self::Events(_) => todo!("Cannot aggregate events over time and scenarios."),
+            Self::Events(state) => state.aggregate_time_metric_scenario(aggregation),
         }
     }
 
@@ -257,7 +335,7 @@ impl InternalState {
             Self::Periodic(state) => {
                 let scenario_data = state
                     .data
-                    .get_mut(scenario_index.index)
+                    .get_mut(scenario_index.simulation_id())
                     .expect("No scenario data found");
 
                 // Find the first non-None value and use that as the start time
@@ -287,7 +365,7 @@ impl InternalState {
             Self::Events(state) => {
                 let scenario_data = state
                     .events
-                    .get_mut(scenario_index.index)
+                    .get_mut(scenario_index.simulation_id())
                     .expect("No scenario data found");
 
                 for (metric_idx, value) in values.iter().enumerate() {
@@ -386,9 +464,8 @@ impl Recorder for MemoryRecorder {
 
     fn finalise(
         &self,
-        scenario_indices: &[ScenarioIndex],
         _network: &Network,
-        _scenario_indices: &[ScenarioIndex],
+        scenario_indices: &[ScenarioIndex],
         metric_set_states: &[Vec<MetricSetState>],
         internal_state: &mut Option<Box<dyn Any>>,
     ) -> Result<(), PywrError> {
@@ -438,10 +515,11 @@ impl Recorder for MemoryRecorder {
 #[cfg(test)]
 mod tests {
     use super::{Aggregation, InternalState};
-    use crate::recorders::aggregator::PeriodValue;
+    use crate::recorders::aggregator::{AggregatorValue, Event, PeriodValue};
     use crate::recorders::AggregationFunction;
-    use crate::test_utils::default_timestepper;
+    use crate::test_utils::{default_timestepper, test_scenario_domain};
     use crate::timestep::TimeDomain;
+    use chrono::NaiveDate;
     use float_cmp::assert_approx_eq;
     use rand::{Rng, SeedableRng};
     use rand_chacha::ChaCha8Rng;
@@ -494,5 +572,46 @@ mod tests {
 
         let agg_value = state.aggregate_time_metric_scenario(&agg).expect("Aggregation failed");
         assert_approx_eq!(f64, agg_value, count_non_zero_by_metric.iter().sum());
+    }
+
+    #[test]
+    fn test_memory_event_aggregation() {
+        let num_scenarios = 2;
+        let num_metrics = 3;
+
+        let mut state = InternalState::new_event(num_scenarios);
+
+        let scenario_domain = test_scenario_domain(num_scenarios);
+
+        for scenario_index in scenario_domain.indices() {
+            for event_index in 0..4 {
+                // Create an event with a known start and end time
+                let start = NaiveDate::from_ymd_opt(2016, event_index + 1, 8).unwrap();
+                let end = start + chrono::Duration::days(event_index as i64 + 1);
+
+                let events: Vec<_> = (0..num_metrics)
+                    .map(|_| {
+                        let e = Event {
+                            start: start.into(),
+                            end: Some(end.into()),
+                        };
+                        Some(AggregatorValue::Event(e))
+                    })
+                    .collect();
+
+                state.append_value(scenario_index, &events);
+            }
+        }
+
+        // This should be the total duration of all the events
+        let agg = Aggregation::new(
+            Some(AggregationFunction::Sum),
+            Some(AggregationFunction::Sum),
+            Some(AggregationFunction::Sum),
+        );
+
+        let expected_total_duration = num_scenarios as f64 * num_metrics as f64 * (1.0 + 2.0 + 3.0 + 4.0);
+        let agg_value = state.aggregate_time_metric_scenario(&agg).expect("Aggregation failed");
+        assert_approx_eq!(f64, agg_value, expected_total_duration);
     }
 }

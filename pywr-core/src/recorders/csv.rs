@@ -209,7 +209,8 @@ pub struct CsvLongFmtValueRecord {
 pub struct CsvLongFmtEventRecord {
     time_start: NaiveDateTime,
     time_end: Option<NaiveDateTime>,
-    scenario_index: usize,
+    simulation_id: usize,
+    label: String,
     metric_set: String,
     name: String,
     attribute: String,
@@ -277,7 +278,7 @@ impl CsvLongFmtOutput {
                                     time_start: value.start,
                                     time_end: value.end(),
                                     simulation_id: scenario_index.simulation_id(),
-                            label: scenario_index.label(),
+                                    label: scenario_index.label(),
                                     metric_set: metric_set.name().to_string(),
                                     name,
                                     attribute,
@@ -293,7 +294,8 @@ impl CsvLongFmtOutput {
                                 let record = CsvLongFmtEventRecord {
                                     time_start: event.start,
                                     time_end: event.end,
-                                    scenario_index: scenario_index,
+                                    simulation_id: scenario_index.simulation_id(),
+                                    label: scenario_index.label(),
                                     metric_set: metric_set.name().to_string(),
                                     name,
                                     attribute,

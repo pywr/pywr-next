@@ -1,11 +1,13 @@
+mod agg_func;
 mod event;
 mod periodic;
 
 use crate::recorders::metric_set::MetricSetOutputInfo;
 use crate::timestep::TimeDomain;
+pub use agg_func::AggregationFunction;
 pub use event::{Event, EventAggregator, EventAggregatorState};
 use periodic::PeriodicAggregatorState;
-pub use periodic::{AggregationFrequency, AggregationFunction, PeriodValue, PeriodicAggregator};
+pub use periodic::{AggregationFrequency, PeriodValue, PeriodicAggregator};
 
 #[derive(Debug, Clone)]
 pub enum AggregatorState {

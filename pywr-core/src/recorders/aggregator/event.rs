@@ -1,5 +1,6 @@
 use crate::predicate::Predicate;
 use crate::recorders::aggregator::PeriodValue;
+use crate::timestep::PywrDuration;
 use chrono::NaiveDateTime;
 
 #[derive(Default, Clone, Debug)]
@@ -13,6 +14,12 @@ enum EventState {
 pub struct Event {
     pub start: NaiveDateTime,
     pub end: Option<NaiveDateTime>,
+}
+
+impl Event {
+    pub fn duration(&self) -> Option<PywrDuration> {
+        self.end.map(|end| (end - self.start).into())
+    }
 }
 
 #[derive(Default, Debug, Clone)]

@@ -89,7 +89,6 @@ pub trait Recorder: Send + Sync {
     }
     fn finalise(
         &self,
-        _scenario_indices: &[ScenarioIndex],
         _network: &Network,
         _scenario_indices: &[ScenarioIndex],
         _metric_set_states: &[Vec<MetricSetState>],
