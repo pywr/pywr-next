@@ -7,7 +7,6 @@ use crate::solvers::SolverTimings;
 use crate::state::{ConstParameterValues, State};
 use crate::timestep::Timestep;
 use crate::PywrError;
-use num::Zero;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::Debug;
 use std::ops::Deref;
@@ -305,7 +304,9 @@ enum NodeRowType<I> {
     /// A regular node constraint bounded by lower and upper bounds.
     Continuous,
     /// A binary node constraint where the upper bound is controlled by a binary variable.
-    Binary { bin_col_id: I },
+    BinaryUpperBound { bin_col_id: I },
+    /// A binary node constraint where the lower bound is controlled by a binary variable.
+    BinaryLowerBound { bin_col_id: I },
 }
 
 struct AggNodeFactorRow<I> {
@@ -449,13 +450,15 @@ where
                     // Regular node constraint
                     self.builder.apply_row_bounds(row.row_id.to_usize().unwrap(), lb, ub);
                 }
-                NodeRowType::Binary { bin_col_id } => {
-                    if !lb.is_zero() {
-                        panic!("Binary node constraint with non-zero lower bounds not implemented!");
-                    }
+                NodeRowType::BinaryUpperBound { bin_col_id } => {
                     // Update the coefficients for the binary column to be the upper bound
-                    self.builder.coefficients_to_update.push((row.row_id, bin_col_id, -ub));
-                    // This row is already upper bounded to zero in `create_node_constraints`.
+                    // This row has the correct bounds already, so we just update the coefficients
+                    self.builder.coefficients_to_update.push((row.row_id, bin_col_id, ub));
+                }
+                NodeRowType::BinaryLowerBound { bin_col_id } => {
+                    // Update the coefficients for the binary column to be the lower bound
+                    // This row has the correct bounds already, so we just update the coefficients
+                    self.builder.coefficients_to_update.push((row.row_id, bin_col_id, -lb));
                 }
             }
         }
@@ -748,6 +751,15 @@ where
     ///
     /// One constraint is created per node to enforce any constraints (flow or storage)
     /// that it may define. Returns the row_ids associated with each constraint.
+    ///
+    ///
+    /// If the node has binary variables associated with it then two rows are created
+    /// to enforce the upper and lower bounds of the binary variable. The lower bound row is only
+    /// created if the `min_flow` is not zero or is a non-constant value.These rows enforce
+    /// the following inequalities:
+    /// - `binary_variable * max_flow >= flow`
+    /// - `binary_variable * min_flow <= flow`
+    ///
     fn create_node_constraints(
         &mut self,
         network: &Network,
@@ -767,39 +779,73 @@ where
             // that enforces each binary variable's constraints
             if let Some(cols) = self.node_bin_col_map.get(&node.index()) {
                 for col in cols {
-                    let mut row: RowBuilder<I> = RowBuilder::default();
-                    self.add_node(node, 1.0, &mut row);
+                    // Create separate rows for upper and lower bound constraints.
+                    let mut row_ub: RowBuilder<I> = RowBuilder::default();
+                    let mut row_lb: RowBuilder<I> = RowBuilder::default();
+
+                    self.add_node(node, -1.0, &mut row_ub);
+                    self.add_node(node, 1.0, &mut row_lb);
+
                     let mut is_fixed = false;
+                    let mut add_lb_row = false;
 
                     match bounds {
                         Some(bounds) => {
-                            if bounds.min_flow != 0.0 {
-                                panic!("Binary node constraint with non-zero lower bounds not implemented!");
-                            }
                             // If the bounds are constant then the binary variable is used to control the upper bound
-                            row.add_element(*col, -bounds.max_flow.min(1e8));
-                            row.set_lower(FMIN);
-                            row.set_upper(0.0);
+                            row_ub.add_element(*col, bounds.max_flow.min(1e8));
+                            row_ub.set_lower(0.0);
+                            row_ub.set_upper(FMAX);
+
+                            if bounds.min_flow != 0.0 {
+                                println!(
+                                    "Adding lower bound row for node {:?} with min_flow: {}",
+                                    node.full_name(),
+                                    bounds.min_flow
+                                );
+                                row_lb.add_element(*col, -bounds.min_flow.max(1e-8));
+                                row_lb.set_lower(0.0);
+                                row_lb.set_upper(FMAX);
+                                add_lb_row = true;
+                            }
                             is_fixed = true;
                         }
                         None => {
                             // If the bounds are not constant then the binary variable coefficient is updated later
-                            // Use a placeholder of -1.0 for now
-                            row.add_element(*col, -1.0);
+                            // Use a placeholder of 1.0 and -1.0 for now
+                            row_ub.add_element(*col, 1.0);
+                            row_lb.add_element(*col, -1.0);
+                            // We do not know the bounds yet, so we have to assume there is a possibility
+                            // of a non-zero lower bound.
+                            add_lb_row = true;
                         }
                     }
 
                     if is_fixed {
-                        self.builder.add_fixed_row(row);
+                        println!("Adding fixed row for node {:#?} {:#?}", row_ub, row_lb);
+                        self.builder.add_fixed_row(row_ub);
+                        if add_lb_row {
+                            self.builder.add_fixed_row(row_lb);
+                        }
                     } else {
-                        let row_id = self.builder.add_variable_row(row);
-                        let row_type = NodeRowType::Binary { bin_col_id: *col };
+                        let row_id = self.builder.add_variable_row(row_ub);
+                        let row_type = NodeRowType::BinaryUpperBound { bin_col_id: *col };
 
                         row_ids.push(NodeRowId {
                             row_id,
                             node_idx: node.index(),
                             row_type,
                         });
+
+                        if add_lb_row {
+                            let row_id = self.builder.add_variable_row(row_lb);
+                            let row_type = NodeRowType::BinaryLowerBound { bin_col_id: *col };
+
+                            row_ids.push(NodeRowId {
+                                row_id,
+                                node_idx: node.index(),
+                                row_type,
+                            });
+                        }
                     }
                 }
             } else {
