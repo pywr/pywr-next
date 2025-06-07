@@ -52,6 +52,7 @@ model_tests! {
     test_mutual_exclusivity1: ("mutual-exclusivity1.json", vec!["mutual-exclusivity1.csv"], vec!["clp", "ipm-simd", "ipm-ocl"], vec![]),
     test_mutual_exclusivity2: ("mutual-exclusivity2.json", vec!["mutual-exclusivity2.csv"], vec!["clp", "ipm-simd", "ipm-ocl"], vec![]),
     test_mutual_exclusivity3: ("mutual-exclusivity3.json", vec!["mutual-exclusivity3.csv"], vec!["clp", "ipm-simd", "ipm-ocl"], vec![]),
+    test_mutual_exclusivity4: ("mutual-exclusivity4.json", vec!["mutual-exclusivity4.csv"], vec!["clp", "ipm-simd", "ipm-ocl"], vec![]),
     test_link_with_soft_min: ("link_with_soft_min.json", vec![], vec!["ipm-simd", "ipm-ocl"], vec![]),
     test_link_with_soft_max: ("link_with_soft_max.json", vec![], vec!["ipm-simd", "ipm-ocl"], vec![]),
     test_delay1: ("delay1.json", vec!["delay1-expected.csv"], vec![], vec![]),
