@@ -755,7 +755,7 @@ where
     ///
     /// If the node has binary variables associated with it then two rows are created
     /// to enforce the upper and lower bounds of the binary variable. The lower bound row is only
-    /// created if the `min_flow` is not zero or is a non-constant value.These rows enforce
+    /// created if the `min_flow` is not zero or is a non-constant value. These rows enforce
     /// the following inequalities:
     /// - `binary_variable * max_flow >= flow`
     /// - `binary_variable * min_flow <= flow`
@@ -786,57 +786,39 @@ where
                     self.add_node(node, -1.0, &mut row_ub);
                     self.add_node(node, 1.0, &mut row_lb);
 
-                    let mut is_fixed = false;
-                    let mut add_lb_row = false;
-
                     match bounds {
                         Some(bounds) => {
                             // If the bounds are constant then the binary variable is used to control the upper bound
                             row_ub.add_element(*col, bounds.max_flow.min(1e8));
                             row_ub.set_lower(0.0);
                             row_ub.set_upper(FMAX);
+                            self.builder.add_fixed_row(row_ub);
 
                             if bounds.min_flow != 0.0 {
-                                println!(
-                                    "Adding lower bound row for node {:?} with min_flow: {}",
-                                    node.full_name(),
-                                    bounds.min_flow
-                                );
                                 row_lb.add_element(*col, -bounds.min_flow.max(1e-8));
                                 row_lb.set_lower(0.0);
                                 row_lb.set_upper(FMAX);
-                                add_lb_row = true;
+
+                                self.builder.add_fixed_row(row_lb);
                             }
-                            is_fixed = true;
                         }
                         None => {
                             // If the bounds are not constant then the binary variable coefficient is updated later
                             // Use a placeholder of 1.0 and -1.0 for now
                             row_ub.add_element(*col, 1.0);
                             row_lb.add_element(*col, -1.0);
+
+                            let row_id = self.builder.add_variable_row(row_ub);
+                            let row_type = NodeRowType::BinaryUpperBound { bin_col_id: *col };
+
+                            row_ids.push(NodeRowId {
+                                row_id,
+                                node_idx: node.index(),
+                                row_type,
+                            });
+
                             // We do not know the bounds yet, so we have to assume there is a possibility
                             // of a non-zero lower bound.
-                            add_lb_row = true;
-                        }
-                    }
-
-                    if is_fixed {
-                        println!("Adding fixed row for node {:#?} {:#?}", row_ub, row_lb);
-                        self.builder.add_fixed_row(row_ub);
-                        if add_lb_row {
-                            self.builder.add_fixed_row(row_lb);
-                        }
-                    } else {
-                        let row_id = self.builder.add_variable_row(row_ub);
-                        let row_type = NodeRowType::BinaryUpperBound { bin_col_id: *col };
-
-                        row_ids.push(NodeRowId {
-                            row_id,
-                            node_idx: node.index(),
-                            row_type,
-                        });
-
-                        if add_lb_row {
                             let row_id = self.builder.add_variable_row(row_lb);
                             let row_type = NodeRowType::BinaryLowerBound { bin_col_id: *col };
 
