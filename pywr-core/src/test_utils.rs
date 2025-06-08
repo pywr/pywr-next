@@ -178,7 +178,7 @@ pub fn run_and_assert_parameter(
 /// This function will run a number of time-steps equal to the number of rows in the expected
 /// values array.
 ///
-/// See [`AssertionF64Recorder`] for more information.
+/// See [`AssertionU64Recorder`] for more information.
 pub fn run_and_assert_parameter_u64(
     model: &mut Model,
     parameter: Box<dyn GeneralParameter<u64>>,

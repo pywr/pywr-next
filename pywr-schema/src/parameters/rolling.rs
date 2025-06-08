@@ -12,13 +12,13 @@ use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::parameters::RollingMeanFlowNodeParameter as RollingMeanFlowNodeParameterV1;
 use schemars::JsonSchema;
 
-/// A parameter that delays a value from the network by a number of time-steps.
+/// A parameter that computes a rolling value based on a specified metric over a defined window size.
 ///
-/// This parameter computes a rolling value based on a specified metric over a defined window size.
-/// The rolling function can be configured to use different aggregation functions. If the
-/// `min_values` is not specified, it defaults to the `window_size`, meaning that the rolling
-/// value will only be computed once enough values are available. Prior to the first
-/// `min_values` being reached, the parameter will return the `initial_value`.
+/// The rolling function can be configured to use different aggregation functions
+/// (see [`AggFunc`] for more details). If the `min_values` is not specified, it defaults to the
+/// `window_size`, meaning that the rolling value will only be computed once enough values are
+/// available. Prior to the first `min_values` being reached, the parameter will return the
+/// `initial_value`.
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct RollingParameter {
@@ -50,13 +50,13 @@ impl RollingParameter {
     }
 }
 
-/// A parameter that delays a value from the network by a number of time-steps.
+/// A parameter that computes a rolling value based on a specified index metric over a defined window size.
 ///
-/// This parameter computes a rolling value based on a specified index metric over a defined window
-/// size. The rolling function can be configured to use different aggregation functions. If the
-/// `min_values` is not specified, it defaults to the `window_size`, meaning that the rolling
-/// value will only be computed once enough values are available. Prior to the first
-/// `min_values` being reached, the parameter will return the `initial_value`.
+/// The rolling function can be configured to use different aggregation functions
+/// (see [`IndexAggFunc`] for more details). If the `min_values` is not specified, it defaults
+/// to the `window_size`, meaning that the rolling value will only be computed once enough values
+/// are available. Prior to the first `min_values` being reached, the parameter will return the
+/// `initial_value`.
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct RollingIndexParameter {

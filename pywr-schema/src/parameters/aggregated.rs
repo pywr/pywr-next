@@ -17,13 +17,23 @@ use schemars::JsonSchema;
 use std::collections::HashMap;
 
 // TODO complete these
+/// Aggregation functions for float values.
+///
+/// This enum defines the possible aggregation functions that can be applied to index metrics.
+/// They are mapped to the corresponding functions in the `pywr_core::parameters::AggFunc` enum
+/// when used in the core library.
 #[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone, strum_macros::Display, JsonSchema, PywrVisitAll)]
 #[serde(rename_all = "lowercase")]
 pub enum AggFunc {
+    /// Sum of all values.
     Sum,
+    /// Product of all values.
     Product,
+    /// Mean of all values.
     Mean,
+    /// Minimum value among all values.
     Min,
+    /// Maximum value among all values.
     Max,
 }
 
@@ -131,14 +141,25 @@ impl TryFromV1<AggregatedParameterV1> for AggregatedParameter {
 }
 
 // TODO complete these
+/// Aggregation functions for index (integer) values.
+///
+/// This enum defines the possible aggregation functions that can be applied to index metrics.
+/// They are mapped to the corresponding functions in the `pywr_core::parameters::AggIndexFunc` enum
+/// when used in the core library.
 #[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone, strum_macros::Display, JsonSchema, PywrVisitAll)]
 #[serde(rename_all = "lowercase")]
 pub enum IndexAggFunc {
+    /// Sum of all values.
     Sum,
+    /// Product of all values.
     Product,
-    Max,
+    /// Minimum value among all values.
     Min,
+    /// Maximum value among all values.
+    Max,
+    /// Returns 1 if any value is non-zero, otherwise 0.
     Any,
+    /// Returns 1 if all values are non-zero, otherwise 0.
     All,
 }
 

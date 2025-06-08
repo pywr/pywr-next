@@ -353,7 +353,13 @@ impl SimpleParameter<u64> for RollingParameter<SimpleMetricU64, u64, AggIndexFun
 fn aggregate_f64_memory(memory: &VecDeque<f64>, agg_func: &AggFunc) -> f64 {
     match agg_func {
         AggFunc::Sum => memory.iter().sum(),
-        AggFunc::Mean => memory.iter().sum::<f64>() / memory.len() as f64,
+        AggFunc::Mean => {
+            if memory.is_empty() {
+                0.0 // Mean of empty set is 0
+            } else {
+                memory.iter().sum::<f64>() / memory.len() as f64
+            }
+        }
         AggFunc::Max => *memory
             .iter()
             .max_by(|a, b| a.partial_cmp(b).unwrap())
@@ -453,5 +459,49 @@ mod tests {
         let expected_values: Array2<u64> = expected_values.insert_axis(Axis(1));
 
         run_and_assert_parameter_u64(&mut model, Box::new(parameter), expected_values);
+    }
+
+    #[test]
+    fn test_aggregate_f64_memory() {
+        let memory: VecDeque<f64> = vec![1.0, 2.0, 3.0, 4.0].into();
+
+        assert_eq!(aggregate_f64_memory(&memory, &AggFunc::Sum), 10.0);
+        assert_eq!(aggregate_f64_memory(&memory, &AggFunc::Mean), 2.5);
+        assert_eq!(aggregate_f64_memory(&memory, &AggFunc::Max), 4.0);
+        assert_eq!(aggregate_f64_memory(&memory, &AggFunc::Min), 1.0);
+        assert_eq!(aggregate_f64_memory(&memory, &AggFunc::Product), 24.0);
+    }
+    #[test]
+    fn test_aggregate_f64_memory_empty() {
+        let memory: VecDeque<f64> = VecDeque::new();
+
+        assert_eq!(aggregate_f64_memory(&memory, &AggFunc::Sum), 0.0);
+        assert_eq!(aggregate_f64_memory(&memory, &AggFunc::Mean), 0.0); // Mean of empty set is 0
+        assert_eq!(aggregate_f64_memory(&memory, &AggFunc::Max), f64::MIN);
+        assert_eq!(aggregate_f64_memory(&memory, &AggFunc::Min), f64::MAX);
+        assert_eq!(aggregate_f64_memory(&memory, &AggFunc::Product), 1.0); // Product of empty set is 1
+    }
+    #[test]
+    fn test_aggregate_u64_memory() {
+        let memory: VecDeque<u64> = vec![1, 2, 3, 4].into();
+
+        assert_eq!(aggregate_u64_memory(&memory, &AggIndexFunc::Sum), 10);
+        assert_eq!(aggregate_u64_memory(&memory, &AggIndexFunc::Max), 4);
+        assert_eq!(aggregate_u64_memory(&memory, &AggIndexFunc::Min), 1);
+        assert_eq!(aggregate_u64_memory(&memory, &AggIndexFunc::Any), 1); // Non-zero values exist
+        assert_eq!(aggregate_u64_memory(&memory, &AggIndexFunc::All), 1); // All values are non-zero
+        assert_eq!(aggregate_u64_memory(&memory, &AggIndexFunc::Product), 24);
+    }
+
+    #[test]
+    fn test_aggregate_u64_memory_empty() {
+        let memory: VecDeque<u64> = VecDeque::new();
+
+        assert_eq!(aggregate_u64_memory(&memory, &AggIndexFunc::Sum), 0);
+        assert_eq!(aggregate_u64_memory(&memory, &AggIndexFunc::Max), u64::MIN);
+        assert_eq!(aggregate_u64_memory(&memory, &AggIndexFunc::Min), u64::MAX);
+        assert_eq!(aggregate_u64_memory(&memory, &AggIndexFunc::Any), 0); // No non-zero values
+        assert_eq!(aggregate_u64_memory(&memory, &AggIndexFunc::All), 1); // No values, so all are non-zero by default
+        assert_eq!(aggregate_u64_memory(&memory, &AggIndexFunc::Product), 1); // Product of empty set is 1
     }
 }

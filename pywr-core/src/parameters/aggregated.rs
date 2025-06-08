@@ -9,10 +9,15 @@ use std::str::FromStr;
 
 #[derive(Debug, Clone, Copy)]
 pub enum AggFunc {
+    /// Sum of all values.
     Sum,
+    /// Product of all values.
     Product,
+    /// Mean of all values.
     Mean,
+    /// Minimum value among all values.
     Min,
+    /// Maximum value among all values.
     Max,
 }
 

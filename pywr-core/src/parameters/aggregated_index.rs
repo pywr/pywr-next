@@ -9,13 +9,20 @@ use crate::state::State;
 use crate::timestep::Timestep;
 use std::str::FromStr;
 
+/// Aggregation functions for aggregated index parameters.
 #[derive(Debug, Clone, Copy)]
 pub enum AggIndexFunc {
+    /// Sum of all values.
     Sum,
+    /// Product of all values.
     Product,
+    /// Minimum value among all values.
     Min,
+    /// Maximum value among all values.
     Max,
+    /// Returns 1 if any value is non-zero, otherwise 0.
     Any,
+    /// Returns 1 if all values are non-zero, otherwise 0.
     All,
 }
 
