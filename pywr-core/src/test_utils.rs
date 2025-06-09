@@ -6,7 +6,7 @@ use crate::network::Network;
 use crate::node::StorageInitialVolume;
 use crate::parameters::{AggFunc, AggregatedParameter, Array2Parameter, ConstantParameter, GeneralParameter};
 use crate::recorders::AssertionRecorder;
-use crate::scenario::{ScenarioDomainBuilder, ScenarioGroupBuilder};
+use crate::scenario::{ScenarioDomain, ScenarioDomainBuilder, ScenarioGroupBuilder};
 #[cfg(feature = "cbc")]
 use crate::solvers::CbcSolver;
 #[cfg(feature = "ipm-ocl")]
@@ -52,6 +52,17 @@ pub fn default_model() -> Model {
     let domain = default_domain();
     let network = Network::default();
     Model::new(domain, network)
+}
+
+/// Create a test scenario domain with a single scenario group containing the specified number of scenarios.
+pub fn test_scenario_domain(num_scenarios: usize) -> ScenarioDomain {
+    let mut scenario_builder = ScenarioDomainBuilder::default();
+    let scenario_group = ScenarioGroupBuilder::new("test-scenario", num_scenarios)
+        .build()
+        .unwrap();
+    scenario_builder = scenario_builder.with_group(scenario_group).unwrap();
+
+    scenario_builder.build().expect("Failed to build Scenario domain.")
 }
 
 /// Create a simple test network with three nodes.

@@ -3,34 +3,11 @@ use crate::network::Network;
 use crate::parameters::{
     downcast_internal_state_mut, GeneralParameter, Parameter, ParameterMeta, ParameterName, ParameterState,
 };
+use crate::predicate::Predicate;
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
 use crate::timestep::Timestep;
 use crate::PywrError;
-use std::str::FromStr;
-
-pub enum Predicate {
-    LessThan,
-    GreaterThan,
-    EqualTo,
-    LessThanOrEqualTo,
-    GreaterThanOrEqualTo,
-}
-
-impl FromStr for Predicate {
-    type Err = PywrError;
-
-    fn from_str(name: &str) -> Result<Self, Self::Err> {
-        match name {
-            "<" => Ok(Self::LessThan),
-            ">" => Ok(Self::GreaterThan),
-            "=" => Ok(Self::EqualTo),
-            "<=" => Ok(Self::LessThanOrEqualTo),
-            ">=" => Ok(Self::GreaterThanOrEqualTo),
-            _ => Err(PywrError::InvalidAggregationFunction(name.to_string())),
-        }
-    }
-}
 
 pub struct ThresholdParameter {
     meta: ParameterMeta,
@@ -94,13 +71,7 @@ impl GeneralParameter<u64> for ThresholdParameter {
         let threshold = self.threshold.get_value(model, state)?;
         let value = self.metric.get_value(model, state)?;
 
-        let active = match self.predicate {
-            Predicate::LessThan => value < threshold,
-            Predicate::GreaterThan => value > threshold,
-            Predicate::EqualTo => (value - threshold).abs() < 1E-6, // TODO make this a global constant
-            Predicate::LessThanOrEqualTo => value <= threshold,
-            Predicate::GreaterThanOrEqualTo => value >= threshold,
-        };
+        let active = self.predicate.apply(value, threshold);
 
         if active {
             // Update the internal state to remember we've been triggered!

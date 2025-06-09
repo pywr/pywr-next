@@ -12,8 +12,10 @@ use crate::scenario::ScenarioIndex;
 use crate::state::State;
 use crate::timestep::Timestep;
 use crate::PywrError;
-pub use aggregator::{AggregationFrequency, AggregationFunction, Aggregator};
-pub use csv::{CsvLongFmtOutput, CsvLongFmtRecord, CsvWideFmtOutput};
+pub use aggregator::{
+    AggregationFrequency, AggregationFunction, Aggregator, EventAggregator, NestedAggregator, PeriodicAggregator,
+};
+pub use csv::{CsvLongFmtOutput, CsvWideFmtOutput};
 use float_cmp::{approx_eq, ApproxEq, F64Margin};
 pub use hdf::HDF5Recorder;
 pub use memory::{Aggregation, AggregationError, AggregationOrder, MemoryRecorder};
