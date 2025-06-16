@@ -23,6 +23,7 @@ mod profiles;
 
 #[cfg(feature = "pyo3")]
 mod py;
+mod rolling;
 mod threshold;
 mod vector;
 
@@ -64,6 +65,7 @@ pub use profiles::{
 };
 #[cfg(feature = "pyo3")]
 pub use py::PyParameter;
+pub use rolling::RollingParameter;
 use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::marker::PhantomData;
@@ -1033,7 +1035,7 @@ impl ParameterCollection {
         match parameter.try_into_const() {
             Some(constant) => self.add_const_u64(constant),
             None => {
-                let index = SimpleParameterIndex::new(self.simple_f64.len());
+                let index = SimpleParameterIndex::new(self.simple_u64.len());
 
                 self.simple_u64.push(parameter);
                 self.simple_resolve_order.push(SimpleParameterType::Index(index));

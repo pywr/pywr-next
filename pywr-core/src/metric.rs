@@ -392,3 +392,25 @@ where
         MetricU64::Simple(v.into())
     }
 }
+
+impl TryFrom<MetricU64> for SimpleMetricU64 {
+    type Error = PywrError;
+
+    fn try_from(value: MetricU64) -> Result<Self, Self::Error> {
+        match value {
+            MetricU64::Simple(s) => Ok(s),
+            _ => Err(PywrError::CannotSimplifyMetric),
+        }
+    }
+}
+
+impl TryFrom<SimpleMetricU64> for ConstantMetricU64 {
+    type Error = PywrError;
+
+    fn try_from(value: SimpleMetricU64) -> Result<Self, Self::Error> {
+        match value {
+            SimpleMetricU64::Constant(c) => Ok(c),
+            _ => Err(PywrError::CannotSimplifyMetric),
+        }
+    }
+}

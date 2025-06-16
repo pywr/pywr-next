@@ -1178,7 +1178,9 @@ mod core_tests {
     use crate::metric::{Metric, ParameterReference};
     use crate::parameters::{AggFunc, AggregatedParameter, ConstantParameter, ConstantValue, Parameter, ParameterMeta};
     use ndarray::{Array1, Array2, Axis};
-    use pywr_core::{metric::MetricF64, recorders::AssertionRecorder, solvers::ClpSolver, test_utils::run_all_solvers};
+    use pywr_core::{
+        metric::MetricF64, recorders::AssertionF64Recorder, solvers::ClpSolver, test_utils::run_all_solvers,
+    };
     use std::fs::read_to_string;
     use std::path::PathBuf;
 
@@ -1201,7 +1203,7 @@ mod core_tests {
         let expected_values: Array1<f64> = [10.0; 365].to_vec().into();
         let expected_values: Array2<f64> = expected_values.insert_axis(Axis(1));
 
-        let rec = AssertionRecorder::new(
+        let rec = AssertionF64Recorder::new(
             "assert-demand1",
             MetricF64::NodeInFlow(demand1_idx),
             expected_values,
@@ -1338,7 +1340,7 @@ mod core_tests {
         let expected_values: Array1<f64> = [10.0; 365].to_vec().into();
         let expected_values: Array2<f64> = expected_values.insert_axis(Axis(1));
 
-        let rec = AssertionRecorder::new(
+        let rec = AssertionF64Recorder::new(
             "assert-demand1",
             MetricF64::NodeInFlow(demand1_idx),
             expected_values,
@@ -1357,7 +1359,7 @@ mod core_tests {
         let expected_values: Array1<f64> = [10.0; 365].to_vec().into();
         let expected_values: Array2<f64> = expected_values.insert_axis(Axis(1));
 
-        let rec = AssertionRecorder::new(
+        let rec = AssertionF64Recorder::new(
             "assert-demand2",
             MetricF64::NodeInFlow(demand1_idx),
             expected_values,
@@ -1389,7 +1391,7 @@ mod core_tests {
         let expected_values: Array1<f64> = [10.0; 365].to_vec().into();
         let expected_values: Array2<f64> = expected_values.insert_axis(Axis(1));
 
-        let rec = AssertionRecorder::new(
+        let rec = AssertionF64Recorder::new(
             "assert-demand1",
             MetricF64::NodeInFlow(demand1_idx),
             expected_values,
@@ -1408,7 +1410,7 @@ mod core_tests {
         let expected_values: Array1<f64> = [10.0; 365].to_vec().into();
         let expected_values: Array2<f64> = expected_values.insert_axis(Axis(1));
 
-        let rec = AssertionRecorder::new(
+        let rec = AssertionF64Recorder::new(
             "assert-demand2",
             MetricF64::NodeInFlow(demand1_idx),
             expected_values,
