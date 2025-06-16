@@ -20,6 +20,7 @@ use pywr_v1_schema::nodes::{
     ReservoirNode as ReservoirNodeV1, StorageNode as StorageNodeV1,
 };
 use schemars::JsonSchema;
+use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticStr};
 
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
@@ -703,8 +704,20 @@ impl TryFromV1<OutputNodeV1> for OutputNode {
 }
 
 #[derive(
-    serde::Deserialize, serde::Serialize, Clone, PartialEq, Copy, Debug, JsonSchema, PywrVisitAll, strum_macros::Display,
+    serde::Deserialize,
+    serde::Serialize,
+    Clone,
+    PartialEq,
+    Copy,
+    Debug,
+    JsonSchema,
+    PywrVisitAll,
+    Display,
+    EnumDiscriminants,
 )]
+#[serde(tag = "type", content = "value", deny_unknown_fields)]
+#[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
+#[strum_discriminants(name(StorageInitialVolumeType))]
 pub enum StorageInitialVolume {
     Absolute(f64),
     Proportional(f64),
@@ -999,8 +1012,10 @@ impl TryFromV1<CatchmentNodeV1> for CatchmentNode {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, PywrVisitAll, strum_macros::Display)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, PywrVisitAll, Display, EnumDiscriminants)]
 #[serde(tag = "type", deny_unknown_fields)]
+#[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
+#[strum_discriminants(name(RelationshipType))]
 pub enum Relationship {
     Proportion {
         factors: Vec<Metric>,
@@ -1342,7 +1357,8 @@ mod tests {
                   "value": 10.0
                 },
                 "initial_volume": {
-                    "Absolute": 12.0
+                  "type": "Absolute",
+                  "value": 12.0
                 }
             }
             "#;
@@ -1364,7 +1380,8 @@ mod tests {
                   "value": 15.0
                 },
                 "initial_volume": {
-                    "Proportional": 0.5
+                  "type": "Proportional",
+                  "value": 0.5
                 }
             }
             "#;

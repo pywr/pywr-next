@@ -81,7 +81,7 @@
           "name": "factored_flow"
         },
         "type": "Aggregated",
-        "agg_func": "product",
+        "agg_func": "Product",
         "metrics": [
           {
             "type": "Timeseries",
@@ -121,7 +121,7 @@
       {
         "name": "nodes",
         "type": "CSV",
-        "format": "long",
+        "format": "Long",
         "filename": "timeseries-expected.csv",
         "metric_set": "nodes"
       }

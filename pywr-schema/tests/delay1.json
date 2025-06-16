@@ -75,7 +75,7 @@
       {
         "name": "nodes",
         "type": "CSV",
-        "format": "long",
+        "format": "Long",
         "filename": "delay1-expected.csv",
         "metric_set": "nodes"
       }
