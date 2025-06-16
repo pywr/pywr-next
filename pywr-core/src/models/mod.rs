@@ -7,7 +7,7 @@ use crate::PywrError;
 pub use multi::{MultiNetworkModel, MultiNetworkTransferIndex};
 pub use simple::{Model, ModelState};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ModelDomain {
     time: TimeDomain,
     scenarios: ScenarioDomain,
