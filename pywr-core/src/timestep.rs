@@ -5,7 +5,7 @@ use polars::prelude::PolarsError;
 use polars::time::ClosedWindow;
 use pyo3::Bound;
 #[cfg(feature = "pyo3")]
-use pyo3::{pyclass, pymethods, IntoPyObject, PyAny, PyResult, Python};
+use pyo3::{IntoPyObject, PyAny, PyResult, Python, pyclass, pymethods};
 use std::ops::Add;
 use thiserror::Error;
 

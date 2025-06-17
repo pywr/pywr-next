@@ -73,7 +73,7 @@ impl PyParameter {
         .map_err(|py_error| ParameterSetupError::PythonError {
             name: self.meta.name.to_string(),
             object: self.object.to_string(),
-            py_error,
+            py_error: Box::new(py_error),
         })?;
 
         let internal = Internal { user_obj };
@@ -115,7 +115,7 @@ impl PyParameter {
         .map_err(|py_error| ParameterCalculationError::PythonError {
             name: self.meta.name.to_string(),
             object: self.object.to_string(),
-            py_error,
+            py_error: Box::new(py_error),
         })?;
 
         Ok(value)
@@ -142,7 +142,7 @@ impl PyParameter {
                     .map_err(|py_error| ParameterCalculationError::PythonError {
                         name: self.meta.name.to_string(),
                         object: self.object.to_string(),
-                        py_error,
+                        py_error: Box::new(py_error),
                     })?;
 
                 // `into_pyobject` is used to convert the `SimulationId` to a Python object.
@@ -159,7 +159,7 @@ impl PyParameter {
                         .map_err(|py_error| ParameterCalculationError::PythonError {
                             name: self.meta.name.to_string(),
                             object: self.object.to_string(),
-                            py_error,
+                            py_error: Box::new(py_error),
                         })?;
 
                 let index_dict =
@@ -168,7 +168,7 @@ impl PyParameter {
                         .map_err(|py_error| ParameterCalculationError::PythonError {
                             name: self.meta.name.to_string(),
                             object: self.object.to_string(),
-                            py_error,
+                            py_error: Box::new(py_error),
                         })?;
 
                 let args = PyTuple::new(
@@ -178,14 +178,14 @@ impl PyParameter {
                 .map_err(|py_error| ParameterCalculationError::PythonError {
                     name: self.meta.name.to_string(),
                     object: self.object.to_string(),
-                    py_error,
+                    py_error: Box::new(py_error),
                 })?;
 
                 internal.user_obj.call_method1(py, "after", args).map_err(|py_error| {
                     ParameterCalculationError::PythonError {
                         name: self.meta.name.to_string(),
                         object: self.object.to_string(),
-                        py_error,
+                        py_error: Box::new(py_error),
                     }
                 })?;
             }
@@ -329,7 +329,7 @@ impl GeneralParameter<MultiValue> for PyParameter {
         .map_err(|py_error| ParameterCalculationError::PythonError {
             name: self.meta.name.to_string(),
             object: self.object.to_string(),
-            py_error,
+            py_error: Box::new(py_error),
         })?;
 
         Ok(value)
