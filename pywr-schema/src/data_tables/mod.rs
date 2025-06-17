@@ -17,6 +17,7 @@ use schemars::JsonSchema;
 #[cfg(feature = "core")]
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticStr};
 use thiserror::Error;
 #[cfg(feature = "core")]
 use tracing::{debug, info};
@@ -26,20 +27,21 @@ use vec::{
     LoadedVecTable,
 };
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, strum_macros::Display)]
-#[serde(rename_all = "lowercase")]
-pub enum DataTableType {
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, Display, EnumIter)]
+pub enum DataTableValueType {
     Scalar,
     Array,
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, strum_macros::Display)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Display, EnumIter)]
 pub enum DataTableFormat {
     CSV,
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, strum_macros::Display)]
-#[serde(tag = "format", rename_all = "lowercase")]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, Display, EnumDiscriminants)]
+#[serde(tag = "format")]
+#[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
+#[strum_discriminants(name(DataTableType))]
 pub enum DataTable {
     CSV(CsvDataTable),
 }
@@ -59,12 +61,14 @@ impl DataTable {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, strum_macros::Display)]
-#[serde(rename_all = "lowercase")]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, Display, EnumDiscriminants)]
+#[serde(tag = "type", deny_unknown_fields)]
+#[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
+#[strum_discriminants(name(CsvDataTableLookupType))]
 pub enum CsvDataTableLookup {
-    Row(usize),
-    Col(usize),
-    Both(usize, usize),
+    Row { rows: usize },
+    Col { cols: usize },
+    Both { rows: usize, cols: usize },
 }
 
 /// An external table of data that can be referenced
@@ -72,7 +76,7 @@ pub enum CsvDataTableLookup {
 pub struct CsvDataTable {
     pub name: String,
     #[serde(rename = "type")]
-    pub ty: DataTableType,
+    pub ty: DataTableValueType,
     pub lookup: CsvDataTableLookup,
     pub url: PathBuf,
 }
@@ -81,8 +85,8 @@ pub struct CsvDataTable {
 impl CsvDataTable {
     fn load_f64(&self, data_path: Option<&Path>) -> Result<LoadedTable, TableError> {
         match &self.ty {
-            DataTableType::Scalar => match self.lookup {
-                CsvDataTableLookup::Row(i) => match i {
+            DataTableValueType::Scalar => match self.lookup {
+                CsvDataTableLookup::Row { rows } => match rows {
                     1 => Ok(LoadedTable::FloatScalar(load_csv_row_scalar_table_one(
                         &self.url, data_path,
                     )?)),
@@ -93,8 +97,8 @@ impl CsvDataTable {
                         "CSV row scalar table with more than two index columns is not supported.".to_string(),
                     )),
                 },
-                CsvDataTableLookup::Col(_) => todo!(),
-                CsvDataTableLookup::Both(nrows, ncols) => match (nrows, ncols) {
+                CsvDataTableLookup::Col { .. } => todo!(),
+                CsvDataTableLookup::Both { rows, cols } => match (rows, cols) {
                     (1, 1) => Ok(LoadedTable::FloatScalar(load_csv_row_col_scalar_table_one(
                         &self.url, data_path,
                     )?)),
@@ -103,8 +107,8 @@ impl CsvDataTable {
                     )),
                 },
             },
-            DataTableType::Array => match self.lookup {
-                CsvDataTableLookup::Row(i) => match i {
+            DataTableValueType::Array => match self.lookup {
+                CsvDataTableLookup::Row { rows } => match rows {
                     1 => Ok(LoadedTable::FloatVec(load_csv_row_vec_table_one(&self.url, data_path)?)),
                     2 => Ok(LoadedTable::FloatVec(load_csv_row2_vec_table_one(
                         &self.url, data_path,
@@ -113,7 +117,7 @@ impl CsvDataTable {
                         "CSV row array table with more than two index columns is not supported.".to_string(),
                     )),
                 },
-                CsvDataTableLookup::Col(i) => match i {
+                CsvDataTableLookup::Col { cols } => match cols {
                     1 => Ok(LoadedTable::FloatVec(load_csv_col1_vec_table_one(
                         &self.url, data_path,
                     )?)),
@@ -124,7 +128,7 @@ impl CsvDataTable {
                         "CSV column array table with more than two index columns is not supported.".to_string(),
                     )),
                 },
-                CsvDataTableLookup::Both(_, _) => todo!(),
+                CsvDataTableLookup::Both { .. } => todo!(),
             },
         }
     }
@@ -331,9 +335,12 @@ mod tests {
             r#"
             {{
                 "name": "my-arrays",
-                "type": "array",
-                "format": "csv",
-                "lookup": {{"row": 1}},
+                "type": "Array",
+                "format": "CSV",
+                "lookup": {{
+                    "type": "Row",
+                    "rows": 1
+                }},
                 "url": {}
             }}"#,
             my_data_fn

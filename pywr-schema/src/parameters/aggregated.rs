@@ -15,6 +15,7 @@ use pywr_v1_schema::parameters::{
 };
 use schemars::JsonSchema;
 use std::collections::HashMap;
+use strum_macros::{Display, EnumIter};
 
 // TODO complete these
 /// Aggregation functions for float values.
@@ -22,8 +23,7 @@ use std::collections::HashMap;
 /// This enum defines the possible aggregation functions that can be applied to index metrics.
 /// They are mapped to the corresponding functions in the `pywr_core::parameters::AggFunc` enum
 /// when used in the core library.
-#[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone, strum_macros::Display, JsonSchema, PywrVisitAll)]
-#[serde(rename_all = "lowercase")]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone, Display, JsonSchema, PywrVisitAll, EnumIter)]
 pub enum AggFunc {
     /// Sum of all values.
     Sum,
@@ -146,8 +146,7 @@ impl TryFromV1<AggregatedParameterV1> for AggregatedParameter {
 /// This enum defines the possible aggregation functions that can be applied to index metrics.
 /// They are mapped to the corresponding functions in the `pywr_core::parameters::AggIndexFunc` enum
 /// when used in the core library.
-#[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone, strum_macros::Display, JsonSchema, PywrVisitAll)]
-#[serde(rename_all = "lowercase")]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone, Display, JsonSchema, PywrVisitAll, EnumIter)]
 pub enum IndexAggFunc {
     /// Sum of all values.
     Sum,
@@ -275,7 +274,7 @@ mod tests {
                     "name": "my-agg-param",
                     "comment": "Take the minimum of two parameters"
                 },
-                "agg_func": "min",
+                "agg_func": "Min",
                 "metrics": [
                   {
                     "type": "Parameter",

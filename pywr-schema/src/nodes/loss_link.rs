@@ -12,14 +12,17 @@ use pywr_core::{aggregated_node::Relationship, metric::MetricF64};
 use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::nodes::LossLinkNode as LossLinkNodeV1;
 use schemars::JsonSchema;
+use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticStr};
 
 /// The type of loss factor applied.
 ///
 /// Gross losses are typically applied as a proportion of the total flow into a node, whereas
 /// net losses are applied as a proportion of the net flow. Please see the documentation for
 /// specific nodes (e.g. [`LossLinkNode`]) to understand how the loss factor is applied.
-#[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, PywrVisitAll, strum_macros::Display)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, PywrVisitAll, Display, EnumDiscriminants)]
 #[serde(tag = "type", deny_unknown_fields)]
+#[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
+#[strum_discriminants(name(LossFactorType))]
 pub enum LossFactor {
     Gross { factor: Metric },
     Net { factor: Metric },

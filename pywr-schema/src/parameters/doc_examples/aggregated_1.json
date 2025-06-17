@@ -3,7 +3,7 @@
     "name": "my-aggregated-value"
   },
   "type": "Aggregated",
-  "agg_func": "sum",
+  "agg_func": "Sum",
   "metrics": [
     {
       "type": "Constant",

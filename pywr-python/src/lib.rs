@@ -13,7 +13,7 @@ use pywr_core::solvers::{HighsSolver, HighsSolverSettings, HighsSolverSettingsBu
 #[cfg(feature = "ipm-simd")]
 use pywr_core::solvers::{SimdIpmF64Solver, SimdIpmSolverSettings, SimdIpmSolverSettingsBuilder};
 use pywr_core::PywrError;
-use pywr_schema::model::DateType;
+use pywr_schema::model::Date;
 use pywr_schema::{ComponentConversionError, ConversionData, ConversionError, TryIntoV2};
 use std::fmt;
 use std::path::PathBuf;
@@ -64,8 +64,8 @@ pub struct Schema {
 impl Schema {
     #[new]
     fn new(title: &str, start: NaiveDateTime, end: NaiveDateTime) -> Self {
-        let start = DateType::DateTime(start);
-        let end = DateType::DateTime(end);
+        let start = Date::DateTime(start);
+        let end = Date::DateTime(end);
 
         Self {
             schema: pywr_schema::PywrModel::new(title, &start, &end),

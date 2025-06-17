@@ -35,6 +35,7 @@ use schemars::JsonSchema;
 #[cfg(feature = "core")]
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticStr};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -80,8 +81,10 @@ pub enum TimeseriesError {
     NdarrayShape(#[from] ShapeError),
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, Display, EnumDiscriminants)]
 #[serde(tag = "type")]
+#[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
+#[strum_discriminants(name(TimeseriesProviderType))]
 pub enum TimeseriesProvider {
     Pandas(PandasDataset),
     Polars(PolarsDataset),
@@ -439,11 +442,13 @@ where
 //     ts.into_values().collect::<Vec<Timeseries>>()
 // }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, strum_macros::Display, PartialEq)]
-#[serde(tag = "type", content = "name")]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PartialEq, Display, EnumDiscriminants)]
+#[serde(tag = "type", deny_unknown_fields)]
+#[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
+#[strum_discriminants(name(TimeseriesColumnsType))]
 pub enum TimeseriesColumns {
-    Scenario(String),
-    Column(String),
+    Scenario { name: String },
+    Column { name: String },
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PartialEq)]
@@ -533,8 +538,8 @@ impl TryFromV1<DataFrameParameterV1> for ConvertedTimeseriesReference {
 
         // Create the reference to the timeseries data
         let columns = match (v1.column, v1.scenario) {
-            (Some(col), None) => Some(TimeseriesColumns::Column(col)),
-            (None, Some(scenario)) => Some(TimeseriesColumns::Scenario(scenario)),
+            (Some(name), None) => Some(TimeseriesColumns::Column { name }),
+            (None, Some(name)) => Some(TimeseriesColumns::Scenario { name }),
             (Some(_), Some(_)) => {
                 return Err(ComponentConversionError::Parameter {
                     name: meta.name.clone(),

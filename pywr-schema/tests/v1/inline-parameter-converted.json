@@ -101,7 +101,7 @@
         "variable": null
       },
       {
-        "agg_func": "product",
+        "agg_func": "Product",
         "meta": {
           "name": "demand1-p0"
         },

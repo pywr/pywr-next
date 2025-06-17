@@ -45,7 +45,7 @@ pub use river_split_with_gauge::{RiverSplit, RiverSplitWithGaugeNode};
 pub use rolling_virtual_storage::{RollingVirtualStorageNode, RollingWindow};
 use schemars::JsonSchema;
 use std::path::{Path, PathBuf};
-use strum_macros::{Display, EnumDiscriminants, EnumString, IntoStaticStr, VariantNames};
+use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticStr};
 pub use turbine::{TargetType, TurbineNode};
 pub use virtual_storage::VirtualStorageNode;
 pub use water_treatment_works::WaterTreatmentWorks;
@@ -89,7 +89,9 @@ impl From<NodeMetaV1> for NodeMeta {
 /// All possible attributes that could be produced by a node.
 ///
 ///
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Copy, Display, JsonSchema, PywrVisitAll, PartialEq)]
+#[derive(
+    serde::Deserialize, serde::Serialize, Debug, Clone, Copy, Display, JsonSchema, PywrVisitAll, PartialEq, EnumIter,
+)]
 pub enum NodeAttribute {
     Inflow,
     Outflow,
@@ -238,9 +240,9 @@ impl NodeBuilder {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Clone, EnumDiscriminants, Debug, JsonSchema, strum_macros::Display)]
-#[serde(tag = "type")]
-#[strum_discriminants(derive(Display, IntoStaticStr, EnumString, VariantNames))]
+#[derive(serde::Deserialize, serde::Serialize, Clone, EnumDiscriminants, Debug, JsonSchema, Display)]
+#[serde(tag = "type", deny_unknown_fields)]
+#[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
 // This creates a separate enum called `NodeType` that is available in this module.
 #[strum_discriminants(name(NodeType))]
 pub enum Node {

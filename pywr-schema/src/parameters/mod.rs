@@ -69,7 +69,7 @@ use pywr_v1_schema::parameters::{
 pub use rolling::{RollingIndexParameter, RollingParameter};
 use schemars::JsonSchema;
 use std::path::{Path, PathBuf};
-use strum_macros::{Display, EnumDiscriminants, EnumString, IntoStaticStr, VariantNames};
+use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticStr};
 pub use tables::TablesArrayParameter;
 pub use thresholds::ThresholdParameter;
 
@@ -82,7 +82,7 @@ pub struct ParameterMeta {
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, EnumDiscriminants, Clone, JsonSchema, Display)]
 #[serde(tag = "type")]
-#[strum_discriminants(derive(Display, IntoStaticStr, EnumString, VariantNames))]
+#[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
 // This creates a separate enum called `ParameterType` that is available in this module.
 #[strum_discriminants(name(ParameterType))]
 pub enum Parameter {
@@ -540,11 +540,13 @@ impl TryFromV1<ParameterV1> for ParameterOrTimeseriesRef {
     }
 }
 
-/// An non-variable constant floating-point (f64) value
+/// A non-variable constant floating-point (f64) value
 ///
 /// This value can be a literal float or an external reference to an input table.
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, Display)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, Display, EnumDiscriminants)]
 #[serde(untagged)]
+#[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
+#[strum_discriminants(name(ConstantValueType))]
 pub enum ConstantValue<T> {
     Literal(T),
     Table(TableDataRef),
@@ -650,8 +652,12 @@ impl TryFrom<ParameterValueV1> for ConstantValue<f64> {
 /// An non-variable vector of constant floating-point (f64) values
 ///
 /// This value can be a literal vector of floats or an external reference to an input table.
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll, Display)]
+#[derive(
+    serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll, Display, EnumDiscriminants, PartialEq,
+)]
 #[serde(untagged)]
+#[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
+#[strum_discriminants(name(ConstantFloatVecType))]
 pub enum ConstantFloatVec {
     Literal(Vec<f64>),
     Table(TableDataRef),
@@ -674,8 +680,12 @@ impl ConstantFloatVec {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll, Display, PartialEq)]
+#[derive(
+    serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll, Display, PartialEq, EnumDiscriminants,
+)]
 #[serde(untagged)]
+#[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
+#[strum_discriminants(name(TableIndexType))]
 pub enum TableIndex {
     Single(String),
     Multi(Vec<String>),

@@ -18,9 +18,8 @@
     ]
   ],
   "function": {
-    "Gaussian": {
-      "epsilon": 3.0
-    }
+    "type": "Gaussian",
+    "epsilon": 3.0
   },
   "variable": {
     "is_active": true,

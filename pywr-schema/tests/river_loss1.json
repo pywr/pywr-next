@@ -102,7 +102,7 @@
       {
         "name": "node-outputs",
         "type": "CSV",
-        "format": "long",
+        "format": "Long",
         "filename": "river_loss1-expected.csv",
         "metric_set": [
           "nodes"

@@ -15,8 +15,9 @@ use pywr_v1_schema::parameters::{
     Predicate as PredicateV1, StorageThresholdParameter as StorageThresholdParameterV1,
 };
 use schemars::JsonSchema;
+use strum_macros::{Display, EnumIter};
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Copy, JsonSchema, PywrVisitAll, strum_macros::Display)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Copy, JsonSchema, PywrVisitAll, Display, EnumIter)]
 pub enum Predicate {
     #[serde(alias = "<")]
     LT,

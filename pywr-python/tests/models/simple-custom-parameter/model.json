@@ -61,6 +61,7 @@
         },
         "type": "Python",
         "source": {
+          "type": "Path",
           "path": "custom.py"
         },
         "object": "CustomParameter",
