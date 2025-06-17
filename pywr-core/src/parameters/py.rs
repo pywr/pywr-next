@@ -98,7 +98,7 @@ impl PyParameter {
         let indices = self.get_indices(network, state)?;
 
         let value: T = Python::with_gil(|py| {
-            let date = timestep.date.into_pyobject(py)?;
+            let date = timestep.into_pyobject(py)?;
 
             let si = scenario_index.simulation_id().into_pyobject(py)?;
 
