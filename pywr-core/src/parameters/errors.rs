@@ -13,7 +13,7 @@ pub enum ParameterSetupError {
         name: String,
         object: String,
         #[source]
-        py_error: pyo3::PyErr,
+        py_error: Box<pyo3::PyErr>,
     },
 }
 
@@ -38,7 +38,7 @@ pub enum ParameterCalculationError {
         name: String,
         object: String,
         #[source]
-        py_error: pyo3::PyErr,
+        py_error: Box<pyo3::PyErr>,
     },
 }
 

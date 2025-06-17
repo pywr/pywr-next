@@ -5,11 +5,54 @@ use crate::parameters::downcast_internal_state_mut;
 use crate::parameters::errors::{ParameterCalculationError, ParameterSetupError};
 use crate::scenario::ScenarioIndex;
 use crate::state::{MultiValue, State};
-use pyo3::exceptions::PyValueError;
+use ahash::RandomState;
+use pyo3::exceptions::PyKeyError;
 use pyo3::prelude::*;
-use pyo3::types::{IntoPyDict, PyDict, PyFloat, PyInt, PyTuple};
+use pyo3::types::{PyDict, PyTuple};
 use std::collections::HashMap;
 
+/// Provides data for a custom Pywr parameter.
+///
+/// This is a read-only object that provides information that can be used for custom parameters in Pywr. It
+/// is passed as the first argument to the `calc` and `after` methods of custom parameter objects.
+#[pyclass]
+pub struct ParameterInfo {
+    /// The timestep for which the parameter is being calculated.
+    #[pyo3(get)]
+    timestep: Timestep,
+
+    /// The scenario index for which the parameter is being calculated.
+    #[pyo3(get)]
+    scenario_index: ScenarioIndex,
+
+    /// The metric values available for the parameter calculation.
+    metric_values: HashMap<String, f64, RandomState>,
+
+    /// The index values available for the parameter calculation.
+    index_values: HashMap<String, u64, RandomState>,
+}
+
+#[pymethods]
+impl ParameterInfo {
+    pub fn get_metric(&self, key: &str) -> PyResult<f64> {
+        self.metric_values
+            .get(key)
+            .ok_or_else(|| PyKeyError::new_err(format!("Metric `{key}` not found")))
+            .cloned()
+    }
+
+    pub fn get_index(&self, key: &str) -> PyResult<u64> {
+        self.index_values
+            .get(key)
+            .ok_or_else(|| PyKeyError::new_err(format!("Index `{key}` not found")))
+            .cloned()
+    }
+}
+
+/// A Python parameter that returns the value produced by a Python object.
+///
+/// This parameter allows you to define a Python class that implements a `calc` method,
+/// which will be called to compute the parameter value.
 pub struct PyParameter {
     meta: ParameterMeta,
     object: Py<PyAny>,
@@ -20,7 +63,9 @@ pub struct PyParameter {
 }
 
 struct Internal {
+    /// The user-defined Python object that implements the parameter logic.
     user_obj: PyObject,
+    info_obj: Option<Py<ParameterInfo>>,
 }
 
 impl Internal {
@@ -48,18 +93,32 @@ impl PyParameter {
         }
     }
 
-    fn get_metrics(&self, network: &Network, state: &State) -> Result<Vec<(&str, f64)>, ParameterCalculationError> {
-        self.metrics
-            .iter()
-            .map(|(k, value)| Ok((k.as_str(), value.get_value(network, state)?)))
-            .collect::<Result<Vec<_>, ParameterCalculationError>>()
+    fn update_metrics(
+        &self,
+        network: &Network,
+        state: &State,
+        values: &mut HashMap<String, f64, RandomState>,
+    ) -> Result<(), ParameterCalculationError> {
+        for (k, m) in self.metrics.iter() {
+            let value = m.get_value(network, state)?;
+            values.insert(k.clone(), value);
+        }
+
+        Ok(())
     }
 
-    fn get_indices(&self, network: &Network, state: &State) -> Result<Vec<(&str, u64)>, ParameterCalculationError> {
-        self.indices
-            .iter()
-            .map(|(k, value)| Ok((k.as_str(), value.get_value(network, state)?)))
-            .collect::<Result<Vec<_>, ParameterCalculationError>>()
+    fn update_indices(
+        &self,
+        network: &Network,
+        state: &State,
+        values: &mut HashMap<String, u64, RandomState>,
+    ) -> Result<(), ParameterCalculationError> {
+        for (k, m) in self.indices.iter() {
+            let value = m.get_value(network, state)?;
+            values.insert(k.clone(), value);
+        }
+
+        Ok(())
     }
 
     fn setup(&self) -> Result<Option<Box<dyn ParameterState>>, ParameterSetupError> {
@@ -73,10 +132,13 @@ impl PyParameter {
         .map_err(|py_error| ParameterSetupError::PythonError {
             name: self.meta.name.to_string(),
             object: self.object.to_string(),
-            py_error,
+            py_error: Box::new(py_error),
         })?;
 
-        let internal = Internal { user_obj };
+        let internal = Internal {
+            user_obj,
+            info_obj: None,
+        };
 
         Ok(Some(internal.into_boxed_any()))
     }
@@ -94,28 +156,41 @@ impl PyParameter {
     {
         let internal = downcast_internal_state_mut::<Internal>(internal_state);
 
-        let metrics = self.get_metrics(network, state)?;
-        let indices = self.get_indices(network, state)?;
+        let info = internal.info_obj.get_or_insert_with(|| {
+            // Create a new PyInfo object to pass to the Python method.
+            Python::with_gil(|py| {
+                Py::new(
+                    py,
+                    ParameterInfo {
+                        timestep: *timestep,
+                        scenario_index: scenario_index.clone(),
+                        metric_values: HashMap::default(),
+                        index_values: HashMap::default(),
+                    },
+                )
+            })
+            .unwrap()
+        });
 
         let value: T = Python::with_gil(|py| {
-            let date = timestep.into_pyobject(py)?;
+            let info_bind = info.bind(py);
+            {
+                let mut info_mut = info_bind.borrow_mut();
+                info_mut.timestep = *timestep;
+                info_mut.scenario_index = scenario_index.clone();
+                self.update_metrics(network, state, &mut info_mut.metric_values)
+                    .unwrap();
+                self.update_indices(network, state, &mut info_mut.index_values).unwrap();
+            }
 
-            let si = scenario_index.simulation_id().into_pyobject(py)?;
-
-            let metric_dict = metrics.into_py_dict(py)?;
-            let index_dict = indices.into_py_dict(py)?;
-
-            let args = PyTuple::new(
-                py,
-                [date.as_any(), si.as_any(), metric_dict.as_any(), index_dict.as_any()],
-            )?;
+            let args = PyTuple::new(py, [info_bind])?;
 
             internal.user_obj.call_method1(py, "calc", args)?.extract(py)
         })
         .map_err(|py_error| ParameterCalculationError::PythonError {
             name: self.meta.name.to_string(),
             object: self.object.to_string(),
-            py_error,
+            py_error: Box::new(py_error),
         })?;
 
         Ok(value)
@@ -131,65 +206,45 @@ impl PyParameter {
     ) -> Result<(), ParameterCalculationError> {
         let internal = downcast_internal_state_mut::<Internal>(internal_state);
 
-        let metrics = self.get_metrics(network, state)?;
-        let indices = self.get_indices(network, state)?;
+        let info = internal.info_obj.get_or_insert_with(|| {
+            // Create a new PyInfo object to pass to the Python method.
+            Python::with_gil(|py| {
+                Py::new(
+                    py,
+                    ParameterInfo {
+                        timestep: *timestep,
+                        scenario_index: scenario_index.clone(),
+                        metric_values: HashMap::default(),
+                        index_values: HashMap::default(),
+                    },
+                )
+            })
+            .unwrap()
+        });
 
         Python::with_gil(|py| {
             // Only do this if the object has an "after" method defined.
             if internal.user_obj.getattr(py, "after").is_ok() {
-                let date = timestep
-                    .into_pyobject(py)
-                    .map_err(|py_error| ParameterCalculationError::PythonError {
-                        name: self.meta.name.to_string(),
-                        object: self.object.to_string(),
-                        py_error,
-                    })?;
+                let info_bind = info.bind(py);
+                {
+                    let mut info_mut = info_bind.borrow_mut();
+                    info_mut.timestep = *timestep;
+                    info_mut.scenario_index = scenario_index.clone();
+                    self.update_metrics(network, state, &mut info_mut.metric_values)
+                        .unwrap();
+                    self.update_indices(network, state, &mut info_mut.index_values).unwrap();
+                }
 
-                // `into_pyobject` is used to convert the `SimulationId` to a Python object.
-                // This current returns `Infallible`, so we can safely unwrap it.
-                // Not sure how to handle it maybe failing in the future.
-                let si = match scenario_index.simulation_id().into_pyobject(py) {
-                    Ok(si) => si,
-                    Err(e) => match e {},
-                };
+                let args = PyTuple::new(py, [info_bind])?;
 
-                let metric_dict =
-                    metrics
-                        .into_py_dict(py)
-                        .map_err(|py_error| ParameterCalculationError::PythonError {
-                            name: self.meta.name.to_string(),
-                            object: self.object.to_string(),
-                            py_error,
-                        })?;
-
-                let index_dict =
-                    indices
-                        .into_py_dict(py)
-                        .map_err(|py_error| ParameterCalculationError::PythonError {
-                            name: self.meta.name.to_string(),
-                            object: self.object.to_string(),
-                            py_error,
-                        })?;
-
-                let args = PyTuple::new(
-                    py,
-                    [date.as_any(), si.as_any(), metric_dict.as_any(), index_dict.as_any()],
-                )
-                .map_err(|py_error| ParameterCalculationError::PythonError {
-                    name: self.meta.name.to_string(),
-                    object: self.object.to_string(),
-                    py_error,
-                })?;
-
-                internal.user_obj.call_method1(py, "after", args).map_err(|py_error| {
-                    ParameterCalculationError::PythonError {
-                        name: self.meta.name.to_string(),
-                        object: self.object.to_string(),
-                        py_error,
-                    }
-                })?;
+                internal.user_obj.call_method1(py, "after", args)?;
             }
-            Ok::<(), ParameterCalculationError>(())
+            Ok::<(), PyErr>(())
+        })
+        .map_err(|py_error| ParameterCalculationError::PythonError {
+            name: self.meta.name.to_string(),
+            object: self.object.to_string(),
+            py_error: Box::new(py_error),
         })?;
 
         Ok(())
@@ -215,22 +270,22 @@ impl GeneralParameter<f64> for PyParameter {
         &self,
         timestep: &Timestep,
         scenario_index: &ScenarioIndex,
-        model: &Network,
+        network: &Network,
         state: &State,
         internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<f64, ParameterCalculationError> {
-        self.compute(timestep, scenario_index, model, state, internal_state)
+        self.compute(timestep, scenario_index, network, state, internal_state)
     }
 
     fn after(
         &self,
         timestep: &Timestep,
         scenario_index: &ScenarioIndex,
-        model: &Network,
+        network: &Network,
         state: &State,
         internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<(), ParameterCalculationError> {
-        self.after(timestep, scenario_index, model, state, internal_state)
+        self.after(timestep, scenario_index, network, state, internal_state)
     }
 
     fn as_parameter(&self) -> &dyn Parameter
@@ -246,22 +301,22 @@ impl GeneralParameter<u64> for PyParameter {
         &self,
         timestep: &Timestep,
         scenario_index: &ScenarioIndex,
-        model: &Network,
+        network: &Network,
         state: &State,
         internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<u64, ParameterCalculationError> {
-        self.compute(timestep, scenario_index, model, state, internal_state)
+        self.compute(timestep, scenario_index, network, state, internal_state)
     }
 
     fn after(
         &self,
         timestep: &Timestep,
         scenario_index: &ScenarioIndex,
-        model: &Network,
+        network: &Network,
         state: &State,
         internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<(), ParameterCalculationError> {
-        self.after(timestep, scenario_index, model, state, internal_state)
+        self.after(timestep, scenario_index, network, state, internal_state)
     }
 
     fn as_parameter(&self) -> &dyn Parameter
@@ -281,58 +336,7 @@ impl GeneralParameter<MultiValue> for PyParameter {
         state: &State,
         internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<MultiValue, ParameterCalculationError> {
-        let internal = downcast_internal_state_mut::<Internal>(internal_state);
-
-        let metrics = self.get_metrics(network, state)?;
-        let indices = self.get_indices(network, state)?;
-
-        let value: MultiValue = Python::with_gil(|py| {
-            let date = timestep.date.into_pyobject(py)?;
-
-            let si = scenario_index.simulation_id().into_pyobject(py)?;
-
-            let metric_dict = metrics.into_py_dict(py)?;
-            let index_dict = indices.into_py_dict(py)?;
-
-            let args = PyTuple::new(
-                py,
-                [date.as_any(), si.as_any(), metric_dict.as_any(), index_dict.as_any()],
-            )?;
-
-            let py_values: HashMap<String, PyObject> = internal.user_obj.call_method1(py, "calc", args)?.extract(py)?;
-
-            // Try to convert the floats
-            let values: HashMap<String, f64> = py_values
-                .iter()
-                .filter_map(|(k, v)| match v.downcast_bound::<PyFloat>(py) {
-                    Ok(v) => Some((k.clone(), v.extract().unwrap())),
-                    Err(_) => None,
-                })
-                .collect();
-
-            let indices: HashMap<String, u64> = py_values
-                .iter()
-                .filter_map(|(k, v)| match v.downcast_bound::<PyInt>(py) {
-                    Ok(v) => Some((k.clone(), v.extract().unwrap())),
-                    Err(_) => None,
-                })
-                .collect();
-
-            if py_values.len() != values.len() + indices.len() {
-                Err(PyValueError::new_err(
-                    "Some returned values were not interpreted as floats or integers.",
-                ))
-            } else {
-                Ok(MultiValue::new(values, indices))
-            }
-        })
-        .map_err(|py_error| ParameterCalculationError::PythonError {
-            name: self.meta.name.to_string(),
-            object: self.object.to_string(),
-            py_error,
-        })?;
-
-        Ok(value)
+        self.compute(timestep, scenario_index, network, state, internal_state)
     }
 
     fn after(
@@ -380,9 +384,9 @@ class MyParameter:
     def __init__(self, count, **kwargs):
         self.count = count
 
-    def calc(self, ts, si, metrics, indices):
-        self.count += si
-        return float(self.count + ts.day)
+    def calc(self, info):
+        self.count += info.scenario_index.simulation_id
+        return float(self.count + info.timestep.day)
 "#
                 ),
                 c_str!(""),
@@ -453,11 +457,11 @@ class MyParameter:
     def __init__(self, count, **kwargs):
         self.count = count
 
-    def calc(self, ts, si, metrics, indices):
-        self.count += si
+    def calc(self, info):
+        self.count += info.scenario_index.simulation_id
         return {
             'a-float': math.pi,  # This is a float
-            'count': self.count + ts.day  # This is an integer
+            'count': self.count + info.timestep.day  # This is an integer
         }
 "#
                 ),

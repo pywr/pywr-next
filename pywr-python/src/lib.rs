@@ -4,6 +4,8 @@ use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyTuple, PyType};
 use pywr_core::models::ModelRunError;
+use pywr_core::parameters::ParameterInfo;
+use pywr_core::scenario::ScenarioIndex;
 #[cfg(any(feature = "ipm-ocl", feature = "ipm-simd"))]
 use pywr_core::solvers::MultiStateSolver;
 #[cfg(feature = "ipm-ocl")]
@@ -338,8 +340,9 @@ fn pywr(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Schema>()?;
     m.add_class::<Model>()?;
     m.add_class::<Metric>()?;
-
     m.add_class::<Timestep>()?;
+    m.add_class::<ScenarioIndex>()?;
+    m.add_class::<ParameterInfo>()?;
 
     // Error classes
     m.add_class::<ComponentConversionError>()?;

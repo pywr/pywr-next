@@ -1,11 +1,11 @@
-use chrono::Datelike;
+use chrono::{Datelike, Timelike};
 use chrono::{Months, NaiveDateTime, TimeDelta};
 use polars::datatypes::TimeUnit;
 use polars::prelude::PolarsError;
 use polars::time::ClosedWindow;
 use pyo3::Bound;
 #[cfg(feature = "pyo3")]
-use pyo3::{pyclass, pymethods, IntoPyObject, PyAny, PyResult, Python};
+use pyo3::{IntoPyObject, PyResult, Python, pyclass, pymethods, types::PyDateTime};
 use std::ops::Add;
 use thiserror::Error;
 
@@ -133,7 +133,7 @@ impl Timestep {
 
     /// Returns the date of the time-step.
     #[getter]
-    fn get_date<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+    fn get_date<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDateTime>> {
         self.date.into_pyobject(py)
     }
 
@@ -200,6 +200,10 @@ impl Timestep {
         self.duration.fractional_days()
     }
 
+    pub fn is_leap_year(&self) -> bool {
+        is_leap_year(self.date.year())
+    }
+
     /// Returns the day of the year index of the timestep.
     ///
     /// The day of the year is one-based, meaning January 1st is day 1 and December 31st is day 365 (or 366 in leap years).
@@ -220,9 +224,14 @@ impl Timestep {
         i
     }
 
-    /// Returns true if the year of the timestep is a leap year.
-    pub fn is_leap_year(&self) -> bool {
-        is_leap_year(self.date.year())
+    /// Returns the day of the year index of the timestep.
+    ///
+    /// The index is zero-based and accounts for leaps days. In non-leap years, 1 is added is added to the index for
+    /// days after Feb 28th.
+    pub fn fractional_day_of_year_index(&self) -> f64 {
+        let seconds_in_day = self.date.num_seconds_from_midnight() as f64 / 86400.0;
+
+        self.day_of_year_index() as f64 + seconds_in_day
     }
 }
 
