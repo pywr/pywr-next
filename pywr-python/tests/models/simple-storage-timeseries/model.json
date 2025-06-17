@@ -29,7 +29,8 @@
           "value": -1.0
         },
         "initial_volume": {
-          "Absolute": 500.0
+          "type": "Absolute",
+          "value": 500.0
         },
         "max_volume": {
           "type": "Constant",
