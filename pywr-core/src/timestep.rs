@@ -3,8 +3,9 @@ use chrono::{Months, NaiveDateTime, TimeDelta};
 use polars::datatypes::TimeUnit;
 use polars::prelude::PolarsError;
 use polars::time::ClosedWindow;
+use pyo3::Bound;
 #[cfg(feature = "pyo3")]
-use pyo3::pyclass;
+use pyo3::{pyclass, pymethods, IntoPyObject, PyAny, PyResult, Python};
 use std::ops::Add;
 use thiserror::Error;
 
@@ -105,12 +106,84 @@ impl PywrDuration {
 
 pub type TimestepIndex = usize;
 
+/// A time-step in a simulation.
+///
+/// This struct represents a single time-step in a simulation, including the date, index, and duration of the time-step.
 #[cfg_attr(feature = "pyo3", pyclass)]
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct Timestep {
     pub date: NaiveDateTime,
     pub index: TimestepIndex,
     pub duration: PywrDuration,
+}
+
+#[cfg_attr(feature = "pyo3", pymethods)]
+impl Timestep {
+    /// Returns true if this is the first time-step.
+    #[getter]
+    pub fn get_is_first(&self) -> bool {
+        self.index == 0
+    }
+
+    /// Returns the duration of the time-step in number of days including any fractional part.
+    #[getter]
+    pub fn get_days(&self) -> f64 {
+        self.duration.fractional_days()
+    }
+
+    /// Returns the date of the time-step.
+    #[getter]
+    fn get_date<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        self.date.into_pyobject(py)
+    }
+
+    /// Returns the day of the time-step.
+    #[getter]
+    fn get_day(&self) -> PyResult<u32> {
+        Ok(self.date.day())
+    }
+
+    /// Returns the month of the time-step.
+    #[getter]
+    fn get_month(&self) -> PyResult<u32> {
+        Ok(self.date.month())
+    }
+
+    /// Returns the year of the time-step.
+    #[getter]
+    fn get_year(&self) -> PyResult<i32> {
+        Ok(self.date.year())
+    }
+
+    /// Returns the current time-step index.
+    #[getter]
+    fn get_index(&self) -> PyResult<usize> {
+        Ok(self.index)
+    }
+
+    /// Returns the day of the year index of the timestep.
+    ///
+    /// The day of the year is one-based, meaning January 1st is day 1 and December 31st is day 365 (or 366 in leap years).
+    /// See [`day_of_year_index`](Timestep::day_of_year_index) for a zero-based index.
+    #[getter]
+    pub fn get_day_of_year(&self) -> PyResult<usize> {
+        Ok(self.day_of_year())
+    }
+
+    /// Returns the day of the year index of the timestep.
+    ///
+    /// The index is zero-based and accounts for leaps days. In non-leap years, 1 i to the index for
+    /// days after Feb 28th.
+    #[getter]
+    fn get_day_of_year_index(&self) -> PyResult<usize> {
+        Ok(self.day_of_year_index())
+    }
+
+    /// Returns true if the year of the timestep is a leap year.
+    #[getter]
+    fn get_is_leap_year(&self) -> PyResult<bool> {
+        Ok(self.is_leap_year())
+    }
 }
 
 impl Timestep {
@@ -122,13 +195,22 @@ impl Timestep {
         self.index == 0
     }
 
-    pub(crate) fn days(&self) -> f64 {
+    /// Returns the duration of the timestep in number of days including any fractional part.
+    pub fn days(&self) -> f64 {
         self.duration.fractional_days()
     }
 
     /// Returns the day of the year index of the timestep.
     ///
-    /// The index is zero-based and accounts for leaps days. In non-leap years, 1 is added is added to the index for
+    /// The day of the year is one-based, meaning January 1st is day 1 and December 31st is day 365 (or 366 in leap years).
+    /// See [`day_of_year_index`](Timestep::day_of_year_index) for a zero-based index.
+    pub fn day_of_year(&self) -> usize {
+        self.date.ordinal() as usize
+    }
+
+    /// Returns the day of the year index of the timestep.
+    ///
+    /// The index is zero-based and accounts for leaps days. In non-leap years, 1 is added to the index for
     /// days after Feb 28th.
     pub fn day_of_year_index(&self) -> usize {
         let mut i = self.date.ordinal() as usize - 1;
@@ -136,6 +218,11 @@ impl Timestep {
             i += 1;
         }
         i
+    }
+
+    /// Returns true if the year of the timestep is a leap year.
+    pub fn is_leap_year(&self) -> bool {
+        is_leap_year(self.date.year())
     }
 }
 

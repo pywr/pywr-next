@@ -13,6 +13,7 @@ use pywr_core::solvers::{ClpSolver, ClpSolverSettings, ClpSolverSettingsBuilder,
 use pywr_core::solvers::{HighsSolver, HighsSolverSettings, HighsSolverSettingsBuilder};
 #[cfg(feature = "ipm-simd")]
 use pywr_core::solvers::{SimdIpmF64Solver, SimdIpmSolverSettings, SimdIpmSolverSettingsBuilder};
+use pywr_core::timestep::Timestep;
 use pywr_schema::model::Date;
 use pywr_schema::{ComponentConversionError, ConversionData, ConversionError, TryIntoV2};
 use std::fmt;
@@ -337,6 +338,8 @@ fn pywr(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Schema>()?;
     m.add_class::<Model>()?;
     m.add_class::<Metric>()?;
+
+    m.add_class::<Timestep>()?;
 
     // Error classes
     m.add_class::<ComponentConversionError>()?;
