@@ -69,6 +69,11 @@ impl PyParameter {
             let args = self.args.bind(py);
             let kwargs = self.kwargs.bind(py);
             self.object.call(py, args, Some(kwargs))
+        })
+        .map_err(|py_error| ParameterSetupError::PythonError {
+            name: self.meta.name.to_string(),
+            object: self.object.to_string(),
+            py_error,
         })?;
 
         let internal = Internal { user_obj };
@@ -106,6 +111,11 @@ impl PyParameter {
             )?;
 
             internal.user_obj.call_method1(py, "calc", args)?.extract(py)
+        })
+        .map_err(|py_error| ParameterCalculationError::PythonError {
+            name: self.meta.name.to_string(),
+            object: self.object.to_string(),
+            py_error,
         })?;
 
         Ok(value)
@@ -127,7 +137,13 @@ impl PyParameter {
         Python::with_gil(|py| {
             // Only do this if the object has an "after" method defined.
             if internal.user_obj.getattr(py, "after").is_ok() {
-                let date = timestep.date.into_pyobject(py)?;
+                let date = timestep
+                    .into_pyobject(py)
+                    .map_err(|py_error| ParameterCalculationError::PythonError {
+                        name: self.meta.name.to_string(),
+                        object: self.object.to_string(),
+                        py_error,
+                    })?;
 
                 // `into_pyobject` is used to convert the `SimulationId` to a Python object.
                 // This current returns `Infallible`, so we can safely unwrap it.
@@ -137,15 +153,41 @@ impl PyParameter {
                     Err(e) => match e {},
                 };
 
-                let metric_dict = metrics.into_py_dict(py)?;
-                let index_dict = indices.into_py_dict(py)?;
+                let metric_dict =
+                    metrics
+                        .into_py_dict(py)
+                        .map_err(|py_error| ParameterCalculationError::PythonError {
+                            name: self.meta.name.to_string(),
+                            object: self.object.to_string(),
+                            py_error,
+                        })?;
+
+                let index_dict =
+                    indices
+                        .into_py_dict(py)
+                        .map_err(|py_error| ParameterCalculationError::PythonError {
+                            name: self.meta.name.to_string(),
+                            object: self.object.to_string(),
+                            py_error,
+                        })?;
 
                 let args = PyTuple::new(
                     py,
                     [date.as_any(), si.as_any(), metric_dict.as_any(), index_dict.as_any()],
-                )?;
+                )
+                .map_err(|py_error| ParameterCalculationError::PythonError {
+                    name: self.meta.name.to_string(),
+                    object: self.object.to_string(),
+                    py_error,
+                })?;
 
-                internal.user_obj.call_method1(py, "after", args)?;
+                internal.user_obj.call_method1(py, "after", args).map_err(|py_error| {
+                    ParameterCalculationError::PythonError {
+                        name: self.meta.name.to_string(),
+                        object: self.object.to_string(),
+                        py_error,
+                    }
+                })?;
             }
             Ok::<(), ParameterCalculationError>(())
         })?;
@@ -283,6 +325,11 @@ impl GeneralParameter<MultiValue> for PyParameter {
             } else {
                 Ok(MultiValue::new(values, indices))
             }
+        })
+        .map_err(|py_error| ParameterCalculationError::PythonError {
+            name: self.meta.name.to_string(),
+            object: self.object.to_string(),
+            py_error,
         })?;
 
         Ok(value)
