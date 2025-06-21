@@ -64,6 +64,8 @@ model_tests! {
     test_piecewise_storage1: ("piecewise_storage1.json", vec!["piecewise_storage1-expected.csv"], vec![], vec!["ipm-simd", "ipm-ocl"]),
     // TODO not sure why this is failing in IPM solvers (https://github.com/pywr/pywr-next/issues/293)
     test_piecewise_storage2: ("piecewise_storage2.json", vec!["piecewise_storage2-expected.csv"], vec![], vec!["ipm-simd", "ipm-ocl"]),
+    test_reservoir_with_river: ("reservoir_with_river.json", vec![], vec![], vec![]),
+    test_reservoir_with_spill: ("reservoir_with_spill.json", vec![], vec![], vec![]),
     test_river_loss1: ("river_loss1.json", vec!["river_loss1-expected.csv"], vec!["ipm-simd", "ipm-ocl"], vec![]),
     // TODO not sure why this is failing in IPM solvers (https://github.com/pywr/pywr-next/issues/293)
     test_river_gauge1: ("river_gauge1.json", vec![], vec![], vec!["ipm-simd", "ipm-ocl"]),
