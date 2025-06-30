@@ -19,7 +19,7 @@ use chrono::{NaiveDate, NaiveDateTime};
 #[cfg(feature = "pyo3")]
 use pyo3::pyclass;
 #[cfg(feature = "core")]
-use pywr_core::{PywrError, models::ModelDomain, timestep::TimestepDuration};
+use pywr_core::{models::ModelDomain, timestep::TimestepDuration};
 use schemars::JsonSchema;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
@@ -581,13 +581,10 @@ impl PywrNetwork {
                 if let Err(e) = node.add_to_model(&mut network, &args) {
                     // Adding the node failed!
                     match e {
-                        SchemaError::PywrCore(core_err) => match core_err {
-                            // And it failed because another node was not found.
-                            // Let's try to load more nodes and see if this one can tried
-                            // again later
-                            PywrError::NodeNotFound(_) => failed_nodes.push(node),
-                            _ => return Err(SchemaError::PywrCore(core_err)),
-                        },
+                        // And it failed because another node was not found.
+                        // Let's try to load more nodes and see if this one can tried
+                        // again later
+                        SchemaError::CoreNodeNotFound { .. } => failed_nodes.push(node),
                         _ => return Err(e),
                     }
                 };
@@ -626,14 +623,10 @@ impl PywrNetwork {
                 if let Err(e) = parameter.add_to_model(&mut network, &args, parent) {
                     // Adding the parameter failed!
                     match e {
-                        SchemaError::PywrCore(core_err) => match core_err {
-                            // And it failed because another parameter was not found.
-                            // Let's try to load more parameters and see if this one can tried
-                            // again later
-                            PywrError::ParameterNotFound(_) => failed_parameters.push((parent, parameter)),
-                            _ => return Err(SchemaError::PywrCore(core_err)),
-                        },
-                        SchemaError::ParameterNotFound(_) => failed_parameters.push((parent, parameter)),
+                        // And it failed because another parameter was not found.
+                        // Let's try to load more parameters and see if this one can tried
+                        // again later
+                        SchemaError::CoreParameterNotFound { .. } => failed_parameters.push((parent, parameter)),
                         _ => return Err(e),
                     }
                 };

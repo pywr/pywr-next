@@ -1,6 +1,6 @@
-use crate::PywrError;
 use crate::metric::MetricF64;
 use crate::network::Network;
+use crate::parameters::errors::ParameterCalculationError;
 use crate::parameters::{GeneralParameter, Parameter, ParameterMeta, ParameterName, ParameterState};
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
@@ -66,7 +66,7 @@ impl GeneralParameter<f64> for HydropowerTargetParameter {
         model: &Network,
         state: &State,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<f64, PywrError> {
+    ) -> Result<f64, ParameterCalculationError> {
         // Calculate the head
         let mut head = if let Some(water_elevation) = &self.water_elevation {
             water_elevation.get_value(model, state)? - self.turbine_elevation
@@ -102,10 +102,9 @@ impl GeneralParameter<f64> for HydropowerTargetParameter {
         }
 
         if q < 0.0 {
-            return Err(PywrError::InternalParameterError(format!(
-                "The calculated flow in the hydro power parameter named {} is negative",
-                self.name()
-            )));
+            return Err(ParameterCalculationError::Internal {
+                message: "The calculated flow is negative".into(),
+            });
         }
         Ok(q)
     }

@@ -1,9 +1,12 @@
-use crate::PywrError;
-use crate::metric::MetricF64;
+use crate::metric::{MetricF64, MetricF64Error};
 use crate::models::ModelDomain;
-use crate::network::{Network, NetworkState, RunTimings};
+use crate::network::{
+    Network, NetworkFinaliseError, NetworkRecorderSaveError, NetworkRecorderSetupError, NetworkSetupError,
+    NetworkSolverSetupError, NetworkState, RunTimings,
+};
 use crate::scenario::ScenarioIndex;
 use crate::solvers::{MultiStateSolver, Solver, SolverSettings};
+use crate::state::StateError;
 use crate::timestep::Timestep;
 use std::any::Any;
 use std::cmp::Ordering;
@@ -12,10 +15,12 @@ use std::fmt::{Display, Formatter};
 use std::num::NonZeroUsize;
 use std::ops::Deref;
 use std::time::Instant;
+use thiserror::Error;
 
 /// An index to another model
 ///
 /// The index is to either a model evaluated before this model, or after this model.
+#[derive(Debug, Copy, Clone)]
 enum OtherNetworkIndex {
     Before(NonZeroUsize),
     After(NonZeroUsize),
@@ -61,7 +66,7 @@ struct MultiNetworkTransfer {
 struct MultiNetworkEntry {
     name: String,
     network: Network,
-    parameters: Vec<MultiNetworkTransfer>,
+    transfers: Vec<MultiNetworkTransfer>,
 }
 
 pub struct MultiNetworkModelState<S> {
@@ -69,6 +74,76 @@ pub struct MultiNetworkModelState<S> {
     states: Vec<NetworkState>,
     recorder_states: Vec<Vec<Option<Box<dyn Any>>>>,
     solvers: Vec<S>,
+}
+
+/// Errors that can occur when setting up a multi-network model.
+#[derive(Debug, Error)]
+pub enum MultiNetworkModelSetupError {
+    #[error("Failed to setup network `{network}`: {source}")]
+    NetworkSetupError {
+        network: String,
+        #[source]
+        source: Box<NetworkSetupError>,
+    },
+    #[error("Error setting up recorder for network `{network}`: {source}")]
+    RecorderSetupError {
+        network: String,
+        #[source]
+        source: NetworkRecorderSetupError,
+    },
+    #[error("Failed to setup solver for network `{network}`: {source}")]
+    SolverSetupError {
+        network: String,
+        #[source]
+        source: NetworkSolverSetupError,
+    },
+}
+
+/// Errors that can occur when stepping through (simulating) a multi-network model.
+#[derive(Debug, Error)]
+pub enum MultiNetworkModelStepError {
+    #[error("Failed to transfer value to `{to_network}`: {source}")]
+    TransferError {
+        to_network: String,
+        #[source]
+        source: InterNetworkTransferError,
+    },
+    #[error("No more timesteps")]
+    EndOfTimesteps,
+    #[error("Error saving recorder for network `{network}` at timestep {timestep:#?}: {source}")]
+    RecorderSaveError {
+        network: String,
+        timestep: Timestep,
+        #[source]
+        source: Box<NetworkRecorderSaveError>,
+    },
+}
+
+/// Errors that can occur when finalising a multi-network model.
+#[derive(Debug, Error)]
+pub enum MultiNetworkModelFinaliseError {
+    #[error("Error finalising network `{network}`: {source}")]
+    NetworkFinaliseError {
+        network: String,
+        #[source]
+        source: NetworkFinaliseError,
+    },
+}
+
+#[derive(Debug, Error)]
+pub enum MultiNetworkModelRunError {
+    #[error("Error setting up multi-network model: {0}")]
+    SetupError(#[from] MultiNetworkModelSetupError),
+    #[error("Error stepping through multi-network model: {0}")]
+    StepError(#[from] Box<MultiNetworkModelStepError>),
+    #[error("Error finalising multi-network model: {0}")]
+    FinaliseError(#[from] MultiNetworkModelFinaliseError),
+}
+
+#[derive(Debug, Error)]
+pub enum MultiNetworkModelError {
+    #[error("Network name `{0}` already exists")]
+    NetworkNameAlreadyExists(String),
 }
 
 /// A MultiNetwork is a collection of models that can be run together.
@@ -91,40 +166,31 @@ impl MultiNetworkModel {
     }
 
     /// Get a reference to a network by index.
-    pub fn network(&self, idx: usize) -> Result<&Network, PywrError> {
-        self.networks
-            .get(idx)
-            .map(|n| &n.network)
-            .ok_or(PywrError::NetworkIndexNotFound(idx))
+    pub fn network(&self, idx: usize) -> Option<&Network> {
+        self.networks.get(idx).map(|n| &n.network)
     }
 
     /// Get a mutable reference to a network by index.
-    pub fn network_mut(&mut self, idx: usize) -> Result<&mut Network, PywrError> {
-        self.networks
-            .get_mut(idx)
-            .map(|n| &mut n.network)
-            .ok_or(PywrError::NetworkIndexNotFound(idx))
+    pub fn network_mut(&mut self, idx: usize) -> Option<&mut Network> {
+        self.networks.get_mut(idx).map(|n| &mut n.network)
     }
 
     /// Get the index of a network by name.
-    pub fn get_network_index_by_name(&self, name: &str) -> Result<usize, PywrError> {
-        self.networks
-            .iter()
-            .position(|n| n.name == name)
-            .ok_or(PywrError::NetworkNotFound(name.to_string()))
+    pub fn get_network_index_by_name(&self, name: &str) -> Option<usize> {
+        self.networks.iter().position(|n| n.name == name)
     }
 
     /// Add a [`Network`] to the model. The name must be unique.
-    pub fn add_network(&mut self, name: &str, network: Network) -> Result<usize, PywrError> {
-        if self.get_network_index_by_name(name).is_ok() {
-            return Err(PywrError::NetworkNameAlreadyExists(name.to_string()));
+    pub fn add_network(&mut self, name: &str, network: Network) -> Result<usize, MultiNetworkModelError> {
+        if self.get_network_index_by_name(name).is_some() {
+            return Err(MultiNetworkModelError::NetworkNameAlreadyExists(name.to_string()));
         }
 
         let idx = self.networks.len();
         self.networks.push(MultiNetworkEntry {
             name: name.to_string(),
             network,
-            parameters: Vec::new(),
+            transfers: Vec::new(),
         });
 
         Ok(idx)
@@ -144,10 +210,13 @@ impl MultiNetworkModel {
             initial_value,
         };
 
-        self.networks[to_network_idx].parameters.push(parameter);
+        self.networks[to_network_idx].transfers.push(parameter);
     }
 
-    pub fn setup<S>(&self, settings: &S::Settings) -> Result<MultiNetworkModelState<Vec<Box<S>>>, PywrError>
+    pub fn setup<S>(
+        &self,
+        settings: &S::Settings,
+    ) -> Result<MultiNetworkModelState<Vec<Box<S>>>, MultiNetworkModelSetupError>
     where
         S: Solver,
         <S as Solver>::Settings: SolverSettings,
@@ -162,9 +231,24 @@ impl MultiNetworkModel {
         for entry in &self.networks {
             let state = entry
                 .network
-                .setup_network(timesteps, scenario_indices, entry.parameters.len())?;
-            let recorder_state = entry.network.setup_recorders(&self.domain)?;
-            let solver = entry.network.setup_solver::<S>(scenario_indices, &state, settings)?;
+                .setup_network(timesteps, scenario_indices, entry.transfers.len())
+                .map_err(|source| MultiNetworkModelSetupError::NetworkSetupError {
+                    network: entry.name.clone(),
+                    source: Box::new(source),
+                })?;
+            let recorder_state = entry.network.setup_recorders(&self.domain).map_err(|source| {
+                MultiNetworkModelSetupError::RecorderSetupError {
+                    network: entry.name.clone(),
+                    source,
+                }
+            })?;
+            let solver = entry
+                .network
+                .setup_solver::<S>(scenario_indices, &state, settings)
+                .map_err(|source| MultiNetworkModelSetupError::SolverSetupError {
+                    network: entry.name.clone(),
+                    source,
+                })?;
 
             states.push(state);
             recorder_states.push(recorder_state);
@@ -179,7 +263,10 @@ impl MultiNetworkModel {
         })
     }
 
-    pub fn setup_multi_scenario<S>(&self, settings: &S::Settings) -> Result<MultiNetworkModelState<Box<S>>, PywrError>
+    pub fn setup_multi_scenario<S>(
+        &self,
+        settings: &S::Settings,
+    ) -> Result<MultiNetworkModelState<Box<S>>, MultiNetworkModelSetupError>
     where
         S: MultiStateSolver,
         <S as MultiStateSolver>::Settings: SolverSettings,
@@ -194,11 +281,26 @@ impl MultiNetworkModel {
         for entry in &self.networks {
             let state = entry
                 .network
-                .setup_network(timesteps, scenario_indices, entry.parameters.len())?;
-            let recorder_state = entry.network.setup_recorders(&self.domain)?;
+                .setup_network(timesteps, scenario_indices, entry.transfers.len())
+                .map_err(|source| MultiNetworkModelSetupError::NetworkSetupError {
+                    network: entry.name.clone(),
+                    source: Box::new(source),
+                })?;
+
+            let recorder_state = entry.network.setup_recorders(&self.domain).map_err(|source| {
+                MultiNetworkModelSetupError::RecorderSetupError {
+                    network: entry.name.clone(),
+                    source,
+                }
+            })?;
+
             let solver = entry
                 .network
-                .setup_multi_scenario_solver::<S>(scenario_indices, settings)?;
+                .setup_multi_scenario_solver::<S>(scenario_indices, settings)
+                .map_err(|source| MultiNetworkModelSetupError::SolverSetupError {
+                    network: entry.name.clone(),
+                    source,
+                })?;
 
             states.push(state);
             recorder_states.push(recorder_state);
@@ -220,7 +322,7 @@ impl MultiNetworkModel {
         timestep: &Timestep,
         scenario_indices: &[ScenarioIndex],
         states: &mut [NetworkState],
-    ) -> Result<(), PywrError> {
+    ) -> Result<(), MultiNetworkModelStepError> {
         // Get references to the models before and after this model
         let (before_models, after_models) = self.networks.split_at(model_idx);
         let (this_model, after_models) = after_models.split_first().unwrap();
@@ -233,20 +335,24 @@ impl MultiNetworkModel {
             compute_inter_network_transfers(
                 timestep,
                 scenario_index,
-                &this_model.parameters,
+                &this_model.transfers,
                 this_models_state,
                 before_models,
                 before,
                 after_models,
                 after,
-            )?;
+            )
+            .map_err(|source| MultiNetworkModelStepError::TransferError {
+                to_network: this_model.name.clone(),
+                source,
+            })?;
         }
 
         Ok(())
     }
 
     /// Perform a single time-step of the multi1-model.
-    pub fn step<S>(&self, state: &mut MultiNetworkModelState<Vec<Box<S>>>) -> Result<(), PywrError>
+    pub fn step<S>(&self, state: &mut MultiNetworkModelState<Vec<Box<S>>>) -> Result<(), MultiNetworkModelStepError>
     where
         S: Solver,
     {
@@ -257,7 +363,7 @@ impl MultiNetworkModel {
             .time
             .timesteps()
             .get(state.current_time_step_idx)
-            .ok_or(PywrError::EndOfTimesteps)?;
+            .ok_or(MultiNetworkModelStepError::EndOfTimesteps)?;
 
         let scenario_indices = self.domain.scenarios.indices();
 
@@ -286,7 +392,12 @@ impl MultiNetworkModel {
 
             entry
                 .network
-                .save_recorders(timestep, scenario_indices, sub_model_states, sub_model_recorder_states)?;
+                .save_recorders(timestep, scenario_indices, sub_model_states, sub_model_recorder_states)
+                .map_err(|source| MultiNetworkModelStepError::RecorderSaveError {
+                    network: entry.name.clone(),
+                    timestep: *timestep,
+                    source: Box::new(source),
+                })?;
             timings.recorder_saving += start_r_save.elapsed();
         }
 
@@ -296,7 +407,10 @@ impl MultiNetworkModel {
         Ok(())
     }
 
-    pub fn step_multi_scenario<S>(&self, state: &mut MultiNetworkModelState<Box<S>>) -> Result<(), PywrError>
+    pub fn step_multi_scenario<S>(
+        &self,
+        state: &mut MultiNetworkModelState<Box<S>>,
+    ) -> Result<(), MultiNetworkModelStepError>
     where
         S: MultiStateSolver,
     {
@@ -307,7 +421,7 @@ impl MultiNetworkModel {
             .time
             .timesteps()
             .get(state.current_time_step_idx)
-            .ok_or(PywrError::EndOfTimesteps)?;
+            .ok_or(MultiNetworkModelStepError::EndOfTimesteps)?;
 
         let scenario_indices = self.domain.scenarios.indices();
 
@@ -336,7 +450,12 @@ impl MultiNetworkModel {
 
             entry
                 .network
-                .save_recorders(timestep, scenario_indices, sub_model_states, sub_model_recorder_states)?;
+                .save_recorders(timestep, scenario_indices, sub_model_states, sub_model_recorder_states)
+                .map_err(|source| MultiNetworkModelStepError::RecorderSaveError {
+                    network: entry.name.clone(),
+                    timestep: *timestep,
+                    source: Box::new(source),
+                })?;
             timings.recorder_saving += start_r_save.elapsed();
         }
 
@@ -346,10 +465,64 @@ impl MultiNetworkModel {
         Ok(())
     }
 
+    pub fn finalise<S>(
+        &self,
+        state: &mut MultiNetworkModelState<Vec<Box<S>>>,
+    ) -> Result<(), MultiNetworkModelFinaliseError>
+    where
+        S: Solver,
+    {
+        for (idx, entry) in self.networks.iter().enumerate() {
+            let sub_model_ms_states = state.states.get_mut(idx).unwrap().all_metric_set_internal_states_mut();
+            let sub_model_recorder_states = state.recorder_states.get_mut(idx).unwrap();
+
+            entry
+                .network
+                .finalise(
+                    self.domain.scenarios.indices(),
+                    sub_model_ms_states,
+                    sub_model_recorder_states,
+                )
+                .map_err(|source| MultiNetworkModelFinaliseError::NetworkFinaliseError {
+                    network: entry.name.clone(),
+                    source,
+                })?;
+        }
+
+        Ok(())
+    }
+
+    pub fn finalise_multi_scenario<S>(
+        &self,
+        state: &mut MultiNetworkModelState<Box<S>>,
+    ) -> Result<(), MultiNetworkModelFinaliseError>
+    where
+        S: MultiStateSolver,
+    {
+        for (idx, entry) in self.networks.iter().enumerate() {
+            let sub_model_ms_states = state.states.get_mut(idx).unwrap().all_metric_set_internal_states_mut();
+            let sub_model_recorder_states = state.recorder_states.get_mut(idx).unwrap();
+
+            entry
+                .network
+                .finalise(
+                    self.domain.scenarios.indices(),
+                    sub_model_ms_states,
+                    sub_model_recorder_states,
+                )
+                .map_err(|source| MultiNetworkModelFinaliseError::NetworkFinaliseError {
+                    network: entry.name.clone(),
+                    source,
+                })?;
+        }
+
+        Ok(())
+    }
+
     /// Run the model through the given time-steps.
     ///
     /// This method will setup state and solvers, and then run the model through the time-steps.
-    pub fn run<S>(&self, settings: &S::Settings) -> Result<(), PywrError>
+    pub fn run<S>(&self, settings: &S::Settings) -> Result<(), MultiNetworkModelRunError>
     where
         S: Solver,
         <S as Solver>::Settings: SolverSettings,
@@ -366,7 +539,7 @@ impl MultiNetworkModel {
         &self,
         state: &mut MultiNetworkModelState<Vec<Box<S>>>,
         _settings: &S::Settings,
-    ) -> Result<(), PywrError>
+    ) -> Result<(), MultiNetworkModelRunError>
     where
         S: Solver,
         <S as Solver>::Settings: SolverSettings,
@@ -379,22 +552,15 @@ impl MultiNetworkModel {
         loop {
             match self.step::<S>(state) {
                 Ok(_) => {}
-                Err(PywrError::EndOfTimesteps) => break,
-                Err(e) => return Err(e),
+                Err(MultiNetworkModelStepError::EndOfTimesteps) => break,
+                Err(e) => return Err(MultiNetworkModelRunError::StepError(Box::new(e))),
             }
 
             count += self.domain.scenarios.indices().len();
         }
 
-        for (idx, entry) in self.networks.iter().enumerate() {
-            let sub_model_ms_states = state.states.get_mut(idx).unwrap().all_metric_set_internal_states_mut();
-            let sub_model_recorder_states = state.recorder_states.get_mut(idx).unwrap();
-            entry.network.finalise(
-                self.domain.scenarios.indices(),
-                sub_model_ms_states,
-                sub_model_recorder_states,
-            )?;
-        }
+        self.finalise(state)?;
+
         // End the global timer and print the run statistics
         timings.finish(count);
         timings.print_table();
@@ -405,7 +571,7 @@ impl MultiNetworkModel {
     /// Run the model through the given time-steps.
     ///
     /// This method will setup state and solvers, and then run the model through the time-steps.
-    pub fn run_multi_scenario<S>(&self, settings: &S::Settings) -> Result<(), PywrError>
+    pub fn run_multi_scenario<S>(&self, settings: &S::Settings) -> Result<(), MultiNetworkModelRunError>
     where
         S: MultiStateSolver,
         <S as MultiStateSolver>::Settings: SolverSettings,
@@ -422,7 +588,7 @@ impl MultiNetworkModel {
         &self,
         state: &mut MultiNetworkModelState<Box<S>>,
         _settings: &S::Settings,
-    ) -> Result<(), PywrError>
+    ) -> Result<(), MultiNetworkModelRunError>
     where
         S: MultiStateSolver,
         <S as MultiStateSolver>::Settings: SolverSettings,
@@ -435,28 +601,37 @@ impl MultiNetworkModel {
         loop {
             match self.step_multi_scenario::<S>(state) {
                 Ok(_) => {}
-                Err(PywrError::EndOfTimesteps) => break,
-                Err(e) => return Err(e),
+                Err(MultiNetworkModelStepError::EndOfTimesteps) => break,
+                Err(e) => return Err(MultiNetworkModelRunError::StepError(Box::new(e))),
             }
 
             count += self.domain.scenarios.indices().len();
         }
 
-        for (idx, entry) in self.networks.iter().enumerate() {
-            let sub_model_ms_states = state.states.get_mut(idx).unwrap().all_metric_set_internal_states_mut();
-            let sub_model_recorder_states = state.recorder_states.get_mut(idx).unwrap();
-            entry.network.finalise(
-                self.domain.scenarios.indices(),
-                sub_model_ms_states,
-                sub_model_recorder_states,
-            )?;
-        }
+        self.finalise_multi_scenario(state)?;
+
         // End the global timer and print the run statistics
         timings.finish(count);
         timings.print_table();
 
         Ok(())
     }
+}
+
+#[derive(Debug, Error)]
+pub enum InterNetworkTransferError {
+    #[error("Error retrieving value to transfer to other network: {source}")]
+    RetrievingTransferValue {
+        other_network: String,
+        #[source]
+        source: MetricF64Error,
+    },
+    #[error("Error setting transfer in receiving network: {source}")]
+    SettingTransferValue {
+        other_network: String,
+        #[source]
+        source: StateError,
+    },
 }
 
 /// Calculate inter-model parameters for the given scenario index.
@@ -472,11 +647,11 @@ fn compute_inter_network_transfers(
     before_states: &[NetworkState],
     after_models: &[MultiNetworkEntry],
     after_states: &[NetworkState],
-) -> Result<(), PywrError> {
+) -> Result<(), InterNetworkTransferError> {
     // Iterate through all of the inter-model transfers
-    for (idx, parameter) in inter_network_transfers.iter().enumerate() {
+    for (idx, transfer) in inter_network_transfers.iter().enumerate() {
         // Determine which model and state we are getting the value from
-        let (other_model, other_model_state) = match parameter.from_model_idx {
+        let (other_network, other_model_state) = match transfer.from_model_idx {
             OtherNetworkIndex::Before(i) => {
                 let rev_i = before_states.len() - i.get();
                 (&before_models[rev_i], &before_states[rev_i])
@@ -484,18 +659,26 @@ fn compute_inter_network_transfers(
             OtherNetworkIndex::After(i) => (&after_models[i.get() - 1], &after_states[i.get() - 1]),
         };
 
-        let value = match timestep.is_first().then_some(parameter.initial_value).flatten() {
+        let value = match timestep.is_first().then_some(transfer.initial_value).flatten() {
             // Use the initial value if it is given and it is the first time-step.
             Some(initial_value) => initial_value,
             // Otherwise, get the value from the other model's state/metric
-            None => parameter
+            None => transfer
                 .from_metric
-                .get_value(&other_model.network, other_model_state.state(scenario_index))?,
+                .get_value(&other_network.network, other_model_state.state(scenario_index))
+                .map_err(|source| InterNetworkTransferError::RetrievingTransferValue {
+                    other_network: other_network.name.clone(),
+                    source,
+                })?,
         };
 
         state
             .state_mut(scenario_index)
-            .set_inter_network_transfer_value(MultiNetworkTransferIndex(idx), value)?;
+            .set_inter_network_transfer_value(MultiNetworkTransferIndex(idx), value)
+            .map_err(|source| InterNetworkTransferError::SettingTransferValue {
+                other_network: other_network.name.clone(),
+                source,
+            })?;
     }
 
     Ok(())

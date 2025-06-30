@@ -1,15 +1,15 @@
-use crate::PywrError;
 use crate::aggregated_storage_node::AggregatedStorageNodeIndex;
-use crate::metric::MetricF64;
+use crate::metric::{MetricF64, MetricF64Error, SimpleMetricF64Error};
 use crate::network::Network;
-use crate::node::NodeIndex;
-use crate::state::State;
+use crate::node::{NodeError, NodeIndex};
+use crate::state::{NetworkStateError, State};
 use crate::timestep::Timestep;
 use crate::utils::hydropower_calculation;
 use crate::virtual_storage::VirtualStorageIndex;
 use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::ops::Deref;
+use thiserror::Error;
 
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Debug)]
 pub struct DerivedMetricIndex(usize);
@@ -51,6 +51,24 @@ pub struct TurbineData {
     pub energy_unit_conversion: f64,
 }
 
+#[derive(Debug, Error)]
+pub enum DerivedMetricError {
+    #[error("Network state error: {0}")]
+    NetworkStateError(#[from] NetworkStateError),
+    #[error("Node index not found: {0}")]
+    NodeIndexNotFound(NodeIndex),
+    #[error("Node error: {0}")]
+    NodeError(#[from] NodeError),
+    #[error("Aggregated storage node index not found: {0}")]
+    AggregatedStorageNodeIndexNotFound(AggregatedStorageNodeIndex),
+    #[error("Virtual storage index not found: {0}")]
+    VirtualStorageIndexNotFound(VirtualStorageIndex),
+    #[error("F64 metric error: {0}")]
+    MetricF64Error(#[from] MetricF64Error),
+    #[error("F64 simple metric error: {0}")]
+    SimpleMetricF64Error(#[from] SimpleMetricF64Error),
+}
+
 /// Derived metrics are updated after the model is solved.
 ///
 /// These metrics are "derived" from node states (e.g. volume, flow) and must be updated
@@ -66,11 +84,16 @@ pub enum DerivedMetric {
 }
 
 impl DerivedMetric {
-    pub fn before(&self, timestep: &Timestep, network: &Network, state: &State) -> Result<Option<f64>, PywrError> {
+    pub fn before(
+        &self,
+        timestep: &Timestep,
+        network: &Network,
+        state: &State,
+    ) -> Result<Option<f64>, DerivedMetricError> {
         // Virtual storage nodes can reset their volume. If this has happened then the
         // proportional volume should also be recalculated.
         let has_reset = if let Self::VirtualStorageProportionalVolume(idx) = self {
-            match state.get_network_state().get_virtual_storage_last_reset(*idx)? {
+            match state.get_network_state().get_virtual_storage_last_reset(idx)? {
                 Some(last_reset) => last_reset == timestep,
                 None => false,
             }
@@ -86,38 +109,53 @@ impl DerivedMetric {
         }
     }
 
-    pub fn compute(&self, network: &Network, state: &State) -> Result<f64, PywrError> {
+    pub fn compute(&self, network: &Network, state: &State) -> Result<f64, DerivedMetricError> {
         match self {
             Self::NodeProportionalVolume(idx) => {
-                let max_volume = network.get_node(idx)?.get_max_volume(state)?;
+                let max_volume = network
+                    .get_node(idx)
+                    .ok_or(DerivedMetricError::NodeIndexNotFound(*idx))?
+                    .get_max_volume(state)?;
                 Ok(state
                     .get_network_state()
                     .get_node_proportional_volume(idx, max_volume)?)
             }
             Self::VirtualStorageProportionalVolume(idx) => {
-                let max_volume = network.get_virtual_storage_node(idx)?.get_max_volume(state)?;
+                let max_volume = network
+                    .get_virtual_storage_node(idx)
+                    .ok_or(DerivedMetricError::VirtualStorageIndexNotFound(*idx))?
+                    .get_max_volume(state)?;
+
                 Ok(state
                     .get_network_state()
-                    .get_virtual_storage_proportional_volume(*idx, max_volume)?)
+                    .get_virtual_storage_proportional_volume(idx, max_volume)?)
             }
             Self::AggregatedNodeProportionalVolume(idx) => {
-                let node = network.get_aggregated_storage_node(idx)?;
+                let node = network
+                    .get_aggregated_storage_node(idx)
+                    .ok_or(DerivedMetricError::AggregatedStorageNodeIndexNotFound(*idx))?;
+
                 let volume: f64 = node
-                    .nodes
-                    .iter()
+                    .iter_nodes()
                     .map(|idx| state.get_network_state().get_node_volume(idx))
                     .sum::<Result<_, _>>()?;
 
                 let max_volume: f64 = node
-                    .nodes
-                    .iter()
-                    .map(|idx| network.get_node(idx)?.get_max_volume(state))
-                    .sum::<Result<_, _>>()?;
+                    .iter_nodes()
+                    .map(|idx| {
+                        Ok(network
+                            .get_node(idx)
+                            .ok_or(DerivedMetricError::NodeIndexNotFound(*idx))?
+                            .get_max_volume(state)?)
+                    })
+                    .sum::<Result<_, DerivedMetricError>>()?;
                 // TODO handle divide by zero
                 Ok(volume / max_volume)
             }
             Self::NodeInFlowDeficit(idx) => {
-                let node = network.get_node(idx)?;
+                let node = network
+                    .get_node(idx)
+                    .ok_or(DerivedMetricError::NodeIndexNotFound(*idx))?;
                 let flow = state.get_network_state().get_node_in_flow(idx)?;
                 let max_flow = node.get_max_flow(network, state)?;
                 Ok(max_flow - flow)
@@ -145,25 +183,41 @@ impl DerivedMetric {
         }
     }
 
-    pub fn name<'a>(&self, network: &'a Network) -> Result<&'a str, PywrError> {
+    pub fn name<'a>(&self, network: &'a Network) -> Result<&'a str, DerivedMetricError> {
         match self {
             Self::NodeInFlowDeficit(idx) | Self::NodeProportionalVolume(idx) | Self::PowerFromNodeFlow(idx, _) => {
-                network.get_node(idx).map(|n| n.name())
+                network
+                    .get_node(idx)
+                    .map(|n| n.name())
+                    .ok_or(DerivedMetricError::NodeIndexNotFound(*idx))
             }
-            Self::AggregatedNodeProportionalVolume(idx) => network.get_aggregated_storage_node(idx).map(|n| n.name()),
-            Self::VirtualStorageProportionalVolume(idx) => network.get_virtual_storage_node(idx).map(|v| v.name()),
+            Self::AggregatedNodeProportionalVolume(idx) => network
+                .get_aggregated_storage_node(idx)
+                .map(|n| n.name())
+                .ok_or(DerivedMetricError::AggregatedStorageNodeIndexNotFound(*idx)),
+            Self::VirtualStorageProportionalVolume(idx) => network
+                .get_virtual_storage_node(idx)
+                .map(|v| v.name())
+                .ok_or(DerivedMetricError::VirtualStorageIndexNotFound(*idx)),
         }
     }
 
-    pub fn sub_name<'a>(&self, network: &'a Network) -> Result<Option<&'a str>, PywrError> {
+    pub fn sub_name<'a>(&self, network: &'a Network) -> Result<Option<&'a str>, DerivedMetricError> {
         match self {
             Self::NodeInFlowDeficit(idx) | Self::NodeProportionalVolume(idx) | Self::PowerFromNodeFlow(idx, _) => {
-                network.get_node(idx).map(|n| n.sub_name())
+                network
+                    .get_node(idx)
+                    .map(|n| n.sub_name())
+                    .ok_or(DerivedMetricError::NodeIndexNotFound(*idx))
             }
-            Self::AggregatedNodeProportionalVolume(idx) => {
-                network.get_aggregated_storage_node(idx).map(|n| n.sub_name())
-            }
-            Self::VirtualStorageProportionalVolume(idx) => network.get_virtual_storage_node(idx).map(|v| v.sub_name()),
+            Self::AggregatedNodeProportionalVolume(idx) => network
+                .get_aggregated_storage_node(idx)
+                .map(|n| n.sub_name())
+                .ok_or(DerivedMetricError::AggregatedStorageNodeIndexNotFound(*idx)),
+            Self::VirtualStorageProportionalVolume(idx) => network
+                .get_virtual_storage_node(idx)
+                .map(|v| v.sub_name())
+                .ok_or(DerivedMetricError::VirtualStorageIndexNotFound(*idx)),
         }
     }
 

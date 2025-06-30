@@ -1,6 +1,6 @@
-use crate::PywrError;
 use crate::metric::MetricF64;
 use crate::network::Network;
+use crate::parameters::errors::ParameterCalculationError;
 use crate::parameters::{GeneralParameter, Parameter, ParameterMeta, ParameterName, ParameterState};
 use crate::scenario::ScenarioIndex;
 use crate::state::{MultiValue, State};
@@ -45,7 +45,7 @@ impl GeneralParameter<MultiValue> for ApportionParameter {
         model: &Network,
         state: &State,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<MultiValue, PywrError> {
+    ) -> Result<MultiValue, ParameterCalculationError> {
         // Current value
         let x = self.metric.get_value(model, state)?;
 

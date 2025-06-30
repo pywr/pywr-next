@@ -61,7 +61,9 @@ impl VirtualStorageNode {
             .map(|name_ref| {
                 args.schema
                     .get_node_by_name(&name_ref.name)
-                    .ok_or_else(|| SchemaError::NodeNotFound(name_ref.name.to_string()))?
+                    .ok_or_else(|| SchemaError::NodeNotFound {
+                        name: name_ref.name.to_string(),
+                    })?
                     .node_indices_for_constraints(network, args)
             })
             .collect::<Result<Vec<_>, _>>()?
@@ -113,7 +115,12 @@ impl VirtualStorageNode {
         // Use the default attribute if none is specified
         let attr = attribute.unwrap_or(Self::DEFAULT_ATTRIBUTE);
 
-        let idx = network.get_virtual_storage_node_index_by_name(self.meta.name.as_str(), None)?;
+        let idx = network
+            .get_virtual_storage_node_index_by_name(self.meta.name.as_str(), None)
+            .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                name: self.meta.name.clone(),
+                sub_name: None,
+            })?;
 
         let metric = match attr {
             NodeAttribute::Volume => MetricF64::VirtualStorageVolume(idx),

@@ -59,15 +59,19 @@ impl Edge {
         network: &pywr_core::network::Network,
         args: &LoadArgs,
     ) -> Result<impl Iterator<Item = (NodeIndex, NodeIndex)> + use<>, SchemaError> {
-        let from_node = args
-            .schema
-            .get_node_by_name(self.from_node.as_str())
-            .ok_or_else(|| SchemaError::NodeNotFound(self.from_node.clone()))?;
+        let from_node =
+            args.schema
+                .get_node_by_name(self.from_node.as_str())
+                .ok_or_else(|| SchemaError::NodeNotFound {
+                    name: self.from_node.clone(),
+                })?;
 
         let to_node = args
             .schema
             .get_node_by_name(self.to_node.as_str())
-            .ok_or_else(|| SchemaError::NodeNotFound(self.to_node.clone()))?;
+            .ok_or_else(|| SchemaError::NodeNotFound {
+                name: self.to_node.clone(),
+            })?;
 
         let from_slot = self.from_slot.as_deref();
         let to_slot = self.to_slot.as_deref();
@@ -76,13 +80,27 @@ impl Edge {
         let from_node_indices: Vec<NodeIndex> = from_node
             .output_connectors(from_slot)
             .into_iter()
-            .map(|(name, sub_name)| network.get_node_index_by_name(name, sub_name.as_deref()))
+            .map(|(name, sub_name)| {
+                network
+                    .get_node_index_by_name(name, sub_name.as_deref())
+                    .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                        name: name.to_string(),
+                        sub_name,
+                    })
+            })
             .collect::<Result<_, _>>()?;
 
         let to_node_indices: Vec<NodeIndex> = to_node
             .input_connectors(to_slot)
             .into_iter()
-            .map(|(name, sub_name)| network.get_node_index_by_name(name, sub_name.as_deref()))
+            .map(|(name, sub_name)| {
+                network
+                    .get_node_index_by_name(name, sub_name.as_deref())
+                    .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                        name: name.to_string(),
+                        sub_name,
+                    })
+            })
             .collect::<Result<_, _>>()?;
 
         let pairs: Vec<_> = from_node_indices
@@ -111,7 +129,14 @@ impl Edge {
     ) -> Result<MetricF64, SchemaError> {
         let indices: Vec<EdgeIndex> = self
             .iter_node_index_pairs(network, args)?
-            .map(|(from_node_index, to_node_index)| network.get_edge_index(from_node_index, to_node_index))
+            .map(|(from_node_index, to_node_index)| {
+                network
+                    .get_edge_index(from_node_index, to_node_index)
+                    .ok_or_else(|| SchemaError::EdgeNotFound {
+                        from_node: self.from_node.clone(),
+                        to_node: self.to_node.clone(),
+                    })
+            })
             .collect::<Result<_, _>>()?;
 
         let metric = MetricF64::MultiEdgeFlow {

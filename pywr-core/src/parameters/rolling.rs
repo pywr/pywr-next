@@ -1,6 +1,6 @@
-use crate::PywrError;
-use crate::metric::{MetricF64, MetricU64, SimpleMetricF64, SimpleMetricU64};
+use crate::metric::{MetricF64, MetricF64Error, MetricU64, MetricU64Error, SimpleMetricF64, SimpleMetricU64};
 use crate::network::Network;
+use crate::parameters::errors::{ParameterCalculationError, ParameterSetupError, SimpleCalculationError};
 use crate::parameters::{
     AggFunc, AggIndexFunc, GeneralParameter, Parameter, ParameterMeta, ParameterName, ParameterState, SimpleParameter,
     downcast_internal_state_mut, downcast_internal_state_ref,
@@ -62,7 +62,7 @@ where
 }
 
 impl TryInto<RollingParameter<SimpleMetricF64, f64, AggFunc>> for &RollingParameter<MetricF64, f64, AggFunc> {
-    type Error = PywrError;
+    type Error = MetricF64Error;
 
     fn try_into(self) -> Result<RollingParameter<SimpleMetricF64, f64, AggFunc>, Self::Error> {
         Ok(RollingParameter {
@@ -77,7 +77,7 @@ impl TryInto<RollingParameter<SimpleMetricF64, f64, AggFunc>> for &RollingParame
 }
 
 impl TryInto<RollingParameter<SimpleMetricU64, u64, AggIndexFunc>> for &RollingParameter<MetricU64, u64, AggIndexFunc> {
-    type Error = PywrError;
+    type Error = MetricU64Error;
 
     fn try_into(self) -> Result<RollingParameter<SimpleMetricU64, u64, AggIndexFunc>, Self::Error> {
         Ok(RollingParameter {
@@ -104,7 +104,7 @@ where
         &self,
         _timesteps: &[Timestep],
         _scenario_index: &ScenarioIndex,
-    ) -> Result<Option<Box<dyn ParameterState>>, PywrError> {
+    ) -> Result<Option<Box<dyn ParameterState>>, ParameterSetupError> {
         // Internal state is the memory
         let memory: VecDeque<f64> = VecDeque::with_capacity(self.window_size);
         Ok(Some(Box::new(memory)))
@@ -124,7 +124,7 @@ where
         &self,
         _timesteps: &[Timestep],
         _scenario_index: &ScenarioIndex,
-    ) -> Result<Option<Box<dyn ParameterState>>, PywrError> {
+    ) -> Result<Option<Box<dyn ParameterState>>, ParameterSetupError> {
         // Internal state is the memory
         let memory: VecDeque<u64> = VecDeque::with_capacity(self.window_size);
         Ok(Some(Box::new(memory)))
@@ -139,7 +139,7 @@ impl GeneralParameter<f64> for RollingParameter<MetricF64, f64, AggFunc> {
         _model: &Network,
         _state: &State,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<f64, PywrError> {
+    ) -> Result<f64, ParameterCalculationError> {
         // Downcast the internal state to the correct type
         let memory = downcast_internal_state_ref::<VecDeque<f64>>(internal_state);
 
@@ -158,7 +158,7 @@ impl GeneralParameter<f64> for RollingParameter<MetricF64, f64, AggFunc> {
         model: &Network,
         state: &State,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<(), PywrError> {
+    ) -> Result<(), ParameterCalculationError> {
         // Downcast the internal state to the correct type
         let memory = downcast_internal_state_mut::<VecDeque<f64>>(internal_state);
 
@@ -198,7 +198,7 @@ impl SimpleParameter<f64> for RollingParameter<SimpleMetricF64, f64, AggFunc> {
         _scenario_index: &ScenarioIndex,
         _values: &SimpleParameterValues,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<f64, PywrError> {
+    ) -> Result<f64, SimpleCalculationError> {
         // Downcast the internal state to the correct type
         let memory = downcast_internal_state_ref::<VecDeque<f64>>(internal_state);
 
@@ -216,7 +216,7 @@ impl SimpleParameter<f64> for RollingParameter<SimpleMetricF64, f64, AggFunc> {
         _scenario_index: &ScenarioIndex,
         values: &SimpleParameterValues,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<(), PywrError> {
+    ) -> Result<(), SimpleCalculationError> {
         // Downcast the internal state to the correct type
         let memory = downcast_internal_state_mut::<VecDeque<f64>>(internal_state);
 
@@ -248,7 +248,7 @@ impl GeneralParameter<u64> for RollingParameter<MetricU64, u64, AggIndexFunc> {
         _model: &Network,
         _state: &State,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<u64, PywrError> {
+    ) -> Result<u64, ParameterCalculationError> {
         // Downcast the internal state to the correct type
         let memory = downcast_internal_state_ref::<VecDeque<u64>>(internal_state);
 
@@ -267,7 +267,7 @@ impl GeneralParameter<u64> for RollingParameter<MetricU64, u64, AggIndexFunc> {
         model: &Network,
         state: &State,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<(), PywrError> {
+    ) -> Result<(), ParameterCalculationError> {
         // Downcast the internal state to the correct type
         let memory = downcast_internal_state_mut::<VecDeque<u64>>(internal_state);
 
@@ -307,7 +307,7 @@ impl SimpleParameter<u64> for RollingParameter<SimpleMetricU64, u64, AggIndexFun
         _scenario_index: &ScenarioIndex,
         _values: &SimpleParameterValues,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<u64, PywrError> {
+    ) -> Result<u64, SimpleCalculationError> {
         // Downcast the internal state to the correct type
         let memory = downcast_internal_state_ref::<VecDeque<u64>>(internal_state);
 
@@ -325,7 +325,7 @@ impl SimpleParameter<u64> for RollingParameter<SimpleMetricU64, u64, AggIndexFun
         _scenario_index: &ScenarioIndex,
         values: &SimpleParameterValues,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<(), PywrError> {
+    ) -> Result<(), SimpleCalculationError> {
         // Downcast the internal state to the correct type
         let memory = downcast_internal_state_mut::<VecDeque<u64>>(internal_state);
 

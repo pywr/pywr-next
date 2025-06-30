@@ -12,10 +12,10 @@ dependencies = [
     "pandas",
     "polars",
     "pyarrow",
-    "click"
+    "click",
 ]
 
-[project.optional-dependencies]
+[dependency-groups]
 excel = ["openpyxl"]
 hdf = ["tables"]
 
