@@ -23,6 +23,7 @@ use pywr_core::{models::ModelDomain, timestep::TimestepDuration, PywrError};
 use schemars::JsonSchema;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
+use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticStr};
 
 #[derive(serde::Deserialize, serde::Serialize, Clone, JsonSchema)]
 pub struct Metadata {
@@ -53,8 +54,10 @@ impl From<pywr_v1_schema::model::Metadata> for Metadata {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, strum_macros::Display)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, Display, EnumDiscriminants)]
 #[serde(untagged)]
+#[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
+#[strum_discriminants(name(TimestepType))]
 pub enum Timestep {
     Days(i64),
     Frequency(String),
@@ -69,14 +72,16 @@ impl From<pywr_v1_schema::model::Timestep> for Timestep {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Clone, Copy, Debug, JsonSchema, strum_macros::Display)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Copy, Debug, JsonSchema, Display, EnumDiscriminants)]
 #[serde(untagged)]
-pub enum DateType {
+#[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
+#[strum_discriminants(name(DateType))]
+pub enum Date {
     Date(NaiveDate),
     DateTime(NaiveDateTime),
 }
 
-impl From<pywr_v1_schema::model::DateType> for DateType {
+impl From<pywr_v1_schema::model::DateType> for Date {
     fn from(v1: pywr_v1_schema::model::DateType) -> Self {
         match v1 {
             pywr_v1_schema::model::DateType::Date(date) => Self::Date(date),
@@ -87,16 +92,16 @@ impl From<pywr_v1_schema::model::DateType> for DateType {
 
 #[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema)]
 pub struct Timestepper {
-    pub start: DateType,
-    pub end: DateType,
+    pub start: Date,
+    pub end: Date,
     pub timestep: Timestep,
 }
 
 impl Default for Timestepper {
     fn default() -> Self {
         Self {
-            start: DateType::Date(NaiveDate::from_ymd_opt(2000, 1, 1).expect("Invalid date")),
-            end: DateType::Date(NaiveDate::from_ymd_opt(2000, 12, 31).expect("Invalid date")),
+            start: Date::Date(NaiveDate::from_ymd_opt(2000, 1, 1).expect("Invalid date")),
+            end: Date::Date(NaiveDate::from_ymd_opt(2000, 12, 31).expect("Invalid date")),
             timestep: Timestep::Days(1),
         }
     }
@@ -121,13 +126,13 @@ impl From<Timestepper> for pywr_core::timestep::Timestepper {
         };
 
         let start = match ts.start {
-            DateType::Date(date) => NaiveDateTime::new(date, NaiveTime::default()),
-            DateType::DateTime(date_time) => date_time,
+            Date::Date(date) => NaiveDateTime::new(date, NaiveTime::default()),
+            Date::DateTime(date_time) => date_time,
         };
 
         let end = match ts.end {
-            DateType::Date(date) => NaiveDateTime::new(date, NaiveTime::default()),
-            DateType::DateTime(date_time) => date_time,
+            Date::Date(date) => NaiveDateTime::new(date, NaiveTime::default()),
+            Date::DateTime(date_time) => date_time,
         };
 
         Self::new(start, end, timestep)
@@ -153,8 +158,10 @@ pub struct ScenarioGroupLabels {
     pub labels: Vec<String>,
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Clone, JsonSchema)]
-#[serde(tag = "type")]
+#[derive(serde::Deserialize, serde::Serialize, Clone, JsonSchema, Display, EnumDiscriminants)]
+#[serde(tag = "type", deny_unknown_fields)]
+#[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
+#[strum_discriminants(name(ScenarioGroupSubsetType))]
 pub enum ScenarioGroupSubset {
     Slice(ScenarioGroupSlice),
     Indices(ScenarioGroupIndices),
@@ -206,8 +213,10 @@ impl TryInto<pywr_core::scenario::ScenarioGroup> for ScenarioGroup {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Clone, JsonSchema)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, JsonSchema, Display, EnumDiscriminants)]
 #[serde(untagged)]
+#[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
+#[strum_discriminants(name(ScenarioLabelOrIndexType))]
 pub enum ScenarioLabelOrIndex {
     Label(String),
     Index(usize),
@@ -662,8 +671,10 @@ impl PywrNetwork {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Clone, strum_macros::Display)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Display, EnumDiscriminants)]
 #[serde(untagged)]
+#[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
+#[strum_discriminants(name(PywrNetworkRefType))]
 pub enum PywrNetworkRef {
     Path(PathBuf),
     Inline(PywrNetwork),
@@ -726,7 +737,7 @@ impl VisitMetrics for PywrModel {
 }
 
 impl PywrModel {
-    pub fn new(title: &str, start: &DateType, end: &DateType) -> Self {
+    pub fn new(title: &str, start: &Date, end: &Date) -> Self {
         Self {
             metadata: Metadata {
                 title: title.to_string(),
@@ -1071,14 +1082,14 @@ mod tests {
         let timestep: Timestepper = serde_json::from_str(timestepper_str).unwrap();
 
         match timestep.start {
-            super::DateType::Date(date) => {
+            super::Date::Date(date) => {
                 assert_eq!(date, chrono::NaiveDate::from_ymd_opt(2015, 1, 1).unwrap());
             }
             _ => panic!("Expected a date"),
         }
 
         match timestep.end {
-            super::DateType::Date(date) => {
+            super::Date::Date(date) => {
                 assert_eq!(date, chrono::NaiveDate::from_ymd_opt(2015, 12, 31).unwrap());
             }
             _ => panic!("Expected a date"),
@@ -1098,7 +1109,7 @@ mod tests {
         let timestep: Timestepper = serde_json::from_str(timestepper_str).unwrap();
 
         match timestep.start {
-            super::DateType::DateTime(date_time) => {
+            super::Date::DateTime(date_time) => {
                 assert_eq!(
                     date_time,
                     chrono::NaiveDate::from_ymd_opt(2015, 1, 1)
@@ -1111,7 +1122,7 @@ mod tests {
         }
 
         match timestep.end {
-            super::DateType::DateTime(date_time) => {
+            super::Date::DateTime(date_time) => {
                 assert_eq!(
                     date_time,
                     chrono::NaiveDate::from_ymd_opt(2015, 1, 1)

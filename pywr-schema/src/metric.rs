@@ -27,7 +27,7 @@ use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::parameters::ParameterValue as ParameterValueV1;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use strum_macros::{Display, EnumDiscriminants, EnumString, IntoStaticStr, VariantNames};
+use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticStr};
 
 /// A floating point value representing different model metrics.
 ///
@@ -38,8 +38,8 @@ use strum_macros::{Display, EnumDiscriminants, EnumString, IntoStaticStr, Varian
 ///
 /// See also [`IndexMetric`] for integer values.
 #[derive(Deserialize, Serialize, Clone, Debug, Display, JsonSchema, PartialEq, EnumDiscriminants)]
-#[serde(tag = "type")]
-#[strum_discriminants(derive(Display, IntoStaticStr, EnumString, VariantNames))]
+#[serde(tag = "type", deny_unknown_fields)]
+#[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
 // This creates a separate enum called `MetricType` that is available in this module.
 #[strum_discriminants(name(MetricType))]
 pub enum Metric {
@@ -108,13 +108,13 @@ impl Metric {
             }
             Self::Timeseries(ts_ref) => {
                 let param_idx = match &ts_ref.columns {
-                    Some(TimeseriesColumns::Scenario(scenario)) => {
+                    Some(TimeseriesColumns::Scenario { name }) => {
                         args.timeseries
-                            .load_df_f64(network, ts_ref.name.as_ref(), args.domain, scenario.as_str())?
+                            .load_df_f64(network, ts_ref.name.as_ref(), args.domain, name.as_str())?
                     }
-                    Some(TimeseriesColumns::Column(col)) => {
+                    Some(TimeseriesColumns::Column { name }) => {
                         args.timeseries
-                            .load_column_f64(network, ts_ref.name.as_ref(), col.as_str())?
+                            .load_column_f64(network, ts_ref.name.as_ref(), name.as_str())?
                     }
                     None => args.timeseries.load_single_column_f64(network, ts_ref.name.as_ref())?,
                 };
@@ -471,8 +471,10 @@ impl EdgeReference {
 ///
 /// This struct is the integer equivalent of [`Metric`] and is used in places where an integer
 /// value is required. See [`Metric`] for more information.
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, Display, PartialEq)]
-#[serde(tag = "type")]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, Display, PartialEq, EnumDiscriminants)]
+#[serde(tag = "type", deny_unknown_fields)]
+#[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
+#[strum_discriminants(name(IndexMetricType))]
 pub enum IndexMetric {
     Constant {
         value: u64,
@@ -535,13 +537,13 @@ impl IndexMetric {
             }
             Self::Timeseries(ts_ref) => {
                 let param_idx = match &ts_ref.columns {
-                    Some(TimeseriesColumns::Scenario(scenario)) => {
+                    Some(TimeseriesColumns::Scenario { name }) => {
                         args.timeseries
-                            .load_df_usize(network, ts_ref.name.as_ref(), args.domain, scenario.as_str())?
+                            .load_df_usize(network, ts_ref.name.as_ref(), args.domain, name.as_str())?
                     }
-                    Some(TimeseriesColumns::Column(col)) => {
+                    Some(TimeseriesColumns::Column { name }) => {
                         args.timeseries
-                            .load_column_usize(network, ts_ref.name.as_ref(), col.as_str())?
+                            .load_column_usize(network, ts_ref.name.as_ref(), name.as_str())?
                     }
                     None => args
                         .timeseries

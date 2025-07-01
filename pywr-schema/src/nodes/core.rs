@@ -20,6 +20,7 @@ use pywr_v1_schema::nodes::{
     ReservoirNode as ReservoirNodeV1, StorageNode as StorageNodeV1,
 };
 use schemars::JsonSchema;
+use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticStr};
 
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
@@ -703,16 +704,28 @@ impl TryFromV1<OutputNodeV1> for OutputNode {
 }
 
 #[derive(
-    serde::Deserialize, serde::Serialize, Clone, PartialEq, Copy, Debug, JsonSchema, PywrVisitAll, strum_macros::Display,
+    serde::Deserialize,
+    serde::Serialize,
+    Clone,
+    PartialEq,
+    Copy,
+    Debug,
+    JsonSchema,
+    PywrVisitAll,
+    Display,
+    EnumDiscriminants,
 )]
+#[serde(tag = "type", deny_unknown_fields)]
+#[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
+#[strum_discriminants(name(StorageInitialVolumeType))]
 pub enum StorageInitialVolume {
-    Absolute(f64),
-    Proportional(f64),
+    Absolute { volume: f64 },
+    Proportional { proportion: f64 },
 }
 
 impl Default for StorageInitialVolume {
     fn default() -> Self {
-        StorageInitialVolume::Proportional(1.0)
+        StorageInitialVolume::Proportional { proportion: 1.0 }
     }
 }
 
@@ -720,8 +733,8 @@ impl Default for StorageInitialVolume {
 impl From<StorageInitialVolume> for CoreStorageInitialVolume {
     fn from(v: StorageInitialVolume) -> Self {
         match v {
-            StorageInitialVolume::Absolute(v) => CoreStorageInitialVolume::Absolute(v),
-            StorageInitialVolume::Proportional(v) => CoreStorageInitialVolume::Proportional(v),
+            StorageInitialVolume::Absolute { volume } => CoreStorageInitialVolume::Absolute(volume),
+            StorageInitialVolume::Proportional { proportion } => CoreStorageInitialVolume::Proportional(proportion),
         }
     }
 }
@@ -999,8 +1012,10 @@ impl TryFromV1<CatchmentNodeV1> for CatchmentNode {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, PywrVisitAll, strum_macros::Display)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, PywrVisitAll, Display, EnumDiscriminants)]
 #[serde(tag = "type", deny_unknown_fields)]
+#[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
+#[strum_discriminants(name(RelationshipType))]
 pub enum Relationship {
     Proportion {
         factors: Vec<Metric>,
@@ -1342,14 +1357,15 @@ mod tests {
                   "value": 10.0
                 },
                 "initial_volume": {
-                    "Absolute": 12.0
+                  "type": "Absolute",
+                  "volume": 12.0
                 }
             }
             "#;
 
         let storage: StorageNode = serde_json::from_str(data).unwrap();
 
-        assert_eq!(storage.initial_volume, StorageInitialVolume::Absolute(12.0));
+        assert_eq!(storage.initial_volume, StorageInitialVolume::Absolute { volume: 12.0 });
     }
 
     #[test]
@@ -1364,13 +1380,17 @@ mod tests {
                   "value": 15.0
                 },
                 "initial_volume": {
-                    "Proportional": 0.5
+                  "type": "Proportional",
+                  "proportion": 0.5
                 }
             }
             "#;
 
         let storage: StorageNode = serde_json::from_str(data).unwrap();
 
-        assert_eq!(storage.initial_volume, StorageInitialVolume::Proportional(0.5));
+        assert_eq!(
+            storage.initial_volume,
+            StorageInitialVolume::Proportional { proportion: 0.5 }
+        );
     }
 }

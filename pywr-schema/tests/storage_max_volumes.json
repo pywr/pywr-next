@@ -27,7 +27,8 @@
         },
         "type": "Storage",
         "initial_volume": {
-          "Proportional": 0.5
+          "type": "Proportional",
+          "proportion": 0.5
         },
         "max_volume": {
           "type": "Constant",
@@ -40,7 +41,8 @@
         },
         "type": "Storage",
         "initial_volume": {
-          "Proportional": 0.5
+          "type": "Proportional",
+          "proportion": 0.5
         },
         "max_volume": {
           "type": "Parameter",
@@ -53,7 +55,8 @@
         },
         "type": "Storage",
         "initial_volume": {
-          "Proportional": 0.5
+          "type": "Proportional",
+          "proportion": 0.5
         },
         "max_volume": {
           "type": "Parameter",
@@ -113,7 +116,7 @@
           "name": "fifteen"
         },
         "type": "Aggregated",
-        "agg_func": "sum",
+        "agg_func": "Sum",
         "metrics": [
           {
             "type": "Parameter",

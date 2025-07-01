@@ -108,7 +108,7 @@
       {
         "name": "node-outputs",
         "type": "CSV",
-        "format": "long",
+        "format": "Long",
         "filename": "piecewise-link1-nodes.csv",
         "metric_set": [
           "nodes"
@@ -118,7 +118,7 @@
       {
         "name": "edge-outputs",
         "type": "CSV",
-        "format": "long",
+        "format": "Long",
         "filename": "piecewise-link1-edges.csv",
         "metric_set": [
           "edges"

@@ -15,6 +15,7 @@ use pywr_v1_schema::parameters::{
     WeeklyProfileParameter as WeeklyProfileParameterV1,
 };
 use schemars::JsonSchema;
+use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticStr};
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
@@ -56,7 +57,7 @@ impl TryFromV1<DailyProfileParameterV1> for DailyProfileParameter {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone, strum_macros::Display, JsonSchema, PywrVisitAll)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone, Display, JsonSchema, PywrVisitAll, EnumIter)]
 pub enum MonthlyInterpDay {
     First,
     Last,
@@ -185,8 +186,12 @@ impl FromV1<UniformDrawdownProfileParameterV1> for UniformDrawdownProfileParamet
 }
 
 /// Distance functions for radial basis function interpolation.
-#[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone, JsonSchema, PywrVisitAll, strum_macros::Display)]
-#[serde(deny_unknown_fields)]
+#[derive(
+    serde::Deserialize, serde::Serialize, Debug, Copy, Clone, JsonSchema, PywrVisitAll, Display, EnumDiscriminants,
+)]
+#[serde(tag = "type", deny_unknown_fields)]
+#[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
+#[strum_discriminants(name(RadialBasisFunctionType))]
 pub enum RadialBasisFunction {
     Linear,
     Cubic,
@@ -437,7 +442,7 @@ impl TryFromV1<RbfProfileParameterV1> for RbfProfileParameter {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone, JsonSchema, PywrVisitAll, strum_macros::Display)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone, JsonSchema, PywrVisitAll, Display, EnumIter)]
 pub enum WeeklyInterpDay {
     First,
     Last,
