@@ -306,7 +306,7 @@ mod tests {
     use crate::network::Network;
     use crate::node::StorageInitialVolume;
     use crate::parameters::ControlCurveInterpolatedParameter;
-    use crate::recorders::{AssertionFnRecorder, AssertionRecorder};
+    use crate::recorders::{AssertionF64Recorder, AssertionFnRecorder};
     use crate::scenario::ScenarioIndex;
     use crate::test_utils::{default_timestepper, run_all_solvers, simple_model};
     use crate::timestep::{Timestep, TimestepDuration, Timestepper};
@@ -449,7 +449,7 @@ mod tests {
         let expected = Array::zeros((366, 1));
 
         let idx = network.get_node_by_name("output", None).unwrap().index();
-        let recorder = AssertionRecorder::new("output-flow", MetricF64::NodeInFlow(idx), expected, None, None);
+        let recorder = AssertionF64Recorder::new("output-flow", MetricF64::NodeInFlow(idx), expected, None, None);
         network.add_recorder(Box::new(recorder)).unwrap();
 
         // Test all solvers

@@ -74,29 +74,29 @@ impl PywrDuration {
     }
 
     /// Convert the duration to a string representation that can be parsed by polars
-    /// see: https://docs.rs/polars/latest/polars/prelude/struct.Duration.html#method.parse
+    /// see: <https://docs.rs/polars/latest/polars/prelude/struct.Duration.html#method.parse>
     pub fn duration_string(&self) -> String {
         let milliseconds = self.milliseconds();
         let mut duration = String::new();
         let days = milliseconds / MILLISECS_IN_DAY;
         if days > 0 {
-            duration.push_str(&format!("{}d", days));
+            duration.push_str(&format!("{days}d",));
         }
         let hours = (milliseconds % MILLISECS_IN_DAY) / MILLISECS_IN_HOUR;
         if hours > 0 {
-            duration.push_str(&format!("{}h", hours));
+            duration.push_str(&format!("{hours}h",));
         }
         let minutes = (milliseconds % MILLISECS_IN_HOUR) / MILLISECS_IN_MINUTE;
         if minutes > 0 {
-            duration.push_str(&format!("{}m", minutes));
+            duration.push_str(&format!("{minutes}m",));
         }
         let seconds = (milliseconds % MILLISECS_IN_MINUTE) / MILLISECS_IN_SECOND;
         if seconds > 0 {
-            duration.push_str(&format!("{}s", seconds));
+            duration.push_str(&format!("{seconds}s",));
         }
         let milliseconds = milliseconds % MILLISECS_IN_SECOND;
         if milliseconds > 0 {
-            duration.push_str(&format!("{}ms", milliseconds));
+            duration.push_str(&format!("{milliseconds}ms",));
         }
         duration
     }
@@ -241,7 +241,7 @@ impl Timestepper {
 }
 
 /// The time domain that a model will be simulated over.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TimeDomain {
     timesteps: Vec<Timestep>,
     duration: PywrDuration,

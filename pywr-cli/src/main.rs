@@ -179,7 +179,7 @@ fn convert(in_path: &Path, out_path: &Path, stop_on_error: bool, network_only: b
 
         for entry in in_path
             .read_dir()
-            .with_context(|| format!("Failed to read directory: {:?}", in_path))?
+            .with_context(|| format!("Failed to read directory: {in_path:?}",))?
             .flatten()
         {
             let path = entry.path();
@@ -211,11 +211,11 @@ fn convert(in_path: &Path, out_path: &Path, stop_on_error: bool, network_only: b
 fn v1_to_v2(in_path: &Path, out_path: &Path, stop_on_error: bool, network_only: bool) -> Result<()> {
     info!("Converting file: {}", in_path.display());
 
-    let data = std::fs::read_to_string(in_path).with_context(|| format!("Failed to read file: {:?}", in_path))?;
+    let data = std::fs::read_to_string(in_path).with_context(|| format!("Failed to read file: {in_path:?}",))?;
 
     if network_only {
         let schema: pywr_v1_schema::PywrNetwork = serde_json::from_str(data.as_str())
-            .with_context(|| format!("Failed deserialise Pywr v1 network file: {:?}", in_path))?;
+            .with_context(|| format!("Failed deserialise Pywr v1 network file: {in_path:?}",))?;
         // Convert to v2 schema and collect any errors
         let (schema_v2, errors) = PywrNetwork::from_v1(schema);
 
@@ -225,11 +225,11 @@ fn v1_to_v2(in_path: &Path, out_path: &Path, stop_on_error: bool, network_only: 
             out_path,
             serde_json::to_string_pretty(&schema_v2).with_context(|| "Failed serialise Pywr v2 network".to_string())?,
         )
-        .with_context(|| format!("Failed to write file: {:?}", out_path))?;
+        .with_context(|| format!("Failed to write file: {out_path:?}",))?;
     } else {
         // Load the v1 schema
         let schema: pywr_v1_schema::PywrModel = serde_json::from_str(data.as_str())
-            .with_context(|| format!("Failed deserialise Pywr v1 model file: {:?}", in_path))?;
+            .with_context(|| format!("Failed deserialise Pywr v1 model file: {in_path:?}",))?;
         // Convert to v2 schema and collect any errors
         let (schema_v2, errors) = PywrModel::from_v1(schema);
 
@@ -239,7 +239,7 @@ fn v1_to_v2(in_path: &Path, out_path: &Path, stop_on_error: bool, network_only: 
             out_path,
             serde_json::to_string_pretty(&schema_v2).with_context(|| "Failed serialise Pywr v2 model".to_string())?,
         )
-        .with_context(|| format!("Failed to write file: {:?}", out_path))?;
+        .with_context(|| format!("Failed to write file: {out_path:?}",))?;
     }
 
     Ok(())
@@ -410,7 +410,7 @@ fn export_schema(out_path: &Path) -> Result<()> {
         out_path,
         serde_json::to_string_pretty(&schema).with_context(|| "Failed serialise Pywr schema".to_string())?,
     )
-    .with_context(|| format!("Failed to write file: {:?}", out_path))?;
+    .with_context(|| format!("Failed to write file: {out_path:?}",))?;
 
     Ok(())
 }

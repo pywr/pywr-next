@@ -1,7 +1,7 @@
 {
   "metadata": {
-    "title": "WTW Test 1",
-    "description": "Test WTW work",
+    "title": "Mutual exclusivity test 4",
+    "description": "Test mutual exclusivities work with simple link minimum flows",
     "minimum_version": "0.1"
   },
   "timestepper": {
@@ -15,27 +15,16 @@
         "meta": {
           "name": "input1"
         },
-        "type": "Catchment",
-        "flow": {
-          "type": "Constant",
-          "value": 20.0
-        }
+        "type": "Input"
       },
       {
         "meta": {
-          "name": "wtw1"
+          "name": "link1"
         },
-        "type": "WaterTreatmentWorks",
-        "max_flow": {
+        "type": "Link",
+        "min_flow": {
           "type": "Constant",
           "value": 10.0
-        },
-        "loss_factor": {
-          "type": "Net",
-          "factor": {
-            "type": "Constant",
-            "value": 0.0
-          }
         }
       },
       {
@@ -45,32 +34,64 @@
         "type": "Output",
         "cost": {
           "type": "Constant",
-          "value": -10
+          "value": 5
         }
       },
       {
         "meta": {
-          "name": "spill1"
+          "name": "link2"
+        },
+        "type": "Link",
+        "min_flow": {
+          "type": "Constant",
+          "value": 10.0
+        }
+      },
+      {
+        "meta": {
+          "name": "demand2"
         },
         "type": "Output",
         "cost": {
           "type": "Constant",
           "value": 10
         }
+      },
+      {
+        "meta": {
+          "name": "me"
+        },
+        "type": "Aggregated",
+        "nodes": [
+          {
+            "name": "link1"
+          },
+          {
+            "name": "link2"
+          }
+        ],
+        "relationship": {
+          "type": "Exclusive",
+          "min_active": 1
+        }
       }
     ],
     "edges": [
       {
         "from_node": "input1",
-        "to_node": "wtw1"
+        "to_node": "link1"
       },
       {
-        "from_node": "wtw1",
+        "from_node": "link1",
         "to_node": "demand1"
       },
       {
         "from_node": "input1",
-        "to_node": "spill1"
+        "to_node": "link2"
+      },
+      {
+        "from_node": "link2",
+        "to_node": "demand2"
       }
     ],
     "metric_sets": [
@@ -79,23 +100,23 @@
         "metrics": [
           {
             "type": "Node",
-            "name": "wtw1",
+            "name": "link1",
             "attribute": "Inflow"
           },
           {
             "type": "Node",
-            "name": "wtw1",
+            "name": "link1",
             "attribute": "Outflow"
           },
           {
             "type": "Node",
-            "name": "wtw1",
-            "attribute": "Loss"
+            "name": "link2",
+            "attribute": "Inflow"
           },
           {
             "type": "Node",
-            "name": "spill1",
-            "attribute": "Inflow"
+            "name": "link2",
+            "attribute": "Outflow"
           }
         ]
       }
@@ -105,7 +126,7 @@
         "name": "node-outputs",
         "type": "CSV",
         "format": "Long",
-        "filename": "wtw2-expected.csv",
+        "filename": "mutual-exclusivity4.csv",
         "metric_set": [
           "nodes"
         ],

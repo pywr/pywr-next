@@ -176,10 +176,10 @@ pub fn try_convert_initial_storage(
     v1_initial_volume: Option<f64>,
     v1_initial_volume_pc: Option<f64>,
 ) -> Result<StorageInitialVolume, ComponentConversionError> {
-    let initial_volume = if let Some(v) = v1_initial_volume {
-        StorageInitialVolume::Absolute(v)
-    } else if let Some(v) = v1_initial_volume_pc {
-        StorageInitialVolume::Proportional(v)
+    let initial_volume = if let Some(volume) = v1_initial_volume {
+        StorageInitialVolume::Absolute { volume }
+    } else if let Some(proportion) = v1_initial_volume_pc {
+        StorageInitialVolume::Proportional { proportion }
     } else {
         return Err(ComponentConversionError::Node {
             attr: attr.to_string(),

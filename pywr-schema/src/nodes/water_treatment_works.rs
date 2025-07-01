@@ -19,8 +19,8 @@ use schemars::JsonSchema;
 /// or gross flow, and an optional "soft" minimum flow.
 ///
 /// When a loss factor is not given the `loss` node is not created. When a non-zero loss
-/// factor is provided [`pywr_core::nodes::Output`] and [`pywr_core::nodes::Aggregated`] nodes
-/// are created.
+/// factor is provided [`pywr_core::node::OutputNode`] and [`pywr_core::aggregated_node::AggregatedNode`]
+/// nodes are created.
 ///
 ///
 /// ```svgbob

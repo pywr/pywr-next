@@ -20,6 +20,7 @@ mod offset;
 mod polynomial;
 mod profiles;
 mod python;
+mod rolling;
 mod tables;
 mod thresholds;
 
@@ -32,6 +33,7 @@ use crate::error::{ComponentConversionError, ConversionError};
 use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
+use crate::parameters::delay::DelayIndexParameter;
 use crate::timeseries::ConvertedTimeseriesReference;
 use crate::v1::{ConversionData, IntoV2, TryFromV1, TryIntoV2};
 use crate::visit::{VisitMetrics, VisitPaths};
@@ -64,9 +66,10 @@ use pywr_v1_schema::parameters::{
     CoreParameter, DataFrameParameter as DataFrameParameterV1, Parameter as ParameterV1,
     ParameterValue as ParameterValueV1, TableIndex as TableIndexV1, TableIndexEntry as TableIndexEntryV1,
 };
+pub use rolling::{RollingIndexParameter, RollingParameter};
 use schemars::JsonSchema;
 use std::path::{Path, PathBuf};
-use strum_macros::{Display, EnumDiscriminants, EnumString, IntoStaticStr, VariantNames};
+use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticStr};
 pub use tables::TablesArrayParameter;
 pub use thresholds::ThresholdParameter;
 
@@ -79,7 +82,7 @@ pub struct ParameterMeta {
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, EnumDiscriminants, Clone, JsonSchema, Display)]
 #[serde(tag = "type")]
-#[strum_discriminants(derive(Display, IntoStaticStr, EnumString, VariantNames))]
+#[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
 // This creates a separate enum called `ParameterType` that is available in this module.
 #[strum_discriminants(name(ParameterType))]
 pub enum Parameter {
@@ -107,11 +110,14 @@ pub enum Parameter {
     TablesArray(TablesArrayParameter),
     Python(PythonParameter),
     Delay(DelayParameter),
+    DelayIndex(DelayIndexParameter),
     Division(DivisionParameter),
     Offset(OffsetParameter),
     DiscountFactor(DiscountFactorParameter),
     Interpolated(InterpolatedParameter),
     RbfProfile(RbfProfileParameter),
+    Rolling(RollingParameter),
+    RollingIndex(RollingIndexParameter),
 }
 
 impl Parameter {
@@ -139,6 +145,7 @@ impl Parameter {
             Self::Python(p) => p.meta.name.as_str(),
             Self::Division(p) => p.meta.name.as_str(),
             Self::Delay(p) => p.meta.name.as_str(),
+            Self::DelayIndex(p) => p.meta.name.as_str(),
             Self::Offset(p) => p.meta.name.as_str(),
             Self::DiscountFactor(p) => p.meta.name.as_str(),
             Self::Interpolated(p) => p.meta.name.as_str(),
@@ -146,6 +153,8 @@ impl Parameter {
             Self::RbfProfile(p) => p.meta.name.as_str(),
             Self::NegativeMax(p) => p.meta.name.as_str(),
             Self::NegativeMin(p) => p.meta.name.as_str(),
+            Self::Rolling(p) => p.meta.name.as_str(),
+            Self::RollingIndex(p) => p.meta.name.as_str(),
         }
     }
 
@@ -195,6 +204,7 @@ impl Parameter {
             Self::TablesArray(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
             Self::Python(p) => p.add_to_model(network, args)?,
             Self::Delay(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
+            Self::DelayIndex(p) => pywr_core::parameters::ParameterType::Index(p.add_to_model(network, args)?),
             Self::Division(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
             Self::Offset(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
             Self::DiscountFactor(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
@@ -205,6 +215,8 @@ impl Parameter {
             Self::HydropowerTarget(p) => {
                 pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?)
             }
+            Self::Rolling(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
+            Self::RollingIndex(p) => pywr_core::parameters::ParameterType::Index(p.add_to_model(network, args)?),
         };
 
         Ok(ty)
@@ -235,6 +247,7 @@ impl VisitMetrics for Parameter {
             Self::TablesArray(p) => p.visit_metrics(visitor),
             Self::Python(p) => p.visit_metrics(visitor),
             Self::Delay(p) => p.visit_metrics(visitor),
+            Self::DelayIndex(p) => p.visit_metrics(visitor),
             Self::Division(p) => p.visit_metrics(visitor),
             Self::Offset(p) => p.visit_metrics(visitor),
             Self::DiscountFactor(p) => p.visit_metrics(visitor),
@@ -243,6 +256,8 @@ impl VisitMetrics for Parameter {
             Self::NegativeMax(p) => p.visit_metrics(visitor),
             Self::NegativeMin(p) => p.visit_metrics(visitor),
             Self::HydropowerTarget(p) => p.visit_metrics(visitor),
+            Self::Rolling(p) => p.visit_metrics(visitor),
+            Self::RollingIndex(p) => p.visit_metrics(visitor),
         }
     }
 
@@ -269,6 +284,7 @@ impl VisitMetrics for Parameter {
             Self::TablesArray(p) => p.visit_metrics_mut(visitor),
             Self::Python(p) => p.visit_metrics_mut(visitor),
             Self::Delay(p) => p.visit_metrics_mut(visitor),
+            Self::DelayIndex(p) => p.visit_metrics_mut(visitor),
             Self::Division(p) => p.visit_metrics_mut(visitor),
             Self::Offset(p) => p.visit_metrics_mut(visitor),
             Self::DiscountFactor(p) => p.visit_metrics_mut(visitor),
@@ -277,6 +293,8 @@ impl VisitMetrics for Parameter {
             Self::NegativeMax(p) => p.visit_metrics_mut(visitor),
             Self::NegativeMin(p) => p.visit_metrics_mut(visitor),
             Self::HydropowerTarget(p) => p.visit_metrics_mut(visitor),
+            Self::Rolling(p) => p.visit_metrics_mut(visitor),
+            Self::RollingIndex(p) => p.visit_metrics_mut(visitor),
         }
     }
 }
@@ -305,6 +323,7 @@ impl VisitPaths for Parameter {
             Self::TablesArray(p) => p.visit_paths(visitor),
             Self::Python(p) => p.visit_paths(visitor),
             Self::Delay(p) => p.visit_paths(visitor),
+            Self::DelayIndex(p) => p.visit_paths(visitor),
             Self::Division(p) => p.visit_paths(visitor),
             Self::Offset(p) => p.visit_paths(visitor),
             Self::DiscountFactor(p) => p.visit_paths(visitor),
@@ -313,6 +332,8 @@ impl VisitPaths for Parameter {
             Self::NegativeMax(p) => p.visit_paths(visitor),
             Self::NegativeMin(p) => p.visit_paths(visitor),
             Self::HydropowerTarget(p) => p.visit_paths(visitor),
+            Self::Rolling(p) => p.visit_paths(visitor),
+            Self::RollingIndex(p) => p.visit_paths(visitor),
         }
     }
 
@@ -339,6 +360,7 @@ impl VisitPaths for Parameter {
             Self::TablesArray(p) => p.visit_paths_mut(visitor),
             Self::Python(p) => p.visit_paths_mut(visitor),
             Self::Delay(p) => p.visit_paths_mut(visitor),
+            Self::DelayIndex(p) => p.visit_paths_mut(visitor),
             Self::Division(p) => p.visit_paths_mut(visitor),
             Self::Offset(p) => p.visit_paths_mut(visitor),
             Self::DiscountFactor(p) => p.visit_paths_mut(visitor),
@@ -347,6 +369,8 @@ impl VisitPaths for Parameter {
             Self::NegativeMax(p) => p.visit_paths_mut(visitor),
             Self::NegativeMin(p) => p.visit_paths_mut(visitor),
             Self::HydropowerTarget(p) => p.visit_paths_mut(visitor),
+            Self::Rolling(p) => p.visit_paths_mut(visitor),
+            Self::RollingIndex(p) => p.visit_paths_mut(visitor),
         }
     }
 }
@@ -479,7 +503,9 @@ impl TryFromV1<ParameterV1> for ParameterOrTimeseriesRef {
                         },
                     });
                 }
-                CoreParameter::RollingMeanFlowNode(_) => todo!("Implement RollingMeanFlowNodeParameter"),
+                CoreParameter::RollingMeanFlowNode(p) => {
+                    Parameter::Rolling(p.try_into_v2(parent_node, conversion_data)?).into()
+                }
                 CoreParameter::ScenarioWrapper(_) => todo!("Implement ScenarioWrapperParameter"),
                 CoreParameter::Flow(p) => {
                     return Err(ComponentConversionError::Parameter {
@@ -514,11 +540,13 @@ impl TryFromV1<ParameterV1> for ParameterOrTimeseriesRef {
     }
 }
 
-/// An non-variable constant floating-point (f64) value
+/// A non-variable constant floating-point (f64) value
 ///
 /// This value can be a literal float or an external reference to an input table.
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, Display)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, Display, EnumDiscriminants)]
 #[serde(untagged)]
+#[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
+#[strum_discriminants(name(ConstantValueType))]
 pub enum ConstantValue<T> {
     Literal(T),
     Table(TableDataRef),
@@ -624,8 +652,12 @@ impl TryFrom<ParameterValueV1> for ConstantValue<f64> {
 /// An non-variable vector of constant floating-point (f64) values
 ///
 /// This value can be a literal vector of floats or an external reference to an input table.
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll, Display)]
+#[derive(
+    serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll, Display, EnumDiscriminants, PartialEq,
+)]
 #[serde(untagged)]
+#[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
+#[strum_discriminants(name(ConstantFloatVecType))]
 pub enum ConstantFloatVec {
     Literal(Vec<f64>),
     Table(TableDataRef),
@@ -648,8 +680,12 @@ impl ConstantFloatVec {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll, Display, PartialEq)]
+#[derive(
+    serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll, Display, PartialEq, EnumDiscriminants,
+)]
 #[serde(untagged)]
+#[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
+#[strum_discriminants(name(TableIndexType))]
 pub enum TableIndex {
     Single(String),
     Multi(Vec<String>),
@@ -710,21 +746,21 @@ mod tests {
         for entry in fs::read_dir(doc_examples).unwrap() {
             let p = entry.unwrap().path();
             if p.is_file() {
-                let data = fs::read_to_string(&p).unwrap_or_else(|_| panic!("Failed to read file: {:?}", p));
+                let data = fs::read_to_string(&p).unwrap_or_else(|_| panic!("Failed to read file: {p:?}",));
 
                 let value: serde_json::Value =
-                    serde_json::from_str(&data).unwrap_or_else(|_| panic!("Failed to deserialize: {:?}", p));
+                    serde_json::from_str(&data).unwrap_or_else(|_| panic!("Failed to deserialize: {p:?}",));
 
                 match value {
                     serde_json::Value::Object(_) => {
                         let _ = serde_json::from_value::<Parameter>(value)
-                            .unwrap_or_else(|_| panic!("Failed to deserialize: {:?}", p));
+                            .unwrap_or_else(|_| panic!("Failed to deserialize: {p:?}",));
                     }
                     serde_json::Value::Array(_) => {
                         let _ = serde_json::from_value::<Vec<Parameter>>(value)
-                            .unwrap_or_else(|_| panic!("Failed to deserialize: {:?}", p));
+                            .unwrap_or_else(|_| panic!("Failed to deserialize: {p:?}",));
                     }
-                    _ => panic!("Expected JSON object or array: {:?}", p),
+                    _ => panic!("Expected JSON object or array: {p:?}",),
                 }
             }
         }

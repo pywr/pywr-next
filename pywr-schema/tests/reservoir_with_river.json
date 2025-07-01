@@ -1,0 +1,84 @@
+{
+  "metadata": {
+    "title": "Reservoir node",
+    "description": "A test of the ReservoirNode.",
+    "minimum_version": "0.1"
+  },
+  "timestepper": {
+    "start": "2015-01-01",
+    "end": "2015-12-31",
+    "timestep": 1
+  },
+  "network": {
+    "nodes": [
+      {
+        "meta": {
+          "name": "Catchment"
+        },
+        "type": "Catchment",
+        "flow": {
+          "type": "Constant",
+          "value": 15
+        }
+      },
+      {
+        "meta": {
+          "name": "Reservoir"
+        },
+        "type": "Reservoir",
+        "max_volume": {
+          "type": "Constant",
+          "value": 21000
+        },
+        "cost": {
+          "type": "Constant",
+          "value": -10.0
+        },
+        "initial_volume": {
+          "type": "Proportional",
+          "proportion": 1.0
+        },
+        "compensation": {
+          "type": "Constant",
+          "value": 0.2
+        },
+        "spill": "LinkNode"
+      },
+      {
+        "meta": {
+          "name": "River termination"
+        },
+        "type": "Output"
+      },
+      {
+        "meta": {
+          "name": "Demand"
+        },
+        "type": "Output",
+        "max_flow": {
+          "type": "Constant",
+          "value": 20.0
+        },
+        "cost": {
+          "type": "Constant",
+          "value": -10.0
+        }
+      }
+    ],
+    "edges": [
+      {
+        "from_node": "Catchment",
+        "to_node": "Reservoir"
+      },
+      {
+        "from_node": "Reservoir",
+        "from_slot": "from_spill",
+        "to_node": "River termination"
+      },
+      {
+        "from_node": "Reservoir",
+        "to_node": "Demand"
+      }
+    ]
+  }
+}

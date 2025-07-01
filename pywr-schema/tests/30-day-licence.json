@@ -56,10 +56,12 @@
           "value": 300
         },
         "initial_volume": {
-          "Proportional": 0.0
+          "type": "Proportional",
+          "proportion": 0.0
         },
         "window": {
-          "Days": 30
+          "type": "Days",
+          "days": 30
         }
       }
     ],

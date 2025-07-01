@@ -207,7 +207,7 @@ fn bench_threads(c: &mut Criterion) {
                     .threads(n_threads)
                     .build(),
             ),
-            name: format!("threads-{}", n_threads),
+            name: format!("threads-{n_threads}",),
         });
         #[cfg(feature = "ipm-simd")]
         solver_setups.push(SolverSetup {

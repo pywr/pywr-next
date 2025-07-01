@@ -555,7 +555,7 @@ fn get_const_norm_ratio_factor_pairs<'a>(
 
     let f0 = factors[0]
         .try_get_constant_value(values)
-        .unwrap_or_else(|e| panic!("Failed to get constant value for factor: {}", e));
+        .unwrap_or_else(|e| panic!("Failed to get constant value for factor: {e}",));
 
     if let Some(v0) = f0 {
         if v0 < 0.0 {
@@ -570,7 +570,7 @@ fn get_const_norm_ratio_factor_pairs<'a>(
         .map(move |(n1, f1)| {
             let v1 = f1
                 .try_get_constant_value(values)
-                .unwrap_or_else(|e| panic!("Failed to get constant value for factor: {}", e));
+                .unwrap_or_else(|e| panic!("Failed to get constant value for factor: {e}",));
 
             if let Some(v) = v1 {
                 if v < 0.0 {
@@ -594,7 +594,7 @@ mod tests {
     use crate::models::Model;
     use crate::network::Network;
     use crate::parameters::MonthlyProfileParameter;
-    use crate::recorders::AssertionRecorder;
+    use crate::recorders::AssertionF64Recorder;
     use crate::test_utils::{default_time_domain, run_all_solvers};
     use ndarray::Array2;
 
@@ -632,13 +632,13 @@ mod tests {
         // Set-up assertion for "input" node
         let idx = network.get_node_by_name("link", Some("0")).unwrap().index();
         let expected = Array2::from_elem((366, 10), 100.0);
-        let recorder = AssertionRecorder::new("link-0-flow", MetricF64::NodeOutFlow(idx), expected, None, None);
+        let recorder = AssertionF64Recorder::new("link-0-flow", MetricF64::NodeOutFlow(idx), expected, None, None);
         network.add_recorder(Box::new(recorder)).unwrap();
 
         // Set-up assertion for "input" node
         let idx = network.get_node_by_name("link", Some("1")).unwrap().index();
         let expected = Array2::from_elem((366, 10), 50.0);
-        let recorder = AssertionRecorder::new("link-0-flow", MetricF64::NodeOutFlow(idx), expected, None, None);
+        let recorder = AssertionF64Recorder::new("link-0-flow", MetricF64::NodeOutFlow(idx), expected, None, None);
         network.add_recorder(Box::new(recorder)).unwrap();
 
         let model = Model::new(default_time_domain().into(), network);
@@ -686,13 +686,13 @@ mod tests {
         // Set-up assertion for "input" node
         let idx = network.get_node_by_name("link", Some("0")).unwrap().index();
         let expected = Array2::from_elem((366, 10), 100.0);
-        let recorder = AssertionRecorder::new("link-0-flow", MetricF64::NodeOutFlow(idx), expected, None, None);
+        let recorder = AssertionF64Recorder::new("link-0-flow", MetricF64::NodeOutFlow(idx), expected, None, None);
         network.add_recorder(Box::new(recorder)).unwrap();
 
         // Set-up assertion for "input" node
         let idx = network.get_node_by_name("link", Some("1")).unwrap().index();
         let expected = Array2::from_elem((366, 10), 50.0);
-        let recorder = AssertionRecorder::new("link-0-flow", MetricF64::NodeOutFlow(idx), expected, None, None);
+        let recorder = AssertionF64Recorder::new("link-0-flow", MetricF64::NodeOutFlow(idx), expected, None, None);
         network.add_recorder(Box::new(recorder)).unwrap();
 
         let model = Model::new(default_time_domain().into(), network);
@@ -742,13 +742,13 @@ mod tests {
         // Set-up assertion for "output-0" node
         let idx = network.get_node_by_name("link", Some("0")).unwrap().index();
         let expected = Array2::from_elem((366, 10), 100.0);
-        let recorder = AssertionRecorder::new("link-0-flow", MetricF64::NodeOutFlow(idx), expected, None, None);
+        let recorder = AssertionF64Recorder::new("link-0-flow", MetricF64::NodeOutFlow(idx), expected, None, None);
         network.add_recorder(Box::new(recorder)).unwrap();
 
         // Set-up assertion for "output-1" node
         let idx = network.get_node_by_name("link", Some("1")).unwrap().index();
         let expected = Array2::from_elem((366, 10), 0.0);
-        let recorder = AssertionRecorder::new("link-1-flow", MetricF64::NodeOutFlow(idx), expected, None, None);
+        let recorder = AssertionF64Recorder::new("link-1-flow", MetricF64::NodeOutFlow(idx), expected, None, None);
         network.add_recorder(Box::new(recorder)).unwrap();
 
         let model = Model::new(default_time_domain().into(), network);
@@ -817,19 +817,19 @@ mod tests {
         // Set-up assertion for "output-0" node
         let idx = network.get_node_by_name("link", Some("0")).unwrap().index();
         let expected = Array2::from_elem((366, 10), 0.0);
-        let recorder = AssertionRecorder::new("link-0-flow", MetricF64::NodeOutFlow(idx), expected, None, None);
+        let recorder = AssertionF64Recorder::new("link-0-flow", MetricF64::NodeOutFlow(idx), expected, None, None);
         network.add_recorder(Box::new(recorder)).unwrap();
 
         // Set-up assertion for "output-0" node
         let idx = network.get_node_by_name("link", Some("1")).unwrap().index();
         let expected = Array2::from_elem((366, 10), 100.0);
-        let recorder = AssertionRecorder::new("link-1-flow", MetricF64::NodeOutFlow(idx), expected, None, None);
+        let recorder = AssertionF64Recorder::new("link-1-flow", MetricF64::NodeOutFlow(idx), expected, None, None);
         network.add_recorder(Box::new(recorder)).unwrap();
 
         // Set-up assertion for "output-2" node
         let idx = network.get_node_by_name("link", Some("2")).unwrap().index();
         let expected = Array2::from_elem((366, 10), 0.0);
-        let recorder = AssertionRecorder::new("link-2-flow", MetricF64::NodeOutFlow(idx), expected, None, None);
+        let recorder = AssertionF64Recorder::new("link-2-flow", MetricF64::NodeOutFlow(idx), expected, None, None);
         network.add_recorder(Box::new(recorder)).unwrap();
 
         let model = Model::new(default_time_domain().into(), network);

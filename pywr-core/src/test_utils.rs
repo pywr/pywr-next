@@ -6,7 +6,7 @@ use crate::models::{Model, ModelDomain};
 use crate::network::Network;
 use crate::node::StorageInitialVolume;
 use crate::parameters::{AggFunc, AggregatedParameter, Array2Parameter, ConstantParameter, GeneralParameter};
-use crate::recorders::AssertionRecorder;
+use crate::recorders::{AssertionF64Recorder, AssertionU64Recorder};
 use crate::scenario::{ScenarioDomainBuilder, ScenarioGroupBuilder};
 #[cfg(feature = "cbc")]
 use crate::solvers::CbcSolver;
@@ -148,7 +148,7 @@ pub fn simple_storage_model() -> Model {
 /// This function will run a number of time-steps equal to the number of rows in the expected
 /// values array.
 ///
-/// See [`AssertionRecorder`] for more information.
+/// See [`AssertionF64Recorder`] for more information.
 pub fn run_and_assert_parameter(
     model: &mut Model,
     parameter: Box<dyn GeneralParameter<f64>>,
@@ -166,7 +166,35 @@ pub fn run_and_assert_parameter(
         .checked_add_days(Days::new(expected_values.nrows() as u64 - 1))
         .unwrap();
 
-    let rec = AssertionRecorder::new("assert", p_idx.into(), expected_values, ulps, epsilon);
+    let rec = AssertionF64Recorder::new("assert", p_idx.into(), expected_values, ulps, epsilon);
+
+    model.network_mut().add_recorder(Box::new(rec)).unwrap();
+    run_all_solvers(model, &[], &[], &[])
+}
+
+/// Add the given parameter to the given model along with an assertion recorder that asserts
+/// whether the parameter returns the expected values when the model is run.
+///
+/// This function will run a number of time-steps equal to the number of rows in the expected
+/// values array.
+///
+/// See [`AssertionU64Recorder`] for more information.
+pub fn run_and_assert_parameter_u64(
+    model: &mut Model,
+    parameter: Box<dyn GeneralParameter<u64>>,
+    expected_values: Array2<u64>,
+) {
+    let p_idx = model.network_mut().add_index_parameter(parameter).unwrap();
+
+    let start = NaiveDate::from_ymd_opt(2020, 1, 1)
+        .unwrap()
+        .and_hms_opt(0, 0, 0)
+        .unwrap();
+    let _end = start
+        .checked_add_days(Days::new(expected_values.nrows() as u64 - 1))
+        .unwrap();
+
+    let rec = AssertionU64Recorder::new("assert", p_idx.into(), expected_values);
 
     model.network_mut().add_recorder(Box::new(rec)).unwrap();
     run_all_solvers(model, &[], &[], &[])
@@ -259,7 +287,7 @@ where
         );
         model
             .run::<S>(&Default::default())
-            .unwrap_or_else(|_| panic!("Failed to solve with: {}", S::name()));
+            .unwrap_or_else(|e| panic!("Failed to solve with {}: {}", S::name(), e));
 
         // Verify any expected outputs
         for expected_output in expected_outputs {

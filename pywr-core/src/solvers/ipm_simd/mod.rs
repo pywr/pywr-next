@@ -670,10 +670,7 @@ impl MultiStateSolver for SimdIpmF64Solver {
 
                     for (state, flow) in chunk_states.iter_mut().zip(flows.as_array_ref()) {
                         if !flow.is_finite() {
-                            panic!(
-                                "Non-finite flow encountered from solver. Edge: {:#?}, value: {}",
-                                edge, flow
-                            )
+                            panic!("Non-finite flow encountered from solver. Edge: {edge:#?}, value: {flow}")
                         }
                         state.get_mut_network_state().add_flow(edge, timestep, *flow).unwrap();
                     }

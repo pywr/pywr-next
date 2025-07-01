@@ -81,6 +81,7 @@ pub enum MetricF64 {
     NodeInFlow(NodeIndex),
     NodeOutFlow(NodeIndex),
     NodeVolume(NodeIndex),
+    NodeMaxVolume(NodeIndex),
     AggregatedNodeInFlow(AggregatedNodeIndex),
     AggregatedNodeOutFlow(AggregatedNodeIndex),
     AggregatedNodeVolume(AggregatedStorageNodeIndex),
@@ -104,6 +105,7 @@ impl MetricF64 {
             MetricF64::NodeInFlow(idx) => Ok(state.get_network_state().get_node_in_flow(idx)?),
             MetricF64::NodeOutFlow(idx) => Ok(state.get_network_state().get_node_out_flow(idx)?),
             MetricF64::NodeVolume(idx) => Ok(state.get_network_state().get_node_volume(idx)?),
+            MetricF64::NodeMaxVolume(idx) => Ok(model.get_node(idx)?.get_max_volume(state)?),
             MetricF64::AggregatedNodeInFlow(idx) => {
                 let node = model.get_aggregated_node(idx)?;
                 node.iter_nodes()
@@ -388,5 +390,27 @@ where
 {
     fn from(v: T) -> Self {
         MetricU64::Simple(v.into())
+    }
+}
+
+impl TryFrom<MetricU64> for SimpleMetricU64 {
+    type Error = PywrError;
+
+    fn try_from(value: MetricU64) -> Result<Self, Self::Error> {
+        match value {
+            MetricU64::Simple(s) => Ok(s),
+            _ => Err(PywrError::CannotSimplifyMetric),
+        }
+    }
+}
+
+impl TryFrom<SimpleMetricU64> for ConstantMetricU64 {
+    type Error = PywrError;
+
+    fn try_from(value: SimpleMetricU64) -> Result<Self, Self::Error> {
+        match value {
+            SimpleMetricU64::Constant(c) => Ok(c),
+            _ => Err(PywrError::CannotSimplifyMetric),
+        }
     }
 }

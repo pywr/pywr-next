@@ -2,7 +2,7 @@ use super::{Matrix, dual_feasibility, primal_feasibility};
 use crate::Tolerances;
 use crate::common::{compute_dx_dz_dw, dot_product, normal_eqn_rhs, vector_norm, vector_set, vector_update};
 use ipm_common::SparseNormalCholeskyIndices;
-use wide::{f64x4, CmpLt};
+use wide::{CmpLt, f64x4};
 
 pub struct ANormIndices {
     indptr: Vec<usize>,

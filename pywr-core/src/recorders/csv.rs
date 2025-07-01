@@ -12,7 +12,7 @@ use std::num::NonZeroU32;
 use std::ops::Deref;
 use std::path::PathBuf;
 
-/// Output the values from a [`MetricSet`] to a CSV file.
+/// Output the values from a [`crate::recorders::MetricSet`] to a CSV file.
 #[derive(Clone, Debug)]
 pub struct CsvWideFmtOutput {
     meta: RecorderMeta,
@@ -184,7 +184,7 @@ pub struct CsvLongFmtRecord {
     value: f64,
 }
 
-/// Output the values from a several [`MetricSet`]s to a CSV file in long format.
+/// Output the values from a several [`crate::recorders::MetricSet`]s to a CSV file in long format.
 ///
 /// The long format contains a row for each value produced by the metric set. This is useful
 /// for analysis in tools like R or Python which can easily read long format data.

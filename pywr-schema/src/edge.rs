@@ -70,6 +70,7 @@ impl Edge {
             .ok_or_else(|| SchemaError::NodeNotFound(self.to_node.clone()))?;
 
         let from_slot = self.from_slot.as_deref();
+        let to_slot = self.to_slot.as_deref();
 
         // Collect the node indices at each end of the edge
         let from_node_indices: Vec<NodeIndex> = from_node
@@ -79,7 +80,7 @@ impl Edge {
             .collect::<Result<_, _>>()?;
 
         let to_node_indices: Vec<NodeIndex> = to_node
-            .input_connectors()
+            .input_connectors(to_slot)
             .into_iter()
             .map(|(name, sub_name)| network.get_node_index_by_name(name, sub_name.as_deref()))
             .collect::<Result<_, _>>()?;

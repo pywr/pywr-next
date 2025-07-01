@@ -5,6 +5,7 @@ use crate::metric_sets::MetricAggFunc;
 use pywr_core::recorders::MemoryRecorder;
 use pywr_schema_macros::PywrVisitPaths;
 use schemars::JsonSchema;
+use strum_macros::{Display, EnumIter};
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitPaths)]
 pub struct MemoryAggregation {
@@ -24,9 +25,7 @@ impl From<MemoryAggregation> for pywr_core::recorders::Aggregation {
     }
 }
 
-#[derive(
-    serde::Deserialize, serde::Serialize, Debug, Copy, Clone, JsonSchema, PywrVisitPaths, strum_macros::Display,
-)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone, JsonSchema, PywrVisitPaths, Display, EnumIter)]
 pub enum MemoryAggregationOrder {
     MetricTimeScenario,
     TimeMetricScenario,

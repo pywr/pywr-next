@@ -25,7 +25,7 @@ coin-or-sys = { path = "../coin-or-sys", version = "0.1.0" }
 ipm-ocl = { path = "../ipm-ocl", optional = true }
 ipm-simd = { path = "../ipm-simd", optional = true }
 tracing = { workspace = true }
-highs-sys = { version = "1.6", optional = true }
+highs-sys = { version = "1.11", optional = true }
 nalgebra = "0.33"
 chrono = { workspace = true }
 polars = { workspace = true }
@@ -39,7 +39,7 @@ serde = { version = "1.0", features = ["derive"] }
 wide = { workspace = true, optional = true }
 
 [dev-dependencies]
-criterion = "0.5"
+criterion = "0.6"
 
 [features]
 cbc = []
