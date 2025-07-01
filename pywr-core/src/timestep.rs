@@ -74,7 +74,7 @@ impl PywrDuration {
     }
 
     /// Convert the duration to a string representation that can be parsed by polars
-    /// see: https://docs.rs/polars/latest/polars/prelude/struct.Duration.html#method.parse
+    /// see: <https://docs.rs/polars/latest/polars/prelude/struct.Duration.html#method.parse>
     pub fn duration_string(&self) -> String {
         let milliseconds = self.milliseconds();
         let mut duration = String::new();
