@@ -1,11 +1,10 @@
 mod settings;
 
-use crate::PywrError;
 use crate::edge::EdgeIndex;
 use crate::network::Network;
 use crate::node::{Node, NodeBounds, NodeType};
 use crate::solvers::col_edge_map::{ColumnEdgeMap, ColumnEdgeMapBuilder};
-use crate::solvers::{MultiStateSolver, SolverFeatures, SolverTimings};
+use crate::solvers::{MultiStateSolver, SolverFeatures, SolverSetupError, SolverSolveError, SolverTimings};
 use crate::state::State;
 use crate::timestep::Timestep;
 use ipm_simd::{PathFollowingDirectSimdSolver, Tolerances};
@@ -297,7 +296,7 @@ impl BuiltSolver {
         timestep: &Timestep,
         states: &[State],
         timings: &mut SolverTimings,
-    ) -> Result<(), PywrError> {
+    ) -> Result<(), SolverSolveError> {
         let start_objective_update = Instant::now();
         self.update_edge_objectives(network, states)?;
         timings.update_objective += start_objective_update.elapsed();
@@ -313,7 +312,7 @@ impl BuiltSolver {
     }
 
     /// Update edge objective coefficients
-    fn update_edge_objectives(&mut self, network: &Network, states: &[State]) -> Result<(), PywrError> {
+    fn update_edge_objectives(&mut self, network: &Network, states: &[State]) -> Result<(), SolverSolveError> {
         self.lp.zero_obj_coefficients();
         for edge in network.edges().deref() {
             // Collect all of the costs for all states together
@@ -337,7 +336,7 @@ impl BuiltSolver {
         network: &Network,
         timestep: &Timestep,
         states: &[State],
-    ) -> Result<(), PywrError> {
+    ) -> Result<(), SolverSolveError> {
         let mut row_ids = self.node_constraints_row_ids.iter();
 
         let dt = timestep.days();
@@ -406,7 +405,7 @@ impl SolverBuilder {
         self.col_edge_map.col_for_edge(edge_index)
     }
 
-    fn create(mut self, network: &Network) -> Result<BuiltSolver, PywrError> {
+    fn create(mut self, network: &Network) -> Result<BuiltSolver, SolverSetupError> {
         // Create the columns
         self.create_columns(network)?;
 
@@ -433,16 +432,18 @@ impl SolverBuilder {
     /// Typically each edge will have its own column. However, we use the mass-balance information
     /// to collapse edges (and their columns) where they are trivially the same. I.e. if there
     /// is a single incoming edge and outgoing edge at a link node.
-    fn create_columns(&mut self, network: &Network) -> Result<(), PywrError> {
+    fn create_columns(&mut self, network: &Network) -> Result<(), SolverSetupError> {
         // One column per edge
         let ncols = network.edges().len();
         if ncols < 1 {
-            return Err(PywrError::NoEdgesDefined);
+            return Err(SolverSetupError::NoEdgesDefined);
         }
 
         for edge in network.edges().iter() {
             let edge_index = edge.index();
-            let from_node = network.get_node(&edge.from_node_index)?;
+            let from_node = network
+                .get_node(&edge.from_node_index)
+                .ok_or(SolverSetupError::NodeIndexNotFound(edge.from_node_index))?;
 
             if let NodeType::Link = from_node.node_type() {
                 // We only look at link nodes; there should be no output nodes as a
@@ -594,7 +595,11 @@ impl MultiStateSolver for SimdIpmF64Solver {
         &[]
     }
 
-    fn setup(network: &Network, num_scenarios: usize, settings: &Self::Settings) -> Result<Box<Self>, PywrError> {
+    fn setup(
+        network: &Network,
+        num_scenarios: usize,
+        settings: &Self::Settings,
+    ) -> Result<Box<Self>, SolverSetupError> {
         let mut built_solvers = Vec::new();
         let mut ipms = Vec::new();
 
@@ -632,7 +637,7 @@ impl MultiStateSolver for SimdIpmF64Solver {
         network: &Network,
         timestep: &Timestep,
         states: &mut [State],
-    ) -> Result<SolverTimings, PywrError> {
+    ) -> Result<SolverTimings, SolverSolveError> {
         // TODO complete the timings
         let timings = SolverTimings::default();
 
