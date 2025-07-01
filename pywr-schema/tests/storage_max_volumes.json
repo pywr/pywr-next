@@ -28,7 +28,7 @@
         "type": "Storage",
         "initial_volume": {
           "type": "Proportional",
-          "value": 0.5
+          "proportion": 0.5
         },
         "max_volume": {
           "type": "Constant",
@@ -42,7 +42,7 @@
         "type": "Storage",
         "initial_volume": {
           "type": "Proportional",
-          "value": 0.5
+          "proportion": 0.5
         },
         "max_volume": {
           "type": "Parameter",
@@ -56,7 +56,7 @@
         "type": "Storage",
         "initial_volume": {
           "type": "Proportional",
-          "value": 0.5
+          "proportion": 0.5
         },
         "max_volume": {
           "type": "Parameter",

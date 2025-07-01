@@ -715,17 +715,17 @@ impl TryFromV1<OutputNodeV1> for OutputNode {
     Display,
     EnumDiscriminants,
 )]
-#[serde(tag = "type", content = "value", deny_unknown_fields)]
+#[serde(tag = "type", deny_unknown_fields)]
 #[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
 #[strum_discriminants(name(StorageInitialVolumeType))]
 pub enum StorageInitialVolume {
-    Absolute(f64),
-    Proportional(f64),
+    Absolute { volume: f64 },
+    Proportional { proportion: f64 },
 }
 
 impl Default for StorageInitialVolume {
     fn default() -> Self {
-        StorageInitialVolume::Proportional(1.0)
+        StorageInitialVolume::Proportional { proportion: 1.0 }
     }
 }
 
@@ -733,8 +733,8 @@ impl Default for StorageInitialVolume {
 impl From<StorageInitialVolume> for CoreStorageInitialVolume {
     fn from(v: StorageInitialVolume) -> Self {
         match v {
-            StorageInitialVolume::Absolute(v) => CoreStorageInitialVolume::Absolute(v),
-            StorageInitialVolume::Proportional(v) => CoreStorageInitialVolume::Proportional(v),
+            StorageInitialVolume::Absolute { volume } => CoreStorageInitialVolume::Absolute(volume),
+            StorageInitialVolume::Proportional { proportion } => CoreStorageInitialVolume::Proportional(proportion),
         }
     }
 }
@@ -1358,14 +1358,14 @@ mod tests {
                 },
                 "initial_volume": {
                   "type": "Absolute",
-                  "value": 12.0
+                  "volume": 12.0
                 }
             }
             "#;
 
         let storage: StorageNode = serde_json::from_str(data).unwrap();
 
-        assert_eq!(storage.initial_volume, StorageInitialVolume::Absolute(12.0));
+        assert_eq!(storage.initial_volume, StorageInitialVolume::Absolute { volume: 12.0 });
     }
 
     #[test]
@@ -1381,13 +1381,16 @@ mod tests {
                 },
                 "initial_volume": {
                   "type": "Proportional",
-                  "value": 0.5
+                  "proportion": 0.5
                 }
             }
             "#;
 
         let storage: StorageNode = serde_json::from_str(data).unwrap();
 
-        assert_eq!(storage.initial_volume, StorageInitialVolume::Proportional(0.5));
+        assert_eq!(
+            storage.initial_volume,
+            StorageInitialVolume::Proportional { proportion: 0.5 }
+        );
     }
 }

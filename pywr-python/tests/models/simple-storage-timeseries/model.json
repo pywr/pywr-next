@@ -30,7 +30,7 @@
         },
         "initial_volume": {
           "type": "Absolute",
-          "value": 500.0
+          "volume": 500.0
         },
         "max_volume": {
           "type": "Constant",
