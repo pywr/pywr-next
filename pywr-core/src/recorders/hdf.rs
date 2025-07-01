@@ -6,7 +6,7 @@ use crate::scenario::{ScenarioDomain, ScenarioIndex};
 use crate::state::State;
 use chrono::{Datelike, Timelike};
 use hdf5_metno::{Extents, Group};
-use ndarray::{s, Array1};
+use ndarray::{Array1, s};
 use std::any::Any;
 use std::ops::Deref;
 use std::path::PathBuf;

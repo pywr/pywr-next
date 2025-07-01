@@ -3,15 +3,13 @@ mod align_and_resample;
 mod pandas;
 mod polars_dataset;
 
+use crate::ConversionError;
 use crate::error::ComponentConversionError;
 use crate::parameters::ParameterMeta;
 use crate::v1::{ConversionData, IntoV2, TryFromV1};
 use crate::visit::VisitPaths;
-use crate::ConversionError;
 #[cfg(feature = "core")]
-use ndarray::ShapeError;
-#[cfg(feature = "core")]
-use ndarray::{s, Array2};
+use ndarray::{Array2, ShapeError, s};
 pub use pandas::PandasDataset;
 #[cfg(feature = "core")]
 use polars::error::PolarsError;
@@ -26,9 +24,9 @@ pub use polars_dataset::PolarsDataset;
 use pyo3::PyErr;
 #[cfg(feature = "core")]
 use pywr_core::{
+    PywrError,
     models::ModelDomain,
     parameters::{Array1Parameter, Array2Parameter, ParameterIndex, ParameterName},
-    PywrError,
 };
 use pywr_v1_schema::parameters::DataFrameParameter as DataFrameParameterV1;
 use schemars::JsonSchema;
@@ -56,7 +54,8 @@ pub enum TimeseriesError {
     DataFrameTimestepMismatch(String),
     #[error("A timeseries dataframe with the name '{0}' already exists.")]
     TimeseriesDataframeAlreadyExists(String),
-    #[error("The timeseries dataset '{0}' has more than one column of data so a column or scenario name must be provided for any reference"
+    #[error(
+        "The timeseries dataset '{0}' has more than one column of data so a column or scenario name must be provided for any reference"
     )]
     TimeseriesColumnOrScenarioRequired(String),
     #[error("The timeseries dataset '{0}' has no columns")]
@@ -547,7 +546,7 @@ impl TryFromV1<DataFrameParameterV1> for ConvertedTimeseriesReference {
                     error: ConversionError::AmbiguousAttributes {
                         attrs: vec!["column".to_string(), "scenario".to_string()],
                     },
-                })
+                });
             }
             (None, None) => None,
         };

@@ -1,7 +1,7 @@
 #[cfg(feature = "core")]
-use crate::model::LoadArgs;
-#[cfg(feature = "core")]
 use crate::SchemaError;
+#[cfg(feature = "core")]
+use crate::model::LoadArgs;
 #[cfg(feature = "core")]
 use pywr_core::{edge::EdgeIndex, metric::MetricF64, node::NodeIndex};
 use schemars::JsonSchema;
@@ -58,7 +58,7 @@ impl Edge {
         &self,
         network: &pywr_core::network::Network,
         args: &LoadArgs,
-    ) -> Result<impl Iterator<Item = (NodeIndex, NodeIndex)>, SchemaError> {
+    ) -> Result<impl Iterator<Item = (NodeIndex, NodeIndex)> + use<>, SchemaError> {
         let from_node = args
             .schema
             .get_node_by_name(self.from_node.as_str())

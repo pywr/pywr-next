@@ -1,5 +1,5 @@
 #[cfg(feature = "core")]
-use pywr_core::test_utils::{run_all_solvers, ExpectedOutputs};
+use pywr_core::test_utils::{ExpectedOutputs, run_all_solvers};
 use pywr_schema::PywrModel;
 use std::fs;
 use std::path::Path;
@@ -149,7 +149,7 @@ fn convert_model(v1_path: &Path, v2_path: &Path) {
     let v1: pywr_v1_schema::PywrModel = serde_json::from_str(&v1_str).unwrap();
 
     let (v2, errors) = PywrModel::from_v1(v1);
-    println!("Conversion errors: {:?}", errors);
+    println!("Conversion errors: {errors:?}",);
     assert_eq!(errors.len(), 0);
 
     let v2_converted: serde_json::Value = serde_json::from_str(&serde_json::to_string_pretty(&v2).unwrap()).unwrap();

@@ -19,7 +19,7 @@ use chrono::{NaiveDate, NaiveDateTime};
 #[cfg(feature = "pyo3")]
 use pyo3::pyclass;
 #[cfg(feature = "core")]
-use pywr_core::{models::ModelDomain, timestep::TimestepDuration, PywrError};
+use pywr_core::{PywrError, models::ModelDomain, timestep::TimestepDuration};
 use schemars::JsonSchema;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
@@ -1173,10 +1173,10 @@ mod tests {
         for entry in fs::read_dir(doc_examples).unwrap() {
             let p = entry.unwrap().path();
             if p.is_file() && p.file_name().unwrap().to_str().unwrap().starts_with("scenario_domain") {
-                let data = read_to_string(&p).unwrap_or_else(|e| panic!("Failed to read file: {:?}: {}", p, e));
+                let data = read_to_string(&p).unwrap_or_else(|e| panic!("Failed to read file: {p:?}: {e}",));
 
                 let _value: ScenarioDomain =
-                    serde_json::from_str(&data).unwrap_or_else(|e| panic!("Failed to deserialize {:?}: {}", p, e));
+                    serde_json::from_str(&data).unwrap_or_else(|e| panic!("Failed to deserialize {p:?}: {e}",));
             }
         }
     }

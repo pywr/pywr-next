@@ -1,12 +1,12 @@
+use crate::PywrError;
 use crate::aggregated_node::AggregatedNodeIndex;
 use crate::edge::EdgeIndex;
 use crate::network::Network;
 use crate::node::{Node, NodeBounds, NodeIndex, NodeType};
-use crate::solvers::col_edge_map::{ColumnEdgeMap, ColumnEdgeMapBuilder};
 use crate::solvers::SolverTimings;
+use crate::solvers::col_edge_map::{ColumnEdgeMap, ColumnEdgeMapBuilder};
 use crate::state::{ConstParameterValues, State};
 use crate::timestep::Timestep;
-use crate::PywrError;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::Debug;
 use std::ops::Deref;

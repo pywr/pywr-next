@@ -379,7 +379,11 @@ fn get_norm_proportional_factor_pairs<'a>(
     state: &State,
 ) -> Vec<NodeFactorPair<'a>> {
     if factors.len() != nodes.len() - 1 {
-        panic!("Found {} proportional factors and {} nodes in aggregated node. The number of proportional factors should equal one less than the number of nodes.", factors.len(), nodes.len());
+        panic!(
+            "Found {} proportional factors and {} nodes in aggregated node. The number of proportional factors should equal one less than the number of nodes.",
+            factors.len(),
+            nodes.len()
+        );
     }
 
     // First get the current factor values
@@ -387,11 +391,7 @@ fn get_norm_proportional_factor_pairs<'a>(
         .iter()
         .map(|f| {
             let v = f.get_value(model, state)?;
-            if v < 0.0 {
-                Err(PywrError::NegativeFactor)
-            } else {
-                Ok(v)
-            }
+            if v < 0.0 { Err(PywrError::NegativeFactor) } else { Ok(v) }
         })
         .collect::<Result<Vec<_>, PywrError>>()
         .expect("Failed to get current factor values. Ensure that all factors are not negative.");
@@ -427,7 +427,11 @@ fn get_const_norm_proportional_factor_pairs<'a>(
     values: &ConstParameterValues,
 ) -> Vec<NodeConstFactorPair<'a>> {
     if factors.len() != nodes.len() - 1 {
-        panic!("Found {} proportional factors and {} nodes in aggregated node. The number of proportional factors should equal one less than the number of nodes.", factors.len(), nodes.len());
+        panic!(
+            "Found {} proportional factors and {} nodes in aggregated node. The number of proportional factors should equal one less than the number of nodes.",
+            factors.len(),
+            nodes.len()
+        );
     }
 
     // First get the current factor values, ensuring they are all non-negative
@@ -499,7 +503,11 @@ fn get_norm_ratio_factor_pairs<'a>(
     state: &State,
 ) -> Vec<NodeFactorPair<'a>> {
     if factors.len() != nodes.len() {
-        panic!("Found {} ratio factors and {} nodes in aggregated node. The number of ratio factors should equal the number of nodes.", factors.len(), nodes.len());
+        panic!(
+            "Found {} ratio factors and {} nodes in aggregated node. The number of ratio factors should equal the number of nodes.",
+            factors.len(),
+            nodes.len()
+        );
     }
 
     let n0 = nodes[0].as_slice();
@@ -535,7 +543,11 @@ fn get_const_norm_ratio_factor_pairs<'a>(
     values: &ConstParameterValues,
 ) -> Vec<NodeConstFactorPair<'a>> {
     if factors.len() != nodes.len() {
-        panic!("Found {} ratio factors and {} nodes in aggregated node. The number of ratio factors should equal the number of nodes.", factors.len(), nodes.len());
+        panic!(
+            "Found {} ratio factors and {} nodes in aggregated node. The number of ratio factors should equal the number of nodes.",
+            factors.len(),
+            nodes.len()
+        );
     }
 
     let n0 = nodes[0].as_slice();
@@ -543,7 +555,7 @@ fn get_const_norm_ratio_factor_pairs<'a>(
 
     let f0 = factors[0]
         .try_get_constant_value(values)
-        .unwrap_or_else(|e| panic!("Failed to get constant value for factor: {}", e));
+        .unwrap_or_else(|e| panic!("Failed to get constant value for factor: {e}",));
 
     if let Some(v0) = f0 {
         if v0 < 0.0 {
@@ -558,7 +570,7 @@ fn get_const_norm_ratio_factor_pairs<'a>(
         .map(move |(n1, f1)| {
             let v1 = f1
                 .try_get_constant_value(values)
-                .unwrap_or_else(|e| panic!("Failed to get constant value for factor: {}", e));
+                .unwrap_or_else(|e| panic!("Failed to get constant value for factor: {e}",));
 
             if let Some(v) = v1 {
                 if v < 0.0 {

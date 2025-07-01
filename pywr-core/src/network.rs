@@ -14,7 +14,7 @@ use crate::solvers::{MultiStateSolver, Solver, SolverFeatures, SolverSettings, S
 use crate::state::{MultiValue, State, StateBuilder};
 use crate::timestep::Timestep;
 use crate::virtual_storage::{VirtualStorage, VirtualStorageBuilder, VirtualStorageIndex, VirtualStorageVec};
-use crate::{parameters, recorders, NodeIndex, PywrError, RecorderIndex};
+use crate::{NodeIndex, PywrError, RecorderIndex, parameters, recorders};
 use rayon::prelude::*;
 use std::any::Any;
 use std::collections::HashSet;

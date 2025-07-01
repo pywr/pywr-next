@@ -1,3 +1,4 @@
+use crate::PywrError;
 use crate::derived_metric::DerivedMetricIndex;
 use crate::edge::{Edge, EdgeIndex};
 use crate::models::MultiNetworkTransferIndex;
@@ -8,7 +9,6 @@ use crate::parameters::{
 };
 use crate::timestep::Timestep;
 use crate::virtual_storage::VirtualStorageIndex;
-use crate::PywrError;
 use std::collections::{HashMap, VecDeque};
 use std::num::NonZeroUsize;
 use std::ops::Deref;

@@ -23,8 +23,8 @@ impl VisitPaths for PolarsDataset {
 #[cfg(feature = "core")]
 mod core {
     use super::PolarsDataset;
-    use crate::timeseries::align_and_resample::align_and_resample;
     use crate::timeseries::TimeseriesError;
+    use crate::timeseries::align_and_resample::align_and_resample;
     use polars::{frame::DataFrame, prelude::*};
     use pywr_core::models::ModelDomain;
     use std::path::Path;
@@ -69,13 +69,13 @@ mod core {
                             return Err(TimeseriesError::TimeseriesUnsupportedFileFormat {
                                 provider: "polars".to_string(),
                                 fmt: other_ext.to_string(),
-                            })
+                            });
                         }
                         None => {
                             return Err(TimeseriesError::TimeseriesUnparsableFileFormat {
                                 provider: "polars".to_string(),
                                 path: self.url.to_string_lossy().to_string(),
-                            })
+                            });
                         }
                     }
                 }
@@ -83,7 +83,7 @@ mod core {
                     return Err(TimeseriesError::TimeseriesUnparsableFileFormat {
                         provider: "polars".to_string(),
                         path: self.url.to_string_lossy().to_string(),
-                    })
+                    });
                 }
             };
 

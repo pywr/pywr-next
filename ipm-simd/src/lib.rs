@@ -2,7 +2,7 @@ mod common;
 mod path_following_direct;
 
 use crate::path_following_direct::{normal_eqn_init, normal_eqn_step};
-use common::{dual_feasibility, primal_feasibility, Matrix};
+use common::{Matrix, dual_feasibility, primal_feasibility};
 use ipm_common::SparseNormalCholeskyIndices;
 use nalgebra_sparse::CsrMatrix;
 use path_following_direct::ANormIndices;

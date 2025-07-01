@@ -103,10 +103,10 @@ const COIN_UTILS_SRCS: [&str; 57] = [
 fn compile_coin_utils() {
     let mut builder = make_builder();
 
-    builder.flag(format!("-I{}", COIN_UTILS_PATH));
+    builder.flag(format!("-I{COIN_UTILS_PATH}",));
 
     for src in COIN_UTILS_SRCS.iter() {
-        builder.file(format!("{}/{}", COIN_UTILS_PATH, src));
+        builder.file(format!("{COIN_UTILS_PATH}/{src}",));
     }
 
     builder.compile("CoinUtils");
@@ -135,11 +135,11 @@ fn compile_osi() {
     let mut builder = make_builder();
 
     builder
-        .flag(format!("-I{}", COIN_UTILS_PATH))
-        .flag(format!("-I{}", OSI_SRC_PATH));
+        .flag(format!("-I{COIN_UTILS_PATH}",))
+        .flag(format!("-I{OSI_SRC_PATH}",));
 
     for src in OSI_SRCS.iter() {
-        builder.file(format!("{}/{}", OSI_SRC_PATH, src));
+        builder.file(format!("{OSI_SRC_PATH}/{src}",));
     }
 
     builder.compile("Osi");
@@ -217,10 +217,10 @@ fn compile_clp() {
         .include(CLP_SRC_PATH);
 
     for src in CLP_SRCS.iter() {
-        builder.file(format!("{}/{}", CLP_SRC_PATH, src));
+        builder.file(format!("{CLP_SRC_PATH}/{src}",));
     }
 
-    builder.file(format!("{}/OsiClpSolverInterface.cpp", CLP_OSI_SRC_PATH));
+    builder.file(format!("{CLP_OSI_SRC_PATH}/OsiClpSolverInterface.cpp",));
     builder.include(CLP_OSI_SRC_PATH);
 
     builder.compile("Clp");
@@ -290,7 +290,7 @@ fn compile_cgl() {
         .include(CGL_SRC_PATH);
 
     for src in CGL_SRCS.iter() {
-        builder.file(format!("{}/{}", CGL_SRC_PATH, src));
+        builder.file(format!("{CGL_SRC_PATH}/{src}",));
     }
 
     builder.includes(cgl_include_dirs());
@@ -392,7 +392,7 @@ fn compile_cbc() {
     builder.includes(cgl_include_dirs());
 
     for src in CBC_SRCS.iter() {
-        builder.file(format!("{}/{}", CBC_SRC_PATH, src));
+        builder.file(format!("{CBC_SRC_PATH}/{src}",));
     }
     builder.define("CBC_THREAD_SAFE", None);
     builder.define("COIN_HAS_CLP", None);

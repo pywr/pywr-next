@@ -80,23 +80,23 @@ impl PywrDuration {
         let mut duration = String::new();
         let days = milliseconds / MILLISECS_IN_DAY;
         if days > 0 {
-            duration.push_str(&format!("{}d", days));
+            duration.push_str(&format!("{days}d",));
         }
         let hours = (milliseconds % MILLISECS_IN_DAY) / MILLISECS_IN_HOUR;
         if hours > 0 {
-            duration.push_str(&format!("{}h", hours));
+            duration.push_str(&format!("{hours}h",));
         }
         let minutes = (milliseconds % MILLISECS_IN_HOUR) / MILLISECS_IN_MINUTE;
         if minutes > 0 {
-            duration.push_str(&format!("{}m", minutes));
+            duration.push_str(&format!("{minutes}m",));
         }
         let seconds = (milliseconds % MILLISECS_IN_MINUTE) / MILLISECS_IN_SECOND;
         if seconds > 0 {
-            duration.push_str(&format!("{}s", seconds));
+            duration.push_str(&format!("{seconds}s",));
         }
         let milliseconds = milliseconds % MILLISECS_IN_SECOND;
         if milliseconds > 0 {
-            duration.push_str(&format!("{}ms", milliseconds));
+            duration.push_str(&format!("{milliseconds}ms",));
         }
         duration
     }
@@ -292,7 +292,7 @@ impl TryFrom<Timestepper> for TimeDomain {
 mod test {
     use chrono::{NaiveDateTime, TimeDelta};
 
-    use crate::timestep::{is_leap_year, PywrDuration, SECS_IN_DAY};
+    use crate::timestep::{PywrDuration, SECS_IN_DAY, is_leap_year};
 
     use super::{TimestepDuration, Timestepper};
 

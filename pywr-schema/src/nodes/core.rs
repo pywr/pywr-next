@@ -7,7 +7,7 @@ use crate::model::LoadArgs;
 use crate::nodes::{NodeAttribute, NodeMeta};
 use crate::parameters::Parameter;
 use crate::v1::{
-    try_convert_initial_storage, try_convert_node_attr, try_convert_parameter_attr, ConversionData, TryFromV1,
+    ConversionData, TryFromV1, try_convert_initial_storage, try_convert_node_attr, try_convert_parameter_attr,
 };
 #[cfg(feature = "core")]
 use pywr_core::{
@@ -102,7 +102,7 @@ impl InputNode {
                     ty: "InputNode".to_string(),
                     name: self.meta.name.clone(),
                     attr,
-                })
+                });
             }
         };
 
@@ -546,7 +546,7 @@ impl LinkNode {
                     ty: "LinkNode".to_string(),
                     name: self.meta.name.clone(),
                     attr,
-                })
+                });
             }
         };
 
@@ -642,7 +642,7 @@ impl OutputNode {
                     ty: "OutputNode".to_string(),
                     name: self.meta.name.clone(),
                     attr,
-                })
+                });
             }
         };
 
@@ -828,7 +828,7 @@ impl StorageNode {
                     ty: "StorageNode".to_string(),
                     name: self.meta.name.clone(),
                     attr,
-                })
+                });
             }
         };
 
@@ -982,7 +982,7 @@ impl CatchmentNode {
                     ty: "CatchmentNode".to_string(),
                     name: self.meta.name.clone(),
                     attr,
-                })
+                });
             }
         };
 
@@ -1165,7 +1165,7 @@ impl AggregatedNode {
                     ty: "AggregatedNode".to_string(),
                     name: self.meta.name.clone(),
                     attr,
-                })
+                });
             }
         };
 
@@ -1301,7 +1301,7 @@ impl AggregatedStorageNode {
                     ty: "AggregatedStorageNode".to_string(),
                     name: self.meta.name.clone(),
                     attr,
-                })
+                });
             }
         };
 
@@ -1323,9 +1323,9 @@ impl From<AggregatedStorageNodeV1> for AggregatedStorageNode {
 
 #[cfg(test)]
 mod tests {
-    use crate::nodes::core::StorageInitialVolume;
     use crate::nodes::InputNode;
     use crate::nodes::StorageNode;
+    use crate::nodes::core::StorageInitialVolume;
 
     #[test]
     fn test_input() {

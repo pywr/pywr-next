@@ -125,7 +125,7 @@
       {
         "name": "node-outputs",
         "type": "CSV",
-        "format": "long",
+        "format": "Long",
         "filename": "mutual-exclusivity4.csv",
         "metric_set": [
           "nodes"

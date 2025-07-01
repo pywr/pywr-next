@@ -1,5 +1,6 @@
 mod settings;
 
+use crate::PywrError;
 use crate::edge::EdgeIndex;
 use crate::network::Network;
 use crate::node::{Node, NodeBounds, NodeType};
@@ -7,7 +8,6 @@ use crate::solvers::col_edge_map::{ColumnEdgeMap, ColumnEdgeMapBuilder};
 use crate::solvers::{MultiStateSolver, SolverFeatures, SolverTimings};
 use crate::state::State;
 use crate::timestep::Timestep;
-use crate::PywrError;
 use ipm_simd::{PathFollowingDirectSimdSolver, Tolerances};
 use rayon::iter::IndexedParallelIterator;
 use rayon::iter::ParallelIterator;
@@ -670,10 +670,7 @@ impl MultiStateSolver for SimdIpmF64Solver {
 
                     for (state, flow) in chunk_states.iter_mut().zip(flows.as_array_ref()) {
                         if !flow.is_finite() {
-                            panic!(
-                                "Non-finite flow encountered from solver. Edge: {:#?}, value: {}",
-                                edge, flow
-                            )
+                            panic!("Non-finite flow encountered from solver. Edge: {edge:#?}, value: {flow}")
                         }
                         state.get_mut_network_state().add_flow(edge, timestep, *flow).unwrap();
                     }

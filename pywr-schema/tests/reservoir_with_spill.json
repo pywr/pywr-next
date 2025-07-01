@@ -35,7 +35,8 @@
           "value": -10.0
         },
         "initial_volume": {
-          "Proportional": 1.0
+          "type": "Proportional",
+          "proportion": 1.0
         },
         "compensation": {
           "type": "Constant",

@@ -1,3 +1,4 @@
+use crate::PywrError;
 use crate::models::ModelDomain;
 use crate::network::Network;
 use crate::recorders::aggregator::PeriodValue;
@@ -5,7 +6,6 @@ use crate::recorders::{AggregationFunction, MetricSetIndex, MetricSetState, Reco
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
 use crate::timestep::Timestep;
-use crate::PywrError;
 use std::any::Any;
 use std::ops::Deref;
 use thiserror::Error;
@@ -320,8 +320,8 @@ impl Recorder for MemoryRecorder {
 #[cfg(test)]
 mod tests {
     use super::{Aggregation, InternalState};
-    use crate::recorders::aggregator::PeriodValue;
     use crate::recorders::AggregationFunction;
+    use crate::recorders::aggregator::PeriodValue;
     use crate::test_utils::default_timestepper;
     use crate::timestep::TimeDomain;
     use float_cmp::assert_approx_eq;

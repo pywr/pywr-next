@@ -1,10 +1,10 @@
+#[cfg(feature = "core")]
+use crate::SchemaError;
 use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::nodes::{NodeAttribute, NodeMeta, StorageNode};
 use crate::parameters::ConstantFloatVec;
-#[cfg(feature = "core")]
-use crate::SchemaError;
 #[cfg(feature = "core")]
 use pywr_core::derived_metric::DerivedMetric;
 #[cfg(feature = "core")]
@@ -577,7 +577,7 @@ impl ReservoirNode {
                             ty: "ReservoirNode".to_string(),
                             name: self.meta().name.clone(),
                             attr,
-                        })
+                        });
                     }
                 };
 

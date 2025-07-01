@@ -746,21 +746,21 @@ mod tests {
         for entry in fs::read_dir(doc_examples).unwrap() {
             let p = entry.unwrap().path();
             if p.is_file() {
-                let data = fs::read_to_string(&p).unwrap_or_else(|_| panic!("Failed to read file: {:?}", p));
+                let data = fs::read_to_string(&p).unwrap_or_else(|_| panic!("Failed to read file: {p:?}",));
 
                 let value: serde_json::Value =
-                    serde_json::from_str(&data).unwrap_or_else(|_| panic!("Failed to deserialize: {:?}", p));
+                    serde_json::from_str(&data).unwrap_or_else(|_| panic!("Failed to deserialize: {p:?}",));
 
                 match value {
                     serde_json::Value::Object(_) => {
                         let _ = serde_json::from_value::<Parameter>(value)
-                            .unwrap_or_else(|_| panic!("Failed to deserialize: {:?}", p));
+                            .unwrap_or_else(|_| panic!("Failed to deserialize: {p:?}",));
                     }
                     serde_json::Value::Array(_) => {
                         let _ = serde_json::from_value::<Vec<Parameter>>(value)
-                            .unwrap_or_else(|_| panic!("Failed to deserialize: {:?}", p));
+                            .unwrap_or_else(|_| panic!("Failed to deserialize: {p:?}",));
                     }
-                    _ => panic!("Expected JSON object or array: {:?}", p),
+                    _ => panic!("Expected JSON object or array: {p:?}",),
                 }
             }
         }

@@ -49,7 +49,7 @@ pub use discount_factor::DiscountFactorParameter;
 pub use division::DivisionParameter;
 pub use hydropower::{HydropowerTargetData, HydropowerTargetParameter};
 pub use indexed_array::IndexedArrayParameter;
-pub use interpolate::{interpolate, linear_interpolation, InterpolationError};
+pub use interpolate::{InterpolationError, interpolate, linear_interpolation};
 pub use interpolated::InterpolatedParameter;
 pub use max::MaxParameter;
 pub use min::MinParameter;
@@ -247,9 +247,9 @@ impl<T> Eq for ParameterIndex<T> {}
 impl<T> Display for ParameterIndex<T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Const(idx) => write!(f, "{}", idx),
-            Self::Simple(idx) => write!(f, "{}", idx),
-            Self::General(idx) => write!(f, "{}", idx),
+            Self::Const(idx) => write!(f, "{idx}",),
+            Self::Simple(idx) => write!(f, "{idx}",),
+            Self::General(idx) => write!(f, "{idx}",),
         }
     }
 }
@@ -1402,10 +1402,10 @@ mod tests {
         ConstParameter, GeneralParameter, Parameter, ParameterCollection, ParameterMeta, ParameterState,
         SimpleParameter,
     };
+    use crate::PywrError;
     use crate::scenario::ScenarioIndex;
     use crate::state::{ConstParameterValues, MultiValue};
     use crate::timestep::{TimestepDuration, Timestepper};
-    use crate::PywrError;
     use chrono::NaiveDateTime;
 
     // TODO tests need re-enabling

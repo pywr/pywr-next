@@ -1,3 +1,4 @@
+use crate::PywrError;
 use crate::metric::MetricF64;
 use crate::network::Network;
 use crate::parameters::interpolate::linear_interpolation;
@@ -5,7 +6,6 @@ use crate::parameters::{GeneralParameter, Parameter, ParameterMeta, ParameterNam
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
 use crate::timestep::Timestep;
-use crate::PywrError;
 
 /// A parameter that interpolates a value to a function with given discrete data points.
 pub struct InterpolatedParameter {

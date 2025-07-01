@@ -1,13 +1,13 @@
+use crate::PywrError;
 use crate::metric::{MetricF64, MetricU64, SimpleMetricF64, SimpleMetricU64};
 use crate::network::Network;
 use crate::parameters::{
-    downcast_internal_state_mut, downcast_internal_state_ref, AggFunc, AggIndexFunc, GeneralParameter, Parameter,
-    ParameterMeta, ParameterName, ParameterState, SimpleParameter,
+    AggFunc, AggIndexFunc, GeneralParameter, Parameter, ParameterMeta, ParameterName, ParameterState, SimpleParameter,
+    downcast_internal_state_mut, downcast_internal_state_ref,
 };
 use crate::scenario::ScenarioIndex;
 use crate::state::{SimpleParameterValues, State};
 use crate::timestep::Timestep;
-use crate::PywrError;
 use std::collections::VecDeque;
 
 /// A rolling parameter that computes an aggregated value over a specified window of metric

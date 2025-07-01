@@ -9,9 +9,9 @@ use crate::parameters::{DynamicFloatValueType, ParameterMeta};
 use crate::visit::{VisitMetrics, VisitPaths};
 #[cfg(all(feature = "core", feature = "pyo3"))]
 use pyo3::{
+    IntoPyObjectExt, PyObject, Python,
     prelude::{IntoPyObject, Py, PyAny, PyAnyMethods, PyModule},
     types::{PyDict, PyString, PyTuple},
-    IntoPyObjectExt, PyObject, Python,
 };
 #[cfg(feature = "core")]
 use pywr_core::parameters::ParameterType;

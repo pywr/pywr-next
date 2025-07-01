@@ -4,7 +4,7 @@ use crate::error::{ComponentConversionError, ConversionError};
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::parameters::{ConstantFloatVec, ConstantValue, ConversionData, ParameterMeta};
-use crate::v1::{try_convert_values, FromV1, IntoV2, TryFromV1};
+use crate::v1::{FromV1, IntoV2, TryFromV1, try_convert_values};
 #[cfg(feature = "core")]
 use pywr_core::parameters::{ParameterIndex, WeeklyProfileError, WeeklyProfileValues};
 use pywr_schema_macros::PywrVisitAll;
@@ -388,7 +388,7 @@ impl TryFromV1<RbfProfileParameterV1> for RbfProfileParameter {
                     attr: "epsilon".to_string(),
                     error: ConversionError::UnexpectedType {
                         expected: "float".to_string(),
-                        actual: format!("{}", epsilon_value),
+                        actual: format!("{epsilon_value}"),
                     },
                 });
             }
@@ -411,7 +411,7 @@ impl TryFromV1<RbfProfileParameterV1> for RbfProfileParameter {
                             name: meta.name,
                             attr: "rbf_kwargs".to_string(),
                             error: ConversionError::UnsupportedFeature {
-                                feature: format!("Radial basis function `{}` not supported.", function_str),
+                                feature: format!("Radial basis function `{function_str}` not supported."),
                             },
                         });
                     }
@@ -422,7 +422,7 @@ impl TryFromV1<RbfProfileParameterV1> for RbfProfileParameter {
                     attr: "rbf_kwargs".to_string(),
                     error: ConversionError::UnexpectedType {
                         expected: "string".to_string(),
-                        actual: format!("{}", function_value),
+                        actual: format!("{function_value}"),
                     },
                 });
             }

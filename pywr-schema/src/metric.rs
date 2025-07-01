@@ -1,3 +1,4 @@
+use crate::ConversionError;
 use crate::data_tables::TableDataRef;
 use crate::edge::Edge;
 use crate::error::ComponentConversionError;
@@ -15,7 +16,6 @@ use crate::parameters::ParameterType;
 use crate::timeseries::TimeseriesColumns;
 use crate::timeseries::TimeseriesReference;
 use crate::v1::{ConversionData, TryFromV1, TryIntoV2};
-use crate::ConversionError;
 #[cfg(feature = "core")]
 use pywr_core::{
     metric::{MetricF64, MetricU64},

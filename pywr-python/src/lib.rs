@@ -1,8 +1,9 @@
 use chrono::NaiveDateTime;
+use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyTuple, PyType};
-use pyo3::IntoPyObjectExt;
+use pywr_core::PywrError;
 #[cfg(any(feature = "ipm-ocl", feature = "ipm-simd"))]
 use pywr_core::solvers::MultiStateSolver;
 #[cfg(feature = "ipm-ocl")]
@@ -12,7 +13,6 @@ use pywr_core::solvers::{ClpSolver, ClpSolverSettings, ClpSolverSettingsBuilder,
 use pywr_core::solvers::{HighsSolver, HighsSolverSettings, HighsSolverSettingsBuilder};
 #[cfg(feature = "ipm-simd")]
 use pywr_core::solvers::{SimdIpmF64Solver, SimdIpmSolverSettings, SimdIpmSolverSettingsBuilder};
-use pywr_core::PywrError;
 use pywr_schema::model::Date;
 use pywr_schema::{ComponentConversionError, ConversionData, ConversionError, TryIntoV2};
 use std::fmt;
@@ -219,7 +219,7 @@ impl Model {
             "clipm-f64" => {
                 run_multi_allowing_threads::<ClIpmF64Solver>(py, &self.model, &ClIpmSolverSettings::default())?
             }
-            _ => return Err(PyRuntimeError::new_err(format!("Unknown solver: {}", solver_name))),
+            _ => return Err(PyRuntimeError::new_err(format!("Unknown solver: {solver_name}",))),
         }
 
         Ok(())
@@ -248,8 +248,7 @@ fn build_clp_settings(kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<ClpSolverS
 
         if !kwargs.is_empty() {
             return Err(PyRuntimeError::new_err(format!(
-                "Unknown keyword arguments: {:?}",
-                kwargs
+                "Unknown keyword arguments: {kwargs:?}",
             )));
         }
     }
@@ -280,8 +279,7 @@ fn build_highs_settings(kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<HighsSol
 
         if !kwargs.is_empty() {
             return Err(PyRuntimeError::new_err(format!(
-                "Unknown keyword arguments: {:?}",
-                kwargs
+                "Unknown keyword arguments: {kwargs:?}",
             )));
         }
     }
