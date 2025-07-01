@@ -2,7 +2,6 @@ use crate::metric::{
     ConstantMetricF64Error, MetricF64Error, MetricU64Error, SimpleMetricF64Error, SimpleMetricU64Error,
 };
 use crate::parameters::InterpolationError;
-use pyo3::PyErr;
 use thiserror::Error;
 
 /// Errors returned during parameter setup.
@@ -10,7 +9,7 @@ use thiserror::Error;
 pub enum ParameterSetupError {
     #[cfg(feature = "pyo3")]
     #[error("Python error: {0}")]
-    PythonError(#[from] PyErr),
+    PythonError(#[from] pyo3::PyErr),
 }
 
 /// Errors returned by parameter calculations.
@@ -30,7 +29,7 @@ pub enum ParameterCalculationError {
     Internal { message: String },
     #[cfg(feature = "pyo3")]
     #[error("Python error: {0}")]
-    PythonError(#[from] PyErr),
+    PythonError(#[from] pyo3::PyErr),
 }
 
 #[derive(Error, Debug)]
