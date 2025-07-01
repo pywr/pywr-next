@@ -1,6 +1,6 @@
-use crate::PywrError;
-use crate::metric::{MetricF64, MetricU64, SimpleMetricF64, SimpleMetricU64};
+use crate::metric::{MetricF64, MetricF64Error, MetricU64, MetricU64Error, SimpleMetricF64, SimpleMetricU64};
 use crate::network::Network;
+use crate::parameters::errors::{ParameterCalculationError, ParameterSetupError, SimpleCalculationError};
 use crate::parameters::{
     GeneralParameter, Parameter, ParameterMeta, ParameterName, ParameterState, SimpleParameter,
     downcast_internal_state_mut,
@@ -32,7 +32,7 @@ impl<T> TryInto<DelayParameter<SimpleMetricF64, T>> for &DelayParameter<MetricF6
 where
     T: Copy,
 {
-    type Error = PywrError;
+    type Error = MetricF64Error;
 
     fn try_into(self) -> Result<DelayParameter<SimpleMetricF64, T>, Self::Error> {
         Ok(DelayParameter {
@@ -48,7 +48,7 @@ impl<T> TryInto<DelayParameter<SimpleMetricU64, T>> for &DelayParameter<MetricU6
 where
     T: Copy,
 {
-    type Error = PywrError;
+    type Error = MetricU64Error;
 
     fn try_into(self) -> Result<DelayParameter<SimpleMetricU64, T>, Self::Error> {
         Ok(DelayParameter {
@@ -73,7 +73,7 @@ where
         &self,
         _timesteps: &[Timestep],
         _scenario_index: &ScenarioIndex,
-    ) -> Result<Option<Box<dyn ParameterState>>, PywrError> {
+    ) -> Result<Option<Box<dyn ParameterState>>, ParameterSetupError> {
         // Internally we need to store a history of previous values
         let memory: VecDeque<T> = (0..self.delay).map(|_| self.initial_value).collect();
         Ok(Some(Box::new(memory)))
@@ -88,15 +88,16 @@ impl GeneralParameter<f64> for DelayParameter<MetricF64, f64> {
         _model: &Network,
         _state: &State,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<f64, PywrError> {
+    ) -> Result<f64, ParameterCalculationError> {
         // Downcast the internal state to the correct type
         let memory = downcast_internal_state_mut::<VecDeque<f64>>(internal_state);
 
         // Take the oldest value from the queue
         // It should be guaranteed that the internal memory/queue has self.delay number of values
-        let value = memory
-            .pop_front()
-            .expect("Delay parameter queue did not contain any values. This internal error should not be possible!");
+        let value = memory.pop_front().ok_or_else(|| ParameterCalculationError::Internal {
+            message: "Delay parameter queue did not contain any values. This internal error should not be possible!"
+                .into(),
+        })?;
 
         Ok(value)
     }
@@ -108,7 +109,7 @@ impl GeneralParameter<f64> for DelayParameter<MetricF64, f64> {
         model: &Network,
         state: &State,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<(), PywrError> {
+    ) -> Result<(), ParameterCalculationError> {
         // Downcast the internal state to the correct type
         let memory = downcast_internal_state_mut::<VecDeque<f64>>(internal_state);
 
@@ -143,15 +144,16 @@ impl SimpleParameter<f64> for DelayParameter<SimpleMetricF64, f64> {
         _scenario_index: &ScenarioIndex,
         _values: &SimpleParameterValues,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<f64, PywrError> {
+    ) -> Result<f64, SimpleCalculationError> {
         // Downcast the internal state to the correct type
         let memory = downcast_internal_state_mut::<VecDeque<f64>>(internal_state);
 
         // Take the oldest value from the queue
         // It should be guaranteed that the internal memory/queue has self.delay number of values
-        let value = memory
-            .pop_front()
-            .expect("Delay parameter queue did not contain any values. This internal error should not be possible!");
+        let value = memory.pop_front().ok_or_else(|| SimpleCalculationError::Internal {
+            message: "Delay parameter queue did not contain any values. This internal error should not be possible!"
+                .into(),
+        })?;
 
         Ok(value)
     }
@@ -162,7 +164,7 @@ impl SimpleParameter<f64> for DelayParameter<SimpleMetricF64, f64> {
         _scenario_index: &ScenarioIndex,
         values: &SimpleParameterValues,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<(), PywrError> {
+    ) -> Result<(), SimpleCalculationError> {
         // Downcast the internal state to the correct type
         let memory = downcast_internal_state_mut::<VecDeque<f64>>(internal_state);
 
@@ -189,15 +191,16 @@ impl GeneralParameter<u64> for DelayParameter<MetricU64, u64> {
         _model: &Network,
         _state: &State,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<u64, PywrError> {
+    ) -> Result<u64, ParameterCalculationError> {
         // Downcast the internal state to the correct type
         let memory = downcast_internal_state_mut::<VecDeque<u64>>(internal_state);
 
         // Take the oldest value from the queue
         // It should be guaranteed that the internal memory/queue has self.delay number of values
-        let value = memory
-            .pop_front()
-            .expect("Delay parameter queue did not contain any values. This internal error should not be possible!");
+        let value = memory.pop_front().ok_or_else(|| ParameterCalculationError::Internal {
+            message: "Delay parameter queue did not contain any values. This internal error should not be possible!"
+                .into(),
+        })?;
 
         Ok(value)
     }
@@ -209,7 +212,7 @@ impl GeneralParameter<u64> for DelayParameter<MetricU64, u64> {
         model: &Network,
         state: &State,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<(), PywrError> {
+    ) -> Result<(), ParameterCalculationError> {
         // Downcast the internal state to the correct type
         let memory = downcast_internal_state_mut::<VecDeque<u64>>(internal_state);
 
@@ -244,15 +247,16 @@ impl SimpleParameter<u64> for DelayParameter<SimpleMetricU64, u64> {
         _scenario_index: &ScenarioIndex,
         _values: &SimpleParameterValues,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<u64, PywrError> {
+    ) -> Result<u64, SimpleCalculationError> {
         // Downcast the internal state to the correct type
         let memory = downcast_internal_state_mut::<VecDeque<u64>>(internal_state);
 
         // Take the oldest value from the queue
         // It should be guaranteed that the internal memory/queue has self.delay number of values
-        let value = memory
-            .pop_front()
-            .expect("Delay parameter queue did not contain any values. This internal error should not be possible!");
+        let value = memory.pop_front().ok_or_else(|| SimpleCalculationError::Internal {
+            message: "Delay parameter queue did not contain any values. This internal error should not be possible!"
+                .into(),
+        })?;
 
         Ok(value)
     }
@@ -263,7 +267,7 @@ impl SimpleParameter<u64> for DelayParameter<SimpleMetricU64, u64> {
         _scenario_index: &ScenarioIndex,
         values: &SimpleParameterValues,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<(), PywrError> {
+    ) -> Result<(), SimpleCalculationError> {
         // Downcast the internal state to the correct type
         let memory = downcast_internal_state_mut::<VecDeque<u64>>(internal_state);
 

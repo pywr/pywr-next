@@ -76,8 +76,18 @@ impl RiverGaugeNode {
         network: &pywr_core::network::Network,
     ) -> Result<Vec<pywr_core::node::NodeIndex>, SchemaError> {
         let indices = vec![
-            network.get_node_index_by_name(self.meta.name.as_str(), Self::mrf_sub_name())?,
-            network.get_node_index_by_name(self.meta.name.as_str(), Self::bypass_sub_name())?,
+            network
+                .get_node_index_by_name(self.meta.name.as_str(), Self::mrf_sub_name())
+                .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                    name: self.meta.name.clone(),
+                    sub_name: Self::mrf_sub_name().map(String::from),
+                })?,
+            network
+                .get_node_index_by_name(self.meta.name.as_str(), Self::bypass_sub_name())
+                .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                    name: self.meta.name.clone(),
+                    sub_name: Self::bypass_sub_name().map(String::from),
+                })?,
         ];
         Ok(indices)
     }
@@ -119,8 +129,18 @@ impl RiverGaugeNode {
         let attr = attribute.unwrap_or(Self::DEFAULT_ATTRIBUTE);
 
         let indices = vec![
-            network.get_node_index_by_name(self.meta.name.as_str(), Self::mrf_sub_name())?,
-            network.get_node_index_by_name(self.meta.name.as_str(), Self::bypass_sub_name())?,
+            network
+                .get_node_index_by_name(self.meta.name.as_str(), Self::mrf_sub_name())
+                .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                    name: self.meta.name.clone(),
+                    sub_name: Self::mrf_sub_name().map(String::from),
+                })?,
+            network
+                .get_node_index_by_name(self.meta.name.as_str(), Self::bypass_sub_name())
+                .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                    name: self.meta.name.clone(),
+                    sub_name: Self::bypass_sub_name().map(String::from),
+                })?,
         ];
 
         let metric = match attr {

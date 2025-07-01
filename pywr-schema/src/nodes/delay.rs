@@ -72,7 +72,14 @@ impl DelayNode {
         &self,
         network: &pywr_core::network::Network,
     ) -> Result<Vec<pywr_core::node::NodeIndex>, SchemaError> {
-        let indices = vec![network.get_node_index_by_name(self.meta.name.as_str(), Self::input_sub_now())?];
+        let indices = vec![
+            network
+                .get_node_index_by_name(self.meta.name.as_str(), Self::input_sub_now())
+                .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                    name: self.meta.name.clone(),
+                    sub_name: Self::input_sub_now().map(String::from),
+                })?,
+        ];
         Ok(indices)
     }
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
@@ -89,7 +96,12 @@ impl DelayNode {
     ) -> Result<(), SchemaError> {
         // Create the delay parameter using the node's name as the parent identifier
         let name = ParameterName::new("delay", Some(self.meta.name.as_str()));
-        let output_idx = network.get_node_index_by_name(self.meta.name.as_str(), Self::output_sub_name())?;
+        let output_idx = network
+            .get_node_index_by_name(self.meta.name.as_str(), Self::output_sub_name())
+            .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                name: self.meta.name.clone(),
+                sub_name: Self::output_sub_name().map(String::from),
+            })?;
         let metric = MetricF64::NodeInFlow(output_idx);
         let p =
             pywr_core::parameters::DelayParameter::new(name, metric, self.delay, self.initial_value.load(args.tables)?);
@@ -113,11 +125,21 @@ impl DelayNode {
 
         let metric = match attr {
             NodeAttribute::Outflow => {
-                let idx = network.get_node_index_by_name(self.meta.name.as_str(), Self::input_sub_now())?;
+                let idx = network
+                    .get_node_index_by_name(self.meta.name.as_str(), Self::input_sub_now())
+                    .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                        name: self.meta.name.clone(),
+                        sub_name: Self::input_sub_now().map(String::from),
+                    })?;
                 MetricF64::NodeOutFlow(idx)
             }
             NodeAttribute::Inflow => {
-                let idx = network.get_node_index_by_name(self.meta.name.as_str(), Self::output_sub_name())?;
+                let idx = network
+                    .get_node_index_by_name(self.meta.name.as_str(), Self::output_sub_name())
+                    .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                        name: self.meta.name.clone(),
+                        sub_name: Self::output_sub_name().map(String::from),
+                    })?;
                 MetricF64::NodeInFlow(idx)
             }
             _ => {

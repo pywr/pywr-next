@@ -1,9 +1,8 @@
-use crate::PywrError;
 use crate::metric::MetricF64;
 use crate::models::{Model, ModelDomain};
 /// Utilities for unit tests.
 /// TODO move this to its own local crate ("test-utilities") as part of a workspace.
-use crate::network::Network;
+use crate::network::{Network, NetworkError};
 use crate::node::StorageInitialVolume;
 use crate::parameters::{AggFunc, AggregatedParameter, Array2Parameter, ConstantParameter, GeneralParameter};
 use crate::recorders::{AssertionF64Recorder, AssertionU64Recorder};
@@ -336,7 +335,7 @@ fn make_simple_system<R: Rng>(
     num_inflow_scenarios: usize,
     inflow_scenario_group_index: usize,
     rng: &mut R,
-) -> Result<(), PywrError> {
+) -> Result<(), NetworkError> {
     let input_idx = network.add_input_node("input", Some(suffix))?;
     let link_idx = network.add_link_node("link", Some(suffix))?;
     let output_idx = network.add_output_node("output", Some(suffix))?;
@@ -383,7 +382,7 @@ fn make_simple_connections<R: Rng>(
     num_systems: usize,
     density: usize,
     rng: &mut R,
-) -> Result<(), PywrError> {
+) -> Result<(), NetworkError> {
     let num_connections = (num_systems.pow(2) * density / 100 / 2).max(1);
 
     let mut connections_added: usize = 0;
@@ -403,9 +402,13 @@ fn make_simple_connections<R: Rng>(
             model.set_node_cost("transfer", Some(&name), Some(transfer_cost.into()))?;
 
             let from_suffix = format!("sys-{i:04}");
-            let from_idx = model.get_node_index_by_name("link", Some(&from_suffix))?;
+            let from_idx = model
+                .get_node_index_by_name("link", Some(&from_suffix))
+                .expect("missing link node");
             let to_suffix = format!("sys-{j:04}");
-            let to_idx = model.get_node_index_by_name("link", Some(&to_suffix))?;
+            let to_idx = model
+                .get_node_index_by_name("link", Some(&to_suffix))
+                .expect("missing link node");
 
             model.connect_nodes(from_idx, idx)?;
             model.connect_nodes(idx, to_idx)?;
@@ -422,7 +425,7 @@ pub fn make_random_model<R: Rng>(
     density: usize,
     num_scenarios: usize,
     rng: &mut R,
-) -> Result<Model, PywrError> {
+) -> Result<Model, NetworkError> {
     let start = NaiveDate::from_ymd_opt(2020, 1, 1)
         .unwrap()
         .and_hms_opt(0, 0, 0)
@@ -435,10 +438,14 @@ pub fn make_random_model<R: Rng>(
     let timestepper = Timestepper::new(start, end, duration);
 
     let mut scenario_builder = ScenarioDomainBuilder::default();
-    let scenario_group = ScenarioGroupBuilder::new("test-scenario", num_scenarios).build()?;
-    scenario_builder = scenario_builder.with_group(scenario_group)?;
+    let scenario_group = ScenarioGroupBuilder::new("test-scenario", num_scenarios)
+        .build()
+        .expect("Could not create scenario group");
+    scenario_builder = scenario_builder
+        .with_group(scenario_group)
+        .expect("Could not add scenario group");
 
-    let domain = ModelDomain::from(timestepper, scenario_builder)?;
+    let domain = ModelDomain::from(timestepper, scenario_builder).expect("Could not create model domain");
 
     let inflow_scenario_group_index = domain
         .scenarios()

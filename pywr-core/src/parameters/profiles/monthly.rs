@@ -1,4 +1,4 @@
-use crate::PywrError;
+use crate::parameters::errors::SimpleCalculationError;
 use crate::parameters::{Parameter, ParameterMeta, ParameterName, ParameterState, SimpleParameter};
 use crate::scenario::ScenarioIndex;
 use crate::state::SimpleParameterValues;
@@ -81,7 +81,7 @@ impl SimpleParameter<f64> for MonthlyProfileParameter {
         _scenario_index: &ScenarioIndex,
         _values: &SimpleParameterValues,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<f64, PywrError> {
+    ) -> Result<f64, SimpleCalculationError> {
         let v = match &self.interp_day {
             Some(interp_day) => match interp_day {
                 MonthlyInterpDay::First => {

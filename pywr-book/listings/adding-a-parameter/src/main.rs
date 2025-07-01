@@ -1,11 +1,12 @@
 #![allow(dead_code)]
 use pywr_core::metric::MetricF64;
 use pywr_core::network::Network;
-use pywr_core::parameters::{GeneralParameter, Parameter, ParameterMeta, ParameterName, ParameterState};
+use pywr_core::parameters::{
+    GeneralParameter, Parameter, ParameterCalculationError, ParameterMeta, ParameterName, ParameterState,
+};
 use pywr_core::scenario::ScenarioIndex;
 use pywr_core::state::State;
 use pywr_core::timestep::Timestep;
-use pywr_core::PywrError;
 
 // ANCHOR: parameter
 pub struct MaxParameter {
@@ -40,7 +41,7 @@ impl GeneralParameter<f64> for MaxParameter {
         model: &Network,
         state: &State,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<f64, PywrError> {
+    ) -> Result<f64, ParameterCalculationError> {
         // Current value
         let x = self.metric.get_value(model, state)?;
         Ok(x.max(self.threshold))

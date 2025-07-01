@@ -54,7 +54,12 @@ impl InputNode {
         &self,
         network: &pywr_core::network::Network,
     ) -> Result<Vec<pywr_core::node::NodeIndex>, SchemaError> {
-        let idx = network.get_node_index_by_name(self.meta.name.as_str(), None)?;
+        let idx = network
+            .get_node_index_by_name(self.meta.name.as_str(), None)
+            .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                name: self.meta.name.clone(),
+                sub_name: None,
+            })?;
         Ok(vec![idx])
     }
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
@@ -93,7 +98,12 @@ impl InputNode {
         // Use the default attribute if none is specified
         let attr = attribute.unwrap_or(Self::DEFAULT_ATTRIBUTE);
 
-        let idx = network.get_node_index_by_name(self.meta.name.as_str(), None)?;
+        let idx = network
+            .get_node_index_by_name(self.meta.name.as_str(), None)
+            .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                name: self.meta.name.clone(),
+                sub_name: None,
+            })?;
 
         let metric = match attr {
             NodeAttribute::Outflow => MetricF64::NodeOutFlow(idx),
@@ -330,7 +340,12 @@ impl LinkNode {
         &self,
         network: &pywr_core::network::Network,
     ) -> Result<Vec<pywr_core::node::NodeIndex>, SchemaError> {
-        let idx = network.get_node_index_by_name(self.meta.name.as_str(), None)?;
+        let idx = network
+            .get_node_index_by_name(self.meta.name.as_str(), None)
+            .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                name: self.meta.name.clone(),
+                sub_name: None,
+            })?;
         Ok(vec![idx])
     }
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
@@ -512,21 +527,47 @@ impl LinkNode {
         // Use the default attribute if none is specified
         let attr = attribute.unwrap_or(Self::DEFAULT_ATTRIBUTE);
         let node_name = self.meta.name.as_str();
-        let link_node = network.get_node_index_by_name(node_name, None)?;
+        let link_node =
+            network
+                .get_node_index_by_name(node_name, None)
+                .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                    name: node_name.to_string(),
+                    sub_name: None,
+                })?;
 
         // combine the flow through the nodes
         let indices = match (&self.soft_min, &self.soft_max) {
             (Some(_), None) => {
-                let soft_min_node = network.get_node_index_by_name(node_name, Self::soft_min_node_sub_name())?;
+                let soft_min_node = network
+                    .get_node_index_by_name(node_name, Self::soft_min_node_sub_name())
+                    .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                        name: node_name.to_string(),
+                        sub_name: Self::soft_min_node_sub_name().map(String::from),
+                    })?;
                 vec![link_node, soft_min_node]
             }
             (None, Some(_)) => {
-                let soft_max_node = network.get_node_index_by_name(node_name, Self::soft_max_node_sub_name())?;
+                let soft_max_node = network
+                    .get_node_index_by_name(node_name, Self::soft_max_node_sub_name())
+                    .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                        name: node_name.to_string(),
+                        sub_name: Self::soft_max_node_sub_name().map(String::from),
+                    })?;
                 vec![link_node, soft_max_node]
             }
             (Some(_), Some(_)) => {
-                let soft_min_node = network.get_node_index_by_name(node_name, Self::soft_min_node_sub_name())?;
-                let soft_max_node = network.get_node_index_by_name(node_name, Self::soft_max_node_sub_name())?;
+                let soft_min_node = network
+                    .get_node_index_by_name(node_name, Self::soft_min_node_sub_name())
+                    .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                        name: node_name.to_string(),
+                        sub_name: Self::soft_min_node_sub_name().map(String::from),
+                    })?;
+                let soft_max_node = network
+                    .get_node_index_by_name(node_name, Self::soft_max_node_sub_name())
+                    .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                        name: node_name.to_string(),
+                        sub_name: Self::soft_max_node_sub_name().map(String::from),
+                    })?;
                 vec![link_node, soft_min_node, soft_max_node]
             }
             (None, None) => vec![link_node],
@@ -617,7 +658,12 @@ impl OutputNode {
         &self,
         network: &pywr_core::network::Network,
     ) -> Result<Vec<pywr_core::node::NodeIndex>, SchemaError> {
-        let idx = network.get_node_index_by_name(self.meta.name.as_str(), None)?;
+        let idx = network
+            .get_node_index_by_name(self.meta.name.as_str(), None)
+            .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                name: self.meta.name.clone(),
+                sub_name: None,
+            })?;
         Ok(vec![idx])
     }
     pub fn create_metric(
@@ -628,7 +674,12 @@ impl OutputNode {
         // Use the default attribute if none is specified
         let attr = attribute.unwrap_or(Self::DEFAULT_ATTRIBUTE);
 
-        let idx = network.get_node_index_by_name(self.meta.name.as_str(), None)?;
+        let idx = network
+            .get_node_index_by_name(self.meta.name.as_str(), None)
+            .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                name: self.meta.name.clone(),
+                sub_name: None,
+            })?;
 
         let metric = match attr {
             NodeAttribute::Inflow => MetricF64::NodeInFlow(idx),
@@ -773,7 +824,12 @@ impl StorageNode {
         &self,
         network: &pywr_core::network::Network,
     ) -> Result<Vec<pywr_core::node::NodeIndex>, SchemaError> {
-        let idx = network.get_node_index_by_name(self.meta.name.as_str(), None)?;
+        let idx = network
+            .get_node_index_by_name(self.meta.name.as_str(), None)
+            .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                name: self.meta.name.clone(),
+                sub_name: None,
+            })?;
         Ok(vec![idx])
     }
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
@@ -813,7 +869,12 @@ impl StorageNode {
         // Use the default attribute if none is specified
         let attr = attribute.unwrap_or(Self::DEFAULT_ATTRIBUTE);
 
-        let idx = network.get_node_index_by_name(self.meta.name.as_str(), None)?;
+        let idx = network
+            .get_node_index_by_name(self.meta.name.as_str(), None)
+            .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                name: self.meta.name.clone(),
+                sub_name: None,
+            })?;
 
         let metric = match attr {
             NodeAttribute::Volume => MetricF64::NodeVolume(idx),
@@ -938,7 +999,12 @@ impl CatchmentNode {
         &self,
         network: &pywr_core::network::Network,
     ) -> Result<Vec<pywr_core::node::NodeIndex>, SchemaError> {
-        let idx = network.get_node_index_by_name(self.meta.name.as_str(), None)?;
+        let idx = network
+            .get_node_index_by_name(self.meta.name.as_str(), None)
+            .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                name: self.meta.name.clone(),
+                sub_name: None,
+            })?;
         Ok(vec![idx])
     }
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
@@ -973,7 +1039,12 @@ impl CatchmentNode {
         // Use the default attribute if none is specified
         let attr = attribute.unwrap_or(Self::DEFAULT_ATTRIBUTE);
 
-        let idx = network.get_node_index_by_name(self.meta.name.as_str(), None)?;
+        let idx = network
+            .get_node_index_by_name(self.meta.name.as_str(), None)
+            .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                name: self.meta.name.clone(),
+                sub_name: None,
+            })?;
 
         let metric = match attr {
             NodeAttribute::Outflow => MetricF64::NodeOutFlow(idx),
@@ -1074,7 +1145,9 @@ impl AggregatedNode {
             .map(|node_ref| {
                 args.schema
                     .get_node_by_name(&node_ref.name)
-                    .ok_or_else(|| SchemaError::NodeNotFound(node_ref.name.to_string()))?
+                    .ok_or_else(|| SchemaError::NodeNotFound {
+                        name: node_ref.name.to_string(),
+                    })?
                     .node_indices_for_constraints(network, args)
             })
             .collect::<Result<Vec<_>, _>>()?
@@ -1091,7 +1164,9 @@ impl AggregatedNode {
                 let node = args
                     .schema
                     .get_node_by_name(&node_ref.name)
-                    .ok_or_else(|| SchemaError::NodeNotFound(node_ref.name.to_string()))?;
+                    .ok_or_else(|| SchemaError::NodeNotFound {
+                        name: node_ref.name.to_string(),
+                    })?;
                 node.node_indices_for_constraints(network, args)
             })
             .collect::<Result<Vec<_>, _>>()?;
@@ -1155,7 +1230,12 @@ impl AggregatedNode {
         // Use the default attribute if none is specified
         let attr = attribute.unwrap_or(Self::DEFAULT_ATTRIBUTE);
 
-        let idx = network.get_aggregated_node_index_by_name(self.meta.name.as_str(), None)?;
+        let idx = network
+            .get_aggregated_node_index_by_name(self.meta.name.as_str(), None)
+            .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                name: self.meta.name.clone(),
+                sub_name: None,
+            })?;
 
         let metric = match attr {
             NodeAttribute::Outflow => MetricF64::AggregatedNodeOutFlow(idx),
@@ -1259,7 +1339,9 @@ impl AggregatedStorageNode {
             .map(|node_ref| {
                 args.schema
                     .get_node_by_name(&node_ref.name)
-                    .ok_or_else(|| SchemaError::NodeNotFound(node_ref.name.to_string()))?
+                    .ok_or_else(|| SchemaError::NodeNotFound {
+                        name: node_ref.name.to_string(),
+                    })?
                     .node_indices_for_constraints(network, args)
             })
             .collect::<Result<Vec<_>, _>>()?
@@ -1272,7 +1354,14 @@ impl AggregatedStorageNode {
         let nodes = self
             .storage_nodes
             .iter()
-            .map(|node_ref| network.get_node_index_by_name(&node_ref.name, None))
+            .map(|node_ref| {
+                network
+                    .get_node_index_by_name(&node_ref.name, None)
+                    .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                        name: node_ref.name.clone(),
+                        sub_name: None,
+                    })
+            })
             .collect::<Result<_, _>>()?;
 
         network.add_aggregated_storage_node(self.meta.name.as_str(), None, nodes)?;
@@ -1287,7 +1376,12 @@ impl AggregatedStorageNode {
         // Use the default attribute if none is specified
         let attr = attribute.unwrap_or(Self::DEFAULT_ATTRIBUTE);
 
-        let idx = network.get_aggregated_storage_node_index_by_name(self.meta.name.as_str(), None)?;
+        let idx = network
+            .get_aggregated_storage_node_index_by_name(self.meta.name.as_str(), None)
+            .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                name: self.meta.name.clone(),
+                sub_name: None,
+            })?;
 
         let metric = match attr {
             NodeAttribute::Volume => MetricF64::AggregatedNodeVolume(idx),

@@ -1,6 +1,6 @@
-use crate::PywrError;
 use crate::metric::MetricF64;
 use crate::network::Network;
+use crate::parameters::errors::ParameterCalculationError;
 use crate::parameters::interpolate::linear_interpolation;
 use crate::parameters::{GeneralParameter, Parameter, ParameterMeta, ParameterName, ParameterState};
 use crate::scenario::ScenarioIndex;
@@ -38,7 +38,7 @@ impl GeneralParameter<f64> for InterpolatedParameter {
         network: &Network,
         state: &State,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<f64, PywrError> {
+    ) -> Result<f64, ParameterCalculationError> {
         // Current value
         let x = self.x.get_value(network, state)?;
 
@@ -49,7 +49,7 @@ impl GeneralParameter<f64> for InterpolatedParameter {
                 let xp = x.get_value(network, state)?;
                 let fp = f.get_value(network, state)?;
 
-                Ok::<(f64, f64), PywrError>((xp, fp))
+                Ok::<(f64, f64), ParameterCalculationError>((xp, fp))
             })
             .collect::<Result<Vec<_>, _>>()?;
 

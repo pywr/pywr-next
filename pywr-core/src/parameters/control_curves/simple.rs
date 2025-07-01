@@ -1,6 +1,6 @@
-use crate::PywrError;
 use crate::metric::MetricF64;
 use crate::network::Network;
+use crate::parameters::errors::ParameterCalculationError;
 use crate::parameters::{GeneralParameter, Parameter, ParameterMeta, ParameterName, ParameterState};
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
@@ -38,20 +38,35 @@ impl GeneralParameter<f64> for ControlCurveParameter {
         model: &Network,
         state: &State,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<f64, PywrError> {
+    ) -> Result<f64, ParameterCalculationError> {
         // Current value
         let x = self.metric.get_value(model, state)?;
 
         for (idx, control_curve) in self.control_curves.iter().enumerate() {
             let cc_value = control_curve.get_value(model, state)?;
             if x >= cc_value {
-                let value = self.values.get(idx).ok_or(PywrError::DataOutOfRange)?;
-                return value.get_value(model, state);
+                let value = self
+                    .values
+                    .get(idx)
+                    .ok_or_else(|| ParameterCalculationError::OutOfBoundsError {
+                        axis: 0,
+                        index: idx,
+                        length: self.values.len(),
+                    })?;
+                return Ok(value.get_value(model, state)?);
             }
         }
 
-        let value = self.values.last().ok_or(PywrError::DataOutOfRange)?;
-        value.get_value(model, state)
+        let value = self
+            .values
+            .last()
+            .ok_or_else(|| ParameterCalculationError::OutOfBoundsError {
+                axis: 0,
+                index: 0,
+                length: self.values.len(),
+            })?;
+
+        Ok(value.get_value(model, state)?)
     }
 
     fn as_parameter(&self) -> &dyn Parameter
