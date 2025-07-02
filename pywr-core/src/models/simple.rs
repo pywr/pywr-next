@@ -341,7 +341,7 @@ impl Model {
             .map_err(ModelFinaliseError::NetworkFinaliseError)?;
         // End the global timer and print the run statistics
         timings.finish(count);
-        timings.print_table();
+        timings.print_table(&self.network);
 
         Ok(())
     }
@@ -403,7 +403,7 @@ impl Model {
 
         // End the global timer and print the run statistics
         timings.finish(count);
-        timings.print_table();
+        timings.print_table(&self.network);
 
         Ok(())
     }

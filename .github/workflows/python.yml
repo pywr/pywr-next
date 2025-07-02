@@ -1,4 +1,4 @@
-# Python workflow for building and testing wheels.
+# Python workflow for checking formatting, linting, and running tests on both Windows and Linux using GitHub Actions.
 
 name: Python
 
@@ -24,15 +24,10 @@ jobs:
         run: uv sync --locked --all-extras --dev
       - name: Check formatting
         run: uv run ruff format --check
+      - name: Check linting
+        run: uv run ruff check
       - name: Run tests
         run: uv run pytest pywr-python/tests
-      - name: Build the wheels
-        run: uv build
-      - name: Upload wheels
-        uses: actions/upload-artifact@v4
-        with:
-          name: wheels-win-cp310-abi3
-          path: dist
 
   linux:
     runs-on: ubuntu-latest
@@ -51,13 +46,9 @@ jobs:
         run: uv sync --locked --all-extras --dev
       - name: Check formatting
         run: uv run ruff format --check
+      - name: Check linting
+        run: uv run ruff check
       - name: Run tests
         run: uv run pytest pywr-python/tests
-      - name: Build the wheels
-        run: uv build
-      - name: Upload wheels
-        uses: actions/upload-artifact@v4
-        with:
-          name: wheels-linux-cp310-abi3
-          path: dist
+
 

@@ -66,10 +66,11 @@ pub use profiles::{
     WeeklyProfileParameter, WeeklyProfileValues,
 };
 #[cfg(feature = "pyo3")]
-pub use py::PyParameter;
+pub use py::{ParameterInfo, PyParameter};
 pub use rolling::RollingParameter;
 use std::fmt;
 use std::fmt::{Display, Formatter};
+use std::hash::{Hash, Hasher};
 use std::marker::PhantomData;
 use std::ops::Deref;
 use thiserror::Error;
@@ -224,6 +225,12 @@ impl<T> Deref for GeneralParameterIndex<T> {
 impl<T> Display for GeneralParameterIndex<T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.idx)
+    }
+}
+
+impl<T> Hash for GeneralParameterIndex<T> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.idx.hash(state);
     }
 }
 
@@ -637,6 +644,7 @@ pub trait ConstParameter<T>: Parameter {
     fn as_parameter(&self) -> &dyn Parameter;
 }
 
+#[derive(Hash, PartialEq, Eq, Clone, Copy)]
 pub enum GeneralParameterType {
     Parameter(GeneralParameterIndex<f64>),
     Index(GeneralParameterIndex<u64>),

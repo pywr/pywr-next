@@ -563,7 +563,7 @@ impl MultiNetworkModel {
 
         // End the global timer and print the run statistics
         timings.finish(count);
-        timings.print_table();
+        // timings.print_table(&self);
 
         Ok(())
     }
@@ -612,7 +612,7 @@ impl MultiNetworkModel {
 
         // End the global timer and print the run statistics
         timings.finish(count);
-        timings.print_table();
+        // timings.print_table(&self.network);
 
         Ok(())
     }

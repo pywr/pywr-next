@@ -1,6 +1,5 @@
 [project]
 name = "pywr"
-version = "2.0.0beta"
 description = ""
 authors = [
     { name = "James Tomlinson", email = "tomo.bbe@gmail.com" }
@@ -14,6 +13,7 @@ dependencies = [
     "pyarrow",
     "click",
 ]
+dynamic = ["version"]
 
 [project.optional-dependencies]
 excel = ["openpyxl"]

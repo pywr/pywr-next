@@ -11,7 +11,7 @@ use std::num::NonZeroUsize;
 use std::ops::{Deref, DerefMut};
 use thiserror::Error;
 
-#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Debug)]
+#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Debug, Hash)]
 pub struct VirtualStorageIndex(usize);
 
 impl Deref for VirtualStorageIndex {

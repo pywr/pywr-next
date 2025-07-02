@@ -335,7 +335,6 @@ wheels = [
 
 [[package]]
 name = "pywr"
-version = "2.0.0b0"
 source = { editable = "." }
 dependencies = [
     { name = "click" },

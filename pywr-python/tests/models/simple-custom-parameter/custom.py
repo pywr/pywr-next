@@ -1,3 +1,7 @@
+# This is imported only for the type hinting of the `info` argument in the `calc` method.
+from pywr import ParameterInfo
+
+
 class CustomParameter:
     """This is a custom parameter class!
 
@@ -10,6 +14,6 @@ class CustomParameter:
         self.value = value
         self.multiplier = multiplier
 
-    def calc(self, timestep, scenario_index, metrics, indices):
+    def calc(self, info: ParameterInfo):
         """This method is called to calculate the parameter value for each timestep."""
         return self.value * self.multiplier

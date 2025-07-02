@@ -1,6 +1,37 @@
 from datetime import datetime
 from os import PathLike
-from typing import Optional
+from typing import Optional, List
+
+
+class ParameterInfo:
+    """Provides data for a custom Pywr parameter.
+
+     This is a read-only object that provides information that can be used for custom parameters in Pywr. It
+     is passed as the first argument to the `calc` and `after` methods of custom parameter objects.
+     """
+
+    @property
+    def timestep(self) -> "Timestep":
+        """Returns the current time-step object."""
+
+    @property
+    def scenario_index(self) -> "ScenarioIndex":
+        """Returns the current scenario index object."""
+
+    def get_metric(self, name: str) -> float:
+        """Returns a metric by name.
+
+        Args:
+            name: The name of the metric to retrieve.
+        """
+
+    def get_index(self, name: str) -> int:
+        """Returns the index of a component by name.
+
+        Args:
+            name: The name of the component to retrieve the index for.
+        """
+
 
 class Timestep:
     """Represents a single time-step in a simulation.
@@ -55,6 +86,22 @@ class Timestep:
     def is_leap_year(self) -> bool:
         """Returns true if the year of the timestep is a leap year."""
 
+
+class ScenarioIndex:
+    """Represents a scenario index in a Pywr model.
+
+    This is a read-only object that provides information about the current scenario index.
+    """
+
+    @property
+    def simulation_id(self) -> int:
+        """Returns the current simulation id."""
+
+    @property
+    def simulation_indices(self) -> List[int]:
+        """Returns indices for each scenario group for this simulation."""
+
+
 class Schema:
     @classmethod
     def from_path(cls, path: PathLike) -> "Schema":
@@ -76,9 +123,10 @@ class Schema:
         """Serialize the schema to a JSON string."""
 
     def build(
-        self, data_path: Optional[PathLike], output_path: Optional[PathLike]
+            self, data_path: Optional[PathLike], output_path: Optional[PathLike]
     ) -> "Model":
         """Build the schema in to a Pywr model."""
+
 
 class Model:
     def run(self, solver_name: str, solver_kwargs: Optional[dict] = None):
@@ -89,9 +137,17 @@ class Model:
             solver_kwargs: Optional keyword arguments to pass to the solver.
         """
 
+
 class Metric: ...
+
+
 class ComponentConversionError: ...
+
+
 class ConversionError: ...
 
+
 def convert_model_from_v1_json_string(data: str): ...
+
+
 def convert_metric_from_v1_json_string(data: str): ...
