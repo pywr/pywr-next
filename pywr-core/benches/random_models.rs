@@ -217,7 +217,7 @@ fn bench_threads(c: &mut Criterion) {
                     .threads(n_threads)
                     .build(),
             ),
-            name: format!("threads-{}", n_threads),
+            name: format!("threads-{n_threads}"),
         });
 
         #[cfg(feature = "ipm-ocl")]
@@ -228,7 +228,7 @@ fn bench_threads(c: &mut Criterion) {
                     .threads(n_threads)
                     .build(),
             ),
-            name: format!("threads-{}", n_threads),
+            name: format!("threads-{n_threads}"),
         });
     }
 
@@ -260,7 +260,7 @@ fn bench_ipm_convergence(c: &mut Criterion) {
                     .threads(N_THREADS)
                     .build(),
             ),
-            name: format!("opt-tol-{:e}", optimality),
+            name: format!("opt-tol-{optimality:e}"),
         });
         #[cfg(feature = "ipm-ocl")]
         solver_setups.push(SolverSetup {
@@ -271,7 +271,7 @@ fn bench_ipm_convergence(c: &mut Criterion) {
                     .threads(N_THREADS)
                     .build(),
             ),
-            name: format!("opt-tol-{:e}", optimality),
+            name: format!("opt-tol-{optimality:e}"),
         });
     }
 
@@ -304,7 +304,7 @@ fn bench_ocl_chunks(c: &mut Criterion) {
                     .num_chunks(NonZeroUsize::new(num_chunks).unwrap())
                     .build(),
             ),
-            name: format!("num-chunks-{}", num_chunks),
+            name: format!("num-chunks-{num_chunks}"),
         });
     }
 
