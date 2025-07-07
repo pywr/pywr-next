@@ -33,7 +33,6 @@ use crate::error::{ComponentConversionError, ConversionError};
 use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
-use crate::parameters::delay::DelayIndexParameter;
 use crate::timeseries::ConvertedTimeseriesReference;
 use crate::v1::{ConversionData, IntoV2, TryFromV1, TryIntoV2};
 use crate::visit::{VisitMetrics, VisitPaths};
@@ -47,7 +46,7 @@ pub use core::{
     ActivationFunction, ConstantParameter, DivisionParameter, MaxParameter, MinParameter, NegativeMaxParameter,
     NegativeMinParameter, NegativeParameter, VariableSettings,
 };
-pub use delay::DelayParameter;
+pub use delay::{DelayIndexParameter, DelayParameter};
 pub use discount_factor::DiscountFactorParameter;
 pub use hydropower::HydropowerTargetParameter;
 pub use indexed_array::IndexedArrayParameter;
