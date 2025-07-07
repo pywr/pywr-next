@@ -319,8 +319,7 @@ fn build_ipm_simd_settings(kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<SimdI
 
         if !kwargs.is_empty() {
             return Err(PyRuntimeError::new_err(format!(
-                "Unknown keyword arguments: {:?}",
-                kwargs
+                "Unknown keyword arguments: {kwargs:?}",
             )));
         }
     }
