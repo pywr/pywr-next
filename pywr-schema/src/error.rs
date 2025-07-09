@@ -86,6 +86,9 @@ pub enum SchemaError {
     #[cfg(feature = "core")]
     #[error("Shape error: {0}")]
     NdarrayShape(#[from] ShapeError),
+    #[cfg(feature = "core")]
+    #[error("Placeholder node `{name}` cannot be added to a model.")]
+    PlaceholderNodeNotAllowed { name: String },
 }
 
 #[cfg(all(feature = "core", feature = "pyo3"))]
