@@ -257,10 +257,7 @@ impl NodeBuilder {
                 },
                 ..Default::default()
             }),
-            NodeType::Placeholder => Node::Placeholder(PlaceholderNode {
-                meta,
-                ..Default::default()
-            }),
+            NodeType::Placeholder => Node::Placeholder(PlaceholderNode { meta }),
         }
     }
 }
