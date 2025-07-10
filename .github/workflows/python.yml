@@ -1,7 +1,4 @@
 # Python workflow for building and testing wheels.
-#
-# TODO: Ideally the runtime dependencies would be installed by pip from pyproject.toml
-# However, this is not currently possible to do with pip: https://github.com/pypa/pip/issues/11440
 
 name: Python
 
@@ -10,244 +7,65 @@ on:
   pull_request:
 
 jobs:
-
-  # Mac OS X does not work with the HDF5 crate for some reason.
-  #  macos:
-  #    runs-on: macos-latest
-  #    strategy:
-  #      matrix:
-  #        python-version: [ '3.9', '3.10', '3.11', '3.12' ]
-  #    steps:
-  #      - uses: actions/checkout@v4
-  #        with:
-  #          submodules: true
-  #      - uses: actions/setup-python@v5
-  #        with:
-  #          python-version: ${{ matrix.python-version }}
-  #          architecture: x64
-  #      - uses: dtolnay/rust-toolchain@stable
-  #      - name: Build wheels - x86_64
-  #        uses: PyO3/maturin-action@v1
-  #        with:
-  #          target: x86_64
-  #          args: --release --out dist --sdist -m pywr-python/Cargo.toml
-  #      - name: Install built wheel - x86_64
-  #        run: |
-  #          pip install pytest h5py pandas polars pyarrow click
-  #          pip install pywr --no-index --find-links dist --force-reinstall --no-deps
-  #          python -c "import pywr"
-  #          python -m pytest
-  #      - name: Build wheels - universal2
-  #        uses: PyO3/maturin-action@v1
-  #        with:
-  #          target: universal2-apple-darwin
-  #          args: -i ${{ matrix.python-version }} --release --out dist -m pywr-python/Cargo.toml
-  #      - name: Install built wheel - universal2
-  #        run: |
-  #          pip install pytest h5py pandas polars pyarrow click
-  #          pip install pywr --no-index --find-links dist --force-reinstall --no-deps
-  #          python -c "import pywr"
-  #          python -m pytest
-  #      - name: Upload wheels
-  #        uses: actions/upload-artifact@v4
-  #        with:
-  #          name: wheels
-  #          path: dist
-
   windows:
     runs-on: windows-latest
     strategy:
       matrix:
-        # We produce abi3-py39 wheels for Python 3.9 later.
+        # We produce abi3-py310 wheels for Python 3.10 later.
         # If this is changed, then the PyO3 feature in the pywr-python/Cargo.toml file must also be updated.
-        python-version: [ '3.9' ]
+        python-version: [ '3.10' ]
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: true
       - uses: swatinem/rust-cache@v2
-      - uses: actions/setup-python@v5
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
         with:
-          python-version: ${{ matrix.python-version }}
-          architecture: x64
+          enable-cache: true
       - uses: dtolnay/rust-toolchain@stable
-      - name: Build wheels
-        uses: PyO3/maturin-action@v1
-        with:
-          target: ${{ matrix.target }}
-          args: -i ${{ matrix.python-version }} --release --out dist -m pywr-python/Cargo.toml
-      - name: Install built wheel
-        run: |
-          pip install pytest h5py pandas polars pyarrow click
-          pip install pywr --no-index --find-links dist --force-reinstall --no-deps
-          python -c "import pywr"
-          python -m pytest
+      - name: Install the project
+        run: uv sync --locked --all-extras --dev
+      - name: Check formatting
+        run: uv run ruff format --check
+      - name: Run tests
+        run: uv run pytest tests
+      - name: Build the wheels
+        run: uv build
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:
-          name: wheels-win-${{ matrix.python-version }}
+          name: wheels-win-${{ matrix.python-version }}-abi3
           path: dist
 
   linux:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        # We produce abi3-py39 wheels for Python 3.9 later.
+        # We produce abi3-py310 wheels for Python 3.10 later.
         # If this is changed, then the PyO3 feature in the pywr-python/Cargo.toml file must also be updated.
-        python-version: [ '3.9' ]
+        python-version: [ '3.10' ]
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: true
       - uses: swatinem/rust-cache@v2
-      - uses: actions/setup-python@v5
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
         with:
-          python-version: ${{ matrix.python-version }}
-          architecture: x64
-      - name: Build wheels
-        uses: PyO3/maturin-action@v1
-        with:
-          target: ${{ matrix.target }}
-          manylinux: auto
-          args: -i ${{ matrix.python-version }} --release --out dist -m pywr-python/Cargo.toml
-      - name: Install built wheel
-        run: |
-          pip install pytest h5py pandas polars pyarrow click
-          pip install pywr --no-index --find-links dist --force-reinstall --no-deps
-          python -c "import pywr"
-          python -m pytest
+          enable-cache: true
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install the project
+        run: uv sync --locked --all-extras --dev
+      - name: Check formatting
+        run: uv run ruff format --check
+      - name: Run tests
+        run: uv run pytest tests
+      - name: Build the wheels
+        run: uv build
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:
-          name: wheels-linux-${{ matrix.python-version }}
+          name: wheels-linux-${{ matrix.python-version }}-abi3
           path: dist
 
-#  linux-cross:
-#    runs-on: ubuntu-latest
-#    strategy:
-#      matrix:
-#        target: [aarch64, armv7, s390x, ppc64le, ppc64]
-#    steps:
-#      - uses: actions/checkout@v4
-#      - uses: actions/setup-python@v4
-#        with:
-#          python-version: 3.9
-#      - name: Build wheels
-#        uses: PyO3/maturin-action@v1
-#        with:
-#          target: ${{ matrix.target }}
-#          manylinux: auto
-#          args: --release --out dist -m python/Cargo.toml
-#      - uses: uraimo/run-on-arch-action@v2.6.0
-#        if: matrix.target != 'ppc64'
-#        name: Install built wheel
-#        with:
-#          arch: ${{ matrix.target }}
-#          distro: ubuntu20.04
-#          githubToken: ${{ github.token }}
-#          install: |
-#            apt-get update
-#            apt-get install -y --no-install-recommends python3 python3-pip
-#            pip3 install -U pip
-#          run: |
-#            pip3 install crfs --no-index --find-links dist/ --force-reinstall
-#            python3 -c "import crfs"
-#      - name: Upload wheels
-#        uses: actions/upload-artifact@v4
-#        with:
-#          name: wheels
-#          path: dist
-
-#  musllinux:
-#    runs-on: ubuntu-latest
-#    strategy:
-#      matrix:
-#        target:
-#          - x86_64-unknown-linux-musl
-#          - i686-unknown-linux-musl
-#    steps:
-#      - uses: actions/checkout@v4
-#      - uses: actions/setup-python@v4
-#        with:
-#          python-version: 3.9
-#          architecture: x64
-#      - name: Build wheels
-#        uses: PyO3/maturin-action@v1
-#        with:
-#          target: ${{ matrix.target }}
-#          manylinux: musllinux_1_2
-#          args: --release --out dist -m python/Cargo.toml
-#      - name: Install built wheel
-#        if: matrix.target == 'x86_64-unknown-linux-musl'
-#        uses: addnab/docker-run-action@v3
-#        with:
-#          image: alpine:latest
-#          options: -v ${{ github.workspace }}:/io -w /io
-#          run: |
-#            apk add py3-pip
-#            pip3 install -U pip
-#            pip3 install crfs --no-index --find-links /io/dist/ --force-reinstall
-#            python3 -c "import crfs"
-#      - name: Upload wheels
-#        uses: actions/upload-artifact@v4
-#        with:
-#          name: wheels
-#          path: dist
-#
-#  musllinux-cross:
-#    runs-on: ubuntu-latest
-#    strategy:
-#      matrix:
-#        platform:
-#          - target: aarch64-unknown-linux-musl
-#            arch: aarch64
-#          - target: armv7-unknown-linux-musleabihf
-#            arch: armv7
-#    steps:
-#      - uses: actions/checkout@v4
-#      - uses: actions/setup-python@v4
-#        with:
-#          python-version: 3.9
-#      - name: Build wheels
-#        uses: PyO3/maturin-action@v1
-#        with:
-#          target: ${{ matrix.platform.target }}
-#          manylinux: musllinux_1_2
-#          args: --release --out dist -m python/Cargo.toml
-#      - uses: uraimo/run-on-arch-action@v2.6.0
-#        name: Install built wheel
-#        with:
-#          arch: ${{ matrix.platform.arch }}
-#          distro: alpine_latest
-#          githubToken: ${{ github.token }}
-#          install: |
-#            apk add py3-pip
-#            pip3 install -U pip
-#          run: |
-#            pip3 install crfs --no-index --find-links dist/ --force-reinstall
-#            python3 -c "import crfs"
-#      - name: Upload wheels
-#        uses: actions/upload-artifact@v4
-#        with:
-#          name: wheels
-#          path: dist
-#
-#  release:
-#    name: Release
-#    runs-on: ubuntu-latest
-#    if: "startsWith(github.ref, 'refs/tags/')"
-#    needs: [ macos, windows, linux, linux-cross, musllinux, musllinux-cross ]
-#    steps:
-#      - uses: actions/download-artifact@v3
-#        with:
-#          name: wheels
-#      - uses: actions/setup-python@v4
-#        with:
-#          python-version: 3.9
-#      - name: Publish to PyPI
-#        env:
-#          TWINE_USERNAME: __token__
-#          TWINE_PASSWORD: ${{ secrets.PYPI_PASSWORD }}
-#        run: |
-#          pip install --upgrade twine
-#          twine upload --skip-existing *
