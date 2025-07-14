@@ -1,6 +1,7 @@
 #[cfg(feature = "core")]
 use crate::SchemaError;
 use crate::parameters::ParameterMeta;
+#[cfg(feature = "core")]
 use pywr_core::parameters::ParameterIndex;
 use pywr_schema_macros::PywrVisitAll;
 use schemars::JsonSchema;
