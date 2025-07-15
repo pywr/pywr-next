@@ -38,12 +38,7 @@ mod core {
     use std::path::Path;
 
     impl PandasTimeseries {
-        pub fn load(
-            &self,
-            _name: &str,
-            _data_path: Option<&Path>,
-            _domain: &ModelDomain,
-        ) -> Result<DataFrame, TimeseriesError> {
+        pub fn load(&self, _data_path: Option<&Path>, _domain: &ModelDomain) -> Result<DataFrame, TimeseriesError> {
             Err(TimeseriesError::PythonNotEnabled)
         }
     }
