@@ -83,7 +83,7 @@ pub enum TimeseriesError {
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, Display, EnumDiscriminants)]
 #[serde(tag = "type")]
 #[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
-#[strum_discriminants(name(TimeseriesProviderType))]
+#[strum_discriminants(name(TimeseriesType))]
 pub enum Timeseries {
     Pandas(PandasTimeseries),
     Polars(PolarsTimeseries),
