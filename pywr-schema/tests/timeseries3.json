@@ -116,11 +116,9 @@
         "meta": {
           "name": "inflow"
         },
-        "provider": {
-          "type": "Polars",
-          "time_col": "date",
-          "url": "inflow2.csv"
-        }
+        "type": "Polars",
+        "time_col": "date",
+        "url": "inflow2.csv"
       }
     ],
     "metric_sets": [

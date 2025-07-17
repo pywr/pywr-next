@@ -110,10 +110,8 @@
         "meta": {
           "name": "inflow"
         },
-        "provider": {
-          "type": "Polars",
-          "url": "inflow.csv"
-        }
+        "type": "Polars",
+        "url": "inflow.csv"
       }
     ],
     "metric_sets": [

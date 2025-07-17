@@ -145,13 +145,11 @@
         "meta": {
           "name": "inflow"
         },
-        "provider": {
-          "type": "Pandas",
-          "time_col": null,
-          "url": "inflow.csv",
-          "kwargs": {
-            "dayfirst": true
-          }
+        "type": "Pandas",
+        "time_col": null,
+        "url": "inflow.csv",
+        "kwargs": {
+          "dayfirst": true
         }
       }
     ],

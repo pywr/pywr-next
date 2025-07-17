@@ -1,6 +1,6 @@
+use crate::parameters::ParameterMeta;
 use crate::visit::VisitPaths;
 use schemars::JsonSchema;
-use serde_json::Value;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
@@ -11,14 +11,15 @@ use std::path::{Path, PathBuf};
 ///
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
 #[serde(deny_unknown_fields)]
-pub struct PandasDataset {
+pub struct PandasTimeseries {
+    pub meta: ParameterMeta,
     pub time_col: Option<String>,
     pub url: PathBuf,
     /// Keyword arguments to pass to the relevant Pandas load function.
-    pub kwargs: Option<HashMap<String, Value>>,
+    pub kwargs: Option<HashMap<String, serde_json::Value>>,
 }
 
-impl VisitPaths for PandasDataset {
+impl VisitPaths for PandasTimeseries {
     fn visit_paths<F: FnMut(&Path)>(&self, visitor: &mut F) {
         visitor(&self.url);
     }
@@ -30,19 +31,14 @@ impl VisitPaths for PandasDataset {
 
 #[cfg(all(feature = "core", not(feature = "pyo3")))]
 mod core {
-    use super::PandasDataset;
+    use super::PandasTimeseries;
     use crate::timeseries::TimeseriesError;
     use polars::frame::DataFrame;
     use pywr_core::models::ModelDomain;
     use std::path::Path;
 
-    impl PandasDataset {
-        pub fn load(
-            &self,
-            _name: &str,
-            _data_path: Option<&Path>,
-            _domain: &ModelDomain,
-        ) -> Result<DataFrame, TimeseriesError> {
+    impl PandasTimeseries {
+        pub fn load(&self, _data_path: Option<&Path>, _domain: &ModelDomain) -> Result<DataFrame, TimeseriesError> {
             Err(TimeseriesError::PythonNotEnabled)
         }
     }
@@ -52,7 +48,7 @@ mod core {
 mod core {
     const PANDAS_LOAD_SCRIPT: &CStr = c_str!(include_str!("pandas_load.py"));
 
-    use super::PandasDataset;
+    use super::PandasTimeseries;
     use crate::parameters::try_json_value_into_py;
     use crate::timeseries::TimeseriesError;
     use crate::timeseries::align_and_resample::align_and_resample;
@@ -66,13 +62,8 @@ mod core {
     use std::ffi::CStr;
     use std::path::Path;
 
-    impl PandasDataset {
-        pub fn load(
-            &self,
-            name: &str,
-            data_path: Option<&Path>,
-            domain: &ModelDomain,
-        ) -> Result<DataFrame, TimeseriesError> {
+    impl PandasTimeseries {
+        pub fn load(&self, data_path: Option<&Path>, domain: &ModelDomain) -> Result<DataFrame, TimeseriesError> {
             // Prepare the Python interpreter if not already
             pyo3::prepare_freethreaded_python();
 
@@ -126,11 +117,11 @@ mod core {
             let mut df = df.0;
 
             df = match self.time_col {
-                Some(ref col) => align_and_resample(name, df, col, domain.time(), true)?,
+                Some(ref col) => align_and_resample(&self.meta.name, df, col, domain.time(), true)?,
                 None => {
                     // If a time col has not been provided assume it is the first column
                     let first_col = df.get_column_names()[0].to_string();
-                    align_and_resample(name, df, first_col.as_str(), domain.time(), true)?
+                    align_and_resample(&self.meta.name, df, first_col.as_str(), domain.time(), true)?
                 }
             };
 
