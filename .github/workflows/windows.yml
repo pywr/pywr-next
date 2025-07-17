@@ -21,6 +21,10 @@ jobs:
         with:
           submodules: true
       - uses: swatinem/rust-cache@v2
+      - name: "Set up Python"
+        uses: actions/setup-python@v5
+        with:
+          python-version-file: "pyproject.toml"
       - name: Run Clippy
         run: cargo clippy --all-targets --features highs,cbc,ipm-simd
       - name: Build

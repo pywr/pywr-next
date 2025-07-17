@@ -60,7 +60,7 @@ float-cmp = "0.10"
 ndarray = "0.16"
 polars = { version = "0.48", features = ["lazy", "rows", "ndarray"] }
 pyo3-polars = "0.21"
-pyo3 = { version = "0.24", features = ["abi3-py39"] }
+pyo3 = { version = "0.24", features = ["abi3-py310"] }
 pyo3-log = "0.12"
 tracing = { version = "0.1", features = ["log"] }
 csv = "1.3"
