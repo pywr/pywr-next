@@ -127,6 +127,7 @@ mod tests {
     use crate::parameters::{ActivationFunction, ConstantParameter, Parameter, VariableParameter};
     use crate::test_utils::default_domain;
     use float_cmp::assert_approx_eq;
+    use std::f64::consts::PI;
 
     #[test]
     fn test_variable_api() {
@@ -148,5 +149,18 @@ mod tests {
         assert_approx_eq!(f64, p.value(&state), 2.0);
 
         assert_approx_eq!(&[f64], &p.get_variables(&state).unwrap(), &[2.0]);
+    }
+
+    #[test]
+    /// Test `ConstantParameter` returns the correct value.
+    fn test_constant_parameter() {
+        let domain = default_domain();
+
+        let p = ConstantParameter::new("my-parameter".into(), PI);
+        let state = p
+            .setup(domain.time().timesteps(), domain.scenarios().indices().first().unwrap())
+            .unwrap();
+
+        assert_approx_eq!(f64, p.value(&state), PI);
     }
 }

@@ -228,3 +228,100 @@ impl SimpleParameter<u64> for Array2Parameter<u64> {
         self
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::state::StateBuilder;
+    use crate::test_utils::default_domain;
+    use float_cmp::assert_approx_eq;
+    use ndarray::Array;
+
+    #[test]
+    fn test_array1_parameter() {
+        let domain = default_domain();
+
+        let data = Array::range(0.0, 366.0, 1.0);
+        let p = Array1Parameter::new("my-array-parameter".into(), data, None);
+
+        let spv = StateBuilder::new(Vec::new(), 0).build();
+
+        let mut state = p
+            .setup(domain.time().timesteps(), domain.scenarios().indices().first().unwrap())
+            .unwrap();
+
+        for ts in domain.time().timesteps().iter() {
+            for si in domain.scenarios().indices().iter() {
+                assert_approx_eq!(
+                    f64,
+                    p.compute(ts, si, &spv.get_simple_parameter_values(), &mut state)
+                        .unwrap(),
+                    ts.index as f64
+                );
+            }
+        }
+    }
+
+    #[test]
+    /// Test `Array2Parameter` returns the correct value.
+    fn test_array2_parameter() {
+        let domain = default_domain();
+
+        let data = Array::range(0.0, 366.0, 1.0);
+        let data = data.insert_axis(Axis(1));
+        let p = Array2Parameter::new("my-array-parameter".into(), data, 0, None);
+
+        let spv = StateBuilder::new(Vec::new(), 0).build();
+
+        let mut state = p
+            .setup(domain.time().timesteps(), domain.scenarios().indices().first().unwrap())
+            .unwrap();
+
+        for ts in domain.time().timesteps().iter() {
+            for si in domain.scenarios().indices().iter() {
+                assert_approx_eq!(
+                    f64,
+                    p.compute(ts, si, &spv.get_simple_parameter_values(), &mut state)
+                        .unwrap(),
+                    ts.index as f64
+                );
+            }
+        }
+    }
+
+    #[test]
+    /// Test `Array2Parameter` returns the correct value.
+    fn test_array2_parameter_not_enough_data() {
+        let domain = default_domain();
+
+        let data = Array::range(0.0, 5.0, 1.0);
+        let data = data.insert_axis(Axis(1));
+        let p = Array2Parameter::new("my-array-parameter".into(), data, 0, None);
+
+        let spv = StateBuilder::new(Vec::new(), 0).build();
+
+        let mut state = p
+            .setup(domain.time().timesteps(), domain.scenarios().indices().first().unwrap())
+            .unwrap();
+
+        for ts in domain.time().timesteps().iter() {
+            for si in domain.scenarios().indices().iter() {
+                if ts.index >= 5 {
+                    // If the time-step index is out of bounds, we should return an error
+                    assert!(
+                        p.compute(ts, si, &spv.get_simple_parameter_values(), &mut state)
+                            .is_err()
+                    );
+                } else {
+                    // Otherwise, we should return the value
+                    assert_approx_eq!(
+                        f64,
+                        p.compute(ts, si, &spv.get_simple_parameter_values(), &mut state)
+                            .unwrap(),
+                        ts.index as f64
+                    );
+                }
+            }
+        }
+    }
+}

@@ -125,7 +125,7 @@ impl TryFromV1<AggregatedParameterV1> for AggregatedParameter {
     ) -> Result<Self, Self::Error> {
         let meta: ParameterMeta = v1.meta.into_v2(parent_node, conversion_data);
 
-        let parameters = v1
+        let metrics = v1
             .parameters
             .into_iter()
             .map(|p| try_convert_parameter_attr(&meta.name, "parameters", p, parent_node, conversion_data))
@@ -134,7 +134,7 @@ impl TryFromV1<AggregatedParameterV1> for AggregatedParameter {
         let p = Self {
             meta,
             agg_func: v1.agg_func.into(),
-            metrics: parameters,
+            metrics,
         };
         Ok(p)
     }
@@ -194,8 +194,7 @@ impl From<IndexAggFuncV1> for IndexAggFunc {
 pub struct AggregatedIndexParameter {
     pub meta: ParameterMeta,
     pub agg_func: IndexAggFunc,
-    // TODO this should be `DynamicIntValues`
-    pub parameters: Vec<IndexMetric>,
+    pub metrics: Vec<IndexMetric>,
 }
 
 impl AggregatedIndexParameter {
@@ -220,15 +219,15 @@ impl AggregatedIndexParameter {
         network: &mut pywr_core::network::Network,
         args: &LoadArgs,
     ) -> Result<ParameterIndex<u64>, SchemaError> {
-        let parameters = self
-            .parameters
+        let metrics = self
+            .metrics
             .iter()
             .map(|v| v.load(network, args, None))
             .collect::<Result<Vec<_>, _>>()?;
 
         let p = pywr_core::parameters::AggregatedIndexParameter::new(
             self.meta.name.as_str().into(),
-            parameters,
+            &metrics,
             self.agg_func.into(),
         );
 
@@ -246,7 +245,7 @@ impl TryFromV1<AggregatedIndexParameterV1> for AggregatedIndexParameter {
     ) -> Result<Self, Self::Error> {
         let meta: ParameterMeta = v1.meta.into_v2(parent_node, conversion_data);
 
-        let parameters = v1
+        let metrics = v1
             .parameters
             .into_iter()
             .map(|p| try_convert_parameter_attr(&meta.name, "parameters", p, parent_node, conversion_data))
@@ -255,7 +254,7 @@ impl TryFromV1<AggregatedIndexParameterV1> for AggregatedIndexParameter {
         let p = Self {
             meta,
             agg_func: v1.agg_func.into(),
-            parameters,
+            metrics,
         };
         Ok(p)
     }

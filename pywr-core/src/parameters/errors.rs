@@ -1,5 +1,6 @@
 use crate::metric::{
-    ConstantMetricF64Error, MetricF64Error, MetricU64Error, SimpleMetricF64Error, SimpleMetricU64Error,
+    ConstantMetricF64Error, ConstantMetricU64Error, MetricF64Error, MetricU64Error, SimpleMetricF64Error,
+    SimpleMetricU64Error,
 };
 use crate::parameters::InterpolationError;
 use thiserror::Error;
@@ -46,6 +47,8 @@ pub enum SimpleCalculationError {
 
 #[derive(Error, Debug)]
 pub enum ConstCalculationError {
-    #[error("Constant metric error: {0}")]
+    #[error("Constant f64 metric error: {0}")]
     ConstantMetricF64Error(#[from] ConstantMetricF64Error),
+    #[error("Constant u64 metric error: {0}")]
+    ConstantMetricU64Error(#[from] ConstantMetricU64Error),
 }
