@@ -12,7 +12,7 @@ dependencies = [
     "pandas",
     "polars",
     "pyarrow",
-    "click"
+    "click",
 ]
 
 [project.optional-dependencies]

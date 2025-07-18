@@ -110,7 +110,12 @@ impl TurbineNode {
         &self,
         network: &pywr_core::network::Network,
     ) -> Result<Vec<pywr_core::node::NodeIndex>, SchemaError> {
-        let idx = network.get_node_index_by_name(self.meta.name.as_str(), None)?;
+        let idx = network
+            .get_node_index_by_name(self.meta.name.as_str(), None)
+            .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                name: self.meta.name.clone(),
+                sub_name: None,
+            })?;
         Ok(vec![idx])
     }
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network, _args: &LoadArgs) -> Result<(), SchemaError> {
@@ -179,7 +184,12 @@ impl TurbineNode {
         // Use the default attribute if none is specified
         let attr = attribute.unwrap_or(Self::DEFAULT_ATTRIBUTE);
 
-        let idx = network.get_node_index_by_name(self.meta.name.as_str(), None)?;
+        let idx = network
+            .get_node_index_by_name(self.meta.name.as_str(), None)
+            .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                name: self.meta.name.clone(),
+                sub_name: None,
+            })?;
 
         let metric = match attr {
             NodeAttribute::Outflow => MetricF64::NodeOutFlow(idx),

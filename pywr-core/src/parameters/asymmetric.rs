@@ -1,6 +1,6 @@
-use crate::PywrError;
 use crate::metric::MetricU64;
 use crate::network::Network;
+use crate::parameters::errors::{ParameterCalculationError, ParameterSetupError};
 use crate::parameters::{
     GeneralParameter, Parameter, ParameterMeta, ParameterName, ParameterState, downcast_internal_state_mut,
 };
@@ -32,7 +32,7 @@ impl Parameter for AsymmetricSwitchIndexParameter {
         &self,
         _timesteps: &[Timestep],
         _scenario_index: &ScenarioIndex,
-    ) -> Result<Option<Box<dyn ParameterState>>, PywrError> {
+    ) -> Result<Option<Box<dyn ParameterState>>, ParameterSetupError> {
         Ok(Some(Box::new(0_u64)))
     }
 }
@@ -45,7 +45,7 @@ impl GeneralParameter<u64> for AsymmetricSwitchIndexParameter {
         network: &Network,
         state: &State,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<u64, PywrError> {
+    ) -> Result<u64, ParameterCalculationError> {
         let on_value = self.on_parameter.get_value(network, state)?;
 
         // Downcast the internal state to the correct type

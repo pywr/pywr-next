@@ -1,9 +1,11 @@
-use crate::metric::MetricF64;
+use crate::NodeIndex;
+use crate::metric::{MetricF64, MetricF64Error};
 use crate::network::Network;
 use crate::node::{Constraint, FlowConstraints, NodeMeta};
 use crate::state::{ConstParameterValues, State};
-use crate::{NodeIndex, PywrError};
+use std::fmt::Display;
 use std::ops::{Deref, DerefMut};
+use thiserror::Error;
 
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Debug)]
 pub struct AggregatedNodeIndex(usize);
@@ -13,6 +15,12 @@ impl Deref for AggregatedNodeIndex {
 
     fn deref(&self) -> &Self::Target {
         &self.0
+    }
+}
+
+impl Display for AggregatedNodeIndex {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
     }
 }
 
@@ -36,12 +44,12 @@ impl DerefMut for AggregatedNodeVec {
 }
 
 impl AggregatedNodeVec {
-    pub fn get(&self, index: &AggregatedNodeIndex) -> Result<&AggregatedNode, PywrError> {
-        self.nodes.get(index.0).ok_or(PywrError::NodeIndexNotFound)
+    pub fn get(&self, index: &AggregatedNodeIndex) -> Option<&AggregatedNode> {
+        self.nodes.get(index.0)
     }
 
-    pub fn get_mut(&mut self, index: &AggregatedNodeIndex) -> Result<&mut AggregatedNode, PywrError> {
-        self.nodes.get_mut(index.0).ok_or(PywrError::NodeIndexNotFound)
+    pub fn get_mut(&mut self, index: &AggregatedNodeIndex) -> Option<&mut AggregatedNode> {
+        self.nodes.get_mut(index.0)
     }
 
     pub fn push_new(
@@ -111,6 +119,16 @@ impl Relationship {
     pub fn new_exclusive(min_active: u64, max_active: u64) -> Self {
         Relationship::Exclusive(Exclusivity { min_active, max_active })
     }
+}
+
+#[derive(Debug, Error)]
+pub enum AggregatedNodeError {
+    #[error("Flow constraints are undefined for this node type")]
+    FlowConstraintsUndefined,
+    #[error("Storage constraints are undefined for this node type")]
+    StorageConstraintsUndefined,
+    #[error("Negative factor is not allowed")]
+    NegativeFactor,
 }
 
 #[derive(Debug, PartialEq)]
@@ -319,18 +337,22 @@ impl AggregatedNode {
     pub fn set_min_flow_constraint(&mut self, value: Option<MetricF64>) {
         self.flow_constraints.min_flow = value;
     }
-    pub fn get_min_flow_constraint(&self, model: &Network, state: &State) -> Result<f64, PywrError> {
+    pub fn get_min_flow_constraint(&self, model: &Network, state: &State) -> Result<f64, MetricF64Error> {
         self.flow_constraints.get_min_flow(model, state)
     }
     pub fn set_max_flow_constraint(&mut self, value: Option<MetricF64>) {
         self.flow_constraints.max_flow = value;
     }
-    pub fn get_max_flow_constraint(&self, model: &Network, state: &State) -> Result<f64, PywrError> {
+    pub fn get_max_flow_constraint(&self, model: &Network, state: &State) -> Result<f64, MetricF64Error> {
         self.flow_constraints.get_max_flow(model, state)
     }
 
     /// Set a constraint on a node.
-    pub fn set_constraint(&mut self, value: Option<MetricF64>, constraint: Constraint) -> Result<(), PywrError> {
+    pub fn set_constraint(
+        &mut self,
+        value: Option<MetricF64>,
+        constraint: Constraint,
+    ) -> Result<(), AggregatedNodeError> {
         match constraint {
             Constraint::MinFlow => self.set_min_flow_constraint(value),
             Constraint::MaxFlow => self.set_max_flow_constraint(value),
@@ -338,27 +360,27 @@ impl AggregatedNode {
                 self.set_min_flow_constraint(value.clone());
                 self.set_max_flow_constraint(value);
             }
-            Constraint::MinVolume => return Err(PywrError::StorageConstraintsUndefined),
-            Constraint::MaxVolume => return Err(PywrError::StorageConstraintsUndefined),
+            Constraint::MinVolume => return Err(AggregatedNodeError::StorageConstraintsUndefined),
+            Constraint::MaxVolume => return Err(AggregatedNodeError::StorageConstraintsUndefined),
         }
         Ok(())
     }
 
-    pub fn get_current_min_flow(&self, model: &Network, state: &State) -> Result<f64, PywrError> {
+    pub fn get_current_min_flow(&self, model: &Network, state: &State) -> Result<f64, MetricF64Error> {
         self.flow_constraints.get_min_flow(model, state)
     }
 
-    pub fn get_current_max_flow(&self, model: &Network, state: &State) -> Result<f64, PywrError> {
+    pub fn get_current_max_flow(&self, model: &Network, state: &State) -> Result<f64, MetricF64Error> {
         self.flow_constraints.get_max_flow(model, state)
     }
 
-    pub fn get_current_flow_bounds(&self, model: &Network, state: &State) -> Result<(f64, f64), PywrError> {
+    pub fn get_current_flow_bounds(&self, model: &Network, state: &State) -> Result<(f64, f64), AggregatedNodeError> {
         match (
             self.get_current_min_flow(model, state),
             self.get_current_max_flow(model, state),
         ) {
             (Ok(min_flow), Ok(max_flow)) => Ok((min_flow, max_flow)),
-            _ => Err(PywrError::FlowConstraintsUndefined),
+            _ => Err(AggregatedNodeError::FlowConstraintsUndefined),
         }
     }
 
@@ -378,6 +400,7 @@ fn get_norm_proportional_factor_pairs<'a>(
     model: &Network,
     state: &State,
 ) -> Vec<NodeFactorPair<'a>> {
+    // TODO handle error cases more gracefully
     if factors.len() != nodes.len() - 1 {
         panic!(
             "Found {} proportional factors and {} nodes in aggregated node. The number of proportional factors should equal one less than the number of nodes.",
@@ -390,11 +413,14 @@ fn get_norm_proportional_factor_pairs<'a>(
     let values: Vec<f64> = factors
         .iter()
         .map(|f| {
-            let v = f.get_value(model, state)?;
-            if v < 0.0 { Err(PywrError::NegativeFactor) } else { Ok(v) }
+            let v = f.get_value(model, state).expect("Failed to get current factor value.");
+            if v < 0.0 {
+                panic!("The provided value is negative.");
+            } else {
+                v
+            }
         })
-        .collect::<Result<Vec<_>, PywrError>>()
-        .expect("Failed to get current factor values. Ensure that all factors are not negative.");
+        .collect::<Vec<_>>();
 
     let total: f64 = values.iter().sum();
     if total < 0.0 {
@@ -426,6 +452,7 @@ fn get_const_norm_proportional_factor_pairs<'a>(
     nodes: &'a [Vec<NodeIndex>],
     values: &ConstParameterValues,
 ) -> Vec<NodeConstFactorPair<'a>> {
+    // TODO handle error cases more gracefully
     if factors.len() != nodes.len() - 1 {
         panic!(
             "Found {} proportional factors and {} nodes in aggregated node. The number of proportional factors should equal one less than the number of nodes.",
@@ -438,19 +465,20 @@ fn get_const_norm_proportional_factor_pairs<'a>(
     let values: Vec<Option<f64>> = factors
         .iter()
         .map(|f| {
-            let v = f.try_get_constant_value(values)?;
+            let v = f
+                .try_get_constant_value(values)
+                .expect("Failed to get current factor value.");
             if let Some(v) = v {
                 if v < 0.0 {
-                    Err(PywrError::NegativeFactor)
+                    panic!("The provided value is negative.");
                 } else {
-                    Ok(Some(v))
+                    Some(v)
                 }
             } else {
-                Ok(None)
+                None
             }
         })
-        .collect::<Result<Vec<_>, PywrError>>()
-        .expect("Failed to get current factor values. Ensure that all factors are not negative.");
+        .collect::<Vec<_>>();
 
     let n0 = nodes[0].as_slice();
 
@@ -502,6 +530,7 @@ fn get_norm_ratio_factor_pairs<'a>(
     model: &Network,
     state: &State,
 ) -> Vec<NodeFactorPair<'a>> {
+    // TODO handle error cases more gracefully
     if factors.len() != nodes.len() {
         panic!(
             "Found {} ratio factors and {} nodes in aggregated node. The number of ratio factors should equal the number of nodes.",
@@ -521,18 +550,14 @@ fn get_norm_ratio_factor_pairs<'a>(
         .zip(factors)
         .skip(1)
         .map(move |(n1, f1)| {
-            let v1 = f1.get_value(model, state)?;
+            let v1 = f1.get_value(model, state).expect("Failed to get current factor value.");
             if v1 < 0.0 {
-                Err(PywrError::NegativeFactor)
+                panic!("The provided value is negative.");
             } else {
-                Ok(NodeFactorPair::new(
-                    NodeFactor::new(n0, f0),
-                    NodeFactor::new(n1.as_slice(), v1),
-                ))
+                NodeFactorPair::new(NodeFactor::new(n0, f0), NodeFactor::new(n1.as_slice(), v1))
             }
         })
-        .collect::<Result<Vec<_>, PywrError>>()
-        .expect("Failed to get current factor values. Ensure that all factors are not negative.")
+        .collect::<Vec<_>>()
 }
 
 /// Constant ratio factors using constant values if they are available. If they are not available,
@@ -542,6 +567,7 @@ fn get_const_norm_ratio_factor_pairs<'a>(
     nodes: &'a [Vec<NodeIndex>],
     values: &ConstParameterValues,
 ) -> Vec<NodeConstFactorPair<'a>> {
+    // TODO handle error cases more gracefully
     if factors.len() != nodes.len() {
         panic!(
             "Found {} ratio factors and {} nodes in aggregated node. The number of ratio factors should equal the number of nodes.",
@@ -574,7 +600,7 @@ fn get_const_norm_ratio_factor_pairs<'a>(
 
             if let Some(v) = v1 {
                 if v < 0.0 {
-                    return Err(PywrError::NegativeFactor);
+                    return Err(AggregatedNodeError::NegativeFactor);
                 }
             }
 
@@ -583,7 +609,7 @@ fn get_const_norm_ratio_factor_pairs<'a>(
                 NodeConstFactor::new(n1.as_slice(), v1),
             ))
         })
-        .collect::<Result<Vec<_>, PywrError>>()
+        .collect::<Result<Vec<_>, AggregatedNodeError>>()
         .expect("Failed to get current factor values. Ensure that all factors are not negative.")
 }
 

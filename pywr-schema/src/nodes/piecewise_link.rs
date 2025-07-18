@@ -89,7 +89,14 @@ impl PiecewiseLinkNode {
             .steps
             .iter()
             .enumerate()
-            .map(|(i, _)| network.get_node_index_by_name(self.meta.name.as_str(), Self::step_sub_name(i).as_deref()))
+            .map(|(i, _)| {
+                network
+                    .get_node_index_by_name(self.meta.name.as_str(), Self::step_sub_name(i).as_deref())
+                    .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                        name: self.meta.name.clone(),
+                        sub_name: Self::step_sub_name(i),
+                    })
+            })
             .collect::<Result<Vec<_>, _>>()?;
         Ok(indices)
     }
@@ -138,7 +145,14 @@ impl PiecewiseLinkNode {
             .steps
             .iter()
             .enumerate()
-            .map(|(i, _)| network.get_node_index_by_name(self.meta.name.as_str(), Self::step_sub_name(i).as_deref()))
+            .map(|(i, _)| {
+                network
+                    .get_node_index_by_name(self.meta.name.as_str(), Self::step_sub_name(i).as_deref())
+                    .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                        name: self.meta.name.clone(),
+                        sub_name: Self::step_sub_name(i),
+                    })
+            })
             .collect::<Result<Vec<_>, _>>()?;
 
         let metric = match attr {

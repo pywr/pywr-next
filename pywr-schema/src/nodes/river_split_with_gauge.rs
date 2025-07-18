@@ -132,15 +132,32 @@ impl RiverSplitWithGaugeNode {
         // There's currently no way to isolate the flows to the individual splits
         // Therefore, the only metrics are gross inflow and outflow
         let mut indices = vec![
-            network.get_node_index_by_name(self.meta.name.as_str(), Self::mrf_sub_name())?,
-            network.get_node_index_by_name(self.meta.name.as_str(), Self::bypass_sub_name())?,
+            network
+                .get_node_index_by_name(self.meta.name.as_str(), Self::mrf_sub_name())
+                .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                    name: self.meta.name.clone(),
+                    sub_name: Self::mrf_sub_name().map(String::from),
+                })?,
+            network
+                .get_node_index_by_name(self.meta.name.as_str(), Self::bypass_sub_name())
+                .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                    name: self.meta.name.clone(),
+                    sub_name: Self::bypass_sub_name().map(String::from),
+                })?,
         ];
 
         let split_idx: Vec<NodeIndex> = self
             .splits
             .iter()
             .enumerate()
-            .map(|(i, _)| network.get_node_index_by_name(self.meta.name.as_str(), Self::split_sub_name(i).as_deref()))
+            .map(|(i, _)| {
+                network
+                    .get_node_index_by_name(self.meta.name.as_str(), Self::split_sub_name(i).as_deref())
+                    .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                        name: self.meta.name.clone(),
+                        sub_name: Self::split_sub_name(i),
+                    })
+            })
             .collect::<Result<_, _>>()?;
 
         indices.extend(split_idx);
@@ -207,15 +224,32 @@ impl RiverSplitWithGaugeNode {
         // There's currently no way to isolate the flows to the individual splits
         // Therefore, the only metrics are gross inflow and outflow
         let mut indices = vec![
-            network.get_node_index_by_name(self.meta.name.as_str(), Self::mrf_sub_name())?,
-            network.get_node_index_by_name(self.meta.name.as_str(), Self::bypass_sub_name())?,
+            network
+                .get_node_index_by_name(self.meta.name.as_str(), Self::mrf_sub_name())
+                .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                    name: self.meta.name.clone(),
+                    sub_name: Self::mrf_sub_name().map(String::from),
+                })?,
+            network
+                .get_node_index_by_name(self.meta.name.as_str(), Self::bypass_sub_name())
+                .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                    name: self.meta.name.clone(),
+                    sub_name: Self::bypass_sub_name().map(String::from),
+                })?,
         ];
 
         let split_idx: Vec<NodeIndex> = self
             .splits
             .iter()
             .enumerate()
-            .map(|(i, _)| network.get_node_index_by_name(self.meta.name.as_str(), Self::split_sub_name(i).as_deref()))
+            .map(|(i, _)| {
+                network
+                    .get_node_index_by_name(self.meta.name.as_str(), Self::split_sub_name(i).as_deref())
+                    .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                        name: self.meta.name.clone(),
+                        sub_name: Self::split_sub_name(i),
+                    })
+            })
             .collect::<Result<_, _>>()?;
 
         indices.extend(split_idx);

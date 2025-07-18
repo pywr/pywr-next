@@ -1,4 +1,4 @@
-use crate::PywrError;
+use crate::parameters::errors::SimpleCalculationError;
 use crate::parameters::{Parameter, ParameterMeta, ParameterName, ParameterState, SimpleParameter};
 use crate::scenario::ScenarioIndex;
 use crate::state::SimpleParameterValues;
@@ -48,11 +48,18 @@ impl SimpleParameter<f64> for Array1Parameter<f64> {
         _scenario_index: &ScenarioIndex,
         _values: &SimpleParameterValues,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<f64, PywrError> {
+    ) -> Result<f64, SimpleCalculationError> {
         let idx = self.timestep_index(timestep);
-        // This panics if out-of-bounds
-        let value = self.array[[idx]];
-        Ok(value)
+
+        let value = self
+            .array
+            .get(idx)
+            .ok_or_else(|| SimpleCalculationError::OutOfBoundsError {
+                index: idx,
+                length: self.array.len(),
+                axis: 0,
+            })?;
+        Ok(*value)
     }
 
     fn as_parameter(&self) -> &dyn Parameter
@@ -70,11 +77,17 @@ impl SimpleParameter<u64> for Array1Parameter<u64> {
         _scenario_index: &ScenarioIndex,
         _values: &SimpleParameterValues,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<u64, PywrError> {
+    ) -> Result<u64, SimpleCalculationError> {
         let idx = self.timestep_index(timestep);
-        // This panics if out-of-bounds
-        let value = self.array[[idx]];
-        Ok(value)
+        let value = self
+            .array
+            .get(idx)
+            .ok_or_else(|| SimpleCalculationError::OutOfBoundsError {
+                index: idx,
+                length: self.array.len(),
+                axis: 0,
+            })?;
+        Ok(*value)
     }
 
     fn as_parameter(&self) -> &dyn Parameter
@@ -137,12 +150,32 @@ impl SimpleParameter<f64> for Array2Parameter<f64> {
         scenario_index: &ScenarioIndex,
         _values: &SimpleParameterValues,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<f64, PywrError> {
-        // This panics if out-of-bounds
+    ) -> Result<f64, SimpleCalculationError> {
         let t_idx = self.timestep_index(timestep);
         let s_idx = scenario_index.simulation_index_for_group(self.scenario_group_index);
 
-        Ok(self.array[[t_idx, s_idx]])
+        let value = self.array.get([t_idx, s_idx]).ok_or_else(|| {
+            let shape = self.array.shape();
+            if t_idx >= shape[0] {
+                SimpleCalculationError::OutOfBoundsError {
+                    index: t_idx,
+                    length: shape[0],
+                    axis: 0,
+                }
+            } else if s_idx >= shape[1] {
+                SimpleCalculationError::OutOfBoundsError {
+                    index: s_idx,
+                    length: shape[1],
+                    axis: 1,
+                }
+            } else {
+                unreachable!(
+                    "Invalid indices for array: t_idx = {}, s_idx = {}, shape = {:?}",
+                    t_idx, s_idx, shape
+                )
+            }
+        })?;
+        Ok(*value)
     }
 
     fn as_parameter(&self) -> &dyn Parameter
@@ -160,12 +193,32 @@ impl SimpleParameter<u64> for Array2Parameter<u64> {
         scenario_index: &ScenarioIndex,
         _values: &SimpleParameterValues,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<u64, PywrError> {
-        // This panics if out-of-bounds
+    ) -> Result<u64, SimpleCalculationError> {
         let t_idx = self.timestep_index(timestep);
         let s_idx = scenario_index.simulation_index_for_group(self.scenario_group_index);
 
-        Ok(self.array[[t_idx, s_idx]])
+        let value = self.array.get([t_idx, s_idx]).ok_or_else(|| {
+            let shape = self.array.shape();
+            if t_idx >= shape[0] {
+                SimpleCalculationError::OutOfBoundsError {
+                    index: t_idx,
+                    length: shape[0],
+                    axis: 0,
+                }
+            } else if s_idx >= shape[1] {
+                SimpleCalculationError::OutOfBoundsError {
+                    index: s_idx,
+                    length: shape[1],
+                    axis: 1,
+                }
+            } else {
+                unreachable!(
+                    "Invalid indices for array: t_idx = {}, s_idx = {}, shape = {:?}",
+                    t_idx, s_idx, shape
+                )
+            }
+        })?;
+        Ok(*value)
     }
 
     fn as_parameter(&self) -> &dyn Parameter

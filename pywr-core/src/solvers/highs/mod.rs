@@ -1,9 +1,8 @@
 mod settings;
 
-use crate::PywrError;
 use crate::network::Network;
 use crate::solvers::builder::{BuiltSolver, ColType, SolverBuilder};
-use crate::solvers::{Solver, SolverFeatures, SolverTimings};
+use crate::solvers::{Solver, SolverFeatures, SolverSetupError, SolverSolveError, SolverTimings};
 use crate::state::{ConstParameterValues, State};
 use crate::timestep::Timestep;
 use highs_sys::{
@@ -214,7 +213,7 @@ impl Solver for HighsSolver {
         network: &Network,
         values: &ConstParameterValues,
         _settings: &Self::Settings,
-    ) -> Result<Box<Self>, PywrError> {
+    ) -> Result<Box<Self>, SolverSetupError> {
         let builder: SolverBuilder<HighsInt> = SolverBuilder::default();
         let built = builder.create(network, values)?;
 
@@ -245,7 +244,12 @@ impl Solver for HighsSolver {
             highs: highs_lp,
         }))
     }
-    fn solve(&mut self, network: &Network, timestep: &Timestep, state: &mut State) -> Result<SolverTimings, PywrError> {
+    fn solve(
+        &mut self,
+        network: &Network,
+        timestep: &Timestep,
+        state: &mut State,
+    ) -> Result<SolverTimings, SolverSolveError> {
         let mut timings = SolverTimings::default();
         self.builder.update(network, timestep, state, &mut timings)?;
 
