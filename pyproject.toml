@@ -15,7 +15,7 @@ dependencies = [
     "click",
 ]
 
-[dependency-groups]
+[project.optional-dependencies]
 excel = ["openpyxl"]
 hdf = ["h5py"]
 
