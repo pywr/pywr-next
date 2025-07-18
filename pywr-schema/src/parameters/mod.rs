@@ -17,6 +17,7 @@ mod hydropower;
 mod indexed_array;
 mod interpolated;
 mod offset;
+mod placeholder;
 mod polynomial;
 mod profiles;
 mod python;
@@ -33,7 +34,6 @@ use crate::error::{ComponentConversionError, ConversionError};
 use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
-use crate::parameters::delay::DelayIndexParameter;
 use crate::timeseries::ConvertedTimeseriesReference;
 use crate::v1::{ConversionData, IntoV2, TryFromV1, TryIntoV2};
 use crate::visit::{VisitMetrics, VisitPaths};
@@ -47,12 +47,13 @@ pub use core::{
     ActivationFunction, ConstantParameter, DivisionParameter, MaxParameter, MinParameter, NegativeMaxParameter,
     NegativeMinParameter, NegativeParameter, VariableSettings,
 };
-pub use delay::DelayParameter;
+pub use delay::{DelayIndexParameter, DelayParameter};
 pub use discount_factor::DiscountFactorParameter;
 pub use hydropower::HydropowerTargetParameter;
 pub use indexed_array::IndexedArrayParameter;
 pub use interpolated::InterpolatedParameter;
 pub use offset::OffsetParameter;
+pub use placeholder::PlaceholderParameter;
 pub use polynomial::Polynomial1DParameter;
 pub use profiles::{
     DailyProfileParameter, MonthlyInterpDay, MonthlyProfileParameter, RadialBasisFunction, RbfProfileParameter,
@@ -118,6 +119,7 @@ pub enum Parameter {
     RbfProfile(RbfProfileParameter),
     Rolling(RollingParameter),
     RollingIndex(RollingIndexParameter),
+    Placeholder(PlaceholderParameter),
 }
 
 impl Parameter {
@@ -155,6 +157,7 @@ impl Parameter {
             Self::NegativeMin(p) => p.meta.name.as_str(),
             Self::Rolling(p) => p.meta.name.as_str(),
             Self::RollingIndex(p) => p.meta.name.as_str(),
+            Self::Placeholder(p) => p.meta.name.as_str(),
         }
     }
 
@@ -217,6 +220,7 @@ impl Parameter {
             }
             Self::Rolling(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
             Self::RollingIndex(p) => pywr_core::parameters::ParameterType::Index(p.add_to_model(network, args)?),
+            Self::Placeholder(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model()?),
         };
 
         Ok(ty)
@@ -258,6 +262,7 @@ impl VisitMetrics for Parameter {
             Self::HydropowerTarget(p) => p.visit_metrics(visitor),
             Self::Rolling(p) => p.visit_metrics(visitor),
             Self::RollingIndex(p) => p.visit_metrics(visitor),
+            Self::Placeholder(p) => p.visit_metrics(visitor),
         }
     }
 
@@ -295,6 +300,7 @@ impl VisitMetrics for Parameter {
             Self::HydropowerTarget(p) => p.visit_metrics_mut(visitor),
             Self::Rolling(p) => p.visit_metrics_mut(visitor),
             Self::RollingIndex(p) => p.visit_metrics_mut(visitor),
+            Self::Placeholder(p) => p.visit_metrics_mut(visitor),
         }
     }
 }
@@ -334,6 +340,7 @@ impl VisitPaths for Parameter {
             Self::HydropowerTarget(p) => p.visit_paths(visitor),
             Self::Rolling(p) => p.visit_paths(visitor),
             Self::RollingIndex(p) => p.visit_paths(visitor),
+            Self::Placeholder(p) => p.visit_paths(visitor),
         }
     }
 
@@ -371,6 +378,7 @@ impl VisitPaths for Parameter {
             Self::HydropowerTarget(p) => p.visit_paths_mut(visitor),
             Self::Rolling(p) => p.visit_paths_mut(visitor),
             Self::RollingIndex(p) => p.visit_paths_mut(visitor),
+            Self::Placeholder(p) => p.visit_paths_mut(visitor),
         }
     }
 }

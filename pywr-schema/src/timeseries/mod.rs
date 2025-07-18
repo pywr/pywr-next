@@ -10,7 +10,7 @@ use crate::v1::{ConversionData, IntoV2, TryFromV1};
 use crate::visit::VisitPaths;
 #[cfg(feature = "core")]
 use ndarray::{Array2, ShapeError, s};
-pub use pandas::PandasDataset;
+pub use pandas::PandasTimeseries;
 #[cfg(feature = "core")]
 use polars::error::PolarsError;
 #[cfg(feature = "core")]
@@ -19,7 +19,7 @@ use polars::prelude::{
     DataType::{Float64, UInt64},
     Float64Type, IndexOrder, UInt64Type,
 };
-pub use polars_dataset::PolarsDataset;
+pub use polars_dataset::PolarsTimeseries;
 #[cfg(feature = "pyo3")]
 use pyo3::PyErr;
 #[cfg(feature = "core")]
@@ -84,45 +84,41 @@ pub enum TimeseriesError {
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, Display, EnumDiscriminants)]
 #[serde(tag = "type")]
 #[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
-#[strum_discriminants(name(TimeseriesProviderType))]
-pub enum TimeseriesProvider {
-    Pandas(PandasDataset),
-    Polars(PolarsDataset),
-}
-
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct Timeseries {
-    pub meta: ParameterMeta,
-    pub provider: TimeseriesProvider,
+#[strum_discriminants(name(TimeseriesType))]
+pub enum Timeseries {
+    Pandas(PandasTimeseries),
+    Polars(PolarsTimeseries),
 }
 
 impl Timeseries {
     #[cfg(feature = "core")]
     pub fn load(&self, domain: &ModelDomain, data_path: Option<&Path>) -> Result<DataFrame, TimeseriesError> {
-        match &self.provider {
-            TimeseriesProvider::Polars(dataset) => dataset.load(self.meta.name.as_str(), data_path, domain),
-            TimeseriesProvider::Pandas(dataset) => dataset.load(self.meta.name.as_str(), data_path, domain),
+        match &self {
+            Timeseries::Polars(dataset) => dataset.load(data_path, domain),
+            Timeseries::Pandas(dataset) => dataset.load(data_path, domain),
         }
     }
 
     pub fn name(&self) -> &str {
-        &self.meta.name
+        match &self {
+            Timeseries::Polars(dataset) => dataset.meta.name.as_str(),
+            Timeseries::Pandas(dataset) => dataset.meta.name.as_str(),
+        }
     }
 }
 
 impl VisitPaths for Timeseries {
     fn visit_paths<F: FnMut(&Path)>(&self, visitor: &mut F) {
-        match &self.provider {
-            TimeseriesProvider::Polars(dataset) => dataset.visit_paths(visitor),
-            TimeseriesProvider::Pandas(dataset) => dataset.visit_paths(visitor),
+        match &self {
+            Timeseries::Polars(dataset) => dataset.visit_paths(visitor),
+            Timeseries::Pandas(dataset) => dataset.visit_paths(visitor),
         }
     }
 
     fn visit_paths_mut<F: FnMut(&mut PathBuf)>(&mut self, visitor: &mut F) {
-        match &mut self.provider {
-            TimeseriesProvider::Polars(dataset) => dataset.visit_paths_mut(visitor),
-            TimeseriesProvider::Pandas(dataset) => dataset.visit_paths_mut(visitor),
+        match self {
+            Timeseries::Polars(dataset) => dataset.visit_paths_mut(visitor),
+            Timeseries::Pandas(dataset) => dataset.visit_paths_mut(visitor),
         }
     }
 }
@@ -144,10 +140,10 @@ impl LoadedTimeseriesCollection {
         if let Some(timeseries_defs) = timeseries_defs {
             for ts in timeseries_defs {
                 let df = ts.load(domain, data_path)?;
-                if timeseries.contains_key(&ts.meta.name) {
-                    return Err(TimeseriesError::TimeseriesDataframeAlreadyExists(ts.meta.name.clone()));
+                if timeseries.contains_key(ts.name()) {
+                    return Err(TimeseriesError::TimeseriesDataframeAlreadyExists(ts.name().to_string()));
                 }
-                timeseries.insert(ts.meta.name.clone(), df);
+                timeseries.insert(ts.name().to_string(), df);
             }
         }
         Ok(Self { timeseries })
@@ -488,20 +484,18 @@ impl TryFromV1<DataFrameParameterV1> for ConvertedTimeseriesReference {
                 }
             }
 
-            let provider = PandasDataset {
+            let timeseries = PandasTimeseries {
+                meta: meta.clone(),
                 time_col,
                 url,
                 kwargs: Some(pandas_kwargs),
             };
 
             // The timeseries data that is extracted
-            let timeseries = Timeseries {
-                meta: meta.clone(),
-                provider: TimeseriesProvider::Pandas(provider),
-            };
+            let timeseries = Timeseries::Pandas(timeseries);
 
             // Only add if the timeseries does not already exist
-            if !conversion_data.timeseries.iter().any(|ts| ts.meta.name == meta.name) {
+            if !conversion_data.timeseries.iter().any(|ts| ts.name() == meta.name) {
                 conversion_data.timeseries.push(timeseries);
             }
         } else if let Some(table) = v1.table {

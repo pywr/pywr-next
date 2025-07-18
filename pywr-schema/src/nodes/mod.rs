@@ -5,6 +5,7 @@ mod loss_link;
 mod monthly_virtual_storage;
 mod piecewise_link;
 mod piecewise_storage;
+mod placeholder;
 mod reservoir;
 mod river;
 mod river_gauge;
@@ -25,6 +26,7 @@ pub use crate::nodes::reservoir::{
     Bathymetry, BathymetryType, Evaporation, Leakage, Rainfall, ReservoirNode, SpillNodeType,
 };
 
+pub use crate::nodes::placeholder::PlaceholderNode;
 use crate::parameters::Parameter;
 use crate::v1::{ConversionData, TryFromV1, TryIntoV2};
 use crate::visit::{VisitMetrics, VisitPaths};
@@ -255,6 +257,7 @@ impl NodeBuilder {
                 },
                 ..Default::default()
             }),
+            NodeType::Placeholder => Node::Placeholder(PlaceholderNode { meta }),
         }
     }
 }
@@ -288,6 +291,7 @@ pub enum Node {
     RollingVirtualStorage(RollingVirtualStorageNode),
     Turbine(TurbineNode),
     Reservoir(ReservoirNode),
+    Placeholder(PlaceholderNode),
 }
 
 impl Node {
@@ -327,6 +331,7 @@ impl Node {
             Node::RollingVirtualStorage(n) => &n.meta,
             Node::Turbine(n) => &n.meta,
             Node::Reservoir(n) => n.meta(),
+            Node::Placeholder(n) => &n.meta,
         }
     }
 
@@ -354,6 +359,7 @@ impl Node {
             Node::RollingVirtualStorage(n) => n.input_connectors(),
             Node::Turbine(n) => n.input_connectors(),
             Node::Reservoir(n) => n.input_connectors(slot),
+            Node::Placeholder(n) => n.input_connectors(),
         }
     }
 
@@ -381,6 +387,7 @@ impl Node {
             Node::RollingVirtualStorage(n) => n.output_connectors(),
             Node::Turbine(n) => n.output_connectors(),
             Node::Reservoir(n) => n.output_connectors(slot),
+            Node::Placeholder(n) => n.output_connectors(),
         }
     }
     pub fn default_metric(&self) -> NodeAttribute {
@@ -406,6 +413,7 @@ impl Node {
             Node::RollingVirtualStorage(n) => n.default_metric(),
             Node::Turbine(n) => n.default_metric(),
             Node::Reservoir(n) => n.default_metric(),
+            Node::Placeholder(n) => n.default_metric(),
         }
     }
 
@@ -436,6 +444,7 @@ impl Node {
             Node::RollingVirtualStorage(n) => n.parameters.as_deref(),
             Node::Turbine(n) => n.parameters.as_deref(),
             Node::Reservoir(n) => n.storage.parameters.as_deref(),
+            Node::Placeholder(_) => None,
         }
     }
 }
@@ -465,6 +474,7 @@ impl Node {
             Node::MonthlyVirtualStorage(n) => n.add_to_model(network, args),
             Node::RollingVirtualStorage(n) => n.add_to_model(network, args),
             Node::Reservoir(n) => n.add_to_model(network),
+            Node::Placeholder(n) => n.add_to_model(),
         }
     }
 
@@ -496,6 +506,7 @@ impl Node {
             Node::MonthlyVirtualStorage(n) => n.node_indices_for_constraints(network, args),
             Node::RollingVirtualStorage(n) => n.node_indices_for_constraints(network, args),
             Node::Reservoir(n) => n.node_indices_for_constraints(network),
+            Node::Placeholder(n) => n.node_indices_for_constraints(),
         }
     }
 
@@ -526,6 +537,7 @@ impl Node {
             Node::Reservoir(n) => n.set_constraints(network, args),
             Node::MonthlyVirtualStorage(_) => Ok(()), // TODO
             Node::RollingVirtualStorage(_) => Ok(()), // TODO
+            Node::Placeholder(n) => n.set_constraints(),
         }
     }
 
@@ -558,6 +570,7 @@ impl Node {
             Node::RollingVirtualStorage(n) => n.create_metric(network, attribute),
             Node::Turbine(n) => n.create_metric(network, attribute, args),
             Node::Reservoir(n) => n.create_metric(network, attribute),
+            Node::Placeholder(n) => n.create_metric(),
         }
     }
 }
@@ -653,6 +666,7 @@ impl VisitMetrics for Node {
             Node::RollingVirtualStorage(n) => n.visit_metrics(visitor),
             Node::Turbine(n) => n.visit_metrics(visitor),
             Node::Reservoir(n) => n.visit_metrics(visitor),
+            Node::Placeholder(n) => n.visit_metrics(visitor),
         }
     }
 
@@ -679,6 +693,7 @@ impl VisitMetrics for Node {
             Node::RollingVirtualStorage(n) => n.visit_metrics_mut(visitor),
             Node::Turbine(n) => n.visit_metrics_mut(visitor),
             Node::Reservoir(n) => n.visit_metrics_mut(visitor),
+            Node::Placeholder(n) => n.visit_metrics_mut(visitor),
         }
     }
 }
@@ -707,6 +722,7 @@ impl VisitPaths for Node {
             Node::RollingVirtualStorage(n) => n.visit_paths(visitor),
             Node::Turbine(n) => n.visit_paths(visitor),
             Node::Reservoir(n) => n.visit_paths(visitor),
+            Node::Placeholder(n) => n.visit_paths(visitor),
         }
     }
 
@@ -733,6 +749,7 @@ impl VisitPaths for Node {
             Node::RollingVirtualStorage(n) => n.visit_paths_mut(visitor),
             Node::Turbine(n) => n.visit_paths_mut(visitor),
             Node::Reservoir(n) => n.visit_paths_mut(visitor),
+            Node::Placeholder(n) => n.visit_paths_mut(visitor),
         }
     }
 }

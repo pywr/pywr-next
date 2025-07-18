@@ -142,27 +142,23 @@
         "meta": {
           "name": "demand1-p2"
         },
-        "provider": {
-          "kwargs": {
-            "dayfirst": true
-          },
-          "time_col": null,
-          "type": "Pandas",
-          "url": "timeseries1.csv"
-        }
+        "kwargs": {
+          "dayfirst": true
+        },
+        "time_col": null,
+        "type": "Pandas",
+        "url": "timeseries1.csv"
       },
       {
         "meta": {
           "name": "demand1-p4"
         },
-        "provider": {
-          "kwargs": {
-            "dayfirst": true
-          },
-          "time_col": null,
-          "type": "Pandas",
-          "url": "timeseries2.csv"
-        }
+        "kwargs": {
+          "dayfirst": true
+        },
+        "time_col": null,
+        "type": "Pandas",
+        "url": "timeseries2.csv"
       }
     ]
   },

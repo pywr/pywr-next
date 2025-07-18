@@ -260,7 +260,7 @@ fn bench_ipm_convergence(c: &mut Criterion) {
                     .threads(N_THREADS)
                     .build(),
             ),
-            name: format!("opt-tol-{optimality:e}",),
+            name: format!("opt-tol-{optimality:e}"),
         });
         #[cfg(feature = "ipm-ocl")]
         solver_setups.push(SolverSetup {

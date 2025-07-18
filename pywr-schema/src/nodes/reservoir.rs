@@ -64,19 +64,19 @@ pub struct Evaporation {
 #[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, PywrVisitAll)]
 pub struct Leakage {
     /// The [`Metric`] containing the lost flow.
-    loss: Metric,
+    pub loss: Metric,
     /// The cost to assign to the [`crate::nodes::OutputNode`].
-    cost: Option<Metric>,
+    pub cost: Option<Metric>,
 }
 
 /// The rainfall data
 #[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, PywrVisitAll)]
 pub struct Rainfall {
     /// The [`Metric`] containing the rainfall level.
-    data: Metric,
+    pub data: Metric,
     /// If `true` the maximum surface area will be used to calculate the rainfall volume. When
     /// `false`, the area is calculated from the bathymetric data. This defaults to `false`.
-    use_max_area: Option<bool>,
+    pub use_max_area: Option<bool>,
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
