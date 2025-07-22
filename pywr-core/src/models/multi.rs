@@ -89,13 +89,13 @@ pub enum MultiNetworkModelSetupError {
     RecorderSetupError {
         network: String,
         #[source]
-        source: NetworkRecorderSetupError,
+        source: Box<NetworkRecorderSetupError>,
     },
     #[error("Failed to setup solver for network `{network}`: {source}")]
     SolverSetupError {
         network: String,
         #[source]
-        source: NetworkSolverSetupError,
+        source: Box<NetworkSolverSetupError>,
     },
 }
 
@@ -106,7 +106,7 @@ pub enum MultiNetworkModelStepError {
     TransferError {
         to_network: String,
         #[source]
-        source: InterNetworkTransferError,
+        source: Box<InterNetworkTransferError>,
     },
     #[error("No more timesteps")]
     EndOfTimesteps,
@@ -126,7 +126,7 @@ pub enum MultiNetworkModelFinaliseError {
     NetworkFinaliseError {
         network: String,
         #[source]
-        source: NetworkFinaliseError,
+        source: Box<NetworkFinaliseError>,
     },
 }
 
@@ -239,7 +239,7 @@ impl MultiNetworkModel {
             let recorder_state = entry.network.setup_recorders(&self.domain).map_err(|source| {
                 MultiNetworkModelSetupError::RecorderSetupError {
                     network: entry.name.clone(),
-                    source,
+                    source: Box::new(source),
                 }
             })?;
             let solver = entry
@@ -247,7 +247,7 @@ impl MultiNetworkModel {
                 .setup_solver::<S>(scenario_indices, &state, settings)
                 .map_err(|source| MultiNetworkModelSetupError::SolverSetupError {
                     network: entry.name.clone(),
-                    source,
+                    source: Box::new(source),
                 })?;
 
             states.push(state);
@@ -290,7 +290,7 @@ impl MultiNetworkModel {
             let recorder_state = entry.network.setup_recorders(&self.domain).map_err(|source| {
                 MultiNetworkModelSetupError::RecorderSetupError {
                     network: entry.name.clone(),
-                    source,
+                    source: Box::new(source),
                 }
             })?;
 
@@ -299,7 +299,7 @@ impl MultiNetworkModel {
                 .setup_multi_scenario_solver::<S>(scenario_indices, settings)
                 .map_err(|source| MultiNetworkModelSetupError::SolverSetupError {
                     network: entry.name.clone(),
-                    source,
+                    source: Box::new(source),
                 })?;
 
             states.push(state);
@@ -344,7 +344,7 @@ impl MultiNetworkModel {
             )
             .map_err(|source| MultiNetworkModelStepError::TransferError {
                 to_network: this_model.name.clone(),
-                source,
+                source: Box::new(source),
             })?;
         }
 
@@ -485,7 +485,7 @@ impl MultiNetworkModel {
                 )
                 .map_err(|source| MultiNetworkModelFinaliseError::NetworkFinaliseError {
                     network: entry.name.clone(),
-                    source,
+                    source: Box::new(source),
                 })?;
         }
 
@@ -512,7 +512,7 @@ impl MultiNetworkModel {
                 )
                 .map_err(|source| MultiNetworkModelFinaliseError::NetworkFinaliseError {
                     network: entry.name.clone(),
-                    source,
+                    source: Box::new(source),
                 })?;
         }
 

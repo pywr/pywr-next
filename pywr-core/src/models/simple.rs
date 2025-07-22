@@ -38,11 +38,11 @@ impl<S> ModelState<S> {
 #[derive(Debug, Error)]
 pub enum ModelSetupError {
     #[error("Failed to setup network: {0}")]
-    NetworkSetupError(#[from] NetworkSetupError),
+    NetworkSetupError(#[from] Box<NetworkSetupError>),
     #[error("Error setting up recorder for network: {0}")]
-    RecorderSetupError(#[from] NetworkRecorderSetupError),
+    RecorderSetupError(#[from] Box<NetworkRecorderSetupError>),
     #[error("Failed to setup solver for network: {0}")]
-    SolverSetupError(#[from] NetworkSolverSetupError),
+    SolverSetupError(#[from] Box<NetworkSolverSetupError>),
 }
 
 /// Errors that can occur when stepping through (simulating) a multi-network model.
@@ -137,10 +137,19 @@ impl Model {
         let timesteps = self.domain.time.timesteps();
         let scenario_indices = self.domain.scenarios.indices();
 
-        let state = self.network.setup_network(timesteps, scenario_indices, 0)?;
+        let state = self
+            .network
+            .setup_network(timesteps, scenario_indices, 0)
+            .map_err(|source| ModelSetupError::NetworkSetupError(Box::new(source)))?;
 
-        let recorder_state = self.network.setup_recorders(&self.domain)?;
-        let solvers = self.network.setup_solver::<S>(scenario_indices, &state, settings)?;
+        let recorder_state = self
+            .network
+            .setup_recorders(&self.domain)
+            .map_err(|source| ModelSetupError::RecorderSetupError(Box::new(source)))?;
+        let solvers = self
+            .network
+            .setup_solver::<S>(scenario_indices, &state, settings)
+            .map_err(|source| ModelSetupError::SolverSetupError(Box::new(source)))?;
 
         Ok(ModelState {
             current_time_step_idx: 0,
@@ -158,11 +167,18 @@ impl Model {
         let timesteps = self.domain.time.timesteps();
         let scenario_indices = self.domain.scenarios.indices();
 
-        let state = self.network.setup_network(timesteps, scenario_indices, 0)?;
-        let recorder_state = self.network.setup_recorders(&self.domain)?;
+        let state = self
+            .network
+            .setup_network(timesteps, scenario_indices, 0)
+            .map_err(|source| ModelSetupError::NetworkSetupError(Box::new(source)))?;
+        let recorder_state = self
+            .network
+            .setup_recorders(&self.domain)
+            .map_err(|source| ModelSetupError::RecorderSetupError(Box::new(source)))?;
         let solvers = self
             .network
-            .setup_multi_scenario_solver::<S>(scenario_indices, settings)?;
+            .setup_multi_scenario_solver::<S>(scenario_indices, settings)
+            .map_err(|source| ModelSetupError::SolverSetupError(Box::new(source)))?;
 
         Ok(ModelState {
             current_time_step_idx: 0,
