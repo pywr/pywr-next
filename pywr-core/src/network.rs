@@ -240,8 +240,14 @@ pub enum NetworkStepError {
     ParameterU64IndexNotFound(GeneralParameterIndex<u64>),
     #[error("General parameter Multi index '{0}' not found.")]
     ParameterMultiIndexNotFound(GeneralParameterIndex<MultiValue>),
-    #[error("Error calculating parameter `{name}`: {source}")]
+    #[error("Error calculating value for parameter `{name}`: {source}")]
     ParameterCalculationError {
+        name: ParameterName,
+        #[source]
+        source: ParameterCalculationError,
+    },
+    #[error("Error performing `after` method on parameter `{name}`: {source}")]
+    ParameterAfterError {
         name: ParameterName,
         #[source]
         source: ParameterCalculationError,
@@ -365,9 +371,9 @@ pub enum NetworkError {
     ParameterStateNotFound { name: ParameterName },
     #[error("Parameter `{name}` is not of a type that supports variable values.")]
     ParameterTypeNotVariable { name: ParameterName },
-    #[error("Parameter with index `{0}` not found")]
+    #[error("F64 Parameter with index `{0}` not found")]
     ParameterF64IndexNotFound(ParameterIndex<f64>),
-    #[error("Parameter with index `{0}` not found")]
+    #[error("U64 Parameter with index `{0}` not found")]
     ParameterU64IndexNotFound(ParameterIndex<u64>),
     #[error("Error with variable parameter `{name}`: {source}")]
     VariableParameterError {
@@ -1003,7 +1009,7 @@ impl Network {
                                 .ok_or_else(|| NetworkStepError::ParameterF64IndexNotFound(*idx))?;
 
                             p.after(timestep, scenario_index, self, state, internal_state)
-                                .map_err(|source| NetworkStepError::ParameterCalculationError {
+                                .map_err(|source| NetworkStepError::ParameterAfterError {
                                     name: p.name().clone(),
                                     source,
                                 })?;
@@ -1020,7 +1026,7 @@ impl Network {
                                 .ok_or_else(|| NetworkStepError::ParameterU64IndexNotFound(*idx))?;
 
                             p.after(timestep, scenario_index, self, state, internal_state)
-                                .map_err(|source| NetworkStepError::ParameterCalculationError {
+                                .map_err(|source| NetworkStepError::ParameterAfterError {
                                     name: p.name().clone(),
                                     source,
                                 })?;
@@ -1037,7 +1043,7 @@ impl Network {
                                 .ok_or_else(|| NetworkStepError::ParameterMultiIndexNotFound(*idx))?;
 
                             p.after(timestep, scenario_index, self, state, internal_state)
-                                .map_err(|source| NetworkStepError::ParameterCalculationError {
+                                .map_err(|source| NetworkStepError::ParameterAfterError {
                                     name: p.name().clone(),
                                     source,
                                 })?;

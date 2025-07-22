@@ -30,7 +30,7 @@ pub enum EdgeError {
     #[error("To node index not found: {0}")]
     ToNodeIndexNotFound(NodeIndex),
     #[error("Node error: {0}")]
-    NodeError(#[from] NodeError),
+    NodeError(#[from] Box<NodeError>),
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -69,8 +69,12 @@ impl Edge {
             .get(&self.to_node_index)
             .ok_or(EdgeError::ToNodeIndexNotFound(self.from_node_index))?;
 
-        let from_cost = from_node.get_outgoing_cost(model, state)?;
-        let to_cost = to_node.get_incoming_cost(model, state)?;
+        let from_cost = from_node
+            .get_outgoing_cost(model, state)
+            .map_err(|e| EdgeError::NodeError(Box::new(e)))?;
+        let to_cost = to_node
+            .get_incoming_cost(model, state)
+            .map_err(|e| EdgeError::NodeError(Box::new(e)))?;
 
         Ok(from_cost + to_cost)
     }

@@ -447,14 +447,6 @@ pub enum NetworkStateError {
     VirtualStorageIndexNotFound(VirtualStorageIndex),
     #[error("Node has no volume: {0}")]
     NodeHasNoVolume(NodeIndex),
-    // #[error("Parameter index not found: {0}")]
-    // ParameterIndexNotFound(ParameterIndex<f64>),
-    // #[error("General parameter index not found: {0}")]
-    // GeneralParameterIndexNotFound(GeneralParameterIndex<f64>),
-    // #[error("Simple parameter index not found: {0}")]
-    // SimpleParameterIndexNotFound(SimpleParameterIndex<f64>),
-    // #[error("Const parameter index not found: {0}")]
-    // ConstParameterIndexNotFound(ConstParameterIndex<f64>),
 }
 
 // State of the nodes and edges

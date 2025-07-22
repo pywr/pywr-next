@@ -420,7 +420,25 @@ where
     fn update_edge_objectives(&mut self, network: &Network, state: &State) -> Result<(), SolverSolveError> {
         self.builder.zero_obj_coefficients();
         for edge in network.edges().deref() {
-            let obj_coef: f64 = edge.cost(network.nodes(), network, state)?;
+            let obj_coef: f64 = edge.cost(network.nodes(), network, state).map_err(|source| {
+                let from_node = match network.get_node(&edge.from_node_index()) {
+                    Some(n) => n,
+                    None => return SolverSolveError::NodeIndexNotFound(edge.from_node_index()),
+                };
+
+                let to_node = match network.get_node(&edge.to_node_index()) {
+                    Some(n) => n,
+                    None => return SolverSolveError::NodeIndexNotFound(edge.to_node_index()),
+                };
+
+                SolverSolveError::EdgeError {
+                    from_name: from_node.name().to_string(),
+                    from_sub_name: from_node.sub_name().map(|s| s.to_string()),
+                    to_name: to_node.name().to_string(),
+                    to_sub_name: to_node.sub_name().map(|s| s.to_string()),
+                    source,
+                }
+            })?;
             let col = self.col_for_edge(&edge.index());
 
             self.builder.add_obj_coefficient(col.to_usize().unwrap(), obj_coef);
@@ -442,10 +460,17 @@ where
                 .get_node(&row.node_idx)
                 .ok_or(SolverSolveError::NodeIndexNotFound(row.node_idx))?;
 
-            let (lb, ub): (f64, f64) = match node.get_bounds(network, state)? {
-                NodeBounds::Flow(bounds) => (bounds.min_flow, bounds.max_flow),
-                NodeBounds::Volume(bounds) => (-bounds.available / dt, bounds.missing / dt),
-            };
+            let (lb, ub): (f64, f64) =
+                match node
+                    .get_bounds(network, state)
+                    .map_err(|source| SolverSolveError::NodeError {
+                        name: node.name().to_string(),
+                        sub_name: node.sub_name().map(|s| s.to_string()),
+                        source,
+                    })? {
+                    NodeBounds::Flow(bounds) => (bounds.min_flow, bounds.max_flow),
+                    NodeBounds::Volume(bounds) => (-bounds.available / dt, bounds.missing / dt),
+                };
 
             match row.row_type {
                 NodeRowType::Continuous => {
@@ -531,7 +556,13 @@ where
             .iter()
             .zip(network.aggregated_nodes().deref())
         {
-            let (lb, ub): (f64, f64) = agg_node.get_current_flow_bounds(network, state)?;
+            let (lb, ub): (f64, f64) = agg_node.get_current_flow_bounds(network, state).map_err(|e| {
+                SolverSolveError::AggregatedNodeError {
+                    name: agg_node.name().to_string(),
+                    sub_name: agg_node.sub_name().map(|s| s.to_string()),
+                    source: e,
+                }
+            })?;
             self.builder.apply_row_bounds(*row_id, lb, ub);
         }
 

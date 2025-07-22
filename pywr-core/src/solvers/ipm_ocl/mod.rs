@@ -309,7 +309,26 @@ impl BuiltSolver {
                     edge.cost(network.nodes(), network, s)
                         .map(|c| if c != 0.0 { -c } else { 0.0 })
                 })
-                .collect::<Result<Vec<f64>, _>>()?;
+                .collect::<Result<Vec<f64>, _>>()
+                .map_err(|source| {
+                    let from_node = match network.get_node(&edge.from_node_index()) {
+                        Some(n) => n,
+                        None => return SolverSolveError::NodeIndexNotFound(edge.from_node_index()),
+                    };
+
+                    let to_node = match network.get_node(&edge.to_node_index()) {
+                        Some(n) => n,
+                        None => return SolverSolveError::NodeIndexNotFound(edge.to_node_index()),
+                    };
+
+                    SolverSolveError::EdgeError {
+                        from_name: from_node.name().to_string(),
+                        from_sub_name: from_node.sub_name().map(|s| s.to_string()),
+                        to_name: to_node.name().to_string(),
+                        to_sub_name: to_node.sub_name().map(|s| s.to_string()),
+                        source,
+                    }
+                })?;
 
             let col = self.col_for_edge(&edge.index());
             self.lp.add_obj_coefficient(col, &cost);

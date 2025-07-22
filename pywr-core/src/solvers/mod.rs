@@ -100,12 +100,29 @@ pub enum SolverSetupError {
 /// Errors that can occur during solver solve.
 #[derive(Debug, Error)]
 pub enum SolverSolveError {
-    #[error("Edge error: {0}")]
-    EdgeError(#[from] crate::edge::EdgeError),
-    #[error("Node error: {0}")]
-    NodeError(#[from] crate::node::NodeError),
-    #[error("Aggregated node error: {0}")]
-    AggregatedNodeError(#[from] crate::aggregated_node::AggregatedNodeError),
+    #[error("Edge from `{from_name}` and sub-name `{}` to `{to_name}` and sub-name `{}` error: {source}", .from_sub_name.as_deref().unwrap_or("None"), .to_sub_name.as_deref().unwrap_or("None"))]
+    EdgeError {
+        from_name: String,
+        from_sub_name: Option<String>,
+        to_name: String,
+        to_sub_name: Option<String>,
+        #[source]
+        source: crate::edge::EdgeError,
+    },
+    #[error("Node `{name}` and sub-name `{}` error: {source}", .sub_name.as_deref().unwrap_or("None"))]
+    NodeError {
+        name: String,
+        sub_name: Option<String>,
+        #[source]
+        source: crate::node::NodeError,
+    },
+    #[error("Aggregated node `{name}` and sub-name `{}` error: {source}", .sub_name.as_deref().unwrap_or("None"))]
+    AggregatedNodeError {
+        name: String,
+        sub_name: Option<String>,
+        #[source]
+        source: crate::aggregated_node::AggregatedNodeError,
+    },
     #[error("Virtual storage error: {0}")]
     VirtualStorageError(#[from] crate::virtual_storage::VirtualStorageError),
     #[error("Node index not found: {0}")]

@@ -37,10 +37,14 @@ pub enum NodeError {
     SimpleMetricF64Error(#[from] SimpleMetricF64Error),
     #[error("F64 constant metric error: {0}")]
     ConstantMetricF64Error(#[from] ConstantMetricF64Error),
-    #[error("Invalid node connection to input node: {0}")]
-    InvalidNodeConnectionToInput(String),
-    #[error("Invalid node connection from output node: {0}")]
-    InvalidNodeConnectionFromOutput(String),
+    #[error("Invalid node connection to input node.")]
+    InvalidNodeConnectionToInput,
+    #[error("Input node has no incoming edges.")]
+    InputNodeHasNoIncomingEdges,
+    #[error("Invalid node connection from output node.")]
+    InvalidNodeConnectionFromOutput,
+    #[error("Output node has no outgoing edges.")]
+    OutputNodeHasNoOutgoingEdges,
     #[error("No virtual storage on storage node")]
     NoVirtualStorageOnStorageNode,
     #[error("Network state error: {0}")]
@@ -278,7 +282,7 @@ impl Node {
 
     pub fn add_incoming_edge(&mut self, edge: EdgeIndex) -> Result<(), NodeError> {
         match self {
-            Self::Input(n) => Err(NodeError::InvalidNodeConnectionToInput(n.meta.name.clone())),
+            Self::Input(_) => Err(NodeError::InvalidNodeConnectionToInput),
             Self::Output(n) => {
                 n.add_incoming_edge(edge);
                 Ok(())
@@ -300,7 +304,7 @@ impl Node {
                 n.add_outgoing_edge(edge);
                 Ok(())
             }
-            Self::Output(n) => Err(NodeError::InvalidNodeConnectionFromOutput(n.meta.name.clone())),
+            Self::Output(_) => Err(NodeError::InvalidNodeConnectionFromOutput),
             Self::Link(n) => {
                 n.add_outgoing_edge(edge);
                 Ok(())
@@ -314,7 +318,7 @@ impl Node {
 
     pub fn get_incoming_edges(&self) -> Result<&Vec<EdgeIndex>, NodeError> {
         match self {
-            Self::Input(n) => Err(NodeError::InvalidNodeConnectionToInput(n.meta.name.clone())), // TODO better error
+            Self::Input(_) => Err(NodeError::InputNodeHasNoIncomingEdges),
             Self::Output(n) => Ok(&n.incoming_edges),
             Self::Link(n) => Ok(&n.incoming_edges),
             Self::Storage(n) => Ok(&n.incoming_edges),
@@ -324,7 +328,7 @@ impl Node {
     pub fn get_outgoing_edges(&self) -> Result<&Vec<EdgeIndex>, NodeError> {
         match self {
             Self::Input(n) => Ok(&n.outgoing_edges),
-            Self::Output(n) => Err(NodeError::InvalidNodeConnectionFromOutput(n.meta.name.clone())), // TODO better error
+            Self::Output(_) => Err(NodeError::OutputNodeHasNoOutgoingEdges),
             Self::Link(n) => Ok(&n.outgoing_edges),
             Self::Storage(n) => Ok(&n.outgoing_edges),
         }

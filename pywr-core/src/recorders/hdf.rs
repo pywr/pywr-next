@@ -29,6 +29,13 @@ pub enum Hdf5Error {
         #[source]
         source: hdf5_metno::Error,
     },
+    #[error("HDF5 writing data for metric `{metric}` error in file at `{path}`: {source}")]
+    HDF5MetricError {
+        path: PathBuf,
+        metric: String,
+        #[source]
+        source: hdf5_metno::Error,
+    },
     #[error("Could not create unicode variable name at `{path}`: {source}")]
     HDF5VarLenUnicode {
         path: PathBuf,
@@ -141,7 +148,7 @@ impl Recorder for HDF5Recorder {
         &self,
         timestep: &Timestep,
         scenario_indices: &[ScenarioIndex],
-        model: &Network,
+        network: &Network,
         state: &[State],
         _metric_set_states: &[Vec<MetricSetState>],
         internal_state: &mut Option<Box<dyn Any>>,
@@ -154,7 +161,7 @@ impl Recorder for HDF5Recorder {
             None => panic!("No internal state defined when one was expected! :("),
         };
 
-        let metric_set = model
+        let metric_set = network
             .get_metric_set(self.metric_set_idx)
             .ok_or(CsvError::MetricSetIndexNotFound {
                 index: self.metric_set_idx,
@@ -165,13 +172,14 @@ impl Recorder for HDF5Recorder {
             let values = scenario_indices
                 .iter()
                 .zip(state)
-                .map(|(_, s)| metric.get_value(model, s))
+                .map(|(_, s)| metric.get_value(network, s))
                 .collect::<Result<Vec<_>, _>>()?;
 
             dataset
                 .write_slice(&values, s![timestep.index, ..])
-                .map_err(|source| Hdf5Error::HDF5Error {
+                .map_err(|source| Hdf5Error::HDF5MetricError {
                     path: dataset.filename().into(),
+                    metric: metric.name().to_string(),
                     source,
                 })?;
         }
@@ -237,6 +245,7 @@ fn require_metric_dataset<S: Into<Extents>>(
         .create("pywr-type")
         .map_err(|source| Hdf5Error::HDF5Error {
             path: ds.filename().into(),
+
             source,
         })?;
     attr.as_writer()

@@ -30,7 +30,7 @@ pub enum SchemaError {
         name: String,
         attr: NodeAttribute,
     },
-    // Use this error when a node is not found in the schema (i.e. while parsing the schema).
+    // Use this error when a parameter is not found in the schema (i.e. while parsing the schema).
     #[error("Parameter `{name}` not found in the schema.")]
     ParameterNotFound { name: String, key: Option<String> },
     // Use this error when a parameter is not found in a pywr-core network (i.e. during building the network).

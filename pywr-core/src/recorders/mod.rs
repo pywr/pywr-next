@@ -108,7 +108,7 @@ pub enum RecorderFinaliseError {
 pub enum RecorderAggregationError {
     #[error("Recorder does not supported aggregation")]
     RecorderDoesNotSupportAggregation,
-    #[error("Error aggregating vale for recorder `{name}`: {source}")]
+    #[error("Error aggregating value for recorder `{name}`: {source}")]
     AggregationError {
         name: String,
         #[source]

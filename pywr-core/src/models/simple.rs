@@ -60,7 +60,7 @@ pub enum ModelStepError {
     RecorderSaveError {
         timestep: Timestep,
         #[source]
-        source: NetworkRecorderSaveError,
+        source: Box<NetworkRecorderSaveError>,
     },
 }
 
@@ -221,7 +221,7 @@ impl Model {
             .save_recorders(timestep, scenario_indices, &state.state, &mut state.recorder_state)
             .map_err(|source| ModelStepError::RecorderSaveError {
                 timestep: *timestep,
-                source,
+                source: Box::new(source),
             })?;
 
         timings.recorder_saving += start_r_save.elapsed();
@@ -271,7 +271,7 @@ impl Model {
             .save_recorders(timestep, scenario_indices, &state.state, &mut state.recorder_state)
             .map_err(|source| ModelStepError::RecorderSaveError {
                 timestep: *timestep,
-                source,
+                source: Box::new(source),
             })?;
 
         timings.recorder_saving += start_r_save.elapsed();
