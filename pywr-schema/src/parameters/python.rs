@@ -202,6 +202,7 @@ impl PythonParameter {
         &self,
         _network: &mut pywr_core::network::Network,
         _args: &LoadArgs,
+        _parent: Option<&str>,
     ) -> Result<ParameterType, SchemaError> {
         Err(SchemaError::FeatureNotEnabled("pyo3".to_string()))
     }
