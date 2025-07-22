@@ -1,9 +1,9 @@
-use crate::PywrError;
 use crate::network::Network;
 use crate::state::{ConstParameterValues, State};
 use crate::timestep::Timestep;
 use std::ops::{Add, AddAssign};
 use std::time::Duration;
+use thiserror::Error;
 
 mod builder;
 
@@ -22,6 +22,8 @@ mod ipm_simd;
 pub use self::ipm_ocl::{ClIpmF32Solver, ClIpmF64Solver, ClIpmSolverSettings, ClIpmSolverSettingsBuilder};
 #[cfg(feature = "ipm-simd")]
 pub use self::ipm_simd::{SimdIpmF64Solver, SimdIpmSolverSettings, SimdIpmSolverSettingsBuilder};
+use crate::aggregated_node::AggregatedNodeIndex;
+use crate::node::NodeIndex;
 #[cfg(feature = "cbc")]
 pub use cbc::{CbcError, CbcSolver, CbcSolverSettings, CbcSolverSettingsBuilder};
 pub use clp::{ClpError, ClpSolver, ClpSolverSettings, ClpSolverSettingsBuilder};
@@ -84,15 +86,74 @@ pub trait SolverSettings {
     fn ignore_feature_requirements(&self) -> bool;
 }
 
+/// Errors that can occur during solver setup.
+#[derive(Debug, Error)]
+pub enum SolverSetupError {
+    #[error("Node error: {0}")]
+    NodeError(#[from] crate::node::NodeError),
+    #[error("Cannot create linear programme. No edges defined in the model")]
+    NoEdgesDefined,
+    #[error("Node index not found: {0}")]
+    NodeIndexNotFound(NodeIndex),
+}
+
+/// Errors that can occur during solver solve.
+#[derive(Debug, Error)]
+pub enum SolverSolveError {
+    #[error("Edge from `{from_name}` and sub-name `{}` to `{to_name}` and sub-name `{}` error: {source}", .from_sub_name.as_deref().unwrap_or("None"), .to_sub_name.as_deref().unwrap_or("None"))]
+    EdgeError {
+        from_name: String,
+        from_sub_name: Option<String>,
+        to_name: String,
+        to_sub_name: Option<String>,
+        #[source]
+        source: crate::edge::EdgeError,
+    },
+    #[error("Node `{name}` and sub-name `{}` error: {source}", .sub_name.as_deref().unwrap_or("None"))]
+    NodeError {
+        name: String,
+        sub_name: Option<String>,
+        #[source]
+        source: crate::node::NodeError,
+    },
+    #[error("Aggregated node `{name}` and sub-name `{}` error: {source}", .sub_name.as_deref().unwrap_or("None"))]
+    AggregatedNodeError {
+        name: String,
+        sub_name: Option<String>,
+        #[source]
+        source: crate::aggregated_node::AggregatedNodeError,
+    },
+    #[error("Virtual storage error: {0}")]
+    VirtualStorageError(#[from] crate::virtual_storage::VirtualStorageError),
+    #[error("Node index not found: {0}")]
+    NodeIndexNotFound(NodeIndex),
+    #[error("Aggregated node index not found: {0}")]
+    AggregatedNodeIndexNotFound(AggregatedNodeIndex),
+    #[error("missing solver features")]
+    MissingSolverFeatures,
+    #[error("Network state error: {0}")]
+    NetworkStateError(#[from] crate::state::NetworkStateError),
+    #[error("State error: {0}")]
+    StateError(#[from] crate::state::StateError),
+}
+
 pub trait Solver: Send {
     type Settings;
 
     fn name() -> &'static str;
     /// An array of features that this solver provides.
     fn features() -> &'static [SolverFeatures];
-    fn setup(model: &Network, values: &ConstParameterValues, settings: &Self::Settings)
-    -> Result<Box<Self>, PywrError>;
-    fn solve(&mut self, model: &Network, timestep: &Timestep, state: &mut State) -> Result<SolverTimings, PywrError>;
+    fn setup(
+        model: &Network,
+        values: &ConstParameterValues,
+        settings: &Self::Settings,
+    ) -> Result<Box<Self>, SolverSetupError>;
+    fn solve(
+        &mut self,
+        model: &Network,
+        timestep: &Timestep,
+        state: &mut State,
+    ) -> Result<SolverTimings, SolverSolveError>;
 }
 
 pub trait MultiStateSolver: Send {
@@ -101,7 +162,11 @@ pub trait MultiStateSolver: Send {
     fn name() -> &'static str;
     /// An array of features that this solver provides.
     fn features() -> &'static [SolverFeatures];
-    fn setup(model: &Network, num_scenarios: usize, settings: &Self::Settings) -> Result<Box<Self>, PywrError>;
-    fn solve(&mut self, model: &Network, timestep: &Timestep, states: &mut [State])
-    -> Result<SolverTimings, PywrError>;
+    fn setup(model: &Network, num_scenarios: usize, settings: &Self::Settings) -> Result<Box<Self>, SolverSetupError>;
+    fn solve(
+        &mut self,
+        model: &Network,
+        timestep: &Timestep,
+        states: &mut [State],
+    ) -> Result<SolverTimings, SolverSolveError>;
 }

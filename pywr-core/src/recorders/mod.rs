@@ -5,10 +5,11 @@ mod memory;
 mod metric_set;
 mod py;
 
-use crate::PywrError;
-use crate::metric::{MetricF64, MetricU64};
+use crate::metric::{MetricF64, MetricF64Error, MetricU64, MetricU64Error};
 use crate::models::ModelDomain;
 use crate::network::Network;
+use crate::recorders::csv::CsvError;
+use crate::recorders::hdf::Hdf5Error;
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
 use crate::timestep::Timestep;
@@ -17,13 +18,14 @@ pub use csv::{CsvLongFmtOutput, CsvLongFmtRecord, CsvWideFmtOutput};
 use float_cmp::{ApproxEq, F64Margin, approx_eq};
 pub use hdf::HDF5Recorder;
 pub use memory::{Aggregation, AggregationError, AggregationOrder, MemoryRecorder};
-pub use metric_set::{MetricSet, MetricSetIndex, MetricSetState, OutputMetric};
+pub use metric_set::{MetricSet, MetricSetIndex, MetricSetSaveError, MetricSetState, OutputMetric};
 use ndarray::Array2;
 use ndarray::prelude::*;
 use std::any::Any;
 use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::ops::Deref;
+use thiserror::Error;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub struct RecorderIndex(usize);
@@ -64,12 +66,62 @@ impl RecorderMeta {
     }
 }
 
+/// Errors returned by recorder setup.
+#[derive(Error, Debug)]
+pub enum RecorderSetupError {
+    #[error("CSV error: {0}")]
+    CSVError(#[from] CsvError),
+    #[error("HDF5 error: {0}")]
+    HDF5Error(#[from] Hdf5Error),
+    #[error("Metric set index `{index}` not found")]
+    MetricSetIndexNotFound { index: MetricSetIndex },
+}
+
+/// Errors returned by recorder saving.
+#[derive(Error, Debug)]
+pub enum RecorderSaveError {
+    #[error("F64 metric error: {0}")]
+    MetricF64Error(#[from] MetricF64Error),
+    #[error("U64 metric error: {0}")]
+    MetricU64Error(#[from] MetricU64Error),
+    #[error("Metric set index `{index}` not found")]
+    MetricSetIndexNotFound { index: MetricSetIndex },
+    #[error("CSV error: {0}")]
+    CSVError(#[from] CsvError),
+    #[error("HDF5 error: {0}")]
+    HDF5Error(#[from] Hdf5Error),
+}
+
+/// Errors returned by recorder saving.
+#[derive(Error, Debug)]
+pub enum RecorderFinaliseError {
+    #[error("Metric set index `{index}` not found")]
+    MetricSetIndexNotFound { index: MetricSetIndex },
+    #[error("CSV error: {0}")]
+    CSVError(#[from] CsvError),
+    #[error("HDF5 error: {0}")]
+    HDF5Error(#[from] Hdf5Error),
+}
+
+/// Errors returned by recorder aggregation.
+#[derive(Error, Debug)]
+pub enum RecorderAggregationError {
+    #[error("Recorder does not supported aggregation")]
+    RecorderDoesNotSupportAggregation,
+    #[error("Error aggregating value for recorder `{name}`: {source}")]
+    AggregationError {
+        name: String,
+        #[source]
+        source: AggregationError,
+    },
+}
+
 pub trait Recorder: Send + Sync {
     fn meta(&self) -> &RecorderMeta;
     fn name(&self) -> &str {
         self.meta().name.as_str()
     }
-    fn setup(&self, _domain: &ModelDomain, _model: &Network) -> Result<Option<Box<dyn Any>>, PywrError> {
+    fn setup(&self, _domain: &ModelDomain, _model: &Network) -> Result<Option<Box<dyn Any>>, RecorderSetupError> {
         Ok(None)
     }
     fn before(&self) {}
@@ -82,7 +134,7 @@ pub trait Recorder: Send + Sync {
         _state: &[State],
         _metric_set_states: &[Vec<MetricSetState>],
         _internal_state: &mut Option<Box<dyn Any>>,
-    ) -> Result<(), PywrError> {
+    ) -> Result<(), RecorderSaveError> {
         Ok(())
     }
     fn finalise(
@@ -91,12 +143,12 @@ pub trait Recorder: Send + Sync {
         _scenario_indices: &[ScenarioIndex],
         _metric_set_states: &[Vec<MetricSetState>],
         _internal_state: &mut Option<Box<dyn Any>>,
-    ) -> Result<(), PywrError> {
+    ) -> Result<(), RecorderFinaliseError> {
         Ok(())
     }
 
-    fn aggregated_value(&self, _internal_state: &Option<Box<dyn Any>>) -> Result<f64, PywrError> {
-        Err(PywrError::RecorderDoesNotSupportAggregation)
+    fn aggregated_value(&self, _internal_state: &Option<Box<dyn Any>>) -> Result<f64, RecorderAggregationError> {
+        Err(RecorderAggregationError::RecorderDoesNotSupportAggregation)
     }
 }
 
@@ -119,7 +171,7 @@ impl Recorder for Array2Recorder {
         &self.meta
     }
 
-    fn setup(&self, domain: &ModelDomain, _model: &Network) -> Result<Option<Box<(dyn Any)>>, PywrError> {
+    fn setup(&self, domain: &ModelDomain, _model: &Network) -> Result<Option<Box<(dyn Any)>>, RecorderSetupError> {
         let array: Array2<f64> = Array::zeros((domain.time().len(), domain.scenarios().len()));
 
         Ok(Some(Box::new(array)))
@@ -133,7 +185,7 @@ impl Recorder for Array2Recorder {
         state: &[State],
         _metric_set_states: &[Vec<MetricSetState>],
         internal_state: &mut Option<Box<dyn Any>>,
-    ) -> Result<(), PywrError> {
+    ) -> Result<(), RecorderSaveError> {
         // Downcast the internal state to the correct type
         let array = match internal_state {
             Some(internal) => match internal.downcast_mut::<Array2<f64>>() {
@@ -192,7 +244,7 @@ impl Recorder for AssertionF64Recorder {
         state: &[State],
         _metric_set_states: &[Vec<MetricSetState>],
         _internal_state: &mut Option<Box<dyn Any>>,
-    ) -> Result<(), PywrError> {
+    ) -> Result<(), RecorderSaveError> {
         // This panics if out-of-bounds
 
         for scenario_index in scenario_indices {
@@ -262,7 +314,7 @@ impl Recorder for AssertionU64Recorder {
         state: &[State],
         _metric_set_states: &[Vec<MetricSetState>],
         _internal_state: &mut Option<Box<dyn Any>>,
-    ) -> Result<(), PywrError> {
+    ) -> Result<(), RecorderSaveError> {
         // This panics if out-of-bounds
 
         for scenario_index in scenario_indices {
@@ -337,7 +389,7 @@ where
         state: &[State],
         _metric_set_states: &[Vec<MetricSetState>],
         _internal_state: &mut Option<Box<dyn Any>>,
-    ) -> Result<(), PywrError> {
+    ) -> Result<(), RecorderSaveError> {
         // This panics if out-of-bounds
 
         for scenario_index in scenario_indices {
@@ -392,7 +444,7 @@ impl Recorder for IndexAssertionRecorder {
         state: &[State],
         _metric_set_states: &[Vec<MetricSetState>],
         _internal_state: &mut Option<Box<dyn Any>>,
-    ) -> Result<(), PywrError> {
+    ) -> Result<(), RecorderSaveError> {
         // This panics if out-of-bounds
 
         for scenario_index in scenario_indices {

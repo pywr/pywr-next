@@ -1,10 +1,16 @@
-use crate::PywrError;
 use crate::models::ModelDomain;
-use crate::network::{Network, NetworkState, RunTimings};
+use crate::network::{
+    Network, NetworkFinaliseError, NetworkRecorderSaveError, NetworkRecorderSetupError, NetworkSetupError,
+    NetworkSolverSetupError, NetworkState, NetworkStepError, RunTimings,
+};
 use crate::solvers::{MultiStateSolver, Solver, SolverSettings};
+use crate::timestep::Timestep;
+#[cfg(feature = "pyo3")]
+use pyo3::{PyErr, exceptions::PyRuntimeError};
 use rayon::ThreadPool;
 use std::any::Any;
 use std::time::Instant;
+use thiserror::Error;
 use tracing::debug;
 
 pub struct ModelState<S> {
@@ -25,6 +31,60 @@ impl<S> ModelState<S> {
 
     pub fn recorder_state(&self) -> &Vec<Option<Box<dyn Any>>> {
         &self.recorder_state
+    }
+}
+
+/// Errors that can occur when setting up a multi-network model.
+#[derive(Debug, Error)]
+pub enum ModelSetupError {
+    #[error("Failed to setup network: {0}")]
+    NetworkSetupError(#[from] Box<NetworkSetupError>),
+    #[error("Error setting up recorder for network: {0}")]
+    RecorderSetupError(#[from] Box<NetworkRecorderSetupError>),
+    #[error("Failed to setup solver for network: {0}")]
+    SolverSetupError(#[from] Box<NetworkSolverSetupError>),
+}
+
+/// Errors that can occur when stepping through (simulating) a multi-network model.
+#[derive(Debug, Error)]
+pub enum ModelStepError {
+    #[error("No more timesteps")]
+    EndOfTimesteps,
+    #[error("Error stepping through network at timestep {timestep:#?}: {source}")]
+    NetworkStepError {
+        timestep: Timestep,
+        #[source]
+        source: Box<NetworkStepError>,
+    },
+    #[error("Error saving recorder for network at timestep {timestep:#?}: {source}")]
+    RecorderSaveError {
+        timestep: Timestep,
+        #[source]
+        source: Box<NetworkRecorderSaveError>,
+    },
+}
+
+/// Errors that can occur when finalising a multi-network model.
+#[derive(Debug, Error)]
+pub enum ModelFinaliseError {
+    #[error("Error finalising network: {0}")]
+    NetworkFinaliseError(#[from] NetworkFinaliseError),
+}
+
+#[derive(Debug, Error)]
+pub enum ModelRunError {
+    #[error("Error setting up model: {0}")]
+    SetupError(#[from] ModelSetupError),
+    #[error("Error stepping through model: {0}")]
+    StepError(#[from] ModelStepError),
+    #[error("Error finalising model: {0}")]
+    FinaliseError(#[from] ModelFinaliseError),
+}
+
+#[cfg(feature = "pyo3")]
+impl From<ModelRunError> for PyErr {
+    fn from(err: ModelRunError) -> PyErr {
+        PyRuntimeError::new_err(err.to_string())
     }
 }
 
@@ -69,7 +129,7 @@ impl Model {
         self.network.check_multi_scenario_solver_features::<S>()
     }
 
-    pub fn setup<S>(&self, settings: &S::Settings) -> Result<ModelState<Vec<Box<S>>>, PywrError>
+    pub fn setup<S>(&self, settings: &S::Settings) -> Result<ModelState<Vec<Box<S>>>, ModelSetupError>
     where
         S: Solver,
         <S as Solver>::Settings: SolverSettings,
@@ -77,9 +137,19 @@ impl Model {
         let timesteps = self.domain.time.timesteps();
         let scenario_indices = self.domain.scenarios.indices();
 
-        let state = self.network.setup_network(timesteps, scenario_indices, 0)?;
-        let recorder_state = self.network.setup_recorders(&self.domain)?;
-        let solvers = self.network.setup_solver::<S>(scenario_indices, &state, settings)?;
+        let state = self
+            .network
+            .setup_network(timesteps, scenario_indices, 0)
+            .map_err(|source| ModelSetupError::NetworkSetupError(Box::new(source)))?;
+
+        let recorder_state = self
+            .network
+            .setup_recorders(&self.domain)
+            .map_err(|source| ModelSetupError::RecorderSetupError(Box::new(source)))?;
+        let solvers = self
+            .network
+            .setup_solver::<S>(scenario_indices, &state, settings)
+            .map_err(|source| ModelSetupError::SolverSetupError(Box::new(source)))?;
 
         Ok(ModelState {
             current_time_step_idx: 0,
@@ -89,7 +159,7 @@ impl Model {
         })
     }
 
-    pub fn setup_multi_scenario<S>(&self, settings: &S::Settings) -> Result<ModelState<Box<S>>, PywrError>
+    pub fn setup_multi_scenario<S>(&self, settings: &S::Settings) -> Result<ModelState<Box<S>>, ModelSetupError>
     where
         S: MultiStateSolver,
         <S as MultiStateSolver>::Settings: SolverSettings,
@@ -97,11 +167,18 @@ impl Model {
         let timesteps = self.domain.time.timesteps();
         let scenario_indices = self.domain.scenarios.indices();
 
-        let state = self.network.setup_network(timesteps, scenario_indices, 0)?;
-        let recorder_state = self.network.setup_recorders(&self.domain)?;
+        let state = self
+            .network
+            .setup_network(timesteps, scenario_indices, 0)
+            .map_err(|source| ModelSetupError::NetworkSetupError(Box::new(source)))?;
+        let recorder_state = self
+            .network
+            .setup_recorders(&self.domain)
+            .map_err(|source| ModelSetupError::RecorderSetupError(Box::new(source)))?;
         let solvers = self
             .network
-            .setup_multi_scenario_solver::<S>(scenario_indices, settings)?;
+            .setup_multi_scenario_solver::<S>(scenario_indices, settings)
+            .map_err(|source| ModelSetupError::SolverSetupError(Box::new(source)))?;
 
         Ok(ModelState {
             current_time_step_idx: 0,
@@ -116,7 +193,7 @@ impl Model {
         state: &mut ModelState<Vec<Box<S>>>,
         thread_pool: Option<&ThreadPool>,
         timings: &mut RunTimings,
-    ) -> Result<(), PywrError>
+    ) -> Result<(), ModelStepError>
     where
         S: Solver,
     {
@@ -125,7 +202,7 @@ impl Model {
             .time
             .timesteps()
             .get(state.current_time_step_idx)
-            .ok_or(PywrError::EndOfTimesteps)?;
+            .ok_or(ModelStepError::EndOfTimesteps)?;
 
         let scenario_indices = self.domain.scenarios.indices();
         debug!("Starting timestep {:?}", timestep);
@@ -139,18 +216,30 @@ impl Model {
                 pool.install(|| {
                     self.network
                         .step_par(timestep, scenario_indices, solvers, network_state, timings)
-                })?;
+                })
+                .map_err(|source| ModelStepError::NetworkStepError {
+                    timestep: *timestep,
+                    source: Box::new(source),
+                })?
             }
-            None => {
-                self.network
-                    .step(timestep, scenario_indices, solvers, network_state, timings)?;
-            }
+            None => self
+                .network
+                .step(timestep, scenario_indices, solvers, network_state, timings)
+                .map_err(|source| ModelStepError::NetworkStepError {
+                    timestep: *timestep,
+                    source: Box::new(source),
+                })?,
         }
 
         let start_r_save = Instant::now();
 
         self.network
-            .save_recorders(timestep, scenario_indices, &state.state, &mut state.recorder_state)?;
+            .save_recorders(timestep, scenario_indices, &state.state, &mut state.recorder_state)
+            .map_err(|source| ModelStepError::RecorderSaveError {
+                timestep: *timestep,
+                source: Box::new(source),
+            })?;
+
         timings.recorder_saving += start_r_save.elapsed();
 
         // Finally increment the time-step index
@@ -164,7 +253,7 @@ impl Model {
         state: &mut ModelState<Box<S>>,
         thread_pool: &ThreadPool,
         timings: &mut RunTimings,
-    ) -> Result<(), PywrError>
+    ) -> Result<(), ModelStepError>
     where
         S: MultiStateSolver,
     {
@@ -173,7 +262,7 @@ impl Model {
             .time
             .timesteps()
             .get(state.current_time_step_idx)
-            .ok_or(PywrError::EndOfTimesteps)?;
+            .ok_or(ModelStepError::EndOfTimesteps)?;
 
         let scenario_indices = self.domain.scenarios.indices();
         debug!("Starting timestep {:?}", timestep);
@@ -182,15 +271,25 @@ impl Model {
         let network_state = &mut state.state;
 
         // State is mutated in-place
-        thread_pool.install(|| {
-            self.network
-                .step_multi_scenario(timestep, scenario_indices, solvers, network_state, timings)
-        })?;
+        thread_pool
+            .install(|| {
+                self.network
+                    .step_multi_scenario(timestep, scenario_indices, solvers, network_state, timings)
+            })
+            .map_err(|source| ModelStepError::NetworkStepError {
+                timestep: *timestep,
+                source: Box::new(source),
+            })?;
 
         let start_r_save = Instant::now();
 
         self.network
-            .save_recorders(timestep, scenario_indices, &state.state, &mut state.recorder_state)?;
+            .save_recorders(timestep, scenario_indices, &state.state, &mut state.recorder_state)
+            .map_err(|source| ModelStepError::RecorderSaveError {
+                timestep: *timestep,
+                source: Box::new(source),
+            })?;
+
         timings.recorder_saving += start_r_save.elapsed();
 
         // Finally increment the time-step index
@@ -202,7 +301,7 @@ impl Model {
     /// Run a model through the given time-steps.
     ///
     /// This method will setup state and solvers, and then run the model through the time-steps.
-    pub fn run<S>(&self, settings: &S::Settings) -> Result<Vec<Option<Box<dyn Any>>>, PywrError>
+    pub fn run<S>(&self, settings: &S::Settings) -> Result<Vec<Option<Box<dyn Any>>>, ModelRunError>
     where
         S: Solver,
         <S as Solver>::Settings: SolverSettings,
@@ -219,7 +318,7 @@ impl Model {
         &self,
         state: &mut ModelState<Vec<Box<S>>>,
         settings: &S::Settings,
-    ) -> Result<(), PywrError>
+    ) -> Result<(), ModelRunError>
     where
         S: Solver,
         <S as Solver>::Settings: SolverSettings,
@@ -242,18 +341,20 @@ impl Model {
         loop {
             match self.step::<S>(state, pool.as_ref(), &mut timings) {
                 Ok(_) => {}
-                Err(PywrError::EndOfTimesteps) => break,
-                Err(e) => return Err(e),
+                Err(ModelStepError::EndOfTimesteps) => break,
+                Err(e) => return Err(ModelRunError::StepError(e)),
             }
 
             count += self.domain.scenarios.indices().len();
         }
 
-        self.network.finalise(
-            self.domain.scenarios.indices(),
-            state.state.all_metric_set_internal_states_mut(),
-            &mut state.recorder_state,
-        )?;
+        self.network
+            .finalise(
+                self.domain.scenarios.indices(),
+                state.state.all_metric_set_internal_states_mut(),
+                &mut state.recorder_state,
+            )
+            .map_err(ModelFinaliseError::NetworkFinaliseError)?;
         // End the global timer and print the run statistics
         timings.finish(count);
         timings.print_table();
@@ -264,7 +365,7 @@ impl Model {
     /// Run a network through the given time-steps with [`MultiStateSolver`].
     ///
     /// This method will setup state and the solver, and then run the network through the time-steps.
-    pub fn run_multi_scenario<S>(&self, settings: &S::Settings) -> Result<Vec<Option<Box<dyn Any>>>, PywrError>
+    pub fn run_multi_scenario<S>(&self, settings: &S::Settings) -> Result<Vec<Option<Box<dyn Any>>>, ModelRunError>
     where
         S: MultiStateSolver,
         <S as MultiStateSolver>::Settings: SolverSettings,
@@ -282,7 +383,7 @@ impl Model {
         &self,
         state: &mut ModelState<Box<S>>,
         settings: &S::Settings,
-    ) -> Result<(), PywrError>
+    ) -> Result<(), ModelRunError>
     where
         S: MultiStateSolver,
         <S as MultiStateSolver>::Settings: SolverSettings,
@@ -301,18 +402,20 @@ impl Model {
         loop {
             match self.step_multi_scenario::<S>(state, &pool, &mut timings) {
                 Ok(_) => {}
-                Err(PywrError::EndOfTimesteps) => break,
-                Err(e) => return Err(e),
+                Err(ModelStepError::EndOfTimesteps) => break,
+                Err(e) => return Err(ModelRunError::StepError(e)),
             }
 
             count += self.domain.scenarios.indices().len();
         }
 
-        self.network.finalise(
-            self.domain.scenarios.indices(),
-            state.state.all_metric_set_internal_states_mut(),
-            &mut state.recorder_state,
-        )?;
+        self.network
+            .finalise(
+                self.domain.scenarios.indices(),
+                state.state.all_metric_set_internal_states_mut(),
+                &mut state.recorder_state,
+            )
+            .map_err(ModelFinaliseError::NetworkFinaliseError)?;
 
         // End the global timer and print the run statistics
         timings.finish(count);

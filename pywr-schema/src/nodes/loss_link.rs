@@ -139,7 +139,14 @@ impl LossLinkNode {
         &self,
         network: &pywr_core::network::Network,
     ) -> Result<Vec<pywr_core::node::NodeIndex>, SchemaError> {
-        let indices = vec![network.get_node_index_by_name(self.meta.name.as_str(), Self::net_sub_name())?];
+        let indices = vec![
+            network
+                .get_node_index_by_name(self.meta.name.as_str(), Self::net_sub_name())
+                .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                    name: self.meta.name.clone(),
+                    sub_name: Self::net_sub_name().map(String::from),
+                })?,
+        ];
         Ok(indices)
     }
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
@@ -205,9 +212,14 @@ impl LossLinkNode {
             NodeAttribute::Inflow => {
                 match network.get_node_index_by_name(self.meta.name.as_str(), Self::loss_sub_name()) {
                     // Loss node is defined. The total inflow is the sum of the net and loss nodes;
-                    Ok(loss_idx) => {
+                    Some(loss_idx) => {
                         let indices = vec![
-                            network.get_node_index_by_name(self.meta.name.as_str(), Self::net_sub_name())?,
+                            network
+                                .get_node_index_by_name(self.meta.name.as_str(), Self::net_sub_name())
+                                .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                                    name: self.meta.name.clone(),
+                                    sub_name: Self::net_sub_name().map(String::from),
+                                })?,
                             loss_idx,
                         ];
                         MetricF64::MultiNodeInFlow {
@@ -216,19 +228,29 @@ impl LossLinkNode {
                         }
                     }
                     // No loss node defined, so just use the net node
-                    Err(_) => MetricF64::NodeInFlow(
-                        network.get_node_index_by_name(self.meta.name.as_str(), Self::net_sub_name())?,
+                    None => MetricF64::NodeInFlow(
+                        network
+                            .get_node_index_by_name(self.meta.name.as_str(), Self::net_sub_name())
+                            .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                                name: self.meta.name.clone(),
+                                sub_name: Self::net_sub_name().map(String::from),
+                            })?,
                     ),
                 }
             }
             NodeAttribute::Outflow => {
-                let idx = network.get_node_index_by_name(self.meta.name.as_str(), Self::net_sub_name())?;
+                let idx = network
+                    .get_node_index_by_name(self.meta.name.as_str(), Self::net_sub_name())
+                    .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                        name: self.meta.name.clone(),
+                        sub_name: Self::net_sub_name().map(String::from),
+                    })?;
                 MetricF64::NodeOutFlow(idx)
             }
             NodeAttribute::Loss => {
                 match network.get_node_index_by_name(self.meta.name.as_str(), Self::loss_sub_name()) {
-                    Ok(idx) => MetricF64::NodeInFlow(idx),
-                    Err(_) => 0.0.into(),
+                    Some(idx) => MetricF64::NodeInFlow(idx),
+                    None => 0.0.into(),
                 }
             }
             _ => {

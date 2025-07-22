@@ -1,7 +1,7 @@
-use super::{Parameter, ParameterName, PywrError};
-use crate::PywrError::InvalidMetricValue;
+use super::{Parameter, ParameterName};
 use crate::metric::MetricF64;
 use crate::network::Network;
+use crate::parameters::errors::ParameterCalculationError;
 use crate::parameters::{GeneralParameter, ParameterMeta, ParameterState};
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
@@ -35,14 +35,11 @@ impl GeneralParameter<f64> for DivisionParameter {
         model: &Network,
         state: &State,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<f64, PywrError> {
+    ) -> Result<f64, ParameterCalculationError> {
         let denominator = self.denominator.get_value(model, state)?;
 
         if denominator == 0.0 {
-            return Err(InvalidMetricValue(format!(
-                "Division by zero creates a NaN in {}.",
-                self.name()
-            )));
+            return Err(ParameterCalculationError::DivisionByZeroError);
         }
 
         let numerator = self.numerator.get_value(model, state)?;

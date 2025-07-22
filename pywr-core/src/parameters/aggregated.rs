@@ -1,11 +1,11 @@
-use super::{Parameter, ParameterName, ParameterState, PywrError, SimpleParameter};
+use super::{Parameter, ParameterName, ParameterState, SimpleParameter};
 use crate::metric::{MetricF64, SimpleMetricF64};
 use crate::network::Network;
+use crate::parameters::errors::{ParameterCalculationError, SimpleCalculationError};
 use crate::parameters::{GeneralParameter, ParameterMeta};
 use crate::scenario::ScenarioIndex;
 use crate::state::{SimpleParameterValues, State};
 use crate::timestep::Timestep;
-use std::str::FromStr;
 
 #[derive(Debug, Clone, Copy)]
 pub enum AggFunc {
@@ -19,21 +19,6 @@ pub enum AggFunc {
     Min,
     /// Maximum value among all values.
     Max,
-}
-
-impl FromStr for AggFunc {
-    type Err = PywrError;
-
-    fn from_str(name: &str) -> Result<Self, Self::Err> {
-        match name {
-            "sum" => Ok(Self::Sum),
-            "product" => Ok(Self::Product),
-            "mean" => Ok(Self::Mean),
-            "min" => Ok(Self::Min),
-            "max" => Ok(Self::Max),
-            _ => Err(PywrError::InvalidAggregationFunction(name.to_string())),
-        }
-    }
 }
 
 pub struct AggregatedParameter<M> {
@@ -72,7 +57,7 @@ impl GeneralParameter<f64> for AggregatedParameter<MetricF64> {
         model: &Network,
         state: &State,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<f64, PywrError> {
+    ) -> Result<f64, ParameterCalculationError> {
         let value: f64 = match self.agg_func {
             AggFunc::Sum => {
                 let mut total = 0.0_f64;
@@ -145,7 +130,7 @@ impl SimpleParameter<f64> for AggregatedParameter<SimpleMetricF64> {
         _scenario_index: &ScenarioIndex,
         values: &SimpleParameterValues,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<f64, PywrError> {
+    ) -> Result<f64, SimpleCalculationError> {
         let value: f64 = match self.agg_func {
             AggFunc::Sum => {
                 let mut total = 0.0_f64;

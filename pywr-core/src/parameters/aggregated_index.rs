@@ -1,13 +1,13 @@
 /// AggregatedIndexParameter
 ///
-use super::{Parameter, ParameterName, ParameterState, PywrError};
+use super::{Parameter, ParameterName, ParameterState};
 use crate::metric::MetricU64;
 use crate::network::Network;
+use crate::parameters::errors::ParameterCalculationError;
 use crate::parameters::{GeneralParameter, ParameterMeta};
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
 use crate::timestep::Timestep;
-use std::str::FromStr;
 
 /// Aggregation functions for aggregated index parameters.
 #[derive(Debug, Clone, Copy)]
@@ -24,22 +24,6 @@ pub enum AggIndexFunc {
     Any,
     /// Returns 1 if all values are non-zero, otherwise 0.
     All,
-}
-
-impl FromStr for AggIndexFunc {
-    type Err = PywrError;
-
-    fn from_str(name: &str) -> Result<Self, Self::Err> {
-        match name {
-            "sum" => Ok(Self::Sum),
-            "product" => Ok(Self::Product),
-            "min" => Ok(Self::Min),
-            "max" => Ok(Self::Max),
-            "any" => Ok(Self::All),
-            "all" => Ok(Self::Any),
-            _ => Err(PywrError::InvalidAggregationFunction(name.to_string())),
-        }
-    }
 }
 
 pub struct AggregatedIndexParameter {
@@ -72,7 +56,7 @@ impl GeneralParameter<u64> for AggregatedIndexParameter {
         network: &Network,
         state: &State,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<u64, PywrError> {
+    ) -> Result<u64, ParameterCalculationError> {
         let value: u64 = match self.agg_func {
             AggIndexFunc::Sum => {
                 let mut total = 0;

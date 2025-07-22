@@ -290,10 +290,30 @@ impl ReservoirNode {
         network: &pywr_core::network::Network,
     ) -> Result<Vec<pywr_core::node::NodeIndex>, SchemaError> {
         let indices = vec![
-            network.get_node_index_by_name(self.meta().name.as_str(), Self::compensation_node_sub_name())?,
-            network.get_node_index_by_name(self.meta().name.as_str(), Self::leakage_node_sub_name())?,
-            network.get_node_index_by_name(self.meta().name.as_str(), Self::rainfall_node_sub_name())?,
-            network.get_node_index_by_name(self.meta().name.as_str(), Self::evaporation_node_sub_name())?,
+            network
+                .get_node_index_by_name(self.meta().name.as_str(), Self::compensation_node_sub_name())
+                .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                    name: self.meta().name.clone(),
+                    sub_name: Self::compensation_node_sub_name().map(String::from),
+                })?,
+            network
+                .get_node_index_by_name(self.meta().name.as_str(), Self::leakage_node_sub_name())
+                .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                    name: self.meta().name.clone(),
+                    sub_name: Self::leakage_node_sub_name().map(String::from),
+                })?,
+            network
+                .get_node_index_by_name(self.meta().name.as_str(), Self::rainfall_node_sub_name())
+                .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                    name: self.meta().name.clone(),
+                    sub_name: Self::rainfall_node_sub_name().map(String::from),
+                })?,
+            network
+                .get_node_index_by_name(self.meta().name.as_str(), Self::evaporation_node_sub_name())
+                .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                    name: self.meta().name.clone(),
+                    sub_name: Self::evaporation_node_sub_name().map(String::from),
+                })?,
         ];
         Ok(indices)
     }
@@ -301,7 +321,12 @@ impl ReservoirNode {
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
         // add storage and spill
         self.storage.add_to_model(network)?;
-        let storage = network.get_node_index_by_name(self.meta().name.as_str(), None)?;
+        let storage = network
+            .get_node_index_by_name(self.meta().name.as_str(), None)
+            .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                name: self.meta().name.clone(),
+                sub_name: Self::evaporation_node_sub_name().map(String::from),
+            })?;
 
         // add compensation node and edge
         let comp_node = match &self.compensation {
@@ -491,7 +516,12 @@ impl ReservoirNode {
         use_max_area: bool,
     ) -> Result<MetricF64, SchemaError> {
         // get the current storage
-        let storage_node = network.get_node_index_by_name(self.meta().name.as_str(), None)?;
+        let storage_node = network
+            .get_node_index_by_name(self.meta().name.as_str(), None)
+            .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                name: self.meta().name.clone(),
+                sub_name: None,
+            })?;
 
         // the storage (absolute or relative) can be the current or max volume
         let current_storage = match (bathymetry.is_storage_proportional, use_max_area) {
@@ -557,20 +587,20 @@ impl ReservoirNode {
                     NodeAttribute::Compensation => match network
                         .get_node_index_by_name(self.meta().name.as_str(), Self::compensation_node_sub_name())
                     {
-                        Ok(idx) => MetricF64::NodeInFlow(idx),
-                        Err(_) => 0.0.into(),
+                        Some(idx) => MetricF64::NodeInFlow(idx),
+                        None => 0.0.into(),
                     },
                     NodeAttribute::Rainfall => match network
                         .get_node_index_by_name(self.meta().name.as_str(), Self::rainfall_node_sub_name())
                     {
-                        Ok(idx) => MetricF64::NodeInFlow(idx),
-                        Err(_) => 0.0.into(),
+                        Some(idx) => MetricF64::NodeInFlow(idx),
+                        None => 0.0.into(),
                     },
                     NodeAttribute::Evaporation => match network
                         .get_node_index_by_name(self.meta().name.as_str(), Self::rainfall_node_sub_name())
                     {
-                        Ok(idx) => MetricF64::NodeInFlow(idx),
-                        Err(_) => 0.0.into(),
+                        Some(idx) => MetricF64::NodeInFlow(idx),
+                        None => 0.0.into(),
                     },
                     _ => {
                         return Err(SchemaError::NodeAttributeNotSupported {

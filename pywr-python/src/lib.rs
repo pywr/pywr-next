@@ -3,7 +3,7 @@ use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyTuple, PyType};
-use pywr_core::PywrError;
+use pywr_core::models::ModelRunError;
 #[cfg(any(feature = "ipm-ocl", feature = "ipm-simd"))]
 use pywr_core::solvers::MultiStateSolver;
 #[cfg(feature = "ipm-ocl")]
@@ -40,7 +40,7 @@ impl From<PySchemaError> for PyErr {
 
 #[derive(Debug)]
 struct PyPywrError {
-    error: pywr_core::PywrError,
+    error: ModelRunError,
 }
 
 impl From<PyPywrError> for PyErr {
@@ -163,7 +163,7 @@ where
 {
     py.allow_threads(|| {
         let _results = model.run::<S>(settings)?;
-        Ok::<(), PywrError>(())
+        Ok::<(), ModelRunError>(())
     })?;
     Ok(())
 }
@@ -181,7 +181,7 @@ where
 {
     py.allow_threads(|| {
         let _results = model.run_multi_scenario::<S>(settings)?;
-        Ok::<(), PywrError>(())
+        Ok::<(), ModelRunError>(())
     })?;
     Ok(())
 }

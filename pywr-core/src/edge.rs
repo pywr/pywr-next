@@ -1,8 +1,10 @@
+use crate::NodeIndex;
 use crate::network::Network;
-use crate::node::NodeVec;
+use crate::node::{NodeError, NodeVec};
 use crate::state::State;
-use crate::{NodeIndex, PywrError};
+use std::fmt::{Display, Formatter};
 use std::ops::{Deref, DerefMut};
+use thiserror::Error;
 
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Debug, Hash)]
 pub struct EdgeIndex(usize);
@@ -15,6 +17,22 @@ impl Deref for EdgeIndex {
     }
 }
 
+impl Display for EdgeIndex {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+#[derive(Debug, Error)]
+pub enum EdgeError {
+    #[error("From node index not found: {0}")]
+    FromNodeIndexNotFound(NodeIndex),
+    #[error("To node index not found: {0}")]
+    ToNodeIndexNotFound(NodeIndex),
+    #[error("Node error: {0}")]
+    NodeError(#[from] Box<NodeError>),
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub struct Edge {
     pub index: EdgeIndex,
@@ -23,7 +41,7 @@ pub struct Edge {
 }
 
 impl Edge {
-    pub(crate) fn new(index: EdgeIndex, from_node_index: NodeIndex, to_node_index: NodeIndex) -> Self {
+    pub fn new(index: EdgeIndex, from_node_index: NodeIndex, to_node_index: NodeIndex) -> Self {
         Self {
             index,
             from_node_index,
@@ -43,12 +61,20 @@ impl Edge {
         self.to_node_index
     }
 
-    pub(crate) fn cost(&self, nodes: &NodeVec, model: &Network, state: &State) -> Result<f64, PywrError> {
-        let from_node = nodes.get(&self.from_node_index)?;
-        let to_node = nodes.get(&self.to_node_index)?;
+    pub fn cost(&self, nodes: &NodeVec, model: &Network, state: &State) -> Result<f64, EdgeError> {
+        let from_node = nodes
+            .get(&self.from_node_index)
+            .ok_or(EdgeError::FromNodeIndexNotFound(self.from_node_index))?;
+        let to_node = nodes
+            .get(&self.to_node_index)
+            .ok_or(EdgeError::ToNodeIndexNotFound(self.from_node_index))?;
 
-        let from_cost = from_node.get_outgoing_cost(model, state)?;
-        let to_cost = to_node.get_incoming_cost(model, state)?;
+        let from_cost = from_node
+            .get_outgoing_cost(model, state)
+            .map_err(|e| EdgeError::NodeError(Box::new(e)))?;
+        let to_cost = to_node
+            .get_incoming_cost(model, state)
+            .map_err(|e| EdgeError::NodeError(Box::new(e)))?;
 
         Ok(from_cost + to_cost)
     }
@@ -74,12 +100,12 @@ impl DerefMut for EdgeVec {
 }
 
 impl EdgeVec {
-    pub fn get(&self, index: &EdgeIndex) -> Result<&Edge, PywrError> {
-        self.edges.get(index.0).ok_or(PywrError::EdgeIndexNotFound)
+    pub fn get(&self, index: &EdgeIndex) -> Option<&Edge> {
+        self.edges.get(index.0)
     }
 
-    pub fn get_mut(&mut self, index: &EdgeIndex) -> Result<&mut Edge, PywrError> {
-        self.edges.get_mut(index.0).ok_or(PywrError::EdgeIndexNotFound)
+    pub fn get_mut(&mut self, index: &EdgeIndex) -> Option<&mut Edge> {
+        self.edges.get_mut(index.0)
     }
 
     pub fn push(&mut self, from_node_index: NodeIndex, to_node_index: NodeIndex) -> EdgeIndex {

@@ -18,27 +18,46 @@ pub enum SchemaError {
     IO { path: PathBuf, error: std::io::Error },
     #[error("JSON error: {0}")]
     Json(#[from] serde_json::Error),
-    #[error("node with name {0} not found")]
-    NodeNotFound(String),
+    // Use this error when a node is not found in the schema (i.e. while parsing the schema).
+    #[error("Node with name {name} not found in the schema.")]
+    NodeNotFound { name: String },
+    // Use this error when a node is not found in a pywr-core network (i.e. during building the network).
+    #[error("Node with name `{name}` and sub-name `{}` not found in the network.", .sub_name.as_deref().unwrap_or("None"))]
+    CoreNodeNotFound { name: String, sub_name: Option<String> },
     #[error("node ({ty}) with name {name} does not support attribute {attr}")]
     NodeAttributeNotSupported {
         ty: String,
         name: String,
         attr: NodeAttribute,
     },
-    #[error("Parameter `{0}` not found")]
-    ParameterNotFound(String),
+    // Use this error when a parameter is not found in the schema (i.e. while parsing the schema).
+    #[error("Parameter `{name}` not found in the schema.")]
+    ParameterNotFound { name: String, key: Option<String> },
+    // Use this error when a parameter is not found in a pywr-core network (i.e. during building the network).
+    #[error("Parameter `{name}` not found in the network.")]
+    CoreParameterNotFound { name: String, key: Option<String> },
     #[error("Expected an index parameter, but found a regular parameter: {0}")]
     IndexParameterExpected(String),
     #[error("Loading a local parameter reference (name: {0}) requires a parent name space.")]
     LocalParameterReferenceRequiresParent(String),
     #[error("network {0} not found")]
     NetworkNotFound(String),
+    #[error("Edge from `{from_node}` to `{to_node}` not found")]
+    EdgeNotFound { from_node: String, to_node: String },
     #[error("missing initial volume for node: {0}")]
     MissingInitialVolume(String),
-    #[error("Pywr core error: {0}")]
+    #[error("Pywr core network error: {0}")]
     #[cfg(feature = "core")]
-    PywrCore(#[from] pywr_core::PywrError),
+    CoreNetworkError(#[from] pywr_core::NetworkError),
+    #[error("Pywr model domain error: {0}")]
+    #[cfg(feature = "core")]
+    CoreModelDomainError(#[from] pywr_core::models::ModelDomainError),
+    #[error("Multi-network model error: {0}")]
+    #[cfg(feature = "core")]
+    CoreMultiNetworkModelError(#[from] pywr_core::models::MultiNetworkModelError),
+    #[error("Metric F64 error: {0}")]
+    #[cfg(feature = "core")]
+    CoreMetricF64Error(#[from] pywr_core::metric::MetricF64Error),
     #[error("Error loading data from table `{0}` (column: `{1:?}`, index: `{2:?}`) error: {error}", table_ref.table, table_ref.column, table_ref.index)]
     TableRefLoad { table_ref: TableDataRef, error: TableError },
     #[error("Error loading table `{table_def:?}` error: {error}")]
