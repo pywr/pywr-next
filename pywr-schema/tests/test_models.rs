@@ -74,6 +74,7 @@ model_tests! {
     test_wtw1: ("wtw1.json", vec!["wtw1-expected.csv"], vec!["ipm-simd", "ipm-ocl"], vec![]),
     test_wtw2: ("wtw2.json", vec!["wtw2-expected.csv"], vec!["ipm-simd", "ipm-ocl"], vec![]),
     test_local_parameter1: ("local-parameter1.json", vec!["local-parameter1-expected.csv"], vec![], vec![]),
+    test_local_parameter2: ("local-parameter2.json", vec!["local-parameter2-expected.csv"], vec![], vec![]),
 }
 
 /// Test Pandas backend for reading timeseries data.
