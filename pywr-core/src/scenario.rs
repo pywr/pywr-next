@@ -1,3 +1,4 @@
+#[cfg(feature = "pyo3")]
 use pyo3::{pyclass, pymethods};
 use std::collections::BTreeSet;
 use thiserror::Error;
@@ -546,7 +547,8 @@ impl Default for ScenarioIndex {
     }
 }
 
-#[cfg_attr(feature = "pyo3", pymethods)]
+#[cfg(feature = "pyo3")]
+#[pymethods]
 impl ScenarioIndex {
     /// The global index of the scenario for this simulation. This may be different
     /// from the global index of the scenario in the schema.

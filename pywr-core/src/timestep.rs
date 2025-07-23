@@ -3,9 +3,8 @@ use chrono::{Months, NaiveDateTime, TimeDelta};
 use polars::datatypes::TimeUnit;
 use polars::prelude::PolarsError;
 use polars::time::ClosedWindow;
-use pyo3::Bound;
 #[cfg(feature = "pyo3")]
-use pyo3::{IntoPyObject, PyResult, Python, pyclass, pymethods, types::PyDateTime};
+use pyo3::{Bound, IntoPyObject, PyResult, Python, pyclass, pymethods, types::PyDateTime};
 use std::ops::Add;
 use thiserror::Error;
 
@@ -117,7 +116,8 @@ pub struct Timestep {
     pub duration: PywrDuration,
 }
 
-#[cfg_attr(feature = "pyo3", pymethods)]
+#[cfg(feature = "pyo3")]
+#[pymethods]
 impl Timestep {
     /// Returns true if this is the first time-step.
     #[getter]

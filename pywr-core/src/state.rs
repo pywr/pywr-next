@@ -9,10 +9,13 @@ use crate::parameters::{
 };
 use crate::timestep::Timestep;
 use crate::virtual_storage::VirtualStorageIndex;
-use pyo3::exceptions::PyValueError;
-use pyo3::prelude::PyAnyMethods;
-use pyo3::types::{PyDict, PyFloat, PyInt};
-use pyo3::{Bound, FromPyObject, PyAny, PyResult};
+#[cfg(feature = "pyo3")]
+use pyo3::{
+    Bound, FromPyObject, PyAny, PyResult,
+    exceptions::PyValueError,
+    prelude::PyAnyMethods,
+    types::{PyDict, PyFloat, PyInt},
+};
 use std::collections::{HashMap, VecDeque};
 use std::fmt::Display;
 use std::num::NonZeroUsize;
@@ -271,6 +274,7 @@ pub struct MultiValue {
     indices: HashMap<String, u64>,
 }
 
+#[cfg(feature = "pyo3")]
 impl FromPyObject<'_> for MultiValue {
     fn extract_bound(ob: &Bound<'_, PyAny>) -> PyResult<Self> {
         let dict = ob.downcast::<PyDict>()?;
