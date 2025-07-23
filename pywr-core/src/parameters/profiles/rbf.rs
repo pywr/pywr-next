@@ -1,11 +1,11 @@
+use crate::parameters::errors::{ParameterSetupError, SimpleCalculationError};
 use crate::parameters::{
-    downcast_internal_state_mut, downcast_internal_state_ref, downcast_variable_config_ref, Parameter, ParameterMeta,
-    ParameterName, ParameterState, SimpleParameter, VariableConfig, VariableParameter,
+    Parameter, ParameterMeta, ParameterName, ParameterState, SimpleParameter, VariableConfig, VariableParameter,
+    VariableParameterError, downcast_internal_state_mut, downcast_internal_state_ref, downcast_variable_config_ref,
 };
 use crate::scenario::ScenarioIndex;
 use crate::state::SimpleParameterValues;
 use crate::timestep::Timestep;
-use crate::PywrError;
 use nalgebra::DMatrix;
 
 pub struct RbfProfileVariableConfig {
@@ -119,7 +119,7 @@ impl Parameter for RbfProfileParameter {
         &self,
         _timesteps: &[Timestep],
         _scenario_index: &ScenarioIndex,
-    ) -> Result<Option<Box<dyn ParameterState>>, PywrError> {
+    ) -> Result<Option<Box<dyn ParameterState>>, ParameterSetupError> {
         let internal_state = RbfProfileInternalState::new(&self.points, &self.function);
         Ok(Some(Box::new(internal_state)))
     }
@@ -147,7 +147,7 @@ impl SimpleParameter<f64> for RbfProfileParameter {
         _scenario_index: &ScenarioIndex,
         _values: &SimpleParameterValues,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<f64, PywrError> {
+    ) -> Result<f64, SimpleCalculationError> {
         // Get the profile from the internal state
         let internal_state = downcast_internal_state_ref::<RbfProfileInternalState>(internal_state);
         // Return today's value from the profile
@@ -176,10 +176,8 @@ impl VariableParameter<f64> for RbfProfileParameter {
     ///
     /// # Arguments
     ///
-    /// * `values`: The value to set for the points. This is an array of size equal to twice the
-    ///   number of points in the RBF profile. The first set of values contain the x values followed
-    ///   by the y points. For example, if you have a 3-point RBF profile, the size of the array is 6
-    ///   with the first 3 items being the  x values and last 3 the y values.
+    /// * `values`: The y value to set for the points. This is an array of size equal to the
+    ///   number of points in the RBF profile.
     /// * `_variable_config`:
     /// * `internal_state`:
     ///
@@ -189,20 +187,19 @@ impl VariableParameter<f64> for RbfProfileParameter {
         values: &[f64],
         _variable_config: &dyn VariableConfig,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<(), PywrError> {
-        let rbf_len = self.points.len();
-        if values.len() == rbf_len {
+    ) -> Result<(), VariableParameterError> {
+        if values.len() == self.points.len() {
             let value = downcast_internal_state_mut::<RbfProfileInternalState>(internal_state);
 
-            let x: Vec<_> = values[0..rbf_len].iter().map(|n| *n as u32).collect();
-            let y = values[rbf_len..].to_vec();
-            value.update_x(x);
-            value.update_y(y);
+            value.update_y(values.to_vec());
             value.update_profile(&self.points, &self.function);
 
             Ok(())
         } else {
-            Err(PywrError::ParameterVariableValuesIncorrectLength)
+            Err(VariableParameterError::IncorrectNumberOfValues {
+                expected: self.points.len(),
+                received: values.len(),
+            })
         }
     }
 
@@ -212,16 +209,16 @@ impl VariableParameter<f64> for RbfProfileParameter {
         value.points_y.clone()
     }
 
-    fn get_lower_bounds(&self, variable_config: &dyn VariableConfig) -> Result<Vec<f64>, PywrError> {
+    fn get_lower_bounds(&self, variable_config: &dyn VariableConfig) -> Option<Vec<f64>> {
         let config = downcast_variable_config_ref::<RbfProfileVariableConfig>(variable_config);
         let lb = (0..self.points.len()).map(|_| config.value_lower_bounds).collect();
-        Ok(lb)
+        Some(lb)
     }
 
-    fn get_upper_bounds(&self, variable_config: &dyn VariableConfig) -> Result<Vec<f64>, PywrError> {
+    fn get_upper_bounds(&self, variable_config: &dyn VariableConfig) -> Option<Vec<f64>> {
         let config = downcast_variable_config_ref::<RbfProfileVariableConfig>(variable_config);
         let lb = (0..self.points.len()).map(|_| config.value_upper_bounds).collect();
-        Ok(lb)
+        Some(lb)
     }
 }
 
@@ -244,7 +241,7 @@ impl VariableParameter<u32> for RbfProfileParameter {
         values: &[u32],
         _variable_config: &dyn VariableConfig,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<(), PywrError> {
+    ) -> Result<(), VariableParameterError> {
         if values.len() == self.points.len() {
             let value = downcast_internal_state_mut::<RbfProfileInternalState>(internal_state);
 
@@ -253,7 +250,10 @@ impl VariableParameter<u32> for RbfProfileParameter {
 
             Ok(())
         } else {
-            Err(PywrError::ParameterVariableValuesIncorrectLength)
+            Err(VariableParameterError::IncorrectNumberOfValues {
+                expected: self.points.len(),
+                received: values.len(),
+            })
         }
     }
 
@@ -263,7 +263,7 @@ impl VariableParameter<u32> for RbfProfileParameter {
         value.points_x.clone()
     }
 
-    fn get_lower_bounds(&self, variable_config: &dyn VariableConfig) -> Result<Vec<u32>, PywrError> {
+    fn get_lower_bounds(&self, variable_config: &dyn VariableConfig) -> Option<Vec<u32>> {
         let config = downcast_variable_config_ref::<RbfProfileVariableConfig>(variable_config);
 
         if let Some(days_of_year_range) = &config.days_of_year_range {
@@ -274,13 +274,13 @@ impl VariableParameter<u32> for RbfProfileParameter {
                 .map(|p| p.0.checked_sub(*days_of_year_range).unwrap_or(1).max(1))
                 .collect();
 
-            Ok(lb)
+            Some(lb)
         } else {
-            Err(PywrError::ParameterVariableNotActive)
+            None
         }
     }
 
-    fn get_upper_bounds(&self, variable_config: &dyn VariableConfig) -> Result<Vec<u32>, PywrError> {
+    fn get_upper_bounds(&self, variable_config: &dyn VariableConfig) -> Option<Vec<u32>> {
         let config = downcast_variable_config_ref::<RbfProfileVariableConfig>(variable_config);
 
         if let Some(days_of_year_range) = &config.days_of_year_range {
@@ -291,9 +291,9 @@ impl VariableParameter<u32> for RbfProfileParameter {
                 .map(|p| p.0.checked_add(*days_of_year_range).unwrap_or(365).min(365))
                 .collect();
 
-            Ok(lb)
+            Some(lb)
         } else {
-            Err(PywrError::ParameterVariableNotActive)
+            None
         }
     }
 }
@@ -387,8 +387,8 @@ fn interpolate_rbf_profile(points: &[(u32, f64)], function: &RadialBasisFunction
 
 #[cfg(test)]
 mod tests {
-    use crate::parameters::profiles::rbf::{interpolate_rbf, interpolate_rbf_profile, RadialBasisFunction};
-    use float_cmp::{assert_approx_eq, F64Margin};
+    use crate::parameters::profiles::rbf::{RadialBasisFunction, interpolate_rbf, interpolate_rbf_profile};
+    use float_cmp::{F64Margin, assert_approx_eq};
     use std::f64::consts::PI;
 
     /// Test example from Wikipedia on Rbf interpolation

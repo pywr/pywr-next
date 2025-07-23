@@ -122,7 +122,7 @@
         "meta": {
           "name": "factored_flow"
         },
-        "agg_func": "product",
+        "agg_func": "Product",
         "metrics": [
           {
             "type": "Timeseries",
@@ -145,13 +145,11 @@
         "meta": {
           "name": "inflow"
         },
-        "provider": {
-          "type": "Pandas",
-          "time_col": null,
-          "url": "inflow.csv",
-          "kwargs": {
-            "dayfirst": true
-          }
+        "type": "Pandas",
+        "time_col": null,
+        "url": "inflow.csv",
+        "kwargs": {
+          "dayfirst": true
         }
       }
     ],

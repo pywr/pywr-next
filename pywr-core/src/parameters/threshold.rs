@@ -1,13 +1,14 @@
 use crate::metric::MetricF64;
 use crate::network::Network;
+use crate::parameters::errors::{ParameterCalculationError, ParameterSetupError};
 use crate::parameters::{
-    downcast_internal_state_mut, GeneralParameter, Parameter, ParameterMeta, ParameterName, ParameterState,
+    GeneralParameter, Parameter, ParameterMeta, ParameterName, ParameterState, downcast_internal_state_mut,
 };
 use crate::predicate::Predicate;
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
 use crate::timestep::Timestep;
-use crate::PywrError;
+
 
 pub struct ThresholdParameter {
     meta: ParameterMeta,
@@ -44,7 +45,7 @@ impl Parameter for ThresholdParameter {
         &self,
         _timesteps: &[Timestep],
         _scenario_index: &ScenarioIndex,
-    ) -> Result<Option<Box<dyn ParameterState>>, PywrError> {
+    ) -> Result<Option<Box<dyn ParameterState>>, ParameterSetupError> {
         // Internal state is just a boolean indicating if the threshold was triggered previously.
         // Initially this is false.
         Ok(Some(Box::new(false)))
@@ -59,7 +60,7 @@ impl GeneralParameter<u64> for ThresholdParameter {
         model: &Network,
         state: &State,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<u64, PywrError> {
+    ) -> Result<u64, ParameterCalculationError> {
         // Downcast the internal state to the correct type
         let previously_activated = downcast_internal_state_mut::<bool>(internal_state);
 

@@ -19,8 +19,8 @@ use schemars::JsonSchema;
 /// or gross flow, and an optional "soft" minimum flow.
 ///
 /// When a loss factor is not given the `loss` node is not created. When a non-zero loss
-/// factor is provided [`pywr_core::nodes::Output`] and [`pywr_core::nodes::Aggregated`] nodes
-/// are created.
+/// factor is provided [`pywr_core::node::OutputNode`] and [`pywr_core::aggregated_node::AggregatedNode`]
+/// nodes are created.
 ///
 ///
 /// ```svgbob
@@ -116,7 +116,12 @@ impl WaterTreatmentWorks {
         &self,
         network: &pywr_core::network::Network,
     ) -> Result<Vec<pywr_core::node::NodeIndex>, SchemaError> {
-        let idx = network.get_node_index_by_name(self.meta.name.as_str(), Self::net_sub_name())?;
+        let idx = network
+            .get_node_index_by_name(self.meta.name.as_str(), Self::net_sub_name())
+            .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                name: self.meta.name.clone(),
+                sub_name: Self::net_sub_name().map(String::from),
+            })?;
         Ok(vec![idx])
     }
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
@@ -205,9 +210,14 @@ impl WaterTreatmentWorks {
             NodeAttribute::Inflow => {
                 match network.get_node_index_by_name(self.meta.name.as_str(), Self::loss_sub_name()) {
                     // Loss node is defined. The total inflow is the sum of the net and loss nodes;
-                    Ok(loss_idx) => {
+                    Some(loss_idx) => {
                         let indices = vec![
-                            network.get_node_index_by_name(self.meta.name.as_str(), Self::net_sub_name())?,
+                            network
+                                .get_node_index_by_name(self.meta.name.as_str(), Self::net_sub_name())
+                                .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                                    name: self.meta.name.clone(),
+                                    sub_name: Self::net_sub_name().map(String::from),
+                                })?,
                             loss_idx,
                         ];
                         MetricF64::MultiNodeInFlow {
@@ -216,19 +226,29 @@ impl WaterTreatmentWorks {
                         }
                     }
                     // No loss node defined, so just use the net node
-                    Err(_) => MetricF64::NodeInFlow(
-                        network.get_node_index_by_name(self.meta.name.as_str(), Self::net_sub_name())?,
+                    None => MetricF64::NodeInFlow(
+                        network
+                            .get_node_index_by_name(self.meta.name.as_str(), Self::net_sub_name())
+                            .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                                name: self.meta.name.clone(),
+                                sub_name: Self::net_sub_name().map(String::from),
+                            })?,
                     ),
                 }
             }
             NodeAttribute::Outflow => {
-                let idx = network.get_node_index_by_name(self.meta.name.as_str(), Self::net_sub_name())?;
+                let idx = network
+                    .get_node_index_by_name(self.meta.name.as_str(), Self::net_sub_name())
+                    .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                        name: self.meta.name.clone(),
+                        sub_name: Self::net_sub_name().map(String::from),
+                    })?;
                 MetricF64::NodeOutFlow(idx)
             }
             NodeAttribute::Loss => {
                 match network.get_node_index_by_name(self.meta.name.as_str(), Self::loss_sub_name()) {
-                    Ok(idx) => MetricF64::NodeInFlow(idx),
-                    Err(_) => 0.0.into(),
+                    Some(idx) => MetricF64::NodeInFlow(idx),
+                    None => 0.0.into(),
                 }
             }
             _ => {
@@ -236,7 +256,7 @@ impl WaterTreatmentWorks {
                     ty: "WaterTreatmentWorksNode".to_string(),
                     name: self.meta.name.clone(),
                     attr,
-                })
+                });
             }
         };
 

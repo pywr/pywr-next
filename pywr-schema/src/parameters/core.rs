@@ -5,7 +5,7 @@ use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::parameters::{ConstantValue, ConversionData, ParameterMeta};
-use crate::v1::{try_convert_parameter_attr, IntoV2, TryFromV1};
+use crate::v1::{IntoV2, TryFromV1, try_convert_parameter_attr};
 #[cfg(feature = "core")]
 use pywr_core::parameters::{ParameterIndex, ParameterName};
 use pywr_schema_macros::PywrVisitAll;
@@ -15,6 +15,7 @@ use pywr_v1_schema::parameters::{
     NegativeMinParameter as NegativeMinParameterV1, NegativeParameter as NegativeParameterV1,
 };
 use schemars::JsonSchema;
+use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticStr};
 
 /// Activation function or transformation to apply to variable value.
 ///
@@ -23,8 +24,12 @@ use schemars::JsonSchema;
 /// algorithms to represent a, for example, binary-like variable in a continuous domain. Each
 /// activation function requires different data to parameterize the function's behaviour.
 ///
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Copy, JsonSchema, PywrVisitAll, strum_macros::Display)]
+#[derive(
+    serde::Deserialize, serde::Serialize, Debug, Clone, Copy, JsonSchema, PywrVisitAll, Display, EnumDiscriminants,
+)]
 #[serde(tag = "type", deny_unknown_fields)]
+#[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
+#[strum_discriminants(name(ActivationFunctionType))]
 pub enum ActivationFunction {
     /// A unit or null transformation.
     ///

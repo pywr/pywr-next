@@ -1,8 +1,9 @@
 use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::parameters::Predicate as PredicateV1;
 use schemars::JsonSchema;
+use strum_macros::{Display, EnumIter};
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Copy, JsonSchema, PywrVisitAll, strum_macros::Display)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Copy, JsonSchema, PywrVisitAll, Display, EnumIter)]
 pub enum Predicate {
     #[serde(alias = "<")]
     LT,
@@ -29,14 +30,14 @@ impl From<PredicateV1> for Predicate {
 }
 
 #[cfg(feature = "core")]
-impl From<Predicate> for pywr_core::Predicate {
+impl From<Predicate> for pywr_core::predicate::Predicate {
     fn from(p: Predicate) -> Self {
         match p {
-            Predicate::LT => pywr_core::Predicate::LessThan,
-            Predicate::GT => pywr_core::Predicate::GreaterThan,
-            Predicate::EQ => pywr_core::Predicate::EqualTo,
-            Predicate::LE => pywr_core::Predicate::LessThanOrEqualTo,
-            Predicate::GE => pywr_core::Predicate::GreaterThanOrEqualTo,
+            Predicate::LT => pywr_core::predicate::Predicate::LessThan,
+            Predicate::GT => pywr_core::predicate::Predicate::GreaterThan,
+            Predicate::EQ => pywr_core::predicate::Predicate::EqualTo,
+            Predicate::LE => pywr_core::predicate::Predicate::LessThanOrEqualTo,
+            Predicate::GE => pywr_core::predicate::Predicate::GreaterThanOrEqualTo,
         }
     }
 }

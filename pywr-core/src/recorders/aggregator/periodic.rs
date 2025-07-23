@@ -13,21 +13,16 @@ pub enum AggregationFrequency {
 impl AggregationFrequency {
     /// Number of periods in the given time domain.
     fn number_of_periods(&self, time_domain: &TimeDomain) -> usize {
+        let start = time_domain.first().expect("No time-steps in time domain.").date;
+        let end = time_domain.last().expect("No time-steps in time domain.").date;
+
         match self {
             Self::Monthly => {
-                let start = time_domain.first().date;
-                let end = time_domain.last().date;
                 let n_years = (end.year() - start.year()) as u32;
                 (n_years * 12 + end.month() - start.month()) as usize
             }
-            Self::Annual => {
-                let start = time_domain.first().date;
-                let end = time_domain.last().date;
-                (end.year() - start.year()) as usize
-            }
+            Self::Annual => (end.year() - start.year()) as usize,
             Self::Days(days) => {
-                let start = time_domain.first().date;
-                let end = time_domain.last().date;
                 let n_days = end.signed_duration_since(start).num_days();
                 (n_days / days.get() as i64) as usize
             }
@@ -272,7 +267,9 @@ impl PeriodicAggregator {
                 let av = current_state.process_value(v, period, &self.function);
                 if av.is_some() {
                     if agg_value.is_some() {
-                        panic!("Multiple aggregated values yielded from aggregator. This indicates that the given value spans multiple aggregation periods which is not supported.")
+                        panic!(
+                            "Multiple aggregated values yielded from aggregator. This indicates that the given value spans multiple aggregation periods which is not supported."
+                        )
                     }
                     agg_value = av;
                 }

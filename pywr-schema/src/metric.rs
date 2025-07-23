@@ -1,3 +1,4 @@
+use crate::ConversionError;
 use crate::data_tables::TableDataRef;
 use crate::edge::Edge;
 use crate::error::ComponentConversionError;
@@ -15,7 +16,6 @@ use crate::parameters::ParameterType;
 use crate::timeseries::TimeseriesColumns;
 use crate::timeseries::TimeseriesReference;
 use crate::v1::{ConversionData, TryFromV1, TryIntoV2};
-use crate::ConversionError;
 #[cfg(feature = "core")]
 use pywr_core::{
     metric::{MetricF64, MetricU64},
@@ -27,7 +27,7 @@ use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::parameters::ParameterValue as ParameterValueV1;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use strum_macros::{Display, EnumDiscriminants, EnumString, IntoStaticStr, VariantNames};
+use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticStr};
 
 /// A floating point value representing different model metrics.
 ///
@@ -38,8 +38,8 @@ use strum_macros::{Display, EnumDiscriminants, EnumString, IntoStaticStr, Varian
 ///
 /// See also [`IndexMetric`] for integer values.
 #[derive(Deserialize, Serialize, Clone, Debug, Display, JsonSchema, PartialEq, EnumDiscriminants)]
-#[serde(tag = "type")]
-#[strum_discriminants(derive(Display, IntoStaticStr, EnumString, VariantNames))]
+#[serde(tag = "type", deny_unknown_fields)]
+#[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
 // This creates a separate enum called `MetricType` that is available in this module.
 #[strum_discriminants(name(MetricType))]
 pub enum Metric {
@@ -108,13 +108,13 @@ impl Metric {
             }
             Self::Timeseries(ts_ref) => {
                 let param_idx = match &ts_ref.columns {
-                    Some(TimeseriesColumns::Scenario(scenario)) => {
+                    Some(TimeseriesColumns::Scenario { name }) => {
                         args.timeseries
-                            .load_df_f64(network, ts_ref.name.as_ref(), args.domain, scenario.as_str())?
+                            .load_df_f64(network, ts_ref.name.as_ref(), args.domain, name.as_str())?
                     }
-                    Some(TimeseriesColumns::Column(col)) => {
+                    Some(TimeseriesColumns::Column { name }) => {
                         args.timeseries
-                            .load_column_f64(network, ts_ref.name.as_ref(), col.as_str())?
+                            .load_column_f64(network, ts_ref.name.as_ref(), name.as_str())?
                     }
                     None => args.timeseries.load_single_column_f64(network, ts_ref.name.as_ref())?,
                 };
@@ -268,7 +268,9 @@ impl NodeReference {
         let node = args
             .schema
             .get_node_by_name(&self.name)
-            .ok_or_else(|| SchemaError::NodeNotFound(self.name.clone()))?;
+            .ok_or_else(|| SchemaError::NodeNotFound {
+                name: self.name.clone(),
+            })?;
 
         node.create_metric(network, self.attribute, args)
     }
@@ -284,7 +286,9 @@ impl NodeReference {
         let _node = args
             .schema
             .get_node_by_name(&self.name)
-            .ok_or_else(|| SchemaError::NodeNotFound(self.name.clone()))?;
+            .ok_or_else(|| SchemaError::NodeNotFound {
+                name: self.name.clone(),
+            })?;
 
         todo!("Support usize attributes on nodes.")
     }
@@ -298,7 +302,9 @@ impl NodeReference {
         let node = args
             .schema
             .get_node_by_name(&self.name)
-            .ok_or_else(|| SchemaError::NodeNotFound(self.name.clone()))?;
+            .ok_or_else(|| SchemaError::NodeNotFound {
+                name: self.name.clone(),
+            })?;
 
         Ok(self.attribute.unwrap_or_else(|| node.default_metric()))
     }
@@ -309,7 +315,9 @@ impl NodeReference {
         let node = args
             .schema
             .get_node_by_name(&self.name)
-            .ok_or_else(|| SchemaError::NodeNotFound(self.name.clone()))?;
+            .ok_or_else(|| SchemaError::NodeNotFound {
+                name: self.name.clone(),
+            })?;
 
         Ok(node.node_type())
     }
@@ -333,7 +341,9 @@ impl SimpleNodeReference {
         let node = args
             .schema
             .get_node_by_name(&self.name)
-            .ok_or_else(|| SchemaError::NodeNotFound(self.name.clone()))?;
+            .ok_or_else(|| SchemaError::NodeNotFound {
+                name: self.name.clone(),
+            })?;
 
         node.create_metric(network, None, args)
     }
@@ -345,7 +355,9 @@ impl SimpleNodeReference {
         let node = args
             .schema
             .get_node_by_name(&self.name)
-            .ok_or_else(|| SchemaError::NodeNotFound(self.name.clone()))?;
+            .ok_or_else(|| SchemaError::NodeNotFound {
+                name: self.name.clone(),
+            })?;
 
         Ok(node.default_metric())
     }
@@ -356,7 +368,9 @@ impl SimpleNodeReference {
         let node = args
             .schema
             .get_node_by_name(&self.name)
-            .ok_or_else(|| SchemaError::NodeNotFound(self.name.clone()))?;
+            .ok_or_else(|| SchemaError::NodeNotFound {
+                name: self.name.clone(),
+            })?;
 
         Ok(node.node_type())
     }
@@ -399,15 +413,25 @@ impl ParameterReference {
         match &self.key {
             Some(key) => {
                 // Key given; this should be a multi-valued parameter
-                Ok((network.get_multi_valued_parameter_index_by_name(&name)?, key.clone()).into())
+                let idx = network.get_multi_valued_parameter_index_by_name(&name).ok_or_else(|| {
+                    SchemaError::CoreParameterNotFound {
+                        name: self.name.to_string(),
+                        key: Some(key.clone()),
+                    }
+                })?;
+
+                Ok((idx, key.clone()).into())
             }
             None => {
-                if let Ok(idx) = network.get_parameter_index_by_name(&name) {
+                if let Some(idx) = network.get_parameter_index_by_name(&name) {
                     Ok(idx.into())
-                } else if let Ok(idx) = network.get_index_parameter_index_by_name(&name) {
+                } else if let Some(idx) = network.get_index_parameter_index_by_name(&name) {
                     Ok(idx.into())
                 } else {
-                    Err(SchemaError::ParameterNotFound(self.name.to_string()))
+                    Err(SchemaError::CoreParameterNotFound {
+                        name: self.name.to_string(),
+                        key: None,
+                    })
                 }
             }
         }
@@ -427,26 +451,38 @@ impl ParameterReference {
         match &self.key {
             Some(key) => {
                 // Key given; this should be a multi-valued parameter
-                Ok((network.get_multi_valued_parameter_index_by_name(&name)?, key.clone()).into())
+                let idx = network.get_multi_valued_parameter_index_by_name(&name).ok_or_else(|| {
+                    SchemaError::CoreParameterNotFound {
+                        name: self.name.to_string(),
+                        key: Some(key.clone()),
+                    }
+                })?;
+                Ok((idx, key.clone()).into())
             }
             None => {
-                if let Ok(idx) = network.get_index_parameter_index_by_name(&name) {
+                if let Some(idx) = network.get_index_parameter_index_by_name(&name) {
                     Ok(idx.into())
-                } else if network.get_parameter_index_by_name(&name).is_ok() {
+                } else if network.get_parameter_index_by_name(&name).is_some() {
                     // Inform the user we found the parameter, but it was the wrong type
                     Err(SchemaError::IndexParameterExpected(self.name.to_string()))
                 } else {
-                    Err(SchemaError::ParameterNotFound(self.name.to_string()))
+                    Err(SchemaError::CoreParameterNotFound {
+                        name: self.name.to_string(),
+                        key: None,
+                    })
                 }
             }
         }
     }
     #[cfg(feature = "core")]
     pub fn parameter_type(&self, args: &LoadArgs) -> Result<ParameterType, SchemaError> {
-        let parameter = args
-            .schema
-            .get_parameter_by_name(&self.name)
-            .ok_or_else(|| SchemaError::ParameterNotFound(self.name.clone()))?;
+        let parameter =
+            args.schema
+                .get_parameter_by_name(&self.name)
+                .ok_or_else(|| SchemaError::ParameterNotFound {
+                    name: self.name.clone(),
+                    key: self.key.clone(),
+                })?;
 
         Ok(parameter.parameter_type())
     }
@@ -471,8 +507,10 @@ impl EdgeReference {
 ///
 /// This struct is the integer equivalent of [`Metric`] and is used in places where an integer
 /// value is required. See [`Metric`] for more information.
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, Display, PartialEq)]
-#[serde(tag = "type")]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, Display, PartialEq, EnumDiscriminants)]
+#[serde(tag = "type", deny_unknown_fields)]
+#[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
+#[strum_discriminants(name(IndexMetricType))]
 pub enum IndexMetric {
     Constant {
         value: u64,
@@ -535,13 +573,13 @@ impl IndexMetric {
             }
             Self::Timeseries(ts_ref) => {
                 let param_idx = match &ts_ref.columns {
-                    Some(TimeseriesColumns::Scenario(scenario)) => {
+                    Some(TimeseriesColumns::Scenario { name }) => {
                         args.timeseries
-                            .load_df_usize(network, ts_ref.name.as_ref(), args.domain, scenario.as_str())?
+                            .load_df_usize(network, ts_ref.name.as_ref(), args.domain, name.as_str())?
                     }
-                    Some(TimeseriesColumns::Column(col)) => {
+                    Some(TimeseriesColumns::Column { name }) => {
                         args.timeseries
-                            .load_column_usize(network, ts_ref.name.as_ref(), col.as_str())?
+                            .load_column_usize(network, ts_ref.name.as_ref(), name.as_str())?
                     }
                     None => args
                         .timeseries

@@ -6,7 +6,7 @@ use crate::metric::{Metric, SimpleNodeReference};
 use crate::model::LoadArgs;
 use crate::nodes::{NodeAttribute, NodeMeta, StorageInitialVolume};
 use crate::parameters::Parameter;
-use crate::v1::{try_convert_initial_storage, try_convert_node_attr, ConversionData, TryFromV1};
+use crate::v1::{ConversionData, TryFromV1, try_convert_initial_storage, try_convert_node_attr};
 #[cfg(feature = "core")]
 use pywr_core::{
     derived_metric::DerivedMetric,
@@ -18,19 +18,25 @@ use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::nodes::RollingVirtualStorageNode as RollingVirtualStorageNodeV1;
 use schemars::JsonSchema;
 use std::num::NonZeroUsize;
+use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticStr};
 
 /// The length of the rolling window.
 ///
 /// This can be specified in either days or time-steps.
-#[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, PywrVisitAll, strum_macros::Display)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, PywrVisitAll, Display, EnumDiscriminants)]
+#[serde(tag = "type", deny_unknown_fields)]
+#[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
+#[strum_discriminants(name(MetricType))]
 pub enum RollingWindow {
-    Days(NonZeroUsize),
-    Timesteps(NonZeroUsize),
+    Days { days: NonZeroUsize },
+    Timesteps { timesteps: NonZeroUsize },
 }
 
 impl Default for RollingWindow {
     fn default() -> Self {
-        Self::Timesteps(NonZeroUsize::new(30).expect("30 is not zero"))
+        Self::Timesteps {
+            timesteps: NonZeroUsize::new(30).expect("30 is not zero"),
+        }
     }
 }
 
@@ -41,7 +47,7 @@ impl RollingWindow {
     /// If the conversion fails (e.g. the number of days is less than the time-step duration) then `None` is returned.
     pub fn as_timesteps(&self, time: &TimeDomain) -> Option<NonZeroUsize> {
         match self {
-            Self::Days(days) => {
+            Self::Days { days } => {
                 let ts_days = match time.step_duration().whole_days() {
                     Some(d) => d as usize,
                     // If the timestep duration is not a whole number of days then the rolling window cannot be specified in days.
@@ -52,7 +58,7 @@ impl RollingWindow {
 
                 NonZeroUsize::new(timesteps)
             }
-            Self::Timesteps(timesteps) => Some(*timesteps),
+            Self::Timesteps { timesteps } => Some(*timesteps),
         }
     }
 }
@@ -112,7 +118,9 @@ impl RollingVirtualStorageNode {
             .map(|node_ref| {
                 args.schema
                     .get_node_by_name(&node_ref.name)
-                    .ok_or_else(|| SchemaError::NodeNotFound(node_ref.name.to_string()))?
+                    .ok_or_else(|| SchemaError::NodeNotFound {
+                        name: node_ref.name.to_string(),
+                    })?
                     .node_indices_for_constraints(network, args)
             })
             .collect::<Result<Vec<_>, _>>()?
@@ -170,7 +178,12 @@ impl RollingVirtualStorageNode {
         // Use the default attribute if none is specified
         let attr = attribute.unwrap_or(Self::DEFAULT_ATTRIBUTE);
 
-        let idx = network.get_virtual_storage_node_index_by_name(self.meta.name.as_str(), None)?;
+        let idx = network
+            .get_virtual_storage_node_index_by_name(self.meta.name.as_str(), None)
+            .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                name: self.meta.name.clone(),
+                sub_name: None,
+            })?;
 
         let metric = match attr {
             NodeAttribute::Volume => MetricF64::VirtualStorageVolume(idx),
@@ -184,7 +197,7 @@ impl RollingVirtualStorageNode {
                     ty: "RollingVirtualStorageNode".to_string(),
                     name: self.meta.name.clone(),
                     attr,
-                })
+                });
             }
         };
 
@@ -211,7 +224,7 @@ impl TryFromV1<RollingVirtualStorageNodeV1> for RollingVirtualStorageNode {
 
         let window = if let Some(days) = v1.days {
             if let Some(days) = NonZeroUsize::new(days as usize) {
-                RollingWindow::Days(days)
+                RollingWindow::Days { days }
             } else {
                 return Err(ComponentConversionError::Node {
                     name: meta.name.clone(),
@@ -223,7 +236,7 @@ impl TryFromV1<RollingVirtualStorageNodeV1> for RollingVirtualStorageNode {
             }
         } else if let Some(timesteps) = v1.timesteps {
             if let Some(timesteps) = NonZeroUsize::new(timesteps as usize) {
-                RollingWindow::Timesteps(timesteps)
+                RollingWindow::Timesteps { timesteps }
             } else {
                 return Err(ComponentConversionError::Node {
                     name: meta.name.clone(),

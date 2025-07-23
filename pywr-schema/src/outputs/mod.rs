@@ -11,9 +11,14 @@ use pywr_schema_macros::PywrVisitPaths;
 use schemars::JsonSchema;
 #[cfg(feature = "core")]
 use std::path::Path;
+use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticStr};
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitPaths, strum_macros::Display)]
+#[derive(
+    serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitPaths, Display, EnumDiscriminants,
+)]
 #[serde(tag = "type")]
+#[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
+#[strum_discriminants(name(OutputType))]
 pub enum Output {
     CSV(CsvOutput),
     HDF5(Hdf5Output),

@@ -2,11 +2,13 @@ use crate::models::ModelDomain;
 use crate::network::Network;
 use crate::recorders::aggregator::{AggregatorValue, Event, PeriodValue};
 use crate::recorders::metric_set::MetricSetOutputInfo;
-use crate::recorders::{AggregationFunction, MetricSetIndex, MetricSetState, Recorder, RecorderMeta};
+use crate::recorders::{
+    AggregationFunction, MetricSetIndex, MetricSetState, Recorder, RecorderAggregationError, RecorderFinaliseError,
+    RecorderMeta, RecorderSaveError, RecorderSetupError,
+};
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
 use crate::timestep::Timestep;
-use crate::PywrError;
 use chrono::NaiveDateTime;
 use std::any::Any;
 use std::collections::HashMap;
@@ -418,8 +420,13 @@ impl Recorder for MemoryRecorder {
         &self.meta
     }
 
-    fn setup(&self, domain: &ModelDomain, network: &Network) -> Result<Option<Box<(dyn Any)>>, PywrError> {
-        let metric_set = network.get_metric_set(self.metric_set_idx)?;
+    fn setup(&self, domain: &ModelDomain, network: &Network) -> Result<Option<Box<(dyn Any)>>, RecorderSetupError> {
+        let metric_set =
+            network
+                .get_metric_set(self.metric_set_idx)
+                .ok_or_else(|| RecorderSetupError::MetricSetIndexNotFound {
+                    index: self.metric_set_idx,
+                })?;
 
         let state = match metric_set.output_info(domain.time()) {
             MetricSetOutputInfo::Periodic { num_periods } => {
@@ -439,7 +446,7 @@ impl Recorder for MemoryRecorder {
         _state: &[State],
         metric_set_states: &[Vec<MetricSetState>],
         internal_state: &mut Option<Box<dyn Any>>,
-    ) -> Result<(), PywrError> {
+    ) -> Result<(), RecorderSaveError> {
         let internal_state = match internal_state {
             Some(internal) => match internal.downcast_mut::<InternalState>() {
                 Some(pa) => pa,
@@ -450,9 +457,11 @@ impl Recorder for MemoryRecorder {
 
         // Iterate through all the scenario's state
         for (scenario_index, ms_scenario_states) in scenario_indices.iter().zip(metric_set_states.iter()) {
-            let metric_set_state = ms_scenario_states
-                .get(*self.metric_set_idx.deref())
-                .ok_or(PywrError::MetricSetIndexNotFound(self.metric_set_idx))?;
+            let metric_set_state = ms_scenario_states.get(*self.metric_set_idx.deref()).ok_or_else(|| {
+                RecorderSaveError::MetricSetIndexNotFound {
+                    index: self.metric_set_idx,
+                }
+            })?;
 
             if metric_set_state.has_some_values() {
                 internal_state.append_value(scenario_index, metric_set_state.current_values());
@@ -468,7 +477,7 @@ impl Recorder for MemoryRecorder {
         scenario_indices: &[ScenarioIndex],
         metric_set_states: &[Vec<MetricSetState>],
         internal_state: &mut Option<Box<dyn Any>>,
-    ) -> Result<(), PywrError> {
+    ) -> Result<(), RecorderFinaliseError> {
         let internal_state = match internal_state {
             Some(internal) => match internal.downcast_mut::<InternalState>() {
                 Some(pa) => pa,
@@ -479,9 +488,11 @@ impl Recorder for MemoryRecorder {
 
         // Iterate through all the scenario's state
         for (scenario_index, ms_scenario_states) in scenario_indices.iter().zip(metric_set_states.iter()) {
-            let metric_set_state = ms_scenario_states
-                .get(*self.metric_set_idx.deref())
-                .ok_or(PywrError::MetricSetIndexNotFound(self.metric_set_idx))?;
+            let metric_set_state = ms_scenario_states.get(*self.metric_set_idx.deref()).ok_or_else(|| {
+                RecorderFinaliseError::MetricSetIndexNotFound {
+                    index: self.metric_set_idx,
+                }
+            })?;
 
             if metric_set_state.has_some_values() {
                 internal_state.append_value(scenario_index, metric_set_state.current_values());
@@ -494,7 +505,7 @@ impl Recorder for MemoryRecorder {
     /// Aggregate the saved data to a single value using the provided aggregation functions.
     ///
     /// This method will first aggregation over the metrics, then over time, and finally over the scenarios.
-    fn aggregated_value(&self, internal_state: &Option<Box<dyn Any>>) -> Result<f64, PywrError> {
+    fn aggregated_value(&self, internal_state: &Option<Box<dyn Any>>) -> Result<f64, RecorderAggregationError> {
         let internal_state = match internal_state {
             Some(internal) => match internal.downcast_ref::<InternalState>() {
                 Some(pa) => pa,
@@ -504,19 +515,22 @@ impl Recorder for MemoryRecorder {
         };
 
         let agg_value = match self.order {
-            AggregationOrder::MetricTimeScenario => internal_state.aggregate_metric_time_scenario(&self.aggregation)?,
-            AggregationOrder::TimeMetricScenario => internal_state.aggregate_time_metric_scenario(&self.aggregation)?,
+            AggregationOrder::MetricTimeScenario => internal_state.aggregate_metric_time_scenario(&self.aggregation),
+            AggregationOrder::TimeMetricScenario => internal_state.aggregate_time_metric_scenario(&self.aggregation),
         };
 
-        Ok(agg_value)
+        agg_value.map_err(|source| RecorderAggregationError::AggregationError {
+            name: self.meta.name.clone(),
+            source,
+        })
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::{Aggregation, InternalState};
-    use crate::recorders::aggregator::{AggregatorValue, Event, PeriodValue};
     use crate::recorders::AggregationFunction;
+    use crate::recorders::aggregator::{AggregatorValue, Event, PeriodValue};
     use crate::test_utils::{default_timestepper, test_scenario_domain};
     use crate::timestep::TimeDomain;
     use chrono::NaiveDate;

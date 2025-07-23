@@ -1,13 +1,13 @@
-use crate::metric::MetricF64;
+use crate::metric::{MetricF64, MetricF64Error};
 use crate::network::Network;
 use crate::recorders::aggregator::{AggregatorValue, NestedAggregator, NestedAggregatorState, PeriodValue};
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
 use crate::timestep::{TimeDomain, Timestep};
-use crate::PywrError;
 use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::ops::Deref;
+use thiserror::Error;
 
 /// A container for a [`MetricF64`] that retains additional information from the schema.
 ///
@@ -35,7 +35,7 @@ impl OutputMetric {
         }
     }
 
-    pub fn get_value(&self, model: &Network, state: &State) -> Result<f64, PywrError> {
+    pub fn get_value(&self, model: &Network, state: &State) -> Result<f64, MetricF64Error> {
         self.metric.get_value(model, state)
     }
 
@@ -109,6 +109,12 @@ pub enum MetricSetOutputInfo {
     Event,
 }
 
+#[derive(Debug, Error)]
+pub enum MetricSetSaveError {
+    #[error("Metric error: {0}")]
+    MetricF64Error(#[from] MetricF64Error),
+}
+
 /// A set of metrics with an optional aggregator
 #[derive(Clone, Debug)]
 pub struct MetricSet {
@@ -162,14 +168,14 @@ impl MetricSet {
         model: &Network,
         state: &State,
         internal_state: &mut MetricSetState,
-    ) -> Result<(), PywrError> {
+    ) -> Result<(), MetricSetSaveError> {
         // Combine all the values for metric across all of the scenarios
         let values: Vec<PeriodValue<f64>> = self
             .metrics
             .iter()
             .map(|metric| {
                 let value = metric.get_value(model, state)?;
-                Ok::<PeriodValue<f64>, PywrError>(PeriodValue::new(timestep.date, timestep.duration, value))
+                Ok::<PeriodValue<f64>, MetricF64Error>(PeriodValue::new(timestep.date, timestep.duration, value))
             })
             .collect::<Result<Vec<_>, _>>()?;
 

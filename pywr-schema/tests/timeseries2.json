@@ -89,7 +89,7 @@
           "name": "factored_flow"
         },
         "type": "Aggregated",
-        "agg_func": "product",
+        "agg_func": "Product",
         "metrics": [
           {
             "type": "Timeseries",
@@ -111,11 +111,9 @@
         "meta": {
           "name": "inflow"
         },
-        "provider": {
-          "type": "Polars",
-          "time_col": "date",
-          "url": "inflow2.csv"
-        }
+        "type": "Polars",
+        "time_col": "date",
+        "url": "inflow2.csv"
       }
     ],
     "metric_sets": [
@@ -133,7 +131,7 @@
       {
         "name": "nodes",
         "type": "CSV",
-        "format": "long",
+        "format": "Long",
         "filename": "timeseries2-expected.csv",
         "metric_set": "nodes"
       }

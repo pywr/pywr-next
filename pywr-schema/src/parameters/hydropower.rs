@@ -1,11 +1,11 @@
+#[cfg(feature = "core")]
+use crate::SchemaError;
 use crate::error::ComponentConversionError;
 use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::parameters::{ConversionData, ParameterMeta};
-use crate::v1::{try_convert_parameter_attr, IntoV2, TryFromV1};
-#[cfg(feature = "core")]
-use crate::SchemaError;
+use crate::v1::{IntoV2, TryFromV1, try_convert_parameter_attr};
 #[cfg(feature = "core")]
 use pywr_core::parameters::{HydropowerTargetData, ParameterIndex};
 use pywr_schema_macros::PywrVisitAll;
@@ -49,7 +49,7 @@ pub struct HydropowerTargetParameter {
     /// The elevation of water entering the turbine. The difference of this
     /// value with the `turbine_elevation` gives the working head of the turbine. This is optional
     /// and can be a constant, a value from a table, a parameter name or an inline parameter
-    /// (see [`DynamicFloatValue`]).
+    /// (see [`Metric`]).
     pub water_elevation: Option<Metric>,
     /// The elevation of the turbine. The difference between the `water_elevation` and this value
     /// gives the working head of the turbine. Default to `0.0`.

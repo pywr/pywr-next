@@ -6,7 +6,7 @@ use crate::metric::Metric;
 use crate::model::LoadArgs;
 use crate::nodes::{NodeAttribute, NodeMeta};
 use crate::parameters::Parameter;
-use crate::v1::{try_convert_node_attr, ConversionData, TryFromV1};
+use crate::v1::{ConversionData, TryFromV1, try_convert_node_attr};
 #[cfg(feature = "core")]
 use pywr_core::metric::MetricF64;
 use pywr_schema_macros::PywrVisitAll;
@@ -76,8 +76,18 @@ impl RiverGaugeNode {
         network: &pywr_core::network::Network,
     ) -> Result<Vec<pywr_core::node::NodeIndex>, SchemaError> {
         let indices = vec![
-            network.get_node_index_by_name(self.meta.name.as_str(), Self::mrf_sub_name())?,
-            network.get_node_index_by_name(self.meta.name.as_str(), Self::bypass_sub_name())?,
+            network
+                .get_node_index_by_name(self.meta.name.as_str(), Self::mrf_sub_name())
+                .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                    name: self.meta.name.clone(),
+                    sub_name: Self::mrf_sub_name().map(String::from),
+                })?,
+            network
+                .get_node_index_by_name(self.meta.name.as_str(), Self::bypass_sub_name())
+                .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                    name: self.meta.name.clone(),
+                    sub_name: Self::bypass_sub_name().map(String::from),
+                })?,
         ];
         Ok(indices)
     }
@@ -119,8 +129,18 @@ impl RiverGaugeNode {
         let attr = attribute.unwrap_or(Self::DEFAULT_ATTRIBUTE);
 
         let indices = vec![
-            network.get_node_index_by_name(self.meta.name.as_str(), Self::mrf_sub_name())?,
-            network.get_node_index_by_name(self.meta.name.as_str(), Self::bypass_sub_name())?,
+            network
+                .get_node_index_by_name(self.meta.name.as_str(), Self::mrf_sub_name())
+                .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                    name: self.meta.name.clone(),
+                    sub_name: Self::mrf_sub_name().map(String::from),
+                })?,
+            network
+                .get_node_index_by_name(self.meta.name.as_str(), Self::bypass_sub_name())
+                .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                    name: self.meta.name.clone(),
+                    sub_name: Self::bypass_sub_name().map(String::from),
+                })?,
         ];
 
         let metric = match attr {
@@ -137,7 +157,7 @@ impl RiverGaugeNode {
                     ty: "RiverGaugeNode".to_string(),
                     name: self.meta.name.clone(),
                     attr,
-                })
+                });
             }
         };
 

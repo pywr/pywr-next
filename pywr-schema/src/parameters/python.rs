@@ -9,9 +9,9 @@ use crate::parameters::{DynamicFloatValueType, ParameterMeta};
 use crate::visit::{VisitMetrics, VisitPaths};
 #[cfg(all(feature = "core", feature = "pyo3"))]
 use pyo3::{
+    IntoPyObjectExt, PyObject, Python,
     prelude::{IntoPyObject, Py, PyAny, PyAnyMethods, PyModule},
     types::{PyDict, PyString, PyTuple},
-    IntoPyObjectExt, PyObject, Python,
 };
 #[cfg(feature = "core")]
 use pywr_core::parameters::ParameterType;
@@ -24,17 +24,19 @@ use std::collections::HashMap;
 #[cfg(all(feature = "core", feature = "pyo3"))]
 use std::ffi::CString;
 use std::path::{Path, PathBuf};
+use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticStr};
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, strum_macros::Display)]
-#[serde(rename_all = "lowercase")]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, Display, EnumDiscriminants)]
+#[serde(tag = "type", deny_unknown_fields)]
+#[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
+#[strum_discriminants(name(PythonSourceType))]
 pub enum PythonSource {
-    Module(String),
-    Path(PathBuf),
+    Module { module: String },
+    Path { path: PathBuf },
 }
 
 /// The expected return type of the Python parameter.
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Default, JsonSchema, strum_macros::Display)]
-#[serde(rename_all = "lowercase")]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Default, JsonSchema, Display, EnumIter)]
 pub enum PythonReturnType {
     #[default]
     Float,
@@ -164,8 +166,8 @@ impl VisitMetrics for PythonParameter {
 impl VisitPaths for PythonParameter {
     fn visit_paths<F: FnMut(&Path)>(&self, visitor: &mut F) {
         match &self.source {
-            PythonSource::Module(_) => {}
-            PythonSource::Path(path) => {
+            PythonSource::Module { .. } => {}
+            PythonSource::Path { path } => {
                 visitor(path);
             }
         }
@@ -177,8 +179,8 @@ impl VisitPaths for PythonParameter {
 
     fn visit_paths_mut<F: FnMut(&mut PathBuf)>(&mut self, visitor: &mut F) {
         match &mut self.source {
-            PythonSource::Module(_) => {}
-            PythonSource::Path(path) => {
+            PythonSource::Module { .. } => {}
+            PythonSource::Path { path } => {
                 visitor(path);
             }
         }
@@ -215,9 +217,9 @@ impl PythonParameter {
 
         let object = Python::with_gil(|py| {
             let module = match &self.source {
-                PythonSource::Module(module) => PyModule::import(py, module.as_str()),
-                PythonSource::Path(original_path) => {
-                    let path = &make_path(original_path, args.data_path);
+                PythonSource::Module { module } => PyModule::import(py, module.as_str()),
+                PythonSource::Path { path } => {
+                    let path = &make_path(path, args.data_path);
                     let code = CString::new(std::fs::read_to_string(path).map_err(|error| SchemaError::IO {
                         path: path.to_path_buf(),
                         error,
@@ -318,6 +320,7 @@ mod tests {
                     "name": "my-float-parameter"
                 },
                 "source": {
+                    "type": "Path",
                     "path": py_fn
                 },
                 "object": "FloatParameter",
@@ -350,7 +353,7 @@ mod tests {
 
         param.add_to_model(&mut network, &args).unwrap();
 
-        assert!(network.get_parameter_by_name(&"my-float-parameter".into()).is_ok());
+        assert!(network.get_parameter_by_name(&"my-float-parameter".into()).is_some());
     }
 
     #[test]
@@ -364,9 +367,10 @@ mod tests {
                     "name": "my-int-parameter"
                 },
                 "source": {
+                    "type": "Path",
                     "path": py_fn
                 },
-                "return_type": "int",
+                "return_type": "Int",
                 "object": "FloatParameter",
                 "args": [0, ],
                 "kwargs": {},
@@ -397,6 +401,10 @@ mod tests {
 
         param.add_to_model(&mut network, &args).unwrap();
 
-        assert!(network.get_index_parameter_by_name(&"my-int-parameter".into()).is_ok());
+        assert!(
+            network
+                .get_index_parameter_by_name(&"my-int-parameter".into())
+                .is_some()
+        );
     }
 }

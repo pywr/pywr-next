@@ -6,7 +6,7 @@ use crate::metric::Metric;
 use crate::model::LoadArgs;
 use crate::nodes::{NodeAttribute, NodeMeta};
 use crate::parameters::Parameter;
-use crate::v1::{try_convert_node_attr, ConversionData, TryFromV1};
+use crate::v1::{ConversionData, TryFromV1, try_convert_node_attr};
 #[cfg(feature = "core")]
 use pywr_core::metric::MetricF64;
 use pywr_schema_macros::PywrVisitAll;
@@ -89,7 +89,14 @@ impl PiecewiseLinkNode {
             .steps
             .iter()
             .enumerate()
-            .map(|(i, _)| network.get_node_index_by_name(self.meta.name.as_str(), Self::step_sub_name(i).as_deref()))
+            .map(|(i, _)| {
+                network
+                    .get_node_index_by_name(self.meta.name.as_str(), Self::step_sub_name(i).as_deref())
+                    .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                        name: self.meta.name.clone(),
+                        sub_name: Self::step_sub_name(i),
+                    })
+            })
             .collect::<Result<Vec<_>, _>>()?;
         Ok(indices)
     }
@@ -138,7 +145,14 @@ impl PiecewiseLinkNode {
             .steps
             .iter()
             .enumerate()
-            .map(|(i, _)| network.get_node_index_by_name(self.meta.name.as_str(), Self::step_sub_name(i).as_deref()))
+            .map(|(i, _)| {
+                network
+                    .get_node_index_by_name(self.meta.name.as_str(), Self::step_sub_name(i).as_deref())
+                    .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                        name: self.meta.name.clone(),
+                        sub_name: Self::step_sub_name(i),
+                    })
+            })
             .collect::<Result<Vec<_>, _>>()?;
 
         let metric = match attr {
@@ -155,7 +169,7 @@ impl PiecewiseLinkNode {
                     ty: "PiecewiseLinkNode".to_string(),
                     name: self.meta.name.clone(),
                     attr,
-                })
+                });
             }
         };
 

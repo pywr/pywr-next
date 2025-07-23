@@ -79,8 +79,8 @@ impl EventAggregator {
 #[cfg(test)]
 mod tests {
     use super::{EventAggregator, EventAggregatorState};
+    use crate::predicate::Predicate;
     use crate::recorders::aggregator::PeriodValue;
-    use crate::Predicate;
     use chrono::{NaiveDate, TimeDelta};
 
     #[test]

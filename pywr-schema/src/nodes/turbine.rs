@@ -1,10 +1,10 @@
+#[cfg(feature = "core")]
+use crate::SchemaError;
 use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::nodes::{NodeAttribute, NodeMeta};
 use crate::parameters::Parameter;
-#[cfg(feature = "core")]
-use crate::SchemaError;
 #[cfg(feature = "core")]
 use pywr_core::{
     derived_metric::{DerivedMetric, TurbineData},
@@ -13,8 +13,11 @@ use pywr_core::{
 };
 use pywr_schema_macros::PywrVisitAll;
 use schemars::JsonSchema;
+use strum_macros::EnumIter;
 
-#[derive(serde::Deserialize, serde::Serialize, Clone, Debug, strum_macros::Display, JsonSchema, PywrVisitAll)]
+#[derive(
+    serde::Deserialize, serde::Serialize, Clone, Debug, strum_macros::Display, JsonSchema, PywrVisitAll, EnumIter,
+)]
 pub enum TargetType {
     // set flow derived from the hydropower target as a max_flow
     MaxFlow,
@@ -107,7 +110,12 @@ impl TurbineNode {
         &self,
         network: &pywr_core::network::Network,
     ) -> Result<Vec<pywr_core::node::NodeIndex>, SchemaError> {
-        let idx = network.get_node_index_by_name(self.meta.name.as_str(), None)?;
+        let idx = network
+            .get_node_index_by_name(self.meta.name.as_str(), None)
+            .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                name: self.meta.name.clone(),
+                sub_name: None,
+            })?;
         Ok(vec![idx])
     }
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network, _args: &LoadArgs) -> Result<(), SchemaError> {
@@ -176,7 +184,12 @@ impl TurbineNode {
         // Use the default attribute if none is specified
         let attr = attribute.unwrap_or(Self::DEFAULT_ATTRIBUTE);
 
-        let idx = network.get_node_index_by_name(self.meta.name.as_str(), None)?;
+        let idx = network
+            .get_node_index_by_name(self.meta.name.as_str(), None)
+            .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                name: self.meta.name.clone(),
+                sub_name: None,
+            })?;
 
         let metric = match attr {
             NodeAttribute::Outflow => MetricF64::NodeOutFlow(idx),
@@ -205,7 +218,7 @@ impl TurbineNode {
                     ty: "TurbineNode".to_string(),
                     name: self.meta.name.clone(),
                     attr,
-                })
+                });
             }
         };
 

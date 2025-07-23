@@ -29,7 +29,10 @@ pub fn align_and_resample(
     let durations = df
         .clone()
         .lazy()
-        .select([col(time_col).diff(1, NullBehavior::Drop).unique().alias("duration")])
+        .select([col(time_col)
+            .diff(1.into(), NullBehavior::Drop)
+            .unique()
+            .alias("duration")])
         .collect()?;
     let durations = durations.column("duration")?.duration()?.deref();
 
@@ -89,13 +92,19 @@ pub fn align_and_resample(
 }
 
 fn slice_start(df: DataFrame, time_col: &str, domain: &TimeDomain) -> Result<DataFrame, TimeseriesError> {
-    let start = domain.first().date;
+    let start = domain
+        .first()
+        .ok_or_else(|| TimeseriesError::NoTimestepsDefined)?
+        .date;
     let df = df.clone().lazy().filter(col(time_col).gt_eq(lit(start))).collect()?;
     Ok(df)
 }
 
 fn slice_end(df: DataFrame, time_col: &str, domain: &TimeDomain) -> Result<DataFrame, TimeseriesError> {
-    let end = domain.last().date;
+    let end = domain
+        .last()
+        .ok_or_else(|| TimeseriesError::NoTimestepsDefined)?
+        .date;
     let df = df.clone().lazy().filter(col(time_col).lt_eq(lit(end))).collect()?;
     Ok(df)
 }

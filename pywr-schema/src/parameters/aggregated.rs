@@ -5,7 +5,7 @@ use crate::metric::{IndexMetric, Metric};
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::parameters::{ConversionData, ParameterMeta};
-use crate::v1::{try_convert_parameter_attr, IntoV2, TryFromV1};
+use crate::v1::{IntoV2, TryFromV1, try_convert_parameter_attr};
 #[cfg(feature = "core")]
 use pywr_core::parameters::ParameterIndex;
 use pywr_schema_macros::PywrVisitAll;
@@ -15,15 +15,26 @@ use pywr_v1_schema::parameters::{
 };
 use schemars::JsonSchema;
 use std::collections::HashMap;
+use strum_macros::{Display, EnumIter};
 
 // TODO complete these
-#[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone, strum_macros::Display, JsonSchema, PywrVisitAll)]
-#[serde(rename_all = "lowercase")]
+/// Aggregation functions for float values.
+///
+/// This enum defines the possible aggregation functions that can be applied to index metrics.
+/// They are mapped to the corresponding functions in the `pywr_core::parameters::AggFunc` enum
+/// when used in the core library.
+#[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone, Display, JsonSchema, PywrVisitAll, EnumIter)]
 pub enum AggFunc {
+    /// Sum of all values.
     Sum,
+    /// Product of all values.
     Product,
-    Max,
+    /// Mean of all values.
+    Mean,
+    /// Minimum value among all values.
     Min,
+    /// Maximum value among all values.
+    Max,
 }
 
 #[cfg(feature = "core")]
@@ -34,6 +45,7 @@ impl From<AggFunc> for pywr_core::parameters::AggFunc {
             AggFunc::Product => pywr_core::parameters::AggFunc::Product,
             AggFunc::Max => pywr_core::parameters::AggFunc::Max,
             AggFunc::Min => pywr_core::parameters::AggFunc::Min,
+            AggFunc::Mean => pywr_core::parameters::AggFunc::Mean,
         }
     }
 }
@@ -129,14 +141,24 @@ impl TryFromV1<AggregatedParameterV1> for AggregatedParameter {
 }
 
 // TODO complete these
-#[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone, strum_macros::Display, JsonSchema, PywrVisitAll)]
-#[serde(rename_all = "lowercase")]
+/// Aggregation functions for index (integer) values.
+///
+/// This enum defines the possible aggregation functions that can be applied to index metrics.
+/// They are mapped to the corresponding functions in the `pywr_core::parameters::AggIndexFunc` enum
+/// when used in the core library.
+#[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone, Display, JsonSchema, PywrVisitAll, EnumIter)]
 pub enum IndexAggFunc {
+    /// Sum of all values.
     Sum,
+    /// Product of all values.
     Product,
-    Max,
+    /// Minimum value among all values.
     Min,
+    /// Maximum value among all values.
+    Max,
+    /// Returns 1 if any value is non-zero, otherwise 0.
     Any,
+    /// Returns 1 if all values are non-zero, otherwise 0.
     All,
 }
 
@@ -252,7 +274,7 @@ mod tests {
                     "name": "my-agg-param",
                     "comment": "Take the minimum of two parameters"
                 },
-                "agg_func": "min",
+                "agg_func": "Min",
                 "metrics": [
                   {
                     "type": "Parameter",

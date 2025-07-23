@@ -1,5 +1,5 @@
 #[cfg(feature = "core")]
-use pywr_core::test_utils::{run_all_solvers, ExpectedOutputs};
+use pywr_core::test_utils::{ExpectedOutputs, run_all_solvers};
 use pywr_schema::PywrModel;
 use std::fs;
 use std::path::Path;
@@ -52,6 +52,7 @@ model_tests! {
     test_mutual_exclusivity1: ("mutual-exclusivity1.json", vec!["mutual-exclusivity1.csv"], vec!["clp", "ipm-simd", "ipm-ocl"], vec![]),
     test_mutual_exclusivity2: ("mutual-exclusivity2.json", vec!["mutual-exclusivity2.csv"], vec!["clp", "ipm-simd", "ipm-ocl"], vec![]),
     test_mutual_exclusivity3: ("mutual-exclusivity3.json", vec!["mutual-exclusivity3.csv"], vec!["clp", "ipm-simd", "ipm-ocl"], vec![]),
+    test_mutual_exclusivity4: ("mutual-exclusivity4.json", vec!["mutual-exclusivity4.csv"], vec!["clp", "ipm-simd", "ipm-ocl"], vec![]),
     test_link_with_soft_min: ("link_with_soft_min.json", vec![], vec!["ipm-simd", "ipm-ocl"], vec![]),
     test_link_with_soft_max: ("link_with_soft_max.json", vec![], vec!["ipm-simd", "ipm-ocl"], vec![]),
     test_delay1: ("delay1.json", vec!["delay1-expected.csv"], vec![], vec![]),
@@ -63,6 +64,8 @@ model_tests! {
     test_piecewise_storage1: ("piecewise_storage1.json", vec!["piecewise_storage1-expected.csv"], vec![], vec!["ipm-simd", "ipm-ocl"]),
     // TODO not sure why this is failing in IPM solvers (https://github.com/pywr/pywr-next/issues/293)
     test_piecewise_storage2: ("piecewise_storage2.json", vec!["piecewise_storage2-expected.csv"], vec![], vec!["ipm-simd", "ipm-ocl"]),
+    test_reservoir_with_river: ("reservoir_with_river.json", vec![], vec![], vec![]),
+    test_reservoir_with_spill: ("reservoir_with_spill.json", vec![], vec![], vec![]),
     test_river_loss1: ("river_loss1.json", vec!["river_loss1-expected.csv"], vec!["ipm-simd", "ipm-ocl"], vec![]),
     // TODO not sure why this is failing in IPM solvers (https://github.com/pywr/pywr-next/issues/293)
     test_river_gauge1: ("river_gauge1.json", vec![], vec![], vec!["ipm-simd", "ipm-ocl"]),
@@ -146,7 +149,7 @@ fn convert_model(v1_path: &Path, v2_path: &Path) {
     let v1: pywr_v1_schema::PywrModel = serde_json::from_str(&v1_str).unwrap();
 
     let (v2, errors) = PywrModel::from_v1(v1);
-
+    println!("Conversion errors: {errors:?}",);
     assert_eq!(errors.len(), 0);
 
     let v2_converted: serde_json::Value = serde_json::from_str(&serde_json::to_string_pretty(&v2).unwrap()).unwrap();

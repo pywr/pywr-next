@@ -1,8 +1,8 @@
+use crate::parameters::errors::SimpleCalculationError;
 use crate::parameters::{Parameter, ParameterMeta, ParameterName, ParameterState, SimpleParameter};
 use crate::scenario::ScenarioIndex;
 use crate::state::SimpleParameterValues;
 use crate::timestep::Timestep;
-use crate::PywrError;
 use chrono::{Datelike, NaiveDate, NaiveDateTime, Timelike};
 use thiserror::Error;
 
@@ -196,7 +196,7 @@ impl SimpleParameter<f64> for WeeklyProfileParameter {
         _scenario_index: &ScenarioIndex,
         _values: &SimpleParameterValues,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<f64, PywrError> {
+    ) -> Result<f64, SimpleCalculationError> {
         Ok(self.values.value(&timestep.date, &self.interp_day))
     }
 
@@ -213,7 +213,7 @@ mod tests {
     use crate::parameters::profiles::weekly::{WeeklyInterpDay, WeeklyProfileValues};
     use crate::test_utils::assert_approx_array_eq;
     use chrono::{Datelike, NaiveDate, TimeDelta};
-    use float_cmp::{assert_approx_eq, F64Margin};
+    use float_cmp::{F64Margin, assert_approx_eq};
 
     /// Build a time-series from the weekly profile
     fn collect(week_size: &WeeklyProfileValues, interp_day: Option<WeeklyInterpDay>) -> Vec<f64> {

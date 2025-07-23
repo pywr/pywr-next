@@ -107,7 +107,7 @@
       {
         "name": "monthly-avg-outputs",
         "type": "CSV",
-        "format": "long",
+        "format": "Long",
         "filename": "csv3-outputs-long.csv",
         "metric_set": [
           "nodes-monthly-mean",

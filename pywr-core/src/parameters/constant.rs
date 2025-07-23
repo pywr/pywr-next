@@ -1,11 +1,12 @@
+use crate::parameters::errors::{ConstCalculationError, ParameterSetupError};
 use crate::parameters::{
-    downcast_internal_state_mut, downcast_internal_state_ref, downcast_variable_config_ref, ActivationFunction,
-    ConstParameter, Parameter, ParameterMeta, ParameterName, ParameterState, VariableConfig, VariableParameter,
+    ActivationFunction, ConstParameter, Parameter, ParameterMeta, ParameterName, ParameterState, VariableConfig,
+    VariableParameter, VariableParameterError, downcast_internal_state_mut, downcast_internal_state_ref,
+    downcast_variable_config_ref,
 };
 use crate::scenario::ScenarioIndex;
 use crate::state::ConstParameterValues;
 use crate::timestep::Timestep;
-use crate::PywrError;
 
 pub struct ConstantParameter {
     meta: ParameterMeta,
@@ -44,7 +45,7 @@ impl Parameter for ConstantParameter {
         &self,
         _timesteps: &[Timestep],
         _scenario_index: &ScenarioIndex,
-    ) -> Result<Option<Box<dyn ParameterState>>, PywrError> {
+    ) -> Result<Option<Box<dyn ParameterState>>, ParameterSetupError> {
         let value: Option<f64> = None;
         Ok(Some(Box::new(value)))
     }
@@ -63,7 +64,7 @@ impl ConstParameter<f64> for ConstantParameter {
         _scenario_index: &ScenarioIndex,
         _values: &ConstParameterValues,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<f64, PywrError> {
+    ) -> Result<f64, ConstCalculationError> {
         Ok(self.value(internal_state))
     }
 
@@ -89,7 +90,7 @@ impl VariableParameter<f64> for ConstantParameter {
         values: &[f64],
         variable_config: &dyn VariableConfig,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<(), PywrError> {
+    ) -> Result<(), VariableParameterError> {
         let activation_function = downcast_variable_config_ref::<ActivationFunction>(variable_config);
 
         if values.len() == 1 {
@@ -97,7 +98,10 @@ impl VariableParameter<f64> for ConstantParameter {
             *value = Some(activation_function.apply(values[0]));
             Ok(())
         } else {
-            Err(PywrError::ParameterVariableValuesIncorrectLength)
+            Err(VariableParameterError::IncorrectNumberOfValues {
+                expected: 1,
+                received: values.len(),
+            })
         }
     }
 
@@ -107,14 +111,14 @@ impl VariableParameter<f64> for ConstantParameter {
             .map(|value| vec![*value])
     }
 
-    fn get_lower_bounds(&self, variable_config: &dyn VariableConfig) -> Result<Vec<f64>, PywrError> {
+    fn get_lower_bounds(&self, variable_config: &dyn VariableConfig) -> Option<Vec<f64>> {
         let activation_function = downcast_variable_config_ref::<ActivationFunction>(variable_config);
-        Ok(vec![activation_function.lower_bound()])
+        Some(vec![activation_function.lower_bound()])
     }
 
-    fn get_upper_bounds(&self, variable_config: &dyn VariableConfig) -> Result<Vec<f64>, PywrError> {
+    fn get_upper_bounds(&self, variable_config: &dyn VariableConfig) -> Option<Vec<f64>> {
         let activation_function = downcast_variable_config_ref::<ActivationFunction>(variable_config);
-        Ok(vec![activation_function.upper_bound()])
+        Some(vec![activation_function.upper_bound()])
     }
 }
 

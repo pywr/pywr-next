@@ -1,3 +1,4 @@
+use crate::ConversionError;
 use crate::error::ComponentConversionError;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
@@ -6,8 +7,7 @@ use crate::metric::{Metric, NodeReference};
 use crate::model::LoadArgs;
 use crate::parameters::{ConversionData, ParameterMeta};
 use crate::predicate::Predicate;
-use crate::v1::{try_convert_parameter_attr, IntoV2, TryFromV1};
-use crate::ConversionError;
+use crate::v1::{IntoV2, TryFromV1, try_convert_parameter_attr};
 #[cfg(feature = "core")]
 use pywr_core::parameters::{ParameterName, ParameterType};
 use pywr_schema_macros::PywrVisitAll;
@@ -132,7 +132,7 @@ impl TryFromV1<ParameterThresholdParameterV1> for ThresholdParameter {
                                 expected: 2,
                                 found: v.len(),
                             },
-                        })
+                        });
                     }
                 }
             }
@@ -179,7 +179,7 @@ impl TryFromV1<NodeThresholdParameterV1> for ThresholdParameter {
                                 expected: 2,
                                 found: v.len(),
                             },
-                        })
+                        });
                     }
                 }
             }
@@ -223,7 +223,7 @@ impl TryFromV1<StorageThresholdParameterV1> for ThresholdParameter {
                                 expected: 2,
                                 found: v.len(),
                             },
-                        })
+                        });
                     }
                 }
             }

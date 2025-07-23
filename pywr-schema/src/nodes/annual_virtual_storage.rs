@@ -7,7 +7,7 @@ use crate::model::LoadArgs;
 use crate::nodes::core::StorageInitialVolume;
 use crate::nodes::{NodeAttribute, NodeMeta};
 use crate::parameters::Parameter;
-use crate::v1::{try_convert_initial_storage, try_convert_node_attr, ConversionData, TryFromV1};
+use crate::v1::{ConversionData, TryFromV1, try_convert_initial_storage, try_convert_node_attr};
 #[cfg(feature = "core")]
 use pywr_core::{
     derived_metric::DerivedMetric,
@@ -80,7 +80,9 @@ impl AnnualVirtualStorageNode {
             .map(|node_ref| {
                 args.schema
                     .get_node_by_name(&node_ref.name)
-                    .ok_or_else(|| SchemaError::NodeNotFound(node_ref.name.to_string()))?
+                    .ok_or_else(|| SchemaError::NodeNotFound {
+                        name: node_ref.name.to_string(),
+                    })?
                     .node_indices_for_constraints(network, args)
             })
             .collect::<Result<Vec<_>, _>>()?
@@ -137,7 +139,12 @@ impl AnnualVirtualStorageNode {
         // Use the default attribute if none is specified
         let attr = attribute.unwrap_or(Self::DEFAULT_ATTRIBUTE);
 
-        let idx = network.get_virtual_storage_node_index_by_name(self.meta.name.as_str(), None)?;
+        let idx = network
+            .get_virtual_storage_node_index_by_name(self.meta.name.as_str(), None)
+            .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                name: self.meta.name.clone(),
+                sub_name: None,
+            })?;
 
         let metric = match attr {
             NodeAttribute::Volume => MetricF64::VirtualStorageVolume(idx),
@@ -151,7 +158,7 @@ impl AnnualVirtualStorageNode {
                     ty: "AnnualVirtualStorageNode".to_string(),
                     name: self.meta.name.clone(),
                     attr,
-                })
+                });
             }
         };
 

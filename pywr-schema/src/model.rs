@@ -19,10 +19,11 @@ use chrono::{NaiveDate, NaiveDateTime};
 #[cfg(feature = "pyo3")]
 use pyo3::pyclass;
 #[cfg(feature = "core")]
-use pywr_core::{models::ModelDomain, timestep::TimestepDuration, PywrError};
+use pywr_core::{models::ModelDomain, timestep::TimestepDuration};
 use schemars::JsonSchema;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
+use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticStr};
 
 #[derive(serde::Deserialize, serde::Serialize, Clone, JsonSchema)]
 pub struct Metadata {
@@ -53,8 +54,10 @@ impl From<pywr_v1_schema::model::Metadata> for Metadata {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, strum_macros::Display)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, Display, EnumDiscriminants)]
 #[serde(untagged)]
+#[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
+#[strum_discriminants(name(TimestepType))]
 pub enum Timestep {
     Days(i64),
     Frequency(String),
@@ -69,14 +72,16 @@ impl From<pywr_v1_schema::model::Timestep> for Timestep {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Clone, Copy, Debug, JsonSchema, strum_macros::Display)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Copy, Debug, JsonSchema, Display, EnumDiscriminants)]
 #[serde(untagged)]
-pub enum DateType {
+#[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
+#[strum_discriminants(name(DateType))]
+pub enum Date {
     Date(NaiveDate),
     DateTime(NaiveDateTime),
 }
 
-impl From<pywr_v1_schema::model::DateType> for DateType {
+impl From<pywr_v1_schema::model::DateType> for Date {
     fn from(v1: pywr_v1_schema::model::DateType) -> Self {
         match v1 {
             pywr_v1_schema::model::DateType::Date(date) => Self::Date(date),
@@ -87,16 +92,16 @@ impl From<pywr_v1_schema::model::DateType> for DateType {
 
 #[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema)]
 pub struct Timestepper {
-    pub start: DateType,
-    pub end: DateType,
+    pub start: Date,
+    pub end: Date,
     pub timestep: Timestep,
 }
 
 impl Default for Timestepper {
     fn default() -> Self {
         Self {
-            start: DateType::Date(NaiveDate::from_ymd_opt(2000, 1, 1).expect("Invalid date")),
-            end: DateType::Date(NaiveDate::from_ymd_opt(2000, 12, 31).expect("Invalid date")),
+            start: Date::Date(NaiveDate::from_ymd_opt(2000, 1, 1).expect("Invalid date")),
+            end: Date::Date(NaiveDate::from_ymd_opt(2000, 12, 31).expect("Invalid date")),
             timestep: Timestep::Days(1),
         }
     }
@@ -121,13 +126,13 @@ impl From<Timestepper> for pywr_core::timestep::Timestepper {
         };
 
         let start = match ts.start {
-            DateType::Date(date) => NaiveDateTime::new(date, NaiveTime::default()),
-            DateType::DateTime(date_time) => date_time,
+            Date::Date(date) => NaiveDateTime::new(date, NaiveTime::default()),
+            Date::DateTime(date_time) => date_time,
         };
 
         let end = match ts.end {
-            DateType::Date(date) => NaiveDateTime::new(date, NaiveTime::default()),
-            DateType::DateTime(date_time) => date_time,
+            Date::Date(date) => NaiveDateTime::new(date, NaiveTime::default()),
+            Date::DateTime(date_time) => date_time,
         };
 
         Self::new(start, end, timestep)
@@ -153,8 +158,10 @@ pub struct ScenarioGroupLabels {
     pub labels: Vec<String>,
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Clone, JsonSchema)]
-#[serde(tag = "type")]
+#[derive(serde::Deserialize, serde::Serialize, Clone, JsonSchema, Display, EnumDiscriminants)]
+#[serde(tag = "type", deny_unknown_fields)]
+#[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
+#[strum_discriminants(name(ScenarioGroupSubsetType))]
 pub enum ScenarioGroupSubset {
     Slice(ScenarioGroupSlice),
     Indices(ScenarioGroupIndices),
@@ -206,8 +213,10 @@ impl TryInto<pywr_core::scenario::ScenarioGroup> for ScenarioGroup {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Clone, JsonSchema)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, JsonSchema, Display, EnumDiscriminants)]
 #[serde(untagged)]
+#[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
+#[strum_discriminants(name(ScenarioLabelOrIndexType))]
 pub enum ScenarioLabelOrIndex {
     Label(String),
     Index(usize),
@@ -572,13 +581,10 @@ impl PywrNetwork {
                 if let Err(e) = node.add_to_model(&mut network, &args) {
                     // Adding the node failed!
                     match e {
-                        SchemaError::PywrCore(core_err) => match core_err {
-                            // And it failed because another node was not found.
-                            // Let's try to load more nodes and see if this one can tried
-                            // again later
-                            PywrError::NodeNotFound(_) => failed_nodes.push(node),
-                            _ => return Err(SchemaError::PywrCore(core_err)),
-                        },
+                        // And it failed because another node was not found.
+                        // Let's try to load more nodes and see if this one can tried
+                        // again later
+                        SchemaError::CoreNodeNotFound { .. } => failed_nodes.push(node),
                         _ => return Err(e),
                     }
                 };
@@ -617,14 +623,10 @@ impl PywrNetwork {
                 if let Err(e) = parameter.add_to_model(&mut network, &args, parent) {
                     // Adding the parameter failed!
                     match e {
-                        SchemaError::PywrCore(core_err) => match core_err {
-                            // And it failed because another parameter was not found.
-                            // Let's try to load more parameters and see if this one can tried
-                            // again later
-                            PywrError::ParameterNotFound(_) => failed_parameters.push((parent, parameter)),
-                            _ => return Err(SchemaError::PywrCore(core_err)),
-                        },
-                        SchemaError::ParameterNotFound(_) => failed_parameters.push((parent, parameter)),
+                        // And it failed because another parameter was not found.
+                        // Let's try to load more parameters and see if this one can tried
+                        // again later
+                        SchemaError::CoreParameterNotFound { .. } => failed_parameters.push((parent, parameter)),
                         _ => return Err(e),
                     }
                 };
@@ -662,8 +664,10 @@ impl PywrNetwork {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Clone, strum_macros::Display)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Display, EnumDiscriminants)]
 #[serde(untagged)]
+#[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
+#[strum_discriminants(name(PywrNetworkRefType))]
 pub enum PywrNetworkRef {
     Path(PathBuf),
     Inline(PywrNetwork),
@@ -726,7 +730,7 @@ impl VisitMetrics for PywrModel {
 }
 
 impl PywrModel {
-    pub fn new(title: &str, start: &DateType, end: &DateType) -> Self {
+    pub fn new(title: &str, start: &Date, end: &Date) -> Self {
         Self {
             metadata: Metadata {
                 title: title.to_string(),
@@ -1071,14 +1075,14 @@ mod tests {
         let timestep: Timestepper = serde_json::from_str(timestepper_str).unwrap();
 
         match timestep.start {
-            super::DateType::Date(date) => {
+            super::Date::Date(date) => {
                 assert_eq!(date, chrono::NaiveDate::from_ymd_opt(2015, 1, 1).unwrap());
             }
             _ => panic!("Expected a date"),
         }
 
         match timestep.end {
-            super::DateType::Date(date) => {
+            super::Date::Date(date) => {
                 assert_eq!(date, chrono::NaiveDate::from_ymd_opt(2015, 12, 31).unwrap());
             }
             _ => panic!("Expected a date"),
@@ -1098,7 +1102,7 @@ mod tests {
         let timestep: Timestepper = serde_json::from_str(timestepper_str).unwrap();
 
         match timestep.start {
-            super::DateType::DateTime(date_time) => {
+            super::Date::DateTime(date_time) => {
                 assert_eq!(
                     date_time,
                     chrono::NaiveDate::from_ymd_opt(2015, 1, 1)
@@ -1111,7 +1115,7 @@ mod tests {
         }
 
         match timestep.end {
-            super::DateType::DateTime(date_time) => {
+            super::Date::DateTime(date_time) => {
                 assert_eq!(
                     date_time,
                     chrono::NaiveDate::from_ymd_opt(2015, 1, 1)
@@ -1162,10 +1166,10 @@ mod tests {
         for entry in fs::read_dir(doc_examples).unwrap() {
             let p = entry.unwrap().path();
             if p.is_file() && p.file_name().unwrap().to_str().unwrap().starts_with("scenario_domain") {
-                let data = read_to_string(&p).unwrap_or_else(|e| panic!("Failed to read file: {:?}: {}", p, e));
+                let data = read_to_string(&p).unwrap_or_else(|e| panic!("Failed to read file: {p:?}: {e}",));
 
                 let _value: ScenarioDomain =
-                    serde_json::from_str(&data).unwrap_or_else(|e| panic!("Failed to deserialize {:?}: {}", p, e));
+                    serde_json::from_str(&data).unwrap_or_else(|e| panic!("Failed to deserialize {p:?}: {e}",));
             }
         }
     }
@@ -1178,7 +1182,9 @@ mod core_tests {
     use crate::metric::{Metric, ParameterReference};
     use crate::parameters::{AggFunc, AggregatedParameter, ConstantParameter, ConstantValue, Parameter, ParameterMeta};
     use ndarray::{Array1, Array2, Axis};
-    use pywr_core::{metric::MetricF64, recorders::AssertionRecorder, solvers::ClpSolver, test_utils::run_all_solvers};
+    use pywr_core::{
+        metric::MetricF64, recorders::AssertionF64Recorder, solvers::ClpSolver, test_utils::run_all_solvers,
+    };
     use std::fs::read_to_string;
     use std::path::PathBuf;
 
@@ -1201,7 +1207,7 @@ mod core_tests {
         let expected_values: Array1<f64> = [10.0; 365].to_vec().into();
         let expected_values: Array2<f64> = expected_values.insert_axis(Axis(1));
 
-        let rec = AssertionRecorder::new(
+        let rec = AssertionF64Recorder::new(
             "assert-demand1",
             MetricF64::NodeInFlow(demand1_idx),
             expected_values,
@@ -1338,7 +1344,7 @@ mod core_tests {
         let expected_values: Array1<f64> = [10.0; 365].to_vec().into();
         let expected_values: Array2<f64> = expected_values.insert_axis(Axis(1));
 
-        let rec = AssertionRecorder::new(
+        let rec = AssertionF64Recorder::new(
             "assert-demand1",
             MetricF64::NodeInFlow(demand1_idx),
             expected_values,
@@ -1357,7 +1363,7 @@ mod core_tests {
         let expected_values: Array1<f64> = [10.0; 365].to_vec().into();
         let expected_values: Array2<f64> = expected_values.insert_axis(Axis(1));
 
-        let rec = AssertionRecorder::new(
+        let rec = AssertionF64Recorder::new(
             "assert-demand2",
             MetricF64::NodeInFlow(demand1_idx),
             expected_values,
@@ -1389,7 +1395,7 @@ mod core_tests {
         let expected_values: Array1<f64> = [10.0; 365].to_vec().into();
         let expected_values: Array2<f64> = expected_values.insert_axis(Axis(1));
 
-        let rec = AssertionRecorder::new(
+        let rec = AssertionF64Recorder::new(
             "assert-demand1",
             MetricF64::NodeInFlow(demand1_idx),
             expected_values,
@@ -1408,7 +1414,7 @@ mod core_tests {
         let expected_values: Array1<f64> = [10.0; 365].to_vec().into();
         let expected_values: Array2<f64> = expected_values.insert_axis(Axis(1));
 
-        let rec = AssertionRecorder::new(
+        let rec = AssertionF64Recorder::new(
             "assert-demand2",
             MetricF64::NodeInFlow(demand1_idx),
             expected_values,

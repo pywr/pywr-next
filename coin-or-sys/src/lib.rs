@@ -21,7 +21,7 @@ mod tests {
             let c_buf = Clp_Version();
             let c_str = std::ffi::CStr::from_ptr(c_buf);
             let version = c_str.to_str().unwrap();
-            println!("{}", version);
+            println!("{version}",);
         }
     }
 
@@ -39,7 +39,7 @@ mod tests {
             let c_buf = Cbc_getVersion();
             let c_str = std::ffi::CStr::from_ptr(c_buf);
             let version = c_str.to_str().unwrap();
-            println!("{}", version);
+            println!("{version}",);
         }
     }
 

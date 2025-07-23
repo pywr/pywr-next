@@ -88,7 +88,13 @@ impl RiverNode {
         &self,
         network: &pywr_core::network::Network,
     ) -> Result<Vec<pywr_core::node::NodeIndex>, SchemaError> {
-        let idx = network.get_node_index_by_name(self.meta.name.as_str(), Self::net_node_sub_name())?;
+        let idx = network
+            .get_node_index_by_name(self.meta.name.as_str(), Self::net_node_sub_name())
+            .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                name: self.meta.name.clone(),
+                sub_name: Self::net_node_sub_name().map(String::from),
+            })?;
+
         Ok(vec![idx])
     }
 
@@ -139,9 +145,14 @@ impl RiverNode {
             NodeAttribute::Inflow => {
                 match network.get_node_index_by_name(self.meta.name.as_str(), Self::loss_node_sub_name()) {
                     // The total inflow with the loss is the sum of the net and loss node
-                    Ok(loss_idx) => {
+                    Some(loss_idx) => {
                         let indices = vec![
-                            network.get_node_index_by_name(self.meta.name.as_str(), Self::net_node_sub_name())?,
+                            network
+                                .get_node_index_by_name(self.meta.name.as_str(), Self::net_node_sub_name())
+                                .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                                    name: self.meta.name.clone(),
+                                    sub_name: Self::net_node_sub_name().map(String::from),
+                                })?,
                             loss_idx,
                         ];
                         MetricF64::MultiNodeInFlow {
@@ -150,19 +161,29 @@ impl RiverNode {
                         }
                     }
                     // Loss is None
-                    Err(_) => MetricF64::NodeInFlow(
-                        network.get_node_index_by_name(self.meta.name.as_str(), Self::net_node_sub_name())?,
+                    None => MetricF64::NodeInFlow(
+                        network
+                            .get_node_index_by_name(self.meta.name.as_str(), Self::net_node_sub_name())
+                            .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                                name: self.meta.name.clone(),
+                                sub_name: Self::net_node_sub_name().map(String::from),
+                            })?,
                     ),
                 }
             }
             NodeAttribute::Outflow => {
-                let idx = network.get_node_index_by_name(self.meta.name.as_str(), Self::net_node_sub_name())?;
+                let idx = network
+                    .get_node_index_by_name(self.meta.name.as_str(), Self::net_node_sub_name())
+                    .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                        name: self.meta.name.clone(),
+                        sub_name: Self::net_node_sub_name().map(String::from),
+                    })?;
                 MetricF64::NodeOutFlow(idx)
             }
             NodeAttribute::Loss => {
                 match network.get_node_index_by_name(self.meta.name.as_str(), Self::loss_node_sub_name()) {
-                    Ok(loss_idx) => MetricF64::NodeInFlow(loss_idx),
-                    Err(_) => 0.0.into(),
+                    Some(loss_idx) => MetricF64::NodeInFlow(loss_idx),
+                    None => 0.0.into(),
                 }
             }
             _ => {
@@ -170,7 +191,7 @@ impl RiverNode {
                     ty: "RiverNode".to_string(),
                     name: self.meta.name.clone(),
                     attr,
-                })
+                });
             }
         };
 

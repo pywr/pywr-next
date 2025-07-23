@@ -96,7 +96,14 @@ impl PiecewiseStorageNode {
             .steps
             .iter()
             .enumerate()
-            .map(|(i, _)| network.get_node_index_by_name(self.meta.name.as_str(), Self::step_sub_name(i).as_deref()))
+            .map(|(i, _)| {
+                network
+                    .get_node_index_by_name(self.meta.name.as_str(), Self::step_sub_name(i).as_deref())
+                    .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                        name: self.meta.name.clone(),
+                        sub_name: Self::step_sub_name(i),
+                    })
+            })
             .collect::<Result<Vec<_>, _>>()?;
         Ok(indices)
     }
@@ -237,7 +244,12 @@ impl PiecewiseStorageNode {
         // Use the default attribute if none is specified
         let attr = attribute.unwrap_or(Self::DEFAULT_ATTRIBUTE);
 
-        let idx = network.get_aggregated_storage_node_index_by_name(self.meta.name.as_str(), Self::agg_sub_name())?;
+        let idx = network
+            .get_aggregated_storage_node_index_by_name(self.meta.name.as_str(), Self::agg_sub_name())
+            .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                name: self.meta.name.clone(),
+                sub_name: Self::agg_sub_name().map(String::from),
+            })?;
 
         let metric = match attr {
             NodeAttribute::Volume => MetricF64::AggregatedNodeVolume(idx),
@@ -251,7 +263,7 @@ impl PiecewiseStorageNode {
                     ty: "PiecewiseStorageNode".to_string(),
                     name: self.meta.name.clone(),
                     attr,
-                })
+                });
             }
         };
 

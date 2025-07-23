@@ -16,9 +16,9 @@ use schemars::JsonSchema;
 ///
 /// This is often useful in long river reaches as a simply way to model time-of-travel. Internally
 /// an `Output` node is used to terminate flows entering the node and an `Input` node is created
-/// with flow constraints set by a [DelayParameter]. These constraints set the minimum and
+/// with flow constraints set by a [`pywr_core::parameters::DelayParameter`]. These constraints set the minimum and
 /// maximum flow on the `Input` node equal to the flow reaching the `Output` node N time-steps
-/// ago. The internally created [DelayParameter] is created with this node's name and the suffix
+/// ago. The internally created [`pywr_core::parameters::DelayParameter`] is created with this node's name and the suffix
 /// "-delay".
 ///
 ///
@@ -72,7 +72,14 @@ impl DelayNode {
         &self,
         network: &pywr_core::network::Network,
     ) -> Result<Vec<pywr_core::node::NodeIndex>, SchemaError> {
-        let indices = vec![network.get_node_index_by_name(self.meta.name.as_str(), Self::input_sub_now())?];
+        let indices = vec![
+            network
+                .get_node_index_by_name(self.meta.name.as_str(), Self::input_sub_now())
+                .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                    name: self.meta.name.clone(),
+                    sub_name: Self::input_sub_now().map(String::from),
+                })?,
+        ];
         Ok(indices)
     }
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
@@ -89,7 +96,12 @@ impl DelayNode {
     ) -> Result<(), SchemaError> {
         // Create the delay parameter using the node's name as the parent identifier
         let name = ParameterName::new("delay", Some(self.meta.name.as_str()));
-        let output_idx = network.get_node_index_by_name(self.meta.name.as_str(), Self::output_sub_name())?;
+        let output_idx = network
+            .get_node_index_by_name(self.meta.name.as_str(), Self::output_sub_name())
+            .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                name: self.meta.name.clone(),
+                sub_name: Self::output_sub_name().map(String::from),
+            })?;
         let metric = MetricF64::NodeInFlow(output_idx);
         let p =
             pywr_core::parameters::DelayParameter::new(name, metric, self.delay, self.initial_value.load(args.tables)?);
@@ -113,11 +125,21 @@ impl DelayNode {
 
         let metric = match attr {
             NodeAttribute::Outflow => {
-                let idx = network.get_node_index_by_name(self.meta.name.as_str(), Self::input_sub_now())?;
+                let idx = network
+                    .get_node_index_by_name(self.meta.name.as_str(), Self::input_sub_now())
+                    .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                        name: self.meta.name.clone(),
+                        sub_name: Self::input_sub_now().map(String::from),
+                    })?;
                 MetricF64::NodeOutFlow(idx)
             }
             NodeAttribute::Inflow => {
-                let idx = network.get_node_index_by_name(self.meta.name.as_str(), Self::output_sub_name())?;
+                let idx = network
+                    .get_node_index_by_name(self.meta.name.as_str(), Self::output_sub_name())
+                    .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                        name: self.meta.name.clone(),
+                        sub_name: Self::output_sub_name().map(String::from),
+                    })?;
                 MetricF64::NodeInFlow(idx)
             }
             _ => {
@@ -125,7 +147,7 @@ impl DelayNode {
                     ty: "DelayNode".to_string(),
                     name: self.meta.name.clone(),
                     attr,
-                })
+                });
             }
         };
 
@@ -151,7 +173,7 @@ impl TryFrom<DelayNodeV1> for DelayNode {
                         error: ConversionError::MissingAttribute {
                             attrs: vec!["days".to_string(), "timesteps".to_string()],
                         },
-                    })
+                    });
                 }
             },
         } as u64;
