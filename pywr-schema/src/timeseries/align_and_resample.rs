@@ -93,7 +93,7 @@ pub fn align_and_resample(
 
 fn slice_start(df: DataFrame, time_col: &str, domain: &TimeDomain) -> Result<DataFrame, TimeseriesError> {
     let start = domain
-        .first_timestep()
+        .first()
         .ok_or_else(|| TimeseriesError::NoTimestepsDefined)?
         .date;
     let df = df.clone().lazy().filter(col(time_col).gt_eq(lit(start))).collect()?;
@@ -102,7 +102,7 @@ fn slice_start(df: DataFrame, time_col: &str, domain: &TimeDomain) -> Result<Dat
 
 fn slice_end(df: DataFrame, time_col: &str, domain: &TimeDomain) -> Result<DataFrame, TimeseriesError> {
     let end = domain
-        .last_timestep()
+        .last()
         .ok_or_else(|| TimeseriesError::NoTimestepsDefined)?
         .date;
     let df = df.clone().lazy().filter(col(time_col).lt_eq(lit(end))).collect()?;
