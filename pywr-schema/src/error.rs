@@ -1,4 +1,5 @@
 use crate::data_tables::{DataTable, TableDataRef, TableError};
+use crate::digest::ChecksumError;
 use crate::nodes::NodeAttribute;
 use crate::timeseries::TimeseriesError;
 #[cfg(feature = "core")]
@@ -58,10 +59,18 @@ pub enum SchemaError {
     #[error("Metric F64 error: {0}")]
     #[cfg(feature = "core")]
     CoreMetricF64Error(#[from] pywr_core::metric::MetricF64Error),
-    #[error("Error loading data from table `{0}` (column: `{1:?}`, index: `{2:?}`) error: {error}", table_ref.table, table_ref.column, table_ref.index)]
-    TableRefLoad { table_ref: TableDataRef, error: TableError },
-    #[error("Error loading table `{table_def:?}` error: {error}")]
-    TableLoad { table_def: DataTable, error: TableError },
+    #[error("Error loading data from table `{0}` (column: `{1:?}`, index: `{2:?}`) error: {source}", table_ref.table, table_ref.column, table_ref.index)]
+    TableRefLoad {
+        table_ref: TableDataRef,
+        #[source]
+        source: Box<TableError>,
+    },
+    #[error("Error loading table `{table_def:?}` error: {source}")]
+    TableLoad {
+        table_def: DataTable,
+        #[source]
+        source: Box<TableError>,
+    },
     #[error("Circular node reference(s) found.")]
     CircularNodeReference,
     #[error("Circular parameters reference(s) found. Unable to load the following parameters: {0:?}")]
@@ -110,6 +119,8 @@ pub enum SchemaError {
     PlaceholderNodeNotAllowed { name: String },
     #[error("Placeholder parameter `{name}` cannot be added to a model.")]
     PlaceholderParameterNotAllowed { name: String },
+    #[error("Checksum error: {0}")]
+    ChecksumError(#[from] ChecksumError),
 }
 
 #[cfg(all(feature = "core", feature = "pyo3"))]

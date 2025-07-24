@@ -79,6 +79,9 @@ pub enum TimeseriesError {
     #[error("Pywr core network error: {0}")]
     #[cfg(feature = "core")]
     CoreNetworkError(#[from] pywr_core::NetworkError),
+    #[error("Checksum error: {0}")]
+    #[cfg(feature = "core")]
+    ChecksumError(#[from] crate::digest::ChecksumError),
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, Display, EnumDiscriminants)]
@@ -489,6 +492,7 @@ impl TryFromV1<DataFrameParameterV1> for ConvertedTimeseriesReference {
                 time_col,
                 url,
                 kwargs: Some(pandas_kwargs),
+                checksum: None, // v1 does not support checksums
             };
 
             // The timeseries data that is extracted

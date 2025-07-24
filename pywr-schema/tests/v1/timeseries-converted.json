@@ -148,6 +148,7 @@
         "type": "Pandas",
         "time_col": null,
         "url": "inflow.csv",
+        "checksum": null,
         "kwargs": {
           "dayfirst": true
         }
