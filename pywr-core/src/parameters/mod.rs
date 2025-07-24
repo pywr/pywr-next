@@ -6,8 +6,10 @@ mod asymmetric;
 mod constant;
 mod control_curves;
 mod delay;
+mod difference;
 mod discount_factor;
 mod division;
+mod errors;
 mod hydropower;
 mod indexed_array;
 mod interpolate;
@@ -20,8 +22,6 @@ mod negativemin;
 mod offset;
 mod polynomial;
 mod profiles;
-
-mod errors;
 #[cfg(feature = "pyo3")]
 mod py;
 mod rolling;
@@ -45,6 +45,7 @@ pub use control_curves::{
     PiecewiseInterpolatedParameter, VolumeBetweenControlCurvesParameter,
 };
 pub use delay::DelayParameter;
+pub use difference::DifferenceParameter;
 pub use discount_factor::DiscountFactorParameter;
 pub use division::DivisionParameter;
 use errors::{ConstCalculationError, SimpleCalculationError};
