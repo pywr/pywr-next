@@ -5,12 +5,11 @@ use crate::metric::Metric;
 use crate::model::LoadArgs;
 use crate::nodes::{NodeAttribute, NodeMeta, StorageInitialVolume};
 use crate::parameters::Parameter;
-use pywr_core::parameters::DifferenceParameter;
 #[cfg(feature = "core")]
 use pywr_core::{
     derived_metric::DerivedMetric,
     metric::{MetricF64, SimpleMetricF64},
-    parameters::{ParameterName, VolumeBetweenControlCurvesParameter},
+    parameters::{DifferenceParameter, ParameterName, VolumeBetweenControlCurvesParameter},
 };
 use pywr_schema_macros::PywrVisitAll;
 use schemars::JsonSchema;
