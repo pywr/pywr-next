@@ -53,6 +53,8 @@ pub enum NodeError {
     StateError(#[from] StateError),
     #[error("Virtual storage index not found: {0}")]
     VirtualStorageIndexNotFound(VirtualStorageIndex),
+    #[error("Node index not found: {0}")]
+    NodeIndexNotFound(NodeIndex),
 }
 
 #[derive(Debug, PartialEq)]
@@ -440,6 +442,18 @@ impl Node {
             Self::Link(n) => Ok(n.is_max_flow_unconstrained()),
             Self::Output(n) => Ok(n.is_max_flow_unconstrained()),
             Self::Storage(_) => Err(NodeError::FlowConstraintsUndefined),
+        }
+    }
+
+    pub fn set_initial_volume(&mut self, initial_volume: StorageInitialVolume) -> Result<(), NodeError> {
+        match self {
+            Self::Input(_) => Err(NodeError::StorageConstraintsUndefined),
+            Self::Link(_) => Err(NodeError::StorageConstraintsUndefined),
+            Self::Output(_) => Err(NodeError::StorageConstraintsUndefined),
+            Self::Storage(n) => {
+                n.set_initial_volume(initial_volume);
+                Ok(())
+            }
         }
     }
 
@@ -927,10 +941,68 @@ impl LinkNode {
     }
 }
 
-#[derive(Debug, PartialEq, Copy, Clone)]
+/// Initial volume for a storage node.
+#[derive(Debug, PartialEq, Clone)]
 pub enum StorageInitialVolume {
+    /// Absolute initial volume.
     Absolute(f64),
+    /// Proportional initial volume, relative to the maximum volume.
     Proportional(f64),
+    /// Absolute initial volume, but distributed progressively over other storage nodes.
+    /// This is used for piecewise storage node configurations that comprise multiple
+    /// nodes. The `absolute` field is the initial volume, and `prior_max_volume` contains
+    /// the metrics that this volume is distributed over before this node.
+    /// Only if there is any remaining volume after distributing
+    /// `absolute` over `prior_max_volume`, this node will have a non-zero initial volume.
+    DistributedAbsolute {
+        /// The absolute initial volume.
+        absolute: f64,
+        /// The sum of the max volumes distributed prior to this node.
+        prior_max_volume: SimpleMetricF64,
+    },
+    /// Similar to `DistributedAbsolute`, but the initial volume is proportional.
+    DistributedProportional {
+        /// The total max volume of the group of storage nodes.
+        total_volume: SimpleMetricF64,
+        /// The absolute initial volume.
+        proportion: f64,
+        /// The sum of the max volumes distributed prior to this node.
+        prior_max_volume: SimpleMetricF64,
+    },
+}
+
+impl StorageInitialVolume {
+    /// Get the initial volume as an absolute value.
+    pub fn get_absolute_initial_volume(&self, max_volume: f64, state: &State) -> Result<f64, SimpleMetricF64Error> {
+        match self {
+            StorageInitialVolume::Absolute(iv) => Ok(*iv),
+            StorageInitialVolume::Proportional(ipc) => Ok(max_volume * ipc),
+            StorageInitialVolume::DistributedAbsolute {
+                absolute,
+                prior_max_volume,
+            } => {
+                let prior_max_volume = prior_max_volume.get_value(&state.get_simple_parameter_values())?;
+
+                // The initial volume is the absolute value minus the prior volumes,
+                // but it cannot exceed the maximum volume.
+                Ok((*absolute - prior_max_volume).max(0.0).min(max_volume))
+            }
+            StorageInitialVolume::DistributedProportional {
+                total_volume,
+                proportion,
+                prior_max_volume,
+            } => {
+                let prior_max_volume = prior_max_volume.get_value(&state.get_simple_parameter_values())?;
+
+                // Calculate the absolute initial volume based on the total volume and proportion.
+                let absolute = total_volume.get_value(&state.get_simple_parameter_values())? * proportion;
+
+                // The initial volume is the absolute value minus the prior volumes,
+                // but it cannot exceed the maximum volume.
+                Ok((absolute - prior_max_volume).max(0.0).min(max_volume))
+            }
+        }
+    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -965,13 +1037,9 @@ impl StorageNode {
     pub fn before(&self, timestep: &Timestep, state: &mut State) -> Result<(), NodeError> {
         // Set the initial volume if it is the first timestep.
         if timestep.is_first() {
-            let volume = match &self.initial_volume {
-                StorageInitialVolume::Absolute(iv) => *iv,
-                StorageInitialVolume::Proportional(ipc) => {
-                    let max_volume = self.get_max_volume(state)?;
-                    max_volume * ipc
-                }
-            };
+            let volume = self
+                .initial_volume
+                .get_absolute_initial_volume(self.get_max_volume(state)?, state)?;
 
             state.set_node_volume(&self.meta.index, volume)?;
         }
@@ -986,6 +1054,9 @@ impl StorageNode {
             None => Ok(0.0),
             Some(m) => m.get_value(network, state),
         }
+    }
+    fn set_initial_volume(&mut self, initial_volume: StorageInitialVolume) {
+        self.initial_volume = initial_volume;
     }
     fn set_min_volume(&mut self, value: Option<SimpleMetricF64>) {
         // TODO use a set_min_volume method

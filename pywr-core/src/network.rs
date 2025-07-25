@@ -1278,6 +1278,27 @@ impl Network {
                 source: Box::new(source),
             })
     }
+    pub fn set_node_initial_volume(
+        &mut self,
+        name: &str,
+        sub_name: Option<&str>,
+        initial_volume: StorageInitialVolume,
+    ) -> Result<(), NetworkError> {
+        let node = self
+            .get_mut_node_by_name(name, sub_name)
+            .ok_or(NetworkError::NodeNotFound {
+                name: name.to_string(),
+                sub_name: sub_name.map(|s| s.to_string()),
+            })?;
+
+        node.set_initial_volume(initial_volume)
+            .map_err(|source| NetworkError::NodeSetAttributeError {
+                name: node.name().to_string(),
+                sub_name: node.sub_name().map(|s| s.to_string()),
+                attribute: "initial_volume".to_string(),
+                source: Box::new(source),
+            })
+    }
 
     pub fn set_node_max_volume(
         &mut self,

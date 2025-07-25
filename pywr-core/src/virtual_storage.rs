@@ -258,10 +258,7 @@ impl VirtualStorage {
         if do_reset {
             let max_volume = self.get_max_volume(state)?;
             // Determine the initial volume
-            let volume = match &self.initial_volume {
-                StorageInitialVolume::Absolute(iv) => *iv,
-                StorageInitialVolume::Proportional(ipc) => max_volume * ipc,
-            };
+            let volume = self.initial_volume.get_absolute_initial_volume(max_volume, state)?;
 
             // Reset the volume
             state.reset_virtual_storage_node_volume(self.meta.index(), volume, timestep)?;

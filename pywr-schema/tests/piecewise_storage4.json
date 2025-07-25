@@ -31,12 +31,16 @@
         },
         "type": "PiecewiseStorage",
         "initial_volume": {
-          "type": "Absolute",
-          "volume": 1000.0
+          "type": "Proportional",
+          "proportion": 0.5
         },
         "max_volume": {
           "type": "Constant",
           "value": 1000.0
+        },
+        "min_volume": {
+          "type": "Constant",
+          "value": 300.0
         },
         "steps": [
           {
@@ -151,7 +155,7 @@
         "name": "nodes",
         "type": "CSV",
         "format": "Long",
-        "filename": "piecewise_storage2-expected.csv",
+        "filename": "piecewise_storage4-expected.csv",
         "metric_set": "nodes",
         "decimal_places": 1
       }

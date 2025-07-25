@@ -30,6 +30,10 @@
           "name": "storage1"
         },
         "type": "PiecewiseStorage",
+        "initial_volume": {
+          "type": "Proportional",
+          "proportion": 1.0
+        },
         "max_volume": {
           "type": "Constant",
           "value": 1000.0
