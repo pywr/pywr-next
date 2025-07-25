@@ -1,7 +1,7 @@
 {
   "metadata": {
-    "title": "PiecewiseStorage Examples",
-    "description": "Examples of using PiecewiseStorage in a network",
+    "title": "Local parameter with Storage node.",
+    "description": "Examples of using local parameters to define cost on a Storage node.",
     "minimum_version": "0.1"
   },
   "timestepper": {
