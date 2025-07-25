@@ -24,7 +24,6 @@ pub use polars_dataset::PolarsTimeseries;
 use pyo3::PyErr;
 #[cfg(feature = "core")]
 use pywr_core::{
-    PywrError,
     models::ModelDomain,
     parameters::{Array1Parameter, Array2Parameter, ParameterIndex, ParameterName},
 };
@@ -60,15 +59,14 @@ pub enum TimeseriesError {
     TimeseriesColumnOrScenarioRequired(String),
     #[error("The timeseries dataset '{0}' has no columns")]
     TimeseriesDataframeHasNoColumns(String),
+    #[error("Model time domain has no timesteps.")]
+    NoTimestepsDefined,
     #[cfg(feature = "pyo3")]
     #[error("Python error: {0}")]
     PythonError(#[from] PyErr),
     #[error("Polars error: {0}")]
     #[cfg(feature = "core")]
     PolarsError(#[from] PolarsError),
-    #[cfg(feature = "core")]
-    #[error("Pywr core error: {0}")]
-    PywrCore(#[from] PywrError),
     #[cfg(feature = "core")]
     #[error("Python not enabled.")]
     PythonNotEnabled,
@@ -78,6 +76,9 @@ pub enum TimeseriesError {
     #[cfg(feature = "core")]
     #[error("Shape error: {0}")]
     NdarrayShape(#[from] ShapeError),
+    #[error("Pywr core network error: {0}")]
+    #[cfg(feature = "core")]
+    CoreNetworkError(#[from] pywr_core::NetworkError),
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, Display, EnumDiscriminants)]
@@ -164,14 +165,11 @@ impl LoadedTimeseriesCollection {
         let name = ParameterName::new(col, Some(name));
 
         match network.get_parameter_index_by_name(&name) {
-            Ok(idx) => Ok(idx),
-            Err(e) => match e {
-                PywrError::ParameterNotFound(_) => {
-                    let p = Array1Parameter::new(name, array, None);
-                    Ok(network.add_simple_parameter(Box::new(p))?)
-                }
-                _ => Err(TimeseriesError::PywrCore(e)),
-            },
+            Some(idx) => Ok(idx),
+            None => {
+                let p = Array1Parameter::new(name, array, None);
+                Ok(network.add_simple_parameter(Box::new(p))?)
+            }
         }
     }
 
@@ -191,14 +189,11 @@ impl LoadedTimeseriesCollection {
         let name = ParameterName::new(col, Some(name));
 
         match network.get_index_parameter_index_by_name(&name) {
-            Ok(idx) => Ok(idx),
-            Err(e) => match e {
-                PywrError::ParameterNotFound(_) => {
-                    let p = Array1Parameter::new(name, array, None);
-                    Ok(network.add_simple_index_parameter(Box::new(p))?)
-                }
-                _ => Err(TimeseriesError::PywrCore(e)),
-            },
+            Some(idx) => Ok(idx),
+            None => {
+                let p = Array1Parameter::new(name, array, None);
+                Ok(network.add_simple_index_parameter(Box::new(p))?)
+            }
         }
     }
 
@@ -229,14 +224,11 @@ impl LoadedTimeseriesCollection {
         let name = ParameterName::new(col, Some(name));
 
         match network.get_parameter_index_by_name(&name) {
-            Ok(idx) => Ok(idx),
-            Err(e) => match e {
-                PywrError::ParameterNotFound(_) => {
-                    let p = Array1Parameter::new(name, array, None);
-                    Ok(network.add_simple_parameter(Box::new(p))?)
-                }
-                _ => Err(TimeseriesError::PywrCore(e)),
-            },
+            Some(idx) => Ok(idx),
+            None => {
+                let p = Array1Parameter::new(name, array, None);
+                Ok(network.add_simple_parameter(Box::new(p))?)
+            }
         }
     }
 
@@ -267,14 +259,11 @@ impl LoadedTimeseriesCollection {
         let name = ParameterName::new(col, Some(name));
 
         match network.get_index_parameter_index_by_name(&name) {
-            Ok(idx) => Ok(idx),
-            Err(e) => match e {
-                PywrError::ParameterNotFound(_) => {
-                    let p = Array1Parameter::new(name, array, None);
-                    Ok(network.add_simple_index_parameter(Box::new(p))?)
-                }
-                _ => Err(TimeseriesError::PywrCore(e)),
-            },
+            Some(idx) => Ok(idx),
+            None => {
+                let p = Array1Parameter::new(name, array, None);
+                Ok(network.add_simple_index_parameter(Box::new(p))?)
+            }
         }
     }
 
@@ -304,14 +293,11 @@ impl LoadedTimeseriesCollection {
         let name = ParameterName::new(scenario, Some(name));
 
         match network.get_parameter_index_by_name(&name) {
-            Ok(idx) => Ok(idx),
-            Err(e) => match e {
-                PywrError::ParameterNotFound(_) => {
-                    let p = Array2Parameter::new(name, array, scenario_group_index, None);
-                    Ok(network.add_simple_parameter(Box::new(p))?)
-                }
-                _ => Err(TimeseriesError::PywrCore(e)),
-            },
+            Some(idx) => Ok(idx),
+            None => {
+                let p = Array2Parameter::new(name, array, scenario_group_index, None);
+                Ok(network.add_simple_parameter(Box::new(p))?)
+            }
         }
     }
 
@@ -341,14 +327,11 @@ impl LoadedTimeseriesCollection {
         let name = ParameterName::new(scenario, Some(name));
 
         match network.get_index_parameter_index_by_name(&name) {
-            Ok(idx) => Ok(idx),
-            Err(e) => match e {
-                PywrError::ParameterNotFound(_) => {
-                    let p = Array2Parameter::new(name, array, scenario_group_index, None);
-                    Ok(network.add_simple_index_parameter(Box::new(p))?)
-                }
-                _ => Err(TimeseriesError::PywrCore(e)),
-            },
+            Some(idx) => Ok(idx),
+            None => {
+                let p = Array2Parameter::new(name, array, scenario_group_index, None);
+                Ok(network.add_simple_index_parameter(Box::new(p))?)
+            }
         }
     }
 }

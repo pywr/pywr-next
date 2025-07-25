@@ -268,7 +268,9 @@ impl NodeReference {
         let node = args
             .schema
             .get_node_by_name(&self.name)
-            .ok_or_else(|| SchemaError::NodeNotFound(self.name.clone()))?;
+            .ok_or_else(|| SchemaError::NodeNotFound {
+                name: self.name.clone(),
+            })?;
 
         node.create_metric(network, self.attribute, args)
     }
@@ -284,7 +286,9 @@ impl NodeReference {
         let _node = args
             .schema
             .get_node_by_name(&self.name)
-            .ok_or_else(|| SchemaError::NodeNotFound(self.name.clone()))?;
+            .ok_or_else(|| SchemaError::NodeNotFound {
+                name: self.name.clone(),
+            })?;
 
         todo!("Support usize attributes on nodes.")
     }
@@ -298,7 +302,9 @@ impl NodeReference {
         let node = args
             .schema
             .get_node_by_name(&self.name)
-            .ok_or_else(|| SchemaError::NodeNotFound(self.name.clone()))?;
+            .ok_or_else(|| SchemaError::NodeNotFound {
+                name: self.name.clone(),
+            })?;
 
         Ok(self.attribute.unwrap_or_else(|| node.default_metric()))
     }
@@ -309,7 +315,9 @@ impl NodeReference {
         let node = args
             .schema
             .get_node_by_name(&self.name)
-            .ok_or_else(|| SchemaError::NodeNotFound(self.name.clone()))?;
+            .ok_or_else(|| SchemaError::NodeNotFound {
+                name: self.name.clone(),
+            })?;
 
         Ok(node.node_type())
     }
@@ -333,7 +341,9 @@ impl SimpleNodeReference {
         let node = args
             .schema
             .get_node_by_name(&self.name)
-            .ok_or_else(|| SchemaError::NodeNotFound(self.name.clone()))?;
+            .ok_or_else(|| SchemaError::NodeNotFound {
+                name: self.name.clone(),
+            })?;
 
         node.create_metric(network, None, args)
     }
@@ -345,7 +355,9 @@ impl SimpleNodeReference {
         let node = args
             .schema
             .get_node_by_name(&self.name)
-            .ok_or_else(|| SchemaError::NodeNotFound(self.name.clone()))?;
+            .ok_or_else(|| SchemaError::NodeNotFound {
+                name: self.name.clone(),
+            })?;
 
         Ok(node.default_metric())
     }
@@ -356,7 +368,9 @@ impl SimpleNodeReference {
         let node = args
             .schema
             .get_node_by_name(&self.name)
-            .ok_or_else(|| SchemaError::NodeNotFound(self.name.clone()))?;
+            .ok_or_else(|| SchemaError::NodeNotFound {
+                name: self.name.clone(),
+            })?;
 
         Ok(node.node_type())
     }
@@ -399,15 +413,25 @@ impl ParameterReference {
         match &self.key {
             Some(key) => {
                 // Key given; this should be a multi-valued parameter
-                Ok((network.get_multi_valued_parameter_index_by_name(&name)?, key.clone()).into())
+                let idx = network.get_multi_valued_parameter_index_by_name(&name).ok_or_else(|| {
+                    SchemaError::CoreParameterNotFound {
+                        name: self.name.to_string(),
+                        key: Some(key.clone()),
+                    }
+                })?;
+
+                Ok((idx, key.clone()).into())
             }
             None => {
-                if let Ok(idx) = network.get_parameter_index_by_name(&name) {
+                if let Some(idx) = network.get_parameter_index_by_name(&name) {
                     Ok(idx.into())
-                } else if let Ok(idx) = network.get_index_parameter_index_by_name(&name) {
+                } else if let Some(idx) = network.get_index_parameter_index_by_name(&name) {
                     Ok(idx.into())
                 } else {
-                    Err(SchemaError::ParameterNotFound(self.name.to_string()))
+                    Err(SchemaError::CoreParameterNotFound {
+                        name: self.name.to_string(),
+                        key: None,
+                    })
                 }
             }
         }
@@ -427,26 +451,38 @@ impl ParameterReference {
         match &self.key {
             Some(key) => {
                 // Key given; this should be a multi-valued parameter
-                Ok((network.get_multi_valued_parameter_index_by_name(&name)?, key.clone()).into())
+                let idx = network.get_multi_valued_parameter_index_by_name(&name).ok_or_else(|| {
+                    SchemaError::CoreParameterNotFound {
+                        name: self.name.to_string(),
+                        key: Some(key.clone()),
+                    }
+                })?;
+                Ok((idx, key.clone()).into())
             }
             None => {
-                if let Ok(idx) = network.get_index_parameter_index_by_name(&name) {
+                if let Some(idx) = network.get_index_parameter_index_by_name(&name) {
                     Ok(idx.into())
-                } else if network.get_parameter_index_by_name(&name).is_ok() {
+                } else if network.get_parameter_index_by_name(&name).is_some() {
                     // Inform the user we found the parameter, but it was the wrong type
                     Err(SchemaError::IndexParameterExpected(self.name.to_string()))
                 } else {
-                    Err(SchemaError::ParameterNotFound(self.name.to_string()))
+                    Err(SchemaError::CoreParameterNotFound {
+                        name: self.name.to_string(),
+                        key: None,
+                    })
                 }
             }
         }
     }
     #[cfg(feature = "core")]
     pub fn parameter_type(&self, args: &LoadArgs) -> Result<ParameterType, SchemaError> {
-        let parameter = args
-            .schema
-            .get_parameter_by_name(&self.name)
-            .ok_or_else(|| SchemaError::ParameterNotFound(self.name.clone()))?;
+        let parameter =
+            args.schema
+                .get_parameter_by_name(&self.name)
+                .ok_or_else(|| SchemaError::ParameterNotFound {
+                    name: self.name.clone(),
+                    key: self.key.clone(),
+                })?;
 
         Ok(parameter.parameter_type())
     }

@@ -1,8 +1,10 @@
-use crate::PywrError;
 use crate::models::ModelDomain;
 use crate::network::Network;
 use crate::recorders::aggregator::PeriodValue;
-use crate::recorders::{AggregationFunction, MetricSetIndex, MetricSetState, Recorder, RecorderMeta};
+use crate::recorders::{
+    AggregationFunction, MetricSetIndex, MetricSetState, Recorder, RecorderAggregationError, RecorderFinaliseError,
+    RecorderMeta, RecorderSaveError, RecorderSetupError,
+};
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
 use crate::timestep::Timestep;
@@ -230,7 +232,7 @@ impl Recorder for MemoryRecorder {
         &self.meta
     }
 
-    fn setup(&self, domain: &ModelDomain, _network: &Network) -> Result<Option<Box<(dyn Any)>>, PywrError> {
+    fn setup(&self, domain: &ModelDomain, _network: &Network) -> Result<Option<Box<(dyn Any)>>, RecorderSetupError> {
         let data = InternalState::new(domain.scenarios().len());
 
         Ok(Some(Box::new(data)))
@@ -244,7 +246,7 @@ impl Recorder for MemoryRecorder {
         _state: &[State],
         metric_set_states: &[Vec<MetricSetState>],
         internal_state: &mut Option<Box<dyn Any>>,
-    ) -> Result<(), PywrError> {
+    ) -> Result<(), RecorderSaveError> {
         let internal_state = match internal_state {
             Some(internal) => match internal.downcast_mut::<InternalState>() {
                 Some(pa) => pa,
@@ -255,9 +257,11 @@ impl Recorder for MemoryRecorder {
 
         // Iterate through all of the scenario's state
         for (ms_scenario_states, scenario_data) in metric_set_states.iter().zip(internal_state.data.iter_mut()) {
-            let metric_set_state = ms_scenario_states
-                .get(*self.metric_set_idx.deref())
-                .ok_or(PywrError::MetricSetIndexNotFound(self.metric_set_idx))?;
+            let metric_set_state = ms_scenario_states.get(*self.metric_set_idx.deref()).ok_or_else(|| {
+                RecorderSaveError::MetricSetIndexNotFound {
+                    index: self.metric_set_idx,
+                }
+            })?;
 
             if let Some(current_values) = metric_set_state.current_values() {
                 scenario_data.push(current_values.into());
@@ -273,7 +277,7 @@ impl Recorder for MemoryRecorder {
         _scenario_indices: &[ScenarioIndex],
         metric_set_states: &[Vec<MetricSetState>],
         internal_state: &mut Option<Box<dyn Any>>,
-    ) -> Result<(), PywrError> {
+    ) -> Result<(), RecorderFinaliseError> {
         let internal_state = match internal_state {
             Some(internal) => match internal.downcast_mut::<InternalState>() {
                 Some(pa) => pa,
@@ -284,9 +288,11 @@ impl Recorder for MemoryRecorder {
 
         // Iterate through all of the scenario's state
         for (ms_scenario_states, scenario_data) in metric_set_states.iter().zip(internal_state.data.iter_mut()) {
-            let metric_set_state = ms_scenario_states
-                .get(*self.metric_set_idx.deref())
-                .ok_or(PywrError::MetricSetIndexNotFound(self.metric_set_idx))?;
+            let metric_set_state = ms_scenario_states.get(*self.metric_set_idx.deref()).ok_or_else(|| {
+                RecorderFinaliseError::MetricSetIndexNotFound {
+                    index: self.metric_set_idx,
+                }
+            })?;
 
             if let Some(current_values) = metric_set_state.current_values() {
                 scenario_data.push(current_values.into());
@@ -299,7 +305,7 @@ impl Recorder for MemoryRecorder {
     /// Aggregate the saved data to a single value using the provided aggregation functions.
     ///
     /// This method will first aggregation over the metrics, then over time, and finally over the scenarios.
-    fn aggregated_value(&self, internal_state: &Option<Box<dyn Any>>) -> Result<f64, PywrError> {
+    fn aggregated_value(&self, internal_state: &Option<Box<dyn Any>>) -> Result<f64, RecorderAggregationError> {
         let internal_state = match internal_state {
             Some(internal) => match internal.downcast_ref::<InternalState>() {
                 Some(pa) => pa,
@@ -309,11 +315,14 @@ impl Recorder for MemoryRecorder {
         };
 
         let agg_value = match self.order {
-            AggregationOrder::MetricTimeScenario => internal_state.aggregate_metric_time_scenario(&self.aggregation)?,
-            AggregationOrder::TimeMetricScenario => internal_state.aggregate_time_metric_scenario(&self.aggregation)?,
+            AggregationOrder::MetricTimeScenario => internal_state.aggregate_metric_time_scenario(&self.aggregation),
+            AggregationOrder::TimeMetricScenario => internal_state.aggregate_time_metric_scenario(&self.aggregation),
         };
 
-        Ok(agg_value)
+        agg_value.map_err(|source| RecorderAggregationError::AggregationError {
+            name: self.meta.name.clone(),
+            source,
+        })
     }
 }
 

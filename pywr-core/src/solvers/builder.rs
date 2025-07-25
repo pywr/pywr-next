@@ -1,10 +1,9 @@
-use crate::PywrError;
 use crate::aggregated_node::AggregatedNodeIndex;
 use crate::edge::EdgeIndex;
 use crate::network::Network;
 use crate::node::{Node, NodeBounds, NodeIndex, NodeType};
-use crate::solvers::SolverTimings;
 use crate::solvers::col_edge_map::{ColumnEdgeMap, ColumnEdgeMapBuilder};
+use crate::solvers::{SolverSetupError, SolverSolveError, SolverTimings};
 use crate::state::{ConstParameterValues, State};
 use crate::timestep::Timestep;
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -398,7 +397,7 @@ where
         timestep: &Timestep,
         state: &State,
         timings: &mut SolverTimings,
-    ) -> Result<(), PywrError> {
+    ) -> Result<(), SolverSolveError> {
         let start_objective_update = Instant::now();
         self.update_edge_objectives(network, state)?;
         timings.update_objective += start_objective_update.elapsed();
@@ -418,10 +417,28 @@ where
     }
 
     /// Update edge objective coefficients
-    fn update_edge_objectives(&mut self, network: &Network, state: &State) -> Result<(), PywrError> {
+    fn update_edge_objectives(&mut self, network: &Network, state: &State) -> Result<(), SolverSolveError> {
         self.builder.zero_obj_coefficients();
         for edge in network.edges().deref() {
-            let obj_coef: f64 = edge.cost(network.nodes(), network, state)?;
+            let obj_coef: f64 = edge.cost(network.nodes(), network, state).map_err(|source| {
+                let from_node = match network.get_node(&edge.from_node_index()) {
+                    Some(n) => n,
+                    None => return SolverSolveError::NodeIndexNotFound(edge.from_node_index()),
+                };
+
+                let to_node = match network.get_node(&edge.to_node_index()) {
+                    Some(n) => n,
+                    None => return SolverSolveError::NodeIndexNotFound(edge.to_node_index()),
+                };
+
+                SolverSolveError::EdgeError {
+                    from_name: from_node.name().to_string(),
+                    from_sub_name: from_node.sub_name().map(|s| s.to_string()),
+                    to_name: to_node.name().to_string(),
+                    to_sub_name: to_node.sub_name().map(|s| s.to_string()),
+                    source,
+                }
+            })?;
             let col = self.col_for_edge(&edge.index());
 
             self.builder.add_obj_coefficient(col.to_usize().unwrap(), obj_coef);
@@ -435,15 +452,25 @@ where
         network: &Network,
         timestep: &Timestep,
         state: &State,
-    ) -> Result<(), PywrError> {
+    ) -> Result<(), SolverSolveError> {
         let dt = timestep.days();
 
         for row in self.node_constraints_row_ids.iter() {
-            let node = network.get_node(&row.node_idx)?;
-            let (lb, ub): (f64, f64) = match node.get_bounds(network, state)? {
-                NodeBounds::Flow(bounds) => (bounds.min_flow, bounds.max_flow),
-                NodeBounds::Volume(bounds) => (-bounds.available / dt, bounds.missing / dt),
-            };
+            let node = network
+                .get_node(&row.node_idx)
+                .ok_or(SolverSolveError::NodeIndexNotFound(row.node_idx))?;
+
+            let (lb, ub): (f64, f64) =
+                match node
+                    .get_bounds(network, state)
+                    .map_err(|source| SolverSolveError::NodeError {
+                        name: node.name().to_string(),
+                        sub_name: node.sub_name().map(|s| s.to_string()),
+                        source,
+                    })? {
+                    NodeBounds::Flow(bounds) => (bounds.min_flow, bounds.max_flow),
+                    NodeBounds::Volume(bounds) => (-bounds.available / dt, bounds.missing / dt),
+                };
 
             match row.row_type {
                 NodeRowType::Continuous => {
@@ -466,10 +493,17 @@ where
         Ok(())
     }
 
-    fn update_aggregated_node_factor_constraints(&mut self, network: &Network, state: &State) -> Result<(), PywrError> {
+    fn update_aggregated_node_factor_constraints(
+        &mut self,
+        network: &Network,
+        state: &State,
+    ) -> Result<(), SolverSolveError> {
         // Update the aggregated node factor constraints which are *not* constant
         for agg_node_row in self.agg_node_factor_constraint_row_ids.iter() {
-            let agg_node = network.get_aggregated_node(&agg_node_row.agg_node_idx)?;
+            let agg_node = network
+                .get_aggregated_node(&agg_node_row.agg_node_idx)
+                .ok_or(SolverSolveError::AggregatedNodeIndexNotFound(agg_node_row.agg_node_idx))?;
+
             // Only create row for nodes that have factors
             if let Some(node_pairs) = agg_node.get_norm_factor_pairs(network, state) {
                 assert_eq!(
@@ -512,13 +546,23 @@ where
     }
 
     /// Update aggregated node constraints
-    fn update_aggregated_node_constraint_bounds(&mut self, network: &Network, state: &State) -> Result<(), PywrError> {
+    fn update_aggregated_node_constraint_bounds(
+        &mut self,
+        network: &Network,
+        state: &State,
+    ) -> Result<(), SolverSolveError> {
         for (row_id, agg_node) in self
             .agg_node_constraint_row_ids
             .iter()
             .zip(network.aggregated_nodes().deref())
         {
-            let (lb, ub): (f64, f64) = agg_node.get_current_flow_bounds(network, state)?;
+            let (lb, ub): (f64, f64) = agg_node.get_current_flow_bounds(network, state).map_err(|e| {
+                SolverSolveError::AggregatedNodeError {
+                    name: agg_node.name().to_string(),
+                    sub_name: agg_node.sub_name().map(|s| s.to_string()),
+                    source: e,
+                }
+            })?;
             self.builder.apply_row_bounds(*row_id, lb, ub);
         }
 
@@ -530,7 +574,7 @@ where
         network: &Network,
         timestep: &Timestep,
         state: &State,
-    ) -> Result<(), PywrError> {
+    ) -> Result<(), SolverSolveError> {
         let dt = timestep.days();
 
         for (row_id, node) in self
@@ -577,7 +621,11 @@ where
         self.col_edge_map.col_for_edge(edge_index)
     }
 
-    pub fn create(mut self, network: &Network, values: &ConstParameterValues) -> Result<BuiltSolver<I>, PywrError> {
+    pub fn create(
+        mut self,
+        network: &Network,
+        values: &ConstParameterValues,
+    ) -> Result<BuiltSolver<I>, SolverSetupError> {
         // Create the columns
         self.create_columns(network)?;
 
@@ -609,16 +657,18 @@ where
     /// Typically each edge will have its own column. However, we use the mass-balance information
     /// to collapse edges (and their columns) where they are trivially the same. I.e. if there
     /// is a single incoming edge and outgoing edge at a link node.
-    fn create_columns(&mut self, network: &Network) -> Result<(), PywrError> {
+    fn create_columns(&mut self, network: &Network) -> Result<(), SolverSetupError> {
         // One column per edge
         let ncols = network.edges().len();
         if ncols < 1 {
-            return Err(PywrError::NoEdgesDefined);
+            return Err(SolverSetupError::NoEdgesDefined);
         }
 
         for edge in network.edges().iter() {
             let edge_index = edge.index();
-            let from_node = network.get_node(&edge.from_node_index)?;
+            let from_node = network
+                .get_node(&edge.from_node_index)
+                .ok_or(SolverSetupError::NodeIndexNotFound(edge.from_node_index))?;
 
             if let NodeType::Link = from_node.node_type() {
                 // We only look at link nodes; there should be no output nodes as a
@@ -764,7 +814,7 @@ where
         &mut self,
         network: &Network,
         values: &ConstParameterValues,
-    ) -> Result<Vec<NodeRowId<I>>, PywrError> {
+    ) -> Result<Vec<NodeRowId<I>>, SolverSetupError> {
         let mut row_ids = Vec::with_capacity(network.nodes().len());
 
         for node in network.nodes().deref() {

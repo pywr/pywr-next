@@ -1,11 +1,22 @@
 mod multi;
 mod simple;
 
-use crate::PywrError;
 use crate::scenario::{ScenarioDomain, ScenarioDomainBuilder};
 use crate::timestep::{TimeDomain, Timestepper};
-pub use multi::{MultiNetworkModel, MultiNetworkTransferIndex};
-pub use simple::{Model, ModelState};
+pub use multi::{
+    InterNetworkTransferError, MultiNetworkModel, MultiNetworkModelError, MultiNetworkModelFinaliseError,
+    MultiNetworkModelRunError, MultiNetworkModelSetupError, MultiNetworkTransferIndex,
+};
+pub use simple::{Model, ModelFinaliseError, ModelRunError, ModelSetupError, ModelState, ModelStepError};
+use thiserror::Error;
+
+#[derive(Error, Debug)]
+pub enum ModelDomainError {
+    #[error("Error in time domain: {0}")]
+    TimestepError(#[from] crate::timestep::TimestepError),
+    #[error("Error in scenario domain: {0}")]
+    ScenarioError(#[from] crate::scenario::ScenarioError),
+}
 
 #[derive(Debug, Clone)]
 pub struct ModelDomain {
@@ -18,7 +29,7 @@ impl ModelDomain {
         Self { time, scenarios }
     }
 
-    pub fn from(timestepper: Timestepper, scenario_builder: ScenarioDomainBuilder) -> Result<Self, PywrError> {
+    pub fn from(timestepper: Timestepper, scenario_builder: ScenarioDomainBuilder) -> Result<Self, ModelDomainError> {
         Ok(Self {
             time: TimeDomain::try_from(timestepper)?,
             scenarios: scenario_builder.build()?,
@@ -39,7 +50,7 @@ impl ModelDomain {
 }
 
 impl TryFrom<Timestepper> for ModelDomain {
-    type Error = PywrError;
+    type Error = ModelDomainError;
 
     fn try_from(value: Timestepper) -> Result<Self, Self::Error> {
         let time = TimeDomain::try_from(value)?;

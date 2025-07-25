@@ -1,11 +1,12 @@
-use crate::PywrError;
 use chrono::Datelike;
 use chrono::{Months, NaiveDateTime, TimeDelta};
 use polars::datatypes::TimeUnit;
+use polars::prelude::PolarsError;
 use polars::time::ClosedWindow;
 #[cfg(feature = "pyo3")]
 use pyo3::pyclass;
 use std::ops::Add;
+use thiserror::Error;
 
 const SECS_IN_DAY: i64 = 60 * 60 * 24;
 const MILLISECS_IN_DAY: i64 = 1000 * SECS_IN_DAY;
@@ -156,6 +157,19 @@ pub enum TimestepDuration {
     Frequency(String),
 }
 
+#[derive(Debug, Error)]
+pub enum TimestepError {
+    #[error("Could not create timestep range: {source}")]
+    RangeGenerationError {
+        #[source]
+        source: PolarsError,
+    },
+    #[error("Could not create timesteps for frequency '{0}'")]
+    GenerationError(String),
+    #[error("Pywr does not currently support timesteps of varying duration")]
+    DurationMismatch,
+}
+
 #[derive(Debug)]
 pub struct Timestepper {
     start: NaiveDateTime,
@@ -169,7 +183,7 @@ impl Timestepper {
     }
 
     /// Create a vector of `Timestep`s between the start and end dates at the given duration.
-    fn timesteps(&self) -> Result<Vec<Timestep>, PywrError> {
+    fn timesteps(&self) -> Result<Vec<Timestep>, TimestepError> {
         match &self.timestep {
             TimestepDuration::Days(days) => Ok(self.generate_timesteps_from_days(*days)),
             TimestepDuration::Frequency(frequency) => self.generate_timesteps_from_frequency(frequency.as_str()),
@@ -193,7 +207,7 @@ impl Timestepper {
     /// Creates a vector of `Timestep`s between the start and end dates for a given frequency `&str`.
     ///
     /// Valid frequency strings are those that can be parsed by `polars::time::Duration::parse`. See: [https://docs.rs/polars-time/latest/polars_time/struct.Duration.html#method.parse]
-    fn generate_timesteps_from_frequency(&self, frequency: &str) -> Result<Vec<Timestep>, PywrError> {
+    fn generate_timesteps_from_frequency(&self, frequency: &str) -> Result<Vec<Timestep>, TimestepError> {
         let duration = polars::time::Duration::parse(frequency);
 
         // Need to add an extra day to the end date so that the duration of the last timestep can be calculated.
@@ -222,10 +236,10 @@ impl Timestepper {
             TimeUnit::Milliseconds,
             None,
         )
-        .map_err(|e| PywrError::TimestepRangeGenerationError(e.to_string()))?
+        .map_err(|source| TimestepError::RangeGenerationError { source })?
         .as_datetime_iter()
-        .map(|x| x.ok_or(PywrError::TimestepGenerationError(frequency.to_string())))
-        .collect::<Result<Vec<NaiveDateTime>, PywrError>>()?;
+        .map(|x| x.ok_or(TimestepError::GenerationError(frequency.to_string())))
+        .collect::<Result<Vec<NaiveDateTime>, TimestepError>>()?;
 
         let timesteps = dates
             .windows(2)
@@ -262,12 +276,12 @@ impl TimeDomain {
         self.timesteps.len()
     }
 
-    pub fn first_timestep(&self) -> &Timestep {
-        self.timesteps.first().expect("No time-steps defined.")
+    pub fn first_timestep(&self) -> Option<&Timestep> {
+        self.timesteps.first()
     }
 
-    pub fn last_timestep(&self) -> &Timestep {
-        self.timesteps.last().expect("No time-steps defined.")
+    pub fn last_timestep(&self) -> Option<&Timestep> {
+        self.timesteps.last()
     }
 
     pub fn is_empty(&self) -> bool {
@@ -276,14 +290,14 @@ impl TimeDomain {
 }
 
 impl TryFrom<Timestepper> for TimeDomain {
-    type Error = PywrError;
+    type Error = TimestepError;
 
     fn try_from(value: Timestepper) -> Result<Self, Self::Error> {
         let timesteps = value.timesteps()?;
         let duration = timesteps.first().expect("No time-steps defined.").duration;
         match timesteps.iter().all(|t| t.duration == duration) {
             true => Ok(Self { timesteps, duration }),
-            false => Err(PywrError::TimestepDurationMismatch),
+            false => Err(TimestepError::DurationMismatch),
         }
     }
 }

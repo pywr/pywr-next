@@ -1,13 +1,12 @@
-use crate::PywrError;
 use crate::metric::MetricF64;
 use crate::network::Network;
+use crate::parameters::errors::{ParameterCalculationError, ParameterSetupError};
 use crate::parameters::{
     GeneralParameter, Parameter, ParameterMeta, ParameterName, ParameterState, downcast_internal_state_mut,
 };
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
 use crate::timestep::Timestep;
-use std::str::FromStr;
 
 pub enum Predicate {
     LessThan,
@@ -15,21 +14,6 @@ pub enum Predicate {
     EqualTo,
     LessThanOrEqualTo,
     GreaterThanOrEqualTo,
-}
-
-impl FromStr for Predicate {
-    type Err = PywrError;
-
-    fn from_str(name: &str) -> Result<Self, Self::Err> {
-        match name {
-            "<" => Ok(Self::LessThan),
-            ">" => Ok(Self::GreaterThan),
-            "=" => Ok(Self::EqualTo),
-            "<=" => Ok(Self::LessThanOrEqualTo),
-            ">=" => Ok(Self::GreaterThanOrEqualTo),
-            _ => Err(PywrError::InvalidAggregationFunction(name.to_string())),
-        }
-    }
 }
 
 pub struct ThresholdParameter {
@@ -67,7 +51,7 @@ impl Parameter for ThresholdParameter {
         &self,
         _timesteps: &[Timestep],
         _scenario_index: &ScenarioIndex,
-    ) -> Result<Option<Box<dyn ParameterState>>, PywrError> {
+    ) -> Result<Option<Box<dyn ParameterState>>, ParameterSetupError> {
         // Internal state is just a boolean indicating if the threshold was triggered previously.
         // Initially this is false.
         Ok(Some(Box::new(false)))
@@ -82,7 +66,7 @@ impl GeneralParameter<u64> for ThresholdParameter {
         model: &Network,
         state: &State,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<u64, PywrError> {
+    ) -> Result<u64, ParameterCalculationError> {
         // Downcast the internal state to the correct type
         let previously_activated = downcast_internal_state_mut::<bool>(internal_state);
 

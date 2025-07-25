@@ -355,7 +355,7 @@ mod tests {
 
         param.add_to_model(&mut network, &args, None).unwrap();
 
-        assert!(network.get_parameter_by_name(&"my-float-parameter".into()).is_ok());
+        assert!(network.get_parameter_by_name(&"my-float-parameter".into()).is_some());
     }
 
     #[test]
@@ -403,6 +403,10 @@ mod tests {
 
         param.add_to_model(&mut network, &args, None).unwrap();
 
-        assert!(network.get_index_parameter_by_name(&"my-int-parameter".into()).is_ok());
+        assert!(
+            network
+                .get_index_parameter_by_name(&"my-int-parameter".into())
+                .is_some()
+        );
     }
 }
