@@ -9,6 +9,13 @@ use crate::parameters::{
 };
 use crate::timestep::Timestep;
 use crate::virtual_storage::VirtualStorageIndex;
+#[cfg(feature = "pyo3")]
+use pyo3::{
+    Bound, FromPyObject, PyAny, PyResult,
+    exceptions::PyValueError,
+    prelude::PyAnyMethods,
+    types::{PyDict, PyFloat, PyInt},
+};
 use std::collections::{HashMap, VecDeque};
 use std::fmt::Display;
 use std::num::NonZeroUsize;
@@ -204,7 +211,7 @@ impl VirtualStorageState {
         Self {
             last_reset: None,
             storage: StorageState::new(initial_volume),
-            history: history_size.map(|size| VirtualStorageHistory::new(size, initial_volume)),
+            history: history_size.map(|size| VirtualStorageHistory::new(size, initial_volume / size.get() as f64)),
         }
     }
 
@@ -265,6 +272,32 @@ impl EdgeState {
 pub struct MultiValue {
     values: HashMap<String, f64>,
     indices: HashMap<String, u64>,
+}
+
+#[cfg(feature = "pyo3")]
+impl FromPyObject<'_> for MultiValue {
+    fn extract_bound(ob: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let dict = ob.downcast::<PyDict>()?;
+
+        // Try to convert the floats
+        let mut values: HashMap<String, f64> = HashMap::default();
+        let mut indices: HashMap<String, u64> = HashMap::default();
+
+        for (k, v) in dict {
+            if let Ok(float_value) = v.downcast::<PyFloat>() {
+                values.insert(k.to_string(), float_value.extract::<f64>()?);
+            } else if let Ok(int_value) = v.downcast::<PyInt>() {
+                // If it's an integer, we will treat it as an index
+                indices.insert(k.to_string(), int_value.extract::<u64>()?);
+            } else {
+                return Err(PyValueError::new_err(
+                    "Some returned values were not interpreted as floats or integers.",
+                ));
+            }
+        }
+
+        Ok(MultiValue::new(values, indices))
+    }
 }
 
 impl MultiValue {

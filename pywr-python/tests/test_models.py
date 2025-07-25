@@ -1,6 +1,6 @@
 import numpy as np
 import pandas
-from pywr import Schema, Model
+from pywr import Schema
 from pathlib import Path
 import h5py
 import pytest
