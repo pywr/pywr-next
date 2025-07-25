@@ -179,6 +179,16 @@ impl Timestep {
         Ok(self.day_of_year_index())
     }
 
+    /// Returns the fraction day of the year of the timestep.
+    ///
+    /// The index is zero-based and accounts for leaps days. In non-leap years, 1 is added to the index for
+    /// days after Feb 28th. The fractional part is the fraction of the day that has passed since midnight
+    /// (calculated to the nearest second).
+    #[getter]
+    fn get_fractional_day_of_year(&self) -> PyResult<f64> {
+        Ok(self.fractional_day_of_year())
+    }
+
     /// Returns true if the year of the timestep is a leap year.
     #[getter]
     fn get_is_leap_year(&self) -> PyResult<bool> {
@@ -224,11 +234,12 @@ impl Timestep {
         i
     }
 
-    /// Returns the day of the year index of the timestep.
+    /// Returns the fraction day of the year of the timestep.
     ///
-    /// The index is zero-based and accounts for leaps days. In non-leap years, 1 is added is added to the index for
-    /// days after Feb 28th.
-    pub fn fractional_day_of_year_index(&self) -> f64 {
+    /// The index is zero-based and accounts for leaps days. In non-leap years, 1 is added to the index for
+    /// days after Feb 28th. The fractional part is the fraction of the day that has passed since midnight
+    /// (calculated to the nearest second).
+    pub fn fractional_day_of_year(&self) -> f64 {
         let seconds_in_day = self.date.num_seconds_from_midnight() as f64 / 86400.0;
 
         self.day_of_year_index() as f64 + seconds_in_day

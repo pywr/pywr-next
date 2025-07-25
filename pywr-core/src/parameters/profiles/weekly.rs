@@ -22,7 +22,7 @@ impl WeeklyProfileValues {
     /// included in the position by setting with_seconds to true.
     fn current_week_index(&self, timestep: &Timestep, with_seconds: bool) -> f64 {
         let current_day_index = if with_seconds {
-            timestep.fractional_day_of_year_index()
+            timestep.fractional_day_of_year()
         } else {
             timestep.day_of_year_index() as f64
         };
