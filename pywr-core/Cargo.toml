@@ -40,7 +40,7 @@ serde = { version = "1.0", features = ["derive"] }
 wide = { workspace = true, optional = true }
 
 [dev-dependencies]
-criterion = "0.6"
+criterion = "0.7"
 
 [features]
 cbc = []
