@@ -218,7 +218,7 @@ impl LoadedTableCollection {
                 let name = table_def.name().to_string();
                 info!("Loading table: {}", &name);
                 let table = table_def.load(data_path).map_err(|source| SchemaError::TableLoad {
-                    table_def: table_def.clone(),
+                    table_def: Box::new(table_def.clone()),
                     source: Box::new(source),
                 })?;
                 // TODO handle duplicate table names!

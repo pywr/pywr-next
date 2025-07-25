@@ -67,7 +67,7 @@ pub enum SchemaError {
     },
     #[error("Error loading table `{table_def:?}` error: {source}")]
     TableLoad {
-        table_def: DataTable,
+        table_def: Box<DataTable>,
         #[source]
         source: Box<TableError>,
     },
