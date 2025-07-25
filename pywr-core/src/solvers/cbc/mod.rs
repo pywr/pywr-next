@@ -148,7 +148,10 @@ impl Cbc {
 
     fn solve(&mut self) {
         unsafe {
-            Cbc_solve(self.ptr);
+            let ret = Cbc_solve(self.ptr);
+            if ret != 0 {
+                panic!("Cbc solve failed with error code: {ret}");
+            }
         }
     }
 

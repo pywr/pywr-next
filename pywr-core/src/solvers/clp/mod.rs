@@ -147,7 +147,10 @@ impl ClpSimplex {
     #[allow(dead_code)]
     fn primal_solve(&mut self) {
         unsafe {
-            Clp_primal(self.ptr, 0);
+            let ret = Clp_primal(self.ptr, 0);
+            if ret != 0 {
+                panic!("Clp primal solve failed with error code: {ret}");
+            }
         }
     }
 
