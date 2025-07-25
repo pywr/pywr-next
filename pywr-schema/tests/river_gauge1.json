@@ -6,7 +6,7 @@
   },
   "timestepper": {
     "start": "2015-01-01",
-    "end": "2015-12-31",
+    "end": "2015-01-03",
     "timestep": 1
   },
   "network": {
@@ -18,7 +18,7 @@
         "type": "Catchment",
         "flow": {
           "type": "Constant",
-          "value": -15
+          "value": 15
         }
       },
       {
@@ -66,8 +66,28 @@
         "to_node": "term1"
       },
       {
-        "from_node": "gauge1",
+        "from_node": "catchment1",
         "to_node": "demand1"
+      }
+    ],
+    "metric_sets": [
+      {
+        "name": "nodes",
+        "filters": {
+          "all_nodes": true
+        }
+      }
+    ],
+    "outputs": [
+      {
+        "name": "node-outputs",
+        "type": "CSV",
+        "format": "Long",
+        "filename": "river_gauge1-expected.csv",
+        "metric_set": [
+          "nodes"
+        ],
+        "decimal_places": 1
       }
     ]
   }

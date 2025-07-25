@@ -67,8 +67,7 @@ model_tests! {
     test_reservoir_with_river: ("reservoir_with_river.json", vec![], vec![], vec![]),
     test_reservoir_with_spill: ("reservoir_with_spill.json", vec![], vec![], vec![]),
     test_river_loss1: ("river_loss1.json", vec!["river_loss1-expected.csv"], vec!["ipm-simd", "ipm-ocl"], vec![]),
-    // TODO not sure why this is failing in IPM solvers (https://github.com/pywr/pywr-next/issues/293)
-    test_river_gauge1: ("river_gauge1.json", vec![], vec![], vec!["ipm-simd", "ipm-ocl"]),
+    test_river_gauge1: ("river_gauge1.json", vec!["river_gauge1-expected.csv"], vec![], vec![]),
     test_river_split_with_gauge1: ("river_split_with_gauge1.json", vec![], vec![], vec![]),
     test_thirty_day_licence: ("30-day-licence.json", vec![], vec!["ipm-simd", "ipm-ocl"], vec![]),
     test_wtw1: ("wtw1.json", vec!["wtw1-expected.csv"], vec!["ipm-simd", "ipm-ocl"], vec![]),
