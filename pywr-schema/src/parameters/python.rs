@@ -69,6 +69,7 @@ pub enum PythonReturnType {
 ///         "name": "my-custom-calculation"
 ///     },
 ///     "source": {
+///         "type": "Path",
 ///         "path": "my_parameter.py"
 ///     },
 ///     "object": "MyParameter",
