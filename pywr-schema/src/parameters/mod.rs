@@ -180,46 +180,80 @@ impl Parameter {
                 pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args, parent)?)
             }
             Self::ControlCurveInterpolated(p) => {
-                pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?)
+                pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args, parent)?)
             }
-            Self::Aggregated(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
-            Self::AggregatedIndex(p) => pywr_core::parameters::ParameterType::Index(p.add_to_model(network, args)?),
+            Self::Aggregated(p) => {
+                pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args, parent)?)
+            }
+            Self::AggregatedIndex(p) => {
+                pywr_core::parameters::ParameterType::Index(p.add_to_model(network, args, parent)?)
+            }
             Self::AsymmetricSwitchIndex(p) => {
-                pywr_core::parameters::ParameterType::Index(p.add_to_model(network, args)?)
+                pywr_core::parameters::ParameterType::Index(p.add_to_model(network, args, parent)?)
             }
             Self::ControlCurvePiecewiseInterpolated(p) => {
-                pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?)
+                pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args, parent)?)
             }
-            Self::ControlCurveIndex(p) => pywr_core::parameters::ParameterType::Index(p.add_to_model(network, args)?),
-            Self::ControlCurve(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
-            Self::DailyProfile(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
-            Self::IndexedArray(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
-            Self::MonthlyProfile(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
-            Self::WeeklyProfile(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
+            Self::ControlCurveIndex(p) => {
+                pywr_core::parameters::ParameterType::Index(p.add_to_model(network, args, parent)?)
+            }
+            Self::ControlCurve(p) => {
+                pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args, parent)?)
+            }
+            Self::DailyProfile(p) => {
+                pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args, parent)?)
+            }
+            Self::IndexedArray(p) => {
+                pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args, parent)?)
+            }
+            Self::MonthlyProfile(p) => {
+                pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args, parent)?)
+            }
+            Self::WeeklyProfile(p) => {
+                pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args, parent)?)
+            }
             Self::UniformDrawdownProfile(p) => {
-                pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?)
+                pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args, parent)?)
             }
-            Self::Max(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
-            Self::Min(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
-            Self::Negative(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
-            Self::Polynomial1D(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
-            Self::Threshold(p) => p.add_to_model(network, args)?,
-            Self::TablesArray(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
-            Self::Python(p) => p.add_to_model(network, args)?,
-            Self::Delay(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
-            Self::DelayIndex(p) => pywr_core::parameters::ParameterType::Index(p.add_to_model(network, args)?),
-            Self::Division(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
-            Self::Offset(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
-            Self::DiscountFactor(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
-            Self::Interpolated(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
-            Self::RbfProfile(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network)?),
-            Self::NegativeMax(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
-            Self::NegativeMin(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
+            Self::Max(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args, parent)?),
+            Self::Min(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args, parent)?),
+            Self::Negative(p) => {
+                pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args, parent)?)
+            }
+            Self::Polynomial1D(p) => {
+                pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args, parent)?)
+            }
+            Self::Threshold(p) => p.add_to_model(network, args, parent)?,
+            Self::TablesArray(p) => {
+                pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args, parent)?)
+            }
+            Self::Python(p) => p.add_to_model(network, args, parent)?,
+            Self::Delay(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args, parent)?),
+            Self::DelayIndex(p) => pywr_core::parameters::ParameterType::Index(p.add_to_model(network, args, parent)?),
+            Self::Division(p) => {
+                pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args, parent)?)
+            }
+            Self::Offset(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args, parent)?),
+            Self::DiscountFactor(p) => {
+                pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args, parent)?)
+            }
+            Self::Interpolated(p) => {
+                pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args, parent)?)
+            }
+            Self::RbfProfile(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, parent)?),
+            Self::NegativeMax(p) => {
+                pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args, parent)?)
+            }
+            Self::NegativeMin(p) => {
+                pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args, parent)?)
+            }
             Self::HydropowerTarget(p) => {
-                pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?)
+                pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args, parent)?)
             }
-            Self::Rolling(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
-            Self::RollingIndex(p) => pywr_core::parameters::ParameterType::Index(p.add_to_model(network, args)?),
+            Self::Rolling(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args, parent)?),
+            Self::RollingIndex(p) => {
+                pywr_core::parameters::ParameterType::Index(p.add_to_model(network, args, parent)?)
+            }
             Self::Placeholder(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model()?),
         };
 

@@ -9,7 +9,7 @@ use crate::v1::{FromV1, IntoV2};
 #[cfg(feature = "core")]
 use ndarray::s;
 #[cfg(feature = "core")]
-use pywr_core::parameters::ParameterIndex;
+use pywr_core::parameters::{ParameterIndex, ParameterName};
 use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::parameters::TablesArrayParameter as TablesArrayParameterV1;
 use schemars::JsonSchema;
@@ -35,6 +35,7 @@ impl TablesArrayParameter {
         &self,
         network: &mut pywr_core::network::Network,
         args: &LoadArgs,
+        parent: Option<&str>,
     ) -> Result<ParameterIndex<f64>, SchemaError> {
         // 1. Load the file from the HDF5 file (NB this is not Pandas format).
 
@@ -73,7 +74,7 @@ impl TablesArrayParameter {
             }
 
             let p = pywr_core::parameters::Array2Parameter::new(
-                self.meta.name.as_str().into(),
+                ParameterName::new(&self.meta.name, parent),
                 array,
                 scenario_group_index,
                 self.timestep_offset,
@@ -82,7 +83,7 @@ impl TablesArrayParameter {
         } else {
             let array = array.slice_move(s![.., 0]);
             let p = pywr_core::parameters::Array1Parameter::new(
-                self.meta.name.as_str().into(),
+                ParameterName::new(&self.meta.name, parent),
                 array,
                 self.timestep_offset,
             );

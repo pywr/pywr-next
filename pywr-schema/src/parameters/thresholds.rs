@@ -106,6 +106,7 @@ impl ThresholdParameter {
         &self,
         network: &mut pywr_core::network::Network,
         args: &LoadArgs,
+        parent: Option<&str>,
     ) -> Result<ParameterType, SchemaError> {
         let metric = self.metric.load(network, args, None)?;
         let threshold = self.threshold.load(network, args, None)?;
@@ -133,7 +134,7 @@ impl ThresholdParameter {
                     .map(|v| v.load(network, args, None))
                     .collect::<Result<Vec<_>, _>>()?;
                 let values_param = pywr_core::parameters::IndexedArrayParameter::new(
-                    self.meta.name.as_str().into(),
+                    ParameterName::new(&self.meta.name, parent),
                     p_idx.into(),
                     &metrics,
                 );

@@ -7,7 +7,7 @@ use crate::parameters::{AggFunc, IndexAggFunc, ParameterMeta};
 use crate::v1::IntoV2;
 use crate::{ComponentConversionError, ConversionData, ConversionError, TryFromV1};
 #[cfg(feature = "core")]
-use pywr_core::parameters::ParameterIndex;
+use pywr_core::parameters::{ParameterIndex, ParameterName};
 use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::parameters::RollingMeanFlowNodeParameter as RollingMeanFlowNodeParameterV1;
 use schemars::JsonSchema;
@@ -36,10 +36,11 @@ impl RollingParameter {
         &self,
         network: &mut pywr_core::network::Network,
         args: &LoadArgs,
+        parent: Option<&str>,
     ) -> Result<ParameterIndex<f64>, SchemaError> {
         let metric = self.metric.load(network, args, None)?;
         let p = pywr_core::parameters::RollingParameter::new(
-            self.meta.name.as_str().into(),
+            ParameterName::new(&self.meta.name, parent),
             metric,
             self.window_size as usize,
             self.initial_value,
@@ -74,10 +75,11 @@ impl RollingIndexParameter {
         &self,
         network: &mut pywr_core::network::Network,
         args: &LoadArgs,
+        parent: Option<&str>,
     ) -> Result<ParameterIndex<u64>, SchemaError> {
         let metric = self.metric.load(network, args, None)?;
         let p = pywr_core::parameters::RollingParameter::new(
-            self.meta.name.as_str().into(),
+            ParameterName::new(&self.meta.name, parent),
             metric,
             self.window_size as usize,
             self.initial_value,

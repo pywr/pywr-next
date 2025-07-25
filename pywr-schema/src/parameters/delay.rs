@@ -4,8 +4,9 @@ use crate::metric::{IndexMetric, Metric};
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::parameters::ParameterMeta;
+
 #[cfg(feature = "core")]
-use pywr_core::parameters::ParameterIndex;
+use pywr_core::parameters::{ParameterIndex, ParameterName};
 use pywr_schema_macros::PywrVisitAll;
 use schemars::JsonSchema;
 
@@ -25,10 +26,11 @@ impl DelayParameter {
         &self,
         network: &mut pywr_core::network::Network,
         args: &LoadArgs,
+        parent: Option<&str>,
     ) -> Result<ParameterIndex<f64>, SchemaError> {
         let metric = self.metric.load(network, args, None)?;
         let p = pywr_core::parameters::DelayParameter::new(
-            self.meta.name.as_str().into(),
+            ParameterName::new(&self.meta.name, parent),
             metric,
             self.delay,
             self.initial_value,
@@ -53,10 +55,11 @@ impl DelayIndexParameter {
         &self,
         network: &mut pywr_core::network::Network,
         args: &LoadArgs,
+        parent: Option<&str>,
     ) -> Result<ParameterIndex<u64>, SchemaError> {
         let metric = self.metric.load(network, args, None)?;
         let p = pywr_core::parameters::DelayParameter::new(
-            self.meta.name.as_str().into(),
+            ParameterName::new(&self.meta.name, parent),
             metric,
             self.delay,
             self.initial_value,
