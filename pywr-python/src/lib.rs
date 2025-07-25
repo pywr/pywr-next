@@ -4,6 +4,8 @@ use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyTuple, PyType};
 use pywr_core::models::ModelRunError;
+use pywr_core::parameters::ParameterInfo;
+use pywr_core::scenario::ScenarioIndex;
 #[cfg(any(feature = "ipm-ocl", feature = "ipm-simd"))]
 use pywr_core::solvers::MultiStateSolver;
 #[cfg(feature = "ipm-ocl")]
@@ -13,6 +15,7 @@ use pywr_core::solvers::{ClpSolver, ClpSolverSettings, ClpSolverSettingsBuilder,
 use pywr_core::solvers::{HighsSolver, HighsSolverSettings, HighsSolverSettingsBuilder};
 #[cfg(feature = "ipm-simd")]
 use pywr_core::solvers::{SimdIpmF64Solver, SimdIpmSolverSettings, SimdIpmSolverSettingsBuilder};
+use pywr_core::timestep::Timestep;
 use pywr_schema::model::Date;
 use pywr_schema::{ComponentConversionError, ConversionData, ConversionError, TryIntoV2};
 use std::fmt;
@@ -337,6 +340,9 @@ fn pywr(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Schema>()?;
     m.add_class::<Model>()?;
     m.add_class::<Metric>()?;
+    m.add_class::<Timestep>()?;
+    m.add_class::<ScenarioIndex>()?;
+    m.add_class::<ParameterInfo>()?;
 
     // Error classes
     m.add_class::<ComponentConversionError>()?;
