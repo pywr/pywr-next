@@ -27,7 +27,7 @@ ipm-ocl = { path = "../ipm-ocl", optional = true }
 ipm-simd = { path = "../ipm-simd", optional = true }
 tracing = { workspace = true }
 highs-sys = { version = "1.11", optional = true }
-nalgebra = "0.33"
+nalgebra = "0.34"
 chrono = { workspace = true }
 polars = { workspace = true }
 pyo3 = { workspace = true, features = ["chrono", "macros"], optional = true }
@@ -40,7 +40,7 @@ serde = { version = "1.0", features = ["derive"] }
 wide = { workspace = true, optional = true }
 
 [dev-dependencies]
-criterion = "0.6"
+criterion = "0.7"
 
 [features]
 cbc = []
