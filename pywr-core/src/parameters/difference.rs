@@ -125,3 +125,48 @@ fn difference(a: f64, b: f64, min: Option<f64>, max: Option<f64>) -> f64 {
     }
     result
 }
+
+#[cfg(test)]
+mod tests {
+    use super::difference;
+    use float_cmp::assert_approx_eq;
+
+    #[test]
+    fn computes_difference_without_bounds() {
+        let result = difference(10.0, 3.0, None, None);
+        assert_approx_eq!(f64, result, 7.0);
+    }
+
+    #[test]
+    fn clamps_to_min_when_result_below_min() {
+        let result = difference(2.0, 5.0, Some(-1.0), None);
+        assert_approx_eq!(f64, result, -1.0);
+    }
+
+    #[test]
+    fn clamps_to_max_when_result_above_max() {
+        let result = difference(10.0, 3.0, None, Some(5.0));
+        assert_approx_eq!(f64, result, 5.0);
+    }
+
+    #[test]
+    fn clamps_to_min_and_max_when_result_outside_bounds() {
+        let result = difference(1.0, 10.0, Some(-5.0), Some(-2.0));
+        assert_approx_eq!(f64, result, -5.0);
+
+        let result = difference(10.0, 1.0, Some(2.0), Some(5.0));
+        assert_approx_eq!(f64, result, 5.0);
+    }
+
+    #[test]
+    fn returns_result_when_within_bounds() {
+        let result = difference(8.0, 3.0, Some(2.0), Some(10.0));
+        assert_approx_eq!(f64, result, 5.0);
+    }
+
+    #[test]
+    fn handles_equal_a_and_b() {
+        let result = difference(5.0, 5.0, None, None);
+        assert_approx_eq!(f64, result, 0.0);
+    }
+}
