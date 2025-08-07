@@ -46,7 +46,7 @@ jobs:
       - name: Build
         run: cargo build --verbose  --all-features --workspace --exclude pywr-python
       - name: Run tests
-        run: cargo test  --features highs,cbc,ipm-simd --verbose --lib --bins -- --test-threads=1
+        run: cargo test  --features highs,cbc,ipm-simd --verbose -- --test-threads=1
       - name: Run mdbook test & build
         run: |
           output=$(mdbook test ./pywr-book 2>&1)

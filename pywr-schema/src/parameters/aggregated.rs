@@ -7,7 +7,7 @@ use crate::model::LoadArgs;
 use crate::parameters::{ConversionData, ParameterMeta};
 use crate::v1::{IntoV2, TryFromV1, try_convert_parameter_attr};
 #[cfg(feature = "core")]
-use pywr_core::parameters::ParameterIndex;
+use pywr_core::parameters::{ParameterIndex, ParameterName};
 use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::parameters::{
     AggFunc as AggFuncV1, AggregatedIndexParameter as AggregatedIndexParameterV1,
@@ -98,6 +98,7 @@ impl AggregatedParameter {
         &self,
         network: &mut pywr_core::network::Network,
         args: &LoadArgs,
+        parent: Option<&str>,
     ) -> Result<ParameterIndex<f64>, SchemaError> {
         let metrics = self
             .metrics
@@ -106,7 +107,7 @@ impl AggregatedParameter {
             .collect::<Result<Vec<_>, _>>()?;
 
         let p = pywr_core::parameters::AggregatedParameter::new(
-            self.meta.name.as_str().into(),
+            ParameterName::new(&self.meta.name, parent),
             &metrics,
             self.agg_func.into(),
         );
@@ -125,7 +126,7 @@ impl TryFromV1<AggregatedParameterV1> for AggregatedParameter {
     ) -> Result<Self, Self::Error> {
         let meta: ParameterMeta = v1.meta.into_v2(parent_node, conversion_data);
 
-        let parameters = v1
+        let metrics = v1
             .parameters
             .into_iter()
             .map(|p| try_convert_parameter_attr(&meta.name, "parameters", p, parent_node, conversion_data))
@@ -134,7 +135,7 @@ impl TryFromV1<AggregatedParameterV1> for AggregatedParameter {
         let p = Self {
             meta,
             agg_func: v1.agg_func.into(),
-            metrics: parameters,
+            metrics,
         };
         Ok(p)
     }
@@ -194,8 +195,7 @@ impl From<IndexAggFuncV1> for IndexAggFunc {
 pub struct AggregatedIndexParameter {
     pub meta: ParameterMeta,
     pub agg_func: IndexAggFunc,
-    // TODO this should be `DynamicIntValues`
-    pub parameters: Vec<IndexMetric>,
+    pub metrics: Vec<IndexMetric>,
 }
 
 impl AggregatedIndexParameter {
@@ -219,16 +219,17 @@ impl AggregatedIndexParameter {
         &self,
         network: &mut pywr_core::network::Network,
         args: &LoadArgs,
+        parent: Option<&str>,
     ) -> Result<ParameterIndex<u64>, SchemaError> {
-        let parameters = self
-            .parameters
+        let metrics = self
+            .metrics
             .iter()
             .map(|v| v.load(network, args, None))
             .collect::<Result<Vec<_>, _>>()?;
 
         let p = pywr_core::parameters::AggregatedIndexParameter::new(
-            self.meta.name.as_str().into(),
-            parameters,
+            ParameterName::new(&self.meta.name, parent),
+            &metrics,
             self.agg_func.into(),
         );
 
@@ -246,7 +247,7 @@ impl TryFromV1<AggregatedIndexParameterV1> for AggregatedIndexParameter {
     ) -> Result<Self, Self::Error> {
         let meta: ParameterMeta = v1.meta.into_v2(parent_node, conversion_data);
 
-        let parameters = v1
+        let metrics = v1
             .parameters
             .into_iter()
             .map(|p| try_convert_parameter_attr(&meta.name, "parameters", p, parent_node, conversion_data))
@@ -255,7 +256,7 @@ impl TryFromV1<AggregatedIndexParameterV1> for AggregatedIndexParameter {
         let p = Self {
             meta,
             agg_func: v1.agg_func.into(),
-            parameters,
+            metrics,
         };
         Ok(p)
     }

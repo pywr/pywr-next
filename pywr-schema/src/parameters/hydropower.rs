@@ -6,8 +6,9 @@ use crate::metric::Metric;
 use crate::model::LoadArgs;
 use crate::parameters::{ConversionData, ParameterMeta};
 use crate::v1::{IntoV2, TryFromV1, try_convert_parameter_attr};
+
 #[cfg(feature = "core")]
-use pywr_core::parameters::{HydropowerTargetData, ParameterIndex};
+use pywr_core::parameters::{HydropowerTargetData, ParameterIndex, ParameterName};
 use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::parameters::HydropowerTargetParameter as HydropowerTargetParameterV1;
 use schemars::JsonSchema;
@@ -83,6 +84,7 @@ impl HydropowerTargetParameter {
         &self,
         network: &mut pywr_core::network::Network,
         args: &LoadArgs,
+        parent: Option<&str>,
     ) -> Result<ParameterIndex<f64>, SchemaError> {
         let target = self.target.load(network, args, None)?;
         let water_elevation = self
@@ -113,7 +115,10 @@ impl HydropowerTargetParameter {
             flow_unit_conversion: self.flow_unit_conversion,
             energy_unit_conversion: self.energy_unit_conversion,
         };
-        let p = pywr_core::parameters::HydropowerTargetParameter::new(self.meta.name.as_str().into(), turbine_data);
+        let p = pywr_core::parameters::HydropowerTargetParameter::new(
+            ParameterName::new(&self.meta.name, parent),
+            turbine_data,
+        );
         Ok(network.add_parameter(Box::new(p))?)
     }
 }

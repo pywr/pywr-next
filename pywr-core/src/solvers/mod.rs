@@ -95,6 +95,9 @@ pub enum SolverSetupError {
     NoEdgesDefined,
     #[error("Node index not found: {0}")]
     NodeIndexNotFound(NodeIndex),
+    #[cfg(feature = "highs")]
+    #[error("Highs error: {0}")]
+    HighsError(#[from] highs::HighsStatusError),
 }
 
 /// Errors that can occur during solver solve.
@@ -135,6 +138,12 @@ pub enum SolverSolveError {
     NetworkStateError(#[from] crate::state::NetworkStateError),
     #[error("State error: {0}")]
     StateError(#[from] crate::state::StateError),
+    #[cfg(feature = "highs")]
+    #[error("Highs error: {0}")]
+    HighsError(#[from] highs::HighsStatusError),
+    #[cfg(feature = "highs")]
+    #[error("Highs error: {0}")]
+    HighsModelError(#[from] highs::HighsModelError),
 }
 
 pub trait Solver: Send {

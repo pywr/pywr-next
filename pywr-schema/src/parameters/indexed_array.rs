@@ -6,8 +6,9 @@ use crate::metric::{IndexMetric, Metric};
 use crate::model::LoadArgs;
 use crate::parameters::{ConversionData, ParameterMeta};
 use crate::v1::{IntoV2, TryFromV1, try_convert_parameter_attr};
+
 #[cfg(feature = "core")]
-use pywr_core::parameters::ParameterIndex;
+use pywr_core::parameters::{ParameterIndex, ParameterName};
 use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::parameters::IndexedArrayParameter as IndexedArrayParameterV1;
 use schemars::JsonSchema;
@@ -27,6 +28,7 @@ impl IndexedArrayParameter {
         &self,
         network: &mut pywr_core::network::Network,
         args: &LoadArgs,
+        parent: Option<&str>,
     ) -> Result<ParameterIndex<f64>, SchemaError> {
         let index_parameter = self.index_parameter.load(network, args, None)?;
 
@@ -37,7 +39,7 @@ impl IndexedArrayParameter {
             .collect::<Result<Vec<_>, _>>()?;
 
         let p = pywr_core::parameters::IndexedArrayParameter::new(
-            self.meta.name.as_str().into(),
+            ParameterName::new(&self.meta.name, parent),
             index_parameter,
             &metrics,
         );

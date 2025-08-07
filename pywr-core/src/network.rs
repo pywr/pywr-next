@@ -26,7 +26,7 @@ use crate::virtual_storage::{
 use crate::{NodeIndex, RecorderIndex, parameters, recorders};
 use rayon::prelude::*;
 use std::any::Any;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::ops::Deref;
 use std::slice::{Iter, IterMut};
 use std::time::Duration;
@@ -39,109 +39,42 @@ pub enum RunDuration {
     Finished(Duration, usize),
 }
 
-pub struct RunTimings {
-    pub global: RunDuration,
-    pub parameter_calculation: Duration,
-    pub recorder_saving: Duration,
-    pub solve: SolverTimings,
-}
-
-impl Default for RunTimings {
-    fn default() -> Self {
-        Self {
-            global: RunDuration::Running(Instant::now()),
-            parameter_calculation: Duration::default(),
-            recorder_saving: Duration::default(),
-            solve: SolverTimings::default(),
-        }
+impl RunDuration {
+    /// Start the global timer for this timing instance.
+    pub fn start() -> Self {
+        RunDuration::Running(Instant::now())
     }
-}
 
-impl RunTimings {
     /// End the global timer for this timing instance.
     ///
     /// If the timer has already finished this method has no effect.
-    pub fn finish(&mut self, count: usize) {
-        if let RunDuration::Running(i) = self.global {
-            self.global = RunDuration::Finished(i.elapsed(), count);
+    pub fn finish(self, count: usize) -> Self {
+        if let RunDuration::Running(i) = self {
+            RunDuration::Finished(i.elapsed(), count)
+        } else {
+            self
         }
     }
 
-    fn total_duration(&self) -> Duration {
-        match self.global {
+    /// Returns the total duration of the run, whether it is still running or has finished.
+    pub fn total_duration(&self) -> Duration {
+        match self {
             RunDuration::Running(i) => i.elapsed(),
-            RunDuration::Finished(d, _c) => d,
+            RunDuration::Finished(d, _c) => *d,
         }
     }
 
-    fn speed(&self) -> Option<f64> {
-        match self.global {
+    /// Returns the speed of the run in terms of time steps per second.
+    pub fn speed(&self) -> Option<f64> {
+        match self {
             RunDuration::Running(_) => None,
-            RunDuration::Finished(d, c) => Some(c as f64 / d.as_secs_f64()),
+            RunDuration::Finished(d, c) => Some(*c as f64 / d.as_secs_f64()),
         }
     }
 
+    /// Prints a summary of the run duration and speed to the log.
     pub fn print_table(&self) {
-        info!("Run timing statistics:");
-        let total = self.total_duration().as_secs_f64();
-        info!("{: <24} | {: <10}", "Metric", "Value");
-        info!("{: <24} | {: <10.5}s", "Total", total);
-
-        info!(
-            "{: <24} | {: <10.5}s ({:5.2}%)",
-            "Parameter calc",
-            self.parameter_calculation.as_secs_f64(),
-            100.0 * self.parameter_calculation.as_secs_f64() / total,
-        );
-
-        info!(
-            "{: <24} | {: <10.5}s ({:5.2}%)",
-            "Recorder save",
-            self.recorder_saving.as_secs_f64(),
-            100.0 * self.recorder_saving.as_secs_f64() / total,
-        );
-
-        info!(
-            "{: <24} | {: <10.5}s ({:5.2}%)",
-            "Solver::obj update",
-            self.solve.update_objective.as_secs_f64(),
-            100.0 * self.solve.update_objective.as_secs_f64() / total,
-        );
-
-        info!(
-            "{: <24} | {: <10.5}s ({:5.2}%)",
-            "Solver::const update",
-            self.solve.update_constraints.as_secs_f64(),
-            100.0 * self.solve.update_constraints.as_secs_f64() / total
-        );
-
-        info!(
-            "{: <24} | {: <10.5}s ({:5.2}%)",
-            "Solver::solve",
-            self.solve.solve.as_secs_f64(),
-            100.0 * self.solve.solve.as_secs_f64() / total,
-        );
-
-        info!(
-            "{: <24} | {: <10.5}s ({:5.2}%)",
-            "Solver::result update",
-            self.solve.save_solution.as_secs_f64(),
-            100.0 * self.solve.save_solution.as_secs_f64() / total,
-        );
-
-        // Difference between total and the parts counted in the timings
-        let not_counted = total
-            - self.parameter_calculation.as_secs_f64()
-            - self.recorder_saving.as_secs_f64()
-            - self.solve.total().as_secs_f64();
-
-        info!(
-            "{: <24} | {: <10.5}s ({:5.2}%)",
-            "Residual",
-            not_counted,
-            100.0 * not_counted / total,
-        );
-
+        info!("{: <24} | {: <10.5}s", "Total", self.total_duration().as_secs_f64());
         match self.speed() {
             None => info!("{: <24} | Unknown", "Speed"),
             Some(speed) => info!("{: <24} | {: <10.5} ts/s", "Speed", speed),
@@ -149,11 +82,132 @@ impl RunTimings {
     }
 }
 
-enum ComponentType {
+/// Collect timing information for component of a network.
+#[derive(Default)]
+pub struct ComponentTimings {
+    pub calculation: HashMap<ComponentType, Duration>,
+    pub total: Duration,
+}
+
+impl ComponentTimings {
+    /// Returns the slowest `n` components and their duration.
+    pub fn slowest_components(&self, n: usize) -> Vec<(ComponentType, Duration)> {
+        let mut components: Vec<_> = self.calculation.iter().map(|(ct, d)| (*ct, *d)).collect();
+        components.sort_by_key(|(_, duration)| *duration);
+        components.iter().rev().take(n).map(|(ct, d)| (*ct, *d)).collect()
+    }
+}
+
+/// Collects timing information for a network
+#[derive(Default)]
+pub struct NetworkTimings {
+    pub component_timings: ComponentTimings,
+    pub recorder_saving: Duration,
+    pub solve: SolverTimings,
+}
+
+impl NetworkTimings {
+    /// Print a summary of the timings to the log.
+    pub fn print_table(&self, total_duration: f64, network: &Network) {
+        info!(
+            "{: <24} | {: <10.5}s ({:5.2}%)",
+            "Parameter calc",
+            self.component_timings.total.as_secs_f64(),
+            100.0 * self.component_timings.total.as_secs_f64() / total_duration,
+        );
+
+        info!(
+            "{: <24} | {: <10.5}s ({:5.2}%)",
+            "Recorder save",
+            self.recorder_saving.as_secs_f64(),
+            100.0 * self.recorder_saving.as_secs_f64() / total_duration,
+        );
+
+        info!(
+            "{: <24} | {: <10.5}s ({:5.2}%)",
+            "Solver::obj update",
+            self.solve.update_objective.as_secs_f64(),
+            100.0 * self.solve.update_objective.as_secs_f64() / total_duration,
+        );
+
+        info!(
+            "{: <24} | {: <10.5}s ({:5.2}%)",
+            "Solver::const update",
+            self.solve.update_constraints.as_secs_f64(),
+            100.0 * self.solve.update_constraints.as_secs_f64() / total_duration
+        );
+
+        info!(
+            "{: <24} | {: <10.5}s ({:5.2}%)",
+            "Solver::solve",
+            self.solve.solve.as_secs_f64(),
+            100.0 * self.solve.solve.as_secs_f64() / total_duration,
+        );
+
+        info!(
+            "{: <24} | {: <10.5}s ({:5.2}%)",
+            "Solver::result update",
+            self.solve.save_solution.as_secs_f64(),
+            100.0 * self.solve.save_solution.as_secs_f64() / total_duration,
+        );
+
+        // Difference between total and the parts counted in the timings
+        let not_counted = total_duration
+            - self.component_timings.total.as_secs_f64()
+            - self.recorder_saving.as_secs_f64()
+            - self.solve.total().as_secs_f64();
+
+        info!(
+            "{: <24} | {: <10.5}s ({:5.2}%)",
+            "Residual",
+            not_counted,
+            100.0 * not_counted / total_duration,
+        );
+
+        info!("Slowest components:");
+        for (ct, duration) in self.component_timings.slowest_components(10) {
+            info!(
+                "  {: <24} | {: <10.5}s ({:5.2}%)",
+                ct.name(network),
+                duration.as_secs_f64(),
+                100.0 * duration.as_secs_f64() / total_duration,
+            );
+        }
+    }
+}
+
+#[derive(Hash, PartialEq, Eq, Copy, Clone)]
+pub enum ComponentType {
     Node(NodeIndex),
     VirtualStorageNode(VirtualStorageIndex),
     Parameter(GeneralParameterType),
     DerivedMetric(DerivedMetricIndex),
+}
+
+impl ComponentType {
+    pub fn name(&self, network: &Network) -> String {
+        match self {
+            ComponentType::Node(idx) => network.get_node(idx).unwrap().name().to_string(),
+            ComponentType::VirtualStorageNode(idx) => network.get_virtual_storage_node(idx).unwrap().name().to_string(),
+            ComponentType::Parameter(p_type) => match p_type {
+                GeneralParameterType::Parameter(idx) => {
+                    network.parameters.get_general_f64(*idx).unwrap().name().to_string()
+                }
+                GeneralParameterType::Index(idx) => {
+                    network.parameters.get_general_u64(*idx).unwrap().name().to_string()
+                }
+                GeneralParameterType::Multi(idx) => {
+                    network.parameters.get_general_multi(idx).unwrap().name().to_string()
+                }
+            },
+            ComponentType::DerivedMetric(idx) => network
+                .get_derived_metric(idx)
+                .unwrap()
+                .name(network)
+                .unwrap()
+                .to_string(),
+        }
+    }
 }
 
 /// Internal states for each scenario and recorder.
@@ -599,7 +653,7 @@ impl Network {
         scenario_indices: &[ScenarioIndex],
         solvers: &mut [Box<S>],
         state: &mut NetworkState,
-        timings: &mut RunTimings,
+        timings: &mut NetworkTimings,
     ) -> Result<(), NetworkStepError>
     where
         S: Solver,
@@ -615,10 +669,16 @@ impl Network {
                     // TODO clear the current parameter values state (i.e. set them all to zero).
 
                     let start_p_calc = Instant::now();
-                    self.compute_components(timestep, scenario_index, current_state, p_internal_states)?;
+                    self.compute_components(
+                        timestep,
+                        scenario_index,
+                        current_state,
+                        p_internal_states,
+                        Some(&mut timings.component_timings),
+                    )?;
 
                     // State now contains updated parameter values BUT original network state
-                    timings.parameter_calculation += start_p_calc.elapsed();
+                    timings.component_timings.total += start_p_calc.elapsed();
 
                     // Solve determines the new network state
                     let solve_timings = solver.solve(self, timestep, current_state)?;
@@ -635,7 +695,7 @@ impl Network {
                         ms_internal_states,
                     )?;
 
-                    timings.parameter_calculation += start_p_after.elapsed();
+                    timings.component_timings.total += start_p_after.elapsed();
 
                     Ok::<(), NetworkStepError>(())
                 },
@@ -655,7 +715,7 @@ impl Network {
         scenario_indices: &[ScenarioIndex],
         solvers: &mut [Box<S>],
         state: &mut NetworkState,
-        timings: &mut RunTimings,
+        timings: &mut NetworkTimings,
     ) -> Result<(), NetworkStepError>
     where
         S: Solver,
@@ -672,7 +732,7 @@ impl Network {
                     // TODO clear the current parameter values state (i.e. set them all to zero).
 
                     let start_p_calc = Instant::now();
-                    self.compute_components(timestep, scenario_index, current_state, p_internal_state)
+                    self.compute_components(timestep, scenario_index, current_state, p_internal_state, None)
                         .unwrap();
 
                     // State now contains updated parameter values BUT original network state
@@ -702,7 +762,7 @@ impl Network {
 
         // Add them all together
         for (parameter_calculation, solve_timings) in step_times.into_iter() {
-            timings.parameter_calculation += parameter_calculation;
+            timings.component_timings.total += parameter_calculation;
             timings.solve += solve_timings;
         }
 
@@ -716,7 +776,7 @@ impl Network {
         scenario_indices: &[ScenarioIndex],
         solver: &mut Box<S>,
         state: &mut NetworkState,
-        timings: &mut RunTimings,
+        timings: &mut NetworkTimings,
     ) -> Result<(), NetworkStepError>
     where
         S: MultiStateSolver,
@@ -731,7 +791,7 @@ impl Network {
                 // TODO clear the current parameter values state (i.e. set them all to zero).
 
                 let start_p_calc = Instant::now();
-                self.compute_components(timestep, scenario_index, current_state, p_internal_states)
+                self.compute_components(timestep, scenario_index, current_state, p_internal_states, None)
                     .unwrap();
 
                 // State now contains updated parameter values BUT original network state
@@ -740,7 +800,7 @@ impl Network {
             .collect();
 
         for t in p_calc_timings.into_iter() {
-            timings.parameter_calculation += t;
+            timings.component_timings.total += t;
         }
 
         // Now solve all the LPs simultaneously
@@ -772,7 +832,7 @@ impl Network {
             .collect();
 
         for t in p_after_timings.into_iter() {
-            timings.parameter_calculation += t;
+            timings.component_timings.total += t;
         }
 
         Ok(())
@@ -827,6 +887,7 @@ impl Network {
         scenario_index: &ScenarioIndex,
         state: &mut State,
         internal_states: &mut ParameterStates,
+        mut timings: Option<&mut ComponentTimings>,
     ) -> Result<(), NetworkStepError> {
         // TODO reset parameter state to zero
 
@@ -835,6 +896,8 @@ impl Network {
             .compute_simple(timestep, scenario_index, state, internal_states)?;
 
         for c_type in &self.resolve_order {
+            let start = Instant::now();
+
             match c_type {
                 ComponentType::Node(idx) => {
                     let n = self
@@ -960,6 +1023,15 @@ impl Network {
                         })?;
                     }
                 }
+            }
+
+            if let Some(timings) = timings.as_deref_mut() {
+                // Update the component timings
+                timings
+                    .calculation
+                    .entry(*c_type)
+                    .and_modify(|duration| *duration += start.elapsed())
+                    .or_insert_with(|| start.elapsed());
             }
         }
 
@@ -2218,7 +2290,7 @@ mod tests {
         const NUM_SCENARIOS: usize = 2;
         let model = simple_model(NUM_SCENARIOS, None);
 
-        let mut timings = RunTimings::default();
+        let mut timings = NetworkTimings::default();
 
         let mut state = model.setup::<ClpSolver>(&ClpSolverSettings::default()).unwrap();
 
