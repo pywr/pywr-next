@@ -1,3 +1,4 @@
+use crate::digest::Checksum;
 use crate::parameters::ParameterMeta;
 use crate::visit::VisitPaths;
 use schemars::JsonSchema;
@@ -17,6 +18,8 @@ pub struct PandasTimeseries {
     pub url: PathBuf,
     /// Keyword arguments to pass to the relevant Pandas load function.
     pub kwargs: Option<HashMap<String, serde_json::Value>>,
+    /// Optional checksum to verify the dataset.
+    pub checksum: Option<Checksum>,
 }
 
 impl VisitPaths for PandasTimeseries {
@@ -74,6 +77,11 @@ mod core {
             } else {
                 self.url.clone()
             };
+
+            // Validate the checksum if provided
+            if let Some(checksum) = &self.checksum {
+                checksum.check(&fp)?;
+            }
 
             let df: PyDataFrame = Python::with_gil(|py| -> PyResult<PyDataFrame> {
                 let pandas_load =

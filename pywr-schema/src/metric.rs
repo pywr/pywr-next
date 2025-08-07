@@ -100,9 +100,9 @@ impl Metric {
                 let value = args
                     .tables
                     .get_scalar_f64(table_ref)
-                    .map_err(|error| SchemaError::TableRefLoad {
+                    .map_err(|source| SchemaError::TableRefLoad {
                         table_ref: table_ref.clone(),
-                        error,
+                        source: Box::new(source),
                     })?;
                 Ok(value.into())
             }
@@ -565,9 +565,9 @@ impl IndexMetric {
                 let value = args
                     .tables
                     .get_scalar_u64(table_ref)
-                    .map_err(|error| SchemaError::TableRefLoad {
+                    .map_err(|source| SchemaError::TableRefLoad {
                         table_ref: table_ref.clone(),
-                        error,
+                        source: Box::new(source),
                     })?;
                 Ok(value.into())
             }

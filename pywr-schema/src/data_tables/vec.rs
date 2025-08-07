@@ -1,4 +1,4 @@
-use crate::data_tables::{TableError, make_path};
+use crate::data_tables::TableError;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::BufReader;
@@ -46,16 +46,11 @@ where
     }
 }
 
-pub fn load_csv_row_vec_table_one<T>(
-    table_path: &Path,
-    data_path: Option<&Path>,
-) -> Result<LoadedVecTable<T>, TableError>
+pub fn load_csv_row_vec_table_one<T>(path: &Path) -> Result<LoadedVecTable<T>, TableError>
 where
     T: FromStr,
     TableError: From<T::Err>,
 {
-    let path = make_path(table_path, data_path);
-
     let file = File::open(path).map_err(|e| TableError::IO(e.to_string()))?;
     let buf_reader = BufReader::new(file);
     let mut rdr = csv::Reader::from_reader(buf_reader);
@@ -78,16 +73,11 @@ where
     Ok(LoadedVecTable::One(tbl))
 }
 
-pub fn load_csv_row2_vec_table_one<T>(
-    table_path: &Path,
-    data_path: Option<&Path>,
-) -> Result<LoadedVecTable<T>, TableError>
+pub fn load_csv_row2_vec_table_one<T>(path: &Path) -> Result<LoadedVecTable<T>, TableError>
 where
     T: FromStr,
     TableError: From<T::Err>,
 {
-    let path = make_path(table_path, data_path);
-
     let file = File::open(path).map_err(|e| TableError::IO(e.to_string()))?;
     let buf_reader = BufReader::new(file);
     let mut rdr = csv::Reader::from_reader(buf_reader);
@@ -113,16 +103,11 @@ where
     Ok(LoadedVecTable::Two(tbl))
 }
 
-pub fn load_csv_col1_vec_table_one<T>(
-    table_path: &Path,
-    data_path: Option<&Path>,
-) -> Result<LoadedVecTable<T>, TableError>
+pub fn load_csv_col1_vec_table_one<T>(path: &Path) -> Result<LoadedVecTable<T>, TableError>
 where
     T: FromStr,
     TableError: From<T::Err>,
 {
-    let path = make_path(table_path, data_path);
-
     let file = File::open(path).map_err(|e| TableError::IO(e.to_string()))?;
     let buf_reader = BufReader::new(file);
     let mut rdr = csv::Reader::from_reader(buf_reader);
@@ -162,16 +147,11 @@ where
     Ok(LoadedVecTable::One(tbl))
 }
 
-pub fn load_csv_col2_vec_table_two<T>(
-    table_path: &Path,
-    data_path: Option<&Path>,
-) -> Result<LoadedVecTable<T>, TableError>
+pub fn load_csv_col2_vec_table_two<T>(path: &Path) -> Result<LoadedVecTable<T>, TableError>
 where
     T: FromStr,
     TableError: From<T::Err>,
 {
-    let path = make_path(table_path, data_path);
-
     let file = File::open(path).map_err(|e| TableError::IO(e.to_string()))?;
     let buf_reader = BufReader::new(file);
     let mut rdr = csv::Reader::from_reader(buf_reader);
