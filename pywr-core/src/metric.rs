@@ -401,7 +401,8 @@ impl TryFrom<ParameterIndex<f64>> for SimpleMetricF64 {
     fn try_from(idx: ParameterIndex<f64>) -> Result<Self, Self::Error> {
         match idx {
             ParameterIndex::Simple(idx) => Ok(Self::ParameterValue(idx)),
-            _ => Err(MetricF64Error::CannotSimplifyMetric),
+            ParameterIndex::Const(idx) => Ok(Self::Constant(ConstantMetricF64::ParameterValue(idx))),
+            ParameterIndex::General(_) => Err(MetricF64Error::CannotSimplifyMetric),
         }
     }
 }
@@ -411,7 +412,8 @@ impl TryFrom<ParameterIndex<u64>> for SimpleMetricU64 {
     fn try_from(idx: ParameterIndex<u64>) -> Result<Self, Self::Error> {
         match idx {
             ParameterIndex::Simple(idx) => Ok(Self::IndexParameterValue(idx)),
-            _ => Err(MetricU64Error::CannotSimplifyMetric),
+            ParameterIndex::Const(idx) => Ok(Self::Constant(ConstantMetricU64::IndexParameterValue(idx))),
+            ParameterIndex::General(_) => Err(MetricU64Error::CannotSimplifyMetric),
         }
     }
 }

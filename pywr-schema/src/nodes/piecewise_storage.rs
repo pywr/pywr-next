@@ -3,14 +3,13 @@ use crate::error::SchemaError;
 use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
-use crate::nodes::{NodeAttribute, NodeMeta};
+use crate::nodes::{NodeAttribute, NodeMeta, StorageInitialVolume};
 use crate::parameters::Parameter;
 #[cfg(feature = "core")]
 use pywr_core::{
     derived_metric::DerivedMetric,
     metric::{MetricF64, SimpleMetricF64},
-    node::StorageInitialVolume,
-    parameters::{ParameterName, VolumeBetweenControlCurvesParameter},
+    parameters::{DifferenceParameter, ParameterIndex, ParameterName, VolumeBetweenControlCurvesParameter},
 };
 use pywr_schema_macros::PywrVisitAll;
 use schemars::JsonSchema;
@@ -30,6 +29,9 @@ pub struct PiecewiseStore {
 /// node where it is important for the volume to follow a control curve that separates the
 /// volume into two or more stores (zones). By applying different penalty costs in each store
 /// (zone) the allocation algorithm makes independent decisions regarding the use of each.
+///
+/// Initial volume can be set as a proportion of the total volume or as an absolute value.
+/// This volume is distributed across the individual storage nodes, from the bottom up.
 ///
 /// Note that this node adds additional complexity to models over the standard storage node.
 ///
@@ -55,12 +57,10 @@ pub struct PiecewiseStorageNode {
     /// Optional local parameters.
     pub parameters: Option<Vec<Parameter>>,
     pub max_volume: Metric,
-    // TODO implement min volume
-    // pub min_volume: Option<DynamicFloatValue>,
+    pub min_volume: Option<Metric>,
+    pub cost: Option<Metric>,
     pub steps: Vec<PiecewiseStore>,
-    // TODO implement initial volume
-    // pub initial_volume: Option<f64>,
-    // pub initial_volume_pc: Option<f64>,
+    pub initial_volume: StorageInitialVolume,
 }
 
 impl PiecewiseStorageNode {
@@ -114,7 +114,7 @@ impl PiecewiseStorageNode {
         // create a storage node for each step
         for (i, _step) in self.steps.iter().enumerate() {
             // Assume each store is full to start with
-            let initial_volume = StorageInitialVolume::Proportional(1.0);
+            let initial_volume = pywr_core::node::StorageInitialVolume::Proportional(1.0);
 
             let idx = network.add_storage_node(
                 self.meta.name.as_str(),
@@ -134,7 +134,7 @@ impl PiecewiseStorageNode {
         }
 
         // Assume each store is full to start with
-        let initial_volume = StorageInitialVolume::Proportional(1.0);
+        let initial_volume = pywr_core::node::StorageInitialVolume::Proportional(1.0);
 
         // And one for the residual part above the less step
         let idx = network.add_storage_node(
@@ -166,6 +166,12 @@ impl PiecewiseStorageNode {
     ) -> Result<(), SchemaError> {
         // These are the min and max volume of the overall node
         let total_volume: SimpleMetricF64 = self.max_volume.load(network, args, Some(&self.meta.name))?.try_into()?;
+        let total_min_volume: Option<SimpleMetricF64> = match &self.min_volume {
+            Some(min_volume) => Some(min_volume.load(network, args, Some(&self.meta.name))?.try_into()?),
+            None => None,
+        };
+
+        let mut prior_max_volumes: Vec<SimpleMetricF64> = Vec::new();
 
         for (i, step) in self.steps.iter().enumerate() {
             let sub_name = Self::step_sub_name(i);
@@ -185,27 +191,41 @@ impl PiecewiseStorageNode {
 
             let upper = step.control_curve.load(network, args, Some(&self.meta.name))?;
 
-            let max_volume_parameter = VolumeBetweenControlCurvesParameter::new(
-                // Node's name is the parent identifier
+            let max_volume_parameter_idx =
+                self.set_sub_node_max_volume(i, total_volume.clone(), Some(upper.try_into()?), lower, network)?;
+
+            let prior_max_volume = pywr_core::parameters::AggregatedParameter::new(
                 ParameterName::new(
-                    format!("{}-max-volume", Self::step_sub_name(i).unwrap()).as_str(),
+                    format!("{}-prior-max-volume", Self::step_sub_name(i).unwrap()).as_str(),
                     Some(&self.meta.name),
                 ),
-                total_volume.clone(),
-                Some(upper.try_into()?),
-                lower,
+                &prior_max_volumes,
+                pywr_core::parameters::AggFunc::Sum,
             );
-            let max_volume_parameter_idx = network.add_simple_parameter(Box::new(max_volume_parameter))?;
-            let max_volume = Some(max_volume_parameter_idx.try_into()?);
-            network.set_node_max_volume(self.meta.name.as_str(), sub_name.as_deref(), max_volume)?;
+            let prior_max_volume_idx = network.add_simple_parameter(Box::new(prior_max_volume))?;
+
+            if let Some(total_min_volume) = total_min_volume.clone() {
+                self.set_sub_node_min_volume(
+                    i,
+                    total_min_volume.clone(),
+                    prior_max_volume_idx,
+                    max_volume_parameter_idx,
+                    network,
+                )?;
+            }
+
+            self.set_sub_node_initial_volume(i, total_volume.clone(), prior_max_volume_idx, network)?;
 
             if let Some(cost) = &step.cost {
                 let value = cost.load(network, args, Some(&self.meta.name))?;
                 network.set_node_cost(self.meta.name.as_str(), sub_name.as_deref(), value.into())?;
             }
+
+            // Append the max volume parameter of this node to the prior list
+            prior_max_volumes.push(max_volume_parameter_idx.try_into()?);
         }
 
-        // The volume of this store the remain proportion above the last control curve
+        // The volume of this store is the remain proportion above the last control curve
         let lower = match self.steps.last() {
             Some(step) => Some(
                 step.control_curve
@@ -217,9 +237,64 @@ impl PiecewiseStorageNode {
 
         let upper = None;
 
-        let max_volume_parameter = VolumeBetweenControlCurvesParameter::new(
+        let max_volume_parameter_idx =
+            self.set_sub_node_max_volume(self.steps.len(), total_volume.clone(), upper, lower, network)?;
+
+        let prior_max_volume = pywr_core::parameters::AggregatedParameter::new(
             ParameterName::new(
-                format!("{}-max-volume", Self::step_sub_name(self.steps.len()).unwrap()).as_str(),
+                format!("{}-prior-max-volume", Self::step_sub_name(self.steps.len()).unwrap()).as_str(),
+                Some(&self.meta.name),
+            ),
+            &prior_max_volumes,
+            pywr_core::parameters::AggFunc::Sum,
+        );
+        let prior_max_volume_idx = network.add_simple_parameter(Box::new(prior_max_volume))?;
+
+        if let Some(total_min_volume) = total_min_volume.clone() {
+            self.set_sub_node_min_volume(
+                self.steps.len(),
+                total_min_volume.clone(),
+                prior_max_volume_idx,
+                max_volume_parameter_idx,
+                network,
+            )?;
+        }
+
+        self.set_sub_node_initial_volume(self.steps.len(), total_volume.clone(), prior_max_volume_idx, network)?;
+
+        // Set the cost for the last step
+        if let Some(cost) = &self.cost {
+            let value = cost.load(network, args, Some(&self.meta.name))?;
+            network.set_node_cost(
+                self.meta.name.as_str(),
+                Self::step_sub_name(self.steps.len()).as_deref(),
+                value.into(),
+            )?;
+        }
+
+        Ok(())
+    }
+
+    /// Set the maximum volume of the node at a specific step index.
+    ///
+    /// This method sets the maximum volume for a specific step in the piecewise storage node. It
+    /// creates a `VolumeBetweenControlCurvesParameter` that defines the maximum volume for that step,
+    /// based on the provided lower and upper bounds, and the total volume of the node.
+    ///
+    fn set_sub_node_max_volume(
+        &self,
+        step_index: usize,
+        total_volume: SimpleMetricF64,
+        upper: Option<SimpleMetricF64>,
+        lower: Option<SimpleMetricF64>,
+        network: &mut pywr_core::network::Network,
+    ) -> Result<ParameterIndex<f64>, SchemaError> {
+        let sub_name = Self::step_sub_name(step_index);
+
+        let max_volume_parameter = VolumeBetweenControlCurvesParameter::new(
+            // Node's name is the parent identifier
+            ParameterName::new(
+                format!("{}-max-volume", Self::step_sub_name(step_index).unwrap()).as_str(),
                 Some(&self.meta.name),
             ),
             total_volume.clone(),
@@ -228,14 +303,75 @@ impl PiecewiseStorageNode {
         );
         let max_volume_parameter_idx = network.add_simple_parameter(Box::new(max_volume_parameter))?;
         let max_volume = Some(max_volume_parameter_idx.try_into()?);
-        network.set_node_max_volume(
+        network.set_node_max_volume(self.meta.name.as_str(), sub_name.as_deref(), max_volume)?;
+
+        Ok(max_volume_parameter_idx)
+    }
+
+    /// Set the minimum volume of the node at a specific step index.
+    ///
+    /// This method sets the minimum volume for a specific step in the piecewise storage node. It
+    /// creates a `DifferenceParameter` that defines the minimum volume for that step, based on the
+    /// total minimum volume and the maximum volume of the previous steps.
+    fn set_sub_node_min_volume(
+        &self,
+        step_index: usize,
+        total_min_volume: SimpleMetricF64,
+        prior_max_volume_idx: ParameterIndex<f64>,
+        max_volume_parameter_idx: ParameterIndex<f64>,
+        network: &mut pywr_core::network::Network,
+    ) -> Result<(), SchemaError> {
+        let sub_name = Self::step_sub_name(step_index);
+        // The minimum volume is the difference between the total volume and
+        // the maximum volume of the previous steps, but limited to be between zero and the maximum volume of this step.
+        let min_volume_parameter = DifferenceParameter::new(
+            ParameterName::new(
+                format!("{}-min-volume", Self::step_sub_name(step_index).unwrap()).as_str(),
+                Some(&self.meta.name),
+            ),
+            total_min_volume,
+            prior_max_volume_idx.try_into()?,
+            Some(0.0.into()),
+            Some(max_volume_parameter_idx.try_into()?),
+        );
+        let min_volume_parameter_idx = network.add_simple_parameter(Box::new(min_volume_parameter))?;
+        network.set_node_min_volume(
             self.meta.name.as_str(),
-            Self::step_sub_name(self.steps.len()).as_deref(),
-            max_volume,
+            sub_name.as_deref(),
+            Some(min_volume_parameter_idx.try_into()?),
         )?;
 
         Ok(())
     }
+
+    /// Set the initial volume of the node at a specific step index.
+    fn set_sub_node_initial_volume(
+        &self,
+        step_index: usize,
+        total_volume: SimpleMetricF64,
+        prior_max_volume_idx: ParameterIndex<f64>,
+        network: &mut pywr_core::network::Network,
+    ) -> Result<(), SchemaError> {
+        let sub_name = Self::step_sub_name(step_index);
+        // Set the initial volume of this step
+        let initial_volume = match &self.initial_volume {
+            StorageInitialVolume::Proportional { proportion } => {
+                pywr_core::node::StorageInitialVolume::DistributedProportional {
+                    total_volume: total_volume.clone(),
+                    proportion: *proportion,
+                    prior_max_volume: prior_max_volume_idx.try_into()?,
+                }
+            }
+            StorageInitialVolume::Absolute { volume } => pywr_core::node::StorageInitialVolume::DistributedAbsolute {
+                absolute: *volume,
+                prior_max_volume: prior_max_volume_idx.try_into()?,
+            },
+        };
+        network.set_node_initial_volume(self.meta.name.as_str(), sub_name.as_deref(), initial_volume)?;
+
+        Ok(())
+    }
+
     pub fn create_metric(
         &self,
         network: &mut pywr_core::network::Network,
