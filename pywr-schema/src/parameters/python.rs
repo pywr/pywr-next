@@ -16,7 +16,7 @@ use pyo3::{
 #[cfg(feature = "core")]
 use pywr_core::parameters::ParameterType;
 #[cfg(all(feature = "core", feature = "pyo3"))]
-use pywr_core::parameters::PyParameter;
+use pywr_core::parameters::{ParameterName, PyParameter};
 use schemars::JsonSchema;
 #[cfg(all(feature = "core", feature = "pyo3"))]
 use serde_json::Value;
@@ -203,6 +203,7 @@ impl PythonParameter {
         &self,
         _network: &mut pywr_core::network::Network,
         _args: &LoadArgs,
+        _parent: Option<&str>,
     ) -> Result<ParameterType, SchemaError> {
         Err(SchemaError::FeatureNotEnabled("pyo3".to_string()))
     }
@@ -213,6 +214,7 @@ impl PythonParameter {
         &self,
         network: &mut pywr_core::network::Network,
         args: &LoadArgs,
+        parent: Option<&str>,
     ) -> Result<ParameterType, SchemaError> {
         pyo3::prepare_freethreaded_python();
 
@@ -279,7 +281,7 @@ impl PythonParameter {
         };
 
         let p = PyParameter::new(
-            self.meta.name.as_str().into(),
+            ParameterName::new(&self.meta.name, parent),
             object,
             py_args,
             kwargs,
@@ -352,7 +354,7 @@ mod tests {
             inter_network_transfers: &[],
         };
 
-        param.add_to_model(&mut network, &args).unwrap();
+        param.add_to_model(&mut network, &args, None).unwrap();
 
         assert!(network.get_parameter_by_name(&"my-float-parameter".into()).is_some());
     }
@@ -400,7 +402,7 @@ mod tests {
             inter_network_transfers: &[],
         };
 
-        param.add_to_model(&mut network, &args).unwrap();
+        param.add_to_model(&mut network, &args, None).unwrap();
 
         assert!(
             network

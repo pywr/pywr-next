@@ -6,8 +6,9 @@ use crate::model::LoadArgs;
 use crate::nodes::NodeAttribute;
 use crate::parameters::{ConversionData, ParameterMeta};
 use crate::v1::{FromV1, IntoV2};
+
 #[cfg(feature = "core")]
-use pywr_core::parameters::ParameterIndex;
+use pywr_core::parameters::{ParameterIndex, ParameterName};
 use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::parameters::Polynomial1DParameter as Polynomial1DParameterV1;
 use schemars::JsonSchema;
@@ -28,11 +29,12 @@ impl Polynomial1DParameter {
         &self,
         network: &mut pywr_core::network::Network,
         args: &LoadArgs,
+        parent: Option<&str>,
     ) -> Result<ParameterIndex<f64>, SchemaError> {
         let metric = self.metric.load(network, args, None)?;
 
         let p = pywr_core::parameters::Polynomial1DParameter::new(
-            self.meta.name.as_str().into(),
+            ParameterName::new(&self.meta.name, parent),
             metric,
             self.coefficients.clone(),
             self.scale.unwrap_or(1.0),
