@@ -4,6 +4,7 @@ use crate::error::SchemaError;
 use crate::metric::{Metric, SimpleNodeReference};
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
+use crate::node_attribute_subset_enum;
 use crate::nodes::{NodeAttribute, NodeMeta};
 use crate::parameters::Parameter;
 use crate::v1::{
@@ -22,6 +23,14 @@ use pywr_v1_schema::nodes::{
 use schemars::JsonSchema;
 use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticStr};
 
+// This macro generates a subset enum for the `InputNode` attributes.
+// It allows for easy conversion between the enum and the `NodeAttribute` type.
+node_attribute_subset_enum! {
+    enum InputNodeAttribute {
+        Outflow,
+    }
+}
+
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct InputNode {
@@ -34,7 +43,7 @@ pub struct InputNode {
 }
 
 impl InputNode {
-    const DEFAULT_ATTRIBUTE: NodeAttribute = NodeAttribute::Outflow;
+    const DEFAULT_ATTRIBUTE: InputNodeAttribute = InputNodeAttribute::Outflow;
 
     pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
         vec![(self.meta.name.as_str(), None)]
@@ -44,7 +53,7 @@ impl InputNode {
     }
 
     pub fn default_metric(&self) -> NodeAttribute {
-        Self::DEFAULT_ATTRIBUTE
+        Self::DEFAULT_ATTRIBUTE.into()
     }
 }
 
@@ -96,7 +105,10 @@ impl InputNode {
         attribute: Option<NodeAttribute>,
     ) -> Result<MetricF64, SchemaError> {
         // Use the default attribute if none is specified
-        let attr = attribute.unwrap_or(Self::DEFAULT_ATTRIBUTE);
+        let attr = match attribute {
+            Some(attr) => attr.try_into()?,
+            None => Self::DEFAULT_ATTRIBUTE,
+        };
 
         let idx = network
             .get_node_index_by_name(self.meta.name.as_str(), None)
@@ -106,14 +118,7 @@ impl InputNode {
             })?;
 
         let metric = match attr {
-            NodeAttribute::Outflow => MetricF64::NodeOutFlow(idx),
-            _ => {
-                return Err(SchemaError::NodeAttributeNotSupported {
-                    ty: "InputNode".to_string(),
-                    name: self.meta.name.clone(),
-                    attr,
-                });
-            }
+            InputNodeAttribute::Outflow => MetricF64::NodeOutFlow(idx),
         };
 
         Ok(metric)
@@ -150,6 +155,15 @@ impl TryFromV1<InputNodeV1> for InputNode {
 pub struct SoftConstraint {
     pub cost: Option<Metric>,
     pub flow: Option<Metric>,
+}
+
+// This macro generates a subset enum for the `LinkNode` attributes.
+// It allows for easy conversion between the enum and the `NodeAttribute` type.
+node_attribute_subset_enum! {
+    enum LinkNodeAttribute {
+        Inflow,
+        Outflow,
+    }
 }
 
 #[doc = svgbobdoc::transform!(
@@ -276,7 +290,7 @@ pub struct LinkNode {
 }
 
 impl LinkNode {
-    const DEFAULT_ATTRIBUTE: NodeAttribute = NodeAttribute::Outflow;
+    const DEFAULT_ATTRIBUTE: LinkNodeAttribute = LinkNodeAttribute::Outflow;
 
     fn soft_min_node_sub_name() -> Option<&'static str> {
         Some("soft_min_node")
@@ -321,7 +335,7 @@ impl LinkNode {
     }
 
     pub fn default_metric(&self) -> NodeAttribute {
-        Self::DEFAULT_ATTRIBUTE
+        Self::DEFAULT_ATTRIBUTE.into()
     }
 }
 
@@ -525,7 +539,11 @@ impl LinkNode {
         attribute: Option<NodeAttribute>,
     ) -> Result<MetricF64, SchemaError> {
         // Use the default attribute if none is specified
-        let attr = attribute.unwrap_or(Self::DEFAULT_ATTRIBUTE);
+        let attr = match attribute {
+            Some(attr) => attr.try_into()?,
+            None => Self::DEFAULT_ATTRIBUTE,
+        };
+
         let node_name = self.meta.name.as_str();
         let link_node =
             network
@@ -574,21 +592,14 @@ impl LinkNode {
         };
 
         let metric = match attr {
-            NodeAttribute::Outflow => MetricF64::MultiNodeInFlow {
+            LinkNodeAttribute::Outflow => MetricF64::MultiNodeInFlow {
                 indices,
                 name: self.meta.name.to_string(),
             },
-            NodeAttribute::Inflow => MetricF64::MultiNodeOutFlow {
+            LinkNodeAttribute::Inflow => MetricF64::MultiNodeOutFlow {
                 indices,
                 name: self.meta.name.to_string(),
             },
-            _ => {
-                return Err(SchemaError::NodeAttributeNotSupported {
-                    ty: "LinkNode".to_string(),
-                    name: self.meta.name.clone(),
-                    attr,
-                });
-            }
         };
 
         Ok(metric)
@@ -625,6 +636,15 @@ impl TryFromV1<LinkNodeV1> for LinkNode {
     }
 }
 
+// This macro generates a subset enum for the `OutputNode` attributes.
+// It allows for easy conversion between the enum and the `NodeAttribute` type.
+node_attribute_subset_enum! {
+    enum OutputNodeAttribute {
+        Inflow,
+        Deficit,
+    }
+}
+
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct OutputNode {
@@ -637,7 +657,7 @@ pub struct OutputNode {
 }
 
 impl OutputNode {
-    const DEFAULT_ATTRIBUTE: NodeAttribute = NodeAttribute::Inflow;
+    const DEFAULT_ATTRIBUTE: OutputNodeAttribute = OutputNodeAttribute::Inflow;
 
     pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
         vec![(self.meta.name.as_str(), None)]
@@ -648,7 +668,7 @@ impl OutputNode {
     }
 
     pub fn default_metric(&self) -> NodeAttribute {
-        Self::DEFAULT_ATTRIBUTE
+        Self::DEFAULT_ATTRIBUTE.into()
     }
 }
 
@@ -672,7 +692,10 @@ impl OutputNode {
         attribute: Option<NodeAttribute>,
     ) -> Result<MetricF64, SchemaError> {
         // Use the default attribute if none is specified
-        let attr = attribute.unwrap_or(Self::DEFAULT_ATTRIBUTE);
+        let attr = match attribute {
+            Some(attr) => attr.try_into()?,
+            None => Self::DEFAULT_ATTRIBUTE,
+        };
 
         let idx = network
             .get_node_index_by_name(self.meta.name.as_str(), None)
@@ -682,18 +705,11 @@ impl OutputNode {
             })?;
 
         let metric = match attr {
-            NodeAttribute::Inflow => MetricF64::NodeInFlow(idx),
-            NodeAttribute::Deficit => {
+            OutputNodeAttribute::Inflow => MetricF64::NodeInFlow(idx),
+            OutputNodeAttribute::Deficit => {
                 let dm = DerivedMetric::NodeInFlowDeficit(idx);
                 let dm_idx = network.add_derived_metric(dm);
                 MetricF64::DerivedMetric(dm_idx)
-            }
-            _ => {
-                return Err(SchemaError::NodeAttributeNotSupported {
-                    ty: "OutputNode".to_string(),
-                    name: self.meta.name.clone(),
-                    attr,
-                });
             }
         };
 
@@ -790,6 +806,16 @@ impl From<StorageInitialVolume> for CoreStorageInitialVolume {
     }
 }
 
+// This macro generates a subset enum for the `StorageNode` attributes.
+// It allows for easy conversion between the enum and the `NodeAttribute` type.
+node_attribute_subset_enum! {
+    enum StorageNodeAttribute {
+        Volume,
+        ProportionalVolume,
+        MaxVolume,
+    }
+}
+
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct StorageNode {
@@ -803,7 +829,7 @@ pub struct StorageNode {
 }
 
 impl StorageNode {
-    const DEFAULT_ATTRIBUTE: NodeAttribute = NodeAttribute::Volume;
+    const DEFAULT_ATTRIBUTE: StorageNodeAttribute = StorageNodeAttribute::Volume;
 
     pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
         vec![(self.meta.name.as_str(), None)]
@@ -814,7 +840,7 @@ impl StorageNode {
     }
 
     pub fn default_metric(&self) -> NodeAttribute {
-        Self::DEFAULT_ATTRIBUTE
+        Self::DEFAULT_ATTRIBUTE.into()
     }
 }
 
@@ -867,7 +893,10 @@ impl StorageNode {
         attribute: Option<NodeAttribute>,
     ) -> Result<MetricF64, SchemaError> {
         // Use the default attribute if none is specified
-        let attr = attribute.unwrap_or(Self::DEFAULT_ATTRIBUTE);
+        let attr = match attribute {
+            Some(attr) => attr.try_into()?,
+            None => Self::DEFAULT_ATTRIBUTE,
+        };
 
         let idx = network
             .get_node_index_by_name(self.meta.name.as_str(), None)
@@ -877,19 +906,12 @@ impl StorageNode {
             })?;
 
         let metric = match attr {
-            NodeAttribute::Volume => MetricF64::NodeVolume(idx),
-            NodeAttribute::MaxVolume => MetricF64::NodeMaxVolume(idx),
-            NodeAttribute::ProportionalVolume => {
+            StorageNodeAttribute::Volume => MetricF64::NodeVolume(idx),
+            StorageNodeAttribute::MaxVolume => MetricF64::NodeMaxVolume(idx),
+            StorageNodeAttribute::ProportionalVolume => {
                 let dm = DerivedMetric::NodeProportionalVolume(idx);
                 let derived_metric_idx = network.add_derived_metric(dm);
                 MetricF64::DerivedMetric(derived_metric_idx)
-            }
-            _ => {
-                return Err(SchemaError::NodeAttributeNotSupported {
-                    ty: "StorageNode".to_string(),
-                    name: self.meta.name.clone(),
-                    attr,
-                });
             }
         };
 
@@ -955,6 +977,15 @@ impl TryFromV1<ReservoirNodeV1> for StorageNode {
     }
 }
 
+// This macro generates a subset enum for the `CatchmentNode` attributes.
+// It allows for easy conversion between the enum and the `NodeAttribute` type.
+node_attribute_subset_enum! {
+    enum CatchmentNodeAttribute {
+        Outflow,
+
+    }
+}
+
 #[doc = svgbobdoc::transform!(
 /// This is used to represent a catchment inflow.
 ///
@@ -978,7 +1009,7 @@ pub struct CatchmentNode {
 }
 
 impl CatchmentNode {
-    const DEFAULT_ATTRIBUTE: NodeAttribute = NodeAttribute::Outflow;
+    const DEFAULT_ATTRIBUTE: CatchmentNodeAttribute = CatchmentNodeAttribute::Outflow;
 
     pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
         vec![(self.meta.name.as_str(), None)]
@@ -989,7 +1020,7 @@ impl CatchmentNode {
     }
 
     pub fn default_metric(&self) -> NodeAttribute {
-        Self::DEFAULT_ATTRIBUTE
+        Self::DEFAULT_ATTRIBUTE.into()
     }
 }
 
@@ -1037,7 +1068,10 @@ impl CatchmentNode {
         attribute: Option<NodeAttribute>,
     ) -> Result<MetricF64, SchemaError> {
         // Use the default attribute if none is specified
-        let attr = attribute.unwrap_or(Self::DEFAULT_ATTRIBUTE);
+        let attr = match attribute {
+            Some(attr) => attr.try_into()?,
+            None => Self::DEFAULT_ATTRIBUTE,
+        };
 
         let idx = network
             .get_node_index_by_name(self.meta.name.as_str(), None)
@@ -1047,14 +1081,7 @@ impl CatchmentNode {
             })?;
 
         let metric = match attr {
-            NodeAttribute::Outflow => MetricF64::NodeOutFlow(idx),
-            _ => {
-                return Err(SchemaError::NodeAttributeNotSupported {
-                    ty: "CatchmentNode".to_string(),
-                    name: self.meta.name.clone(),
-                    attr,
-                });
-            }
+            CatchmentNodeAttribute::Outflow => MetricF64::NodeOutFlow(idx),
         };
 
         Ok(metric)
@@ -1101,6 +1128,15 @@ pub enum Relationship {
     },
 }
 
+// This macro generates a subset enum for the `AggregatedNode` attributes.
+// It allows for easy conversion between the enum and the `NodeAttribute` type.
+node_attribute_subset_enum! {
+    enum AggregatedNodeAttribute {
+        Inflow,
+        Outflow,
+    }
+}
+
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct AggregatedNode {
@@ -1114,7 +1150,7 @@ pub struct AggregatedNode {
 }
 
 impl AggregatedNode {
-    const DEFAULT_ATTRIBUTE: NodeAttribute = NodeAttribute::Outflow;
+    const DEFAULT_ATTRIBUTE: AggregatedNodeAttribute = AggregatedNodeAttribute::Outflow;
 
     pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
         // Not connectable
@@ -1128,7 +1164,7 @@ impl AggregatedNode {
     }
 
     pub fn default_metric(&self) -> NodeAttribute {
-        Self::DEFAULT_ATTRIBUTE
+        Self::DEFAULT_ATTRIBUTE.into()
     }
 }
 
@@ -1228,7 +1264,10 @@ impl AggregatedNode {
         attribute: Option<NodeAttribute>,
     ) -> Result<MetricF64, SchemaError> {
         // Use the default attribute if none is specified
-        let attr = attribute.unwrap_or(Self::DEFAULT_ATTRIBUTE);
+        let attr = match attribute {
+            Some(attr) => attr.try_into()?,
+            None => Self::DEFAULT_ATTRIBUTE,
+        };
 
         let idx = network
             .get_aggregated_node_index_by_name(self.meta.name.as_str(), None)
@@ -1238,15 +1277,8 @@ impl AggregatedNode {
             })?;
 
         let metric = match attr {
-            NodeAttribute::Outflow => MetricF64::AggregatedNodeOutFlow(idx),
-            NodeAttribute::Inflow => MetricF64::AggregatedNodeInFlow(idx),
-            _ => {
-                return Err(SchemaError::NodeAttributeNotSupported {
-                    ty: "AggregatedNode".to_string(),
-                    name: self.meta.name.clone(),
-                    attr,
-                });
-            }
+            AggregatedNodeAttribute::Outflow => MetricF64::AggregatedNodeOutFlow(idx),
+            AggregatedNodeAttribute::Inflow => MetricF64::AggregatedNodeInFlow(idx),
         };
 
         Ok(metric)
@@ -1298,6 +1330,15 @@ impl TryFromV1<AggregatedNodeV1> for AggregatedNode {
     }
 }
 
+// This macro generates a subset enum for the `AggregatedStorageNode` attributes.
+// It allows for easy conversion between the enum and the `NodeAttribute` type.
+node_attribute_subset_enum! {
+    enum AggregatedStorageNodeAttribute {
+        Volume,
+        ProportionalVolume,
+    }
+}
+
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct AggregatedStorageNode {
@@ -1308,7 +1349,7 @@ pub struct AggregatedStorageNode {
 }
 
 impl AggregatedStorageNode {
-    const DEFAULT_ATTRIBUTE: NodeAttribute = NodeAttribute::Volume;
+    const DEFAULT_ATTRIBUTE: AggregatedStorageNodeAttribute = AggregatedStorageNodeAttribute::Volume;
 
     pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
         // Not connectable
@@ -1322,7 +1363,7 @@ impl AggregatedStorageNode {
     }
 
     pub fn default_metric(&self) -> NodeAttribute {
-        Self::DEFAULT_ATTRIBUTE
+        Self::DEFAULT_ATTRIBUTE.into()
     }
 }
 
@@ -1374,7 +1415,10 @@ impl AggregatedStorageNode {
         attribute: Option<NodeAttribute>,
     ) -> Result<MetricF64, SchemaError> {
         // Use the default attribute if none is specified
-        let attr = attribute.unwrap_or(Self::DEFAULT_ATTRIBUTE);
+        let attr = match attribute {
+            Some(attr) => attr.try_into()?,
+            None => Self::DEFAULT_ATTRIBUTE,
+        };
 
         let idx = network
             .get_aggregated_storage_node_index_by_name(self.meta.name.as_str(), None)
@@ -1384,18 +1428,11 @@ impl AggregatedStorageNode {
             })?;
 
         let metric = match attr {
-            NodeAttribute::Volume => MetricF64::AggregatedNodeVolume(idx),
-            NodeAttribute::ProportionalVolume => {
+            AggregatedStorageNodeAttribute::Volume => MetricF64::AggregatedNodeVolume(idx),
+            AggregatedStorageNodeAttribute::ProportionalVolume => {
                 let dm = DerivedMetric::AggregatedNodeProportionalVolume(idx);
                 let derived_metric_idx = network.add_derived_metric(dm);
                 MetricF64::DerivedMetric(derived_metric_idx)
-            }
-            _ => {
-                return Err(SchemaError::NodeAttributeNotSupported {
-                    ty: "AggregatedStorageNode".to_string(),
-                    name: self.meta.name.clone(),
-                    attr,
-                });
             }
         };
 

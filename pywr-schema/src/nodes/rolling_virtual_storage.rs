@@ -4,6 +4,7 @@ use crate::error::{ComponentConversionError, ConversionError};
 use crate::metric::{Metric, SimpleNodeReference};
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
+use crate::node_attribute_subset_enum;
 use crate::nodes::{NodeAttribute, NodeMeta, StorageInitialVolume};
 use crate::parameters::Parameter;
 use crate::v1::{ConversionData, TryFromV1, try_convert_initial_storage, try_convert_node_attr};
@@ -63,6 +64,15 @@ impl RollingWindow {
     }
 }
 
+// This macro generates a subset enum for the `RollingVirtualStorageNode` attributes.
+// It allows for easy conversion between the enum and the `NodeAttribute` type.
+node_attribute_subset_enum! {
+    enum RollingVirtualStorageNodeAttribute {
+        Volume,
+        ProportionalVolume,
+    }
+}
+
 /// A virtual storage node that constrains node(s) utilisation over a fixed window.
 ///
 /// A virtual storage node represents a "virtual" volume that can be used to constrain the utilisation of one or more
@@ -90,7 +100,7 @@ pub struct RollingVirtualStorageNode {
 }
 
 impl RollingVirtualStorageNode {
-    const DEFAULT_ATTRIBUTE: NodeAttribute = NodeAttribute::Volume;
+    const DEFAULT_ATTRIBUTE: RollingVirtualStorageNodeAttribute = RollingVirtualStorageNodeAttribute::Volume;
 
     pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
         vec![]
@@ -101,7 +111,7 @@ impl RollingVirtualStorageNode {
     }
 
     pub fn default_metric(&self) -> NodeAttribute {
-        Self::DEFAULT_ATTRIBUTE
+        Self::DEFAULT_ATTRIBUTE.into()
     }
 }
 
@@ -176,7 +186,10 @@ impl RollingVirtualStorageNode {
         attribute: Option<NodeAttribute>,
     ) -> Result<MetricF64, SchemaError> {
         // Use the default attribute if none is specified
-        let attr = attribute.unwrap_or(Self::DEFAULT_ATTRIBUTE);
+        let attr = match attribute {
+            Some(attr) => attr.try_into()?,
+            None => Self::DEFAULT_ATTRIBUTE,
+        };
 
         let idx = network
             .get_virtual_storage_node_index_by_name(self.meta.name.as_str(), None)
@@ -186,18 +199,11 @@ impl RollingVirtualStorageNode {
             })?;
 
         let metric = match attr {
-            NodeAttribute::Volume => MetricF64::VirtualStorageVolume(idx),
-            NodeAttribute::ProportionalVolume => {
+            RollingVirtualStorageNodeAttribute::Volume => MetricF64::VirtualStorageVolume(idx),
+            RollingVirtualStorageNodeAttribute::ProportionalVolume => {
                 let dm = DerivedMetric::VirtualStorageProportionalVolume(idx);
                 let derived_metric_idx = network.add_derived_metric(dm);
                 MetricF64::DerivedMetric(derived_metric_idx)
-            }
-            _ => {
-                return Err(SchemaError::NodeAttributeNotSupported {
-                    ty: "RollingVirtualStorageNode".to_string(),
-                    name: self.meta.name.clone(),
-                    attr,
-                });
             }
         };
 
