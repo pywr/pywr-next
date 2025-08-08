@@ -74,7 +74,7 @@ macro_rules! node_attribute_subset_enum {
                     $(
                         $crate::nodes::NodeAttribute::$variant => Ok($name::$variant),
                     )*
-                    _ => Err(SchemaError::NodeAttributeNotSupported {
+                    _ => Err($crate::SchemaError::NodeAttributeNotSupported {
                         attr,
                     })
                 }
