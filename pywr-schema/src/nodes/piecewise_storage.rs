@@ -3,6 +3,7 @@ use crate::error::SchemaError;
 use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
+use crate::node_attribute_subset_enum;
 use crate::nodes::{NodeAttribute, NodeMeta, StorageInitialVolume};
 use crate::parameters::Parameter;
 #[cfg(feature = "core")]
@@ -19,6 +20,15 @@ use schemars::JsonSchema;
 pub struct PiecewiseStore {
     pub control_curve: Metric,
     pub cost: Option<Metric>,
+}
+
+// This macro generates a subset enum for the `PiecewiseStorageNode` attributes.
+// It allows for easy conversion between the enum and the `NodeAttribute` type.
+node_attribute_subset_enum! {
+    enum PiecewiseStorageNodeAttribute {
+        Volume,
+        ProportionalVolume,
+    }
 }
 
 #[doc = svgbobdoc::transform!(
@@ -64,7 +74,7 @@ pub struct PiecewiseStorageNode {
 }
 
 impl PiecewiseStorageNode {
-    const DEFAULT_ATTRIBUTE: NodeAttribute = NodeAttribute::Volume;
+    const DEFAULT_ATTRIBUTE: PiecewiseStorageNodeAttribute = PiecewiseStorageNodeAttribute::Volume;
 
     fn step_sub_name(i: usize) -> Option<String> {
         Some(format!("store-{i:02}"))
@@ -78,7 +88,7 @@ impl PiecewiseStorageNode {
     }
 
     pub fn default_metric(&self) -> NodeAttribute {
-        Self::DEFAULT_ATTRIBUTE
+        Self::DEFAULT_ATTRIBUTE.into()
     }
 }
 
@@ -378,7 +388,10 @@ impl PiecewiseStorageNode {
         attribute: Option<NodeAttribute>,
     ) -> Result<MetricF64, SchemaError> {
         // Use the default attribute if none is specified
-        let attr = attribute.unwrap_or(Self::DEFAULT_ATTRIBUTE);
+        let attr = match attribute {
+            Some(attr) => attr.try_into()?,
+            None => Self::DEFAULT_ATTRIBUTE,
+        };
 
         let idx = network
             .get_aggregated_storage_node_index_by_name(self.meta.name.as_str(), Self::agg_sub_name())
@@ -388,18 +401,11 @@ impl PiecewiseStorageNode {
             })?;
 
         let metric = match attr {
-            NodeAttribute::Volume => MetricF64::AggregatedNodeVolume(idx),
-            NodeAttribute::ProportionalVolume => {
+            PiecewiseStorageNodeAttribute::Volume => MetricF64::AggregatedNodeVolume(idx),
+            PiecewiseStorageNodeAttribute::ProportionalVolume => {
                 let dm = DerivedMetric::AggregatedNodeProportionalVolume(idx);
                 let derived_metric_idx = network.add_derived_metric(dm);
                 MetricF64::DerivedMetric(derived_metric_idx)
-            }
-            _ => {
-                return Err(SchemaError::NodeAttributeNotSupported {
-                    ty: "PiecewiseStorageNode".to_string(),
-                    name: self.meta.name.clone(),
-                    attr,
-                });
             }
         };
 

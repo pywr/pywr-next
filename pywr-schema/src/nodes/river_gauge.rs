@@ -4,6 +4,7 @@ use crate::error::SchemaError;
 use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
+use crate::node_attribute_subset_enum;
 use crate::nodes::{NodeAttribute, NodeMeta};
 use crate::parameters::Parameter;
 use crate::v1::{ConversionData, TryFromV1, try_convert_node_attr};
@@ -12,6 +13,15 @@ use pywr_core::metric::MetricF64;
 use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::nodes::RiverGaugeNode as RiverGaugeNodeV1;
 use schemars::JsonSchema;
+
+// This macro generates a subset enum for the `RiverGaugeNode` attributes.
+// It allows for easy conversion between the enum and the `NodeAttribute` type.
+node_attribute_subset_enum! {
+    enum RiverGaugeNodeAttribute {
+        Inflow,
+        Outflow,
+    }
+}
 
 #[doc = svgbobdoc::transform!(
 /// This is used to represent a minimum residual flow (MRF) at a gauging station.
@@ -40,7 +50,7 @@ pub struct RiverGaugeNode {
 }
 
 impl RiverGaugeNode {
-    const DEFAULT_ATTRIBUTE: NodeAttribute = NodeAttribute::Outflow;
+    const DEFAULT_ATTRIBUTE: RiverGaugeNodeAttribute = RiverGaugeNodeAttribute::Outflow;
 
     fn mrf_sub_name() -> Option<&'static str> {
         Some("mrf")
@@ -65,7 +75,7 @@ impl RiverGaugeNode {
     }
 
     pub fn default_metric(&self) -> NodeAttribute {
-        Self::DEFAULT_ATTRIBUTE
+        Self::DEFAULT_ATTRIBUTE.into()
     }
 }
 
@@ -126,7 +136,10 @@ impl RiverGaugeNode {
         attribute: Option<NodeAttribute>,
     ) -> Result<MetricF64, SchemaError> {
         // Use the default attribute if none is specified
-        let attr = attribute.unwrap_or(Self::DEFAULT_ATTRIBUTE);
+        let attr = match attribute {
+            Some(attr) => attr.try_into()?,
+            None => Self::DEFAULT_ATTRIBUTE,
+        };
 
         let indices = vec![
             network
@@ -144,21 +157,14 @@ impl RiverGaugeNode {
         ];
 
         let metric = match attr {
-            NodeAttribute::Inflow => MetricF64::MultiNodeInFlow {
+            RiverGaugeNodeAttribute::Inflow => MetricF64::MultiNodeInFlow {
                 indices,
                 name: self.meta.name.to_string(),
             },
-            NodeAttribute::Outflow => MetricF64::MultiNodeOutFlow {
+            RiverGaugeNodeAttribute::Outflow => MetricF64::MultiNodeOutFlow {
                 indices,
                 name: self.meta.name.to_string(),
             },
-            _ => {
-                return Err(SchemaError::NodeAttributeNotSupported {
-                    ty: "RiverGaugeNode".to_string(),
-                    name: self.meta.name.clone(),
-                    attr,
-                });
-            }
         };
 
         Ok(metric)

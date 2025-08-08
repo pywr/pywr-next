@@ -3,6 +3,7 @@ use crate::SchemaError;
 use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
+use crate::node_attribute_subset_enum;
 use crate::nodes::{NodeAttribute, NodeMeta};
 use crate::parameters::Parameter;
 #[cfg(feature = "core")]
@@ -25,6 +26,16 @@ pub enum TargetType {
     MinFlow,
     // set flow derived from the hydropower target as min_flow and max_flow (like a catchment)
     Both,
+}
+
+// This macro generates a subset enum for the `TurbineNode` attributes.
+// It allows for easy conversion between the enum and the `NodeAttribute` type.
+node_attribute_subset_enum! {
+    enum TurbineNodeAttribute {
+        Inflow,
+        Outflow,
+        Power,
+    }
 }
 
 /// This turbine node can be used to set a flow constraint based on a hydropower production target.
@@ -86,7 +97,7 @@ impl Default for TurbineNode {
 }
 
 impl TurbineNode {
-    const DEFAULT_ATTRIBUTE: NodeAttribute = NodeAttribute::Outflow;
+    const DEFAULT_ATTRIBUTE: TurbineNodeAttribute = TurbineNodeAttribute::Outflow;
 
     pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
         vec![(self.meta.name.as_str(), None)]
@@ -96,7 +107,7 @@ impl TurbineNode {
     }
 
     pub fn default_metric(&self) -> NodeAttribute {
-        Self::DEFAULT_ATTRIBUTE
+        Self::DEFAULT_ATTRIBUTE.into()
     }
 }
 
@@ -182,7 +193,10 @@ impl TurbineNode {
         args: &LoadArgs,
     ) -> Result<MetricF64, SchemaError> {
         // Use the default attribute if none is specified
-        let attr = attribute.unwrap_or(Self::DEFAULT_ATTRIBUTE);
+        let attr = match attribute {
+            Some(attr) => attr.try_into()?,
+            None => Self::DEFAULT_ATTRIBUTE,
+        };
 
         let idx = network
             .get_node_index_by_name(self.meta.name.as_str(), None)
@@ -192,9 +206,9 @@ impl TurbineNode {
             })?;
 
         let metric = match attr {
-            NodeAttribute::Outflow => MetricF64::NodeOutFlow(idx),
-            NodeAttribute::Inflow => MetricF64::NodeInFlow(idx),
-            NodeAttribute::Power => {
+            TurbineNodeAttribute::Outflow => MetricF64::NodeOutFlow(idx),
+            TurbineNodeAttribute::Inflow => MetricF64::NodeInFlow(idx),
+            TurbineNodeAttribute::Power => {
                 let water_elevation = self
                     .water_elevation
                     .as_ref()
@@ -212,13 +226,6 @@ impl TurbineNode {
                 let dm = DerivedMetric::PowerFromNodeFlow(idx, turbine_data);
                 let dm_idx = network.add_derived_metric(dm);
                 MetricF64::DerivedMetric(dm_idx)
-            }
-            _ => {
-                return Err(SchemaError::NodeAttributeNotSupported {
-                    ty: "TurbineNode".to_string(),
-                    name: self.meta.name.clone(),
-                    attr,
-                });
             }
         };
 

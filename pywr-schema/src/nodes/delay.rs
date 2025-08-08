@@ -3,6 +3,7 @@ use crate::error::SchemaError;
 use crate::error::{ComponentConversionError, ConversionError};
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
+use crate::node_attribute_subset_enum;
 use crate::nodes::{NodeAttribute, NodeMeta};
 use crate::parameters::{ConstantValue, Parameter};
 #[cfg(feature = "core")]
@@ -10,6 +11,15 @@ use pywr_core::{metric::MetricF64, parameters::ParameterName};
 use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::nodes::DelayNode as DelayNodeV1;
 use schemars::JsonSchema;
+
+// This macro generates a subset enum for the `DelayNode` attributes.
+// It allows for easy conversion between the enum and the `NodeAttribute` type.
+node_attribute_subset_enum! {
+    enum DelayNodeAttribute {
+        Inflow,
+        Outflow,
+    }
+}
 
 #[doc = svgbobdoc::transform!(
 /// This node is used to introduce a delay between flows entering and leaving the node.
@@ -41,7 +51,7 @@ pub struct DelayNode {
 }
 
 impl DelayNode {
-    const DEFAULT_ATTRIBUTE: NodeAttribute = NodeAttribute::Outflow;
+    const DEFAULT_ATTRIBUTE: DelayNodeAttribute = DelayNodeAttribute::Outflow;
 
     fn output_sub_name() -> Option<&'static str> {
         Some("inflow")
@@ -62,7 +72,7 @@ impl DelayNode {
     }
 
     pub fn default_metric(&self) -> NodeAttribute {
-        Self::DEFAULT_ATTRIBUTE
+        Self::DEFAULT_ATTRIBUTE.into()
     }
 }
 
@@ -121,10 +131,13 @@ impl DelayNode {
         attribute: Option<NodeAttribute>,
     ) -> Result<MetricF64, SchemaError> {
         // Use the default attribute if none is specified
-        let attr = attribute.unwrap_or(Self::DEFAULT_ATTRIBUTE);
+        let attr = match attribute {
+            Some(attr) => attr.try_into()?,
+            None => Self::DEFAULT_ATTRIBUTE,
+        };
 
         let metric = match attr {
-            NodeAttribute::Outflow => {
+            DelayNodeAttribute::Outflow => {
                 let idx = network
                     .get_node_index_by_name(self.meta.name.as_str(), Self::input_sub_now())
                     .ok_or_else(|| SchemaError::CoreNodeNotFound {
@@ -133,7 +146,7 @@ impl DelayNode {
                     })?;
                 MetricF64::NodeOutFlow(idx)
             }
-            NodeAttribute::Inflow => {
+            DelayNodeAttribute::Inflow => {
                 let idx = network
                     .get_node_index_by_name(self.meta.name.as_str(), Self::output_sub_name())
                     .ok_or_else(|| SchemaError::CoreNodeNotFound {
@@ -141,13 +154,6 @@ impl DelayNode {
                         sub_name: Self::output_sub_name().map(String::from),
                     })?;
                 MetricF64::NodeInFlow(idx)
-            }
-            _ => {
-                return Err(SchemaError::NodeAttributeNotSupported {
-                    ty: "DelayNode".to_string(),
-                    name: self.meta.name.clone(),
-                    attr,
-                });
             }
         };
 

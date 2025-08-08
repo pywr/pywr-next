@@ -4,6 +4,7 @@ use crate::error::SchemaError;
 use crate::metric::{Metric, SimpleNodeReference};
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
+use crate::node_attribute_subset_enum;
 use crate::nodes::core::StorageInitialVolume;
 use crate::nodes::{NodeAttribute, NodeMeta};
 use crate::parameters::Parameter;
@@ -36,6 +37,15 @@ impl Default for AnnualReset {
     }
 }
 
+// This macro generates a subset enum for the `AnnualVirtualStorageNode` attributes.
+// It allows for easy conversion between the enum and the `NodeAttribute` type.
+node_attribute_subset_enum! {
+    enum AnnualVirtualStorageNodeAttribute {
+        Volume,
+        ProportionalVolume,
+    }
+}
+
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct AnnualVirtualStorageNode {
@@ -52,7 +62,7 @@ pub struct AnnualVirtualStorageNode {
 }
 
 impl AnnualVirtualStorageNode {
-    pub const DEFAULT_ATTRIBUTE: NodeAttribute = NodeAttribute::Volume;
+    const DEFAULT_ATTRIBUTE: AnnualVirtualStorageNodeAttribute = AnnualVirtualStorageNodeAttribute::Volume;
 
     pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
         vec![]
@@ -63,7 +73,7 @@ impl AnnualVirtualStorageNode {
     }
 
     pub fn default_metric(&self) -> NodeAttribute {
-        Self::DEFAULT_ATTRIBUTE
+        Self::DEFAULT_ATTRIBUTE.into()
     }
 }
 
@@ -137,7 +147,10 @@ impl AnnualVirtualStorageNode {
         attribute: Option<NodeAttribute>,
     ) -> Result<MetricF64, SchemaError> {
         // Use the default attribute if none is specified
-        let attr = attribute.unwrap_or(Self::DEFAULT_ATTRIBUTE);
+        let attr: AnnualVirtualStorageNodeAttribute = match attribute {
+            Some(attr) => attr.try_into()?,
+            None => Self::DEFAULT_ATTRIBUTE,
+        };
 
         let idx = network
             .get_virtual_storage_node_index_by_name(self.meta.name.as_str(), None)
@@ -147,18 +160,11 @@ impl AnnualVirtualStorageNode {
             })?;
 
         let metric = match attr {
-            NodeAttribute::Volume => MetricF64::VirtualStorageVolume(idx),
-            NodeAttribute::ProportionalVolume => {
+            AnnualVirtualStorageNodeAttribute::Volume => MetricF64::VirtualStorageVolume(idx),
+            AnnualVirtualStorageNodeAttribute::ProportionalVolume => {
                 let dm = DerivedMetric::VirtualStorageProportionalVolume(idx);
                 let derived_metric_idx = network.add_derived_metric(dm);
                 MetricF64::DerivedMetric(derived_metric_idx)
-            }
-            _ => {
-                return Err(SchemaError::NodeAttributeNotSupported {
-                    ty: "AnnualVirtualStorageNode".to_string(),
-                    name: self.meta.name.clone(),
-                    attr,
-                });
             }
         };
 

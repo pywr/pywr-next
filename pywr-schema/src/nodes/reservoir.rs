@@ -3,6 +3,7 @@ use crate::SchemaError;
 use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
+use crate::node_attribute_subset_enum;
 use crate::nodes::{NodeAttribute, NodeMeta, StorageNode};
 use crate::parameters::ConstantFloatVec;
 #[cfg(feature = "core")]
@@ -77,6 +78,19 @@ pub struct Rainfall {
     /// If `true` the maximum surface area will be used to calculate the rainfall volume. When
     /// `false`, the area is calculated from the bathymetric data. This defaults to `false`.
     pub use_max_area: Option<bool>,
+}
+
+// This macro generates a subset enum for the `ReservoirNode` attributes.
+// It allows for easy conversion between the enum and the `NodeAttribute` type.
+// NB, this node uses the node attributes from `StorageNode` as well, therefore the attributes
+// defined here are those that are specific to the `ReservoirNode` and not already used
+// in `StorageNode`.
+node_attribute_subset_enum! {
+    enum ReservoirNodeAttribute {
+        Compensation,
+        Rainfall,
+        Evaporation,
+    }
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
@@ -582,33 +596,30 @@ impl ReservoirNode {
         match self.storage.create_metric(network, attribute) {
             Ok(m) => Ok(m),
             Err(SchemaError::NodeAttributeNotSupported { .. }) => {
-                let attr = attribute.unwrap();
+                let attr = match attribute {
+                    Some(attr) => attr.try_into()?,
+                    None => self.default_metric().try_into()?,
+                };
+
                 let metric = match attr {
-                    NodeAttribute::Compensation => match network
+                    ReservoirNodeAttribute::Compensation => match network
                         .get_node_index_by_name(self.meta().name.as_str(), Self::compensation_node_sub_name())
                     {
                         Some(idx) => MetricF64::NodeInFlow(idx),
                         None => 0.0.into(),
                     },
-                    NodeAttribute::Rainfall => match network
+                    ReservoirNodeAttribute::Rainfall => match network
                         .get_node_index_by_name(self.meta().name.as_str(), Self::rainfall_node_sub_name())
                     {
                         Some(idx) => MetricF64::NodeInFlow(idx),
                         None => 0.0.into(),
                     },
-                    NodeAttribute::Evaporation => match network
+                    ReservoirNodeAttribute::Evaporation => match network
                         .get_node_index_by_name(self.meta().name.as_str(), Self::rainfall_node_sub_name())
                     {
                         Some(idx) => MetricF64::NodeInFlow(idx),
                         None => 0.0.into(),
                     },
-                    _ => {
-                        return Err(SchemaError::NodeAttributeNotSupported {
-                            ty: "ReservoirNode".to_string(),
-                            name: self.meta().name.clone(),
-                            attr,
-                        });
-                    }
                 };
 
                 Ok(metric)

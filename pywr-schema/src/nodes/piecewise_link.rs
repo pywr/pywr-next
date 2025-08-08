@@ -4,6 +4,7 @@ use crate::error::SchemaError;
 use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
+use crate::node_attribute_subset_enum;
 use crate::nodes::{NodeAttribute, NodeMeta};
 use crate::parameters::Parameter;
 use crate::v1::{ConversionData, TryFromV1, try_convert_node_attr};
@@ -19,6 +20,15 @@ pub struct PiecewiseLinkStep {
     pub max_flow: Option<Metric>,
     pub min_flow: Option<Metric>,
     pub cost: Option<Metric>,
+}
+
+// This macro generates a subset enum for the `PiecewiseLinkNode` attributes.
+// It allows for easy conversion between the enum and the `NodeAttribute` type.
+node_attribute_subset_enum! {
+    enum PiecewiseLinkNodeAttribute {
+        Inflow,
+        Outflow,
+    }
 }
 
 #[doc = svgbobdoc::transform!(
@@ -53,7 +63,7 @@ pub struct PiecewiseLinkNode {
 }
 
 impl PiecewiseLinkNode {
-    const DEFAULT_ATTRIBUTE: NodeAttribute = NodeAttribute::Outflow;
+    const DEFAULT_ATTRIBUTE: PiecewiseLinkNodeAttribute = PiecewiseLinkNodeAttribute::Outflow;
 
     fn step_sub_name(i: usize) -> Option<String> {
         Some(format!("step-{i:02}"))
@@ -75,7 +85,7 @@ impl PiecewiseLinkNode {
     }
 
     pub fn default_metric(&self) -> NodeAttribute {
-        Self::DEFAULT_ATTRIBUTE
+        Self::DEFAULT_ATTRIBUTE.into()
     }
 }
 
@@ -139,7 +149,10 @@ impl PiecewiseLinkNode {
         attribute: Option<NodeAttribute>,
     ) -> Result<MetricF64, SchemaError> {
         // Use the default attribute if none is specified
-        let attr = attribute.unwrap_or(Self::DEFAULT_ATTRIBUTE);
+        let attr = match attribute {
+            Some(attr) => attr.try_into()?,
+            None => Self::DEFAULT_ATTRIBUTE,
+        };
 
         let indices = self
             .steps
@@ -156,21 +169,14 @@ impl PiecewiseLinkNode {
             .collect::<Result<Vec<_>, _>>()?;
 
         let metric = match attr {
-            NodeAttribute::Inflow => MetricF64::MultiNodeInFlow {
+            PiecewiseLinkNodeAttribute::Inflow => MetricF64::MultiNodeInFlow {
                 indices,
                 name: self.meta.name.to_string(),
             },
-            NodeAttribute::Outflow => MetricF64::MultiNodeOutFlow {
+            PiecewiseLinkNodeAttribute::Outflow => MetricF64::MultiNodeOutFlow {
                 indices,
                 name: self.meta.name.to_string(),
             },
-            _ => {
-                return Err(SchemaError::NodeAttributeNotSupported {
-                    ty: "PiecewiseLinkNode".to_string(),
-                    name: self.meta.name.clone(),
-                    attr,
-                });
-            }
         };
 
         Ok(metric)

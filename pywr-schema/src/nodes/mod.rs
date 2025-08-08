@@ -1,4 +1,5 @@
 mod annual_virtual_storage;
+mod attributes;
 mod core;
 mod delay;
 mod loss_link;
@@ -22,15 +23,15 @@ use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::model::PywrNetwork;
+pub use crate::nodes::placeholder::PlaceholderNode;
 pub use crate::nodes::reservoir::{
     Bathymetry, BathymetryType, Evaporation, Leakage, Rainfall, ReservoirNode, SpillNodeType,
 };
-
-pub use crate::nodes::placeholder::PlaceholderNode;
 use crate::parameters::Parameter;
 use crate::v1::{ConversionData, TryFromV1, TryIntoV2};
 use crate::visit::{VisitMetrics, VisitPaths};
 pub use annual_virtual_storage::{AnnualReset, AnnualVirtualStorageNode};
+pub use attributes::NodeAttribute;
 pub use core::{
     AggregatedNode, AggregatedStorageNode, CatchmentNode, InputNode, LinkNode, OutputNode, Relationship,
     SoftConstraint, StorageInitialVolume, StorageNode,
@@ -55,7 +56,7 @@ use std::path::{Path, PathBuf};
 use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticStr};
 pub use turbine::{TargetType, TurbineNode};
 pub use virtual_storage::VirtualStorageNode;
-pub use water_treatment_works::WaterTreatmentWorks;
+pub use water_treatment_works::WaterTreatmentWorksNode;
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Copy, JsonSchema, PywrVisitAll)]
 pub struct NodePosition {
@@ -91,29 +92,6 @@ impl From<NodeMetaV1> for NodeMeta {
             position: v1.position.map(|p| p.into()),
         }
     }
-}
-
-/// All possible attributes that could be produced by a node.
-///
-///
-#[derive(
-    serde::Deserialize, serde::Serialize, Debug, Clone, Copy, Display, JsonSchema, PywrVisitAll, PartialEq, EnumIter,
-)]
-pub enum NodeAttribute {
-    Inflow,
-    Outflow,
-    Volume,
-    MaxVolume,
-    ProportionalVolume,
-    Loss,
-    Deficit,
-    Power,
-    /// The compensation flow out of a [`ReservoirNode`]
-    Compensation,
-    /// The rainfall volume into a [`ReservoirNode`]
-    Rainfall,
-    /// The evaporation volume out of a [`ReservoirNode`]
-    Evaporation,
 }
 
 pub struct NodeBuilder {
@@ -218,7 +196,7 @@ impl NodeBuilder {
                 meta,
                 ..Default::default()
             }),
-            NodeType::WaterTreatmentWorks => Node::WaterTreatmentWorks(WaterTreatmentWorks {
+            NodeType::WaterTreatmentWorks => Node::WaterTreatmentWorks(WaterTreatmentWorksNode {
                 meta,
                 ..Default::default()
             }),
@@ -282,7 +260,7 @@ pub enum Node {
     PiecewiseStorage(PiecewiseStorageNode),
     River(RiverNode),
     RiverSplitWithGauge(RiverSplitWithGaugeNode),
-    WaterTreatmentWorks(WaterTreatmentWorks),
+    WaterTreatmentWorks(WaterTreatmentWorksNode),
     Aggregated(AggregatedNode),
     AggregatedStorage(AggregatedStorageNode),
     VirtualStorage(VirtualStorageNode),

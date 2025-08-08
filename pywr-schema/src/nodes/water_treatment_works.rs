@@ -3,6 +3,7 @@ use crate::error::SchemaError;
 use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
+use crate::node_attribute_subset_enum;
 use crate::nodes::loss_link::LossFactor;
 use crate::nodes::{NodeAttribute, NodeMeta};
 use crate::parameters::Parameter;
@@ -10,6 +11,16 @@ use crate::parameters::Parameter;
 use pywr_core::metric::MetricF64;
 use pywr_schema_macros::PywrVisitAll;
 use schemars::JsonSchema;
+
+// This macro generates a subset enum for the `WaterTreatmentWorksNode` attributes.
+// It allows for easy conversion between the enum and the `NodeAttribute` type.
+node_attribute_subset_enum! {
+    enum WaterTreatmentWorksNodeAttribute {
+        Inflow,
+        Outflow,
+        Loss,
+    }
+}
 
 #[doc = svgbobdoc::transform!(
 /// A node used to represent a water treatment works (WTW) with optional losses.
@@ -38,7 +49,7 @@ use schemars::JsonSchema;
 )]
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
-pub struct WaterTreatmentWorks {
+pub struct WaterTreatmentWorksNode {
     /// Node metadata
     pub meta: NodeMeta,
     /// Optional local parameters.
@@ -58,8 +69,8 @@ pub struct WaterTreatmentWorks {
     pub cost: Option<Metric>,
 }
 
-impl WaterTreatmentWorks {
-    const DEFAULT_ATTRIBUTE: NodeAttribute = NodeAttribute::Outflow;
+impl WaterTreatmentWorksNode {
+    const DEFAULT_ATTRIBUTE: WaterTreatmentWorksNodeAttribute = WaterTreatmentWorksNodeAttribute::Outflow;
 
     fn loss_sub_name() -> Option<&'static str> {
         Some("loss")
@@ -102,12 +113,12 @@ impl WaterTreatmentWorks {
     }
 
     pub fn default_metric(&self) -> NodeAttribute {
-        Self::DEFAULT_ATTRIBUTE
+        Self::DEFAULT_ATTRIBUTE.into()
     }
 }
 
 #[cfg(feature = "core")]
-impl WaterTreatmentWorks {
+impl WaterTreatmentWorksNode {
     fn agg_sub_name() -> Option<&'static str> {
         Some("agg")
     }
@@ -204,10 +215,13 @@ impl WaterTreatmentWorks {
         attribute: Option<NodeAttribute>,
     ) -> Result<MetricF64, SchemaError> {
         // Use the default attribute if none is specified
-        let attr = attribute.unwrap_or(Self::DEFAULT_ATTRIBUTE);
+        let attr = match attribute {
+            Some(attr) => attr.try_into()?,
+            None => Self::DEFAULT_ATTRIBUTE,
+        };
 
         let metric = match attr {
-            NodeAttribute::Inflow => {
+            WaterTreatmentWorksNodeAttribute::Inflow => {
                 match network.get_node_index_by_name(self.meta.name.as_str(), Self::loss_sub_name()) {
                     // Loss node is defined. The total inflow is the sum of the net and loss nodes;
                     Some(loss_idx) => {
@@ -236,7 +250,7 @@ impl WaterTreatmentWorks {
                     ),
                 }
             }
-            NodeAttribute::Outflow => {
+            WaterTreatmentWorksNodeAttribute::Outflow => {
                 let idx = network
                     .get_node_index_by_name(self.meta.name.as_str(), Self::net_sub_name())
                     .ok_or_else(|| SchemaError::CoreNodeNotFound {
@@ -245,18 +259,11 @@ impl WaterTreatmentWorks {
                     })?;
                 MetricF64::NodeOutFlow(idx)
             }
-            NodeAttribute::Loss => {
+            WaterTreatmentWorksNodeAttribute::Loss => {
                 match network.get_node_index_by_name(self.meta.name.as_str(), Self::loss_sub_name()) {
                     Some(idx) => MetricF64::NodeInFlow(idx),
                     None => 0.0.into(),
                 }
-            }
-            _ => {
-                return Err(SchemaError::NodeAttributeNotSupported {
-                    ty: "WaterTreatmentWorksNode".to_string(),
-                    name: self.meta.name.clone(),
-                    attr,
-                });
             }
         };
 

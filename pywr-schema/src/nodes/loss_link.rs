@@ -4,6 +4,7 @@ use crate::error::SchemaError;
 use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
+use crate::node_attribute_subset_enum;
 use crate::nodes::{NodeAttribute, NodeMeta};
 use crate::parameters::Parameter;
 use crate::v1::{ConversionData, TryFromV1, try_convert_node_attr};
@@ -63,6 +64,16 @@ impl LossFactor {
     }
 }
 
+// This macro generates a subset enum for the `LossLinkNode` attributes.
+// It allows for easy conversion between the enum and the `NodeAttribute` type.
+node_attribute_subset_enum! {
+    enum LossLinkNodeAttribute {
+        Inflow,
+        Outflow,
+        Loss,
+    }
+}
+
 #[doc = svgbobdoc::transform!(
 /// This is used to represent a link with losses.
 ///
@@ -97,7 +108,7 @@ pub struct LossLinkNode {
 }
 
 impl LossLinkNode {
-    const DEFAULT_ATTRIBUTE: NodeAttribute = NodeAttribute::Outflow;
+    const DEFAULT_ATTRIBUTE: LossLinkNodeAttribute = LossLinkNodeAttribute::Outflow;
 
     fn loss_sub_name() -> Option<&'static str> {
         Some("loss")
@@ -125,7 +136,7 @@ impl LossLinkNode {
     }
 
     pub fn default_metric(&self) -> NodeAttribute {
-        Self::DEFAULT_ATTRIBUTE
+        Self::DEFAULT_ATTRIBUTE.into()
     }
 }
 
@@ -206,10 +217,13 @@ impl LossLinkNode {
         attribute: Option<NodeAttribute>,
     ) -> Result<MetricF64, SchemaError> {
         // Use the default attribute if none is specified
-        let attr = attribute.unwrap_or(Self::DEFAULT_ATTRIBUTE);
+        let attr = match attribute {
+            Some(attr) => attr.try_into()?,
+            None => Self::DEFAULT_ATTRIBUTE,
+        };
 
         let metric = match attr {
-            NodeAttribute::Inflow => {
+            LossLinkNodeAttribute::Inflow => {
                 match network.get_node_index_by_name(self.meta.name.as_str(), Self::loss_sub_name()) {
                     // Loss node is defined. The total inflow is the sum of the net and loss nodes;
                     Some(loss_idx) => {
@@ -238,7 +252,7 @@ impl LossLinkNode {
                     ),
                 }
             }
-            NodeAttribute::Outflow => {
+            LossLinkNodeAttribute::Outflow => {
                 let idx = network
                     .get_node_index_by_name(self.meta.name.as_str(), Self::net_sub_name())
                     .ok_or_else(|| SchemaError::CoreNodeNotFound {
@@ -247,18 +261,11 @@ impl LossLinkNode {
                     })?;
                 MetricF64::NodeOutFlow(idx)
             }
-            NodeAttribute::Loss => {
+            LossLinkNodeAttribute::Loss => {
                 match network.get_node_index_by_name(self.meta.name.as_str(), Self::loss_sub_name()) {
                     Some(idx) => MetricF64::NodeInFlow(idx),
                     None => 0.0.into(),
                 }
-            }
-            _ => {
-                return Err(SchemaError::NodeAttributeNotSupported {
-                    ty: "LossLinkNode".to_string(),
-                    name: self.meta.name.clone(),
-                    attr,
-                });
             }
         };
 

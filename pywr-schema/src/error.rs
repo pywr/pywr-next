@@ -24,12 +24,8 @@ pub enum SchemaError {
     // Use this error when a node is not found in a pywr-core network (i.e. during building the network).
     #[error("Node with name `{name}` and sub-name `{}` not found in the network.", .sub_name.as_deref().unwrap_or("None"))]
     CoreNodeNotFound { name: String, sub_name: Option<String> },
-    #[error("node ({ty}) with name {name} does not support attribute {attr}")]
-    NodeAttributeNotSupported {
-        ty: String,
-        name: String,
-        attr: NodeAttribute,
-    },
+    #[error("Attribute `{attr}` not supported.")]
+    NodeAttributeNotSupported { attr: NodeAttribute },
     // Use this error when a parameter is not found in the schema (i.e. while parsing the schema).
     #[error("Parameter `{name}` not found in the schema.")]
     ParameterNotFound { name: String, key: Option<String> },
