@@ -679,7 +679,7 @@ pub enum PywrNetworkRef {
 /// JSON file. The schema is used to "build" a [`pywr_core::models::Model`] which can then be
 /// "run" to produce results. The purpose of the schema is to provide a higher level and more
 /// user friendly interface to model definition than the core model itself. This allows
-/// abstractions, such as [`crate::nodes::WaterTreatmentWorks`], to be created and used in the
+/// abstractions, such as [`crate::nodes::WaterTreatmentWorksNode`], to be created and used in the
 /// schema without the user needing to know the details of how this is implemented in the core
 /// model.
 ///
