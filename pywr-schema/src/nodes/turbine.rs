@@ -3,9 +3,9 @@ use crate::SchemaError;
 use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
-use crate::node_attribute_subset_enum;
-use crate::nodes::{NodeAttribute, NodeMeta};
+use crate::nodes::{NodeAttribute, NodeComponent, NodeMeta};
 use crate::parameters::Parameter;
+use crate::{node_attribute_subset_enum, node_component_subset_enum};
 #[cfg(feature = "core")]
 use pywr_core::{
     derived_metric::{DerivedMetric, TurbineData},
@@ -31,15 +31,28 @@ pub enum TargetType {
 // This macro generates a subset enum for the `TurbineNode` attributes.
 // It allows for easy conversion between the enum and the `NodeAttribute` type.
 node_attribute_subset_enum! {
-    enum TurbineNodeAttribute {
+    pub enum TurbineNodeAttribute {
         Inflow,
         Outflow,
         Power,
     }
 }
 
+node_component_subset_enum! {
+    pub enum TurbineNodeComponent {
+        Inflow,
+        Outflow,
+    }
+}
+
 /// This turbine node can be used to set a flow constraint based on a hydropower production target.
 /// The turbine elevation, minimum head and efficiency can also be configured.
+///
+/// # Available attributes and components
+///
+/// The enums [`TurbineNodeAttribute`] and [`TurbineNodeComponent`] define the available
+/// attributes and components for this node.
+///
 #[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct TurbineNode {
@@ -98,6 +111,7 @@ impl Default for TurbineNode {
 
 impl TurbineNode {
     const DEFAULT_ATTRIBUTE: TurbineNodeAttribute = TurbineNodeAttribute::Outflow;
+    const DEFAULT_COMPONENT: TurbineNodeComponent = TurbineNodeComponent::Outflow;
 
     pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
         vec![(self.meta.name.as_str(), None)]
@@ -106,8 +120,8 @@ impl TurbineNode {
         vec![(self.meta.name.as_str(), None)]
     }
 
-    pub fn default_metric(&self) -> NodeAttribute {
-        Self::DEFAULT_ATTRIBUTE.into()
+    pub fn default_attribute(&self) -> TurbineNodeAttribute {
+        Self::DEFAULT_ATTRIBUTE
     }
 }
 
@@ -117,16 +131,25 @@ impl TurbineNode {
         Some("turbine")
     }
 
-    pub fn node_indices_for_constraints(
+    pub fn node_indices_for_flow_constraints(
         &self,
         network: &pywr_core::network::Network,
+        component: Option<NodeComponent>,
     ) -> Result<Vec<pywr_core::node::NodeIndex>, SchemaError> {
-        let idx = network
-            .get_node_index_by_name(self.meta.name.as_str(), None)
-            .ok_or_else(|| SchemaError::CoreNodeNotFound {
-                name: self.meta.name.clone(),
-                sub_name: None,
-            })?;
+        // Use the default component if none is specified
+        let component = match component {
+            Some(c) => c.try_into()?,
+            None => Self::DEFAULT_COMPONENT,
+        };
+        let idx = match component {
+            TurbineNodeComponent::Inflow | TurbineNodeComponent::Outflow => network
+                .get_node_index_by_name(self.meta.name.as_str(), Self::sub_name())
+                .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                    name: self.meta.name.clone(),
+                    sub_name: Self::sub_name().map(String::from),
+                })?,
+        };
+
         Ok(vec![idx])
     }
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network, _args: &LoadArgs) -> Result<(), SchemaError> {

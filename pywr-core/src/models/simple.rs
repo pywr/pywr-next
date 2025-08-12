@@ -3,12 +3,13 @@ use crate::network::{
     Network, NetworkFinaliseError, NetworkRecorderSaveError, NetworkRecorderSetupError, NetworkSetupError,
     NetworkSolverSetupError, NetworkState, NetworkStepError, NetworkTimings, RunDuration,
 };
-use crate::solvers::{MultiStateSolver, Solver, SolverSettings};
+use crate::solvers::{MultiStateSolver, Solver, SolverFeatures, SolverSettings};
 use crate::timestep::Timestep;
 #[cfg(feature = "pyo3")]
 use pyo3::{PyErr, exceptions::PyRuntimeError};
 use rayon::ThreadPool;
 use std::any::Any;
+use std::collections::HashSet;
 use std::time::Instant;
 use thiserror::Error;
 use tracing::{debug, info};
@@ -107,6 +108,10 @@ impl Model {
 
     pub fn network(&self) -> &Network {
         &self.network
+    }
+
+    pub fn required_features(&self) -> HashSet<SolverFeatures> {
+        self.network.required_features()
     }
 
     pub fn network_mut(&mut self) -> &mut Network {

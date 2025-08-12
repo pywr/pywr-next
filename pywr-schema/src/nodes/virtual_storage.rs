@@ -1,7 +1,7 @@
 use crate::error::ComponentConversionError;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
-use crate::metric::{Metric, SimpleNodeReference};
+use crate::metric::{Metric, NodeComponentReference};
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::node_attribute_subset_enum;
@@ -22,19 +22,33 @@ use schemars::JsonSchema;
 // This macro generates a subset enum for the `VirtualStorageNode` attributes.
 // It allows for easy conversion between the enum and the `NodeAttribute` type.
 node_attribute_subset_enum! {
-    enum VirtualStorageNodeAttribute {
+    pub enum VirtualStorageNodeAttribute {
         Volume,
         ProportionalVolume,
     }
 }
 
+/// A virtual storage node that can be used to represent non-physical storage constraints.
+///
+/// This is typically used to represent storage limits that are associated with licences or
+/// other artificial constraints. The storage is drawdown by the nodes specified in the
+/// `nodes` field. The `component` of the node reference is used to determine the flow that is
+/// used by storage. The rate of drawdown is determined by the `factors` field, which
+/// multiplies the flow by the factor to determine the rate of drawdown. If not specified
+/// the factor is assumed to be 1.0 for each node.
+///
+/// The `max_volume` and `min_volume` fields are used to determine the maximum and minimum
+/// volume of the storage. If `max_volume` is not specified then the storage is
+/// unlimited. If `min_volume` is not specified then it is assumed to be zero.
+///
+// TODO write the cost documentation when linking a node to this cost is supported in the schema.
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct VirtualStorageNode {
     pub meta: NodeMeta,
     /// Optional local parameters.
     pub parameters: Option<Vec<Parameter>>,
-    pub nodes: Vec<SimpleNodeReference>,
+    pub nodes: Vec<NodeComponentReference>,
     pub factors: Option<Vec<f64>>,
     pub max_volume: Option<Metric>,
     pub min_volume: Option<Metric>,
@@ -53,14 +67,18 @@ impl VirtualStorageNode {
         vec![]
     }
 
-    pub fn default_metric(&self) -> NodeAttribute {
-        Self::DEFAULT_ATTRIBUTE.into()
+    pub fn default_attribute(&self) -> VirtualStorageNodeAttribute {
+        Self::DEFAULT_ATTRIBUTE
     }
 }
 
 #[cfg(feature = "core")]
 impl VirtualStorageNode {
-    pub fn node_indices_for_constraints(
+    /// This returns the node indices for flow constraints based on the nodes referenced in this virtual storage node.
+    ///
+    /// Note that this is a private function, as it is not supported using this node itself
+    /// inside a flow constraint.
+    fn node_indices_for_flow_constraints(
         &self,
         network: &pywr_core::network::Network,
         args: &LoadArgs,
@@ -68,13 +86,13 @@ impl VirtualStorageNode {
         let indices = self
             .nodes
             .iter()
-            .map(|name_ref| {
+            .map(|node_ref| {
                 args.schema
-                    .get_node_by_name(&name_ref.name)
+                    .get_node_by_name(&node_ref.name)
                     .ok_or_else(|| SchemaError::NodeNotFound {
-                        name: name_ref.name.to_string(),
+                        name: node_ref.name.to_string(),
                     })?
-                    .node_indices_for_constraints(network, args)
+                    .node_indices_for_flow_constraints(network, node_ref.component)
             })
             .collect::<Result<Vec<_>, _>>()?
             .into_iter()
@@ -98,7 +116,7 @@ impl VirtualStorageNode {
             None => None,
         };
 
-        let node_idxs = self.node_indices_for_constraints(network, args)?;
+        let node_idxs = self.node_indices_for_flow_constraints(network, args)?;
 
         // Standard virtual storage node never resets.
         let reset = VirtualStorageReset::Never;

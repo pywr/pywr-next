@@ -25,7 +25,7 @@ pub struct PiecewiseStore {
 // This macro generates a subset enum for the `PiecewiseStorageNode` attributes.
 // It allows for easy conversion between the enum and the `NodeAttribute` type.
 node_attribute_subset_enum! {
-    enum PiecewiseStorageNodeAttribute {
+    pub enum PiecewiseStorageNodeAttribute {
         Volume,
         ProportionalVolume,
     }
@@ -59,6 +59,11 @@ node_attribute_subset_enum! {
 ///      <node>.n    S
 /// ```
 ///
+/// # Available attributes and components
+///
+/// The enum [`PiecewiseStorageNodeAttribute`] defines the available attributes. There are no components
+/// to choose from.
+///
 )]
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
@@ -87,8 +92,8 @@ impl PiecewiseStorageNode {
         vec![(self.meta.name.as_str(), Self::step_sub_name(self.steps.len()))]
     }
 
-    pub fn default_metric(&self) -> NodeAttribute {
-        Self::DEFAULT_ATTRIBUTE.into()
+    pub fn default_attribute(&self) -> PiecewiseStorageNodeAttribute {
+        Self::DEFAULT_ATTRIBUTE
     }
 }
 
@@ -98,15 +103,14 @@ impl PiecewiseStorageNode {
         Some("agg-store")
     }
 
-    pub fn node_indices_for_constraints(
+    pub fn node_indices_for_storage_constraints(
         &self,
         network: &pywr_core::network::Network,
     ) -> Result<Vec<pywr_core::node::NodeIndex>, SchemaError> {
-        let indices = self
-            .steps
-            .iter()
-            .enumerate()
-            .map(|(i, _)| {
+        // Get the indices of all the sub-nodes for this piecewise storage node (including
+        // the final one that represents the residual part above the last step).
+        let indices = (0..self.steps.len() + 1)
+            .map(|i| {
                 network
                     .get_node_index_by_name(self.meta.name.as_str(), Self::step_sub_name(i).as_deref())
                     .ok_or_else(|| SchemaError::CoreNodeNotFound {
@@ -115,6 +119,7 @@ impl PiecewiseStorageNode {
                     })
             })
             .collect::<Result<Vec<_>, _>>()?;
+
         Ok(indices)
     }
 

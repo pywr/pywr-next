@@ -312,8 +312,10 @@ where
     if expect_features {
         assert!(
             has_features,
-            "Solver `{}` was expected to have the required features",
-            S::name()
+            "Solver `{}` (with features: {:#?}) was expected to have the required features: {:?}",
+            S::name(),
+            S::features(),
+            model.required_features()
         );
         model
             .run_multi_scenario::<S>(&Default::default())

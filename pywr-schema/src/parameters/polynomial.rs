@@ -1,6 +1,6 @@
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
-use crate::metric::{Metric, NodeReference};
+use crate::metric::{Metric, NodeAttrReference};
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::nodes::NodeAttribute;
@@ -51,7 +51,7 @@ impl FromV1<Polynomial1DParameterV1> for Polynomial1DParameter {
             false => Some(NodeAttribute::Volume),
         };
 
-        let metric = Metric::Node(NodeReference {
+        let metric = Metric::Node(NodeAttrReference {
             name: v1.storage_node,
             attribute,
         });

@@ -3,9 +3,9 @@ use crate::error::SchemaError;
 use crate::error::{ComponentConversionError, ConversionError};
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
-use crate::node_attribute_subset_enum;
-use crate::nodes::{LossFactor, NodeAttribute, NodeMeta};
+use crate::nodes::{LossFactor, NodeAttribute, NodeComponent, NodeMeta};
 use crate::parameters::Parameter;
+use crate::{node_attribute_subset_enum, node_component_subset_enum};
 #[cfg(feature = "core")]
 use pywr_core::metric::MetricF64;
 use pywr_schema_macros::PywrVisitAll;
@@ -15,7 +15,15 @@ use schemars::JsonSchema;
 // This macro generates a subset enum for the `RiverNode` attributes.
 // It allows for easy conversion between the enum and the `NodeAttribute` type.
 node_attribute_subset_enum! {
-    enum RiverNodeAttribute {
+    pub enum RiverNodeAttribute {
+        Inflow,
+        Outflow,
+        Loss,
+    }
+}
+
+node_component_subset_enum! {
+    pub enum RiverNodeComponent {
         Inflow,
         Outflow,
         Loss,
@@ -38,6 +46,12 @@ node_attribute_subset_enum! {
 ///               <RiverNode>.loss
 ///
 /// ```
+///
+/// # Available attributes and components
+///
+/// The enums [`RiverNodeAttribute`] and [`RiverNodeComponent`] define the available
+/// attributes and components for this node.
+///
 )]
 pub struct RiverNode {
     pub meta: NodeMeta,
@@ -50,41 +64,33 @@ pub struct RiverNode {
 
 impl RiverNode {
     const DEFAULT_ATTRIBUTE: RiverNodeAttribute = RiverNodeAttribute::Outflow;
+    const DEFAULT_COMPONENT: RiverNodeComponent = RiverNodeComponent::Outflow;
 
     /// The sub-name of the output node.
-    fn loss_node_sub_name() -> Option<&'static str> {
+    fn loss_sub_name() -> Option<&'static str> {
         Some("loss")
     }
 
     /// The name of net flow node.
-    fn net_node_sub_name() -> Option<&'static str> {
+    fn net_sub_name() -> Option<&'static str> {
         Some("net")
     }
 
     pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
-        let mut connectors = vec![(
-            self.meta.name.as_str(),
-            Self::net_node_sub_name().map(|s| s.to_string()),
-        )];
+        let mut connectors = vec![(self.meta.name.as_str(), Self::net_sub_name().map(|s| s.to_string()))];
 
         // add the optional loss link
         if self.loss_factor.is_some() {
-            connectors.push((
-                self.meta.name.as_str(),
-                Self::loss_node_sub_name().map(|s| s.to_string()),
-            ))
+            connectors.push((self.meta.name.as_str(), Self::loss_sub_name().map(|s| s.to_string())))
         }
         connectors
     }
     pub fn output_connectors(&self) -> Vec<(&str, Option<String>)> {
-        vec![(
-            self.meta.name.as_str(),
-            Self::net_node_sub_name().map(|s| s.to_string()),
-        )]
+        vec![(self.meta.name.as_str(), Self::net_sub_name().map(|s| s.to_string()))]
     }
 
-    pub fn default_metric(&self) -> NodeAttribute {
-        Self::DEFAULT_ATTRIBUTE.into()
+    pub fn default_attribute(&self) -> RiverNodeAttribute {
+        Self::DEFAULT_ATTRIBUTE
     }
 }
 
@@ -95,26 +101,69 @@ impl RiverNode {
         Some("aggregated_node")
     }
 
-    pub fn node_indices_for_constraints(
+    pub fn node_indices_for_flow_constraints(
         &self,
         network: &pywr_core::network::Network,
+        component: Option<NodeComponent>,
     ) -> Result<Vec<pywr_core::node::NodeIndex>, SchemaError> {
-        let idx = network
-            .get_node_index_by_name(self.meta.name.as_str(), Self::net_node_sub_name())
-            .ok_or_else(|| SchemaError::CoreNodeNotFound {
-                name: self.meta.name.clone(),
-                sub_name: Self::net_node_sub_name().map(String::from),
-            })?;
+        // Use the default attribute if none is specified
+        let component = match component {
+            Some(c) => c.try_into()?,
+            None => Self::DEFAULT_COMPONENT,
+        };
 
-        Ok(vec![idx])
+        let indices = match component {
+            RiverNodeComponent::Inflow => {
+                // If the loss node is defined, we need to return both the net and loss nodes
+                match network.get_node_index_by_name(self.meta.name.as_str(), Self::loss_sub_name()) {
+                    Some(loss_idx) => {
+                        vec![
+                            network
+                                .get_node_index_by_name(self.meta.name.as_str(), Self::net_sub_name())
+                                .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                                    name: self.meta.name.clone(),
+                                    sub_name: Self::net_sub_name().map(String::from),
+                                })?,
+                            loss_idx,
+                        ]
+                    }
+                    None => vec![
+                        network
+                            .get_node_index_by_name(self.meta.name.as_str(), Self::net_sub_name())
+                            .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                                name: self.meta.name.clone(),
+                                sub_name: Self::net_sub_name().map(String::from),
+                            })?,
+                    ],
+                }
+            }
+            RiverNodeComponent::Outflow => {
+                vec![
+                    network
+                        .get_node_index_by_name(self.meta.name.as_str(), Self::net_sub_name())
+                        .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                            name: self.meta.name.clone(),
+                            sub_name: Self::net_sub_name().map(String::from),
+                        })?,
+                ]
+            }
+            RiverNodeComponent::Loss => {
+                match network.get_node_index_by_name(self.meta.name.as_str(), Self::loss_sub_name()) {
+                    Some(idx) => vec![idx],
+                    None => return Ok(vec![]), // No loss node defined, so return empty
+                }
+            }
+        };
+
+        Ok(indices)
     }
 
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
-        let river_idx = network.add_link_node(self.meta.name.as_str(), Self::net_node_sub_name())?;
+        let river_idx = network.add_link_node(self.meta.name.as_str(), Self::net_sub_name())?;
 
         // add nodes and edge
         if self.loss_factor.is_some() {
-            let loss_idx = network.add_output_node(self.meta.name.as_str(), Self::loss_node_sub_name())?;
+            let loss_idx = network.add_output_node(self.meta.name.as_str(), Self::loss_sub_name())?;
             // The aggregated node factors to handle the loss
             network.add_aggregated_node(
                 self.meta.name.as_str(),
@@ -136,7 +185,7 @@ impl RiverNode {
             let factors = loss_factor.load(network, args, Some(&self.meta.name))?;
             if factors.is_none() {
                 // Loaded a constant zero factor; ensure that the loss node has zero flow
-                network.set_node_max_flow(self.meta.name.as_str(), Self::loss_node_sub_name(), Some(0.0.into()))?;
+                network.set_node_max_flow(self.meta.name.as_str(), Self::loss_sub_name(), Some(0.0.into()))?;
             }
             network.set_aggregated_node_relationship(self.meta.name.as_str(), Self::agg_sub_name(), factors)?;
         }
@@ -157,15 +206,15 @@ impl RiverNode {
 
         let metric = match attr {
             RiverNodeAttribute::Inflow => {
-                match network.get_node_index_by_name(self.meta.name.as_str(), Self::loss_node_sub_name()) {
+                match network.get_node_index_by_name(self.meta.name.as_str(), Self::loss_sub_name()) {
                     // The total inflow with the loss is the sum of the net and loss node
                     Some(loss_idx) => {
                         let indices = vec![
                             network
-                                .get_node_index_by_name(self.meta.name.as_str(), Self::net_node_sub_name())
+                                .get_node_index_by_name(self.meta.name.as_str(), Self::net_sub_name())
                                 .ok_or_else(|| SchemaError::CoreNodeNotFound {
                                     name: self.meta.name.clone(),
-                                    sub_name: Self::net_node_sub_name().map(String::from),
+                                    sub_name: Self::net_sub_name().map(String::from),
                                 })?,
                             loss_idx,
                         ];
@@ -177,25 +226,25 @@ impl RiverNode {
                     // Loss is None
                     None => MetricF64::NodeInFlow(
                         network
-                            .get_node_index_by_name(self.meta.name.as_str(), Self::net_node_sub_name())
+                            .get_node_index_by_name(self.meta.name.as_str(), Self::net_sub_name())
                             .ok_or_else(|| SchemaError::CoreNodeNotFound {
                                 name: self.meta.name.clone(),
-                                sub_name: Self::net_node_sub_name().map(String::from),
+                                sub_name: Self::net_sub_name().map(String::from),
                             })?,
                     ),
                 }
             }
             RiverNodeAttribute::Outflow => {
                 let idx = network
-                    .get_node_index_by_name(self.meta.name.as_str(), Self::net_node_sub_name())
+                    .get_node_index_by_name(self.meta.name.as_str(), Self::net_sub_name())
                     .ok_or_else(|| SchemaError::CoreNodeNotFound {
                         name: self.meta.name.clone(),
-                        sub_name: Self::net_node_sub_name().map(String::from),
+                        sub_name: Self::net_sub_name().map(String::from),
                     })?;
                 MetricF64::NodeOutFlow(idx)
             }
             RiverNodeAttribute::Loss => {
-                match network.get_node_index_by_name(self.meta.name.as_str(), Self::loss_node_sub_name()) {
+                match network.get_node_index_by_name(self.meta.name.as_str(), Self::loss_sub_name()) {
                     Some(loss_idx) => MetricF64::NodeInFlow(loss_idx),
                     None => 0.0.into(),
                 }

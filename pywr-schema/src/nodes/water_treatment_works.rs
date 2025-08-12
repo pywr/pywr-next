@@ -3,10 +3,10 @@ use crate::error::SchemaError;
 use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
-use crate::node_attribute_subset_enum;
 use crate::nodes::loss_link::LossFactor;
-use crate::nodes::{NodeAttribute, NodeMeta};
+use crate::nodes::{NodeAttribute, NodeComponent, NodeMeta};
 use crate::parameters::Parameter;
+use crate::{node_attribute_subset_enum, node_component_subset_enum};
 #[cfg(feature = "core")]
 use pywr_core::metric::MetricF64;
 use pywr_schema_macros::PywrVisitAll;
@@ -15,7 +15,15 @@ use schemars::JsonSchema;
 // This macro generates a subset enum for the `WaterTreatmentWorksNode` attributes.
 // It allows for easy conversion between the enum and the `NodeAttribute` type.
 node_attribute_subset_enum! {
-    enum WaterTreatmentWorksNodeAttribute {
+    pub enum WaterTreatmentWorksNodeAttribute {
+        Inflow,
+        Outflow,
+        Loss,
+    }
+}
+
+node_component_subset_enum! {
+    pub enum WaterTreatmentWorksNodeComponent {
         Inflow,
         Outflow,
         Loss,
@@ -46,6 +54,11 @@ node_attribute_subset_enum! {
 ///            <node>.loss
 /// ```
 ///
+/// # Available attributes and components
+///
+/// The enums [`WaterTreatmentWorksNodeAttribute`] and [`WaterTreatmentWorksNodeComponent`] define the available
+/// attributes and components for this node.
+///
 )]
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
@@ -71,6 +84,7 @@ pub struct WaterTreatmentWorksNode {
 
 impl WaterTreatmentWorksNode {
     const DEFAULT_ATTRIBUTE: WaterTreatmentWorksNodeAttribute = WaterTreatmentWorksNodeAttribute::Outflow;
+    const DEFAULT_COMPONENT: WaterTreatmentWorksNodeComponent = WaterTreatmentWorksNodeComponent::Outflow;
 
     fn loss_sub_name() -> Option<&'static str> {
         Some("loss")
@@ -112,8 +126,8 @@ impl WaterTreatmentWorksNode {
         ]
     }
 
-    pub fn default_metric(&self) -> NodeAttribute {
-        Self::DEFAULT_ATTRIBUTE.into()
+    pub fn default_attribute(&self) -> WaterTreatmentWorksNodeAttribute {
+        Self::DEFAULT_ATTRIBUTE
     }
 }
 
@@ -123,17 +137,61 @@ impl WaterTreatmentWorksNode {
         Some("agg")
     }
 
-    pub fn node_indices_for_constraints(
+    pub fn node_indices_for_flow_constraints(
         &self,
         network: &pywr_core::network::Network,
+        component: Option<NodeComponent>,
     ) -> Result<Vec<pywr_core::node::NodeIndex>, SchemaError> {
-        let idx = network
-            .get_node_index_by_name(self.meta.name.as_str(), Self::net_sub_name())
-            .ok_or_else(|| SchemaError::CoreNodeNotFound {
-                name: self.meta.name.clone(),
-                sub_name: Self::net_sub_name().map(String::from),
-            })?;
-        Ok(vec![idx])
+        // Use the default attribute if none is specified
+        let component = match component {
+            Some(c) => c.try_into()?,
+            None => Self::DEFAULT_COMPONENT,
+        };
+
+        let indices = match component {
+            WaterTreatmentWorksNodeComponent::Inflow => {
+                // If the loss node is defined, we need to return both the net and loss nodes
+                match network.get_node_index_by_name(self.meta.name.as_str(), Self::loss_sub_name()) {
+                    Some(loss_idx) => {
+                        vec![
+                            network
+                                .get_node_index_by_name(self.meta.name.as_str(), Self::net_sub_name())
+                                .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                                    name: self.meta.name.clone(),
+                                    sub_name: Self::net_sub_name().map(String::from),
+                                })?,
+                            loss_idx,
+                        ]
+                    }
+                    None => vec![
+                        network
+                            .get_node_index_by_name(self.meta.name.as_str(), Self::net_sub_name())
+                            .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                                name: self.meta.name.clone(),
+                                sub_name: Self::net_sub_name().map(String::from),
+                            })?,
+                    ],
+                }
+            }
+            WaterTreatmentWorksNodeComponent::Outflow => {
+                vec![
+                    network
+                        .get_node_index_by_name(self.meta.name.as_str(), Self::net_sub_name())
+                        .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                            name: self.meta.name.clone(),
+                            sub_name: Self::net_sub_name().map(String::from),
+                        })?,
+                ]
+            }
+            WaterTreatmentWorksNodeComponent::Loss => {
+                match network.get_node_index_by_name(self.meta.name.as_str(), Self::loss_sub_name()) {
+                    Some(idx) => vec![idx],
+                    None => return Ok(vec![]), // No loss node defined, so return empty
+                }
+            }
+        };
+
+        Ok(indices)
     }
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
         let idx_net = network.add_link_node(self.meta.name.as_str(), Self::net_sub_name())?;
