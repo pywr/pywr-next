@@ -1,3 +1,4 @@
+use crate::ConversionError;
 use crate::error::ComponentConversionError;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
@@ -5,10 +6,10 @@ use crate::metric::{Metric, NodeReference};
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::parameters::{ConversionData, ParameterMeta};
-use crate::v1::{try_convert_parameter_attr, IntoV2, TryFromV1};
-use crate::ConversionError;
+use crate::v1::{IntoV2, TryFromV1, try_convert_parameter_attr};
+
 #[cfg(feature = "core")]
-use pywr_core::parameters::ParameterIndex;
+use pywr_core::parameters::{ParameterIndex, ParameterName};
 use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::parameters::{
     InterpolatedFlowParameter as InterpolatedFlowParameterV1,
@@ -37,6 +38,7 @@ impl InterpolatedParameter {
         &self,
         network: &mut pywr_core::network::Network,
         args: &LoadArgs,
+        parent: Option<&str>,
     ) -> Result<ParameterIndex<f64>, SchemaError> {
         let x = self.x.load(network, args, None)?;
 
@@ -62,7 +64,7 @@ impl InterpolatedParameter {
         let points = xp.into_iter().zip(fp).collect::<Vec<_>>();
 
         let p = pywr_core::parameters::InterpolatedParameter::new(
-            self.meta.name.as_str().into(),
+            ParameterName::new(&self.meta.name, parent),
             x,
             points,
             self.error_on_bounds.unwrap_or(true),

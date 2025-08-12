@@ -1,5 +1,5 @@
 #[cfg(feature = "core")]
-use pywr_core::test_utils::{run_all_solvers, ExpectedOutputs};
+use pywr_core::test_utils::{ExpectedOutputs, run_all_solvers};
 use pywr_schema::PywrModel;
 use std::fs;
 use std::path::Path;
@@ -44,10 +44,15 @@ model_tests! {
     test_hdf1: ("hdf1.json", vec![], vec![], vec![]), // TODO asserting h5 results not possible with this framework
     test_memory1: ("memory1.json", vec![], vec![], vec![]),  // TODO asserting memory results not possible with this framework
     test_timeseries: ("timeseries.json", vec!["timeseries-expected.csv"], vec![], vec![]),
+    test_timeseries2: ("timeseries2.json", vec!["timeseries2-expected.csv"], vec![], vec![]),
+    test_timeseries3: ("timeseries3.json", vec!["timeseries3-expected.csv"], vec![], vec![]),
+    test_timeseries4: ("timeseries4.json", vec!["timeseries4-expected.csv"], vec![], vec![]),
+    test_timeseries5: ("timeseries5.json", vec!["timeseries5-expected.csv"], vec![], vec![]),
     test_storage_max_volumes: ("storage_max_volumes.json", vec![], vec![], vec![]),
     test_mutual_exclusivity1: ("mutual-exclusivity1.json", vec!["mutual-exclusivity1.csv"], vec!["clp", "ipm-simd", "ipm-ocl"], vec![]),
     test_mutual_exclusivity2: ("mutual-exclusivity2.json", vec!["mutual-exclusivity2.csv"], vec!["clp", "ipm-simd", "ipm-ocl"], vec![]),
     test_mutual_exclusivity3: ("mutual-exclusivity3.json", vec!["mutual-exclusivity3.csv"], vec!["clp", "ipm-simd", "ipm-ocl"], vec![]),
+    test_mutual_exclusivity4: ("mutual-exclusivity4.json", vec!["mutual-exclusivity4.csv"], vec!["clp", "ipm-simd", "ipm-ocl"], vec![]),
     test_link_with_soft_min: ("link_with_soft_min.json", vec![], vec!["ipm-simd", "ipm-ocl"], vec![]),
     test_link_with_soft_max: ("link_with_soft_max.json", vec![], vec!["ipm-simd", "ipm-ocl"], vec![]),
     test_delay1: ("delay1.json", vec!["delay1-expected.csv"], vec![], vec![]),
@@ -59,24 +64,30 @@ model_tests! {
     test_piecewise_storage1: ("piecewise_storage1.json", vec!["piecewise_storage1-expected.csv"], vec![], vec!["ipm-simd", "ipm-ocl"]),
     // TODO not sure why this is failing in IPM solvers (https://github.com/pywr/pywr-next/issues/293)
     test_piecewise_storage2: ("piecewise_storage2.json", vec!["piecewise_storage2-expected.csv"], vec![], vec!["ipm-simd", "ipm-ocl"]),
+    test_piecewise_storage3: ("piecewise_storage3.json", vec!["piecewise_storage3-expected.csv"], vec![], vec!["ipm-simd", "ipm-ocl"]),
+    test_piecewise_storage4: ("piecewise_storage4.json", vec!["piecewise_storage4-expected.csv"], vec![], vec!["ipm-simd", "ipm-ocl"]),
+    test_reservoir_with_river: ("reservoir_with_river.json", vec![], vec![], vec![]),
+    test_reservoir_with_spill: ("reservoir_with_spill.json", vec![], vec![], vec![]),
     test_river_loss1: ("river_loss1.json", vec!["river_loss1-expected.csv"], vec!["ipm-simd", "ipm-ocl"], vec![]),
-    // TODO not sure why this is failing in IPM solvers (https://github.com/pywr/pywr-next/issues/293)
-    test_river_gauge1: ("river_gauge1.json", vec![], vec![], vec!["ipm-simd", "ipm-ocl"]),
+    test_river_gauge1: ("river_gauge1.json", vec!["river_gauge1-expected.csv"], vec![], vec![]),
     test_river_split_with_gauge1: ("river_split_with_gauge1.json", vec![], vec![], vec![]),
     test_thirty_day_licence: ("30-day-licence.json", vec![], vec!["ipm-simd", "ipm-ocl"], vec![]),
     test_wtw1: ("wtw1.json", vec!["wtw1-expected.csv"], vec!["ipm-simd", "ipm-ocl"], vec![]),
     test_wtw2: ("wtw2.json", vec!["wtw2-expected.csv"], vec!["ipm-simd", "ipm-ocl"], vec![]),
     test_local_parameter1: ("local-parameter1.json", vec!["local-parameter1-expected.csv"], vec![], vec![]),
+    test_python_parameter1: ("python-parameter1.json", vec!["python-parameter1-expected.csv"], vec![], vec![]),
+    test_local_parameter2: ("local-parameter2.json", vec!["local-parameter2-expected.csv"], vec![], vec![]),
 }
 
 /// Test Pandas backend for reading timeseries data.
 ///
-/// This test requires Python environment with Pandas#[test]
+/// This test requires Python environment with Pandas
+#[test]
 #[cfg(feature = "test-python")]
 fn test_timeseries_pandas() {
     let input = "timeseries_pandas.json";
     let input_pth = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join(input);
-    let expected = vec!["timeseries-expected.csv"];
+    let expected = ["timeseries-expected.csv"];
     let expected_paths = expected
         .iter()
         .map(|p| Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join(p))
@@ -141,7 +152,7 @@ fn convert_model(v1_path: &Path, v2_path: &Path) {
     let v1: pywr_v1_schema::PywrModel = serde_json::from_str(&v1_str).unwrap();
 
     let (v2, errors) = PywrModel::from_v1(v1);
-
+    println!("Conversion errors: {errors:?}",);
     assert_eq!(errors.len(), 0);
 
     let v2_converted: serde_json::Value = serde_json::from_str(&serde_json::to_string_pretty(&v2).unwrap()).unwrap();

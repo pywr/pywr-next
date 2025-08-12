@@ -1,11 +1,11 @@
 use crate::metric::MetricF64;
 use crate::network::Network;
+use crate::parameters::errors::ParameterCalculationError;
 use crate::parameters::interpolate::interpolate;
 use crate::parameters::{GeneralParameter, Parameter, ParameterMeta, ParameterName, ParameterState};
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
 use crate::timestep::Timestep;
-use crate::PywrError;
 
 pub struct PiecewiseInterpolatedParameter {
     meta: ParameterMeta,
@@ -48,7 +48,7 @@ impl GeneralParameter<f64> for PiecewiseInterpolatedParameter {
         model: &Network,
         state: &State,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<f64, PywrError> {
+    ) -> Result<f64, ParameterCalculationError> {
         // Current value
         let x = self.metric.get_value(model, state)?;
 
@@ -56,12 +56,26 @@ impl GeneralParameter<f64> for PiecewiseInterpolatedParameter {
         for (idx, control_curve) in self.control_curves.iter().enumerate() {
             let cc_value = control_curve.get_value(model, state)?;
             if x >= cc_value {
-                let v = self.values.get(idx).ok_or(PywrError::DataOutOfRange)?;
+                let v = self
+                    .values
+                    .get(idx)
+                    .ok_or_else(|| ParameterCalculationError::OutOfBoundsError {
+                        axis: 0,
+                        index: idx,
+                        length: self.values.len(),
+                    })?;
                 return Ok(interpolate(x, cc_value, cc_previous_value, v[1], v[0]));
             }
             cc_previous_value = cc_value;
         }
-        let v = self.values.last().ok_or(PywrError::DataOutOfRange)?;
+        let v = self
+            .values
+            .last()
+            .ok_or_else(|| ParameterCalculationError::OutOfBoundsError {
+                axis: 0,
+                index: 0,
+                length: self.values.len(),
+            })?;
         Ok(interpolate(x, self.minimum, cc_previous_value, v[1], v[0]))
     }
 

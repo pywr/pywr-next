@@ -1,8 +1,8 @@
+use crate::parameters::errors::SimpleCalculationError;
 use crate::parameters::{Parameter, ParameterMeta, ParameterName, ParameterState, SimpleParameter};
 use crate::scenario::ScenarioIndex;
 use crate::state::SimpleParameterValues;
 use crate::timestep::Timestep;
-use crate::PywrError;
 use chrono::{Datelike, NaiveDate};
 
 fn is_leap_year(year: i32) -> bool {
@@ -42,7 +42,7 @@ impl SimpleParameter<f64> for UniformDrawdownProfileParameter {
         _scenario_index: &ScenarioIndex,
         _values: &SimpleParameterValues,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<f64, PywrError> {
+    ) -> Result<f64, SimpleCalculationError> {
         // Current calendar year (might be adjusted depending on position of reset day)
         let mut year = timestep.date.year();
 

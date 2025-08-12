@@ -3,6 +3,7 @@ use crate::error::SchemaError;
 use crate::error::{ComponentConversionError, ConversionError};
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
+use crate::node_attribute_subset_enum;
 use crate::nodes::{NodeAttribute, NodeMeta};
 use crate::parameters::{ConstantValue, Parameter};
 #[cfg(feature = "core")]
@@ -11,14 +12,23 @@ use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::nodes::DelayNode as DelayNodeV1;
 use schemars::JsonSchema;
 
+// This macro generates a subset enum for the `DelayNode` attributes.
+// It allows for easy conversion between the enum and the `NodeAttribute` type.
+node_attribute_subset_enum! {
+    enum DelayNodeAttribute {
+        Inflow,
+        Outflow,
+    }
+}
+
 #[doc = svgbobdoc::transform!(
 /// This node is used to introduce a delay between flows entering and leaving the node.
 ///
 /// This is often useful in long river reaches as a simply way to model time-of-travel. Internally
 /// an `Output` node is used to terminate flows entering the node and an `Input` node is created
-/// with flow constraints set by a [DelayParameter]. These constraints set the minimum and
+/// with flow constraints set by a [`pywr_core::parameters::DelayParameter`]. These constraints set the minimum and
 /// maximum flow on the `Input` node equal to the flow reaching the `Output` node N time-steps
-/// ago. The internally created [DelayParameter] is created with this node's name and the suffix
+/// ago. The internally created [`pywr_core::parameters::DelayParameter`] is created with this node's name and the suffix
 /// "-delay".
 ///
 ///
@@ -41,7 +51,7 @@ pub struct DelayNode {
 }
 
 impl DelayNode {
-    const DEFAULT_ATTRIBUTE: NodeAttribute = NodeAttribute::Outflow;
+    const DEFAULT_ATTRIBUTE: DelayNodeAttribute = DelayNodeAttribute::Outflow;
 
     fn output_sub_name() -> Option<&'static str> {
         Some("inflow")
@@ -62,7 +72,7 @@ impl DelayNode {
     }
 
     pub fn default_metric(&self) -> NodeAttribute {
-        Self::DEFAULT_ATTRIBUTE
+        Self::DEFAULT_ATTRIBUTE.into()
     }
 }
 
@@ -72,7 +82,14 @@ impl DelayNode {
         &self,
         network: &pywr_core::network::Network,
     ) -> Result<Vec<pywr_core::node::NodeIndex>, SchemaError> {
-        let indices = vec![network.get_node_index_by_name(self.meta.name.as_str(), Self::input_sub_now())?];
+        let indices = vec![
+            network
+                .get_node_index_by_name(self.meta.name.as_str(), Self::input_sub_now())
+                .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                    name: self.meta.name.clone(),
+                    sub_name: Self::input_sub_now().map(String::from),
+                })?,
+        ];
         Ok(indices)
     }
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
@@ -89,7 +106,12 @@ impl DelayNode {
     ) -> Result<(), SchemaError> {
         // Create the delay parameter using the node's name as the parent identifier
         let name = ParameterName::new("delay", Some(self.meta.name.as_str()));
-        let output_idx = network.get_node_index_by_name(self.meta.name.as_str(), Self::output_sub_name())?;
+        let output_idx = network
+            .get_node_index_by_name(self.meta.name.as_str(), Self::output_sub_name())
+            .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                name: self.meta.name.clone(),
+                sub_name: Self::output_sub_name().map(String::from),
+            })?;
         let metric = MetricF64::NodeInFlow(output_idx);
         let p =
             pywr_core::parameters::DelayParameter::new(name, metric, self.delay, self.initial_value.load(args.tables)?);
@@ -109,23 +131,29 @@ impl DelayNode {
         attribute: Option<NodeAttribute>,
     ) -> Result<MetricF64, SchemaError> {
         // Use the default attribute if none is specified
-        let attr = attribute.unwrap_or(Self::DEFAULT_ATTRIBUTE);
+        let attr = match attribute {
+            Some(attr) => attr.try_into()?,
+            None => Self::DEFAULT_ATTRIBUTE,
+        };
 
         let metric = match attr {
-            NodeAttribute::Outflow => {
-                let idx = network.get_node_index_by_name(self.meta.name.as_str(), Self::input_sub_now())?;
+            DelayNodeAttribute::Outflow => {
+                let idx = network
+                    .get_node_index_by_name(self.meta.name.as_str(), Self::input_sub_now())
+                    .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                        name: self.meta.name.clone(),
+                        sub_name: Self::input_sub_now().map(String::from),
+                    })?;
                 MetricF64::NodeOutFlow(idx)
             }
-            NodeAttribute::Inflow => {
-                let idx = network.get_node_index_by_name(self.meta.name.as_str(), Self::output_sub_name())?;
+            DelayNodeAttribute::Inflow => {
+                let idx = network
+                    .get_node_index_by_name(self.meta.name.as_str(), Self::output_sub_name())
+                    .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                        name: self.meta.name.clone(),
+                        sub_name: Self::output_sub_name().map(String::from),
+                    })?;
                 MetricF64::NodeInFlow(idx)
-            }
-            _ => {
-                return Err(SchemaError::NodeAttributeNotSupported {
-                    ty: "DelayNode".to_string(),
-                    name: self.meta.name.clone(),
-                    attr,
-                })
             }
         };
 
@@ -151,7 +179,7 @@ impl TryFrom<DelayNodeV1> for DelayNode {
                         error: ConversionError::MissingAttribute {
                             attrs: vec!["days".to_string(), "timesteps".to_string()],
                         },
-                    })
+                    });
                 }
             },
         } as u64;

@@ -4,10 +4,9 @@ use crate::edge::EdgeIndex;
 use crate::network::Network;
 use crate::node::{Node, NodeBounds, NodeType};
 use crate::solvers::col_edge_map::{ColumnEdgeMap, ColumnEdgeMapBuilder};
-use crate::solvers::{MultiStateSolver, SolverFeatures, SolverTimings};
+use crate::solvers::{MultiStateSolver, SolverFeatures, SolverSetupError, SolverSolveError, SolverTimings};
 use crate::state::State;
 use crate::timestep::Timestep;
-use crate::PywrError;
 use ipm_ocl::{GetClProgram, PathFollowingDirectClSolver};
 use rayon::iter::IndexedParallelIterator;
 use rayon::iter::ParallelIterator;
@@ -284,7 +283,7 @@ impl BuiltSolver {
         timestep: &Timestep,
         states: &[State],
         timings: &mut SolverTimings,
-    ) -> Result<(), PywrError> {
+    ) -> Result<(), SolverSolveError> {
         let start_objective_update = Instant::now();
         self.update_edge_objectives(network, states)?;
         timings.update_objective += start_objective_update.elapsed();
@@ -300,17 +299,36 @@ impl BuiltSolver {
     }
 
     /// Update edge objective coefficients
-    fn update_edge_objectives(&mut self, network: &Network, states: &[State]) -> Result<(), PywrError> {
+    fn update_edge_objectives(&mut self, network: &Network, states: &[State]) -> Result<(), SolverSolveError> {
         self.lp.zero_obj_coefficients();
         for edge in network.edges().deref() {
             // Collect all of the costs for all states together
             let cost = states
                 .iter()
                 .map(|s| {
-                    edge.cost(&network.nodes(), network, s)
+                    edge.cost(network.nodes(), network, s)
                         .map(|c| if c != 0.0 { -c } else { 0.0 })
                 })
-                .collect::<Result<Vec<f64>, _>>()?;
+                .collect::<Result<Vec<f64>, _>>()
+                .map_err(|source| {
+                    let from_node = match network.get_node(&edge.from_node_index()) {
+                        Some(n) => n,
+                        None => return SolverSolveError::NodeIndexNotFound(edge.from_node_index()),
+                    };
+
+                    let to_node = match network.get_node(&edge.to_node_index()) {
+                        Some(n) => n,
+                        None => return SolverSolveError::NodeIndexNotFound(edge.to_node_index()),
+                    };
+
+                    SolverSolveError::EdgeError {
+                        from_name: from_node.name().to_string(),
+                        from_sub_name: from_node.sub_name().map(|s| s.to_string()),
+                        to_name: to_node.name().to_string(),
+                        to_sub_name: to_node.sub_name().map(|s| s.to_string()),
+                        source,
+                    }
+                })?;
 
             let col = self.col_for_edge(&edge.index());
             self.lp.add_obj_coefficient(col, &cost);
@@ -324,7 +342,7 @@ impl BuiltSolver {
         network: &Network,
         timestep: &Timestep,
         states: &[State],
-    ) -> Result<(), PywrError> {
+    ) -> Result<(), SolverSolveError> {
         let mut row_ids = self.node_constraints_row_ids.iter();
 
         let dt = timestep.days();
@@ -393,7 +411,7 @@ impl SolverBuilder {
         self.col_edge_map.col_for_edge(edge_index)
     }
 
-    fn create(mut self, network: &Network) -> Result<BuiltSolver, PywrError> {
+    fn create(mut self, network: &Network) -> Result<BuiltSolver, SolverSetupError> {
         // Create the columns
         self.create_columns(network)?;
 
@@ -420,16 +438,18 @@ impl SolverBuilder {
     /// Typically each edge will have its own column. However, we use the mass-balance information
     /// to collapse edges (and their columns) where they are trivially the same. I.e. if there
     /// is a single incoming edge and outgoing edge at a link node.
-    fn create_columns(&mut self, network: &Network) -> Result<(), PywrError> {
+    fn create_columns(&mut self, network: &Network) -> Result<(), SolverSetupError> {
         // One column per edge
         let ncols = network.edges().len();
         if ncols < 1 {
-            return Err(PywrError::NoEdgesDefined);
+            return Err(SolverSetupError::NoEdgesDefined);
         }
 
         for edge in network.edges().iter() {
             let edge_index = edge.index();
-            let from_node = network.get_node(&edge.from_node_index)?;
+            let from_node = network
+                .get_node(&edge.from_node_index)
+                .ok_or(SolverSetupError::NodeIndexNotFound(edge.from_node_index))?;
 
             if let NodeType::Link = from_node.node_type() {
                 // We only look at link nodes; there should be no output nodes as a
@@ -582,7 +602,11 @@ impl MultiStateSolver for ClIpmF32Solver {
         &[]
     }
 
-    fn setup(network: &Network, num_scenarios: usize, settings: &Self::Settings) -> Result<Box<Self>, PywrError> {
+    fn setup(
+        network: &Network,
+        num_scenarios: usize,
+        settings: &Self::Settings,
+    ) -> Result<Box<Self>, SolverSetupError> {
         let platform = ocl::Platform::default();
         let device = ocl::Device::first(platform).expect("Failed to get OpenCL device.");
         let context = ocl::Context::builder()
@@ -641,7 +665,7 @@ impl MultiStateSolver for ClIpmF32Solver {
         network: &Network,
         timestep: &Timestep,
         states: &mut [State],
-    ) -> Result<SolverTimings, PywrError> {
+    ) -> Result<SolverTimings, SolverSolveError> {
         // TODO complete the timings
         let timings = SolverTimings::default();
 
@@ -701,7 +725,11 @@ impl MultiStateSolver for ClIpmF64Solver {
         &[]
     }
 
-    fn setup(network: &Network, num_scenarios: usize, settings: &Self::Settings) -> Result<Box<Self>, PywrError> {
+    fn setup(
+        network: &Network,
+        num_scenarios: usize,
+        settings: &Self::Settings,
+    ) -> Result<Box<Self>, SolverSetupError> {
         let platform = ocl::Platform::default();
         let device = ocl::Device::first(platform).expect("Failed to get OpenCL device.");
         let context = ocl::Context::builder()
@@ -764,7 +792,7 @@ impl MultiStateSolver for ClIpmF64Solver {
         network: &Network,
         timestep: &Timestep,
         states: &mut [State],
-    ) -> Result<SolverTimings, PywrError> {
+    ) -> Result<SolverTimings, SolverSolveError> {
         // TODO complete the timings
         let timings = SolverTimings::default();
 

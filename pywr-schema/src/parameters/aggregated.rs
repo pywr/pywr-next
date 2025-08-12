@@ -5,9 +5,9 @@ use crate::metric::{IndexMetric, Metric};
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::parameters::{ConversionData, ParameterMeta};
-use crate::v1::{try_convert_parameter_attr, IntoV2, TryFromV1};
+use crate::v1::{IntoV2, TryFromV1, try_convert_parameter_attr};
 #[cfg(feature = "core")]
-use pywr_core::parameters::ParameterIndex;
+use pywr_core::parameters::{ParameterIndex, ParameterName};
 use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::parameters::{
     AggFunc as AggFuncV1, AggregatedIndexParameter as AggregatedIndexParameterV1,
@@ -15,15 +15,26 @@ use pywr_v1_schema::parameters::{
 };
 use schemars::JsonSchema;
 use std::collections::HashMap;
+use strum_macros::{Display, EnumIter};
 
 // TODO complete these
-#[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone, strum_macros::Display, JsonSchema, PywrVisitAll)]
-#[serde(rename_all = "lowercase")]
+/// Aggregation functions for float values.
+///
+/// This enum defines the possible aggregation functions that can be applied to index metrics.
+/// They are mapped to the corresponding functions in the `pywr_core::parameters::AggFunc` enum
+/// when used in the core library.
+#[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone, Display, JsonSchema, PywrVisitAll, EnumIter)]
 pub enum AggFunc {
+    /// Sum of all values.
     Sum,
+    /// Product of all values.
     Product,
-    Max,
+    /// Mean of all values.
+    Mean,
+    /// Minimum value among all values.
     Min,
+    /// Maximum value among all values.
+    Max,
 }
 
 #[cfg(feature = "core")]
@@ -34,6 +45,7 @@ impl From<AggFunc> for pywr_core::parameters::AggFunc {
             AggFunc::Product => pywr_core::parameters::AggFunc::Product,
             AggFunc::Max => pywr_core::parameters::AggFunc::Max,
             AggFunc::Min => pywr_core::parameters::AggFunc::Min,
+            AggFunc::Mean => pywr_core::parameters::AggFunc::Mean,
         }
     }
 }
@@ -86,6 +98,7 @@ impl AggregatedParameter {
         &self,
         network: &mut pywr_core::network::Network,
         args: &LoadArgs,
+        parent: Option<&str>,
     ) -> Result<ParameterIndex<f64>, SchemaError> {
         let metrics = self
             .metrics
@@ -94,7 +107,7 @@ impl AggregatedParameter {
             .collect::<Result<Vec<_>, _>>()?;
 
         let p = pywr_core::parameters::AggregatedParameter::new(
-            self.meta.name.as_str().into(),
+            ParameterName::new(&self.meta.name, parent),
             &metrics,
             self.agg_func.into(),
         );
@@ -113,7 +126,7 @@ impl TryFromV1<AggregatedParameterV1> for AggregatedParameter {
     ) -> Result<Self, Self::Error> {
         let meta: ParameterMeta = v1.meta.into_v2(parent_node, conversion_data);
 
-        let parameters = v1
+        let metrics = v1
             .parameters
             .into_iter()
             .map(|p| try_convert_parameter_attr(&meta.name, "parameters", p, parent_node, conversion_data))
@@ -122,21 +135,31 @@ impl TryFromV1<AggregatedParameterV1> for AggregatedParameter {
         let p = Self {
             meta,
             agg_func: v1.agg_func.into(),
-            metrics: parameters,
+            metrics,
         };
         Ok(p)
     }
 }
 
 // TODO complete these
-#[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone, strum_macros::Display, JsonSchema, PywrVisitAll)]
-#[serde(rename_all = "lowercase")]
+/// Aggregation functions for index (integer) values.
+///
+/// This enum defines the possible aggregation functions that can be applied to index metrics.
+/// They are mapped to the corresponding functions in the `pywr_core::parameters::AggIndexFunc` enum
+/// when used in the core library.
+#[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone, Display, JsonSchema, PywrVisitAll, EnumIter)]
 pub enum IndexAggFunc {
+    /// Sum of all values.
     Sum,
+    /// Product of all values.
     Product,
-    Max,
+    /// Minimum value among all values.
     Min,
+    /// Maximum value among all values.
+    Max,
+    /// Returns 1 if any value is non-zero, otherwise 0.
     Any,
+    /// Returns 1 if all values are non-zero, otherwise 0.
     All,
 }
 
@@ -172,8 +195,7 @@ impl From<IndexAggFuncV1> for IndexAggFunc {
 pub struct AggregatedIndexParameter {
     pub meta: ParameterMeta,
     pub agg_func: IndexAggFunc,
-    // TODO this should be `DynamicIntValues`
-    pub parameters: Vec<IndexMetric>,
+    pub metrics: Vec<IndexMetric>,
 }
 
 impl AggregatedIndexParameter {
@@ -197,16 +219,17 @@ impl AggregatedIndexParameter {
         &self,
         network: &mut pywr_core::network::Network,
         args: &LoadArgs,
+        parent: Option<&str>,
     ) -> Result<ParameterIndex<u64>, SchemaError> {
-        let parameters = self
-            .parameters
+        let metrics = self
+            .metrics
             .iter()
             .map(|v| v.load(network, args, None))
             .collect::<Result<Vec<_>, _>>()?;
 
         let p = pywr_core::parameters::AggregatedIndexParameter::new(
-            self.meta.name.as_str().into(),
-            parameters,
+            ParameterName::new(&self.meta.name, parent),
+            &metrics,
             self.agg_func.into(),
         );
 
@@ -224,7 +247,7 @@ impl TryFromV1<AggregatedIndexParameterV1> for AggregatedIndexParameter {
     ) -> Result<Self, Self::Error> {
         let meta: ParameterMeta = v1.meta.into_v2(parent_node, conversion_data);
 
-        let parameters = v1
+        let metrics = v1
             .parameters
             .into_iter()
             .map(|p| try_convert_parameter_attr(&meta.name, "parameters", p, parent_node, conversion_data))
@@ -233,7 +256,7 @@ impl TryFromV1<AggregatedIndexParameterV1> for AggregatedIndexParameter {
         let p = Self {
             meta,
             agg_func: v1.agg_func.into(),
-            parameters,
+            metrics,
         };
         Ok(p)
     }
@@ -252,7 +275,7 @@ mod tests {
                     "name": "my-agg-param",
                     "comment": "Take the minimum of two parameters"
                 },
-                "agg_func": "min",
+                "agg_func": "Min",
                 "metrics": [
                   {
                     "type": "Parameter",

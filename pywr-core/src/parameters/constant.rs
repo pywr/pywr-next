@@ -1,11 +1,12 @@
+use crate::parameters::errors::{ConstCalculationError, ParameterSetupError};
 use crate::parameters::{
-    downcast_internal_state_mut, downcast_internal_state_ref, downcast_variable_config_ref, ActivationFunction,
-    ConstParameter, Parameter, ParameterMeta, ParameterName, ParameterState, VariableConfig, VariableParameter,
+    ActivationFunction, ConstParameter, Parameter, ParameterMeta, ParameterName, ParameterState, VariableConfig,
+    VariableParameter, VariableParameterError, downcast_internal_state_mut, downcast_internal_state_ref,
+    downcast_variable_config_ref,
 };
 use crate::scenario::ScenarioIndex;
 use crate::state::ConstParameterValues;
 use crate::timestep::Timestep;
-use crate::PywrError;
 
 pub struct ConstantParameter {
     meta: ParameterMeta,
@@ -44,7 +45,7 @@ impl Parameter for ConstantParameter {
         &self,
         _timesteps: &[Timestep],
         _scenario_index: &ScenarioIndex,
-    ) -> Result<Option<Box<dyn ParameterState>>, PywrError> {
+    ) -> Result<Option<Box<dyn ParameterState>>, ParameterSetupError> {
         let value: Option<f64> = None;
         Ok(Some(Box::new(value)))
     }
@@ -59,7 +60,7 @@ impl ConstParameter<f64> for ConstantParameter {
         _scenario_index: &ScenarioIndex,
         _values: &ConstParameterValues,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<f64, PywrError> {
+    ) -> Result<f64, ConstCalculationError> {
         Ok(self.value(internal_state))
     }
 
@@ -86,7 +87,7 @@ impl VariableParameter for ConstantParameter {
         values_u64: &[u64],
         variable_config: &dyn VariableConfig,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<(), PywrError> {
+    ) -> Result<(), VariableParameterError> {
         let activation_function = downcast_variable_config_ref::<ActivationFunction>(variable_config);
 
         if !values_u64.is_empty() {
@@ -98,7 +99,10 @@ impl VariableParameter for ConstantParameter {
             *value = Some(activation_function.apply(values_f64[0]));
             Ok(())
         } else {
-            Err(PywrError::ParameterVariableValuesIncorrectLength)
+            Err(VariableParameterError::IncorrectNumberOfValues {
+                expected: 1,
+                received: values.len(),
+            })
         }
     }
 
@@ -108,14 +112,14 @@ impl VariableParameter for ConstantParameter {
             .map(|value| (vec![*value], vec![]))
     }
 
-    fn get_lower_bounds(&self, variable_config: &dyn VariableConfig) -> Result<(Vec<f64>, Vec<u64>), PywrError> {
+    fn get_lower_bounds(&self, variable_config: &dyn VariableConfig) -> Option<(Vec<f64>, Vec<u64>)> {
         let activation_function = downcast_variable_config_ref::<ActivationFunction>(variable_config);
-        Ok((vec![activation_function.lower_bound()], vec![]))
+        Some((vec![activation_function.lower_bound()], vec![]))
     }
 
-    fn get_upper_bounds(&self, variable_config: &dyn VariableConfig) -> Result<(Vec<f64>, Vec<u64>), PywrError> {
+    fn get_upper_bounds(&self, variable_config: &dyn VariableConfig) -> Option<(Vec<f64>, Vec<u64>)> {
         let activation_function = downcast_variable_config_ref::<ActivationFunction>(variable_config);
-        Ok((vec![activation_function.upper_bound()], vec![]))
+        Some((vec![activation_function.upper_bound()], vec![]))
     }
 }
 
@@ -124,6 +128,7 @@ mod tests {
     use crate::parameters::{ActivationFunction, ConstantParameter, Parameter, VariableParameter};
     use crate::test_utils::default_domain;
     use float_cmp::assert_approx_eq;
+    use std::f64::consts::PI;
 
     #[test]
     fn test_variable_api() {
@@ -147,5 +152,18 @@ mod tests {
         let (v_f64, v_u64) = p.get_variables(&state).unwrap();
         assert_approx_eq!(&[f64], &v_f64, &[2.0]);
         assert!(v_u64.is_empty());
+    }
+
+    #[test]
+    /// Test `ConstantParameter` returns the correct value.
+    fn test_constant_parameter() {
+        let domain = default_domain();
+
+        let p = ConstantParameter::new("my-parameter".into(), PI);
+        let state = p
+            .setup(domain.time().timesteps(), domain.scenarios().indices().first().unwrap())
+            .unwrap();
+
+        assert_approx_eq!(f64, p.value(&state), PI);
     }
 }

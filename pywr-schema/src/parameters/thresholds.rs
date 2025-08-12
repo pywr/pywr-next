@@ -1,3 +1,4 @@
+use crate::ConversionError;
 use crate::error::ComponentConversionError;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
@@ -5,8 +6,7 @@ use crate::metric::{Metric, NodeReference};
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::parameters::{ConversionData, ParameterMeta};
-use crate::v1::{try_convert_parameter_attr, IntoV2, TryFromV1};
-use crate::ConversionError;
+use crate::v1::{IntoV2, TryFromV1, try_convert_parameter_attr};
 #[cfg(feature = "core")]
 use pywr_core::parameters::{ParameterName, ParameterType};
 use pywr_schema_macros::PywrVisitAll;
@@ -15,8 +15,9 @@ use pywr_v1_schema::parameters::{
     Predicate as PredicateV1, StorageThresholdParameter as StorageThresholdParameterV1,
 };
 use schemars::JsonSchema;
+use strum_macros::{Display, EnumIter};
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Copy, JsonSchema, PywrVisitAll, strum_macros::Display)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Copy, JsonSchema, PywrVisitAll, Display, EnumIter)]
 pub enum Predicate {
     #[serde(alias = "<")]
     LT,
@@ -105,6 +106,7 @@ impl ThresholdParameter {
         &self,
         network: &mut pywr_core::network::Network,
         args: &LoadArgs,
+        parent: Option<&str>,
     ) -> Result<ParameterType, SchemaError> {
         let metric = self.metric.load(network, args, None)?;
         let threshold = self.threshold.load(network, args, None)?;
@@ -132,7 +134,7 @@ impl ThresholdParameter {
                     .map(|v| v.load(network, args, None))
                     .collect::<Result<Vec<_>, _>>()?;
                 let values_param = pywr_core::parameters::IndexedArrayParameter::new(
-                    self.meta.name.as_str().into(),
+                    ParameterName::new(&self.meta.name, parent),
                     p_idx.into(),
                     &metrics,
                 );
@@ -170,7 +172,7 @@ impl TryFromV1<ParameterThresholdParameterV1> for ThresholdParameter {
                                 expected: 2,
                                 found: v.len(),
                             },
-                        })
+                        });
                     }
                 }
             }
@@ -217,7 +219,7 @@ impl TryFromV1<NodeThresholdParameterV1> for ThresholdParameter {
                                 expected: 2,
                                 found: v.len(),
                             },
-                        })
+                        });
                     }
                 }
             }
@@ -261,7 +263,7 @@ impl TryFromV1<StorageThresholdParameterV1> for ThresholdParameter {
                                 expected: 2,
                                 found: v.len(),
                             },
-                        })
+                        });
                     }
                 }
             }

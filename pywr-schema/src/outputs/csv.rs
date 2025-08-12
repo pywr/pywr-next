@@ -9,19 +9,23 @@ use std::num::NonZeroU32;
 #[cfg(feature = "core")]
 use std::path::Path;
 use std::path::PathBuf;
+use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticStr};
 
 #[derive(
-    serde::Deserialize, serde::Serialize, Debug, Clone, Default, JsonSchema, PywrVisitPaths, strum_macros::Display,
+    serde::Deserialize, serde::Serialize, Debug, Clone, Default, JsonSchema, PywrVisitPaths, Display, EnumIter,
 )]
-#[serde(rename_all = "lowercase")]
 pub enum CsvFormat {
     Wide,
     #[default]
     Long,
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitPaths, strum_macros::Display)]
+#[derive(
+    serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitPaths, Display, EnumDiscriminants,
+)]
 #[serde(untagged)]
+#[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
+#[strum_discriminants(name(CsvMetricSetType))]
 pub enum CsvMetricSet {
     Single(String),
     Multiple(Vec<String>),
@@ -68,7 +72,7 @@ impl CsvOutput {
                 CsvMetricSet::Multiple(_) => {
                     return Err(SchemaError::MissingMetricSet(
                         "Wide format CSV output requires a single `metric_set`".to_string(),
-                    ))
+                    ));
                 }
             },
             CsvFormat::Long => {

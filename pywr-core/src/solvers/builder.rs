@@ -3,11 +3,9 @@ use crate::edge::EdgeIndex;
 use crate::network::Network;
 use crate::node::{Node, NodeBounds, NodeIndex, NodeType};
 use crate::solvers::col_edge_map::{ColumnEdgeMap, ColumnEdgeMapBuilder};
-use crate::solvers::SolverTimings;
+use crate::solvers::{SolverSetupError, SolverSolveError, SolverTimings};
 use crate::state::{ConstParameterValues, State};
 use crate::timestep::Timestep;
-use crate::PywrError;
-use num::Zero;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::Debug;
 use std::ops::Deref;
@@ -305,7 +303,9 @@ enum NodeRowType<I> {
     /// A regular node constraint bounded by lower and upper bounds.
     Continuous,
     /// A binary node constraint where the upper bound is controlled by a binary variable.
-    Binary { bin_col_id: I },
+    BinaryUpperBound { bin_col_id: I },
+    /// A binary node constraint where the lower bound is controlled by a binary variable.
+    BinaryLowerBound { bin_col_id: I },
 }
 
 struct AggNodeFactorRow<I> {
@@ -397,7 +397,7 @@ where
         timestep: &Timestep,
         state: &State,
         timings: &mut SolverTimings,
-    ) -> Result<(), PywrError> {
+    ) -> Result<(), SolverSolveError> {
         let start_objective_update = Instant::now();
         self.update_edge_objectives(network, state)?;
         timings.update_objective += start_objective_update.elapsed();
@@ -417,10 +417,28 @@ where
     }
 
     /// Update edge objective coefficients
-    fn update_edge_objectives(&mut self, network: &Network, state: &State) -> Result<(), PywrError> {
+    fn update_edge_objectives(&mut self, network: &Network, state: &State) -> Result<(), SolverSolveError> {
         self.builder.zero_obj_coefficients();
         for edge in network.edges().deref() {
-            let obj_coef: f64 = edge.cost(network.nodes(), network, state)?;
+            let obj_coef: f64 = edge.cost(network.nodes(), network, state).map_err(|source| {
+                let from_node = match network.get_node(&edge.from_node_index()) {
+                    Some(n) => n,
+                    None => return SolverSolveError::NodeIndexNotFound(edge.from_node_index()),
+                };
+
+                let to_node = match network.get_node(&edge.to_node_index()) {
+                    Some(n) => n,
+                    None => return SolverSolveError::NodeIndexNotFound(edge.to_node_index()),
+                };
+
+                SolverSolveError::EdgeError {
+                    from_name: from_node.name().to_string(),
+                    from_sub_name: from_node.sub_name().map(|s| s.to_string()),
+                    to_name: to_node.name().to_string(),
+                    to_sub_name: to_node.sub_name().map(|s| s.to_string()),
+                    source,
+                }
+            })?;
             let col = self.col_for_edge(&edge.index());
 
             self.builder.add_obj_coefficient(col.to_usize().unwrap(), obj_coef);
@@ -434,28 +452,40 @@ where
         network: &Network,
         timestep: &Timestep,
         state: &State,
-    ) -> Result<(), PywrError> {
+    ) -> Result<(), SolverSolveError> {
         let dt = timestep.days();
 
         for row in self.node_constraints_row_ids.iter() {
-            let node = network.get_node(&row.node_idx)?;
-            let (lb, ub): (f64, f64) = match node.get_bounds(network, state)? {
-                NodeBounds::Flow(bounds) => (bounds.min_flow, bounds.max_flow),
-                NodeBounds::Volume(bounds) => (-bounds.available / dt, bounds.missing / dt),
-            };
+            let node = network
+                .get_node(&row.node_idx)
+                .ok_or(SolverSolveError::NodeIndexNotFound(row.node_idx))?;
+
+            let (lb, ub): (f64, f64) =
+                match node
+                    .get_bounds(network, state)
+                    .map_err(|source| SolverSolveError::NodeError {
+                        name: node.name().to_string(),
+                        sub_name: node.sub_name().map(|s| s.to_string()),
+                        source,
+                    })? {
+                    NodeBounds::Flow(bounds) => (bounds.min_flow, bounds.max_flow),
+                    NodeBounds::Volume(bounds) => (-bounds.available / dt, bounds.missing / dt),
+                };
 
             match row.row_type {
                 NodeRowType::Continuous => {
                     // Regular node constraint
                     self.builder.apply_row_bounds(row.row_id.to_usize().unwrap(), lb, ub);
                 }
-                NodeRowType::Binary { bin_col_id } => {
-                    if !lb.is_zero() {
-                        panic!("Binary node constraint with non-zero lower bounds not implemented!");
-                    }
+                NodeRowType::BinaryUpperBound { bin_col_id } => {
                     // Update the coefficients for the binary column to be the upper bound
-                    self.builder.coefficients_to_update.push((row.row_id, bin_col_id, -ub));
-                    // This row is already upper bounded to zero in `create_node_constraints`.
+                    // This row has the correct bounds already, so we just update the coefficients
+                    self.builder.coefficients_to_update.push((row.row_id, bin_col_id, ub));
+                }
+                NodeRowType::BinaryLowerBound { bin_col_id } => {
+                    // Update the coefficients for the binary column to be the lower bound
+                    // This row has the correct bounds already, so we just update the coefficients
+                    self.builder.coefficients_to_update.push((row.row_id, bin_col_id, -lb));
                 }
             }
         }
@@ -463,10 +493,17 @@ where
         Ok(())
     }
 
-    fn update_aggregated_node_factor_constraints(&mut self, network: &Network, state: &State) -> Result<(), PywrError> {
+    fn update_aggregated_node_factor_constraints(
+        &mut self,
+        network: &Network,
+        state: &State,
+    ) -> Result<(), SolverSolveError> {
         // Update the aggregated node factor constraints which are *not* constant
         for agg_node_row in self.agg_node_factor_constraint_row_ids.iter() {
-            let agg_node = network.get_aggregated_node(&agg_node_row.agg_node_idx)?;
+            let agg_node = network
+                .get_aggregated_node(&agg_node_row.agg_node_idx)
+                .ok_or(SolverSolveError::AggregatedNodeIndexNotFound(agg_node_row.agg_node_idx))?;
+
             // Only create row for nodes that have factors
             if let Some(node_pairs) = agg_node.get_norm_factor_pairs(network, state) {
                 assert_eq!(
@@ -509,13 +546,23 @@ where
     }
 
     /// Update aggregated node constraints
-    fn update_aggregated_node_constraint_bounds(&mut self, network: &Network, state: &State) -> Result<(), PywrError> {
+    fn update_aggregated_node_constraint_bounds(
+        &mut self,
+        network: &Network,
+        state: &State,
+    ) -> Result<(), SolverSolveError> {
         for (row_id, agg_node) in self
             .agg_node_constraint_row_ids
             .iter()
             .zip(network.aggregated_nodes().deref())
         {
-            let (lb, ub): (f64, f64) = agg_node.get_current_flow_bounds(network, state)?;
+            let (lb, ub): (f64, f64) = agg_node.get_current_flow_bounds(network, state).map_err(|e| {
+                SolverSolveError::AggregatedNodeError {
+                    name: agg_node.name().to_string(),
+                    sub_name: agg_node.sub_name().map(|s| s.to_string()),
+                    source: e,
+                }
+            })?;
             self.builder.apply_row_bounds(*row_id, lb, ub);
         }
 
@@ -527,7 +574,7 @@ where
         network: &Network,
         timestep: &Timestep,
         state: &State,
-    ) -> Result<(), PywrError> {
+    ) -> Result<(), SolverSolveError> {
         let dt = timestep.days();
 
         for (row_id, node) in self
@@ -574,7 +621,11 @@ where
         self.col_edge_map.col_for_edge(edge_index)
     }
 
-    pub fn create(mut self, network: &Network, values: &ConstParameterValues) -> Result<BuiltSolver<I>, PywrError> {
+    pub fn create(
+        mut self,
+        network: &Network,
+        values: &ConstParameterValues,
+    ) -> Result<BuiltSolver<I>, SolverSetupError> {
         // Create the columns
         self.create_columns(network)?;
 
@@ -606,16 +657,18 @@ where
     /// Typically each edge will have its own column. However, we use the mass-balance information
     /// to collapse edges (and their columns) where they are trivially the same. I.e. if there
     /// is a single incoming edge and outgoing edge at a link node.
-    fn create_columns(&mut self, network: &Network) -> Result<(), PywrError> {
+    fn create_columns(&mut self, network: &Network) -> Result<(), SolverSetupError> {
         // One column per edge
         let ncols = network.edges().len();
         if ncols < 1 {
-            return Err(PywrError::NoEdgesDefined);
+            return Err(SolverSetupError::NoEdgesDefined);
         }
 
         for edge in network.edges().iter() {
             let edge_index = edge.index();
-            let from_node = network.get_node(&edge.from_node_index)?;
+            let from_node = network
+                .get_node(&edge.from_node_index)
+                .ok_or(SolverSetupError::NodeIndexNotFound(edge.from_node_index))?;
 
             if let NodeType::Link = from_node.node_type() {
                 // We only look at link nodes; there should be no output nodes as a
@@ -748,11 +801,20 @@ where
     ///
     /// One constraint is created per node to enforce any constraints (flow or storage)
     /// that it may define. Returns the row_ids associated with each constraint.
+    ///
+    ///
+    /// If the node has binary variables associated with it then two rows are created
+    /// to enforce the upper and lower bounds of the binary variable. The lower bound row is only
+    /// created if the `min_flow` is not zero or is a non-constant value. These rows enforce
+    /// the following inequalities:
+    /// - `binary_variable * max_flow >= flow`
+    /// - `binary_variable * min_flow <= flow`
+    ///
     fn create_node_constraints(
         &mut self,
         network: &Network,
         values: &ConstParameterValues,
-    ) -> Result<Vec<NodeRowId<I>>, PywrError> {
+    ) -> Result<Vec<NodeRowId<I>>, SolverSetupError> {
         let mut row_ids = Vec::with_capacity(network.nodes().len());
 
         for node in network.nodes().deref() {
@@ -767,39 +829,55 @@ where
             // that enforces each binary variable's constraints
             if let Some(cols) = self.node_bin_col_map.get(&node.index()) {
                 for col in cols {
-                    let mut row: RowBuilder<I> = RowBuilder::default();
-                    self.add_node(node, 1.0, &mut row);
-                    let mut is_fixed = false;
+                    // Create separate rows for upper and lower bound constraints.
+                    let mut row_ub: RowBuilder<I> = RowBuilder::default();
+                    let mut row_lb: RowBuilder<I> = RowBuilder::default();
+
+                    self.add_node(node, -1.0, &mut row_ub);
+                    self.add_node(node, 1.0, &mut row_lb);
 
                     match bounds {
                         Some(bounds) => {
-                            if bounds.min_flow != 0.0 {
-                                panic!("Binary node constraint with non-zero lower bounds not implemented!");
-                            }
                             // If the bounds are constant then the binary variable is used to control the upper bound
-                            row.add_element(*col, -bounds.max_flow.min(1e8));
-                            row.set_lower(FMIN);
-                            row.set_upper(0.0);
-                            is_fixed = true;
+                            row_ub.add_element(*col, bounds.max_flow.min(1e8));
+                            row_ub.set_lower(0.0);
+                            row_ub.set_upper(FMAX);
+                            self.builder.add_fixed_row(row_ub);
+
+                            if bounds.min_flow != 0.0 {
+                                row_lb.add_element(*col, -bounds.min_flow.max(1e-8));
+                                row_lb.set_lower(0.0);
+                                row_lb.set_upper(FMAX);
+
+                                self.builder.add_fixed_row(row_lb);
+                            }
                         }
                         None => {
                             // If the bounds are not constant then the binary variable coefficient is updated later
-                            // Use a placeholder of -1.0 for now
-                            row.add_element(*col, -1.0);
+                            // Use a placeholder of 1.0 and -1.0 for now
+                            row_ub.add_element(*col, 1.0);
+                            row_lb.add_element(*col, -1.0);
+
+                            let row_id = self.builder.add_variable_row(row_ub);
+                            let row_type = NodeRowType::BinaryUpperBound { bin_col_id: *col };
+
+                            row_ids.push(NodeRowId {
+                                row_id,
+                                node_idx: node.index(),
+                                row_type,
+                            });
+
+                            // We do not know the bounds yet, so we have to assume there is a possibility
+                            // of a non-zero lower bound.
+                            let row_id = self.builder.add_variable_row(row_lb);
+                            let row_type = NodeRowType::BinaryLowerBound { bin_col_id: *col };
+
+                            row_ids.push(NodeRowId {
+                                row_id,
+                                node_idx: node.index(),
+                                row_type,
+                            });
                         }
-                    }
-
-                    if is_fixed {
-                        self.builder.add_fixed_row(row);
-                    } else {
-                        let row_id = self.builder.add_variable_row(row);
-                        let row_type = NodeRowType::Binary { bin_col_id: *col };
-
-                        row_ids.push(NodeRowId {
-                            row_id,
-                            node_idx: node.index(),
-                            row_type,
-                        });
                     }
                 }
             } else {

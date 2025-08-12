@@ -9,12 +9,15 @@ use pywr_schema_macros::PywrVisitPaths;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::num::NonZeroUsize;
+use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticStr};
 
 /// Aggregation function to apply over metric values.
 #[derive(
-    serde::Deserialize, serde::Serialize, Debug, Copy, Clone, JsonSchema, PywrVisitPaths, strum_macros::Display,
+    serde::Deserialize, serde::Serialize, Debug, Copy, Clone, JsonSchema, PywrVisitPaths, Display, EnumDiscriminants,
 )]
-#[serde(tag = "type")]
+#[serde(tag = "type", deny_unknown_fields)]
+#[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
+#[strum_discriminants(name(MetricAggFuncType))]
 pub enum MetricAggFunc {
     Sum,
     Max,
@@ -36,8 +39,10 @@ impl From<MetricAggFunc> for pywr_core::recorders::AggregationFunction {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone, JsonSchema, strum_macros::Display)]
-#[serde(tag = "type")]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone, JsonSchema, Display, EnumDiscriminants)]
+#[serde(tag = "type", deny_unknown_fields)]
+#[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
+#[strum_discriminants(name(MetricAggFrequencyType))]
 pub enum MetricAggFrequency {
     Monthly,
     Annual,
@@ -92,9 +97,9 @@ impl From<MetricAggregator> for pywr_core::recorders::Aggregator {
 #[derive(Deserialize, Serialize, Clone, JsonSchema, Default)]
 pub struct MetricSetFilters {
     #[serde(default)]
-    all_nodes: bool,
+    pub all_nodes: bool,
     #[serde(default)]
-    all_parameters: bool,
+    pub all_parameters: bool,
 }
 
 #[cfg(feature = "core")]

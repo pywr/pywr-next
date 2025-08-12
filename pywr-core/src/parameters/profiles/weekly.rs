@@ -1,9 +1,8 @@
+use crate::parameters::errors::SimpleCalculationError;
 use crate::parameters::{Parameter, ParameterMeta, ParameterName, ParameterState, SimpleParameter};
 use crate::scenario::ScenarioIndex;
 use crate::state::SimpleParameterValues;
 use crate::timestep::Timestep;
-use crate::PywrError;
-use chrono::{Datelike, NaiveDate, NaiveDateTime, Timelike};
 use thiserror::Error;
 
 pub enum WeeklyInterpDay {
@@ -21,48 +20,35 @@ impl WeeklyProfileValues {
     /// Get the week position in a calendar year from date. In the first year week, the position
     /// starts from 0 on the first week day and ends with 1 on the last day. Seconds may be
     /// included in the position by setting with_seconds to true.
-    fn current_pos(&self, date: &NaiveDateTime, with_seconds: bool) -> f64 {
-        let mut current_day = date.ordinal() as f64;
-        if with_seconds {
-            let seconds_in_day = date.num_seconds_from_midnight() as f64 / 86400.0;
-            current_day += seconds_in_day;
-        }
-        (current_day - 1.0) / 7.0
+    fn current_week_index(&self, timestep: &Timestep, with_seconds: bool) -> f64 {
+        let current_day_index = if with_seconds {
+            timestep.fractional_day_of_year()
+        } else {
+            timestep.day_of_year_index() as f64
+        };
+        current_day_index / 7.0
     }
 
     /// Get the week index from the provided date
-    fn current_index(&self, date: &NaiveDateTime) -> usize {
-        let current_day = date.ordinal();
-        let current_pos = self.current_pos(date, false) as usize;
-
-        // if year is leap the last week starts on the 365th day
-        let is_leap_year = NaiveDate::from_ymd_opt(date.year(), 1, 1).unwrap().leap_year();
-        let last_week_day_start = if is_leap_year { 365 } else { 364 };
+    fn current_index(&self, timestep: &Timestep) -> usize {
+        let current_pos = self.current_week_index(timestep, false) as usize;
 
         match self {
             Self::FiftyTwo(_) => {
-                if current_day >= last_week_day_start {
-                    51
-                } else {
-                    current_pos
-                }
+                current_pos.min(51) // 52 weeks, so max index is 51
             }
             Self::FiftyThree(_) => {
-                if current_day >= last_week_day_start {
-                    52
-                } else {
-                    current_pos
-                }
+                current_pos.min(52) // 53 weeks, so max index is 51
             }
         }
     }
 
     /// Get the value corresponding to the week index for the provided date
-    fn current(&self, date: &NaiveDateTime) -> f64 {
+    fn current(&self, timestep: &Timestep) -> f64 {
         // The current_index function always returns and index between 0 and
         // 52 (for Self::FiftyTwo) or 53 (Self::FiftyThree). This ensures
         // that the index is always in range in the value array below
-        let current_index = self.current_index(date);
+        let current_index = self.current_index(timestep);
 
         match self {
             Self::FiftyTwo(values) => values[current_index],
@@ -73,8 +59,8 @@ impl WeeklyProfileValues {
     /// Get the next week's value based on the week index of the provided date. If the current
     /// week is larger than the array length, the value corresponding to the first week is
     /// returned.
-    fn next(&self, date: &NaiveDateTime) -> f64 {
-        let current_week_index = self.current_index(date);
+    fn next(&self, timestep: &Timestep) -> f64 {
+        let current_week_index = self.current_index(timestep);
 
         match self {
             Self::FiftyTwo(values) => {
@@ -96,8 +82,8 @@ impl WeeklyProfileValues {
 
     /// Get the previous week's value based on the week index of the provided date. If the
     /// current week index is 0 than the last array value is returned.
-    fn prev(&self, date: &NaiveDateTime) -> f64 {
-        let current_week_index = self.current_index(date);
+    fn prev(&self, timestep: &Timestep) -> f64 {
+        let current_week_index = self.current_index(timestep);
 
         match self {
             Self::FiftyTwo(values) => {
@@ -119,8 +105,8 @@ impl WeeklyProfileValues {
 
     /// Find the value corresponding to the given date by linearly interpolating between two
     /// consecutive week's values.
-    fn interpolate(&self, date: &NaiveDateTime, first_value: f64, last_value: f64) -> f64 {
-        let current_pos = self.current_pos(date, true);
+    fn interpolate(&self, timestep: &Timestep, first_value: f64, last_value: f64) -> f64 {
+        let current_pos = self.current_week_index(timestep, true);
         let week_delta = current_pos - current_pos.floor();
         first_value + (last_value - first_value) * week_delta
     }
@@ -129,19 +115,19 @@ impl WeeklyProfileValues {
     /// interpolated profile, the upper boundary in the 52nd and 53rd week is the same when
     /// WeeklyInterpDay is First (i.e. the value on 1st January). When WeeklyInterpDay is Last the
     /// 1st and last week will share the same lower bound (i.e. the value on the last week).
-    fn value(&self, date: &NaiveDateTime, interp_day: &Option<WeeklyInterpDay>) -> f64 {
+    fn value(&self, timestep: &Timestep, interp_day: &Option<WeeklyInterpDay>) -> f64 {
         match interp_day {
-            None => self.current(date),
+            None => self.current(timestep),
             Some(interp_day) => match interp_day {
                 WeeklyInterpDay::First => {
-                    let first_value = self.current(date);
-                    let last_value = self.next(date);
-                    self.interpolate(date, first_value, last_value)
+                    let first_value = self.current(timestep);
+                    let last_value = self.next(timestep);
+                    self.interpolate(timestep, first_value, last_value)
                 }
                 WeeklyInterpDay::Last => {
-                    let first_value = self.prev(date);
-                    let last_value = self.current(date);
-                    self.interpolate(date, first_value, last_value)
+                    let first_value = self.prev(timestep);
+                    let last_value = self.current(timestep);
+                    self.interpolate(timestep, first_value, last_value)
                 }
             },
         }
@@ -196,8 +182,8 @@ impl SimpleParameter<f64> for WeeklyProfileParameter {
         _scenario_index: &ScenarioIndex,
         _values: &SimpleParameterValues,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<f64, PywrError> {
-        Ok(self.values.value(&timestep.date, &self.interp_day))
+    ) -> Result<f64, SimpleCalculationError> {
+        Ok(self.values.value(timestep, &self.interp_day))
     }
 
     fn as_parameter(&self) -> &dyn Parameter
@@ -212,8 +198,9 @@ impl SimpleParameter<f64> for WeeklyProfileParameter {
 mod tests {
     use crate::parameters::profiles::weekly::{WeeklyInterpDay, WeeklyProfileValues};
     use crate::test_utils::assert_approx_array_eq;
+    use crate::timestep::{PywrDuration, Timestep};
     use chrono::{Datelike, NaiveDate, TimeDelta};
-    use float_cmp::{assert_approx_eq, F64Margin};
+    use float_cmp::{F64Margin, assert_approx_eq};
 
     /// Build a time-series from the weekly profile
     fn collect(week_size: &WeeklyProfileValues, interp_day: Option<WeeklyInterpDay>) -> Vec<f64> {
@@ -233,7 +220,10 @@ mod tests {
                 .unwrap()
                 .and_hms_opt(0, 0, 0)
                 .unwrap();
-            let value = week_size.value(&date, &interp_day);
+
+            let timestep = Timestep::new(date, 0, PywrDuration::days(1));
+
+            let value = week_size.value(&timestep, &interp_day);
             data.push(value);
 
             dt += TimeDelta::days(1);
@@ -485,6 +475,7 @@ mod tests {
             .unwrap()
             .and_hms_opt(0, 0, 0)
             .unwrap();
+        let t0 = Timestep::new(t0, 0, PywrDuration::days(1));
         assert_eq!(week_size.interpolate(&t0, 0.0, 1.0), 0.0);
 
         let t0 = NaiveDate::from_ymd_opt(2016, 1, 7)
@@ -495,6 +486,7 @@ mod tests {
             epsilon: 2.0,
             ulps: (f64::EPSILON * 2.0) as i64,
         };
+        let t0 = Timestep::new(t0, 0, PywrDuration::days(1));
         assert_approx_eq!(f64, week_size.interpolate(&t0, 0.0, 1.0), 1.928571429, margins);
     }
 }

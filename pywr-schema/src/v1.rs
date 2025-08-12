@@ -10,12 +10,12 @@
 //! It also tracks a count of unnamed parameters and timeseries. This is used during conversion
 //! of meta-data to provide a unique name for unnamed parameters and timeseries.
 
+use crate::ConversionError;
 use crate::error::ComponentConversionError;
 use crate::metric::Metric;
 use crate::nodes::StorageInitialVolume;
 use crate::parameters::{ConstantFloatVec, Parameter, ParameterMeta};
 use crate::timeseries::Timeseries;
-use crate::ConversionError;
 use pywr_v1_schema::parameters::{
     ExternalDataRef, ParameterMeta as ParameterMetaV1, ParameterValue, ParameterValues, TableDataRef,
 };
@@ -64,7 +64,7 @@ where
 pub trait TryFromV1<T>: Sized {
     type Error;
     fn try_from_v1(v1: T, parent_node: Option<&str>, conversion_data: &mut ConversionData)
-        -> Result<Self, Self::Error>;
+    -> Result<Self, Self::Error>;
 }
 impl<T, U> TryFromV1<Option<U>> for Option<T>
 where
@@ -176,10 +176,10 @@ pub fn try_convert_initial_storage(
     v1_initial_volume: Option<f64>,
     v1_initial_volume_pc: Option<f64>,
 ) -> Result<StorageInitialVolume, ComponentConversionError> {
-    let initial_volume = if let Some(v) = v1_initial_volume {
-        StorageInitialVolume::Absolute(v)
-    } else if let Some(v) = v1_initial_volume_pc {
-        StorageInitialVolume::Proportional(v)
+    let initial_volume = if let Some(volume) = v1_initial_volume {
+        StorageInitialVolume::Absolute { volume }
+    } else if let Some(proportion) = v1_initial_volume_pc {
+        StorageInitialVolume::Proportional { proportion }
     } else {
         return Err(ComponentConversionError::Node {
             attr: attr.to_string(),

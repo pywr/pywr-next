@@ -7,7 +7,7 @@
 /// Benchmarks test the performance the solvers with different sized models (numbers of
 /// systems and density of transfers between them), numbers of scenarios (which vary the
 /// input flows) and number of CPU threads.
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 #[cfg(feature = "ipm-ocl")]
 use pywr_core::solvers::{ClIpmF64Solver, ClIpmSolverSettings, ClIpmSolverSettingsBuilder};
 use pywr_core::solvers::{ClpSolver, ClpSolverSettings, ClpSolverSettingsBuilder};
@@ -83,41 +83,6 @@ fn random_benchmark(
                             );
                         }
                         #[cfg(feature = "ipm-simd")]
-                        SolverSetting::IpmSimdF64x1(settings) => {
-                            let parameter_string =
-                                format!("ipm-simd-f64x1 * {n_sys} * {density} * {n_sc} * {}", &setup.name);
-
-                            group.bench_with_input(
-                                BenchmarkId::new("random-model", parameter_string),
-                                &(n_sys, density, n_sc),
-                                |b, _n| {
-                                    let mut state = model
-                                        .setup_multi_scenario::<SimdIpmF64Solver<1>>(&settings)
-                                        .expect("Failed to setup the model.");
-
-                                    b.iter(|| model.run_multi_scenario_with_state(&mut state, &settings))
-                                },
-                            );
-                        }
-                        #[cfg(feature = "ipm-simd")]
-                        SolverSetting::IpmSimdF64x2(settings) => {
-                            let parameter_string =
-                                format!("ipm-simd-f64x2 * {n_sys} * {density} * {n_sc} * {}", &setup.name);
-
-                            group.bench_with_input(
-                                BenchmarkId::new("random-model", parameter_string),
-                                &(n_sys, density, n_sc),
-                                |b, _n| {
-                                    // Do the setup here outside of the time-step loop
-                                    let mut state = model
-                                        .setup_multi_scenario::<SimdIpmF64Solver<2>>(&settings)
-                                        .expect("Failed to setup the model.");
-
-                                    b.iter(|| model.run_multi_scenario_with_state(&mut state, &settings))
-                                },
-                            );
-                        }
-                        #[cfg(feature = "ipm-simd")]
                         SolverSetting::IpmSimdF64x4(settings) => {
                             let parameter_string =
                                 format!("ipm-simd-f64x4 * {n_sys} * {density} * {n_sc} * {}", &setup.name);
@@ -128,10 +93,10 @@ fn random_benchmark(
                                 |b, _n| {
                                     // Do the setup here outside of the time-step loop
                                     let mut state = model
-                                        .setup_multi_scenario::<SimdIpmF64Solver<4>>(&settings)
+                                        .setup_multi_scenario::<SimdIpmF64Solver>(settings)
                                         .expect("Failed to setup the model.");
 
-                                    b.iter(|| model.run_multi_scenario_with_state(&mut state, &settings))
+                                    b.iter(|| model.run_multi_scenario_with_state(&mut state, settings))
                                 },
                             );
                         }
@@ -146,10 +111,10 @@ fn random_benchmark(
                                 |b, _n| {
                                     // Do the setup here outside of the time-step loop
                                     let mut state = model
-                                        .setup_multi_scenario::<ClIpmF64Solver>(&settings)
+                                        .setup_multi_scenario::<ClIpmF64Solver>(settings)
                                         .expect("Failed to setup the model.");
 
-                                    b.iter(|| model.run_multi_scenario_with_state(&mut state, &settings))
+                                    b.iter(|| model.run_multi_scenario_with_state(&mut state, settings))
                                 },
                             );
                         }
@@ -167,11 +132,7 @@ enum SolverSetting {
     #[cfg(feature = "highs")]
     Highs(HighsSolverSettings),
     #[cfg(feature = "ipm-simd")]
-    IpmSimdF64x1(SimdIpmSolverSettings<f64, 1>),
-    #[cfg(feature = "ipm-simd")]
-    IpmSimdF64x2(SimdIpmSolverSettings<f64, 2>),
-    #[cfg(feature = "ipm-simd")]
-    IpmSimdF64x4(SimdIpmSolverSettings<f64, 4>),
+    IpmSimdF64x4(SimdIpmSolverSettings),
     #[cfg(feature = "ipm-ocl")]
     IpmOcl(ClIpmSolverSettings),
 }
@@ -190,16 +151,6 @@ fn default_solver_setups() -> Vec<SolverSetup> {
         },
         SolverSetup {
             setting: SolverSetting::Clp(ClpSolverSettings::default()),
-            name: "default".to_string(),
-        },
-        #[cfg(feature = "ipm-simd")]
-        SolverSetup {
-            setting: SolverSetting::IpmSimdF64x1(SimdIpmSolverSettings::default()),
-            name: "default".to_string(),
-        },
-        #[cfg(feature = "ipm-simd")]
-        SolverSetup {
-            setting: SolverSetting::IpmSimdF64x2(SimdIpmSolverSettings::default()),
             name: "default".to_string(),
         },
         #[cfg(feature = "ipm-simd")]
@@ -256,28 +207,7 @@ fn bench_threads(c: &mut Criterion) {
                     .threads(n_threads)
                     .build(),
             ),
-            name: format!("threads-{}", n_threads),
-        });
-
-        #[cfg(feature = "ipm-simd")]
-        solver_setups.push(SolverSetup {
-            setting: SolverSetting::IpmSimdF64x1(
-                SimdIpmSolverSettingsBuilder::default()
-                    .parallel()
-                    .threads(n_threads)
-                    .build(),
-            ),
-            name: format!("threads-{}", n_threads),
-        });
-        #[cfg(feature = "ipm-simd")]
-        solver_setups.push(SolverSetup {
-            setting: SolverSetting::IpmSimdF64x2(
-                SimdIpmSolverSettingsBuilder::default()
-                    .parallel()
-                    .threads(n_threads)
-                    .build(),
-            ),
-            name: format!("threads-{}", n_threads),
+            name: format!("threads-{n_threads}",),
         });
         #[cfg(feature = "ipm-simd")]
         solver_setups.push(SolverSetup {
@@ -287,7 +217,7 @@ fn bench_threads(c: &mut Criterion) {
                     .threads(n_threads)
                     .build(),
             ),
-            name: format!("threads-{}", n_threads),
+            name: format!("threads-{n_threads}"),
         });
 
         #[cfg(feature = "ipm-ocl")]
@@ -298,7 +228,7 @@ fn bench_threads(c: &mut Criterion) {
                     .threads(n_threads)
                     .build(),
             ),
-            name: format!("threads-{}", n_threads),
+            name: format!("threads-{n_threads}"),
         });
     }
 
@@ -330,7 +260,7 @@ fn bench_ipm_convergence(c: &mut Criterion) {
                     .threads(N_THREADS)
                     .build(),
             ),
-            name: format!("opt-tol-{:e}", optimality),
+            name: format!("opt-tol-{optimality:e}"),
         });
         #[cfg(feature = "ipm-ocl")]
         solver_setups.push(SolverSetup {
@@ -341,7 +271,7 @@ fn bench_ipm_convergence(c: &mut Criterion) {
                     .threads(N_THREADS)
                     .build(),
             ),
-            name: format!("opt-tol-{:e}", optimality),
+            name: format!("opt-tol-{optimality:e}"),
         });
     }
 
@@ -374,7 +304,7 @@ fn bench_ocl_chunks(c: &mut Criterion) {
                     .num_chunks(NonZeroUsize::new(num_chunks).unwrap())
                     .build(),
             ),
-            name: format!("num-chunks-{}", num_chunks),
+            name: format!("num-chunks-{num_chunks}"),
         });
     }
 
@@ -406,26 +336,6 @@ fn bench_hyper_scenarios(c: &mut Criterion) {
         SolverSetup {
             setting: SolverSetting::Clp(
                 ClpSolverSettingsBuilder::default()
-                    .parallel()
-                    .threads(N_THREADS)
-                    .build(),
-            ),
-            name: "default".to_string(),
-        },
-        #[cfg(feature = "ipm-simd")]
-        SolverSetup {
-            setting: SolverSetting::IpmSimdF64x1(
-                SimdIpmSolverSettingsBuilder::default()
-                    .parallel()
-                    .threads(N_THREADS)
-                    .build(),
-            ),
-            name: "default".to_string(),
-        },
-        #[cfg(feature = "ipm-simd")]
-        SolverSetup {
-            setting: SolverSetting::IpmSimdF64x2(
-                SimdIpmSolverSettingsBuilder::default()
                     .parallel()
                     .threads(N_THREADS)
                     .build(),

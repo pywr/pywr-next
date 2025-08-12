@@ -1,16 +1,17 @@
-use crate::metric::{MetricF64, SimpleMetricF64};
-use crate::network::Network;
+use crate::NodeIndex;
+use crate::metric::{MetricF64, MetricF64Error, SimpleMetricF64, SimpleMetricF64Error};
+use crate::network::{Network, NetworkError};
 use crate::node::{NodeMeta, StorageConstraints, StorageInitialVolume};
-use crate::state::{State, VirtualStorageState};
+use crate::state::{NetworkStateError, State, StateError, VirtualStorageState};
 use crate::timestep::Timestep;
-use crate::{NodeIndex, PywrError};
 use chrono::{Datelike, Month, NaiveDateTime};
 use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::num::NonZeroUsize;
 use std::ops::{Deref, DerefMut};
+use thiserror::Error;
 
-#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Debug)]
+#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Debug, Hash)]
 pub struct VirtualStorageIndex(usize);
 
 impl Deref for VirtualStorageIndex {
@@ -47,17 +48,20 @@ impl DerefMut for VirtualStorageVec {
 }
 
 impl VirtualStorageVec {
-    pub fn get(&self, index: &VirtualStorageIndex) -> Result<&VirtualStorage, PywrError> {
-        self.nodes.get(index.0).ok_or(PywrError::NodeIndexNotFound)
+    pub fn get(&self, index: &VirtualStorageIndex) -> Option<&VirtualStorage> {
+        self.nodes.get(index.0)
     }
 
-    pub fn get_mut(&mut self, index: &VirtualStorageIndex) -> Result<&mut VirtualStorage, PywrError> {
-        self.nodes.get_mut(index.0).ok_or(PywrError::NodeIndexNotFound)
+    pub fn get_mut(&mut self, index: &VirtualStorageIndex) -> Option<&mut VirtualStorage> {
+        self.nodes.get_mut(index.0)
     }
 
-    pub fn push_new(&mut self, builder: VirtualStorageBuilder) -> Result<VirtualStorageIndex, PywrError> {
+    pub fn push_new(&mut self, builder: VirtualStorageBuilder) -> Result<VirtualStorageIndex, NetworkError> {
         if self.nodes.iter().any(|n| n.name() == builder.name) {
-            return Err(PywrError::NodeNameAlreadyExists(builder.name.to_string()));
+            return Err(NetworkError::NodeAlreadyExists {
+                name: builder.name.clone(),
+                sub_name: builder.sub_name.clone(),
+            });
         }
 
         let node_index = VirtualStorageIndex(self.nodes.len());
@@ -160,6 +164,16 @@ pub enum VirtualStorageReset {
     NumberOfMonths { months: i32 },
 }
 
+#[derive(Debug, Error)]
+pub enum VirtualStorageError {
+    #[error("Network state error: {0}")]
+    NetworkStateError(#[from] NetworkStateError),
+    #[error("State error: {0}")]
+    StateError(#[from] StateError),
+    #[error("Simple metric error: {0}")]
+    SimpleMetricError(#[from] SimpleMetricF64Error),
+}
+
 /// A component that represents a virtual storage constraint.
 ///
 /// Virtual storage are not part of the main network but can have their volume "used" by
@@ -205,7 +219,7 @@ impl VirtualStorage {
         VirtualStorageState::new(0.0, self.rolling_window)
     }
 
-    pub fn get_cost(&self, network: &Network, state: &State) -> Result<f64, PywrError> {
+    pub fn get_cost(&self, network: &Network, state: &State) -> Result<f64, MetricF64Error> {
         match &self.cost {
             None => Ok(0.0),
             Some(m) => m.get_value(network, state),
@@ -216,7 +230,7 @@ impl VirtualStorage {
         self.cost = cost;
     }
 
-    pub fn before(&self, timestep: &Timestep, state: &mut State) -> Result<(), PywrError> {
+    pub fn before(&self, timestep: &Timestep, state: &mut State) -> Result<(), VirtualStorageError> {
         let do_reset = if timestep.is_first() {
             // Set the initial volume if it is the first timestep.
             true
@@ -229,7 +243,10 @@ impl VirtualStorage {
                 }
                 VirtualStorageReset::NumberOfMonths { months } => {
                     // Get the date when the virtual storage was last reset
-                    match state.get_network_state().get_virtual_storage_last_reset(self.index())? {
+                    match state
+                        .get_network_state()
+                        .get_virtual_storage_last_reset(&self.index())?
+                    {
                         // Reset if last reset is more than `months` ago.
                         Some(last_reset) => months_since_last_reset(&timestep.date, &last_reset.date) >= months,
                         None => true,
@@ -241,23 +258,20 @@ impl VirtualStorage {
         if do_reset {
             let max_volume = self.get_max_volume(state)?;
             // Determine the initial volume
-            let volume = match &self.initial_volume {
-                StorageInitialVolume::Absolute(iv) => *iv,
-                StorageInitialVolume::Proportional(ipc) => max_volume * ipc,
-            };
+            let volume = self.initial_volume.get_absolute_initial_volume(max_volume, state)?;
 
             // Reset the volume
-            state.reset_virtual_storage_node_volume(*self.meta.index(), volume, timestep)?;
+            state.reset_virtual_storage_node_volume(self.meta.index(), volume, timestep)?;
             // Reset the rolling history if defined
             if let Some(window) = self.rolling_window {
                 // Initially the missing volume is distributed evenly across the window
                 let initial_flow = (max_volume - volume) / window.get() as f64;
-                state.reset_virtual_storage_history(*self.meta.index(), initial_flow)?;
+                state.reset_virtual_storage_history(self.meta.index(), initial_flow)?;
             }
         }
         // Recover any historical flows from a rolling window
         if self.rolling_window.is_some() {
-            state.recover_virtual_storage_last_historical_flow(*self.meta.index(), timestep)?;
+            state.recover_virtual_storage_last_historical_flow(self.meta.index(), timestep)?;
         }
 
         Ok(())
@@ -271,17 +285,17 @@ impl VirtualStorage {
         self.nodes.iter().zip(self.factors.iter()).map(|(n, f)| (n, *f))
     }
 
-    pub fn get_min_volume(&self, state: &State) -> Result<f64, PywrError> {
+    pub fn get_min_volume(&self, state: &State) -> Result<f64, SimpleMetricF64Error> {
         self.storage_constraints
             .get_min_volume(&state.get_simple_parameter_values())
     }
 
-    pub fn get_max_volume(&self, state: &State) -> Result<f64, PywrError> {
+    pub fn get_max_volume(&self, state: &State) -> Result<f64, SimpleMetricF64Error> {
         self.storage_constraints
             .get_max_volume(&state.get_simple_parameter_values())
     }
 
-    pub fn get_available_volume_bounds(&self, state: &State) -> Result<(f64, f64), PywrError> {
+    pub fn get_available_volume_bounds(&self, state: &State) -> Result<(f64, f64), VirtualStorageError> {
         let min_vol = self.get_min_volume(state)?;
         let max_vol = self.get_max_volume(state)?;
 
@@ -306,11 +320,11 @@ mod tests {
     use crate::network::Network;
     use crate::node::StorageInitialVolume;
     use crate::parameters::ControlCurveInterpolatedParameter;
-    use crate::recorders::{AssertionFnRecorder, AssertionRecorder};
+    use crate::recorders::{AssertionF64Recorder, AssertionFnRecorder};
     use crate::scenario::ScenarioIndex;
     use crate::test_utils::{default_timestepper, run_all_solvers, simple_model};
     use crate::timestep::{Timestep, TimestepDuration, Timestepper};
-    use crate::virtual_storage::{months_since_last_reset, VirtualStorageBuilder, VirtualStorageReset};
+    use crate::virtual_storage::{VirtualStorageBuilder, VirtualStorageReset, months_since_last_reset};
     use chrono::{Datelike, NaiveDate};
     use ndarray::Array;
     use std::num::NonZeroUsize;
@@ -409,11 +423,7 @@ mod tests {
         // Set-up assertion for "link" node
         let idx = network.get_node_by_name("link", Some("0")).unwrap().index();
         let expected = |ts: &Timestep, _si: &ScenarioIndex| {
-            if ts.index < 3 {
-                10.0
-            } else {
-                0.0
-            }
+            if ts.index < 3 { 10.0 } else { 0.0 }
         };
         let recorder = AssertionFnRecorder::new("link-0-flow", MetricF64::NodeOutFlow(idx), expected, None, None);
         network.add_recorder(Box::new(recorder)).unwrap();
@@ -421,11 +431,7 @@ mod tests {
         // Set-up assertion for "input" node
         let idx = network.get_node_by_name("link", Some("1")).unwrap().index();
         let expected = |ts: &Timestep, _si: &ScenarioIndex| {
-            if ts.index < 4 {
-                10.0
-            } else {
-                0.0
-            }
+            if ts.index < 4 { 10.0 } else { 0.0 }
         };
         let recorder = AssertionFnRecorder::new("link-1-flow", MetricF64::NodeOutFlow(idx), expected, None, None);
         network.add_recorder(Box::new(recorder)).unwrap();
@@ -457,7 +463,7 @@ mod tests {
         let expected = Array::zeros((366, 1));
 
         let idx = network.get_node_by_name("output", None).unwrap().index();
-        let recorder = AssertionRecorder::new("output-flow", MetricF64::NodeInFlow(idx), expected, None, None);
+        let recorder = AssertionF64Recorder::new("output-flow", MetricF64::NodeInFlow(idx), expected, None, None);
         network.add_recorder(Box::new(recorder)).unwrap();
 
         // Test all solvers

@@ -19,10 +19,11 @@ use chrono::{NaiveDate, NaiveDateTime};
 #[cfg(feature = "pyo3")]
 use pyo3::pyclass;
 #[cfg(feature = "core")]
-use pywr_core::{models::ModelDomain, timestep::TimestepDuration, PywrError};
+use pywr_core::{models::ModelDomain, timestep::TimestepDuration};
 use schemars::JsonSchema;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
+use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticStr};
 
 #[derive(serde::Deserialize, serde::Serialize, Clone, JsonSchema)]
 pub struct Metadata {
@@ -53,8 +54,10 @@ impl From<pywr_v1_schema::model::Metadata> for Metadata {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, strum_macros::Display)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, Display, EnumDiscriminants)]
 #[serde(untagged)]
+#[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
+#[strum_discriminants(name(TimestepType))]
 pub enum Timestep {
     Days(i64),
     Frequency(String),
@@ -69,14 +72,16 @@ impl From<pywr_v1_schema::model::Timestep> for Timestep {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Clone, Copy, Debug, JsonSchema, strum_macros::Display)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Copy, Debug, JsonSchema, Display, EnumDiscriminants)]
 #[serde(untagged)]
-pub enum DateType {
+#[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
+#[strum_discriminants(name(DateType))]
+pub enum Date {
     Date(NaiveDate),
     DateTime(NaiveDateTime),
 }
 
-impl From<pywr_v1_schema::model::DateType> for DateType {
+impl From<pywr_v1_schema::model::DateType> for Date {
     fn from(v1: pywr_v1_schema::model::DateType) -> Self {
         match v1 {
             pywr_v1_schema::model::DateType::Date(date) => Self::Date(date),
@@ -87,16 +92,16 @@ impl From<pywr_v1_schema::model::DateType> for DateType {
 
 #[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema)]
 pub struct Timestepper {
-    pub start: DateType,
-    pub end: DateType,
+    pub start: Date,
+    pub end: Date,
     pub timestep: Timestep,
 }
 
 impl Default for Timestepper {
     fn default() -> Self {
         Self {
-            start: DateType::Date(NaiveDate::from_ymd_opt(2000, 1, 1).expect("Invalid date")),
-            end: DateType::Date(NaiveDate::from_ymd_opt(2000, 12, 31).expect("Invalid date")),
+            start: Date::Date(NaiveDate::from_ymd_opt(2000, 1, 1).expect("Invalid date")),
+            end: Date::Date(NaiveDate::from_ymd_opt(2000, 12, 31).expect("Invalid date")),
             timestep: Timestep::Days(1),
         }
     }
@@ -121,13 +126,13 @@ impl From<Timestepper> for pywr_core::timestep::Timestepper {
         };
 
         let start = match ts.start {
-            DateType::Date(date) => NaiveDateTime::new(date, NaiveTime::default()),
-            DateType::DateTime(date_time) => date_time,
+            Date::Date(date) => NaiveDateTime::new(date, NaiveTime::default()),
+            Date::DateTime(date_time) => date_time,
         };
 
         let end = match ts.end {
-            DateType::Date(date) => NaiveDateTime::new(date, NaiveTime::default()),
-            DateType::DateTime(date_time) => date_time,
+            Date::Date(date) => NaiveDateTime::new(date, NaiveTime::default()),
+            Date::DateTime(date_time) => date_time,
         };
 
         Self::new(start, end, timestep)
@@ -135,10 +140,160 @@ impl From<Timestepper> for pywr_core::timestep::Timestepper {
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Clone, JsonSchema)]
-pub struct Scenario {
+#[serde(deny_unknown_fields)]
+pub struct ScenarioGroupSlice {
+    pub start: usize,
+    pub end: usize,
+}
+
+#[derive(serde::Deserialize, serde::Serialize, Clone, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ScenarioGroupIndices {
+    pub indices: Vec<usize>,
+}
+
+#[derive(serde::Deserialize, serde::Serialize, Clone, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ScenarioGroupLabels {
+    pub labels: Vec<String>,
+}
+
+#[derive(serde::Deserialize, serde::Serialize, Clone, JsonSchema, Display, EnumDiscriminants)]
+#[serde(tag = "type", deny_unknown_fields)]
+#[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
+#[strum_discriminants(name(ScenarioGroupSubsetType))]
+pub enum ScenarioGroupSubset {
+    Slice(ScenarioGroupSlice),
+    Indices(ScenarioGroupIndices),
+    Labels(ScenarioGroupLabels),
+}
+
+/// A scenario group defines a set of scenarios that can be run in a model.
+///
+/// A scenario group is defined by a name and a size. The size is the number of scenarios in the group.
+/// Optional labels can be defined for the group. These labels are used in output data
+/// to identify the scenario group. A subset can be defined to simulate only part of the group.
+///
+/// See also the examples in the [`ScenarioDomain`] documentation.
+#[derive(serde::Deserialize, serde::Serialize, Clone, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ScenarioGroup {
     pub name: String,
     pub size: usize,
-    pub ensemble_names: Option<Vec<String>>,
+    pub labels: Option<Vec<String>>,
+    pub subset: Option<ScenarioGroupSubset>,
+}
+
+#[cfg(feature = "core")]
+impl TryInto<pywr_core::scenario::ScenarioGroup> for ScenarioGroup {
+    type Error = SchemaError;
+
+    fn try_into(self) -> Result<pywr_core::scenario::ScenarioGroup, Self::Error> {
+        let mut builder = pywr_core::scenario::ScenarioGroupBuilder::new(&self.name, self.size);
+
+        if let Some(labels) = self.labels {
+            builder = builder.with_labels(&labels);
+        }
+
+        if let Some(subset) = self.subset {
+            match subset {
+                ScenarioGroupSubset::Slice(slice) => {
+                    builder = builder.with_subset_slice(slice.start, slice.end);
+                }
+                ScenarioGroupSubset::Indices(indices) => {
+                    builder = builder.with_subset_indices(indices.indices);
+                }
+                ScenarioGroupSubset::Labels(labels) => {
+                    builder = builder.with_subset_labels(&labels.labels);
+                }
+            }
+        }
+
+        Ok(builder.build()?)
+    }
+}
+
+#[derive(serde::Deserialize, serde::Serialize, Clone, JsonSchema, Display, EnumDiscriminants)]
+#[serde(untagged)]
+#[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
+#[strum_discriminants(name(ScenarioLabelOrIndexType))]
+pub enum ScenarioLabelOrIndex {
+    Label(String),
+    Index(usize),
+}
+
+#[cfg(feature = "core")]
+impl From<ScenarioLabelOrIndex> for pywr_core::scenario::ScenarioLabelOrIndex {
+    fn from(val: ScenarioLabelOrIndex) -> pywr_core::scenario::ScenarioLabelOrIndex {
+        match val {
+            ScenarioLabelOrIndex::Label(label) => pywr_core::scenario::ScenarioLabelOrIndex::Label(label),
+            ScenarioLabelOrIndex::Index(index) => pywr_core::scenario::ScenarioLabelOrIndex::Index(index),
+        }
+    }
+}
+
+/// A scenario domain is a collection of scenario groups that define the possible scenarios that
+/// can be run in a model.
+///
+/// Each scenario group has a name and size. The full space of the domain is defined as the
+/// cartesian product of the sizes of each group. For simulation purposes, the domain can be
+/// constrained (or "subsetted") by defining a subset for each group. A subset can be defined
+/// using specific labels or indices of the group, or using slice of the group. The slice is a contiguous
+/// subset of the group that will be used in the simulation. The slice is defined by the `start`
+/// and `end` indices of the group. The `start` index is inclusive and the `end` index is exclusive.
+///
+/// Alternatively, the domain can be constrained by defining a list of combinations of the groups
+/// that will be used in the simulation. The combinations are defined as a list of lists of indices
+/// of the groups.
+///
+/// It is an error if both a `slice`(s) and `combinations` are defined.
+///
+/// # JSON Examples
+///
+/// The examples below show how a scenario group can be defined in JSON.
+///
+/// ```json
+#[doc = include_str!("doc_examples/scenario_domain1.json")]
+/// ```
+///
+/// The example below shows how a scenario group can be defined with custom labels. In this
+/// case Roman numerals are used to identify the individual scenarios.
+///
+/// ```json
+#[doc = include_str!("doc_examples/scenario_domain2.json")]
+/// ```
+///
+/// The example below shows how to define two scenario groups.
+///
+/// ```json
+#[doc = include_str!("doc_examples/scenario_domain3.json")]
+/// ```
+#[derive(serde::Deserialize, serde::Serialize, Clone, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ScenarioDomain {
+    /// The groups that define the scenario domain.
+    pub groups: Vec<ScenarioGroup>,
+    /// Optional combinations of the groups that allow simulation of specific scenarios.
+    pub combinations: Option<Vec<Vec<ScenarioLabelOrIndex>>>,
+}
+
+#[cfg(feature = "core")]
+impl TryInto<pywr_core::scenario::ScenarioDomainBuilder> for ScenarioDomain {
+    type Error = SchemaError;
+
+    fn try_into(self) -> Result<pywr_core::scenario::ScenarioDomainBuilder, Self::Error> {
+        let mut builder = pywr_core::scenario::ScenarioDomainBuilder::default();
+
+        for group in self.groups {
+            builder = builder.with_group(group.try_into()?)?;
+        }
+
+        if let Some(combinations) = self.combinations {
+            builder = builder.with_combinations(combinations.into_iter().collect());
+        }
+
+        Ok(builder)
+    }
 }
 
 #[cfg(feature = "core")]
@@ -426,13 +581,10 @@ impl PywrNetwork {
                 if let Err(e) = node.add_to_model(&mut network, &args) {
                     // Adding the node failed!
                     match e {
-                        SchemaError::PywrCore(core_err) => match core_err {
-                            // And it failed because another node was not found.
-                            // Let's try to load more nodes and see if this one can tried
-                            // again later
-                            PywrError::NodeNotFound(_) => failed_nodes.push(node),
-                            _ => return Err(SchemaError::PywrCore(core_err)),
-                        },
+                        // And it failed because another node was not found.
+                        // Let's try to load more nodes and see if this one can tried
+                        // again later
+                        SchemaError::CoreNodeNotFound { .. } => failed_nodes.push(node),
                         _ => return Err(e),
                     }
                 };
@@ -471,14 +623,10 @@ impl PywrNetwork {
                 if let Err(e) = parameter.add_to_model(&mut network, &args, parent) {
                     // Adding the parameter failed!
                     match e {
-                        SchemaError::PywrCore(core_err) => match core_err {
-                            // And it failed because another parameter was not found.
-                            // Let's try to load more parameters and see if this one can tried
-                            // again later
-                            PywrError::ParameterNotFound(_) => failed_parameters.push((parent, parameter)),
-                            _ => return Err(SchemaError::PywrCore(core_err)),
-                        },
-                        SchemaError::ParameterNotFound(_) => failed_parameters.push((parent, parameter)),
+                        // And it failed because another parameter was not found.
+                        // Let's try to load more parameters and see if this one can tried
+                        // again later
+                        SchemaError::CoreParameterNotFound { .. } => failed_parameters.push((parent, parameter)),
                         _ => return Err(e),
                     }
                 };
@@ -516,8 +664,10 @@ impl PywrNetwork {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Clone, strum_macros::Display)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Display, EnumDiscriminants)]
 #[serde(untagged)]
+#[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
+#[strum_discriminants(name(PywrNetworkRefType))]
 pub enum PywrNetworkRef {
     Path(PathBuf),
     Inline(PywrNetwork),
@@ -529,7 +679,7 @@ pub enum PywrNetworkRef {
 /// JSON file. The schema is used to "build" a [`pywr_core::models::Model`] which can then be
 /// "run" to produce results. The purpose of the schema is to provide a higher level and more
 /// user friendly interface to model definition than the core model itself. This allows
-/// abstractions, such as [`crate::nodes::WaterTreatmentWorks`], to be created and used in the
+/// abstractions, such as [`crate::nodes::WaterTreatmentWorksNode`], to be created and used in the
 /// schema without the user needing to know the details of how this is implemented in the core
 /// model.
 ///
@@ -548,7 +698,7 @@ pub enum PywrNetworkRef {
 pub struct PywrModel {
     pub metadata: Metadata,
     pub timestepper: Timestepper,
-    pub scenarios: Option<Vec<Scenario>>,
+    pub scenarios: Option<ScenarioDomain>,
     pub network: PywrNetwork,
 }
 
@@ -580,7 +730,7 @@ impl VisitMetrics for PywrModel {
 }
 
 impl PywrModel {
-    pub fn new(title: &str, start: &DateType, end: &DateType) -> Self {
+    pub fn new(title: &str, start: &Date, end: &Date) -> Self {
         Self {
             metadata: Metadata {
                 title: title.to_string(),
@@ -613,15 +763,12 @@ impl PywrModel {
     ) -> Result<pywr_core::models::Model, SchemaError> {
         let timestepper = self.timestepper.clone().into();
 
-        let mut scenario_collection = pywr_core::scenario::ScenarioGroupCollection::default();
+        let scenario_builder = match &self.scenarios {
+            Some(scenarios) => scenarios.clone().try_into()?,
+            None => pywr_core::scenario::ScenarioDomainBuilder::default(),
+        };
 
-        if let Some(scenarios) = &self.scenarios {
-            for scenario in scenarios {
-                scenario_collection.add_group(&scenario.name, scenario.size);
-            }
-        }
-
-        let domain = ModelDomain::from(timestepper, scenario_collection)?;
+        let domain = ModelDomain::from(timestepper, scenario_builder)?;
 
         let tables = self.network.load_tables(data_path)?;
         let timeseries = self.network.load_timeseries(&domain, data_path)?;
@@ -752,7 +899,7 @@ pub struct PywrMultiNetworkEntry {
 pub struct PywrMultiNetworkModel {
     pub metadata: Metadata,
     pub timestepper: Timestepper,
-    pub scenarios: Option<Vec<Scenario>>,
+    pub scenarios: Option<ScenarioDomain>,
     pub networks: Vec<PywrMultiNetworkEntry>,
 }
 
@@ -781,15 +928,12 @@ impl PywrMultiNetworkModel {
     ) -> Result<pywr_core::models::MultiNetworkModel, SchemaError> {
         let timestepper = self.timestepper.clone().into();
 
-        let mut scenario_collection = pywr_core::scenario::ScenarioGroupCollection::default();
+        let scenario_builder = match &self.scenarios {
+            Some(scenarios) => scenarios.clone().try_into()?,
+            None => pywr_core::scenario::ScenarioDomainBuilder::default(),
+        };
 
-        if let Some(scenarios) = &self.scenarios {
-            for scenario in scenarios {
-                scenario_collection.add_group(&scenario.name, scenario.size);
-            }
-        }
-
-        let domain = ModelDomain::from(timestepper, scenario_collection)?;
+        let domain = ModelDomain::from(timestepper, scenario_builder)?;
         let mut networks = Vec::with_capacity(self.networks.len());
         let mut inter_network_transfers = Vec::new();
         let mut schemas: Vec<(PywrNetwork, LoadedTableCollection, LoadedTimeseriesCollection)> =
@@ -898,9 +1042,10 @@ impl PywrMultiNetworkModel {
 
 #[cfg(test)]
 mod tests {
-    use super::PywrModel;
+    use super::{PywrModel, ScenarioDomain};
     use crate::model::Timestepper;
     use crate::visit::VisitPaths;
+    use std::fs;
     use std::fs::read_to_string;
     use std::path::PathBuf;
 
@@ -930,14 +1075,14 @@ mod tests {
         let timestep: Timestepper = serde_json::from_str(timestepper_str).unwrap();
 
         match timestep.start {
-            super::DateType::Date(date) => {
+            super::Date::Date(date) => {
                 assert_eq!(date, chrono::NaiveDate::from_ymd_opt(2015, 1, 1).unwrap());
             }
             _ => panic!("Expected a date"),
         }
 
         match timestep.end {
-            super::DateType::Date(date) => {
+            super::Date::Date(date) => {
                 assert_eq!(date, chrono::NaiveDate::from_ymd_opt(2015, 12, 31).unwrap());
             }
             _ => panic!("Expected a date"),
@@ -957,7 +1102,7 @@ mod tests {
         let timestep: Timestepper = serde_json::from_str(timestepper_str).unwrap();
 
         match timestep.start {
-            super::DateType::DateTime(date_time) => {
+            super::Date::DateTime(date_time) => {
                 assert_eq!(
                     date_time,
                     chrono::NaiveDate::from_ymd_opt(2015, 1, 1)
@@ -970,7 +1115,7 @@ mod tests {
         }
 
         match timestep.end {
-            super::DateType::DateTime(date_time) => {
+            super::Date::DateTime(date_time) => {
                 assert_eq!(
                     date_time,
                     chrono::NaiveDate::from_ymd_opt(2015, 1, 1)
@@ -1012,6 +1157,22 @@ mod tests {
             panic!("Expected an error due to missing file: {str}");
         }
     }
+
+    #[test]
+    fn test_scenario_domain_doc_examples() {
+        let mut doc_examples = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        doc_examples.push("src/doc_examples");
+
+        for entry in fs::read_dir(doc_examples).unwrap() {
+            let p = entry.unwrap().path();
+            if p.is_file() && p.file_name().unwrap().to_str().unwrap().starts_with("scenario_domain") {
+                let data = read_to_string(&p).unwrap_or_else(|e| panic!("Failed to read file: {p:?}: {e}",));
+
+                let _value: ScenarioDomain =
+                    serde_json::from_str(&data).unwrap_or_else(|e| panic!("Failed to deserialize {p:?}: {e}",));
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -1021,7 +1182,9 @@ mod core_tests {
     use crate::metric::{Metric, ParameterReference};
     use crate::parameters::{AggFunc, AggregatedParameter, ConstantParameter, ConstantValue, Parameter, ParameterMeta};
     use ndarray::{Array1, Array2, Axis};
-    use pywr_core::{metric::MetricF64, recorders::AssertionRecorder, solvers::ClpSolver, test_utils::run_all_solvers};
+    use pywr_core::{
+        metric::MetricF64, recorders::AssertionF64Recorder, solvers::ClpSolver, test_utils::run_all_solvers,
+    };
     use std::fs::read_to_string;
     use std::path::PathBuf;
 
@@ -1044,7 +1207,7 @@ mod core_tests {
         let expected_values: Array1<f64> = [10.0; 365].to_vec().into();
         let expected_values: Array2<f64> = expected_values.insert_axis(Axis(1));
 
-        let rec = AssertionRecorder::new(
+        let rec = AssertionF64Recorder::new(
             "assert-demand1",
             MetricF64::NodeInFlow(demand1_idx),
             expected_values,
@@ -1181,7 +1344,7 @@ mod core_tests {
         let expected_values: Array1<f64> = [10.0; 365].to_vec().into();
         let expected_values: Array2<f64> = expected_values.insert_axis(Axis(1));
 
-        let rec = AssertionRecorder::new(
+        let rec = AssertionF64Recorder::new(
             "assert-demand1",
             MetricF64::NodeInFlow(demand1_idx),
             expected_values,
@@ -1200,7 +1363,7 @@ mod core_tests {
         let expected_values: Array1<f64> = [10.0; 365].to_vec().into();
         let expected_values: Array2<f64> = expected_values.insert_axis(Axis(1));
 
-        let rec = AssertionRecorder::new(
+        let rec = AssertionF64Recorder::new(
             "assert-demand2",
             MetricF64::NodeInFlow(demand1_idx),
             expected_values,
@@ -1232,7 +1395,7 @@ mod core_tests {
         let expected_values: Array1<f64> = [10.0; 365].to_vec().into();
         let expected_values: Array2<f64> = expected_values.insert_axis(Axis(1));
 
-        let rec = AssertionRecorder::new(
+        let rec = AssertionF64Recorder::new(
             "assert-demand1",
             MetricF64::NodeInFlow(demand1_idx),
             expected_values,
@@ -1251,7 +1414,7 @@ mod core_tests {
         let expected_values: Array1<f64> = [10.0; 365].to_vec().into();
         let expected_values: Array2<f64> = expected_values.insert_axis(Axis(1));
 
-        let rec = AssertionRecorder::new(
+        let rec = AssertionF64Recorder::new(
             "assert-demand2",
             MetricF64::NodeInFlow(demand1_idx),
             expected_values,

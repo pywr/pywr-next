@@ -13,9 +13,7 @@ members = [
     # These are the listings for the book
     "pywr-book/listings/*",
 ]
-exclude = [
-    "tests/models/simple-wasm/simple-wasm-parameter"
-]
+
 # IPM packages are not default because they require nightly (portable_simd).
 default-members = [
     "coin-or-sys",
@@ -37,25 +35,43 @@ opt-level = 3
 
 [profile.profiling]
 inherits = "release"
-debug = true
+debug = "line-tables-only"
+
+
+[workspace.package]
+readme = "README.md"
+description = "A generalised water resource allocation model."
+version = "2.0.0-dev"
+edition = "2024"
+rust-version = "1.85"
+authors = ["James Tomlinson <tomo.bbe@gmail.com>"]
+repository = "https://github.com/pywr/pywr-next/"
+license = "MIT OR Apache-2.0"
+keywords = ["water", "modelling"]
+categories = ["science", "simulation"]
 
 
 [workspace.dependencies]
+ahash = "0.8"
 serde = { version = "1", features = ["derive", ] }
 serde_json = "1.0"
 thiserror = "2.0"
 num = "0.4"
 float-cmp = "0.10"
 ndarray = "0.16"
-polars = { version = "0.46", features = ["lazy", "rows", "ndarray"] }
-pyo3-polars = "0.20"
-pyo3 = { version = "0.23", features = ["abi3-py39"] }
+polars = { version = "0.49", features = ["lazy", "rows", "ndarray"] }
+pyo3-polars = "0.22"
+pyo3 = { version = "0.25", features = ["abi3-py310"] }
 pyo3-log = "0.12"
 tracing = { version = "0.1", features = ["log"] }
 csv = "1.3"
-hdf5-metno = { version = "0.9", features = ["static", "zlib"] }
-pywr-v1-schema = "0.17"
+hdf5-metno = { version = "0.10.1", features = ["static", "zlib"] }
+pywr-v1-schema = "0.18"
 chrono = { version = "0.4", features = ["serde"] }
-schemars = { version = "0.8", features = ["chrono"] }
+schemars = { version = "1.0", features = ["chrono04"] }
 rand = "0.8"
 rand_chacha = "0.3"
+wide = "0.7.33"
+
+[workspace.metadata.docs.rs]
+rustdoc-args = ["--html-in-header", "katex-header.html"]

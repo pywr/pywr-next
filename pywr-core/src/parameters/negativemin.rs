@@ -1,10 +1,10 @@
 use crate::metric::MetricF64;
 use crate::network::Network;
+use crate::parameters::errors::ParameterCalculationError;
 use crate::parameters::{GeneralParameter, Parameter, ParameterMeta, ParameterName, ParameterState};
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
 use crate::timestep::Timestep;
-use crate::PywrError;
 
 pub struct NegativeMinParameter {
     meta: ParameterMeta,
@@ -35,7 +35,7 @@ impl GeneralParameter<f64> for NegativeMinParameter {
         network: &Network,
         state: &State,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<f64, PywrError> {
+    ) -> Result<f64, ParameterCalculationError> {
         let x = -self.metric.get_value(network, state)?;
         Ok(x.min(self.threshold))
     }

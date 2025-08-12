@@ -1,13 +1,14 @@
+#[cfg(feature = "core")]
+use crate::SchemaError;
 use crate::error::ComponentConversionError;
 use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::parameters::{ConversionData, ParameterMeta};
-use crate::v1::{try_convert_parameter_attr, IntoV2, TryFromV1};
+use crate::v1::{IntoV2, TryFromV1, try_convert_parameter_attr};
+
 #[cfg(feature = "core")]
-use crate::SchemaError;
-#[cfg(feature = "core")]
-use pywr_core::parameters::{HydropowerTargetData, ParameterIndex};
+use pywr_core::parameters::{HydropowerTargetData, ParameterIndex, ParameterName};
 use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::parameters::HydropowerTargetParameter as HydropowerTargetParameterV1;
 use schemars::JsonSchema;
@@ -49,7 +50,7 @@ pub struct HydropowerTargetParameter {
     /// The elevation of water entering the turbine. The difference of this
     /// value with the `turbine_elevation` gives the working head of the turbine. This is optional
     /// and can be a constant, a value from a table, a parameter name or an inline parameter
-    /// (see [`DynamicFloatValue`]).
+    /// (see [`Metric`]).
     pub water_elevation: Option<Metric>,
     /// The elevation of the turbine. The difference between the `water_elevation` and this value
     /// gives the working head of the turbine. Default to `0.0`.
@@ -83,6 +84,7 @@ impl HydropowerTargetParameter {
         &self,
         network: &mut pywr_core::network::Network,
         args: &LoadArgs,
+        parent: Option<&str>,
     ) -> Result<ParameterIndex<f64>, SchemaError> {
         let target = self.target.load(network, args, None)?;
         let water_elevation = self
@@ -113,7 +115,10 @@ impl HydropowerTargetParameter {
             flow_unit_conversion: self.flow_unit_conversion,
             energy_unit_conversion: self.energy_unit_conversion,
         };
-        let p = pywr_core::parameters::HydropowerTargetParameter::new(self.meta.name.as_str().into(), turbine_data);
+        let p = pywr_core::parameters::HydropowerTargetParameter::new(
+            ParameterName::new(&self.meta.name, parent),
+            turbine_data,
+        );
         Ok(network.add_parameter(Box::new(p))?)
     }
 }

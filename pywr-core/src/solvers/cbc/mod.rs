@@ -3,14 +3,13 @@ mod settings;
 use super::builder::{ColType, SolverBuilder};
 use crate::network::Network;
 use crate::solvers::builder::BuiltSolver;
-use crate::solvers::{Solver, SolverFeatures, SolverTimings};
+use crate::solvers::{Solver, SolverFeatures, SolverSetupError, SolverSolveError, SolverTimings};
 use crate::state::{ConstParameterValues, State};
 use crate::timestep::Timestep;
-use crate::PywrError;
 use coin_or_sys::cbc::*;
 use libc::{c_double, c_int};
 pub use settings::{CbcSolverSettings, CbcSolverSettingsBuilder};
-use std::ffi::{c_char, CString};
+use std::ffi::{CString, c_char};
 use std::time::Instant;
 use std::{ptr, slice};
 use thiserror::Error;
@@ -149,7 +148,10 @@ impl Cbc {
 
     fn solve(&mut self) {
         unsafe {
-            Cbc_solve(self.ptr);
+            let ret = Cbc_solve(self.ptr);
+            if ret != 0 {
+                panic!("Cbc solve failed with error code: {ret}");
+            }
         }
     }
 
@@ -244,7 +246,7 @@ impl Solver for CbcSolver {
         model: &Network,
         values: &ConstParameterValues,
         _settings: &Self::Settings,
-    ) -> Result<Box<Self>, PywrError> {
+    ) -> Result<Box<Self>, SolverSetupError> {
         let builder = SolverBuilder::default();
         let built = builder.create(model, values)?;
 
@@ -252,7 +254,12 @@ impl Solver for CbcSolver {
         Ok(Box::new(solver))
     }
 
-    fn solve(&mut self, model: &Network, timestep: &Timestep, state: &mut State) -> Result<SolverTimings, PywrError> {
+    fn solve(
+        &mut self,
+        model: &Network,
+        timestep: &Timestep,
+        state: &mut State,
+    ) -> Result<SolverTimings, SolverSolveError> {
         let mut timings = SolverTimings::default();
         self.builder.update(model, timestep, state, &mut timings)?;
 
@@ -265,7 +272,7 @@ impl Solver for CbcSolver {
         self.cbc.change_row_upper(self.builder.row_upper());
 
         if !self.builder.coefficients_to_update().is_empty() {
-            return Err(PywrError::MissingSolverFeatures);
+            return Err(SolverSolveError::MissingSolverFeatures);
             // TODO waiting for support in CBC's C API: https://github.com/coin-or/Cbc/pull/656
             // self.cbc.modify_coefficient(*row, *column, *coefficient)
         }

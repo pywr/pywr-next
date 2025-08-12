@@ -3,6 +3,7 @@ use crate::error::SchemaError;
 use crate::error::{ComponentConversionError, ConversionError};
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
+use crate::node_attribute_subset_enum;
 use crate::nodes::{LossFactor, NodeAttribute, NodeMeta};
 use crate::parameters::Parameter;
 #[cfg(feature = "core")]
@@ -10,6 +11,16 @@ use pywr_core::metric::MetricF64;
 use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::nodes::LinkNode as LinkNodeV1;
 use schemars::JsonSchema;
+
+// This macro generates a subset enum for the `RiverNode` attributes.
+// It allows for easy conversion between the enum and the `NodeAttribute` type.
+node_attribute_subset_enum! {
+    enum RiverNodeAttribute {
+        Inflow,
+        Outflow,
+        Loss,
+    }
+}
 
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
@@ -38,7 +49,7 @@ pub struct RiverNode {
 }
 
 impl RiverNode {
-    const DEFAULT_ATTRIBUTE: NodeAttribute = NodeAttribute::Outflow;
+    const DEFAULT_ATTRIBUTE: RiverNodeAttribute = RiverNodeAttribute::Outflow;
 
     /// The sub-name of the output node.
     fn loss_node_sub_name() -> Option<&'static str> {
@@ -73,7 +84,7 @@ impl RiverNode {
     }
 
     pub fn default_metric(&self) -> NodeAttribute {
-        Self::DEFAULT_ATTRIBUTE
+        Self::DEFAULT_ATTRIBUTE.into()
     }
 }
 
@@ -88,7 +99,13 @@ impl RiverNode {
         &self,
         network: &pywr_core::network::Network,
     ) -> Result<Vec<pywr_core::node::NodeIndex>, SchemaError> {
-        let idx = network.get_node_index_by_name(self.meta.name.as_str(), Self::net_node_sub_name())?;
+        let idx = network
+            .get_node_index_by_name(self.meta.name.as_str(), Self::net_node_sub_name())
+            .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                name: self.meta.name.clone(),
+                sub_name: Self::net_node_sub_name().map(String::from),
+            })?;
+
         Ok(vec![idx])
     }
 
@@ -133,15 +150,23 @@ impl RiverNode {
         attribute: Option<NodeAttribute>,
     ) -> Result<MetricF64, SchemaError> {
         // Use the default attribute if none is specified
-        let attr = attribute.unwrap_or(Self::DEFAULT_ATTRIBUTE);
+        let attr = match attribute {
+            Some(attr) => attr.try_into()?,
+            None => Self::DEFAULT_ATTRIBUTE,
+        };
 
         let metric = match attr {
-            NodeAttribute::Inflow => {
+            RiverNodeAttribute::Inflow => {
                 match network.get_node_index_by_name(self.meta.name.as_str(), Self::loss_node_sub_name()) {
                     // The total inflow with the loss is the sum of the net and loss node
-                    Ok(loss_idx) => {
+                    Some(loss_idx) => {
                         let indices = vec![
-                            network.get_node_index_by_name(self.meta.name.as_str(), Self::net_node_sub_name())?,
+                            network
+                                .get_node_index_by_name(self.meta.name.as_str(), Self::net_node_sub_name())
+                                .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                                    name: self.meta.name.clone(),
+                                    sub_name: Self::net_node_sub_name().map(String::from),
+                                })?,
                             loss_idx,
                         ];
                         MetricF64::MultiNodeInFlow {
@@ -150,27 +175,30 @@ impl RiverNode {
                         }
                     }
                     // Loss is None
-                    Err(_) => MetricF64::NodeInFlow(
-                        network.get_node_index_by_name(self.meta.name.as_str(), Self::net_node_sub_name())?,
+                    None => MetricF64::NodeInFlow(
+                        network
+                            .get_node_index_by_name(self.meta.name.as_str(), Self::net_node_sub_name())
+                            .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                                name: self.meta.name.clone(),
+                                sub_name: Self::net_node_sub_name().map(String::from),
+                            })?,
                     ),
                 }
             }
-            NodeAttribute::Outflow => {
-                let idx = network.get_node_index_by_name(self.meta.name.as_str(), Self::net_node_sub_name())?;
+            RiverNodeAttribute::Outflow => {
+                let idx = network
+                    .get_node_index_by_name(self.meta.name.as_str(), Self::net_node_sub_name())
+                    .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                        name: self.meta.name.clone(),
+                        sub_name: Self::net_node_sub_name().map(String::from),
+                    })?;
                 MetricF64::NodeOutFlow(idx)
             }
-            NodeAttribute::Loss => {
+            RiverNodeAttribute::Loss => {
                 match network.get_node_index_by_name(self.meta.name.as_str(), Self::loss_node_sub_name()) {
-                    Ok(loss_idx) => MetricF64::NodeInFlow(loss_idx),
-                    Err(_) => 0.0.into(),
+                    Some(loss_idx) => MetricF64::NodeInFlow(loss_idx),
+                    None => 0.0.into(),
                 }
-            }
-            _ => {
-                return Err(SchemaError::NodeAttributeNotSupported {
-                    ty: "RiverNode".to_string(),
-                    name: self.meta.name.clone(),
-                    attr,
-                })
             }
         };
 

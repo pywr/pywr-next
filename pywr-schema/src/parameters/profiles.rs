@@ -4,9 +4,9 @@ use crate::error::{ComponentConversionError, ConversionError};
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::parameters::{ConstantFloatVec, ConstantValue, ConversionData, ParameterMeta};
-use crate::v1::{try_convert_values, FromV1, IntoV2, TryFromV1};
+use crate::v1::{FromV1, IntoV2, TryFromV1, try_convert_values};
 #[cfg(feature = "core")]
-use pywr_core::parameters::{ParameterIndex, WeeklyProfileError, WeeklyProfileValues};
+use pywr_core::parameters::{ParameterIndex, ParameterName, WeeklyProfileError, WeeklyProfileValues};
 use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::parameters::{
     DailyProfileParameter as DailyProfileParameterV1, MonthInterpDay as MonthInterpDayV1,
@@ -15,6 +15,7 @@ use pywr_v1_schema::parameters::{
     WeeklyProfileParameter as WeeklyProfileParameterV1,
 };
 use schemars::JsonSchema;
+use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticStr};
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
@@ -29,10 +30,11 @@ impl DailyProfileParameter {
         &self,
         network: &mut pywr_core::network::Network,
         args: &LoadArgs,
+        parent: Option<&str>,
     ) -> Result<ParameterIndex<f64>, SchemaError> {
         let values = &self.values.load(args.tables)?[..366];
         let p = pywr_core::parameters::DailyProfileParameter::new(
-            self.meta.name.as_str().into(),
+            ParameterName::new(&self.meta.name, parent),
             values.try_into().expect(""),
         );
         Ok(network.add_simple_parameter(Box::new(p))?)
@@ -56,7 +58,7 @@ impl TryFromV1<DailyProfileParameterV1> for DailyProfileParameter {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone, strum_macros::Display, JsonSchema, PywrVisitAll)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone, Display, JsonSchema, PywrVisitAll, EnumIter)]
 pub enum MonthlyInterpDay {
     First,
     Last,
@@ -86,10 +88,11 @@ impl MonthlyProfileParameter {
         &self,
         network: &mut pywr_core::network::Network,
         args: &LoadArgs,
+        parent: Option<&str>,
     ) -> Result<ParameterIndex<f64>, SchemaError> {
         let values = &self.values.load(args.tables)?[..12];
         let p = pywr_core::parameters::MonthlyProfileParameter::new(
-            self.meta.name.as_str().into(),
+            ParameterName::new(&self.meta.name, parent),
             values.try_into().expect(""),
             self.interp_day.map(|id| id.into()),
         );
@@ -143,6 +146,7 @@ impl UniformDrawdownProfileParameter {
         &self,
         network: &mut pywr_core::network::Network,
         args: &LoadArgs,
+        parent: Option<&str>,
     ) -> Result<ParameterIndex<f64>, SchemaError> {
         let reset_day = match &self.reset_day {
             Some(v) => v.load(args.tables)? as u32,
@@ -158,7 +162,7 @@ impl UniformDrawdownProfileParameter {
         };
 
         let p = pywr_core::parameters::UniformDrawdownProfileParameter::new(
-            self.meta.name.as_str().into(),
+            ParameterName::new(&self.meta.name, parent),
             reset_day,
             reset_month,
             residual_days,
@@ -185,8 +189,12 @@ impl FromV1<UniformDrawdownProfileParameterV1> for UniformDrawdownProfileParamet
 }
 
 /// Distance functions for radial basis function interpolation.
-#[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone, JsonSchema, PywrVisitAll, strum_macros::Display)]
-#[serde(deny_unknown_fields)]
+#[derive(
+    serde::Deserialize, serde::Serialize, Debug, Copy, Clone, JsonSchema, PywrVisitAll, Display, EnumDiscriminants,
+)]
+#[serde(tag = "type", deny_unknown_fields)]
+#[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
+#[strum_discriminants(name(RadialBasisFunctionType))]
 pub enum RadialBasisFunction {
     Linear,
     Cubic,
@@ -329,11 +337,15 @@ pub struct RbfProfileParameter {
 
 #[cfg(feature = "core")]
 impl RbfProfileParameter {
-    pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<ParameterIndex<f64>, SchemaError> {
+    pub fn add_to_model(
+        &self,
+        network: &mut pywr_core::network::Network,
+        parent: Option<&str>,
+    ) -> Result<ParameterIndex<f64>, SchemaError> {
         let function = self.function.into_core_rbf(&self.points)?;
 
         let p = pywr_core::parameters::RbfProfileParameter::new(
-            self.meta.name.as_str().into(),
+            ParameterName::new(&self.meta.name, parent),
             self.points.clone(),
             function,
         );
@@ -388,7 +400,7 @@ impl TryFromV1<RbfProfileParameterV1> for RbfProfileParameter {
                     attr: "epsilon".to_string(),
                     error: ConversionError::UnexpectedType {
                         expected: "float".to_string(),
-                        actual: format!("{}", epsilon_value),
+                        actual: format!("{epsilon_value}"),
                     },
                 });
             }
@@ -411,7 +423,7 @@ impl TryFromV1<RbfProfileParameterV1> for RbfProfileParameter {
                             name: meta.name,
                             attr: "rbf_kwargs".to_string(),
                             error: ConversionError::UnsupportedFeature {
-                                feature: format!("Radial basis function `{}` not supported.", function_str),
+                                feature: format!("Radial basis function `{function_str}` not supported."),
                             },
                         });
                     }
@@ -422,7 +434,7 @@ impl TryFromV1<RbfProfileParameterV1> for RbfProfileParameter {
                     attr: "rbf_kwargs".to_string(),
                     error: ConversionError::UnexpectedType {
                         expected: "string".to_string(),
-                        actual: format!("{}", function_value),
+                        actual: format!("{function_value}"),
                     },
                 });
             }
@@ -442,7 +454,7 @@ impl TryFromV1<RbfProfileParameterV1> for RbfProfileParameter {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone, JsonSchema, PywrVisitAll, strum_macros::Display)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone, JsonSchema, PywrVisitAll, Display, EnumIter)]
 pub enum WeeklyInterpDay {
     First,
     Last,
@@ -463,12 +475,12 @@ impl From<WeeklyInterpDay> for pywr_core::parameters::WeeklyInterpDay {
 /// # Arguments
 ///
 /// * `values` - The weekly values; this can be an array of 52 or 53 values. With 52 items,
-///     the value for the 53<sup>rd</sup> week (day 364 - 29<sup>th</sup> Dec or 30<sup>th</sup>
-///     Dec for a leap year) is copied from week 52<sup>nd</sup>.
+///   the value for the 53<sup>rd</sup> week (day 364 - 29<sup>th</sup> Dec or 30<sup>th</sup>
+///   Dec for a leap year) is copied from week 52<sup>nd</sup>.
 /// * `interp_day` - This is an optional field to control the parameter interpolation. When this
-///     is not provided, the profile is piecewise. When this equals "First" or "Last", the values
-///     are linearly interpolated in each week and the string specifies whether the given values are
-///     the first or last day of the week. See the examples below for more information.
+///   is not provided, the profile is piecewise. When this equals "First" or "Last", the values
+///   are linearly interpolated in each week and the string specifies whether the given values are
+///   the first or last day of the week. See the examples below for more information.
 ///
 /// ## Interpolation notes
 /// When the profile is interpolated, the following assumptions are made for a 52-week profile due to the missing
@@ -533,9 +545,10 @@ impl WeeklyProfileParameter {
         &self,
         network: &mut pywr_core::network::Network,
         args: &LoadArgs,
+        parent: Option<&str>,
     ) -> Result<ParameterIndex<f64>, SchemaError> {
         let p = pywr_core::parameters::WeeklyProfileParameter::new(
-            self.meta.name.as_str().into(),
+            ParameterName::new(&self.meta.name, parent),
             WeeklyProfileValues::try_from(self.values.load(args.tables)?.as_slice()).map_err(
                 |err: WeeklyProfileError| SchemaError::LoadParameter {
                     name: self.meta.name.to_string(),

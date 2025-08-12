@@ -3,14 +3,14 @@ mod align_and_resample;
 mod pandas;
 mod polars_dataset;
 
+use crate::ConversionError;
 use crate::error::ComponentConversionError;
 use crate::parameters::ParameterMeta;
 use crate::v1::{ConversionData, IntoV2, TryFromV1};
 use crate::visit::VisitPaths;
-use crate::ConversionError;
 #[cfg(feature = "core")]
-use ndarray::Array2;
-pub use pandas::PandasDataset;
+use ndarray::{Array2, ShapeError, s};
+pub use pandas::PandasTimeseries;
 #[cfg(feature = "core")]
 use polars::error::PolarsError;
 #[cfg(feature = "core")]
@@ -19,20 +19,20 @@ use polars::prelude::{
     DataType::{Float64, UInt64},
     Float64Type, IndexOrder, UInt64Type,
 };
-pub use polars_dataset::PolarsDataset;
+pub use polars_dataset::PolarsTimeseries;
 #[cfg(feature = "pyo3")]
 use pyo3::PyErr;
 #[cfg(feature = "core")]
 use pywr_core::{
     models::ModelDomain,
     parameters::{Array1Parameter, Array2Parameter, ParameterIndex, ParameterName},
-    PywrError,
 };
 use pywr_v1_schema::parameters::DataFrameParameter as DataFrameParameterV1;
 use schemars::JsonSchema;
 #[cfg(feature = "core")]
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticStr};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -53,11 +53,14 @@ pub enum TimeseriesError {
     DataFrameTimestepMismatch(String),
     #[error("A timeseries dataframe with the name '{0}' already exists.")]
     TimeseriesDataframeAlreadyExists(String),
-    #[error("The timeseries dataset '{0}' has more than one column of data so a column or scenario name must be provided for any reference"
+    #[error(
+        "The timeseries dataset '{0}' has more than one column of data so a column or scenario name must be provided for any reference"
     )]
     TimeseriesColumnOrScenarioRequired(String),
     #[error("The timeseries dataset '{0}' has no columns")]
     TimeseriesDataframeHasNoColumns(String),
+    #[error("Model time domain has no timesteps.")]
+    NoTimestepsDefined,
     #[cfg(feature = "pyo3")]
     #[error("Python error: {0}")]
     PythonError(#[from] PyErr),
@@ -65,53 +68,57 @@ pub enum TimeseriesError {
     #[cfg(feature = "core")]
     PolarsError(#[from] PolarsError),
     #[cfg(feature = "core")]
-    #[error("Pywr core error: {0}")]
-    PywrCore(#[from] PywrError),
-    #[cfg(feature = "core")]
     #[error("Python not enabled.")]
     PythonNotEnabled,
+    #[cfg(feature = "core")]
+    #[error("Scenario error: {0}")]
+    Scenario(#[from] pywr_core::scenario::ScenarioError),
+    #[cfg(feature = "core")]
+    #[error("Shape error: {0}")]
+    NdarrayShape(#[from] ShapeError),
+    #[error("Pywr core network error: {0}")]
+    #[cfg(feature = "core")]
+    CoreNetworkError(#[from] pywr_core::NetworkError),
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, Display, EnumDiscriminants)]
 #[serde(tag = "type")]
-pub enum TimeseriesProvider {
-    Pandas(PandasDataset),
-    Polars(PolarsDataset),
-}
-
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct Timeseries {
-    pub meta: ParameterMeta,
-    pub provider: TimeseriesProvider,
+#[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
+#[strum_discriminants(name(TimeseriesType))]
+pub enum Timeseries {
+    Pandas(PandasTimeseries),
+    Polars(PolarsTimeseries),
 }
 
 impl Timeseries {
     #[cfg(feature = "core")]
     pub fn load(&self, domain: &ModelDomain, data_path: Option<&Path>) -> Result<DataFrame, TimeseriesError> {
-        match &self.provider {
-            TimeseriesProvider::Polars(dataset) => dataset.load(self.meta.name.as_str(), data_path, domain),
-            TimeseriesProvider::Pandas(dataset) => dataset.load(self.meta.name.as_str(), data_path, domain),
+        match &self {
+            Timeseries::Polars(dataset) => dataset.load(data_path, domain),
+            Timeseries::Pandas(dataset) => dataset.load(data_path, domain),
         }
     }
 
     pub fn name(&self) -> &str {
-        &self.meta.name
+        match &self {
+            Timeseries::Polars(dataset) => dataset.meta.name.as_str(),
+            Timeseries::Pandas(dataset) => dataset.meta.name.as_str(),
+        }
     }
 }
 
 impl VisitPaths for Timeseries {
     fn visit_paths<F: FnMut(&Path)>(&self, visitor: &mut F) {
-        match &self.provider {
-            TimeseriesProvider::Polars(dataset) => dataset.visit_paths(visitor),
-            TimeseriesProvider::Pandas(dataset) => dataset.visit_paths(visitor),
+        match &self {
+            Timeseries::Polars(dataset) => dataset.visit_paths(visitor),
+            Timeseries::Pandas(dataset) => dataset.visit_paths(visitor),
         }
     }
 
     fn visit_paths_mut<F: FnMut(&mut PathBuf)>(&mut self, visitor: &mut F) {
-        match &mut self.provider {
-            TimeseriesProvider::Polars(dataset) => dataset.visit_paths_mut(visitor),
-            TimeseriesProvider::Pandas(dataset) => dataset.visit_paths_mut(visitor),
+        match self {
+            Timeseries::Polars(dataset) => dataset.visit_paths_mut(visitor),
+            Timeseries::Pandas(dataset) => dataset.visit_paths_mut(visitor),
         }
     }
 }
@@ -133,10 +140,10 @@ impl LoadedTimeseriesCollection {
         if let Some(timeseries_defs) = timeseries_defs {
             for ts in timeseries_defs {
                 let df = ts.load(domain, data_path)?;
-                if timeseries.contains_key(&ts.meta.name) {
-                    return Err(TimeseriesError::TimeseriesDataframeAlreadyExists(ts.meta.name.clone()));
+                if timeseries.contains_key(ts.name()) {
+                    return Err(TimeseriesError::TimeseriesDataframeAlreadyExists(ts.name().to_string()));
                 }
-                timeseries.insert(ts.meta.name.clone(), df);
+                timeseries.insert(ts.name().to_string(), df);
             }
         }
         Ok(Self { timeseries })
@@ -158,14 +165,11 @@ impl LoadedTimeseriesCollection {
         let name = ParameterName::new(col, Some(name));
 
         match network.get_parameter_index_by_name(&name) {
-            Ok(idx) => Ok(idx),
-            Err(e) => match e {
-                PywrError::ParameterNotFound(_) => {
-                    let p = Array1Parameter::new(name, array, None);
-                    Ok(network.add_simple_parameter(Box::new(p))?)
-                }
-                _ => Err(TimeseriesError::PywrCore(e)),
-            },
+            Some(idx) => Ok(idx),
+            None => {
+                let p = Array1Parameter::new(name, array, None);
+                Ok(network.add_simple_parameter(Box::new(p))?)
+            }
         }
     }
 
@@ -185,14 +189,11 @@ impl LoadedTimeseriesCollection {
         let name = ParameterName::new(col, Some(name));
 
         match network.get_index_parameter_index_by_name(&name) {
-            Ok(idx) => Ok(idx),
-            Err(e) => match e {
-                PywrError::ParameterNotFound(_) => {
-                    let p = Array1Parameter::new(name, array, None);
-                    Ok(network.add_simple_index_parameter(Box::new(p))?)
-                }
-                _ => Err(TimeseriesError::PywrCore(e)),
-            },
+            Some(idx) => Ok(idx),
+            None => {
+                let p = Array1Parameter::new(name, array, None);
+                Ok(network.add_simple_index_parameter(Box::new(p))?)
+            }
         }
     }
 
@@ -223,14 +224,11 @@ impl LoadedTimeseriesCollection {
         let name = ParameterName::new(col, Some(name));
 
         match network.get_parameter_index_by_name(&name) {
-            Ok(idx) => Ok(idx),
-            Err(e) => match e {
-                PywrError::ParameterNotFound(_) => {
-                    let p = Array1Parameter::new(name, array, None);
-                    Ok(network.add_simple_parameter(Box::new(p))?)
-                }
-                _ => Err(TimeseriesError::PywrCore(e)),
-            },
+            Some(idx) => Ok(idx),
+            None => {
+                let p = Array1Parameter::new(name, array, None);
+                Ok(network.add_simple_parameter(Box::new(p))?)
+            }
         }
     }
 
@@ -261,14 +259,11 @@ impl LoadedTimeseriesCollection {
         let name = ParameterName::new(col, Some(name));
 
         match network.get_index_parameter_index_by_name(&name) {
-            Ok(idx) => Ok(idx),
-            Err(e) => match e {
-                PywrError::ParameterNotFound(_) => {
-                    let p = Array1Parameter::new(name, array, None);
-                    Ok(network.add_simple_index_parameter(Box::new(p))?)
-                }
-                _ => Err(TimeseriesError::PywrCore(e)),
-            },
+            Some(idx) => Ok(idx),
+            None => {
+                let p = Array1Parameter::new(name, array, None);
+                Ok(network.add_simple_index_parameter(Box::new(p))?)
+            }
         }
     }
 
@@ -280,28 +275,29 @@ impl LoadedTimeseriesCollection {
         domain: &ModelDomain,
         scenario: &str,
     ) -> Result<ParameterIndex<f64>, TimeseriesError> {
-        let scenario_group_index = domain
-            .scenarios()
-            .group_index(scenario)
-            .ok_or(TimeseriesError::ScenarioGroupNotFound(scenario.to_string()))?;
-
+        let scenario_group_index = domain.scenarios().group_index(scenario)?;
         let df = self
             .timeseries
             .get(name)
             .ok_or(TimeseriesError::TimeseriesNotFound(name.to_string()))?;
 
-        let array: Array2<f64> = df.to_ndarray::<Float64Type>(IndexOrder::default()).unwrap();
+        // Original array as loaded from the timeseries
+        let mut array: Array2<f64> = df.to_ndarray::<Float64Type>(IndexOrder::default())?;
+
+        // If there is a scenario subset then we can reduce the data to align with the scenarios
+        // that are actually used in the model.
+        if let Some(subset) = domain.scenarios().group_scenario_subset(scenario)? {
+            array = subset_array2(&array, subset)?;
+        }
+
         let name = ParameterName::new(scenario, Some(name));
 
         match network.get_parameter_index_by_name(&name) {
-            Ok(idx) => Ok(idx),
-            Err(e) => match e {
-                PywrError::ParameterNotFound(_) => {
-                    let p = Array2Parameter::new(name, array, scenario_group_index, None);
-                    Ok(network.add_simple_parameter(Box::new(p))?)
-                }
-                _ => Err(TimeseriesError::PywrCore(e)),
-            },
+            Some(idx) => Ok(idx),
+            None => {
+                let p = Array2Parameter::new(name, array, scenario_group_index, None);
+                Ok(network.add_simple_parameter(Box::new(p))?)
+            }
         }
     }
 
@@ -313,30 +309,47 @@ impl LoadedTimeseriesCollection {
         domain: &ModelDomain,
         scenario: &str,
     ) -> Result<ParameterIndex<u64>, TimeseriesError> {
-        let scenario_group_index = domain
-            .scenarios()
-            .group_index(scenario)
-            .ok_or(TimeseriesError::ScenarioGroupNotFound(scenario.to_string()))?;
+        let scenario_group_index = domain.scenarios().group_index(scenario)?;
 
         let df = self
             .timeseries
             .get(name)
             .ok_or(TimeseriesError::TimeseriesNotFound(name.to_string()))?;
 
-        let array: Array2<u64> = df.to_ndarray::<UInt64Type>(IndexOrder::default()).unwrap();
+        let mut array: Array2<u64> = df.to_ndarray::<UInt64Type>(IndexOrder::default())?;
+
+        // If there is a scenario subset then we can reduce the data to align with the scenarios
+        // that are actually used in the model.
+        if let Some(subset) = domain.scenarios().group_scenario_subset(scenario)? {
+            array = subset_array2(&array, subset)?;
+        }
+
         let name = ParameterName::new(scenario, Some(name));
 
         match network.get_index_parameter_index_by_name(&name) {
-            Ok(idx) => Ok(idx),
-            Err(e) => match e {
-                PywrError::ParameterNotFound(_) => {
-                    let p = Array2Parameter::new(name, array, scenario_group_index, None);
-                    Ok(network.add_simple_index_parameter(Box::new(p))?)
-                }
-                _ => Err(TimeseriesError::PywrCore(e)),
-            },
+            Some(idx) => Ok(idx),
+            None => {
+                let p = Array2Parameter::new(name, array, scenario_group_index, None);
+                Ok(network.add_simple_index_parameter(Box::new(p))?)
+            }
         }
     }
+}
+
+/// Create a subset of a 2D array based on the column indices.
+///
+/// This function is used to reduce the size of a timeseries dataframe to only include the columns
+/// that are used in a simulation.
+#[cfg(feature = "core")]
+pub fn subset_array2<T>(array: &Array2<T>, subset: &[usize]) -> Result<Array2<T>, ShapeError>
+where
+    T: Copy,
+{
+    // Slice the array to only include the columns that are used in the scenario
+    let slices = subset.iter().map(|c| array.slice(s![.., *c])).collect::<Vec<_>>();
+    // Stack the slices to create a new array; this should be infallible because
+    // the slices are all the same length.
+    ndarray::stack(ndarray::Axis(1), &slices)
 }
 
 /// Convert timeseries inputs to this schema.
@@ -407,11 +420,13 @@ impl LoadedTimeseriesCollection {
 //     ts.into_values().collect::<Vec<Timeseries>>()
 // }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, strum_macros::Display, PartialEq)]
-#[serde(tag = "type", content = "name")]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PartialEq, Display, EnumDiscriminants)]
+#[serde(tag = "type", deny_unknown_fields)]
+#[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
+#[strum_discriminants(name(TimeseriesColumnsType))]
 pub enum TimeseriesColumns {
-    Scenario(String),
-    Column(String),
+    Scenario { name: String },
+    Column { name: String },
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PartialEq)]
@@ -461,21 +476,26 @@ impl TryFromV1<DataFrameParameterV1> for ConvertedTimeseriesReference {
                 Some(v) => v.as_str().map(|s| s.to_string()),
                 None => None,
             };
+            // remove the parse_dates for CSV files as this is already passed to read_csv in
+            // pandas_load.py. This prevents from raising a multiple keyword error.
+            if let Some(ext) = url.extension() {
+                if ext == "csv" && pandas_kwargs.contains_key("parse_dates") {
+                    pandas_kwargs.remove("parse_dates");
+                }
+            }
 
-            let provider = PandasDataset {
+            let timeseries = PandasTimeseries {
+                meta: meta.clone(),
                 time_col,
                 url,
                 kwargs: Some(pandas_kwargs),
             };
 
             // The timeseries data that is extracted
-            let timeseries = Timeseries {
-                meta: meta.clone(),
-                provider: TimeseriesProvider::Pandas(provider),
-            };
+            let timeseries = Timeseries::Pandas(timeseries);
 
             // Only add if the timeseries does not already exist
-            if !conversion_data.timeseries.iter().any(|ts| ts.meta.name == meta.name) {
+            if !conversion_data.timeseries.iter().any(|ts| ts.name() == meta.name) {
                 conversion_data.timeseries.push(timeseries);
             }
         } else if let Some(table) = v1.table {
@@ -494,8 +514,8 @@ impl TryFromV1<DataFrameParameterV1> for ConvertedTimeseriesReference {
 
         // Create the reference to the timeseries data
         let columns = match (v1.column, v1.scenario) {
-            (Some(col), None) => Some(TimeseriesColumns::Column(col)),
-            (None, Some(scenario)) => Some(TimeseriesColumns::Scenario(scenario)),
+            (Some(name), None) => Some(TimeseriesColumns::Column { name }),
+            (None, Some(name)) => Some(TimeseriesColumns::Scenario { name }),
             (Some(_), Some(_)) => {
                 return Err(ComponentConversionError::Parameter {
                     name: meta.name.clone(),
@@ -503,7 +523,7 @@ impl TryFromV1<DataFrameParameterV1> for ConvertedTimeseriesReference {
                     error: ConversionError::AmbiguousAttributes {
                         attrs: vec!["column".to_string(), "scenario".to_string()],
                     },
-                })
+                });
             }
             (None, None) => None,
         };

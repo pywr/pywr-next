@@ -21,9 +21,4 @@
 - [Developers Guide](./developers-guide/README.md)
     - [Parameter traits and return types](./developers-guide/parameter-traits.md)
     - [Adding a new parameter](./developers-guide/adding-a-parameter.md)
-    - [Version control](./model-management/version-control.md)
-    - [Packaging](./model-management/packaging.md)
-    - [Deployment & Docker](./model-management/deployment.md)
     - [Documentation](./building_documentation.md)
-
-> > > > > > > main

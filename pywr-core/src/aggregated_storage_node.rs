@@ -1,6 +1,7 @@
+use crate::NodeIndex;
 use crate::metric::MetricF64;
 use crate::node::NodeMeta;
-use crate::{NodeIndex, PywrError};
+use std::fmt::Display;
 use std::ops::{Deref, DerefMut};
 
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Debug)]
@@ -11,6 +12,12 @@ impl Deref for AggregatedStorageNodeIndex {
 
     fn deref(&self) -> &Self::Target {
         &self.0
+    }
+}
+
+impl Display for AggregatedStorageNodeIndex {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
     }
 }
 
@@ -34,12 +41,12 @@ impl DerefMut for AggregatedStorageNodeVec {
 }
 
 impl AggregatedStorageNodeVec {
-    pub fn get(&self, index: &AggregatedStorageNodeIndex) -> Result<&AggregatedStorageNode, PywrError> {
-        self.nodes.get(index.0).ok_or(PywrError::NodeIndexNotFound)
+    pub fn get(&self, index: &AggregatedStorageNodeIndex) -> Option<&AggregatedStorageNode> {
+        self.nodes.get(index.0)
     }
 
-    pub fn get_mut(&mut self, index: &AggregatedStorageNodeIndex) -> Result<&mut AggregatedStorageNode, PywrError> {
-        self.nodes.get_mut(index.0).ok_or(PywrError::NodeIndexNotFound)
+    pub fn get_mut(&mut self, index: &AggregatedStorageNodeIndex) -> Option<&mut AggregatedStorageNode> {
+        self.nodes.get_mut(index.0)
     }
 
     pub fn push_new(
@@ -57,8 +64,8 @@ impl AggregatedStorageNodeVec {
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct AggregatedStorageNode {
-    pub meta: NodeMeta<AggregatedStorageNodeIndex>,
-    pub nodes: Vec<NodeIndex>,
+    meta: NodeMeta<AggregatedStorageNodeIndex>,
+    nodes: Vec<NodeIndex>,
 }
 
 impl AggregatedStorageNode {
@@ -87,8 +94,8 @@ impl AggregatedStorageNode {
         *self.meta.index()
     }
 
-    pub fn get_nodes(&self) -> Vec<NodeIndex> {
-        self.nodes.to_vec()
+    pub fn iter_nodes(&self) -> impl Iterator<Item = &NodeIndex> {
+        self.nodes.iter()
     }
 
     pub fn default_metric(&self) -> Vec<MetricF64> {

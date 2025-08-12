@@ -1,7 +1,7 @@
 {
   "metadata": {
-    "title": "Mutual exclusivity test 1",
-    "description": "Test mutual exclusivities work with simple link node types",
+    "title": "Mutual exclusivity test 3",
+    "description": "Test mutual exclusivities work with piecewise link node types",
     "minimum_version": "0.1"
   },
   "timestepper": {
@@ -152,7 +152,7 @@
       {
         "name": "node-outputs",
         "type": "CSV",
-        "format": "long",
+        "format": "Long",
         "filename": "mutual-exclusivity3.csv",
         "metric_set": [
           "nodes"

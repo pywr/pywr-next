@@ -1,10 +1,13 @@
 mod annual_virtual_storage;
+mod attributes;
 mod core;
 mod delay;
 mod loss_link;
 mod monthly_virtual_storage;
 mod piecewise_link;
 mod piecewise_storage;
+mod placeholder;
+mod reservoir;
 mod river;
 mod river_gauge;
 mod river_split_with_gauge;
@@ -20,10 +23,15 @@ use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::model::PywrNetwork;
+pub use crate::nodes::placeholder::PlaceholderNode;
+pub use crate::nodes::reservoir::{
+    Bathymetry, BathymetryType, Evaporation, Leakage, Rainfall, ReservoirNode, SpillNodeType,
+};
 use crate::parameters::Parameter;
 use crate::v1::{ConversionData, TryFromV1, TryIntoV2};
 use crate::visit::{VisitMetrics, VisitPaths};
 pub use annual_virtual_storage::{AnnualReset, AnnualVirtualStorageNode};
+pub use attributes::NodeAttribute;
 pub use core::{
     AggregatedNode, AggregatedStorageNode, CatchmentNode, InputNode, LinkNode, OutputNode, Relationship,
     SoftConstraint, StorageInitialVolume, StorageNode,
@@ -45,10 +53,10 @@ pub use river_split_with_gauge::{RiverSplit, RiverSplitWithGaugeNode};
 pub use rolling_virtual_storage::{RollingVirtualStorageNode, RollingWindow};
 use schemars::JsonSchema;
 use std::path::{Path, PathBuf};
-use strum_macros::{Display, EnumDiscriminants, EnumString, IntoStaticStr, VariantNames};
+use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticStr};
 pub use turbine::{TargetType, TurbineNode};
 pub use virtual_storage::VirtualStorageNode;
-pub use water_treatment_works::WaterTreatmentWorks;
+pub use water_treatment_works::WaterTreatmentWorksNode;
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Copy, JsonSchema, PywrVisitAll)]
 pub struct NodePosition {
@@ -84,20 +92,6 @@ impl From<NodeMetaV1> for NodeMeta {
             position: v1.position.map(|p| p.into()),
         }
     }
-}
-
-/// All possible attributes that could be produced by a node.
-///
-///
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Copy, Display, JsonSchema, PywrVisitAll, PartialEq)]
-pub enum NodeAttribute {
-    Inflow,
-    Outflow,
-    Volume,
-    ProportionalVolume,
-    Loss,
-    Deficit,
-    Power,
 }
 
 pub struct NodeBuilder {
@@ -202,7 +196,7 @@ impl NodeBuilder {
                 meta,
                 ..Default::default()
             }),
-            NodeType::WaterTreatmentWorks => Node::WaterTreatmentWorks(WaterTreatmentWorks {
+            NodeType::WaterTreatmentWorks => Node::WaterTreatmentWorks(WaterTreatmentWorksNode {
                 meta,
                 ..Default::default()
             }),
@@ -234,15 +228,25 @@ impl NodeBuilder {
                 meta,
                 ..Default::default()
             }),
+            NodeType::Reservoir => Node::Reservoir(ReservoirNode {
+                storage: StorageNode {
+                    meta,
+                    ..Default::default()
+                },
+                ..Default::default()
+            }),
+            NodeType::Placeholder => Node::Placeholder(PlaceholderNode { meta }),
         }
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Clone, EnumDiscriminants, Debug, JsonSchema, strum_macros::Display)]
-#[serde(tag = "type")]
-#[strum_discriminants(derive(Display, IntoStaticStr, EnumString, VariantNames))]
+#[derive(serde::Deserialize, serde::Serialize, Clone, EnumDiscriminants, Debug, JsonSchema, Display)]
+#[serde(tag = "type", deny_unknown_fields)]
+#[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
 // This creates a separate enum called `NodeType` that is available in this module.
 #[strum_discriminants(name(NodeType))]
+// This is currently required by the `Reservoir` node. Rather than box it
+#[allow(clippy::large_enum_variant)]
 pub enum Node {
     Input(InputNode),
     Link(LinkNode),
@@ -256,7 +260,7 @@ pub enum Node {
     PiecewiseStorage(PiecewiseStorageNode),
     River(RiverNode),
     RiverSplitWithGauge(RiverSplitWithGaugeNode),
-    WaterTreatmentWorks(WaterTreatmentWorks),
+    WaterTreatmentWorks(WaterTreatmentWorksNode),
     Aggregated(AggregatedNode),
     AggregatedStorage(AggregatedStorageNode),
     VirtualStorage(VirtualStorageNode),
@@ -264,6 +268,8 @@ pub enum Node {
     MonthlyVirtualStorage(MonthlyVirtualStorageNode),
     RollingVirtualStorage(RollingVirtualStorageNode),
     Turbine(TurbineNode),
+    Reservoir(ReservoirNode),
+    Placeholder(PlaceholderNode),
 }
 
 impl Node {
@@ -302,10 +308,12 @@ impl Node {
             Node::MonthlyVirtualStorage(n) => &n.meta,
             Node::RollingVirtualStorage(n) => &n.meta,
             Node::Turbine(n) => &n.meta,
+            Node::Reservoir(n) => n.meta(),
+            Node::Placeholder(n) => &n.meta,
         }
     }
 
-    pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
+    pub fn input_connectors(&self, slot: Option<&str>) -> Vec<(&str, Option<String>)> {
         match self {
             Node::Input(n) => n.input_connectors(),
             Node::Link(n) => n.input_connectors(),
@@ -328,6 +336,8 @@ impl Node {
             Node::Delay(n) => n.input_connectors(),
             Node::RollingVirtualStorage(n) => n.input_connectors(),
             Node::Turbine(n) => n.input_connectors(),
+            Node::Reservoir(n) => n.input_connectors(slot),
+            Node::Placeholder(n) => n.input_connectors(),
         }
     }
 
@@ -354,6 +364,8 @@ impl Node {
             Node::Delay(n) => n.output_connectors(),
             Node::RollingVirtualStorage(n) => n.output_connectors(),
             Node::Turbine(n) => n.output_connectors(),
+            Node::Reservoir(n) => n.output_connectors(slot),
+            Node::Placeholder(n) => n.output_connectors(),
         }
     }
     pub fn default_metric(&self) -> NodeAttribute {
@@ -378,6 +390,8 @@ impl Node {
             Node::Delay(n) => n.default_metric(),
             Node::RollingVirtualStorage(n) => n.default_metric(),
             Node::Turbine(n) => n.default_metric(),
+            Node::Reservoir(n) => n.default_metric(),
+            Node::Placeholder(n) => n.default_metric(),
         }
     }
 
@@ -407,6 +421,8 @@ impl Node {
             Node::Delay(n) => n.parameters.as_deref(),
             Node::RollingVirtualStorage(n) => n.parameters.as_deref(),
             Node::Turbine(n) => n.parameters.as_deref(),
+            Node::Reservoir(n) => n.storage.parameters.as_deref(),
+            Node::Placeholder(_) => None,
         }
     }
 }
@@ -435,6 +451,8 @@ impl Node {
             Node::Turbine(n) => n.add_to_model(network, args),
             Node::MonthlyVirtualStorage(n) => n.add_to_model(network, args),
             Node::RollingVirtualStorage(n) => n.add_to_model(network, args),
+            Node::Reservoir(n) => n.add_to_model(network),
+            Node::Placeholder(n) => n.add_to_model(),
         }
     }
 
@@ -465,6 +483,8 @@ impl Node {
             Node::Turbine(n) => n.node_indices_for_constraints(network),
             Node::MonthlyVirtualStorage(n) => n.node_indices_for_constraints(network, args),
             Node::RollingVirtualStorage(n) => n.node_indices_for_constraints(network, args),
+            Node::Reservoir(n) => n.node_indices_for_constraints(network),
+            Node::Placeholder(n) => n.node_indices_for_constraints(),
         }
     }
 
@@ -492,8 +512,10 @@ impl Node {
             Node::PiecewiseStorage(n) => n.set_constraints(network, args),
             Node::Delay(n) => n.set_constraints(network, args),
             Node::Turbine(n) => n.set_constraints(network, args),
+            Node::Reservoir(n) => n.set_constraints(network, args),
             Node::MonthlyVirtualStorage(_) => Ok(()), // TODO
             Node::RollingVirtualStorage(_) => Ok(()), // TODO
+            Node::Placeholder(n) => n.set_constraints(),
         }
     }
 
@@ -525,6 +547,8 @@ impl Node {
             Node::Delay(n) => n.create_metric(network, attribute),
             Node::RollingVirtualStorage(n) => n.create_metric(network, attribute),
             Node::Turbine(n) => n.create_metric(network, attribute, args),
+            Node::Reservoir(n) => n.create_metric(network, attribute),
+            Node::Placeholder(n) => n.create_metric(),
         }
     }
 }
@@ -619,6 +643,8 @@ impl VisitMetrics for Node {
             Node::MonthlyVirtualStorage(n) => n.visit_metrics(visitor),
             Node::RollingVirtualStorage(n) => n.visit_metrics(visitor),
             Node::Turbine(n) => n.visit_metrics(visitor),
+            Node::Reservoir(n) => n.visit_metrics(visitor),
+            Node::Placeholder(n) => n.visit_metrics(visitor),
         }
     }
 
@@ -644,6 +670,8 @@ impl VisitMetrics for Node {
             Node::MonthlyVirtualStorage(n) => n.visit_metrics_mut(visitor),
             Node::RollingVirtualStorage(n) => n.visit_metrics_mut(visitor),
             Node::Turbine(n) => n.visit_metrics_mut(visitor),
+            Node::Reservoir(n) => n.visit_metrics_mut(visitor),
+            Node::Placeholder(n) => n.visit_metrics_mut(visitor),
         }
     }
 }
@@ -671,6 +699,8 @@ impl VisitPaths for Node {
             Node::MonthlyVirtualStorage(n) => n.visit_paths(visitor),
             Node::RollingVirtualStorage(n) => n.visit_paths(visitor),
             Node::Turbine(n) => n.visit_paths(visitor),
+            Node::Reservoir(n) => n.visit_paths(visitor),
+            Node::Placeholder(n) => n.visit_paths(visitor),
         }
     }
 
@@ -696,6 +726,8 @@ impl VisitPaths for Node {
             Node::MonthlyVirtualStorage(n) => n.visit_paths_mut(visitor),
             Node::RollingVirtualStorage(n) => n.visit_paths_mut(visitor),
             Node::Turbine(n) => n.visit_paths_mut(visitor),
+            Node::Reservoir(n) => n.visit_paths_mut(visitor),
+            Node::Placeholder(n) => n.visit_paths_mut(visitor),
         }
     }
 }

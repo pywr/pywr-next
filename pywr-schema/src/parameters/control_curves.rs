@@ -6,9 +6,10 @@ use crate::metric::{Metric, NodeReference};
 use crate::model::LoadArgs;
 use crate::nodes::NodeAttribute;
 use crate::parameters::{ConversionData, ParameterMeta};
-use crate::v1::{try_convert_control_curves, try_convert_parameter_attr, IntoV2, TryFromV1};
+use crate::v1::{IntoV2, TryFromV1, try_convert_control_curves, try_convert_parameter_attr};
+
 #[cfg(feature = "core")]
-use pywr_core::parameters::ParameterIndex;
+use pywr_core::parameters::{ParameterIndex, ParameterName};
 use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::parameters::{
     ControlCurveIndexParameter as ControlCurveIndexParameterV1,
@@ -33,6 +34,7 @@ impl ControlCurveInterpolatedParameter {
         &self,
         network: &mut pywr_core::network::Network,
         args: &LoadArgs,
+        parent: Option<&str>,
     ) -> Result<ParameterIndex<f64>, SchemaError> {
         let metric = self.storage_node.load_f64(network, args)?;
 
@@ -49,7 +51,7 @@ impl ControlCurveInterpolatedParameter {
             .collect::<Result<_, _>>()?;
 
         let p = pywr_core::parameters::ControlCurveInterpolatedParameter::new(
-            self.meta.name.as_str().into(),
+            ParameterName::new(&self.meta.name, parent),
             metric,
             control_curves,
             values,
@@ -133,6 +135,7 @@ impl ControlCurveIndexParameter {
         &self,
         network: &mut pywr_core::network::Network,
         args: &LoadArgs,
+        parent: Option<&str>,
     ) -> Result<ParameterIndex<u64>, SchemaError> {
         let metric = self.storage_node.load_f64(network, args)?;
 
@@ -143,7 +146,7 @@ impl ControlCurveIndexParameter {
             .collect::<Result<_, _>>()?;
 
         let p = pywr_core::parameters::ControlCurveIndexParameter::new(
-            self.meta.name.as_str().into(),
+            ParameterName::new(&self.meta.name, parent),
             metric,
             control_curves,
         );
@@ -242,6 +245,7 @@ impl ControlCurveParameter {
         &self,
         network: &mut pywr_core::network::Network,
         args: &LoadArgs,
+        parent: Option<&str>,
     ) -> Result<ParameterIndex<f64>, SchemaError> {
         let metric = self.storage_node.load_f64(network, args)?;
 
@@ -258,7 +262,7 @@ impl ControlCurveParameter {
             .collect::<Result<_, _>>()?;
 
         let p = pywr_core::parameters::ControlCurveParameter::new(
-            self.meta.name.as_str().into(),
+            ParameterName::new(&self.meta.name, parent),
             metric,
             control_curves,
             values,
@@ -335,6 +339,7 @@ impl ControlCurvePiecewiseInterpolatedParameter {
         &self,
         network: &mut pywr_core::network::Network,
         args: &LoadArgs,
+        parent: Option<&str>,
     ) -> Result<ParameterIndex<f64>, SchemaError> {
         let metric = self.storage_node.load_f64(network, args)?;
 
@@ -350,7 +355,7 @@ impl ControlCurvePiecewiseInterpolatedParameter {
         };
 
         let p = pywr_core::parameters::PiecewiseInterpolatedParameter::new(
-            self.meta.name.as_str().into(),
+            ParameterName::new(&self.meta.name, parent),
             metric,
             control_curves,
             values,

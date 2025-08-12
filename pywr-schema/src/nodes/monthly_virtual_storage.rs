@@ -4,10 +4,11 @@ use crate::error::SchemaError;
 use crate::metric::{Metric, SimpleNodeReference};
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
+use crate::node_attribute_subset_enum;
 use crate::nodes::core::StorageInitialVolume;
 use crate::nodes::{NodeAttribute, NodeMeta};
 use crate::parameters::Parameter;
-use crate::v1::{try_convert_initial_storage, try_convert_node_attr, ConversionData, TryFromV1};
+use crate::v1::{ConversionData, TryFromV1, try_convert_initial_storage, try_convert_node_attr};
 #[cfg(feature = "core")]
 use pywr_core::{
     derived_metric::DerivedMetric,
@@ -30,6 +31,15 @@ impl Default for NumberOfMonthsReset {
     }
 }
 
+// This macro generates a subset enum for the `MonthlyVirtualStorageNode` attributes.
+// It allows for easy conversion between the enum and the `NodeAttribute` type.
+node_attribute_subset_enum! {
+    enum MonthlyVirtualStorageNodeAttribute {
+        Volume,
+        ProportionalVolume,
+    }
+}
+
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct MonthlyVirtualStorageNode {
@@ -46,7 +56,7 @@ pub struct MonthlyVirtualStorageNode {
 }
 
 impl MonthlyVirtualStorageNode {
-    const DEFAULT_ATTRIBUTE: NodeAttribute = NodeAttribute::Volume;
+    const DEFAULT_ATTRIBUTE: MonthlyVirtualStorageNodeAttribute = MonthlyVirtualStorageNodeAttribute::Volume;
 
     pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
         vec![]
@@ -57,7 +67,7 @@ impl MonthlyVirtualStorageNode {
     }
 
     pub fn default_metric(&self) -> NodeAttribute {
-        Self::DEFAULT_ATTRIBUTE
+        Self::DEFAULT_ATTRIBUTE.into()
     }
 }
 
@@ -74,7 +84,9 @@ impl MonthlyVirtualStorageNode {
             .map(|node_ref| {
                 args.schema
                     .get_node_by_name(&node_ref.name)
-                    .ok_or_else(|| SchemaError::NodeNotFound(node_ref.name.to_string()))?
+                    .ok_or_else(|| SchemaError::NodeNotFound {
+                        name: node_ref.name.to_string(),
+                    })?
                     .node_indices_for_constraints(network, args)
             })
             .collect::<Result<Vec<_>, _>>()?
@@ -126,23 +138,24 @@ impl MonthlyVirtualStorageNode {
         attribute: Option<NodeAttribute>,
     ) -> Result<MetricF64, SchemaError> {
         // Use the default attribute if none is specified
-        let attr = attribute.unwrap_or(Self::DEFAULT_ATTRIBUTE);
+        let attr = match attribute {
+            Some(attr) => attr.try_into()?,
+            None => Self::DEFAULT_ATTRIBUTE,
+        };
 
-        let idx = network.get_virtual_storage_node_index_by_name(self.meta.name.as_str(), None)?;
+        let idx = network
+            .get_virtual_storage_node_index_by_name(self.meta.name.as_str(), None)
+            .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                name: self.meta.name.clone(),
+                sub_name: None,
+            })?;
 
         let metric = match attr {
-            NodeAttribute::Volume => MetricF64::VirtualStorageVolume(idx),
-            NodeAttribute::ProportionalVolume => {
+            MonthlyVirtualStorageNodeAttribute::Volume => MetricF64::VirtualStorageVolume(idx),
+            MonthlyVirtualStorageNodeAttribute::ProportionalVolume => {
                 let dm = DerivedMetric::VirtualStorageProportionalVolume(idx);
                 let derived_metric_idx = network.add_derived_metric(dm);
                 MetricF64::DerivedMetric(derived_metric_idx)
-            }
-            _ => {
-                return Err(SchemaError::NodeAttributeNotSupported {
-                    ty: "MonthlyVirtualStorageNode".to_string(),
-                    name: self.meta.name.clone(),
-                    attr,
-                })
             }
         };
 

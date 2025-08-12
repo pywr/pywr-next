@@ -3,6 +3,7 @@ use crate::error::SchemaError;
 use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
+use crate::node_attribute_subset_enum;
 use crate::nodes::loss_link::LossFactor;
 use crate::nodes::{NodeAttribute, NodeMeta};
 use crate::parameters::Parameter;
@@ -10,6 +11,16 @@ use crate::parameters::Parameter;
 use pywr_core::metric::MetricF64;
 use pywr_schema_macros::PywrVisitAll;
 use schemars::JsonSchema;
+
+// This macro generates a subset enum for the `WaterTreatmentWorksNode` attributes.
+// It allows for easy conversion between the enum and the `NodeAttribute` type.
+node_attribute_subset_enum! {
+    enum WaterTreatmentWorksNodeAttribute {
+        Inflow,
+        Outflow,
+        Loss,
+    }
+}
 
 #[doc = svgbobdoc::transform!(
 /// A node used to represent a water treatment works (WTW) with optional losses.
@@ -19,8 +30,8 @@ use schemars::JsonSchema;
 /// or gross flow, and an optional "soft" minimum flow.
 ///
 /// When a loss factor is not given the `loss` node is not created. When a non-zero loss
-/// factor is provided [`pywr_core::nodes::Output`] and [`pywr_core::nodes::Aggregated`] nodes
-/// are created.
+/// factor is provided [`pywr_core::node::OutputNode`] and [`pywr_core::aggregated_node::AggregatedNode`]
+/// nodes are created.
 ///
 ///
 /// ```svgbob
@@ -38,7 +49,7 @@ use schemars::JsonSchema;
 )]
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
-pub struct WaterTreatmentWorks {
+pub struct WaterTreatmentWorksNode {
     /// Node metadata
     pub meta: NodeMeta,
     /// Optional local parameters.
@@ -58,8 +69,8 @@ pub struct WaterTreatmentWorks {
     pub cost: Option<Metric>,
 }
 
-impl WaterTreatmentWorks {
-    const DEFAULT_ATTRIBUTE: NodeAttribute = NodeAttribute::Outflow;
+impl WaterTreatmentWorksNode {
+    const DEFAULT_ATTRIBUTE: WaterTreatmentWorksNodeAttribute = WaterTreatmentWorksNodeAttribute::Outflow;
 
     fn loss_sub_name() -> Option<&'static str> {
         Some("loss")
@@ -102,12 +113,12 @@ impl WaterTreatmentWorks {
     }
 
     pub fn default_metric(&self) -> NodeAttribute {
-        Self::DEFAULT_ATTRIBUTE
+        Self::DEFAULT_ATTRIBUTE.into()
     }
 }
 
 #[cfg(feature = "core")]
-impl WaterTreatmentWorks {
+impl WaterTreatmentWorksNode {
     fn agg_sub_name() -> Option<&'static str> {
         Some("agg")
     }
@@ -116,7 +127,12 @@ impl WaterTreatmentWorks {
         &self,
         network: &pywr_core::network::Network,
     ) -> Result<Vec<pywr_core::node::NodeIndex>, SchemaError> {
-        let idx = network.get_node_index_by_name(self.meta.name.as_str(), Self::net_sub_name())?;
+        let idx = network
+            .get_node_index_by_name(self.meta.name.as_str(), Self::net_sub_name())
+            .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                name: self.meta.name.clone(),
+                sub_name: Self::net_sub_name().map(String::from),
+            })?;
         Ok(vec![idx])
     }
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
@@ -199,15 +215,23 @@ impl WaterTreatmentWorks {
         attribute: Option<NodeAttribute>,
     ) -> Result<MetricF64, SchemaError> {
         // Use the default attribute if none is specified
-        let attr = attribute.unwrap_or(Self::DEFAULT_ATTRIBUTE);
+        let attr = match attribute {
+            Some(attr) => attr.try_into()?,
+            None => Self::DEFAULT_ATTRIBUTE,
+        };
 
         let metric = match attr {
-            NodeAttribute::Inflow => {
+            WaterTreatmentWorksNodeAttribute::Inflow => {
                 match network.get_node_index_by_name(self.meta.name.as_str(), Self::loss_sub_name()) {
                     // Loss node is defined. The total inflow is the sum of the net and loss nodes;
-                    Ok(loss_idx) => {
+                    Some(loss_idx) => {
                         let indices = vec![
-                            network.get_node_index_by_name(self.meta.name.as_str(), Self::net_sub_name())?,
+                            network
+                                .get_node_index_by_name(self.meta.name.as_str(), Self::net_sub_name())
+                                .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                                    name: self.meta.name.clone(),
+                                    sub_name: Self::net_sub_name().map(String::from),
+                                })?,
                             loss_idx,
                         ];
                         MetricF64::MultiNodeInFlow {
@@ -216,27 +240,30 @@ impl WaterTreatmentWorks {
                         }
                     }
                     // No loss node defined, so just use the net node
-                    Err(_) => MetricF64::NodeInFlow(
-                        network.get_node_index_by_name(self.meta.name.as_str(), Self::net_sub_name())?,
+                    None => MetricF64::NodeInFlow(
+                        network
+                            .get_node_index_by_name(self.meta.name.as_str(), Self::net_sub_name())
+                            .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                                name: self.meta.name.clone(),
+                                sub_name: Self::net_sub_name().map(String::from),
+                            })?,
                     ),
                 }
             }
-            NodeAttribute::Outflow => {
-                let idx = network.get_node_index_by_name(self.meta.name.as_str(), Self::net_sub_name())?;
+            WaterTreatmentWorksNodeAttribute::Outflow => {
+                let idx = network
+                    .get_node_index_by_name(self.meta.name.as_str(), Self::net_sub_name())
+                    .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                        name: self.meta.name.clone(),
+                        sub_name: Self::net_sub_name().map(String::from),
+                    })?;
                 MetricF64::NodeOutFlow(idx)
             }
-            NodeAttribute::Loss => {
+            WaterTreatmentWorksNodeAttribute::Loss => {
                 match network.get_node_index_by_name(self.meta.name.as_str(), Self::loss_sub_name()) {
-                    Ok(idx) => MetricF64::NodeInFlow(idx),
-                    Err(_) => 0.0.into(),
+                    Some(idx) => MetricF64::NodeInFlow(idx),
+                    None => 0.0.into(),
                 }
-            }
-            _ => {
-                return Err(SchemaError::NodeAttributeNotSupported {
-                    ty: "WaterTreatmentWorksNode".to_string(),
-                    name: self.meta.name.clone(),
-                    attr,
-                })
             }
         };
 

@@ -33,7 +33,6 @@ def cli():
     "-o", "--output-path", type=click.Path(exists=True, dir_okay=True), default=None
 )
 def run(path: str, solver: str, data_path: Optional[str], output_path: Optional[str]):
-
     data_path = Path(data_path) if data_path is not None else None
     output_path = Path(output_path) if output_path is not None else None
 

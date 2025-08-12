@@ -1,5 +1,6 @@
 use crate::derived_metric::DerivedMetricIndex;
 use crate::edge::{Edge, EdgeIndex};
+use crate::metric::SimpleMetricF64Error;
 use crate::models::MultiNetworkTransferIndex;
 use crate::network::Network;
 use crate::node::{Node, NodeIndex};
@@ -8,8 +9,15 @@ use crate::parameters::{
 };
 use crate::timestep::Timestep;
 use crate::virtual_storage::VirtualStorageIndex;
-use crate::PywrError;
+#[cfg(feature = "pyo3")]
+use pyo3::{
+    Bound, FromPyObject, PyAny, PyResult,
+    exceptions::PyValueError,
+    prelude::PyAnyMethods,
+    types::{PyDict, PyFloat, PyInt},
+};
 use std::collections::{HashMap, VecDeque};
+use std::fmt::Display;
 use std::num::NonZeroUsize;
 use std::ops::Deref;
 use thiserror::Error;
@@ -203,7 +211,7 @@ impl VirtualStorageState {
         Self {
             last_reset: None,
             storage: StorageState::new(initial_volume),
-            history: history_size.map(|size| VirtualStorageHistory::new(size, initial_volume)),
+            history: history_size.map(|size| VirtualStorageHistory::new(size, initial_volume / size.get() as f64)),
         }
     }
 
@@ -266,6 +274,32 @@ pub struct MultiValue {
     indices: HashMap<String, u64>,
 }
 
+#[cfg(feature = "pyo3")]
+impl FromPyObject<'_> for MultiValue {
+    fn extract_bound(ob: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let dict = ob.downcast::<PyDict>()?;
+
+        // Try to convert the floats
+        let mut values: HashMap<String, f64> = HashMap::default();
+        let mut indices: HashMap<String, u64> = HashMap::default();
+
+        for (k, v) in dict {
+            if let Ok(float_value) = v.downcast::<PyFloat>() {
+                values.insert(k.to_string(), float_value.extract::<f64>()?);
+            } else if let Ok(int_value) = v.downcast::<PyInt>() {
+                // If it's an integer, we will treat it as an index
+                indices.insert(k.to_string(), int_value.extract::<u64>()?);
+            } else {
+                return Err(PyValueError::new_err(
+                    "Some returned values were not interpreted as floats or integers.",
+                ));
+            }
+        }
+
+        Ok(MultiValue::new(values, indices))
+    }
+}
+
 impl MultiValue {
     pub fn new(values: HashMap<String, f64>, indices: HashMap<String, u64>) -> Self {
         Self { values, indices }
@@ -278,14 +312,11 @@ impl MultiValue {
     pub fn get_index(&self, key: &str) -> Option<&u64> {
         self.indices.get(key)
     }
-}
 
-#[derive(Error, Debug)]
-pub enum ParameterValuesError {
-    #[error("index not found: {0}")]
-    IndexNotFound(usize),
-    #[error("key not found: {0}")]
-    KeyNotFound(String),
+    /// Check if any of the values in the MultiValue are NaN
+    pub fn has_nan(&self) -> bool {
+        self.values.values().any(|&v| v.is_nan())
+    }
 }
 
 // State of the parameters
@@ -305,72 +336,28 @@ impl ParameterValues {
         }
     }
 
-    fn get_value(&self, idx: usize) -> Result<f64, ParameterValuesError> {
-        self.values
-            .get(idx)
-            .ok_or(ParameterValuesError::IndexNotFound(idx))
-            .copied()
+    fn get_value(&self, idx: usize) -> Option<&f64> {
+        self.values.get(idx)
     }
 
-    fn set_value(&mut self, idx: usize, value: f64) -> Result<(), ParameterValuesError> {
-        match self.values.get_mut(idx) {
-            Some(s) => {
-                *s = value;
-                Ok(())
-            }
-            None => Err(ParameterValuesError::IndexNotFound(idx)),
-        }
+    fn get_value_mut(&mut self, idx: usize) -> Option<&mut f64> {
+        self.values.get_mut(idx)
     }
 
-    fn get_index(&self, idx: usize) -> Result<u64, ParameterValuesError> {
-        self.indices
-            .get(idx)
-            .ok_or(ParameterValuesError::IndexNotFound(idx))
-            .copied()
+    fn get_index(&self, idx: usize) -> Option<&u64> {
+        self.indices.get(idx)
     }
 
-    fn set_index(&mut self, idx: usize, value: u64) -> Result<(), ParameterValuesError> {
-        match self.indices.get_mut(idx) {
-            Some(s) => {
-                *s = value;
-                Ok(())
-            }
-            None => Err(ParameterValuesError::IndexNotFound(idx)),
-        }
+    fn get_index_mut(&mut self, idx: usize) -> Option<&mut u64> {
+        self.indices.get_mut(idx)
     }
 
-    fn get_multi_value(&self, idx: usize, key: &str) -> Result<f64, ParameterValuesError> {
-        let value = self
-            .multi_values
-            .get(idx)
-            .ok_or(ParameterValuesError::IndexNotFound(idx))?;
-
-        value
-            .get_value(key)
-            .ok_or(ParameterValuesError::KeyNotFound(key.to_string()))
-            .copied()
+    fn get_multi_value(&self, idx: usize) -> Option<&MultiValue> {
+        self.multi_values.get(idx)
     }
 
-    fn set_multi_value(&mut self, idx: usize, value: MultiValue) -> Result<(), ParameterValuesError> {
-        match self.multi_values.get_mut(idx) {
-            Some(s) => {
-                *s = value;
-                Ok(())
-            }
-            None => Err(ParameterValuesError::IndexNotFound(idx)),
-        }
-    }
-
-    fn get_multi_index(&self, idx: usize, key: &str) -> Result<u64, ParameterValuesError> {
-        let value = self
-            .multi_values
-            .get(idx)
-            .ok_or(ParameterValuesError::IndexNotFound(idx))?;
-
-        value
-            .get_index(key)
-            .ok_or(ParameterValuesError::KeyNotFound(key.to_string()))
-            .copied()
+    fn get_multi_value_mut(&mut self, idx: usize) -> Option<&mut MultiValue> {
+        self.multi_values.get_mut(idx)
     }
 }
 
@@ -440,40 +427,20 @@ pub struct SimpleParameterValues<'a> {
 }
 
 impl SimpleParameterValues<'_> {
-    pub fn get_simple_parameter_f64(&self, idx: SimpleParameterIndex<f64>) -> Result<f64, PywrError> {
-        self.simple
-            .get_value(*idx.deref())
-            .ok_or(PywrError::SimpleParameterIndexNotFound(idx))
-            .copied()
+    pub fn get_simple_parameter_f64(&self, idx: SimpleParameterIndex<f64>) -> Option<&f64> {
+        self.simple.get_value(*idx.deref())
     }
 
-    pub fn get_simple_parameter_u64(&self, idx: SimpleParameterIndex<u64>) -> Result<u64, PywrError> {
-        self.simple
-            .get_index(*idx.deref())
-            .ok_or(PywrError::SimpleIndexParameterIndexNotFound(idx))
-            .copied()
+    pub fn get_simple_parameter_u64(&self, idx: SimpleParameterIndex<u64>) -> Option<&u64> {
+        self.simple.get_index(*idx.deref())
     }
 
-    pub fn get_simple_multi_parameter_f64(
-        &self,
-        idx: SimpleParameterIndex<MultiValue>,
-        key: &str,
-    ) -> Result<f64, PywrError> {
-        self.simple
-            .get_multi_value(*idx.deref(), key)
-            .ok_or(PywrError::SimpleMultiValueParameterIndexNotFound(idx))
-            .copied()
+    pub fn get_simple_multi_parameter_f64(&self, idx: SimpleParameterIndex<MultiValue>, key: &str) -> Option<&f64> {
+        self.simple.get_multi_value(*idx.deref(), key)
     }
 
-    pub fn get_simple_multi_parameter_u64(
-        &self,
-        idx: SimpleParameterIndex<MultiValue>,
-        key: &str,
-    ) -> Result<u64, PywrError> {
-        self.simple
-            .get_multi_index(*idx.deref(), key)
-            .ok_or(PywrError::SimpleMultiValueParameterIndexNotFound(idx))
-            .copied()
+    pub fn get_simple_multi_parameter_u64(&self, idx: SimpleParameterIndex<MultiValue>, key: &str) -> Option<&u64> {
+        self.simple.get_multi_index(*idx.deref(), key)
     }
 
     pub fn get_constant_values(&self) -> &ConstParameterValues {
@@ -486,41 +453,33 @@ pub struct ConstParameterValues<'a> {
 }
 
 impl ConstParameterValues<'_> {
-    pub fn get_const_parameter_f64(&self, idx: ConstParameterIndex<f64>) -> Result<f64, PywrError> {
-        self.constant
-            .get_value(*idx.deref())
-            .ok_or(PywrError::ConstParameterIndexNotFound(idx))
-            .copied()
+    pub fn get_const_parameter_f64(&self, idx: ConstParameterIndex<f64>) -> Option<&f64> {
+        self.constant.get_value(*idx.deref())
     }
 
-    pub fn get_const_parameter_u64(&self, idx: ConstParameterIndex<u64>) -> Result<u64, PywrError> {
-        self.constant
-            .get_index(*idx.deref())
-            .ok_or(PywrError::ConstIndexParameterIndexNotFound(idx))
-            .copied()
+    pub fn get_const_parameter_u64(&self, idx: ConstParameterIndex<u64>) -> Option<&u64> {
+        self.constant.get_index(*idx.deref())
     }
 
-    pub fn get_const_multi_parameter_f64(
-        &self,
-        idx: ConstParameterIndex<MultiValue>,
-        key: &str,
-    ) -> Result<f64, PywrError> {
-        self.constant
-            .get_multi_value(*idx.deref(), key)
-            .ok_or(PywrError::ConstMultiValueParameterIndexNotFound(idx))
-            .copied()
+    pub fn get_const_multi_parameter_f64(&self, idx: ConstParameterIndex<MultiValue>, key: &str) -> Option<&f64> {
+        self.constant.get_multi_value(*idx.deref(), key)
     }
 
-    pub fn get_const_multi_parameter_u64(
-        &self,
-        idx: ConstParameterIndex<MultiValue>,
-        key: &str,
-    ) -> Result<u64, PywrError> {
-        self.constant
-            .get_multi_index(*idx.deref(), key)
-            .ok_or(PywrError::ConstMultiValueParameterIndexNotFound(idx))
-            .copied()
+    pub fn get_const_multi_parameter_u64(&self, idx: ConstParameterIndex<MultiValue>, key: &str) -> Option<&u64> {
+        self.constant.get_multi_index(*idx.deref(), key)
     }
+}
+
+#[derive(Debug, Error)]
+pub enum NetworkStateError {
+    #[error("Node index not found: {0}")]
+    NodeIndexNotFound(NodeIndex),
+    #[error("Edge index not found: {0}")]
+    EdgeIndexNotFound(EdgeIndex),
+    #[error("Virtual storage index not found: {0}")]
+    VirtualStorageIndexNotFound(VirtualStorageIndex),
+    #[error("Node has no volume: {0}")]
+    NodeHasNoVolume(NodeIndex),
 }
 
 // State of the nodes and edges
@@ -563,20 +522,23 @@ impl NetworkState {
         }
     }
 
-    pub(crate) fn add_flow(&mut self, edge: &Edge, timestep: &Timestep, flow: f64) -> Result<(), PywrError> {
-        match self.node_states.get_mut(*edge.from_node_index()) {
+    pub fn add_flow(&mut self, edge: &Edge, timestep: &Timestep, flow: f64) -> Result<(), NetworkStateError> {
+        let from_node_index = edge.from_node_index();
+        match self.node_states.get_mut(*from_node_index) {
             Some(s) => s.add_out_flow(flow, timestep),
-            None => return Err(PywrError::NodeIndexNotFound),
+            None => return Err(NetworkStateError::NodeIndexNotFound(from_node_index)),
         };
 
-        match self.node_states.get_mut(*edge.to_node_index()) {
+        let to_node_index = edge.to_node_index();
+        match self.node_states.get_mut(*to_node_index) {
             Some(s) => s.add_in_flow(flow, timestep),
-            None => return Err(PywrError::NodeIndexNotFound),
+            None => return Err(NetworkStateError::NodeIndexNotFound(to_node_index)),
         };
 
-        match self.edge_states.get_mut(*edge.index()) {
+        let edge_index = edge.index();
+        match self.edge_states.get_mut(*edge_index) {
             Some(s) => s.add_flow(flow),
-            None => return Err(PywrError::EdgeIndexNotFound),
+            None => return Err(NetworkStateError::EdgeIndexNotFound(edge_index)),
         };
 
         Ok(())
@@ -586,7 +548,7 @@ impl NetworkState {
     ///
     /// This final step ensures that derived states (e.g. virtual storage volume) are updated
     /// once all the flows have been updated.
-    fn update_derived_states(&mut self, model: &Network, timestep: &Timestep) -> Result<(), PywrError> {
+    fn update_derived_states(&mut self, model: &Network, timestep: &Timestep) -> Result<(), NetworkStateError> {
         // Update virtual storage node states
         for (state, node) in self
             .virtual_storage_states
@@ -596,9 +558,12 @@ impl NetworkState {
             let flow = node
                 .iter_nodes_with_factors()
                 .map(|(idx, factor)| match self.node_states.get(*idx.deref()) {
-                    None => Err(PywrError::NodeIndexNotFound),
+                    None => Err(NetworkStateError::NodeIndexNotFound(*idx)),
                     Some(s) => {
-                        let node = model.nodes().get(idx)?;
+                        let node = model
+                            .nodes()
+                            .get(idx)
+                            .ok_or(NetworkStateError::NodeIndexNotFound(*idx))?;
                         match node {
                             Node::Input(_) => Ok(factor * s.get_out_flow()),
                             Node::Output(_) => Ok(factor * s.get_in_flow()),
@@ -616,13 +581,18 @@ impl NetworkState {
     }
 
     /// Clamp the volume of `node_index` to be within the bounds provided.
-    fn clamp_node_volume(&mut self, node_index: &NodeIndex, min_volume: f64, max_volume: f64) -> Result<(), PywrError> {
+    fn clamp_node_volume(
+        &mut self,
+        node_index: &NodeIndex,
+        min_volume: f64,
+        max_volume: f64,
+    ) -> Result<(), NetworkStateError> {
         match self.node_states.get_mut(*node_index.deref()) {
             Some(s) => {
                 s.clamp_volume(min_volume, max_volume);
                 Ok(())
             }
-            None => Err(PywrError::NodeIndexNotFound),
+            None => Err(NetworkStateError::NodeIndexNotFound(*node_index)),
         }
     }
 
@@ -632,137 +602,196 @@ impl NetworkState {
         node_index: &VirtualStorageIndex,
         min_volume: f64,
         max_volume: f64,
-    ) -> Result<(), PywrError> {
+    ) -> Result<(), NetworkStateError> {
         match self.virtual_storage_states.get_mut(*node_index.deref()) {
             Some(s) => {
                 s.clamp_volume(min_volume, max_volume);
                 Ok(())
             }
-            None => Err(PywrError::VirtualStorageIndexNotFound(*node_index)),
+            None => Err(NetworkStateError::VirtualStorageIndexNotFound(*node_index)),
         }
     }
-    pub fn get_node_in_flow(&self, node_index: &NodeIndex) -> Result<f64, PywrError> {
+    pub fn get_node_in_flow(&self, node_index: &NodeIndex) -> Result<f64, NetworkStateError> {
         match self.node_states.get(*node_index.deref()) {
             Some(s) => Ok(s.get_in_flow()),
-            None => Err(PywrError::NodeIndexNotFound),
+            None => Err(NetworkStateError::NodeIndexNotFound(*node_index)),
         }
     }
 
-    pub fn get_node_out_flow(&self, node_index: &NodeIndex) -> Result<f64, PywrError> {
+    pub fn get_node_out_flow(&self, node_index: &NodeIndex) -> Result<f64, NetworkStateError> {
         match self.node_states.get(*node_index.deref()) {
             Some(s) => Ok(s.get_out_flow()),
-            None => Err(PywrError::NodeIndexNotFound),
+            None => Err(NetworkStateError::NodeIndexNotFound(*node_index)),
         }
     }
 
-    pub fn get_node_volume(&self, node_index: &NodeIndex) -> Result<f64, PywrError> {
+    pub fn get_node_volume(&self, node_index: &NodeIndex) -> Result<f64, NetworkStateError> {
         match self.node_states.get(*node_index.deref()) {
             Some(s) => match s {
                 NodeState::Storage(ss) => Ok(ss.volume),
-                NodeState::Flow(_) => Err(PywrError::MetricNotDefinedForNode),
+                NodeState::Flow(_) => Err(NetworkStateError::NodeHasNoVolume(*node_index)),
             },
-            None => Err(PywrError::MetricNotDefinedForNode),
+            None => Err(NetworkStateError::NodeIndexNotFound(*node_index)),
         }
     }
 
-    pub fn get_node_proportional_volume(&self, node_index: &NodeIndex, max_volume: f64) -> Result<f64, PywrError> {
+    pub fn get_node_proportional_volume(
+        &self,
+        node_index: &NodeIndex,
+        max_volume: f64,
+    ) -> Result<f64, NetworkStateError> {
         match self.node_states.get(*node_index.deref()) {
             Some(s) => match s {
                 NodeState::Storage(ss) => Ok(ss.proportional_volume(max_volume)),
-                NodeState::Flow(_) => Err(PywrError::MetricNotDefinedForNode),
+                NodeState::Flow(_) => Err(NetworkStateError::NodeHasNoVolume(*node_index)),
             },
-            None => Err(PywrError::MetricNotDefinedForNode),
+            None => Err(NetworkStateError::NodeIndexNotFound(*node_index)),
         }
     }
 
-    pub fn get_edge_flow(&self, edge_index: &EdgeIndex) -> Result<f64, PywrError> {
+    pub fn get_edge_flow(&self, edge_index: &EdgeIndex) -> Result<f64, NetworkStateError> {
         match self.edge_states.get(*edge_index.deref()) {
             Some(s) => Ok(s.flow),
-            None => Err(PywrError::EdgeIndexNotFound),
+            None => Err(NetworkStateError::EdgeIndexNotFound(*edge_index)),
         }
     }
 
-    pub fn set_volume(&mut self, idx: NodeIndex, volume: f64) -> Result<(), PywrError> {
-        // TODO handle these errors properly
-        if let Some(node_state) = self.node_states.get_mut(*idx.deref()) {
-            match node_state {
-                NodeState::Flow(_) => panic!("Cannot set volume for a non-storage state :("),
-                NodeState::Storage(s) => s.volume = volume,
-            }
-        } else {
-            panic!("Node state not found.")
+    pub fn set_volume(&mut self, node_index: &NodeIndex, volume: f64) -> Result<(), NetworkStateError> {
+        match self.node_states.get_mut(*node_index.deref()) {
+            Some(s) => match s {
+                NodeState::Flow(_) => Err(NetworkStateError::NodeHasNoVolume(*node_index)),
+                NodeState::Storage(s) => {
+                    s.volume = volume;
+                    Ok(())
+                }
+            },
+            None => Err(NetworkStateError::NodeIndexNotFound(*node_index)),
         }
-
-        Ok(())
     }
 
     pub fn reset_virtual_storage_volume(
         &mut self,
-        idx: VirtualStorageIndex,
+        idx: &VirtualStorageIndex,
         volume: f64,
         timestep: &Timestep,
-    ) -> Result<(), PywrError> {
+    ) -> Result<(), NetworkStateError> {
         match self.virtual_storage_states.get_mut(*idx.deref()) {
             Some(s) => {
                 s.reset_volume(volume, timestep);
                 Ok(())
             }
-            None => Err(PywrError::VirtualStorageIndexNotFound(idx)),
+            None => Err(NetworkStateError::VirtualStorageIndexNotFound(*idx)),
         }
     }
 
     pub fn reset_virtual_storage_history(
         &mut self,
-        idx: VirtualStorageIndex,
+        idx: &VirtualStorageIndex,
         initial_volume: f64,
-    ) -> Result<(), PywrError> {
+    ) -> Result<(), NetworkStateError> {
         match self.virtual_storage_states.get_mut(*idx.deref()) {
             Some(s) => {
                 s.reset_history(initial_volume);
                 Ok(())
             }
-            None => Err(PywrError::VirtualStorageIndexNotFound(idx)),
+            None => Err(NetworkStateError::VirtualStorageIndexNotFound(*idx)),
         }
     }
 
     pub fn recover_virtual_storage_last_historical_flow(
         &mut self,
-        idx: VirtualStorageIndex,
+        idx: &VirtualStorageIndex,
         timestep: &Timestep,
-    ) -> Result<(), PywrError> {
+    ) -> Result<(), NetworkStateError> {
         match self.virtual_storage_states.get_mut(*idx.deref()) {
             Some(s) => {
                 s.recover_last_historical_flow(timestep);
                 Ok(())
             }
-            None => Err(PywrError::VirtualStorageIndexNotFound(idx)),
+            None => Err(NetworkStateError::VirtualStorageIndexNotFound(*idx)),
         }
     }
 
-    pub fn get_virtual_storage_volume(&self, idx: &VirtualStorageIndex) -> Result<f64, PywrError> {
+    pub fn get_virtual_storage_volume(&self, idx: &VirtualStorageIndex) -> Result<f64, NetworkStateError> {
         match self.virtual_storage_states.get(*idx.deref()) {
             Some(s) => Ok(s.storage.volume),
-            None => Err(PywrError::VirtualStorageIndexNotFound(*idx)),
+            None => Err(NetworkStateError::VirtualStorageIndexNotFound(*idx)),
         }
     }
 
     pub fn get_virtual_storage_proportional_volume(
         &self,
-        idx: VirtualStorageIndex,
+        idx: &VirtualStorageIndex,
         max_volume: f64,
-    ) -> Result<f64, PywrError> {
+    ) -> Result<f64, NetworkStateError> {
         match self.virtual_storage_states.get(*idx.deref()) {
             Some(s) => Ok(s.proportional_volume(max_volume)),
-            None => Err(PywrError::VirtualStorageIndexNotFound(idx)),
+            None => Err(NetworkStateError::VirtualStorageIndexNotFound(*idx)),
         }
     }
 
-    pub fn get_virtual_storage_last_reset(&self, idx: VirtualStorageIndex) -> Result<&Option<Timestep>, PywrError> {
+    pub fn get_virtual_storage_last_reset(
+        &self,
+        idx: &VirtualStorageIndex,
+    ) -> Result<&Option<Timestep>, NetworkStateError> {
         match self.virtual_storage_states.get(*idx.deref()) {
             Some(s) => Ok(&s.last_reset),
-            None => Err(PywrError::VirtualStorageIndexNotFound(idx)),
+            None => Err(NetworkStateError::VirtualStorageIndexNotFound(*idx)),
         }
     }
+}
+
+#[derive(Error, Debug)]
+pub enum StateError {
+    #[error("General parameter index not found: {0}")]
+    GeneralParameterIndexNotFound(GeneralParameterIndex<f64>),
+    #[error("General index parameter index not found: {0}")]
+    GeneralIndexParameterIndexNotFound(GeneralParameterIndex<u64>),
+    #[error("General parameter index not found: {0}")]
+    GeneralMultiValueParameterIndexNotFound(GeneralParameterIndex<MultiValue>),
+    #[error("General parameter with index {index} has no key: {key}")]
+    GeneralMultiValueParameterKeyNotFound {
+        index: GeneralParameterIndex<MultiValue>,
+        key: String,
+    },
+    #[error("Simple parameter index not found: {0}")]
+    SimpleParameterIndexNotFound(SimpleParameterIndex<f64>),
+    #[error("Simple index parameter index not found: {0}")]
+    SimpleIndexParameterIndexNotFound(SimpleParameterIndex<u64>),
+    #[error("Simple parameter index not found: {0}")]
+    SimpleMultiValueParameterIndexNotFound(SimpleParameterIndex<MultiValue>),
+    #[error("Simple parameter with index {index} has no key: {key}")]
+    SimpleMultiValueParameterKeyNotFound {
+        index: SimpleParameterIndex<MultiValue>,
+        key: String,
+    },
+    #[error("Constant parameter index not found: {0}")]
+    ConstParameterIndexNotFound(ConstParameterIndex<f64>),
+    #[error("Constant index parameter index not found: {0}")]
+    ConstIndexParameterIndexNotFound(ConstParameterIndex<u64>),
+    #[error("Constant parameter index not found: {0}")]
+    ConstMultiValueParameterIndexNotFound(ConstParameterIndex<MultiValue>),
+    #[error("Constant parameter with index {index} has no key: {key}")]
+    ConstMultiValueParameterKeyNotFound {
+        index: ConstParameterIndex<MultiValue>,
+        key: String,
+    },
+    #[error("Derived metric index not found: {0}")]
+    DerivedMetricIndexNotFound(DerivedMetricIndex),
+    #[error("Multi-network transfer index not found: {0}")]
+    MultiNetworkTransferIndexNotFound(MultiNetworkTransferIndex),
+    #[error("Network state error: {0}")]
+    NetworkStateError(#[from] NetworkStateError),
+    #[error("Simple metric f64 error: {0}")]
+    SimpleMetricF64Error(#[from] SimpleMetricF64Error),
+}
+
+#[derive(Error, Debug)]
+pub enum SetStateError<I: Display> {
+    #[error("Unable to set state; index not found: {0}")]
+    IndexNotFound(I),
+    #[error("Unable to set state; NaN encountered: {0}")]
+    NaNValue(I),
 }
 
 /// State of the model simulation.
@@ -791,123 +820,221 @@ impl State {
         &mut self.network
     }
 
-    pub fn get_parameter_value(&self, idx: GeneralParameterIndex<f64>) -> Result<f64, PywrError> {
-        self.parameters.general.get_value(*idx).map_err(|e| match e {
-            ParameterValuesError::IndexNotFound(_) => PywrError::GeneralParameterIndexNotFound(idx),
-            ParameterValuesError::KeyNotFound(key) => PywrError::MultiValueParameterKeyNotFound(key),
-        })
+    pub fn get_parameter_value(&self, idx: GeneralParameterIndex<f64>) -> Result<f64, StateError> {
+        self.parameters
+            .general
+            .get_value(*idx)
+            .ok_or(StateError::GeneralParameterIndexNotFound(idx))
+            .copied()
     }
 
-    pub fn set_parameter_value(&mut self, idx: GeneralParameterIndex<f64>, value: f64) -> Result<(), PywrError> {
-        self.parameters.general.set_value(*idx, value).map_err(|e| match e {
-            ParameterValuesError::IndexNotFound(_) => PywrError::GeneralParameterIndexNotFound(idx),
-            ParameterValuesError::KeyNotFound(key) => PywrError::MultiValueParameterKeyNotFound(key),
-        })
+    pub fn set_parameter_value(
+        &mut self,
+        idx: GeneralParameterIndex<f64>,
+        value: f64,
+    ) -> Result<(), SetStateError<GeneralParameterIndex<f64>>> {
+        let v = self
+            .parameters
+            .general
+            .get_value_mut(*idx)
+            .ok_or(SetStateError::IndexNotFound(idx))?;
+
+        if value.is_nan() {
+            return Err(SetStateError::NaNValue(idx));
+        }
+
+        *v = value;
+
+        Ok(())
     }
 
-    pub fn set_simple_parameter_value(&mut self, idx: SimpleParameterIndex<f64>, value: f64) -> Result<(), PywrError> {
-        self.parameters.simple.set_value(*idx, value).map_err(|e| match e {
-            ParameterValuesError::IndexNotFound(_) => PywrError::SimpleParameterIndexNotFound(idx),
-            ParameterValuesError::KeyNotFound(key) => PywrError::MultiValueParameterKeyNotFound(key),
-        })
+    pub fn set_simple_parameter_value(
+        &mut self,
+        idx: SimpleParameterIndex<f64>,
+        value: f64,
+    ) -> Result<(), SetStateError<SimpleParameterIndex<f64>>> {
+        let v = self
+            .parameters
+            .simple
+            .get_value_mut(*idx)
+            .ok_or(SetStateError::IndexNotFound(idx))?;
+
+        if value.is_nan() {
+            return Err(SetStateError::NaNValue(idx));
+        }
+
+        *v = value;
+
+        Ok(())
     }
 
-    pub fn set_const_parameter_value(&mut self, idx: ConstParameterIndex<f64>, value: f64) -> Result<(), PywrError> {
-        self.parameters.constant.set_value(*idx, value).map_err(|e| match e {
-            ParameterValuesError::IndexNotFound(_) => PywrError::ConstParameterIndexNotFound(idx),
-            ParameterValuesError::KeyNotFound(key) => PywrError::MultiValueParameterKeyNotFound(key),
-        })
+    pub fn set_const_parameter_value(
+        &mut self,
+        idx: ConstParameterIndex<f64>,
+        value: f64,
+    ) -> Result<(), SetStateError<ConstParameterIndex<f64>>> {
+        let v = self
+            .parameters
+            .constant
+            .get_value_mut(*idx)
+            .ok_or(SetStateError::IndexNotFound(idx))?;
+
+        *v = value;
+
+        Ok(())
     }
 
-    pub fn get_parameter_index(&self, idx: GeneralParameterIndex<u64>) -> Result<u64, PywrError> {
-        self.parameters.general.get_index(*idx).map_err(|e| match e {
-            ParameterValuesError::IndexNotFound(_) => PywrError::GeneralIndexParameterIndexNotFound(idx),
-            ParameterValuesError::KeyNotFound(key) => PywrError::MultiValueParameterKeyNotFound(key),
-        })
+    pub fn get_parameter_index(&self, idx: GeneralParameterIndex<u64>) -> Result<u64, StateError> {
+        self.parameters
+            .general
+            .get_index(*idx)
+            .ok_or(StateError::GeneralIndexParameterIndexNotFound(idx))
+            .copied()
     }
 
-    pub fn set_parameter_index(&mut self, idx: GeneralParameterIndex<u64>, value: u64) -> Result<(), PywrError> {
-        self.parameters.general.set_index(*idx, value).map_err(|e| match e {
-            ParameterValuesError::IndexNotFound(_) => PywrError::GeneralIndexParameterIndexNotFound(idx),
-            ParameterValuesError::KeyNotFound(key) => PywrError::MultiValueParameterKeyNotFound(key),
-        })
+    pub fn set_parameter_index(
+        &mut self,
+        idx: GeneralParameterIndex<u64>,
+        value: u64,
+    ) -> Result<(), SetStateError<GeneralParameterIndex<u64>>> {
+        let v = self
+            .parameters
+            .general
+            .get_index_mut(*idx)
+            .ok_or(SetStateError::IndexNotFound(idx))?;
+
+        *v = value;
+
+        Ok(())
     }
 
-    pub fn set_simple_parameter_index(&mut self, idx: SimpleParameterIndex<u64>, value: u64) -> Result<(), PywrError> {
-        self.parameters.simple.set_index(*idx, value).map_err(|e| match e {
-            ParameterValuesError::IndexNotFound(_) => PywrError::SimpleIndexParameterIndexNotFound(idx),
-            ParameterValuesError::KeyNotFound(key) => PywrError::MultiValueParameterKeyNotFound(key),
-        })
+    pub fn set_simple_parameter_index(
+        &mut self,
+        idx: SimpleParameterIndex<u64>,
+        value: u64,
+    ) -> Result<(), SetStateError<SimpleParameterIndex<u64>>> {
+        let v = self
+            .parameters
+            .simple
+            .get_index_mut(*idx)
+            .ok_or(SetStateError::IndexNotFound(idx))?;
+
+        *v = value;
+
+        Ok(())
     }
 
-    pub fn set_const_parameter_index(&mut self, idx: ConstParameterIndex<u64>, value: u64) -> Result<(), PywrError> {
-        self.parameters.constant.set_index(*idx, value).map_err(|e| match e {
-            ParameterValuesError::IndexNotFound(_) => PywrError::ConstIndexParameterIndexNotFound(idx),
-            ParameterValuesError::KeyNotFound(key) => PywrError::MultiValueParameterKeyNotFound(key),
-        })
+    pub fn set_const_parameter_index(
+        &mut self,
+        idx: ConstParameterIndex<u64>,
+        value: u64,
+    ) -> Result<(), SetStateError<ConstParameterIndex<u64>>> {
+        let v = self
+            .parameters
+            .constant
+            .get_index_mut(*idx)
+            .ok_or(SetStateError::IndexNotFound(idx))?;
+
+        *v = value;
+
+        Ok(())
     }
     pub fn get_multi_parameter_value(
         &self,
         idx: GeneralParameterIndex<MultiValue>,
         key: &str,
-    ) -> Result<f64, PywrError> {
-        self.parameters.general.get_multi_value(*idx, key).map_err(|e| match e {
-            ParameterValuesError::IndexNotFound(_) => PywrError::GeneralMultiValueParameterIndexNotFound(idx),
-            ParameterValuesError::KeyNotFound(key) => PywrError::MultiValueParameterKeyNotFound(key),
-        })
-    }
-
-    pub fn set_multi_parameter_value(
-        &mut self,
-        idx: GeneralParameterIndex<MultiValue>,
-        value: MultiValue,
-    ) -> Result<(), PywrError> {
-        self.parameters
+    ) -> Result<f64, StateError> {
+        let mv = self
+            .parameters
             .general
-            .set_multi_value(*idx, value)
-            .map_err(|e| match e {
-                ParameterValuesError::IndexNotFound(_) => PywrError::GeneralMultiValueParameterIndexNotFound(idx),
-                ParameterValuesError::KeyNotFound(key) => PywrError::MultiValueParameterKeyNotFound(key),
-            })
-    }
+            .get_multi_value(*idx)
+            .ok_or(StateError::GeneralMultiValueParameterIndexNotFound(idx))?;
 
-    pub fn set_simple_multi_parameter_value(
-        &mut self,
-        idx: SimpleParameterIndex<MultiValue>,
-        value: MultiValue,
-    ) -> Result<(), PywrError> {
-        self.parameters
-            .simple
-            .set_multi_value(*idx, value)
-            .map_err(|e| match e {
-                ParameterValuesError::IndexNotFound(_) => PywrError::SimpleMultiValueParameterIndexNotFound(idx),
-                ParameterValuesError::KeyNotFound(key) => PywrError::MultiValueParameterKeyNotFound(key),
+        mv.get_value(key)
+            .ok_or_else(|| StateError::GeneralMultiValueParameterKeyNotFound {
+                index: idx,
+                key: key.to_string(),
             })
-    }
-
-    pub fn set_const_multi_parameter_value(
-        &mut self,
-        idx: ConstParameterIndex<MultiValue>,
-        value: MultiValue,
-    ) -> Result<(), PywrError> {
-        self.parameters
-            .constant
-            .set_multi_value(*idx, value)
-            .map_err(|e| match e {
-                ParameterValuesError::IndexNotFound(_) => PywrError::ConstMultiValueParameterIndexNotFound(idx),
-                ParameterValuesError::KeyNotFound(key) => PywrError::MultiValueParameterKeyNotFound(key),
-            })
+            .copied()
     }
 
     pub fn get_multi_parameter_index(
         &self,
         idx: GeneralParameterIndex<MultiValue>,
         key: &str,
-    ) -> Result<u64, PywrError> {
-        self.parameters.general.get_multi_index(*idx, key).map_err(|e| match e {
-            ParameterValuesError::IndexNotFound(_) => PywrError::GeneralMultiValueParameterIndexNotFound(idx),
-            ParameterValuesError::KeyNotFound(key) => PywrError::MultiValueParameterKeyNotFound(key),
-        })
+    ) -> Result<u64, StateError> {
+        let mv = self
+            .parameters
+            .general
+            .get_multi_value(*idx)
+            .ok_or(StateError::GeneralMultiValueParameterIndexNotFound(idx))?;
+
+        mv.get_index(key)
+            .ok_or_else(|| StateError::GeneralMultiValueParameterKeyNotFound {
+                index: idx,
+                key: key.to_string(),
+            })
+            .copied()
+    }
+
+    pub fn set_multi_parameter_value(
+        &mut self,
+        idx: GeneralParameterIndex<MultiValue>,
+        value: MultiValue,
+    ) -> Result<(), SetStateError<GeneralParameterIndex<MultiValue>>> {
+        let mv = self
+            .parameters
+            .general
+            .get_multi_value_mut(*idx)
+            .ok_or(SetStateError::IndexNotFound(idx))?;
+
+        if value.has_nan() {
+            return Err(SetStateError::NaNValue(idx));
+        }
+
+        *mv = value;
+
+        Ok(())
+    }
+
+    pub fn set_simple_multi_parameter_value(
+        &mut self,
+        idx: SimpleParameterIndex<MultiValue>,
+        value: MultiValue,
+    ) -> Result<(), SetStateError<SimpleParameterIndex<MultiValue>>> {
+        let mv = self
+            .parameters
+            .simple
+            .get_multi_value_mut(*idx)
+            .ok_or(SetStateError::IndexNotFound(idx))?;
+
+        if value.has_nan() {
+            return Err(SetStateError::NaNValue(idx));
+        }
+
+        *mv = value;
+
+        Ok(())
+    }
+
+    pub fn set_const_multi_parameter_value(
+        &mut self,
+        idx: ConstParameterIndex<MultiValue>,
+        value: MultiValue,
+    ) -> Result<(), SetStateError<ConstParameterIndex<MultiValue>>> {
+        let mv = self
+            .parameters
+            .constant
+            .get_multi_value_mut(*idx)
+            .ok_or(SetStateError::IndexNotFound(idx))?;
+
+        if value.has_nan() {
+            return Err(SetStateError::NaNValue(idx));
+        }
+
+        *mv = value;
+
+        Ok(())
     }
 
     pub fn get_simple_parameter_values(&self) -> SimpleParameterValues {
@@ -918,56 +1045,62 @@ impl State {
         self.parameters.get_const_parameter_values()
     }
 
-    pub fn set_node_volume(&mut self, idx: NodeIndex, volume: f64) -> Result<(), PywrError> {
-        self.network.set_volume(idx, volume)
+    pub fn set_node_volume(&mut self, idx: &NodeIndex, volume: f64) -> Result<(), StateError> {
+        Ok(self.network.set_volume(idx, volume)?)
     }
 
     pub fn reset_virtual_storage_node_volume(
         &mut self,
-        idx: VirtualStorageIndex,
+        idx: &VirtualStorageIndex,
         volume: f64,
         timestep: &Timestep,
-    ) -> Result<(), PywrError> {
-        self.network.reset_virtual_storage_volume(idx, volume, timestep)
+    ) -> Result<(), StateError> {
+        Ok(self.network.reset_virtual_storage_volume(idx, volume, timestep)?)
     }
 
     pub fn reset_virtual_storage_history(
         &mut self,
-        idx: VirtualStorageIndex,
+        idx: &VirtualStorageIndex,
         initial_volume: f64,
-    ) -> Result<(), PywrError> {
-        self.network.reset_virtual_storage_history(idx, initial_volume)
+    ) -> Result<(), StateError> {
+        Ok(self.network.reset_virtual_storage_history(idx, initial_volume)?)
     }
 
     pub fn recover_virtual_storage_last_historical_flow(
         &mut self,
-        idx: VirtualStorageIndex,
+        idx: &VirtualStorageIndex,
         timestep: &Timestep,
-    ) -> Result<(), PywrError> {
-        self.network.recover_virtual_storage_last_historical_flow(idx, timestep)
+    ) -> Result<(), StateError> {
+        Ok(self
+            .network
+            .recover_virtual_storage_last_historical_flow(idx, timestep)?)
     }
 
-    pub fn get_derived_metric_value(&self, idx: DerivedMetricIndex) -> Result<f64, PywrError> {
+    pub fn get_derived_metric_value(&self, idx: DerivedMetricIndex) -> Result<f64, StateError> {
         match self.derived_metrics.get(*idx.deref()) {
             Some(s) => Ok(*s),
-            None => Err(PywrError::DerivedMetricIndexNotFound(idx)),
+            None => Err(StateError::DerivedMetricIndexNotFound(idx)),
         }
     }
 
-    pub fn set_derived_metric_value(&mut self, idx: DerivedMetricIndex, value: f64) -> Result<(), PywrError> {
+    pub fn set_derived_metric_value(
+        &mut self,
+        idx: DerivedMetricIndex,
+        value: f64,
+    ) -> Result<(), SetStateError<DerivedMetricIndex>> {
         match self.derived_metrics.get_mut(*idx.deref()) {
             Some(s) => {
                 *s = value;
                 Ok(())
             }
-            None => Err(PywrError::DerivedMetricIndexNotFound(idx)),
+            None => Err(SetStateError::IndexNotFound(idx)),
         }
     }
 
-    pub fn get_inter_network_transfer_value(&self, idx: MultiNetworkTransferIndex) -> Result<f64, PywrError> {
+    pub fn get_inter_network_transfer_value(&self, idx: MultiNetworkTransferIndex) -> Result<f64, StateError> {
         match self.inter_network_values.get(*idx.deref()) {
             Some(s) => Ok(*s),
-            None => Err(PywrError::MultiNetworkTransferIndexNotFound(idx)),
+            None => Err(StateError::MultiNetworkTransferIndexNotFound(idx)),
         }
     }
 
@@ -975,13 +1108,13 @@ impl State {
         &mut self,
         idx: MultiNetworkTransferIndex,
         value: f64,
-    ) -> Result<(), PywrError> {
+    ) -> Result<(), StateError> {
         match self.inter_network_values.get_mut(*idx.deref()) {
             Some(s) => {
                 *s = value;
                 Ok(())
             }
-            None => Err(PywrError::MultiNetworkTransferIndexNotFound(idx)),
+            None => Err(StateError::MultiNetworkTransferIndexNotFound(idx)),
         }
     }
 
@@ -990,12 +1123,12 @@ impl State {
     /// This final step ensures, once all the flows have been updated, that:
     ///   - Derived states (e.g. virtual storage volume) are updated
     ///   - Volumes are within bounds
-    pub fn complete(&mut self, model: &Network, timestep: &Timestep) -> Result<(), PywrError> {
+    pub fn complete(&mut self, model: &Network, timestep: &Timestep) -> Result<(), StateError> {
         for node in model.nodes().iter() {
-            if let Node::Storage(_) = node {
+            if let Node::Storage(storage) = node {
                 let node_index = node.index();
-                let min_volume = node.get_min_volume(self)?;
-                let max_volume = node.get_max_volume(self)?;
+                let min_volume = storage.get_min_volume(self)?;
+                let max_volume = storage.get_max_volume(self)?;
                 self.network.clamp_node_volume(&node_index, min_volume, max_volume)?;
             }
         }
@@ -1008,7 +1141,9 @@ impl State {
                 .clamp_virtual_storage_node_volume(&node_index, min_volume, max_volume)?;
         }
 
-        self.network.update_derived_states(model, timestep)
+        self.network.update_derived_states(model, timestep)?;
+
+        Ok(())
     }
 }
 
