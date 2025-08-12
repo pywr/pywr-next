@@ -440,6 +440,34 @@ impl Node {
         }
     }
 
+    /// Returns the default component for the node, if defined.
+    pub fn default_component(&self) -> Option<NodeComponent> {
+        match self {
+            Node::Input(n) => Some(n.default_component().into()),
+            Node::Link(n) => Some(n.default_component().into()),
+            Node::Output(n) => Some(n.default_component().into()),
+            Node::Catchment(n) => Some(n.default_component().into()),
+            Node::Storage(_) => None,
+            Node::RiverGauge(n) => Some(n.default_component().into()),
+            Node::LossLink(n) => Some(n.default_component().into()),
+            Node::Delay(n) => Some(n.default_component().into()),
+            Node::PiecewiseLink(n) => Some(n.default_component().into()),
+            Node::PiecewiseStorage(_) => None,
+            Node::River(n) => Some(n.default_component().into()),
+            Node::RiverSplitWithGauge(n) => Some(n.default_component().into()),
+            Node::WaterTreatmentWorks(n) => Some(n.default_component().into()),
+            Node::Aggregated(_) => None,
+            Node::AggregatedStorage(_) => None,
+            Node::VirtualStorage(_) => None,
+            Node::AnnualVirtualStorage(_) => None,
+            Node::MonthlyVirtualStorage(_) => None,
+            Node::RollingVirtualStorage(_) => None,
+            Node::Turbine(n) => Some(n.default_component().into()),
+            Node::Reservoir(n) => Some(n.default_component().into()),
+            Node::Placeholder(_) => None,
+        }
+    }
+
     /// Get the locally defined parameters for this node.
     ///
     /// This does **not** return which parameters this node might reference, but rather

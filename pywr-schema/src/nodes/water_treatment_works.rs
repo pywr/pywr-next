@@ -3,8 +3,10 @@ use crate::error::SchemaError;
 use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
+use crate::nodes::NodeMeta;
 use crate::nodes::loss_link::LossFactor;
-use crate::nodes::{NodeAttribute, NodeComponent, NodeMeta};
+#[cfg(feature = "core")]
+use crate::nodes::{NodeAttribute, NodeComponent};
 use crate::parameters::Parameter;
 use crate::{node_attribute_subset_enum, node_component_subset_enum};
 #[cfg(feature = "core")]
@@ -128,6 +130,10 @@ impl WaterTreatmentWorksNode {
 
     pub fn default_attribute(&self) -> WaterTreatmentWorksNodeAttribute {
         Self::DEFAULT_ATTRIBUTE
+    }
+
+    pub fn default_component(&self) -> WaterTreatmentWorksNodeComponent {
+        Self::DEFAULT_COMPONENT
     }
 }
 

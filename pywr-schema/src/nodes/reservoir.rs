@@ -3,7 +3,9 @@ use crate::SchemaError;
 use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
-use crate::nodes::{NodeAttribute, NodeComponent, NodeMeta, StorageNode, StorageNodeAttribute};
+#[cfg(feature = "core")]
+use crate::nodes::{NodeAttribute, NodeComponent};
+use crate::nodes::{NodeMeta, StorageNode, StorageNodeAttribute};
 use crate::parameters::ConstantFloatVec;
 use crate::{node_attribute_subset_enum, node_component_subset_enum};
 #[cfg(feature = "core")]
@@ -303,6 +305,10 @@ impl ReservoirNode {
 
     pub fn default_attribute(&self) -> ReservoirNodeAttribute {
         self.storage.default_attribute().into()
+    }
+
+    pub fn default_component(&self) -> ReservoirNodeComponent {
+        Self::DEFAULT_COMPONENT
     }
 }
 

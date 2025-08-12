@@ -3,7 +3,9 @@ use crate::error::SchemaError;
 use crate::error::{ComponentConversionError, ConversionError};
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
-use crate::nodes::{LossFactor, NodeAttribute, NodeComponent, NodeMeta};
+use crate::nodes::{LossFactor, NodeMeta};
+#[cfg(feature = "core")]
+use crate::nodes::{NodeAttribute, NodeComponent};
 use crate::parameters::Parameter;
 use crate::{node_attribute_subset_enum, node_component_subset_enum};
 #[cfg(feature = "core")]
@@ -91,6 +93,10 @@ impl RiverNode {
 
     pub fn default_attribute(&self) -> RiverNodeAttribute {
         Self::DEFAULT_ATTRIBUTE
+    }
+
+    pub fn default_component(&self) -> RiverNodeComponent {
+        Self::DEFAULT_COMPONENT
     }
 }
 

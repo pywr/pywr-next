@@ -5,7 +5,9 @@ use crate::metric::{Metric, NodeComponentReference};
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::node_attribute_subset_enum;
-use crate::nodes::{NodeAttribute, NodeMeta, StorageInitialVolume};
+#[cfg(feature = "core")]
+use crate::nodes::NodeAttribute;
+use crate::nodes::{NodeMeta, StorageInitialVolume};
 use crate::parameters::Parameter;
 use crate::v1::{ConversionData, TryFromV1, try_convert_initial_storage, try_convert_node_attr};
 #[cfg(feature = "core")]

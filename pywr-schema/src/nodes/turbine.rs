@@ -3,7 +3,9 @@ use crate::SchemaError;
 use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
-use crate::nodes::{NodeAttribute, NodeComponent, NodeMeta};
+use crate::nodes::NodeMeta;
+#[cfg(feature = "core")]
+use crate::nodes::{NodeAttribute, NodeComponent};
 use crate::parameters::Parameter;
 use crate::{node_attribute_subset_enum, node_component_subset_enum};
 #[cfg(feature = "core")]
@@ -122,6 +124,10 @@ impl TurbineNode {
 
     pub fn default_attribute(&self) -> TurbineNodeAttribute {
         Self::DEFAULT_ATTRIBUTE
+    }
+
+    pub fn default_component(&self) -> TurbineNodeComponent {
+        Self::DEFAULT_COMPONENT
     }
 }
 

@@ -4,7 +4,9 @@ use crate::error::SchemaError;
 use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
-use crate::nodes::{NodeAttribute, NodeComponent, NodeMeta};
+use crate::nodes::NodeMeta;
+#[cfg(feature = "core")]
+use crate::nodes::{NodeAttribute, NodeComponent};
 use crate::parameters::Parameter;
 use crate::v1::{ConversionData, TryFromV1, try_convert_node_attr};
 use crate::{node_attribute_subset_enum, node_component_subset_enum};
@@ -89,6 +91,10 @@ impl RiverGaugeNode {
 
     pub fn default_attribute(&self) -> RiverGaugeNodeAttribute {
         Self::DEFAULT_ATTRIBUTE
+    }
+
+    pub fn default_component(&self) -> RiverGaugeNodeComponent {
+        Self::DEFAULT_COMPONENT
     }
 }
 

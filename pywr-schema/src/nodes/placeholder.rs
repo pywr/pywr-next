@@ -64,7 +64,7 @@ impl PlaceholderNode {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "core"))]
 mod test {
     use super::*;
 

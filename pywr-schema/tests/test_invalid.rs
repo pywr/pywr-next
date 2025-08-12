@@ -1,4 +1,6 @@
-use pywr_schema::{PywrModel, SchemaError};
+use pywr_schema::PywrModel;
+#[cfg(feature = "core")]
+use pywr_schema::SchemaError;
 use std::fs;
 use std::path::Path;
 #[cfg(feature = "core")]
@@ -26,7 +28,7 @@ macro_rules! invalid_tests {
             #[cfg(not(feature = "core"))]
             {
                 let input: &str = $value;
-                let input_pth = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join(input);
+                let input_pth = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("invalid").join(input);
                 let _schema = deserialise_test_model(&input_pth);
             }
         }
@@ -46,7 +48,7 @@ fn deserialise_test_model(model_path: &Path) -> PywrModel {
 #[cfg(feature = "core")]
 fn build_test_model(schema: &PywrModel) -> SchemaError {
     let temp_dir = TempDir::new().unwrap();
-    let data_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests");
+    let data_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("invalid");
     match schema.build_model(Some(&data_dir), Some(temp_dir.path())) {
         Ok(_) => panic!("Expected an error, but model built successfully!"),
         Err(e) => e,

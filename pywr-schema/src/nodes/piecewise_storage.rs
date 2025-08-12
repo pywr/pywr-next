@@ -4,7 +4,9 @@ use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::node_attribute_subset_enum;
-use crate::nodes::{NodeAttribute, NodeMeta, StorageInitialVolume};
+#[cfg(feature = "core")]
+use crate::nodes::NodeAttribute;
+use crate::nodes::{NodeMeta, StorageInitialVolume};
 use crate::parameters::Parameter;
 #[cfg(feature = "core")]
 use pywr_core::{

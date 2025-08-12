@@ -4,7 +4,9 @@ use crate::error::SchemaError;
 use crate::metric::{Metric, NodeComponentReference};
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
-use crate::nodes::{NodeAttribute, NodeComponent, NodeMeta};
+use crate::nodes::NodeMeta;
+#[cfg(feature = "core")]
+use crate::nodes::{NodeAttribute, NodeComponent};
 use crate::parameters::Parameter;
 use crate::v1::{
     ConversionData, TryFromV1, try_convert_initial_storage, try_convert_node_attr, try_convert_parameter_attr,
@@ -71,6 +73,10 @@ impl InputNode {
 
     pub fn default_attribute(&self) -> InputNodeAttribute {
         Self::DEFAULT_ATTRIBUTE
+    }
+
+    pub fn default_component(&self) -> InputNodeComponent {
+        Self::DEFAULT_COMPONENT
     }
 }
 
@@ -378,6 +384,10 @@ impl LinkNode {
 
     pub fn default_attribute(&self) -> LinkNodeAttribute {
         Self::DEFAULT_ATTRIBUTE
+    }
+
+    pub fn default_component(&self) -> LinkNodeComponent {
+        Self::DEFAULT_COMPONENT
     }
 }
 
@@ -769,6 +779,10 @@ impl OutputNode {
     pub fn default_attribute(&self) -> OutputNodeAttribute {
         Self::DEFAULT_ATTRIBUTE
     }
+
+    pub fn default_component(&self) -> OutputNodeComponent {
+        Self::DEFAULT_COMPONENT
+    }
 }
 
 #[cfg(feature = "core")]
@@ -1157,6 +1171,10 @@ impl CatchmentNode {
 
     pub fn default_attribute(&self) -> CatchmentNodeAttribute {
         Self::DEFAULT_ATTRIBUTE
+    }
+
+    pub fn default_component(&self) -> CatchmentNodeComponent {
+        Self::DEFAULT_COMPONENT
     }
 }
 
