@@ -1,5 +1,6 @@
 use crate::SchemaError;
 use crate::parameters::{ActivationFunction, MonthlyProfileVariableConfig, RbfProfileVariableConfig};
+#[cfg(feature = "core")]
 use pywr_core::parameters::ParameterName;
 use schemars::JsonSchema;
 use std::path::Path;
@@ -20,6 +21,7 @@ pub enum VariableConfig {
     MonthlyProfile(MonthlyProfileVariableConfig),
 }
 
+#[cfg(feature = "core")]
 impl VariableConfig {
     fn load(&self) -> Box<dyn pywr_core::parameters::VariableConfig> {
         match self {
@@ -55,7 +57,10 @@ impl VariableConfigs {
         })?;
         Ok(serde_json::from_str(data.as_str())?)
     }
+}
 
+#[cfg(feature = "core")]
+impl VariableConfigs {
     /// Convert the variable configuration to a "core" network variable configuration.
     ///
     /// This is required in order to apply the built configuration to the built core network.
