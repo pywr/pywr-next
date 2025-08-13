@@ -1,15 +1,23 @@
 use crate::parameters::errors::SimpleCalculationError;
-use crate::parameters::{Parameter, ParameterMeta, ParameterName, ParameterState, SimpleParameter};
+use crate::parameters::{
+    Parameter, ParameterMeta, ParameterName, ParameterSetupError, ParameterState, SimpleParameter, VariableConfig,
+    VariableParameter, VariableParameterError, VariableParameterValues, downcast_internal_state_mut,
+    downcast_internal_state_ref, downcast_variable_config_ref,
+};
 use crate::scenario::ScenarioIndex;
 use crate::state::SimpleParameterValues;
 use crate::timestep::Timestep;
 use chrono::{Datelike, NaiveDateTime, Timelike};
+use std::any::Any;
 
 #[derive(Copy, Clone)]
 pub enum MonthlyInterpDay {
     First,
     Last,
 }
+
+// We store this internal value as an Option<f64> so that it can be updated by the variable API
+type InternalValue = Option<[f64; 12]>;
 
 pub struct MonthlyProfileParameter {
     meta: ParameterMeta,
@@ -23,6 +31,17 @@ impl MonthlyProfileParameter {
             meta: ParameterMeta::new(name),
             values,
             interp_day,
+        }
+    }
+
+    /// Return the current value for a given month0 (0-based index).
+    ///
+    /// If the internal state is None, the value is returned directly. Otherwise, the value is
+    /// taken from the internal state.
+    fn value_for_month0(&self, month0: usize, internal_state: &Option<Box<dyn ParameterState>>) -> f64 {
+        match downcast_internal_state_ref::<InternalValue>(internal_state) {
+            Some(value) => value[month0],
+            None => self.values[month0],
         }
     }
 }
@@ -73,6 +92,17 @@ impl Parameter for MonthlyProfileParameter {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }
+    fn setup(
+        &self,
+        _timesteps: &[Timestep],
+        _scenario_index: &ScenarioIndex,
+    ) -> Result<Option<Box<dyn ParameterState>>, ParameterSetupError> {
+        let value: Option<[f64; 12]> = None;
+        Ok(Some(Box::new(value)))
+    }
+    fn as_variable(&self) -> Option<&dyn VariableParameter> {
+        Some(self)
+    }
 }
 impl SimpleParameter<f64> for MonthlyProfileParameter {
     fn compute(
@@ -80,27 +110,27 @@ impl SimpleParameter<f64> for MonthlyProfileParameter {
         timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
         _values: &SimpleParameterValues,
-        _internal_state: &mut Option<Box<dyn ParameterState>>,
+        internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<f64, SimpleCalculationError> {
         let v = match &self.interp_day {
             Some(interp_day) => match interp_day {
                 MonthlyInterpDay::First => {
                     let next_month0 = (timestep.date.month0() + 1) % 12;
-                    let first_value = self.values[timestep.date.month0() as usize];
-                    let last_value = self.values[next_month0 as usize];
+                    let first_value = self.value_for_month0(timestep.date.month0() as usize, internal_state);
+                    let last_value = self.value_for_month0(next_month0 as usize, internal_state);
 
                     interpolate_first(&timestep.date, first_value, last_value)
                 }
                 MonthlyInterpDay::Last => {
                     let current_month = timestep.date.month();
                     let last_month = if current_month == 1 { 12 } else { current_month - 1 };
-                    let first_value = self.values[last_month as usize - 1];
-                    let last_value = self.values[timestep.date.month() as usize - 1];
+                    let first_value = self.value_for_month0(last_month as usize - 1, internal_state);
+                    let last_value = self.value_for_month0(timestep.date.month() as usize - 1, internal_state);
 
                     interpolate_last(&timestep.date, first_value, last_value)
                 }
             },
-            None => self.values[timestep.date.month() as usize - 1],
+            None => self.value_for_month0(timestep.date.month() as usize - 1, internal_state),
         };
         Ok(v)
     }
@@ -109,6 +139,106 @@ impl SimpleParameter<f64> for MonthlyProfileParameter {
     where
         Self: Sized,
     {
+        self
+    }
+}
+
+impl VariableParameter for MonthlyProfileParameter {
+    fn meta(&self) -> &ParameterMeta {
+        &self.meta
+    }
+
+    fn size(&self, _variable_config: &dyn VariableConfig) -> (usize, usize) {
+        (12, 0)
+    }
+
+    fn set_variables(
+        &self,
+        values_f64: &[f64],
+        values_u64: &[u64],
+        variable_config: &dyn VariableConfig,
+        internal_state: &mut Option<Box<dyn ParameterState>>,
+    ) -> Result<(), VariableParameterError> {
+        let monthly_profile_config = downcast_variable_config_ref::<MonthlyProfileVariableConfig>(variable_config);
+
+        if values_f64.len() != 12 {
+            return Err(VariableParameterError::IncorrectNumberOfValues {
+                expected: 12,
+                received: values_f64.len(),
+            });
+        }
+
+        if !values_u64.is_empty() {
+            return Err(VariableParameterError::IncorrectNumberOfValues {
+                expected: 0,
+                received: values_u64.len(),
+            });
+        }
+
+        let value = downcast_internal_state_mut::<InternalValue>(internal_state);
+
+        let new_values: [f64; 12] = (0..12)
+            .map(|i| {
+                values_f64[i].clamp(
+                    monthly_profile_config.lower_bounds[i],
+                    monthly_profile_config.upper_bounds[i],
+                )
+            })
+            .collect::<Vec<_>>()
+            .try_into()
+            .unwrap();
+
+        *value = Some(new_values);
+
+        Ok(())
+    }
+
+    fn get_variables(&self, internal_state: &Option<Box<dyn ParameterState>>) -> Option<VariableParameterValues> {
+        downcast_internal_state_ref::<InternalValue>(internal_state)
+            .as_ref()
+            .map(|values| VariableParameterValues {
+                f64: values.to_vec(),
+                u64: vec![],
+            })
+    }
+
+    fn get_lower_bounds(&self, variable_config: &dyn VariableConfig) -> Option<VariableParameterValues> {
+        let monthly_profile_config = downcast_variable_config_ref::<MonthlyProfileVariableConfig>(variable_config);
+        Some(VariableParameterValues {
+            f64: monthly_profile_config.lower_bounds.to_vec(),
+            u64: vec![],
+        })
+    }
+
+    fn get_upper_bounds(&self, variable_config: &dyn VariableConfig) -> Option<VariableParameterValues> {
+        let monthly_profile_config = downcast_variable_config_ref::<MonthlyProfileVariableConfig>(variable_config);
+        Some(VariableParameterValues {
+            f64: monthly_profile_config.upper_bounds.to_vec(),
+            u64: vec![],
+        })
+    }
+}
+
+pub struct MonthlyProfileVariableConfig {
+    upper_bounds: [f64; 12],
+    lower_bounds: [f64; 12],
+}
+
+impl MonthlyProfileVariableConfig {
+    pub fn new(upper_bounds: [f64; 12], lower_bounds: [f64; 12]) -> Self {
+        Self {
+            upper_bounds,
+            lower_bounds,
+        }
+    }
+}
+
+impl VariableConfig for MonthlyProfileVariableConfig {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
         self
     }
 }

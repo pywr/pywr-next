@@ -1,8 +1,8 @@
 use crate::parameters::errors::{ConstCalculationError, ParameterSetupError};
 use crate::parameters::{
     ActivationFunction, ConstParameter, Parameter, ParameterMeta, ParameterName, ParameterState, VariableConfig,
-    VariableParameter, VariableParameterError, downcast_internal_state_mut, downcast_internal_state_ref,
-    downcast_variable_config_ref,
+    VariableParameter, VariableParameterError, VariableParameterValues, downcast_internal_state_mut,
+    downcast_internal_state_ref, downcast_variable_config_ref,
 };
 use crate::scenario::ScenarioIndex;
 use crate::state::ConstParameterValues;
@@ -91,7 +91,10 @@ impl VariableParameter for ConstantParameter {
         let activation_function = downcast_variable_config_ref::<ActivationFunction>(variable_config);
 
         if !values_u64.is_empty() {
-            return Err(PywrError::ParameterVariableValuesIncorrectLength);
+            return Err(VariableParameterError::IncorrectNumberOfValues {
+                expected: 0,
+                received: values_u64.len(),
+            });
         }
 
         if values_f64.len() == 1 {
@@ -101,25 +104,34 @@ impl VariableParameter for ConstantParameter {
         } else {
             Err(VariableParameterError::IncorrectNumberOfValues {
                 expected: 1,
-                received: values.len(),
+                received: values_f64.len(),
             })
         }
     }
 
-    fn get_variables(&self, internal_state: &Option<Box<dyn ParameterState>>) -> Option<(Vec<f64>, Vec<u64>)> {
+    fn get_variables(&self, internal_state: &Option<Box<dyn ParameterState>>) -> Option<VariableParameterValues> {
         downcast_internal_state_ref::<InternalValue>(internal_state)
             .as_ref()
-            .map(|value| (vec![*value], vec![]))
+            .map(|value| VariableParameterValues {
+                f64: vec![*value],
+                u64: vec![],
+            })
     }
 
-    fn get_lower_bounds(&self, variable_config: &dyn VariableConfig) -> Option<(Vec<f64>, Vec<u64>)> {
+    fn get_lower_bounds(&self, variable_config: &dyn VariableConfig) -> Option<VariableParameterValues> {
         let activation_function = downcast_variable_config_ref::<ActivationFunction>(variable_config);
-        Some((vec![activation_function.lower_bound()], vec![]))
+        Some(VariableParameterValues {
+            f64: vec![activation_function.lower_bound()],
+            u64: vec![],
+        })
     }
 
-    fn get_upper_bounds(&self, variable_config: &dyn VariableConfig) -> Option<(Vec<f64>, Vec<u64>)> {
+    fn get_upper_bounds(&self, variable_config: &dyn VariableConfig) -> Option<VariableParameterValues> {
         let activation_function = downcast_variable_config_ref::<ActivationFunction>(variable_config);
-        Some((vec![activation_function.upper_bound()], vec![]))
+        Some(VariableParameterValues {
+            f64: vec![activation_function.upper_bound()],
+            u64: vec![],
+        })
     }
 }
 
@@ -149,9 +161,9 @@ mod tests {
         // Check the parameter returns the new value
         assert_approx_eq!(f64, p.value(&state), 2.0);
 
-        let (v_f64, v_u64) = p.get_variables(&state).unwrap();
-        assert_approx_eq!(&[f64], &v_f64, &[2.0]);
-        assert!(v_u64.is_empty());
+        let values = p.get_variables(&state).unwrap();
+        assert_approx_eq!(&[f64], &values.f64, &[2.0]);
+        assert!(values.u64.is_empty());
     }
 
     #[test]

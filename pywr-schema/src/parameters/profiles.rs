@@ -131,6 +131,30 @@ impl TryFromV1<MonthlyProfileParameterV1> for MonthlyProfileParameter {
     }
 }
 
+/// Settings for a variable RBF profile.
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Copy, JsonSchema, PywrVisitAll)]
+#[serde(deny_unknown_fields)]
+pub struct MonthlyProfileVariableConfig {
+    /// Is this parameter an active variable?
+    pub is_active: bool,
+    /// Optional upper bound for the value of each month. If this is `None` then
+    ///  there is no upper bound.
+    pub upper_bounds: Option<[f64; 12]>,
+    /// Optional lower bound for the value of each month. If this is `None` then
+    ///  the lower bound is zero.
+    pub lower_bounds: Option<[f64; 12]>,
+}
+
+#[cfg(feature = "core")]
+impl From<MonthlyProfileVariableConfig> for pywr_core::parameters::MonthlyProfileVariableConfig {
+    fn from(settings: MonthlyProfileVariableConfig) -> Self {
+        Self::new(
+            settings.upper_bounds.unwrap_or([f64::INFINITY; 12]),
+            settings.lower_bounds.unwrap_or([0.0; 12]),
+        )
+    }
+}
+
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct UniformDrawdownProfileParameter {

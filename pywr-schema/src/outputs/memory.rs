@@ -8,6 +8,7 @@ use schemars::JsonSchema;
 use strum_macros::{Display, EnumIter};
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitPaths)]
+#[serde(deny_unknown_fields)]
 pub struct MemoryAggregation {
     pub time: Option<MetricAggFunc>,
     pub scenario: Option<MetricAggFunc>,
@@ -18,8 +19,8 @@ pub struct MemoryAggregation {
 impl From<MemoryAggregation> for pywr_core::recorders::Aggregation {
     fn from(value: MemoryAggregation) -> Self {
         pywr_core::recorders::Aggregation::new(
-            value.time.map(|f| f.into()),
             value.scenario.map(|f| f.into()),
+            value.time.map(|f| f.into()),
             value.metric.map(|f| f.into()),
         )
     }

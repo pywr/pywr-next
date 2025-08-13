@@ -59,12 +59,8 @@ impl VariableConfig for ActivationFunction {
         self
     }
 
-    fn size_f64(&self) -> usize {
-        1
-    }
-
-    fn size_u64(&self) -> usize {
-        0
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
     }
 }
 

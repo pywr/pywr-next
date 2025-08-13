@@ -15,7 +15,7 @@ pub mod edge;
 pub mod metric;
 pub mod models;
 pub mod network;
-mod network_variable_config;
+pub mod network_variable_config;
 pub mod node;
 pub mod parameters;
 pub mod recorders;

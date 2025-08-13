@@ -56,8 +56,9 @@ pub use offset::OffsetParameter;
 pub use placeholder::PlaceholderParameter;
 pub use polynomial::Polynomial1DParameter;
 pub use profiles::{
-    DailyProfileParameter, MonthlyInterpDay, MonthlyProfileParameter, RadialBasisFunction, RbfProfileParameter,
-    RbfProfileVariableConfig, UniformDrawdownProfileParameter, WeeklyProfileParameter,
+    DailyProfileParameter, MonthlyInterpDay, MonthlyProfileParameter, MonthlyProfileVariableConfig,
+    RadialBasisFunction, RbfProfileParameter, RbfProfileVariableConfig, UniformDrawdownProfileParameter,
+    WeeklyProfileParameter,
 };
 #[cfg(all(feature = "core", feature = "pyo3"))]
 pub use python::try_json_value_into_py;

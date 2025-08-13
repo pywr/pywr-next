@@ -62,14 +62,14 @@ pub use negativemin::NegativeMinParameter;
 pub use offset::OffsetParameter;
 pub use polynomial::Polynomial1DParameter;
 pub use profiles::{
-    DailyProfileParameter, MonthlyInterpDay, MonthlyProfileParameter, RadialBasisFunction, RbfProfileParameter,
-    RbfProfileVariableConfig, UniformDrawdownProfileParameter, WeeklyInterpDay, WeeklyProfileError,
-    WeeklyProfileParameter, WeeklyProfileValues,
+    DailyProfileParameter, MonthlyInterpDay, MonthlyProfileParameter, MonthlyProfileVariableConfig,
+    RadialBasisFunction, RbfProfileParameter, RbfProfileVariableConfig, UniformDrawdownProfileParameter,
+    WeeklyInterpDay, WeeklyProfileError, WeeklyProfileParameter, WeeklyProfileValues,
 };
 #[cfg(feature = "pyo3")]
 pub use py::{ParameterInfo, PyParameter};
-pub use rolling::RollingParameter;
 use pyo3::pyclass;
+pub use rolling::RollingParameter;
 use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
@@ -518,22 +518,6 @@ pub fn downcast_internal_state_ref<T: 'static>(internal_state: &Option<Box<dyn P
 pub trait VariableConfig: Any + Send + Sync {
     fn as_any(&self) -> &dyn Any;
     fn as_any_mut(&mut self) -> &mut dyn Any;
-    /// The total number of f64 variables required by this config.
-    fn size_f64(&self) -> usize;
-    /// The total number of u64 variables required by this config.
-    fn size_u64(&self) -> usize;
-}
-
-impl<T> VariableConfig for T
-where
-    T: Any + Send + Sync,
-{
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
-    }
 }
 
 /// Helper function to downcast to variable config and print a helpful panic message if this fails.
@@ -566,11 +550,6 @@ pub trait Parameter: Send + Sync {
     fn as_variable(&self) -> Option<&dyn VariableParameter> {
         None
     }
-
-    // /// Return the parameter as a [`VariableParameter`] if it supports being a variable.
-    // fn as_variable_mut(&mut self) -> Option<&mut dyn VariableParameter> {
-    //     None
-    // }
 
     /// Can this parameter be a variable
     fn can_be_variable(&self) -> bool {
@@ -756,6 +735,15 @@ pub enum VariableParameterError {
     IncorrectNumberOfValues { expected: usize, received: usize },
 }
 
+/// Values associated with a variable parameter.
+///
+/// These could represent the current values, new values, or lower and upper bounds for the parameter.
+#[derive(PartialEq, Debug)]
+pub struct VariableParameterValues {
+    pub f64: Vec<f64>,
+    pub u64: Vec<u64>,
+}
+
 /// A parameter that can be optimised.
 ///
 /// This trait is used to allow parameter's internal values to be accessed and altered by
@@ -778,11 +766,11 @@ pub trait VariableParameter {
         internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<(), VariableParameterError>;
     /// Get the current variable values
-    fn get_variables(&self, internal_state: &Option<Box<dyn ParameterState>>) -> Option<(Vec<f64>, Vec<u64>)>;
+    fn get_variables(&self, internal_state: &Option<Box<dyn ParameterState>>) -> Option<VariableParameterValues>;
     /// Get variable lower bounds
-    fn get_lower_bounds(&self, variable_config: &dyn VariableConfig) -> Option<(Vec<T>, Vec<T>)>;
+    fn get_lower_bounds(&self, variable_config: &dyn VariableConfig) -> Option<VariableParameterValues>;
     /// Get variable upper bounds
-    fn get_upper_bounds(&self, variable_config: &dyn VariableConfig) -> Option<(Vec<T>, Vec<T>)>;
+    fn get_upper_bounds(&self, variable_config: &dyn VariableConfig) -> Option<VariableParameterValues>;
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -1154,10 +1142,26 @@ impl ParameterCollection {
     }
 
     pub fn get_f64_by_name(&self, name: &ParameterName) -> Option<&dyn Parameter> {
-        self.general_f64
+        if let Some(p) = self
+            .general_f64
             .iter()
             .find(|p| p.name() == name)
             .map(|p| p.as_parameter())
+        {
+            Some(p)
+        } else if let Some(p) = self
+            .simple_f64
+            .iter()
+            .find(|p| p.name() == name)
+            .map(|p| p.as_parameter())
+        {
+            Some(p)
+        } else {
+            self.constant_f64
+                .iter()
+                .find(|p| p.name() == name)
+                .map(|p| p.as_parameter())
+        }
     }
 
     pub fn get_f64_index_by_name(&self, name: &ParameterName) -> Option<ParameterIndex<f64>> {
@@ -1258,10 +1262,26 @@ impl ParameterCollection {
     }
 
     pub fn get_u64_by_name(&self, name: &ParameterName) -> Option<&dyn Parameter> {
-        self.general_u64
+        if let Some(p) = self
+            .general_u64
             .iter()
             .find(|p| p.name() == name)
             .map(|p| p.as_parameter())
+        {
+            Some(p)
+        } else if let Some(p) = self
+            .simple_u64
+            .iter()
+            .find(|p| p.name() == name)
+            .map(|p| p.as_parameter())
+        {
+            Some(p)
+        } else {
+            self.constant_u64
+                .iter()
+                .find(|p| p.name() == name)
+                .map(|p| p.as_parameter())
+        }
     }
 
     pub fn get_u64_index_by_name(&self, name: &ParameterName) -> Option<ParameterIndex<u64>> {

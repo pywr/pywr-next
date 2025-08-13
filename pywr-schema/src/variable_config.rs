@@ -1,5 +1,5 @@
-use crate::parameters::{ActivationFunction, RbfProfileVariableConfig};
 use crate::SchemaError;
+use crate::parameters::{ActivationFunction, MonthlyProfileVariableConfig, RbfProfileVariableConfig};
 use pywr_core::parameters::ParameterName;
 use schemars::JsonSchema;
 use std::path::Path;
@@ -17,16 +17,20 @@ use strum_macros::{Display, EnumDiscriminants, EnumString, IntoStaticStr, Varian
 pub enum VariableConfig {
     ActivationFunction(ActivationFunction),
     RbfProfile(RbfProfileVariableConfig),
+    MonthlyProfile(MonthlyProfileVariableConfig),
 }
 
 impl VariableConfig {
     fn load(&self) -> Box<dyn pywr_core::parameters::VariableConfig> {
         match self {
             VariableConfig::ActivationFunction(activation_function) => {
-                Box::<pywr_core::parameters::ActivationFunction>::new(activation_function.clone().into())
+                Box::<pywr_core::parameters::ActivationFunction>::new((*activation_function).into())
             }
             VariableConfig::RbfProfile(rbf_profile) => {
-                Box::<pywr_core::parameters::RbfProfileVariableConfig>::new(rbf_profile.clone().into())
+                Box::<pywr_core::parameters::RbfProfileVariableConfig>::new((*rbf_profile).into())
+            }
+            VariableConfig::MonthlyProfile(monthly_profile) => {
+                Box::<pywr_core::parameters::MonthlyProfileVariableConfig>::new((*monthly_profile).into())
             }
         }
     }
@@ -55,11 +59,11 @@ impl VariableConfigs {
     /// Convert the variable configuration to a "core" network variable configuration.
     ///
     /// This is required in order to apply the built configuration to the built core network.
-    pub fn build_config<'n>(
+    pub fn build_config(
         &self,
-        network: &'n pywr_core::network::Network,
-    ) -> Result<pywr_core::NetworkVariableConfig<'n>, SchemaError> {
-        let mut builder = pywr_core::NetworkVariableConfigBuilder::new(network);
+        network: &pywr_core::network::Network,
+    ) -> Result<pywr_core::network_variable_config::NetworkVariableConfig, SchemaError> {
+        let mut builder = pywr_core::network_variable_config::NetworkVariableConfigBuilder::new(network);
 
         for config in &self.configs {
             let core_config = config.config.load();
