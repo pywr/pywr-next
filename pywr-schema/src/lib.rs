@@ -15,9 +15,11 @@ pub mod outputs;
 pub mod parameters;
 pub mod timeseries;
 mod v1;
+mod variable_config;
 mod visit;
 
 pub use error::{ComponentConversionError, ConversionError, SchemaError};
 pub use model::PywrModel;
 pub use v1::{ConversionData, TryFromV1, TryIntoV2};
+pub use variable_config::VariableConfigs;
 pub use visit::{VisitMetrics, VisitPaths};

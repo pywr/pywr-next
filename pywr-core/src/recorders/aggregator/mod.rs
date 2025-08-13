@@ -113,7 +113,7 @@ impl AggregationFunction {
                     .expect("Failed to calculate maximum of values containing a NaN.")
             }),
             AggregationFunction::CountNonZero => {
-                let count = values.iter().filter(|v| v.value != 0.0).count();
+                let count = values.iter().filter(|v| v.value.abs() > 1e-6).count();
                 Some(count as f64)
             }
             AggregationFunction::CountFunc { func } => {
