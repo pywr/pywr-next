@@ -68,6 +68,7 @@ pub use profiles::{
 };
 #[cfg(feature = "pyo3")]
 pub use py::{ParameterInfo, PyParameter};
+#[cfg(feature = "pyo3")]
 use pyo3::pyclass;
 pub use rolling::RollingParameter;
 use std::fmt;
