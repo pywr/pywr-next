@@ -1,11 +1,13 @@
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
 use crate::error::{ComponentConversionError, ConversionError};
-use crate::metric::{Metric, SimpleNodeReference};
+use crate::metric::{Metric, NodeComponentReference};
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::node_attribute_subset_enum;
-use crate::nodes::{NodeAttribute, NodeMeta, StorageInitialVolume};
+#[cfg(feature = "core")]
+use crate::nodes::NodeAttribute;
+use crate::nodes::{NodeMeta, StorageInitialVolume};
 use crate::parameters::Parameter;
 use crate::v1::{ConversionData, TryFromV1, try_convert_initial_storage, try_convert_node_attr};
 #[cfg(feature = "core")]
@@ -67,7 +69,7 @@ impl RollingWindow {
 // This macro generates a subset enum for the `RollingVirtualStorageNode` attributes.
 // It allows for easy conversion between the enum and the `NodeAttribute` type.
 node_attribute_subset_enum! {
-    enum RollingVirtualStorageNodeAttribute {
+    pub enum RollingVirtualStorageNodeAttribute {
         Volume,
         ProportionalVolume,
     }
@@ -90,7 +92,7 @@ pub struct RollingVirtualStorageNode {
     pub meta: NodeMeta,
     /// Optional local parameters.
     pub parameters: Option<Vec<Parameter>>,
-    pub nodes: Vec<SimpleNodeReference>,
+    pub nodes: Vec<NodeComponentReference>,
     pub factors: Option<Vec<f64>>,
     pub max_volume: Option<Metric>,
     pub min_volume: Option<Metric>,
@@ -110,14 +112,18 @@ impl RollingVirtualStorageNode {
         vec![]
     }
 
-    pub fn default_metric(&self) -> NodeAttribute {
-        Self::DEFAULT_ATTRIBUTE.into()
+    pub fn default_attribute(&self) -> RollingVirtualStorageNodeAttribute {
+        Self::DEFAULT_ATTRIBUTE
     }
 }
 
 #[cfg(feature = "core")]
 impl RollingVirtualStorageNode {
-    pub fn node_indices_for_constraints(
+    /// This returns the node indices for flow constraints based on the nodes referenced in this virtual storage node.
+    ///
+    /// Note that this is a private function, as it is not supported using this node itself
+    /// inside a flow constraint.
+    fn node_indices_for_flow_constraints(
         &self,
         network: &pywr_core::network::Network,
         args: &LoadArgs,
@@ -131,7 +137,7 @@ impl RollingVirtualStorageNode {
                     .ok_or_else(|| SchemaError::NodeNotFound {
                         name: node_ref.name.to_string(),
                     })?
-                    .node_indices_for_constraints(network, args)
+                    .node_indices_for_flow_constraints(network, node_ref.component)
             })
             .collect::<Result<Vec<_>, _>>()?
             .into_iter()
@@ -155,7 +161,7 @@ impl RollingVirtualStorageNode {
             None => None,
         };
 
-        let node_idxs = self.node_indices_for_constraints(network, args)?;
+        let node_idxs = self.node_indices_for_flow_constraints(network, args)?;
         // The rolling licence never resets
         let reset = VirtualStorageReset::Never;
         let timesteps =

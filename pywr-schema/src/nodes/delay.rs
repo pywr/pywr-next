@@ -3,9 +3,11 @@ use crate::error::SchemaError;
 use crate::error::{ComponentConversionError, ConversionError};
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
-use crate::node_attribute_subset_enum;
-use crate::nodes::{NodeAttribute, NodeMeta};
+use crate::nodes::NodeMeta;
+#[cfg(feature = "core")]
+use crate::nodes::{NodeAttribute, NodeComponent};
 use crate::parameters::{ConstantValue, Parameter};
+use crate::{node_attribute_subset_enum, node_component_subset_enum};
 #[cfg(feature = "core")]
 use pywr_core::{metric::MetricF64, parameters::ParameterName};
 use pywr_schema_macros::PywrVisitAll;
@@ -15,7 +17,14 @@ use schemars::JsonSchema;
 // This macro generates a subset enum for the `DelayNode` attributes.
 // It allows for easy conversion between the enum and the `NodeAttribute` type.
 node_attribute_subset_enum! {
-    enum DelayNodeAttribute {
+    pub enum DelayNodeAttribute {
+        Inflow,
+        Outflow,
+    }
+}
+
+node_component_subset_enum! {
+    pub enum DelayNodeComponent {
         Inflow,
         Outflow,
     }
@@ -39,6 +48,11 @@ node_attribute_subset_enum! {
 ///             <node.outflow>
 /// ```
 ///
+/// # Available attributes and components
+///
+/// The enums [`DelayNodeAttribute`] and [`DelayNodeComponent`] define the available
+/// attributes and components for this node.
+///
 )]
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
@@ -52,6 +66,7 @@ pub struct DelayNode {
 
 impl DelayNode {
     const DEFAULT_ATTRIBUTE: DelayNodeAttribute = DelayNodeAttribute::Outflow;
+    const DEFAULT_COMPONENT: DelayNodeComponent = DelayNodeComponent::Outflow;
 
     fn output_sub_name() -> Option<&'static str> {
         Some("inflow")
@@ -71,26 +86,44 @@ impl DelayNode {
         vec![(self.meta.name.as_str(), Self::input_sub_now().map(|s| s.to_string()))]
     }
 
-    pub fn default_metric(&self) -> NodeAttribute {
-        Self::DEFAULT_ATTRIBUTE.into()
+    pub fn default_attribute(&self) -> DelayNodeAttribute {
+        Self::DEFAULT_ATTRIBUTE
+    }
+
+    pub fn default_component(&self) -> DelayNodeComponent {
+        Self::DEFAULT_COMPONENT
     }
 }
 
 #[cfg(feature = "core")]
 impl DelayNode {
-    pub fn node_indices_for_constraints(
+    pub fn node_indices_for_flow_constraints(
         &self,
         network: &pywr_core::network::Network,
+        component: Option<NodeComponent>,
     ) -> Result<Vec<pywr_core::node::NodeIndex>, SchemaError> {
-        let indices = vec![
-            network
+        // Use the default component if none is specified
+        let component = match component {
+            Some(c) => c.try_into()?,
+            None => Self::DEFAULT_COMPONENT,
+        };
+
+        let idx = match component {
+            DelayNodeComponent::Inflow => network
+                .get_node_index_by_name(self.meta.name.as_str(), Self::output_sub_name())
+                .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                    name: self.meta.name.clone(),
+                    sub_name: Self::output_sub_name().map(String::from),
+                })?,
+            DelayNodeComponent::Outflow => network
                 .get_node_index_by_name(self.meta.name.as_str(), Self::input_sub_now())
                 .ok_or_else(|| SchemaError::CoreNodeNotFound {
                     name: self.meta.name.clone(),
                     sub_name: Self::input_sub_now().map(String::from),
                 })?,
-        ];
-        Ok(indices)
+        };
+
+        Ok(vec![idx])
     }
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
         network.add_output_node(self.meta.name.as_str(), Self::output_sub_name())?;

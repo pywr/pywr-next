@@ -1,5 +1,5 @@
 use crate::data_tables::{DataTable, TableDataRef, TableError};
-use crate::nodes::NodeAttribute;
+use crate::nodes::{NodeAttribute, NodeComponent};
 use crate::timeseries::TimeseriesError;
 #[cfg(feature = "core")]
 use ndarray::ShapeError;
@@ -26,6 +26,8 @@ pub enum SchemaError {
     CoreNodeNotFound { name: String, sub_name: Option<String> },
     #[error("Attribute `{attr}` not supported.")]
     NodeAttributeNotSupported { attr: NodeAttribute },
+    #[error("Component `{attr}` not supported.")]
+    NodeComponentNotSupported { attr: NodeComponent },
     // Use this error when a parameter is not found in the schema (i.e. while parsing the schema).
     #[error("Parameter `{name}` not found in the schema.")]
     ParameterNotFound { name: String, key: Option<String> },
@@ -106,6 +108,10 @@ pub enum SchemaError {
     PlaceholderNodeNotAllowed { name: String },
     #[error("Placeholder parameter `{name}` cannot be added to a model.")]
     PlaceholderParameterNotAllowed { name: String },
+    #[error("Node cannot be used in a flow constraint.")]
+    NodeNotAllowedInFlowConstraint,
+    #[error("Node cannot be used in a storage constraint.")]
+    NodeNotAllowedInStorageConstraint,
 }
 
 #[cfg(all(feature = "core", feature = "pyo3"))]

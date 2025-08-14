@@ -4,10 +4,12 @@ use crate::error::SchemaError;
 use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
-use crate::node_attribute_subset_enum;
-use crate::nodes::{NodeAttribute, NodeMeta};
+use crate::nodes::NodeMeta;
+#[cfg(feature = "core")]
+use crate::nodes::{NodeAttribute, NodeComponent};
 use crate::parameters::Parameter;
 use crate::v1::{ConversionData, TryFromV1, try_convert_node_attr};
+use crate::{node_attribute_subset_enum, node_component_subset_enum};
 #[cfg(feature = "core")]
 use pywr_core::metric::MetricF64;
 use pywr_schema_macros::PywrVisitAll;
@@ -25,7 +27,14 @@ pub struct PiecewiseLinkStep {
 // This macro generates a subset enum for the `PiecewiseLinkNode` attributes.
 // It allows for easy conversion between the enum and the `NodeAttribute` type.
 node_attribute_subset_enum! {
-    enum PiecewiseLinkNodeAttribute {
+    pub enum PiecewiseLinkNodeAttribute {
+        Inflow,
+        Outflow,
+    }
+}
+
+node_component_subset_enum! {
+    pub enum PiecewiseLinkNodeComponent {
         Inflow,
         Outflow,
     }
@@ -52,6 +61,11 @@ node_attribute_subset_enum! {
 ///
 /// ```
 ///
+/// # Available attributes and components
+///
+/// The enums [`PiecewiseLinkNodeAttribute`] and [`PiecewiseLinkNodeComponent`] define the available
+/// attributes and components for this node.
+///
 )]
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
@@ -64,6 +78,7 @@ pub struct PiecewiseLinkNode {
 
 impl PiecewiseLinkNode {
     const DEFAULT_ATTRIBUTE: PiecewiseLinkNodeAttribute = PiecewiseLinkNodeAttribute::Outflow;
+    const DEFAULT_COMPONENT: PiecewiseLinkNodeComponent = PiecewiseLinkNodeComponent::Outflow;
 
     fn step_sub_name(i: usize) -> Option<String> {
         Some(format!("step-{i:02}"))
@@ -84,30 +99,44 @@ impl PiecewiseLinkNode {
             .collect()
     }
 
-    pub fn default_metric(&self) -> NodeAttribute {
-        Self::DEFAULT_ATTRIBUTE.into()
+    pub fn default_attribute(&self) -> PiecewiseLinkNodeAttribute {
+        Self::DEFAULT_ATTRIBUTE
+    }
+
+    pub fn default_component(&self) -> PiecewiseLinkNodeComponent {
+        Self::DEFAULT_COMPONENT
     }
 }
 
 #[cfg(feature = "core")]
 impl PiecewiseLinkNode {
-    pub fn node_indices_for_constraints(
+    pub fn node_indices_for_flow_constraints(
         &self,
         network: &pywr_core::network::Network,
+        component: Option<NodeComponent>,
     ) -> Result<Vec<pywr_core::node::NodeIndex>, SchemaError> {
-        let indices = self
-            .steps
-            .iter()
-            .enumerate()
-            .map(|(i, _)| {
-                network
-                    .get_node_index_by_name(self.meta.name.as_str(), Self::step_sub_name(i).as_deref())
-                    .ok_or_else(|| SchemaError::CoreNodeNotFound {
-                        name: self.meta.name.clone(),
-                        sub_name: Self::step_sub_name(i),
-                    })
-            })
-            .collect::<Result<Vec<_>, _>>()?;
+        // Use the default component if none is specified
+        let component = match component {
+            Some(c) => c.try_into()?,
+            None => Self::DEFAULT_COMPONENT,
+        };
+
+        let indices = match component {
+            PiecewiseLinkNodeComponent::Inflow | PiecewiseLinkNodeComponent::Outflow => self
+                .steps
+                .iter()
+                .enumerate()
+                .map(|(i, _)| {
+                    network
+                        .get_node_index_by_name(self.meta.name.as_str(), Self::step_sub_name(i).as_deref())
+                        .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                            name: self.meta.name.clone(),
+                            sub_name: Self::step_sub_name(i),
+                        })
+                })
+                .collect::<Result<Vec<_>, _>>()?,
+        };
+
         Ok(indices)
     }
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {

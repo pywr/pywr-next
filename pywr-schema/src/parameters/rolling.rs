@@ -1,6 +1,6 @@
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
-use crate::metric::{IndexMetric, Metric, NodeReference};
+use crate::metric::{IndexMetric, Metric, NodeAttrReference};
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::parameters::{AggFunc, IndexAggFunc, ParameterMeta};
@@ -132,7 +132,7 @@ impl TryFromV1<RollingMeanFlowNodeParameterV1> for RollingParameter {
         };
 
         // Convert the node reference to a metric
-        let node_ref = NodeReference {
+        let node_ref = NodeAttrReference {
             name: v1.node,
             attribute: None,
         };

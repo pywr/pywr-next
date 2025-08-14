@@ -70,7 +70,7 @@ impl AddAssign for SolverTimings {
 ///
 /// This enum is used to ensure that a given solver implements the appropriate features
 /// to solve a given model.
-#[derive(PartialEq, Eq, Hash)]
+#[derive(Debug, PartialEq, Eq, Hash)]
 pub enum SolverFeatures {
     AggregatedNode,
     AggregatedNodeFactors,

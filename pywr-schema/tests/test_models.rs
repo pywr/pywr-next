@@ -37,6 +37,9 @@ macro_rules! model_tests {
 }
 
 model_tests! {
+    test_agg_storage1: ("agg-storage1.json", vec!["agg-storage1-expected.csv"], vec![], vec![]),
+    test_agg_storage2: ("agg-storage2.json", vec!["agg-storage2-expected.csv"], vec![], vec![]),
+    test_agg_storage3: ("agg-storage3.json", vec!["agg-storage3-expected.csv"], vec![], vec![]),
     test_simple1: ("simple1.json", vec![], vec![], vec![]),
     test_csv1: ("csv1.json", vec!["csv1-outputs-long.csv", "csv1-outputs-wide.csv"], vec![], vec![]),
     test_csv2: ("csv2.json", vec!["csv2-outputs-long.csv", "csv2-outputs-wide.csv"], vec![], vec![]),
@@ -77,6 +80,9 @@ model_tests! {
     test_local_parameter1: ("local-parameter1.json", vec!["local-parameter1-expected.csv"], vec![], vec![]),
     test_python_parameter1: ("python-parameter1.json", vec!["python-parameter1-expected.csv"], vec![], vec![]),
     test_local_parameter2: ("local-parameter2.json", vec!["local-parameter2-expected.csv"], vec![], vec![]),
+    // IPM solvers currently do not support virtual storage nodes
+    test_vs_with_piecewise_link: ("vs-with-piecewise-link.json", vec!["vs-with-piecewise-link-expected.csv"], vec!["ipm-simd", "ipm-ocl"], vec![]),
+    test_vs_wtw1: ("vs-with-wtw1.json", vec!["vs-with-wtw1-expected.csv"], vec!["ipm-simd", "ipm-ocl"], vec![]),
 }
 
 /// Test Pandas backend for reading timeseries data.

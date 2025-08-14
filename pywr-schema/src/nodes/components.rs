@@ -2,36 +2,34 @@ use pywr_schema_macros::PywrVisitAll;
 use schemars::JsonSchema;
 use strum_macros::{Display, EnumIter};
 
-/// All possible attributes that could be produced by a node.
+/// All possible components that might be present in a node.
 ///
 ///
 #[derive(
     serde::Deserialize, serde::Serialize, Debug, Clone, Copy, Display, JsonSchema, PywrVisitAll, PartialEq, EnumIter,
 )]
-pub enum NodeAttribute {
+pub enum NodeComponent {
     Inflow,
     Outflow,
     Volume,
     MaxVolume,
     ProportionalVolume,
     Loss,
-    Deficit,
-    Power,
     /// The compensation flow.
     Compensation,
-    /// The rainfall volume.
+    /// The rainfall flow.
     Rainfall,
-    /// The evaporation volume.
+    /// The evaporation flow.
     Evaporation,
 }
 
-/// Macro to generate a subset enum of `NodeAttribute` with conversion implementations.
+/// Macro to generate a subset enum of `NodeComponent` with conversion implementations.
 ///
 /// Usage:
 /// ```
-/// use pywr_schema::node_attribute_subset_enum;
+/// use pywr_schema::node_component_subset_enum;
 ///
-/// node_attribute_subset_enum! {
+/// node_component_subset_enum! {
 ///     pub enum MySubset {
 ///         Inflow,
 ///         Outflow,
@@ -41,11 +39,11 @@ pub enum NodeAttribute {
 /// ```
 ///
 /// This generates a `MySubset` enum and implements:
-/// - `From<MySubset> for NodeAttribute`
-/// - `TryFrom<NodeAttribute> for MySubset`
+/// - `From<MySubset> for NodeComponent`
+/// - `TryFrom<NodeComponent> for MySubset`
 ///
 #[macro_export]
-macro_rules! node_attribute_subset_enum {
+macro_rules! node_component_subset_enum {
     (
         $(#[$meta:meta])* $vis:vis enum $name:ident {
             $(
@@ -63,24 +61,24 @@ macro_rules! node_attribute_subset_enum {
             ),*
         }
 
-        impl std::convert::From<$name> for $crate::nodes::NodeAttribute {
-            fn from(attr: $name) -> $crate::nodes::NodeAttribute {
+        impl std::convert::From<$name> for $crate::nodes::NodeComponent {
+            fn from(attr: $name) -> $crate::nodes::NodeComponent {
                 match attr {
                     $(
-                        $name::$variant => $crate::nodes::NodeAttribute::$variant,
+                        $name::$variant => $crate::nodes::NodeComponent::$variant,
                     )*
                 }
             }
         }
 
-        impl std::convert::TryFrom<$crate::nodes::NodeAttribute> for $name {
+        impl std::convert::TryFrom<$crate::nodes::NodeComponent> for $name {
             type Error = $crate::SchemaError;
-            fn try_from(attr: $crate::nodes::NodeAttribute) -> Result<$name, Self::Error> {
+            fn try_from(attr: $crate::nodes::NodeComponent) -> Result<$name, Self::Error> {
                 match attr {
                     $(
-                        $crate::nodes::NodeAttribute::$variant => Ok($name::$variant),
+                        $crate::nodes::NodeComponent::$variant => Ok($name::$variant),
                     )*
-                    _ => Err($crate::SchemaError::NodeAttributeNotSupported {
+                    _ => Err($crate::SchemaError::NodeComponentNotSupported {
                         attr,
                     })
                 }

@@ -2,7 +2,7 @@ use crate::ConversionError;
 use crate::error::ComponentConversionError;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
-use crate::metric::{Metric, NodeReference};
+use crate::metric::{Metric, NodeAttrReference};
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::parameters::{ConversionData, ParameterMeta};
@@ -201,7 +201,7 @@ impl TryFromV1<NodeThresholdParameterV1> for ThresholdParameter {
     ) -> Result<Self, Self::Error> {
         let meta: ParameterMeta = v1.meta.into_v2(parent_node, conversion_data);
 
-        let metric = Metric::Node(NodeReference::new(v1.node, None));
+        let metric = Metric::Node(NodeAttrReference::new(v1.node, None));
 
         let threshold =
             try_convert_parameter_attr(&meta.name, "threshold", v1.threshold, parent_node, conversion_data)?;
@@ -248,7 +248,7 @@ impl TryFromV1<StorageThresholdParameterV1> for ThresholdParameter {
     ) -> Result<Self, Self::Error> {
         let meta: ParameterMeta = v1.meta.into_v2(parent_node, conversion_data);
 
-        let metric = Metric::Node(NodeReference::new(v1.storage_node, None));
+        let metric = Metric::Node(NodeAttrReference::new(v1.storage_node, None));
 
         let returned_metrics: Option<[Metric; 2]> = match v1.values {
             Some(v) => {
