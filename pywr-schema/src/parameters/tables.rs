@@ -3,13 +3,13 @@ use crate::error::SchemaError;
 #[cfg(feature = "core")]
 use crate::network::LoadArgs;
 use crate::parameters::{ConversionData, ParameterMeta};
-#[cfg(feature = "core")]
+#[cfg(all(feature = "core", feature = "hdf5"))]
 use crate::timeseries::subset_array2;
 use crate::v1::{FromV1, IntoV2};
-#[cfg(feature = "core")]
+#[cfg(all(feature = "core", feature = "hdf5"))]
 use ndarray::s;
-#[cfg(feature = "core")]
-use pywr_core::parameters::{ParameterIndex, ParameterName};
+#[cfg(all(feature = "core", feature = "hdf5"))]
+use pywr_core::parameters::ParameterName;
 use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::parameters::TablesArrayParameter as TablesArrayParameterV1;
 use schemars::JsonSchema;
@@ -29,14 +29,14 @@ pub struct TablesArrayParameter {
     pub timestep_offset: Option<i32>,
 }
 
-#[cfg(feature = "core")]
+#[cfg(all(feature = "core", feature = "hdf5"))]
 impl TablesArrayParameter {
     pub fn add_to_model(
         &self,
         network: &mut pywr_core::network::Network,
         args: &LoadArgs,
         parent: Option<&str>,
-    ) -> Result<ParameterIndex<f64>, SchemaError> {
+    ) -> Result<pywr_core::parameters::ParameterIndex<f64>, SchemaError> {
         // 1. Load the file from the HDF5 file (NB this is not Pandas format).
 
         // Handle the case of an optional data path with a relative url.
@@ -89,6 +89,18 @@ impl TablesArrayParameter {
             );
             Ok(network.add_simple_parameter(Box::new(p))?)
         }
+    }
+}
+
+#[cfg(all(feature = "core", not(feature = "hdf5")))]
+impl TablesArrayParameter {
+    pub fn add_to_model(
+        &self,
+        network: &mut pywr_core::network::Network,
+        args: &LoadArgs,
+        parent: Option<&str>,
+    ) -> Result<pywr_core::parameters::ParameterIndex<f64>, SchemaError> {
+        Err(SchemaError::FeatureNotEnabled("hdf5".to_string()))
     }
 }
 

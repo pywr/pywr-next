@@ -9,6 +9,8 @@ mod builder;
 
 #[cfg(feature = "cbc")]
 mod cbc;
+
+#[cfg(feature = "clp")]
 mod clp;
 mod col_edge_map;
 #[cfg(feature = "highs")]
@@ -26,6 +28,7 @@ use crate::aggregated_node::AggregatedNodeIndex;
 use crate::node::NodeIndex;
 #[cfg(feature = "cbc")]
 pub use cbc::{CbcError, CbcSolver, CbcSolverSettings, CbcSolverSettingsBuilder};
+#[cfg(feature = "clp")]
 pub use clp::{ClpError, ClpSolver, ClpSolverSettings, ClpSolverSettingsBuilder};
 #[cfg(feature = "highs")]
 pub use highs::{HighsSolver, HighsSolverSettings, HighsSolverSettingsBuilder};

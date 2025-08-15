@@ -5,7 +5,6 @@ use super::{
 use crate::models::ModelDomain;
 use crate::network::Network;
 use crate::recorders::MetricSetIndex;
-use crate::recorders::csv::CsvError;
 use crate::scenario::{ScenarioDomain, ScenarioIndex};
 use crate::state::State;
 use chrono::{Datelike, Timelike};
@@ -129,7 +128,7 @@ impl Recorder for HDF5Recorder {
 
         let metric_set = network
             .get_metric_set(self.metric_set_idx)
-            .ok_or(CsvError::MetricSetIndexNotFound {
+            .ok_or(Hdf5Error::MetricSetIndexNotFound {
                 index: self.metric_set_idx,
             })?;
 
@@ -163,7 +162,7 @@ impl Recorder for HDF5Recorder {
 
         let metric_set = network
             .get_metric_set(self.metric_set_idx)
-            .ok_or(CsvError::MetricSetIndexNotFound {
+            .ok_or(Hdf5Error::MetricSetIndexNotFound {
                 index: self.metric_set_idx,
             })?;
 

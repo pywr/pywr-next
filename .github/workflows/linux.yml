@@ -40,9 +40,9 @@ jobs:
         with:
           tool: cargo-hack@0.5
       - name: Check (pywr-core)
-        run: cargo hack check --feature-powerset --no-dev-deps -p pywr-core
+        run: cargo hack check --each-feature --no-dev-deps -p pywr-core
       - name: Check (pywr-schema)
-        run: cargo hack check --feature-powerset --no-dev-deps -p pywr-schema
+        run: cargo hack check --each-feature --no-dev-deps -p pywr-schema
       - name: Build
         run: cargo build --verbose  --all-features --workspace --exclude pywr-python
       - name: Run tests

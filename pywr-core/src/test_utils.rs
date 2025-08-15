@@ -11,13 +11,15 @@ use crate::scenario::{ScenarioDomainBuilder, ScenarioGroupBuilder};
 use crate::solvers::CbcSolver;
 #[cfg(feature = "ipm-ocl")]
 use crate::solvers::ClIpmF64Solver;
+#[cfg(feature = "clp")]
+use crate::solvers::ClpSolver;
 #[cfg(feature = "highs")]
 use crate::solvers::HighsSolver;
 #[cfg(any(feature = "ipm-simd", feature = "ipm-ocl"))]
 use crate::solvers::MultiStateSolver;
 #[cfg(feature = "ipm-simd")]
 use crate::solvers::SimdIpmF64Solver;
-use crate::solvers::{ClpSolver, Solver, SolverSettings};
+use crate::solvers::{Solver, SolverSettings};
 use crate::timestep::{TimeDomain, TimestepDuration, Timestepper};
 use chrono::{Days, NaiveDate};
 use csv::{Reader, ReaderBuilder};
@@ -374,8 +376,11 @@ pub fn run_all_solvers(
     solvers_to_skip: &[&str],
     expected_outputs: &[Box<dyn VerifyExpected>],
 ) {
-    if !solvers_to_skip.contains(&"clp") {
-        check_features_and_run::<ClpSolver>(model, !solvers_without_features.contains(&"clp"), expected_outputs);
+    #[cfg(feature = "clp")]
+    {
+        if !solvers_to_skip.contains(&"clp") {
+            check_features_and_run::<ClpSolver>(model, !solvers_without_features.contains(&"clp"), expected_outputs);
+        }
     }
 
     #[cfg(feature = "cbc")]
