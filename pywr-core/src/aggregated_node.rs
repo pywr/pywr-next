@@ -304,7 +304,7 @@ impl AggregatedNode {
     }
 
     /// Return constant normalised factor pairs
-    pub fn get_const_norm_factor_pairs(&self, values: &ConstParameterValues) -> Option<Vec<NodeConstFactorPair>> {
+    pub fn get_const_norm_factor_pairs(&self, values: &ConstParameterValues) -> Option<Vec<NodeConstFactorPair<'_>>> {
         if let Some(factors) = self.get_factors() {
             let pairs = match factors {
                 Factors::Proportion(prop_factors) => {
@@ -320,7 +320,7 @@ impl AggregatedNode {
 
     /// Return normalised factor pairs
     ///
-    pub fn get_norm_factor_pairs(&self, model: &Network, state: &State) -> Option<Vec<NodeFactorPair>> {
+    pub fn get_norm_factor_pairs(&self, model: &Network, state: &State) -> Option<Vec<NodeFactorPair<'_>>> {
         if let Some(factors) = self.get_factors() {
             let pairs = match factors {
                 Factors::Proportion(prop_factors) => {

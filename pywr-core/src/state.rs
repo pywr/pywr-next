@@ -369,7 +369,7 @@ pub struct ParameterValuesCollection {
 }
 
 impl ParameterValuesCollection {
-    fn get_simple_parameter_values(&self) -> SimpleParameterValues {
+    fn get_simple_parameter_values(&self) -> SimpleParameterValues<'_> {
         SimpleParameterValues {
             constant: ConstParameterValues {
                 constant: ParameterValuesRef {
@@ -386,7 +386,7 @@ impl ParameterValuesCollection {
         }
     }
 
-    fn get_const_parameter_values(&self) -> ConstParameterValues {
+    fn get_const_parameter_values(&self) -> ConstParameterValues<'_> {
         ConstParameterValues {
             constant: ParameterValuesRef {
                 values: &self.constant.values,
@@ -443,7 +443,7 @@ impl SimpleParameterValues<'_> {
         self.simple.get_multi_index(*idx.deref(), key)
     }
 
-    pub fn get_constant_values(&self) -> &ConstParameterValues {
+    pub fn get_constant_values(&self) -> &ConstParameterValues<'_> {
         &self.constant
     }
 }
@@ -1037,11 +1037,11 @@ impl State {
         Ok(())
     }
 
-    pub fn get_simple_parameter_values(&self) -> SimpleParameterValues {
+    pub fn get_simple_parameter_values(&self) -> SimpleParameterValues<'_> {
         self.parameters.get_simple_parameter_values()
     }
 
-    pub fn get_const_parameter_values(&self) -> ConstParameterValues {
+    pub fn get_const_parameter_values(&self) -> ConstParameterValues<'_> {
         self.parameters.get_const_parameter_values()
     }
 
