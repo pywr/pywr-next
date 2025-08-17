@@ -98,7 +98,7 @@
           "time": {
             "type": "CountNonZero"
           },
-          "metrics": {
+          "metric": {
             "type": "Max"
           },
           "scenario": {
