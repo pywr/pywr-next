@@ -1,5 +1,39 @@
+//! This module contains the definition of all nodes in the model.
+//!
+//! Nodes are the main components of a Pywr network. They are connected to each other by [`crate::edge::Edge`]s
+//! and can have various constraints and parameters. Each node type has its own specific
+//! implementation, that defines its behaviour in the overall model.
+//!
+//! The valid nodes are defined in the [`Node`] enum, which is a tagged union of all the
+//! node types. For more information on the individual nodes, see their individual modules.
+//!
+//! # Attributes
+//!
+//! Node attributes are properties that nodes can have, such as volume, cost, or flow. These attributes
+//! are defined in the [`NodeAttribute`] enum, which is a tagged union of all the possible attributes.
+//! Not all nodes have all attributes, and an error will be raised if an attribute is requested that
+//! is not supported by the node.
+//!
+//! Each node can convert a subset of the attributes into a [`pywr_core::metric::MetricF64`], which can then be used
+//! in calculations in the model. For example, by other parameters or in output [`crate::metric_sets::MetricSet`]s.
+//!
+//! # Components
+//!
+//! Similarly to attributes, nodes can have components that refer to particular sub-components of the node.
+//! This is useful for nodes that have multiple components, such as a [`ReservoirNode`]. The purpose
+//! of the component is to give a more fine-grained control over the node's behaviour when used
+//! in constraints.
+//!
+//! Certain nodes, such as [`VirtualStorageNode`] or [`ReservoirNode`], refer to other nodes in the model
+//! and have a special representation in the model. In this case the components are used to determine
+//! how the referred to node behaves. For example, [`VirtualStorageNode`] representing a licence may
+//! wish to use the inflow (gross) or outflow (net) from a [`WaterTreatmentWorksNode`]. The component
+//! is used to determine which of these values is used in the constraint.
+//!
+//!
 mod annual_virtual_storage;
 mod attributes;
+mod components;
 mod core;
 mod delay;
 mod loss_link;
@@ -23,40 +57,50 @@ use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::model::PywrNetwork;
-pub use crate::nodes::placeholder::PlaceholderNode;
-pub use crate::nodes::reservoir::{
-    Bathymetry, BathymetryType, Evaporation, Leakage, Rainfall, ReservoirNode, SpillNodeType,
-};
 use crate::parameters::Parameter;
 use crate::v1::{ConversionData, TryFromV1, TryIntoV2};
 use crate::visit::{VisitMetrics, VisitPaths};
-pub use annual_virtual_storage::{AnnualReset, AnnualVirtualStorageNode};
+pub use annual_virtual_storage::{AnnualReset, AnnualVirtualStorageNode, AnnualVirtualStorageNodeAttribute};
 pub use attributes::NodeAttribute;
+pub use components::NodeComponent;
 pub use core::{
-    AggregatedNode, AggregatedStorageNode, CatchmentNode, InputNode, LinkNode, OutputNode, Relationship,
-    SoftConstraint, StorageInitialVolume, StorageNode,
+    AggregatedNode, AggregatedNodeAttribute, AggregatedStorageNode, AggregatedStorageNodeAttribute, CatchmentNode,
+    CatchmentNodeAttribute, CatchmentNodeComponent, InputNode, InputNodeAttribute, InputNodeComponent, LinkNode,
+    LinkNodeAttribute, LinkNodeComponent, OutputNode, OutputNodeAttribute, OutputNodeComponent, Relationship,
+    SoftConstraint, StorageInitialVolume, StorageNode, StorageNodeAttribute,
 };
-pub use delay::DelayNode;
-pub use loss_link::{LossFactor, LossLinkNode};
-pub use monthly_virtual_storage::{MonthlyVirtualStorageNode, NumberOfMonthsReset};
-pub use piecewise_link::{PiecewiseLinkNode, PiecewiseLinkStep};
-pub use piecewise_storage::{PiecewiseStorageNode, PiecewiseStore};
+pub use delay::{DelayNode, DelayNodeAttribute, DelayNodeComponent};
+pub use loss_link::{LossFactor, LossLinkNode, LossLinkNodeAttribute, LossLinkNodeComponent};
+pub use monthly_virtual_storage::{MonthlyVirtualStorageNode, MonthlyVirtualStorageNodeAttribute, NumberOfMonthsReset};
+pub use piecewise_link::{
+    PiecewiseLinkNode, PiecewiseLinkNodeAttribute, PiecewiseLinkNodeComponent, PiecewiseLinkStep,
+};
+pub use piecewise_storage::{PiecewiseStorageNode, PiecewiseStorageNodeAttribute, PiecewiseStore};
+pub use placeholder::PlaceholderNode;
 #[cfg(feature = "core")]
 use pywr_core::metric::MetricF64;
 use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::nodes::{
     CoreNode as CoreNodeV1, Node as NodeV1, NodeMeta as NodeMetaV1, NodePosition as NodePositionV1,
 };
-pub use river::RiverNode;
-pub use river_gauge::RiverGaugeNode;
-pub use river_split_with_gauge::{RiverSplit, RiverSplitWithGaugeNode};
-pub use rolling_virtual_storage::{RollingVirtualStorageNode, RollingWindow};
+pub use reservoir::{
+    Bathymetry, BathymetryType, Evaporation, Leakage, Rainfall, ReservoirNode, ReservoirNodeAttribute,
+    ReservoirNodeComponent, SpillNodeType,
+};
+pub use river::{RiverNode, RiverNodeAttribute, RiverNodeComponent};
+pub use river_gauge::{RiverGaugeNode, RiverGaugeNodeAttribute, RiverGaugeNodeComponent};
+pub use river_split_with_gauge::{
+    RiverSplit, RiverSplitWithGaugeNode, RiverSplitWithGaugeNodeAttribute, RiverSplitWithGaugeNodeComponent,
+};
+pub use rolling_virtual_storage::{RollingVirtualStorageNode, RollingVirtualStorageNodeAttribute, RollingWindow};
 use schemars::JsonSchema;
 use std::path::{Path, PathBuf};
 use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticStr};
-pub use turbine::{TargetType, TurbineNode};
+pub use turbine::{TargetType, TurbineNode, TurbineNodeAttribute, TurbineNodeComponent};
 pub use virtual_storage::VirtualStorageNode;
-pub use water_treatment_works::WaterTreatmentWorksNode;
+pub use water_treatment_works::{
+    WaterTreatmentWorksNode, WaterTreatmentWorksNodeAttribute, WaterTreatmentWorksNodeComponent,
+};
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Copy, JsonSchema, PywrVisitAll)]
 pub struct NodePosition {
@@ -240,6 +284,7 @@ impl NodeBuilder {
     }
 }
 
+/// The main enum for all nodes in the model.
 #[derive(serde::Deserialize, serde::Serialize, Clone, EnumDiscriminants, Debug, JsonSchema, Display)]
 #[serde(tag = "type", deny_unknown_fields)]
 #[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
@@ -368,30 +413,58 @@ impl Node {
             Node::Placeholder(n) => n.output_connectors(),
         }
     }
-    pub fn default_metric(&self) -> NodeAttribute {
+    pub fn default_attribute(&self) -> NodeAttribute {
         match self {
-            Node::Input(n) => n.default_metric(),
-            Node::Link(n) => n.default_metric(),
-            Node::Output(n) => n.default_metric(),
-            Node::Storage(n) => n.default_metric(),
-            Node::Catchment(n) => n.default_metric(),
-            Node::RiverGauge(n) => n.default_metric(),
-            Node::LossLink(n) => n.default_metric(),
-            Node::River(n) => n.default_metric(),
-            Node::RiverSplitWithGauge(n) => n.default_metric(),
-            Node::WaterTreatmentWorks(n) => n.default_metric(),
-            Node::Aggregated(n) => n.default_metric(),
-            Node::AggregatedStorage(n) => n.default_metric(),
-            Node::VirtualStorage(n) => n.default_metric(),
-            Node::AnnualVirtualStorage(n) => n.default_metric(),
-            Node::MonthlyVirtualStorage(n) => n.default_metric(),
-            Node::PiecewiseLink(n) => n.default_metric(),
-            Node::PiecewiseStorage(n) => n.default_metric(),
-            Node::Delay(n) => n.default_metric(),
-            Node::RollingVirtualStorage(n) => n.default_metric(),
-            Node::Turbine(n) => n.default_metric(),
-            Node::Reservoir(n) => n.default_metric(),
-            Node::Placeholder(n) => n.default_metric(),
+            Node::Input(n) => n.default_attribute().into(),
+            Node::Link(n) => n.default_attribute().into(),
+            Node::Output(n) => n.default_attribute().into(),
+            Node::Storage(n) => n.default_attribute().into(),
+            Node::Catchment(n) => n.default_attribute().into(),
+            Node::RiverGauge(n) => n.default_attribute().into(),
+            Node::LossLink(n) => n.default_attribute().into(),
+            Node::River(n) => n.default_attribute().into(),
+            Node::RiverSplitWithGauge(n) => n.default_attribute().into(),
+            Node::WaterTreatmentWorks(n) => n.default_attribute().into(),
+            Node::Aggregated(n) => n.default_attribute().into(),
+            Node::AggregatedStorage(n) => n.default_attribute().into(),
+            Node::VirtualStorage(n) => n.default_attribute().into(),
+            Node::AnnualVirtualStorage(n) => n.default_attribute().into(),
+            Node::MonthlyVirtualStorage(n) => n.default_attribute().into(),
+            Node::PiecewiseLink(n) => n.default_attribute().into(),
+            Node::PiecewiseStorage(n) => n.default_attribute().into(),
+            Node::Delay(n) => n.default_attribute().into(),
+            Node::RollingVirtualStorage(n) => n.default_attribute().into(),
+            Node::Turbine(n) => n.default_attribute().into(),
+            Node::Reservoir(n) => n.default_attribute().into(),
+            Node::Placeholder(n) => n.default_attribute(),
+        }
+    }
+
+    /// Returns the default component for the node, if defined.
+    pub fn default_component(&self) -> Option<NodeComponent> {
+        match self {
+            Node::Input(n) => Some(n.default_component().into()),
+            Node::Link(n) => Some(n.default_component().into()),
+            Node::Output(n) => Some(n.default_component().into()),
+            Node::Catchment(n) => Some(n.default_component().into()),
+            Node::Storage(_) => None,
+            Node::RiverGauge(n) => Some(n.default_component().into()),
+            Node::LossLink(n) => Some(n.default_component().into()),
+            Node::Delay(n) => Some(n.default_component().into()),
+            Node::PiecewiseLink(n) => Some(n.default_component().into()),
+            Node::PiecewiseStorage(_) => None,
+            Node::River(n) => Some(n.default_component().into()),
+            Node::RiverSplitWithGauge(n) => Some(n.default_component().into()),
+            Node::WaterTreatmentWorks(n) => Some(n.default_component().into()),
+            Node::Aggregated(_) => None,
+            Node::AggregatedStorage(_) => None,
+            Node::VirtualStorage(_) => None,
+            Node::AnnualVirtualStorage(_) => None,
+            Node::MonthlyVirtualStorage(_) => None,
+            Node::RollingVirtualStorage(_) => None,
+            Node::Turbine(n) => Some(n.default_component().into()),
+            Node::Reservoir(n) => Some(n.default_component().into()),
+            Node::Placeholder(_) => None,
         }
     }
 
@@ -442,7 +515,7 @@ impl Node {
             Node::RiverSplitWithGauge(n) => n.add_to_model(network),
             Node::WaterTreatmentWorks(n) => n.add_to_model(network),
             Node::Aggregated(n) => n.add_to_model(network, args),
-            Node::AggregatedStorage(n) => n.add_to_model(network),
+            Node::AggregatedStorage(n) => n.add_to_model(network, args),
             Node::VirtualStorage(n) => n.add_to_model(network, args),
             Node::AnnualVirtualStorage(n) => n.add_to_model(network, args),
             Node::PiecewiseLink(n) => n.add_to_model(network),
@@ -456,35 +529,80 @@ impl Node {
         }
     }
 
-    /// Get the node indices for the constraints that this node has added to the network.
-    pub fn node_indices_for_constraints(
+    /// Get the node indices for flow constraints that this node has added to the network.
+    ///
+    /// This is used to determine which core nodes should be used when this node is used
+    /// in a flow constraint. Depending on the node type, this may return multiple
+    /// node indices, for example if node contains multiple internal components. The node
+    /// indices may also be different depending on the `component` argument, which is used
+    /// to determine which component of the node is used in the flow constraint.
+    ///
+    /// If the node is not allowed in flow constraints it should return [`SchemaError::NodeNotAllowedInFlowConstraint`].
+    pub fn node_indices_for_flow_constraints(
+        &self,
+        network: &pywr_core::network::Network,
+        component: Option<NodeComponent>,
+    ) -> Result<Vec<pywr_core::node::NodeIndex>, SchemaError> {
+        match self {
+            Node::Input(n) => n.node_indices_for_flow_constraints(network, component),
+            Node::Link(n) => n.node_indices_for_flow_constraints(network, component),
+            Node::Output(n) => n.node_indices_for_flow_constraints(network, component),
+            Node::Storage(_) => Err(SchemaError::NodeNotAllowedInFlowConstraint),
+            Node::Catchment(n) => n.node_indices_for_flow_constraints(network, component),
+            Node::RiverGauge(n) => n.node_indices_for_flow_constraints(network, component),
+            Node::LossLink(n) => n.node_indices_for_flow_constraints(network, component),
+            Node::River(n) => n.node_indices_for_flow_constraints(network, component),
+            Node::RiverSplitWithGauge(n) => n.node_indices_for_flow_constraints(network, component),
+            Node::WaterTreatmentWorks(n) => n.node_indices_for_flow_constraints(network, component),
+            Node::Aggregated(_) => Err(SchemaError::NodeNotAllowedInFlowConstraint),
+            Node::AggregatedStorage(_) => Err(SchemaError::NodeNotAllowedInFlowConstraint),
+            Node::VirtualStorage(_) => Err(SchemaError::NodeNotAllowedInFlowConstraint),
+            Node::AnnualVirtualStorage(_) => Err(SchemaError::NodeNotAllowedInFlowConstraint),
+            Node::PiecewiseLink(n) => n.node_indices_for_flow_constraints(network, component),
+            Node::PiecewiseStorage(_) => Err(SchemaError::NodeNotAllowedInFlowConstraint),
+            Node::Delay(n) => n.node_indices_for_flow_constraints(network, component),
+            Node::Turbine(n) => n.node_indices_for_flow_constraints(network, component),
+            Node::MonthlyVirtualStorage(_) => Err(SchemaError::NodeNotAllowedInFlowConstraint),
+            Node::RollingVirtualStorage(_) => Err(SchemaError::NodeNotAllowedInFlowConstraint),
+            Node::Reservoir(n) => n.node_indices_for_flow_constraints(network, component),
+            Node::Placeholder(n) => n.node_indices_for_flow_constraints(),
+        }
+    }
+
+    /// Get the node indices for storage nodes for this node.
+    ///
+    /// This is used to determine which core nodes should be used when this node is used
+    /// in an [`AggregatedStorageNode`].
+    ///
+    /// If the node is not allowed in storage constraints it should return [`SchemaError::NodeNotAllowedInStorageConstraint`].
+    pub fn node_indices_for_storage_constraints(
         &self,
         network: &pywr_core::network::Network,
         args: &LoadArgs,
     ) -> Result<Vec<pywr_core::node::NodeIndex>, SchemaError> {
         match self {
-            Node::Input(n) => n.node_indices_for_constraints(network),
-            Node::Link(n) => n.node_indices_for_constraints(network),
-            Node::Output(n) => n.node_indices_for_constraints(network),
-            Node::Storage(n) => n.node_indices_for_constraints(network),
-            Node::Catchment(n) => n.node_indices_for_constraints(network),
-            Node::RiverGauge(n) => n.node_indices_for_constraints(network),
-            Node::LossLink(n) => n.node_indices_for_constraints(network),
-            Node::River(n) => n.node_indices_for_constraints(network),
-            Node::RiverSplitWithGauge(n) => n.node_indices_for_constraints(network),
-            Node::WaterTreatmentWorks(n) => n.node_indices_for_constraints(network),
-            Node::Aggregated(n) => n.node_indices_for_constraints(network, args),
-            Node::AggregatedStorage(n) => n.node_indices_for_constraints(network, args),
-            Node::VirtualStorage(n) => n.node_indices_for_constraints(network, args),
-            Node::AnnualVirtualStorage(n) => n.node_indices_for_constraints(network, args),
-            Node::PiecewiseLink(n) => n.node_indices_for_constraints(network),
-            Node::PiecewiseStorage(n) => n.node_indices_for_constraints(network),
-            Node::Delay(n) => n.node_indices_for_constraints(network),
-            Node::Turbine(n) => n.node_indices_for_constraints(network),
-            Node::MonthlyVirtualStorage(n) => n.node_indices_for_constraints(network, args),
-            Node::RollingVirtualStorage(n) => n.node_indices_for_constraints(network, args),
-            Node::Reservoir(n) => n.node_indices_for_constraints(network),
-            Node::Placeholder(n) => n.node_indices_for_constraints(),
+            Node::Input(_) => Err(SchemaError::NodeNotAllowedInStorageConstraint),
+            Node::Link(_) => Err(SchemaError::NodeNotAllowedInStorageConstraint),
+            Node::Output(_) => Err(SchemaError::NodeNotAllowedInStorageConstraint),
+            Node::Storage(n) => n.node_indices_for_storage_constraints(network),
+            Node::Catchment(_) => Err(SchemaError::NodeNotAllowedInStorageConstraint),
+            Node::RiverGauge(_) => Err(SchemaError::NodeNotAllowedInStorageConstraint),
+            Node::LossLink(_) => Err(SchemaError::NodeNotAllowedInStorageConstraint),
+            Node::River(_) => Err(SchemaError::NodeNotAllowedInStorageConstraint),
+            Node::RiverSplitWithGauge(_) => Err(SchemaError::NodeNotAllowedInStorageConstraint),
+            Node::WaterTreatmentWorks(_) => Err(SchemaError::NodeNotAllowedInStorageConstraint),
+            Node::Aggregated(_) => Err(SchemaError::NodeNotAllowedInStorageConstraint),
+            Node::AggregatedStorage(n) => n.node_indices_for_storage_constraints(network, args),
+            Node::VirtualStorage(_) => Err(SchemaError::NodeNotAllowedInStorageConstraint), // TODO perhaps this should be allowed?
+            Node::AnnualVirtualStorage(_) => Err(SchemaError::NodeNotAllowedInStorageConstraint), // TODO perhaps this should be allowed?
+            Node::PiecewiseLink(_) => Err(SchemaError::NodeNotAllowedInStorageConstraint),
+            Node::PiecewiseStorage(n) => n.node_indices_for_storage_constraints(network),
+            Node::Delay(_) => Err(SchemaError::NodeNotAllowedInStorageConstraint),
+            Node::Turbine(_) => Err(SchemaError::NodeNotAllowedInStorageConstraint),
+            Node::MonthlyVirtualStorage(_) => Err(SchemaError::NodeNotAllowedInStorageConstraint), // TODO perhaps this should be allowed?
+            Node::RollingVirtualStorage(_) => Err(SchemaError::NodeNotAllowedInStorageConstraint), // TODO perhaps this should be allowed?
+            Node::Reservoir(n) => n.node_indices_for_storage_constraints(network),
+            Node::Placeholder(n) => n.node_indices_for_storage_constraints(),
         }
     }
 

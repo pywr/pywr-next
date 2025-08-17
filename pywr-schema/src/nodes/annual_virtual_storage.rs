@@ -1,12 +1,14 @@
 use crate::error::ComponentConversionError;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
-use crate::metric::{Metric, SimpleNodeReference};
+use crate::metric::{Metric, NodeComponentReference};
 #[cfg(feature = "core")]
 use crate::model::LoadArgs;
 use crate::node_attribute_subset_enum;
+#[cfg(feature = "core")]
+use crate::nodes::NodeAttribute;
+use crate::nodes::NodeMeta;
 use crate::nodes::core::StorageInitialVolume;
-use crate::nodes::{NodeAttribute, NodeMeta};
 use crate::parameters::Parameter;
 use crate::v1::{ConversionData, TryFromV1, try_convert_initial_storage, try_convert_node_attr};
 #[cfg(feature = "core")]
@@ -40,7 +42,7 @@ impl Default for AnnualReset {
 // This macro generates a subset enum for the `AnnualVirtualStorageNode` attributes.
 // It allows for easy conversion between the enum and the `NodeAttribute` type.
 node_attribute_subset_enum! {
-    enum AnnualVirtualStorageNodeAttribute {
+    pub enum AnnualVirtualStorageNodeAttribute {
         Volume,
         ProportionalVolume,
     }
@@ -52,7 +54,7 @@ pub struct AnnualVirtualStorageNode {
     pub meta: NodeMeta,
     /// Optional local parameters.
     pub parameters: Option<Vec<Parameter>>,
-    pub nodes: Vec<SimpleNodeReference>,
+    pub nodes: Vec<NodeComponentReference>,
     pub factors: Option<Vec<f64>>,
     pub max_volume: Option<Metric>,
     pub min_volume: Option<Metric>,
@@ -72,14 +74,18 @@ impl AnnualVirtualStorageNode {
         vec![]
     }
 
-    pub fn default_metric(&self) -> NodeAttribute {
-        Self::DEFAULT_ATTRIBUTE.into()
+    pub fn default_attribute(&self) -> AnnualVirtualStorageNodeAttribute {
+        Self::DEFAULT_ATTRIBUTE
     }
 }
 
 #[cfg(feature = "core")]
 impl AnnualVirtualStorageNode {
-    pub fn node_indices_for_constraints(
+    /// This returns the node indices for flow constraints based on the nodes referenced in this virtual storage node.
+    ///
+    /// Note that this is a private function, as it is not supported using this node itself
+    /// inside a flow constraint.
+    fn node_indices_for_flow_constraints(
         &self,
         network: &pywr_core::network::Network,
         args: &LoadArgs,
@@ -93,7 +99,7 @@ impl AnnualVirtualStorageNode {
                     .ok_or_else(|| SchemaError::NodeNotFound {
                         name: node_ref.name.to_string(),
                     })?
-                    .node_indices_for_constraints(network, args)
+                    .node_indices_for_flow_constraints(network, node_ref.component)
             })
             .collect::<Result<Vec<_>, _>>()?
             .into_iter()
@@ -118,7 +124,7 @@ impl AnnualVirtualStorageNode {
             None => None,
         };
 
-        let node_idxs = self.node_indices_for_constraints(network, args)?;
+        let node_idxs = self.node_indices_for_flow_constraints(network, args)?;
 
         let reset_month = self.reset.month.try_into()?;
         let reset = VirtualStorageReset::DayOfYear {

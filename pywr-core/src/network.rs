@@ -839,7 +839,7 @@ impl Network {
     }
 
     /// Calculate the set of [`SolverFeatures`] required to correctly run this network.
-    fn required_features(&self) -> HashSet<SolverFeatures> {
+    pub fn required_features(&self) -> HashSet<SolverFeatures> {
         let mut features = HashSet::new();
 
         // Aggregated node feature required if there are any aggregated nodes

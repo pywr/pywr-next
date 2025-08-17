@@ -26,7 +26,7 @@ impl PlaceholderNode {
         vec![(self.meta.name.as_str(), None)]
     }
 
-    pub fn default_metric(&self) -> NodeAttribute {
+    pub fn default_attribute(&self) -> NodeAttribute {
         NodeAttribute::Outflow
     }
 }
@@ -39,7 +39,13 @@ impl PlaceholderNode {
         })
     }
 
-    pub fn node_indices_for_constraints(&self) -> Result<Vec<pywr_core::node::NodeIndex>, SchemaError> {
+    pub fn node_indices_for_flow_constraints(&self) -> Result<Vec<pywr_core::node::NodeIndex>, SchemaError> {
+        Err(SchemaError::PlaceholderNodeNotAllowed {
+            name: self.meta.name.clone(),
+        })
+    }
+
+    pub fn node_indices_for_storage_constraints(&self) -> Result<Vec<pywr_core::node::NodeIndex>, SchemaError> {
         Err(SchemaError::PlaceholderNodeNotAllowed {
             name: self.meta.name.clone(),
         })
@@ -58,7 +64,7 @@ impl PlaceholderNode {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "core"))]
 mod test {
     use super::*;
 
