@@ -1,6 +1,6 @@
 //! This module contains the definition of all nodes in the model.
 //!
-//! Nodes are the main components of a Pywr network. They are connected to each by [`crate::edge::Edge`]s
+//! Nodes are the main components of a Pywr network. They are connected to each other by [`crate::edge::Edge`]s
 //! and can have various constraints and parameters. Each node type has its own specific
 //! implementation, that defines its behaviour in the overall model.
 //!
