@@ -2,7 +2,7 @@
 use crate::error::SchemaError;
 use crate::metric::{Metric, NodeAttrReference};
 #[cfg(feature = "core")]
-use crate::model::LoadArgs;
+use crate::network::LoadArgs;
 use crate::nodes::NodeAttribute;
 use crate::parameters::{ConversionData, ParameterMeta};
 use crate::v1::{FromV1, IntoV2};

@@ -62,7 +62,7 @@ mod schema {
     use pywr_schema::metric::Metric;
     use pywr_schema::parameters::ParameterMeta;
     #[cfg(feature = "core")]
-    use pywr_schema::{model::LoadArgs, SchemaError};
+    use pywr_schema::{LoadArgs, SchemaError};
     use schemars::JsonSchema;
 
     // ANCHOR: schema

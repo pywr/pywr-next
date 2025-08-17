@@ -1,7 +1,7 @@
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
 #[cfg(feature = "core")]
-use crate::model::LoadArgs;
+use crate::network::LoadArgs;
 use crate::parameters::{ConversionData, ParameterMeta};
 #[cfg(feature = "core")]
 use crate::timeseries::subset_array2;
