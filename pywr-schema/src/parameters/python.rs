@@ -192,7 +192,7 @@ impl PythonParameter {
     pub fn node_references(&self) -> HashMap<&str, &str> {
         HashMap::new()
     }
-    pub fn parameters(&self) -> HashMap<&str, DynamicFloatValueType> {
+    pub fn parameters(&self) -> HashMap<&str, DynamicFloatValueType<'_>> {
         HashMap::new()
     }
 }
