@@ -51,8 +51,6 @@ pub enum TimeseriesError {
     ScenarioGroupNotFound(String),
     #[error("The length of the resampled timeseries dataframe '{0}' does not match the number of model timesteps.")]
     DataFrameTimestepMismatch(String),
-    #[error("A timeseries dataframe with the name '{0}' already exists.")]
-    TimeseriesDataframeAlreadyExists(String),
     #[error(
         "The timeseries dataset '{0}' has more than one column of data so a column or scenario name must be provided for any reference"
     )]
@@ -79,6 +77,17 @@ pub enum TimeseriesError {
     #[error("Pywr core network error: {0}")]
     #[cfg(feature = "core")]
     CoreNetworkError(#[from] pywr_core::NetworkError),
+}
+
+#[cfg(feature = "pyo3")]
+impl TryFrom<TimeseriesError> for PyErr {
+    type Error = ();
+    fn try_from(err: TimeseriesError) -> Result<Self, Self::Error> {
+        match err {
+            TimeseriesError::PythonError(py_err) => Ok(py_err),
+            _ => Err(()),
+        }
+    }
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, Display, EnumDiscriminants)]
@@ -123,6 +132,26 @@ impl VisitPaths for Timeseries {
     }
 }
 
+#[derive(Error, Debug)]
+#[cfg(feature = "core")]
+pub enum LoadTimeseriesError {
+    #[error("Failed to load timeseries dataframe from path '{name}': {source}")]
+    TimeseriesError { name: String, source: TimeseriesError },
+    #[error("A timeseries with name '{0}' already exists.")]
+    DuplicateTimeseriesName(String),
+}
+
+#[cfg(feature = "pyo3")]
+impl TryFrom<LoadTimeseriesError> for PyErr {
+    type Error = ();
+    fn try_from(err: LoadTimeseriesError) -> Result<Self, Self::Error> {
+        match err {
+            LoadTimeseriesError::TimeseriesError { source, .. } => source.try_into(),
+            _ => Err(()),
+        }
+    }
+}
+
 #[derive(Default)]
 #[cfg(feature = "core")]
 pub struct LoadedTimeseriesCollection {
@@ -135,13 +164,18 @@ impl LoadedTimeseriesCollection {
         timeseries_defs: Option<&[Timeseries]>,
         domain: &ModelDomain,
         data_path: Option<&Path>,
-    ) -> Result<Self, TimeseriesError> {
+    ) -> Result<Self, LoadTimeseriesError> {
         let mut timeseries = HashMap::new();
         if let Some(timeseries_defs) = timeseries_defs {
             for ts in timeseries_defs {
-                let df = ts.load(domain, data_path)?;
+                let df = ts
+                    .load(domain, data_path)
+                    .map_err(|source| LoadTimeseriesError::TimeseriesError {
+                        name: ts.name().to_string(),
+                        source,
+                    })?;
                 if timeseries.contains_key(ts.name()) {
-                    return Err(TimeseriesError::TimeseriesDataframeAlreadyExists(ts.name().to_string()));
+                    return Err(LoadTimeseriesError::DuplicateTimeseriesName(ts.name().to_string()));
                 }
                 timeseries.insert(ts.name().to_string(), df);
             }

@@ -7,6 +7,7 @@ use crate::metric::{IndexMetric, Metric};
 use crate::network::LoadArgs;
 use crate::parameters::{DynamicFloatValueType, ParameterMeta};
 use crate::visit::{VisitMetrics, VisitPaths};
+use pyo3::PyErr;
 #[cfg(all(feature = "core", feature = "pyo3"))]
 use pyo3::{
     IntoPyObjectExt, PyObject, Python,
@@ -114,7 +115,7 @@ pub struct PythonParameter {
 }
 
 #[cfg(all(feature = "core", feature = "pyo3"))]
-pub fn try_json_value_into_py(py: Python, value: &serde_json::Value) -> Result<Option<PyObject>, SchemaError> {
+pub fn try_json_value_into_py(py: Python, value: &serde_json::Value) -> Result<Option<PyObject>, PyErr> {
     let py_value: Option<PyObject> = match value {
         Value::Null => None,
         Value::Bool(v) => Some(v.into_py_any(py)?),
@@ -243,9 +244,9 @@ impl PythonParameter {
                 .args
                 .iter()
                 .map(|arg| try_json_value_into_py(py, arg))
-                .collect::<Result<Vec<_>, SchemaError>>()?;
+                .collect::<Result<Vec<_>, PyErr>>()?;
 
-            Ok::<_, SchemaError>(PyTuple::new(py, args)?.unbind())
+            Ok::<_, PyErr>(PyTuple::new(py, args)?.unbind())
         })?;
 
         let kwargs = Python::with_gil(|py| {

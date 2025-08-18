@@ -1,6 +1,6 @@
 use pywr_schema::PywrModel;
 #[cfg(feature = "core")]
-use pywr_schema::SchemaError;
+use pywr_schema::PywrModelBuildError;
 use std::fs;
 use std::path::Path;
 #[cfg(feature = "core")]
@@ -19,8 +19,8 @@ macro_rules! invalid_tests {
 
                 let schema = deserialise_test_model(&input_pth);
                 let err = build_test_model(&schema);
-                if !matches!(err, SchemaError::$expected_err { .. }) {
-                    panic!("Expected error: SchemaError::{}, but got: {:?}", stringify!($expected_err), err);
+                if !matches!(err, PywrModelBuildError::$expected_err { .. }) {
+                    panic!("Expected error: PywrModelBuildError::{}, but got: {:?}", stringify!($expected_err), err);
                 };
             }
 
@@ -37,7 +37,7 @@ macro_rules! invalid_tests {
 }
 
 invalid_tests! {
-    agg_storage_with_flow_node: "agg-storage-with-flow-node.json", NodeNotAllowedInStorageConstraint,
+    agg_storage_with_flow_node: "agg-storage-with-flow-node.json", NetworkBuildError,
 }
 
 fn deserialise_test_model(model_path: &Path) -> PywrModel {
@@ -46,7 +46,7 @@ fn deserialise_test_model(model_path: &Path) -> PywrModel {
 }
 
 #[cfg(feature = "core")]
-fn build_test_model(schema: &PywrModel) -> SchemaError {
+fn build_test_model(schema: &PywrModel) -> PywrModelBuildError {
     let temp_dir = TempDir::new().unwrap();
     let data_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("invalid");
     match schema.build_model(Some(&data_dir), Some(temp_dir.path())) {
