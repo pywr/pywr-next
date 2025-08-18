@@ -23,6 +23,8 @@ pub enum NodeAttribute {
     Rainfall,
     /// The evaporation volume.
     Evaporation,
+    /// The abstracted flow
+    Abstraction,
 }
 
 /// Macro to generate a subset enum of `NodeAttribute` with conversion implementations.

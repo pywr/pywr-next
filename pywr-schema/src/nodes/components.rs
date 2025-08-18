@@ -21,6 +21,8 @@ pub enum NodeComponent {
     Rainfall,
     /// The evaporation flow.
     Evaporation,
+    /// The abstracted flow.
+    Abstraction,
 }
 
 /// Macro to generate a subset enum of `NodeComponent` with conversion implementations.

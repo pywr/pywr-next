@@ -1,0 +1,129 @@
+{
+  "metadata": {
+    "title": "Abstraction 1",
+    "comment": "Test behaviour of an abstraction node constrained by an MRF and licence"
+  },
+  "timestepper": {
+    "start": "2021-01-01",
+    "end": "2021-01-07",
+    "timestep": 1
+  },
+  "network": {
+    "nodes": [
+      {
+        "meta": {
+          "name": "catchment"
+        },
+        "type": "Catchment",
+        "flow": {
+          "type": "Timeseries",
+          "name": "inflow"
+        }
+      },
+      {
+        "meta": {
+          "name": "abstraction"
+        },
+        "type": "Abstraction",
+        "mrf": {
+          "type": "Constant",
+          "value": 2.0
+        },
+        "mrf_cost": {
+          "type": "Constant",
+          "value": -1000.0
+        },
+        "abs_max_flow": {
+          "type": "Constant",
+          "value": 4.0
+        },
+        "abs_cost": {
+          "type": "Constant",
+          "value": 1.0
+        }
+      },
+      {
+        "meta": {
+          "name": "estuary"
+        },
+        "type": "Output"
+      },
+      {
+        "meta": {
+          "name": "demand"
+        },
+        "type": "Output",
+        "cost": {
+          "type": "Constant",
+          "value": -500
+        },
+        "max_flow": {
+          "type": "Constant",
+          "value": 4.0
+        }
+      },
+      {
+        "meta": {
+          "name": "abstraction_licence"
+        },
+        "type": "VirtualStorage",
+        "max_volume": {
+          "type": "Constant",
+          "value": 13
+        },
+        "initial_volume": {
+          "type": "Proportional",
+          "proportion": 1.0
+        },
+        "nodes": [
+          {
+            "name": "abstraction"
+          }
+        ]
+      }
+    ],
+    "edges": [
+      {
+        "from_node": "catchment",
+        "to_node": "abstraction"
+      },
+      {
+        "from_node": "abstraction",
+        "to_node": "demand",
+        "from_slot": "abstraction"
+      },
+      {
+        "from_node": "abstraction",
+        "to_node": "estuary",
+        "from_slot": "downstream"
+      }
+    ],
+    "timeseries": [
+      {
+        "meta": {
+          "name": "inflow"
+        },
+        "type": "Polars",
+        "time_col": "date",
+        "url": "inflow3.csv"
+      }
+    ],
+    "metric_sets": [
+      {
+        "name": "nodes",
+        "filters": {
+          "all_nodes": true
+        }
+      }
+    ],
+    "outputs": [
+      {
+        "name": "nodes",
+        "type": "CSV",
+        "format": "Long",
+        "filename": "abstraction1-expected.csv",
+        "metric_set": "nodes"
+      }
+    ]
+  }
+}
