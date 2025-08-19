@@ -31,7 +31,7 @@ nalgebra = "0.34"
 chrono = { workspace = true }
 polars = { workspace = true }
 pyo3 = { workspace = true, features = ["chrono", "macros"], optional = true }
-rayon = "1.6"
+rayon = "1.11"
 ocl = { version = "0.19", optional = true }
 rand = { workspace = true }
 rand_distr = "0.4"
