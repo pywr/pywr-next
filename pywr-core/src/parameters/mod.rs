@@ -820,9 +820,9 @@ pub enum ParameterCollectionError {
 #[derive(Error, Debug)]
 #[error("Error setting up parameter '{name}': {source}")]
 pub struct ParameterCollectionSetupError {
-    name: ParameterName,
+    name: Box<ParameterName>,
     #[source]
-    source: ParameterSetupError,
+    source: Box<ParameterSetupError>,
 }
 
 /// Error in a constant parameter during calculation.
@@ -941,8 +941,8 @@ impl ParameterCollection {
             .map(|p| {
                 p.setup(timesteps, scenario_index)
                     .map_err(|source| ParameterCollectionSetupError {
-                        name: p.name().clone(),
-                        source,
+                        name: Box::new(p.name().clone()),
+                        source: Box::new(source),
                     })
             })
             .collect::<Result<Vec<_>, _>>()?;
@@ -953,8 +953,8 @@ impl ParameterCollection {
             .map(|p| {
                 p.setup(timesteps, scenario_index)
                     .map_err(|source| ParameterCollectionSetupError {
-                        name: p.name().clone(),
-                        source,
+                        name: Box::new(p.name().clone()),
+                        source: Box::new(source),
                     })
             })
             .collect::<Result<Vec<_>, _>>()?;
@@ -965,8 +965,8 @@ impl ParameterCollection {
             .map(|p| {
                 p.setup(timesteps, scenario_index)
                     .map_err(|source| ParameterCollectionSetupError {
-                        name: p.name().clone(),
-                        source,
+                        name: Box::new(p.name().clone()),
+                        source: Box::new(source),
                     })
             })
             .collect::<Result<Vec<_>, _>>()?;
@@ -990,8 +990,8 @@ impl ParameterCollection {
             .map(|p| {
                 p.setup(timesteps, scenario_index)
                     .map_err(|source| ParameterCollectionSetupError {
-                        name: p.name().clone(),
-                        source,
+                        name: Box::new(p.name().clone()),
+                        source: Box::new(source),
                     })
             })
             .collect::<Result<Vec<_>, _>>()?;
@@ -1002,8 +1002,8 @@ impl ParameterCollection {
             .map(|p| {
                 p.setup(timesteps, scenario_index)
                     .map_err(|source| ParameterCollectionSetupError {
-                        name: p.name().clone(),
-                        source,
+                        name: Box::new(p.name().clone()),
+                        source: Box::new(source),
                     })
             })
             .collect::<Result<Vec<_>, _>>()?;
@@ -1014,8 +1014,8 @@ impl ParameterCollection {
             .map(|p| {
                 p.setup(timesteps, scenario_index)
                     .map_err(|source| ParameterCollectionSetupError {
-                        name: p.name().clone(),
-                        source,
+                        name: Box::new(p.name().clone()),
+                        source: Box::new(source),
                     })
             })
             .collect::<Result<Vec<_>, _>>()?;
@@ -1039,8 +1039,8 @@ impl ParameterCollection {
             .map(|p| {
                 p.setup(timesteps, scenario_index)
                     .map_err(|source| ParameterCollectionSetupError {
-                        name: p.name().clone(),
-                        source,
+                        name: Box::new(p.name().clone()),
+                        source: Box::new(source),
                     })
             })
             .collect::<Result<Vec<_>, _>>()?;
@@ -1051,8 +1051,8 @@ impl ParameterCollection {
             .map(|p| {
                 p.setup(timesteps, scenario_index)
                     .map_err(|source| ParameterCollectionSetupError {
-                        name: p.name().clone(),
-                        source,
+                        name: Box::new(p.name().clone()),
+                        source: Box::new(source),
                     })
             })
             .collect::<Result<Vec<_>, _>>()?;
@@ -1063,8 +1063,8 @@ impl ParameterCollection {
             .map(|p| {
                 p.setup(timesteps, scenario_index)
                     .map_err(|source| ParameterCollectionSetupError {
-                        name: p.name().clone(),
-                        source,
+                        name: Box::new(p.name().clone()),
+                        source: Box::new(source),
                     })
             })
             .collect::<Result<Vec<_>, _>>()?;
