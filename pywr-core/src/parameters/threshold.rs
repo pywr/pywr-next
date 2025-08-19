@@ -4,17 +4,11 @@ use crate::parameters::errors::{ParameterCalculationError, ParameterSetupError};
 use crate::parameters::{
     GeneralParameter, Parameter, ParameterMeta, ParameterName, ParameterState, downcast_internal_state_mut,
 };
+use crate::predicate::Predicate;
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
 use crate::timestep::Timestep;
 
-pub enum Predicate {
-    LessThan,
-    GreaterThan,
-    EqualTo,
-    LessThanOrEqualTo,
-    GreaterThanOrEqualTo,
-}
 
 pub struct ThresholdParameter {
     meta: ParameterMeta,
@@ -78,13 +72,7 @@ impl GeneralParameter<u64> for ThresholdParameter {
         let threshold = self.threshold.get_value(model, state)?;
         let value = self.metric.get_value(model, state)?;
 
-        let active = match self.predicate {
-            Predicate::LessThan => value < threshold,
-            Predicate::GreaterThan => value > threshold,
-            Predicate::EqualTo => (value - threshold).abs() < 1E-6, // TODO make this a global constant
-            Predicate::LessThanOrEqualTo => value <= threshold,
-            Predicate::GreaterThanOrEqualTo => value >= threshold,
-        };
+        let active = self.predicate.apply(value, threshold);
 
         if active {
             // Update the internal state to remember we've been triggered!

@@ -14,6 +14,7 @@ mod network;
 pub mod nodes;
 pub mod outputs;
 pub mod parameters;
+mod predicate;
 pub mod timeseries;
 mod v1;
 mod visit;
