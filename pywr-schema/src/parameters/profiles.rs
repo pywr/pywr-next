@@ -2,7 +2,7 @@
 use crate::error::SchemaError;
 use crate::error::{ComponentConversionError, ConversionError};
 #[cfg(feature = "core")]
-use crate::model::LoadArgs;
+use crate::network::LoadArgs;
 use crate::parameters::{ConstantFloatVec, ConstantValue, ConversionData, ParameterMeta};
 use crate::v1::{FromV1, IntoV2, TryFromV1, try_convert_values};
 #[cfg(feature = "core")]

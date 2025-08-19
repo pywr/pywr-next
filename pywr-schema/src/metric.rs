@@ -5,7 +5,7 @@ use crate::error::ComponentConversionError;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
 #[cfg(feature = "core")]
-use crate::model::LoadArgs;
+use crate::network::LoadArgs;
 #[cfg(feature = "core")]
 use crate::nodes::NodeType;
 use crate::nodes::{NodeAttribute, NodeComponent};

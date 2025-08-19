@@ -4,7 +4,7 @@ use crate::data_tables::make_path;
 use crate::error::SchemaError;
 use crate::metric::{IndexMetric, Metric};
 #[cfg(feature = "core")]
-use crate::model::LoadArgs;
+use crate::network::LoadArgs;
 use crate::parameters::{DynamicFloatValueType, ParameterMeta};
 use crate::visit::{VisitMetrics, VisitPaths};
 #[cfg(all(feature = "core", feature = "pyo3"))]
@@ -303,7 +303,7 @@ impl PythonParameter {
 #[cfg(all(feature = "core", feature = "pyo3"))]
 mod tests {
     use crate::data_tables::LoadedTableCollection;
-    use crate::model::{LoadArgs, PywrNetwork};
+    use crate::network::{LoadArgs, PywrNetwork};
     use crate::parameters::python::PythonParameter;
     use crate::timeseries::LoadedTimeseriesCollection;
     use pywr_core::models::ModelDomain;

@@ -3,7 +3,7 @@ use crate::error::SchemaError;
 use crate::error::{ComponentConversionError, ConversionError};
 use crate::metric::{Metric, NodeAttrReference};
 #[cfg(feature = "core")]
-use crate::model::LoadArgs;
+use crate::network::LoadArgs;
 use crate::nodes::NodeAttribute;
 use crate::parameters::{ConversionData, ParameterMeta};
 use crate::v1::{IntoV2, TryFromV1, try_convert_control_curves, try_convert_parameter_attr};
