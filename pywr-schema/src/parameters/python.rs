@@ -7,10 +7,9 @@ use crate::metric::{IndexMetric, Metric};
 use crate::network::LoadArgs;
 use crate::parameters::{DynamicFloatValueType, ParameterMeta};
 use crate::visit::{VisitMetrics, VisitPaths};
-use pyo3::PyErr;
 #[cfg(all(feature = "core", feature = "pyo3"))]
 use pyo3::{
-    IntoPyObjectExt, PyObject, Python,
+    IntoPyObjectExt, PyErr, PyObject, Python,
     prelude::{IntoPyObject, Py, PyAny, PyAnyMethods, PyModule},
     types::{PyDict, PyString, PyTuple},
 };
