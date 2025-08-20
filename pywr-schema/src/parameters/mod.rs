@@ -16,6 +16,7 @@ mod discount_factor;
 mod hydropower;
 mod indexed_array;
 mod interpolated;
+
 mod offset;
 mod placeholder;
 mod polynomial;
@@ -34,6 +35,7 @@ use crate::error::{ComponentConversionError, ConversionError};
 use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::network::LoadArgs;
+use crate::parameters::thresholds::MultiThresholdParameter;
 use crate::timeseries::ConvertedTimeseriesReference;
 use crate::v1::{ConversionData, IntoV2, TryFromV1, TryIntoV2};
 use crate::visit::{VisitMetrics, VisitPaths};
@@ -102,6 +104,7 @@ pub enum Parameter {
     UniformDrawdownProfile(UniformDrawdownProfileParameter),
     Max(MaxParameter),
     Min(MinParameter),
+    MultiThreshold(MultiThresholdParameter),
     Negative(NegativeParameter),
     NegativeMax(NegativeMaxParameter),
     NegativeMin(NegativeMinParameter),
@@ -140,6 +143,7 @@ impl Parameter {
             Self::UniformDrawdownProfile(p) => p.meta.name.as_str(),
             Self::Max(p) => p.meta.name.as_str(),
             Self::Min(p) => p.meta.name.as_str(),
+            Self::MultiThreshold(p) => p.meta.name.as_str(),
             Self::Negative(p) => p.meta.name.as_str(),
             Self::Polynomial1D(p) => p.meta.name.as_str(),
             Self::Threshold(p) => p.meta.name.as_str(),
@@ -255,6 +259,7 @@ impl Parameter {
                 pywr_core::parameters::ParameterType::Index(p.add_to_model(network, args, parent)?)
             }
             Self::Placeholder(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model()?),
+            Self::MultiThreshold(p) => p.add_to_model(network, args, parent)?,
         };
 
         Ok(ty)
@@ -279,6 +284,7 @@ impl VisitMetrics for Parameter {
             Self::UniformDrawdownProfile(p) => p.visit_metrics(visitor),
             Self::Max(p) => p.visit_metrics(visitor),
             Self::Min(p) => p.visit_metrics(visitor),
+            Self::MultiThreshold(p) => p.visit_metrics(visitor),
             Self::Negative(p) => p.visit_metrics(visitor),
             Self::Polynomial1D(p) => p.visit_metrics(visitor),
             Self::Threshold(p) => p.visit_metrics(visitor),
@@ -317,6 +323,7 @@ impl VisitMetrics for Parameter {
             Self::UniformDrawdownProfile(p) => p.visit_metrics_mut(visitor),
             Self::Max(p) => p.visit_metrics_mut(visitor),
             Self::Min(p) => p.visit_metrics_mut(visitor),
+            Self::MultiThreshold(p) => p.visit_metrics_mut(visitor),
             Self::Negative(p) => p.visit_metrics_mut(visitor),
             Self::Polynomial1D(p) => p.visit_metrics_mut(visitor),
             Self::Threshold(p) => p.visit_metrics_mut(visitor),
@@ -357,6 +364,7 @@ impl VisitPaths for Parameter {
             Self::UniformDrawdownProfile(p) => p.visit_paths(visitor),
             Self::Max(p) => p.visit_paths(visitor),
             Self::Min(p) => p.visit_paths(visitor),
+            Self::MultiThreshold(p) => p.visit_paths(visitor),
             Self::Negative(p) => p.visit_paths(visitor),
             Self::Polynomial1D(p) => p.visit_paths(visitor),
             Self::Threshold(p) => p.visit_paths(visitor),
@@ -395,6 +403,7 @@ impl VisitPaths for Parameter {
             Self::UniformDrawdownProfile(p) => p.visit_paths_mut(visitor),
             Self::Max(p) => p.visit_paths_mut(visitor),
             Self::Min(p) => p.visit_paths_mut(visitor),
+            Self::MultiThreshold(p) => p.visit_paths_mut(visitor),
             Self::Negative(p) => p.visit_paths_mut(visitor),
             Self::Polynomial1D(p) => p.visit_paths_mut(visitor),
             Self::Threshold(p) => p.visit_paths_mut(visitor),
@@ -495,8 +504,12 @@ impl TryFromV1<ParameterV1> for ParameterOrTimeseriesRef {
                 CoreParameter::StorageThreshold(p) => {
                     Parameter::Threshold(p.try_into_v2(parent_node, conversion_data)?).into()
                 }
-                CoreParameter::MultipleThresholdIndex(_) => todo!(),
-                CoreParameter::MultipleThresholdParameterIndex(_) => todo!(),
+                CoreParameter::MultipleThresholdIndex(p) => {
+                    Parameter::MultiThreshold(p.try_into_v2(parent_node, conversion_data)?).into()
+                }
+                CoreParameter::MultipleThresholdParameterIndex(p) => {
+                    Parameter::MultiThreshold(p.try_into_v2(parent_node, conversion_data)?).into()
+                }
                 CoreParameter::CurrentYearThreshold(_) => todo!(),
                 CoreParameter::CurrentOrdinalDayThreshold(_) => todo!(),
                 CoreParameter::TablesArray(p) => Parameter::TablesArray(p.into_v2(parent_node, conversion_data)).into(),

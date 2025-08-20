@@ -298,13 +298,13 @@ pub enum NetworkStepError {
     ParameterCalculationError {
         name: ParameterName,
         #[source]
-        source: ParameterCalculationError,
+        source: Box<ParameterCalculationError>,
     },
     #[error("Error performing `after` method on parameter `{name}`: {source}")]
     ParameterAfterError {
         name: ParameterName,
         #[source]
-        source: ParameterCalculationError,
+        source: Box<ParameterCalculationError>,
     },
     #[error("Error setting state for general F64 parameter `{name}`: {source}")]
     ParameterF64SetStateError {
@@ -941,7 +941,7 @@ impl Network {
                                 .compute(timestep, scenario_index, self, state, internal_state)
                                 .map_err(|source| NetworkStepError::ParameterCalculationError {
                                     name: p.name().clone(),
-                                    source,
+                                    source: Box::new(source),
                                 })?;
 
                             state.set_parameter_value(*idx, value).map_err(|source| {
@@ -966,7 +966,7 @@ impl Network {
                                 .compute(timestep, scenario_index, self, state, internal_state)
                                 .map_err(|source| NetworkStepError::ParameterCalculationError {
                                     name: p.name().clone(),
-                                    source,
+                                    source: Box::new(source),
                                 })?;
 
                             state.set_parameter_index(*idx, value).map_err(|source| {
@@ -991,7 +991,7 @@ impl Network {
                                 .compute(timestep, scenario_index, self, state, internal_state)
                                 .map_err(|source| NetworkStepError::ParameterCalculationError {
                                     name: p.name().clone(),
-                                    source,
+                                    source: Box::new(source),
                                 })?;
                             // debug!("Current value of index parameter {}: {}", p.name(), value);
                             state.set_multi_parameter_value(*idx, value).map_err(|source| {
@@ -1083,7 +1083,7 @@ impl Network {
                             p.after(timestep, scenario_index, self, state, internal_state)
                                 .map_err(|source| NetworkStepError::ParameterAfterError {
                                     name: p.name().clone(),
-                                    source,
+                                    source: Box::new(source),
                                 })?;
                         }
                         GeneralParameterType::Index(idx) => {
@@ -1100,7 +1100,7 @@ impl Network {
                             p.after(timestep, scenario_index, self, state, internal_state)
                                 .map_err(|source| NetworkStepError::ParameterAfterError {
                                     name: p.name().clone(),
-                                    source,
+                                    source: Box::new(source),
                                 })?;
                         }
                         GeneralParameterType::Multi(idx) => {
@@ -1117,7 +1117,7 @@ impl Network {
                             p.after(timestep, scenario_index, self, state, internal_state)
                                 .map_err(|source| NetworkStepError::ParameterAfterError {
                                     name: p.name().clone(),
-                                    source,
+                                    source: Box::new(source),
                                 })?;
                         }
                     }
