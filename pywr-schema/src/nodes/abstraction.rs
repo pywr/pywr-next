@@ -253,8 +253,11 @@ impl AbstractionNode {
                 let value = cost.load(network, args, Some(&self.meta.name))?;
                 network.set_node_cost(self.meta.name.as_str(), Self::mrf_sub_name(), value.into())?;
             } else {
-                return Err(SchemaError::MissingMRFConstraint {
-                    name: self.meta.name.clone(),
+                return Err(SchemaError::InvalidNodeAttributes {
+                    msg: format!(
+                        "MRF cost defined but no MRF constraint provided for node {}",
+                        self.meta.name
+                    ),
                 });
             }
         }

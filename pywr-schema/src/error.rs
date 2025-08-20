@@ -112,8 +112,8 @@ pub enum SchemaError {
     NodeNotAllowedInFlowConstraint,
     #[error("Node cannot be used in a storage constraint.")]
     NodeNotAllowedInStorageConstraint,
-    #[error("MRF cost defined but no MRF constraint provided for node {name}")]
-    MissingMRFConstraint { name: String },
+    #[error("{msg}")]
+    InvalidNodeAttributes { msg: String },
 }
 
 #[cfg(all(feature = "core", feature = "pyo3"))]
