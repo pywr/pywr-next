@@ -17,8 +17,10 @@ use crate::timeseries::Timeseries;
 use crate::timeseries::{LoadTimeseriesError, LoadedTimeseriesCollection};
 use crate::v1::{ConversionData, TryIntoV2};
 use crate::visit::{VisitMetrics, VisitPaths};
+#[cfg(all(feature = "core", feature = "pyo3"))]
+use pyo3::PyErr;
 #[cfg(feature = "pyo3")]
-use pyo3::{PyErr, pyclass};
+use pyo3::pyclass;
 #[cfg(feature = "core")]
 use pywr_core::models::ModelDomain;
 use schemars::JsonSchema;

@@ -141,7 +141,7 @@ pub enum LoadTimeseriesError {
     DuplicateTimeseriesName(String),
 }
 
-#[cfg(feature = "pyo3")]
+#[cfg(all(feature = "core", feature = "pyo3"))]
 impl TryFrom<LoadTimeseriesError> for PyErr {
     type Error = ();
     fn try_from(err: LoadTimeseriesError) -> Result<Self, Self::Error> {

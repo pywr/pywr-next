@@ -14,7 +14,9 @@ use crate::{PywrNetwork, PywrNetworkRef};
 use chrono::NaiveTime;
 use chrono::{NaiveDate, NaiveDateTime};
 #[cfg(feature = "pyo3")]
-use pyo3::{PyErr, Python};
+use pyo3::PyErr;
+#[cfg(all(feature = "core", feature = "pyo3"))]
+use pyo3::Python;
 #[cfg(feature = "core")]
 use pywr_core::{
     models::{ModelDomain, MultiNetworkModelError},
