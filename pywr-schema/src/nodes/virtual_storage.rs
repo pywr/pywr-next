@@ -11,9 +11,10 @@ use crate::nodes::core::StorageInitialVolume;
 use crate::parameters::Parameter;
 use crate::v1::{ConversionData, TryFromV1, try_convert_initial_storage, try_convert_node_attr};
 use crate::{ConversionError, node_attribute_subset_enum};
-use pywr_core::timestep::TimeDomain;
 #[cfg(feature = "core")]
-use pywr_core::{derived_metric::DerivedMetric, metric::MetricF64, virtual_storage::VirtualStorageBuilder};
+use pywr_core::{
+    derived_metric::DerivedMetric, metric::MetricF64, timestep::TimeDomain, virtual_storage::VirtualStorageBuilder,
+};
 use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::nodes::{
     AnnualVirtualStorageNode as AnnualVirtualStorageNodeV1, MonthlyVirtualStorageNode as MonthlyVirtualStorageNodeV1,
@@ -50,6 +51,7 @@ pub enum VirtualStorageReset {
     Monthly { months: u8 },
 }
 
+#[cfg(feature = "core")]
 impl TryInto<pywr_core::virtual_storage::VirtualStorageReset> for VirtualStorageReset {
     type Error = SchemaError;
     fn try_into(self) -> Result<pywr_core::virtual_storage::VirtualStorageReset, Self::Error> {
