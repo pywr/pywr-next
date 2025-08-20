@@ -1,5 +1,3 @@
-use core::panic;
-
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
 use crate::metric::Metric;
@@ -36,7 +34,11 @@ node_component_subset_enum! {
 #[doc = svgbobdoc::transform!(
 /// This node represents a river abstraction.
 /// 
-/// The abstraction can optionally be constrained by a minimum residual flow (MRF) requirement.
+/// The abstraction can optionally be constrained by a minimum residual flow (MRF) requirement. If
+/// this is defined an internal MRF node is created.
+///
+/// The node defines two output slots. The 'downstream' slot represents a continuation of the
+/// river and the 'abstraction' slot is where the abstracted flow is directed.
 ///
 ///
 /// ```svgbob
@@ -125,11 +127,11 @@ impl AbstractionNode {
                 self.meta.name.as_str(),
                 Self::abstraction_sub_name().map(|s| s.to_string()),
             )],
-            Some(_) => panic!("The slot '{}' does not exist in {}", slot.unwrap(), self.meta.name),
-            None => vec![(
-                self.meta.name.as_str(),
-                Self::abstraction_sub_name().map(|s| s.to_string()),
-            )],
+            Some(s) => panic!("The slot '{}' does not exist in {}", s, self.meta.name),
+            None => panic!(
+                "Either the 'downstream' or 'abstraction' slot must be specified when connecting to '{}'",
+                self.meta.name
+            ),
         }
     }
 
@@ -157,7 +159,6 @@ impl AbstractionNode {
 
         let indices = match component {
             AbstractionNodeComponent::Inflow => {
-                // TODO optionally add mrf node if it is defined...
                 let mut indices = Vec::new();
 
                 if self.mrf.is_some() {
@@ -252,10 +253,9 @@ impl AbstractionNode {
                 let value = cost.load(network, args, Some(&self.meta.name))?;
                 network.set_node_cost(self.meta.name.as_str(), Self::mrf_sub_name(), value.into())?;
             } else {
-                panic!(
-                    "MRF cost defined but no MRF constraint provided for node {}",
-                    self.meta.name
-                );
+                return Err(SchemaError::MissingMRFConstraint {
+                    name: self.meta.name.clone(),
+                });
             }
         }
 
