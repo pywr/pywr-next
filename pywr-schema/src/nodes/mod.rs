@@ -32,13 +32,11 @@
 //!
 //!
 mod abstraction;
-mod annual_virtual_storage;
 mod attributes;
 mod components;
 mod core;
 mod delay;
 mod loss_link;
-mod monthly_virtual_storage;
 mod piecewise_link;
 mod piecewise_storage;
 mod placeholder;
@@ -46,7 +44,6 @@ mod reservoir;
 mod river;
 mod river_gauge;
 mod river_split_with_gauge;
-mod rolling_virtual_storage;
 mod turbine;
 mod virtual_storage;
 mod water_treatment_works;
@@ -62,7 +59,6 @@ use crate::parameters::Parameter;
 use crate::v1::{ConversionData, TryFromV1, TryIntoV2};
 use crate::visit::{VisitMetrics, VisitPaths};
 pub use abstraction::AbstractionNode;
-pub use annual_virtual_storage::{AnnualReset, AnnualVirtualStorageNode, AnnualVirtualStorageNodeAttribute};
 pub use attributes::NodeAttribute;
 pub use components::NodeComponent;
 pub use core::{
@@ -73,7 +69,6 @@ pub use core::{
 };
 pub use delay::{DelayNode, DelayNodeAttribute, DelayNodeComponent};
 pub use loss_link::{LossFactor, LossLinkNode, LossLinkNodeAttribute, LossLinkNodeComponent};
-pub use monthly_virtual_storage::{MonthlyVirtualStorageNode, MonthlyVirtualStorageNodeAttribute, NumberOfMonthsReset};
 pub use piecewise_link::{
     PiecewiseLinkNode, PiecewiseLinkNodeAttribute, PiecewiseLinkNodeComponent, PiecewiseLinkStep,
 };
@@ -94,12 +89,13 @@ pub use river_gauge::{RiverGaugeNode, RiverGaugeNodeAttribute, RiverGaugeNodeCom
 pub use river_split_with_gauge::{
     RiverSplit, RiverSplitWithGaugeNode, RiverSplitWithGaugeNodeAttribute, RiverSplitWithGaugeNodeComponent,
 };
-pub use rolling_virtual_storage::{RollingVirtualStorageNode, RollingVirtualStorageNodeAttribute, RollingWindow};
 use schemars::JsonSchema;
 use std::path::{Path, PathBuf};
 use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticStr};
 pub use turbine::{TargetType, TurbineNode, TurbineNodeAttribute, TurbineNodeComponent};
-pub use virtual_storage::VirtualStorageNode;
+pub use virtual_storage::{
+    AnnualReset, RollingWindow, VirtualStorageNode, VirtualStorageNodeAttribute, VirtualStorageReset,
+};
 pub use water_treatment_works::{
     WaterTreatmentWorksNode, WaterTreatmentWorksNodeAttribute, WaterTreatmentWorksNodeComponent,
 };
@@ -258,18 +254,6 @@ impl NodeBuilder {
                 meta,
                 ..Default::default()
             }),
-            NodeType::AnnualVirtualStorage => Node::AnnualVirtualStorage(AnnualVirtualStorageNode {
-                meta,
-                ..Default::default()
-            }),
-            NodeType::MonthlyVirtualStorage => Node::MonthlyVirtualStorage(MonthlyVirtualStorageNode {
-                meta,
-                ..Default::default()
-            }),
-            NodeType::RollingVirtualStorage => Node::RollingVirtualStorage(RollingVirtualStorageNode {
-                meta,
-                ..Default::default()
-            }),
             NodeType::Turbine => Node::Turbine(TurbineNode {
                 meta,
                 ..Default::default()
@@ -315,9 +299,6 @@ pub enum Node {
     Aggregated(AggregatedNode),
     AggregatedStorage(AggregatedStorageNode),
     VirtualStorage(VirtualStorageNode),
-    AnnualVirtualStorage(AnnualVirtualStorageNode),
-    MonthlyVirtualStorage(MonthlyVirtualStorageNode),
-    RollingVirtualStorage(RollingVirtualStorageNode),
     Turbine(TurbineNode),
     Reservoir(ReservoirNode),
     Placeholder(PlaceholderNode),
@@ -353,12 +334,9 @@ impl Node {
             Node::Aggregated(n) => &n.meta,
             Node::AggregatedStorage(n) => &n.meta,
             Node::VirtualStorage(n) => &n.meta,
-            Node::AnnualVirtualStorage(n) => &n.meta,
             Node::PiecewiseLink(n) => &n.meta,
             Node::PiecewiseStorage(n) => &n.meta,
             Node::Delay(n) => &n.meta,
-            Node::MonthlyVirtualStorage(n) => &n.meta,
-            Node::RollingVirtualStorage(n) => &n.meta,
             Node::Turbine(n) => &n.meta,
             Node::Reservoir(n) => n.meta(),
             Node::Placeholder(n) => &n.meta,
@@ -382,12 +360,9 @@ impl Node {
             Node::Aggregated(n) => n.input_connectors(),
             Node::AggregatedStorage(n) => n.input_connectors(),
             Node::VirtualStorage(n) => n.input_connectors(),
-            Node::AnnualVirtualStorage(n) => n.input_connectors(),
-            Node::MonthlyVirtualStorage(n) => n.input_connectors(),
             Node::PiecewiseLink(n) => n.input_connectors(),
             Node::PiecewiseStorage(n) => n.input_connectors(),
             Node::Delay(n) => n.input_connectors(),
-            Node::RollingVirtualStorage(n) => n.input_connectors(),
             Node::Turbine(n) => n.input_connectors(),
             Node::Reservoir(n) => n.input_connectors(slot),
             Node::Placeholder(n) => n.input_connectors(),
@@ -411,12 +386,9 @@ impl Node {
             Node::Aggregated(n) => n.output_connectors(),
             Node::AggregatedStorage(n) => n.output_connectors(),
             Node::VirtualStorage(n) => n.output_connectors(),
-            Node::AnnualVirtualStorage(n) => n.output_connectors(),
-            Node::MonthlyVirtualStorage(n) => n.output_connectors(),
             Node::PiecewiseLink(n) => n.output_connectors(),
             Node::PiecewiseStorage(n) => n.output_connectors(),
             Node::Delay(n) => n.output_connectors(),
-            Node::RollingVirtualStorage(n) => n.output_connectors(),
             Node::Turbine(n) => n.output_connectors(),
             Node::Reservoir(n) => n.output_connectors(slot),
             Node::Placeholder(n) => n.output_connectors(),
@@ -438,12 +410,9 @@ impl Node {
             Node::Aggregated(n) => n.default_attribute().into(),
             Node::AggregatedStorage(n) => n.default_attribute().into(),
             Node::VirtualStorage(n) => n.default_attribute().into(),
-            Node::AnnualVirtualStorage(n) => n.default_attribute().into(),
-            Node::MonthlyVirtualStorage(n) => n.default_attribute().into(),
             Node::PiecewiseLink(n) => n.default_attribute().into(),
             Node::PiecewiseStorage(n) => n.default_attribute().into(),
             Node::Delay(n) => n.default_attribute().into(),
-            Node::RollingVirtualStorage(n) => n.default_attribute().into(),
             Node::Turbine(n) => n.default_attribute().into(),
             Node::Reservoir(n) => n.default_attribute().into(),
             Node::Placeholder(n) => n.default_attribute(),
@@ -470,9 +439,6 @@ impl Node {
             Node::Aggregated(_) => None,
             Node::AggregatedStorage(_) => None,
             Node::VirtualStorage(_) => None,
-            Node::AnnualVirtualStorage(_) => None,
-            Node::MonthlyVirtualStorage(_) => None,
-            Node::RollingVirtualStorage(_) => None,
             Node::Turbine(n) => Some(n.default_component().into()),
             Node::Reservoir(n) => Some(n.default_component().into()),
             Node::Placeholder(_) => None,
@@ -499,12 +465,9 @@ impl Node {
             Node::Aggregated(n) => n.parameters.as_deref(),
             Node::AggregatedStorage(n) => n.parameters.as_deref(),
             Node::VirtualStorage(n) => n.parameters.as_deref(),
-            Node::AnnualVirtualStorage(n) => n.parameters.as_deref(),
-            Node::MonthlyVirtualStorage(n) => n.parameters.as_deref(),
             Node::PiecewiseLink(n) => n.parameters.as_deref(),
             Node::PiecewiseStorage(n) => n.parameters.as_deref(),
             Node::Delay(n) => n.parameters.as_deref(),
-            Node::RollingVirtualStorage(n) => n.parameters.as_deref(),
             Node::Turbine(n) => n.parameters.as_deref(),
             Node::Reservoir(n) => n.storage.parameters.as_deref(),
             Node::Placeholder(_) => None,
@@ -530,13 +493,10 @@ impl Node {
             Node::Aggregated(n) => n.add_to_model(network, args),
             Node::AggregatedStorage(n) => n.add_to_model(network, args),
             Node::VirtualStorage(n) => n.add_to_model(network, args),
-            Node::AnnualVirtualStorage(n) => n.add_to_model(network, args),
             Node::PiecewiseLink(n) => n.add_to_model(network),
             Node::PiecewiseStorage(n) => n.add_to_model(network),
             Node::Delay(n) => n.add_to_model(network),
             Node::Turbine(n) => n.add_to_model(network, args),
-            Node::MonthlyVirtualStorage(n) => n.add_to_model(network, args),
-            Node::RollingVirtualStorage(n) => n.add_to_model(network, args),
             Node::Reservoir(n) => n.add_to_model(network),
             Node::Placeholder(n) => n.add_to_model(),
             Node::Abstraction(n) => n.add_to_model(network),
@@ -571,13 +531,10 @@ impl Node {
             Node::Aggregated(_) => Err(SchemaError::NodeNotAllowedInFlowConstraint),
             Node::AggregatedStorage(_) => Err(SchemaError::NodeNotAllowedInFlowConstraint),
             Node::VirtualStorage(_) => Err(SchemaError::NodeNotAllowedInFlowConstraint),
-            Node::AnnualVirtualStorage(_) => Err(SchemaError::NodeNotAllowedInFlowConstraint),
             Node::PiecewiseLink(n) => n.node_indices_for_flow_constraints(network, component),
             Node::PiecewiseStorage(_) => Err(SchemaError::NodeNotAllowedInFlowConstraint),
             Node::Delay(n) => n.node_indices_for_flow_constraints(network, component),
             Node::Turbine(n) => n.node_indices_for_flow_constraints(network, component),
-            Node::MonthlyVirtualStorage(_) => Err(SchemaError::NodeNotAllowedInFlowConstraint),
-            Node::RollingVirtualStorage(_) => Err(SchemaError::NodeNotAllowedInFlowConstraint),
             Node::Reservoir(n) => n.node_indices_for_flow_constraints(network, component),
             Node::Placeholder(n) => n.node_indices_for_flow_constraints(),
             Node::Abstraction(n) => n.node_indices_for_flow_constraints(network, component),
@@ -609,13 +566,10 @@ impl Node {
             Node::Aggregated(_) => Err(SchemaError::NodeNotAllowedInStorageConstraint),
             Node::AggregatedStorage(n) => n.node_indices_for_storage_constraints(network, args),
             Node::VirtualStorage(_) => Err(SchemaError::NodeNotAllowedInStorageConstraint), // TODO perhaps this should be allowed?
-            Node::AnnualVirtualStorage(_) => Err(SchemaError::NodeNotAllowedInStorageConstraint), // TODO perhaps this should be allowed?
             Node::PiecewiseLink(_) => Err(SchemaError::NodeNotAllowedInStorageConstraint),
             Node::PiecewiseStorage(n) => n.node_indices_for_storage_constraints(network),
             Node::Delay(_) => Err(SchemaError::NodeNotAllowedInStorageConstraint),
             Node::Turbine(_) => Err(SchemaError::NodeNotAllowedInStorageConstraint),
-            Node::MonthlyVirtualStorage(_) => Err(SchemaError::NodeNotAllowedInStorageConstraint), // TODO perhaps this should be allowed?
-            Node::RollingVirtualStorage(_) => Err(SchemaError::NodeNotAllowedInStorageConstraint), // TODO perhaps this should be allowed?
             Node::Reservoir(n) => n.node_indices_for_storage_constraints(network),
             Node::Placeholder(n) => n.node_indices_for_storage_constraints(),
             Node::Abstraction(_) => Err(SchemaError::NodeNotAllowedInStorageConstraint),
@@ -641,14 +595,11 @@ impl Node {
             Node::Aggregated(n) => n.set_constraints(network, args),
             Node::AggregatedStorage(_) => Ok(()), // No constraints on aggregated storage nodes.
             Node::VirtualStorage(_) => Ok(()),    // TODO
-            Node::AnnualVirtualStorage(_) => Ok(()), // TODO
             Node::PiecewiseLink(n) => n.set_constraints(network, args),
             Node::PiecewiseStorage(n) => n.set_constraints(network, args),
             Node::Delay(n) => n.set_constraints(network, args),
             Node::Turbine(n) => n.set_constraints(network, args),
             Node::Reservoir(n) => n.set_constraints(network, args),
-            Node::MonthlyVirtualStorage(_) => Ok(()), // TODO
-            Node::RollingVirtualStorage(_) => Ok(()), // TODO
             Node::Placeholder(n) => n.set_constraints(),
             Node::Abstraction(n) => n.set_constraints(network, args),
         }
@@ -675,12 +626,9 @@ impl Node {
             Node::Aggregated(n) => n.create_metric(network, attribute),
             Node::AggregatedStorage(n) => n.create_metric(network, attribute),
             Node::VirtualStorage(n) => n.create_metric(network, attribute),
-            Node::AnnualVirtualStorage(n) => n.create_metric(network, attribute),
-            Node::MonthlyVirtualStorage(n) => n.create_metric(network, attribute),
             Node::PiecewiseLink(n) => n.create_metric(network, attribute),
             Node::PiecewiseStorage(n) => n.create_metric(network, attribute),
             Node::Delay(n) => n.create_metric(network, attribute),
-            Node::RollingVirtualStorage(n) => n.create_metric(network, attribute),
             Node::Turbine(n) => n.create_metric(network, attribute, args),
             Node::Reservoir(n) => n.create_metric(network, attribute),
             Node::Placeholder(n) => n.create_metric(),
@@ -735,21 +683,15 @@ impl TryFromV1<Box<CoreNodeV1>> for Node {
             CoreNodeV1::Aggregated(n) => Node::Aggregated(n.try_into_v2(parent_node, conversion_data)?),
             CoreNodeV1::AggregatedStorage(n) => Node::AggregatedStorage(n.into()),
             CoreNodeV1::VirtualStorage(n) => Node::VirtualStorage(n.try_into_v2(parent_node, conversion_data)?),
-            CoreNodeV1::AnnualVirtualStorage(n) => {
-                Node::AnnualVirtualStorage(n.try_into_v2(parent_node, conversion_data)?)
-            }
+            CoreNodeV1::AnnualVirtualStorage(n) => Node::VirtualStorage(n.try_into_v2(parent_node, conversion_data)?),
             CoreNodeV1::PiecewiseLink(n) => Node::PiecewiseLink(n.try_into_v2(parent_node, conversion_data)?),
             CoreNodeV1::MultiSplitLink(_) => todo!(),
             CoreNodeV1::BreakLink(_) => todo!(),
             CoreNodeV1::Delay(n) => Node::Delay(n.try_into()?),
             CoreNodeV1::RiverSplit(_) => todo!("Conversion of RiverSplit nodes"),
-            CoreNodeV1::MonthlyVirtualStorage(n) => {
-                Node::MonthlyVirtualStorage(n.try_into_v2(parent_node, conversion_data)?)
-            }
+            CoreNodeV1::MonthlyVirtualStorage(n) => Node::VirtualStorage(n.try_into_v2(parent_node, conversion_data)?),
             CoreNodeV1::SeasonalVirtualStorage(_) => todo!("Conversion of SeasonalVirtualStorage nodes"),
-            CoreNodeV1::RollingVirtualStorage(n) => {
-                Node::RollingVirtualStorage(n.try_into_v2(parent_node, conversion_data)?)
-            }
+            CoreNodeV1::RollingVirtualStorage(n) => Node::VirtualStorage(n.try_into_v2(parent_node, conversion_data)?),
         };
 
         Ok(n)
@@ -772,12 +714,9 @@ impl VisitMetrics for Node {
             Node::Aggregated(n) => n.visit_metrics(visitor),
             Node::AggregatedStorage(n) => n.visit_metrics(visitor),
             Node::VirtualStorage(n) => n.visit_metrics(visitor),
-            Node::AnnualVirtualStorage(n) => n.visit_metrics(visitor),
             Node::PiecewiseLink(n) => n.visit_metrics(visitor),
             Node::PiecewiseStorage(n) => n.visit_metrics(visitor),
             Node::Delay(n) => n.visit_metrics(visitor),
-            Node::MonthlyVirtualStorage(n) => n.visit_metrics(visitor),
-            Node::RollingVirtualStorage(n) => n.visit_metrics(visitor),
             Node::Turbine(n) => n.visit_metrics(visitor),
             Node::Reservoir(n) => n.visit_metrics(visitor),
             Node::Placeholder(n) => n.visit_metrics(visitor),
@@ -800,12 +739,9 @@ impl VisitMetrics for Node {
             Node::Aggregated(n) => n.visit_metrics_mut(visitor),
             Node::AggregatedStorage(n) => n.visit_metrics_mut(visitor),
             Node::VirtualStorage(n) => n.visit_metrics_mut(visitor),
-            Node::AnnualVirtualStorage(n) => n.visit_metrics_mut(visitor),
             Node::PiecewiseLink(n) => n.visit_metrics_mut(visitor),
             Node::PiecewiseStorage(n) => n.visit_metrics_mut(visitor),
             Node::Delay(n) => n.visit_metrics_mut(visitor),
-            Node::MonthlyVirtualStorage(n) => n.visit_metrics_mut(visitor),
-            Node::RollingVirtualStorage(n) => n.visit_metrics_mut(visitor),
             Node::Turbine(n) => n.visit_metrics_mut(visitor),
             Node::Reservoir(n) => n.visit_metrics_mut(visitor),
             Node::Placeholder(n) => n.visit_metrics_mut(visitor),
@@ -830,12 +766,9 @@ impl VisitPaths for Node {
             Node::Aggregated(n) => n.visit_paths(visitor),
             Node::AggregatedStorage(n) => n.visit_paths(visitor),
             Node::VirtualStorage(n) => n.visit_paths(visitor),
-            Node::AnnualVirtualStorage(n) => n.visit_paths(visitor),
             Node::PiecewiseLink(n) => n.visit_paths(visitor),
             Node::PiecewiseStorage(n) => n.visit_paths(visitor),
             Node::Delay(n) => n.visit_paths(visitor),
-            Node::MonthlyVirtualStorage(n) => n.visit_paths(visitor),
-            Node::RollingVirtualStorage(n) => n.visit_paths(visitor),
             Node::Turbine(n) => n.visit_paths(visitor),
             Node::Reservoir(n) => n.visit_paths(visitor),
             Node::Placeholder(n) => n.visit_paths(visitor),
@@ -858,12 +791,9 @@ impl VisitPaths for Node {
             Node::Aggregated(n) => n.visit_paths_mut(visitor),
             Node::AggregatedStorage(n) => n.visit_paths_mut(visitor),
             Node::VirtualStorage(n) => n.visit_paths_mut(visitor),
-            Node::AnnualVirtualStorage(n) => n.visit_paths_mut(visitor),
             Node::PiecewiseLink(n) => n.visit_paths_mut(visitor),
             Node::PiecewiseStorage(n) => n.visit_paths_mut(visitor),
             Node::Delay(n) => n.visit_paths_mut(visitor),
-            Node::MonthlyVirtualStorage(n) => n.visit_paths_mut(visitor),
-            Node::RollingVirtualStorage(n) => n.visit_paths_mut(visitor),
             Node::Turbine(n) => n.visit_paths_mut(visitor),
             Node::Reservoir(n) => n.visit_paths_mut(visitor),
             Node::Placeholder(n) => n.visit_paths_mut(visitor),
