@@ -31,6 +31,7 @@
 //! is used to determine which of these values is used in the constraint.
 //!
 //!
+mod abstraction;
 mod annual_virtual_storage;
 mod attributes;
 mod components;
@@ -60,6 +61,7 @@ use crate::network::PywrNetwork;
 use crate::parameters::Parameter;
 use crate::v1::{ConversionData, TryFromV1, TryIntoV2};
 use crate::visit::{VisitMetrics, VisitPaths};
+pub use abstraction::AbstractionNode;
 pub use annual_virtual_storage::{AnnualReset, AnnualVirtualStorageNode, AnnualVirtualStorageNodeAttribute};
 pub use attributes::NodeAttribute;
 pub use components::NodeComponent;
@@ -280,6 +282,10 @@ impl NodeBuilder {
                 ..Default::default()
             }),
             NodeType::Placeholder => Node::Placeholder(PlaceholderNode { meta }),
+            NodeType::Abstraction => Node::Abstraction(AbstractionNode {
+                meta,
+                ..Default::default()
+            }),
         }
     }
 }
@@ -315,6 +321,7 @@ pub enum Node {
     Turbine(TurbineNode),
     Reservoir(ReservoirNode),
     Placeholder(PlaceholderNode),
+    Abstraction(AbstractionNode),
 }
 
 impl Node {
@@ -355,6 +362,7 @@ impl Node {
             Node::Turbine(n) => &n.meta,
             Node::Reservoir(n) => n.meta(),
             Node::Placeholder(n) => &n.meta,
+            Node::Abstraction(n) => &n.meta,
         }
     }
 
@@ -383,6 +391,7 @@ impl Node {
             Node::Turbine(n) => n.input_connectors(),
             Node::Reservoir(n) => n.input_connectors(slot),
             Node::Placeholder(n) => n.input_connectors(),
+            Node::Abstraction(n) => n.input_connectors(),
         }
     }
 
@@ -411,6 +420,7 @@ impl Node {
             Node::Turbine(n) => n.output_connectors(),
             Node::Reservoir(n) => n.output_connectors(slot),
             Node::Placeholder(n) => n.output_connectors(),
+            Node::Abstraction(n) => n.output_connectors(slot),
         }
     }
     pub fn default_attribute(&self) -> NodeAttribute {
@@ -437,6 +447,7 @@ impl Node {
             Node::Turbine(n) => n.default_attribute().into(),
             Node::Reservoir(n) => n.default_attribute().into(),
             Node::Placeholder(n) => n.default_attribute(),
+            Node::Abstraction(n) => n.default_attribute().into(),
         }
     }
 
@@ -465,6 +476,7 @@ impl Node {
             Node::Turbine(n) => Some(n.default_component().into()),
             Node::Reservoir(n) => Some(n.default_component().into()),
             Node::Placeholder(_) => None,
+            Node::Abstraction(n) => Some(n.default_component().into()),
         }
     }
 
@@ -496,6 +508,7 @@ impl Node {
             Node::Turbine(n) => n.parameters.as_deref(),
             Node::Reservoir(n) => n.storage.parameters.as_deref(),
             Node::Placeholder(_) => None,
+            Node::Abstraction(n) => n.parameters.as_deref(),
         }
     }
 }
@@ -526,6 +539,7 @@ impl Node {
             Node::RollingVirtualStorage(n) => n.add_to_model(network, args),
             Node::Reservoir(n) => n.add_to_model(network),
             Node::Placeholder(n) => n.add_to_model(),
+            Node::Abstraction(n) => n.add_to_model(network),
         }
     }
 
@@ -566,6 +580,7 @@ impl Node {
             Node::RollingVirtualStorage(_) => Err(SchemaError::NodeNotAllowedInFlowConstraint),
             Node::Reservoir(n) => n.node_indices_for_flow_constraints(network, component),
             Node::Placeholder(n) => n.node_indices_for_flow_constraints(),
+            Node::Abstraction(n) => n.node_indices_for_flow_constraints(network, component),
         }
     }
 
@@ -603,6 +618,7 @@ impl Node {
             Node::RollingVirtualStorage(_) => Err(SchemaError::NodeNotAllowedInStorageConstraint), // TODO perhaps this should be allowed?
             Node::Reservoir(n) => n.node_indices_for_storage_constraints(network),
             Node::Placeholder(n) => n.node_indices_for_storage_constraints(),
+            Node::Abstraction(_) => Err(SchemaError::NodeNotAllowedInStorageConstraint),
         }
     }
 
@@ -634,6 +650,7 @@ impl Node {
             Node::MonthlyVirtualStorage(_) => Ok(()), // TODO
             Node::RollingVirtualStorage(_) => Ok(()), // TODO
             Node::Placeholder(n) => n.set_constraints(),
+            Node::Abstraction(n) => n.set_constraints(network, args),
         }
     }
 
@@ -667,6 +684,7 @@ impl Node {
             Node::Turbine(n) => n.create_metric(network, attribute, args),
             Node::Reservoir(n) => n.create_metric(network, attribute),
             Node::Placeholder(n) => n.create_metric(),
+            Node::Abstraction(n) => n.create_metric(network, attribute),
         }
     }
 }
@@ -763,6 +781,7 @@ impl VisitMetrics for Node {
             Node::Turbine(n) => n.visit_metrics(visitor),
             Node::Reservoir(n) => n.visit_metrics(visitor),
             Node::Placeholder(n) => n.visit_metrics(visitor),
+            Node::Abstraction(n) => n.visit_metrics(visitor),
         }
     }
 
@@ -790,6 +809,7 @@ impl VisitMetrics for Node {
             Node::Turbine(n) => n.visit_metrics_mut(visitor),
             Node::Reservoir(n) => n.visit_metrics_mut(visitor),
             Node::Placeholder(n) => n.visit_metrics_mut(visitor),
+            Node::Abstraction(n) => n.visit_metrics_mut(visitor),
         }
     }
 }
@@ -819,6 +839,7 @@ impl VisitPaths for Node {
             Node::Turbine(n) => n.visit_paths(visitor),
             Node::Reservoir(n) => n.visit_paths(visitor),
             Node::Placeholder(n) => n.visit_paths(visitor),
+            Node::Abstraction(n) => n.visit_paths(visitor),
         }
     }
 
@@ -846,6 +867,7 @@ impl VisitPaths for Node {
             Node::Turbine(n) => n.visit_paths_mut(visitor),
             Node::Reservoir(n) => n.visit_paths_mut(visitor),
             Node::Placeholder(n) => n.visit_paths_mut(visitor),
+            Node::Abstraction(n) => n.visit_paths_mut(visitor),
         }
     }
 }

@@ -84,6 +84,8 @@ model_tests! {
     test_vs_with_piecewise_link: ("vs-with-piecewise-link.json", vec!["vs-with-piecewise-link-expected.csv"], vec!["ipm-simd", "ipm-ocl"], vec![]),
     test_vs_wtw1: ("vs-with-wtw1.json", vec!["vs-with-wtw1-expected.csv"], vec!["ipm-simd", "ipm-ocl"], vec![]),
     test_vs_wtw2: ("vs-with-wtw2.json", vec!["vs-with-wtw2-expected.csv"], vec!["ipm-simd", "ipm-ocl"], vec![]),
+    test_abstraction1: ("abstraction1.json", vec!["abstraction1-expected.csv"], vec!["ipm-simd", "ipm-ocl"], vec![]),
+    test_abstraction2: ("abstraction2.json", vec!["abstraction2-expected.csv"], vec!["ipm-simd", "ipm-ocl"], vec![]),
 }
 
 /// Test Pandas backend for reading timeseries data.

@@ -112,6 +112,8 @@ pub enum SchemaError {
     NodeNotAllowedInFlowConstraint,
     #[error("Node cannot be used in a storage constraint.")]
     NodeNotAllowedInStorageConstraint,
+    #[error("{msg}")]
+    InvalidNodeAttributes { msg: String },
 }
 
 #[cfg(all(feature = "core", feature = "pyo3"))]
