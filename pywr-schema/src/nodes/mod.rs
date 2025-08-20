@@ -56,8 +56,8 @@ use crate::error::SchemaError;
 use crate::error::{ComponentConversionError, ConversionError};
 use crate::metric::Metric;
 #[cfg(feature = "core")]
-use crate::model::LoadArgs;
-use crate::model::PywrNetwork;
+use crate::network::LoadArgs;
+use crate::network::PywrNetwork;
 use crate::parameters::Parameter;
 use crate::v1::{ConversionData, TryFromV1, TryIntoV2};
 use crate::visit::{VisitMetrics, VisitPaths};

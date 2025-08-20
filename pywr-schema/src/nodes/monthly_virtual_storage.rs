@@ -3,7 +3,7 @@ use crate::error::ComponentConversionError;
 use crate::error::SchemaError;
 use crate::metric::{Metric, NodeComponentReference};
 #[cfg(feature = "core")]
-use crate::model::LoadArgs;
+use crate::network::LoadArgs;
 use crate::node_attribute_subset_enum;
 #[cfg(feature = "core")]
 use crate::nodes::NodeAttribute;

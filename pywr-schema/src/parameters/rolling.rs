@@ -2,7 +2,7 @@
 use crate::error::SchemaError;
 use crate::metric::{IndexMetric, Metric, NodeAttrReference};
 #[cfg(feature = "core")]
-use crate::model::LoadArgs;
+use crate::network::LoadArgs;
 use crate::parameters::{AggFunc, IndexAggFunc, ParameterMeta};
 use crate::v1::IntoV2;
 use crate::{ComponentConversionError, ConversionData, ConversionError, TryFromV1};

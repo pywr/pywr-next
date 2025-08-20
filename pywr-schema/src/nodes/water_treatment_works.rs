@@ -2,7 +2,7 @@
 use crate::error::SchemaError;
 use crate::metric::Metric;
 #[cfg(feature = "core")]
-use crate::model::LoadArgs;
+use crate::network::LoadArgs;
 use crate::nodes::NodeMeta;
 use crate::nodes::loss_link::LossFactor;
 #[cfg(feature = "core")]

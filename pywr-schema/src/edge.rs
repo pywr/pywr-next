@@ -1,7 +1,7 @@
 #[cfg(feature = "core")]
 use crate::SchemaError;
 #[cfg(feature = "core")]
-use crate::model::LoadArgs;
+use crate::network::LoadArgs;
 #[cfg(feature = "core")]
 use pywr_core::{edge::EdgeIndex, metric::MetricF64, node::NodeIndex};
 use schemars::JsonSchema;
