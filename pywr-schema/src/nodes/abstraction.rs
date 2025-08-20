@@ -255,7 +255,7 @@ impl AbstractionNode {
             } else {
                 return Err(SchemaError::InvalidNodeAttributes {
                     msg: format!(
-                        "MRF cost defined but no MRF constraint provided for node {}",
+                        "MRF cost defined but no MRF constraint provided for node '{}'",
                         self.meta.name
                     ),
                 });
