@@ -710,7 +710,7 @@ mod tests {
         let scenario_group = ScenarioGroupBuilder::new("test-scenario", 2).build().unwrap();
         scenario_builder = scenario_builder.with_group(scenario_group).unwrap();
 
-        let mut multi_model = MultiNetworkModel::new(ModelDomain::from(timestepper, scenario_builder).unwrap());
+        let mut multi_model = MultiNetworkModel::new(ModelDomain::try_from(timestepper, scenario_builder).unwrap());
 
         let test_scenario_group_idx = multi_model
             .domain()
@@ -743,7 +743,7 @@ mod tests {
         let timestepper = default_timestepper();
         let scenario_collection = ScenarioDomainBuilder::default();
 
-        let mut multi_model = MultiNetworkModel::new(ModelDomain::from(timestepper, scenario_collection).unwrap());
+        let mut multi_model = MultiNetworkModel::new(ModelDomain::try_from(timestepper, scenario_collection).unwrap());
 
         let network = Network::default();
         let _network1_idx = multi_model.add_network("network1", network);

@@ -1,9 +1,11 @@
 #[cfg(feature = "core")]
 use crate::data_tables::LoadedTableCollection;
-use crate::error::{ComponentConversionError, SchemaError};
+use crate::error::ComponentConversionError;
+#[cfg(feature = "core")]
+use crate::error::SchemaError;
 use crate::metric::Metric;
 #[cfg(feature = "core")]
-use crate::network::LoadArgs;
+use crate::network::{LoadArgs, PywrNetworkBuildError, PywrNetworkReadError};
 #[cfg(feature = "core")]
 use crate::timeseries::LoadedTimeseriesCollection;
 use crate::visit::{VisitMetrics, VisitPaths};
@@ -11,12 +13,20 @@ use crate::{PywrNetwork, PywrNetworkRef};
 #[cfg(feature = "core")]
 use chrono::NaiveTime;
 use chrono::{NaiveDate, NaiveDateTime};
+#[cfg(feature = "pyo3")]
+use pyo3::PyErr;
+#[cfg(all(feature = "core", feature = "pyo3"))]
+use pyo3::Python;
 #[cfg(feature = "core")]
-use pywr_core::{models::ModelDomain, timestep::TimestepDuration};
+use pywr_core::{
+    models::{ModelDomain, MultiNetworkModelError},
+    timestep::TimestepDuration,
+};
 use schemars::JsonSchema;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticStr};
+use thiserror::Error;
 
 #[derive(serde::Deserialize, serde::Serialize, Clone, JsonSchema)]
 pub struct Metadata {
@@ -179,7 +189,7 @@ pub struct ScenarioGroup {
 
 #[cfg(feature = "core")]
 impl TryInto<pywr_core::scenario::ScenarioGroup> for ScenarioGroup {
-    type Error = SchemaError;
+    type Error = pywr_core::scenario::ScenarioError;
 
     fn try_into(self) -> Result<pywr_core::scenario::ScenarioGroup, Self::Error> {
         let mut builder = pywr_core::scenario::ScenarioGroupBuilder::new(&self.name, self.size);
@@ -202,7 +212,7 @@ impl TryInto<pywr_core::scenario::ScenarioGroup> for ScenarioGroup {
             }
         }
 
-        Ok(builder.build()?)
+        builder.build()
     }
 }
 
@@ -272,7 +282,7 @@ pub struct ScenarioDomain {
 
 #[cfg(feature = "core")]
 impl TryInto<pywr_core::scenario::ScenarioDomainBuilder> for ScenarioDomain {
-    type Error = SchemaError;
+    type Error = pywr_core::scenario::ScenarioError;
 
     fn try_into(self) -> Result<pywr_core::scenario::ScenarioDomainBuilder, Self::Error> {
         let mut builder = pywr_core::scenario::ScenarioDomainBuilder::default();
@@ -286,6 +296,59 @@ impl TryInto<pywr_core::scenario::ScenarioDomainBuilder> for ScenarioDomain {
         }
 
         Ok(builder)
+    }
+}
+
+/// Error type for reading a [`PywrModel`] or [`PywrMultiNetworkModel`] network from a file or string.
+#[derive(Error, Debug)]
+pub enum PywrModelReadError {
+    #[error("IO error on path `{path}`: {error}")]
+    IO { path: PathBuf, error: std::io::Error },
+    #[error("JSON error: {0}")]
+    Json(#[from] serde_json::Error),
+}
+
+#[cfg(feature = "pyo3")]
+impl From<PywrModelReadError> for PyErr {
+    fn from(err: PywrModelReadError) -> PyErr {
+        pyo3::exceptions::PyRuntimeError::new_err(err.to_string())
+    }
+}
+
+#[derive(Error, Debug)]
+#[cfg(feature = "core")]
+pub enum PywrModelBuildError {
+    #[error("Failed to construct scenario builder: {0}")]
+    ScenarioBuilderError(#[from] pywr_core::scenario::ScenarioError),
+    #[error("Failed to construct model domain: {0}")]
+    CoreModelDomainError(#[from] pywr_core::models::ModelDomainError),
+    #[error("Failed to construct the network: {source}")]
+    NetworkBuildError {
+        #[source]
+        source: Box<PywrNetworkBuildError>,
+    },
+}
+
+#[cfg(all(feature = "core", feature = "pyo3"))]
+impl From<PywrModelBuildError> for PyErr {
+    fn from(err: PywrModelBuildError) -> PyErr {
+        let py_err = pyo3::exceptions::PyRuntimeError::new_err(err.to_string());
+
+        // Check if the error has a cause that can be converted to a PyErr
+        let py_cause: Result<PyErr, ()> = match err {
+            PywrModelBuildError::NetworkBuildError { source } => (*source).try_into(),
+            _ => Err(()),
+        };
+
+        if let Ok(py_cause) = py_cause {
+            // If the cause is a PyErr, set it as the cause of the PyErr
+            return Python::with_gil(|py| {
+                py_err.set_cause(py, Some(py_cause));
+                py_err
+            });
+        }
+
+        py_err
     }
 }
 
@@ -319,7 +382,7 @@ pub struct PywrModel {
 }
 
 impl FromStr for PywrModel {
-    type Err = SchemaError;
+    type Err = PywrModelReadError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Ok(serde_json::from_str(s)?)
@@ -363,8 +426,8 @@ impl PywrModel {
         }
     }
 
-    pub fn from_path<P: AsRef<Path>>(path: P) -> Result<Self, SchemaError> {
-        let data = std::fs::read_to_string(&path).map_err(|error| SchemaError::IO {
+    pub fn from_path<P: AsRef<Path>>(path: P) -> Result<Self, PywrModelReadError> {
+        let data = std::fs::read_to_string(&path).map_err(|error| PywrModelReadError::IO {
             path: path.as_ref().to_path_buf(),
             error,
         })?;
@@ -376,7 +439,7 @@ impl PywrModel {
         &self,
         data_path: Option<&Path>,
         output_path: Option<&Path>,
-    ) -> Result<pywr_core::models::Model, SchemaError> {
+    ) -> Result<pywr_core::models::Model, PywrModelBuildError> {
         let timestepper = self.timestepper.clone().into();
 
         let scenario_builder = match &self.scenarios {
@@ -384,14 +447,14 @@ impl PywrModel {
             None => pywr_core::scenario::ScenarioDomainBuilder::default(),
         };
 
-        let domain = ModelDomain::from(timestepper, scenario_builder)?;
+        let domain = ModelDomain::try_from(timestepper, scenario_builder)?;
 
-        let tables = self.network.load_tables(data_path)?;
-        let timeseries = self.network.load_timeseries(&domain, data_path)?;
-
-        let network = self
+        let (network, _tables, _ts) = self
             .network
-            .build_network(&domain, data_path, output_path, &tables, &timeseries, &[])?;
+            .build_network(&domain, data_path, output_path, &[])
+            .map_err(|source| PywrModelBuildError::NetworkBuildError {
+                source: Box::new(source),
+            })?;
 
         let model = pywr_core::models::Model::new(domain, network);
 
@@ -448,6 +511,39 @@ pub struct PywrMultiNetworkEntry {
     pub name: String,
     pub network: PywrNetworkRef,
     pub transfers: Vec<PywrMultiNetworkTransfer>,
+}
+
+#[derive(Error, Debug)]
+#[cfg(feature = "core")]
+pub enum PywrMultiNetworkModelBuildError {
+    #[error("Failed to construct scenario builder: {0}")]
+    ScenarioBuilderError(#[from] pywr_core::scenario::ScenarioError),
+    #[error("Failed to construct model domain: {0}")]
+    CoreModelDomainError(#[from] pywr_core::models::ModelDomainError),
+    #[error("Failed to construct the network `{name}`: {source}")]
+    NetworkBuildError {
+        name: String,
+        #[source]
+        source: Box<PywrNetworkBuildError>,
+    },
+    #[error("Failed to read Pywr network from path `{path}`: {source}")]
+    NetworkReadError {
+        path: PathBuf,
+        #[source]
+        source: PywrNetworkReadError,
+    },
+    #[error("Failed to add node `{name}` to the model: {source}")]
+    AddTransferError {
+        name: String,
+        #[source]
+        source: Box<SchemaError>,
+    },
+    #[error("Failed to add network `{name}` to the model: {source}")]
+    AddNetworkError {
+        name: String,
+        #[source]
+        source: MultiNetworkModelError,
+    },
 }
 
 /// A Pywr model containing multiple link networks.
@@ -520,7 +616,7 @@ pub struct PywrMultiNetworkModel {
 }
 
 impl FromStr for PywrMultiNetworkModel {
-    type Err = SchemaError;
+    type Err = PywrModelReadError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Ok(serde_json::from_str(s)?)
@@ -528,8 +624,8 @@ impl FromStr for PywrMultiNetworkModel {
 }
 
 impl PywrMultiNetworkModel {
-    pub fn from_path<P: AsRef<Path>>(path: P) -> Result<Self, SchemaError> {
-        let data = std::fs::read_to_string(&path).map_err(|error| SchemaError::IO {
+    pub fn from_path<P: AsRef<Path>>(path: P) -> Result<Self, PywrModelReadError> {
+        let data = std::fs::read_to_string(&path).map_err(|error| PywrModelReadError::IO {
             path: path.as_ref().to_path_buf(),
             error,
         })?;
@@ -541,7 +637,7 @@ impl PywrMultiNetworkModel {
         &self,
         data_path: Option<&Path>,
         output_path: Option<&Path>,
-    ) -> Result<pywr_core::models::MultiNetworkModel, SchemaError> {
+    ) -> Result<pywr_core::models::MultiNetworkModel, PywrMultiNetworkModelBuildError> {
         let timestepper = self.timestepper.clone().into();
 
         let scenario_builder = match &self.scenarios {
@@ -549,7 +645,7 @@ impl PywrMultiNetworkModel {
             None => pywr_core::scenario::ScenarioDomainBuilder::default(),
         };
 
-        let domain = ModelDomain::from(timestepper, scenario_builder)?;
+        let domain = ModelDomain::try_from(timestepper, scenario_builder)?;
         let mut networks = Vec::with_capacity(self.networks.len());
         let mut inter_network_transfers = Vec::new();
         let mut schemas: Vec<(PywrNetwork, LoadedTableCollection, LoadedTimeseriesCollection)> =
@@ -572,31 +668,25 @@ impl PywrMultiNetworkModel {
                         path.clone()
                     };
 
-                    let network_schema = PywrNetwork::from_path(pth)?;
-                    let tables = network_schema.load_tables(data_path)?;
-                    let timeseries = network_schema.load_timeseries(&domain, data_path)?;
-                    let net = network_schema.build_network(
-                        &domain,
-                        data_path,
-                        output_path,
-                        &tables,
-                        &timeseries,
-                        &network_entry.transfers,
-                    )?;
+                    let network_schema = PywrNetwork::from_path(&pth)
+                        .map_err(|source| PywrMultiNetworkModelBuildError::NetworkReadError { path: pth, source })?;
+
+                    let (net, tables, timeseries) = network_schema
+                        .build_network(&domain, data_path, output_path, &network_entry.transfers)
+                        .map_err(|source| PywrMultiNetworkModelBuildError::NetworkBuildError {
+                            name: network_entry.name.clone(),
+                            source: Box::new(source),
+                        })?;
 
                     (net, network_schema, tables, timeseries)
                 }
                 PywrNetworkRef::Inline(network_schema) => {
-                    let tables = network_schema.load_tables(data_path)?;
-                    let timeseries = network_schema.load_timeseries(&domain, data_path)?;
-                    let net = network_schema.build_network(
-                        &domain,
-                        data_path,
-                        output_path,
-                        &tables,
-                        &timeseries,
-                        &network_entry.transfers,
-                    )?;
+                    let (net, tables, timeseries) = network_schema
+                        .build_network(&domain, data_path, output_path, &network_entry.transfers)
+                        .map_err(|source| PywrMultiNetworkModelBuildError::NetworkBuildError {
+                            name: network_entry.name.clone(),
+                            source: Box::new(source),
+                        })?;
 
                     (net, network_schema.clone(), tables, timeseries)
                 }
@@ -621,7 +711,10 @@ impl PywrMultiNetworkModel {
                             None
                         }
                     })
-                    .ok_or_else(|| SchemaError::NetworkNotFound(transfer.from_network.clone()))?;
+                    .ok_or_else(|| PywrMultiNetworkModelBuildError::AddTransferError {
+                        name: transfer.name.clone(),
+                        source: Box::new(SchemaError::NetworkNotFound(transfer.from_network.clone())),
+                    })?;
 
                 // The transfer metric will fail to load if it is defined as an inter-model transfer itself.
                 let (from_schema, from_tables, from_timeseries) = &schemas[from_network_idx];
@@ -635,7 +728,12 @@ impl PywrMultiNetworkModel {
                     inter_network_transfers: &[],
                 };
 
-                let from_metric = transfer.metric.load(from_network, &args, None)?;
+                let from_metric = transfer.metric.load(from_network, &args, None).map_err(|source| {
+                    PywrMultiNetworkModelBuildError::AddTransferError {
+                        name: transfer.name.clone(),
+                        source: Box::new(source),
+                    }
+                })?;
 
                 inter_network_transfers.push((from_network_idx, from_metric, to_network_idx, transfer.initial_value));
             }
@@ -645,7 +743,9 @@ impl PywrMultiNetworkModel {
         let mut model = pywr_core::models::MultiNetworkModel::new(domain);
 
         for (name, network) in networks {
-            model.add_network(&name, network)?;
+            model
+                .add_network(&name, network)
+                .map_err(|source| PywrMultiNetworkModelBuildError::AddNetworkError { name, source })?;
         }
 
         for (from_network_idx, from_metric, to_network_idx, initial_value) in inter_network_transfers {

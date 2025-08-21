@@ -1,4 +1,4 @@
-use crate::data_tables::{DataTable, TableDataRef, TableError};
+use crate::data_tables::{TableDataRef, TableError};
 use crate::nodes::{NodeAttribute, NodeComponent};
 use crate::timeseries::TimeseriesError;
 #[cfg(feature = "core")]
@@ -16,8 +16,6 @@ pub enum SchemaError {
     Infallible(#[from] std::convert::Infallible),
     #[error("IO error on path `{path}`: {error}")]
     IO { path: PathBuf, error: std::io::Error },
-    #[error("JSON error: {0}")]
-    Json(#[from] serde_json::Error),
     // Use this error when a node is not found in the schema (i.e. while parsing the schema).
     #[error("Node with name {name} not found in the schema.")]
     NodeNotFound { name: String },
@@ -42,8 +40,6 @@ pub enum SchemaError {
     NetworkNotFound(String),
     #[error("Edge from `{from_node}` to `{to_node}` not found")]
     EdgeNotFound { from_node: String, to_node: String },
-    #[error("missing initial volume for node: {0}")]
-    MissingInitialVolume(String),
     #[error("Pywr core network error: {0}")]
     #[cfg(feature = "core")]
     CoreNetworkError(#[from] pywr_core::NetworkError),
@@ -58,14 +54,6 @@ pub enum SchemaError {
     CoreMetricF64Error(#[from] pywr_core::metric::MetricF64Error),
     #[error("Error loading data from table `{0}` (column: `{1:?}`, index: `{2:?}`) error: {error}", table_ref.table, table_ref.column, table_ref.index)]
     TableRefLoad { table_ref: TableDataRef, error: TableError },
-    #[error("Error loading table `{table_def:?}` error: {error}")]
-    TableLoad { table_def: DataTable, error: TableError },
-    #[error("Circular node reference(s) found.")]
-    CircularNodeReference,
-    #[error("Circular parameters reference(s) found. Unable to load the following parameters: {0:?}")]
-    CircularParameterReference(Vec<String>),
-    #[error("unsupported file format")]
-    UnsupportedFileFormat,
     #[cfg(feature = "pyo3")]
     #[error("Python error: {0}")]
     PythonError(#[from] PyErr),
@@ -117,9 +105,14 @@ pub enum SchemaError {
 }
 
 #[cfg(all(feature = "core", feature = "pyo3"))]
-impl From<SchemaError> for PyErr {
-    fn from(err: SchemaError) -> PyErr {
-        pyo3::exceptions::PyRuntimeError::new_err(err.to_string())
+impl TryFrom<SchemaError> for PyErr {
+    type Error = ();
+    fn try_from(err: SchemaError) -> Result<Self, Self::Error> {
+        match err {
+            SchemaError::PythonError(py_err) => Ok(py_err),
+            SchemaError::Timeseries(err) => err.try_into(),
+            _ => Err(()),
+        }
     }
 }
 

@@ -97,7 +97,7 @@ pub fn simple_model(num_scenarios: usize, timestepper: Option<Timestepper>) -> M
         .unwrap();
     scenario_builder = scenario_builder.with_group(scenario_group).unwrap();
 
-    let domain = ModelDomain::from(timestepper.unwrap_or_else(default_timestepper), scenario_builder).unwrap();
+    let domain = ModelDomain::try_from(timestepper.unwrap_or_else(default_timestepper), scenario_builder).unwrap();
     let mut network = Network::default();
 
     let idx = domain
@@ -447,7 +447,7 @@ pub fn make_random_model<R: Rng>(
         .with_group(scenario_group)
         .expect("Could not add scenario group");
 
-    let domain = ModelDomain::from(timestepper, scenario_builder).expect("Could not create model domain");
+    let domain = ModelDomain::try_from(timestepper, scenario_builder).expect("Could not create model domain");
 
     let inflow_scenario_group_index = domain
         .scenarios()
