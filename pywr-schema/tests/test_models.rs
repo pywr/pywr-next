@@ -79,6 +79,7 @@ model_tests! {
     test_wtw2: ("wtw2.json", vec!["wtw2-expected.csv"], vec!["ipm-simd", "ipm-ocl"], vec![]),
     test_local_parameter1: ("local-parameter1.json", vec!["local-parameter1-expected.csv"], vec![], vec![]),
     test_python_parameter1: ("python-parameter1.json", vec!["python-parameter1-expected.csv"], vec![], vec![]),
+    test_python_parameter2: ("python-parameter2.json", vec!["python-parameter2-expected.csv"], vec![], vec![]),
     test_local_parameter2: ("local-parameter2.json", vec!["local-parameter2-expected.csv"], vec![], vec![]),
     // IPM solvers currently do not support virtual storage nodes
     test_vs_with_piecewise_link: ("vs-with-piecewise-link.json", vec!["vs-with-piecewise-link-expected.csv"], vec!["ipm-simd", "ipm-ocl"], vec![]),
