@@ -24,5 +24,5 @@ def multiple_values(info, factor: float) -> dict:
     """Return multiple values."""
     return {
         "value1": float(info.timestep.index),
-        "value2": info.get_metric("deficit") * factor
+        "value2": info.get_metric("deficit") * factor,
     }
