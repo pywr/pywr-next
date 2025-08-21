@@ -17,6 +17,7 @@ mod highs;
 mod ipm_ocl;
 #[cfg(feature = "ipm-simd")]
 mod ipm_simd;
+mod microlp;
 
 #[cfg(feature = "ipm-ocl")]
 pub use self::ipm_ocl::{ClIpmF32Solver, ClIpmF64Solver, ClIpmSolverSettings, ClIpmSolverSettingsBuilder};
@@ -29,7 +30,8 @@ pub use cbc::{CbcError, CbcSolver, CbcSolverSettings, CbcSolverSettingsBuilder};
 pub use clp::{ClpError, ClpSolver, ClpSolverSettings, ClpSolverSettingsBuilder};
 #[cfg(feature = "highs")]
 pub use highs::{HighsSolver, HighsSolverSettings, HighsSolverSettingsBuilder};
-
+#[cfg(feature = "microlp")]
+pub use microlp::{MicroLpError, MicroLpSolver, MicroLpSolverSettings, MicroLpSolverSettingsBuilder};
 #[derive(Default, Debug)]
 pub struct SolverTimings {
     pub update_objective: Duration,
@@ -144,6 +146,9 @@ pub enum SolverSolveError {
     #[cfg(feature = "highs")]
     #[error("Highs error: {0}")]
     HighsModelError(#[from] highs::HighsModelError),
+    #[cfg(feature = "microlp")]
+    #[error("MicroLP error: {0}")]
+    MicroLpError(#[from] MicroLpError),
 }
 
 pub trait Solver: Send {
