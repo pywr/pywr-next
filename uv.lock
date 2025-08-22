@@ -363,7 +363,7 @@ requires-dist = [
     { name = "h5py", marker = "extra == 'hdf'" },
     { name = "openpyxl", marker = "extra == 'excel'" },
     { name = "pandas" },
-    { name = "polars" },
+    { name = "polars", specifier = "<1.32" },
     { name = "pyarrow" },
 ]
 provides-extras = ["excel", "hdf"]
