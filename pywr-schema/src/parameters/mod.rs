@@ -553,7 +553,7 @@ impl TryFromV1<ParameterV1> for ParameterOrTimeseriesRef {
                         name: p.meta.and_then(|m| m.name).unwrap_or("unnamed".to_string()),
                         attr: "".to_string(),
                         error: ConversionError::DeprecatedParameter {
-                            ty: "DeficitParameter".to_string(),
+                            ty: "StorageParameter".to_string(),
                             instead: "Use a derived metric instead.".to_string(),
                         },
                     });
