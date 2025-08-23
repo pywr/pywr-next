@@ -64,7 +64,10 @@
           "type": "Path",
           "path": "custom.py"
         },
-        "object": "CustomParameter",
+        "object": {
+          "type": "Class",
+          "class": "CustomParameter"
+        },
         "args": [
           5.0
         ],

@@ -1,7 +1,7 @@
 {
   "metadata": {
     "title": "Python parameters",
-    "description": "An example of using custom Python parameters.",
+    "description": "An example of using custom Python function that returns multiple values.",
     "minimum_version": "0.1"
   },
   "timestepper": {
@@ -18,7 +18,7 @@
         "type": "Input",
         "max_flow": {
           "type": "Constant",
-          "value": 15.0
+          "value": 8.0
         }
       },
       {
@@ -55,7 +55,7 @@
     "parameters": [
       {
         "meta": {
-          "name": "my-float-parameter"
+          "name": "my-multiple-values"
         },
         "type": "Python",
         "source": {
@@ -63,32 +63,21 @@
           "path": "test_parameters.py"
         },
         "object": {
-          "type": "Class",
-          "class": "FloatParameter"
+          "type": "Function",
+          "function": "multiple_values"
         },
+        "return_type": "Dict",
         "args": [
-          0
+          2.0
         ],
-        "kwargs": {}
-      },
-      {
-        "meta": {
-          "name": "my-int-parameter"
-        },
-        "type": "Python",
-        "source": {
-          "type": "Path",
-          "path": "test_parameters.py"
-        },
-        "return_type": "Int",
-        "object": {
-          "type": "Class",
-          "class": "IntParameter"
-        },
-        "args": [
-          0
-        ],
-        "kwargs": {}
+        "kwargs": {},
+        "metrics": {
+          "deficit": {
+            "type": "Node",
+            "name": "demand1",
+            "attribute": "Inflow"
+          }
+        }
       }
     ],
     "metric_sets": [
@@ -97,11 +86,13 @@
         "metrics": [
           {
             "type": "Parameter",
-            "name": "my-float-parameter"
+            "name": "my-multiple-values",
+            "key": "value1"
           },
           {
             "type": "Parameter",
-            "name": "my-int-parameter"
+            "name": "my-multiple-values",
+            "key": "value2"
           }
         ]
       }
@@ -111,7 +102,7 @@
         "name": "nodes",
         "type": "CSV",
         "format": "Long",
-        "filename": "python-parameter1-expected.csv",
+        "filename": "python-parameter2-expected.csv",
         "metric_set": "parameters"
       }
     ]
