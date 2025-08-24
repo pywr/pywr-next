@@ -397,7 +397,7 @@ impl TryFromV1<MultiThresholdIndexParameterV1> for MultiThresholdParameter {
             metric,
             returned_metrics: None,
             thresholds,
-            predicate: v1.predicate.into(),
+            predicate: Predicate::GE, // v1 assumed GE and this was not configurable
             ratchet: false,
         };
         Ok(p)
@@ -427,7 +427,7 @@ impl TryFromV1<MultipleThresholdParameterIndexParameterV1> for MultiThresholdPar
             metric,
             returned_metrics: None,
             thresholds,
-            predicate: v1.predicate.into(),
+            predicate: Predicate::GE, // v1 assumed GE and this was not configurable
             ratchet: false,
         };
         Ok(p)
