@@ -112,8 +112,7 @@
         "filename": "piecewise-link1-nodes.csv",
         "metric_set": [
           "nodes"
-        ],
-        "decimal_places": 1
+        ]
       },
       {
         "name": "edge-outputs",
@@ -122,8 +121,7 @@
         "filename": "piecewise-link1-edges.csv",
         "metric_set": [
           "edges"
-        ],
-        "decimal_places": 1
+        ]
       }
     ]
   }

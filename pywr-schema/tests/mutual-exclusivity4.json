@@ -129,8 +129,7 @@
         "filename": "mutual-exclusivity4.csv",
         "metric_set": [
           "nodes"
-        ],
-        "decimal_places": 1
+        ]
       }
     ]
   }

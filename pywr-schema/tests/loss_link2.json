@@ -108,8 +108,7 @@
         "filename": "loss_link2-expected.csv",
         "metric_set": [
           "nodes"
-        ],
-        "decimal_places": 1
+        ]
       }
     ]
   }

@@ -156,8 +156,7 @@
         "type": "CSV",
         "format": "Long",
         "filename": "piecewise_storage4-expected.csv",
-        "metric_set": "nodes",
-        "decimal_places": 1
+        "metric_set": "nodes"
       }
     ]
   }

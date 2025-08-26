@@ -114,8 +114,7 @@
         "type": "CSV",
         "format": "Long",
         "filename": "abstraction2-expected.csv",
-        "metric_set": "nodes",
-        "decimal_places": 1
+        "metric_set": "nodes"
       }
     ]
   }
