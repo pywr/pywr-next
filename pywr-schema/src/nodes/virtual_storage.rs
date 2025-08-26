@@ -38,17 +38,23 @@ node_attribute_subset_enum! {
 pub struct AnnualReset {
     pub day: u8,
     pub month: u8,
-    pub use_initial_volume: bool,
 }
 
+/// The reset behaviour for a virtual storage node.
+///
+/// If provided this determines when the virtual storage node's volume is reset.
 #[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, PywrVisitAll, Display, EnumDiscriminants)]
 #[serde(tag = "type", deny_unknown_fields)]
 #[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
 #[strum_discriminants(name(VirtualStorageResetType))]
 pub enum VirtualStorageReset {
     Never,
+    /// Reset annually on a specific day and month.
     Annual(AnnualReset),
-    Monthly { months: u8 },
+    /// Reset every N months.
+    Monthly {
+        months: u8,
+    },
 }
 
 #[cfg(feature = "core")]
@@ -116,6 +122,26 @@ impl RollingWindow {
     }
 }
 
+/// The volume to reset to when a reset occurs.
+#[derive(
+    serde::Deserialize, serde::Serialize, Copy, Clone, Debug, JsonSchema, PywrVisitAll, Display, EnumDiscriminants,
+)]
+#[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
+#[strum_discriminants(name(VirtualStorageResetVolumeType))]
+pub enum VirtualStorageResetVolume {
+    Initial,
+    Max,
+}
+
+impl From<VirtualStorageResetVolume> for pywr_core::virtual_storage::VirtualStorageResetVolume {
+    fn from(val: VirtualStorageResetVolume) -> pywr_core::virtual_storage::VirtualStorageResetVolume {
+        match val {
+            VirtualStorageResetVolume::Initial => pywr_core::virtual_storage::VirtualStorageResetVolume::Initial,
+            VirtualStorageResetVolume::Max => pywr_core::virtual_storage::VirtualStorageResetVolume::Max,
+        }
+    }
+}
+
 /// A virtual storage node that can be used to represent non-physical storage constraints.
 ///
 /// This is typically used to represent storage limits that are associated with licences or
@@ -143,6 +169,7 @@ pub struct VirtualStorageNode {
     pub cost: Option<Metric>,
     pub initial_volume: StorageInitialVolume,
     pub reset: Option<VirtualStorageReset>,
+    pub reset_volume: Option<VirtualStorageResetVolume>,
     pub window: Option<RollingWindow>,
 }
 
@@ -218,6 +245,10 @@ impl VirtualStorageNode {
         if let Some(r) = self.reset.clone() {
             let reset = r.try_into()?;
             builder = builder.reset(reset);
+        }
+
+        if let Some(rv) = &self.reset_volume {
+            builder = builder.reset_volume((*rv).into());
         }
 
         if let Some(window) = &self.window {
@@ -297,6 +328,7 @@ impl TryFromV1<VirtualStorageNodeV1> for VirtualStorageNode {
             cost,
             initial_volume,
             reset: None,
+            reset_volume: None,
             window: None,
         };
         Ok(n)
@@ -322,6 +354,12 @@ impl TryFromV1<AnnualVirtualStorageNodeV1> for VirtualStorageNode {
 
         let nodes = v1.nodes.into_iter().map(|n| n.into()).collect();
 
+        let reset_volume = if v1.reset_to_initial_volume {
+            Some(VirtualStorageResetVolume::Initial)
+        } else {
+            Some(VirtualStorageResetVolume::Max)
+        };
+
         let n = Self {
             meta,
             parameters: None,
@@ -334,8 +372,8 @@ impl TryFromV1<AnnualVirtualStorageNodeV1> for VirtualStorageNode {
             reset: Some(VirtualStorageReset::Annual(AnnualReset {
                 day: v1.reset_day as u8,
                 month: v1.reset_month as u8,
-                use_initial_volume: v1.reset_to_initial_volume,
             })),
+            reset_volume,
             window: None,
         };
         Ok(n)
@@ -361,6 +399,12 @@ impl TryFromV1<MonthlyVirtualStorageNodeV1> for VirtualStorageNode {
 
         let nodes = v1.nodes.into_iter().map(|n| n.into()).collect();
 
+        let reset_volume = if v1.reset_to_initial_volume {
+            Some(VirtualStorageResetVolume::Initial)
+        } else {
+            Some(VirtualStorageResetVolume::Max)
+        };
+
         let n = Self {
             meta,
             parameters: None,
@@ -371,6 +415,7 @@ impl TryFromV1<MonthlyVirtualStorageNodeV1> for VirtualStorageNode {
             cost,
             initial_volume,
             reset: Some(VirtualStorageReset::Monthly { months: v1.months }),
+            reset_volume,
             window: None,
         };
         Ok(n)
@@ -440,6 +485,7 @@ impl TryFromV1<RollingVirtualStorageNodeV1> for VirtualStorageNode {
             cost,
             initial_volume,
             reset: None,
+            reset_volume: None,
             window: Some(window),
         };
         Ok(n)
