@@ -126,6 +126,30 @@ impl InternalObj {
     }
 }
 
+fn ensure_parameter_info(
+    info_obj: &mut Option<Py<ParameterInfo>>,
+    timestep: &Timestep,
+    scenario_index: &ScenarioIndex,
+) -> Result<(), PyErr> {
+    if info_obj.is_none() {
+        let obj = Python::with_gil(|py| {
+            Py::new(
+                py,
+                ParameterInfo {
+                    timestep: *timestep,
+                    scenario_index: scenario_index.clone(),
+                    metric_values: HashMap::default(),
+                    index_values: HashMap::default(),
+                },
+            )
+        })?;
+
+        *info_obj = Some(obj);
+    }
+
+    Ok(())
+}
+
 impl PyClassParameter {
     pub fn new(
         name: ParameterName,
@@ -176,21 +200,16 @@ impl PyClassParameter {
     {
         let internal = downcast_internal_state_mut::<InternalObj>(internal_state);
 
-        let info = internal.info_obj.get_or_insert_with(|| {
-            // Create a new PyInfo object to pass to the Python method.
-            Python::with_gil(|py| {
-                Py::new(
-                    py,
-                    ParameterInfo {
-                        timestep: *timestep,
-                        scenario_index: scenario_index.clone(),
-                        metric_values: HashMap::default(),
-                        index_values: HashMap::default(),
-                    },
-                )
-            })
-            .unwrap()
-        });
+        ensure_parameter_info(&mut internal.info_obj, timestep, scenario_index).map_err(|py_error| {
+            ParameterCalculationError::PythonError {
+                name: self.common.meta.name.to_string(),
+                object: self.class.to_string(),
+                py_error: Box::new(py_error),
+            }
+        })?;
+
+        // Safe to unwrap as we just ensured it is Some.
+        let info = internal.info_obj.as_ref().unwrap();
 
         let value: T = Python::with_gil(|py| {
             let info_bind = info.bind(py);
@@ -199,21 +218,31 @@ impl PyClassParameter {
                 info_mut.timestep = *timestep;
                 info_mut.scenario_index = scenario_index.clone();
                 self.common
-                    .update_metrics(network, state, &mut info_mut.metric_values)
-                    .unwrap();
-                self.common
-                    .update_indices(network, state, &mut info_mut.index_values)
-                    .unwrap();
+                    .update_metrics(network, state, &mut info_mut.metric_values)?;
+
+                self.common.update_indices(network, state, &mut info_mut.index_values)?;
             }
 
-            let args = PyTuple::new(py, [info_bind])?;
+            let args = PyTuple::new(py, [info_bind]).map_err(|py_error| ParameterCalculationError::PythonError {
+                name: self.common.meta.name.to_string(),
+                object: self.class.to_string(),
+                py_error: Box::new(py_error),
+            })?;
 
-            internal.user_obj.call_method1(py, "calc", args)?.extract(py)
-        })
-        .map_err(|py_error| ParameterCalculationError::PythonError {
-            name: self.common.meta.name.to_string(),
-            object: self.class.to_string(),
-            py_error: Box::new(py_error),
+            internal
+                .user_obj
+                .call_method1(py, "calc", args)
+                .map_err(|py_error| ParameterCalculationError::PythonError {
+                    name: self.common.meta.name.to_string(),
+                    object: self.class.to_string(),
+                    py_error: Box::new(py_error),
+                })?
+                .extract(py)
+                .map_err(|py_error| ParameterCalculationError::PythonError {
+                    name: self.common.meta.name.to_string(),
+                    object: self.class.to_string(),
+                    py_error: Box::new(py_error),
+                })
         })?;
 
         Ok(value)
@@ -229,21 +258,16 @@ impl PyClassParameter {
     ) -> Result<(), ParameterCalculationError> {
         let internal = downcast_internal_state_mut::<InternalObj>(internal_state);
 
-        let info = internal.info_obj.get_or_insert_with(|| {
-            // Create a new PyInfo object to pass to the Python method.
-            Python::with_gil(|py| {
-                Py::new(
-                    py,
-                    ParameterInfo {
-                        timestep: *timestep,
-                        scenario_index: scenario_index.clone(),
-                        metric_values: HashMap::default(),
-                        index_values: HashMap::default(),
-                    },
-                )
-            })
-            .unwrap()
-        });
+        ensure_parameter_info(&mut internal.info_obj, timestep, scenario_index).map_err(|py_error| {
+            ParameterCalculationError::PythonError {
+                name: self.common.meta.name.to_string(),
+                object: self.class.to_string(),
+                py_error: Box::new(py_error),
+            }
+        })?;
+
+        // Safe to unwrap as we just ensured it is Some.
+        let info = internal.info_obj.as_ref().unwrap();
 
         Python::with_gil(|py| {
             // Only do this if the object has an "after" method defined.
@@ -254,23 +278,27 @@ impl PyClassParameter {
                     info_mut.timestep = *timestep;
                     info_mut.scenario_index = scenario_index.clone();
                     self.common
-                        .update_metrics(network, state, &mut info_mut.metric_values)
-                        .unwrap();
-                    self.common
-                        .update_indices(network, state, &mut info_mut.index_values)
-                        .unwrap();
+                        .update_metrics(network, state, &mut info_mut.metric_values)?;
+
+                    self.common.update_indices(network, state, &mut info_mut.index_values)?;
                 }
 
-                let args = PyTuple::new(py, [info_bind])?;
+                let args =
+                    PyTuple::new(py, [info_bind]).map_err(|py_error| ParameterCalculationError::PythonError {
+                        name: self.common.meta.name.to_string(),
+                        object: self.class.to_string(),
+                        py_error: Box::new(py_error),
+                    })?;
 
-                internal.user_obj.call_method1(py, "after", args)?;
+                internal.user_obj.call_method1(py, "after", args).map_err(|py_error| {
+                    ParameterCalculationError::PythonError {
+                        name: self.common.meta.name.to_string(),
+                        object: self.class.to_string(),
+                        py_error: Box::new(py_error),
+                    }
+                })?;
             }
-            Ok::<(), PyErr>(())
-        })
-        .map_err(|py_error| ParameterCalculationError::PythonError {
-            name: self.common.meta.name.to_string(),
-            object: self.class.to_string(),
-            py_error: Box::new(py_error),
+            Ok::<(), ParameterCalculationError>(())
         })?;
 
         Ok(())
@@ -440,21 +468,16 @@ impl PyFuncParameter {
     {
         let internal = downcast_internal_state_mut::<InternalInfo>(internal_state);
 
-        let info = internal.info_obj.get_or_insert_with(|| {
-            // Create a new PyInfo object to pass to the Python method.
-            Python::with_gil(|py| {
-                Py::new(
-                    py,
-                    ParameterInfo {
-                        timestep: *timestep,
-                        scenario_index: scenario_index.clone(),
-                        metric_values: HashMap::default(),
-                        index_values: HashMap::default(),
-                    },
-                )
-            })
-            .unwrap()
-        });
+        ensure_parameter_info(&mut internal.info_obj, timestep, scenario_index).map_err(|py_error| {
+            ParameterCalculationError::PythonError {
+                name: self.common.meta.name.to_string(),
+                object: self.function.to_string(),
+                py_error: Box::new(py_error),
+            }
+        })?;
+
+        // Safe to unwrap as we just ensured it is Some.
+        let info = internal.info_obj.as_ref().unwrap();
 
         let value: T = Python::with_gil(|py| {
             let info_bind = info.bind(py);
@@ -463,26 +486,49 @@ impl PyFuncParameter {
                 info_mut.timestep = *timestep;
                 info_mut.scenario_index = scenario_index.clone();
                 self.common
-                    .update_metrics(network, state, &mut info_mut.metric_values)
-                    .unwrap();
-                self.common
-                    .update_indices(network, state, &mut info_mut.index_values)
-                    .unwrap();
+                    .update_metrics(network, state, &mut info_mut.metric_values)?;
+
+                self.common.update_indices(network, state, &mut info_mut.index_values)?;
             }
 
-            let args = PyTuple::new(py, [info_bind])?;
+            let args = PyTuple::new(py, [info_bind]).map_err(|py_error| ParameterCalculationError::PythonError {
+                name: self.common.meta.name.to_string(),
+                object: self.function.to_string(),
+                py_error: Box::new(py_error),
+            })?;
+
             // Concatenate the user defined args with the info arg.
-            let args = args.into_sequence().concat(self.common.args.bind(py).as_sequence())?;
-            let args = args.to_tuple()?;
+            let args = args
+                .into_sequence()
+                .concat(self.common.args.bind(py).as_sequence())
+                .map_err(|py_error| ParameterCalculationError::PythonError {
+                    name: self.common.meta.name.to_string(),
+                    object: self.function.to_string(),
+                    py_error: Box::new(py_error),
+                })?;
+            let args = args
+                .to_tuple()
+                .map_err(|py_error| ParameterCalculationError::PythonError {
+                    name: self.common.meta.name.to_string(),
+                    object: self.function.to_string(),
+                    py_error: Box::new(py_error),
+                })?;
 
             let kwargs = self.common.kwargs.bind(py);
 
-            self.function.call(py, args, Some(kwargs))?.extract(py)
-        })
-        .map_err(|py_error| ParameterCalculationError::PythonError {
-            name: self.common.meta.name.to_string(),
-            object: self.function.to_string(),
-            py_error: Box::new(py_error),
+            self.function
+                .call(py, args, Some(kwargs))
+                .map_err(|py_error| ParameterCalculationError::PythonError {
+                    name: self.common.meta.name.to_string(),
+                    object: self.function.to_string(),
+                    py_error: Box::new(py_error),
+                })?
+                .extract(py)
+                .map_err(|py_error| ParameterCalculationError::PythonError {
+                    name: self.common.meta.name.to_string(),
+                    object: self.function.to_string(),
+                    py_error: Box::new(py_error),
+                })
         })?;
 
         Ok(value)

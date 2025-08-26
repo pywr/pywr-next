@@ -295,6 +295,51 @@ def multiple_values(info: ParameterInfo, factor: float) -> dict:
     }
 ```
 
+The corresponding JSON for this parameter would look like this:
+
+```json
+{
+  "parameters": [
+    {
+      "meta": {
+        "name": "multiple_values"
+      },
+      "type": "Python",
+      "source": {
+        "type": "Module",
+        "module": "my_model.parameters"
+      },
+      "object": {
+        "type": "Function",
+        "class": "multiple_values"
+      },
+      "return_type": "Dict",
+      "args": [
+        2.0
+      ],
+      "metrics": {
+        "volume": {
+          "type": "Node",
+          "name": "a-reservoir",
+          "attribute": "Volume"
+        }
+      }
+    }
+  ]
+}
+```
+
+And the returned values can be accessed in the model using the keys defined in the dictionary.
+
+```json
+{
+  "type": "Parameter",
+  "name": "multiple_values",
+  "key": "value1"
+  // or "value2" 
+}
+```
+
 ## Cython (and other compiled languages)
 
 Cython functions and classes can be used in Pywr as long as they accessible from Python, and can be
