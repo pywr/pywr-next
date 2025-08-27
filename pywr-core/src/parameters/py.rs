@@ -126,6 +126,7 @@ impl InternalObj {
     }
 }
 
+/// Ensure that `info_obj` is populated with a `ParameterInfo`.
 fn ensure_parameter_info(
     info_obj: &mut Option<Py<ParameterInfo>>,
     timestep: &Timestep,
