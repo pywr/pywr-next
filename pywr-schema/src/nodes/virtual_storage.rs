@@ -133,6 +133,7 @@ pub enum VirtualStorageResetVolume {
     Max,
 }
 
+#[cfg(feature = "core")]
 impl From<VirtualStorageResetVolume> for pywr_core::virtual_storage::VirtualStorageResetVolume {
     fn from(val: VirtualStorageResetVolume) -> pywr_core::virtual_storage::VirtualStorageResetVolume {
         match val {
