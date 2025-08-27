@@ -200,10 +200,16 @@ pub fn run_and_assert_parameter_u64(
     run_all_solvers(model, &[], &[], &[])
 }
 
+/// A trait with a verify method for checking model outputs.
+///
+/// The verify method should compare model outputs with expected results, raising
+/// an error if they do not match.
 pub trait VerifyExpected {
     fn verify(&self);
 }
 
+
+/// A struct representing an CSV output row in long format
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct ExpectedRowLong {
     time_start: String,
@@ -225,12 +231,11 @@ impl PartialEq for ExpectedRowLong {
             && self.metric_set == other.metric_set
             && self.name == other.name
             && self.attribute == other.attribute
-            && (self.value - other.value).abs() < 1e-8
+            && approx_eq!(f64, self.value, other.value, F64Margin { ulps: 2, epsilon: 1e-8 })
     }
 }
 
-/// A struct to hold the expected outputs for a test.
-/// Generic over the record type `T` (defaults to `ExpectedRow`).
+/// A struct to hold the expected outputs in long format for a test.
 pub struct ExpectedOutputsLong {
     output_path: PathBuf,
     expected_str: String,
@@ -257,6 +262,20 @@ impl VerifyExpected for ExpectedOutputsLong {
         let mut expected_rdr = Reader::from_reader(self.expected_str.as_bytes());
         let mut actual_rdr = Reader::from_reader(actual_str.as_bytes());
 
+        let expected_line_count = expected_rdr.records().count();
+        let actual_line_count = actual_rdr.records().count();
+
+        assert!(
+            expected_line_count == actual_line_count,
+            "Row count mismatch (expected rows: {}, actual rows: {})",
+            expected_line_count,
+            actual_line_count
+        );
+
+        // Reset the readers to the beginning for actual comparison
+        let mut expected_rdr = Reader::from_reader(self.expected_str.as_bytes());
+        let mut actual_rdr = Reader::from_reader(actual_str.as_bytes());
+
         for (row_idx, (result, actual_result)) in expected_rdr
             .deserialize::<ExpectedRowLong>()
             .zip(actual_rdr.deserialize::<ExpectedRowLong>())
@@ -266,19 +285,9 @@ impl VerifyExpected for ExpectedOutputsLong {
             let actual_record: ExpectedRowLong = actual_result.unwrap();
             assert_eq!(record, actual_record, "Row {} differs", row_idx);
         }
-
-        // Extra rows check
-        let expected_remaining = expected_rdr.records().next().is_some();
-        let actual_remaining = actual_rdr.records().next().is_some();
-        assert!(
-            !expected_remaining && !actual_remaining,
-            "Row count mismatch (expected_remaining: {}, actual_remaining: {})",
-            expected_remaining,
-            actual_remaining
-        );
     }
 }
-
+/// A struct to hold the expected outputs in wide format for a test.
 pub struct ExpectedOutputsWide {
     output_path: PathBuf,
     expected_str: String,
@@ -345,11 +354,10 @@ impl VerifyExpected for ExpectedOutputsWide {
 
             // Compare the rest of the values
             for (col_idx, (expected, actual)) in expected_values.iter().zip(actual_values.iter()).enumerate() {
-                let epsilon = 1e-8;
-                if (expected - actual).abs() > epsilon {
+                if !approx_eq!(f64, *expected, *actual, F64Margin { ulps: 2, epsilon: 1e-8 }) {
                     panic!(
-                        "Row {} with index {}: value at column {} differs (expected: {}, actual: {}, epsilon: {})",
-                        row_idx, expected_index, col_idx, expected, actual, epsilon
+                        "Row {} with index {}: value at column {} differs (expected: {}, actual: {})",
+                        row_idx, expected_index, col_idx, expected, actual
                     );
                 }
             }

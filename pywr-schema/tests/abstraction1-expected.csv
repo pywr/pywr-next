@@ -1,5 +1,5 @@
 time_start,time_end,simulation_id,label,metric_set,name,attribute,value
-2021-01-01T00:00:00,2021-01-02T00:00:00,0,0,nodes,catchment,Outflow,5.0000000000000001
+2021-01-01T00:00:00,2021-01-02T00:00:00,0,0,nodes,catchment,Outflow,5.0
 2021-01-01T00:00:00,2021-01-02T00:00:00,0,0,nodes,abstraction,Abstraction,3.0
 2021-01-01T00:00:00,2021-01-02T00:00:00,0,0,nodes,estuary,Inflow,2.0
 2021-01-01T00:00:00,2021-01-02T00:00:00,0,0,nodes,demand,Inflow,3.0
