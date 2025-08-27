@@ -45,7 +45,7 @@
         "meta": {
           "name": "licence"
         },
-        "type": "RollingVirtualStorage",
+        "type": "VirtualStorage",
         "nodes": [
           {
             "name": "supply1"

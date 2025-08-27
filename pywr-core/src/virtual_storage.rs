@@ -81,6 +81,7 @@ pub struct VirtualStorageBuilder {
     min_volume: Option<SimpleMetricF64>,
     max_volume: Option<SimpleMetricF64>,
     reset: VirtualStorageReset,
+    reset_volume: VirtualStorageResetVolume,
     rolling_window: Option<NonZeroUsize>,
     cost: Option<MetricF64>,
 }
@@ -96,6 +97,7 @@ impl VirtualStorageBuilder {
             min_volume: None,
             max_volume: None,
             reset: VirtualStorageReset::Never,
+            reset_volume: VirtualStorageResetVolume::Initial,
             rolling_window: None,
             cost: None,
         }
@@ -131,6 +133,11 @@ impl VirtualStorageBuilder {
         self
     }
 
+    pub fn reset_volume(mut self, reset_volume: VirtualStorageResetVolume) -> Self {
+        self.reset_volume = reset_volume;
+        self
+    }
+
     pub fn rolling_window(mut self, rolling_window: NonZeroUsize) -> Self {
         self.rolling_window = Some(rolling_window);
         self
@@ -152,16 +159,24 @@ impl VirtualStorageBuilder {
             initial_volume: self.initial_volume,
             storage_constraints: StorageConstraints::new(self.min_volume, self.max_volume),
             reset: self.reset,
+            reset_volume: self.reset_volume,
             rolling_window: self.rolling_window,
             cost: self.cost,
         }
     }
 }
 
+/// Defines when the virtual storage volume should be reset.
 pub enum VirtualStorageReset {
     Never,
     DayOfYear { day: u32, month: Month },
     NumberOfMonths { months: i32 },
+}
+
+/// When resetting the virtual storage volume, this enum defines how much volume to set.
+pub enum VirtualStorageResetVolume {
+    Initial,
+    Max,
 }
 
 #[derive(Debug, Error)]
@@ -192,6 +207,7 @@ pub struct VirtualStorage {
     initial_volume: StorageInitialVolume,
     storage_constraints: StorageConstraints,
     reset: VirtualStorageReset,
+    reset_volume: VirtualStorageResetVolume,
     rolling_window: Option<NonZeroUsize>,
     cost: Option<MetricF64>,
 }
@@ -257,15 +273,19 @@ impl VirtualStorage {
 
         if do_reset {
             let max_volume = self.get_max_volume(state)?;
-            // Determine the initial volume
-            let volume = self.initial_volume.get_absolute_initial_volume(max_volume, state)?;
+            let initial_volume = self.initial_volume.get_absolute_initial_volume(max_volume, state)?;
 
-            // Reset the volume
-            state.reset_virtual_storage_node_volume(self.meta.index(), volume, timestep)?;
+            let reset_volume = match &self.reset_volume {
+                VirtualStorageResetVolume::Max => max_volume,
+                VirtualStorageResetVolume::Initial => initial_volume,
+            };
+
+            state.reset_virtual_storage_node_volume(self.meta.index(), reset_volume, timestep)?;
+
             // Reset the rolling history if defined
             if let Some(window) = self.rolling_window {
                 // Initially the missing volume is distributed evenly across the window
-                let initial_flow = (max_volume - volume) / window.get() as f64;
+                let initial_flow = (max_volume - initial_volume) / window.get() as f64;
                 state.reset_virtual_storage_history(self.meta.index(), initial_flow)?;
             }
         }
