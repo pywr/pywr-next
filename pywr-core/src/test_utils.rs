@@ -20,6 +20,7 @@ use crate::solvers::SimdIpmF64Solver;
 use crate::solvers::{ClpSolver, Solver, SolverSettings};
 use crate::timestep::{TimeDomain, TimestepDuration, Timestepper};
 use chrono::{Days, NaiveDate};
+use csv::{Reader, ReaderBuilder};
 use float_cmp::{F64Margin, approx_eq};
 use ndarray::{Array, Array2};
 use rand::Rng;
@@ -199,20 +200,56 @@ pub fn run_and_assert_parameter_u64(
     run_all_solvers(model, &[], &[], &[])
 }
 
-/// A struct to hold the expected outputs for a test.
-pub struct ExpectedOutputs {
+/// A trait with a verify method for checking model outputs.
+///
+/// The verify method should compare model outputs with expected results, raising
+/// an error if they do not match.
+pub trait VerifyExpected {
+    fn verify(&self);
+}
+
+/// A struct representing an CSV output row in long format
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct ExpectedRowLong {
+    time_start: String,
+    time_end: String,
+    simulation_id: String,
+    label: String,
+    metric_set: String,
+    name: String,
+    attribute: String,
+    value: f64,
+}
+
+impl PartialEq for ExpectedRowLong {
+    fn eq(&self, other: &Self) -> bool {
+        self.time_start == other.time_start
+            && self.time_end == other.time_end
+            && self.simulation_id == other.simulation_id
+            && self.label == other.label
+            && self.metric_set == other.metric_set
+            && self.name == other.name
+            && self.attribute == other.attribute
+            && approx_eq!(f64, self.value, other.value, F64Margin { ulps: 2, epsilon: 1e-8 })
+    }
+}
+
+/// A struct to hold the expected outputs in long format for a test.
+pub struct ExpectedOutputsLong {
     output_path: PathBuf,
     expected_str: String,
 }
 
-impl ExpectedOutputs {
+impl ExpectedOutputsLong {
     pub fn new(output_path: PathBuf, expected_str: String) -> Self {
         Self {
             output_path,
             expected_str,
         }
     }
+}
 
+impl VerifyExpected for ExpectedOutputsLong {
     fn verify(&self) {
         assert!(
             self.output_path.exists(),
@@ -220,7 +257,110 @@ impl ExpectedOutputs {
             self.output_path
         );
         let actual_str = std::fs::read_to_string(&self.output_path).unwrap();
-        assert_eq!(actual_str, self.expected_str, "Output file contents do not match");
+
+        let mut expected_rdr = Reader::from_reader(self.expected_str.as_bytes());
+        let mut actual_rdr = Reader::from_reader(actual_str.as_bytes());
+
+        let expected_line_count = expected_rdr.records().count();
+        let actual_line_count = actual_rdr.records().count();
+
+        assert!(
+            expected_line_count == actual_line_count,
+            "Row count mismatch (expected rows: {}, actual rows: {})",
+            expected_line_count,
+            actual_line_count
+        );
+
+        // Reset the readers to the beginning for actual comparison
+        let mut expected_rdr = Reader::from_reader(self.expected_str.as_bytes());
+        let mut actual_rdr = Reader::from_reader(actual_str.as_bytes());
+
+        for (row_idx, (result, actual_result)) in expected_rdr
+            .deserialize::<ExpectedRowLong>()
+            .zip(actual_rdr.deserialize::<ExpectedRowLong>())
+            .enumerate()
+        {
+            let record: ExpectedRowLong = result.unwrap();
+            let actual_record: ExpectedRowLong = actual_result.unwrap();
+            assert_eq!(record, actual_record, "Row {} differs", row_idx);
+        }
+    }
+}
+/// A struct to hold the expected outputs in wide format for a test.
+pub struct ExpectedOutputsWide {
+    output_path: PathBuf,
+    expected_str: String,
+}
+
+impl ExpectedOutputsWide {
+    pub fn new(output_path: PathBuf, expected_str: String) -> Self {
+        Self {
+            output_path,
+            expected_str,
+        }
+    }
+}
+
+impl VerifyExpected for ExpectedOutputsWide {
+    fn verify(&self) {
+        assert!(
+            self.output_path.exists(),
+            "Output file does not exist: {:?}",
+            self.output_path
+        );
+        let actual_str = std::fs::read_to_string(&self.output_path).unwrap();
+
+        let mut expected_rdr = ReaderBuilder::new()
+            .has_headers(false)
+            .delimiter(b',')
+            .from_reader(self.expected_str.as_bytes());
+        let mut actual_rdr = ReaderBuilder::new()
+            .has_headers(false)
+            .delimiter(b',')
+            .from_reader(actual_str.as_bytes());
+
+        // first 4 lines are headers so compare line strings
+        for i in 0..4 {
+            let expected_line = expected_rdr.records().next().unwrap().unwrap();
+            let actual_line = actual_rdr.records().next().unwrap().unwrap();
+            assert_eq!(expected_line, actual_line, "Header line {} differs", i);
+        }
+
+        for (row_idx, (expected_result, actual_result)) in expected_rdr.records().zip(actual_rdr.records()).enumerate()
+        {
+            let expected_row = expected_result.unwrap();
+            let actual_row = actual_result.unwrap();
+            let mut expected_iter = expected_row.iter();
+            let mut actual_iter = actual_row.iter();
+
+            let expected_index = expected_iter.next().unwrap();
+            let actual_index = actual_iter.next().unwrap();
+
+            let expected_values: Vec<f64> = expected_iter
+                .map(|s| s.trim().parse::<f64>().expect("Failed to parse expected value"))
+                .collect();
+            let actual_values: Vec<f64> = actual_iter
+                .map(|s| s.trim().parse::<f64>().expect("Failed to parse actual value"))
+                .collect();
+
+            // Compare index values
+            assert_eq!(
+                expected_index.trim(),
+                actual_index.trim(),
+                "Row {}: index values differ",
+                row_idx
+            );
+
+            // Compare the rest of the values
+            for (col_idx, (expected, actual)) in expected_values.iter().zip(actual_values.iter()).enumerate() {
+                if !approx_eq!(f64, *expected, *actual, F64Margin { ulps: 2, epsilon: 1e-8 }) {
+                    panic!(
+                        "Row {} with index {}: value at column {} differs (expected: {}, actual: {})",
+                        row_idx, expected_index, col_idx, expected, actual
+                    );
+                }
+            }
+        }
     }
 }
 
@@ -232,7 +372,7 @@ pub fn run_all_solvers(
     model: &Model,
     solvers_without_features: &[&str],
     solvers_to_skip: &[&str],
-    expected_outputs: &[ExpectedOutputs],
+    expected_outputs: &[Box<dyn VerifyExpected>],
 ) {
     if !solvers_to_skip.contains(&"clp") {
         check_features_and_run::<ClpSolver>(model, !solvers_without_features.contains(&"clp"), expected_outputs);
@@ -272,7 +412,7 @@ pub fn run_all_solvers(
 }
 
 /// Check features and
-fn check_features_and_run<S>(model: &Model, expect_features: bool, expected_outputs: &[ExpectedOutputs])
+fn check_features_and_run<S>(model: &Model, expect_features: bool, expected_outputs: &[Box<dyn VerifyExpected>])
 where
     S: Solver,
     <S as Solver>::Settings: SolverSettings + Default,

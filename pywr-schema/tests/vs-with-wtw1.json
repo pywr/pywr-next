@@ -96,8 +96,7 @@
         "type": "CSV",
         "format": "Long",
         "filename": "vs-with-wtw1-expected.csv",
-        "metric_set": "nodes",
-        "decimal_places": 1
+        "metric_set": "nodes"
       }
     ]
   }
