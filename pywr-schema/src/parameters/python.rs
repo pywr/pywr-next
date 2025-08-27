@@ -16,7 +16,7 @@ use pyo3::{
 #[cfg(feature = "core")]
 use pywr_core::parameters::ParameterType;
 #[cfg(all(feature = "core", feature = "pyo3"))]
-use pywr_core::parameters::{ParameterName, PyParameter};
+use pywr_core::parameters::{ParameterName, PyClassParameter, PyFuncParameter};
 use schemars::JsonSchema;
 #[cfg(all(feature = "core", feature = "pyo3"))]
 use serde_json::Value;
@@ -35,6 +35,22 @@ pub enum PythonSource {
     Path { path: PathBuf },
 }
 
+/// The type of Python object that is expected to be used in the parameter.
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, Display, EnumDiscriminants)]
+#[serde(tag = "type", deny_unknown_fields)]
+#[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
+#[strum_discriminants(name(PythonObjectType))]
+pub enum PythonObject {
+    Class { class: String },
+    Function { function: String },
+}
+
+#[cfg(all(feature = "core", feature = "pyo3"))]
+enum PyObj {
+    Class(Py<PyAny>),
+    Function(Py<PyAny>),
+}
+
 /// The expected return type of the Python parameter.
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Default, JsonSchema, Display, EnumIter)]
 pub enum PythonReturnType {
@@ -46,12 +62,13 @@ pub enum PythonReturnType {
 
 /// A Parameter that uses a Python object for its calculations.
 ///
-/// This struct defines a schema for loading a [`PyParameter`] from external
+/// This struct defines a schema for loading a [`PyClassParameter`] or [`PyFuncParameter`] from external
 /// sources. The user provides the name of an object in the given module. Typically, this object will be
-/// a class the user has written. For more information on the expected format and signature of
-/// this object please refer to the [`PyParameter`] documentation. The object
-/// is initialised with user provided positional and/or keyword arguments that can be provided
-/// here.
+/// a class or function the user has written. For more information on the expected format and signature of
+/// this object please refer to the [`PyClassParameter`] documentation. If a class is provided
+/// then it is initialised with user provided positional and/or keyword arguments that can be provided
+/// here. If a function is provided then it is called with the same arguments along with an `info`
+/// object (see below).
 ///
 /// In additions `metrics` and `indices` can be specified. These dependent values from the network
 /// are provided to the calculation method of the Python object. This allows a custom Python
@@ -62,7 +79,7 @@ pub enum PythonReturnType {
 /// use pywr_schema::parameters::Parameter;
 ///
 /// // Parameter JSON definition
-/// // `my_parameter.py` should contain a Python class.
+/// // `my_parameter.py` should contain a Python class called `MyParameter`.
 /// let data = r#"{
 ///     "type": "Python",
 ///     "meta": {
@@ -72,7 +89,10 @@ pub enum PythonReturnType {
 ///         "type": "Path",
 ///         "path": "my_parameter.py"
 ///     },
-///     "object": "MyParameter",
+///     "object": {
+///         "type": "Class",
+///         "class": "MyParameter"
+///     },
 ///     "args": [],
 ///     "kwargs": {},
 ///     "metrics": {
@@ -95,8 +115,8 @@ pub enum PythonReturnType {
 pub struct PythonParameter {
     pub meta: ParameterMeta,
     pub source: PythonSource,
-    /// The name of Python object from the module to use.
-    pub object: String,
+    /// The type of Python object from the module to use. This is either a class or a function.
+    pub object: PythonObject,
     /// The return type of the Python calculation. This is used to convert the Python return value
     /// to the appropriate type for the Parameter.
     #[serde(default)]
@@ -235,7 +255,18 @@ impl PythonParameter {
                 }
             }?;
 
-            Ok::<_, SchemaError>(module.getattr(self.object.as_str())?.into())
+            let obj = match &self.object {
+                PythonObject::Class { class } => {
+                    let obj = module.getattr(class)?;
+                    PyObj::Class(obj.unbind())
+                }
+                PythonObject::Function { function } => {
+                    let func = module.getattr(function)?;
+                    PyObj::Function(func.unbind())
+                }
+            };
+
+            Ok::<_, SchemaError>(obj)
         })?;
 
         let py_args = Python::with_gil(|py| {
@@ -280,19 +311,39 @@ impl PythonParameter {
             None => HashMap::new(),
         };
 
-        let p = PyParameter::new(
-            ParameterName::new(&self.meta.name, parent),
-            object,
-            py_args,
-            kwargs,
-            &metrics,
-            &indices,
-        );
+        let pt = match object {
+            PyObj::Class(py_class) => {
+                let p = PyClassParameter::new(
+                    ParameterName::new(&self.meta.name, parent),
+                    py_class,
+                    py_args,
+                    kwargs,
+                    &metrics,
+                    &indices,
+                );
 
-        let pt = match self.return_type {
-            PythonReturnType::Float => network.add_parameter(Box::new(p))?.into(),
-            PythonReturnType::Int => ParameterType::Index(network.add_index_parameter(Box::new(p))?),
-            PythonReturnType::Dict => ParameterType::Multi(network.add_multi_value_parameter(Box::new(p))?),
+                match self.return_type {
+                    PythonReturnType::Float => network.add_parameter(Box::new(p))?.into(),
+                    PythonReturnType::Int => ParameterType::Index(network.add_index_parameter(Box::new(p))?),
+                    PythonReturnType::Dict => ParameterType::Multi(network.add_multi_value_parameter(Box::new(p))?),
+                }
+            }
+            PyObj::Function(py_function) => {
+                let p = PyFuncParameter::new(
+                    ParameterName::new(&self.meta.name, parent),
+                    py_function,
+                    py_args,
+                    kwargs,
+                    &metrics,
+                    &indices,
+                );
+
+                match self.return_type {
+                    PythonReturnType::Float => network.add_parameter(Box::new(p))?.into(),
+                    PythonReturnType::Int => ParameterType::Index(network.add_index_parameter(Box::new(p))?),
+                    PythonReturnType::Dict => ParameterType::Multi(network.add_multi_value_parameter(Box::new(p))?),
+                }
+            }
         };
 
         Ok(pt)
@@ -326,7 +377,10 @@ mod tests {
                     "type": "Path",
                     "path": py_fn
                 },
-                "object": "FloatParameter",
+                "object": {
+                    "type": "Class",
+                    "class": "FloatParameter"
+                },
                 "args": [0, ],
                 "kwargs": {},
             }
@@ -374,7 +428,10 @@ mod tests {
                     "path": py_fn
                 },
                 "return_type": "Int",
-                "object": "FloatParameter",
+                "object": {
+                    "type": "Class",
+                    "class": "FloatParameter"
+                },
                 "args": [0, ],
                 "kwargs": {},
             }
