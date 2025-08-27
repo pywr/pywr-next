@@ -208,7 +208,6 @@ pub trait VerifyExpected {
     fn verify(&self);
 }
 
-
 /// A struct representing an CSV output row in long format
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct ExpectedRowLong {
