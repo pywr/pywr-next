@@ -396,6 +396,17 @@ pub fn run_all_solvers(
         }
     }
 
+    #[cfg(feature = "microlp")]
+    {
+        if !solvers_to_skip.contains(&"microlp") {
+            check_features_and_run::<crate::solvers::MicroLpSolver>(
+                model,
+                !solvers_without_features.contains(&"microlp"),
+                expected_outputs,
+            );
+        }
+    }
+
     #[cfg(feature = "ipm-simd")]
     {
         if !solvers_to_skip.contains(&"ipm-simd") {

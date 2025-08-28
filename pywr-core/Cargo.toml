@@ -38,6 +38,7 @@ rand_distr = "0.4"
 rand_chacha = { workspace = true }
 serde = { version = "1.0", features = ["derive"] }
 wide = { workspace = true, optional = true }
+microlp = { workspace = true, optional = true }
 
 [dev-dependencies]
 criterion = "0.7"
@@ -47,6 +48,7 @@ cbc = []
 highs = ["dep:highs-sys"]
 ipm-ocl = ["dep:ipm-ocl", "dep:ocl"]
 ipm-simd = ["dep:ipm-simd", "dep:wide"]
+microlp = ["dep:microlp"]
 default = ["pyo3"]
 pyo3 = ["dep:pyo3"]
 

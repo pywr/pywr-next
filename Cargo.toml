@@ -72,6 +72,7 @@ schemars = { version = "1.0", features = ["chrono04"] }
 rand = "0.8"
 rand_chacha = "0.3"
 wide = "0.7.33"
+microlp = "0.2.11"
 
 [workspace.metadata.docs.rs]
 rustdoc-args = ["--html-in-header", "katex-header.html"]
