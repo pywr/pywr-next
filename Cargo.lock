@@ -1842,6 +1842,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "microlp"
+version = "0.2.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "51d1790c73b93164ff65868f63164497cb32339458a9297e17e212d91df62258"
+dependencies = [
+ "log",
+ "sprs",
+]
+
+[[package]]
 name = "mime"
 version = "0.3.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3129,6 +3139,7 @@ dependencies = [
  "ipm-ocl",
  "ipm-simd",
  "libc",
+ "microlp",
  "nalgebra 0.34.0",
  "ndarray",
  "num",
@@ -4048,6 +4059,18 @@ dependencies = [
  "hashbrown 0.15.3",
  "num-traits 0.2.19",
  "robust",
+ "smallvec",
+]
+
+[[package]]
+name = "sprs"
+version = "0.11.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8bff8419009a08f6cb7519a602c5590241fbff1446bcc823c07af15386eb801b"
+dependencies = [
+ "ndarray",
+ "num-complex",
+ "num-traits 0.2.19",
  "smallvec",
 ]
 

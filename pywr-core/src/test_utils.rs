@@ -26,7 +26,8 @@ use crate::solvers::Solver;
     feature = "clp",
     feature = "highs",
     feature = "ipm-ocl",
-    feature = "ipm-simd"
+    feature = "ipm-simd",
+    feature = "microlp"
 ))]
 use crate::solvers::SolverSettings;
 use crate::timestep::{TimeDomain, TimestepDuration, Timestepper};
@@ -384,7 +385,8 @@ impl VerifyExpected for ExpectedOutputsWide {
     feature = "clp",
     feature = "highs",
     feature = "ipm-ocl",
-    feature = "ipm-simd"
+    feature = "ipm-simd",
+    feature = "microlp"
 ))]
 pub fn run_all_solvers(
     model: &Model,
@@ -412,6 +414,17 @@ pub fn run_all_solvers(
             check_features_and_run::<HighsSolver>(
                 model,
                 !solvers_without_features.contains(&"highs"),
+                expected_outputs,
+            );
+        }
+    }
+
+    #[cfg(feature = "microlp")]
+    {
+        if !solvers_to_skip.contains(&"microlp") {
+            check_features_and_run::<crate::solvers::MicroLpSolver>(
+                model,
+                !solvers_without_features.contains(&"microlp"),
                 expected_outputs,
             );
         }
@@ -445,7 +458,8 @@ pub fn run_all_solvers(
     feature = "clp",
     feature = "highs",
     feature = "ipm-ocl",
-    feature = "ipm-simd"
+    feature = "ipm-simd",
+    feature = "microlp"
 )))]
 pub fn run_all_solvers(
     _model: &Model,

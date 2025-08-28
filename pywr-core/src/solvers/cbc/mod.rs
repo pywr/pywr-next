@@ -247,7 +247,7 @@ impl Solver for CbcSolver {
         values: &ConstParameterValues,
         _settings: &Self::Settings,
     ) -> Result<Box<Self>, SolverSetupError> {
-        let builder = SolverBuilder::default();
+        let builder = SolverBuilder::new(f64::MAX, f64::MIN);
         let built = builder.create(model, values)?;
 
         let solver = CbcSolver::from_builder(built);
