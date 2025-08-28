@@ -35,7 +35,6 @@ use crate::error::{ComponentConversionError, ConversionError};
 use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::network::LoadArgs;
-use crate::parameters::thresholds::MultiThresholdParameter;
 use crate::timeseries::ConvertedTimeseriesReference;
 use crate::v1::{ConversionData, IntoV2, TryFromV1, TryIntoV2};
 use crate::visit::{VisitMetrics, VisitPaths};
@@ -63,7 +62,7 @@ pub use profiles::{
 };
 #[cfg(all(feature = "core", feature = "pyo3"))]
 pub use python::try_json_value_into_py;
-pub use python::{PythonParameter, PythonReturnType, PythonSource};
+pub use python::{PythonObject, PythonParameter, PythonReturnType, PythonSource};
 use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::parameters::{
     CoreParameter, DataFrameParameter as DataFrameParameterV1, Parameter as ParameterV1,
@@ -74,7 +73,7 @@ use schemars::JsonSchema;
 use std::path::{Path, PathBuf};
 use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticStr};
 pub use tables::TablesArrayParameter;
-pub use thresholds::ThresholdParameter;
+pub use thresholds::{MultiThresholdParameter, Predicate, ThresholdParameter};
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 pub struct ParameterMeta {
