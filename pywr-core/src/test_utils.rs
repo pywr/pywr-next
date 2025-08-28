@@ -19,7 +19,7 @@ use crate::solvers::HighsSolver;
 use crate::solvers::MultiStateSolver;
 #[cfg(feature = "ipm-simd")]
 use crate::solvers::SimdIpmF64Solver;
-#[cfg(any(feature = "cbc", feature = "clp", feature = "highs"))]
+#[cfg(any(feature = "cbc", feature = "clp", feature = "highs", feature = "microlp"))]
 use crate::solvers::Solver;
 #[cfg(any(
     feature = "cbc",
