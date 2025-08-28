@@ -51,7 +51,7 @@ pub struct CsvOutput {
     pub decimal_places: Option<u32>,
 }
 
-#[cfg(all(feature = "core"))]
+#[cfg(feature = "core")]
 impl CsvOutput {
     pub fn add_to_model(
         &self,
