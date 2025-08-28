@@ -17,6 +17,7 @@ mod highs;
 mod ipm_ocl;
 #[cfg(feature = "ipm-simd")]
 mod ipm_simd;
+#[cfg(feature = "microlp")]
 mod microlp;
 
 #[cfg(feature = "ipm-ocl")]

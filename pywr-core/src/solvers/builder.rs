@@ -394,6 +394,7 @@ where
     }
 
     /// Apply the updated coefficients to the sparse matrix.
+    #[allow(dead_code)]
     pub fn apply_updated_coefficients(&mut self) {
         for (row, col, value) in self.builder.coefficients_to_update.drain(..) {
             let row = row.to_usize().unwrap();
