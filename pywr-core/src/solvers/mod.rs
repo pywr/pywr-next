@@ -5,6 +5,7 @@ use std::ops::{Add, AddAssign};
 use std::time::Duration;
 use thiserror::Error;
 
+#[cfg(any(feature = "cbc", feature = "clp", feature = "highs"))]
 mod builder;
 
 #[cfg(feature = "cbc")]
@@ -12,6 +13,14 @@ mod cbc;
 
 #[cfg(feature = "clp")]
 mod clp;
+
+#[cfg(any(
+    feature = "cbc",
+    feature = "clp",
+    feature = "highs",
+    feature = "ipm-ocl",
+    feature = "ipm-simd"
+))]
 mod col_edge_map;
 #[cfg(feature = "highs")]
 mod highs;

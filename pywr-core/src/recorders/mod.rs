@@ -1,5 +1,4 @@
 mod aggregator;
-#[cfg(feature = "csv")]
 mod csv;
 
 #[cfg(feature = "hdf5")]
@@ -11,7 +10,6 @@ mod py;
 use crate::metric::{MetricF64, MetricF64Error, MetricU64, MetricU64Error};
 use crate::models::ModelDomain;
 use crate::network::Network;
-#[cfg(feature = "csv")]
 use crate::recorders::csv::CsvError;
 #[cfg(feature = "hdf5")]
 use crate::recorders::hdf::Hdf5Error;
@@ -19,7 +17,6 @@ use crate::scenario::ScenarioIndex;
 use crate::state::State;
 use crate::timestep::Timestep;
 pub use aggregator::{AggregationFrequency, AggregationFunction, Aggregator};
-#[cfg(feature = "csv")]
 pub use csv::{CsvLongFmtOutput, CsvLongFmtRecord, CsvWideFmtOutput};
 use float_cmp::{ApproxEq, F64Margin, approx_eq};
 #[cfg(feature = "hdf5")]
@@ -76,7 +73,6 @@ impl RecorderMeta {
 /// Errors returned by recorder setup.
 #[derive(Error, Debug)]
 pub enum RecorderSetupError {
-    #[cfg(feature = "csv")]
     #[error("CSV error: {0}")]
     CSVError(#[from] CsvError),
     #[cfg(feature = "hdf5")]
@@ -95,7 +91,6 @@ pub enum RecorderSaveError {
     MetricU64Error(#[from] MetricU64Error),
     #[error("Metric set index `{index}` not found")]
     MetricSetIndexNotFound { index: MetricSetIndex },
-    #[cfg(feature = "csv")]
     #[error("CSV error: {0}")]
     CSVError(#[from] CsvError),
     #[cfg(feature = "hdf5")]
@@ -108,7 +103,6 @@ pub enum RecorderSaveError {
 pub enum RecorderFinaliseError {
     #[error("Metric set index `{index}` not found")]
     MetricSetIndexNotFound { index: MetricSetIndex },
-    #[cfg(feature = "csv")]
     #[error("CSV error: {0}")]
     CSVError(#[from] CsvError),
     #[cfg(feature = "hdf5")]

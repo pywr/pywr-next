@@ -1,6 +1,6 @@
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
-#[cfg(all(feature = "core", feature = "core-csv"))]
+#[cfg(feature = "core")]
 use pywr_core::recorders::{CsvLongFmtOutput, CsvWideFmtOutput, Recorder};
 use pywr_schema_macros::PywrVisitPaths;
 use schemars::JsonSchema;
@@ -51,7 +51,7 @@ pub struct CsvOutput {
     pub decimal_places: Option<u32>,
 }
 
-#[cfg(all(feature = "core", feature = "core-csv"))]
+#[cfg(all(feature = "core"))]
 impl CsvOutput {
     pub fn add_to_model(
         &self,
@@ -96,16 +96,5 @@ impl CsvOutput {
         network.add_recorder(recorder)?;
 
         Ok(())
-    }
-}
-
-#[cfg(all(feature = "core", not(feature = "core-csv")))]
-impl CsvOutput {
-    pub fn add_to_model(
-        &self,
-        network: &mut pywr_core::network::Network,
-        output_path: Option<&Path>,
-    ) -> Result<(), SchemaError> {
-        Err(SchemaError::FeatureNotEnabled("core-csv".to_string()))
     }
 }

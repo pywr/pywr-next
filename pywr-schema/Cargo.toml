@@ -41,7 +41,7 @@ tempfile = "3.21"
 [features]
 # Core feature requires additional dependencies
 core = ["dep:pywr-core", "dep:polars", "dep:ndarray", "dep:tracing"]
-default = ["core", "pyo3", "hdf5", "core-csv", "clp"]
+default = ["core", "pyo3", "hdf5", "clp"]
 
 # Core solvers
 clp = ["pywr-core/clp"]
@@ -54,5 +54,3 @@ pyo3 = ["dep:pyo3", "pywr-core/pyo3", "dep:pyo3-polars"]
 
 # File formats
 hdf5 = ["dep:hdf5-metno", "pywr-core/hdf5"]
-# TODO tables code needs refactoring to disable CSV in pywr-schema
-core-csv = ["pywr-core/csv"]

@@ -21,7 +21,7 @@ ndarray = { workspace = true }
 num = { workspace = true }
 float-cmp = { workspace = true }
 hdf5-metno = { workspace = true, optional = true }
-csv = { workspace = true, optional = true }
+csv = { workspace = true }
 coin-or-sys = { path = "../coin-or-sys", version = "0.1.0", optional = true }
 ipm-ocl = { path = "../ipm-ocl", optional = true }
 ipm-simd = { path = "../ipm-simd", optional = true }
@@ -54,8 +54,6 @@ pyo3 = ["dep:pyo3"]
 
 # File formats
 hdf5 = ["dep:hdf5-metno"]
-csv = ["dep:csv"]
-
 
 [[bench]]
 name = "random_models"
