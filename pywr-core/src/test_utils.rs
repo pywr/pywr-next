@@ -471,7 +471,7 @@ pub fn run_all_solvers(
 }
 
 /// Check features and
-#[cfg(any(feature = "cbc", feature = "clp", feature = "highs"))]
+#[cfg(any(feature = "cbc", feature = "clp", feature = "highs", feature = "microlp"))]
 fn check_features_and_run<S>(model: &Model, expect_features: bool, expected_outputs: &[Box<dyn VerifyExpected>])
 where
     S: Solver,

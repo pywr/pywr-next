@@ -40,8 +40,7 @@ jobs:
           sccache: ${{ !startsWith(github.ref, 'refs/tags/') }}
           manylinux: manylinux_2_28
           before-script-linux: |
-            sudo apt-get update
-            sudo apt-get install -y libclang-dev
+            dnf install -y clang
       - name: Build free-threaded wheels
         uses: PyO3/maturin-action@v1
         with:
@@ -50,8 +49,7 @@ jobs:
           sccache: ${{ !startsWith(github.ref, 'refs/tags/') }}
           manylinux: manylinux_2_28
           before-script-linux: |
-            sudo apt-get update
-            sudo apt-get install -y libclang-dev
+            dnf install -y clang
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:

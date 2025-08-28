@@ -5,7 +5,7 @@ use std::ops::{Add, AddAssign};
 use std::time::Duration;
 use thiserror::Error;
 
-#[cfg(any(feature = "cbc", feature = "clp", feature = "highs"))]
+#[cfg(any(feature = "cbc", feature = "clp", feature = "highs", feature = "microlp"))]
 mod builder;
 
 #[cfg(feature = "cbc")]
