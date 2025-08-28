@@ -1,7 +1,7 @@
 use crate::timeseries::TimeseriesError;
 use polars::{prelude::*, series::ops::NullBehavior};
 use pywr_core::timestep::TimeDomain;
-use std::{cmp::Ordering, ops::Deref};
+use std::cmp::Ordering;
 
 pub fn align_and_resample(
     name: &str,
@@ -34,13 +34,13 @@ pub fn align_and_resample(
             .unique()
             .alias("duration")])
         .collect()?;
-    let durations = durations.column("duration")?.duration()?.deref();
+    let durations = durations.column("duration")?.duration()?;
 
     if durations.len() > 1 {
         todo!("Non-uniform timestep are not yet supported");
     }
 
-    let timeseries_duration = match durations.get(0) {
+    let timeseries_duration = match durations.physical().get(0) {
         Some(duration) => duration,
         None => return Err(TimeseriesError::TimeseriesDurationNotFound(name.to_string())),
     };
@@ -64,7 +64,7 @@ pub fn align_and_resample(
                         ..Default::default()
                     },
                 )
-                .agg([col("*").exclude([time_col]).mean()])
+                .agg([all().exclude_cols([time_col]).as_expr().mean()])
                 .collect()?
         }
         Ordering::Less => {
