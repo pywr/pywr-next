@@ -59,8 +59,8 @@ thiserror = "2.0"
 num = "0.4"
 float-cmp = "0.10"
 ndarray = "0.16"
-polars = { version = "0.49", default-features = false }
-pyo3-polars = { version = "0.22", default-features = false }
+polars = { version = "0.50", default-features = false }
+pyo3-polars = { version = "0.23.1", default-features = false }
 pyo3 = { version = "0.25" }
 pyo3-log = "0.12"
 tracing = { version = "0.1", features = ["log"] }
