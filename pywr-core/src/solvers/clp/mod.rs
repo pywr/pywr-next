@@ -10,16 +10,124 @@ use coin_or_sys::clp::*;
 use libc::{c_double, c_int};
 pub use settings::{ClpSolverSettings, ClpSolverSettingsBuilder};
 use std::ffi::CString;
+use std::fmt::Display;
 use std::slice;
 use std::time::Instant;
 use thiserror::Error;
 
-#[derive(Error, Debug, PartialEq, Eq)]
-pub enum ClpError {
-    #[error("an unknown error occurred in Clp.")]
-    UnknownError,
-    #[error("the simplex model has not been created")]
-    SimplexNotInitialisedError,
+#[derive(Error, Debug)]
+pub enum ClpSolveStatusError {
+    #[error("The problem is primal infeasible. Secondary status: {secondary}")]
+    PrimalInfeasible { secondary: ClpSecondaryStatus },
+    #[error("The problem is dual infeasible. Secondary status: {secondary}")]
+    DualInfeasible { secondary: ClpSecondaryStatus },
+    #[error("The problem is stopped on iterations. Secondary status: {secondary}")]
+    StoppedOnIterations { secondary: ClpSecondaryStatus },
+    #[error("The problem is stopped due to errors. Secondary status: {secondary}")]
+    StoppedOnErrors { secondary: ClpSecondaryStatus },
+    #[error("An unknown error occurred in Clp with code {code}. Secondary status: {secondary}")]
+    Unknown { code: c_int, secondary: ClpSecondaryStatus },
+}
+
+/// Convert Clp return codes to Result
+fn to_clp_result(code: c_int, secondary: c_int) -> Result<(), ClpSolveStatusError> {
+    let secondary_status = ClpSecondaryStatus::from(secondary);
+    match code {
+        0 => Ok(()),
+        1 => Err(ClpSolveStatusError::PrimalInfeasible {
+            secondary: secondary_status,
+        }),
+        2 => Err(ClpSolveStatusError::DualInfeasible {
+            secondary: secondary_status,
+        }),
+        3 => Err(ClpSolveStatusError::StoppedOnIterations {
+            secondary: secondary_status,
+        }),
+        4 => Err(ClpSolveStatusError::StoppedOnErrors {
+            secondary: secondary_status,
+        }),
+        other => Err(ClpSolveStatusError::Unknown {
+            code: other,
+            secondary: secondary_status,
+        }),
+    }
+}
+
+/// Secondary status codes from Clp
+#[derive(Debug)]
+pub enum ClpSecondaryStatus {
+    NotSet,
+    MaybePrimalInfeasible,
+    ScaledOptimalPrimalInfeasible,
+    ScaledOptimalDualInfeasible,
+    ScaledOptimalPrimalAndDualInfeasible,
+    GivingUpPrimal,
+    EmptyProblemCheck,
+    PostSolveNotOptimal,
+    BadElementCheck,
+    StoppedOnTime,
+    StoppedAsPrimalFeasible,
+    PresolveInfeasibleOrUnbounded,
+    Unknown(c_int),
+}
+
+impl From<c_int> for ClpSecondaryStatus {
+    fn from(code: c_int) -> Self {
+        match code {
+            0 => ClpSecondaryStatus::NotSet,
+            1 => ClpSecondaryStatus::MaybePrimalInfeasible,
+            2 => ClpSecondaryStatus::ScaledOptimalPrimalInfeasible,
+            3 => ClpSecondaryStatus::ScaledOptimalDualInfeasible,
+            4 => ClpSecondaryStatus::ScaledOptimalPrimalAndDualInfeasible,
+            5 => ClpSecondaryStatus::GivingUpPrimal,
+            6 => ClpSecondaryStatus::EmptyProblemCheck,
+            7 => ClpSecondaryStatus::PostSolveNotOptimal,
+            8 => ClpSecondaryStatus::BadElementCheck,
+            9 => ClpSecondaryStatus::StoppedOnTime,
+            10 => ClpSecondaryStatus::StoppedAsPrimalFeasible,
+            11 => ClpSecondaryStatus::PresolveInfeasibleOrUnbounded,
+            other => ClpSecondaryStatus::Unknown(other),
+        }
+    }
+}
+
+impl Display for ClpSecondaryStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ClpSecondaryStatus::NotSet => write!(f, "No secondary status set"),
+            ClpSecondaryStatus::MaybePrimalInfeasible => write!(
+                f,
+                "Primal infeasible because dual limit reached OR (probably primal infeasible but can't prove it - main status was 4)"
+            ),
+            ClpSecondaryStatus::ScaledOptimalPrimalInfeasible => write!(
+                f,
+                "Scaled problem optimal - unscaled problem has primal infeasibilities"
+            ),
+            ClpSecondaryStatus::ScaledOptimalDualInfeasible => {
+                write!(f, "Scaled problem optimal - unscaled problem has dual infeasibilities")
+            }
+            ClpSecondaryStatus::ScaledOptimalPrimalAndDualInfeasible => write!(
+                f,
+                "Scaled problem optimal - unscaled problem has primal and dual infeasibilities"
+            ),
+            ClpSecondaryStatus::GivingUpPrimal => {
+                write!(f, "Giving up in primal with flagged variables")
+            }
+            ClpSecondaryStatus::EmptyProblemCheck => write!(f, "Failed due to empty problem check"),
+            ClpSecondaryStatus::PostSolveNotOptimal => write!(f, "PostSolve says not optimal"),
+            ClpSecondaryStatus::BadElementCheck => write!(f, "Failed due to bad element check"),
+            ClpSecondaryStatus::StoppedOnTime => write!(f, "Status was 3 and stopped on time"),
+            ClpSecondaryStatus::StoppedAsPrimalFeasible => {
+                write!(f, "Status was 3 but stopped as primal feasible")
+            }
+            ClpSecondaryStatus::PresolveInfeasibleOrUnbounded => {
+                write!(f, "Status was 1/2 from presolve found infeasible or unbounded")
+            }
+            ClpSecondaryStatus::Unknown(code) => {
+                write!(f, "An unknown secondary status error occurred in Clp with code {code}")
+            }
+        }
+    }
 }
 
 pub type CoinBigIndex = c_int;
@@ -138,19 +246,22 @@ impl ClpSimplex {
         }
     }
 
-    fn dual_solve(&mut self) {
+    fn dual_solve(&mut self) -> Result<(), ClpSolveStatusError> {
         unsafe {
-            Clp_dual(self.ptr, 0);
+            let _ret = Clp_dual(self.ptr, 0);
+            let primary = Clp_status(self.ptr);
+            let secondary = Clp_secondaryStatus(self.ptr);
+            to_clp_result(primary, secondary)
         }
     }
 
     #[allow(dead_code)]
-    fn primal_solve(&mut self) {
+    fn primal_solve(&mut self) -> Result<(), ClpSolveStatusError> {
         unsafe {
-            let ret = Clp_primal(self.ptr, 0);
-            if ret != 0 {
-                panic!("Clp primal solve failed with error code: {ret}");
-            }
+            let _ret = Clp_primal(self.ptr, 0);
+            let primary = Clp_status(self.ptr);
+            let secondary = Clp_secondaryStatus(self.ptr);
+            to_clp_result(primary, secondary)
         }
     }
 
@@ -219,12 +330,12 @@ impl ClpSolver {
         ClpSolver { builder, clp_simplex }
     }
 
-    fn solve(&mut self) -> Vec<c_double> {
-        self.clp_simplex.dual_solve();
+    fn solve(&mut self) -> Result<Vec<c_double>, ClpSolveStatusError> {
+        self.clp_simplex.dual_solve()?;
 
         let num_cols = self.builder.num_cols() as usize;
 
-        self.clp_simplex.primal_column_solution(num_cols)
+        Ok(self.clp_simplex.primal_column_solution(num_cols))
     }
 }
 
@@ -281,7 +392,7 @@ impl Solver for ClpSolver {
         timings.update_constraints += now.elapsed();
 
         let now = Instant::now();
-        let solution = self.solve();
+        let solution = self.solve()?;
         timings.solve = now.elapsed();
 
         // Create the updated network state from the results
@@ -344,7 +455,7 @@ mod tests {
         lp.change_objective_coefficients(&col_obj_coef);
 
         lp.add_rows(&row_lower, &row_upper, &row_starts, &columns, &elements);
-        lp.dual_solve();
+        lp.dual_solve().unwrap();
 
         assert!(approx_eq!(f64, lp.objective_value(), -20.0));
         assert_eq!(lp.primal_column_solution(3), vec![0.0, 0.0, 5.0]);
@@ -369,7 +480,7 @@ mod tests {
         lp.change_objective_coefficients(&col_obj_coef);
 
         lp.add_rows(&row_lower, &row_upper, &row_starts, &columns, &elements);
-        lp.dual_solve();
+        lp.dual_solve().unwrap();
 
         assert!(approx_eq!(f64, lp.objective_value(), -40.0));
         assert_eq!(lp.primal_column_solution(3), vec![0.0, 0.0, 10.0]);

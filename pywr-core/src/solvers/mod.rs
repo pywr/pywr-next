@@ -41,11 +41,12 @@ use crate::node::NodeIndex;
 #[cfg(feature = "cbc")]
 pub use cbc::{CbcError, CbcSolver, CbcSolverSettings, CbcSolverSettingsBuilder};
 #[cfg(feature = "clp")]
-pub use clp::{ClpError, ClpSolver, ClpSolverSettings, ClpSolverSettingsBuilder};
+pub use clp::{ClpSolveStatusError, ClpSolver, ClpSolverSettings, ClpSolverSettingsBuilder};
 #[cfg(feature = "highs")]
 pub use highs::{HighsSolver, HighsSolverSettings, HighsSolverSettingsBuilder};
 #[cfg(feature = "microlp")]
 pub use microlp::{MicroLpError, MicroLpSolver, MicroLpSolverSettings, MicroLpSolverSettingsBuilder};
+
 #[derive(Default, Debug)]
 pub struct SolverTimings {
     pub update_objective: Duration,
@@ -154,6 +155,8 @@ pub enum SolverSolveError {
     NetworkStateError(#[from] crate::state::NetworkStateError),
     #[error("State error: {0}")]
     StateError(#[from] crate::state::StateError),
+    #[error("Clp error: {0}")]
+    ClpSolveError(#[from] ClpSolveStatusError),
     #[cfg(feature = "highs")]
     #[error("Highs error: {0}")]
     HighsError(#[from] highs::HighsStatusError),
