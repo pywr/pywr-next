@@ -104,19 +104,19 @@ impl WaterTreatmentWorksNode {
         Some("net_above_soft_min_flow")
     }
 
-    pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
+    pub fn input_connectors(&self) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
         // Connect directly to the total net
         let mut connectors = vec![(self.meta.name.as_str(), Self::net_sub_name().map(|s| s.to_string()))];
         // Only connect to the loss link if it is created
         if self.loss_factor.is_some() {
             connectors.push((self.meta.name.as_str(), Self::loss_sub_name().map(|s| s.to_string())))
         }
-        connectors
+        Ok(connectors)
     }
 
-    pub fn output_connectors(&self) -> Vec<(&str, Option<String>)> {
+    pub fn output_connectors(&self) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
         // Connect to the split of the net flow.
-        vec![
+        Ok(vec![
             (
                 self.meta.name.as_str(),
                 Self::net_soft_min_flow_sub_name().map(|s| s.to_string()),
@@ -125,7 +125,7 @@ impl WaterTreatmentWorksNode {
                 self.meta.name.as_str(),
                 Self::net_above_soft_min_flow_sub_name().map(|s| s.to_string()),
             ),
-        ]
+        ])
     }
 
     pub fn default_attribute(&self) -> WaterTreatmentWorksNodeAttribute {

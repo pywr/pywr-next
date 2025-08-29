@@ -265,40 +265,46 @@ impl ReservoirNode {
         "from_spill"
     }
 
-    pub fn input_connectors(&self, slot: Option<&str>) -> Vec<(&str, Option<String>)> {
+    pub fn input_connectors(&self, slot: Option<&str>) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
         match slot {
-            None => vec![(self.meta().name.as_str(), None)],
+            None => Ok(vec![(self.meta().name.as_str(), None)]),
             Some(name) => match name {
-                name if name == Self::spill_to_slot_name() => vec![(
+                name if name == Self::spill_to_slot_name() => Ok(vec![(
                     self.meta().name.as_str(),
                     Self::spill_node_sub_name().map(|n| n.to_string()),
-                )],
-                _ => panic!("The slot '{name}' does not exist in {}", self.meta().name),
+                )]),
+                _ => Err(SchemaError::NodeConnectionSlotNotFound {
+                    node: self.meta().name.clone(),
+                    slot: name.to_string(),
+                }),
             },
         }
     }
 
-    pub fn output_connectors(&self, slot: Option<&str>) -> Vec<(&str, Option<String>)> {
+    pub fn output_connectors(&self, slot: Option<&str>) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
         match slot {
-            None => vec![(self.meta().name.as_str(), None)],
+            None => Ok(vec![(self.meta().name.as_str(), None)]),
             Some(name) => match name {
-                name if name == Self::compensation_slot_name() => vec![(
+                name if name == Self::compensation_slot_name() => Ok(vec![(
                     self.meta().name.as_str(),
                     Self::compensation_node_sub_name().map(|n| n.to_string()),
-                )],
-                name if name == Self::spill_from_slot_name() => {
-                    if let Some(SpillNodeType::OutputNode) = self.spill {
-                        panic!(
-                            "The slot '{name}' in {} is only supported when the spill node is a link",
-                            self.meta().name
-                        )
-                    }
-                    vec![(
+                )]),
+                name if name == Self::spill_from_slot_name() => match self.spill {
+                    Some(SpillNodeType::LinkNode) => Ok(vec![(
                         self.meta().name.as_str(),
                         Self::spill_node_sub_name().map(|n| n.to_string()),
-                    )]
-                }
-                _ => panic!("The slot '{name}' does not exist in {}", self.meta().name),
+                    )]),
+                    _ => Err(SchemaError::NodeConnectionSlotNotAvailable {
+                        msg: format!(
+                            "The slot '{name}' in {} is only supported when the spill node is a link",
+                            self.meta().name
+                        ),
+                    }),
+                },
+                _ => Err(SchemaError::NodeConnectionSlotNotFound {
+                    node: self.meta().name.clone(),
+                    slot: name.to_string(),
+                }),
             },
         }
     }

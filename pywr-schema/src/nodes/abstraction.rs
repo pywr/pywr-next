@@ -97,7 +97,7 @@ impl AbstractionNode {
         Some("abstraction")
     }
 
-    pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
+    pub fn input_connectors(&self) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
         let mut connectors = vec![
             (self.meta.name.as_str(), Self::bypass_sub_name().map(|s| s.to_string())),
             (
@@ -108,30 +108,38 @@ impl AbstractionNode {
         if self.mrf.is_some() {
             connectors.push((self.meta.name.as_str(), Self::mrf_sub_name().map(|s| s.to_string())));
         }
-        connectors
+        Ok(connectors)
     }
 
-    pub fn output_connectors(&self, slot: Option<&str>) -> Vec<(&str, Option<String>)> {
+    pub fn output_connectors(&self, slot: Option<&str>) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
         match slot {
             Some("downstream") => {
                 if self.mrf.is_some() {
-                    vec![
+                    Ok(vec![
                         (self.meta.name.as_str(), Self::mrf_sub_name().map(|s| s.to_string())),
                         (self.meta.name.as_str(), Self::bypass_sub_name().map(|s| s.to_string())),
-                    ]
+                    ])
                 } else {
-                    vec![(self.meta.name.as_str(), Self::bypass_sub_name().map(|s| s.to_string()))]
+                    Ok(vec![(
+                        self.meta.name.as_str(),
+                        Self::bypass_sub_name().map(|s| s.to_string()),
+                    )])
                 }
             }
-            Some("abstraction") => vec![(
+            Some("abstraction") => Ok(vec![(
                 self.meta.name.as_str(),
                 Self::abstraction_sub_name().map(|s| s.to_string()),
-            )],
-            Some(s) => panic!("The slot '{}' does not exist in {}", s, self.meta.name),
-            None => panic!(
-                "Either the 'downstream' or 'abstraction' slot must be specified when connecting to '{}'",
-                self.meta.name
-            ),
+            )]),
+            Some(s) => Err(SchemaError::NodeConnectionSlotNotFound {
+                node: self.meta.name.clone(),
+                slot: s.to_string(),
+            }),
+            None => Err(SchemaError::NodeConnectionSlotRequired {
+                msg: format!(
+                    "Either the 'downstream' or 'abstraction' slot must be specified when connecting to '{}'",
+                    self.meta.name
+                ),
+            }),
         }
     }
 

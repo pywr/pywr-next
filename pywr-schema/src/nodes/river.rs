@@ -78,17 +78,20 @@ impl RiverNode {
         Some("net")
     }
 
-    pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
+    pub fn input_connectors(&self) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
         let mut connectors = vec![(self.meta.name.as_str(), Self::net_sub_name().map(|s| s.to_string()))];
 
         // add the optional loss link
         if self.loss_factor.is_some() {
             connectors.push((self.meta.name.as_str(), Self::loss_sub_name().map(|s| s.to_string())))
         }
-        connectors
+        Ok(connectors)
     }
-    pub fn output_connectors(&self) -> Vec<(&str, Option<String>)> {
-        vec![(self.meta.name.as_str(), Self::net_sub_name().map(|s| s.to_string()))]
+    pub fn output_connectors(&self) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
+        Ok(vec![(
+            self.meta.name.as_str(),
+            Self::net_sub_name().map(|s| s.to_string()),
+        )])
     }
 
     pub fn default_attribute(&self) -> RiverNodeAttribute {

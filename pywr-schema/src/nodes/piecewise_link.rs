@@ -84,19 +84,21 @@ impl PiecewiseLinkNode {
         Some(format!("step-{i:02}"))
     }
 
-    pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
-        self.steps
+    pub fn input_connectors(&self) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
+        Ok(self
+            .steps
             .iter()
             .enumerate()
             .map(|(i, _)| (self.meta.name.as_str(), Self::step_sub_name(i)))
-            .collect()
+            .collect())
     }
-    pub fn output_connectors(&self) -> Vec<(&str, Option<String>)> {
-        self.steps
+    pub fn output_connectors(&self) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
+        Ok(self
+            .steps
             .iter()
             .enumerate()
             .map(|(i, _)| (self.meta.name.as_str(), Self::step_sub_name(i)))
-            .collect()
+            .collect())
     }
 
     pub fn default_attribute(&self) -> PiecewiseLinkNodeAttribute {

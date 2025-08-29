@@ -87,11 +87,11 @@ impl PiecewiseStorageNode {
         Some(format!("store-{i:02}"))
     }
 
-    pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
-        vec![(self.meta.name.as_str(), Self::step_sub_name(self.steps.len()))]
+    pub fn input_connectors(&self) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
+        Ok(vec![(self.meta.name.as_str(), Self::step_sub_name(self.steps.len()))])
     }
-    pub fn output_connectors(&self) -> Vec<(&str, Option<String>)> {
-        vec![(self.meta.name.as_str(), Self::step_sub_name(self.steps.len()))]
+    pub fn output_connectors(&self) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
+        Ok(vec![(self.meta.name.as_str(), Self::step_sub_name(self.steps.len()))])
     }
 
     pub fn default_attribute(&self) -> PiecewiseStorageNodeAttribute {

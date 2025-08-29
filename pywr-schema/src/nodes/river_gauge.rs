@@ -75,18 +75,18 @@ impl RiverGaugeNode {
         Some("bypass")
     }
 
-    pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
-        vec![
+    pub fn input_connectors(&self) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
+        Ok(vec![
             (self.meta.name.as_str(), Self::mrf_sub_name().map(|s| s.to_string())),
             (self.meta.name.as_str(), Self::bypass_sub_name().map(|s| s.to_string())),
-        ]
+        ])
     }
 
-    pub fn output_connectors(&self) -> Vec<(&str, Option<String>)> {
-        vec![
+    pub fn output_connectors(&self) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
+        Ok(vec![
             (self.meta.name.as_str(), Self::mrf_sub_name().map(|s| s.to_string())),
             (self.meta.name.as_str(), Self::bypass_sub_name().map(|s| s.to_string())),
-        ]
+        ])
     }
 
     pub fn default_attribute(&self) -> RiverGaugeNodeAttribute {
