@@ -1,4 +1,3 @@
-#[cfg(feature = "core")]
 use crate::SchemaError;
 use crate::metric::Metric;
 #[cfg(feature = "core")]
@@ -115,11 +114,11 @@ impl TurbineNode {
     const DEFAULT_ATTRIBUTE: TurbineNodeAttribute = TurbineNodeAttribute::Outflow;
     const DEFAULT_COMPONENT: TurbineNodeComponent = TurbineNodeComponent::Outflow;
 
-    pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
-        vec![(self.meta.name.as_str(), None)]
+    pub fn input_connectors(&self) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
+        Ok(vec![(self.meta.name.as_str(), None)])
     }
-    pub fn output_connectors(&self) -> Vec<(&str, Option<String>)> {
-        vec![(self.meta.name.as_str(), None)]
+    pub fn output_connectors(&self) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
+        Ok(vec![(self.meta.name.as_str(), None)])
     }
 
     pub fn default_attribute(&self) -> TurbineNodeAttribute {

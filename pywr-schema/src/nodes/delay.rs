@@ -1,4 +1,3 @@
-#[cfg(feature = "core")]
 use crate::error::SchemaError;
 use crate::error::{ComponentConversionError, ConversionError};
 #[cfg(feature = "core")]
@@ -76,14 +75,20 @@ impl DelayNode {
         Some("outflow")
     }
 
-    pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
+    pub fn input_connectors(&self) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
         // Inflow goes to the output node
-        vec![(self.meta.name.as_str(), Self::output_sub_name().map(|s| s.to_string()))]
+        Ok(vec![(
+            self.meta.name.as_str(),
+            Self::output_sub_name().map(|s| s.to_string()),
+        )])
     }
 
-    pub fn output_connectors(&self) -> Vec<(&str, Option<String>)> {
+    pub fn output_connectors(&self) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
         // Outflow goes from the input node
-        vec![(self.meta.name.as_str(), Self::input_sub_now().map(|s| s.to_string()))]
+        Ok(vec![(
+            self.meta.name.as_str(),
+            Self::input_sub_now().map(|s| s.to_string()),
+        )])
     }
 
     pub fn default_attribute(&self) -> DelayNodeAttribute {

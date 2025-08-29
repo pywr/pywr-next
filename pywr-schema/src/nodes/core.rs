@@ -1,5 +1,4 @@
 use crate::error::ComponentConversionError;
-#[cfg(feature = "core")]
 use crate::error::SchemaError;
 use crate::metric::{Metric, NodeComponentReference};
 #[cfg(feature = "core")]
@@ -64,11 +63,11 @@ impl InputNode {
     pub const DEFAULT_ATTRIBUTE: InputNodeAttribute = InputNodeAttribute::Outflow;
     pub const DEFAULT_COMPONENT: InputNodeComponent = InputNodeComponent::Outflow;
 
-    pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
-        vec![(self.meta.name.as_str(), None)]
+    pub fn input_connectors(&self) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
+        Ok(vec![(self.meta.name.as_str(), None)])
     }
-    pub fn output_connectors(&self) -> Vec<(&str, Option<String>)> {
-        vec![(self.meta.name.as_str(), None)]
+    pub fn output_connectors(&self) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
+        Ok(vec![(self.meta.name.as_str(), None)])
     }
 
     pub fn default_attribute(&self) -> InputNodeAttribute {
@@ -348,7 +347,7 @@ impl LinkNode {
         Some("soft_max_node")
     }
 
-    pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
+    pub fn input_connectors(&self) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
         let mut connectors = vec![(self.meta.name.as_str(), None)];
         if self.soft_min.is_some() {
             connectors.push((
@@ -362,10 +361,10 @@ impl LinkNode {
                 Self::soft_max_node_sub_name().map(|s| s.to_string()),
             ));
         }
-        connectors
+        Ok(connectors)
     }
 
-    pub fn output_connectors(&self) -> Vec<(&str, Option<String>)> {
+    pub fn output_connectors(&self) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
         let mut connectors = vec![(self.meta.name.as_str(), None)];
         if self.soft_min.is_some() {
             connectors.push((
@@ -379,7 +378,7 @@ impl LinkNode {
                 Self::soft_max_node_sub_name().map(|s| s.to_string()),
             ));
         }
-        connectors
+        Ok(connectors)
     }
 
     pub fn default_attribute(&self) -> LinkNodeAttribute {
@@ -768,12 +767,12 @@ impl OutputNode {
     const DEFAULT_ATTRIBUTE: OutputNodeAttribute = OutputNodeAttribute::Inflow;
     const DEFAULT_COMPONENT: OutputNodeComponent = OutputNodeComponent::Inflow;
 
-    pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
-        vec![(self.meta.name.as_str(), None)]
+    pub fn input_connectors(&self) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
+        Ok(vec![(self.meta.name.as_str(), None)])
     }
 
-    pub fn output_connectors(&self) -> Vec<(&str, Option<String>)> {
-        vec![(self.meta.name.as_str(), None)]
+    pub fn output_connectors(&self) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
+        Ok(vec![(self.meta.name.as_str(), None)])
     }
 
     pub fn default_attribute(&self) -> OutputNodeAttribute {
@@ -969,12 +968,12 @@ pub struct StorageNode {
 impl StorageNode {
     const DEFAULT_ATTRIBUTE: StorageNodeAttribute = StorageNodeAttribute::Volume;
 
-    pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
-        vec![(self.meta.name.as_str(), None)]
+    pub fn input_connectors(&self) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
+        Ok(vec![(self.meta.name.as_str(), None)])
     }
 
-    pub fn output_connectors(&self) -> Vec<(&str, Option<String>)> {
-        vec![(self.meta.name.as_str(), None)]
+    pub fn output_connectors(&self) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
+        Ok(vec![(self.meta.name.as_str(), None)])
     }
 
     pub fn default_attribute(&self) -> StorageNodeAttribute {
@@ -1161,12 +1160,12 @@ impl CatchmentNode {
     const DEFAULT_ATTRIBUTE: CatchmentNodeAttribute = CatchmentNodeAttribute::Outflow;
     const DEFAULT_COMPONENT: CatchmentNodeComponent = CatchmentNodeComponent::Outflow;
 
-    pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
-        vec![(self.meta.name.as_str(), None)]
+    pub fn input_connectors(&self) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
+        Ok(vec![(self.meta.name.as_str(), None)])
     }
 
-    pub fn output_connectors(&self) -> Vec<(&str, Option<String>)> {
-        vec![(self.meta.name.as_str(), None)]
+    pub fn output_connectors(&self) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
+        Ok(vec![(self.meta.name.as_str(), None)])
     }
 
     pub fn default_attribute(&self) -> CatchmentNodeAttribute {
@@ -1330,15 +1329,15 @@ pub struct AggregatedNode {
 impl AggregatedNode {
     const DEFAULT_ATTRIBUTE: AggregatedNodeAttribute = AggregatedNodeAttribute::Outflow;
 
-    pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
+    pub fn input_connectors(&self) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
         // Not connectable
         // TODO this should be a trait? And error if you try to connect to a non-connectable node.
-        vec![]
+        Ok(vec![])
     }
 
-    pub fn output_connectors(&self) -> Vec<(&str, Option<String>)> {
+    pub fn output_connectors(&self) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
         // Not connectable
-        vec![]
+        Ok(vec![])
     }
 
     pub fn default_attribute(&self) -> AggregatedNodeAttribute {
@@ -1523,15 +1522,15 @@ pub struct AggregatedStorageNode {
 impl AggregatedStorageNode {
     const DEFAULT_ATTRIBUTE: AggregatedStorageNodeAttribute = AggregatedStorageNodeAttribute::Volume;
 
-    pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
+    pub fn input_connectors(&self) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
         // Not connectable
         // TODO this should be a trait? And error if you try to connect to a non-connectable node.
-        vec![]
+        Ok(vec![])
     }
 
-    pub fn output_connectors(&self) -> Vec<(&str, Option<String>)> {
+    pub fn output_connectors(&self) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
         // Not connectable
-        vec![]
+        Ok(vec![])
     }
 
     pub fn default_attribute(&self) -> AggregatedStorageNodeAttribute {

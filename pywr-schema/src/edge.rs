@@ -78,7 +78,7 @@ impl Edge {
 
         // Collect the node indices at each end of the edge
         let from_node_indices: Vec<NodeIndex> = from_node
-            .output_connectors(from_slot)
+            .output_connectors(from_slot)?
             .into_iter()
             .map(|(name, sub_name)| {
                 network
@@ -91,7 +91,7 @@ impl Edge {
             .collect::<Result<_, _>>()?;
 
         let to_node_indices: Vec<NodeIndex> = to_node
-            .input_connectors(to_slot)
+            .input_connectors(to_slot)?
             .into_iter()
             .map(|(name, sub_name)| {
                 network

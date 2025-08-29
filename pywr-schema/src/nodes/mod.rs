@@ -48,7 +48,6 @@ mod turbine;
 mod virtual_storage;
 mod water_treatment_works;
 
-#[cfg(feature = "core")]
 use crate::error::SchemaError;
 use crate::error::{ComponentConversionError, ConversionError};
 use crate::metric::Metric;
@@ -345,7 +344,7 @@ impl Node {
         }
     }
 
-    pub fn input_connectors(&self, slot: Option<&str>) -> Vec<(&str, Option<String>)> {
+    pub fn input_connectors(&self, slot: Option<&str>) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
         match self {
             Node::Input(n) => n.input_connectors(),
             Node::Link(n) => n.input_connectors(),
@@ -371,7 +370,7 @@ impl Node {
         }
     }
 
-    pub fn output_connectors(&self, slot: Option<&str>) -> Vec<(&str, Option<String>)> {
+    pub fn output_connectors(&self, slot: Option<&str>) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
         match self {
             Node::Input(n) => n.output_connectors(),
             Node::Link(n) => n.output_connectors(),

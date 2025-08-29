@@ -1,5 +1,4 @@
 use crate::error::ComponentConversionError;
-#[cfg(feature = "core")]
 use crate::error::SchemaError;
 use crate::metric::{Metric, NodeComponentReference};
 #[cfg(feature = "core")]
@@ -177,12 +176,12 @@ pub struct VirtualStorageNode {
 impl VirtualStorageNode {
     const DEFAULT_ATTRIBUTE: VirtualStorageNodeAttribute = VirtualStorageNodeAttribute::Volume;
 
-    pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
-        vec![]
+    pub fn input_connectors(&self) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
+        Ok(vec![])
     }
 
-    pub fn output_connectors(&self) -> Vec<(&str, Option<String>)> {
-        vec![]
+    pub fn output_connectors(&self) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
+        Ok(vec![])
     }
 
     pub fn default_attribute(&self) -> VirtualStorageNodeAttribute {
