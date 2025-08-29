@@ -155,6 +155,7 @@ pub enum SolverSolveError {
     NetworkStateError(#[from] crate::state::NetworkStateError),
     #[error("State error: {0}")]
     StateError(#[from] crate::state::StateError),
+    #[cfg(feature = "clp")]
     #[error("Clp error: {0}")]
     ClpSolveError(#[from] ClpSolveStatusError),
     #[cfg(feature = "highs")]
