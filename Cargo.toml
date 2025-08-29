@@ -70,7 +70,7 @@ pywr-v1-schema = "0.19"
 chrono = { version = "0.4", features = ["serde"] }
 schemars = { version = "1.0", features = ["chrono04"] }
 rand = "0.8"
-rand_chacha = "0.3"
+rand_chacha = "0.9"
 wide = "0.7.33"
 microlp = "0.2.11"
 
