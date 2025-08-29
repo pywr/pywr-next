@@ -481,7 +481,7 @@ where
 }
 
 /// Make a simple system with random inputs.
-fn make_simple_system<R: Rng>(
+fn make_simple_system<R: Rng + ?Sized>(
     network: &mut Network,
     suffix: &str,
     num_timesteps: usize,
@@ -513,7 +513,7 @@ fn make_simple_system<R: Rng>(
 
     network.set_node_max_flow("input", Some(suffix), Some(idx.into()))?;
 
-    let input_cost = rng.gen_range(-20.0..-5.00);
+    let input_cost = rng.random_range(-20.0..-5.00);
     network.set_node_cost("input", Some(suffix), Some(input_cost.into()))?;
 
     let outflow_distr = Normal::new(8.0, 3.0).unwrap();
@@ -541,8 +541,8 @@ fn make_simple_connections<R: Rng>(
     let mut connections_added: usize = 0;
 
     while connections_added < num_connections {
-        let i = rng.gen_range(0..num_systems);
-        let j = rng.gen_range(0..num_systems);
+        let i = rng.random_range(0..num_systems);
+        let j = rng.random_range(0..num_systems);
 
         if i == j {
             continue;
@@ -551,7 +551,7 @@ fn make_simple_connections<R: Rng>(
         let name = format!("{i:04}->{j:04}");
 
         if let Ok(idx) = model.add_link_node("transfer", Some(&name)) {
-            let transfer_cost = rng.gen_range(0.0..1.0);
+            let transfer_cost = rng.random_range(0.0..1.0);
             model.set_node_cost("transfer", Some(&name), Some(transfer_cost.into()))?;
 
             let from_suffix = format!("sys-{i:04}");
