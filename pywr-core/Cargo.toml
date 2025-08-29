@@ -35,7 +35,7 @@ pyo3 = { workspace = true, features = ["chrono", "macros"], optional = true }
 rayon = "1.11"
 ocl = { version = "0.19", optional = true }
 rand = { workspace = true }
-rand_distr = "0.4"
+rand_distr = { workspace = true }
 rand_chacha = { workspace = true }
 serde = { version = "1.0", features = ["derive"] }
 wide = { workspace = true, optional = true }

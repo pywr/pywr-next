@@ -69,8 +69,9 @@ hdf5-metno = { version = "0.10.1", features = ["static", "zlib"] }
 pywr-v1-schema = "0.19"
 chrono = { version = "0.4", features = ["serde"] }
 schemars = { version = "1.0", features = ["chrono04"] }
-rand = "0.8"
-rand_chacha = "0.3"
+rand = "0.9"
+rand_chacha = "0.9"
+rand_distr = "0.5"
 wide = "0.7.33"
 microlp = "0.2.11"
 
