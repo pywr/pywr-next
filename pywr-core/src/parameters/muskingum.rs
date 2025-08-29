@@ -18,7 +18,7 @@ pub enum MuskingumInitialCondition {
 /// This parameter computes two coefficients used in the Muskingum routing method:
 /// - `inflow_factor`: The coefficient applied to the current inflow.
 /// - `rhs`: The right-hand side of the Muskingum equation, which combines the previous
-/// inflow and outflow.
+///   inflow and outflow.
 ///
 /// These coefficients are intended for use in an [`AggregatedNode`] that relates the inflow
 /// and outflow using an equality constraint. This ensures the outflow is computed based on

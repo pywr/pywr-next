@@ -237,10 +237,6 @@ impl ClpSolver {
 
         self.clp_simplex.primal_column_solution(num_cols)
     }
-
-    fn write_mps(&mut self, filename: &str) {
-        self.clp_simplex.write_mps(filename);
-    }
 }
 
 impl Solver for ClpSolver {

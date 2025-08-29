@@ -47,9 +47,9 @@ pub enum MuskingumInitialCondition {
 }
 
 #[cfg(feature = "core")]
-impl Into<pywr_core::parameters::MuskingumInitialCondition> for MuskingumInitialCondition {
-    fn into(self) -> pywr_core::parameters::MuskingumInitialCondition {
-        match self {
+impl From<MuskingumInitialCondition> for pywr_core::parameters::MuskingumInitialCondition {
+    fn from(val: MuskingumInitialCondition) -> Self {
+        match val {
             MuskingumInitialCondition::SteadyState => pywr_core::parameters::MuskingumInitialCondition::SteadyState,
             MuskingumInitialCondition::Specified { inflow, outflow } => {
                 pywr_core::parameters::MuskingumInitialCondition::Specified { inflow, outflow }
