@@ -96,9 +96,9 @@ impl TablesArrayParameter {
 impl TablesArrayParameter {
     pub fn add_to_model(
         &self,
-        network: &mut pywr_core::network::Network,
-        args: &LoadArgs,
-        parent: Option<&str>,
+        _network: &mut pywr_core::network::Network,
+        _args: &LoadArgs,
+        _parent: Option<&str>,
     ) -> Result<pywr_core::parameters::ParameterIndex<f64>, SchemaError> {
         Err(SchemaError::FeatureNotEnabled("hdf5".to_string()))
     }

@@ -42,8 +42,8 @@ impl Hdf5Output {
 impl Hdf5Output {
     pub fn add_to_model(
         &self,
-        network: &mut pywr_core::network::Network,
-        output_path: Option<&Path>,
+        _network: &mut pywr_core::network::Network,
+        _output_path: Option<&Path>,
     ) -> Result<(), SchemaError> {
         Err(SchemaError::FeatureNotEnabled("hdf5".to_string()))
     }
