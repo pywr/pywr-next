@@ -1,5 +1,4 @@
 use crate::error::ComponentConversionError;
-#[cfg(feature = "core")]
 use crate::error::SchemaError;
 use crate::metric::Metric;
 #[cfg(feature = "core")]

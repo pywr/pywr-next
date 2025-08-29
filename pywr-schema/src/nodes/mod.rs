@@ -48,7 +48,6 @@ mod turbine;
 mod virtual_storage;
 mod water_treatment_works;
 
-#[cfg(feature = "core")]
 use crate::error::SchemaError;
 use crate::error::{ComponentConversionError, ConversionError};
 use crate::metric::Metric;

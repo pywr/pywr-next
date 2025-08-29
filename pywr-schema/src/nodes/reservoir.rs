@@ -1,4 +1,3 @@
-#[cfg(feature = "core")]
 use crate::SchemaError;
 use crate::metric::Metric;
 #[cfg(feature = "core")]

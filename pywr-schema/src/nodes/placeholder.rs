@@ -1,4 +1,3 @@
-#[cfg(feature = "core")]
 use crate::SchemaError;
 use crate::nodes::{NodeAttribute, NodeMeta};
 use pywr_schema_macros::PywrVisitAll;
