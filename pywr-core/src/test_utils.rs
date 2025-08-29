@@ -11,13 +11,25 @@ use crate::scenario::{ScenarioDomainBuilder, ScenarioGroupBuilder};
 use crate::solvers::CbcSolver;
 #[cfg(feature = "ipm-ocl")]
 use crate::solvers::ClIpmF64Solver;
+#[cfg(feature = "clp")]
+use crate::solvers::ClpSolver;
 #[cfg(feature = "highs")]
 use crate::solvers::HighsSolver;
 #[cfg(any(feature = "ipm-simd", feature = "ipm-ocl"))]
 use crate::solvers::MultiStateSolver;
 #[cfg(feature = "ipm-simd")]
 use crate::solvers::SimdIpmF64Solver;
-use crate::solvers::{ClpSolver, Solver, SolverSettings};
+#[cfg(any(feature = "cbc", feature = "clp", feature = "highs", feature = "microlp"))]
+use crate::solvers::Solver;
+#[cfg(any(
+    feature = "cbc",
+    feature = "clp",
+    feature = "highs",
+    feature = "ipm-ocl",
+    feature = "ipm-simd",
+    feature = "microlp"
+))]
+use crate::solvers::SolverSettings;
 use crate::timestep::{TimeDomain, TimestepDuration, Timestepper};
 use chrono::{Days, NaiveDate};
 use csv::{Reader, ReaderBuilder};
@@ -368,14 +380,25 @@ impl VerifyExpected for ExpectedOutputsWide {
 ///
 /// The model will only be run if the solver has the required solver features (and
 /// is also enabled as a Cargo feature).
+#[cfg(any(
+    feature = "cbc",
+    feature = "clp",
+    feature = "highs",
+    feature = "ipm-ocl",
+    feature = "ipm-simd",
+    feature = "microlp"
+))]
 pub fn run_all_solvers(
     model: &Model,
     solvers_without_features: &[&str],
     solvers_to_skip: &[&str],
     expected_outputs: &[Box<dyn VerifyExpected>],
 ) {
-    if !solvers_to_skip.contains(&"clp") {
-        check_features_and_run::<ClpSolver>(model, !solvers_without_features.contains(&"clp"), expected_outputs);
+    #[cfg(feature = "clp")]
+    {
+        if !solvers_to_skip.contains(&"clp") {
+            check_features_and_run::<ClpSolver>(model, !solvers_without_features.contains(&"clp"), expected_outputs);
+        }
     }
 
     #[cfg(feature = "cbc")]
@@ -410,19 +433,45 @@ pub fn run_all_solvers(
     #[cfg(feature = "ipm-simd")]
     {
         if !solvers_to_skip.contains(&"ipm-simd") {
-            check_features_and_run_multi::<SimdIpmF64Solver>(model, !solvers_without_features.contains(&"ipm-simd"));
+            check_features_and_run_multi::<SimdIpmF64Solver>(
+                model,
+                !solvers_without_features.contains(&"ipm-simd"),
+                expected_outputs,
+            );
         }
     }
 
     #[cfg(feature = "ipm-ocl")]
     {
         if !solvers_to_skip.contains(&"ipm-ocl") {
-            check_features_and_run_multi::<ClIpmF64Solver>(model, !solvers_without_features.contains(&"ipm-ocl"));
+            check_features_and_run_multi::<ClIpmF64Solver>(
+                model,
+                !solvers_without_features.contains(&"ipm-ocl"),
+                expected_outputs,
+            );
         }
     }
 }
 
+#[cfg(not(any(
+    feature = "cbc",
+    feature = "clp",
+    feature = "highs",
+    feature = "ipm-ocl",
+    feature = "ipm-simd",
+    feature = "microlp"
+)))]
+pub fn run_all_solvers(
+    _model: &Model,
+    _solvers_without_features: &[&str],
+    _solvers_to_skip: &[&str],
+    _expected_outputs: &[Box<dyn VerifyExpected>],
+) {
+    panic!("No solvers are enabled. Please enable at least one solver feature.");
+}
+
 /// Check features and
+#[cfg(any(feature = "cbc", feature = "clp", feature = "highs", feature = "microlp"))]
 fn check_features_and_run<S>(model: &Model, expect_features: bool, expected_outputs: &[Box<dyn VerifyExpected>])
 where
     S: Solver,
@@ -454,7 +503,7 @@ where
 
 /// Check features and run with a multi-scenario solver
 #[cfg(any(feature = "ipm-simd", feature = "ipm-ocl"))]
-fn check_features_and_run_multi<S>(model: &Model, expect_features: bool)
+fn check_features_and_run_multi<S>(model: &Model, expect_features: bool, _expected_outputs: &[Box<dyn VerifyExpected>])
 where
     S: MultiStateSolver,
     <S as MultiStateSolver>::Settings: SolverSettings + Default,
