@@ -9,10 +9,12 @@ use crate::nodes::{LossFactor, NodeMeta};
 use crate::nodes::{NodeAttribute, NodeComponent};
 use crate::parameters::{ConstantValue, Parameter};
 use crate::{node_attribute_subset_enum, node_component_subset_enum};
-use pywr_core::aggregated_node::Relationship;
 #[cfg(feature = "core")]
-use pywr_core::metric::MetricF64;
-use pywr_core::parameters::{MuskingumParameter, ParameterName};
+use pywr_core::{
+    aggregated_node::Relationship,
+    metric::MetricF64,
+    parameters::{MuskingumParameter, ParameterName},
+};
 use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::nodes::LinkNode as LinkNodeV1;
 use schemars::JsonSchema;
