@@ -69,7 +69,10 @@ impl AggregatedNodeVec {
 #[derive(Debug, PartialEq)]
 pub enum Factors {
     Proportion(Vec<MetricF64>),
-    Ratio(Vec<MetricF64>),
+    Ratio {
+        factors: Vec<MetricF64>,
+        rhs: Option<MetricF64>,
+    },
 }
 
 impl Factors {
@@ -77,7 +80,9 @@ impl Factors {
     pub fn is_constant(&self) -> bool {
         match self {
             Factors::Proportion(factors) => factors.iter().all(|f| f.is_constant()),
-            Factors::Ratio(factors) => factors.iter().all(|f| f.is_constant()),
+            Factors::Ratio { factors, rhs } => {
+                factors.iter().all(|f| f.is_constant()) && rhs.as_ref().map(|r| r.is_constant()).unwrap_or(true)
+            }
         }
     }
 }
@@ -109,8 +114,11 @@ pub enum Relationship {
 }
 
 impl Relationship {
-    pub fn new_ratio_factors(factors: &[MetricF64]) -> Self {
-        Relationship::Factored(Factors::Ratio(factors.to_vec()))
+    pub fn new_ratio_factors(factors: &[MetricF64], rhs: Option<MetricF64>) -> Self {
+        Relationship::Factored(Factors::Ratio {
+            factors: factors.to_vec(),
+            rhs,
+        })
     }
     pub fn new_proportion_factors(factors: &[MetricF64]) -> Self {
         Relationship::Factored(Factors::Proportion(factors.to_vec()))
@@ -156,16 +164,21 @@ impl<'a> NodeFactor<'a> {
 pub struct NodeFactorPair<'a> {
     pub node0: NodeFactor<'a>,
     pub node1: NodeFactor<'a>,
+    pub rhs: f64,
 }
 
 impl<'a> NodeFactorPair<'a> {
-    fn new(node0: NodeFactor<'a>, node1: NodeFactor<'a>) -> Self {
-        Self { node0, node1 }
+    fn new(node0: NodeFactor<'a>, node1: NodeFactor<'a>, rhs: f64) -> Self {
+        Self { node0, node1, rhs }
     }
 
     /// Return the ratio of the two factors (node0 / node1)
     pub fn ratio(&self) -> f64 {
         self.node0.factor / self.node1.factor
+    }
+
+    pub fn rhs_ratio(&self) -> f64 {
+        self.rhs / self.node1.factor
     }
 }
 
@@ -187,11 +200,12 @@ impl<'a> NodeConstFactor<'a> {
 pub struct NodeConstFactorPair<'a> {
     pub node0: NodeConstFactor<'a>,
     pub node1: NodeConstFactor<'a>,
+    pub rhs: f64,
 }
 
 impl<'a> NodeConstFactorPair<'a> {
-    fn new(node0: NodeConstFactor<'a>, node1: NodeConstFactor<'a>) -> Self {
-        Self { node0, node1 }
+    fn new(node0: NodeConstFactor<'a>, node1: NodeConstFactor<'a>, rhs: f64) -> Self {
+        Self { node0, node1, rhs }
     }
 
     /// Return the ratio of the two factors (node0 / node1). If either factor is `None`,
@@ -310,7 +324,9 @@ impl AggregatedNode {
                 Factors::Proportion(prop_factors) => {
                     get_const_norm_proportional_factor_pairs(prop_factors, &self.nodes, values)
                 }
-                Factors::Ratio(ratio_factors) => get_const_norm_ratio_factor_pairs(ratio_factors, &self.nodes, values),
+                Factors::Ratio { factors, rhs } => {
+                    get_const_norm_ratio_factor_pairs(factors, &self.nodes, rhs.as_ref(), values)
+                }
             };
             Some(pairs)
         } else {
@@ -326,7 +342,9 @@ impl AggregatedNode {
                 Factors::Proportion(prop_factors) => {
                     get_norm_proportional_factor_pairs(prop_factors, &self.nodes, model, state)
                 }
-                Factors::Ratio(ratio_factors) => get_norm_ratio_factor_pairs(ratio_factors, &self.nodes, model, state),
+                Factors::Ratio { factors, rhs } => {
+                    get_norm_ratio_factor_pairs(factors, &self.nodes, rhs.as_ref(), model, state)
+                }
             };
             Some(pairs)
         } else {
@@ -437,7 +455,7 @@ fn get_norm_proportional_factor_pairs<'a>(
         .iter()
         .skip(1)
         .zip(values)
-        .map(move |(n1, f1)| NodeFactorPair::new(NodeFactor::new(n0, f0), NodeFactor::new(n1.as_slice(), f1)))
+        .map(move |(n1, f1)| NodeFactorPair::new(NodeFactor::new(n0, f0), NodeFactor::new(n1.as_slice(), f1), 0.0))
         .collect::<Vec<_>>()
 }
 
@@ -490,7 +508,11 @@ fn get_const_norm_proportional_factor_pairs<'a>(
             .skip(1)
             .zip(values)
             .map(move |(n1, f1)| {
-                NodeConstFactorPair::new(NodeConstFactor::new(n0, None), NodeConstFactor::new(n1.as_slice(), f1))
+                NodeConstFactorPair::new(
+                    NodeConstFactor::new(n0, None),
+                    NodeConstFactor::new(n1.as_slice(), f1),
+                    0.0,
+                )
             })
             .collect::<Vec<_>>()
     } else {
@@ -513,7 +535,11 @@ fn get_const_norm_proportional_factor_pairs<'a>(
             .skip(1)
             .zip(values)
             .map(move |(n1, f1)| {
-                NodeConstFactorPair::new(NodeConstFactor::new(n0, f0), NodeConstFactor::new(n1.as_slice(), f1))
+                NodeConstFactorPair::new(
+                    NodeConstFactor::new(n0, f0),
+                    NodeConstFactor::new(n1.as_slice(), f1),
+                    0.0,
+                )
             })
             .collect::<Vec<_>>()
     }
@@ -524,9 +550,13 @@ fn get_const_norm_proportional_factor_pairs<'a>(
 /// The number of node indices and factors should be equal. The factors correspond to each of the
 /// node indices. Factor pairs relating the first index to each of the other indices are calculated.
 /// This requires that the factors are all non-zero.
+///
+/// The `rhs` value is the right-hand side of the ratio equation. The same right-hand side is used
+/// for all factor pairs.
 fn get_norm_ratio_factor_pairs<'a>(
     factors: &[MetricF64],
     nodes: &'a [Vec<NodeIndex>],
+    rhs: Option<&MetricF64>,
     model: &Network,
     state: &State,
 ) -> Vec<NodeFactorPair<'a>> {
@@ -541,9 +571,12 @@ fn get_norm_ratio_factor_pairs<'a>(
 
     let n0 = nodes[0].as_slice();
     let f0 = factors[0].get_value(model, state).unwrap();
-    if f0 < 0.0 {
-        panic!("Negative factor is not allowed");
-    }
+    // if f0 < 0.0 {
+    //     panic!("Negative factor is not allowed");
+    // }
+
+    // Zero if not provided
+    let rhs = rhs.map(|m| m.get_value(model, state).unwrap()).unwrap_or_default();
 
     nodes
         .iter()
@@ -551,11 +584,8 @@ fn get_norm_ratio_factor_pairs<'a>(
         .skip(1)
         .map(move |(n1, f1)| {
             let v1 = f1.get_value(model, state).expect("Failed to get current factor value.");
-            if v1 < 0.0 {
-                panic!("The provided value is negative.");
-            } else {
-                NodeFactorPair::new(NodeFactor::new(n0, f0), NodeFactor::new(n1.as_slice(), v1))
-            }
+
+            NodeFactorPair::new(NodeFactor::new(n0, f0), NodeFactor::new(n1.as_slice(), v1), rhs)
         })
         .collect::<Vec<_>>()
 }
@@ -565,6 +595,7 @@ fn get_norm_ratio_factor_pairs<'a>(
 fn get_const_norm_ratio_factor_pairs<'a>(
     factors: &[MetricF64],
     nodes: &'a [Vec<NodeIndex>],
+    rhs: Option<&MetricF64>,
     values: &ConstParameterValues,
 ) -> Vec<NodeConstFactorPair<'a>> {
     // TODO handle error cases more gracefully
@@ -589,6 +620,14 @@ fn get_const_norm_ratio_factor_pairs<'a>(
         }
     }
 
+    let rhs = rhs
+        .map(|m| {
+            m.try_get_constant_value(values)
+                .unwrap_or_else(|e| panic!("Failed to constant RHS for factor: {e}"))
+        })
+        .unwrap_or_default()
+        .unwrap_or_default();
+
     nodes
         .iter()
         .zip(factors)
@@ -607,6 +646,7 @@ fn get_const_norm_ratio_factor_pairs<'a>(
             Ok(NodeConstFactorPair::new(
                 NodeConstFactor::new(n0, f0),
                 NodeConstFactor::new(n1.as_slice(), v1),
+                rhs,
             ))
         })
         .collect::<Result<Vec<_>, AggregatedNodeError>>()
@@ -644,7 +684,7 @@ mod tests {
         network.connect_nodes(input_node, link_node1).unwrap();
         network.connect_nodes(link_node1, output_node1).unwrap();
 
-        let relationship = Some(Relationship::new_ratio_factors(&[2.0.into(), 1.0.into()]));
+        let relationship = Some(Relationship::new_ratio_factors(&[2.0.into(), 1.0.into()], None));
 
         let _agg_node =
             network.add_aggregated_node("agg-node", None, &[vec![link_node0], vec![link_node1]], relationship);
@@ -695,10 +735,10 @@ mod tests {
         let factor_profile = MonthlyProfileParameter::new("factor-profile".into(), [2.0; 12], None);
         let factor_profile_idx = network.add_simple_parameter(Box::new(factor_profile)).unwrap();
 
-        let relationship = Some(Relationship::new_ratio_factors(&[
-            factor_profile_idx.into(),
-            1.0.into(),
-        ]));
+        let relationship = Some(Relationship::new_ratio_factors(
+            &[factor_profile_idx.into(), 1.0.into()],
+            None,
+        ));
 
         let _agg_node =
             network.add_aggregated_node("agg-node", None, &[vec![link_node0], vec![link_node1]], relationship);

@@ -1400,6 +1400,7 @@ impl AggregatedNode {
                         .iter()
                         .map(|f| f.load(network, args, Some(&self.meta.name)))
                         .collect::<Result<Vec<_>, _>>()?,
+                    None,
                 ),
                 Relationship::Exclusive { min_active, max_active } => {
                     pywr_core::aggregated_node::Relationship::new_exclusive(
