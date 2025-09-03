@@ -11,13 +11,25 @@ use crate::scenario::{ScenarioDomainBuilder, ScenarioGroupBuilder};
 use crate::solvers::CbcSolver;
 #[cfg(feature = "ipm-ocl")]
 use crate::solvers::ClIpmF64Solver;
+#[cfg(feature = "clp")]
+use crate::solvers::ClpSolver;
 #[cfg(feature = "highs")]
 use crate::solvers::HighsSolver;
 #[cfg(any(feature = "ipm-simd", feature = "ipm-ocl"))]
 use crate::solvers::MultiStateSolver;
 #[cfg(feature = "ipm-simd")]
 use crate::solvers::SimdIpmF64Solver;
-use crate::solvers::{ClpSolver, Solver, SolverSettings};
+#[cfg(any(feature = "cbc", feature = "clp", feature = "highs", feature = "microlp"))]
+use crate::solvers::Solver;
+#[cfg(any(
+    feature = "cbc",
+    feature = "clp",
+    feature = "highs",
+    feature = "ipm-ocl",
+    feature = "ipm-simd",
+    feature = "microlp"
+))]
+use crate::solvers::SolverSettings;
 use crate::timestep::{TimeDomain, TimestepDuration, Timestepper};
 use chrono::{Days, NaiveDate};
 use csv::{Reader, ReaderBuilder};
@@ -368,14 +380,25 @@ impl VerifyExpected for ExpectedOutputsWide {
 ///
 /// The model will only be run if the solver has the required solver features (and
 /// is also enabled as a Cargo feature).
+#[cfg(any(
+    feature = "cbc",
+    feature = "clp",
+    feature = "highs",
+    feature = "ipm-ocl",
+    feature = "ipm-simd",
+    feature = "microlp"
+))]
 pub fn run_all_solvers(
     model: &Model,
     solvers_without_features: &[&str],
     solvers_to_skip: &[&str],
     expected_outputs: &[Box<dyn VerifyExpected>],
 ) {
-    if !solvers_to_skip.contains(&"clp") {
-        check_features_and_run::<ClpSolver>(model, !solvers_without_features.contains(&"clp"), expected_outputs);
+    #[cfg(feature = "clp")]
+    {
+        if !solvers_to_skip.contains(&"clp") {
+            check_features_and_run::<ClpSolver>(model, !solvers_without_features.contains(&"clp"), expected_outputs);
+        }
     }
 
     #[cfg(feature = "cbc")]
@@ -410,19 +433,45 @@ pub fn run_all_solvers(
     #[cfg(feature = "ipm-simd")]
     {
         if !solvers_to_skip.contains(&"ipm-simd") {
-            check_features_and_run_multi::<SimdIpmF64Solver>(model, !solvers_without_features.contains(&"ipm-simd"));
+            check_features_and_run_multi::<SimdIpmF64Solver>(
+                model,
+                !solvers_without_features.contains(&"ipm-simd"),
+                expected_outputs,
+            );
         }
     }
 
     #[cfg(feature = "ipm-ocl")]
     {
         if !solvers_to_skip.contains(&"ipm-ocl") {
-            check_features_and_run_multi::<ClIpmF64Solver>(model, !solvers_without_features.contains(&"ipm-ocl"));
+            check_features_and_run_multi::<ClIpmF64Solver>(
+                model,
+                !solvers_without_features.contains(&"ipm-ocl"),
+                expected_outputs,
+            );
         }
     }
 }
 
+#[cfg(not(any(
+    feature = "cbc",
+    feature = "clp",
+    feature = "highs",
+    feature = "ipm-ocl",
+    feature = "ipm-simd",
+    feature = "microlp"
+)))]
+pub fn run_all_solvers(
+    _model: &Model,
+    _solvers_without_features: &[&str],
+    _solvers_to_skip: &[&str],
+    _expected_outputs: &[Box<dyn VerifyExpected>],
+) {
+    panic!("No solvers are enabled. Please enable at least one solver feature.");
+}
+
 /// Check features and
+#[cfg(any(feature = "cbc", feature = "clp", feature = "highs", feature = "microlp"))]
 fn check_features_and_run<S>(model: &Model, expect_features: bool, expected_outputs: &[Box<dyn VerifyExpected>])
 where
     S: Solver,
@@ -454,7 +503,7 @@ where
 
 /// Check features and run with a multi-scenario solver
 #[cfg(any(feature = "ipm-simd", feature = "ipm-ocl"))]
-fn check_features_and_run_multi<S>(model: &Model, expect_features: bool)
+fn check_features_and_run_multi<S>(model: &Model, expect_features: bool, _expected_outputs: &[Box<dyn VerifyExpected>])
 where
     S: MultiStateSolver,
     <S as MultiStateSolver>::Settings: SolverSettings + Default,
@@ -481,7 +530,7 @@ where
 }
 
 /// Make a simple system with random inputs.
-fn make_simple_system<R: Rng>(
+fn make_simple_system<R: Rng + ?Sized>(
     network: &mut Network,
     suffix: &str,
     num_timesteps: usize,
@@ -513,7 +562,7 @@ fn make_simple_system<R: Rng>(
 
     network.set_node_max_flow("input", Some(suffix), Some(idx.into()))?;
 
-    let input_cost = rng.gen_range(-20.0..-5.00);
+    let input_cost = rng.random_range(-20.0..-5.00);
     network.set_node_cost("input", Some(suffix), Some(input_cost.into()))?;
 
     let outflow_distr = Normal::new(8.0, 3.0).unwrap();
@@ -541,8 +590,8 @@ fn make_simple_connections<R: Rng>(
     let mut connections_added: usize = 0;
 
     while connections_added < num_connections {
-        let i = rng.gen_range(0..num_systems);
-        let j = rng.gen_range(0..num_systems);
+        let i = rng.random_range(0..num_systems);
+        let j = rng.random_range(0..num_systems);
 
         if i == j {
             continue;
@@ -551,7 +600,7 @@ fn make_simple_connections<R: Rng>(
         let name = format!("{i:04}->{j:04}");
 
         if let Ok(idx) = model.add_link_node("transfer", Some(&name)) {
-            let transfer_cost = rng.gen_range(0.0..1.0);
+            let transfer_cost = rng.random_range(0.0..1.0);
             model.set_node_cost("transfer", Some(&name), Some(transfer_cost.into()))?;
 
             let from_suffix = format!("sys-{i:04}");

@@ -1,5 +1,4 @@
 use crate::error::ComponentConversionError;
-#[cfg(feature = "core")]
 use crate::error::SchemaError;
 use crate::metric::Metric;
 #[cfg(feature = "core")]
@@ -117,22 +116,20 @@ impl RiverSplitWithGaugeNode {
         connectors
     }
 
-    pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
-        self.default_connectors()
+    pub fn input_connectors(&self) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
+        Ok(self.default_connectors())
     }
 
-    pub fn output_connectors(&self, slot: Option<&str>) -> Vec<(&str, Option<String>)> {
+    pub fn output_connectors(&self, slot: Option<&str>) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
         match slot {
-            Some(slot) => {
-                let i = self
-                    .splits
-                    .iter()
-                    .position(|split| split.slot_name == slot)
-                    .expect("Invalid slot name!");
-
-                vec![(self.meta.name.as_str(), Self::split_sub_name(i))]
-            }
-            None => self.default_connectors(),
+            Some(slot) => match self.splits.iter().position(|split| split.slot_name == slot) {
+                Some(i) => Ok(vec![(self.meta.name.as_str(), Self::split_sub_name(i))]),
+                None => Err(SchemaError::NodeConnectionSlotNotFound {
+                    node: self.meta.name.clone(),
+                    slot: slot.to_string(),
+                }),
+            },
+            None => Ok(self.default_connectors()),
         }
     }
 

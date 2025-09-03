@@ -1,5 +1,7 @@
 mod aggregator;
 mod csv;
+
+#[cfg(feature = "hdf5")]
 mod hdf;
 mod memory;
 mod metric_set;
@@ -9,6 +11,7 @@ use crate::metric::{MetricF64, MetricF64Error, MetricU64, MetricU64Error};
 use crate::models::ModelDomain;
 use crate::network::Network;
 use crate::recorders::csv::CsvError;
+#[cfg(feature = "hdf5")]
 use crate::recorders::hdf::Hdf5Error;
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
@@ -16,6 +19,7 @@ use crate::timestep::Timestep;
 pub use aggregator::{AggregationFrequency, AggregationFunction, Aggregator};
 pub use csv::{CsvLongFmtOutput, CsvLongFmtRecord, CsvWideFmtOutput};
 use float_cmp::{ApproxEq, F64Margin, approx_eq};
+#[cfg(feature = "hdf5")]
 pub use hdf::HDF5Recorder;
 pub use memory::{Aggregation, AggregationError, AggregationOrder, MemoryRecorder};
 pub use metric_set::{MetricSet, MetricSetIndex, MetricSetSaveError, MetricSetState, OutputMetric};
@@ -71,6 +75,7 @@ impl RecorderMeta {
 pub enum RecorderSetupError {
     #[error("CSV error: {0}")]
     CSVError(#[from] CsvError),
+    #[cfg(feature = "hdf5")]
     #[error("HDF5 error: {0}")]
     HDF5Error(#[from] Hdf5Error),
     #[error("Metric set index `{index}` not found")]
@@ -88,6 +93,7 @@ pub enum RecorderSaveError {
     MetricSetIndexNotFound { index: MetricSetIndex },
     #[error("CSV error: {0}")]
     CSVError(#[from] CsvError),
+    #[cfg(feature = "hdf5")]
     #[error("HDF5 error: {0}")]
     HDF5Error(#[from] Hdf5Error),
 }
@@ -99,6 +105,7 @@ pub enum RecorderFinaliseError {
     MetricSetIndexNotFound { index: MetricSetIndex },
     #[error("CSV error: {0}")]
     CSVError(#[from] CsvError),
+    #[cfg(feature = "hdf5")]
     #[error("HDF5 error: {0}")]
     HDF5Error(#[from] Hdf5Error),
 }

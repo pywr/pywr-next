@@ -1,4 +1,3 @@
-#[cfg(feature = "core")]
 use crate::error::SchemaError;
 use crate::error::{ComponentConversionError, ConversionError};
 use crate::metric::Metric;
@@ -167,8 +166,8 @@ impl RiverNode {
         Some("outflow")
     }
 
-    pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
-        match (self.loss_factor.is_some(), self.routing_method.is_some()) {
+    pub fn input_connectors(&self) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
+        let connectors = match (self.loss_factor.is_some(), self.routing_method.is_some()) {
             (false, false) => vec![(self.meta.name.as_str(), Self::net_sub_name().map(|s| s.to_string()))],
             (true, false) => vec![
                 (self.meta.name.as_str(), Self::net_sub_name().map(|s| s.to_string())),
@@ -176,15 +175,19 @@ impl RiverNode {
             ],
             // If there is routing directly to the output node
             _ => vec![(self.meta.name.as_str(), Self::output_sub_name().map(|s| s.to_string()))],
-        }
+        };
+
+        Ok(connectors)
     }
 
-    pub fn output_connectors(&self) -> Vec<(&str, Option<String>)> {
-        match (self.loss_factor.is_some(), self.routing_method.is_some()) {
+    pub fn output_connectors(&self) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
+        let connectors = match (self.loss_factor.is_some(), self.routing_method.is_some()) {
             // If there is routing, but no loss connect directly from the input node
             (false, true) => vec![(self.meta.name.as_str(), Self::input_sub_name().map(|s| s.to_string()))],
             _ => vec![(self.meta.name.as_str(), Self::net_sub_name().map(|s| s.to_string()))],
-        }
+        };
+
+        Ok(connectors)
     }
 
     pub fn default_attribute(&self) -> RiverNodeAttribute {

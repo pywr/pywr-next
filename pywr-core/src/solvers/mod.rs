@@ -5,11 +5,23 @@ use std::ops::{Add, AddAssign};
 use std::time::Duration;
 use thiserror::Error;
 
+#[cfg(any(feature = "cbc", feature = "clp", feature = "highs", feature = "microlp"))]
 mod builder;
 
 #[cfg(feature = "cbc")]
 mod cbc;
+
+#[cfg(feature = "clp")]
 mod clp;
+
+#[cfg(any(
+    feature = "cbc",
+    feature = "clp",
+    feature = "highs",
+    feature = "ipm-ocl",
+    feature = "ipm-simd",
+    feature = "microlp"
+))]
 mod col_edge_map;
 #[cfg(feature = "highs")]
 mod highs;
@@ -28,11 +40,13 @@ use crate::aggregated_node::AggregatedNodeIndex;
 use crate::node::NodeIndex;
 #[cfg(feature = "cbc")]
 pub use cbc::{CbcError, CbcSolver, CbcSolverSettings, CbcSolverSettingsBuilder};
-pub use clp::{ClpError, ClpSolver, ClpSolverSettings, ClpSolverSettingsBuilder};
+#[cfg(feature = "clp")]
+pub use clp::{ClpSolveStatusError, ClpSolver, ClpSolverSettings, ClpSolverSettingsBuilder};
 #[cfg(feature = "highs")]
 pub use highs::{HighsSolver, HighsSolverSettings, HighsSolverSettingsBuilder};
 #[cfg(feature = "microlp")]
 pub use microlp::{MicroLpError, MicroLpSolver, MicroLpSolverSettings, MicroLpSolverSettingsBuilder};
+
 #[derive(Default, Debug)]
 pub struct SolverTimings {
     pub update_objective: Duration,
@@ -141,6 +155,9 @@ pub enum SolverSolveError {
     NetworkStateError(#[from] crate::state::NetworkStateError),
     #[error("State error: {0}")]
     StateError(#[from] crate::state::StateError),
+    #[cfg(feature = "clp")]
+    #[error("Clp error: {0}")]
+    ClpSolveError(#[from] ClpSolveStatusError),
     #[cfg(feature = "highs")]
     #[error("Highs error: {0}")]
     HighsError(#[from] highs::HighsStatusError),

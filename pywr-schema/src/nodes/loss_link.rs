@@ -1,5 +1,4 @@
 use crate::error::ComponentConversionError;
-#[cfg(feature = "core")]
 use crate::error::SchemaError;
 use crate::metric::Metric;
 #[cfg(feature = "core")]
@@ -134,7 +133,7 @@ impl LossLinkNode {
         Some("net")
     }
 
-    pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
+    pub fn input_connectors(&self) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
         // Gross inflow always goes to the net node ...
         let mut input_connectors = vec![(self.meta.name.as_str(), Self::net_sub_name().map(|s| s.to_string()))];
 
@@ -143,12 +142,15 @@ impl LossLinkNode {
             input_connectors.push((self.meta.name.as_str(), Self::loss_sub_name().map(|s| s.to_string())));
         }
 
-        input_connectors
+        Ok(input_connectors)
     }
 
-    pub fn output_connectors(&self) -> Vec<(&str, Option<String>)> {
+    pub fn output_connectors(&self) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
         // Only net goes to the downstream.
-        vec![(self.meta.name.as_str(), Self::net_sub_name().map(|s| s.to_string()))]
+        Ok(vec![(
+            self.meta.name.as_str(),
+            Self::net_sub_name().map(|s| s.to_string()),
+        )])
     }
 
     pub fn default_attribute(&self) -> LossLinkNodeAttribute {

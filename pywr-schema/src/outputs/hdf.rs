@@ -1,6 +1,6 @@
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
-#[cfg(feature = "core")]
+#[cfg(all(feature = "core", feature = "hdf5"))]
 use pywr_core::recorders::HDF5Recorder;
 use pywr_schema_macros::PywrVisitPaths;
 use schemars::JsonSchema;
@@ -16,7 +16,7 @@ pub struct Hdf5Output {
     pub metric_set: String,
 }
 
-#[cfg(feature = "core")]
+#[cfg(all(feature = "core", feature = "hdf5"))]
 impl Hdf5Output {
     pub fn add_to_model(
         &self,
@@ -35,6 +35,17 @@ impl Hdf5Output {
         network.add_recorder(Box::new(recorder))?;
 
         Ok(())
+    }
+}
+
+#[cfg(all(feature = "core", not(feature = "hdf5")))]
+impl Hdf5Output {
+    pub fn add_to_model(
+        &self,
+        _network: &mut pywr_core::network::Network,
+        _output_path: Option<&Path>,
+    ) -> Result<(), SchemaError> {
+        Err(SchemaError::FeatureNotEnabled("hdf5".to_string()))
     }
 }
 

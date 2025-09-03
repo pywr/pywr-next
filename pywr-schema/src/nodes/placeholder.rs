@@ -1,4 +1,3 @@
-#[cfg(feature = "core")]
 use crate::SchemaError;
 use crate::nodes::{NodeAttribute, NodeMeta};
 use pywr_schema_macros::PywrVisitAll;
@@ -18,12 +17,12 @@ pub struct PlaceholderNode {
 }
 
 impl PlaceholderNode {
-    pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
-        vec![(self.meta.name.as_str(), None)]
+    pub fn input_connectors(&self) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
+        Ok(vec![(self.meta.name.as_str(), None)])
     }
 
-    pub fn output_connectors(&self) -> Vec<(&str, Option<String>)> {
-        vec![(self.meta.name.as_str(), None)]
+    pub fn output_connectors(&self) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
+        Ok(vec![(self.meta.name.as_str(), None)])
     }
 
     pub fn default_attribute(&self) -> NodeAttribute {

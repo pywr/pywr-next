@@ -102,6 +102,12 @@ pub enum SchemaError {
     NodeNotAllowedInStorageConstraint,
     #[error("{msg}")]
     InvalidNodeAttributes { msg: String },
+    #[error("'{node}' does not have a slot named '{slot}'")]
+    NodeConnectionSlotNotFound { node: String, slot: String },
+    #[error("{msg}")]
+    NodeConnectionSlotNotAvailable { msg: String },
+    #[error("{msg}")]
+    NodeConnectionSlotRequired { msg: String },
 }
 
 #[cfg(all(feature = "core", feature = "pyo3"))]

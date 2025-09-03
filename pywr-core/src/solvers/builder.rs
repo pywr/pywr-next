@@ -329,6 +329,7 @@ impl<I> BuiltSolver<I>
 where
     I: num::PrimInt + Default + Debug + Copy,
 {
+    #[allow(dead_code)]
     pub fn num_cols(&self) -> I {
         I::from(self.builder.col_upper.len()).unwrap()
     }
@@ -389,6 +390,7 @@ where
         self.col_edge_map.col_for_edge(edge_index)
     }
 
+    #[allow(dead_code)]
     pub fn coefficients_to_update(&self) -> &[(I, I, f64)] {
         &self.builder.coefficients_to_update
     }
