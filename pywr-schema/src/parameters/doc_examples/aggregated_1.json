@@ -12,7 +12,7 @@
     {
       "type": "Table",
       "table": "demands",
-      "index": "my-node"
+      "row": "my-node"
     },
     {
       "type": "Parameter",

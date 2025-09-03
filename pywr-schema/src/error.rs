@@ -52,7 +52,7 @@ pub enum SchemaError {
     #[error("Metric F64 error: {0}")]
     #[cfg(feature = "core")]
     CoreMetricF64Error(#[from] pywr_core::metric::MetricF64Error),
-    #[error("Error loading data from table `{0}` (column: `{1:?}`, index: `{2:?}`) error: {error}", table_ref.table, table_ref.column, table_ref.index)]
+    #[error("Error loading data from table `{0}` (column: `{1:?}`, row: `{2:?}`) error: {error}", table_ref.table, table_ref.column, table_ref.row)]
     TableRefLoad { table_ref: TableDataRef, error: TableError },
     #[cfg(feature = "pyo3")]
     #[error("Python error: {0}")]

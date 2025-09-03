@@ -11,6 +11,7 @@
     - [Abstraction licences](./concepts/abstraction-licences.md)
     - [Scenarios](./concepts/scenarios.md)
     - [Input data](./concepts/input-data.md)
+- [Data tables](./data_tables.md)
 - [Custom parameters](./custom_parameters.md)
 - [Multi-models](./multi_models.md)
 - [Migration guide](./migration_guide.md)
