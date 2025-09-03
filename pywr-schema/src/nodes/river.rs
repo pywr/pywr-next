@@ -290,7 +290,7 @@ impl RiverNode {
                         ]
                     }
                     true => {
-                        // Routing, but no loss
+                        // Routing
                         vec![
                             network
                                 .get_node_index_by_name(self.meta.name.as_str(), Self::input_sub_name())
@@ -393,6 +393,7 @@ impl RiverNode {
         if let Some(routing_method) = &self.routing_method {
             match routing_method {
                 RoutingMethod::Delay { delay, initial_value } => {
+                    // Create a delay parameter using the node's name as the parent identifier
                     let name = ParameterName::new("delay", Some(self.meta.name.as_str()));
                     let inflow_idx = network
                         .get_node_index_by_name(self.meta.name.as_str(), Self::output_sub_name())
@@ -424,7 +425,7 @@ impl RiverNode {
                     weight,
                     initial_condition,
                 } => {
-                    // Create the delay parameter using the node's name as the parent identifier
+                    // Create a Muskingum parameter using the node's name as the parent identifier
                     let name = ParameterName::new("muskingum", Some(self.meta.name.as_str()));
                     let inflow_idx = network
                         .get_node_index_by_name(self.meta.name.as_str(), Self::output_sub_name())
@@ -453,8 +454,9 @@ impl RiverNode {
 
                     let muskingum_idx = network.add_multi_value_parameter(Box::new(muskingum_parameter))?;
 
-                    let factors = Relationship::new_ratio_factors(
-                        &[(muskingum_idx.clone(), "inflow_factor".to_string()).into(), 1.0.into()],
+                    // Set the relationship on the aggregated node to enforce the Muskingum routing
+                    let factors = Relationship::new_coefficient_factors(
+                        &[1.0.into(), (muskingum_idx.clone(), "inflow_factor".to_string()).into()],
                         Some((muskingum_idx, "rhs".to_string()).into()),
                     );
 

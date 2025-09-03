@@ -1273,6 +1273,23 @@ impl TryFromV1<CatchmentNodeV1> for CatchmentNode {
     }
 }
 
+/// Defines the relationship between nodes in an `AggregatedNode`.
+///
+/// - `Proportion`: The factors represent the proportion of the total flow that each node after
+///   the first should receive. The first node will have the residual flow. Factors should sum to a total
+///   less than 1.0, and there should be one less factor than the number of nodes.
+/// - `Ratio`: The factors represent the ratio of flow between the nodes. There should be factors
+///   equal to the number of nodes, and the factors should be non-negative.
+/// - `Coefficients`: The factors represent coefficients in a linear equation, with an optional
+///   right-hand side. For example, for three nodes A and B with coefficients 2 and 3, and a
+///   right-hand side of 100, the equation would be `2*A + 3*B = 100`. If no right-hand side
+///   is provided, it is assumed to be 0, i.e. `2*A + 3*B = 0`. Currently, this is limited to
+///   a maximum of 2 nodes.
+/// - `Exclusive`: Only a limited number of nodes can be active at any one time. The `min_active`
+///   and `max_active` parameters define the minimum and maximum number of nodes that can be active
+///   at any one time. If not specified, `min_active` defaults to 0 and `max_active` defaults to 1.
+///   This relationship requires binary variables to be added to the model, so may increase
+///   solve times.
 #[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, PywrVisitAll, Display, EnumDiscriminants)]
 #[serde(tag = "type", deny_unknown_fields)]
 #[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
@@ -1283,6 +1300,10 @@ pub enum Relationship {
     },
     Ratio {
         factors: Vec<Metric>,
+    },
+    Coefficients {
+        factors: Vec<Metric>,
+        rhs: Option<Metric>,
     },
     Exclusive {
         min_active: Option<u64>,
@@ -1399,8 +1420,20 @@ impl AggregatedNode {
                         .iter()
                         .map(|f| f.load(network, args, Some(&self.meta.name)))
                         .collect::<Result<Vec<_>, _>>()?,
-                    None,
                 ),
+                Relationship::Coefficients { factors, rhs } => {
+                    let rhs_value = match rhs {
+                        Some(r) => Some(r.load(network, args, Some(&self.meta.name))?),
+                        None => None,
+                    };
+                    pywr_core::aggregated_node::Relationship::new_coefficient_factors(
+                        &factors
+                            .iter()
+                            .map(|f| f.load(network, args, Some(&self.meta.name)))
+                            .collect::<Result<Vec<_>, _>>()?,
+                        rhs_value,
+                    )
+                }
                 Relationship::Exclusive { min_active, max_active } => {
                     pywr_core::aggregated_node::Relationship::new_exclusive(
                         min_active.unwrap_or(0),

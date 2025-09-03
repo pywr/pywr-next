@@ -6,7 +6,7 @@
   },
   "timestepper": {
     "start": "2021-01-01",
-    "end": "2021-12-31",
+    "end": "2021-02-28",
     "timestep": 1
   },
   "network": {

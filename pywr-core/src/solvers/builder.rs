@@ -543,28 +543,29 @@ where
                         // Modify the constraint matrix coefficients for the nodes
                         // TODO error handling?
                         let nodes = network.nodes();
-                        for node0_idx in node_pair.node0.indices {
+                        for node0_idx in node_pair.node0_indices() {
                             let node0 = nodes.get(node0_idx).expect("Node index not found!");
-                            self.builder
-                                .update_row_coefficients(*row_idx, node0, 1.0, &self.col_edge_map);
+                            self.builder.update_row_coefficients(
+                                *row_idx,
+                                node0,
+                                node_pair.node0_factor(),
+                                &self.col_edge_map,
+                            );
                         }
 
-                        for node1_idx in node_pair.node1.indices {
+                        for node1_idx in node_pair.node1_indices() {
                             let node1 = nodes.get(node1_idx).expect("Node index not found!");
                             self.builder.update_row_coefficients(
                                 *row_idx,
                                 node1,
-                                -node_pair.ratio(),
+                                -node_pair.node1_factor(),
                                 &self.col_edge_map,
                             );
                         }
 
                         // Apply the bounds to the row
-                        self.builder.apply_row_bounds(
-                            row_idx.to_usize().unwrap(),
-                            node_pair.rhs_ratio(),
-                            node_pair.rhs_ratio(),
-                        );
+                        self.builder
+                            .apply_row_bounds(row_idx.to_usize().unwrap(), node_pair.rhs(), node_pair.rhs());
                     }
                 }
             } else {
@@ -955,23 +956,29 @@ where
 
                     // TODO error handling?
                     let nodes = network.nodes();
-                    for node0_idx in node_pair.node0.indices {
+
+                    let f0 = node_pair.node0_factor();
+
+                    for node0_idx in node_pair.node0_indices() {
                         let node0 = nodes.get(node0_idx).expect("Node index not found!");
-                        self.add_node(node0, 1.0, &mut row);
+                        self.add_node(node0, f0.unwrap_or(1.0), &mut row);
                     }
 
-                    let ratio = node_pair.ratio();
+                    let f1 = node_pair.node1_factor();
 
-                    for node1_idx in node_pair.node1.indices {
+                    for node1_idx in node_pair.node1_indices() {
                         let node1 = nodes.get(node1_idx).expect("Node index not found!");
-                        self.add_node(node1, -ratio.unwrap_or(1.0), &mut row);
+                        self.add_node(node1, -f1.unwrap_or(1.0), &mut row);
                     }
-                    // Make the row fixed at zero RHS
-                    row.set_lower(0.0);
-                    row.set_upper(0.0);
+
+                    // Make the row fixed at RHS
+                    let rhs = node_pair.rhs();
+
+                    row.set_lower(rhs);
+                    row.set_upper(rhs);
 
                     // Row is fixed if we can compute the ratio now
-                    if ratio.is_some() {
+                    if f0.is_some() && f1.is_some() {
                         self.builder.add_fixed_row(row);
                         row_indices_for_agg_node.push(None)
                     } else {
