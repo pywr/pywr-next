@@ -755,7 +755,7 @@ fn get_const_coefficient_factor_pairs<'a>(
 
     vec![NodeConstFactorPair::new(
         NodeConstFactor::new(nodes[0].as_slice(), f0),
-        NodeConstFactor::new(nodes[0].as_slice(), f1),
+        NodeConstFactor::new(nodes[1].as_slice(), f1),
         rhs,
     )]
 }
