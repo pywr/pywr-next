@@ -63,7 +63,7 @@ impl TryFromV1<HashMap<String, String>> for Checksum {
 
             Err(ConversionError::UnsupportedFeature {
                 feature: format!(
-                    "Non of the hash algorithm(s) `{algos}` are supported. Only `md5` and `sha256` are currently supported."
+                    "None of the hash algorithm(s) `{algos}` are supported. Only `md5` and `sha256` are currently supported."
                 ),
             })
         }
