@@ -39,6 +39,15 @@ pub struct AnnualReset {
     pub month: u8,
 }
 
+#[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, PywrVisitAll)]
+#[serde(deny_unknown_fields)]
+pub struct SeasonalReset {
+    pub start_day: u8,
+    pub start_month: u8,
+    pub end_day: u8,
+    pub end_month: u8,
+}
+
 /// The reset behaviour for a virtual storage node.
 ///
 /// If provided this determines when the virtual storage node's volume is reset.
@@ -54,6 +63,7 @@ pub enum VirtualStorageReset {
     Monthly {
         months: u8,
     },
+    Seasonal(SeasonalReset),
 }
 
 #[cfg(feature = "core")]
@@ -71,6 +81,13 @@ impl TryInto<pywr_core::virtual_storage::VirtualStorageReset> for VirtualStorage
             }
             VirtualStorageReset::Monthly { months } => {
                 pywr_core::virtual_storage::VirtualStorageReset::NumberOfMonths { months: months.into() }
+            }
+            VirtualStorageReset::Seasonal(seasonal) => {
+                let reset_month = seasonal.start_month.try_into()?;
+                pywr_core::virtual_storage::VirtualStorageReset::DayOfYear {
+                    day: seasonal.start_day as u32,
+                    month: reset_month,
+                }
             }
         };
 
@@ -241,7 +258,6 @@ impl VirtualStorageNode {
             .max_volume(max_volume)
             .cost(cost);
 
-        // Standard virtual storage node never resets.
         if let Some(r) = self.reset.clone() {
             let reset = r.try_into()?;
             builder = builder.reset(reset);
@@ -249,6 +265,19 @@ impl VirtualStorageNode {
 
         if let Some(rv) = &self.reset_volume {
             builder = builder.reset_volume((*rv).into());
+        }
+
+        // Set the active period if this is a seasonal reset
+        if let Some(VirtualStorageReset::Seasonal(seasonal)) = &self.reset {
+            let start_month = seasonal.start_month.try_into()?;
+            let end_month = seasonal.end_month.try_into()?;
+            let period = pywr_core::virtual_storage::VirtualStorageActivePeriod::Period {
+                start_day: seasonal.start_day as u32,
+                start_month,
+                end_day: seasonal.end_day as u32,
+                end_month,
+            };
+            builder = builder.active_period(period);
         }
 
         if let Some(window) = &self.window {

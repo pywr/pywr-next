@@ -4,7 +4,7 @@ use crate::network::{Network, NetworkError};
 use crate::node::{NodeMeta, StorageConstraints, StorageInitialVolume};
 use crate::state::{NetworkStateError, State, StateError, VirtualStorageState};
 use crate::timestep::Timestep;
-use chrono::{Datelike, Month, NaiveDateTime};
+use chrono::{Datelike, Month, NaiveDate, NaiveDateTime};
 use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::num::NonZeroUsize;
@@ -83,6 +83,7 @@ pub struct VirtualStorageBuilder {
     reset: VirtualStorageReset,
     reset_volume: VirtualStorageResetVolume,
     rolling_window: Option<NonZeroUsize>,
+    active_period: VirtualStorageActivePeriod,
     cost: Option<MetricF64>,
 }
 
@@ -99,6 +100,7 @@ impl VirtualStorageBuilder {
             reset: VirtualStorageReset::Never,
             reset_volume: VirtualStorageResetVolume::Initial,
             rolling_window: None,
+            active_period: VirtualStorageActivePeriod::Always,
             cost: None,
         }
     }
@@ -143,6 +145,11 @@ impl VirtualStorageBuilder {
         self
     }
 
+    pub fn active_period(mut self, active_period: VirtualStorageActivePeriod) -> Self {
+        self.active_period = active_period;
+        self
+    }
+
     pub fn cost(mut self, cost: Option<MetricF64>) -> Self {
         self.cost = cost;
         self
@@ -161,6 +168,7 @@ impl VirtualStorageBuilder {
             reset: self.reset,
             reset_volume: self.reset_volume,
             rolling_window: self.rolling_window,
+            active_period: self.active_period,
             cost: self.cost,
         }
     }
@@ -177,6 +185,48 @@ pub enum VirtualStorageReset {
 pub enum VirtualStorageResetVolume {
     Initial,
     Max,
+}
+
+/// Active periods for a virtual storage node.
+pub enum VirtualStorageActivePeriod {
+    Always,
+    Period {
+        start_day: u32,
+        start_month: Month,
+        end_day: u32,
+        end_month: Month,
+    },
+}
+
+impl VirtualStorageActivePeriod {
+    fn is_active(&self, timestep: &NaiveDate) -> bool {
+        match self {
+            Self::Always => true,
+            Self::Period {
+                start_day,
+                start_month,
+                end_day,
+                end_month,
+            } => {
+                let start_month_num = start_month.number_from_month();
+                let end_month_num = end_month.number_from_month();
+                let current_month = timestep.month();
+                let current_day = timestep.day();
+
+                if start_month_num < end_month_num || (start_month_num == end_month_num && start_day <= end_day) {
+                    // Period does not wrap around the year end
+                    (current_month > start_month_num || (current_month == start_month_num && current_day >= *start_day))
+                        && (current_month < end_month_num
+                            || (current_month == end_month_num && current_day <= *end_day))
+                } else {
+                    // Period wraps around the year end
+                    (current_month > start_month_num || (current_month == start_month_num && current_day >= *start_day))
+                        || (current_month < end_month_num
+                            || (current_month == end_month_num && current_day <= *end_day))
+                }
+            }
+        }
+    }
 }
 
 #[derive(Debug, Error)]
@@ -209,6 +259,7 @@ pub struct VirtualStorage {
     reset: VirtualStorageReset,
     reset_volume: VirtualStorageResetVolume,
     rolling_window: Option<NonZeroUsize>,
+    active_period: VirtualStorageActivePeriod,
     cost: Option<MetricF64>,
 }
 
@@ -249,6 +300,9 @@ impl VirtualStorage {
     pub fn before(&self, timestep: &Timestep, state: &mut State) -> Result<(), VirtualStorageError> {
         let do_reset = if timestep.is_first() {
             // Set the initial volume if it is the first timestep.
+            true
+        } else if !self.is_active(timestep) {
+            // Make sure volume is reset outside the active period
             true
         } else {
             // Otherwise we check the reset condition
@@ -315,6 +369,7 @@ impl VirtualStorage {
             .get_max_volume(&state.get_simple_parameter_values())
     }
 
+    /// Return the available and missing volume as a tuple (available, missing).
     pub fn get_available_volume_bounds(&self, state: &State) -> Result<(f64, f64), VirtualStorageError> {
         let min_vol = self.get_min_volume(state)?;
         let max_vol = self.get_max_volume(state)?;
@@ -324,6 +379,11 @@ impl VirtualStorage {
         let available = (current_volume - min_vol).max(0.0);
         let missing = (max_vol - current_volume).max(0.0);
         Ok((available, missing))
+    }
+
+    /// Returns true if the virtual storage is active (i.e. it has no period where it is inactive) .
+    pub fn is_active(&self, timestep: &Timestep) -> bool {
+        self.active_period.is_active(&timestep.date.date())
     }
 }
 
@@ -344,8 +404,10 @@ mod tests {
     use crate::scenario::ScenarioIndex;
     use crate::test_utils::{default_timestepper, run_all_solvers, simple_model};
     use crate::timestep::{Timestep, TimestepDuration, Timestepper};
-    use crate::virtual_storage::{VirtualStorageBuilder, VirtualStorageReset, months_since_last_reset};
-    use chrono::{Datelike, NaiveDate};
+    use crate::virtual_storage::{
+        VirtualStorageActivePeriod, VirtualStorageBuilder, VirtualStorageReset, months_since_last_reset,
+    };
+    use chrono::{Datelike, Month, NaiveDate};
     use ndarray::Array;
     use std::num::NonZeroUsize;
 
@@ -595,5 +657,92 @@ mod tests {
 
         // Test all solvers
         run_all_solvers(&model, &["ipm-ocl", "ipm-simd"], &[], &[]);
+    }
+
+    #[test]
+    /// Test virtual storage active period
+    fn test_virtual_storage_node_active_period() {
+        let period = VirtualStorageActivePeriod::Period {
+            start_day: 15,
+            start_month: Month::March,
+            end_day: 15,
+            end_month: Month::September,
+        };
+
+        // Dates inside the period
+        assert!(period.is_active(&NaiveDate::from_ymd_opt(2016, 3, 15).unwrap()));
+        assert!(period.is_active(&NaiveDate::from_ymd_opt(2016, 7, 8).unwrap()));
+        assert!(period.is_active(&NaiveDate::from_ymd_opt(2016, 9, 15).unwrap()));
+
+        // Dates outside the period
+        assert!(!period.is_active(&NaiveDate::from_ymd_opt(2016, 3, 14).unwrap()));
+        assert!(!period.is_active(&NaiveDate::from_ymd_opt(2016, 9, 16).unwrap()));
+        assert!(!period.is_active(&NaiveDate::from_ymd_opt(2016, 12, 31).unwrap()));
+    }
+
+    #[test]
+    fn test_virtual_storage_node_active_period_wrap() {
+        let period = VirtualStorageActivePeriod::Period {
+            start_day: 15,
+            start_month: Month::September,
+            end_day: 15,
+            end_month: Month::March,
+        };
+
+        // Dates inside the period
+        assert!(period.is_active(&NaiveDate::from_ymd_opt(2016, 9, 15).unwrap()));
+        assert!(period.is_active(&NaiveDate::from_ymd_opt(2016, 12, 31).unwrap()));
+        assert!(period.is_active(&NaiveDate::from_ymd_opt(2017, 1, 1).unwrap()));
+        assert!(period.is_active(&NaiveDate::from_ymd_opt(2017, 3, 15).unwrap()));
+
+        // Dates outside the period
+        assert!(!period.is_active(&NaiveDate::from_ymd_opt(2016, 9, 14).unwrap()));
+        assert!(!period.is_active(&NaiveDate::from_ymd_opt(2016, 3, 16).unwrap()));
+        assert!(!period.is_active(&NaiveDate::from_ymd_opt(2016, 6, 1).unwrap()));
+    }
+
+    #[test]
+    fn test_virtual_storage_node_active_period_same_month() {
+        let period = VirtualStorageActivePeriod::Period {
+            start_day: 10,
+            start_month: Month::June,
+            end_day: 20,
+            end_month: Month::June,
+        };
+
+        // Dates inside the period
+        assert!(period.is_active(&NaiveDate::from_ymd_opt(2016, 6, 10).unwrap()));
+        assert!(period.is_active(&NaiveDate::from_ymd_opt(2016, 6, 15).unwrap()));
+        assert!(period.is_active(&NaiveDate::from_ymd_opt(2016, 6, 20).unwrap()));
+
+        // Dates outside the period
+        assert!(!period.is_active(&NaiveDate::from_ymd_opt(2016, 6, 9).unwrap()));
+        assert!(!period.is_active(&NaiveDate::from_ymd_opt(2016, 6, 21).unwrap()));
+        assert!(!period.is_active(&NaiveDate::from_ymd_opt(2016, 5, 31).unwrap()));
+        assert!(!period.is_active(&NaiveDate::from_ymd_opt(2016, 7, 1).unwrap()));
+    }
+
+    #[test]
+    fn test_virtual_storage_node_active_period_same_month_wrap() {
+        let period = VirtualStorageActivePeriod::Period {
+            start_day: 20,
+            start_month: Month::June,
+            end_day: 10,
+            end_month: Month::June,
+        };
+
+        // Dates inside the period
+        assert!(period.is_active(&NaiveDate::from_ymd_opt(2016, 6, 20).unwrap()));
+        assert!(period.is_active(&NaiveDate::from_ymd_opt(2016, 6, 25).unwrap()));
+        assert!(period.is_active(&NaiveDate::from_ymd_opt(2016, 6, 30).unwrap()));
+        assert!(period.is_active(&NaiveDate::from_ymd_opt(2016, 6, 1).unwrap()));
+        assert!(period.is_active(&NaiveDate::from_ymd_opt(2016, 6, 5).unwrap()));
+        assert!(period.is_active(&NaiveDate::from_ymd_opt(2016, 6, 10).unwrap()));
+        assert!(period.is_active(&NaiveDate::from_ymd_opt(2016, 5, 31).unwrap()));
+        assert!(period.is_active(&NaiveDate::from_ymd_opt(2016, 7, 1).unwrap()));
+
+        // Dates outside the period
+        assert!(!period.is_active(&NaiveDate::from_ymd_opt(2016, 6, 19).unwrap()));
+        assert!(!period.is_active(&NaiveDate::from_ymd_opt(2016, 6, 11).unwrap()));
     }
 }

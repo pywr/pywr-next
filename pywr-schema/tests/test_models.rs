@@ -79,6 +79,8 @@ model_tests! {
     test_river_loss1: ("river_loss1.json", vec![("river_loss1-expected.csv", ResultsShape::Long)], vec!["ipm-simd", "ipm-ocl"], vec![]),
     test_river_gauge1: ("river_gauge1.json", vec![("river_gauge1-expected.csv", ResultsShape::Long)], vec![], vec![]),
     test_river_split_with_gauge1: ("river_split_with_gauge1.json", vec![], vec![], vec![]),
+    test_seasonal_vs1: ("seasonal-vs1.json", vec![("seasonal-vs1-expected.csv", ResultsShape::Long)], vec!["ipm-simd", "ipm-ocl"], vec![]),
+    test_seasonal_vs2: ("seasonal-vs2.json", vec![("seasonal-vs2-expected.csv", ResultsShape::Long)], vec!["ipm-simd", "ipm-ocl"], vec![]),
     test_thirty_day_licence: ("30-day-licence.json", vec![], vec!["ipm-simd", "ipm-ocl"], vec![]),
     test_wtw1: ("wtw1.json", vec![("wtw1-expected.csv", ResultsShape::Long)], vec!["ipm-simd", "ipm-ocl"], vec![]),
     test_wtw2: ("wtw2.json", vec![("wtw2-expected.csv", ResultsShape::Long)], vec!["ipm-simd", "ipm-ocl"], vec![]),
