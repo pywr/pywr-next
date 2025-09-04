@@ -1,3 +1,18 @@
+//! # Data Tables in Pywr
+//!
+//! Data tables provide a flexible mechanism for loading external data into Pywr models.
+//! They are used to supply scalar or array values to parameters and nodes, typically from CSV files.
+//! Data tables support different lookup formats, such as row-based, column-based, or both,
+//! allowing for a variety of indexing schemes.
+//!
+//! The main supported formats are:
+//! - **CSV**: The most common format, supporting both scalar and array data.
+//!     - **Row-based lookup**: Index by one or more row keys.
+//!     - **Column-based lookup**: Index by one or more column keys (for arrays).
+//!     - **Row & column lookup**: Index by both row and column keys (for scalars).
+//!
+//! For more details and advanced usage, see the [Pywr Book](https://pywr.org/book/data_tables.html).
+
 #[cfg(feature = "core")]
 mod scalar;
 #[cfg(feature = "core")]
@@ -95,13 +110,15 @@ impl CsvDataTable {
                         "CSV row scalar table with more than two index columns is not supported.".to_string(),
                     )),
                 },
-                CsvDataTableLookup::Col { .. } => todo!(),
+                CsvDataTableLookup::Col { .. } => Err(TableError::FormatNotSupported(
+                    "CSV col scalar table is not supported. Use row based table instead.".to_string(),
+                )),
                 CsvDataTableLookup::Both { rows, cols } => match (rows, cols) {
                     (1, 1) => Ok(LoadedTable::FloatScalar(load_csv_row_col_scalar_table_one(
                         &self.url, data_path,
                     )?)),
                     _ => Err(TableError::FormatNotSupported(
-                        "CSV row & col scalar table with more than one index is not supported.".to_string(),
+                        "CSV row & column scalar table with more than one index is not supported.".to_string(),
                     )),
                 },
             },
@@ -126,7 +143,9 @@ impl CsvDataTable {
                         "CSV column array table with more than two index columns is not supported.".to_string(),
                     )),
                 },
-                CsvDataTableLookup::Both { .. } => todo!(),
+                CsvDataTableLookup::Both { .. } => Err(TableError::FormatNotSupported(
+                    "CSV row & column array table is not supported. Use either row or column based format.".to_string(),
+                )),
             },
         }
     }
@@ -175,12 +194,14 @@ pub enum TableError {
     IndexOutOfBounds(usize),
     #[error("Table format invalid: {0}")]
     InvalidFormat(String),
+    #[error("Could not convert to u64 without loss of precision. Index values must be postive whole numbers.")]
+    U64ConversionError,
 }
 
 #[cfg(feature = "core")]
 pub enum LoadedTable {
     FloatVec(LoadedVecTable<f64>),
-    FloatScalar(LoadedScalarTable<f64>),
+    FloatScalar(LoadedScalarTable),
 }
 
 #[cfg(feature = "core")]
@@ -196,7 +217,19 @@ impl LoadedTable {
 
     pub fn get_scalar_f64(&self, key: &[&str]) -> Result<f64, TableError> {
         match self {
-            LoadedTable::FloatScalar(tbl) => tbl.get_scalar(key),
+            LoadedTable::FloatScalar(tbl) => Ok(tbl.get_scalar(key)?.as_f64()),
+            _ => Err(TableError::WrongTableFormat(format!(
+                "Scalar value with key \"{key:?}\" requested from non-scalar table."
+            ))),
+        }
+    }
+
+    pub fn get_scalar_u64(&self, key: &[&str]) -> Result<u64, TableError> {
+        match self {
+            LoadedTable::FloatScalar(tbl) => Ok(tbl
+                .get_scalar(key)?
+                .try_as_u64()
+                .ok_or(TableError::U64ConversionError)?),
             _ => Err(TableError::WrongTableFormat(format!(
                 "Scalar value with key \"{key:?}\" requested from non-scalar table."
             ))),
@@ -260,9 +293,10 @@ impl LoadedTableCollection {
     }
 
     /// Return a single scalar value from a table collection.
-    pub fn get_scalar_u64(&self, _table_ref: &TableDataRef) -> Result<u64, TableError> {
-        // let tbl = self.get_table(&table_ref.table)?;
-        todo!()
+    pub fn get_scalar_u64(&self, table_ref: &TableDataRef) -> Result<u64, TableError> {
+        let tbl = self.get_table(&table_ref.table)?;
+        let key = table_ref.key();
+        tbl.get_scalar_u64(&key)
     }
 
     /// Return a single scalar value from a table collection.
@@ -279,14 +313,14 @@ impl LoadedTableCollection {
 pub struct TableDataRef {
     pub table: String,
     pub column: Option<TableIndex>,
-    pub index: Option<TableIndex>,
+    pub row: Option<TableIndex>,
 }
 
 #[cfg(feature = "core")]
 impl TableDataRef {
-    fn key(&self) -> Vec<&str> {
+    pub fn key(&self) -> Vec<&str> {
         let mut key: Vec<&str> = Vec::new();
-        if let Some(row_idx) = &self.index {
+        if let Some(row_idx) = &self.row {
             match row_idx {
                 TableIndex::Single(k) => key.push(k),
                 TableIndex::Multi(k) => key.extend(k.iter().map(|s| s.as_str())),
@@ -324,7 +358,7 @@ impl TryFrom<TableDataRefV1> for TableDataRef {
         Ok(Self {
             table: v1.table,
             column,
-            index,
+            row: index,
         })
     }
 }

@@ -150,8 +150,11 @@ impl Metric {
             Self::Parameter(p_ref) => p_ref.key.clone().unwrap_or_else(|| "value".to_string()),
             Self::LocalParameter(p_ref) => p_ref.key.clone().unwrap_or_else(|| "value".to_string()),
             Self::Constant { .. } => "value".to_string(),
-            Self::Table(_) => "value".to_string(),
-            Self::Timeseries(_) => "value".to_string(),
+            Self::Table(tbl_ref) => tbl_ref.key().join(";").to_string(),
+            Self::Timeseries(ts_ref) => ts_ref
+                .column()
+                .map(|c| c.to_string())
+                .unwrap_or_else(|| "value".to_string()),
             Self::InterNetworkTransfer { .. } => "value".to_string(),
             Self::Edge { .. } => "Flow".to_string(),
         };

@@ -3,7 +3,10 @@
   "meta": {
     "name": "my-variable"
   },
-  "value": 5.0,
+  "value": {
+    "type": "Literal",
+    "value": 5.0
+  },
   "variable": {
     "is_active": true,
     "activation": {

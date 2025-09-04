@@ -3,7 +3,10 @@
   "meta": {
     "name": "my-offset"
   },
-  "offset": 3.14,
+  "offset": {
+    "type": "Literal",
+    "value": 3.14
+  },
   "metric": {
     "type": "Parameter",
     "name": "my-other-parameter"

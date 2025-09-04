@@ -3,5 +3,8 @@
   "meta": {
     "name": "my-constant"
   },
-  "value": 10.0
+  "value": {
+    "type": "Literal",
+    "value": 10.0
+  }
 }

@@ -200,7 +200,7 @@ pub fn try_convert_values(
     v1_table_ref: Option<TableDataRef>,
 ) -> Result<ConstantFloatVec, ComponentConversionError> {
     let values: ConstantFloatVec = if let Some(values) = v1_values {
-        ConstantFloatVec::Literal(values)
+        ConstantFloatVec::Literal { values }
     } else if let Some(_external) = v1_external {
         return Err(ComponentConversionError::Parameter {
             name: name.to_string(),

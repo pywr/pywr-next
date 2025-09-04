@@ -192,7 +192,7 @@ impl TryFromV1<ConstantParameterV1> for ConstantParameter {
         let meta: ParameterMeta = v1.meta.into_v2(parent_node, conversion_data);
 
         let value = if let Some(v) = v1.value {
-            ConstantValue::Literal(v)
+            v.into()
         } else if let Some(tbl) = v1.table {
             ConstantValue::Table(tbl.try_into().map_err(|error| ComponentConversionError::Parameter {
                 name: meta.name.clone(),
@@ -200,7 +200,7 @@ impl TryFromV1<ConstantParameterV1> for ConstantParameter {
                 error,
             })?)
         } else {
-            ConstantValue::Literal(0.0)
+            0.0.into()
         };
 
         let p = Self {
