@@ -16,14 +16,14 @@ categories.workspace = true
 [dependencies]
 digest = { workspace = true }
 svgbobdoc = { git = "https://github.com/jetuk/svgbobdoc.git", features = ["enable"], branch = "svgbob-0_7_5" }
-polars = { workspace = true, features = ["csv", "diff", "dtype-datetime", "dtype-date", "dynamic_group_by"], optional = true }
+polars = { workspace = true, features = ["lazy", "rows", "ndarray", "diff", "dtype-datetime", "dtype-date", "dynamic_group_by"], optional = true }
 pyo3 = { workspace = true, optional = true }
 pyo3-polars = { workspace = true, optional = true }
 strum = "0.27"
 strum_macros = "0.27"
 schemars = { workspace = true }
 hdf5-metno = { workspace = true, optional = true }
-csv = { workspace = true, optional = true }
+csv = { workspace = true }
 tracing = { workspace = true, optional = true }
 num = { workspace = true }
 float-cmp = { workspace = true }
@@ -32,7 +32,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 pywr-v1-schema = { workspace = true }
-pywr-core = { path = "../pywr-core", optional = true }
+pywr-core = { path = "../pywr-core", default-features = false, optional = true }
 chrono = { workspace = true }
 pywr-schema-macros = { path = "../pywr-schema-macros" }
 md-5 = { workspace = true }
@@ -40,15 +40,21 @@ sha2 = { workspace = true }
 hex = { workspace = true }
 
 [dev-dependencies]
-tempfile = "3.20"
+tempfile = "3.21"
 
 [features]
 # Core feature requires additional dependencies
-core = ["dep:pywr-core", "dep:hdf5-metno", "dep:csv", "dep:polars", "dep:pyo3-polars", "dep:ndarray", "dep:tracing"]
-default = ["core", "pyo3"]
+core = ["dep:pywr-core", "dep:polars", "dep:ndarray", "dep:tracing"]
+default = ["core", "pyo3", "hdf5", "clp"]
+
+# Core solvers
+clp = ["pywr-core/clp"]
 cbc = ["pywr-core/cbc"]
 highs = ["pywr-core/highs"]
 ipm-ocl = ["pywr-core/ipm-ocl"]
 ipm-simd = ["pywr-core/ipm-simd"]
 test-python = []
-pyo3 = ["dep:pyo3", "pywr-core/pyo3"]
+pyo3 = ["dep:pyo3", "pywr-core/pyo3", "dep:pyo3-polars"]
+
+# File formats
+hdf5 = ["dep:hdf5-metno", "pywr-core/hdf5"]

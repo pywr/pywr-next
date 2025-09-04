@@ -11,9 +11,6 @@ use std::fmt::Debug;
 use std::ops::Deref;
 use std::time::Instant;
 
-const FMAX: f64 = f64::MAX;
-const FMIN: f64 = f64::MIN;
-
 enum Bounds {
     // Free,
     Lower(f64),
@@ -34,6 +31,10 @@ pub enum ColType {
 /// This struct is intended to facilitate passing the LP data to a external library. Most
 /// libraries accept LP construct in sparse form.
 struct Lp<I> {
+    /// The maximum value for a floating point number to be used as a bound.
+    f64_max: f64,
+    /// The minimum value for a floating point number to be used as a bound.
+    f64_min: f64,
     col_lower: Vec<f64>,
     col_upper: Vec<f64>,
     col_obj_coef: Vec<f64>,
@@ -71,8 +72,8 @@ where
             .zip(self.row_upper.iter_mut())
         {
             if mask == &I::one() {
-                *lb = FMIN;
-                *ub = FMAX;
+                *lb = self.f64_min;
+                *ub = self.f64_max;
             }
         }
     }
@@ -129,6 +130,8 @@ where
 /// between variable and fixed types. In the generated `LP<I>` the user is able to modify the
 /// variable rows, but not the fixed rows.
 struct LpBuilder<I> {
+    f64_max: f64,
+    f64_min: f64,
     col_lower: Vec<f64>,
     col_upper: Vec<f64>,
     col_obj_coef: Vec<f64>,
@@ -137,12 +140,14 @@ struct LpBuilder<I> {
     fixed_rows: Vec<RowBuilder<I>>,
 }
 
-impl<I> Default for LpBuilder<I>
+impl<I> LpBuilder<I>
 where
     I: num::PrimInt,
 {
-    fn default() -> Self {
+    fn new(f64_max: f64, f64_min: f64) -> Self {
         Self {
+            f64_max,
+            f64_min,
             col_lower: Vec::new(),
             col_upper: Vec::new(),
             col_obj_coef: Vec::new(),
@@ -151,16 +156,11 @@ where
             fixed_rows: Vec::new(),
         }
     }
-}
 
-impl<I> LpBuilder<I>
-where
-    I: num::PrimInt,
-{
     fn add_column(&mut self, obj_coef: f64, bounds: Bounds, col_type: ColType) -> I {
         let (lb, ub): (f64, f64) = match bounds {
             Bounds::Double(lb, ub) => (lb, ub),
-            Bounds::Lower(lb) => (lb, FMAX),
+            Bounds::Lower(lb) => (lb, self.f64_max),
             // Bounds::Fixed(b) => (b, b),
             // Bounds::Free => (f64::MIN, FMAX),
             // Bounds::Upper(ub) => (f64::MIN, ub),
@@ -217,7 +217,7 @@ where
         for (rows, mask) in [(self.rows, I::one()), (self.fixed_rows, I::zero())] {
             for row in rows {
                 row_lower.push(row.lower);
-                row_upper.push(row.upper);
+                row_upper.push(row.upper.unwrap_or(self.f64_max));
                 row_mask.push(mask);
                 let prev_row_start = *row_starts.get(&row_starts.len() - 1).unwrap();
                 row_starts.push(prev_row_start + I::from(row.columns.len()).unwrap());
@@ -229,6 +229,8 @@ where
         }
 
         Lp {
+            f64_max: self.f64_max,
+            f64_min: self.f64_min,
             col_lower: self.col_lower,
             col_upper: self.col_upper,
             col_obj_coef: self.col_obj_coef,
@@ -247,7 +249,7 @@ where
 #[derive(Debug, PartialEq)]
 struct RowBuilder<I> {
     lower: f64,
-    upper: f64,
+    upper: Option<f64>,
     columns: BTreeMap<I, f64>,
 }
 
@@ -255,7 +257,7 @@ impl<I> Default for RowBuilder<I> {
     fn default() -> Self {
         Self {
             lower: 0.0,
-            upper: FMAX,
+            upper: None,
             columns: BTreeMap::new(),
         }
     }
@@ -266,7 +268,7 @@ where
     I: num::PrimInt,
 {
     pub fn set_upper(&mut self, upper: f64) {
-        self.upper = upper;
+        self.upper = Some(upper);
     }
 
     pub fn set_lower(&mut self, lower: f64) {
@@ -327,6 +329,7 @@ impl<I> BuiltSolver<I>
 where
     I: num::PrimInt + Default + Debug + Copy,
 {
+    #[allow(dead_code)]
     pub fn num_cols(&self) -> I {
         I::from(self.builder.col_upper.len()).unwrap()
     }
@@ -387,8 +390,30 @@ where
         self.col_edge_map.col_for_edge(edge_index)
     }
 
+    #[allow(dead_code)]
     pub fn coefficients_to_update(&self) -> &[(I, I, f64)] {
         &self.builder.coefficients_to_update
+    }
+
+    /// Apply the updated coefficients to the sparse matrix.
+    #[allow(dead_code)]
+    pub fn apply_updated_coefficients(&mut self) {
+        for (row, col, value) in self.builder.coefficients_to_update.drain(..) {
+            let row = row.to_usize().unwrap();
+            let col = col.to_usize().unwrap();
+
+            // Find the position of the column in the sparse matrix
+            let start = self.builder.row_starts[row].to_usize().unwrap();
+            let end = self.builder.row_starts[row + 1].to_usize().unwrap();
+            if let Some(pos) = self.builder.columns[start..end]
+                .iter()
+                .position(|&c| c.to_usize().unwrap() == col)
+            {
+                self.builder.elements[start + pos] = value;
+            } else {
+                panic!("Column not found in row when applying updated coefficients.");
+            }
+        }
     }
 
     pub fn update(
@@ -599,24 +624,19 @@ pub struct SolverBuilder<I> {
     node_set_bin_col_map: HashMap<Vec<NodeIndex>, I>,
 }
 
-impl<I> Default for SolverBuilder<I>
+impl<I> SolverBuilder<I>
 where
-    I: num::PrimInt,
+    I: num::PrimInt + Default + Debug,
 {
-    fn default() -> Self {
+    pub fn new(f64_max: f64, f64_min: f64) -> Self {
         Self {
-            builder: LpBuilder::default(),
+            builder: LpBuilder::new(f64_max, f64_min),
             col_edge_map: ColumnEdgeMapBuilder::default(),
             node_bin_col_map: HashMap::new(),
             node_set_bin_col_map: HashMap::new(),
         }
     }
-}
 
-impl<I> SolverBuilder<I>
-where
-    I: num::PrimInt + Default + Debug,
-{
     pub fn col_for_edge(&self, edge_index: &EdgeIndex) -> I {
         self.col_edge_map.col_for_edge(edge_index)
     }
@@ -839,15 +859,15 @@ where
                     match bounds {
                         Some(bounds) => {
                             // If the bounds are constant then the binary variable is used to control the upper bound
-                            row_ub.add_element(*col, bounds.max_flow.min(1e8));
+                            row_ub.add_element(*col, bounds.max_flow.min(1e6));
                             row_ub.set_lower(0.0);
-                            row_ub.set_upper(FMAX);
+                            row_ub.set_upper(self.builder.f64_max);
                             self.builder.add_fixed_row(row_ub);
 
                             if bounds.min_flow != 0.0 {
-                                row_lb.add_element(*col, -bounds.min_flow.max(1e-8));
+                                row_lb.add_element(*col, -bounds.min_flow.max(1e-6));
                                 row_lb.set_lower(0.0);
-                                row_lb.set_upper(FMAX);
+                                row_lb.set_upper(self.builder.f64_max);
 
                                 self.builder.add_fixed_row(row_lb);
                             }
@@ -1045,12 +1065,12 @@ mod tests {
 
     #[test]
     fn model_builder_new() {
-        let _builder: LpBuilder<i32> = LpBuilder::default();
+        let _builder: LpBuilder<i32> = LpBuilder::new(f64::INFINITY, f64::NEG_INFINITY);
     }
 
     #[test]
     fn builder_add_rows() {
-        let mut builder: LpBuilder<i32> = LpBuilder::default();
+        let mut builder: LpBuilder<i32> = LpBuilder::new(f64::INFINITY, f64::NEG_INFINITY);
         let mut row = RowBuilder::default();
         row.add_element(0, 1.0);
         row.add_element(1, 1.0);
@@ -1061,7 +1081,7 @@ mod tests {
 
     #[test]
     fn builder_solve2() {
-        let mut builder = LpBuilder::default();
+        let mut builder = LpBuilder::new(f64::MAX, f64::MIN);
 
         builder.add_column(-2.0, Bounds::Lower(0.0), ColType::Continuous);
         builder.add_column(-3.0, Bounds::Lower(0.0), ColType::Continuous);

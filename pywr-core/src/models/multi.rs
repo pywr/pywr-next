@@ -2,7 +2,7 @@ use crate::metric::{MetricF64, MetricF64Error};
 use crate::models::ModelDomain;
 use crate::network::{
     Network, NetworkFinaliseError, NetworkRecorderSaveError, NetworkRecorderSetupError, NetworkSetupError,
-    NetworkSolverSetupError, NetworkState, RunTimings,
+    NetworkSolverSetupError, NetworkState, NetworkTimings, RunDuration,
 };
 use crate::scenario::ScenarioIndex;
 use crate::solvers::{MultiStateSolver, Solver, SolverSettings};
@@ -16,6 +16,7 @@ use std::num::NonZeroUsize;
 use std::ops::Deref;
 use std::time::Instant;
 use thiserror::Error;
+use tracing::info;
 
 /// An index to another model
 ///
@@ -352,12 +353,14 @@ impl MultiNetworkModel {
     }
 
     /// Perform a single time-step of the multi1-model.
-    pub fn step<S>(&self, state: &mut MultiNetworkModelState<Vec<Box<S>>>) -> Result<(), MultiNetworkModelStepError>
+    pub fn step<S>(
+        &self,
+        state: &mut MultiNetworkModelState<Vec<Box<S>>>,
+        timings: &mut [NetworkTimings],
+    ) -> Result<(), MultiNetworkModelStepError>
     where
         S: Solver,
     {
-        let mut timings = RunTimings::default();
-
         let timestep = self
             .domain
             .time
@@ -367,7 +370,7 @@ impl MultiNetworkModel {
 
         let scenario_indices = self.domain.scenarios.indices();
 
-        for (idx, entry) in self.networks.iter().enumerate() {
+        for (idx, (entry, timing)) in self.networks.iter().zip(timings.iter_mut()).enumerate() {
             // Perform inter-model state updates
             self.compute_inter_network_transfers(idx, timestep, scenario_indices, &mut state.states)?;
 
@@ -377,13 +380,7 @@ impl MultiNetworkModel {
             // Perform sub-model step
             entry
                 .network
-                .step(
-                    timestep,
-                    scenario_indices,
-                    sub_model_solvers,
-                    sub_model_states,
-                    &mut timings,
-                )
+                .step(timestep, scenario_indices, sub_model_solvers, sub_model_states, timing)
                 .unwrap();
 
             let start_r_save = Instant::now();
@@ -398,7 +395,7 @@ impl MultiNetworkModel {
                     timestep: *timestep,
                     source: Box::new(source),
                 })?;
-            timings.recorder_saving += start_r_save.elapsed();
+            timing.recorder_saving += start_r_save.elapsed();
         }
 
         // Finally increment the time-step index
@@ -410,12 +407,11 @@ impl MultiNetworkModel {
     pub fn step_multi_scenario<S>(
         &self,
         state: &mut MultiNetworkModelState<Box<S>>,
+        timings: &mut [NetworkTimings],
     ) -> Result<(), MultiNetworkModelStepError>
     where
         S: MultiStateSolver,
     {
-        let mut timings = RunTimings::default();
-
         let timestep = self
             .domain
             .time
@@ -425,7 +421,7 @@ impl MultiNetworkModel {
 
         let scenario_indices = self.domain.scenarios.indices();
 
-        for (idx, entry) in self.networks.iter().enumerate() {
+        for (idx, (entry, timing)) in self.networks.iter().zip(timings.iter_mut()).enumerate() {
             // Perform inter-model state updates
             self.compute_inter_network_transfers(idx, timestep, scenario_indices, &mut state.states)?;
 
@@ -435,13 +431,7 @@ impl MultiNetworkModel {
             // Perform sub-model step
             entry
                 .network
-                .step_multi_scenario(
-                    timestep,
-                    scenario_indices,
-                    sub_model_solvers,
-                    sub_model_states,
-                    &mut timings,
-                )
+                .step_multi_scenario(timestep, scenario_indices, sub_model_solvers, sub_model_states, timing)
                 .unwrap();
 
             let start_r_save = Instant::now();
@@ -456,7 +446,7 @@ impl MultiNetworkModel {
                     timestep: *timestep,
                     source: Box::new(source),
                 })?;
-            timings.recorder_saving += start_r_save.elapsed();
+            timing.recorder_saving += start_r_save.elapsed();
         }
 
         // Finally increment the time-step index
@@ -544,13 +534,15 @@ impl MultiNetworkModel {
         S: Solver,
         <S as Solver>::Settings: SolverSettings,
     {
-        let mut timings = RunTimings::default();
+        let run_duration = RunDuration::start();
+        // Create a timer for each network
+        let mut timings: Vec<_> = (0..self.networks.len()).map(|_| NetworkTimings::default()).collect();
         let mut count = 0;
 
         // TODO: Setup thread pool if running in parallel
 
         loop {
-            match self.step::<S>(state) {
+            match self.step::<S>(state, &mut timings) {
                 Ok(_) => {}
                 Err(MultiNetworkModelStepError::EndOfTimesteps) => break,
                 Err(e) => return Err(MultiNetworkModelRunError::StepError(Box::new(e))),
@@ -562,8 +554,8 @@ impl MultiNetworkModel {
         self.finalise(state)?;
 
         // End the global timer and print the run statistics
-        timings.finish(count);
-        timings.print_table();
+        let run_duration = run_duration.finish(count);
+        self.print_summary_statistics(&run_duration, &timings);
 
         Ok(())
     }
@@ -593,13 +585,15 @@ impl MultiNetworkModel {
         S: MultiStateSolver,
         <S as MultiStateSolver>::Settings: SolverSettings,
     {
-        let mut timings = RunTimings::default();
+        let run_duration = RunDuration::start();
+        // Create a timer for each network
+        let mut timings: Vec<_> = (0..self.networks.len()).map(|_| NetworkTimings::default()).collect();
         let mut count = 0;
 
         // TODO: Setup thread pool if running in parallel
 
         loop {
-            match self.step_multi_scenario::<S>(state) {
+            match self.step_multi_scenario::<S>(state, &mut timings) {
                 Ok(_) => {}
                 Err(MultiNetworkModelStepError::EndOfTimesteps) => break,
                 Err(e) => return Err(MultiNetworkModelRunError::StepError(Box::new(e))),
@@ -611,10 +605,23 @@ impl MultiNetworkModel {
         self.finalise_multi_scenario(state)?;
 
         // End the global timer and print the run statistics
-        timings.finish(count);
-        timings.print_table();
+        let run_duration = run_duration.finish(count);
+        self.print_summary_statistics(&run_duration, &timings);
 
         Ok(())
+    }
+
+    /// Print summary statistics of the model run.
+    fn print_summary_statistics(&self, run_duration: &RunDuration, timings: &[NetworkTimings]) {
+        info!("Run timing statistics:");
+        let total_duration = run_duration.total_duration().as_secs_f64();
+        info!("{: <24} | {: <10}", "Metric", "Value");
+        run_duration.print_table();
+
+        for (entry, timing) in self.networks.iter().zip(timings.iter()) {
+            info!("Network: {}", entry.name);
+            timing.print_table(total_duration, &entry.network);
+        }
     }
 }
 
@@ -703,7 +710,7 @@ mod tests {
         let scenario_group = ScenarioGroupBuilder::new("test-scenario", 2).build().unwrap();
         scenario_builder = scenario_builder.with_group(scenario_group).unwrap();
 
-        let mut multi_model = MultiNetworkModel::new(ModelDomain::from(timestepper, scenario_builder).unwrap());
+        let mut multi_model = MultiNetworkModel::new(ModelDomain::try_from(timestepper, scenario_builder).unwrap());
 
         let test_scenario_group_idx = multi_model
             .domain()
@@ -724,7 +731,11 @@ mod tests {
             .setup::<ClpSolver>(&Default::default())
             .expect("Failed to setup multi1-model.");
 
-        multi_model.step(&mut state).expect("Failed to step multi1-model.")
+        let mut timings: Vec<_> = (0..multi_model.networks.len()).map(|_| Default::default()).collect();
+
+        multi_model
+            .step(&mut state, &mut timings)
+            .expect("Failed to step multi1-model.")
     }
 
     #[test]
@@ -732,7 +743,7 @@ mod tests {
         let timestepper = default_timestepper();
         let scenario_collection = ScenarioDomainBuilder::default();
 
-        let mut multi_model = MultiNetworkModel::new(ModelDomain::from(timestepper, scenario_collection).unwrap());
+        let mut multi_model = MultiNetworkModel::new(ModelDomain::try_from(timestepper, scenario_collection).unwrap());
 
         let network = Network::default();
         let _network1_idx = multi_model.add_network("network1", network);

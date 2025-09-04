@@ -1,6 +1,6 @@
-use crate::data_tables::{DataTable, TableDataRef, TableError};
+use crate::data_tables::{TableDataRef, TableError};
 use crate::digest::ChecksumError;
-use crate::nodes::NodeAttribute;
+use crate::nodes::{NodeAttribute, NodeComponent};
 use crate::timeseries::TimeseriesError;
 #[cfg(feature = "core")]
 use ndarray::ShapeError;
@@ -17,20 +17,16 @@ pub enum SchemaError {
     Infallible(#[from] std::convert::Infallible),
     #[error("IO error on path `{path}`: {error}")]
     IO { path: PathBuf, error: std::io::Error },
-    #[error("JSON error: {0}")]
-    Json(#[from] serde_json::Error),
     // Use this error when a node is not found in the schema (i.e. while parsing the schema).
     #[error("Node with name {name} not found in the schema.")]
     NodeNotFound { name: String },
     // Use this error when a node is not found in a pywr-core network (i.e. during building the network).
     #[error("Node with name `{name}` and sub-name `{}` not found in the network.", .sub_name.as_deref().unwrap_or("None"))]
     CoreNodeNotFound { name: String, sub_name: Option<String> },
-    #[error("node ({ty}) with name {name} does not support attribute {attr}")]
-    NodeAttributeNotSupported {
-        ty: String,
-        name: String,
-        attr: NodeAttribute,
-    },
+    #[error("Attribute `{attr}` not supported.")]
+    NodeAttributeNotSupported { attr: NodeAttribute },
+    #[error("Component `{attr}` not supported.")]
+    NodeComponentNotSupported { attr: NodeComponent },
     // Use this error when a parameter is not found in the schema (i.e. while parsing the schema).
     #[error("Parameter `{name}` not found in the schema.")]
     ParameterNotFound { name: String, key: Option<String> },
@@ -45,8 +41,6 @@ pub enum SchemaError {
     NetworkNotFound(String),
     #[error("Edge from `{from_node}` to `{to_node}` not found")]
     EdgeNotFound { from_node: String, to_node: String },
-    #[error("missing initial volume for node: {0}")]
-    MissingInitialVolume(String),
     #[error("Pywr core network error: {0}")]
     #[cfg(feature = "core")]
     CoreNetworkError(#[from] pywr_core::NetworkError),
@@ -62,12 +56,6 @@ pub enum SchemaError {
     #[error("Error loading data from table `{0}` (column: `{1:?}`, index: `{2:?}`) error: {source}", table_ref.table, table_ref.column, table_ref.index)]
     TableRefLoad {
         table_ref: TableDataRef,
-        #[source]
-        source: Box<TableError>,
-    },
-    #[error("Error loading table `{table_def:?}` error: {source}")]
-    TableLoad {
-        table_def: Box<DataTable>,
         #[source]
         source: Box<TableError>,
     },
@@ -119,14 +107,31 @@ pub enum SchemaError {
     PlaceholderNodeNotAllowed { name: String },
     #[error("Placeholder parameter `{name}` cannot be added to a model.")]
     PlaceholderParameterNotAllowed { name: String },
+    #[error("Node cannot be used in a flow constraint.")]
+    NodeNotAllowedInFlowConstraint,
+    #[error("Node cannot be used in a storage constraint.")]
+    NodeNotAllowedInStorageConstraint,
+    #[error("{msg}")]
+    InvalidNodeAttributes { msg: String },
+    #[error("'{node}' does not have a slot named '{slot}'")]
+    NodeConnectionSlotNotFound { node: String, slot: String },
+    #[error("{msg}")]
+    NodeConnectionSlotNotAvailable { msg: String },
+    #[error("{msg}")]
+    NodeConnectionSlotRequired { msg: String },
     #[error("Checksum error: {0}")]
     ChecksumError(#[from] ChecksumError),
 }
 
 #[cfg(all(feature = "core", feature = "pyo3"))]
-impl From<SchemaError> for PyErr {
-    fn from(err: SchemaError) -> PyErr {
-        pyo3::exceptions::PyRuntimeError::new_err(err.to_string())
+impl TryFrom<SchemaError> for PyErr {
+    type Error = ();
+    fn try_from(err: SchemaError) -> Result<Self, Self::Error> {
+        match err {
+            SchemaError::PythonError(py_err) => Ok(py_err),
+            SchemaError::Timeseries(err) => err.try_into(),
+            _ => Err(()),
+        }
     }
 }
 

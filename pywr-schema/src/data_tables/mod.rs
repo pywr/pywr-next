@@ -4,8 +4,6 @@ mod scalar;
 mod vec;
 
 use crate::ConversionError;
-#[cfg(feature = "core")]
-use crate::SchemaError;
 use crate::digest::{Checksum, ChecksumError};
 use crate::parameters::TableIndex;
 use pywr_schema_macros::PywrVisitAll;
@@ -205,23 +203,40 @@ impl LoadedTable {
 }
 
 #[cfg(feature = "core")]
+#[derive(Error, Debug)]
+pub enum TableLoadError {
+    #[error("Failed to load table `{name}`: {source}")]
+    TableError {
+        name: String,
+        #[source]
+        source: TableError,
+    },
+    #[error("Table with name `{name}` already exists in the collection.")]
+    DuplicateTableName { name: String },
+}
+
+#[cfg(feature = "core")]
 pub struct LoadedTableCollection {
     tables: HashMap<String, LoadedTable>,
 }
 
 #[cfg(feature = "core")]
 impl LoadedTableCollection {
-    pub fn from_schema(table_defs: Option<&[DataTable]>, data_path: Option<&Path>) -> Result<Self, SchemaError> {
+    pub fn from_schema(table_defs: Option<&[DataTable]>, data_path: Option<&Path>) -> Result<Self, TableLoadError> {
         let mut tables = HashMap::new();
         if let Some(table_defs) = table_defs {
             for table_def in table_defs {
                 let name = table_def.name().to_string();
                 info!("Loading table: {}", &name);
-                let table = table_def.load(data_path).map_err(|source| SchemaError::TableLoad {
-                    table_def: Box::new(table_def.clone()),
-                    source: Box::new(source),
+                let table = table_def.load(data_path).map_err(|source| TableLoadError::TableError {
+                    name: name.clone(),
+                    source,
                 })?;
-                // TODO handle duplicate table names!
+
+                if tables.contains_key(&name) {
+                    return Err(TableLoadError::DuplicateTableName { name });
+                }
+
                 tables.insert(name, table);
             }
         }

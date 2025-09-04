@@ -16,6 +16,7 @@ mod discount_factor;
 mod hydropower;
 mod indexed_array;
 mod interpolated;
+
 mod offset;
 mod placeholder;
 mod polynomial;
@@ -33,7 +34,7 @@ use crate::error::SchemaError;
 use crate::error::{ComponentConversionError, ConversionError};
 use crate::metric::Metric;
 #[cfg(feature = "core")]
-use crate::model::LoadArgs;
+use crate::network::LoadArgs;
 use crate::timeseries::ConvertedTimeseriesReference;
 use crate::v1::{ConversionData, IntoV2, TryFromV1, TryIntoV2};
 use crate::visit::{VisitMetrics, VisitPaths};
@@ -61,7 +62,7 @@ pub use profiles::{
 };
 #[cfg(all(feature = "core", feature = "pyo3"))]
 pub use python::try_json_value_into_py;
-pub use python::{PythonParameter, PythonReturnType, PythonSource};
+pub use python::{PythonObject, PythonParameter, PythonReturnType, PythonSource};
 use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::parameters::{
     CoreParameter, DataFrameParameter as DataFrameParameterV1, Parameter as ParameterV1,
@@ -72,7 +73,7 @@ use schemars::JsonSchema;
 use std::path::{Path, PathBuf};
 use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticStr};
 pub use tables::TablesArrayParameter;
-pub use thresholds::ThresholdParameter;
+pub use thresholds::{MultiThresholdParameter, Predicate, ThresholdParameter};
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 pub struct ParameterMeta {
@@ -102,6 +103,7 @@ pub enum Parameter {
     UniformDrawdownProfile(UniformDrawdownProfileParameter),
     Max(MaxParameter),
     Min(MinParameter),
+    MultiThreshold(MultiThresholdParameter),
     Negative(NegativeParameter),
     NegativeMax(NegativeMaxParameter),
     NegativeMin(NegativeMinParameter),
@@ -140,6 +142,7 @@ impl Parameter {
             Self::UniformDrawdownProfile(p) => p.meta.name.as_str(),
             Self::Max(p) => p.meta.name.as_str(),
             Self::Min(p) => p.meta.name.as_str(),
+            Self::MultiThreshold(p) => p.meta.name.as_str(),
             Self::Negative(p) => p.meta.name.as_str(),
             Self::Polynomial1D(p) => p.meta.name.as_str(),
             Self::Threshold(p) => p.meta.name.as_str(),
@@ -180,47 +183,82 @@ impl Parameter {
                 pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args, parent)?)
             }
             Self::ControlCurveInterpolated(p) => {
-                pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?)
+                pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args, parent)?)
             }
-            Self::Aggregated(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
-            Self::AggregatedIndex(p) => pywr_core::parameters::ParameterType::Index(p.add_to_model(network, args)?),
+            Self::Aggregated(p) => {
+                pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args, parent)?)
+            }
+            Self::AggregatedIndex(p) => {
+                pywr_core::parameters::ParameterType::Index(p.add_to_model(network, args, parent)?)
+            }
             Self::AsymmetricSwitchIndex(p) => {
-                pywr_core::parameters::ParameterType::Index(p.add_to_model(network, args)?)
+                pywr_core::parameters::ParameterType::Index(p.add_to_model(network, args, parent)?)
             }
             Self::ControlCurvePiecewiseInterpolated(p) => {
-                pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?)
+                pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args, parent)?)
             }
-            Self::ControlCurveIndex(p) => pywr_core::parameters::ParameterType::Index(p.add_to_model(network, args)?),
-            Self::ControlCurve(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
-            Self::DailyProfile(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
-            Self::IndexedArray(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
-            Self::MonthlyProfile(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
-            Self::WeeklyProfile(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
+            Self::ControlCurveIndex(p) => {
+                pywr_core::parameters::ParameterType::Index(p.add_to_model(network, args, parent)?)
+            }
+            Self::ControlCurve(p) => {
+                pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args, parent)?)
+            }
+            Self::DailyProfile(p) => {
+                pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args, parent)?)
+            }
+            Self::IndexedArray(p) => {
+                pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args, parent)?)
+            }
+            Self::MonthlyProfile(p) => {
+                pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args, parent)?)
+            }
+            Self::WeeklyProfile(p) => {
+                pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args, parent)?)
+            }
             Self::UniformDrawdownProfile(p) => {
-                pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?)
+                pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args, parent)?)
             }
-            Self::Max(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
-            Self::Min(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
-            Self::Negative(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
-            Self::Polynomial1D(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
-            Self::Threshold(p) => p.add_to_model(network, args)?,
-            Self::TablesArray(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
-            Self::Python(p) => p.add_to_model(network, args)?,
-            Self::Delay(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
-            Self::DelayIndex(p) => pywr_core::parameters::ParameterType::Index(p.add_to_model(network, args)?),
-            Self::Division(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
-            Self::Offset(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
-            Self::DiscountFactor(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
-            Self::Interpolated(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
-            Self::RbfProfile(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network)?),
-            Self::NegativeMax(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
-            Self::NegativeMin(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
+            Self::Max(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args, parent)?),
+            Self::Min(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args, parent)?),
+            Self::Negative(p) => {
+                pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args, parent)?)
+            }
+            Self::Polynomial1D(p) => {
+                pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args, parent)?)
+            }
+            Self::Threshold(p) => p.add_to_model(network, args, parent)?,
+            Self::TablesArray(p) => {
+                pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args, parent)?)
+            }
+            Self::Python(p) => p.add_to_model(network, args, parent)?,
+            Self::Delay(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args, parent)?),
+            Self::DelayIndex(p) => pywr_core::parameters::ParameterType::Index(p.add_to_model(network, args, parent)?),
+            Self::Division(p) => {
+                pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args, parent)?)
+            }
+            Self::Offset(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args, parent)?),
+            Self::DiscountFactor(p) => {
+                pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args, parent)?)
+            }
+            Self::Interpolated(p) => {
+                pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args, parent)?)
+            }
+            Self::RbfProfile(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, parent)?),
+            Self::NegativeMax(p) => {
+                pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args, parent)?)
+            }
+            Self::NegativeMin(p) => {
+                pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args, parent)?)
+            }
             Self::HydropowerTarget(p) => {
-                pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?)
+                pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args, parent)?)
             }
-            Self::Rolling(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args)?),
-            Self::RollingIndex(p) => pywr_core::parameters::ParameterType::Index(p.add_to_model(network, args)?),
+            Self::Rolling(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args, parent)?),
+            Self::RollingIndex(p) => {
+                pywr_core::parameters::ParameterType::Index(p.add_to_model(network, args, parent)?)
+            }
             Self::Placeholder(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model()?),
+            Self::MultiThreshold(p) => p.add_to_model(network, args, parent)?,
         };
 
         Ok(ty)
@@ -245,6 +283,7 @@ impl VisitMetrics for Parameter {
             Self::UniformDrawdownProfile(p) => p.visit_metrics(visitor),
             Self::Max(p) => p.visit_metrics(visitor),
             Self::Min(p) => p.visit_metrics(visitor),
+            Self::MultiThreshold(p) => p.visit_metrics(visitor),
             Self::Negative(p) => p.visit_metrics(visitor),
             Self::Polynomial1D(p) => p.visit_metrics(visitor),
             Self::Threshold(p) => p.visit_metrics(visitor),
@@ -283,6 +322,7 @@ impl VisitMetrics for Parameter {
             Self::UniformDrawdownProfile(p) => p.visit_metrics_mut(visitor),
             Self::Max(p) => p.visit_metrics_mut(visitor),
             Self::Min(p) => p.visit_metrics_mut(visitor),
+            Self::MultiThreshold(p) => p.visit_metrics_mut(visitor),
             Self::Negative(p) => p.visit_metrics_mut(visitor),
             Self::Polynomial1D(p) => p.visit_metrics_mut(visitor),
             Self::Threshold(p) => p.visit_metrics_mut(visitor),
@@ -323,6 +363,7 @@ impl VisitPaths for Parameter {
             Self::UniformDrawdownProfile(p) => p.visit_paths(visitor),
             Self::Max(p) => p.visit_paths(visitor),
             Self::Min(p) => p.visit_paths(visitor),
+            Self::MultiThreshold(p) => p.visit_paths(visitor),
             Self::Negative(p) => p.visit_paths(visitor),
             Self::Polynomial1D(p) => p.visit_paths(visitor),
             Self::Threshold(p) => p.visit_paths(visitor),
@@ -361,6 +402,7 @@ impl VisitPaths for Parameter {
             Self::UniformDrawdownProfile(p) => p.visit_paths_mut(visitor),
             Self::Max(p) => p.visit_paths_mut(visitor),
             Self::Min(p) => p.visit_paths_mut(visitor),
+            Self::MultiThreshold(p) => p.visit_paths_mut(visitor),
             Self::Negative(p) => p.visit_paths_mut(visitor),
             Self::Polynomial1D(p) => p.visit_paths_mut(visitor),
             Self::Threshold(p) => p.visit_paths_mut(visitor),
@@ -461,8 +503,12 @@ impl TryFromV1<ParameterV1> for ParameterOrTimeseriesRef {
                 CoreParameter::StorageThreshold(p) => {
                     Parameter::Threshold(p.try_into_v2(parent_node, conversion_data)?).into()
                 }
-                CoreParameter::MultipleThresholdIndex(_) => todo!(),
-                CoreParameter::MultipleThresholdParameterIndex(_) => todo!(),
+                CoreParameter::MultipleThresholdIndex(p) => {
+                    Parameter::MultiThreshold(p.try_into_v2(parent_node, conversion_data)?).into()
+                }
+                CoreParameter::MultipleThresholdParameterIndex(p) => {
+                    Parameter::MultiThreshold(p.try_into_v2(parent_node, conversion_data)?).into()
+                }
                 CoreParameter::CurrentYearThreshold(_) => todo!(),
                 CoreParameter::CurrentOrdinalDayThreshold(_) => todo!(),
                 CoreParameter::TablesArray(p) => {
@@ -508,7 +554,7 @@ impl TryFromV1<ParameterV1> for ParameterOrTimeseriesRef {
                         name: p.meta.and_then(|m| m.name).unwrap_or("unnamed".to_string()),
                         attr: "".to_string(),
                         error: ConversionError::DeprecatedParameter {
-                            ty: "DeficitParameter".to_string(),
+                            ty: "StorageParameter".to_string(),
                             instead: "Use a derived metric instead.".to_string(),
                         },
                     });

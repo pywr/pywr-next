@@ -1,12 +1,14 @@
 use crate::error::ComponentConversionError;
-#[cfg(feature = "core")]
 use crate::error::SchemaError;
 use crate::metric::Metric;
 #[cfg(feature = "core")]
-use crate::model::LoadArgs;
-use crate::nodes::{NodeAttribute, NodeMeta};
+use crate::network::LoadArgs;
+use crate::nodes::NodeMeta;
+#[cfg(feature = "core")]
+use crate::nodes::{NodeAttribute, NodeComponent};
 use crate::parameters::Parameter;
 use crate::v1::{ConversionData, TryFromV1, try_convert_node_attr};
+use crate::{node_attribute_subset_enum, node_component_subset_enum};
 #[cfg(feature = "core")]
 use pywr_core::{aggregated_node::Relationship, metric::MetricF64};
 use pywr_schema_macros::PywrVisitAll;
@@ -63,6 +65,24 @@ impl LossFactor {
     }
 }
 
+// This macro generates a subset enum for the `LossLinkNode` attributes.
+// It allows for easy conversion between the enum and the `NodeAttribute` type.
+node_attribute_subset_enum! {
+    pub enum LossLinkNodeAttribute {
+        Inflow,
+        Outflow,
+        Loss,
+    }
+}
+
+node_component_subset_enum! {
+    pub enum LossLinkNodeComponent {
+        Inflow,
+        Outflow,
+        Loss,
+    }
+}
+
 #[doc = svgbobdoc::transform!(
 /// This is used to represent a link with losses.
 ///
@@ -83,6 +103,11 @@ impl LossFactor {
 ///            <node>.loss
 /// ```
 ///
+/// # Available attributes and components
+///
+/// The enums [`LossLinkNodeAttribute`] and [`LossLinkNodeComponent`] define the available
+/// attributes and components for this node.
+///
 )]
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
@@ -97,7 +122,8 @@ pub struct LossLinkNode {
 }
 
 impl LossLinkNode {
-    const DEFAULT_ATTRIBUTE: NodeAttribute = NodeAttribute::Outflow;
+    const DEFAULT_ATTRIBUTE: LossLinkNodeAttribute = LossLinkNodeAttribute::Outflow;
+    const DEFAULT_COMPONENT: LossLinkNodeComponent = LossLinkNodeComponent::Outflow;
 
     fn loss_sub_name() -> Option<&'static str> {
         Some("loss")
@@ -107,7 +133,7 @@ impl LossLinkNode {
         Some("net")
     }
 
-    pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
+    pub fn input_connectors(&self) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
         // Gross inflow always goes to the net node ...
         let mut input_connectors = vec![(self.meta.name.as_str(), Self::net_sub_name().map(|s| s.to_string()))];
 
@@ -116,16 +142,23 @@ impl LossLinkNode {
             input_connectors.push((self.meta.name.as_str(), Self::loss_sub_name().map(|s| s.to_string())));
         }
 
-        input_connectors
+        Ok(input_connectors)
     }
 
-    pub fn output_connectors(&self) -> Vec<(&str, Option<String>)> {
+    pub fn output_connectors(&self) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
         // Only net goes to the downstream.
-        vec![(self.meta.name.as_str(), Self::net_sub_name().map(|s| s.to_string()))]
+        Ok(vec![(
+            self.meta.name.as_str(),
+            Self::net_sub_name().map(|s| s.to_string()),
+        )])
     }
 
-    pub fn default_metric(&self) -> NodeAttribute {
+    pub fn default_attribute(&self) -> LossLinkNodeAttribute {
         Self::DEFAULT_ATTRIBUTE
+    }
+
+    pub fn default_component(&self) -> LossLinkNodeComponent {
+        Self::DEFAULT_COMPONENT
     }
 }
 
@@ -135,18 +168,60 @@ impl LossLinkNode {
         Some("agg")
     }
 
-    pub fn node_indices_for_constraints(
+    pub fn node_indices_for_flow_constraints(
         &self,
         network: &pywr_core::network::Network,
+        component: Option<NodeComponent>,
     ) -> Result<Vec<pywr_core::node::NodeIndex>, SchemaError> {
-        let indices = vec![
-            network
-                .get_node_index_by_name(self.meta.name.as_str(), Self::net_sub_name())
-                .ok_or_else(|| SchemaError::CoreNodeNotFound {
-                    name: self.meta.name.clone(),
-                    sub_name: Self::net_sub_name().map(String::from),
-                })?,
-        ];
+        // Use the default attribute if none is specified
+        let component = match component {
+            Some(c) => c.try_into()?,
+            None => Self::DEFAULT_COMPONENT,
+        };
+
+        let indices = match component {
+            LossLinkNodeComponent::Inflow => {
+                // If the loss node is defined, we need to return both the net and loss nodes
+                match network.get_node_index_by_name(self.meta.name.as_str(), Self::loss_sub_name()) {
+                    Some(loss_idx) => {
+                        vec![
+                            network
+                                .get_node_index_by_name(self.meta.name.as_str(), Self::net_sub_name())
+                                .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                                    name: self.meta.name.clone(),
+                                    sub_name: Self::net_sub_name().map(String::from),
+                                })?,
+                            loss_idx,
+                        ]
+                    }
+                    None => vec![
+                        network
+                            .get_node_index_by_name(self.meta.name.as_str(), Self::net_sub_name())
+                            .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                                name: self.meta.name.clone(),
+                                sub_name: Self::net_sub_name().map(String::from),
+                            })?,
+                    ],
+                }
+            }
+            LossLinkNodeComponent::Outflow => {
+                vec![
+                    network
+                        .get_node_index_by_name(self.meta.name.as_str(), Self::net_sub_name())
+                        .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                            name: self.meta.name.clone(),
+                            sub_name: Self::net_sub_name().map(String::from),
+                        })?,
+                ]
+            }
+            LossLinkNodeComponent::Loss => {
+                match network.get_node_index_by_name(self.meta.name.as_str(), Self::loss_sub_name()) {
+                    Some(idx) => vec![idx],
+                    None => return Ok(vec![]), // No loss node defined, so return empty
+                }
+            }
+        };
+
         Ok(indices)
     }
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
@@ -206,10 +281,13 @@ impl LossLinkNode {
         attribute: Option<NodeAttribute>,
     ) -> Result<MetricF64, SchemaError> {
         // Use the default attribute if none is specified
-        let attr = attribute.unwrap_or(Self::DEFAULT_ATTRIBUTE);
+        let attr = match attribute {
+            Some(attr) => attr.try_into()?,
+            None => Self::DEFAULT_ATTRIBUTE,
+        };
 
         let metric = match attr {
-            NodeAttribute::Inflow => {
+            LossLinkNodeAttribute::Inflow => {
                 match network.get_node_index_by_name(self.meta.name.as_str(), Self::loss_sub_name()) {
                     // Loss node is defined. The total inflow is the sum of the net and loss nodes;
                     Some(loss_idx) => {
@@ -238,7 +316,7 @@ impl LossLinkNode {
                     ),
                 }
             }
-            NodeAttribute::Outflow => {
+            LossLinkNodeAttribute::Outflow => {
                 let idx = network
                     .get_node_index_by_name(self.meta.name.as_str(), Self::net_sub_name())
                     .ok_or_else(|| SchemaError::CoreNodeNotFound {
@@ -247,18 +325,11 @@ impl LossLinkNode {
                     })?;
                 MetricF64::NodeOutFlow(idx)
             }
-            NodeAttribute::Loss => {
+            LossLinkNodeAttribute::Loss => {
                 match network.get_node_index_by_name(self.meta.name.as_str(), Self::loss_sub_name()) {
                     Some(idx) => MetricF64::NodeInFlow(idx),
                     None => 0.0.into(),
                 }
-            }
-            _ => {
-                return Err(SchemaError::NodeAttributeNotSupported {
-                    ty: "LossLinkNode".to_string(),
-                    name: self.meta.name.clone(),
-                    attr,
-                });
             }
         };
 

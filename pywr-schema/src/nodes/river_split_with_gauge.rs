@@ -1,13 +1,14 @@
 use crate::error::ComponentConversionError;
-#[cfg(feature = "core")]
 use crate::error::SchemaError;
 use crate::metric::Metric;
 #[cfg(feature = "core")]
-use crate::model::LoadArgs;
-use crate::nodes::{NodeAttribute, NodeMeta};
+use crate::network::LoadArgs;
+use crate::nodes::NodeMeta;
+#[cfg(feature = "core")]
+use crate::nodes::{NodeAttribute, NodeComponent};
 use crate::parameters::Parameter;
 use crate::v1::{ConversionData, TryFromV1, try_convert_node_attr};
-use crate::{ConversionError, TryIntoV2};
+use crate::{ConversionError, TryIntoV2, node_attribute_subset_enum, node_component_subset_enum};
 #[cfg(feature = "core")]
 use pywr_core::{aggregated_node::Relationship, metric::MetricF64, node::NodeIndex};
 use pywr_schema_macros::PywrVisitAll;
@@ -21,6 +22,21 @@ pub struct RiverSplit {
     pub factor: Metric,
     /// Name of the slot when connecting to this split.
     pub slot_name: String,
+}
+// This macro generates a subset enum for the `RiverSplitWithGaugeNode` attributes.
+// It allows for easy conversion between the enum and the `NodeAttribute` type.
+node_attribute_subset_enum! {
+    pub enum RiverSplitWithGaugeNodeAttribute {
+        Inflow,
+        Outflow,
+    }
+}
+
+node_component_subset_enum! {
+    pub enum RiverSplitWithGaugeNodeComponent {
+        Inflow,
+        Outflow,
+    }
 }
 
 #[doc = svgbobdoc::transform!(
@@ -50,6 +66,11 @@ pub struct RiverSplit {
 ///                   '---------->*- - -
 /// ```
 ///
+/// # Available attributes and components
+///
+/// The enums [`RiverSplitWithGaugeNodeAttribute`] and [`RiverSplitWithGaugeNodeComponent`] define the available
+/// attributes and components for this node.
+///
 )]
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
@@ -63,7 +84,8 @@ pub struct RiverSplitWithGaugeNode {
 }
 
 impl RiverSplitWithGaugeNode {
-    const DEFAULT_ATTRIBUTE: NodeAttribute = NodeAttribute::Outflow;
+    const DEFAULT_ATTRIBUTE: RiverSplitWithGaugeNodeAttribute = RiverSplitWithGaugeNodeAttribute::Outflow;
+    const DEFAULT_COMPONENT: RiverSplitWithGaugeNodeComponent = RiverSplitWithGaugeNodeComponent::Outflow;
 
     fn mrf_sub_name() -> Option<&'static str> {
         Some("mrf")
@@ -94,27 +116,29 @@ impl RiverSplitWithGaugeNode {
         connectors
     }
 
-    pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
-        self.default_connectors()
+    pub fn input_connectors(&self) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
+        Ok(self.default_connectors())
     }
 
-    pub fn output_connectors(&self, slot: Option<&str>) -> Vec<(&str, Option<String>)> {
+    pub fn output_connectors(&self, slot: Option<&str>) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
         match slot {
-            Some(slot) => {
-                let i = self
-                    .splits
-                    .iter()
-                    .position(|split| split.slot_name == slot)
-                    .expect("Invalid slot name!");
-
-                vec![(self.meta.name.as_str(), Self::split_sub_name(i))]
-            }
-            None => self.default_connectors(),
+            Some(slot) => match self.splits.iter().position(|split| split.slot_name == slot) {
+                Some(i) => Ok(vec![(self.meta.name.as_str(), Self::split_sub_name(i))]),
+                None => Err(SchemaError::NodeConnectionSlotNotFound {
+                    node: self.meta.name.clone(),
+                    slot: slot.to_string(),
+                }),
+            },
+            None => Ok(self.default_connectors()),
         }
     }
 
-    pub fn default_metric(&self) -> NodeAttribute {
+    pub fn default_attribute(&self) -> RiverSplitWithGaugeNodeAttribute {
         Self::DEFAULT_ATTRIBUTE
+    }
+
+    pub fn default_component(&self) -> RiverSplitWithGaugeNodeComponent {
+        Self::DEFAULT_COMPONENT
     }
 }
 
@@ -124,44 +148,55 @@ impl RiverSplitWithGaugeNode {
         Some(format!("split-agg-{i}"))
     }
 
-    pub fn node_indices_for_constraints(
+    pub fn node_indices_for_flow_constraints(
         &self,
         network: &pywr_core::network::Network,
+        component: Option<NodeComponent>,
     ) -> Result<Vec<NodeIndex>, SchemaError> {
-        // This gets the indices of all the link nodes
-        // There's currently no way to isolate the flows to the individual splits
-        // Therefore, the only metrics are gross inflow and outflow
-        let mut indices = vec![
-            network
-                .get_node_index_by_name(self.meta.name.as_str(), Self::mrf_sub_name())
-                .ok_or_else(|| SchemaError::CoreNodeNotFound {
-                    name: self.meta.name.clone(),
-                    sub_name: Self::mrf_sub_name().map(String::from),
-                })?,
-            network
-                .get_node_index_by_name(self.meta.name.as_str(), Self::bypass_sub_name())
-                .ok_or_else(|| SchemaError::CoreNodeNotFound {
-                    name: self.meta.name.clone(),
-                    sub_name: Self::bypass_sub_name().map(String::from),
-                })?,
-        ];
+        // Use the default component if none is specified
+        let component = match component {
+            Some(c) => c.try_into()?,
+            None => Self::DEFAULT_COMPONENT,
+        };
 
-        let split_idx: Vec<NodeIndex> = self
-            .splits
-            .iter()
-            .enumerate()
-            .map(|(i, _)| {
-                network
-                    .get_node_index_by_name(self.meta.name.as_str(), Self::split_sub_name(i).as_deref())
-                    .ok_or_else(|| SchemaError::CoreNodeNotFound {
-                        name: self.meta.name.clone(),
-                        sub_name: Self::split_sub_name(i),
+        match component {
+            // This gets the indices of all the link nodes
+            // There's currently no way to isolate the flows to the individual splits
+            // Therefore, the only components are gross inflow and outflow
+            RiverSplitWithGaugeNodeComponent::Inflow | RiverSplitWithGaugeNodeComponent::Outflow => {
+                let mut indices = vec![
+                    network
+                        .get_node_index_by_name(self.meta.name.as_str(), Self::mrf_sub_name())
+                        .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                            name: self.meta.name.clone(),
+                            sub_name: Self::mrf_sub_name().map(String::from),
+                        })?,
+                    network
+                        .get_node_index_by_name(self.meta.name.as_str(), Self::bypass_sub_name())
+                        .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                            name: self.meta.name.clone(),
+                            sub_name: Self::bypass_sub_name().map(String::from),
+                        })?,
+                ];
+
+                let split_idx: Vec<NodeIndex> = self
+                    .splits
+                    .iter()
+                    .enumerate()
+                    .map(|(i, _)| {
+                        network
+                            .get_node_index_by_name(self.meta.name.as_str(), Self::split_sub_name(i).as_deref())
+                            .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                                name: self.meta.name.clone(),
+                                sub_name: Self::split_sub_name(i),
+                            })
                     })
-            })
-            .collect::<Result<_, _>>()?;
+                    .collect::<Result<_, _>>()?;
 
-        indices.extend(split_idx);
-        Ok(indices)
+                indices.extend(split_idx);
+                Ok(indices)
+            }
+        }
     }
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
         // TODO do this properly
@@ -218,7 +253,10 @@ impl RiverSplitWithGaugeNode {
         attribute: Option<NodeAttribute>,
     ) -> Result<MetricF64, SchemaError> {
         // Use the default attribute if none is specified
-        let attr = attribute.unwrap_or(Self::DEFAULT_ATTRIBUTE);
+        let attr = match attribute {
+            Some(attr) => attr.try_into()?,
+            None => Self::DEFAULT_ATTRIBUTE,
+        };
 
         // This gets the indices of all the link nodes
         // There's currently no way to isolate the flows to the individual splits
@@ -255,21 +293,14 @@ impl RiverSplitWithGaugeNode {
         indices.extend(split_idx);
 
         let metric = match attr {
-            NodeAttribute::Inflow => MetricF64::MultiNodeInFlow {
+            RiverSplitWithGaugeNodeAttribute::Inflow => MetricF64::MultiNodeInFlow {
                 indices,
                 name: self.meta.name.to_string(),
             },
-            NodeAttribute::Outflow => MetricF64::MultiNodeOutFlow {
+            RiverSplitWithGaugeNodeAttribute::Outflow => MetricF64::MultiNodeOutFlow {
                 indices,
                 name: self.meta.name.to_string(),
             },
-            _ => {
-                return Err(SchemaError::NodeAttributeNotSupported {
-                    ty: "RiverSplitWithGaugeNode".to_string(),
-                    name: self.meta.name.clone(),
-                    attr,
-                });
-            }
         };
 
         Ok(metric)

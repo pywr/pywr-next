@@ -14,8 +14,7 @@ use pywr_core::solvers::{HighsSolver, HighsSolverSettings, HighsSolverSettingsBu
 #[cfg(feature = "ipm-simd")]
 use pywr_core::solvers::{SimdIpmF64Solver, SimdIpmSolverSettings, SimdIpmSolverSettingsBuilder};
 use pywr_core::test_utils::make_random_model;
-use pywr_schema::ComponentConversionError;
-use pywr_schema::model::{PywrModel, PywrMultiNetworkModel, PywrNetwork};
+use pywr_schema::{ComponentConversionError, PywrModel, PywrMultiNetworkModel, PywrNetwork};
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use schemars::schema_for;

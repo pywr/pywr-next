@@ -5,10 +5,10 @@ use crate::error::ComponentConversionError;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
 #[cfg(feature = "core")]
-use crate::model::LoadArgs;
-use crate::nodes::NodeAttribute;
+use crate::network::LoadArgs;
 #[cfg(feature = "core")]
 use crate::nodes::NodeType;
+use crate::nodes::{NodeAttribute, NodeComponent};
 use crate::parameters::ParameterOrTimeseriesRef;
 #[cfg(feature = "core")]
 use crate::parameters::ParameterType;
@@ -48,7 +48,7 @@ pub enum Metric {
     /// A reference to a constant value in a table.
     Table(TableDataRef),
     /// An attribute of a node.
-    Node(NodeReference),
+    Node(NodeAttrReference),
     /// An attribute of an edge.
     Edge(EdgeReference),
     /// A reference to a value from a timeseries.
@@ -245,14 +245,14 @@ impl TryFromV1<ParameterValueV1> for Metric {
 /// A reference to a node with an optional attribute.
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll, PartialEq)]
 #[serde(deny_unknown_fields)]
-pub struct NodeReference {
+pub struct NodeAttrReference {
     /// The name of the node
     pub name: String,
     /// The attribute of the node. If this is `None` then the default attribute is used.
     pub attribute: Option<NodeAttribute>,
 }
 
-impl NodeReference {
+impl NodeAttrReference {
     pub fn new(name: String, attribute: Option<NodeAttribute>) -> Self {
         Self { name, attribute }
     }
@@ -306,7 +306,7 @@ impl NodeReference {
                 name: self.name.clone(),
             })?;
 
-        Ok(self.attribute.unwrap_or_else(|| node.default_metric()))
+        Ok(self.attribute.unwrap_or_else(|| node.default_attribute()))
     }
 
     #[cfg(feature = "core")]
@@ -323,62 +323,31 @@ impl NodeReference {
     }
 }
 
-/// A reference to a node without an attribute.
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
-pub struct SimpleNodeReference {
+impl From<String> for NodeAttrReference {
+    fn from(v: String) -> Self {
+        NodeAttrReference {
+            name: v,
+            attribute: None,
+        }
+    }
+}
+
+/// A reference to a node with an optional component.
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct NodeComponentReference {
     /// The name of the node
     pub name: String,
+    /// The component of the node. If this is `None` then the default component is used.
+    pub component: Option<NodeComponent>,
 }
 
-impl SimpleNodeReference {
-    pub fn new(name: String) -> Self {
-        Self { name }
-    }
-
-    #[cfg(feature = "core")]
-    pub fn load(&self, network: &mut pywr_core::network::Network, args: &LoadArgs) -> Result<MetricF64, SchemaError> {
-        // This is the associated node in the schema
-        let node = args
-            .schema
-            .get_node_by_name(&self.name)
-            .ok_or_else(|| SchemaError::NodeNotFound {
-                name: self.name.clone(),
-            })?;
-
-        node.create_metric(network, None, args)
-    }
-
-    /// Return the default attribute of the node.
-    #[cfg(feature = "core")]
-    pub fn attribute(&self, args: &LoadArgs) -> Result<NodeAttribute, SchemaError> {
-        // This is the associated node in the schema
-        let node = args
-            .schema
-            .get_node_by_name(&self.name)
-            .ok_or_else(|| SchemaError::NodeNotFound {
-                name: self.name.clone(),
-            })?;
-
-        Ok(node.default_metric())
-    }
-
-    #[cfg(feature = "core")]
-    pub fn node_type(&self, args: &LoadArgs) -> Result<NodeType, SchemaError> {
-        // This is the associated node in the schema
-        let node = args
-            .schema
-            .get_node_by_name(&self.name)
-            .ok_or_else(|| SchemaError::NodeNotFound {
-                name: self.name.clone(),
-            })?;
-
-        Ok(node.node_type())
-    }
-}
-
-impl From<String> for SimpleNodeReference {
+impl From<String> for NodeComponentReference {
     fn from(v: String) -> Self {
-        SimpleNodeReference { name: v }
+        NodeComponentReference {
+            name: v,
+            component: None,
+        }
     }
 }
 
@@ -517,7 +486,7 @@ pub enum IndexMetric {
     },
     Table(TableDataRef),
     /// An attribute of a node.
-    Node(NodeReference),
+    Node(NodeAttrReference),
     Timeseries(TimeseriesReference),
     Parameter(ParameterReference),
     LocalParameter(ParameterReference),

@@ -1,0 +1,149 @@
+from datetime import datetime
+from os import PathLike
+from typing import Optional, List
+
+class ParameterInfo:
+    """Provides data for a custom Pywr parameter.
+
+    This is a read-only object that provides information that can be used for custom parameters in Pywr. It
+    is passed as the first argument to the `calc` and `after` methods of custom parameter objects.
+    """
+
+    @property
+    def timestep(self) -> "Timestep":
+        """Returns the current time-step object."""
+
+    @property
+    def scenario_index(self) -> "ScenarioIndex":
+        """Returns the current scenario index object."""
+
+    def get_metric(self, name: str) -> float:
+        """Returns a metric by name.
+
+        Args:
+            name: The name of the metric to retrieve.
+        """
+
+    def get_index(self, name: str) -> int:
+        """Returns the index of a component by name.
+
+        Args:
+            name: The name of the component to retrieve the index for.
+        """
+
+class Timestep:
+    """Represents a single time-step in a simulation.
+
+    This is a read-only object that provides information about the current time-step.
+    """
+
+    @property
+    def is_first(self) -> bool:
+        """Returns true if this is the first time-step."""
+
+    @property
+    def days(self) -> float:
+        """Returns the duration of the time-step in number of days including any fractional part."""
+
+    @property
+    def date(self) -> datetime:
+        """Returns the date of the time-step."""
+
+    @property
+    def day(self) -> int:
+        """Returns the day of the time-step."""
+
+    @property
+    def month(self) -> int:
+        """Returns the month of the time-step."""
+
+    @property
+    def year(self) -> int:
+        """Returns the year of the time-step."""
+
+    @property
+    def index(self) -> int:
+        """Returns the current time-step index."""
+
+    @property
+    def day_of_year(self) -> int:
+        """Returns the day of the year index of the timestep.
+
+        The day of the year is one-based, meaning January 1st is day 1 and December 31st is day 365 (or 366 in leap years).
+        """
+
+    @property
+    def day_of_year_index(self) -> int:
+        """Returns the day of the year index of the timestep.
+
+        The index is zero-based and accounts for leaps days. In non-leap years, 1 i to the index for
+        days after Feb 28th.
+        """
+
+    @property
+    def fractional_day_of_year(self) -> float:
+        """Returns the fraction day of the year of the timestep.
+
+        The index is zero-based and accounts for leaps days. In non-leap years, 1 is added to the index for
+        days after Feb 28th. The fractional part is the fraction of the day that has passed since midnight
+        (calculated to the nearest second).
+        """
+
+    @property
+    def is_leap_year(self) -> bool:
+        """Returns true if the year of the timestep is a leap year."""
+
+class ScenarioIndex:
+    """Represents a scenario index in a Pywr model.
+
+    This is a read-only object that provides information about the current scenario index.
+    """
+
+    @property
+    def simulation_id(self) -> int:
+        """Returns the current simulation id."""
+
+    @property
+    def simulation_indices(self) -> List[int]:
+        """Returns indices for each scenario group for this simulation."""
+
+class Schema:
+    @classmethod
+    def from_path(cls, path: PathLike) -> "Schema":
+        """Create a new schema object from a file path.
+
+        Args:
+            path: The path to the schema JSON file.
+        """
+
+    @classmethod
+    def from_json_string(cls, json_string: str) -> "Schema":
+        """Create a new schema object from a JSON string.
+
+        Args:
+            json_string: The JSON string representing the schema.
+        """
+
+    def to_json_string(self) -> str:
+        """Serialize the schema to a JSON string."""
+
+    def build(
+        self, data_path: Optional[PathLike], output_path: Optional[PathLike]
+    ) -> "Model":
+        """Build the schema in to a Pywr model."""
+
+class Model:
+    def run(self, solver_name: str, solver_kwargs: Optional[dict] = None):
+        """Run the model using the specified solver.
+
+        Args:
+            solver_name: The name of the solver to use.
+            solver_kwargs: Optional keyword arguments to pass to the solver.
+        """
+
+class Metric: ...
+class ComponentConversionError: ...
+class ConversionError: ...
+
+def convert_model_from_v1_json_string(data: str): ...
+def convert_metric_from_v1_json_string(data: str): ...

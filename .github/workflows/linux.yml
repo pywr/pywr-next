@@ -17,7 +17,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           submodules: true
       - uses: swatinem/rust-cache@v2
@@ -40,13 +40,13 @@ jobs:
         with:
           tool: cargo-hack@0.5
       - name: Check (pywr-core)
-        run: cargo hack check --feature-powerset --no-dev-deps -p pywr-core
+        run: cargo hack check --each-feature --no-dev-deps -p pywr-core
       - name: Check (pywr-schema)
-        run: cargo hack check --feature-powerset --no-dev-deps -p pywr-schema
+        run: cargo hack check --each-feature --no-dev-deps -p pywr-schema
       - name: Build
         run: cargo build --verbose  --all-features --workspace --exclude pywr-python
       - name: Run tests
-        run: cargo test  --features highs,cbc,ipm-simd --verbose --lib --bins -- --test-threads=1
+        run: cargo test  --features highs,cbc,microlp,ipm-simd --verbose -- --test-threads=1
       - name: Run mdbook test & build
         run: |
           output=$(mdbook test ./pywr-book 2>&1)

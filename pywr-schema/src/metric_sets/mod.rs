@@ -2,7 +2,7 @@
 use crate::error::SchemaError;
 use crate::metric::Metric;
 #[cfg(feature = "core")]
-use crate::model::LoadArgs;
+use crate::network::LoadArgs;
 #[cfg(feature = "core")]
 use crate::parameters::{Parameter, PythonReturnType};
 use pywr_schema_macros::PywrVisitPaths;
@@ -105,7 +105,7 @@ pub struct MetricSetFilters {
 #[cfg(feature = "core")]
 impl MetricSetFilters {
     fn create_metrics(&self, args: &LoadArgs) -> Option<Vec<Metric>> {
-        use crate::metric::{NodeReference, ParameterReference};
+        use crate::metric::{NodeAttrReference, ParameterReference};
 
         if !self.all_nodes && !self.all_parameters {
             return None;
@@ -115,7 +115,7 @@ impl MetricSetFilters {
 
         if self.all_nodes {
             for node in args.schema.nodes.iter() {
-                metrics.push(Metric::Node(NodeReference::new(node.name().to_string(), None)));
+                metrics.push(Metric::Node(NodeAttrReference::new(node.name().to_string(), None)));
             }
         }
 

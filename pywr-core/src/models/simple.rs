@@ -1,17 +1,18 @@
 use crate::models::ModelDomain;
 use crate::network::{
     Network, NetworkFinaliseError, NetworkRecorderSaveError, NetworkRecorderSetupError, NetworkSetupError,
-    NetworkSolverSetupError, NetworkState, NetworkStepError, RunTimings,
+    NetworkSolverSetupError, NetworkState, NetworkStepError, NetworkTimings, RunDuration,
 };
-use crate::solvers::{MultiStateSolver, Solver, SolverSettings};
+use crate::solvers::{MultiStateSolver, Solver, SolverFeatures, SolverSettings};
 use crate::timestep::Timestep;
 #[cfg(feature = "pyo3")]
 use pyo3::{PyErr, exceptions::PyRuntimeError};
 use rayon::ThreadPool;
 use std::any::Any;
+use std::collections::HashSet;
 use std::time::Instant;
 use thiserror::Error;
-use tracing::debug;
+use tracing::{debug, info};
 
 pub struct ModelState<S> {
     current_time_step_idx: usize,
@@ -109,6 +110,10 @@ impl Model {
         &self.network
     }
 
+    pub fn required_features(&self) -> HashSet<SolverFeatures> {
+        self.network.required_features()
+    }
+
     pub fn network_mut(&mut self) -> &mut Network {
         &mut self.network
     }
@@ -192,7 +197,7 @@ impl Model {
         &self,
         state: &mut ModelState<Vec<Box<S>>>,
         thread_pool: Option<&ThreadPool>,
-        timings: &mut RunTimings,
+        timings: &mut NetworkTimings,
     ) -> Result<(), ModelStepError>
     where
         S: Solver,
@@ -252,7 +257,7 @@ impl Model {
         &self,
         state: &mut ModelState<Box<S>>,
         thread_pool: &ThreadPool,
-        timings: &mut RunTimings,
+        timings: &mut NetworkTimings,
     ) -> Result<(), ModelStepError>
     where
         S: MultiStateSolver,
@@ -323,7 +328,8 @@ impl Model {
         S: Solver,
         <S as Solver>::Settings: SolverSettings,
     {
-        let mut timings = RunTimings::default();
+        let run_duration = RunDuration::start();
+        let mut timings = NetworkTimings::default();
         let mut count = 0;
 
         // Setup thread pool if running in parallel
@@ -355,9 +361,10 @@ impl Model {
                 &mut state.recorder_state,
             )
             .map_err(ModelFinaliseError::NetworkFinaliseError)?;
+
         // End the global timer and print the run statistics
-        timings.finish(count);
-        timings.print_table();
+        let run_duration = run_duration.finish(count);
+        self.print_summary_statistics(&run_duration, &timings);
 
         Ok(())
     }
@@ -388,7 +395,8 @@ impl Model {
         S: MultiStateSolver,
         <S as MultiStateSolver>::Settings: SolverSettings,
     {
-        let mut timings = RunTimings::default();
+        let run_duration = RunDuration::start();
+        let mut timings = NetworkTimings::default();
         let mut count = 0;
 
         let num_threads = if settings.parallel() { settings.threads() } else { 1 };
@@ -418,9 +426,18 @@ impl Model {
             .map_err(ModelFinaliseError::NetworkFinaliseError)?;
 
         // End the global timer and print the run statistics
-        timings.finish(count);
-        timings.print_table();
+        let run_duration = run_duration.finish(count);
+        self.print_summary_statistics(&run_duration, &timings);
 
         Ok(())
+    }
+
+    /// Print summary statistics of the model run.
+    fn print_summary_statistics(&self, run_duration: &RunDuration, timings: &NetworkTimings) {
+        info!("Run timing statistics:");
+        let total_duration = run_duration.total_duration().as_secs_f64();
+        info!("{: <24} | {: <10}", "Metric", "Value");
+        run_duration.print_table();
+        timings.print_table(total_duration, &self.network);
     }
 }

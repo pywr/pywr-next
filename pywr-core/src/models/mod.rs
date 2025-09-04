@@ -29,7 +29,10 @@ impl ModelDomain {
         Self { time, scenarios }
     }
 
-    pub fn from(timestepper: Timestepper, scenario_builder: ScenarioDomainBuilder) -> Result<Self, ModelDomainError> {
+    pub fn try_from(
+        timestepper: Timestepper,
+        scenario_builder: ScenarioDomainBuilder,
+    ) -> Result<Self, ModelDomainError> {
         Ok(Self {
             time: TimeDomain::try_from(timestepper)?,
             scenarios: scenario_builder.build()?,

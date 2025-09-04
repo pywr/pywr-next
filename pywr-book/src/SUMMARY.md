@@ -11,7 +11,7 @@
     - [Abstraction licences](./concepts/abstraction-licences.md)
     - [Scenarios](./concepts/scenarios.md)
     - [Input data](./concepts/input-data.md)
-- [Extending Pywr](./extending_pywr.md)
+- [Custom parameters](./custom_parameters.md)
 - [Multi-models](./multi_models.md)
 - [Migration guide](./migration_guide.md)
 - [Model management](./model-management/README.md)

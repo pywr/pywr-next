@@ -2,11 +2,12 @@
 use crate::error::SchemaError;
 use crate::metric::Metric;
 #[cfg(feature = "core")]
-use crate::model::LoadArgs;
+use crate::network::LoadArgs;
 use crate::parameters::{ConversionData, ParameterMeta};
 use crate::v1::{FromV1, IntoV2};
+
 #[cfg(feature = "core")]
-use pywr_core::parameters::ParameterIndex;
+use pywr_core::parameters::{ParameterIndex, ParameterName};
 use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::parameters::DiscountFactorParameter as DiscountFactorParameterV1;
 use schemars::JsonSchema;
@@ -26,10 +27,11 @@ impl DiscountFactorParameter {
         &self,
         network: &mut pywr_core::network::Network,
         args: &LoadArgs,
+        parent: Option<&str>,
     ) -> Result<ParameterIndex<f64>, SchemaError> {
         let discount_rate = self.discount_rate.load(network, args, None)?;
         let p = pywr_core::parameters::DiscountFactorParameter::new(
-            self.meta.name.as_str().into(),
+            ParameterName::new(&self.meta.name, parent),
             discount_rate,
             self.base_year,
         );

@@ -1,14 +1,15 @@
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
 use crate::error::{ComponentConversionError, ConversionError};
-use crate::metric::{Metric, NodeReference};
+use crate::metric::{Metric, NodeAttrReference};
 #[cfg(feature = "core")]
-use crate::model::LoadArgs;
+use crate::network::LoadArgs;
 use crate::nodes::NodeAttribute;
 use crate::parameters::{ConversionData, ParameterMeta};
 use crate::v1::{IntoV2, TryFromV1, try_convert_control_curves, try_convert_parameter_attr};
+
 #[cfg(feature = "core")]
-use pywr_core::parameters::ParameterIndex;
+use pywr_core::parameters::{ParameterIndex, ParameterName};
 use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::parameters::{
     ControlCurveIndexParameter as ControlCurveIndexParameterV1,
@@ -23,7 +24,7 @@ use schemars::JsonSchema;
 pub struct ControlCurveInterpolatedParameter {
     pub meta: ParameterMeta,
     pub control_curves: Vec<Metric>,
-    pub storage_node: NodeReference,
+    pub storage_node: NodeAttrReference,
     pub values: Vec<Metric>,
 }
 
@@ -33,6 +34,7 @@ impl ControlCurveInterpolatedParameter {
         &self,
         network: &mut pywr_core::network::Network,
         args: &LoadArgs,
+        parent: Option<&str>,
     ) -> Result<ParameterIndex<f64>, SchemaError> {
         let metric = self.storage_node.load_f64(network, args)?;
 
@@ -49,7 +51,7 @@ impl ControlCurveInterpolatedParameter {
             .collect::<Result<_, _>>()?;
 
         let p = pywr_core::parameters::ControlCurveInterpolatedParameter::new(
-            self.meta.name.as_str().into(),
+            ParameterName::new(&self.meta.name, parent),
             metric,
             control_curves,
             values,
@@ -104,7 +106,7 @@ impl TryFromV1<ControlCurveInterpolatedParameterV1> for ControlCurveInterpolated
         };
 
         // v1 uses proportional volume for control curves
-        let storage_node = NodeReference {
+        let storage_node = NodeAttrReference {
             name: v1.storage_node,
             attribute: Some(NodeAttribute::ProportionalVolume),
         };
@@ -124,7 +126,7 @@ impl TryFromV1<ControlCurveInterpolatedParameterV1> for ControlCurveInterpolated
 pub struct ControlCurveIndexParameter {
     pub meta: ParameterMeta,
     pub control_curves: Vec<Metric>,
-    pub storage_node: NodeReference,
+    pub storage_node: NodeAttrReference,
 }
 
 #[cfg(feature = "core")]
@@ -133,6 +135,7 @@ impl ControlCurveIndexParameter {
         &self,
         network: &mut pywr_core::network::Network,
         args: &LoadArgs,
+        parent: Option<&str>,
     ) -> Result<ParameterIndex<u64>, SchemaError> {
         let metric = self.storage_node.load_f64(network, args)?;
 
@@ -143,7 +146,7 @@ impl ControlCurveIndexParameter {
             .collect::<Result<_, _>>()?;
 
         let p = pywr_core::parameters::ControlCurveIndexParameter::new(
-            self.meta.name.as_str().into(),
+            ParameterName::new(&self.meta.name, parent),
             metric,
             control_curves,
         );
@@ -168,7 +171,7 @@ impl TryFromV1<ControlCurveIndexParameterV1> for ControlCurveIndexParameter {
             .collect::<Result<Vec<_>, _>>()?;
 
         // v1 uses proportional volume for control curves
-        let storage_node = NodeReference {
+        let storage_node = NodeAttrReference {
             name: v1.storage_node,
             attribute: Some(NodeAttribute::ProportionalVolume),
         };
@@ -213,7 +216,7 @@ impl TryFromV1<ControlCurveParameterV1> for ControlCurveIndexParameter {
         };
 
         // v1 uses proportional volume for control curves
-        let storage_node = NodeReference {
+        let storage_node = NodeAttrReference {
             name: v1.storage_node,
             attribute: Some(NodeAttribute::ProportionalVolume),
         };
@@ -232,7 +235,7 @@ impl TryFromV1<ControlCurveParameterV1> for ControlCurveIndexParameter {
 pub struct ControlCurveParameter {
     pub meta: ParameterMeta,
     pub control_curves: Vec<Metric>,
-    pub storage_node: NodeReference,
+    pub storage_node: NodeAttrReference,
     pub values: Vec<Metric>,
 }
 
@@ -242,6 +245,7 @@ impl ControlCurveParameter {
         &self,
         network: &mut pywr_core::network::Network,
         args: &LoadArgs,
+        parent: Option<&str>,
     ) -> Result<ParameterIndex<f64>, SchemaError> {
         let metric = self.storage_node.load_f64(network, args)?;
 
@@ -258,7 +262,7 @@ impl ControlCurveParameter {
             .collect::<Result<_, _>>()?;
 
         let p = pywr_core::parameters::ControlCurveParameter::new(
-            self.meta.name.as_str().into(),
+            ParameterName::new(&self.meta.name, parent),
             metric,
             control_curves,
             values,
@@ -303,7 +307,7 @@ impl TryFromV1<ControlCurveParameterV1> for ControlCurveParameter {
         };
 
         // v1 uses proportional volume for control curves
-        let storage_node = NodeReference {
+        let storage_node = NodeAttrReference {
             name: v1.storage_node,
             attribute: Some(NodeAttribute::ProportionalVolume),
         };
@@ -323,7 +327,7 @@ impl TryFromV1<ControlCurveParameterV1> for ControlCurveParameter {
 pub struct ControlCurvePiecewiseInterpolatedParameter {
     pub meta: ParameterMeta,
     pub control_curves: Vec<Metric>,
-    pub storage_node: NodeReference,
+    pub storage_node: NodeAttrReference,
     pub values: Option<Vec<[f64; 2]>>,
     pub minimum: Option<f64>,
     pub maximum: Option<f64>,
@@ -335,6 +339,7 @@ impl ControlCurvePiecewiseInterpolatedParameter {
         &self,
         network: &mut pywr_core::network::Network,
         args: &LoadArgs,
+        parent: Option<&str>,
     ) -> Result<ParameterIndex<f64>, SchemaError> {
         let metric = self.storage_node.load_f64(network, args)?;
 
@@ -350,7 +355,7 @@ impl ControlCurvePiecewiseInterpolatedParameter {
         };
 
         let p = pywr_core::parameters::PiecewiseInterpolatedParameter::new(
-            self.meta.name.as_str().into(),
+            ParameterName::new(&self.meta.name, parent),
             metric,
             control_curves,
             values,
@@ -380,7 +385,7 @@ impl TryFromV1<ControlCurvePiecewiseInterpolatedParameterV1> for ControlCurvePie
         )?;
 
         // v1 uses proportional volume for control curves
-        let storage_node = NodeReference {
+        let storage_node = NodeAttrReference {
             name: v1.storage_node,
             attribute: Some(NodeAttribute::ProportionalVolume),
         };

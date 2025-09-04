@@ -17,7 +17,7 @@ jobs:
     runs-on: windows-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           submodules: true
       - uses: swatinem/rust-cache@v2
@@ -26,10 +26,10 @@ jobs:
         with:
           python-version-file: "pyproject.toml"
       - name: Run Clippy
-        run: cargo clippy --all-targets --features highs,cbc,ipm-simd
+        run: cargo clippy --all-targets --features highs,cbc,microlp,ipm-simd
       - name: Build
-        run: cargo build --verbose --features highs,cbc,ipm-simd --workspace --exclude pywr-python
+        run: cargo build --verbose --features highs,cbc,microlp,ipm-simd --workspace --exclude pywr-python
       - name: Run tests
         # Only test the library and binaries, not the docs
         # There were some issues with the docs tests timing out on Windows CI
-        run: cargo test --features highs,cbc,ipm-simd --verbose --lib --bins -- --test-threads=1
+        run: cargo test --features highs,cbc,microlp,ipm-simd --verbose -- --test-threads=1

@@ -119,8 +119,7 @@ mod core {
                     .extract()?;
 
                 Ok(df)
-            })
-            .expect("Failed to load Pandas dataset");
+            })?;
 
             let mut df = df.0;
 

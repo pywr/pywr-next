@@ -2,16 +2,16 @@ use crate::digest::Checksum;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
 #[cfg(feature = "core")]
-use crate::model::LoadArgs;
+use crate::network::LoadArgs;
 use crate::parameters::{ConversionData, ParameterMeta};
-#[cfg(feature = "core")]
+#[cfg(all(feature = "core", feature = "hdf5"))]
 use crate::timeseries::subset_array2;
 use crate::v1::{IntoV2, try_convert_parameter_attr};
 use crate::{ComponentConversionError, TryFromV1};
-#[cfg(feature = "core")]
+#[cfg(all(feature = "core", feature = "hdf5"))]
 use ndarray::s;
-#[cfg(feature = "core")]
-use pywr_core::parameters::ParameterIndex;
+#[cfg(all(feature = "core", feature = "hdf5"))]
+use pywr_core::parameters::ParameterName;
 use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::parameters::TablesArrayParameter as TablesArrayParameterV1;
 use schemars::JsonSchema;
@@ -30,13 +30,14 @@ pub struct TablesArrayParameter {
     pub timestep_offset: Option<i32>,
 }
 
-#[cfg(feature = "core")]
+#[cfg(all(feature = "core", feature = "hdf5"))]
 impl TablesArrayParameter {
     pub fn add_to_model(
         &self,
         network: &mut pywr_core::network::Network,
         args: &LoadArgs,
-    ) -> Result<ParameterIndex<f64>, SchemaError> {
+        parent: Option<&str>,
+    ) -> Result<pywr_core::parameters::ParameterIndex<f64>, SchemaError> {
         // 1. Load the file from the HDF5 file (NB this is not Pandas format).
 
         // Handle the case of an optional data path with a relative url.
@@ -78,7 +79,7 @@ impl TablesArrayParameter {
             }
 
             let p = pywr_core::parameters::Array2Parameter::new(
-                self.meta.name.as_str().into(),
+                ParameterName::new(&self.meta.name, parent),
                 array,
                 scenario_group_index,
                 self.timestep_offset,
@@ -87,12 +88,24 @@ impl TablesArrayParameter {
         } else {
             let array = array.slice_move(s![.., 0]);
             let p = pywr_core::parameters::Array1Parameter::new(
-                self.meta.name.as_str().into(),
+                ParameterName::new(&self.meta.name, parent),
                 array,
                 self.timestep_offset,
             );
             Ok(network.add_simple_parameter(Box::new(p))?)
         }
+    }
+}
+
+#[cfg(all(feature = "core", not(feature = "hdf5")))]
+impl TablesArrayParameter {
+    pub fn add_to_model(
+        &self,
+        _network: &mut pywr_core::network::Network,
+        _args: &LoadArgs,
+        _parent: Option<&str>,
+    ) -> Result<pywr_core::parameters::ParameterIndex<f64>, SchemaError> {
+        Err(SchemaError::FeatureNotEnabled("hdf5".to_string()))
     }
 }
 

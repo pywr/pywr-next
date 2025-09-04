@@ -38,4 +38,12 @@ impl Output {
             Self::Memory(o) => o.add_to_model(network),
         }
     }
+
+    pub fn name(&self) -> &str {
+        match self {
+            Self::CSV(o) => &o.name,
+            Self::HDF5(o) => &o.name,
+            Self::Memory(o) => &o.name,
+        }
+    }
 }

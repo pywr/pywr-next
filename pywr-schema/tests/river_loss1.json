@@ -106,8 +106,7 @@
         "filename": "river_loss1-expected.csv",
         "metric_set": [
           "nodes"
-        ],
-        "decimal_places": 1
+        ]
       }
     ]
   }

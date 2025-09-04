@@ -3,11 +3,12 @@ use crate::error::ComponentConversionError;
 use crate::error::SchemaError;
 use crate::metric::IndexMetric;
 #[cfg(feature = "core")]
-use crate::model::LoadArgs;
+use crate::network::LoadArgs;
 use crate::parameters::{ConversionData, ParameterMeta};
 use crate::v1::{IntoV2, TryFromV1, try_convert_parameter_attr};
+
 #[cfg(feature = "core")]
-use pywr_core::parameters::ParameterIndex;
+use pywr_core::parameters::{ParameterIndex, ParameterName};
 use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::parameters::AsymmetricSwitchIndexParameter as AsymmetricSwitchIndexParameterV1;
 use schemars::JsonSchema;
@@ -26,12 +27,13 @@ impl AsymmetricSwitchIndexParameter {
         &self,
         network: &mut pywr_core::network::Network,
         args: &LoadArgs,
+        parent: Option<&str>,
     ) -> Result<ParameterIndex<u64>, SchemaError> {
         let on_index_parameter = self.on_index_parameter.load(network, args, None)?;
         let off_index_parameter = self.off_index_parameter.load(network, args, None)?;
 
         let p = pywr_core::parameters::AsymmetricSwitchIndexParameter::new(
-            self.meta.name.as_str().into(),
+            ParameterName::new(&self.meta.name, parent),
             on_index_parameter,
             off_index_parameter,
         );

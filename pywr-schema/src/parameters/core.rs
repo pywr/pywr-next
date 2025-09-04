@@ -3,7 +3,7 @@ use crate::error::ComponentConversionError;
 use crate::error::SchemaError;
 use crate::metric::Metric;
 #[cfg(feature = "core")]
-use crate::model::LoadArgs;
+use crate::network::LoadArgs;
 use crate::parameters::{ConstantValue, ConversionData, ParameterMeta};
 use crate::v1::{IntoV2, TryFromV1, try_convert_parameter_attr};
 #[cfg(feature = "core")]
@@ -226,11 +226,12 @@ impl MaxParameter {
         &self,
         network: &mut pywr_core::network::Network,
         args: &LoadArgs,
+        parent: Option<&str>,
     ) -> Result<ParameterIndex<f64>, SchemaError> {
         let idx = self.parameter.load(network, args, None)?;
         let threshold = self.threshold.unwrap_or(0.0);
 
-        let p = pywr_core::parameters::MaxParameter::new(self.meta.name.as_str().into(), idx, threshold);
+        let p = pywr_core::parameters::MaxParameter::new(ParameterName::new(&self.meta.name, parent), idx, threshold);
         Ok(network.add_parameter(Box::new(p))?)
     }
 }
@@ -283,11 +284,12 @@ impl DivisionParameter {
         &self,
         network: &mut pywr_core::network::Network,
         args: &LoadArgs,
+        parent: Option<&str>,
     ) -> Result<ParameterIndex<f64>, SchemaError> {
         let n = self.numerator.load(network, args, None)?;
         let d = self.denominator.load(network, args, None)?;
 
-        let p = pywr_core::parameters::DivisionParameter::new(self.meta.name.as_str().into(), n, d);
+        let p = pywr_core::parameters::DivisionParameter::new(ParameterName::new(&self.meta.name, parent), n, d);
         Ok(network.add_parameter(Box::new(p))?)
     }
 }
@@ -342,11 +344,12 @@ impl MinParameter {
         &self,
         network: &mut pywr_core::network::Network,
         args: &LoadArgs,
+        parent: Option<&str>,
     ) -> Result<ParameterIndex<f64>, SchemaError> {
         let idx = self.parameter.load(network, args, None)?;
         let threshold = self.threshold.unwrap_or(0.0);
 
-        let p = pywr_core::parameters::MinParameter::new(self.meta.name.as_str().into(), idx, threshold);
+        let p = pywr_core::parameters::MinParameter::new(ParameterName::new(&self.meta.name, parent), idx, threshold);
         Ok(network.add_parameter(Box::new(p))?)
     }
 }
@@ -386,10 +389,11 @@ impl NegativeParameter {
         &self,
         network: &mut pywr_core::network::Network,
         args: &LoadArgs,
+        parent: Option<&str>,
     ) -> Result<ParameterIndex<f64>, SchemaError> {
         let idx = self.parameter.load(network, args, None)?;
 
-        let p = pywr_core::parameters::NegativeParameter::new(self.meta.name.as_str().into(), idx);
+        let p = pywr_core::parameters::NegativeParameter::new(ParameterName::new(&self.meta.name, parent), idx);
         Ok(network.add_parameter(Box::new(p))?)
     }
 }
@@ -440,11 +444,16 @@ impl NegativeMaxParameter {
         &self,
         network: &mut pywr_core::network::Network,
         args: &LoadArgs,
+        parent: Option<&str>,
     ) -> Result<ParameterIndex<f64>, SchemaError> {
         let idx = self.metric.load(network, args, None)?;
         let threshold = self.threshold.unwrap_or(0.0);
 
-        let p = pywr_core::parameters::NegativeMaxParameter::new(self.meta.name.as_str().into(), idx, threshold);
+        let p = pywr_core::parameters::NegativeMaxParameter::new(
+            ParameterName::new(&self.meta.name, parent),
+            idx,
+            threshold,
+        );
         Ok(network.add_parameter(Box::new(p))?)
     }
 }
@@ -499,11 +508,16 @@ impl NegativeMinParameter {
         &self,
         network: &mut pywr_core::network::Network,
         args: &LoadArgs,
+        parent: Option<&str>,
     ) -> Result<ParameterIndex<f64>, SchemaError> {
         let idx = self.metric.load(network, args, None)?;
         let threshold = self.threshold.unwrap_or(0.0);
 
-        let p = pywr_core::parameters::NegativeMinParameter::new(self.meta.name.as_str().into(), idx, threshold);
+        let p = pywr_core::parameters::NegativeMinParameter::new(
+            ParameterName::new(&self.meta.name, parent),
+            idx,
+            threshold,
+        );
         Ok(network.add_parameter(Box::new(p))?)
     }
 }

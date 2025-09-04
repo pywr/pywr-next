@@ -6,22 +6,23 @@ mod asymmetric;
 mod constant;
 mod control_curves;
 mod delay;
+mod difference;
 mod discount_factor;
 mod division;
+mod errors;
 mod hydropower;
 mod indexed_array;
 mod interpolate;
 mod interpolated;
 mod max;
 mod min;
+mod multi_threshold;
 mod negative;
 mod negativemax;
 mod negativemin;
 mod offset;
 mod polynomial;
 mod profiles;
-
-mod errors;
 #[cfg(feature = "pyo3")]
 mod py;
 mod rolling;
@@ -45,6 +46,7 @@ pub use control_curves::{
     PiecewiseInterpolatedParameter, VolumeBetweenControlCurvesParameter,
 };
 pub use delay::DelayParameter;
+pub use difference::DifferenceParameter;
 pub use discount_factor::DiscountFactorParameter;
 pub use division::DivisionParameter;
 use errors::{ConstCalculationError, SimpleCalculationError};
@@ -55,6 +57,7 @@ pub use interpolate::{InterpolationError, interpolate, linear_interpolation};
 pub use interpolated::InterpolatedParameter;
 pub use max::MaxParameter;
 pub use min::MinParameter;
+pub use multi_threshold::MultiThresholdParameter;
 pub use negative::NegativeParameter;
 pub use negativemax::NegativeMaxParameter;
 pub use negativemin::NegativeMinParameter;
@@ -66,10 +69,11 @@ pub use profiles::{
     WeeklyProfileParameter, WeeklyProfileValues,
 };
 #[cfg(feature = "pyo3")]
-pub use py::PyParameter;
+pub use py::{ParameterInfo, PyClassParameter, PyFuncParameter};
 pub use rolling::RollingParameter;
 use std::fmt;
 use std::fmt::{Display, Formatter};
+use std::hash::{Hash, Hasher};
 use std::marker::PhantomData;
 use std::ops::Deref;
 use thiserror::Error;
@@ -227,6 +231,12 @@ impl<T> Display for GeneralParameterIndex<T> {
     }
 }
 
+impl<T> Hash for GeneralParameterIndex<T> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.idx.hash(state);
+    }
+}
+
 #[derive(Debug, Copy, Clone)]
 pub enum ParameterIndex<T> {
     Const(ConstParameterIndex<T>),
@@ -277,6 +287,9 @@ impl<T> From<ConstParameterIndex<T>> for ParameterIndex<T> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParameterName {
     name: String,
+    // Optional sub-name for parameters that are part of multi-parameter groups
+    sub_name: Option<String>,
+    // Optional parent name for parameters that are added by a node
     parent: Option<String>,
 }
 
@@ -284,6 +297,15 @@ impl ParameterName {
     pub fn new(name: &str, parent: Option<&str>) -> Self {
         Self {
             name: name.to_string(),
+            sub_name: None,
+            parent: parent.map(|p| p.to_string()),
+        }
+    }
+
+    pub fn new_with_subname(name: &str, sub_name: Option<&str>, parent: Option<&str>) -> Self {
+        Self {
+            name: name.to_string(),
+            sub_name: sub_name.map(|s| s.to_string()),
             parent: parent.map(|p| p.to_string()),
         }
     }
@@ -312,6 +334,7 @@ impl From<&str> for ParameterName {
     fn from(name: &str) -> Self {
         Self {
             name: name.to_string(),
+            sub_name: None,
             parent: None,
         }
     }
@@ -637,6 +660,7 @@ pub trait ConstParameter<T>: Parameter {
     fn as_parameter(&self) -> &dyn Parameter;
 }
 
+#[derive(Hash, PartialEq, Eq, Clone, Copy)]
 pub enum GeneralParameterType {
     Parameter(GeneralParameterIndex<f64>),
     Index(GeneralParameterIndex<u64>),
@@ -796,9 +820,9 @@ pub enum ParameterCollectionError {
 #[derive(Error, Debug)]
 #[error("Error setting up parameter '{name}': {source}")]
 pub struct ParameterCollectionSetupError {
-    name: ParameterName,
+    name: Box<ParameterName>,
     #[source]
-    source: ParameterSetupError,
+    source: Box<ParameterSetupError>,
 }
 
 /// Error in a constant parameter during calculation.
@@ -917,8 +941,8 @@ impl ParameterCollection {
             .map(|p| {
                 p.setup(timesteps, scenario_index)
                     .map_err(|source| ParameterCollectionSetupError {
-                        name: p.name().clone(),
-                        source,
+                        name: Box::new(p.name().clone()),
+                        source: Box::new(source),
                     })
             })
             .collect::<Result<Vec<_>, _>>()?;
@@ -929,8 +953,8 @@ impl ParameterCollection {
             .map(|p| {
                 p.setup(timesteps, scenario_index)
                     .map_err(|source| ParameterCollectionSetupError {
-                        name: p.name().clone(),
-                        source,
+                        name: Box::new(p.name().clone()),
+                        source: Box::new(source),
                     })
             })
             .collect::<Result<Vec<_>, _>>()?;
@@ -941,8 +965,8 @@ impl ParameterCollection {
             .map(|p| {
                 p.setup(timesteps, scenario_index)
                     .map_err(|source| ParameterCollectionSetupError {
-                        name: p.name().clone(),
-                        source,
+                        name: Box::new(p.name().clone()),
+                        source: Box::new(source),
                     })
             })
             .collect::<Result<Vec<_>, _>>()?;
@@ -966,8 +990,8 @@ impl ParameterCollection {
             .map(|p| {
                 p.setup(timesteps, scenario_index)
                     .map_err(|source| ParameterCollectionSetupError {
-                        name: p.name().clone(),
-                        source,
+                        name: Box::new(p.name().clone()),
+                        source: Box::new(source),
                     })
             })
             .collect::<Result<Vec<_>, _>>()?;
@@ -978,8 +1002,8 @@ impl ParameterCollection {
             .map(|p| {
                 p.setup(timesteps, scenario_index)
                     .map_err(|source| ParameterCollectionSetupError {
-                        name: p.name().clone(),
-                        source,
+                        name: Box::new(p.name().clone()),
+                        source: Box::new(source),
                     })
             })
             .collect::<Result<Vec<_>, _>>()?;
@@ -990,8 +1014,8 @@ impl ParameterCollection {
             .map(|p| {
                 p.setup(timesteps, scenario_index)
                     .map_err(|source| ParameterCollectionSetupError {
-                        name: p.name().clone(),
-                        source,
+                        name: Box::new(p.name().clone()),
+                        source: Box::new(source),
                     })
             })
             .collect::<Result<Vec<_>, _>>()?;
@@ -1015,8 +1039,8 @@ impl ParameterCollection {
             .map(|p| {
                 p.setup(timesteps, scenario_index)
                     .map_err(|source| ParameterCollectionSetupError {
-                        name: p.name().clone(),
-                        source,
+                        name: Box::new(p.name().clone()),
+                        source: Box::new(source),
                     })
             })
             .collect::<Result<Vec<_>, _>>()?;
@@ -1027,8 +1051,8 @@ impl ParameterCollection {
             .map(|p| {
                 p.setup(timesteps, scenario_index)
                     .map_err(|source| ParameterCollectionSetupError {
-                        name: p.name().clone(),
-                        source,
+                        name: Box::new(p.name().clone()),
+                        source: Box::new(source),
                     })
             })
             .collect::<Result<Vec<_>, _>>()?;
@@ -1039,8 +1063,8 @@ impl ParameterCollection {
             .map(|p| {
                 p.setup(timesteps, scenario_index)
                     .map_err(|source| ParameterCollectionSetupError {
-                        name: p.name().clone(),
-                        source,
+                        name: Box::new(p.name().clone()),
+                        source: Box::new(source),
                     })
             })
             .collect::<Result<Vec<_>, _>>()?;
@@ -1664,17 +1688,6 @@ mod tests {
     use crate::parameters::errors::{ConstCalculationError, SimpleCalculationError};
     use crate::scenario::ScenarioIndex;
     use crate::state::{ConstParameterValues, MultiValue};
-    use crate::timestep::{TimestepDuration, Timestepper};
-    use chrono::NaiveDateTime;
-
-    // TODO tests need re-enabling
-    #[allow(dead_code)]
-    fn default_timestepper() -> Timestepper {
-        let start = NaiveDateTime::parse_from_str("2020-01-01 00:00:00", "%Y-%m-%d %H:%M:%S").unwrap();
-        let end = NaiveDateTime::parse_from_str("2020-01-15 00:00:00", "%Y-%m-%d %H:%M:%S").unwrap();
-        let duration = TimestepDuration::Days(1);
-        Timestepper::new(start, end, duration)
-    }
 
     /// Parameter for testing purposes
     struct TestParameter {
@@ -1835,125 +1848,4 @@ mod tests {
         let ret = collection.add_general_multi(Box::new(TestParameter::default()));
         assert!(ret.is_err());
     }
-
-    // #[test]
-    // /// Test `ConstantParameter` returns the correct value.
-    // fn test_constant_parameter() {
-    //     let mut param = ConstantParameter::new("my-parameter", PI);
-    //     let timestepper = test_timestepper();
-    //     let si = ScenarioIndex {
-    //         index: 0,
-    //         indices: vec![0],
-    //     };
-    //
-    //     for ts in timestepper.timesteps().iter() {
-    //         let ns = NetworkState::new();
-    //         let ps = ParameterState::new();
-    //         assert_almost_eq!(param.compute(ts, &si, &ns, &ps).unwrap(), PI);
-    //     }
-    // }
-
-    // #[test]
-    // /// Test `Array2Parameter` returns the correct value.
-    // fn test_array2_parameter() {
-    //     let data = Array::range(0.0, 366.0, 1.0);
-    //     let data = data.insert_axis(Axis(1));
-    //     let mut param = Array2Parameter::new("my-array-parameter", data);
-    //     let timestepper = test_timestepper();
-    //     let si = ScenarioIndex {
-    //         index: 0,
-    //         indices: vec![0],
-    //     };
-    //
-    //     for ts in timestepper.timesteps().iter() {
-    //         let ns = NetworkState::new();
-    //         let ps = ParameterState::new();
-    //         assert_almost_eq!(param.compute(ts, &si, &ns, &ps).unwrap(), ts.index as f64);
-    //     }
-    // }
-
-    // #[test]
-    // #[should_panic] // TODO this is not great; but a problem with using ndarray slicing.
-    // /// Test `Array2Parameter` returns the correct value.
-    // fn test_array2_parameter_not_enough_data() {
-    //     let data = Array::range(0.0, 100.0, 1.0);
-    //     let data = data.insert_axis(Axis(1));
-    //     let mut param = Array2Parameter::new("my-array-parameter", data);
-    //     let timestepper = test_timestepper();
-    //     let si = ScenarioIndex {
-    //         index: 0,
-    //         indices: vec![0],
-    //     };
-    //
-    //     for ts in timestepper.timesteps().iter() {
-    //         let ns = NetworkState::new();
-    //         let ps = ParameterState::new();
-    //         let value = param.compute(ts, &si, &ns, &ps);
-    //     }
-    // }
-
-    // #[test]
-    // fn test_aggregated_parameter_sum() {
-    //     let mut parameter_state = ParameterState::new();
-    //     // Parameter's 0 and 1 have values of 10.0 and 2.0 respectively
-    //     parameter_state.push(10.0);
-    //     parameter_state.push(2.0);
-    //     test_aggregated_parameter(vec![0, 1], &parameter_state, AggFunc::Sum, 12.0);
-    // }
-    //
-    // #[test]
-    // fn test_aggregated_parameter_mean() {
-    //     let mut parameter_state = ParameterState::new();
-    //     // Parameter's 0 and 1 have values of 10.0 and 2.0 respectively
-    //     parameter_state.push(10.0);
-    //     parameter_state.push(2.0);
-    //     test_aggregated_parameter(vec![0, 1], &parameter_state, AggFunc::Mean, 6.0);
-    // }
-    //
-    // #[test]
-    // fn test_aggregated_parameter_max() {
-    //     let mut parameter_state = ParameterState::new();
-    //     // Parameter's 0 and 1 have values of 10.0 and 2.0 respectively
-    //     parameter_state.push(10.0);
-    //     parameter_state.push(2.0);
-    //     test_aggregated_parameter(vec![0, 1], &parameter_state, AggFunc::Max, 10.0);
-    // }
-    //
-    // #[test]
-    // fn test_aggregated_parameter_min() {
-    //     let mut parameter_state = ParameterState::new();
-    //     // Parameter's 0 and 1 have values of 10.0 and 2.0 respectively
-    //     parameter_state.push(10.0);
-    //     parameter_state.push(2.0);
-    //     test_aggregated_parameter(vec![0, 1], &parameter_state, AggFunc::Min, 2.0);
-    // }
-    //
-    // #[test]
-    // fn test_aggregated_parameter_product() {
-    //     let mut parameter_state = ParameterState::new();
-    //     // Parameter's 0 and 1 have values of 10.0 and 2.0 respectively
-    //     parameter_state.push(10.0);
-    //     parameter_state.push(2.0);
-    //     test_aggregated_parameter(vec![0, 1], &parameter_state, AggFunc::Product, 20.0);
-    // }
-    //
-    // /// Test `AggregatedParameter` returns the correct value.
-    // fn test_aggregated_parameter(
-    //     parameter_indices: Vec<ParameterIndex>,
-    //     parameter_state: &ParameterState,
-    //     agg_func: AggFunc,
-    //     expected: f64,
-    // ) {
-    //     let param = AggregatedParameter::new("my-aggregation", parameters, agg_func);
-    //     let timestepper = test_timestepper();
-    //     let si = ScenarioIndex {
-    //         index: 0,
-    //         indices: vec![0],
-    //     };
-    //
-    //     for ts in timestepper.timesteps().iter() {
-    //         let ns = NetworkState::new();
-    //         assert_almost_eq!(param.compute(ts, &si, &ns, &parameter_state).unwrap(), expected);
-    //     }
-    // }
 }
