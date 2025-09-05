@@ -16,7 +16,7 @@ use crate::recorders::hdf::Hdf5Error;
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
 use crate::timestep::Timestep;
-pub use aggregator::{AggregationFrequency, AggregationFunction, Aggregator};
+pub use aggregator::{AggregationFrequency, Aggregator, PeriodValue};
 pub use csv::{CsvLongFmtOutput, CsvLongFmtRecord, CsvWideFmtOutput};
 use float_cmp::{ApproxEq, F64Margin, approx_eq};
 #[cfg(feature = "hdf5")]

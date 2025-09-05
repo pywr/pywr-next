@@ -8,6 +8,7 @@ use crate::node::NodeIndex;
 use crate::recorders::RecorderIndex;
 pub use network::NetworkError;
 
+pub mod agg_funcs;
 pub mod aggregated_node;
 mod aggregated_storage_node;
 pub mod derived_metric;

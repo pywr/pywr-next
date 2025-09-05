@@ -1,10 +1,11 @@
+use crate::agg_funcs::AggFuncF64;
 use crate::metric::MetricF64;
 use crate::models::{Model, ModelDomain};
 /// Utilities for unit tests.
 /// TODO move this to its own local crate ("test-utilities") as part of a workspace.
 use crate::network::{Network, NetworkError};
 use crate::node::StorageInitialVolume;
-use crate::parameters::{AggFunc, AggregatedParameter, Array2Parameter, ConstantParameter, GeneralParameter};
+use crate::parameters::{AggregatedParameter, Array2Parameter, ConstantParameter, GeneralParameter};
 use crate::recorders::{AssertionF64Recorder, AssertionU64Recorder};
 use crate::scenario::{ScenarioDomainBuilder, ScenarioGroupBuilder};
 #[cfg(feature = "cbc")]
@@ -91,7 +92,7 @@ pub fn simple_network(network: &mut Network, inflow_scenario_index: usize, num_i
     let total_demand: AggregatedParameter<MetricF64> = AggregatedParameter::new(
         "total-demand".into(),
         &[base_demand.into(), demand_factor.into()],
-        AggFunc::Product,
+        AggFuncF64::Product,
     );
     let total_demand = network.add_parameter(Box::new(total_demand)).unwrap();
 
