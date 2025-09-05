@@ -45,9 +45,13 @@ impl GeneralParameter<f64> for AggregatedParameter<MetricF64> {
         state: &State,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<f64, ParameterCalculationError> {
-        Ok(self
-            .agg_func
-            .calc_iter_result_f64(self.metrics.iter().map(|p| p.get_value(model, state)))?)
+        let values = self
+            .metrics
+            .iter()
+            .map(|p| p.get_value(model, state))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(self.agg_func.calc_iter_f64(&values)?)
     }
 
     fn as_parameter(&self) -> &dyn Parameter
@@ -82,9 +86,13 @@ impl SimpleParameter<f64> for AggregatedParameter<SimpleMetricF64> {
         values: &SimpleParameterValues,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<f64, SimpleCalculationError> {
-        Ok(self
-            .agg_func
-            .calc_iter_result_f64(self.metrics.iter().map(|p| p.get_value(values)))?)
+        let values = self
+            .metrics
+            .iter()
+            .map(|p| p.get_value(values))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(self.agg_func.calc_iter_f64(&values)?)
     }
 
     fn as_parameter(&self) -> &dyn Parameter
@@ -118,9 +126,13 @@ impl ConstParameter<f64> for AggregatedParameter<ConstantMetricF64> {
         values: &ConstParameterValues,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<f64, ConstCalculationError> {
-        Ok(self
-            .agg_func
-            .calc_iter_result_f64(self.metrics.iter().map(|p| p.get_value(values)))?)
+        let values = self
+            .metrics
+            .iter()
+            .map(|p| p.get_value(values))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(self.agg_func.calc_iter_f64(&values)?)
     }
 
     fn as_parameter(&self) -> &dyn Parameter

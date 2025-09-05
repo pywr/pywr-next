@@ -1,0 +1,4 @@
+time_start,time_end,simulation_id,label,metric_set,name,attribute,value
+2015-01-01T00:00:00,2015-01-02T00:00:00,0,0,parameters,demand,value,13.5
+2015-01-02T00:00:00,2015-01-03T00:00:00,0,0,parameters,demand,value,13.5
+2015-01-03T00:00:00,2015-01-04T00:00:00,0,0,parameters,demand,value,13.5

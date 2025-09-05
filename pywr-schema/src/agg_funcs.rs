@@ -1,16 +1,58 @@
+#[cfg(all(feature = "core", feature = "pyo3"))]
+use crate::SchemaError;
+use crate::py_utils::PythonSource;
+#[cfg(all(feature = "core", feature = "pyo3"))]
+use crate::py_utils::{try_load_optional_py_args, try_load_optional_py_kwargs};
+#[cfg(feature = "pyo3")]
+use pyo3::{Python, prelude::PyAnyMethods};
 use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::parameters::{AggFunc as AggFuncV1, IndexAggFunc as IndexAggFuncV1};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+#[cfg(all(feature = "core", feature = "pyo3"))]
+use std::path::Path;
 use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticStr};
 
+/// An aggregation function implemented in Python.
+#[derive(Deserialize, Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
+#[serde(deny_unknown_fields)]
+pub struct PythonAggFunc {
+    pub source: PythonSource,
+    /// The name of the Python object from the module to use. This should be a callable object.
+    pub object: String,
+    /// Position arguments to pass to the object during setup.
+    pub args: Option<Vec<serde_json::Value>>,
+    /// Keyword arguments to pass to the object during setup.
+    pub kwargs: Option<HashMap<String, serde_json::Value>>,
+}
+
+#[cfg(all(feature = "core", feature = "pyo3"))]
+impl PythonAggFunc {
+    /// Load the Python aggregation function.
+    fn load(&self, data_path: Option<&Path>) -> Result<pywr_core::agg_funcs::PyAggFunc, SchemaError> {
+        pyo3::prepare_freethreaded_python();
+
+        let function = Python::with_gil(|py| {
+            let module = self.source.load_module(py, data_path)?;
+            let obj = module.getattr(&self.object)?;
+
+            Ok::<_, SchemaError>(obj.unbind())
+        })?;
+
+        let args = Python::with_gil(|py| try_load_optional_py_args(py, &self.args))?;
+        let kwargs = Python::with_gil(|py| try_load_optional_py_kwargs(py, &self.kwargs))?;
+
+        Ok(pywr_core::agg_funcs::PyAggFunc::new(function, args, kwargs))
+    }
+}
 // TODO complete these
 /// Aggregation functions for float values.
 ///
 /// This enum defines the possible aggregation functions that can be applied to index metrics.
 /// They are mapped to the corresponding functions in the `pywr_core::parameters::AggFunc` enum
 /// when used in the core library.
-#[derive(Deserialize, Serialize, Debug, Copy, Clone, JsonSchema, PywrVisitAll, Display, EnumDiscriminants)]
+#[derive(Deserialize, Serialize, Debug, Clone, JsonSchema, PywrVisitAll, Display, EnumDiscriminants)]
 #[serde(tag = "type", deny_unknown_fields)]
 #[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
 #[strum_discriminants(name(AggFuncType))]
@@ -21,18 +63,21 @@ pub enum AggFunc {
     Product,
     Mean,
     CountNonZero,
+    Python(PythonAggFunc),
 }
 
 #[cfg(feature = "core")]
-impl From<AggFunc> for pywr_core::agg_funcs::AggFuncF64 {
-    fn from(value: AggFunc) -> Self {
-        match value {
-            AggFunc::Sum => pywr_core::agg_funcs::AggFuncF64::Sum,
-            AggFunc::Max => pywr_core::agg_funcs::AggFuncF64::Max,
-            AggFunc::Min => pywr_core::agg_funcs::AggFuncF64::Min,
-            AggFunc::Product => pywr_core::agg_funcs::AggFuncF64::Product,
-            AggFunc::Mean => pywr_core::agg_funcs::AggFuncF64::Mean,
-            AggFunc::CountNonZero => pywr_core::agg_funcs::AggFuncF64::CountNonZero,
+impl AggFunc {
+    pub fn load(&self, data_path: Option<&Path>) -> Result<pywr_core::agg_funcs::AggFuncF64, SchemaError> {
+        match self {
+            Self::Sum => Ok(pywr_core::agg_funcs::AggFuncF64::Sum),
+            Self::Max => Ok(pywr_core::agg_funcs::AggFuncF64::Max),
+            Self::Min => Ok(pywr_core::agg_funcs::AggFuncF64::Min),
+            Self::Product => Ok(pywr_core::agg_funcs::AggFuncF64::Product),
+            Self::Mean => Ok(pywr_core::agg_funcs::AggFuncF64::Mean),
+            Self::CountNonZero => Ok(pywr_core::agg_funcs::AggFuncF64::CountNonZero),
+            #[cfg(feature = "pyo3")]
+            Self::Python(py_func) => Ok(pywr_core::agg_funcs::AggFuncF64::Python(py_func.load(data_path)?)),
         }
     }
 }
@@ -53,7 +98,7 @@ impl From<AggFuncV1> for AggFunc {
 /// This enum defines the possible aggregation functions that can be applied to index metrics.
 /// They are mapped to the corresponding functions in the `pywr_core::parameters::AggIndexFunc` enum
 /// when used in the core library.
-#[derive(Deserialize, Serialize, Debug, Copy, Clone, JsonSchema, PywrVisitAll, Display, EnumDiscriminants)]
+#[derive(Deserialize, Serialize, Debug, Clone, JsonSchema, PywrVisitAll, Display, EnumDiscriminants)]
 #[serde(tag = "type", deny_unknown_fields)]
 #[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
 #[strum_discriminants(name(IndexAggFuncType))]
@@ -70,18 +115,22 @@ pub enum IndexAggFunc {
     Any,
     /// Returns 1 if all values are non-zero, otherwise 0.
     All,
+    #[cfg(feature = "pyo3")]
+    Python(PythonAggFunc),
 }
 
 #[cfg(feature = "core")]
-impl From<IndexAggFunc> for pywr_core::agg_funcs::AggFuncU64 {
-    fn from(value: IndexAggFunc) -> Self {
-        match value {
-            IndexAggFunc::Sum => pywr_core::agg_funcs::AggFuncU64::Sum,
-            IndexAggFunc::Product => pywr_core::agg_funcs::AggFuncU64::Product,
-            IndexAggFunc::Max => pywr_core::agg_funcs::AggFuncU64::Max,
-            IndexAggFunc::Min => pywr_core::agg_funcs::AggFuncU64::Min,
-            IndexAggFunc::Any => pywr_core::agg_funcs::AggFuncU64::Any,
-            IndexAggFunc::All => pywr_core::agg_funcs::AggFuncU64::All,
+impl IndexAggFunc {
+    pub fn load(&self, data_path: Option<&Path>) -> Result<pywr_core::agg_funcs::AggFuncU64, SchemaError> {
+        match self {
+            Self::Sum => Ok(pywr_core::agg_funcs::AggFuncU64::Sum),
+            Self::Product => Ok(pywr_core::agg_funcs::AggFuncU64::Product),
+            Self::Max => Ok(pywr_core::agg_funcs::AggFuncU64::Max),
+            Self::Min => Ok(pywr_core::agg_funcs::AggFuncU64::Min),
+            Self::Any => Ok(pywr_core::agg_funcs::AggFuncU64::Any),
+            Self::All => Ok(pywr_core::agg_funcs::AggFuncU64::All),
+            #[cfg(feature = "pyo3")]
+            Self::Python(py_func) => Ok(pywr_core::agg_funcs::AggFuncU64::Python(py_func.load(data_path)?)),
         }
     }
 }

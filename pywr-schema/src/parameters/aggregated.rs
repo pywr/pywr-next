@@ -64,7 +64,7 @@ impl AggregatedParameter {
         let p = pywr_core::parameters::AggregatedParameter::new(
             ParameterName::new(&self.meta.name, parent),
             &metrics,
-            self.agg_func.into(),
+            self.agg_func.load(args.data_path)?,
         );
 
         Ok(network.add_parameter(Box::new(p))?)
@@ -136,7 +136,7 @@ impl AggregatedIndexParameter {
         let p = pywr_core::parameters::AggregatedIndexParameter::new(
             ParameterName::new(&self.meta.name, parent),
             &metrics,
-            self.agg_func.into(),
+            self.agg_func.load(args.data_path)?,
         );
 
         Ok(network.add_index_parameter(Box::new(p))?)
