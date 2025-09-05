@@ -4,6 +4,7 @@ mod scalar;
 mod vec;
 
 use crate::ConversionError;
+use crate::digest::{Checksum, ChecksumError};
 use crate::parameters::TableIndex;
 use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::parameters::TableDataRef as TableDataRefV1;
@@ -77,29 +78,30 @@ pub struct CsvDataTable {
     pub ty: DataTableValueType,
     pub lookup: CsvDataTableLookup,
     pub url: PathBuf,
+    pub checksum: Option<Checksum>,
 }
 
 #[cfg(feature = "core")]
 impl CsvDataTable {
     fn load_f64(&self, data_path: Option<&Path>) -> Result<LoadedTable, TableError> {
+        let fp = make_path(&self.url, data_path);
+
+        if let Some(checksum) = &self.checksum {
+            checksum.check(&fp)?;
+        }
+
         match &self.ty {
             DataTableValueType::Scalar => match self.lookup {
                 CsvDataTableLookup::Row { rows } => match rows {
-                    1 => Ok(LoadedTable::FloatScalar(load_csv_row_scalar_table_one(
-                        &self.url, data_path,
-                    )?)),
-                    2 => Ok(LoadedTable::FloatScalar(load_csv_row2_scalar_table_one(
-                        &self.url, data_path,
-                    )?)),
+                    1 => Ok(LoadedTable::FloatScalar(load_csv_row_scalar_table_one(&fp)?)),
+                    2 => Ok(LoadedTable::FloatScalar(load_csv_row2_scalar_table_one(&fp)?)),
                     _ => Err(TableError::FormatNotSupported(
                         "CSV row scalar table with more than two index columns is not supported.".to_string(),
                     )),
                 },
                 CsvDataTableLookup::Col { .. } => todo!(),
                 CsvDataTableLookup::Both { rows, cols } => match (rows, cols) {
-                    (1, 1) => Ok(LoadedTable::FloatScalar(load_csv_row_col_scalar_table_one(
-                        &self.url, data_path,
-                    )?)),
+                    (1, 1) => Ok(LoadedTable::FloatScalar(load_csv_row_col_scalar_table_one(&fp)?)),
                     _ => Err(TableError::FormatNotSupported(
                         "CSV row & col scalar table with more than one index is not supported.".to_string(),
                     )),
@@ -107,21 +109,15 @@ impl CsvDataTable {
             },
             DataTableValueType::Array => match self.lookup {
                 CsvDataTableLookup::Row { rows } => match rows {
-                    1 => Ok(LoadedTable::FloatVec(load_csv_row_vec_table_one(&self.url, data_path)?)),
-                    2 => Ok(LoadedTable::FloatVec(load_csv_row2_vec_table_one(
-                        &self.url, data_path,
-                    )?)),
+                    1 => Ok(LoadedTable::FloatVec(load_csv_row_vec_table_one(&fp)?)),
+                    2 => Ok(LoadedTable::FloatVec(load_csv_row2_vec_table_one(&fp)?)),
                     _ => Err(TableError::FormatNotSupported(
                         "CSV row array table with more than two index columns is not supported.".to_string(),
                     )),
                 },
                 CsvDataTableLookup::Col { cols } => match cols {
-                    1 => Ok(LoadedTable::FloatVec(load_csv_col1_vec_table_one(
-                        &self.url, data_path,
-                    )?)),
-                    2 => Ok(LoadedTable::FloatVec(load_csv_col2_vec_table_two(
-                        &self.url, data_path,
-                    )?)),
+                    1 => Ok(LoadedTable::FloatVec(load_csv_col1_vec_table_one(&fp)?)),
+                    2 => Ok(LoadedTable::FloatVec(load_csv_col2_vec_table_two(&fp)?)),
                     _ => Err(TableError::FormatNotSupported(
                         "CSV column array table with more than two index columns is not supported.".to_string(),
                     )),
@@ -149,7 +145,7 @@ pub fn make_path(table_path: &Path, data_path: Option<&Path>) -> PathBuf {
     }
 }
 
-#[derive(Error, Debug, PartialEq, Eq)]
+#[derive(Error, Debug)]
 pub enum TableError {
     #[error("table not found: {0}")]
     TableNotFound(String),
@@ -175,6 +171,8 @@ pub enum TableError {
     IndexOutOfBounds(usize),
     #[error("Table format invalid: {0}")]
     InvalidFormat(String),
+    #[error("Checksum error: {0}")]
+    ChecksumError(#[from] ChecksumError),
 }
 
 #[cfg(feature = "core")]

@@ -1,3 +1,4 @@
+use crate::digest::Checksum;
 use crate::parameters::ParameterMeta;
 use crate::visit::VisitPaths;
 use schemars::JsonSchema;
@@ -10,6 +11,8 @@ pub struct PolarsTimeseries {
     pub time_col: Option<String>,
     pub url: PathBuf,
     pub infer_schema_length: Option<usize>,
+    /// Optional checksum to verify the dataset.
+    pub checksum: Option<Checksum>,
 }
 
 impl VisitPaths for PolarsTimeseries {
@@ -40,6 +43,11 @@ mod core {
             } else {
                 self.url.clone()
             };
+
+            // Validate the checksum if provided
+            if let Some(checksum) = &self.checksum {
+                checksum.check(&fp)?;
+            }
 
             let mut df = match fp.extension() {
                 Some(ext) => {

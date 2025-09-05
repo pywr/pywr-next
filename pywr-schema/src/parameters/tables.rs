@@ -1,3 +1,4 @@
+use crate::digest::Checksum;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
 #[cfg(feature = "core")]
@@ -5,7 +6,8 @@ use crate::network::LoadArgs;
 use crate::parameters::{ConversionData, ParameterMeta};
 #[cfg(all(feature = "core", feature = "hdf5"))]
 use crate::timeseries::subset_array2;
-use crate::v1::{FromV1, IntoV2};
+use crate::v1::{IntoV2, try_convert_parameter_attr};
+use crate::{ComponentConversionError, TryFromV1};
 #[cfg(all(feature = "core", feature = "hdf5"))]
 use ndarray::s;
 #[cfg(all(feature = "core", feature = "hdf5"))]
@@ -13,7 +15,6 @@ use pywr_core::parameters::ParameterName;
 use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::parameters::TablesArrayParameter as TablesArrayParameterV1;
 use schemars::JsonSchema;
-use std::collections::HashMap;
 use std::path::PathBuf;
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
@@ -24,7 +25,7 @@ pub struct TablesArrayParameter {
     #[serde(rename = "where")]
     pub wh: String,
     pub scenario: Option<String>,
-    pub checksum: Option<HashMap<String, String>>,
+    pub checksum: Option<Checksum>,
     pub url: PathBuf,
     pub timestep_offset: Option<i32>,
 }
@@ -49,6 +50,10 @@ impl TablesArrayParameter {
         } else {
             self.url.clone()
         };
+
+        if let Some(checksum) = &self.checksum {
+            checksum.check(&pth)?;
+        }
 
         let file = hdf5_metno::File::open(pth).map_err(|e| SchemaError::HDF5Error(e.to_string()))?; // open for reading
 
@@ -104,16 +109,34 @@ impl TablesArrayParameter {
     }
 }
 
-impl FromV1<TablesArrayParameterV1> for TablesArrayParameter {
-    fn from_v1(v1: TablesArrayParameterV1, parent_node: Option<&str>, conversion_data: &mut ConversionData) -> Self {
-        Self {
-            meta: v1.meta.into_v2(parent_node, conversion_data),
+impl TryFromV1<TablesArrayParameterV1> for TablesArrayParameter {
+    type Error = ComponentConversionError;
+    fn try_from_v1(
+        v1: TablesArrayParameterV1,
+        parent_node: Option<&str>,
+        conversion_data: &mut ConversionData,
+    ) -> Result<Self, Self::Error> {
+        let meta: ParameterMeta = v1.meta.into_v2(parent_node, conversion_data);
+
+        let checksum = match v1.checksum {
+            Some(checksum) => Some(try_convert_parameter_attr(
+                &meta.name,
+                "checksum",
+                checksum,
+                parent_node,
+                conversion_data,
+            )?),
+            None => None,
+        };
+
+        Ok(Self {
+            meta,
             node: v1.node,
             wh: v1.wh,
             scenario: v1.scenario,
-            checksum: v1.checksum,
+            checksum,
             url: v1.url,
             timestep_offset: None,
-        }
+        })
     }
 }
