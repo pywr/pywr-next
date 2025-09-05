@@ -32,7 +32,7 @@ macro_rules! model_tests {
             // Just deserialise the schema
             #[cfg(not(feature = "core"))]
             {
-                let (input, _expected, _solvers_without_features, _solvers_to_skip): (&str, Vec<&str>, Vec<&str>, Vec<&str>) = $value;
+                let (input, _expected, _solvers_without_features, _solvers_to_skip): (&str, Vec<(&str, ResultsShape)>, Vec<&str>, Vec<&str>) = $value;
                 let input_pth = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join(input);
                 let _schema = deserialise_test_model(&input_pth);
             }

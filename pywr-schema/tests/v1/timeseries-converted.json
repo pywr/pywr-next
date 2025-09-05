@@ -122,7 +122,9 @@
         "meta": {
           "name": "factored_flow"
         },
-        "agg_func": "Product",
+        "agg_func": {
+          "type": "Product"
+        },
         "metrics": [
           {
             "type": "Timeseries",

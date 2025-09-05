@@ -118,7 +118,9 @@
           "name": "factored_flow"
         },
         "type": "Aggregated",
-        "agg_func": "Product",
+        "agg_func": {
+          "type": "Product"
+        },
         "metrics": [
           {
             "type": "Timeseries",
