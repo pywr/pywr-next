@@ -59,12 +59,6 @@ pub enum SchemaError {
         #[source]
         source: Box<TableError>,
     },
-    #[error("Circular node reference(s) found.")]
-    CircularNodeReference,
-    #[error("Circular parameters reference(s) found. Unable to load the following parameters: {0:?}")]
-    CircularParameterReference(Vec<String>),
-    #[error("unsupported file format")]
-    UnsupportedFileFormat,
     #[cfg(feature = "pyo3")]
     #[error("Python error: {0}")]
     PythonError(#[from] PyErr),
