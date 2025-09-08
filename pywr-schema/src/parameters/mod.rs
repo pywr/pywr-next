@@ -511,7 +511,9 @@ impl TryFromV1<ParameterV1> for ParameterOrTimeseriesRef {
                 }
                 CoreParameter::CurrentYearThreshold(_) => todo!(),
                 CoreParameter::CurrentOrdinalDayThreshold(_) => todo!(),
-                CoreParameter::TablesArray(p) => Parameter::TablesArray(p.into_v2(parent_node, conversion_data)).into(),
+                CoreParameter::TablesArray(p) => {
+                    Parameter::TablesArray(p.try_into_v2(parent_node, conversion_data)?).into()
+                }
                 CoreParameter::Min(p) => Parameter::Min(p.try_into_v2(parent_node, conversion_data)?).into(),
                 CoreParameter::Division(p) => Parameter::Division(p.try_into_v2(parent_node, conversion_data)?).into(),
                 CoreParameter::DataFrame(p) => {
@@ -666,9 +668,9 @@ impl ConstantValue<f64> {
             Self::Literal(v) => Ok(*v),
             Self::Table(tbl_ref) => tables
                 .get_scalar_f64(tbl_ref)
-                .map_err(|error| SchemaError::TableRefLoad {
+                .map_err(|source| SchemaError::TableRefLoad {
                     table_ref: tbl_ref.clone(),
-                    error,
+                    source: Box::new(source),
                 }),
         }
     }
@@ -682,9 +684,9 @@ impl ConstantValue<u64> {
             Self::Literal(v) => Ok(*v),
             Self::Table(tbl_ref) => tables
                 .get_scalar_u64(tbl_ref)
-                .map_err(|error| SchemaError::TableRefLoad {
+                .map_err(|source| SchemaError::TableRefLoad {
                     table_ref: tbl_ref.clone(),
-                    error,
+                    source: Box::new(source),
                 }),
         }
     }
@@ -726,9 +728,9 @@ impl ConstantFloatVec {
             Self::Table(tbl_ref) => tables
                 .get_vec_f64(tbl_ref)
                 .cloned()
-                .map_err(|error| SchemaError::TableRefLoad {
+                .map_err(|source| SchemaError::TableRefLoad {
                     table_ref: tbl_ref.clone(),
-                    error,
+                    source: Box::new(source),
                 }),
         }
     }

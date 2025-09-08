@@ -1,4 +1,5 @@
 use crate::data_tables::{TableDataRef, TableError};
+use crate::digest::ChecksumError;
 use crate::nodes::{NodeAttribute, NodeComponent};
 use crate::timeseries::TimeseriesError;
 #[cfg(feature = "core")]
@@ -52,8 +53,12 @@ pub enum SchemaError {
     #[error("Metric F64 error: {0}")]
     #[cfg(feature = "core")]
     CoreMetricF64Error(#[from] pywr_core::metric::MetricF64Error),
-    #[error("Error loading data from table `{0}` (column: `{1:?}`, index: `{2:?}`) error: {error}", table_ref.table, table_ref.column, table_ref.index)]
-    TableRefLoad { table_ref: TableDataRef, error: TableError },
+    #[error("Error loading data from table `{0}` (column: `{1:?}`, index: `{2:?}`) error: {source}", table_ref.table, table_ref.column, table_ref.index)]
+    TableRefLoad {
+        table_ref: TableDataRef,
+        #[source]
+        source: Box<TableError>,
+    },
     #[cfg(feature = "pyo3")]
     #[error("Python error: {0}")]
     PythonError(#[from] PyErr),
@@ -108,6 +113,8 @@ pub enum SchemaError {
     NodeConnectionSlotNotAvailable { msg: String },
     #[error("{msg}")]
     NodeConnectionSlotRequired { msg: String },
+    #[error("Checksum error: {0}")]
+    ChecksumError(#[from] ChecksumError),
 }
 
 #[cfg(all(feature = "core", feature = "pyo3"))]

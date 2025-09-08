@@ -1,4 +1,4 @@
-use crate::data_tables::{TableError, make_path};
+use crate::data_tables::TableError;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::BufReader;
@@ -129,16 +129,11 @@ where
 }
 
 /// Load a CSV file with looks for each rows & columns
-pub fn load_csv_row_col_scalar_table_one<T>(
-    table_path: &Path,
-    data_path: Option<&Path>,
-) -> Result<LoadedScalarTable<T>, TableError>
+pub fn load_csv_row_col_scalar_table_one<T>(path: &Path) -> Result<LoadedScalarTable<T>, TableError>
 where
     T: FromStr + Copy,
     TableError: From<T::Err>,
 {
-    let path = make_path(table_path, data_path);
-
     let file = File::open(path).map_err(|e| TableError::IO(e.to_string()))?;
     let buf_reader = BufReader::new(file);
     let mut rdr = csv::Reader::from_reader(buf_reader);
@@ -175,17 +170,12 @@ where
     }))
 }
 
-pub fn load_csv_row_scalar_table_one<T>(
-    table_path: &Path,
-    data_path: Option<&Path>,
-) -> Result<LoadedScalarTable<T>, TableError>
+pub fn load_csv_row_scalar_table_one<T>(path: &Path) -> Result<LoadedScalarTable<T>, TableError>
 where
     T: FromStr + Copy,
     TableError: From<T::Err>,
 {
-    let path = make_path(table_path, data_path);
-
-    let file = File::open(path.clone()).map_err(|e| TableError::IO(e.to_string()))?;
+    let file = File::open(path).map_err(|e| TableError::IO(e.to_string()))?;
     let buf_reader = BufReader::new(file);
     let mut rdr = csv::Reader::from_reader(buf_reader);
 
@@ -201,7 +191,7 @@ where
             let values: Vec<T> = record.iter().skip(1).map(|v| v.parse()).collect::<Result<_, _>>()?;
 
             if values.len() > 1 {
-                return Err(TableError::TooManyValues(path.clone()));
+                return Err(TableError::TooManyValues(path.to_path_buf()));
             }
 
             Ok((key, values[0]))
@@ -213,17 +203,12 @@ where
     Ok(LoadedScalarTable::One(ScalarTableOne { keys, values }))
 }
 
-pub fn load_csv_row2_scalar_table_one<T>(
-    table_path: &Path,
-    data_path: Option<&Path>,
-) -> Result<LoadedScalarTable<T>, TableError>
+pub fn load_csv_row2_scalar_table_one<T>(path: &Path) -> Result<LoadedScalarTable<T>, TableError>
 where
     T: FromStr + Copy,
     TableError: From<T::Err>,
 {
-    let path = make_path(table_path, data_path);
-
-    let file = File::open(path.clone()).map_err(|e| TableError::IO(e.to_string()))?;
+    let file = File::open(path).map_err(|e| TableError::IO(e.to_string()))?;
     let buf_reader = BufReader::new(file);
     let mut rdr = csv::Reader::from_reader(buf_reader);
 
@@ -242,7 +227,7 @@ where
             let values: Vec<T> = record.iter().skip(2).map(|v| v.parse()).collect::<Result<_, _>>()?;
 
             if values.len() > 1 {
-                return Err(TableError::TooManyValues(path.clone()));
+                return Err(TableError::TooManyValues(path.to_path_buf()));
             }
 
             Ok((key, values[0]))
