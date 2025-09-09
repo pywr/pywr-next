@@ -76,6 +76,16 @@
         "url": "tbl-scalar-row-row.csv"
       },
       {
+        "name": "scalar-col",
+        "type": "Scalar",
+        "format": "CSV",
+        "lookup": {
+          "type": "Col",
+          "cols": 1
+        },
+        "url": "tbl-scalar-col.csv"
+      },
+      {
         "name": "scalar-row-col",
         "type": "Scalar",
         "format": "CSV",
@@ -145,6 +155,17 @@
       },
       {
         "meta": {
+          "name": "my-constant-B"
+        },
+        "type": "Constant",
+        "value": {
+          "type": "Table",
+          "table": "scalar-col",
+          "row": "B"
+        }
+      },
+      {
+        "meta": {
           "name": "my-constant-A-python"
         },
         "type": "Constant",
@@ -208,6 +229,11 @@
               "A",
               "Y"
             ]
+          },
+          {
+            "type": "Table",
+            "table": "scalar-col",
+            "row": "B"
           },
           {
             "type": "Table",

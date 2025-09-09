@@ -3,7 +3,7 @@ use super::nodes::Node;
 use super::parameters::{Parameter, ParameterOrTimeseriesRef};
 use crate::data_tables::DataTable;
 #[cfg(feature = "core")]
-use crate::data_tables::{LoadedTableCollection, TableLoadError};
+use crate::data_tables::{LoadedTableCollection, TableCollectionLoadError};
 use crate::error::ComponentConversionError;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
@@ -91,7 +91,7 @@ pub enum PywrNetworkBuildError {
         source: Box<SchemaError>,
     },
     #[error("{0}")]
-    TableLoadError(#[from] TableLoadError),
+    TableLoadError(#[from] TableCollectionLoadError),
     #[error("{0}")]
     LoadTimeseriesError(#[from] LoadTimeseriesError),
 }

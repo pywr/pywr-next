@@ -1,4 +1,5 @@
-use crate::data_tables::{TableDataRef, TableError};
+#[cfg(feature = "core")]
+use crate::data_tables::{TableCollectionError, TableDataRef};
 use crate::nodes::{NodeAttribute, NodeComponent};
 use crate::timeseries::TimeseriesError;
 #[cfg(feature = "core")]
@@ -52,8 +53,13 @@ pub enum SchemaError {
     #[error("Metric F64 error: {0}")]
     #[cfg(feature = "core")]
     CoreMetricF64Error(#[from] pywr_core::metric::MetricF64Error),
-    #[error("Error loading data from table `{0}` (column: `{1:?}`, row: `{2:?}`) error: {error}", table_ref.table, table_ref.column, table_ref.row)]
-    TableRefLoad { table_ref: TableDataRef, error: TableError },
+    #[error("Error loading data from table `{0}` (column: `{1:?}`, row: `{2:?}`) error: {source}", table_ref.table, table_ref.column, table_ref.row)]
+    #[cfg(feature = "core")]
+    TableRefLoad {
+        table_ref: TableDataRef,
+        #[source]
+        source: Box<TableCollectionError>,
+    },
     #[cfg(feature = "pyo3")]
     #[error("Python error: {0}")]
     PythonError(#[from] PyErr),

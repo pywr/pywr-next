@@ -23,9 +23,7 @@ use crate::parameters::TableIndex;
 use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::parameters::TableDataRef as TableDataRefV1;
 #[cfg(feature = "core")]
-use scalar::{
-    LoadedScalarTable, load_csv_row_col_scalar_table_one, load_csv_row_scalar_table_one, load_csv_row2_scalar_table_one,
-};
+use scalar::LoadedScalarTable;
 use schemars::JsonSchema;
 #[cfg(feature = "core")]
 use std::collections::HashMap;
@@ -35,10 +33,7 @@ use thiserror::Error;
 #[cfg(feature = "core")]
 use tracing::{debug, info};
 #[cfg(feature = "core")]
-use vec::{
-    LoadedVecTable, load_csv_col1_vec_table_one, load_csv_col2_vec_table_two, load_csv_row_vec_table_one,
-    load_csv_row2_vec_table_one,
-};
+use vec::LoadedVecTable;
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, Display, EnumIter)]
 pub enum DataTableValueType {
@@ -99,50 +94,23 @@ impl CsvDataTable {
     fn load_f64(&self, data_path: Option<&Path>) -> Result<LoadedTable, TableError> {
         match &self.ty {
             DataTableValueType::Scalar => match self.lookup {
-                CsvDataTableLookup::Row { rows } => match rows {
-                    1 => Ok(LoadedTable::FloatScalar(load_csv_row_scalar_table_one(
-                        &self.url, data_path,
-                    )?)),
-                    2 => Ok(LoadedTable::FloatScalar(load_csv_row2_scalar_table_one(
-                        &self.url, data_path,
-                    )?)),
-                    _ => Err(TableError::FormatNotSupported(
-                        "CSV row scalar table with more than two index columns is not supported.".to_string(),
-                    )),
-                },
-                CsvDataTableLookup::Col { .. } => Err(TableError::FormatNotSupported(
-                    "CSV col scalar table is not supported. Use row based table instead.".to_string(),
+                CsvDataTableLookup::Row { rows } => Ok(LoadedTable::FloatScalar(LoadedScalarTable::from_csv_row(
+                    &self.url, data_path, rows,
+                )?)),
+                CsvDataTableLookup::Col { cols } => Ok(LoadedTable::FloatScalar(LoadedScalarTable::from_csv_col(
+                    &self.url, data_path, cols,
+                )?)),
+                CsvDataTableLookup::Both { rows, cols } => Ok(LoadedTable::FloatScalar(
+                    LoadedScalarTable::from_csv_row_col(&self.url, data_path, rows, cols)?,
                 )),
-                CsvDataTableLookup::Both { rows, cols } => match (rows, cols) {
-                    (1, 1) => Ok(LoadedTable::FloatScalar(load_csv_row_col_scalar_table_one(
-                        &self.url, data_path,
-                    )?)),
-                    _ => Err(TableError::FormatNotSupported(
-                        "CSV row & column scalar table with more than one index is not supported.".to_string(),
-                    )),
-                },
             },
             DataTableValueType::Array => match self.lookup {
-                CsvDataTableLookup::Row { rows } => match rows {
-                    1 => Ok(LoadedTable::FloatVec(load_csv_row_vec_table_one(&self.url, data_path)?)),
-                    2 => Ok(LoadedTable::FloatVec(load_csv_row2_vec_table_one(
-                        &self.url, data_path,
-                    )?)),
-                    _ => Err(TableError::FormatNotSupported(
-                        "CSV row array table with more than two index columns is not supported.".to_string(),
-                    )),
-                },
-                CsvDataTableLookup::Col { cols } => match cols {
-                    1 => Ok(LoadedTable::FloatVec(load_csv_col1_vec_table_one(
-                        &self.url, data_path,
-                    )?)),
-                    2 => Ok(LoadedTable::FloatVec(load_csv_col2_vec_table_two(
-                        &self.url, data_path,
-                    )?)),
-                    _ => Err(TableError::FormatNotSupported(
-                        "CSV column array table with more than two index columns is not supported.".to_string(),
-                    )),
-                },
+                CsvDataTableLookup::Row { rows } => Ok(LoadedTable::FloatVec(LoadedVecTable::from_csv_row(
+                    &self.url, data_path, rows,
+                )?)),
+                CsvDataTableLookup::Col { cols } => Ok(LoadedTable::FloatVec(LoadedVecTable::from_csv_col(
+                    &self.url, data_path, cols,
+                )?)),
                 CsvDataTableLookup::Both { .. } => Err(TableError::FormatNotSupported(
                     "CSV row & column array table is not supported. Use either row or column based format.".to_string(),
                 )),
@@ -169,6 +137,9 @@ pub fn make_path(table_path: &Path, data_path: Option<&Path>) -> PathBuf {
 }
 
 #[derive(Error, Debug, PartialEq, Eq)]
+pub enum TableLoadError {}
+
+#[derive(Error, Debug, PartialEq, Eq)]
 pub enum TableError {
     #[error("table not found: {0}")]
     TableNotFound(String),
@@ -186,11 +157,11 @@ pub enum TableError {
     FormatNotSupported(String),
     #[error("Failed to parse: {0}")]
     ParseFloatError(#[from] std::num::ParseFloatError),
-    #[error("wrong table format: {0}")]
+    #[error("Wrong table format: {0}")]
     WrongTableFormat(String),
-    #[error("too many values for scalar table when loading data table from: {0}")]
-    TooManyValues(PathBuf),
-    #[error("table index out of bounds: {0}")]
+    #[error("Too many values for scalar table when loading data table from.")]
+    TooManyValues,
+    #[error("Table index out of bounds: {0}")]
     IndexOutOfBounds(usize),
     #[error("Table format invalid: {0}")]
     InvalidFormat(String),
@@ -206,7 +177,7 @@ pub enum LoadedTable {
 
 #[cfg(feature = "core")]
 impl LoadedTable {
-    pub fn get_vec_f64(&self, key: &[&str]) -> Result<&Vec<f64>, TableError> {
+    pub fn get_vec_f64(&self, key: &[&str]) -> Result<&[f64], TableError> {
         match self {
             LoadedTable::FloatVec(tbl) => tbl.get_vec(key),
             _ => Err(TableError::WrongTableFormat(
@@ -239,7 +210,7 @@ impl LoadedTable {
 
 #[cfg(feature = "core")]
 #[derive(Error, Debug)]
-pub enum TableLoadError {
+pub enum TableCollectionLoadError {
     #[error("Failed to load table `{name}`: {source}")]
     TableError {
         name: String,
@@ -251,25 +222,43 @@ pub enum TableLoadError {
 }
 
 #[cfg(feature = "core")]
+#[derive(Error, Debug)]
+pub enum TableCollectionError {
+    #[error("Failed to load table `{name}`: {source}")]
+    TableError {
+        name: String,
+        #[source]
+        source: TableError,
+    },
+    #[error("Table with name `{name}` not found.")]
+    TableNotFound { name: String },
+}
+
+#[cfg(feature = "core")]
 pub struct LoadedTableCollection {
     tables: HashMap<String, LoadedTable>,
 }
 
 #[cfg(feature = "core")]
 impl LoadedTableCollection {
-    pub fn from_schema(table_defs: Option<&[DataTable]>, data_path: Option<&Path>) -> Result<Self, TableLoadError> {
+    pub fn from_schema(
+        table_defs: Option<&[DataTable]>,
+        data_path: Option<&Path>,
+    ) -> Result<Self, TableCollectionLoadError> {
         let mut tables = HashMap::new();
         if let Some(table_defs) = table_defs {
             for table_def in table_defs {
                 let name = table_def.name().to_string();
                 info!("Loading table: {}", &name);
-                let table = table_def.load(data_path).map_err(|source| TableLoadError::TableError {
-                    name: name.clone(),
-                    source,
-                })?;
+                let table = table_def
+                    .load(data_path)
+                    .map_err(|source| TableCollectionLoadError::TableError {
+                        name: name.clone(),
+                        source,
+                    })?;
 
                 if tables.contains_key(&name) {
-                    return Err(TableLoadError::DuplicateTableName { name });
+                    return Err(TableCollectionLoadError::DuplicateTableName { name });
                 }
 
                 tables.insert(name, table);
@@ -279,32 +268,44 @@ impl LoadedTableCollection {
         Ok(LoadedTableCollection { tables })
     }
 
-    pub fn get_table(&self, name: &str) -> Result<&LoadedTable, TableError> {
+    pub fn get_table(&self, name: &str) -> Result<&LoadedTable, TableCollectionError> {
         self.tables
             .get(name)
-            .ok_or_else(|| TableError::TableNotFound(name.to_string()))
+            .ok_or_else(|| TableCollectionError::TableNotFound { name: name.to_string() })
     }
 
     /// Return a single scalar value from a table collection.
-    pub fn get_scalar_f64(&self, table_ref: &TableDataRef) -> Result<f64, TableError> {
+    pub fn get_scalar_f64(&self, table_ref: &TableDataRef) -> Result<f64, TableCollectionError> {
         let tbl = self.get_table(&table_ref.table)?;
         let key = table_ref.key();
         tbl.get_scalar_f64(&key)
+            .map_err(|source| TableCollectionError::TableError {
+                name: table_ref.table.clone(),
+                source,
+            })
     }
 
     /// Return a single scalar value from a table collection.
-    pub fn get_scalar_u64(&self, table_ref: &TableDataRef) -> Result<u64, TableError> {
+    pub fn get_scalar_u64(&self, table_ref: &TableDataRef) -> Result<u64, TableCollectionError> {
         let tbl = self.get_table(&table_ref.table)?;
         let key = table_ref.key();
         tbl.get_scalar_u64(&key)
+            .map_err(|source| TableCollectionError::TableError {
+                name: table_ref.table.clone(),
+                source,
+            })
     }
 
     /// Return a single scalar value from a table collection.
-    pub fn get_vec_f64(&self, table_ref: &TableDataRef) -> Result<&Vec<f64>, TableError> {
+    pub fn get_vec_f64(&self, table_ref: &TableDataRef) -> Result<&[f64], TableCollectionError> {
         debug!("Looking-up float array with reference: {:?}", table_ref);
         let tbl = self.get_table(&table_ref.table)?;
         let key = table_ref.key();
         tbl.get_vec_f64(&key)
+            .map_err(|source| TableCollectionError::TableError {
+                name: table_ref.table.clone(),
+                source,
+            })
     }
 }
 
@@ -409,11 +410,8 @@ my-reservoir,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2";
         // Load the table definition
         let tbl = tbl.load(None).unwrap();
 
-        let values: &Vec<f64> = tbl.get_vec_f64(&["my-reservoir"]).unwrap();
+        let values: Vec<f64> = tbl.get_vec_f64(&["my-reservoir"]).unwrap().to_vec();
 
-        assert_eq!(
-            values,
-            &vec![0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2]
-        );
+        assert_eq!(values, vec![0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2]);
     }
 }
