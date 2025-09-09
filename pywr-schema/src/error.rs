@@ -1,5 +1,6 @@
 #[cfg(feature = "core")]
 use crate::data_tables::{TableCollectionError, TableDataRef};
+use crate::digest::ChecksumError;
 use crate::nodes::{NodeAttribute, NodeComponent};
 use crate::timeseries::TimeseriesError;
 #[cfg(feature = "core")]
@@ -114,6 +115,8 @@ pub enum SchemaError {
     NodeConnectionSlotNotAvailable { msg: String },
     #[error("{msg}")]
     NodeConnectionSlotRequired { msg: String },
+    #[error("Checksum error: {0}")]
+    ChecksumError(#[from] ChecksumError),
 }
 
 #[cfg(all(feature = "core", feature = "pyo3"))]

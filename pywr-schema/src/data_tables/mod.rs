@@ -11,7 +11,7 @@
 //!     - **Column-based lookup**: Index by one or more column keys (for arrays).
 //!     - **Row & column lookup**: Index by both row and column keys (for scalars).
 //!
-//! For more details and advanced usage, see the [Pywr Book](https://pywr.org/book/data_tables.html).
+//! For more details and advanced usage, see the [Pywr Book](https://pywr.org/book/external_data.html).
 
 #[cfg(feature = "core")]
 mod scalar;
@@ -19,6 +19,7 @@ mod scalar;
 mod vec;
 
 use crate::ConversionError;
+use crate::digest::{Checksum, ChecksumError};
 use crate::parameters::TableIndex;
 use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::parameters::TableDataRef as TableDataRefV1;
@@ -87,30 +88,33 @@ pub struct CsvDataTable {
     pub ty: DataTableValueType,
     pub lookup: CsvDataTableLookup,
     pub url: PathBuf,
+    pub checksum: Option<Checksum>,
 }
 
 #[cfg(feature = "core")]
 impl CsvDataTable {
     fn load_f64(&self, data_path: Option<&Path>) -> Result<LoadedTable, TableError> {
+        let fp = make_path(&self.url, data_path);
+
+        if let Some(checksum) = &self.checksum {
+            checksum.check(&fp)?;
+        }
+
         match &self.ty {
             DataTableValueType::Scalar => match self.lookup {
-                CsvDataTableLookup::Row { rows } => Ok(LoadedTable::FloatScalar(LoadedScalarTable::from_csv_row(
-                    &self.url, data_path, rows,
-                )?)),
-                CsvDataTableLookup::Col { cols } => Ok(LoadedTable::FloatScalar(LoadedScalarTable::from_csv_col(
-                    &self.url, data_path, cols,
-                )?)),
+                CsvDataTableLookup::Row { rows } => {
+                    Ok(LoadedTable::FloatScalar(LoadedScalarTable::from_csv_row(&fp, rows)?))
+                }
+                CsvDataTableLookup::Col { cols } => {
+                    Ok(LoadedTable::FloatScalar(LoadedScalarTable::from_csv_col(&fp, cols)?))
+                }
                 CsvDataTableLookup::Both { rows, cols } => Ok(LoadedTable::FloatScalar(
-                    LoadedScalarTable::from_csv_row_col(&self.url, data_path, rows, cols)?,
+                    LoadedScalarTable::from_csv_row_col(&fp, rows, cols)?,
                 )),
             },
             DataTableValueType::Array => match self.lookup {
-                CsvDataTableLookup::Row { rows } => Ok(LoadedTable::FloatVec(LoadedVecTable::from_csv_row(
-                    &self.url, data_path, rows,
-                )?)),
-                CsvDataTableLookup::Col { cols } => Ok(LoadedTable::FloatVec(LoadedVecTable::from_csv_col(
-                    &self.url, data_path, cols,
-                )?)),
+                CsvDataTableLookup::Row { rows } => Ok(LoadedTable::FloatVec(LoadedVecTable::from_csv_row(&fp, rows)?)),
+                CsvDataTableLookup::Col { cols } => Ok(LoadedTable::FloatVec(LoadedVecTable::from_csv_col(&fp, cols)?)),
                 CsvDataTableLookup::Both { .. } => Err(TableError::FormatNotSupported(
                     "CSV row & column array table is not supported. Use either row or column based format.".to_string(),
                 )),
@@ -136,10 +140,10 @@ pub fn make_path(table_path: &Path, data_path: Option<&Path>) -> PathBuf {
     }
 }
 
-#[derive(Error, Debug, PartialEq, Eq)]
+#[derive(Error, Debug)]
 pub enum TableLoadError {}
 
-#[derive(Error, Debug, PartialEq, Eq)]
+#[derive(Error, Debug)]
 pub enum TableError {
     #[error("table not found: {0}")]
     TableNotFound(String),
@@ -167,6 +171,8 @@ pub enum TableError {
     InvalidFormat(String),
     #[error("Could not convert to u64 without loss of precision. Index values must be postive whole numbers.")]
     U64ConversionError,
+    #[error("Checksum error: {0}")]
+    ChecksumError(#[from] ChecksumError),
 }
 
 #[cfg(feature = "core")]
