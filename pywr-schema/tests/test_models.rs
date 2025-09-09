@@ -164,6 +164,7 @@ convert_tests! {
     test_convert_timeseries: ("v1/timeseries.json", "v1/timeseries-converted.json"),
     test_convert_inline_parameter: ("v1/inline-parameter.json", "v1/inline-parameter-converted.json"),
     test_convert_river_split_with_gauge1: ("v1/river_split_with_gauge1.json", "v1/river_split_with_gauge1-converted.json"),
+    test_convert_breaklink: ("v1/breaklink.json", "v1/breaklink-converted.json"),
 }
 
 fn convert_model(v1_path: &Path, v2_path: &Path) {
