@@ -1,6 +1,7 @@
 use crate::digest::Checksum;
 use crate::parameters::ParameterMeta;
 use crate::visit::VisitPaths;
+use pywr_schema_macros::skip_serializing_none;
 use schemars::JsonSchema;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -10,6 +11,7 @@ use std::path::{Path, PathBuf};
 /// This dataset is loaded using Pandas. This is done via a callback to Python to load the dataset.
 /// It is then converted to a Polars DataFrame and returned.
 ///
+#[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct PandasTimeseries {

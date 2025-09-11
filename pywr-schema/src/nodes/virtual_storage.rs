@@ -15,6 +15,7 @@ use pywr_core::{
     derived_metric::DerivedMetric, metric::MetricF64, timestep::TimeDomain, virtual_storage::VirtualStorageBuilder,
 };
 use pywr_schema_macros::PywrVisitAll;
+use pywr_schema_macros::skip_serializing_none;
 use pywr_v1_schema::nodes::{
     AnnualVirtualStorageNode as AnnualVirtualStorageNodeV1, MonthlyVirtualStorageNode as MonthlyVirtualStorageNodeV1,
     RollingVirtualStorageNode as RollingVirtualStorageNodeV1, VirtualStorageNode as VirtualStorageNodeV1,
@@ -156,6 +157,7 @@ impl From<VirtualStorageResetVolume> for pywr_core::virtual_storage::VirtualStor
 /// unlimited. If `min_volume` is not specified then it is assumed to be zero.
 ///
 // TODO write the cost documentation when linking a node to this cost is supported in the schema.
+#[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct VirtualStorageNode {

@@ -1,9 +1,11 @@
 use crate::digest::Checksum;
 use crate::parameters::ParameterMeta;
 use crate::visit::VisitPaths;
+use pywr_schema_macros::skip_serializing_none;
 use schemars::JsonSchema;
 use std::path::{Path, PathBuf};
 
+#[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct PolarsTimeseries {

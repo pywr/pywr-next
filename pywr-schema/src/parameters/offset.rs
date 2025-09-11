@@ -7,7 +7,7 @@ use crate::parameters::{ConstantValue, ParameterMeta, VariableSettings};
 
 #[cfg(feature = "core")]
 use pywr_core::parameters::{ParameterIndex, ParameterName};
-use pywr_schema_macros::PywrVisitAll;
+use pywr_schema_macros::{PywrVisitAll, skip_serializing_none};
 use schemars::JsonSchema;
 
 /// A parameter that returns a fixed delta from another metric.
@@ -24,6 +24,7 @@ use schemars::JsonSchema;
 #[doc = include_str!("doc_examples/offset_variable.json")]
 /// ```
 ///
+#[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct OffsetParameter {

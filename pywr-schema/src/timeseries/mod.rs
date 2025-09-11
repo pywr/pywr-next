@@ -27,6 +27,7 @@ use pywr_core::{
     models::ModelDomain,
     parameters::{Array1Parameter, Array2Parameter, ParameterIndex, ParameterName},
 };
+use pywr_schema_macros::skip_serializing_none;
 use pywr_v1_schema::parameters::DataFrameParameter as DataFrameParameterV1;
 use schemars::JsonSchema;
 #[cfg(feature = "core")]
@@ -466,6 +467,7 @@ pub enum TimeseriesColumns {
     Column { name: String },
 }
 
+#[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct TimeseriesReference {

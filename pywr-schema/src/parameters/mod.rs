@@ -63,7 +63,7 @@ pub use profiles::{
 #[cfg(all(feature = "core", feature = "pyo3"))]
 pub use python::try_json_value_into_py;
 pub use python::{PythonObject, PythonParameter, PythonReturnType, PythonSource};
-use pywr_schema_macros::PywrVisitAll;
+use pywr_schema_macros::{PywrVisitAll, skip_serializing_none};
 use pywr_v1_schema::parameters::{
     CoreParameter, DataFrameParameter as DataFrameParameterV1, Parameter as ParameterV1,
     ParameterValue as ParameterValueV1, TableIndex as TableIndexV1, TableIndexEntry as TableIndexEntryV1,
@@ -75,6 +75,7 @@ use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticS
 pub use tables::TablesArrayParameter;
 pub use thresholds::{MultiThresholdParameter, Predicate, ThresholdParameter};
 
+#[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 pub struct ParameterMeta {
     pub name: String,

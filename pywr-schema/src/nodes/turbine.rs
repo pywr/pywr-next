@@ -13,7 +13,7 @@ use pywr_core::{
     metric::MetricF64,
     parameters::{HydropowerTargetData, ParameterName},
 };
-use pywr_schema_macros::PywrVisitAll;
+use pywr_schema_macros::{PywrVisitAll, skip_serializing_none};
 use schemars::JsonSchema;
 use strum_macros::EnumIter;
 
@@ -54,6 +54,7 @@ node_component_subset_enum! {
 /// The enums [`TurbineNodeAttribute`] and [`TurbineNodeComponent`] define the available
 /// attributes and components for this node.
 ///
+#[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct TurbineNode {
