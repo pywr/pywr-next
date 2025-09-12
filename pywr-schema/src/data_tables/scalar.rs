@@ -256,7 +256,10 @@ fn load_csv_rows_scalar_table<const N: usize>(path: &Path) -> Result<ScalarTable
                 .collect();
 
             if values.len() > 1 {
-                return Err(TableError::TooManyValues);
+                return Err(TableError::TooManyColumns {
+                    found: values.len() + N,
+                    expected: 1 + N,
+                });
             }
 
             Ok((key, values[0]))
@@ -321,7 +324,10 @@ fn load_csv_cols_scalar_table<const N: usize>(path: &Path) -> Result<ScalarTable
         .collect::<Result<Vec<_>, TableError>>()?;
 
     if rows.len() > 1 {
-        return Err(TableError::TooManyValues);
+        return Err(TableError::TooManyRows {
+            found: rows.len() + N,
+            expected: 1 + N,
+        });
     }
 
     // Turn this into a look-up table with key (row, column)

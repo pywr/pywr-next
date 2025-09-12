@@ -163,13 +163,19 @@ pub enum TableError {
     ParseFloatError(#[from] std::num::ParseFloatError),
     #[error("Wrong table format: {0}")]
     WrongTableFormat(String),
-    #[error("Too many values for scalar table when loading data table from.")]
-    TooManyValues,
+    #[error(
+        "Too many columns for scalar table. Expected {expected} columns (one more than the size of the index), found {found} columns."
+    )]
+    TooManyColumns { expected: usize, found: usize },
+    #[error(
+        "Too many rows for scalar table. Expected {expected} rows (one more than the size of the index), found {found} rows."
+    )]
+    TooManyRows { expected: usize, found: usize },
     #[error("Table index out of bounds: {0}")]
     IndexOutOfBounds(usize),
     #[error("Table format invalid: {0}")]
     InvalidFormat(String),
-    #[error("Could not convert to u64 without loss of precision. Index values must be postive whole numbers.")]
+    #[error("Could not convert to u64 without loss of precision. Index values must be positive whole numbers.")]
     U64ConversionError,
     #[error("Checksum error: {0}")]
     ChecksumError(#[from] ChecksumError),
@@ -230,7 +236,7 @@ pub enum TableCollectionLoadError {
 #[cfg(feature = "core")]
 #[derive(Error, Debug)]
 pub enum TableCollectionError {
-    #[error("Failed to load table `{name}`: {source}")]
+    #[error("Failed to get value from table `{name}`: {source}")]
     TableError {
         name: String,
         #[source]
