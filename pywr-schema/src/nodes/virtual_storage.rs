@@ -17,7 +17,8 @@ use pywr_core::{
 use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::nodes::{
     AnnualVirtualStorageNode as AnnualVirtualStorageNodeV1, MonthlyVirtualStorageNode as MonthlyVirtualStorageNodeV1,
-    RollingVirtualStorageNode as RollingVirtualStorageNodeV1, VirtualStorageNode as VirtualStorageNodeV1,
+    RollingVirtualStorageNode as RollingVirtualStorageNodeV1,
+    SeasonalVirtualStorageNode as SeasonalVirtualStorageNodeV1, VirtualStorageNode as VirtualStorageNodeV1,
 };
 use schemars::JsonSchema;
 use std::num::NonZeroUsize;
@@ -171,6 +172,19 @@ impl From<VirtualStorageResetVolume> for pywr_core::virtual_storage::VirtualStor
 /// The `max_volume` and `min_volume` fields are used to determine the maximum and minimum
 /// volume of the storage. If `max_volume` is not specified then the storage is
 /// unlimited. If `min_volume` is not specified then it is assumed to be zero.
+///
+/// The `reset` field can be used to specify when the storage is reset to a specific volume.
+/// By default, the storage is never reset. The choices in [`VirtualStorageReset`] are:
+/// - `Never`: The storage is never reset.
+/// - `Annual`: The storage is reset annually on a specific day and month.
+/// - `Monthly`: The storage is reset every N months.
+/// - `Seasonal`: The storage is reset seasonally between a start and end date.
+///
+/// If the `reset` field is specified, the `reset_volume` field determines the volume to reset to.
+/// The choices in [`VirtualStorageResetVolume`] are:
+/// - `Initial`: The storage is reset to the initial volume specified in the `initial_volume` field.
+/// This is the default if `reset_volume` is not specified.
+/// - `Max`: The storage is reset to the maximum volume specified in the `max_volume` field.
 ///
 // TODO write the cost documentation when linking a node to this cost is supported in the schema.
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
@@ -516,6 +530,55 @@ impl TryFromV1<RollingVirtualStorageNodeV1> for VirtualStorageNode {
             reset: None,
             reset_volume: None,
             window: Some(window),
+        };
+        Ok(n)
+    }
+}
+
+impl TryFromV1<SeasonalVirtualStorageNodeV1> for VirtualStorageNode {
+    type Error = ComponentConversionError;
+
+    fn try_from_v1(
+        v1: SeasonalVirtualStorageNodeV1,
+        parent_node: Option<&str>,
+        conversion_data: &mut ConversionData,
+    ) -> Result<Self, Self::Error> {
+        let meta: NodeMeta = v1.meta.into();
+
+        let cost = try_convert_node_attr(&meta.name, "cost", v1.cost, parent_node, conversion_data)?;
+        let max_volume = try_convert_node_attr(&meta.name, "max_volume", v1.max_volume, parent_node, conversion_data)?;
+        let min_volume = try_convert_node_attr(&meta.name, "min_volume", v1.min_volume, parent_node, conversion_data)?;
+
+        let initial_volume =
+            try_convert_initial_storage(&meta.name, "initial_volume", v1.initial_volume, v1.initial_volume_pc)?;
+
+        let nodes = v1.nodes.into_iter().map(|n| n.into()).collect();
+
+        let reset_volume = if v1.reset_to_initial_volume {
+            Some(VirtualStorageResetVolume::Initial)
+        } else {
+            Some(VirtualStorageResetVolume::Max)
+        };
+
+        let reset = VirtualStorageReset::Seasonal(SeasonalReset {
+            start_day: v1.reset_day as u8,
+            start_month: v1.reset_month as u8,
+            end_day: v1.end_day as u8,
+            end_month: v1.end_month as u8,
+        });
+
+        let n = Self {
+            meta,
+            parameters: None,
+            nodes,
+            factors: v1.factors,
+            max_volume,
+            min_volume,
+            cost,
+            initial_volume,
+            reset: Some(reset),
+            reset_volume,
+            window: None,
         };
         Ok(n)
     }
