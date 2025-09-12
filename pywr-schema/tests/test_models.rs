@@ -32,7 +32,7 @@ macro_rules! model_tests {
             // Just deserialise the schema
             #[cfg(not(feature = "core"))]
             {
-                let (input, _expected, _solvers_without_features, _solvers_to_skip): (&str, Vec<&str>, Vec<&str>, Vec<&str>) = $value;
+                let (input, _expected, _solvers_without_features, _solvers_to_skip): (&str, Vec<(&str, ResultsShape)>, Vec<&str>, Vec<&str>) = $value;
                 let input_pth = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join(input);
                 let _schema = deserialise_test_model(&input_pth);
             }
@@ -88,6 +88,7 @@ model_tests! {
     test_python_parameter2: ("python-parameter2.json", vec![("python-parameter2-expected.csv", ResultsShape::Long)], vec![], vec![]),
     test_python_parameter1: ("python-parameter1.json", vec![("python-parameter1-expected.csv", ResultsShape::Long)], vec![], vec![]),
     test_local_parameter2: ("local-parameter2.json", vec![("local-parameter2-expected.csv", ResultsShape::Long)], vec![], vec![]),
+    test_tbl_formats1: ("tbl-formats1.json", vec![("tbl-formats1-expected.csv", ResultsShape::Long)], vec![], vec![]),
     // IPM solvers currently do not support virtual storage nodes
     test_vs_with_piecewise_link: ("vs-with-piecewise-link.json", vec![("vs-with-piecewise-link-expected.csv", ResultsShape::Long)], vec!["ipm-simd", "ipm-ocl"], vec![]),
     test_vs_wtw1: ("vs-with-wtw1.json", vec![("vs-with-wtw1-expected.csv", ResultsShape::Long)], vec!["ipm-simd", "ipm-ocl"], vec![]),

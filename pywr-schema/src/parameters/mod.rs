@@ -600,17 +600,55 @@ impl TryFromV1<ParameterV1> for ParameterOrTimeseriesRef {
 ///
 /// This value can be a literal float or an external reference to an input table.
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, Display, EnumDiscriminants)]
-#[serde(untagged)]
+#[serde(tag = "type", deny_unknown_fields)]
 #[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
 #[strum_discriminants(name(ConstantValueType))]
 pub enum ConstantValue<T> {
-    Literal(T),
+    /// A literal value.
+    Literal { value: T },
+    /// A reference to a constant value in a table.
     Table(TableDataRef),
+}
+
+impl From<f64> for ConstantValue<f64> {
+    fn from(v: f64) -> Self {
+        Self::Literal { value: v }
+    }
+}
+
+impl From<u64> for ConstantValue<u64> {
+    fn from(v: u64) -> Self {
+        Self::Literal { value: v }
+    }
+}
+
+impl From<u32> for ConstantValue<u64> {
+    fn from(v: u32) -> Self {
+        Self::Literal { value: v as u64 }
+    }
+}
+
+impl From<u16> for ConstantValue<u64> {
+    fn from(v: u16) -> Self {
+        Self::Literal { value: v as u64 }
+    }
+}
+
+impl From<u8> for ConstantValue<u64> {
+    fn from(v: u8) -> Self {
+        Self::Literal { value: v as u64 }
+    }
 }
 
 impl Default for ConstantValue<f64> {
     fn default() -> Self {
-        Self::Literal(0.0)
+        0.0.into()
+    }
+}
+
+impl Default for ConstantValue<u64> {
+    fn default() -> Self {
+        0_u64.into()
     }
 }
 
@@ -625,13 +663,13 @@ mod constant_value_visit_metrics {
     {
         fn visit_metrics<F: FnMut(&Metric)>(&self, visitor: &mut F) {
             match self {
-                Self::Literal(v) => v.visit_metrics(visitor),
+                Self::Literal { value } => value.visit_metrics(visitor),
                 Self::Table(v) => v.visit_metrics(visitor),
             }
         }
         fn visit_metrics_mut<F: FnMut(&mut Metric)>(&mut self, visitor: &mut F) {
             match self {
-                Self::Literal(v) => v.visit_metrics_mut(visitor),
+                Self::Literal { value } => value.visit_metrics_mut(visitor),
                 Self::Table(v) => v.visit_metrics_mut(visitor),
             }
         }
@@ -647,13 +685,13 @@ mod constant_value_visit_paths {
     {
         fn visit_paths<F: FnMut(&Path)>(&self, visitor: &mut F) {
             match self {
-                Self::Literal(v) => v.visit_paths(visitor),
+                Self::Literal { value } => value.visit_paths(visitor),
                 Self::Table(v) => v.visit_paths(visitor),
             }
         }
         fn visit_paths_mut<F: FnMut(&mut PathBuf)>(&mut self, visitor: &mut F) {
             match self {
-                Self::Literal(v) => v.visit_paths_mut(visitor),
+                Self::Literal { value } => value.visit_paths_mut(visitor),
                 Self::Table(v) => v.visit_paths_mut(visitor),
             }
         }
@@ -665,7 +703,7 @@ impl ConstantValue<f64> {
     /// Return the value loading from a table if required.
     pub fn load(&self, tables: &LoadedTableCollection) -> Result<f64, SchemaError> {
         match self {
-            Self::Literal(v) => Ok(*v),
+            Self::Literal { value } => Ok(*value),
             Self::Table(tbl_ref) => tables
                 .get_scalar_f64(tbl_ref)
                 .map_err(|source| SchemaError::TableRefLoad {
@@ -681,7 +719,7 @@ impl ConstantValue<u64> {
     /// Return the value loading from a table if required.
     pub fn load(&self, tables: &LoadedTableCollection) -> Result<u64, SchemaError> {
         match self {
-            Self::Literal(v) => Ok(*v),
+            Self::Literal { value } => Ok(*value),
             Self::Table(tbl_ref) => tables
                 .get_scalar_u64(tbl_ref)
                 .map_err(|source| SchemaError::TableRefLoad {
@@ -697,7 +735,7 @@ impl TryFrom<ParameterValueV1> for ConstantValue<f64> {
 
     fn try_from(v1: ParameterValueV1) -> Result<Self, Self::Error> {
         match v1 {
-            ParameterValueV1::Constant(v) => Ok(Self::Literal(v)),
+            ParameterValueV1::Constant(value) => Ok(Self::Literal { value }),
             ParameterValueV1::Reference(_) => Err(ConversionError::ConstantFloatReferencesParameter {}),
             ParameterValueV1::Table(tbl) => Ok(Self::Table(tbl.try_into()?)),
             ParameterValueV1::Inline(_) => Err(ConversionError::ConstantFloatInlineParameter {}),
@@ -711,11 +749,11 @@ impl TryFrom<ParameterValueV1> for ConstantValue<f64> {
 #[derive(
     serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll, Display, EnumDiscriminants, PartialEq,
 )]
-#[serde(untagged)]
+#[serde(tag = "type", deny_unknown_fields)]
 #[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
 #[strum_discriminants(name(ConstantFloatVecType))]
 pub enum ConstantFloatVec {
-    Literal(Vec<f64>),
+    Literal { values: Vec<f64> },
     Table(TableDataRef),
 }
 
@@ -724,14 +762,16 @@ impl ConstantFloatVec {
     /// Return the value loading from a table if required.
     pub fn load(&self, tables: &LoadedTableCollection) -> Result<Vec<f64>, SchemaError> {
         match self {
-            Self::Literal(v) => Ok(v.clone()),
-            Self::Table(tbl_ref) => tables
-                .get_vec_f64(tbl_ref)
-                .cloned()
-                .map_err(|source| SchemaError::TableRefLoad {
-                    table_ref: tbl_ref.clone(),
-                    source: Box::new(source),
-                }),
+            Self::Literal { values } => Ok(values.clone()),
+            Self::Table(tbl_ref) => {
+                tables
+                    .get_vec_f64(tbl_ref)
+                    .map(|v| v.to_vec())
+                    .map_err(|source| SchemaError::TableRefLoad {
+                        table_ref: tbl_ref.clone(),
+                        source: Box::new(source),
+                    })
+            }
         }
     }
 }
