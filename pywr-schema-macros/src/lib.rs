@@ -401,7 +401,7 @@ fn impl_visit_paths(ast: &syn::DeriveInput) -> TokenStream {
 }
 
 
-// An attribute macro to add `#[serde(skip_serializing_if = "Option::is_none")]` to all Option<T> fields in a struct
+/// An attribute macro to add `#[serde(skip_serializing_if = "Option::is_none")]` to all Option<T> fields in a struct
 #[proc_macro_attribute]
 pub fn skip_serializing_none(_attr: TokenStream, item: TokenStream) -> TokenStream {
     // Parse the input as a TokenStream so we can preserve all original tokens, including doc comments
