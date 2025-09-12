@@ -76,8 +76,6 @@ you need to provide both keys:
 
 [//]: # (@formatter:on)
 
-When referencing a row-based table with multiple keys, you need to provide all the keys. For example, to use the
-
 ## Column-based scalar data tables
 
 Alternatively a column-based scalar data table can be used. Column-based scalar data tables use the column header
