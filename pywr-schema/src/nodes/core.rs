@@ -16,6 +16,7 @@ use pywr_core::{
     derived_metric::DerivedMetric, metric::MetricF64, node::StorageInitialVolume as CoreStorageInitialVolume,
 };
 use pywr_schema_macros::PywrVisitAll;
+use pywr_schema_macros::skip_serializing_none;
 use pywr_v1_schema::nodes::{
     AggregatedNode as AggregatedNodeV1, AggregatedStorageNode as AggregatedStorageNodeV1,
     BreakLinkNode as BreakLinkNodeV1, CatchmentNode as CatchmentNodeV1, InputNode as InputNodeV1,
@@ -49,6 +50,7 @@ node_component_subset_enum! {
 /// The enums [`InputNodeAttribute`] and [`InputNodeComponent`] define the available
 /// attributes and components for this node.
 ///
+#[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct InputNode {
@@ -318,6 +320,7 @@ node_component_subset_enum! {
 ///   (for example when the abstraction license or the source runs out), the minimum flow will not
 ///   be honoured and the solver will find a solution.
 )]
+#[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct LinkNode {
@@ -782,6 +785,7 @@ node_component_subset_enum! {
 /// The enums [`OutputNodeAttribute`] and [`OutputNodeComponent`] define the available
 /// attributes and components for this node.
 ///
+#[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct OutputNode {
@@ -983,6 +987,7 @@ node_attribute_subset_enum! {
 /// The enum [`StorageNodeAttribute`] defines the available attributes. There are no components
 /// to choose from.
 ///
+#[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct StorageNode {
@@ -1176,6 +1181,7 @@ node_component_subset_enum! {
 /// attributes and components for this node.
 ///
 )]
+#[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct CatchmentNode {
@@ -1344,6 +1350,7 @@ node_attribute_subset_enum! {
 /// # Available attributes and components
 /// The enum [`AggregatedNodeAttribute`] defines the available attributes. There are no components
 /// to choose from.
+#[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct AggregatedNode {
@@ -1540,6 +1547,7 @@ node_attribute_subset_enum! {
 /// The enum [`AggregatedStorageNodeAttribute`] defines the available attributes. There are no components
 /// to choose from.
 ///
+#[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct AggregatedStorageNode {

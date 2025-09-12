@@ -10,7 +10,7 @@ use crate::parameters::Parameter;
 use crate::{node_attribute_subset_enum, node_component_subset_enum};
 #[cfg(feature = "core")]
 use pywr_core::metric::MetricF64;
-use pywr_schema_macros::PywrVisitAll;
+use pywr_schema_macros::{PywrVisitAll, skip_serializing_none};
 use schemars::JsonSchema;
 
 // This macro generates a subset enum for the `WaterTreatmentWorksNode` attributes.
@@ -61,6 +61,7 @@ node_component_subset_enum! {
 /// attributes and components for this node.
 ///
 )]
+#[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct WaterTreatmentWorksNode {

@@ -13,7 +13,7 @@ use pywr_core::{
     metric::{MetricF64, SimpleMetricF64},
     parameters::{DifferenceParameter, ParameterIndex, ParameterName, VolumeBetweenControlCurvesParameter},
 };
-use pywr_schema_macros::PywrVisitAll;
+use pywr_schema_macros::{PywrVisitAll, skip_serializing_none};
 use schemars::JsonSchema;
 
 #[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, PywrVisitAll)]
@@ -66,6 +66,7 @@ node_attribute_subset_enum! {
 /// to choose from.
 ///
 )]
+#[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct PiecewiseStorageNode {

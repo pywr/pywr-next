@@ -21,7 +21,7 @@ mod vec;
 use crate::ConversionError;
 use crate::digest::{Checksum, ChecksumError};
 use crate::parameters::TableIndex;
-use pywr_schema_macros::PywrVisitAll;
+use pywr_schema_macros::{PywrVisitAll, skip_serializing_none};
 use pywr_v1_schema::parameters::TableDataRef as TableDataRefV1;
 #[cfg(feature = "core")]
 use scalar::LoadedScalarTable;
@@ -321,6 +321,7 @@ impl LoadedTableCollection {
     }
 }
 
+#[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct TableDataRef {

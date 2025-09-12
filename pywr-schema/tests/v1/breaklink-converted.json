@@ -9,7 +9,6 @@
     "end": "2015-12-31",
     "timestep": 1
   },
-  "scenarios": null,
   "network": {
     "nodes": [
       {
@@ -20,10 +19,7 @@
         "max_flow": {
           "type": "Constant",
           "value": 15.0
-        },
-        "cost": null,
-        "min_flow": null,
-        "parameters": null
+        }
       },
       {
         "meta": {
@@ -41,10 +37,7 @@
         "cost": {
           "type": "Constant",
           "value": -1.0
-        },
-        "parameters": null,
-        "soft_min": null,
-        "soft_max": null
+        }
       },
       {
         "meta": {
@@ -58,9 +51,7 @@
         "cost": {
           "type": "Constant",
           "value": -10.0
-        },
-        "min_flow": null,
-        "parameters": null
+        }
       }
     ],
     "edges": [
@@ -72,11 +63,6 @@
         "from_node": "link1",
         "to_node": "demand1"
       }
-    ],
-    "parameters": null,
-    "tables": null,
-    "timeseries": null,
-    "metric_sets": null,
-    "outputs": null
+    ]
   }
 }

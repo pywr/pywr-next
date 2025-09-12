@@ -5,7 +5,7 @@ use crate::metric::Metric;
 use crate::network::LoadArgs;
 #[cfg(feature = "core")]
 use crate::parameters::{Parameter, PythonReturnType};
-use pywr_schema_macros::PywrVisitPaths;
+use pywr_schema_macros::{PywrVisitPaths, skip_serializing_none};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::num::NonZeroUsize;
@@ -147,6 +147,7 @@ impl MetricSetFilters {
 ///
 /// Metrics added by the filters will be appended to any metrics specified for the metric attribute,
 /// if they are not a duplication.
+#[skip_serializing_none]
 #[derive(Deserialize, Serialize, Clone, JsonSchema)]
 pub struct MetricSet {
     pub name: String,

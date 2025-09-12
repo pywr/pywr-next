@@ -2,7 +2,7 @@
 use crate::error::SchemaError;
 #[cfg(feature = "core")]
 use pywr_core::recorders::{CsvLongFmtOutput, CsvWideFmtOutput, Recorder};
-use pywr_schema_macros::PywrVisitPaths;
+use pywr_schema_macros::{PywrVisitPaths, skip_serializing_none};
 use schemars::JsonSchema;
 #[cfg(feature = "core")]
 use std::num::NonZeroU32;
@@ -42,6 +42,7 @@ pub enum CsvMetricSet {
 /// The long format supports either a single metric set or a list of metric sets. However,
 /// the wide format only supports a single metric set.
 ///
+#[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitPaths)]
 pub struct CsvOutput {
     pub name: String,

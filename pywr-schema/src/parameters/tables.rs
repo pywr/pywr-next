@@ -12,11 +12,12 @@ use crate::{ComponentConversionError, TryFromV1};
 use ndarray::s;
 #[cfg(all(feature = "core", feature = "hdf5"))]
 use pywr_core::parameters::ParameterName;
-use pywr_schema_macros::PywrVisitAll;
+use pywr_schema_macros::{PywrVisitAll, skip_serializing_none};
 use pywr_v1_schema::parameters::TablesArrayParameter as TablesArrayParameterV1;
 use schemars::JsonSchema;
 use std::path::PathBuf;
 
+#[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct TablesArrayParameter {
