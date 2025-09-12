@@ -183,7 +183,7 @@ impl From<VirtualStorageResetVolume> for pywr_core::virtual_storage::VirtualStor
 /// If the `reset` field is specified, the `reset_volume` field determines the volume to reset to.
 /// The choices in [`VirtualStorageResetVolume`] are:
 /// - `Initial`: The storage is reset to the initial volume specified in the `initial_volume` field.
-/// This is the default if `reset_volume` is not specified.
+///   This is the default if `reset_volume` is not specified.
 /// - `Max`: The storage is reset to the maximum volume specified in the `max_volume` field.
 ///
 // TODO write the cost documentation when linking a node to this cost is supported in the schema.
