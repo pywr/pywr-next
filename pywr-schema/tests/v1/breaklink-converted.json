@@ -1,0 +1,82 @@
+{
+  "metadata": {
+    "title": "Simple break link",
+    "description": "A very simple example.",
+    "minimum_version": "0.1"
+  },
+  "timestepper": {
+    "start": "2015-01-01",
+    "end": "2015-12-31",
+    "timestep": 1
+  },
+  "scenarios": null,
+  "network": {
+    "nodes": [
+      {
+        "meta": {
+          "name": "supply1"
+        },
+        "type": "Input",
+        "max_flow": {
+          "type": "Constant",
+          "value": 15.0
+        },
+        "cost": null,
+        "min_flow": null,
+        "parameters": null
+      },
+      {
+        "meta": {
+          "name": "link1"
+        },
+        "type": "Link",
+        "max_flow": {
+          "type": "Constant",
+          "value": 5.0
+        },
+        "min_flow": {
+          "type": "Constant",
+          "value": 1.0
+        },
+        "cost": {
+          "type": "Constant",
+          "value": -1.0
+        },
+        "parameters": null,
+        "soft_min": null,
+        "soft_max": null
+      },
+      {
+        "meta": {
+          "name": "demand1"
+        },
+        "type": "Output",
+        "max_flow": {
+          "type": "Constant",
+          "value": 10.0
+        },
+        "cost": {
+          "type": "Constant",
+          "value": -10.0
+        },
+        "min_flow": null,
+        "parameters": null
+      }
+    ],
+    "edges": [
+      {
+        "from_node": "supply1",
+        "to_node": "link1"
+      },
+      {
+        "from_node": "link1",
+        "to_node": "demand1"
+      }
+    ],
+    "parameters": null,
+    "tables": null,
+    "timeseries": null,
+    "metric_sets": null,
+    "outputs": null
+  }
+}
