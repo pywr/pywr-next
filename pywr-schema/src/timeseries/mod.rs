@@ -483,6 +483,13 @@ impl TimeseriesReference {
     pub fn name(&self) -> &str {
         self.name.as_str()
     }
+
+    pub fn column(&self) -> Option<&str> {
+        match &self.columns {
+            Some(TimeseriesColumns::Column { name }) => Some(name.as_str()),
+            _ => None,
+        }
+    }
 }
 
 /// Helper struct to convert references to timeseries.

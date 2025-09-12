@@ -32,7 +32,7 @@ macro_rules! model_tests {
             // Just deserialise the schema
             #[cfg(not(feature = "core"))]
             {
-                let (input, _expected, _solvers_without_features, _solvers_to_skip): (&str, Vec<&str>, Vec<&str>, Vec<&str>) = $value;
+                let (input, _expected, _solvers_without_features, _solvers_to_skip): (&str, Vec<(&str, ResultsShape)>, Vec<&str>, Vec<&str>) = $value;
                 let input_pth = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join(input);
                 let _schema = deserialise_test_model(&input_pth);
             }
@@ -79,6 +79,8 @@ model_tests! {
     test_river_loss1: ("river_loss1.json", vec![("river_loss1-expected.csv", ResultsShape::Long)], vec!["ipm-simd", "ipm-ocl"], vec![]),
     test_river_gauge1: ("river_gauge1.json", vec![("river_gauge1-expected.csv", ResultsShape::Long)], vec![], vec![]),
     test_river_split_with_gauge1: ("river_split_with_gauge1.json", vec![], vec![], vec![]),
+    test_seasonal_vs1: ("seasonal-vs1.json", vec![("seasonal-vs1-expected.csv", ResultsShape::Long)], vec!["ipm-simd", "ipm-ocl"], vec![]),
+    test_seasonal_vs2: ("seasonal-vs2.json", vec![("seasonal-vs2-expected.csv", ResultsShape::Long)], vec!["ipm-simd", "ipm-ocl"], vec![]),
     test_thirty_day_licence: ("30-day-licence.json", vec![], vec!["ipm-simd", "ipm-ocl"], vec![]),
     test_wtw1: ("wtw1.json", vec![("wtw1-expected.csv", ResultsShape::Long)], vec!["ipm-simd", "ipm-ocl"], vec![]),
     test_wtw2: ("wtw2.json", vec![("wtw2-expected.csv", ResultsShape::Long)], vec!["ipm-simd", "ipm-ocl"], vec![]),
@@ -86,6 +88,7 @@ model_tests! {
     test_python_parameter2: ("python-parameter2.json", vec![("python-parameter2-expected.csv", ResultsShape::Long)], vec![], vec![]),
     test_python_parameter1: ("python-parameter1.json", vec![("python-parameter1-expected.csv", ResultsShape::Long)], vec![], vec![]),
     test_local_parameter2: ("local-parameter2.json", vec![("local-parameter2-expected.csv", ResultsShape::Long)], vec![], vec![]),
+    test_tbl_formats1: ("tbl-formats1.json", vec![("tbl-formats1-expected.csv", ResultsShape::Long)], vec![], vec![]),
     // IPM solvers currently do not support virtual storage nodes
     test_vs_with_piecewise_link: ("vs-with-piecewise-link.json", vec![("vs-with-piecewise-link-expected.csv", ResultsShape::Long)], vec!["ipm-simd", "ipm-ocl"], vec![]),
     test_vs_wtw1: ("vs-with-wtw1.json", vec![("vs-with-wtw1-expected.csv", ResultsShape::Long)], vec!["ipm-simd", "ipm-ocl"], vec![]),
@@ -164,6 +167,7 @@ convert_tests! {
     test_convert_timeseries: ("v1/timeseries.json", "v1/timeseries-converted.json"),
     test_convert_inline_parameter: ("v1/inline-parameter.json", "v1/inline-parameter-converted.json"),
     test_convert_river_split_with_gauge1: ("v1/river_split_with_gauge1.json", "v1/river_split_with_gauge1-converted.json"),
+    test_convert_breaklink: ("v1/breaklink.json", "v1/breaklink-converted.json"),
 }
 
 fn convert_model(v1_path: &Path, v2_path: &Path) {

@@ -53,34 +53,43 @@
           "name": "supply1-p0"
         },
         "type": "MonthlyProfile",
-        "values": [
-          10.0,
-          20.0,
-          30.0,
-          40.0,
-          50.0,
-          60.0,
-          70.0,
-          80.0,
-          90.0,
-          100.0,
-          110.0,
-          120.0
-        ]
+        "values": {
+          "type": "Literal",
+          "values": [
+            10.0,
+            20.0,
+            30.0,
+            40.0,
+            50.0,
+            60.0,
+            70.0,
+            80.0,
+            90.0,
+            100.0,
+            110.0,
+            120.0
+          ]
+        }
       },
       {
         "meta": {
           "name": "demand1-p1"
         },
         "type": "Constant",
-        "value": 0.9
+        "value": {
+          "type": "Literal",
+          "value": 0.9
+        }
       },
       {
         "meta": {
           "name": "demand1-p3"
         },
         "type": "Constant",
-        "value": 0.9
+        "value": {
+          "type": "Literal",
+          "value": 0.9
+        }
       },
       {
         "agg_func": "Product",

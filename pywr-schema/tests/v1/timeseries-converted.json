@@ -92,7 +92,10 @@
         "meta": {
           "name": "demand"
         },
-        "value": 100.0
+        "value": {
+          "type": "Literal",
+          "value": 100.0
+        }
       },
       {
         "type": "Aggregated",
