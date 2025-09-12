@@ -1,8 +1,9 @@
+use crate::agg_funcs::{AggFuncF64, AggFuncU64};
 use crate::metric::{MetricF64, MetricF64Error, MetricU64, MetricU64Error, SimpleMetricF64, SimpleMetricU64};
 use crate::network::Network;
 use crate::parameters::errors::{ParameterCalculationError, ParameterSetupError, SimpleCalculationError};
 use crate::parameters::{
-    AggFunc, AggIndexFunc, GeneralParameter, Parameter, ParameterMeta, ParameterName, ParameterState, SimpleParameter,
+    GeneralParameter, Parameter, ParameterMeta, ParameterName, ParameterState, SimpleParameter,
     downcast_internal_state_mut, downcast_internal_state_ref,
 };
 use crate::scenario::ScenarioIndex;
@@ -61,25 +62,25 @@ where
     }
 }
 
-impl TryInto<RollingParameter<SimpleMetricF64, f64, AggFunc>> for &RollingParameter<MetricF64, f64, AggFunc> {
+impl TryInto<RollingParameter<SimpleMetricF64, f64, AggFuncF64>> for &RollingParameter<MetricF64, f64, AggFuncF64> {
     type Error = MetricF64Error;
 
-    fn try_into(self) -> Result<RollingParameter<SimpleMetricF64, f64, AggFunc>, Self::Error> {
+    fn try_into(self) -> Result<RollingParameter<SimpleMetricF64, f64, AggFuncF64>, Self::Error> {
         Ok(RollingParameter {
             meta: self.meta.clone(),
             metric: self.metric.clone().try_into()?,
             window_size: self.window_size,
             initial_value: self.initial_value,
             min_values: self.min_values,
-            agg_func: self.agg_func,
+            agg_func: self.agg_func.clone(),
         })
     }
 }
 
-impl TryInto<RollingParameter<SimpleMetricU64, u64, AggIndexFunc>> for &RollingParameter<MetricU64, u64, AggIndexFunc> {
+impl TryInto<RollingParameter<SimpleMetricU64, u64, AggFuncU64>> for &RollingParameter<MetricU64, u64, AggFuncU64> {
     type Error = MetricU64Error;
 
-    fn try_into(self) -> Result<RollingParameter<SimpleMetricU64, u64, AggIndexFunc>, Self::Error> {
+    fn try_into(self) -> Result<RollingParameter<SimpleMetricU64, u64, AggFuncU64>, Self::Error> {
         Ok(RollingParameter {
             meta: self.meta.clone(),
             metric: self.metric.clone().try_into()?,
@@ -131,7 +132,7 @@ where
     }
 }
 
-impl GeneralParameter<f64> for RollingParameter<MetricF64, f64, AggFunc> {
+impl GeneralParameter<f64> for RollingParameter<MetricF64, f64, AggFuncF64> {
     fn compute(
         &self,
         _timestep: &Timestep,
@@ -147,7 +148,7 @@ impl GeneralParameter<f64> for RollingParameter<MetricF64, f64, AggFunc> {
             // Not enough values collected yet, return the initial value
             Ok(self.initial_value)
         } else {
-            Ok(aggregate_f64_memory(memory, &self.agg_func))
+            Ok(self.agg_func.calc_iter_f64(memory))
         }
     }
 
@@ -180,7 +181,7 @@ impl GeneralParameter<f64> for RollingParameter<MetricF64, f64, AggFunc> {
     {
         self.try_into()
             .ok()
-            .map(|p: RollingParameter<SimpleMetricF64, f64, AggFunc>| Box::new(p) as Box<dyn SimpleParameter<f64>>)
+            .map(|p: RollingParameter<SimpleMetricF64, f64, AggFuncF64>| Box::new(p) as Box<dyn SimpleParameter<f64>>)
     }
 
     fn as_parameter(&self) -> &dyn Parameter
@@ -191,7 +192,7 @@ impl GeneralParameter<f64> for RollingParameter<MetricF64, f64, AggFunc> {
     }
 }
 
-impl SimpleParameter<f64> for RollingParameter<SimpleMetricF64, f64, AggFunc> {
+impl SimpleParameter<f64> for RollingParameter<SimpleMetricF64, f64, AggFuncF64> {
     fn compute(
         &self,
         _timestep: &Timestep,
@@ -206,7 +207,7 @@ impl SimpleParameter<f64> for RollingParameter<SimpleMetricF64, f64, AggFunc> {
             // Not enough values collected yet, return the initial value
             Ok(self.initial_value)
         } else {
-            Ok(aggregate_f64_memory(memory, &self.agg_func))
+            Ok(self.agg_func.calc_iter_f64(memory))
         }
     }
 
@@ -240,7 +241,7 @@ impl SimpleParameter<f64> for RollingParameter<SimpleMetricF64, f64, AggFunc> {
     }
 }
 
-impl GeneralParameter<u64> for RollingParameter<MetricU64, u64, AggIndexFunc> {
+impl GeneralParameter<u64> for RollingParameter<MetricU64, u64, AggFuncU64> {
     fn compute(
         &self,
         _timestep: &Timestep,
@@ -289,7 +290,7 @@ impl GeneralParameter<u64> for RollingParameter<MetricU64, u64, AggIndexFunc> {
     {
         self.try_into()
             .ok()
-            .map(|p: RollingParameter<SimpleMetricU64, u64, AggIndexFunc>| Box::new(p) as Box<dyn SimpleParameter<u64>>)
+            .map(|p: RollingParameter<SimpleMetricU64, u64, AggFuncU64>| Box::new(p) as Box<dyn SimpleParameter<u64>>)
     }
 
     fn as_parameter(&self) -> &dyn Parameter
@@ -300,7 +301,7 @@ impl GeneralParameter<u64> for RollingParameter<MetricU64, u64, AggIndexFunc> {
     }
 }
 
-impl SimpleParameter<u64> for RollingParameter<SimpleMetricU64, u64, AggIndexFunc> {
+impl SimpleParameter<u64> for RollingParameter<SimpleMetricU64, u64, AggFuncU64> {
     fn compute(
         &self,
         _timestep: &Timestep,
@@ -350,49 +351,26 @@ impl SimpleParameter<u64> for RollingParameter<SimpleMetricU64, u64, AggIndexFun
 }
 
 /// Aggregates the values in the memory using the specified aggregation function.
-fn aggregate_f64_memory(memory: &VecDeque<f64>, agg_func: &AggFunc) -> f64 {
+fn aggregate_u64_memory(memory: &VecDeque<u64>, agg_func: &AggFuncU64) -> u64 {
     match agg_func {
-        AggFunc::Sum => memory.iter().sum(),
-        AggFunc::Mean => {
-            if memory.is_empty() {
-                0.0 // Mean of empty set is 0
-            } else {
-                memory.iter().sum::<f64>() / memory.len() as f64
-            }
-        }
-        AggFunc::Max => *memory
-            .iter()
-            .max_by(|a, b| a.partial_cmp(b).unwrap())
-            .unwrap_or(&f64::MIN),
-        AggFunc::Min => *memory
-            .iter()
-            .min_by(|a, b| a.partial_cmp(b).unwrap())
-            .unwrap_or(&f64::MAX),
-        AggFunc::Product => memory.iter().product(),
-    }
-}
-
-/// Aggregates the values in the memory using the specified aggregation function.
-fn aggregate_u64_memory(memory: &VecDeque<u64>, agg_func: &AggIndexFunc) -> u64 {
-    match agg_func {
-        AggIndexFunc::Sum => memory.iter().sum(),
-        AggIndexFunc::Max => *memory.iter().max_by(|a, b| a.cmp(b)).unwrap_or(&u64::MIN),
-        AggIndexFunc::Min => *memory.iter().min_by(|a, b| a.cmp(b)).unwrap_or(&u64::MAX),
-        AggIndexFunc::Any => {
+        AggFuncU64::Sum => memory.iter().sum(),
+        AggFuncU64::Max => *memory.iter().max_by(|a, b| a.cmp(b)).unwrap_or(&u64::MIN),
+        AggFuncU64::Min => *memory.iter().min_by(|a, b| a.cmp(b)).unwrap_or(&u64::MAX),
+        AggFuncU64::Any => {
             if memory.iter().any(|&x| x > 0) {
                 1
             } else {
                 0
             }
         }
-        AggIndexFunc::All => {
+        AggFuncU64::All => {
             if memory.iter().all(|&x| x > 0) {
                 1
             } else {
                 0
             }
         }
-        AggIndexFunc::Product => memory.iter().product(),
+        AggFuncU64::Product => memory.iter().product(),
     }
 }
 
@@ -415,7 +393,7 @@ mod tests {
             .unwrap()
             .into();
 
-        let parameter = RollingParameter::new("my-parameter".into(), metric_idx, 3, 0.0, 3, AggFunc::Mean);
+        let parameter = RollingParameter::new("my-parameter".into(), metric_idx, 3, 0.0, 3, AggFuncF64::Mean);
 
         // Before the first three values are collected, the parameter should return the initial value.
         let expected_values: Array1<f64> = [
@@ -445,7 +423,7 @@ mod tests {
             .unwrap()
             .into();
 
-        let parameter = RollingParameter::new("my-parameter".into(), metric_idx, 3, 0, 3, AggIndexFunc::Max);
+        let parameter = RollingParameter::new("my-parameter".into(), metric_idx, 3, 0, 3, AggFuncU64::Max);
 
         // Before the first three values are collected, the parameter should return the initial value.
         let expected_values: Array1<u64> = [
@@ -462,46 +440,26 @@ mod tests {
     }
 
     #[test]
-    fn test_aggregate_f64_memory() {
-        let memory: VecDeque<f64> = vec![1.0, 2.0, 3.0, 4.0].into();
-
-        assert_eq!(aggregate_f64_memory(&memory, &AggFunc::Sum), 10.0);
-        assert_eq!(aggregate_f64_memory(&memory, &AggFunc::Mean), 2.5);
-        assert_eq!(aggregate_f64_memory(&memory, &AggFunc::Max), 4.0);
-        assert_eq!(aggregate_f64_memory(&memory, &AggFunc::Min), 1.0);
-        assert_eq!(aggregate_f64_memory(&memory, &AggFunc::Product), 24.0);
-    }
-    #[test]
-    fn test_aggregate_f64_memory_empty() {
-        let memory: VecDeque<f64> = VecDeque::new();
-
-        assert_eq!(aggregate_f64_memory(&memory, &AggFunc::Sum), 0.0);
-        assert_eq!(aggregate_f64_memory(&memory, &AggFunc::Mean), 0.0); // Mean of empty set is 0
-        assert_eq!(aggregate_f64_memory(&memory, &AggFunc::Max), f64::MIN);
-        assert_eq!(aggregate_f64_memory(&memory, &AggFunc::Min), f64::MAX);
-        assert_eq!(aggregate_f64_memory(&memory, &AggFunc::Product), 1.0); // Product of empty set is 1
-    }
-    #[test]
     fn test_aggregate_u64_memory() {
         let memory: VecDeque<u64> = vec![1, 2, 3, 4].into();
 
-        assert_eq!(aggregate_u64_memory(&memory, &AggIndexFunc::Sum), 10);
-        assert_eq!(aggregate_u64_memory(&memory, &AggIndexFunc::Max), 4);
-        assert_eq!(aggregate_u64_memory(&memory, &AggIndexFunc::Min), 1);
-        assert_eq!(aggregate_u64_memory(&memory, &AggIndexFunc::Any), 1); // Non-zero values exist
-        assert_eq!(aggregate_u64_memory(&memory, &AggIndexFunc::All), 1); // All values are non-zero
-        assert_eq!(aggregate_u64_memory(&memory, &AggIndexFunc::Product), 24);
+        assert_eq!(aggregate_u64_memory(&memory, &AggFuncU64::Sum), 10);
+        assert_eq!(aggregate_u64_memory(&memory, &AggFuncU64::Max), 4);
+        assert_eq!(aggregate_u64_memory(&memory, &AggFuncU64::Min), 1);
+        assert_eq!(aggregate_u64_memory(&memory, &AggFuncU64::Any), 1); // Non-zero values exist
+        assert_eq!(aggregate_u64_memory(&memory, &AggFuncU64::All), 1); // All values are non-zero
+        assert_eq!(aggregate_u64_memory(&memory, &AggFuncU64::Product), 24);
     }
 
     #[test]
     fn test_aggregate_u64_memory_empty() {
         let memory: VecDeque<u64> = VecDeque::new();
 
-        assert_eq!(aggregate_u64_memory(&memory, &AggIndexFunc::Sum), 0);
-        assert_eq!(aggregate_u64_memory(&memory, &AggIndexFunc::Max), u64::MIN);
-        assert_eq!(aggregate_u64_memory(&memory, &AggIndexFunc::Min), u64::MAX);
-        assert_eq!(aggregate_u64_memory(&memory, &AggIndexFunc::Any), 0); // No non-zero values
-        assert_eq!(aggregate_u64_memory(&memory, &AggIndexFunc::All), 1); // No values, so all are non-zero by default
-        assert_eq!(aggregate_u64_memory(&memory, &AggIndexFunc::Product), 1); // Product of empty set is 1
+        assert_eq!(aggregate_u64_memory(&memory, &AggFuncU64::Sum), 0);
+        assert_eq!(aggregate_u64_memory(&memory, &AggFuncU64::Max), u64::MIN);
+        assert_eq!(aggregate_u64_memory(&memory, &AggFuncU64::Min), u64::MAX);
+        assert_eq!(aggregate_u64_memory(&memory, &AggFuncU64::Any), 0); // No non-zero values
+        assert_eq!(aggregate_u64_memory(&memory, &AggFuncU64::All), 1); // No values, so all are non-zero by default
+        assert_eq!(aggregate_u64_memory(&memory, &AggFuncU64::Product), 1); // Product of empty set is 1
     }
 }

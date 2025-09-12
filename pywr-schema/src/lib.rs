@@ -4,6 +4,7 @@
 //!
 //! Serializing and deserializing is accomplished using [`serde`].
 //!
+pub mod agg_funcs;
 pub mod data_tables;
 mod digest;
 pub mod edge;
