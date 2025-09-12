@@ -89,7 +89,7 @@ impl GeneralParameter<MultiValue> for MuskingumParameter {
                     let inflow_factor = steady_state_inflow_factor(weight, travel_time);
                     let outflow_factor = steady_state_outflow_factor(weight, travel_time);
                     let mut values = HashMap::new();
-                    values.insert("inflow_factor".to_string(), inflow_factor / outflow_factor);
+                    values.insert("inflow_factor".to_string(), -inflow_factor / outflow_factor);
                     values.insert("rhs".to_string(), 0.0);
                     return Ok(MultiValue::new(values, HashMap::new()));
                 }
@@ -103,7 +103,7 @@ impl GeneralParameter<MultiValue> for MuskingumParameter {
         };
 
         let mut values = HashMap::new();
-        values.insert("inflow_factor".to_string(), inflow_factor(weight, travel_time));
+        values.insert("inflow_factor".to_string(), -inflow_factor(weight, travel_time));
         values.insert("rhs".to_string(), rhs(inflow, outflow, weight, travel_time));
         Ok(MultiValue::new(values, HashMap::new()))
     }

@@ -558,7 +558,7 @@ where
                             self.builder.update_row_coefficients(
                                 *row_idx,
                                 node1,
-                                -node_pair.node1_factor(),
+                                node_pair.node1_factor(),
                                 &self.col_edge_map,
                             );
                         }
@@ -968,7 +968,7 @@ where
 
                     for node1_idx in node_pair.node1_indices() {
                         let node1 = nodes.get(node1_idx).expect("Node index not found!");
-                        self.add_node(node1, -f1.unwrap_or(1.0), &mut row);
+                        self.add_node(node1, f1.unwrap_or(1.0), &mut row);
                     }
 
                     // Make the row fixed at RHS

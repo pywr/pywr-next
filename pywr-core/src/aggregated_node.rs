@@ -495,7 +495,7 @@ fn get_norm_proportional_factor_pairs<'a>(
         .skip(1)
         .zip(values)
         .map(move |(n1, f1)| {
-            NodeFactorPair::new(NodeFactor::new(n0, 1.0), NodeFactor::new(n1.as_slice(), f0 / f1), 0.0)
+            NodeFactorPair::new(NodeFactor::new(n0, 1.0), NodeFactor::new(n1.as_slice(), -f0 / f1), 0.0)
         })
         .collect::<Vec<_>>()
 }
@@ -578,7 +578,7 @@ fn get_const_norm_proportional_factor_pairs<'a>(
             .map(move |(n1, f1)| {
                 NodeConstFactorPair::new(
                     NodeConstFactor::new(n0, Some(1.0)),
-                    NodeConstFactor::new(n1.as_slice(), f1.map(|v| f0 / v)),
+                    NodeConstFactor::new(n1.as_slice(), f1.map(|v| -f0 / v)),
                     0.0,
                 )
             })
@@ -619,7 +619,7 @@ fn get_norm_ratio_factor_pairs<'a>(
         .map(move |(n1, f1)| {
             let v1 = f1.get_value(model, state).expect("Failed to get current factor value.");
 
-            NodeFactorPair::new(NodeFactor::new(n0, 1.0), NodeFactor::new(n1.as_slice(), f0 / v1), 0.0)
+            NodeFactorPair::new(NodeFactor::new(n0, 1.0), NodeFactor::new(n1.as_slice(), -f0 / v1), 0.0)
         })
         .collect::<Vec<_>>()
 }
@@ -668,7 +668,7 @@ fn get_const_norm_ratio_factor_pairs<'a>(
                 }
             }
 
-            let v1 = v1.and_then(|v| f0.map(|f0| f0 / v));
+            let v1 = v1.and_then(|v| f0.map(|f0| -f0 / v));
 
             Ok(NodeConstFactorPair::new(
                 NodeConstFactor::new(n0, Some(1.0)),
