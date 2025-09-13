@@ -106,7 +106,6 @@ where
                 .try_into()
                 .unwrap();
 
-            println!("{} {:?} {:?}", N, key, record);
             let values: Vec<T> = record.iter().skip(N).map(|v| v.parse()).collect::<Result<_, _>>()?;
 
             Ok((key, values))
