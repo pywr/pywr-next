@@ -19,7 +19,7 @@ use pywr_core::metric::MetricF64;
 use pywr_core::metric::SimpleMetricF64;
 #[cfg(feature = "core")]
 use pywr_core::parameters::ParameterName;
-use pywr_schema_macros::PywrVisitAll;
+use pywr_schema_macros::{PywrVisitAll, skip_serializing_none};
 use schemars::JsonSchema;
 
 /// The type of spill node.
@@ -120,6 +120,7 @@ node_component_subset_enum! {
     }
 }
 
+#[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 /// A reservoir node with compensation, leakage, direct rainfall and evaporation.

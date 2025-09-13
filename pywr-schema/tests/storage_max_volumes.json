@@ -102,14 +102,20 @@
           "name": "ten"
         },
         "type": "Constant",
-        "value": 10.0
+        "value": {
+          "type": "Literal",
+          "value": 10.0
+        }
       },
       {
         "meta": {
           "name": "five"
         },
         "type": "Constant",
-        "value": 5.0
+        "value": {
+          "type": "Literal",
+          "value": 5.0
+        }
       },
       {
         "meta": {

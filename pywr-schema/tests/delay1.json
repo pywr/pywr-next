@@ -26,8 +26,14 @@
           "name": "link1"
         },
         "type": "Delay",
-        "delay": 3,
-        "initial_value": 0.0
+        "delay": {
+          "type": "Literal",
+          "value": 3
+        },
+        "initial_value": {
+          "type": "Literal",
+          "value": 0.0
+        }
       },
       {
         "meta": {

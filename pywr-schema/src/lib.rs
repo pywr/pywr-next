@@ -6,6 +6,7 @@
 //!
 pub mod agg_funcs;
 pub mod data_tables;
+mod digest;
 pub mod edge;
 mod error;
 pub mod metric;

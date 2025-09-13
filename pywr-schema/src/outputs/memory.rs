@@ -3,10 +3,11 @@ use crate::SchemaError;
 use crate::agg_funcs::AggFunc;
 #[cfg(feature = "core")]
 use pywr_core::recorders::MemoryRecorder;
-use pywr_schema_macros::PywrVisitPaths;
+use pywr_schema_macros::{PywrVisitPaths, skip_serializing_none};
 use schemars::JsonSchema;
 use strum_macros::{Display, EnumIter};
 
+#[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitPaths)]
 pub struct MemoryAggregation {
     pub time: Option<AggFunc>,
@@ -41,6 +42,7 @@ impl From<MemoryAggregationOrder> for pywr_core::recorders::AggregationOrder {
     }
 }
 
+#[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitPaths)]
 pub struct MemoryOutput {
     pub name: String,

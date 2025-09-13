@@ -7,7 +7,7 @@ use crate::parameters::{ConstantFloatVec, ConstantValue, ConversionData, Paramet
 use crate::v1::{FromV1, IntoV2, TryFromV1, try_convert_values};
 #[cfg(feature = "core")]
 use pywr_core::parameters::{ParameterIndex, ParameterName, WeeklyProfileError, WeeklyProfileValues};
-use pywr_schema_macros::PywrVisitAll;
+use pywr_schema_macros::{PywrVisitAll, skip_serializing_none};
 use pywr_v1_schema::parameters::{
     DailyProfileParameter as DailyProfileParameterV1, MonthInterpDay as MonthInterpDayV1,
     MonthlyProfileParameter as MonthlyProfileParameterV1, RbfProfileParameter as RbfProfileParameterV1,
@@ -74,6 +74,7 @@ impl From<MonthlyInterpDay> for pywr_core::parameters::MonthlyInterpDay {
     }
 }
 
+#[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct MonthlyProfileParameter {
@@ -131,6 +132,7 @@ impl TryFromV1<MonthlyProfileParameterV1> for MonthlyProfileParameter {
     }
 }
 
+#[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct UniformDrawdownProfileParameter {
@@ -181,9 +183,9 @@ impl FromV1<UniformDrawdownProfileParameterV1> for UniformDrawdownProfileParamet
 
         Self {
             meta,
-            reset_day: v1.reset_day.map(|v| ConstantValue::Literal(v as u64)),
-            reset_month: v1.reset_month.map(|v| ConstantValue::Literal(v as u64)),
-            residual_days: v1.residual_days.map(|v| ConstantValue::Literal(v as u64)),
+            reset_day: v1.reset_day.map(|v| v.into()),
+            reset_month: v1.reset_month.map(|v| v.into()),
+            residual_days: v1.residual_days.map(|v| v.into()),
         }
     }
 }
@@ -526,6 +528,7 @@ impl From<WeeklyInterpDay> for pywr_core::parameters::WeeklyInterpDay {
 /// The values in the last week are interpolated between `10` and `12` (i.e the value on 31<sup>st</sup>
 /// December).
 ///
+#[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct WeeklyProfileParameter {

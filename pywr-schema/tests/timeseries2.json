@@ -82,7 +82,10 @@
           "name": "demand"
         },
         "type": "Constant",
-        "value": 100.0
+        "value": {
+          "type": "Literal",
+          "value": 100.0
+        }
       },
       {
         "meta": {

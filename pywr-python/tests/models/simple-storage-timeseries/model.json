@@ -68,7 +68,10 @@
           "name": "demand"
         },
         "type": "Constant",
-        "value": 10.0
+        "value": {
+          "type": "Literal",
+          "value": 10.0
+        }
       }
     ],
     "metric_sets": [

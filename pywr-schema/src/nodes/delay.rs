@@ -9,7 +9,7 @@ use crate::parameters::{ConstantValue, Parameter};
 use crate::{node_attribute_subset_enum, node_component_subset_enum};
 #[cfg(feature = "core")]
 use pywr_core::{metric::MetricF64, parameters::ParameterName};
-use pywr_schema_macros::PywrVisitAll;
+use pywr_schema_macros::{PywrVisitAll, skip_serializing_none};
 use pywr_v1_schema::nodes::DelayNode as DelayNodeV1;
 use schemars::JsonSchema;
 
@@ -53,13 +53,14 @@ node_component_subset_enum! {
 /// attributes and components for this node.
 ///
 )]
+#[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct DelayNode {
     pub meta: NodeMeta,
     /// Optional local parameters.
     pub parameters: Option<Vec<Parameter>>,
-    pub delay: u64,
+    pub delay: ConstantValue<u64>,
     pub initial_value: ConstantValue<f64>,
 }
 
@@ -151,8 +152,12 @@ impl DelayNode {
                 sub_name: Self::output_sub_name().map(String::from),
             })?;
         let metric = MetricF64::NodeInFlow(output_idx);
-        let p =
-            pywr_core::parameters::DelayParameter::new(name, metric, self.delay, self.initial_value.load(args.tables)?);
+        let p = pywr_core::parameters::DelayParameter::new(
+            name,
+            metric,
+            self.delay.load(args.tables)?,
+            self.initial_value.load(args.tables)?,
+        );
         let delay_idx = network.add_parameter(Box::new(p))?;
 
         // Apply it as a constraint on the input node.
@@ -222,12 +227,12 @@ impl TryFrom<DelayNodeV1> for DelayNode {
             },
         } as u64;
 
-        let initial_value = ConstantValue::Literal(v1.initial_flow.unwrap_or_default());
+        let initial_value = v1.initial_flow.unwrap_or_default().into();
 
         let n = Self {
             meta,
             parameters: None,
-            delay,
+            delay: delay.into(),
             initial_value,
         };
         Ok(n)

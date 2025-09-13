@@ -16,13 +16,15 @@ use pywr_core::{
     derived_metric::DerivedMetric, metric::MetricF64, node::StorageInitialVolume as CoreStorageInitialVolume,
 };
 use pywr_schema_macros::PywrVisitAll;
+use pywr_schema_macros::skip_serializing_none;
 use pywr_v1_schema::nodes::{
     AggregatedNode as AggregatedNodeV1, AggregatedStorageNode as AggregatedStorageNodeV1,
-    CatchmentNode as CatchmentNodeV1, InputNode as InputNodeV1, LinkNode as LinkNodeV1, OutputNode as OutputNodeV1,
-    ReservoirNode as ReservoirNodeV1, StorageNode as StorageNodeV1,
+    BreakLinkNode as BreakLinkNodeV1, CatchmentNode as CatchmentNodeV1, InputNode as InputNodeV1,
+    LinkNode as LinkNodeV1, OutputNode as OutputNodeV1, ReservoirNode as ReservoirNodeV1, StorageNode as StorageNodeV1,
 };
 use schemars::JsonSchema;
 use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticStr};
+use tracing::warn;
 
 // This macro generates a subset enum for the `InputNode` attributes.
 // It allows for easy conversion between the enum and the `NodeAttribute` type.
@@ -48,6 +50,7 @@ node_component_subset_enum! {
 /// The enums [`InputNodeAttribute`] and [`InputNodeComponent`] define the available
 /// attributes and components for this node.
 ///
+#[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct InputNode {
@@ -317,6 +320,7 @@ node_component_subset_enum! {
 ///   (for example when the abstraction license or the source runs out), the minimum flow will not
 ///   be honoured and the solver will find a solution.
 )]
+#[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct LinkNode {
@@ -726,6 +730,35 @@ impl TryFromV1<LinkNodeV1> for LinkNode {
     }
 }
 
+impl TryFromV1<BreakLinkNodeV1> for LinkNode {
+    type Error = ComponentConversionError;
+
+    fn try_from_v1(
+        v1: BreakLinkNodeV1,
+        parent_node: Option<&str>,
+        conversion_data: &mut ConversionData,
+    ) -> Result<Self, Self::Error> {
+        let meta: NodeMeta = v1.meta.into();
+        let cost = try_convert_node_attr(&meta.name, "cost", v1.cost, parent_node, conversion_data)?;
+        let max_flow = try_convert_node_attr(&meta.name, "max_flow", v1.max_flow, parent_node, conversion_data)?;
+        let min_flow = try_convert_node_attr(&meta.name, "min_flow", v1.min_flow, parent_node, conversion_data)?;
+
+        warn!(
+            "BreakLinkNode is deprecated. Converting node with name '{}' to a LinkNode",
+            meta.name
+        );
+
+        let n = Self {
+            meta,
+            max_flow,
+            min_flow,
+            cost,
+            ..Default::default()
+        };
+        Ok(n)
+    }
+}
+
 // This macro generates a subset enum for the `OutputNode` attributes.
 // It allows for easy conversion between the enum and the `NodeAttribute` type.
 node_attribute_subset_enum! {
@@ -752,6 +785,7 @@ node_component_subset_enum! {
 /// The enums [`OutputNodeAttribute`] and [`OutputNodeComponent`] define the available
 /// attributes and components for this node.
 ///
+#[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct OutputNode {
@@ -953,6 +987,7 @@ node_attribute_subset_enum! {
 /// The enum [`StorageNodeAttribute`] defines the available attributes. There are no components
 /// to choose from.
 ///
+#[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct StorageNode {
@@ -1146,6 +1181,7 @@ node_component_subset_enum! {
 /// attributes and components for this node.
 ///
 )]
+#[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct CatchmentNode {
@@ -1314,6 +1350,7 @@ node_attribute_subset_enum! {
 /// # Available attributes and components
 /// The enum [`AggregatedNodeAttribute`] defines the available attributes. There are no components
 /// to choose from.
+#[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct AggregatedNode {
@@ -1510,6 +1547,7 @@ node_attribute_subset_enum! {
 /// The enum [`AggregatedStorageNodeAttribute`] defines the available attributes. There are no components
 /// to choose from.
 ///
+#[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct AggregatedStorageNode {

@@ -9,7 +9,7 @@ use crate::parameters::Parameter;
 use crate::{node_attribute_subset_enum, node_component_subset_enum};
 #[cfg(feature = "core")]
 use pywr_core::metric::MetricF64;
-use pywr_schema_macros::PywrVisitAll;
+use pywr_schema_macros::{PywrVisitAll, skip_serializing_none};
 use pywr_v1_schema::nodes::LinkNode as LinkNodeV1;
 use schemars::JsonSchema;
 
@@ -31,6 +31,7 @@ node_component_subset_enum! {
     }
 }
 
+#[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 #[doc = svgbobdoc::transform!(

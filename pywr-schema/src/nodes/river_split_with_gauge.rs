@@ -12,6 +12,7 @@ use crate::{ConversionError, TryIntoV2, node_attribute_subset_enum, node_compone
 #[cfg(feature = "core")]
 use pywr_core::{aggregated_node::Relationship, metric::MetricF64, node::NodeIndex};
 use pywr_schema_macros::PywrVisitAll;
+use pywr_schema_macros::skip_serializing_none;
 use pywr_v1_schema::nodes::RiverSplitWithGaugeNode as RiverSplitWithGaugeNodeV1;
 use pywr_v1_schema::parameters::ParameterValues;
 use schemars::JsonSchema;
@@ -72,6 +73,7 @@ node_component_subset_enum! {
 /// attributes and components for this node.
 ///
 )]
+#[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct RiverSplitWithGaugeNode {
