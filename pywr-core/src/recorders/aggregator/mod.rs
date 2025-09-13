@@ -460,7 +460,7 @@ mod tests {
         assert_approx_eq!(f64, agg_value, 7.0 / 4.0);
 
         let agg_value = AggFuncF64::Sum.calc_period_values(values.as_slice()).unwrap();
-        let expected = 2.0 * (1.0 / 24.0) + 1.0 * (2.0 / 24.0) + 3.0 * (1.0 / 24.0);
+        let expected = 2.0 + 1.0 + 3.0;
         assert_approx_eq!(f64, agg_value, expected);
     }
 }

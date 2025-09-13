@@ -16,7 +16,7 @@ impl AggFuncF64 {
     /// Calculate the aggregation of the given values.
     pub fn calc_period_values(&self, values: &[PeriodValue<f64>]) -> Option<f64> {
         match self {
-            Self::Sum => Some(values.iter().map(|v| v.value * v.duration.fractional_days()).sum()),
+            Self::Sum => Some(values.iter().map(|v| v.value).sum()),
             Self::Mean => {
                 let ndays: f64 = values.iter().map(|v| v.duration.fractional_days()).sum();
                 if ndays == 0.0 {
