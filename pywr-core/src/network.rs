@@ -195,7 +195,7 @@ impl NetworkTimings {
     pub fn print_table(&self, total_duration: f64, network: &Network) {
         info!(
             "{: <24} | {: <10.5}s ({:5.2}%)",
-            "Dynamic component calculations",
+            "Components calcs",
             self.component_timings.total.as_secs_f64(),
             100.0 * self.component_timings.total.as_secs_f64() / total_duration,
         );
