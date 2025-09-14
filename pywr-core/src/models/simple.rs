@@ -10,7 +10,6 @@ use pyo3::{PyErr, exceptions::PyRuntimeError};
 use rayon::ThreadPool;
 use std::any::Any;
 use std::collections::HashSet;
-use std::time::Instant;
 use thiserror::Error;
 use tracing::{debug, info};
 
@@ -236,16 +235,18 @@ impl Model {
                 })?,
         }
 
-        let start_r_save = Instant::now();
-
         self.network
-            .save_recorders(timestep, scenario_indices, &state.state, &mut state.recorder_state)
+            .save_recorders(
+                timestep,
+                scenario_indices,
+                &state.state,
+                &mut state.recorder_state,
+                timings,
+            )
             .map_err(|source| ModelStepError::RecorderSaveError {
                 timestep: *timestep,
                 source: Box::new(source),
             })?;
-
-        timings.recorder_saving += start_r_save.elapsed();
 
         // Finally increment the time-step index
         state.current_time_step_idx += 1;
@@ -286,16 +287,18 @@ impl Model {
                 source: Box::new(source),
             })?;
 
-        let start_r_save = Instant::now();
-
         self.network
-            .save_recorders(timestep, scenario_indices, &state.state, &mut state.recorder_state)
+            .save_recorders(
+                timestep,
+                scenario_indices,
+                &state.state,
+                &mut state.recorder_state,
+                timings,
+            )
             .map_err(|source| ModelStepError::RecorderSaveError {
                 timestep: *timestep,
                 source: Box::new(source),
             })?;
-
-        timings.recorder_saving += start_r_save.elapsed();
 
         // Finally increment the time-step index
         state.current_time_step_idx += 1;
@@ -329,7 +332,7 @@ impl Model {
         <S as Solver>::Settings: SolverSettings,
     {
         let run_duration = RunDuration::start();
-        let mut timings = NetworkTimings::default();
+        let mut timings = NetworkTimings::new_with_component_timings(&self.network);
         let mut count = 0;
 
         // Setup thread pool if running in parallel
@@ -396,7 +399,7 @@ impl Model {
         <S as MultiStateSolver>::Settings: SolverSettings,
     {
         let run_duration = RunDuration::start();
-        let mut timings = NetworkTimings::default();
+        let mut timings = NetworkTimings::new_with_component_timings(&self.network);
         let mut count = 0;
 
         let num_threads = if settings.parallel() { settings.threads() } else { 1 };

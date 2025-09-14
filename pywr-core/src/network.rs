@@ -26,7 +26,7 @@ use crate::virtual_storage::{
 use crate::{NodeIndex, RecorderIndex, parameters, recorders};
 use rayon::prelude::*;
 use std::any::Any;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::ops::Deref;
 use std::slice::{Iter, IterMut};
 use std::time::Duration;
@@ -82,36 +82,120 @@ impl RunDuration {
     }
 }
 
+#[derive(Default, Copy, Clone)]
+pub struct ComponentTiming {
+    calculation: Duration,
+    after: Duration,
+}
+
+impl ComponentTiming {
+    /// Time spent in the calculation method of the component.
+    pub fn calculation(&self) -> Duration {
+        self.calculation
+    }
+
+    /// Time spent in the "after" method of the component.
+    pub fn after(&self) -> Duration {
+        self.after
+    }
+
+    /// Total time spent in calculation and after methods.
+    pub fn total(&self) -> Duration {
+        self.calculation + self.after
+    }
+}
+
 /// Collect timing information for component of a network.
-#[derive(Default)]
 pub struct ComponentTimings {
-    pub calculation: HashMap<ComponentType, Duration>,
-    pub total: Duration,
+    /// Timing information for calculation of each component.
+    calculation: Option<Vec<ComponentTiming>>,
+    /// Total time spent in component calculations.
+    total: Duration,
 }
 
 impl ComponentTimings {
-    /// Returns the slowest `n` components and their duration.
-    pub fn slowest_components(&self, n: usize) -> Vec<(ComponentType, Duration)> {
-        let mut components: Vec<_> = self.calculation.iter().map(|(ct, d)| (*ct, *d)).collect();
-        components.sort_by_key(|(_, duration)| *duration);
-        components.iter().rev().take(n).map(|(ct, d)| (*ct, *d)).collect()
+    pub fn new_with_components(num_components: usize) -> Self {
+        Self {
+            calculation: Some(vec![ComponentTiming::default(); num_components]),
+            total: Duration::ZERO,
+        }
+    }
+
+    pub fn new_without_components() -> Self {
+        Self {
+            calculation: None,
+            total: Duration::ZERO,
+        }
+    }
+
+    /// Returns the slowest `n` components and their duration, if timing information is available.
+    ///
+    /// This includes both "calculation" and "after" duration.
+    pub fn slowest_components(
+        &self,
+        n: usize,
+        component_types: &[ComponentType],
+    ) -> Option<Vec<(ComponentType, ComponentTiming)>> {
+        self.calculation.as_ref().map(|calculation| {
+            let mut components: Vec<_> = calculation
+                .iter()
+                .zip(component_types)
+                .map(|(d, ct)| (*ct, *d))
+                .collect();
+            components.sort_by_key(|(_, duration)| duration.total());
+            components.iter().rev().take(n).map(|(ct, d)| (*ct, *d)).collect()
+        })
+    }
+
+    /// Add timing information for a component calculation.
+    pub fn add_component_calculation_timing(&mut self, idx: usize, duration: Duration) {
+        if let Some(calculation) = &mut self.calculation {
+            if let Some(c) = calculation.get_mut(idx) {
+                c.calculation += duration;
+            }
+        }
+    }
+
+    /// Add timing information for a component "after" calculation.
+    pub fn add_component_after_timing(&mut self, idx: usize, duration: Duration) {
+        if let Some(calculation) = &mut self.calculation {
+            if let Some(c) = calculation.get_mut(idx) {
+                c.after += duration;
+            }
+        }
     }
 }
 
 /// Collects timing information for a network
-#[derive(Default)]
 pub struct NetworkTimings {
-    pub component_timings: ComponentTimings,
-    pub recorder_saving: Duration,
-    pub solve: SolverTimings,
+    /// Timing information for component calculations.
+    component_timings: ComponentTimings,
+    recorder_saving: Duration,
+    solve: SolverTimings,
 }
 
 impl NetworkTimings {
+    pub fn new_with_component_timings(network: &Network) -> Self {
+        Self {
+            component_timings: ComponentTimings::new_with_components(network.resolve_order.len()),
+            recorder_saving: Duration::ZERO,
+            solve: SolverTimings::default(),
+        }
+    }
+
+    pub fn new_without_component_timings() -> Self {
+        Self {
+            component_timings: ComponentTimings::new_without_components(),
+            recorder_saving: Duration::ZERO,
+            solve: SolverTimings::default(),
+        }
+    }
+
     /// Print a summary of the timings to the log.
     pub fn print_table(&self, total_duration: f64, network: &Network) {
         info!(
             "{: <24} | {: <10.5}s ({:5.2}%)",
-            "Parameter calc",
+            "Dynamic component calculations",
             self.component_timings.total.as_secs_f64(),
             100.0 * self.component_timings.total.as_secs_f64() / total_duration,
         );
@@ -164,14 +248,22 @@ impl NetworkTimings {
             100.0 * not_counted / total_duration,
         );
 
-        info!("Slowest components:");
-        for (ct, duration) in self.component_timings.slowest_components(10) {
+        if let Some(slowest) = self.component_timings.slowest_components(10, &network.resolve_order) {
+            info!("Slowest components:");
             info!(
-                "  {: <24} | {: <10.5}s ({:5.2}%)",
-                ct.name(network),
-                duration.as_secs_f64(),
-                100.0 * duration.as_secs_f64() / total_duration,
+                "  {: <24} | {: <10}  | {: <10}  | {: <10}  | {:5}",
+                "Component", "Calc", "After", "Total", "% of total"
             );
+            for (ct, duration) in slowest {
+                info!(
+                    "  {: <24} | {: <10.5}s | {: <10.5}s | {: <10.5}s | {:5.2}%",
+                    ct.name(network),
+                    duration.calculation.as_secs_f64(),
+                    duration.after.as_secs_f64(),
+                    duration.total().as_secs_f64(),
+                    100.0 * duration.total().as_secs_f64() / total_duration,
+                );
+            }
         }
     }
 }
@@ -693,6 +785,7 @@ impl Network {
                         current_state,
                         p_internal_states,
                         ms_internal_states,
+                        Some(&mut timings.component_timings),
                     )?;
 
                     timings.component_timings.total += start_p_after.elapsed();
@@ -750,6 +843,7 @@ impl Network {
                         current_state,
                         p_internal_state,
                         ms_internal_state,
+                        None,
                     )
                     .unwrap();
 
@@ -824,6 +918,7 @@ impl Network {
                         current_state,
                         p_internal_states,
                         ms_internal_states,
+                        None,
                     )
                     .unwrap();
                     start_p_after.elapsed()
@@ -895,7 +990,7 @@ impl Network {
         self.parameters
             .compute_simple(timestep, scenario_index, state, internal_states)?;
 
-        for c_type in &self.resolve_order {
+        for (c_idx, c_type) in self.resolve_order.iter().enumerate() {
             let start = Instant::now();
 
             match c_type {
@@ -1027,11 +1122,7 @@ impl Network {
 
             if let Some(timings) = timings.as_deref_mut() {
                 // Update the component timings
-                timings
-                    .calculation
-                    .entry(*c_type)
-                    .and_modify(|duration| *duration += start.elapsed())
-                    .or_insert_with(|| start.elapsed());
+                timings.add_component_calculation_timing(c_idx, start.elapsed());
             }
         }
 
@@ -1052,13 +1143,16 @@ impl Network {
         state: &mut State,
         internal_states: &mut ParameterStates,
         metric_set_states: &mut [MetricSetState],
+        mut timings: Option<&mut ComponentTimings>,
     ) -> Result<(), NetworkStepError> {
         // TODO reset parameter state to zero
 
         self.parameters
             .after_simple(timestep, scenario_index, state, internal_states)?;
 
-        for c_type in &self.resolve_order {
+        for (c_idx, c_type) in self.resolve_order.iter().enumerate() {
+            let start = Instant::now();
+
             match c_type {
                 ComponentType::Node(_) => {
                     // Nodes do not have an "after" method.
@@ -1141,6 +1235,11 @@ impl Network {
                     })?;
                 }
             }
+
+            if let Some(timings) = timings.as_deref_mut() {
+                // Update the component timings
+                timings.add_component_after_timing(c_idx, start.elapsed());
+            }
         }
 
         // Finally, save new data to the metric set
@@ -1162,7 +1261,9 @@ impl Network {
         scenario_indices: &[ScenarioIndex],
         state: &NetworkState,
         recorder_internal_states: &mut [Option<Box<dyn Any>>],
+        timings: &mut NetworkTimings,
     ) -> Result<(), NetworkRecorderSaveError> {
+        let start = Instant::now();
         for (recorder, internal_state) in self.recorders.iter().zip(recorder_internal_states) {
             recorder
                 .save(
@@ -1178,6 +1279,7 @@ impl Network {
                     source,
                 })?;
         }
+        timings.recorder_saving += start.elapsed();
         Ok(())
     }
 
@@ -2290,7 +2392,7 @@ mod tests {
         const NUM_SCENARIOS: usize = 2;
         let model = simple_model(NUM_SCENARIOS, None);
 
-        let mut timings = NetworkTimings::default();
+        let mut timings = NetworkTimings::new_without_component_timings();
 
         let mut state = model.setup::<ClpSolver>(&ClpSolverSettings::default()).unwrap();
 
