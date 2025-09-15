@@ -900,8 +900,9 @@ mod tests {
 #[cfg(feature = "core")]
 mod core_tests {
     use super::{PywrModel, PywrMultiNetworkModel};
+    use crate::agg_funcs::AggFunc;
     use crate::metric::{Metric, ParameterReference};
-    use crate::parameters::{AggFunc, AggregatedParameter, ConstantParameter, Parameter, ParameterMeta};
+    use crate::parameters::{AggregatedParameter, ConstantParameter, Parameter, ParameterMeta};
     use ndarray::{Array1, Array2, Axis};
     use pywr_core::{
         metric::MetricF64, recorders::AssertionF64Recorder, solvers::ClpSolver, test_utils::run_all_solvers,

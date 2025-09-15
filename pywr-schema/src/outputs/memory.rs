@@ -1,6 +1,6 @@
 #[cfg(feature = "core")]
 use crate::SchemaError;
-use crate::metric_sets::MetricAggFunc;
+use crate::agg_funcs::AggFunc;
 #[cfg(feature = "core")]
 use pywr_core::recorders::MemoryRecorder;
 use pywr_schema_macros::{PywrVisitPaths, skip_serializing_none};
@@ -10,9 +10,9 @@ use strum_macros::{Display, EnumIter};
 #[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitPaths)]
 pub struct MemoryAggregation {
-    pub time: Option<MetricAggFunc>,
-    pub scenario: Option<MetricAggFunc>,
-    pub metric: Option<MetricAggFunc>,
+    pub time: Option<AggFunc>,
+    pub scenario: Option<AggFunc>,
+    pub metric: Option<AggFunc>,
 }
 
 #[cfg(feature = "core")]

@@ -8,6 +8,8 @@ use crate::nodes::{NodeMeta, StorageNode, StorageNodeAttribute};
 use crate::parameters::ConstantFloatVec;
 use crate::{node_attribute_subset_enum, node_component_subset_enum};
 #[cfg(feature = "core")]
+use pywr_core::agg_funcs::AggFuncF64;
+#[cfg(feature = "core")]
 use pywr_core::derived_metric::DerivedMetric;
 #[cfg(feature = "core")]
 use pywr_core::metric::ConstantMetricF64::Constant;
@@ -16,7 +18,7 @@ use pywr_core::metric::MetricF64;
 #[cfg(feature = "core")]
 use pywr_core::metric::SimpleMetricF64;
 #[cfg(feature = "core")]
-use pywr_core::parameters::{AggFunc, ParameterName};
+use pywr_core::parameters::ParameterName;
 use pywr_schema_macros::{PywrVisitAll, skip_serializing_none};
 use schemars::JsonSchema;
 
@@ -511,7 +513,7 @@ impl ReservoirNode {
                 let rainfall_flow_parameter = pywr_core::parameters::AggregatedParameter::new(
                     ParameterName::new("rainfall", Some(self.meta().name.as_str())),
                     &[rainfall_metric, rainfall_area_metric],
-                    AggFunc::Product,
+                    AggFuncF64::Product,
                 );
                 let rainfall_idx = network.add_parameter(Box::new(rainfall_flow_parameter))?;
                 let rainfall_flow_metric: MetricF64 = rainfall_idx.into();
@@ -539,7 +541,7 @@ impl ReservoirNode {
                 let evaporation_flow_parameter = pywr_core::parameters::AggregatedParameter::new(
                     ParameterName::new("evaporation", Some(self.meta().name.as_str())),
                     &[evaporation_metric, evaporation_area_metric],
-                    AggFunc::Product,
+                    AggFuncF64::Product,
                 );
                 let evaporation_idx = network.add_parameter(Box::new(evaporation_flow_parameter))?;
                 let evaporation_flow_metric: MetricF64 = evaporation_idx.into();

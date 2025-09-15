@@ -1,9 +1,10 @@
+use crate::agg_funcs::{AggFunc, IndexAggFunc};
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
 use crate::metric::{IndexMetric, Metric, NodeAttrReference};
 #[cfg(feature = "core")]
 use crate::network::LoadArgs;
-use crate::parameters::{AggFunc, IndexAggFunc, ParameterMeta};
+use crate::parameters::ParameterMeta;
 use crate::v1::IntoV2;
 use crate::{ComponentConversionError, ConversionData, ConversionError, TryFromV1};
 #[cfg(feature = "core")]

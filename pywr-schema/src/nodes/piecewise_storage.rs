@@ -217,7 +217,7 @@ impl PiecewiseStorageNode {
                     Some(&self.meta.name),
                 ),
                 &prior_max_volumes,
-                pywr_core::parameters::AggFunc::Sum,
+                pywr_core::agg_funcs::AggFuncF64::Sum,
             );
             let prior_max_volume_idx = network.add_simple_parameter(Box::new(prior_max_volume))?;
 
@@ -263,7 +263,7 @@ impl PiecewiseStorageNode {
                 Some(&self.meta.name),
             ),
             &prior_max_volumes,
-            pywr_core::parameters::AggFunc::Sum,
+            pywr_core::agg_funcs::AggFuncF64::Sum,
         );
         let prior_max_volume_idx = network.add_simple_parameter(Box::new(prior_max_volume))?;
 

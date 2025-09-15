@@ -92,7 +92,9 @@
         }
       },
       {
-        "agg_func": "Product",
+        "agg_func": {
+          "type": "Product"
+        },
         "meta": {
           "name": "demand1-p0"
         },

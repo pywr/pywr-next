@@ -38,7 +38,7 @@ use crate::network::LoadArgs;
 use crate::timeseries::ConvertedTimeseriesReference;
 use crate::v1::{ConversionData, IntoV2, TryFromV1, TryIntoV2};
 use crate::visit::{VisitMetrics, VisitPaths};
-pub use aggregated::{AggFunc, AggregatedIndexParameter, AggregatedParameter, IndexAggFunc};
+pub use aggregated::{AggregatedIndexParameter, AggregatedParameter};
 pub use asymmetric_switch::AsymmetricSwitchIndexParameter;
 pub use control_curves::{
     ControlCurveIndexParameter, ControlCurveInterpolatedParameter, ControlCurveParameter,

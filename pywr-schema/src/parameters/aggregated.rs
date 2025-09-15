@@ -1,3 +1,4 @@
+use crate::agg_funcs::{AggFunc, IndexAggFunc};
 use crate::error::ComponentConversionError;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
@@ -10,63 +11,17 @@ use crate::v1::{IntoV2, TryFromV1, try_convert_parameter_attr};
 use pywr_core::parameters::{ParameterIndex, ParameterName};
 use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::parameters::{
-    AggFunc as AggFuncV1, AggregatedIndexParameter as AggregatedIndexParameterV1,
-    AggregatedParameter as AggregatedParameterV1, IndexAggFunc as IndexAggFuncV1,
+    AggregatedIndexParameter as AggregatedIndexParameterV1, AggregatedParameter as AggregatedParameterV1,
 };
 use schemars::JsonSchema;
 use std::collections::HashMap;
-use strum_macros::{Display, EnumIter};
-
-// TODO complete these
-/// Aggregation functions for float values.
-///
-/// This enum defines the possible aggregation functions that can be applied to index metrics.
-/// They are mapped to the corresponding functions in the `pywr_core::parameters::AggFunc` enum
-/// when used in the core library.
-#[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone, Display, JsonSchema, PywrVisitAll, EnumIter)]
-pub enum AggFunc {
-    /// Sum of all values.
-    Sum,
-    /// Product of all values.
-    Product,
-    /// Mean of all values.
-    Mean,
-    /// Minimum value among all values.
-    Min,
-    /// Maximum value among all values.
-    Max,
-}
-
-#[cfg(feature = "core")]
-impl From<AggFunc> for pywr_core::parameters::AggFunc {
-    fn from(value: AggFunc) -> Self {
-        match value {
-            AggFunc::Sum => pywr_core::parameters::AggFunc::Sum,
-            AggFunc::Product => pywr_core::parameters::AggFunc::Product,
-            AggFunc::Max => pywr_core::parameters::AggFunc::Max,
-            AggFunc::Min => pywr_core::parameters::AggFunc::Min,
-            AggFunc::Mean => pywr_core::parameters::AggFunc::Mean,
-        }
-    }
-}
-
-impl From<AggFuncV1> for AggFunc {
-    fn from(v1: AggFuncV1) -> Self {
-        match v1 {
-            AggFuncV1::Sum => Self::Sum,
-            AggFuncV1::Product => Self::Product,
-            AggFuncV1::Max => Self::Max,
-            AggFuncV1::Min => Self::Min,
-        }
-    }
-}
 
 /// Schema for a parameter that aggregates metrics using a user specified function.
 ///
 /// Each time-step the aggregation is updated using the current values of the referenced metrics.
 /// The available aggregation functions are defined by the [`AggFunc`] enum.
 ///
-/// This parameter definition is applied to a network using [`crate::parameters::AggregatedParameter`].
+/// This parameter definition is applied to a network using [`AggregatedParameter`].
 ///
 /// See also [`AggregatedIndexParameter`] for aggregation of integer values.
 ///
@@ -138,55 +93,6 @@ impl TryFromV1<AggregatedParameterV1> for AggregatedParameter {
             metrics,
         };
         Ok(p)
-    }
-}
-
-// TODO complete these
-/// Aggregation functions for index (integer) values.
-///
-/// This enum defines the possible aggregation functions that can be applied to index metrics.
-/// They are mapped to the corresponding functions in the `pywr_core::parameters::AggIndexFunc` enum
-/// when used in the core library.
-#[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone, Display, JsonSchema, PywrVisitAll, EnumIter)]
-pub enum IndexAggFunc {
-    /// Sum of all values.
-    Sum,
-    /// Product of all values.
-    Product,
-    /// Minimum value among all values.
-    Min,
-    /// Maximum value among all values.
-    Max,
-    /// Returns 1 if any value is non-zero, otherwise 0.
-    Any,
-    /// Returns 1 if all values are non-zero, otherwise 0.
-    All,
-}
-
-#[cfg(feature = "core")]
-impl From<IndexAggFunc> for pywr_core::parameters::AggIndexFunc {
-    fn from(value: IndexAggFunc) -> Self {
-        match value {
-            IndexAggFunc::Sum => pywr_core::parameters::AggIndexFunc::Sum,
-            IndexAggFunc::Product => pywr_core::parameters::AggIndexFunc::Product,
-            IndexAggFunc::Max => pywr_core::parameters::AggIndexFunc::Max,
-            IndexAggFunc::Min => pywr_core::parameters::AggIndexFunc::Min,
-            IndexAggFunc::Any => pywr_core::parameters::AggIndexFunc::Any,
-            IndexAggFunc::All => pywr_core::parameters::AggIndexFunc::All,
-        }
-    }
-}
-
-impl From<IndexAggFuncV1> for IndexAggFunc {
-    fn from(v1: IndexAggFuncV1) -> Self {
-        match v1 {
-            IndexAggFuncV1::Sum => Self::Sum,
-            IndexAggFuncV1::Product => Self::Product,
-            IndexAggFuncV1::Max => Self::Max,
-            IndexAggFuncV1::Min => Self::Min,
-            IndexAggFuncV1::Any => Self::Any,
-            IndexAggFuncV1::All => Self::All,
-        }
     }
 }
 
@@ -275,7 +181,9 @@ mod tests {
                     "name": "my-agg-param",
                     "comment": "Take the minimum of two parameters"
                 },
-                "agg_func": "Min",
+                "agg_func": {
+                  "type": "Min"
+                },
                 "metrics": [
                   {
                     "type": "Parameter",
