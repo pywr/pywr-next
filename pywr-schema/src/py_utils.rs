@@ -3,7 +3,7 @@
 //!
 #[cfg(all(feature = "core", feature = "pyo3"))]
 use crate::data_tables::make_path;
-#[cfg(feature = "core")]
+#[cfg(all(feature = "core", feature = "pyo3"))]
 use crate::error::SchemaError;
 #[cfg(all(feature = "core", feature = "pyo3"))]
 use pyo3::{

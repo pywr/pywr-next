@@ -1,4 +1,4 @@
-#[cfg(all(feature = "core", feature = "pyo3"))]
+#[cfg(feature = "core")]
 use crate::SchemaError;
 use crate::py_utils::PythonSource;
 #[cfg(all(feature = "core", feature = "pyo3"))]
@@ -10,7 +10,7 @@ use pywr_v1_schema::parameters::{AggFunc as AggFuncV1, IndexAggFunc as IndexAggF
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-#[cfg(all(feature = "core", feature = "pyo3"))]
+#[cfg(feature = "core")]
 use std::path::Path;
 use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticStr};
 
@@ -46,6 +46,7 @@ impl PythonAggFunc {
         Ok(pywr_core::agg_funcs::PyAggFunc::new(function, args, kwargs))
     }
 }
+
 // TODO complete these
 /// Aggregation functions for float values.
 ///
@@ -68,6 +69,7 @@ pub enum AggFunc {
 
 #[cfg(feature = "core")]
 impl AggFunc {
+    #[cfg_attr(not(feature = "pyo3"), allow(unused_variables))]
     pub fn load(&self, data_path: Option<&Path>) -> Result<pywr_core::agg_funcs::AggFuncF64, SchemaError> {
         match self {
             Self::Sum => Ok(pywr_core::agg_funcs::AggFuncF64::Sum),
@@ -78,6 +80,8 @@ impl AggFunc {
             Self::CountNonZero => Ok(pywr_core::agg_funcs::AggFuncF64::CountNonZero),
             #[cfg(feature = "pyo3")]
             Self::Python(py_func) => Ok(pywr_core::agg_funcs::AggFuncF64::Python(py_func.load(data_path)?)),
+            #[cfg(not(feature = "pyo3"))]
+            Self::Python(_) => Err(SchemaError::FeatureNotEnabled("pyo3".to_string())),
         }
     }
 }
@@ -115,12 +119,12 @@ pub enum IndexAggFunc {
     Any,
     /// Returns 1 if all values are non-zero, otherwise 0.
     All,
-    #[cfg(feature = "pyo3")]
     Python(PythonAggFunc),
 }
 
 #[cfg(feature = "core")]
 impl IndexAggFunc {
+    #[cfg_attr(not(feature = "pyo3"), allow(unused_variables))]
     pub fn load(&self, data_path: Option<&Path>) -> Result<pywr_core::agg_funcs::AggFuncU64, SchemaError> {
         match self {
             Self::Sum => Ok(pywr_core::agg_funcs::AggFuncU64::Sum),
@@ -131,6 +135,8 @@ impl IndexAggFunc {
             Self::All => Ok(pywr_core::agg_funcs::AggFuncU64::All),
             #[cfg(feature = "pyo3")]
             Self::Python(py_func) => Ok(pywr_core::agg_funcs::AggFuncU64::Python(py_func.load(data_path)?)),
+            #[cfg(not(feature = "pyo3"))]
+            Self::Python(_) => Err(SchemaError::FeatureNotEnabled("pyo3".to_string())),
         }
     }
 }
