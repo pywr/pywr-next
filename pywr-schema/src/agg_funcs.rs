@@ -4,7 +4,7 @@ use crate::py_utils::PythonSource;
 #[cfg(all(feature = "core", feature = "pyo3"))]
 use crate::py_utils::{try_load_optional_py_args, try_load_optional_py_kwargs};
 #[cfg(all(feature = "core", feature = "pyo3"))]
-use pyo3::{Python, pelude::PyAnyMethods};
+use pyo3::{Python, types::PyAnyMethods};
 use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::parameters::{AggFunc as AggFuncV1, IndexAggFunc as IndexAggFuncV1};
 use schemars::JsonSchema;
