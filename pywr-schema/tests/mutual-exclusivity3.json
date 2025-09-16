@@ -25,13 +25,13 @@
         "steps": [
           {
             "max_flow": {
-              "type": "Constant",
+              "type": "Literal",
               "value": 5.0
             }
           },
           {
             "max_flow": {
-              "type": "Constant",
+              "type": "Literal",
               "value": 5.0
             }
           }
@@ -43,11 +43,11 @@
         },
         "type": "Output",
         "max_flow": {
-          "type": "Constant",
+          "type": "Literal",
           "value": 15.0
         },
         "cost": {
-          "type": "Constant",
+          "type": "Literal",
           "value": -15
         }
       },
@@ -59,13 +59,13 @@
         "steps": [
           {
             "max_flow": {
-              "type": "Constant",
+              "type": "Literal",
               "value": 5.0
             }
           },
           {
             "max_flow": {
-              "type": "Constant",
+              "type": "Literal",
               "value": 5.0
             }
           }
@@ -77,11 +77,11 @@
         },
         "type": "Output",
         "max_flow": {
-          "type": "Constant",
+          "type": "Literal",
           "value": 15.0
         },
         "cost": {
-          "type": "Constant",
+          "type": "Literal",
           "value": -10
         }
       },

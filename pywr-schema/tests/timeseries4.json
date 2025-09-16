@@ -82,7 +82,7 @@
         },
         "type": "Output",
         "cost": {
-          "type": "Constant",
+          "type": "Literal",
           "value": -10
         },
         "max_flow": {
@@ -134,7 +134,7 @@
             }
           },
           {
-            "type": "Constant",
+            "type": "Literal",
             "value": 0.5
           }
         ]

@@ -17,11 +17,11 @@
         },
         "type": "Input",
         "max_flow": {
-          "type": "Constant",
+          "type": "Literal",
           "value": 3.0
         },
         "cost": {
-          "type": "Constant",
+          "type": "Literal",
           "value": 2.0
         }
       },
@@ -35,23 +35,23 @@
           "volume": 1000.0
         },
         "max_volume": {
-          "type": "Constant",
+          "type": "Literal",
           "value": 1000.0
         },
         "steps": [
           {
             "cost": {
-              "type": "Constant",
+              "type": "Literal",
               "value": -15.0
             },
             "control_curve": {
-              "type": "Constant",
+              "type": "Literal",
               "value": 0.25
             }
           },
           {
             "cost": {
-              "type": "Constant",
+              "type": "Literal",
               "value": -5.0
             },
             "control_curve": {
@@ -67,11 +67,11 @@
         },
         "type": "Output",
         "max_flow": {
-          "type": "Constant",
+          "type": "Literal",
           "value": 5.0
         },
         "cost": {
-          "type": "Constant",
+          "type": "Literal",
           "value": -10
         }
       }

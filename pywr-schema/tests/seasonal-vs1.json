@@ -17,7 +17,7 @@
         },
         "type": "Input",
         "max_flow": {
-          "type": "Constant",
+          "type": "Literal",
           "value": 15
         }
       },
@@ -37,7 +37,7 @@
           "name": "demand"
         },
         "cost": {
-          "type": "Constant",
+          "type": "Literal",
           "value": -10
         }
       },
@@ -52,7 +52,7 @@
           }
         ],
         "max_volume": {
-          "type": "Constant",
+          "type": "Literal",
           "value": 300
         },
         "initial_volume": {

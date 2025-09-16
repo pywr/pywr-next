@@ -43,8 +43,8 @@ use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticS
 // This creates a separate enum called `MetricType` that is available in this module.
 #[strum_discriminants(name(MetricType))]
 pub enum Metric {
-    /// A constant floating point value.
-    Constant { value: f64 },
+    /// A literal floating point value.
+    Literal { value: f64 },
     /// A reference to a constant value in a table.
     Table(TableDataRef),
     /// An attribute of a node.
@@ -63,13 +63,13 @@ pub enum Metric {
 
 impl Default for Metric {
     fn default() -> Self {
-        Self::Constant { value: 0.0 }
+        Self::Literal { value: 0.0 }
     }
 }
 
 impl From<f64> for Metric {
     fn from(value: f64) -> Self {
-        Self::Constant { value }
+        Self::Literal { value }
     }
 }
 
@@ -95,7 +95,7 @@ impl Metric {
 
                 parameter_ref.load_f64(network, parent)
             }
-            Self::Constant { value } => Ok((*value).into()),
+            Self::Literal { value } => Ok((*value).into()),
             Self::Table(table_ref) => {
                 let value = args
                     .tables
@@ -136,7 +136,7 @@ impl Metric {
             Self::Node(node_ref) => Ok(node_ref.name.to_string()),
             Self::Parameter(parameter_ref) => Ok(parameter_ref.name.clone()),
             Self::LocalParameter(parameter_ref) => Ok(parameter_ref.name.clone()),
-            Self::Constant { .. } => Err(SchemaError::LiteralConstantOutputNotSupported),
+            Self::Literal { .. } => Err(SchemaError::LiteralConstantOutputNotSupported),
             Self::Table(table_ref) => Ok(table_ref.table.clone()),
             Self::Timeseries(ts_ref) => Ok(ts_ref.name.clone()),
             Self::InterNetworkTransfer { name } => Ok(name.clone()),
@@ -149,7 +149,7 @@ impl Metric {
             Self::Node(node_ref) => node_ref.attribute(args)?.to_string(),
             Self::Parameter(p_ref) => p_ref.key.clone().unwrap_or_else(|| "value".to_string()),
             Self::LocalParameter(p_ref) => p_ref.key.clone().unwrap_or_else(|| "value".to_string()),
-            Self::Constant { .. } => "value".to_string(),
+            Self::Literal { .. } => "value".to_string(),
             Self::Table(tbl_ref) => tbl_ref.key().join(";").to_string(),
             Self::Timeseries(ts_ref) => ts_ref
                 .column()
@@ -170,7 +170,7 @@ impl Metric {
             Self::Node(node_ref) => Some(node_ref.node_type(args)?.to_string()),
             Self::Parameter(parameter_ref) => Some(parameter_ref.parameter_type(args)?.to_string()),
             Self::LocalParameter(parameter_ref) => Some(parameter_ref.parameter_type(args)?.to_string()),
-            Self::Constant { .. } => None,
+            Self::Literal { .. } => None,
             Self::Table(_) => None,
             Self::Timeseries(_) => None,
             Self::InterNetworkTransfer { .. } => None,
@@ -210,7 +210,7 @@ impl TryFromV1<ParameterValueV1> for Metric {
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
         let p = match v1 {
-            ParameterValueV1::Constant(value) => Self::Constant { value },
+            ParameterValueV1::Constant(value) => Self::Literal { value },
             ParameterValueV1::Reference(p_name) => Self::Parameter(ParameterReference {
                 name: p_name,
                 key: None,

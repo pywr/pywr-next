@@ -63,7 +63,7 @@
           "name": "output1"
         },
         "cost": {
-          "type": "Constant",
+          "type": "Literal",
           "value": -10.0
         }
       }
@@ -115,7 +115,7 @@
             }
           },
           {
-            "type": "Constant",
+            "type": "Literal",
             "value": 0.5
           }
         ]

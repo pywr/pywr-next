@@ -17,7 +17,7 @@
         },
         "type": "Input",
         "max_flow": {
-          "type": "Constant",
+          "type": "Literal",
           "value": 15.0
         }
       },
@@ -31,7 +31,7 @@
           "proportion": 0.5
         },
         "max_volume": {
-          "type": "Constant",
+          "type": "Literal",
           "value": 10.0
         }
       },

@@ -17,7 +17,7 @@
         },
         "type": "Catchment",
         "flow": {
-          "type": "Constant",
+          "type": "Literal",
           "value": 5
         }
       },
@@ -43,7 +43,7 @@
           "proportion": 1.0
         },
         "max_volume": {
-          "type": "Constant",
+          "type": "Literal",
           "value": 100.0
         },
         "cost": {
@@ -62,17 +62,17 @@
             },
             "control_curves": [
               {
-                "type": "Constant",
+                "type": "Literal",
                 "value": 0.5
               }
             ],
             "values": [
               {
-                "type": "Constant",
+                "type": "Literal",
                 "value": 0.1
               },
               {
-                "type": "Constant",
+                "type": "Literal",
                 "value": -5
               }
             ]
@@ -85,11 +85,11 @@
         },
         "type": "Output",
         "max_flow": {
-          "type": "Constant",
+          "type": "Literal",
           "value": 3.0
         },
         "cost": {
-          "type": "Constant",
+          "type": "Literal",
           "value": -10.0
         }
       }

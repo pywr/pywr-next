@@ -23,7 +23,7 @@
         },
         "type": "Link",
         "min_flow": {
-          "type": "Constant",
+          "type": "Literal",
           "value": 10.0
         }
       },
@@ -33,7 +33,7 @@
         },
         "type": "Output",
         "cost": {
-          "type": "Constant",
+          "type": "Literal",
           "value": 5
         }
       },
@@ -43,7 +43,7 @@
         },
         "type": "Link",
         "min_flow": {
-          "type": "Constant",
+          "type": "Literal",
           "value": 10.0
         }
       },
@@ -53,7 +53,7 @@
         },
         "type": "Output",
         "cost": {
-          "type": "Constant",
+          "type": "Literal",
           "value": 10
         }
       },

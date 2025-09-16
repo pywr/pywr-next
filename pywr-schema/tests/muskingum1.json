@@ -29,11 +29,11 @@
         "routing_method": {
           "type": "Muskingum",
           "travel_time": {
-            "type": "Constant",
+            "type": "Literal",
             "value": 1.1
           },
           "weight": {
-            "type": "Constant",
+            "type": "Literal",
             "value": 0.25
           },
           "initial_condition": {

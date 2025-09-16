@@ -17,7 +17,7 @@
         },
         "type": "Input",
         "max_flow": {
-          "type": "Constant",
+          "type": "Literal",
           "value": 5
         }
       },
@@ -27,11 +27,11 @@
         },
         "type": "Reservoir",
         "cost": {
-          "type": "Constant",
+          "type": "Literal",
           "value": -0.1
         },
         "max_volume": {
-          "type": "Constant",
+          "type": "Literal",
           "value": 100
         },
         "initial_volume": {
@@ -49,7 +49,7 @@
           "name": "demand"
         },
         "cost": {
-          "type": "Constant",
+          "type": "Literal",
           "value": -10
         }
       },
@@ -59,7 +59,7 @@
         },
         "type": "Input",
         "max_flow": {
-          "type": "Constant",
+          "type": "Literal",
           "value": 5
         }
       },
@@ -69,11 +69,11 @@
         },
         "type": "Reservoir",
         "cost": {
-          "type": "Constant",
+          "type": "Literal",
           "value": -0.1
         },
         "max_volume": {
-          "type": "Constant",
+          "type": "Literal",
           "value": 100
         },
         "initial_volume": {
@@ -91,7 +91,7 @@
           "name": "demand"
         },
         "cost": {
-          "type": "Constant",
+          "type": "Literal",
           "value": -10
         }
       },
@@ -140,17 +140,17 @@
         },
         "control_curves": [
           {
-            "type": "Constant",
+            "type": "Literal",
             "value": 0.475
           }
         ],
         "values": [
           {
-            "type": "Constant",
+            "type": "Literal",
             "value": 10.0
           },
           {
-            "type": "Constant",
+            "type": "Literal",
             "value": 5.0
           }
         ]

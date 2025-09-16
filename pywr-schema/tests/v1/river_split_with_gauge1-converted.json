@@ -17,7 +17,7 @@
         },
         "type": "Catchment",
         "flow": {
-          "type": "Constant",
+          "type": "Literal",
           "value": 100.0
         }
       },
@@ -31,13 +31,13 @@
           "name": "Gauge-p0"
         },
         "mrf_cost": {
-          "type": "Constant",
+          "type": "Literal",
           "value": -1000.0
         },
         "splits": [
           {
             "factor": {
-              "type": "Constant",
+              "type": "Literal",
               "value": 0.25
             },
             "slot_name": "abstraction"
@@ -56,11 +56,11 @@
         },
         "type": "Output",
         "max_flow": {
-          "type": "Constant",
+          "type": "Literal",
           "value": 50.0
         },
         "cost": {
-          "type": "Constant",
+          "type": "Literal",
           "value": -10.0
         }
       }
