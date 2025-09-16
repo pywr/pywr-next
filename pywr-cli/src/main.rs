@@ -361,6 +361,7 @@ fn run(
             let settings = settings_builder.build();
             model.run_multi_scenario::<SimdIpmF64Solver>(&settings)
         }
+        #[cfg(feature = "microlp")]
         Solver::Microlp => {
             let mut settings_builder = MicroLpSolverSettingsBuilder::default();
             if threads > 1 {

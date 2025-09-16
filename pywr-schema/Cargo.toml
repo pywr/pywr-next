@@ -40,7 +40,7 @@ sha2 = { workspace = true }
 hex = { workspace = true }
 
 [dev-dependencies]
-tempfile = "3.21"
+tempfile = "3.22"
 
 [features]
 # Core feature requires additional dependencies
