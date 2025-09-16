@@ -96,27 +96,33 @@
           "name": "storage1-drought-curve"
         },
         "type": "Constant",
-        "value": 0.5
+        "value": {
+          "type": "Literal",
+          "value": 0.5
+        }
       },
       {
         "type": "MonthlyProfile",
         "meta": {
           "name": "storage1-control-curve"
         },
-        "values": [
-          0.75,
-          0.75,
-          0.75,
-          0.5,
-          0.5,
-          0.5,
-          0.3,
-          0.3,
-          0.3,
-          0.5,
-          0.5,
-          0.5
-        ]
+        "values": {
+          "type": "Literal",
+          "values": [
+            0.75,
+            0.75,
+            0.75,
+            0.5,
+            0.5,
+            0.5,
+            0.3,
+            0.3,
+            0.3,
+            0.5,
+            0.5,
+            0.5
+          ]
+        }
       },
       {
         "meta": {

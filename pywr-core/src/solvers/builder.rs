@@ -613,9 +613,14 @@ where
             .iter()
             .zip(network.virtual_storage_nodes().deref())
         {
-            let (avail, missing) = node.get_available_volume_bounds(state)?;
+            let (lb, ub) = if node.is_active(timestep) {
+                let (avail, missing) = node.get_available_volume_bounds(state)?;
+                (-avail / dt, missing / dt)
+            } else {
+                // Node is inactive, so set bounds to be unbounded
+                (self.builder.f64_min, self.builder.f64_max)
+            };
 
-            let (lb, ub) = (-avail / dt, missing / dt);
             self.builder.apply_row_bounds(*row_id, lb, ub);
         }
 

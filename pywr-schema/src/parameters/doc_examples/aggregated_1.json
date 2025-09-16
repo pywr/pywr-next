@@ -3,7 +3,9 @@
     "name": "my-aggregated-value"
   },
   "type": "Aggregated",
-  "agg_func": "Sum",
+  "agg_func": {
+    "type": "Sum"
+  },
   "metrics": [
     {
       "type": "Constant",
@@ -12,7 +14,7 @@
     {
       "type": "Table",
       "table": "demands",
-      "index": "my-node"
+      "row": "my-node"
     },
     {
       "type": "Parameter",

@@ -4,16 +4,16 @@ use crate::SchemaError;
 use crate::network::LoadArgs;
 #[cfg(feature = "core")]
 use pywr_core::{edge::EdgeIndex, metric::MetricF64, node::NodeIndex};
+use pywr_schema_macros::skip_serializing_none;
 use schemars::JsonSchema;
 use std::fmt::{Display, Formatter};
 
+#[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Clone, JsonSchema, Debug, PartialEq)]
 pub struct Edge {
     pub from_node: String,
     pub to_node: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub from_slot: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub to_slot: Option<String>,
 }
 

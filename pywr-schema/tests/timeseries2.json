@@ -82,14 +82,19 @@
           "name": "demand"
         },
         "type": "Constant",
-        "value": 100.0
+        "value": {
+          "type": "Literal",
+          "value": 100.0
+        }
       },
       {
         "meta": {
           "name": "factored_flow"
         },
         "type": "Aggregated",
-        "agg_func": "Product",
+        "agg_func": {
+          "type": "Product"
+        },
         "metrics": [
           {
             "type": "Timeseries",

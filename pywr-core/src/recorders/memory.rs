@@ -1,9 +1,10 @@
+use crate::agg_funcs::AggFuncF64;
 use crate::models::ModelDomain;
 use crate::network::Network;
 use crate::recorders::aggregator::PeriodValue;
 use crate::recorders::{
-    AggregationFunction, MetricSetIndex, MetricSetState, Recorder, RecorderAggregationError, RecorderFinaliseError,
-    RecorderMeta, RecorderSaveError, RecorderSetupError,
+    MetricSetIndex, MetricSetState, Recorder, RecorderAggregationError, RecorderFinaliseError, RecorderMeta,
+    RecorderSaveError, RecorderSetupError,
 };
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
@@ -22,17 +23,13 @@ pub enum AggregationError {
 }
 
 pub struct Aggregation {
-    scenario: Option<AggregationFunction>,
-    time: Option<AggregationFunction>,
-    metric: Option<AggregationFunction>,
+    scenario: Option<AggFuncF64>,
+    time: Option<AggFuncF64>,
+    metric: Option<AggFuncF64>,
 }
 
 impl Aggregation {
-    pub fn new(
-        scenario: Option<AggregationFunction>,
-        time: Option<AggregationFunction>,
-        metric: Option<AggregationFunction>,
-    ) -> Self {
+    pub fn new(scenario: Option<AggFuncF64>, time: Option<AggFuncF64>, metric: Option<AggFuncF64>) -> Self {
         Self { scenario, time, metric }
     }
 
@@ -53,8 +50,7 @@ impl Aggregation {
             self.metric
                 .as_ref()
                 .ok_or(AggregationError::AggregationFunctionNotDefined)?
-                .calc_f64(&values.value)
-                .ok_or(AggregationError::AggregationFunctionFailed)?
+                .calc_iter_f64(&values.value)
         };
 
         Ok(PeriodValue::new(values.start, values.duration, agg_value))
@@ -74,8 +70,7 @@ impl Aggregation {
             self.metric
                 .as_ref()
                 .ok_or(AggregationError::AggregationFunctionNotDefined)?
-                .calc_f64(values)
-                .ok_or(AggregationError::AggregationFunctionFailed)?
+                .calc_iter_f64(values)
         };
 
         Ok(agg_value)
@@ -95,8 +90,7 @@ impl Aggregation {
             self.scenario
                 .as_ref()
                 .ok_or(AggregationError::AggregationFunctionNotDefined)?
-                .calc_f64(values)
-                .ok_or(AggregationError::AggregationFunctionFailed)?
+                .calc_iter_f64(values)
         };
 
         Ok(agg_value)
@@ -329,7 +323,7 @@ impl Recorder for MemoryRecorder {
 #[cfg(test)]
 mod tests {
     use super::{Aggregation, InternalState};
-    use crate::recorders::AggregationFunction;
+    use crate::agg_funcs::AggFuncF64;
     use crate::recorders::aggregator::PeriodValue;
     use crate::test_utils::default_timestepper;
     use crate::timestep::TimeDomain;
@@ -374,9 +368,9 @@ mod tests {
         });
 
         let agg = Aggregation::new(
-            Some(AggregationFunction::Sum),
-            Some(AggregationFunction::CountFunc { func: |v: f64| v > 0.0 }),
-            Some(AggregationFunction::Sum),
+            Some(AggFuncF64::Sum),
+            Some(AggFuncF64::CountFunc { func: |v: f64| v > 0.0 }),
+            Some(AggFuncF64::Sum),
         );
         let agg_value = state.aggregate_metric_time_scenario(&agg).expect("Aggregation failed");
         assert_approx_eq!(f64, agg_value, count_non_zero_max);

@@ -17,6 +17,7 @@ use pyo3::{
 use pywr_core::parameters::ParameterType;
 #[cfg(all(feature = "core", feature = "pyo3"))]
 use pywr_core::parameters::{ParameterName, PyClassParameter, PyFuncParameter};
+use pywr_schema_macros::skip_serializing_none;
 use schemars::JsonSchema;
 #[cfg(all(feature = "core", feature = "pyo3"))]
 use serde_json::Value;
@@ -110,6 +111,7 @@ pub enum PythonReturnType {
 ///
 /// let parameter: Parameter = serde_json::from_str(data).unwrap();
 /// ```
+#[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct PythonParameter {

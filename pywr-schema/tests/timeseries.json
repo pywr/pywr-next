@@ -74,14 +74,19 @@
           "name": "demand"
         },
         "type": "Constant",
-        "value": 100.0
+        "value": {
+          "type": "Literal",
+          "value": 100.0
+        }
       },
       {
         "meta": {
           "name": "factored_flow"
         },
         "type": "Aggregated",
-        "agg_func": "Product",
+        "agg_func": {
+          "type": "Product"
+        },
         "metrics": [
           {
             "type": "Timeseries",
@@ -101,7 +106,11 @@
         },
         "type": "Polars",
         "time_col": "date",
-        "url": "inflow.csv"
+        "url": "inflow.csv",
+        "checksum": {
+          "type": "SHA256",
+          "hash": "fec0c6d3d9ba3b3dfca7fa68dde3a9053b56cf615cb9293d3b9b92a756493b55"
+        }
       }
     ],
     "metric_sets": [

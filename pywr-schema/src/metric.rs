@@ -23,7 +23,7 @@ use pywr_core::{
     parameters::ParameterName,
     recorders::OutputMetric,
 };
-use pywr_schema_macros::PywrVisitAll;
+use pywr_schema_macros::{PywrVisitAll, skip_serializing_none};
 use pywr_v1_schema::parameters::ParameterValue as ParameterValueV1;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -100,9 +100,9 @@ impl Metric {
                 let value = args
                     .tables
                     .get_scalar_f64(table_ref)
-                    .map_err(|error| SchemaError::TableRefLoad {
+                    .map_err(|source| SchemaError::TableRefLoad {
                         table_ref: table_ref.clone(),
-                        error,
+                        source: Box::new(source),
                     })?;
                 Ok(value.into())
             }
@@ -150,8 +150,11 @@ impl Metric {
             Self::Parameter(p_ref) => p_ref.key.clone().unwrap_or_else(|| "value".to_string()),
             Self::LocalParameter(p_ref) => p_ref.key.clone().unwrap_or_else(|| "value".to_string()),
             Self::Constant { .. } => "value".to_string(),
-            Self::Table(_) => "value".to_string(),
-            Self::Timeseries(_) => "value".to_string(),
+            Self::Table(tbl_ref) => tbl_ref.key().join(";").to_string(),
+            Self::Timeseries(ts_ref) => ts_ref
+                .column()
+                .map(|c| c.to_string())
+                .unwrap_or_else(|| "value".to_string()),
             Self::InterNetworkTransfer { .. } => "value".to_string(),
             Self::Edge { .. } => "Flow".to_string(),
         };
@@ -243,6 +246,7 @@ impl TryFromV1<ParameterValueV1> for Metric {
 }
 
 /// A reference to a node with an optional attribute.
+#[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct NodeAttrReference {
@@ -351,6 +355,7 @@ impl From<String> for NodeComponentReference {
     }
 }
 
+#[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct ParameterReference {
@@ -534,9 +539,9 @@ impl IndexMetric {
                 let value = args
                     .tables
                     .get_scalar_u64(table_ref)
-                    .map_err(|error| SchemaError::TableRefLoad {
+                    .map_err(|source| SchemaError::TableRefLoad {
                         table_ref: table_ref.clone(),
-                        error,
+                        source: Box::new(source),
                     })?;
                 Ok(value.into())
             }

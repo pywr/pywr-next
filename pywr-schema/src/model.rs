@@ -22,12 +22,14 @@ use pywr_core::{
     models::{ModelDomain, MultiNetworkModelError},
     timestep::TimestepDuration,
 };
+use pywr_schema_macros::skip_serializing_none;
 use schemars::JsonSchema;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticStr};
 use thiserror::Error;
 
+#[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Clone, JsonSchema)]
 pub struct Metadata {
     pub title: String,
@@ -178,8 +180,8 @@ pub enum ScenarioGroupSubset {
 /// to identify the scenario group. A subset can be defined to simulate only part of the group.
 ///
 /// See also the examples in the [`ScenarioDomain`] documentation.
+#[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Clone, JsonSchema)]
-#[serde(deny_unknown_fields)]
 pub struct ScenarioGroup {
     pub name: String,
     pub size: usize,
@@ -373,6 +375,7 @@ impl From<PywrModelBuildError> for PyErr {
 ///
 ///
 ///
+#[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Clone, JsonSchema)]
 pub struct PywrModel {
     pub metadata: Metadata,
@@ -498,6 +501,7 @@ impl PywrModel {
     }
 }
 
+#[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Clone)]
 pub struct PywrMultiNetworkTransfer {
     pub from_network: String,
@@ -607,6 +611,7 @@ pub enum PywrMultiNetworkModelBuildError {
 ///
 ///
 ///
+#[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Clone)]
 pub struct PywrMultiNetworkModel {
     pub metadata: Metadata,
@@ -895,8 +900,9 @@ mod tests {
 #[cfg(feature = "core")]
 mod core_tests {
     use super::{PywrModel, PywrMultiNetworkModel};
+    use crate::agg_funcs::AggFunc;
     use crate::metric::{Metric, ParameterReference};
-    use crate::parameters::{AggFunc, AggregatedParameter, ConstantParameter, ConstantValue, Parameter, ParameterMeta};
+    use crate::parameters::{AggregatedParameter, ConstantParameter, Parameter, ParameterMeta};
     use ndarray::{Array1, Array2, Axis};
     use pywr_core::{
         metric::MetricF64, recorders::AssertionF64Recorder, solvers::ClpSolver, test_utils::run_all_solvers,
@@ -967,7 +973,7 @@ mod core_tests {
                         name: "p1".to_string(),
                         comment: None,
                     },
-                    value: ConstantValue::Literal(10.0),
+                    value: 10.0.into(),
                     variable: None,
                 }),
                 Parameter::Aggregated(AggregatedParameter {
@@ -1024,7 +1030,7 @@ mod core_tests {
                         name: "p1".to_string(),
                         comment: None,
                     },
-                    value: ConstantValue::Literal(10.0),
+                    value: 10.0.into(),
                     variable: None,
                 }),
                 Parameter::Constant(ConstantParameter {
@@ -1032,7 +1038,7 @@ mod core_tests {
                         name: "p2".to_string(),
                         comment: None,
                     },
-                    value: ConstantValue::Literal(10.0),
+                    value: 10.0.into(),
                     variable: None,
                 }),
             ]);

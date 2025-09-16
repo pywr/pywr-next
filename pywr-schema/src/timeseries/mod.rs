@@ -27,6 +27,7 @@ use pywr_core::{
     models::ModelDomain,
     parameters::{Array1Parameter, Array2Parameter, ParameterIndex, ParameterName},
 };
+use pywr_schema_macros::skip_serializing_none;
 use pywr_v1_schema::parameters::DataFrameParameter as DataFrameParameterV1;
 use schemars::JsonSchema;
 #[cfg(feature = "core")]
@@ -77,6 +78,9 @@ pub enum TimeseriesError {
     #[error("Pywr core network error: {0}")]
     #[cfg(feature = "core")]
     CoreNetworkError(#[from] pywr_core::NetworkError),
+    #[error("Checksum error: {0}")]
+    #[cfg(feature = "core")]
+    ChecksumError(#[from] crate::digest::ChecksumError),
 }
 
 #[cfg(feature = "pyo3")]
@@ -463,6 +467,7 @@ pub enum TimeseriesColumns {
     Column { name: String },
 }
 
+#[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct TimeseriesReference {
@@ -477,6 +482,13 @@ impl TimeseriesReference {
 
     pub fn name(&self) -> &str {
         self.name.as_str()
+    }
+
+    pub fn column(&self) -> Option<&str> {
+        match &self.columns {
+            Some(TimeseriesColumns::Column { name }) => Some(name.as_str()),
+            _ => None,
+        }
     }
 }
 
@@ -523,6 +535,7 @@ impl TryFromV1<DataFrameParameterV1> for ConvertedTimeseriesReference {
                 time_col,
                 url,
                 kwargs: Some(pandas_kwargs),
+                checksum: None, // v1 does not support checksums
             };
 
             // The timeseries data that is extracted

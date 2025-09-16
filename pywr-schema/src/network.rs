@@ -3,7 +3,7 @@ use super::nodes::Node;
 use super::parameters::{Parameter, ParameterOrTimeseriesRef};
 use crate::data_tables::DataTable;
 #[cfg(feature = "core")]
-use crate::data_tables::{LoadedTableCollection, TableLoadError};
+use crate::data_tables::{LoadedTableCollection, TableCollectionLoadError};
 use crate::error::ComponentConversionError;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
@@ -23,6 +23,7 @@ use pyo3::PyErr;
 use pyo3::pyclass;
 #[cfg(feature = "core")]
 use pywr_core::models::ModelDomain;
+use pywr_schema_macros::skip_serializing_none;
 use schemars::JsonSchema;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
@@ -91,7 +92,7 @@ pub enum PywrNetworkBuildError {
         source: Box<SchemaError>,
     },
     #[error("{0}")]
-    TableLoadError(#[from] TableLoadError),
+    TableLoadError(#[from] TableCollectionLoadError),
     #[error("{0}")]
     LoadTimeseriesError(#[from] LoadTimeseriesError),
 }
@@ -125,6 +126,7 @@ pub struct LoadArgs<'a> {
     pub inter_network_transfers: &'a [PywrMultiNetworkTransfer],
 }
 
+#[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, JsonSchema)]
 #[cfg_attr(feature = "pyo3", pyclass)]
 pub struct PywrNetwork {

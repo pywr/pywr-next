@@ -9,7 +9,7 @@ use crate::parameters::{ConversionData, ParameterMeta};
 use crate::v1::{IntoV2, TryFromV1, try_convert_parameter_attr};
 #[cfg(feature = "core")]
 use pywr_core::parameters::{ParameterName, ParameterType};
-use pywr_schema_macros::PywrVisitAll;
+use pywr_schema_macros::{PywrVisitAll, skip_serializing_none};
 use pywr_v1_schema::parameters::{
     MultipleThresholdIndexParameter as MultiThresholdIndexParameterV1,
     MultipleThresholdParameterIndexParameter as MultipleThresholdParameterIndexParameterV1,
@@ -83,6 +83,7 @@ impl From<Predicate> for pywr_core::parameters::Predicate {
 /// ```JSON
 #[doc = include_str!("doc_examples/threshold_returned_values2.json")]
 /// ```
+#[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct ThresholdParameter {
@@ -307,6 +308,7 @@ impl TryFromV1<StorageThresholdParameterV1> for ThresholdParameter {
 /// [`pywr_core::parameters::MultiThresholdParameter`], which is set as the index parameter of a
 /// [`pywr_core::parameters::IndexedArrayParameter`] containing the `returned_metrics`
 /// values.
+#[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct MultiThresholdParameter {

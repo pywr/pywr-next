@@ -15,32 +15,21 @@
         "to_node": "demand1"
       }
     ],
-    "metric_sets": null,
     "nodes": [
       {
-        "cost": null,
         "max_flow": {
-          "key": null,
           "name": "supply1-p0",
           "type": "Parameter"
         },
         "meta": {
           "name": "supply1"
         },
-        "min_flow": null,
-        "parameters": null,
         "type": "Input"
       },
       {
-        "cost": null,
-        "max_flow": null,
         "meta": {
           "name": "link1"
         },
-        "min_flow": null,
-        "parameters": null,
-        "soft_max": null,
-        "soft_min": null,
         "type": "Link"
       },
       {
@@ -49,65 +38,68 @@
           "value": -10.0
         },
         "max_flow": {
-          "key": null,
           "name": "demand1-p0",
           "type": "Parameter"
         },
         "meta": {
           "name": "demand1"
         },
-        "min_flow": null,
-        "parameters": null,
         "type": "Output"
       }
     ],
-    "outputs": null,
     "parameters": [
       {
-        "interp_day": null,
         "meta": {
           "name": "supply1-p0"
         },
         "type": "MonthlyProfile",
-        "values": [
-          10.0,
-          20.0,
-          30.0,
-          40.0,
-          50.0,
-          60.0,
-          70.0,
-          80.0,
-          90.0,
-          100.0,
-          110.0,
-          120.0
-        ]
+        "values": {
+          "type": "Literal",
+          "values": [
+            10.0,
+            20.0,
+            30.0,
+            40.0,
+            50.0,
+            60.0,
+            70.0,
+            80.0,
+            90.0,
+            100.0,
+            110.0,
+            120.0
+          ]
+        }
       },
       {
         "meta": {
           "name": "demand1-p1"
         },
         "type": "Constant",
-        "value": 0.9,
-        "variable": null
+        "value": {
+          "type": "Literal",
+          "value": 0.9
+        }
       },
       {
         "meta": {
           "name": "demand1-p3"
         },
         "type": "Constant",
-        "value": 0.9,
-        "variable": null
+        "value": {
+          "type": "Literal",
+          "value": 0.9
+        }
       },
       {
-        "agg_func": "Product",
+        "agg_func": {
+          "type": "Product"
+        },
         "meta": {
           "name": "demand1-p0"
         },
         "metrics": [
           {
-            "key": null,
             "name": "demand1-p1",
             "type": "Parameter"
           },
@@ -120,7 +112,6 @@
             "type": "Timeseries"
           },
           {
-            "key": null,
             "name": "demand1-p3",
             "type": "Parameter"
           },
@@ -136,7 +127,6 @@
         "type": "Aggregated"
       }
     ],
-    "tables": null,
     "timeseries": [
       {
         "meta": {
@@ -145,7 +135,6 @@
         "kwargs": {
           "dayfirst": true
         },
-        "time_col": null,
         "type": "Pandas",
         "url": "timeseries1.csv"
       },
@@ -156,13 +145,11 @@
         "kwargs": {
           "dayfirst": true
         },
-        "time_col": null,
         "type": "Pandas",
         "url": "timeseries2.csv"
       }
     ]
   },
-  "scenarios": null,
   "timestepper": {
     "end": "2015-12-31",
     "start": "2015-01-01",

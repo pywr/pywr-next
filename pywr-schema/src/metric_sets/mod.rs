@@ -1,3 +1,4 @@
+use crate::agg_funcs::AggFunc;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
 use crate::metric::Metric;
@@ -5,39 +6,11 @@ use crate::metric::Metric;
 use crate::network::LoadArgs;
 #[cfg(feature = "core")]
 use crate::parameters::{Parameter, PythonReturnType};
-use pywr_schema_macros::PywrVisitPaths;
+use pywr_schema_macros::skip_serializing_none;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::num::NonZeroUsize;
 use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticStr};
-
-/// Aggregation function to apply over metric values.
-#[derive(
-    serde::Deserialize, serde::Serialize, Debug, Copy, Clone, JsonSchema, PywrVisitPaths, Display, EnumDiscriminants,
-)]
-#[serde(tag = "type", deny_unknown_fields)]
-#[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
-#[strum_discriminants(name(MetricAggFuncType))]
-pub enum MetricAggFunc {
-    Sum,
-    Max,
-    Min,
-    Mean,
-    CountNonZero,
-}
-
-#[cfg(feature = "core")]
-impl From<MetricAggFunc> for pywr_core::recorders::AggregationFunction {
-    fn from(value: MetricAggFunc) -> Self {
-        match value {
-            MetricAggFunc::Sum => pywr_core::recorders::AggregationFunction::Sum,
-            MetricAggFunc::Max => pywr_core::recorders::AggregationFunction::Max,
-            MetricAggFunc::Min => pywr_core::recorders::AggregationFunction::Min,
-            MetricAggFunc::Mean => pywr_core::recorders::AggregationFunction::Mean,
-            MetricAggFunc::CountNonZero => pywr_core::recorders::AggregationFunction::CountNonZero,
-        }
-    }
-}
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone, JsonSchema, Display, EnumDiscriminants)]
 #[serde(tag = "type", deny_unknown_fields)]
@@ -74,7 +47,7 @@ pub struct MetricAggregator {
     /// Optional aggregation frequency.
     pub freq: Option<MetricAggFrequency>,
     /// Aggregation function to apply over metric values.
-    pub func: MetricAggFunc,
+    pub func: AggFunc,
     /// Optional child aggregator.
     pub child: Option<Box<MetricAggregator>>,
 }
@@ -147,6 +120,7 @@ impl MetricSetFilters {
 ///
 /// Metrics added by the filters will be appended to any metrics specified for the metric attribute,
 /// if they are not a duplication.
+#[skip_serializing_none]
 #[derive(Deserialize, Serialize, Clone, JsonSchema)]
 pub struct MetricSet {
     pub name: String,

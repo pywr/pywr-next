@@ -686,11 +686,11 @@ impl TryFromV1<Box<CoreNodeV1>> for Node {
             CoreNodeV1::AnnualVirtualStorage(n) => Node::VirtualStorage(n.try_into_v2(parent_node, conversion_data)?),
             CoreNodeV1::PiecewiseLink(n) => Node::PiecewiseLink(n.try_into_v2(parent_node, conversion_data)?),
             CoreNodeV1::MultiSplitLink(_) => todo!(),
-            CoreNodeV1::BreakLink(_) => todo!(),
+            CoreNodeV1::BreakLink(n) => Node::Link(n.try_into_v2(parent_node, conversion_data)?),
             CoreNodeV1::Delay(n) => Node::Delay(n.try_into()?),
             CoreNodeV1::RiverSplit(_) => todo!("Conversion of RiverSplit nodes"),
             CoreNodeV1::MonthlyVirtualStorage(n) => Node::VirtualStorage(n.try_into_v2(parent_node, conversion_data)?),
-            CoreNodeV1::SeasonalVirtualStorage(_) => todo!("Conversion of SeasonalVirtualStorage nodes"),
+            CoreNodeV1::SeasonalVirtualStorage(n) => Node::VirtualStorage(n.try_into_v2(parent_node, conversion_data)?),
             CoreNodeV1::RollingVirtualStorage(n) => Node::VirtualStorage(n.try_into_v2(parent_node, conversion_data)?),
         };
 

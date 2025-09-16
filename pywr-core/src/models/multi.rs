@@ -14,7 +14,6 @@ use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::num::NonZeroUsize;
 use std::ops::Deref;
-use std::time::Instant;
 use thiserror::Error;
 use tracing::info;
 
@@ -383,19 +382,22 @@ impl MultiNetworkModel {
                 .step(timestep, scenario_indices, sub_model_solvers, sub_model_states, timing)
                 .unwrap();
 
-            let start_r_save = Instant::now();
-
             let sub_model_recorder_states = state.recorder_states.get_mut(idx).unwrap();
 
             entry
                 .network
-                .save_recorders(timestep, scenario_indices, sub_model_states, sub_model_recorder_states)
+                .save_recorders(
+                    timestep,
+                    scenario_indices,
+                    sub_model_states,
+                    sub_model_recorder_states,
+                    timing,
+                )
                 .map_err(|source| MultiNetworkModelStepError::RecorderSaveError {
                     network: entry.name.clone(),
                     timestep: *timestep,
                     source: Box::new(source),
                 })?;
-            timing.recorder_saving += start_r_save.elapsed();
         }
 
         // Finally increment the time-step index
@@ -434,19 +436,22 @@ impl MultiNetworkModel {
                 .step_multi_scenario(timestep, scenario_indices, sub_model_solvers, sub_model_states, timing)
                 .unwrap();
 
-            let start_r_save = Instant::now();
-
             let sub_model_recorder_states = state.recorder_states.get_mut(idx).unwrap();
 
             entry
                 .network
-                .save_recorders(timestep, scenario_indices, sub_model_states, sub_model_recorder_states)
+                .save_recorders(
+                    timestep,
+                    scenario_indices,
+                    sub_model_states,
+                    sub_model_recorder_states,
+                    timing,
+                )
                 .map_err(|source| MultiNetworkModelStepError::RecorderSaveError {
                     network: entry.name.clone(),
                     timestep: *timestep,
                     source: Box::new(source),
                 })?;
-            timing.recorder_saving += start_r_save.elapsed();
         }
 
         // Finally increment the time-step index
@@ -536,7 +541,11 @@ impl MultiNetworkModel {
     {
         let run_duration = RunDuration::start();
         // Create a timer for each network
-        let mut timings: Vec<_> = (0..self.networks.len()).map(|_| NetworkTimings::default()).collect();
+        let mut timings: Vec<_> = self
+            .networks
+            .iter()
+            .map(|n| NetworkTimings::new_with_component_timings(&n.network))
+            .collect();
         let mut count = 0;
 
         // TODO: Setup thread pool if running in parallel
@@ -587,7 +596,11 @@ impl MultiNetworkModel {
     {
         let run_duration = RunDuration::start();
         // Create a timer for each network
-        let mut timings: Vec<_> = (0..self.networks.len()).map(|_| NetworkTimings::default()).collect();
+        let mut timings: Vec<_> = self
+            .networks
+            .iter()
+            .map(|n| NetworkTimings::new_with_component_timings(&n.network))
+            .collect();
         let mut count = 0;
 
         // TODO: Setup thread pool if running in parallel
@@ -695,7 +708,7 @@ fn compute_inter_network_transfers(
 mod tests {
     use super::MultiNetworkModel;
     use crate::models::ModelDomain;
-    use crate::network::Network;
+    use crate::network::{Network, NetworkTimings};
     use crate::scenario::{ScenarioDomainBuilder, ScenarioGroupBuilder};
     use crate::solvers::ClpSolver;
     use crate::test_utils::{default_timestepper, simple_network};
@@ -731,7 +744,11 @@ mod tests {
             .setup::<ClpSolver>(&Default::default())
             .expect("Failed to setup multi1-model.");
 
-        let mut timings: Vec<_> = (0..multi_model.networks.len()).map(|_| Default::default()).collect();
+        let mut timings: Vec<_> = multi_model
+            .networks
+            .iter()
+            .map(|n| NetworkTimings::new_with_component_timings(&n.network))
+            .collect();
 
         multi_model
             .step(&mut state, &mut timings)
