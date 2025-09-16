@@ -32,6 +32,7 @@ chrono = { workspace = true }
 # We are only need polars for date/time parsing.
 polars = { workspace = true, features = ["temporal"] }
 pyo3 = { workspace = true, features = ["chrono", "macros"], optional = true }
+pyo3-polars = { workspace = true, optional = true }
 rayon = "1.11"
 ocl = { version = "0.19", optional = true }
 rand = { workspace = true }
@@ -52,7 +53,7 @@ highs = ["dep:highs-sys"]
 ipm-ocl = ["dep:ipm-ocl", "dep:ocl"]
 ipm-simd = ["dep:ipm-simd", "dep:wide"]
 microlp = ["dep:microlp"]
-pyo3 = ["dep:pyo3"]
+pyo3 = ["dep:pyo3", "dep:pyo3-polars"]
 
 # File formats
 hdf5 = ["dep:hdf5-metno"]

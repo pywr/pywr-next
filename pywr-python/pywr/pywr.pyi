@@ -1,6 +1,8 @@
 from datetime import datetime
 from os import PathLike
 from typing import Optional, List
+import polars as pl
+
 
 class ParameterInfo:
     """Provides data for a custom Pywr parameter.
@@ -30,6 +32,7 @@ class ParameterInfo:
         Args:
             name: The name of the component to retrieve the index for.
         """
+
 
 class Timestep:
     """Represents a single time-step in a simulation.
@@ -93,6 +96,7 @@ class Timestep:
     def is_leap_year(self) -> bool:
         """Returns true if the year of the timestep is a leap year."""
 
+
 class ScenarioIndex:
     """Represents a scenario index in a Pywr model.
 
@@ -106,6 +110,7 @@ class ScenarioIndex:
     @property
     def simulation_indices(self) -> List[int]:
         """Returns indices for each scenario group for this simulation."""
+
 
 class Schema:
     @classmethod
@@ -128,9 +133,10 @@ class Schema:
         """Serialize the schema to a JSON string."""
 
     def build(
-        self, data_path: Optional[PathLike], output_path: Optional[PathLike]
+            self, data_path: Optional[PathLike], output_path: Optional[PathLike]
     ) -> "Model":
         """Build the schema in to a Pywr model."""
+
 
 class Model:
     def run(self, solver_name: str, solver_kwargs: Optional[dict] = None):
@@ -141,9 +147,50 @@ class Model:
             solver_kwargs: Optional keyword arguments to pass to the solver.
         """
 
+
+class ModelResult:
+
+    @property
+    def network_result(self) -> "NetworkResult":
+        """Returns the network result object."""
+
+
+class MultiNetworkModelResult:
+
+    def network_results(self, name: str) -> "NetworkResult":
+        """Get the network result for a specific network by name.
+
+        Args:
+            name: The name of the network to retrieve the results for.
+        """
+
+
+class NetworkResult:
+    def aggregated_value(self, name: str) -> float:
+        """Get the aggregated value of a recorder by name, if it exists and can be aggregated.
+
+        Args:
+            name: The name of the output to retrieve.
+        """
+
+    def to_dataframe(self, name: str) -> pl.DataFrame:
+        """Get the output of a recorder by name as a polars DataFrame.
+
+        Args:
+            name: The name of the output to retrieve.
+        """
+
+
 class Metric: ...
+
+
 class ComponentConversionError: ...
+
+
 class ConversionError: ...
 
+
 def convert_model_from_v1_json_string(data: str): ...
+
+
 def convert_metric_from_v1_json_string(data: str): ...

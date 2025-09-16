@@ -3146,6 +3146,7 @@ dependencies = [
  "ocl",
  "polars",
  "pyo3",
+ "pyo3-polars",
  "rand 0.9.2",
  "rand_chacha",
  "rand_distr",

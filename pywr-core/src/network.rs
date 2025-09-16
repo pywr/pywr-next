@@ -11,8 +11,8 @@ use crate::parameters::{
     ParameterCollectionSimpleCalculationError, ParameterIndex, ParameterName, ParameterStates, VariableConfig,
 };
 use crate::recorders::{
-    MetricSet, MetricSetIndex, MetricSetSaveError, MetricSetState, RecorderAggregationError, RecorderFinaliseError,
-    RecorderSaveError, RecorderSetupError,
+    MetricSet, MetricSetIndex, MetricSetSaveError, MetricSetState, RecorderAggregationError, RecorderFinalResult,
+    RecorderFinaliseError, RecorderInternalState, RecorderSaveError, RecorderSetupError,
 };
 use crate::scenario::ScenarioIndex;
 use crate::solvers::{
@@ -24,11 +24,15 @@ use crate::virtual_storage::{
     VirtualStorage, VirtualStorageBuilder, VirtualStorageError, VirtualStorageIndex, VirtualStorageVec,
 };
 use crate::{NodeIndex, RecorderIndex, parameters, recorders};
+#[cfg(feature = "pyo3")]
+use pyo3::{PyResult, exceptions::PyKeyError, pyclass, pymethods};
+#[cfg(feature = "pyo3")]
+use pyo3_polars::PyDataFrame;
 use rayon::prelude::*;
-use std::any::Any;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::ops::Deref;
 use std::slice::{Iter, IterMut};
+use std::sync::Arc;
 use std::time::Duration;
 use std::time::Instant;
 use thiserror::Error;
@@ -541,6 +545,48 @@ pub enum NetworkRecorderAggregationError {
     },
 }
 
+/// The results of a model run.
+///
+/// Only recorders which produced a result will be present.
+#[cfg_attr(feature = "pyo3", pyclass)]
+#[derive(Clone)]
+pub struct NetworkResult {
+    results: Arc<HashMap<String, Box<dyn RecorderFinalResult>>>,
+}
+
+impl NetworkResult {
+    /// Get the results of a recorder by name.
+    pub fn get(&self, name: &str) -> Option<&dyn RecorderFinalResult> {
+        self.results.get(name).map(|r| r.as_ref())
+    }
+
+    /// Get the aggregated value of a recorder by name, if it exists and can be aggregated.
+    pub fn get_aggregated_value(&self, name: &str) -> Option<f64> {
+        self.results.get(name).and_then(|r| r.aggregated_value().ok())
+    }
+}
+
+#[cfg_attr(feature = "pyo3", pymethods)]
+impl NetworkResult {
+    /// Get the aggregated value of a recorder by name, if it exists and can be aggregated.
+    #[pyo3(name = "aggregated_value")]
+    pub fn get_aggregated_value_py(&self, name: &str) -> PyResult<f64> {
+        self.results
+            .get(name)
+            .ok_or_else(|| PyKeyError::new_err(format!("Output `{}` not found in results", name)))
+            .and_then(|r| r.aggregated_value().map_err(|e| e.into()))
+    }
+
+    /// Return an output as a dataframe.
+    pub fn to_dataframe(&self, name: &str) -> PyResult<PyDataFrame> {
+        self.results
+            .get(name)
+            .ok_or_else(|| PyKeyError::new_err(format!("Output `{}` not found in results", name)))
+            .and_then(|r| r.to_dataframe().map_err(|e| e.into()))
+            .map(PyDataFrame)
+    }
+}
+
 /// A Pywr network containing nodes, edges, parameters, metric sets, etc.
 ///
 /// This struct is the main entry point for constructing a Pywr network and should be used
@@ -634,7 +680,7 @@ impl Network {
     pub fn setup_recorders(
         &self,
         domain: &ModelDomain,
-    ) -> Result<Vec<Option<Box<dyn Any>>>, NetworkRecorderSetupError> {
+    ) -> Result<Vec<Option<Box<dyn RecorderInternalState>>>, NetworkRecorderSetupError> {
         // Setup recorders
         let mut recorder_internal_states = Vec::new();
         for recorder in &self.recorders {
@@ -711,12 +757,18 @@ impl Network {
         Ok(S::setup(self, scenario_indices.len(), settings)?)
     }
 
+    /// Finalise the run of the network, performing any final calculations and returning
+    /// the results from the recorders.
+    ///
+    /// This method consumes the recorder internal states as they are no longer needed.
+    ///
+    /// Only recorders which produce a final result will be included in the returned HashMap.
     pub fn finalise(
         &self,
         scenario_indices: &[ScenarioIndex],
         metric_set_states: &mut [Vec<MetricSetState>],
-        recorder_internal_states: &mut [Option<Box<dyn Any>>],
-    ) -> Result<(), NetworkFinaliseError> {
+        recorder_internal_states: Vec<Option<Box<dyn RecorderInternalState>>>,
+    ) -> Result<NetworkResult, NetworkFinaliseError> {
         // Finally, save new data to the metric set
 
         for ms_states in metric_set_states.iter_mut() {
@@ -725,17 +777,30 @@ impl Network {
             }
         }
 
-        // Setup recorders
-        for (recorder, internal_state) in self.recorders.iter().zip(recorder_internal_states) {
-            recorder
-                .finalise(self, scenario_indices, metric_set_states, internal_state)
-                .map_err(|source| NetworkRecorderFinaliseError {
-                    name: recorder.name().to_string(),
-                    source,
-                })?;
-        }
+        // Finalise recorders and return results
+        let recorder_results = self
+            .recorders
+            .iter()
+            .zip(recorder_internal_states.into_iter())
+            .filter_map(|(recorder, internal_state)| {
+                let result = recorder
+                    .finalise(self, scenario_indices, metric_set_states, internal_state)
+                    .map_err(|source| NetworkRecorderFinaliseError {
+                        name: recorder.name().to_string(),
+                        source,
+                    });
 
-        Ok(())
+                match result {
+                    Err(e) => Some(Err(e)),
+                    Ok(None) => None, // No final result
+                    Ok(Some(r)) => Some(Ok((recorder.name().to_string(), r))),
+                }
+            })
+            .collect::<Result<HashMap<_, _>, _>>()?;
+
+        Ok(NetworkResult {
+            results: Arc::new(recorder_results),
+        })
     }
 
     /// Perform a single timestep mutating the current state.
@@ -1260,7 +1325,7 @@ impl Network {
         timestep: &Timestep,
         scenario_indices: &[ScenarioIndex],
         state: &NetworkState,
-        recorder_internal_states: &mut [Option<Box<dyn Any>>],
+        recorder_internal_states: &mut [Option<Box<dyn RecorderInternalState>>],
         timings: &mut NetworkTimings,
     ) -> Result<(), NetworkRecorderSaveError> {
         let start = Instant::now();
@@ -1706,22 +1771,6 @@ impl Network {
             .iter()
             .position(|r| r.name() == name)
             .map(RecorderIndex::new)
-    }
-
-    pub fn get_aggregated_value(
-        &self,
-        name: &str,
-        recorder_states: &[Option<Box<dyn Any>>],
-    ) -> Result<f64, NetworkRecorderAggregationError> {
-        match self.recorders.iter().enumerate().find(|(_, r)| r.name() == name) {
-            Some((idx, recorder)) => recorder.aggregated_value(&recorder_states[idx]).map_err(|source| {
-                NetworkRecorderAggregationError::AggregationError {
-                    name: recorder.name().to_string(),
-                    source,
-                }
-            }),
-            None => Err(NetworkRecorderAggregationError::NotFound { name: name.to_string() }),
-        }
     }
 
     /// Add a new Node::Input to the network.

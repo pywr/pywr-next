@@ -488,7 +488,7 @@ impl ParameterStates {
 
 /// Helper function to downcast to internal parameter state and print a helpful panic
 /// message if this fails.
-pub fn downcast_internal_state_mut<T: 'static>(internal_state: &mut Option<Box<dyn ParameterState>>) -> &mut T {
+fn downcast_internal_state_mut<T: 'static>(internal_state: &mut Option<Box<dyn ParameterState>>) -> &mut T {
     // Downcast the internal state to the correct type
     match internal_state {
         Some(internal) => match internal.as_mut().as_any_mut().downcast_mut::<T>() {
@@ -501,7 +501,7 @@ pub fn downcast_internal_state_mut<T: 'static>(internal_state: &mut Option<Box<d
 
 /// Helper function to downcast to internal parameter state and print a helpful panic
 /// message if this fails.
-pub fn downcast_internal_state_ref<T: 'static>(internal_state: &Option<Box<dyn ParameterState>>) -> &T {
+fn downcast_internal_state_ref<T: 'static>(internal_state: &Option<Box<dyn ParameterState>>) -> &T {
     // Downcast the internal state to the correct type
     match internal_state {
         Some(internal) => match internal.as_ref().as_any().downcast_ref::<T>() {

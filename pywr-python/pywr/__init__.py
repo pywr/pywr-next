@@ -4,6 +4,7 @@ from typing import Optional
 from .pywr import (
     Schema,
     Model,
+    ModelResult,
     Timestep,
     ScenarioIndex,
     ParameterInfo,
@@ -17,6 +18,7 @@ from .pywr import (
 __all__ = [
     "Schema",
     "Model",
+    "ModelResult",
     "Timestep",
     "ScenarioIndex",
     "ParameterInfo",
@@ -30,10 +32,10 @@ __all__ = [
 
 
 def run_from_path(
-    filename: Path,
-    data_path: Optional[Path] = None,
-    output_path: Optional[Path] = None,
-    solver: str = "clp",
+        filename: Path,
+        data_path: Optional[Path] = None,
+        output_path: Optional[Path] = None,
+        solver: str = "clp",
 ):
     """Load and run a Pywr model from a file path.
 
