@@ -251,28 +251,10 @@ impl VirtualStorageNode {
         Ok(indices)
     }
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network, args: &LoadArgs) -> Result<(), SchemaError> {
-        let cost = match &self.cost {
-            Some(v) => v.load(network, args, Some(&self.meta.name))?.into(),
-            None => None,
-        };
-
-        let min_volume = match &self.min_volume {
-            Some(v) => Some(v.load(network, args, Some(&self.meta.name))?.try_into()?),
-            None => None,
-        };
-
-        let max_volume = match &self.max_volume {
-            Some(v) => Some(v.load(network, args, Some(&self.meta.name))?.try_into()?),
-            None => None,
-        };
-
         let node_idxs = self.node_indices_for_flow_constraints(network, args)?;
 
-        let mut builder = VirtualStorageBuilder::new(self.meta.name.as_str(), &node_idxs)
-            .initial_volume(self.initial_volume.into())
-            .min_volume(min_volume)
-            .max_volume(max_volume)
-            .cost(cost);
+        let mut builder =
+            VirtualStorageBuilder::new(self.meta.name.as_str(), &node_idxs).initial_volume(self.initial_volume.into());
 
         if let Some(r) = self.reset.clone() {
             let reset = r.try_into()?;
@@ -313,6 +295,30 @@ impl VirtualStorageNode {
         network.add_virtual_storage_node(builder)?;
         Ok(())
     }
+
+    pub fn set_constraints(
+        &self,
+        network: &mut pywr_core::network::Network,
+        args: &LoadArgs,
+    ) -> Result<(), SchemaError> {
+        if let Some(cost) = &self.cost {
+            let value = cost.load(network, args, Some(&self.meta.name))?;
+            network.set_node_cost(self.meta.name.as_str(), None, value.into())?;
+        }
+
+        if let Some(min_volume) = &self.min_volume {
+            let value = min_volume.load(network, args, Some(&self.meta.name))?;
+            network.set_node_min_volume(self.meta.name.as_str(), None, Some(value.try_into()?))?;
+        }
+
+        if let Some(max_volume) = &self.max_volume {
+            let value = max_volume.load(network, args, Some(&self.meta.name))?;
+            network.set_node_max_volume(self.meta.name.as_str(), None, Some(value.try_into()?))?;
+        }
+
+        Ok(())
+    }
+
     pub fn create_metric(
         &self,
         network: &mut pywr_core::network::Network,
