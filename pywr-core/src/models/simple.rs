@@ -99,7 +99,7 @@ pub struct ModelResult {
 
 impl ModelResult {
     /// Get a reference to the results map.
-    pub fn network_results(&self) -> &NetworkResult {
+    pub fn network_result(&self) -> &NetworkResult {
         &self.network_result
     }
 }
@@ -108,8 +108,8 @@ impl ModelResult {
 #[pymethods]
 impl ModelResult {
     #[getter]
-    #[pyo3(name = "network_results")]
-    pub fn network_results_py(&self) -> NetworkResult {
+    #[pyo3(name = "network_result")]
+    pub fn network_result_py(&self) -> NetworkResult {
         self.network_result.clone()
     }
 }
