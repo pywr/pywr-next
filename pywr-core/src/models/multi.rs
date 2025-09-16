@@ -155,7 +155,6 @@ pub enum MultiNetworkModelError {
 #[cfg_attr(feature = "pyo3", pyclass)]
 #[derive(Clone)]
 pub struct MultiNetworkModelResult {
-    #[pyo3(get)]
     network_results: HashMap<String, NetworkResult>,
 }
 
@@ -165,7 +164,8 @@ impl MultiNetworkModelResult {
     }
 }
 
-#[cfg_attr(feature = "pyo3", pymethods)]
+#[cfg(feature = "pyo3")]
+#[pymethods]
 impl MultiNetworkModelResult {
     /// Get a reference to the results map.
     #[pyo3(name = "network_results")]

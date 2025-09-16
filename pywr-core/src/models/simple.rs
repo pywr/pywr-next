@@ -7,7 +7,7 @@ use crate::recorders::RecorderInternalState;
 use crate::solvers::{MultiStateSolver, Solver, SolverFeatures, SolverSettings};
 use crate::timestep::Timestep;
 #[cfg(feature = "pyo3")]
-use pyo3::{PyErr, exceptions::PyRuntimeError, pyclass};
+use pyo3::{PyErr, exceptions::PyRuntimeError, pyclass, pymethods};
 use rayon::ThreadPool;
 use std::collections::HashSet;
 use thiserror::Error;
@@ -94,7 +94,6 @@ impl From<ModelRunError> for PyErr {
 #[cfg_attr(feature = "pyo3", pyclass)]
 #[derive(Clone)]
 pub struct ModelResult {
-    #[pyo3(get)]
     network_result: NetworkResult,
 }
 
@@ -102,6 +101,16 @@ impl ModelResult {
     /// Get a reference to the results map.
     pub fn network_results(&self) -> &NetworkResult {
         &self.network_result
+    }
+}
+
+#[cfg(feature = "pyo3")]
+#[pymethods]
+impl ModelResult {
+    #[getter]
+    #[pyo3(name = "network_results")]
+    pub fn network_results_py(&self) -> NetworkResult {
+        self.network_result.clone()
     }
 }
 

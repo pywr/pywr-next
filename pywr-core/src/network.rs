@@ -566,7 +566,8 @@ impl NetworkResult {
     }
 }
 
-#[cfg_attr(feature = "pyo3", pymethods)]
+#[cfg(feature = "pyo3")]
+#[pymethods]
 impl NetworkResult {
     /// Get the aggregated value of a recorder by name, if it exists and can be aggregated.
     #[pyo3(name = "aggregated_value")]
