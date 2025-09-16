@@ -107,7 +107,7 @@ mod tests {
         let result = model.run::<ClpSolver>(&ClpSolverSettings::default()).unwrap();
 
         let result = result
-            .network_results()
+            .network_result()
             .get("outputs")
             .expect("`outputs` not found")
             .aggregated_value()
