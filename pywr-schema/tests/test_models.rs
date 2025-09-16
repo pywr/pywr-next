@@ -96,6 +96,7 @@ model_tests! {
     test_vs_wtw2: ("vs-with-wtw2.json", vec![("vs-with-wtw2-expected.csv", ResultsShape::Long)], vec!["ipm-simd", "ipm-ocl"], vec![]),
     test_abstraction1: ("abstraction1.json", vec![("abstraction1-expected.csv", ResultsShape::Long)], vec!["ipm-simd", "ipm-ocl"], vec![]),
     test_abstraction2: ("abstraction2.json", vec![("abstraction2-expected.csv", ResultsShape::Long)], vec!["ipm-simd", "ipm-ocl"], vec![]),
+    test_reservoir_failure_levels1: ("reservoir-failure-levels1.json", vec![("reservoir-failure-levels1-expected.csv", ResultsShape::Long)], vec![], vec![]),
 }
 
 /// Test Pandas backend for reading timeseries data.
