@@ -51,7 +51,11 @@ def test_simple_timeseries(model_dir: Path, tmpdir: Path):
     assert mean_flows.shape[0] == 3
 
     expected_mean_flows = pl.DataFrame(
-        {"name": ["input1", "link1", "output1"], "value": [8.520548, 8.520548, 8.520548]})
+        {
+            "name": ["input1", "link1", "output1"],
+            "value": [8.520548, 8.520548, 8.520548],
+        }
+    )
 
     assert_frame_equal(mean_flows, expected_mean_flows)
 
