@@ -29,7 +29,7 @@
         },
         "type": "Link",
         "max_flow": {
-          "type": "Constant",
+          "type": "Literal",
           "value": 2.0
         }
       },
@@ -39,7 +39,7 @@
         },
         "type": "Link",
         "cost": {
-          "type": "Constant",
+          "type": "Literal",
           "value": 1.0
         }
       },
@@ -57,7 +57,7 @@
           }
         ],
         "max_flow": {
-          "type": "Constant",
+          "type": "Literal",
           "value": 5.0
         }
       },
@@ -67,7 +67,7 @@
         },
         "type": "Output",
         "cost": {
-          "type": "Constant",
+          "type": "Literal",
           "value": -10.0
         },
         "max_flow": {
