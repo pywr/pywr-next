@@ -87,7 +87,7 @@ impl TryInto<RollingParameter<SimpleMetricU64, u64, AggFuncU64>> for &RollingPar
             window_size: self.window_size,
             initial_value: self.initial_value,
             min_values: self.min_values,
-            agg_func: self.agg_func,
+            agg_func: self.agg_func.clone(),
         })
     }
 }
@@ -148,7 +148,7 @@ impl GeneralParameter<f64> for RollingParameter<MetricF64, f64, AggFuncF64> {
             // Not enough values collected yet, return the initial value
             Ok(self.initial_value)
         } else {
-            Ok(self.agg_func.calc_iter_f64(memory))
+            Ok(self.agg_func.calc_iter_f64(memory)?)
         }
     }
 
@@ -207,7 +207,7 @@ impl SimpleParameter<f64> for RollingParameter<SimpleMetricF64, f64, AggFuncF64>
             // Not enough values collected yet, return the initial value
             Ok(self.initial_value)
         } else {
-            Ok(self.agg_func.calc_iter_f64(memory))
+            Ok(self.agg_func.calc_iter_f64(memory)?)
         }
     }
 
@@ -257,7 +257,7 @@ impl GeneralParameter<u64> for RollingParameter<MetricU64, u64, AggFuncU64> {
             // Not enough values collected yet, return the initial value
             Ok(self.initial_value)
         } else {
-            Ok(aggregate_u64_memory(memory, &self.agg_func))
+            Ok(self.agg_func.calc_iter_u64(memory.iter())?)
         }
     }
 
@@ -316,7 +316,7 @@ impl SimpleParameter<u64> for RollingParameter<SimpleMetricU64, u64, AggFuncU64>
             // Not enough values collected yet, return the initial value
             Ok(self.initial_value)
         } else {
-            Ok(aggregate_u64_memory(memory, &self.agg_func))
+            Ok(self.agg_func.calc_iter_u64(memory.iter())?)
         }
     }
 
@@ -347,30 +347,6 @@ impl SimpleParameter<u64> for RollingParameter<SimpleMetricU64, u64, AggFuncU64>
         Self: Sized,
     {
         self
-    }
-}
-
-/// Aggregates the values in the memory using the specified aggregation function.
-fn aggregate_u64_memory(memory: &VecDeque<u64>, agg_func: &AggFuncU64) -> u64 {
-    match agg_func {
-        AggFuncU64::Sum => memory.iter().sum(),
-        AggFuncU64::Max => *memory.iter().max_by(|a, b| a.cmp(b)).unwrap_or(&u64::MIN),
-        AggFuncU64::Min => *memory.iter().min_by(|a, b| a.cmp(b)).unwrap_or(&u64::MAX),
-        AggFuncU64::Any => {
-            if memory.iter().any(|&x| x > 0) {
-                1
-            } else {
-                0
-            }
-        }
-        AggFuncU64::All => {
-            if memory.iter().all(|&x| x > 0) {
-                1
-            } else {
-                0
-            }
-        }
-        AggFuncU64::Product => memory.iter().product(),
     }
 }
 
@@ -437,29 +413,5 @@ mod tests {
         let expected_values: Array2<u64> = expected_values.insert_axis(Axis(1));
 
         run_and_assert_parameter_u64(&mut model, Box::new(parameter), expected_values);
-    }
-
-    #[test]
-    fn test_aggregate_u64_memory() {
-        let memory: VecDeque<u64> = vec![1, 2, 3, 4].into();
-
-        assert_eq!(aggregate_u64_memory(&memory, &AggFuncU64::Sum), 10);
-        assert_eq!(aggregate_u64_memory(&memory, &AggFuncU64::Max), 4);
-        assert_eq!(aggregate_u64_memory(&memory, &AggFuncU64::Min), 1);
-        assert_eq!(aggregate_u64_memory(&memory, &AggFuncU64::Any), 1); // Non-zero values exist
-        assert_eq!(aggregate_u64_memory(&memory, &AggFuncU64::All), 1); // All values are non-zero
-        assert_eq!(aggregate_u64_memory(&memory, &AggFuncU64::Product), 24);
-    }
-
-    #[test]
-    fn test_aggregate_u64_memory_empty() {
-        let memory: VecDeque<u64> = VecDeque::new();
-
-        assert_eq!(aggregate_u64_memory(&memory, &AggFuncU64::Sum), 0);
-        assert_eq!(aggregate_u64_memory(&memory, &AggFuncU64::Max), u64::MIN);
-        assert_eq!(aggregate_u64_memory(&memory, &AggFuncU64::Min), u64::MAX);
-        assert_eq!(aggregate_u64_memory(&memory, &AggFuncU64::Any), 0); // No non-zero values
-        assert_eq!(aggregate_u64_memory(&memory, &AggFuncU64::All), 1); // No values, so all are non-zero by default
-        assert_eq!(aggregate_u64_memory(&memory, &AggFuncU64::Product), 1); // Product of empty set is 1
     }
 }

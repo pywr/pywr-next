@@ -1,49 +1,55 @@
-#[cfg(all(feature = "core", feature = "pyo3"))]
-use crate::data_tables::make_path;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
 use crate::metric::{IndexMetric, Metric};
 #[cfg(feature = "core")]
 use crate::network::LoadArgs;
 use crate::parameters::{DynamicFloatValueType, ParameterMeta};
+use crate::py_utils::PythonSource;
+#[cfg(all(feature = "core", feature = "pyo3"))]
+use crate::py_utils::{try_load_optional_py_args, try_load_optional_py_kwargs};
 use crate::visit::{VisitMetrics, VisitPaths};
 #[cfg(all(feature = "core", feature = "pyo3"))]
 use pyo3::{
-    IntoPyObjectExt, PyErr, PyObject, Python,
-    prelude::{IntoPyObject, Py, PyAny, PyAnyMethods, PyModule},
-    types::{PyDict, PyString, PyTuple},
+    Bound, Python,
+    prelude::{Py, PyAny, PyAnyMethods, PyModule},
 };
 #[cfg(feature = "core")]
 use pywr_core::parameters::ParameterType;
 #[cfg(all(feature = "core", feature = "pyo3"))]
 use pywr_core::parameters::{ParameterName, PyClassParameter, PyFuncParameter};
-use pywr_schema_macros::skip_serializing_none;
+use pywr_schema_macros::{PywrVisitAll, skip_serializing_none};
 use schemars::JsonSchema;
-#[cfg(all(feature = "core", feature = "pyo3"))]
 use serde_json::Value;
 use std::collections::HashMap;
-#[cfg(all(feature = "core", feature = "pyo3"))]
-use std::ffi::CString;
 use std::path::{Path, PathBuf};
 use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticStr};
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, Display, EnumDiscriminants)]
-#[serde(tag = "type", deny_unknown_fields)]
-#[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
-#[strum_discriminants(name(PythonSourceType))]
-pub enum PythonSource {
-    Module { module: String },
-    Path { path: PathBuf },
-}
-
 /// The type of Python object that is expected to be used in the parameter.
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, Display, EnumDiscriminants)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, Display, EnumDiscriminants, PywrVisitAll)]
 #[serde(tag = "type", deny_unknown_fields)]
 #[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
 #[strum_discriminants(name(PythonObjectType))]
 pub enum PythonObject {
     Class { class: String },
     Function { function: String },
+}
+
+#[cfg(all(feature = "core", feature = "pyo3"))]
+impl PythonObject {
+    fn load_object(&self, module: &Bound<PyModule>) -> Result<PyObj, SchemaError> {
+        let obj = match &self {
+            PythonObject::Class { class } => {
+                let obj = module.getattr(class)?;
+                PyObj::Class(obj.unbind())
+            }
+            PythonObject::Function { function } => {
+                let func = module.getattr(function)?;
+                PyObj::Function(func.unbind())
+            }
+        };
+
+        Ok(obj)
+    }
 }
 
 #[cfg(all(feature = "core", feature = "pyo3"))]
@@ -124,48 +130,15 @@ pub struct PythonParameter {
     #[serde(default)]
     pub return_type: PythonReturnType,
     /// Position arguments to pass to the object during setup.
-    pub args: Vec<serde_json::Value>,
+    pub args: Option<Vec<Value>>,
     /// Keyword arguments to pass to the object during setup.
-    pub kwargs: HashMap<String, serde_json::Value>,
+    pub kwargs: Option<HashMap<String, Value>>,
     /// Metric values to pass to the calculation method of the initialised object (i.e.
     /// values that the Python calculation is dependent on).
     pub metrics: Option<HashMap<String, Metric>>,
     /// Index values to pass to the calculation method of the initialised object (i.e.
     /// indices that the Python calculation is dependent on).
     pub indices: Option<HashMap<String, IndexMetric>>,
-}
-
-#[cfg(all(feature = "core", feature = "pyo3"))]
-pub fn try_json_value_into_py(py: Python, value: &serde_json::Value) -> Result<Option<PyObject>, PyErr> {
-    let py_value: Option<PyObject> = match value {
-        Value::Null => None,
-        Value::Bool(v) => Some(v.into_py_any(py)?),
-        Value::Number(v) => {
-            if let Some(i) = v.as_i64() {
-                Some(i.into_py_any(py)?)
-            } else if let Some(f) = v.as_f64() {
-                Some(f.into_py_any(py)?)
-            } else {
-                panic!("Could not convert JSON number to Python type.");
-            }
-        }
-        Value::String(v) => Some(v.into_py_any(py)?),
-        Value::Array(array) => Some(
-            array
-                .iter()
-                .map(|v| try_json_value_into_py(py, v).unwrap())
-                .collect::<Vec<_>>()
-                .into_py_any(py)?,
-        ),
-        Value::Object(map) => Some(
-            map.iter()
-                .map(|(k, v)| (k, try_json_value_into_py(py, v).unwrap()))
-                .collect::<HashMap<_, _>>()
-                .into_py_any(py)?,
-        ),
-    };
-
-    Ok(py_value)
 }
 
 impl VisitMetrics for PythonParameter {
@@ -241,61 +214,14 @@ impl PythonParameter {
         pyo3::prepare_freethreaded_python();
 
         let object = Python::with_gil(|py| {
-            let module = match &self.source {
-                PythonSource::Module { module } => PyModule::import(py, module.as_str()),
-                PythonSource::Path { path } => {
-                    let path = &make_path(path, args.data_path);
-                    let code = CString::new(std::fs::read_to_string(path).map_err(|error| SchemaError::IO {
-                        path: path.to_path_buf(),
-                        error,
-                    })?)
-                    .unwrap();
-
-                    let file_name = CString::new(path.file_name().unwrap().to_str().unwrap()).unwrap();
-                    let module_name = CString::new(path.file_stem().unwrap().to_str().unwrap()).unwrap();
-                    PyModule::from_code(py, &code, &file_name, &module_name)
-                }
-            }?;
-
-            let obj = match &self.object {
-                PythonObject::Class { class } => {
-                    let obj = module.getattr(class)?;
-                    PyObj::Class(obj.unbind())
-                }
-                PythonObject::Function { function } => {
-                    let func = module.getattr(function)?;
-                    PyObj::Function(func.unbind())
-                }
-            };
+            let module = self.source.load_module(py, args.data_path)?;
+            let obj = self.object.load_object(&module)?;
 
             Ok::<_, SchemaError>(obj)
         })?;
 
-        let py_args = Python::with_gil(|py| {
-            let args: Vec<_> = self
-                .args
-                .iter()
-                .map(|arg| try_json_value_into_py(py, arg))
-                .collect::<Result<Vec<_>, PyErr>>()?;
-
-            Ok::<_, PyErr>(PyTuple::new(py, args)?.unbind())
-        })?;
-
-        let kwargs = Python::with_gil(|py| {
-            let kwargs: Vec<(Py<PyString>, Option<Py<PyAny>>)> = self
-                .kwargs
-                .iter()
-                .map(|(k, v)| {
-                    let key = k.into_pyobject(py)?.unbind();
-                    let value = try_json_value_into_py(py, v)?;
-                    Ok((key, value))
-                })
-                .collect::<Result<Vec<_>, SchemaError>>()?;
-
-            let seq = PyTuple::new(py, kwargs)?;
-
-            Ok::<_, SchemaError>(PyDict::from_sequence(seq.as_any())?.unbind())
-        })?;
+        let py_args = Python::with_gil(|py| try_load_optional_py_args(py, &self.args))?;
+        let py_kwargs = Python::with_gil(|py| try_load_optional_py_kwargs(py, &self.kwargs))?;
 
         let metrics = match &self.metrics {
             Some(metrics) => metrics
@@ -319,7 +245,7 @@ impl PythonParameter {
                     ParameterName::new(&self.meta.name, parent),
                     py_class,
                     py_args,
-                    kwargs,
+                    py_kwargs,
                     &metrics,
                     &indices,
                 );
@@ -335,7 +261,7 @@ impl PythonParameter {
                     ParameterName::new(&self.meta.name, parent),
                     py_function,
                     py_args,
-                    kwargs,
+                    py_kwargs,
                     &metrics,
                     &indices,
                 );

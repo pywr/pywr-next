@@ -54,7 +54,7 @@ mod core {
     const PANDAS_LOAD_SCRIPT: &CStr = c_str!(include_str!("pandas_load.py"));
 
     use super::PandasTimeseries;
-    use crate::parameters::try_json_value_into_py;
+    use crate::py_utils::try_json_value_into_py;
     use crate::timeseries::TimeseriesError;
     use crate::timeseries::align_and_resample::align_and_resample;
     use polars::frame::DataFrame;

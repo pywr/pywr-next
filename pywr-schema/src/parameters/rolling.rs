@@ -47,7 +47,7 @@ impl RollingParameter {
             self.window_size as usize,
             self.initial_value,
             self.min_values.unwrap_or(self.window_size) as usize,
-            self.agg_func.into(),
+            self.agg_func.load(args.data_path)?,
         );
         Ok(network.add_parameter(Box::new(p))?)
     }
@@ -87,7 +87,7 @@ impl RollingIndexParameter {
             self.window_size as usize,
             self.initial_value,
             self.min_values.unwrap_or(self.window_size) as usize,
-            self.agg_func.into(),
+            self.agg_func.load(args.data_path)?,
         );
         Ok(network.add_index_parameter(Box::new(p))?)
     }

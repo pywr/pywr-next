@@ -86,6 +86,7 @@ model_tests! {
     test_wtw1: ("wtw1.json", vec![("wtw1-expected.csv", ResultsShape::Long)], vec!["ipm-simd", "ipm-ocl"], vec![]),
     test_wtw2: ("wtw2.json", vec![("wtw2-expected.csv", ResultsShape::Long)], vec!["ipm-simd", "ipm-ocl"], vec![]),
     test_local_parameter1: ("local-parameter1.json", vec![("local-parameter1-expected.csv", ResultsShape::Long)], vec![], vec![]),
+    test_python_agg_func1: ("python-agg-func1.json", vec![("python-agg-func1-expected.csv", ResultsShape::Long)], vec![], vec![]),
     test_python_parameter2: ("python-parameter2.json", vec![("python-parameter2-expected.csv", ResultsShape::Long)], vec![], vec![]),
     test_python_parameter1: ("python-parameter1.json", vec![("python-parameter1-expected.csv", ResultsShape::Long)], vec![], vec![]),
     test_local_parameter2: ("local-parameter2.json", vec![("local-parameter2-expected.csv", ResultsShape::Long)], vec![], vec![]),
