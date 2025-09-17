@@ -303,17 +303,17 @@ impl VirtualStorageNode {
     ) -> Result<(), SchemaError> {
         if let Some(cost) = &self.cost {
             let value = cost.load(network, args, Some(&self.meta.name))?;
-            network.set_node_cost(self.meta.name.as_str(), None, value.into())?;
+            network.set_virtual_storage_cost(self.meta.name.as_str(), None, value.into())?;
         }
 
         if let Some(min_volume) = &self.min_volume {
             let value = min_volume.load(network, args, Some(&self.meta.name))?;
-            network.set_node_min_volume(self.meta.name.as_str(), None, Some(value.try_into()?))?;
+            network.set_virtual_storage_min_volume(self.meta.name.as_str(), None, Some(value.try_into()?))?;
         }
 
         if let Some(max_volume) = &self.max_volume {
             let value = max_volume.load(network, args, Some(&self.meta.name))?;
-            network.set_node_max_volume(self.meta.name.as_str(), None, Some(value.try_into()?))?;
+            network.set_virtual_storage_max_volume(self.meta.name.as_str(), None, Some(value.try_into()?))?;
         }
 
         Ok(())

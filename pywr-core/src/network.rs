@@ -1592,6 +1592,57 @@ impl Network {
         self.get_virtual_storage_node_by_name(name, sub_name).map(|n| n.index())
     }
 
+    pub fn set_virtual_storage_cost(
+        &mut self,
+        name: &str,
+        sub_name: Option<&str>,
+        value: Option<MetricF64>,
+    ) -> Result<(), NetworkError> {
+        let node = self
+            .get_mut_virtual_storage_node_by_name(name, sub_name)
+            .ok_or(NetworkError::NodeNotFound {
+                name: name.to_string(),
+                sub_name: sub_name.map(|s| s.to_string()),
+            })?;
+
+        node.set_cost(value);
+        Ok(())
+    }
+
+    pub fn set_virtual_storage_max_volume(
+        &mut self,
+        name: &str,
+        sub_name: Option<&str>,
+        value: Option<SimpleMetricF64>,
+    ) -> Result<(), NetworkError> {
+        let node = self
+            .get_mut_virtual_storage_node_by_name(name, sub_name)
+            .ok_or(NetworkError::NodeNotFound {
+                name: name.to_string(),
+                sub_name: sub_name.map(|s| s.to_string()),
+            })?;
+
+        node.set_max_volume_constraint(value);
+        Ok(())
+    }
+
+    pub fn set_virtual_storage_min_volume(
+        &mut self,
+        name: &str,
+        sub_name: Option<&str>,
+        value: Option<SimpleMetricF64>,
+    ) -> Result<(), NetworkError> {
+        let node = self
+            .get_mut_virtual_storage_node_by_name(name, sub_name)
+            .ok_or(NetworkError::NodeNotFound {
+                name: name.to_string(),
+                sub_name: sub_name.map(|s| s.to_string()),
+            })?;
+
+        node.set_min_volume_constraint(value);
+        Ok(())
+    }
+
     pub fn get_storage_node_metric(
         &mut self,
         name: &str,

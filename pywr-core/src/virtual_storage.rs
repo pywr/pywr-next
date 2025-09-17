@@ -297,6 +297,14 @@ impl VirtualStorage {
         self.cost = cost;
     }
 
+    pub fn set_min_volume_constraint(&mut self, min_volume: Option<SimpleMetricF64>) {
+        self.storage_constraints.min_volume = min_volume;
+    }
+
+    pub fn set_max_volume_constraint(&mut self, max_volume: Option<SimpleMetricF64>) {
+        self.storage_constraints.max_volume = max_volume;
+    }
+
     pub fn before(&self, timestep: &Timestep, state: &mut State) -> Result<(), VirtualStorageError> {
         let do_reset = if timestep.is_first() {
             // Set the initial volume if it is the first timestep.
