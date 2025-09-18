@@ -17,11 +17,11 @@
         },
         "type": "Storage",
         "max_volume": {
-          "type": "Constant",
+          "type": "Literal",
           "value": 1000
         },
         "cost": {
-          "type": "Constant",
+          "type": "Literal",
           "value": 10.0
         },
         "initial_volume": {
@@ -35,7 +35,7 @@
         },
         "type": "Output",
         "max_flow": {
-          "type": "Constant",
+          "type": "Literal",
           "value": 1.0
         }
       }
