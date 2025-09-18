@@ -1,15 +1,18 @@
 use crate::metric::{MetricF64, MetricF64Error};
 use crate::models::ModelDomain;
 use crate::network::{
-    Network, NetworkFinaliseError, NetworkRecorderSaveError, NetworkRecorderSetupError, NetworkSetupError,
-    NetworkSolverSetupError, NetworkState, NetworkTimings, RunDuration,
+    Network, NetworkFinaliseError, NetworkRecorderSaveError, NetworkRecorderSetupError, NetworkResult,
+    NetworkSetupError, NetworkSolverSetupError, NetworkState, NetworkTimings, RunDuration,
 };
+use crate::recorders::RecorderInternalState;
 use crate::scenario::ScenarioIndex;
 use crate::solvers::{MultiStateSolver, Solver, SolverSettings};
 use crate::state::StateError;
 use crate::timestep::Timestep;
-use std::any::Any;
+#[cfg(feature = "pyo3")]
+use pyo3::{PyResult, exceptions::PyKeyError, pyclass, pymethods};
 use std::cmp::Ordering;
+use std::collections::HashMap;
 use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::num::NonZeroUsize;
@@ -72,7 +75,7 @@ struct MultiNetworkEntry {
 pub struct MultiNetworkModelState<S> {
     current_time_step_idx: usize,
     states: Vec<NetworkState>,
-    recorder_states: Vec<Vec<Option<Box<dyn Any>>>>,
+    recorder_states: Vec<Vec<Option<Box<dyn RecorderInternalState>>>>,
     solvers: Vec<S>,
 }
 
@@ -144,6 +147,34 @@ pub enum MultiNetworkModelRunError {
 pub enum MultiNetworkModelError {
     #[error("Network name `{0}` already exists")]
     NetworkNameAlreadyExists(String),
+}
+
+/// The results of a model run.
+///
+/// Only recorders which produced a result will be present.
+#[cfg_attr(feature = "pyo3", pyclass)]
+#[derive(Clone)]
+pub struct MultiNetworkModelResult {
+    network_results: HashMap<String, NetworkResult>,
+}
+
+impl MultiNetworkModelResult {
+    pub fn network_results(&self, name: &str) -> Option<&NetworkResult> {
+        self.network_results.get(name)
+    }
+}
+
+#[cfg(feature = "pyo3")]
+#[pymethods]
+impl MultiNetworkModelResult {
+    /// Get a reference to the results map.
+    #[pyo3(name = "network_results")]
+    pub fn network_results_py(&self, name: &str) -> PyResult<NetworkResult> {
+        self.network_results
+            .get(name)
+            .ok_or_else(|| PyKeyError::new_err(format!("Network result `{}` not found", name)))
+            .cloned()
+    }
 }
 
 /// A MultiNetwork is a collection of models that can be run together.
@@ -462,62 +493,70 @@ impl MultiNetworkModel {
 
     pub fn finalise<S>(
         &self,
-        state: &mut MultiNetworkModelState<Vec<Box<S>>>,
-    ) -> Result<(), MultiNetworkModelFinaliseError>
+        state: MultiNetworkModelState<Vec<Box<S>>>,
+    ) -> Result<HashMap<String, NetworkResult>, MultiNetworkModelFinaliseError>
     where
         S: Solver,
     {
-        for (idx, entry) in self.networks.iter().enumerate() {
-            let sub_model_ms_states = state.states.get_mut(idx).unwrap().all_metric_set_internal_states_mut();
-            let sub_model_recorder_states = state.recorder_states.get_mut(idx).unwrap();
+        self.networks
+            .iter()
+            .zip(state.states)
+            .zip(state.recorder_states)
+            .map(|((entry, mut sub_model_state), sub_model_recorder_states)| {
+                let sub_model_ms_states = sub_model_state.all_metric_set_internal_states_mut();
 
-            entry
-                .network
-                .finalise(
-                    self.domain.scenarios.indices(),
-                    sub_model_ms_states,
-                    sub_model_recorder_states,
-                )
-                .map_err(|source| MultiNetworkModelFinaliseError::NetworkFinaliseError {
-                    network: entry.name.clone(),
-                    source: Box::new(source),
-                })?;
-        }
+                let result = entry
+                    .network
+                    .finalise(
+                        self.domain.scenarios.indices(),
+                        sub_model_ms_states,
+                        sub_model_recorder_states,
+                    )
+                    .map_err(|source| MultiNetworkModelFinaliseError::NetworkFinaliseError {
+                        network: entry.name.clone(),
+                        source: Box::new(source),
+                    })?;
 
-        Ok(())
+                Ok((entry.name.clone(), result))
+            })
+            .collect::<Result<HashMap<_, _>, _>>()
     }
 
     pub fn finalise_multi_scenario<S>(
         &self,
-        state: &mut MultiNetworkModelState<Box<S>>,
-    ) -> Result<(), MultiNetworkModelFinaliseError>
+        state: MultiNetworkModelState<Box<S>>,
+    ) -> Result<HashMap<String, NetworkResult>, MultiNetworkModelFinaliseError>
     where
         S: MultiStateSolver,
     {
-        for (idx, entry) in self.networks.iter().enumerate() {
-            let sub_model_ms_states = state.states.get_mut(idx).unwrap().all_metric_set_internal_states_mut();
-            let sub_model_recorder_states = state.recorder_states.get_mut(idx).unwrap();
+        self.networks
+            .iter()
+            .zip(state.states)
+            .zip(state.recorder_states)
+            .map(|((entry, mut sub_model_state), sub_model_recorder_states)| {
+                let sub_model_ms_states = sub_model_state.all_metric_set_internal_states_mut();
 
-            entry
-                .network
-                .finalise(
-                    self.domain.scenarios.indices(),
-                    sub_model_ms_states,
-                    sub_model_recorder_states,
-                )
-                .map_err(|source| MultiNetworkModelFinaliseError::NetworkFinaliseError {
-                    network: entry.name.clone(),
-                    source: Box::new(source),
-                })?;
-        }
+                let result = entry
+                    .network
+                    .finalise(
+                        self.domain.scenarios.indices(),
+                        sub_model_ms_states,
+                        sub_model_recorder_states,
+                    )
+                    .map_err(|source| MultiNetworkModelFinaliseError::NetworkFinaliseError {
+                        network: entry.name.clone(),
+                        source: Box::new(source),
+                    })?;
 
-        Ok(())
+                Ok((entry.name.clone(), result))
+            })
+            .collect::<Result<HashMap<_, _>, _>>()
     }
 
     /// Run the model through the given time-steps.
     ///
     /// This method will setup state and solvers, and then run the model through the time-steps.
-    pub fn run<S>(&self, settings: &S::Settings) -> Result<(), MultiNetworkModelRunError>
+    pub fn run<S>(&self, settings: &S::Settings) -> Result<MultiNetworkModelResult, MultiNetworkModelRunError>
     where
         S: Solver,
         <S as Solver>::Settings: SolverSettings,
@@ -526,7 +565,9 @@ impl MultiNetworkModel {
 
         self.run_with_state::<S>(&mut state, settings)?;
 
-        Ok(())
+        let network_results = self.finalise(state)?;
+
+        Ok(MultiNetworkModelResult { network_results })
     }
 
     /// Run the model with the provided states and solvers.
@@ -560,8 +601,6 @@ impl MultiNetworkModel {
             count += self.domain.scenarios.indices().len();
         }
 
-        self.finalise(state)?;
-
         // End the global timer and print the run statistics
         let run_duration = run_duration.finish(count);
         self.print_summary_statistics(&run_duration, &timings);
@@ -572,7 +611,10 @@ impl MultiNetworkModel {
     /// Run the model through the given time-steps.
     ///
     /// This method will setup state and solvers, and then run the model through the time-steps.
-    pub fn run_multi_scenario<S>(&self, settings: &S::Settings) -> Result<(), MultiNetworkModelRunError>
+    pub fn run_multi_scenario<S>(
+        &self,
+        settings: &S::Settings,
+    ) -> Result<MultiNetworkModelResult, MultiNetworkModelRunError>
     where
         S: MultiStateSolver,
         <S as MultiStateSolver>::Settings: SolverSettings,
@@ -581,7 +623,9 @@ impl MultiNetworkModel {
 
         self.run_multi_scenario_with_state::<S>(&mut state, settings)?;
 
-        Ok(())
+        let network_results = self.finalise_multi_scenario(state)?;
+
+        Ok(MultiNetworkModelResult { network_results })
     }
 
     /// Run the model with the provided states and solvers.
@@ -614,8 +658,6 @@ impl MultiNetworkModel {
 
             count += self.domain.scenarios.indices().len();
         }
-
-        self.finalise_multi_scenario(state)?;
 
         // End the global timer and print the run statistics
         let run_duration = run_duration.finish(count);

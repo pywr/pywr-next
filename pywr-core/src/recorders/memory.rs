@@ -3,13 +3,16 @@ use crate::models::ModelDomain;
 use crate::network::Network;
 use crate::recorders::aggregator::PeriodValue;
 use crate::recorders::{
-    MetricSetIndex, MetricSetState, Recorder, RecorderAggregationError, RecorderFinaliseError, RecorderMeta,
-    RecorderSaveError, RecorderSetupError,
+    MetricSetIndex, MetricSetState, Recorder, RecorderAggregationError, RecorderDataFrameError, RecorderFinalResult,
+    RecorderFinaliseError, RecorderInternalState, RecorderMeta, RecorderSaveError, RecorderSetupError,
+    downcast_internal_state, downcast_internal_state_mut,
 };
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
 use crate::timestep::Timestep;
-use std::any::Any;
+use chrono::NaiveDateTime;
+use polars::df;
+use polars::frame::DataFrame;
 use std::ops::Deref;
 use thiserror::Error;
 use tracing::warn;
@@ -24,6 +27,7 @@ pub enum AggregationError {
     AggFuncError(#[from] AggFuncError),
 }
 
+#[derive(Clone)]
 pub struct Aggregation {
     scenario: Option<AggFuncF64>,
     time: Option<AggFuncF64>,
@@ -140,11 +144,38 @@ impl InternalState {
 
         Self { data }
     }
+}
 
+struct LongFmtRecord {
+    time_start: NaiveDateTime,
+    time_end: NaiveDateTime,
+    simulation_id: usize,
+    label: String,
+    metric_set: String,
+    name: String,
+    attribute: String,
+    value: f64,
+}
+
+/// Final results for the memory recorder.
+///
+/// This is a 3D array, where the first dimension is the scenario, the second dimension is the time,
+/// and the third dimension is the metric.
+pub struct MemoryRecorderResult {
+    meta: RecorderMeta,
+    scenario_indices: Vec<ScenarioIndex>,
+    metric_names: Vec<String>,
+    metric_attrs: Vec<String>,
+    data: Vec<Vec<PeriodValue<Vec<f64>>>>,
+    aggregation: Aggregation,
+    order: AggregationOrder,
+}
+
+impl MemoryRecorderResult {
     /// Aggregate over the saved data to a single value using the provided aggregation functions.
     ///
     /// This method will first aggregation over the metrics, then over time, and finally over the scenarios.
-    fn aggregate_metric_time_scenario(&self, aggregation: &Aggregation) -> Result<f64, AggregationError> {
+    fn aggregate_metric_time_scenario(&self) -> Result<f64, AggregationError> {
         let scenario_data: Vec<f64> = self
             .data
             .iter()
@@ -153,20 +184,20 @@ impl InternalState {
                 // this results in a time series iterator of aggregated values
                 let ts: Vec<PeriodValue<f64>> = time_data
                     .iter()
-                    .map(|metric_data| aggregation.apply_metric_func_period_value(metric_data))
+                    .map(|metric_data| self.aggregation.apply_metric_func_period_value(metric_data))
                     .collect::<Result<_, _>>()?;
 
-                aggregation.apply_time_func(&ts)
+                self.aggregation.apply_time_func(&ts)
             })
             .collect::<Result<_, _>>()?;
 
-        aggregation.apply_scenario_func(&scenario_data)
+        self.aggregation.apply_scenario_func(&scenario_data)
     }
 
     /// Aggregate over the saved data to a single value using the provided aggregation functions.
     ///
     /// This method will first aggregation over time, then over the metrics, and finally over the scenarios.
-    fn aggregate_time_metric_scenario(&self, aggregation: &Aggregation) -> Result<f64, AggregationError> {
+    fn aggregate_time_metric_scenario(&self) -> Result<f64, AggregationError> {
         let scenario_data: Vec<f64> = self
             .data
             .iter()
@@ -178,15 +209,75 @@ impl InternalState {
                 let metric_ts: Vec<f64> = (0..num_metrics)
                     // TODO remove the collect allocation; requires `AggregationFunction.calc` to accept an iterator
                     .map(|metric_idx| time_data.iter().map(|t| t.index(metric_idx)).collect())
-                    .map(|ts: Vec<PeriodValue<f64>>| aggregation.apply_time_func(&ts))
+                    .map(|ts: Vec<PeriodValue<f64>>| self.aggregation.apply_time_func(&ts))
                     .collect::<Result<_, _>>()?;
 
                 // Now aggregate over the metrics
-                aggregation.apply_metric_func_f64(&metric_ts)
+                self.aggregation.apply_metric_func_f64(&metric_ts)
             })
             .collect::<Result<_, _>>()?;
 
-        aggregation.apply_scenario_func(&scenario_data)
+        self.aggregation.apply_scenario_func(&scenario_data)
+    }
+
+    fn iter_long_fmt_records(&self) -> impl Iterator<Item = LongFmtRecord> {
+        self.scenario_indices
+            .iter()
+            .zip(self.data.iter())
+            .flat_map(|(scenario_index, scenario_data)| {
+                scenario_data.iter().flat_map(|pv| {
+                    pv.value
+                        .iter()
+                        .zip(self.metric_names.iter())
+                        .zip(self.metric_attrs.iter())
+                        .map(|((v, name), attr)| LongFmtRecord {
+                            time_start: pv.start,
+                            time_end: pv.end(),
+                            simulation_id: scenario_index.simulation_id(),
+                            label: scenario_index.label(),
+                            metric_set: self.meta.name.clone(),
+                            name: name.clone(),
+                            attribute: attr.clone(),
+                            value: *v,
+                        })
+                })
+            })
+    }
+}
+
+impl RecorderFinalResult for MemoryRecorderResult {
+    /// Aggregate the saved data to a single value using the provided aggregation functions.
+    ///
+    /// This method will first aggregation over the metrics, then over time, and finally over the scenarios.
+    fn aggregated_value(&self) -> Result<f64, RecorderAggregationError> {
+        let agg_value = match self.order {
+            AggregationOrder::MetricTimeScenario => self.aggregate_metric_time_scenario(),
+            AggregationOrder::TimeMetricScenario => self.aggregate_time_metric_scenario(),
+        };
+
+        agg_value.map_err(|source| RecorderAggregationError::AggregationError {
+            name: self.meta.name.clone(),
+            source,
+        })
+    }
+
+    fn to_dataframe(&self) -> Result<DataFrame, RecorderDataFrameError> {
+        let records: Vec<LongFmtRecord> = self.iter_long_fmt_records().collect();
+
+        df!(
+            "time_start" => records.iter().map(|r| r.time_start).collect::<Vec<_>>(),
+            "time_end" => records.iter().map(|r| r.time_end).collect::<Vec<_>>(),
+            "simulation_id" => records.iter().map(|r| r.simulation_id as u32).collect::<Vec<_>>(),
+            "label" => records.iter().map(|r| r.label.as_str()).collect::<Vec<_>>(),
+            "metric_set" => records.iter().map(|r| r.metric_set.as_str()).collect::<Vec<_>>(),
+            "name" => records.iter().map(|r| r.name.as_str()).collect::<Vec<_>>(),
+            "attribute" => records.iter().map(|r| r.attribute.as_str()).collect::<Vec<_>>(),
+            "value" => records.iter().map(|r| r.value).collect::<Vec<_>>(),
+        )
+        .map_err(|source| RecorderDataFrameError::PolarsError {
+            name: self.meta.name.clone(),
+            source,
+        })
     }
 }
 
@@ -228,7 +319,11 @@ impl Recorder for MemoryRecorder {
         &self.meta
     }
 
-    fn setup(&self, domain: &ModelDomain, _network: &Network) -> Result<Option<Box<(dyn Any)>>, RecorderSetupError> {
+    fn setup(
+        &self,
+        domain: &ModelDomain,
+        _network: &Network,
+    ) -> Result<Option<Box<dyn RecorderInternalState>>, RecorderSetupError> {
         let data = InternalState::new(domain.scenarios().len());
 
         Ok(Some(Box::new(data)))
@@ -241,15 +336,9 @@ impl Recorder for MemoryRecorder {
         _model: &Network,
         _state: &[State],
         metric_set_states: &[Vec<MetricSetState>],
-        internal_state: &mut Option<Box<dyn Any>>,
+        internal_state: &mut Option<Box<dyn RecorderInternalState>>,
     ) -> Result<(), RecorderSaveError> {
-        let internal_state = match internal_state {
-            Some(internal) => match internal.downcast_mut::<InternalState>() {
-                Some(pa) => pa,
-                None => panic!("Internal state did not downcast to the correct type! :("),
-            },
-            None => panic!("No internal state defined when one was expected! :("),
-        };
+        let internal_state = downcast_internal_state_mut::<InternalState>(internal_state);
 
         // Iterate through all of the scenario's state
         for (ms_scenario_states, scenario_data) in metric_set_states.iter().zip(internal_state.data.iter_mut()) {
@@ -269,18 +358,19 @@ impl Recorder for MemoryRecorder {
 
     fn finalise(
         &self,
-        _network: &Network,
-        _scenario_indices: &[ScenarioIndex],
+        network: &Network,
+        scenario_indices: &[ScenarioIndex],
         metric_set_states: &[Vec<MetricSetState>],
-        internal_state: &mut Option<Box<dyn Any>>,
-    ) -> Result<(), RecorderFinaliseError> {
-        let internal_state = match internal_state {
-            Some(internal) => match internal.downcast_mut::<InternalState>() {
-                Some(pa) => pa,
-                None => panic!("Internal state did not downcast to the correct type! :("),
-            },
-            None => panic!("No internal state defined when one was expected! :("),
-        };
+        internal_state: Option<Box<dyn RecorderInternalState>>,
+    ) -> Result<Option<Box<dyn RecorderFinalResult>>, RecorderFinaliseError> {
+        let mut internal_state = downcast_internal_state::<InternalState>(internal_state);
+
+        let metric_set =
+            network
+                .get_metric_set(self.metric_set_idx)
+                .ok_or(RecorderFinaliseError::MetricSetIndexNotFound {
+                    index: self.metric_set_idx,
+                })?;
 
         // Iterate through all of the scenario's state
         for (ms_scenario_states, scenario_data) in metric_set_states.iter().zip(internal_state.data.iter_mut()) {
@@ -295,40 +385,29 @@ impl Recorder for MemoryRecorder {
             }
         }
 
-        Ok(())
-    }
-
-    /// Aggregate the saved data to a single value using the provided aggregation functions.
-    ///
-    /// This method will first aggregation over the metrics, then over time, and finally over the scenarios.
-    fn aggregated_value(&self, internal_state: &Option<Box<dyn Any>>) -> Result<f64, RecorderAggregationError> {
-        let internal_state = match internal_state {
-            Some(internal) => match internal.downcast_ref::<InternalState>() {
-                Some(pa) => pa,
-                None => panic!("Internal state did not downcast to the correct type! :("),
-            },
-            None => panic!("No internal state defined when one was expected! :("),
+        let result = MemoryRecorderResult {
+            meta: self.meta.clone(),
+            scenario_indices: scenario_indices.to_vec(),
+            metric_names: metric_set.iter_metrics().map(|m| m.name().to_string()).collect(),
+            metric_attrs: metric_set.iter_metrics().map(|m| m.attribute().to_string()).collect(),
+            data: internal_state.data,
+            aggregation: self.aggregation.clone(),
+            order: self.order,
         };
 
-        let agg_value = match self.order {
-            AggregationOrder::MetricTimeScenario => internal_state.aggregate_metric_time_scenario(&self.aggregation),
-            AggregationOrder::TimeMetricScenario => internal_state.aggregate_time_metric_scenario(&self.aggregation),
-        };
-
-        agg_value.map_err(|source| RecorderAggregationError::AggregationError {
-            name: self.meta.name.clone(),
-            source,
-        })
+        Ok(Some(Box::new(result)))
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{Aggregation, InternalState};
+    use super::{Aggregation, InternalState, MemoryRecorderResult};
     use crate::agg_funcs::AggFuncF64;
+    use crate::models::ModelDomain;
+    use crate::recorders::RecorderMeta;
     use crate::recorders::aggregator::PeriodValue;
+    use crate::scenario::{ScenarioDomainBuilder, ScenarioGroupBuilder};
     use crate::test_utils::default_timestepper;
-    use crate::timestep::TimeDomain;
     use float_cmp::assert_approx_eq;
     use rand::{Rng, SeedableRng};
     use rand_chacha::ChaCha8Rng;
@@ -336,19 +415,23 @@ mod tests {
 
     #[test]
     fn test_aggregation_orders() {
-        let num_scenarios = 2;
+        let mut scenario_builder = ScenarioDomainBuilder::default();
+        let scenario_group = ScenarioGroupBuilder::new("test-scenario", 2).build().unwrap();
+        scenario_builder = scenario_builder.with_group(scenario_group).unwrap();
+
+        let domain = ModelDomain::try_from(default_timestepper(), scenario_builder).unwrap();
+
         let num_metrics = 3;
-        let mut state = InternalState::new(num_scenarios);
+        let mut state = InternalState::new(domain.scenarios().len());
 
         let mut rng = ChaCha8Rng::seed_from_u64(0);
         let dist: Normal<f64> = Normal::new(0.0, 1.0).unwrap();
 
-        let time_domain: TimeDomain = default_timestepper().try_into().unwrap();
         // The expected values from this test
         let mut count_non_zero_max = 0.0;
         let mut count_non_zero_by_metric = vec![0.0; num_metrics];
 
-        time_domain.timesteps().iter().for_each(|timestep| {
+        domain.time().timesteps().iter().for_each(|timestep| {
             state.data.iter_mut().for_each(|scenario_data| {
                 let metric_data = (&mut rng).sample_iter(&dist).take(num_metrics).collect::<Vec<f64>>();
 
@@ -374,10 +457,21 @@ mod tests {
             Some(AggFuncF64::CountFunc { func: |v: f64| v > 0.0 }),
             Some(AggFuncF64::Sum),
         );
-        let agg_value = state.aggregate_metric_time_scenario(&agg).expect("Aggregation failed");
+
+        let result = MemoryRecorderResult {
+            meta: RecorderMeta::new("test"),
+            scenario_indices: domain.scenarios().indices().to_vec(),
+            metric_names: vec!["m1".to_string(), "m2".to_string(), "m3".to_string()],
+            metric_attrs: vec!["a1".to_string(), "a2".to_string(), "a3".to_string()],
+            data: state.data,
+            aggregation: agg,
+            order: super::AggregationOrder::MetricTimeScenario,
+        };
+
+        let agg_value = result.aggregate_metric_time_scenario().expect("Aggregation failed");
         assert_approx_eq!(f64, agg_value, count_non_zero_max);
 
-        let agg_value = state.aggregate_time_metric_scenario(&agg).expect("Aggregation failed");
+        let agg_value = result.aggregate_time_metric_scenario().expect("Aggregation failed");
         assert_approx_eq!(f64, agg_value, count_non_zero_by_metric.iter().sum());
     }
 }

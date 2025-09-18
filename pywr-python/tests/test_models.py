@@ -1,6 +1,8 @@
 import numpy as np
 import pandas
-from pywr import Schema
+import polars as pl
+from polars.testing import assert_frame_equal
+from pywr import Schema, ModelResult
 from pathlib import Path
 import h5py
 import pytest
@@ -25,8 +27,9 @@ def test_simple_timeseries(model_dir: Path, tmpdir: Path):
 
     schema = Schema.from_path(filename)
     model = schema.build(data_path=model_dir / "simple-timeseries", output_path=tmpdir)
-    model.run("clp")
+    result = model.run("clp")
 
+    assert isinstance(result, ModelResult)
     assert output_fn.exists()
 
     expected_data = pandas.read_csv(
@@ -37,6 +40,24 @@ def test_simple_timeseries(model_dir: Path, tmpdir: Path):
         for (node, attr), df in expected_data.items():
             simulated = np.squeeze(fh[f"{node}/{attr}"])
             np.testing.assert_allclose(simulated, df)
+
+    with pytest.raises(RuntimeError):
+        result.network_result.aggregated_value("nodes")
+
+    df = result.network_result.to_dataframe("nodes")
+    assert df.shape[0] == 365 * 3
+
+    mean_flows = df.group_by(pl.col("name")).agg(pl.col("value").mean()).sort("name")
+    assert mean_flows.shape[0] == 3
+
+    expected_mean_flows = pl.DataFrame(
+        {
+            "name": ["input1", "link1", "output1"],
+            "value": [8.520548, 8.520548, 8.520548],
+        }
+    )
+
+    assert_frame_equal(mean_flows, expected_mean_flows)
 
 
 # TODO these tests could be auto-discovered.

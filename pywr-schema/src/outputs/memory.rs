@@ -10,7 +10,7 @@ use std::path::Path;
 use strum_macros::{Display, EnumIter};
 
 #[skip_serializing_none]
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitPaths)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Default, Clone, JsonSchema, PywrVisitPaths)]
 pub struct MemoryAggregation {
     pub time: Option<AggFunc>,
     pub scenario: Option<AggFunc>,
@@ -49,7 +49,7 @@ impl From<MemoryAggregationOrder> for pywr_core::recorders::AggregationOrder {
 pub struct MemoryOutput {
     pub name: String,
     pub metric_set: String,
-    pub aggregation: MemoryAggregation,
+    pub aggregation: Option<MemoryAggregation>,
     pub order: Option<MemoryAggregationOrder>,
 }
 
@@ -61,10 +61,11 @@ impl MemoryOutput {
         data_path: Option<&Path>,
     ) -> Result<(), SchemaError> {
         let metric_set_idx = network.get_metric_set_index_by_name(&self.metric_set)?;
+
         let recorder = MemoryRecorder::new(
             &self.name,
             metric_set_idx,
-            self.aggregation.load(data_path)?,
+            self.aggregation.clone().unwrap_or_default().load(data_path)?,
             self.order.map(|o| o.into()).unwrap_or_default(),
         );
 
@@ -110,11 +111,13 @@ mod tests {
 
         let model = schema.build_model(None, Some(temp_dir.path())).unwrap();
 
-        let recorder_states = model.run::<ClpSolver>(&ClpSolverSettings::default()).unwrap();
+        let result = model.run::<ClpSolver>(&ClpSolverSettings::default()).unwrap();
 
-        let result = model
-            .network()
-            .get_aggregated_value("outputs", &recorder_states)
+        let result = result
+            .network_result()
+            .get("outputs")
+            .expect("`outputs` not found")
+            .aggregated_value()
             .expect("No results found");
 
         assert_approx_eq!(f64, result, 91.0);

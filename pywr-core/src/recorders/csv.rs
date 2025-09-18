@@ -1,5 +1,6 @@
 use super::{
-    MetricSetState, Recorder, RecorderFinaliseError, RecorderMeta, RecorderSaveError, RecorderSetupError, Timestep,
+    MetricSetState, Recorder, RecorderFinalResult, RecorderFinaliseError, RecorderInternalState, RecorderMeta,
+    RecorderSaveError, RecorderSetupError, Timestep, downcast_internal_state, downcast_internal_state_mut,
 };
 use crate::models::ModelDomain;
 use crate::network::Network;
@@ -8,7 +9,6 @@ use crate::scenario::ScenarioIndex;
 use crate::state::State;
 use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
-use std::any::Any;
 use std::fs::File;
 use std::num::NonZeroU32;
 use std::ops::Deref;
@@ -92,7 +92,11 @@ impl Recorder for CsvWideFmtOutput {
     fn meta(&self) -> &RecorderMeta {
         &self.meta
     }
-    fn setup(&self, domain: &ModelDomain, network: &Network) -> Result<Option<Box<(dyn Any)>>, RecorderSetupError> {
+    fn setup(
+        &self,
+        domain: &ModelDomain,
+        network: &Network,
+    ) -> Result<Option<Box<dyn RecorderInternalState>>, RecorderSetupError> {
         let mut writer = csv::Writer::from_path(&self.filename).map_err(|source| CsvError::CSVError {
             path: self.filename.clone(),
             source,
@@ -165,15 +169,9 @@ impl Recorder for CsvWideFmtOutput {
         _network: &Network,
         _state: &[State],
         metric_set_states: &[Vec<MetricSetState>],
-        internal_state: &mut Option<Box<dyn Any>>,
+        internal_state: &mut Option<Box<dyn RecorderInternalState>>,
     ) -> Result<(), RecorderSaveError> {
-        let internal = match internal_state {
-            Some(internal) => match internal.downcast_mut::<Internal>() {
-                Some(pa) => pa,
-                None => panic!("Internal state did not downcast to the correct type! :("),
-            },
-            None => panic!("No internal state defined when one was expected! :("),
-        };
+        let internal = downcast_internal_state_mut::<Internal>(internal_state);
 
         self.write_values(metric_set_states, internal)?;
 
@@ -185,21 +183,11 @@ impl Recorder for CsvWideFmtOutput {
         _network: &Network,
         _scenario_indices: &[ScenarioIndex],
         metric_set_states: &[Vec<MetricSetState>],
-        internal_state: &mut Option<Box<dyn Any>>,
-    ) -> Result<(), RecorderFinaliseError> {
-        // This will leave the internal state with a `None` because we need to take
-        // ownership of the file handle in order to close it.
-        match internal_state.take() {
-            Some(mut internal) => {
-                if let Some(internal) = internal.downcast_mut::<Internal>() {
-                    self.write_values(metric_set_states, internal)?;
-                    Ok(())
-                } else {
-                    panic!("Internal state did not downcast to the correct type! :(");
-                }
-            }
-            None => panic!("No internal state defined when one was expected! :("),
-        }
+        internal_state: Option<Box<dyn RecorderInternalState>>,
+    ) -> Result<Option<Box<dyn RecorderFinalResult>>, RecorderFinaliseError> {
+        let mut internal = downcast_internal_state::<Internal>(internal_state);
+        self.write_values(metric_set_states, &mut internal)?;
+        Ok(None)
     }
 }
 
@@ -301,7 +289,11 @@ impl Recorder for CsvLongFmtOutput {
     fn meta(&self) -> &RecorderMeta {
         &self.meta
     }
-    fn setup(&self, _domain: &ModelDomain, _network: &Network) -> Result<Option<Box<(dyn Any)>>, RecorderSetupError> {
+    fn setup(
+        &self,
+        _domain: &ModelDomain,
+        _network: &Network,
+    ) -> Result<Option<Box<dyn RecorderInternalState>>, RecorderSetupError> {
         let writer = csv::Writer::from_path(&self.filename).map_err(|source| CsvError::CSVError {
             path: self.filename.clone(),
             source,
@@ -319,15 +311,9 @@ impl Recorder for CsvLongFmtOutput {
         network: &Network,
         _state: &[State],
         metric_set_states: &[Vec<MetricSetState>],
-        internal_state: &mut Option<Box<dyn Any>>,
+        internal_state: &mut Option<Box<dyn RecorderInternalState>>,
     ) -> Result<(), RecorderSaveError> {
-        let internal = match internal_state {
-            Some(internal) => match internal.downcast_mut::<Internal>() {
-                Some(pa) => pa,
-                None => panic!("Internal state did not downcast to the correct type! :("),
-            },
-            None => panic!("No internal state defined when one was expected! :("),
-        };
+        let internal = downcast_internal_state_mut::<Internal>(internal_state);
 
         self.write_values(network, scenario_indices, metric_set_states, internal)?;
 
@@ -339,20 +325,10 @@ impl Recorder for CsvLongFmtOutput {
         network: &Network,
         scenario_indices: &[ScenarioIndex],
         metric_set_states: &[Vec<MetricSetState>],
-        internal_state: &mut Option<Box<dyn Any>>,
-    ) -> Result<(), RecorderFinaliseError> {
-        // This will leave the internal state with a `None` because we need to take
-        // ownership of the file handle in order to close it.
-        match internal_state.take() {
-            Some(mut internal) => {
-                if let Some(internal) = internal.downcast_mut::<Internal>() {
-                    self.write_values(network, scenario_indices, metric_set_states, internal)?;
-                    Ok(())
-                } else {
-                    panic!("Internal state did not downcast to the correct type! :(");
-                }
-            }
-            None => panic!("No internal state defined when one was expected! :("),
-        }
+        internal_state: Option<Box<dyn RecorderInternalState>>,
+    ) -> Result<Option<Box<dyn RecorderFinalResult>>, RecorderFinaliseError> {
+        let mut internal = downcast_internal_state::<Internal>(internal_state);
+        self.write_values(network, scenario_indices, metric_set_states, &mut internal)?;
+        Ok(None)
     }
 }

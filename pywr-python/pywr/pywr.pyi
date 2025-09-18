@@ -1,6 +1,7 @@
 from datetime import datetime
 from os import PathLike
 from typing import Optional, List
+import polars as pl
 
 class ParameterInfo:
     """Provides data for a custom Pywr parameter.
@@ -139,6 +140,34 @@ class Model:
         Args:
             solver_name: The name of the solver to use.
             solver_kwargs: Optional keyword arguments to pass to the solver.
+        """
+
+class ModelResult:
+    @property
+    def network_result(self) -> "NetworkResult":
+        """Returns the network result object."""
+
+class MultiNetworkModelResult:
+    def network_results(self, name: str) -> "NetworkResult":
+        """Get the network result for a specific network by name.
+
+        Args:
+            name: The name of the network to retrieve the results for.
+        """
+
+class NetworkResult:
+    def aggregated_value(self, name: str) -> float:
+        """Get the aggregated value of a recorder by name, if it exists and can be aggregated.
+
+        Args:
+            name: The name of the output to retrieve.
+        """
+
+    def to_dataframe(self, name: str) -> pl.DataFrame:
+        """Get the output of a recorder by name as a polars DataFrame.
+
+        Args:
+            name: The name of the output to retrieve.
         """
 
 class Metric: ...

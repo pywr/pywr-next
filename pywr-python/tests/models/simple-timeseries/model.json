@@ -100,6 +100,11 @@
         "type": "HDF5",
         "filename": "outputs.h5",
         "metric_set": "nodes"
+      },
+      {
+        "name": "nodes",
+        "type": "Memory",
+        "metric_set": "nodes"
       }
     ]
   }
