@@ -224,8 +224,7 @@ pub trait Recorder: Send + Sync {
     /// Finalise the recorder, e.g. write out any remaining data and close files.
     ///
     /// This is called once after all timesteps have been processed. The internal state
-    /// is consumed by this method and should be used to perform any house-keeping. Final
-    ///
+    /// is consumed by this method and should be used to perform any house-keeping.
     fn finalise(
         &self,
         _network: &Network,
