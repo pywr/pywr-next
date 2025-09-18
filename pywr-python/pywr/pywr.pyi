@@ -147,6 +147,10 @@ class ModelResult:
     def network_result(self) -> "NetworkResult":
         """Returns the network result object."""
 
+    @property
+    def timings(self) -> "ModelTimings":
+        """Returns the model timings object."""
+
 class MultiNetworkModelResult:
     def network_results(self, name: str) -> "NetworkResult":
         """Get the network result for a specific network by name.
@@ -154,6 +158,10 @@ class MultiNetworkModelResult:
         Args:
             name: The name of the network to retrieve the results for.
         """
+
+    @property
+    def timings(self) -> "MultiNetworkModelTimings":
+        """Returns the model timings object."""
 
 class NetworkResult:
     def aggregated_value(self, name: str) -> float:
@@ -169,6 +177,24 @@ class NetworkResult:
         Args:
             name: The name of the output to retrieve.
         """
+
+class ModelTimings:
+    @property
+    def total_duration(self) -> float:
+        """Total duration of the model run in seconds."""
+
+    @property
+    def speed(self) -> float:
+        """Model speed in timesteps per second."""
+
+class MultiNetworkModelTimings:
+    @property
+    def total_duration(self) -> float:
+        """Total duration of the model run in seconds."""
+
+    @property
+    def speed(self) -> float:
+        """Model speed in timesteps per second."""
 
 class Metric: ...
 class ComponentConversionError: ...

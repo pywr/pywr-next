@@ -2,7 +2,7 @@ import numpy as np
 import pandas
 import polars as pl
 from polars.testing import assert_frame_equal
-from pywr import Schema, ModelResult
+from pywr import Schema, ModelResult, ModelTimings
 from pathlib import Path
 import h5py
 import pytest
@@ -31,6 +31,10 @@ def test_simple_timeseries(model_dir: Path, tmpdir: Path):
 
     assert isinstance(result, ModelResult)
     assert output_fn.exists()
+
+    assert isinstance(result.timings, ModelTimings)
+    assert result.timings.total_duration > 0.0
+    assert result.timings.speed > 0.0
 
     expected_data = pandas.read_csv(
         model_dir / "simple-timeseries" / "expected.csv", index_col=0, header=[0, 1]

@@ -88,12 +88,70 @@ impl From<ModelRunError> for PyErr {
     }
 }
 
+/// Internal struct for tracking model timings.
+#[cfg_attr(feature = "pyo3", pyclass)]
+#[derive(Clone)]
+pub struct ModelTimings {
+    run_duration: RunDuration,
+    network_timings: NetworkTimings,
+}
+
+impl ModelTimings {
+    pub fn new_with_component_timings(network: &Network) -> Self {
+        Self {
+            run_duration: RunDuration::start(),
+            network_timings: NetworkTimings::new_with_component_timings(network),
+        }
+    }
+
+    fn finish(&mut self) {
+        self.run_duration = self.run_duration.finish();
+    }
+
+    /// Print summary statistics of the model run.
+    pub fn print_summary_statistics(&self, network: &Network) {
+        info!("Run timing statistics:");
+        let total_duration = self.run_duration.total_duration().as_secs_f64();
+        info!("{: <24} | {: <10}", "Metric", "Value");
+        self.run_duration.print_table();
+        self.network_timings.print_table(total_duration, network);
+    }
+}
+
+#[cfg(feature = "pyo3")]
+#[pymethods]
+impl ModelTimings {
+    /// Total duration of the model run in seconds.
+    #[getter]
+    pub fn total_duration(&self) -> f64 {
+        self.run_duration.total_duration().as_secs_f64()
+    }
+
+    #[getter]
+    pub fn speed(&self) -> Option<f64> {
+        self.run_duration.speed()
+    }
+
+    fn __repr__(&self) -> String {
+        match self.speed() {
+            Some(speed) => format!(
+                "<ModelTimings completed in {:.2} seconds with speed {:.2} time-steps/second>",
+                self.total_duration(),
+                speed
+            ),
+            None => format!("<ModelTimings completed in {:.2} seconds>", self.total_duration()),
+        }
+    }
+}
+
 /// The results of a model run.
 ///
 /// Only recorders which produced a result will be present.
 #[cfg_attr(feature = "pyo3", pyclass)]
 #[derive(Clone)]
 pub struct ModelResult {
+    #[pyo3(get)]
+    timings: ModelTimings,
     network_result: NetworkResult,
 }
 
@@ -109,7 +167,7 @@ impl ModelResult {
 impl ModelResult {
     #[getter]
     #[pyo3(name = "network_result")]
-    pub fn network_result_py(&self) -> NetworkResult {
+    fn network_result_py(&self) -> NetworkResult {
         self.network_result.clone()
     }
 }
@@ -332,6 +390,64 @@ impl Model {
         Ok(())
     }
 
+    pub fn finalise<S>(
+        &self,
+        mut state: ModelState<Vec<Box<S>>>,
+        mut timings: ModelTimings,
+    ) -> Result<ModelResult, ModelFinaliseError>
+    where
+        S: Solver,
+        <S as Solver>::Settings: SolverSettings,
+    {
+        let network_result = self
+            .network
+            .finalise(
+                self.domain.scenarios.indices(),
+                state.state.all_metric_set_internal_states_mut(),
+                state.recorder_state,
+            )
+            .map_err(ModelFinaliseError::NetworkFinaliseError)?;
+
+        // End the global timer and print the run statistics
+        timings.finish();
+
+        timings.print_summary_statistics(&self.network);
+
+        Ok(ModelResult {
+            network_result,
+            timings,
+        })
+    }
+
+    pub fn finalise_multi_scenario<S>(
+        &self,
+        mut state: ModelState<Box<S>>,
+        mut timings: ModelTimings,
+    ) -> Result<ModelResult, ModelFinaliseError>
+    where
+        S: MultiStateSolver,
+        <S as MultiStateSolver>::Settings: SolverSettings,
+    {
+        let network_result = self
+            .network
+            .finalise(
+                self.domain.scenarios.indices(),
+                state.state.all_metric_set_internal_states_mut(),
+                state.recorder_state,
+            )
+            .map_err(ModelFinaliseError::NetworkFinaliseError)?;
+
+        // End the global timer and print the run statistics
+        timings.finish();
+
+        timings.print_summary_statistics(&self.network);
+
+        Ok(ModelResult {
+            network_result,
+            timings,
+        })
+    }
+
     /// Run a model through the given time-steps.
     ///
     /// This method will setup state and solvers, and then run the model through the time-steps.
@@ -342,18 +458,13 @@ impl Model {
     {
         let mut state = self.setup::<S>(settings)?;
 
-        self.run_with_state::<S>(&mut state, settings)?;
+        let mut timings = ModelTimings::new_with_component_timings(&self.network);
 
-        let network_result = self
-            .network
-            .finalise(
-                self.domain.scenarios.indices(),
-                state.state.all_metric_set_internal_states_mut(),
-                state.recorder_state,
-            )
-            .map_err(ModelFinaliseError::NetworkFinaliseError)?;
+        self.run_with_state::<S>(&mut state, settings, &mut timings)?;
 
-        Ok(ModelResult { network_result })
+        let result = self.finalise(state, timings)?;
+
+        Ok(result)
     }
 
     /// Run the model with the provided states and solvers.
@@ -361,15 +472,12 @@ impl Model {
         &self,
         state: &mut ModelState<Vec<Box<S>>>,
         settings: &S::Settings,
+        timings: &mut ModelTimings,
     ) -> Result<(), ModelRunError>
     where
         S: Solver,
         <S as Solver>::Settings: SolverSettings,
     {
-        let run_duration = RunDuration::start();
-        let mut timings = NetworkTimings::new_with_component_timings(&self.network);
-        let mut count = 0;
-
         // Setup thread pool if running in parallel
         let pool = if settings.parallel() {
             Some(
@@ -383,18 +491,16 @@ impl Model {
         };
 
         loop {
-            match self.step::<S>(state, pool.as_ref(), &mut timings) {
+            match self.step::<S>(state, pool.as_ref(), &mut timings.network_timings) {
                 Ok(_) => {}
                 Err(ModelStepError::EndOfTimesteps) => break,
                 Err(e) => return Err(ModelRunError::StepError(e)),
             }
 
-            count += self.domain.scenarios.indices().len();
+            timings
+                .run_duration
+                .complete_scenarios(self.domain.scenarios.indices().len());
         }
-
-        // End the global timer and print the run statistics
-        let run_duration = run_duration.finish(count);
-        self.print_summary_statistics(&run_duration, &timings);
 
         Ok(())
     }
@@ -409,19 +515,12 @@ impl Model {
     {
         // Setup the network and create the initial state
         let mut state = self.setup_multi_scenario(settings)?;
+        let mut timings = ModelTimings::new_with_component_timings(&self.network);
+        self.run_multi_scenario_with_state::<S>(&mut state, settings, &mut timings)?;
 
-        self.run_multi_scenario_with_state::<S>(&mut state, settings)?;
+        let result = self.finalise_multi_scenario(state, timings)?;
 
-        let network_result = self
-            .network
-            .finalise(
-                self.domain.scenarios.indices(),
-                state.state.all_metric_set_internal_states_mut(),
-                state.recorder_state,
-            )
-            .map_err(ModelFinaliseError::NetworkFinaliseError)?;
-
-        Ok(ModelResult { network_result })
+        Ok(result)
     }
 
     /// Run the network with the provided states and [`MultiStateSolver`] solver.
@@ -429,15 +528,12 @@ impl Model {
         &self,
         state: &mut ModelState<Box<S>>,
         settings: &S::Settings,
+        timings: &mut ModelTimings,
     ) -> Result<(), ModelRunError>
     where
         S: MultiStateSolver,
         <S as MultiStateSolver>::Settings: SolverSettings,
     {
-        let run_duration = RunDuration::start();
-        let mut timings = NetworkTimings::new_with_component_timings(&self.network);
-        let mut count = 0;
-
         let num_threads = if settings.parallel() { settings.threads() } else { 1 };
 
         // Setup thread pool
@@ -447,28 +543,17 @@ impl Model {
             .unwrap();
 
         loop {
-            match self.step_multi_scenario::<S>(state, &pool, &mut timings) {
+            match self.step_multi_scenario::<S>(state, &pool, &mut timings.network_timings) {
                 Ok(_) => {}
                 Err(ModelStepError::EndOfTimesteps) => break,
                 Err(e) => return Err(ModelRunError::StepError(e)),
             }
 
-            count += self.domain.scenarios.indices().len();
+            timings
+                .run_duration
+                .complete_scenarios(self.domain.scenarios.indices().len());
         }
 
-        // End the global timer and print the run statistics
-        let run_duration = run_duration.finish(count);
-        self.print_summary_statistics(&run_duration, &timings);
-
         Ok(())
-    }
-
-    /// Print summary statistics of the model run.
-    fn print_summary_statistics(&self, run_duration: &RunDuration, timings: &NetworkTimings) {
-        info!("Run timing statistics:");
-        let total_duration = run_duration.total_duration().as_secs_f64();
-        info!("{: <24} | {: <10}", "Metric", "Value");
-        run_duration.print_table();
-        timings.print_table(total_duration, &self.network);
     }
 }
