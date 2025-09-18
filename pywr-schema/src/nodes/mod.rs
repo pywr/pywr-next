@@ -594,7 +594,7 @@ impl Node {
             Node::WaterTreatmentWorks(n) => n.set_constraints(network, args),
             Node::Aggregated(n) => n.set_constraints(network, args),
             Node::AggregatedStorage(_) => Ok(()), // No constraints on aggregated storage nodes.
-            Node::VirtualStorage(_) => Ok(()),    // TODO
+            Node::VirtualStorage(n) => n.set_constraints(network, args),
             Node::PiecewiseLink(n) => n.set_constraints(network, args),
             Node::PiecewiseStorage(n) => n.set_constraints(network, args),
             Node::Delay(n) => n.set_constraints(network, args),

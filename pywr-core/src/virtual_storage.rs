@@ -78,13 +78,10 @@ pub struct VirtualStorageBuilder {
     nodes: Vec<NodeIndex>,
     factors: Option<Vec<f64>>,
     initial_volume: StorageInitialVolume,
-    min_volume: Option<SimpleMetricF64>,
-    max_volume: Option<SimpleMetricF64>,
     reset: VirtualStorageReset,
     reset_volume: VirtualStorageResetVolume,
     rolling_window: Option<NonZeroUsize>,
     active_period: VirtualStorageActivePeriod,
-    cost: Option<MetricF64>,
 }
 
 impl VirtualStorageBuilder {
@@ -95,13 +92,10 @@ impl VirtualStorageBuilder {
             nodes: nodes.to_vec(),
             factors: None,
             initial_volume: StorageInitialVolume::Absolute(0.0),
-            min_volume: None,
-            max_volume: None,
             reset: VirtualStorageReset::Never,
             reset_volume: VirtualStorageResetVolume::Initial,
             rolling_window: None,
             active_period: VirtualStorageActivePeriod::Always,
-            cost: None,
         }
     }
 
@@ -117,16 +111,6 @@ impl VirtualStorageBuilder {
 
     pub fn initial_volume(mut self, initial_volume: StorageInitialVolume) -> Self {
         self.initial_volume = initial_volume;
-        self
-    }
-
-    pub fn min_volume(mut self, min_volume: Option<SimpleMetricF64>) -> Self {
-        self.min_volume = min_volume;
-        self
-    }
-
-    pub fn max_volume(mut self, max_volume: Option<SimpleMetricF64>) -> Self {
-        self.max_volume = max_volume;
         self
     }
 
@@ -150,10 +134,6 @@ impl VirtualStorageBuilder {
         self
     }
 
-    pub fn cost(mut self, cost: Option<MetricF64>) -> Self {
-        self.cost = cost;
-        self
-    }
 
     pub fn build(self, index: VirtualStorageIndex) -> VirtualStorage {
         // Default to unit factors if none provided
@@ -164,12 +144,12 @@ impl VirtualStorageBuilder {
             nodes: self.nodes,
             factors,
             initial_volume: self.initial_volume,
-            storage_constraints: StorageConstraints::new(self.min_volume, self.max_volume),
+            storage_constraints: StorageConstraints::new(None, None),
             reset: self.reset,
             reset_volume: self.reset_volume,
             rolling_window: self.rolling_window,
             active_period: self.active_period,
-            cost: self.cost,
+            cost: None,
         }
     }
 }
@@ -295,6 +275,14 @@ impl VirtualStorage {
 
     pub fn set_cost(&mut self, cost: Option<MetricF64>) {
         self.cost = cost;
+    }
+
+    pub fn set_min_volume_constraint(&mut self, min_volume: Option<SimpleMetricF64>) {
+        self.storage_constraints.min_volume = min_volume;
+    }
+
+    pub fn set_max_volume_constraint(&mut self, max_volume: Option<SimpleMetricF64>) {
+        self.storage_constraints.max_volume = max_volume;
     }
 
     pub fn before(&self, timestep: &Timestep, state: &mut State) -> Result<(), VirtualStorageError> {
@@ -477,12 +465,10 @@ mod tests {
         let vs_builder = VirtualStorageBuilder::new("virtual-storage", &[link_node0, link_node1])
             .factors(&[2.0, 1.0])
             .initial_volume(StorageInitialVolume::Absolute(100.0))
-            .min_volume(Some(0.0.into()))
-            .max_volume(Some(100.0.into()))
-            .reset(VirtualStorageReset::Never)
-            .cost(None);
+            .reset(VirtualStorageReset::Never);
 
         let vs_idx = network.add_virtual_storage_node(vs_builder).unwrap();
+        network.set_virtual_storage_max_volume("virtual-storage", None, Some(100.0.into())).unwrap();
 
         // Setup a demand on output-0 and output-1
         for sub_name in &["0", "1"] {
@@ -535,12 +521,11 @@ mod tests {
 
         let vs_builder = VirtualStorageBuilder::new("vs", &nodes)
             .initial_volume(StorageInitialVolume::Proportional(1.0))
-            .min_volume(Some(0.0.into()))
-            .max_volume(Some(100.0.into()))
-            .reset(VirtualStorageReset::Never)
-            .cost(Some(20.0.into()));
+            .reset(VirtualStorageReset::Never);
 
         network.add_virtual_storage_node(vs_builder).unwrap();
+        network.set_virtual_storage_cost("vs", None, Some(20.0.into())).unwrap();
+        network.set_virtual_storage_max_volume("vs", None, Some(100.0.into())).unwrap();
 
         let expected = Array::zeros((366, 1));
 
@@ -574,12 +559,11 @@ mod tests {
 
         let vs_builder = VirtualStorageBuilder::new("vs", &nodes)
             .initial_volume(StorageInitialVolume::Proportional(1.0))
-            .min_volume(Some(0.0.into()))
-            .max_volume(Some(100.0.into()))
             .reset(VirtualStorageReset::NumberOfMonths { months: 1 });
 
         let vs_idx = network.add_virtual_storage_node(vs_builder).unwrap();
         let vs_vol_metric = network.add_derived_metric(DerivedMetric::VirtualStorageProportionalVolume(vs_idx));
+        network.set_virtual_storage_max_volume("vs", None, Some(100.0.into())).unwrap();
 
         // Virtual storage node cost increases with decreasing volume
         let cost_param = ControlCurveInterpolatedParameter::new(
@@ -632,12 +616,10 @@ mod tests {
         let vs_builder = VirtualStorageBuilder::new("virtual-storage", &nodes)
             .factors(&[1.0])
             .initial_volume(StorageInitialVolume::Absolute(2.5))
-            .min_volume(Some(0.0.into()))
-            .max_volume(Some(2.5.into()))
             .reset(VirtualStorageReset::Never)
-            .rolling_window(NonZeroUsize::new(5).unwrap())
-            .cost(None);
+            .rolling_window(NonZeroUsize::new(5).unwrap());
         let _vs = network.add_virtual_storage_node(vs_builder);
+        network.set_virtual_storage_max_volume("virtual-storage", None, Some(2.5.into())).unwrap();
 
         // Expected values will follow a pattern set by the first few time-steps
         let expected = |ts: &Timestep, _si: &ScenarioIndex| {
