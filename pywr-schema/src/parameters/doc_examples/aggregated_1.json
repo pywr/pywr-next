@@ -8,7 +8,7 @@
   },
   "metrics": [
     {
-      "type": "Constant",
+      "type": "Literal",
       "value": 3.1415
     },
     {

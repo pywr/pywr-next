@@ -1714,7 +1714,7 @@ mod tests {
                     "name": "supply1"
                 },
                 "max_flow": {
-                    "type": "Constant",
+                    "type": "Literal",
                     "value": 15.0
                 }
             }
@@ -1733,7 +1733,7 @@ mod tests {
                     "name": "storage1"
                 },
                 "max_volume": {
-                  "type": "Constant",
+                  "type": "Literal",
                   "value": 10.0
                 },
                 "initial_volume": {
@@ -1756,7 +1756,7 @@ mod tests {
                     "name": "storage1"
                 },
                 "max_volume": {
-                  "type": "Constant",
+                  "type": "Literal",
                   "value": 15.0
                 },
                 "initial_volume": {

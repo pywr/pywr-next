@@ -17,7 +17,7 @@
         },
         "type": "Catchment",
         "flow": {
-          "type": "Constant",
+          "type": "Literal",
           "value": 10.0
         }
       },
@@ -35,7 +35,7 @@
         "loss_factor": {
           "type": "Gross",
           "factor": {
-            "type": "Constant",
+            "type": "Literal",
             "value": 0.1
           }
         }

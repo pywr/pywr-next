@@ -26,19 +26,19 @@
         },
         "type": "Abstraction",
         "mrf": {
-          "type": "Constant",
+          "type": "Literal",
           "value": 2.0
         },
         "mrf_cost": {
-          "type": "Constant",
+          "type": "Literal",
           "value": -1000.0
         },
         "abs_max_flow": {
-          "type": "Constant",
+          "type": "Literal",
           "value": 4.0
         },
         "abs_cost": {
-          "type": "Constant",
+          "type": "Literal",
           "value": 1.0
         }
       },
@@ -54,11 +54,11 @@
         },
         "type": "Output",
         "cost": {
-          "type": "Constant",
+          "type": "Literal",
           "value": -500
         },
         "max_flow": {
-          "type": "Constant",
+          "type": "Literal",
           "value": 4.0
         }
       },
@@ -68,7 +68,7 @@
         },
         "type": "VirtualStorage",
         "max_volume": {
-          "type": "Constant",
+          "type": "Literal",
           "value": 13
         },
         "initial_volume": {

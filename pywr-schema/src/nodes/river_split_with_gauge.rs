@@ -354,12 +354,12 @@ fn convert_factors(
 ) -> Result<Vec<Metric>, ConversionError> {
     let mut iter = factors.into_iter();
     if let Some(first_factor) = iter.next() {
-        if let Metric::Constant { value } = first_factor.try_into_v2(parent_node, conversion_data)? {
+        if let Metric::Literal { value } = first_factor.try_into_v2(parent_node, conversion_data)? {
             // First Metric is a constant; we can proceed with the conversion
 
             let split_factors = iter
                 .map(|f| {
-                    if let Metric::Constant { value } = f.try_into_v2(parent_node, conversion_data)? {
+                    if let Metric::Literal { value } = f.try_into_v2(parent_node, conversion_data)? {
                         Ok(value)
                     } else {
                         Err(ConversionError::NonConstantValue {})
@@ -371,7 +371,7 @@ fn convert_factors(
             let sum: f64 = split_factors.iter().sum::<f64>() + value;
             Ok(split_factors
                 .into_iter()
-                .map(|f| Metric::Constant { value: f / sum })
+                .map(|f| Metric::Literal { value: f / sum })
                 .collect())
         } else {
             // Non-constant metric can not be easily converted to proportional factors

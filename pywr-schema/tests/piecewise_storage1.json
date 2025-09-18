@@ -17,11 +17,11 @@
         },
         "type": "Input",
         "max_flow": {
-          "type": "Constant",
+          "type": "Literal",
           "value": 5
         },
         "cost": {
-          "type": "Constant",
+          "type": "Literal",
           "value": 2.0
         }
       },
@@ -35,27 +35,27 @@
           "proportion": 1.0
         },
         "max_volume": {
-          "type": "Constant",
+          "type": "Literal",
           "value": 1000.0
         },
         "steps": [
           {
             "cost": {
-              "type": "Constant",
+              "type": "Literal",
               "value": -15
             },
             "control_curve": {
-              "type": "Constant",
+              "type": "Literal",
               "value": 0.25
             }
           },
           {
             "cost": {
-              "type": "Constant",
+              "type": "Literal",
               "value": -5
             },
             "control_curve": {
-              "type": "Constant",
+              "type": "Literal",
               "value": 0.5
             }
           }
@@ -67,11 +67,11 @@
         },
         "type": "Output",
         "max_flow": {
-          "type": "Constant",
+          "type": "Literal",
           "value": 15
         },
         "cost": {
-          "type": "Constant",
+          "type": "Literal",
           "value": -10
         }
       }

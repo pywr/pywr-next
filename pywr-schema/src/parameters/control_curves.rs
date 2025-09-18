@@ -421,7 +421,7 @@ mod tests {
                 },
                 "control_curves": [
                     {"type": "Parameter", "name": "reservoir_cc"},
-                    {"type": "Constant", "value": 0.2}
+                    {"type": "Literal", "value": 0.2}
                 ],
                 "values": [
                     [-0.1, -1.0],

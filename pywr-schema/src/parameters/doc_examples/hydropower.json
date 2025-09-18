@@ -4,11 +4,11 @@
   },
   "type": "HydropowerTarget",
   "target": {
-    "type": "Constant",
+    "type": "Literal",
     "value": 320.11
   },
   "water_elevation": {
-    "type": "Constant",
+    "type": "Literal",
     "value": 1.0
   },
   "turbine_elevation": 35.0,
