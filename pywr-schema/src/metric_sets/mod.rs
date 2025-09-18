@@ -126,6 +126,7 @@ impl MetricSetFilters {
 /// if they are not a duplication.
 #[skip_serializing_none]
 #[derive(Deserialize, Serialize, Clone, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct MetricSet {
     pub name: String,
     pub metrics: Option<Vec<Metric>>,
