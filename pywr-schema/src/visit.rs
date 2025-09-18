@@ -118,6 +118,8 @@ impl VisitMetrics for String {}
 impl VisitMetrics for PathBuf {}
 impl VisitMetrics for NonZeroUsize {}
 
+impl VisitMetrics for serde_json::Value {}
+
 /// A trait for recursively visiting paths in a schema.
 ///
 /// This trait is used to visit all the paths in a schema. This is useful for finding
@@ -228,3 +230,5 @@ impl VisitPaths for PathBuf {
     }
 }
 impl VisitPaths for NonZeroUsize {}
+
+impl VisitPaths for serde_json::Value {}

@@ -66,6 +66,7 @@ model_tests! {
     test_delay1: ("delay1.json", vec![("delay1-expected.csv", ResultsShape::Long)], vec![], vec![]),
     test_loss_link1: ("loss_link1.json", vec![("loss_link1-expected.csv", ResultsShape::Long)], vec!["ipm-simd", "ipm-ocl"], vec![]),
     test_loss_link2: ("loss_link2.json", vec![("loss_link2-expected.csv", ResultsShape::Long)], vec!["ipm-simd", "ipm-ocl"], vec![]),
+    test_muskingum: ("muskingum1.json", vec![("muskingum1-expected.csv", ResultsShape::Long)], vec!["cbc", "ipm-simd", "ipm-ocl"], vec![]),
     // TODO this asserted internal flows in the previous test
     test_piecewise_link1: ("piecewise_link1.json", vec![("piecewise-link1-nodes.csv", ResultsShape::Long), ("piecewise-link1-edges.csv", ResultsShape::Long)], vec![], vec![]),
     // TODO not sure why this is failing in IPM solvers (https://github.com/pywr/pywr-next/issues/293)
@@ -85,6 +86,7 @@ model_tests! {
     test_wtw1: ("wtw1.json", vec![("wtw1-expected.csv", ResultsShape::Long)], vec!["ipm-simd", "ipm-ocl"], vec![]),
     test_wtw2: ("wtw2.json", vec![("wtw2-expected.csv", ResultsShape::Long)], vec!["ipm-simd", "ipm-ocl"], vec![]),
     test_local_parameter1: ("local-parameter1.json", vec![("local-parameter1-expected.csv", ResultsShape::Long)], vec![], vec![]),
+    test_python_agg_func1: ("python-agg-func1.json", vec![("python-agg-func1-expected.csv", ResultsShape::Long)], vec![], vec![]),
     test_python_parameter2: ("python-parameter2.json", vec![("python-parameter2-expected.csv", ResultsShape::Long)], vec![], vec![]),
     test_python_parameter1: ("python-parameter1.json", vec![("python-parameter1-expected.csv", ResultsShape::Long)], vec![], vec![]),
     test_local_parameter2: ("local-parameter2.json", vec![("local-parameter2-expected.csv", ResultsShape::Long)], vec![], vec![]),

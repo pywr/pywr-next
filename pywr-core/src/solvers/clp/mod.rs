@@ -298,6 +298,14 @@ impl ClpSimplex {
     fn objective_value(&self) -> c_double {
         unsafe { Clp_objectiveValue(self.ptr) }
     }
+
+    #[allow(dead_code)]
+    fn write_mps(&mut self, filename: &str) {
+        let c_filename = CString::new(filename).expect("CString::new failed");
+        unsafe {
+            Clp_writeMps(self.ptr, c_filename.as_ptr(), 0, 1, 0.0);
+        }
+    }
 }
 
 pub struct ClpSolver {
@@ -391,7 +399,10 @@ impl Solver for ClpSolver {
 
         timings.update_constraints += now.elapsed();
 
+        // self.write_mps(&format!("model_{}.mps", timestep.index));
+
         let now = Instant::now();
+
         let solution = self.solve()?;
         timings.solve = now.elapsed();
 

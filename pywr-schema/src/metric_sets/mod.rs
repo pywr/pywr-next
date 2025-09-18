@@ -10,6 +10,8 @@ use pywr_schema_macros::skip_serializing_none;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::num::NonZeroUsize;
+#[cfg(feature = "core")]
+use std::path::Path;
 use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticStr};
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone, JsonSchema, Display, EnumDiscriminants)]
@@ -53,13 +55,15 @@ pub struct MetricAggregator {
 }
 
 #[cfg(feature = "core")]
-impl From<MetricAggregator> for pywr_core::recorders::Aggregator {
-    fn from(value: MetricAggregator) -> Self {
-        pywr_core::recorders::Aggregator::new(
-            value.freq.map(|p| p.into()),
-            value.func.into(),
-            value.child.map(|a| (*a).into()),
-        )
+impl MetricAggregator {
+    fn load(&self, data_path: Option<&Path>) -> Result<pywr_core::recorders::Aggregator, SchemaError> {
+        let child = self.child.as_ref().map(|a| a.load(data_path)).transpose()?;
+
+        Ok(pywr_core::recorders::Aggregator::new(
+            self.freq.map(|p| p.into()),
+            self.func.load(data_path)?,
+            child,
+        ))
     }
 }
 
@@ -164,7 +168,7 @@ impl MetricSet {
             }
         };
 
-        let aggregator = self.aggregator.clone().map(|a| a.into());
+        let aggregator = self.aggregator.clone().map(|a| a.load(args.data_path)).transpose()?;
 
         let metric_set = pywr_core::recorders::MetricSet::new(&self.name, aggregator, output_metrics);
         let _ = network.add_metric_set(metric_set)?;

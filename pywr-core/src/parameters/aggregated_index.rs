@@ -47,9 +47,13 @@ impl GeneralParameter<u64> for AggregatedIndexParameter<MetricU64> {
         state: &State,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<u64, ParameterCalculationError> {
-        Ok(self
-            .agg_func
-            .calc_iter_result_u64(self.metrics.iter().map(|p| p.get_value(network, state)))?)
+        let values = self
+            .metrics
+            .iter()
+            .map(|p| p.get_value(network, state))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(self.agg_func.calc_iter_u64(&values)?)
     }
 
     fn as_parameter(&self) -> &dyn Parameter
@@ -71,7 +75,7 @@ impl GeneralParameter<u64> for AggregatedIndexParameter<MetricU64> {
         Some(Box::new(AggregatedIndexParameter::<SimpleMetricU64> {
             meta: self.meta.clone(),
             metrics,
-            agg_func: self.agg_func,
+            agg_func: self.agg_func.clone(),
         }))
     }
 }
@@ -84,9 +88,13 @@ impl SimpleParameter<u64> for AggregatedIndexParameter<SimpleMetricU64> {
         values: &SimpleParameterValues,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<u64, SimpleCalculationError> {
-        Ok(self
-            .agg_func
-            .calc_iter_result_u64(self.metrics.iter().map(|p| p.get_value(values)))?)
+        let values = self
+            .metrics
+            .iter()
+            .map(|p| p.get_value(values))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(self.agg_func.calc_iter_u64(&values)?)
     }
 
     fn as_parameter(&self) -> &dyn Parameter
@@ -108,7 +116,7 @@ impl SimpleParameter<u64> for AggregatedIndexParameter<SimpleMetricU64> {
         Some(Box::new(AggregatedIndexParameter::<ConstantMetricU64> {
             meta: self.meta.clone(),
             metrics,
-            agg_func: self.agg_func,
+            agg_func: self.agg_func.clone(),
         }))
     }
 }
@@ -120,9 +128,13 @@ impl ConstParameter<u64> for AggregatedIndexParameter<ConstantMetricU64> {
         values: &ConstParameterValues,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<u64, ConstCalculationError> {
-        Ok(self
-            .agg_func
-            .calc_iter_result_u64(self.metrics.iter().map(|p| p.get_value(values)))?)
+        let values = self
+            .metrics
+            .iter()
+            .map(|p| p.get_value(values))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(self.agg_func.calc_iter_u64(&values)?)
     }
 
     fn as_parameter(&self) -> &dyn Parameter

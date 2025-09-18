@@ -499,12 +499,12 @@ impl PywrNetwork {
         // Create all of the outputs
         if let Some(outputs) = &self.outputs {
             for output in outputs {
-                output.add_to_model(&mut network, output_path).map_err(|source| {
-                    PywrNetworkBuildError::AddOutputError {
+                output
+                    .add_to_model(&mut network, data_path, output_path)
+                    .map_err(|source| PywrNetworkBuildError::AddOutputError {
                         name: output.name().to_string(),
                         source: Box::new(source),
-                    }
-                })?;
+                    })?;
             }
         }
 

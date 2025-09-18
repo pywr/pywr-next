@@ -1,14 +1,19 @@
 use crate::error::SchemaError;
 use crate::error::{ComponentConversionError, ConversionError};
+use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::network::LoadArgs;
 use crate::nodes::{LossFactor, NodeMeta};
 #[cfg(feature = "core")]
 use crate::nodes::{NodeAttribute, NodeComponent};
-use crate::parameters::Parameter;
+use crate::parameters::{ConstantValue, Parameter};
 use crate::{node_attribute_subset_enum, node_component_subset_enum};
 #[cfg(feature = "core")]
-use pywr_core::metric::MetricF64;
+use pywr_core::{
+    aggregated_node::Relationship,
+    metric::MetricF64,
+    parameters::{MuskingumParameter, ParameterName},
+};
 use pywr_schema_macros::{PywrVisitAll, skip_serializing_none};
 use pywr_v1_schema::nodes::LinkNode as LinkNodeV1;
 use schemars::JsonSchema;
@@ -31,11 +36,51 @@ node_component_subset_enum! {
     }
 }
 
+/// The initial condition for the Muskingum routing method.
+///
+/// - `SteadyState`: Assumes that the inflow and outflow are equal at the first time-step.
+/// - `Specified`: Allows the user to specify the initial inflow and outflow values.
+#[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, PywrVisitAll, strum_macros::Display)]
+#[serde(tag = "type", deny_unknown_fields)]
+pub enum MuskingumInitialCondition {
+    SteadyState,
+    Specified { inflow: f64, outflow: f64 },
+}
+
+#[cfg(feature = "core")]
+impl From<MuskingumInitialCondition> for pywr_core::parameters::MuskingumInitialCondition {
+    fn from(val: MuskingumInitialCondition) -> Self {
+        match val {
+            MuskingumInitialCondition::SteadyState => pywr_core::parameters::MuskingumInitialCondition::SteadyState,
+            MuskingumInitialCondition::Specified { inflow, outflow } => {
+                pywr_core::parameters::MuskingumInitialCondition::Specified { inflow, outflow }
+            }
+        }
+    }
+}
+
+#[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, PywrVisitAll, strum_macros::Display)]
+#[serde(tag = "type", deny_unknown_fields)]
+pub enum RoutingMethod {
+    Delay {
+        delay: u64,
+        initial_value: ConstantValue<f64>,
+    },
+    Muskingum {
+        travel_time: Metric,
+        weight: Metric,
+        initial_condition: MuskingumInitialCondition,
+    },
+}
+
 #[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 #[doc = svgbobdoc::transform!(
-/// A link node representing a river with an optional proportional loss.
+/// A link node representing a river with an optional proportional loss and routing method.
+///
+/// With no routing method or loss this is simply a link node. With only a loss factor it
+/// creates a link node with an output node to represent the loss:
 ///
 /// ```svgbob
 ///
@@ -48,6 +93,41 @@ node_component_subset_enum! {
 ///               <RiverNode>.loss
 ///
 /// ```
+///
+/// With only a routing method it creates an input and output node with an aggregated node
+/// to represent the routing:
+///
+/// ```svgbob
+///
+///
+///      U                D
+///     -*---> O    I --->*
+///
+/// ```
+///
+/// With both a loss factor and routing method it creates a link node, output node, input node
+/// and two aggregated nodes to represent the loss and routing:
+///
+/// ```svgbob
+///
+///                            <RiverNode>.net    D
+///                         .-------->L---------->*
+///      U                  |
+///     -*---> O    I --->*-|
+///                         !
+///                         '-.-.-.-.->O
+///                                 <RiverNode>.loss
+///
+/// ```
+///
+/// # Routing methods
+///
+/// Routing methods can be used to represent the travel time and attenuation of flood waves
+/// through a river reach.
+///
+/// ## Delay routing
+///
+/// ## Muskingum routing
 ///
 /// # Available attributes and components
 ///
@@ -62,6 +142,8 @@ pub struct RiverNode {
     /// An optional loss. This internally creates an [`crate::nodes::OutputNode`] and
     /// [`pywr_core::nodes::Aggregated`] to handle the loss.
     pub loss_factor: Option<LossFactor>,
+    /// The routing method to use.
+    pub routing_method: Option<RoutingMethod>,
 }
 
 impl RiverNode {
@@ -77,21 +159,36 @@ impl RiverNode {
     fn net_sub_name() -> Option<&'static str> {
         Some("net")
     }
+    fn output_sub_name() -> Option<&'static str> {
+        Some("inflow")
+    }
+
+    fn input_sub_name() -> Option<&'static str> {
+        Some("outflow")
+    }
 
     pub fn input_connectors(&self) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
-        let mut connectors = vec![(self.meta.name.as_str(), Self::net_sub_name().map(|s| s.to_string()))];
+        let connectors = match (self.loss_factor.is_some(), self.routing_method.is_some()) {
+            (false, false) => vec![(self.meta.name.as_str(), Self::net_sub_name().map(|s| s.to_string()))],
+            (true, false) => vec![
+                (self.meta.name.as_str(), Self::net_sub_name().map(|s| s.to_string())),
+                (self.meta.name.as_str(), Self::loss_sub_name().map(|s| s.to_string())),
+            ],
+            // If there is routing directly to the output node
+            _ => vec![(self.meta.name.as_str(), Self::output_sub_name().map(|s| s.to_string()))],
+        };
 
-        // add the optional loss link
-        if self.loss_factor.is_some() {
-            connectors.push((self.meta.name.as_str(), Self::loss_sub_name().map(|s| s.to_string())))
-        }
         Ok(connectors)
     }
+
     pub fn output_connectors(&self) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
-        Ok(vec![(
-            self.meta.name.as_str(),
-            Self::net_sub_name().map(|s| s.to_string()),
-        )])
+        let connectors = match (self.loss_factor.is_some(), self.routing_method.is_some()) {
+            // If there is routing, but no loss connect directly from the input node
+            (false, true) => vec![(self.meta.name.as_str(), Self::input_sub_name().map(|s| s.to_string()))],
+            _ => vec![(self.meta.name.as_str(), Self::net_sub_name().map(|s| s.to_string()))],
+        };
+
+        Ok(connectors)
     }
 
     pub fn default_attribute(&self) -> RiverNodeAttribute {
@@ -106,8 +203,12 @@ impl RiverNode {
 #[cfg(feature = "core")]
 impl RiverNode {
     /// The name of the aggregated node to handle the proportional loss.
-    fn agg_sub_name() -> Option<&'static str> {
-        Some("aggregated_node")
+    fn agg_loss_sub_name() -> Option<&'static str> {
+        Some("aggregated_loss_node")
+    }
+
+    fn agg_routing_sub_name() -> Option<&'static str> {
+        Some("aggregated_routing_node")
     }
 
     pub fn node_indices_for_flow_constraints(
@@ -123,9 +224,9 @@ impl RiverNode {
 
         let indices = match component {
             RiverNodeComponent::Inflow => {
-                // If the loss node is defined, we need to return both the net and loss nodes
-                match network.get_node_index_by_name(self.meta.name.as_str(), Self::loss_sub_name()) {
-                    Some(loss_idx) => {
+                match (self.loss_factor.is_some(), self.routing_method.is_some()) {
+                    (false, false) => {
+                        // Simple link node
                         vec![
                             network
                                 .get_node_index_by_name(self.meta.name.as_str(), Self::net_sub_name())
@@ -133,28 +234,74 @@ impl RiverNode {
                                     name: self.meta.name.clone(),
                                     sub_name: Self::net_sub_name().map(String::from),
                                 })?,
-                            loss_idx,
                         ]
                     }
-                    None => vec![
-                        network
-                            .get_node_index_by_name(self.meta.name.as_str(), Self::net_sub_name())
-                            .ok_or_else(|| SchemaError::CoreNodeNotFound {
-                                name: self.meta.name.clone(),
-                                sub_name: Self::net_sub_name().map(String::from),
-                            })?,
-                    ],
+                    (true, false) => {
+                        // Loss, but no routing
+                        vec![
+                            network
+                                .get_node_index_by_name(self.meta.name.as_str(), Self::net_sub_name())
+                                .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                                    name: self.meta.name.clone(),
+                                    sub_name: Self::net_sub_name().map(String::from),
+                                })?,
+                            network
+                                .get_node_index_by_name(self.meta.name.as_str(), Self::loss_sub_name())
+                                .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                                    name: self.meta.name.clone(),
+                                    sub_name: Self::loss_sub_name().map(String::from),
+                                })?,
+                        ]
+                    }
+                    (false, true) => {
+                        // Routing, but no loss
+                        vec![
+                            network
+                                .get_node_index_by_name(self.meta.name.as_str(), Self::output_sub_name())
+                                .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                                    name: self.meta.name.clone(),
+                                    sub_name: Self::output_sub_name().map(String::from),
+                                })?,
+                        ]
+                    }
+                    (true, true) => {
+                        // Both loss and routing
+                        vec![
+                            network
+                                .get_node_index_by_name(self.meta.name.as_str(), Self::output_sub_name())
+                                .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                                    name: self.meta.name.clone(),
+                                    sub_name: Self::output_sub_name().map(String::from),
+                                })?,
+                        ]
+                    }
                 }
             }
             RiverNodeComponent::Outflow => {
-                vec![
-                    network
-                        .get_node_index_by_name(self.meta.name.as_str(), Self::net_sub_name())
-                        .ok_or_else(|| SchemaError::CoreNodeNotFound {
-                            name: self.meta.name.clone(),
-                            sub_name: Self::net_sub_name().map(String::from),
-                        })?,
-                ]
+                match self.routing_method.is_some() {
+                    false => {
+                        // Simple link node
+                        vec![
+                            network
+                                .get_node_index_by_name(self.meta.name.as_str(), Self::net_sub_name())
+                                .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                                    name: self.meta.name.clone(),
+                                    sub_name: Self::net_sub_name().map(String::from),
+                                })?,
+                        ]
+                    }
+                    true => {
+                        // Routing
+                        vec![
+                            network
+                                .get_node_index_by_name(self.meta.name.as_str(), Self::input_sub_name())
+                                .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                                    name: self.meta.name.clone(),
+                                    sub_name: Self::input_sub_name().map(String::from),
+                                })?,
+                        ]
+                    }
+                }
             }
             RiverNodeComponent::Loss => {
                 match network.get_node_index_by_name(self.meta.name.as_str(), Self::loss_sub_name()) {
@@ -168,18 +315,63 @@ impl RiverNode {
     }
 
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
-        let river_idx = network.add_link_node(self.meta.name.as_str(), Self::net_sub_name())?;
+        // Create nodes based on the presence of loss and routing method
+        match (self.loss_factor.is_some(), self.routing_method.is_some()) {
+            (false, false) => {
+                // Simple link node
+                network.add_link_node(self.meta.name.as_str(), Self::net_sub_name())?;
+            }
+            (true, false) => {
+                // Loss, but no routing
+                let river_idx = network.add_link_node(self.meta.name.as_str(), Self::net_sub_name())?;
+                let loss_idx = network.add_output_node(self.meta.name.as_str(), Self::loss_sub_name())?;
+                // The aggregated node factors to handle the loss
+                network.add_aggregated_node(
+                    self.meta.name.as_str(),
+                    Self::agg_loss_sub_name(),
+                    &[vec![river_idx], vec![loss_idx]],
+                    None,
+                )?;
+            }
+            (false, true) => {
+                // Routing, but no loss
+                let inflow_idx = network.add_output_node(self.meta.name.as_str(), Self::output_sub_name())?;
+                let outflow_idx = network.add_input_node(self.meta.name.as_str(), Self::input_sub_name())?;
 
-        // add nodes and edge
-        if self.loss_factor.is_some() {
-            let loss_idx = network.add_output_node(self.meta.name.as_str(), Self::loss_sub_name())?;
-            // The aggregated node factors to handle the loss
-            network.add_aggregated_node(
-                self.meta.name.as_str(),
-                Self::agg_sub_name(),
-                &[vec![river_idx], vec![loss_idx]],
-                None,
-            )?;
+                // This aggregated node will contain the factors to enforce the Muskingum routing
+                network.add_aggregated_node(
+                    self.meta.name.as_str(),
+                    Self::agg_routing_sub_name(),
+                    &[vec![outflow_idx], vec![inflow_idx]],
+                    None,
+                )?;
+            }
+            (true, true) => {
+                // Both loss and routing
+                let river_idx = network.add_link_node(self.meta.name.as_str(), Self::net_sub_name())?;
+                let loss_idx = network.add_output_node(self.meta.name.as_str(), Self::loss_sub_name())?;
+                // The aggregated node factors to handle the loss
+                network.add_aggregated_node(
+                    self.meta.name.as_str(),
+                    Self::agg_loss_sub_name(),
+                    &[vec![river_idx], vec![loss_idx]],
+                    None,
+                )?;
+                let inflow_idx = network.add_output_node(self.meta.name.as_str(), Self::output_sub_name())?;
+                let outflow_idx = network.add_input_node(self.meta.name.as_str(), Self::input_sub_name())?;
+
+                // This aggregated node will contain the factors to enforce the Muskingum routing
+                network.add_aggregated_node(
+                    self.meta.name.as_str(),
+                    Self::agg_routing_sub_name(),
+                    &[vec![outflow_idx], vec![inflow_idx]],
+                    None,
+                )?;
+
+                // The input node needs connecting to the main link node and loss node.
+                network.connect_nodes(outflow_idx, river_idx)?;
+                network.connect_nodes(outflow_idx, loss_idx)?;
+            }
         }
 
         Ok(())
@@ -196,7 +388,86 @@ impl RiverNode {
                 // Loaded a constant zero factor; ensure that the loss node has zero flow
                 network.set_node_max_flow(self.meta.name.as_str(), Self::loss_sub_name(), Some(0.0.into()))?;
             }
-            network.set_aggregated_node_relationship(self.meta.name.as_str(), Self::agg_sub_name(), factors)?;
+            network.set_aggregated_node_relationship(self.meta.name.as_str(), Self::agg_loss_sub_name(), factors)?;
+        }
+
+        if let Some(routing_method) = &self.routing_method {
+            match routing_method {
+                RoutingMethod::Delay { delay, initial_value } => {
+                    // Create a delay parameter using the node's name as the parent identifier
+                    let name = ParameterName::new("delay", Some(self.meta.name.as_str()));
+                    let inflow_idx = network
+                        .get_node_index_by_name(self.meta.name.as_str(), Self::output_sub_name())
+                        .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                            name: self.meta.name.clone(),
+                            sub_name: Self::output_sub_name().map(String::from),
+                        })?;
+                    let metric = MetricF64::NodeInFlow(inflow_idx);
+
+                    let p = pywr_core::parameters::DelayParameter::new(
+                        name,
+                        metric,
+                        *delay,
+                        initial_value.load(args.tables)?,
+                    );
+                    let delay_idx = network.add_parameter(Box::new(p))?;
+
+                    // Apply it as a constraint on the input node.
+                    let metric: MetricF64 = delay_idx.into();
+                    network.set_node_max_flow(
+                        self.meta.name.as_str(),
+                        Self::input_sub_name(),
+                        metric.clone().into(),
+                    )?;
+                    network.set_node_min_flow(self.meta.name.as_str(), Self::input_sub_name(), metric.into())?;
+                }
+                RoutingMethod::Muskingum {
+                    travel_time,
+                    weight,
+                    initial_condition,
+                } => {
+                    // Create a Muskingum parameter using the node's name as the parent identifier
+                    let name = ParameterName::new("muskingum", Some(self.meta.name.as_str()));
+                    let inflow_idx = network
+                        .get_node_index_by_name(self.meta.name.as_str(), Self::output_sub_name())
+                        .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                            name: self.meta.name.clone(),
+                            sub_name: Self::output_sub_name().map(String::from),
+                        })?;
+                    let outflow_idx = network
+                        .get_node_index_by_name(self.meta.name.as_str(), Self::input_sub_name())
+                        .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                            name: self.meta.name.clone(),
+                            sub_name: Self::input_sub_name().map(String::from),
+                        })?;
+
+                    let travel_time = travel_time.load(network, args, Some(&self.meta.name))?;
+                    let weight = weight.load(network, args, Some(&self.meta.name))?;
+
+                    let muskingum_parameter = MuskingumParameter::new(
+                        name.clone(),
+                        MetricF64::NodeInFlow(inflow_idx),
+                        MetricF64::NodeOutFlow(outflow_idx),
+                        travel_time,
+                        weight,
+                        initial_condition.clone().into(),
+                    );
+
+                    let muskingum_idx = network.add_multi_value_parameter(Box::new(muskingum_parameter))?;
+
+                    // Set the relationship on the aggregated node to enforce the Muskingum routing
+                    let factors = Relationship::new_coefficient_factors(
+                        &[1.0.into(), (muskingum_idx.clone(), "inflow_factor".to_string()).into()],
+                        Some((muskingum_idx, "rhs".to_string()).into()),
+                    );
+
+                    network.set_aggregated_node_relationship(
+                        self.meta.name.as_str(),
+                        Self::agg_routing_sub_name(),
+                        Some(factors),
+                    )?;
+                }
+            }
         }
 
         Ok(())
@@ -215,42 +486,22 @@ impl RiverNode {
 
         let metric = match attr {
             RiverNodeAttribute::Inflow => {
-                match network.get_node_index_by_name(self.meta.name.as_str(), Self::loss_sub_name()) {
-                    // The total inflow with the loss is the sum of the net and loss node
-                    Some(loss_idx) => {
-                        let indices = vec![
-                            network
-                                .get_node_index_by_name(self.meta.name.as_str(), Self::net_sub_name())
-                                .ok_or_else(|| SchemaError::CoreNodeNotFound {
-                                    name: self.meta.name.clone(),
-                                    sub_name: Self::net_sub_name().map(String::from),
-                                })?,
-                            loss_idx,
-                        ];
-                        MetricF64::MultiNodeInFlow {
-                            indices,
-                            name: self.meta.name.to_string(),
-                        }
-                    }
-                    // Loss is None
-                    None => MetricF64::NodeInFlow(
-                        network
-                            .get_node_index_by_name(self.meta.name.as_str(), Self::net_sub_name())
-                            .ok_or_else(|| SchemaError::CoreNodeNotFound {
-                                name: self.meta.name.clone(),
-                                sub_name: Self::net_sub_name().map(String::from),
-                            })?,
-                    ),
+                let indices =
+                    self.node_indices_for_flow_constraints(network, Some(RiverNodeComponent::Inflow.into()))?;
+
+                MetricF64::MultiNodeInFlow {
+                    indices,
+                    name: self.meta.name.to_string(),
                 }
             }
             RiverNodeAttribute::Outflow => {
-                let idx = network
-                    .get_node_index_by_name(self.meta.name.as_str(), Self::net_sub_name())
-                    .ok_or_else(|| SchemaError::CoreNodeNotFound {
-                        name: self.meta.name.clone(),
-                        sub_name: Self::net_sub_name().map(String::from),
-                    })?;
-                MetricF64::NodeOutFlow(idx)
+                let indices =
+                    self.node_indices_for_flow_constraints(network, Some(RiverNodeComponent::Outflow.into()))?;
+
+                MetricF64::MultiNodeOutFlow {
+                    indices,
+                    name: self.meta.name.to_string(),
+                }
             }
             RiverNodeAttribute::Loss => {
                 match network.get_node_index_by_name(self.meta.name.as_str(), Self::loss_sub_name()) {
@@ -302,6 +553,7 @@ impl TryFrom<LinkNodeV1> for RiverNode {
             meta,
             parameters: None,
             loss_factor: None,
+            routing_method: None,
         };
         Ok(n)
     }

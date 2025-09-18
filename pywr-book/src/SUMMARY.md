@@ -16,6 +16,7 @@
     - [Array tables](./external-data/array-tables.md)
     - [Time series tables](./external-data/timeseries.md)
 - [Custom parameters](./custom_parameters.md)
+- [River routing and attenuation](./river-routing.md)
 - [Multi-models](./multi_models.md)
 - [Migration guide](./migration_guide.md)
 - [Model management](./model-management/README.md)

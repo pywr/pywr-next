@@ -72,7 +72,7 @@ impl DelayNode {
         Some("inflow")
     }
 
-    fn input_sub_now() -> Option<&'static str> {
+    fn input_sub_name() -> Option<&'static str> {
         Some("outflow")
     }
 
@@ -88,7 +88,7 @@ impl DelayNode {
         // Outflow goes from the input node
         Ok(vec![(
             self.meta.name.as_str(),
-            Self::input_sub_now().map(|s| s.to_string()),
+            Self::input_sub_name().map(|s| s.to_string()),
         )])
     }
 
@@ -122,10 +122,10 @@ impl DelayNode {
                     sub_name: Self::output_sub_name().map(String::from),
                 })?,
             DelayNodeComponent::Outflow => network
-                .get_node_index_by_name(self.meta.name.as_str(), Self::input_sub_now())
+                .get_node_index_by_name(self.meta.name.as_str(), Self::input_sub_name())
                 .ok_or_else(|| SchemaError::CoreNodeNotFound {
                     name: self.meta.name.clone(),
-                    sub_name: Self::input_sub_now().map(String::from),
+                    sub_name: Self::input_sub_name().map(String::from),
                 })?,
         };
 
@@ -133,7 +133,7 @@ impl DelayNode {
     }
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
         network.add_output_node(self.meta.name.as_str(), Self::output_sub_name())?;
-        network.add_input_node(self.meta.name.as_str(), Self::input_sub_now())?;
+        network.add_input_node(self.meta.name.as_str(), Self::input_sub_name())?;
 
         Ok(())
     }
@@ -162,8 +162,8 @@ impl DelayNode {
 
         // Apply it as a constraint on the input node.
         let metric: MetricF64 = delay_idx.into();
-        network.set_node_max_flow(self.meta.name.as_str(), Self::input_sub_now(), metric.clone().into())?;
-        network.set_node_min_flow(self.meta.name.as_str(), Self::input_sub_now(), metric.into())?;
+        network.set_node_max_flow(self.meta.name.as_str(), Self::input_sub_name(), metric.clone().into())?;
+        network.set_node_min_flow(self.meta.name.as_str(), Self::input_sub_name(), metric.into())?;
 
         Ok(())
     }
@@ -182,10 +182,10 @@ impl DelayNode {
         let metric = match attr {
             DelayNodeAttribute::Outflow => {
                 let idx = network
-                    .get_node_index_by_name(self.meta.name.as_str(), Self::input_sub_now())
+                    .get_node_index_by_name(self.meta.name.as_str(), Self::input_sub_name())
                     .ok_or_else(|| SchemaError::CoreNodeNotFound {
                         name: self.meta.name.clone(),
-                        sub_name: Self::input_sub_now().map(String::from),
+                        sub_name: Self::input_sub_name().map(String::from),
                     })?;
                 MetricF64::NodeOutFlow(idx)
             }

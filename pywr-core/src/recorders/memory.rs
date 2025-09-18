@@ -1,4 +1,4 @@
-use crate::agg_funcs::AggFuncF64;
+use crate::agg_funcs::{AggFuncError, AggFuncF64};
 use crate::models::ModelDomain;
 use crate::network::Network;
 use crate::recorders::aggregator::PeriodValue;
@@ -17,12 +17,14 @@ use std::ops::Deref;
 use thiserror::Error;
 use tracing::warn;
 
-#[derive(Error, Debug, PartialEq, Eq)]
+#[derive(Error, Debug)]
 pub enum AggregationError {
     #[error("Aggregation function not defined.")]
     AggregationFunctionNotDefined,
     #[error("Aggregation function failed.")]
     AggregationFunctionFailed,
+    #[error("Aggregation function error: {0}")]
+    AggFuncError(#[from] AggFuncError),
 }
 
 #[derive(Clone)]
@@ -54,7 +56,7 @@ impl Aggregation {
             self.metric
                 .as_ref()
                 .ok_or(AggregationError::AggregationFunctionNotDefined)?
-                .calc_iter_f64(&values.value)
+                .calc_iter_f64(&values.value)?
         };
 
         Ok(PeriodValue::new(values.start, values.duration, agg_value))
@@ -74,7 +76,7 @@ impl Aggregation {
             self.metric
                 .as_ref()
                 .ok_or(AggregationError::AggregationFunctionNotDefined)?
-                .calc_iter_f64(values)
+                .calc_iter_f64(values)?
         };
 
         Ok(agg_value)
@@ -94,7 +96,7 @@ impl Aggregation {
             self.scenario
                 .as_ref()
                 .ok_or(AggregationError::AggregationFunctionNotDefined)?
-                .calc_iter_f64(values)
+                .calc_iter_f64(values)?
         };
 
         Ok(agg_value)

@@ -22,7 +22,7 @@ use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticS
 pub enum Output {
     CSV(CsvOutput),
     HDF5(Hdf5Output),
-    Memory(MemoryOutput),
+    Memory(Box<MemoryOutput>),
 }
 
 #[cfg(feature = "core")]
@@ -30,12 +30,13 @@ impl Output {
     pub fn add_to_model(
         &self,
         network: &mut pywr_core::network::Network,
+        data_path: Option<&Path>,
         output_path: Option<&Path>,
     ) -> Result<(), SchemaError> {
         match self {
             Self::CSV(o) => o.add_to_model(network, output_path),
             Self::HDF5(o) => o.add_to_model(network, output_path),
-            Self::Memory(o) => o.add_to_model(network),
+            Self::Memory(o) => o.add_to_model(network, data_path),
         }
     }
 
