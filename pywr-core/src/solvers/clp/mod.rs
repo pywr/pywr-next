@@ -8,6 +8,8 @@ use crate::state::{ConstParameterValues, State};
 use crate::timestep::Timestep;
 use coin_or_sys::clp::*;
 use libc::{c_double, c_int};
+#[cfg(feature = "pyo3")]
+pub use settings::build_clp_settings_py;
 pub use settings::{ClpSolverSettings, ClpSolverSettingsBuilder};
 use std::ffi::CString;
 use std::fmt::Display;

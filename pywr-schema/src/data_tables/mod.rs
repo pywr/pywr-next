@@ -21,6 +21,8 @@ mod vec;
 use crate::ConversionError;
 use crate::digest::{Checksum, ChecksumError};
 use crate::parameters::TableIndex;
+#[cfg(feature = "pyo3")]
+use pyo3::pyclass;
 use pywr_schema_macros::{PywrVisitAll, skip_serializing_none};
 use pywr_v1_schema::parameters::TableDataRef as TableDataRefV1;
 #[cfg(feature = "core")]
@@ -324,6 +326,7 @@ impl LoadedTableCollection {
 #[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll, PartialEq)]
 #[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "pyo3", pyclass)]
 pub struct TableDataRef {
     pub table: String,
     pub column: Option<TableIndex>,

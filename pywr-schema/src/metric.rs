@@ -16,6 +16,8 @@ use crate::parameters::ParameterType;
 use crate::timeseries::TimeseriesColumns;
 use crate::timeseries::TimeseriesReference;
 use crate::v1::{ConversionData, TryFromV1, TryIntoV2};
+#[cfg(feature = "pyo3")]
+use pyo3::{PyResult, exceptions::PyRuntimeError, pyclass, pymethods};
 #[cfg(feature = "core")]
 use pywr_core::{
     metric::{MetricF64, MetricU64},
@@ -42,6 +44,7 @@ use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticS
 #[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
 // This creates a separate enum called `MetricType` that is available in this module.
 #[strum_discriminants(name(MetricType))]
+#[cfg_attr(feature = "pyo3", pyclass)]
 pub enum Metric {
     /// A literal floating point value.
     Literal { value: f64 },
@@ -201,6 +204,16 @@ impl Metric {
     }
 }
 
+#[cfg(feature = "pyo3")]
+#[pymethods]
+impl Metric {
+    /// Serialize the metric to a JSON string.
+    fn to_json_string(&self) -> PyResult<String> {
+        let data = serde_json::to_string_pretty(self).map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        Ok(data)
+    }
+}
+
 impl TryFromV1<ParameterValueV1> for Metric {
     type Error = ConversionError;
 
@@ -249,6 +262,7 @@ impl TryFromV1<ParameterValueV1> for Metric {
 #[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll, PartialEq)]
 #[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "pyo3", pyclass)]
 pub struct NodeAttrReference {
     /// The name of the node
     pub name: String,
@@ -358,6 +372,7 @@ impl From<String> for NodeComponentReference {
 #[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PartialEq)]
 #[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "pyo3", pyclass)]
 pub struct ParameterReference {
     /// The name of the parameter
     pub name: String,
@@ -464,6 +479,7 @@ impl ParameterReference {
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PartialEq)]
 #[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "pyo3", pyclass)]
 pub struct EdgeReference {
     /// The edge referred to by this reference.
     pub edge: Edge,

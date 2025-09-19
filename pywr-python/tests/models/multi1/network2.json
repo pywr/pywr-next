@@ -1,0 +1,56 @@
+{
+  "nodes": [
+    {
+      "meta": {
+        "name": "supply2"
+      },
+      "type": "Input",
+      "max_flow": {
+        "type": "InterNetworkTransfer",
+        "name": "inflow"
+      }
+    },
+    {
+      "meta": {
+        "name": "link2"
+      },
+      "type": "Link"
+    },
+    {
+      "meta": {
+        "name": "demand2"
+      },
+      "type": "Output",
+      "max_flow": {
+        "type": "Parameter",
+        "name": "demand"
+      },
+      "cost": {
+        "type": "Literal",
+        "value": -10
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from_node": "supply2",
+      "to_node": "link2"
+    },
+    {
+      "from_node": "link2",
+      "to_node": "demand2"
+    }
+  ],
+  "parameters": [
+    {
+      "meta": {
+        "name": "demand"
+      },
+      "type": "Constant",
+      "value": {
+        "type": "Literal",
+        "value": 20.0
+      }
+    }
+  ]
+}

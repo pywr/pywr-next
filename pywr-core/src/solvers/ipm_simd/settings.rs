@@ -1,5 +1,7 @@
 use crate::solvers::SolverSettings;
 use ipm_simd::Tolerances;
+#[cfg(feature = "pyo3")]
+use pyo3::{Bound, PyResult, exceptions::PyRuntimeError, prelude::PyAnyMethods, types::PyDict};
 use std::num::NonZeroUsize;
 use wide::f64x4;
 
@@ -138,6 +140,43 @@ impl SimdIpmSolverSettingsBuilder {
             ignore_feature_requirements: self.ignore_feature_requirements,
         }
     }
+}
+
+#[cfg(feature = "pyo3")]
+pub fn build_ipm_simd_settings_py(kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<SimdIpmSolverSettings> {
+    let mut builder = SimdIpmSolverSettingsBuilder::default();
+
+    if let Some(kwargs) = kwargs {
+        if let Ok(threads) = kwargs.get_item("threads") {
+            builder = builder.threads(threads.extract::<usize>()?);
+
+            kwargs.del_item("threads")?;
+        }
+
+        if let Ok(parallel) = kwargs.get_item("parallel") {
+            if parallel.extract::<bool>()? {
+                builder = builder.parallel();
+            }
+
+            kwargs.del_item("parallel")?;
+        }
+
+        if let Ok(ignore) = kwargs.get_item("ignore_feature_requirements") {
+            if ignore.extract::<bool>()? {
+                builder = builder.ignore_feature_requirements();
+            }
+
+            kwargs.del_item("ignore_feature_requirements")?;
+        }
+
+        if !kwargs.is_empty()? {
+            return Err(PyRuntimeError::new_err(format!(
+                "Unknown keyword arguments: {kwargs:?}",
+            )));
+        }
+    }
+
+    Ok(builder.build())
 }
 
 #[cfg(test)]

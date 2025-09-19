@@ -2,8 +2,10 @@ from pathlib import Path
 from typing import Optional
 
 from .pywr import (
-    Schema,
+    ModelSchema,
+    MultiNetworkModelSchema,
     Model,
+    MultiNetworkModel,
     ModelResult,
     Timestep,
     ScenarioIndex,
@@ -16,8 +18,10 @@ from .pywr import (
 )
 
 __all__ = [
-    "Schema",
+    "ModelSchema",
+    "MultiNetworkModelSchema",
     "Model",
+    "MultiNetworkModel",
     "ModelResult",
     "Timestep",
     "ScenarioIndex",
@@ -48,6 +52,6 @@ def run_from_path(
     if output_path is None:
         output_path = filename.parent
 
-    schema = Schema.from_path(filename)
+    schema = ModelSchema.from_path(filename)
     model = schema.build(data_path=data_path, output_path=output_path)
     model.run(solver)

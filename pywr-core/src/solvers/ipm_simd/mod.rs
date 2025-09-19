@@ -11,6 +11,8 @@ use ipm_simd::{PathFollowingDirectSimdSolver, Tolerances};
 use rayon::iter::IndexedParallelIterator;
 use rayon::iter::ParallelIterator;
 use rayon::prelude::ParallelSliceMut;
+#[cfg(feature = "pyo3")]
+pub use settings::build_ipm_simd_settings_py;
 pub use settings::{SimdIpmSolverSettings, SimdIpmSolverSettingsBuilder};
 use std::collections::BTreeMap;
 use std::num::NonZeroUsize;
