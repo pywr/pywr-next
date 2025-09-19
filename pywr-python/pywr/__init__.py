@@ -52,6 +52,6 @@ def run_from_path(
     if output_path is None:
         output_path = filename.parent
 
-    schema = Schema.from_path(filename)
+    schema = ModelSchema.from_path(filename)
     model = schema.build(data_path=data_path, output_path=output_path)
     model.run(solver)
