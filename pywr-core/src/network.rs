@@ -102,23 +102,23 @@ impl RunDuration {
     }
 
     /// Returns the speed of the run in terms of time steps per second.
-    pub fn speed(&self) -> Option<f64> {
+    pub fn speed(&self) -> f64 {
         match self {
-            RunDuration::Running { .. } => None,
+            RunDuration::Running {
+                started,
+                timesteps_completed,
+            } => *timesteps_completed as f64 / started.elapsed().as_secs_f64(),
             RunDuration::Finished {
                 duration,
                 timesteps_completed,
-            } => Some(*timesteps_completed as f64 / duration.as_secs_f64()),
+            } => *timesteps_completed as f64 / duration.as_secs_f64(),
         }
     }
 
     /// Prints a summary of the run duration and speed to the log.
     pub fn print_table(&self) {
-        info!("{: <24} | {: <10.5}s", "Total", self.total_duration().as_secs_f64());
-        match self.speed() {
-            None => info!("{: <24} | Unknown", "Speed"),
-            Some(speed) => info!("{: <24} | {: <10.5} ts/s", "Speed", speed),
-        };
+        info!("{: <24} | {: <10.5} s", "Total", self.total_duration().as_secs_f64());
+        info!("{: <24} | {: <10.5} ts/s", "Speed", self.speed());
     }
 }
 
@@ -593,6 +593,14 @@ pub struct NetworkResult {
 }
 
 impl NetworkResult {
+    pub fn len(&self) -> usize {
+        self.results.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.results.is_empty()
+    }
+
     /// Get the results of a recorder by name.
     pub fn get(&self, name: &str) -> Option<&dyn RecorderFinalResult> {
         self.results.get(name).map(|r| r.as_ref())

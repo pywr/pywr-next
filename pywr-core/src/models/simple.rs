@@ -128,19 +128,16 @@ impl ModelTimings {
     }
 
     #[getter]
-    pub fn speed(&self) -> Option<f64> {
+    pub fn speed(&self) -> f64 {
         self.run_duration.speed()
     }
 
     fn __repr__(&self) -> String {
-        match self.speed() {
-            Some(speed) => format!(
-                "<ModelTimings completed in {:.2} seconds with speed {:.2} time-steps/second>",
-                self.total_duration(),
-                speed
-            ),
-            None => format!("<ModelTimings completed in {:.2} seconds>", self.total_duration()),
-        }
+        format!(
+            "<ModelTimings completed in {:.2} seconds with speed {:.2} time-steps/second>",
+            self.total_duration(),
+            self.speed()
+        )
     }
 }
 
@@ -150,25 +147,31 @@ impl ModelTimings {
 #[cfg_attr(feature = "pyo3", pyclass)]
 #[derive(Clone)]
 pub struct ModelResult {
-    #[pyo3(get)]
-    timings: ModelTimings,
-    network_result: NetworkResult,
-}
-
-impl ModelResult {
-    /// Get a reference to the results map.
-    pub fn network_result(&self) -> &NetworkResult {
-        &self.network_result
-    }
+    pub timings: ModelTimings,
+    pub network_result: NetworkResult,
 }
 
 #[cfg(feature = "pyo3")]
 #[pymethods]
 impl ModelResult {
     #[getter]
+    #[pyo3(name = "timings")]
+    fn timings_py(&self) -> ModelTimings {
+        self.timings.clone()
+    }
+    #[getter]
     #[pyo3(name = "network_result")]
     fn network_result_py(&self) -> NetworkResult {
         self.network_result.clone()
+    }
+
+    fn __rep__(&self) -> String {
+        format!(
+            "<ModelResult with {} recorder results; completed in {:.2} seconds with speed {:.2} time-steps/second>",
+            self.network_result.len(),
+            self.timings.total_duration(),
+            self.timings.speed()
+        )
     }
 }
 

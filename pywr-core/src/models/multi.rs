@@ -195,22 +195,16 @@ impl MultiNetworkModelTimings {
     }
 
     #[getter]
-    fn speed(&self) -> Option<f64> {
+    fn speed(&self) -> f64 {
         self.run_duration.speed()
     }
 
     fn __repr__(&self) -> String {
-        match self.speed() {
-            Some(speed) => format!(
-                "<MultiNetworkModelTimings completed in {:.2} seconds with speed {:.2} time-steps/second>",
-                self.total_duration(),
-                speed
-            ),
-            None => format!(
-                "<MultiNetworkModelTimings completed in {:.2} seconds>",
-                self.total_duration()
-            ),
-        }
+        format!(
+            "<MultiNetworkModelTimings completed in {:.2} seconds with speed {:.2} time-steps/second>",
+            self.total_duration(),
+            self.speed()
+        )
     }
 }
 
@@ -226,20 +220,18 @@ pub enum MultiNetworkModelError {
 #[cfg_attr(feature = "pyo3", pyclass)]
 #[derive(Clone)]
 pub struct MultiNetworkModelResult {
-    #[pyo3(get)]
-    timings: MultiNetworkModelTimings,
-    network_results: HashMap<String, NetworkResult>,
-}
-
-impl MultiNetworkModelResult {
-    pub fn network_results(&self, name: &str) -> Option<&NetworkResult> {
-        self.network_results.get(name)
-    }
+    pub timings: MultiNetworkModelTimings,
+    pub network_results: HashMap<String, NetworkResult>,
 }
 
 #[cfg(feature = "pyo3")]
 #[pymethods]
 impl MultiNetworkModelResult {
+    #[getter]
+    #[pyo3(name = "timings")]
+    fn timings_py(&self) -> MultiNetworkModelTimings {
+        self.timings.clone()
+    }
     /// Get a reference to the results map.
     #[pyo3(name = "network_results")]
     pub fn network_results_py(&self, name: &str) -> PyResult<NetworkResult> {
@@ -247,6 +239,15 @@ impl MultiNetworkModelResult {
             .get(name)
             .ok_or_else(|| PyKeyError::new_err(format!("Network result `{}` not found", name)))
             .cloned()
+    }
+
+    fn __rep__(&self) -> String {
+        format!(
+            "<MultiNetworkModelResult with {} network results; completed in {:.2} seconds with speed {:.2} time-steps/second>",
+            self.network_results.len(),
+            self.timings.total_duration(),
+            self.timings.speed()
+        )
     }
 }
 
