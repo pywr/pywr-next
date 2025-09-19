@@ -386,7 +386,7 @@ mod tests {
     use crate::metric::MetricF64;
     use crate::models::Model;
     use crate::network::Network;
-    use crate::node::StorageInitialVolume;
+    use crate::node::{CostAggFunc, StorageInitialVolume};
     use crate::parameters::ControlCurveInterpolatedParameter;
     use crate::recorders::{AssertionF64Recorder, AssertionFnRecorder};
     use crate::scenario::ScenarioIndex;
@@ -516,6 +516,10 @@ mod tests {
         let mut model = simple_model(1, None);
         let network = model.network_mut();
 
+        // Make the input use any VS costs
+        let node = network.get_mut_node_by_name("input", None).unwrap();
+        node.set_cost_agg_func(Some(CostAggFunc::Max)).unwrap();
+
         let nodes = vec![network.get_node_index_by_name("input", None).unwrap()];
         // Virtual storage node cost is high enough to prevent any flow
 
@@ -554,6 +558,10 @@ mod tests {
 
         let mut model = simple_model(1, Some(Timestepper::new(start, end, duration)));
         let network = model.network_mut();
+
+        // Make the input use any VS costs
+        let node = network.get_mut_node_by_name("input", None).unwrap();
+        node.set_cost_agg_func(Some(CostAggFunc::Max)).unwrap();
 
         let nodes = vec![network.get_node_index_by_name("input", None).unwrap()];
 
