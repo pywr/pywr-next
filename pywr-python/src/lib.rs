@@ -3,7 +3,7 @@ use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyTuple, PyType};
-use pywr_core::models::{ModelResult, ModelRunError, MultiNetworkModelResult};
+use pywr_core::models::{ModelResult, ModelRunError, ModelTimings, MultiNetworkModelResult, MultiNetworkModelTimings};
 use pywr_core::network::NetworkResult;
 use pywr_core::parameters::ParameterInfo;
 use pywr_core::scenario::ScenarioIndex;
@@ -339,6 +339,8 @@ fn pywr(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Model>()?;
     m.add_class::<ModelResult>()?;
     m.add_class::<MultiNetworkModelResult>()?;
+    m.add_class::<ModelTimings>()?;
+    m.add_class::<MultiNetworkModelTimings>()?;
     m.add_class::<NetworkResult>()?;
     m.add_class::<Metric>()?;
     m.add_class::<Timestep>()?;

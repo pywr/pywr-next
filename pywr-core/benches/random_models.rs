@@ -8,6 +8,7 @@
 /// systems and density of transfers between them), numbers of scenarios (which vary the
 /// input flows) and number of CPU threads.
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
+use pywr_core::models::ModelTimings;
 #[cfg(feature = "ipm-ocl")]
 use pywr_core::solvers::{ClIpmF64Solver, ClIpmSolverSettings, ClIpmSolverSettingsBuilder};
 use pywr_core::solvers::{ClpSolver, ClpSolverSettings, ClpSolverSettingsBuilder};
@@ -61,8 +62,9 @@ fn random_benchmark(
                                     // Do the setup here outside of the time-step loop
                                     let mut state =
                                         model.setup::<ClpSolver>(settings).expect("Failed to setup the model.");
+                                    let mut timings = ModelTimings::new_with_component_timings(model.network());
 
-                                    b.iter(|| model.run_with_state(&mut state, settings))
+                                    b.iter(|| model.run_with_state(&mut state, settings, &mut timings))
                                 },
                             );
                         }
@@ -77,8 +79,9 @@ fn random_benchmark(
                                     let mut state = model
                                         .setup::<HighsSolver>(settings)
                                         .expect("Failed to setup the model.");
+                                    let mut timings = ModelTimings::new_with_component_timings(model.network());
 
-                                    b.iter(|| model.run_with_state(&mut state, settings))
+                                    b.iter(|| model.run_with_state(&mut state, settings, &mut timings))
                                 },
                             );
                         }
@@ -95,8 +98,9 @@ fn random_benchmark(
                                     let mut state = model
                                         .setup_multi_scenario::<SimdIpmF64Solver>(settings)
                                         .expect("Failed to setup the model.");
+                                    let mut timings = ModelTimings::new_with_component_timings(model.network());
 
-                                    b.iter(|| model.run_multi_scenario_with_state(&mut state, settings))
+                                    b.iter(|| model.run_multi_scenario_with_state(&mut state, settings, &mut timings))
                                 },
                             );
                         }
@@ -114,7 +118,9 @@ fn random_benchmark(
                                         .setup_multi_scenario::<ClIpmF64Solver>(settings)
                                         .expect("Failed to setup the model.");
 
-                                    b.iter(|| model.run_multi_scenario_with_state(&mut state, settings))
+                                    let mut timings = ModelTimings::new_with_component_timings(model.network());
+
+                                    b.iter(|| model.run_multi_scenario_with_state(&mut state, settings, &mut timings))
                                 },
                             );
                         }
