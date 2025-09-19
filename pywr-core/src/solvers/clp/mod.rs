@@ -8,7 +8,7 @@ use crate::state::{ConstParameterValues, State};
 use crate::timestep::Timestep;
 use coin_or_sys::clp::*;
 use libc::{c_double, c_int};
-pub use settings::{ClpSolverSettings, ClpSolverSettingsBuilder};
+pub use settings::{ClpSolverSettings, ClpSolverSettingsBuilder, build_clp_settings_py};
 use std::ffi::CString;
 use std::fmt::Display;
 use std::slice;

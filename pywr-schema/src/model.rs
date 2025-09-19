@@ -13,13 +13,13 @@ use crate::{PywrNetwork, PywrNetworkRef};
 #[cfg(feature = "core")]
 use chrono::NaiveTime;
 use chrono::{NaiveDate, NaiveDateTime};
-#[cfg(feature = "pyo3")]
-use pyo3::PyErr;
 #[cfg(all(feature = "core", feature = "pyo3"))]
 use pyo3::Python;
+#[cfg(feature = "pyo3")]
+use pyo3::{Bound, PyErr, PyResult, exceptions::PyRuntimeError, pyclass, pymethods, types::PyType};
 #[cfg(feature = "core")]
 use pywr_core::{
-    models::{ModelDomain, MultiNetworkModelError},
+    models::{Model, ModelDomain, MultiNetworkModel, MultiNetworkModelError},
     timestep::TimestepDuration,
 };
 use pywr_schema_macros::skip_serializing_none;
@@ -377,6 +377,7 @@ impl From<PywrModelBuildError> for PyErr {
 ///
 #[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Clone, JsonSchema)]
+#[cfg_attr(feature = "pyo3", pyclass(name = "ModelSchema"))]
 pub struct PywrModel {
     pub metadata: Metadata,
     pub timestepper: Timestepper,
@@ -442,7 +443,7 @@ impl PywrModel {
         &self,
         data_path: Option<&Path>,
         output_path: Option<&Path>,
-    ) -> Result<pywr_core::models::Model, PywrModelBuildError> {
+    ) -> Result<Model, PywrModelBuildError> {
         let timestepper = self.timestepper.clone().into();
 
         let scenario_builder = match &self.scenarios {
@@ -459,7 +460,7 @@ impl PywrModel {
                 source: Box::new(source),
             })?;
 
-        let model = pywr_core::models::Model::new(domain, network);
+        let model = Model::new(domain, network);
 
         Ok(model)
     }
@@ -498,6 +499,46 @@ impl PywrModel {
         let v1_model: pywr_v1_schema::PywrModel = serde_json::from_str(v1)?;
 
         Ok(Self::from_v1(v1_model))
+    }
+}
+
+#[cfg(feature = "pyo3")]
+#[pymethods]
+impl PywrModel {
+    #[new]
+    fn new_py(title: &str, start: NaiveDateTime, end: NaiveDateTime) -> Self {
+        let start = Date::DateTime(start);
+        let end = Date::DateTime(end);
+
+        Self::new(title, &start, &end)
+    }
+
+    /// Create a new schema object from a file path.
+    #[classmethod]
+    #[pyo3(name = "from_path")]
+    fn from_path_py(_cls: &Bound<'_, PyType>, path: PathBuf) -> PyResult<Self> {
+        Ok(Self::from_path(path)?)
+    }
+
+    ///  Create a new schema object from a JSON string.
+    #[classmethod]
+    #[pyo3(name = "from_json_string")]
+    fn from_json_string_py(_cls: &Bound<'_, PyType>, data: &str) -> PyResult<Self> {
+        Ok(Self::from_str(data)?)
+    }
+
+    /// Serialize the schema to a JSON string.
+    #[pyo3(name = "to_json_string")]
+    fn to_json_string_py(&self) -> PyResult<String> {
+        let data = serde_json::to_string_pretty(&self).map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        Ok(data)
+    }
+
+    /// Build the schema in to a Pywr model.
+    #[pyo3(name="build", signature = (data_path=None, output_path=None))]
+    fn build_py(&mut self, data_path: Option<PathBuf>, output_path: Option<PathBuf>) -> PyResult<Model> {
+        let model = self.build_model(data_path.as_deref(), output_path.as_deref())?;
+        Ok(model)
     }
 }
 
@@ -548,6 +589,29 @@ pub enum PywrMultiNetworkModelBuildError {
         #[source]
         source: MultiNetworkModelError,
     },
+}
+
+#[cfg(all(feature = "core", feature = "pyo3"))]
+impl From<PywrMultiNetworkModelBuildError> for PyErr {
+    fn from(err: PywrMultiNetworkModelBuildError) -> PyErr {
+        let py_err = PyRuntimeError::new_err(err.to_string());
+
+        // Check if the error has a cause that can be converted to a PyErr
+        let py_cause: Result<PyErr, ()> = match err {
+            PywrMultiNetworkModelBuildError::NetworkBuildError { source, .. } => (*source).try_into(),
+            _ => Err(()),
+        };
+
+        if let Ok(py_cause) = py_cause {
+            // If the cause is a PyErr, set it as the cause of the PyErr
+            return Python::with_gil(|py| {
+                py_err.set_cause(py, Some(py_cause));
+                py_err
+            });
+        }
+
+        py_err
+    }
 }
 
 /// A Pywr model containing multiple link networks.
@@ -613,6 +677,7 @@ pub enum PywrMultiNetworkModelBuildError {
 ///
 #[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Clone)]
+#[cfg_attr(feature = "pyo3", pyclass(name = "MultiNetworkModelSchema"))]
 pub struct PywrMultiNetworkModel {
     pub metadata: Metadata,
     pub timestepper: Timestepper,
@@ -629,6 +694,22 @@ impl FromStr for PywrMultiNetworkModel {
 }
 
 impl PywrMultiNetworkModel {
+    pub fn new(title: &str, start: &Date, end: &Date) -> Self {
+        Self {
+            metadata: Metadata {
+                title: title.to_string(),
+                description: None,
+                minimum_version: None,
+            },
+            timestepper: Timestepper {
+                start: *start,
+                end: *end,
+                timestep: Timestep::Days(1),
+            },
+            scenarios: None,
+            networks: Vec::new(),
+        }
+    }
     pub fn from_path<P: AsRef<Path>>(path: P) -> Result<Self, PywrModelReadError> {
         let data = std::fs::read_to_string(&path).map_err(|error| PywrModelReadError::IO {
             path: path.as_ref().to_path_buf(),
@@ -642,7 +723,7 @@ impl PywrMultiNetworkModel {
         &self,
         data_path: Option<&Path>,
         output_path: Option<&Path>,
-    ) -> Result<pywr_core::models::MultiNetworkModel, PywrMultiNetworkModelBuildError> {
+    ) -> Result<MultiNetworkModel, PywrMultiNetworkModelBuildError> {
         let timestepper = self.timestepper.clone().into();
 
         let scenario_builder = match &self.scenarios {
@@ -745,7 +826,7 @@ impl PywrMultiNetworkModel {
         }
 
         // Now construct the model from the loaded components
-        let mut model = pywr_core::models::MultiNetworkModel::new(domain);
+        let mut model = MultiNetworkModel::new(domain);
 
         for (name, network) in networks {
             model
@@ -757,6 +838,50 @@ impl PywrMultiNetworkModel {
             model.add_inter_network_transfer(from_network_idx, from_metric, to_network_idx, initial_value);
         }
 
+        Ok(model)
+    }
+}
+
+#[cfg(feature = "pyo3")]
+#[pymethods]
+impl PywrMultiNetworkModel {
+    #[new]
+    fn new_py(title: &str, start: NaiveDateTime, end: NaiveDateTime) -> Self {
+        let start = Date::DateTime(start);
+        let end = Date::DateTime(end);
+
+        Self::new(title, &start, &end)
+    }
+
+    /// Create a new schema object from a file path.
+    #[classmethod]
+    #[pyo3(name = "from_path")]
+    fn from_path_py(_cls: &Bound<'_, PyType>, path: PathBuf) -> PyResult<Self> {
+        Ok(Self::from_path(path)?)
+    }
+
+    ///  Create a new schema object from a JSON string.
+    #[classmethod]
+    #[pyo3(name = "from_json_string")]
+    fn from_json_string_py(_cls: &Bound<'_, PyType>, data: &str) -> PyResult<Self> {
+        Ok(Self::from_str(data)?)
+    }
+
+    /// Serialize the schema to a JSON string.
+    #[pyo3(name = "to_json_string")]
+    fn to_json_string_py(&self) -> PyResult<String> {
+        let data = serde_json::to_string_pretty(&self).map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        Ok(data)
+    }
+
+    /// Build the schema in to a Pywr model.
+    #[pyo3(name="build", signature = (data_path=None, output_path=None))]
+    fn build_py(
+        &mut self,
+        data_path: Option<PathBuf>,
+        output_path: Option<PathBuf>,
+    ) -> PyResult<pywr_core::models::MultiNetworkModel> {
+        let model = self.build_model(data_path.as_deref(), output_path.as_deref())?;
         Ok(model)
     }
 }

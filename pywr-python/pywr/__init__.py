@@ -2,8 +2,10 @@ from pathlib import Path
 from typing import Optional
 
 from .pywr import (
-    Schema,
+    ModelSchema,
+    MultiNetworkModelSchema,
     Model,
+    MultiNetworkModel,
     ModelResult,
     Timestep,
     ScenarioIndex,
@@ -16,8 +18,10 @@ from .pywr import (
 )
 
 __all__ = [
-    "Schema",
+    "ModelSchema",
+    "MultiNetworkModelSchema",
     "Model",
+    "MultiNetworkModel",
     "ModelResult",
     "Timestep",
     "ScenarioIndex",

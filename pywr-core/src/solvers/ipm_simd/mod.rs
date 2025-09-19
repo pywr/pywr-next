@@ -11,7 +11,7 @@ use ipm_simd::{PathFollowingDirectSimdSolver, Tolerances};
 use rayon::iter::IndexedParallelIterator;
 use rayon::iter::ParallelIterator;
 use rayon::prelude::ParallelSliceMut;
-pub use settings::{SimdIpmSolverSettings, SimdIpmSolverSettingsBuilder};
+pub use settings::{SimdIpmSolverSettings, SimdIpmSolverSettingsBuilder, build_ipm_simd_settings_py};
 use std::collections::BTreeMap;
 use std::num::NonZeroUsize;
 use std::ops::Deref;
