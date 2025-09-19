@@ -21,8 +21,7 @@ use polars::prelude::{
 };
 pub use polars_dataset::PolarsTimeseries;
 #[cfg(feature = "pyo3")]
-use pyo3::PyErr;
-use pyo3::pyclass;
+use pyo3::{PyErr, pyclass};
 #[cfg(feature = "core")]
 use pywr_core::{
     models::ModelDomain,

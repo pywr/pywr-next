@@ -21,6 +21,7 @@ mod vec;
 use crate::ConversionError;
 use crate::digest::{Checksum, ChecksumError};
 use crate::parameters::TableIndex;
+#[cfg(feature = "pyo3")]
 use pyo3::pyclass;
 use pywr_schema_macros::{PywrVisitAll, skip_serializing_none};
 use pywr_v1_schema::parameters::TableDataRef as TableDataRefV1;
