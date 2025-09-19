@@ -72,7 +72,8 @@
           "name": "Failure index"
         },
         "type": "ControlCurveIndex",
-        "storage_node": {
+        "storage_metric": {
+          "type": "Node",
           "name": "Reservoir",
           "attribute": "ProportionalVolume"
         },

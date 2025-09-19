@@ -71,7 +71,9 @@
           "type": "Literal",
           "value": -10
         }
-      },
+      }
+    ],
+    "virtual_nodes": [
       {
         "meta": {
           "name": "me"

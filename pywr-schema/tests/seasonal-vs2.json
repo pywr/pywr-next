@@ -40,7 +40,9 @@
           "type": "Literal",
           "value": -10
         }
-      },
+      }
+    ],
+    "virtual_nodes": [
       {
         "meta": {
           "name": "licence"
@@ -95,7 +97,7 @@
         "name": "nodes",
         "metrics": [
           {
-            "type": "Node",
+            "type": "VirtualNode",
             "name": "licence"
           }
         ]

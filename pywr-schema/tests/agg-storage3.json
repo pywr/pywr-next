@@ -138,7 +138,9 @@
           "type": "Literal",
           "value": -10
         }
-      },
+      }
+    ],
+    "virtual_nodes": [
       {
         "meta": {
           "name": "total-storage"
@@ -178,7 +180,8 @@
           "name": "demand"
         },
         "type": "ControlCurve",
-        "storage_node": {
+        "storage_metric": {
+          "type": "VirtualNode",
           "name": "total-storage",
           "attribute": "ProportionalVolume"
         },
@@ -204,7 +207,8 @@
       {
         "name": "nodes",
         "filters": {
-          "all_nodes": true
+          "all_nodes": true,
+          "all_virtual_nodes": true
         }
       }
     ],
