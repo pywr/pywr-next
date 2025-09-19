@@ -17,11 +17,11 @@
         },
         "type": "Input",
         "max_flow": {
-          "type": "Constant",
+          "type": "Literal",
           "value": 15
         },
         "cost": {
-          "type": "Constant",
+          "type": "Literal",
           "value": 1.0
         }
       },
@@ -31,18 +31,18 @@
         },
         "type": "WaterTreatmentWorks",
         "max_flow": {
-          "type": "Constant",
+          "type": "Literal",
           "value": 10.0
         },
         "loss_factor": {
           "type": "Net",
           "factor": {
-            "type": "Constant",
+            "type": "Literal",
             "value": 0.1
           }
         },
         "cost": {
-          "type": "Constant",
+          "type": "Literal",
           "value": -10
         }
       },
@@ -52,7 +52,7 @@
         },
         "type": "Output",
         "max_flow": {
-          "type": "Constant",
+          "type": "Literal",
           "value": 15.0
         }
       },
@@ -62,7 +62,7 @@
         },
         "type": "VirtualStorage",
         "max_volume": {
-          "type": "Constant",
+          "type": "Literal",
           "value": 100
         },
         "initial_volume": {
