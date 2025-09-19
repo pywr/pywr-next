@@ -12,8 +12,8 @@ use crate::parameters::{
     VariableParameterValues,
 };
 use crate::recorders::{
-    MetricSet, MetricSetIndex, MetricSetSaveError, MetricSetState, RecorderAggregationError, RecorderFinaliseError,
-    RecorderSaveError, RecorderSetupError,
+    MetricSet, MetricSetIndex, MetricSetSaveError, MetricSetState, RecorderAggregationError, RecorderFinalResult,
+    RecorderFinaliseError, RecorderInternalState, RecorderSaveError, RecorderSetupError,
 };
 use crate::scenario::ScenarioIndex;
 use crate::solvers::{
@@ -25,11 +25,15 @@ use crate::virtual_storage::{
     VirtualStorage, VirtualStorageBuilder, VirtualStorageError, VirtualStorageIndex, VirtualStorageVec,
 };
 use crate::{NodeIndex, RecorderIndex, parameters, recorders};
+#[cfg(feature = "pyo3")]
+use pyo3::{PyResult, exceptions::PyKeyError, pyclass, pymethods};
+#[cfg(feature = "pyo3")]
+use pyo3_polars::PyDataFrame;
 use rayon::prelude::*;
-use std::any::Any;
 use std::collections::{HashMap, HashSet};
 use std::ops::Deref;
 use std::slice::{Iter, IterMut};
+use std::sync::Arc;
 use std::time::Duration;
 use std::time::Instant;
 use thiserror::Error;
@@ -83,36 +87,120 @@ impl RunDuration {
     }
 }
 
+#[derive(Default, Copy, Clone)]
+pub struct ComponentTiming {
+    calculation: Duration,
+    after: Duration,
+}
+
+impl ComponentTiming {
+    /// Time spent in the calculation method of the component.
+    pub fn calculation(&self) -> Duration {
+        self.calculation
+    }
+
+    /// Time spent in the "after" method of the component.
+    pub fn after(&self) -> Duration {
+        self.after
+    }
+
+    /// Total time spent in calculation and after methods.
+    pub fn total(&self) -> Duration {
+        self.calculation + self.after
+    }
+}
+
 /// Collect timing information for component of a network.
-#[derive(Default)]
 pub struct ComponentTimings {
-    pub calculation: HashMap<ComponentType, Duration>,
-    pub total: Duration,
+    /// Timing information for calculation of each component.
+    calculation: Option<Vec<ComponentTiming>>,
+    /// Total time spent in component calculations.
+    total: Duration,
 }
 
 impl ComponentTimings {
-    /// Returns the slowest `n` components and their duration.
-    pub fn slowest_components(&self, n: usize) -> Vec<(ComponentType, Duration)> {
-        let mut components: Vec<_> = self.calculation.iter().map(|(ct, d)| (*ct, *d)).collect();
-        components.sort_by_key(|(_, duration)| *duration);
-        components.iter().rev().take(n).map(|(ct, d)| (*ct, *d)).collect()
+    pub fn new_with_components(num_components: usize) -> Self {
+        Self {
+            calculation: Some(vec![ComponentTiming::default(); num_components]),
+            total: Duration::ZERO,
+        }
+    }
+
+    pub fn new_without_components() -> Self {
+        Self {
+            calculation: None,
+            total: Duration::ZERO,
+        }
+    }
+
+    /// Returns the slowest `n` components and their duration, if timing information is available.
+    ///
+    /// This includes both "calculation" and "after" duration.
+    pub fn slowest_components(
+        &self,
+        n: usize,
+        component_types: &[ComponentType],
+    ) -> Option<Vec<(ComponentType, ComponentTiming)>> {
+        self.calculation.as_ref().map(|calculation| {
+            let mut components: Vec<_> = calculation
+                .iter()
+                .zip(component_types)
+                .map(|(d, ct)| (*ct, *d))
+                .collect();
+            components.sort_by_key(|(_, duration)| duration.total());
+            components.iter().rev().take(n).map(|(ct, d)| (*ct, *d)).collect()
+        })
+    }
+
+    /// Add timing information for a component calculation.
+    pub fn add_component_calculation_timing(&mut self, idx: usize, duration: Duration) {
+        if let Some(calculation) = &mut self.calculation {
+            if let Some(c) = calculation.get_mut(idx) {
+                c.calculation += duration;
+            }
+        }
+    }
+
+    /// Add timing information for a component "after" calculation.
+    pub fn add_component_after_timing(&mut self, idx: usize, duration: Duration) {
+        if let Some(calculation) = &mut self.calculation {
+            if let Some(c) = calculation.get_mut(idx) {
+                c.after += duration;
+            }
+        }
     }
 }
 
 /// Collects timing information for a network
-#[derive(Default)]
 pub struct NetworkTimings {
-    pub component_timings: ComponentTimings,
-    pub recorder_saving: Duration,
-    pub solve: SolverTimings,
+    /// Timing information for component calculations.
+    component_timings: ComponentTimings,
+    recorder_saving: Duration,
+    solve: SolverTimings,
 }
 
 impl NetworkTimings {
+    pub fn new_with_component_timings(network: &Network) -> Self {
+        Self {
+            component_timings: ComponentTimings::new_with_components(network.resolve_order.len()),
+            recorder_saving: Duration::ZERO,
+            solve: SolverTimings::default(),
+        }
+    }
+
+    pub fn new_without_component_timings() -> Self {
+        Self {
+            component_timings: ComponentTimings::new_without_components(),
+            recorder_saving: Duration::ZERO,
+            solve: SolverTimings::default(),
+        }
+    }
+
     /// Print a summary of the timings to the log.
     pub fn print_table(&self, total_duration: f64, network: &Network) {
         info!(
             "{: <24} | {: <10.5}s ({:5.2}%)",
-            "Parameter calc",
+            "Components calcs",
             self.component_timings.total.as_secs_f64(),
             100.0 * self.component_timings.total.as_secs_f64() / total_duration,
         );
@@ -165,14 +253,22 @@ impl NetworkTimings {
             100.0 * not_counted / total_duration,
         );
 
-        info!("Slowest components:");
-        for (ct, duration) in self.component_timings.slowest_components(10) {
+        if let Some(slowest) = self.component_timings.slowest_components(10, &network.resolve_order) {
+            info!("Slowest components:");
             info!(
-                "  {: <24} | {: <10.5}s ({:5.2}%)",
-                ct.name(network),
-                duration.as_secs_f64(),
-                100.0 * duration.as_secs_f64() / total_duration,
+                "  {: <24} | {: <10}  | {: <10}  | {: <10}  | {:5}",
+                "Component", "Calc", "After", "Total", "% of total"
             );
+            for (ct, duration) in slowest {
+                info!(
+                    "  {: <24} | {: <10.5}s | {: <10.5}s | {: <10.5}s | {:5.2}%",
+                    ct.name(network),
+                    duration.calculation.as_secs_f64(),
+                    duration.after.as_secs_f64(),
+                    duration.total().as_secs_f64(),
+                    100.0 * duration.total().as_secs_f64() / total_duration,
+                );
+            }
         }
     }
 }
@@ -299,13 +395,13 @@ pub enum NetworkStepError {
     ParameterCalculationError {
         name: ParameterName,
         #[source]
-        source: ParameterCalculationError,
+        source: Box<ParameterCalculationError>,
     },
     #[error("Error performing `after` method on parameter `{name}`: {source}")]
     ParameterAfterError {
         name: ParameterName,
         #[source]
-        source: ParameterCalculationError,
+        source: Box<ParameterCalculationError>,
     },
     #[error("Error setting state for general F64 parameter `{name}`: {source}")]
     ParameterF64SetStateError {
@@ -450,6 +546,49 @@ pub enum NetworkRecorderAggregationError {
     },
 }
 
+/// The results of a model run.
+///
+/// Only recorders which produced a result will be present.
+#[cfg_attr(feature = "pyo3", pyclass)]
+#[derive(Clone)]
+pub struct NetworkResult {
+    results: Arc<HashMap<String, Box<dyn RecorderFinalResult>>>,
+}
+
+impl NetworkResult {
+    /// Get the results of a recorder by name.
+    pub fn get(&self, name: &str) -> Option<&dyn RecorderFinalResult> {
+        self.results.get(name).map(|r| r.as_ref())
+    }
+
+    /// Get the aggregated value of a recorder by name, if it exists and can be aggregated.
+    pub fn get_aggregated_value(&self, name: &str) -> Option<f64> {
+        self.results.get(name).and_then(|r| r.aggregated_value().ok())
+    }
+}
+
+#[cfg(feature = "pyo3")]
+#[pymethods]
+impl NetworkResult {
+    /// Get the aggregated value of a recorder by name, if it exists and can be aggregated.
+    #[pyo3(name = "aggregated_value")]
+    pub fn get_aggregated_value_py(&self, name: &str) -> PyResult<f64> {
+        self.results
+            .get(name)
+            .ok_or_else(|| PyKeyError::new_err(format!("Output `{}` not found in results", name)))
+            .and_then(|r| r.aggregated_value().map_err(|e| e.into()))
+    }
+
+    /// Return an output as a dataframe.
+    pub fn to_dataframe(&self, name: &str) -> PyResult<PyDataFrame> {
+        self.results
+            .get(name)
+            .ok_or_else(|| PyKeyError::new_err(format!("Output `{}` not found in results", name)))
+            .and_then(|r| r.to_dataframe().map_err(|e| e.into()))
+            .map(PyDataFrame)
+    }
+}
+
 /// A Pywr network containing nodes, edges, parameters, metric sets, etc.
 ///
 /// This struct is the main entry point for constructing a Pywr network and should be used
@@ -543,7 +682,7 @@ impl Network {
     pub fn setup_recorders(
         &self,
         domain: &ModelDomain,
-    ) -> Result<Vec<Option<Box<dyn Any>>>, NetworkRecorderSetupError> {
+    ) -> Result<Vec<Option<Box<dyn RecorderInternalState>>>, NetworkRecorderSetupError> {
         // Setup recorders
         let mut recorder_internal_states = Vec::new();
         for recorder in &self.recorders {
@@ -620,12 +759,18 @@ impl Network {
         Ok(S::setup(self, scenario_indices.len(), settings)?)
     }
 
+    /// Finalise the run of the network, performing any final calculations and returning
+    /// the results from the recorders.
+    ///
+    /// This method consumes the recorder internal states as they are no longer needed.
+    ///
+    /// Only recorders which produce a final result will be included in the returned HashMap.
     pub fn finalise(
         &self,
         scenario_indices: &[ScenarioIndex],
         metric_set_states: &mut [Vec<MetricSetState>],
-        recorder_internal_states: &mut [Option<Box<dyn Any>>],
-    ) -> Result<(), NetworkFinaliseError> {
+        recorder_internal_states: Vec<Option<Box<dyn RecorderInternalState>>>,
+    ) -> Result<NetworkResult, NetworkFinaliseError> {
         // Finally, save new data to the metric set
 
         for ms_states in metric_set_states.iter_mut() {
@@ -634,17 +779,30 @@ impl Network {
             }
         }
 
-        // Setup recorders
-        for (recorder, internal_state) in self.recorders.iter().zip(recorder_internal_states) {
-            recorder
-                .finalise(self, scenario_indices, metric_set_states, internal_state)
-                .map_err(|source| NetworkRecorderFinaliseError {
-                    name: recorder.name().to_string(),
-                    source,
-                })?;
-        }
+        // Finalise recorders and return results
+        let recorder_results = self
+            .recorders
+            .iter()
+            .zip(recorder_internal_states.into_iter())
+            .filter_map(|(recorder, internal_state)| {
+                let result = recorder
+                    .finalise(self, scenario_indices, metric_set_states, internal_state)
+                    .map_err(|source| NetworkRecorderFinaliseError {
+                        name: recorder.name().to_string(),
+                        source,
+                    });
 
-        Ok(())
+                match result {
+                    Err(e) => Some(Err(e)),
+                    Ok(None) => None, // No final result
+                    Ok(Some(r)) => Some(Ok((recorder.name().to_string(), r))),
+                }
+            })
+            .collect::<Result<HashMap<_, _>, _>>()?;
+
+        Ok(NetworkResult {
+            results: Arc::new(recorder_results),
+        })
     }
 
     /// Perform a single timestep mutating the current state.
@@ -694,6 +852,7 @@ impl Network {
                         current_state,
                         p_internal_states,
                         ms_internal_states,
+                        Some(&mut timings.component_timings),
                     )?;
 
                     timings.component_timings.total += start_p_after.elapsed();
@@ -751,6 +910,7 @@ impl Network {
                         current_state,
                         p_internal_state,
                         ms_internal_state,
+                        None,
                     )
                     .unwrap();
 
@@ -825,6 +985,7 @@ impl Network {
                         current_state,
                         p_internal_states,
                         ms_internal_states,
+                        None,
                     )
                     .unwrap();
                     start_p_after.elapsed()
@@ -840,7 +1001,7 @@ impl Network {
     }
 
     /// Calculate the set of [`SolverFeatures`] required to correctly run this network.
-    fn required_features(&self) -> HashSet<SolverFeatures> {
+    pub fn required_features(&self) -> HashSet<SolverFeatures> {
         let mut features = HashSet::new();
 
         // Aggregated node feature required if there are any aggregated nodes
@@ -896,7 +1057,7 @@ impl Network {
         self.parameters
             .compute_simple(timestep, scenario_index, state, internal_states)?;
 
-        for c_type in &self.resolve_order {
+        for (c_idx, c_type) in self.resolve_order.iter().enumerate() {
             let start = Instant::now();
 
             match c_type {
@@ -942,7 +1103,7 @@ impl Network {
                                 .compute(timestep, scenario_index, self, state, internal_state)
                                 .map_err(|source| NetworkStepError::ParameterCalculationError {
                                     name: p.name().clone(),
-                                    source,
+                                    source: Box::new(source),
                                 })?;
 
                             state.set_parameter_value(*idx, value).map_err(|source| {
@@ -967,7 +1128,7 @@ impl Network {
                                 .compute(timestep, scenario_index, self, state, internal_state)
                                 .map_err(|source| NetworkStepError::ParameterCalculationError {
                                     name: p.name().clone(),
-                                    source,
+                                    source: Box::new(source),
                                 })?;
 
                             state.set_parameter_index(*idx, value).map_err(|source| {
@@ -992,7 +1153,7 @@ impl Network {
                                 .compute(timestep, scenario_index, self, state, internal_state)
                                 .map_err(|source| NetworkStepError::ParameterCalculationError {
                                     name: p.name().clone(),
-                                    source,
+                                    source: Box::new(source),
                                 })?;
                             // debug!("Current value of index parameter {}: {}", p.name(), value);
                             state.set_multi_parameter_value(*idx, value).map_err(|source| {
@@ -1028,11 +1189,7 @@ impl Network {
 
             if let Some(timings) = timings.as_deref_mut() {
                 // Update the component timings
-                timings
-                    .calculation
-                    .entry(*c_type)
-                    .and_modify(|duration| *duration += start.elapsed())
-                    .or_insert_with(|| start.elapsed());
+                timings.add_component_calculation_timing(c_idx, start.elapsed());
             }
         }
 
@@ -1053,13 +1210,16 @@ impl Network {
         state: &mut State,
         internal_states: &mut ParameterStates,
         metric_set_states: &mut [MetricSetState],
+        mut timings: Option<&mut ComponentTimings>,
     ) -> Result<(), NetworkStepError> {
         // TODO reset parameter state to zero
 
         self.parameters
             .after_simple(timestep, scenario_index, state, internal_states)?;
 
-        for c_type in &self.resolve_order {
+        for (c_idx, c_type) in self.resolve_order.iter().enumerate() {
+            let start = Instant::now();
+
             match c_type {
                 ComponentType::Node(_) => {
                     // Nodes do not have an "after" method.
@@ -1084,7 +1244,7 @@ impl Network {
                             p.after(timestep, scenario_index, self, state, internal_state)
                                 .map_err(|source| NetworkStepError::ParameterAfterError {
                                     name: p.name().clone(),
-                                    source,
+                                    source: Box::new(source),
                                 })?;
                         }
                         GeneralParameterType::Index(idx) => {
@@ -1101,7 +1261,7 @@ impl Network {
                             p.after(timestep, scenario_index, self, state, internal_state)
                                 .map_err(|source| NetworkStepError::ParameterAfterError {
                                     name: p.name().clone(),
-                                    source,
+                                    source: Box::new(source),
                                 })?;
                         }
                         GeneralParameterType::Multi(idx) => {
@@ -1118,7 +1278,7 @@ impl Network {
                             p.after(timestep, scenario_index, self, state, internal_state)
                                 .map_err(|source| NetworkStepError::ParameterAfterError {
                                     name: p.name().clone(),
-                                    source,
+                                    source: Box::new(source),
                                 })?;
                         }
                     }
@@ -1142,6 +1302,11 @@ impl Network {
                     })?;
                 }
             }
+
+            if let Some(timings) = timings.as_deref_mut() {
+                // Update the component timings
+                timings.add_component_after_timing(c_idx, start.elapsed());
+            }
         }
 
         // Finally, save new data to the metric set
@@ -1162,8 +1327,10 @@ impl Network {
         timestep: &Timestep,
         scenario_indices: &[ScenarioIndex],
         state: &NetworkState,
-        recorder_internal_states: &mut [Option<Box<dyn Any>>],
+        recorder_internal_states: &mut [Option<Box<dyn RecorderInternalState>>],
+        timings: &mut NetworkTimings,
     ) -> Result<(), NetworkRecorderSaveError> {
+        let start = Instant::now();
         for (recorder, internal_state) in self.recorders.iter().zip(recorder_internal_states) {
             recorder
                 .save(
@@ -1179,6 +1346,7 @@ impl Network {
                     source,
                 })?;
         }
+        timings.recorder_saving += start.elapsed();
         Ok(())
     }
 
@@ -1491,6 +1659,57 @@ impl Network {
         self.get_virtual_storage_node_by_name(name, sub_name).map(|n| n.index())
     }
 
+    pub fn set_virtual_storage_cost(
+        &mut self,
+        name: &str,
+        sub_name: Option<&str>,
+        value: Option<MetricF64>,
+    ) -> Result<(), NetworkError> {
+        let node = self
+            .get_mut_virtual_storage_node_by_name(name, sub_name)
+            .ok_or(NetworkError::NodeNotFound {
+                name: name.to_string(),
+                sub_name: sub_name.map(|s| s.to_string()),
+            })?;
+
+        node.set_cost(value);
+        Ok(())
+    }
+
+    pub fn set_virtual_storage_max_volume(
+        &mut self,
+        name: &str,
+        sub_name: Option<&str>,
+        value: Option<SimpleMetricF64>,
+    ) -> Result<(), NetworkError> {
+        let node = self
+            .get_mut_virtual_storage_node_by_name(name, sub_name)
+            .ok_or(NetworkError::NodeNotFound {
+                name: name.to_string(),
+                sub_name: sub_name.map(|s| s.to_string()),
+            })?;
+
+        node.set_max_volume_constraint(value);
+        Ok(())
+    }
+
+    pub fn set_virtual_storage_min_volume(
+        &mut self,
+        name: &str,
+        sub_name: Option<&str>,
+        value: Option<SimpleMetricF64>,
+    ) -> Result<(), NetworkError> {
+        let node = self
+            .get_mut_virtual_storage_node_by_name(name, sub_name)
+            .ok_or(NetworkError::NodeNotFound {
+                name: name.to_string(),
+                sub_name: sub_name.map(|s| s.to_string()),
+            })?;
+
+        node.set_min_volume_constraint(value);
+        Ok(())
+    }
+
     pub fn get_storage_node_metric(
         &mut self,
         name: &str,
@@ -1605,22 +1824,6 @@ impl Network {
             .iter()
             .position(|r| r.name() == name)
             .map(RecorderIndex::new)
-    }
-
-    pub fn get_aggregated_value(
-        &self,
-        name: &str,
-        recorder_states: &[Option<Box<dyn Any>>],
-    ) -> Result<f64, NetworkRecorderAggregationError> {
-        match self.recorders.iter().enumerate().find(|(_, r)| r.name() == name) {
-            Some((idx, recorder)) => recorder.aggregated_value(&recorder_states[idx]).map_err(|source| {
-                NetworkRecorderAggregationError::AggregationError {
-                    name: recorder.name().to_string(),
-                    source,
-                }
-            }),
-            None => Err(NetworkRecorderAggregationError::NotFound { name: name.to_string() }),
-        }
     }
 
     /// Add a new Node::Input to the network.
@@ -2329,7 +2532,7 @@ mod tests {
         const NUM_SCENARIOS: usize = 2;
         let model = simple_model(NUM_SCENARIOS, None);
 
-        let mut timings = NetworkTimings::default();
+        let mut timings = NetworkTimings::new_without_component_timings();
 
         let mut state = model.setup::<ClpSolver>(&ClpSolverSettings::default()).unwrap();
 

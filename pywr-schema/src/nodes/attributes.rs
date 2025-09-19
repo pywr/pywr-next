@@ -23,6 +23,8 @@ pub enum NodeAttribute {
     Rainfall,
     /// The evaporation volume.
     Evaporation,
+    /// The abstracted flow
+    Abstraction,
 }
 
 /// Macro to generate a subset enum of `NodeAttribute` with conversion implementations.
@@ -48,13 +50,19 @@ pub enum NodeAttribute {
 macro_rules! node_attribute_subset_enum {
     (
         $(#[$meta:meta])* $vis:vis enum $name:ident {
-            $($variant:ident $( ( $($field:ty),* ) )? ),* $(,)?
+            $(
+                $(#[$variant_meta:meta])*
+                $variant:ident $( ( $($field:ty),* ) )?
+            ),* $(,)?
         }
     ) => {
         $(#[$meta])*
         #[derive(Debug, Clone, PartialEq, Eq)]
         $vis enum $name {
-            $( $variant $( ( $($field),* ) )? ),*
+            $(
+                $(#[$variant_meta])*
+                $variant $( ( $($field),* ) )?
+            ),*
         }
 
         impl std::convert::From<$name> for $crate::nodes::NodeAttribute {

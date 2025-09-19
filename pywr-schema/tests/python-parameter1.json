@@ -17,7 +17,7 @@
         },
         "type": "Input",
         "max_flow": {
-          "type": "Constant",
+          "type": "Literal",
           "value": 15.0
         }
       },
@@ -33,11 +33,11 @@
         },
         "type": "Output",
         "max_flow": {
-          "type": "Constant",
+          "type": "Literal",
           "value": 10
         },
         "cost": {
-          "type": "Constant",
+          "type": "Literal",
           "value": -10
         }
       }
@@ -62,7 +62,10 @@
           "type": "Path",
           "path": "test_parameters.py"
         },
-        "object": "FloatParameter",
+        "object": {
+          "type": "Class",
+          "class": "FloatParameter"
+        },
         "args": [
           0
         ],
@@ -78,7 +81,10 @@
           "path": "test_parameters.py"
         },
         "return_type": "Int",
-        "object": "IntParameter",
+        "object": {
+          "type": "Class",
+          "class": "IntParameter"
+        },
         "args": [
           0
         ],

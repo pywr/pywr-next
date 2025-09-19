@@ -27,7 +27,7 @@ pub enum ConstantMetricF64Error {
 pub enum ConstantMetricF64 {
     ParameterValue(ConstParameterIndex<f64>),
     IndexParameterValue(ConstParameterIndex<u64>),
-    MultiParameterValue((ConstParameterIndex<MultiValue>, String)),
+    MultiParameterValue(ConstParameterIndex<MultiValue>, String),
     Constant(f64),
 }
 
@@ -42,7 +42,7 @@ impl ConstantMetricF64 {
                 .get_const_parameter_u64(*idx)
                 .ok_or(ConstantMetricF64Error::IndexParameterNotFound { index: *idx })
                 .map(|&v| v as f64),
-            ConstantMetricF64::MultiParameterValue((idx, key)) => values
+            ConstantMetricF64::MultiParameterValue(idx, key) => values
                 .get_const_multi_parameter_f64(*idx, key)
                 .ok_or_else(|| ConstantMetricF64Error::MultiParameterNotFound {
                     index: *idx,
@@ -83,7 +83,7 @@ pub enum SimpleMetricF64Error {
 pub enum SimpleMetricF64 {
     ParameterValue(SimpleParameterIndex<f64>),
     IndexParameterValue(SimpleParameterIndex<u64>),
-    MultiParameterValue((SimpleParameterIndex<MultiValue>, String)),
+    MultiParameterValue(SimpleParameterIndex<MultiValue>, String),
     Constant(ConstantMetricF64),
 }
 
@@ -98,7 +98,7 @@ impl SimpleMetricF64 {
                 .get_simple_parameter_u64(*idx)
                 .ok_or(SimpleMetricF64Error::IndexParameterNotFound { index: *idx })
                 .map(|&v| v as f64),
-            SimpleMetricF64::MultiParameterValue((idx, key)) => values
+            SimpleMetricF64::MultiParameterValue(idx, key) => values
                 .get_simple_multi_parameter_f64(*idx, key)
                 .ok_or_else(|| SimpleMetricF64Error::MultiParameterNotFound {
                     index: *idx,
@@ -173,7 +173,7 @@ pub enum MetricF64 {
     MultiEdgeFlow { indices: Vec<EdgeIndex>, name: String },
     ParameterValue(GeneralParameterIndex<f64>),
     IndexParameterValue(GeneralParameterIndex<u64>),
-    MultiParameterValue((GeneralParameterIndex<MultiValue>, String)),
+    MultiParameterValue(GeneralParameterIndex<MultiValue>, String),
     VirtualStorageVolume(VirtualStorageIndex),
     MultiNodeInFlow { indices: Vec<NodeIndex>, name: String },
     MultiNodeOutFlow { indices: Vec<NodeIndex>, name: String },
@@ -235,7 +235,7 @@ impl MetricF64 {
             }
             MetricF64::ParameterValue(idx) => Ok(state.get_parameter_value(*idx)?),
             MetricF64::IndexParameterValue(idx) => Ok(state.get_parameter_index(*idx)? as f64),
-            MetricF64::MultiParameterValue((idx, key)) => Ok(state.get_multi_parameter_value(*idx, key)?),
+            MetricF64::MultiParameterValue(idx, key) => Ok(state.get_multi_parameter_value(*idx, key)?),
             MetricF64::VirtualStorageVolume(idx) => Ok(state.get_network_state().get_virtual_storage_volume(idx)?),
             MetricF64::DerivedMetric(idx) => Ok(state.get_derived_metric_value(*idx)?),
 
@@ -375,10 +375,10 @@ impl From<ParameterIndex<u64>> for MetricF64 {
 impl From<(ParameterIndex<MultiValue>, String)> for MetricF64 {
     fn from((idx, key): (ParameterIndex<MultiValue>, String)) -> Self {
         match idx {
-            ParameterIndex::General(idx) => Self::MultiParameterValue((idx, key)),
-            ParameterIndex::Simple(idx) => Self::Simple(SimpleMetricF64::MultiParameterValue((idx, key))),
+            ParameterIndex::General(idx) => Self::MultiParameterValue(idx, key),
+            ParameterIndex::Simple(idx) => Self::Simple(SimpleMetricF64::MultiParameterValue(idx, key)),
             ParameterIndex::Const(idx) => Self::Simple(SimpleMetricF64::Constant(
-                ConstantMetricF64::MultiParameterValue((idx, key)),
+                ConstantMetricF64::MultiParameterValue(idx, key),
             )),
         }
     }

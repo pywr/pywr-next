@@ -16,6 +16,7 @@ mod discount_factor;
 mod hydropower;
 mod indexed_array;
 mod interpolated;
+
 mod offset;
 mod placeholder;
 mod polynomial;
@@ -33,11 +34,11 @@ use crate::error::SchemaError;
 use crate::error::{ComponentConversionError, ConversionError};
 use crate::metric::Metric;
 #[cfg(feature = "core")]
-use crate::model::LoadArgs;
+use crate::network::LoadArgs;
 use crate::timeseries::ConvertedTimeseriesReference;
 use crate::v1::{ConversionData, IntoV2, TryFromV1, TryIntoV2};
 use crate::visit::{VisitMetrics, VisitPaths};
-pub use aggregated::{AggFunc, AggregatedIndexParameter, AggregatedParameter, IndexAggFunc};
+pub use aggregated::{AggregatedIndexParameter, AggregatedParameter};
 pub use asymmetric_switch::AsymmetricSwitchIndexParameter;
 pub use control_curves::{
     ControlCurveIndexParameter, ControlCurveInterpolatedParameter, ControlCurveParameter,
@@ -60,10 +61,8 @@ pub use profiles::{
     RadialBasisFunction, RbfProfileParameter, RbfProfileVariableConfig, UniformDrawdownProfileParameter,
     WeeklyProfileParameter,
 };
-#[cfg(all(feature = "core", feature = "pyo3"))]
-pub use python::try_json_value_into_py;
-pub use python::{PythonParameter, PythonReturnType, PythonSource};
-use pywr_schema_macros::PywrVisitAll;
+pub use python::{PythonObject, PythonParameter, PythonReturnType};
+use pywr_schema_macros::{PywrVisitAll, skip_serializing_none};
 use pywr_v1_schema::parameters::{
     CoreParameter, DataFrameParameter as DataFrameParameterV1, Parameter as ParameterV1,
     ParameterValue as ParameterValueV1, TableIndex as TableIndexV1, TableIndexEntry as TableIndexEntryV1,
@@ -73,8 +72,9 @@ use schemars::JsonSchema;
 use std::path::{Path, PathBuf};
 use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticStr};
 pub use tables::TablesArrayParameter;
-pub use thresholds::ThresholdParameter;
+pub use thresholds::{MultiThresholdParameter, Predicate, ThresholdParameter};
 
+#[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 pub struct ParameterMeta {
     pub name: String,
@@ -103,6 +103,7 @@ pub enum Parameter {
     UniformDrawdownProfile(UniformDrawdownProfileParameter),
     Max(MaxParameter),
     Min(MinParameter),
+    MultiThreshold(MultiThresholdParameter),
     Negative(NegativeParameter),
     NegativeMax(NegativeMaxParameter),
     NegativeMin(NegativeMinParameter),
@@ -141,6 +142,7 @@ impl Parameter {
             Self::UniformDrawdownProfile(p) => p.meta.name.as_str(),
             Self::Max(p) => p.meta.name.as_str(),
             Self::Min(p) => p.meta.name.as_str(),
+            Self::MultiThreshold(p) => p.meta.name.as_str(),
             Self::Negative(p) => p.meta.name.as_str(),
             Self::Polynomial1D(p) => p.meta.name.as_str(),
             Self::Threshold(p) => p.meta.name.as_str(),
@@ -256,6 +258,7 @@ impl Parameter {
                 pywr_core::parameters::ParameterType::Index(p.add_to_model(network, args, parent)?)
             }
             Self::Placeholder(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model()?),
+            Self::MultiThreshold(p) => p.add_to_model(network, args, parent)?,
         };
 
         Ok(ty)
@@ -280,6 +283,7 @@ impl VisitMetrics for Parameter {
             Self::UniformDrawdownProfile(p) => p.visit_metrics(visitor),
             Self::Max(p) => p.visit_metrics(visitor),
             Self::Min(p) => p.visit_metrics(visitor),
+            Self::MultiThreshold(p) => p.visit_metrics(visitor),
             Self::Negative(p) => p.visit_metrics(visitor),
             Self::Polynomial1D(p) => p.visit_metrics(visitor),
             Self::Threshold(p) => p.visit_metrics(visitor),
@@ -318,6 +322,7 @@ impl VisitMetrics for Parameter {
             Self::UniformDrawdownProfile(p) => p.visit_metrics_mut(visitor),
             Self::Max(p) => p.visit_metrics_mut(visitor),
             Self::Min(p) => p.visit_metrics_mut(visitor),
+            Self::MultiThreshold(p) => p.visit_metrics_mut(visitor),
             Self::Negative(p) => p.visit_metrics_mut(visitor),
             Self::Polynomial1D(p) => p.visit_metrics_mut(visitor),
             Self::Threshold(p) => p.visit_metrics_mut(visitor),
@@ -358,6 +363,7 @@ impl VisitPaths for Parameter {
             Self::UniformDrawdownProfile(p) => p.visit_paths(visitor),
             Self::Max(p) => p.visit_paths(visitor),
             Self::Min(p) => p.visit_paths(visitor),
+            Self::MultiThreshold(p) => p.visit_paths(visitor),
             Self::Negative(p) => p.visit_paths(visitor),
             Self::Polynomial1D(p) => p.visit_paths(visitor),
             Self::Threshold(p) => p.visit_paths(visitor),
@@ -396,6 +402,7 @@ impl VisitPaths for Parameter {
             Self::UniformDrawdownProfile(p) => p.visit_paths_mut(visitor),
             Self::Max(p) => p.visit_paths_mut(visitor),
             Self::Min(p) => p.visit_paths_mut(visitor),
+            Self::MultiThreshold(p) => p.visit_paths_mut(visitor),
             Self::Negative(p) => p.visit_paths_mut(visitor),
             Self::Polynomial1D(p) => p.visit_paths_mut(visitor),
             Self::Threshold(p) => p.visit_paths_mut(visitor),
@@ -496,11 +503,17 @@ impl TryFromV1<ParameterV1> for ParameterOrTimeseriesRef {
                 CoreParameter::StorageThreshold(p) => {
                     Parameter::Threshold(p.try_into_v2(parent_node, conversion_data)?).into()
                 }
-                CoreParameter::MultipleThresholdIndex(_) => todo!(),
-                CoreParameter::MultipleThresholdParameterIndex(_) => todo!(),
+                CoreParameter::MultipleThresholdIndex(p) => {
+                    Parameter::MultiThreshold(p.try_into_v2(parent_node, conversion_data)?).into()
+                }
+                CoreParameter::MultipleThresholdParameterIndex(p) => {
+                    Parameter::MultiThreshold(p.try_into_v2(parent_node, conversion_data)?).into()
+                }
                 CoreParameter::CurrentYearThreshold(_) => todo!(),
                 CoreParameter::CurrentOrdinalDayThreshold(_) => todo!(),
-                CoreParameter::TablesArray(p) => Parameter::TablesArray(p.into_v2(parent_node, conversion_data)).into(),
+                CoreParameter::TablesArray(p) => {
+                    Parameter::TablesArray(p.try_into_v2(parent_node, conversion_data)?).into()
+                }
                 CoreParameter::Min(p) => Parameter::Min(p.try_into_v2(parent_node, conversion_data)?).into(),
                 CoreParameter::Division(p) => Parameter::Division(p.try_into_v2(parent_node, conversion_data)?).into(),
                 CoreParameter::DataFrame(p) => {
@@ -541,7 +554,7 @@ impl TryFromV1<ParameterV1> for ParameterOrTimeseriesRef {
                         name: p.meta.and_then(|m| m.name).unwrap_or("unnamed".to_string()),
                         attr: "".to_string(),
                         error: ConversionError::DeprecatedParameter {
-                            ty: "DeficitParameter".to_string(),
+                            ty: "StorageParameter".to_string(),
                             instead: "Use a derived metric instead.".to_string(),
                         },
                     });
@@ -587,17 +600,55 @@ impl TryFromV1<ParameterV1> for ParameterOrTimeseriesRef {
 ///
 /// This value can be a literal float or an external reference to an input table.
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, Display, EnumDiscriminants)]
-#[serde(untagged)]
+#[serde(tag = "type", deny_unknown_fields)]
 #[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
 #[strum_discriminants(name(ConstantValueType))]
 pub enum ConstantValue<T> {
-    Literal(T),
+    /// A literal value.
+    Literal { value: T },
+    /// A reference to a constant value in a table.
     Table(TableDataRef),
+}
+
+impl From<f64> for ConstantValue<f64> {
+    fn from(v: f64) -> Self {
+        Self::Literal { value: v }
+    }
+}
+
+impl From<u64> for ConstantValue<u64> {
+    fn from(v: u64) -> Self {
+        Self::Literal { value: v }
+    }
+}
+
+impl From<u32> for ConstantValue<u64> {
+    fn from(v: u32) -> Self {
+        Self::Literal { value: v as u64 }
+    }
+}
+
+impl From<u16> for ConstantValue<u64> {
+    fn from(v: u16) -> Self {
+        Self::Literal { value: v as u64 }
+    }
+}
+
+impl From<u8> for ConstantValue<u64> {
+    fn from(v: u8) -> Self {
+        Self::Literal { value: v as u64 }
+    }
 }
 
 impl Default for ConstantValue<f64> {
     fn default() -> Self {
-        Self::Literal(0.0)
+        0.0.into()
+    }
+}
+
+impl Default for ConstantValue<u64> {
+    fn default() -> Self {
+        0_u64.into()
     }
 }
 
@@ -612,13 +663,13 @@ mod constant_value_visit_metrics {
     {
         fn visit_metrics<F: FnMut(&Metric)>(&self, visitor: &mut F) {
             match self {
-                Self::Literal(v) => v.visit_metrics(visitor),
+                Self::Literal { value } => value.visit_metrics(visitor),
                 Self::Table(v) => v.visit_metrics(visitor),
             }
         }
         fn visit_metrics_mut<F: FnMut(&mut Metric)>(&mut self, visitor: &mut F) {
             match self {
-                Self::Literal(v) => v.visit_metrics_mut(visitor),
+                Self::Literal { value } => value.visit_metrics_mut(visitor),
                 Self::Table(v) => v.visit_metrics_mut(visitor),
             }
         }
@@ -634,13 +685,13 @@ mod constant_value_visit_paths {
     {
         fn visit_paths<F: FnMut(&Path)>(&self, visitor: &mut F) {
             match self {
-                Self::Literal(v) => v.visit_paths(visitor),
+                Self::Literal { value } => value.visit_paths(visitor),
                 Self::Table(v) => v.visit_paths(visitor),
             }
         }
         fn visit_paths_mut<F: FnMut(&mut PathBuf)>(&mut self, visitor: &mut F) {
             match self {
-                Self::Literal(v) => v.visit_paths_mut(visitor),
+                Self::Literal { value } => value.visit_paths_mut(visitor),
                 Self::Table(v) => v.visit_paths_mut(visitor),
             }
         }
@@ -652,12 +703,12 @@ impl ConstantValue<f64> {
     /// Return the value loading from a table if required.
     pub fn load(&self, tables: &LoadedTableCollection) -> Result<f64, SchemaError> {
         match self {
-            Self::Literal(v) => Ok(*v),
+            Self::Literal { value } => Ok(*value),
             Self::Table(tbl_ref) => tables
                 .get_scalar_f64(tbl_ref)
-                .map_err(|error| SchemaError::TableRefLoad {
+                .map_err(|source| SchemaError::TableRefLoad {
                     table_ref: tbl_ref.clone(),
-                    error,
+                    source: Box::new(source),
                 }),
         }
     }
@@ -668,12 +719,12 @@ impl ConstantValue<u64> {
     /// Return the value loading from a table if required.
     pub fn load(&self, tables: &LoadedTableCollection) -> Result<u64, SchemaError> {
         match self {
-            Self::Literal(v) => Ok(*v),
+            Self::Literal { value } => Ok(*value),
             Self::Table(tbl_ref) => tables
                 .get_scalar_u64(tbl_ref)
-                .map_err(|error| SchemaError::TableRefLoad {
+                .map_err(|source| SchemaError::TableRefLoad {
                     table_ref: tbl_ref.clone(),
-                    error,
+                    source: Box::new(source),
                 }),
         }
     }
@@ -684,7 +735,7 @@ impl TryFrom<ParameterValueV1> for ConstantValue<f64> {
 
     fn try_from(v1: ParameterValueV1) -> Result<Self, Self::Error> {
         match v1 {
-            ParameterValueV1::Constant(v) => Ok(Self::Literal(v)),
+            ParameterValueV1::Constant(value) => Ok(Self::Literal { value }),
             ParameterValueV1::Reference(_) => Err(ConversionError::ConstantFloatReferencesParameter {}),
             ParameterValueV1::Table(tbl) => Ok(Self::Table(tbl.try_into()?)),
             ParameterValueV1::Inline(_) => Err(ConversionError::ConstantFloatInlineParameter {}),
@@ -698,11 +749,11 @@ impl TryFrom<ParameterValueV1> for ConstantValue<f64> {
 #[derive(
     serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll, Display, EnumDiscriminants, PartialEq,
 )]
-#[serde(untagged)]
+#[serde(tag = "type", deny_unknown_fields)]
 #[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
 #[strum_discriminants(name(ConstantFloatVecType))]
 pub enum ConstantFloatVec {
-    Literal(Vec<f64>),
+    Literal { values: Vec<f64> },
     Table(TableDataRef),
 }
 
@@ -711,14 +762,16 @@ impl ConstantFloatVec {
     /// Return the value loading from a table if required.
     pub fn load(&self, tables: &LoadedTableCollection) -> Result<Vec<f64>, SchemaError> {
         match self {
-            Self::Literal(v) => Ok(v.clone()),
-            Self::Table(tbl_ref) => tables
-                .get_vec_f64(tbl_ref)
-                .cloned()
-                .map_err(|error| SchemaError::TableRefLoad {
-                    table_ref: tbl_ref.clone(),
-                    error,
-                }),
+            Self::Literal { values } => Ok(values.clone()),
+            Self::Table(tbl_ref) => {
+                tables
+                    .get_vec_f64(tbl_ref)
+                    .map(|v| v.to_vec())
+                    .map_err(|source| SchemaError::TableRefLoad {
+                        table_ref: tbl_ref.clone(),
+                        source: Box::new(source),
+                    })
+            }
         }
     }
 }

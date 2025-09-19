@@ -1,0 +1,36 @@
+{
+    "metadata": {
+        "title": "Simple break link",
+        "description": "A very simple example.",
+        "minimum_version": "0.1"
+    },
+    "timestepper": {
+        "start": "2015-01-01",
+        "end": "2015-12-31",
+        "timestep": 1
+    },
+    "nodes": [
+        {
+            "name": "supply1",
+            "type": "Input",
+            "max_flow": 15
+        },
+        {
+            "name": "link1",
+            "type": "breaklink",
+            "cost": -1,
+            "max_flow": 5.0,
+            "min_flow": 1.0
+        },
+        {
+            "name": "demand1",
+            "type": "Output",
+            "max_flow": 10,
+            "cost": -10
+        }
+    ],
+    "edges": [
+        ["supply1", "link1"],
+        ["link1", "demand1"]
+    ]
+}

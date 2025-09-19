@@ -1,16 +1,16 @@
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
 use crate::error::{ComponentConversionError, ConversionError};
-use crate::metric::{Metric, NodeReference};
+use crate::metric::{Metric, NodeAttrReference};
 #[cfg(feature = "core")]
-use crate::model::LoadArgs;
+use crate::network::LoadArgs;
 use crate::nodes::NodeAttribute;
 use crate::parameters::{ConversionData, ParameterMeta};
 use crate::v1::{IntoV2, TryFromV1, try_convert_control_curves, try_convert_parameter_attr};
 
 #[cfg(feature = "core")]
 use pywr_core::parameters::{ParameterIndex, ParameterName};
-use pywr_schema_macros::PywrVisitAll;
+use pywr_schema_macros::{PywrVisitAll, skip_serializing_none};
 use pywr_v1_schema::parameters::{
     ControlCurveIndexParameter as ControlCurveIndexParameterV1,
     ControlCurveInterpolatedParameter as ControlCurveInterpolatedParameterV1,
@@ -24,7 +24,7 @@ use schemars::JsonSchema;
 pub struct ControlCurveInterpolatedParameter {
     pub meta: ParameterMeta,
     pub control_curves: Vec<Metric>,
-    pub storage_node: NodeReference,
+    pub storage_node: NodeAttrReference,
     pub values: Vec<Metric>,
 }
 
@@ -106,7 +106,7 @@ impl TryFromV1<ControlCurveInterpolatedParameterV1> for ControlCurveInterpolated
         };
 
         // v1 uses proportional volume for control curves
-        let storage_node = NodeReference {
+        let storage_node = NodeAttrReference {
             name: v1.storage_node,
             attribute: Some(NodeAttribute::ProportionalVolume),
         };
@@ -126,7 +126,7 @@ impl TryFromV1<ControlCurveInterpolatedParameterV1> for ControlCurveInterpolated
 pub struct ControlCurveIndexParameter {
     pub meta: ParameterMeta,
     pub control_curves: Vec<Metric>,
-    pub storage_node: NodeReference,
+    pub storage_node: NodeAttrReference,
 }
 
 #[cfg(feature = "core")]
@@ -171,7 +171,7 @@ impl TryFromV1<ControlCurveIndexParameterV1> for ControlCurveIndexParameter {
             .collect::<Result<Vec<_>, _>>()?;
 
         // v1 uses proportional volume for control curves
-        let storage_node = NodeReference {
+        let storage_node = NodeAttrReference {
             name: v1.storage_node,
             attribute: Some(NodeAttribute::ProportionalVolume),
         };
@@ -216,7 +216,7 @@ impl TryFromV1<ControlCurveParameterV1> for ControlCurveIndexParameter {
         };
 
         // v1 uses proportional volume for control curves
-        let storage_node = NodeReference {
+        let storage_node = NodeAttrReference {
             name: v1.storage_node,
             attribute: Some(NodeAttribute::ProportionalVolume),
         };
@@ -235,7 +235,7 @@ impl TryFromV1<ControlCurveParameterV1> for ControlCurveIndexParameter {
 pub struct ControlCurveParameter {
     pub meta: ParameterMeta,
     pub control_curves: Vec<Metric>,
-    pub storage_node: NodeReference,
+    pub storage_node: NodeAttrReference,
     pub values: Vec<Metric>,
 }
 
@@ -307,7 +307,7 @@ impl TryFromV1<ControlCurveParameterV1> for ControlCurveParameter {
         };
 
         // v1 uses proportional volume for control curves
-        let storage_node = NodeReference {
+        let storage_node = NodeAttrReference {
             name: v1.storage_node,
             attribute: Some(NodeAttribute::ProportionalVolume),
         };
@@ -322,12 +322,13 @@ impl TryFromV1<ControlCurveParameterV1> for ControlCurveParameter {
     }
 }
 
+#[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct ControlCurvePiecewiseInterpolatedParameter {
     pub meta: ParameterMeta,
     pub control_curves: Vec<Metric>,
-    pub storage_node: NodeReference,
+    pub storage_node: NodeAttrReference,
     pub values: Option<Vec<[f64; 2]>>,
     pub minimum: Option<f64>,
     pub maximum: Option<f64>,
@@ -385,7 +386,7 @@ impl TryFromV1<ControlCurvePiecewiseInterpolatedParameterV1> for ControlCurvePie
         )?;
 
         // v1 uses proportional volume for control curves
-        let storage_node = NodeReference {
+        let storage_node = NodeAttrReference {
             name: v1.storage_node,
             attribute: Some(NodeAttribute::ProportionalVolume),
         };
@@ -420,7 +421,7 @@ mod tests {
                 },
                 "control_curves": [
                     {"type": "Parameter", "name": "reservoir_cc"},
-                    {"type": "Constant", "value": 0.2}
+                    {"type": "Literal", "value": 0.2}
                 ],
                 "values": [
                     [-0.1, -1.0],

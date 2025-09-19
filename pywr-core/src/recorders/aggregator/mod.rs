@@ -1,3 +1,4 @@
+use crate::agg_funcs::AggFuncF64;
 use crate::timestep::PywrDuration;
 use chrono::{Datelike, Duration, NaiveDate, NaiveDateTime, NaiveTime};
 use std::num::NonZeroUsize;
@@ -79,88 +80,6 @@ impl AggregationFrequency {
     }
 }
 
-#[derive(Clone, Debug)]
-pub enum AggregationFunction {
-    Sum,
-    Mean,
-    Min,
-    Max,
-    CountNonZero,
-    CountFunc { func: fn(f64) -> bool },
-}
-
-impl AggregationFunction {
-    /// Calculate the aggregation of the given values.
-    pub fn calc_period_values(&self, values: &[PeriodValue<f64>]) -> Option<f64> {
-        match self {
-            AggregationFunction::Sum => Some(values.iter().map(|v| v.value * v.duration.fractional_days()).sum()),
-            AggregationFunction::Mean => {
-                let ndays: f64 = values.iter().map(|v| v.duration.fractional_days()).sum();
-                if ndays == 0.0 {
-                    None
-                } else {
-                    let sum: f64 = values.iter().map(|v| v.value * v.duration.fractional_days()).sum();
-
-                    Some(sum / ndays)
-                }
-            }
-            AggregationFunction::Min => values.iter().map(|v| v.value).min_by(|a, b| {
-                a.partial_cmp(b)
-                    .expect("Failed to calculate minimum of values containing a NaN.")
-            }),
-            AggregationFunction::Max => values.iter().map(|v| v.value).max_by(|a, b| {
-                a.partial_cmp(b)
-                    .expect("Failed to calculate maximum of values containing a NaN.")
-            }),
-            AggregationFunction::CountNonZero => {
-                let count = values.iter().filter(|v| v.value.abs() > 1e-6).count();
-                Some(count as f64)
-            }
-            AggregationFunction::CountFunc { func } => {
-                let count = values.iter().filter(|v| func(v.value)).count();
-                Some(count as f64)
-            }
-        }
-    }
-
-    pub fn calc_f64(&self, values: &[f64]) -> Option<f64> {
-        match self {
-            AggregationFunction::Sum => Some(values.iter().sum()),
-            AggregationFunction::Mean => {
-                let ndays: i64 = values.len() as i64;
-                if ndays == 0 {
-                    None
-                } else {
-                    let sum: f64 = values.iter().sum();
-                    Some(sum / ndays as f64)
-                }
-            }
-            AggregationFunction::Min => values
-                .iter()
-                .min_by(|a, b| {
-                    a.partial_cmp(b)
-                        .expect("Failed to calculate minimum of values containing a NaN.")
-                })
-                .copied(),
-            AggregationFunction::Max => values
-                .iter()
-                .max_by(|a, b| {
-                    a.partial_cmp(b)
-                        .expect("Failed to calculate maximum of values containing a NaN.")
-                })
-                .copied(),
-            AggregationFunction::CountNonZero => {
-                let count = values.iter().filter(|v| **v != 0.0).count();
-                Some(count as f64)
-            }
-            AggregationFunction::CountFunc { func } => {
-                let count = values.iter().filter(|v| func(**v)).count();
-                Some(count as f64)
-            }
-        }
-    }
-}
-
 #[derive(Default, Debug, Clone)]
 struct PeriodicAggregatorState {
     current_values: Option<Vec<PeriodValue<f64>>>,
@@ -171,7 +90,7 @@ impl PeriodicAggregatorState {
         &mut self,
         value: PeriodValue<f64>,
         agg_freq: &AggregationFrequency,
-        agg_func: &AggregationFunction,
+        agg_func: &AggFuncF64,
     ) -> Option<PeriodValue<f64>> {
         if let Some(current_values) = self.current_values.as_mut() {
             // SAFETY: The current_values vector is guaranteed to contain at least one value.
@@ -220,7 +139,7 @@ impl PeriodicAggregatorState {
         }
     }
 
-    fn calc_aggregation(&self, agg_func: &AggregationFunction) -> Option<PeriodValue<f64>> {
+    fn calc_aggregation(&self, agg_func: &AggFuncF64) -> Option<PeriodValue<f64>> {
         if let Some(current_values) = &self.current_values {
             if let Some(agg_value) = agg_func.calc_period_values(current_values) {
                 // SAFETY: The current_values vector is guaranteed to contain at least one value.
@@ -251,7 +170,7 @@ impl PeriodicAggregatorState {
 #[derive(Clone, Debug)]
 struct PeriodicAggregator {
     frequency: Option<AggregationFrequency>,
-    function: AggregationFunction,
+    function: AggFuncF64,
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -285,6 +204,10 @@ impl<T> PeriodValue<Vec<T>> {
     }
     pub fn len(&self) -> usize {
         self.value.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.value.is_empty()
     }
 }
 
@@ -355,7 +278,7 @@ pub struct Aggregator {
 }
 
 impl Aggregator {
-    pub fn new(period: Option<AggregationFrequency>, function: AggregationFunction, child: Option<Aggregator>) -> Self {
+    pub fn new(period: Option<AggregationFrequency>, function: AggFuncF64, child: Option<Aggregator>) -> Self {
         Self {
             agg: PeriodicAggregator {
                 frequency: period,
@@ -419,7 +342,7 @@ impl Aggregator {
 
 #[cfg(test)]
 mod tests {
-    use super::{AggregationFrequency, AggregationFunction, Aggregator, PeriodicAggregator, PeriodicAggregatorState};
+    use super::{AggFuncF64, AggregationFrequency, Aggregator, PeriodicAggregator, PeriodicAggregatorState};
     use crate::recorders::aggregator::PeriodValue;
     use chrono::{Datelike, NaiveDate, TimeDelta};
     use float_cmp::assert_approx_eq;
@@ -428,7 +351,7 @@ mod tests {
     fn test_periodic_aggregator() {
         let agg = PeriodicAggregator {
             frequency: Some(AggregationFrequency::Monthly),
-            function: AggregationFunction::Sum,
+            function: AggFuncF64::Sum,
         };
 
         let mut state = PeriodicAggregatorState::default();
@@ -466,12 +389,12 @@ mod tests {
     fn test_nested_aggregator() {
         let model_agg = PeriodicAggregator {
             frequency: None,
-            function: AggregationFunction::Max,
+            function: AggFuncF64::Max,
         };
 
         let annual_agg = PeriodicAggregator {
             frequency: Some(AggregationFrequency::Annual),
-            function: AggregationFunction::Min,
+            function: AggFuncF64::Min,
         };
 
         // Setup an aggregator to calculate the max of the annual minimum values
@@ -533,11 +456,11 @@ mod tests {
             ),
         ];
 
-        let agg_value = AggregationFunction::Mean.calc_period_values(values.as_slice()).unwrap();
+        let agg_value = AggFuncF64::Mean.calc_period_values(values.as_slice()).unwrap();
         assert_approx_eq!(f64, agg_value, 7.0 / 4.0);
 
-        let agg_value = AggregationFunction::Sum.calc_period_values(values.as_slice()).unwrap();
-        let expected = 2.0 * (1.0 / 24.0) + 1.0 * (2.0 / 24.0) + 3.0 * (1.0 / 24.0);
+        let agg_value = AggFuncF64::Sum.calc_period_values(values.as_slice()).unwrap();
+        let expected = 2.0 + 1.0 + 3.0;
         assert_approx_eq!(f64, agg_value, expected);
     }
 }

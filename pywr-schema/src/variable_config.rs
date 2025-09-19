@@ -3,8 +3,9 @@ use crate::parameters::{ActivationFunction, MonthlyProfileVariableConfig, RbfPro
 #[cfg(feature = "core")]
 use pywr_core::parameters::ParameterName;
 use schemars::JsonSchema;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use strum_macros::{Display, EnumDiscriminants, EnumString, IntoStaticStr, VariantNames};
+use thiserror::Error;
 
 /// Configuration of a variable parameter.
 ///
@@ -44,14 +45,22 @@ pub struct NamedVariableConfig {
     pub config: VariableConfig,
 }
 
+#[derive(Error, Debug)]
+pub enum VariableConfigsReadError {
+    #[error("IO error on path `{path}`: {error}")]
+    IO { path: PathBuf, error: std::io::Error },
+    #[error("JSON error: {0}")]
+    Json(#[from] serde_json::Error),
+}
+
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, JsonSchema)]
 pub struct VariableConfigs {
     pub configs: Vec<NamedVariableConfig>,
 }
 
 impl VariableConfigs {
-    pub fn from_path<P: AsRef<Path>>(path: P) -> Result<Self, SchemaError> {
-        let data = std::fs::read_to_string(&path).map_err(|error| SchemaError::IO {
+    pub fn from_path<P: AsRef<Path>>(path: P) -> Result<Self, VariableConfigsReadError> {
+        let data = std::fs::read_to_string(&path).map_err(|error| VariableConfigsReadError::IO {
             path: path.as_ref().to_path_buf(),
             error,
         })?;

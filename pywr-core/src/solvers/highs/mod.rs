@@ -7,16 +7,16 @@ use crate::state::{ConstParameterValues, State};
 use crate::timestep::Timestep;
 use highs_sys::{
     Highs_addCols, Highs_addRows, Highs_changeCoeff, Highs_changeColIntegrality, Highs_changeColsCostByRange,
-    Highs_changeObjectiveSense, Highs_changeRowsBoundsByMask, Highs_create, Highs_getDoubleInfoValue,
-    Highs_getModelStatus, Highs_getSolution, Highs_run, Highs_setBoolOptionValue, Highs_setStringOptionValue, HighsInt,
-    OBJECTIVE_SENSE_MINIMIZE, STATUS_OK, kHighsModelStatusInfeasible, kHighsModelStatusInterrupt,
-    kHighsModelStatusIterationLimit, kHighsModelStatusLoadError, kHighsModelStatusModelEmpty,
-    kHighsModelStatusModelError, kHighsModelStatusNotset, kHighsModelStatusObjectiveBound,
-    kHighsModelStatusObjectiveTarget, kHighsModelStatusOptimal, kHighsModelStatusPostsolveError,
-    kHighsModelStatusPresolveError, kHighsModelStatusSolutionLimit, kHighsModelStatusSolveError,
-    kHighsModelStatusTimeLimit, kHighsModelStatusUnbounded, kHighsModelStatusUnboundedOrInfeasible,
-    kHighsModelStatusUnknown, kHighsStatusError, kHighsStatusOk, kHighsStatusWarning, kHighsVarTypeContinuous,
-    kHighsVarTypeInteger,
+    Highs_changeObjectiveSense, Highs_changeRowsBoundsByMask, Highs_clearSolver, Highs_create,
+    Highs_getDoubleInfoValue, Highs_getModelStatus, Highs_getSolution, Highs_run, Highs_setBoolOptionValue,
+    Highs_setStringOptionValue, Highs_writeModel, HighsInt, OBJECTIVE_SENSE_MINIMIZE, STATUS_OK,
+    kHighsModelStatusInfeasible, kHighsModelStatusInterrupt, kHighsModelStatusIterationLimit,
+    kHighsModelStatusLoadError, kHighsModelStatusModelEmpty, kHighsModelStatusModelError, kHighsModelStatusNotset,
+    kHighsModelStatusObjectiveBound, kHighsModelStatusObjectiveTarget, kHighsModelStatusOptimal,
+    kHighsModelStatusPostsolveError, kHighsModelStatusPresolveError, kHighsModelStatusSolutionLimit,
+    kHighsModelStatusSolveError, kHighsModelStatusTimeLimit, kHighsModelStatusUnbounded,
+    kHighsModelStatusUnboundedOrInfeasible, kHighsModelStatusUnknown, kHighsStatusError, kHighsStatusOk,
+    kHighsStatusWarning, kHighsVarTypeContinuous, kHighsVarTypeInteger,
 };
 use libc::c_void;
 pub use settings::{HighsSolverSettings, HighsSolverSettingsBuilder};
@@ -291,6 +291,17 @@ impl Highs {
         to_highs_result(ret, "getSolution")?;
         Ok(colvalue.to_vec())
     }
+
+    fn write_model(&mut self, filename: &str) -> Result<(), HighsStatusError> {
+        let c_filename = CString::new(filename).unwrap();
+        let ret = unsafe { Highs_writeModel(self.ptr, c_filename.as_ptr()) };
+        to_highs_result(ret, "writeModel")
+    }
+
+    fn clear_solver(&mut self) -> Result<(), HighsStatusError> {
+        let ret = unsafe { Highs_clearSolver(self.ptr) };
+        to_highs_result(ret, "clearSolver")
+    }
 }
 
 pub struct HighsSolver {
@@ -321,13 +332,14 @@ impl Solver for HighsSolver {
         values: &ConstParameterValues,
         _settings: &Self::Settings,
     ) -> Result<Box<Self>, SolverSetupError> {
-        let builder: SolverBuilder<HighsInt> = SolverBuilder::default();
+        let builder: SolverBuilder<HighsInt> = SolverBuilder::new(f64::MAX, f64::MIN);
         let built = builder.create(network, values)?;
 
         let num_cols = built.num_cols();
         let num_nz = built.num_non_zero();
 
         let mut highs_lp = Highs::default();
+        highs_lp.presolve("on");
 
         highs_lp.add_cols(
             built.col_lower(),
@@ -385,7 +397,23 @@ impl Solver for HighsSolver {
         timings.update_constraints += now.elapsed();
 
         let now = Instant::now();
-        self.highs.run()?;
+
+        if let Err(e) = self.highs.run() {
+            let result = if let HighsModelError::Unknown = e {
+                // An unknown error occurred, try a resolve after clearing solve information
+                // See https://github.com/ERGO-Code/HiGHS/issues/1607
+                self.highs.clear_solver()?;
+                self.highs.run()
+            } else {
+                Err(e)
+            };
+
+            if let Err(e) = result {
+                self.highs.write_model("pywr_lp.mps")?;
+
+                return Err(SolverSolveError::HighsModelError(e));
+            }
+        }
         let solution = self
             .highs
             .primal_column_solution(num_cols as usize, num_rows as usize)?;

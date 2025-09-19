@@ -3,16 +3,18 @@
     "name": "my-aggregated-value"
   },
   "type": "Aggregated",
-  "agg_func": "Sum",
+  "agg_func": {
+    "type": "Sum"
+  },
   "metrics": [
     {
-      "type": "Constant",
+      "type": "Literal",
       "value": 3.1415
     },
     {
       "type": "Table",
       "table": "demands",
-      "index": "my-node"
+      "row": "my-node"
     },
     {
       "type": "Parameter",

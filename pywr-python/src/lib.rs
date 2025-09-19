@@ -3,7 +3,8 @@ use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyTuple, PyType};
-use pywr_core::models::ModelRunError;
+use pywr_core::models::{ModelResult, ModelRunError, MultiNetworkModelResult};
+use pywr_core::network::NetworkResult;
 use pywr_core::parameters::ParameterInfo;
 use pywr_core::scenario::ScenarioIndex;
 #[cfg(any(feature = "ipm-ocl", feature = "ipm-simd"))]
@@ -159,16 +160,13 @@ fn run_allowing_threads<S>(
     py: Python<'_>,
     model: &pywr_core::models::Model,
     settings: &S::Settings,
-) -> Result<(), PyErr>
+) -> Result<ModelResult, PyErr>
 where
     S: Solver,
     <S as Solver>::Settings: SolverSettings + Sync,
 {
-    py.allow_threads(|| {
-        let _results = model.run::<S>(settings)?;
-        Ok::<(), ModelRunError>(())
-    })?;
-    Ok(())
+    let result = py.allow_threads(|| model.run::<S>(settings))?;
+    Ok(result)
 }
 
 /// Run a model using the specified multi solver unlocking the GIL
@@ -177,16 +175,13 @@ fn run_multi_allowing_threads<S>(
     py: Python<'_>,
     model: &pywr_core::models::Model,
     settings: &S::Settings,
-) -> Result<(), PyErr>
+) -> Result<ModelResult, PyErr>
 where
     S: MultiStateSolver,
     <S as MultiStateSolver>::Settings: SolverSettings + Sync,
 {
-    py.allow_threads(|| {
-        let _results = model.run_multi_scenario::<S>(settings)?;
-        Ok::<(), ModelRunError>(())
-    })?;
-    Ok(())
+    let result = py.allow_threads(|| model.run_multi_scenario::<S>(settings))?;
+    Ok(result)
 }
 
 #[pyclass]
@@ -197,35 +192,38 @@ pub struct Model {
 #[pymethods]
 impl Model {
     #[pyo3(signature = (solver_name, solver_kwargs=None))]
-    fn run(&self, py: Python<'_>, solver_name: &str, solver_kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<()> {
+    fn run(
+        &self,
+        py: Python<'_>,
+        solver_name: &str,
+        solver_kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<ModelResult> {
         match solver_name {
             "clp" => {
                 let settings = build_clp_settings(solver_kwargs)?;
-                run_allowing_threads::<ClpSolver>(py, &self.model, &settings)?;
+                run_allowing_threads::<ClpSolver>(py, &self.model, &settings)
             }
             #[cfg(feature = "highs")]
             "highs" => {
                 let settings = build_highs_settings(solver_kwargs)?;
-                run_allowing_threads::<HighsSolver>(py, &self.model, &settings)?;
+                run_allowing_threads::<HighsSolver>(py, &self.model, &settings)
             }
             #[cfg(feature = "ipm-simd")]
             "ipm-simd" => {
                 let settings = build_ipm_simd_settings(solver_kwargs)?;
-                run_multi_allowing_threads::<SimdIpmF64Solver>(py, &self.model, &settings)?;
+                run_multi_allowing_threads::<SimdIpmF64Solver>(py, &self.model, &settings)
             }
             #[cfg(feature = "ipm-ocl")]
             "clipm-f32" => {
-                run_multi_allowing_threads::<ClIpmF32Solver>(py, &self.model, &ClIpmSolverSettings::default())?
+                run_multi_allowing_threads::<ClIpmF32Solver>(py, &self.model, &ClIpmSolverSettings::default())
             }
 
             #[cfg(feature = "ipm-ocl")]
             "clipm-f64" => {
-                run_multi_allowing_threads::<ClIpmF64Solver>(py, &self.model, &ClIpmSolverSettings::default())?
+                run_multi_allowing_threads::<ClIpmF64Solver>(py, &self.model, &ClIpmSolverSettings::default())
             }
-            _ => return Err(PyRuntimeError::new_err(format!("Unknown solver: {solver_name}",))),
+            _ => Err(PyRuntimeError::new_err(format!("Unknown solver: {solver_name}",))),
         }
-
-        Ok(())
     }
 }
 
@@ -339,6 +337,9 @@ fn pywr(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(convert_metric_from_v1_json_string, m)?)?;
     m.add_class::<Schema>()?;
     m.add_class::<Model>()?;
+    m.add_class::<ModelResult>()?;
+    m.add_class::<MultiNetworkModelResult>()?;
+    m.add_class::<NetworkResult>()?;
     m.add_class::<Metric>()?;
     m.add_class::<Timestep>()?;
     m.add_class::<ScenarioIndex>()?;

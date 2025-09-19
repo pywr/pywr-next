@@ -2,7 +2,7 @@
 use crate::error::SchemaError;
 use crate::metric::{IndexMetric, Metric};
 #[cfg(feature = "core")]
-use crate::model::LoadArgs;
+use crate::network::LoadArgs;
 use crate::parameters::ParameterMeta;
 
 #[cfg(feature = "core")]

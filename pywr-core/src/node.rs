@@ -578,7 +578,7 @@ impl Node {
         }
     }
 
-    pub fn set_cost_agg_func(&mut self, agg_func: CostAggFunc) -> Result<(), NodeError> {
+    pub fn set_cost_agg_func(&mut self, agg_func: Option<CostAggFunc>) -> Result<(), NodeError> {
         match self {
             Self::Input(n) => n.set_cost_agg_func(agg_func),
             Self::Link(n) => n.set_cost_agg_func(agg_func),
@@ -726,21 +726,11 @@ impl StorageConstraints {
 }
 
 /// Generic cost data for a node.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Default)]
 struct NodeCost {
     local: Option<MetricF64>,
     virtual_storage_nodes: Vec<VirtualStorageIndex>,
-    agg_func: CostAggFunc,
-}
-
-impl Default for NodeCost {
-    fn default() -> Self {
-        Self {
-            local: None,
-            virtual_storage_nodes: Vec::new(),
-            agg_func: CostAggFunc::Max,
-        }
-    }
+    agg_func: Option<CostAggFunc>,
 }
 
 impl NodeCost {
@@ -751,30 +741,32 @@ impl NodeCost {
             Some(m) => m.get_value(network, state),
         }?;
 
-        let vs_costs = self.virtual_storage_nodes.iter().map(|idx| {
-            let vs = network
-                .get_virtual_storage_node(idx)
-                .ok_or(NodeError::VirtualStorageIndexNotFound(*idx))?;
-            Ok::<_, NodeError>(vs.get_cost(network, state)?)
-        });
+        if let Some(agg_func) = &self.agg_func {
+            let vs_costs = self.virtual_storage_nodes.iter().map(|idx| {
+                let vs = network
+                    .get_virtual_storage_node(idx)
+                    .ok_or(NodeError::VirtualStorageIndexNotFound(*idx))?;
+                Ok::<_, NodeError>(vs.get_cost(network, state)?)
+            });
 
-        match self.agg_func {
-            CostAggFunc::Sum => {
-                for vs_cost in vs_costs {
-                    cost += vs_cost?;
+            match agg_func {
+                CostAggFunc::Sum => {
+                    for vs_cost in vs_costs {
+                        cost += vs_cost?;
+                    }
                 }
-            }
-            CostAggFunc::Max => {
-                for vs_cost in vs_costs {
-                    cost = cost.max(vs_cost?);
+                CostAggFunc::Max => {
+                    for vs_cost in vs_costs {
+                        cost = cost.max(vs_cost?);
+                    }
                 }
-            }
-            CostAggFunc::Min => {
-                for vs_cost in vs_costs {
-                    cost = cost.min(vs_cost?);
+                CostAggFunc::Min => {
+                    for vs_cost in vs_costs {
+                        cost = cost.min(vs_cost?);
+                    }
                 }
-            }
-        };
+            };
+        }
 
         Ok(cost)
     }
@@ -800,7 +792,7 @@ impl InputNode {
     fn set_cost(&mut self, value: Option<MetricF64>) {
         self.cost.local = value
     }
-    fn set_cost_agg_func(&mut self, agg_func: CostAggFunc) {
+    fn set_cost_agg_func(&mut self, agg_func: Option<CostAggFunc>) {
         self.cost.agg_func = agg_func
     }
     fn get_cost(&self, network: &Network, state: &State) -> Result<f64, NodeError> {
@@ -855,7 +847,7 @@ impl OutputNode {
     fn get_cost(&self, network: &Network, state: &State) -> Result<f64, NodeError> {
         self.cost.get_cost(network, state)
     }
-    fn set_cost_agg_func(&mut self, agg_func: CostAggFunc) {
+    fn set_cost_agg_func(&mut self, agg_func: Option<CostAggFunc>) {
         self.cost.agg_func = agg_func
     }
     fn set_min_flow(&mut self, value: Option<MetricF64>) {
@@ -906,7 +898,7 @@ impl LinkNode {
     fn set_cost(&mut self, value: Option<MetricF64>) {
         self.cost.local = value
     }
-    fn set_cost_agg_func(&mut self, agg_func: CostAggFunc) {
+    fn set_cost_agg_func(&mut self, agg_func: Option<CostAggFunc>) {
         self.cost.agg_func = agg_func
     }
     fn get_cost(&self, network: &Network, state: &State) -> Result<f64, NodeError> {

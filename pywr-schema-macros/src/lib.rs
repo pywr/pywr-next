@@ -1,7 +1,7 @@
 use heck::ToSnakeCase;
 use proc_macro::TokenStream;
-use quote::quote;
-use syn::Fields;
+use quote::{quote, ToTokens};
+use syn::{parse_macro_input, ItemStruct, Type, Fields};
 use syn::punctuated::Punctuated;
 use syn::token::Comma;
 
@@ -398,4 +398,36 @@ fn impl_visit_paths(ast: &syn::DeriveInput) -> TokenStream {
     };
     // Hand the output tokens back to the compiler.
     TokenStream::from(expanded)
+}
+
+
+/// An attribute macro to add `#[serde(skip_serializing_if = "Option::is_none")]` to all Option<T> fields in a struct
+#[proc_macro_attribute]
+pub fn skip_serializing_none(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    // Parse the input as a TokenStream so we can preserve all original tokens, including doc comments
+
+    // Parse the struct for field processing
+    let input = parse_macro_input!(item as ItemStruct);
+    let mut output = input.clone();
+
+    for field in &mut output.fields {
+        if let Type::Path(type_path) = &field.ty {
+            if type_path.path.segments.last().map(|s| s.ident == "Option").unwrap_or(false) {
+                // Only add if not already present
+                let already_has = field.attrs.iter().any(|attr| {
+                    attr.path().is_ident("serde") && attr.to_token_stream().to_string().contains("skip_serializing_if")
+                });
+                if !already_has {
+                    field.attrs.push(syn::parse_quote!(
+                        #[serde(skip_serializing_if = "Option::is_none")]
+                    ));
+                }
+            }
+        }
+    }
+
+    // Replace the struct definition in the original tokens with the modified one,
+    // so that doc comments and formatting are preserved as in the original source.
+    // This is a simple approach that works if the macro is only applied to structs.
+    TokenStream::from(quote! { #output })
 }

@@ -5,10 +5,10 @@ use crate::error::ComponentConversionError;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
 #[cfg(feature = "core")]
-use crate::model::LoadArgs;
-use crate::nodes::NodeAttribute;
+use crate::network::LoadArgs;
 #[cfg(feature = "core")]
 use crate::nodes::NodeType;
+use crate::nodes::{NodeAttribute, NodeComponent};
 use crate::parameters::ParameterOrTimeseriesRef;
 #[cfg(feature = "core")]
 use crate::parameters::ParameterType;
@@ -23,7 +23,7 @@ use pywr_core::{
     parameters::ParameterName,
     recorders::OutputMetric,
 };
-use pywr_schema_macros::PywrVisitAll;
+use pywr_schema_macros::{PywrVisitAll, skip_serializing_none};
 use pywr_v1_schema::parameters::ParameterValue as ParameterValueV1;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -43,12 +43,12 @@ use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticS
 // This creates a separate enum called `MetricType` that is available in this module.
 #[strum_discriminants(name(MetricType))]
 pub enum Metric {
-    /// A constant floating point value.
-    Constant { value: f64 },
+    /// A literal floating point value.
+    Literal { value: f64 },
     /// A reference to a constant value in a table.
     Table(TableDataRef),
     /// An attribute of a node.
-    Node(NodeReference),
+    Node(NodeAttrReference),
     /// An attribute of an edge.
     Edge(EdgeReference),
     /// A reference to a value from a timeseries.
@@ -63,13 +63,13 @@ pub enum Metric {
 
 impl Default for Metric {
     fn default() -> Self {
-        Self::Constant { value: 0.0 }
+        Self::Literal { value: 0.0 }
     }
 }
 
 impl From<f64> for Metric {
     fn from(value: f64) -> Self {
-        Self::Constant { value }
+        Self::Literal { value }
     }
 }
 
@@ -95,14 +95,14 @@ impl Metric {
 
                 parameter_ref.load_f64(network, parent)
             }
-            Self::Constant { value } => Ok((*value).into()),
+            Self::Literal { value } => Ok((*value).into()),
             Self::Table(table_ref) => {
                 let value = args
                     .tables
                     .get_scalar_f64(table_ref)
-                    .map_err(|error| SchemaError::TableRefLoad {
+                    .map_err(|source| SchemaError::TableRefLoad {
                         table_ref: table_ref.clone(),
-                        error,
+                        source: Box::new(source),
                     })?;
                 Ok(value.into())
             }
@@ -136,7 +136,7 @@ impl Metric {
             Self::Node(node_ref) => Ok(node_ref.name.to_string()),
             Self::Parameter(parameter_ref) => Ok(parameter_ref.name.clone()),
             Self::LocalParameter(parameter_ref) => Ok(parameter_ref.name.clone()),
-            Self::Constant { .. } => Err(SchemaError::LiteralConstantOutputNotSupported),
+            Self::Literal { .. } => Err(SchemaError::LiteralConstantOutputNotSupported),
             Self::Table(table_ref) => Ok(table_ref.table.clone()),
             Self::Timeseries(ts_ref) => Ok(ts_ref.name.clone()),
             Self::InterNetworkTransfer { name } => Ok(name.clone()),
@@ -149,9 +149,12 @@ impl Metric {
             Self::Node(node_ref) => node_ref.attribute(args)?.to_string(),
             Self::Parameter(p_ref) => p_ref.key.clone().unwrap_or_else(|| "value".to_string()),
             Self::LocalParameter(p_ref) => p_ref.key.clone().unwrap_or_else(|| "value".to_string()),
-            Self::Constant { .. } => "value".to_string(),
-            Self::Table(_) => "value".to_string(),
-            Self::Timeseries(_) => "value".to_string(),
+            Self::Literal { .. } => "value".to_string(),
+            Self::Table(tbl_ref) => tbl_ref.key().join(";").to_string(),
+            Self::Timeseries(ts_ref) => ts_ref
+                .column()
+                .map(|c| c.to_string())
+                .unwrap_or_else(|| "value".to_string()),
             Self::InterNetworkTransfer { .. } => "value".to_string(),
             Self::Edge { .. } => "Flow".to_string(),
         };
@@ -167,7 +170,7 @@ impl Metric {
             Self::Node(node_ref) => Some(node_ref.node_type(args)?.to_string()),
             Self::Parameter(parameter_ref) => Some(parameter_ref.parameter_type(args)?.to_string()),
             Self::LocalParameter(parameter_ref) => Some(parameter_ref.parameter_type(args)?.to_string()),
-            Self::Constant { .. } => None,
+            Self::Literal { .. } => None,
             Self::Table(_) => None,
             Self::Timeseries(_) => None,
             Self::InterNetworkTransfer { .. } => None,
@@ -207,7 +210,7 @@ impl TryFromV1<ParameterValueV1> for Metric {
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
         let p = match v1 {
-            ParameterValueV1::Constant(value) => Self::Constant { value },
+            ParameterValueV1::Constant(value) => Self::Literal { value },
             ParameterValueV1::Reference(p_name) => Self::Parameter(ParameterReference {
                 name: p_name,
                 key: None,
@@ -243,16 +246,17 @@ impl TryFromV1<ParameterValueV1> for Metric {
 }
 
 /// A reference to a node with an optional attribute.
+#[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll, PartialEq)]
 #[serde(deny_unknown_fields)]
-pub struct NodeReference {
+pub struct NodeAttrReference {
     /// The name of the node
     pub name: String,
     /// The attribute of the node. If this is `None` then the default attribute is used.
     pub attribute: Option<NodeAttribute>,
 }
 
-impl NodeReference {
+impl NodeAttrReference {
     pub fn new(name: String, attribute: Option<NodeAttribute>) -> Self {
         Self { name, attribute }
     }
@@ -306,7 +310,7 @@ impl NodeReference {
                 name: self.name.clone(),
             })?;
 
-        Ok(self.attribute.unwrap_or_else(|| node.default_metric()))
+        Ok(self.attribute.unwrap_or_else(|| node.default_attribute()))
     }
 
     #[cfg(feature = "core")]
@@ -323,65 +327,35 @@ impl NodeReference {
     }
 }
 
-/// A reference to a node without an attribute.
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
-pub struct SimpleNodeReference {
+impl From<String> for NodeAttrReference {
+    fn from(v: String) -> Self {
+        NodeAttrReference {
+            name: v,
+            attribute: None,
+        }
+    }
+}
+
+/// A reference to a node with an optional component.
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct NodeComponentReference {
     /// The name of the node
     pub name: String,
+    /// The component of the node. If this is `None` then the default component is used.
+    pub component: Option<NodeComponent>,
 }
 
-impl SimpleNodeReference {
-    pub fn new(name: String) -> Self {
-        Self { name }
-    }
-
-    #[cfg(feature = "core")]
-    pub fn load(&self, network: &mut pywr_core::network::Network, args: &LoadArgs) -> Result<MetricF64, SchemaError> {
-        // This is the associated node in the schema
-        let node = args
-            .schema
-            .get_node_by_name(&self.name)
-            .ok_or_else(|| SchemaError::NodeNotFound {
-                name: self.name.clone(),
-            })?;
-
-        node.create_metric(network, None, args)
-    }
-
-    /// Return the default attribute of the node.
-    #[cfg(feature = "core")]
-    pub fn attribute(&self, args: &LoadArgs) -> Result<NodeAttribute, SchemaError> {
-        // This is the associated node in the schema
-        let node = args
-            .schema
-            .get_node_by_name(&self.name)
-            .ok_or_else(|| SchemaError::NodeNotFound {
-                name: self.name.clone(),
-            })?;
-
-        Ok(node.default_metric())
-    }
-
-    #[cfg(feature = "core")]
-    pub fn node_type(&self, args: &LoadArgs) -> Result<NodeType, SchemaError> {
-        // This is the associated node in the schema
-        let node = args
-            .schema
-            .get_node_by_name(&self.name)
-            .ok_or_else(|| SchemaError::NodeNotFound {
-                name: self.name.clone(),
-            })?;
-
-        Ok(node.node_type())
-    }
-}
-
-impl From<String> for SimpleNodeReference {
+impl From<String> for NodeComponentReference {
     fn from(v: String) -> Self {
-        SimpleNodeReference { name: v }
+        NodeComponentReference {
+            name: v,
+            component: None,
+        }
     }
 }
 
+#[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct ParameterReference {
@@ -517,7 +491,7 @@ pub enum IndexMetric {
     },
     Table(TableDataRef),
     /// An attribute of a node.
-    Node(NodeReference),
+    Node(NodeAttrReference),
     Timeseries(TimeseriesReference),
     Parameter(ParameterReference),
     LocalParameter(ParameterReference),
@@ -565,9 +539,9 @@ impl IndexMetric {
                 let value = args
                     .tables
                     .get_scalar_u64(table_ref)
-                    .map_err(|error| SchemaError::TableRefLoad {
+                    .map_err(|source| SchemaError::TableRefLoad {
                         table_ref: table_ref.clone(),
-                        error,
+                        source: Box::new(source),
                     })?;
                 Ok(value.into())
             }

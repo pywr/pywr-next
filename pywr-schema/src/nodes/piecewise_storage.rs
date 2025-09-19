@@ -1,10 +1,11 @@
-#[cfg(feature = "core")]
 use crate::error::SchemaError;
 use crate::metric::Metric;
 #[cfg(feature = "core")]
-use crate::model::LoadArgs;
+use crate::network::LoadArgs;
 use crate::node_attribute_subset_enum;
-use crate::nodes::{NodeAttribute, NodeMeta, StorageInitialVolume};
+#[cfg(feature = "core")]
+use crate::nodes::NodeAttribute;
+use crate::nodes::{NodeMeta, StorageInitialVolume};
 use crate::parameters::Parameter;
 #[cfg(feature = "core")]
 use pywr_core::{
@@ -12,7 +13,7 @@ use pywr_core::{
     metric::{MetricF64, SimpleMetricF64},
     parameters::{DifferenceParameter, ParameterIndex, ParameterName, VolumeBetweenControlCurvesParameter},
 };
-use pywr_schema_macros::PywrVisitAll;
+use pywr_schema_macros::{PywrVisitAll, skip_serializing_none};
 use schemars::JsonSchema;
 
 #[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, PywrVisitAll)]
@@ -25,7 +26,7 @@ pub struct PiecewiseStore {
 // This macro generates a subset enum for the `PiecewiseStorageNode` attributes.
 // It allows for easy conversion between the enum and the `NodeAttribute` type.
 node_attribute_subset_enum! {
-    enum PiecewiseStorageNodeAttribute {
+    pub enum PiecewiseStorageNodeAttribute {
         Volume,
         ProportionalVolume,
     }
@@ -59,7 +60,13 @@ node_attribute_subset_enum! {
 ///      <node>.n    S
 /// ```
 ///
+/// # Available attributes and components
+///
+/// The enum [`PiecewiseStorageNodeAttribute`] defines the available attributes. There are no components
+/// to choose from.
+///
 )]
+#[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct PiecewiseStorageNode {
@@ -80,15 +87,15 @@ impl PiecewiseStorageNode {
         Some(format!("store-{i:02}"))
     }
 
-    pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
-        vec![(self.meta.name.as_str(), Self::step_sub_name(self.steps.len()))]
+    pub fn input_connectors(&self) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
+        Ok(vec![(self.meta.name.as_str(), Self::step_sub_name(self.steps.len()))])
     }
-    pub fn output_connectors(&self) -> Vec<(&str, Option<String>)> {
-        vec![(self.meta.name.as_str(), Self::step_sub_name(self.steps.len()))]
+    pub fn output_connectors(&self) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
+        Ok(vec![(self.meta.name.as_str(), Self::step_sub_name(self.steps.len()))])
     }
 
-    pub fn default_metric(&self) -> NodeAttribute {
-        Self::DEFAULT_ATTRIBUTE.into()
+    pub fn default_attribute(&self) -> PiecewiseStorageNodeAttribute {
+        Self::DEFAULT_ATTRIBUTE
     }
 }
 
@@ -98,15 +105,14 @@ impl PiecewiseStorageNode {
         Some("agg-store")
     }
 
-    pub fn node_indices_for_constraints(
+    pub fn node_indices_for_storage_constraints(
         &self,
         network: &pywr_core::network::Network,
     ) -> Result<Vec<pywr_core::node::NodeIndex>, SchemaError> {
-        let indices = self
-            .steps
-            .iter()
-            .enumerate()
-            .map(|(i, _)| {
+        // Get the indices of all the sub-nodes for this piecewise storage node (including
+        // the final one that represents the residual part above the last step).
+        let indices = (0..self.steps.len() + 1)
+            .map(|i| {
                 network
                     .get_node_index_by_name(self.meta.name.as_str(), Self::step_sub_name(i).as_deref())
                     .ok_or_else(|| SchemaError::CoreNodeNotFound {
@@ -115,6 +121,7 @@ impl PiecewiseStorageNode {
                     })
             })
             .collect::<Result<Vec<_>, _>>()?;
+
         Ok(indices)
     }
 
@@ -210,7 +217,7 @@ impl PiecewiseStorageNode {
                     Some(&self.meta.name),
                 ),
                 &prior_max_volumes,
-                pywr_core::parameters::AggFunc::Sum,
+                pywr_core::agg_funcs::AggFuncF64::Sum,
             );
             let prior_max_volume_idx = network.add_simple_parameter(Box::new(prior_max_volume))?;
 
@@ -256,7 +263,7 @@ impl PiecewiseStorageNode {
                 Some(&self.meta.name),
             ),
             &prior_max_volumes,
-            pywr_core::parameters::AggFunc::Sum,
+            pywr_core::agg_funcs::AggFuncF64::Sum,
         );
         let prior_max_volume_idx = network.add_simple_parameter(Box::new(prior_max_volume))?;
 

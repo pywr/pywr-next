@@ -11,11 +11,12 @@ use pywr_core::solvers::{ClIpmF32Solver, ClIpmF64Solver, ClIpmSolverSettings, Cl
 use pywr_core::solvers::{ClpSolver, ClpSolverSettings, ClpSolverSettingsBuilder};
 #[cfg(feature = "highs")]
 use pywr_core::solvers::{HighsSolver, HighsSolverSettings, HighsSolverSettingsBuilder};
+#[cfg(feature = "microlp")]
+use pywr_core::solvers::{MicroLpSolver, MicroLpSolverSettings, MicroLpSolverSettingsBuilder};
 #[cfg(feature = "ipm-simd")]
 use pywr_core::solvers::{SimdIpmF64Solver, SimdIpmSolverSettings, SimdIpmSolverSettingsBuilder};
 use pywr_core::test_utils::make_random_model;
-use pywr_schema::ComponentConversionError;
-use pywr_schema::model::{PywrModel, PywrMultiNetworkModel, PywrNetwork};
+use pywr_schema::{ComponentConversionError, PywrModel, PywrMultiNetworkModel, PywrNetwork};
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use schemars::schema_for;
@@ -35,6 +36,8 @@ enum Solver {
     CLIPMF64,
     #[cfg(feature = "ipm-simd")]
     IpmSimd,
+    #[cfg(feature = "microlp")]
+    Microlp,
 }
 
 impl Display for Solver {
@@ -51,6 +54,8 @@ impl Display for Solver {
             Solver::CLIPMF64 => write!(f, "clipmf64"),
             #[cfg(feature = "ipm-simd")]
             Solver::IpmSimd => write!(f, "ipm-simd"),
+            #[cfg(feature = "microlp")]
+            Solver::Microlp => write!(f, "microlp"),
         }
     }
 }
@@ -356,6 +361,19 @@ fn run(
             let settings = settings_builder.build();
             model.run_multi_scenario::<SimdIpmF64Solver>(&settings)
         }
+        #[cfg(feature = "microlp")]
+        Solver::Microlp => {
+            let mut settings_builder = MicroLpSolverSettingsBuilder::default();
+            if threads > 1 {
+                settings_builder = settings_builder.parallel();
+                settings_builder = settings_builder.threads(threads);
+            }
+            if ignore_feature_requirements {
+                settings_builder = settings_builder.ignore_feature_requirements();
+            }
+            let settings = settings_builder.build();
+            model.run::<MicroLpSolver>(&settings)
+        }
     }
     .unwrap();
 }
@@ -380,6 +398,8 @@ fn run_multi(path: &Path, solver: &Solver, data_path: Option<&Path>, output_path
         Solver::CLIPMF64 => model.run_multi_scenario::<ClIpmF64Solver>(&ClIpmSolverSettings::default()),
         #[cfg(feature = "ipm-simd")]
         Solver::IpmSimd => model.run_multi_scenario::<SimdIpmF64Solver>(&SimdIpmSolverSettings::default()),
+        #[cfg(feature = "microlp")]
+        Solver::Microlp => model.run::<MicroLpSolver>(&MicroLpSolverSettings::default()),
     }
     .unwrap();
 }
@@ -400,6 +420,8 @@ fn run_random(num_systems: usize, density: usize, num_scenarios: usize, solver: 
         Solver::CLIPMF64 => model.run_multi_scenario::<ClIpmF64Solver>(&ClIpmSolverSettings::default()),
         #[cfg(feature = "ipm-simd")]
         Solver::IpmSimd => model.run_multi_scenario::<SimdIpmF64Solver>(&SimdIpmSolverSettings::default()),
+        #[cfg(feature = "microlp")]
+        Solver::Microlp => model.run::<MicroLpSolver>(&MicroLpSolverSettings::default()),
     }
     .unwrap();
 }

@@ -1,38 +1,61 @@
-#[cfg(all(feature = "core", feature = "pyo3"))]
-use crate::data_tables::make_path;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
 use crate::metric::{IndexMetric, Metric};
 #[cfg(feature = "core")]
-use crate::model::LoadArgs;
+use crate::network::LoadArgs;
 use crate::parameters::{DynamicFloatValueType, ParameterMeta};
+use crate::py_utils::PythonSource;
+#[cfg(all(feature = "core", feature = "pyo3"))]
+use crate::py_utils::{try_load_optional_py_args, try_load_optional_py_kwargs};
 use crate::visit::{VisitMetrics, VisitPaths};
 #[cfg(all(feature = "core", feature = "pyo3"))]
 use pyo3::{
-    IntoPyObjectExt, PyObject, Python,
-    prelude::{IntoPyObject, Py, PyAny, PyAnyMethods, PyModule},
-    types::{PyDict, PyString, PyTuple},
+    Bound, Python,
+    prelude::{Py, PyAny, PyAnyMethods, PyModule},
 };
 #[cfg(feature = "core")]
 use pywr_core::parameters::ParameterType;
 #[cfg(all(feature = "core", feature = "pyo3"))]
-use pywr_core::parameters::{ParameterName, PyParameter};
+use pywr_core::parameters::{ParameterName, PyClassParameter, PyFuncParameter};
+use pywr_schema_macros::{PywrVisitAll, skip_serializing_none};
 use schemars::JsonSchema;
-#[cfg(all(feature = "core", feature = "pyo3"))]
 use serde_json::Value;
 use std::collections::HashMap;
-#[cfg(all(feature = "core", feature = "pyo3"))]
-use std::ffi::CString;
 use std::path::{Path, PathBuf};
 use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticStr};
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, Display, EnumDiscriminants)]
+/// The type of Python object that is expected to be used in the parameter.
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, Display, EnumDiscriminants, PywrVisitAll)]
 #[serde(tag = "type", deny_unknown_fields)]
 #[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
-#[strum_discriminants(name(PythonSourceType))]
-pub enum PythonSource {
-    Module { module: String },
-    Path { path: PathBuf },
+#[strum_discriminants(name(PythonObjectType))]
+pub enum PythonObject {
+    Class { class: String },
+    Function { function: String },
+}
+
+#[cfg(all(feature = "core", feature = "pyo3"))]
+impl PythonObject {
+    fn load_object(&self, module: &Bound<PyModule>) -> Result<PyObj, SchemaError> {
+        let obj = match &self {
+            PythonObject::Class { class } => {
+                let obj = module.getattr(class)?;
+                PyObj::Class(obj.unbind())
+            }
+            PythonObject::Function { function } => {
+                let func = module.getattr(function)?;
+                PyObj::Function(func.unbind())
+            }
+        };
+
+        Ok(obj)
+    }
+}
+
+#[cfg(all(feature = "core", feature = "pyo3"))]
+enum PyObj {
+    Class(Py<PyAny>),
+    Function(Py<PyAny>),
 }
 
 /// The expected return type of the Python parameter.
@@ -46,12 +69,13 @@ pub enum PythonReturnType {
 
 /// A Parameter that uses a Python object for its calculations.
 ///
-/// This struct defines a schema for loading a [`PyParameter`] from external
+/// This struct defines a schema for loading a [`PyClassParameter`] or [`PyFuncParameter`] from external
 /// sources. The user provides the name of an object in the given module. Typically, this object will be
-/// a class the user has written. For more information on the expected format and signature of
-/// this object please refer to the [`PyParameter`] documentation. The object
-/// is initialised with user provided positional and/or keyword arguments that can be provided
-/// here.
+/// a class or function the user has written. For more information on the expected format and signature of
+/// this object please refer to the [`PyClassParameter`] documentation. If a class is provided
+/// then it is initialised with user provided positional and/or keyword arguments that can be provided
+/// here. If a function is provided then it is called with the same arguments along with an `info`
+/// object (see below).
 ///
 /// In additions `metrics` and `indices` can be specified. These dependent values from the network
 /// are provided to the calculation method of the Python object. This allows a custom Python
@@ -62,7 +86,7 @@ pub enum PythonReturnType {
 /// use pywr_schema::parameters::Parameter;
 ///
 /// // Parameter JSON definition
-/// // `my_parameter.py` should contain a Python class.
+/// // `my_parameter.py` should contain a Python class called `MyParameter`.
 /// let data = r#"{
 ///     "type": "Python",
 ///     "meta": {
@@ -72,7 +96,10 @@ pub enum PythonReturnType {
 ///         "type": "Path",
 ///         "path": "my_parameter.py"
 ///     },
-///     "object": "MyParameter",
+///     "object": {
+///         "type": "Class",
+///         "class": "MyParameter"
+///     },
 ///     "args": [],
 ///     "kwargs": {},
 ///     "metrics": {
@@ -90,60 +117,28 @@ pub enum PythonReturnType {
 ///
 /// let parameter: Parameter = serde_json::from_str(data).unwrap();
 /// ```
+#[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct PythonParameter {
     pub meta: ParameterMeta,
     pub source: PythonSource,
-    /// The name of Python object from the module to use.
-    pub object: String,
+    /// The type of Python object from the module to use. This is either a class or a function.
+    pub object: PythonObject,
     /// The return type of the Python calculation. This is used to convert the Python return value
     /// to the appropriate type for the Parameter.
     #[serde(default)]
     pub return_type: PythonReturnType,
     /// Position arguments to pass to the object during setup.
-    pub args: Vec<serde_json::Value>,
+    pub args: Option<Vec<Value>>,
     /// Keyword arguments to pass to the object during setup.
-    pub kwargs: HashMap<String, serde_json::Value>,
+    pub kwargs: Option<HashMap<String, Value>>,
     /// Metric values to pass to the calculation method of the initialised object (i.e.
     /// values that the Python calculation is dependent on).
     pub metrics: Option<HashMap<String, Metric>>,
     /// Index values to pass to the calculation method of the initialised object (i.e.
     /// indices that the Python calculation is dependent on).
     pub indices: Option<HashMap<String, IndexMetric>>,
-}
-
-#[cfg(all(feature = "core", feature = "pyo3"))]
-pub fn try_json_value_into_py(py: Python, value: &serde_json::Value) -> Result<Option<PyObject>, SchemaError> {
-    let py_value: Option<PyObject> = match value {
-        Value::Null => None,
-        Value::Bool(v) => Some(v.into_py_any(py)?),
-        Value::Number(v) => {
-            if let Some(i) = v.as_i64() {
-                Some(i.into_py_any(py)?)
-            } else if let Some(f) = v.as_f64() {
-                Some(f.into_py_any(py)?)
-            } else {
-                panic!("Could not convert JSON number to Python type.");
-            }
-        }
-        Value::String(v) => Some(v.into_py_any(py)?),
-        Value::Array(array) => Some(
-            array
-                .iter()
-                .map(|v| try_json_value_into_py(py, v).unwrap())
-                .collect::<Vec<_>>()
-                .into_py_any(py)?,
-        ),
-        Value::Object(map) => Some(
-            map.iter()
-                .map(|(k, v)| (k, try_json_value_into_py(py, v).unwrap()))
-                .collect::<HashMap<_, _>>()
-                .into_py_any(py)?,
-        ),
-    };
-
-    Ok(py_value)
 }
 
 impl VisitMetrics for PythonParameter {
@@ -192,7 +187,7 @@ impl PythonParameter {
     pub fn node_references(&self) -> HashMap<&str, &str> {
         HashMap::new()
     }
-    pub fn parameters(&self) -> HashMap<&str, DynamicFloatValueType> {
+    pub fn parameters(&self) -> HashMap<&str, DynamicFloatValueType<'_>> {
         HashMap::new()
     }
 }
@@ -219,50 +214,14 @@ impl PythonParameter {
         pyo3::prepare_freethreaded_python();
 
         let object = Python::with_gil(|py| {
-            let module = match &self.source {
-                PythonSource::Module { module } => PyModule::import(py, module.as_str()),
-                PythonSource::Path { path } => {
-                    let path = &make_path(path, args.data_path);
-                    let code = CString::new(std::fs::read_to_string(path).map_err(|error| SchemaError::IO {
-                        path: path.to_path_buf(),
-                        error,
-                    })?)
-                    .unwrap();
+            let module = self.source.load_module(py, args.data_path)?;
+            let obj = self.object.load_object(&module)?;
 
-                    let file_name = CString::new(path.file_name().unwrap().to_str().unwrap()).unwrap();
-                    let module_name = CString::new(path.file_stem().unwrap().to_str().unwrap()).unwrap();
-                    PyModule::from_code(py, &code, &file_name, &module_name)
-                }
-            }?;
-
-            Ok::<_, SchemaError>(module.getattr(self.object.as_str())?.into())
+            Ok::<_, SchemaError>(obj)
         })?;
 
-        let py_args = Python::with_gil(|py| {
-            let args: Vec<_> = self
-                .args
-                .iter()
-                .map(|arg| try_json_value_into_py(py, arg))
-                .collect::<Result<Vec<_>, SchemaError>>()?;
-
-            Ok::<_, SchemaError>(PyTuple::new(py, args)?.unbind())
-        })?;
-
-        let kwargs = Python::with_gil(|py| {
-            let kwargs: Vec<(Py<PyString>, Option<Py<PyAny>>)> = self
-                .kwargs
-                .iter()
-                .map(|(k, v)| {
-                    let key = k.into_pyobject(py)?.unbind();
-                    let value = try_json_value_into_py(py, v)?;
-                    Ok((key, value))
-                })
-                .collect::<Result<Vec<_>, SchemaError>>()?;
-
-            let seq = PyTuple::new(py, kwargs)?;
-
-            Ok::<_, SchemaError>(PyDict::from_sequence(seq.as_any())?.unbind())
-        })?;
+        let py_args = Python::with_gil(|py| try_load_optional_py_args(py, &self.args))?;
+        let py_kwargs = Python::with_gil(|py| try_load_optional_py_kwargs(py, &self.kwargs))?;
 
         let metrics = match &self.metrics {
             Some(metrics) => metrics
@@ -280,19 +239,39 @@ impl PythonParameter {
             None => HashMap::new(),
         };
 
-        let p = PyParameter::new(
-            ParameterName::new(&self.meta.name, parent),
-            object,
-            py_args,
-            kwargs,
-            &metrics,
-            &indices,
-        );
+        let pt = match object {
+            PyObj::Class(py_class) => {
+                let p = PyClassParameter::new(
+                    ParameterName::new(&self.meta.name, parent),
+                    py_class,
+                    py_args,
+                    py_kwargs,
+                    &metrics,
+                    &indices,
+                );
 
-        let pt = match self.return_type {
-            PythonReturnType::Float => network.add_parameter(Box::new(p))?.into(),
-            PythonReturnType::Int => ParameterType::Index(network.add_index_parameter(Box::new(p))?),
-            PythonReturnType::Dict => ParameterType::Multi(network.add_multi_value_parameter(Box::new(p))?),
+                match self.return_type {
+                    PythonReturnType::Float => network.add_parameter(Box::new(p))?.into(),
+                    PythonReturnType::Int => ParameterType::Index(network.add_index_parameter(Box::new(p))?),
+                    PythonReturnType::Dict => ParameterType::Multi(network.add_multi_value_parameter(Box::new(p))?),
+                }
+            }
+            PyObj::Function(py_function) => {
+                let p = PyFuncParameter::new(
+                    ParameterName::new(&self.meta.name, parent),
+                    py_function,
+                    py_args,
+                    py_kwargs,
+                    &metrics,
+                    &indices,
+                );
+
+                match self.return_type {
+                    PythonReturnType::Float => network.add_parameter(Box::new(p))?.into(),
+                    PythonReturnType::Int => ParameterType::Index(network.add_index_parameter(Box::new(p))?),
+                    PythonReturnType::Dict => ParameterType::Multi(network.add_multi_value_parameter(Box::new(p))?),
+                }
+            }
         };
 
         Ok(pt)
@@ -303,7 +282,7 @@ impl PythonParameter {
 #[cfg(all(feature = "core", feature = "pyo3"))]
 mod tests {
     use crate::data_tables::LoadedTableCollection;
-    use crate::model::{LoadArgs, PywrNetwork};
+    use crate::network::{LoadArgs, PywrNetwork};
     use crate::parameters::python::PythonParameter;
     use crate::timeseries::LoadedTimeseriesCollection;
     use pywr_core::models::ModelDomain;
@@ -326,7 +305,10 @@ mod tests {
                     "type": "Path",
                     "path": py_fn
                 },
-                "object": "FloatParameter",
+                "object": {
+                    "type": "Class",
+                    "class": "FloatParameter"
+                },
                 "args": [0, ],
                 "kwargs": {},
             }
@@ -374,7 +356,10 @@ mod tests {
                     "path": py_fn
                 },
                 "return_type": "Int",
-                "object": "FloatParameter",
+                "object": {
+                    "type": "Class",
+                    "class": "FloatParameter"
+                },
                 "args": [0, ],
                 "kwargs": {},
             }

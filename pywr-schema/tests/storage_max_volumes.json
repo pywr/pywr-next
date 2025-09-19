@@ -17,7 +17,7 @@
         },
         "type": "Input",
         "max_flow": {
-          "type": "Constant",
+          "type": "Literal",
           "value": 15.0
         }
       },
@@ -31,7 +31,7 @@
           "proportion": 0.5
         },
         "max_volume": {
-          "type": "Constant",
+          "type": "Literal",
           "value": 10.0
         }
       },
@@ -102,21 +102,29 @@
           "name": "ten"
         },
         "type": "Constant",
-        "value": 10.0
+        "value": {
+          "type": "Literal",
+          "value": 10.0
+        }
       },
       {
         "meta": {
           "name": "five"
         },
         "type": "Constant",
-        "value": 5.0
+        "value": {
+          "type": "Literal",
+          "value": 5.0
+        }
       },
       {
         "meta": {
           "name": "fifteen"
         },
         "type": "Aggregated",
-        "agg_func": "Sum",
+        "agg_func": {
+          "type": "Sum"
+        },
         "metrics": [
           {
             "type": "Parameter",

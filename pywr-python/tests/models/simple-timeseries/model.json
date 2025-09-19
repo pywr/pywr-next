@@ -35,7 +35,7 @@
         },
         "type": "Output",
         "cost": {
-          "type": "Constant",
+          "type": "Literal",
           "value": -10.0
         },
         "max_flow": {
@@ -60,7 +60,10 @@
           "name": "demand"
         },
         "type": "Constant",
-        "value": 10.0
+        "value": {
+          "type": "Literal",
+          "value": 10.0
+        }
       }
     ],
     "timeseries": [
@@ -96,6 +99,11 @@
         "name": "outputs",
         "type": "HDF5",
         "filename": "outputs.h5",
+        "metric_set": "nodes"
+      },
+      {
+        "name": "nodes",
+        "type": "Memory",
         "metric_set": "nodes"
       }
     ]

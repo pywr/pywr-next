@@ -2,15 +2,15 @@ use crate::ConversionError;
 use crate::error::ComponentConversionError;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
-use crate::metric::{Metric, NodeReference};
+use crate::metric::{Metric, NodeAttrReference};
 #[cfg(feature = "core")]
-use crate::model::LoadArgs;
+use crate::network::LoadArgs;
 use crate::parameters::{ConversionData, ParameterMeta};
 use crate::v1::{IntoV2, TryFromV1, try_convert_parameter_attr};
 
 #[cfg(feature = "core")]
 use pywr_core::parameters::{ParameterIndex, ParameterName};
-use pywr_schema_macros::PywrVisitAll;
+use pywr_schema_macros::{PywrVisitAll, skip_serializing_none};
 use pywr_v1_schema::parameters::{
     InterpolatedFlowParameter as InterpolatedFlowParameterV1,
     InterpolatedVolumeParameter as InterpolatedVolumeParameterV1,
@@ -21,6 +21,7 @@ use schemars::JsonSchema;
 ///
 /// Internally this is implemented as a piecewise linear interpolation via
 /// [`pywr_core::parameters::InterpolatedParameter`].
+#[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct InterpolatedParameter {
@@ -84,7 +85,7 @@ impl TryFromV1<InterpolatedFlowParameterV1> for InterpolatedParameter {
         let meta: ParameterMeta = v1.meta.into_v2(parent_node, conversion_data);
 
         // Convert the node reference to a metric
-        let node_ref = NodeReference {
+        let node_ref = NodeAttrReference {
             name: v1.node,
             attribute: None,
         };
@@ -150,7 +151,7 @@ impl TryFromV1<InterpolatedVolumeParameterV1> for InterpolatedParameter {
         let meta: ParameterMeta = v1.meta.into_v2(parent_node, conversion_data);
 
         // Convert the node reference to a metric
-        let node_ref = NodeReference {
+        let node_ref = NodeAttrReference {
             name: v1.node,
             attribute: None,
         };

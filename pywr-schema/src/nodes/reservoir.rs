@@ -1,11 +1,14 @@
-#[cfg(feature = "core")]
 use crate::SchemaError;
 use crate::metric::Metric;
 #[cfg(feature = "core")]
-use crate::model::LoadArgs;
-use crate::node_attribute_subset_enum;
-use crate::nodes::{NodeAttribute, NodeMeta, StorageNode};
+use crate::network::LoadArgs;
+#[cfg(feature = "core")]
+use crate::nodes::{NodeAttribute, NodeComponent};
+use crate::nodes::{NodeMeta, StorageNode, StorageNodeAttribute};
 use crate::parameters::ConstantFloatVec;
+use crate::{node_attribute_subset_enum, node_component_subset_enum};
+#[cfg(feature = "core")]
+use pywr_core::agg_funcs::AggFuncF64;
 #[cfg(feature = "core")]
 use pywr_core::derived_metric::DerivedMetric;
 #[cfg(feature = "core")]
@@ -15,8 +18,8 @@ use pywr_core::metric::MetricF64;
 #[cfg(feature = "core")]
 use pywr_core::metric::SimpleMetricF64;
 #[cfg(feature = "core")]
-use pywr_core::parameters::{AggFunc, ParameterName};
-use pywr_schema_macros::PywrVisitAll;
+use pywr_core::parameters::ParameterName;
+use pywr_schema_macros::{PywrVisitAll, skip_serializing_none};
 use schemars::JsonSchema;
 
 /// The type of spill node.
@@ -82,17 +85,42 @@ pub struct Rainfall {
 
 // This macro generates a subset enum for the `ReservoirNode` attributes.
 // It allows for easy conversion between the enum and the `NodeAttribute` type.
-// NB, this node uses the node attributes from `StorageNode` as well, therefore the attributes
-// defined here are those that are specific to the `ReservoirNode` and not already used
-// in `StorageNode`.
 node_attribute_subset_enum! {
-    enum ReservoirNodeAttribute {
+    pub enum ReservoirNodeAttribute {
+        /// The absolute reservoir volume.
+        Volume,
+        /// The proportional reservoir proportional volume (0-1).
+        ProportionalVolume,
+        MaxVolume,
+        /// The minimum residual flow when the `compensation` field is provided.
+        Compensation,
+        /// The rainfall flow when the `rainfall` field is provided.
+        Rainfall,
+        /// The evaporation flow when the `evaporation` field is provided.
+        Evaporation,
+    }
+}
+
+impl From<StorageNodeAttribute> for ReservoirNodeAttribute {
+    fn from(attr: StorageNodeAttribute) -> Self {
+        match attr {
+            StorageNodeAttribute::Volume => ReservoirNodeAttribute::Volume,
+            StorageNodeAttribute::ProportionalVolume => ReservoirNodeAttribute::ProportionalVolume,
+            StorageNodeAttribute::MaxVolume => ReservoirNodeAttribute::MaxVolume,
+        }
+    }
+}
+
+node_component_subset_enum! {
+    pub enum ReservoirNodeComponent {
+        Loss,
         Compensation,
         Rainfall,
         Evaporation,
     }
 }
 
+#[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 /// A reservoir node with compensation, leakage, direct rainfall and evaporation.
@@ -167,13 +195,11 @@ node_attribute_subset_enum! {
 /// $$
 ///
 ///
-/// # Available metrics
-/// The following metrics are available:
-/// - Volume: to get the reservoir volume.
-/// - ProportionalVolume: to get the reservoir relative volume (0-1).
-/// - Compensation: to get the minimum residual flow when the `compensation` field is provided.
-/// - Rainfall: to get the rainfall flow when the `rainfall` field is provided.
-/// - Evaporation: to get the evaporation flow when the `evaporation` field is provided.
+/// # Available attributes and components
+///
+/// The enums [`ReservoirNodeAttribute`] and [`ReservoirNodeComponent`] define the available
+/// attributes and components for this node.
+///
 ///
 /// # JSON Examples
 /// ## Reservoir with output spill
@@ -209,6 +235,8 @@ pub struct ReservoirNode {
 }
 
 impl ReservoirNode {
+    pub const DEFAULT_COMPONENT: ReservoirNodeComponent = ReservoirNodeComponent::Compensation;
+
     /// Get the node's metadata.
     pub(crate) fn meta(&self) -> &NodeMeta {
         &self.storage.meta
@@ -239,46 +267,56 @@ impl ReservoirNode {
         "from_spill"
     }
 
-    pub fn input_connectors(&self, slot: Option<&str>) -> Vec<(&str, Option<String>)> {
+    pub fn input_connectors(&self, slot: Option<&str>) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
         match slot {
-            None => vec![(self.meta().name.as_str(), None)],
+            None => Ok(vec![(self.meta().name.as_str(), None)]),
             Some(name) => match name {
-                name if name == Self::spill_to_slot_name() => vec![(
+                name if name == Self::spill_to_slot_name() => Ok(vec![(
                     self.meta().name.as_str(),
                     Self::spill_node_sub_name().map(|n| n.to_string()),
-                )],
-                _ => panic!("The slot '{name}' does not exist in {}", self.meta().name),
+                )]),
+                _ => Err(SchemaError::NodeConnectionSlotNotFound {
+                    node: self.meta().name.clone(),
+                    slot: name.to_string(),
+                }),
             },
         }
     }
 
-    pub fn output_connectors(&self, slot: Option<&str>) -> Vec<(&str, Option<String>)> {
+    pub fn output_connectors(&self, slot: Option<&str>) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
         match slot {
-            None => vec![(self.meta().name.as_str(), None)],
+            None => Ok(vec![(self.meta().name.as_str(), None)]),
             Some(name) => match name {
-                name if name == Self::compensation_slot_name() => vec![(
+                name if name == Self::compensation_slot_name() => Ok(vec![(
                     self.meta().name.as_str(),
                     Self::compensation_node_sub_name().map(|n| n.to_string()),
-                )],
-                name if name == Self::spill_from_slot_name() => {
-                    if let Some(SpillNodeType::OutputNode) = self.spill {
-                        panic!(
-                            "The slot '{name}' in {} is only supported when the spill node is a link",
-                            self.meta().name
-                        )
-                    }
-                    vec![(
+                )]),
+                name if name == Self::spill_from_slot_name() => match self.spill {
+                    Some(SpillNodeType::LinkNode) => Ok(vec![(
                         self.meta().name.as_str(),
                         Self::spill_node_sub_name().map(|n| n.to_string()),
-                    )]
-                }
-                _ => panic!("The slot '{name}' does not exist in {}", self.meta().name),
+                    )]),
+                    _ => Err(SchemaError::NodeConnectionSlotNotAvailable {
+                        msg: format!(
+                            "The slot '{name}' in {} is only supported when the spill node is a link",
+                            self.meta().name
+                        ),
+                    }),
+                },
+                _ => Err(SchemaError::NodeConnectionSlotNotFound {
+                    node: self.meta().name.clone(),
+                    slot: name.to_string(),
+                }),
             },
         }
     }
 
-    pub fn default_metric(&self) -> NodeAttribute {
-        self.storage.default_metric()
+    pub fn default_attribute(&self) -> ReservoirNodeAttribute {
+        self.storage.default_attribute().into()
+    }
+
+    pub fn default_component(&self) -> ReservoirNodeComponent {
+        Self::DEFAULT_COMPONENT
     }
 }
 
@@ -299,34 +337,57 @@ impl ReservoirNode {
         Some("leakage")
     }
 
-    pub fn node_indices_for_constraints(
+    pub fn node_indices_for_flow_constraints(
         &self,
         network: &pywr_core::network::Network,
+        component: Option<NodeComponent>,
     ) -> Result<Vec<pywr_core::node::NodeIndex>, SchemaError> {
-        let indices = vec![
-            network
-                .get_node_index_by_name(self.meta().name.as_str(), Self::compensation_node_sub_name())
-                .ok_or_else(|| SchemaError::CoreNodeNotFound {
-                    name: self.meta().name.clone(),
-                    sub_name: Self::compensation_node_sub_name().map(String::from),
-                })?,
-            network
+        // Use the default component if none is specified
+        let component = match component {
+            Some(c) => c.try_into()?,
+            None => Self::DEFAULT_COMPONENT,
+        };
+
+        let idx = match component {
+            ReservoirNodeComponent::Loss => network
                 .get_node_index_by_name(self.meta().name.as_str(), Self::leakage_node_sub_name())
                 .ok_or_else(|| SchemaError::CoreNodeNotFound {
                     name: self.meta().name.clone(),
                     sub_name: Self::leakage_node_sub_name().map(String::from),
                 })?,
-            network
+            ReservoirNodeComponent::Compensation => network
+                .get_node_index_by_name(self.meta().name.as_str(), Self::compensation_node_sub_name())
+                .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                    name: self.meta().name.clone(),
+                    sub_name: Self::compensation_node_sub_name().map(String::from),
+                })?,
+            ReservoirNodeComponent::Rainfall => network
                 .get_node_index_by_name(self.meta().name.as_str(), Self::rainfall_node_sub_name())
                 .ok_or_else(|| SchemaError::CoreNodeNotFound {
                     name: self.meta().name.clone(),
                     sub_name: Self::rainfall_node_sub_name().map(String::from),
                 })?,
-            network
+            ReservoirNodeComponent::Evaporation => network
                 .get_node_index_by_name(self.meta().name.as_str(), Self::evaporation_node_sub_name())
                 .ok_or_else(|| SchemaError::CoreNodeNotFound {
                     name: self.meta().name.clone(),
                     sub_name: Self::evaporation_node_sub_name().map(String::from),
+                })?,
+        };
+
+        Ok(vec![idx])
+    }
+
+    pub fn node_indices_for_storage_constraints(
+        &self,
+        network: &pywr_core::network::Network,
+    ) -> Result<Vec<pywr_core::node::NodeIndex>, SchemaError> {
+        let indices = vec![
+            network
+                .get_node_index_by_name(self.meta().name.as_str(), None)
+                .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                    name: self.meta().name.clone(),
+                    sub_name: Self::compensation_node_sub_name().map(String::from),
                 })?,
         ];
         Ok(indices)
@@ -452,7 +513,7 @@ impl ReservoirNode {
                 let rainfall_flow_parameter = pywr_core::parameters::AggregatedParameter::new(
                     ParameterName::new("rainfall", Some(self.meta().name.as_str())),
                     &[rainfall_metric, rainfall_area_metric],
-                    AggFunc::Product,
+                    AggFuncF64::Product,
                 );
                 let rainfall_idx = network.add_parameter(Box::new(rainfall_flow_parameter))?;
                 let rainfall_flow_metric: MetricF64 = rainfall_idx.into();
@@ -480,7 +541,7 @@ impl ReservoirNode {
                 let evaporation_flow_parameter = pywr_core::parameters::AggregatedParameter::new(
                     ParameterName::new("evaporation", Some(self.meta().name.as_str())),
                     &[evaporation_metric, evaporation_area_metric],
-                    AggFunc::Product,
+                    AggFuncF64::Product,
                 );
                 let evaporation_idx = network.add_parameter(Box::new(evaporation_flow_parameter))?;
                 let evaporation_flow_metric: MetricF64 = evaporation_idx.into();
@@ -598,7 +659,7 @@ impl ReservoirNode {
             Err(SchemaError::NodeAttributeNotSupported { .. }) => {
                 let attr = match attribute {
                     Some(attr) => attr.try_into()?,
-                    None => self.default_metric().try_into()?,
+                    None => self.default_attribute(),
                 };
 
                 let metric = match attr {
@@ -620,6 +681,35 @@ impl ReservoirNode {
                         Some(idx) => MetricF64::NodeInFlow(idx),
                         None => 0.0.into(),
                     },
+                    ReservoirNodeAttribute::Volume => {
+                        let idx = network
+                            .get_node_index_by_name(self.meta().name.as_str(), None)
+                            .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                                name: self.meta().name.clone(),
+                                sub_name: None,
+                            })?;
+                        MetricF64::NodeVolume(idx)
+                    }
+                    ReservoirNodeAttribute::ProportionalVolume => {
+                        let idx = network
+                            .get_node_index_by_name(self.meta().name.as_str(), None)
+                            .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                                name: self.meta().name.clone(),
+                                sub_name: None,
+                            })?;
+                        let dm = DerivedMetric::NodeProportionalVolume(idx);
+                        let derived_metric_idx = network.add_derived_metric(dm);
+                        MetricF64::DerivedMetric(derived_metric_idx)
+                    }
+                    ReservoirNodeAttribute::MaxVolume => {
+                        let idx = network
+                            .get_node_index_by_name(self.meta().name.as_str(), None)
+                            .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                                name: self.meta().name.clone(),
+                                sub_name: None,
+                            })?;
+                        MetricF64::NodeMaxVolume(idx)
+                    }
                 };
 
                 Ok(metric)

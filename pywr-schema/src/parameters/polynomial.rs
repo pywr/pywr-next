@@ -1,18 +1,19 @@
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
-use crate::metric::{Metric, NodeReference};
+use crate::metric::{Metric, NodeAttrReference};
 #[cfg(feature = "core")]
-use crate::model::LoadArgs;
+use crate::network::LoadArgs;
 use crate::nodes::NodeAttribute;
 use crate::parameters::{ConversionData, ParameterMeta};
 use crate::v1::{FromV1, IntoV2};
 
 #[cfg(feature = "core")]
 use pywr_core::parameters::{ParameterIndex, ParameterName};
-use pywr_schema_macros::PywrVisitAll;
+use pywr_schema_macros::{PywrVisitAll, skip_serializing_none};
 use pywr_v1_schema::parameters::Polynomial1DParameter as Polynomial1DParameterV1;
 use schemars::JsonSchema;
 
+#[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct Polynomial1DParameter {
@@ -51,7 +52,7 @@ impl FromV1<Polynomial1DParameterV1> for Polynomial1DParameter {
             false => Some(NodeAttribute::Volume),
         };
 
-        let metric = Metric::Node(NodeReference {
+        let metric = Metric::Node(NodeAttrReference {
             name: v1.storage_node,
             attribute,
         });

@@ -1,43 +1,18 @@
+use crate::agg_funcs::AggFunc;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
 use crate::metric::Metric;
 #[cfg(feature = "core")]
-use crate::model::LoadArgs;
+use crate::network::LoadArgs;
 #[cfg(feature = "core")]
 use crate::parameters::{Parameter, PythonReturnType};
-use pywr_schema_macros::PywrVisitPaths;
+use pywr_schema_macros::skip_serializing_none;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::num::NonZeroUsize;
-use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticStr};
-
-/// Aggregation function to apply over metric values.
-#[derive(
-    serde::Deserialize, serde::Serialize, Debug, Copy, Clone, JsonSchema, PywrVisitPaths, Display, EnumDiscriminants,
-)]
-#[serde(tag = "type", deny_unknown_fields)]
-#[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
-#[strum_discriminants(name(MetricAggFuncType))]
-pub enum MetricAggFunc {
-    Sum,
-    Max,
-    Min,
-    Mean,
-    CountNonZero,
-}
-
 #[cfg(feature = "core")]
-impl From<MetricAggFunc> for pywr_core::recorders::AggregationFunction {
-    fn from(value: MetricAggFunc) -> Self {
-        match value {
-            MetricAggFunc::Sum => pywr_core::recorders::AggregationFunction::Sum,
-            MetricAggFunc::Max => pywr_core::recorders::AggregationFunction::Max,
-            MetricAggFunc::Min => pywr_core::recorders::AggregationFunction::Min,
-            MetricAggFunc::Mean => pywr_core::recorders::AggregationFunction::Mean,
-            MetricAggFunc::CountNonZero => pywr_core::recorders::AggregationFunction::CountNonZero,
-        }
-    }
-}
+use std::path::Path;
+use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticStr};
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone, JsonSchema, Display, EnumDiscriminants)]
 #[serde(tag = "type", deny_unknown_fields)]
@@ -74,19 +49,21 @@ pub struct MetricAggregator {
     /// Optional aggregation frequency.
     pub freq: Option<MetricAggFrequency>,
     /// Aggregation function to apply over metric values.
-    pub func: MetricAggFunc,
+    pub func: AggFunc,
     /// Optional child aggregator.
     pub child: Option<Box<MetricAggregator>>,
 }
 
 #[cfg(feature = "core")]
-impl From<MetricAggregator> for pywr_core::recorders::Aggregator {
-    fn from(value: MetricAggregator) -> Self {
-        pywr_core::recorders::Aggregator::new(
-            value.freq.map(|p| p.into()),
-            value.func.into(),
-            value.child.map(|a| (*a).into()),
-        )
+impl MetricAggregator {
+    fn load(&self, data_path: Option<&Path>) -> Result<pywr_core::recorders::Aggregator, SchemaError> {
+        let child = self.child.as_ref().map(|a| a.load(data_path)).transpose()?;
+
+        Ok(pywr_core::recorders::Aggregator::new(
+            self.freq.map(|p| p.into()),
+            self.func.load(data_path)?,
+            child,
+        ))
     }
 }
 
@@ -105,7 +82,7 @@ pub struct MetricSetFilters {
 #[cfg(feature = "core")]
 impl MetricSetFilters {
     fn create_metrics(&self, args: &LoadArgs) -> Option<Vec<Metric>> {
-        use crate::metric::{NodeReference, ParameterReference};
+        use crate::metric::{NodeAttrReference, ParameterReference};
 
         if !self.all_nodes && !self.all_parameters {
             return None;
@@ -115,7 +92,7 @@ impl MetricSetFilters {
 
         if self.all_nodes {
             for node in args.schema.nodes.iter() {
-                metrics.push(Metric::Node(NodeReference::new(node.name().to_string(), None)));
+                metrics.push(Metric::Node(NodeAttrReference::new(node.name().to_string(), None)));
             }
         }
 
@@ -147,7 +124,9 @@ impl MetricSetFilters {
 ///
 /// Metrics added by the filters will be appended to any metrics specified for the metric attribute,
 /// if they are not a duplication.
+#[skip_serializing_none]
 #[derive(Deserialize, Serialize, Clone, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct MetricSet {
     pub name: String,
     pub metrics: Option<Vec<Metric>>,
@@ -190,7 +169,7 @@ impl MetricSet {
             }
         };
 
-        let aggregator = self.aggregator.clone().map(|a| a.into());
+        let aggregator = self.aggregator.clone().map(|a| a.load(args.data_path)).transpose()?;
 
         let metric_set = pywr_core::recorders::MetricSet::new(&self.name, aggregator, output_metrics);
         let _ = network.add_metric_set(metric_set)?;

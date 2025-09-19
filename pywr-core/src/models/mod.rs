@@ -5,9 +5,9 @@ use crate::scenario::{ScenarioDomain, ScenarioDomainBuilder};
 use crate::timestep::{TimeDomain, Timestepper};
 pub use multi::{
     InterNetworkTransferError, MultiNetworkModel, MultiNetworkModelError, MultiNetworkModelFinaliseError,
-    MultiNetworkModelRunError, MultiNetworkModelSetupError, MultiNetworkTransferIndex,
+    MultiNetworkModelResult, MultiNetworkModelRunError, MultiNetworkModelSetupError, MultiNetworkTransferIndex,
 };
-pub use simple::{Model, ModelFinaliseError, ModelRunError, ModelSetupError, ModelState, ModelStepError};
+pub use simple::{Model, ModelFinaliseError, ModelResult, ModelRunError, ModelSetupError, ModelState, ModelStepError};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -29,7 +29,10 @@ impl ModelDomain {
         Self { time, scenarios }
     }
 
-    pub fn from(timestepper: Timestepper, scenario_builder: ScenarioDomainBuilder) -> Result<Self, ModelDomainError> {
+    pub fn try_from(
+        timestepper: Timestepper,
+        scenario_builder: ScenarioDomainBuilder,
+    ) -> Result<Self, ModelDomainError> {
         Ok(Self {
             time: TimeDomain::try_from(timestepper)?,
             scenarios: scenario_builder.build()?,

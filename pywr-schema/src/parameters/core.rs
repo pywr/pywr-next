@@ -3,12 +3,12 @@ use crate::error::ComponentConversionError;
 use crate::error::SchemaError;
 use crate::metric::Metric;
 #[cfg(feature = "core")]
-use crate::model::LoadArgs;
+use crate::network::LoadArgs;
 use crate::parameters::{ConstantValue, ConversionData, ParameterMeta};
 use crate::v1::{IntoV2, TryFromV1, try_convert_parameter_attr};
 #[cfg(feature = "core")]
 use pywr_core::parameters::{ParameterIndex, ParameterName};
-use pywr_schema_macros::PywrVisitAll;
+use pywr_schema_macros::{PywrVisitAll, skip_serializing_none};
 use pywr_v1_schema::parameters::{
     ConstantParameter as ConstantParameterV1, DivisionParameter as DivisionParameterV1, MaxParameter as MaxParameterV1,
     MinParameter as MinParameterV1, NegativeMaxParameter as NegativeMaxParameterV1,
@@ -152,6 +152,7 @@ pub struct VariableSettings {
 #[doc = include_str!("doc_examples/constant_variable.json")]
 /// ```
 ///
+#[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct ConstantParameter {
@@ -192,7 +193,7 @@ impl TryFromV1<ConstantParameterV1> for ConstantParameter {
         let meta: ParameterMeta = v1.meta.into_v2(parent_node, conversion_data);
 
         let value = if let Some(v) = v1.value {
-            ConstantValue::Literal(v)
+            v.into()
         } else if let Some(tbl) = v1.table {
             ConstantValue::Table(tbl.try_into().map_err(|error| ComponentConversionError::Parameter {
                 name: meta.name.clone(),
@@ -200,7 +201,7 @@ impl TryFromV1<ConstantParameterV1> for ConstantParameter {
                 error,
             })?)
         } else {
-            ConstantValue::Literal(0.0)
+            0.0.into()
         };
 
         let p = Self {
@@ -212,6 +213,7 @@ impl TryFromV1<ConstantParameterV1> for ConstantParameter {
     }
 }
 
+#[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct MaxParameter {
@@ -330,6 +332,7 @@ impl TryFromV1<DivisionParameterV1> for DivisionParameter {
 /// ```json
 #[doc = include_str!("doc_examples/min.json")]
 /// ```
+#[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct MinParameter {
@@ -430,6 +433,7 @@ impl TryFromV1<NegativeParameterV1> for NegativeParameter {
 /// ```
 /// In January this parameter returns 2, in February 4.
 ///
+#[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct NegativeMaxParameter {
@@ -494,6 +498,7 @@ impl TryFromV1<NegativeMaxParameterV1> for NegativeMaxParameter {
 /// ```
 /// In January this parameter returns 1, in February 2.
 ///
+#[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct NegativeMinParameter {

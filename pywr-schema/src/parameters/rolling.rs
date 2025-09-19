@@ -1,14 +1,15 @@
+use crate::agg_funcs::{AggFunc, IndexAggFunc};
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
-use crate::metric::{IndexMetric, Metric, NodeReference};
+use crate::metric::{IndexMetric, Metric, NodeAttrReference};
 #[cfg(feature = "core")]
-use crate::model::LoadArgs;
-use crate::parameters::{AggFunc, IndexAggFunc, ParameterMeta};
+use crate::network::LoadArgs;
+use crate::parameters::ParameterMeta;
 use crate::v1::IntoV2;
 use crate::{ComponentConversionError, ConversionData, ConversionError, TryFromV1};
 #[cfg(feature = "core")]
 use pywr_core::parameters::{ParameterIndex, ParameterName};
-use pywr_schema_macros::PywrVisitAll;
+use pywr_schema_macros::{PywrVisitAll, skip_serializing_none};
 use pywr_v1_schema::parameters::RollingMeanFlowNodeParameter as RollingMeanFlowNodeParameterV1;
 use schemars::JsonSchema;
 
@@ -19,6 +20,7 @@ use schemars::JsonSchema;
 /// `window_size`, meaning that the rolling value will only be computed once enough values are
 /// available. Prior to the first `min_values` being reached, the parameter will return the
 /// `initial_value`.
+#[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct RollingParameter {
@@ -45,7 +47,7 @@ impl RollingParameter {
             self.window_size as usize,
             self.initial_value,
             self.min_values.unwrap_or(self.window_size) as usize,
-            self.agg_func.into(),
+            self.agg_func.load(args.data_path)?,
         );
         Ok(network.add_parameter(Box::new(p))?)
     }
@@ -58,6 +60,7 @@ impl RollingParameter {
 /// to the `window_size`, meaning that the rolling value will only be computed once enough values
 /// are available. Prior to the first `min_values` being reached, the parameter will return the
 /// `initial_value`.
+#[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct RollingIndexParameter {
@@ -84,7 +87,7 @@ impl RollingIndexParameter {
             self.window_size as usize,
             self.initial_value,
             self.min_values.unwrap_or(self.window_size) as usize,
-            self.agg_func.into(),
+            self.agg_func.load(args.data_path)?,
         );
         Ok(network.add_index_parameter(Box::new(p))?)
     }
@@ -132,7 +135,7 @@ impl TryFromV1<RollingMeanFlowNodeParameterV1> for RollingParameter {
         };
 
         // Convert the node reference to a metric
-        let node_ref = NodeReference {
+        let node_ref = NodeAttrReference {
             name: v1.node,
             attribute: None,
         };

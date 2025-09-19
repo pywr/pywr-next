@@ -1,0 +1,271 @@
+{
+  "metadata": {
+    "title": "Data table examples",
+    "description": "Examples of using data tables to define values in a model.",
+    "minimum_version": "0.1"
+  },
+  "timestepper": {
+    "start": "2015-01-01",
+    "end": "2015-01-02",
+    "timestep": 1
+  },
+  "network": {
+    "nodes": [
+      {
+        "meta": {
+          "name": "supply1"
+        },
+        "type": "Input",
+        "max_flow": {
+          "type": "Literal",
+          "value": 15.0
+        }
+      },
+      {
+        "meta": {
+          "name": "link1"
+        },
+        "type": "Link"
+      },
+      {
+        "meta": {
+          "name": "demand1"
+        },
+        "type": "Output",
+        "max_flow": {
+          "type": "Table",
+          "table": "scalar-row-col",
+          "row": "A",
+          "column": "\uD83D\uDC0D"
+        },
+        "cost": {
+          "type": "Literal",
+          "value": -10
+        }
+      }
+    ],
+    "edges": [
+      {
+        "from_node": "supply1",
+        "to_node": "link1"
+      },
+      {
+        "from_node": "link1",
+        "to_node": "demand1"
+      }
+    ],
+    "tables": [
+      {
+        "name": "scalar-row",
+        "type": "Scalar",
+        "format": "CSV",
+        "lookup": {
+          "type": "Row",
+          "rows": 1
+        },
+        "url": "tbl-scalar-row.csv"
+      },
+      {
+        "name": "scalar-row-row",
+        "type": "Scalar",
+        "format": "CSV",
+        "lookup": {
+          "type": "Row",
+          "rows": 2
+        },
+        "url": "tbl-scalar-row-row.csv"
+      },
+      {
+        "name": "scalar-col",
+        "type": "Scalar",
+        "format": "CSV",
+        "lookup": {
+          "type": "Col",
+          "cols": 1
+        },
+        "url": "tbl-scalar-col.csv"
+      },
+      {
+        "name": "scalar-row-col",
+        "type": "Scalar",
+        "format": "CSV",
+        "lookup": {
+          "type": "Both",
+          "rows": 1,
+          "cols": 1
+        },
+        "url": "tbl-scalar-row-col.csv"
+      },
+      {
+        "name": "array-row",
+        "type": "Array",
+        "format": "CSV",
+        "lookup": {
+          "type": "Row",
+          "rows": 1
+        },
+        "url": "tbl-array-row.csv"
+      },
+      {
+        "name": "array-row-row",
+        "type": "Array",
+        "format": "CSV",
+        "lookup": {
+          "type": "Row",
+          "rows": 2
+        },
+        "url": "tbl-array-row-row.csv"
+      },
+      {
+        "name": "array-col",
+        "type": "Array",
+        "format": "CSV",
+        "lookup": {
+          "type": "Col",
+          "cols": 1
+        },
+        "url": "tbl-array-col.csv"
+      }
+    ],
+    "parameters": [
+      {
+        "meta": {
+          "name": "my-constant-C"
+        },
+        "type": "Constant",
+        "value": {
+          "type": "Table",
+          "table": "scalar-row",
+          "row": "C"
+        }
+      },
+      {
+        "meta": {
+          "name": "my-constant-A-Y"
+        },
+        "type": "Constant",
+        "value": {
+          "type": "Table",
+          "table": "scalar-row-row",
+          "row": [
+            "A",
+            "Y"
+          ]
+        }
+      },
+      {
+        "meta": {
+          "name": "my-constant-B"
+        },
+        "type": "Constant",
+        "value": {
+          "type": "Table",
+          "table": "scalar-col",
+          "row": "B"
+        }
+      },
+      {
+        "meta": {
+          "name": "my-constant-A-python"
+        },
+        "type": "Constant",
+        "value": {
+          "type": "Table",
+          "table": "scalar-row-col",
+          "row": "A",
+          "column": "\uD83D\uDC0D"
+        }
+      },
+      {
+        "meta": {
+          "name": "profile1"
+        },
+        "type": "MonthlyProfile",
+        "values": {
+          "type": "Table",
+          "table": "array-col",
+          "column": "profile1"
+        }
+      },
+      {
+        "meta": {
+          "name": "profile2"
+        },
+        "type": "MonthlyProfile",
+        "values": {
+          "type": "Table",
+          "table": "array-row",
+          "row": "profile2"
+        }
+      },
+      {
+        "meta": {
+          "name": "B-profile1"
+        },
+        "type": "MonthlyProfile",
+        "values": {
+          "type": "Table",
+          "table": "array-row-row",
+          "row": [
+            "B",
+            "profile1"
+          ]
+        }
+      }
+    ],
+    "metric_sets": [
+      {
+        "name": "table-values",
+        "metrics": [
+          {
+            "type": "Table",
+            "table": "scalar-row",
+            "row": "C"
+          },
+          {
+            "type": "Table",
+            "table": "scalar-row-row",
+            "row": [
+              "A",
+              "Y"
+            ]
+          },
+          {
+            "type": "Table",
+            "table": "scalar-col",
+            "row": "B"
+          },
+          {
+            "type": "Table",
+            "table": "scalar-row-col",
+            "row": "A",
+            "column": "\uD83D\uDC0D"
+          },
+          {
+            "type": "Parameter",
+            "name": "profile1"
+          },
+          {
+            "type": "Parameter",
+            "name": "profile2"
+          },
+          {
+            "type": "Parameter",
+            "name": "B-profile1"
+          }
+        ]
+      }
+    ],
+    "outputs": [
+      {
+        "name": "table-values",
+        "type": "CSV",
+        "format": "Long",
+        "filename": "tbl-formats1-expected.csv",
+        "metric_set": [
+          "table-values"
+        ]
+      }
+    ]
+  }
+}

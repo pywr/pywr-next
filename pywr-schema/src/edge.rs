@@ -1,19 +1,19 @@
 #[cfg(feature = "core")]
 use crate::SchemaError;
 #[cfg(feature = "core")]
-use crate::model::LoadArgs;
+use crate::network::LoadArgs;
 #[cfg(feature = "core")]
 use pywr_core::{edge::EdgeIndex, metric::MetricF64, node::NodeIndex};
+use pywr_schema_macros::skip_serializing_none;
 use schemars::JsonSchema;
 use std::fmt::{Display, Formatter};
 
+#[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Clone, JsonSchema, Debug, PartialEq)]
 pub struct Edge {
     pub from_node: String,
     pub to_node: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub from_slot: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub to_slot: Option<String>,
 }
 
@@ -78,7 +78,7 @@ impl Edge {
 
         // Collect the node indices at each end of the edge
         let from_node_indices: Vec<NodeIndex> = from_node
-            .output_connectors(from_slot)
+            .output_connectors(from_slot)?
             .into_iter()
             .map(|(name, sub_name)| {
                 network
@@ -91,7 +91,7 @@ impl Edge {
             .collect::<Result<_, _>>()?;
 
         let to_node_indices: Vec<NodeIndex> = to_node
-            .input_connectors(to_slot)
+            .input_connectors(to_slot)?
             .into_iter()
             .map(|(name, sub_name)| {
                 network

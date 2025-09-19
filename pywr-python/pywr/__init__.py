@@ -4,6 +4,7 @@ from typing import Optional
 from .pywr import (
     Schema,
     Model,
+    ModelResult,
     Timestep,
     ScenarioIndex,
     ParameterInfo,
@@ -17,6 +18,7 @@ from .pywr import (
 __all__ = [
     "Schema",
     "Model",
+    "ModelResult",
     "Timestep",
     "ScenarioIndex",
     "ParameterInfo",

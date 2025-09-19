@@ -1,28 +1,31 @@
 #[cfg(feature = "core")]
 use crate::SchemaError;
-use crate::metric_sets::MetricAggFunc;
+use crate::agg_funcs::AggFunc;
 #[cfg(feature = "core")]
 use pywr_core::recorders::MemoryRecorder;
-use pywr_schema_macros::PywrVisitPaths;
+use pywr_schema_macros::{PywrVisitPaths, skip_serializing_none};
 use schemars::JsonSchema;
+#[cfg(feature = "core")]
+use std::path::Path;
 use strum_macros::{Display, EnumIter};
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitPaths)]
+#[skip_serializing_none]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Default, Clone, JsonSchema, PywrVisitPaths)]
 #[serde(deny_unknown_fields)]
 pub struct MemoryAggregation {
-    pub time: Option<MetricAggFunc>,
-    pub scenario: Option<MetricAggFunc>,
-    pub metric: Option<MetricAggFunc>,
+    pub time: Option<AggFunc>,
+    pub scenario: Option<AggFunc>,
+    pub metric: Option<AggFunc>,
 }
 
 #[cfg(feature = "core")]
-impl From<MemoryAggregation> for pywr_core::recorders::Aggregation {
-    fn from(value: MemoryAggregation) -> Self {
-        pywr_core::recorders::Aggregation::new(
-            value.scenario.map(|f| f.into()),
-            value.time.map(|f| f.into()),
-            value.metric.map(|f| f.into()),
-        )
+impl MemoryAggregation {
+    fn load(&self, data_path: Option<&Path>) -> Result<pywr_core::recorders::Aggregation, SchemaError> {
+        Ok(pywr_core::recorders::Aggregation::new(
+            self.scenario.as_ref().map(|f| f.load(data_path)).transpose()?,
+            self.time.as_ref().map(|f| f.load(data_path)).transpose()?,
+            self.metric.as_ref().map(|f| f.load(data_path)).transpose()?,
+        ))
     }
 }
 
@@ -42,22 +45,28 @@ impl From<MemoryAggregationOrder> for pywr_core::recorders::AggregationOrder {
     }
 }
 
+#[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitPaths)]
 pub struct MemoryOutput {
     pub name: String,
     pub metric_set: String,
-    pub aggregation: MemoryAggregation,
+    pub aggregation: Option<MemoryAggregation>,
     pub order: Option<MemoryAggregationOrder>,
 }
 
 #[cfg(feature = "core")]
 impl MemoryOutput {
-    pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
+    pub fn add_to_model(
+        &self,
+        network: &mut pywr_core::network::Network,
+        data_path: Option<&Path>,
+    ) -> Result<(), SchemaError> {
         let metric_set_idx = network.get_metric_set_index_by_name(&self.metric_set)?;
+
         let recorder = MemoryRecorder::new(
             &self.name,
             metric_set_idx,
-            self.aggregation.clone().into(),
+            self.aggregation.clone().unwrap_or_default().load(data_path)?,
             self.order.map(|o| o.into()).unwrap_or_default(),
         );
 
@@ -103,11 +112,13 @@ mod tests {
 
         let model = schema.build_model(None, Some(temp_dir.path())).unwrap();
 
-        let recorder_states = model.run::<ClpSolver>(&ClpSolverSettings::default()).unwrap();
+        let result = model.run::<ClpSolver>(&ClpSolverSettings::default()).unwrap();
 
-        let result = model
-            .network()
-            .get_aggregated_value("outputs", &recorder_states)
+        let result = result
+            .network_result()
+            .get("outputs")
+            .expect("`outputs` not found")
+            .aggregated_value()
             .expect("No results found");
 
         assert_approx_eq!(f64, result, 91.0);

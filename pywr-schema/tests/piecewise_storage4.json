@@ -17,11 +17,11 @@
         },
         "type": "Input",
         "max_flow": {
-          "type": "Constant",
+          "type": "Literal",
           "value": 3.0
         },
         "cost": {
-          "type": "Constant",
+          "type": "Literal",
           "value": 2.0
         }
       },
@@ -35,27 +35,27 @@
           "proportion": 0.5
         },
         "max_volume": {
-          "type": "Constant",
+          "type": "Literal",
           "value": 1000.0
         },
         "min_volume": {
-          "type": "Constant",
+          "type": "Literal",
           "value": 300.0
         },
         "steps": [
           {
             "cost": {
-              "type": "Constant",
+              "type": "Literal",
               "value": -15.0
             },
             "control_curve": {
-              "type": "Constant",
+              "type": "Literal",
               "value": 0.25
             }
           },
           {
             "cost": {
-              "type": "Constant",
+              "type": "Literal",
               "value": -5.0
             },
             "control_curve": {
@@ -71,11 +71,11 @@
         },
         "type": "Output",
         "max_flow": {
-          "type": "Constant",
+          "type": "Literal",
           "value": 5.0
         },
         "cost": {
-          "type": "Constant",
+          "type": "Literal",
           "value": -10
         }
       }
@@ -96,27 +96,33 @@
           "name": "storage1-drought-curve"
         },
         "type": "Constant",
-        "value": 0.5
+        "value": {
+          "type": "Literal",
+          "value": 0.5
+        }
       },
       {
         "type": "MonthlyProfile",
         "meta": {
           "name": "storage1-control-curve"
         },
-        "values": [
-          0.75,
-          0.75,
-          0.75,
-          0.5,
-          0.5,
-          0.5,
-          0.3,
-          0.3,
-          0.3,
-          0.5,
-          0.5,
-          0.5
-        ]
+        "values": {
+          "type": "Literal",
+          "values": [
+            0.75,
+            0.75,
+            0.75,
+            0.5,
+            0.5,
+            0.5,
+            0.3,
+            0.3,
+            0.3,
+            0.5,
+            0.5,
+            0.5
+          ]
+        }
       },
       {
         "meta": {
@@ -156,8 +162,7 @@
         "type": "CSV",
         "format": "Long",
         "filename": "piecewise_storage4-expected.csv",
-        "metric_set": "nodes",
-        "decimal_places": 1
+        "metric_set": "nodes"
       }
     ]
   }

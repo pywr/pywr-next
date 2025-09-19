@@ -9,7 +9,7 @@ requires-python = ">=3.10"
 license = "MIT OR Apache-2.0"
 dependencies = [
     "pandas",
-    "polars",
+    "polars>=1.32",
     "pyarrow",
     "click",
 ]
