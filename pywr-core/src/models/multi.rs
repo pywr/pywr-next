@@ -701,6 +701,7 @@ impl MultiNetworkModel {
     }
 
     /// Run a model using the specified solver unlocking the GIL
+    #[cfg(any(feature = "clp", feature = "highs"))]
     #[cfg(feature = "pyo3")]
     fn run_allowing_threads_py<S>(
         &self,
@@ -739,8 +740,20 @@ impl MultiNetworkModel {
     #[pyo3(name = "run", signature = (solver_name, solver_kwargs=None))]
     fn run_py(
         &self,
+        #[cfg_attr(
+            not(any(feature = "clp", feature = "highs", feature = "ipm-simd", feature = "ipm-ocl")),
+            allow(unused_variables)
+        )]
         py: Python<'_>,
+        #[cfg_attr(
+            not(any(feature = "clp", feature = "highs", feature = "ipm-simd", feature = "ipm-ocl")),
+            allow(unused_variables)
+        )]
         solver_name: &str,
+        #[cfg_attr(
+            not(any(feature = "clp", feature = "highs", feature = "ipm-simd", feature = "ipm-ocl")),
+            allow(unused_variables)
+        )]
         solver_kwargs: Option<&Bound<'_, PyDict>>,
     ) -> PyResult<MultiNetworkModelResult> {
         match solver_name {
