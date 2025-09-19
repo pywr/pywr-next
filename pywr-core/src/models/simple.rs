@@ -517,6 +517,7 @@ impl Model {
         solver_kwargs: Option<&Bound<'_, PyDict>>,
     ) -> PyResult<ModelResult> {
         match solver_name {
+            #[cfg(feature = "clp")]
             "clp" => {
                 let settings = build_clp_settings_py(solver_kwargs)?;
                 self.run_allowing_threads_py::<ClpSolver>(py, &settings)
