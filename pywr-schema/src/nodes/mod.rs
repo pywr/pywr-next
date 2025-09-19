@@ -614,6 +614,7 @@ pub enum NodeOrVirtualNode {
     Virtual(Box<VirtualNode>),
 }
 
+#[cfg(feature = "core")]
 impl NodeOrVirtualNode {
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network, args: &LoadArgs) -> Result<(), SchemaError> {
         match self {

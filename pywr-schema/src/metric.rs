@@ -8,7 +8,9 @@ use crate::error::SchemaError;
 use crate::network::LoadArgs;
 #[cfg(feature = "core")]
 use crate::nodes::NodeType;
-use crate::nodes::{NodeAttribute, NodeComponent, VirtualNodeType};
+#[cfg(feature = "core")]
+use crate::nodes::VirtualNodeType;
+use crate::nodes::{NodeAttribute, NodeComponent};
 use crate::parameters::ParameterOrTimeseriesRef;
 #[cfg(feature = "core")]
 use crate::parameters::ParameterType;

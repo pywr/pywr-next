@@ -4,7 +4,9 @@ mod virtual_storage;
 use crate::metric::Metric;
 use crate::nodes::{NodeAttribute, NodeComponent, NodeMeta, NodePosition, PlaceholderNode};
 use crate::parameters::Parameter;
-use crate::{LoadArgs, SchemaError, VisitMetrics, VisitPaths};
+#[cfg(feature = "core")]
+use crate::{LoadArgs, SchemaError};
+use crate::{VisitMetrics, VisitPaths};
 pub use aggregated::{
     AggregatedNode, AggregatedNodeAttribute, AggregatedStorageNode, AggregatedStorageNodeAttribute, Relationship,
 };
