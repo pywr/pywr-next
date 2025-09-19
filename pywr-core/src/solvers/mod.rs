@@ -44,6 +44,7 @@ use crate::node::NodeIndex;
 pub use cbc::{CbcError, CbcSolver, CbcSolverSettings, CbcSolverSettingsBuilder};
 #[cfg(all(feature = "clp", feature = "pyo3"))]
 pub use clp::build_clp_settings_py;
+#[cfg(feature = "clp")]
 pub use clp::{ClpSolveStatusError, ClpSolver, ClpSolverSettings, ClpSolverSettingsBuilder};
 #[cfg(all(feature = "highs", feature = "pyo3"))]
 pub use highs::build_highs_settings_py;
