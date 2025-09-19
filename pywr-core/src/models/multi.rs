@@ -8,9 +8,11 @@ use crate::recorders::RecorderInternalState;
 use crate::scenario::ScenarioIndex;
 #[cfg(feature = "ipm-ocl")]
 use crate::solvers::{ClIpmF32Solver, ClIpmF64Solver, ClIpmSolverSettings};
-use crate::solvers::{ClpSolver, MultiStateSolver, Solver, SolverSettings, build_clp_settings_py};
+#[cfg(feature = "clp")]
+use crate::solvers::{ClpSolver, build_clp_settings_py};
 #[cfg(feature = "highs")]
 use crate::solvers::{HighsSolver, build_highs_settings_py};
+use crate::solvers::{MultiStateSolver, Solver, SolverSettings};
 #[cfg(feature = "ipm-simd")]
 use crate::solvers::{SimdIpmF64Solver, build_ipm_simd_settings_py};
 use crate::state::StateError;
