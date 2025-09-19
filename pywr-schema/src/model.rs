@@ -535,6 +535,7 @@ impl PywrModel {
     }
 
     /// Build the schema in to a Pywr model.
+    #[cfg(feature = "core")]
     #[pyo3(name="build", signature = (data_path=None, output_path=None))]
     fn build_py(&mut self, data_path: Option<PathBuf>, output_path: Option<PathBuf>) -> PyResult<Model> {
         let model = self.build_model(data_path.as_deref(), output_path.as_deref())?;
@@ -875,6 +876,7 @@ impl PywrMultiNetworkModel {
     }
 
     /// Build the schema in to a Pywr model.
+    #[cfg(feature = "core")]
     #[pyo3(name="build", signature = (data_path=None, output_path=None))]
     fn build_py(
         &mut self,
