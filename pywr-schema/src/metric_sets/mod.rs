@@ -3,6 +3,8 @@ use crate::agg_funcs::AggFunc;
 use crate::error::SchemaError;
 use crate::metric::Metric;
 #[cfg(feature = "core")]
+use crate::metric::VirtualNodeAttrReference;
+#[cfg(feature = "core")]
 use crate::network::LoadArgs;
 #[cfg(feature = "core")]
 use crate::parameters::{Parameter, PythonReturnType};
@@ -76,6 +78,8 @@ pub struct MetricSetFilters {
     #[serde(default)]
     pub all_nodes: bool,
     #[serde(default)]
+    pub all_virtual_nodes: bool,
+    #[serde(default)]
     pub all_parameters: bool,
 }
 
@@ -84,7 +88,7 @@ impl MetricSetFilters {
     fn create_metrics(&self, args: &LoadArgs) -> Option<Vec<Metric>> {
         use crate::metric::{NodeAttrReference, ParameterReference};
 
-        if !self.all_nodes && !self.all_parameters {
+        if !self.all_nodes && !self.all_virtual_nodes && !self.all_parameters {
             return None;
         }
 
@@ -93,6 +97,17 @@ impl MetricSetFilters {
         if self.all_nodes {
             for node in args.schema.nodes.iter() {
                 metrics.push(Metric::Node(NodeAttrReference::new(node.name().to_string(), None)));
+            }
+        }
+
+        if self.all_virtual_nodes {
+            if let Some(virtual_nodes) = args.schema.virtual_nodes.as_ref() {
+                for node in virtual_nodes.iter() {
+                    metrics.push(Metric::VirtualNode(VirtualNodeAttrReference::new(
+                        node.name().to_string(),
+                        None,
+                    )));
+                }
             }
         }
 

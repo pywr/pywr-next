@@ -21,6 +21,8 @@ pub enum SchemaError {
     // Use this error when a node is not found in the schema (i.e. while parsing the schema).
     #[error("Node with name {name} not found in the schema.")]
     NodeNotFound { name: String },
+    #[error("Virtual bode with name {name} not found in the schema.")]
+    VirtualNodeNotFound { name: String },
     // Use this error when a node is not found in a pywr-core network (i.e. during building the network).
     #[error("Node with name `{name}` and sub-name `{}` not found in the network.", .sub_name.as_deref().unwrap_or("None"))]
     CoreNodeNotFound { name: String, sub_name: Option<String> },

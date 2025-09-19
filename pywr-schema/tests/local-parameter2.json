@@ -56,7 +56,8 @@
               "name": "cost"
             },
             "type": "ControlCurve",
-            "storage_node": {
+            "storage_metric": {
+              "type": "Node",
               "name": "storage1",
               "attribute": "ProportionalVolume"
             },
