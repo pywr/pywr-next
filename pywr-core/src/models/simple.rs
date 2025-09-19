@@ -4,14 +4,14 @@ use crate::network::{
     NetworkSetupError, NetworkSolverSetupError, NetworkState, NetworkStepError, NetworkTimings, RunDuration,
 };
 use crate::recorders::RecorderInternalState;
-#[cfg(feature = "ipm-ocl")]
+#[cfg(all(feature = "ipm-ocl", feature = "pyo3"))]
 use crate::solvers::{ClIpmF32Solver, ClIpmF64Solver, ClIpmSolverSettings};
-#[cfg(feature = "clp")]
+#[cfg(all(feature = "clp", feature = "pyo3"))]
 use crate::solvers::{ClpSolver, build_clp_settings_py};
-#[cfg(feature = "highs")]
+#[cfg(all(feature = "highs", feature = "pyo3"))]
 use crate::solvers::{HighsSolver, build_highs_settings_py};
 use crate::solvers::{MultiStateSolver, Solver, SolverFeatures, SolverSettings};
-#[cfg(feature = "ipm-simd")]
+#[cfg(all(feature = "ipm-simd", feature = "pyo3"))]
 use crate::solvers::{SimdIpmF64Solver, build_ipm_simd_settings_py};
 use crate::timestep::Timestep;
 #[cfg(feature = "pyo3")]
