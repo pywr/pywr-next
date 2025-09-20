@@ -108,9 +108,9 @@ class ScenarioIndex:
     def simulation_indices(self) -> List[int]:
         """Returns indices for each scenario group for this simulation."""
 
-class Schema:
+class ModelSchema:
     @classmethod
-    def from_path(cls, path: PathLike) -> "Schema":
+    def from_path(cls, path: PathLike) -> "ModelSchema":
         """Create a new schema object from a file path.
 
         Args:
@@ -118,7 +118,32 @@ class Schema:
         """
 
     @classmethod
-    def from_json_string(cls, json_string: str) -> "Schema":
+    def from_json_string(cls, json_string: str) -> "ModelSchema":
+        """Create a new schema object from a JSON string.
+
+        Args:
+            json_string: The JSON string representing the schema.
+        """
+
+    def to_json_string(self) -> str:
+        """Serialize the schema to a JSON string."""
+
+    def build(
+        self, data_path: Optional[PathLike], output_path: Optional[PathLike]
+    ) -> "Model":
+        """Build the schema in to a Pywr model."""
+
+class MultiNetworkModelSchema:
+    @classmethod
+    def from_path(cls, path: PathLike) -> "ModelSchema":
+        """Create a new schema object from a file path.
+
+        Args:
+            path: The path to the schema JSON file.
+        """
+
+    @classmethod
+    def from_json_string(cls, json_string: str) -> "ModelSchema":
         """Create a new schema object from a JSON string.
 
         Args:
@@ -134,6 +159,15 @@ class Schema:
         """Build the schema in to a Pywr model."""
 
 class Model:
+    def run(self, solver_name: str, solver_kwargs: Optional[dict] = None):
+        """Run the model using the specified solver.
+
+        Args:
+            solver_name: The name of the solver to use.
+            solver_kwargs: Optional keyword arguments to pass to the solver.
+        """
+
+class MultiNetworkModel:
     def run(self, solver_name: str, solver_kwargs: Optional[dict] = None):
         """Run the model using the specified solver.
 

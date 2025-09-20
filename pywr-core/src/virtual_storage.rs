@@ -134,7 +134,6 @@ impl VirtualStorageBuilder {
         self
     }
 
-
     pub fn build(self, index: VirtualStorageIndex) -> VirtualStorage {
         // Default to unit factors if none provided
         let factors = self.factors.unwrap_or(vec![1.0; self.nodes.len()]);
@@ -468,7 +467,9 @@ mod tests {
             .reset(VirtualStorageReset::Never);
 
         let vs_idx = network.add_virtual_storage_node(vs_builder).unwrap();
-        network.set_virtual_storage_max_volume("virtual-storage", None, Some(100.0.into())).unwrap();
+        network
+            .set_virtual_storage_max_volume("virtual-storage", None, Some(100.0.into()))
+            .unwrap();
 
         // Setup a demand on output-0 and output-1
         for sub_name in &["0", "1"] {
@@ -529,7 +530,9 @@ mod tests {
 
         network.add_virtual_storage_node(vs_builder).unwrap();
         network.set_virtual_storage_cost("vs", None, Some(20.0.into())).unwrap();
-        network.set_virtual_storage_max_volume("vs", None, Some(100.0.into())).unwrap();
+        network
+            .set_virtual_storage_max_volume("vs", None, Some(100.0.into()))
+            .unwrap();
 
         let expected = Array::zeros((366, 1));
 
@@ -571,7 +574,9 @@ mod tests {
 
         let vs_idx = network.add_virtual_storage_node(vs_builder).unwrap();
         let vs_vol_metric = network.add_derived_metric(DerivedMetric::VirtualStorageProportionalVolume(vs_idx));
-        network.set_virtual_storage_max_volume("vs", None, Some(100.0.into())).unwrap();
+        network
+            .set_virtual_storage_max_volume("vs", None, Some(100.0.into()))
+            .unwrap();
 
         // Virtual storage node cost increases with decreasing volume
         let cost_param = ControlCurveInterpolatedParameter::new(
@@ -627,7 +632,9 @@ mod tests {
             .reset(VirtualStorageReset::Never)
             .rolling_window(NonZeroUsize::new(5).unwrap());
         let _vs = network.add_virtual_storage_node(vs_builder);
-        network.set_virtual_storage_max_volume("virtual-storage", None, Some(2.5.into())).unwrap();
+        network
+            .set_virtual_storage_max_volume("virtual-storage", None, Some(2.5.into()))
+            .unwrap();
 
         // Expected values will follow a pattern set by the first few time-steps
         let expected = |ts: &Timestep, _si: &ScenarioIndex| {

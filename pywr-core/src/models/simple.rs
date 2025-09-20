@@ -4,10 +4,18 @@ use crate::network::{
     NetworkSetupError, NetworkSolverSetupError, NetworkState, NetworkStepError, NetworkTimings, RunDuration,
 };
 use crate::recorders::RecorderInternalState;
+#[cfg(all(feature = "ipm-ocl", feature = "pyo3"))]
+use crate::solvers::{ClIpmF32Solver, ClIpmF64Solver, ClIpmSolverSettings};
+#[cfg(all(feature = "clp", feature = "pyo3"))]
+use crate::solvers::{ClpSolver, build_clp_settings_py};
+#[cfg(all(feature = "highs", feature = "pyo3"))]
+use crate::solvers::{HighsSolver, build_highs_settings_py};
 use crate::solvers::{MultiStateSolver, Solver, SolverFeatures, SolverSettings};
+#[cfg(all(feature = "ipm-simd", feature = "pyo3"))]
+use crate::solvers::{SimdIpmF64Solver, build_ipm_simd_settings_py};
 use crate::timestep::Timestep;
 #[cfg(feature = "pyo3")]
-use pyo3::{PyErr, exceptions::PyRuntimeError, pyclass, pymethods};
+use pyo3::{Bound, PyErr, PyResult, Python, exceptions::PyRuntimeError, pyclass, pymethods, types::PyDict};
 use rayon::ThreadPool;
 use std::collections::HashSet;
 use thiserror::Error;
@@ -176,6 +184,7 @@ impl ModelResult {
 }
 
 /// A standard Pywr model containing a single network.
+#[cfg_attr(feature = "pyo3", pyclass)]
 pub struct Model {
     domain: ModelDomain,
     network: Network,
@@ -558,5 +567,78 @@ impl Model {
         }
 
         Ok(())
+    }
+
+    /// Run a model using the specified solver unlocking the GIL
+    #[cfg(any(feature = "clp", feature = "highs"))]
+    #[cfg(feature = "pyo3")]
+    fn run_allowing_threads_py<S>(&self, py: Python<'_>, settings: &S::Settings) -> Result<ModelResult, PyErr>
+    where
+        S: Solver,
+        <S as Solver>::Settings: SolverSettings + Sync,
+    {
+        let result = py.allow_threads(|| self.run::<S>(settings))?;
+        Ok(result)
+    }
+
+    /// Run a model using the specified multi solver unlocking the GIL
+    #[cfg(any(feature = "ipm-simd", feature = "ipm-ocl"))]
+    #[cfg(feature = "pyo3")]
+    fn run_multi_allowing_threads_py<S>(&self, py: Python<'_>, settings: &S::Settings) -> Result<ModelResult, PyErr>
+    where
+        S: MultiStateSolver,
+        <S as MultiStateSolver>::Settings: SolverSettings + Sync,
+    {
+        let result = py.allow_threads(|| self.run_multi_scenario::<S>(settings))?;
+        Ok(result)
+    }
+}
+
+/// Run a model using the specified multi solver unlocking the GIL
+#[cfg(feature = "pyo3")]
+#[pymethods]
+impl Model {
+    #[pyo3(name = "run", signature = (solver_name, solver_kwargs=None))]
+    fn run_py(
+        &self,
+        #[cfg_attr(
+            not(any(feature = "clp", feature = "highs", feature = "ipm-simd", feature = "ipm-ocl")),
+            allow(unused_variables)
+        )]
+        py: Python<'_>,
+        #[cfg_attr(
+            not(any(feature = "clp", feature = "highs", feature = "ipm-simd", feature = "ipm-ocl")),
+            allow(unused_variables)
+        )]
+        solver_name: &str,
+        #[cfg_attr(
+            not(any(feature = "clp", feature = "highs", feature = "ipm-simd", feature = "ipm-ocl")),
+            allow(unused_variables)
+        )]
+        solver_kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<ModelResult> {
+        match solver_name {
+            #[cfg(feature = "clp")]
+            "clp" => {
+                let settings = build_clp_settings_py(solver_kwargs)?;
+                self.run_allowing_threads_py::<ClpSolver>(py, &settings)
+            }
+            #[cfg(feature = "highs")]
+            "highs" => {
+                let settings = build_highs_settings_py(solver_kwargs)?;
+                self.run_allowing_threads_py::<HighsSolver>(py, &settings)
+            }
+            #[cfg(feature = "ipm-simd")]
+            "ipm-simd" => {
+                let settings = build_ipm_simd_settings_py(solver_kwargs)?;
+                self.run_multi_allowing_threads_py::<SimdIpmF64Solver>(py, &settings)
+            }
+            #[cfg(feature = "ipm-ocl")]
+            "clipm-f32" => self.run_multi_allowing_threads_py::<ClIpmF32Solver>(py, &ClIpmSolverSettings::default()),
+
+            #[cfg(feature = "ipm-ocl")]
+            "clipm-f64" => self.run_multi_allowing_threads_py::<ClIpmF64Solver>(py, &ClIpmSolverSettings::default()),
+            _ => Err(PyRuntimeError::new_err(format!("Unknown solver: {solver_name}",))),
+        }
     }
 }
