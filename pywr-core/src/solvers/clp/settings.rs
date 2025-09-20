@@ -1,4 +1,6 @@
 use crate::solvers::SolverSettings;
+#[cfg(feature = "pyo3")]
+use pyo3::{Bound, PyResult, exceptions::PyRuntimeError, prelude::PyAnyMethods, types::PyDict};
 
 /// Settings for the OpenCL IPM solvers.
 ///
@@ -85,6 +87,34 @@ impl ClpSolverSettingsBuilder {
             ignore_feature_requirements: self.ignore_feature_requirements,
         }
     }
+}
+
+#[cfg(feature = "pyo3")]
+/// Build CLP solver settings from Python kwargs.
+pub fn build_clp_settings_py(kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<ClpSolverSettings> {
+    let mut builder = ClpSolverSettingsBuilder::default();
+
+    if let Some(kwargs) = kwargs {
+        if let Ok(threads) = kwargs.get_item("threads") {
+            builder = builder.threads(threads.extract::<usize>()?);
+            kwargs.del_item("threads")?;
+        }
+
+        if let Ok(parallel) = kwargs.get_item("parallel") {
+            if parallel.extract::<bool>()? {
+                builder = builder.parallel();
+            }
+            kwargs.del_item("parallel")?;
+        }
+
+        if !kwargs.is_empty()? {
+            return Err(PyRuntimeError::new_err(format!(
+                "Unknown keyword arguments: {kwargs:?}",
+            )));
+        }
+    }
+
+    Ok(builder.build())
 }
 
 #[cfg(test)]

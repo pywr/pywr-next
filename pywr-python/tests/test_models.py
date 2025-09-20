@@ -2,7 +2,7 @@ import numpy as np
 import pandas
 import polars as pl
 from polars.testing import assert_frame_equal
-from pywr import Schema, ModelResult
+from pywr import ModelSchema, ModelResult, MultiNetworkModelSchema
 from pathlib import Path
 import h5py
 import pytest
@@ -25,7 +25,7 @@ def test_simple_timeseries(model_dir: Path, tmpdir: Path):
 
     output_fn = tmpdir / "outputs.h5"
 
-    schema = Schema.from_path(filename)
+    schema = ModelSchema.from_path(filename)
     model = schema.build(data_path=model_dir / "simple-timeseries", output_path=tmpdir)
     result = model.run("clp")
 
@@ -75,7 +75,7 @@ def test_model(model_dir: Path, tmpdir: Path, model_name: str):
     filename = model_dir / model_name / "model.json"
     output_fn = tmpdir / "outputs.h5"
 
-    schema = Schema.from_path(filename)
+    schema = ModelSchema.from_path(filename)
     model = schema.build(data_path=model_dir / model_name, output_path=tmpdir)
     model.run("clp")
 
@@ -93,3 +93,18 @@ def test_model(model_dir: Path, tmpdir: Path, model_name: str):
         for (node, attr), df in expected_data.items():
             simulated = np.squeeze(fh[f"{node}/{attr}"])
             np.testing.assert_allclose(simulated, df)
+
+
+@pytest.mark.parametrize(
+    "model_name",
+    [
+        "multi1",
+    ],
+)
+def test_multi_model(model_dir: Path, model_name: str):
+    """Test the multi-network model"""
+    filename = model_dir / model_name / "model.json"
+
+    schema = MultiNetworkModelSchema.from_path(filename)
+    model = schema.build(data_path=model_dir / model_name, output_path=None)
+    model.run("clp")
