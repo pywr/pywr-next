@@ -1,0 +1,35 @@
+{
+  "metadata": {
+    "title": "Multi-model 1",
+    "description": "A simple multi-model that passes data from sub-model1 to sub-model2.",
+    "minimum_version": "0.1"
+  },
+  "timestepper": {
+    "start": "2015-01-01",
+    "end": "2015-12-31",
+    "timestep": 1
+  },
+  "networks": [
+    {
+      "name": "network1",
+      "network": "network1.json",
+      "transfers": []
+    },
+    {
+      "name": "network2",
+      "network": "network2.json",
+      "transfers": [
+        {
+          "from_network": "network1",
+          "metric": {
+            "type": "Node",
+            "name": "demand1",
+            "attribute": "Inflow"
+          },
+          "name": "inflow"
+        }
+      ]
+    }
+  ]
+
+}
