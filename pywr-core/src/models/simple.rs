@@ -173,7 +173,7 @@ impl ModelResult {
         self.network_result.clone()
     }
 
-    fn __rep__(&self) -> String {
+    fn __repr__(&self) -> String {
         format!(
             "<ModelResult with {} recorder results; completed in {:.2} seconds with speed {:.2} time-steps/second>",
             self.network_result.len(),
