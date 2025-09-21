@@ -24,7 +24,7 @@ use schemars::JsonSchema;
 pub struct ControlCurveInterpolatedParameter {
     pub meta: ParameterMeta,
     pub control_curves: Vec<Metric>,
-    pub storage_node: NodeAttrReference,
+    pub storage_metric: Metric,
     pub values: Vec<Metric>,
 }
 
@@ -36,7 +36,7 @@ impl ControlCurveInterpolatedParameter {
         args: &LoadArgs,
         parent: Option<&str>,
     ) -> Result<ParameterIndex<f64>, SchemaError> {
-        let metric = self.storage_node.load_f64(network, args)?;
+        let metric = self.storage_metric.load(network, args, None)?;
 
         let control_curves = self
             .control_curves
@@ -114,7 +114,7 @@ impl TryFromV1<ControlCurveInterpolatedParameterV1> for ControlCurveInterpolated
         let p = Self {
             meta,
             control_curves,
-            storage_node,
+            storage_metric: storage_node.into(),
             values,
         };
         Ok(p)
@@ -126,7 +126,7 @@ impl TryFromV1<ControlCurveInterpolatedParameterV1> for ControlCurveInterpolated
 pub struct ControlCurveIndexParameter {
     pub meta: ParameterMeta,
     pub control_curves: Vec<Metric>,
-    pub storage_node: NodeAttrReference,
+    pub storage_metric: Metric,
 }
 
 #[cfg(feature = "core")]
@@ -137,7 +137,7 @@ impl ControlCurveIndexParameter {
         args: &LoadArgs,
         parent: Option<&str>,
     ) -> Result<ParameterIndex<u64>, SchemaError> {
-        let metric = self.storage_node.load_f64(network, args)?;
+        let metric = self.storage_metric.load(network, args, None)?;
 
         let control_curves = self
             .control_curves
@@ -179,7 +179,7 @@ impl TryFromV1<ControlCurveIndexParameterV1> for ControlCurveIndexParameter {
         let p = Self {
             meta,
             control_curves,
-            storage_node,
+            storage_metric: storage_node.into(),
         };
         Ok(p)
     }
@@ -224,7 +224,7 @@ impl TryFromV1<ControlCurveParameterV1> for ControlCurveIndexParameter {
         let p = Self {
             meta,
             control_curves,
-            storage_node,
+            storage_metric: storage_node.into(),
         };
         Ok(p)
     }
@@ -235,7 +235,7 @@ impl TryFromV1<ControlCurveParameterV1> for ControlCurveIndexParameter {
 pub struct ControlCurveParameter {
     pub meta: ParameterMeta,
     pub control_curves: Vec<Metric>,
-    pub storage_node: NodeAttrReference,
+    pub storage_metric: Metric,
     pub values: Vec<Metric>,
 }
 
@@ -247,7 +247,7 @@ impl ControlCurveParameter {
         args: &LoadArgs,
         parent: Option<&str>,
     ) -> Result<ParameterIndex<f64>, SchemaError> {
-        let metric = self.storage_node.load_f64(network, args)?;
+        let metric = self.storage_metric.load(network, args, None)?;
 
         let control_curves = self
             .control_curves
@@ -315,7 +315,7 @@ impl TryFromV1<ControlCurveParameterV1> for ControlCurveParameter {
         let p = Self {
             meta,
             control_curves,
-            storage_node,
+            storage_metric: storage_node.into(),
             values,
         };
         Ok(p)
