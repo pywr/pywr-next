@@ -38,23 +38,56 @@ use std::time::Instant;
 use thiserror::Error;
 use tracing::info;
 
+#[derive(Copy, Clone)]
 pub enum RunDuration {
-    Running(Instant),
-    Finished(Duration, usize),
+    Running {
+        /// The instant the run was started.
+        started: Instant,
+        /// The number of time steps completed so far.
+        timesteps_completed: usize,
+    },
+    Finished {
+        /// The total duration of the run.
+        duration: Duration,
+        /// The total number of time steps completed.
+        timesteps_completed: usize,
+    },
 }
 
 impl RunDuration {
     /// Start the global timer for this timing instance.
     pub fn start() -> Self {
-        RunDuration::Running(Instant::now())
+        RunDuration::Running {
+            started: Instant::now(),
+            timesteps_completed: 0,
+        }
+    }
+
+    /// Increment the number of completed scenarios by `num`.
+    ///
+    /// This has no effect if the run has already finished.
+    pub fn complete_scenarios(&mut self, num: usize) {
+        if let RunDuration::Running {
+            timesteps_completed, ..
+        } = self
+        {
+            *timesteps_completed += num;
+        }
     }
 
     /// End the global timer for this timing instance.
     ///
     /// If the timer has already finished this method has no effect.
-    pub fn finish(self, count: usize) -> Self {
-        if let RunDuration::Running(i) = self {
-            RunDuration::Finished(i.elapsed(), count)
+    pub fn finish(self) -> Self {
+        if let RunDuration::Running {
+            started,
+            timesteps_completed,
+        } = self
+        {
+            RunDuration::Finished {
+                duration: started.elapsed(),
+                timesteps_completed,
+            }
         } else {
             self
         }
@@ -63,26 +96,29 @@ impl RunDuration {
     /// Returns the total duration of the run, whether it is still running or has finished.
     pub fn total_duration(&self) -> Duration {
         match self {
-            RunDuration::Running(i) => i.elapsed(),
-            RunDuration::Finished(d, _c) => *d,
+            RunDuration::Running { started, .. } => started.elapsed(),
+            RunDuration::Finished { duration, .. } => *duration,
         }
     }
 
     /// Returns the speed of the run in terms of time steps per second.
-    pub fn speed(&self) -> Option<f64> {
+    pub fn speed(&self) -> f64 {
         match self {
-            RunDuration::Running(_) => None,
-            RunDuration::Finished(d, c) => Some(*c as f64 / d.as_secs_f64()),
+            RunDuration::Running {
+                started,
+                timesteps_completed,
+            } => *timesteps_completed as f64 / started.elapsed().as_secs_f64(),
+            RunDuration::Finished {
+                duration,
+                timesteps_completed,
+            } => *timesteps_completed as f64 / duration.as_secs_f64(),
         }
     }
 
     /// Prints a summary of the run duration and speed to the log.
     pub fn print_table(&self) {
-        info!("{: <24} | {: <10.5}s", "Total", self.total_duration().as_secs_f64());
-        match self.speed() {
-            None => info!("{: <24} | Unknown", "Speed"),
-            Some(speed) => info!("{: <24} | {: <10.5} ts/s", "Speed", speed),
-        };
+        info!("{: <24} | {: <10.5} s", "Total", self.total_duration().as_secs_f64());
+        info!("{: <24} | {: <10.5} ts/s", "Speed", self.speed());
     }
 }
 
@@ -110,6 +146,7 @@ impl ComponentTiming {
 }
 
 /// Collect timing information for component of a network.
+#[derive(Clone)]
 pub struct ComponentTimings {
     /// Timing information for calculation of each component.
     calculation: Option<Vec<ComponentTiming>>,
@@ -171,6 +208,7 @@ impl ComponentTimings {
 }
 
 /// Collects timing information for a network
+#[derive(Clone)]
 pub struct NetworkTimings {
     /// Timing information for component calculations.
     component_timings: ComponentTimings,
@@ -555,6 +593,14 @@ pub struct NetworkResult {
 }
 
 impl NetworkResult {
+    pub fn len(&self) -> usize {
+        self.results.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.results.is_empty()
+    }
+
     /// Get the results of a recorder by name.
     pub fn get(&self, name: &str) -> Option<&dyn RecorderFinalResult> {
         self.results.get(name).map(|r| r.as_ref())
