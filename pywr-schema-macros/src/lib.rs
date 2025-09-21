@@ -1,9 +1,9 @@
 use heck::ToSnakeCase;
 use proc_macro::TokenStream;
-use quote::{quote, ToTokens};
-use syn::{parse_macro_input, ItemStruct, Type, Fields};
+use quote::{ToTokens, quote};
 use syn::punctuated::Punctuated;
 use syn::token::Comma;
+use syn::{Fields, ItemStruct, Type, parse_macro_input};
 
 /// A derive macro for Pywr components that implement the `VisitMetrics`
 /// and `VisitPaths` traits.
@@ -400,7 +400,6 @@ fn impl_visit_paths(ast: &syn::DeriveInput) -> TokenStream {
     TokenStream::from(expanded)
 }
 
-
 /// An attribute macro to add `#[serde(skip_serializing_if = "Option::is_none")]` to all Option<T> fields in a struct
 #[proc_macro_attribute]
 pub fn skip_serializing_none(_attr: TokenStream, item: TokenStream) -> TokenStream {
@@ -412,7 +411,13 @@ pub fn skip_serializing_none(_attr: TokenStream, item: TokenStream) -> TokenStre
 
     for field in &mut output.fields {
         if let Type::Path(type_path) = &field.ty {
-            if type_path.path.segments.last().map(|s| s.ident == "Option").unwrap_or(false) {
+            if type_path
+                .path
+                .segments
+                .last()
+                .map(|s| s.ident == "Option")
+                .unwrap_or(false)
+            {
                 // Only add if not already present
                 let already_has = field.attrs.iter().any(|attr| {
                     attr.path().is_ident("serde") && attr.to_token_stream().to_string().contains("skip_serializing_if")

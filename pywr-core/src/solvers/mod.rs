@@ -53,7 +53,7 @@ pub use highs::{HighsSolver, HighsSolverSettings, HighsSolverSettingsBuilder};
 #[cfg(feature = "microlp")]
 pub use microlp::{MicroLpError, MicroLpSolver, MicroLpSolverSettings, MicroLpSolverSettingsBuilder};
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone)]
 pub struct SolverTimings {
     pub update_objective: Duration,
     pub update_constraints: Duration,
