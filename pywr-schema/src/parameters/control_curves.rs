@@ -1,7 +1,7 @@
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
 use crate::error::{ComponentConversionError, ConversionError};
-use crate::metric::{Metric, NodeAttrReference};
+use crate::metric::{Metric, NodeAttrReference, VirtualNodeAttrReference};
 #[cfg(feature = "core")]
 use crate::network::LoadArgs;
 use crate::nodes::NodeAttribute;
@@ -106,15 +106,22 @@ impl TryFromV1<ControlCurveInterpolatedParameterV1> for ControlCurveInterpolated
         };
 
         // v1 uses proportional volume for control curves
-        let storage_node = NodeAttrReference {
-            name: v1.storage_node,
-            attribute: Some(NodeAttribute::ProportionalVolume),
+        let storage_metric = if conversion_data.virtual_nodes.contains(&v1.storage_node) {
+           VirtualNodeAttrReference {
+                name: v1.storage_node,
+                attribute: Some(NodeAttribute::ProportionalVolume),
+            }.into()
+        } else {
+            NodeAttrReference {
+                name: v1.storage_node,
+                attribute: Some(NodeAttribute::ProportionalVolume),
+            }.into()
         };
 
         let p = Self {
             meta,
             control_curves,
-            storage_metric: storage_node.into(),
+            storage_metric,
             values,
         };
         Ok(p)
@@ -171,15 +178,22 @@ impl TryFromV1<ControlCurveIndexParameterV1> for ControlCurveIndexParameter {
             .collect::<Result<Vec<_>, _>>()?;
 
         // v1 uses proportional volume for control curves
-        let storage_node = NodeAttrReference {
-            name: v1.storage_node,
-            attribute: Some(NodeAttribute::ProportionalVolume),
+        let storage_metric = if conversion_data.virtual_nodes.contains(&v1.storage_node) {
+           VirtualNodeAttrReference {
+                name: v1.storage_node,
+                attribute: Some(NodeAttribute::ProportionalVolume),
+            }.into()
+        } else {
+            NodeAttrReference {
+                name: v1.storage_node,
+                attribute: Some(NodeAttribute::ProportionalVolume),
+            }.into()
         };
 
         let p = Self {
             meta,
             control_curves,
-            storage_metric: storage_node.into(),
+            storage_metric,
         };
         Ok(p)
     }
@@ -307,15 +321,22 @@ impl TryFromV1<ControlCurveParameterV1> for ControlCurveParameter {
         };
 
         // v1 uses proportional volume for control curves
-        let storage_node = NodeAttrReference {
-            name: v1.storage_node,
-            attribute: Some(NodeAttribute::ProportionalVolume),
+        let storage_metric = if conversion_data.virtual_nodes.contains(&v1.storage_node) {
+           VirtualNodeAttrReference {
+                name: v1.storage_node,
+                attribute: Some(NodeAttribute::ProportionalVolume),
+            }.into()
+        } else {
+            NodeAttrReference {
+                name: v1.storage_node,
+                attribute: Some(NodeAttribute::ProportionalVolume),
+            }.into()
         };
 
         let p = Self {
             meta,
             control_curves,
-            storage_metric: storage_node.into(),
+            storage_metric,
             values,
         };
         Ok(p)
@@ -328,7 +349,7 @@ impl TryFromV1<ControlCurveParameterV1> for ControlCurveParameter {
 pub struct ControlCurvePiecewiseInterpolatedParameter {
     pub meta: ParameterMeta,
     pub control_curves: Vec<Metric>,
-    pub storage_node: NodeAttrReference,
+    pub storage_metric: Metric,
     pub values: Option<Vec<[f64; 2]>>,
     pub minimum: Option<f64>,
     pub maximum: Option<f64>,
@@ -342,7 +363,7 @@ impl ControlCurvePiecewiseInterpolatedParameter {
         args: &LoadArgs,
         parent: Option<&str>,
     ) -> Result<ParameterIndex<f64>, SchemaError> {
-        let metric = self.storage_node.load_f64(network, args)?;
+        let metric = self.storage_metric.load(network, args, None)?;
 
         let control_curves = self
             .control_curves
@@ -386,15 +407,22 @@ impl TryFromV1<ControlCurvePiecewiseInterpolatedParameterV1> for ControlCurvePie
         )?;
 
         // v1 uses proportional volume for control curves
-        let storage_node = NodeAttrReference {
-            name: v1.storage_node,
-            attribute: Some(NodeAttribute::ProportionalVolume),
+        let storage_node = if conversion_data.virtual_nodes.contains(&v1.storage_node) {
+           VirtualNodeAttrReference {
+                name: v1.storage_node,
+                attribute: Some(NodeAttribute::ProportionalVolume),
+            }.into()
+        } else {
+            NodeAttrReference {
+                name: v1.storage_node,
+                attribute: Some(NodeAttribute::ProportionalVolume),
+            }.into()
         };
 
         let p = Self {
             meta,
             control_curves,
-            storage_node,
+            storage_metric: storage_node,
             values: v1.values,
             minimum: v1.minimum,
             maximum: None,
@@ -405,7 +433,7 @@ impl TryFromV1<ControlCurvePiecewiseInterpolatedParameterV1> for ControlCurvePie
 
 #[cfg(test)]
 mod tests {
-    use crate::parameters::control_curves::ControlCurvePiecewiseInterpolatedParameter;
+    use crate::{metric::{Metric, NodeAttrReference}, parameters::control_curves::ControlCurvePiecewiseInterpolatedParameter};
 
     #[test]
     fn test_control_curve_piecewise_interpolated() {
@@ -415,9 +443,10 @@ mod tests {
                     "name": "My control curve",
                     "comment": "A witty comment"
                 },
-                "storage_node": {
-                  "name": "Reservoir",
-                  "attribute": "ProportionalVolume"
+                "storage_metric": {
+                    "type": "Node",
+                    "name": "storage1",
+                    "attribute": "ProportionalVolume"
                 },
                 "control_curves": [
                     {"type": "Parameter", "name": "reservoir_cc"},
@@ -434,6 +463,9 @@ mod tests {
 
         let param: ControlCurvePiecewiseInterpolatedParameter = serde_json::from_str(data).unwrap();
 
-        assert_eq!(param.storage_node.name, "Reservoir");
+        assert_eq!(param.storage_metric, Metric::Node(NodeAttrReference {
+            name: "storage1".to_string(),
+            attribute: Some(crate::nodes::NodeAttribute::ProportionalVolume),
+        }));
     }
 }

@@ -275,7 +275,10 @@ impl PywrNetwork {
                 match result {
                     Ok(node) => match node {
                         NodeOrVirtualNode::Node(n) => nodes.push(*n),
-                        NodeOrVirtualNode::Virtual(vn) => virtual_nodes.push(*vn),
+                        NodeOrVirtualNode::Virtual(vn) => {
+                            conversion_data.virtual_nodes.push(vn.name().to_owned());
+                            virtual_nodes.push(*vn);
+                        }
                     },
                     Err(e) => {
                         errors.push(e);

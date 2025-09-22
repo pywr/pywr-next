@@ -86,6 +86,12 @@ impl From<NodeAttrReference> for Metric {
     }
 }
 
+impl From<VirtualNodeAttrReference> for Metric {
+    fn from(v: VirtualNodeAttrReference) -> Self {
+        Self::VirtualNode(v)
+    }
+}
+
 #[cfg(feature = "core")]
 impl Metric {
     pub fn load(

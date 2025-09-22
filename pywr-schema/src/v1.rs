@@ -24,6 +24,7 @@ use pywr_v1_schema::parameters::{
 #[derive(Default)]
 pub struct ConversionData {
     unnamed_count: usize,
+    pub virtual_nodes: Vec<String>,
     pub parameters: Vec<Parameter>,
     pub timeseries: Vec<Timeseries>,
 }
