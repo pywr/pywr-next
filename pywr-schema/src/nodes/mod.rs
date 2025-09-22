@@ -83,7 +83,7 @@ pub use reservoir::{
     Bathymetry, BathymetryType, Evaporation, Leakage, Rainfall, ReservoirNode, ReservoirNodeAttribute,
     ReservoirNodeComponent, SpillNodeType,
 };
-pub use river::{RiverNode, RiverNodeAttribute, RiverNodeComponent, RoutingMethod};
+pub use river::{MuskingumInitialCondition, RiverNode, RiverNodeAttribute, RiverNodeComponent, RoutingMethod};
 pub use river_gauge::{RiverGaugeNode, RiverGaugeNodeAttribute, RiverGaugeNodeComponent};
 pub use river_split_with_gauge::{
     RiverSplit, RiverSplitWithGaugeNode, RiverSplitWithGaugeNodeAttribute, RiverSplitWithGaugeNodeComponent,
