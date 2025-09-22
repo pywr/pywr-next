@@ -71,7 +71,10 @@ def handle_custom_parameters(schema_data, name: str, p_type: str):
             "meta": {"name": name},
             "type": "Python",
             "source": {"type": "Path", "path": "v2_custom_parameter.py"},
-            "object": {"type": "Class", "class": p_type},  # Use the same class name in v1 & v2
+            "object": {
+                "type": "Class",
+                "class": p_type,
+            },  # Use the same class name in v1 & v2
             "args": [],
             "kwargs": {},
         }
