@@ -135,6 +135,7 @@ impl TryFrom<SchemaError> for PyErr {
 
 #[derive(Error, Debug, PartialEq, Eq, Clone)]
 #[cfg_attr(feature = "pyo3", pyclass)]
+#[allow(clippy::large_enum_variant)]
 pub enum ComponentConversionError {
     #[error("Failed to convert `{attr}` on node `{name}`: {error}")]
     Node {
@@ -150,6 +151,13 @@ pub enum ComponentConversionError {
     },
     #[error("Failed to convert scenario: {error}")]
     Scenarios { error: ConversionError },
+    #[error("Failed to convert table: {error}")]
+    Table {
+        name: String,
+        url: PathBuf,
+        json: Option<String>,
+        error: ConversionError,
+    },
 }
 
 #[derive(Error, Debug, PartialEq, Eq, Clone)]
@@ -189,4 +197,6 @@ pub enum ConversionError {
     IncorrectNumberOfValues { expected: usize, found: usize },
     #[error("Scenario slice is invalid: length is {length}, expected 1 or 2.")]
     InvalidScenarioSlice { length: usize },
+    #[error("Table conversion is not currently supported: {name}")]
+    TableConversionNotSupported { name: String },
 }

@@ -1,6 +1,6 @@
 #[cfg(feature = "core")]
 use pywr_core::test_utils::{ExpectedOutputsLong, ExpectedOutputsWide, VerifyExpected, run_all_solvers};
-use pywr_schema::PywrModel;
+use pywr_schema::{ComponentConversionError, PywrModel};
 use std::fs;
 use std::path::Path;
 #[cfg(feature = "core")]
@@ -180,7 +180,18 @@ fn convert_model(v1_path: &Path, v2_path: &Path) {
 
     let (v2, errors) = PywrModel::from_v1(v1);
     println!("Conversion errors: {errors:?}",);
-    assert_eq!(errors.len(), 0);
+
+    // TODO Table conversion is not yet supported, so ignore those errors for now
+    let non_table_errors: Vec<_> = errors
+        .iter()
+        .filter(|error| !matches!(error, ComponentConversionError::Table { .. }))
+        .collect();
+
+    assert_eq!(
+        non_table_errors.len(),
+        0,
+        "Found non-table conversion errors: {non_table_errors:?}"
+    );
 
     let v2_converted: serde_json::Value = serde_json::from_str(&serde_json::to_string_pretty(&v2).unwrap()).unwrap();
 

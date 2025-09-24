@@ -1,6 +1,7 @@
 use super::edge::Edge;
 use super::nodes::{Node, NodeOrVirtualNode, VirtualNode};
 use super::parameters::{Parameter, ParameterOrTimeseriesRef};
+use crate::ConversionError;
 use crate::data_tables::DataTable;
 #[cfg(feature = "core")]
 use crate::data_tables::{LoadedTableCollection, TableCollectionLoadError};
@@ -269,7 +270,6 @@ impl PywrNetwork {
 
         // Extract nodes and any timeseries data from the v1 nodes
         if let Some(v1_nodes) = v1.nodes {
-            
             // First find any virtual nodes so these can be used to determine metric conversion types
             for node in v1_nodes.iter() {
                 match node {
@@ -280,9 +280,9 @@ impl PywrNetwork {
                         | CoreNodeV1::AnnualVirtualStorage(_)
                         | CoreNodeV1::MonthlyVirtualStorage(_)
                         | CoreNodeV1::SeasonalVirtualStorage(_)
-                        | CoreNodeV1::RollingVirtualStorage(_)  => {
+                        | CoreNodeV1::RollingVirtualStorage(_) => {
                             conversion_data.virtual_nodes.push(n.name().to_string());
-                        },
+                        }
                         _ => continue,
                     },
                     _ => continue,
@@ -345,6 +345,16 @@ impl PywrNetwork {
 
         nodes.visit_metrics_mut(update_to_ts_ref);
         parameters.visit_metrics_mut(update_to_ts_ref);
+
+        for table in v1.tables.into_iter().flatten() {
+            let json_string = serde_json::to_string(&table).ok();
+            errors.push(ComponentConversionError::Table {
+                name: table.name.clone(),
+                url: table.url,
+                json: json_string,
+                error: ConversionError::TableConversionNotSupported { name: table.name },
+            });
+        }
 
         // TODO convert v1 tables!
         let tables = None;
