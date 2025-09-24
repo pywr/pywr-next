@@ -148,6 +148,8 @@ pub enum ComponentConversionError {
         name: String,
         error: ConversionError,
     },
+    #[error("Failed to convert scenario: {error}")]
+    Scenarios { error: ConversionError },
 }
 
 #[derive(Error, Debug, PartialEq, Eq, Clone)]
@@ -185,4 +187,6 @@ pub enum ConversionError {
     NonConstantValue {},
     #[error("{found:?} value(s) found, {expected:?} were expected")]
     IncorrectNumberOfValues { expected: usize, found: usize },
+    #[error("Scenario slice is invalid: length is {length}, expected 1 or 2.")]
+    InvalidScenarioSlice { length: usize },
 }

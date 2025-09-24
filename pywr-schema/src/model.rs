@@ -9,7 +9,7 @@ use crate::network::{LoadArgs, PywrNetworkBuildError, PywrNetworkReadError};
 #[cfg(feature = "core")]
 use crate::timeseries::LoadedTimeseriesCollection;
 use crate::visit::{VisitMetrics, VisitPaths};
-use crate::{PywrNetwork, PywrNetworkRef};
+use crate::{ConversionError, PywrNetwork, PywrNetworkRef};
 #[cfg(feature = "core")]
 use chrono::NaiveTime;
 use chrono::{NaiveDate, NaiveDateTime};
@@ -218,6 +218,53 @@ impl TryInto<pywr_core::scenario::ScenarioGroup> for ScenarioGroup {
     }
 }
 
+impl TryFrom<pywr_v1_schema::model::Scenario> for ScenarioGroup {
+    type Error = ConversionError;
+
+    fn try_from(v1: pywr_v1_schema::model::Scenario) -> Result<Self, Self::Error> {
+        let subset = v1
+            .slice
+            .map(|s| match s.len() {
+                1 => {
+                    let start = 0;
+                    let end = v1.size;
+                    Ok(ScenarioGroupSubset::Slice(ScenarioGroupSlice { start, end }))
+                }
+                2 => {
+                    let start = s[0].unwrap_or_default();
+                    let end = match s[1] {
+                        Some(v) => v,
+                        None => v1.size,
+                    };
+                    Ok(ScenarioGroupSubset::Slice(ScenarioGroupSlice { start, end }))
+                }
+                3 => {
+                    let start = s[0].unwrap_or_default();
+                    let end = match s[1] {
+                        Some(v) => v,
+                        None => v1.size,
+                    };
+                    match s[2] {
+                        Some(step) => {
+                            let indices = (start..end).step_by(step).collect();
+                            Ok(ScenarioGroupSubset::Indices(ScenarioGroupIndices { indices }))
+                        }
+                        None => Ok(ScenarioGroupSubset::Slice(ScenarioGroupSlice { start, end })),
+                    }
+                }
+                _ => Err(ConversionError::InvalidScenarioSlice { length: s.len() }),
+            })
+            .transpose()?;
+
+        Ok(Self {
+            name: v1.name,
+            size: v1.size,
+            labels: v1.ensemble_names,
+            subset,
+        })
+    }
+}
+
 #[derive(serde::Deserialize, serde::Serialize, Clone, JsonSchema, Display, EnumDiscriminants)]
 #[serde(untagged)]
 #[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
@@ -280,6 +327,18 @@ pub struct ScenarioDomain {
     pub groups: Vec<ScenarioGroup>,
     /// Optional combinations of the groups that allow simulation of specific scenarios.
     pub combinations: Option<Vec<Vec<ScenarioLabelOrIndex>>>,
+}
+
+impl TryFrom<Vec<pywr_v1_schema::model::Scenario>> for ScenarioDomain {
+    type Error = ConversionError;
+
+    fn try_from(v1: Vec<pywr_v1_schema::model::Scenario>) -> Result<Self, Self::Error> {
+        let groups = v1.into_iter().map(|g| g.try_into()).collect::<Result<Vec<_>, _>>()?;
+        Ok(Self {
+            groups,
+            combinations: None,
+        })
+    }
 }
 
 #[cfg(feature = "core")]
@@ -477,6 +536,14 @@ impl PywrModel {
 
         let metadata = v1.metadata.into();
         let timestepper = v1.timestepper.into();
+        let scenarios = match v1.scenarios.map(|s| s.try_into()) {
+            Some(Ok(scenarios)) => Some(scenarios),
+            Some(Err(err)) => {
+                errors.push(ComponentConversionError::Scenarios { error: err });
+                None
+            }
+            None => None,
+        };
 
         let (network, network_errors) = PywrNetwork::from_v1(v1.network);
         errors.extend(network_errors);
@@ -485,7 +552,7 @@ impl PywrModel {
             Self {
                 metadata,
                 timestepper,
-                scenarios: None,
+                scenarios,
                 network,
             },
             errors,
