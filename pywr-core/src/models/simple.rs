@@ -155,6 +155,7 @@ impl ModelTimings {
 #[cfg_attr(feature = "pyo3", pyclass)]
 #[derive(Clone)]
 pub struct ModelResult {
+    pub domain: ModelDomain,
     pub timings: ModelTimings,
     pub network_result: NetworkResult,
 }
@@ -175,8 +176,9 @@ impl ModelResult {
 
     fn __repr__(&self) -> String {
         format!(
-            "<ModelResult with {} recorder results; completed in {:.2} seconds with speed {:.2} time-steps/second>",
+            "<ModelResult with {} recorder results; {} scenarios completed in {:.2} seconds with speed {:.2} time-steps/second>",
             self.network_result.len(),
+            self.domain.scenarios.len(),
             self.timings.total_duration(),
             self.timings.speed()
         )
@@ -428,6 +430,7 @@ impl Model {
         Ok(ModelResult {
             network_result,
             timings,
+            domain: self.domain.clone(),
         })
     }
 
@@ -457,6 +460,7 @@ impl Model {
         Ok(ModelResult {
             network_result,
             timings,
+            domain: self.domain.clone(),
         })
     }
 
