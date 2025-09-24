@@ -24,6 +24,7 @@ use pyo3::pyclass;
 #[cfg(feature = "core")]
 use pywr_core::models::ModelDomain;
 use pywr_schema_macros::skip_serializing_none;
+use pywr_v1_schema::nodes::{CoreNode as CoreNodeV1, Node as NodeV1};
 use schemars::JsonSchema;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
@@ -268,6 +269,26 @@ impl PywrNetwork {
 
         // Extract nodes and any timeseries data from the v1 nodes
         if let Some(v1_nodes) = v1.nodes {
+            
+            // First find any virtual nodes so these can be used to determine metric conversion types
+            for node in v1_nodes.iter() {
+                match node {
+                    NodeV1::Core(n) => match n.as_ref() {
+                        CoreNodeV1::Aggregated(_)
+                        | CoreNodeV1::AggregatedStorage(_)
+                        | CoreNodeV1::VirtualStorage(_)
+                        | CoreNodeV1::AnnualVirtualStorage(_)
+                        | CoreNodeV1::MonthlyVirtualStorage(_)
+                        | CoreNodeV1::SeasonalVirtualStorage(_)
+                        | CoreNodeV1::RollingVirtualStorage(_)  => {
+                            conversion_data.virtual_nodes.push(n.name().to_string());
+                        },
+                        _ => continue,
+                    },
+                    _ => continue,
+                }
+            }
+
             for v1_node in v1_nodes.into_iter() {
                 // Reset the unnamed count for each node because they are named by the parent node.
                 conversion_data.reset_count();
@@ -275,10 +296,7 @@ impl PywrNetwork {
                 match result {
                     Ok(node) => match node {
                         NodeOrVirtualNode::Node(n) => nodes.push(*n),
-                        NodeOrVirtualNode::Virtual(vn) => {
-                            conversion_data.virtual_nodes.push(vn.name().to_owned());
-                            virtual_nodes.push(*vn);
-                        }
+                        NodeOrVirtualNode::Virtual(vn) => virtual_nodes.push(*vn),
                     },
                     Err(e) => {
                         errors.push(e);
