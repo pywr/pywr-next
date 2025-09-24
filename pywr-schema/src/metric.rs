@@ -253,6 +253,7 @@ impl TryFromV1<ParameterValueV1> for Metric {
                         .map_err(|e| match e {
                             ComponentConversionError::Parameter { error, .. } => error,
                             ComponentConversionError::Node { error, .. } => error,
+                            ComponentConversionError::Scenarios { error } => error,
                         })?;
                 match definition {
                     ParameterOrTimeseriesRef::Parameter(p) => {
@@ -728,6 +729,7 @@ impl TryFromV1<ParameterValueV1> for IndexMetric {
                         .map_err(|e| match e {
                             ComponentConversionError::Parameter { error, .. } => error,
                             ComponentConversionError::Node { error, .. } => error,
+                            ComponentConversionError::Scenarios { error } => error,
                         })?;
                 match definition {
                     ParameterOrTimeseriesRef::Parameter(p) => {
