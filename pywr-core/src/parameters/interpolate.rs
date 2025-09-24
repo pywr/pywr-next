@@ -53,7 +53,7 @@ pub fn linear_interpolation(
             return Err(InterpolationError::NotStrictlyMonotonic);
         }
 
-        if value < up.0 {
+        if value <= up.0 {
             return Ok(interpolate(value, lp.0, up.0, lp.1, up.1));
         }
     }
