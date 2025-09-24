@@ -624,6 +624,11 @@ impl NetworkResult {
             .and_then(|r| r.aggregated_value().map_err(|e| e.into()))
     }
 
+    /// An iterator over the names of all available outputs.
+    pub fn output_names(&self) -> Vec<String> {
+        self.results.keys().map(|k| k.to_string()).collect()
+    }
+
     /// Return an output as a dataframe.
     pub fn to_dataframe(&self, name: &str) -> PyResult<PyDataFrame> {
         self.results
