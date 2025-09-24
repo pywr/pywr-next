@@ -1,6 +1,7 @@
 use super::edge::Edge;
 use super::nodes::{Node, NodeOrVirtualNode, VirtualNode};
 use super::parameters::{Parameter, ParameterOrTimeseriesRef};
+use crate::ConversionError;
 use crate::data_tables::DataTable;
 #[cfg(feature = "core")]
 use crate::data_tables::{LoadedTableCollection, TableCollectionLoadError};
@@ -344,6 +345,16 @@ impl PywrNetwork {
 
         nodes.visit_metrics_mut(update_to_ts_ref);
         parameters.visit_metrics_mut(update_to_ts_ref);
+
+        for table in v1.tables.into_iter().flatten() {
+            let json_string = serde_json::to_string(&table).ok();
+            errors.push(ComponentConversionError::Table {
+                name: table.name.clone(),
+                url: table.url,
+                json: json_string,
+                error: ConversionError::TableConversionNotSupported { name: table.name },
+            });
+        }
 
         // TODO convert v1 tables!
         let tables = None;
