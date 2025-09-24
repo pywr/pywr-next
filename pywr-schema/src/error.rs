@@ -135,6 +135,7 @@ impl TryFrom<SchemaError> for PyErr {
 
 #[derive(Error, Debug, PartialEq, Eq, Clone)]
 #[cfg_attr(feature = "pyo3", pyclass)]
+#[allow(clippy::large_enum_variant)]
 pub enum ComponentConversionError {
     #[error("Failed to convert `{attr}` on node `{name}`: {error}")]
     Node {

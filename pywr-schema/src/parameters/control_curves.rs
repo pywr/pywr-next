@@ -107,15 +107,17 @@ impl TryFromV1<ControlCurveInterpolatedParameterV1> for ControlCurveInterpolated
 
         // v1 uses proportional volume for control curves
         let storage_metric = if conversion_data.virtual_nodes.contains(&v1.storage_node) {
-           VirtualNodeAttrReference {
+            VirtualNodeAttrReference {
                 name: v1.storage_node,
                 attribute: Some(NodeAttribute::ProportionalVolume),
-            }.into()
+            }
+            .into()
         } else {
             NodeAttrReference {
                 name: v1.storage_node,
                 attribute: Some(NodeAttribute::ProportionalVolume),
-            }.into()
+            }
+            .into()
         };
 
         let p = Self {
@@ -179,15 +181,17 @@ impl TryFromV1<ControlCurveIndexParameterV1> for ControlCurveIndexParameter {
 
         // v1 uses proportional volume for control curves
         let storage_metric = if conversion_data.virtual_nodes.contains(&v1.storage_node) {
-           VirtualNodeAttrReference {
+            VirtualNodeAttrReference {
                 name: v1.storage_node,
                 attribute: Some(NodeAttribute::ProportionalVolume),
-            }.into()
+            }
+            .into()
         } else {
             NodeAttrReference {
                 name: v1.storage_node,
                 attribute: Some(NodeAttribute::ProportionalVolume),
-            }.into()
+            }
+            .into()
         };
 
         let p = Self {
@@ -322,15 +326,17 @@ impl TryFromV1<ControlCurveParameterV1> for ControlCurveParameter {
 
         // v1 uses proportional volume for control curves
         let storage_metric = if conversion_data.virtual_nodes.contains(&v1.storage_node) {
-           VirtualNodeAttrReference {
+            VirtualNodeAttrReference {
                 name: v1.storage_node,
                 attribute: Some(NodeAttribute::ProportionalVolume),
-            }.into()
+            }
+            .into()
         } else {
             NodeAttrReference {
                 name: v1.storage_node,
                 attribute: Some(NodeAttribute::ProportionalVolume),
-            }.into()
+            }
+            .into()
         };
 
         let p = Self {
@@ -408,15 +414,17 @@ impl TryFromV1<ControlCurvePiecewiseInterpolatedParameterV1> for ControlCurvePie
 
         // v1 uses proportional volume for control curves
         let storage_node = if conversion_data.virtual_nodes.contains(&v1.storage_node) {
-           VirtualNodeAttrReference {
+            VirtualNodeAttrReference {
                 name: v1.storage_node,
                 attribute: Some(NodeAttribute::ProportionalVolume),
-            }.into()
+            }
+            .into()
         } else {
             NodeAttrReference {
                 name: v1.storage_node,
                 attribute: Some(NodeAttribute::ProportionalVolume),
-            }.into()
+            }
+            .into()
         };
 
         let p = Self {
@@ -433,7 +441,10 @@ impl TryFromV1<ControlCurvePiecewiseInterpolatedParameterV1> for ControlCurvePie
 
 #[cfg(test)]
 mod tests {
-    use crate::{metric::{Metric, NodeAttrReference}, parameters::control_curves::ControlCurvePiecewiseInterpolatedParameter};
+    use crate::{
+        metric::{Metric, NodeAttrReference},
+        parameters::control_curves::ControlCurvePiecewiseInterpolatedParameter,
+    };
 
     #[test]
     fn test_control_curve_piecewise_interpolated() {
@@ -463,9 +474,12 @@ mod tests {
 
         let param: ControlCurvePiecewiseInterpolatedParameter = serde_json::from_str(data).unwrap();
 
-        assert_eq!(param.storage_metric, Metric::Node(NodeAttrReference {
-            name: "storage1".to_string(),
-            attribute: Some(crate::nodes::NodeAttribute::ProportionalVolume),
-        }));
+        assert_eq!(
+            param.storage_metric,
+            Metric::Node(NodeAttrReference {
+                name: "storage1".to_string(),
+                attribute: Some(crate::nodes::NodeAttribute::ProportionalVolume),
+            })
+        );
     }
 }

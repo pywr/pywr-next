@@ -181,7 +181,7 @@ fn convert_model(v1_path: &Path, v2_path: &Path) {
     let (v2, errors) = PywrModel::from_v1(v1);
     println!("Conversion errors: {errors:?}",);
 
-    // Table conversion is not yet supported, so ignore those errors for now
+    // TODO Table conversion is not yet supported, so ignore those errors for now
     let non_table_errors: Vec<_> = errors
         .iter()
         .filter(|error| !matches!(error, ComponentConversionError::Table { .. }))

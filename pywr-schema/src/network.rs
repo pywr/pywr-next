@@ -270,7 +270,6 @@ impl PywrNetwork {
 
         // Extract nodes and any timeseries data from the v1 nodes
         if let Some(v1_nodes) = v1.nodes {
-            
             // First find any virtual nodes so these can be used to determine metric conversion types
             for node in v1_nodes.iter() {
                 match node {
@@ -281,9 +280,9 @@ impl PywrNetwork {
                         | CoreNodeV1::AnnualVirtualStorage(_)
                         | CoreNodeV1::MonthlyVirtualStorage(_)
                         | CoreNodeV1::SeasonalVirtualStorage(_)
-                        | CoreNodeV1::RollingVirtualStorage(_)  => {
+                        | CoreNodeV1::RollingVirtualStorage(_) => {
                             conversion_data.virtual_nodes.push(n.name().to_string());
-                        },
+                        }
                         _ => continue,
                     },
                     _ => continue,
