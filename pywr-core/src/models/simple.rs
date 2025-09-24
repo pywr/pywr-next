@@ -4,6 +4,7 @@ use crate::network::{
     NetworkSetupError, NetworkSolverSetupError, NetworkState, NetworkStepError, NetworkTimings, RunDuration,
 };
 use crate::recorders::RecorderInternalState;
+use crate::scenario::ScenarioDomain;
 #[cfg(all(feature = "ipm-ocl", feature = "pyo3"))]
 use crate::solvers::{ClIpmF32Solver, ClIpmF64Solver, ClIpmSolverSettings};
 #[cfg(all(feature = "clp", feature = "pyo3"))]
@@ -155,7 +156,7 @@ impl ModelTimings {
 #[cfg_attr(feature = "pyo3", pyclass)]
 #[derive(Clone)]
 pub struct ModelResult {
-    pub scenarios: usize,
+    pub scenario_domain: ScenarioDomain,
     pub timings: ModelTimings,
     pub network_result: NetworkResult,
 }
@@ -178,7 +179,7 @@ impl ModelResult {
         format!(
             "<ModelResult with {} recorder results; {} scenarios completed in {:.2} seconds with speed {:.2} time-steps/second>",
             self.network_result.len(),
-            self.scenarios,
+            self.scenario_domain.len(),
             self.timings.total_duration(),
             self.timings.speed()
         )
@@ -430,7 +431,7 @@ impl Model {
         Ok(ModelResult {
             network_result,
             timings,
-            scenarios: self.domain.scenarios.len(),
+            scenario_domain: self.domain.scenarios.clone(),
         })
     }
 
@@ -460,7 +461,7 @@ impl Model {
         Ok(ModelResult {
             network_result,
             timings,
-            scenarios: self.domain.scenarios.len(),
+            scenario_domain: self.domain.scenarios.clone(),
         })
     }
 
