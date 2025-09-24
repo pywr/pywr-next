@@ -212,6 +212,9 @@ class NetworkResult:
             name: The name of the output to retrieve.
         """
 
+    def output_names(self) -> list[str]:
+        """Get a list of all available output names."""
+
 class ModelTimings:
     @property
     def total_duration(self) -> float:
