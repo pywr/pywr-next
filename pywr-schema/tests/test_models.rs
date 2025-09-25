@@ -105,17 +105,19 @@ model_tests! {
 ///
 /// This test requires Python environment with Pandas
 #[test]
-#[cfg(feature = "test-python")]
 fn test_timeseries_pandas() {
     let input = "timeseries_pandas.json";
     let input_pth = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join(input);
     let expected = [("timeseries-expected.csv", ResultsShape::Long)];
-    let expected_paths = expected
+    let _expected_paths = expected
         .into_iter()
         .map(|(p, shape)| (Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join(p), shape))
         .collect::<Vec<_>>();
-    let schema = deserialise_test_model(&input_pth);
-    run_test_model(&schema, &expected_paths, &[], &[]);
+    let _schema = deserialise_test_model(&input_pth);
+
+    // TODO - fix issue with pyo3 failing to find the active venv so this feature gate can be removed
+    #[cfg(feature = "test-python")]
+    run_test_model(&_schema, &_expected_paths, &[], &[]);
 }
 
 fn deserialise_test_model(model_path: &Path) -> PywrModel {
