@@ -111,6 +111,12 @@ Any major revision to Pywr will have the following feature requirements:
 
 ### Getting started
 
+#### Installing pre-compiled wheels
+
+See instructions in the [Pywr book](https://pywr.github.io/pywr-next/getting_started.html).
+
+#### Compiling from source
+
 This repository contains a version of Clp using Git submodules. In order to build those submodules
 must be initialised first.
 
