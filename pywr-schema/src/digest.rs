@@ -18,8 +18,12 @@ pub enum ChecksumError {
         expected: String,
         path: PathBuf,
     },
-    #[error("IO error: {0}")]
-    IoError(#[from] Box<std::io::Error>),
+    #[error("IO error when trying to read `{path}`: {source}")]
+    IoError {
+        path: PathBuf,
+        #[source]
+        source: Box<std::io::Error>,
+    },
 }
 
 /// A checksum for a file, either MD5 or SHA256.
@@ -72,11 +76,17 @@ impl TryFromV1<HashMap<String, String>> for Checksum {
 
 /// Validate a file's checksum against the expected hash.
 fn validate_hex_digest<D: Digest + Write>(path: &Path, expected: &str) -> Result<(), ChecksumError> {
-    let input = File::open(path).map_err(|e| ChecksumError::IoError(Box::new(e)))?;
+    let input = File::open(path).map_err(|e| ChecksumError::IoError {
+        path: path.to_path_buf(),
+        source: Box::new(e),
+    })?;
     let mut reader = BufReader::new(input);
 
     let mut hasher = D::new();
-    let _n = copy(&mut reader, &mut hasher).map_err(|e| ChecksumError::IoError(Box::new(e)))?;
+    let _n = copy(&mut reader, &mut hasher).map_err(|e| ChecksumError::IoError {
+        path: path.to_path_buf(),
+        source: Box::new(e),
+    })?;
     let hash = hasher.finalize();
 
     let actual_hash = hex::encode(hash);
