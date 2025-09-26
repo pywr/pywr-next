@@ -583,6 +583,10 @@ impl ScenarioIndex {
         &self.labels
     }
 
+    pub fn schema_index_for_group(&self, group_index: usize) -> usize {
+        self.schema.as_ref().map(|s| s.indices[group_index]).unwrap_or_else(|| self.core.indices[group_index])
+    }
+
     /// Concatenated labels for the scenario
     ///
     /// This is useful for generating a unique label for each scenario index. The labels are
