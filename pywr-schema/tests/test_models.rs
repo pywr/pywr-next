@@ -174,6 +174,7 @@ convert_tests! {
     test_convert_inline_parameter: ("v1/inline-parameter.json", "v1/inline-parameter-converted.json"),
     test_convert_river_split_with_gauge1: ("v1/river_split_with_gauge1.json", "v1/river_split_with_gauge1-converted.json"),
     test_convert_breaklink: ("v1/breaklink.json", "v1/breaklink-converted.json"),
+    test_convert_scenarios: ("v1/scenarios.json", "v1/scenarios-converted.json"),
 }
 
 fn convert_model(v1_path: &Path, v2_path: &Path) {

@@ -631,6 +631,11 @@ impl ScenarioDomain {
         let group_index = self.group_index(name)?;
         Ok(self.scenario_map[group_index].as_deref())
     }
+
+    pub fn group_size(&self, name: &str) -> Result<usize, ScenarioError> {
+        let group_index = self.group_index(name)?;
+        Ok(self.groups[group_index].size())
+    }
 }
 
 #[cfg(test)]
