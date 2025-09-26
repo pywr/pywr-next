@@ -401,6 +401,7 @@ impl ParameterValuesCollection {
     }
 }
 
+#[derive(Default)]
 pub struct ParameterValuesRef<'a> {
     values: &'a [f64],
     indices: &'a [u64],
@@ -452,6 +453,7 @@ impl SimpleParameterValues<'_> {
     }
 }
 
+#[derive(Default)]
 pub struct ConstParameterValues<'a> {
     constant: ParameterValuesRef<'a>,
 }

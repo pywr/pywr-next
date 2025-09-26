@@ -45,7 +45,7 @@ pub use control_curves::{
     ControlCurvePiecewiseInterpolatedParameter,
 };
 pub use core::{
-    ActivationFunction, ConstantParameter, DivisionParameter, MaxParameter, MinParameter, NegativeMaxParameter,
+    ActivationFunction, ConstantParameter, ConstantScenarioParameter, DivisionParameter, MaxParameter, MinParameter, NegativeMaxParameter,
     NegativeMinParameter, NegativeParameter, VariableSettings,
 };
 pub use delay::{DelayIndexParameter, DelayParameter};
@@ -91,6 +91,7 @@ pub enum Parameter {
     AggregatedIndex(AggregatedIndexParameter),
     AsymmetricSwitchIndex(AsymmetricSwitchIndexParameter),
     Constant(ConstantParameter),
+    ConstantScenario(ConstantScenarioParameter),
     ControlCurvePiecewiseInterpolated(ControlCurvePiecewiseInterpolatedParameter),
     ControlCurveInterpolated(ControlCurveInterpolatedParameter),
     ControlCurveIndex(ControlCurveIndexParameter),
@@ -127,6 +128,7 @@ impl Parameter {
     pub fn name(&self) -> &str {
         match self {
             Self::Constant(p) => p.meta.name.as_str(),
+            Self::ConstantScenario(p) => p.meta.name.as_str(),
             Self::ControlCurveInterpolated(p) => p.meta.name.as_str(),
             Self::Aggregated(p) => p.meta.name.as_str(),
             Self::AggregatedIndex(p) => p.meta.name.as_str(),
@@ -179,6 +181,9 @@ impl Parameter {
     ) -> Result<pywr_core::parameters::ParameterType, SchemaError> {
         let ty = match self {
             Self::Constant(p) => {
+                pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args, parent)?)
+            }
+            Self::ConstantScenario(p) => {
                 pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args, parent)?)
             }
             Self::ControlCurveInterpolated(p) => {
@@ -268,6 +273,7 @@ impl VisitMetrics for Parameter {
     fn visit_metrics<F: FnMut(&Metric)>(&self, visitor: &mut F) {
         match self {
             Self::Constant(p) => p.visit_metrics(visitor),
+            Self::ConstantScenario(p) => p.visit_metrics(visitor),
             Self::ControlCurveInterpolated(p) => p.visit_metrics(visitor),
             Self::Aggregated(p) => p.visit_metrics(visitor),
             Self::AggregatedIndex(p) => p.visit_metrics(visitor),
@@ -307,6 +313,7 @@ impl VisitMetrics for Parameter {
     fn visit_metrics_mut<F: FnMut(&mut Metric)>(&mut self, visitor: &mut F) {
         match self {
             Self::Constant(p) => p.visit_metrics_mut(visitor),
+            Self::ConstantScenario(p) => p.visit_metrics_mut(visitor),
             Self::ControlCurveInterpolated(p) => p.visit_metrics_mut(visitor),
             Self::Aggregated(p) => p.visit_metrics_mut(visitor),
             Self::AggregatedIndex(p) => p.visit_metrics_mut(visitor),
@@ -348,6 +355,7 @@ impl VisitPaths for Parameter {
     fn visit_paths<F: FnMut(&Path)>(&self, visitor: &mut F) {
         match self {
             Self::Constant(p) => p.visit_paths(visitor),
+            Self::ConstantScenario(p) => p.visit_paths(visitor),
             Self::ControlCurveInterpolated(p) => p.visit_paths(visitor),
             Self::Aggregated(p) => p.visit_paths(visitor),
             Self::AggregatedIndex(p) => p.visit_paths(visitor),
@@ -387,6 +395,7 @@ impl VisitPaths for Parameter {
     fn visit_paths_mut<F: FnMut(&mut PathBuf)>(&mut self, visitor: &mut F) {
         match self {
             Self::Constant(p) => p.visit_paths_mut(visitor),
+            Self::ConstantScenario(p) => p.visit_paths_mut(visitor),
             Self::ControlCurveInterpolated(p) => p.visit_paths_mut(visitor),
             Self::Aggregated(p) => p.visit_paths_mut(visitor),
             Self::AggregatedIndex(p) => p.visit_paths_mut(visitor),
@@ -463,6 +472,7 @@ impl TryFromV1<ParameterV1> for ParameterOrTimeseriesRef {
                     Parameter::AsymmetricSwitchIndex(p.try_into_v2(parent_node, conversion_data)?).into()
                 }
                 CoreParameter::Constant(p) => Parameter::Constant(p.try_into_v2(parent_node, conversion_data)?).into(),
+                CoreParameter::ConstantScenario(p) => Parameter::ConstantScenario(p.try_into_v2(parent_node, conversion_data)?).into(),
                 CoreParameter::ControlCurvePiecewiseInterpolated(p) => {
                     Parameter::ControlCurvePiecewiseInterpolated(p.try_into_v2(parent_node, conversion_data)?).into()
                 }

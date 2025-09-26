@@ -1,0 +1,56 @@
+{
+    "metadata": {
+        "title": "Simple 1",
+        "description": "A very simple example.",
+        "minimum_version": "0.1"
+    },
+    "timestepper": {
+        "start": "2015-01-01",
+        "end": "2015-12-31",
+        "timestep": 1
+    },
+    "scenarios": [
+        {
+            "name": "scenario A",
+            "size": 10
+        },
+        {
+            "name": "scenario B",
+            "size": 2,
+            "ensemble_names": ["First", "Second"]
+        }
+    ],
+    "nodes": [
+        {
+            "name": "supply1",
+            "type": "Input",
+            "max_flow": "flow_scenarios"
+        },
+        {
+            "name": "link1",
+            "type": "Link"
+        },
+        {
+            "name": "demand1",
+            "type": "Output",
+            "max_flow": "demand_scenarios",
+            "cost": -10
+        }
+    ],
+    "edges": [
+        ["supply1", "link1"],
+        ["link1", "demand1"]
+    ],
+    "parameters": {
+        "demand_scenarios": {
+            "type": "constantscenario",
+            "scenario": "scenario B",
+            "values": [10, 15]
+        },
+        "flow_scenarios": {
+            "type": "constantscenario",
+            "scenario": "scenario A",
+            "values": [10, 11, 12, 13, 14, 15, 16, 17, 18 , 19]
+        }
+    }
+}

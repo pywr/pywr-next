@@ -4,13 +4,13 @@ use crate::error::SchemaError;
 use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::network::LoadArgs;
-use crate::parameters::{ConstantValue, ConversionData, ParameterMeta};
-use crate::v1::{IntoV2, TryFromV1, try_convert_parameter_attr};
+use crate::parameters::{ConstantFloatVec, ConstantValue, ConversionData, ParameterMeta};
+use crate::v1::{try_convert_parameter_attr, try_convert_values, IntoV2, TryFromV1};
 #[cfg(feature = "core")]
 use pywr_core::parameters::{ParameterIndex, ParameterName};
 use pywr_schema_macros::{PywrVisitAll, skip_serializing_none};
 use pywr_v1_schema::parameters::{
-    ConstantParameter as ConstantParameterV1, DivisionParameter as DivisionParameterV1, MaxParameter as MaxParameterV1,
+    ConstantParameter as ConstantParameterV1, ConstantScenarioParameter as ConstantScenarioParameterV1, DivisionParameter as DivisionParameterV1, MaxParameter as MaxParameterV1,
     MinParameter as MinParameterV1, NegativeMaxParameter as NegativeMaxParameterV1,
     NegativeMinParameter as NegativeMinParameterV1, NegativeParameter as NegativeParameterV1,
 };
@@ -208,6 +208,72 @@ impl TryFromV1<ConstantParameterV1> for ConstantParameter {
             meta,
             value,
             variable: None, // TODO convert variable settings
+        };
+        Ok(p)
+    }
+}
+
+
+/// A constant scenario parameter.
+///
+/// A parameter that provides a constant value for each scenario in a scenario group.
+#[skip_serializing_none]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
+#[serde(deny_unknown_fields)]
+pub struct ConstantScenarioParameter {
+
+    pub meta: ParameterMeta,
+    /// The values the parameter should return.
+    ///
+    /// The length of this array must match the number of scenarios in the scenario group.
+    pub values: ConstantFloatVec,
+    /// The name of the scenario group
+    pub scenario_group: String,
+}
+
+#[cfg(feature = "core")]
+impl ConstantScenarioParameter {
+    pub fn add_to_model(
+        &self,
+        network: &mut pywr_core::network::Network,
+        args: &LoadArgs,
+        parent: Option<&str>,
+    ) -> Result<ParameterIndex<f64>, SchemaError> {
+        let name = ParameterName::new(&self.meta.name, parent);
+        let scenario_group_index = args.domain.scenarios().group_index(&self.scenario_group)?;
+        let values = self.values.load(args.tables)?;
+
+        let scenario_group_size = args.domain.scenarios().group_size(&self.scenario_group)?;
+        if values.len() != scenario_group_size {
+            return Err(SchemaError::ScenarioValuesLengthMismatch {
+                name: name.to_string(),
+                values: values.len(),
+                scenarios: scenario_group_size,
+                group: self.scenario_group.clone(),
+            });
+        }
+
+        let p = pywr_core::parameters::ConstantScenarioParameter::new(name, values, scenario_group_index);
+        Ok(network.add_const_parameter(Box::new(p))?)
+    }
+}
+
+impl TryFromV1<ConstantScenarioParameterV1> for ConstantScenarioParameter {
+    type Error = ComponentConversionError;
+
+    fn try_from_v1(
+        v1: ConstantScenarioParameterV1,
+        parent_node: Option<&str>,
+        conversion_data: &mut ConversionData,
+    ) -> Result<Self, Self::Error> {
+        let meta: ParameterMeta = v1.meta.into_v2(parent_node, conversion_data);
+
+        let values = try_convert_values(&meta.name, v1.values, v1.external, v1.table)?;
+
+        let p = Self {
+            meta,
+            values,
+            scenario_group: v1.scenario,
         };
         Ok(p)
     }
