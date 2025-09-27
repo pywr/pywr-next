@@ -47,6 +47,21 @@ impl PythonAggFunc {
     }
 }
 
+#[derive(Deserialize, Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
+#[serde(deny_unknown_fields)]
+pub struct AnyNonZero {
+    tolerance: Option<f64>,
+}
+
+#[cfg(feature = "core")]
+impl AnyNonZero {
+    fn load(&self) -> Result<pywr_core::agg_funcs::AggFuncF64, SchemaError> {
+        let tolerance = self.tolerance.unwrap_or(1e-6);
+
+        Ok(pywr_core::agg_funcs::AggFuncF64::AnyNonZero { tolerance })
+    }
+}
+
 // TODO complete these
 /// Aggregation functions for float values.
 ///
@@ -64,6 +79,7 @@ pub enum AggFunc {
     Product,
     Mean,
     CountNonZero,
+    AnyNonZero(AnyNonZero),
     Python(PythonAggFunc),
 }
 
@@ -78,6 +94,7 @@ impl AggFunc {
             Self::Product => Ok(pywr_core::agg_funcs::AggFuncF64::Product),
             Self::Mean => Ok(pywr_core::agg_funcs::AggFuncF64::Mean),
             Self::CountNonZero => Ok(pywr_core::agg_funcs::AggFuncF64::CountNonZero),
+            Self::AnyNonZero(agg_func) => Ok(agg_func.load()?),
             #[cfg(feature = "pyo3")]
             Self::Python(py_func) => Ok(pywr_core::agg_funcs::AggFuncF64::Python(py_func.load(data_path)?)),
             #[cfg(not(feature = "pyo3"))]
