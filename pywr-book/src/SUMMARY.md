@@ -27,4 +27,4 @@
     - [Parameter traits and return types](./developers-guide/parameter-traits.md)
     - [Adding a new parameter](./developers-guide/adding-a-parameter.md)
     - [Documentation](./building_documentation.md)
-- [Python API](./api/index.html)
+- [Python API](./api/index.md)
