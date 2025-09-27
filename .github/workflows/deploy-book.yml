@@ -33,9 +33,10 @@ jobs:
               exit 1
           fi
       # Python API docs
-      - uses: actions/setup-python@v5
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
         with:
-          python-version: '3.13'
+          enable-cache: true
       # Puts the Python API in the `pywr-book/book/api` directory
       - run: uv run --group docs pdoc pywr-python/pywr -o ./pywr-book/book/api
       - name: Setup Pages
