@@ -17,7 +17,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
-          fetch-depth: 0
+          submodules: true
       - uses: swatinem/rust-cache@v2
       - name: Install latest mdbook
         run: |
