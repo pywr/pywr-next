@@ -41,7 +41,7 @@ debug = "line-tables-only"
 [workspace.package]
 readme = "README.md"
 description = "A generalised water resource allocation model."
-version = "2.0.0-dev"
+version = "2.0.0-beta"
 edition = "2024"
 rust-version = "1.85"
 authors = ["James Tomlinson <tomo.bbe@gmail.com>"]
