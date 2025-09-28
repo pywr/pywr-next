@@ -17,6 +17,7 @@ from .pywr import (
     ConversionError,
     convert_model_from_v1_json_string,
     convert_metric_from_v1_json_string,
+    export_schema,
 )
 
 __all__ = [
@@ -36,6 +37,7 @@ __all__ = [
     "convert_model_from_v1_json_string",
     "convert_metric_from_v1_json_string",
     "run_from_path",
+    "export_schema",
 ]
 
 
