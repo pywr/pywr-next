@@ -3169,6 +3169,7 @@ dependencies = [
  "pywr-core",
  "pywr-schema",
  "pywr-v1-schema",
+ "schemars",
  "serde",
  "serde_json",
 ]
