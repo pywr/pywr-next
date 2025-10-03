@@ -1,0 +1,10 @@
+{
+  "meta": {
+    "name": "supply1"
+  },
+  "type": "Input",
+  "max_flow": {
+    "type": "Literal",
+    "value": 15.0
+  }
+}

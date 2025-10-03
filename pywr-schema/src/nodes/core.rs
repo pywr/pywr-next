@@ -47,6 +47,12 @@ node_component_subset_enum! {
 /// The enums [`InputNodeAttribute`] and [`InputNodeComponent`] define the available
 /// attributes and components for this node.
 ///
+/// # Examples
+///
+/// ```json
+#[doc = include_str!("doc_examples/input.json")]
+/// ```
+///
 #[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]

@@ -169,3 +169,39 @@ impl VisitPaths for VirtualNode {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::VirtualNode;
+    use std::fs;
+    use std::path::PathBuf;
+
+    /// Test all the documentation examples successfully deserialize.
+    #[test]
+    fn test_doc_examples() {
+        let mut doc_examples = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        doc_examples.push("src/nodes/virtual_nodes/doc_examples");
+
+        for entry in fs::read_dir(doc_examples).unwrap() {
+            let p = entry.unwrap().path();
+            if p.is_file() {
+                let data = fs::read_to_string(&p).unwrap_or_else(|_| panic!("Failed to read file: {p:?}",));
+
+                let value: serde_json::Value =
+                    serde_json::from_str(&data).unwrap_or_else(|_| panic!("Failed to deserialize: {p:?}",));
+
+                match value {
+                    serde_json::Value::Object(_) => {
+                        let _ = serde_json::from_value::<VirtualNode>(value)
+                            .unwrap_or_else(|e| panic!("Failed to deserialize `{p:?}`: {e}",));
+                    }
+                    serde_json::Value::Array(_) => {
+                        let _ = serde_json::from_value::<Vec<VirtualNode>>(value)
+                            .unwrap_or_else(|e| panic!("Failed to deserialize `{p:?}`: {e}",));
+                    }
+                    _ => panic!("Expected JSON object or array: {p:?}",),
+                }
+            }
+        }
+    }
+}

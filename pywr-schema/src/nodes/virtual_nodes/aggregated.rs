@@ -77,8 +77,27 @@ node_attribute_subset_enum! {
 /// which component of the node to use. If not specified, the default component is used.
 ///
 /// # Available attributes and components
+///
 /// The enum [`AggregatedNodeAttribute`] defines the available attributes. There are no components
 /// to choose from.
+///
+/// # Examples
+///
+/// An example using a relationship with ratio factors:
+/// ```json
+#[doc = include_str!("doc_examples/aggregated_rel_ratio.json")]
+/// ```
+///
+/// An example using a relationship with proportion factors:
+/// ```json
+#[doc = include_str!("doc_examples/aggregated_rel_proportional.json")]
+/// ```
+///
+/// An example using a relationship with coefficient factors:
+/// ```json
+#[doc = include_str!("doc_examples/aggregated_rel_coef.json")]
+/// ```
+///
 #[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
