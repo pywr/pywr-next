@@ -1,4 +1,4 @@
-use pywr_schema::PywrModel;
+use pywr_schema::ModelSchema;
 #[cfg(feature = "core")]
 use pywr_schema::PywrModelBuildError;
 use std::fs;
@@ -40,13 +40,13 @@ invalid_tests! {
     agg_storage_with_flow_node: "agg-storage-with-flow-node.json", NetworkBuildError,
 }
 
-fn deserialise_test_model(model_path: &Path) -> PywrModel {
+fn deserialise_test_model(model_path: &Path) -> ModelSchema {
     let data = fs::read_to_string(model_path).expect("Unable to read file");
     serde_json::from_str(&data).expect("Failed to deserialize model")
 }
 
 #[cfg(feature = "core")]
-fn build_test_model(schema: &PywrModel) -> PywrModelBuildError {
+fn build_test_model(schema: &ModelSchema) -> PywrModelBuildError {
     let temp_dir = TempDir::new().unwrap();
     let data_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("invalid");
     match schema.build_model(Some(&data_dir), Some(temp_dir.path())) {

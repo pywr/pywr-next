@@ -12,7 +12,7 @@ use pywr_core::scenario::ScenarioIndex;
 use pywr_core::timestep::Timestep;
 use pywr_schema::metric::Metric;
 use pywr_schema::{
-    ComponentConversionError, ConversionData, ConversionError, PywrModel, PywrMultiNetworkModel, TryIntoV2,
+    ComponentConversionError, ConversionData, ConversionError, ModelSchema, MultiNetworkModelSchema, TryIntoV2,
 };
 use schemars::schema_for;
 use std::fmt;
@@ -58,7 +58,7 @@ impl fmt::Display for PyPywrError {
 #[pyfunction]
 fn convert_model_from_v1_json_string(py: Python, data: &str) -> PyResult<Py<PyTuple>> {
     // Try to convert
-    let (schema, errors) = PywrModel::from_v1_str(data).map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+    let (schema, errors) = ModelSchema::from_v1_str(data).map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
 
     let py_errors = errors
         .into_iter()
@@ -84,7 +84,7 @@ fn convert_metric_from_v1_json_string(_py: Python, data: &str) -> PyResult<Metri
 /// Export the Pywr schema to a JSON file at the given path.
 #[pyfunction]
 fn export_schema(_py: Python, out_path: PathBuf) -> PyResult<()> {
-    let schema = schema_for!(PywrModel);
+    let schema = schema_for!(ModelSchema);
 
     let contents = serde_json::to_string_pretty(&schema)
         .map_err(|e| PyRuntimeError::new_err(format!("Failed serialise Pywr schema: {}", e)))?;
@@ -103,8 +103,8 @@ fn pywr(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(convert_model_from_v1_json_string, m)?)?;
     m.add_function(wrap_pyfunction!(convert_metric_from_v1_json_string, m)?)?;
     m.add_function(wrap_pyfunction!(export_schema, m)?)?;
-    m.add_class::<PywrModel>()?;
-    m.add_class::<PywrMultiNetworkModel>()?;
+    m.add_class::<ModelSchema>()?;
+    m.add_class::<MultiNetworkModelSchema>()?;
     m.add_class::<Model>()?;
     m.add_class::<ModelResult>()?;
     m.add_class::<MultiNetworkModel>()?;

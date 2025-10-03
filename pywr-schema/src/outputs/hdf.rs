@@ -51,7 +51,7 @@ impl Hdf5Output {
 
 #[cfg(test)]
 mod tests {
-    use crate::PywrModel;
+    use crate::ModelSchema;
     use crate::visit::VisitPaths;
     #[cfg(feature = "core")]
     use pywr_core::solvers::{ClpSolver, ClpSolverSettings};
@@ -68,7 +68,7 @@ mod tests {
     #[test]
     fn test_schema() {
         let data = model_str();
-        let schema = PywrModel::from_str(&data).unwrap();
+        let schema = ModelSchema::from_str(&data).unwrap();
 
         assert_eq!(schema.network.nodes.len(), 3);
         assert_eq!(schema.network.edges.len(), 2);
@@ -88,7 +88,7 @@ mod tests {
     #[cfg(feature = "core")]
     fn test_run() {
         let data = model_str();
-        let schema = PywrModel::from_str(&data).unwrap();
+        let schema = ModelSchema::from_str(&data).unwrap();
 
         let temp_dir = TempDir::new().unwrap();
 

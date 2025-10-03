@@ -23,7 +23,7 @@ mod visit;
 
 pub use digest::{Checksum, ChecksumError};
 pub use error::{ComponentConversionError, ConversionError, SchemaError};
-pub use model::{PywrModel, PywrModelReadError, PywrMultiNetworkModel};
+pub use model::{ModelSchema, MultiNetworkModelSchema, PywrModelReadError};
 #[cfg(feature = "core")]
 pub use model::{PywrModelBuildError, PywrMultiNetworkModelBuildError};
 #[cfg(feature = "core")]

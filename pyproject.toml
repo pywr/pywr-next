@@ -25,6 +25,7 @@ dev = [
     "ruff>=0.12.3",
 ]
 docs = [
+    "json-schema-for-humans>=1.4.1",
     "pdoc",
 ]
 
