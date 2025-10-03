@@ -4,16 +4,14 @@ use strum_macros::{Display, EnumIter};
 
 /// All possible components that might be present in a node.
 ///
-///
+/// These will generally be flows associated with a node. It's not possible to use
+/// other values, such as volume, because these are not represented in the linear programs.
 #[derive(
     serde::Deserialize, serde::Serialize, Debug, Clone, Copy, Display, JsonSchema, PywrVisitAll, PartialEq, EnumIter,
 )]
 pub enum NodeComponent {
     Inflow,
     Outflow,
-    Volume,
-    MaxVolume,
-    ProportionalVolume,
     Loss,
     /// The compensation flow.
     Compensation,
@@ -34,8 +32,7 @@ pub enum NodeComponent {
 /// node_component_subset_enum! {
 ///     pub enum MySubset {
 ///         Inflow,
-///         Outflow,
-///         Volume,
+///         Outflow
 ///     }
 /// }
 /// ```
