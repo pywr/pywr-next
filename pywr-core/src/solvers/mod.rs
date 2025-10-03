@@ -40,6 +40,8 @@ pub use self::ipm_simd::build_ipm_simd_settings_py;
 pub use self::ipm_simd::{SimdIpmF64Solver, SimdIpmSolverSettings, SimdIpmSolverSettingsBuilder};
 use crate::aggregated_node::AggregatedNodeIndex;
 use crate::node::NodeIndex;
+#[cfg(all(feature = "cbc", feature = "pyo3"))]
+pub use cbc::build_cbc_settings_py;
 #[cfg(feature = "cbc")]
 pub use cbc::{CbcError, CbcSolver, CbcSolverSettings, CbcSolverSettingsBuilder};
 #[cfg(all(feature = "clp", feature = "pyo3"))]
