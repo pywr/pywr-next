@@ -91,10 +91,16 @@ impl MonthlyProfileParameter {
         args: &LoadArgs,
         parent: Option<&str>,
     ) -> Result<ParameterIndex<f64>, SchemaError> {
-        let values = &self.values.load(args.tables)?[..12];
+        let values = self.values.load(args.tables)?;
+
+        let values: [f64; 12] = values.try_into().map_err(|v: Vec<_>| SchemaError::DataLengthMismatch {
+            expected: 12,
+            found: v.len(),
+        })?;
+
         let p = pywr_core::parameters::MonthlyProfileParameter::new(
             ParameterName::new(&self.meta.name, parent),
-            values.try_into().expect(""),
+            values,
             self.interp_day.map(|id| id.into()),
         );
         Ok(network.add_simple_parameter(Box::new(p))?)
@@ -578,5 +584,44 @@ impl TryFromV1<WeeklyProfileParameterV1> for WeeklyProfileParameter {
             interp_day: None,
         };
         Ok(p)
+    }
+}
+
+/// A parameter that defines a profile over a 24-hour period.
+///
+/// The values array should contain 24 values, one for each hour of the day.
+///
+/// # JSON Example
+///
+/// ```json
+#[doc = include_str!("doc_examples/dirunal_1.json")]
+/// ```
+
+#[skip_serializing_none]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
+#[serde(deny_unknown_fields)]
+pub struct DirunalProfileParameter {
+    pub meta: ParameterMeta,
+    pub values: ConstantFloatVec,
+}
+
+#[cfg(feature = "core")]
+impl DirunalProfileParameter {
+    pub fn add_to_model(
+        &self,
+        network: &mut pywr_core::network::Network,
+        args: &LoadArgs,
+        parent: Option<&str>,
+    ) -> Result<ParameterIndex<f64>, SchemaError> {
+        let values = self.values.load(args.tables)?;
+
+        let values: [f64; 24] = values.try_into().map_err(|v: Vec<_>| SchemaError::DataLengthMismatch {
+            expected: 24,
+            found: v.len(),
+        })?;
+
+        let p =
+            pywr_core::parameters::DiurnalProfileParameter::new(ParameterName::new(&self.meta.name, parent), values);
+        Ok(network.add_simple_parameter(Box::new(p))?)
     }
 }

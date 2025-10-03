@@ -45,8 +45,8 @@ pub use control_curves::{
     ControlCurvePiecewiseInterpolatedParameter,
 };
 pub use core::{
-    ActivationFunction, ConstantParameter, ConstantScenarioParameter, DivisionParameter, MaxParameter, MinParameter, NegativeMaxParameter,
-    NegativeMinParameter, NegativeParameter, VariableSettings,
+    ActivationFunction, ConstantParameter, ConstantScenarioParameter, DivisionParameter, MaxParameter, MinParameter,
+    NegativeMaxParameter, NegativeMinParameter, NegativeParameter, VariableSettings,
 };
 pub use delay::{DelayIndexParameter, DelayParameter};
 pub use discount_factor::DiscountFactorParameter;
@@ -57,8 +57,8 @@ pub use offset::OffsetParameter;
 pub use placeholder::PlaceholderParameter;
 pub use polynomial::Polynomial1DParameter;
 pub use profiles::{
-    DailyProfileParameter, MonthlyInterpDay, MonthlyProfileParameter, RadialBasisFunction, RbfProfileParameter,
-    RbfProfileVariableSettings, UniformDrawdownProfileParameter, WeeklyProfileParameter,
+    DailyProfileParameter, DirunalProfileParameter, MonthlyInterpDay, MonthlyProfileParameter, RadialBasisFunction,
+    RbfProfileParameter, RbfProfileVariableSettings, UniformDrawdownProfileParameter, WeeklyProfileParameter,
 };
 pub use python::{PythonObject, PythonParameter, PythonReturnType};
 use pywr_schema_macros::{PywrVisitAll, skip_serializing_none};
@@ -122,6 +122,7 @@ pub enum Parameter {
     Rolling(RollingParameter),
     RollingIndex(RollingIndexParameter),
     Placeholder(PlaceholderParameter),
+    DiurnalProfile(DirunalProfileParameter),
 }
 
 impl Parameter {
@@ -162,6 +163,7 @@ impl Parameter {
             Self::Rolling(p) => p.meta.name.as_str(),
             Self::RollingIndex(p) => p.meta.name.as_str(),
             Self::Placeholder(p) => p.meta.name.as_str(),
+            Self::DiurnalProfile(p) => p.meta.name.as_str(),
         }
     }
 
@@ -263,6 +265,9 @@ impl Parameter {
             }
             Self::Placeholder(p) => pywr_core::parameters::ParameterType::Parameter(p.add_to_model()?),
             Self::MultiThreshold(p) => p.add_to_model(network, args, parent)?,
+            Self::DiurnalProfile(p) => {
+                pywr_core::parameters::ParameterType::Parameter(p.add_to_model(network, args, parent)?)
+            }
         };
 
         Ok(ty)
@@ -307,6 +312,7 @@ impl VisitMetrics for Parameter {
             Self::Rolling(p) => p.visit_metrics(visitor),
             Self::RollingIndex(p) => p.visit_metrics(visitor),
             Self::Placeholder(p) => p.visit_metrics(visitor),
+            Self::DiurnalProfile(p) => p.visit_metrics(visitor),
         }
     }
 
@@ -347,6 +353,7 @@ impl VisitMetrics for Parameter {
             Self::Rolling(p) => p.visit_metrics_mut(visitor),
             Self::RollingIndex(p) => p.visit_metrics_mut(visitor),
             Self::Placeholder(p) => p.visit_metrics_mut(visitor),
+            Self::DiurnalProfile(p) => p.visit_metrics_mut(visitor),
         }
     }
 }
@@ -389,6 +396,7 @@ impl VisitPaths for Parameter {
             Self::Rolling(p) => p.visit_paths(visitor),
             Self::RollingIndex(p) => p.visit_paths(visitor),
             Self::Placeholder(p) => p.visit_paths(visitor),
+            Self::DiurnalProfile(p) => p.visit_paths(visitor),
         }
     }
 
@@ -429,6 +437,7 @@ impl VisitPaths for Parameter {
             Self::Rolling(p) => p.visit_paths_mut(visitor),
             Self::RollingIndex(p) => p.visit_paths_mut(visitor),
             Self::Placeholder(p) => p.visit_paths_mut(visitor),
+            Self::DiurnalProfile(p) => p.visit_paths_mut(visitor),
         }
     }
 }
@@ -472,7 +481,9 @@ impl TryFromV1<ParameterV1> for ParameterOrTimeseriesRef {
                     Parameter::AsymmetricSwitchIndex(p.try_into_v2(parent_node, conversion_data)?).into()
                 }
                 CoreParameter::Constant(p) => Parameter::Constant(p.try_into_v2(parent_node, conversion_data)?).into(),
-                CoreParameter::ConstantScenario(p) => Parameter::ConstantScenario(p.try_into_v2(parent_node, conversion_data)?).into(),
+                CoreParameter::ConstantScenario(p) => {
+                    Parameter::ConstantScenario(p.try_into_v2(parent_node, conversion_data)?).into()
+                }
                 CoreParameter::ControlCurvePiecewiseInterpolated(p) => {
                     Parameter::ControlCurvePiecewiseInterpolated(p.try_into_v2(parent_node, conversion_data)?).into()
                 }
@@ -859,11 +870,11 @@ mod tests {
                 match value {
                     serde_json::Value::Object(_) => {
                         let _ = serde_json::from_value::<Parameter>(value)
-                            .unwrap_or_else(|_| panic!("Failed to deserialize: {p:?}",));
+                            .unwrap_or_else(|e| panic!("Failed to deserialize `{p:?}`: {e}",));
                     }
                     serde_json::Value::Array(_) => {
                         let _ = serde_json::from_value::<Vec<Parameter>>(value)
-                            .unwrap_or_else(|_| panic!("Failed to deserialize: {p:?}",));
+                            .unwrap_or_else(|e| panic!("Failed to deserialize: `{p:?}`: {e}",));
                     }
                     _ => panic!("Expected JSON object or array: {p:?}",),
                 }

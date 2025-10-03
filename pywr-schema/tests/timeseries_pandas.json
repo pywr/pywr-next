@@ -5,7 +5,10 @@
   "timestepper": {
     "start": "2021-01-01",
     "end": "2021-12-31",
-    "timestep": 1
+    "timestep": {
+      "type": "Days",
+      "days": 1
+    }
   },
   "network": {
     "nodes": [
@@ -108,8 +111,8 @@
         "time_col": "date",
         "url": "inflow.csv",
         "kwargs": {
-            "dayfirst": true
-          }
+          "dayfirst": true
+        }
       }
     ]
   }

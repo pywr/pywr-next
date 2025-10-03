@@ -12,10 +12,10 @@
   },
   "timestepper": {
     "start": "2021-01-01",
-    "end": "2021-01-10",
+    "end": "2021-01-02",
     "timestep": {
-      "type": "Days",
-      "days": 1
+      "type": "Hours",
+      "hours": 3
     }
   },
   "network": {
@@ -140,7 +140,7 @@
         "name": "nodes",
         "type": "CSV",
         "format": "Long",
-        "filename": "timeseries2-expected.csv",
+        "filename": "timeseries2-hourly-expected.csv",
         "metric_set": "nodes"
       }
     ]

@@ -221,7 +221,7 @@ mod tests {
                 .and_hms_opt(0, 0, 0)
                 .unwrap();
 
-            let timestep = Timestep::new(date, 0, PywrDuration::days(1));
+            let timestep = Timestep::new(date, 0, PywrDuration::from_days(1));
 
             let value = week_size.value(&timestep, &interp_day);
             data.push(value);
@@ -475,7 +475,7 @@ mod tests {
             .unwrap()
             .and_hms_opt(0, 0, 0)
             .unwrap();
-        let t0 = Timestep::new(t0, 0, PywrDuration::days(1));
+        let t0 = Timestep::new(t0, 0, PywrDuration::from_days(1));
         assert_eq!(week_size.interpolate(&t0, 0.0, 1.0), 0.0);
 
         let t0 = NaiveDate::from_ymd_opt(2016, 1, 7)
@@ -486,7 +486,7 @@ mod tests {
             epsilon: 2.0,
             ulps: (f64::EPSILON * 2.0) as i64,
         };
-        let t0 = Timestep::new(t0, 0, PywrDuration::days(1));
+        let t0 = Timestep::new(t0, 0, PywrDuration::from_days(1));
         assert_approx_eq!(f64, week_size.interpolate(&t0, 0.0, 1.0), 1.928571429, margins);
     }
 }

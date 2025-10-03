@@ -68,9 +68,9 @@ pub use negativemin::NegativeMinParameter;
 pub use offset::OffsetParameter;
 pub use polynomial::Polynomial1DParameter;
 pub use profiles::{
-    DailyProfileParameter, MonthlyInterpDay, MonthlyProfileParameter, RadialBasisFunction, RbfProfileParameter,
-    RbfProfileVariableConfig, UniformDrawdownProfileParameter, WeeklyInterpDay, WeeklyProfileError,
-    WeeklyProfileParameter, WeeklyProfileValues,
+    DailyProfileParameter, DiurnalProfileParameter, MonthlyInterpDay, MonthlyProfileParameter, RadialBasisFunction,
+    RbfProfileParameter, RbfProfileVariableConfig, UniformDrawdownProfileParameter, WeeklyInterpDay,
+    WeeklyProfileError, WeeklyProfileParameter, WeeklyProfileValues,
 };
 #[cfg(feature = "pyo3")]
 pub use py::{ParameterInfo, PyClassParameter, PyFuncParameter};
