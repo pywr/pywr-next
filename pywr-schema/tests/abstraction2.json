@@ -6,7 +6,10 @@
   "timestepper": {
     "start": "2021-01-01",
     "end": "2021-01-07",
-    "timestep": 1
+    "timestep": {
+      "type": "Days",
+      "days": 1
+    }
   },
   "network": {
     "nodes": [

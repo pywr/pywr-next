@@ -153,6 +153,9 @@
   "timestepper": {
     "end": "2015-12-31",
     "start": "2015-01-01",
-    "timestep": 1
+    "timestep": {
+      "type": "Days",
+      "days": 1
+    }
   }
 }

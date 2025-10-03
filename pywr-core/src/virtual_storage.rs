@@ -396,7 +396,7 @@ mod tests {
     };
     use chrono::{Datelike, Month, NaiveDate};
     use ndarray::Array;
-    use std::num::NonZeroUsize;
+    use std::num::{NonZeroU64, NonZeroUsize};
 
     /// Test the calculation of number of months since last reset
     #[test]
@@ -557,7 +557,7 @@ mod tests {
             .unwrap()
             .and_hms_opt(0, 0, 0)
             .unwrap();
-        let duration = TimestepDuration::Days(1);
+        let duration = TimestepDuration::Days(NonZeroU64::new(1).unwrap());
 
         let mut model = simple_model(1, Some(Timestepper::new(start, end, duration)));
         let network = model.network_mut();

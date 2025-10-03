@@ -5,6 +5,7 @@ use polars::prelude::PolarsError;
 use polars::time::ClosedWindow;
 #[cfg(feature = "pyo3")]
 use pyo3::{Bound, IntoPyObject, PyResult, Python, pyclass, pymethods, types::PyDateTime};
+use std::num::NonZeroU64;
 use std::ops::Add;
 use thiserror::Error;
 
@@ -51,8 +52,12 @@ impl Add<NaiveDateTime> for PywrDuration {
 
 impl PywrDuration {
     /// Create a new `PywrDuration` from a number of days.
-    pub fn days(days: i64) -> Self {
+    pub fn from_days(days: i64) -> Self {
         Self(TimeDelta::days(days))
+    }
+
+    pub fn from_hours(hours: i64) -> Self {
+        Self(TimeDelta::hours(hours))
     }
 
     /// Returns the number of whole days in the duration, if the total duration is a whole number of days.
@@ -260,7 +265,8 @@ impl Add<PywrDuration> for Timestep {
 
 #[derive(Debug)]
 pub enum TimestepDuration {
-    Days(i64),
+    Hours(NonZeroU64),
+    Days(NonZeroU64),
     Frequency(String),
 }
 
@@ -292,15 +298,19 @@ impl Timestepper {
     /// Create a vector of `Timestep`s between the start and end dates at the given duration.
     fn timesteps(&self) -> Result<Vec<Timestep>, TimestepError> {
         match &self.timestep {
-            TimestepDuration::Days(days) => Ok(self.generate_timesteps_from_days(*days)),
+            TimestepDuration::Hours(hours) => {
+                Ok(self.generate_timesteps_from_fixed_duration(PywrDuration::from_hours(hours.get() as i64)))
+            }
+            TimestepDuration::Days(days) => {
+                Ok(self.generate_timesteps_from_fixed_duration(PywrDuration::from_days(days.get() as i64)))
+            }
             TimestepDuration::Frequency(frequency) => self.generate_timesteps_from_frequency(frequency.as_str()),
         }
     }
 
-    /// Creates a vector of `Timestep`s between the start and end dates at the given duration of days.
-    fn generate_timesteps_from_days(&self, days: i64) -> Vec<Timestep> {
+    /// Creates a vector of `Timestep`s between the start and end dates at the given duration.
+    fn generate_timesteps_from_fixed_duration(&self, duration: PywrDuration) -> Vec<Timestep> {
         let mut timesteps: Vec<Timestep> = Vec::new();
-        let duration = PywrDuration::days(days);
         let mut current = Timestep::new(self.start, 0, duration);
 
         while current.date <= self.end {
@@ -412,6 +422,7 @@ impl TryFrom<Timestepper> for TimeDomain {
 #[cfg(test)]
 mod test {
     use chrono::{NaiveDateTime, TimeDelta};
+    use std::num::NonZeroU64;
 
     use crate::timestep::{PywrDuration, SECS_IN_DAY, is_leap_year};
 
@@ -421,7 +432,7 @@ mod test {
     fn test_days() {
         let start = NaiveDateTime::parse_from_str("2021-01-01 00:00:00", "%Y-%m-%d %H:%M:%S").unwrap();
         let end = NaiveDateTime::parse_from_str("2021-01-10 00:00:00", "%Y-%m-%d %H:%M:%S").unwrap();
-        let timestep = TimestepDuration::Days(1);
+        let timestep = TimestepDuration::Days(NonZeroU64::new(1).unwrap());
 
         let timestepper = Timestepper::new(start, end, timestep);
         let timesteps = timestepper.timesteps().unwrap();
@@ -482,7 +493,7 @@ mod test {
 
     #[test]
     fn test_pywr_duration() {
-        let duration = PywrDuration::days(5);
+        let duration = PywrDuration::from_days(5);
         assert_eq!(duration.whole_days(), Some(5));
         assert_eq!(duration.fractional_days(), 5.0);
         assert_eq!(duration.duration_string(), String::from("5d"));
