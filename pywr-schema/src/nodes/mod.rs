@@ -783,6 +783,8 @@ mod tests {
     use crate::nodes::{Node, NodeOrVirtualNode};
     use crate::v1::{ConversionData, TryIntoV2};
     use pywr_v1_schema::nodes::Node as NodeV1;
+    use std::fs;
+    use std::path::PathBuf;
 
     #[test]
     fn test_ts_inline() {
@@ -897,5 +899,33 @@ mod tests {
         assert_eq!(conversion_data.timeseries.len(), 2);
         assert_eq!(conversion_data.timeseries[0].name(), expected_name1);
         assert_eq!(conversion_data.timeseries[1].name(), expected_name2);
+    }
+
+    #[test]
+    fn test_doc_examples() {
+        let mut doc_examples = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        doc_examples.push("src/nodes/doc_examples");
+
+        for entry in fs::read_dir(doc_examples).unwrap() {
+            let p = entry.unwrap().path();
+            if p.is_file() {
+                let data = fs::read_to_string(&p).unwrap_or_else(|_| panic!("Failed to read file: {p:?}",));
+
+                let value: serde_json::Value =
+                    serde_json::from_str(&data).unwrap_or_else(|_| panic!("Failed to deserialize: {p:?}",));
+
+                match value {
+                    serde_json::Value::Object(_) => {
+                        let _ = serde_json::from_value::<Node>(value)
+                            .unwrap_or_else(|_| panic!("Failed to deserialize: {p:?}",));
+                    }
+                    serde_json::Value::Array(_) => {
+                        let _ = serde_json::from_value::<Vec<Node>>(value)
+                            .unwrap_or_else(|_| panic!("Failed to deserialize: {p:?}",));
+                    }
+                    _ => panic!("Expected JSON object or array: {p:?}",),
+                }
+            }
+        }
     }
 }

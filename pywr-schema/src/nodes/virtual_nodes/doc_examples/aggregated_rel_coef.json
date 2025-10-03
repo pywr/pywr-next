@@ -1,0 +1,31 @@
+{
+  "meta": {
+    "name": "my-agg-node"
+  },
+  "type": "Aggregated",
+  "nodes": [
+    {
+      "name": "supply1"
+    },
+    {
+      "name": "supply2"
+    }
+  ],
+  "relationship": {
+    "type": "Coefficients",
+    "factors": [
+      {
+        "type": "Literal",
+        "value": 2.0
+      },
+      {
+        "type": "Literal",
+        "value": 3.0
+      }
+    ],
+    "rhs": {
+      "type": "Literal",
+      "value": 100.0
+    }
+  }
+}
