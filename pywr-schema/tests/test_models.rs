@@ -1,6 +1,6 @@
 #[cfg(feature = "core")]
 use pywr_core::test_utils::{ExpectedOutputsLong, ExpectedOutputsWide, VerifyExpected, run_all_solvers};
-use pywr_schema::{ComponentConversionError, PywrModel};
+use pywr_schema::{ComponentConversionError, ModelSchema};
 use std::fs;
 use std::path::Path;
 #[cfg(feature = "core")]
@@ -120,14 +120,14 @@ fn test_timeseries_pandas() {
     run_test_model(&_schema, &_expected_paths, &[], &[]);
 }
 
-fn deserialise_test_model(model_path: &Path) -> PywrModel {
+fn deserialise_test_model(model_path: &Path) -> ModelSchema {
     let data = fs::read_to_string(model_path).expect("Unable to read file");
     serde_json::from_str(&data).expect("Failed to deserialize model")
 }
 
 #[cfg(feature = "core")]
 fn run_test_model(
-    schema: &PywrModel,
+    schema: &ModelSchema,
     result_paths: &[(PathBuf, ResultsShape)],
     solvers_without_features: &[&str],
     solvers_to_skip: &[&str],
@@ -181,7 +181,7 @@ fn convert_model(v1_path: &Path, v2_path: &Path) {
     let v1_str = fs::read_to_string(v1_path).unwrap();
     let v1: pywr_v1_schema::PywrModel = serde_json::from_str(&v1_str).unwrap();
 
-    let (v2, errors) = PywrModel::from_v1(v1);
+    let (v2, errors) = ModelSchema::from_v1(v1);
     println!("Conversion errors: {errors:?}",);
 
     // TODO Table conversion is not yet supported, so ignore those errors for now

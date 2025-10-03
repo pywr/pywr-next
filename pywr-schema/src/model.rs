@@ -360,7 +360,7 @@ impl TryInto<pywr_core::scenario::ScenarioDomainBuilder> for ScenarioDomain {
     }
 }
 
-/// Error type for reading a [`PywrModel`] or [`PywrMultiNetworkModel`] network from a file or string.
+/// Error type for reading a [`ModelSchema`] or [`MultiNetworkModelSchema`] network from a file or string.
 #[derive(Error, Debug)]
 pub enum PywrModelReadError {
     #[error("IO error on path `{path}`: {error}")]
@@ -436,15 +436,15 @@ impl From<PywrModelBuildError> for PyErr {
 ///
 #[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Clone, JsonSchema)]
-#[cfg_attr(feature = "pyo3", pyclass(name = "ModelSchema"))]
-pub struct PywrModel {
+#[cfg_attr(feature = "pyo3", pyclass)]
+pub struct ModelSchema {
     pub metadata: Metadata,
     pub timestepper: Timestepper,
     pub scenarios: Option<ScenarioDomain>,
     pub network: PywrNetwork,
 }
 
-impl FromStr for PywrModel {
+impl FromStr for ModelSchema {
     type Err = PywrModelReadError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -452,7 +452,7 @@ impl FromStr for PywrModel {
     }
 }
 
-impl VisitPaths for PywrModel {
+impl VisitPaths for ModelSchema {
     fn visit_paths<F: FnMut(&Path)>(&self, visitor: &mut F) {
         self.network.visit_paths(visitor);
     }
@@ -461,7 +461,7 @@ impl VisitPaths for PywrModel {
     }
 }
 
-impl VisitMetrics for PywrModel {
+impl VisitMetrics for ModelSchema {
     fn visit_metrics<F: FnMut(&Metric)>(&self, visitor: &mut F) {
         self.network.visit_metrics(visitor);
     }
@@ -471,7 +471,7 @@ impl VisitMetrics for PywrModel {
     }
 }
 
-impl PywrModel {
+impl ModelSchema {
     pub fn new(title: &str, start: &Date, end: &Date) -> Self {
         Self {
             metadata: Metadata {
@@ -561,7 +561,7 @@ impl PywrModel {
 
     /// Convert a v1 JSON string to a v2 model.
     ///
-    /// See [`PywrModel::from_v1`] for more information.
+    /// See [`ModelSchema::from_v1`] for more information.
     pub fn from_v1_str(v1: &str) -> Result<(Self, Vec<ComponentConversionError>), pywr_v1_schema::PywrSchemaError> {
         let v1_model: pywr_v1_schema::PywrModel = serde_json::from_str(v1)?;
 
@@ -571,7 +571,7 @@ impl PywrModel {
 
 #[cfg(feature = "pyo3")]
 #[pymethods]
-impl PywrModel {
+impl ModelSchema {
     #[new]
     fn new_py(title: &str, start: NaiveDateTime, end: NaiveDateTime) -> Self {
         let start = Date::DateTime(start);
@@ -712,7 +712,7 @@ impl From<PywrMultiNetworkModelBuildError> for PyErr {
 ///
 /// # When to use
 ///
-/// A [`PywrMultiNetworkModel`] should be used in cases where there is a strong separation between
+/// A [`MultiNetworkModelSchema`] should be used in cases where there is a strong separation between
 /// the networks being simulated. The allocation routine (linear program) of each network is solved
 /// independently each time-step. This means that the only way in which the networks can share
 /// information and data is between the linear program solves via the user defined transfers.
@@ -724,7 +724,7 @@ impl From<PywrMultiNetworkModelBuildError> for PyErr {
 ///     networks (linear programs) were combined into a single model, the allocation routine could
 ///     produce different results (i.e. penalty costs from one model influencing another).
 ///   2. Are very large and/or complex to control model run times. The run time of a
-///     [`PywrMultiNetworkModel`] is roughly the sum of the individual networks. Whereas the time
+///     [`MultiNetworkModelSchema`] is roughly the sum of the individual networks. Whereas the time
 ///     solve a large linear program combining all the networks could be significantly longer.
 ///
 /// # Example
@@ -745,15 +745,15 @@ impl From<PywrMultiNetworkModelBuildError> for PyErr {
 ///
 #[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Clone)]
-#[cfg_attr(feature = "pyo3", pyclass(name = "MultiNetworkModelSchema"))]
-pub struct PywrMultiNetworkModel {
+#[cfg_attr(feature = "pyo3", pyclass)]
+pub struct MultiNetworkModelSchema {
     pub metadata: Metadata,
     pub timestepper: Timestepper,
     pub scenarios: Option<ScenarioDomain>,
     pub networks: Vec<PywrMultiNetworkEntry>,
 }
 
-impl FromStr for PywrMultiNetworkModel {
+impl FromStr for MultiNetworkModelSchema {
     type Err = PywrModelReadError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -761,7 +761,7 @@ impl FromStr for PywrMultiNetworkModel {
     }
 }
 
-impl PywrMultiNetworkModel {
+impl MultiNetworkModelSchema {
     pub fn new(title: &str, start: &Date, end: &Date) -> Self {
         Self {
             metadata: Metadata {
@@ -912,7 +912,7 @@ impl PywrMultiNetworkModel {
 
 #[cfg(feature = "pyo3")]
 #[pymethods]
-impl PywrMultiNetworkModel {
+impl MultiNetworkModelSchema {
     #[new]
     fn new_py(title: &str, start: NaiveDateTime, end: NaiveDateTime) -> Self {
         let start = Date::DateTime(start);
@@ -957,7 +957,7 @@ impl PywrMultiNetworkModel {
 
 #[cfg(test)]
 mod tests {
-    use super::{PywrModel, ScenarioDomain};
+    use super::{ModelSchema, ScenarioDomain};
     use crate::model::Timestepper;
     use crate::visit::VisitPaths;
     use std::fs;
@@ -971,7 +971,7 @@ mod tests {
     #[test]
     fn test_simple1_schema() {
         let data = model_str();
-        let schema: PywrModel = serde_json::from_str(&data).unwrap();
+        let schema: ModelSchema = serde_json::from_str(&data).unwrap();
 
         assert_eq!(schema.network.nodes.len(), 3);
         assert_eq!(schema.network.edges.len(), 2);
@@ -1049,7 +1049,7 @@ mod tests {
         let mut model_fn = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         model_fn.push("tests/timeseries.json");
 
-        let mut schema = PywrModel::from_path(model_fn.as_path()).unwrap();
+        let mut schema = ModelSchema::from_path(model_fn.as_path()).unwrap();
 
         let expected_paths = vec![PathBuf::from("inflow.csv"), PathBuf::from("timeseries-expected.csv")];
 
@@ -1093,7 +1093,7 @@ mod tests {
 #[cfg(test)]
 #[cfg(feature = "core")]
 mod core_tests {
-    use super::{PywrModel, PywrMultiNetworkModel};
+    use super::{ModelSchema, MultiNetworkModelSchema};
     use crate::agg_funcs::AggFunc;
     use crate::metric::{Metric, ParameterReference};
     use crate::parameters::{AggregatedParameter, ConstantParameter, Parameter, ParameterMeta};
@@ -1111,7 +1111,7 @@ mod core_tests {
     #[test]
     fn test_simple1_run() {
         let data = model_str();
-        let schema: PywrModel = serde_json::from_str(&data).unwrap();
+        let schema: ModelSchema = serde_json::from_str(&data).unwrap();
         let mut model = schema.build_model(None, None).unwrap();
 
         let network = model.network_mut();
@@ -1140,7 +1140,7 @@ mod core_tests {
     #[test]
     fn test_cycle_error() {
         let data = model_str();
-        let mut schema: PywrModel = serde_json::from_str(&data).unwrap();
+        let mut schema: ModelSchema = serde_json::from_str(&data).unwrap();
 
         // Add additional parameters for the test
         if let Some(parameters) = &mut schema.network.parameters {
@@ -1198,7 +1198,7 @@ mod core_tests {
     #[test]
     fn test_ordering() {
         let data = model_str();
-        let mut schema: PywrModel = serde_json::from_str(&data).unwrap();
+        let mut schema: ModelSchema = serde_json::from_str(&data).unwrap();
 
         if let Some(parameters) = &mut schema.network.parameters {
             parameters.extend(vec![
@@ -1247,7 +1247,7 @@ mod core_tests {
         let mut model_fn = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         model_fn.push("tests/multi1/model.json");
 
-        let schema = PywrMultiNetworkModel::from_path(model_fn.as_path()).unwrap();
+        let schema = MultiNetworkModelSchema::from_path(model_fn.as_path()).unwrap();
         let mut model = schema.build_model(model_fn.parent(), None).unwrap();
 
         // Add some recorders for the expected outputs
@@ -1297,7 +1297,7 @@ mod core_tests {
         let mut model_fn = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         model_fn.push("tests/multi2/model.json");
 
-        let schema = PywrMultiNetworkModel::from_path(model_fn.as_path()).unwrap();
+        let schema = MultiNetworkModelSchema::from_path(model_fn.as_path()).unwrap();
         let mut model = schema.build_model(model_fn.parent(), None).unwrap();
 
         // Add some recorders for the expected outputs
