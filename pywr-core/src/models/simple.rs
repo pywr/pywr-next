@@ -4,6 +4,8 @@ use crate::network::{
     NetworkSetupError, NetworkSolverSetupError, NetworkState, NetworkStepError, NetworkTimings, RunDuration,
 };
 use crate::recorders::RecorderInternalState;
+#[cfg(all(feature = "cbc", feature = "pyo3"))]
+use crate::solvers::{CbcSolver, build_cbc_settings_py};
 #[cfg(all(feature = "ipm-ocl", feature = "pyo3"))]
 use crate::solvers::{ClIpmF32Solver, ClIpmF64Solver, ClIpmSolverSettings};
 #[cfg(all(feature = "clp", feature = "pyo3"))]
@@ -626,6 +628,11 @@ impl Model {
             "clp" => {
                 let settings = build_clp_settings_py(solver_kwargs)?;
                 self.run_allowing_threads_py::<ClpSolver>(py, &settings)
+            }
+            #[cfg(feature = "cbc")]
+            "cbc" => {
+                let settings = build_cbc_settings_py(solver_kwargs)?;
+                self.run_allowing_threads_py::<CbcSolver>(py, &settings)
             }
             #[cfg(feature = "highs")]
             "highs" => {
