@@ -70,7 +70,7 @@ pub enum SchemaError {
     HDF5Error(String),
     #[error("Missing metric set: {0}")]
     MissingMetricSet(String),
-    #[error("mismatch in the length of data provided. expected: {expected}, found: {found}")]
+    #[error("Mismatch in the length of data provided. expected: {expected}, found: {found}")]
     DataLengthMismatch { expected: usize, found: usize },
     #[error("Failed to estimate epsilon for use in the radial basis function.")]
     RbfEpsilonEstimation,
@@ -119,8 +119,15 @@ pub enum SchemaError {
     NodeConnectionSlotRequired { msg: String },
     #[error("Checksum error: {0}")]
     ChecksumError(#[from] ChecksumError),
-    #[error("Number of values ({values}) for parameter '{name}' does not match the size ({scenarios}) of the specified scenario group '{group}'.")]
-    ScenarioValuesLengthMismatch { values: usize, name: String, scenarios: usize, group: String }
+    #[error(
+        "Number of values ({values}) for parameter '{name}' does not match the size ({scenarios}) of the specified scenario group '{group}'."
+    )]
+    ScenarioValuesLengthMismatch {
+        values: usize,
+        name: String,
+        scenarios: usize,
+        group: String,
+    },
 }
 
 #[cfg(all(feature = "core", feature = "pyo3"))]

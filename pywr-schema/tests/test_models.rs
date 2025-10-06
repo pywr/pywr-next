@@ -56,6 +56,7 @@ model_tests! {
     test_timeseries3: ("timeseries3.json", vec![("timeseries3-expected.csv", ResultsShape::Long)], vec![], vec![]),
     test_timeseries4: ("timeseries4.json", vec![("timeseries4-expected.csv", ResultsShape::Long)], vec![], vec![]),
     test_timeseries5: ("timeseries5.json", vec![("timeseries5-expected.csv", ResultsShape::Long)], vec![], vec![]),
+    test_timeseries2_hourly: ("timeseries2-hourly.json", vec![("timeseries2-hourly-expected.csv", ResultsShape::Long)], vec![], vec![]),
     test_storage_max_volumes: ("storage_max_volumes.json", vec![], vec![], vec![]),
     test_mutual_exclusivity1: ("mutual-exclusivity1.json", vec![("mutual-exclusivity1.csv", ResultsShape::Long)], vec!["clp", "ipm-simd", "ipm-ocl"], vec![]),
     test_mutual_exclusivity2: ("mutual-exclusivity2.json", vec![("mutual-exclusivity2.csv", ResultsShape::Long)], vec!["clp", "ipm-simd", "ipm-ocl"], vec![]),

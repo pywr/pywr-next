@@ -24,6 +24,7 @@ use pywr_core::{
 };
 use pywr_schema_macros::skip_serializing_none;
 use schemars::JsonSchema;
+use std::num::NonZeroU64;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticStr};
@@ -59,20 +60,40 @@ impl From<pywr_v1_schema::model::Metadata> for Metadata {
     }
 }
 
+/// A timestep defines the time interval between each step in the model.
+///
+/// The timestep can be defined in three ways:
+/// - A fixed number of non-zero hours.
+/// - A fixed number of non-zero days.
+/// - A frequency string that can be parsed by polars (e.g. '7d').
 #[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, Display, EnumDiscriminants)]
-#[serde(untagged)]
+#[serde(tag = "type", deny_unknown_fields)]
 #[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
 #[strum_discriminants(name(TimestepType))]
 pub enum Timestep {
-    Days(i64),
-    Frequency(String),
+    /// A fixed number of hours.
+    Hours { hours: NonZeroU64 },
+    /// A fixed number of days.
+    Days { days: NonZeroU64 },
+    /// A frequency string that can be parsed by polars.
+    Frequency { freq: String },
 }
 
 impl From<pywr_v1_schema::model::Timestep> for Timestep {
     fn from(v1: pywr_v1_schema::model::Timestep) -> Self {
         match v1 {
-            pywr_v1_schema::model::Timestep::Days(d) => Self::Days(d as i64),
-            pywr_v1_schema::model::Timestep::Frequency(f) => Self::Frequency(f),
+            pywr_v1_schema::model::Timestep::Days(d) => Self::Days {
+                days: NonZeroU64::new(d).expect("days must be non-zero"),
+            },
+            pywr_v1_schema::model::Timestep::Frequency(freq) => Self::Frequency { freq },
+        }
+    }
+}
+
+impl Default for Timestep {
+    fn default() -> Self {
+        Self::Days {
+            days: NonZeroU64::new(1).expect("1 is non-zero"),
         }
     }
 }
@@ -107,7 +128,7 @@ impl Default for Timestepper {
         Self {
             start: Date::Date(NaiveDate::from_ymd_opt(2000, 1, 1).expect("Invalid date")),
             end: Date::Date(NaiveDate::from_ymd_opt(2000, 12, 31).expect("Invalid date")),
-            timestep: Timestep::Days(1),
+            timestep: Timestep::default(),
         }
     }
 }
@@ -126,8 +147,9 @@ impl From<pywr_v1_schema::model::Timestepper> for Timestepper {
 impl From<Timestepper> for pywr_core::timestep::Timestepper {
     fn from(ts: Timestepper) -> Self {
         let timestep = match ts.timestep {
-            Timestep::Days(d) => TimestepDuration::Days(d),
-            Timestep::Frequency(f) => TimestepDuration::Frequency(f),
+            Timestep::Hours { hours } => TimestepDuration::Hours(hours),
+            Timestep::Days { days } => TimestepDuration::Days(days),
+            Timestep::Frequency { freq } => TimestepDuration::Frequency(freq),
         };
 
         let start = match ts.start {
@@ -482,7 +504,7 @@ impl ModelSchema {
             timestepper: Timestepper {
                 start: *start,
                 end: *end,
-                timestep: Timestep::Days(1),
+                timestep: Timestep::default(),
             },
             scenarios: None,
             network: PywrNetwork::default(),
@@ -772,7 +794,7 @@ impl MultiNetworkModelSchema {
             timestepper: Timestepper {
                 start: *start,
                 end: *end,
-                timestep: Timestep::Days(1),
+                timestep: Timestep::default(),
             },
             scenarios: None,
             networks: Vec::new(),
@@ -983,7 +1005,10 @@ mod tests {
         {
             "start": "2015-01-01",
             "end": "2015-12-31",
-            "timestep": 1
+            "timestep": {
+              "type": "Days",
+              "days": 1
+            }
         }
         "#;
 
@@ -1010,7 +1035,10 @@ mod tests {
         {
             "start": "2015-01-01T12:30:00",
             "end": "2015-01-01T14:30:00",
-            "timestep": 1
+            "timestep": {
+                "type": "Hours",
+                "hours": 1
+            }
         }
         "#;
 
