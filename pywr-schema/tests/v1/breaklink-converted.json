@@ -1,0 +1,71 @@
+{
+  "metadata": {
+    "title": "Simple break link",
+    "description": "A very simple example.",
+    "minimum_version": "0.1"
+  },
+  "timestepper": {
+    "start": "2015-01-01",
+    "end": "2015-12-31",
+    "timestep": {
+      "type": "Days",
+      "days": 1
+    }
+  },
+  "network": {
+    "nodes": [
+      {
+        "meta": {
+          "name": "supply1"
+        },
+        "type": "Input",
+        "max_flow": {
+          "type": "Literal",
+          "value": 15.0
+        }
+      },
+      {
+        "meta": {
+          "name": "link1"
+        },
+        "type": "Link",
+        "max_flow": {
+          "type": "Literal",
+          "value": 5.0
+        },
+        "min_flow": {
+          "type": "Literal",
+          "value": 1.0
+        },
+        "cost": {
+          "type": "Literal",
+          "value": -1.0
+        }
+      },
+      {
+        "meta": {
+          "name": "demand1"
+        },
+        "type": "Output",
+        "max_flow": {
+          "type": "Literal",
+          "value": 10.0
+        },
+        "cost": {
+          "type": "Literal",
+          "value": -10.0
+        }
+      }
+    ],
+    "edges": [
+      {
+        "from_node": "supply1",
+        "to_node": "link1"
+      },
+      {
+        "from_node": "link1",
+        "to_node": "demand1"
+      }
+    ]
+  }
+}

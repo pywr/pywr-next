@@ -1,6 +1,6 @@
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
-#[cfg(feature = "core")]
+#[cfg(all(feature = "core", feature = "hdf5"))]
 use pywr_core::recorders::HDF5Recorder;
 use pywr_schema_macros::PywrVisitPaths;
 use schemars::JsonSchema;
@@ -16,7 +16,7 @@ pub struct Hdf5Output {
     pub metric_set: String,
 }
 
-#[cfg(feature = "core")]
+#[cfg(all(feature = "core", feature = "hdf5"))]
 impl Hdf5Output {
     pub fn add_to_model(
         &self,
@@ -38,9 +38,20 @@ impl Hdf5Output {
     }
 }
 
+#[cfg(all(feature = "core", not(feature = "hdf5")))]
+impl Hdf5Output {
+    pub fn add_to_model(
+        &self,
+        _network: &mut pywr_core::network::Network,
+        _output_path: Option<&Path>,
+    ) -> Result<(), SchemaError> {
+        Err(SchemaError::FeatureNotEnabled("hdf5".to_string()))
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use crate::PywrModel;
+    use crate::ModelSchema;
     use crate::visit::VisitPaths;
     #[cfg(feature = "core")]
     use pywr_core::solvers::{ClpSolver, ClpSolverSettings};
@@ -57,7 +68,7 @@ mod tests {
     #[test]
     fn test_schema() {
         let data = model_str();
-        let schema = PywrModel::from_str(&data).unwrap();
+        let schema = ModelSchema::from_str(&data).unwrap();
 
         assert_eq!(schema.network.nodes.len(), 3);
         assert_eq!(schema.network.edges.len(), 2);
@@ -77,7 +88,7 @@ mod tests {
     #[cfg(feature = "core")]
     fn test_run() {
         let data = model_str();
-        let schema = PywrModel::from_str(&data).unwrap();
+        let schema = ModelSchema::from_str(&data).unwrap();
 
         let temp_dir = TempDir::new().unwrap();
 

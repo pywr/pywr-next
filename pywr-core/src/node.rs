@@ -53,6 +53,8 @@ pub enum NodeError {
     StateError(#[from] StateError),
     #[error("Virtual storage index not found: {0}")]
     VirtualStorageIndexNotFound(VirtualStorageIndex),
+    #[error("Node index not found: {0}")]
+    NodeIndexNotFound(NodeIndex),
 }
 
 #[derive(Debug, PartialEq)]
@@ -443,6 +445,18 @@ impl Node {
         }
     }
 
+    pub fn set_initial_volume(&mut self, initial_volume: StorageInitialVolume) -> Result<(), NodeError> {
+        match self {
+            Self::Input(_) => Err(NodeError::StorageConstraintsUndefined),
+            Self::Link(_) => Err(NodeError::StorageConstraintsUndefined),
+            Self::Output(_) => Err(NodeError::StorageConstraintsUndefined),
+            Self::Storage(n) => {
+                n.set_initial_volume(initial_volume);
+                Ok(())
+            }
+        }
+    }
+
     pub fn set_min_volume_constraint(&mut self, value: Option<SimpleMetricF64>) -> Result<(), NodeError> {
         match self {
             Self::Input(_) => Err(NodeError::StorageConstraintsUndefined),
@@ -564,7 +578,7 @@ impl Node {
         }
     }
 
-    pub fn set_cost_agg_func(&mut self, agg_func: CostAggFunc) -> Result<(), NodeError> {
+    pub fn set_cost_agg_func(&mut self, agg_func: Option<CostAggFunc>) -> Result<(), NodeError> {
         match self {
             Self::Input(n) => n.set_cost_agg_func(agg_func),
             Self::Link(n) => n.set_cost_agg_func(agg_func),
@@ -712,21 +726,11 @@ impl StorageConstraints {
 }
 
 /// Generic cost data for a node.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Default)]
 struct NodeCost {
     local: Option<MetricF64>,
     virtual_storage_nodes: Vec<VirtualStorageIndex>,
-    agg_func: CostAggFunc,
-}
-
-impl Default for NodeCost {
-    fn default() -> Self {
-        Self {
-            local: None,
-            virtual_storage_nodes: Vec::new(),
-            agg_func: CostAggFunc::Max,
-        }
-    }
+    agg_func: Option<CostAggFunc>,
 }
 
 impl NodeCost {
@@ -737,30 +741,32 @@ impl NodeCost {
             Some(m) => m.get_value(network, state),
         }?;
 
-        let vs_costs = self.virtual_storage_nodes.iter().map(|idx| {
-            let vs = network
-                .get_virtual_storage_node(idx)
-                .ok_or(NodeError::VirtualStorageIndexNotFound(*idx))?;
-            Ok::<_, NodeError>(vs.get_cost(network, state)?)
-        });
+        if let Some(agg_func) = &self.agg_func {
+            let vs_costs = self.virtual_storage_nodes.iter().map(|idx| {
+                let vs = network
+                    .get_virtual_storage_node(idx)
+                    .ok_or(NodeError::VirtualStorageIndexNotFound(*idx))?;
+                Ok::<_, NodeError>(vs.get_cost(network, state)?)
+            });
 
-        match self.agg_func {
-            CostAggFunc::Sum => {
-                for vs_cost in vs_costs {
-                    cost += vs_cost?;
+            match agg_func {
+                CostAggFunc::Sum => {
+                    for vs_cost in vs_costs {
+                        cost += vs_cost?;
+                    }
                 }
-            }
-            CostAggFunc::Max => {
-                for vs_cost in vs_costs {
-                    cost = cost.max(vs_cost?);
+                CostAggFunc::Max => {
+                    for vs_cost in vs_costs {
+                        cost = cost.max(vs_cost?);
+                    }
                 }
-            }
-            CostAggFunc::Min => {
-                for vs_cost in vs_costs {
-                    cost = cost.min(vs_cost?);
+                CostAggFunc::Min => {
+                    for vs_cost in vs_costs {
+                        cost = cost.min(vs_cost?);
+                    }
                 }
-            }
-        };
+            };
+        }
 
         Ok(cost)
     }
@@ -786,7 +792,7 @@ impl InputNode {
     fn set_cost(&mut self, value: Option<MetricF64>) {
         self.cost.local = value
     }
-    fn set_cost_agg_func(&mut self, agg_func: CostAggFunc) {
+    fn set_cost_agg_func(&mut self, agg_func: Option<CostAggFunc>) {
         self.cost.agg_func = agg_func
     }
     fn get_cost(&self, network: &Network, state: &State) -> Result<f64, NodeError> {
@@ -841,7 +847,7 @@ impl OutputNode {
     fn get_cost(&self, network: &Network, state: &State) -> Result<f64, NodeError> {
         self.cost.get_cost(network, state)
     }
-    fn set_cost_agg_func(&mut self, agg_func: CostAggFunc) {
+    fn set_cost_agg_func(&mut self, agg_func: Option<CostAggFunc>) {
         self.cost.agg_func = agg_func
     }
     fn set_min_flow(&mut self, value: Option<MetricF64>) {
@@ -892,7 +898,7 @@ impl LinkNode {
     fn set_cost(&mut self, value: Option<MetricF64>) {
         self.cost.local = value
     }
-    fn set_cost_agg_func(&mut self, agg_func: CostAggFunc) {
+    fn set_cost_agg_func(&mut self, agg_func: Option<CostAggFunc>) {
         self.cost.agg_func = agg_func
     }
     fn get_cost(&self, network: &Network, state: &State) -> Result<f64, NodeError> {
@@ -927,10 +933,68 @@ impl LinkNode {
     }
 }
 
-#[derive(Debug, PartialEq, Copy, Clone)]
+/// Initial volume for a storage node.
+#[derive(Debug, PartialEq, Clone)]
 pub enum StorageInitialVolume {
+    /// Absolute initial volume.
     Absolute(f64),
+    /// Proportional initial volume, relative to the maximum volume.
     Proportional(f64),
+    /// Absolute initial volume, but distributed progressively over other storage nodes.
+    /// This is used for piecewise storage node configurations that comprise multiple
+    /// nodes. The `absolute` field is the initial volume, and `prior_max_volume` contains
+    /// the metrics that this volume is distributed over before this node.
+    /// Only if there is any remaining volume after distributing
+    /// `absolute` over `prior_max_volume`, this node will have a non-zero initial volume.
+    DistributedAbsolute {
+        /// The absolute initial volume.
+        absolute: f64,
+        /// The sum of the max volumes distributed prior to this node.
+        prior_max_volume: SimpleMetricF64,
+    },
+    /// Similar to `DistributedAbsolute`, but the initial volume is proportional.
+    DistributedProportional {
+        /// The total max volume of the group of storage nodes.
+        total_volume: SimpleMetricF64,
+        /// The absolute initial volume.
+        proportion: f64,
+        /// The sum of the max volumes distributed prior to this node.
+        prior_max_volume: SimpleMetricF64,
+    },
+}
+
+impl StorageInitialVolume {
+    /// Get the initial volume as an absolute value.
+    pub fn get_absolute_initial_volume(&self, max_volume: f64, state: &State) -> Result<f64, SimpleMetricF64Error> {
+        match self {
+            StorageInitialVolume::Absolute(iv) => Ok(*iv),
+            StorageInitialVolume::Proportional(ipc) => Ok(max_volume * ipc),
+            StorageInitialVolume::DistributedAbsolute {
+                absolute,
+                prior_max_volume,
+            } => {
+                let prior_max_volume = prior_max_volume.get_value(&state.get_simple_parameter_values())?;
+
+                // The initial volume is the absolute value minus the prior volumes,
+                // but it cannot exceed the maximum volume.
+                Ok((*absolute - prior_max_volume).max(0.0).min(max_volume))
+            }
+            StorageInitialVolume::DistributedProportional {
+                total_volume,
+                proportion,
+                prior_max_volume,
+            } => {
+                let prior_max_volume = prior_max_volume.get_value(&state.get_simple_parameter_values())?;
+
+                // Calculate the absolute initial volume based on the total volume and proportion.
+                let absolute = total_volume.get_value(&state.get_simple_parameter_values())? * proportion;
+
+                // The initial volume is the absolute value minus the prior volumes,
+                // but it cannot exceed the maximum volume.
+                Ok((absolute - prior_max_volume).max(0.0).min(max_volume))
+            }
+        }
+    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -965,13 +1029,9 @@ impl StorageNode {
     pub fn before(&self, timestep: &Timestep, state: &mut State) -> Result<(), NodeError> {
         // Set the initial volume if it is the first timestep.
         if timestep.is_first() {
-            let volume = match &self.initial_volume {
-                StorageInitialVolume::Absolute(iv) => *iv,
-                StorageInitialVolume::Proportional(ipc) => {
-                    let max_volume = self.get_max_volume(state)?;
-                    max_volume * ipc
-                }
-            };
+            let volume = self
+                .initial_volume
+                .get_absolute_initial_volume(self.get_max_volume(state)?, state)?;
 
             state.set_node_volume(&self.meta.index, volume)?;
         }
@@ -986,6 +1046,9 @@ impl StorageNode {
             None => Ok(0.0),
             Some(m) => m.get_value(network, state),
         }
+    }
+    fn set_initial_volume(&mut self, initial_volume: StorageInitialVolume) {
+        self.initial_volume = initial_volume;
     }
     fn set_min_volume(&mut self, value: Option<SimpleMetricF64>) {
         // TODO use a set_min_volume method

@@ -7,9 +7,11 @@
   "timestepper": {
     "start": "2015-01-01",
     "end": "2015-12-31",
-    "timestep": 1
+    "timestep": {
+      "type": "Days",
+      "days": 1
+    }
   },
-  "scenarios": null,
   "network": {
     "nodes": [
       {
@@ -17,12 +19,10 @@
           "name": "Catchment"
         },
         "type": "Catchment",
-        "cost": null,
         "flow": {
-          "type": "Constant",
+          "type": "Literal",
           "value": 100.0
-        },
-        "parameters": null
+        }
       },
       {
         "meta": {
@@ -31,18 +31,16 @@
         "type": "RiverSplitWithGauge",
         "mrf": {
           "type": "Parameter",
-          "name": "Gauge-p0",
-          "key": null
+          "name": "Gauge-p0"
         },
         "mrf_cost": {
-          "type": "Constant",
+          "type": "Literal",
           "value": -1000.0
         },
-        "parameters": null,
         "splits": [
           {
             "factor": {
-              "type": "Constant",
+              "type": "Literal",
               "value": 0.25
             },
             "slot_name": "abstraction"
@@ -53,11 +51,7 @@
         "meta": {
           "name": "Estuary"
         },
-        "type": "Output",
-        "cost": null,
-        "max_flow": null,
-        "min_flow": null,
-        "parameters": null
+        "type": "Output"
       },
       {
         "meta": {
@@ -65,15 +59,13 @@
         },
         "type": "Output",
         "max_flow": {
-          "type": "Constant",
+          "type": "Literal",
           "value": 50.0
         },
         "cost": {
-          "type": "Constant",
+          "type": "Literal",
           "value": -10.0
-        },
-        "min_flow": null,
-        "parameters": null
+        }
       }
     ],
     "edges": [
@@ -92,32 +84,30 @@
         "to_node": "Demand"
       }
     ],
-    "metric_sets": null,
     "parameters": [
       {
         "meta": {
           "name": "Gauge-p0"
         },
         "type": "MonthlyProfile",
-        "interp_day": null,
-        "values": [
-          40.0,
-          40.0,
-          40.0,
-          40.0,
-          40.0,
-          40.0,
-          40.0,
-          40.0,
-          40.0,
-          40.0,
-          40.0,
-          40.0
-        ]
+        "values": {
+          "type": "Literal",
+          "values": [
+            40.0,
+            40.0,
+            40.0,
+            40.0,
+            40.0,
+            40.0,
+            40.0,
+            40.0,
+            40.0,
+            40.0,
+            40.0,
+            40.0
+          ]
+        }
       }
-    ],
-    "outputs": null,
-    "tables": null,
-    "timeseries": null
+    ]
   }
 }

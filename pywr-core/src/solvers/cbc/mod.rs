@@ -8,12 +8,13 @@ use crate::state::{ConstParameterValues, State};
 use crate::timestep::Timestep;
 use coin_or_sys::cbc::*;
 use libc::{c_double, c_int};
+#[cfg(feature = "pyo3")]
+pub use settings::build_cbc_settings_py;
 pub use settings::{CbcSolverSettings, CbcSolverSettingsBuilder};
 use std::ffi::{CString, c_char};
 use std::time::Instant;
 use std::{ptr, slice};
 use thiserror::Error;
-
 #[derive(Error, Debug, PartialEq, Eq)]
 pub enum CbcError {
     #[error("an unknown error occurred in Cbc.")]
@@ -148,7 +149,10 @@ impl Cbc {
 
     fn solve(&mut self) {
         unsafe {
-            Cbc_solve(self.ptr);
+            let ret = Cbc_solve(self.ptr);
+            if ret != 0 {
+                panic!("Cbc solve failed with error code: {ret}");
+            }
         }
     }
 
@@ -244,7 +248,7 @@ impl Solver for CbcSolver {
         values: &ConstParameterValues,
         _settings: &Self::Settings,
     ) -> Result<Box<Self>, SolverSetupError> {
-        let builder = SolverBuilder::default();
+        let builder = SolverBuilder::new(f64::MAX, f64::MIN);
         let built = builder.create(model, values)?;
 
         let solver = CbcSolver::from_builder(built);

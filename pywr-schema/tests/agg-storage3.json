@@ -1,0 +1,228 @@
+{
+  "metadata": {
+    "title": "Aggregated storage 1",
+    "description": "Test behaviour of aggregated storage node.",
+    "minimum_version": "0.1"
+  },
+  "timestepper": {
+    "start": "2015-01-01",
+    "end": "2015-01-10",
+    "timestep": {
+      "type": "Days",
+      "days": 1
+    }
+  },
+  "network": {
+    "nodes": [
+      {
+        "meta": {
+          "name": "supply1"
+        },
+        "type": "Input",
+        "max_flow": {
+          "type": "Literal",
+          "value": 5
+        }
+      },
+      {
+        "meta": {
+          "name": "storage1"
+        },
+        "type": "PiecewiseStorage",
+        "cost": {
+          "type": "Literal",
+          "value": -0.1
+        },
+        "max_volume": {
+          "type": "Literal",
+          "value": 100
+        },
+        "initial_volume": {
+          "type": "Proportional",
+          "proportion": 0.5
+        },
+        "steps": [
+          {
+            "cost": {
+              "type": "Literal",
+              "value": -0.2
+            },
+            "control_curve": {
+              "type": "Literal",
+              "value": 0.25
+            }
+          },
+          {
+            "cost": {
+              "type": "Literal",
+              "value": -0.15
+            },
+            "control_curve": {
+              "type": "Literal",
+              "value": 0.5
+            }
+          }
+        ]
+      },
+      {
+        "meta": {
+          "name": "demand1"
+        },
+        "type": "Output",
+        "max_flow": {
+          "type": "Parameter",
+          "name": "demand"
+        },
+        "cost": {
+          "type": "Literal",
+          "value": -10
+        }
+      },
+      {
+        "meta": {
+          "name": "supply2"
+        },
+        "type": "Input",
+        "max_flow": {
+          "type": "Literal",
+          "value": 5
+        }
+      },
+      {
+        "meta": {
+          "name": "storage2"
+        },
+        "type": "PiecewiseStorage",
+        "cost": {
+          "type": "Literal",
+          "value": -0.1
+        },
+        "max_volume": {
+          "type": "Literal",
+          "value": 100
+        },
+        "initial_volume": {
+          "type": "Proportional",
+          "proportion": 1.0
+        },
+        "steps": [
+          {
+            "cost": {
+              "type": "Literal",
+              "value": -0.2
+            },
+            "control_curve": {
+              "type": "Literal",
+              "value": 0.25
+            }
+          },
+          {
+            "cost": {
+              "type": "Literal",
+              "value": -0.15
+            },
+            "control_curve": {
+              "type": "Literal",
+              "value": 0.5
+            }
+          }
+        ]
+      },
+      {
+        "meta": {
+          "name": "demand2"
+        },
+        "type": "Output",
+        "max_flow": {
+          "type": "Parameter",
+          "name": "demand"
+        },
+        "cost": {
+          "type": "Literal",
+          "value": -10
+        }
+      }
+    ],
+    "virtual_nodes": [
+      {
+        "meta": {
+          "name": "total-storage"
+        },
+        "type": "AggregatedStorage",
+        "storage_nodes": [
+          {
+            "name": "storage1"
+          },
+          {
+            "name": "storage2"
+          }
+        ]
+      }
+    ],
+    "edges": [
+      {
+        "from_node": "supply1",
+        "to_node": "storage1"
+      },
+      {
+        "from_node": "storage1",
+        "to_node": "demand1"
+      },
+      {
+        "from_node": "supply2",
+        "to_node": "storage2"
+      },
+      {
+        "from_node": "storage2",
+        "to_node": "demand2"
+      }
+    ],
+    "parameters": [
+      {
+        "meta": {
+          "name": "demand"
+        },
+        "type": "ControlCurve",
+        "storage_metric": {
+          "type": "VirtualNode",
+          "name": "total-storage",
+          "attribute": "ProportionalVolume"
+        },
+        "control_curves": [
+          {
+            "type": "Literal",
+            "value": 0.475
+          }
+        ],
+        "values": [
+          {
+            "type": "Literal",
+            "value": 10.0
+          },
+          {
+            "type": "Literal",
+            "value": 5.0
+          }
+        ]
+      }
+    ],
+    "metric_sets": [
+      {
+        "name": "nodes",
+        "filters": {
+          "all_nodes": true,
+          "all_virtual_nodes": true
+        }
+      }
+    ],
+    "outputs": [
+      {
+        "name": "my-outputs",
+        "type": "CSV",
+        "format": "Long",
+        "filename": "agg-storage3-expected.csv",
+        "metric_set": "nodes"
+      }
+    ]
+  }
+}

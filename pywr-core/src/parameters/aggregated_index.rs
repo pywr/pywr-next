@@ -1,54 +1,44 @@
 /// AggregatedIndexParameter
 ///
-use super::{Parameter, ParameterName, ParameterState};
-use crate::metric::MetricU64;
+use super::{ConstParameter, Parameter, ParameterName, ParameterState, SimpleParameter};
+use crate::agg_funcs::AggFuncU64;
+use crate::metric::{ConstantMetricU64, MetricU64, SimpleMetricU64};
 use crate::network::Network;
-use crate::parameters::errors::ParameterCalculationError;
+use crate::parameters::errors::{ConstCalculationError, ParameterCalculationError, SimpleCalculationError};
 use crate::parameters::{GeneralParameter, ParameterMeta};
 use crate::scenario::ScenarioIndex;
-use crate::state::State;
+use crate::state::{ConstParameterValues, SimpleParameterValues, State};
 use crate::timestep::Timestep;
 
-/// Aggregation functions for aggregated index parameters.
-#[derive(Debug, Clone, Copy)]
-pub enum AggIndexFunc {
-    /// Sum of all values.
-    Sum,
-    /// Product of all values.
-    Product,
-    /// Minimum value among all values.
-    Min,
-    /// Maximum value among all values.
-    Max,
-    /// Returns 1 if any value is non-zero, otherwise 0.
-    Any,
-    /// Returns 1 if all values are non-zero, otherwise 0.
-    All,
-}
-
-pub struct AggregatedIndexParameter {
+pub struct AggregatedIndexParameter<M> {
     meta: ParameterMeta,
-    values: Vec<MetricU64>,
-    agg_func: AggIndexFunc,
+    metrics: Vec<M>,
+    agg_func: AggFuncU64,
 }
 
-impl AggregatedIndexParameter {
-    pub fn new(name: ParameterName, values: Vec<MetricU64>, agg_func: AggIndexFunc) -> Self {
+impl<M> AggregatedIndexParameter<M>
+where
+    M: Send + Sync + Clone,
+{
+    pub fn new(name: ParameterName, metrics: &[M], agg_func: AggFuncU64) -> Self {
         Self {
             meta: ParameterMeta::new(name),
-            values,
+            metrics: metrics.to_vec(),
             agg_func,
         }
     }
 }
 
-impl Parameter for AggregatedIndexParameter {
+impl<M> Parameter for AggregatedIndexParameter<M>
+where
+    M: Send + Sync,
+{
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }
 }
 
-impl GeneralParameter<u64> for AggregatedIndexParameter {
+impl GeneralParameter<u64> for AggregatedIndexParameter<MetricU64> {
     fn compute(
         &self,
         _timestep: &Timestep,
@@ -57,62 +47,94 @@ impl GeneralParameter<u64> for AggregatedIndexParameter {
         state: &State,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<u64, ParameterCalculationError> {
-        let value: u64 = match self.agg_func {
-            AggIndexFunc::Sum => {
-                let mut total = 0;
-                for p in &self.values {
-                    total += p.get_value(network, state)?;
-                }
-                total
-            }
-            AggIndexFunc::Max => {
-                let mut total = u64::MIN;
-                for p in &self.values {
-                    total = total.max(p.get_value(network, state)?);
-                }
-                total
-            }
-            AggIndexFunc::Min => {
-                let mut total = u64::MAX;
-                for p in &self.values {
-                    total = total.min(p.get_value(network, state)?);
-                }
-                total
-            }
-            AggIndexFunc::Product => {
-                let mut total = 1;
-                for p in &self.values {
-                    total *= p.get_value(network, state)?;
-                }
-                total
-            }
-            AggIndexFunc::Any => {
-                let mut any = 0;
-                for p in &self.values {
-                    let value = p.get_value(network, state)?;
+        let values = self
+            .metrics
+            .iter()
+            .map(|p| p.get_value(network, state))
+            .collect::<Result<Vec<_>, _>>()?;
 
-                    if value > 0 {
-                        any = 1;
-                        break;
-                    };
-                }
-                any
-            }
-            AggIndexFunc::All => {
-                let mut all = 1;
-                for p in &self.values {
-                    let value = p.get_value(network, state)?;
+        Ok(self.agg_func.calc_iter_u64(&values)?)
+    }
 
-                    if value == 0 {
-                        all = 0;
-                        break;
-                    };
-                }
-                all
-            }
-        };
+    fn as_parameter(&self) -> &dyn Parameter
+    where
+        Self: Sized,
+    {
+        self
+    }
 
-        Ok(value)
+    fn try_into_simple(&self) -> Option<Box<dyn SimpleParameter<u64>>> {
+        // We can make a simple version if all metrics can be simplified
+        let metrics: Vec<SimpleMetricU64> = self
+            .metrics
+            .clone()
+            .into_iter()
+            .map(|m| m.try_into().ok())
+            .collect::<Option<Vec<_>>>()?;
+
+        Some(Box::new(AggregatedIndexParameter::<SimpleMetricU64> {
+            meta: self.meta.clone(),
+            metrics,
+            agg_func: self.agg_func.clone(),
+        }))
+    }
+}
+
+impl SimpleParameter<u64> for AggregatedIndexParameter<SimpleMetricU64> {
+    fn compute(
+        &self,
+        _timestep: &Timestep,
+        _scenario_index: &ScenarioIndex,
+        values: &SimpleParameterValues,
+        _internal_state: &mut Option<Box<dyn ParameterState>>,
+    ) -> Result<u64, SimpleCalculationError> {
+        let values = self
+            .metrics
+            .iter()
+            .map(|p| p.get_value(values))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(self.agg_func.calc_iter_u64(&values)?)
+    }
+
+    fn as_parameter(&self) -> &dyn Parameter
+    where
+        Self: Sized,
+    {
+        self
+    }
+
+    fn try_into_const(&self) -> Option<Box<dyn ConstParameter<u64>>> {
+        // We can make a constant version if all metrics can be simplified to constants
+        let metrics: Vec<ConstantMetricU64> = self
+            .metrics
+            .clone()
+            .into_iter()
+            .map(|m| m.try_into().ok())
+            .collect::<Option<Vec<_>>>()?;
+
+        Some(Box::new(AggregatedIndexParameter::<ConstantMetricU64> {
+            meta: self.meta.clone(),
+            metrics,
+            agg_func: self.agg_func.clone(),
+        }))
+    }
+}
+
+impl ConstParameter<u64> for AggregatedIndexParameter<ConstantMetricU64> {
+    fn compute(
+        &self,
+        _scenario_index: &ScenarioIndex,
+        values: &ConstParameterValues,
+        _internal_state: &mut Option<Box<dyn ParameterState>>,
+    ) -> Result<u64, ConstCalculationError> {
+        let values = self
+            .metrics
+            .iter()
+            .map(|p| p.get_value(values))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(self.agg_func.calc_iter_u64(&values)?)
     }
 
     fn as_parameter(&self) -> &dyn Parameter

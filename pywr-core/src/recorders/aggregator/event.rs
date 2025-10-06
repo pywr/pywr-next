@@ -120,4 +120,126 @@ mod tests {
         let agg_value = agg.process_value(&mut state, PeriodValue::new(start, TimeDelta::days(1).into(), 1.0));
         assert!(agg_value.is_none());
     }
+
+    #[test]
+    fn test_event_aggregator_less_than() {
+        let agg = EventAggregator {
+            predicate: Predicate::LessThan,
+            threshold: 2.0,
+        };
+        let mut state = EventAggregatorState::default();
+
+        let start = NaiveDate::from_ymd_opt(2023, 3, 1)
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap();
+        let v1 = agg.process_value(&mut state, PeriodValue::new(start, TimeDelta::days(1).into(), 1.5));
+        assert!(v1.is_none());
+
+        let start2 = NaiveDate::from_ymd_opt(2023, 3, 2)
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap();
+        let v2 = agg.process_value(&mut state, PeriodValue::new(start2, TimeDelta::days(1).into(), 2.5));
+        assert!(v2.is_some());
+        let event = v2.unwrap();
+        assert_eq!(event.start, start);
+        assert_eq!(event.end, Some(start2));
+    }
+
+    #[test]
+    fn test_multiple_events() {
+        let agg = EventAggregator {
+            predicate: Predicate::GreaterThan,
+            threshold: 5.0,
+        };
+        let mut state = EventAggregatorState::default();
+
+        let dates: Vec<_> = (0..6)
+            .map(|i| {
+                NaiveDate::from_ymd_opt(2023, 4, 1 + i)
+                    .unwrap()
+                    .and_hms_opt(0, 0, 0)
+                    .unwrap()
+            })
+            .collect();
+
+        // Start event
+        assert!(
+            agg.process_value(&mut state, PeriodValue::new(dates[0], TimeDelta::days(1).into(), 6.0))
+                .is_none()
+        );
+        // Continue event
+        assert!(
+            agg.process_value(&mut state, PeriodValue::new(dates[1], TimeDelta::days(1).into(), 7.0))
+                .is_none()
+        );
+        // End event
+        let ev1 = agg.process_value(&mut state, PeriodValue::new(dates[2], TimeDelta::days(1).into(), 4.0));
+        assert!(ev1.is_some());
+        assert_eq!(ev1.unwrap().start, dates[0]);
+        assert_eq!(ev1.unwrap().end, Some(dates[2]));
+
+        // Start new event
+        assert!(
+            agg.process_value(&mut state, PeriodValue::new(dates[3], TimeDelta::days(1).into(), 8.0))
+                .is_none()
+        );
+        // End new event
+        let ev2 = agg.process_value(&mut state, PeriodValue::new(dates[4], TimeDelta::days(1).into(), 2.0));
+        assert!(ev2.is_some());
+        assert_eq!(ev2.unwrap().start, dates[3]);
+        assert_eq!(ev2.unwrap().end, Some(dates[4]));
+
+        // No event
+        assert!(
+            agg.process_value(&mut state, PeriodValue::new(dates[5], TimeDelta::days(1).into(), 1.0))
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn test_no_event_triggered() {
+        let agg = EventAggregator {
+            predicate: Predicate::GreaterThan,
+            threshold: 10.0,
+        };
+        let mut state = EventAggregatorState::default();
+
+        for i in 0..5 {
+            let start = NaiveDate::from_ymd_opt(2023, 5, 1 + i)
+                .unwrap()
+                .and_hms_opt(0, 0, 0)
+                .unwrap();
+            let v = agg.process_value(&mut state, PeriodValue::new(start, TimeDelta::days(1).into(), 5.0));
+            assert!(v.is_none());
+        }
+    }
+
+    #[test]
+    fn test_event_starts_but_never_ends() {
+        let agg = EventAggregator {
+            predicate: Predicate::GreaterThan,
+            threshold: 2.0,
+        };
+        let mut state = EventAggregatorState::default();
+
+        let start = NaiveDate::from_ymd_opt(2023, 6, 1)
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap();
+        assert!(
+            agg.process_value(&mut state, PeriodValue::new(start, TimeDelta::days(1).into(), 3.0))
+                .is_none()
+        );
+
+        let start2 = NaiveDate::from_ymd_opt(2023, 6, 2)
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap();
+        assert!(
+            agg.process_value(&mut state, PeriodValue::new(start2, TimeDelta::days(1).into(), 4.0))
+                .is_none()
+        );
+    }
 }

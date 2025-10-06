@@ -5,7 +5,10 @@
   "timestepper": {
     "start": "2021-01-01",
     "end": "2021-12-31",
-    "timestep": 1
+    "timestep": {
+      "type": "Days",
+      "days": 1
+    }
   },
   "network": {
     "nodes": [
@@ -35,7 +38,7 @@
         },
         "type": "Output",
         "cost": {
-          "type": "Constant",
+          "type": "Literal",
           "value": -10.0
         },
         "max_flow": {
@@ -64,7 +67,10 @@
           "type": "Path",
           "path": "custom.py"
         },
-        "object": "CustomParameter",
+        "object": {
+          "type": "Class",
+          "class": "CustomParameter"
+        },
         "args": [
           5.0
         ],

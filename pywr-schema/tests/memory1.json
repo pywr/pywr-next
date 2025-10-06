@@ -7,7 +7,10 @@
   "timestepper": {
     "start": "2015-01-01",
     "end": "2015-12-31",
-    "timestep": 1
+    "timestep": {
+      "type": "Days",
+      "days": 1
+    }
   },
   "network": {
     "nodes": [
@@ -17,7 +20,7 @@
         },
         "type": "Input",
         "max_flow": {
-          "type": "Constant",
+          "type": "Literal",
           "value": 15
         }
       },
@@ -37,7 +40,7 @@
           "name": "demand"
         },
         "cost": {
-          "type": "Constant",
+          "type": "Literal",
           "value": -10
         }
       }
@@ -58,32 +61,31 @@
           "name": "demand"
         },
         "type": "Constant",
-        "value": 10.0
+        "value": {
+          "type": "Literal",
+          "value": 10.0
+        }
       }
     ],
     "metric_sets": [
       {
         "name": "nodes",
         "aggregator": {
-          "parent": {
-            "type": "Periodic",
-            "freq": {
-              "type": "Annual"
-            },
-            "func": {
-              "type": "CountNonZero"
-            }
+          "type": "Periodic",
+          "freq": {
+            "type": "Annual"
+          },
+          "func": {
+            "type": "CountNonZero"
           },
           "child": {
-            "parent": {
-              "type": "Periodic",
-              "freq": {
-                "type": "Days",
-                "days": 4
-              },
-              "func": {
-                "type": "Min"
-              }
+            "type": "Periodic",
+            "freq": {
+              "type": "Days",
+              "days": 4
+            },
+            "func": {
+              "type": "Min"
             }
           }
         },

@@ -1,0 +1,107 @@
+{
+  "metadata": {
+    "title": "Muskingum 1",
+    "description": "An example of using Muskingum routing in a River node.",
+    "minimum_version": "0.1"
+  },
+  "timestepper": {
+    "start": "2021-01-01",
+    "end": "2021-02-28",
+    "timestep": {
+      "type": "Days",
+      "days": 1
+    }
+  },
+  "network": {
+    "nodes": [
+      {
+        "meta": {
+          "name": "catchment1"
+        },
+        "type": "Catchment",
+        "flow": {
+          "type": "Timeseries",
+          "name": "inflow"
+        }
+      },
+      {
+        "meta": {
+          "name": "reach1"
+        },
+        "type": "River",
+        "routing_method": {
+          "type": "Muskingum",
+          "travel_time": {
+            "type": "Literal",
+            "value": 1.1
+          },
+          "weight": {
+            "type": "Literal",
+            "value": 0.25
+          },
+          "initial_condition": {
+            "type": "SteadyState"
+          }
+        }
+      },
+      {
+        "meta": {
+          "name": "term1"
+        },
+        "type": "Output"
+      }
+    ],
+    "edges": [
+      {
+        "from_node": "catchment1",
+        "to_node": "reach1"
+      },
+      {
+        "from_node": "reach1",
+        "to_node": "term1"
+      }
+    ],
+    "timeseries": [
+      {
+        "meta": {
+          "name": "inflow"
+        },
+        "type": "Polars",
+        "time_col": "date",
+        "url": "inflow.csv"
+      }
+    ],
+    "metric_sets": [
+      {
+        "name": "nodes",
+        "metrics": [
+          {
+            "type": "Node",
+            "name": "catchment1"
+          },
+          {
+            "type": "Node",
+            "name": "reach1",
+            "attribute": "Inflow"
+          },
+          {
+            "type": "Node",
+            "name": "reach1",
+            "attribute": "Outflow"
+          }
+        ]
+      }
+    ],
+    "outputs": [
+      {
+        "name": "node-outputs",
+        "type": "CSV",
+        "format": "Long",
+        "filename": "muskingum1-expected.csv",
+        "metric_set": [
+          "nodes"
+        ]
+      }
+    ]
+  }
+}

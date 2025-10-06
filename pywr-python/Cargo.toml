@@ -17,7 +17,7 @@ categories.workspace = true
 [dependencies]
 # The Github workflow is configured to use the minimum version corresponding to the `abi3-pyXX` feature enabled here.
 # Please remember to update the workflow if changing the ABI version.
-pyo3 = { workspace = true, features = ["extension-module", "macros", "chrono"] }
+pyo3 = { workspace = true, features = ["extension-module", "macros", "chrono", "abi3-py310"] }
 pyo3-polars = { workspace = true }
 pyo3-log = { workspace = true }
 serde = { workspace = true }
@@ -26,6 +26,7 @@ chrono = { workspace = true }
 pywr-v1-schema = { workspace = true }
 pywr-core = { path = "../pywr-core" }
 pywr-schema = { path = "../pywr-schema" }
+schemars = { workspace = true }
 
 
 [lib]
@@ -33,6 +34,7 @@ name = "pywr"
 crate-type = ["cdylib"]
 
 [features]
+default = ["cbc", "highs"]
 cbc = ["pywr-core/cbc", "pywr-schema/cbc"]
 highs = ["pywr-core/highs", "pywr-schema/highs"]
 ipm-ocl = ["pywr-core/ipm-ocl", "pywr-schema/ipm-ocl"]

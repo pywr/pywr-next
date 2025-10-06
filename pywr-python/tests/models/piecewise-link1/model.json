@@ -5,7 +5,10 @@
   "timestepper": {
     "start": "2021-01-01",
     "end": "2021-12-31",
-    "timestep": 1
+    "timestep": {
+      "type": "Days",
+      "days": 1
+    }
   },
   "network": {
     "nodes": [
@@ -45,11 +48,11 @@
         "steps": [
           {
             "cost": {
-              "type": "Constant",
+              "type": "Literal",
               "value": -10.0
             },
             "max_flow": {
-              "type": "Constant",
+              "type": "Literal",
               "value": 1.0
             }
           },
@@ -69,7 +72,7 @@
         },
         "type": "Output",
         "cost": {
-          "type": "Constant",
+          "type": "Literal",
           "value": -5.0
         },
         "max_flow": {
@@ -102,7 +105,10 @@
           "name": "demand"
         },
         "type": "Constant",
-        "value": 10.0
+        "value": {
+          "type": "Literal",
+          "value": 10.0
+        }
       }
     ],
     "timeseries": [

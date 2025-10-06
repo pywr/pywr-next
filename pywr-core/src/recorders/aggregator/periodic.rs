@@ -1,4 +1,4 @@
-use crate::recorders::AggregationFunction;
+use crate::agg_funcs::AggFuncF64;
 use crate::timestep::{PywrDuration, TimeDomain};
 use chrono::{Datelike, Duration, NaiveDate, NaiveDateTime, NaiveTime};
 use std::num::NonZeroUsize;
@@ -114,7 +114,7 @@ impl PeriodicAggregatorState {
         &mut self,
         value: PeriodValue<f64>,
         agg_freq: &AggregationFrequency,
-        agg_func: &AggregationFunction,
+        agg_func: &AggFuncF64,
     ) -> Option<PeriodValue<f64>> {
         if let Some(current_values) = self.current_values.as_mut() {
             // SAFETY: The current_values vector is guaranteed to contain at least one value.
@@ -163,7 +163,7 @@ impl PeriodicAggregatorState {
         }
     }
 
-    fn calc_aggregation(&self, agg_func: &AggregationFunction) -> Option<PeriodValue<f64>> {
+    fn calc_aggregation(&self, agg_func: &AggFuncF64) -> Option<PeriodValue<f64>> {
         if let Some(current_values) = &self.current_values {
             if let Some(agg_value) = agg_func.calc_period_values(current_values) {
                 // SAFETY: The current_values vector is guaranteed to contain at least one value.
@@ -223,6 +223,10 @@ impl<T> PeriodValue<Vec<T>> {
     pub fn len(&self) -> usize {
         self.value.len()
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.value.is_empty()
+    }
 }
 
 impl<T> From<&[PeriodValue<T>]> for PeriodValue<Vec<T>>
@@ -241,11 +245,11 @@ where
 #[derive(Clone, Debug)]
 pub struct PeriodicAggregator {
     frequency: Option<AggregationFrequency>,
-    function: AggregationFunction,
+    function: AggFuncF64,
 }
 
 impl PeriodicAggregator {
-    pub fn new(frequency: Option<AggregationFrequency>, function: AggregationFunction) -> Self {
+    pub fn new(frequency: Option<AggregationFrequency>, function: AggFuncF64) -> Self {
         Self { frequency, function }
     }
 
@@ -295,7 +299,8 @@ impl PeriodicAggregator {
 
 #[cfg(test)]
 mod tests {
-    use super::{AggregationFrequency, AggregationFunction, PeriodicAggregator, PeriodicAggregatorState};
+    use super::{AggregationFrequency, PeriodicAggregator, PeriodicAggregatorState};
+    use crate::agg_funcs::AggFuncF64;
     use crate::recorders::aggregator::PeriodValue;
     use chrono::{NaiveDate, TimeDelta};
     use float_cmp::assert_approx_eq;
@@ -304,7 +309,7 @@ mod tests {
     fn test_periodic_aggregator() {
         let agg = PeriodicAggregator {
             frequency: Some(AggregationFrequency::Monthly),
-            function: AggregationFunction::Sum,
+            function: AggFuncF64::Sum,
         };
 
         let mut state = PeriodicAggregatorState::default();
@@ -367,11 +372,11 @@ mod tests {
             ),
         ];
 
-        let agg_value = AggregationFunction::Mean.calc_period_values(values.as_slice()).unwrap();
+        let agg_value = AggFuncF64::Mean.calc_period_values(values.as_slice()).unwrap();
         assert_approx_eq!(f64, agg_value, 7.0 / 4.0);
 
-        let agg_value = AggregationFunction::Sum.calc_period_values(values.as_slice()).unwrap();
-        let expected = 2.0 * (1.0 / 24.0) + 1.0 * (2.0 / 24.0) + 3.0 * (1.0 / 24.0);
+        let agg_value = AggFuncF64::Sum.calc_period_values(values.as_slice()).unwrap();
+        let expected = 2.0 + 1.0 + 3.0;
         assert_approx_eq!(f64, agg_value, expected);
     }
 }

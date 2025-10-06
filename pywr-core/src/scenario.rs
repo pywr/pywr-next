@@ -1,3 +1,5 @@
+#[cfg(feature = "pyo3")]
+use pyo3::{pyclass, pymethods};
 use std::collections::BTreeSet;
 use thiserror::Error;
 
@@ -522,6 +524,7 @@ impl ScenarioIndexBuilder {
     }
 }
 
+#[cfg_attr(feature = "pyo3", pyclass)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ScenarioIndex {
     /// The indices of the scenarios run in the model.
@@ -544,6 +547,23 @@ impl Default for ScenarioIndex {
     }
 }
 
+#[cfg(feature = "pyo3")]
+#[pymethods]
+impl ScenarioIndex {
+    /// The global index of the scenario for this simulation. This may be different
+    /// from the global index of the scenario in the schema.
+    #[getter]
+    pub fn get_simulation_id(&self) -> usize {
+        self.core.index
+    }
+
+    /// The indices for each scenario group for this simulation.
+    #[getter]
+    pub fn get_simulation_indices(&self) -> &[usize] {
+        &self.core.indices
+    }
+}
+
 impl ScenarioIndex {
     /// The global index of the scenario for this simulation. This may be different
     /// from the global index of the scenario in the schema.
@@ -561,6 +581,10 @@ impl ScenarioIndex {
 
     pub fn labels(&self) -> &[String] {
         &self.labels
+    }
+
+    pub fn schema_index_for_group(&self, group_index: usize) -> usize {
+        self.schema.as_ref().map(|s| s.indices[group_index]).unwrap_or_else(|| self.core.indices[group_index])
     }
 
     /// Concatenated labels for the scenario
@@ -610,6 +634,11 @@ impl ScenarioDomain {
     pub fn group_scenario_subset(&self, name: &str) -> Result<Option<&[usize]>, ScenarioError> {
         let group_index = self.group_index(name)?;
         Ok(self.scenario_map[group_index].as_deref())
+    }
+
+    pub fn group_size(&self, name: &str) -> Result<usize, ScenarioError> {
+        let group_index = self.group_index(name)?;
+        Ok(self.groups[group_index].size())
     }
 }
 

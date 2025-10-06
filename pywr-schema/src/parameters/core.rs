@@ -3,14 +3,14 @@ use crate::error::ComponentConversionError;
 use crate::error::SchemaError;
 use crate::metric::Metric;
 #[cfg(feature = "core")]
-use crate::model::LoadArgs;
-use crate::parameters::{ConstantValue, ConversionData, ParameterMeta};
-use crate::v1::{IntoV2, TryFromV1, try_convert_parameter_attr};
+use crate::network::LoadArgs;
+use crate::parameters::{ConstantFloatVec, ConstantValue, ConversionData, ParameterMeta};
+use crate::v1::{try_convert_parameter_attr, try_convert_values, IntoV2, TryFromV1};
 #[cfg(feature = "core")]
 use pywr_core::parameters::{ParameterIndex, ParameterName};
-use pywr_schema_macros::PywrVisitAll;
+use pywr_schema_macros::{PywrVisitAll, skip_serializing_none};
 use pywr_v1_schema::parameters::{
-    ConstantParameter as ConstantParameterV1, DivisionParameter as DivisionParameterV1, MaxParameter as MaxParameterV1,
+    ConstantParameter as ConstantParameterV1, ConstantScenarioParameter as ConstantScenarioParameterV1, DivisionParameter as DivisionParameterV1, MaxParameter as MaxParameterV1,
     MinParameter as MinParameterV1, NegativeMaxParameter as NegativeMaxParameterV1,
     NegativeMinParameter as NegativeMinParameterV1, NegativeParameter as NegativeParameterV1,
 };
@@ -152,6 +152,7 @@ pub struct VariableSettings {
 #[doc = include_str!("doc_examples/constant_variable.json")]
 /// ```
 ///
+#[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct ConstantParameter {
@@ -192,7 +193,7 @@ impl TryFromV1<ConstantParameterV1> for ConstantParameter {
         let meta: ParameterMeta = v1.meta.into_v2(parent_node, conversion_data);
 
         let value = if let Some(v) = v1.value {
-            ConstantValue::Literal(v)
+            v.into()
         } else if let Some(tbl) = v1.table {
             ConstantValue::Table(tbl.try_into().map_err(|error| ComponentConversionError::Parameter {
                 name: meta.name.clone(),
@@ -200,7 +201,7 @@ impl TryFromV1<ConstantParameterV1> for ConstantParameter {
                 error,
             })?)
         } else {
-            ConstantValue::Literal(0.0)
+            0.0.into()
         };
 
         let p = Self {
@@ -212,6 +213,73 @@ impl TryFromV1<ConstantParameterV1> for ConstantParameter {
     }
 }
 
+
+/// A constant scenario parameter.
+///
+/// A parameter that provides a constant value for each scenario in a scenario group.
+#[skip_serializing_none]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
+#[serde(deny_unknown_fields)]
+pub struct ConstantScenarioParameter {
+
+    pub meta: ParameterMeta,
+    /// The values the parameter should return.
+    ///
+    /// The length of this array must match the number of scenarios in the scenario group.
+    pub values: ConstantFloatVec,
+    /// The name of the scenario group
+    pub scenario_group: String,
+}
+
+#[cfg(feature = "core")]
+impl ConstantScenarioParameter {
+    pub fn add_to_model(
+        &self,
+        network: &mut pywr_core::network::Network,
+        args: &LoadArgs,
+        parent: Option<&str>,
+    ) -> Result<ParameterIndex<f64>, SchemaError> {
+        let name = ParameterName::new(&self.meta.name, parent);
+        let scenario_group_index = args.domain.scenarios().group_index(&self.scenario_group)?;
+        let values = self.values.load(args.tables)?;
+
+        let scenario_group_size = args.domain.scenarios().group_size(&self.scenario_group)?;
+        if values.len() != scenario_group_size {
+            return Err(SchemaError::ScenarioValuesLengthMismatch {
+                name: name.to_string(),
+                values: values.len(),
+                scenarios: scenario_group_size,
+                group: self.scenario_group.clone(),
+            });
+        }
+
+        let p = pywr_core::parameters::ConstantScenarioParameter::new(name, values, scenario_group_index);
+        Ok(network.add_const_parameter(Box::new(p))?)
+    }
+}
+
+impl TryFromV1<ConstantScenarioParameterV1> for ConstantScenarioParameter {
+    type Error = ComponentConversionError;
+
+    fn try_from_v1(
+        v1: ConstantScenarioParameterV1,
+        parent_node: Option<&str>,
+        conversion_data: &mut ConversionData,
+    ) -> Result<Self, Self::Error> {
+        let meta: ParameterMeta = v1.meta.into_v2(parent_node, conversion_data);
+
+        let values = try_convert_values(&meta.name, v1.values, v1.external, v1.table)?;
+
+        let p = Self {
+            meta,
+            values,
+            scenario_group: v1.scenario,
+        };
+        Ok(p)
+    }
+}
+
+#[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct MaxParameter {
@@ -226,11 +294,12 @@ impl MaxParameter {
         &self,
         network: &mut pywr_core::network::Network,
         args: &LoadArgs,
+        parent: Option<&str>,
     ) -> Result<ParameterIndex<f64>, SchemaError> {
         let idx = self.parameter.load(network, args, None)?;
         let threshold = self.threshold.unwrap_or(0.0);
 
-        let p = pywr_core::parameters::MaxParameter::new(self.meta.name.as_str().into(), idx, threshold);
+        let p = pywr_core::parameters::MaxParameter::new(ParameterName::new(&self.meta.name, parent), idx, threshold);
         Ok(network.add_parameter(Box::new(p))?)
     }
 }
@@ -283,11 +352,12 @@ impl DivisionParameter {
         &self,
         network: &mut pywr_core::network::Network,
         args: &LoadArgs,
+        parent: Option<&str>,
     ) -> Result<ParameterIndex<f64>, SchemaError> {
         let n = self.numerator.load(network, args, None)?;
         let d = self.denominator.load(network, args, None)?;
 
-        let p = pywr_core::parameters::DivisionParameter::new(self.meta.name.as_str().into(), n, d);
+        let p = pywr_core::parameters::DivisionParameter::new(ParameterName::new(&self.meta.name, parent), n, d);
         Ok(network.add_parameter(Box::new(p))?)
     }
 }
@@ -328,6 +398,7 @@ impl TryFromV1<DivisionParameterV1> for DivisionParameter {
 /// ```json
 #[doc = include_str!("doc_examples/min.json")]
 /// ```
+#[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct MinParameter {
@@ -342,11 +413,12 @@ impl MinParameter {
         &self,
         network: &mut pywr_core::network::Network,
         args: &LoadArgs,
+        parent: Option<&str>,
     ) -> Result<ParameterIndex<f64>, SchemaError> {
         let idx = self.parameter.load(network, args, None)?;
         let threshold = self.threshold.unwrap_or(0.0);
 
-        let p = pywr_core::parameters::MinParameter::new(self.meta.name.as_str().into(), idx, threshold);
+        let p = pywr_core::parameters::MinParameter::new(ParameterName::new(&self.meta.name, parent), idx, threshold);
         Ok(network.add_parameter(Box::new(p))?)
     }
 }
@@ -386,10 +458,11 @@ impl NegativeParameter {
         &self,
         network: &mut pywr_core::network::Network,
         args: &LoadArgs,
+        parent: Option<&str>,
     ) -> Result<ParameterIndex<f64>, SchemaError> {
         let idx = self.parameter.load(network, args, None)?;
 
-        let p = pywr_core::parameters::NegativeParameter::new(self.meta.name.as_str().into(), idx);
+        let p = pywr_core::parameters::NegativeParameter::new(ParameterName::new(&self.meta.name, parent), idx);
         Ok(network.add_parameter(Box::new(p))?)
     }
 }
@@ -426,6 +499,7 @@ impl TryFromV1<NegativeParameterV1> for NegativeParameter {
 /// ```
 /// In January this parameter returns 2, in February 4.
 ///
+#[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct NegativeMaxParameter {
@@ -440,11 +514,16 @@ impl NegativeMaxParameter {
         &self,
         network: &mut pywr_core::network::Network,
         args: &LoadArgs,
+        parent: Option<&str>,
     ) -> Result<ParameterIndex<f64>, SchemaError> {
         let idx = self.metric.load(network, args, None)?;
         let threshold = self.threshold.unwrap_or(0.0);
 
-        let p = pywr_core::parameters::NegativeMaxParameter::new(self.meta.name.as_str().into(), idx, threshold);
+        let p = pywr_core::parameters::NegativeMaxParameter::new(
+            ParameterName::new(&self.meta.name, parent),
+            idx,
+            threshold,
+        );
         Ok(network.add_parameter(Box::new(p))?)
     }
 }
@@ -485,6 +564,7 @@ impl TryFromV1<NegativeMaxParameterV1> for NegativeMaxParameter {
 /// ```
 /// In January this parameter returns 1, in February 2.
 ///
+#[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct NegativeMinParameter {
@@ -499,11 +579,16 @@ impl NegativeMinParameter {
         &self,
         network: &mut pywr_core::network::Network,
         args: &LoadArgs,
+        parent: Option<&str>,
     ) -> Result<ParameterIndex<f64>, SchemaError> {
         let idx = self.metric.load(network, args, None)?;
         let threshold = self.threshold.unwrap_or(0.0);
 
-        let p = pywr_core::parameters::NegativeMinParameter::new(self.meta.name.as_str().into(), idx, threshold);
+        let p = pywr_core::parameters::NegativeMinParameter::new(
+            ParameterName::new(&self.meta.name, parent),
+            idx,
+            threshold,
+        );
         Ok(network.add_parameter(Box::new(p))?)
     }
 }

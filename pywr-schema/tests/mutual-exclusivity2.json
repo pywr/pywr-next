@@ -7,7 +7,10 @@
   "timestepper": {
     "start": "2015-01-01",
     "end": "2015-01-03",
-    "timestep": 1
+    "timestep": {
+      "type": "Days",
+      "days": 1
+    }
   },
   "network": {
     "nodes": [
@@ -23,13 +26,13 @@
         },
         "type": "WaterTreatmentWorks",
         "max_flow": {
-          "type": "Constant",
+          "type": "Literal",
           "value": 10.0
         },
         "loss_factor": {
           "type": "Net",
           "factor": {
-            "type": "Constant",
+            "type": "Literal",
             "value": 0.1
           }
         }
@@ -40,11 +43,11 @@
         },
         "type": "Output",
         "max_flow": {
-          "type": "Constant",
+          "type": "Literal",
           "value": 15.0
         },
         "cost": {
-          "type": "Constant",
+          "type": "Literal",
           "value": -15
         }
       },
@@ -54,7 +57,7 @@
         },
         "type": "WaterTreatmentWorks",
         "max_flow": {
-          "type": "Constant",
+          "type": "Literal",
           "value": 10.0
         }
       },
@@ -64,14 +67,16 @@
         },
         "type": "Output",
         "max_flow": {
-          "type": "Constant",
+          "type": "Literal",
           "value": 15.0
         },
         "cost": {
-          "type": "Constant",
+          "type": "Literal",
           "value": -10
         }
-      },
+      }
+    ],
+    "virtual_nodes": [
       {
         "meta": {
           "name": "me"
@@ -153,8 +158,7 @@
         "filename": "mutual-exclusivity2.csv",
         "metric_set": [
           "nodes"
-        ],
-        "decimal_places": 1
+        ]
       }
     ]
   }

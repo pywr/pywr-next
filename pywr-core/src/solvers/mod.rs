@@ -5,11 +5,23 @@ use std::ops::{Add, AddAssign};
 use std::time::Duration;
 use thiserror::Error;
 
+#[cfg(any(feature = "cbc", feature = "clp", feature = "highs", feature = "microlp"))]
 mod builder;
 
 #[cfg(feature = "cbc")]
 mod cbc;
+
+#[cfg(feature = "clp")]
 mod clp;
+
+#[cfg(any(
+    feature = "cbc",
+    feature = "clp",
+    feature = "highs",
+    feature = "ipm-ocl",
+    feature = "ipm-simd",
+    feature = "microlp"
+))]
 mod col_edge_map;
 #[cfg(feature = "highs")]
 mod highs;
@@ -17,20 +29,33 @@ mod highs;
 mod ipm_ocl;
 #[cfg(feature = "ipm-simd")]
 mod ipm_simd;
+#[cfg(feature = "microlp")]
+mod microlp;
 
 #[cfg(feature = "ipm-ocl")]
 pub use self::ipm_ocl::{ClIpmF32Solver, ClIpmF64Solver, ClIpmSolverSettings, ClIpmSolverSettingsBuilder};
+#[cfg(all(feature = "ipm-simd", feature = "pyo3"))]
+pub use self::ipm_simd::build_ipm_simd_settings_py;
 #[cfg(feature = "ipm-simd")]
 pub use self::ipm_simd::{SimdIpmF64Solver, SimdIpmSolverSettings, SimdIpmSolverSettingsBuilder};
 use crate::aggregated_node::AggregatedNodeIndex;
 use crate::node::NodeIndex;
+#[cfg(all(feature = "cbc", feature = "pyo3"))]
+pub use cbc::build_cbc_settings_py;
 #[cfg(feature = "cbc")]
 pub use cbc::{CbcError, CbcSolver, CbcSolverSettings, CbcSolverSettingsBuilder};
-pub use clp::{ClpError, ClpSolver, ClpSolverSettings, ClpSolverSettingsBuilder};
+#[cfg(all(feature = "clp", feature = "pyo3"))]
+pub use clp::build_clp_settings_py;
+#[cfg(feature = "clp")]
+pub use clp::{ClpSolveStatusError, ClpSolver, ClpSolverSettings, ClpSolverSettingsBuilder};
+#[cfg(all(feature = "highs", feature = "pyo3"))]
+pub use highs::build_highs_settings_py;
 #[cfg(feature = "highs")]
 pub use highs::{HighsSolver, HighsSolverSettings, HighsSolverSettingsBuilder};
+#[cfg(feature = "microlp")]
+pub use microlp::{MicroLpError, MicroLpSolver, MicroLpSolverSettings, MicroLpSolverSettingsBuilder};
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone)]
 pub struct SolverTimings {
     pub update_objective: Duration,
     pub update_constraints: Duration,
@@ -70,7 +95,7 @@ impl AddAssign for SolverTimings {
 ///
 /// This enum is used to ensure that a given solver implements the appropriate features
 /// to solve a given model.
-#[derive(PartialEq, Eq, Hash)]
+#[derive(Debug, PartialEq, Eq, Hash)]
 pub enum SolverFeatures {
     AggregatedNode,
     AggregatedNodeFactors,
@@ -95,6 +120,9 @@ pub enum SolverSetupError {
     NoEdgesDefined,
     #[error("Node index not found: {0}")]
     NodeIndexNotFound(NodeIndex),
+    #[cfg(feature = "highs")]
+    #[error("Highs error: {0}")]
+    HighsError(#[from] highs::HighsStatusError),
 }
 
 /// Errors that can occur during solver solve.
@@ -135,6 +163,18 @@ pub enum SolverSolveError {
     NetworkStateError(#[from] crate::state::NetworkStateError),
     #[error("State error: {0}")]
     StateError(#[from] crate::state::StateError),
+    #[cfg(feature = "clp")]
+    #[error("Clp error: {0}")]
+    ClpSolveError(#[from] ClpSolveStatusError),
+    #[cfg(feature = "highs")]
+    #[error("Highs error: {0}")]
+    HighsError(#[from] highs::HighsStatusError),
+    #[cfg(feature = "highs")]
+    #[error("Highs error: {0}")]
+    HighsModelError(#[from] highs::HighsModelError),
+    #[cfg(feature = "microlp")]
+    #[error("MicroLP error: {0}")]
+    MicroLpError(#[from] MicroLpError),
 }
 
 pub trait Solver: Send {

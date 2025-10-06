@@ -11,7 +11,7 @@ use std::fmt::{Display, Formatter};
 use std::ops::Deref;
 use thiserror::Error;
 
-#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Debug)]
+#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Debug, Hash)]
 pub struct DerivedMetricIndex(usize);
 
 impl Deref for DerivedMetricIndex {

@@ -1,5 +1,7 @@
+use crate::agg_funcs::AggFuncError;
 use crate::metric::{
-    ConstantMetricF64Error, MetricF64Error, MetricU64Error, SimpleMetricF64Error, SimpleMetricU64Error,
+    ConstantMetricF64Error, ConstantMetricU64Error, MetricF64Error, MetricU64Error, SimpleMetricF64Error,
+    SimpleMetricU64Error,
 };
 use crate::parameters::InterpolationError;
 use thiserror::Error;
@@ -8,8 +10,13 @@ use thiserror::Error;
 #[derive(Error, Debug)]
 pub enum ParameterSetupError {
     #[cfg(feature = "pyo3")]
-    #[error("Python error: {0}")]
-    PythonError(#[from] pyo3::PyErr),
+    #[error("Error with Python parameter `{name}` (`{object}`): {py_error}")]
+    PythonError {
+        name: String,
+        object: String,
+        #[source]
+        py_error: Box<pyo3::PyErr>,
+    },
 }
 
 /// Errors returned by parameter calculations.
@@ -28,8 +35,15 @@ pub enum ParameterCalculationError {
     #[error("Internal error: {message}")]
     Internal { message: String },
     #[cfg(feature = "pyo3")]
-    #[error("Python error: {0}")]
-    PythonError(#[from] pyo3::PyErr),
+    #[error("Error with Python parameter `{name}` (`{object}`): {py_error}")]
+    PythonError {
+        name: String,
+        object: String,
+        #[source]
+        py_error: Box<pyo3::PyErr>,
+    },
+    #[error("Aggregation error: {0}")]
+    AggFuncError(#[from] AggFuncError),
 }
 
 #[derive(Error, Debug)]
@@ -42,10 +56,17 @@ pub enum SimpleCalculationError {
     OutOfBoundsError { index: usize, length: usize, axis: usize },
     #[error("Internal error: {message}")]
     Internal { message: String },
+    #[error("Aggregation error: {0}")]
+    AggFuncError(#[from] AggFuncError),
 }
 
+#[allow(clippy::enum_variant_names)]
 #[derive(Error, Debug)]
 pub enum ConstCalculationError {
-    #[error("Constant metric error: {0}")]
+    #[error("Constant f64 metric error: {0}")]
     ConstantMetricF64Error(#[from] ConstantMetricF64Error),
+    #[error("Constant u64 metric error: {0}")]
+    ConstantMetricU64Error(#[from] ConstantMetricU64Error),
+    #[error("Aggregation error: {0}")]
+    AggFuncError(#[from] AggFuncError),
 }

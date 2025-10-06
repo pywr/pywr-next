@@ -1,5 +1,7 @@
+use crate::digest::Checksum;
 use crate::parameters::ParameterMeta;
 use crate::visit::VisitPaths;
+use pywr_schema_macros::skip_serializing_none;
 use schemars::JsonSchema;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -9,6 +11,7 @@ use std::path::{Path, PathBuf};
 /// This dataset is loaded using Pandas. This is done via a callback to Python to load the dataset.
 /// It is then converted to a Polars DataFrame and returned.
 ///
+#[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct PandasTimeseries {
@@ -17,6 +20,8 @@ pub struct PandasTimeseries {
     pub url: PathBuf,
     /// Keyword arguments to pass to the relevant Pandas load function.
     pub kwargs: Option<HashMap<String, serde_json::Value>>,
+    /// Optional checksum to verify the dataset.
+    pub checksum: Option<Checksum>,
 }
 
 impl VisitPaths for PandasTimeseries {
@@ -49,7 +54,7 @@ mod core {
     const PANDAS_LOAD_SCRIPT: &CStr = c_str!(include_str!("pandas_load.py"));
 
     use super::PandasTimeseries;
-    use crate::parameters::try_json_value_into_py;
+    use crate::py_utils::try_json_value_into_py;
     use crate::timeseries::TimeseriesError;
     use crate::timeseries::align_and_resample::align_and_resample;
     use polars::frame::DataFrame;
@@ -74,6 +79,11 @@ mod core {
             } else {
                 self.url.clone()
             };
+
+            // Validate the checksum if provided
+            if let Some(checksum) = &self.checksum {
+                checksum.check(&fp)?;
+            }
 
             let df: PyDataFrame = Python::with_gil(|py| -> PyResult<PyDataFrame> {
                 let pandas_load =
@@ -111,8 +121,7 @@ mod core {
                     .extract()?;
 
                 Ok(df)
-            })
-            .expect("Failed to load Pandas dataset");
+            })?;
 
             let mut df = df.0;
 

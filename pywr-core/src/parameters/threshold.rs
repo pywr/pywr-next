@@ -9,7 +9,6 @@ use crate::scenario::ScenarioIndex;
 use crate::state::State;
 use crate::timestep::Timestep;
 
-
 pub struct ThresholdParameter {
     meta: ParameterMeta,
     metric: MetricF64,
@@ -71,7 +70,6 @@ impl GeneralParameter<u64> for ThresholdParameter {
 
         let threshold = self.threshold.get_value(model, state)?;
         let value = self.metric.get_value(model, state)?;
-
         let active = self.predicate.apply(value, threshold);
 
         if active {

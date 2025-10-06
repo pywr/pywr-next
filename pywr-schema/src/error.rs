@@ -1,5 +1,7 @@
-use crate::data_tables::{DataTable, TableDataRef, TableError};
-use crate::nodes::NodeAttribute;
+#[cfg(feature = "core")]
+use crate::data_tables::{TableCollectionError, TableDataRef};
+use crate::digest::ChecksumError;
+use crate::nodes::{NodeAttribute, NodeComponent};
 use crate::timeseries::TimeseriesError;
 #[cfg(feature = "core")]
 use ndarray::ShapeError;
@@ -16,20 +18,18 @@ pub enum SchemaError {
     Infallible(#[from] std::convert::Infallible),
     #[error("IO error on path `{path}`: {error}")]
     IO { path: PathBuf, error: std::io::Error },
-    #[error("JSON error: {0}")]
-    Json(#[from] serde_json::Error),
     // Use this error when a node is not found in the schema (i.e. while parsing the schema).
     #[error("Node with name {name} not found in the schema.")]
     NodeNotFound { name: String },
+    #[error("Virtual node with name {name} not found in the schema.")]
+    VirtualNodeNotFound { name: String },
     // Use this error when a node is not found in a pywr-core network (i.e. during building the network).
     #[error("Node with name `{name}` and sub-name `{}` not found in the network.", .sub_name.as_deref().unwrap_or("None"))]
     CoreNodeNotFound { name: String, sub_name: Option<String> },
-    #[error("node ({ty}) with name {name} does not support attribute {attr}")]
-    NodeAttributeNotSupported {
-        ty: String,
-        name: String,
-        attr: NodeAttribute,
-    },
+    #[error("Attribute `{attr}` not supported.")]
+    NodeAttributeNotSupported { attr: NodeAttribute },
+    #[error("Component `{attr}` not supported.")]
+    NodeComponentNotSupported { attr: NodeComponent },
     // Use this error when a parameter is not found in the schema (i.e. while parsing the schema).
     #[error("Parameter `{name}` not found in the schema.")]
     ParameterNotFound { name: String, key: Option<String> },
@@ -44,8 +44,6 @@ pub enum SchemaError {
     NetworkNotFound(String),
     #[error("Edge from `{from_node}` to `{to_node}` not found")]
     EdgeNotFound { from_node: String, to_node: String },
-    #[error("missing initial volume for node: {0}")]
-    MissingInitialVolume(String),
     #[error("Pywr core network error: {0}")]
     #[cfg(feature = "core")]
     CoreNetworkError(#[from] pywr_core::NetworkError),
@@ -58,16 +56,13 @@ pub enum SchemaError {
     #[error("Metric F64 error: {0}")]
     #[cfg(feature = "core")]
     CoreMetricF64Error(#[from] pywr_core::metric::MetricF64Error),
-    #[error("Error loading data from table `{0}` (column: `{1:?}`, index: `{2:?}`) error: {error}", table_ref.table, table_ref.column, table_ref.index)]
-    TableRefLoad { table_ref: TableDataRef, error: TableError },
-    #[error("Error loading table `{table_def:?}` error: {error}")]
-    TableLoad { table_def: DataTable, error: TableError },
-    #[error("Circular node reference(s) found.")]
-    CircularNodeReference,
-    #[error("Circular parameters reference(s) found. Unable to load the following parameters: {0:?}")]
-    CircularParameterReference(Vec<String>),
-    #[error("unsupported file format")]
-    UnsupportedFileFormat,
+    #[error("Error loading data from table `{0}` (column: `{1:?}`, row: `{2:?}`) error: {source}", table_ref.table, table_ref.column, table_ref.row)]
+    #[cfg(feature = "core")]
+    TableRefLoad {
+        table_ref: TableDataRef,
+        #[source]
+        source: Box<TableCollectionError>,
+    },
     #[cfg(feature = "pyo3")]
     #[error("Python error: {0}")]
     PythonError(#[from] PyErr),
@@ -75,7 +70,7 @@ pub enum SchemaError {
     HDF5Error(String),
     #[error("Missing metric set: {0}")]
     MissingMetricSet(String),
-    #[error("mismatch in the length of data provided. expected: {expected}, found: {found}")]
+    #[error("Mismatch in the length of data provided. expected: {expected}, found: {found}")]
     DataLengthMismatch { expected: usize, found: usize },
     #[error("Failed to estimate epsilon for use in the radial basis function.")]
     RbfEpsilonEstimation,
@@ -110,17 +105,46 @@ pub enum SchemaError {
     PlaceholderNodeNotAllowed { name: String },
     #[error("Placeholder parameter `{name}` cannot be added to a model.")]
     PlaceholderParameterNotAllowed { name: String },
+    #[error("Node cannot be used in a flow constraint.")]
+    NodeNotAllowedInFlowConstraint,
+    #[error("Node cannot be used in a storage constraint.")]
+    NodeNotAllowedInStorageConstraint,
+    #[error("{msg}")]
+    InvalidNodeAttributes { msg: String },
+    #[error("'{node}' does not have a slot named '{slot}'")]
+    NodeConnectionSlotNotFound { node: String, slot: String },
+    #[error("{msg}")]
+    NodeConnectionSlotNotAvailable { msg: String },
+    #[error("{msg}")]
+    NodeConnectionSlotRequired { msg: String },
+    #[error("Checksum error: {0}")]
+    ChecksumError(#[from] ChecksumError),
+    #[error(
+        "Number of values ({values}) for parameter '{name}' does not match the size ({scenarios}) of the specified scenario group '{group}'."
+    )]
+    ScenarioValuesLengthMismatch {
+        values: usize,
+        name: String,
+        scenarios: usize,
+        group: String,
+    },
 }
 
 #[cfg(all(feature = "core", feature = "pyo3"))]
-impl From<SchemaError> for PyErr {
-    fn from(err: SchemaError) -> PyErr {
-        pyo3::exceptions::PyRuntimeError::new_err(err.to_string())
+impl TryFrom<SchemaError> for PyErr {
+    type Error = ();
+    fn try_from(err: SchemaError) -> Result<Self, Self::Error> {
+        match err {
+            SchemaError::PythonError(py_err) => Ok(py_err),
+            SchemaError::Timeseries(err) => err.try_into(),
+            _ => Err(()),
+        }
     }
 }
 
 #[derive(Error, Debug, PartialEq, Eq, Clone)]
 #[cfg_attr(feature = "pyo3", pyclass)]
+#[allow(clippy::large_enum_variant)]
 pub enum ComponentConversionError {
     #[error("Failed to convert `{attr}` on node `{name}`: {error}")]
     Node {
@@ -132,6 +156,15 @@ pub enum ComponentConversionError {
     Parameter {
         attr: String,
         name: String,
+        error: ConversionError,
+    },
+    #[error("Failed to convert scenario: {error}")]
+    Scenarios { error: ConversionError },
+    #[error("Failed to convert table: {error}")]
+    Table {
+        name: String,
+        url: PathBuf,
+        json: Option<String>,
         error: ConversionError,
     },
 }
@@ -171,4 +204,8 @@ pub enum ConversionError {
     NonConstantValue {},
     #[error("{found:?} value(s) found, {expected:?} were expected")]
     IncorrectNumberOfValues { expected: usize, found: usize },
+    #[error("Scenario slice is invalid: length is {length}, expected 1 or 2.")]
+    InvalidScenarioSlice { length: usize },
+    #[error("Table conversion is not currently supported: {name}")]
+    TableConversionNotSupported { name: String },
 }

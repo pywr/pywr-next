@@ -5,7 +5,10 @@
   "timestepper": {
     "start": "2021-01-01",
     "end": "2021-12-31",
-    "timestep": 1
+    "timestep": {
+      "type": "Days",
+      "days": 1
+    }
   },
   "network": {
     "nodes": [
@@ -29,7 +32,7 @@
         },
         "type": "Link",
         "max_flow": {
-          "type": "Constant",
+          "type": "Literal",
           "value": 2.0
         }
       },
@@ -39,10 +42,26 @@
         },
         "type": "Link",
         "cost": {
-          "type": "Constant",
+          "type": "Literal",
           "value": 1.0
         }
       },
+      {
+        "meta": {
+          "name": "output1"
+        },
+        "type": "Output",
+        "cost": {
+          "type": "Literal",
+          "value": -10.0
+        },
+        "max_flow": {
+          "type": "Parameter",
+          "name": "demand"
+        }
+      }
+    ],
+    "virtual_nodes": [
       {
         "meta": {
           "name": "agg-node"
@@ -57,22 +76,8 @@
           }
         ],
         "max_flow": {
-          "type": "Constant",
+          "type": "Literal",
           "value": 5.0
-        }
-      },
-      {
-        "meta": {
-          "name": "output1"
-        },
-        "type": "Output",
-        "cost": {
-          "type": "Constant",
-          "value": -10.0
-        },
-        "max_flow": {
-          "type": "Parameter",
-          "name": "demand"
         }
       }
     ],
@@ -100,7 +105,10 @@
           "name": "demand"
         },
         "type": "Constant",
-        "value": 10.0
+        "value": {
+          "type": "Literal",
+          "value": 10.0
+        }
       }
     ],
     "timeseries": [
@@ -133,7 +141,7 @@
             "name": "output1"
           },
           {
-            "type": "Node",
+            "type": "VirtualNode",
             "name": "agg-node"
           }
         ]

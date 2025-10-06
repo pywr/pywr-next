@@ -1,0 +1,114 @@
+{
+  "metadata": {
+    "title": "Simple 1",
+    "description": "A very simple example.",
+    "minimum_version": "0.1"
+  },
+  "timestepper": {
+    "start": "2015-01-01",
+    "end": "2015-12-31",
+    "timestep": {
+      "type": "Days",
+      "days": 1
+    }
+  },
+  "scenarios": {
+    "groups": [
+      {
+        "name": "scenario A",
+        "size": 10
+      },
+      {
+        "name": "scenario B",
+        "size": 2,
+        "labels": [
+          "First",
+          "Second"
+        ]
+      }
+    ],
+    "combinations": null
+  },
+  "network": {
+    "nodes": [
+      {
+        "type": "Input",
+        "meta": {
+          "name": "supply1"
+        },
+        "max_flow": {
+          "type": "Parameter",
+          "name": "flow_scenarios"
+        }
+      },
+      {
+        "type": "Link",
+        "meta": {
+          "name": "link1"
+        }
+      },
+      {
+        "type": "Output",
+        "meta": {
+          "name": "demand1"
+        },
+        "max_flow": {
+          "type": "Parameter",
+          "name": "demand_scenarios"
+        },
+        "cost": {
+          "type": "Literal",
+          "value": -10.0
+        }
+      }
+    ],
+    "edges": [
+      {
+        "from_node": "supply1",
+        "to_node": "link1"
+      },
+      {
+        "from_node": "link1",
+        "to_node": "demand1"
+      }
+    ],
+    "parameters": [
+      {
+        "type": "ConstantScenario",
+        "meta": {
+          "name": "demand_scenarios"
+        },
+        "values": {
+          "type": "Literal",
+          "values": [
+            10.0,
+            15.0
+          ]
+        },
+        "scenario_group": "scenario B"
+      },
+      {
+        "type": "ConstantScenario",
+        "meta": {
+          "name": "flow_scenarios"
+        },
+        "values": {
+          "type": "Literal",
+          "values": [
+            10.0,
+            11.0,
+            12.0,
+            13.0,
+            14.0,
+            15.0,
+            16.0,
+            17.0,
+            18.0,
+            19.0
+          ]
+        },
+        "scenario_group": "scenario A"
+      }
+    ]
+  }
+}

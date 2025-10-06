@@ -11,11 +11,12 @@ use pywr_core::solvers::{ClIpmF32Solver, ClIpmF64Solver, ClIpmSolverSettings, Cl
 use pywr_core::solvers::{ClpSolver, ClpSolverSettings, ClpSolverSettingsBuilder};
 #[cfg(feature = "highs")]
 use pywr_core::solvers::{HighsSolver, HighsSolverSettings, HighsSolverSettingsBuilder};
+#[cfg(feature = "microlp")]
+use pywr_core::solvers::{MicroLpSolver, MicroLpSolverSettings, MicroLpSolverSettingsBuilder};
 #[cfg(feature = "ipm-simd")]
 use pywr_core::solvers::{SimdIpmF64Solver, SimdIpmSolverSettings, SimdIpmSolverSettingsBuilder};
 use pywr_core::test_utils::make_random_model;
-use pywr_schema::ComponentConversionError;
-use pywr_schema::model::{PywrModel, PywrMultiNetworkModel, PywrNetwork};
+use pywr_schema::{ComponentConversionError, ModelSchema, MultiNetworkModelSchema, PywrNetwork};
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use schemars::schema_for;
@@ -35,6 +36,8 @@ enum Solver {
     CLIPMF64,
     #[cfg(feature = "ipm-simd")]
     IpmSimd,
+    #[cfg(feature = "microlp")]
+    Microlp,
 }
 
 impl Display for Solver {
@@ -51,6 +54,8 @@ impl Display for Solver {
             Solver::CLIPMF64 => write!(f, "clipmf64"),
             #[cfg(feature = "ipm-simd")]
             Solver::IpmSimd => write!(f, "ipm-simd"),
+            #[cfg(feature = "microlp")]
+            Solver::Microlp => write!(f, "microlp"),
         }
     }
 }
@@ -231,7 +236,7 @@ fn v1_to_v2(in_path: &Path, out_path: &Path, stop_on_error: bool, network_only: 
         let schema: pywr_v1_schema::PywrModel = serde_json::from_str(data.as_str())
             .with_context(|| format!("Failed deserialise Pywr v1 model file: {in_path:?}",))?;
         // Convert to v2 schema and collect any errors
-        let (schema_v2, errors) = PywrModel::from_v1(schema);
+        let (schema_v2, errors) = ModelSchema::from_v1(schema);
 
         handle_conversion_errors(&errors, stop_on_error)?;
 
@@ -271,7 +276,7 @@ fn run(
 ) {
     let data = std::fs::read_to_string(path).unwrap();
     let data_path = data_path.or_else(|| path.parent());
-    let schema_v2: PywrModel = serde_json::from_str(data.as_str()).unwrap();
+    let schema_v2: ModelSchema = serde_json::from_str(data.as_str()).unwrap();
 
     let model = schema_v2.build_model(data_path, output_path).unwrap();
 
@@ -356,6 +361,19 @@ fn run(
             let settings = settings_builder.build();
             model.run_multi_scenario::<SimdIpmF64Solver>(&settings)
         }
+        #[cfg(feature = "microlp")]
+        Solver::Microlp => {
+            let mut settings_builder = MicroLpSolverSettingsBuilder::default();
+            if threads > 1 {
+                settings_builder = settings_builder.parallel();
+                settings_builder = settings_builder.threads(threads);
+            }
+            if ignore_feature_requirements {
+                settings_builder = settings_builder.ignore_feature_requirements();
+            }
+            let settings = settings_builder.build();
+            model.run::<MicroLpSolver>(&settings)
+        }
     }
     .unwrap();
 }
@@ -364,7 +382,7 @@ fn run_multi(path: &Path, solver: &Solver, data_path: Option<&Path>, output_path
     let data = std::fs::read_to_string(path).unwrap();
     let data_path = data_path.or_else(|| path.parent());
 
-    let schema_v2: PywrMultiNetworkModel = serde_json::from_str(data.as_str()).unwrap();
+    let schema_v2: MultiNetworkModelSchema = serde_json::from_str(data.as_str()).unwrap();
 
     let model = schema_v2.build_model(data_path, output_path).unwrap();
 
@@ -380,6 +398,8 @@ fn run_multi(path: &Path, solver: &Solver, data_path: Option<&Path>, output_path
         Solver::CLIPMF64 => model.run_multi_scenario::<ClIpmF64Solver>(&ClIpmSolverSettings::default()),
         #[cfg(feature = "ipm-simd")]
         Solver::IpmSimd => model.run_multi_scenario::<SimdIpmF64Solver>(&SimdIpmSolverSettings::default()),
+        #[cfg(feature = "microlp")]
+        Solver::Microlp => model.run::<MicroLpSolver>(&MicroLpSolverSettings::default()),
     }
     .unwrap();
 }
@@ -400,12 +420,14 @@ fn run_random(num_systems: usize, density: usize, num_scenarios: usize, solver: 
         Solver::CLIPMF64 => model.run_multi_scenario::<ClIpmF64Solver>(&ClIpmSolverSettings::default()),
         #[cfg(feature = "ipm-simd")]
         Solver::IpmSimd => model.run_multi_scenario::<SimdIpmF64Solver>(&SimdIpmSolverSettings::default()),
+        #[cfg(feature = "microlp")]
+        Solver::Microlp => model.run::<MicroLpSolver>(&MicroLpSolverSettings::default()),
     }
     .unwrap();
 }
 
 fn export_schema(out_path: &Path) -> Result<()> {
-    let schema = schema_for!(PywrModel);
+    let schema = schema_for!(ModelSchema);
     std::fs::write(
         out_path,
         serde_json::to_string_pretty(&schema).with_context(|| "Failed serialise Pywr schema".to_string())?,

@@ -8,7 +8,7 @@
     "name": "my-monthly-profile"
   },
   "denominator": {
-    "type": "Constant",
+    "type": "Literal",
     "value": 0.3
   }
 }

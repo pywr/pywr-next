@@ -6,8 +6,11 @@
   },
   "timestepper": {
     "start": "2015-01-01",
-    "end": "2015-12-31",
-    "timestep": 1
+    "end": "2015-01-03",
+    "timestep": {
+      "type": "Days",
+      "days": 1
+    }
   },
   "network": {
     "nodes": [
@@ -17,8 +20,8 @@
         },
         "type": "Catchment",
         "flow": {
-          "type": "Constant",
-          "value": -15
+          "type": "Literal",
+          "value": 15
         }
       },
       {
@@ -27,11 +30,11 @@
         },
         "type": "RiverGauge",
         "mrf": {
-          "type": "Constant",
+          "type": "Literal",
           "value": 5.0
         },
         "mrf_cost": {
-          "type": "Constant",
+          "type": "Literal",
           "value": -20.0
         }
       },
@@ -47,11 +50,11 @@
         },
         "type": "Output",
         "max_flow": {
-          "type": "Constant",
+          "type": "Literal",
           "value": 15
         },
         "cost": {
-          "type": "Constant",
+          "type": "Literal",
           "value": -10
         }
       }
@@ -66,8 +69,27 @@
         "to_node": "term1"
       },
       {
-        "from_node": "gauge1",
+        "from_node": "catchment1",
         "to_node": "demand1"
+      }
+    ],
+    "metric_sets": [
+      {
+        "name": "nodes",
+        "filters": {
+          "all_nodes": true
+        }
+      }
+    ],
+    "outputs": [
+      {
+        "name": "node-outputs",
+        "type": "CSV",
+        "format": "Long",
+        "filename": "river_gauge1-expected.csv",
+        "metric_set": [
+          "nodes"
+        ]
       }
     ]
   }

@@ -1,22 +1,32 @@
 use crate::models::ModelDomain;
 use crate::network::{
-    Network, NetworkFinaliseError, NetworkRecorderSaveError, NetworkRecorderSetupError, NetworkSetupError,
-    NetworkSolverSetupError, NetworkState, NetworkStepError, RunTimings,
+    Network, NetworkFinaliseError, NetworkRecorderSaveError, NetworkRecorderSetupError, NetworkResult,
+    NetworkSetupError, NetworkSolverSetupError, NetworkState, NetworkStepError, NetworkTimings, RunDuration,
 };
-use crate::solvers::{MultiStateSolver, Solver, SolverSettings};
+use crate::recorders::RecorderInternalState;
+#[cfg(all(feature = "cbc", feature = "pyo3"))]
+use crate::solvers::{CbcSolver, build_cbc_settings_py};
+#[cfg(all(feature = "ipm-ocl", feature = "pyo3"))]
+use crate::solvers::{ClIpmF32Solver, ClIpmF64Solver, ClIpmSolverSettings};
+#[cfg(all(feature = "clp", feature = "pyo3"))]
+use crate::solvers::{ClpSolver, build_clp_settings_py};
+#[cfg(all(feature = "highs", feature = "pyo3"))]
+use crate::solvers::{HighsSolver, build_highs_settings_py};
+use crate::solvers::{MultiStateSolver, Solver, SolverFeatures, SolverSettings};
+#[cfg(all(feature = "ipm-simd", feature = "pyo3"))]
+use crate::solvers::{SimdIpmF64Solver, build_ipm_simd_settings_py};
 use crate::timestep::Timestep;
 #[cfg(feature = "pyo3")]
-use pyo3::{PyErr, exceptions::PyRuntimeError};
+use pyo3::{Bound, PyErr, PyResult, Python, exceptions::PyRuntimeError, pyclass, pymethods, types::PyDict};
 use rayon::ThreadPool;
-use std::any::Any;
-use std::time::Instant;
+use std::collections::HashSet;
 use thiserror::Error;
-use tracing::debug;
+use tracing::{debug, info};
 
 pub struct ModelState<S> {
     current_time_step_idx: usize,
     state: NetworkState,
-    recorder_state: Vec<Option<Box<dyn Any>>>,
+    recorder_state: Vec<Option<Box<dyn RecorderInternalState>>>,
     solvers: S,
 }
 
@@ -29,7 +39,7 @@ impl<S> ModelState<S> {
         &mut self.state
     }
 
-    pub fn recorder_state(&self) -> &Vec<Option<Box<dyn Any>>> {
+    pub fn recorder_state(&self) -> &Vec<Option<Box<dyn RecorderInternalState>>> {
         &self.recorder_state
     }
 }
@@ -88,7 +98,97 @@ impl From<ModelRunError> for PyErr {
     }
 }
 
+/// Internal struct for tracking model timings.
+#[cfg_attr(feature = "pyo3", pyclass)]
+#[derive(Clone)]
+pub struct ModelTimings {
+    run_duration: RunDuration,
+    network_timings: NetworkTimings,
+}
+
+impl ModelTimings {
+    pub fn new_with_component_timings(network: &Network) -> Self {
+        Self {
+            run_duration: RunDuration::start(),
+            network_timings: NetworkTimings::new_with_component_timings(network),
+        }
+    }
+
+    fn finish(&mut self) {
+        self.run_duration = self.run_duration.finish();
+    }
+
+    /// Print summary statistics of the model run.
+    pub fn print_summary_statistics(&self, network: &Network) {
+        info!("Run timing statistics:");
+        let total_duration = self.run_duration.total_duration().as_secs_f64();
+        info!("{: <24} | {: <10}", "Metric", "Value");
+        self.run_duration.print_table();
+        self.network_timings.print_table(total_duration, network);
+    }
+}
+
+#[cfg(feature = "pyo3")]
+#[pymethods]
+impl ModelTimings {
+    /// Total duration of the model run in seconds.
+    #[getter]
+    pub fn total_duration(&self) -> f64 {
+        self.run_duration.total_duration().as_secs_f64()
+    }
+
+    #[getter]
+    pub fn speed(&self) -> f64 {
+        self.run_duration.speed()
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "<ModelTimings completed in {:.2} seconds with speed {:.2} time-steps/second>",
+            self.total_duration(),
+            self.speed()
+        )
+    }
+}
+
+/// The results of a model run.
+///
+/// Only recorders which produced a result will be present.
+#[cfg_attr(feature = "pyo3", pyclass)]
+#[derive(Clone)]
+pub struct ModelResult {
+    pub domain: ModelDomain,
+    pub timings: ModelTimings,
+    pub network_result: NetworkResult,
+}
+
+#[cfg(feature = "pyo3")]
+#[pymethods]
+impl ModelResult {
+    #[getter]
+    #[pyo3(name = "timings")]
+    fn timings_py(&self) -> ModelTimings {
+        self.timings.clone()
+    }
+    #[getter]
+    #[pyo3(name = "network_result")]
+    fn network_result_py(&self) -> NetworkResult {
+        self.network_result.clone()
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "<ModelResult with {} recorder results; {} scenarios completed in {:.2} seconds with speed {:.2} time-steps/second>",
+            self.network_result.len(),
+            self.domain.scenarios.len(),
+            self.timings.total_duration(),
+            self.timings.speed()
+        )
+    }
+}
+
 /// A standard Pywr model containing a single network.
+#[cfg_attr(feature = "pyo3", pyclass)]
 pub struct Model {
     domain: ModelDomain,
     network: Network,
@@ -107,6 +207,10 @@ impl Model {
 
     pub fn network(&self) -> &Network {
         &self.network
+    }
+
+    pub fn required_features(&self) -> HashSet<SolverFeatures> {
+        self.network.required_features()
     }
 
     pub fn network_mut(&mut self) -> &mut Network {
@@ -192,7 +296,7 @@ impl Model {
         &self,
         state: &mut ModelState<Vec<Box<S>>>,
         thread_pool: Option<&ThreadPool>,
-        timings: &mut RunTimings,
+        timings: &mut NetworkTimings,
     ) -> Result<(), ModelStepError>
     where
         S: Solver,
@@ -231,16 +335,18 @@ impl Model {
                 })?,
         }
 
-        let start_r_save = Instant::now();
-
         self.network
-            .save_recorders(timestep, scenario_indices, &state.state, &mut state.recorder_state)
+            .save_recorders(
+                timestep,
+                scenario_indices,
+                &state.state,
+                &mut state.recorder_state,
+                timings,
+            )
             .map_err(|source| ModelStepError::RecorderSaveError {
                 timestep: *timestep,
                 source: Box::new(source),
             })?;
-
-        timings.recorder_saving += start_r_save.elapsed();
 
         // Finally increment the time-step index
         state.current_time_step_idx += 1;
@@ -252,7 +358,7 @@ impl Model {
         &self,
         state: &mut ModelState<Box<S>>,
         thread_pool: &ThreadPool,
-        timings: &mut RunTimings,
+        timings: &mut NetworkTimings,
     ) -> Result<(), ModelStepError>
     where
         S: MultiStateSolver,
@@ -281,16 +387,18 @@ impl Model {
                 source: Box::new(source),
             })?;
 
-        let start_r_save = Instant::now();
-
         self.network
-            .save_recorders(timestep, scenario_indices, &state.state, &mut state.recorder_state)
+            .save_recorders(
+                timestep,
+                scenario_indices,
+                &state.state,
+                &mut state.recorder_state,
+                timings,
+            )
             .map_err(|source| ModelStepError::RecorderSaveError {
                 timestep: *timestep,
                 source: Box::new(source),
             })?;
-
-        timings.recorder_saving += start_r_save.elapsed();
 
         // Finally increment the time-step index
         state.current_time_step_idx += 1;
@@ -298,19 +406,83 @@ impl Model {
         Ok(())
     }
 
+    pub fn finalise<S>(
+        &self,
+        mut state: ModelState<Vec<Box<S>>>,
+        mut timings: ModelTimings,
+    ) -> Result<ModelResult, ModelFinaliseError>
+    where
+        S: Solver,
+        <S as Solver>::Settings: SolverSettings,
+    {
+        let network_result = self
+            .network
+            .finalise(
+                self.domain.scenarios.indices(),
+                state.state.all_metric_set_internal_states_mut(),
+                state.recorder_state,
+            )
+            .map_err(ModelFinaliseError::NetworkFinaliseError)?;
+
+        // End the global timer and print the run statistics
+        timings.finish();
+
+        timings.print_summary_statistics(&self.network);
+
+        Ok(ModelResult {
+            network_result,
+            timings,
+            domain: self.domain.clone(),
+        })
+    }
+
+    pub fn finalise_multi_scenario<S>(
+        &self,
+        mut state: ModelState<Box<S>>,
+        mut timings: ModelTimings,
+    ) -> Result<ModelResult, ModelFinaliseError>
+    where
+        S: MultiStateSolver,
+        <S as MultiStateSolver>::Settings: SolverSettings,
+    {
+        let network_result = self
+            .network
+            .finalise(
+                self.domain.scenarios.indices(),
+                state.state.all_metric_set_internal_states_mut(),
+                state.recorder_state,
+            )
+            .map_err(ModelFinaliseError::NetworkFinaliseError)?;
+
+        // End the global timer and print the run statistics
+        timings.finish();
+
+        timings.print_summary_statistics(&self.network);
+
+        Ok(ModelResult {
+            network_result,
+            timings,
+            domain: self.domain.clone(),
+        })
+    }
+
     /// Run a model through the given time-steps.
     ///
     /// This method will setup state and solvers, and then run the model through the time-steps.
-    pub fn run<S>(&self, settings: &S::Settings) -> Result<Vec<Option<Box<dyn Any>>>, ModelRunError>
+    pub fn run<S>(&self, settings: &S::Settings) -> Result<ModelResult, ModelRunError>
     where
         S: Solver,
         <S as Solver>::Settings: SolverSettings,
     {
         let mut state = self.setup::<S>(settings)?;
 
-        self.run_with_state::<S>(&mut state, settings)?;
+        let mut timings = ModelTimings::new_with_component_timings(&self.network);
 
-        Ok(state.recorder_state)
+        self.run_with_state::<S>(&mut state, settings, &mut timings)?;
+
+        let result = self.finalise(state, timings)?;
+
+        Ok(result)
     }
 
     /// Run the model with the provided states and solvers.
@@ -318,14 +490,12 @@ impl Model {
         &self,
         state: &mut ModelState<Vec<Box<S>>>,
         settings: &S::Settings,
+        timings: &mut ModelTimings,
     ) -> Result<(), ModelRunError>
     where
         S: Solver,
         <S as Solver>::Settings: SolverSettings,
     {
-        let mut timings = RunTimings::default();
-        let mut count = 0;
-
         // Setup thread pool if running in parallel
         let pool = if settings.parallel() {
             Some(
@@ -339,25 +509,16 @@ impl Model {
         };
 
         loop {
-            match self.step::<S>(state, pool.as_ref(), &mut timings) {
+            match self.step::<S>(state, pool.as_ref(), &mut timings.network_timings) {
                 Ok(_) => {}
                 Err(ModelStepError::EndOfTimesteps) => break,
                 Err(e) => return Err(ModelRunError::StepError(e)),
             }
 
-            count += self.domain.scenarios.indices().len();
+            timings
+                .run_duration
+                .complete_scenarios(self.domain.scenarios.indices().len());
         }
-
-        self.network
-            .finalise(
-                self.domain.scenarios.indices(),
-                state.state.all_metric_set_internal_states_mut(),
-                &mut state.recorder_state,
-            )
-            .map_err(ModelFinaliseError::NetworkFinaliseError)?;
-        // End the global timer and print the run statistics
-        timings.finish(count);
-        timings.print_table();
 
         Ok(())
     }
@@ -365,17 +526,19 @@ impl Model {
     /// Run a network through the given time-steps with [`MultiStateSolver`].
     ///
     /// This method will setup state and the solver, and then run the network through the time-steps.
-    pub fn run_multi_scenario<S>(&self, settings: &S::Settings) -> Result<Vec<Option<Box<dyn Any>>>, ModelRunError>
+    pub fn run_multi_scenario<S>(&self, settings: &S::Settings) -> Result<ModelResult, ModelRunError>
     where
         S: MultiStateSolver,
         <S as MultiStateSolver>::Settings: SolverSettings,
     {
         // Setup the network and create the initial state
         let mut state = self.setup_multi_scenario(settings)?;
+        let mut timings = ModelTimings::new_with_component_timings(&self.network);
+        self.run_multi_scenario_with_state::<S>(&mut state, settings, &mut timings)?;
 
-        self.run_multi_scenario_with_state::<S>(&mut state, settings)?;
+        let result = self.finalise_multi_scenario(state, timings)?;
 
-        Ok(state.recorder_state)
+        Ok(result)
     }
 
     /// Run the network with the provided states and [`MultiStateSolver`] solver.
@@ -383,14 +546,12 @@ impl Model {
         &self,
         state: &mut ModelState<Box<S>>,
         settings: &S::Settings,
+        timings: &mut ModelTimings,
     ) -> Result<(), ModelRunError>
     where
         S: MultiStateSolver,
         <S as MultiStateSolver>::Settings: SolverSettings,
     {
-        let mut timings = RunTimings::default();
-        let mut count = 0;
-
         let num_threads = if settings.parallel() { settings.threads() } else { 1 };
 
         // Setup thread pool
@@ -400,27 +561,95 @@ impl Model {
             .unwrap();
 
         loop {
-            match self.step_multi_scenario::<S>(state, &pool, &mut timings) {
+            match self.step_multi_scenario::<S>(state, &pool, &mut timings.network_timings) {
                 Ok(_) => {}
                 Err(ModelStepError::EndOfTimesteps) => break,
                 Err(e) => return Err(ModelRunError::StepError(e)),
             }
 
-            count += self.domain.scenarios.indices().len();
+            timings
+                .run_duration
+                .complete_scenarios(self.domain.scenarios.indices().len());
         }
 
-        self.network
-            .finalise(
-                self.domain.scenarios.indices(),
-                state.state.all_metric_set_internal_states_mut(),
-                &mut state.recorder_state,
-            )
-            .map_err(ModelFinaliseError::NetworkFinaliseError)?;
-
-        // End the global timer and print the run statistics
-        timings.finish(count);
-        timings.print_table();
-
         Ok(())
+    }
+
+    /// Run a model using the specified solver unlocking the GIL
+    #[cfg(any(feature = "clp", feature = "highs"))]
+    #[cfg(feature = "pyo3")]
+    fn run_allowing_threads_py<S>(&self, py: Python<'_>, settings: &S::Settings) -> Result<ModelResult, PyErr>
+    where
+        S: Solver,
+        <S as Solver>::Settings: SolverSettings + Sync,
+    {
+        let result = py.allow_threads(|| self.run::<S>(settings))?;
+        Ok(result)
+    }
+
+    /// Run a model using the specified multi solver unlocking the GIL
+    #[cfg(any(feature = "ipm-simd", feature = "ipm-ocl"))]
+    #[cfg(feature = "pyo3")]
+    fn run_multi_allowing_threads_py<S>(&self, py: Python<'_>, settings: &S::Settings) -> Result<ModelResult, PyErr>
+    where
+        S: MultiStateSolver,
+        <S as MultiStateSolver>::Settings: SolverSettings + Sync,
+    {
+        let result = py.allow_threads(|| self.run_multi_scenario::<S>(settings))?;
+        Ok(result)
+    }
+}
+
+/// Run a model using the specified multi solver unlocking the GIL
+#[cfg(feature = "pyo3")]
+#[pymethods]
+impl Model {
+    #[pyo3(name = "run", signature = (solver_name, solver_kwargs=None))]
+    fn run_py(
+        &self,
+        #[cfg_attr(
+            not(any(feature = "clp", feature = "highs", feature = "ipm-simd", feature = "ipm-ocl")),
+            allow(unused_variables)
+        )]
+        py: Python<'_>,
+        #[cfg_attr(
+            not(any(feature = "clp", feature = "highs", feature = "ipm-simd", feature = "ipm-ocl")),
+            allow(unused_variables)
+        )]
+        solver_name: &str,
+        #[cfg_attr(
+            not(any(feature = "clp", feature = "highs", feature = "ipm-simd", feature = "ipm-ocl")),
+            allow(unused_variables)
+        )]
+        solver_kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<ModelResult> {
+        match solver_name {
+            #[cfg(feature = "clp")]
+            "clp" => {
+                let settings = build_clp_settings_py(solver_kwargs)?;
+                self.run_allowing_threads_py::<ClpSolver>(py, &settings)
+            }
+            #[cfg(feature = "cbc")]
+            "cbc" => {
+                let settings = build_cbc_settings_py(solver_kwargs)?;
+                self.run_allowing_threads_py::<CbcSolver>(py, &settings)
+            }
+            #[cfg(feature = "highs")]
+            "highs" => {
+                let settings = build_highs_settings_py(solver_kwargs)?;
+                self.run_allowing_threads_py::<HighsSolver>(py, &settings)
+            }
+            #[cfg(feature = "ipm-simd")]
+            "ipm-simd" => {
+                let settings = build_ipm_simd_settings_py(solver_kwargs)?;
+                self.run_multi_allowing_threads_py::<SimdIpmF64Solver>(py, &settings)
+            }
+            #[cfg(feature = "ipm-ocl")]
+            "clipm-f32" => self.run_multi_allowing_threads_py::<ClIpmF32Solver>(py, &ClIpmSolverSettings::default()),
+
+            #[cfg(feature = "ipm-ocl")]
+            "clipm-f64" => self.run_multi_allowing_threads_py::<ClIpmF64Solver>(py, &ClIpmSolverSettings::default()),
+            _ => Err(PyRuntimeError::new_err(format!("Unknown solver: {solver_name}",))),
+        }
     }
 }

@@ -2,11 +2,12 @@
 use crate::error::SchemaError;
 use crate::metric::Metric;
 #[cfg(feature = "core")]
-use crate::model::LoadArgs;
+use crate::network::LoadArgs;
 use crate::parameters::{ConstantValue, ParameterMeta, VariableSettings};
+
 #[cfg(feature = "core")]
-use pywr_core::parameters::ParameterIndex;
-use pywr_schema_macros::PywrVisitAll;
+use pywr_core::parameters::{ParameterIndex, ParameterName};
+use pywr_schema_macros::{PywrVisitAll, skip_serializing_none};
 use schemars::JsonSchema;
 
 /// A parameter that returns a fixed delta from another metric.
@@ -23,6 +24,7 @@ use schemars::JsonSchema;
 #[doc = include_str!("doc_examples/offset_variable.json")]
 /// ```
 ///
+#[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct OffsetParameter {
@@ -46,11 +48,12 @@ impl OffsetParameter {
         &self,
         network: &mut pywr_core::network::Network,
         args: &LoadArgs,
+        parent: Option<&str>,
     ) -> Result<ParameterIndex<f64>, SchemaError> {
         let idx = self.metric.load(network, args, None)?;
 
         let p = pywr_core::parameters::OffsetParameter::new(
-            self.meta.name.as_str().into(),
+            ParameterName::new(&self.meta.name, parent),
             idx,
             self.offset.load(args.tables)?,
         );

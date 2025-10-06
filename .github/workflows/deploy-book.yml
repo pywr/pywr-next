@@ -15,9 +15,9 @@ jobs:
       pages: write  # To push to a GitHub Pages site
       id-token: write # To update the deployment status
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
-          fetch-depth: 0
+          submodules: true
       - uses: swatinem/rust-cache@v2
       - name: Install latest mdbook
         run: |
@@ -32,10 +32,17 @@ jobs:
           if echo "$output" | grep -q "\[ERROR\]" ; then
               exit 1
           fi
+      # Python API docs
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      # Puts the Python API in the `pywr-book/book/api` directory
+      - run: uv run --group docs pdoc pywr-python/pywr -o ./pywr-book/book/api
       - name: Setup Pages
         uses: actions/configure-pages@v5
       - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v4
         with:
           # Upload entire repository
           path: './pywr-book/book'

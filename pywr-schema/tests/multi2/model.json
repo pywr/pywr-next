@@ -7,7 +7,10 @@
   "timestepper": {
     "start": "2015-01-01",
     "end": "2015-12-31",
-    "timestep": 1
+    "timestep": {
+      "type": "Days",
+      "days": 1
+    }
   },
   "networks": [
     {
@@ -41,5 +44,4 @@
       ]
     }
   ]
-
 }

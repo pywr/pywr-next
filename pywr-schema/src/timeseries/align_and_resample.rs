@@ -1,7 +1,7 @@
 use crate::timeseries::TimeseriesError;
 use polars::{prelude::*, series::ops::NullBehavior};
 use pywr_core::timestep::TimeDomain;
-use std::{cmp::Ordering, ops::Deref};
+use std::cmp::Ordering;
 
 pub fn align_and_resample(
     name: &str,
@@ -34,13 +34,13 @@ pub fn align_and_resample(
             .unique()
             .alias("duration")])
         .collect()?;
-    let durations = durations.column("duration")?.duration()?.deref();
+    let durations = durations.column("duration")?.duration()?;
 
     if durations.len() > 1 {
         todo!("Non-uniform timestep are not yet supported");
     }
 
-    let timeseries_duration = match durations.get(0) {
+    let timeseries_duration = match durations.physical().get(0) {
         Some(duration) => duration,
         None => return Err(TimeseriesError::TimeseriesDurationNotFound(name.to_string())),
     };
@@ -64,7 +64,7 @@ pub fn align_and_resample(
                         ..Default::default()
                     },
                 )
-                .agg([col("*").exclude([time_col]).mean()])
+                .agg([all().exclude_cols([time_col]).as_expr().mean()])
                 .collect()?
         }
         Ordering::Less => {
@@ -72,7 +72,7 @@ pub fn align_and_resample(
             // TODO: this does not extend the dataframe beyond its original end date. Should it do when using a forward fill strategy?
             // The df could be extend by the length of the duration it is being resampled to.
             df.clone()
-                .upsample::<[String; 0]>([], "time", Duration::parse(model_duration_string.as_str()))?
+                .upsample::<[String; 0]>([], time_col, Duration::parse(model_duration_string.as_str()))?
                 .fill_null(FillNullStrategy::Forward(None))?
         }
         Ordering::Equal => df,
@@ -118,6 +118,7 @@ mod tests {
         scenario::{ScenarioDomain, ScenarioDomainBuilder},
         timestep::{TimeDomain, TimestepDuration, Timestepper},
     };
+    use std::num::NonZeroU64;
 
     use crate::timeseries::align_and_resample::align_and_resample;
 
@@ -125,7 +126,7 @@ mod tests {
     fn test_downsample_and_slice() {
         let start = NaiveDateTime::parse_from_str("2021-01-07 00:00:00", "%Y-%m-%d %H:%M:%S").unwrap();
         let end = NaiveDateTime::parse_from_str("2021-01-20 00:00:00", "%Y-%m-%d %H:%M:%S").unwrap();
-        let timestep = TimestepDuration::Days(7);
+        let timestep = TimestepDuration::Days(NonZeroU64::new(7).unwrap());
         let timestepper = Timestepper::new(start, end, timestep);
         let time_domain = TimeDomain::try_from(timestepper).unwrap();
 
@@ -180,7 +181,7 @@ mod tests {
     fn test_upsample_and_slice() {
         let start = NaiveDateTime::parse_from_str("2021-01-01 00:00:00", "%Y-%m-%d %H:%M:%S").unwrap();
         let end = NaiveDateTime::parse_from_str("2021-01-14 00:00:00", "%Y-%m-%d %H:%M:%S").unwrap();
-        let timestep = TimestepDuration::Days(1);
+        let timestep = TimestepDuration::Days(NonZeroU64::new(1).unwrap());
         let timestepper = Timestepper::new(start, end, timestep);
         let time_domain = TimeDomain::try_from(timestepper).unwrap();
 
@@ -220,7 +221,7 @@ mod tests {
     fn test_no_resample_slice() {
         let start = NaiveDateTime::parse_from_str("2021-01-01 00:00:00", "%Y-%m-%d %H:%M:%S").unwrap();
         let end = NaiveDateTime::parse_from_str("2021-01-03 00:00:00", "%Y-%m-%d %H:%M:%S").unwrap();
-        let timestep = TimestepDuration::Days(1);
+        let timestep = TimestepDuration::Days(NonZeroU64::new(1).unwrap());
         let timestepper = Timestepper::new(start, end, timestep);
         let time_domain = TimeDomain::try_from(timestepper).unwrap();
 

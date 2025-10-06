@@ -1,27 +1,59 @@
 use crate::error::ComponentConversionError;
-#[cfg(feature = "core")]
 use crate::error::SchemaError;
-use crate::metric::{Metric, SimpleNodeReference};
+use crate::metric::Metric;
 #[cfg(feature = "core")]
-use crate::model::LoadArgs;
-use crate::nodes::{NodeAttribute, NodeMeta};
+use crate::network::LoadArgs;
+use crate::nodes::NodeMeta;
+#[cfg(feature = "core")]
+use crate::nodes::{NodeAttribute, NodeComponent};
 use crate::parameters::Parameter;
-use crate::v1::{
-    ConversionData, TryFromV1, try_convert_initial_storage, try_convert_node_attr, try_convert_parameter_attr,
-};
+use crate::v1::{ConversionData, TryFromV1, try_convert_initial_storage, try_convert_node_attr};
+use crate::{node_attribute_subset_enum, node_component_subset_enum};
 #[cfg(feature = "core")]
 use pywr_core::{
     derived_metric::DerivedMetric, metric::MetricF64, node::StorageInitialVolume as CoreStorageInitialVolume,
 };
 use pywr_schema_macros::PywrVisitAll;
+use pywr_schema_macros::skip_serializing_none;
 use pywr_v1_schema::nodes::{
-    AggregatedNode as AggregatedNodeV1, AggregatedStorageNode as AggregatedStorageNodeV1,
-    CatchmentNode as CatchmentNodeV1, InputNode as InputNodeV1, LinkNode as LinkNodeV1, OutputNode as OutputNodeV1,
-    ReservoirNode as ReservoirNodeV1, StorageNode as StorageNodeV1,
+    BreakLinkNode as BreakLinkNodeV1, CatchmentNode as CatchmentNodeV1, InputNode as InputNodeV1,
+    LinkNode as LinkNodeV1, OutputNode as OutputNodeV1, ReservoirNode as ReservoirNodeV1, StorageNode as StorageNodeV1,
 };
 use schemars::JsonSchema;
 use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticStr};
+use tracing::warn;
 
+// This macro generates a subset enum for the `InputNode` attributes.
+// It allows for easy conversion between the enum and the `NodeAttribute` type.
+node_attribute_subset_enum! {
+    pub enum InputNodeAttribute {
+        Outflow,
+    }
+}
+
+node_component_subset_enum! {
+    pub enum InputNodeComponent {
+        Outflow,
+    }
+}
+
+/// A node that represents an input to the model, such as a river inflow or a reservoir inflow.
+///
+/// Flow is constrained by the `max_flow` and `min_flow` metrics. If `max_flow` is not specified,
+/// the flow is unconstrained. If `min_flow` is not specified it defaults to 0.
+///
+/// # Available attributes and components
+///
+/// The enums [`InputNodeAttribute`] and [`InputNodeComponent`] define the available
+/// attributes and components for this node.
+///
+/// # Examples
+///
+/// ```json
+#[doc = include_str!("doc_examples/input.json")]
+/// ```
+///
+#[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct InputNode {
@@ -34,32 +66,47 @@ pub struct InputNode {
 }
 
 impl InputNode {
-    const DEFAULT_ATTRIBUTE: NodeAttribute = NodeAttribute::Outflow;
+    pub const DEFAULT_ATTRIBUTE: InputNodeAttribute = InputNodeAttribute::Outflow;
+    pub const DEFAULT_COMPONENT: InputNodeComponent = InputNodeComponent::Outflow;
 
-    pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
-        vec![(self.meta.name.as_str(), None)]
+    pub fn input_connectors(&self) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
+        Ok(vec![(self.meta.name.as_str(), None)])
     }
-    pub fn output_connectors(&self) -> Vec<(&str, Option<String>)> {
-        vec![(self.meta.name.as_str(), None)]
+    pub fn output_connectors(&self) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
+        Ok(vec![(self.meta.name.as_str(), None)])
     }
 
-    pub fn default_metric(&self) -> NodeAttribute {
+    pub fn default_attribute(&self) -> InputNodeAttribute {
         Self::DEFAULT_ATTRIBUTE
+    }
+
+    pub fn default_component(&self) -> InputNodeComponent {
+        Self::DEFAULT_COMPONENT
     }
 }
 
 #[cfg(feature = "core")]
 impl InputNode {
-    pub fn node_indices_for_constraints(
+    pub fn node_indices_for_flow_constraints(
         &self,
         network: &pywr_core::network::Network,
+        component: Option<NodeComponent>,
     ) -> Result<Vec<pywr_core::node::NodeIndex>, SchemaError> {
-        let idx = network
-            .get_node_index_by_name(self.meta.name.as_str(), None)
-            .ok_or_else(|| SchemaError::CoreNodeNotFound {
-                name: self.meta.name.clone(),
-                sub_name: None,
-            })?;
+        // Use the default component if none is specified
+        let attr = match component {
+            Some(c) => c.try_into()?,
+            None => Self::DEFAULT_COMPONENT,
+        };
+
+        let idx = match attr {
+            InputNodeComponent::Outflow => network
+                .get_node_index_by_name(self.meta.name.as_str(), None)
+                .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                    name: self.meta.name.clone(),
+                    sub_name: None,
+                })?,
+        };
+
         Ok(vec![idx])
     }
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
@@ -96,7 +143,10 @@ impl InputNode {
         attribute: Option<NodeAttribute>,
     ) -> Result<MetricF64, SchemaError> {
         // Use the default attribute if none is specified
-        let attr = attribute.unwrap_or(Self::DEFAULT_ATTRIBUTE);
+        let attr = match attribute {
+            Some(attr) => attr.try_into()?,
+            None => Self::DEFAULT_ATTRIBUTE,
+        };
 
         let idx = network
             .get_node_index_by_name(self.meta.name.as_str(), None)
@@ -106,14 +156,7 @@ impl InputNode {
             })?;
 
         let metric = match attr {
-            NodeAttribute::Outflow => MetricF64::NodeOutFlow(idx),
-            _ => {
-                return Err(SchemaError::NodeAttributeNotSupported {
-                    ty: "InputNode".to_string(),
-                    name: self.meta.name.clone(),
-                    attr,
-                });
-            }
+            InputNodeAttribute::Outflow => MetricF64::NodeOutFlow(idx),
         };
 
         Ok(metric)
@@ -150,6 +193,24 @@ impl TryFromV1<InputNodeV1> for InputNode {
 pub struct SoftConstraint {
     pub cost: Option<Metric>,
     pub flow: Option<Metric>,
+}
+
+// This macro generates a subset enum for the `LinkNode` attributes.
+// It allows for easy conversion between the enum and the `NodeAttribute` type.
+node_attribute_subset_enum! {
+    pub enum LinkNodeAttribute {
+        Inflow,
+        Outflow,
+    }
+}
+
+// This macro generates a subset enum for the `LinkNode` attributes.
+// It allows for easy conversion between the enum and the `NodeAttribute` type.
+node_component_subset_enum! {
+    pub enum LinkNodeComponent {
+        Inflow,
+        Outflow,
+    }
 }
 
 #[doc = svgbobdoc::transform!(
@@ -246,6 +307,11 @@ pub struct SoftConstraint {
 /// - An aggregated node is added with `L`, `L_max` and `L_min` to ensure the flow is between
 ///   `min_flow` and `max_flow`.
 ///
+/// # Available attributes and components
+///
+/// The enums [`LinkNodeAttribute`] and [`LinkNodeComponent`] define the available
+/// attributes and components for this node.
+///
 /// ## Examples
 /// Link soft constraints may be used in the following scenarios:
 ///  1) If the link represents a works and its `max_flow` is constrained by a reservoir rule curve,
@@ -257,6 +323,7 @@ pub struct SoftConstraint {
 ///   (for example when the abstraction license or the source runs out), the minimum flow will not
 ///   be honoured and the solver will find a solution.
 )]
+#[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct LinkNode {
@@ -276,7 +343,8 @@ pub struct LinkNode {
 }
 
 impl LinkNode {
-    const DEFAULT_ATTRIBUTE: NodeAttribute = NodeAttribute::Outflow;
+    const DEFAULT_ATTRIBUTE: LinkNodeAttribute = LinkNodeAttribute::Outflow;
+    const DEFAULT_COMPONENT: LinkNodeComponent = LinkNodeComponent::Outflow;
 
     fn soft_min_node_sub_name() -> Option<&'static str> {
         Some("soft_min_node")
@@ -286,7 +354,7 @@ impl LinkNode {
         Some("soft_max_node")
     }
 
-    pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
+    pub fn input_connectors(&self) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
         let mut connectors = vec![(self.meta.name.as_str(), None)];
         if self.soft_min.is_some() {
             connectors.push((
@@ -300,10 +368,10 @@ impl LinkNode {
                 Self::soft_max_node_sub_name().map(|s| s.to_string()),
             ));
         }
-        connectors
+        Ok(connectors)
     }
 
-    pub fn output_connectors(&self) -> Vec<(&str, Option<String>)> {
+    pub fn output_connectors(&self) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
         let mut connectors = vec![(self.meta.name.as_str(), None)];
         if self.soft_min.is_some() {
             connectors.push((
@@ -317,11 +385,15 @@ impl LinkNode {
                 Self::soft_max_node_sub_name().map(|s| s.to_string()),
             ));
         }
-        connectors
+        Ok(connectors)
     }
 
-    pub fn default_metric(&self) -> NodeAttribute {
+    pub fn default_attribute(&self) -> LinkNodeAttribute {
         Self::DEFAULT_ATTRIBUTE
+    }
+
+    pub fn default_component(&self) -> LinkNodeComponent {
+        Self::DEFAULT_COMPONENT
     }
 }
 
@@ -336,17 +408,56 @@ impl LinkNode {
         Some("aggregate_node_l_l_min")
     }
 
-    pub fn node_indices_for_constraints(
+    pub fn node_indices_for_flow_constraints(
         &self,
         network: &pywr_core::network::Network,
+        component: Option<NodeComponent>,
     ) -> Result<Vec<pywr_core::node::NodeIndex>, SchemaError> {
-        let idx = network
-            .get_node_index_by_name(self.meta.name.as_str(), None)
-            .ok_or_else(|| SchemaError::CoreNodeNotFound {
-                name: self.meta.name.clone(),
-                sub_name: None,
-            })?;
-        Ok(vec![idx])
+        // Use the default component if none is specified
+        let component = match component {
+            Some(c) => c.try_into()?,
+            None => Self::DEFAULT_COMPONENT,
+        };
+
+        let indices = match component {
+            // The same nodes are returned for inflow and outflow
+            LinkNodeComponent::Inflow | LinkNodeComponent::Outflow => {
+                let idx = network
+                    .get_node_index_by_name(self.meta.name.as_str(), None)
+                    .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                        name: self.meta.name.clone(),
+                        sub_name: None,
+                    })?;
+
+                let mut indices = vec![idx];
+
+                if self.soft_min.is_some() {
+                    let idx = network
+                        .get_node_index_by_name(self.meta.name.as_str(), Self::soft_min_node_sub_name())
+                        .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                            name: self.meta.name.clone(),
+                            sub_name: Self::soft_min_node_sub_name().map(|s| s.to_string()),
+                        })?;
+
+                    indices.push(idx);
+                }
+
+                if self.soft_max.is_some() {
+                    let idx = network
+                        .get_node_index_by_name(self.meta.name.as_str(), Self::soft_max_node_sub_name())
+                        .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                            name: self.meta.name.clone(),
+                            sub_name: Self::soft_max_node_sub_name().map(|s| s.to_string()),
+                        })?;
+
+                    indices.push(idx);
+                }
+
+                indices
+            }
+        };
+
+        Ok(indices)
     }
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
         let node_name = self.meta.name.as_str();
@@ -525,7 +636,11 @@ impl LinkNode {
         attribute: Option<NodeAttribute>,
     ) -> Result<MetricF64, SchemaError> {
         // Use the default attribute if none is specified
-        let attr = attribute.unwrap_or(Self::DEFAULT_ATTRIBUTE);
+        let attr = match attribute {
+            Some(attr) => attr.try_into()?,
+            None => Self::DEFAULT_ATTRIBUTE,
+        };
+
         let node_name = self.meta.name.as_str();
         let link_node =
             network
@@ -574,21 +689,14 @@ impl LinkNode {
         };
 
         let metric = match attr {
-            NodeAttribute::Outflow => MetricF64::MultiNodeInFlow {
+            LinkNodeAttribute::Outflow => MetricF64::MultiNodeInFlow {
                 indices,
                 name: self.meta.name.to_string(),
             },
-            NodeAttribute::Inflow => MetricF64::MultiNodeOutFlow {
+            LinkNodeAttribute::Inflow => MetricF64::MultiNodeOutFlow {
                 indices,
                 name: self.meta.name.to_string(),
             },
-            _ => {
-                return Err(SchemaError::NodeAttributeNotSupported {
-                    ty: "LinkNode".to_string(),
-                    name: self.meta.name.clone(),
-                    attr,
-                });
-            }
         };
 
         Ok(metric)
@@ -625,6 +733,62 @@ impl TryFromV1<LinkNodeV1> for LinkNode {
     }
 }
 
+impl TryFromV1<BreakLinkNodeV1> for LinkNode {
+    type Error = ComponentConversionError;
+
+    fn try_from_v1(
+        v1: BreakLinkNodeV1,
+        parent_node: Option<&str>,
+        conversion_data: &mut ConversionData,
+    ) -> Result<Self, Self::Error> {
+        let meta: NodeMeta = v1.meta.into();
+        let cost = try_convert_node_attr(&meta.name, "cost", v1.cost, parent_node, conversion_data)?;
+        let max_flow = try_convert_node_attr(&meta.name, "max_flow", v1.max_flow, parent_node, conversion_data)?;
+        let min_flow = try_convert_node_attr(&meta.name, "min_flow", v1.min_flow, parent_node, conversion_data)?;
+
+        warn!(
+            "BreakLinkNode is deprecated. Converting node with name '{}' to a LinkNode",
+            meta.name
+        );
+
+        let n = Self {
+            meta,
+            max_flow,
+            min_flow,
+            cost,
+            ..Default::default()
+        };
+        Ok(n)
+    }
+}
+
+// This macro generates a subset enum for the `OutputNode` attributes.
+// It allows for easy conversion between the enum and the `NodeAttribute` type.
+node_attribute_subset_enum! {
+    pub enum OutputNodeAttribute {
+        Inflow,
+        /// The deficit of the inflow compared to the `max_flow` metric.
+        Deficit,
+    }
+}
+
+node_component_subset_enum! {
+    pub enum OutputNodeComponent {
+        Inflow,
+    }
+}
+
+/// A node that represents an output from the model, such as a river estuary or demand centre.
+///
+/// Flow is constrained by the `max_flow` and `min_flow` metrics. If `max_flow` is not specified,
+/// the flow is unconstrained. If `min_flow` is not specified it defaults to 0.
+///
+/// # Available attributes and components
+///
+/// The enums [`OutputNodeAttribute`] and [`OutputNodeComponent`] define the available
+/// attributes and components for this node.
+///
+#[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct OutputNode {
@@ -637,33 +801,48 @@ pub struct OutputNode {
 }
 
 impl OutputNode {
-    const DEFAULT_ATTRIBUTE: NodeAttribute = NodeAttribute::Inflow;
+    const DEFAULT_ATTRIBUTE: OutputNodeAttribute = OutputNodeAttribute::Inflow;
+    const DEFAULT_COMPONENT: OutputNodeComponent = OutputNodeComponent::Inflow;
 
-    pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
-        vec![(self.meta.name.as_str(), None)]
+    pub fn input_connectors(&self) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
+        Ok(vec![(self.meta.name.as_str(), None)])
     }
 
-    pub fn output_connectors(&self) -> Vec<(&str, Option<String>)> {
-        vec![(self.meta.name.as_str(), None)]
+    pub fn output_connectors(&self) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
+        Ok(vec![(self.meta.name.as_str(), None)])
     }
 
-    pub fn default_metric(&self) -> NodeAttribute {
+    pub fn default_attribute(&self) -> OutputNodeAttribute {
         Self::DEFAULT_ATTRIBUTE
+    }
+
+    pub fn default_component(&self) -> OutputNodeComponent {
+        Self::DEFAULT_COMPONENT
     }
 }
 
 #[cfg(feature = "core")]
 impl OutputNode {
-    pub fn node_indices_for_constraints(
+    pub fn node_indices_for_flow_constraints(
         &self,
         network: &pywr_core::network::Network,
+        component: Option<NodeComponent>,
     ) -> Result<Vec<pywr_core::node::NodeIndex>, SchemaError> {
-        let idx = network
-            .get_node_index_by_name(self.meta.name.as_str(), None)
-            .ok_or_else(|| SchemaError::CoreNodeNotFound {
-                name: self.meta.name.clone(),
-                sub_name: None,
-            })?;
+        // Use the default component if none is specified
+        let component = match component {
+            Some(c) => c.try_into()?,
+            None => Self::DEFAULT_COMPONENT,
+        };
+
+        let idx = match component {
+            OutputNodeComponent::Inflow => network
+                .get_node_index_by_name(self.meta.name.as_str(), None)
+                .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                    name: self.meta.name.clone(),
+                    sub_name: None,
+                })?,
+        };
+
         Ok(vec![idx])
     }
     pub fn create_metric(
@@ -672,7 +851,10 @@ impl OutputNode {
         attribute: Option<NodeAttribute>,
     ) -> Result<MetricF64, SchemaError> {
         // Use the default attribute if none is specified
-        let attr = attribute.unwrap_or(Self::DEFAULT_ATTRIBUTE);
+        let attr = match attribute {
+            Some(attr) => attr.try_into()?,
+            None => Self::DEFAULT_ATTRIBUTE,
+        };
 
         let idx = network
             .get_node_index_by_name(self.meta.name.as_str(), None)
@@ -682,18 +864,11 @@ impl OutputNode {
             })?;
 
         let metric = match attr {
-            NodeAttribute::Inflow => MetricF64::NodeInFlow(idx),
-            NodeAttribute::Deficit => {
+            OutputNodeAttribute::Inflow => MetricF64::NodeInFlow(idx),
+            OutputNodeAttribute::Deficit => {
                 let dm = DerivedMetric::NodeInFlowDeficit(idx);
                 let dm_idx = network.add_derived_metric(dm);
                 MetricF64::DerivedMetric(dm_idx)
-            }
-            _ => {
-                return Err(SchemaError::NodeAttributeNotSupported {
-                    ty: "OutputNode".to_string(),
-                    name: self.meta.name.clone(),
-                    attr,
-                });
             }
         };
 
@@ -790,6 +965,32 @@ impl From<StorageInitialVolume> for CoreStorageInitialVolume {
     }
 }
 
+// This macro generates a subset enum for the `StorageNode` attributes.
+// It allows for easy conversion between the enum and the `NodeAttribute` type.
+node_attribute_subset_enum! {
+    pub enum StorageNodeAttribute {
+        Volume,
+        ProportionalVolume,
+        MaxVolume,
+    }
+}
+
+/// A simple store of water, such as a reservoir or aquifer.
+///
+/// This node has a `max_volume` and `min_volume` which are used to constraint the flow through
+/// the node. If `max_volume` is not specified, the flow is unconstrained. If `min_volume` is not specified,
+/// it defaults to 0.
+///
+/// The `cost` is used as the penalty cost for each unit of net increase in volume in the reservoir.
+/// I.e. a negative cost will encourage the reservoir to fill, while a positive cost will encourage
+/// it to empty.
+///
+/// # Available attributes and components
+///
+/// The enum [`StorageNodeAttribute`] defines the available attributes. There are no components
+/// to choose from.
+///
+#[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct StorageNode {
@@ -803,24 +1004,24 @@ pub struct StorageNode {
 }
 
 impl StorageNode {
-    const DEFAULT_ATTRIBUTE: NodeAttribute = NodeAttribute::Volume;
+    const DEFAULT_ATTRIBUTE: StorageNodeAttribute = StorageNodeAttribute::Volume;
 
-    pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
-        vec![(self.meta.name.as_str(), None)]
+    pub fn input_connectors(&self) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
+        Ok(vec![(self.meta.name.as_str(), None)])
     }
 
-    pub fn output_connectors(&self) -> Vec<(&str, Option<String>)> {
-        vec![(self.meta.name.as_str(), None)]
+    pub fn output_connectors(&self) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
+        Ok(vec![(self.meta.name.as_str(), None)])
     }
 
-    pub fn default_metric(&self) -> NodeAttribute {
+    pub fn default_attribute(&self) -> StorageNodeAttribute {
         Self::DEFAULT_ATTRIBUTE
     }
 }
 
 #[cfg(feature = "core")]
 impl StorageNode {
-    pub fn node_indices_for_constraints(
+    pub fn node_indices_for_storage_constraints(
         &self,
         network: &pywr_core::network::Network,
     ) -> Result<Vec<pywr_core::node::NodeIndex>, SchemaError> {
@@ -867,7 +1068,10 @@ impl StorageNode {
         attribute: Option<NodeAttribute>,
     ) -> Result<MetricF64, SchemaError> {
         // Use the default attribute if none is specified
-        let attr = attribute.unwrap_or(Self::DEFAULT_ATTRIBUTE);
+        let attr = match attribute {
+            Some(attr) => attr.try_into()?,
+            None => Self::DEFAULT_ATTRIBUTE,
+        };
 
         let idx = network
             .get_node_index_by_name(self.meta.name.as_str(), None)
@@ -877,19 +1081,12 @@ impl StorageNode {
             })?;
 
         let metric = match attr {
-            NodeAttribute::Volume => MetricF64::NodeVolume(idx),
-            NodeAttribute::MaxVolume => MetricF64::NodeMaxVolume(idx),
-            NodeAttribute::ProportionalVolume => {
+            StorageNodeAttribute::Volume => MetricF64::NodeVolume(idx),
+            StorageNodeAttribute::MaxVolume => MetricF64::NodeMaxVolume(idx),
+            StorageNodeAttribute::ProportionalVolume => {
                 let dm = DerivedMetric::NodeProportionalVolume(idx);
                 let derived_metric_idx = network.add_derived_metric(dm);
                 MetricF64::DerivedMetric(derived_metric_idx)
-            }
-            _ => {
-                return Err(SchemaError::NodeAttributeNotSupported {
-                    ty: "StorageNode".to_string(),
-                    name: self.meta.name.clone(),
-                    attr,
-                });
             }
         };
 
@@ -955,8 +1152,23 @@ impl TryFromV1<ReservoirNodeV1> for StorageNode {
     }
 }
 
+// This macro generates a subset enum for the `CatchmentNode` attributes.
+// It allows for easy conversion between the enum and the `NodeAttribute` type.
+node_attribute_subset_enum! {
+    pub enum CatchmentNodeAttribute {
+        Outflow,
+
+    }
+}
+
+node_component_subset_enum! {
+    pub enum CatchmentNodeComponent {
+        Outflow,
+    }
+}
+
 #[doc = svgbobdoc::transform!(
-/// This is used to represent a catchment inflow.
+/// A node to represent a catchment inflow.
 ///
 /// Catchment nodes create a single [`InputNode`] node in the network, but
 /// ensure that the maximum and minimum flow are equal to [`Self::flow`].
@@ -966,7 +1178,13 @@ impl TryFromV1<ReservoirNodeV1> for StorageNode {
 ///     *----->*- - -
 /// ```
 ///
+/// # Available attributes and components
+///
+/// The enums [`CatchmentNodeAttribute`] and [`CatchmentNodeComponent`] define the available
+/// attributes and components for this node.
+///
 )]
+#[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct CatchmentNode {
@@ -978,33 +1196,47 @@ pub struct CatchmentNode {
 }
 
 impl CatchmentNode {
-    const DEFAULT_ATTRIBUTE: NodeAttribute = NodeAttribute::Outflow;
+    const DEFAULT_ATTRIBUTE: CatchmentNodeAttribute = CatchmentNodeAttribute::Outflow;
+    const DEFAULT_COMPONENT: CatchmentNodeComponent = CatchmentNodeComponent::Outflow;
 
-    pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
-        vec![(self.meta.name.as_str(), None)]
+    pub fn input_connectors(&self) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
+        Ok(vec![(self.meta.name.as_str(), None)])
     }
 
-    pub fn output_connectors(&self) -> Vec<(&str, Option<String>)> {
-        vec![(self.meta.name.as_str(), None)]
+    pub fn output_connectors(&self) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
+        Ok(vec![(self.meta.name.as_str(), None)])
     }
 
-    pub fn default_metric(&self) -> NodeAttribute {
+    pub fn default_attribute(&self) -> CatchmentNodeAttribute {
         Self::DEFAULT_ATTRIBUTE
+    }
+
+    pub fn default_component(&self) -> CatchmentNodeComponent {
+        Self::DEFAULT_COMPONENT
     }
 }
 
 #[cfg(feature = "core")]
 impl CatchmentNode {
-    pub fn node_indices_for_constraints(
+    pub fn node_indices_for_flow_constraints(
         &self,
         network: &pywr_core::network::Network,
+        component: Option<NodeComponent>,
     ) -> Result<Vec<pywr_core::node::NodeIndex>, SchemaError> {
-        let idx = network
-            .get_node_index_by_name(self.meta.name.as_str(), None)
-            .ok_or_else(|| SchemaError::CoreNodeNotFound {
-                name: self.meta.name.clone(),
-                sub_name: None,
-            })?;
+        // Use the default component if none is specified
+        let component = match component {
+            Some(c) => c.try_into()?,
+            None => Self::DEFAULT_COMPONENT,
+        };
+
+        let idx = match component {
+            CatchmentNodeComponent::Outflow => network
+                .get_node_index_by_name(self.meta.name.as_str(), None)
+                .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                    name: self.meta.name.clone(),
+                    sub_name: None,
+                })?,
+        };
         Ok(vec![idx])
     }
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
@@ -1037,7 +1269,10 @@ impl CatchmentNode {
         attribute: Option<NodeAttribute>,
     ) -> Result<MetricF64, SchemaError> {
         // Use the default attribute if none is specified
-        let attr = attribute.unwrap_or(Self::DEFAULT_ATTRIBUTE);
+        let attr = match attribute {
+            Some(attr) => attr.try_into()?,
+            None => Self::DEFAULT_ATTRIBUTE,
+        };
 
         let idx = network
             .get_node_index_by_name(self.meta.name.as_str(), None)
@@ -1047,14 +1282,7 @@ impl CatchmentNode {
             })?;
 
         let metric = match attr {
-            NodeAttribute::Outflow => MetricF64::NodeOutFlow(idx),
-            _ => {
-                return Err(SchemaError::NodeAttributeNotSupported {
-                    ty: "CatchmentNode".to_string(),
-                    name: self.meta.name.clone(),
-                    attr,
-                });
-            }
+            CatchmentNodeAttribute::Outflow => MetricF64::NodeOutFlow(idx),
         };
 
         Ok(metric)
@@ -1084,337 +1312,6 @@ impl TryFromV1<CatchmentNodeV1> for CatchmentNode {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, PywrVisitAll, Display, EnumDiscriminants)]
-#[serde(tag = "type", deny_unknown_fields)]
-#[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
-#[strum_discriminants(name(RelationshipType))]
-pub enum Relationship {
-    Proportion {
-        factors: Vec<Metric>,
-    },
-    Ratio {
-        factors: Vec<Metric>,
-    },
-    Exclusive {
-        min_active: Option<u64>,
-        max_active: Option<u64>,
-    },
-}
-
-#[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
-#[serde(deny_unknown_fields)]
-pub struct AggregatedNode {
-    pub meta: NodeMeta,
-    /// Optional local parameters.
-    pub parameters: Option<Vec<Parameter>>,
-    pub nodes: Vec<SimpleNodeReference>,
-    pub max_flow: Option<Metric>,
-    pub min_flow: Option<Metric>,
-    pub relationship: Option<Relationship>,
-}
-
-impl AggregatedNode {
-    const DEFAULT_ATTRIBUTE: NodeAttribute = NodeAttribute::Outflow;
-
-    pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
-        // Not connectable
-        // TODO this should be a trait? And error if you try to connect to a non-connectable node.
-        vec![]
-    }
-
-    pub fn output_connectors(&self) -> Vec<(&str, Option<String>)> {
-        // Not connectable
-        vec![]
-    }
-
-    pub fn default_metric(&self) -> NodeAttribute {
-        Self::DEFAULT_ATTRIBUTE
-    }
-}
-
-#[cfg(feature = "core")]
-impl AggregatedNode {
-    pub fn node_indices_for_constraints(
-        &self,
-        network: &pywr_core::network::Network,
-        args: &LoadArgs,
-    ) -> Result<Vec<pywr_core::node::NodeIndex>, SchemaError> {
-        let indices = self
-            .nodes
-            .iter()
-            .map(|node_ref| {
-                args.schema
-                    .get_node_by_name(&node_ref.name)
-                    .ok_or_else(|| SchemaError::NodeNotFound {
-                        name: node_ref.name.to_string(),
-                    })?
-                    .node_indices_for_constraints(network, args)
-            })
-            .collect::<Result<Vec<_>, _>>()?
-            .into_iter()
-            .flatten()
-            .collect();
-        Ok(indices)
-    }
-    pub fn add_to_model(&self, network: &mut pywr_core::network::Network, args: &LoadArgs) -> Result<(), SchemaError> {
-        let nodes: Vec<Vec<_>> = self
-            .nodes
-            .iter()
-            .map(|node_ref| {
-                let node = args
-                    .schema
-                    .get_node_by_name(&node_ref.name)
-                    .ok_or_else(|| SchemaError::NodeNotFound {
-                        name: node_ref.name.to_string(),
-                    })?;
-                node.node_indices_for_constraints(network, args)
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-
-        // We initialise with no factors, but will update them in the `set_constraints` method
-        // once all the parameters are loaded.
-        network.add_aggregated_node(self.meta.name.as_str(), None, nodes.as_slice(), None)?;
-        Ok(())
-    }
-
-    pub fn set_constraints(
-        &self,
-        network: &mut pywr_core::network::Network,
-        args: &LoadArgs,
-    ) -> Result<(), SchemaError> {
-        if let Some(max_flow) = &self.max_flow {
-            let value = max_flow.load(network, args, Some(&self.meta.name))?;
-            network.set_aggregated_node_max_flow(self.meta.name.as_str(), None, value.into())?;
-        }
-
-        if let Some(min_flow) = &self.min_flow {
-            let value = min_flow.load(network, args, Some(&self.meta.name))?;
-            network.set_aggregated_node_min_flow(self.meta.name.as_str(), None, value.into())?;
-        }
-
-        if let Some(relationship) = &self.relationship {
-            let r = match relationship {
-                Relationship::Proportion { factors } => {
-                    pywr_core::aggregated_node::Relationship::new_proportion_factors(
-                        &factors
-                            .iter()
-                            .map(|f| f.load(network, args, Some(&self.meta.name)))
-                            .collect::<Result<Vec<_>, _>>()?,
-                    )
-                }
-                Relationship::Ratio { factors } => pywr_core::aggregated_node::Relationship::new_ratio_factors(
-                    &factors
-                        .iter()
-                        .map(|f| f.load(network, args, Some(&self.meta.name)))
-                        .collect::<Result<Vec<_>, _>>()?,
-                ),
-                Relationship::Exclusive { min_active, max_active } => {
-                    pywr_core::aggregated_node::Relationship::new_exclusive(
-                        min_active.unwrap_or(0),
-                        max_active.unwrap_or(1),
-                    )
-                }
-            };
-
-            network.set_aggregated_node_relationship(self.meta.name.as_str(), None, Some(r))?;
-        }
-
-        Ok(())
-    }
-
-    pub fn create_metric(
-        &self,
-        network: &pywr_core::network::Network,
-        attribute: Option<NodeAttribute>,
-    ) -> Result<MetricF64, SchemaError> {
-        // Use the default attribute if none is specified
-        let attr = attribute.unwrap_or(Self::DEFAULT_ATTRIBUTE);
-
-        let idx = network
-            .get_aggregated_node_index_by_name(self.meta.name.as_str(), None)
-            .ok_or_else(|| SchemaError::CoreNodeNotFound {
-                name: self.meta.name.clone(),
-                sub_name: None,
-            })?;
-
-        let metric = match attr {
-            NodeAttribute::Outflow => MetricF64::AggregatedNodeOutFlow(idx),
-            NodeAttribute::Inflow => MetricF64::AggregatedNodeInFlow(idx),
-            _ => {
-                return Err(SchemaError::NodeAttributeNotSupported {
-                    ty: "AggregatedNode".to_string(),
-                    name: self.meta.name.clone(),
-                    attr,
-                });
-            }
-        };
-
-        Ok(metric)
-    }
-}
-
-impl TryFromV1<AggregatedNodeV1> for AggregatedNode {
-    type Error = ComponentConversionError;
-
-    fn try_from_v1(
-        v1: AggregatedNodeV1,
-        parent_node: Option<&str>,
-        conversion_data: &mut ConversionData,
-    ) -> Result<Self, Self::Error> {
-        let meta: NodeMeta = v1.meta.into();
-
-        let relationship = match v1.factors {
-            Some(f) => Some(Relationship::Ratio {
-                factors: f
-                    .into_iter()
-                    .map(|v| {
-                        try_convert_parameter_attr(
-                            &meta.name,
-                            "factors",
-                            v,
-                            parent_node.or(Some(&meta.name)),
-                            conversion_data,
-                        )
-                    })
-                    .collect::<Result<_, _>>()?,
-            }),
-            None => None,
-        };
-
-        let max_flow = try_convert_node_attr(&meta.name, "max_flow", v1.max_flow, parent_node, conversion_data)?;
-        let min_flow = try_convert_node_attr(&meta.name, "min_flow", v1.min_flow, parent_node, conversion_data)?;
-
-        let nodes = v1.nodes.into_iter().map(|n| n.into()).collect();
-
-        let n = Self {
-            meta,
-            parameters: None,
-            nodes,
-            max_flow,
-            min_flow,
-            relationship,
-        };
-        Ok(n)
-    }
-}
-
-#[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
-#[serde(deny_unknown_fields)]
-pub struct AggregatedStorageNode {
-    pub meta: NodeMeta,
-    /// Optional local parameters.
-    pub parameters: Option<Vec<Parameter>>,
-    pub storage_nodes: Vec<SimpleNodeReference>,
-}
-
-impl AggregatedStorageNode {
-    const DEFAULT_ATTRIBUTE: NodeAttribute = NodeAttribute::Volume;
-
-    pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
-        // Not connectable
-        // TODO this should be a trait? And error if you try to connect to a non-connectable node.
-        vec![]
-    }
-
-    pub fn output_connectors(&self) -> Vec<(&str, Option<String>)> {
-        // Not connectable
-        vec![]
-    }
-
-    pub fn default_metric(&self) -> NodeAttribute {
-        Self::DEFAULT_ATTRIBUTE
-    }
-}
-
-#[cfg(feature = "core")]
-impl AggregatedStorageNode {
-    pub fn node_indices_for_constraints(
-        &self,
-        network: &pywr_core::network::Network,
-        args: &LoadArgs,
-    ) -> Result<Vec<pywr_core::node::NodeIndex>, SchemaError> {
-        let indices = self
-            .storage_nodes
-            .iter()
-            .map(|node_ref| {
-                args.schema
-                    .get_node_by_name(&node_ref.name)
-                    .ok_or_else(|| SchemaError::NodeNotFound {
-                        name: node_ref.name.to_string(),
-                    })?
-                    .node_indices_for_constraints(network, args)
-            })
-            .collect::<Result<Vec<_>, _>>()?
-            .into_iter()
-            .flatten()
-            .collect();
-        Ok(indices)
-    }
-    pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
-        let nodes = self
-            .storage_nodes
-            .iter()
-            .map(|node_ref| {
-                network
-                    .get_node_index_by_name(&node_ref.name, None)
-                    .ok_or_else(|| SchemaError::CoreNodeNotFound {
-                        name: node_ref.name.clone(),
-                        sub_name: None,
-                    })
-            })
-            .collect::<Result<_, _>>()?;
-
-        network.add_aggregated_storage_node(self.meta.name.as_str(), None, nodes)?;
-        Ok(())
-    }
-
-    pub fn create_metric(
-        &self,
-        network: &mut pywr_core::network::Network,
-        attribute: Option<NodeAttribute>,
-    ) -> Result<MetricF64, SchemaError> {
-        // Use the default attribute if none is specified
-        let attr = attribute.unwrap_or(Self::DEFAULT_ATTRIBUTE);
-
-        let idx = network
-            .get_aggregated_storage_node_index_by_name(self.meta.name.as_str(), None)
-            .ok_or_else(|| SchemaError::CoreNodeNotFound {
-                name: self.meta.name.clone(),
-                sub_name: None,
-            })?;
-
-        let metric = match attr {
-            NodeAttribute::Volume => MetricF64::AggregatedNodeVolume(idx),
-            NodeAttribute::ProportionalVolume => {
-                let dm = DerivedMetric::AggregatedNodeProportionalVolume(idx);
-                let derived_metric_idx = network.add_derived_metric(dm);
-                MetricF64::DerivedMetric(derived_metric_idx)
-            }
-            _ => {
-                return Err(SchemaError::NodeAttributeNotSupported {
-                    ty: "AggregatedStorageNode".to_string(),
-                    name: self.meta.name.clone(),
-                    attr,
-                });
-            }
-        };
-
-        Ok(metric)
-    }
-}
-
-impl From<AggregatedStorageNodeV1> for AggregatedStorageNode {
-    fn from(v1: AggregatedStorageNodeV1) -> Self {
-        let storage_nodes = v1.storage_nodes.into_iter().map(|n| n.into()).collect();
-
-        Self {
-            meta: v1.meta.into(),
-            parameters: None,
-            storage_nodes,
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use crate::nodes::InputNode;
@@ -1429,7 +1326,7 @@ mod tests {
                     "name": "supply1"
                 },
                 "max_flow": {
-                    "type": "Constant",
+                    "type": "Literal",
                     "value": 15.0
                 }
             }
@@ -1448,7 +1345,7 @@ mod tests {
                     "name": "storage1"
                 },
                 "max_volume": {
-                  "type": "Constant",
+                  "type": "Literal",
                   "value": 10.0
                 },
                 "initial_volume": {
@@ -1471,7 +1368,7 @@ mod tests {
                     "name": "storage1"
                 },
                 "max_volume": {
-                  "type": "Constant",
+                  "type": "Literal",
                   "value": 15.0
                 },
                 "initial_volume": {

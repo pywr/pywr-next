@@ -1,18 +1,17 @@
 use super::{
-    MetricSetState, OutputMetric, Recorder, RecorderFinaliseError, RecorderMeta, RecorderSaveError, RecorderSetupError,
-    Timestep,
+    MetricSetState, OutputMetric, Recorder, RecorderFinalResult, RecorderFinaliseError, RecorderInternalState,
+    RecorderMeta, RecorderSaveError, RecorderSetupError, Timestep, downcast_internal_state,
+    downcast_internal_state_mut,
 };
 use crate::models::ModelDomain;
 use crate::network::Network;
 use crate::recorders::MetricSetIndex;
-use crate::recorders::csv::CsvError;
 use crate::scenario::{ScenarioDomain, ScenarioIndex};
 use crate::state::State;
 use chrono::{Datelike, Timelike};
 use hdf5_metno::types::StringError;
 use hdf5_metno::{Extents, Group};
 use ndarray::{Array1, s};
-use std::any::Any;
 use std::ops::Deref;
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -103,7 +102,11 @@ impl Recorder for HDF5Recorder {
     fn meta(&self) -> &RecorderMeta {
         &self.meta
     }
-    fn setup(&self, domain: &ModelDomain, network: &Network) -> Result<Option<Box<(dyn Any)>>, RecorderSetupError> {
+    fn setup(
+        &self,
+        domain: &ModelDomain,
+        network: &Network,
+    ) -> Result<Option<Box<dyn RecorderInternalState>>, RecorderSetupError> {
         let file = hdf5_metno::File::create(&self.filename).map_err(|source| Hdf5Error::HDF5Error {
             path: self.filename.clone(),
             source,
@@ -129,7 +132,7 @@ impl Recorder for HDF5Recorder {
 
         let metric_set = network
             .get_metric_set(self.metric_set_idx)
-            .ok_or(CsvError::MetricSetIndexNotFound {
+            .ok_or(Hdf5Error::MetricSetIndexNotFound {
                 index: self.metric_set_idx,
             })?;
 
@@ -151,19 +154,13 @@ impl Recorder for HDF5Recorder {
         network: &Network,
         state: &[State],
         _metric_set_states: &[Vec<MetricSetState>],
-        internal_state: &mut Option<Box<dyn Any>>,
+        internal_state: &mut Option<Box<dyn RecorderInternalState>>,
     ) -> Result<(), RecorderSaveError> {
-        let internal = match internal_state {
-            Some(internal) => match internal.downcast_mut::<Internal>() {
-                Some(pa) => pa,
-                None => panic!("Internal state did not downcast to the correct type! :("),
-            },
-            None => panic!("No internal state defined when one was expected! :("),
-        };
+        let internal = downcast_internal_state_mut::<Internal>(internal_state);
 
         let metric_set = network
             .get_metric_set(self.metric_set_idx)
-            .ok_or(CsvError::MetricSetIndexNotFound {
+            .ok_or(Hdf5Error::MetricSetIndexNotFound {
                 index: self.metric_set_idx,
             })?;
 
@@ -192,23 +189,15 @@ impl Recorder for HDF5Recorder {
         _network: &Network,
         _scenario_indices: &[ScenarioIndex],
         _metric_set_states: &[Vec<MetricSetState>],
-        internal_state: &mut Option<Box<dyn Any>>,
-    ) -> Result<(), RecorderFinaliseError> {
-        // This will leave the internal state with a `None` because we need to take
-        // ownership of the file handle in order to close it.
-        match internal_state.take() {
-            Some(internal) => {
-                if let Ok(internal) = internal.downcast::<Internal>() {
-                    Ok(internal.file.close().map_err(|source| Hdf5Error::HDF5Error {
-                        path: self.filename.clone(),
-                        source,
-                    })?)
-                } else {
-                    panic!("Internal state did not downcast to the correct type! :(");
-                }
-            }
-            None => panic!("No internal state defined when one was expected! :("),
-        }
+        internal_state: Option<Box<dyn RecorderInternalState>>,
+    ) -> Result<Option<Box<dyn RecorderFinalResult>>, RecorderFinaliseError> {
+        let internal = downcast_internal_state::<Internal>(internal_state);
+        internal.file.close().map_err(|source| Hdf5Error::HDF5Error {
+            path: self.filename.clone(),
+            source,
+        })?;
+
+        Ok(None)
     }
 }
 

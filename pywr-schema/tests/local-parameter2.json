@@ -1,0 +1,142 @@
+{
+  "metadata": {
+    "title": "Local parameter with Storage node.",
+    "description": "Examples of using local parameters to define cost on a Storage node.",
+    "minimum_version": "0.1"
+  },
+  "timestepper": {
+    "start": "2015-01-01",
+    "end": "2015-01-31",
+    "timestep": {
+      "type": "Days",
+      "days": 1
+    }
+  },
+  "network": {
+    "nodes": [
+      {
+        "meta": {
+          "name": "catchment1"
+        },
+        "type": "Catchment",
+        "flow": {
+          "type": "Literal",
+          "value": 5
+        }
+      },
+      {
+        "meta": {
+          "name": "river1"
+        },
+        "type": "River"
+      },
+      {
+        "meta": {
+          "name": "term1"
+        },
+        "type": "Output"
+      },
+      {
+        "meta": {
+          "name": "storage1"
+        },
+        "type": "Storage",
+        "initial_volume": {
+          "type": "Proportional",
+          "proportion": 1.0
+        },
+        "max_volume": {
+          "type": "Literal",
+          "value": 100.0
+        },
+        "cost": {
+          "type": "LocalParameter",
+          "name": "cost"
+        },
+        "parameters": [
+          {
+            "meta": {
+              "name": "cost"
+            },
+            "type": "ControlCurve",
+            "storage_metric": {
+              "type": "Node",
+              "name": "storage1",
+              "attribute": "ProportionalVolume"
+            },
+            "control_curves": [
+              {
+                "type": "Literal",
+                "value": 0.5
+              }
+            ],
+            "values": [
+              {
+                "type": "Literal",
+                "value": 0.1
+              },
+              {
+                "type": "Literal",
+                "value": -5
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "meta": {
+          "name": "demand1"
+        },
+        "type": "Output",
+        "max_flow": {
+          "type": "Literal",
+          "value": 3.0
+        },
+        "cost": {
+          "type": "Literal",
+          "value": -10.0
+        }
+      }
+    ],
+    "edges": [
+      {
+        "from_node": "catchment1",
+        "to_node": "river1"
+      },
+      {
+        "from_node": "river1",
+        "to_node": "term1"
+      },
+      {
+        "from_node": "river1",
+        "to_node": "storage1"
+      },
+      {
+        "from_node": "storage1",
+        "to_node": "demand1"
+      }
+    ],
+    "metric_sets": [
+      {
+        "name": "nodes",
+        "metrics": [
+          {
+            "type": "Node",
+            "name": "storage1"
+          }
+        ]
+      }
+    ],
+    "outputs": [
+      {
+        "name": "node-outputs",
+        "type": "CSV",
+        "format": "Long",
+        "filename": "local-parameter2-expected.csv",
+        "metric_set": [
+          "nodes"
+        ]
+      }
+    ]
+  }
+}

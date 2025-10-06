@@ -1,10 +1,8 @@
-mod agg_func;
 mod event;
 mod periodic;
 
 use crate::recorders::metric_set::MetricSetOutputInfo;
 use crate::timestep::TimeDomain;
-pub use agg_func::AggregationFunction;
 pub use event::{Event, EventAggregator, EventAggregatorState};
 use periodic::PeriodicAggregatorState;
 pub use periodic::{AggregationFrequency, PeriodValue, PeriodicAggregator};
@@ -167,7 +165,9 @@ impl NestedAggregator {
             match agg_value {
                 AggregatorValue::Periodic(value) => self.aggregator.process_value(&mut state.state, value),
                 AggregatorValue::Event(_event) => {
-                    panic!("It is not possible to process an event value in a nested aggregator. The event aggregator should be the top level aggregator.")
+                    panic!(
+                        "It is not possible to process an event value in a nested aggregator. The event aggregator should be the top level aggregator."
+                    )
                 }
             }
         } else {
@@ -194,7 +194,9 @@ impl NestedAggregator {
                     let _ = self.aggregator.process_value(&mut state.state, value);
                 }
                 AggregatorValue::Event(_event) => {
-                    panic!("It is not possible to process an event value in a nested aggregator. The event aggregator should be the top level aggregator.")
+                    panic!(
+                        "It is not possible to process an event value in a nested aggregator. The event aggregator should be the top level aggregator."
+                    )
                 }
             }
         }
@@ -206,18 +208,17 @@ impl NestedAggregator {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        AggregationFrequency, AggregationFunction, Aggregator, AggregatorValue, NestedAggregator, PeriodicAggregator,
-    };
+    use super::{AggregationFrequency, Aggregator, AggregatorValue, NestedAggregator, PeriodicAggregator};
+    use crate::agg_funcs::AggFuncF64;
     use crate::recorders::aggregator::PeriodValue;
     use chrono::{Datelike, NaiveDate, TimeDelta};
     use float_cmp::assert_approx_eq;
 
     #[test]
     fn test_nested_aggregator() {
-        let model_agg = PeriodicAggregator::new(None, AggregationFunction::Max);
+        let model_agg = PeriodicAggregator::new(None, AggFuncF64::Max);
 
-        let annual_agg = PeriodicAggregator::new(Some(AggregationFrequency::Annual), AggregationFunction::Min);
+        let annual_agg = PeriodicAggregator::new(Some(AggregationFrequency::Annual), AggFuncF64::Min);
 
         // Setup an aggregator to calculate the max of the annual minimum values
         let max_annual_min = NestedAggregator {

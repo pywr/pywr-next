@@ -2,12 +2,12 @@
 use crate::error::SchemaError;
 use crate::error::{ComponentConversionError, ConversionError};
 #[cfg(feature = "core")]
-use crate::model::LoadArgs;
+use crate::network::LoadArgs;
 use crate::parameters::{ConstantFloatVec, ConstantValue, ConversionData, ParameterMeta};
 use crate::v1::{FromV1, IntoV2, TryFromV1, try_convert_values};
 #[cfg(feature = "core")]
-use pywr_core::parameters::{ParameterIndex, WeeklyProfileError, WeeklyProfileValues};
-use pywr_schema_macros::PywrVisitAll;
+use pywr_core::parameters::{ParameterIndex, ParameterName, WeeklyProfileError, WeeklyProfileValues};
+use pywr_schema_macros::{PywrVisitAll, skip_serializing_none};
 use pywr_v1_schema::parameters::{
     DailyProfileParameter as DailyProfileParameterV1, MonthInterpDay as MonthInterpDayV1,
     MonthlyProfileParameter as MonthlyProfileParameterV1, RbfProfileParameter as RbfProfileParameterV1,
@@ -30,10 +30,11 @@ impl DailyProfileParameter {
         &self,
         network: &mut pywr_core::network::Network,
         args: &LoadArgs,
+        parent: Option<&str>,
     ) -> Result<ParameterIndex<f64>, SchemaError> {
         let values = &self.values.load(args.tables)?[..366];
         let p = pywr_core::parameters::DailyProfileParameter::new(
-            self.meta.name.as_str().into(),
+            ParameterName::new(&self.meta.name, parent),
             values.try_into().expect(""),
         );
         Ok(network.add_simple_parameter(Box::new(p))?)
@@ -73,6 +74,7 @@ impl From<MonthlyInterpDay> for pywr_core::parameters::MonthlyInterpDay {
     }
 }
 
+#[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct MonthlyProfileParameter {
@@ -87,11 +89,18 @@ impl MonthlyProfileParameter {
         &self,
         network: &mut pywr_core::network::Network,
         args: &LoadArgs,
+        parent: Option<&str>,
     ) -> Result<ParameterIndex<f64>, SchemaError> {
-        let values = &self.values.load(args.tables)?[..12];
+        let values = self.values.load(args.tables)?;
+
+        let values: [f64; 12] = values.try_into().map_err(|v: Vec<_>| SchemaError::DataLengthMismatch {
+            expected: 12,
+            found: v.len(),
+        })?;
+
         let p = pywr_core::parameters::MonthlyProfileParameter::new(
-            self.meta.name.as_str().into(),
-            values.try_into().expect(""),
+            ParameterName::new(&self.meta.name, parent),
+            values,
             self.interp_day.map(|id| id.into()),
         );
         Ok(network.add_simple_parameter(Box::new(p))?)
@@ -129,6 +138,7 @@ impl TryFromV1<MonthlyProfileParameterV1> for MonthlyProfileParameter {
     }
 }
 
+#[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct UniformDrawdownProfileParameter {
@@ -144,6 +154,7 @@ impl UniformDrawdownProfileParameter {
         &self,
         network: &mut pywr_core::network::Network,
         args: &LoadArgs,
+        parent: Option<&str>,
     ) -> Result<ParameterIndex<f64>, SchemaError> {
         let reset_day = match &self.reset_day {
             Some(v) => v.load(args.tables)? as u32,
@@ -159,7 +170,7 @@ impl UniformDrawdownProfileParameter {
         };
 
         let p = pywr_core::parameters::UniformDrawdownProfileParameter::new(
-            self.meta.name.as_str().into(),
+            ParameterName::new(&self.meta.name, parent),
             reset_day,
             reset_month,
             residual_days,
@@ -178,9 +189,9 @@ impl FromV1<UniformDrawdownProfileParameterV1> for UniformDrawdownProfileParamet
 
         Self {
             meta,
-            reset_day: v1.reset_day.map(|v| ConstantValue::Literal(v as u64)),
-            reset_month: v1.reset_month.map(|v| ConstantValue::Literal(v as u64)),
-            residual_days: v1.residual_days.map(|v| ConstantValue::Literal(v as u64)),
+            reset_day: v1.reset_day.map(|v| v.into()),
+            reset_month: v1.reset_month.map(|v| v.into()),
+            residual_days: v1.residual_days.map(|v| v.into()),
         }
     }
 }
@@ -334,11 +345,15 @@ pub struct RbfProfileParameter {
 
 #[cfg(feature = "core")]
 impl RbfProfileParameter {
-    pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<ParameterIndex<f64>, SchemaError> {
+    pub fn add_to_model(
+        &self,
+        network: &mut pywr_core::network::Network,
+        parent: Option<&str>,
+    ) -> Result<ParameterIndex<f64>, SchemaError> {
         let function = self.function.into_core_rbf(&self.points)?;
 
         let p = pywr_core::parameters::RbfProfileParameter::new(
-            self.meta.name.as_str().into(),
+            ParameterName::new(&self.meta.name, parent),
             self.points.clone(),
             function,
         );
@@ -519,6 +534,7 @@ impl From<WeeklyInterpDay> for pywr_core::parameters::WeeklyInterpDay {
 /// The values in the last week are interpolated between `10` and `12` (i.e the value on 31<sup>st</sup>
 /// December).
 ///
+#[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct WeeklyProfileParameter {
@@ -533,9 +549,10 @@ impl WeeklyProfileParameter {
         &self,
         network: &mut pywr_core::network::Network,
         args: &LoadArgs,
+        parent: Option<&str>,
     ) -> Result<ParameterIndex<f64>, SchemaError> {
         let p = pywr_core::parameters::WeeklyProfileParameter::new(
-            self.meta.name.as_str().into(),
+            ParameterName::new(&self.meta.name, parent),
             WeeklyProfileValues::try_from(self.values.load(args.tables)?.as_slice()).map_err(
                 |err: WeeklyProfileError| SchemaError::LoadParameter {
                     name: self.meta.name.to_string(),
@@ -567,5 +584,44 @@ impl TryFromV1<WeeklyProfileParameterV1> for WeeklyProfileParameter {
             interp_day: None,
         };
         Ok(p)
+    }
+}
+
+/// A parameter that defines a profile over a 24-hour period.
+///
+/// The values array should contain 24 values, one for each hour of the day.
+///
+/// # JSON Example
+///
+/// ```json
+#[doc = include_str!("doc_examples/dirunal_1.json")]
+/// ```
+
+#[skip_serializing_none]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
+#[serde(deny_unknown_fields)]
+pub struct DirunalProfileParameter {
+    pub meta: ParameterMeta,
+    pub values: ConstantFloatVec,
+}
+
+#[cfg(feature = "core")]
+impl DirunalProfileParameter {
+    pub fn add_to_model(
+        &self,
+        network: &mut pywr_core::network::Network,
+        args: &LoadArgs,
+        parent: Option<&str>,
+    ) -> Result<ParameterIndex<f64>, SchemaError> {
+        let values = self.values.load(args.tables)?;
+
+        let values: [f64; 24] = values.try_into().map_err(|v: Vec<_>| SchemaError::DataLengthMismatch {
+            expected: 24,
+            found: v.len(),
+        })?;
+
+        let p =
+            pywr_core::parameters::DiurnalProfileParameter::new(ParameterName::new(&self.meta.name, parent), values);
+        Ok(network.add_simple_parameter(Box::new(p))?)
     }
 }

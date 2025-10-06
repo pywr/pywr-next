@@ -7,7 +7,10 @@
   "timestepper": {
     "start": "2021-01-01",
     "end": "2021-01-31",
-    "timestep": 1
+    "timestep": {
+      "type": "Days",
+      "days": 1
+    }
   },
   "network": {
     "nodes": [
@@ -17,7 +20,7 @@
         },
         "type": "Catchment",
         "flow": {
-          "type": "Constant",
+          "type": "Literal",
           "value": 15
         }
       },
@@ -26,8 +29,14 @@
           "name": "link1"
         },
         "type": "Delay",
-        "delay": 3,
-        "initial_value": 0.0
+        "delay": {
+          "type": "Literal",
+          "value": 3
+        },
+        "initial_value": {
+          "type": "Literal",
+          "value": 0.0
+        }
       },
       {
         "meta": {
@@ -35,11 +44,11 @@
         },
         "type": "Output",
         "max_flow": {
-          "type": "Constant",
+          "type": "Literal",
           "value": 20.0
         },
         "cost": {
-          "type": "Constant",
+          "type": "Literal",
           "value": 1.0
         }
       }

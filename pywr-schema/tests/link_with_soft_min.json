@@ -7,7 +7,10 @@
   "timestepper": {
     "start": "2015-01-01",
     "end": "2015-01-03",
-    "timestep": 1
+    "timestep": {
+      "type": "Days",
+      "days": 1
+    }
   },
   "network": {
     "nodes": [
@@ -23,20 +26,20 @@
         },
         "type": "Link",
         "max_flow": {
-          "type": "Constant",
+          "type": "Literal",
           "value": 20.0
         },
         "cost": {
-          "type": "Constant",
+          "type": "Literal",
           "value": -50
         },
         "soft_min": {
           "cost": {
-            "type": "Constant",
+            "type": "Literal",
             "value": 50
           },
           "flow": {
-            "type": "Constant",
+            "type": "Literal",
             "value": 5
           }
         }
@@ -47,11 +50,11 @@
         },
         "type": "Output",
         "max_flow": {
-          "type": "Constant",
+          "type": "Literal",
           "value": 10.0
         },
         "cost": {
-          "type": "Constant",
+          "type": "Literal",
           "value": -10
         }
       }

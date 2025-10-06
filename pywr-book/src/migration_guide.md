@@ -107,7 +107,8 @@ The complete example below demonstrates the conversion process for a v1.x model 
 
 The main changes to custom parameters in Pywr v2.x are as follows:
 
-1. Custom parameters are no longer required to be a subclass of `Parameter`. They instead can be simple Python classes
+1. Custom parameters are no longer required to be a subclass of `Parameter`. They instead can be simple Python
+   functions, or classes
    that implement a `calc` method.
 2. Users are no longer required to handle scenarios within custom parameters. Instead an instance of the custom
    parameter is created for each scenario in the simulation. This simplifies writing parameters and removes the risk of
@@ -115,6 +116,9 @@ The main changes to custom parameters in Pywr v2.x are as follows:
 3. Custom parameters are now added to the model using the "Python" parameter type. I.e. the "type" field in the
    parameter definition should be set to "Python" (not the class name of the custom parameter). This parameter type
    requires that the user explicitly define which metrics the custom parameter requires.
+
+For more information on custom parameters, see the
+[Custom parameters](./custom_parameters.md) section of the documentation.
 
 ### Simple example
 

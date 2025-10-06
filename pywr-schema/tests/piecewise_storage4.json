@@ -1,0 +1,173 @@
+{
+  "metadata": {
+    "title": "PiecewiseStorage 2",
+    "description": "A test of PiecewiseStorageNode with a monthly profile control curve.",
+    "minimum_version": "0.1"
+  },
+  "timestepper": {
+    "start": "2021-01-01",
+    "end": "2021-08-31",
+    "timestep": {
+      "type": "Days",
+      "days": 1
+    }
+  },
+  "network": {
+    "nodes": [
+      {
+        "meta": {
+          "name": "input1"
+        },
+        "type": "Input",
+        "max_flow": {
+          "type": "Literal",
+          "value": 3.0
+        },
+        "cost": {
+          "type": "Literal",
+          "value": 2.0
+        }
+      },
+      {
+        "meta": {
+          "name": "storage1"
+        },
+        "type": "PiecewiseStorage",
+        "initial_volume": {
+          "type": "Proportional",
+          "proportion": 0.5
+        },
+        "max_volume": {
+          "type": "Literal",
+          "value": 1000.0
+        },
+        "min_volume": {
+          "type": "Literal",
+          "value": 300.0
+        },
+        "steps": [
+          {
+            "cost": {
+              "type": "Literal",
+              "value": -15.0
+            },
+            "control_curve": {
+              "type": "Literal",
+              "value": 0.25
+            }
+          },
+          {
+            "cost": {
+              "type": "Literal",
+              "value": -5.0
+            },
+            "control_curve": {
+              "type": "Parameter",
+              "name": "storage1-control-curve"
+            }
+          }
+        ]
+      },
+      {
+        "meta": {
+          "name": "demand1"
+        },
+        "type": "Output",
+        "max_flow": {
+          "type": "Literal",
+          "value": 5.0
+        },
+        "cost": {
+          "type": "Literal",
+          "value": -10
+        }
+      }
+    ],
+    "edges": [
+      {
+        "from_node": "input1",
+        "to_node": "storage1"
+      },
+      {
+        "from_node": "storage1",
+        "to_node": "demand1"
+      }
+    ],
+    "parameters": [
+      {
+        "meta": {
+          "name": "storage1-drought-curve"
+        },
+        "type": "Constant",
+        "value": {
+          "type": "Literal",
+          "value": 0.5
+        }
+      },
+      {
+        "type": "MonthlyProfile",
+        "meta": {
+          "name": "storage1-control-curve"
+        },
+        "values": {
+          "type": "Literal",
+          "values": [
+            0.75,
+            0.75,
+            0.75,
+            0.5,
+            0.5,
+            0.5,
+            0.3,
+            0.3,
+            0.3,
+            0.5,
+            0.5,
+            0.5
+          ]
+        }
+      },
+      {
+        "meta": {
+          "name": "storage1-drought-index"
+        },
+        "type": "ControlCurveIndex",
+        "storage_metric": {
+          "type": "Node",
+          "name": "storage1",
+          "attribute": "ProportionalVolume"
+        },
+        "control_curves": [
+          {
+            "type": "Parameter",
+            "name": "storage1-drought-curve"
+          }
+        ]
+      }
+    ],
+    "metric_sets": [
+      {
+        "name": "nodes",
+        "metrics": [
+          {
+            "type": "Node",
+            "name": "storage1"
+          },
+          {
+            "type": "Parameter",
+            "name": "storage1-drought-index"
+          }
+        ]
+      }
+    ],
+    "outputs": [
+      {
+        "name": "nodes",
+        "type": "CSV",
+        "format": "Long",
+        "filename": "piecewise_storage4-expected.csv",
+        "metric_set": "nodes"
+      }
+    ]
+  }
+}

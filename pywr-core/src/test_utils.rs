@@ -1,29 +1,44 @@
+use crate::agg_funcs::AggFuncF64;
 use crate::metric::MetricF64;
 use crate::models::{Model, ModelDomain};
 /// Utilities for unit tests.
 /// TODO move this to its own local crate ("test-utilities") as part of a workspace.
 use crate::network::{Network, NetworkError};
 use crate::node::StorageInitialVolume;
-use crate::parameters::{AggFunc, AggregatedParameter, Array2Parameter, ConstantParameter, GeneralParameter};
+use crate::parameters::{AggregatedParameter, Array2Parameter, ConstantParameter, GeneralParameter};
 use crate::recorders::{AssertionF64Recorder, AssertionU64Recorder};
 use crate::scenario::{ScenarioDomain, ScenarioDomainBuilder, ScenarioGroupBuilder};
 #[cfg(feature = "cbc")]
 use crate::solvers::CbcSolver;
 #[cfg(feature = "ipm-ocl")]
 use crate::solvers::ClIpmF64Solver;
+#[cfg(feature = "clp")]
+use crate::solvers::ClpSolver;
 #[cfg(feature = "highs")]
 use crate::solvers::HighsSolver;
 #[cfg(any(feature = "ipm-simd", feature = "ipm-ocl"))]
 use crate::solvers::MultiStateSolver;
 #[cfg(feature = "ipm-simd")]
 use crate::solvers::SimdIpmF64Solver;
-use crate::solvers::{ClpSolver, Solver, SolverSettings};
+#[cfg(any(feature = "cbc", feature = "clp", feature = "highs", feature = "microlp"))]
+use crate::solvers::Solver;
+#[cfg(any(
+    feature = "cbc",
+    feature = "clp",
+    feature = "highs",
+    feature = "ipm-ocl",
+    feature = "ipm-simd",
+    feature = "microlp"
+))]
+use crate::solvers::SolverSettings;
 use crate::timestep::{TimeDomain, TimestepDuration, Timestepper};
 use chrono::{Days, NaiveDate};
+use csv::{Reader, ReaderBuilder};
 use float_cmp::{F64Margin, approx_eq};
 use ndarray::{Array, Array2};
 use rand::Rng;
 use rand_distr::{Distribution, Normal};
+use std::num::NonZeroU64;
 use std::path::PathBuf;
 
 pub fn default_timestepper() -> Timestepper {
@@ -35,7 +50,7 @@ pub fn default_timestepper() -> Timestepper {
         .unwrap()
         .and_hms_opt(0, 0, 0)
         .unwrap();
-    let duration = TimestepDuration::Days(1);
+    let duration = TimestepDuration::Days(NonZeroU64::new(1).unwrap());
     Timestepper::new(start, end, duration)
 }
 
@@ -89,7 +104,7 @@ pub fn simple_network(network: &mut Network, inflow_scenario_index: usize, num_i
     let total_demand: AggregatedParameter<MetricF64> = AggregatedParameter::new(
         "total-demand".into(),
         &[base_demand.into(), demand_factor.into()],
-        AggFunc::Product,
+        AggFuncF64::Product,
     );
     let total_demand = network.add_parameter(Box::new(total_demand)).unwrap();
 
@@ -108,7 +123,7 @@ pub fn simple_model(num_scenarios: usize, timestepper: Option<Timestepper>) -> M
         .unwrap();
     scenario_builder = scenario_builder.with_group(scenario_group).unwrap();
 
-    let domain = ModelDomain::from(timestepper.unwrap_or_else(default_timestepper), scenario_builder).unwrap();
+    let domain = ModelDomain::try_from(timestepper.unwrap_or_else(default_timestepper), scenario_builder).unwrap();
     let mut network = Network::default();
 
     let idx = domain
@@ -210,20 +225,56 @@ pub fn run_and_assert_parameter_u64(
     run_all_solvers(model, &[], &[], &[])
 }
 
-/// A struct to hold the expected outputs for a test.
-pub struct ExpectedOutputs {
+/// A trait with a verify method for checking model outputs.
+///
+/// The verify method should compare model outputs with expected results, raising
+/// an error if they do not match.
+pub trait VerifyExpected {
+    fn verify(&self);
+}
+
+/// A struct representing an CSV output row in long format
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct ExpectedRowLong {
+    time_start: String,
+    time_end: String,
+    simulation_id: String,
+    label: String,
+    metric_set: String,
+    name: String,
+    attribute: String,
+    value: f64,
+}
+
+impl PartialEq for ExpectedRowLong {
+    fn eq(&self, other: &Self) -> bool {
+        self.time_start == other.time_start
+            && self.time_end == other.time_end
+            && self.simulation_id == other.simulation_id
+            && self.label == other.label
+            && self.metric_set == other.metric_set
+            && self.name == other.name
+            && self.attribute == other.attribute
+            && approx_eq!(f64, self.value, other.value, F64Margin { ulps: 2, epsilon: 1e-8 })
+    }
+}
+
+/// A struct to hold the expected outputs in long format for a test.
+pub struct ExpectedOutputsLong {
     output_path: PathBuf,
     expected_str: String,
 }
 
-impl ExpectedOutputs {
+impl ExpectedOutputsLong {
     pub fn new(output_path: PathBuf, expected_str: String) -> Self {
         Self {
             output_path,
             expected_str,
         }
     }
+}
 
+impl VerifyExpected for ExpectedOutputsLong {
     fn verify(&self) {
         assert!(
             self.output_path.exists(),
@@ -231,7 +282,109 @@ impl ExpectedOutputs {
             self.output_path
         );
         let actual_str = std::fs::read_to_string(&self.output_path).unwrap();
-        assert_eq!(actual_str, self.expected_str, "Output file contents do not match");
+
+        let mut expected_rdr = Reader::from_reader(self.expected_str.as_bytes());
+        let mut actual_rdr = Reader::from_reader(actual_str.as_bytes());
+
+        let expected_line_count = expected_rdr.records().count();
+        let actual_line_count = actual_rdr.records().count();
+
+        assert_eq!(
+            expected_line_count, actual_line_count,
+            "Row count mismatch (expected rows: {}, actual rows: {})",
+            expected_line_count, actual_line_count
+        );
+
+        // Reset the readers to the beginning for actual comparison
+        let mut expected_rdr = Reader::from_reader(self.expected_str.as_bytes());
+        let mut actual_rdr = Reader::from_reader(actual_str.as_bytes());
+
+        for (row_idx, (result, actual_result)) in expected_rdr
+            .deserialize::<ExpectedRowLong>()
+            .zip(actual_rdr.deserialize::<ExpectedRowLong>())
+            .enumerate()
+        {
+            let record: ExpectedRowLong = result.unwrap();
+            let actual_record: ExpectedRowLong = actual_result.unwrap();
+            assert_eq!(record, actual_record, "Row {} differs", row_idx);
+        }
+    }
+}
+/// A struct to hold the expected outputs in wide format for a test.
+pub struct ExpectedOutputsWide {
+    output_path: PathBuf,
+    expected_str: String,
+}
+
+impl ExpectedOutputsWide {
+    pub fn new(output_path: PathBuf, expected_str: String) -> Self {
+        Self {
+            output_path,
+            expected_str,
+        }
+    }
+}
+
+impl VerifyExpected for ExpectedOutputsWide {
+    fn verify(&self) {
+        assert!(
+            self.output_path.exists(),
+            "Output file does not exist: {:?}",
+            self.output_path
+        );
+        let actual_str = std::fs::read_to_string(&self.output_path).unwrap();
+
+        let mut expected_rdr = ReaderBuilder::new()
+            .has_headers(false)
+            .delimiter(b',')
+            .from_reader(self.expected_str.as_bytes());
+        let mut actual_rdr = ReaderBuilder::new()
+            .has_headers(false)
+            .delimiter(b',')
+            .from_reader(actual_str.as_bytes());
+
+        // first 4 lines are headers so compare line strings
+        for i in 0..4 {
+            let expected_line = expected_rdr.records().next().unwrap().unwrap();
+            let actual_line = actual_rdr.records().next().unwrap().unwrap();
+            assert_eq!(expected_line, actual_line, "Header line {} differs", i);
+        }
+
+        for (row_idx, (expected_result, actual_result)) in expected_rdr.records().zip(actual_rdr.records()).enumerate()
+        {
+            let expected_row = expected_result.unwrap();
+            let actual_row = actual_result.unwrap();
+            let mut expected_iter = expected_row.iter();
+            let mut actual_iter = actual_row.iter();
+
+            let expected_index = expected_iter.next().unwrap();
+            let actual_index = actual_iter.next().unwrap();
+
+            let expected_values: Vec<f64> = expected_iter
+                .map(|s| s.trim().parse::<f64>().expect("Failed to parse expected value"))
+                .collect();
+            let actual_values: Vec<f64> = actual_iter
+                .map(|s| s.trim().parse::<f64>().expect("Failed to parse actual value"))
+                .collect();
+
+            // Compare index values
+            assert_eq!(
+                expected_index.trim(),
+                actual_index.trim(),
+                "Row {}: index values differ",
+                row_idx
+            );
+
+            // Compare the rest of the values
+            for (col_idx, (expected, actual)) in expected_values.iter().zip(actual_values.iter()).enumerate() {
+                if !approx_eq!(f64, *expected, *actual, F64Margin { ulps: 2, epsilon: 1e-8 }) {
+                    panic!(
+                        "Row {} with index {}: value at column {} differs (expected: {}, actual: {})",
+                        row_idx, expected_index, col_idx, expected, actual
+                    );
+                }
+            }
+        }
     }
 }
 
@@ -239,14 +392,25 @@ impl ExpectedOutputs {
 ///
 /// The model will only be run if the solver has the required solver features (and
 /// is also enabled as a Cargo feature).
+#[cfg(any(
+    feature = "cbc",
+    feature = "clp",
+    feature = "highs",
+    feature = "ipm-ocl",
+    feature = "ipm-simd",
+    feature = "microlp"
+))]
 pub fn run_all_solvers(
     model: &Model,
     solvers_without_features: &[&str],
     solvers_to_skip: &[&str],
-    expected_outputs: &[ExpectedOutputs],
+    expected_outputs: &[Box<dyn VerifyExpected>],
 ) {
-    if !solvers_to_skip.contains(&"clp") {
-        check_features_and_run::<ClpSolver>(model, !solvers_without_features.contains(&"clp"), expected_outputs);
+    #[cfg(feature = "clp")]
+    {
+        if !solvers_to_skip.contains(&"clp") {
+            check_features_and_run::<ClpSolver>(model, !solvers_without_features.contains(&"clp"), expected_outputs);
+        }
     }
 
     #[cfg(feature = "cbc")]
@@ -267,23 +431,60 @@ pub fn run_all_solvers(
         }
     }
 
+    #[cfg(feature = "microlp")]
+    {
+        if !solvers_to_skip.contains(&"microlp") {
+            check_features_and_run::<crate::solvers::MicroLpSolver>(
+                model,
+                !solvers_without_features.contains(&"microlp"),
+                expected_outputs,
+            );
+        }
+    }
+
     #[cfg(feature = "ipm-simd")]
     {
         if !solvers_to_skip.contains(&"ipm-simd") {
-            check_features_and_run_multi::<SimdIpmF64Solver>(model, !solvers_without_features.contains(&"ipm-simd"));
+            check_features_and_run_multi::<SimdIpmF64Solver>(
+                model,
+                !solvers_without_features.contains(&"ipm-simd"),
+                expected_outputs,
+            );
         }
     }
 
     #[cfg(feature = "ipm-ocl")]
     {
         if !solvers_to_skip.contains(&"ipm-ocl") {
-            check_features_and_run_multi::<ClIpmF64Solver>(model, !solvers_without_features.contains(&"ipm-ocl"));
+            check_features_and_run_multi::<ClIpmF64Solver>(
+                model,
+                !solvers_without_features.contains(&"ipm-ocl"),
+                expected_outputs,
+            );
         }
     }
 }
 
+#[cfg(not(any(
+    feature = "cbc",
+    feature = "clp",
+    feature = "highs",
+    feature = "ipm-ocl",
+    feature = "ipm-simd",
+    feature = "microlp"
+)))]
+pub fn run_all_solvers(
+    _model: &Model,
+    _solvers_without_features: &[&str],
+    _solvers_to_skip: &[&str],
+    _expected_outputs: &[Box<dyn VerifyExpected>],
+) {
+    panic!("No solvers are enabled. Please enable at least one solver feature.");
+}
+
 /// Check features and
-fn check_features_and_run<S>(model: &Model, expect_features: bool, expected_outputs: &[ExpectedOutputs])
+#[cfg(any(feature = "cbc", feature = "clp", feature = "highs", feature = "microlp"))]
+fn check_features_and_run<S>(model: &Model, expect_features: bool, expected_outputs: &[Box<dyn VerifyExpected>])
 where
     S: Solver,
     <S as Solver>::Settings: SolverSettings + Default,
@@ -314,7 +515,7 @@ where
 
 /// Check features and run with a multi-scenario solver
 #[cfg(any(feature = "ipm-simd", feature = "ipm-ocl"))]
-fn check_features_and_run_multi<S>(model: &Model, expect_features: bool)
+fn check_features_and_run_multi<S>(model: &Model, expect_features: bool, _expected_outputs: &[Box<dyn VerifyExpected>])
 where
     S: MultiStateSolver,
     <S as MultiStateSolver>::Settings: SolverSettings + Default,
@@ -323,8 +524,10 @@ where
     if expect_features {
         assert!(
             has_features,
-            "Solver `{}` was expected to have the required features",
-            S::name()
+            "Solver `{}` (with features: {:#?}) was expected to have the required features: {:?}",
+            S::name(),
+            S::features(),
+            model.required_features()
         );
         model
             .run_multi_scenario::<S>(&Default::default())
@@ -339,7 +542,7 @@ where
 }
 
 /// Make a simple system with random inputs.
-fn make_simple_system<R: Rng>(
+fn make_simple_system<R: Rng + ?Sized>(
     network: &mut Network,
     suffix: &str,
     num_timesteps: usize,
@@ -371,7 +574,7 @@ fn make_simple_system<R: Rng>(
 
     network.set_node_max_flow("input", Some(suffix), Some(idx.into()))?;
 
-    let input_cost = rng.gen_range(-20.0..-5.00);
+    let input_cost = rng.random_range(-20.0..-5.00);
     network.set_node_cost("input", Some(suffix), Some(input_cost.into()))?;
 
     let outflow_distr = Normal::new(8.0, 3.0).unwrap();
@@ -399,8 +602,8 @@ fn make_simple_connections<R: Rng>(
     let mut connections_added: usize = 0;
 
     while connections_added < num_connections {
-        let i = rng.gen_range(0..num_systems);
-        let j = rng.gen_range(0..num_systems);
+        let i = rng.random_range(0..num_systems);
+        let j = rng.random_range(0..num_systems);
 
         if i == j {
             continue;
@@ -409,7 +612,7 @@ fn make_simple_connections<R: Rng>(
         let name = format!("{i:04}->{j:04}");
 
         if let Ok(idx) = model.add_link_node("transfer", Some(&name)) {
-            let transfer_cost = rng.gen_range(0.0..1.0);
+            let transfer_cost = rng.random_range(0.0..1.0);
             model.set_node_cost("transfer", Some(&name), Some(transfer_cost.into()))?;
 
             let from_suffix = format!("sys-{i:04}");
@@ -445,7 +648,7 @@ pub fn make_random_model<R: Rng>(
         .unwrap()
         .and_hms_opt(0, 0, 0)
         .unwrap();
-    let duration = TimestepDuration::Days(1);
+    let duration = TimestepDuration::Days(NonZeroU64::new(1).unwrap());
     let timestepper = Timestepper::new(start, end, duration);
 
     let mut scenario_builder = ScenarioDomainBuilder::default();
@@ -456,7 +659,7 @@ pub fn make_random_model<R: Rng>(
         .with_group(scenario_group)
         .expect("Could not add scenario group");
 
-    let domain = ModelDomain::from(timestepper, scenario_builder).expect("Could not create model domain");
+    let domain = ModelDomain::try_from(timestepper, scenario_builder).expect("Could not create model domain");
 
     let inflow_scenario_group_index = domain
         .scenarios()

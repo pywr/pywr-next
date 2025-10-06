@@ -7,7 +7,10 @@
   "timestepper": {
     "start": "2021-01-01",
     "end": "2021-08-31",
-    "timestep": 1
+    "timestep": {
+      "type": "Days",
+      "days": 1
+    }
   },
   "network": {
     "nodes": [
@@ -17,11 +20,11 @@
         },
         "type": "Input",
         "max_flow": {
-          "type": "Constant",
+          "type": "Literal",
           "value": 3.0
         },
         "cost": {
-          "type": "Constant",
+          "type": "Literal",
           "value": 2.0
         }
       },
@@ -30,24 +33,28 @@
           "name": "storage1"
         },
         "type": "PiecewiseStorage",
+        "initial_volume": {
+          "type": "Absolute",
+          "volume": 1000.0
+        },
         "max_volume": {
-          "type": "Constant",
+          "type": "Literal",
           "value": 1000.0
         },
         "steps": [
           {
             "cost": {
-              "type": "Constant",
+              "type": "Literal",
               "value": -15.0
             },
             "control_curve": {
-              "type": "Constant",
+              "type": "Literal",
               "value": 0.25
             }
           },
           {
             "cost": {
-              "type": "Constant",
+              "type": "Literal",
               "value": -5.0
             },
             "control_curve": {
@@ -63,11 +70,11 @@
         },
         "type": "Output",
         "max_flow": {
-          "type": "Constant",
+          "type": "Literal",
           "value": 5.0
         },
         "cost": {
-          "type": "Constant",
+          "type": "Literal",
           "value": -10
         }
       }
@@ -88,34 +95,41 @@
           "name": "storage1-drought-curve"
         },
         "type": "Constant",
-        "value": 0.5
+        "value": {
+          "type": "Literal",
+          "value": 0.5
+        }
       },
       {
         "type": "MonthlyProfile",
         "meta": {
           "name": "storage1-control-curve"
         },
-        "values": [
-          0.75,
-          0.75,
-          0.75,
-          0.5,
-          0.5,
-          0.5,
-          0.3,
-          0.3,
-          0.3,
-          0.5,
-          0.5,
-          0.5
-        ]
+        "values": {
+          "type": "Literal",
+          "values": [
+            0.75,
+            0.75,
+            0.75,
+            0.5,
+            0.5,
+            0.5,
+            0.3,
+            0.3,
+            0.3,
+            0.5,
+            0.5,
+            0.5
+          ]
+        }
       },
       {
         "meta": {
           "name": "storage1-drought-index"
         },
         "type": "ControlCurveIndex",
-        "storage_node": {
+        "storage_metric": {
+          "type": "Node",
           "name": "storage1",
           "attribute": "ProportionalVolume"
         },
@@ -148,8 +162,7 @@
         "type": "CSV",
         "format": "Long",
         "filename": "piecewise_storage2-expected.csv",
-        "metric_set": "nodes",
-        "decimal_places": 1
+        "metric_set": "nodes"
       }
     ]
   }

@@ -1,17 +1,36 @@
 use crate::error::ComponentConversionError;
-#[cfg(feature = "core")]
 use crate::error::SchemaError;
 use crate::metric::Metric;
 #[cfg(feature = "core")]
-use crate::model::LoadArgs;
-use crate::nodes::{NodeAttribute, NodeMeta};
+use crate::network::LoadArgs;
+use crate::nodes::NodeMeta;
+#[cfg(feature = "core")]
+use crate::nodes::{NodeAttribute, NodeComponent};
 use crate::parameters::Parameter;
 use crate::v1::{ConversionData, TryFromV1, try_convert_node_attr};
+use crate::{node_attribute_subset_enum, node_component_subset_enum};
 #[cfg(feature = "core")]
 use pywr_core::metric::MetricF64;
 use pywr_schema_macros::PywrVisitAll;
+use pywr_schema_macros::skip_serializing_none;
 use pywr_v1_schema::nodes::RiverGaugeNode as RiverGaugeNodeV1;
 use schemars::JsonSchema;
+
+// This macro generates a subset enum for the `RiverGaugeNode` attributes.
+// It allows for easy conversion between the enum and the `NodeAttribute` type.
+node_attribute_subset_enum! {
+    pub enum RiverGaugeNodeAttribute {
+        Inflow,
+        Outflow,
+    }
+}
+
+node_component_subset_enum! {
+    pub enum RiverGaugeNodeComponent {
+        Inflow,
+        Outflow,
+    }
+}
 
 #[doc = svgbobdoc::transform!(
 /// This is used to represent a minimum residual flow (MRF) at a gauging station.
@@ -27,7 +46,13 @@ use schemars::JsonSchema;
 ///            <node>.bypass
 /// ```
 ///
+/// # Available attributes and components
+///
+/// The enums [`RiverGaugeNodeAttribute`] and [`RiverGaugeNodeComponent`] define the available
+/// attributes and components for this node.
+///
 )]
+#[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct RiverGaugeNode {
@@ -40,7 +65,8 @@ pub struct RiverGaugeNode {
 }
 
 impl RiverGaugeNode {
-    const DEFAULT_ATTRIBUTE: NodeAttribute = NodeAttribute::Outflow;
+    const DEFAULT_ATTRIBUTE: RiverGaugeNodeAttribute = RiverGaugeNodeAttribute::Outflow;
+    const DEFAULT_COMPONENT: RiverGaugeNodeComponent = RiverGaugeNodeComponent::Outflow;
 
     fn mrf_sub_name() -> Option<&'static str> {
         Some("mrf")
@@ -50,45 +76,61 @@ impl RiverGaugeNode {
         Some("bypass")
     }
 
-    pub fn input_connectors(&self) -> Vec<(&str, Option<String>)> {
-        vec![
+    pub fn input_connectors(&self) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
+        Ok(vec![
             (self.meta.name.as_str(), Self::mrf_sub_name().map(|s| s.to_string())),
             (self.meta.name.as_str(), Self::bypass_sub_name().map(|s| s.to_string())),
-        ]
+        ])
     }
 
-    pub fn output_connectors(&self) -> Vec<(&str, Option<String>)> {
-        vec![
+    pub fn output_connectors(&self) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
+        Ok(vec![
             (self.meta.name.as_str(), Self::mrf_sub_name().map(|s| s.to_string())),
             (self.meta.name.as_str(), Self::bypass_sub_name().map(|s| s.to_string())),
-        ]
+        ])
     }
 
-    pub fn default_metric(&self) -> NodeAttribute {
+    pub fn default_attribute(&self) -> RiverGaugeNodeAttribute {
         Self::DEFAULT_ATTRIBUTE
+    }
+
+    pub fn default_component(&self) -> RiverGaugeNodeComponent {
+        Self::DEFAULT_COMPONENT
     }
 }
 
 #[cfg(feature = "core")]
 impl RiverGaugeNode {
-    pub fn node_indices_for_constraints(
+    pub fn node_indices_for_flow_constraints(
         &self,
         network: &pywr_core::network::Network,
+        component: Option<NodeComponent>,
     ) -> Result<Vec<pywr_core::node::NodeIndex>, SchemaError> {
-        let indices = vec![
-            network
-                .get_node_index_by_name(self.meta.name.as_str(), Self::mrf_sub_name())
-                .ok_or_else(|| SchemaError::CoreNodeNotFound {
-                    name: self.meta.name.clone(),
-                    sub_name: Self::mrf_sub_name().map(String::from),
-                })?,
-            network
-                .get_node_index_by_name(self.meta.name.as_str(), Self::bypass_sub_name())
-                .ok_or_else(|| SchemaError::CoreNodeNotFound {
-                    name: self.meta.name.clone(),
-                    sub_name: Self::bypass_sub_name().map(String::from),
-                })?,
-        ];
+        // Use the default component if none is specified
+        let component = match component {
+            Some(c) => c.try_into()?,
+            None => Self::DEFAULT_COMPONENT,
+        };
+
+        let indices = match component {
+            // Inflow and Outflow components both use the same nodes.
+            RiverGaugeNodeComponent::Inflow | RiverGaugeNodeComponent::Outflow => {
+                vec![
+                    network
+                        .get_node_index_by_name(self.meta.name.as_str(), Self::mrf_sub_name())
+                        .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                            name: self.meta.name.clone(),
+                            sub_name: Self::mrf_sub_name().map(String::from),
+                        })?,
+                    network
+                        .get_node_index_by_name(self.meta.name.as_str(), Self::bypass_sub_name())
+                        .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                            name: self.meta.name.clone(),
+                            sub_name: Self::bypass_sub_name().map(String::from),
+                        })?,
+                ]
+            }
+        };
         Ok(indices)
     }
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
@@ -126,7 +168,10 @@ impl RiverGaugeNode {
         attribute: Option<NodeAttribute>,
     ) -> Result<MetricF64, SchemaError> {
         // Use the default attribute if none is specified
-        let attr = attribute.unwrap_or(Self::DEFAULT_ATTRIBUTE);
+        let attr = match attribute {
+            Some(attr) => attr.try_into()?,
+            None => Self::DEFAULT_ATTRIBUTE,
+        };
 
         let indices = vec![
             network
@@ -144,21 +189,14 @@ impl RiverGaugeNode {
         ];
 
         let metric = match attr {
-            NodeAttribute::Inflow => MetricF64::MultiNodeInFlow {
+            RiverGaugeNodeAttribute::Inflow => MetricF64::MultiNodeInFlow {
                 indices,
                 name: self.meta.name.to_string(),
             },
-            NodeAttribute::Outflow => MetricF64::MultiNodeOutFlow {
+            RiverGaugeNodeAttribute::Outflow => MetricF64::MultiNodeOutFlow {
                 indices,
                 name: self.meta.name.to_string(),
             },
-            _ => {
-                return Err(SchemaError::NodeAttributeNotSupported {
-                    ty: "RiverGaugeNode".to_string(),
-                    name: self.meta.name.clone(),
-                    attr,
-                });
-            }
         };
 
         Ok(metric)

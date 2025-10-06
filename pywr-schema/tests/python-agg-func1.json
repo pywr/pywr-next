@@ -1,0 +1,131 @@
+{
+  "metadata": {
+    "title": "Python agg func 1",
+    "description": "A simple example showing how to use a Python function to aggregate data.",
+    "minimum_version": "0.1"
+  },
+  "timestepper": {
+    "start": "2015-01-01",
+    "end": "2015-01-03",
+    "timestep": {
+      "type": "Days",
+      "days": 1
+    }
+  },
+  "network": {
+    "nodes": [
+      {
+        "meta": {
+          "name": "supply1"
+        },
+        "type": "Input",
+        "max_flow": {
+          "type": "Literal",
+          "value": 15.0
+        }
+      },
+      {
+        "meta": {
+          "name": "link1"
+        },
+        "type": "Link"
+      },
+      {
+        "meta": {
+          "name": "demand1"
+        },
+        "type": "Output",
+        "max_flow": {
+          "type": "Parameter",
+          "name": "demand"
+        },
+        "cost": {
+          "type": "Literal",
+          "value": -10
+        }
+      }
+    ],
+    "edges": [
+      {
+        "from_node": "supply1",
+        "to_node": "link1"
+      },
+      {
+        "from_node": "link1",
+        "to_node": "demand1"
+      }
+    ],
+    "parameters": [
+      {
+        "meta": {
+          "name": "A"
+        },
+        "type": "Constant",
+        "value": {
+          "type": "Literal",
+          "value": 2.0
+        }
+      },
+      {
+        "meta": {
+          "name": "B"
+        },
+        "type": "Constant",
+        "value": {
+          "type": "Literal",
+          "value": 5.0
+        }
+      },
+      {
+        "meta": {
+          "name": "demand"
+        },
+        "type": "Aggregated",
+        "agg_func": {
+          "type": "Python",
+          "source": {
+            "type": "Path",
+            "path": "test_agg_funcs.py"
+          },
+          "object": "my_agg_func",
+          "args": [
+            2.0
+          ],
+          "kwargs": {
+            "multiplier": 1.5
+          }
+        },
+        "metrics": [
+          {
+            "type": "Parameter",
+            "name": "A"
+          },
+          {
+            "type": "Parameter",
+            "name": "B"
+          }
+        ]
+      }
+    ],
+    "metric_sets": [
+      {
+        "name": "parameters",
+        "metrics": [
+          {
+            "type": "Parameter",
+            "name": "demand"
+          }
+        ]
+      }
+    ],
+    "outputs": [
+      {
+        "name": "nodes",
+        "type": "CSV",
+        "format": "Long",
+        "filename": "python-agg-func1-expected.csv",
+        "metric_set": "parameters"
+      }
+    ]
+  }
+}

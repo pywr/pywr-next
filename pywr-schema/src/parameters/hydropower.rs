@@ -3,12 +3,13 @@ use crate::SchemaError;
 use crate::error::ComponentConversionError;
 use crate::metric::Metric;
 #[cfg(feature = "core")]
-use crate::model::LoadArgs;
+use crate::network::LoadArgs;
 use crate::parameters::{ConversionData, ParameterMeta};
 use crate::v1::{IntoV2, TryFromV1, try_convert_parameter_attr};
+
 #[cfg(feature = "core")]
-use pywr_core::parameters::{HydropowerTargetData, ParameterIndex};
-use pywr_schema_macros::PywrVisitAll;
+use pywr_core::parameters::{HydropowerTargetData, ParameterIndex, ParameterName};
+use pywr_schema_macros::{PywrVisitAll, skip_serializing_none};
 use pywr_v1_schema::parameters::HydropowerTargetParameter as HydropowerTargetParameterV1;
 use schemars::JsonSchema;
 
@@ -19,7 +20,7 @@ use schemars::JsonSchema;
 /// is required at each time-step. The parameter uses the following (hydropower) equation to calculate
 /// the flow `q` required to produce `P`:
 ///
-///    q = P / ( C<sub>E</sub> * ρ * g * H * δ * C<sub>F</sub>)
+/// q = P / ( C<sub>E</sub> * ρ * g * H * δ * C<sub>F</sub>)
 ///
 /// where:
 ///  - `q` is the flow needed to achieve `P`.
@@ -28,7 +29,7 @@ use schemars::JsonSchema;
 ///  - `ρ` is the water density.
 ///  - `g` is the gravitational acceleration (9.81 m s<sup>-2</sup>).
 ///  - `H` is the turbine head. If `water_elevation` is given, then the head is the difference between `water_elevation`
-///     and `turbine_elevation`. If `water_elevation` is not provided, then the head is simply `turbine_elevation`.
+///    and `turbine_elevation`. If `water_elevation` is not provided, then the head is simply `turbine_elevation`.
 ///  - `δ` is the turbine efficiency.
 ///  - C<sub>E</sub> is a coefficient to convert the flow unit. Use the `flow_unit_conversion` parameter to convert `q`
 ///    from units of m<sup>3</sup> day<sup>-1</sup> to those used by the model.
@@ -38,6 +39,7 @@ use schemars::JsonSchema;
 ///
 /// ```json
 #[doc = include_str!("doc_examples/hydropower.json")]
+#[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct HydropowerTargetParameter {
@@ -83,6 +85,7 @@ impl HydropowerTargetParameter {
         &self,
         network: &mut pywr_core::network::Network,
         args: &LoadArgs,
+        parent: Option<&str>,
     ) -> Result<ParameterIndex<f64>, SchemaError> {
         let target = self.target.load(network, args, None)?;
         let water_elevation = self
@@ -113,7 +116,10 @@ impl HydropowerTargetParameter {
             flow_unit_conversion: self.flow_unit_conversion,
             energy_unit_conversion: self.energy_unit_conversion,
         };
-        let p = pywr_core::parameters::HydropowerTargetParameter::new(self.meta.name.as_str().into(), turbine_data);
+        let p = pywr_core::parameters::HydropowerTargetParameter::new(
+            ParameterName::new(&self.meta.name, parent),
+            turbine_data,
+        );
         Ok(network.add_parameter(Box::new(p))?)
     }
 }

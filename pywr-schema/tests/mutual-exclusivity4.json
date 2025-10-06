@@ -7,7 +7,10 @@
   "timestepper": {
     "start": "2015-01-01",
     "end": "2015-01-03",
-    "timestep": 1
+    "timestep": {
+      "type": "Days",
+      "days": 1
+    }
   },
   "network": {
     "nodes": [
@@ -23,7 +26,7 @@
         },
         "type": "Link",
         "min_flow": {
-          "type": "Constant",
+          "type": "Literal",
           "value": 10.0
         }
       },
@@ -33,7 +36,7 @@
         },
         "type": "Output",
         "cost": {
-          "type": "Constant",
+          "type": "Literal",
           "value": 5
         }
       },
@@ -43,7 +46,7 @@
         },
         "type": "Link",
         "min_flow": {
-          "type": "Constant",
+          "type": "Literal",
           "value": 10.0
         }
       },
@@ -53,10 +56,12 @@
         },
         "type": "Output",
         "cost": {
-          "type": "Constant",
+          "type": "Literal",
           "value": 10
         }
-      },
+      }
+    ],
+    "virtual_nodes": [
       {
         "meta": {
           "name": "me"
@@ -129,8 +134,7 @@
         "filename": "mutual-exclusivity4.csv",
         "metric_set": [
           "nodes"
-        ],
-        "decimal_places": 1
+        ]
       }
     ]
   }

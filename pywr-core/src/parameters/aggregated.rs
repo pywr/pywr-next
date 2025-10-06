@@ -1,37 +1,24 @@
-use super::{Parameter, ParameterName, ParameterState, SimpleParameter};
-use crate::metric::{MetricF64, SimpleMetricF64};
+use super::{ConstParameter, Parameter, ParameterName, ParameterState, SimpleParameter};
+use crate::agg_funcs::AggFuncF64;
+use crate::metric::{ConstantMetricF64, MetricF64, SimpleMetricF64};
 use crate::network::Network;
-use crate::parameters::errors::{ParameterCalculationError, SimpleCalculationError};
+use crate::parameters::errors::{ConstCalculationError, ParameterCalculationError, SimpleCalculationError};
 use crate::parameters::{GeneralParameter, ParameterMeta};
 use crate::scenario::ScenarioIndex;
-use crate::state::{SimpleParameterValues, State};
+use crate::state::{ConstParameterValues, SimpleParameterValues, State};
 use crate::timestep::Timestep;
-
-#[derive(Debug, Clone, Copy)]
-pub enum AggFunc {
-    /// Sum of all values.
-    Sum,
-    /// Product of all values.
-    Product,
-    /// Mean of all values.
-    Mean,
-    /// Minimum value among all values.
-    Min,
-    /// Maximum value among all values.
-    Max,
-}
 
 pub struct AggregatedParameter<M> {
     meta: ParameterMeta,
     metrics: Vec<M>,
-    agg_func: AggFunc,
+    agg_func: AggFuncF64,
 }
 
 impl<M> AggregatedParameter<M>
 where
     M: Send + Sync + Clone,
 {
-    pub fn new(name: ParameterName, metrics: &[M], agg_func: AggFunc) -> Self {
+    pub fn new(name: ParameterName, metrics: &[M], agg_func: AggFuncF64) -> Self {
         Self {
             meta: ParameterMeta::new(name),
             metrics: metrics.to_vec(),
@@ -58,45 +45,13 @@ impl GeneralParameter<f64> for AggregatedParameter<MetricF64> {
         state: &State,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<f64, ParameterCalculationError> {
-        let value: f64 = match self.agg_func {
-            AggFunc::Sum => {
-                let mut total = 0.0_f64;
-                for p in &self.metrics {
-                    total += p.get_value(model, state)?;
-                }
-                total
-            }
-            AggFunc::Mean => {
-                let mut total = 0.0_f64;
-                for p in &self.metrics {
-                    total += p.get_value(model, state)?;
-                }
-                total / self.metrics.len() as f64
-            }
-            AggFunc::Max => {
-                let mut total = f64::MIN;
-                for p in &self.metrics {
-                    total = total.max(p.get_value(model, state)?);
-                }
-                total
-            }
-            AggFunc::Min => {
-                let mut total = f64::MAX;
-                for p in &self.metrics {
-                    total = total.min(p.get_value(model, state)?);
-                }
-                total
-            }
-            AggFunc::Product => {
-                let mut total = 1.0_f64;
-                for p in &self.metrics {
-                    total *= p.get_value(model, state)?;
-                }
-                total
-            }
-        };
+        let values = self
+            .metrics
+            .iter()
+            .map(|p| p.get_value(model, state))
+            .collect::<Result<Vec<_>, _>>()?;
 
-        Ok(value)
+        Ok(self.agg_func.calc_iter_f64(&values)?)
     }
 
     fn as_parameter(&self) -> &dyn Parameter
@@ -118,7 +73,7 @@ impl GeneralParameter<f64> for AggregatedParameter<MetricF64> {
         Some(Box::new(AggregatedParameter::<SimpleMetricF64> {
             meta: self.meta.clone(),
             metrics,
-            agg_func: self.agg_func,
+            agg_func: self.agg_func.clone(),
         }))
     }
 }
@@ -131,45 +86,53 @@ impl SimpleParameter<f64> for AggregatedParameter<SimpleMetricF64> {
         values: &SimpleParameterValues,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<f64, SimpleCalculationError> {
-        let value: f64 = match self.agg_func {
-            AggFunc::Sum => {
-                let mut total = 0.0_f64;
-                for p in &self.metrics {
-                    total += p.get_value(values)?;
-                }
-                total
-            }
-            AggFunc::Mean => {
-                let mut total = 0.0_f64;
-                for p in &self.metrics {
-                    total += p.get_value(values)?;
-                }
-                total / self.metrics.len() as f64
-            }
-            AggFunc::Max => {
-                let mut total = f64::MIN;
-                for p in &self.metrics {
-                    total = total.max(p.get_value(values)?);
-                }
-                total
-            }
-            AggFunc::Min => {
-                let mut total = f64::MAX;
-                for p in &self.metrics {
-                    total = total.min(p.get_value(values)?);
-                }
-                total
-            }
-            AggFunc::Product => {
-                let mut total = 1.0_f64;
-                for p in &self.metrics {
-                    total *= p.get_value(values)?;
-                }
-                total
-            }
-        };
+        let values = self
+            .metrics
+            .iter()
+            .map(|p| p.get_value(values))
+            .collect::<Result<Vec<_>, _>>()?;
 
-        Ok(value)
+        Ok(self.agg_func.calc_iter_f64(&values)?)
+    }
+
+    fn as_parameter(&self) -> &dyn Parameter
+    where
+        Self: Sized,
+    {
+        self
+    }
+
+    fn try_into_const(&self) -> Option<Box<dyn ConstParameter<f64>>> {
+        // We can make a constant version if all metrics can be simplified
+        let metrics: Vec<ConstantMetricF64> = self
+            .metrics
+            .clone()
+            .into_iter()
+            .map(|m| m.try_into().ok())
+            .collect::<Option<Vec<_>>>()?;
+
+        Some(Box::new(AggregatedParameter::<ConstantMetricF64> {
+            meta: self.meta.clone(),
+            metrics,
+            agg_func: self.agg_func.clone(),
+        }))
+    }
+}
+
+impl ConstParameter<f64> for AggregatedParameter<ConstantMetricF64> {
+    fn compute(
+        &self,
+        _scenario_index: &ScenarioIndex,
+        values: &ConstParameterValues,
+        _internal_state: &mut Option<Box<dyn ParameterState>>,
+    ) -> Result<f64, ConstCalculationError> {
+        let values = self
+            .metrics
+            .iter()
+            .map(|p| p.get_value(values))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(self.agg_func.calc_iter_f64(&values)?)
     }
 
     fn as_parameter(&self) -> &dyn Parameter

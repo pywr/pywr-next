@@ -7,7 +7,10 @@
   "timestepper": {
     "start": "2015-01-01",
     "end": "2015-01-31",
-    "timestep": 1
+    "timestep": {
+      "type": "Days",
+      "days": 1
+    }
   },
   "network": {
     "nodes": [
@@ -17,7 +20,7 @@
         },
         "type": "Input",
         "max_flow": {
-          "type": "Constant",
+          "type": "Literal",
           "value": 15.0
         }
       },
@@ -37,7 +40,7 @@
           "name": "demand"
         },
         "cost": {
-          "type": "Constant",
+          "type": "Literal",
           "value": -10
         },
         "parameters": [
@@ -46,7 +49,10 @@
               "name": "demand"
             },
             "type": "Constant",
-            "value": 10.0
+            "value": {
+              "type": "Literal",
+              "value": 10.0
+            }
           }
         ]
       }
@@ -80,8 +86,7 @@
         "filename": "local-parameter1-expected.csv",
         "metric_set": [
           "nodes"
-        ],
-        "decimal_places": 1
+        ]
       }
     ]
   }

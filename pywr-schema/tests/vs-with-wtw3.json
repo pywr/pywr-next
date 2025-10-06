@@ -1,0 +1,114 @@
+{
+  "metadata": {
+    "title": "Virtual Storage with PiecewiseLinkNode.",
+    "description": "Ensure that the correct flow is removed from the virtual storage node when using a PiecewiseLinkNode.",
+    "minimum_version": "0.1"
+  },
+  "timestepper": {
+    "start": "2015-01-01",
+    "end": "2015-01-03",
+    "timestep": {
+      "type": "Days",
+      "days": 1
+    }
+  },
+  "network": {
+    "nodes": [
+      {
+        "meta": {
+          "name": "input1"
+        },
+        "type": "Input",
+        "max_flow": {
+          "type": "Literal",
+          "value": 15
+        },
+        "cost": {
+          "type": "Literal",
+          "value": 1.0
+        }
+      },
+      {
+        "meta": {
+          "name": "wtw1"
+        },
+        "type": "WaterTreatmentWorks",
+        "max_flow": {
+          "type": "Literal",
+          "value": 10.0
+        },
+        "loss_factor": {
+          "type": "Net",
+          "factor": {
+            "type": "Literal",
+            "value": 0.1
+          }
+        },
+        "cost": {
+          "type": "Literal",
+          "value": -10
+        }
+      },
+      {
+        "meta": {
+          "name": "demand1"
+        },
+        "type": "Output",
+        "max_flow": {
+          "type": "Literal",
+          "value": 15.0
+        }
+      }
+    ],
+    "virtual_nodes": [
+      {
+        "meta": {
+          "name": "vs1"
+        },
+        "type": "VirtualStorage",
+        "max_volume": {
+          "type": "Literal",
+          "value": 100
+        },
+        "initial_volume": {
+          "type": "Proportional",
+          "proportion": 0.5
+        },
+        "nodes": [
+          {
+            "name": "wtw1",
+            "component": "Inflow"
+          }
+        ]
+      }
+    ],
+    "edges": [
+      {
+        "from_node": "input1",
+        "to_node": "wtw1"
+      },
+      {
+        "from_node": "wtw1",
+        "to_node": "demand1"
+      }
+    ],
+    "metric_sets": [
+      {
+        "name": "nodes",
+        "filters": {
+          "all_nodes": true,
+          "all_virtual_nodes": true
+        }
+      }
+    ],
+    "outputs": [
+      {
+        "name": "my-outputs",
+        "type": "CSV",
+        "format": "Long",
+        "filename": "vs-with-wtw3-expected.csv",
+        "metric_set": "nodes"
+      }
+    ]
+  }
+}

@@ -6,7 +6,7 @@ from pywr import (
     convert_model_from_v1_json_string,
     ComponentConversionError,
     ConversionError,
-    Schema,
+    ModelSchema,
 )
 
 
@@ -30,7 +30,7 @@ def convert(v1_path: Path):
     #     fh.write(schema_data_str)
     print("Conversion complete; running model...")
     # 5. Load and run the new JSON file in Pywr v2.x.
-    schema = Schema.from_json_string(schema_data_str)
+    schema = ModelSchema.from_json_string(schema_data_str)
     model = schema.build(Path(__file__).parent, None)
     model.run("clp")
     print("Model run complete 🎉")
@@ -63,15 +63,18 @@ def handle_custom_parameters(schema_data, name: str, p_type: str):
     """Patch the v2 schema to add the custom parameter with `name` and `p_type`."""
 
     # Ensure the network parameters is a list
-    if schema_data["network"]["parameters"] is None:
+    if "parameters" not in schema_data["network"]:
         schema_data["network"]["parameters"] = []
 
     schema_data["network"]["parameters"].append(
         {
             "meta": {"name": name},
             "type": "Python",
-            "source": {"path": "v2_custom_parameter.py"},
-            "object": p_type,  # Use the same class name in v1 & v2
+            "source": {"type": "Path", "path": "v2_custom_parameter.py"},
+            "object": {
+                "type": "Class",
+                "class": p_type,
+            },  # Use the same class name in v1 & v2
             "args": [],
             "kwargs": {},
         }

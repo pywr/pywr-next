@@ -1,0 +1,113 @@
+{
+  "metadata": {
+    "title": "Python parameters",
+    "description": "An example of using custom Python function that returns multiple values.",
+    "minimum_version": "0.1"
+  },
+  "timestepper": {
+    "start": "2015-01-01",
+    "end": "2015-01-15",
+    "timestep": {
+      "type": "Days",
+      "days": 1
+    }
+  },
+  "network": {
+    "nodes": [
+      {
+        "meta": {
+          "name": "supply1"
+        },
+        "type": "Input",
+        "max_flow": {
+          "type": "Literal",
+          "value": 8.0
+        }
+      },
+      {
+        "meta": {
+          "name": "link1"
+        },
+        "type": "Link"
+      },
+      {
+        "meta": {
+          "name": "demand1"
+        },
+        "type": "Output",
+        "max_flow": {
+          "type": "Literal",
+          "value": 10
+        },
+        "cost": {
+          "type": "Literal",
+          "value": -10
+        }
+      }
+    ],
+    "edges": [
+      {
+        "from_node": "supply1",
+        "to_node": "link1"
+      },
+      {
+        "from_node": "link1",
+        "to_node": "demand1"
+      }
+    ],
+    "parameters": [
+      {
+        "meta": {
+          "name": "my-multiple-values"
+        },
+        "type": "Python",
+        "source": {
+          "type": "Path",
+          "path": "test_parameters.py"
+        },
+        "object": {
+          "type": "Function",
+          "function": "multiple_values"
+        },
+        "return_type": "Dict",
+        "args": [
+          2.0
+        ],
+        "kwargs": {},
+        "metrics": {
+          "deficit": {
+            "type": "Node",
+            "name": "demand1",
+            "attribute": "Inflow"
+          }
+        }
+      }
+    ],
+    "metric_sets": [
+      {
+        "name": "parameters",
+        "metrics": [
+          {
+            "type": "Parameter",
+            "name": "my-multiple-values",
+            "key": "value1"
+          },
+          {
+            "type": "Parameter",
+            "name": "my-multiple-values",
+            "key": "value2"
+          }
+        ]
+      }
+    ],
+    "outputs": [
+      {
+        "name": "nodes",
+        "type": "CSV",
+        "format": "Long",
+        "filename": "python-parameter2-expected.csv",
+        "metric_set": "parameters"
+      }
+    ]
+  }
+}

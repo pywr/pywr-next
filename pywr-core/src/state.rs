@@ -9,6 +9,14 @@ use crate::parameters::{
 };
 use crate::timestep::Timestep;
 use crate::virtual_storage::VirtualStorageIndex;
+use num::Zero;
+#[cfg(feature = "pyo3")]
+use pyo3::{
+    Bound, FromPyObject, PyAny, PyResult,
+    exceptions::PyValueError,
+    prelude::PyAnyMethods,
+    types::{PyDict, PyFloat, PyInt},
+};
 use std::collections::{HashMap, VecDeque};
 use std::fmt::Display;
 use std::num::NonZeroUsize;
@@ -128,7 +136,10 @@ impl StorageState {
     }
 
     fn proportional_volume(&self, max_volume: f64) -> f64 {
-        // TODO handle divide by zero (is it full or empty?)
+        if max_volume.is_zero() {
+            // If max volume is zero then we will consider the storage to befull. This matches V1 behaviour.
+            return 1.0;
+        }
         self.volume / max_volume
     }
 
@@ -204,7 +215,7 @@ impl VirtualStorageState {
         Self {
             last_reset: None,
             storage: StorageState::new(initial_volume),
-            history: history_size.map(|size| VirtualStorageHistory::new(size, initial_volume)),
+            history: history_size.map(|size| VirtualStorageHistory::new(size, initial_volume / size.get() as f64)),
         }
     }
 
@@ -265,6 +276,32 @@ impl EdgeState {
 pub struct MultiValue {
     values: HashMap<String, f64>,
     indices: HashMap<String, u64>,
+}
+
+#[cfg(feature = "pyo3")]
+impl FromPyObject<'_> for MultiValue {
+    fn extract_bound(ob: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let dict = ob.downcast::<PyDict>()?;
+
+        // Try to convert the floats
+        let mut values: HashMap<String, f64> = HashMap::default();
+        let mut indices: HashMap<String, u64> = HashMap::default();
+
+        for (k, v) in dict {
+            if let Ok(float_value) = v.downcast::<PyFloat>() {
+                values.insert(k.to_string(), float_value.extract::<f64>()?);
+            } else if let Ok(int_value) = v.downcast::<PyInt>() {
+                // If it's an integer, we will treat it as an index
+                indices.insert(k.to_string(), int_value.extract::<u64>()?);
+            } else {
+                return Err(PyValueError::new_err(
+                    "Some returned values were not interpreted as floats or integers.",
+                ));
+            }
+        }
+
+        Ok(MultiValue::new(values, indices))
+    }
 }
 
 impl MultiValue {
@@ -336,7 +373,7 @@ pub struct ParameterValuesCollection {
 }
 
 impl ParameterValuesCollection {
-    fn get_simple_parameter_values(&self) -> SimpleParameterValues {
+    fn get_simple_parameter_values(&self) -> SimpleParameterValues<'_> {
         SimpleParameterValues {
             constant: ConstParameterValues {
                 constant: ParameterValuesRef {
@@ -353,7 +390,7 @@ impl ParameterValuesCollection {
         }
     }
 
-    fn get_const_parameter_values(&self) -> ConstParameterValues {
+    fn get_const_parameter_values(&self) -> ConstParameterValues<'_> {
         ConstParameterValues {
             constant: ParameterValuesRef {
                 values: &self.constant.values,
@@ -364,6 +401,7 @@ impl ParameterValuesCollection {
     }
 }
 
+#[derive(Default)]
 pub struct ParameterValuesRef<'a> {
     values: &'a [f64],
     indices: &'a [u64],
@@ -410,11 +448,12 @@ impl SimpleParameterValues<'_> {
         self.simple.get_multi_index(*idx.deref(), key)
     }
 
-    pub fn get_constant_values(&self) -> &ConstParameterValues {
+    pub fn get_constant_values(&self) -> &ConstParameterValues<'_> {
         &self.constant
     }
 }
 
+#[derive(Default)]
 pub struct ConstParameterValues<'a> {
     constant: ParameterValuesRef<'a>,
 }
@@ -522,26 +561,29 @@ impl NetworkState {
             .iter_mut()
             .zip(model.virtual_storage_nodes().iter())
         {
-            let flow = node
-                .iter_nodes_with_factors()
-                .map(|(idx, factor)| match self.node_states.get(*idx.deref()) {
-                    None => Err(NetworkStateError::NodeIndexNotFound(*idx)),
-                    Some(s) => {
-                        let node = model
-                            .nodes()
-                            .get(idx)
-                            .ok_or(NetworkStateError::NodeIndexNotFound(*idx))?;
-                        match node {
-                            Node::Input(_) => Ok(factor * s.get_out_flow()),
-                            Node::Output(_) => Ok(factor * s.get_in_flow()),
-                            Node::Link(_) => Ok(factor * s.get_in_flow()),
-                            Node::Storage(_) => panic!("Storage node not supported on virtual storage."),
+            // Only update if the node is active
+            if node.is_active(timestep) {
+                let flow = node
+                    .iter_nodes_with_factors()
+                    .map(|(idx, factor)| match self.node_states.get(*idx.deref()) {
+                        None => Err(NetworkStateError::NodeIndexNotFound(*idx)),
+                        Some(s) => {
+                            let node = model
+                                .nodes()
+                                .get(idx)
+                                .ok_or(NetworkStateError::NodeIndexNotFound(*idx))?;
+                            match node {
+                                Node::Input(_) => Ok(factor * s.get_out_flow()),
+                                Node::Output(_) => Ok(factor * s.get_in_flow()),
+                                Node::Link(_) => Ok(factor * s.get_in_flow()),
+                                Node::Storage(_) => panic!("Storage node not supported on virtual storage."),
+                            }
                         }
-                    }
-                })
-                .sum::<Result<f64, _>>()?;
+                    })
+                    .sum::<Result<f64, _>>()?;
 
-            state.add_out_flow(flow, timestep);
+                state.add_out_flow(flow, timestep);
+            }
         }
 
         Ok(())
@@ -1004,11 +1046,11 @@ impl State {
         Ok(())
     }
 
-    pub fn get_simple_parameter_values(&self) -> SimpleParameterValues {
+    pub fn get_simple_parameter_values(&self) -> SimpleParameterValues<'_> {
         self.parameters.get_simple_parameter_values()
     }
 
-    pub fn get_const_parameter_values(&self) -> ConstParameterValues {
+    pub fn get_const_parameter_values(&self) -> ConstParameterValues<'_> {
         self.parameters.get_const_parameter_values()
     }
 

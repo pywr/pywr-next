@@ -1,0 +1,129 @@
+{
+  "metadata": {
+    "title": "Reservoir node",
+    "description": "A test of the ReservoirNode.",
+    "minimum_version": "0.1"
+  },
+  "timestepper": {
+    "start": "2015-01-01",
+    "end": "2017-12-31",
+    "timestep": {
+      "type": "Days",
+      "days": 1
+    }
+  },
+  "network": {
+    "nodes": [
+      {
+        "meta": {
+          "name": "Reservoir"
+        },
+        "type": "Storage",
+        "max_volume": {
+          "type": "Literal",
+          "value": 1000
+        },
+        "cost": {
+          "type": "Literal",
+          "value": 10.0
+        },
+        "initial_volume": {
+          "type": "Proportional",
+          "proportion": 1.0
+        }
+      },
+      {
+        "meta": {
+          "name": "Release"
+        },
+        "type": "Output",
+        "max_flow": {
+          "type": "Literal",
+          "value": 1.0
+        }
+      }
+    ],
+    "edges": [
+      {
+        "from_node": "Reservoir",
+        "to_node": "Release"
+      }
+    ],
+    "parameters": [
+      {
+        "meta": {
+          "name": "Failure level 1"
+        },
+        "type": "Constant",
+        "value": {
+          "type": "Literal",
+          "value": 0.8
+        }
+      },
+      {
+        "meta": {
+          "name": "Failure level 2"
+        },
+        "type": "Constant",
+        "value": {
+          "type": "Literal",
+          "value": 0.5
+        }
+      },
+      {
+        "meta": {
+          "name": "Failure index"
+        },
+        "type": "ControlCurveIndex",
+        "storage_metric": {
+          "type": "Node",
+          "name": "Reservoir",
+          "attribute": "ProportionalVolume"
+        },
+        "control_curves": [
+          {
+            "type": "Parameter",
+            "name": "Failure level 1"
+          },
+          {
+            "type": "Parameter",
+            "name": "Failure level 2"
+          }
+        ]
+      }
+    ],
+    "metric_sets": [
+      {
+        "name": "reservoir-metrics",
+        "aggregator": {
+          "type": "Periodic",
+          "freq": {
+            "type": "Annual"
+          },
+          "func": {
+            "type": "Max"
+          }
+        },
+        "metrics": [
+          {
+            "type": "Node",
+            "name": "Reservoir"
+          },
+          {
+            "type": "Parameter",
+            "name": "Failure index"
+          }
+        ]
+      }
+    ],
+    "outputs": [
+      {
+        "name": "reservoir-metrics",
+        "type": "CSV",
+        "format": "Long",
+        "filename": "reservoir-failure-levels1-expected.csv",
+        "metric_set": "reservoir-metrics"
+      }
+    ]
+  }
+}

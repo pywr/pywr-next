@@ -1,24 +1,24 @@
 {
   "type": "Threshold",
   "meta": {
-      "name": "my-threshold-param"
+    "name": "my-threshold-param"
   },
   "metric": {
-      "type": "Node",
-      "name": "river-1"
+    "type": "Node",
+    "name": "river-1"
   },
   "threshold": {
-      "type": "Constant",
-      "value": 5.0
+    "type": "Literal",
+    "value": 5.0
   },
   "predicate": "LT",
   "returned_metrics": [
     {
-      "type": "Constant",
+      "type": "Literal",
       "value": 1.5
     },
     {
-      "type": "Constant",
+      "type": "Literal",
       "value": 0.5
     }
   ]
