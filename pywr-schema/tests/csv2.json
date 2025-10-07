@@ -71,6 +71,7 @@
       {
         "name": "nodes",
         "aggregator": {
+          "type": "Periodic",
           "freq": {
             "type": "Monthly"
           },

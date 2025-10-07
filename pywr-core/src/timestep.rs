@@ -393,11 +393,11 @@ impl TimeDomain {
         self.timesteps.len()
     }
 
-    pub fn first_timestep(&self) -> Option<&Timestep> {
+    pub fn first(&self) -> Option<&Timestep> {
         self.timesteps.first()
     }
 
-    pub fn last_timestep(&self) -> Option<&Timestep> {
+    pub fn last(&self) -> Option<&Timestep> {
         self.timesteps.last()
     }
 

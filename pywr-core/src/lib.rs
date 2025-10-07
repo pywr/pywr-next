@@ -18,6 +18,7 @@ pub mod models;
 pub mod network;
 pub mod node;
 pub mod parameters;
+pub mod predicate;
 pub mod recorders;
 pub mod scenario;
 pub mod solvers;

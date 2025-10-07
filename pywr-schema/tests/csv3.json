@@ -71,6 +71,7 @@
       {
         "name": "nodes-monthly-mean",
         "aggregator": {
+          "type": "Periodic",
           "freq": {
             "type": "Monthly"
           },
@@ -88,6 +89,7 @@
       {
         "name": "nodes-annual-mean",
         "aggregator": {
+          "type": "Periodic",
           "freq": {
             "type": "Annual"
           },

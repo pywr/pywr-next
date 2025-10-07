@@ -4,30 +4,10 @@ use crate::parameters::errors::{ParameterCalculationError, ParameterSetupError};
 use crate::parameters::{
     GeneralParameter, Parameter, ParameterMeta, ParameterName, ParameterState, downcast_internal_state_mut,
 };
+use crate::predicate::Predicate;
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
 use crate::timestep::Timestep;
-
-pub enum Predicate {
-    LessThan,
-    GreaterThan,
-    EqualTo,
-    LessThanOrEqualTo,
-    GreaterThanOrEqualTo,
-}
-
-impl Predicate {
-    /// Apply the predicate to a value and a threshold.
-    pub fn apply(&self, value: f64, threshold: f64) -> bool {
-        match self {
-            Predicate::LessThan => value < threshold,
-            Predicate::GreaterThan => value > threshold,
-            Predicate::EqualTo => (value - threshold).abs() < 1E-6, // TODO make this a global constant
-            Predicate::LessThanOrEqualTo => value <= threshold,
-            Predicate::GreaterThanOrEqualTo => value >= threshold,
-        }
-    }
-}
 
 pub struct ThresholdParameter {
     meta: ParameterMeta,
