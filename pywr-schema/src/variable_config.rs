@@ -1,3 +1,4 @@
+#[cfg(feature = "core")]
 use crate::SchemaError;
 use crate::parameters::{ActivationFunction, MonthlyProfileVariableConfig, RbfProfileVariableConfig};
 #[cfg(feature = "core")]
