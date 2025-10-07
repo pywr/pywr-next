@@ -7,7 +7,10 @@
   "timestepper": {
     "start": "2015-01-01",
     "end": "2015-01-03",
-    "timestep": 1
+    "timestep": {
+      "type": "Days",
+      "days": 1
+    }
   },
   "network": {
     "nodes": [
@@ -51,7 +54,9 @@
           "type": "Literal",
           "value": -10
         }
-      },
+      }
+    ],
+    "virtual_nodes": [
       {
         "meta": {
           "name": "vs1"
@@ -87,7 +92,8 @@
       {
         "name": "nodes",
         "filters": {
-          "all_nodes": true
+          "all_nodes": true,
+          "all_virtual_nodes": true
         }
       }
     ],

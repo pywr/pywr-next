@@ -24,6 +24,7 @@ use pywr_v1_schema::parameters::{
 #[derive(Default)]
 pub struct ConversionData {
     unnamed_count: usize,
+    pub virtual_nodes: Vec<String>,
     pub parameters: Vec<Parameter>,
     pub timeseries: Vec<Timeseries>,
 }
@@ -130,6 +131,7 @@ impl FromV1<Option<ParameterMetaV1>> for ParameterMeta {
 }
 
 /// Helper function to convert a node attribute from v1 to v2.
+#[allow(clippy::result_large_err)]
 pub fn try_convert_node_attr<V1, V2>(
     name: &str,
     attr: &str,
@@ -150,6 +152,7 @@ where
 }
 
 /// Helper function to convert a parameter attribute from v1 to v2.
+#[allow(clippy::result_large_err)]
 pub fn try_convert_parameter_attr<V1, V2>(
     name: &str,
     attr: &str,
@@ -170,6 +173,7 @@ where
 }
 
 /// Helper function to convert initial storage from v1 to v2.
+#[allow(clippy::result_large_err)]
 pub fn try_convert_initial_storage(
     name: &str,
     attr: &str,
@@ -193,6 +197,7 @@ pub fn try_convert_initial_storage(
     Ok(initial_volume)
 }
 
+#[allow(clippy::result_large_err)]
 pub fn try_convert_values(
     name: &str,
     v1_values: Option<Vec<f64>>,
@@ -233,6 +238,7 @@ pub fn try_convert_values(
     Ok(values)
 }
 
+#[allow(clippy::result_large_err)]
 pub fn try_convert_control_curves(
     name: &str,
     v1_control_curves: Option<ParameterValues>,

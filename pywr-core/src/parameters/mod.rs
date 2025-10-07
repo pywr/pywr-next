@@ -4,6 +4,7 @@ mod aggregated_index;
 mod array;
 mod asymmetric;
 mod constant;
+mod constant_scenario;
 mod control_curves;
 mod delay;
 mod difference;
@@ -42,6 +43,7 @@ pub use aggregated_index::AggregatedIndexParameter;
 pub use array::{Array1Parameter, Array2Parameter};
 pub use asymmetric::AsymmetricSwitchIndexParameter;
 pub use constant::ConstantParameter;
+pub use constant_scenario::ConstantScenarioParameter;
 pub use control_curves::{
     ApportionParameter, ControlCurveIndexParameter, ControlCurveInterpolatedParameter, ControlCurveParameter,
     PiecewiseInterpolatedParameter, VolumeBetweenControlCurvesParameter,
@@ -66,7 +68,7 @@ pub use negativemin::NegativeMinParameter;
 pub use offset::OffsetParameter;
 pub use polynomial::Polynomial1DParameter;
 pub use profiles::{
-    DailyProfileParameter, MonthlyInterpDay, MonthlyProfileParameter, MonthlyProfileVariableConfig,
+    DailyProfileParameter, DiurnalProfileParameter, MonthlyInterpDay, MonthlyProfileParameter, MonthlyProfileVariableConfig,
     RadialBasisFunction, RbfProfileParameter, RbfProfileVariableConfig, UniformDrawdownProfileParameter,
     WeeklyInterpDay, WeeklyProfileError, WeeklyProfileParameter, WeeklyProfileValues,
 };

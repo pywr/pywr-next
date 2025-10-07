@@ -31,6 +31,9 @@ pub enum AggFuncF64 {
     CountFunc {
         func: fn(f64) -> bool,
     },
+    AnyNonZero {
+        tolerance: f64,
+    },
     #[cfg(feature = "pyo3")]
     Python(PyAggFunc),
 }
@@ -66,6 +69,10 @@ impl AggFuncF64 {
             Self::CountFunc { func } => {
                 let count = values.iter().filter(|v| func(v.value)).count();
                 Some(count as f64)
+            }
+            Self::AnyNonZero { tolerance } => {
+                let any = values.iter().any(|v| v.value.abs() > *tolerance);
+                Some(any as u8 as f64)
             }
             #[cfg(feature = "pyo3")]
             Self::Python(py_func) => {
@@ -117,6 +124,10 @@ impl AggFuncF64 {
             Self::CountFunc { func } => {
                 let count = values.into_iter().filter(|&v| func(*v)).count();
                 count as f64
+            }
+            Self::AnyNonZero { tolerance } => {
+                let any = values.into_iter().any(|&v| v.abs() > *tolerance);
+                any as u8 as f64
             }
             #[cfg(feature = "pyo3")]
             Self::Python(py_func) => {
@@ -220,6 +231,19 @@ mod tests {
         let result = AggFuncF64::Mean.calc_iter_f64(&[]).unwrap();
         assert_approx_eq!(f64, result, 0.0);
     }
+
+    #[test]
+    fn test_f64_any_nonzero_true() {
+        let result = AggFuncF64::AnyNonZero { tolerance: 1e-6 }.calc_iter_f64(&[1e-5, 0.0, 0.0]).unwrap();
+        assert_approx_eq!(f64, result, 1.0);
+    }
+
+    #[test]
+    fn test_f64_any_nonzero_false() {
+        let result = AggFuncF64::AnyNonZero { tolerance: 1e-6 }.calc_iter_f64(&[1e-7, 0.0, 0.0]).unwrap();
+        assert_approx_eq!(f64, result, 0.0);
+    }
+
 
     #[test]
     fn test_u64_sum() {

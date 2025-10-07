@@ -24,6 +24,10 @@ dev = [
     "pytest>=8.4.1",
     "ruff>=0.12.3",
 ]
+docs = [
+    "json-schema-for-humans>=1.4.1",
+    "pdoc",
+]
 
 [build-system]
 requires = ["maturin>=1.0,<2.0"]

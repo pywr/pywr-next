@@ -34,20 +34,28 @@ mod microlp;
 
 #[cfg(feature = "ipm-ocl")]
 pub use self::ipm_ocl::{ClIpmF32Solver, ClIpmF64Solver, ClIpmSolverSettings, ClIpmSolverSettingsBuilder};
+#[cfg(all(feature = "ipm-simd", feature = "pyo3"))]
+pub use self::ipm_simd::build_ipm_simd_settings_py;
 #[cfg(feature = "ipm-simd")]
 pub use self::ipm_simd::{SimdIpmF64Solver, SimdIpmSolverSettings, SimdIpmSolverSettingsBuilder};
 use crate::aggregated_node::AggregatedNodeIndex;
 use crate::node::NodeIndex;
+#[cfg(all(feature = "cbc", feature = "pyo3"))]
+pub use cbc::build_cbc_settings_py;
 #[cfg(feature = "cbc")]
 pub use cbc::{CbcError, CbcSolver, CbcSolverSettings, CbcSolverSettingsBuilder};
+#[cfg(all(feature = "clp", feature = "pyo3"))]
+pub use clp::build_clp_settings_py;
 #[cfg(feature = "clp")]
 pub use clp::{ClpSolveStatusError, ClpSolver, ClpSolverSettings, ClpSolverSettingsBuilder};
+#[cfg(all(feature = "highs", feature = "pyo3"))]
+pub use highs::build_highs_settings_py;
 #[cfg(feature = "highs")]
 pub use highs::{HighsSolver, HighsSolverSettings, HighsSolverSettingsBuilder};
 #[cfg(feature = "microlp")]
 pub use microlp::{MicroLpError, MicroLpSolver, MicroLpSolverSettings, MicroLpSolverSettingsBuilder};
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone)]
 pub struct SolverTimings {
     pub update_objective: Duration,
     pub update_constraints: Duration,

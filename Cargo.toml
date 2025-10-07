@@ -41,7 +41,7 @@ debug = "line-tables-only"
 [workspace.package]
 readme = "README.md"
 description = "A generalised water resource allocation model."
-version = "2.0.0-dev"
+version = "2.0.0-beta1"
 edition = "2024"
 rust-version = "1.85"
 authors = ["James Tomlinson <tomo.bbe@gmail.com>"]
@@ -66,7 +66,7 @@ pyo3-log = "0.12"
 tracing = { version = "0.1", features = ["log"] }
 csv = "1.3"
 hdf5-metno = { version = "0.10.1", features = ["static", "zlib"] }
-pywr-v1-schema = "0.19"
+pywr-v1-schema = "0.21"
 chrono = { version = "0.4", features = ["serde"] }
 schemars = { version = "1.0", features = ["chrono04"] }
 rand = "0.9"

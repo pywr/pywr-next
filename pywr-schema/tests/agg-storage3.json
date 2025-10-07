@@ -7,7 +7,10 @@
   "timestepper": {
     "start": "2015-01-01",
     "end": "2015-01-10",
-    "timestep": 1
+    "timestep": {
+      "type": "Days",
+      "days": 1
+    }
   },
   "network": {
     "nodes": [
@@ -138,7 +141,9 @@
           "type": "Literal",
           "value": -10
         }
-      },
+      }
+    ],
+    "virtual_nodes": [
       {
         "meta": {
           "name": "total-storage"
@@ -178,7 +183,8 @@
           "name": "demand"
         },
         "type": "ControlCurve",
-        "storage_node": {
+        "storage_metric": {
+          "type": "VirtualNode",
           "name": "total-storage",
           "attribute": "ProportionalVolume"
         },
@@ -204,7 +210,8 @@
       {
         "name": "nodes",
         "filters": {
-          "all_nodes": true
+          "all_nodes": true,
+          "all_virtual_nodes": true
         }
       }
     ],

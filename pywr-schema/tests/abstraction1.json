@@ -6,7 +6,10 @@
   "timestepper": {
     "start": "2021-01-01",
     "end": "2021-01-07",
-    "timestep": 1
+    "timestep": {
+      "type": "Days",
+      "days": 1
+    }
   },
   "network": {
     "nodes": [
@@ -61,7 +64,9 @@
           "type": "Literal",
           "value": 4.0
         }
-      },
+      }
+    ],
+    "virtual_nodes": [
       {
         "meta": {
           "name": "abstraction_licence"
@@ -112,7 +117,8 @@
       {
         "name": "nodes",
         "filters": {
-          "all_nodes": true
+          "all_nodes": true,
+          "all_virtual_nodes": true
         }
       }
     ],

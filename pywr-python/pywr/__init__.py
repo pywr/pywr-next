@@ -2,9 +2,13 @@ from pathlib import Path
 from typing import Optional
 
 from .pywr import (
-    Schema,
+    ModelSchema,
+    MultiNetworkModelSchema,
     Model,
+    MultiNetworkModel,
     ModelResult,
+    ModelTimings,
+    MultiNetworkModelTimings,
     Timestep,
     ScenarioIndex,
     ParameterInfo,
@@ -13,12 +17,17 @@ from .pywr import (
     ConversionError,
     convert_model_from_v1_json_string,
     convert_metric_from_v1_json_string,
+    export_schema,
 )
 
 __all__ = [
-    "Schema",
+    "ModelSchema",
+    "MultiNetworkModelSchema",
     "Model",
+    "MultiNetworkModel",
     "ModelResult",
+    "ModelTimings",
+    "MultiNetworkModelTimings",
     "Timestep",
     "ScenarioIndex",
     "ParameterInfo",
@@ -28,6 +37,7 @@ __all__ = [
     "convert_model_from_v1_json_string",
     "convert_metric_from_v1_json_string",
     "run_from_path",
+    "export_schema",
 ]
 
 
@@ -48,6 +58,6 @@ def run_from_path(
     if output_path is None:
         output_path = filename.parent
 
-    schema = Schema.from_path(filename)
+    schema = ModelSchema.from_path(filename)
     model = schema.build(data_path=data_path, output_path=output_path)
     model.run(solver)

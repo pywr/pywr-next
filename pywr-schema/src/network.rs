@@ -1,6 +1,7 @@
 use super::edge::Edge;
-use super::nodes::Node;
+use super::nodes::{Node, NodeOrVirtualNode, VirtualNode};
 use super::parameters::{Parameter, ParameterOrTimeseriesRef};
+use crate::ConversionError;
 use crate::data_tables::DataTable;
 #[cfg(feature = "core")]
 use crate::data_tables::{LoadedTableCollection, TableCollectionLoadError};
@@ -24,6 +25,7 @@ use pyo3::pyclass;
 #[cfg(feature = "core")]
 use pywr_core::models::ModelDomain;
 use pywr_schema_macros::skip_serializing_none;
+use pywr_v1_schema::nodes::{CoreNode as CoreNodeV1, Node as NodeV1};
 use schemars::JsonSchema;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
@@ -53,8 +55,20 @@ pub enum PywrNetworkBuildError {
         #[source]
         source: Box<SchemaError>,
     },
+    #[error("Failed to add virtual node `{name}` to the model: {source}")]
+    AddVirtualNodeError {
+        name: String,
+        #[source]
+        source: Box<SchemaError>,
+    },
     #[error("Failed to set constraints for node `{name}`: {source}")]
     SetNodeConstraintsError {
+        name: String,
+        #[source]
+        source: Box<SchemaError>,
+    },
+    #[error("Failed to set constraints for virtual node `{name}`: {source}")]
+    SetVirtualNodeConstraintsError {
         name: String,
         #[source]
         source: Box<SchemaError>,
@@ -129,9 +143,11 @@ pub struct LoadArgs<'a> {
 #[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, JsonSchema)]
 #[cfg_attr(feature = "pyo3", pyclass)]
+#[serde(deny_unknown_fields)]
 pub struct PywrNetwork {
     pub nodes: Vec<Node>,
     pub edges: Vec<Edge>,
+    pub virtual_nodes: Option<Vec<VirtualNode>>,
     pub parameters: Option<Vec<Parameter>>,
     pub tables: Option<Vec<DataTable>>,
     pub timeseries: Option<Vec<Timeseries>>,
@@ -248,19 +264,40 @@ impl PywrNetwork {
         let mut conversion_data = ConversionData::default();
 
         let mut nodes = Vec::with_capacity(v1.nodes.as_ref().map(|n| n.len()).unwrap_or_default());
+        let mut virtual_nodes = Vec::with_capacity(v1.nodes.as_ref().map(|n| n.len()).unwrap_or_default());
         let mut parameters = Vec::new();
         let mut timeseries = Vec::new();
 
         // Extract nodes and any timeseries data from the v1 nodes
         if let Some(v1_nodes) = v1.nodes {
+            // First find any virtual nodes so these can be used to determine metric conversion types
+            for node in v1_nodes.iter() {
+                match node {
+                    NodeV1::Core(n) => match n.as_ref() {
+                        CoreNodeV1::Aggregated(_)
+                        | CoreNodeV1::AggregatedStorage(_)
+                        | CoreNodeV1::VirtualStorage(_)
+                        | CoreNodeV1::AnnualVirtualStorage(_)
+                        | CoreNodeV1::MonthlyVirtualStorage(_)
+                        | CoreNodeV1::SeasonalVirtualStorage(_)
+                        | CoreNodeV1::RollingVirtualStorage(_) => {
+                            conversion_data.virtual_nodes.push(n.name().to_string());
+                        }
+                        _ => continue,
+                    },
+                    _ => continue,
+                }
+            }
+
             for v1_node in v1_nodes.into_iter() {
                 // Reset the unnamed count for each node because they are named by the parent node.
                 conversion_data.reset_count();
-                let result: Result<Node, _> = v1_node.try_into_v2(None, &mut conversion_data);
+                let result: Result<NodeOrVirtualNode, _> = v1_node.try_into_v2(None, &mut conversion_data);
                 match result {
-                    Ok(node) => {
-                        nodes.push(node);
-                    }
+                    Ok(node) => match node {
+                        NodeOrVirtualNode::Node(n) => nodes.push(*n),
+                        NodeOrVirtualNode::Virtual(vn) => virtual_nodes.push(*vn),
+                    },
                     Err(e) => {
                         errors.push(e);
                     }
@@ -309,10 +346,25 @@ impl PywrNetwork {
         nodes.visit_metrics_mut(update_to_ts_ref);
         parameters.visit_metrics_mut(update_to_ts_ref);
 
+        for table in v1.tables.into_iter().flatten() {
+            let json_string = serde_json::to_string(&table).ok();
+            errors.push(ComponentConversionError::Table {
+                name: table.name.clone(),
+                url: table.url,
+                json: json_string,
+                error: ConversionError::TableConversionNotSupported { name: table.name },
+            });
+        }
+
         // TODO convert v1 tables!
         let tables = None;
         let outputs = None;
         let metric_sets = None;
+        let virtual_nodes = if !virtual_nodes.is_empty() {
+            Some(virtual_nodes)
+        } else {
+            None
+        };
         let parameters = if !parameters.is_empty() { Some(parameters) } else { None };
         let timeseries = if !timeseries.is_empty() { Some(timeseries) } else { None };
 
@@ -320,6 +372,7 @@ impl PywrNetwork {
             Self {
                 nodes,
                 edges,
+                virtual_nodes,
                 parameters,
                 tables,
                 timeseries,
@@ -343,6 +396,30 @@ impl PywrNetwork {
 
     pub fn get_node(&self, idx: usize) -> Option<&Node> {
         self.nodes.get(idx)
+    }
+
+    pub fn get_virtual_node_by_name(&self, name: &str) -> Option<&VirtualNode> {
+        match &self.virtual_nodes {
+            Some(virtual_nodes) => virtual_nodes.iter().find(|n| n.name() == name),
+            None => None,
+        }
+    }
+
+    pub fn get_virtual_node_index_by_name(&self, name: &str) -> Option<usize> {
+        match &self.virtual_nodes {
+            Some(virtual_nodes) => virtual_nodes
+                .iter()
+                .enumerate()
+                .find_map(|(idx, n)| (n.name() == name).then_some(idx)),
+            None => None,
+        }
+    }
+
+    pub fn get_virtual_node(&self, idx: usize) -> Option<&VirtualNode> {
+        match &self.virtual_nodes {
+            Some(virtual_nodes) => virtual_nodes.get(idx),
+            None => None,
+        }
     }
 
     pub fn get_parameter_by_name(&self, name: &str) -> Option<&Parameter> {
@@ -381,11 +458,22 @@ impl PywrNetwork {
             inter_network_transfers,
         };
 
-        // Create all the nodes
-        let mut remaining_nodes = self.nodes.clone();
+        // Create a combined list of nodes and virtual nodes
+        let mut remaining_nodes: Vec<NodeOrVirtualNode> = self
+            .nodes
+            .iter()
+            .map(|n| n.clone().into())
+            .chain(
+                self.virtual_nodes
+                    .clone()
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(|vn| vn.into()),
+            )
+            .collect();
 
         while !remaining_nodes.is_empty() {
-            let mut failed_nodes: Vec<Node> = Vec::new();
+            let mut failed_nodes: Vec<NodeOrVirtualNode> = Vec::new();
             let n = remaining_nodes.len();
             for node in remaining_nodes.into_iter() {
                 if let Err(e) = node.add_to_model(&mut network, &args) {
@@ -395,10 +483,16 @@ impl PywrNetwork {
                         // Let's try to load more nodes and see if this one can be added later
                         SchemaError::CoreNodeNotFound { .. } => failed_nodes.push(node),
                         _ => {
-                            return Err(PywrNetworkBuildError::AddNodeError {
-                                name: node.name().to_string(),
-                                source: Box::new(e),
-                            });
+                            return match node {
+                                NodeOrVirtualNode::Node(n) => Err(PywrNetworkBuildError::AddNodeError {
+                                    name: n.name().to_string(),
+                                    source: Box::new(e),
+                                }),
+                                NodeOrVirtualNode::Virtual(vn) => Err(PywrNetworkBuildError::AddVirtualNodeError {
+                                    name: vn.name().to_string(),
+                                    source: Box::new(e),
+                                }),
+                            };
                         }
                     }
                 };
@@ -474,7 +568,7 @@ impl PywrNetwork {
             remaining_parameters = failed_parameters;
         }
 
-        // Apply the inline parameters & constraints to the nodes
+        // Apply the constraints to the nodes
         for node in &self.nodes {
             node.set_constraints(&mut network, &args).map_err(|source| {
                 PywrNetworkBuildError::SetNodeConstraintsError {
@@ -482,6 +576,18 @@ impl PywrNetwork {
                     source: Box::new(source),
                 }
             })?;
+        }
+
+        // Apply the constraints to the virtual nodes
+        if let Some(virtual_nodes) = &self.virtual_nodes {
+            for node in virtual_nodes {
+                node.set_constraints(&mut network, &args).map_err(|source| {
+                    PywrNetworkBuildError::SetVirtualNodeConstraintsError {
+                        name: node.name().to_string(),
+                        source: Box::new(source),
+                    }
+                })?;
+            }
         }
 
         // Create all of the metric sets

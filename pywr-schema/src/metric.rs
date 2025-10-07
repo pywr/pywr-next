@@ -8,6 +8,8 @@ use crate::error::SchemaError;
 use crate::network::LoadArgs;
 #[cfg(feature = "core")]
 use crate::nodes::NodeType;
+#[cfg(feature = "core")]
+use crate::nodes::VirtualNodeType;
 use crate::nodes::{NodeAttribute, NodeComponent};
 use crate::parameters::ParameterOrTimeseriesRef;
 #[cfg(feature = "core")]
@@ -16,6 +18,8 @@ use crate::parameters::ParameterType;
 use crate::timeseries::TimeseriesColumns;
 use crate::timeseries::TimeseriesReference;
 use crate::v1::{ConversionData, TryFromV1, TryIntoV2};
+#[cfg(feature = "pyo3")]
+use pyo3::{PyResult, exceptions::PyRuntimeError, pyclass, pymethods};
 #[cfg(feature = "core")]
 use pywr_core::{
     metric::{MetricF64, MetricU64},
@@ -42,6 +46,7 @@ use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticS
 #[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
 // This creates a separate enum called `MetricType` that is available in this module.
 #[strum_discriminants(name(MetricType))]
+#[cfg_attr(feature = "pyo3", pyclass)]
 pub enum Metric {
     /// A literal floating point value.
     Literal { value: f64 },
@@ -49,6 +54,8 @@ pub enum Metric {
     Table(TableDataRef),
     /// An attribute of a node.
     Node(NodeAttrReference),
+    /// An attribute of a node.
+    VirtualNode(VirtualNodeAttrReference),
     /// An attribute of an edge.
     Edge(EdgeReference),
     /// A reference to a value from a timeseries.
@@ -73,6 +80,18 @@ impl From<f64> for Metric {
     }
 }
 
+impl From<NodeAttrReference> for Metric {
+    fn from(v: NodeAttrReference) -> Self {
+        Self::Node(v)
+    }
+}
+
+impl From<VirtualNodeAttrReference> for Metric {
+    fn from(v: VirtualNodeAttrReference) -> Self {
+        Self::VirtualNode(v)
+    }
+}
+
 #[cfg(feature = "core")]
 impl Metric {
     pub fn load(
@@ -83,6 +102,7 @@ impl Metric {
     ) -> Result<MetricF64, SchemaError> {
         match self {
             Self::Node(node_ref) => node_ref.load_f64(network, args),
+            Self::VirtualNode(node_ref) => node_ref.load_f64(network, args),
             // Global parameter with no parent
             Self::Parameter(parameter_ref) => parameter_ref.load_f64(network, None),
             // Local parameter loaded from parent's namespace
@@ -134,6 +154,7 @@ impl Metric {
     fn name(&self) -> Result<String, SchemaError> {
         match self {
             Self::Node(node_ref) => Ok(node_ref.name.to_string()),
+            Self::VirtualNode(node_ref) => Ok(node_ref.name.to_string()),
             Self::Parameter(parameter_ref) => Ok(parameter_ref.name.clone()),
             Self::LocalParameter(parameter_ref) => Ok(parameter_ref.name.clone()),
             Self::Literal { .. } => Err(SchemaError::LiteralConstantOutputNotSupported),
@@ -147,6 +168,7 @@ impl Metric {
     fn attribute(&self, args: &LoadArgs) -> Result<String, SchemaError> {
         let attribute = match self {
             Self::Node(node_ref) => node_ref.attribute(args)?.to_string(),
+            Self::VirtualNode(node_ref) => node_ref.attribute(args)?.to_string(),
             Self::Parameter(p_ref) => p_ref.key.clone().unwrap_or_else(|| "value".to_string()),
             Self::LocalParameter(p_ref) => p_ref.key.clone().unwrap_or_else(|| "value".to_string()),
             Self::Literal { .. } => "value".to_string(),
@@ -168,6 +190,7 @@ impl Metric {
     fn sub_type(&self, args: &LoadArgs) -> Result<Option<String>, SchemaError> {
         let sub_type = match self {
             Self::Node(node_ref) => Some(node_ref.node_type(args)?.to_string()),
+            Self::VirtualNode(node_ref) => Some(node_ref.node_type(args)?.to_string()),
             Self::Parameter(parameter_ref) => Some(parameter_ref.parameter_type(args)?.to_string()),
             Self::LocalParameter(parameter_ref) => Some(parameter_ref.parameter_type(args)?.to_string()),
             Self::Literal { .. } => None,
@@ -201,6 +224,16 @@ impl Metric {
     }
 }
 
+#[cfg(feature = "pyo3")]
+#[pymethods]
+impl Metric {
+    /// Serialize the metric to a JSON string.
+    fn to_json_string(&self) -> PyResult<String> {
+        let data = serde_json::to_string_pretty(self).map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        Ok(data)
+    }
+}
+
 impl TryFromV1<ParameterValueV1> for Metric {
     type Error = ConversionError;
 
@@ -226,6 +259,8 @@ impl TryFromV1<ParameterValueV1> for Metric {
                         .map_err(|e| match e {
                             ComponentConversionError::Parameter { error, .. } => error,
                             ComponentConversionError::Node { error, .. } => error,
+                            ComponentConversionError::Scenarios { error } => error,
+                            ComponentConversionError::Table { error, .. } => error,
                         })?;
                 match definition {
                     ParameterOrTimeseriesRef::Parameter(p) => {
@@ -249,6 +284,7 @@ impl TryFromV1<ParameterValueV1> for Metric {
 #[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll, PartialEq)]
 #[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "pyo3", pyclass)]
 pub struct NodeAttrReference {
     /// The name of the node
     pub name: String,
@@ -336,6 +372,98 @@ impl From<String> for NodeAttrReference {
     }
 }
 
+/// A reference to a node with an optional attribute.
+#[skip_serializing_none]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll, PartialEq)]
+#[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "pyo3", pyclass)]
+pub struct VirtualNodeAttrReference {
+    /// The name of the node
+    pub name: String,
+    /// The attribute of the node. If this is `None` then the default attribute is used.
+    pub attribute: Option<NodeAttribute>,
+}
+
+impl VirtualNodeAttrReference {
+    pub fn new(name: String, attribute: Option<NodeAttribute>) -> Self {
+        Self { name, attribute }
+    }
+
+    /// Load a node reference into a [`MetricF64`].
+    #[cfg(feature = "core")]
+    pub fn load_f64(
+        &self,
+        network: &mut pywr_core::network::Network,
+        args: &LoadArgs,
+    ) -> Result<MetricF64, SchemaError> {
+        // This is the associated node in the schema
+        let node =
+            args.schema
+                .get_virtual_node_by_name(&self.name)
+                .ok_or_else(|| SchemaError::VirtualNodeNotFound {
+                    name: self.name.clone(),
+                })?;
+
+        node.create_metric(network, self.attribute)
+    }
+
+    /// Load a node reference into a [`MetricUsize`].
+    #[cfg(feature = "core")]
+    pub fn load_u64(
+        &self,
+        _network: &mut pywr_core::network::Network,
+        args: &LoadArgs,
+    ) -> Result<MetricU64, SchemaError> {
+        // This is the associated node in the schema
+        let _node =
+            args.schema
+                .get_virtual_node_by_name(&self.name)
+                .ok_or_else(|| SchemaError::VirtualNodeNotFound {
+                    name: self.name.clone(),
+                })?;
+
+        todo!("Support usize attributes on nodes.")
+    }
+
+    /// Return the attribute of the node. If the attribute is not specified then the default
+    /// attribute of the node is returned. Note that this does not check if the attribute is
+    /// valid for the node.
+    #[cfg(feature = "core")]
+    pub fn attribute(&self, args: &LoadArgs) -> Result<NodeAttribute, SchemaError> {
+        // This is the associated node in the schema
+        let node =
+            args.schema
+                .get_virtual_node_by_name(&self.name)
+                .ok_or_else(|| SchemaError::VirtualNodeNotFound {
+                    name: self.name.clone(),
+                })?;
+
+        Ok(self.attribute.unwrap_or_else(|| node.default_attribute()))
+    }
+
+    #[cfg(feature = "core")]
+    pub fn node_type(&self, args: &LoadArgs) -> Result<VirtualNodeType, SchemaError> {
+        // This is the associated node in the schema
+        let node =
+            args.schema
+                .get_virtual_node_by_name(&self.name)
+                .ok_or_else(|| SchemaError::VirtualNodeNotFound {
+                    name: self.name.clone(),
+                })?;
+
+        Ok(node.node_type())
+    }
+}
+
+impl From<String> for VirtualNodeAttrReference {
+    fn from(v: String) -> Self {
+        VirtualNodeAttrReference {
+            name: v,
+            attribute: None,
+        }
+    }
+}
+
 /// A reference to a node with an optional component.
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll, PartialEq)]
 #[serde(deny_unknown_fields)]
@@ -358,6 +486,7 @@ impl From<String> for NodeComponentReference {
 #[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PartialEq)]
 #[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "pyo3", pyclass)]
 pub struct ParameterReference {
     /// The name of the parameter
     pub name: String,
@@ -464,6 +593,7 @@ impl ParameterReference {
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PartialEq)]
 #[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "pyo3", pyclass)]
 pub struct EdgeReference {
     /// The edge referred to by this reference.
     pub edge: Edge,
@@ -606,6 +736,8 @@ impl TryFromV1<ParameterValueV1> for IndexMetric {
                         .map_err(|e| match e {
                             ComponentConversionError::Parameter { error, .. } => error,
                             ComponentConversionError::Node { error, .. } => error,
+                            ComponentConversionError::Scenarios { error } => error,
+                            ComponentConversionError::Table { error, .. } => error,
                         })?;
                 match definition {
                     ParameterOrTimeseriesRef::Parameter(p) => {

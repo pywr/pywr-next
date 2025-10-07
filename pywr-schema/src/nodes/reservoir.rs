@@ -722,7 +722,7 @@ impl ReservoirNode {
 #[cfg(test)]
 #[cfg(feature = "core")]
 mod tests {
-    use crate::model::PywrModel;
+    use crate::model::ModelSchema;
 
     fn reservoir_with_spill_str() -> &'static str {
         include_str!("../../tests/reservoir_with_spill.json")
@@ -731,7 +731,7 @@ mod tests {
     #[test]
     fn test_model_nodes_and_edges() {
         let data = reservoir_with_spill_str();
-        let schema: PywrModel = serde_json::from_str(data).unwrap();
+        let schema: ModelSchema = serde_json::from_str(data).unwrap();
         let mut model: pywr_core::models::Model = schema.build_model(None, None).unwrap();
 
         let network = model.network_mut();

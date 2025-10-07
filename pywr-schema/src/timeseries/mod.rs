@@ -4,6 +4,7 @@ mod pandas;
 mod polars_dataset;
 
 use crate::ConversionError;
+use crate::digest::Checksum;
 use crate::error::ComponentConversionError;
 use crate::parameters::ParameterMeta;
 use crate::v1::{ConversionData, IntoV2, TryFromV1};
@@ -21,7 +22,7 @@ use polars::prelude::{
 };
 pub use polars_dataset::PolarsTimeseries;
 #[cfg(feature = "pyo3")]
-use pyo3::PyErr;
+use pyo3::{PyErr, pyclass};
 #[cfg(feature = "core")]
 use pywr_core::{
     models::ModelDomain,
@@ -470,6 +471,7 @@ pub enum TimeseriesColumns {
 #[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PartialEq)]
 #[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "pyo3", pyclass)]
 pub struct TimeseriesReference {
     pub name: String,
     pub columns: Option<TimeseriesColumns>,
@@ -530,12 +532,17 @@ impl TryFromV1<DataFrameParameterV1> for ConvertedTimeseriesReference {
                 }
             }
 
+            let checksum = match v1.checksum {
+                Some(c) => Checksum::try_from_v1(c, parent_node, conversion_data).ok(),
+                None => None,
+            };
+
             let timeseries = PandasTimeseries {
                 meta: meta.clone(),
                 time_col,
                 url,
                 kwargs: Some(pandas_kwargs),
-                checksum: None, // v1 does not support checksums
+                checksum,
             };
 
             // The timeseries data that is extracted

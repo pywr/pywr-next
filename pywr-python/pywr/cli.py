@@ -25,7 +25,9 @@ def cli():
 
 @cli.command()
 @click.argument("path", type=click.Path(exists=True, file_okay=True))
-@click.option("-s", "--solver", type=click.Choice(["clp", "highs"]), default="clp")
+@click.option(
+    "-s", "--solver", type=click.Choice(["clp", "highs", "cbc"]), default="clp"
+)
 @click.option(
     "-d", "--data-path", type=click.Path(exists=True, dir_okay=True), default=None
 )

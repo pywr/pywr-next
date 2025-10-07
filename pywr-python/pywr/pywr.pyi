@@ -1,6 +1,6 @@
 from datetime import datetime
 from os import PathLike
-from typing import Optional, List
+from typing import Optional, List, Tuple
 import polars as pl
 
 class ParameterInfo:
@@ -108,9 +108,9 @@ class ScenarioIndex:
     def simulation_indices(self) -> List[int]:
         """Returns indices for each scenario group for this simulation."""
 
-class Schema:
+class ModelSchema:
     @classmethod
-    def from_path(cls, path: PathLike) -> "Schema":
+    def from_path(cls, path: PathLike) -> "ModelSchema":
         """Create a new schema object from a file path.
 
         Args:
@@ -118,7 +118,32 @@ class Schema:
         """
 
     @classmethod
-    def from_json_string(cls, json_string: str) -> "Schema":
+    def from_json_string(cls, json_string: str) -> "ModelSchema":
+        """Create a new schema object from a JSON string.
+
+        Args:
+            json_string: The JSON string representing the schema.
+        """
+
+    def to_json_string(self) -> str:
+        """Serialize the schema to a JSON string."""
+
+    def build(
+        self, data_path: Optional[PathLike], output_path: Optional[PathLike]
+    ) -> "Model":
+        """Build the schema in to a Pywr model."""
+
+class MultiNetworkModelSchema:
+    @classmethod
+    def from_path(cls, path: PathLike) -> "ModelSchema":
+        """Create a new schema object from a file path.
+
+        Args:
+            path: The path to the schema JSON file.
+        """
+
+    @classmethod
+    def from_json_string(cls, json_string: str) -> "ModelSchema":
         """Create a new schema object from a JSON string.
 
         Args:
@@ -142,10 +167,23 @@ class Model:
             solver_kwargs: Optional keyword arguments to pass to the solver.
         """
 
+class MultiNetworkModel:
+    def run(self, solver_name: str, solver_kwargs: Optional[dict] = None):
+        """Run the model using the specified solver.
+
+        Args:
+            solver_name: The name of the solver to use.
+            solver_kwargs: Optional keyword arguments to pass to the solver.
+        """
+
 class ModelResult:
     @property
     def network_result(self) -> "NetworkResult":
         """Returns the network result object."""
+
+    @property
+    def timings(self) -> "ModelTimings":
+        """Returns the model timings object."""
 
 class MultiNetworkModelResult:
     def network_results(self, name: str) -> "NetworkResult":
@@ -154,6 +192,10 @@ class MultiNetworkModelResult:
         Args:
             name: The name of the network to retrieve the results for.
         """
+
+    @property
+    def timings(self) -> "MultiNetworkModelTimings":
+        """Returns the model timings object."""
 
 class NetworkResult:
     def aggregated_value(self, name: str) -> float:
@@ -170,9 +212,33 @@ class NetworkResult:
             name: The name of the output to retrieve.
         """
 
+    def output_names(self) -> list[str]:
+        """Get a list of all available output names."""
+
+class ModelTimings:
+    @property
+    def total_duration(self) -> float:
+        """Total duration of the model run in seconds."""
+
+    @property
+    def speed(self) -> float:
+        """Model speed in timesteps per second."""
+
+class MultiNetworkModelTimings:
+    @property
+    def total_duration(self) -> float:
+        """Total duration of the model run in seconds."""
+
+    @property
+    def speed(self) -> float:
+        """Model speed in timesteps per second."""
+
 class Metric: ...
 class ComponentConversionError: ...
 class ConversionError: ...
 
-def convert_model_from_v1_json_string(data: str): ...
-def convert_metric_from_v1_json_string(data: str): ...
+def convert_model_from_v1_json_string(
+    data: str,
+) -> Tuple[ModelSchema, List[ComponentConversionError]]: ...
+def convert_metric_from_v1_json_string(data: str) -> Metric: ...
+def export_schema(out_path: PathLike): ...

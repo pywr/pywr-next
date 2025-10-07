@@ -21,6 +21,8 @@ pub enum SchemaError {
     // Use this error when a node is not found in the schema (i.e. while parsing the schema).
     #[error("Node with name {name} not found in the schema.")]
     NodeNotFound { name: String },
+    #[error("Virtual node with name {name} not found in the schema.")]
+    VirtualNodeNotFound { name: String },
     // Use this error when a node is not found in a pywr-core network (i.e. during building the network).
     #[error("Node with name `{name}` and sub-name `{}` not found in the network.", .sub_name.as_deref().unwrap_or("None"))]
     CoreNodeNotFound { name: String, sub_name: Option<String> },
@@ -68,7 +70,7 @@ pub enum SchemaError {
     HDF5Error(String),
     #[error("Missing metric set: {0}")]
     MissingMetricSet(String),
-    #[error("mismatch in the length of data provided. expected: {expected}, found: {found}")]
+    #[error("Mismatch in the length of data provided. expected: {expected}, found: {found}")]
     DataLengthMismatch { expected: usize, found: usize },
     #[error("Failed to estimate epsilon for use in the radial basis function.")]
     RbfEpsilonEstimation,
@@ -122,6 +124,15 @@ pub enum SchemaError {
     NodeConnectionSlotRequired { msg: String },
     #[error("Checksum error: {0}")]
     ChecksumError(#[from] ChecksumError),
+    #[error(
+        "Number of values ({values}) for parameter '{name}' does not match the size ({scenarios}) of the specified scenario group '{group}'."
+    )]
+    ScenarioValuesLengthMismatch {
+        values: usize,
+        name: String,
+        scenarios: usize,
+        group: String,
+    },
 }
 
 #[cfg(all(feature = "core", feature = "pyo3"))]
@@ -138,6 +149,7 @@ impl TryFrom<SchemaError> for PyErr {
 
 #[derive(Error, Debug, PartialEq, Eq, Clone)]
 #[cfg_attr(feature = "pyo3", pyclass)]
+#[allow(clippy::large_enum_variant)]
 pub enum ComponentConversionError {
     #[error("Failed to convert `{attr}` on node `{name}`: {error}")]
     Node {
@@ -149,6 +161,15 @@ pub enum ComponentConversionError {
     Parameter {
         attr: String,
         name: String,
+        error: ConversionError,
+    },
+    #[error("Failed to convert scenario: {error}")]
+    Scenarios { error: ConversionError },
+    #[error("Failed to convert table: {error}")]
+    Table {
+        name: String,
+        url: PathBuf,
+        json: Option<String>,
         error: ConversionError,
     },
 }
@@ -188,4 +209,8 @@ pub enum ConversionError {
     NonConstantValue {},
     #[error("{found:?} value(s) found, {expected:?} were expected")]
     IncorrectNumberOfValues { expected: usize, found: usize },
+    #[error("Scenario slice is invalid: length is {length}, expected 1 or 2.")]
+    InvalidScenarioSlice { length: usize },
+    #[error("Table conversion is not currently supported: {name}")]
+    TableConversionNotSupported { name: String },
 }

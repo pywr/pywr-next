@@ -78,7 +78,7 @@ impl MemoryOutput {
 
 #[cfg(test)]
 mod tests {
-    use crate::PywrModel;
+    use crate::ModelSchema;
     #[cfg(feature = "core")]
     use float_cmp::assert_approx_eq;
     #[cfg(feature = "core")]
@@ -95,7 +95,7 @@ mod tests {
     #[test]
     fn test_schema() {
         let data = memory1_str();
-        let schema = PywrModel::from_str(&data).unwrap();
+        let schema = ModelSchema::from_str(&data).unwrap();
 
         assert_eq!(schema.network.nodes.len(), 3);
         assert_eq!(schema.network.edges.len(), 2);
@@ -106,7 +106,7 @@ mod tests {
     #[cfg(feature = "core")]
     fn test_run() {
         let data = memory1_str();
-        let schema = PywrModel::from_str(&data).unwrap();
+        let schema = ModelSchema::from_str(&data).unwrap();
 
         let temp_dir = TempDir::new().unwrap();
 
@@ -115,7 +115,7 @@ mod tests {
         let result = model.run::<ClpSolver>(&ClpSolverSettings::default()).unwrap();
 
         let result = result
-            .network_result()
+            .network_result
             .get("outputs")
             .expect("`outputs` not found")
             .aggregated_value()

@@ -2,7 +2,7 @@ import numpy as np
 import pandas
 import polars as pl
 from polars.testing import assert_frame_equal
-from pywr import Schema, ModelResult
+from pywr import ModelSchema, ModelResult, MultiNetworkModelSchema, ModelTimings
 from pathlib import Path
 import h5py
 import pytest
@@ -25,12 +25,16 @@ def test_simple_timeseries(model_dir: Path, tmpdir: Path):
 
     output_fn = tmpdir / "outputs.h5"
 
-    schema = Schema.from_path(filename)
+    schema = ModelSchema.from_path(filename)
     model = schema.build(data_path=model_dir / "simple-timeseries", output_path=tmpdir)
     result = model.run("clp")
 
     assert isinstance(result, ModelResult)
     assert output_fn.exists()
+
+    assert isinstance(result.timings, ModelTimings)
+    assert result.timings.total_duration > 0.0
+    assert result.timings.speed > 0.0
 
     expected_data = pandas.read_csv(
         model_dir / "simple-timeseries" / "expected.csv", index_col=0, header=[0, 1]
@@ -75,7 +79,7 @@ def test_model(model_dir: Path, tmpdir: Path, model_name: str):
     filename = model_dir / model_name / "model.json"
     output_fn = tmpdir / "outputs.h5"
 
-    schema = Schema.from_path(filename)
+    schema = ModelSchema.from_path(filename)
     model = schema.build(data_path=model_dir / model_name, output_path=tmpdir)
     model.run("clp")
 
@@ -93,3 +97,18 @@ def test_model(model_dir: Path, tmpdir: Path, model_name: str):
         for (node, attr), df in expected_data.items():
             simulated = np.squeeze(fh[f"{node}/{attr}"])
             np.testing.assert_allclose(simulated, df)
+
+
+@pytest.mark.parametrize(
+    "model_name",
+    [
+        "multi1",
+    ],
+)
+def test_multi_model(model_dir: Path, model_name: str):
+    """Test the multi-network model"""
+    filename = model_dir / model_name / "model.json"
+
+    schema = MultiNetworkModelSchema.from_path(filename)
+    model = schema.build(data_path=model_dir / model_name, output_path=None)
+    model.run("clp")

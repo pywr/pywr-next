@@ -6,11 +6,26 @@ use crate::network::{
 };
 use crate::recorders::RecorderInternalState;
 use crate::scenario::ScenarioIndex;
+#[cfg(all(feature = "cbc", feature = "pyo3"))]
+use crate::solvers::{CbcSolver, build_cbc_settings_py};
+#[cfg(all(feature = "ipm-ocl", feature = "pyo3"))]
+use crate::solvers::{ClIpmF32Solver, ClIpmF64Solver, ClIpmSolverSettings};
+#[cfg(all(feature = "clp", feature = "pyo3"))]
+use crate::solvers::{ClpSolver, build_clp_settings_py};
+#[cfg(all(feature = "highs", feature = "pyo3"))]
+use crate::solvers::{HighsSolver, build_highs_settings_py};
 use crate::solvers::{MultiStateSolver, Solver, SolverSettings};
+#[cfg(all(feature = "ipm-simd", feature = "pyo3"))]
+use crate::solvers::{SimdIpmF64Solver, build_ipm_simd_settings_py};
 use crate::state::StateError;
 use crate::timestep::Timestep;
 #[cfg(feature = "pyo3")]
-use pyo3::{PyResult, exceptions::PyKeyError, pyclass, pymethods};
+use pyo3::{
+    Bound, PyErr, PyResult, Python,
+    exceptions::{PyKeyError, PyRuntimeError},
+    pyclass, pymethods,
+    types::PyDict,
+};
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::fmt;
@@ -143,6 +158,78 @@ pub enum MultiNetworkModelRunError {
     FinaliseError(#[from] MultiNetworkModelFinaliseError),
 }
 
+#[cfg(feature = "pyo3")]
+impl From<MultiNetworkModelRunError> for PyErr {
+    fn from(err: MultiNetworkModelRunError) -> PyErr {
+        PyRuntimeError::new_err(err.to_string())
+    }
+}
+
+/// Internal struct for tracking model timings.
+#[cfg_attr(feature = "pyo3", pyclass)]
+#[derive(Clone)]
+pub struct MultiNetworkModelTimings {
+    run_duration: RunDuration,
+    network_timings: HashMap<String, NetworkTimings>,
+}
+
+impl MultiNetworkModelTimings {
+    fn new_with_component_timings(entries: &[MultiNetworkEntry]) -> Self {
+        let network_timings = entries
+            .iter()
+            .map(|e| (e.name.clone(), NetworkTimings::new_with_component_timings(&e.network)))
+            .collect();
+
+        Self {
+            run_duration: RunDuration::start(),
+            network_timings,
+        }
+    }
+
+    fn finish(&mut self) {
+        self.run_duration = self.run_duration.finish();
+    }
+
+    /// Print summary statistics of the model run.
+    fn print_summary_statistics(&self, entries: &[MultiNetworkEntry]) {
+        info!("Run timing statistics:");
+        let total_duration = self.run_duration.total_duration().as_secs_f64();
+        info!("{: <24} | {: <10}", "Metric", "Value");
+        self.run_duration.print_table();
+        for entry in entries {
+            let timing = self
+                .network_timings
+                .get(&entry.name)
+                .expect("Network timings not found for network.");
+            info!("Network: {}", entry.name);
+            timing.print_table(total_duration, &entry.network);
+        }
+    }
+}
+
+#[cfg(feature = "pyo3")]
+#[pymethods]
+impl MultiNetworkModelTimings {
+    /// Total duration of the model run in seconds.
+    #[getter]
+    fn total_duration(&self) -> f64 {
+        self.run_duration.total_duration().as_secs_f64()
+    }
+
+    #[getter]
+    fn speed(&self) -> f64 {
+        self.run_duration.speed()
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "<MultiNetworkModelTimings completed in {:.2} seconds with speed {:.2} time-steps/second>",
+            self.total_duration(),
+            self.speed()
+        )
+    }
+}
+
 #[derive(Debug, Error)]
 pub enum MultiNetworkModelError {
     #[error("Network name `{0}` already exists")]
@@ -155,18 +242,18 @@ pub enum MultiNetworkModelError {
 #[cfg_attr(feature = "pyo3", pyclass)]
 #[derive(Clone)]
 pub struct MultiNetworkModelResult {
-    network_results: HashMap<String, NetworkResult>,
-}
-
-impl MultiNetworkModelResult {
-    pub fn network_results(&self, name: &str) -> Option<&NetworkResult> {
-        self.network_results.get(name)
-    }
+    pub timings: MultiNetworkModelTimings,
+    pub network_results: HashMap<String, NetworkResult>,
 }
 
 #[cfg(feature = "pyo3")]
 #[pymethods]
 impl MultiNetworkModelResult {
+    #[getter]
+    #[pyo3(name = "timings")]
+    fn timings_py(&self) -> MultiNetworkModelTimings {
+        self.timings.clone()
+    }
     /// Get a reference to the results map.
     #[pyo3(name = "network_results")]
     pub fn network_results_py(&self, name: &str) -> PyResult<NetworkResult> {
@@ -175,9 +262,19 @@ impl MultiNetworkModelResult {
             .ok_or_else(|| PyKeyError::new_err(format!("Network result `{}` not found", name)))
             .cloned()
     }
+
+    fn __rep__(&self) -> String {
+        format!(
+            "<MultiNetworkModelResult with {} network results; completed in {:.2} seconds with speed {:.2} time-steps/second>",
+            self.network_results.len(),
+            self.timings.total_duration(),
+            self.timings.speed()
+        )
+    }
 }
 
 /// A MultiNetwork is a collection of models that can be run together.
+#[cfg_attr(feature = "pyo3", pyclass)]
 pub struct MultiNetworkModel {
     domain: ModelDomain,
     networks: Vec<MultiNetworkEntry>,
@@ -386,7 +483,7 @@ impl MultiNetworkModel {
     pub fn step<S>(
         &self,
         state: &mut MultiNetworkModelState<Vec<Box<S>>>,
-        timings: &mut [NetworkTimings],
+        timings: &mut MultiNetworkModelTimings,
     ) -> Result<(), MultiNetworkModelStepError>
     where
         S: Solver,
@@ -400,7 +497,12 @@ impl MultiNetworkModel {
 
         let scenario_indices = self.domain.scenarios.indices();
 
-        for (idx, (entry, timing)) in self.networks.iter().zip(timings.iter_mut()).enumerate() {
+        for (idx, entry) in self.networks.iter().enumerate() {
+            let timing = timings
+                .network_timings
+                .get_mut(&entry.name)
+                .expect("Network timings not found for network.");
+
             // Perform inter-model state updates
             self.compute_inter_network_transfers(idx, timestep, scenario_indices, &mut state.states)?;
 
@@ -440,7 +542,7 @@ impl MultiNetworkModel {
     pub fn step_multi_scenario<S>(
         &self,
         state: &mut MultiNetworkModelState<Box<S>>,
-        timings: &mut [NetworkTimings],
+        timings: &mut MultiNetworkModelTimings,
     ) -> Result<(), MultiNetworkModelStepError>
     where
         S: MultiStateSolver,
@@ -454,7 +556,12 @@ impl MultiNetworkModel {
 
         let scenario_indices = self.domain.scenarios.indices();
 
-        for (idx, (entry, timing)) in self.networks.iter().zip(timings.iter_mut()).enumerate() {
+        for (idx, entry) in self.networks.iter().enumerate() {
+            let timing = timings
+                .network_timings
+                .get_mut(&entry.name)
+                .expect("Network timings not found for network.");
+
             // Perform inter-model state updates
             self.compute_inter_network_transfers(idx, timestep, scenario_indices, &mut state.states)?;
 
@@ -494,11 +601,13 @@ impl MultiNetworkModel {
     pub fn finalise<S>(
         &self,
         state: MultiNetworkModelState<Vec<Box<S>>>,
-    ) -> Result<HashMap<String, NetworkResult>, MultiNetworkModelFinaliseError>
+        mut timings: MultiNetworkModelTimings,
+    ) -> Result<MultiNetworkModelResult, MultiNetworkModelFinaliseError>
     where
         S: Solver,
     {
-        self.networks
+        let network_results = self
+            .networks
             .iter()
             .zip(state.states)
             .zip(state.recorder_states)
@@ -519,17 +628,27 @@ impl MultiNetworkModel {
 
                 Ok((entry.name.clone(), result))
             })
-            .collect::<Result<HashMap<_, _>, _>>()
+            .collect::<Result<HashMap<_, _>, _>>()?;
+
+        timings.finish();
+        timings.print_summary_statistics(&self.networks);
+
+        Ok(MultiNetworkModelResult {
+            network_results,
+            timings,
+        })
     }
 
     pub fn finalise_multi_scenario<S>(
         &self,
         state: MultiNetworkModelState<Box<S>>,
-    ) -> Result<HashMap<String, NetworkResult>, MultiNetworkModelFinaliseError>
+        mut timings: MultiNetworkModelTimings,
+    ) -> Result<MultiNetworkModelResult, MultiNetworkModelFinaliseError>
     where
         S: MultiStateSolver,
     {
-        self.networks
+        let network_results = self
+            .networks
             .iter()
             .zip(state.states)
             .zip(state.recorder_states)
@@ -550,7 +669,15 @@ impl MultiNetworkModel {
 
                 Ok((entry.name.clone(), result))
             })
-            .collect::<Result<HashMap<_, _>, _>>()
+            .collect::<Result<HashMap<_, _>, _>>()?;
+
+        timings.finish();
+        timings.print_summary_statistics(&self.networks);
+
+        Ok(MultiNetworkModelResult {
+            network_results,
+            timings,
+        })
     }
 
     /// Run the model through the given time-steps.
@@ -562,12 +689,13 @@ impl MultiNetworkModel {
         <S as Solver>::Settings: SolverSettings,
     {
         let mut state = self.setup::<S>(settings)?;
+        let mut timings = MultiNetworkModelTimings::new_with_component_timings(&self.networks);
 
-        self.run_with_state::<S>(&mut state, settings)?;
+        self.run_with_state::<S>(&mut state, settings, &mut timings)?;
 
-        let network_results = self.finalise(state)?;
+        let result = self.finalise(state, timings)?;
 
-        Ok(MultiNetworkModelResult { network_results })
+        Ok(result)
     }
 
     /// Run the model with the provided states and solvers.
@@ -575,35 +703,25 @@ impl MultiNetworkModel {
         &self,
         state: &mut MultiNetworkModelState<Vec<Box<S>>>,
         _settings: &S::Settings,
+        timings: &mut MultiNetworkModelTimings,
     ) -> Result<(), MultiNetworkModelRunError>
     where
         S: Solver,
         <S as Solver>::Settings: SolverSettings,
     {
-        let run_duration = RunDuration::start();
-        // Create a timer for each network
-        let mut timings: Vec<_> = self
-            .networks
-            .iter()
-            .map(|n| NetworkTimings::new_with_component_timings(&n.network))
-            .collect();
-        let mut count = 0;
-
         // TODO: Setup thread pool if running in parallel
 
         loop {
-            match self.step::<S>(state, &mut timings) {
+            match self.step::<S>(state, timings) {
                 Ok(_) => {}
                 Err(MultiNetworkModelStepError::EndOfTimesteps) => break,
                 Err(e) => return Err(MultiNetworkModelRunError::StepError(Box::new(e))),
             }
 
-            count += self.domain.scenarios.indices().len();
+            timings
+                .run_duration
+                .complete_scenarios(self.domain.scenarios.indices().len());
         }
-
-        // End the global timer and print the run statistics
-        let run_duration = run_duration.finish(count);
-        self.print_summary_statistics(&run_duration, &timings);
 
         Ok(())
     }
@@ -620,12 +738,13 @@ impl MultiNetworkModel {
         <S as MultiStateSolver>::Settings: SolverSettings,
     {
         let mut state = self.setup_multi_scenario::<S>(settings)?;
+        let mut timings = MultiNetworkModelTimings::new_with_component_timings(&self.networks);
 
-        self.run_multi_scenario_with_state::<S>(&mut state, settings)?;
+        self.run_multi_scenario_with_state::<S>(&mut state, settings, &mut timings)?;
 
-        let network_results = self.finalise_multi_scenario(state)?;
+        let result = self.finalise_multi_scenario(state, timings)?;
 
-        Ok(MultiNetworkModelResult { network_results })
+        Ok(result)
     }
 
     /// Run the model with the provided states and solvers.
@@ -633,49 +752,112 @@ impl MultiNetworkModel {
         &self,
         state: &mut MultiNetworkModelState<Box<S>>,
         _settings: &S::Settings,
+        timings: &mut MultiNetworkModelTimings,
     ) -> Result<(), MultiNetworkModelRunError>
     where
         S: MultiStateSolver,
         <S as MultiStateSolver>::Settings: SolverSettings,
     {
-        let run_duration = RunDuration::start();
-        // Create a timer for each network
-        let mut timings: Vec<_> = self
-            .networks
-            .iter()
-            .map(|n| NetworkTimings::new_with_component_timings(&n.network))
-            .collect();
-        let mut count = 0;
-
         // TODO: Setup thread pool if running in parallel
 
         loop {
-            match self.step_multi_scenario::<S>(state, &mut timings) {
+            match self.step_multi_scenario::<S>(state, timings) {
                 Ok(_) => {}
                 Err(MultiNetworkModelStepError::EndOfTimesteps) => break,
                 Err(e) => return Err(MultiNetworkModelRunError::StepError(Box::new(e))),
             }
 
-            count += self.domain.scenarios.indices().len();
+            timings
+                .run_duration
+                .complete_scenarios(self.domain.scenarios.indices().len());
         }
-
-        // End the global timer and print the run statistics
-        let run_duration = run_duration.finish(count);
-        self.print_summary_statistics(&run_duration, &timings);
 
         Ok(())
     }
 
-    /// Print summary statistics of the model run.
-    fn print_summary_statistics(&self, run_duration: &RunDuration, timings: &[NetworkTimings]) {
-        info!("Run timing statistics:");
-        let total_duration = run_duration.total_duration().as_secs_f64();
-        info!("{: <24} | {: <10}", "Metric", "Value");
-        run_duration.print_table();
+    /// Run a model using the specified solver unlocking the GIL
+    #[cfg(any(feature = "clp", feature = "highs"))]
+    #[cfg(feature = "pyo3")]
+    fn run_allowing_threads_py<S>(
+        &self,
+        py: Python<'_>,
+        settings: &S::Settings,
+    ) -> Result<MultiNetworkModelResult, PyErr>
+    where
+        S: Solver,
+        <S as Solver>::Settings: SolverSettings + Sync,
+    {
+        let result = py.allow_threads(|| self.run::<S>(settings))?;
+        Ok(result)
+    }
 
-        for (entry, timing) in self.networks.iter().zip(timings.iter()) {
-            info!("Network: {}", entry.name);
-            timing.print_table(total_duration, &entry.network);
+    /// Run a model using the specified multi solver unlocking the GIL
+    #[cfg(any(feature = "ipm-simd", feature = "ipm-ocl"))]
+    #[cfg(feature = "pyo3")]
+    fn run_multi_allowing_threads_py<S>(
+        &self,
+        py: Python<'_>,
+        settings: &S::Settings,
+    ) -> Result<MultiNetworkModelResult, PyErr>
+    where
+        S: MultiStateSolver,
+        <S as MultiStateSolver>::Settings: SolverSettings + Sync,
+    {
+        let result = py.allow_threads(|| self.run_multi_scenario::<S>(settings))?;
+        Ok(result)
+    }
+}
+
+/// Run a model using the specified multi solver unlocking the GIL
+#[cfg(feature = "pyo3")]
+#[pymethods]
+impl MultiNetworkModel {
+    #[pyo3(name = "run", signature = (solver_name, solver_kwargs=None))]
+    fn run_py(
+        &self,
+        #[cfg_attr(
+            not(any(feature = "clp", feature = "highs", feature = "ipm-simd", feature = "ipm-ocl")),
+            allow(unused_variables)
+        )]
+        py: Python<'_>,
+        #[cfg_attr(
+            not(any(feature = "clp", feature = "highs", feature = "ipm-simd", feature = "ipm-ocl")),
+            allow(unused_variables)
+        )]
+        solver_name: &str,
+        #[cfg_attr(
+            not(any(feature = "clp", feature = "highs", feature = "ipm-simd", feature = "ipm-ocl")),
+            allow(unused_variables)
+        )]
+        solver_kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<MultiNetworkModelResult> {
+        match solver_name {
+            #[cfg(feature = "clp")]
+            "clp" => {
+                let settings = build_clp_settings_py(solver_kwargs)?;
+                self.run_allowing_threads_py::<ClpSolver>(py, &settings)
+            }
+            #[cfg(feature = "cbc")]
+            "cbc" => {
+                let settings = build_cbc_settings_py(solver_kwargs)?;
+                self.run_allowing_threads_py::<CbcSolver>(py, &settings)
+            }
+            #[cfg(feature = "highs")]
+            "highs" => {
+                let settings = build_highs_settings_py(solver_kwargs)?;
+                self.run_allowing_threads_py::<HighsSolver>(py, &settings)
+            }
+            #[cfg(feature = "ipm-simd")]
+            "ipm-simd" => {
+                let settings = build_ipm_simd_settings_py(solver_kwargs)?;
+                self.run_multi_allowing_threads_py::<SimdIpmF64Solver>(py, &settings)
+            }
+            #[cfg(feature = "ipm-ocl")]
+            "clipm-f32" => self.run_multi_allowing_threads_py::<ClIpmF32Solver>(py, &ClIpmSolverSettings::default()),
+
+            #[cfg(feature = "ipm-ocl")]
+            "clipm-f64" => self.run_multi_allowing_threads_py::<ClIpmF64Solver>(py, &ClIpmSolverSettings::default()),
+            _ => Err(PyRuntimeError::new_err(format!("Unknown solver: {solver_name}",))),
         }
     }
 }
@@ -748,9 +930,9 @@ fn compute_inter_network_transfers(
 
 #[cfg(test)]
 mod tests {
-    use super::MultiNetworkModel;
+    use super::{MultiNetworkModel, MultiNetworkModelTimings};
     use crate::models::ModelDomain;
-    use crate::network::{Network, NetworkTimings};
+    use crate::network::Network;
     use crate::scenario::{ScenarioDomainBuilder, ScenarioGroupBuilder};
     use crate::solvers::ClpSolver;
     use crate::test_utils::{default_timestepper, simple_network};
@@ -786,11 +968,7 @@ mod tests {
             .setup::<ClpSolver>(&Default::default())
             .expect("Failed to setup multi1-model.");
 
-        let mut timings: Vec<_> = multi_model
-            .networks
-            .iter()
-            .map(|n| NetworkTimings::new_with_component_timings(&n.network))
-            .collect();
+        let mut timings = MultiNetworkModelTimings::new_with_component_timings(&multi_model.networks);
 
         multi_model
             .step(&mut state, &mut timings)

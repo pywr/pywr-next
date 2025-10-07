@@ -4,10 +4,18 @@ updates:
     directory: "/" # Location of package manifests
     schedule:
       interval: "weekly"
+    groups:
+      minor-patch:
+        update-types:
+          - "patch"
   - package-ecosystem: "uv"
     directory: "/"
     schedule:
       interval: "weekly"
+    groups:
+      minor-patch:
+        update-types:
+          - "patch"
   - package-ecosystem: "github-actions"
     # Workflow files stored in the
     # default location of `.github/workflows`

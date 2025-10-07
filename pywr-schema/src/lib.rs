@@ -22,13 +22,15 @@ mod v1;
 mod variable_config;
 mod visit;
 
+pub use digest::{Checksum, ChecksumError};
 pub use error::{ComponentConversionError, ConversionError, SchemaError};
-pub use model::{PywrModel, PywrModelReadError, PywrMultiNetworkModel};
+pub use model::{ModelSchema, MultiNetworkModelSchema, PywrModelReadError};
 #[cfg(feature = "core")]
 pub use model::{PywrModelBuildError, PywrMultiNetworkModelBuildError};
 #[cfg(feature = "core")]
 pub use network::{LoadArgs, PywrNetworkBuildError};
 pub use network::{PywrNetwork, PywrNetworkReadError, PywrNetworkRef};
+pub use py_utils::{PythonSource, PythonSourceType, PythonSourceTypeIter};
 pub use v1::{ConversionData, TryFromV1, TryIntoV2};
 pub use variable_config::VariableConfigs;
 pub use visit::{VisitMetrics, VisitPaths};

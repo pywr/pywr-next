@@ -9,6 +9,7 @@ use crate::parameters::{
 };
 use crate::timestep::Timestep;
 use crate::virtual_storage::VirtualStorageIndex;
+use num::Zero;
 #[cfg(feature = "pyo3")]
 use pyo3::{
     Bound, FromPyObject, PyAny, PyResult,
@@ -135,7 +136,10 @@ impl StorageState {
     }
 
     fn proportional_volume(&self, max_volume: f64) -> f64 {
-        // TODO handle divide by zero (is it full or empty?)
+        if max_volume.is_zero() {
+            // If max volume is zero then we will consider the storage to befull. This matches V1 behaviour.
+            return 1.0;
+        }
         self.volume / max_volume
     }
 
@@ -397,6 +401,7 @@ impl ParameterValuesCollection {
     }
 }
 
+#[derive(Default)]
 pub struct ParameterValuesRef<'a> {
     values: &'a [f64],
     indices: &'a [u64],
@@ -448,6 +453,7 @@ impl SimpleParameterValues<'_> {
     }
 }
 
+#[derive(Default)]
 pub struct ConstParameterValues<'a> {
     constant: ParameterValuesRef<'a>,
 }

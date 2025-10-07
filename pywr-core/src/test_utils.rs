@@ -38,6 +38,7 @@ use float_cmp::{F64Margin, approx_eq};
 use ndarray::{Array, Array2};
 use rand::Rng;
 use rand_distr::{Distribution, Normal};
+use std::num::NonZeroU64;
 use std::path::PathBuf;
 
 pub fn default_timestepper() -> Timestepper {
@@ -49,7 +50,7 @@ pub fn default_timestepper() -> Timestepper {
         .unwrap()
         .and_hms_opt(0, 0, 0)
         .unwrap();
-    let duration = TimestepDuration::Days(1);
+    let duration = TimestepDuration::Days(NonZeroU64::new(1).unwrap());
     Timestepper::new(start, end, duration)
 }
 
@@ -277,11 +278,10 @@ impl VerifyExpected for ExpectedOutputsLong {
         let expected_line_count = expected_rdr.records().count();
         let actual_line_count = actual_rdr.records().count();
 
-        assert!(
-            expected_line_count == actual_line_count,
+        assert_eq!(
+            expected_line_count, actual_line_count,
             "Row count mismatch (expected rows: {}, actual rows: {})",
-            expected_line_count,
-            actual_line_count
+            expected_line_count, actual_line_count
         );
 
         // Reset the readers to the beginning for actual comparison
@@ -637,7 +637,7 @@ pub fn make_random_model<R: Rng>(
         .unwrap()
         .and_hms_opt(0, 0, 0)
         .unwrap();
-    let duration = TimestepDuration::Days(1);
+    let duration = TimestepDuration::Days(NonZeroU64::new(1).unwrap());
     let timestepper = Timestepper::new(start, end, duration);
 
     let mut scenario_builder = ScenarioDomainBuilder::default();

@@ -9,21 +9,22 @@ use crate::network::{LoadArgs, PywrNetworkBuildError, PywrNetworkReadError};
 #[cfg(feature = "core")]
 use crate::timeseries::LoadedTimeseriesCollection;
 use crate::visit::{VisitMetrics, VisitPaths};
-use crate::{PywrNetwork, PywrNetworkRef};
+use crate::{ConversionError, PywrNetwork, PywrNetworkRef};
 #[cfg(feature = "core")]
 use chrono::NaiveTime;
 use chrono::{NaiveDate, NaiveDateTime};
-#[cfg(feature = "pyo3")]
-use pyo3::PyErr;
 #[cfg(all(feature = "core", feature = "pyo3"))]
 use pyo3::Python;
+#[cfg(feature = "pyo3")]
+use pyo3::{Bound, PyErr, PyResult, exceptions::PyRuntimeError, pyclass, pymethods, types::PyType};
 #[cfg(feature = "core")]
 use pywr_core::{
-    models::{ModelDomain, MultiNetworkModelError},
+    models::{Model, ModelDomain, MultiNetworkModel, MultiNetworkModelError},
     timestep::TimestepDuration,
 };
 use pywr_schema_macros::skip_serializing_none;
 use schemars::JsonSchema;
+use std::num::NonZeroU64;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticStr};
@@ -59,20 +60,40 @@ impl From<pywr_v1_schema::model::Metadata> for Metadata {
     }
 }
 
+/// A timestep defines the time interval between each step in the model.
+///
+/// The timestep can be defined in three ways:
+/// - A fixed number of non-zero hours.
+/// - A fixed number of non-zero days.
+/// - A frequency string that can be parsed by polars (e.g. '7d').
 #[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, Display, EnumDiscriminants)]
-#[serde(untagged)]
+#[serde(tag = "type", deny_unknown_fields)]
 #[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
 #[strum_discriminants(name(TimestepType))]
 pub enum Timestep {
-    Days(i64),
-    Frequency(String),
+    /// A fixed number of hours.
+    Hours { hours: NonZeroU64 },
+    /// A fixed number of days.
+    Days { days: NonZeroU64 },
+    /// A frequency string that can be parsed by polars.
+    Frequency { freq: String },
 }
 
 impl From<pywr_v1_schema::model::Timestep> for Timestep {
     fn from(v1: pywr_v1_schema::model::Timestep) -> Self {
         match v1 {
-            pywr_v1_schema::model::Timestep::Days(d) => Self::Days(d as i64),
-            pywr_v1_schema::model::Timestep::Frequency(f) => Self::Frequency(f),
+            pywr_v1_schema::model::Timestep::Days(d) => Self::Days {
+                days: NonZeroU64::new(d).expect("days must be non-zero"),
+            },
+            pywr_v1_schema::model::Timestep::Frequency(freq) => Self::Frequency { freq },
+        }
+    }
+}
+
+impl Default for Timestep {
+    fn default() -> Self {
+        Self::Days {
+            days: NonZeroU64::new(1).expect("1 is non-zero"),
         }
     }
 }
@@ -107,7 +128,7 @@ impl Default for Timestepper {
         Self {
             start: Date::Date(NaiveDate::from_ymd_opt(2000, 1, 1).expect("Invalid date")),
             end: Date::Date(NaiveDate::from_ymd_opt(2000, 12, 31).expect("Invalid date")),
-            timestep: Timestep::Days(1),
+            timestep: Timestep::default(),
         }
     }
 }
@@ -126,8 +147,9 @@ impl From<pywr_v1_schema::model::Timestepper> for Timestepper {
 impl From<Timestepper> for pywr_core::timestep::Timestepper {
     fn from(ts: Timestepper) -> Self {
         let timestep = match ts.timestep {
-            Timestep::Days(d) => TimestepDuration::Days(d),
-            Timestep::Frequency(f) => TimestepDuration::Frequency(f),
+            Timestep::Hours { hours } => TimestepDuration::Hours(hours),
+            Timestep::Days { days } => TimestepDuration::Days(days),
+            Timestep::Frequency { freq } => TimestepDuration::Frequency(freq),
         };
 
         let start = match ts.start {
@@ -218,6 +240,53 @@ impl TryInto<pywr_core::scenario::ScenarioGroup> for ScenarioGroup {
     }
 }
 
+impl TryFrom<pywr_v1_schema::model::Scenario> for ScenarioGroup {
+    type Error = ConversionError;
+
+    fn try_from(v1: pywr_v1_schema::model::Scenario) -> Result<Self, Self::Error> {
+        let subset = v1
+            .slice
+            .map(|s| match s.len() {
+                1 => {
+                    let start = 0;
+                    let end = v1.size;
+                    Ok(ScenarioGroupSubset::Slice(ScenarioGroupSlice { start, end }))
+                }
+                2 => {
+                    let start = s[0].unwrap_or_default();
+                    let end = match s[1] {
+                        Some(v) => v,
+                        None => v1.size,
+                    };
+                    Ok(ScenarioGroupSubset::Slice(ScenarioGroupSlice { start, end }))
+                }
+                3 => {
+                    let start = s[0].unwrap_or_default();
+                    let end = match s[1] {
+                        Some(v) => v,
+                        None => v1.size,
+                    };
+                    match s[2] {
+                        Some(step) => {
+                            let indices = (start..end).step_by(step).collect();
+                            Ok(ScenarioGroupSubset::Indices(ScenarioGroupIndices { indices }))
+                        }
+                        None => Ok(ScenarioGroupSubset::Slice(ScenarioGroupSlice { start, end })),
+                    }
+                }
+                _ => Err(ConversionError::InvalidScenarioSlice { length: s.len() }),
+            })
+            .transpose()?;
+
+        Ok(Self {
+            name: v1.name,
+            size: v1.size,
+            labels: v1.ensemble_names,
+            subset,
+        })
+    }
+}
+
 #[derive(serde::Deserialize, serde::Serialize, Clone, JsonSchema, Display, EnumDiscriminants)]
 #[serde(untagged)]
 #[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
@@ -282,6 +351,18 @@ pub struct ScenarioDomain {
     pub combinations: Option<Vec<Vec<ScenarioLabelOrIndex>>>,
 }
 
+impl TryFrom<Vec<pywr_v1_schema::model::Scenario>> for ScenarioDomain {
+    type Error = ConversionError;
+
+    fn try_from(v1: Vec<pywr_v1_schema::model::Scenario>) -> Result<Self, Self::Error> {
+        let groups = v1.into_iter().map(|g| g.try_into()).collect::<Result<Vec<_>, _>>()?;
+        Ok(Self {
+            groups,
+            combinations: None,
+        })
+    }
+}
+
 #[cfg(feature = "core")]
 impl TryInto<pywr_core::scenario::ScenarioDomainBuilder> for ScenarioDomain {
     type Error = pywr_core::scenario::ScenarioError;
@@ -301,7 +382,7 @@ impl TryInto<pywr_core::scenario::ScenarioDomainBuilder> for ScenarioDomain {
     }
 }
 
-/// Error type for reading a [`PywrModel`] or [`PywrMultiNetworkModel`] network from a file or string.
+/// Error type for reading a [`ModelSchema`] or [`MultiNetworkModelSchema`] network from a file or string.
 #[derive(Error, Debug)]
 pub enum PywrModelReadError {
     #[error("IO error on path `{path}`: {error}")]
@@ -377,14 +458,15 @@ impl From<PywrModelBuildError> for PyErr {
 ///
 #[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Clone, JsonSchema)]
-pub struct PywrModel {
+#[cfg_attr(feature = "pyo3", pyclass)]
+pub struct ModelSchema {
     pub metadata: Metadata,
     pub timestepper: Timestepper,
     pub scenarios: Option<ScenarioDomain>,
     pub network: PywrNetwork,
 }
 
-impl FromStr for PywrModel {
+impl FromStr for ModelSchema {
     type Err = PywrModelReadError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -392,7 +474,7 @@ impl FromStr for PywrModel {
     }
 }
 
-impl VisitPaths for PywrModel {
+impl VisitPaths for ModelSchema {
     fn visit_paths<F: FnMut(&Path)>(&self, visitor: &mut F) {
         self.network.visit_paths(visitor);
     }
@@ -401,7 +483,7 @@ impl VisitPaths for PywrModel {
     }
 }
 
-impl VisitMetrics for PywrModel {
+impl VisitMetrics for ModelSchema {
     fn visit_metrics<F: FnMut(&Metric)>(&self, visitor: &mut F) {
         self.network.visit_metrics(visitor);
     }
@@ -411,7 +493,7 @@ impl VisitMetrics for PywrModel {
     }
 }
 
-impl PywrModel {
+impl ModelSchema {
     pub fn new(title: &str, start: &Date, end: &Date) -> Self {
         Self {
             metadata: Metadata {
@@ -422,7 +504,7 @@ impl PywrModel {
             timestepper: Timestepper {
                 start: *start,
                 end: *end,
-                timestep: Timestep::Days(1),
+                timestep: Timestep::default(),
             },
             scenarios: None,
             network: PywrNetwork::default(),
@@ -442,7 +524,7 @@ impl PywrModel {
         &self,
         data_path: Option<&Path>,
         output_path: Option<&Path>,
-    ) -> Result<pywr_core::models::Model, PywrModelBuildError> {
+    ) -> Result<Model, PywrModelBuildError> {
         let timestepper = self.timestepper.clone().into();
 
         let scenario_builder = match &self.scenarios {
@@ -459,7 +541,7 @@ impl PywrModel {
                 source: Box::new(source),
             })?;
 
-        let model = pywr_core::models::Model::new(domain, network);
+        let model = Model::new(domain, network);
 
         Ok(model)
     }
@@ -476,6 +558,14 @@ impl PywrModel {
 
         let metadata = v1.metadata.into();
         let timestepper = v1.timestepper.into();
+        let scenarios = match v1.scenarios.map(|s| s.try_into()) {
+            Some(Ok(scenarios)) => Some(scenarios),
+            Some(Err(err)) => {
+                errors.push(ComponentConversionError::Scenarios { error: err });
+                None
+            }
+            None => None,
+        };
 
         let (network, network_errors) = PywrNetwork::from_v1(v1.network);
         errors.extend(network_errors);
@@ -484,7 +574,7 @@ impl PywrModel {
             Self {
                 metadata,
                 timestepper,
-                scenarios: None,
+                scenarios,
                 network,
             },
             errors,
@@ -493,11 +583,52 @@ impl PywrModel {
 
     /// Convert a v1 JSON string to a v2 model.
     ///
-    /// See [`PywrModel::from_v1`] for more information.
+    /// See [`ModelSchema::from_v1`] for more information.
     pub fn from_v1_str(v1: &str) -> Result<(Self, Vec<ComponentConversionError>), pywr_v1_schema::PywrSchemaError> {
         let v1_model: pywr_v1_schema::PywrModel = serde_json::from_str(v1)?;
 
         Ok(Self::from_v1(v1_model))
+    }
+}
+
+#[cfg(feature = "pyo3")]
+#[pymethods]
+impl ModelSchema {
+    #[new]
+    fn new_py(title: &str, start: NaiveDateTime, end: NaiveDateTime) -> Self {
+        let start = Date::DateTime(start);
+        let end = Date::DateTime(end);
+
+        Self::new(title, &start, &end)
+    }
+
+    /// Create a new schema object from a file path.
+    #[classmethod]
+    #[pyo3(name = "from_path")]
+    fn from_path_py(_cls: &Bound<'_, PyType>, path: PathBuf) -> PyResult<Self> {
+        Ok(Self::from_path(path)?)
+    }
+
+    ///  Create a new schema object from a JSON string.
+    #[classmethod]
+    #[pyo3(name = "from_json_string")]
+    fn from_json_string_py(_cls: &Bound<'_, PyType>, data: &str) -> PyResult<Self> {
+        Ok(Self::from_str(data)?)
+    }
+
+    /// Serialize the schema to a JSON string.
+    #[pyo3(name = "to_json_string")]
+    fn to_json_string_py(&self) -> PyResult<String> {
+        let data = serde_json::to_string_pretty(&self).map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        Ok(data)
+    }
+
+    /// Build the schema in to a Pywr model.
+    #[cfg(feature = "core")]
+    #[pyo3(name="build", signature = (data_path=None, output_path=None))]
+    fn build_py(&mut self, data_path: Option<PathBuf>, output_path: Option<PathBuf>) -> PyResult<Model> {
+        let model = self.build_model(data_path.as_deref(), output_path.as_deref())?;
+        Ok(model)
     }
 }
 
@@ -550,6 +681,29 @@ pub enum PywrMultiNetworkModelBuildError {
     },
 }
 
+#[cfg(all(feature = "core", feature = "pyo3"))]
+impl From<PywrMultiNetworkModelBuildError> for PyErr {
+    fn from(err: PywrMultiNetworkModelBuildError) -> PyErr {
+        let py_err = PyRuntimeError::new_err(err.to_string());
+
+        // Check if the error has a cause that can be converted to a PyErr
+        let py_cause: Result<PyErr, ()> = match err {
+            PywrMultiNetworkModelBuildError::NetworkBuildError { source, .. } => (*source).try_into(),
+            _ => Err(()),
+        };
+
+        if let Ok(py_cause) = py_cause {
+            // If the cause is a PyErr, set it as the cause of the PyErr
+            return Python::with_gil(|py| {
+                py_err.set_cause(py, Some(py_cause));
+                py_err
+            });
+        }
+
+        py_err
+    }
+}
+
 /// A Pywr model containing multiple link networks.
 ///
 /// This schema is used to define a model containing multiple linked networks. Each network
@@ -580,7 +734,7 @@ pub enum PywrMultiNetworkModelBuildError {
 ///
 /// # When to use
 ///
-/// A [`PywrMultiNetworkModel`] should be used in cases where there is a strong separation between
+/// A [`MultiNetworkModelSchema`] should be used in cases where there is a strong separation between
 /// the networks being simulated. The allocation routine (linear program) of each network is solved
 /// independently each time-step. This means that the only way in which the networks can share
 /// information and data is between the linear program solves via the user defined transfers.
@@ -592,7 +746,7 @@ pub enum PywrMultiNetworkModelBuildError {
 ///     networks (linear programs) were combined into a single model, the allocation routine could
 ///     produce different results (i.e. penalty costs from one model influencing another).
 ///   2. Are very large and/or complex to control model run times. The run time of a
-///     [`PywrMultiNetworkModel`] is roughly the sum of the individual networks. Whereas the time
+///     [`MultiNetworkModelSchema`] is roughly the sum of the individual networks. Whereas the time
 ///     solve a large linear program combining all the networks could be significantly longer.
 ///
 /// # Example
@@ -613,14 +767,15 @@ pub enum PywrMultiNetworkModelBuildError {
 ///
 #[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Clone)]
-pub struct PywrMultiNetworkModel {
+#[cfg_attr(feature = "pyo3", pyclass)]
+pub struct MultiNetworkModelSchema {
     pub metadata: Metadata,
     pub timestepper: Timestepper,
     pub scenarios: Option<ScenarioDomain>,
     pub networks: Vec<PywrMultiNetworkEntry>,
 }
 
-impl FromStr for PywrMultiNetworkModel {
+impl FromStr for MultiNetworkModelSchema {
     type Err = PywrModelReadError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -628,7 +783,23 @@ impl FromStr for PywrMultiNetworkModel {
     }
 }
 
-impl PywrMultiNetworkModel {
+impl MultiNetworkModelSchema {
+    pub fn new(title: &str, start: &Date, end: &Date) -> Self {
+        Self {
+            metadata: Metadata {
+                title: title.to_string(),
+                description: None,
+                minimum_version: None,
+            },
+            timestepper: Timestepper {
+                start: *start,
+                end: *end,
+                timestep: Timestep::default(),
+            },
+            scenarios: None,
+            networks: Vec::new(),
+        }
+    }
     pub fn from_path<P: AsRef<Path>>(path: P) -> Result<Self, PywrModelReadError> {
         let data = std::fs::read_to_string(&path).map_err(|error| PywrModelReadError::IO {
             path: path.as_ref().to_path_buf(),
@@ -642,7 +813,7 @@ impl PywrMultiNetworkModel {
         &self,
         data_path: Option<&Path>,
         output_path: Option<&Path>,
-    ) -> Result<pywr_core::models::MultiNetworkModel, PywrMultiNetworkModelBuildError> {
+    ) -> Result<MultiNetworkModel, PywrMultiNetworkModelBuildError> {
         let timestepper = self.timestepper.clone().into();
 
         let scenario_builder = match &self.scenarios {
@@ -745,7 +916,7 @@ impl PywrMultiNetworkModel {
         }
 
         // Now construct the model from the loaded components
-        let mut model = pywr_core::models::MultiNetworkModel::new(domain);
+        let mut model = MultiNetworkModel::new(domain);
 
         for (name, network) in networks {
             model
@@ -761,9 +932,54 @@ impl PywrMultiNetworkModel {
     }
 }
 
+#[cfg(feature = "pyo3")]
+#[pymethods]
+impl MultiNetworkModelSchema {
+    #[new]
+    fn new_py(title: &str, start: NaiveDateTime, end: NaiveDateTime) -> Self {
+        let start = Date::DateTime(start);
+        let end = Date::DateTime(end);
+
+        Self::new(title, &start, &end)
+    }
+
+    /// Create a new schema object from a file path.
+    #[classmethod]
+    #[pyo3(name = "from_path")]
+    fn from_path_py(_cls: &Bound<'_, PyType>, path: PathBuf) -> PyResult<Self> {
+        Ok(Self::from_path(path)?)
+    }
+
+    ///  Create a new schema object from a JSON string.
+    #[classmethod]
+    #[pyo3(name = "from_json_string")]
+    fn from_json_string_py(_cls: &Bound<'_, PyType>, data: &str) -> PyResult<Self> {
+        Ok(Self::from_str(data)?)
+    }
+
+    /// Serialize the schema to a JSON string.
+    #[pyo3(name = "to_json_string")]
+    fn to_json_string_py(&self) -> PyResult<String> {
+        let data = serde_json::to_string_pretty(&self).map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        Ok(data)
+    }
+
+    /// Build the schema in to a Pywr model.
+    #[cfg(feature = "core")]
+    #[pyo3(name="build", signature = (data_path=None, output_path=None))]
+    fn build_py(
+        &mut self,
+        data_path: Option<PathBuf>,
+        output_path: Option<PathBuf>,
+    ) -> PyResult<pywr_core::models::MultiNetworkModel> {
+        let model = self.build_model(data_path.as_deref(), output_path.as_deref())?;
+        Ok(model)
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{PywrModel, ScenarioDomain};
+    use super::{ModelSchema, ScenarioDomain};
     use crate::model::Timestepper;
     use crate::visit::VisitPaths;
     use std::fs;
@@ -777,7 +993,7 @@ mod tests {
     #[test]
     fn test_simple1_schema() {
         let data = model_str();
-        let schema: PywrModel = serde_json::from_str(&data).unwrap();
+        let schema: ModelSchema = serde_json::from_str(&data).unwrap();
 
         assert_eq!(schema.network.nodes.len(), 3);
         assert_eq!(schema.network.edges.len(), 2);
@@ -789,7 +1005,10 @@ mod tests {
         {
             "start": "2015-01-01",
             "end": "2015-12-31",
-            "timestep": 1
+            "timestep": {
+              "type": "Days",
+              "days": 1
+            }
         }
         "#;
 
@@ -816,7 +1035,10 @@ mod tests {
         {
             "start": "2015-01-01T12:30:00",
             "end": "2015-01-01T14:30:00",
-            "timestep": 1
+            "timestep": {
+                "type": "Hours",
+                "hours": 1
+            }
         }
         "#;
 
@@ -855,7 +1077,7 @@ mod tests {
         let mut model_fn = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         model_fn.push("tests/timeseries.json");
 
-        let mut schema = PywrModel::from_path(model_fn.as_path()).unwrap();
+        let mut schema = ModelSchema::from_path(model_fn.as_path()).unwrap();
 
         let expected_paths = vec![PathBuf::from("inflow.csv"), PathBuf::from("timeseries-expected.csv")];
 
@@ -899,7 +1121,7 @@ mod tests {
 #[cfg(test)]
 #[cfg(feature = "core")]
 mod core_tests {
-    use super::{PywrModel, PywrMultiNetworkModel};
+    use super::{ModelSchema, MultiNetworkModelSchema};
     use crate::agg_funcs::AggFunc;
     use crate::metric::{Metric, ParameterReference};
     use crate::parameters::{AggregatedParameter, ConstantParameter, Parameter, ParameterMeta};
@@ -917,7 +1139,7 @@ mod core_tests {
     #[test]
     fn test_simple1_run() {
         let data = model_str();
-        let schema: PywrModel = serde_json::from_str(&data).unwrap();
+        let schema: ModelSchema = serde_json::from_str(&data).unwrap();
         let mut model = schema.build_model(None, None).unwrap();
 
         let network = model.network_mut();
@@ -946,7 +1168,7 @@ mod core_tests {
     #[test]
     fn test_cycle_error() {
         let data = model_str();
-        let mut schema: PywrModel = serde_json::from_str(&data).unwrap();
+        let mut schema: ModelSchema = serde_json::from_str(&data).unwrap();
 
         // Add additional parameters for the test
         if let Some(parameters) = &mut schema.network.parameters {
@@ -1004,7 +1226,7 @@ mod core_tests {
     #[test]
     fn test_ordering() {
         let data = model_str();
-        let mut schema: PywrModel = serde_json::from_str(&data).unwrap();
+        let mut schema: ModelSchema = serde_json::from_str(&data).unwrap();
 
         if let Some(parameters) = &mut schema.network.parameters {
             parameters.extend(vec![
@@ -1053,7 +1275,7 @@ mod core_tests {
         let mut model_fn = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         model_fn.push("tests/multi1/model.json");
 
-        let schema = PywrMultiNetworkModel::from_path(model_fn.as_path()).unwrap();
+        let schema = MultiNetworkModelSchema::from_path(model_fn.as_path()).unwrap();
         let mut model = schema.build_model(model_fn.parent(), None).unwrap();
 
         // Add some recorders for the expected outputs
@@ -1103,7 +1325,7 @@ mod core_tests {
         let mut model_fn = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         model_fn.push("tests/multi2/model.json");
 
-        let schema = PywrMultiNetworkModel::from_path(model_fn.as_path()).unwrap();
+        let schema = MultiNetworkModelSchema::from_path(model_fn.as_path()).unwrap();
         let mut model = schema.build_model(model_fn.parent(), None).unwrap();
 
         // Add some recorders for the expected outputs

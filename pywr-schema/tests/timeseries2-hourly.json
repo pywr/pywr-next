@@ -1,0 +1,148 @@
+{
+  "metadata": {
+    "title": "Timeseries with a single scenario"
+  },
+  "scenarios": {
+    "groups": [
+      {
+        "name": "scenario1",
+        "size": 10
+      }
+    ]
+  },
+  "timestepper": {
+    "start": "2021-01-01",
+    "end": "2021-01-02",
+    "timestep": {
+      "type": "Hours",
+      "hours": 3
+    }
+  },
+  "network": {
+    "nodes": [
+      {
+        "meta": {
+          "name": "input2"
+        },
+        "type": "Input",
+        "max_flow": {
+          "type": "Parameter",
+          "name": "factored_flow"
+        }
+      },
+      {
+        "meta": {
+          "name": "input1"
+        },
+        "type": "Input",
+        "max_flow": {
+          "type": "Timeseries",
+          "name": "inflow",
+          "columns": {
+            "type": "Scenario",
+            "name": "scenario1"
+          }
+        }
+      },
+      {
+        "meta": {
+          "name": "link1"
+        },
+        "type": "Link"
+      },
+      {
+        "meta": {
+          "name": "output1"
+        },
+        "type": "Output",
+        "cost": {
+          "type": "Literal",
+          "value": -10
+        },
+        "max_flow": {
+          "type": "Parameter",
+          "name": "demand"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "from_node": "input1",
+        "to_node": "link1"
+      },
+      {
+        "from_node": "input2",
+        "to_node": "link1"
+      },
+      {
+        "from_node": "link1",
+        "to_node": "output1"
+      }
+    ],
+    "parameters": [
+      {
+        "meta": {
+          "name": "demand"
+        },
+        "type": "Constant",
+        "value": {
+          "type": "Literal",
+          "value": 100.0
+        }
+      },
+      {
+        "meta": {
+          "name": "factored_flow"
+        },
+        "type": "Aggregated",
+        "agg_func": {
+          "type": "Product"
+        },
+        "metrics": [
+          {
+            "type": "Timeseries",
+            "name": "inflow",
+            "columns": {
+              "type": "Scenario",
+              "name": "scenario1"
+            }
+          },
+          {
+            "type": "Literal",
+            "value": 0.5
+          }
+        ]
+      }
+    ],
+    "timeseries": [
+      {
+        "meta": {
+          "name": "inflow"
+        },
+        "type": "Polars",
+        "time_col": "date",
+        "url": "inflow2.csv"
+      }
+    ],
+    "metric_sets": [
+      {
+        "name": "nodes",
+        "metrics": [
+          {
+            "type": "Node",
+            "name": "output1"
+          }
+        ]
+      }
+    ],
+    "outputs": [
+      {
+        "name": "nodes",
+        "type": "CSV",
+        "format": "Long",
+        "filename": "timeseries2-hourly-expected.csv",
+        "metric_set": "nodes"
+      }
+    ]
+  }
+}

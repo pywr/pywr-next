@@ -5,9 +5,12 @@ use crate::scenario::{ScenarioDomain, ScenarioDomainBuilder};
 use crate::timestep::{TimeDomain, Timestepper};
 pub use multi::{
     InterNetworkTransferError, MultiNetworkModel, MultiNetworkModelError, MultiNetworkModelFinaliseError,
-    MultiNetworkModelResult, MultiNetworkModelRunError, MultiNetworkModelSetupError, MultiNetworkTransferIndex,
+    MultiNetworkModelResult, MultiNetworkModelRunError, MultiNetworkModelSetupError, MultiNetworkModelTimings,
+    MultiNetworkTransferIndex,
 };
-pub use simple::{Model, ModelFinaliseError, ModelResult, ModelRunError, ModelSetupError, ModelState, ModelStepError};
+pub use simple::{
+    Model, ModelFinaliseError, ModelResult, ModelRunError, ModelSetupError, ModelState, ModelStepError, ModelTimings,
+};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
