@@ -282,7 +282,7 @@ impl PythonParameter {
 #[cfg(all(feature = "core", feature = "pyo3"))]
 mod tests {
     use crate::data_tables::LoadedTableCollection;
-    use crate::network::{LoadArgs, PywrNetwork};
+    use crate::network::{LoadArgs, NetworkSchema};
     use crate::parameters::python::PythonParameter;
     use crate::timeseries::LoadedTimeseriesCollection;
     use pywr_core::models::ModelDomain;
@@ -322,7 +322,7 @@ mod tests {
         // ... add it to an empty network
         // this should trigger loading the module and extracting the class
         let domain: ModelDomain = default_time_domain().into();
-        let schema = PywrNetwork::default();
+        let schema = NetworkSchema::default();
         let mut network = Network::default();
         let tables = LoadedTableCollection::from_schema(None, None).unwrap();
         let ts = LoadedTimeseriesCollection::default();
@@ -373,7 +373,7 @@ mod tests {
         // ... add it to an empty network
         // this should trigger loading the module and extracting the class
         let domain: ModelDomain = default_time_domain().into();
-        let schema = PywrNetwork::default();
+        let schema = NetworkSchema::default();
         let mut network = Network::default();
         let tables = LoadedTableCollection::from_schema(None, None).unwrap();
         let ts = LoadedTimeseriesCollection::default();
