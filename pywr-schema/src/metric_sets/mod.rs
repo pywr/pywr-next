@@ -1,9 +1,9 @@
 use crate::agg_funcs::AggFunc;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
+use crate::metric::Metric;
 #[cfg(feature = "core")]
-use crate::metric::VirtualNodeAttrReference;
-use crate::metric::{EdgeReference, Metric};
+use crate::metric::{EdgeReference, VirtualNodeAttrReference};
 #[cfg(feature = "core")]
 use crate::network::LoadArgs;
 #[cfg(feature = "core")]
