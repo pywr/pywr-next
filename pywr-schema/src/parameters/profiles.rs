@@ -663,8 +663,10 @@ mod tests {
         let values = ConstantFloatVec::Literal { values: vec![1.0; 366] };
         let param = DailyProfileParameter { meta, values };
         let domain: ModelDomain = default_time_domain().into();
-        let mut network = NetworkSchema::default();
-        network.parameters = Some(vec![Parameter::DailyProfile(param)]);
+        let network = NetworkSchema {
+            parameters: Some(vec![Parameter::DailyProfile(param)]),
+            ..Default::default()
+        };
 
         let result = network.build_network(&domain, None, None, &[]);
 
@@ -684,9 +686,10 @@ mod tests {
         let values = ConstantFloatVec::Literal { values };
         let param = DailyProfileParameter { meta, values };
         let domain: ModelDomain = default_time_domain().into();
-        let mut network = NetworkSchema::default();
-
-        network.parameters = Some(vec![Parameter::DailyProfile(param)]);
+        let network = NetworkSchema {
+            parameters: Some(vec![Parameter::DailyProfile(param)]),
+            ..Default::default()
+        };
 
         let result = network.build_network(&domain, None, None, &[]);
 
@@ -702,9 +705,10 @@ mod tests {
         let values = ConstantFloatVec::Literal { values: vec![1.0; 364] };
         let param = DailyProfileParameter { meta, values };
         let domain: ModelDomain = default_time_domain().into();
-        let mut network = NetworkSchema::default();
-
-        network.parameters = Some(vec![Parameter::DailyProfile(param)]);
+        let network = NetworkSchema {
+            parameters: Some(vec![Parameter::DailyProfile(param)]),
+            ..Default::default()
+        };
 
         let result = network.build_network(&domain, None, None, &[]);
 
