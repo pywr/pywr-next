@@ -64,7 +64,7 @@
         "format": "CSV",
         "lookup": {
           "type": "Row",
-          "rows": 1
+          "cols": 1
         },
         "url": "tbl-scalar-row.csv"
       },
@@ -74,7 +74,7 @@
         "format": "CSV",
         "lookup": {
           "type": "Row",
-          "rows": 2
+          "cols": 2
         },
         "url": "tbl-scalar-row-row.csv"
       },
@@ -84,7 +84,7 @@
         "format": "CSV",
         "lookup": {
           "type": "Col",
-          "cols": 1
+          "rows": 1
         },
         "url": "tbl-scalar-col.csv"
       },
@@ -105,7 +105,7 @@
         "format": "CSV",
         "lookup": {
           "type": "Row",
-          "rows": 1
+          "cols": 1
         },
         "url": "tbl-array-row.csv"
       },
@@ -115,7 +115,7 @@
         "format": "CSV",
         "lookup": {
           "type": "Row",
-          "rows": 2
+          "cols": 2
         },
         "url": "tbl-array-row-row.csv"
       },
@@ -125,7 +125,7 @@
         "format": "CSV",
         "lookup": {
           "type": "Col",
-          "cols": 1
+          "rows": 1
         },
         "url": "tbl-array-col.csv"
       }

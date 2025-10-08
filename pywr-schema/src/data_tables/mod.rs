@@ -77,8 +77,8 @@ impl DataTable {
 #[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
 #[strum_discriminants(name(CsvDataTableLookupType))]
 pub enum CsvDataTableLookup {
-    Row { rows: usize },
-    Col { cols: usize },
+    Row { cols: usize },
+    Col { rows: usize },
     Both { rows: usize, cols: usize },
 }
 
@@ -104,10 +104,10 @@ impl CsvDataTable {
 
         match &self.ty {
             DataTableValueType::Scalar => match self.lookup {
-                CsvDataTableLookup::Row { rows } => {
+                CsvDataTableLookup::Row { cols: rows } => {
                     Ok(LoadedTable::FloatScalar(LoadedScalarTable::from_csv_row(&fp, rows)?))
                 }
-                CsvDataTableLookup::Col { cols } => {
+                CsvDataTableLookup::Col { rows: cols } => {
                     Ok(LoadedTable::FloatScalar(LoadedScalarTable::from_csv_col(&fp, cols)?))
                 }
                 CsvDataTableLookup::Both { rows, cols } => Ok(LoadedTable::FloatScalar(
@@ -115,8 +115,12 @@ impl CsvDataTable {
                 )),
             },
             DataTableValueType::Array => match self.lookup {
-                CsvDataTableLookup::Row { rows } => Ok(LoadedTable::FloatVec(LoadedVecTable::from_csv_row(&fp, rows)?)),
-                CsvDataTableLookup::Col { cols } => Ok(LoadedTable::FloatVec(LoadedVecTable::from_csv_col(&fp, cols)?)),
+                CsvDataTableLookup::Row { cols: rows } => {
+                    Ok(LoadedTable::FloatVec(LoadedVecTable::from_csv_row(&fp, rows)?))
+                }
+                CsvDataTableLookup::Col { rows: cols } => {
+                    Ok(LoadedTable::FloatVec(LoadedVecTable::from_csv_col(&fp, cols)?))
+                }
                 CsvDataTableLookup::Both { .. } => Err(TableError::FormatNotSupported(
                     "CSV row & column array table is not supported. Use either row or column based format.".to_string(),
                 )),
@@ -405,7 +409,7 @@ mod tests {
                 "format": "CSV",
                 "lookup": {{
                     "type": "Row",
-                    "rows": 1
+                    "cols": 1
                 }},
                 "url": {my_data_fn}
             }}"#,
