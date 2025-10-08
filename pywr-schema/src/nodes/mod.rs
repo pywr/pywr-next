@@ -54,7 +54,7 @@ use crate::error::{ComponentConversionError, ConversionError};
 use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::network::LoadArgs;
-use crate::network::PywrNetwork;
+use crate::network::NetworkSchema;
 use crate::parameters::Parameter;
 use crate::v1::{ConversionData, TryFromV1, TryIntoV2};
 use crate::visit::{VisitMetrics, VisitPaths};
@@ -166,7 +166,7 @@ impl NodeBuilder {
     }
 
     /// Create the next default name without duplicating an existing name in the model.
-    pub fn next_default_name_for_model(mut self, network: &PywrNetwork) -> Self {
+    pub fn next_default_name_for_model(mut self, network: &NetworkSchema) -> Self {
         let mut num = 1;
         loop {
             let name = format!("{}-{}", self.ty, num);
