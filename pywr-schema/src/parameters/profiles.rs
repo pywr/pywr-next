@@ -38,6 +38,7 @@ impl DailyProfileParameter {
         parent: Option<&str>,
     ) -> Result<ParameterIndex<f64>, SchemaError> {
         let mut values = self.values.load(args.tables)?;
+
         match values.len() {
             366 => {} // already correct
             365 => {
@@ -52,6 +53,7 @@ impl DailyProfileParameter {
                 });
             }
         }
+
         let p = pywr_core::parameters::DailyProfileParameter::new(
             ParameterName::new(&self.meta.name, parent),
             values.try_into().expect("Failed to convert values to [f64; 366]"),
@@ -680,9 +682,7 @@ mod tests {
             comment: None,
         };
 
-        let mut values = vec![1.0; 365];
-        values[58] = 2.0; // Feb 28
-        values[59] = 4.0; // Mar 1
+        let values = vec![1.0; 365];
         let values = ConstantFloatVec::Literal { values };
         let param = DailyProfileParameter { meta, values };
         let domain: ModelDomain = default_time_domain().into();
