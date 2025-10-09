@@ -3,7 +3,7 @@ use crate::agg_funcs::AggFunc;
 use crate::error::SchemaError;
 use crate::metric::Metric;
 #[cfg(feature = "core")]
-use crate::metric::VirtualNodeAttrReference;
+use crate::metric::{EdgeReference, VirtualNodeAttrReference};
 #[cfg(feature = "core")]
 use crate::network::LoadArgs;
 #[cfg(feature = "core")]
@@ -47,6 +47,7 @@ impl From<MetricAggFrequency> for pywr_core::recorders::AggregationFrequency {
 /// If the metric set has a child aggregator then the aggregation will be performed over the
 /// aggregated values of the child aggregator.
 #[derive(Deserialize, Serialize, Clone, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct MetricAggregator {
     /// Optional aggregation frequency.
     pub freq: Option<MetricAggFrequency>,
@@ -71,9 +72,10 @@ impl MetricAggregator {
 
 /// Filters that allow multiple metrics to be added to a metric set.
 ///
-/// The filters allow the default metrics for all nodes and/or parameters in a model
-/// to be added to a metric set.
+/// The filters allow the default metrics for all nodes, virtual nodes, parameters and/or edges in
+/// a model to be added to a metric set.
 #[derive(Deserialize, Serialize, Clone, JsonSchema, Default)]
+#[serde(deny_unknown_fields)]
 pub struct MetricSetFilters {
     #[serde(default)]
     pub all_nodes: bool,
@@ -81,16 +83,14 @@ pub struct MetricSetFilters {
     pub all_virtual_nodes: bool,
     #[serde(default)]
     pub all_parameters: bool,
+    #[serde(default)]
+    pub all_edges: bool,
 }
 
 #[cfg(feature = "core")]
 impl MetricSetFilters {
-    fn create_metrics(&self, args: &LoadArgs) -> Option<Vec<Metric>> {
+    fn create_metrics(&self, args: &LoadArgs) -> Vec<Metric> {
         use crate::metric::{NodeAttrReference, ParameterReference};
-
-        if !self.all_nodes && !self.all_virtual_nodes && !self.all_parameters {
-            return None;
-        }
 
         let mut metrics = vec![];
 
@@ -127,7 +127,13 @@ impl MetricSetFilters {
             }
         }
 
-        Some(metrics)
+        if self.all_edges {
+            for edge in args.schema.edges.iter() {
+                metrics.push(Metric::Edge(EdgeReference { edge: edge.clone() }));
+            }
+        }
+
+        metrics
     }
 }
 
@@ -155,34 +161,35 @@ impl MetricSet {
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network, args: &LoadArgs) -> Result<(), SchemaError> {
         use pywr_core::recorders::OutputMetric;
 
-        let output_metrics = match self.metrics {
-            Some(ref metrics) => {
+        // Create metrics from filters and load them as output metrics
+        let metrics_from_filters = self
+            .filters
+            .create_metrics(args)
+            .iter()
+            .map(|m| m.load_as_output(network, args, None))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let output_metrics = match &self.metrics {
+            Some(metrics) => {
                 let mut output_metrics: Vec<OutputMetric> = metrics
                     .iter()
                     .map(|m| m.load_as_output(network, args, None))
                     .collect::<Result<_, _>>()?;
 
-                if let Some(additional_metrics) = self.filters.create_metrics(args) {
-                    for m in additional_metrics.iter() {
-                        let output_metric = m.load_as_output(network, args, None)?;
-                        if !output_metrics.contains(&output_metric) {
-                            output_metrics.push(output_metric);
-                        }
+                for output_metric in metrics_from_filters.into_iter() {
+                    if !output_metrics.contains(&output_metric) {
+                        output_metrics.push(output_metric);
                     }
                 }
+
                 output_metrics
             }
-            None => {
-                if let Some(metrics) = self.filters.create_metrics(args) {
-                    metrics
-                        .iter()
-                        .map(|m| m.load_as_output(network, args, None))
-                        .collect::<Result<_, _>>()?
-                } else {
-                    return Err(SchemaError::EmptyMetricSet(self.name.clone()));
-                }
-            }
+            None => metrics_from_filters,
         };
+
+        if output_metrics.is_empty() {
+            return Err(SchemaError::EmptyMetricSet(self.name.clone()));
+        }
 
         let aggregator = self.aggregator.clone().map(|a| a.load(args.data_path)).transpose()?;
 
