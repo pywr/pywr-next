@@ -57,7 +57,9 @@
     ],
     "tables": [
       {
-        "name": "profiles-365",
+        "meta": {
+          "name": "profiles-365"
+        },
         "type": "Array",
         "format": "CSV",
         "lookup": {
@@ -67,7 +69,9 @@
         "url": "daily-profile-365.csv"
       },
       {
-        "name": "profiles-366",
+        "meta": {
+          "name": "profiles-366"
+        },
         "type": "Array",
         "format": "CSV",
         "lookup": {
