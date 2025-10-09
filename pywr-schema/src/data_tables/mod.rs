@@ -45,7 +45,7 @@ pub enum DataTableValueType {
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Default, JsonSchema, PywrVisitAll)]
-pub struct TabelMeta {
+pub struct TableMeta {
     pub name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub comment: Option<String>,
@@ -64,7 +64,7 @@ impl DataTable {
         self.meta().name.as_str()
     }
 
-    pub fn meta(&self) -> &TabelMeta {
+    pub fn meta(&self) -> &TableMeta {
         match self {
             DataTable::CSV(tbl) => &tbl.meta,
         }
@@ -91,7 +91,7 @@ pub enum CsvDataTableLookup {
 /// An external table of data that can be referenced
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
 pub struct CsvDataTable {
-    pub meta: TabelMeta,
+    pub meta: TableMeta,
     #[serde(rename = "type")]
     pub ty: DataTableValueType,
     pub lookup: CsvDataTableLookup,
