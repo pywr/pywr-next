@@ -2,9 +2,9 @@ use crate::SchemaError;
 use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::network::LoadArgs;
-use crate::nodes::NodeMeta;
 #[cfg(feature = "core")]
 use crate::nodes::{NodeAttribute, NodeComponent};
+use crate::nodes::{NodeMeta, NodeSlot};
 use crate::parameters::Parameter;
 use crate::{node_attribute_subset_enum, node_component_subset_enum};
 #[cfg(feature = "core")]
@@ -115,11 +115,19 @@ impl TurbineNode {
     const DEFAULT_ATTRIBUTE: TurbineNodeAttribute = TurbineNodeAttribute::Outflow;
     const DEFAULT_COMPONENT: TurbineNodeComponent = TurbineNodeComponent::Outflow;
 
-    pub fn input_connectors(&self) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
-        Ok(vec![(self.meta.name.as_str(), None)])
+    pub fn input_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
+        if let Some(slot) = slot {
+            Err(SchemaError::InputNodeSlotNotSupported { slot: slot.clone() })
+        } else {
+            Ok(vec![(self.meta.name.as_str(), None)])
+        }
     }
-    pub fn output_connectors(&self) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
-        Ok(vec![(self.meta.name.as_str(), None)])
+    pub fn output_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
+        if let Some(slot) = slot {
+            Err(SchemaError::OutputNodeSlotNotSupported { slot: slot.clone() })
+        } else {
+            Ok(vec![(self.meta.name.as_str(), None)])
+        }
     }
 
     pub fn default_attribute(&self) -> TurbineNodeAttribute {

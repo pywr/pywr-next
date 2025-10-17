@@ -2,10 +2,10 @@ use crate::error::SchemaError;
 use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::network::LoadArgs;
-use crate::nodes::NodeMeta;
 use crate::nodes::loss_link::LossFactor;
 #[cfg(feature = "core")]
 use crate::nodes::{NodeAttribute, NodeComponent};
+use crate::nodes::{NodeMeta, NodeSlot};
 use crate::parameters::Parameter;
 use crate::{node_attribute_subset_enum, node_component_subset_enum};
 #[cfg(feature = "core")]
@@ -104,28 +104,36 @@ impl WaterTreatmentWorksNode {
         Some("net_above_soft_min_flow")
     }
 
-    pub fn input_connectors(&self) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
-        // Connect directly to the total net
-        let mut connectors = vec![(self.meta.name.as_str(), Self::net_sub_name().map(|s| s.to_string()))];
-        // Only connect to the loss link if it is created
-        if self.loss_factor.is_some() {
-            connectors.push((self.meta.name.as_str(), Self::loss_sub_name().map(|s| s.to_string())))
+    pub fn input_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
+        if let Some(slot) = slot {
+            Err(SchemaError::InputNodeSlotNotSupported { slot: slot.clone() })
+        } else {
+            // Connect directly to the total net
+            let mut connectors = vec![(self.meta.name.as_str(), Self::net_sub_name().map(|s| s.to_string()))];
+            // Only connect to the loss link if it is created
+            if self.loss_factor.is_some() {
+                connectors.push((self.meta.name.as_str(), Self::loss_sub_name().map(|s| s.to_string())))
+            }
+            Ok(connectors)
         }
-        Ok(connectors)
     }
 
-    pub fn output_connectors(&self) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
-        // Connect to the split of the net flow.
-        Ok(vec![
-            (
-                self.meta.name.as_str(),
-                Self::net_soft_min_flow_sub_name().map(|s| s.to_string()),
-            ),
-            (
-                self.meta.name.as_str(),
-                Self::net_above_soft_min_flow_sub_name().map(|s| s.to_string()),
-            ),
-        ])
+    pub fn output_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
+        if let Some(slot) = slot {
+            Err(SchemaError::OutputNodeSlotNotSupported { slot: slot.clone() })
+        } else {
+            // Connect to the split of the net flow.
+            Ok(vec![
+                (
+                    self.meta.name.as_str(),
+                    Self::net_soft_min_flow_sub_name().map(|s| s.to_string()),
+                ),
+                (
+                    self.meta.name.as_str(),
+                    Self::net_above_soft_min_flow_sub_name().map(|s| s.to_string()),
+                ),
+            ])
+        }
     }
 
     pub fn default_attribute(&self) -> WaterTreatmentWorksNodeAttribute {
