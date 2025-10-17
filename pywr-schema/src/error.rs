@@ -1,7 +1,7 @@
 #[cfg(feature = "core")]
 use crate::data_tables::{TableCollectionError, TableDataRef};
 use crate::digest::ChecksumError;
-use crate::nodes::{NodeAttribute, NodeComponent};
+use crate::nodes::{NodeAttribute, NodeComponent, NodeSlot};
 use crate::timeseries::TimeseriesError;
 #[cfg(feature = "core")]
 use ndarray::ShapeError;
@@ -30,6 +30,10 @@ pub enum SchemaError {
     NodeAttributeNotSupported { attr: NodeAttribute },
     #[error("Component `{attr}` not supported.")]
     NodeComponentNotSupported { attr: NodeComponent },
+    #[error("Input slot `{slot}` not supported.")]
+    InputNodeSlotNotSupported { slot: NodeSlot },
+    #[error("Output slot `{slot}` not supported.")]
+    OutputNodeSlotNotSupported { slot: NodeSlot },
     // Use this error when a parameter is not found in the schema (i.e. while parsing the schema).
     #[error("Parameter `{name}` not found in the schema.")]
     ParameterNotFound { name: String, key: Option<String> },
@@ -112,9 +116,7 @@ pub enum SchemaError {
     #[error("{msg}")]
     InvalidNodeAttributes { msg: String },
     #[error("'{node}' does not have a slot named '{slot}'")]
-    NodeConnectionSlotNotFound { node: String, slot: String },
-    #[error("{msg}")]
-    NodeConnectionSlotNotAvailable { msg: String },
+    NodeConnectionSlotNotFound { node: String, slot: NodeSlot },
     #[error("{msg}")]
     NodeConnectionSlotRequired { msg: String },
     #[error("Checksum error: {0}")]
@@ -167,6 +169,12 @@ pub enum ComponentConversionError {
         json: Option<String>,
         error: ConversionError,
     },
+    #[error("Failed to convert edge from `{from_node}` to `{to_node}`: {error}")]
+    Edge {
+        from_node: String,
+        to_node: String,
+        error: ConversionError,
+    },
 }
 
 #[derive(Error, Debug, PartialEq, Eq, Clone)]
@@ -208,4 +216,6 @@ pub enum ConversionError {
     InvalidScenarioSlice { length: usize },
     #[error("Table conversion is not currently supported: {name}")]
     TableConversionNotSupported { name: String },
+    #[error("Invalid slot: {slot}")]
+    InvalidSlot { slot: String },
 }

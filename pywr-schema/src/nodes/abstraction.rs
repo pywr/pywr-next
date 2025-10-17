@@ -2,9 +2,9 @@ use crate::error::SchemaError;
 use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::network::LoadArgs;
-use crate::nodes::NodeMeta;
 #[cfg(feature = "core")]
 use crate::nodes::{NodeAttribute, NodeComponent};
+use crate::nodes::{NodeMeta, NodeSlot};
 use crate::parameters::Parameter;
 use crate::{node_attribute_subset_enum, node_component_subset_enum};
 #[cfg(feature = "core")]
@@ -27,6 +27,32 @@ node_component_subset_enum! {
         Inflow,
         Outflow,
         Abstraction,
+    }
+}
+
+pub enum AbstractionOutputNodeSlot {
+    River,
+    Abstraction,
+}
+
+impl From<AbstractionOutputNodeSlot> for NodeSlot {
+    fn from(slot: AbstractionOutputNodeSlot) -> Self {
+        match slot {
+            AbstractionOutputNodeSlot::River => NodeSlot::River,
+            AbstractionOutputNodeSlot::Abstraction => NodeSlot::Abstraction,
+        }
+    }
+}
+
+impl TryFrom<NodeSlot> for AbstractionOutputNodeSlot {
+    type Error = SchemaError;
+
+    fn try_from(slot: NodeSlot) -> Result<Self, Self::Error> {
+        match slot {
+            NodeSlot::River => Ok(AbstractionOutputNodeSlot::River),
+            NodeSlot::Abstraction => Ok(AbstractionOutputNodeSlot::Abstraction),
+            _ => Err(SchemaError::OutputNodeSlotNotSupported { slot }),
+        }
     }
 }
 
@@ -84,6 +110,7 @@ pub struct AbstractionNode {
 impl AbstractionNode {
     const DEFAULT_ATTRIBUTE: AbstractionNodeAttribute = AbstractionNodeAttribute::Abstraction;
     const DEFAULT_COMPONENT: AbstractionNodeComponent = AbstractionNodeComponent::Abstraction;
+    const DEFAULT_OUTPUT_SLOT: AbstractionOutputNodeSlot = AbstractionOutputNodeSlot::River;
 
     fn mrf_sub_name() -> Option<&'static str> {
         Some("mrf")
@@ -97,50 +124,56 @@ impl AbstractionNode {
         Some("abstraction")
     }
 
-    pub fn input_connectors(&self) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
-        let mut connectors = vec![
-            (self.meta.name.as_str(), Self::bypass_sub_name().map(|s| s.to_string())),
-            (
-                self.meta.name.as_str(),
-                Self::abstraction_sub_name().map(|s| s.to_string()),
-            ),
-        ];
-        if self.mrf.is_some() {
-            connectors.push((self.meta.name.as_str(), Self::mrf_sub_name().map(|s| s.to_string())));
+    pub fn input_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
+        if let Some(slot) = slot {
+            Err(SchemaError::InputNodeSlotNotSupported { slot: slot.clone() })
+        } else {
+            let mut connectors = vec![
+                (self.meta.name.as_str(), Self::bypass_sub_name().map(|s| s.to_string())),
+                (
+                    self.meta.name.as_str(),
+                    Self::abstraction_sub_name().map(|s| s.to_string()),
+                ),
+            ];
+            if self.mrf.is_some() {
+                connectors.push((self.meta.name.as_str(), Self::mrf_sub_name().map(|s| s.to_string())));
+            }
+            Ok(connectors)
         }
-        Ok(connectors)
     }
 
-    pub fn output_connectors(&self, slot: Option<&str>) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
-        match slot {
-            Some("downstream") => {
+    pub fn output_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
+        let slot = match slot {
+            Some(s) => s.clone().try_into()?,
+            None => Self::DEFAULT_OUTPUT_SLOT,
+        };
+
+        let indices = match slot {
+            AbstractionOutputNodeSlot::River => {
                 if self.mrf.is_some() {
-                    Ok(vec![
+                    vec![
                         (self.meta.name.as_str(), Self::mrf_sub_name().map(|s| s.to_string())),
                         (self.meta.name.as_str(), Self::bypass_sub_name().map(|s| s.to_string())),
-                    ])
+                    ]
                 } else {
-                    Ok(vec![(
-                        self.meta.name.as_str(),
-                        Self::bypass_sub_name().map(|s| s.to_string()),
-                    )])
+                    vec![(self.meta.name.as_str(), Self::bypass_sub_name().map(|s| s.to_string()))]
                 }
             }
-            Some("abstraction") => Ok(vec![(
+            AbstractionOutputNodeSlot::Abstraction => vec![(
                 self.meta.name.as_str(),
                 Self::abstraction_sub_name().map(|s| s.to_string()),
-            )]),
-            Some(s) => Err(SchemaError::NodeConnectionSlotNotFound {
-                node: self.meta.name.clone(),
-                slot: s.to_string(),
-            }),
-            None => Err(SchemaError::NodeConnectionSlotRequired {
-                msg: format!(
-                    "Either the 'downstream' or 'abstraction' slot must be specified when connecting to '{}'",
-                    self.meta.name
-                ),
-            }),
-        }
+            )],
+        };
+
+        Ok(indices)
+    }
+
+    pub fn iter_output_slots(&self) -> impl Iterator<Item = NodeSlot> + '_ {
+        [
+            AbstractionOutputNodeSlot::River.into(),
+            AbstractionOutputNodeSlot::Abstraction.into(),
+        ]
+        .into_iter()
     }
 
     pub fn default_attribute(&self) -> AbstractionNodeAttribute {

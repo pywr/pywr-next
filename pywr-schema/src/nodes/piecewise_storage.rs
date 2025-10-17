@@ -5,7 +5,7 @@ use crate::network::LoadArgs;
 use crate::node_attribute_subset_enum;
 #[cfg(feature = "core")]
 use crate::nodes::NodeAttribute;
-use crate::nodes::{NodeMeta, StorageInitialVolume};
+use crate::nodes::{NodeMeta, NodeSlot, StorageInitialVolume};
 use crate::parameters::Parameter;
 #[cfg(feature = "core")]
 use pywr_core::{
@@ -87,11 +87,19 @@ impl PiecewiseStorageNode {
         Some(format!("store-{i:02}"))
     }
 
-    pub fn input_connectors(&self) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
-        Ok(vec![(self.meta.name.as_str(), Self::step_sub_name(self.steps.len()))])
+    pub fn input_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
+        if let Some(slot) = slot {
+            Err(SchemaError::InputNodeSlotNotSupported { slot: slot.clone() })
+        } else {
+            Ok(vec![(self.meta.name.as_str(), Self::step_sub_name(self.steps.len()))])
+        }
     }
-    pub fn output_connectors(&self) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
-        Ok(vec![(self.meta.name.as_str(), Self::step_sub_name(self.steps.len()))])
+    pub fn output_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
+        if let Some(slot) = slot {
+            Err(SchemaError::OutputNodeSlotNotSupported { slot: slot.clone() })
+        } else {
+            Ok(vec![(self.meta.name.as_str(), Self::step_sub_name(self.steps.len()))])
+        }
     }
 
     pub fn default_attribute(&self) -> PiecewiseStorageNodeAttribute {
