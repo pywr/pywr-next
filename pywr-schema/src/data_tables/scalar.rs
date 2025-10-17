@@ -153,15 +153,15 @@ fn load_csv_row_col_scalar_table<const R: usize, const C: usize, const N: usize>
     let mut rdr = csv::Reader::from_reader(buf_reader);
 
     // Read the column headers
-    // Skip the first R columns which are for the row keys
+    // Skip the first C columns which are for the row keys
     // Each header is a vector of strings, one for each row header
     let mut col_headers: Vec<Vec<String>> = rdr
         .headers()
         .map_err(|e| TableError::Csv(e.to_string()))?
         .iter()
-        .skip(R)
+        .skip(C)
         .map(|s| {
-            let mut h = Vec::with_capacity(C);
+            let mut h = Vec::with_capacity(R);
             h.push(s.to_string());
             h
         })
@@ -169,11 +169,11 @@ fn load_csv_row_col_scalar_table<const R: usize, const C: usize, const N: usize>
 
     let mut records = rdr.records();
 
-    // Read the next C-1 header rows
-    for _ in 1..C {
+    // Read the next R-1 header rows
+    for _ in 1..R {
         let next_headers = records.next();
         if let Some(Ok(record)) = next_headers {
-            for (i, header) in record.iter().skip(R).enumerate() {
+            for (i, header) in record.iter().skip(C).enumerate() {
                 col_headers[i].push(header.to_string());
             }
         } else {
@@ -192,13 +192,13 @@ fn load_csv_row_col_scalar_table<const R: usize, const C: usize, const N: usize>
             // error here.
             let record = result.map_err(|e| TableError::Csv(e.to_string()))?;
 
-            let key: Vec<_> = (0..R)
+            let key: Vec<_> = (0..C)
                 .map(|i| Ok(record.get(i).ok_or(TableError::KeyParse)?.to_string()))
                 .collect::<Result<Vec<_>, TableError>>()?;
 
             let values: Vec<Option<TableScalarValue>> = record
                 .iter()
-                .skip(R)
+                .skip(C)
                 .map(|v| TableScalarValue::from_str(v).ok())
                 .collect();
 
@@ -427,7 +427,7 @@ mod tests {
     }
 
     #[test]
-    fn test_load_csv2_row2_col_scalar_table_one() {
+    fn test_load_csv_row2_col2_scalar_table_one() {
         let mut file = NamedTempFile::new().unwrap();
         writeln!(file, "key1,key2,col1,col2").unwrap();
         writeln!(file, "key1,key2,A,A").unwrap();
@@ -440,6 +440,22 @@ mod tests {
         assert_eq!(table.get_scalar(&["X", "B", "col1", "A"]).unwrap().as_f64(), 3.0);
         assert_eq!(table.get_scalar(&["X", "B", "col2", "A"]).unwrap().as_f64(), 4.0);
         assert!(table.get_scalar(&["Y", "C", "col1", "B"]).is_err());
+    }
+
+    #[test]
+    fn test_load_csv_row2_col_scalar_table_one() {
+        let mut file = NamedTempFile::new().unwrap();
+        writeln!(file, "key1,col1,col2").unwrap();
+        writeln!(file, "key1,A,A").unwrap();
+        writeln!(file, "X,1.0,2.0").unwrap();
+        writeln!(file, "Y,3.0,4.0").unwrap();
+        let path = file.path();
+        let table = load_csv_row_col_scalar_table::<2, 1, 3>(path).unwrap();
+        assert_eq!(table.get_scalar(&["X", "col1", "A"]).unwrap().as_f64(), 1.0);
+        assert_eq!(table.get_scalar(&["X", "col2", "A"]).unwrap().as_f64(), 2.0);
+        assert_eq!(table.get_scalar(&["Y", "col1", "A"]).unwrap().as_f64(), 3.0);
+        assert_eq!(table.get_scalar(&["Y", "col2", "A"]).unwrap().as_f64(), 4.0);
+        assert!(table.get_scalar(&["Y", "col1", "B"]).is_err());
     }
 
     #[test]
