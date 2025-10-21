@@ -214,9 +214,9 @@ pub fn normal_eqn_step(
     // }
     // #endif
 
-    let status = normr.cmp_lt(tolerances.primal_feasibility)
-        & norms.cmp_lt(tolerances.dual_feasibility)
-        & gamma.cmp_lt(tolerances.optimality);
+    let status = normr.simd_lt(tolerances.primal_feasibility)
+        & norms.simd_lt(tolerances.dual_feasibility)
+        & gamma.simd_lt(tolerances.optimality);
 
     if status.all() {
         // Feasible and optimal; no further work!
