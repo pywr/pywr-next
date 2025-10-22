@@ -21,7 +21,7 @@ To use this table in your model use `"type": "Array"` in the table definition in
 [//]: # (@formatter:off)
 
 ```json,ignore
-{{ #include ../../../pywr-schema/tests/tbl-formats1.json:102:111 }}
+{{ #include ../../../pywr-schema/tests/tbl-formats1.json:110:121 }}
 ```
 
 [//]: # (@formatter:on)
@@ -42,7 +42,7 @@ And the corresponding table definition in JSON:
 [//]: # (@formatter:off)
 
 ```json,ignore
-{{ #include ../../../pywr-schema/tests/tbl-formats1.json:122:131 }}
+{{ #include ../../../pywr-schema/tests/tbl-formats1.json:134:145 }}
 ```
 
 [//]: # (@formatter:on)

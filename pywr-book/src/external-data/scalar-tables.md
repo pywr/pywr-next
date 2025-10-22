@@ -31,7 +31,7 @@ table define the following in your model JSON:
 [//]: # (@formatter:off)
 
 ```json,ignore
-{{ #include ../../../pywr-schema/tests/tbl-formats1.json:61:70 }}
+{{ #include ../../../pywr-schema/tests/tbl-formats1.json:61:72 }}
 ```
 
 [//]: # (@formatter:on)
@@ -48,7 +48,7 @@ used anywhere a `Metric` or `ConstantValue` is expected.
 [//]: # (@formatter:off)
 
 ```json,ignore
-{{ #include ../../../pywr-schema/tests/tbl-formats1.json:134:144 }}
+{{ #include ../../../pywr-schema/tests/tbl-formats1.json:148:158 }}
 ```
 
 [//]: # (@formatter:on)
@@ -71,7 +71,7 @@ you need to provide both keys:
 [//]: # (@formatter:off)
 
 ```json,ignore
-{{ #include ../../../pywr-schema/tests/tbl-formats1.json:145:158 }}
+{{ #include ../../../pywr-schema/tests/tbl-formats1.json:159:172 }}
 ```
 
 [//]: # (@formatter:on)
@@ -96,7 +96,7 @@ table define the following in your model JSON
 [//]: # (@formatter:off)
 
 ```json,ignore
-{{ #include ../../../pywr-schema/tests/tbl-formats1.json:81:90 }}
+{{ #include ../../../pywr-schema/tests/tbl-formats1.json:85:96 }}
 ```
 
 [//]: # (@formatter:on)
@@ -107,7 +107,7 @@ to provide a value for a `ConstantParameter`, you would reference it for the `va
 [//]: # (@formatter:off)
 
 ```json,ignore
-{{ #include ../../../pywr-schema/tests/tbl-formats1.json:159:169 }}
+{{ #include ../../../pywr-schema/tests/tbl-formats1.json:173:183 }}
 ```
 
 [//]: # (@formatter:on)
@@ -132,7 +132,7 @@ etc. For example, to load the above table define the following in your model JSO
 [//]: # (@formatter:off)
 
 ```json,ignore
-{{ #include ../../../pywr-schema/tests/tbl-formats1.json:91:101 }}
+{{ #include ../../../pywr-schema/tests/tbl-formats1.json:97:109 }}
 ```
 
 [//]: # (@formatter:on)
@@ -148,7 +148,7 @@ provide both the row and column keys.
 [//]: # (@formatter:off)
 
 ```json,ignore
-{{ #include ../../../pywr-schema/tests/tbl-formats1.json:170:181 }}
+{{ #include ../../../pywr-schema/tests/tbl-formats1.json:184:195 }}
 ```
 
 [//]: # (@formatter:on)
