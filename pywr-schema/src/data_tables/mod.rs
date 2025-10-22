@@ -44,9 +44,11 @@ pub enum DataTableValueType {
     Array,
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Display, EnumIter)]
-pub enum DataTableFormat {
-    CSV,
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Default, JsonSchema, PywrVisitAll)]
+pub struct TableMeta {
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub comment: Option<String>,
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, Display, EnumDiscriminants)]
@@ -59,8 +61,12 @@ pub enum DataTable {
 
 impl DataTable {
     pub fn name(&self) -> &str {
+        self.meta().name.as_str()
+    }
+
+    pub fn meta(&self) -> &TableMeta {
         match self {
-            DataTable::CSV(tbl) => &tbl.name,
+            DataTable::CSV(tbl) => &tbl.meta,
         }
     }
 
@@ -85,7 +91,7 @@ pub enum CsvDataTableLookup {
 /// An external table of data that can be referenced
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
 pub struct CsvDataTable {
-    pub name: String,
+    pub meta: TableMeta,
     #[serde(rename = "type")]
     pub ty: DataTableValueType,
     pub lookup: CsvDataTableLookup,
@@ -404,7 +410,9 @@ mod tests {
         let table_def = format!(
             r#"
             {{
-                "name": "my-arrays",
+                "meta": {{
+                    "name": "my-arrays"
+                }},
                 "type": "Array",
                 "format": "CSV",
                 "lookup": {{
