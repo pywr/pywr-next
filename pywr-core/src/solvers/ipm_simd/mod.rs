@@ -694,7 +694,7 @@ impl MultiStateSolver for SimdIpmF64Solver {
                     let col = built.col_for_edge(&edge.index());
                     let flows = solution[col];
 
-                    for (state, flow) in chunk_states.iter_mut().zip(flows.as_array_ref()) {
+                    for (state, flow) in chunk_states.iter_mut().zip(flows.as_array()) {
                         if !flow.is_finite() {
                             panic!("Non-finite flow encountered from solver. Edge: {edge:#?}, value: {flow}")
                         }

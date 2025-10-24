@@ -64,7 +64,7 @@
         "format": "CSV",
         "lookup": {
           "type": "Col",
-          "cols": 1
+          "rows": 1
         },
         "url": "daily-profile-365.csv"
       },
@@ -76,7 +76,7 @@
         "format": "CSV",
         "lookup": {
           "type": "Col",
-          "cols": 1
+          "rows": 1
         },
         "url": "daily-profile-366.csv"
       }
