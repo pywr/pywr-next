@@ -1,0 +1,12 @@
+{
+  "meta": {
+    "name": "my-constant-A-python"
+  },
+  "type": "Constant",
+  "value": {
+    "type": "Table",
+    "table": "scalar-row-col",
+    "row": "A",
+    "column": "\uD83D\uDC0D"
+  }
+}

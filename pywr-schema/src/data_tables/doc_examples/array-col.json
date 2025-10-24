@@ -1,0 +1,12 @@
+{
+  "meta": {
+    "name": "array-col"
+  },
+  "type": "Array",
+  "format": "CSV",
+  "lookup": {
+    "type": "Col",
+    "rows": 1
+  },
+  "url": "tbl-array-col.csv"
+}
