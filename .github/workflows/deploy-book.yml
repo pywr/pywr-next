@@ -37,6 +37,7 @@ jobs:
         uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
+          python-version: 3.13
       # Puts the Python API in the `pywr-book/book/api` directory
       - run: uv run --group docs pdoc pywr-python/pywr -o ./pywr-book/book/api
       - name: Setup Pages
