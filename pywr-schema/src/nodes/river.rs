@@ -3,7 +3,7 @@ use crate::error::{ComponentConversionError, ConversionError};
 use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::network::LoadArgs;
-use crate::nodes::{LossFactor, NodeMeta};
+use crate::nodes::{LossFactor, NodeMeta, NodeSlot};
 #[cfg(feature = "core")]
 use crate::nodes::{NodeAttribute, NodeComponent};
 use crate::parameters::{ConstantValue, Parameter};
@@ -167,28 +167,36 @@ impl RiverNode {
         Some("outflow")
     }
 
-    pub fn input_connectors(&self) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
-        let connectors = match (self.loss_factor.is_some(), self.routing_method.is_some()) {
-            (false, false) => vec![(self.meta.name.as_str(), Self::net_sub_name().map(|s| s.to_string()))],
-            (true, false) => vec![
-                (self.meta.name.as_str(), Self::net_sub_name().map(|s| s.to_string())),
-                (self.meta.name.as_str(), Self::loss_sub_name().map(|s| s.to_string())),
-            ],
-            // If there is routing directly to the output node
-            _ => vec![(self.meta.name.as_str(), Self::output_sub_name().map(|s| s.to_string()))],
-        };
+    pub fn input_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
+        if let Some(slot) = slot {
+            Err(SchemaError::InputNodeSlotNotSupported { slot: slot.clone() })
+        } else {
+            let connectors = match (self.loss_factor.is_some(), self.routing_method.is_some()) {
+                (false, false) => vec![(self.meta.name.as_str(), Self::net_sub_name().map(|s| s.to_string()))],
+                (true, false) => vec![
+                    (self.meta.name.as_str(), Self::net_sub_name().map(|s| s.to_string())),
+                    (self.meta.name.as_str(), Self::loss_sub_name().map(|s| s.to_string())),
+                ],
+                // If there is routing directly to the output node
+                _ => vec![(self.meta.name.as_str(), Self::output_sub_name().map(|s| s.to_string()))],
+            };
 
-        Ok(connectors)
+            Ok(connectors)
+        }
     }
 
-    pub fn output_connectors(&self) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
-        let connectors = match (self.loss_factor.is_some(), self.routing_method.is_some()) {
-            // If there is routing, but no loss connect directly from the input node
-            (false, true) => vec![(self.meta.name.as_str(), Self::input_sub_name().map(|s| s.to_string()))],
-            _ => vec![(self.meta.name.as_str(), Self::net_sub_name().map(|s| s.to_string()))],
-        };
+    pub fn output_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
+        if let Some(slot) = slot {
+            Err(SchemaError::OutputNodeSlotNotSupported { slot: slot.clone() })
+        } else {
+            let connectors = match (self.loss_factor.is_some(), self.routing_method.is_some()) {
+                // If there is routing, but no loss connect directly from the input node
+                (false, true) => vec![(self.meta.name.as_str(), Self::input_sub_name().map(|s| s.to_string()))],
+                _ => vec![(self.meta.name.as_str(), Self::net_sub_name().map(|s| s.to_string()))],
+            };
 
-        Ok(connectors)
+            Ok(connectors)
+        }
     }
 
     pub fn default_attribute(&self) -> RiverNodeAttribute {

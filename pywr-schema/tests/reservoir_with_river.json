@@ -75,7 +75,9 @@
       },
       {
         "from_node": "Reservoir",
-        "from_slot": "from_spill",
+        "from_slot": {
+          "type": "Spill"
+        },
         "to_node": "River termination"
       },
       {
