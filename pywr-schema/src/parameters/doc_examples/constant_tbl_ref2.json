@@ -1,0 +1,14 @@
+{
+  "meta": {
+    "name": "my-constant-A-Y"
+  },
+  "type": "Constant",
+  "value": {
+    "type": "Table",
+    "table": "scalar-row-row",
+    "row": [
+      "A",
+      "Y"
+    ]
+  }
+}

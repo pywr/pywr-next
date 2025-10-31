@@ -1,0 +1,11 @@
+{
+  "meta": {
+    "name": "my-constant-B"
+  },
+  "type": "Constant",
+  "value": {
+    "type": "Table",
+    "table": "scalar-col",
+    "row": "B"
+  }
+}

@@ -31,7 +31,7 @@ table define the following in your model JSON:
 [//]: # (@formatter:off)
 
 ```json,ignore
-{{ #include ../../../pywr-schema/tests/tbl-formats1.json:58:67 }}
+{{ #include ../../../pywr-schema/src/data_tables/doc_examples/scalar-row-tbl.json }}
 ```
 
 [//]: # (@formatter:on)
@@ -48,7 +48,7 @@ used anywhere a `Metric` or `ConstantValue` is expected.
 [//]: # (@formatter:off)
 
 ```json,ignore
-{{ #include ../../../pywr-schema/tests/tbl-formats1.json:131:141 }}
+{{ #include ../../../pywr-schema/src/parameters/doc_examples/constant_tbl_ref.json }}
 ```
 
 [//]: # (@formatter:on)
@@ -71,7 +71,7 @@ you need to provide both keys:
 [//]: # (@formatter:off)
 
 ```json,ignore
-{{ #include ../../../pywr-schema/tests/tbl-formats1.json:142:155 }}
+{{ #include ../../../pywr-schema/src/parameters/doc_examples/constant_tbl_ref2.json }}
 ```
 
 [//]: # (@formatter:on)
@@ -96,7 +96,7 @@ table define the following in your model JSON
 [//]: # (@formatter:off)
 
 ```json,ignore
-{{ #include ../../../pywr-schema/tests/tbl-formats1.json:78:87 }}
+{{ #include ../../../pywr-schema/src/data_tables/doc_examples/scalar-col-tbl.json }}
 ```
 
 [//]: # (@formatter:on)
@@ -107,7 +107,7 @@ to provide a value for a `ConstantParameter`, you would reference it for the `va
 [//]: # (@formatter:off)
 
 ```json,ignore
-{{ #include ../../../pywr-schema/tests/tbl-formats1.json:156:166 }}
+{{ #include ../../../pywr-schema/src/parameters/doc_examples/constant_tbl_ref3.json }}
 ```
 
 [//]: # (@formatter:on)
@@ -132,7 +132,7 @@ etc. For example, to load the above table define the following in your model JSO
 [//]: # (@formatter:off)
 
 ```json,ignore
-{{ #include ../../../pywr-schema/tests/tbl-formats1.json:88:98 }}
+{{ #include ../../../pywr-schema/tests/pywr-schema/src/data_tables/doc_examples/scalar-row-col.json }}
 ```
 
 [//]: # (@formatter:on)
@@ -148,7 +148,7 @@ provide both the row and column keys.
 [//]: # (@formatter:off)
 
 ```json,ignore
-{{ #include ../../../pywr-schema/tests/tbl-formats1.json:167:178 }}
+{{ #include ../../../pywr-schema/src/parameters/doc_examples/constant_tbl_ref4.json }}
 ```
 
 [//]: # (@formatter:on)
