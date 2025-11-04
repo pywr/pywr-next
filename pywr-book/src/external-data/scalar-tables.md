@@ -132,7 +132,7 @@ etc. For example, to load the above table define the following in your model JSO
 [//]: # (@formatter:off)
 
 ```json,ignore
-{{ #include ../../../pywr-schema/tests/pywr-schema/src/data_tables/doc_examples/scalar-row-col.json }}
+{{ #include ../../../pywr-schema/src/data_tables/doc_examples/scalar-row-col.json }}
 ```
 
 [//]: # (@formatter:on)
