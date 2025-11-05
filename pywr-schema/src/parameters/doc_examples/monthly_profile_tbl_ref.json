@@ -1,0 +1,11 @@
+{
+  "meta": {
+    "name": "profile1"
+  },
+  "type": "MonthlyProfile",
+  "values": {
+    "type": "Table",
+    "table": "array-col",
+    "column": "profile1"
+  }
+}

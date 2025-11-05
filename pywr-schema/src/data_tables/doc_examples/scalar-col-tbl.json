@@ -1,0 +1,12 @@
+{
+  "meta": {
+    "name": "scalar-col"
+  },
+  "type": "Scalar",
+  "format": "CSV",
+  "lookup": {
+    "type": "Col",
+    "rows": 1
+  },
+  "url": "tbl-scalar-col.csv"
+}
