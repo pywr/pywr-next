@@ -7,6 +7,10 @@ description = "Low-level bindings to COIN-OR CLP (Coin-or linear programming) an
 license = "MIT OR Apache-2.0"
 repository.workspace = true
 
+[features]
+default = ["clp"]
+clp = []
+cbc = []
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -14,8 +18,3 @@ repository.workspace = true
 
 [build-dependencies]
 cc = { version = "1.2", features = ["parallel"] }
-
-[features]
-default = ["clp"]
-clp = []
-cbc = []
