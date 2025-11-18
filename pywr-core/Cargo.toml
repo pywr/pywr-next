@@ -33,7 +33,7 @@ coin-or-sys = { path = "../coin-or-sys", version = "0.1.0", optional = true }
 csv = { workspace = true }
 float-cmp = { workspace = true }
 hdf5-metno = { workspace = true, optional = true }
-highs-sys = { version = "1.11", optional = true }
+highs-sys = { version = "1.12", optional = true }
 ipm-ocl = { path = "../ipm-ocl", optional = true }
 ipm-simd = { path = "../ipm-simd", optional = true }
 libc = "0.2"
