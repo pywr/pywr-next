@@ -41,7 +41,7 @@ chrono = { version = "0.4", features = ["serde"] }
 csv = "1.4"
 digest = "0.10"
 float-cmp = "0.10"
-hdf5-metno = { version = "0.10.2", features = ["static", "zlib"] }
+hdf5-metno = { version = "0.11.0", features = ["static", "zlib"] }
 hex = "0.4.3"
 md-5 = "0.10"
 microlp = "0.2.11"
