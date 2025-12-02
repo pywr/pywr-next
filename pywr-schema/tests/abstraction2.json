@@ -87,12 +87,16 @@
       {
         "from_node": "abstraction",
         "to_node": "demand",
-        "from_slot": "abstraction"
+        "from_slot": {
+          "type": "Abstraction"
+        }
       },
       {
         "from_node": "abstraction",
         "to_node": "estuary",
-        "from_slot": "downstream"
+        "from_slot": {
+          "type": "River"
+        }
       }
     ],
     "timeseries": [

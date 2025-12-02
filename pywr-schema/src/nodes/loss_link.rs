@@ -3,9 +3,9 @@ use crate::error::SchemaError;
 use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::network::LoadArgs;
-use crate::nodes::NodeMeta;
 #[cfg(feature = "core")]
 use crate::nodes::{NodeAttribute, NodeComponent};
+use crate::nodes::{NodeMeta, NodeSlot};
 use crate::parameters::Parameter;
 use crate::v1::{ConversionData, TryFromV1, try_convert_node_attr};
 use crate::{node_attribute_subset_enum, node_component_subset_enum};
@@ -135,24 +135,32 @@ impl LossLinkNode {
         Some("net")
     }
 
-    pub fn input_connectors(&self) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
-        // Gross inflow always goes to the net node ...
-        let mut input_connectors = vec![(self.meta.name.as_str(), Self::net_sub_name().map(|s| s.to_string()))];
+    pub fn input_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
+        if let Some(slot) = slot {
+            Err(SchemaError::InputNodeSlotNotSupported { slot: slot.clone() })
+        } else {
+            // Gross inflow always goes to the net node ...
+            let mut input_connectors = vec![(self.meta.name.as_str(), Self::net_sub_name().map(|s| s.to_string()))];
 
-        // ... but only to the loss node if a loss is defined
-        if self.loss_factor.is_some() {
-            input_connectors.push((self.meta.name.as_str(), Self::loss_sub_name().map(|s| s.to_string())));
+            // ... but only to the loss node if a loss is defined
+            if self.loss_factor.is_some() {
+                input_connectors.push((self.meta.name.as_str(), Self::loss_sub_name().map(|s| s.to_string())));
+            }
+
+            Ok(input_connectors)
         }
-
-        Ok(input_connectors)
     }
 
-    pub fn output_connectors(&self) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
-        // Only net goes to the downstream.
-        Ok(vec![(
-            self.meta.name.as_str(),
-            Self::net_sub_name().map(|s| s.to_string()),
-        )])
+    pub fn output_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
+        if let Some(slot) = slot {
+            Err(SchemaError::OutputNodeSlotNotSupported { slot: slot.clone() })
+        } else {
+            // Only net goes to the downstream.
+            Ok(vec![(
+                self.meta.name.as_str(),
+                Self::net_sub_name().map(|s| s.to_string()),
+            )])
+        }
     }
 
     pub fn default_attribute(&self) -> LossLinkNodeAttribute {
