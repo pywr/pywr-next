@@ -10,7 +10,7 @@ use crate::nodes::NodeMeta;
 use crate::parameters::Parameter;
 use crate::v1::{ConversionData, TryFromV1, try_convert_node_attr, try_convert_parameter_attr};
 #[cfg(feature = "core")]
-use pywr_core::{derived_metric::DerivedMetric, metric::MetricF64};
+use pywr_core::metric::MetricF64;
 use pywr_schema_macros::PywrVisitAll;
 use pywr_schema_macros::skip_serializing_none;
 use pywr_v1_schema::nodes::{AggregatedNode as AggregatedNodeV1, AggregatedStorageNode as AggregatedStorageNodeV1};
@@ -382,11 +382,7 @@ impl AggregatedStorageNode {
 
         let metric = match attr {
             AggregatedStorageNodeAttribute::Volume => MetricF64::AggregatedNodeVolume(idx),
-            AggregatedStorageNodeAttribute::ProportionalVolume => {
-                let dm = DerivedMetric::AggregatedNodeProportionalVolume(idx);
-                let derived_metric_idx = network.add_derived_metric(dm);
-                MetricF64::DerivedMetric(derived_metric_idx)
-            }
+            AggregatedStorageNodeAttribute::ProportionalVolume => MetricF64::AggregatedNodeProportionalVolume(idx),
         };
 
         Ok(metric)

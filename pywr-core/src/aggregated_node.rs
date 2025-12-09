@@ -768,6 +768,7 @@ mod tests {
     use crate::network::Network;
     use crate::parameters::MonthlyProfileParameter;
     use crate::recorders::AssertionF64Recorder;
+    use crate::state::ParameterReturnValue;
     use crate::test_utils::{default_time_domain, run_all_solvers};
     use ndarray::Array2;
 
@@ -843,7 +844,7 @@ mod tests {
         let factor_profile_idx = network.add_simple_parameter(Box::new(factor_profile)).unwrap();
 
         let relationship = Some(Relationship::new_ratio_factors(&[
-            factor_profile_idx.into(),
+            factor_profile_idx.into_metric_f64(ParameterReturnValue::Before),
             1.0.into(),
         ]));
 

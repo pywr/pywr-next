@@ -269,7 +269,7 @@ impl Node {
             Self::Input(_n) => NodeState::new_flow_state(),
             Self::Output(_n) => NodeState::new_flow_state(),
             Self::Link(_n) => NodeState::new_flow_state(),
-            Self::Storage(_n) => NodeState::new_storage_state(0.0),
+            Self::Storage(_n) => NodeState::new_storage_state(0.0, 0.0),
         }
     }
 
@@ -1029,11 +1029,10 @@ impl StorageNode {
     pub fn before(&self, timestep: &Timestep, state: &mut State) -> Result<(), NodeError> {
         // Set the initial volume if it is the first timestep.
         if timestep.is_first() {
-            let volume = self
-                .initial_volume
-                .get_absolute_initial_volume(self.get_max_volume(state)?, state)?;
+            let max_volume = self.get_max_volume(state)?;
+            let volume = self.initial_volume.get_absolute_initial_volume(max_volume, state)?;
 
-            state.set_node_volume(&self.meta.index, volume)?;
+            state.set_node_volume(&self.meta.index, volume, max_volume)?;
         }
         Ok(())
     }

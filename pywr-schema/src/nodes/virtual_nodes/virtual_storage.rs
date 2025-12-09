@@ -11,9 +11,7 @@ use crate::parameters::Parameter;
 use crate::v1::{ConversionData, TryFromV1, try_convert_initial_storage, try_convert_node_attr};
 use crate::{ConversionError, node_attribute_subset_enum};
 #[cfg(feature = "core")]
-use pywr_core::{
-    derived_metric::DerivedMetric, metric::MetricF64, timestep::TimeDomain, virtual_storage::VirtualStorageBuilder,
-};
+use pywr_core::{metric::MetricF64, timestep::TimeDomain, virtual_storage::VirtualStorageBuilder};
 use pywr_schema_macros::PywrVisitAll;
 use pywr_schema_macros::skip_serializing_none;
 use pywr_v1_schema::nodes::{
@@ -339,11 +337,7 @@ impl VirtualStorageNode {
 
         let metric = match attr {
             VirtualStorageNodeAttribute::Volume => MetricF64::VirtualStorageVolume(idx),
-            VirtualStorageNodeAttribute::ProportionalVolume => {
-                let dm = DerivedMetric::VirtualStorageProportionalVolume(idx);
-                let derived_metric_idx = network.add_derived_metric(dm);
-                MetricF64::DerivedMetric(derived_metric_idx)
-            }
+            VirtualStorageNodeAttribute::ProportionalVolume => MetricF64::VirtualStorageProportionalVolume(idx),
         };
 
         Ok(metric)

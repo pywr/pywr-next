@@ -34,19 +34,19 @@ where
 }
 
 impl SimpleParameter<f64> for VolumeBetweenControlCurvesParameter<SimpleMetricF64> {
-    fn compute(
+    fn before(
         &self,
         _timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
         values: &SimpleParameterValues,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<f64, SimpleCalculationError> {
+    ) -> Result<Option<f64>, SimpleCalculationError> {
         let total = self.total.get_value(values)?;
 
         let lower = self.lower.as_ref().map_or(Ok(0.0), |metric| metric.get_value(values))?;
         let upper = self.upper.as_ref().map_or(Ok(1.0), |metric| metric.get_value(values))?;
 
-        Ok(total * (upper - lower))
+        Ok(Some(total * (upper - lower)))
     }
 
     fn as_parameter(&self) -> &dyn Parameter

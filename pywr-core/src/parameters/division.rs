@@ -28,14 +28,14 @@ impl Parameter for DivisionParameter {
     }
 }
 impl GeneralParameter<f64> for DivisionParameter {
-    fn compute(
+    fn before(
         &self,
         _timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
         model: &Network,
         state: &State,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<f64, ParameterCalculationError> {
+    ) -> Result<Option<f64>, ParameterCalculationError> {
         let denominator = self.denominator.get_value(model, state)?;
 
         if denominator == 0.0 {
@@ -43,7 +43,7 @@ impl GeneralParameter<f64> for DivisionParameter {
         }
 
         let numerator = self.numerator.get_value(model, state)?;
-        Ok(numerator / denominator)
+        Ok(Some(numerator / denominator))
     }
 
     fn as_parameter(&self) -> &dyn Parameter

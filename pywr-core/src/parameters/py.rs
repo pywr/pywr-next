@@ -14,7 +14,7 @@ use std::collections::HashMap;
 /// Provides data for a custom Pywr parameter.
 ///
 /// This is a read-only object that provides information that can be used for custom parameters in Pywr. It
-/// is passed as the first argument to the `calc` and `after` methods of custom parameter objects.
+/// is passed as the first argument to the `before` and `after` methods of custom parameter objects.
 #[pyclass]
 pub struct ParameterInfo {
     /// The timestep for which the parameter is being calculated.
@@ -55,6 +55,18 @@ struct PyCommon {
     kwargs: Py<PyDict>,
     metrics: HashMap<String, MetricF64>,
     indices: HashMap<String, MetricU64>,
+}
+
+/// Compare PyCommon instances using Python pointer equality for args and kwargs. This should
+/// be roughly equivalent to use `id()` in Python.
+impl PartialEq for PyCommon {
+    fn eq(&self, other: &Self) -> bool {
+        self.meta == other.meta
+            && self.args.as_ptr().addr() == other.args.as_ptr().addr()
+            && self.kwargs.as_ptr().addr() == other.kwargs.as_ptr().addr()
+            && self.metrics == other.metrics
+            && self.indices == other.indices
+    }
 }
 
 impl PyCommon {
@@ -105,9 +117,8 @@ impl PyCommon {
 
 /// A Python parameter that returns the value produced by a Python object.
 ///
-/// This parameter allows you to define a Python class that implements a `calc` method,
-/// which will be called to compute the parameter value. An optional `after` method can also be defined
-/// to perform any additional actions during the "after" phase of a time-step.
+/// This parameter allows you to define a Python class that implements a `before` and/or `after` methods,
+/// which will be called to compute the parameter values.
 pub struct PyClassParameter {
     /// This is the user's class that implements the parameter logic.
     class: Py<PyAny>,
@@ -188,14 +199,15 @@ impl PyClassParameter {
         Ok(Some(internal.into_boxed_any()))
     }
 
-    fn compute<T>(
+    fn call_method<T>(
         &self,
+        method: &str,
         timestep: &Timestep,
         scenario_index: &ScenarioIndex,
         network: &Network,
         state: &State,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<T, ParameterCalculationError>
+    ) -> Result<Option<T>, ParameterCalculationError>
     where
         T: for<'a> FromPyObject<'a>,
     {
@@ -212,67 +224,8 @@ impl PyClassParameter {
         // Safe to unwrap as we just ensured it is Some.
         let info = internal.info_obj.as_ref().unwrap();
 
-        let value: T = Python::with_gil(|py| {
-            let info_bind = info.bind(py);
-            {
-                let mut info_mut = info_bind.borrow_mut();
-                info_mut.timestep = *timestep;
-                info_mut.scenario_index = scenario_index.clone();
-                self.common
-                    .update_metrics(network, state, &mut info_mut.metric_values)?;
-
-                self.common.update_indices(network, state, &mut info_mut.index_values)?;
-            }
-
-            let args = PyTuple::new(py, [info_bind]).map_err(|py_error| ParameterCalculationError::PythonError {
-                name: self.common.meta.name.to_string(),
-                object: self.class.to_string(),
-                py_error: Box::new(py_error),
-            })?;
-
-            internal
-                .user_obj
-                .call_method1(py, "calc", args)
-                .map_err(|py_error| ParameterCalculationError::PythonError {
-                    name: self.common.meta.name.to_string(),
-                    object: self.class.to_string(),
-                    py_error: Box::new(py_error),
-                })?
-                .extract(py)
-                .map_err(|py_error| ParameterCalculationError::PythonError {
-                    name: self.common.meta.name.to_string(),
-                    object: self.class.to_string(),
-                    py_error: Box::new(py_error),
-                })
-        })?;
-
-        Ok(value)
-    }
-
-    fn after(
-        &self,
-        timestep: &Timestep,
-        scenario_index: &ScenarioIndex,
-        network: &Network,
-        state: &State,
-        internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<(), ParameterCalculationError> {
-        let internal = downcast_internal_state_mut::<InternalObj>(internal_state);
-
-        ensure_parameter_info(&mut internal.info_obj, timestep, scenario_index).map_err(|py_error| {
-            ParameterCalculationError::PythonError {
-                name: self.common.meta.name.to_string(),
-                object: self.class.to_string(),
-                py_error: Box::new(py_error),
-            }
-        })?;
-
-        // Safe to unwrap as we just ensured it is Some.
-        let info = internal.info_obj.as_ref().unwrap();
-
-        Python::with_gil(|py| {
-            // Only do this if the object has an "after" method defined.
-            if internal.user_obj.getattr(py, "after").is_ok() {
+        let value: Option<T> = Python::with_gil(|py| {
+            if internal.user_obj.getattr(py, method).is_ok() {
                 let info_bind = info.bind(py);
                 {
                     let mut info_mut = info_bind.borrow_mut();
@@ -291,18 +244,26 @@ impl PyClassParameter {
                         py_error: Box::new(py_error),
                     })?;
 
-                internal.user_obj.call_method1(py, "after", args).map_err(|py_error| {
-                    ParameterCalculationError::PythonError {
+                internal
+                    .user_obj
+                    .call_method1(py, method, args)
+                    .map_err(|py_error| ParameterCalculationError::PythonError {
                         name: self.common.meta.name.to_string(),
                         object: self.class.to_string(),
                         py_error: Box::new(py_error),
-                    }
-                })?;
+                    })?
+                    .extract(py)
+                    .map_err(|py_error| ParameterCalculationError::PythonError {
+                        name: self.common.meta.name.to_string(),
+                        object: self.class.to_string(),
+                        py_error: Box::new(py_error),
+                    })
+            } else {
+                Ok(None)
             }
-            Ok::<(), ParameterCalculationError>(())
         })?;
 
-        Ok(())
+        Ok(value)
     }
 }
 
@@ -321,15 +282,15 @@ impl Parameter for PyClassParameter {
 }
 
 impl GeneralParameter<f64> for PyClassParameter {
-    fn compute(
+    fn before(
         &self,
         timestep: &Timestep,
         scenario_index: &ScenarioIndex,
         network: &Network,
         state: &State,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<f64, ParameterCalculationError> {
-        self.compute(timestep, scenario_index, network, state, internal_state)
+    ) -> Result<Option<f64>, ParameterCalculationError> {
+        self.call_method("before", timestep, scenario_index, network, state, internal_state)
     }
 
     fn after(
@@ -339,8 +300,8 @@ impl GeneralParameter<f64> for PyClassParameter {
         network: &Network,
         state: &State,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<(), ParameterCalculationError> {
-        self.after(timestep, scenario_index, network, state, internal_state)
+    ) -> Result<Option<f64>, ParameterCalculationError> {
+        self.call_method("after", timestep, scenario_index, network, state, internal_state)
     }
 
     fn as_parameter(&self) -> &dyn Parameter
@@ -352,15 +313,15 @@ impl GeneralParameter<f64> for PyClassParameter {
 }
 
 impl GeneralParameter<u64> for PyClassParameter {
-    fn compute(
+    fn before(
         &self,
         timestep: &Timestep,
         scenario_index: &ScenarioIndex,
         network: &Network,
         state: &State,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<u64, ParameterCalculationError> {
-        self.compute(timestep, scenario_index, network, state, internal_state)
+    ) -> Result<Option<u64>, ParameterCalculationError> {
+        self.call_method("before", timestep, scenario_index, network, state, internal_state)
     }
 
     fn after(
@@ -370,8 +331,8 @@ impl GeneralParameter<u64> for PyClassParameter {
         network: &Network,
         state: &State,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<(), ParameterCalculationError> {
-        self.after(timestep, scenario_index, network, state, internal_state)
+    ) -> Result<Option<u64>, ParameterCalculationError> {
+        self.call_method("after", timestep, scenario_index, network, state, internal_state)
     }
 
     fn as_parameter(&self) -> &dyn Parameter
@@ -383,15 +344,15 @@ impl GeneralParameter<u64> for PyClassParameter {
 }
 
 impl GeneralParameter<MultiValue> for PyClassParameter {
-    fn compute(
+    fn before(
         &self,
         timestep: &Timestep,
         scenario_index: &ScenarioIndex,
         network: &Network,
         state: &State,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<MultiValue, ParameterCalculationError> {
-        self.compute(timestep, scenario_index, network, state, internal_state)
+    ) -> Result<Option<MultiValue>, ParameterCalculationError> {
+        self.call_method("before", timestep, scenario_index, network, state, internal_state)
     }
 
     fn after(
@@ -401,8 +362,8 @@ impl GeneralParameter<MultiValue> for PyClassParameter {
         model: &Network,
         state: &State,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<(), ParameterCalculationError> {
-        self.after(timestep, scenario_index, model, state, internal_state)
+    ) -> Result<Option<MultiValue>, ParameterCalculationError> {
+        self.call_method("after", timestep, scenario_index, model, state, internal_state)
     }
 
     fn as_parameter(&self) -> &dyn Parameter
@@ -421,6 +382,12 @@ pub struct PyFuncParameter {
     /// This is the user's class that implements the parameter logic.
     function: Py<PyAny>,
     common: PyCommon,
+}
+
+impl PartialEq for PyFuncParameter {
+    fn eq(&self, other: &Self) -> bool {
+        self.function.as_ptr().addr() == other.function.as_ptr().addr() && self.common == other.common
+    }
 }
 
 struct InternalInfo {
@@ -550,14 +517,14 @@ impl Parameter for PyFuncParameter {
     }
 }
 impl GeneralParameter<f64> for PyFuncParameter {
-    fn compute(
+    fn before(
         &self,
         timestep: &Timestep,
         scenario_index: &ScenarioIndex,
         network: &Network,
         state: &State,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<f64, ParameterCalculationError> {
+    ) -> Result<Option<f64>, ParameterCalculationError> {
         self.compute(timestep, scenario_index, network, state, internal_state)
     }
 
@@ -570,14 +537,14 @@ impl GeneralParameter<f64> for PyFuncParameter {
 }
 
 impl GeneralParameter<u64> for PyFuncParameter {
-    fn compute(
+    fn before(
         &self,
         timestep: &Timestep,
         scenario_index: &ScenarioIndex,
         network: &Network,
         state: &State,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<u64, ParameterCalculationError> {
+    ) -> Result<Option<u64>, ParameterCalculationError> {
         self.compute(timestep, scenario_index, network, state, internal_state)
     }
 
@@ -590,14 +557,14 @@ impl GeneralParameter<u64> for PyFuncParameter {
 }
 
 impl GeneralParameter<MultiValue> for PyFuncParameter {
-    fn compute(
+    fn before(
         &self,
         timestep: &Timestep,
         scenario_index: &ScenarioIndex,
         network: &Network,
         state: &State,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<MultiValue, ParameterCalculationError> {
+    ) -> Result<Option<MultiValue>, ParameterCalculationError> {
         self.compute(timestep, scenario_index, network, state, internal_state)
     }
 
@@ -619,31 +586,79 @@ mod tests {
     use chrono::Datelike;
     use float_cmp::assert_approx_eq;
     use pyo3::ffi::c_str;
+    use std::ffi::CStr;
+
+    enum CounterParameterType {
+        BeforeOnly,
+        BeforeAfter,
+        AfterOnly,
+    }
 
     #[test]
-    /// Test `PyClassParameter` returns the correct value.
-    fn test_counter_parameter() {
-        // Init Python
-        pyo3::prepare_freethreaded_python();
-
-        let class = Python::with_gil(|py| {
-            let test_module = PyModule::from_code(
-                py,
-                c_str!(
-                    r#"
+    fn test_counter_parameter_before_only() {
+        test_counter_parameter(
+            CounterParameterType::BeforeOnly,
+            c_str!(
+                r#"
 class MyParameter:
     def __init__(self, count, **kwargs):
         self.count = count
 
-    def calc(self, info):
+    def before(self, info):
         self.count += info.scenario_index.simulation_id
         return float(self.count + info.timestep.day)
 "#
-                ),
-                c_str!(""),
-                c_str!(""),
-            )
-            .unwrap();
+            ),
+        )
+    }
+
+    #[test]
+    fn test_counter_parameter_before_after() {
+        test_counter_parameter(
+            CounterParameterType::BeforeAfter,
+            c_str!(
+                r#"
+class MyParameter:
+    def __init__(self, count, **kwargs):
+        self.count = count
+
+    def before(self, info):
+        self.count += info.scenario_index.simulation_id
+        return float(self.count + info.timestep.day)
+
+    def after(self, info):
+        self.count += info.scenario_index.simulation_id
+        return float(self.count + info.timestep.day)
+"#
+            ),
+        )
+    }
+
+    #[test]
+    fn test_counter_parameter_after_only() {
+        test_counter_parameter(
+            CounterParameterType::AfterOnly,
+            c_str!(
+                r#"
+class MyParameter:
+    def __init__(self, count, **kwargs):
+        self.count = count
+
+    def after(self, info):
+        self.count += info.scenario_index.simulation_id
+        return float(self.count + info.timestep.day)
+"#
+            ),
+        )
+    }
+
+    /// Test `PyClassParameter` returns the correct value.
+    fn test_counter_parameter(counter_parameter_type: CounterParameterType, counter_parameter_str: &'static CStr) {
+        // Init Python
+        pyo3::prepare_freethreaded_python();
+
+        let class = Python::with_gil(|py| {
+            let test_module = PyModule::from_code(py, counter_parameter_str, c_str!(""), c_str!("")).unwrap();
 
             test_module.getattr("MyParameter").unwrap().into()
         });
@@ -679,13 +694,42 @@ class MyParameter:
 
         for ts in timesteps {
             for (si, internal) in scenario_indices.iter().zip(internal_p_states.iter_mut()) {
-                let value = GeneralParameter::compute(&param, ts, si, &model, &state, internal).unwrap();
+                let before_value: Option<f64> =
+                    GeneralParameter::before(&param, ts, si, &model, &state, internal).unwrap();
 
-                assert_approx_eq!(
-                    f64,
-                    value,
-                    ((ts.index + 1) * si.simulation_id() + ts.date.day() as usize) as f64
-                );
+                let after_value: Option<f64> =
+                    GeneralParameter::after(&param, ts, si, &model, &state, internal).unwrap();
+
+                match counter_parameter_type {
+                    CounterParameterType::BeforeOnly => {
+                        assert_approx_eq!(
+                            f64,
+                            before_value.expect("Expected a value from before()"),
+                            ((ts.index + 1) * si.simulation_id() + ts.date.day() as usize) as f64
+                        );
+                        assert!(after_value.is_none(), "Expected no value from after()");
+                    }
+                    CounterParameterType::BeforeAfter => {
+                        assert_approx_eq!(
+                            f64,
+                            before_value.expect("Expected a value from before()"),
+                            ((ts.index * 2 + 1) * si.simulation_id() + ts.date.day() as usize) as f64
+                        );
+                        assert_approx_eq!(
+                            f64,
+                            after_value.expect("Expected a value from after()"),
+                            ((ts.index * 2 + 2) * si.simulation_id() + ts.date.day() as usize) as f64
+                        );
+                    }
+                    CounterParameterType::AfterOnly => {
+                        assert!(before_value.is_none(), "Expected no value from before()");
+                        assert_approx_eq!(
+                            f64,
+                            after_value.expect("Expected a value from after()"),
+                            ((ts.index + 1) * si.simulation_id() + ts.date.day() as usize) as f64
+                        );
+                    }
+                }
             }
         }
     }
@@ -708,7 +752,7 @@ class MyParameter:
     def __init__(self, count, **kwargs):
         self.count = count
 
-    def calc(self, info):
+    def before(self, info):
         self.count += info.scenario_index.simulation_id
         return {
             'a-float': math.pi,  # This is a float
@@ -755,7 +799,9 @@ class MyParameter:
 
         for ts in timesteps {
             for (si, internal) in scenario_indices.iter().zip(internal_p_states.iter_mut()) {
-                let value = GeneralParameter::<MultiValue>::compute(&param, ts, si, &model, &state, internal).unwrap();
+                let value = GeneralParameter::<MultiValue>::before(&param, ts, si, &model, &state, internal)
+                    .unwrap()
+                    .unwrap();
 
                 assert_approx_eq!(f64, *value.get_value("a-float").unwrap(), std::f64::consts::PI);
 
@@ -821,7 +867,9 @@ def my_function(info, count, **kwargs):
 
         for ts in timesteps {
             for (si, internal) in scenario_indices.iter().zip(internal_p_states.iter_mut()) {
-                let value = GeneralParameter::compute(&param, ts, si, &model, &state, internal).unwrap();
+                let value = GeneralParameter::before(&param, ts, si, &model, &state, internal)
+                    .unwrap()
+                    .unwrap();
 
                 assert_approx_eq!(f64, value, (2 + si.simulation_id() + ts.date.day() as usize) as f64);
             }

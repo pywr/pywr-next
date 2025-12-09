@@ -4,7 +4,7 @@ class FloatParameter:
     def __init__(self, count, *args, **kwargs):
         self.count = count
 
-    def calc(self, info) -> float:
+    def before(self, info) -> float | None:
         self.count += info.scenario_index.simulation_id
         return float(self.count + info.timestep.day)
 
@@ -15,7 +15,7 @@ class IntParameter:
     def __init__(self, count, *args, **kwargs):
         self.count = count
 
-    def calc(self, info) -> int:
+    def before(self, info) -> int | None:
         self.count += info.scenario_index.simulation_id
         return self.count + info.timestep.day
 

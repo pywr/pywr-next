@@ -44,10 +44,14 @@ use schemars::JsonSchema;
 #[serde(deny_unknown_fields)]
 pub struct HydropowerTargetParameter {
     pub meta: ParameterMeta,
+    /// The flow through the turbine node. If provided, this is used as the actual flow to
+    /// compute the actual power output in the "after" method of the parameter. This is optional
+    /// and if not provided then no power output is calculated.
+    pub actual_flow: Option<Metric>,
     /// Hydropower production target. This can be a constant, a value from a table, a
     /// parameter name or an inline parameter (see [`Metric`]). Units should be in
-    /// units of energy per day.
-    pub target: Metric,
+    /// units of energy per day. If not provided, no flow will be calculated.
+    pub target: Option<Metric>,
     /// The elevation of water entering the turbine. The difference of this
     /// value with the `turbine_elevation` gives the working head of the turbine. This is optional
     /// and can be a constant, a value from a table, a parameter name or an inline parameter
@@ -87,7 +91,7 @@ impl HydropowerTargetParameter {
         args: &LoadArgs,
         parent: Option<&str>,
     ) -> Result<ParameterIndex<f64>, SchemaError> {
-        let target = self.target.load(network, args, None)?;
+        let target = self.target.as_ref().map(|t| t.load(network, args, None)).transpose()?;
         let water_elevation = self
             .water_elevation
             .as_ref()
@@ -103,8 +107,14 @@ impl HydropowerTargetParameter {
             .as_ref()
             .map(|t| t.load(network, args, None))
             .transpose()?;
+        let actual_flow = self
+            .actual_flow
+            .as_ref()
+            .map(|t| t.load(network, args, None))
+            .transpose()?;
 
         let turbine_data = HydropowerTargetData {
+            actual_flow,
             target,
             water_elevation,
             elevation: self.turbine_elevation,
@@ -133,7 +143,7 @@ impl TryFromV1<HydropowerTargetParameterV1> for HydropowerTargetParameter {
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
         let meta: ParameterMeta = v1.meta.into_v2(parent_node, conversion_data);
-        let target = try_convert_parameter_attr(&meta.name, "target", v1.target, parent_node, conversion_data)?;
+        let target: Metric = try_convert_parameter_attr(&meta.name, "target", v1.target, parent_node, conversion_data)?;
         let water_elevation = try_convert_parameter_attr(
             &meta.name,
             "water_elevation_parameter",
@@ -147,7 +157,8 @@ impl TryFromV1<HydropowerTargetParameterV1> for HydropowerTargetParameter {
 
         Ok(Self {
             meta,
-            target,
+            target: Some(target),
+            actual_flow: None,
             water_elevation,
             turbine_elevation: v1.turbine_elevation,
             min_head: v1.min_head,

@@ -10,8 +10,6 @@ use crate::{node_attribute_subset_enum, node_component_subset_enum};
 #[cfg(feature = "core")]
 use pywr_core::agg_funcs::AggFuncF64;
 #[cfg(feature = "core")]
-use pywr_core::derived_metric::DerivedMetric;
-#[cfg(feature = "core")]
 use pywr_core::metric::ConstantMetricF64::Constant;
 #[cfg(feature = "core")]
 use pywr_core::metric::MetricF64;
@@ -516,7 +514,7 @@ impl ReservoirNode {
                     AggFuncF64::Product,
                 );
                 let rainfall_idx = network.add_parameter(Box::new(rainfall_flow_parameter))?;
-                let rainfall_flow_metric: MetricF64 = rainfall_idx.into();
+                let rainfall_flow_metric: MetricF64 = rainfall_idx.into_metric_f64_before();
 
                 network.set_node_min_flow(
                     self.meta().name.as_str(),
@@ -544,7 +542,7 @@ impl ReservoirNode {
                     AggFuncF64::Product,
                 );
                 let evaporation_idx = network.add_parameter(Box::new(evaporation_flow_parameter))?;
-                let evaporation_flow_metric: MetricF64 = evaporation_idx.into();
+                let evaporation_flow_metric: MetricF64 = evaporation_idx.into_metric_f64_before();
 
                 network.set_node_max_flow(
                     self.meta().name.as_str(),
@@ -601,11 +599,7 @@ impl ReservoirNode {
         // the storage (absolute or relative) can be the current or max volume
         let current_storage = match (bathymetry.is_storage_proportional, use_max_area) {
             (false, false) => MetricF64::NodeVolume(storage_node),
-            (true, false) => {
-                let dm = DerivedMetric::NodeProportionalVolume(storage_node);
-                let derived_metric_idx = network.add_derived_metric(dm);
-                MetricF64::DerivedMetric(derived_metric_idx)
-            }
+            (true, false) => MetricF64::NodeProportionalVolume(storage_node),
             (false, true) => MetricF64::NodeMaxVolume(storage_node),
             (true, true) => MetricF64::Simple(SimpleMetricF64::Constant(Constant(1.0))),
         };
@@ -629,7 +623,7 @@ impl ReservoirNode {
                     true,
                 );
                 let area_idx = network.add_parameter(Box::new(interpolated_area_parameter))?;
-                let interpolated_area_metric: MetricF64 = area_idx.into();
+                let interpolated_area_metric: MetricF64 = area_idx.into_metric_f64_before();
                 interpolated_area_metric
             }
             BathymetryType::Polynomial(coeffs) => {
@@ -641,7 +635,7 @@ impl ReservoirNode {
                     0.0,
                 );
                 let area_idx = network.add_parameter(Box::new(poly_area_parameter))?;
-                let poly_area_metric: MetricF64 = area_idx.into();
+                let poly_area_metric: MetricF64 = area_idx.into_metric_f64_before();
                 poly_area_metric
             }
         };
@@ -697,9 +691,7 @@ impl ReservoirNode {
                                 name: self.meta().name.clone(),
                                 sub_name: None,
                             })?;
-                        let dm = DerivedMetric::NodeProportionalVolume(idx);
-                        let derived_metric_idx = network.add_derived_metric(dm);
-                        MetricF64::DerivedMetric(derived_metric_idx)
+                        MetricF64::NodeVolume(idx)
                     }
                     ReservoirNodeAttribute::MaxVolume => {
                         let idx = network

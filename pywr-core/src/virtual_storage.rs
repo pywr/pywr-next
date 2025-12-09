@@ -262,7 +262,7 @@ impl VirtualStorage {
     }
 
     pub fn default_state(&self) -> VirtualStorageState {
-        VirtualStorageState::new(0.0, self.rolling_window)
+        VirtualStorageState::new(0.0, 0.0, self.rolling_window)
     }
 
     pub fn get_cost(&self, network: &Network, state: &State) -> Result<f64, MetricF64Error> {
@@ -321,7 +321,7 @@ impl VirtualStorage {
                 VirtualStorageResetVolume::Initial => initial_volume,
             };
 
-            state.reset_virtual_storage_node_volume(self.meta.index(), reset_volume, timestep)?;
+            state.reset_virtual_storage_node_volume(self.meta.index(), reset_volume, timestep, max_volume)?;
 
             // Reset the rolling history if defined
             if let Some(window) = self.rolling_window {
@@ -381,7 +381,6 @@ fn months_since_last_reset(current: &NaiveDateTime, last_reset: &NaiveDateTime) 
 
 #[cfg(test)]
 mod tests {
-    use crate::derived_metric::DerivedMetric;
     use crate::metric::MetricF64;
     use crate::models::Model;
     use crate::network::Network;
@@ -573,15 +572,11 @@ mod tests {
             .reset(VirtualStorageReset::NumberOfMonths { months: 1 });
 
         let vs_idx = network.add_virtual_storage_node(vs_builder).unwrap();
-        let vs_vol_metric = network.add_derived_metric(DerivedMetric::VirtualStorageProportionalVolume(vs_idx));
-        network
-            .set_virtual_storage_max_volume("vs", None, Some(100.0.into()))
-            .unwrap();
 
         // Virtual storage node cost increases with decreasing volume
         let cost_param = ControlCurveInterpolatedParameter::new(
             "cost".into(),
-            vs_vol_metric.into(),
+            MetricF64::VirtualStorageProportionalVolume(vs_idx),
             vec![],
             vec![0.0.into(), 20.0.into()],
         );
@@ -589,7 +584,11 @@ mod tests {
         let cost_param = network.add_parameter(Box::new(cost_param)).unwrap();
 
         network
-            .set_virtual_storage_node_cost("vs", None, Some(cost_param.into()))
+            .set_virtual_storage_node_cost("vs", None, Some(cost_param.into_metric_f64_before()))
+            .unwrap();
+
+        network
+            .set_virtual_storage_max_volume("vs", None, Some(100.0.into()))
             .unwrap();
 
         let expected = |ts: &Timestep, _si: &ScenarioIndex| {

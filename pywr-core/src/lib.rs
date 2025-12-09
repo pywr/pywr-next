@@ -11,7 +11,6 @@ pub use network::NetworkError;
 pub mod agg_funcs;
 pub mod aggregated_node;
 mod aggregated_storage_node;
-pub mod derived_metric;
 pub mod edge;
 pub mod metric;
 pub mod models;

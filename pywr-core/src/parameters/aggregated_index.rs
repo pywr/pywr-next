@@ -39,21 +39,21 @@ where
 }
 
 impl GeneralParameter<u64> for AggregatedIndexParameter<MetricU64> {
-    fn compute(
+    fn before(
         &self,
         _timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
         network: &Network,
         state: &State,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<u64, ParameterCalculationError> {
+    ) -> Result<Option<u64>, ParameterCalculationError> {
         let values = self
             .metrics
             .iter()
             .map(|p| p.get_value(network, state))
             .collect::<Result<Vec<_>, _>>()?;
 
-        Ok(self.agg_func.calc_iter_u64(&values)?)
+        Ok(Some(self.agg_func.calc_iter_u64(&values)?))
     }
 
     fn as_parameter(&self) -> &dyn Parameter
@@ -81,20 +81,20 @@ impl GeneralParameter<u64> for AggregatedIndexParameter<MetricU64> {
 }
 
 impl SimpleParameter<u64> for AggregatedIndexParameter<SimpleMetricU64> {
-    fn compute(
+    fn before(
         &self,
         _timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
         values: &SimpleParameterValues,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<u64, SimpleCalculationError> {
+    ) -> Result<Option<u64>, SimpleCalculationError> {
         let values = self
             .metrics
             .iter()
             .map(|p| p.get_value(values))
             .collect::<Result<Vec<_>, _>>()?;
 
-        Ok(self.agg_func.calc_iter_u64(&values)?)
+        Ok(Some(self.agg_func.calc_iter_u64(&values)?))
     }
 
     fn as_parameter(&self) -> &dyn Parameter

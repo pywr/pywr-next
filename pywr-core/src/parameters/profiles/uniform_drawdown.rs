@@ -36,13 +36,13 @@ impl Parameter for UniformDrawdownProfileParameter {
     }
 }
 impl SimpleParameter<f64> for UniformDrawdownProfileParameter {
-    fn compute(
+    fn before(
         &self,
         timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
         _values: &SimpleParameterValues,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<f64, SimpleCalculationError> {
+    ) -> Result<Option<f64>, SimpleCalculationError> {
         // Current calendar year (might be adjusted depending on position of reset day)
         let mut year = timestep.date.year();
 
@@ -75,7 +75,7 @@ impl SimpleParameter<f64> for UniformDrawdownProfileParameter {
         let residual_proportion = self.residual_days as f64 / total_days_in_period as f64;
         let slope = (residual_proportion - 1.0) / total_days_in_period as f64;
 
-        Ok(1.0 + (slope * days_into_period as f64))
+        Ok(Some(1.0 + (slope * days_into_period as f64)))
     }
 
     fn as_parameter(&self) -> &dyn Parameter

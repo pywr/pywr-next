@@ -9,7 +9,6 @@ use crate::nodes::{NodeMeta, StorageInitialVolume};
 use crate::parameters::Parameter;
 #[cfg(feature = "core")]
 use pywr_core::{
-    derived_metric::DerivedMetric,
     metric::{MetricF64, SimpleMetricF64},
     parameters::{DifferenceParameter, ParameterIndex, ParameterName, VolumeBetweenControlCurvesParameter},
 };
@@ -409,11 +408,7 @@ impl PiecewiseStorageNode {
 
         let metric = match attr {
             PiecewiseStorageNodeAttribute::Volume => MetricF64::AggregatedNodeVolume(idx),
-            PiecewiseStorageNodeAttribute::ProportionalVolume => {
-                let dm = DerivedMetric::AggregatedNodeProportionalVolume(idx);
-                let derived_metric_idx = network.add_derived_metric(dm);
-                MetricF64::DerivedMetric(derived_metric_idx)
-            }
+            PiecewiseStorageNodeAttribute::ProportionalVolume => MetricF64::AggregatedNodeProportionalVolume(idx),
         };
 
         Ok(metric)

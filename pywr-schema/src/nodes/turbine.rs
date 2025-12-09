@@ -9,7 +9,6 @@ use crate::parameters::Parameter;
 use crate::{node_attribute_subset_enum, node_component_subset_enum};
 #[cfg(feature = "core")]
 use pywr_core::{
-    derived_metric::{DerivedMetric, TurbineData},
     metric::MetricF64,
     parameters::{HydropowerTargetData, ParameterName},
 };
@@ -18,10 +17,19 @@ use schemars::JsonSchema;
 use strum_macros::EnumIter;
 
 #[derive(
-    serde::Deserialize, serde::Serialize, Clone, Debug, strum_macros::Display, JsonSchema, PywrVisitAll, EnumIter,
+    serde::Deserialize,
+    serde::Serialize,
+    Clone,
+    Debug,
+    strum_macros::Display,
+    JsonSchema,
+    PywrVisitAll,
+    EnumIter,
+    Default,
 )]
 pub enum TargetType {
     // set flow derived from the hydropower target as a max_flow
+    #[default]
     MaxFlow,
     // set flow derived from the hydropower target as a min_flow
     MinFlow,
@@ -68,7 +76,7 @@ pub struct TurbineNode {
     pub target: Option<Metric>,
     /// This can be used to define where to apply the flow calculated from the hydropower production
     /// target using the inverse hydropower equation. Default to [`TargetType::MaxFlow`])
-    pub target_type: TargetType,
+    pub target_type: Option<TargetType>,
     /// The elevation of water entering the turbine. The difference of this value with the
     /// `turbine_elevation` gives the working head of the turbine. This is optional
     /// and can be a constant, a value from a table, a parameter name or an inline parameter
@@ -99,7 +107,7 @@ impl Default for TurbineNode {
             parameters: None,
             cost: None,
             target: None,
-            target_type: TargetType::MaxFlow,
+            target_type: Some(TargetType::default()),
             water_elevation: None,
             turbine_elevation: 0.0,
             min_head: 0.0,
@@ -133,10 +141,6 @@ impl TurbineNode {
 
 #[cfg(feature = "core")]
 impl TurbineNode {
-    fn sub_name() -> Option<&'static str> {
-        Some("turbine")
-    }
-
     pub fn node_indices_for_flow_constraints(
         &self,
         network: &pywr_core::network::Network,
@@ -149,10 +153,10 @@ impl TurbineNode {
         };
         let idx = match component {
             TurbineNodeComponent::Inflow | TurbineNodeComponent::Outflow => network
-                .get_node_index_by_name(self.meta.name.as_str(), Self::sub_name())
+                .get_node_index_by_name(self.meta.name.as_str(), None)
                 .ok_or_else(|| SchemaError::CoreNodeNotFound {
                     name: self.meta.name.clone(),
-                    sub_name: Self::sub_name().map(String::from),
+                    sub_name: None,
                 })?,
         };
 
@@ -173,41 +177,59 @@ impl TurbineNode {
             network.set_node_cost(self.meta.name.as_str(), None, value.into())?;
         }
 
-        if let Some(target) = &self.target {
-            let name = ParameterName::new("power", Some(self.meta.name.as_str()));
-            let target_value = target.load(network, args, Some(&self.meta.name))?;
+        let name = ParameterName::new("power", Some(self.meta.name.as_str()));
+        let target_value = self
+            .target
+            .as_ref()
+            .map(|target| target.load(network, args, Some(&self.meta.name)))
+            .transpose()?;
 
-            let water_elevation = self
-                .water_elevation
-                .as_ref()
-                .map(|t| t.load(network, args, Some(&self.meta.name)))
-                .transpose()?;
-            let turbine_data = HydropowerTargetData {
-                target: target_value,
-                water_elevation,
-                elevation: Some(self.turbine_elevation),
-                min_head: Some(self.min_head),
-                max_flow: None,
-                min_flow: None,
-                efficiency: Some(self.efficiency),
-                water_density: Some(self.water_density),
-                flow_unit_conversion: Some(self.flow_unit_conversion),
-                energy_unit_conversion: Some(self.energy_unit_conversion),
-            };
-            let p = pywr_core::parameters::HydropowerTargetParameter::new(name, turbine_data);
-            let power_idx = network.add_parameter(Box::new(p))?;
-            let metric: MetricF64 = power_idx.into();
+        let water_elevation = self
+            .water_elevation
+            .as_ref()
+            .map(|t| t.load(network, args, Some(&self.meta.name)))
+            .transpose()?;
 
-            match self.target_type {
+        let inflow_metric: MetricF64 = MetricF64::NodeInFlow(
+            network
+                .get_node_index_by_name(self.meta.name.as_str(), None)
+                .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                    name: self.meta.name.clone(),
+                    sub_name: None,
+                })?,
+        );
+
+        let turbine_data = HydropowerTargetData {
+            actual_flow: Some(inflow_metric),
+            target: target_value,
+            water_elevation,
+            elevation: Some(self.turbine_elevation),
+            min_head: Some(self.min_head),
+            max_flow: None,
+            min_flow: None,
+            efficiency: Some(self.efficiency),
+            water_density: Some(self.water_density),
+            flow_unit_conversion: Some(self.flow_unit_conversion),
+            energy_unit_conversion: Some(self.energy_unit_conversion),
+        };
+
+        let p = pywr_core::parameters::HydropowerTargetParameter::new(name, turbine_data);
+        let power_idx = network.add_parameter(Box::new(p))?;
+
+        // Only set flow constraints if a target is defined
+        if self.target.is_some() {
+            let metric: MetricF64 = power_idx.into_metric_f64_before();
+
+            match self.target_type.clone().unwrap_or_default() {
                 TargetType::MaxFlow => {
-                    network.set_node_max_flow(self.meta.name.as_str(), Self::sub_name(), metric.clone().into())?;
+                    network.set_node_max_flow(self.meta.name.as_str(), None, metric.clone().into())?;
                 }
                 TargetType::MinFlow => {
-                    network.set_node_min_flow(self.meta.name.as_str(), Self::sub_name(), metric.clone().into())?;
+                    network.set_node_min_flow(self.meta.name.as_str(), None, metric.clone().into())?;
                 }
                 TargetType::Both => {
-                    network.set_node_max_flow(self.meta.name.as_str(), Self::sub_name(), metric.clone().into())?;
-                    network.set_node_min_flow(self.meta.name.as_str(), Self::sub_name(), metric.clone().into())?
+                    network.set_node_max_flow(self.meta.name.as_str(), None, metric.clone().into())?;
+                    network.set_node_min_flow(self.meta.name.as_str(), None, metric.clone().into())?
                 }
             }
         }
@@ -219,7 +241,6 @@ impl TurbineNode {
         &self,
         network: &mut pywr_core::network::Network,
         attribute: Option<NodeAttribute>,
-        args: &LoadArgs,
     ) -> Result<MetricF64, SchemaError> {
         // Use the default attribute if none is specified
         let attr = match attribute {
@@ -238,23 +259,17 @@ impl TurbineNode {
             TurbineNodeAttribute::Outflow => MetricF64::NodeOutFlow(idx),
             TurbineNodeAttribute::Inflow => MetricF64::NodeInFlow(idx),
             TurbineNodeAttribute::Power => {
-                let water_elevation = self
-                    .water_elevation
-                    .as_ref()
-                    .map(|t| t.load(network, args, Some(&self.meta.name)))
-                    .transpose()?;
+                // Retrieve the parameter created for the hydropower calculation
+                let name = ParameterName::new("power", Some(self.meta.name.as_str()));
+                let power_param =
+                    network
+                        .get_parameter_index_by_name(&name)
+                        .ok_or_else(|| SchemaError::CoreParameterNotFound {
+                            name: name.to_string(),
+                            key: None,
+                        })?;
 
-                let turbine_data = TurbineData {
-                    elevation: self.turbine_elevation,
-                    efficiency: self.efficiency,
-                    water_elevation,
-                    water_density: self.water_density,
-                    flow_unit_conversion: self.flow_unit_conversion,
-                    energy_unit_conversion: self.energy_unit_conversion,
-                };
-                let dm = DerivedMetric::PowerFromNodeFlow(idx, turbine_data);
-                let dm_idx = network.add_derived_metric(dm);
-                MetricF64::DerivedMetric(dm_idx)
+                power_param.into_metric_f64_after()
             }
         };
 

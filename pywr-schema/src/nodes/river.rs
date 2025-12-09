@@ -413,7 +413,7 @@ impl RiverNode {
                     let delay_idx = network.add_parameter(Box::new(p))?;
 
                     // Apply it as a constraint on the input node.
-                    let metric: MetricF64 = delay_idx.into();
+                    let metric: MetricF64 = delay_idx.into_metric_f64_before();
                     network.set_node_max_flow(
                         self.meta.name.as_str(),
                         Self::input_sub_name(),
@@ -457,8 +457,11 @@ impl RiverNode {
 
                     // Set the relationship on the aggregated node to enforce the Muskingum routing
                     let factors = Relationship::new_coefficient_factors(
-                        &[1.0.into(), (muskingum_idx.clone(), "inflow_factor".to_string()).into()],
-                        Some((muskingum_idx, "rhs".to_string()).into()),
+                        &[
+                            1.0.into(),
+                            muskingum_idx.clone().into_metric_f64_before("inflow_factor"),
+                        ],
+                        Some(muskingum_idx.into_metric_f64_before("rhs")),
                     );
 
                     network.set_aggregated_node_relationship(
