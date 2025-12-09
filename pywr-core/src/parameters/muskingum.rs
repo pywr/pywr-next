@@ -69,14 +69,14 @@ impl Parameter for MuskingumParameter {
 }
 
 impl GeneralParameter<MultiValue> for MuskingumParameter {
-    fn compute(
+    fn before(
         &self,
         timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
         model: &Network,
         state: &State,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<MultiValue, ParameterCalculationError> {
+    ) -> Result<Option<MultiValue>, ParameterCalculationError> {
         let weight = self.weight.get_value(model, state)?;
         let travel_time = self.travel_time.get_value(model, state)?;
 
@@ -91,7 +91,7 @@ impl GeneralParameter<MultiValue> for MuskingumParameter {
                     let mut values = HashMap::new();
                     values.insert("inflow_factor".to_string(), -inflow_factor / outflow_factor);
                     values.insert("rhs".to_string(), 0.0);
-                    return Ok(MultiValue::new(values, HashMap::new()));
+                    return Ok(Some(MultiValue::new(values, HashMap::new())));
                 }
                 MuskingumInitialCondition::Specified { inflow, outflow } => (*inflow, *outflow),
             }
@@ -105,7 +105,7 @@ impl GeneralParameter<MultiValue> for MuskingumParameter {
         let mut values = HashMap::new();
         values.insert("inflow_factor".to_string(), -inflow_factor(weight, travel_time));
         values.insert("rhs".to_string(), rhs(inflow, outflow, weight, travel_time));
-        Ok(MultiValue::new(values, HashMap::new()))
+        Ok(Some(MultiValue::new(values, HashMap::new())))
     }
 
     fn as_parameter(&self) -> &dyn Parameter

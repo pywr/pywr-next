@@ -33,14 +33,14 @@ impl Parameter for Polynomial1DParameter {
 }
 
 impl GeneralParameter<f64> for Polynomial1DParameter {
-    fn compute(
+    fn before(
         &self,
         _timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
         model: &Network,
         state: &State,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<f64, ParameterCalculationError> {
+    ) -> Result<Option<f64>, ParameterCalculationError> {
         // Current value
         let x = self.metric.get_value(model, state)?;
         let x = x * self.scale + self.offset;
@@ -50,7 +50,7 @@ impl GeneralParameter<f64> for Polynomial1DParameter {
             .iter()
             .enumerate()
             .fold(0.0, |y, (i, c)| y + c * x.powi(i as i32));
-        Ok(y)
+        Ok(Some(y))
     }
 
     fn as_parameter(&self) -> &dyn Parameter

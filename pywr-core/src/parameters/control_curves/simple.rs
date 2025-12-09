@@ -31,14 +31,14 @@ impl Parameter for ControlCurveParameter {
 }
 
 impl GeneralParameter<f64> for ControlCurveParameter {
-    fn compute(
+    fn before(
         &self,
         _timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
         model: &Network,
         state: &State,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<f64, ParameterCalculationError> {
+    ) -> Result<Option<f64>, ParameterCalculationError> {
         // Current value
         let x = self.metric.get_value(model, state)?;
 
@@ -53,7 +53,7 @@ impl GeneralParameter<f64> for ControlCurveParameter {
                         index: idx,
                         length: self.values.len(),
                     })?;
-                return Ok(value.get_value(model, state)?);
+                return Ok(Some(value.get_value(model, state)?));
             }
         }
 
@@ -66,7 +66,7 @@ impl GeneralParameter<f64> for ControlCurveParameter {
                 length: self.values.len(),
             })?;
 
-        Ok(value.get_value(model, state)?)
+        Ok(Some(value.get_value(model, state)?))
     }
 
     fn as_parameter(&self) -> &dyn Parameter

@@ -26,16 +26,16 @@ impl Parameter for VectorParameter {
 }
 
 impl GeneralParameter<f64> for VectorParameter {
-    fn compute(
+    fn before(
         &self,
         timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
         _model: &Network,
         _state: &State,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<f64, ParameterCalculationError> {
+    ) -> Result<Option<f64>, ParameterCalculationError> {
         match self.values.get(timestep.index) {
-            Some(v) => Ok(*v),
+            Some(v) => Ok(Some(*v)),
             None => Err(ParameterCalculationError::OutOfBoundsError {
                 index: timestep.index,
                 length: self.values.len(),

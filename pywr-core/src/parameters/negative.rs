@@ -27,17 +27,17 @@ impl Parameter for NegativeParameter {
 }
 
 impl GeneralParameter<f64> for NegativeParameter {
-    fn compute(
+    fn before(
         &self,
         _timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
         model: &Network,
         state: &State,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<f64, ParameterCalculationError> {
+    ) -> Result<Option<f64>, ParameterCalculationError> {
         // Current value
         let x = self.metric.get_value(model, state)?;
-        Ok(-x)
+        Ok(Some(-x))
     }
 
     fn as_parameter(&self) -> &dyn Parameter
