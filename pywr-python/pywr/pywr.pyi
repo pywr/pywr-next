@@ -3,7 +3,6 @@ from os import PathLike
 from typing import Optional, List, Tuple
 import polars as pl
 
-
 class ParameterInfo:
     """Provides data for a custom Pywr parameter.
 
@@ -32,7 +31,6 @@ class ParameterInfo:
         Args:
             name: The name of the component to retrieve the index for.
         """
-
 
 class Timestep:
     """Represents a single time-step in a simulation.
@@ -96,7 +94,6 @@ class Timestep:
     def is_leap_year(self) -> bool:
         """Returns true if the year of the timestep is a leap year."""
 
-
 class ScenarioIndex:
     """Represents a scenario index in a Pywr model.
 
@@ -110,7 +107,6 @@ class ScenarioIndex:
     @property
     def simulation_indices(self) -> List[int]:
         """Returns indices for each scenario group for this simulation."""
-
 
 class ModelSchema:
     @classmethod
@@ -133,10 +129,9 @@ class ModelSchema:
         """Serialize the schema to a JSON string."""
 
     def build(
-            self, data_path: Optional[PathLike], output_path: Optional[PathLike]
+        self, data_path: Optional[PathLike], output_path: Optional[PathLike]
     ) -> "Model":
         """Build the schema in to a Pywr model."""
-
 
 class MultiNetworkModelSchema:
     @classmethod
@@ -159,10 +154,9 @@ class MultiNetworkModelSchema:
         """Serialize the schema to a JSON string."""
 
     def build(
-            self, data_path: Optional[PathLike], output_path: Optional[PathLike]
+        self, data_path: Optional[PathLike], output_path: Optional[PathLike]
     ) -> "Model":
         """Build the schema in to a Pywr model."""
-
 
 class Model:
     def run(self, solver_name: str, solver_kwargs: Optional[dict] = None):
@@ -173,7 +167,6 @@ class Model:
             solver_kwargs: Optional keyword arguments to pass to the solver.
         """
 
-
 class MultiNetworkModel:
     def run(self, solver_name: str, solver_kwargs: Optional[dict] = None):
         """Run the model using the specified solver.
@@ -183,7 +176,6 @@ class MultiNetworkModel:
             solver_kwargs: Optional keyword arguments to pass to the solver.
         """
 
-
 class ModelResult:
     @property
     def network_result(self) -> "NetworkResult":
@@ -192,7 +184,6 @@ class ModelResult:
     @property
     def timings(self) -> "ModelTimings":
         """Returns the model timings object."""
-
 
 class MultiNetworkModelResult:
     def network_results(self, name: str) -> "NetworkResult":
@@ -205,7 +196,6 @@ class MultiNetworkModelResult:
     @property
     def timings(self) -> "MultiNetworkModelTimings":
         """Returns the model timings object."""
-
 
 class NetworkResult:
     def aggregated_value(self, name: str) -> float:
@@ -225,7 +215,6 @@ class NetworkResult:
     def output_names(self) -> list[str]:
         """Get a list of all available output names."""
 
-
 class ModelTimings:
     @property
     def total_duration(self) -> float:
@@ -234,7 +223,6 @@ class ModelTimings:
     @property
     def speed(self) -> float:
         """Model speed in timesteps per second."""
-
 
 class MultiNetworkModelTimings:
     @property
@@ -245,22 +233,12 @@ class MultiNetworkModelTimings:
     def speed(self) -> float:
         """Model speed in timesteps per second."""
 
-
 class Metric: ...
-
-
 class ComponentConversionError: ...
-
-
 class ConversionError: ...
 
-
 def convert_model_from_v1_json_string(
-        data: str,
+    data: str,
 ) -> Tuple[ModelSchema, List[ComponentConversionError]]: ...
-
-
 def convert_metric_from_v1_json_string(data: str) -> Metric: ...
-
-
 def export_schema(out_path: PathLike): ...

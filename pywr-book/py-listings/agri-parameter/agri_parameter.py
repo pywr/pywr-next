@@ -25,7 +25,7 @@ class CropParameter:
             9: 10.0,  # September
             10: 0.0,  # October
             11: 0.0,  # November
-            12: 0.0  # December
+            12: 0.0,  # December
         }
         self.growing_season_months = {3, 4, 5, 6, 7, 8, 9}
 
@@ -43,14 +43,12 @@ class CropParameter:
         if info.timestep.month not in self.growing_season_months:
             # Reset yield at the end of the growing season
             if info.timestep.month == 10 and info.timestep.day == 1:
+                final_crop_yield = self.crop_yield
                 self.crop_yield = 0.0
-                return self.crop_yield
+                return final_crop_yield
         else:
             # Implement a simple crop growth/yield model based on irrigation deficit
-            if deficit <= 0:
-                self.crop_yield += 1.0  # Full yield increment
-            else:
-                self.crop_yield += max(0.0, 1.0 - (deficit / irrigation_required))
+            self.crop_yield += max(0.0, 1.0 - (deficit / irrigation_required))
 
         return 0.0  # Yield is only returned at the end of the season
 
@@ -64,6 +62,6 @@ def run(model_path: Path):
     print("Model run complete 🎉")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     pth = Path(__file__).parent / "model.json"
     run(pth)
