@@ -491,6 +491,8 @@ pub enum ParameterReturnValue {
     #[default]
     Before,
     After,
+    BeforeOrElseAfter,
+    AfterOrElseBefore,
 }
 
 #[cfg(feature = "core")]
@@ -499,6 +501,8 @@ impl From<ParameterReturnValue> for pywr_core::state::ParameterReturnValue {
         match v {
             ParameterReturnValue::Before => Self::Before,
             ParameterReturnValue::After => Self::After,
+            ParameterReturnValue::BeforeOrElseAfter => Self::BeforeOrElseAfter,
+            ParameterReturnValue::AfterOrElseBefore => Self::AfterOrElseBefore,
         }
     }
 }
