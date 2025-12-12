@@ -48,9 +48,9 @@ microlp = "0.2.11"
 ndarray = "0.16"
 num = "0.4"
 polars = { version = "0.52", default-features = false }
-pyo3 = { version = "0.25" }
-pyo3-log = "0.12"
-pyo3-polars = { version = "0.24", default-features = false }
+pyo3 = { version = "0.26" }
+pyo3-log = "0.13"
+pyo3-polars = { version = "0.25", default-features = false }
 pywr-v1-schema = "0.21"
 rand = "0.9"
 rand_chacha = "0.9"
