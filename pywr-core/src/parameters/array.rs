@@ -42,13 +42,13 @@ where
     }
 }
 impl SimpleParameter<f64> for Array1Parameter<f64> {
-    fn compute(
+    fn before(
         &self,
         timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
         _values: &SimpleParameterValues,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<f64, SimpleCalculationError> {
+    ) -> Result<Option<f64>, SimpleCalculationError> {
         let idx = self.timestep_index(timestep);
 
         let value = self
@@ -59,7 +59,7 @@ impl SimpleParameter<f64> for Array1Parameter<f64> {
                 length: self.array.len(),
                 axis: 0,
             })?;
-        Ok(*value)
+        Ok(Some(*value))
     }
 
     fn as_parameter(&self) -> &dyn Parameter
@@ -71,13 +71,13 @@ impl SimpleParameter<f64> for Array1Parameter<f64> {
 }
 
 impl SimpleParameter<u64> for Array1Parameter<u64> {
-    fn compute(
+    fn before(
         &self,
         timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
         _values: &SimpleParameterValues,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<u64, SimpleCalculationError> {
+    ) -> Result<Option<u64>, SimpleCalculationError> {
         let idx = self.timestep_index(timestep);
         let value = self
             .array
@@ -87,7 +87,7 @@ impl SimpleParameter<u64> for Array1Parameter<u64> {
                 length: self.array.len(),
                 axis: 0,
             })?;
-        Ok(*value)
+        Ok(Some(*value))
     }
 
     fn as_parameter(&self) -> &dyn Parameter
@@ -144,13 +144,13 @@ where
 }
 
 impl SimpleParameter<f64> for Array2Parameter<f64> {
-    fn compute(
+    fn before(
         &self,
         timestep: &Timestep,
         scenario_index: &ScenarioIndex,
         _values: &SimpleParameterValues,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<f64, SimpleCalculationError> {
+    ) -> Result<Option<f64>, SimpleCalculationError> {
         let t_idx = self.timestep_index(timestep);
         let s_idx = scenario_index.simulation_index_for_group(self.scenario_group_index);
 
@@ -175,7 +175,7 @@ impl SimpleParameter<f64> for Array2Parameter<f64> {
                 )
             }
         })?;
-        Ok(*value)
+        Ok(Some(*value))
     }
 
     fn as_parameter(&self) -> &dyn Parameter
@@ -187,13 +187,13 @@ impl SimpleParameter<f64> for Array2Parameter<f64> {
 }
 
 impl SimpleParameter<u64> for Array2Parameter<u64> {
-    fn compute(
+    fn before(
         &self,
         timestep: &Timestep,
         scenario_index: &ScenarioIndex,
         _values: &SimpleParameterValues,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<u64, SimpleCalculationError> {
+    ) -> Result<Option<u64>, SimpleCalculationError> {
         let t_idx = self.timestep_index(timestep);
         let s_idx = scenario_index.simulation_index_for_group(self.scenario_group_index);
 
@@ -218,7 +218,7 @@ impl SimpleParameter<u64> for Array2Parameter<u64> {
                 )
             }
         })?;
-        Ok(*value)
+        Ok(Some(*value))
     }
 
     fn as_parameter(&self) -> &dyn Parameter
@@ -254,7 +254,8 @@ mod tests {
             for si in domain.scenarios().indices().iter() {
                 assert_approx_eq!(
                     f64,
-                    p.compute(ts, si, &spv.get_simple_parameter_values(), &mut state)
+                    p.before(ts, si, &spv.get_simple_parameter_values(), &mut state)
+                        .unwrap()
                         .unwrap(),
                     ts.index as f64
                 );
@@ -281,7 +282,8 @@ mod tests {
             for si in domain.scenarios().indices().iter() {
                 assert_approx_eq!(
                     f64,
-                    p.compute(ts, si, &spv.get_simple_parameter_values(), &mut state)
+                    p.before(ts, si, &spv.get_simple_parameter_values(), &mut state)
+                        .unwrap()
                         .unwrap(),
                     ts.index as f64
                 );
@@ -309,14 +311,15 @@ mod tests {
                 if ts.index >= 5 {
                     // If the time-step index is out of bounds, we should return an error
                     assert!(
-                        p.compute(ts, si, &spv.get_simple_parameter_values(), &mut state)
+                        p.before(ts, si, &spv.get_simple_parameter_values(), &mut state)
                             .is_err()
                     );
                 } else {
                     // Otherwise, we should return the value
                     assert_approx_eq!(
                         f64,
-                        p.compute(ts, si, &spv.get_simple_parameter_values(), &mut state)
+                        p.before(ts, si, &spv.get_simple_parameter_values(), &mut state)
+                            .unwrap()
                             .unwrap(),
                         ts.index as f64
                     );

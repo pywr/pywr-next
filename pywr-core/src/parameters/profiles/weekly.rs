@@ -176,14 +176,14 @@ impl Parameter for WeeklyProfileParameter {
 }
 
 impl SimpleParameter<f64> for WeeklyProfileParameter {
-    fn compute(
+    fn before(
         &self,
         timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
         _values: &SimpleParameterValues,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<f64, SimpleCalculationError> {
-        Ok(self.values.value(timestep, &self.interp_day))
+    ) -> Result<Option<f64>, SimpleCalculationError> {
+        Ok(Some(self.values.value(timestep, &self.interp_day)))
     }
 
     fn as_parameter(&self) -> &dyn Parameter

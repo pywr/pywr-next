@@ -29,14 +29,14 @@ impl Parameter for DiurnalProfileParameter {
 }
 
 impl SimpleParameter<f64> for DiurnalProfileParameter {
-    fn compute(
+    fn before(
         &self,
         timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
         _values: &SimpleParameterValues,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<f64, SimpleCalculationError> {
-        Ok(self.values[timestep.date.time().hour() as usize])
+    ) -> Result<Option<f64>, SimpleCalculationError> {
+        Ok(Some(self.values[timestep.date.time().hour() as usize]))
     }
 
     fn as_parameter(&self) -> &dyn Parameter

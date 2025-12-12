@@ -14,6 +14,6 @@ class CustomParameter:
         self.value = value
         self.multiplier = multiplier
 
-    def calc(self, info: ParameterInfo):
+    def before(self, _info: ParameterInfo) -> float | None:
         """This method is called to calculate the parameter value for each timestep."""
         return self.value * self.multiplier

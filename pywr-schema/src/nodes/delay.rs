@@ -161,7 +161,7 @@ impl DelayNode {
         let delay_idx = network.add_parameter(Box::new(p))?;
 
         // Apply it as a constraint on the input node.
-        let metric: MetricF64 = delay_idx.into();
+        let metric: MetricF64 = delay_idx.into_metric_f64_before();
         network.set_node_max_flow(self.meta.name.as_str(), Self::input_sub_name(), metric.clone().into())?;
         network.set_node_min_flow(self.meta.name.as_str(), Self::input_sub_name(), metric.into())?;
 

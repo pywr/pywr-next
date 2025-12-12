@@ -6,6 +6,7 @@ mod asymmetric;
 mod constant;
 mod constant_scenario;
 mod control_curves;
+mod deficit;
 mod delay;
 mod difference;
 mod discount_factor;
@@ -33,9 +34,12 @@ mod vector;
 
 use std::any::Any;
 // Re-imports
+use crate::metric::{ConstantMetricF64, ConstantMetricU64, MetricF64, MetricU64, SimpleMetricF64, SimpleMetricU64};
 use crate::network::Network;
 use crate::scenario::ScenarioIndex;
-use crate::state::{ConstParameterValues, MultiValue, SetStateError, SimpleParameterValues, State};
+use crate::state::{
+    ConstParameterValues, MultiValue, ParameterReturnValue, SetStateError, SimpleParameterValues, State,
+};
 use crate::timestep::Timestep;
 pub use activation_function::ActivationFunction;
 pub use aggregated::AggregatedParameter;
@@ -48,6 +52,7 @@ pub use control_curves::{
     ApportionParameter, ControlCurveIndexParameter, ControlCurveInterpolatedParameter, ControlCurveParameter,
     PiecewiseInterpolatedParameter, VolumeBetweenControlCurvesParameter,
 };
+pub use deficit::DeficitParameter;
 pub use delay::DelayParameter;
 pub use difference::DifferenceParameter;
 pub use discount_factor::DiscountFactorParameter;
@@ -288,6 +293,109 @@ impl<T> From<ConstParameterIndex<T>> for ParameterIndex<T> {
     }
 }
 
+impl ParameterIndex<f64> {
+    /// Convert the parameter index into a metric.
+    pub fn into_metric_f64(self, return_value: ParameterReturnValue) -> MetricF64 {
+        match self {
+            ParameterIndex::Const(idx) => ConstantMetricF64::ParameterValue(idx).into(),
+            ParameterIndex::Simple(idx) => SimpleMetricF64::ParameterValue(idx).into(),
+            ParameterIndex::General(index) => MetricF64::ParameterValue { index, return_value },
+        }
+    }
+
+    /// Convert the parameter index into a metric that returns the "before" value.
+    ///
+    /// This is a convenience method for `into_metric_f64(ParameterReturnValue::Before)`.
+    pub fn into_metric_f64_before(self) -> MetricF64 {
+        self.into_metric_f64(ParameterReturnValue::Before)
+    }
+
+    /// Convert the parameter index into a metric that returns the "after" value.
+    ///
+    /// This is a convenience method for `into_metric_f64(ParameterReturnValue::After)`.
+    pub fn into_metric_f64_after(self) -> MetricF64 {
+        self.into_metric_f64(ParameterReturnValue::After)
+    }
+}
+
+impl ParameterIndex<u64> {
+    /// Convert the parameter index into a metric.
+    pub fn into_metric_f64(self, return_value: ParameterReturnValue) -> MetricF64 {
+        match self {
+            ParameterIndex::Const(idx) => ConstantMetricF64::IndexParameterValue(idx).into(),
+            ParameterIndex::Simple(idx) => SimpleMetricF64::IndexParameterValue(idx).into(),
+            ParameterIndex::General(index) => MetricF64::IndexParameterValue { index, return_value },
+        }
+    }
+
+    /// Convert the parameter index into a metric that returns the "before" value.
+    ///
+    /// This is a convenience method for `into_metric(ParameterReturnValue::Before)`.
+    pub fn into_metric_f64_before(self) -> MetricF64 {
+        self.into_metric_f64(ParameterReturnValue::Before)
+    }
+
+    /// Convert the parameter index into a metric.
+    pub fn into_metric_u64(self, return_value: ParameterReturnValue) -> MetricU64 {
+        match self {
+            ParameterIndex::Const(idx) => ConstantMetricU64::IndexParameterValue(idx).into(),
+            ParameterIndex::Simple(idx) => SimpleMetricU64::IndexParameterValue(idx).into(),
+            ParameterIndex::General(index) => MetricU64::IndexParameterValue { index, return_value },
+        }
+    }
+
+    /// Convert the parameter index into a metric that returns the "before" value.
+    ///
+    /// This is a convenience method for `into_metric(ParameterReturnValue::Before)`.
+    pub fn into_metric_u64_before(self) -> MetricU64 {
+        self.into_metric_u64(ParameterReturnValue::Before)
+    }
+}
+
+impl ParameterIndex<MultiValue> {
+    /// Convert the parameter index into a metric.
+    pub fn into_metric_f64(self, key: &str, return_value: ParameterReturnValue) -> MetricF64 {
+        let key = key.to_string();
+        match self {
+            ParameterIndex::Const(index) => ConstantMetricF64::MultiParameterValue { index, key }.into(),
+            ParameterIndex::Simple(index) => SimpleMetricF64::MultiParameterValue { index, key }.into(),
+            ParameterIndex::General(index) => MetricF64::MultiParameterValue {
+                index,
+                key,
+                return_value,
+            },
+        }
+    }
+
+    /// Convert the parameter index into a metric that returns the "before" value.
+    ///
+    /// This is a convenience method for `into_metric_f64(key, ParameterReturnValue::Before)`.
+    pub fn into_metric_f64_before(self, key: &str) -> MetricF64 {
+        self.into_metric_f64(key, ParameterReturnValue::Before)
+    }
+
+    /// Convert the parameter index into a metric.
+    pub fn into_metric_u64(self, key: &str, return_value: ParameterReturnValue) -> MetricU64 {
+        let key = key.to_string();
+        match self {
+            ParameterIndex::Const(index) => ConstantMetricU64::MultiParameterValue { index, key }.into(),
+            ParameterIndex::Simple(index) => SimpleMetricU64::MultiParameterValue { index, key }.into(),
+            ParameterIndex::General(index) => MetricU64::MultiParameterValue {
+                index,
+                key,
+                return_value,
+            },
+        }
+    }
+
+    /// Convert the parameter index into a metric that returns the "before" value.
+    ///
+    /// This is a convenience method for `into_metric_u64(key, ParameterReturnValue::Before)`.
+    pub fn into_metric_u64_before(self, key: &str) -> MetricU64 {
+        self.into_metric_u64(key, ParameterReturnValue::Before)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParameterName {
     name: String,
@@ -345,7 +453,7 @@ impl From<&str> for ParameterName {
 }
 
 /// Meta data common to all parameters.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ParameterMeta {
     name: ParameterName,
 }
@@ -594,14 +702,16 @@ pub trait Parameter: Send + Sync {
 ///
 /// The trait is generic over the type of the value produced.
 pub trait GeneralParameter<T>: Parameter {
-    fn compute(
+    fn before(
         &self,
-        timestep: &Timestep,
-        scenario_index: &ScenarioIndex,
-        model: &Network,
-        state: &State,
-        internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<T, ParameterCalculationError>;
+        #[allow(unused_variables)] timestep: &Timestep,
+        #[allow(unused_variables)] scenario_index: &ScenarioIndex,
+        #[allow(unused_variables)] model: &Network,
+        #[allow(unused_variables)] state: &State,
+        #[allow(unused_variables)] internal_state: &mut Option<Box<dyn ParameterState>>,
+    ) -> Result<Option<T>, ParameterCalculationError> {
+        Ok(None)
+    }
 
     fn after(
         &self,
@@ -610,8 +720,8 @@ pub trait GeneralParameter<T>: Parameter {
         #[allow(unused_variables)] model: &Network,
         #[allow(unused_variables)] state: &State,
         #[allow(unused_variables)] internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<(), ParameterCalculationError> {
-        Ok(())
+    ) -> Result<Option<T>, ParameterCalculationError> {
+        Ok(None)
     }
 
     fn try_into_simple(&self) -> Option<Box<dyn SimpleParameter<T>>> {
@@ -625,13 +735,13 @@ pub trait GeneralParameter<T>: Parameter {
 ///
 /// The trait is generic over the type of the value produced.
 pub trait SimpleParameter<T>: Parameter {
-    fn compute(
+    fn before(
         &self,
         timestep: &Timestep,
         scenario_index: &ScenarioIndex,
         values: &SimpleParameterValues,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<T, SimpleCalculationError>;
+    ) -> Result<Option<T>, SimpleCalculationError>;
 
     fn after(
         &self,
@@ -639,8 +749,8 @@ pub trait SimpleParameter<T>: Parameter {
         #[allow(unused_variables)] scenario_index: &ScenarioIndex,
         #[allow(unused_variables)] values: &SimpleParameterValues,
         #[allow(unused_variables)] internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<(), SimpleCalculationError> {
-        Ok(())
+    ) -> Result<Option<T>, SimpleCalculationError> {
+        Ok(None)
     }
 
     fn as_parameter(&self) -> &dyn Parameter;
@@ -1422,7 +1532,7 @@ impl ParameterCollection {
                         .ok_or(ParameterCollectionSimpleCalculationError::F64IndexNotFound(*idx))?;
 
                     let value = p
-                        .compute(
+                        .before(
                             timestep,
                             scenario_index,
                             &state.get_simple_parameter_values(),
@@ -1433,7 +1543,7 @@ impl ParameterCollection {
                             source,
                         })?;
 
-                    state.set_simple_parameter_value(*idx, value).map_err(|source| {
+                    state.set_simple_parameter_value_before(*idx, value).map_err(|source| {
                         ParameterCollectionSimpleCalculationError::F64SetStateError {
                             name: p.name().clone(),
                             source,
@@ -1452,7 +1562,7 @@ impl ParameterCollection {
                         .ok_or(ParameterCollectionSimpleCalculationError::U64IndexNotFound(*idx))?;
 
                     let value = p
-                        .compute(
+                        .before(
                             timestep,
                             scenario_index,
                             &state.get_simple_parameter_values(),
@@ -1463,7 +1573,7 @@ impl ParameterCollection {
                             source,
                         })?;
 
-                    state.set_simple_parameter_index(*idx, value).map_err(|source| {
+                    state.set_simple_parameter_index_before(*idx, value).map_err(|source| {
                         ParameterCollectionSimpleCalculationError::U64SetStateError {
                             name: p.name().clone(),
                             source,
@@ -1482,7 +1592,7 @@ impl ParameterCollection {
                         .ok_or(ParameterCollectionSimpleCalculationError::MultiIndexNotFound(*idx))?;
 
                     let value = p
-                        .compute(
+                        .before(
                             timestep,
                             scenario_index,
                             &state.get_simple_parameter_values(),
@@ -1493,12 +1603,12 @@ impl ParameterCollection {
                             source,
                         })?;
 
-                    state.set_simple_multi_parameter_value(*idx, value).map_err(|source| {
-                        ParameterCollectionSimpleCalculationError::MultiSetStateError {
+                    state
+                        .set_simple_multi_parameter_value_before(*idx, value)
+                        .map_err(|source| ParameterCollectionSimpleCalculationError::MultiSetStateError {
                             name: p.name().clone(),
                             source,
-                        }
-                    })?;
+                        })?;
                 }
             }
         }
@@ -1575,7 +1685,7 @@ impl ParameterCollection {
                         .get_simple_mut_multi_state(*idx)
                         .ok_or(ParameterCollectionSimpleCalculationError::MultiIndexNotFound(*idx))?;
 
-                    p.compute(
+                    p.before(
                         timestep,
                         scenario_index,
                         &state.get_simple_parameter_values(),
@@ -1747,14 +1857,14 @@ mod tests {
     where
         T: From<u8>,
     {
-        fn compute(
+        fn before(
             &self,
             _timestep: &crate::timestep::Timestep,
             _scenario_index: &ScenarioIndex,
             _values: &crate::state::SimpleParameterValues,
             _internal_state: &mut Option<Box<dyn ParameterState>>,
-        ) -> Result<T, SimpleCalculationError> {
-            Ok(T::from(1))
+        ) -> Result<Option<T>, SimpleCalculationError> {
+            Ok(Some(T::from(1)))
         }
 
         fn as_parameter(&self) -> &dyn Parameter {
@@ -1763,14 +1873,14 @@ mod tests {
     }
 
     impl SimpleParameter<MultiValue> for TestParameter {
-        fn compute(
+        fn before(
             &self,
             _timestep: &crate::timestep::Timestep,
             _scenario_index: &ScenarioIndex,
             _values: &crate::state::SimpleParameterValues,
             _internal_state: &mut Option<Box<dyn ParameterState>>,
-        ) -> Result<MultiValue, SimpleCalculationError> {
-            Ok(MultiValue::default())
+        ) -> Result<Option<MultiValue>, SimpleCalculationError> {
+            Ok(Some(MultiValue::default()))
         }
 
         fn as_parameter(&self) -> &dyn Parameter {
@@ -1781,15 +1891,15 @@ mod tests {
     where
         T: From<u8>,
     {
-        fn compute(
+        fn before(
             &self,
             _timestep: &crate::timestep::Timestep,
             _scenario_index: &ScenarioIndex,
             _model: &crate::network::Network,
             _state: &crate::state::State,
             _internal_state: &mut Option<Box<dyn ParameterState>>,
-        ) -> Result<T, ParameterCalculationError> {
-            Ok(T::from(1))
+        ) -> Result<Option<T>, ParameterCalculationError> {
+            Ok(Some(T::from(1)))
         }
 
         fn as_parameter(&self) -> &dyn Parameter {
@@ -1798,15 +1908,15 @@ mod tests {
     }
 
     impl GeneralParameter<MultiValue> for TestParameter {
-        fn compute(
+        fn before(
             &self,
             _timestep: &crate::timestep::Timestep,
             _scenario_index: &ScenarioIndex,
             _model: &crate::network::Network,
             _state: &crate::state::State,
             _internal_state: &mut Option<Box<dyn ParameterState>>,
-        ) -> Result<MultiValue, ParameterCalculationError> {
-            Ok(MultiValue::default())
+        ) -> Result<Option<MultiValue>, ParameterCalculationError> {
+            Ok(Some(MultiValue::default()))
         }
 
         fn as_parameter(&self) -> &dyn Parameter {
