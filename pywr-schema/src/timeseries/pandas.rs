@@ -70,7 +70,7 @@ mod core {
     impl PandasTimeseries {
         pub fn load(&self, data_path: Option<&Path>, domain: &ModelDomain) -> Result<DataFrame, TimeseriesError> {
             // Prepare the Python interpreter if not already
-            pyo3::prepare_freethreaded_python();
+            Python::initialize();
 
             let fp = if self.url.is_absolute() {
                 self.url.clone()
@@ -85,7 +85,7 @@ mod core {
                 checksum.check(&fp)?;
             }
 
-            let df: PyDataFrame = Python::with_gil(|py| -> PyResult<PyDataFrame> {
+            let df: PyDataFrame = Python::attach(|py| -> PyResult<PyDataFrame> {
                 let pandas_load =
                     PyModule::from_code(py, PANDAS_LOAD_SCRIPT, c_str!("pandas_load.py"), c_str!("pandas_load"))?;
 

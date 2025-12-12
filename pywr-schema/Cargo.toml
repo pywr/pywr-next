@@ -40,7 +40,8 @@ hex = { workspace = true }
 md-5 = { workspace = true }
 ndarray = { workspace = true, optional = true }
 num = { workspace = true }
-polars = { workspace = true, features = ["lazy", "rows", "ndarray", "diff", "dtype-datetime", "dtype-date", "dynamic_group_by"], optional = true }
+# "timezones" feature is only needed v0.52 (see https://github.com/pola-rs/polars/issues/25148)
+polars = { workspace = true, features = ["lazy", "rows", "ndarray", "diff", "dtype-datetime", "dtype-date", "dynamic_group_by", "timezones"], optional = true }
 pyo3 = { workspace = true, optional = true }
 pyo3-polars = { workspace = true, optional = true }
 pywr-core = { path = "../pywr-core", default-features = false, optional = true }

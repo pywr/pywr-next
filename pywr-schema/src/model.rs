@@ -425,7 +425,7 @@ impl From<ModelSchemaBuildError> for PyErr {
 
         if let Ok(py_cause) = py_cause {
             // If the cause is a PyErr, set it as the cause of the PyErr
-            return Python::with_gil(|py| {
+            return Python::attach(|py| {
                 py_err.set_cause(py, Some(py_cause));
                 py_err
             });
@@ -694,7 +694,7 @@ impl From<MultiNetworkModelSchemaBuildError> for PyErr {
 
         if let Ok(py_cause) = py_cause {
             // If the cause is a PyErr, set it as the cause of the PyErr
-            return Python::with_gil(|py| {
+            return Python::attach(|py| {
                 py_err.set_cause(py, Some(py_cause));
                 py_err
             });

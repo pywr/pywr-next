@@ -583,7 +583,7 @@ impl Model {
         S: Solver,
         <S as Solver>::Settings: SolverSettings + Sync,
     {
-        let result = py.allow_threads(|| self.run::<S>(settings))?;
+        let result = py.detach(|| self.run::<S>(settings))?;
         Ok(result)
     }
 
@@ -595,7 +595,7 @@ impl Model {
         S: MultiStateSolver,
         <S as MultiStateSolver>::Settings: SolverSettings + Sync,
     {
-        let result = py.allow_threads(|| self.run_multi_scenario::<S>(settings))?;
+        let result = py.detach(|| self.run_multi_scenario::<S>(settings))?;
         Ok(result)
     }
 }
