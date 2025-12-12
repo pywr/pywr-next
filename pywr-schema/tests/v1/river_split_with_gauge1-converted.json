@@ -75,12 +75,16 @@
       },
       {
         "from_node": "Gauge",
-        "from_slot": "river",
+        "from_slot": {
+          "type": "River"
+        },
         "to_node": "Estuary"
       },
       {
         "from_node": "Gauge",
-        "from_slot": "abstraction",
+        "from_slot": {
+          "type": "Abstraction"
+        },
         "to_node": "Demand"
       }
     ],

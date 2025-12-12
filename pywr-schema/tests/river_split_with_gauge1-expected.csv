@@ -1,0 +1,13 @@
+time_start,time_end,simulation_id,label,metric_set,name,attribute,value
+2015-01-01T00:00:00,2015-01-02T00:00:00,0,0,nodes,catchment1,Outflow,15.0
+2015-01-01T00:00:00,2015-01-02T00:00:00,0,0,nodes,gauge1,Outflow,15.0
+2015-01-01T00:00:00,2015-01-02T00:00:00,0,0,nodes,term1,Inflow,14.0
+2015-01-01T00:00:00,2015-01-02T00:00:00,0,0,nodes,demand1,Inflow,1.0
+2015-01-02T00:00:00,2015-01-03T00:00:00,0,0,nodes,catchment1,Outflow,15.0
+2015-01-02T00:00:00,2015-01-03T00:00:00,0,0,nodes,gauge1,Outflow,15.0
+2015-01-02T00:00:00,2015-01-03T00:00:00,0,0,nodes,term1,Inflow,14.0
+2015-01-02T00:00:00,2015-01-03T00:00:00,0,0,nodes,demand1,Inflow,1.0
+2015-01-03T00:00:00,2015-01-04T00:00:00,0,0,nodes,catchment1,Outflow,15.0
+2015-01-03T00:00:00,2015-01-04T00:00:00,0,0,nodes,gauge1,Outflow,15.0
+2015-01-03T00:00:00,2015-01-04T00:00:00,0,0,nodes,term1,Inflow,14.0
+2015-01-03T00:00:00,2015-01-04T00:00:00,0,0,nodes,demand1,Inflow,1.0
