@@ -1289,7 +1289,7 @@ dependencies = [
  "hdf5-metno-sys",
  "hdf5-metno-types",
  "libc",
- "ndarray",
+ "ndarray 0.17.1",
  "paste",
 ]
 
@@ -2025,6 +2025,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "ndarray"
+version = "0.17.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0c7c9125e8f6f10c9da3aad044cc918cf8784fa34de857b1aa68038eb05a50a9"
+dependencies = [
+ "matrixmultiply",
+ "num-complex",
+ "num-integer",
+ "num-traits 0.2.19",
+ "portable-atomic",
+ "portable-atomic-util",
+ "rawpointer",
+]
+
+[[package]]
 name = "nodrop"
 version = "0.1.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2541,7 +2556,7 @@ dependencies = [
  "hashbrown 0.16.1",
  "indexmap",
  "itoa",
- "ndarray",
+ "ndarray 0.16.1",
  "num-traits 0.2.19",
  "polars-arrow",
  "polars-compute",
@@ -3231,7 +3246,7 @@ dependencies = [
  "libc",
  "microlp",
  "nalgebra 0.34.1",
- "ndarray",
+ "ndarray 0.17.1",
  "num",
  "ocl",
  "polars",
@@ -3274,7 +3289,7 @@ dependencies = [
  "hdf5-metno",
  "hex",
  "md-5",
- "ndarray",
+ "ndarray 0.17.1",
  "num",
  "polars",
  "pyo3",
@@ -4169,7 +4184,7 @@ version = "0.11.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8bff8419009a08f6cb7519a602c5590241fbff1446bcc823c07af15386eb801b"
 dependencies = [
- "ndarray",
+ "ndarray 0.16.1",
  "num-complex",
  "num-traits 0.2.19",
  "smallvec",
