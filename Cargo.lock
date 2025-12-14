@@ -1657,7 +1657,7 @@ version = "0.1.0"
 dependencies = [
  "ipm-common",
  "nalgebra-sparse",
- "wide 0.8.3",
+ "wide 1.1.0",
 ]
 
 [[package]]
@@ -3244,7 +3244,7 @@ dependencies = [
  "serde",
  "thiserror 2.0.17",
  "tracing",
- "wide 0.8.3",
+ "wide 1.1.0",
 ]
 
 [[package]]
@@ -3797,9 +3797,9 @@ dependencies = [
 
 [[package]]
 name = "safe_arch"
-version = "0.9.2"
+version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3fb5032219cc30e5bb98749b19a18ceb2cf15e24ba8d517a7e64dff4f1f1eca5"
+checksum = "1f7caad094bd561859bcd467734a720c3c1f5d1f338995351fefe2190c45efed"
 dependencies = [
  "bytemuck",
 ]
@@ -4904,12 +4904,12 @@ dependencies = [
 
 [[package]]
 name = "wide"
-version = "0.8.3"
+version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "13ca908d26e4786149c48efcf6c0ea09ab0e06d1fe3c17dc1b4b0f1ca4a7e788"
+checksum = "8afd0e867c652e7c27e88620e1fbf073ad060a919235f50b64f273d9d4092931"
 dependencies = [
  "bytemuck",
- "safe_arch 0.9.2",
+ "safe_arch 1.0.0",
 ]
 
 [[package]]
