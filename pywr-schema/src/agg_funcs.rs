@@ -31,17 +31,17 @@ pub struct PythonAggFunc {
 impl PythonAggFunc {
     /// Load the Python aggregation function.
     fn load(&self, data_path: Option<&Path>) -> Result<pywr_core::agg_funcs::PyAggFunc, SchemaError> {
-        pyo3::prepare_freethreaded_python();
+        Python::initialize();
 
-        let function = Python::with_gil(|py| {
+        let function = Python::attach(|py| {
             let module = self.source.load_module(py, data_path)?;
             let obj = module.getattr(&self.object)?;
 
             Ok::<_, SchemaError>(obj.unbind())
         })?;
 
-        let args = Python::with_gil(|py| try_load_optional_py_args(py, &self.args))?;
-        let kwargs = Python::with_gil(|py| try_load_optional_py_kwargs(py, &self.kwargs))?;
+        let args = Python::attach(|py| try_load_optional_py_args(py, &self.args))?;
+        let kwargs = Python::attach(|py| try_load_optional_py_kwargs(py, &self.kwargs))?;
 
         Ok(pywr_core::agg_funcs::PyAggFunc::new(function, args, kwargs))
     }

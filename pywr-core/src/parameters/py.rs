@@ -127,7 +127,7 @@ pub struct PyClassParameter {
 
 struct InternalObj {
     /// The user-defined Python object that implements the parameter logic.
-    user_obj: PyObject,
+    user_obj: Py<PyAny>,
     info_obj: Option<Py<ParameterInfo>>,
 }
 
@@ -144,7 +144,7 @@ fn ensure_parameter_info(
     scenario_index: &ScenarioIndex,
 ) -> Result<(), PyErr> {
     if info_obj.is_none() {
-        let obj = Python::with_gil(|py| {
+        let obj = Python::attach(|py| {
             Py::new(
                 py,
                 ParameterInfo {
@@ -178,9 +178,9 @@ impl PyClassParameter {
     }
 
     fn setup(&self) -> Result<Option<Box<dyn ParameterState>>, ParameterSetupError> {
-        pyo3::prepare_freethreaded_python();
+        Python::initialize();
 
-        let user_obj: PyObject = Python::with_gil(|py| -> PyResult<PyObject> {
+        let user_obj: Py<PyAny> = Python::attach(|py| -> PyResult<_> {
             let args = self.common.args.bind(py);
             let kwargs = self.common.kwargs.bind(py);
             self.class.call(py, args, Some(kwargs))
@@ -224,7 +224,7 @@ impl PyClassParameter {
         // Safe to unwrap as we just ensured it is Some.
         let info = internal.info_obj.as_ref().unwrap();
 
-        let value: Option<T> = Python::with_gil(|py| {
+        let value: Option<T> = Python::attach(|py| {
             if internal.user_obj.getattr(py, method).is_ok() {
                 let info_bind = info.bind(py);
                 {
@@ -416,7 +416,7 @@ impl PyFuncParameter {
     }
 
     fn setup(&self) -> Result<Option<Box<dyn ParameterState>>, ParameterSetupError> {
-        pyo3::prepare_freethreaded_python();
+        Python::initialize();
 
         let internal = InternalInfo { info_obj: None };
 
@@ -447,7 +447,7 @@ impl PyFuncParameter {
         // Safe to unwrap as we just ensured it is Some.
         let info = internal.info_obj.as_ref().unwrap();
 
-        let value: T = Python::with_gil(|py| {
+        let value: T = Python::attach(|py| {
             let info_bind = info.bind(py);
             {
                 let mut info_mut = info_bind.borrow_mut();
@@ -655,16 +655,16 @@ class MyParameter:
     /// Test `PyClassParameter` returns the correct value.
     fn test_counter_parameter(counter_parameter_type: CounterParameterType, counter_parameter_str: &'static CStr) {
         // Init Python
-        pyo3::prepare_freethreaded_python();
+        Python::initialize();
 
-        let class = Python::with_gil(|py| {
+        let class = Python::attach(|py| {
             let test_module = PyModule::from_code(py, counter_parameter_str, c_str!(""), c_str!("")).unwrap();
 
             test_module.getattr("MyParameter").unwrap().into()
         });
 
-        let args = Python::with_gil(|py| PyTuple::new(py, [0]).unwrap().unbind());
-        let kwargs = Python::with_gil(|py| PyDict::new(py).unbind());
+        let args = Python::attach(|py| PyTuple::new(py, [0]).unwrap().unbind());
+        let kwargs = Python::attach(|py| PyDict::new(py).unbind());
 
         let param = PyClassParameter::new(
             "my-parameter".into(),
@@ -738,9 +738,9 @@ class MyParameter:
     /// Test `PyClassParameter` returns the correct value.
     fn test_multi_valued_parameter() {
         // Init Python
-        pyo3::prepare_freethreaded_python();
+        Python::initialize();
 
-        let class = Python::with_gil(|py| {
+        let class = Python::attach(|py| {
             let test_module = PyModule::from_code(
                 py,
                 c_str!(
@@ -768,8 +768,8 @@ class MyParameter:
             test_module.getattr("MyParameter").unwrap().into()
         });
 
-        let args = Python::with_gil(|py| PyTuple::new(py, [0]).unwrap().unbind());
-        let kwargs = Python::with_gil(|py| PyDict::new(py).unbind());
+        let args = Python::attach(|py| PyTuple::new(py, [0]).unwrap().unbind());
+        let kwargs = Python::attach(|py| PyDict::new(py).unbind());
 
         let param = PyClassParameter::new(
             "my-parameter".into(),
@@ -817,9 +817,9 @@ class MyParameter:
     /// Test `PythonParameter` returns the correct value.
     fn test_function_parameter() {
         // Init Python
-        pyo3::prepare_freethreaded_python();
+        Python::initialize();
 
-        let function = Python::with_gil(|py| {
+        let function = Python::attach(|py| {
             let test_module = PyModule::from_code(
                 py,
                 c_str!(
@@ -836,8 +836,8 @@ def my_function(info, count, **kwargs):
             test_module.getattr("my_function").unwrap().into()
         });
 
-        let args = Python::with_gil(|py| PyTuple::new(py, [2]).unwrap().unbind());
-        let kwargs = Python::with_gil(|py| PyDict::new(py).unbind());
+        let args = Python::attach(|py| PyTuple::new(py, [2]).unwrap().unbind());
+        let kwargs = Python::attach(|py| PyDict::new(py).unbind());
 
         let param = PyFuncParameter::new(
             "MyParameter".into(),
