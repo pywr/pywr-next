@@ -1,0 +1,119 @@
+{
+  "metadata": {
+    "title": "Reservoir node",
+    "description": "A test of the ReservoirNode with a spill to a termination (output) node.",
+    "minimum_version": "0.1"
+  },
+  "timestepper": {
+    "start": "2015-01-01",
+    "end": "2015-01-06",
+    "timestep": {
+      "type": "Days",
+      "days": 1
+    }
+  },
+  "network": {
+    "nodes": [
+      {
+        "meta": {
+          "name": "Catchment"
+        },
+        "type": "Catchment",
+        "flow": {
+          "type": "Literal",
+          "value": 15
+        }
+      },
+      {
+        "meta": {
+          "name": "Reservoir"
+        },
+        "type": "Reservoir",
+        "max_volume": {
+          "type": "Literal",
+          "value": 21000
+        },
+        "cost": {
+          "type": "Literal",
+          "value": -1.0
+        },
+        "initial_volume": {
+          "type": "Proportional",
+          "proportion": 1.0
+        },
+        "compensation": {
+          "type": "Literal",
+          "value": 1.0
+        },
+        "spill": "LinkNode"
+      },
+      {
+        "meta": {
+          "name": "River termination"
+        },
+        "type": "Output"
+      },
+      {
+        "meta": {
+          "name": "Demand"
+        },
+        "type": "Output",
+        "max_flow": {
+          "type": "Literal",
+          "value": 20.0
+        },
+        "cost": {
+          "type": "Literal",
+          "value": -10.0
+        }
+      }
+    ],
+    "edges": [
+      {
+        "from_node": "Catchment",
+        "to_node": "Reservoir"
+      },
+      {
+        "from_node": "Reservoir",
+        "from_slot": {
+          "type": "Spill"
+        },
+        "to_node": "River termination"
+      },
+      {
+        "from_node": "Reservoir",
+        "to_node": "Demand"
+      }
+    ],
+    "metric_sets": [
+      {
+        "name": "nodes",
+        "metrics": [
+          {
+            "type": "Node",
+            "name": "Reservoir"
+          },
+          {
+            "type": "Node",
+            "name": "Demand"
+          },
+          {
+            "type": "Node",
+            "name": "River termination"
+          }
+        ]
+      }
+    ],
+    "outputs": [
+      {
+        "name": "node-outputs",
+        "type": "CSV",
+        "format": "Long",
+        "filename": "reservoir_with_river1-expected.csv",
+        "metric_set": [
+          "nodes"
+        ]
+      }
+    ]
+  }
+}

@@ -232,13 +232,13 @@ impl TryFrom<NodeSlot> for ReservoirOutputNodeSlot {
 /// # JSON Examples
 /// ## Reservoir with output spill
 /// ```json
-#[doc = include_str!("../../tests/reservoir_with_spill.json")]
+#[doc = include_str!("../../tests/reservoir_with_spill1.json")]
 /// ```
 ///
 /// ## Reservoir with link spill
 /// The compensation goes into the spill which routes water to the "River termination" node.
 /// ```json
-#[doc = include_str!("../../tests/reservoir_with_river.json")]
+#[doc = include_str!("../../tests/reservoir_with_river1.json")]
 /// ```
 pub struct ReservoirNode {
     #[serde(flatten)]
@@ -743,7 +743,7 @@ mod tests {
     use crate::model::ModelSchema;
 
     fn reservoir_with_spill_str() -> &'static str {
-        include_str!("../../tests/reservoir_with_spill.json")
+        include_str!("../../tests/reservoir_with_spill1.json")
     }
 
     #[test]

@@ -1,12 +1,12 @@
 {
   "metadata": {
     "title": "Reservoir node",
-    "description": "A test of the ReservoirNode.",
+    "description": "A test of the ReservoirNode with a spill to a termination (output) node.",
     "minimum_version": "0.1"
   },
   "timestepper": {
     "start": "2015-01-01",
-    "end": "2015-12-31",
+    "end": "2015-01-06",
     "timestep": {
       "type": "Days",
       "days": 1
@@ -35,7 +35,7 @@
         },
         "cost": {
           "type": "Literal",
-          "value": -10.0
+          "value": -1.0
         },
         "initial_volume": {
           "type": "Proportional",
@@ -43,9 +43,10 @@
         },
         "compensation": {
           "type": "Literal",
-          "value": 0.2
+          "value": 1.0
         },
-        "spill": "LinkNode"
+        "spill": "LinkNode",
+        "connect_compensation_to_spill": false
       },
       {
         "meta": {
@@ -82,7 +83,44 @@
       },
       {
         "from_node": "Reservoir",
+        "from_slot": {
+          "type": "Compensation"
+        },
+        "to_node": "River termination"
+      },
+      {
+        "from_node": "Reservoir",
         "to_node": "Demand"
+      }
+    ],
+    "metric_sets": [
+      {
+        "name": "nodes",
+        "metrics": [
+          {
+            "type": "Node",
+            "name": "Reservoir"
+          },
+          {
+            "type": "Node",
+            "name": "Demand"
+          },
+          {
+            "type": "Node",
+            "name": "River termination"
+          }
+        ]
+      }
+    ],
+    "outputs": [
+      {
+        "name": "node-outputs",
+        "type": "CSV",
+        "format": "Long",
+        "filename": "reservoir_with_river2-expected.csv",
+        "metric_set": [
+          "nodes"
+        ]
       }
     ]
   }
