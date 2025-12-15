@@ -3,13 +3,13 @@ name = "adding-a-parameter"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+core = ["pywr-schema/core"]
+default = ["core"]
+
 [dependencies]
 pywr-core = { path = "../../../pywr-core" }
 pywr-schema = { path = "../../../pywr-schema" }
 pywr-schema-macros = { path = "../../../pywr-schema-macros" }
-serde = { workspace = true }
 schemars = { workspace = true }
-
-[features]
-core = ["pywr-schema/core"]
-default = ["core"]
+serde = { workspace = true }

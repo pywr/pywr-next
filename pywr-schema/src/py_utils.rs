@@ -7,7 +7,7 @@ use crate::data_tables::make_path;
 use crate::error::SchemaError;
 #[cfg(all(feature = "core", feature = "pyo3"))]
 use pyo3::{
-    Bound, IntoPyObjectExt, PyErr, PyObject, Python,
+    Bound, IntoPyObjectExt, PyAny, PyErr, Python,
     prelude::{IntoPyObject, Py, PyModule},
     types::{PyDict, PyTuple},
 };
@@ -105,8 +105,8 @@ pub fn try_load_optional_py_kwargs(py: Python, kwargs: &Option<HashMap<String, V
 }
 
 #[cfg(all(feature = "core", feature = "pyo3"))]
-pub fn try_json_value_into_py(py: Python, value: &Value) -> Result<Option<PyObject>, PyErr> {
-    let py_value: Option<PyObject> = match value {
+pub fn try_json_value_into_py(py: Python, value: &Value) -> Result<Option<Py<PyAny>>, PyErr> {
+    let py_value: Option<Py<PyAny>> = match value {
         Value::Null => None,
         Value::Bool(v) => Some(v.into_py_any(py)?),
         Value::Number(v) => {
