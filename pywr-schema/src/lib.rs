@@ -24,12 +24,12 @@ mod visit;
 
 pub use digest::{Checksum, ChecksumError};
 pub use error::{ComponentConversionError, ConversionError, SchemaError};
-pub use model::{ModelSchema, MultiNetworkModelSchema, PywrModelReadError};
+pub use model::{ModelSchema, ModelSchemaReadError, MultiNetworkModelSchema};
 #[cfg(feature = "core")]
-pub use model::{PywrModelBuildError, PywrMultiNetworkModelBuildError};
+pub use model::{ModelSchemaBuildError, MultiNetworkModelSchemaBuildError};
 #[cfg(feature = "core")]
-pub use network::{LoadArgs, PywrNetworkBuildError};
-pub use network::{PywrNetwork, PywrNetworkReadError, PywrNetworkRef};
+pub use network::{LoadArgs, NetworkSchemaBuildError};
+pub use network::{NetworkSchema, NetworkSchemaReadError, NetworkSchemaRef};
 pub use py_utils::{PythonSource, PythonSourceType, PythonSourceTypeIter};
 pub use v1::{ConversionData, TryFromV1, TryIntoV2};
 pub use variable_config::VariableConfigs;

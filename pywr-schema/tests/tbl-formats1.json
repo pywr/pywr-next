@@ -59,37 +59,45 @@
     ],
     "tables": [
       {
-        "name": "scalar-row",
+        "meta": {
+          "name": "scalar-row"
+        },
         "type": "Scalar",
         "format": "CSV",
         "lookup": {
           "type": "Row",
-          "rows": 1
+          "cols": 1
         },
         "url": "tbl-scalar-row.csv"
       },
       {
-        "name": "scalar-row-row",
+        "meta": {
+          "name": "scalar-row-row"
+        },
         "type": "Scalar",
         "format": "CSV",
         "lookup": {
           "type": "Row",
-          "rows": 2
+          "cols": 2
         },
         "url": "tbl-scalar-row-row.csv"
       },
       {
-        "name": "scalar-col",
+        "meta": {
+          "name": "scalar-col"
+        },
         "type": "Scalar",
         "format": "CSV",
         "lookup": {
           "type": "Col",
-          "cols": 1
+          "rows": 1
         },
         "url": "tbl-scalar-col.csv"
       },
       {
-        "name": "scalar-row-col",
+        "meta": {
+          "name": "scalar-row-col"
+        },
         "type": "Scalar",
         "format": "CSV",
         "lookup": {
@@ -100,32 +108,38 @@
         "url": "tbl-scalar-row-col.csv"
       },
       {
-        "name": "array-row",
+        "meta": {
+          "name": "array-row"
+        },
         "type": "Array",
         "format": "CSV",
         "lookup": {
           "type": "Row",
-          "rows": 1
+          "cols": 1
         },
         "url": "tbl-array-row.csv"
       },
       {
-        "name": "array-row-row",
+        "meta": {
+          "name": "array-row-row"
+        },
         "type": "Array",
         "format": "CSV",
         "lookup": {
           "type": "Row",
-          "rows": 2
+          "cols": 2
         },
         "url": "tbl-array-row-row.csv"
       },
       {
-        "name": "array-col",
+        "meta": {
+          "name": "array-col"
+        },
         "type": "Array",
         "format": "CSV",
         "lookup": {
           "type": "Col",
-          "cols": 1
+          "rows": 1
         },
         "url": "tbl-array-col.csv"
       }

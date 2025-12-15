@@ -1,0 +1,154 @@
+{
+  "metadata": {
+    "title": "Daily profiles 1",
+    "description": "An example of using daily profiles with 365 and 366 values.",
+    "minimum_version": "0.1"
+  },
+  "timestepper": {
+    "start": "2015-01-01",
+    "end": "2016-03-31",
+    "timestep": {
+      "type": "Days",
+      "days": 1
+    }
+  },
+  "network": {
+    "nodes": [
+      {
+        "meta": {
+          "name": "supply1"
+        },
+        "type": "Input",
+        "max_flow": {
+          "type": "Literal",
+          "value": 15.0
+        }
+      },
+      {
+        "meta": {
+          "name": "link1"
+        },
+        "type": "Link"
+      },
+      {
+        "meta": {
+          "name": "demand1"
+        },
+        "type": "Output",
+        "max_flow": {
+          "type": "Parameter",
+          "name": "demand"
+        },
+        "cost": {
+          "type": "Literal",
+          "value": -10
+        }
+      }
+    ],
+    "edges": [
+      {
+        "from_node": "supply1",
+        "to_node": "link1"
+      },
+      {
+        "from_node": "link1",
+        "to_node": "demand1"
+      }
+    ],
+    "tables": [
+      {
+        "meta": {
+          "name": "profiles-365"
+        },
+        "type": "Array",
+        "format": "CSV",
+        "lookup": {
+          "type": "Col",
+          "rows": 1
+        },
+        "url": "daily-profile-365.csv"
+      },
+      {
+        "meta": {
+          "name": "profiles-366"
+        },
+        "type": "Array",
+        "format": "CSV",
+        "lookup": {
+          "type": "Col",
+          "rows": 1
+        },
+        "url": "daily-profile-366.csv"
+      }
+    ],
+    "parameters": [
+      {
+        "meta": {
+          "name": "daily-profile-365"
+        },
+        "type": "DailyProfile",
+        "values": {
+          "type": "Table",
+          "table": "profiles-365",
+          "row": "profile365"
+        }
+      },
+      {
+        "meta": {
+          "name": "daily-profile-366"
+        },
+        "type": "DailyProfile",
+        "values": {
+          "type": "Table",
+          "table": "profiles-366",
+          "row": "profile366"
+        }
+      },
+      {
+        "meta": {
+          "name": "demand"
+        },
+        "type": "Aggregated",
+        "agg_func": {
+          "type": "Sum"
+        },
+        "metrics": [
+          {
+            "type": "Parameter",
+            "name": "daily-profile-365"
+          },
+          {
+            "type": "Parameter",
+            "name": "daily-profile-366"
+          }
+        ]
+      }
+    ],
+    "metric_sets": [
+      {
+        "name": "profiles",
+        "metrics": [
+          {
+            "type": "Parameter",
+            "name": "daily-profile-365"
+          },
+          {
+            "type": "Parameter",
+            "name": "daily-profile-366"
+          }
+        ]
+      }
+    ],
+    "outputs": [
+      {
+        "name": "table-values",
+        "type": "CSV",
+        "format": "Long",
+        "filename": "daily-profile1-expected.csv",
+        "metric_set": [
+          "profiles"
+        ]
+      }
+    ]
+  }
+}

@@ -42,7 +42,7 @@ impl PyAggFuncInner {
     }
 
     fn call_f64(&self, values: Vec<f64>) -> Result<f64, AggFuncError> {
-        let value = Python::with_gil(|py| {
+        let value = Python::attach(|py| {
             let values_py: Bound<PyList> = PyList::new(py, values).map_err(|py_error| AggFuncError::PythonError {
                 object: self.function.to_string(),
                 py_error: Box::new(py_error),
@@ -89,7 +89,7 @@ impl PyAggFuncInner {
     }
 
     fn call_u64(&self, values: Vec<u64>) -> Result<u64, AggFuncError> {
-        let value = Python::with_gil(|py| {
+        let value = Python::attach(|py| {
             let values_py: Bound<PyList> = PyList::new(py, values).map_err(|py_error| AggFuncError::PythonError {
                 object: self.function.to_string(),
                 py_error: Box::new(py_error),

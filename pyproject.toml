@@ -23,6 +23,7 @@ hdf = ["h5py"]
 dev = [
     "pytest>=8.4.1",
     "ruff>=0.12.3",
+    "maturin>=1.0,<2.0",
 ]
 docs = [
     "json-schema-for-humans>=1.4.1",

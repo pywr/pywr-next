@@ -16,7 +16,7 @@ use pywr_core::solvers::{MicroLpSolver, MicroLpSolverSettings, MicroLpSolverSett
 #[cfg(feature = "ipm-simd")]
 use pywr_core::solvers::{SimdIpmF64Solver, SimdIpmSolverSettings, SimdIpmSolverSettingsBuilder};
 use pywr_core::test_utils::make_random_model;
-use pywr_schema::{ComponentConversionError, ModelSchema, MultiNetworkModelSchema, PywrNetwork};
+use pywr_schema::{ComponentConversionError, ModelSchema, MultiNetworkModelSchema, NetworkSchema};
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use schemars::schema_for;
@@ -222,7 +222,7 @@ fn v1_to_v2(in_path: &Path, out_path: &Path, stop_on_error: bool, network_only: 
         let schema: pywr_v1_schema::PywrNetwork = serde_json::from_str(data.as_str())
             .with_context(|| format!("Failed deserialise Pywr v1 network file: {in_path:?}",))?;
         // Convert to v2 schema and collect any errors
-        let (schema_v2, errors) = PywrNetwork::from_v1(schema);
+        let (schema_v2, errors) = NetworkSchema::from_v1(schema);
 
         handle_conversion_errors(&errors, stop_on_error)?;
 

@@ -211,17 +211,17 @@ impl PythonParameter {
         args: &LoadArgs,
         parent: Option<&str>,
     ) -> Result<ParameterType, SchemaError> {
-        pyo3::prepare_freethreaded_python();
+        Python::initialize();
 
-        let object = Python::with_gil(|py| {
+        let object = Python::attach(|py| {
             let module = self.source.load_module(py, args.data_path)?;
             let obj = self.object.load_object(&module)?;
 
             Ok::<_, SchemaError>(obj)
         })?;
 
-        let py_args = Python::with_gil(|py| try_load_optional_py_args(py, &self.args))?;
-        let py_kwargs = Python::with_gil(|py| try_load_optional_py_kwargs(py, &self.kwargs))?;
+        let py_args = Python::attach(|py| try_load_optional_py_args(py, &self.args))?;
+        let py_kwargs = Python::attach(|py| try_load_optional_py_kwargs(py, &self.kwargs))?;
 
         let metrics = match &self.metrics {
             Some(metrics) => metrics
@@ -282,9 +282,10 @@ impl PythonParameter {
 #[cfg(all(feature = "core", feature = "pyo3"))]
 mod tests {
     use crate::data_tables::LoadedTableCollection;
-    use crate::network::{LoadArgs, PywrNetwork};
+    use crate::network::{LoadArgs, NetworkSchema};
     use crate::parameters::python::PythonParameter;
     use crate::timeseries::LoadedTimeseriesCollection;
+    use pyo3::Python;
     use pywr_core::models::ModelDomain;
     use pywr_core::network::Network;
     use pywr_core::test_utils::default_time_domain;
@@ -316,13 +317,13 @@ mod tests {
         .to_string();
 
         // Init Python
-        pyo3::prepare_freethreaded_python();
+        Python::initialize();
         // Load the schema ...
         let param: PythonParameter = serde_json::from_str(data.as_str()).unwrap();
         // ... add it to an empty network
         // this should trigger loading the module and extracting the class
         let domain: ModelDomain = default_time_domain().into();
-        let schema = PywrNetwork::default();
+        let schema = NetworkSchema::default();
         let mut network = Network::default();
         let tables = LoadedTableCollection::from_schema(None, None).unwrap();
         let ts = LoadedTimeseriesCollection::default();
@@ -367,13 +368,13 @@ mod tests {
         .to_string();
 
         // Init Python
-        pyo3::prepare_freethreaded_python();
+        Python::initialize();
         // Load the schema ...
         let param: PythonParameter = serde_json::from_str(data.as_str()).unwrap();
         // ... add it to an empty network
         // this should trigger loading the module and extracting the class
         let domain: ModelDomain = default_time_domain().into();
-        let schema = PywrNetwork::default();
+        let schema = NetworkSchema::default();
         let mut network = Network::default();
         let tables = LoadedTableCollection::from_schema(None, None).unwrap();
         let ts = LoadedTimeseriesCollection::default();

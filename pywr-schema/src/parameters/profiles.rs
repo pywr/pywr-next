@@ -17,6 +17,11 @@ use pywr_v1_schema::parameters::{
 use schemars::JsonSchema;
 use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticStr};
 
+/// A parameter that defines a daily profile over a year.
+///
+/// The values array should contain 366 values, one for each day of the year. If the array contains
+/// 365 values, then a value for the 29th February (day 59, zero-based) is inserted as a copy of the
+/// 28th February (day 58, zero-based). Any other length will result in an error.
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct DailyProfileParameter {
@@ -32,10 +37,26 @@ impl DailyProfileParameter {
         args: &LoadArgs,
         parent: Option<&str>,
     ) -> Result<ParameterIndex<f64>, SchemaError> {
-        let values = &self.values.load(args.tables)?[..366];
+        let mut values = self.values.load(args.tables)?;
+
+        match values.len() {
+            366 => {} // already correct
+            365 => {
+                // Insert value for 29th Feb as copy of 28th Feb (day 59, zero-based)
+                let feb_28 = values[58];
+                values.insert(59, feb_28);
+            }
+            _ => {
+                return Err(SchemaError::DataLengthMismatch {
+                    expected: 366,
+                    found: values.len(),
+                });
+            }
+        }
+
         let p = pywr_core::parameters::DailyProfileParameter::new(
             ParameterName::new(&self.meta.name, parent),
-            values.try_into().expect(""),
+            values.try_into().expect("Failed to convert values to [f64; 366]"),
         );
         Ok(network.add_simple_parameter(Box::new(p))?)
     }
@@ -652,5 +673,74 @@ impl DirunalProfileParameter {
         let p =
             pywr_core::parameters::DiurnalProfileParameter::new(ParameterName::new(&self.meta.name, parent), values);
         Ok(network.add_simple_parameter(Box::new(p))?)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::network::NetworkSchema;
+    use crate::parameters::ParameterMeta;
+    use crate::parameters::{ConstantFloatVec, Parameter};
+    use pywr_core::models::ModelDomain;
+    use pywr_core::test_utils::default_time_domain;
+
+    #[test]
+    fn add_to_model_with_366_values() {
+        let meta = ParameterMeta {
+            name: "test".to_string(),
+            comment: None,
+        };
+        let values = ConstantFloatVec::Literal { values: vec![1.0; 366] };
+        let param = DailyProfileParameter { meta, values };
+        let domain: ModelDomain = default_time_domain().into();
+        let network = NetworkSchema {
+            parameters: Some(vec![Parameter::DailyProfile(param)]),
+            ..Default::default()
+        };
+
+        let result = network.build_network(&domain, None, None, &[]);
+
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn add_to_model_with_365_values_inserts_feb_29() {
+        let meta = ParameterMeta {
+            name: "test".to_string(),
+            comment: None,
+        };
+
+        let values = vec![1.0; 365];
+        let values = ConstantFloatVec::Literal { values };
+        let param = DailyProfileParameter { meta, values };
+        let domain: ModelDomain = default_time_domain().into();
+        let network = NetworkSchema {
+            parameters: Some(vec![Parameter::DailyProfile(param)]),
+            ..Default::default()
+        };
+
+        let result = network.build_network(&domain, None, None, &[]);
+
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn add_to_model_with_invalid_length_returns_error() {
+        let meta = ParameterMeta {
+            name: "test".to_string(),
+            comment: None,
+        };
+        let values = ConstantFloatVec::Literal { values: vec![1.0; 364] };
+        let param = DailyProfileParameter { meta, values };
+        let domain: ModelDomain = default_time_domain().into();
+        let network = NetworkSchema {
+            parameters: Some(vec![Parameter::DailyProfile(param)]),
+            ..Default::default()
+        };
+
+        let result = network.build_network(&domain, None, None, &[]);
+
+        assert!(result.is_err());
     }
 }

@@ -66,6 +66,30 @@
           "value": 10.0
         }
       }
+    ],
+    "metric_sets": [
+      {
+        "name": "all",
+        "filters": {
+          "all_nodes": true,
+          "all_virtual_nodes": true,
+          "all_parameters": true,
+          "all_edges": true
+        }
+      }
+    ],
+    "outputs": [
+      {
+        "name": "all",
+        "type": "Memory",
+        "metric_set": "all"
+      },
+      {
+        "name": "all-hdf5",
+        "type": "HDF5",
+        "filename": "outputs.h5",
+        "metric_set": "all"
+      }
     ]
   }
 }
