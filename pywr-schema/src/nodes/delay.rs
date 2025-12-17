@@ -2,9 +2,9 @@ use crate::error::SchemaError;
 use crate::error::{ComponentConversionError, ConversionError};
 #[cfg(feature = "core")]
 use crate::network::LoadArgs;
-use crate::nodes::NodeMeta;
 #[cfg(feature = "core")]
 use crate::nodes::{NodeAttribute, NodeComponent};
+use crate::nodes::{NodeMeta, NodeSlot};
 use crate::parameters::{ConstantValue, Parameter};
 use crate::{node_attribute_subset_enum, node_component_subset_enum};
 #[cfg(feature = "core")]
@@ -76,20 +76,28 @@ impl DelayNode {
         Some("outflow")
     }
 
-    pub fn input_connectors(&self) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
-        // Inflow goes to the output node
-        Ok(vec![(
-            self.meta.name.as_str(),
-            Self::output_sub_name().map(|s| s.to_string()),
-        )])
+    pub fn input_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
+        if let Some(slot) = slot {
+            Err(SchemaError::InputNodeSlotNotSupported { slot: slot.clone() })
+        } else {
+            // Inflow goes to the output node
+            Ok(vec![(
+                self.meta.name.as_str(),
+                Self::output_sub_name().map(|s| s.to_string()),
+            )])
+        }
     }
 
-    pub fn output_connectors(&self) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
-        // Outflow goes from the input node
-        Ok(vec![(
-            self.meta.name.as_str(),
-            Self::input_sub_name().map(|s| s.to_string()),
-        )])
+    pub fn output_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
+        if let Some(slot) = slot {
+            Err(SchemaError::OutputNodeSlotNotSupported { slot: slot.clone() })
+        } else {
+            // Outflow goes from the input node
+            Ok(vec![(
+                self.meta.name.as_str(),
+                Self::input_sub_name().map(|s| s.to_string()),
+            )])
+        }
     }
 
     pub fn default_attribute(&self) -> DelayNodeAttribute {

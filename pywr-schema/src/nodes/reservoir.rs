@@ -4,7 +4,7 @@ use crate::metric::Metric;
 use crate::network::LoadArgs;
 #[cfg(feature = "core")]
 use crate::nodes::{NodeAttribute, NodeComponent};
-use crate::nodes::{NodeMeta, StorageNode, StorageNodeAttribute};
+use crate::nodes::{NodeMeta, NodeSlot, StorageNode, StorageNodeAttribute};
 use crate::parameters::ConstantFloatVec;
 use crate::{node_attribute_subset_enum, node_component_subset_enum};
 #[cfg(feature = "core")]
@@ -120,6 +120,34 @@ node_component_subset_enum! {
     }
 }
 
+pub enum ReservoirOutputNodeSlot {
+    Storage,
+    Compensation,
+    Spill,
+}
+
+impl From<ReservoirOutputNodeSlot> for NodeSlot {
+    fn from(slot: ReservoirOutputNodeSlot) -> Self {
+        match slot {
+            ReservoirOutputNodeSlot::Storage => NodeSlot::Storage,
+            ReservoirOutputNodeSlot::Compensation => NodeSlot::Compensation,
+            ReservoirOutputNodeSlot::Spill => NodeSlot::Spill,
+        }
+    }
+}
+
+impl TryFrom<NodeSlot> for ReservoirOutputNodeSlot {
+    type Error = SchemaError;
+    fn try_from(slot: NodeSlot) -> Result<Self, Self::Error> {
+        match slot {
+            NodeSlot::Storage => Ok(ReservoirOutputNodeSlot::Storage),
+            NodeSlot::Compensation => Ok(ReservoirOutputNodeSlot::Compensation),
+            NodeSlot::Spill => Ok(ReservoirOutputNodeSlot::Spill),
+            _ => Err(SchemaError::OutputNodeSlotNotSupported { slot }),
+        }
+    }
+}
+
 #[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
@@ -204,13 +232,13 @@ node_component_subset_enum! {
 /// # JSON Examples
 /// ## Reservoir with output spill
 /// ```json
-#[doc = include_str!("../../tests/reservoir_with_spill.json")]
+#[doc = include_str!("../../tests/reservoir_with_spill1.json")]
 /// ```
 ///
 /// ## Reservoir with link spill
 /// The compensation goes into the spill which routes water to the "River termination" node.
 /// ```json
-#[doc = include_str!("../../tests/reservoir_with_river.json")]
+#[doc = include_str!("../../tests/reservoir_with_river1.json")]
 /// ```
 pub struct ReservoirNode {
     #[serde(flatten)]
@@ -236,6 +264,7 @@ pub struct ReservoirNode {
 
 impl ReservoirNode {
     pub const DEFAULT_COMPONENT: ReservoirNodeComponent = ReservoirNodeComponent::Compensation;
+    const DEFAULT_OUTPUT_SLOT: ReservoirOutputNodeSlot = ReservoirOutputNodeSlot::Storage;
 
     /// Get the node's metadata.
     pub(crate) fn meta(&self) -> &NodeMeta {
@@ -252,63 +281,52 @@ impl ReservoirNode {
         Some("spill")
     }
 
-    /// The name of the compensation slot.
-    fn compensation_slot_name() -> &'static str {
-        "compensation"
-    }
-
-    /// The name of the spill to_slot.
-    fn spill_to_slot_name() -> &'static str {
-        "to_spill"
-    }
-
-    /// The name of the spill from_slot.
-    fn spill_from_slot_name() -> &'static str {
-        "from_spill"
-    }
-
-    pub fn input_connectors(&self, slot: Option<&str>) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
-        match slot {
-            None => Ok(vec![(self.meta().name.as_str(), None)]),
-            Some(name) => match name {
-                name if name == Self::spill_to_slot_name() => Ok(vec![(
-                    self.meta().name.as_str(),
-                    Self::spill_node_sub_name().map(|n| n.to_string()),
-                )]),
-                _ => Err(SchemaError::NodeConnectionSlotNotFound {
-                    node: self.meta().name.clone(),
-                    slot: name.to_string(),
-                }),
-            },
+    pub fn input_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
+        if let Some(slot) = slot {
+            Err(SchemaError::InputNodeSlotNotSupported { slot: slot.clone() })
+        } else {
+            Ok(vec![(self.meta().name.as_str(), None)])
         }
     }
 
-    pub fn output_connectors(&self, slot: Option<&str>) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
-        match slot {
-            None => Ok(vec![(self.meta().name.as_str(), None)]),
-            Some(name) => match name {
-                name if name == Self::compensation_slot_name() => Ok(vec![(
+    pub fn output_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
+        // Use the default slot if none is specified
+        let slot = match slot {
+            Some(c) => c.clone().try_into()?,
+            None => Self::DEFAULT_OUTPUT_SLOT,
+        };
+
+        let indices = match slot {
+            ReservoirOutputNodeSlot::Storage => {
+                vec![(self.meta().name.as_str(), None)]
+            }
+            ReservoirOutputNodeSlot::Compensation => {
+                vec![(
                     self.meta().name.as_str(),
                     Self::compensation_node_sub_name().map(|n| n.to_string()),
-                )]),
-                name if name == Self::spill_from_slot_name() => match self.spill {
-                    Some(SpillNodeType::LinkNode) => Ok(vec![(
-                        self.meta().name.as_str(),
-                        Self::spill_node_sub_name().map(|n| n.to_string()),
-                    )]),
-                    _ => Err(SchemaError::NodeConnectionSlotNotAvailable {
-                        msg: format!(
-                            "The slot '{name}' in {} is only supported when the spill node is a link",
-                            self.meta().name
-                        ),
-                    }),
-                },
-                _ => Err(SchemaError::NodeConnectionSlotNotFound {
-                    node: self.meta().name.clone(),
-                    slot: name.to_string(),
-                }),
+                )]
+            }
+            ReservoirOutputNodeSlot::Spill => match self.spill {
+                Some(SpillNodeType::LinkNode) => vec![(
+                    self.meta().name.as_str(),
+                    Self::spill_node_sub_name().map(|n| n.to_string()),
+                )],
+                _ => {
+                    return Err(SchemaError::OutputNodeSlotNotSupported { slot: slot.into() });
+                }
             },
-        }
+        };
+
+        Ok(indices)
+    }
+
+    pub fn iter_output_slots(&self) -> impl Iterator<Item = NodeSlot> + '_ {
+        [
+            ReservoirOutputNodeSlot::Storage.into(),
+            ReservoirOutputNodeSlot::Compensation.into(),
+            ReservoirOutputNodeSlot::Spill.into(),
+        ]
+        .into_iter()
     }
 
     pub fn default_attribute(&self) -> ReservoirNodeAttribute {
@@ -725,7 +743,7 @@ mod tests {
     use crate::model::ModelSchema;
 
     fn reservoir_with_spill_str() -> &'static str {
-        include_str!("../../tests/reservoir_with_spill.json")
+        include_str!("../../tests/reservoir_with_spill1.json")
     }
 
     #[test]
