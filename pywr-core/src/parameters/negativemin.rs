@@ -28,16 +28,16 @@ impl Parameter for NegativeMinParameter {
     }
 }
 impl GeneralParameter<f64> for NegativeMinParameter {
-    fn compute(
+    fn before(
         &self,
         _timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
         network: &Network,
         state: &State,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<f64, ParameterCalculationError> {
+    ) -> Result<Option<f64>, ParameterCalculationError> {
         let x = -self.metric.get_value(network, state)?;
-        Ok(x.min(self.threshold))
+        Ok(Some(x.min(self.threshold)))
     }
 
     fn as_parameter(&self) -> &dyn Parameter

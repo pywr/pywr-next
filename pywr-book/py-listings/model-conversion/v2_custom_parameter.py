@@ -1,3 +1,3 @@
 class MyParameter:
-    def calc(self, *args, **kwargs):
+    def before(self, *args, **kwargs):
         return 42

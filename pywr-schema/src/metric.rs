@@ -138,7 +138,7 @@ impl Metric {
                     }
                     None => args.timeseries.load_single_column_f64(network, ts_ref.name.as_ref())?,
                 };
-                Ok(param_idx.into())
+                Ok(param_idx.into_metric_f64_before())
             }
             Self::InterNetworkTransfer { name } => {
                 // Find the matching inter model transfer
@@ -169,8 +169,8 @@ impl Metric {
         let attribute = match self {
             Self::Node(node_ref) => node_ref.attribute(args)?.to_string(),
             Self::VirtualNode(node_ref) => node_ref.attribute(args)?.to_string(),
-            Self::Parameter(p_ref) => p_ref.key.clone().unwrap_or_else(|| "value".to_string()),
-            Self::LocalParameter(p_ref) => p_ref.key.clone().unwrap_or_else(|| "value".to_string()),
+            Self::Parameter(p_ref) => p_ref.attribute(),
+            Self::LocalParameter(p_ref) => p_ref.attribute(),
             Self::Literal { .. } => "value".to_string(),
             Self::Table(tbl_ref) => tbl_ref.key().join(";").to_string(),
             Self::Timeseries(ts_ref) => ts_ref
@@ -247,6 +247,7 @@ impl TryFromV1<ParameterValueV1> for Metric {
             ParameterValueV1::Reference(p_name) => Self::Parameter(ParameterReference {
                 name: p_name,
                 key: None,
+                return_value: None,
             }),
             ParameterValueV1::Table(tbl) => Self::Table(tbl.try_into()?),
             ParameterValueV1::Inline(param) => {
@@ -268,6 +269,7 @@ impl TryFromV1<ParameterValueV1> for Metric {
                         let reference = ParameterReference {
                             name: p.name().to_string(),
                             key: None,
+                            return_value: None,
                         };
                         conversion_data.parameters.push(*p);
 
@@ -313,7 +315,7 @@ impl NodeAttrReference {
                 name: self.name.clone(),
             })?;
 
-        node.create_metric(network, self.attribute, args)
+        node.create_metric(network, self.attribute)
     }
 
     /// Load a node reference into a [`MetricUsize`].
@@ -484,6 +486,28 @@ impl From<String> for NodeComponentReference {
     }
 }
 
+/// The type of value to return from a parameter.
+#[derive(Deserialize, Serialize, Clone, Copy, Debug, Display, JsonSchema, PartialEq, EnumDiscriminants, Default)]
+pub enum ParameterReturnValue {
+    #[default]
+    Before,
+    After,
+    BeforeOrElseAfter,
+    AfterOrElseBefore,
+}
+
+#[cfg(feature = "core")]
+impl From<ParameterReturnValue> for pywr_core::state::ParameterReturnValue {
+    fn from(v: ParameterReturnValue) -> Self {
+        match v {
+            ParameterReturnValue::Before => Self::Before,
+            ParameterReturnValue::After => Self::After,
+            ParameterReturnValue::BeforeOrElseAfter => Self::BeforeOrElseAfter,
+            ParameterReturnValue::AfterOrElseBefore => Self::AfterOrElseBefore,
+        }
+    }
+}
+
 #[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PartialEq)]
 #[serde(deny_unknown_fields)]
@@ -493,6 +517,8 @@ pub struct ParameterReference {
     pub name: String,
     /// The key of the parameter. If this is `None` then the default value is used.
     pub key: Option<String>,
+    /// Which method's return value to use. If this is `None` then the default is used.
+    pub return_value: Option<ParameterReturnValue>,
 }
 
 impl ParameterReference {
@@ -500,6 +526,7 @@ impl ParameterReference {
         Self {
             name: name.to_string(),
             key,
+            return_value: None,
         }
     }
 
@@ -513,6 +540,8 @@ impl ParameterReference {
         parent: Option<&str>,
     ) -> Result<MetricF64, SchemaError> {
         let name = ParameterName::new(&self.name, parent);
+        // Determine the return value to use
+        let return_value = self.return_value.unwrap_or_default().into();
 
         match &self.key {
             Some(key) => {
@@ -524,13 +553,13 @@ impl ParameterReference {
                     }
                 })?;
 
-                Ok((idx, key.clone()).into())
+                Ok(idx.into_metric_f64(key, return_value))
             }
             None => {
                 if let Some(idx) = network.get_parameter_index_by_name(&name) {
-                    Ok(idx.into())
+                    Ok(idx.into_metric_f64(return_value))
                 } else if let Some(idx) = network.get_index_parameter_index_by_name(&name) {
-                    Ok(idx.into())
+                    Ok(idx.into_metric_f64(return_value))
                 } else {
                     Err(SchemaError::CoreParameterNotFound {
                         name: self.name.to_string(),
@@ -551,6 +580,8 @@ impl ParameterReference {
         parent: Option<&str>,
     ) -> Result<MetricU64, SchemaError> {
         let name = ParameterName::new(&self.name, parent);
+        // Determine the return value to use
+        let return_value = self.return_value.unwrap_or_default().into();
 
         match &self.key {
             Some(key) => {
@@ -561,11 +592,11 @@ impl ParameterReference {
                         key: Some(key.clone()),
                     }
                 })?;
-                Ok((idx, key.clone()).into())
+                Ok(idx.into_metric_u64(key, return_value))
             }
             None => {
                 if let Some(idx) = network.get_index_parameter_index_by_name(&name) {
-                    Ok(idx.into())
+                    Ok(idx.into_metric_u64(return_value))
                 } else if network.get_parameter_index_by_name(&name).is_some() {
                     // Inform the user we found the parameter, but it was the wrong type
                     Err(SchemaError::IndexParameterExpected(self.name.to_string()))
@@ -589,6 +620,14 @@ impl ParameterReference {
                 })?;
 
         Ok(parameter.parameter_type())
+    }
+
+    #[cfg(feature = "core")]
+    fn attribute(&self) -> String {
+        match &self.key {
+            Some(key) => key.clone(),
+            None => self.return_value.unwrap_or_default().to_string().to_lowercase(),
+        }
     }
 }
 
@@ -690,7 +729,7 @@ impl IndexMetric {
                         .timeseries
                         .load_single_column_usize(network, ts_ref.name.as_ref())?,
                 };
-                Ok(param_idx.into())
+                Ok(param_idx.into_metric_u64_before())
             }
             Self::InterNetworkTransfer { name } => {
                 // Find the matching inter model transfer
@@ -725,6 +764,7 @@ impl TryFromV1<ParameterValueV1> for IndexMetric {
             ParameterValueV1::Reference(p_name) => Self::Parameter(ParameterReference {
                 name: p_name,
                 key: None,
+                return_value: None,
             }),
             ParameterValueV1::Table(tbl) => Self::Table(tbl.try_into()?),
             ParameterValueV1::Inline(param) => {
@@ -746,6 +786,7 @@ impl TryFromV1<ParameterValueV1> for IndexMetric {
                         let reference = ParameterReference {
                             name: p.name().to_string(),
                             key: None,
+                            return_value: None,
                         };
                         conversion_data.parameters.push(*p);
 

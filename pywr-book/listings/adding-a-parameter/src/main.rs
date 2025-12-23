@@ -34,17 +34,17 @@ impl Parameter for MaxParameter {
 }
 
 impl GeneralParameter<f64> for MaxParameter {
-    fn compute(
+    fn before(
         &self,
         _timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
         model: &Network,
         state: &State,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<f64, ParameterCalculationError> {
+    ) -> Result<Option<f64>, ParameterCalculationError> {
         // Current value
         let x = self.metric.get_value(model, state)?;
-        Ok(x.max(self.threshold))
+        Ok(Some(x.max(self.threshold)))
     }
 
     fn as_parameter(&self) -> &dyn Parameter

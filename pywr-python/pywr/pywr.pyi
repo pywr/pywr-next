@@ -7,7 +7,7 @@ class ParameterInfo:
     """Provides data for a custom Pywr parameter.
 
     This is a read-only object that provides information that can be used for custom parameters in Pywr. It
-    is passed as the first argument to the `calc` and `after` methods of custom parameter objects.
+    is passed as the first argument to the `before` and `after` methods of custom parameter objects.
     """
 
     @property
