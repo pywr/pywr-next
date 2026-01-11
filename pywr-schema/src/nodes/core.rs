@@ -11,7 +11,9 @@ use crate::v1::{ConversionData, TryFromV1, try_convert_initial_storage, try_conv
 use crate::{node_attribute_subset_enum, node_component_subset_enum};
 #[cfg(feature = "core")]
 use pywr_core::{
-    derived_metric::DerivedMetric, metric::MetricF64, node::StorageInitialVolume as CoreStorageInitialVolume,
+    metric::MetricF64,
+    node::StorageInitialVolume as CoreStorageInitialVolume,
+    parameters::{DeficitParameter, ParameterName},
 };
 use pywr_schema_macros::PywrVisitAll;
 use pywr_schema_macros::skip_serializing_none;
@@ -890,9 +892,23 @@ impl OutputNode {
         let metric = match attr {
             OutputNodeAttribute::Inflow => MetricF64::NodeInFlow(idx),
             OutputNodeAttribute::Deficit => {
-                let dm = DerivedMetric::NodeInFlowDeficit(idx);
-                let dm_idx = network.add_derived_metric(dm);
-                MetricF64::DerivedMetric(dm_idx)
+                let deficit_parameter_name = ParameterName::new("deficit", Some(self.meta.name.as_str()));
+
+                // Create a parameter for the deficit metric if it does not already exist
+                let deficit_parameter_idx = match network.get_parameter_index_by_name(&deficit_parameter_name) {
+                    Some(p_idx) => p_idx,
+                    None => {
+                        let deficit_parameter = DeficitParameter::new(
+                            deficit_parameter_name,
+                            MetricF64::NodeInFlow(idx),
+                            MetricF64::NodeMaxFlow(idx),
+                        );
+
+                        network.add_parameter(Box::new(deficit_parameter))?
+                    }
+                };
+
+                deficit_parameter_idx.into_metric_f64_after()
             }
         };
 
@@ -1115,11 +1131,7 @@ impl StorageNode {
         let metric = match attr {
             StorageNodeAttribute::Volume => MetricF64::NodeVolume(idx),
             StorageNodeAttribute::MaxVolume => MetricF64::NodeMaxVolume(idx),
-            StorageNodeAttribute::ProportionalVolume => {
-                let dm = DerivedMetric::NodeProportionalVolume(idx);
-                let derived_metric_idx = network.add_derived_metric(dm);
-                MetricF64::DerivedMetric(derived_metric_idx)
-            }
+            StorageNodeAttribute::ProportionalVolume => MetricF64::NodeProportionalVolume(idx),
         };
 
         Ok(metric)
