@@ -11,6 +11,7 @@ use strum_macros::{Display, EnumIter};
 
 #[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Debug, Default, Clone, JsonSchema, PywrVisitPaths)]
+#[serde(deny_unknown_fields)]
 pub struct MemoryAggregation {
     pub time: Option<AggFunc>,
     pub scenario: Option<AggFunc>,
@@ -21,8 +22,8 @@ pub struct MemoryAggregation {
 impl MemoryAggregation {
     fn load(&self, data_path: Option<&Path>) -> Result<pywr_core::recorders::Aggregation, SchemaError> {
         Ok(pywr_core::recorders::Aggregation::new(
-            self.time.as_ref().map(|f| f.load(data_path)).transpose()?,
             self.scenario.as_ref().map(|f| f.load(data_path)).transpose()?,
+            self.time.as_ref().map(|f| f.load(data_path)).transpose()?,
             self.metric.as_ref().map(|f| f.load(data_path)).transpose()?,
         ))
     }
