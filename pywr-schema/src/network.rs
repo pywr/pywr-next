@@ -306,7 +306,23 @@ impl NetworkSchema {
         }
 
         let edges = match v1.edges {
-            Some(edges) => edges.into_iter().map(|e| e.into()).collect(),
+            Some(v1_edges) => {
+                let mut edges = Vec::with_capacity(v1_edges.len());
+                for v1_edge in v1_edges.into_iter() {
+                    match v1_edge.clone().try_into() {
+                        Ok(e) => edges.push(e),
+                        Err(error) => {
+                            errors.push(ComponentConversionError::Edge {
+                                from_node: v1_edge.from_node,
+                                to_node: v1_edge.to_node,
+                                error,
+                            });
+                        }
+                    }
+                }
+
+                edges
+            }
             None => Vec::new(),
         };
 
