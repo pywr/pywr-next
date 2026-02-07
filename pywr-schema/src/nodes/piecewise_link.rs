@@ -3,9 +3,9 @@ use crate::error::SchemaError;
 use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::network::LoadArgs;
-use crate::nodes::NodeMeta;
 #[cfg(feature = "core")]
 use crate::nodes::{NodeAttribute, NodeComponent};
+use crate::nodes::{NodeMeta, NodeSlot};
 use crate::parameters::Parameter;
 use crate::v1::{ConversionData, TryFromV1, try_convert_node_attr};
 use crate::{node_attribute_subset_enum, node_component_subset_enum};
@@ -85,21 +85,29 @@ impl PiecewiseLinkNode {
         Some(format!("step-{i:02}"))
     }
 
-    pub fn input_connectors(&self) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
-        Ok(self
-            .steps
-            .iter()
-            .enumerate()
-            .map(|(i, _)| (self.meta.name.as_str(), Self::step_sub_name(i)))
-            .collect())
+    pub fn input_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
+        if let Some(slot) = slot {
+            Err(SchemaError::InputNodeSlotNotSupported { slot: slot.clone() })
+        } else {
+            Ok(self
+                .steps
+                .iter()
+                .enumerate()
+                .map(|(i, _)| (self.meta.name.as_str(), Self::step_sub_name(i)))
+                .collect())
+        }
     }
-    pub fn output_connectors(&self) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
-        Ok(self
-            .steps
-            .iter()
-            .enumerate()
-            .map(|(i, _)| (self.meta.name.as_str(), Self::step_sub_name(i)))
-            .collect())
+    pub fn output_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
+        if let Some(slot) = slot {
+            Err(SchemaError::OutputNodeSlotNotSupported { slot: slot.clone() })
+        } else {
+            Ok(self
+                .steps
+                .iter()
+                .enumerate()
+                .map(|(i, _)| (self.meta.name.as_str(), Self::step_sub_name(i)))
+                .collect())
+        }
     }
 
     pub fn default_attribute(&self) -> PiecewiseLinkNodeAttribute {

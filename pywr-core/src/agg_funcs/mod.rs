@@ -378,7 +378,7 @@ mod tests {
     /// Create a simple Python function that sums a list of values and adds an offset.
     #[cfg(feature = "pyo3")]
     fn make_py_sum_function() -> Py<PyAny> {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let test_module = PyModule::from_code(
                 py,
                 c_str!(
@@ -399,12 +399,12 @@ def my_sum(values, offset):
     #[test]
     #[cfg(feature = "pyo3")]
     fn test_f64_py() {
-        pyo3::prepare_freethreaded_python();
+        Python::initialize();
 
         let py_func = make_py_sum_function();
 
-        let args = Python::with_gil(|py| PyTuple::new(py, [5]).unwrap().unbind());
-        let kwargs = Python::with_gil(|py| PyDict::new(py).unbind());
+        let args = Python::attach(|py| PyTuple::new(py, [5]).unwrap().unbind());
+        let kwargs = Python::attach(|py| PyDict::new(py).unbind());
 
         let agg_func = AggFuncF64::Python(py::PyAggFunc::new(py_func, args, kwargs));
 
@@ -415,12 +415,12 @@ def my_sum(values, offset):
     #[test]
     #[cfg(feature = "pyo3")]
     fn test_u64_py() {
-        pyo3::prepare_freethreaded_python();
+        Python::initialize();
 
         let py_func = make_py_sum_function();
 
-        let args = Python::with_gil(|py| PyTuple::new(py, [5]).unwrap().unbind());
-        let kwargs = Python::with_gil(|py| PyDict::new(py).unbind());
+        let args = Python::attach(|py| PyTuple::new(py, [5]).unwrap().unbind());
+        let kwargs = Python::attach(|py| PyDict::new(py).unbind());
 
         let agg_func = AggFuncU64::Python(py::PyAggFunc::new(py_func, args, kwargs));
 

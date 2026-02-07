@@ -1,0 +1,108 @@
+{
+  "metadata": {
+    "title": "An example of using RiverSplitWithGauge",
+    "description": "A river split with a proportion above an MRF taken off. The split is given a user defined slot name.",
+    "minimum_version": "0.1"
+  },
+  "timestepper": {
+    "start": "2015-01-01",
+    "end": "2015-01-03",
+    "timestep": {
+      "type": "Days",
+      "days": 1
+    }
+  },
+  "network": {
+    "nodes": [
+      {
+        "meta": {
+          "name": "catchment1"
+        },
+        "type": "Catchment",
+        "flow": {
+          "type": "Literal",
+          "value": 15.0
+        }
+      },
+      {
+        "meta": {
+          "name": "gauge1"
+        },
+        "type": "RiverSplitWithGauge",
+        "mrf": {
+          "type": "Literal",
+          "value": 5.0
+        },
+        "mrf_cost": {
+          "type": "Literal",
+          "value": -20
+        },
+        "splits": [
+          {
+            "factor": {
+              "type": "Literal",
+              "value": 0.1
+            }
+          }
+        ]
+      },
+      {
+        "meta": {
+          "name": "term1"
+        },
+        "type": "Output"
+      },
+      {
+        "meta": {
+          "name": "demand1"
+        },
+        "type": "Output",
+        "max_flow": {
+          "type": "Literal",
+          "value": 15.0
+        },
+        "cost": {
+          "type": "Literal",
+          "value": -10
+        }
+      }
+    ],
+    "edges": [
+      {
+        "from_node": "catchment1",
+        "to_node": "gauge1"
+      },
+      {
+        "from_node": "gauge1",
+        "to_node": "term1"
+      },
+      {
+        "from_node": "gauge1",
+        "from_slot": {
+          "type": "Split",
+          "position": 0
+        },
+        "to_node": "demand1"
+      }
+    ],
+    "metric_sets": [
+      {
+        "name": "nodes",
+        "filters": {
+          "all_nodes": true
+        }
+      }
+    ],
+    "outputs": [
+      {
+        "name": "node-outputs",
+        "type": "CSV",
+        "format": "Long",
+        "filename": "river_split_with_gauge2-expected.csv",
+        "metric_set": [
+          "nodes"
+        ]
+      }
+    ]
+  }
+}

@@ -76,11 +76,13 @@ model_tests! {
     test_piecewise_storage2: ("piecewise_storage2.json", vec![("piecewise_storage2-expected.csv", ResultsShape::Long)], vec![], vec!["ipm-simd", "ipm-ocl"]),
     test_piecewise_storage3: ("piecewise_storage3.json", vec![("piecewise_storage3-expected.csv", ResultsShape::Long)], vec![], vec!["ipm-simd", "ipm-ocl"]),
     test_piecewise_storage4: ("piecewise_storage4.json", vec![("piecewise_storage4-expected.csv", ResultsShape::Long)], vec![], vec!["ipm-simd", "ipm-ocl"]),
-    test_reservoir_with_river: ("reservoir_with_river.json", vec![], vec![], vec![]),
-    test_reservoir_with_spill: ("reservoir_with_spill.json", vec![], vec![], vec![]),
+    test_reservoir_with_river1: ("reservoir_with_river1.json", vec![("reservoir_with_river1-expected.csv", ResultsShape::Long)], vec![], vec![]),
+    test_reservoir_with_river2: ("reservoir_with_river2.json", vec![("reservoir_with_river2-expected.csv", ResultsShape::Long)], vec![], vec![]),
+    test_reservoir_with_spill1: ("reservoir_with_spill1.json", vec![("reservoir_with_spill1-expected.csv", ResultsShape::Long)], vec![], vec![]),
     test_river_loss1: ("river_loss1.json", vec![("river_loss1-expected.csv", ResultsShape::Long)], vec!["ipm-simd", "ipm-ocl"], vec![]),
     test_river_gauge1: ("river_gauge1.json", vec![("river_gauge1-expected.csv", ResultsShape::Long)], vec![], vec![]),
-    test_river_split_with_gauge1: ("river_split_with_gauge1.json", vec![], vec![], vec![]),
+    test_river_split_with_gauge1: ("river_split_with_gauge1.json", vec![("river_split_with_gauge1-expected.csv", ResultsShape::Long)], vec!["ipm-simd", "ipm-ocl"], vec![]),
+    test_river_split_with_gauge2: ("river_split_with_gauge2.json", vec![("river_split_with_gauge2-expected.csv", ResultsShape::Long)], vec!["ipm-simd", "ipm-ocl"], vec![]),
     test_seasonal_vs1: ("seasonal-vs1.json", vec![("seasonal-vs1-expected.csv", ResultsShape::Long)], vec!["ipm-simd", "ipm-ocl"], vec![]),
     test_seasonal_vs2: ("seasonal-vs2.json", vec![("seasonal-vs2-expected.csv", ResultsShape::Long)], vec!["ipm-simd", "ipm-ocl"], vec![]),
     test_thirty_day_licence: ("30-day-licence.json", vec![], vec!["ipm-simd", "ipm-ocl"], vec![]),
@@ -100,6 +102,7 @@ model_tests! {
     test_abstraction1: ("abstraction1.json", vec![("abstraction1-expected.csv", ResultsShape::Long)], vec!["ipm-simd", "ipm-ocl"], vec![]),
     test_abstraction2: ("abstraction2.json", vec![("abstraction2-expected.csv", ResultsShape::Long)], vec!["ipm-simd", "ipm-ocl"], vec![]),
     test_reservoir_failure_levels1: ("reservoir-failure-levels1.json", vec![("reservoir-failure-levels1-expected.csv", ResultsShape::Long)], vec![], vec![]),
+    test_daily_profile1: ("daily-profile1.json", vec![("daily-profile1-expected.csv", ResultsShape::Long)], vec![], vec![]),
 }
 
 /// Test Pandas backend for reading timeseries data.

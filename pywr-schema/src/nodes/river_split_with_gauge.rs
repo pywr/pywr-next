@@ -3,9 +3,10 @@ use crate::error::SchemaError;
 use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::network::LoadArgs;
-use crate::nodes::NodeMeta;
+use crate::nodes::abstraction::AbstractionOutputNodeSlot;
 #[cfg(feature = "core")]
 use crate::nodes::{NodeAttribute, NodeComponent};
+use crate::nodes::{NodeMeta, NodeSlot};
 use crate::parameters::Parameter;
 use crate::v1::{ConversionData, TryFromV1, try_convert_node_attr};
 use crate::{ConversionError, TryIntoV2, node_attribute_subset_enum, node_component_subset_enum};
@@ -21,8 +22,9 @@ use schemars::JsonSchema;
 pub struct RiverSplit {
     /// Proportion of flow not going via the mrf route.
     pub factor: Metric,
-    /// Name of the slot when connecting to this split.
-    pub slot_name: String,
+    /// Name of the slot when connecting to this split. If not provided then the slot
+    /// can be accessed by its index.
+    pub slot_name: Option<String>,
 }
 // This macro generates a subset enum for the `RiverSplitWithGaugeNode` attributes.
 // It allows for easy conversion between the enum and the `NodeAttribute` type.
@@ -37,6 +39,35 @@ node_component_subset_enum! {
     pub enum RiverSplitWithGaugeNodeComponent {
         Inflow,
         Outflow,
+    }
+}
+
+pub enum RiverSplitWithGaugeOutputNodeSlot {
+    River,
+    Split { position: usize },
+    User { name: String },
+}
+
+impl From<RiverSplitWithGaugeOutputNodeSlot> for NodeSlot {
+    fn from(slot: RiverSplitWithGaugeOutputNodeSlot) -> Self {
+        match slot {
+            RiverSplitWithGaugeOutputNodeSlot::River => NodeSlot::River,
+            RiverSplitWithGaugeOutputNodeSlot::Split { position } => NodeSlot::Split { position },
+            RiverSplitWithGaugeOutputNodeSlot::User { name } => NodeSlot::User { name },
+        }
+    }
+}
+
+impl TryFrom<NodeSlot> for RiverSplitWithGaugeOutputNodeSlot {
+    type Error = SchemaError;
+
+    fn try_from(slot: NodeSlot) -> Result<Self, Self::Error> {
+        match slot {
+            NodeSlot::River => Ok(RiverSplitWithGaugeOutputNodeSlot::River),
+            NodeSlot::Split { position } => Ok(RiverSplitWithGaugeOutputNodeSlot::Split { position }),
+            NodeSlot::User { name } => Ok(RiverSplitWithGaugeOutputNodeSlot::User { name }),
+            _ => Err(SchemaError::OutputNodeSlotNotSupported { slot }),
+        }
     }
 }
 
@@ -88,6 +119,7 @@ pub struct RiverSplitWithGaugeNode {
 impl RiverSplitWithGaugeNode {
     const DEFAULT_ATTRIBUTE: RiverSplitWithGaugeNodeAttribute = RiverSplitWithGaugeNodeAttribute::Outflow;
     const DEFAULT_COMPONENT: RiverSplitWithGaugeNodeComponent = RiverSplitWithGaugeNodeComponent::Outflow;
+    const DEFAULT_OUTPUT_SLOT: RiverSplitWithGaugeOutputNodeSlot = RiverSplitWithGaugeOutputNodeSlot::River;
 
     fn mrf_sub_name() -> Option<&'static str> {
         Some("mrf")
@@ -101,7 +133,7 @@ impl RiverSplitWithGaugeNode {
         Some(format!("split-{i}"))
     }
 
-    /// These connectors are used for both incoming and outgoing edges on the default slot.
+    /// These connectors are used for both incoming and Output edges on the default slot.
     fn default_connectors(&self) -> Vec<(&str, Option<String>)> {
         let mut connectors = vec![
             (self.meta.name.as_str(), Self::mrf_sub_name().map(|s| s.to_string())),
@@ -118,21 +150,59 @@ impl RiverSplitWithGaugeNode {
         connectors
     }
 
-    pub fn input_connectors(&self) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
-        Ok(self.default_connectors())
+    pub fn input_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
+        if let Some(slot) = slot {
+            Err(SchemaError::InputNodeSlotNotSupported { slot: slot.clone() })
+        } else {
+            Ok(self.default_connectors())
+        }
     }
 
-    pub fn output_connectors(&self, slot: Option<&str>) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
-        match slot {
-            Some(slot) => match self.splits.iter().position(|split| split.slot_name == slot) {
-                Some(i) => Ok(vec![(self.meta.name.as_str(), Self::split_sub_name(i))]),
-                None => Err(SchemaError::NodeConnectionSlotNotFound {
-                    node: self.meta.name.clone(),
-                    slot: slot.to_string(),
-                }),
-            },
-            None => Ok(self.default_connectors()),
-        }
+    pub fn output_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
+        let slot = match slot {
+            Some(s) => s.clone().try_into()?,
+            None => Self::DEFAULT_OUTPUT_SLOT,
+        };
+
+        let indices = match &slot {
+            RiverSplitWithGaugeOutputNodeSlot::River => self.default_connectors(),
+            RiverSplitWithGaugeOutputNodeSlot::Split { position } => {
+                if *position < self.splits.len() {
+                    vec![(self.meta.name.as_str(), Self::split_sub_name(*position))]
+                } else {
+                    return Err(SchemaError::NodeConnectionSlotNotFound {
+                        node: self.meta.name.clone(),
+                        slot: slot.into(),
+                    });
+                }
+            }
+            RiverSplitWithGaugeOutputNodeSlot::User { name } => {
+                match self
+                    .splits
+                    .iter()
+                    .position(|split| split.slot_name.as_ref().is_some_and(|s| s == name))
+                {
+                    Some(i) => vec![(self.meta.name.as_str(), Self::split_sub_name(i))],
+                    None => {
+                        return Err(SchemaError::NodeConnectionSlotNotFound {
+                            node: self.meta.name.clone(),
+                            slot: slot.into(),
+                        });
+                    }
+                }
+            }
+        };
+
+        Ok(indices)
+    }
+
+    pub fn iter_output_slots(&self) -> impl Iterator<Item = NodeSlot> + '_ {
+        [AbstractionOutputNodeSlot::River.into()]
+            .into_iter()
+            .chain(self.splits.iter().enumerate().map(|(i, split)| match &split.slot_name {
+                Some(name) => NodeSlot::User { name: name.clone() },
+                None => NodeSlot::Split { position: i },
+            }))
     }
 
     pub fn default_attribute(&self) -> RiverSplitWithGaugeNodeAttribute {
@@ -332,7 +402,12 @@ impl TryFromV1<RiverSplitWithGaugeNodeV1> for RiverSplitWithGaugeNode {
         let splits = factors
             .into_iter()
             .zip(v1.slot_names.into_iter().skip(1))
-            .map(|(factor, slot_name)| Ok(RiverSplit { factor, slot_name }))
+            .map(|(factor, slot_name)| {
+                Ok(RiverSplit {
+                    factor,
+                    slot_name: Some(slot_name),
+                })
+            })
             .collect::<Result<Vec<_>, Self::Error>>()?;
 
         let n = Self {

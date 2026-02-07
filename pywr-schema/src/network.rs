@@ -11,7 +11,7 @@ use crate::error::SchemaError;
 use crate::metric::Metric;
 use crate::metric_sets::MetricSet;
 #[cfg(feature = "core")]
-use crate::model::PywrMultiNetworkTransfer;
+use crate::model::MultiNetworkTransfer;
 use crate::outputs::Output;
 use crate::timeseries::Timeseries;
 #[cfg(feature = "core")]
@@ -32,19 +32,19 @@ use std::str::FromStr;
 use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticStr};
 use thiserror::Error;
 
-/// Error type for reading a [`PywrNetwork`] network from a file or string.
+/// Error type for reading a [`NetworkSchema`] network from a file or string.
 #[derive(Error, Debug)]
-pub enum PywrNetworkReadError {
+pub enum NetworkSchemaReadError {
     #[error("IO error on path `{path}`: {error}")]
     IO { path: PathBuf, error: std::io::Error },
     #[error("JSON error: {0}")]
     Json(#[from] serde_json::Error),
 }
 
-/// Error type for building a `pywr_core::PywrNetwork` network from a schema ([`PywrNetwork`]).
+/// Error type for building a `pywr_core::PywrNetwork` network from a schema ([`NetworkSchema`]).
 #[cfg(feature = "core")]
 #[derive(Error, Debug)]
-pub enum PywrNetworkBuildError {
+pub enum NetworkSchemaBuildError {
     #[error("Circular node reference(s) found.")]
     CircularNodeReference,
     #[error("Circular parameters reference(s) found. Unable to load the following parameters: {0:?}")]
@@ -112,18 +112,18 @@ pub enum PywrNetworkBuildError {
 }
 
 #[cfg(all(feature = "core", feature = "pyo3"))]
-impl TryFrom<PywrNetworkBuildError> for PyErr {
+impl TryFrom<NetworkSchemaBuildError> for PyErr {
     type Error = ();
-    fn try_from(err: PywrNetworkBuildError) -> Result<PyErr, Self::Error> {
+    fn try_from(err: NetworkSchemaBuildError) -> Result<PyErr, Self::Error> {
         match err {
-            PywrNetworkBuildError::AddNodeError { source, .. } => (*source).try_into(),
-            PywrNetworkBuildError::SetNodeConstraintsError { source, .. } => (*source).try_into(),
-            PywrNetworkBuildError::AddEdgeError { source, .. } => (*source).try_into(),
-            PywrNetworkBuildError::AddParameterError { source, .. } => (*source).try_into(),
-            PywrNetworkBuildError::AddLocalParameterError { source, .. } => (*source).try_into(),
-            PywrNetworkBuildError::AddMetricSetError { source, .. } => (*source).try_into(),
-            PywrNetworkBuildError::AddOutputError { source, .. } => (*source).try_into(),
-            PywrNetworkBuildError::LoadTimeseriesError(e) => e.try_into(),
+            NetworkSchemaBuildError::AddNodeError { source, .. } => (*source).try_into(),
+            NetworkSchemaBuildError::SetNodeConstraintsError { source, .. } => (*source).try_into(),
+            NetworkSchemaBuildError::AddEdgeError { source, .. } => (*source).try_into(),
+            NetworkSchemaBuildError::AddParameterError { source, .. } => (*source).try_into(),
+            NetworkSchemaBuildError::AddLocalParameterError { source, .. } => (*source).try_into(),
+            NetworkSchemaBuildError::AddMetricSetError { source, .. } => (*source).try_into(),
+            NetworkSchemaBuildError::AddOutputError { source, .. } => (*source).try_into(),
+            NetworkSchemaBuildError::LoadTimeseriesError(e) => e.try_into(),
             _ => Err(()),
         }
     }
@@ -132,19 +132,19 @@ impl TryFrom<PywrNetworkBuildError> for PyErr {
 #[cfg(feature = "core")]
 #[derive(Clone)]
 pub struct LoadArgs<'a> {
-    pub schema: &'a PywrNetwork,
+    pub schema: &'a NetworkSchema,
     pub domain: &'a ModelDomain,
     pub tables: &'a LoadedTableCollection,
     pub timeseries: &'a LoadedTimeseriesCollection,
     pub data_path: Option<&'a Path>,
-    pub inter_network_transfers: &'a [PywrMultiNetworkTransfer],
+    pub inter_network_transfers: &'a [MultiNetworkTransfer],
 }
 
 #[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, JsonSchema)]
 #[cfg_attr(feature = "pyo3", pyclass)]
 #[serde(deny_unknown_fields)]
-pub struct PywrNetwork {
+pub struct NetworkSchema {
     pub nodes: Vec<Node>,
     pub edges: Vec<Edge>,
     pub virtual_nodes: Option<Vec<VirtualNode>>,
@@ -155,15 +155,15 @@ pub struct PywrNetwork {
     pub outputs: Option<Vec<Output>>,
 }
 
-impl FromStr for PywrNetwork {
-    type Err = PywrNetworkReadError;
+impl FromStr for NetworkSchema {
+    type Err = NetworkSchemaReadError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Ok(serde_json::from_str(s)?)
     }
 }
 
-impl VisitPaths for PywrNetwork {
+impl VisitPaths for NetworkSchema {
     fn visit_paths<F: FnMut(&Path)>(&self, visitor: &mut F) {
         for node in &self.nodes {
             node.visit_paths(visitor);
@@ -200,7 +200,7 @@ impl VisitPaths for PywrNetwork {
     }
 }
 
-impl VisitMetrics for PywrNetwork {
+impl VisitMetrics for NetworkSchema {
     fn visit_metrics<F: FnMut(&Metric)>(&self, visitor: &mut F) {
         for node in &self.nodes {
             node.visit_metrics(visitor);
@@ -242,9 +242,9 @@ impl VisitMetrics for PywrNetwork {
     }
 }
 
-impl PywrNetwork {
-    pub fn from_path<P: AsRef<Path>>(path: P) -> Result<Self, PywrNetworkReadError> {
-        let data = std::fs::read_to_string(&path).map_err(|error| PywrNetworkReadError::IO {
+impl NetworkSchema {
+    pub fn from_path<P: AsRef<Path>>(path: P) -> Result<Self, NetworkSchemaReadError> {
+        let data = std::fs::read_to_string(&path).map_err(|error| NetworkSchemaReadError::IO {
             path: path.as_ref().to_path_buf(),
             error,
         })?;
@@ -306,7 +306,23 @@ impl PywrNetwork {
         }
 
         let edges = match v1.edges {
-            Some(edges) => edges.into_iter().map(|e| e.into()).collect(),
+            Some(v1_edges) => {
+                let mut edges = Vec::with_capacity(v1_edges.len());
+                for v1_edge in v1_edges.into_iter() {
+                    match v1_edge.clone().try_into() {
+                        Ok(e) => edges.push(e),
+                        Err(error) => {
+                            errors.push(ComponentConversionError::Edge {
+                                from_node: v1_edge.from_node,
+                                to_node: v1_edge.to_node,
+                                error,
+                            });
+                        }
+                    }
+                }
+
+                edges
+            }
             None => Vec::new(),
         };
 
@@ -435,14 +451,14 @@ impl PywrNetwork {
         domain: &ModelDomain,
         data_path: Option<&Path>,
         output_path: Option<&Path>,
-        inter_network_transfers: &[PywrMultiNetworkTransfer],
+        inter_network_transfers: &[MultiNetworkTransfer],
     ) -> Result<
         (
             pywr_core::network::Network,
             LoadedTableCollection,
             LoadedTimeseriesCollection,
         ),
-        PywrNetworkBuildError,
+        NetworkSchemaBuildError,
     > {
         let mut network = pywr_core::network::Network::default();
 
@@ -484,11 +500,11 @@ impl PywrNetwork {
                         SchemaError::CoreNodeNotFound { .. } => failed_nodes.push(node),
                         _ => {
                             return match node {
-                                NodeOrVirtualNode::Node(n) => Err(PywrNetworkBuildError::AddNodeError {
+                                NodeOrVirtualNode::Node(n) => Err(NetworkSchemaBuildError::AddNodeError {
                                     name: n.name().to_string(),
                                     source: Box::new(e),
                                 }),
-                                NodeOrVirtualNode::Virtual(vn) => Err(PywrNetworkBuildError::AddVirtualNodeError {
+                                NodeOrVirtualNode::Virtual(vn) => Err(NetworkSchemaBuildError::AddVirtualNodeError {
                                     name: vn.name().to_string(),
                                     source: Box::new(e),
                                 }),
@@ -500,7 +516,7 @@ impl PywrNetwork {
 
             if failed_nodes.len() == n {
                 // Could not load any nodes; must be a circular reference
-                return Err(PywrNetworkBuildError::CircularNodeReference);
+                return Err(NetworkSchemaBuildError::CircularNodeReference);
             }
 
             remaining_nodes = failed_nodes;
@@ -509,7 +525,7 @@ impl PywrNetwork {
         // Create the edges
         for edge in &self.edges {
             edge.add_to_model(&mut network, &args)
-                .map_err(|source| PywrNetworkBuildError::AddEdgeError {
+                .map_err(|source| NetworkSchemaBuildError::AddEdgeError {
                     from_node: edge.from_node.clone(),
                     to_node: edge.to_node.clone(),
                     source: Box::new(source),
@@ -541,14 +557,14 @@ impl PywrNetwork {
                         SchemaError::CoreParameterNotFound { .. } => failed_parameters.push((parent, parameter)),
                         _ => {
                             return match parent {
-                                Some(p) => Err(PywrNetworkBuildError::AddLocalParameterError {
+                                Some(p) => Err(NetworkSchemaBuildError::AddLocalParameterError {
                                     parent: p.to_string(),
                                     name: parameter.name().to_string(),
                                     source: Box::new(e),
                                 }),
                                 None => {
                                     // Global parameter
-                                    Err(PywrNetworkBuildError::AddParameterError {
+                                    Err(NetworkSchemaBuildError::AddParameterError {
                                         name: parameter.name().to_string(),
                                         source: Box::new(e),
                                     })
@@ -562,7 +578,7 @@ impl PywrNetwork {
             if failed_parameters.len() == n {
                 // Could not load any parameters; must be a circular reference
                 let failed_names = failed_parameters.iter().map(|(_n, p)| p.name().to_string()).collect();
-                return Err(PywrNetworkBuildError::CircularParameterReference(failed_names));
+                return Err(NetworkSchemaBuildError::CircularParameterReference(failed_names));
             }
 
             remaining_parameters = failed_parameters;
@@ -571,7 +587,7 @@ impl PywrNetwork {
         // Apply the constraints to the nodes
         for node in &self.nodes {
             node.set_constraints(&mut network, &args).map_err(|source| {
-                PywrNetworkBuildError::SetNodeConstraintsError {
+                NetworkSchemaBuildError::SetNodeConstraintsError {
                     name: node.name().to_string(),
                     source: Box::new(source),
                 }
@@ -582,7 +598,7 @@ impl PywrNetwork {
         if let Some(virtual_nodes) = &self.virtual_nodes {
             for node in virtual_nodes {
                 node.set_constraints(&mut network, &args).map_err(|source| {
-                    PywrNetworkBuildError::SetVirtualNodeConstraintsError {
+                    NetworkSchemaBuildError::SetVirtualNodeConstraintsError {
                         name: node.name().to_string(),
                         source: Box::new(source),
                     }
@@ -594,7 +610,7 @@ impl PywrNetwork {
         if let Some(metric_sets) = &self.metric_sets {
             for metric_set in metric_sets {
                 metric_set.add_to_model(&mut network, &args).map_err(|source| {
-                    PywrNetworkBuildError::AddMetricSetError {
+                    NetworkSchemaBuildError::AddMetricSetError {
                         name: metric_set.name.clone(),
                         source: Box::new(source),
                     }
@@ -607,7 +623,7 @@ impl PywrNetwork {
             for output in outputs {
                 output
                     .add_to_model(&mut network, data_path, output_path)
-                    .map_err(|source| PywrNetworkBuildError::AddOutputError {
+                    .map_err(|source| NetworkSchemaBuildError::AddOutputError {
                         name: output.name().to_string(),
                         source: Box::new(source),
                     })?;
@@ -621,8 +637,8 @@ impl PywrNetwork {
 #[derive(serde::Deserialize, serde::Serialize, Clone, Display, EnumDiscriminants)]
 #[serde(untagged)]
 #[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
-#[strum_discriminants(name(PywrNetworkRefType))]
-pub enum PywrNetworkRef {
+#[strum_discriminants(name(NetworkSchemaRefType))]
+pub enum NetworkSchemaRef {
     Path(PathBuf),
-    Inline(PywrNetwork),
+    Inline(NetworkSchema),
 }

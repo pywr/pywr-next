@@ -1,12 +1,12 @@
 {
   "metadata": {
-    "title": "Simple 1",
-    "description": "A very simple example.",
+    "title": "An example of using RiverSplitWithGauge",
+    "description": "A river split with a proportion above an MRF taken off.",
     "minimum_version": "0.1"
   },
   "timestepper": {
     "start": "2015-01-01",
-    "end": "2015-12-31",
+    "end": "2015-01-03",
     "timestep": {
       "type": "Days",
       "days": 1
@@ -28,7 +28,7 @@
         "meta": {
           "name": "gauge1"
         },
-        "type": "RiverGauge",
+        "type": "RiverSplitWithGauge",
         "mrf": {
           "type": "Literal",
           "value": 5.0
@@ -36,7 +36,16 @@
         "mrf_cost": {
           "type": "Literal",
           "value": -20
-        }
+        },
+        "splits": [
+          {
+            "factor": {
+              "type": "Literal",
+              "value": 0.1
+            },
+            "slot_name": "my-abstraction"
+          }
+        ]
       },
       {
         "meta": {
@@ -70,7 +79,30 @@
       },
       {
         "from_node": "gauge1",
+        "from_slot": {
+          "type": "User",
+          "name": "my-abstraction"
+        },
         "to_node": "demand1"
+      }
+    ],
+    "metric_sets": [
+      {
+        "name": "nodes",
+        "filters": {
+          "all_nodes": true
+        }
+      }
+    ],
+    "outputs": [
+      {
+        "name": "node-outputs",
+        "type": "CSV",
+        "format": "Long",
+        "filename": "river_split_with_gauge1-expected.csv",
+        "metric_set": [
+          "nodes"
+        ]
       }
     ]
   }

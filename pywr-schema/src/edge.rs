@@ -1,7 +1,9 @@
+use crate::ConversionError;
 #[cfg(feature = "core")]
 use crate::SchemaError;
 #[cfg(feature = "core")]
 use crate::network::LoadArgs;
+use crate::nodes::NodeSlot;
 #[cfg(feature = "core")]
 use pywr_core::{edge::EdgeIndex, metric::MetricF64, node::NodeIndex};
 use pywr_schema_macros::skip_serializing_none;
@@ -13,18 +15,29 @@ use std::fmt::{Display, Formatter};
 pub struct Edge {
     pub from_node: String,
     pub to_node: String,
-    pub from_slot: Option<String>,
-    pub to_slot: Option<String>,
+    pub from_slot: Option<NodeSlot>,
+    pub to_slot: Option<NodeSlot>,
 }
 
-impl From<pywr_v1_schema::edge::Edge> for Edge {
-    fn from(v1: pywr_v1_schema::edge::Edge) -> Self {
-        Self {
+impl TryFrom<pywr_v1_schema::edge::Edge> for Edge {
+    type Error = ConversionError;
+    fn try_from(v1: pywr_v1_schema::edge::Edge) -> Result<Self, Self::Error> {
+        let from_slot = match v1.from_slot.flatten() {
+            Some(s) => Some(NodeSlot::try_from_v1_str(&s)?),
+            None => None,
+        };
+
+        let to_slot = match v1.to_slot.flatten() {
+            Some(s) => Some(NodeSlot::try_from_v1_str(&s)?),
+            None => None,
+        };
+
+        Ok(Self {
             from_node: v1.from_node,
             to_node: v1.to_node,
-            from_slot: v1.from_slot.flatten(),
-            to_slot: v1.to_slot.flatten(),
-        }
+            from_slot,
+            to_slot,
+        })
     }
 }
 
@@ -73,12 +86,9 @@ impl Edge {
                 name: self.to_node.clone(),
             })?;
 
-        let from_slot = self.from_slot.as_deref();
-        let to_slot = self.to_slot.as_deref();
-
         // Collect the node indices at each end of the edge
         let from_node_indices: Vec<NodeIndex> = from_node
-            .output_connectors(from_slot)?
+            .output_connectors(self.from_slot.as_ref())?
             .into_iter()
             .map(|(name, sub_name)| {
                 network
@@ -91,7 +101,7 @@ impl Edge {
             .collect::<Result<_, _>>()?;
 
         let to_node_indices: Vec<NodeIndex> = to_node
-            .input_connectors(to_slot)?
+            .input_connectors(self.to_slot.as_ref())?
             .into_iter()
             .map(|(name, sub_name)| {
                 network

@@ -44,9 +44,11 @@ pub enum DataTableValueType {
     Array,
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Display, EnumIter)]
-pub enum DataTableFormat {
-    CSV,
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Default, JsonSchema, PywrVisitAll)]
+pub struct TableMeta {
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub comment: Option<String>,
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, Display, EnumDiscriminants)]
@@ -59,8 +61,12 @@ pub enum DataTable {
 
 impl DataTable {
     pub fn name(&self) -> &str {
+        self.meta().name.as_str()
+    }
+
+    pub fn meta(&self) -> &TableMeta {
         match self {
-            DataTable::CSV(tbl) => &tbl.name,
+            DataTable::CSV(tbl) => &tbl.meta,
         }
     }
 
@@ -77,15 +83,15 @@ impl DataTable {
 #[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
 #[strum_discriminants(name(CsvDataTableLookupType))]
 pub enum CsvDataTableLookup {
-    Row { rows: usize },
-    Col { cols: usize },
+    Row { cols: usize },
+    Col { rows: usize },
     Both { rows: usize, cols: usize },
 }
 
 /// An external table of data that can be referenced
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
 pub struct CsvDataTable {
-    pub name: String,
+    pub meta: TableMeta,
     #[serde(rename = "type")]
     pub ty: DataTableValueType,
     pub lookup: CsvDataTableLookup,
@@ -104,10 +110,10 @@ impl CsvDataTable {
 
         match &self.ty {
             DataTableValueType::Scalar => match self.lookup {
-                CsvDataTableLookup::Row { rows } => {
+                CsvDataTableLookup::Row { cols: rows } => {
                     Ok(LoadedTable::FloatScalar(LoadedScalarTable::from_csv_row(&fp, rows)?))
                 }
-                CsvDataTableLookup::Col { cols } => {
+                CsvDataTableLookup::Col { rows: cols } => {
                     Ok(LoadedTable::FloatScalar(LoadedScalarTable::from_csv_col(&fp, cols)?))
                 }
                 CsvDataTableLookup::Both { rows, cols } => Ok(LoadedTable::FloatScalar(
@@ -115,8 +121,12 @@ impl CsvDataTable {
                 )),
             },
             DataTableValueType::Array => match self.lookup {
-                CsvDataTableLookup::Row { rows } => Ok(LoadedTable::FloatVec(LoadedVecTable::from_csv_row(&fp, rows)?)),
-                CsvDataTableLookup::Col { cols } => Ok(LoadedTable::FloatVec(LoadedVecTable::from_csv_col(&fp, cols)?)),
+                CsvDataTableLookup::Row { cols: rows } => {
+                    Ok(LoadedTable::FloatVec(LoadedVecTable::from_csv_row(&fp, rows)?))
+                }
+                CsvDataTableLookup::Col { rows: cols } => {
+                    Ok(LoadedTable::FloatVec(LoadedVecTable::from_csv_col(&fp, cols)?))
+                }
                 CsvDataTableLookup::Both { .. } => Err(TableError::FormatNotSupported(
                     "CSV row & column array table is not supported. Use either row or column based format.".to_string(),
                 )),
@@ -384,6 +394,7 @@ impl TryFrom<TableDataRefV1> for TableDataRef {
 #[cfg(feature = "core")]
 mod tests {
     use super::*;
+    use std::fs;
     use std::fs::File;
     use std::io::Write;
     use tempfile::tempdir;
@@ -400,12 +411,14 @@ mod tests {
         let table_def = format!(
             r#"
             {{
-                "name": "my-arrays",
+                "meta": {{
+                    "name": "my-arrays"
+                }},
                 "type": "Array",
                 "format": "CSV",
                 "lookup": {{
                     "type": "Row",
-                    "rows": 1
+                    "cols": 1
                 }},
                 "url": {my_data_fn}
             }}"#,
@@ -429,5 +442,30 @@ my-reservoir,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2";
         let values: Vec<f64> = tbl.get_vec_f64(&["my-reservoir"]).unwrap().to_vec();
 
         assert_eq!(values, vec![0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2]);
+    }
+
+    /// Test all the documentation examples successfully deserialize.
+    #[test]
+    fn test_doc_examples() {
+        let mut doc_examples = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        doc_examples.push("src/data_tables/doc_examples");
+
+        for entry in fs::read_dir(doc_examples).unwrap() {
+            let p = entry.unwrap().path();
+            if p.is_file() {
+                let data = fs::read_to_string(&p).unwrap_or_else(|_| panic!("Failed to read file: {p:?}",));
+
+                let value: serde_json::Value =
+                    serde_json::from_str(&data).unwrap_or_else(|_| panic!("Failed to deserialize: {p:?}",));
+
+                match value {
+                    serde_json::Value::Object(_) => {
+                        let _ = serde_json::from_value::<DataTable>(value)
+                            .unwrap_or_else(|e| panic!("Failed to deserialize `{p:?}`: {e}",));
+                    }
+                    _ => panic!("Expected JSON object or array: {p:?}",),
+                }
+            }
+        }
     }
 }

@@ -11,37 +11,6 @@ license.workspace = true
 keywords.workspace = true
 categories.workspace = true
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
-[dependencies]
-digest = { workspace = true }
-svgbobdoc = { git = "https://github.com/jetuk/svgbobdoc.git", features = ["enable"], branch = "svgbob-0_7_5" }
-polars = { workspace = true, features = ["lazy", "rows", "ndarray", "diff", "dtype-datetime", "dtype-date", "dynamic_group_by"], optional = true }
-pyo3 = { workspace = true, optional = true }
-pyo3-polars = { workspace = true, optional = true }
-strum = "0.27"
-strum_macros = "0.27"
-schemars = { workspace = true }
-hdf5-metno = { workspace = true, optional = true }
-csv = { workspace = true }
-tracing = { workspace = true }
-num = { workspace = true }
-float-cmp = { workspace = true }
-ndarray = { workspace = true, optional = true }
-serde = { workspace = true }
-serde_json = { workspace = true }
-thiserror = { workspace = true }
-pywr-v1-schema = { workspace = true }
-pywr-core = { path = "../pywr-core", default-features = false, optional = true }
-chrono = { workspace = true }
-pywr-schema-macros = { path = "../pywr-schema-macros" }
-md-5 = { workspace = true }
-sha2 = { workspace = true }
-hex = { workspace = true }
-
-[dev-dependencies]
-tempfile = "3.23"
-
 [features]
 # Core feature requires additional dependencies
 core = ["dep:pywr-core", "dep:polars", "dep:ndarray"]
@@ -58,3 +27,35 @@ pyo3 = ["dep:pyo3", "pywr-core/pyo3", "dep:pyo3-polars"]
 
 # File formats
 hdf5 = ["dep:hdf5-metno", "pywr-core/hdf5"]
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+chrono = { workspace = true }
+csv = { workspace = true }
+digest = { workspace = true }
+float-cmp = { workspace = true }
+hdf5-metno = { workspace = true, optional = true }
+hex = { workspace = true }
+md-5 = { workspace = true }
+ndarray = { workspace = true, optional = true }
+num = { workspace = true }
+# "timezones" feature is only needed v0.52 (see https://github.com/pola-rs/polars/issues/25148)
+polars = { workspace = true, features = ["lazy", "rows", "ndarray", "diff", "dtype-datetime", "dtype-date", "dynamic_group_by", "timezones"], optional = true }
+pyo3 = { workspace = true, optional = true }
+pyo3-polars = { workspace = true, optional = true }
+pywr-core = { path = "../pywr-core", default-features = false, optional = true }
+pywr-schema-macros = { path = "../pywr-schema-macros" }
+pywr-v1-schema = { workspace = true }
+schemars = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+strum = "0.27"
+strum_macros = "0.27"
+svgbobdoc = { git = "https://github.com/jetuk/svgbobdoc.git", features = ["enable"], branch = "svgbob-0_7_5" }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3.24"
