@@ -38,7 +38,7 @@ build-backend = "maturin"
 manifest-path = "pywr-python/Cargo.toml"
 python-source = "pywr-python"
 # "extension-module" tells pyo3 we want to build an extension module (skips linking against libpython.so)
-features = ["pyo3/extension-module"]
+features = ["pyo3/extension-module", "ipm-simd"]
 
 [tool.ruff]
 exclude = ["coin-or-sys/vendor"]
