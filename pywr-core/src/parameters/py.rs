@@ -197,7 +197,7 @@ impl PyClassParameter {
         internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<T, ParameterCalculationError>
     where
-        T: for<'a> FromPyObject<'a>,
+        T: for<'a, 'py> FromPyObject<'a, 'py>,
     {
         let internal = downcast_internal_state_mut::<InternalObj>(internal_state);
 
@@ -239,6 +239,7 @@ impl PyClassParameter {
                     py_error: Box::new(py_error),
                 })?
                 .extract(py)
+                .map_err(Into::into)
                 .map_err(|py_error| ParameterCalculationError::PythonError {
                     name: self.common.meta.name.to_string(),
                     object: self.class.to_string(),
@@ -465,7 +466,7 @@ impl PyFuncParameter {
         internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<T, ParameterCalculationError>
     where
-        T: for<'a> FromPyObject<'a>,
+        T: for<'a, 'py> FromPyObject<'a, 'py>,
     {
         let internal = downcast_internal_state_mut::<InternalInfo>(internal_state);
 
@@ -525,6 +526,7 @@ impl PyFuncParameter {
                     py_error: Box::new(py_error),
                 })?
                 .extract(py)
+                .map_err(Into::into)
                 .map_err(|py_error| ParameterCalculationError::PythonError {
                     name: self.common.meta.name.to_string(),
                     object: self.function.to_string(),
