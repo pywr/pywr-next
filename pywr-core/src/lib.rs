@@ -1,7 +1,3 @@
-// Requires upgrading to PyO3 v0.23 which is blocked by updating Polars
-// See also: https://github.com/PyO3/pyo3/issues/4743
-#![allow(unexpected_cfgs)]
-
 extern crate core;
 
 use crate::node::NodeIndex;
