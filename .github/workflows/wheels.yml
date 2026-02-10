@@ -56,39 +56,40 @@ jobs:
           name: wheels-linux-${{ matrix.platform.target }}
           path: dist
 
-  musllinux:
-    runs-on: ${{ matrix.platform.runner }}
-    strategy:
-      matrix:
-        platform:
-          - runner: ubuntu-24.04
-            target: x86_64
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          submodules: true
-      - uses: actions/setup-python@v6
-        with:
-          python-version: 3.13
-      - name: Build wheels
-        uses: PyO3/maturin-action@v1
-        with:
-          target: ${{ matrix.platform.target }}
-          args: --release --out dist
-          sccache: ${{ !startsWith(github.ref, 'refs/tags/') }}
-          manylinux: musllinux_1_2
-      - name: Build free-threaded wheels
-        uses: PyO3/maturin-action@v1
-        with:
-          target: ${{ matrix.platform.target }}
-          args: --release --out dist -i python3.13t
-          sccache: ${{ !startsWith(github.ref, 'refs/tags/') }}
-          manylinux: musllinux_1_2
-      - name: Upload wheels
-        uses: actions/upload-artifact@v6
-        with:
-          name: wheels-musllinux-${{ matrix.platform.target }}
-          path: dist
+  # Disabled due to difficulty building zlib on musllinux_1_2 image. Revisit when there is an updated release.
+  #  musllinux:
+  #    runs-on: ${{ matrix.platform.runner }}
+  #    strategy:
+  #      matrix:
+  #        platform:
+  #          - runner: ubuntu-24.04
+  #            target: x86_64
+  #    steps:
+  #      - uses: actions/checkout@v6
+  #        with:
+  #          submodules: true
+  #      - uses: actions/setup-python@v6
+  #        with:
+  #          python-version: 3.13
+  #      - name: Build wheels
+  #        uses: PyO3/maturin-action@v1
+  #        with:
+  #          target: ${{ matrix.platform.target }}
+  #          args: --release --out dist
+  #          sccache: ${{ !startsWith(github.ref, 'refs/tags/') }}
+  #          manylinux: musllinux_1_2
+  #      - name: Build free-threaded wheels
+  #        uses: PyO3/maturin-action@v1
+  #        with:
+  #          target: ${{ matrix.platform.target }}
+  #          args: --release --out dist -i python3.13t
+  #          sccache: ${{ !startsWith(github.ref, 'refs/tags/') }}
+  #          manylinux: musllinux_1_2
+  #      - name: Upload wheels
+  #        uses: actions/upload-artifact@v6
+  #        with:
+  #          name: wheels-musllinux-${{ matrix.platform.target }}
+  #          path: dist
 
   windows:
     runs-on: ${{ matrix.platform.runner }}
@@ -183,7 +184,7 @@ jobs:
     environment: pypi
     runs-on: ubuntu-latest
     if: ${{ startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch' }}
-    needs: [ linux, musllinux, windows, macos, sdist ]
+    needs: [ linux, windows, macos, sdist ]
     permissions:
       # Use to sign the release artifacts
       id-token: write
