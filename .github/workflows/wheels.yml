@@ -23,7 +23,7 @@ jobs:
     strategy:
       matrix:
         platform:
-          - runner: ubuntu-22.04
+          - runner: ubuntu-24.04
             target: x86_64
     steps:
       - uses: actions/checkout@v6
@@ -51,44 +51,45 @@ jobs:
           before-script-linux: |
             dnf install -y clang
       - name: Upload wheels
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: wheels-linux-${{ matrix.platform.target }}
           path: dist
 
-  musllinux:
-    runs-on: ${{ matrix.platform.runner }}
-    strategy:
-      matrix:
-        platform:
-          - runner: ubuntu-22.04
-            target: x86_64
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          submodules: true
-      - uses: actions/setup-python@v6
-        with:
-          python-version: 3.13
-      - name: Build wheels
-        uses: PyO3/maturin-action@v1
-        with:
-          target: ${{ matrix.platform.target }}
-          args: --release --out dist
-          sccache: ${{ !startsWith(github.ref, 'refs/tags/') }}
-          manylinux: musllinux_1_2
-      - name: Build free-threaded wheels
-        uses: PyO3/maturin-action@v1
-        with:
-          target: ${{ matrix.platform.target }}
-          args: --release --out dist -i python3.13t
-          sccache: ${{ !startsWith(github.ref, 'refs/tags/') }}
-          manylinux: musllinux_1_2
-      - name: Upload wheels
-        uses: actions/upload-artifact@v5
-        with:
-          name: wheels-musllinux-${{ matrix.platform.target }}
-          path: dist
+  # Disabled due to difficulty building zlib on musllinux_1_2 image. Revisit when there is an updated release.
+  #  musllinux:
+  #    runs-on: ${{ matrix.platform.runner }}
+  #    strategy:
+  #      matrix:
+  #        platform:
+  #          - runner: ubuntu-24.04
+  #            target: x86_64
+  #    steps:
+  #      - uses: actions/checkout@v6
+  #        with:
+  #          submodules: true
+  #      - uses: actions/setup-python@v6
+  #        with:
+  #          python-version: 3.13
+  #      - name: Build wheels
+  #        uses: PyO3/maturin-action@v1
+  #        with:
+  #          target: ${{ matrix.platform.target }}
+  #          args: --release --out dist
+  #          sccache: ${{ !startsWith(github.ref, 'refs/tags/') }}
+  #          manylinux: musllinux_1_2
+  #      - name: Build free-threaded wheels
+  #        uses: PyO3/maturin-action@v1
+  #        with:
+  #          target: ${{ matrix.platform.target }}
+  #          args: --release --out dist -i python3.13t
+  #          sccache: ${{ !startsWith(github.ref, 'refs/tags/') }}
+  #          manylinux: musllinux_1_2
+  #      - name: Upload wheels
+  #        uses: actions/upload-artifact@v6
+  #        with:
+  #          name: wheels-musllinux-${{ matrix.platform.target }}
+  #          path: dist
 
   windows:
     runs-on: ${{ matrix.platform.runner }}
@@ -122,7 +123,7 @@ jobs:
           args: --release --out dist -i python3.13t
           sccache: ${{ !startsWith(github.ref, 'refs/tags/') }}
       - name: Upload wheels
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: wheels-windows-${{ matrix.platform.target }}
           path: dist
@@ -156,7 +157,7 @@ jobs:
           args: --release --out dist -i python3.13t
           sccache: ${{ !startsWith(github.ref, 'refs/tags/') }}
       - name: Upload wheels
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: wheels-macos-${{ matrix.platform.target }}
           path: dist
@@ -173,7 +174,7 @@ jobs:
           command: sdist
           args: --out dist
       - name: Upload sdist
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: wheels-sdist
           path: dist
@@ -183,7 +184,7 @@ jobs:
     environment: pypi
     runs-on: ubuntu-latest
     if: ${{ startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch' }}
-    needs: [ linux, musllinux, windows, macos, sdist ]
+    needs: [ linux, windows, macos, sdist ]
     permissions:
       # Use to sign the release artifacts
       id-token: write
@@ -192,7 +193,7 @@ jobs:
       # Used to generate artifact attestation
       attestations: write
     steps:
-      - uses: actions/download-artifact@v6
+      - uses: actions/download-artifact@v7
       - name: Generate artifact attestation
         uses: actions/attest-build-provenance@v3
         with:

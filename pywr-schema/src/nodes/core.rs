@@ -3,9 +3,9 @@ use crate::error::SchemaError;
 use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::network::LoadArgs;
-use crate::nodes::NodeMeta;
 #[cfg(feature = "core")]
 use crate::nodes::{NodeAttribute, NodeComponent};
+use crate::nodes::{NodeMeta, NodeSlot};
 use crate::parameters::Parameter;
 use crate::v1::{ConversionData, TryFromV1, try_convert_initial_storage, try_convert_node_attr};
 use crate::{node_attribute_subset_enum, node_component_subset_enum};
@@ -71,11 +71,19 @@ impl InputNode {
     pub const DEFAULT_ATTRIBUTE: InputNodeAttribute = InputNodeAttribute::Outflow;
     pub const DEFAULT_COMPONENT: InputNodeComponent = InputNodeComponent::Outflow;
 
-    pub fn input_connectors(&self) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
-        Ok(vec![(self.meta.name.as_str(), None)])
+    pub fn input_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
+        if let Some(slot) = slot {
+            Err(SchemaError::InputNodeSlotNotSupported { slot: slot.clone() })
+        } else {
+            Ok(vec![(self.meta.name.as_str(), None)])
+        }
     }
-    pub fn output_connectors(&self) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
-        Ok(vec![(self.meta.name.as_str(), None)])
+    pub fn output_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
+        if let Some(slot) = slot {
+            Err(SchemaError::OutputNodeSlotNotSupported { slot: slot.clone() })
+        } else {
+            Ok(vec![(self.meta.name.as_str(), None)])
+        }
     }
 
     pub fn default_attribute(&self) -> InputNodeAttribute {
@@ -356,7 +364,11 @@ impl LinkNode {
         Some("soft_max_node")
     }
 
-    pub fn input_connectors(&self) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
+    pub fn input_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
+        if let Some(slot) = slot {
+            return Err(SchemaError::InputNodeSlotNotSupported { slot: slot.clone() });
+        }
+
         let mut connectors = vec![(self.meta.name.as_str(), None)];
         if self.soft_min.is_some() {
             connectors.push((
@@ -373,7 +385,11 @@ impl LinkNode {
         Ok(connectors)
     }
 
-    pub fn output_connectors(&self) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
+    pub fn output_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
+        if let Some(slot) = slot {
+            return Err(SchemaError::OutputNodeSlotNotSupported { slot: slot.clone() });
+        }
+
         let mut connectors = vec![(self.meta.name.as_str(), None)];
         if self.soft_min.is_some() {
             connectors.push((
@@ -806,12 +822,20 @@ impl OutputNode {
     const DEFAULT_ATTRIBUTE: OutputNodeAttribute = OutputNodeAttribute::Inflow;
     const DEFAULT_COMPONENT: OutputNodeComponent = OutputNodeComponent::Inflow;
 
-    pub fn input_connectors(&self) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
-        Ok(vec![(self.meta.name.as_str(), None)])
+    pub fn input_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
+        if let Some(slot) = slot {
+            Err(SchemaError::InputNodeSlotNotSupported { slot: slot.clone() })
+        } else {
+            Ok(vec![(self.meta.name.as_str(), None)])
+        }
     }
 
-    pub fn output_connectors(&self) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
-        Ok(vec![(self.meta.name.as_str(), None)])
+    pub fn output_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
+        if let Some(slot) = slot {
+            Err(SchemaError::OutputNodeSlotNotSupported { slot: slot.clone() })
+        } else {
+            Ok(vec![(self.meta.name.as_str(), None)])
+        }
     }
 
     pub fn default_attribute(&self) -> OutputNodeAttribute {
@@ -1022,12 +1046,20 @@ pub struct StorageNode {
 impl StorageNode {
     const DEFAULT_ATTRIBUTE: StorageNodeAttribute = StorageNodeAttribute::Volume;
 
-    pub fn input_connectors(&self) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
-        Ok(vec![(self.meta.name.as_str(), None)])
+    pub fn input_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
+        if let Some(slot) = slot {
+            Err(SchemaError::InputNodeSlotNotSupported { slot: slot.clone() })
+        } else {
+            Ok(vec![(self.meta.name.as_str(), None)])
+        }
     }
 
-    pub fn output_connectors(&self) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
-        Ok(vec![(self.meta.name.as_str(), None)])
+    pub fn output_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
+        if let Some(slot) = slot {
+            Err(SchemaError::OutputNodeSlotNotSupported { slot: slot.clone() })
+        } else {
+            Ok(vec![(self.meta.name.as_str(), None)])
+        }
     }
 
     pub fn default_attribute(&self) -> StorageNodeAttribute {
@@ -1211,12 +1243,20 @@ impl CatchmentNode {
     const DEFAULT_ATTRIBUTE: CatchmentNodeAttribute = CatchmentNodeAttribute::Outflow;
     const DEFAULT_COMPONENT: CatchmentNodeComponent = CatchmentNodeComponent::Outflow;
 
-    pub fn input_connectors(&self) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
-        Ok(vec![(self.meta.name.as_str(), None)])
+    pub fn input_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
+        if let Some(slot) = slot {
+            Err(SchemaError::InputNodeSlotNotSupported { slot: slot.clone() })
+        } else {
+            Ok(vec![(self.meta.name.as_str(), None)])
+        }
     }
 
-    pub fn output_connectors(&self) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
-        Ok(vec![(self.meta.name.as_str(), None)])
+    pub fn output_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
+        if let Some(slot) = slot {
+            Err(SchemaError::OutputNodeSlotNotSupported { slot: slot.clone() })
+        } else {
+            Ok(vec![(self.meta.name.as_str(), None)])
+        }
     }
 
     pub fn default_attribute(&self) -> CatchmentNodeAttribute {

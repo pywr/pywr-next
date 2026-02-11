@@ -1,7 +1,7 @@
 {
   "metadata": {
     "title": "An example of using RiverSplitWithGauge",
-    "description": "A river split with a proportion above an MRF taken off.",
+    "description": "A river split with a proportion above an MRF taken off. The split is given a user defined slot name.",
     "minimum_version": "0.1"
   },
   "timestepper": {
@@ -42,8 +42,7 @@
             "factor": {
               "type": "Literal",
               "value": 0.1
-            },
-            "slot_name": "my-abstraction"
+            }
           }
         ]
       },
@@ -80,8 +79,8 @@
       {
         "from_node": "gauge1",
         "from_slot": {
-          "type": "User",
-          "name": "my-abstraction"
+          "type": "Split",
+          "position": 0
         },
         "to_node": "demand1"
       }
@@ -99,7 +98,7 @@
         "name": "node-outputs",
         "type": "CSV",
         "format": "Long",
-        "filename": "river_split_with_gauge1-expected.csv",
+        "filename": "river_split_with_gauge2-expected.csv",
         "metric_set": [
           "nodes"
         ]

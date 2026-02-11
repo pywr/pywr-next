@@ -3,6 +3,7 @@ use pyo3::{pyclass, pymethods};
 use std::collections::BTreeSet;
 use thiserror::Error;
 
+/// Errors that can occur when building a [`ScenarioDomain`].
 #[derive(Error, Debug)]
 pub enum ScenarioError {
     #[error("Scenario group name `{0}` already exists")]
@@ -30,6 +31,7 @@ pub enum ScenarioError {
     },
 }
 
+/// A subset of a scenario group to run, either defined as a slice or as specific indices.
 #[derive(Clone, Debug)]
 pub enum ScenarioGroupSubset {
     /// Slice of scenarios to run
@@ -38,6 +40,11 @@ pub enum ScenarioGroupSubset {
     Indices(Vec<usize>),
 }
 
+/// A group of scenarios for a model.
+///
+/// The group may have an optional subset defined and/or labels for the scenarios.
+///
+/// The default group contains a single scenario with no labels and no subset.
 #[derive(Clone, Debug)]
 pub struct ScenarioGroup {
     /// Name of the scenario group
@@ -62,14 +69,24 @@ impl Default for ScenarioGroup {
 }
 
 impl ScenarioGroup {
+    /// Return the name of the scenario group.
+    #[must_use]
     pub fn name(&self) -> &str {
         &self.name
     }
 
+    /// Return the number of scenarios in the group.
+    #[must_use]
     pub fn size(&self) -> usize {
         self.size
     }
 
+    /// Return the position of a label in the labels for the group.
+    ///
+    /// # Errors
+    ///
+    /// - [`ScenarioError::NoLabels`] if no labels are defined for the group
+    /// - [`ScenarioError::LabelNotFound`] if the label is not found in the labels for the group
     fn label_position(&self, label: &str) -> Result<usize, ScenarioError> {
         match &self.labels {
             Some(labels) => labels
@@ -86,13 +103,18 @@ impl ScenarioGroup {
     }
 }
 
-pub enum ScenarioGroupSubsetBuilder {
+/// A builder for defining a subset of scenarios to run for a scenario group.
+enum ScenarioGroupSubsetBuilder {
     Slice { start: usize, end: usize },
     Indices(Vec<usize>),
     Labels(Vec<String>),
 }
 
 /// Builder for [`ScenarioGroup`] instances.
+///
+/// This allows for defining the subset of scenarios to run for a group in different ways
+/// (e.g. as a slice, as specific indices, or as labels). It also allows for defining labels for the
+/// group, which can be used in the subset definition.
 pub struct ScenarioGroupBuilder {
     name: String,
     size: usize,
@@ -101,6 +123,10 @@ pub struct ScenarioGroupBuilder {
 }
 
 impl ScenarioGroupBuilder {
+    /// Create a new builder for a scenario group with the given name and size.
+    ///
+    /// The name must be unique within the domain, and the size must be greater than 0.
+    #[must_use]
     pub fn new(name: &str, size: usize) -> Self {
         Self {
             name: name.to_string(),
@@ -111,12 +137,14 @@ impl ScenarioGroupBuilder {
     }
 
     /// Set the subset of scenarios to run as a slice
+    #[must_use]
     pub fn with_subset_slice(mut self, start: usize, end: usize) -> Self {
         self.subset = Some(ScenarioGroupSubsetBuilder::Slice { start, end });
         self
     }
 
     /// Set the subset of scenarios to run as a list of indices
+    #[must_use]
     pub fn with_subset_indices(mut self, indices: Vec<usize>) -> Self {
         self.subset = Some(ScenarioGroupSubsetBuilder::Indices(indices));
         self
@@ -124,6 +152,7 @@ impl ScenarioGroupBuilder {
 
     /// Set the subset of scenarios to run as a list of labels. The complete list of labels must
     /// be defined using the [`with_labels`] method.
+    #[must_use]
     pub fn with_subset_labels<T: AsRef<str>>(mut self, labels: &[T]) -> Self {
         self.subset = Some(ScenarioGroupSubsetBuilder::Labels(
             labels.iter().map(|l| l.as_ref().to_string()).collect(),
@@ -132,11 +161,22 @@ impl ScenarioGroupBuilder {
     }
 
     /// Set the labels for the group
+    #[must_use]
     pub fn with_labels<T: AsRef<str>>(mut self, labels: &[T]) -> Self {
         self.labels = Some(labels.iter().map(|l| l.as_ref().to_string()).collect());
         self
     }
 
+    /// Build the [`ScenarioGroup`] instance, validating the subset and labels if necessary.
+    ///
+    /// This will check that the slice is valid, that the labels exist if using label subsets, and that the number of labels matches the group size if labels are provided.
+    ///
+    /// # Errors
+    ///
+    /// - [`ScenarioError::InvalidSlice`] if the slice is invalid (e.g. start >= end or end > size)
+    /// - [`ScenarioError::NoLabels`] if a label subset is defined but no labels are provided
+    /// - [`ScenarioError::LabelNotFound`] if a label in the subset is not found in the labels for the group
+    /// - [`ScenarioError::IncorrectNumberOfLabels`] if the number of labels provided does not match the group size
     pub fn build(self) -> Result<ScenarioGroup, ScenarioError> {
         let subset = match self.subset {
             Some(ScenarioGroupSubsetBuilder::Slice { start, end }) => {
@@ -161,7 +201,7 @@ impl ScenarioGroupBuilder {
                                 .iter()
                                 .position(|label| label == l)
                                 .ok_or_else(|| ScenarioError::LabelNotFound {
-                                    label: l.to_string(),
+                                    label: l.clone(),
                                     group: self.name.clone(),
                                 })
                         })
@@ -229,10 +269,14 @@ pub struct ScenarioDomainBuilder {
 
 impl ScenarioDomainBuilder {
     /// Add a [`ScenarioGroup`] to the collection
+    ///
+    /// # Errors
+    ///
+    /// - [`ScenarioError::DuplicateGroupName`] if a group with the same name already exists in the builder
     pub fn with_group(mut self, group: ScenarioGroup) -> Result<Self, ScenarioError> {
-        for g in self.groups.iter() {
+        for g in &self.groups {
             if g.name == group.name {
-                return Err(ScenarioError::DuplicateGroupName(group.name.to_string()));
+                return Err(ScenarioError::DuplicateGroupName(group.name.clone()));
             }
         }
 
@@ -241,11 +285,16 @@ impl ScenarioDomainBuilder {
         Ok(self)
     }
 
+    /// Set specific combinations of scenarios to run.
+    ///
+    /// Each inner vector represents a combination of scenarios to run, with one entry for each group.
+    /// The entries can be either the label or the index of the scenario in the group.
+    #[must_use]
     pub fn with_combinations<T: Into<ScenarioLabelOrIndex>>(mut self, combinations: Vec<Vec<T>>) -> Self {
         self.combinations = Some(
             combinations
                 .into_iter()
-                .map(|inner| inner.into_iter().map(|c| c.into()).collect())
+                .map(|inner| inner.into_iter().map(Into::into).collect())
                 .collect(),
         );
         self
@@ -276,13 +325,10 @@ impl ScenarioDomainBuilder {
     }
 
     /// Build a map of simulation indices to schema indices for each group from a list of combinations
-    fn build_scenario_map_from_combinations(
-        &self,
-        combinations: &[Vec<usize>],
-    ) -> Result<Vec<Option<Vec<usize>>>, ScenarioError> {
+    fn build_scenario_map_from_combinations(&self, combinations: &[Vec<usize>]) -> Vec<Option<Vec<usize>>> {
         let mut scenario_map: Vec<BTreeSet<usize>> = vec![BTreeSet::new(); self.groups.len()];
 
-        for combination in combinations.iter() {
+        for combination in combinations {
             for (group_index, _group) in self.groups.iter().enumerate() {
                 scenario_map[group_index].insert(combination[group_index]);
             }
@@ -294,12 +340,12 @@ impl ScenarioDomainBuilder {
                 if set.is_empty() {
                     None
                 } else {
-                    Some(set.iter().cloned().collect())
+                    Some(set.iter().copied().collect())
                 }
             })
             .collect();
 
-        Ok(scenario_map)
+        scenario_map
     }
 
     fn schema_id(&self, combination: &[usize]) -> usize {
@@ -312,6 +358,21 @@ impl ScenarioDomainBuilder {
         id
     }
 
+    /// Build the [`ScenarioDomain`] from the defined groups and combinations.
+    ///
+    /// # Errors
+    ///
+    /// A [`ScenarioError::CombinationsAndSlices`] will be returned if the combinations and slices
+    /// are both defined as this is not currently supported.
+    /// Other [`ScenarioError`] variants may be returned from the group builders if the groups are
+    /// not valid (e.g. invalid slices or labels).
+    ///
+    /// # Panics
+    ///
+    /// This will panic if the combinations are defined and contain labels that are not found in the
+    /// corresponding group labels, or if the number of labels does not match the group size.
+    /// However, these cases should be caught by the group builders when building the groups.
+    #[allow(clippy::too_many_lines)]
     pub fn build(self) -> Result<ScenarioDomain, ScenarioError> {
         let (indices, groups, scenario_map) = if self.groups.is_empty() {
             // Default to a single scenario if no groups are defined.
@@ -345,7 +406,7 @@ impl ScenarioDomainBuilder {
                     })
                     .collect::<Result<Vec<Vec<usize>>, ScenarioError>>()?;
 
-                let scenario_map_from_combinations = self.build_scenario_map_from_combinations(&combinations)?;
+                let scenario_map_from_combinations = self.build_scenario_map_from_combinations(&combinations);
 
                 for combination in combinations {
                     let simulation_indices = scenario_map_from_combinations
@@ -380,7 +441,7 @@ impl ScenarioDomainBuilder {
                 // Case with either all scenarios or a subset of scenarios via slices
                 let scenario_map_from_slices = self.build_scenario_map_from_subsets();
 
-                let is_sliced = scenario_map_from_slices.iter().any(|s| s.is_some());
+                let is_sliced = scenario_map_from_slices.iter().any(Option::is_some);
 
                 if is_sliced && self.combinations.is_some() {
                     return Err(ScenarioError::CombinationsAndSlices);
@@ -420,20 +481,17 @@ impl ScenarioDomainBuilder {
                                         // Skip this scenario
                                         include_scenario = false;
                                         break;
-                                    } else {
-                                        simulation_indices.push(schema_indices[group_index] - start);
                                     }
+                                    simulation_indices.push(schema_indices[group_index] - start);
                                 }
                                 ScenarioGroupSubset::Indices(indices) => {
                                     if !indices.contains(&schema_indices[group_index]) {
                                         // Skip this scenario
                                         include_scenario = false;
                                         break;
-                                    } else {
-                                        simulation_indices.push(
-                                            indices.iter().position(|i| i == &schema_indices[group_index]).unwrap(),
-                                        );
                                     }
+                                    simulation_indices
+                                        .push(indices.iter().position(|i| i == &schema_indices[group_index]).unwrap());
                                 }
                             }
                         } else {
@@ -477,6 +535,7 @@ pub struct ScenarioIndices {
 }
 
 impl ScenarioIndices {
+    #[must_use]
     pub fn new(index: usize, indices: Vec<usize>) -> Self {
         Self { index, indices }
     }
@@ -510,11 +569,13 @@ impl ScenarioIndexBuilder {
         }
     }
 
+    #[must_use]
     pub fn with_schema(mut self, index: usize, indices: Vec<usize>) -> Self {
         self.schema = Some(ScenarioIndices::new(index, indices));
         self
     }
 
+    #[must_use]
     pub fn build(self) -> ScenarioIndex {
         ScenarioIndex {
             core: self.core,
@@ -553,12 +614,14 @@ impl ScenarioIndex {
     /// The global index of the scenario for this simulation. This may be different
     /// from the global index of the scenario in the schema.
     #[getter]
+    #[must_use]
     pub fn get_simulation_id(&self) -> usize {
         self.core.index
     }
 
     /// The indices for each scenario group for this simulation.
     #[getter]
+    #[must_use]
     pub fn get_simulation_indices(&self) -> &[usize] {
         &self.core.indices
     }
@@ -567,30 +630,38 @@ impl ScenarioIndex {
 impl ScenarioIndex {
     /// The global index of the scenario for this simulation. This may be different
     /// from the global index of the scenario in the schema.
+    #[must_use]
     pub fn simulation_id(&self) -> usize {
         self.core.index
     }
 
+    #[must_use]
     pub fn simulation_indices(&self) -> &[usize] {
         &self.core.indices
     }
 
+    #[must_use]
     pub fn simulation_index_for_group(&self, group_index: usize) -> usize {
         self.core.indices[group_index]
     }
 
+    #[must_use]
     pub fn labels(&self) -> &[String] {
         &self.labels
     }
 
+    #[must_use]
     pub fn schema_index_for_group(&self, group_index: usize) -> usize {
-        self.schema.as_ref().map(|s| s.indices[group_index]).unwrap_or_else(|| self.core.indices[group_index])
+        self.schema
+            .as_ref()
+            .map_or_else(|| self.core.indices[group_index], |s| s.indices[group_index])
     }
 
     /// Concatenated labels for the scenario
     ///
     /// This is useful for generating a unique label for each scenario index. The labels are
     /// concatenated with a `-` separator.
+    #[must_use]
     pub fn label(&self) -> String {
         self.labels.join("-")
     }
@@ -606,19 +677,28 @@ pub struct ScenarioDomain {
 
 impl ScenarioDomain {
     /// The total number of scenario combinations in the domain.
+    #[must_use]
     pub fn len(&self) -> usize {
         self.indices.len()
     }
 
+    /// Whether the domain contains any indices.
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.indices.is_empty()
     }
 
+    /// Return the scenario indices for the domain.
+    #[must_use]
     pub fn indices(&self) -> &[ScenarioIndex] {
         &self.indices
     }
 
     /// Return the index of a scenario group by name
+    ///
+    /// # Errors
+    ///
+    /// - [`ScenarioError::GroupNameNotFound`] if the group name is not found in the domain.
     pub fn group_index(&self, name: &str) -> Result<usize, ScenarioError> {
         self.groups
             .iter()
@@ -626,16 +706,27 @@ impl ScenarioDomain {
             .ok_or_else(|| ScenarioError::GroupNameNotFound(name.to_string()))
     }
 
+    /// Return the scenario groups for the domain.
+    #[must_use]
     pub fn groups(&self) -> &[ScenarioGroup] {
         &self.groups
     }
 
     /// Return a map of the simulation indices to the schema indices for a group
+    ///
+    /// # Errors
+    ///
+    /// - [`ScenarioError::GroupNameNotFound`] if the group name is not found
     pub fn group_scenario_subset(&self, name: &str) -> Result<Option<&[usize]>, ScenarioError> {
         let group_index = self.group_index(name)?;
         Ok(self.scenario_map[group_index].as_deref())
     }
 
+    /// Return the size of a scenario group by name
+    ///
+    /// # Errors
+    ///
+    /// - [`ScenarioError::GroupNameNotFound`] if the group name is not found
     pub fn group_size(&self, name: &str) -> Result<usize, ScenarioError> {
         let group_index = self.group_index(name)?;
         Ok(self.groups[group_index].size())

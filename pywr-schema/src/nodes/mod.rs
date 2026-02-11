@@ -30,6 +30,11 @@
 //! wish to use the inflow (gross) or outflow (net) from a [`WaterTreatmentWorksNode`]. The component
 //! is used to determine which of these values is used in the constraint.
 //!
+//! # Slots
+//!
+//! Some nodes have multiple input or output connectors, which are referred to as "slots". These
+//! are used to connect to different parts of the node. For example, a [`ReservoirNode`] has
+//! output slots for connecting either the spill, compensation or storage itself.
 //!
 mod abstraction;
 mod attributes;
@@ -44,6 +49,7 @@ mod reservoir;
 mod river;
 mod river_gauge;
 mod river_split_with_gauge;
+mod slots;
 mod turbine;
 mod water_treatment_works;
 // `virtual` is a reserved keyword in Rust, so we use `virtual_nodes` as the module name
@@ -89,6 +95,7 @@ pub use river_split_with_gauge::{
     RiverSplit, RiverSplitWithGaugeNode, RiverSplitWithGaugeNodeAttribute, RiverSplitWithGaugeNodeComponent,
 };
 use schemars::JsonSchema;
+pub use slots::NodeSlot;
 use std::path::{Path, PathBuf};
 use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticStr};
 pub use turbine::{TargetType, TurbineNode, TurbineNodeAttribute, TurbineNodeComponent};
@@ -327,49 +334,116 @@ impl Node {
         }
     }
 
-    pub fn input_connectors(&self, slot: Option<&str>) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
+    /// Get the input connectors for this node.
+    ///
+    /// The `slot` argument is used for nodes that have multiple input connectors. If the node
+    /// does not have multiple input connectors, then a [`SchemaError`] is returned.
+    ///
+    /// The input connectors are returned as a vector of tuples, where the first element is the name of the
+    /// connector, and the second element is an optional sub-name. The sub-name is used for nodes
+    /// that have multiple internal nodes, such as a [`ReservoirNode`].
+    ///
+    pub fn input_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
         match self {
-            Node::Input(n) => n.input_connectors(),
-            Node::Link(n) => n.input_connectors(),
-            Node::Output(n) => n.input_connectors(),
-            Node::Storage(n) => n.input_connectors(),
-            Node::Catchment(n) => n.input_connectors(),
-            Node::RiverGauge(n) => n.input_connectors(),
-            Node::LossLink(n) => n.input_connectors(),
-            Node::River(n) => n.input_connectors(),
-            Node::RiverSplitWithGauge(n) => n.input_connectors(),
-            Node::WaterTreatmentWorks(n) => n.input_connectors(),
-            Node::PiecewiseLink(n) => n.input_connectors(),
-            Node::PiecewiseStorage(n) => n.input_connectors(),
-            Node::Delay(n) => n.input_connectors(),
-            Node::Turbine(n) => n.input_connectors(),
+            Node::Input(n) => n.input_connectors(slot),
+            Node::Link(n) => n.input_connectors(slot),
+            Node::Output(n) => n.input_connectors(slot),
+            Node::Storage(n) => n.input_connectors(slot),
+            Node::Catchment(n) => n.input_connectors(slot),
+            Node::RiverGauge(n) => n.input_connectors(slot),
+            Node::LossLink(n) => n.input_connectors(slot),
+            Node::River(n) => n.input_connectors(slot),
+            Node::RiverSplitWithGauge(n) => n.input_connectors(slot),
+            Node::WaterTreatmentWorks(n) => n.input_connectors(slot),
+            Node::PiecewiseLink(n) => n.input_connectors(slot),
+            Node::PiecewiseStorage(n) => n.input_connectors(slot),
+            Node::Delay(n) => n.input_connectors(slot),
+            Node::Turbine(n) => n.input_connectors(slot),
             Node::Reservoir(n) => n.input_connectors(slot),
+            // Deliberately do not take a slot for Placeholder nodes so they can be used with any slot
             Node::Placeholder(n) => n.input_connectors(),
-            Node::Abstraction(n) => n.input_connectors(),
+            Node::Abstraction(n) => n.input_connectors(slot),
         }
     }
 
-    pub fn output_connectors(&self, slot: Option<&str>) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
+    /// Get any input (or "to") slots that this node has.
+    pub fn iter_input_slots(&self) -> Option<Box<dyn Iterator<Item = NodeSlot> + '_>> {
         match self {
-            Node::Input(n) => n.output_connectors(),
-            Node::Link(n) => n.output_connectors(),
-            Node::Output(n) => n.output_connectors(),
-            Node::Storage(n) => n.output_connectors(),
-            Node::Catchment(n) => n.output_connectors(),
-            Node::RiverGauge(n) => n.output_connectors(),
-            Node::LossLink(n) => n.output_connectors(),
-            Node::River(n) => n.output_connectors(),
+            Node::Input(_) => None,
+            Node::Link(_) => None,
+            Node::Output(_) => None,
+            Node::Storage(_) => None,
+            Node::Catchment(_) => None,
+            Node::RiverGauge(_) => None,
+            Node::LossLink(_) => None,
+            Node::Delay(_) => None,
+            Node::PiecewiseLink(_) => None,
+            Node::PiecewiseStorage(_) => None,
+            Node::River(_) => None,
+            Node::RiverSplitWithGauge(_) => None,
+            Node::WaterTreatmentWorks(_) => None,
+            Node::Turbine(_) => None,
+            Node::Reservoir(_) => None,
+            Node::Placeholder(_) => None,
+            Node::Abstraction(_) => None,
+        }
+    }
+
+    /// Get the output connectors for this node.
+    ///
+    /// The `slot` argument is used for nodes that have multiple output connectors. If the node
+    /// does not have multiple output connectors, then a [`SchemaError`] is returned.
+    ///
+    /// The output connectors are returned as a vector of tuples, where the first element is the name of the
+    /// connector, and the second element is an optional sub-name. The sub-name is used for nodes
+    /// that have multiple internal nodes, such as a [`ReservoirNode`].
+    ///
+    pub fn output_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
+        match self {
+            Node::Input(n) => n.output_connectors(slot),
+            Node::Link(n) => n.output_connectors(slot),
+            Node::Output(n) => n.output_connectors(slot),
+            Node::Storage(n) => n.output_connectors(slot),
+            Node::Catchment(n) => n.output_connectors(slot),
+            Node::RiverGauge(n) => n.output_connectors(slot),
+            Node::LossLink(n) => n.output_connectors(slot),
+            Node::River(n) => n.output_connectors(slot),
             Node::RiverSplitWithGauge(n) => n.output_connectors(slot),
-            Node::WaterTreatmentWorks(n) => n.output_connectors(),
-            Node::PiecewiseLink(n) => n.output_connectors(),
-            Node::PiecewiseStorage(n) => n.output_connectors(),
-            Node::Delay(n) => n.output_connectors(),
-            Node::Turbine(n) => n.output_connectors(),
+            Node::WaterTreatmentWorks(n) => n.output_connectors(slot),
+            Node::PiecewiseLink(n) => n.output_connectors(slot),
+            Node::PiecewiseStorage(n) => n.output_connectors(slot),
+            Node::Delay(n) => n.output_connectors(slot),
+            Node::Turbine(n) => n.output_connectors(slot),
             Node::Reservoir(n) => n.output_connectors(slot),
+            // Deliberately do not take a slot for Placeholder nodes so they can be used with any slot
             Node::Placeholder(n) => n.output_connectors(),
             Node::Abstraction(n) => n.output_connectors(slot),
         }
     }
+
+    /// Get any output (or "from") slots that this node has.
+    pub fn iter_output_slots(&self) -> Option<Box<dyn Iterator<Item = NodeSlot> + '_>> {
+        match self {
+            Node::Input(_) => None,
+            Node::Link(_) => None,
+            Node::Output(_) => None,
+            Node::Storage(_) => None,
+            Node::Catchment(_) => None,
+            Node::RiverGauge(_) => None,
+            Node::LossLink(_) => None,
+            Node::Delay(_) => None,
+            Node::PiecewiseLink(_) => None,
+            Node::PiecewiseStorage(_) => None,
+            Node::River(_) => None,
+            Node::RiverSplitWithGauge(n) => Some(Box::new(n.iter_output_slots())),
+            Node::WaterTreatmentWorks(_) => None,
+            Node::Turbine(_) => None,
+            Node::Reservoir(n) => Some(Box::new(n.iter_output_slots())),
+            Node::Placeholder(_) => None,
+            Node::Abstraction(n) => Some(Box::new(n.iter_output_slots())),
+        }
+    }
+
     pub fn default_attribute(&self) -> NodeAttribute {
         match self {
             Node::Input(n) => n.default_attribute().into(),
