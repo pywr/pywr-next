@@ -8,6 +8,7 @@ use crate::metric::{EdgeReference, VirtualNodeAttrReference};
 use crate::network::LoadArgs;
 #[cfg(feature = "core")]
 use crate::parameters::{Parameter, PythonReturnType};
+use crate::predicate::Predicate;
 use pywr_schema_macros::skip_serializing_none;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -37,18 +38,15 @@ impl From<MetricAggFrequency> for pywr_core::recorders::AggregationFrequency {
     }
 }
 
-/// A set of metrics that can be output from a model run.
+/// Periodic aggregation of metric values.
 ///
-/// A metric set can optionally have an aggregator, which will apply an aggregation function
-/// over the metrics in the set. If an aggregation frequency is provided then the aggregation
-/// will be performed over each period implied by that frequency. For example, if the frequency
-/// is monthly then the aggregation will be performed over each month in the model run.
+/// Applies an aggregation function over metric values at a specified frequency. If
+/// no frequency is specified, the aggregation is applied over all values.
 ///
-/// If the metric set has a child aggregator then the aggregation will be performed over the
-/// aggregated values of the child aggregator.
+/// An optional child aggregator can be specified to allow for nested aggregations.
 #[derive(Deserialize, Serialize, Clone, JsonSchema)]
 #[serde(deny_unknown_fields)]
-pub struct MetricAggregator {
+pub struct PeriodicMetricAggregator {
     /// Optional aggregation frequency.
     pub freq: Option<MetricAggFrequency>,
     /// Aggregation function to apply over metric values.
@@ -58,15 +56,60 @@ pub struct MetricAggregator {
 }
 
 #[cfg(feature = "core")]
-impl MetricAggregator {
+impl PeriodicMetricAggregator {
     fn load(&self, data_path: Option<&Path>) -> Result<pywr_core::recorders::Aggregator, SchemaError> {
-        let child = self.child.as_ref().map(|a| a.load(data_path)).transpose()?;
+        Ok(
+            pywr_core::recorders::PeriodicAggregator::new(self.freq.map(|p| p.into()), self.func.load(data_path)?)
+                .into(),
+        )
+    }
+}
 
-        Ok(pywr_core::recorders::Aggregator::new(
-            self.freq.map(|p| p.into()),
-            self.func.load(data_path)?,
-            child,
-        ))
+/// Event-based aggregation of metric values.
+///
+/// Starts a new event when the `predicate` is true relative to the `threshold`. The event
+/// continues until the `predicate` is false.
+///
+/// An optional child aggregator can be specified to allow for nested aggregations.
+#[derive(Deserialize, Serialize, Clone, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct EventMetricAggregator {
+    pub predicate: Predicate,
+    pub threshold: f64,
+    /// Optional child aggregator.
+    pub child: Option<Box<MetricAggregator>>,
+}
+
+#[cfg(feature = "core")]
+impl EventMetricAggregator {
+    fn load(&self, _data_path: Option<&Path>) -> Result<pywr_core::recorders::Aggregator, SchemaError> {
+        let ema = pywr_core::recorders::EventAggregator::new(self.predicate.into(), self.threshold);
+        Ok(ema.into())
+    }
+}
+
+#[derive(Deserialize, Serialize, Clone, JsonSchema)]
+#[serde(tag = "type")]
+pub enum MetricAggregator {
+    Periodic(PeriodicMetricAggregator),
+    Event(EventMetricAggregator),
+}
+
+#[cfg(feature = "core")]
+impl MetricAggregator {
+    fn load(&self, data_path: Option<&Path>) -> Result<pywr_core::recorders::NestedAggregator, SchemaError> {
+        let (agg, child) = match self {
+            MetricAggregator::Periodic(p) => (
+                p.load(data_path)?,
+                p.child.as_ref().map(|c| c.load(data_path)).transpose()?,
+            ),
+            MetricAggregator::Event(e) => (
+                e.load(data_path)?,
+                e.child.as_ref().map(|c| c.load(data_path)).transpose()?,
+            ),
+        };
+
+        Ok(pywr_core::recorders::NestedAggregator::new(agg, child))
     }
 }
 

@@ -17,6 +17,7 @@ pub mod nodes;
 pub mod outputs;
 pub mod parameters;
 mod py_utils;
+mod predicate;
 pub mod timeseries;
 mod v1;
 mod visit;

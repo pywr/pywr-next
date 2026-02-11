@@ -81,7 +81,7 @@ use std::hash::{Hash, Hasher};
 use std::marker::PhantomData;
 use std::ops::Deref;
 use thiserror::Error;
-pub use threshold::{Predicate, ThresholdParameter};
+pub use threshold::ThresholdParameter;
 pub use vector::VectorParameter;
 
 /// Simple parameter index.

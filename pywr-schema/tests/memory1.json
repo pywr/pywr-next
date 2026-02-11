@@ -71,6 +71,7 @@
       {
         "name": "nodes",
         "aggregator": {
+          "type": "Periodic",
           "freq": {
             "type": "Annual"
           },
@@ -78,6 +79,7 @@
             "type": "CountNonZero"
           },
           "child": {
+            "type": "Periodic",
             "freq": {
               "type": "Days",
               "days": 4
