@@ -25,14 +25,14 @@ impl Parameter for DailyProfileParameter {
 }
 
 impl SimpleParameter<f64> for DailyProfileParameter {
-    fn compute(
+    fn before(
         &self,
         timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
         _values: &SimpleParameterValues,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<f64, SimpleCalculationError> {
-        Ok(self.values[timestep.day_of_year_index()])
+    ) -> Result<Option<f64>, SimpleCalculationError> {
+        Ok(Some(self.values[timestep.day_of_year_index()]))
     }
 
     fn as_parameter(&self) -> &dyn Parameter

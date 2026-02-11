@@ -183,7 +183,7 @@ These instances will be reused for each time step in the scenario, allowing you 
 > This means you do not have to worry about state being shared between scenarios, and do *not* need to implement
 > state for each scenario yourself.
 
-The class should also implement `calc` method, which is called for each time step in the scenario.
+The class should also implement `before` method, which is called for each time step in the scenario.
 This method should accept a `ParameterInfo` object as its only argument.
 
 Finally, the class may also implement an `after` method, which is called after the resource allocation
@@ -203,7 +203,7 @@ class TimeStepCounter:
     def __init__(self, initial_value: int = 0):
         self.count = initial_value
 
-    def calc(self, _info: ParameterInfo) -> float:
+    def before(self, _info: ParameterInfo) -> float | None:
         """Return the current time step count."""
         # Note that `_info` is not used, but it is required by the interface.
         self.count += 1

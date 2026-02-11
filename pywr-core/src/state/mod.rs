@@ -1,4 +1,6 @@
-use crate::derived_metric::DerivedMetricIndex;
+mod flow;
+mod storage;
+
 use crate::edge::{Edge, EdgeIndex};
 use crate::metric::SimpleMetricF64Error;
 use crate::models::MultiNetworkTransferIndex;
@@ -9,7 +11,7 @@ use crate::parameters::{
 };
 use crate::timestep::Timestep;
 use crate::virtual_storage::VirtualStorageIndex;
-use num::Zero;
+use flow::FlowState;
 #[cfg(feature = "pyo3")]
 use pyo3::{
     Borrowed, FromPyObject, PyAny, PyErr, PyResult,
@@ -21,6 +23,7 @@ use std::collections::{HashMap, VecDeque};
 use std::fmt::Display;
 use std::num::NonZeroUsize;
 use std::ops::Deref;
+use storage::StorageState;
 use thiserror::Error;
 
 #[derive(Clone, Copy, Debug)]
@@ -34,8 +37,8 @@ impl NodeState {
         Self::Flow(FlowState::new())
     }
 
-    pub(crate) fn new_storage_state(initial_volume: f64) -> Self {
-        Self::Storage(StorageState::new(initial_volume))
+    pub(crate) fn new_storage_state(initial_volume: f64, max_volume: f64) -> Self {
+        Self::Storage(StorageState::new(initial_volume, max_volume))
     }
 
     fn reset(&mut self) {
@@ -55,14 +58,14 @@ impl NodeState {
     pub fn get_in_flow(&self) -> f64 {
         match self {
             Self::Flow(s) => s.in_flow,
-            Self::Storage(s) => s.flows.in_flow,
+            Self::Storage(s) => s.flow_state().in_flow,
         }
     }
 
     pub fn get_out_flow(&self) -> f64 {
         match self {
             Self::Flow(s) => s.out_flow,
-            Self::Storage(s) => s.flows.out_flow,
+            Self::Storage(s) => s.flow_state().out_flow,
         }
     }
 
@@ -73,93 +76,10 @@ impl NodeState {
         };
     }
 
-    fn clamp_volume(&mut self, min_volume: f64, max_volume: f64) {
+    fn finalise_volume(&mut self, min_volume: f64, max_volume: f64) {
         if let Self::Storage(s) = self {
-            s.clamp(min_volume, max_volume);
+            s.finalise(min_volume, max_volume)
         }
-    }
-}
-
-#[derive(Clone, Copy, Debug, Default)]
-pub struct FlowState {
-    pub in_flow: f64,
-    pub out_flow: f64,
-}
-
-impl FlowState {
-    fn new() -> Self {
-        Self {
-            in_flow: 0.0,
-            out_flow: 0.0,
-        }
-    }
-
-    fn reset(&mut self) {
-        self.in_flow = 0.0;
-        self.out_flow = 0.0;
-    }
-
-    fn add_in_flow(&mut self, flow: f64) {
-        self.in_flow += flow;
-    }
-    fn add_out_flow(&mut self, flow: f64) {
-        self.out_flow += flow;
-    }
-}
-
-#[derive(Clone, Copy, Debug, Default)]
-pub struct StorageState {
-    pub volume: f64,
-    pub flows: FlowState,
-}
-
-impl StorageState {
-    pub fn new(initial_volume: f64) -> Self {
-        Self {
-            volume: initial_volume,
-            flows: FlowState::new(),
-        }
-    }
-
-    fn reset(&mut self) {
-        self.flows.reset();
-        // Volume remains unchanged
-    }
-
-    fn add_in_flow(&mut self, flow: f64, timestep: &Timestep) {
-        self.flows.add_in_flow(flow);
-        self.volume += flow * timestep.days();
-    }
-    fn add_out_flow(&mut self, flow: f64, timestep: &Timestep) {
-        self.flows.add_out_flow(flow);
-        self.volume -= flow * timestep.days();
-    }
-
-    fn proportional_volume(&self, max_volume: f64) -> f64 {
-        if max_volume.is_zero() {
-            // If max volume is zero then we will consider the storage to befull. This matches V1 behaviour.
-            return 1.0;
-        }
-        self.volume / max_volume
-    }
-
-    /// Ensure the volume is within the min and max volume range (inclusive). If the volume
-    /// is more than 1E6 outside the min or max volume then this function will panic,
-    /// reporting a mass-balance message.
-    fn clamp(&mut self, min_volume: f64, max_volume: f64) {
-        if (self.volume - min_volume) < -1e-6 {
-            panic!(
-                "Mass-balance error detected. Volume ({}) is smaller than minimum volume ({}).",
-                self.volume, min_volume
-            );
-        }
-        if (self.volume - max_volume) > 1e-6 {
-            panic!(
-                "Mass-balance error detected. Volume ({}) is greater than maximum volume ({}).",
-                self.volume, max_volume,
-            );
-        }
-        self.volume = self.volume.clamp(min_volume, max_volume);
     }
 }
 
@@ -211,10 +131,10 @@ pub struct VirtualStorageState {
 }
 
 impl VirtualStorageState {
-    pub fn new(initial_volume: f64, history_size: Option<NonZeroUsize>) -> Self {
+    pub fn new(initial_volume: f64, max_volume: f64, history_size: Option<NonZeroUsize>) -> Self {
         Self {
             last_reset: None,
-            storage: StorageState::new(initial_volume),
+            storage: StorageState::new(initial_volume, max_volume),
             history: history_size.map(|size| VirtualStorageHistory::new(size, initial_volume / size.get() as f64)),
         }
     }
@@ -225,8 +145,8 @@ impl VirtualStorageState {
     }
 
     /// Reset the volume to a new value storing the `timestep`
-    fn reset_volume(&mut self, volume: f64, timestep: &Timestep) {
-        self.storage.volume = volume;
+    fn reset_volume(&mut self, volume: f64, timestep: &Timestep, max_volume: f64) {
+        self.storage.set_volume(volume, max_volume);
         self.last_reset = Some(*timestep);
     }
 
@@ -249,12 +169,8 @@ impl VirtualStorageState {
         }
     }
 
-    fn proportional_volume(&self, max_volume: f64) -> f64 {
-        self.storage.proportional_volume(max_volume)
-    }
-
-    fn clamp_volume(&mut self, min_volume: f64, max_volume: f64) {
-        self.storage.clamp(min_volume, max_volume);
+    fn finalise_volume(&mut self, min_volume: f64, max_volume: f64) {
+        self.storage.finalise(min_volume, max_volume)
     }
 }
 
@@ -324,65 +240,61 @@ impl MultiValue {
     }
 }
 
-// State of the parameters
+/// Values from parameters
 #[derive(Debug, Clone)]
 struct ParameterValues {
-    values: Vec<f64>,
-    indices: Vec<u64>,
-    multi_values: Vec<MultiValue>,
+    values: Vec<Option<f64>>,
+    indices: Vec<Option<u64>>,
+    multi_values: Vec<Option<MultiValue>>,
 }
 
 impl ParameterValues {
     fn new(num_values: usize, num_indices: usize, num_multi_values: usize) -> Self {
         Self {
-            values: vec![0.0; num_values],
-            indices: vec![0; num_indices],
-            multi_values: vec![MultiValue::default(); num_multi_values],
+            values: vec![None; num_values],
+            indices: vec![None; num_indices],
+            multi_values: vec![None; num_multi_values],
         }
     }
 
-    fn get_value(&self, idx: usize) -> Option<&f64> {
-        self.values.get(idx)
+    fn get_value(&self, idx: usize) -> Option<f64> {
+        self.values.get(idx).copied().flatten()
     }
 
-    fn get_value_mut(&mut self, idx: usize) -> Option<&mut f64> {
+    fn get_value_mut(&mut self, idx: usize) -> Option<&mut Option<f64>> {
         self.values.get_mut(idx)
     }
 
-    fn get_index(&self, idx: usize) -> Option<&u64> {
-        self.indices.get(idx)
+    fn get_index(&self, idx: usize) -> Option<u64> {
+        self.indices.get(idx).copied().flatten()
     }
 
-    fn get_index_mut(&mut self, idx: usize) -> Option<&mut u64> {
+    fn get_index_mut(&mut self, idx: usize) -> Option<&mut Option<u64>> {
         self.indices.get_mut(idx)
     }
 
     fn get_multi_value(&self, idx: usize) -> Option<&MultiValue> {
-        self.multi_values.get(idx)
+        self.multi_values.get(idx).and_then(|s| s.as_ref())
     }
 
-    fn get_multi_value_mut(&mut self, idx: usize) -> Option<&mut MultiValue> {
+    fn get_multi_value_mut(&mut self, idx: usize) -> Option<&mut Option<MultiValue>> {
         self.multi_values.get_mut(idx)
     }
 }
 
 #[derive(Debug, Clone)]
 pub struct ParameterValuesCollection {
-    constant: ParameterValues,
     simple: ParameterValues,
     general: ParameterValues,
 }
 
 impl ParameterValuesCollection {
-    fn get_simple_parameter_values(&self) -> SimpleParameterValues<'_> {
+    fn get_simple_parameter_values<'a>(
+        &'a self,
+        constant_parameter_values: ConstParameterValues<'a>,
+    ) -> SimpleParameterValues<'a> {
         SimpleParameterValues {
-            constant: ConstParameterValues {
-                constant: ParameterValuesRef {
-                    values: &self.constant.values,
-                    indices: &self.constant.indices,
-                    multi_values: &self.constant.multi_values,
-                },
-            },
+            constant: constant_parameter_values,
             simple: ParameterValuesRef {
                 values: &self.simple.values,
                 indices: &self.simple.indices,
@@ -390,40 +302,38 @@ impl ParameterValuesCollection {
             },
         }
     }
-
-    fn get_const_parameter_values(&self) -> ConstParameterValues<'_> {
-        ConstParameterValues {
-            constant: ParameterValuesRef {
-                values: &self.constant.values,
-                indices: &self.constant.indices,
-                multi_values: &self.constant.multi_values,
-            },
-        }
-    }
 }
 
 #[derive(Default)]
 pub struct ParameterValuesRef<'a> {
-    values: &'a [f64],
-    indices: &'a [u64],
-    multi_values: &'a [MultiValue],
+    values: &'a [Option<f64>],
+    indices: &'a [Option<u64>],
+    multi_values: &'a [Option<MultiValue>],
 }
 
 impl ParameterValuesRef<'_> {
-    fn get_value(&self, idx: usize) -> Option<&f64> {
-        self.values.get(idx)
+    /// Get the value at the given index.
+    fn get_value(&self, idx: usize) -> Option<f64> {
+        self.values.get(idx).copied().flatten()
     }
 
-    fn get_index(&self, idx: usize) -> Option<&u64> {
-        self.indices.get(idx)
+    /// Get the index at the given index.
+    fn get_index(&self, idx: usize) -> Option<u64> {
+        self.indices.get(idx).copied().flatten()
     }
 
-    fn get_multi_value(&self, idx: usize, key: &str) -> Option<&f64> {
-        self.multi_values.get(idx).and_then(|s| s.get_value(key))
+    fn get_multi_value(&self, idx: usize, key: &str) -> Option<f64> {
+        self.multi_values
+            .get(idx)
+            .and_then(|s| s.as_ref().map(|mv| mv.get_value(key).copied()))
+            .flatten()
     }
 
-    fn get_multi_index(&self, idx: usize, key: &str) -> Option<&u64> {
-        self.multi_values.get(idx).and_then(|s| s.get_index(key))
+    fn get_multi_index(&self, idx: usize, key: &str) -> Option<u64> {
+        self.multi_values
+            .get(idx)
+            .and_then(|s| s.as_ref().map(|mv| mv.get_index(key).copied()))
+            .flatten()
     }
 }
 
@@ -433,19 +343,19 @@ pub struct SimpleParameterValues<'a> {
 }
 
 impl SimpleParameterValues<'_> {
-    pub fn get_simple_parameter_f64(&self, idx: SimpleParameterIndex<f64>) -> Option<&f64> {
+    pub fn get_simple_parameter_f64(&self, idx: SimpleParameterIndex<f64>) -> Option<f64> {
         self.simple.get_value(*idx.deref())
     }
 
-    pub fn get_simple_parameter_u64(&self, idx: SimpleParameterIndex<u64>) -> Option<&u64> {
+    pub fn get_simple_parameter_u64(&self, idx: SimpleParameterIndex<u64>) -> Option<u64> {
         self.simple.get_index(*idx.deref())
     }
 
-    pub fn get_simple_multi_parameter_f64(&self, idx: SimpleParameterIndex<MultiValue>, key: &str) -> Option<&f64> {
+    pub fn get_simple_multi_parameter_f64(&self, idx: SimpleParameterIndex<MultiValue>, key: &str) -> Option<f64> {
         self.simple.get_multi_value(*idx.deref(), key)
     }
 
-    pub fn get_simple_multi_parameter_u64(&self, idx: SimpleParameterIndex<MultiValue>, key: &str) -> Option<&u64> {
+    pub fn get_simple_multi_parameter_u64(&self, idx: SimpleParameterIndex<MultiValue>, key: &str) -> Option<u64> {
         self.simple.get_multi_index(*idx.deref(), key)
     }
 
@@ -460,19 +370,19 @@ pub struct ConstParameterValues<'a> {
 }
 
 impl ConstParameterValues<'_> {
-    pub fn get_const_parameter_f64(&self, idx: ConstParameterIndex<f64>) -> Option<&f64> {
+    pub fn get_const_parameter_f64(&self, idx: ConstParameterIndex<f64>) -> Option<f64> {
         self.constant.get_value(*idx.deref())
     }
 
-    pub fn get_const_parameter_u64(&self, idx: ConstParameterIndex<u64>) -> Option<&u64> {
+    pub fn get_const_parameter_u64(&self, idx: ConstParameterIndex<u64>) -> Option<u64> {
         self.constant.get_index(*idx.deref())
     }
 
-    pub fn get_const_multi_parameter_f64(&self, idx: ConstParameterIndex<MultiValue>, key: &str) -> Option<&f64> {
+    pub fn get_const_multi_parameter_f64(&self, idx: ConstParameterIndex<MultiValue>, key: &str) -> Option<f64> {
         self.constant.get_multi_value(*idx.deref(), key)
     }
 
-    pub fn get_const_multi_parameter_u64(&self, idx: ConstParameterIndex<MultiValue>, key: &str) -> Option<&u64> {
+    pub fn get_const_multi_parameter_u64(&self, idx: ConstParameterIndex<MultiValue>, key: &str) -> Option<u64> {
         self.constant.get_multi_index(*idx.deref(), key)
     }
 }
@@ -590,8 +500,13 @@ impl NetworkState {
         Ok(())
     }
 
-    /// Clamp the volume of `node_index` to be within the bounds provided.
-    fn clamp_node_volume(
+    /// Finalise the volume of `node_index` after a solve.
+    ///
+    /// This method does two things:
+    /// 1. Clamp the volume of the node to be within the provided bounds.
+    /// 2. Update the proportional volume based on the current volume and the max volume.
+    ///
+    fn finalise_node_volume(
         &mut self,
         node_index: &NodeIndex,
         min_volume: f64,
@@ -599,7 +514,7 @@ impl NetworkState {
     ) -> Result<(), NetworkStateError> {
         match self.node_states.get_mut(*node_index.deref()) {
             Some(s) => {
-                s.clamp_volume(min_volume, max_volume);
+                s.finalise_volume(min_volume, max_volume);
                 Ok(())
             }
             None => Err(NetworkStateError::NodeIndexNotFound(*node_index)),
@@ -607,7 +522,7 @@ impl NetworkState {
     }
 
     /// Clamp the volume of `node_index` to be within the bounds provided.
-    fn clamp_virtual_storage_node_volume(
+    fn finalise_virtual_storage_node_volume(
         &mut self,
         node_index: &VirtualStorageIndex,
         min_volume: f64,
@@ -615,7 +530,7 @@ impl NetworkState {
     ) -> Result<(), NetworkStateError> {
         match self.virtual_storage_states.get_mut(*node_index.deref()) {
             Some(s) => {
-                s.clamp_volume(min_volume, max_volume);
+                s.finalise_volume(min_volume, max_volume);
                 Ok(())
             }
             None => Err(NetworkStateError::VirtualStorageIndexNotFound(*node_index)),
@@ -638,21 +553,32 @@ impl NetworkState {
     pub fn get_node_volume(&self, node_index: &NodeIndex) -> Result<f64, NetworkStateError> {
         match self.node_states.get(*node_index.deref()) {
             Some(s) => match s {
-                NodeState::Storage(ss) => Ok(ss.volume),
+                NodeState::Storage(ss) => Ok(ss.volume()),
                 NodeState::Flow(_) => Err(NetworkStateError::NodeHasNoVolume(*node_index)),
             },
             None => Err(NetworkStateError::NodeIndexNotFound(*node_index)),
         }
     }
 
-    pub fn get_node_proportional_volume(
-        &self,
-        node_index: &NodeIndex,
-        max_volume: f64,
-    ) -> Result<f64, NetworkStateError> {
+    /// Retrieve the maximum volume of a storage node.
+    ///
+    /// Note that this is the max volume stored in the state, not necessarily the max volume
+    /// defined by the parameter. The state retains the max volume as it was at the last
+    /// volume change.
+    pub fn get_node_max_volume(&self, node_index: &NodeIndex) -> Result<f64, NetworkStateError> {
         match self.node_states.get(*node_index.deref()) {
             Some(s) => match s {
-                NodeState::Storage(ss) => Ok(ss.proportional_volume(max_volume)),
+                NodeState::Storage(ss) => Ok(ss.max_volume()),
+                NodeState::Flow(_) => Err(NetworkStateError::NodeHasNoVolume(*node_index)),
+            },
+            None => Err(NetworkStateError::NodeIndexNotFound(*node_index)),
+        }
+    }
+
+    pub fn get_node_proportional_volume(&self, node_index: &NodeIndex) -> Result<f64, NetworkStateError> {
+        match self.node_states.get(*node_index.deref()) {
+            Some(s) => match s {
+                NodeState::Storage(ss) => Ok(ss.proportional_volume()),
                 NodeState::Flow(_) => Err(NetworkStateError::NodeHasNoVolume(*node_index)),
             },
             None => Err(NetworkStateError::NodeIndexNotFound(*node_index)),
@@ -666,12 +592,18 @@ impl NetworkState {
         }
     }
 
-    pub fn set_volume(&mut self, node_index: &NodeIndex, volume: f64) -> Result<(), NetworkStateError> {
+    pub fn set_volume(
+        &mut self,
+        node_index: &NodeIndex,
+        volume: f64,
+        max_volume: f64,
+    ) -> Result<(), NetworkStateError> {
         match self.node_states.get_mut(*node_index.deref()) {
             Some(s) => match s {
                 NodeState::Flow(_) => Err(NetworkStateError::NodeHasNoVolume(*node_index)),
                 NodeState::Storage(s) => {
-                    s.volume = volume;
+                    s.set_volume(volume, max_volume);
+
                     Ok(())
                 }
             },
@@ -684,10 +616,11 @@ impl NetworkState {
         idx: &VirtualStorageIndex,
         volume: f64,
         timestep: &Timestep,
+        max_volume: f64,
     ) -> Result<(), NetworkStateError> {
         match self.virtual_storage_states.get_mut(*idx.deref()) {
             Some(s) => {
-                s.reset_volume(volume, timestep);
+                s.reset_volume(volume, timestep, max_volume);
                 Ok(())
             }
             None => Err(NetworkStateError::VirtualStorageIndexNotFound(*idx)),
@@ -724,18 +657,14 @@ impl NetworkState {
 
     pub fn get_virtual_storage_volume(&self, idx: &VirtualStorageIndex) -> Result<f64, NetworkStateError> {
         match self.virtual_storage_states.get(*idx.deref()) {
-            Some(s) => Ok(s.storage.volume),
+            Some(s) => Ok(s.storage.volume()),
             None => Err(NetworkStateError::VirtualStorageIndexNotFound(*idx)),
         }
     }
 
-    pub fn get_virtual_storage_proportional_volume(
-        &self,
-        idx: &VirtualStorageIndex,
-        max_volume: f64,
-    ) -> Result<f64, NetworkStateError> {
+    pub fn get_virtual_storage_proportional_volume(&self, idx: &VirtualStorageIndex) -> Result<f64, NetworkStateError> {
         match self.virtual_storage_states.get(*idx.deref()) {
-            Some(s) => Ok(s.proportional_volume(max_volume)),
+            Some(s) => Ok(s.storage.proportional_volume()),
             None => Err(NetworkStateError::VirtualStorageIndexNotFound(*idx)),
         }
     }
@@ -786,8 +715,6 @@ pub enum StateError {
         index: ConstParameterIndex<MultiValue>,
         key: String,
     },
-    #[error("Derived metric index not found: {0}")]
-    DerivedMetricIndexNotFound(DerivedMetricIndex),
     #[error("Multi-network transfer index not found: {0}")]
     MultiNetworkTransferIndexNotFound(MultiNetworkTransferIndex),
     #[error("Network state error: {0}")]
@@ -804,52 +731,93 @@ pub enum SetStateError<I: Display> {
     NaNValue(I),
 }
 
+/// Specifies whether to use the 'before' or 'after' parameter values.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ParameterReturnValue {
+    Before,
+    After,
+    BeforeOrElseAfter,
+    AfterOrElseBefore,
+}
+
 /// State of the model simulation.
 ///
 /// This struct contains the state of the model simulation at a given point in time. The state
-/// contains the current state of the network, the values of the parameters, the values of the
-/// derived metrics, and the values of the inter-network transfers.
+/// contains the current state of the network, the values of the parameters (before and after)
+/// and the values of the inter-network transfers.
 ///
 /// This struct can be constructed using the [`StateBuilder`] and then updated using the various
-/// methods to set the values of the parameters, derived metrics, and inter-network transfers.
+/// methods to set the values of the parameters and inter-network transfers.
 ///
 #[derive(Debug, Clone)]
 pub struct State {
     network: NetworkState,
-    parameters: ParameterValuesCollection,
-    derived_metrics: Vec<f64>,
+    // Constant parameter values that do not change during the simulation
+    parameters_constant: ParameterValues,
+    // Parameter values calculated before the current time-step's solve
+    parameters_before: ParameterValuesCollection,
+    // Parameter values calculated after the current time-step's solve
+    parameters_after: ParameterValuesCollection,
     inter_network_values: Vec<f64>,
 }
 
 impl State {
+    /// Get a reference to the network state.
     pub fn get_network_state(&self) -> &NetworkState {
         &self.network
     }
 
+    /// Get a mutable reference to the network state.
     pub fn get_mut_network_state(&mut self) -> &mut NetworkState {
         &mut self.network
     }
 
-    pub fn get_parameter_value(&self, idx: GeneralParameterIndex<f64>) -> Result<f64, StateError> {
-        self.parameters
+    pub fn get_parameter_value(
+        &self,
+        idx: GeneralParameterIndex<f64>,
+        return_value: ParameterReturnValue,
+    ) -> Result<f64, StateError> {
+        match return_value {
+            ParameterReturnValue::Before => self.get_parameter_value_before(idx),
+            ParameterReturnValue::After => self.get_parameter_value_after(idx),
+            ParameterReturnValue::BeforeOrElseAfter => match self.get_parameter_value_before(idx) {
+                Ok(v) => Ok(v),
+                Err(_) => self.get_parameter_value_after(idx),
+            },
+            ParameterReturnValue::AfterOrElseBefore => match self.get_parameter_value_after(idx) {
+                Ok(v) => Ok(v),
+                Err(_) => self.get_parameter_value_before(idx),
+            },
+        }
+    }
+
+    fn get_parameter_value_before(&self, idx: GeneralParameterIndex<f64>) -> Result<f64, StateError> {
+        self.parameters_before
             .general
             .get_value(*idx)
             .ok_or(StateError::GeneralParameterIndexNotFound(idx))
-            .copied()
     }
 
-    pub fn set_parameter_value(
+    fn get_parameter_value_after(&self, idx: GeneralParameterIndex<f64>) -> Result<f64, StateError> {
+        self.parameters_after
+            .general
+            .get_value(*idx)
+            .ok_or(StateError::GeneralParameterIndexNotFound(idx))
+    }
+
+    /// Set the "before" value of a general parameter.
+    pub fn set_parameter_value_before(
         &mut self,
         idx: GeneralParameterIndex<f64>,
-        value: f64,
+        value: Option<f64>,
     ) -> Result<(), SetStateError<GeneralParameterIndex<f64>>> {
         let v = self
-            .parameters
+            .parameters_before
             .general
             .get_value_mut(*idx)
             .ok_or(SetStateError::IndexNotFound(idx))?;
 
-        if value.is_nan() {
+        if value.is_some_and(|v| v.is_nan()) {
             return Err(SetStateError::NaNValue(idx));
         }
 
@@ -858,18 +826,39 @@ impl State {
         Ok(())
     }
 
-    pub fn set_simple_parameter_value(
+    /// Set the "after" value of a general parameter.
+    pub fn set_parameter_value_after(
+        &mut self,
+        idx: GeneralParameterIndex<f64>,
+        value: Option<f64>,
+    ) -> Result<(), SetStateError<GeneralParameterIndex<f64>>> {
+        let v = self
+            .parameters_after
+            .general
+            .get_value_mut(*idx)
+            .ok_or(SetStateError::IndexNotFound(idx))?;
+
+        if value.is_some_and(|v| v.is_nan()) {
+            return Err(SetStateError::NaNValue(idx));
+        }
+
+        *v = value;
+
+        Ok(())
+    }
+
+    pub fn set_simple_parameter_value_before(
         &mut self,
         idx: SimpleParameterIndex<f64>,
-        value: f64,
+        value: Option<f64>,
     ) -> Result<(), SetStateError<SimpleParameterIndex<f64>>> {
         let v = self
-            .parameters
+            .parameters_before
             .simple
             .get_value_mut(*idx)
             .ok_or(SetStateError::IndexNotFound(idx))?;
 
-        if value.is_nan() {
+        if value.is_some_and(|v| v.is_nan()) {
             return Err(SetStateError::NaNValue(idx));
         }
 
@@ -884,31 +873,59 @@ impl State {
         value: f64,
     ) -> Result<(), SetStateError<ConstParameterIndex<f64>>> {
         let v = self
-            .parameters
-            .constant
+            .parameters_constant
             .get_value_mut(*idx)
             .ok_or(SetStateError::IndexNotFound(idx))?;
 
-        *v = value;
+        if value.is_nan() {
+            return Err(SetStateError::NaNValue(idx));
+        }
+
+        *v = Some(value);
 
         Ok(())
     }
 
-    pub fn get_parameter_index(&self, idx: GeneralParameterIndex<u64>) -> Result<u64, StateError> {
-        self.parameters
+    pub fn get_parameter_index(
+        &self,
+        idx: GeneralParameterIndex<u64>,
+        return_value: ParameterReturnValue,
+    ) -> Result<u64, StateError> {
+        match return_value {
+            ParameterReturnValue::Before => self.get_parameter_index_before(idx),
+            ParameterReturnValue::After => self.get_parameter_index_after(idx),
+            ParameterReturnValue::BeforeOrElseAfter => match self.get_parameter_index_before(idx) {
+                Ok(v) => Ok(v),
+                Err(_) => self.get_parameter_index_after(idx),
+            },
+            ParameterReturnValue::AfterOrElseBefore => match self.get_parameter_index_after(idx) {
+                Ok(v) => Ok(v),
+                Err(_) => self.get_parameter_index_before(idx),
+            },
+        }
+    }
+
+    fn get_parameter_index_before(&self, idx: GeneralParameterIndex<u64>) -> Result<u64, StateError> {
+        self.parameters_before
             .general
             .get_index(*idx)
             .ok_or(StateError::GeneralIndexParameterIndexNotFound(idx))
-            .copied()
     }
 
-    pub fn set_parameter_index(
+    fn get_parameter_index_after(&self, idx: GeneralParameterIndex<u64>) -> Result<u64, StateError> {
+        self.parameters_before
+            .general
+            .get_index(*idx)
+            .ok_or(StateError::GeneralIndexParameterIndexNotFound(idx))
+    }
+
+    pub fn set_parameter_index_before(
         &mut self,
         idx: GeneralParameterIndex<u64>,
-        value: u64,
+        value: Option<u64>,
     ) -> Result<(), SetStateError<GeneralParameterIndex<u64>>> {
         let v = self
-            .parameters
+            .parameters_before
             .general
             .get_index_mut(*idx)
             .ok_or(SetStateError::IndexNotFound(idx))?;
@@ -918,13 +935,45 @@ impl State {
         Ok(())
     }
 
-    pub fn set_simple_parameter_index(
+    pub fn set_parameter_index_after(
+        &mut self,
+        idx: GeneralParameterIndex<u64>,
+        value: Option<u64>,
+    ) -> Result<(), SetStateError<GeneralParameterIndex<u64>>> {
+        let v = self
+            .parameters_after
+            .general
+            .get_index_mut(*idx)
+            .ok_or(SetStateError::IndexNotFound(idx))?;
+
+        *v = value;
+
+        Ok(())
+    }
+
+    pub fn set_simple_parameter_index_before(
         &mut self,
         idx: SimpleParameterIndex<u64>,
-        value: u64,
+        value: Option<u64>,
     ) -> Result<(), SetStateError<SimpleParameterIndex<u64>>> {
         let v = self
-            .parameters
+            .parameters_before
+            .simple
+            .get_index_mut(*idx)
+            .ok_or(SetStateError::IndexNotFound(idx))?;
+
+        *v = value;
+
+        Ok(())
+    }
+
+    pub fn set_simple_parameter_index_after(
+        &mut self,
+        idx: SimpleParameterIndex<u64>,
+        value: Option<u64>,
+    ) -> Result<(), SetStateError<SimpleParameterIndex<u64>>> {
+        let v = self
+            .parameters_after
             .simple
             .get_index_mut(*idx)
             .ok_or(SetStateError::IndexNotFound(idx))?;
@@ -940,22 +989,60 @@ impl State {
         value: u64,
     ) -> Result<(), SetStateError<ConstParameterIndex<u64>>> {
         let v = self
-            .parameters
-            .constant
+            .parameters_constant
             .get_index_mut(*idx)
             .ok_or(SetStateError::IndexNotFound(idx))?;
 
-        *v = value;
+        *v = Some(value);
 
         Ok(())
     }
+
     pub fn get_multi_parameter_value(
+        &self,
+        idx: GeneralParameterIndex<MultiValue>,
+        key: &str,
+        return_value: ParameterReturnValue,
+    ) -> Result<f64, StateError> {
+        match return_value {
+            ParameterReturnValue::Before => self.get_multi_parameter_value_before(idx, key),
+            ParameterReturnValue::After => self.get_multi_parameter_value_after(idx, key),
+            ParameterReturnValue::BeforeOrElseAfter => match self.get_multi_parameter_value_before(idx, key) {
+                Ok(v) => Ok(v),
+                Err(_) => self.get_multi_parameter_value_after(idx, key),
+            },
+            ParameterReturnValue::AfterOrElseBefore => match self.get_multi_parameter_value_after(idx, key) {
+                Ok(v) => Ok(v),
+                Err(_) => self.get_multi_parameter_value_before(idx, key),
+            },
+        }
+    }
+    fn get_multi_parameter_value_before(
         &self,
         idx: GeneralParameterIndex<MultiValue>,
         key: &str,
     ) -> Result<f64, StateError> {
         let mv = self
-            .parameters
+            .parameters_before
+            .general
+            .get_multi_value(*idx)
+            .ok_or(StateError::GeneralMultiValueParameterIndexNotFound(idx))?;
+
+        mv.get_value(key)
+            .ok_or_else(|| StateError::GeneralMultiValueParameterKeyNotFound {
+                index: idx,
+                key: key.to_string(),
+            })
+            .copied()
+    }
+
+    fn get_multi_parameter_value_after(
+        &self,
+        idx: GeneralParameterIndex<MultiValue>,
+        key: &str,
+    ) -> Result<f64, StateError> {
+        let mv = self
+            .parameters_after
             .general
             .get_multi_value(*idx)
             .ok_or(StateError::GeneralMultiValueParameterIndexNotFound(idx))?;
@@ -972,9 +1059,29 @@ impl State {
         &self,
         idx: GeneralParameterIndex<MultiValue>,
         key: &str,
+        return_value: ParameterReturnValue,
+    ) -> Result<u64, StateError> {
+        match return_value {
+            ParameterReturnValue::Before => self.get_multi_parameter_index_before(idx, key),
+            ParameterReturnValue::After => self.get_multi_parameter_index_after(idx, key),
+            ParameterReturnValue::BeforeOrElseAfter => match self.get_multi_parameter_index_before(idx, key) {
+                Ok(v) => Ok(v),
+                Err(_) => self.get_multi_parameter_index_after(idx, key),
+            },
+            ParameterReturnValue::AfterOrElseBefore => match self.get_multi_parameter_index_after(idx, key) {
+                Ok(v) => Ok(v),
+                Err(_) => self.get_multi_parameter_index_before(idx, key),
+            },
+        }
+    }
+
+    fn get_multi_parameter_index_before(
+        &self,
+        idx: GeneralParameterIndex<MultiValue>,
+        key: &str,
     ) -> Result<u64, StateError> {
         let mv = self
-            .parameters
+            .parameters_before
             .general
             .get_multi_value(*idx)
             .ok_or(StateError::GeneralMultiValueParameterIndexNotFound(idx))?;
@@ -987,18 +1094,37 @@ impl State {
             .copied()
     }
 
-    pub fn set_multi_parameter_value(
+    fn get_multi_parameter_index_after(
+        &self,
+        idx: GeneralParameterIndex<MultiValue>,
+        key: &str,
+    ) -> Result<u64, StateError> {
+        let mv = self
+            .parameters_after
+            .general
+            .get_multi_value(*idx)
+            .ok_or(StateError::GeneralMultiValueParameterIndexNotFound(idx))?;
+
+        mv.get_index(key)
+            .ok_or_else(|| StateError::GeneralMultiValueParameterKeyNotFound {
+                index: idx,
+                key: key.to_string(),
+            })
+            .copied()
+    }
+
+    pub fn set_multi_parameter_value_before(
         &mut self,
         idx: GeneralParameterIndex<MultiValue>,
-        value: MultiValue,
+        value: Option<MultiValue>,
     ) -> Result<(), SetStateError<GeneralParameterIndex<MultiValue>>> {
         let mv = self
-            .parameters
+            .parameters_before
             .general
             .get_multi_value_mut(*idx)
             .ok_or(SetStateError::IndexNotFound(idx))?;
 
-        if value.has_nan() {
+        if value.as_ref().is_some_and(|mv| mv.has_nan()) {
             return Err(SetStateError::NaNValue(idx));
         }
 
@@ -1007,18 +1133,58 @@ impl State {
         Ok(())
     }
 
-    pub fn set_simple_multi_parameter_value(
+    pub fn set_multi_parameter_value_after(
+        &mut self,
+        idx: GeneralParameterIndex<MultiValue>,
+        value: Option<MultiValue>,
+    ) -> Result<(), SetStateError<GeneralParameterIndex<MultiValue>>> {
+        let mv = self
+            .parameters_after
+            .general
+            .get_multi_value_mut(*idx)
+            .ok_or(SetStateError::IndexNotFound(idx))?;
+
+        if value.as_ref().is_some_and(|mv| mv.has_nan()) {
+            return Err(SetStateError::NaNValue(idx));
+        }
+
+        *mv = value;
+
+        Ok(())
+    }
+
+    pub fn set_simple_multi_parameter_value_before(
         &mut self,
         idx: SimpleParameterIndex<MultiValue>,
-        value: MultiValue,
+        value: Option<MultiValue>,
     ) -> Result<(), SetStateError<SimpleParameterIndex<MultiValue>>> {
         let mv = self
-            .parameters
+            .parameters_before
             .simple
             .get_multi_value_mut(*idx)
             .ok_or(SetStateError::IndexNotFound(idx))?;
 
-        if value.has_nan() {
+        if value.as_ref().is_some_and(|mv| mv.has_nan()) {
+            return Err(SetStateError::NaNValue(idx));
+        }
+
+        *mv = value;
+
+        Ok(())
+    }
+
+    pub fn set_simple_multi_parameter_value_after(
+        &mut self,
+        idx: SimpleParameterIndex<MultiValue>,
+        value: Option<MultiValue>,
+    ) -> Result<(), SetStateError<SimpleParameterIndex<MultiValue>>> {
+        let mv = self
+            .parameters_after
+            .simple
+            .get_multi_value_mut(*idx)
+            .ok_or(SetStateError::IndexNotFound(idx))?;
+
+        if value.as_ref().is_some_and(|mv| mv.has_nan()) {
             return Err(SetStateError::NaNValue(idx));
         }
 
@@ -1033,8 +1199,7 @@ impl State {
         value: MultiValue,
     ) -> Result<(), SetStateError<ConstParameterIndex<MultiValue>>> {
         let mv = self
-            .parameters
-            .constant
+            .parameters_constant
             .get_multi_value_mut(*idx)
             .ok_or(SetStateError::IndexNotFound(idx))?;
 
@@ -1042,21 +1207,28 @@ impl State {
             return Err(SetStateError::NaNValue(idx));
         }
 
-        *mv = value;
+        *mv = Some(value);
 
         Ok(())
     }
 
     pub fn get_simple_parameter_values(&self) -> SimpleParameterValues<'_> {
-        self.parameters.get_simple_parameter_values()
+        self.parameters_before
+            .get_simple_parameter_values(self.get_const_parameter_values())
     }
 
     pub fn get_const_parameter_values(&self) -> ConstParameterValues<'_> {
-        self.parameters.get_const_parameter_values()
+        ConstParameterValues {
+            constant: ParameterValuesRef {
+                values: &self.parameters_constant.values,
+                indices: &self.parameters_constant.indices,
+                multi_values: &self.parameters_constant.multi_values,
+            },
+        }
     }
 
-    pub fn set_node_volume(&mut self, idx: &NodeIndex, volume: f64) -> Result<(), StateError> {
-        Ok(self.network.set_volume(idx, volume)?)
+    pub fn set_node_volume(&mut self, idx: &NodeIndex, volume: f64, max_volume: f64) -> Result<(), StateError> {
+        Ok(self.network.set_volume(idx, volume, max_volume)?)
     }
 
     pub fn reset_virtual_storage_node_volume(
@@ -1064,8 +1236,11 @@ impl State {
         idx: &VirtualStorageIndex,
         volume: f64,
         timestep: &Timestep,
+        max_volume: f64,
     ) -> Result<(), StateError> {
-        Ok(self.network.reset_virtual_storage_volume(idx, volume, timestep)?)
+        Ok(self
+            .network
+            .reset_virtual_storage_volume(idx, volume, timestep, max_volume)?)
     }
 
     pub fn reset_virtual_storage_history(
@@ -1084,27 +1259,6 @@ impl State {
         Ok(self
             .network
             .recover_virtual_storage_last_historical_flow(idx, timestep)?)
-    }
-
-    pub fn get_derived_metric_value(&self, idx: DerivedMetricIndex) -> Result<f64, StateError> {
-        match self.derived_metrics.get(*idx.deref()) {
-            Some(s) => Ok(*s),
-            None => Err(StateError::DerivedMetricIndexNotFound(idx)),
-        }
-    }
-
-    pub fn set_derived_metric_value(
-        &mut self,
-        idx: DerivedMetricIndex,
-        value: f64,
-    ) -> Result<(), SetStateError<DerivedMetricIndex>> {
-        match self.derived_metrics.get_mut(*idx.deref()) {
-            Some(s) => {
-                *s = value;
-                Ok(())
-            }
-            None => Err(SetStateError::IndexNotFound(idx)),
-        }
     }
 
     pub fn get_inter_network_transfer_value(&self, idx: MultiNetworkTransferIndex) -> Result<f64, StateError> {
@@ -1139,19 +1293,20 @@ impl State {
                 let node_index = node.index();
                 let min_volume = storage.get_min_volume(self)?;
                 let max_volume = storage.get_max_volume(self)?;
-                self.network.clamp_node_volume(&node_index, min_volume, max_volume)?;
+
+                self.network.finalise_node_volume(&node_index, min_volume, max_volume)?;
             }
         }
+
+        self.network.update_derived_states(model, timestep)?;
 
         for node in model.virtual_storage_nodes().iter() {
             let node_index = node.index();
             let min_volume = node.get_min_volume(self)?;
             let max_volume = node.get_max_volume(self)?;
             self.network
-                .clamp_virtual_storage_node_volume(&node_index, min_volume, max_volume)?;
+                .finalise_virtual_storage_node_volume(&node_index, min_volume, max_volume)?;
         }
-
-        self.network.update_derived_states(model, timestep)?;
 
         Ok(())
     }
@@ -1232,11 +1387,7 @@ impl StateBuilder {
             self.num_parameters.map(|s| s.general_multi).unwrap_or(0),
         );
 
-        let parameters = ParameterValuesCollection {
-            constant,
-            simple,
-            general,
-        };
+        let parameters = ParameterValuesCollection { simple, general };
 
         State {
             network: NetworkState::new(
@@ -1244,8 +1395,9 @@ impl StateBuilder {
                 self.num_edges,
                 self.initial_virtual_storage_states.unwrap_or_default(),
             ),
-            parameters,
-            derived_metrics: vec![0.0; self.num_derived_metrics.unwrap_or(0)],
+            parameters_constant: constant,
+            parameters_before: parameters.clone(),
+            parameters_after: parameters,
             inter_network_values: vec![0.0; self.num_inter_network_values.unwrap_or(0)],
         }
     }

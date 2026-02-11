@@ -51,14 +51,14 @@ impl Parameter for MultiThresholdParameter {
 }
 
 impl GeneralParameter<u64> for MultiThresholdParameter {
-    fn compute(
+    fn before(
         &self,
         _timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
         model: &Network,
         state: &State,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<u64, ParameterCalculationError> {
+    ) -> Result<Option<u64>, ParameterCalculationError> {
         // Downcast the internal state to the correct type
         let previous_max = downcast_internal_state_mut::<u64>(internal_state);
 
@@ -81,11 +81,11 @@ impl GeneralParameter<u64> for MultiThresholdParameter {
             if position > *previous_max {
                 *previous_max = position;
             } else {
-                return Ok(*previous_max);
+                return Ok(Some(*previous_max));
             }
         }
 
-        Ok(position)
+        Ok(Some(position))
     }
 
     fn as_parameter(&self) -> &dyn Parameter
@@ -126,7 +126,7 @@ mod tests {
 
         let parameter = MultiThresholdParameter::new(
             "test-parameter".into(),
-            volume_idx.into(),
+            volume_idx.into_metric_f64_before(),
             &thresholds,
             Predicate::GreaterThan,
             false,
@@ -163,7 +163,7 @@ mod tests {
 
         let parameter = MultiThresholdParameter::new(
             "test-parameter".into(),
-            volume_idx.into(),
+            volume_idx.into_metric_f64_before(),
             &thresholds,
             Predicate::GreaterThan,
             true,

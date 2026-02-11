@@ -637,7 +637,6 @@ impl Node {
         &self,
         network: &mut pywr_core::network::Network,
         attribute: Option<NodeAttribute>,
-        args: &LoadArgs,
     ) -> Result<MetricF64, SchemaError> {
         match self {
             Node::Input(n) => n.create_metric(network, attribute),
@@ -653,7 +652,7 @@ impl Node {
             Node::PiecewiseLink(n) => n.create_metric(network, attribute),
             Node::PiecewiseStorage(n) => n.create_metric(network, attribute),
             Node::Delay(n) => n.create_metric(network, attribute),
-            Node::Turbine(n) => n.create_metric(network, attribute, args),
+            Node::Turbine(n) => n.create_metric(network, attribute),
             Node::Reservoir(n) => n.create_metric(network, attribute),
             Node::Placeholder(n) => n.create_metric(),
             Node::Abstraction(n) => n.create_metric(network, attribute),

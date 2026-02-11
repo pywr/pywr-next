@@ -81,14 +81,14 @@ where
 }
 
 impl GeneralParameter<f64> for DelayParameter<MetricF64, f64> {
-    fn compute(
+    fn before(
         &self,
         _timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
         _model: &Network,
         _state: &State,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<f64, ParameterCalculationError> {
+    ) -> Result<Option<f64>, ParameterCalculationError> {
         // Downcast the internal state to the correct type
         let memory = downcast_internal_state_mut::<VecDeque<f64>>(internal_state);
 
@@ -99,7 +99,7 @@ impl GeneralParameter<f64> for DelayParameter<MetricF64, f64> {
                 .into(),
         })?;
 
-        Ok(value)
+        Ok(Some(value))
     }
 
     fn after(
@@ -109,7 +109,7 @@ impl GeneralParameter<f64> for DelayParameter<MetricF64, f64> {
         model: &Network,
         state: &State,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<(), ParameterCalculationError> {
+    ) -> Result<Option<f64>, ParameterCalculationError> {
         // Downcast the internal state to the correct type
         let memory = downcast_internal_state_mut::<VecDeque<f64>>(internal_state);
 
@@ -117,7 +117,7 @@ impl GeneralParameter<f64> for DelayParameter<MetricF64, f64> {
         let value = self.metric.get_value(model, state)?;
         memory.push_back(value);
 
-        Ok(())
+        Ok(None)
     }
 
     fn try_into_simple(&self) -> Option<Box<dyn SimpleParameter<f64>>>
@@ -138,13 +138,13 @@ impl GeneralParameter<f64> for DelayParameter<MetricF64, f64> {
 }
 
 impl SimpleParameter<f64> for DelayParameter<SimpleMetricF64, f64> {
-    fn compute(
+    fn before(
         &self,
         _timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
         _values: &SimpleParameterValues,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<f64, SimpleCalculationError> {
+    ) -> Result<Option<f64>, SimpleCalculationError> {
         // Downcast the internal state to the correct type
         let memory = downcast_internal_state_mut::<VecDeque<f64>>(internal_state);
 
@@ -155,7 +155,7 @@ impl SimpleParameter<f64> for DelayParameter<SimpleMetricF64, f64> {
                 .into(),
         })?;
 
-        Ok(value)
+        Ok(Some(value))
     }
 
     fn after(
@@ -164,7 +164,7 @@ impl SimpleParameter<f64> for DelayParameter<SimpleMetricF64, f64> {
         _scenario_index: &ScenarioIndex,
         values: &SimpleParameterValues,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<(), SimpleCalculationError> {
+    ) -> Result<Option<f64>, SimpleCalculationError> {
         // Downcast the internal state to the correct type
         let memory = downcast_internal_state_mut::<VecDeque<f64>>(internal_state);
 
@@ -172,7 +172,7 @@ impl SimpleParameter<f64> for DelayParameter<SimpleMetricF64, f64> {
         let value = self.metric.get_value(values)?;
         memory.push_back(value);
 
-        Ok(())
+        Ok(None)
     }
 
     fn as_parameter(&self) -> &dyn Parameter
@@ -184,14 +184,14 @@ impl SimpleParameter<f64> for DelayParameter<SimpleMetricF64, f64> {
 }
 
 impl GeneralParameter<u64> for DelayParameter<MetricU64, u64> {
-    fn compute(
+    fn before(
         &self,
         _timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
         _model: &Network,
         _state: &State,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<u64, ParameterCalculationError> {
+    ) -> Result<Option<u64>, ParameterCalculationError> {
         // Downcast the internal state to the correct type
         let memory = downcast_internal_state_mut::<VecDeque<u64>>(internal_state);
 
@@ -202,7 +202,7 @@ impl GeneralParameter<u64> for DelayParameter<MetricU64, u64> {
                 .into(),
         })?;
 
-        Ok(value)
+        Ok(Some(value))
     }
 
     fn after(
@@ -212,7 +212,7 @@ impl GeneralParameter<u64> for DelayParameter<MetricU64, u64> {
         model: &Network,
         state: &State,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<(), ParameterCalculationError> {
+    ) -> Result<Option<u64>, ParameterCalculationError> {
         // Downcast the internal state to the correct type
         let memory = downcast_internal_state_mut::<VecDeque<u64>>(internal_state);
 
@@ -220,7 +220,7 @@ impl GeneralParameter<u64> for DelayParameter<MetricU64, u64> {
         let value = self.metric.get_value(model, state)?;
         memory.push_back(value);
 
-        Ok(())
+        Ok(None)
     }
 
     fn try_into_simple(&self) -> Option<Box<dyn SimpleParameter<u64>>>
@@ -241,13 +241,13 @@ impl GeneralParameter<u64> for DelayParameter<MetricU64, u64> {
 }
 
 impl SimpleParameter<u64> for DelayParameter<SimpleMetricU64, u64> {
-    fn compute(
+    fn before(
         &self,
         _timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
         _values: &SimpleParameterValues,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<u64, SimpleCalculationError> {
+    ) -> Result<Option<u64>, SimpleCalculationError> {
         // Downcast the internal state to the correct type
         let memory = downcast_internal_state_mut::<VecDeque<u64>>(internal_state);
 
@@ -258,7 +258,7 @@ impl SimpleParameter<u64> for DelayParameter<SimpleMetricU64, u64> {
                 .into(),
         })?;
 
-        Ok(value)
+        Ok(Some(value))
     }
 
     fn after(
@@ -267,7 +267,7 @@ impl SimpleParameter<u64> for DelayParameter<SimpleMetricU64, u64> {
         _scenario_index: &ScenarioIndex,
         values: &SimpleParameterValues,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<(), SimpleCalculationError> {
+    ) -> Result<Option<u64>, SimpleCalculationError> {
         // Downcast the internal state to the correct type
         let memory = downcast_internal_state_mut::<VecDeque<u64>>(internal_state);
 
@@ -275,7 +275,7 @@ impl SimpleParameter<u64> for DelayParameter<SimpleMetricU64, u64> {
         let value = self.metric.get_value(values)?;
         memory.push_back(value);
 
-        Ok(())
+        Ok(None)
     }
 
     fn as_parameter(&self) -> &dyn Parameter
@@ -305,7 +305,7 @@ mod test {
         let volume_idx = model.network_mut().add_simple_parameter(Box::new(volume)).unwrap();
 
         const DELAY: u64 = 3; // 3 time-step delay
-        let parameter = DelayParameter::new("test-parameter".into(), volume_idx.into(), DELAY, 0.0);
+        let parameter = DelayParameter::new("test-parameter".into(), volume_idx.into_metric_f64_before(), DELAY, 0.0);
 
         // We should have DELAY number of initial values to start with, and then follow the
         // values in the `volumes` array.
@@ -339,7 +339,7 @@ mod test {
             .network_mut()
             .add_simple_index_parameter(Box::new(volume))
             .unwrap()
-            .into();
+            .into_metric_u64_before();
 
         const DELAY: u64 = 3; // 3 time-step delay
         let parameter = DelayParameter::new("test-parameter".into(), metric, DELAY, 0);

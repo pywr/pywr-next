@@ -83,7 +83,9 @@ pub fn simple_network(network: &mut Network, inflow_scenario_index: usize, num_i
     let inflow = network.add_simple_parameter(Box::new(inflow)).unwrap();
 
     let input_node = network.get_mut_node_by_name("input", None).unwrap();
-    input_node.set_max_flow_constraint(Some(inflow.into())).unwrap();
+    input_node
+        .set_max_flow_constraint(Some(inflow.into_metric_f64_before()))
+        .unwrap();
 
     let base_demand = 10.0;
 
@@ -92,7 +94,7 @@ pub fn simple_network(network: &mut Network, inflow_scenario_index: usize, num_i
 
     let total_demand: AggregatedParameter<MetricF64> = AggregatedParameter::new(
         "total-demand".into(),
-        &[base_demand.into(), demand_factor.into()],
+        &[base_demand.into(), demand_factor.into_metric_f64_before()],
         AggFuncF64::Product,
     );
     let total_demand = network.add_parameter(Box::new(total_demand)).unwrap();
@@ -101,8 +103,10 @@ pub fn simple_network(network: &mut Network, inflow_scenario_index: usize, num_i
     let demand_cost = network.add_const_parameter(Box::new(demand_cost)).unwrap();
 
     let output_node = network.get_mut_node_by_name("output", None).unwrap();
-    output_node.set_max_flow_constraint(Some(total_demand.into())).unwrap();
-    output_node.set_cost(Some(demand_cost.into()));
+    output_node
+        .set_max_flow_constraint(Some(total_demand.into_metric_f64_before()))
+        .unwrap();
+    output_node.set_cost(Some(demand_cost.into_metric_f64_before()));
 }
 /// Create a simple test model with three nodes.
 pub fn simple_model(num_scenarios: usize, timestepper: Option<Timestepper>) -> Model {
@@ -150,8 +154,10 @@ pub fn simple_storage_model() -> Model {
     let demand_cost = network.add_const_parameter(Box::new(demand_cost)).unwrap();
 
     let output_node = network.get_mut_node_by_name("output", None).unwrap();
-    output_node.set_max_flow_constraint(Some(demand.into())).unwrap();
-    output_node.set_cost(Some(demand_cost.into()));
+    output_node
+        .set_max_flow_constraint(Some(demand.into_metric_f64_before()))
+        .unwrap();
+    output_node.set_cost(Some(demand_cost.into_metric_f64_before()));
 
     Model::new(default_time_domain().into(), network)
 }
@@ -180,7 +186,7 @@ pub fn run_and_assert_parameter(
         .checked_add_days(Days::new(expected_values.nrows() as u64 - 1))
         .unwrap();
 
-    let rec = AssertionF64Recorder::new("assert", p_idx.into(), expected_values, ulps, epsilon);
+    let rec = AssertionF64Recorder::new("assert", p_idx.into_metric_f64_before(), expected_values, ulps, epsilon);
 
     model.network_mut().add_recorder(Box::new(rec)).unwrap();
     run_all_solvers(model, &[], &[], &[])
@@ -208,7 +214,7 @@ pub fn run_and_assert_parameter_u64(
         .checked_add_days(Days::new(expected_values.nrows() as u64 - 1))
         .unwrap();
 
-    let rec = AssertionU64Recorder::new("assert", p_idx.into(), expected_values);
+    let rec = AssertionU64Recorder::new("assert", p_idx.into_metric_u64_before(), expected_values);
 
     model.network_mut().add_recorder(Box::new(rec)).unwrap();
     run_all_solvers(model, &[], &[], &[])
@@ -561,7 +567,7 @@ fn make_simple_system<R: Rng + ?Sized>(
     );
     let idx = network.add_simple_parameter(Box::new(inflow))?;
 
-    network.set_node_max_flow("input", Some(suffix), Some(idx.into()))?;
+    network.set_node_max_flow("input", Some(suffix), Some(idx.into_metric_f64_before()))?;
 
     let input_cost = rng.random_range(-20.0..-5.00);
     network.set_node_cost("input", Some(suffix), Some(input_cost.into()))?;

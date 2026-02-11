@@ -38,14 +38,14 @@ impl Parameter for ApportionParameter {
 }
 
 impl GeneralParameter<MultiValue> for ApportionParameter {
-    fn compute(
+    fn before(
         &self,
         _timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
         model: &Network,
         state: &State,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<MultiValue, ParameterCalculationError> {
+    ) -> Result<Option<MultiValue>, ParameterCalculationError> {
         // Current value
         let x = self.metric.get_value(model, state)?;
 
@@ -58,7 +58,7 @@ impl GeneralParameter<MultiValue> for ApportionParameter {
         let values = HashMap::from([("upper".to_string(), upper), ("lower".to_string(), lower)]);
 
         let value = MultiValue::new(values, HashMap::new());
-        Ok(value)
+        Ok(Some(value))
     }
     fn as_parameter(&self) -> &dyn Parameter
     where

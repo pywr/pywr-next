@@ -72,20 +72,20 @@ impl Parameter for ThresholdParameter {
 }
 
 impl GeneralParameter<u64> for ThresholdParameter {
-    fn compute(
+    fn before(
         &self,
         _timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
         model: &Network,
         state: &State,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<u64, ParameterCalculationError> {
+    ) -> Result<Option<u64>, ParameterCalculationError> {
         // Downcast the internal state to the correct type
         let previously_activated = downcast_internal_state_mut::<bool>(internal_state);
 
         // Return early if ratchet has been hit
         if self.ratchet & *previously_activated {
-            return Ok(1);
+            return Ok(Some(1));
         }
 
         let threshold = self.threshold.get_value(model, state)?;
@@ -95,9 +95,9 @@ impl GeneralParameter<u64> for ThresholdParameter {
         if active {
             // Update the internal state to remember we've been triggered!
             *previously_activated = true;
-            Ok(1)
+            Ok(Some(1))
         } else {
-            Ok(0)
+            Ok(Some(0))
         }
     }
 

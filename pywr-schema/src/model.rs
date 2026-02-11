@@ -1183,10 +1183,12 @@ mod core_tests {
                         Metric::Parameter(ParameterReference {
                             name: "p1".to_string(),
                             key: None,
+                            return_value: None,
                         }),
                         Metric::Parameter(ParameterReference {
                             name: "agg2".to_string(),
                             key: None,
+                            return_value: None,
                         }),
                     ],
                 }),
@@ -1208,10 +1210,12 @@ mod core_tests {
                         Metric::Parameter(ParameterReference {
                             name: "p1".to_string(),
                             key: None,
+                            return_value: None,
                         }),
                         Metric::Parameter(ParameterReference {
                             name: "agg1".to_string(),
                             key: None,
+                            return_value: None,
                         }),
                     ],
                 }),
@@ -1240,10 +1244,12 @@ mod core_tests {
                         Metric::Parameter(ParameterReference {
                             name: "p1".to_string(),
                             key: None,
+                            return_value: None,
                         }),
                         Metric::Parameter(ParameterReference {
                             name: "p2".to_string(),
                             key: None,
+                            return_value: None,
                         }),
                     ],
                 }),

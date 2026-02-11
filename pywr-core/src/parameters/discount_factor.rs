@@ -29,19 +29,19 @@ impl Parameter for DiscountFactorParameter {
     }
 }
 impl GeneralParameter<f64> for DiscountFactorParameter {
-    fn compute(
+    fn before(
         &self,
         timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
         network: &Network,
         state: &State,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<f64, ParameterCalculationError> {
+    ) -> Result<Option<f64>, ParameterCalculationError> {
         let year = timestep.date.year() - self.base_year;
         let rate = self.discount_rate.get_value(network, state)?;
 
         let factor = 1.0 / (1.0 + rate).powi(year);
-        Ok(factor)
+        Ok(Some(factor))
     }
 
     fn as_parameter(&self) -> &dyn Parameter

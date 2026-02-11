@@ -31,14 +31,14 @@ impl Parameter for InterpolatedParameter {
     }
 }
 impl GeneralParameter<f64> for InterpolatedParameter {
-    fn compute(
+    fn before(
         &self,
         _timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
         network: &Network,
         state: &State,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<f64, ParameterCalculationError> {
+    ) -> Result<Option<f64>, ParameterCalculationError> {
         // Current value
         let x = self.x.get_value(network, state)?;
 
@@ -55,7 +55,7 @@ impl GeneralParameter<f64> for InterpolatedParameter {
 
         let f = linear_interpolation(x, &points, self.error_on_bounds)?;
 
-        Ok(f)
+        Ok(Some(f))
     }
 
     fn as_parameter(&self) -> &dyn Parameter

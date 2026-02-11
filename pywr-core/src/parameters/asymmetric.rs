@@ -38,14 +38,14 @@ impl Parameter for AsymmetricSwitchIndexParameter {
 }
 
 impl GeneralParameter<u64> for AsymmetricSwitchIndexParameter {
-    fn compute(
+    fn before(
         &self,
         _timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
         network: &Network,
         state: &State,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<u64, ParameterCalculationError> {
+    ) -> Result<Option<u64>, ParameterCalculationError> {
         let on_value = self.on_parameter.get_value(network, state)?;
 
         // Downcast the internal state to the correct type
@@ -65,7 +65,7 @@ impl GeneralParameter<u64> for AsymmetricSwitchIndexParameter {
             *current_state = 1;
         }
 
-        Ok(*current_state)
+        Ok(Some(*current_state))
     }
 
     fn as_parameter(&self) -> &dyn Parameter
