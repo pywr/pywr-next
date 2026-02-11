@@ -57,8 +57,8 @@ pub use offset::OffsetParameter;
 pub use placeholder::PlaceholderParameter;
 pub use polynomial::Polynomial1DParameter;
 pub use profiles::{
-    DailyProfileParameter, DirunalProfileParameter, MonthlyInterpDay, MonthlyProfileParameter, RadialBasisFunction,
-    RbfProfileParameter, RbfProfileVariableSettings, UniformDrawdownProfileParameter, WeeklyProfileParameter,
+    DailyProfileParameter, DirunalProfileParameter, MonthlyInterpDay, MonthlyProfileParameter, MonthlyProfileVariableConfig, RadialBasisFunction, RbfProfileParameter,
+    RbfProfileVariableConfig, UniformDrawdownProfileParameter, WeeklyProfileParameter,
 };
 pub use python::{PythonObject, PythonParameter, PythonReturnType};
 use pywr_schema_macros::{PywrVisitAll, skip_serializing_none};

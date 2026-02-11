@@ -9,6 +9,7 @@ use crate::parameters::{
     GeneralParameterIndex, GeneralParameterType, ParameterCalculationError, ParameterCollection,
     ParameterCollectionConstCalculationError, ParameterCollectionError, ParameterCollectionSetupError,
     ParameterCollectionSimpleCalculationError, ParameterIndex, ParameterName, ParameterStates, VariableConfig,
+    VariableParameterValues,
 };
 use crate::recorders::{
     MetricSet, MetricSetIndex, MetricSetSaveError, MetricSetState, RecorderAggregationError, RecorderFinalResult,
@@ -2207,18 +2208,19 @@ impl Network {
         Ok(edge_index)
     }
 
-    /// Set the variable values on the parameter `parameter_index`.
+    /// Set the variable values on the parameter [`parameter_index`].
     ///
     /// This will update the internal state of the parameter with the new values for all scenarios.
     pub fn set_f64_parameter_variable_values(
         &self,
         parameter_index: ParameterIndex<f64>,
-        values: &[f64],
+        values_f64: &[f64],
+        values_u64: &[u64],
         variable_config: &dyn VariableConfig,
         state: &mut NetworkState,
     ) -> Result<(), NetworkError> {
         match self.parameters.get_f64(parameter_index) {
-            Some(parameter) => match parameter.as_f64_variable() {
+            Some(parameter) => match parameter.as_variable() {
                 Some(variable) => {
                     // Iterate over all scenarios and set the variable values
                     for parameter_states in state.iter_parameter_states_mut() {
@@ -2229,7 +2231,7 @@ impl Network {
                         )?;
 
                         variable
-                            .set_variables(values, variable_config, internal_state)
+                            .set_variables(values_f64, values_u64, variable_config, internal_state)
                             .map_err(|source| NetworkError::VariableParameterError {
                                 name: parameter.name().clone(),
                                 source,
@@ -2246,19 +2248,20 @@ impl Network {
         }
     }
 
-    /// Set the variable values on the parameter `parameter_index` and scenario `scenario_index`.
+    /// Set the variable values on the parameter [`parameter_index`] and scenario [`scenario_index`].
     ///
     /// Only the internal state of the parameter for the given scenario will be updated.
     pub fn set_f64_parameter_variable_values_for_scenario(
         &self,
         parameter_index: ParameterIndex<f64>,
         scenario_index: ScenarioIndex,
-        values: &[f64],
+        values_f64: &[f64],
+        values_u64: &[u64],
         variable_config: &dyn VariableConfig,
         state: &mut NetworkState,
     ) -> Result<(), NetworkError> {
         match self.parameters.get_f64(parameter_index) {
-            Some(parameter) => match parameter.as_f64_variable() {
+            Some(parameter) => match parameter.as_variable() {
                 Some(variable) => {
                     let internal_state = state
                         .parameter_states_mut(&scenario_index)
@@ -2266,13 +2269,14 @@ impl Network {
                         .ok_or(NetworkError::ParameterStateNotFound {
                             name: parameter.name().clone(),
                         })?;
-
                     variable
-                        .set_variables(values, variable_config, internal_state)
+                        .set_variables(values_f64, values_u64, variable_config, internal_state)
                         .map_err(|source| NetworkError::VariableParameterError {
                             name: parameter.name().clone(),
                             source,
-                        })
+                        })?;
+
+                    Ok(())
                 }
                 None => Err(NetworkError::ParameterTypeNotVariable {
                     name: parameter.name().clone(),
@@ -2288,9 +2292,9 @@ impl Network {
         parameter_index: ParameterIndex<f64>,
         scenario_index: ScenarioIndex,
         state: &NetworkState,
-    ) -> Result<Option<Vec<f64>>, NetworkError> {
+    ) -> Result<Option<VariableParameterValues>, NetworkError> {
         match self.parameters.get_f64(parameter_index) {
-            Some(parameter) => match parameter.as_f64_variable() {
+            Some(parameter) => match parameter.as_variable() {
                 Some(variable) => {
                     let internal_state = state
                         .parameter_states(&scenario_index)
@@ -2313,9 +2317,9 @@ impl Network {
         &self,
         parameter_index: ParameterIndex<f64>,
         state: &NetworkState,
-    ) -> Result<Vec<Option<Vec<f64>>>, NetworkError> {
+    ) -> Result<Vec<Option<VariableParameterValues>>, NetworkError> {
         match self.parameters.get_f64(parameter_index) {
-            Some(parameter) => match parameter.as_f64_variable() {
+            Some(parameter) => match parameter.as_variable() {
                 Some(variable) => {
                     let values = state
                         .iter_parameter_states()
@@ -2340,29 +2344,30 @@ impl Network {
         }
     }
 
-    /// Set the variable values on the parameter `parameter_index`.
+    /// Set the variable values on the parameter [`parameter_index`].
     ///
     /// This will update the internal state of the parameter with the new values for scenarios.
-    pub fn set_u32_parameter_variable_values(
+    pub fn set_u64_parameter_variable_values(
         &self,
-        parameter_index: ParameterIndex<f64>,
-        values: &[u32],
+        parameter_index: ParameterIndex<u64>,
+        values_f64: &[f64],
+        values_u64: &[u64],
         variable_config: &dyn VariableConfig,
         state: &mut NetworkState,
     ) -> Result<(), NetworkError> {
-        match self.parameters.get_f64(parameter_index) {
-            Some(parameter) => match parameter.as_u32_variable() {
+        match self.parameters.get_u64(parameter_index) {
+            Some(parameter) => match parameter.as_variable() {
                 Some(variable) => {
                     // Iterate over all scenarios and set the variable values
                     for parameter_states in state.iter_parameter_states_mut() {
-                        let internal_state = parameter_states.get_mut_f64_state(parameter_index).ok_or(
+                        let internal_state = parameter_states.get_mut_u64_state(parameter_index).ok_or(
                             NetworkError::ParameterStateNotFound {
                                 name: parameter.name().clone(),
                             },
                         )?;
 
                         variable
-                            .set_variables(values, variable_config, internal_state)
+                            .set_variables(values_f64, values_u64, variable_config, internal_state)
                             .map_err(|source| NetworkError::VariableParameterError {
                                 name: parameter.name().clone(),
                                 source,
@@ -2375,73 +2380,107 @@ impl Network {
                     name: parameter.name().clone(),
                 }),
             },
-            None => Err(NetworkError::ParameterF64IndexNotFound(parameter_index)),
+            None => Err(NetworkError::ParameterU64IndexNotFound(parameter_index)),
         }
     }
 
-    /// Set the variable values on the parameter `parameter_index` and scenario `scenario_index`.
+    /// Set the variable values on the parameter [`parameter_index`] and scenario [`scenario_index`].
     ///
     /// Only the internal state of the parameter for the given scenario will be updated.
-    pub fn set_u32_parameter_variable_values_for_scenario(
+    pub fn set_u64_parameter_variable_values_for_scenario(
         &self,
-        parameter_index: ParameterIndex<f64>,
+        parameter_index: ParameterIndex<u64>,
         scenario_index: ScenarioIndex,
-        values: &[u32],
+        values_f64: &[f64],
+        values_u64: &[u64],
         variable_config: &dyn VariableConfig,
         state: &mut NetworkState,
     ) -> Result<(), NetworkError> {
-        match self.parameters.get_f64(parameter_index) {
-            Some(parameter) => match parameter.as_u32_variable() {
+        match self.parameters.get_u64(parameter_index) {
+            Some(parameter) => match parameter.as_variable() {
                 Some(variable) => {
                     let internal_state = state
                         .parameter_states_mut(&scenario_index)
-                        .get_mut_f64_state(parameter_index)
+                        .get_mut_u64_state(parameter_index)
                         .ok_or(NetworkError::ParameterStateNotFound {
                             name: parameter.name().clone(),
                         })?;
 
                     variable
-                        .set_variables(values, variable_config, internal_state)
+                        .set_variables(values_f64, values_u64, variable_config, internal_state)
                         .map_err(|source| NetworkError::VariableParameterError {
                             name: parameter.name().clone(),
                             source,
-                        })
+                        })?;
+
+                    Ok(())
                 }
                 None => Err(NetworkError::ParameterTypeNotVariable {
                     name: parameter.name().clone(),
                 }),
             },
-            None => Err(NetworkError::ParameterF64IndexNotFound(parameter_index)),
+            None => Err(NetworkError::ParameterU64IndexNotFound(parameter_index)),
         }
     }
 
     /// Return a vector of the current values of active variable parameters.
-    pub fn get_u32_parameter_variable_values_for_scenario(
+    pub fn get_u64_parameter_variable_values_for_scenario(
         &self,
-        parameter_index: ParameterIndex<f64>,
+        parameter_index: ParameterIndex<u64>,
         scenario_index: ScenarioIndex,
         state: &NetworkState,
-    ) -> Result<Option<Vec<u32>>, NetworkError> {
-        match self.parameters.get_f64(parameter_index) {
-            Some(parameter) => match parameter.as_u32_variable() {
+    ) -> Result<Option<VariableParameterValues>, NetworkError> {
+        match self.parameters.get_u64(parameter_index) {
+            Some(parameter) => match parameter.as_variable() {
                 Some(variable) => {
                     let internal_state = state
                         .parameter_states(&scenario_index)
-                        .get_f64_state(parameter_index)
+                        .get_u64_state(parameter_index)
                         .ok_or(NetworkError::ParameterStateNotFound {
                             name: parameter.name().clone(),
                         })?;
+
                     Ok(variable.get_variables(internal_state))
                 }
                 None => Err(NetworkError::ParameterTypeNotVariable {
                     name: parameter.name().clone(),
                 }),
             },
-            None => Err(NetworkError::ParameterF64IndexNotFound(parameter_index)),
+            None => Err(NetworkError::ParameterU64IndexNotFound(parameter_index)),
+        }
+    }
+
+    pub fn get_u64_parameter_variable_values(
+        &self,
+        parameter_index: ParameterIndex<u64>,
+        state: &NetworkState,
+    ) -> Result<Vec<Option<VariableParameterValues>>, NetworkError> {
+        match self.parameters.get_u64(parameter_index) {
+            Some(parameter) => match parameter.as_variable() {
+                Some(variable) => {
+                    let values = state
+                        .iter_parameter_states()
+                        .map(|parameter_states| {
+                            let internal_state = parameter_states.get_u64_state(parameter_index).ok_or(
+                                NetworkError::ParameterStateNotFound {
+                                    name: parameter.name().clone(),
+                                },
+                            )?;
+
+                            Ok(variable.get_variables(internal_state))
+                        })
+                        .collect::<Result<_, NetworkError>>()?;
+
+                    Ok(values)
+                }
+                None => Err(NetworkError::ParameterTypeNotVariable {
+                    name: parameter.name().clone(),
+                }),
+            },
+            None => Err(NetworkError::ParameterU64IndexNotFound(parameter_index)),
         }
     }
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2670,7 +2709,7 @@ mod tests {
         let variable = ActivationFunction::Unit { min: 0.0, max: 10.0 };
         let input_max_flow = parameters::ConstantParameter::new("my-constant".into(), 10.0);
 
-        assert!(input_max_flow.can_be_f64_variable());
+        assert!(input_max_flow.can_be_variable());
 
         let input_max_flow_idx = model
             .network_mut()
@@ -2693,7 +2732,7 @@ mod tests {
         // Update the variable values
         model
             .network_mut()
-            .set_f64_parameter_variable_values(input_max_flow_idx, &[5.0], &variable, state.network_state_mut())
+            .set_f64_parameter_variable_values(input_max_flow_idx, &[5.0], &[], &variable, state.network_state_mut())
             .unwrap();
 
         // After update the variable value should match what was set
@@ -2702,6 +2741,12 @@ mod tests {
             .get_f64_parameter_variable_values(input_max_flow_idx, state.network_state())
             .unwrap();
 
-        assert_eq!(variable_values, vec![Some(vec![5.0])]);
+        assert_eq!(
+            variable_values,
+            vec![Some(VariableParameterValues {
+                f64: vec![5.0],
+                u64: vec![]
+            })]
+        );
     }
 }
