@@ -12,7 +12,7 @@ use crate::virtual_storage::VirtualStorageIndex;
 use num::Zero;
 #[cfg(feature = "pyo3")]
 use pyo3::{
-    Bound, FromPyObject, PyAny, PyResult,
+    Borrowed, FromPyObject, PyAny, PyErr, PyResult,
     exceptions::PyValueError,
     prelude::PyAnyMethods,
     types::{PyDict, PyFloat, PyInt},
@@ -279,18 +279,19 @@ pub struct MultiValue {
 }
 
 #[cfg(feature = "pyo3")]
-impl FromPyObject<'_> for MultiValue {
-    fn extract_bound(ob: &Bound<'_, PyAny>) -> PyResult<Self> {
-        let dict = ob.downcast::<PyDict>()?;
+impl FromPyObject<'_, '_> for MultiValue {
+    type Error = PyErr;
+    fn extract(obj: Borrowed<'_, '_, PyAny>) -> PyResult<Self> {
+        let dict = obj.cast::<PyDict>()?;
 
         // Try to convert the floats
         let mut values: HashMap<String, f64> = HashMap::default();
         let mut indices: HashMap<String, u64> = HashMap::default();
 
-        for (k, v) in dict {
-            if let Ok(float_value) = v.downcast::<PyFloat>() {
+        for (k, v) in dict.deref() {
+            if let Ok(float_value) = v.cast::<PyFloat>() {
                 values.insert(k.to_string(), float_value.extract::<f64>()?);
-            } else if let Ok(int_value) = v.downcast::<PyInt>() {
+            } else if let Ok(int_value) = v.cast::<PyInt>() {
                 // If it's an integer, we will treat it as an index
                 indices.insert(k.to_string(), int_value.extract::<u64>()?);
             } else {
