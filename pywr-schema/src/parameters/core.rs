@@ -5,14 +5,15 @@ use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::network::LoadArgs;
 use crate::parameters::{ConstantFloatVec, ConstantValue, ConversionData, ParameterMeta};
-use crate::v1::{try_convert_parameter_attr, try_convert_values, IntoV2, TryFromV1};
+use crate::v1::{IntoV2, TryFromV1, try_convert_parameter_attr, try_convert_values};
 #[cfg(feature = "core")]
 use pywr_core::parameters::{ParameterIndex, ParameterName};
 use pywr_schema_macros::{PywrVisitAll, skip_serializing_none};
 use pywr_v1_schema::parameters::{
-    ConstantParameter as ConstantParameterV1, ConstantScenarioParameter as ConstantScenarioParameterV1, DivisionParameter as DivisionParameterV1, MaxParameter as MaxParameterV1,
-    MinParameter as MinParameterV1, NegativeMaxParameter as NegativeMaxParameterV1,
-    NegativeMinParameter as NegativeMinParameterV1, NegativeParameter as NegativeParameterV1,
+    ConstantParameter as ConstantParameterV1, ConstantScenarioParameter as ConstantScenarioParameterV1,
+    DivisionParameter as DivisionParameterV1, MaxParameter as MaxParameterV1, MinParameter as MinParameterV1,
+    NegativeMaxParameter as NegativeMaxParameterV1, NegativeMinParameter as NegativeMinParameterV1,
+    NegativeParameter as NegativeParameterV1,
 };
 use schemars::JsonSchema;
 use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticStr};
@@ -183,7 +184,7 @@ impl ConstantParameter {
 }
 
 impl TryFromV1<ConstantParameterV1> for ConstantParameter {
-    type Error = ComponentConversionError;
+    type Error = Box<ComponentConversionError>;
 
     fn try_from_v1(
         v1: ConstantParameterV1,
@@ -213,7 +214,6 @@ impl TryFromV1<ConstantParameterV1> for ConstantParameter {
     }
 }
 
-
 /// A constant scenario parameter.
 ///
 /// A parameter that provides a constant value for each scenario in a scenario group.
@@ -221,7 +221,6 @@ impl TryFromV1<ConstantParameterV1> for ConstantParameter {
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct ConstantScenarioParameter {
-
     pub meta: ParameterMeta,
     /// The values the parameter should return.
     ///
@@ -259,7 +258,7 @@ impl ConstantScenarioParameter {
 }
 
 impl TryFromV1<ConstantScenarioParameterV1> for ConstantScenarioParameter {
-    type Error = ComponentConversionError;
+    type Error = Box<ComponentConversionError>;
 
     fn try_from_v1(
         v1: ConstantScenarioParameterV1,
@@ -305,7 +304,7 @@ impl MaxParameter {
 }
 
 impl TryFromV1<MaxParameterV1> for MaxParameter {
-    type Error = ComponentConversionError;
+    type Error = Box<ComponentConversionError>;
 
     fn try_from_v1(
         v1: MaxParameterV1,
@@ -363,7 +362,7 @@ impl DivisionParameter {
 }
 
 impl TryFromV1<DivisionParameterV1> for DivisionParameter {
-    type Error = ComponentConversionError;
+    type Error = Box<ComponentConversionError>;
 
     fn try_from_v1(
         v1: DivisionParameterV1,
@@ -424,7 +423,7 @@ impl MinParameter {
 }
 
 impl TryFromV1<MinParameterV1> for MinParameter {
-    type Error = ComponentConversionError;
+    type Error = Box<ComponentConversionError>;
 
     fn try_from_v1(
         v1: MinParameterV1,
@@ -468,7 +467,7 @@ impl NegativeParameter {
 }
 
 impl TryFromV1<NegativeParameterV1> for NegativeParameter {
-    type Error = ComponentConversionError;
+    type Error = Box<ComponentConversionError>;
 
     fn try_from_v1(
         v1: NegativeParameterV1,
@@ -529,7 +528,7 @@ impl NegativeMaxParameter {
 }
 
 impl TryFromV1<NegativeMaxParameterV1> for NegativeMaxParameter {
-    type Error = ComponentConversionError;
+    type Error = Box<ComponentConversionError>;
 
     fn try_from_v1(
         v1: NegativeMaxParameterV1,
@@ -594,7 +593,7 @@ impl NegativeMinParameter {
 }
 
 impl TryFromV1<NegativeMinParameterV1> for NegativeMinParameter {
-    type Error = ComponentConversionError;
+    type Error = Box<ComponentConversionError>;
 
     fn try_from_v1(
         v1: NegativeMinParameterV1,

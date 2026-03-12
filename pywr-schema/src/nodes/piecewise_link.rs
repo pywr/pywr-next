@@ -224,7 +224,7 @@ impl PiecewiseLinkNode {
 }
 
 impl TryFromV1<PiecewiseLinkNodeV1> for PiecewiseLinkNode {
-    type Error = ComponentConversionError;
+    type Error = Box<ComponentConversionError>;
 
     fn try_from_v1(
         v1: PiecewiseLinkNodeV1,

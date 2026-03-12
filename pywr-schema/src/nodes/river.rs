@@ -524,37 +524,37 @@ impl RiverNode {
 }
 
 impl TryFrom<LinkNodeV1> for RiverNode {
-    type Error = ComponentConversionError;
+    type Error = Box<ComponentConversionError>;
 
     fn try_from(v1: LinkNodeV1) -> Result<Self, Self::Error> {
         let meta: NodeMeta = v1.meta.into();
 
         if v1.max_flow.is_some() {
-            return Err(ComponentConversionError::Node {
+            return Err(Box::new(ComponentConversionError::Node {
                 name: meta.name,
                 attr: "max_flow".to_string(),
                 error: ConversionError::ExtraAttribute {
                     attr: "max_flow".to_string(),
                 },
-            });
+            }));
         }
         if v1.min_flow.is_some() {
-            return Err(ComponentConversionError::Node {
+            return Err(Box::new(ComponentConversionError::Node {
                 name: meta.name,
                 attr: "min_flow".to_string(),
                 error: ConversionError::ExtraAttribute {
                     attr: "min_flow".to_string(),
                 },
-            });
+            }));
         }
         if v1.cost.is_some() {
-            return Err(ComponentConversionError::Node {
+            return Err(Box::new(ComponentConversionError::Node {
                 name: meta.name,
                 attr: "cost".to_string(),
                 error: ConversionError::ExtraAttribute {
                     attr: "cost".to_string(),
                 },
-            });
+            }));
         }
 
         let n = Self {

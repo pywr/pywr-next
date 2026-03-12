@@ -240,7 +240,7 @@ impl AggregatedNode {
 }
 
 impl TryFromV1<AggregatedNodeV1> for AggregatedNode {
-    type Error = ComponentConversionError;
+    type Error = Box<ComponentConversionError>;
 
     fn try_from_v1(
         v1: AggregatedNodeV1,

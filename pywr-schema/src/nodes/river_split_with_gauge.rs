@@ -380,7 +380,7 @@ impl RiverSplitWithGaugeNode {
 }
 
 impl TryFromV1<RiverSplitWithGaugeNodeV1> for RiverSplitWithGaugeNode {
-    type Error = ComponentConversionError;
+    type Error = Box<ComponentConversionError>;
 
     fn try_from_v1(
         v1: RiverSplitWithGaugeNodeV1,

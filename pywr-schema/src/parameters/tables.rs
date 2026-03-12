@@ -111,7 +111,7 @@ impl TablesArrayParameter {
 }
 
 impl TryFromV1<TablesArrayParameterV1> for TablesArrayParameter {
-    type Error = ComponentConversionError;
+    type Error = Box<ComponentConversionError>;
     fn try_from_v1(
         v1: TablesArrayParameterV1,
         parent_node: Option<&str>,

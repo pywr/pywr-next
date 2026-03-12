@@ -63,7 +63,7 @@ impl DailyProfileParameter {
 }
 
 impl TryFromV1<DailyProfileParameterV1> for DailyProfileParameter {
-    type Error = ComponentConversionError;
+    type Error = Box<ComponentConversionError>;
 
     fn try_from_v1(
         v1: DailyProfileParameterV1,
@@ -138,7 +138,7 @@ impl From<MonthInterpDayV1> for MonthlyInterpDay {
 }
 
 impl TryFromV1<MonthlyProfileParameterV1> for MonthlyProfileParameter {
-    type Error = ComponentConversionError;
+    type Error = Box<ComponentConversionError>;
 
     fn try_from_v1(
         v1: MonthlyProfileParameterV1,
@@ -383,7 +383,7 @@ impl RbfProfileParameter {
 }
 
 impl TryFromV1<RbfProfileParameterV1> for RbfProfileParameter {
-    type Error = ComponentConversionError;
+    type Error = Box<ComponentConversionError>;
 
     fn try_from_v1(
         v1: RbfProfileParameterV1,
@@ -395,23 +395,23 @@ impl TryFromV1<RbfProfileParameterV1> for RbfProfileParameter {
         let points = v1.days_of_year.into_iter().zip(v1.values).collect();
 
         if v1.rbf_kwargs.contains_key("smooth") {
-            return Err(ComponentConversionError::Parameter {
+            return Err(Box::new(ComponentConversionError::Parameter {
                 name: meta.name,
                 attr: "smooth".to_string(),
                 error: ConversionError::UnsupportedFeature {
                     feature: "The RBF `smooth` keyword argument is not supported.".to_string(),
                 },
-            });
+            }));
         }
 
         if v1.rbf_kwargs.contains_key("norm") {
-            return Err(ComponentConversionError::Parameter {
+            return Err(Box::new(ComponentConversionError::Parameter {
                 name: meta.name,
                 attr: "norm".to_string(),
                 error: ConversionError::UnsupportedFeature {
                     feature: "The RBF `norm` keyword argument is not supported.".to_string(),
                 },
-            });
+            }));
         }
 
         // Parse any epsilon value; we expect a float here.
@@ -419,14 +419,14 @@ impl TryFromV1<RbfProfileParameterV1> for RbfProfileParameter {
             if let Some(epsilon_f64) = epsilon_value.as_f64() {
                 Some(epsilon_f64)
             } else {
-                return Err(ComponentConversionError::Parameter {
+                return Err(Box::new(ComponentConversionError::Parameter {
                     name: meta.name,
                     attr: "epsilon".to_string(),
                     error: ConversionError::UnexpectedType {
                         expected: "float".to_string(),
                         actual: format!("{epsilon_value}"),
                     },
-                });
+                }));
             }
         } else {
             None
@@ -443,24 +443,24 @@ impl TryFromV1<RbfProfileParameterV1> for RbfProfileParameter {
                     "cubic" => RadialBasisFunction::Cubic,
                     "thin_plate" => RadialBasisFunction::ThinPlateSpline,
                     _ => {
-                        return Err(ComponentConversionError::Parameter {
+                        return Err(Box::new(ComponentConversionError::Parameter {
                             name: meta.name,
                             attr: "rbf_kwargs".to_string(),
                             error: ConversionError::UnsupportedFeature {
                                 feature: format!("Radial basis function `{function_str}` not supported."),
                             },
-                        });
+                        }));
                     }
                 }
             } else {
-                return Err(ComponentConversionError::Parameter {
+                return Err(Box::new(ComponentConversionError::Parameter {
                     name: meta.name,
                     attr: "rbf_kwargs".to_string(),
                     error: ConversionError::UnexpectedType {
                         expected: "string".to_string(),
                         actual: format!("{function_value}"),
                     },
-                });
+                }));
             }
         } else {
             // Default to multi-quadratic
@@ -587,7 +587,7 @@ impl WeeklyProfileParameter {
 }
 
 impl TryFromV1<WeeklyProfileParameterV1> for WeeklyProfileParameter {
-    type Error = ComponentConversionError;
+    type Error = Box<ComponentConversionError>;
 
     fn try_from_v1(
         v1: WeeklyProfileParameterV1,

@@ -212,7 +212,7 @@ impl RiverGaugeNode {
 }
 
 impl TryFromV1<RiverGaugeNodeV1> for RiverGaugeNode {
-    type Error = ComponentConversionError;
+    type Error = Box<ComponentConversionError>;
 
     fn try_from_v1(
         v1: RiverGaugeNodeV1,

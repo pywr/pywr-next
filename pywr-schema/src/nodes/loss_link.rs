@@ -348,7 +348,7 @@ impl LossLinkNode {
 }
 
 impl TryFromV1<LossLinkNodeV1> for LossLinkNode {
-    type Error = ComponentConversionError;
+    type Error = Box<ComponentConversionError>;
 
     fn try_from_v1(
         v1: LossLinkNodeV1,

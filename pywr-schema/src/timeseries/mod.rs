@@ -506,7 +506,7 @@ pub struct ConvertedTimeseriesReference {
 }
 
 impl TryFromV1<DataFrameParameterV1> for ConvertedTimeseriesReference {
-    type Error = ComponentConversionError;
+    type Error = Box<ComponentConversionError>;
 
     fn try_from_v1(
         v1: DataFrameParameterV1,
@@ -557,13 +557,13 @@ impl TryFromV1<DataFrameParameterV1> for ConvertedTimeseriesReference {
             // ignore the original parameter's name entirely.
             ts_name = table;
         } else {
-            return Err(ComponentConversionError::Parameter {
+            return Err(Box::new(ComponentConversionError::Parameter {
                 name: meta.name,
                 attr: "url".to_string(),
                 error: ConversionError::MissingAttribute {
                     attrs: vec!["url".to_string(), "table".to_string()],
                 },
-            });
+            }));
         };
 
         // Create the reference to the timeseries data
@@ -571,13 +571,13 @@ impl TryFromV1<DataFrameParameterV1> for ConvertedTimeseriesReference {
             (Some(name), None) => Some(TimeseriesColumns::Column { name }),
             (None, Some(name)) => Some(TimeseriesColumns::Scenario { name }),
             (Some(_), Some(_)) => {
-                return Err(ComponentConversionError::Parameter {
+                return Err(Box::new(ComponentConversionError::Parameter {
                     name: meta.name.clone(),
                     attr: "column".to_string(),
                     error: ConversionError::AmbiguousAttributes {
                         attrs: vec!["column".to_string(), "scenario".to_string()],
                     },
-                });
+                }));
             }
             (None, None) => None,
         };

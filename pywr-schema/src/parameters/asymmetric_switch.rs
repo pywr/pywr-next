@@ -43,7 +43,7 @@ impl AsymmetricSwitchIndexParameter {
 }
 
 impl TryFromV1<AsymmetricSwitchIndexParameterV1> for AsymmetricSwitchIndexParameter {
-    type Error = ComponentConversionError;
+    type Error = Box<ComponentConversionError>;
 
     fn try_from_v1(
         v1: AsymmetricSwitchIndexParameterV1,
