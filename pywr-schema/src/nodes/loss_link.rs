@@ -8,7 +8,7 @@ use crate::nodes::{NodeAttribute, NodeComponent};
 use crate::nodes::{NodeMeta, NodeSlot};
 use crate::parameters::Parameter;
 use crate::v1::{ConversionData, TryFromV1, try_convert_node_attr};
-use crate::{node_attribute_subset_enum, node_component_subset_enum};
+use crate::{mermaid, node_attribute_subset_enum, node_component_subset_enum};
 #[cfg(feature = "core")]
 use pywr_core::{aggregated_node::Relationship, metric::MetricF64};
 use pywr_schema_macros::PywrVisitAll;
@@ -84,7 +84,6 @@ node_component_subset_enum! {
     }
 }
 
-#[doc = svgbobdoc::transform!(
 /// This is used to represent a link with losses.
 ///
 /// The loss is applied using a loss factor, [`LossFactor`], which can be applied to either the
@@ -93,23 +92,13 @@ node_component_subset_enum! {
 ///
 /// The default output metric for this node is the net flow.
 ///
-/// ```svgbob
-///
-///            <node>.net    D
-///          .------>L ---->*
-///      U  |
-///     -*--|
-///         |
-///          '------>O
-///            <node>.loss
-/// ```
+#[doc = mermaid!("doc_diagrams/loss-link.mmd")]
 ///
 /// # Available attributes and components
 ///
 /// The enums [`LossLinkNodeAttribute`] and [`LossLinkNodeComponent`] define the available
 /// attributes and components for this node.
 ///
-)]
 #[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]

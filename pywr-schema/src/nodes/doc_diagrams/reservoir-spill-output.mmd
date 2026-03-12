@@ -1,0 +1,39 @@
+graph LR
+    subgraph ThisNode["Reservoir (with spill as output)"]
+
+        s_in@{ shape: small-circle, label: "Incoming slot" }
+        s_out@{ shape: framed-circle, label: "Outgoing slot" }
+        s_out_comp@{ shape: framed-circle, label: "Outgoing slot" }
+
+        L_rain("[name].rainfall")
+        O_spill("[name].spill")
+        L_comp("[name].compensation")
+        O_evap("[name].evaporation")
+        O_leak("[name].leakage")
+        S("[name]")
+
+        s_in --> S --> s_out
+
+        L_rain --> S
+        S --> O_spill
+        S --> O_evap
+        S --> O_leak
+        S -.-> L_comp -.-> s_out_comp
+
+    end
+
+    U(Upstream) --> s_in
+    s_out -->|Storage| D1(Downstream 1)
+    s_out_comp -->|Compensation| D2(Downstream 2)
+
+    class L_rain linkNode;
+    class O_spill outputNode;
+    class L_comp linkNode;
+    class O_evap outputNode;
+    class O_leak outputNode;
+    class S storageNode;
+    class ThisNode thisNode;
+    class s_in slot;
+    class s_out slot;
+    class s_out_comp slot;
+    class s_out_spill slot;

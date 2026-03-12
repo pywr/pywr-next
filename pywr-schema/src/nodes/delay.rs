@@ -6,7 +6,7 @@ use crate::network::LoadArgs;
 use crate::nodes::{NodeAttribute, NodeComponent};
 use crate::nodes::{NodeMeta, NodeSlot};
 use crate::parameters::{ConstantValue, Parameter};
-use crate::{node_attribute_subset_enum, node_component_subset_enum};
+use crate::{mermaid, node_attribute_subset_enum, node_component_subset_enum};
 #[cfg(feature = "core")]
 use pywr_core::{metric::MetricF64, parameters::ParameterName};
 use pywr_schema_macros::{PywrVisitAll, skip_serializing_none};
@@ -29,7 +29,6 @@ node_component_subset_enum! {
     }
 }
 
-#[doc = svgbobdoc::transform!(
 /// This node is used to introduce a delay between flows entering and leaving the node.
 ///
 /// This is often useful in long river reaches as a simply way to model time-of-travel. Internally
@@ -40,19 +39,13 @@ node_component_subset_enum! {
 /// "-delay".
 ///
 ///
-/// ```svgbob
-///
-///      U  <node.inflow>  D
-///     -*---> O    I --->*-
-///             <node.outflow>
-/// ```
+#[doc = mermaid!("doc_diagrams/delay.mmd")]
 ///
 /// # Available attributes and components
 ///
 /// The enums [`DelayNodeAttribute`] and [`DelayNodeComponent`] define the available
 /// attributes and components for this node.
 ///
-)]
 #[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
