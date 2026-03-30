@@ -1,0 +1,23 @@
+graph LR
+    subgraph ThisNode["Delay"]
+
+        s_in@{ shape: small-circle, label: "Incoming slot" }
+        s_out@{ shape: framed-circle, label: "Outgoing slot" }
+
+        s_in --> O("[name].inflow")
+        O -.->|Delay| I
+        I("[name].outflow") --> s_out
+
+
+    end
+
+    U(Upstream) --> s_in
+    s_out --> D1(Downstream )
+
+    class I inputNode;
+    class O outputNode;
+    class L_net linkNode;
+    class ThisNode thisNode;
+    class AG1 aggNode;
+    class s_in slot;
+    class s_out slot;

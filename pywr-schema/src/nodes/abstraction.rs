@@ -6,7 +6,7 @@ use crate::network::LoadArgs;
 use crate::nodes::{NodeAttribute, NodeComponent};
 use crate::nodes::{NodeMeta, NodeSlot};
 use crate::parameters::Parameter;
-use crate::{node_attribute_subset_enum, node_component_subset_enum};
+use crate::{mermaid, node_attribute_subset_enum, node_component_subset_enum};
 #[cfg(feature = "core")]
 use pywr_core::metric::MetricF64;
 use pywr_schema_macros::{PywrVisitAll, skip_serializing_none};
@@ -56,9 +56,8 @@ impl TryFrom<NodeSlot> for AbstractionOutputNodeSlot {
     }
 }
 
-#[doc = svgbobdoc::transform!(
 /// This node represents a river abstraction.
-/// 
+///
 /// The abstraction can optionally be constrained by a minimum residual flow (MRF) requirement. If
 /// this is defined an internal MRF node is created.
 ///
@@ -66,28 +65,13 @@ impl TryFrom<NodeSlot> for AbstractionOutputNodeSlot {
 /// river and the 'abstraction' slot is where the abstracted flow is directed.
 ///
 ///
-/// ```svgbob
-///            <node>.mrf
-///          .------>L -----.
-///      U  |                |     D[downstream]
-///     -*--|                |--->*- - ->
-///         |                |
-///         |'------>L -----'
-///         |   <node>.bypass
-///         |
-///         |
-///         |                     D[abstraction]
-///         +------>L ---------->*- - ->
-///            <node>.abstraction
-///
-/// ```
+#[doc = mermaid!("doc_diagrams/abstraction.mmd")]
 ///
 /// # Available attributes and components
 ///
 /// The enums [`AbstractionNodeAttribute`] and [`AbstractionNodeComponent`] define the available
 /// attributes and components for this node.
 ///
-)]
 #[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]

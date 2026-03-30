@@ -53,7 +53,6 @@ serde_json = { workspace = true }
 sha2 = { workspace = true }
 strum = "0.27"
 strum_macros = "0.27"
-svgbobdoc = { git = "https://github.com/jetuk/svgbobdoc.git", features = ["enable"], branch = "svgbob-0_7_5" }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 

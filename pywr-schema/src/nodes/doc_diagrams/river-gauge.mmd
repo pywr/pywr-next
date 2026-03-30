@@ -1,0 +1,25 @@
+graph LR
+    subgraph ThisNode["RiverGauge"]
+
+        s_in@{ shape: small-circle, label: "Incoming slot" }
+        s_out@{ shape: framed-circle, label: "Outgoing slot" }
+
+        s_in --> L_mrf("[name].mrf")
+        s_in --> L_bypass("[name]".bypass)
+
+
+        L_mrf --> s_out
+        L_bypass --> s_out
+
+
+
+    end
+
+    U(Upstream) --> s_in
+    s_out -->|River| D1(Downstream)
+
+    class L_mrf linkNode;
+    class L_bypass linkNode;
+    class ThisNode thisNode;
+    class s_in slot;
+    class s_out slot;

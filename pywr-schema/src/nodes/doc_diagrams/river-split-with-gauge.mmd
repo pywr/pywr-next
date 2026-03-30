@@ -1,0 +1,39 @@
+graph LR
+    subgraph ThisNode["RiverSplitWithGauge"]
+
+        subgraph AG0["Aggregated node 0"]
+            L_bypass("[name].bypass")
+            L_split_0("[name].split-0")
+        end
+
+
+        s_in@{ shape: small-circle, label: "Incoming slot" }
+        s_out@{ shape: framed-circle, label: "Outgoing slot" }
+
+        s_out_0@{ shape: framed-circle, label: "slot_name[0]" }
+        s_out_i@{ shape: framed-circle, label: "slot_name[i]" }
+
+        s_in --> L_mrf("[name].mrf") --> s_out
+        s_in --> L_bypass --> s_out
+        s_in --> L_split_0 --> s_out
+        L_split_0 --> s_out_0
+
+        s_in -.-> L_split_i("[name].split-i") -.-> s_out
+        L_split_i -.->s_out_i
+    end
+
+    U(Upstream) --> s_in
+    s_out -->|"River"| D1(Downstream 1)
+    s_out_0 -->|"slot_name[0]"| D2(Downstream 2)
+    s_out_i -.->|"slot_name[i]"| D3(Downstream 3)
+
+    class L_mrf linkNode;
+    class L_bypass linkNode;
+    class L_split_0 linkNode;
+    class L_split_i linkNode;
+    class ThisNode thisNode;
+    class AG0 aggNode
+    class s_in slot;
+    class s_out slot;
+    class s_out_0 slot;
+    class s_out_i slot;
