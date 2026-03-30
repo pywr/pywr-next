@@ -662,7 +662,7 @@ impl Node {
 }
 
 impl TryFromV1<NodeV1> for NodeOrVirtualNode {
-    type Error = ComponentConversionError;
+    type Error = Box<ComponentConversionError>;
 
     fn try_from_v1(
         v1: NodeV1,
@@ -674,11 +674,11 @@ impl TryFromV1<NodeV1> for NodeOrVirtualNode {
                 let nv2: Self = n.try_into_v2(parent_node, conversion_data)?;
                 Ok(nv2)
             }
-            NodeV1::Custom(n) => Err(ComponentConversionError::Node {
+            NodeV1::Custom(n) => Err(Box::new(ComponentConversionError::Node {
                 name: n.meta.name,
                 attr: "".to_string(),
                 error: ConversionError::CustomTypeNotSupported { ty: n.ty },
-            }),
+            })),
         }
     }
 }
@@ -711,7 +711,7 @@ impl From<VirtualNode> for NodeOrVirtualNode {
 }
 
 impl TryFromV1<Box<CoreNodeV1>> for NodeOrVirtualNode {
-    type Error = ComponentConversionError;
+    type Error = Box<ComponentConversionError>;
 
     fn try_from_v1(
         v1: Box<CoreNodeV1>,

@@ -72,7 +72,7 @@ impl AggregatedParameter {
 }
 
 impl TryFromV1<AggregatedParameterV1> for AggregatedParameter {
-    type Error = ComponentConversionError;
+    type Error = Box<ComponentConversionError>;
 
     fn try_from_v1(
         v1: AggregatedParameterV1,
@@ -144,7 +144,7 @@ impl AggregatedIndexParameter {
 }
 
 impl TryFromV1<AggregatedIndexParameterV1> for AggregatedIndexParameter {
-    type Error = ComponentConversionError;
+    type Error = Box<ComponentConversionError>;
 
     fn try_from_v1(
         v1: AggregatedIndexParameterV1,

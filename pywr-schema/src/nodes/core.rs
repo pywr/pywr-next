@@ -172,7 +172,7 @@ impl InputNode {
 }
 
 impl TryFromV1<InputNodeV1> for InputNode {
-    type Error = ComponentConversionError;
+    type Error = Box<ComponentConversionError>;
 
     fn try_from_v1(
         v1: InputNodeV1,
@@ -720,7 +720,7 @@ impl LinkNode {
 }
 
 impl TryFromV1<LinkNodeV1> for LinkNode {
-    type Error = ComponentConversionError;
+    type Error = Box<ComponentConversionError>;
 
     fn try_from_v1(
         v1: LinkNodeV1,
@@ -750,7 +750,7 @@ impl TryFromV1<LinkNodeV1> for LinkNode {
 }
 
 impl TryFromV1<BreakLinkNodeV1> for LinkNode {
-    type Error = ComponentConversionError;
+    type Error = Box<ComponentConversionError>;
 
     fn try_from_v1(
         v1: BreakLinkNodeV1,
@@ -929,7 +929,7 @@ impl OutputNode {
 }
 
 impl TryFromV1<OutputNodeV1> for OutputNode {
-    type Error = ComponentConversionError;
+    type Error = Box<ComponentConversionError>;
 
     fn try_from_v1(
         v1: OutputNodeV1,
@@ -1127,7 +1127,7 @@ impl StorageNode {
 }
 
 impl TryFromV1<StorageNodeV1> for StorageNode {
-    type Error = ComponentConversionError;
+    type Error = Box<ComponentConversionError>;
 
     fn try_from_v1(
         v1: StorageNodeV1,
@@ -1156,7 +1156,7 @@ impl TryFromV1<StorageNodeV1> for StorageNode {
 }
 
 impl TryFromV1<ReservoirNodeV1> for StorageNode {
-    type Error = ComponentConversionError;
+    type Error = Box<ComponentConversionError>;
 
     fn try_from_v1(
         v1: ReservoirNodeV1,
@@ -1330,7 +1330,7 @@ impl CatchmentNode {
 }
 
 impl TryFromV1<CatchmentNodeV1> for CatchmentNode {
-    type Error = ComponentConversionError;
+    type Error = Box<ComponentConversionError>;
 
     fn try_from_v1(
         v1: CatchmentNodeV1,

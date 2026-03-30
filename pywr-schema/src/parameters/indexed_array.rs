@@ -49,7 +49,7 @@ impl IndexedArrayParameter {
 }
 
 impl TryFromV1<IndexedArrayParameterV1> for IndexedArrayParameter {
-    type Error = ComponentConversionError;
+    type Error = Box<ComponentConversionError>;
 
     fn try_from_v1(
         v1: IndexedArrayParameterV1,

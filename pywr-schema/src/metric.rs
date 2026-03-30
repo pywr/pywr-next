@@ -253,16 +253,15 @@ impl TryFromV1<ParameterValueV1> for Metric {
                 // Inline parameters are converted to either a parameter or a timeseries
                 // The actual component is extracted into the conversion data leaving a reference
                 // to the component in the metric.
-                let definition: ParameterOrTimeseriesRef =
-                    (*param)
-                        .try_into_v2(parent_node, conversion_data)
-                        .map_err(|e| match e {
-                            ComponentConversionError::Parameter { error, .. } => error,
-                            ComponentConversionError::Node { error, .. } => error,
-                            ComponentConversionError::Scenarios { error } => error,
-                            ComponentConversionError::Table { error, .. } => error,
-                            ComponentConversionError::Edge { error, .. } => error,
-                        })?;
+                let definition: ParameterOrTimeseriesRef = (*param).try_into_v2(parent_node, conversion_data).map_err(
+                    |e: Box<ComponentConversionError>| match *e {
+                        ComponentConversionError::Parameter { error, .. } => error,
+                        ComponentConversionError::Node { error, .. } => error,
+                        ComponentConversionError::Scenarios { error } => error,
+                        ComponentConversionError::Table { error, .. } => error,
+                        ComponentConversionError::Edge { error, .. } => error,
+                    },
+                )?;
                 match definition {
                     ParameterOrTimeseriesRef::Parameter(p) => {
                         let reference = ParameterReference {
@@ -731,16 +730,15 @@ impl TryFromV1<ParameterValueV1> for IndexMetric {
                 // Inline parameters are converted to either a parameter or a timeseries
                 // The actual component is extracted into the conversion data leaving a reference
                 // to the component in the metric.
-                let definition: ParameterOrTimeseriesRef =
-                    (*param)
-                        .try_into_v2(parent_node, conversion_data)
-                        .map_err(|e| match e {
-                            ComponentConversionError::Parameter { error, .. } => error,
-                            ComponentConversionError::Node { error, .. } => error,
-                            ComponentConversionError::Scenarios { error } => error,
-                            ComponentConversionError::Table { error, .. } => error,
-                            ComponentConversionError::Edge { error, .. } => error,
-                        })?;
+                let definition: ParameterOrTimeseriesRef = (*param).try_into_v2(parent_node, conversion_data).map_err(
+                    |e: Box<ComponentConversionError>| match *e {
+                        ComponentConversionError::Parameter { error, .. } => error,
+                        ComponentConversionError::Node { error, .. } => error,
+                        ComponentConversionError::Scenarios { error } => error,
+                        ComponentConversionError::Table { error, .. } => error,
+                        ComponentConversionError::Edge { error, .. } => error,
+                    },
+                )?;
                 match definition {
                     ParameterOrTimeseriesRef::Parameter(p) => {
                         let reference = ParameterReference {

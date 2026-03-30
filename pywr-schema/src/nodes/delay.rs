@@ -213,7 +213,7 @@ impl DelayNode {
 }
 
 impl TryFrom<DelayNodeV1> for DelayNode {
-    type Error = ComponentConversionError;
+    type Error = Box<ComponentConversionError>;
 
     fn try_from(v1: DelayNodeV1) -> Result<Self, Self::Error> {
         let meta: NodeMeta = v1.meta.into();
@@ -224,13 +224,13 @@ impl TryFrom<DelayNodeV1> for DelayNode {
             None => match v1.timesteps {
                 Some(ts) => ts,
                 None => {
-                    return Err(ComponentConversionError::Node {
+                    return Err(Box::new(ComponentConversionError::Node {
                         name: meta.name,
                         attr: "delay".to_string(),
                         error: ConversionError::MissingAttribute {
                             attrs: vec!["days".to_string(), "timesteps".to_string()],
                         },
-                    });
+                    }));
                 }
             },
         } as u64;

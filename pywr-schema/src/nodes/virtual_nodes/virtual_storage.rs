@@ -351,7 +351,7 @@ impl VirtualStorageNode {
 }
 
 impl TryFromV1<VirtualStorageNodeV1> for VirtualStorageNode {
-    type Error = ComponentConversionError;
+    type Error = Box<ComponentConversionError>;
 
     fn try_from_v1(
         v1: VirtualStorageNodeV1,
@@ -387,7 +387,7 @@ impl TryFromV1<VirtualStorageNodeV1> for VirtualStorageNode {
 }
 
 impl TryFromV1<AnnualVirtualStorageNodeV1> for VirtualStorageNode {
-    type Error = ComponentConversionError;
+    type Error = Box<ComponentConversionError>;
 
     fn try_from_v1(
         v1: AnnualVirtualStorageNodeV1,
@@ -432,7 +432,7 @@ impl TryFromV1<AnnualVirtualStorageNodeV1> for VirtualStorageNode {
 }
 
 impl TryFromV1<MonthlyVirtualStorageNodeV1> for VirtualStorageNode {
-    type Error = ComponentConversionError;
+    type Error = Box<ComponentConversionError>;
 
     fn try_from_v1(
         v1: MonthlyVirtualStorageNodeV1,
@@ -474,7 +474,7 @@ impl TryFromV1<MonthlyVirtualStorageNodeV1> for VirtualStorageNode {
 }
 
 impl TryFromV1<RollingVirtualStorageNodeV1> for VirtualStorageNode {
-    type Error = ComponentConversionError;
+    type Error = Box<ComponentConversionError>;
 
     fn try_from_v1(
         v1: RollingVirtualStorageNodeV1,
@@ -494,34 +494,34 @@ impl TryFromV1<RollingVirtualStorageNodeV1> for VirtualStorageNode {
             if let Some(days) = NonZeroUsize::new(days as usize) {
                 RollingWindow::Days { days }
             } else {
-                return Err(ComponentConversionError::Node {
+                return Err(Box::new(ComponentConversionError::Node {
                     name: meta.name.clone(),
                     attr: "window".to_string(),
                     error: ConversionError::UnsupportedFeature {
                         feature: "Rolling window with zero `days` is not supported".to_string(),
                     },
-                });
+                }));
             }
         } else if let Some(timesteps) = v1.timesteps {
             if let Some(timesteps) = NonZeroUsize::new(timesteps as usize) {
                 RollingWindow::Timesteps { timesteps }
             } else {
-                return Err(ComponentConversionError::Node {
+                return Err(Box::new(ComponentConversionError::Node {
                     name: meta.name.clone(),
                     attr: "window".to_string(),
                     error: ConversionError::UnsupportedFeature {
                         feature: "Rolling window with zero `timesteps` is not supported".to_string(),
                     },
-                });
+                }));
             }
         } else {
-            return Err(ComponentConversionError::Node {
+            return Err(Box::new(ComponentConversionError::Node {
                 name: meta.name.clone(),
                 attr: "window".to_string(),
                 error: ConversionError::MissingAttribute {
                     attrs: vec!["days".to_string(), "timesteps".to_string()],
                 },
-            });
+            }));
         };
 
         let nodes = v1.nodes.into_iter().map(|n| n.into()).collect();
@@ -544,7 +544,7 @@ impl TryFromV1<RollingVirtualStorageNodeV1> for VirtualStorageNode {
 }
 
 impl TryFromV1<SeasonalVirtualStorageNodeV1> for VirtualStorageNode {
-    type Error = ComponentConversionError;
+    type Error = Box<ComponentConversionError>;
 
     fn try_from_v1(
         v1: SeasonalVirtualStorageNodeV1,
