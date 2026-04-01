@@ -2426,7 +2426,7 @@ dependencies = [
  "serde",
  "simdutf8",
  "streaming-iterator",
- "strum_macros",
+ "strum_macros 0.27.2",
  "version_check",
  "zstd",
 ]
@@ -2474,7 +2474,7 @@ dependencies = [
  "rand 0.9.2",
  "serde",
  "strength_reduce",
- "strum_macros",
+ "strum_macros 0.27.2",
  "version_check",
  "zmij",
 ]
@@ -2511,7 +2511,7 @@ dependencies = [
  "regex",
  "serde",
  "serde_json",
- "strum_macros",
+ "strum_macros 0.27.2",
  "uuid",
  "version_check",
  "xxhash-rust",
@@ -2724,7 +2724,7 @@ dependencies = [
  "rayon",
  "regex",
  "regex-syntax",
- "strum_macros",
+ "strum_macros 0.27.2",
  "unicode-normalization",
  "unicode-reverse",
  "version_check",
@@ -2797,7 +2797,7 @@ dependencies = [
  "regex",
  "sha2",
  "slotmap",
- "strum_macros",
+ "strum_macros 0.27.2",
  "tokio",
  "version_check",
 ]
@@ -2915,7 +2915,7 @@ dependencies = [
  "polars-utils",
  "rayon",
  "regex",
- "strum_macros",
+ "strum_macros 0.27.2",
 ]
 
 [[package]]
@@ -3225,8 +3225,8 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
- "strum",
- "strum_macros",
+ "strum 0.27.2",
+ "strum_macros 0.27.2",
  "tempfile",
  "thiserror 2.0.18",
  "tracing",
@@ -3244,24 +3244,24 @@ dependencies = [
 
 [[package]]
 name = "pywr-v1-schema"
-version = "0.21.1"
+version = "0.22.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "71962025f4a6d02bec45d9f333a55bef1ff202a57975f025404cf756b125607f"
+checksum = "24ac0fff51bf9fb49e3b63d083dce9183e17e29edae0c793326281c4bdd4a5fe"
 dependencies = [
  "chrono",
  "pywr-v1-schema-macros",
  "serde",
  "serde_json",
- "strum",
- "strum_macros",
+ "strum 0.28.0",
+ "strum_macros 0.28.0",
  "thiserror 2.0.18",
 ]
 
 [[package]]
 name = "pywr-v1-schema-macros"
-version = "0.21.0"
+version = "0.22.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "59c0db0e6539334fcb1bc4c1938a78f9dc2814dea4e724fd3392062a24ee7696"
+checksum = "031186c262527b7bdab50dc193b661327d6d4d96ee5ec44761c61984ad5cfaa2"
 dependencies = [
  "quote",
  "syn",
@@ -4084,10 +4084,28 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "af23d6f6c1a224baef9d3f61e287d2761385a5b88fdab4eb4c6f11aeb54c4bcf"
 
 [[package]]
+name = "strum"
+version = "0.28.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9628de9b8791db39ceda2b119bbe13134770b56c138ec1d3af810d045c04f9bd"
+
+[[package]]
 name = "strum_macros"
 version = "0.27.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7695ce3845ea4b33927c055a39dc438a45b059f7c1b3d91d38d10355fb8cbca7"
+dependencies = [
+ "heck",
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
+name = "strum_macros"
+version = "0.28.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ab85eea0270ee17587ed4156089e10b9e6880ee688791d45a905f5b1ca36f664"
 dependencies = [
  "heck",
  "proc-macro2",
