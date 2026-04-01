@@ -44,7 +44,7 @@ float-cmp = "0.10"
 hdf5-metno = { version = "0.12", features = ["static", "zlib"] }
 hex = "0.4.3"
 md-5 = "0.10"
-microlp = "0.2.11"
+microlp = "0.4.0"
 ndarray = "0.17"
 num = "0.4"
 polars = { version = "0.53", default-features = false }
