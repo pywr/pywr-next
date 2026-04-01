@@ -1921,12 +1921,13 @@ dependencies = [
 
 [[package]]
 name = "microlp"
-version = "0.2.11"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "51d1790c73b93164ff65868f63164497cb32339458a9297e17e212d91df62258"
+checksum = "458ed987196f802dc47c69d4c5afcd19002d6c1c5f8f75c76d129bcf2425057a"
 dependencies = [
  "log",
  "sprs",
+ "web-time",
 ]
 
 [[package]]
