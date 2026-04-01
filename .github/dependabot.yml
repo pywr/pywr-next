@@ -5,6 +5,9 @@ updates:
     schedule:
       interval: "weekly"
     groups:
+      strum:
+        patterns:
+          - "strum*"
       minor-patch:
         update-types:
           - "patch"
