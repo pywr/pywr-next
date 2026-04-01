@@ -36,7 +36,7 @@ use chrono::{Days, NaiveDate};
 use csv::{Reader, ReaderBuilder};
 use float_cmp::{F64Margin, approx_eq};
 use ndarray::{Array, Array2};
-use rand::Rng;
+use rand::{Rng, RngExt};
 use rand_distr::{Distribution, Normal};
 use std::num::NonZeroU64;
 use std::path::PathBuf;
