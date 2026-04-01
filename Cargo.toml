@@ -59,6 +59,8 @@ schemars = { version = "1.2", features = ["chrono04"] }
 serde = { version = "1", features = ["derive", ] }
 serde_json = "1.0"
 sha2 = "0.10"
+strum = "0.28"
+strum_macros = "0.28"
 thiserror = "2.0"
 tracing = { version = "0.1", features = ["log"] }
 wide = "1.1.1"
