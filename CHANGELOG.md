@@ -2,7 +2,7 @@
 
 All notable changes to this project since v2.0.0-beta will be documented in this file.
 
-## [2.0.0-beta2.1] - 2026-04-01
+## [2.0.0-beta3] - 2026-04-02
 
 ### 💼 Other
 
@@ -25,6 +25,7 @@ All notable changes to this project since v2.0.0-beta will be documented in this
 - Bump bytes to v1.11.1 (#614)
 - Bump polars to v0.53.
 - Upgrade to latest COIN-OR release. (#619)
+
 ## [2.0.0-beta2] - 2025-12-19
 
 ### 🚀 Features
@@ -52,6 +53,7 @@ All notable changes to this project since v2.0.0-beta will be documented in this
 - Pin mdbook to v0.4.52 (#577)
 - Sort Cargo.toml files with cargo sort. (#584)
 - Migrate to macos-15 runners. (#600)
+
 ## [2.0.0-beta1] - 2025-10-06
 
 ### 🚀 Features
