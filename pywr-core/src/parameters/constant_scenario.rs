@@ -77,7 +77,10 @@ mod tests {
 
     #[test]
     fn test_constant_scenario_parameter_with_subset_indices() {
-        let scenario_group = ScenarioGroupBuilder::new("group1", 5).with_subset_indices(vec![0, 2, 4]).build().unwrap();
+        let scenario_group = ScenarioGroupBuilder::new("group1", 5)
+            .with_subset_indices(vec![0, 2, 4])
+            .build()
+            .unwrap();
         let scenario_domain = scenario::ScenarioDomainBuilder::default()
             .with_group(scenario_group)
             .unwrap()
@@ -99,7 +102,10 @@ mod tests {
 
     #[test]
     fn test_constant_scenario_parameter_with_subset_slice() {
-        let scenario_group = ScenarioGroupBuilder::new("group1", 5).with_subset_slice(1, 3).build().unwrap();
+        let scenario_group = ScenarioGroupBuilder::new("group1", 5)
+            .with_subset_slice(1, 3)
+            .build()
+            .unwrap();
         let scenario_domain = scenario::ScenarioDomainBuilder::default()
             .with_group(scenario_group)
             .unwrap()

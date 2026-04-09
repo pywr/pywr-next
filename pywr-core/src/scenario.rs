@@ -1,3 +1,4 @@
+#![warn(clippy::pedantic)]
 #[cfg(feature = "pyo3")]
 use pyo3::{pyclass, pymethods};
 use std::collections::BTreeSet;
