@@ -1642,7 +1642,7 @@ impl Network {
     }
 
     /// Get a `&AggregatedStorageNode` from a node's name
-    pub fn get_aggregated_storage_node(&self, index: &AggregatedStorageNodeIndex) -> Option<&AggregatedStorageNode> {
+    pub fn get_aggregated_storage_node(&self, index: AggregatedStorageNodeIndex) -> Option<&AggregatedStorageNode> {
         self.aggregated_storage_nodes.get(index)
     }
 

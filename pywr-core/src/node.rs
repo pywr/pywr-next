@@ -103,19 +103,19 @@ impl NodeVec {
 
     pub fn push_new_input(&mut self, name: &str, sub_name: Option<&str>) -> NodeIndex {
         let node_index = NodeIndex(self.nodes.len());
-        let node = Node::new_input(&node_index, name, sub_name);
+        let node = Node::new_input(node_index, name, sub_name);
         self.nodes.push(node);
         node_index
     }
     pub fn push_new_link(&mut self, name: &str, sub_name: Option<&str>) -> NodeIndex {
         let node_index = NodeIndex(self.nodes.len());
-        let node = Node::new_link(&node_index, name, sub_name);
+        let node = Node::new_link(node_index, name, sub_name);
         self.nodes.push(node);
         node_index
     }
     pub fn push_new_output(&mut self, name: &str, sub_name: Option<&str>) -> NodeIndex {
         let node_index = NodeIndex(self.nodes.len());
-        let node = Node::new_output(&node_index, name, sub_name);
+        let node = Node::new_output(node_index, name, sub_name);
         self.nodes.push(node);
         node_index
     }
@@ -129,7 +129,7 @@ impl NodeVec {
         max_volume: Option<SimpleMetricF64>,
     ) -> NodeIndex {
         let node_index = NodeIndex(self.nodes.len());
-        let node = Node::new_storage(&node_index, name, sub_name, initial_volume, min_volume, max_volume);
+        let node = Node::new_storage(node_index, name, sub_name, initial_volume, min_volume, max_volume);
         self.nodes.push(node);
         node_index
     }
@@ -175,23 +175,23 @@ pub enum CostAggFunc {
 
 impl Node {
     /// Create a new input node
-    pub fn new_input(node_index: &NodeIndex, name: &str, sub_name: Option<&str>) -> Self {
+    pub fn new_input(node_index: NodeIndex, name: &str, sub_name: Option<&str>) -> Self {
         Self::Input(InputNode::new(node_index, name, sub_name))
     }
 
     /// Create a new output node
-    pub fn new_output(node_index: &NodeIndex, name: &str, sub_name: Option<&str>) -> Self {
+    pub fn new_output(node_index: NodeIndex, name: &str, sub_name: Option<&str>) -> Self {
         Self::Output(OutputNode::new(node_index, name, sub_name))
     }
 
     /// Create a new link node
-    pub fn new_link(node_index: &NodeIndex, name: &str, sub_name: Option<&str>) -> Self {
+    pub fn new_link(node_index: NodeIndex, name: &str, sub_name: Option<&str>) -> Self {
         Self::Link(LinkNode::new(node_index, name, sub_name))
     }
 
     /// Create a new storage node
     pub fn new_storage(
-        node_index: &NodeIndex,
+        node_index: NodeIndex,
         name: &str,
         sub_name: Option<&str>,
         initial_volume: StorageInitialVolume,
@@ -621,9 +621,9 @@ impl<T> NodeMeta<T>
 where
     T: Copy,
 {
-    pub(crate) fn new(index: &T, name: &str, sub_name: Option<&str>) -> Self {
+    pub(crate) fn new(index: T, name: &str, sub_name: Option<&str>) -> Self {
         Self {
-            index: *index,
+            index,
             name: name.to_string(),
             sub_name: sub_name.map(|s| s.to_string()),
             comment: "".to_string(),
@@ -781,7 +781,7 @@ pub struct InputNode {
 }
 
 impl InputNode {
-    fn new(index: &NodeIndex, name: &str, sub_name: Option<&str>) -> Self {
+    fn new(index: NodeIndex, name: &str, sub_name: Option<&str>) -> Self {
         Self {
             meta: NodeMeta::new(index, name, sub_name),
             cost: NodeCost::default(),
@@ -833,7 +833,7 @@ pub struct OutputNode {
 }
 
 impl OutputNode {
-    fn new(index: &NodeIndex, name: &str, sub_name: Option<&str>) -> Self {
+    fn new(index: NodeIndex, name: &str, sub_name: Option<&str>) -> Self {
         Self {
             meta: NodeMeta::new(index, name, sub_name),
             cost: NodeCost::default(),
@@ -886,7 +886,7 @@ pub struct LinkNode {
 }
 
 impl LinkNode {
-    fn new(index: &NodeIndex, name: &str, sub_name: Option<&str>) -> Self {
+    fn new(index: NodeIndex, name: &str, sub_name: Option<&str>) -> Self {
         Self {
             meta: NodeMeta::new(index, name, sub_name),
             cost: NodeCost::default(),
@@ -1009,7 +1009,7 @@ pub struct StorageNode {
 
 impl StorageNode {
     fn new(
-        index: &NodeIndex,
+        index: NodeIndex,
         name: &str,
         sub_name: Option<&str>,
         initial_volume: StorageInitialVolume,

@@ -60,7 +60,7 @@ impl AggregatedNodeVec {
         relationship: Option<Relationship>,
     ) -> AggregatedNodeIndex {
         let node_index = AggregatedNodeIndex(self.nodes.len());
-        let node = AggregatedNode::new(&node_index, name, sub_name, nodes, relationship);
+        let node = AggregatedNode::new(node_index, name, sub_name, nodes, relationship);
         self.nodes.push(node);
         node_index
     }
@@ -257,7 +257,7 @@ impl<'a> NodeConstFactorPair<'a> {
 
 impl AggregatedNode {
     pub fn new(
-        index: &AggregatedNodeIndex,
+        index: AggregatedNodeIndex,
         name: &str,
         sub_name: Option<&str>,
         nodes: &[Vec<NodeIndex>],
