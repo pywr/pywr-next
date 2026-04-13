@@ -1603,7 +1603,7 @@ impl Network {
                 sub_name: sub_name.map(|s| s.to_string()),
             })?;
 
-        node.set_max_flow_constraint(value);
+        node.set_max_flow(value);
         Ok(())
     }
 
@@ -1620,7 +1620,7 @@ impl Network {
                 sub_name: sub_name.map(|s| s.to_string()),
             })?;
 
-        node.set_min_flow_constraint(value);
+        node.set_min_flow(value);
         Ok(())
     }
 
