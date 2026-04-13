@@ -1,0 +1,25 @@
+graph LR
+    subgraph ThisNode["Link"]
+
+        s_in@{ shape: small-circle, label: "Incoming slot" }
+        s_out@{ shape: framed-circle, label: "Outgoing slot" }
+
+        L0("[name].00")
+        L1("[name].01")
+        Ln("[name].n")
+
+        s_in --> L0 --> s_out
+        s_in --> L1 --> s_out
+        s_in -.-> Ln -.-> s_out
+
+    end
+
+    U(Upstream) --> s_in
+    s_out --> D1(Downstream)
+
+    class L0 linkNode;
+    class L1 linkNode;
+    class Ln linkNode;
+    class ThisNode thisNode;
+    class s_in slot;
+    class s_out slot;

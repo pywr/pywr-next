@@ -1,4 +1,3 @@
-use crate::SchemaError;
 use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::network::LoadArgs;
@@ -6,6 +5,7 @@ use crate::network::LoadArgs;
 use crate::nodes::{NodeAttribute, NodeComponent};
 use crate::nodes::{NodeMeta, NodeSlot, StorageNode, StorageNodeAttribute};
 use crate::parameters::ConstantFloatVec;
+use crate::{SchemaError, mermaid};
 use crate::{node_attribute_subset_enum, node_component_subset_enum};
 #[cfg(feature = "core")]
 use pywr_core::agg_funcs::AggFuncF64;
@@ -154,33 +154,10 @@ impl TryFrom<NodeSlot> for ReservoirOutputNodeSlot {
 /// A reservoir node with compensation, leakage, direct rainfall and evaporation.
 ///
 /// # Implementation
-#[doc = svgbobdoc::transform!(
-/// ```svgbob
 ///
-///             <Reservoir>.Rainfall
-///                      *
-///     U                |            if OutputNode                if LinkNode
-/// - - *--.             |                                         D[from_spill]
-///        |             |           <Reservoir>.Spill   - or -     <Reservoir>.Spill
-///        V             V             D[to_spill]                 D[to_spill]
-///        .----------------+----------------->o               --------->*- - -
-///        |                |
-///        |  StorageNode   |
-///        |                |-------------->o   <Reservoir>.Evaporation
-///        +-------------+--+---------------------------.
-///        |             |                              |
-///        |             +--------->*- -                +------>o  <Reservoir>.Leakage
-///        |               <Reservoir>.Compensation
-///        |                   D[compensation]
-///        +---->*- - -
-///             D[<default>]
-///
-/// ```
-)]
-///
-/// This is a [`StorageNode`] connected to an upstream node `U` and downstream network node `D`. When
+/// This is a [`StorageNode`] connected to an upstream node `Upstream` and downstream network node `D`. When
 /// an edge to this component is created without slots, the target nodes are directly connected to
-/// `D[<default>]`.
+/// `Downstream 1` via the "Storage" slot.
 ///
 /// This component has the following internal nodes, which the modeller still needs to connect to
 /// other network nodes using slots:
@@ -200,6 +177,12 @@ impl TryFrom<NodeSlot> for ReservoirOutputNodeSlot {
 ///   the node's behaviour.
 /// - Leakage: this is an optional [`pywr_core::node::OutputNode`] with a `max_flow` equal to the
 ///   provided [`Metric`]'s value.
+///
+/// The internal layout when configured with a `LinkNode` spill:
+#[doc = mermaid!("doc_diagrams/reservoir-spill-link.mmd")]
+///
+/// The internal layout when configured with an `OutputNode` spill:
+#[doc = mermaid!("doc_diagrams/reservoir-spill-output.mmd")]
 ///
 /// ## Rainfall and evaporation calculation
 /// The rainfall and evaporation volumes are calculated by multiplying the reservoir current
@@ -231,12 +214,15 @@ impl TryFrom<NodeSlot> for ReservoirOutputNodeSlot {
 ///
 /// # JSON Examples
 /// ## Reservoir with output spill
+///
+///
 /// ```json
 #[doc = include_str!("../../tests/reservoir_with_spill1.json")]
 /// ```
 ///
 /// ## Reservoir with link spill
 /// The compensation goes into the spill which routes water to the "River termination" node.
+///
 /// ```json
 #[doc = include_str!("../../tests/reservoir_with_river1.json")]
 /// ```

@@ -7,7 +7,7 @@ use crate::nodes::{LossFactor, NodeMeta, NodeSlot};
 #[cfg(feature = "core")]
 use crate::nodes::{NodeAttribute, NodeComponent};
 use crate::parameters::{ConstantValue, Parameter};
-use crate::{node_attribute_subset_enum, node_component_subset_enum};
+use crate::{mermaid, node_attribute_subset_enum, node_component_subset_enum};
 #[cfg(feature = "core")]
 use pywr_core::{
     aggregated_node::Relationship,
@@ -76,49 +76,22 @@ pub enum RoutingMethod {
 #[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
-#[doc = svgbobdoc::transform!(
 /// A link node representing a river with an optional proportional loss and routing method.
 ///
 /// With no routing method or loss this is simply a link node. With only a loss factor it
 /// creates a link node with an output node to represent the loss:
 ///
-/// ```svgbob
-///
-///             <RiverNode>.net    D
-///          .-------->L---------->*
-///      U  |
-///     -*--|
-///         !
-///         '-.-.-.-.->O
-///               <RiverNode>.loss
-///
-/// ```
+#[doc = mermaid!("doc_diagrams/river-no-routing.mmd")]
 ///
 /// With only a routing method it creates an input and output node with an aggregated node
 /// to represent the routing:
 ///
-/// ```svgbob
-///
-///
-///      U                D
-///     -*---> O    I --->*
-///
-/// ```
+#[doc = mermaid!("doc_diagrams/river-delay.mmd")]
 ///
 /// With both a loss factor and routing method it creates a link node, output node, input node
 /// and two aggregated nodes to represent the loss and routing:
 ///
-/// ```svgbob
-///
-///                            <RiverNode>.net    D
-///                         .-------->L---------->*
-///      U                  |
-///     -*---> O    I --->*-|
-///                         !
-///                         '-.-.-.-.->O
-///                                 <RiverNode>.loss
-///
-/// ```
+#[doc = mermaid!("doc_diagrams/river-delay-with-loss.mmd")]
 ///
 /// # Routing methods
 ///
@@ -134,7 +107,6 @@ pub enum RoutingMethod {
 /// The enums [`RiverNodeAttribute`] and [`RiverNodeComponent`] define the available
 /// attributes and components for this node.
 ///
-)]
 pub struct RiverNode {
     pub meta: NodeMeta,
     /// Optional local parameters.
@@ -524,37 +496,37 @@ impl RiverNode {
 }
 
 impl TryFrom<LinkNodeV1> for RiverNode {
-    type Error = ComponentConversionError;
+    type Error = Box<ComponentConversionError>;
 
     fn try_from(v1: LinkNodeV1) -> Result<Self, Self::Error> {
         let meta: NodeMeta = v1.meta.into();
 
         if v1.max_flow.is_some() {
-            return Err(ComponentConversionError::Node {
+            return Err(Box::new(ComponentConversionError::Node {
                 name: meta.name,
                 attr: "max_flow".to_string(),
                 error: ConversionError::ExtraAttribute {
                     attr: "max_flow".to_string(),
                 },
-            });
+            }));
         }
         if v1.min_flow.is_some() {
-            return Err(ComponentConversionError::Node {
+            return Err(Box::new(ComponentConversionError::Node {
                 name: meta.name,
                 attr: "min_flow".to_string(),
                 error: ConversionError::ExtraAttribute {
                     attr: "min_flow".to_string(),
                 },
-            });
+            }));
         }
         if v1.cost.is_some() {
-            return Err(ComponentConversionError::Node {
+            return Err(Box::new(ComponentConversionError::Node {
                 name: meta.name,
                 attr: "cost".to_string(),
                 error: ConversionError::ExtraAttribute {
                     attr: "cost".to_string(),
                 },
-            });
+            }));
         }
 
         let n = Self {

@@ -1,0 +1,32 @@
+graph LR
+    subgraph ThisNode["Link"]
+
+        s_in@{ shape: small-circle, label: "Incoming slot" }
+        s_out@{ shape: framed-circle, label: "Outgoing slot" }
+
+        subgraph AG1["Max flow constraint"]
+
+        L_soft_max("[name].soft_max")
+        subgraph AG2["Soft max flow constraint"]
+        L("[name]")
+        L_soft_min("[name].soft_min")
+        end
+        end
+
+        s_in --> L_soft_max --> s_out
+        s_in --> L --> s_out
+        s_in --> L_soft_min --> s_out
+
+    end
+
+    U(Upstream) --> s_in
+    s_out --> D1(Downstream)
+
+    class L linkNode;
+    class L_soft_max linkNode;
+    class L_soft_min linkNode;
+    class AG1 aggNode;
+    class AG2 aggNode;
+    class ThisNode thisNode;
+    class s_in slot;
+    class s_out slot;

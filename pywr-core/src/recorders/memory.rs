@@ -409,7 +409,7 @@ mod tests {
     use crate::scenario::{ScenarioDomainBuilder, ScenarioGroupBuilder};
     use crate::test_utils::default_timestepper;
     use float_cmp::assert_approx_eq;
-    use rand::{Rng, SeedableRng};
+    use rand::{RngExt, SeedableRng};
     use rand_chacha::ChaCha8Rng;
     use rand_distr::Normal;
 

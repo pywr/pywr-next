@@ -462,7 +462,7 @@ impl From<ConvertedTimeseriesReference> for ParameterOrTimeseriesRef {
 }
 
 impl TryFromV1<ParameterV1> for ParameterOrTimeseriesRef {
-    type Error = ComponentConversionError;
+    type Error = Box<ComponentConversionError>;
 
     fn try_from_v1(
         v1: ParameterV1,
@@ -545,14 +545,14 @@ impl TryFromV1<ParameterV1> for ParameterOrTimeseriesRef {
                     .into()
                 }
                 CoreParameter::Deficit(p) => {
-                    return Err(ComponentConversionError::Parameter {
+                    return Err(Box::new(ComponentConversionError::Parameter {
                         name: p.meta.and_then(|m| m.name).unwrap_or("unnamed".to_string()),
                         attr: "".to_string(),
                         error: ConversionError::DeprecatedParameter {
                             ty: "DeficitParameter".to_string(),
                             instead: "Use a derived metric instead.".to_string(),
                         },
-                    });
+                    }));
                 }
                 CoreParameter::DiscountFactor(p) => {
                     Parameter::DiscountFactor(p.into_v2(parent_node, conversion_data)).into()
@@ -570,28 +570,28 @@ impl TryFromV1<ParameterV1> for ParameterOrTimeseriesRef {
                     Parameter::WeeklyProfile(p.try_into_v2(parent_node, conversion_data)?).into()
                 }
                 CoreParameter::Storage(p) => {
-                    return Err(ComponentConversionError::Parameter {
+                    return Err(Box::new(ComponentConversionError::Parameter {
                         name: p.meta.and_then(|m| m.name).unwrap_or("unnamed".to_string()),
                         attr: "".to_string(),
                         error: ConversionError::DeprecatedParameter {
                             ty: "StorageParameter".to_string(),
                             instead: "Use a derived metric instead.".to_string(),
                         },
-                    });
+                    }));
                 }
                 CoreParameter::RollingMeanFlowNode(p) => {
                     Parameter::Rolling(p.try_into_v2(parent_node, conversion_data)?).into()
                 }
                 CoreParameter::ScenarioWrapper(_) => todo!("Implement ScenarioWrapperParameter"),
                 CoreParameter::Flow(p) => {
-                    return Err(ComponentConversionError::Parameter {
+                    return Err(Box::new(ComponentConversionError::Parameter {
                         name: p.meta.and_then(|m| m.name).unwrap_or("unnamed".to_string()),
                         attr: "".to_string(),
                         error: ConversionError::DeprecatedParameter {
                             ty: "FlowParameter".to_string(),
                             instead: "Use a derived metric instead.".to_string(),
                         },
-                    });
+                    }));
                 }
                 CoreParameter::RbfProfile(p) => {
                     Parameter::RbfProfile(p.try_into_v2(parent_node, conversion_data)?).into()
@@ -604,11 +604,11 @@ impl TryFromV1<ParameterV1> for ParameterOrTimeseriesRef {
                 }
             },
             ParameterV1::Custom(p) => {
-                return Err(ComponentConversionError::Parameter {
+                return Err(Box::new(ComponentConversionError::Parameter {
                     name: p.meta.name.unwrap_or_else(|| "unnamed".to_string()),
                     attr: "".to_string(),
                     error: ConversionError::UnrecognisedType { ty: p.ty },
-                });
+                }));
             }
         };
 

@@ -1,0 +1,26 @@
+graph LR
+    subgraph ThisNode["WaterTreatmentWorks"]
+
+        subgraph AG["Aggregated node"]
+                L_net("[name].net")
+                O_loss("[name].loss")
+        end
+
+        s_in@{ shape: sm-circ, label: "Incoming slot" } --> L_net("[name].net") --> L_smf
+        L_smf("[name].net_soft_min_flow") --> s_out@{ shape: framed-circle, label: "Outgoing slot" }
+        L_net --> L_asmf("[name].net_above_soft_min_flow") --> s_out
+        s_in --> O_loss("[name].loss")
+
+    end
+
+    U(Upstream) --> s_in
+    s_out --> D(Downstream)
+
+    class O_loss outputNode;
+    class L_net linkNode;
+    class L_asmf linkNode;
+    class L_smf linkNode;
+    class AG aggNode;
+    class ThisNode thisNode;
+    class s_in slot;
+    class s_out slot;

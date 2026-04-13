@@ -7,7 +7,7 @@ use crate::nodes::loss_link::LossFactor;
 use crate::nodes::{NodeAttribute, NodeComponent};
 use crate::nodes::{NodeMeta, NodeSlot};
 use crate::parameters::Parameter;
-use crate::{node_attribute_subset_enum, node_component_subset_enum};
+use crate::{mermaid, node_attribute_subset_enum, node_component_subset_enum};
 #[cfg(feature = "core")]
 use pywr_core::metric::MetricF64;
 use pywr_schema_macros::{PywrVisitAll, skip_serializing_none};
@@ -31,7 +31,6 @@ node_component_subset_enum! {
     }
 }
 
-#[doc = svgbobdoc::transform!(
 /// A node used to represent a water treatment works (WTW) with optional losses.
 ///
 /// This node comprises an internal structure that allows specifying a minimum and
@@ -43,24 +42,13 @@ node_component_subset_enum! {
 /// nodes are created.
 ///
 ///
-/// ```svgbob
-///                          <node>.net_soft_min_flow
-///                           .--->L ---.
-///            <node>.net    |           |     D
-///          .------>L ------|           |--->*- - -
-///      U  |                |           |
-///     -*--|                 '--->L ---'
-///         |                <node>.net_above_soft_min_flow
-///          '------>O
-///            <node>.loss
-/// ```
+#[doc = mermaid!("doc_diagrams/wtw.mmd")]
 ///
 /// # Available attributes and components
 ///
 /// The enums [`WaterTreatmentWorksNodeAttribute`] and [`WaterTreatmentWorksNodeComponent`] define the available
 /// attributes and components for this node.
 ///
-)]
 #[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]

@@ -9,6 +9,7 @@ pub mod data_tables;
 mod digest;
 pub mod edge;
 mod error;
+mod mermaid;
 pub mod metric;
 pub mod metric_sets;
 pub mod model;

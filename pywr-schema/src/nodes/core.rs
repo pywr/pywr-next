@@ -8,7 +8,7 @@ use crate::nodes::{NodeAttribute, NodeComponent};
 use crate::nodes::{NodeMeta, NodeSlot};
 use crate::parameters::Parameter;
 use crate::v1::{ConversionData, TryFromV1, try_convert_initial_storage, try_convert_node_attr};
-use crate::{node_attribute_subset_enum, node_component_subset_enum};
+use crate::{mermaid, node_attribute_subset_enum, node_component_subset_enum};
 #[cfg(feature = "core")]
 use pywr_core::{
     derived_metric::DerivedMetric, metric::MetricF64, node::StorageInitialVolume as CoreStorageInitialVolume,
@@ -172,7 +172,7 @@ impl InputNode {
 }
 
 impl TryFromV1<InputNodeV1> for InputNode {
-    type Error = ComponentConversionError;
+    type Error = Box<ComponentConversionError>;
 
     fn try_from_v1(
         v1: InputNodeV1,
@@ -221,98 +221,59 @@ node_component_subset_enum! {
     }
 }
 
-#[doc = svgbobdoc::transform!(
-/// A node with cost, and min and max flow constraints. The node `L`, when connected to an upstream
-/// node `U` and downstream node `D`, will look like this on the model schematic:
+/// A node with cost, and min and max flow constraints. The node `[name]`, when connected to an upstream
+/// node and downstream node, will look like this on the model schematic:
 ///
-/// ```svgbob
-///
-///          U         L         D
-///    - - ->*-------->*--------->*- - -
-/// ```
+#[doc = mermaid!("doc_diagrams/link-node-simple.mmd")]
 ///
 /// # Soft constraints
 /// This node allows setting optional maximum and minimum soft constraints via the `soft_min.flow`
 /// and `soft_max.flow` properties. These may be breached depending on the costs set on the
 /// optional nodes. However, the combined flow through the internal nodes will always be bound
-/// between the `min_flow` and `max_flow` attributes. When the two attributes are provided, the
-/// internal representation of the link will look like this:
+/// between the `min_flow` and `max_flow` attributes.
 ///
-/// ```svgbob
-///                <Link>.soft_max
-///              .------>L_max -----.
-///             |                   |
-///          U  |                   |     D
-///     - - -*--|-------->L --------|--->*- - -
-///             |                   |
-///             |                   |
-///             '------>L_min -----'
-///                <Link>.soft_min
-/// ```
 /// ## Implementation
 ///
 ///
 /// ### Only `soft_min` is defined
-/// Normally the minimum flow is delivered through `L_min` depending on the cost `soft_min.cost`. Any
-/// additional flow goes through `L`. Depending on the network demand and the value of `soft_min.cost`,
-/// the delivered flow via `L_min` may go below `soft_min.flow`.
-/// ```svgbob
-///          U                            D
-///     - - -*----------->L ------------>*- - -
-///             |                   |
-///             |                   |                () <Link>.aggregated_node
-///             '------>L_min -----'                         [ L_min, L ]
-///                <Link>.soft_min
-/// ```
+/// Normally the minimum flow is delivered through `[name].soft_min` depending on the cost `soft_min.cost`. Any
+/// additional flow goes through `[name]`. Depending on the network demand and the value of `soft_min.cost`,
+/// the delivered flow via `[name].soft_min` may go below `soft_min.flow`.
+///
+#[doc = mermaid!("doc_diagrams/link-node-soft-min-only.mmd")]
 ///
 /// The network is set up as follows:
-///  - `L_max` is not added to the network
-///  - `L_min` is added with `soft_min` data
-///  - `L` is added with `cost`, `min_flow` is set to 0 and `max_flow` is unconstrained.
-///  - An aggregated node is added to ensure that combined flow in `L_min` and `L` never exceeds
+///  - `[name].soft_max` is not added to the network
+///  - `[name].soft_min` is added with `soft_min` data
+///  - `[name]` is added with `cost`, `min_flow` is set to 0 and `max_flow` is unconstrained.
+///  - An aggregated node is added to ensure that combined flow in `[name].soft_min` and `[name]` never exceeds
 ///    the hard constraints `min_flow` and `max_flow`.
 ///
 /// ### Only `soft_max` is defined
-/// Normally the maximum flow `soft_max.max` is delivered through the `L_max` node and no flow
-/// goes through `L`. When needed, based on the value of `soft_max.cost`, the maximum `soft_max.max`
+/// Normally the maximum flow `soft_max.max` is delivered through the `[name].soft_max` node and no flow
+/// goes through `[name]`. When needed, based on the value of `soft_max.cost`, the maximum `soft_max.max`
 /// value can be breached up to a combined flow of `max_flow`.
-/// ```svgbob
-///          U                            D
-///     - - -*----------->L ------------>*- - -
-///             |                   |
-///             |                   |                () <Link>.aggregated_node
-///             '------>L_max -----'                         [ L_max, L ]
-///                <Link>.soft_max
-/// ```
+///
+#[doc = mermaid!("doc_diagrams/link-node-soft-max-only.mmd")]
 ///
 /// The network is set up as follows:
-///  - `L_min` is not added to the network.
-///  - `L` is added with the cost in `soft_max.cost` (i.e. cost of going above soft max).
-///  - `L_max` is added with max flow of `soft_max.max` and cost of `cost`.
-///  - An aggregated node is added to ensure that combined flow in `L_max` and `L` never exceeds
+///  - `[name].soft_min` is not added to the network.
+///  - `[name]` is added with the cost in `soft_max.cost` (i.e. cost of going above soft max).
+///  - `[name].soft_max` is added with max flow of `soft_max.max` and cost of `cost`.
+///  - An aggregated node is added to ensure that combined flow in `[name].soft_max` and `[name]` never exceeds
 ///    the hard constraints `min_flow` and `max_flow`.
 ///
 /// ### Both `soft_min` and `soft_max` are defined
 ///
-/// ```svgbob
-///                <Link>.soft_max
-///              .------>L_max -----.
-///             |                   |                    () <Link>.aggregated_node
-///          U  |                   |     D                   [ L_max, L_min, L ]
-///     - - -*--|-------->L --------|--->*- - -
-///             |                   |                    () <Link>.aggregate_node_l_l_min
-///             |                   |                            [ L_min, L ]
-///             '------>L_min -----'
-///                <Link>.soft_min
-/// ```
+#[doc = mermaid!("doc_diagrams/link-node-soft-cons.mmd")]
 ///
 /// The network is set up as follows:
-/// - `L_max`'s flow is unconstrained with a cost equal to `soft_max.cost`.
-/// - `L`'s flow is unconstrained with a cost equal to `cost`.
-/// - `L_min`'s max flow is constrained to `soft_min.flow` with a cost equal to `soft_min.cost`.
-/// - An aggregated node is added with `L` and `L_min` to ensure the max flow does not exceed
+/// - `[name].soft_max`'s flow is unconstrained with a cost equal to `soft_max.cost`.
+/// - `[name]`'s flow is unconstrained with a cost equal to `cost`.
+/// - `[name].soft_min`'s max flow is constrained to `soft_min.flow` with a cost equal to `soft_min.cost`.
+/// - An aggregated node is added with `[name]` and `[name].soft_min` to ensure the max flow does not exceed
 ///   `soft_max.flow`.
-/// - An aggregated node is added with `L`, `L_max` and `L_min` to ensure the flow is between
+/// - An aggregated node is added with `[name].soft_max`, `[name]` and `[name].soft_min` to ensure the flow is between
 ///   `min_flow` and `max_flow`.
 ///
 /// # Available attributes and components
@@ -330,7 +291,6 @@ node_component_subset_enum! {
 ///   with a negative cost to allow the minimum flow requirement. However, when this cannot be met
 ///   (for example when the abstraction license or the source runs out), the minimum flow will not
 ///   be honoured and the solver will find a solution.
-)]
 #[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
@@ -355,11 +315,11 @@ impl LinkNode {
     const DEFAULT_COMPONENT: LinkNodeComponent = LinkNodeComponent::Outflow;
 
     fn soft_min_node_sub_name() -> Option<&'static str> {
-        Some("soft_min_node")
+        Some("soft_min")
     }
 
     fn soft_max_node_sub_name() -> Option<&'static str> {
-        Some("soft_max_node")
+        Some("soft_max")
     }
 
     pub fn input_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
@@ -419,7 +379,7 @@ impl LinkNode {
         Some("aggregate_node")
     }
 
-    /// The aggregated node name of `L` and `L_min` when both soft constraints are provided.
+    /// The aggregated node name of `[name]` and `[name].soft_min` when both soft constraints are provided.
     fn aggregated_node_l_l_min_sub_name() -> Option<&'static str> {
         Some("aggregate_node_l_l_min")
     }
@@ -631,7 +591,7 @@ impl LinkNode {
                     network.set_aggregated_node_min_flow(node_name, Self::aggregated_node_sub_name(), value.into())?;
                 }
 
-                // add constraints on node aggregating `L` and `L_min`
+                // add constraints on node aggregating `[name]` and `[name].soft_min`
                 if let Some(soft_max_flow) = &soft_max.flow {
                     let value = soft_max_flow.load(network, args, Some(&self.meta.name))?;
                     network.set_aggregated_node_max_flow(
@@ -720,7 +680,7 @@ impl LinkNode {
 }
 
 impl TryFromV1<LinkNodeV1> for LinkNode {
-    type Error = ComponentConversionError;
+    type Error = Box<ComponentConversionError>;
 
     fn try_from_v1(
         v1: LinkNodeV1,
@@ -750,7 +710,7 @@ impl TryFromV1<LinkNodeV1> for LinkNode {
 }
 
 impl TryFromV1<BreakLinkNodeV1> for LinkNode {
-    type Error = ComponentConversionError;
+    type Error = Box<ComponentConversionError>;
 
     fn try_from_v1(
         v1: BreakLinkNodeV1,
@@ -929,7 +889,7 @@ impl OutputNode {
 }
 
 impl TryFromV1<OutputNodeV1> for OutputNode {
-    type Error = ComponentConversionError;
+    type Error = Box<ComponentConversionError>;
 
     fn try_from_v1(
         v1: OutputNodeV1,
@@ -1127,7 +1087,7 @@ impl StorageNode {
 }
 
 impl TryFromV1<StorageNodeV1> for StorageNode {
-    type Error = ComponentConversionError;
+    type Error = Box<ComponentConversionError>;
 
     fn try_from_v1(
         v1: StorageNodeV1,
@@ -1156,7 +1116,7 @@ impl TryFromV1<StorageNodeV1> for StorageNode {
 }
 
 impl TryFromV1<ReservoirNodeV1> for StorageNode {
-    type Error = ComponentConversionError;
+    type Error = Box<ComponentConversionError>;
 
     fn try_from_v1(
         v1: ReservoirNodeV1,
@@ -1199,23 +1159,17 @@ node_component_subset_enum! {
     }
 }
 
-#[doc = svgbobdoc::transform!(
 /// A node to represent a catchment inflow.
 ///
 /// Catchment nodes create a single [`InputNode`] node in the network, but
 /// ensure that the maximum and minimum flow are equal to [`Self::flow`].
 ///
-/// ```svgbob
-///  <node>     D
-///     *----->*- - -
-/// ```
 ///
 /// # Available attributes and components
 ///
 /// The enums [`CatchmentNodeAttribute`] and [`CatchmentNodeComponent`] define the available
 /// attributes and components for this node.
 ///
-)]
 #[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
@@ -1330,7 +1284,7 @@ impl CatchmentNode {
 }
 
 impl TryFromV1<CatchmentNodeV1> for CatchmentNode {
-    type Error = ComponentConversionError;
+    type Error = Box<ComponentConversionError>;
 
     fn try_from_v1(
         v1: CatchmentNodeV1,

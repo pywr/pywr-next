@@ -154,7 +154,7 @@ impl ThresholdParameter {
 }
 
 impl TryFromV1<ParameterThresholdParameterV1> for ThresholdParameter {
-    type Error = ComponentConversionError;
+    type Error = Box<ComponentConversionError>;
 
     fn try_from_v1(
         v1: ParameterThresholdParameterV1,
@@ -173,14 +173,14 @@ impl TryFromV1<ParameterThresholdParameterV1> for ThresholdParameter {
                 match values.try_into() {
                     Ok(array) => Some(array),
                     Err(v) => {
-                        return Err(ComponentConversionError::Parameter {
+                        return Err(Box::new(ComponentConversionError::Parameter {
                             name: meta.name.to_string(),
                             attr: "values".to_string(),
                             error: ConversionError::IncorrectNumberOfValues {
                                 expected: 2,
                                 found: v.len(),
                             },
-                        });
+                        }));
                     }
                 }
             }
@@ -200,7 +200,7 @@ impl TryFromV1<ParameterThresholdParameterV1> for ThresholdParameter {
 }
 
 impl TryFromV1<NodeThresholdParameterV1> for ThresholdParameter {
-    type Error = ComponentConversionError;
+    type Error = Box<ComponentConversionError>;
 
     fn try_from_v1(
         v1: NodeThresholdParameterV1,
@@ -220,14 +220,14 @@ impl TryFromV1<NodeThresholdParameterV1> for ThresholdParameter {
                 match values.try_into() {
                     Ok(array) => Some(array),
                     Err(v) => {
-                        return Err(ComponentConversionError::Parameter {
+                        return Err(Box::new(ComponentConversionError::Parameter {
                             name: meta.name.to_string(),
                             attr: "values".to_string(),
                             error: ConversionError::IncorrectNumberOfValues {
                                 expected: 2,
                                 found: v.len(),
                             },
-                        });
+                        }));
                     }
                 }
             }
@@ -247,7 +247,7 @@ impl TryFromV1<NodeThresholdParameterV1> for ThresholdParameter {
 }
 
 impl TryFromV1<StorageThresholdParameterV1> for ThresholdParameter {
-    type Error = ComponentConversionError;
+    type Error = Box<ComponentConversionError>;
 
     fn try_from_v1(
         v1: StorageThresholdParameterV1,
@@ -264,14 +264,14 @@ impl TryFromV1<StorageThresholdParameterV1> for ThresholdParameter {
                 match values.try_into() {
                     Ok(array) => Some(array),
                     Err(v) => {
-                        return Err(ComponentConversionError::Parameter {
+                        return Err(Box::new(ComponentConversionError::Parameter {
                             name: meta.name.to_string(),
                             attr: "values".to_string(),
                             error: ConversionError::IncorrectNumberOfValues {
                                 expected: 2,
                                 found: v.len(),
                             },
-                        });
+                        }));
                     }
                 }
             }
@@ -377,7 +377,7 @@ impl MultiThresholdParameter {
 }
 
 impl TryFromV1<MultiThresholdIndexParameterV1> for MultiThresholdParameter {
-    type Error = ComponentConversionError;
+    type Error = Box<ComponentConversionError>;
 
     fn try_from_v1(
         v1: MultiThresholdIndexParameterV1,
@@ -407,7 +407,7 @@ impl TryFromV1<MultiThresholdIndexParameterV1> for MultiThresholdParameter {
 }
 
 impl TryFromV1<MultipleThresholdParameterIndexParameterV1> for MultiThresholdParameter {
-    type Error = ComponentConversionError;
+    type Error = Box<ComponentConversionError>;
 
     fn try_from_v1(
         v1: MultipleThresholdParameterIndexParameterV1,

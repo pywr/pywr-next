@@ -131,90 +131,90 @@ impl FromV1<Option<ParameterMetaV1>> for ParameterMeta {
 }
 
 /// Helper function to convert a node attribute from v1 to v2.
-#[allow(clippy::result_large_err)]
 pub fn try_convert_node_attr<V1, V2>(
     name: &str,
     attr: &str,
     v1_value: V1,
     parent_node: Option<&str>,
     conversion_data: &mut ConversionData,
-) -> Result<V2, ComponentConversionError>
+) -> Result<V2, Box<ComponentConversionError>>
 where
     V1: TryIntoV2<V2, Error = ConversionError>,
 {
     v1_value
         .try_into_v2(parent_node.or(Some(name)), conversion_data)
-        .map_err(|error| ComponentConversionError::Node {
-            attr: attr.to_string(),
-            name: name.to_string(),
-            error,
+        .map_err(|error| {
+            Box::new(ComponentConversionError::Node {
+                attr: attr.to_string(),
+                name: name.to_string(),
+                error,
+            })
         })
 }
 
 /// Helper function to convert a parameter attribute from v1 to v2.
-#[allow(clippy::result_large_err)]
 pub fn try_convert_parameter_attr<V1, V2>(
     name: &str,
     attr: &str,
     v1_value: V1,
     parent_node: Option<&str>,
     conversion_data: &mut ConversionData,
-) -> Result<V2, ComponentConversionError>
+) -> Result<V2, Box<ComponentConversionError>>
 where
     V1: TryIntoV2<V2, Error = ConversionError>,
 {
     v1_value
         .try_into_v2(parent_node.or(Some(name)), conversion_data)
-        .map_err(|error| ComponentConversionError::Parameter {
-            attr: attr.to_string(),
-            name: name.to_string(),
-            error,
+        .map_err(|error| {
+            Box::new(ComponentConversionError::Parameter {
+                attr: attr.to_string(),
+                name: name.to_string(),
+                error,
+            })
         })
 }
 
 /// Helper function to convert initial storage from v1 to v2.
-#[allow(clippy::result_large_err)]
 pub fn try_convert_initial_storage(
     name: &str,
     attr: &str,
     v1_initial_volume: Option<f64>,
     v1_initial_volume_pc: Option<f64>,
-) -> Result<StorageInitialVolume, ComponentConversionError> {
+) -> Result<StorageInitialVolume, Box<ComponentConversionError>> {
     let initial_volume = if let Some(volume) = v1_initial_volume {
         StorageInitialVolume::Absolute { volume }
     } else if let Some(proportion) = v1_initial_volume_pc {
         StorageInitialVolume::Proportional { proportion }
     } else {
-        return Err(ComponentConversionError::Node {
+        return Err(Box::new(ComponentConversionError::Node {
             attr: attr.to_string(),
             name: name.to_string(),
             error: ConversionError::MissingAttribute {
                 attrs: vec!["initial_volume".to_string(), "initial_volume_pc".to_string()],
             },
-        });
+        }));
     };
 
     Ok(initial_volume)
 }
 
-#[allow(clippy::result_large_err)]
 pub fn try_convert_values(
     name: &str,
     v1_values: Option<Vec<f64>>,
     v1_external: Option<ExternalDataRef>,
     v1_table_ref: Option<TableDataRef>,
-) -> Result<ConstantFloatVec, ComponentConversionError> {
+) -> Result<ConstantFloatVec, Box<ComponentConversionError>> {
     let values: ConstantFloatVec = if let Some(values) = v1_values {
         ConstantFloatVec::Literal { values }
     } else if let Some(_external) = v1_external {
-        return Err(ComponentConversionError::Parameter {
+        return Err(Box::new(ComponentConversionError::Parameter {
             name: name.to_string(),
             attr: "url".to_string(),
             error: ConversionError::UnsupportedFeature {
                 feature: "External data references are not supported in Pywr v2. Please use a table instead."
                     .to_string(),
             },
-        });
+        }));
     } else if let Some(table_ref) = v1_table_ref {
         ConstantFloatVec::Table(
             table_ref
@@ -226,26 +226,25 @@ pub fn try_convert_values(
                 })?,
         )
     } else {
-        return Err(ComponentConversionError::Parameter {
+        return Err(Box::new(ComponentConversionError::Parameter {
             name: name.to_string(),
             attr: "table".to_string(),
             error: ConversionError::MissingAttribute {
                 attrs: vec!["values".to_string(), "table".to_string(), "url".to_string()],
             },
-        });
+        }));
     };
 
     Ok(values)
 }
 
-#[allow(clippy::result_large_err)]
 pub fn try_convert_control_curves(
     name: &str,
     v1_control_curves: Option<ParameterValues>,
     v1_control_curve: Option<ParameterValue>,
     parent_node: Option<&str>,
     conversion_data: &mut ConversionData,
-) -> Result<Vec<Metric>, ComponentConversionError> {
+) -> Result<Vec<Metric>, Box<ComponentConversionError>> {
     let control_curves = if let Some(control_curves) = v1_control_curves {
         control_curves
             .into_iter()
@@ -260,13 +259,13 @@ pub fn try_convert_control_curves(
             conversion_data,
         )?]
     } else {
-        return Err(ComponentConversionError::Parameter {
+        return Err(Box::new(ComponentConversionError::Parameter {
             name: name.to_string(),
             attr: "control_curves".to_string(),
             error: ConversionError::MissingAttribute {
                 attrs: vec!["control_curves".to_string(), "control_curve".to_string()],
             },
-        });
+        }));
     };
 
     Ok(control_curves)

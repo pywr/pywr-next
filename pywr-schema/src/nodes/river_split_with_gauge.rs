@@ -9,7 +9,7 @@ use crate::nodes::{NodeAttribute, NodeComponent};
 use crate::nodes::{NodeMeta, NodeSlot};
 use crate::parameters::Parameter;
 use crate::v1::{ConversionData, TryFromV1, try_convert_node_attr};
-use crate::{ConversionError, TryIntoV2, node_attribute_subset_enum, node_component_subset_enum};
+use crate::{ConversionError, TryIntoV2, mermaid, node_attribute_subset_enum, node_component_subset_enum};
 #[cfg(feature = "core")]
 use pywr_core::{aggregated_node::Relationship, metric::MetricF64, node::NodeIndex};
 use pywr_schema_macros::PywrVisitAll;
@@ -71,7 +71,6 @@ impl TryFrom<NodeSlot> for RiverSplitWithGaugeOutputNodeSlot {
     }
 }
 
-#[doc = svgbobdoc::transform!(
 /// A node used to represent a proportional split above a minimum residual flow (MRF) at a gauging station.
 ///
 /// The maximum flow along each split is controlled by a factor. Internally an aggregated node
@@ -81,29 +80,13 @@ impl TryFrom<NodeSlot> for RiverSplitWithGaugeOutputNodeSlot {
 /// Here the split factors are defined as a proportion of the flow not going via the mrf route.
 /// Whereas in Pywr v1.x the factors are defined as ratios.
 ///
-/// ```svgbob
-///           <node>.mrf
-///          .------>L -----.
-///      U  | <node>.bypass  |     D[<default>]
-///     -*--|------->L ------|--->*- - -
-///         | <node>.split-0 |
-///          '------>L -----'
-///                  |             D[slot_name_0]
-///                   '---------->*- - -
-///
-///         |                |
-///         | <node>.split-i |
-///          '------>L -----'
-///                  |             D[slot_name_i]
-///                   '---------->*- - -
-/// ```
+#[doc = mermaid!("doc_diagrams/river-split-with-gauge.mmd")]
 ///
 /// # Available attributes and components
 ///
 /// The enums [`RiverSplitWithGaugeNodeAttribute`] and [`RiverSplitWithGaugeNodeComponent`] define the available
 /// attributes and components for this node.
 ///
-)]
 #[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
@@ -380,7 +363,7 @@ impl RiverSplitWithGaugeNode {
 }
 
 impl TryFromV1<RiverSplitWithGaugeNodeV1> for RiverSplitWithGaugeNode {
-    type Error = ComponentConversionError;
+    type Error = Box<ComponentConversionError>;
 
     fn try_from_v1(
         v1: RiverSplitWithGaugeNodeV1,

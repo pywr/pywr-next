@@ -125,7 +125,7 @@ impl HydropowerTargetParameter {
 }
 
 impl TryFromV1<HydropowerTargetParameterV1> for HydropowerTargetParameter {
-    type Error = ComponentConversionError;
+    type Error = Box<ComponentConversionError>;
 
     fn try_from_v1(
         v1: HydropowerTargetParameterV1,

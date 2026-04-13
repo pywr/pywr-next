@@ -8,7 +8,7 @@ use crate::nodes::{NodeAttribute, NodeComponent};
 use crate::nodes::{NodeMeta, NodeSlot};
 use crate::parameters::Parameter;
 use crate::v1::{ConversionData, TryFromV1, try_convert_node_attr};
-use crate::{node_attribute_subset_enum, node_component_subset_enum};
+use crate::{mermaid, node_attribute_subset_enum, node_component_subset_enum};
 #[cfg(feature = "core")]
 use pywr_core::metric::MetricF64;
 use pywr_schema_macros::PywrVisitAll;
@@ -32,26 +32,16 @@ node_component_subset_enum! {
     }
 }
 
-#[doc = svgbobdoc::transform!(
 /// This is used to represent a minimum residual flow (MRF) at a gauging station.
 ///
 ///
-/// ```svgbob
-///            <node>.mrf
-///          .------>L -----.
-///      U  |                |     D
-///     -*--|                |--->*- - -
-///         |                |
-///          '------>L -----'
-///            <node>.bypass
-/// ```
+#[doc = mermaid!("doc_diagrams/river-gauge.mmd")]
 ///
 /// # Available attributes and components
 ///
 /// The enums [`RiverGaugeNodeAttribute`] and [`RiverGaugeNodeComponent`] define the available
 /// attributes and components for this node.
 ///
-)]
 #[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
@@ -212,7 +202,7 @@ impl RiverGaugeNode {
 }
 
 impl TryFromV1<RiverGaugeNodeV1> for RiverGaugeNode {
-    type Error = ComponentConversionError;
+    type Error = Box<ComponentConversionError>;
 
     fn try_from_v1(
         v1: RiverGaugeNodeV1,

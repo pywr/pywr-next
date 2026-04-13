@@ -61,7 +61,7 @@ impl ControlCurveInterpolatedParameter {
 }
 
 impl TryFromV1<ControlCurveInterpolatedParameterV1> for ControlCurveInterpolatedParameter {
-    type Error = ComponentConversionError;
+    type Error = Box<ComponentConversionError>;
 
     fn try_from_v1(
         v1: ControlCurveInterpolatedParameterV1,
@@ -81,22 +81,22 @@ impl TryFromV1<ControlCurveInterpolatedParameterV1> for ControlCurveInterpolated
         // Handle the case where neither or both "values" and "parameters" are defined.
         let values = match (v1.values, v1.parameters) {
             (None, None) => {
-                return Err(ComponentConversionError::Parameter {
+                return Err(Box::new(ComponentConversionError::Parameter {
                     name: meta.name,
                     attr: "control_curves".to_string(),
                     error: ConversionError::MissingAttribute {
                         attrs: vec!["values".to_string(), "parameters".to_string()],
                     },
-                });
+                }));
             }
             (Some(_), Some(_)) => {
-                return Err(ComponentConversionError::Parameter {
+                return Err(Box::new(ComponentConversionError::Parameter {
                     name: meta.name,
                     attr: "control_curves".to_string(),
                     error: ConversionError::UnexpectedAttribute {
                         attrs: vec!["values".to_string(), "parameters".to_string()],
                     },
-                });
+                }));
             }
             (Some(values), None) => values.into_iter().map(Metric::from).collect(),
             (None, Some(parameters)) => parameters
@@ -164,7 +164,7 @@ impl ControlCurveIndexParameter {
 }
 
 impl TryFromV1<ControlCurveIndexParameterV1> for ControlCurveIndexParameter {
-    type Error = ComponentConversionError;
+    type Error = Box<ComponentConversionError>;
 
     fn try_from_v1(
         v1: ControlCurveIndexParameterV1,
@@ -206,7 +206,7 @@ impl TryFromV1<ControlCurveIndexParameterV1> for ControlCurveIndexParameter {
 /// Pywr v1.x ControlCurveParameter can be an index parameter if it is not given "values"
 /// or "parameters" keys.
 impl TryFromV1<ControlCurveParameterV1> for ControlCurveIndexParameter {
-    type Error = ComponentConversionError;
+    type Error = Box<ComponentConversionError>;
 
     fn try_from_v1(
         v1: ControlCurveParameterV1,
@@ -224,13 +224,13 @@ impl TryFromV1<ControlCurveParameterV1> for ControlCurveIndexParameter {
         )?;
 
         if v1.values.is_some() || v1.parameters.is_some() {
-            return Err(ComponentConversionError::Parameter {
+            return Err(Box::new(ComponentConversionError::Parameter {
                 name: meta.name,
                 attr: "values".to_string(),
                 error: ConversionError::UnexpectedAttribute {
                     attrs: vec!["values".to_string(), "parameters".to_string()],
                 },
-            });
+            }));
         };
 
         // v1 uses proportional volume for control curves
@@ -290,7 +290,7 @@ impl ControlCurveParameter {
 }
 
 impl TryFromV1<ControlCurveParameterV1> for ControlCurveParameter {
-    type Error = ComponentConversionError;
+    type Error = Box<ComponentConversionError>;
 
     fn try_from_v1(
         v1: ControlCurveParameterV1,
@@ -315,13 +315,13 @@ impl TryFromV1<ControlCurveParameterV1> for ControlCurveParameter {
                 .map(|p| try_convert_parameter_attr(&meta.name, "parameters", p, parent_node, conversion_data))
                 .collect::<Result<Vec<_>, _>>()?
         } else {
-            return Err(ComponentConversionError::Parameter {
+            return Err(Box::new(ComponentConversionError::Parameter {
                 name: meta.name,
                 attr: "values".to_string(),
                 error: ConversionError::MissingAttribute {
                     attrs: vec!["values".to_string(), "parameters".to_string()],
                 },
-            });
+            }));
         };
 
         // v1 uses proportional volume for control curves
@@ -395,7 +395,7 @@ impl ControlCurvePiecewiseInterpolatedParameter {
 }
 
 impl TryFromV1<ControlCurvePiecewiseInterpolatedParameterV1> for ControlCurvePiecewiseInterpolatedParameter {
-    type Error = ComponentConversionError;
+    type Error = Box<ComponentConversionError>;
 
     fn try_from_v1(
         v1: ControlCurvePiecewiseInterpolatedParameterV1,

@@ -8,7 +8,7 @@ use crate::nodes::{NodeAttribute, NodeComponent};
 use crate::nodes::{NodeMeta, NodeSlot};
 use crate::parameters::Parameter;
 use crate::v1::{ConversionData, TryFromV1, try_convert_node_attr};
-use crate::{node_attribute_subset_enum, node_component_subset_enum};
+use crate::{mermaid, node_attribute_subset_enum, node_component_subset_enum};
 #[cfg(feature = "core")]
 use pywr_core::metric::MetricF64;
 use pywr_schema_macros::PywrVisitAll;
@@ -40,33 +40,18 @@ node_component_subset_enum! {
     }
 }
 
-#[doc = svgbobdoc::transform!(
 /// This node is used to create a sequence of link nodes with separate costs and constraints.
 ///
 /// Typically this node is used to model an non-linear cost by providing increasing cost
 /// values at different flows limits.
 ///
-/// ```svgbob
-///
-///            <node>.00    D
-///          .------>L ---.
-///      U  |             |         D
-///     -*--|             |-------->*-
-///         |  <node>.01  |
-///          '------>L --'
-///         :             :
-///         :             :
-///         :  <node>.n   :
-///          '~~~~~~>L ~~'
-///
-/// ```
+#[doc = mermaid!("doc_diagrams/piecewise.mmd")]
 ///
 /// # Available attributes and components
 ///
 /// The enums [`PiecewiseLinkNodeAttribute`] and [`PiecewiseLinkNodeComponent`] define the available
 /// attributes and components for this node.
 ///
-)]
 #[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
@@ -224,7 +209,7 @@ impl PiecewiseLinkNode {
 }
 
 impl TryFromV1<PiecewiseLinkNodeV1> for PiecewiseLinkNode {
-    type Error = ComponentConversionError;
+    type Error = Box<ComponentConversionError>;
 
     fn try_from_v1(
         v1: PiecewiseLinkNodeV1,
