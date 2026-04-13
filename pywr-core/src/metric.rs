@@ -241,7 +241,7 @@ impl MetricF64 {
 
             MetricF64::AggregatedNodeVolume(idx) => {
                 let node = network
-                    .get_aggregated_storage_node(idx)
+                    .get_aggregated_storage_node(*idx)
                     .ok_or(MetricF64Error::AggregatedStorageNodeIndexNotFound(*idx))?;
 
                 let network_state = state.get_network_state();

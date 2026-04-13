@@ -132,7 +132,7 @@ impl DerivedMetric {
             }
             Self::AggregatedNodeProportionalVolume(idx) => {
                 let node = network
-                    .get_aggregated_storage_node(idx)
+                    .get_aggregated_storage_node(*idx)
                     .ok_or(DerivedMetricError::AggregatedStorageNodeIndexNotFound(*idx))?;
 
                 let volume: f64 = node
@@ -192,7 +192,7 @@ impl DerivedMetric {
                     .ok_or(DerivedMetricError::NodeIndexNotFound(*idx))
             }
             Self::AggregatedNodeProportionalVolume(idx) => network
-                .get_aggregated_storage_node(idx)
+                .get_aggregated_storage_node(*idx)
                 .map(|n| n.name())
                 .ok_or(DerivedMetricError::AggregatedStorageNodeIndexNotFound(*idx)),
             Self::VirtualStorageProportionalVolume(idx) => network
@@ -211,7 +211,7 @@ impl DerivedMetric {
                     .ok_or(DerivedMetricError::NodeIndexNotFound(*idx))
             }
             Self::AggregatedNodeProportionalVolume(idx) => network
-                .get_aggregated_storage_node(idx)
+                .get_aggregated_storage_node(*idx)
                 .map(|n| n.sub_name())
                 .ok_or(DerivedMetricError::AggregatedStorageNodeIndexNotFound(*idx)),
             Self::VirtualStorageProportionalVolume(idx) => network
