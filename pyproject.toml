@@ -21,7 +21,7 @@ hdf = ["h5py"]
 
 [dependency-groups]
 dev = [
-    "pytest>=8.4.1",
+    "pytest>=9.0.3",
     "ruff>=0.12.3",
     "maturin>=1.0,<2.0",
 ]
