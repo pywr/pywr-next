@@ -157,15 +157,6 @@ pub enum NodeBounds {
     Volume(VolumeBounds),
 }
 
-#[derive(Debug, Clone)]
-pub enum Constraint {
-    MinFlow,
-    MaxFlow,
-    MinAndMaxFlow,
-    MinVolume,
-    MaxVolume,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CostAggFunc {
     Sum,
