@@ -833,7 +833,7 @@ impl Network {
         let recorder_results = self
             .recorders
             .iter()
-            .zip(recorder_internal_states.into_iter())
+            .zip(recorder_internal_states)
             .filter_map(|(recorder, internal_state)| {
                 let result = recorder
                     .finalise(self, scenario_indices, metric_set_states, internal_state)
