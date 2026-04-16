@@ -111,6 +111,13 @@ pub enum NetworkSchemaBuildError {
     LoadTimeseriesError(#[from] LoadTimeseriesError),
 }
 
+/// Error type when trying to rename a node.
+#[derive(Error, Debug)]
+pub enum NetworkRenameNodeError {
+    #[error("Node not found: {node_name}")]
+    NodeNotFound { node_name: String },
+}
+
 #[cfg(all(feature = "core", feature = "pyo3"))]
 impl TryFrom<NetworkSchemaBuildError> for PyErr {
     type Error = ();
@@ -403,6 +410,10 @@ impl NetworkSchema {
         self.nodes.iter().find(|n| n.name() == name)
     }
 
+    pub fn get_node_by_name_mut(&mut self, name: &str) -> Option<&mut Node> {
+        self.nodes.iter_mut().find(|n| n.name() == name)
+    }
+
     pub fn get_node_index_by_name(&self, name: &str) -> Option<usize> {
         self.nodes
             .iter()
@@ -443,6 +454,35 @@ impl NetworkSchema {
             Some(parameters) => parameters.iter().find(|p| p.name() == name),
             None => None,
         }
+    }
+
+    /// Attempt to rename a node from `old_name` to `new_name`
+    ///
+    /// # Errors
+    ///
+    /// - Will return [`NetworkRenameNodeError::NodeNotFound`] if there is no existing node
+    ///   with the name `old_name`.
+    pub fn rename_node(&mut self, old_name: &str, new_name: &str) -> Result<(), NetworkRenameNodeError> {
+        let node = self
+            .get_node_by_name_mut(old_name)
+            .ok_or_else(|| NetworkRenameNodeError::NodeNotFound {
+                node_name: old_name.to_string(),
+            })?;
+
+        // Update the name of the found node on its meta
+        let meta = node.meta_mut();
+        meta.name = new_name.to_string();
+
+        // Now visit all the metrics in the network and update any node references
+        self.visit_metrics_mut(&mut |m| {
+            if let Metric::Node(node_ref) = m {
+                if node_ref.name == old_name {
+                    node_ref.name = new_name.to_string();
+                }
+            }
+        });
+
+        Ok(())
     }
 
     #[cfg(feature = "core")]
@@ -641,4 +681,307 @@ impl NetworkSchema {
 pub enum NetworkSchemaRef {
     Path(PathBuf),
     Inline(NetworkSchema),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::metric::{NodeAttrReference, ParameterReference};
+    use crate::nodes::{InputNode, LinkNode, NodeMeta, OutputNode};
+
+    /// Helper to create a simple [`NodeMeta`] with the given name.
+    fn node_meta(name: &str) -> NodeMeta {
+        NodeMeta {
+            name: name.to_string(),
+            ..Default::default()
+        }
+    }
+
+    /// Helper to create a minimal [`NetworkSchema`] with the given nodes and edges.
+    fn simple_network(nodes: Vec<Node>, edges: Vec<Edge>) -> NetworkSchema {
+        NetworkSchema {
+            nodes,
+            edges,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn test_rename_node_not_found() {
+        let mut network = simple_network(vec![], vec![]);
+        let result = network.rename_node("nonexistent", "new_name");
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            NetworkRenameNodeError::NodeNotFound { .. }
+        ));
+    }
+
+    #[test]
+    fn test_rename_node_updates_name() {
+        let mut network = simple_network(
+            vec![Node::Input(InputNode {
+                meta: node_meta("supply1"),
+                ..Default::default()
+            })],
+            vec![],
+        );
+
+        let result = network.rename_node("supply1", "supply_renamed");
+        assert!(result.is_ok());
+        assert_eq!(network.nodes[0].name(), "supply_renamed");
+    }
+
+    #[test]
+    fn test_rename_node_updates_metric_node_references() {
+        // Create a link node whose `max_flow` references another node ("supply1") via a Metric::Node
+        let mut network = simple_network(
+            vec![
+                Node::Input(InputNode {
+                    meta: node_meta("supply1"),
+                    ..Default::default()
+                }),
+                Node::Link(LinkNode {
+                    meta: node_meta("link1"),
+                    max_flow: Some(Metric::Node(NodeAttrReference {
+                        name: "supply1".to_string(),
+                        attribute: None,
+                    })),
+                    ..Default::default()
+                }),
+            ],
+            vec![],
+        );
+
+        network.rename_node("supply1", "supply_new").unwrap();
+
+        // The node itself should be renamed
+        assert_eq!(network.nodes[0].name(), "supply_new");
+
+        // The metric reference inside link1 should also be updated
+        if let Node::Link(ref link) = network.nodes[1] {
+            if let Some(Metric::Node(ref node_ref)) = link.max_flow {
+                assert_eq!(node_ref.name, "supply_new");
+            } else {
+                panic!("Expected Metric::Node for max_flow");
+            }
+        } else {
+            panic!("Expected Link node");
+        }
+    }
+
+    #[test]
+    fn test_rename_node_does_not_affect_unrelated_metrics() {
+        // A link node references "other_node" — renaming "supply1" should not affect it.
+        let mut network = simple_network(
+            vec![
+                Node::Input(InputNode {
+                    meta: node_meta("supply1"),
+                    ..Default::default()
+                }),
+                Node::Link(LinkNode {
+                    meta: node_meta("link1"),
+                    cost: Some(Metric::Node(NodeAttrReference {
+                        name: "other_node".to_string(),
+                        attribute: None,
+                    })),
+                    ..Default::default()
+                }),
+            ],
+            vec![],
+        );
+
+        network.rename_node("supply1", "supply_new").unwrap();
+
+        // The unrelated reference should be unchanged
+        if let Node::Link(ref link) = network.nodes[1] {
+            if let Some(Metric::Node(ref node_ref)) = link.cost {
+                assert_eq!(node_ref.name, "other_node");
+            } else {
+                panic!("Expected Metric::Node for cost");
+            }
+        } else {
+            panic!("Expected Link node");
+        }
+    }
+
+    #[test]
+    fn test_rename_node_does_not_affect_parameter_metrics() {
+        // A Metric::Parameter reference should not be changed when renaming a node.
+        let mut network = simple_network(
+            vec![
+                Node::Input(InputNode {
+                    meta: node_meta("supply1"),
+                    ..Default::default()
+                }),
+                Node::Link(LinkNode {
+                    meta: node_meta("link1"),
+                    max_flow: Some(Metric::Parameter(ParameterReference {
+                        name: "supply1".to_string(),
+                        key: None,
+                    })),
+                    ..Default::default()
+                }),
+            ],
+            vec![],
+        );
+
+        network.rename_node("supply1", "supply_new").unwrap();
+
+        // The parameter reference should be unchanged (only Metric::Node references are updated)
+        if let Node::Link(ref link) = network.nodes[1] {
+            if let Some(Metric::Parameter(ref param_ref)) = link.max_flow {
+                assert_eq!(param_ref.name, "supply1");
+            } else {
+                panic!("Expected Metric::Parameter for max_flow");
+            }
+        } else {
+            panic!("Expected Link node");
+        }
+    }
+
+    #[test]
+    fn test_rename_node_updates_multiple_references() {
+        // Two different nodes both reference "supply1"
+        let mut network = simple_network(
+            vec![
+                Node::Input(InputNode {
+                    meta: node_meta("supply1"),
+                    ..Default::default()
+                }),
+                Node::Link(LinkNode {
+                    meta: node_meta("link1"),
+                    max_flow: Some(Metric::Node(NodeAttrReference {
+                        name: "supply1".to_string(),
+                        attribute: None,
+                    })),
+                    ..Default::default()
+                }),
+                Node::Output(OutputNode {
+                    meta: node_meta("demand1"),
+                    cost: Some(Metric::Node(NodeAttrReference {
+                        name: "supply1".to_string(),
+                        attribute: None,
+                    })),
+                    ..Default::default()
+                }),
+            ],
+            vec![],
+        );
+
+        network.rename_node("supply1", "supply_new").unwrap();
+
+        // Both references should be updated
+        if let Node::Link(ref link) = network.nodes[1] {
+            if let Some(Metric::Node(ref node_ref)) = link.max_flow {
+                assert_eq!(node_ref.name, "supply_new");
+            } else {
+                panic!("Expected Metric::Node for link max_flow");
+            }
+        }
+
+        if let Node::Output(ref output) = network.nodes[2] {
+            if let Some(Metric::Node(ref node_ref)) = output.cost {
+                assert_eq!(node_ref.name, "supply_new");
+            } else {
+                panic!("Expected Metric::Node for output cost");
+            }
+        }
+    }
+
+    #[test]
+    fn test_rename_node_updates_references_in_global_parameters() {
+        use crate::parameters::Parameter as SchemaParameter;
+
+        // Create a network with a global parameter that references "supply1" via a Metric::Node.
+        // We use JSON deserialization to build the parameter since the enum is complex.
+        // MaxParameter has a `parameter: Metric` field which can hold a Node reference.
+        let param_json = r#"{
+            "type": "Max",
+            "meta": {
+                "name": "my_param"
+            },
+            "parameter": {
+                "type": "Node",
+                "name": "supply1"
+            }
+        }"#;
+        let param: SchemaParameter = serde_json::from_str(param_json).unwrap();
+
+        let mut network = NetworkSchema {
+            nodes: vec![Node::Input(InputNode {
+                meta: node_meta("supply1"),
+                ..Default::default()
+            })],
+            edges: vec![],
+            parameters: Some(vec![param]),
+            ..Default::default()
+        };
+
+        network.rename_node("supply1", "supply_new").unwrap();
+
+        assert_eq!(network.nodes[0].name(), "supply_new");
+
+        // Verify the parameter's metric reference was also updated by serialising and checking
+        let params_json = serde_json::to_string(&network.parameters).unwrap();
+        assert!(params_json.contains("supply_new"));
+        assert!(!params_json.contains("supply1"));
+    }
+
+    #[test]
+    fn test_rename_node_updates_metric_set_references() {
+        let mut network = NetworkSchema {
+            nodes: vec![Node::Input(InputNode {
+                meta: node_meta("supply1"),
+                ..Default::default()
+            })],
+            edges: vec![],
+            metric_sets: Some(vec![MetricSet {
+                name: "my_metrics".to_string(),
+                metrics: Some(vec![Metric::Node(NodeAttrReference {
+                    name: "supply1".to_string(),
+                    attribute: None,
+                })]),
+                aggregator: None,
+                filters: Default::default(),
+            }]),
+            ..Default::default()
+        };
+
+        network.rename_node("supply1", "supply_new").unwrap();
+
+        let metric_set = &network.metric_sets.as_ref().unwrap()[0];
+        if let Metric::Node(ref node_ref) = metric_set.metrics.as_ref().unwrap()[0] {
+            assert_eq!(node_ref.name, "supply_new");
+        } else {
+            panic!("Expected Metric::Node in metric set");
+        }
+    }
+
+    #[test]
+    fn test_rename_node_literal_metric_unchanged() {
+        let mut network = simple_network(
+            vec![
+                Node::Input(InputNode {
+                    meta: node_meta("supply1"),
+                    ..Default::default()
+                }),
+                Node::Link(LinkNode {
+                    meta: node_meta("link1"),
+                    cost: Some(Metric::Literal { value: 42.0 }),
+                    ..Default::default()
+                }),
+            ],
+            vec![],
+        );
+
+        network.rename_node("supply1", "supply_new").unwrap();
+
+        // Literal metric should be unchanged
+        if let Node::Link(ref link) = network.nodes[1] {
+            assert_eq!(link.cost, Some(Metric::Literal { value: 42.0 }));
+        } else {
+            panic!("Expected Link node");
+        }
+    }
 }

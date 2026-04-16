@@ -334,6 +334,28 @@ impl Node {
         }
     }
 
+    pub fn meta_mut(&mut self) -> &mut NodeMeta {
+        match self {
+            Node::Input(n) => &mut n.meta,
+            Node::Link(n) => &mut n.meta,
+            Node::Output(n) => &mut n.meta,
+            Node::Storage(n) => &mut n.meta,
+            Node::Catchment(n) => &mut n.meta,
+            Node::RiverGauge(n) => &mut n.meta,
+            Node::LossLink(n) => &mut n.meta,
+            Node::River(n) => &mut n.meta,
+            Node::RiverSplitWithGauge(n) => &mut n.meta,
+            Node::WaterTreatmentWorks(n) => &mut n.meta,
+            Node::PiecewiseLink(n) => &mut n.meta,
+            Node::PiecewiseStorage(n) => &mut n.meta,
+            Node::Delay(n) => &mut n.meta,
+            Node::Turbine(n) => &mut n.meta,
+            Node::Reservoir(n) => n.meta_mut(),
+            Node::Placeholder(n) => &mut n.meta,
+            Node::Abstraction(n) => &mut n.meta,
+        }
+    }
+
     /// Get the input connectors for this node.
     ///
     /// The `slot` argument is used for nodes that have multiple input connectors. If the node

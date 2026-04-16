@@ -257,6 +257,10 @@ impl ReservoirNode {
         &self.storage.meta
     }
 
+    pub(crate) fn meta_mut(&mut self) -> &mut NodeMeta {
+        &mut self.storage.meta
+    }
+
     /// The sub-name of the compensation link node.
     fn compensation_node_sub_name() -> Option<&'static str> {
         Some("compensation")
