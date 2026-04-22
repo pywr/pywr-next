@@ -34,6 +34,7 @@ hdf5 = ["dep:hdf5-metno", "pywr-core/hdf5"]
 chrono = { workspace = true }
 csv = { workspace = true }
 digest = { workspace = true }
+digest-io = { workspace = true }
 float-cmp = { workspace = true }
 hdf5-metno = { workspace = true, optional = true }
 hex = { workspace = true }
