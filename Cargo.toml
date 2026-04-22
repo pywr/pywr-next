@@ -43,7 +43,7 @@ digest = "0.10"
 float-cmp = "0.10"
 hdf5-metno = { version = "0.12", features = ["static", "zlib"] }
 hex = "0.4.3"
-md-5 = "0.10"
+md-5 = "0.11"
 microlp = "0.4.0"
 ndarray = "0.17"
 num = "0.4"
