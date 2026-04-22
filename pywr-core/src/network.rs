@@ -833,7 +833,7 @@ impl Network {
         let recorder_results = self
             .recorders
             .iter()
-            .zip(recorder_internal_states.into_iter())
+            .zip(recorder_internal_states)
             .filter_map(|(recorder, internal_state)| {
                 let result = recorder
                     .finalise(self, scenario_indices, metric_set_states, internal_state)
@@ -1603,7 +1603,7 @@ impl Network {
                 sub_name: sub_name.map(|s| s.to_string()),
             })?;
 
-        node.set_max_flow_constraint(value);
+        node.set_max_flow(value);
         Ok(())
     }
 
@@ -1620,7 +1620,7 @@ impl Network {
                 sub_name: sub_name.map(|s| s.to_string()),
             })?;
 
-        node.set_min_flow_constraint(value);
+        node.set_min_flow(value);
         Ok(())
     }
 
@@ -1642,7 +1642,7 @@ impl Network {
     }
 
     /// Get a `&AggregatedStorageNode` from a node's name
-    pub fn get_aggregated_storage_node(&self, index: &AggregatedStorageNodeIndex) -> Option<&AggregatedStorageNode> {
+    pub fn get_aggregated_storage_node(&self, index: AggregatedStorageNodeIndex) -> Option<&AggregatedStorageNode> {
         self.aggregated_storage_nodes.get(index)
     }
 

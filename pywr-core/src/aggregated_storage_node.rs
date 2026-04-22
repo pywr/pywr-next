@@ -1,3 +1,4 @@
+#![warn(clippy::pedantic)]
 use crate::NodeIndex;
 use crate::metric::MetricF64;
 use crate::node::NodeMeta;
@@ -41,11 +42,11 @@ impl DerefMut for AggregatedStorageNodeVec {
 }
 
 impl AggregatedStorageNodeVec {
-    pub fn get(&self, index: &AggregatedStorageNodeIndex) -> Option<&AggregatedStorageNode> {
+    pub fn get(&self, index: AggregatedStorageNodeIndex) -> Option<&AggregatedStorageNode> {
         self.nodes.get(index.0)
     }
 
-    pub fn get_mut(&mut self, index: &AggregatedStorageNodeIndex) -> Option<&mut AggregatedStorageNode> {
+    pub fn get_mut(&mut self, index: AggregatedStorageNodeIndex) -> Option<&mut AggregatedStorageNode> {
         self.nodes.get_mut(index.0)
     }
 
@@ -56,7 +57,7 @@ impl AggregatedStorageNodeVec {
         nodes: Vec<NodeIndex>,
     ) -> AggregatedStorageNodeIndex {
         let node_index = AggregatedStorageNodeIndex(self.nodes.len());
-        let node = AggregatedStorageNode::new(&node_index, name, sub_name, nodes);
+        let node = AggregatedStorageNode::new(node_index, name, sub_name, nodes);
         self.nodes.push(node);
         node_index
     }
@@ -69,7 +70,7 @@ pub struct AggregatedStorageNode {
 }
 
 impl AggregatedStorageNode {
-    pub fn new(index: &AggregatedStorageNodeIndex, name: &str, sub_name: Option<&str>, nodes: Vec<NodeIndex>) -> Self {
+    pub fn new(index: AggregatedStorageNodeIndex, name: &str, sub_name: Option<&str>, nodes: Vec<NodeIndex>) -> Self {
         Self {
             meta: NodeMeta::new(index, name, sub_name),
             nodes,
@@ -80,7 +81,7 @@ impl AggregatedStorageNode {
         self.meta.name()
     }
 
-    /// Get a node's sub_name
+    /// Get a node's sub-name
     pub fn sub_name(&self) -> Option<&str> {
         self.meta.sub_name()
     }

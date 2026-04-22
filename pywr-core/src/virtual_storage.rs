@@ -139,7 +139,7 @@ impl VirtualStorageBuilder {
         let factors = self.factors.unwrap_or(vec![1.0; self.nodes.len()]);
 
         VirtualStorage {
-            meta: NodeMeta::new(&index, &self.name, self.sub_name.as_deref()),
+            meta: NodeMeta::new(index, &self.name, self.sub_name.as_deref()),
             nodes: self.nodes,
             factors,
             initial_volume: self.initial_volume,

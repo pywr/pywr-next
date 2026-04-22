@@ -1,5 +1,3 @@
-extern crate core;
-
 use crate::node::NodeIndex;
 use crate::recorders::RecorderIndex;
 pub use network::NetworkError;

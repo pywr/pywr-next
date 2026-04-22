@@ -530,7 +530,7 @@ where
                 .ok_or(SolverSolveError::AggregatedNodeIndexNotFound(agg_node_row.agg_node_idx))?;
 
             // Only create row for nodes that have factors
-            if let Some(node_pairs) = agg_node.get_norm_factor_pairs(network, state) {
+            if let Some(Ok(node_pairs)) = agg_node.get_norm_factor_pairs(network, state) {
                 assert_eq!(
                     agg_node_row.row_indices.len(),
                     node_pairs.len(),
@@ -587,13 +587,14 @@ where
             .iter()
             .zip(network.aggregated_nodes().deref())
         {
-            let (lb, ub): (f64, f64) = agg_node.get_current_flow_bounds(network, state).map_err(|e| {
-                SolverSolveError::AggregatedNodeError {
-                    name: agg_node.name().to_string(),
-                    sub_name: agg_node.sub_name().map(|s| s.to_string()),
-                    source: e,
-                }
-            })?;
+            let (lb, ub): (f64, f64) =
+                agg_node
+                    .get_flow_bounds(network, state)
+                    .map_err(|e| SolverSolveError::AggregatedNodeError {
+                        name: agg_node.name().to_string(),
+                        sub_name: agg_node.sub_name().map(|s| s.to_string()),
+                        source: e,
+                    })?;
             self.builder.apply_row_bounds(*row_id, lb, ub);
         }
 
@@ -951,7 +952,7 @@ where
 
         for agg_node in network.aggregated_nodes().deref() {
             // Only create row for nodes that have factors
-            if let Some(node_pairs) = agg_node.get_const_norm_factor_pairs(values) {
+            if let Some(Ok(node_pairs)) = agg_node.get_const_norm_factor_pairs(values) {
                 let mut row_indices_for_agg_node = Vec::with_capacity(node_pairs.len());
 
                 for node_pair in node_pairs {

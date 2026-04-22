@@ -134,3 +134,107 @@ impl SparseNormalCholeskyIndices {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use nalgebra_sparse::csr::CsrMatrix;
+
+    fn create_simple_csr_matrix() -> CsrMatrix<f64> {
+        // Simple 3x4 matrix:
+        // [1, 0, 2, 0]
+        // [0, 3, 0, 4]
+        // [5, 0, 6, 0]
+        CsrMatrix::try_from_csr_data(
+            3,
+            4,
+            vec![0, 2, 4, 6],
+            vec![0, 2, 1, 3, 0, 2],
+            vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+        )
+        .unwrap()
+    }
+
+    fn create_identity_like_csr() -> CsrMatrix<f64> {
+        // 3x3 diagonal-ish pattern:
+        // [1, 0, 0]
+        // [0, 1, 0]
+        // [0, 0, 1]
+        CsrMatrix::try_from_csr_data(3, 3, vec![0, 1, 2, 3], vec![0, 1, 2], vec![1.0, 1.0, 1.0]).unwrap()
+    }
+
+    fn create_dense_csr() -> CsrMatrix<f64> {
+        // 2x3 fully dense matrix:
+        // [1, 2, 3]
+        // [4, 5, 6]
+        CsrMatrix::try_from_csr_data(
+            2,
+            3,
+            vec![0, 3, 6],
+            vec![0, 1, 2, 0, 1, 2],
+            vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn test_from_simple_matrix() {
+        let a = create_simple_csr_matrix();
+        let indices = SparseNormalCholeskyIndices::from_matrix(&a);
+
+        // Check that lindptr has correct length (nrows + 1)
+        assert_eq!(indices.lindptr.len(), a.nrows() + 1);
+
+        // Check that ldiag_indptr has correct length (nrows)
+        assert_eq!(indices.ldiag_indptr.len(), a.nrows());
+
+        // anorm_indptr should start with 0
+        assert_eq!(indices.anorm_indptr[0], 0);
+
+        // ldecomp_indptr should start with 0
+        assert_eq!(indices.ldecomp_indptr[0], 0);
+    }
+
+    #[test]
+    fn test_from_identity_like_matrix() {
+        let a = create_identity_like_csr();
+        let indices = SparseNormalCholeskyIndices::from_matrix(&a);
+
+        assert_eq!(indices.lindptr.len(), a.nrows() + 1);
+        assert_eq!(indices.ldiag_indptr.len(), a.nrows());
+        assert_eq!(indices.ltindptr.len(), a.nrows() + 1);
+    }
+
+    #[test]
+    fn test_from_dense_matrix() {
+        let a = create_dense_csr();
+        let indices = SparseNormalCholeskyIndices::from_matrix(&a);
+
+        assert_eq!(indices.lindptr.len(), a.nrows() + 1);
+        assert_eq!(indices.ldiag_indptr.len(), a.nrows());
+
+        // For dense input, AAT will be dense, so L should have entries
+        assert!(!indices.lindices.is_empty());
+    }
+
+    #[test]
+    fn test_ltmap_length_matches_lindices() {
+        let a = create_simple_csr_matrix();
+        let indices = SparseNormalCholeskyIndices::from_matrix(&a);
+
+        // ltmap should have same length as lindices
+        assert_eq!(indices.ltmap.len(), indices.lindices.len());
+    }
+
+    #[test]
+    fn test_indptr_consistency() {
+        let a = create_simple_csr_matrix();
+        let indices = SparseNormalCholeskyIndices::from_matrix(&a);
+
+        // anorm_indptr_i and anorm_indptr_j should have same length
+        assert_eq!(indices.anorm_indptr_i.len(), indices.anorm_indptr_j.len());
+
+        // ldecomp_indptr_i and ldecomp_indptr_j should have same length
+        assert_eq!(indices.ldecomp_indptr_i.len(), indices.ldecomp_indptr_j.len());
+    }
+}

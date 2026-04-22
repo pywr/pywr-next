@@ -1,7 +1,8 @@
+#![warn(clippy::pedantic)]
 use crate::NodeIndex;
-use crate::metric::{MetricF64, MetricF64Error};
+use crate::metric::{ConstantMetricF64Error, MetricF64, MetricF64Error};
 use crate::network::Network;
-use crate::node::{Constraint, FlowConstraints, NodeMeta};
+use crate::node::{FlowConstraints, NodeMeta};
 use crate::state::{ConstParameterValues, State};
 use std::fmt::Display;
 use std::ops::{Deref, DerefMut};
@@ -44,6 +45,7 @@ impl DerefMut for AggregatedNodeVec {
 }
 
 impl AggregatedNodeVec {
+    #[must_use]
     pub fn get(&self, index: &AggregatedNodeIndex) -> Option<&AggregatedNode> {
         self.nodes.get(index.0)
     }
@@ -60,7 +62,7 @@ impl AggregatedNodeVec {
         relationship: Option<Relationship>,
     ) -> AggregatedNodeIndex {
         let node_index = AggregatedNodeIndex(self.nodes.len());
-        let node = AggregatedNode::new(&node_index, name, sub_name, nodes, relationship);
+        let node = AggregatedNode::new(node_index, name, sub_name, nodes, relationship);
         self.nodes.push(node);
         node_index
     }
@@ -87,12 +89,12 @@ pub enum Factors {
 
 impl Factors {
     /// Returns true if all factors and any right-hands sides are constant
+    #[must_use]
     pub fn is_constant(&self) -> bool {
         match self {
-            Self::Proportion { factors } => factors.iter().all(|f| f.is_constant()),
-            Self::Ratio { factors } => factors.iter().all(|f| f.is_constant()),
+            Self::Proportion { factors } | Self::Ratio { factors } => factors.iter().all(MetricF64::is_constant),
             Self::Coefficients { factors, rhs } => {
-                factors.iter().all(|f| f.is_constant()) && rhs.as_ref().map(|r| r.is_constant()).unwrap_or(true)
+                factors.iter().all(MetricF64::is_constant) && rhs.as_ref().is_none_or(MetricF64::is_constant)
             }
         }
     }
@@ -107,9 +109,12 @@ pub struct Exclusivity {
 }
 
 impl Exclusivity {
+    #[must_use]
     pub fn min_active(&self) -> u64 {
         self.min_active
     }
+
+    #[must_use]
     pub fn max_active(&self) -> u64 {
         self.max_active
     }
@@ -125,17 +130,21 @@ pub enum Relationship {
 }
 
 impl Relationship {
+    #[must_use]
     pub fn new_ratio_factors(factors: &[MetricF64]) -> Self {
         Relationship::Factored(Factors::Ratio {
             factors: factors.to_vec(),
         })
     }
+
+    #[must_use]
     pub fn new_proportion_factors(factors: &[MetricF64]) -> Self {
         Relationship::Factored(Factors::Proportion {
             factors: factors.to_vec(),
         })
     }
 
+    #[must_use]
     pub fn new_coefficient_factors(factors: &[MetricF64], rhs: Option<MetricF64>) -> Self {
         Relationship::Factored(Factors::Coefficients {
             factors: factors.to_vec(),
@@ -143,6 +152,7 @@ impl Relationship {
         })
     }
 
+    #[must_use]
     pub fn new_exclusive(min_active: u64, max_active: u64) -> Self {
         Relationship::Exclusive(Exclusivity { min_active, max_active })
     }
@@ -191,20 +201,25 @@ impl<'a> NodeFactorPair<'a> {
         Self { node0, node1, rhs }
     }
 
+    #[must_use]
     pub fn node0_indices(&self) -> &[NodeIndex] {
         self.node0.indices
     }
+    #[must_use]
     pub fn node0_factor(&self) -> f64 {
         self.node0.factor
     }
 
+    #[must_use]
     pub fn node1_indices(&self) -> &[NodeIndex] {
         self.node1.indices
     }
+    #[must_use]
     pub fn node1_factor(&self) -> f64 {
         self.node1.factor
     }
 
+    #[must_use]
     pub fn rhs(&self) -> f64 {
         self.rhs
     }
@@ -236,28 +251,34 @@ impl<'a> NodeConstFactorPair<'a> {
         Self { node0, node1, rhs }
     }
 
+    #[must_use]
     pub fn node0_indices(&self) -> &[NodeIndex] {
         self.node0.indices
     }
+    #[must_use]
     pub fn node0_factor(&self) -> Option<f64> {
         self.node0.factor
     }
 
+    #[must_use]
     pub fn node1_indices(&self) -> &[NodeIndex] {
         self.node1.indices
     }
+    #[must_use]
     pub fn node1_factor(&self) -> Option<f64> {
         self.node1.factor
     }
 
+    #[must_use]
     pub fn rhs(&self) -> f64 {
         self.rhs
     }
 }
 
 impl AggregatedNode {
+    #[must_use]
     pub fn new(
-        index: &AggregatedNodeIndex,
+        index: AggregatedNodeIndex,
         name: &str,
         sub_name: Option<&str>,
         nodes: &[Vec<NodeIndex>],
@@ -271,58 +292,61 @@ impl AggregatedNode {
         }
     }
 
+    #[must_use]
     pub fn name(&self) -> &str {
         self.meta.name()
     }
 
-    /// Get a node's sub_name
+    /// Get a node's sub-name
+    #[must_use]
     pub fn sub_name(&self) -> Option<&str> {
         self.meta.sub_name()
     }
 
     /// Get a node's full name
+    #[must_use]
     pub fn full_name(&self) -> (&str, Option<&str>) {
         self.meta.full_name()
     }
 
+    #[must_use]
     pub fn index(&self) -> AggregatedNodeIndex {
         *self.meta.index()
     }
 
     pub fn iter_nodes(&self) -> impl Iterator<Item = &[NodeIndex]> {
-        self.nodes.iter().map(|n| n.as_slice())
+        self.nodes.iter().map(Vec::as_slice)
     }
 
     /// Does the aggregated node have a mutual exclusivity relationship?
+    #[must_use]
     pub fn has_exclusivity(&self) -> bool {
         self.relationship
             .as_ref()
-            .map(|r| matches!(r, Relationship::Exclusive(_)))
-            .unwrap_or(false)
+            .is_some_and(|r| matches!(r, Relationship::Exclusive(_)))
     }
 
     /// Does the aggregated node have factors?
+    #[must_use]
     pub fn has_factors(&self) -> bool {
         self.relationship
             .as_ref()
-            .map(|r| matches!(r, Relationship::Factored(_)))
-            .unwrap_or(false)
+            .is_some_and(|r| matches!(r, Relationship::Factored(_)))
     }
 
     /// Does the aggregated node have constant factors?
+    #[must_use]
     pub fn has_const_factors(&self) -> bool {
-        self.relationship
-            .as_ref()
-            .map(|r| match r {
-                Relationship::Factored(f) => f.is_constant(),
-                _ => false,
-            })
-            .unwrap_or(false)
+        self.relationship.as_ref().is_some_and(|r| match r {
+            Relationship::Factored(f) => f.is_constant(),
+            Relationship::Exclusive(_) => false,
+        })
     }
     pub fn set_relationship(&mut self, relationship: Option<Relationship>) {
         self.relationship = relationship;
     }
 
+    #[must_use]
     pub fn get_exclusivity(&self) -> Option<&Exclusivity> {
         self.relationship.as_ref().and_then(|r| match r {
             Relationship::Factored(_) => None,
@@ -330,6 +354,7 @@ impl AggregatedNode {
         })
     }
 
+    #[must_use]
     pub fn get_factors(&self) -> Option<&Factors> {
         self.relationship.as_ref().and_then(|r| match r {
             Relationship::Factored(f) => Some(f),
@@ -338,6 +363,7 @@ impl AggregatedNode {
     }
 
     /// Return normalised factor pairs
+    #[must_use]
     pub fn get_factor_node_pairs(&self) -> Option<Vec<(&[NodeIndex], &[NodeIndex])>> {
         if self.has_factors() {
             let n0 = self.nodes[0].as_slice();
@@ -355,15 +381,28 @@ impl AggregatedNode {
     }
 
     /// Return constant normalised factor pairs
-    pub fn get_const_norm_factor_pairs(&self, values: &ConstParameterValues) -> Option<Vec<NodeConstFactorPair<'_>>> {
+    ///
+    /// # Error
+    ///
+    /// A [`ConstantFactorError`] with variant corresponding to the type of factors will be returned
+    /// if there is any error calculating the factor values.
+    #[must_use]
+    pub fn get_const_norm_factor_pairs(
+        &self,
+        values: &ConstParameterValues,
+    ) -> Option<Result<Vec<NodeConstFactorPair<'_>>, ConstantFactorError>> {
         if let Some(factors) = self.get_factors() {
             let pairs = match factors {
                 Factors::Proportion { factors } => {
                     get_const_norm_proportional_factor_pairs(factors, &self.nodes, values)
+                        .map_err(ConstantFactorError::Proportional)
                 }
-                Factors::Ratio { factors } => get_const_norm_ratio_factor_pairs(factors, &self.nodes, values),
+                Factors::Ratio { factors } => {
+                    get_const_norm_ratio_factor_pairs(factors, &self.nodes, values).map_err(ConstantFactorError::Ratio)
+                }
                 Factors::Coefficients { factors, rhs } => {
                     get_const_coefficient_factor_pairs(factors, &self.nodes, rhs.as_ref(), values)
+                        .map_err(ConstantFactorError::Coefficient)
                 }
             };
             Some(pairs)
@@ -374,15 +413,29 @@ impl AggregatedNode {
 
     /// Return normalised factor pairs
     ///
-    pub fn get_norm_factor_pairs(&self, model: &Network, state: &State) -> Option<Vec<NodeFactorPair<'_>>> {
+    /// # Error
+    ///
+    /// A [`FactorError`] with variant corresponding to the type of factors will be returned
+    /// if there is any error calculating the factor values.
+    ///
+    #[must_use]
+    pub fn get_norm_factor_pairs(
+        &self,
+        model: &Network,
+        state: &State,
+    ) -> Option<Result<Vec<NodeFactorPair<'_>>, FactorError>> {
         if let Some(factors) = self.get_factors() {
             let pairs = match factors {
                 Factors::Proportion { factors } => {
                     get_norm_proportional_factor_pairs(factors, &self.nodes, model, state)
+                        .map_err(FactorError::Proportional)
                 }
-                Factors::Ratio { factors } => get_norm_ratio_factor_pairs(factors, &self.nodes, model, state),
+                Factors::Ratio { factors } => {
+                    get_norm_ratio_factor_pairs(factors, &self.nodes, model, state).map_err(FactorError::Ratio)
+                }
                 Factors::Coefficients { factors, rhs } => {
                     get_coefficient_factor_pairs(factors, &self.nodes, rhs.as_ref(), model, state)
+                        .map_err(FactorError::Coefficient)
                 }
             };
             Some(pairs)
@@ -391,59 +444,84 @@ impl AggregatedNode {
         }
     }
 
-    pub fn set_min_flow_constraint(&mut self, value: Option<MetricF64>) {
+    pub fn set_min_flow(&mut self, value: Option<MetricF64>) {
         self.flow_constraints.min_flow = value;
     }
-    pub fn get_min_flow_constraint(&self, model: &Network, state: &State) -> Result<f64, MetricF64Error> {
+
+    /// Get the min flow constraint value.
+    ///
+    /// # Errors
+    ///
+    /// If the constraint is a metric any error when attempting to retrieve
+    /// that metric will be returned. See [`MetricF64::get_value`] for more information.
+    pub fn get_min_flow(&self, model: &Network, state: &State) -> Result<f64, MetricF64Error> {
         self.flow_constraints.get_min_flow(model, state)
     }
-    pub fn set_max_flow_constraint(&mut self, value: Option<MetricF64>) {
+    pub fn set_max_flow(&mut self, value: Option<MetricF64>) {
         self.flow_constraints.max_flow = value;
     }
-    pub fn get_max_flow_constraint(&self, model: &Network, state: &State) -> Result<f64, MetricF64Error> {
+
+    /// Get the max flow constraint value.
+    ///
+    /// # Errors
+    ///
+    /// If the constraint is a metric any error when attempting to retrieve
+    /// that metric will be returned. See [`MetricF64::get_value`] for more information.
+    pub fn get_max_flow(&self, model: &Network, state: &State) -> Result<f64, MetricF64Error> {
         self.flow_constraints.get_max_flow(model, state)
     }
 
-    /// Set a constraint on a node.
-    pub fn set_constraint(
-        &mut self,
-        value: Option<MetricF64>,
-        constraint: Constraint,
-    ) -> Result<(), AggregatedNodeError> {
-        match constraint {
-            Constraint::MinFlow => self.set_min_flow_constraint(value),
-            Constraint::MaxFlow => self.set_max_flow_constraint(value),
-            Constraint::MinAndMaxFlow => {
-                self.set_min_flow_constraint(value.clone());
-                self.set_max_flow_constraint(value);
-            }
-            Constraint::MinVolume => return Err(AggregatedNodeError::StorageConstraintsUndefined),
-            Constraint::MaxVolume => return Err(AggregatedNodeError::StorageConstraintsUndefined),
-        }
-        Ok(())
-    }
-
-    pub fn get_current_min_flow(&self, model: &Network, state: &State) -> Result<f64, MetricF64Error> {
-        self.flow_constraints.get_min_flow(model, state)
-    }
-
-    pub fn get_current_max_flow(&self, model: &Network, state: &State) -> Result<f64, MetricF64Error> {
-        self.flow_constraints.get_max_flow(model, state)
-    }
-
-    pub fn get_current_flow_bounds(&self, model: &Network, state: &State) -> Result<(f64, f64), AggregatedNodeError> {
-        match (
-            self.get_current_min_flow(model, state),
-            self.get_current_max_flow(model, state),
-        ) {
+    /// Get the min and max flow bounds as a tuple.
+    ///
+    /// # Errors
+    ///
+    /// If either constraint is a metric any error when attempting to retrieve
+    /// that metric will be returned. See [`MetricF64::get_value`] for more information.
+    pub fn get_flow_bounds(&self, model: &Network, state: &State) -> Result<(f64, f64), AggregatedNodeError> {
+        match (self.get_min_flow(model, state), self.get_max_flow(model, state)) {
             (Ok(min_flow), Ok(max_flow)) => Ok((min_flow, max_flow)),
             _ => Err(AggregatedNodeError::FlowConstraintsUndefined),
         }
     }
 
+    #[must_use]
     pub fn default_metric(&self) -> MetricF64 {
         MetricF64::AggregatedNodeInFlow(self.index())
     }
+}
+
+#[derive(Debug, Error)]
+pub enum FactorError {
+    #[error("Error calculating proportional factors: {0}")]
+    Proportional(#[from] ProportionalFactorError),
+    #[error("Error calculating ratio factors: {0}")]
+    Ratio(#[from] RatioFactorError),
+    #[error("Error calculating coefficient factors: {0}")]
+    Coefficient(#[from] CoefficientFactorError),
+}
+
+#[derive(Debug, Error)]
+pub enum ConstantFactorError {
+    #[error("Error calculating proportional factors: {0}")]
+    Proportional(#[from] ConstantProportionalFactorError),
+    #[error("Error calculating ratio factors: {0}")]
+    Ratio(#[from] ConstantRatioFactorError),
+    #[error("Error calculating coefficient factors: {0}")]
+    Coefficient(#[from] ConstantCoefficientFactorError),
+}
+
+#[derive(Debug, Error)]
+pub enum ProportionalFactorError {
+    #[error(
+        "Found {num_factors} proportional factors and {num_nodes} nodes in aggregated node. The number of proportional factors should equal one less than the number of nodes."
+    )]
+    IncorrectNumberOfFactors { num_factors: usize, num_nodes: usize },
+    #[error("Failed to get metric value for factor: {0}")]
+    MetricF64(#[from] MetricF64Error),
+    #[error("Negative or zero factor values are not allowed. Found: {value}")]
+    NegativeOrZeroFactor { value: f64 },
+    #[error("Sum total of factors is greater than or equal to one. Total: {total} ")]
+    TotalIsGreaterThanOrEqualToOne { total: f64 },
 }
 
 /// Calculate factor pairs for proportional factors.
@@ -456,48 +534,59 @@ fn get_norm_proportional_factor_pairs<'a>(
     nodes: &'a [Vec<NodeIndex>],
     model: &Network,
     state: &State,
-) -> Vec<NodeFactorPair<'a>> {
-    // TODO handle error cases more gracefully
+) -> Result<Vec<NodeFactorPair<'a>>, ProportionalFactorError> {
     if factors.len() != nodes.len() - 1 {
-        panic!(
-            "Found {} proportional factors and {} nodes in aggregated node. The number of proportional factors should equal one less than the number of nodes.",
-            factors.len(),
-            nodes.len()
-        );
+        return Err(ProportionalFactorError::IncorrectNumberOfFactors {
+            num_factors: factors.len(),
+            num_nodes: nodes.len(),
+        });
     }
 
     // First get the current factor values
     let values: Vec<f64> = factors
         .iter()
         .map(|f| {
-            let v = f.get_value(model, state).expect("Failed to get current factor value.");
+            let v = f.get_value(model, state)?;
             if v < 0.0 {
-                panic!("The provided value is negative.");
+                Err(ProportionalFactorError::NegativeOrZeroFactor { value: v })
             } else {
-                v
+                Ok(v)
             }
         })
-        .collect::<Vec<_>>();
+        .collect::<Result<Vec<_>, _>>()?;
 
     let total: f64 = values.iter().sum();
-    if total < 0.0 {
-        panic!("Proportional factors are too small or negative.");
-    }
     if total >= 1.0 {
-        panic!("Proportional factors are too large.")
+        return Err(ProportionalFactorError::TotalIsGreaterThanOrEqualToOne { total });
     }
 
     let f0 = 1.0 - total;
     let n0 = nodes[0].as_slice();
 
-    nodes
+    let pairs = nodes
         .iter()
         .skip(1)
         .zip(values)
         .map(move |(n1, f1)| {
             NodeFactorPair::new(NodeFactor::new(n0, 1.0), NodeFactor::new(n1.as_slice(), -f0 / f1), 0.0)
         })
-        .collect::<Vec<_>>()
+        .collect::<Vec<_>>();
+
+    Ok(pairs)
+}
+
+#[derive(Debug, Error)]
+pub enum ConstantProportionalFactorError {
+    #[error(
+        "Found {num_factors} proportional factors and {num_nodes} nodes in aggregated node. The number of proportional factors should equal one less than the number of nodes."
+    )]
+    IncorrectNumberOfFactors { num_factors: usize, num_nodes: usize },
+    #[error("Failed to get metric value for factor: {0}")]
+    MetricF64(#[from] ConstantMetricF64Error),
+    #[error("Negative or zero factor values are not allowed. Found: {value}")]
+    NegativeOrZeroFactor { value: f64 },
+    #[error("Sum total of factors is greater than or equal to one. Total: {total} ")]
+    TotalIsGreaterThanOrEqualToOne { total: f64 },
 }
 
 /// Calculate constant factor pairs for proportional factors.
@@ -510,39 +599,35 @@ fn get_const_norm_proportional_factor_pairs<'a>(
     factors: &[MetricF64],
     nodes: &'a [Vec<NodeIndex>],
     values: &ConstParameterValues,
-) -> Vec<NodeConstFactorPair<'a>> {
-    // TODO handle error cases more gracefully
+) -> Result<Vec<NodeConstFactorPair<'a>>, ConstantProportionalFactorError> {
     if factors.len() != nodes.len() - 1 {
-        panic!(
-            "Found {} proportional factors and {} nodes in aggregated node. The number of proportional factors should equal one less than the number of nodes.",
-            factors.len(),
-            nodes.len()
-        );
+        return Err(ConstantProportionalFactorError::IncorrectNumberOfFactors {
+            num_factors: factors.len(),
+            num_nodes: nodes.len(),
+        });
     }
 
     // First get the current factor values, ensuring they are all non-negative
     let factor_values: Vec<Option<f64>> = factors
         .iter()
         .map(|f| {
-            let v = f
-                .try_get_constant_value(values)
-                .expect("Failed to get current factor value.");
+            let v = f.try_get_constant_value(values)?;
             if let Some(v) = v {
                 if v < 0.0 {
-                    panic!("The provided value is negative.");
+                    Err(ConstantProportionalFactorError::NegativeOrZeroFactor { value: v })
                 } else {
-                    Some(v)
+                    Ok(Some(v))
                 }
             } else {
-                None
+                Ok(None)
             }
         })
-        .collect::<Vec<_>>();
+        .collect::<Result<Vec<_>, _>>()?;
 
     let n0 = nodes[0].as_slice();
 
     // To calculate the factors we require that every factor is available.
-    if factor_values.iter().any(|v| v.is_none()) {
+    let pairs = if factor_values.iter().any(Option::is_none) {
         // At least one factor is not available; therefore we can not calculate "f0"
         nodes
             .iter()
@@ -562,11 +647,8 @@ fn get_const_norm_proportional_factor_pairs<'a>(
             .iter()
             .map(|v| v.expect("Factor is `None`; this should be impossible."))
             .sum();
-        if total < 0.0 {
-            panic!("Proportional factors are too small or negative.");
-        }
         if total >= 1.0 {
-            panic!("Proportional factors are too large.")
+            return Err(ConstantProportionalFactorError::TotalIsGreaterThanOrEqualToOne { total });
         }
 
         let f0 = 1.0 - total;
@@ -583,7 +665,23 @@ fn get_const_norm_proportional_factor_pairs<'a>(
                 )
             })
             .collect::<Vec<_>>()
-    }
+    };
+
+    Ok(pairs)
+}
+
+#[derive(Debug, Error)]
+pub enum RatioFactorError {
+    #[error(
+        "Found {num_factors} ratio factors and {num_nodes} nodes in aggregated node. The number of ratio factors should equal the number of nodes."
+    )]
+    IncorrectNumberOfFactors { num_factors: usize, num_nodes: usize },
+    #[error("Failed to get metric value for factor: {0}")]
+    MetricF64(#[from] MetricF64Error),
+    #[error("Negative or zero factor values are not allowed. Found: {value}")]
+    NegativeOrZeroFactor { value: f64 },
+    #[error("Sum total of factors is greater than or equal to one. Total: {total} ")]
+    TotalIsGreaterThanOrEqualToOne { total: f64 },
 }
 
 /// Calculate factor pairs for ratio factors.
@@ -596,32 +694,51 @@ fn get_norm_ratio_factor_pairs<'a>(
     nodes: &'a [Vec<NodeIndex>],
     model: &Network,
     state: &State,
-) -> Vec<NodeFactorPair<'a>> {
+) -> Result<Vec<NodeFactorPair<'a>>, RatioFactorError> {
     // TODO handle error cases more gracefully
     if factors.len() != nodes.len() {
-        panic!(
-            "Found {} ratio factors and {} nodes in aggregated node. The number of ratio factors should equal the number of nodes.",
-            factors.len(),
-            nodes.len()
-        );
+        return Err(RatioFactorError::IncorrectNumberOfFactors {
+            num_factors: factors.len(),
+            num_nodes: nodes.len(),
+        });
     }
 
     let n0 = nodes[0].as_slice();
-    let f0 = factors[0].get_value(model, state).unwrap();
+    let f0 = factors[0].get_value(model, state)?;
     if f0 < 0.0 {
-        panic!("Negative factor is not allowed");
+        return Err(RatioFactorError::NegativeOrZeroFactor { value: f0 });
     }
 
-    nodes
+    let pairs = nodes
         .iter()
         .zip(factors)
         .skip(1)
-        .map(move |(n1, f1)| {
-            let v1 = f1.get_value(model, state).expect("Failed to get current factor value.");
+        .map(|(n1, f1)| {
+            let v1 = f1.get_value(model, state)?;
 
-            NodeFactorPair::new(NodeFactor::new(n0, 1.0), NodeFactor::new(n1.as_slice(), -f0 / v1), 0.0)
+            Ok(NodeFactorPair::new(
+                NodeFactor::new(n0, 1.0),
+                NodeFactor::new(n1.as_slice(), -f0 / v1),
+                0.0,
+            ))
         })
-        .collect::<Vec<_>>()
+        .collect::<Result<Vec<_>, RatioFactorError>>()?;
+
+    Ok(pairs)
+}
+
+#[derive(Debug, Error)]
+pub enum ConstantRatioFactorError {
+    #[error(
+        "Found {num_factors} ratio factors and {num_nodes} nodes in aggregated node. The number of ratio factors should equal the number of nodes."
+    )]
+    IncorrectNumberOfFactors { num_factors: usize, num_nodes: usize },
+    #[error("Failed to get metric value for factor: {0}")]
+    MetricF64(#[from] ConstantMetricF64Error),
+    #[error("Negative or zero factor values are not allowed. Found: {value}")]
+    NegativeOrZeroFactor { value: f64 },
+    #[error("Sum total of factors is greater than or equal to one. Total: {total} ")]
+    TotalIsGreaterThanOrEqualToOne { total: f64 },
 }
 
 /// Constant ratio factors using constant values if they are available. If they are not available,
@@ -630,41 +747,35 @@ fn get_const_norm_ratio_factor_pairs<'a>(
     factors: &[MetricF64],
     nodes: &'a [Vec<NodeIndex>],
     values: &ConstParameterValues,
-) -> Vec<NodeConstFactorPair<'a>> {
-    // TODO handle error cases more gracefully
+) -> Result<Vec<NodeConstFactorPair<'a>>, ConstantRatioFactorError> {
     if factors.len() != nodes.len() {
-        panic!(
-            "Found {} ratio factors and {} nodes in aggregated node. The number of ratio factors should equal the number of nodes.",
-            factors.len(),
-            nodes.len()
-        );
+        return Err(ConstantRatioFactorError::IncorrectNumberOfFactors {
+            num_factors: factors.len(),
+            num_nodes: nodes.len(),
+        });
     }
 
     let n0 = nodes[0].as_slice();
     // Try to convert the factor into a constant
 
-    let f0 = factors[0]
-        .try_get_constant_value(values)
-        .unwrap_or_else(|e| panic!("Failed to get constant value for factor: {e}",));
+    let f0 = factors[0].try_get_constant_value(values)?;
 
     if let Some(v0) = f0 {
         if v0 < 0.0 {
-            panic!("Negative factor is not allowed");
+            return Err(ConstantRatioFactorError::NegativeOrZeroFactor { value: v0 });
         }
     }
 
-    nodes
+    let pairs = nodes
         .iter()
         .zip(factors)
         .skip(1)
-        .map(move |(n1, f1)| {
-            let v1 = f1
-                .try_get_constant_value(values)
-                .unwrap_or_else(|e| panic!("Failed to get constant value for factor: {e}",));
+        .map(|(n1, f1)| {
+            let v1 = f1.try_get_constant_value(values)?;
 
             if let Some(v) = v1 {
                 if v < 0.0 {
-                    return Err(AggregatedNodeError::NegativeFactor);
+                    return Err(ConstantRatioFactorError::NegativeOrZeroFactor { value: v });
                 }
             }
 
@@ -676,8 +787,21 @@ fn get_const_norm_ratio_factor_pairs<'a>(
                 0.0,
             ))
         })
-        .collect::<Result<Vec<_>, AggregatedNodeError>>()
-        .expect("Failed to get current factor values. Ensure that all factors are not negative.")
+        .collect::<Result<Vec<_>, ConstantRatioFactorError>>()?;
+
+    Ok(pairs)
+}
+
+#[derive(Debug, Error)]
+pub enum CoefficientFactorError {
+    #[error(
+        "Found {num_factors} coefficient factors and {num_nodes} nodes in aggregated node. The number of coefficient factors should equal the number of nodes."
+    )]
+    IncorrectNumberOfFactors { num_factors: usize, num_nodes: usize },
+    #[error("Coefficient factors are not yet implemented for more than two nodes.")]
+    MoreThanTwoFactors,
+    #[error("Failed to get metric value for factor: {0}")]
+    MetricF64(#[from] MetricF64Error),
 }
 
 /// Calculate factor pairs for coefficient factors.
@@ -691,29 +815,43 @@ fn get_coefficient_factor_pairs<'a>(
     rhs: Option<&MetricF64>,
     model: &Network,
     state: &State,
-) -> Vec<NodeFactorPair<'a>> {
+) -> Result<Vec<NodeFactorPair<'a>>, CoefficientFactorError> {
     // TODO handle error cases more gracefully
     if factors.len() != nodes.len() {
-        panic!(
-            "Found {} coefficient factors and {} nodes in aggregated node. The number of ratio factors should equal the number of nodes.",
-            factors.len(),
-            nodes.len()
-        );
+        return Err(CoefficientFactorError::IncorrectNumberOfFactors {
+            num_factors: factors.len(),
+            num_nodes: nodes.len(),
+        });
     }
 
     if factors.len() != 2 {
-        panic!("Coefficient factors are not yet implemented for more than two nodes.");
+        return Err(CoefficientFactorError::MoreThanTwoFactors);
     }
 
-    let f0 = factors[0].get_value(model, state).unwrap();
-    let f1 = factors[1].get_value(model, state).unwrap();
-    let rhs = rhs.map(|m| m.get_value(model, state).unwrap()).unwrap_or_default();
+    let f0 = factors[0].get_value(model, state)?;
+    let f1 = factors[1].get_value(model, state)?;
+    let rhs = match rhs {
+        Some(rhs) => rhs.get_value(model, state)?,
+        None => 0.0,
+    };
 
-    vec![NodeFactorPair::new(
+    Ok(vec![NodeFactorPair::new(
         NodeFactor::new(nodes[0].as_slice(), f0),
         NodeFactor::new(nodes[1].as_slice(), f1),
         rhs,
+    )])
+}
+
+#[derive(Debug, Error)]
+pub enum ConstantCoefficientFactorError {
+    #[error(
+        "Found {num_factors} coefficient factors and {num_nodes} nodes in aggregated node. The number of coefficient factors should equal the number of nodes."
     )]
+    IncorrectNumberOfFactors { num_factors: usize, num_nodes: usize },
+    #[error("Coefficient factors are not yet implemented for more than two nodes.")]
+    MoreThanTwoFactors,
+    #[error("Failed to get metric value for factor: {0}")]
+    MetricF64(#[from] ConstantMetricF64Error),
 }
 
 /// Constant coefficient factors using constant values if they are available.
@@ -722,42 +860,33 @@ fn get_const_coefficient_factor_pairs<'a>(
     nodes: &'a [Vec<NodeIndex>],
     rhs: Option<&MetricF64>,
     values: &ConstParameterValues,
-) -> Vec<NodeConstFactorPair<'a>> {
-    // TODO handle error cases more gracefully
+) -> Result<Vec<NodeConstFactorPair<'a>>, ConstantCoefficientFactorError> {
     if factors.len() != nodes.len() {
-        panic!(
-            "Found {} ratio factors and {} nodes in aggregated node. The number of ratio factors should equal the number of nodes.",
-            factors.len(),
-            nodes.len()
-        );
+        return Err(ConstantCoefficientFactorError::IncorrectNumberOfFactors {
+            num_factors: factors.len(),
+            num_nodes: nodes.len(),
+        });
     }
 
     if factors.len() != 2 {
-        panic!("Coefficient factors are not yet implemented for more than two nodes.");
+        return Err(ConstantCoefficientFactorError::MoreThanTwoFactors);
     }
 
     // Try to convert the factor into a constant
 
-    let f0 = factors[0]
-        .try_get_constant_value(values)
-        .unwrap_or_else(|e| panic!("Failed to get constant value for factor: {e}",));
-    let f1 = factors[1]
-        .try_get_constant_value(values)
-        .unwrap_or_else(|e| panic!("Failed to get constant value for factor: {e}",));
+    let f0 = factors[0].try_get_constant_value(values)?;
+    let f1 = factors[1].try_get_constant_value(values)?;
 
-    let rhs = rhs
-        .map(|m| {
-            m.try_get_constant_value(values)
-                .unwrap_or_else(|e| panic!("Failed to constant RHS for factor: {e}"))
-        })
-        .unwrap_or_default()
-        .unwrap_or_default();
+    let rhs = match rhs {
+        Some(rhs) => rhs.try_get_constant_value(values)?.unwrap_or_default(),
+        None => 0.0,
+    };
 
-    vec![NodeConstFactorPair::new(
+    Ok(vec![NodeConstFactorPair::new(
         NodeConstFactor::new(nodes[0].as_slice(), f0),
         NodeConstFactor::new(nodes[1].as_slice(), f1),
         rhs,
-    )]
+    )])
 }
 
 #[cfg(test)]
