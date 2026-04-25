@@ -34,7 +34,7 @@ struct Lp<I> {
     /// The maximum value for a floating point number to be used as a bound.
     f64_max: f64,
     /// The minimum value for a floating point number to be used as a bound.
-    f64_min: f64,
+    f64_neg_max: f64,
     col_lower: Vec<f64>,
     col_upper: Vec<f64>,
     col_obj_coef: Vec<f64>,
@@ -72,7 +72,7 @@ where
             .zip(self.row_upper.iter_mut())
         {
             if mask == &I::one() {
-                *lb = self.f64_min;
+                *lb = self.f64_neg_max;
                 *ub = self.f64_max;
             }
         }
@@ -131,7 +131,7 @@ where
 /// variable rows, but not the fixed rows.
 struct LpBuilder<I> {
     f64_max: f64,
-    f64_min: f64,
+    f64_neg_max: f64,
     col_lower: Vec<f64>,
     col_upper: Vec<f64>,
     col_obj_coef: Vec<f64>,
@@ -144,10 +144,10 @@ impl<I> LpBuilder<I>
 where
     I: num::PrimInt,
 {
-    fn new(f64_max: f64, f64_min: f64) -> Self {
+    fn new(f64_max: f64, f64_neg_max: f64) -> Self {
         Self {
             f64_max,
-            f64_min,
+            f64_neg_max,
             col_lower: Vec::new(),
             col_upper: Vec::new(),
             col_obj_coef: Vec::new(),
@@ -230,7 +230,7 @@ where
 
         Lp {
             f64_max: self.f64_max,
-            f64_min: self.f64_min,
+            f64_neg_max: self.f64_neg_max,
             col_lower: self.col_lower,
             col_upper: self.col_upper,
             col_obj_coef: self.col_obj_coef,
@@ -619,7 +619,7 @@ where
                 (-avail / dt, missing / dt)
             } else {
                 // Node is inactive, so set bounds to be unbounded
-                (self.builder.f64_min, self.builder.f64_max)
+                (self.builder.f64_neg_max, self.builder.f64_max)
             };
 
             self.builder.apply_row_bounds(*row_id, lb, ub);
@@ -640,9 +640,9 @@ impl<I> SolverBuilder<I>
 where
     I: num::PrimInt + Default + Debug,
 {
-    pub fn new(f64_max: f64, f64_min: f64) -> Self {
+    pub fn new(f64_max: f64, f64_neg_max: f64) -> Self {
         Self {
-            builder: LpBuilder::new(f64_max, f64_min),
+            builder: LpBuilder::new(f64_max, f64_neg_max),
             col_edge_map: ColumnEdgeMapBuilder::default(),
             node_bin_col_map: HashMap::new(),
             node_set_bin_col_map: HashMap::new(),
@@ -1099,7 +1099,7 @@ mod tests {
 
     #[test]
     fn builder_solve2() {
-        let mut builder = LpBuilder::new(f64::MAX, f64::MIN);
+        let mut builder = LpBuilder::new(f64::INFINITY, f64::NEG_INFINITY);
 
         builder.add_column(-2.0, Bounds::Lower(0.0), ColType::Continuous);
         builder.add_column(-3.0, Bounds::Lower(0.0), ColType::Continuous);

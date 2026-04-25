@@ -334,7 +334,7 @@ impl Solver for HighsSolver {
         values: &ConstParameterValues,
         _settings: &Self::Settings,
     ) -> Result<Box<Self>, SolverSetupError> {
-        let builder: SolverBuilder<HighsInt> = SolverBuilder::new(f64::MAX, f64::MIN);
+        let builder: SolverBuilder<HighsInt> = SolverBuilder::new(f64::MAX, -f64::MAX);
         let built = builder.create(network, values)?;
 
         let num_cols = built.num_cols();
