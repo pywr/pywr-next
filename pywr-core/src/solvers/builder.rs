@@ -1099,7 +1099,7 @@ mod tests {
 
     #[test]
     fn builder_solve2() {
-        let mut builder = LpBuilder::new(f64::INFINITY, f64::NEG_INFINITY);
+        let mut builder = LpBuilder::new(f64::MAX, -f64::MAX);
 
         builder.add_column(-2.0, Bounds::Lower(0.0), ColType::Continuous);
         builder.add_column(-3.0, Bounds::Lower(0.0), ColType::Continuous);
