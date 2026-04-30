@@ -1,7 +1,7 @@
 mod settings;
 
 use crate::network::Network;
-use crate::solvers::builder::{BuiltSolver, ColType, SolverBuilder};
+use crate::solvers::builder::{ColType, LpIndex, LpWrapper, SolverBuilder};
 use crate::solvers::{Solver, SolverFeatures, SolverSetupError, SolverSolveError, SolverTimings};
 use crate::state::{ConstParameterValues, State};
 use crate::timestep::Timestep;
@@ -307,7 +307,7 @@ impl Highs {
 }
 
 pub struct HighsSolver {
-    builder: BuiltSolver<HighsInt>,
+    builder: LpWrapper<HighsInt>,
     highs: Highs,
 }
 
@@ -427,7 +427,13 @@ impl Solver for HighsSolver {
         let start_save_solution = Instant::now();
 
         for edge in network.edges().deref() {
-            let col = self.builder.col_for_edge(&edge.index()) as usize;
+            let col = self
+                .builder
+                .col_for_edge(&edge.index())
+                .ok_or_else(|| SolverSolveError::ColumnNotFound {
+                    edge_index: edge.index(),
+                })?
+                .to_usize();
             let flow = solution[col];
             network_state.add_flow(edge, timestep, flow)?;
         }

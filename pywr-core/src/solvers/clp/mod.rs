@@ -1,8 +1,8 @@
 mod settings;
 
-use super::builder::SolverBuilder;
+use super::builder::{LpIndex, SolverBuilder};
 use crate::network::Network;
-use crate::solvers::builder::BuiltSolver;
+use crate::solvers::builder::LpWrapper;
 use crate::solvers::{Solver, SolverFeatures, SolverSetupError, SolverSolveError, SolverTimings};
 use crate::state::{ConstParameterValues, State};
 use crate::timestep::Timestep;
@@ -311,12 +311,12 @@ impl ClpSimplex {
 }
 
 pub struct ClpSolver {
-    builder: BuiltSolver<c_int>,
+    builder: LpWrapper<c_int>,
     clp_simplex: ClpSimplex,
 }
 
 impl ClpSolver {
-    fn from_builder(builder: BuiltSolver<c_int>) -> Self {
+    fn from_builder(builder: LpWrapper<c_int>) -> Self {
         let mut clp_simplex = ClpSimplex::default();
 
         let num_cols = builder.num_cols();
@@ -414,7 +414,13 @@ impl Solver for ClpSolver {
 
         let start_save_solution = Instant::now();
         for edge in model.edges().iter() {
-            let col = self.builder.col_for_edge(&edge.index()) as usize;
+            let col = self
+                .builder
+                .col_for_edge(&edge.index())
+                .ok_or_else(|| SolverSolveError::ColumnNotFound {
+                    edge_index: edge.index(),
+                })?
+                .to_usize();
             let flow = solution[col];
             network_state.add_flow(edge, timestep, flow)?;
         }

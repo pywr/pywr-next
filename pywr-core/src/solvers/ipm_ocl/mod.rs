@@ -3,6 +3,7 @@ mod settings;
 use crate::edge::EdgeIndex;
 use crate::network::Network;
 use crate::node::{Node, NodeBounds, NodeType};
+use crate::solvers::builder::SolverBuilderError;
 use crate::solvers::col_edge_map::{ColumnEdgeMap, ColumnEdgeMapBuilder};
 use crate::solvers::{MultiStateSolver, SolverFeatures, SolverSetupError, SolverSolveError, SolverTimings};
 use crate::state::State;
@@ -273,7 +274,7 @@ impl BuiltSolver {
         &self.lp.row_upper
     }
 
-    pub fn col_for_edge(&self, edge_index: &EdgeIndex) -> usize {
+    pub fn col_for_edge(&self, edge_index: &EdgeIndex) -> Option<usize> {
         self.col_edge_map.col_for_edge(edge_index)
     }
 
@@ -330,7 +331,11 @@ impl BuiltSolver {
                     }
                 })?;
 
-            let col = self.col_for_edge(&edge.index());
+            let col = self
+                .col_for_edge(&edge.index())
+                .ok_or_else(|| SolverSolveError::ColumnNotFound {
+                    edge_index: edge.index(),
+                })?;
             self.lp.add_obj_coefficient(col, &cost);
         }
         Ok(())
@@ -438,30 +443,31 @@ impl SolverBuilder {
     /// Typically each edge will have its own column. However, we use the mass-balance information
     /// to collapse edges (and their columns) where they are trivially the same. I.e. if there
     /// is a single incoming edge and outgoing edge at a link node.
-    fn create_columns(&mut self, network: &Network) -> Result<(), SolverSetupError> {
+    fn create_columns(&mut self, network: &Network) -> Result<(), SolverBuilderError> {
         // One column per edge
         let ncols = network.edges().len();
         if ncols < 1 {
-            return Err(SolverSetupError::NoEdgesDefined);
+            return Err(SolverBuilderError::NoEdgesDefined);
         }
 
         for edge in network.edges().iter() {
             let edge_index = edge.index();
             let from_node = network
                 .get_node(&edge.from_node_index)
-                .ok_or(SolverSetupError::NodeIndexNotFound(edge.from_node_index))?;
+                .ok_or(SolverBuilderError::NodeIndexNotFound {
+                    node_index: edge.from_node_index,
+                })?;
 
             if let NodeType::Link = from_node.node_type() {
                 // We only look at link nodes; there should be no output nodes as a
                 // "from_node" and input nodes will have no upstream edges
-                let incoming_edges = from_node.get_incoming_edges()?;
-                // NB `edge` should be one of these outgoing edges
-                let outgoing_edges = from_node.get_outgoing_edges()?;
-                assert!(outgoing_edges.contains(&edge_index));
-                if (incoming_edges.len() == 1) && (outgoing_edges.len() == 1) {
+                if (from_node.num_incoming_edges() == 1) && (from_node.num_outgoing_edges() == 1) {
                     // Because of the mass-balance constraint these two edges must be equal to
                     // one another.
-                    self.col_edge_map.add_equal_edges(edge_index, incoming_edges[0]);
+                    let first_incoming_edge = from_node.iter_incoming_edges().next().expect(
+                        "No incoming edges despite just checking we have exactly one. This should be impossible.",
+                    );
+                    self.col_edge_map.add_equal_edges(edge_index, *first_incoming_edge);
                 } else {
                     // Otherwise this edge has a more complex relationship with its upstream
                     self.col_edge_map.add_simple_edge(edge_index);
@@ -487,16 +493,14 @@ impl SolverBuilder {
 
             if let NodeType::Link = node.node_type() {
                 let mut row = RowBuilder::fixed();
-                let incoming_edges = node.get_incoming_edges().unwrap();
-                let outgoing_edges = node.get_outgoing_edges().unwrap();
 
                 // TODO check for length >= 1
 
-                for edge in incoming_edges {
+                for edge in node.iter_incoming_edges() {
                     let column = self.col_for_edge(edge);
                     row.add_element(column, 1.0);
                 }
-                for edge in outgoing_edges {
+                for edge in node.iter_outgoing_edges() {
                     let column = self.col_for_edge(edge);
                     row.add_element(column, -1.0);
                 }
@@ -514,30 +518,24 @@ impl SolverBuilder {
 
     fn add_node(&mut self, node: &Node, factor: f64, row: &mut RowBuilder) {
         match node.node_type() {
-            NodeType::Link => {
-                for edge in node.get_outgoing_edges().unwrap() {
-                    let column = self.col_for_edge(edge);
-                    row.add_element(column, factor);
-                }
-            }
-            NodeType::Input => {
-                for edge in node.get_outgoing_edges().unwrap() {
+            NodeType::Link | NodeType::Input => {
+                for edge in node.iter_outgoing_edges() {
                     let column = self.col_for_edge(edge);
                     row.add_element(column, factor);
                 }
             }
             NodeType::Output => {
-                for edge in node.get_incoming_edges().unwrap() {
+                for edge in node.iter_incoming_edges() {
                     let column = self.col_for_edge(edge);
                     row.add_element(column, factor);
                 }
             }
             NodeType::Storage => {
-                for edge in node.get_incoming_edges().unwrap() {
+                for edge in node.iter_incoming_edges() {
                     let column = self.col_for_edge(edge);
                     row.add_element(column, factor);
                 }
-                for edge in node.get_outgoing_edges().unwrap() {
+                for edge in node.iter_outgoing_edges() {
                     let column = self.col_for_edge(edge);
                     row.add_element(column, -factor);
                 }
@@ -694,7 +692,12 @@ impl MultiStateSolver for ClIpmF32Solver {
                     network_state.reset();
 
                     for edge in network.edges().deref() {
-                        let col = built.col_for_edge(&edge.index());
+                        let col = built
+                            .col_for_edge(&edge.index())
+                            .ok_or_else(|| SolverSolveError::ColumnNotFound {
+                                edge_index: edge.index(),
+                            })
+                            .unwrap();
                         let flow = solution[col * num_states + i];
                         network_state.add_flow(edge, timestep, flow as f64).unwrap();
                     }
@@ -820,7 +823,12 @@ impl MultiStateSolver for ClIpmF64Solver {
                     network_state.reset();
 
                     for edge in network.edges().deref() {
-                        let col = built.col_for_edge(&edge.index());
+                        let col = built
+                            .col_for_edge(&edge.index())
+                            .ok_or_else(|| SolverSolveError::ColumnNotFound {
+                                edge_index: edge.index(),
+                            })
+                            .unwrap();
                         let flow = solution[col * num_states + i];
                         network_state.add_flow(edge, timestep, flow).unwrap();
                     }

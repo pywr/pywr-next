@@ -40,7 +40,6 @@ libc = "0.2"
 microlp = { workspace = true, optional = true }
 nalgebra = "0.34"
 ndarray = { workspace = true }
-num = { workspace = true }
 ocl = { version = "0.19", optional = true }
 # We are only need polars for date/time parsing.
 polars = { workspace = true, features = ["temporal"] }

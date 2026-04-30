@@ -1,7 +1,7 @@
 mod settings;
 use super::builder::{ColType, SolverBuilder};
 use crate::network::Network;
-use crate::solvers::builder::BuiltSolver;
+use crate::solvers::builder::LpWrapper;
 use crate::solvers::{Solver, SolverFeatures, SolverSetupError, SolverSolveError, SolverTimings};
 use crate::state::{ConstParameterValues, State};
 use crate::timestep::Timestep;
@@ -17,7 +17,7 @@ pub enum MicroLpError {
 }
 
 pub struct MicroLpSolver {
-    builder: BuiltSolver<usize>,
+    builder: LpWrapper<usize>,
 }
 
 impl MicroLpSolver {
@@ -117,7 +117,7 @@ impl Solver for MicroLpSolver {
         let mut timings = SolverTimings::default();
         self.builder.update(model, timestep, state, &mut timings)?;
 
-        self.builder.apply_updated_coefficients();
+        self.builder.apply_updated_coefficients()?;
 
         let now = Instant::now();
         let problem = self.make_problem();
@@ -136,7 +136,12 @@ impl Solver for MicroLpSolver {
 
         let start_save_solution = Instant::now();
         for edge in model.edges().iter() {
-            let col = self.builder.col_for_edge(&edge.index());
+            let col = self
+                .builder
+                .col_for_edge(&edge.index())
+                .ok_or_else(|| SolverSolveError::ColumnNotFound {
+                    edge_index: edge.index(),
+                })?;
             let flow = solution[col];
             network_state.add_flow(edge, timestep, flow)?;
         }

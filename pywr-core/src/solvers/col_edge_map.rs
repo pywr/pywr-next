@@ -1,4 +1,5 @@
 use crate::edge::EdgeIndex;
+use crate::solvers::builder::LpIndex;
 use std::collections::BTreeMap;
 use std::ops::Deref;
 
@@ -8,13 +9,10 @@ pub struct ColumnEdgeMap<I> {
 
 impl<I> ColumnEdgeMap<I>
 where
-    I: Copy + num::PrimInt,
+    I: Copy + LpIndex,
 {
-    pub fn col_for_edge(&self, edge_index: &EdgeIndex) -> I {
-        *self
-            .edge_to_col
-            .get(*edge_index.deref())
-            .unwrap_or_else(|| panic!("EdgeIndex {edge_index:?} not found in column-edge map."))
+    pub fn col_for_edge(&self, edge_index: &EdgeIndex) -> Option<I> {
+        self.edge_to_col.get(*edge_index.deref()).copied()
     }
 }
 
@@ -27,10 +25,7 @@ pub struct ColumnEdgeMapBuilder<I> {
     edge_to_col: BTreeMap<EdgeIndex, I>,
 }
 
-impl<I> Default for ColumnEdgeMapBuilder<I>
-where
-    I: num::PrimInt,
-{
+impl<I> Default for ColumnEdgeMapBuilder<I> {
     fn default() -> Self {
         Self {
             col_to_edges: Vec::default(),
@@ -41,7 +36,7 @@ where
 
 impl<I> ColumnEdgeMapBuilder<I>
 where
-    I: Copy + num::PrimInt,
+    I: Copy + LpIndex,
 {
     pub fn build(self) -> ColumnEdgeMap<I> {
         // Convert the hashmap to vector
@@ -76,7 +71,7 @@ where
             return;
         }
         // Next column id;
-        let col = I::from(self.col_to_edges.len()).unwrap();
+        let col = I::from_usize(self.col_to_edges.len());
         self.col_to_edges.push(vec![idx]);
         self.edge_to_col.insert(idx, col);
     }
@@ -96,19 +91,19 @@ where
                 // idx1 is not present, but idx2 is
                 // Therefore add idx1 to idx2's column;
                 let col = self.col_for_edge(&idx2);
-                self.col_to_edges[col.to_usize().unwrap()].push(idx1);
+                self.col_to_edges[col.to_usize()].push(idx1);
                 self.edge_to_col.insert(idx1, col);
             }
             (true, false) => {
                 // idx1 is present, but idx2 is not
                 // Therefore add idx2 to idx1's column;
                 let col = self.col_for_edge(&idx1);
-                self.col_to_edges[col.to_usize().unwrap()].push(idx2);
+                self.col_to_edges[col.to_usize()].push(idx2);
                 self.edge_to_col.insert(idx2, col);
             }
             (false, false) => {
                 // Neither idx is present
-                let col = I::from(self.col_to_edges.len()).unwrap();
+                let col = I::from_usize(self.col_to_edges.len());
                 self.col_to_edges.push(vec![idx1, idx2]);
                 self.edge_to_col.insert(idx1, col);
                 self.edge_to_col.insert(idx2, col);

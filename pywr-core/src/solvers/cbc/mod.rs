@@ -1,8 +1,8 @@
 mod settings;
 
-use super::builder::{ColType, SolverBuilder};
+use super::builder::{ColType, LpIndex, SolverBuilder};
 use crate::network::Network;
-use crate::solvers::builder::BuiltSolver;
+use crate::solvers::builder::LpWrapper;
 use crate::solvers::{Solver, SolverFeatures, SolverSetupError, SolverSolveError, SolverTimings};
 use crate::state::{ConstParameterValues, State};
 use crate::timestep::Timestep;
@@ -44,14 +44,6 @@ impl Default for Cbc {
 }
 
 impl Cbc {
-    #[allow(dead_code)]
-    pub fn print(&mut self) {
-        unsafe {
-            let prefix = CString::new("  ").expect("CString::new failed");
-            Cbc_printModel(self.ptr, prefix.as_ptr());
-        }
-    }
-
     pub fn change_row_lower(&mut self, row_lower: &[c_double]) {
         for (i, val) in row_lower.iter().enumerate() {
             unsafe {
@@ -192,12 +184,12 @@ impl Cbc {
 }
 
 pub struct CbcSolver {
-    builder: BuiltSolver<c_int>,
+    builder: LpWrapper<c_int>,
     cbc: Cbc,
 }
 
 impl CbcSolver {
-    fn from_builder(builder: BuiltSolver<c_int>) -> Self {
+    fn from_builder(builder: LpWrapper<c_int>) -> Self {
         let mut cbc = Cbc::default();
 
         cbc.add_cols(
@@ -290,7 +282,13 @@ impl Solver for CbcSolver {
 
         let start_save_solution = Instant::now();
         for edge in model.edges().iter() {
-            let col = self.builder.col_for_edge(&edge.index()) as usize;
+            let col = self
+                .builder
+                .col_for_edge(&edge.index())
+                .ok_or_else(|| SolverSolveError::ColumnNotFound {
+                    edge_index: edge.index(),
+                })?
+                .to_usize();
             let flow = solution[col];
             // Round very small values to zero
             let flow = if flow.abs() < 1e-10 { 0.0 } else { flow };

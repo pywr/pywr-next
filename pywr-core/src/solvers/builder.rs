@@ -1,15 +1,18 @@
+#![deny(clippy::unwrap_used, clippy::panic, clippy::expect_used)]
 use crate::aggregated_node::AggregatedNodeIndex;
 use crate::edge::EdgeIndex;
 use crate::network::Network;
 use crate::node::{Node, NodeBounds, NodeIndex, NodeType};
+use crate::solvers::SolverTimings;
 use crate::solvers::col_edge_map::{ColumnEdgeMap, ColumnEdgeMapBuilder};
-use crate::solvers::{SolverSetupError, SolverSolveError, SolverTimings};
 use crate::state::{ConstParameterValues, State};
 use crate::timestep::Timestep;
+use crate::virtual_storage::VirtualStorageIndex;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::Debug;
-use std::ops::Deref;
+use std::ops::{Add, Deref};
 use std::time::Instant;
+use thiserror::Error;
 
 enum Bounds {
     // Free,
@@ -24,6 +27,12 @@ enum Bounds {
 pub enum ColType {
     Continuous,
     Integer,
+}
+
+#[derive(Debug, Error)]
+pub enum LpError {
+    #[error("Column not found for edge ({edge_index})")]
+    ColumnNotFound { edge_index: EdgeIndex },
 }
 
 /// Sparse form of a linear program.
@@ -51,7 +60,7 @@ struct Lp<I> {
 
 impl<I> Lp<I>
 where
-    I: num::PrimInt,
+    I: LpIndex,
 {
     /// Zero all objective coefficients.
     fn zero_obj_coefficients(&mut self) {
@@ -90,39 +99,52 @@ where
         self.row_upper[row] = self.row_upper[row].min(ub);
     }
 
-    fn update_row_coefficients(&mut self, row: I, node: &Node, factor: f64, col_edge_map: &ColumnEdgeMap<I>) {
+    fn update_row_coefficients(
+        &mut self,
+        row: I,
+        node: &Node,
+        factor: f64,
+        col_edge_map: &ColumnEdgeMap<I>,
+    ) -> Result<(), LpError> {
         match node.node_type() {
-            NodeType::Link => {
-                for edge in node.get_outgoing_edges().unwrap() {
-                    let column = col_edge_map.col_for_edge(edge);
-                    self.coefficients_to_update.push((row, column, factor))
-                }
-            }
-            NodeType::Input => {
-                for edge in node.get_outgoing_edges().unwrap() {
-                    let column = col_edge_map.col_for_edge(edge);
+            NodeType::Input | NodeType::Link => {
+                for edge in node.iter_outgoing_edges() {
+                    let column = col_edge_map
+                        .col_for_edge(edge)
+                        .ok_or(LpError::ColumnNotFound { edge_index: *edge })?;
                     self.coefficients_to_update.push((row, column, factor))
                 }
             }
             NodeType::Output => {
-                for edge in node.get_incoming_edges().unwrap() {
-                    let column = col_edge_map.col_for_edge(edge);
+                for edge in node.iter_incoming_edges() {
+                    let column = col_edge_map
+                        .col_for_edge(edge)
+                        .ok_or(LpError::ColumnNotFound { edge_index: *edge })?;
                     self.coefficients_to_update.push((row, column, factor))
                 }
             }
             NodeType::Storage => {
-                for edge in node.get_incoming_edges().unwrap() {
-                    let column = col_edge_map.col_for_edge(edge);
+                for edge in node.iter_incoming_edges() {
+                    let column = col_edge_map
+                        .col_for_edge(edge)
+                        .ok_or(LpError::ColumnNotFound { edge_index: *edge })?;
                     self.coefficients_to_update.push((row, column, factor))
                 }
-                for edge in node.get_outgoing_edges().unwrap() {
-                    let column = col_edge_map.col_for_edge(edge);
+                for edge in node.iter_outgoing_edges() {
+                    let column = col_edge_map
+                        .col_for_edge(edge)
+                        .ok_or(LpError::ColumnNotFound { edge_index: *edge })?;
                     self.coefficients_to_update.push((row, column, factor))
                 }
             }
         }
+
+        Ok(())
     }
 }
+
+#[derive(Debug, Error)]
+pub enum LpBuilderError {}
 
 /// Helper struct for constructing a `LP<I>`
 ///
@@ -142,7 +164,7 @@ struct LpBuilder<I> {
 
 impl<I> LpBuilder<I>
 where
-    I: num::PrimInt,
+    I: LpIndex,
 {
     fn new(f64_max: f64, f64_min: f64) -> Self {
         Self {
@@ -170,7 +192,7 @@ where
         self.col_upper.push(ub);
         self.col_obj_coef.push(obj_coef);
         self.col_type.push(col_type);
-        I::from(self.col_lower.len() - 1).unwrap()
+        I::from_usize(self.col_lower.len() - 1)
     }
 
     /// Add a fixed row to the LP.
@@ -184,7 +206,7 @@ where
     /// Add a row to the LP or return an existing row number if the same row already exists.
     fn add_variable_row(&mut self, row: RowBuilder<I>) -> I {
         match self.rows.iter().position(|r| r == &row) {
-            Some(row_id) => I::from(row_id).unwrap(),
+            Some(row_id) => I::from_usize(row_id),
             None => {
                 // No row found, add a new one
                 let row_id = self.num_variable_rows();
@@ -196,7 +218,7 @@ where
 
     /// Return the number of variable rows
     fn num_variable_rows(&self) -> I {
-        I::from(self.rows.len()).unwrap()
+        I::from_usize(self.rows.len())
     }
 
     /// Build the LP into a final sparse form
@@ -214,17 +236,22 @@ where
 
         // Construct the sparse matrix from the rows; variable rows first
         // The mask marks the fixed rows as not requiring an update.
+        let mut prev_row_start = I::zero();
         for (rows, mask) in [(self.rows, I::one()), (self.fixed_rows, I::zero())] {
             for row in rows {
                 row_lower.push(row.lower);
                 row_upper.push(row.upper.unwrap_or(self.f64_max));
                 row_mask.push(mask);
-                let prev_row_start = *row_starts.get(&row_starts.len() - 1).unwrap();
-                row_starts.push(prev_row_start + I::from(row.columns.len()).unwrap());
+
+                let next_row_start = prev_row_start + I::from_usize(row.columns.len());
+                row_starts.push(next_row_start);
+
                 for (column, value) in row.columns {
                     columns.push(column);
                     elements.push(value);
                 }
+
+                prev_row_start = next_row_start;
             }
         }
 
@@ -265,7 +292,7 @@ impl<I> Default for RowBuilder<I> {
 
 impl<I> RowBuilder<I>
 where
-    I: num::PrimInt,
+    I: LpIndex,
 {
     pub fn set_upper(&mut self, upper: f64) {
         self.upper = Some(upper);
@@ -283,9 +310,6 @@ where
     ///
     /// If the column already exists `value` will be added to the existing coefficient.
     pub fn add_element(&mut self, column: I, value: f64) {
-        if !value.is_finite() {
-            panic!("Row factor is non-finite.");
-        }
         *self.columns.entry(column).or_insert(0.0) += value;
     }
 }
@@ -316,8 +340,49 @@ struct AggNodeFactorRow<I> {
     row_indices: Vec<Option<I>>,
 }
 
-pub struct BuiltSolver<I> {
-    builder: Lp<I>,
+#[derive(Debug, Error)]
+pub enum LpWrapperError {
+    #[error("Edge from `{from_name}` and sub-name `{}` to `{to_name}` and sub-name `{}` error: {source}", .from_sub_name.as_deref().unwrap_or("None"), .to_sub_name.as_deref().unwrap_or("None"))]
+    EdgeError {
+        from_name: String,
+        from_sub_name: Option<String>,
+        to_name: String,
+        to_sub_name: Option<String>,
+        #[source]
+        source: crate::edge::EdgeError,
+    },
+    #[error("Node `{name}` and sub-name `{}` error: {source}", .sub_name.as_deref().unwrap_or("None"))]
+    NodeError {
+        name: String,
+        sub_name: Option<String>,
+        #[source]
+        source: crate::node::NodeError,
+    },
+    #[error("Aggregated node `{name}` and sub-name `{}` error: {source}", .sub_name.as_deref().unwrap_or("None"))]
+    AggregatedNodeError {
+        name: String,
+        sub_name: Option<String>,
+        #[source]
+        source: crate::aggregated_node::AggregatedNodeError,
+    },
+    #[error("Virtual storage error: {0}")]
+    VirtualStorageError(#[from] crate::virtual_storage::VirtualStorageError),
+    #[error("Column ({col}) not found.")]
+    ColumnNotFound { col: usize },
+    #[error("Column not found for edge ({edge_index}).")]
+    ColumnNotFoundForEdge { edge_index: EdgeIndex },
+    #[error("Node index not found: {node_index}")]
+    NodeIndexNotFound { node_index: NodeIndex },
+    #[error("Aggregated node index not found: {0}")]
+    AggregatedNodeIndexNotFound(AggregatedNodeIndex),
+    #[error("No factor pairs found for an aggregated node that was setup with factors!")]
+    NoFactorPairsFoundForAggregatedNode { aggregated_node_index: AggregatedNodeIndex },
+    #[error("Linear program error: {0}")]
+    LpError(#[from] LpError),
+}
+
+pub struct LpWrapper<I> {
+    lp: Lp<I>,
     col_edge_map: ColumnEdgeMap<I>,
     node_constraints_row_ids: Vec<NodeRowId<I>>,
     agg_node_constraint_row_ids: Vec<usize>,
@@ -325,95 +390,89 @@ pub struct BuiltSolver<I> {
     virtual_storage_constraint_row_ids: Vec<usize>,
 }
 
-impl<I> BuiltSolver<I>
+impl<I> LpWrapper<I>
 where
-    I: num::PrimInt + Default + Debug + Copy,
+    I: LpIndex + Default + Debug + Copy,
 {
-    #[allow(dead_code)]
     pub fn num_cols(&self) -> I {
-        I::from(self.builder.col_upper.len()).unwrap()
+        I::from_usize(self.lp.col_upper.len())
     }
 
-    #[allow(dead_code)]
     pub fn num_rows(&self) -> I {
-        I::from(self.builder.row_upper.len()).unwrap()
+        I::from_usize(self.lp.row_upper.len())
     }
 
-    #[allow(dead_code)]
     pub fn num_non_zero(&self) -> I {
-        I::from(self.builder.elements.len()).unwrap()
+        I::from_usize(self.lp.elements.len())
     }
 
     pub fn col_lower(&self) -> &[f64] {
-        &self.builder.col_lower
+        &self.lp.col_lower
     }
 
     pub fn col_upper(&self) -> &[f64] {
-        &self.builder.col_upper
+        &self.lp.col_upper
     }
 
     pub fn col_obj_coef(&self) -> &[f64] {
-        &self.builder.col_obj_coef
+        &self.lp.col_obj_coef
     }
 
-    #[allow(dead_code)]
     pub fn col_type(&self) -> &[ColType] {
-        &self.builder.col_type
+        &self.lp.col_type
     }
 
     pub fn row_lower(&self) -> &[f64] {
-        &self.builder.row_lower
+        &self.lp.row_lower
     }
 
     pub fn row_upper(&self) -> &[f64] {
-        &self.builder.row_upper
+        &self.lp.row_upper
     }
 
-    #[allow(dead_code)]
     pub fn row_mask(&self) -> &[I] {
-        &self.builder.row_mask
+        &self.lp.row_mask
     }
 
     pub fn row_starts(&self) -> &[I] {
-        &self.builder.row_starts
+        &self.lp.row_starts
     }
 
     pub fn columns(&self) -> &[I] {
-        &self.builder.columns
+        &self.lp.columns
     }
 
     pub fn elements(&self) -> &[f64] {
-        &self.builder.elements
+        &self.lp.elements
     }
 
-    pub fn col_for_edge(&self, edge_index: &EdgeIndex) -> I {
+    pub fn col_for_edge(&self, edge_index: &EdgeIndex) -> Option<I> {
         self.col_edge_map.col_for_edge(edge_index)
     }
 
     #[allow(dead_code)]
     pub fn coefficients_to_update(&self) -> &[(I, I, f64)] {
-        &self.builder.coefficients_to_update
+        &self.lp.coefficients_to_update
     }
 
     /// Apply the updated coefficients to the sparse matrix.
     #[allow(dead_code)]
-    pub fn apply_updated_coefficients(&mut self) {
-        for (row, col, value) in self.builder.coefficients_to_update.drain(..) {
-            let row = row.to_usize().unwrap();
-            let col = col.to_usize().unwrap();
+    pub fn apply_updated_coefficients(&mut self) -> Result<(), LpWrapperError> {
+        for (row, col, value) in self.lp.coefficients_to_update.drain(..) {
+            let row = row.to_usize();
+            let col = col.to_usize();
 
             // Find the position of the column in the sparse matrix
-            let start = self.builder.row_starts[row].to_usize().unwrap();
-            let end = self.builder.row_starts[row + 1].to_usize().unwrap();
-            if let Some(pos) = self.builder.columns[start..end]
-                .iter()
-                .position(|&c| c.to_usize().unwrap() == col)
-            {
-                self.builder.elements[start + pos] = value;
+            let start = self.lp.row_starts[row].to_usize();
+            let end = self.lp.row_starts[row + 1].to_usize();
+            if let Some(pos) = self.lp.columns[start..end].iter().position(|&c| c.to_usize() == col) {
+                self.lp.elements[start + pos] = value;
             } else {
-                panic!("Column not found in row when applying updated coefficients.");
+                return Err(LpWrapperError::ColumnNotFound { col });
             }
         }
+
+        Ok(())
     }
 
     pub fn update(
@@ -422,15 +481,15 @@ where
         timestep: &Timestep,
         state: &State,
         timings: &mut SolverTimings,
-    ) -> Result<(), SolverSolveError> {
+    ) -> Result<(), LpWrapperError> {
         let start_objective_update = Instant::now();
         self.update_edge_objectives(network, state)?;
         timings.update_objective += start_objective_update.elapsed();
 
         let start_constraint_update = Instant::now();
         // Reset the row bounds
-        self.builder.reset_row_bounds();
-        self.builder.reset_coefficients_to_update();
+        self.lp.reset_row_bounds();
+        self.lp.reset_coefficients_to_update();
         // Then these methods will add their bounds
         self.update_node_constraint_bounds(network, timestep, state)?;
         self.update_aggregated_node_factor_constraints(network, state)?;
@@ -442,21 +501,29 @@ where
     }
 
     /// Update edge objective coefficients
-    fn update_edge_objectives(&mut self, network: &Network, state: &State) -> Result<(), SolverSolveError> {
-        self.builder.zero_obj_coefficients();
+    fn update_edge_objectives(&mut self, network: &Network, state: &State) -> Result<(), LpWrapperError> {
+        self.lp.zero_obj_coefficients();
         for edge in network.edges().deref() {
             let obj_coef: f64 = edge.cost(network.nodes(), network, state).map_err(|source| {
                 let from_node = match network.get_node(&edge.from_node_index()) {
                     Some(n) => n,
-                    None => return SolverSolveError::NodeIndexNotFound(edge.from_node_index()),
+                    None => {
+                        return LpWrapperError::NodeIndexNotFound {
+                            node_index: edge.from_node_index(),
+                        };
+                    }
                 };
 
                 let to_node = match network.get_node(&edge.to_node_index()) {
                     Some(n) => n,
-                    None => return SolverSolveError::NodeIndexNotFound(edge.to_node_index()),
+                    None => {
+                        return LpWrapperError::NodeIndexNotFound {
+                            node_index: edge.to_node_index(),
+                        };
+                    }
                 };
 
-                SolverSolveError::EdgeError {
+                LpWrapperError::EdgeError {
                     from_name: from_node.name().to_string(),
                     from_sub_name: from_node.sub_name().map(|s| s.to_string()),
                     to_name: to_node.name().to_string(),
@@ -464,9 +531,14 @@ where
                     source,
                 }
             })?;
-            let col = self.col_for_edge(&edge.index());
 
-            self.builder.add_obj_coefficient(col.to_usize().unwrap(), obj_coef);
+            let col = self
+                .col_for_edge(&edge.index())
+                .ok_or_else(|| LpWrapperError::ColumnNotFoundForEdge {
+                    edge_index: edge.index(),
+                })?;
+
+            self.lp.add_obj_coefficient(col.to_usize(), obj_coef);
         }
         Ok(())
     }
@@ -477,18 +549,20 @@ where
         network: &Network,
         timestep: &Timestep,
         state: &State,
-    ) -> Result<(), SolverSolveError> {
+    ) -> Result<(), LpWrapperError> {
         let dt = timestep.days();
 
         for row in self.node_constraints_row_ids.iter() {
             let node = network
                 .get_node(&row.node_idx)
-                .ok_or(SolverSolveError::NodeIndexNotFound(row.node_idx))?;
+                .ok_or(LpWrapperError::NodeIndexNotFound {
+                    node_index: row.node_idx,
+                })?;
 
             let (lb, ub): (f64, f64) =
                 match node
                     .get_bounds(network, state)
-                    .map_err(|source| SolverSolveError::NodeError {
+                    .map_err(|source| LpWrapperError::NodeError {
                         name: node.name().to_string(),
                         sub_name: node.sub_name().map(|s| s.to_string()),
                         source,
@@ -500,17 +574,17 @@ where
             match row.row_type {
                 NodeRowType::Continuous => {
                     // Regular node constraint
-                    self.builder.apply_row_bounds(row.row_id.to_usize().unwrap(), lb, ub);
+                    self.lp.apply_row_bounds(row.row_id.to_usize(), lb, ub);
                 }
                 NodeRowType::BinaryUpperBound { bin_col_id } => {
                     // Update the coefficients for the binary column to be the upper bound
                     // This row has the correct bounds already, so we just update the coefficients
-                    self.builder.coefficients_to_update.push((row.row_id, bin_col_id, ub));
+                    self.lp.coefficients_to_update.push((row.row_id, bin_col_id, ub));
                 }
                 NodeRowType::BinaryLowerBound { bin_col_id } => {
                     // Update the coefficients for the binary column to be the lower bound
                     // This row has the correct bounds already, so we just update the coefficients
-                    self.builder.coefficients_to_update.push((row.row_id, bin_col_id, -lb));
+                    self.lp.coefficients_to_update.push((row.row_id, bin_col_id, -lb));
                 }
             }
         }
@@ -522,12 +596,12 @@ where
         &mut self,
         network: &Network,
         state: &State,
-    ) -> Result<(), SolverSolveError> {
+    ) -> Result<(), LpWrapperError> {
         // Update the aggregated node factor constraints which are *not* constant
         for agg_node_row in self.agg_node_factor_constraint_row_ids.iter() {
             let agg_node = network
                 .get_aggregated_node(&agg_node_row.agg_node_idx)
-                .ok_or(SolverSolveError::AggregatedNodeIndexNotFound(agg_node_row.agg_node_idx))?;
+                .ok_or(LpWrapperError::AggregatedNodeIndexNotFound(agg_node_row.agg_node_idx))?;
 
             // Only create row for nodes that have factors
             if let Some(Ok(node_pairs)) = agg_node.get_norm_factor_pairs(network, state) {
@@ -544,32 +618,38 @@ where
                         // TODO error handling?
                         let nodes = network.nodes();
                         for node0_idx in node_pair.node0_indices() {
-                            let node0 = nodes.get(node0_idx).expect("Node index not found!");
-                            self.builder.update_row_coefficients(
+                            let node0 = nodes
+                                .get(node0_idx)
+                                .ok_or(LpWrapperError::NodeIndexNotFound { node_index: *node0_idx })?;
+                            self.lp.update_row_coefficients(
                                 *row_idx,
                                 node0,
                                 node_pair.node0_factor(),
                                 &self.col_edge_map,
-                            );
+                            )?;
                         }
 
                         for node1_idx in node_pair.node1_indices() {
-                            let node1 = nodes.get(node1_idx).expect("Node index not found!");
-                            self.builder.update_row_coefficients(
+                            let node1 = nodes
+                                .get(node1_idx)
+                                .ok_or(LpWrapperError::NodeIndexNotFound { node_index: *node1_idx })?;
+                            self.lp.update_row_coefficients(
                                 *row_idx,
                                 node1,
                                 node_pair.node1_factor(),
                                 &self.col_edge_map,
-                            );
+                            )?;
                         }
 
                         // Apply the bounds to the row
-                        self.builder
-                            .apply_row_bounds(row_idx.to_usize().unwrap(), node_pair.rhs(), node_pair.rhs());
+                        self.lp
+                            .apply_row_bounds(row_idx.to_usize(), node_pair.rhs(), node_pair.rhs());
                     }
                 }
             } else {
-                panic!("No factor pairs found for an aggregated node that was setup with factors?!");
+                return Err(LpWrapperError::NoFactorPairsFoundForAggregatedNode {
+                    aggregated_node_index: agg_node_row.agg_node_idx,
+                });
             }
         }
 
@@ -581,7 +661,7 @@ where
         &mut self,
         network: &Network,
         state: &State,
-    ) -> Result<(), SolverSolveError> {
+    ) -> Result<(), LpWrapperError> {
         for (row_id, agg_node) in self
             .agg_node_constraint_row_ids
             .iter()
@@ -590,12 +670,12 @@ where
             let (lb, ub): (f64, f64) =
                 agg_node
                     .get_flow_bounds(network, state)
-                    .map_err(|e| SolverSolveError::AggregatedNodeError {
+                    .map_err(|e| LpWrapperError::AggregatedNodeError {
                         name: agg_node.name().to_string(),
                         sub_name: agg_node.sub_name().map(|s| s.to_string()),
                         source: e,
                     })?;
-            self.builder.apply_row_bounds(*row_id, lb, ub);
+            self.lp.apply_row_bounds(*row_id, lb, ub);
         }
 
         Ok(())
@@ -606,7 +686,7 @@ where
         network: &Network,
         timestep: &Timestep,
         state: &State,
-    ) -> Result<(), SolverSolveError> {
+    ) -> Result<(), LpWrapperError> {
         let dt = timestep.days();
 
         for (row_id, node) in self
@@ -619,14 +699,87 @@ where
                 (-avail / dt, missing / dt)
             } else {
                 // Node is inactive, so set bounds to be unbounded
-                (self.builder.f64_min, self.builder.f64_max)
+                (self.lp.f64_min, self.lp.f64_max)
             };
 
-            self.builder.apply_row_bounds(*row_id, lb, ub);
+            self.lp.apply_row_bounds(*row_id, lb, ub);
         }
 
         Ok(())
     }
+}
+
+pub trait LpIndex: TryFrom<usize> + TryInto<usize> + Copy + Ord + Add<Output = Self> {
+    fn one() -> Self;
+    fn zero() -> Self;
+
+    fn to_usize(self) -> usize;
+
+    fn from_usize(val: usize) -> Self;
+}
+
+impl LpIndex for usize {
+    fn one() -> Self {
+        1
+    }
+    fn zero() -> Self {
+        0
+    }
+
+    fn to_usize(self) -> usize {
+        self
+    }
+    fn from_usize(val: usize) -> Self {
+        val
+    }
+}
+
+impl LpIndex for i32 {
+    fn one() -> Self {
+        1
+    }
+    fn zero() -> Self {
+        0
+    }
+
+    fn to_usize(self) -> usize {
+        self as usize
+    }
+    fn from_usize(val: usize) -> Self {
+        val as Self
+    }
+}
+
+#[derive(Debug, Error)]
+pub enum SolverBuilderError {
+    #[error("Cannot create linear programme. No edges defined in the model")]
+    NoEdgesDefined,
+    #[error("Node error: {0}")]
+    NodeError(#[from] crate::node::NodeError),
+    #[error("Error assembling the linear program: {0}")]
+    LpBuilderError(#[from] LpBuilderError),
+    #[error("Node index not found: {node_index}")]
+    NodeIndexNotFound { node_index: NodeIndex },
+    #[error("Link node with name `{name}` and sub-name `{}` ({node_index}) has no incoming edges.", .sub_name.as_deref().unwrap_or("None"))]
+    NoIncomingEdges {
+        name: String,
+        sub_name: Option<String>,
+        node_index: NodeIndex,
+    },
+    #[error("Link node with name `{name}` and sub-name `{}` ({node_index}) has no outgoing edges.", .sub_name.as_deref().unwrap_or("None"))]
+    NoOutgoingEdges {
+        name: String,
+        sub_name: Option<String>,
+        node_index: NodeIndex,
+    },
+    #[error("Virtual storage node with name `{name}` and sub-name `{}` ({virtual_storage_index}) contains a non-finite factor.", .sub_name.as_deref().unwrap_or("None"))]
+    VirtualStorageNonFiniteFactor {
+        name: String,
+        sub_name: Option<String>,
+        virtual_storage_index: VirtualStorageIndex,
+    },
+    #[error("Binary column mapping not found for aggregated node with name `{name}` and sub-name `{}`.", .sub_name.as_deref().unwrap_or("None"))]
+    BinaryColumnMappingNotFound { name: String, sub_name: Option<String> },
 }
 
 pub struct SolverBuilder<I> {
@@ -638,7 +791,7 @@ pub struct SolverBuilder<I> {
 
 impl<I> SolverBuilder<I>
 where
-    I: num::PrimInt + Default + Debug,
+    I: LpIndex + Default + Debug,
 {
     pub fn new(f64_max: f64, f64_min: f64) -> Self {
         Self {
@@ -657,25 +810,25 @@ where
         mut self,
         network: &Network,
         values: &ConstParameterValues,
-    ) -> Result<BuiltSolver<I>, SolverSetupError> {
+    ) -> Result<LpWrapper<I>, SolverBuilderError> {
         // Create the columns
         self.create_columns(network)?;
 
         // Create edge mass balance constraints
-        self.create_mass_balance_constraints(network);
+        self.create_mass_balance_constraints(network)?;
         // Create the nodal constraints
         let node_constraints_row_ids = self.create_node_constraints(network, values)?;
         // Create the aggregated node constraints
-        let agg_node_constraint_row_ids = self.create_aggregated_node_constraints(network);
+        let agg_node_constraint_row_ids = self.create_aggregated_node_constraints(network)?;
         // Create the aggregated node factor constraints
-        let agg_node_factor_constraint_row_ids = self.create_aggregated_node_factor_constraints(network, values);
+        let agg_node_factor_constraint_row_ids = self.create_aggregated_node_factor_constraints(network, values)?;
         // Create virtual storage constraints
-        let virtual_storage_constraint_row_ids = self.create_virtual_storage_constraints(network);
+        let virtual_storage_constraint_row_ids = self.create_virtual_storage_constraints(network)?;
         // Create mutual exclusivity constraints
-        self.create_mutual_exclusivity_constraints(network);
+        self.create_mutual_exclusivity_constraints(network)?;
 
-        Ok(BuiltSolver {
-            builder: self.builder.build(),
+        Ok(LpWrapper {
+            lp: self.builder.build(),
             col_edge_map: self.col_edge_map.build(),
             node_constraints_row_ids,
             agg_node_factor_constraint_row_ids,
@@ -689,30 +842,32 @@ where
     /// Typically each edge will have its own column. However, we use the mass-balance information
     /// to collapse edges (and their columns) where they are trivially the same. I.e. if there
     /// is a single incoming edge and outgoing edge at a link node.
-    fn create_columns(&mut self, network: &Network) -> Result<(), SolverSetupError> {
+    fn create_columns(&mut self, network: &Network) -> Result<(), SolverBuilderError> {
         // One column per edge
         let ncols = network.edges().len();
         if ncols < 1 {
-            return Err(SolverSetupError::NoEdgesDefined);
+            return Err(SolverBuilderError::NoEdgesDefined);
         }
 
         for edge in network.edges().iter() {
             let edge_index = edge.index();
             let from_node = network
                 .get_node(&edge.from_node_index)
-                .ok_or(SolverSetupError::NodeIndexNotFound(edge.from_node_index))?;
+                .ok_or(SolverBuilderError::NodeIndexNotFound {
+                    node_index: edge.from_node_index,
+                })?;
 
             if let NodeType::Link = from_node.node_type() {
                 // We only look at link nodes; there should be no output nodes as a
                 // "from_node" and input nodes will have no upstream edges
-                let incoming_edges = from_node.get_incoming_edges()?;
-                // NB `edge` should be one of these outgoing edges
-                let outgoing_edges = from_node.get_outgoing_edges()?;
-                assert!(outgoing_edges.contains(&edge_index));
-                if (incoming_edges.len() == 1) && (outgoing_edges.len() == 1) {
+                if (from_node.num_incoming_edges() == 1) && (from_node.num_outgoing_edges() == 1) {
                     // Because of the mass-balance constraint these two edges must be equal to
                     // one another.
-                    self.col_edge_map.add_equal_edges(edge_index, incoming_edges[0]);
+                    #[allow(clippy::expect_used)]
+                    let first_incoming_edge = from_node.iter_incoming_edges().next().expect(
+                        "No incoming edges despite just checking we have exactly one. This should be impossible.",
+                    );
+                    self.col_edge_map.add_equal_edges(edge_index, *first_incoming_edge);
                 } else {
                     // Otherwise this edge has a more complex relationship with its upstream
                     self.col_edge_map.add_simple_edge(edge_index);
@@ -755,36 +910,40 @@ where
     }
 
     /// Create mass balance constraints for each edge
-    fn create_mass_balance_constraints(&mut self, network: &Network) {
+    fn create_mass_balance_constraints(&mut self, network: &Network) -> Result<(), SolverBuilderError> {
         for node in network.nodes().deref() {
             // Only link nodes create mass-balance constraints
 
             if let NodeType::Link = node.node_type() {
                 let mut row: RowBuilder<I> = RowBuilder::default();
 
-                let incoming_edges = node.get_incoming_edges().unwrap();
-                let outgoing_edges = node.get_outgoing_edges().unwrap();
-
-                // TODO use Display for the error message
-                if incoming_edges.is_empty() {
-                    panic!("Node {:?} contains no incoming edges 💥", node.full_name())
+                if node.num_incoming_edges() == 0 {
+                    return Err(SolverBuilderError::NoIncomingEdges {
+                        name: node.name().to_string(),
+                        sub_name: node.sub_name().map(|s| s.to_string()),
+                        node_index: node.index(),
+                    });
                 }
-                if outgoing_edges.is_empty() {
-                    panic!("Node {:?} contains no outgoing edges 💥", node.full_name())
+                if node.num_outgoing_edges() == 0 {
+                    return Err(SolverBuilderError::NoOutgoingEdges {
+                        name: node.name().to_string(),
+                        sub_name: node.sub_name().map(|s| s.to_string()),
+                        node_index: node.index(),
+                    });
                 }
 
-                for edge in incoming_edges {
+                for edge in node.iter_incoming_edges() {
                     let column = self.col_for_edge(edge);
                     row.add_element(column, 1.0);
                 }
-                for edge in outgoing_edges {
+                for edge in node.iter_outgoing_edges() {
                     let column = self.col_for_edge(edge);
                     row.add_element(column, -1.0);
                 }
 
-                if row.columns.is_empty() {
-                    panic!("Row contains no columns!")
-                } else if row.columns.len() == 1 {
+                // Row should not be empty at this point because we have already checked there are
+                // incoming and outgoing edges.
+                if row.columns.len() == 1 {
                     // Skip this row because the edges must be mapped to the same column
                 } else {
                     row.set_upper(0.0);
@@ -794,34 +953,30 @@ where
                 }
             }
         }
+
+        Ok(())
     }
 
     fn add_node(&self, node: &Node, factor: f64, row: &mut RowBuilder<I>) {
         match node.node_type() {
-            NodeType::Link => {
-                for edge in node.get_outgoing_edges().unwrap() {
-                    let column = self.col_for_edge(edge);
-                    row.add_element(column, factor);
-                }
-            }
-            NodeType::Input => {
-                for edge in node.get_outgoing_edges().unwrap() {
+            NodeType::Link | NodeType::Input => {
+                for edge in node.iter_outgoing_edges() {
                     let column = self.col_for_edge(edge);
                     row.add_element(column, factor);
                 }
             }
             NodeType::Output => {
-                for edge in node.get_incoming_edges().unwrap() {
+                for edge in node.iter_incoming_edges() {
                     let column = self.col_for_edge(edge);
                     row.add_element(column, factor);
                 }
             }
             NodeType::Storage => {
-                for edge in node.get_incoming_edges().unwrap() {
+                for edge in node.iter_incoming_edges() {
                     let column = self.col_for_edge(edge);
                     row.add_element(column, factor);
                 }
-                for edge in node.get_outgoing_edges().unwrap() {
+                for edge in node.iter_outgoing_edges() {
                     let column = self.col_for_edge(edge);
                     row.add_element(column, -factor);
                 }
@@ -846,7 +1001,7 @@ where
         &mut self,
         network: &Network,
         values: &ConstParameterValues,
-    ) -> Result<Vec<NodeRowId<I>>, SolverSetupError> {
+    ) -> Result<Vec<NodeRowId<I>>, SolverBuilderError> {
         let mut row_ids = Vec::with_capacity(network.nodes().len());
 
         for node in network.nodes().deref() {
@@ -947,7 +1102,7 @@ where
         &mut self,
         network: &Network,
         values: &ConstParameterValues,
-    ) -> Vec<AggNodeFactorRow<I>> {
+    ) -> Result<Vec<AggNodeFactorRow<I>>, SolverBuilderError> {
         let mut row_ids = Vec::new();
 
         for agg_node in network.aggregated_nodes().deref() {
@@ -960,20 +1115,23 @@ where
 
                     let mut row = RowBuilder::default();
 
-                    // TODO error handling?
                     let nodes = network.nodes();
 
                     let f0 = node_pair.node0_factor();
 
                     for node0_idx in node_pair.node0_indices() {
-                        let node0 = nodes.get(node0_idx).expect("Node index not found!");
+                        let node0 = nodes
+                            .get(node0_idx)
+                            .ok_or(SolverBuilderError::NodeIndexNotFound { node_index: *node0_idx })?;
                         self.add_node(node0, f0.unwrap_or(1.0), &mut row);
                     }
 
                     let f1 = node_pair.node1_factor();
 
                     for node1_idx in node_pair.node1_indices() {
-                        let node1 = nodes.get(node1_idx).expect("Node index not found!");
+                        let node1 = nodes
+                            .get(node1_idx)
+                            .ok_or(SolverBuilderError::NodeIndexNotFound { node_index: *node1_idx })?;
                         self.add_node(node1, f1.unwrap_or(1.0), &mut row);
                     }
 
@@ -1001,7 +1159,7 @@ where
             }
         }
 
-        row_ids
+        Ok(row_ids)
     }
 
     /// Create aggregated node constraints
@@ -1009,7 +1167,7 @@ where
     /// One constraint is created per node to enforce any constraints (flow or storage)
     /// that it may define. Returns the row ids associated with each aggregated node constraint.
     /// Panics if the model contains aggregated nodes with broken references to nodes.
-    fn create_aggregated_node_constraints(&mut self, network: &Network) -> Vec<usize> {
+    fn create_aggregated_node_constraints(&mut self, network: &Network) -> Result<Vec<usize>, SolverBuilderError> {
         let mut row_ids = Vec::with_capacity(network.aggregated_nodes().len());
 
         for agg_node in network.aggregated_nodes().deref() {
@@ -1017,22 +1175,24 @@ where
             let mut row: RowBuilder<I> = RowBuilder::default();
 
             for node_indices in agg_node.iter_nodes() {
-                // TODO error handling?
                 for node_idx in node_indices {
-                    let node = network.nodes().get(node_idx).expect("Node index not found!");
+                    let node = network
+                        .nodes()
+                        .get(node_idx)
+                        .ok_or(SolverBuilderError::NodeIndexNotFound { node_index: *node_idx })?;
                     self.add_node(node, 1.0, &mut row);
                 }
             }
 
             let row_id = self.builder.add_variable_row(row);
-            row_ids.push(row_id.to_usize().unwrap())
+            row_ids.push(row_id.to_usize())
         }
-        row_ids
+        Ok(row_ids)
     }
 
     /// Create virtual storage node constraints
     ///
-    fn create_virtual_storage_constraints(&mut self, network: &Network) -> Vec<usize> {
+    fn create_virtual_storage_constraints(&mut self, network: &Network) -> Result<Vec<usize>, SolverBuilderError> {
         let mut row_ids = Vec::with_capacity(network.virtual_storage_nodes().len());
 
         for virtual_storage in network.virtual_storage_nodes().deref() {
@@ -1041,30 +1201,38 @@ where
             let mut row: RowBuilder<I> = RowBuilder::default();
             for (node_index, factor) in virtual_storage.iter_nodes_with_factors() {
                 if !factor.is_finite() {
-                    panic!(
-                        "Virtual storage node {:?} contains a non-finite factor.",
-                        virtual_storage.full_name()
-                    );
+                    return Err(SolverBuilderError::VirtualStorageNonFiniteFactor {
+                        name: virtual_storage.name().to_string(),
+                        sub_name: virtual_storage.sub_name().map(|s| s.to_string()),
+                        virtual_storage_index: virtual_storage.index(),
+                    });
                 }
-                let node = network.nodes().get(node_index).expect("Node index not found!");
+                let node = network
+                    .nodes()
+                    .get(node_index)
+                    .ok_or(SolverBuilderError::NodeIndexNotFound {
+                        node_index: *node_index,
+                    })?;
                 self.add_node(node, -factor, &mut row);
             }
             let row_id = self.builder.add_variable_row(row);
-            row_ids.push(row_id.to_usize().unwrap());
+            row_ids.push(row_id.to_usize());
         }
-        row_ids
+        Ok(row_ids)
     }
 
     /// Create mutual exclusivity constraints
-    fn create_mutual_exclusivity_constraints(&mut self, network: &Network) {
+    fn create_mutual_exclusivity_constraints(&mut self, network: &Network) -> Result<(), SolverBuilderError> {
         for agg_node in network.aggregated_nodes().iter() {
             if let Some(exclusivity) = agg_node.get_exclusivity() {
                 let mut row = RowBuilder::default();
                 for node_index in agg_node.iter_nodes() {
-                    let bin_col = self
-                        .node_set_bin_col_map
-                        .get(node_index)
-                        .expect("Binary column not found for Node in mutual exclusivity constraint!");
+                    let bin_col = self.node_set_bin_col_map.get(node_index).ok_or_else(|| {
+                        SolverBuilderError::BinaryColumnMappingNotFound {
+                            name: agg_node.name().to_string(),
+                            sub_name: agg_node.sub_name().map(|s| s.to_string()),
+                        }
+                    })?;
 
                     row.add_element(*bin_col, 1.0);
                 }
@@ -1074,6 +1242,8 @@ where
                 self.builder.add_fixed_row(row);
             }
         }
+
+        Ok(())
     }
 }
 

@@ -39,7 +39,9 @@ pub use self::ipm_simd::build_ipm_simd_settings_py;
 #[cfg(feature = "ipm-simd")]
 pub use self::ipm_simd::{SimdIpmF64Solver, SimdIpmSolverSettings, SimdIpmSolverSettingsBuilder};
 use crate::aggregated_node::AggregatedNodeIndex;
+use crate::edge::EdgeIndex;
 use crate::node::NodeIndex;
+use crate::solvers::builder::{LpWrapperError, SolverBuilderError};
 #[cfg(all(feature = "cbc", feature = "pyo3"))]
 pub use cbc::build_cbc_settings_py;
 #[cfg(feature = "cbc")]
@@ -114,12 +116,8 @@ pub trait SolverSettings {
 /// Errors that can occur during solver setup.
 #[derive(Debug, Error)]
 pub enum SolverSetupError {
-    #[error("Node error: {0}")]
-    NodeError(#[from] crate::node::NodeError),
-    #[error("Cannot create linear programme. No edges defined in the model")]
-    NoEdgesDefined,
-    #[error("Node index not found: {0}")]
-    NodeIndexNotFound(NodeIndex),
+    #[error("Solver builder error: {0}")]
+    SolverBuilderError(#[from] SolverBuilderError),
     #[cfg(feature = "highs")]
     #[error("Highs error: {0}")]
     HighsError(#[from] highs::HighsStatusError),
@@ -175,6 +173,10 @@ pub enum SolverSolveError {
     #[cfg(feature = "microlp")]
     #[error("MicroLP error: {0}")]
     MicroLpError(#[from] MicroLpError),
+    #[error("Column not found for edge ({edge_index}).")]
+    ColumnNotFound { edge_index: EdgeIndex },
+    #[error("LP wrapper error: {0}")]
+    LpWrapperError(#[from] LpWrapperError),
 }
 
 pub trait Solver: Send {

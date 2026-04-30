@@ -39,12 +39,8 @@ pub enum NodeError {
     ConstantMetricF64Error(#[from] ConstantMetricF64Error),
     #[error("Invalid node connection to input node.")]
     InvalidNodeConnectionToInput,
-    #[error("Input node has no incoming edges.")]
-    InputNodeHasNoIncomingEdges,
     #[error("Invalid node connection from output node.")]
     InvalidNodeConnectionFromOutput,
-    #[error("Output node has no outgoing edges.")]
-    OutputNodeHasNoOutgoingEdges,
     #[error("No virtual storage on storage node")]
     NoVirtualStorageOnStorageNode,
     #[error("Network state error: {0}")]
@@ -309,21 +305,39 @@ impl Node {
         }
     }
 
-    pub fn get_incoming_edges(&self) -> Result<&Vec<EdgeIndex>, NodeError> {
+    pub fn num_incoming_edges(&self) -> usize {
         match self {
-            Self::Input(_) => Err(NodeError::InputNodeHasNoIncomingEdges),
-            Self::Output(n) => Ok(&n.incoming_edges),
-            Self::Link(n) => Ok(&n.incoming_edges),
-            Self::Storage(n) => Ok(&n.incoming_edges),
+            Self::Input(_) => 0,
+            Self::Output(n) => n.incoming_edges.len(),
+            Self::Link(n) => n.incoming_edges.len(),
+            Self::Storage(n) => n.incoming_edges.len(),
         }
     }
 
-    pub fn get_outgoing_edges(&self) -> Result<&Vec<EdgeIndex>, NodeError> {
+    pub fn iter_incoming_edges(&self) -> impl Iterator<Item = &EdgeIndex> + '_ {
         match self {
-            Self::Input(n) => Ok(&n.outgoing_edges),
-            Self::Output(_) => Err(NodeError::OutputNodeHasNoOutgoingEdges),
-            Self::Link(n) => Ok(&n.outgoing_edges),
-            Self::Storage(n) => Ok(&n.outgoing_edges),
+            Self::Input(_) => [].iter(),
+            Self::Output(n) => n.incoming_edges.iter(),
+            Self::Link(n) => n.incoming_edges.iter(),
+            Self::Storage(n) => n.incoming_edges.iter(),
+        }
+    }
+
+    pub fn num_outgoing_edges(&self) -> usize {
+        match self {
+            Self::Input(n) => n.outgoing_edges.len(),
+            Self::Output(_) => 0,
+            Self::Link(n) => n.outgoing_edges.len(),
+            Self::Storage(n) => n.outgoing_edges.len(),
+        }
+    }
+
+    pub fn iter_outgoing_edges(&self) -> impl Iterator<Item = &EdgeIndex> + '_ {
+        match self {
+            Self::Input(n) => n.outgoing_edges.iter(),
+            Self::Output(_) => [].iter(),
+            Self::Link(n) => n.outgoing_edges.iter(),
+            Self::Storage(n) => n.outgoing_edges.iter(),
         }
     }
 

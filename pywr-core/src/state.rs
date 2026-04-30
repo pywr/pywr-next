@@ -9,7 +9,6 @@ use crate::parameters::{
 };
 use crate::timestep::Timestep;
 use crate::virtual_storage::VirtualStorageIndex;
-use num::Zero;
 #[cfg(feature = "pyo3")]
 use pyo3::{
     Borrowed, FromPyObject, PyAny, PyErr, PyResult,
@@ -136,8 +135,8 @@ impl StorageState {
     }
 
     fn proportional_volume(&self, max_volume: f64) -> f64 {
-        if max_volume.is_zero() {
-            // If max volume is zero then we will consider the storage to befull. This matches V1 behaviour.
+        if max_volume == 0.0 {
+            // If max volume is zero then we will consider the storage to be full. This matches V1 behaviour.
             return 1.0;
         }
         self.volume / max_volume

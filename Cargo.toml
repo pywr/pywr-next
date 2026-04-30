@@ -47,7 +47,6 @@ hex = "0.4.3"
 md-5 = "0.11"
 microlp = "0.4.0"
 ndarray = "0.17"
-num = "0.4"
 polars = { version = "0.53", default-features = false }
 pyo3 = { version = "0.27" }
 pyo3-log = "0.13"

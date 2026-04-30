@@ -2477,10 +2477,10 @@ mod tests {
         let input_node = network.get_node_by_name("input", None).unwrap();
         let link_node = network.get_node_by_name("link", None).unwrap();
         let output_node = network.get_node_by_name("output", None).unwrap();
-        assert_eq!(input_node.get_outgoing_edges().unwrap().len(), 1);
-        assert_eq!(link_node.get_incoming_edges().unwrap().len(), 1);
-        assert_eq!(link_node.get_outgoing_edges().unwrap().len(), 1);
-        assert_eq!(output_node.get_incoming_edges().unwrap().len(), 1);
+        assert_eq!(input_node.num_outgoing_edges(), 1);
+        assert_eq!(link_node.num_incoming_edges(), 1);
+        assert_eq!(link_node.num_outgoing_edges(), 1);
+        assert_eq!(output_node.num_incoming_edges(), 1);
     }
 
     #[test]
