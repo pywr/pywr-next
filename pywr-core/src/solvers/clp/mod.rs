@@ -370,7 +370,7 @@ impl Solver for ClpSolver {
         values: &ConstParameterValues,
         _settings: &Self::Settings,
     ) -> Result<Box<Self>, SolverSetupError> {
-        let builder = SolverBuilder::new(f64::MAX, f64::MIN);
+        let builder = SolverBuilder::new(f64::MAX, -f64::MAX);
         let built = builder.create(model, values)?;
 
         let solver = ClpSolver::from_builder(built);
