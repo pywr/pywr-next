@@ -1,12 +1,13 @@
 use crate::{ConversionData, ConversionError, TryFromV1};
 use digest::Digest;
+use digest_io::IoWrapper;
 use md5::Md5;
 use pywr_schema_macros::PywrVisitAll;
 use schemars::JsonSchema;
 use sha2::Sha256;
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::{BufReader, Write, copy};
+use std::io::{BufReader, copy};
 use std::path::{Path, PathBuf};
 use thiserror::Error;
 
@@ -75,19 +76,19 @@ impl TryFromV1<HashMap<String, String>> for Checksum {
 }
 
 /// Validate a file's checksum against the expected hash.
-fn validate_hex_digest<D: Digest + Write>(path: &Path, expected: &str) -> Result<(), ChecksumError> {
+fn validate_hex_digest<D: Digest + digest::Update>(path: &Path, expected: &str) -> Result<(), ChecksumError> {
     let input = File::open(path).map_err(|e| ChecksumError::IoError {
         path: path.to_path_buf(),
         source: Box::new(e),
     })?;
     let mut reader = BufReader::new(input);
 
-    let mut hasher = D::new();
+    let mut hasher = IoWrapper(D::new());
     let _n = copy(&mut reader, &mut hasher).map_err(|e| ChecksumError::IoError {
         path: path.to_path_buf(),
         source: Box::new(e),
     })?;
-    let hash = hasher.finalize();
+    let hash = hasher.0.finalize();
 
     let actual_hash = hex::encode(hash);
     if actual_hash == expected {
