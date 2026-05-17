@@ -64,7 +64,7 @@ strum = "0.28"
 strum_macros = "0.28"
 thiserror = "2.0"
 tracing = { version = "0.1", features = ["log"] }
-wide = "1.3.0"
+wide = "1.4.0"
 
 [workspace.metadata.docs.rs]
 rustdoc-args = ["--html-in-header", "katex-header.html"]
