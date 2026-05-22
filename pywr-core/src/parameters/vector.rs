@@ -1,5 +1,5 @@
 use crate::network::Network;
-use crate::parameters::errors::ParameterCalculationError;
+use crate::parameters::errors::GeneralCalculationError;
 use crate::parameters::{GeneralParameter, Parameter, ParameterMeta, ParameterName, ParameterState};
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
@@ -33,10 +33,10 @@ impl GeneralParameter<f64> for VectorParameter {
         _model: &Network,
         _state: &State,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<f64>, ParameterCalculationError> {
+    ) -> Result<Option<f64>, GeneralCalculationError> {
         match self.values.get(timestep.index) {
             Some(v) => Ok(Some(*v)),
-            None => Err(ParameterCalculationError::OutOfBoundsError {
+            None => Err(GeneralCalculationError::OutOfBoundsError {
                 index: timestep.index,
                 length: self.values.len(),
                 axis: 0,

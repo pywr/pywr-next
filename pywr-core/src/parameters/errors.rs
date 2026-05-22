@@ -21,7 +21,7 @@ pub enum ParameterSetupError {
 
 /// Errors returned by parameter calculations.
 #[derive(Error, Debug)]
-pub enum ParameterCalculationError {
+pub enum GeneralCalculationError {
     #[error("F64 metric error: {0}")]
     MetricF64Error(#[from] MetricF64Error),
     #[error("U64 metric error: {0}")]

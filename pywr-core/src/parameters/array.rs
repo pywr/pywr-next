@@ -1,5 +1,9 @@
+use crate::network::ResolutionMaps;
 use crate::parameters::errors::SimpleCalculationError;
-use crate::parameters::{Parameter, ParameterMeta, ParameterName, ParameterState, SimpleParameter};
+use crate::parameters::{
+    BuiltParameter, MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder, ParameterMeta,
+    ParameterName, ParameterState, SimpleParameter,
+};
 use crate::scenario::ScenarioIndex;
 use crate::state::SimpleParameterValues;
 use crate::timestep::{Timestep, TimestepIndex};
@@ -12,14 +16,6 @@ pub struct Array1Parameter<T> {
 }
 
 impl<T> Array1Parameter<T> {
-    pub fn new(name: ParameterName, array: Array1<T>, timestep_offset: Option<i32>) -> Self {
-        Self {
-            meta: ParameterMeta::new(name),
-            array,
-            timestep_offset,
-        }
-    }
-
     /// Compute the time-step index to use accounting for any defined offset.
     ///
     /// The offset is applied to the time-step index and then clamped to the bounds of the array.
@@ -98,6 +94,61 @@ impl SimpleParameter<u64> for Array1Parameter<u64> {
     }
 }
 
+pub struct Array1ParameterBuilder<T> {
+    meta: ParameterMeta,
+    array: Array1<T>,
+    timestep_offset: Option<i32>,
+}
+
+impl<T> Array1ParameterBuilder<T> {
+    pub fn new(name: ParameterName, array: Array1<T>) -> Self {
+        Self {
+            meta: ParameterMeta::new(name),
+            array,
+            timestep_offset: None,
+        }
+    }
+
+    pub fn timestep_offset(&mut self, offset: i32) -> &mut Self {
+        self.timestep_offset = Some(offset);
+        self
+    }
+}
+
+impl ParameterBuilder<f64> for Array1ParameterBuilder<f64> {
+    fn name(&self) -> &ParameterName {
+        &self.meta.name
+    }
+    fn build(
+        self: Box<Self>,
+        _resolution_maps: &ResolutionMaps,
+    ) -> Result<MaybeBuiltParameter<f64>, ParameterBuildError> {
+        let p = Array1Parameter {
+            meta: self.meta,
+            array: self.array,
+            timestep_offset: self.timestep_offset,
+        };
+        Ok(BuiltParameter::Simple(Box::new(p)).into())
+    }
+}
+
+impl ParameterBuilder<u64> for Array1ParameterBuilder<u64> {
+    fn name(&self) -> &ParameterName {
+        &self.meta.name
+    }
+    fn build(
+        self: Box<Self>,
+        _resolution_maps: &ResolutionMaps,
+    ) -> Result<MaybeBuiltParameter<u64>, ParameterBuildError> {
+        let p = Array1Parameter {
+            meta: self.meta,
+            array: self.array,
+            timestep_offset: self.timestep_offset,
+        };
+        Ok(BuiltParameter::Simple(Box::new(p)).into())
+    }
+}
+
 pub struct Array2Parameter<T> {
     meta: ParameterMeta,
     array: Array2<T>,
@@ -106,20 +157,6 @@ pub struct Array2Parameter<T> {
 }
 
 impl<T> Array2Parameter<T> {
-    pub fn new(
-        name: ParameterName,
-        array: Array2<T>,
-        scenario_group_index: usize,
-        timestep_offset: Option<i32>,
-    ) -> Self {
-        Self {
-            meta: ParameterMeta::new(name),
-            array,
-            scenario_group_index,
-            timestep_offset,
-        }
-    }
-
     /// Compute the time-step index to use accounting for any defined offset.
     ///
     /// The offset is applied to the time-step index and then clamped to the bounds of the array.
@@ -229,6 +266,80 @@ impl SimpleParameter<u64> for Array2Parameter<u64> {
     }
 }
 
+pub struct Array2ParameterBuilder<T> {
+    meta: ParameterMeta,
+    array: Array2<T>,
+    scenario_group: String,
+    timestep_offset: Option<i32>,
+}
+
+impl<T> Array2ParameterBuilder<T> {
+    pub fn new(name: ParameterName, array: Array2<T>, scenario_group: &str) -> Self {
+        Self {
+            meta: ParameterMeta::new(name),
+            array,
+            scenario_group: scenario_group.to_string(),
+            timestep_offset: None,
+        }
+    }
+
+    pub fn timestep_offset(&mut self, offset: i32) -> &mut Self {
+        self.timestep_offset = Some(offset);
+        self
+    }
+}
+
+impl ParameterBuilder<f64> for Array2ParameterBuilder<f64> {
+    fn name(&self) -> &ParameterName {
+        &self.meta.name
+    }
+    fn build(
+        self: Box<Self>,
+        resolution_maps: &ResolutionMaps,
+    ) -> Result<MaybeBuiltParameter<f64>, ParameterBuildError> {
+        let scenario_group_index = resolution_maps
+            .scenario_group
+            .get(&self.scenario_group)
+            .ok_or_else(|| ParameterBuildError::ScenarioGroupNotFound {
+                name: self.scenario_group.clone(),
+            })?;
+
+        let p = Array2Parameter {
+            meta: self.meta,
+            array: self.array,
+            scenario_group_index: *scenario_group_index,
+            timestep_offset: self.timestep_offset,
+        };
+
+        Ok(BuiltParameter::Simple(Box::new(p)).into())
+    }
+}
+
+impl ParameterBuilder<u64> for Array2ParameterBuilder<u64> {
+    fn name(&self) -> &ParameterName {
+        &self.meta.name
+    }
+    fn build(
+        self: Box<Self>,
+        resolution_maps: &ResolutionMaps,
+    ) -> Result<MaybeBuiltParameter<u64>, ParameterBuildError> {
+        let scenario_group_index = resolution_maps
+            .scenario_group
+            .get(&self.scenario_group)
+            .ok_or_else(|| ParameterBuildError::ScenarioGroupNotFound {
+                name: self.scenario_group.clone(),
+            })?;
+
+        let p = Array2Parameter {
+            meta: self.meta,
+            array: self.array,
+            scenario_group_index: *scenario_group_index,
+            timestep_offset: self.timestep_offset,
+        };
+        Ok(BuiltParameter::Simple(Box::new(p)).into())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -242,7 +353,11 @@ mod tests {
         let domain = default_domain();
 
         let data = Array::range(0.0, 366.0, 1.0);
-        let p = Array1Parameter::new("my-array-parameter".into(), data, None);
+        let p = Array1Parameter {
+            meta: ParameterMeta::new("my-array-parameter".into()),
+            array: data,
+            timestep_offset: None,
+        };
 
         let spv = StateBuilder::new(Vec::new(), 0).build();
 
@@ -270,7 +385,12 @@ mod tests {
 
         let data = Array::range(0.0, 366.0, 1.0);
         let data = data.insert_axis(Axis(1));
-        let p = Array2Parameter::new("my-array-parameter".into(), data, 0, None);
+        let p = Array2Parameter {
+            meta: ParameterMeta::new("my-array-parameter".into()),
+            array: data,
+            scenario_group_index: 0,
+            timestep_offset: None,
+        };
 
         let spv = StateBuilder::new(Vec::new(), 0).build();
 
@@ -298,7 +418,12 @@ mod tests {
 
         let data = Array::range(0.0, 5.0, 1.0);
         let data = data.insert_axis(Axis(1));
-        let p = Array2Parameter::new("my-array-parameter".into(), data, 0, None);
+        let p = Array2Parameter {
+            meta: ParameterMeta::new("my-array-parameter".into()),
+            array: data,
+            scenario_group_index: 0,
+            timestep_offset: None,
+        };
 
         let spv = StateBuilder::new(Vec::new(), 0).build();
 

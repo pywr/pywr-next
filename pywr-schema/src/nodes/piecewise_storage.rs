@@ -401,7 +401,7 @@ impl PiecewiseStorageNode {
             })?;
 
         let metric = match attr {
-            PiecewiseStorageNodeAttribute::Volume => MetricF64::AggregatedNodeVolume(idx),
+            PiecewiseStorageNodeAttribute::Volume => MetricF64::AggregatedStorageNodeVolume(idx),
             PiecewiseStorageNodeAttribute::ProportionalVolume => MetricF64::AggregatedNodeProportionalVolume(idx),
         };
 

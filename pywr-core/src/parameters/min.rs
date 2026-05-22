@@ -1,6 +1,6 @@
 use crate::metric::MetricF64;
 use crate::network::Network;
-use crate::parameters::errors::ParameterCalculationError;
+use crate::parameters::errors::GeneralCalculationError;
 use crate::parameters::{GeneralParameter, Parameter, ParameterMeta, ParameterName, ParameterState};
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
@@ -35,7 +35,7 @@ impl GeneralParameter<f64> for MinParameter {
         model: &Network,
         state: &State,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<f64>, ParameterCalculationError> {
+    ) -> Result<Option<f64>, GeneralCalculationError> {
         let x = self.metric.get_value(model, state)?;
         Ok(Some(x.min(self.threshold)))
     }

@@ -4,7 +4,7 @@ use super::{ConstParameter, Parameter, ParameterName, ParameterState, SimplePara
 use crate::agg_funcs::AggFuncU64;
 use crate::metric::{ConstantMetricU64, MetricU64, SimpleMetricU64};
 use crate::network::Network;
-use crate::parameters::errors::{ConstCalculationError, ParameterCalculationError, SimpleCalculationError};
+use crate::parameters::errors::{ConstCalculationError, GeneralCalculationError, SimpleCalculationError};
 use crate::parameters::{GeneralParameter, ParameterMeta};
 use crate::scenario::ScenarioIndex;
 use crate::state::{ConstParameterValues, SimpleParameterValues, State};
@@ -46,7 +46,7 @@ impl GeneralParameter<u64> for AggregatedIndexParameter<MetricU64> {
         network: &Network,
         state: &State,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<u64>, ParameterCalculationError> {
+    ) -> Result<Option<u64>, GeneralCalculationError> {
         let values = self
             .metrics
             .iter()

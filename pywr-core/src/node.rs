@@ -1,29 +1,12 @@
-use crate::edge::EdgeIndex;
-use crate::metric::{ConstantMetricF64Error, MetricF64, MetricF64Error, SimpleMetricF64, SimpleMetricF64Error};
-use crate::network::Network;
+use crate::metric::{
+    ConstantMetricF64Error, MetricF64, MetricF64Error, MetricF64ResolutionError, SimpleMetricF64, SimpleMetricF64Error,
+    UnresolvedMetricF64,
+};
+use crate::network::{EdgeIndex, Network, NodeIndex, ResolutionMaps, VirtualStorageIndex};
 use crate::state::{ConstParameterValues, NetworkStateError, NodeState, SimpleParameterValues, State, StateError};
 use crate::timestep::Timestep;
-use crate::virtual_storage::VirtualStorageIndex;
 use std::fmt::{Display, Formatter};
-use std::ops::{Deref, DerefMut};
 use thiserror::Error;
-
-#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Debug, Hash)]
-pub struct NodeIndex(usize);
-
-impl Deref for NodeIndex {
-    type Target = usize;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl Display for NodeIndex {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        self.0.fmt(f)
-    }
-}
 
 #[derive(Debug, Error)]
 pub enum NodeError {
@@ -57,6 +40,392 @@ pub enum NodeError {
     NodeIndexNotFound(NodeIndex),
 }
 
+#[derive(Debug, Error)]
+pub enum NodeBuilderError {
+    #[error("Index not found in resolution map.")]
+    IndexNotFound,
+    #[error("Could not resolve f64 metric for `{attr}` attribute: {source}")]
+    ResolveMetricF64Error {
+        attr: String,
+        #[source]
+        source: MetricF64ResolutionError,
+    },
+    #[error("Could not simplify f64 metric for `{attr}`: {source}")]
+    CouldNotSimplifyMetricF64 {
+        attr: String,
+        #[source]
+        source: MetricF64Error,
+    },
+    #[error("Initial volume not defined.")]
+    InitialVolumeNotDefined,
+    #[error("Node type `{node_type}` must have at-least one outgoing edge.")]
+    NoOutgoingEdges { node_type: NodeType },
+    #[error("Node type `{node_type}` must have at-least one incoming edge.")]
+    NoIncomingEdges { node_type: NodeType },
+    #[error("Node type `{node_type}` must not have any outgoing edges ({num} found).")]
+    UnexpectedOutgoingEdges { node_type: NodeType, num: usize },
+    #[error("Node type `{node_type}` must not have any incoming edges ({num} found).")]
+    UnexpectedIncomingEdges { node_type: NodeType, num: usize },
+}
+
+pub struct NodeBuilder {
+    name: UnresolvedNode,
+    node_type: NodeType,
+    cost: Option<UnresolvedMetricF64>,
+    cost_agg_func: Option<CostAggFunc>,
+    min_flow: Option<UnresolvedMetricF64>,
+    max_flow: Option<UnresolvedMetricF64>,
+    initial_volume: Option<UnresolvedStorageInitialVolume>,
+    max_volume: Option<UnresolvedMetricF64>,
+    min_volume: Option<UnresolvedMetricF64>,
+}
+
+impl NodeBuilder {
+    /// The name of node that will be built.
+    pub fn name(&self) -> &UnresolvedNode {
+        &self.name
+    }
+    pub fn input(name: &str) -> Self {
+        Self::new(name, NodeType::Input)
+    }
+
+    pub fn output(name: &str) -> Self {
+        Self::new(name, NodeType::Output)
+    }
+
+    pub fn link(name: &str) -> Self {
+        Self::new(name, NodeType::Link)
+    }
+
+    pub fn storage(name: &str) -> Self {
+        Self::new(name, NodeType::Storage)
+    }
+    pub fn new(name: &str, node_type: NodeType) -> Self {
+        let meta = UnresolvedNode {
+            name: name.to_string(),
+            sub_name: None,
+        };
+        Self {
+            name: meta,
+            node_type,
+            cost: None,
+            cost_agg_func: None,
+            max_flow: None,
+            min_flow: None,
+            initial_volume: None,
+            min_volume: None,
+            max_volume: None,
+        }
+    }
+
+    pub fn sub_name(&mut self, sub_name: &str) -> &mut Self {
+        self.name.sub_name = Some(sub_name.to_string());
+        self
+    }
+
+    pub fn cost(&mut self, cost: UnresolvedMetricF64) -> &mut Self {
+        self.cost = Some(cost);
+        self
+    }
+
+    pub fn cost_agg_func(&mut self, cost_agg_func: CostAggFunc) -> &mut Self {
+        self.cost_agg_func = Some(cost_agg_func);
+        self
+    }
+
+    pub fn min_flow(&mut self, min_flow: UnresolvedMetricF64) -> &mut Self {
+        self.min_flow = Some(min_flow);
+        self
+    }
+
+    pub fn max_flow(&mut self, max_flow: UnresolvedMetricF64) -> &mut Self {
+        self.max_flow = Some(max_flow);
+        self
+    }
+
+    pub fn initial_volume(&mut self, initial_volume: UnresolvedStorageInitialVolume) -> &mut Self {
+        self.initial_volume = Some(initial_volume);
+        self
+    }
+
+    pub fn max_volume(&mut self, max_volume: UnresolvedMetricF64) -> &mut Self {
+        self.max_volume = Some(max_volume);
+        self
+    }
+
+    pub fn min_volume(&mut self, min_volume: UnresolvedMetricF64) -> &mut Self {
+        self.min_volume = Some(min_volume);
+        self
+    }
+
+    fn build_cost(&self, resolution_maps: &ResolutionMaps) -> Result<NodeCost, NodeBuilderError> {
+        let index = resolution_maps
+            .nodes
+            .get(&self.name)
+            .ok_or(NodeBuilderError::IndexNotFound)?;
+
+        let local = match &self.cost {
+            Some(cost) => cost
+                .resolve(resolution_maps)
+                .map_err(|source| NodeBuilderError::ResolveMetricF64Error {
+                    attr: "cost".to_string(),
+                    source,
+                })?,
+            None => 0.0.into(),
+        };
+
+        let virtual_storage_nodes = resolution_maps
+            .virtual_storage_associated_nodes
+            .get(index)
+            .cloned()
+            .unwrap_or_default();
+
+        let cost = NodeCost {
+            local: Some(local),
+            virtual_storage_nodes,
+            agg_func: self.cost_agg_func,
+        };
+
+        Ok(cost)
+    }
+
+    /// Build a [`FlowConstraints`] from the builder.
+    fn build_flow_constraints(&self, resolution_maps: &ResolutionMaps) -> Result<FlowConstraints, NodeBuilderError> {
+        let min_flow = self
+            .min_flow
+            .as_ref()
+            .map(|min_flow| {
+                min_flow
+                    .resolve(resolution_maps)
+                    .map_err(|source| NodeBuilderError::ResolveMetricF64Error {
+                        attr: "min_flow".to_string(),
+                        source,
+                    })
+            })
+            .transpose()?;
+
+        let max_flow = self
+            .max_flow
+            .as_ref()
+            .map(|max_flow| {
+                max_flow
+                    .resolve(resolution_maps)
+                    .map_err(|source| NodeBuilderError::ResolveMetricF64Error {
+                        attr: "max_flow".to_string(),
+                        source,
+                    })
+            })
+            .transpose()?;
+
+        let flow_constraints = FlowConstraints::new(min_flow, max_flow);
+
+        Ok(flow_constraints)
+    }
+
+    /// Build a [`StorageConstraints`] from the builder.
+    fn build_storage_constraints(
+        &self,
+        resolution_maps: &ResolutionMaps,
+    ) -> Result<StorageConstraints, NodeBuilderError> {
+        let min_volume = self
+            .min_volume
+            .as_ref()
+            .map(|min_volume| {
+                min_volume
+                    .resolve(resolution_maps)
+                    .map_err(|source| NodeBuilderError::ResolveMetricF64Error {
+                        attr: "min_volume".to_string(),
+                        source,
+                    })?
+                    .try_into()
+                    .map_err(|source| NodeBuilderError::CouldNotSimplifyMetricF64 {
+                        attr: "max_volume".to_string(),
+                        source,
+                    })
+            })
+            .transpose()?;
+
+        let max_volume = self
+            .max_volume
+            .as_ref()
+            .map(|max_volume| {
+                max_volume
+                    .resolve(resolution_maps)
+                    .map_err(|source| NodeBuilderError::ResolveMetricF64Error {
+                        attr: "max_volume".to_string(),
+                        source,
+                    })?
+                    .try_into()
+                    .map_err(|source| NodeBuilderError::CouldNotSimplifyMetricF64 {
+                        attr: "max_volume".to_string(),
+                        source,
+                    })
+            })
+            .transpose()?;
+
+        let storage_constraints = StorageConstraints { min_volume, max_volume };
+
+        Ok(storage_constraints)
+    }
+
+    fn build_storage_initial_volume(
+        &self,
+        resolution_maps: &ResolutionMaps,
+    ) -> Result<StorageInitialVolume, NodeBuilderError> {
+        match &self.initial_volume {
+            Some(iv) => match iv {
+                UnresolvedStorageInitialVolume::Absolute(iv) => Ok(StorageInitialVolume::Absolute(*iv)),
+                UnresolvedStorageInitialVolume::Proportional(iv) => Ok(StorageInitialVolume::Proportional(*iv)),
+                UnresolvedStorageInitialVolume::DistributedAbsolute {
+                    absolute,
+                    prior_max_volume,
+                } => {
+                    let prior_max_volume = prior_max_volume
+                        .resolve(resolution_maps)
+                        .map_err(|source| NodeBuilderError::ResolveMetricF64Error {
+                            attr: "prior_max_volume".to_string(),
+                            source,
+                        })?
+                        .try_into()
+                        .map_err(|source| NodeBuilderError::CouldNotSimplifyMetricF64 {
+                            attr: "prior_max_volume".to_string(),
+                            source,
+                        })?;
+                    Ok(StorageInitialVolume::DistributedAbsolute {
+                        absolute: *absolute,
+                        prior_max_volume,
+                    })
+                }
+                UnresolvedStorageInitialVolume::DistributedProportional {
+                    proportion,
+                    total_volume,
+                    prior_max_volume,
+                } => {
+                    let total_volume = total_volume
+                        .resolve(resolution_maps)
+                        .map_err(|source| NodeBuilderError::ResolveMetricF64Error {
+                            attr: "total_volume".to_string(),
+                            source,
+                        })?
+                        .try_into()
+                        .map_err(|source| NodeBuilderError::CouldNotSimplifyMetricF64 {
+                            attr: "total_volume".to_string(),
+                            source,
+                        })?;
+                    let prior_max_volume = prior_max_volume
+                        .resolve(resolution_maps)
+                        .map_err(|source| NodeBuilderError::ResolveMetricF64Error {
+                            attr: "prior_max_volume".to_string(),
+                            source,
+                        })?
+                        .try_into()
+                        .map_err(|source| NodeBuilderError::CouldNotSimplifyMetricF64 {
+                            attr: "prior_max_volume".to_string(),
+                            source,
+                        })?;
+
+                    Ok(StorageInitialVolume::DistributedProportional {
+                        total_volume,
+                        proportion: *proportion,
+                        prior_max_volume,
+                    })
+                }
+            },
+            None => Err(NodeBuilderError::InitialVolumeNotDefined),
+        }
+    }
+    pub fn build(&self, resolution_maps: &ResolutionMaps) -> Result<Node, NodeBuilderError> {
+        let index = resolution_maps
+            .nodes
+            .get(&self.name)
+            .ok_or(NodeBuilderError::IndexNotFound)?;
+
+        let meta = NodeMeta {
+            index: *index,
+            name: self.name.name.clone(),
+            sub_name: self.name.sub_name.clone(),
+        };
+
+        let cost = self.build_cost(resolution_maps)?;
+
+        let incoming_edges = resolution_maps.incoming_edges.get(index).cloned().unwrap_or_default();
+        let outgoing_edges = resolution_maps.outgoing_edges.get(index).cloned().unwrap_or_default();
+
+        let node = match self.node_type {
+            NodeType::Input => {
+                if outgoing_edges.is_empty() {
+                    return Err(NodeBuilderError::NoOutgoingEdges {
+                        node_type: self.node_type,
+                    });
+                }
+                if !incoming_edges.is_empty() {
+                    return Err(NodeBuilderError::UnexpectedIncomingEdges {
+                        node_type: self.node_type,
+                        num: incoming_edges.len(),
+                    });
+                }
+
+                Node::Input(InputNode {
+                    meta,
+                    cost,
+                    flow_constraints: self.build_flow_constraints(resolution_maps)?,
+                    outgoing_edges,
+                })
+            }
+            NodeType::Output => {
+                if !outgoing_edges.is_empty() {
+                    return Err(NodeBuilderError::UnexpectedOutgoingEdges {
+                        node_type: self.node_type,
+                        num: outgoing_edges.len(),
+                    });
+                }
+                if incoming_edges.is_empty() {
+                    return Err(NodeBuilderError::NoIncomingEdges {
+                        node_type: self.node_type,
+                    });
+                }
+
+                Node::Output(OutputNode {
+                    meta,
+                    cost,
+                    flow_constraints: self.build_flow_constraints(resolution_maps)?,
+                    incoming_edges,
+                })
+            }
+            NodeType::Link => {
+                if outgoing_edges.is_empty() {
+                    return Err(NodeBuilderError::NoOutgoingEdges {
+                        node_type: self.node_type,
+                    });
+                }
+                if incoming_edges.is_empty() {
+                    return Err(NodeBuilderError::NoIncomingEdges {
+                        node_type: self.node_type,
+                    });
+                }
+
+                Node::Link(LinkNode {
+                    meta,
+                    cost,
+                    flow_constraints: Default::default(),
+                    incoming_edges,
+                    outgoing_edges,
+                })
+            }
+            NodeType::Storage => Node::Storage(StorageNode {
+                meta,
+                cost,
+                initial_volume: self.build_storage_initial_volume(resolution_maps)?,
+                incoming_edges,
+                outgoing_edges,
+                storage_constraints: self.build_storage_constraints(resolution_maps)?,
+            }),
+        };
+
+        Ok(node)
+    }
+}
+
 #[derive(Debug, PartialEq)]
 pub enum Node {
     Input(InputNode),
@@ -65,7 +434,7 @@ pub enum Node {
     Storage(StorageNode),
 }
 
-#[derive(Eq, PartialEq)]
+#[derive(Eq, PartialEq, Debug, Copy, Clone)]
 pub enum NodeType {
     Input,
     Output,
@@ -73,65 +442,14 @@ pub enum NodeType {
     Storage,
 }
 
-#[derive(Default)]
-pub struct NodeVec {
-    nodes: Vec<Node>,
-}
-
-impl Deref for NodeVec {
-    type Target = Vec<Node>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.nodes
-    }
-}
-
-impl DerefMut for NodeVec {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.nodes
-    }
-}
-
-impl NodeVec {
-    pub fn get(&self, index: &NodeIndex) -> Option<&Node> {
-        self.nodes.get(index.0)
-    }
-
-    pub fn get_mut(&mut self, index: &NodeIndex) -> Option<&mut Node> {
-        self.nodes.get_mut(index.0)
-    }
-
-    pub fn push_new_input(&mut self, name: &str, sub_name: Option<&str>) -> NodeIndex {
-        let node_index = NodeIndex(self.nodes.len());
-        let node = Node::new_input(node_index, name, sub_name);
-        self.nodes.push(node);
-        node_index
-    }
-    pub fn push_new_link(&mut self, name: &str, sub_name: Option<&str>) -> NodeIndex {
-        let node_index = NodeIndex(self.nodes.len());
-        let node = Node::new_link(node_index, name, sub_name);
-        self.nodes.push(node);
-        node_index
-    }
-    pub fn push_new_output(&mut self, name: &str, sub_name: Option<&str>) -> NodeIndex {
-        let node_index = NodeIndex(self.nodes.len());
-        let node = Node::new_output(node_index, name, sub_name);
-        self.nodes.push(node);
-        node_index
-    }
-
-    pub fn push_new_storage(
-        &mut self,
-        name: &str,
-        sub_name: Option<&str>,
-        initial_volume: StorageInitialVolume,
-        min_volume: Option<SimpleMetricF64>,
-        max_volume: Option<SimpleMetricF64>,
-    ) -> NodeIndex {
-        let node_index = NodeIndex(self.nodes.len());
-        let node = Node::new_storage(node_index, name, sub_name, initial_volume, min_volume, max_volume);
-        self.nodes.push(node);
-        node_index
+impl Display for NodeType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            NodeType::Input => write!(f, "Input"),
+            NodeType::Output => write!(f, "Output"),
+            NodeType::Link => write!(f, "Link"),
+            NodeType::Storage => write!(f, "Storage"),
+        }
     }
 }
 
@@ -165,40 +483,6 @@ pub enum CostAggFunc {
 }
 
 impl Node {
-    /// Create a new input node
-    pub fn new_input(node_index: NodeIndex, name: &str, sub_name: Option<&str>) -> Self {
-        Self::Input(InputNode::new(node_index, name, sub_name))
-    }
-
-    /// Create a new output node
-    pub fn new_output(node_index: NodeIndex, name: &str, sub_name: Option<&str>) -> Self {
-        Self::Output(OutputNode::new(node_index, name, sub_name))
-    }
-
-    /// Create a new link node
-    pub fn new_link(node_index: NodeIndex, name: &str, sub_name: Option<&str>) -> Self {
-        Self::Link(LinkNode::new(node_index, name, sub_name))
-    }
-
-    /// Create a new storage node
-    pub fn new_storage(
-        node_index: NodeIndex,
-        name: &str,
-        sub_name: Option<&str>,
-        initial_volume: StorageInitialVolume,
-        min_volume: Option<SimpleMetricF64>,
-        max_volume: Option<SimpleMetricF64>,
-    ) -> Self {
-        Self::Storage(StorageNode::new(
-            node_index,
-            name,
-            sub_name,
-            initial_volume,
-            min_volume,
-            max_volume,
-        ))
-    }
-
     /// Get a node's name
     pub fn name(&self) -> &str {
         match self {
@@ -273,42 +557,6 @@ impl Node {
         }
     }
 
-    pub fn add_incoming_edge(&mut self, edge: EdgeIndex) -> Result<(), NodeError> {
-        match self {
-            Self::Input(_) => Err(NodeError::InvalidNodeConnectionToInput),
-            Self::Output(n) => {
-                n.add_incoming_edge(edge);
-                Ok(())
-            }
-            Self::Link(n) => {
-                n.add_incoming_edge(edge);
-                Ok(())
-            }
-            Self::Storage(n) => {
-                n.add_incoming_edge(edge);
-                Ok(())
-            }
-        }
-    }
-
-    pub fn add_outgoing_edge(&mut self, edge: EdgeIndex) -> Result<(), NodeError> {
-        match self {
-            Self::Input(n) => {
-                n.add_outgoing_edge(edge);
-                Ok(())
-            }
-            Self::Output(_) => Err(NodeError::InvalidNodeConnectionFromOutput),
-            Self::Link(n) => {
-                n.add_outgoing_edge(edge);
-                Ok(())
-            }
-            Self::Storage(n) => {
-                n.add_outgoing_edge(edge);
-                Ok(())
-            }
-        }
-    }
-
     pub fn get_incoming_edges(&self) -> Result<&Vec<EdgeIndex>, NodeError> {
         match self {
             Self::Input(_) => Err(NodeError::InputNodeHasNoIncomingEdges),
@@ -327,24 +575,6 @@ impl Node {
         }
     }
 
-    pub fn add_virtual_storage(&mut self, virtual_storage_index: VirtualStorageIndex) -> Result<(), NodeError> {
-        match self {
-            Self::Input(n) => {
-                n.cost.virtual_storage_nodes.push(virtual_storage_index);
-                Ok(())
-            }
-            Self::Output(n) => {
-                n.cost.virtual_storage_nodes.push(virtual_storage_index);
-                Ok(())
-            }
-            Self::Link(n) => {
-                n.cost.virtual_storage_nodes.push(virtual_storage_index);
-                Ok(())
-            }
-            Self::Storage(_) => Err(NodeError::NoVirtualStorageOnStorageNode),
-        }
-    }
-
     pub fn before(&self, timestep: &Timestep, state: &mut State) -> Result<(), NodeError> {
         // Currently only storage nodes do something during before
         match self {
@@ -352,24 +582,6 @@ impl Node {
             Node::Output(_) => Ok(()),
             Node::Link(_) => Ok(()),
             Node::Storage(n) => n.before(timestep, state),
-        }
-    }
-
-    pub fn set_min_flow_constraint(&mut self, value: Option<MetricF64>) -> Result<(), NodeError> {
-        match self {
-            Self::Input(n) => {
-                n.set_min_flow(value);
-                Ok(())
-            }
-            Self::Link(n) => {
-                n.set_min_flow(value);
-                Ok(())
-            }
-            Self::Output(n) => {
-                n.set_min_flow(value);
-                Ok(())
-            }
-            Self::Storage(_) => Err(NodeError::FlowConstraintsUndefined),
         }
     }
 
@@ -387,24 +599,6 @@ impl Node {
             Self::Input(n) => Ok(n.get_const_min_flow(values)?),
             Self::Link(n) => Ok(n.get_const_min_flow(values)?),
             Self::Output(n) => Ok(n.get_const_min_flow(values)?),
-            Self::Storage(_) => Err(NodeError::FlowConstraintsUndefined),
-        }
-    }
-
-    pub fn set_max_flow_constraint(&mut self, value: Option<MetricF64>) -> Result<(), NodeError> {
-        match self {
-            Self::Input(n) => {
-                n.set_max_flow(value);
-                Ok(())
-            }
-            Self::Link(n) => {
-                n.set_max_flow(value);
-                Ok(())
-            }
-            Self::Output(n) => {
-                n.set_max_flow(value);
-                Ok(())
-            }
             Self::Storage(_) => Err(NodeError::FlowConstraintsUndefined),
         }
     }
@@ -436,48 +630,12 @@ impl Node {
         }
     }
 
-    pub fn set_initial_volume(&mut self, initial_volume: StorageInitialVolume) -> Result<(), NodeError> {
-        match self {
-            Self::Input(_) => Err(NodeError::StorageConstraintsUndefined),
-            Self::Link(_) => Err(NodeError::StorageConstraintsUndefined),
-            Self::Output(_) => Err(NodeError::StorageConstraintsUndefined),
-            Self::Storage(n) => {
-                n.set_initial_volume(initial_volume);
-                Ok(())
-            }
-        }
-    }
-
-    pub fn set_min_volume_constraint(&mut self, value: Option<SimpleMetricF64>) -> Result<(), NodeError> {
-        match self {
-            Self::Input(_) => Err(NodeError::StorageConstraintsUndefined),
-            Self::Link(_) => Err(NodeError::StorageConstraintsUndefined),
-            Self::Output(_) => Err(NodeError::StorageConstraintsUndefined),
-            Self::Storage(n) => {
-                n.set_min_volume(value);
-                Ok(())
-            }
-        }
-    }
-
     pub fn get_min_volume(&self, state: &State) -> Result<f64, NodeError> {
         match self {
             Self::Input(_) => Err(NodeError::StorageConstraintsUndefined),
             Self::Link(_) => Err(NodeError::StorageConstraintsUndefined),
             Self::Output(_) => Err(NodeError::StorageConstraintsUndefined),
             Self::Storage(n) => Ok(n.get_min_volume(state)?),
-        }
-    }
-
-    pub fn set_max_volume_constraint(&mut self, value: Option<SimpleMetricF64>) -> Result<(), NodeError> {
-        match self {
-            Self::Input(_) => Err(NodeError::StorageConstraintsUndefined),
-            Self::Link(_) => Err(NodeError::StorageConstraintsUndefined),
-            Self::Output(_) => Err(NodeError::StorageConstraintsUndefined),
-            Self::Storage(n) => {
-                n.set_max_volume(value);
-                Ok(())
-            }
         }
     }
 
@@ -560,26 +718,6 @@ impl Node {
         }
     }
 
-    pub fn set_cost(&mut self, value: Option<MetricF64>) {
-        match self {
-            Self::Input(n) => n.set_cost(value),
-            Self::Link(n) => n.set_cost(value),
-            Self::Output(n) => n.set_cost(value),
-            Self::Storage(n) => n.set_cost(value),
-        }
-    }
-
-    pub fn set_cost_agg_func(&mut self, agg_func: Option<CostAggFunc>) -> Result<(), NodeError> {
-        match self {
-            Self::Input(n) => n.set_cost_agg_func(agg_func),
-            Self::Link(n) => n.set_cost_agg_func(agg_func),
-            Self::Output(n) => n.set_cost_agg_func(agg_func),
-            Self::Storage(_) => return Err(NodeError::NoVirtualStorageOnStorageNode),
-        };
-
-        Ok(())
-    }
-
     pub fn get_outgoing_cost(&self, network: &Network, state: &State) -> Result<f64, NodeError> {
         match self {
             Self::Input(n) => n.get_cost(network, state),
@@ -599,49 +737,91 @@ impl Node {
     }
 }
 
+/// Metadata for a node without its index.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct UnresolvedNode {
+    name: String,
+    sub_name: Option<String>,
+}
+
+impl From<&str> for UnresolvedNode {
+    fn from(name: &str) -> Self {
+        Self {
+            name: name.to_string(),
+            sub_name: None,
+        }
+    }
+}
+
+impl UnresolvedNode {
+    pub fn new(name: &str, sub_name: Option<&str>) -> Self {
+        Self {
+            name: name.to_string(),
+            sub_name: sub_name.map(|s| s.to_string()),
+        }
+    }
+
+    pub fn set_sub_name(&mut self, sub_name: Option<&str>) {
+        self.sub_name = sub_name.map(|s| s.to_string());
+    }
+}
+
+impl Display for UnresolvedNode {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match &self.sub_name {
+            Some(sub) => write!(f, "{}[{}]", self.name, sub),
+            None => write!(f, "{}", self.name),
+        }
+    }
+}
+
 /// Meta data common to all nodes.
 #[derive(Debug, PartialEq, Eq)]
 pub struct NodeMeta<T> {
     index: T,
     name: String,
     sub_name: Option<String>,
-    comment: String,
+}
+
+impl<T> NodeMeta<T> {
+    pub fn from_unresolved_name(name: UnresolvedNode, index: T) -> Self {
+        Self {
+            name: name.name,
+            index,
+            sub_name: name.sub_name,
+        }
+    }
 }
 
 impl<T> NodeMeta<T>
 where
     T: Copy,
 {
-    pub(crate) fn new(index: T, name: &str, sub_name: Option<&str>) -> Self {
-        Self {
-            index,
-            name: name.to_string(),
-            sub_name: sub_name.map(|s| s.to_string()),
-            comment: "".to_string(),
-        }
-    }
-
-    pub(crate) fn index(&self) -> &T {
+    pub fn index(&self) -> &T {
         &self.index
     }
-    pub(crate) fn name(&self) -> &str {
+    pub fn name(&self) -> &str {
         self.name.as_str()
     }
-    pub(crate) fn sub_name(&self) -> Option<&str> {
+    pub fn sub_name(&self) -> Option<&str> {
         self.sub_name.as_deref()
     }
-    pub(crate) fn full_name(&self) -> (&str, Option<&str>) {
+    pub fn full_name(&self) -> (&str, Option<&str>) {
         (self.name(), self.sub_name())
     }
 }
 
 #[derive(Debug, PartialEq, Default)]
 pub struct FlowConstraints {
-    pub min_flow: Option<MetricF64>,
-    pub max_flow: Option<MetricF64>,
+    min_flow: Option<MetricF64>,
+    max_flow: Option<MetricF64>,
 }
 
 impl FlowConstraints {
+    pub fn new(min_flow: Option<MetricF64>, max_flow: Option<MetricF64>) -> Self {
+        Self { min_flow, max_flow }
+    }
+
     /// Return the current minimum flow from the parameter state
     ///
     /// Defaults to zero if no parameter is defined.
@@ -688,14 +868,15 @@ impl FlowConstraints {
 
 #[derive(Debug, PartialEq)]
 pub struct StorageConstraints {
-    pub(crate) min_volume: Option<SimpleMetricF64>,
-    pub(crate) max_volume: Option<SimpleMetricF64>,
+    min_volume: Option<SimpleMetricF64>,
+    max_volume: Option<SimpleMetricF64>,
 }
 
 impl StorageConstraints {
     pub fn new(min_volume: Option<SimpleMetricF64>, max_volume: Option<SimpleMetricF64>) -> Self {
         Self { min_volume, max_volume }
     }
+
     /// Return the current minimum volume from the parameter state
     ///
     /// Defaults to zero if no parameter is defined.
@@ -718,7 +899,7 @@ impl StorageConstraints {
 
 /// Generic cost data for a node.
 #[derive(Debug, PartialEq, Default)]
-struct NodeCost {
+pub struct NodeCost {
     local: Option<MetricF64>,
     virtual_storage_nodes: Vec<VirtualStorageIndex>,
     agg_func: Option<CostAggFunc>,
@@ -765,42 +946,24 @@ impl NodeCost {
 
 #[derive(Debug, PartialEq)]
 pub struct InputNode {
-    pub meta: NodeMeta<NodeIndex>,
+    meta: NodeMeta<NodeIndex>,
     cost: NodeCost,
-    pub flow_constraints: FlowConstraints,
-    pub outgoing_edges: Vec<EdgeIndex>,
+    flow_constraints: FlowConstraints,
+    outgoing_edges: Vec<EdgeIndex>,
 }
 
 impl InputNode {
-    fn new(index: NodeIndex, name: &str, sub_name: Option<&str>) -> Self {
-        Self {
-            meta: NodeMeta::new(index, name, sub_name),
-            cost: NodeCost::default(),
-            flow_constraints: FlowConstraints::default(),
-            outgoing_edges: Vec::new(),
-        }
-    }
-    fn set_cost(&mut self, value: Option<MetricF64>) {
-        self.cost.local = value
-    }
-    fn set_cost_agg_func(&mut self, agg_func: Option<CostAggFunc>) {
-        self.cost.agg_func = agg_func
-    }
     fn get_cost(&self, network: &Network, state: &State) -> Result<f64, NodeError> {
         self.cost.get_cost(network, state)
     }
-    fn set_min_flow(&mut self, value: Option<MetricF64>) {
-        self.flow_constraints.min_flow = value;
-    }
+
     fn get_min_flow(&self, network: &Network, state: &State) -> Result<f64, MetricF64Error> {
         self.flow_constraints.get_min_flow(network, state)
     }
     fn get_const_min_flow(&self, values: &ConstParameterValues) -> Result<Option<f64>, ConstantMetricF64Error> {
         self.flow_constraints.get_const_min_flow(values)
     }
-    fn set_max_flow(&mut self, value: Option<MetricF64>) {
-        self.flow_constraints.max_flow = value;
-    }
+
     fn get_max_flow(&self, network: &Network, state: &State) -> Result<f64, MetricF64Error> {
         self.flow_constraints.get_max_flow(network, state)
     }
@@ -809,50 +972,29 @@ impl InputNode {
     }
     fn is_max_flow_unconstrained(&self) -> bool {
         self.flow_constraints.is_max_flow_unconstrained()
-    }
-    fn add_outgoing_edge(&mut self, edge: EdgeIndex) {
-        self.outgoing_edges.push(edge);
     }
 }
 
 #[derive(Debug, PartialEq)]
 pub struct OutputNode {
-    pub meta: NodeMeta<NodeIndex>,
+    meta: NodeMeta<NodeIndex>,
     cost: NodeCost,
-    pub flow_constraints: FlowConstraints,
-    pub incoming_edges: Vec<EdgeIndex>,
+    flow_constraints: FlowConstraints,
+    incoming_edges: Vec<EdgeIndex>,
 }
 
 impl OutputNode {
-    fn new(index: NodeIndex, name: &str, sub_name: Option<&str>) -> Self {
-        Self {
-            meta: NodeMeta::new(index, name, sub_name),
-            cost: NodeCost::default(),
-            flow_constraints: FlowConstraints::default(),
-            incoming_edges: Vec::new(),
-        }
-    }
-    fn set_cost(&mut self, value: Option<MetricF64>) {
-        self.cost.local = value
-    }
     fn get_cost(&self, network: &Network, state: &State) -> Result<f64, NodeError> {
         self.cost.get_cost(network, state)
     }
-    fn set_cost_agg_func(&mut self, agg_func: Option<CostAggFunc>) {
-        self.cost.agg_func = agg_func
-    }
-    fn set_min_flow(&mut self, value: Option<MetricF64>) {
-        self.flow_constraints.min_flow = value;
-    }
+
     fn get_min_flow(&self, network: &Network, state: &State) -> Result<f64, MetricF64Error> {
         self.flow_constraints.get_min_flow(network, state)
     }
     fn get_const_min_flow(&self, values: &ConstParameterValues) -> Result<Option<f64>, ConstantMetricF64Error> {
         self.flow_constraints.get_const_min_flow(values)
     }
-    fn set_max_flow(&mut self, value: Option<MetricF64>) {
-        self.flow_constraints.max_flow = value;
-    }
+
     fn get_max_flow(&self, network: &Network, state: &State) -> Result<f64, MetricF64Error> {
         self.flow_constraints.get_max_flow(network, state)
     }
@@ -861,52 +1003,30 @@ impl OutputNode {
     }
     fn is_max_flow_unconstrained(&self) -> bool {
         self.flow_constraints.is_max_flow_unconstrained()
-    }
-    fn add_incoming_edge(&mut self, edge: EdgeIndex) {
-        self.incoming_edges.push(edge);
     }
 }
 
 #[derive(Debug, PartialEq)]
 pub struct LinkNode {
-    pub meta: NodeMeta<NodeIndex>,
+    meta: NodeMeta<NodeIndex>,
     cost: NodeCost,
-    pub flow_constraints: FlowConstraints,
-    pub incoming_edges: Vec<EdgeIndex>,
-    pub outgoing_edges: Vec<EdgeIndex>,
+    flow_constraints: FlowConstraints,
+    incoming_edges: Vec<EdgeIndex>,
+    outgoing_edges: Vec<EdgeIndex>,
 }
 
 impl LinkNode {
-    fn new(index: NodeIndex, name: &str, sub_name: Option<&str>) -> Self {
-        Self {
-            meta: NodeMeta::new(index, name, sub_name),
-            cost: NodeCost::default(),
-            flow_constraints: FlowConstraints::default(),
-            incoming_edges: Vec::new(),
-            outgoing_edges: Vec::new(),
-        }
-    }
-    fn set_cost(&mut self, value: Option<MetricF64>) {
-        self.cost.local = value
-    }
-    fn set_cost_agg_func(&mut self, agg_func: Option<CostAggFunc>) {
-        self.cost.agg_func = agg_func
-    }
     fn get_cost(&self, network: &Network, state: &State) -> Result<f64, NodeError> {
         self.cost.get_cost(network, state)
     }
-    fn set_min_flow(&mut self, value: Option<MetricF64>) {
-        self.flow_constraints.min_flow = value;
-    }
+
     fn get_min_flow(&self, network: &Network, state: &State) -> Result<f64, MetricF64Error> {
         self.flow_constraints.get_min_flow(network, state)
     }
     fn get_const_min_flow(&self, values: &ConstParameterValues) -> Result<Option<f64>, ConstantMetricF64Error> {
         self.flow_constraints.get_const_min_flow(values)
     }
-    fn set_max_flow(&mut self, value: Option<MetricF64>) {
-        self.flow_constraints.max_flow = value;
-    }
+
     fn get_max_flow(&self, network: &Network, state: &State) -> Result<f64, MetricF64Error> {
         self.flow_constraints.get_max_flow(network, state)
     }
@@ -915,12 +1035,6 @@ impl LinkNode {
     }
     fn is_max_flow_unconstrained(&self) -> bool {
         self.flow_constraints.is_max_flow_unconstrained()
-    }
-    fn add_incoming_edge(&mut self, edge: EdgeIndex) {
-        self.incoming_edges.push(edge);
-    }
-    fn add_outgoing_edge(&mut self, edge: EdgeIndex) {
-        self.outgoing_edges.push(edge);
     }
 }
 
@@ -988,35 +1102,60 @@ impl StorageInitialVolume {
     }
 }
 
-#[derive(Debug, PartialEq)]
-pub struct StorageNode {
-    pub meta: NodeMeta<NodeIndex>,
-    pub cost: Option<MetricF64>,
-    pub initial_volume: StorageInitialVolume,
-    pub storage_constraints: StorageConstraints,
-    pub incoming_edges: Vec<EdgeIndex>,
-    pub outgoing_edges: Vec<EdgeIndex>,
+pub enum UnresolvedStorageInitialVolume {
+    Absolute(f64),
+    Proportional(f64),
+    DistributedAbsolute {
+        absolute: f64,
+        prior_max_volume: UnresolvedMetricF64,
+    },
+    DistributedProportional {
+        total_volume: UnresolvedMetricF64,
+        proportion: f64,
+        prior_max_volume: UnresolvedMetricF64,
+    },
 }
 
-impl StorageNode {
-    fn new(
-        index: NodeIndex,
-        name: &str,
-        sub_name: Option<&str>,
-        initial_volume: StorageInitialVolume,
-        min_volume: Option<SimpleMetricF64>,
-        max_volume: Option<SimpleMetricF64>,
-    ) -> Self {
-        Self {
-            meta: NodeMeta::new(index, name, sub_name),
-            cost: None,
-            initial_volume,
-            storage_constraints: StorageConstraints::new(min_volume, max_volume),
-            incoming_edges: Vec::new(),
-            outgoing_edges: Vec::new(),
+impl UnresolvedStorageInitialVolume {
+    pub fn absolute(absolute: f64) -> Self {
+        Self::Absolute(absolute)
+    }
+
+    pub fn proportional(proportion: f64) -> Self {
+        Self::Proportional(proportion)
+    }
+
+    pub fn distributed_absolute(absolute: f64, prior_max_volume: UnresolvedMetricF64) -> Self {
+        Self::DistributedAbsolute {
+            absolute,
+            prior_max_volume,
         }
     }
 
+    pub fn distributed_proportional(
+        total_volume: UnresolvedMetricF64,
+        proportion: f64,
+        prior_max_volume: UnresolvedMetricF64,
+    ) -> Self {
+        Self::DistributedProportional {
+            total_volume,
+            proportion,
+            prior_max_volume,
+        }
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub struct StorageNode {
+    meta: NodeMeta<NodeIndex>,
+    cost: NodeCost,
+    initial_volume: StorageInitialVolume,
+    storage_constraints: StorageConstraints,
+    incoming_edges: Vec<EdgeIndex>,
+    outgoing_edges: Vec<EdgeIndex>,
+}
+
+impl StorageNode {
     pub fn before(&self, timestep: &Timestep, state: &mut State) -> Result<(), NodeError> {
         // Set the initial volume if it is the first timestep.
         if timestep.is_first() {
@@ -1028,38 +1167,17 @@ impl StorageNode {
         Ok(())
     }
 
-    fn set_cost(&mut self, value: Option<MetricF64>) {
-        self.cost = value
+    fn get_cost(&self, network: &Network, state: &State) -> Result<f64, NodeError> {
+        self.cost.get_cost(network, state)
     }
-    fn get_cost(&self, network: &Network, state: &State) -> Result<f64, MetricF64Error> {
-        match &self.cost {
-            None => Ok(0.0),
-            Some(m) => m.get_value(network, state),
-        }
-    }
-    fn set_initial_volume(&mut self, initial_volume: StorageInitialVolume) {
-        self.initial_volume = initial_volume;
-    }
-    fn set_min_volume(&mut self, value: Option<SimpleMetricF64>) {
-        // TODO use a set_min_volume method
-        self.storage_constraints.min_volume = value;
-    }
+
     pub fn get_min_volume(&self, state: &State) -> Result<f64, SimpleMetricF64Error> {
         self.storage_constraints
             .get_min_volume(&state.get_simple_parameter_values())
     }
-    fn set_max_volume(&mut self, value: Option<SimpleMetricF64>) {
-        // TODO use a set_min_volume method
-        self.storage_constraints.max_volume = value;
-    }
+
     pub fn get_max_volume(&self, state: &State) -> Result<f64, SimpleMetricF64Error> {
         self.storage_constraints
             .get_max_volume(&state.get_simple_parameter_values())
-    }
-    fn add_incoming_edge(&mut self, edge: EdgeIndex) {
-        self.incoming_edges.push(edge);
-    }
-    fn add_outgoing_edge(&mut self, edge: EdgeIndex) {
-        self.outgoing_edges.push(edge);
     }
 }

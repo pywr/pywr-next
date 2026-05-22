@@ -1,7 +1,7 @@
 use crate::metric::MetricF64;
 use crate::network::Network;
 use crate::parameters::{
-    GeneralParameter, Parameter, ParameterCalculationError, ParameterMeta, ParameterName, ParameterState,
+    GeneralCalculationError, GeneralParameter, Parameter, ParameterMeta, ParameterName, ParameterState,
 };
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
@@ -41,7 +41,7 @@ impl GeneralParameter<f64> for DeficitParameter {
         model: &Network,
         state: &State,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<f64>, ParameterCalculationError> {
+    ) -> Result<Option<f64>, GeneralCalculationError> {
         let actual_flow = self.flow.get_value(model, state)?;
         let max_flow = self.max_flow.get_value(model, state)?;
 

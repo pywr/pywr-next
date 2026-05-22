@@ -1,6 +1,6 @@
 use crate::metric::MetricF64;
 use crate::network::Network;
-use crate::parameters::errors::ParameterCalculationError;
+use crate::parameters::errors::GeneralCalculationError;
 use crate::parameters::{GeneralParameter, Parameter, ParameterMeta, ParameterName, ParameterState};
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
@@ -38,7 +38,7 @@ impl GeneralParameter<f64> for ControlCurveParameter {
         model: &Network,
         state: &State,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<f64>, ParameterCalculationError> {
+    ) -> Result<Option<f64>, GeneralCalculationError> {
         // Current value
         let x = self.metric.get_value(model, state)?;
 
@@ -48,7 +48,7 @@ impl GeneralParameter<f64> for ControlCurveParameter {
                 let value = self
                     .values
                     .get(idx)
-                    .ok_or_else(|| ParameterCalculationError::OutOfBoundsError {
+                    .ok_or_else(|| GeneralCalculationError::OutOfBoundsError {
                         axis: 0,
                         index: idx,
                         length: self.values.len(),
@@ -60,7 +60,7 @@ impl GeneralParameter<f64> for ControlCurveParameter {
         let value = self
             .values
             .last()
-            .ok_or_else(|| ParameterCalculationError::OutOfBoundsError {
+            .ok_or_else(|| GeneralCalculationError::OutOfBoundsError {
                 axis: 0,
                 index: 0,
                 length: self.values.len(),

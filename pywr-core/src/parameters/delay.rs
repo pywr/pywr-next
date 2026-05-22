@@ -1,13 +1,17 @@
-use crate::metric::{MetricF64, MetricF64Error, MetricU64, MetricU64Error, SimpleMetricF64, SimpleMetricU64};
-use crate::network::Network;
-use crate::parameters::errors::{ParameterCalculationError, ParameterSetupError, SimpleCalculationError};
+use crate::metric::{
+    MetricF64, MetricF64Error, MetricU64, MetricU64Error, SimpleMetricF64, SimpleMetricU64, UnresolvedMetricF64,
+    UnresolvedMetricU64,
+};
+use crate::network::{Network, ResolutionMaps};
+use crate::parameters::errors::{GeneralCalculationError, ParameterSetupError, SimpleCalculationError};
 use crate::parameters::{
-    GeneralParameter, Parameter, ParameterMeta, ParameterName, ParameterState, SimpleParameter,
-    downcast_internal_state_mut,
+    BuiltParameter, GeneralParameter, MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder,
+    ParameterMeta, ParameterName, ParameterState, SimpleParameter, downcast_internal_state_mut,
 };
 use crate::scenario::ScenarioIndex;
 use crate::state::{SimpleParameterValues, State};
 use crate::timestep::Timestep;
+use crate::{resolve_metric_f64, resolve_metric_u64};
 use std::collections::VecDeque;
 
 pub struct DelayParameter<M, T> {
@@ -15,17 +19,6 @@ pub struct DelayParameter<M, T> {
     metric: M,
     delay: u64,
     initial_value: T,
-}
-
-impl<M, T> DelayParameter<M, T> {
-    pub fn new(name: ParameterName, metric: M, delay: u64, initial_value: T) -> Self {
-        Self {
-            meta: ParameterMeta::new(name),
-            metric,
-            delay,
-            initial_value,
-        }
-    }
 }
 
 impl<T> TryInto<DelayParameter<SimpleMetricF64, T>> for &DelayParameter<MetricF64, T>
@@ -88,13 +81,13 @@ impl GeneralParameter<f64> for DelayParameter<MetricF64, f64> {
         _model: &Network,
         _state: &State,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<f64>, ParameterCalculationError> {
+    ) -> Result<Option<f64>, GeneralCalculationError> {
         // Downcast the internal state to the correct type
         let memory = downcast_internal_state_mut::<VecDeque<f64>>(internal_state);
 
         // Take the oldest value from the queue
         // It should be guaranteed that the internal memory/queue has self.delay number of values
-        let value = memory.pop_front().ok_or_else(|| ParameterCalculationError::Internal {
+        let value = memory.pop_front().ok_or_else(|| GeneralCalculationError::Internal {
             message: "Delay parameter queue did not contain any values. This internal error should not be possible!"
                 .into(),
         })?;
@@ -109,7 +102,7 @@ impl GeneralParameter<f64> for DelayParameter<MetricF64, f64> {
         model: &Network,
         state: &State,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<f64>, ParameterCalculationError> {
+    ) -> Result<Option<f64>, GeneralCalculationError> {
         // Downcast the internal state to the correct type
         let memory = downcast_internal_state_mut::<VecDeque<f64>>(internal_state);
 
@@ -191,13 +184,13 @@ impl GeneralParameter<u64> for DelayParameter<MetricU64, u64> {
         _model: &Network,
         _state: &State,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<u64>, ParameterCalculationError> {
+    ) -> Result<Option<u64>, GeneralCalculationError> {
         // Downcast the internal state to the correct type
         let memory = downcast_internal_state_mut::<VecDeque<u64>>(internal_state);
 
         // Take the oldest value from the queue
         // It should be guaranteed that the internal memory/queue has self.delay number of values
-        let value = memory.pop_front().ok_or_else(|| ParameterCalculationError::Internal {
+        let value = memory.pop_front().ok_or_else(|| GeneralCalculationError::Internal {
             message: "Delay parameter queue did not contain any values. This internal error should not be possible!"
                 .into(),
         })?;
@@ -212,7 +205,7 @@ impl GeneralParameter<u64> for DelayParameter<MetricU64, u64> {
         model: &Network,
         state: &State,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<u64>, ParameterCalculationError> {
+    ) -> Result<Option<u64>, GeneralCalculationError> {
         // Downcast the internal state to the correct type
         let memory = downcast_internal_state_mut::<VecDeque<u64>>(internal_state);
 
@@ -286,26 +279,110 @@ impl SimpleParameter<u64> for DelayParameter<SimpleMetricU64, u64> {
     }
 }
 
+pub struct DelayParameterBuilder<M, T> {
+    meta: ParameterMeta,
+    metric: M,
+    delay: u64,
+    initial_value: T,
+}
+
+impl<M, T> DelayParameterBuilder<M, T> {
+    pub fn new(name: ParameterName, metric: M, delay: u64, initial_value: T) -> Self {
+        Self {
+            meta: ParameterMeta::new(name),
+            metric,
+            delay,
+            initial_value,
+        }
+    }
+}
+
+impl ParameterBuilder<f64> for DelayParameterBuilder<UnresolvedMetricF64, f64> {
+    fn name(&self) -> &ParameterName {
+        &self.meta.name
+    }
+
+    fn build(
+        self: Box<Self>,
+        resolution_maps: &ResolutionMaps,
+    ) -> Result<MaybeBuiltParameter<f64>, ParameterBuildError> {
+        let metric = resolve_metric_f64!(self, self.metric, resolution_maps, "metric");
+
+        let p = DelayParameter {
+            meta: self.meta,
+            metric,
+            delay: self.delay,
+            initial_value: self.initial_value,
+        };
+
+        let bp = match p.try_into_simple() {
+            None => BuiltParameter::General(Box::new(p)),
+            Some(sp) => match sp.try_into_const() {
+                None => BuiltParameter::Simple(sp),
+                Some(cp) => BuiltParameter::Const(cp),
+            },
+        };
+
+        Ok(bp.into())
+    }
+}
+
+impl ParameterBuilder<u64> for DelayParameterBuilder<UnresolvedMetricU64, u64> {
+    fn name(&self) -> &ParameterName {
+        &self.meta.name
+    }
+
+    fn build(
+        self: Box<Self>,
+        resolution_maps: &ResolutionMaps,
+    ) -> Result<MaybeBuiltParameter<u64>, ParameterBuildError> {
+        let metric = resolve_metric_u64!(self, self.metric, resolution_maps, "metric");
+
+        let p = DelayParameter {
+            meta: self.meta,
+            metric,
+            delay: self.delay,
+            initial_value: self.initial_value,
+        };
+
+        let bp = match p.try_into_simple() {
+            None => BuiltParameter::General(Box::new(p)),
+            Some(sp) => match sp.try_into_const() {
+                None => BuiltParameter::Simple(sp),
+                Some(cp) => BuiltParameter::Const(cp),
+            },
+        };
+
+        Ok(bp.into())
+    }
+}
+
 #[cfg(test)]
 mod test {
-    use crate::metric::MetricU64;
-    use crate::parameters::{Array1Parameter, DelayParameter};
+    use crate::metric::{UnresolvedMetricF64, UnresolvedMetricU64};
+    use crate::parameters::Array1ParameterBuilder;
+    use crate::parameters::delay::DelayParameterBuilder;
     use crate::test_utils::{run_and_assert_parameter, run_and_assert_parameter_u64, simple_model};
     use ndarray::{Array1, Array2, Axis, concatenate, s};
 
     /// Basic functional test of the delay parameter.
     #[test]
     fn test_delay_f64() {
-        let mut model = simple_model(1, None);
+        let mut model_builder = simple_model(1, None);
 
         // Create an artificial volume series to use for the delay test
         let volumes = Array1::linspace(1.0, 0.0, 21);
-        let volume = Array1Parameter::new("test-x".into(), volumes.clone(), None);
+        let volume = Array1ParameterBuilder::new("test-x".into(), volumes.clone());
 
-        let volume_idx = model.network_mut().add_simple_parameter(Box::new(volume)).unwrap();
+        model_builder.network_builder().parameters().f64(Box::new(volume));
 
         const DELAY: u64 = 3; // 3 time-step delay
-        let parameter = DelayParameter::new("test-parameter".into(), volume_idx.into_metric_f64_before(), DELAY, 0.0);
+        let parameter = DelayParameterBuilder::new(
+            "test-parameter".into(),
+            UnresolvedMetricF64::new_parameter_before("test-x"),
+            DELAY,
+            0.0,
+        );
 
         // We should have DELAY number of initial values to start with, and then follow the
         // values in the `volumes` array.
@@ -323,26 +400,27 @@ mod test {
 
         let expected_values: Array2<f64> = expected_values.insert_axis(Axis(1));
 
-        run_and_assert_parameter(&mut model, Box::new(parameter), expected_values, None, Some(1e-12));
+        run_and_assert_parameter(model_builder, Box::new(parameter), expected_values, None, Some(1e-12));
     }
 
     /// Basic functional test of the delay parameter.
     #[test]
     fn test_delay_u64() {
-        let mut model = simple_model(1, None);
+        let mut model_builder = simple_model(1, None);
 
         // Create an artificial volume series to use for the delay test
         let volumes: Array1<u64> = Array1::from(Array1::linspace(1.0, 0.0, 21).map(|x| *x as u64));
-        let volume = Array1Parameter::new("test-x".into(), volumes.clone(), None);
+        let volume = Array1ParameterBuilder::new("test-x".into(), volumes.clone());
 
-        let metric: MetricU64 = model
-            .network_mut()
-            .add_simple_index_parameter(Box::new(volume))
-            .unwrap()
-            .into_metric_u64_before();
+        model_builder.network_builder().parameters().u64(Box::new(volume));
 
         const DELAY: u64 = 3; // 3 time-step delay
-        let parameter = DelayParameter::new("test-parameter".into(), metric, DELAY, 0);
+        let parameter = DelayParameterBuilder::new(
+            "test-parameter".into(),
+            UnresolvedMetricU64::new_index_parameter_before("test-x"),
+            DELAY,
+            0,
+        );
 
         // We should have DELAY number of initial values to start with, and then follow the
         // values in the `volumes` array.
@@ -360,6 +438,6 @@ mod test {
 
         let expected_values: Array2<u64> = expected_values.insert_axis(Axis(1));
 
-        run_and_assert_parameter_u64(&mut model, Box::new(parameter), expected_values);
+        run_and_assert_parameter_u64(model_builder, Box::new(parameter), expected_values);
     }
 }

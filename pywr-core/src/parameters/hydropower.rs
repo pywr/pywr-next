@@ -1,6 +1,6 @@
 use crate::metric::MetricF64;
 use crate::network::Network;
-use crate::parameters::errors::ParameterCalculationError;
+use crate::parameters::errors::GeneralCalculationError;
 use crate::parameters::{GeneralParameter, Parameter, ParameterMeta, ParameterName, ParameterState};
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
@@ -54,7 +54,7 @@ impl HydropowerTargetParameter {
         }
     }
 
-    fn head(&self, model: &Network, state: &State) -> Result<f64, ParameterCalculationError> {
+    fn head(&self, model: &Network, state: &State) -> Result<f64, GeneralCalculationError> {
         let head = if let Some(water_elevation) = &self.water_elevation {
             water_elevation.get_value(model, state)? - self.turbine_elevation
         } else {
@@ -78,7 +78,7 @@ impl GeneralParameter<f64> for HydropowerTargetParameter {
         model: &Network,
         state: &State,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<f64>, ParameterCalculationError> {
+    ) -> Result<Option<f64>, GeneralCalculationError> {
         let head = self.head(model, state)?;
 
         // apply the minimum head threshold
@@ -107,7 +107,7 @@ impl GeneralParameter<f64> for HydropowerTargetParameter {
             }
 
             if q < 0.0 {
-                return Err(ParameterCalculationError::Internal {
+                return Err(GeneralCalculationError::Internal {
                     message: "The calculated flow is negative".into(),
                 });
             }
@@ -125,7 +125,7 @@ impl GeneralParameter<f64> for HydropowerTargetParameter {
         model: &Network,
         state: &State,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<f64>, ParameterCalculationError> {
+    ) -> Result<Option<f64>, GeneralCalculationError> {
         if let Some(actual_flow) = &self.actual_flow {
             let flow = actual_flow.get_value(model, state)?;
             // Calculate the head (the head may be negative)

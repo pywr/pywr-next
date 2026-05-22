@@ -1,77 +1,75 @@
 mod multi;
 mod simple;
 
-use crate::scenario::{ScenarioDomain, ScenarioDomainBuilder};
-use crate::timestep::{TimeDomain, Timestepper};
+use crate::scenario::{ScenarioDomain, ScenarioDomainBuilder, ScenarioDomainBuilderError};
+use crate::timestep::{TimeDomain, TimeDomainBuilder, TimeDomainBuilderError};
 pub use multi::{
-    InterNetworkTransferError, MultiNetworkModel, MultiNetworkModelError, MultiNetworkModelFinaliseError,
-    MultiNetworkModelResult, MultiNetworkModelRunError, MultiNetworkModelSetupError, MultiNetworkModelTimings,
-    MultiNetworkTransferIndex,
+    InterNetworkTransferError, MultiModelBuilder, MultiModelBuilderError, MultiNetworkEntryBuilder, MultiNetworkModel,
+    MultiNetworkModelFinaliseError, MultiNetworkModelResult, MultiNetworkModelRunError, MultiNetworkModelSetupError,
+    MultiNetworkModelTimings, MultiNetworkTransferIndex,
 };
 pub use simple::{
-    Model, ModelFinaliseError, ModelResult, ModelRunError, ModelSetupError, ModelState, ModelStepError, ModelTimings,
+    Model, ModelBuilder, ModelBuilderError, ModelFinaliseError, ModelResult, ModelRunError, ModelSetupError,
+    ModelState, ModelStepError, ModelTimings,
 };
 use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum ModelDomainError {
     #[error("Error in time domain: {0}")]
-    TimestepError(#[from] crate::timestep::TimestepError),
+    TimestepError(#[from] crate::timestep::TimeDomainBuilderError),
     #[error("Error in scenario domain: {0}")]
-    ScenarioError(#[from] crate::scenario::ScenarioError),
+    ScenarioError(#[from] crate::scenario::ScenarioDomainBuilderError),
 }
 
 #[derive(Debug, Clone)]
 pub struct ModelDomain {
     time: TimeDomain,
-    scenarios: ScenarioDomain,
+    scenario: ScenarioDomain,
 }
 
 impl ModelDomain {
-    pub fn new(time: TimeDomain, scenarios: ScenarioDomain) -> Self {
-        Self { time, scenarios }
-    }
-
-    pub fn try_from(
-        timestepper: Timestepper,
-        scenario_builder: ScenarioDomainBuilder,
-    ) -> Result<Self, ModelDomainError> {
-        Ok(Self {
-            time: TimeDomain::try_from(timestepper)?,
-            scenarios: scenario_builder.build()?,
-        })
-    }
-
     pub fn time(&self) -> &TimeDomain {
         &self.time
     }
 
     pub fn scenarios(&self) -> &ScenarioDomain {
-        &self.scenarios
+        &self.scenario
     }
 
     pub fn shape(&self) -> (usize, usize) {
-        (self.time.timesteps().len(), self.scenarios.indices().len())
+        (self.time.timesteps().len(), self.scenario.indices().len())
     }
 }
 
-impl TryFrom<Timestepper> for ModelDomain {
-    type Error = ModelDomainError;
-
-    fn try_from(value: Timestepper) -> Result<Self, Self::Error> {
-        let time = TimeDomain::try_from(value)?;
-        Ok(Self {
-            time,
-            scenarios: ScenarioDomainBuilder::default().build()?,
-        })
-    }
+#[derive(Debug, Error)]
+pub enum ModelDomainBuilderError {
+    #[error("Error building time domain: {0}")]
+    Time(#[from] TimeDomainBuilderError),
+    #[error("Error building scenario domain: {0}")]
+    Scenario(#[from] ScenarioDomainBuilderError),
 }
 
-impl From<TimeDomain> for ModelDomain {
-    fn from(value: TimeDomain) -> Self {
-        Self {
-            time: value,
-            scenarios: ScenarioDomainBuilder::default().build().unwrap(),
-        }
+#[derive(Clone)]
+pub struct ModelDomainBuilder {
+    time: TimeDomainBuilder,
+    scenario: Option<ScenarioDomainBuilder>,
+}
+
+impl ModelDomainBuilder {
+    pub fn new(time: TimeDomainBuilder) -> Self {
+        Self { time, scenario: None }
+    }
+
+    pub fn scenario(&mut self, scenario: ScenarioDomainBuilder) -> &mut Self {
+        self.scenario = Some(scenario);
+        self
+    }
+
+    pub fn build(self) -> Result<ModelDomain, ModelDomainBuilderError> {
+        let time = self.time.build()?;
+        let scenario = self.scenario.unwrap_or_default().build()?;
+
+        Ok(ModelDomain { time, scenario })
     }
 }

@@ -1,5 +1,9 @@
+use crate::network::ResolutionMaps;
 use crate::parameters::errors::SimpleCalculationError;
-use crate::parameters::{Parameter, ParameterMeta, ParameterName, ParameterState, SimpleParameter};
+use crate::parameters::{
+    BuiltParameter, MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder, ParameterMeta,
+    ParameterName, ParameterState, SimpleParameter,
+};
 use crate::scenario::ScenarioIndex;
 use crate::state::SimpleParameterValues;
 use crate::timestep::Timestep;
@@ -17,13 +21,42 @@ pub struct MonthlyProfileParameter {
     interp_day: Option<MonthlyInterpDay>,
 }
 
-impl MonthlyProfileParameter {
-    pub fn new(name: ParameterName, values: [f64; 12], interp_day: Option<MonthlyInterpDay>) -> Self {
+pub struct MonthlyProfileParameterBuilder {
+    name: ParameterName,
+    values: [f64; 12],
+    interp_day: Option<MonthlyInterpDay>,
+}
+
+impl MonthlyProfileParameterBuilder {
+    pub fn new(name: ParameterName, values: [f64; 12]) -> Self {
         Self {
-            meta: ParameterMeta::new(name),
+            name,
             values,
-            interp_day,
+            interp_day: None,
         }
+    }
+
+    pub fn interp_day(&mut self, interp_day: MonthlyInterpDay) -> &mut Self {
+        self.interp_day = Some(interp_day);
+        self
+    }
+}
+
+impl ParameterBuilder<f64> for MonthlyProfileParameterBuilder {
+    fn name(&self) -> &ParameterName {
+        &self.name
+    }
+
+    fn build(
+        self: Box<Self>,
+        _resolution_maps: &ResolutionMaps,
+    ) -> Result<MaybeBuiltParameter<f64>, ParameterBuildError> {
+        Ok(BuiltParameter::Simple(Box::new(MonthlyProfileParameter {
+            meta: ParameterMeta::new(self.name.clone()),
+            values: self.values,
+            interp_day: self.interp_day,
+        }))
+        .into())
     }
 }
 

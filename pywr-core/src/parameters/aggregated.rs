@@ -1,8 +1,11 @@
-use super::{ConstParameter, Parameter, ParameterName, ParameterState, SimpleParameter};
+use super::{
+    BuiltParameter, ConstParameter, MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder,
+    ParameterName, ParameterState, SimpleParameter,
+};
 use crate::agg_funcs::AggFuncF64;
-use crate::metric::{ConstantMetricF64, MetricF64, SimpleMetricF64};
-use crate::network::Network;
-use crate::parameters::errors::{ConstCalculationError, ParameterCalculationError, SimpleCalculationError};
+use crate::metric::{ConstantMetricF64, MetricF64, MetricF64ResolutionError, SimpleMetricF64, UnresolvedMetricF64};
+use crate::network::{Network, ResolutionMaps};
+use crate::parameters::errors::{ConstCalculationError, GeneralCalculationError, SimpleCalculationError};
 use crate::parameters::{GeneralParameter, ParameterMeta};
 use crate::scenario::ScenarioIndex;
 use crate::state::{ConstParameterValues, SimpleParameterValues, State};
@@ -12,19 +15,6 @@ pub struct AggregatedParameter<M> {
     meta: ParameterMeta,
     metrics: Vec<M>,
     agg_func: AggFuncF64,
-}
-
-impl<M> AggregatedParameter<M>
-where
-    M: Send + Sync + Clone,
-{
-    pub fn new(name: ParameterName, metrics: &[M], agg_func: AggFuncF64) -> Self {
-        Self {
-            meta: ParameterMeta::new(name),
-            metrics: metrics.to_vec(),
-            agg_func,
-        }
-    }
 }
 
 impl<M> Parameter for AggregatedParameter<M>
@@ -44,7 +34,7 @@ impl GeneralParameter<f64> for AggregatedParameter<MetricF64> {
         model: &Network,
         state: &State,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<f64>, ParameterCalculationError> {
+    ) -> Result<Option<f64>, GeneralCalculationError> {
         let values = self
             .metrics
             .iter()
@@ -52,13 +42,6 @@ impl GeneralParameter<f64> for AggregatedParameter<MetricF64> {
             .collect::<Result<Vec<_>, _>>()?;
 
         Ok(Some(self.agg_func.calc_iter_f64(&values)?))
-    }
-
-    fn as_parameter(&self) -> &dyn Parameter
-    where
-        Self: Sized,
-    {
-        self
     }
 
     fn try_into_simple(&self) -> Option<Box<dyn SimpleParameter<f64>>> {
@@ -75,6 +58,13 @@ impl GeneralParameter<f64> for AggregatedParameter<MetricF64> {
             metrics,
             agg_func: self.agg_func.clone(),
         }))
+    }
+
+    fn as_parameter(&self) -> &dyn Parameter
+    where
+        Self: Sized,
+    {
+        self
     }
 }
 
@@ -140,5 +130,70 @@ impl ConstParameter<f64> for AggregatedParameter<ConstantMetricF64> {
         Self: Sized,
     {
         self
+    }
+}
+
+pub struct AggregatedParameterBuilder {
+    meta: ParameterMeta,
+    agg_func: AggFuncF64,
+    metrics: Vec<UnresolvedMetricF64>,
+}
+
+impl AggregatedParameterBuilder {
+    pub fn new(name: ParameterName, agg_func: AggFuncF64) -> Self {
+        Self {
+            meta: ParameterMeta::new(name),
+            metrics: Vec::new(),
+            agg_func,
+        }
+    }
+
+    /// Add a new metric to the builder
+    pub fn metric(&mut self, metric: UnresolvedMetricF64) -> &mut Self {
+        self.metrics.push(metric);
+        self
+    }
+}
+
+impl ParameterBuilder<f64> for AggregatedParameterBuilder {
+    fn name(&self) -> &ParameterName {
+        &self.meta.name
+    }
+    fn build(
+        self: Box<Self>,
+        resolution_maps: &ResolutionMaps,
+    ) -> Result<MaybeBuiltParameter<f64>, ParameterBuildError> {
+        let mut metrics = Vec::with_capacity(self.metrics.len());
+        for m in &self.metrics {
+            match m.resolve(resolution_maps) {
+                Ok(m) => metrics.push(m),
+                Err(err) => {
+                    return if let MetricF64ResolutionError::ParameterNotFound { .. } = err {
+                        Ok(MaybeBuiltParameter::Retry(self))
+                    } else {
+                        Err(ParameterBuildError::ResolveMetricF64Error {
+                            attr: "metrics".to_string(),
+                            source: err,
+                        })
+                    };
+                }
+            }
+        }
+
+        let p = AggregatedParameter {
+            meta: self.meta.clone(),
+            metrics,
+            agg_func: self.agg_func.clone(),
+        };
+
+        let bp = match p.try_into_simple() {
+            None => BuiltParameter::General(Box::new(p)),
+            Some(sp) => match sp.try_into_const() {
+                None => BuiltParameter::Simple(sp),
+                Some(cp) => BuiltParameter::Const(cp),
+            },
+        };
+
+        Ok(MaybeBuiltParameter::Built(bp))
     }
 }

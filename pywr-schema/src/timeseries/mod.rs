@@ -26,7 +26,7 @@ use pyo3::{PyErr, pyclass};
 #[cfg(feature = "core")]
 use pywr_core::{
     models::ModelDomain,
-    parameters::{Array1Parameter, Array2Parameter, ParameterIndex, ParameterName},
+    parameters::{Array1ParameterBuilder, Array2ParameterBuilder, ParameterIndex, ParameterName},
 };
 use pywr_schema_macros::skip_serializing_none;
 use pywr_v1_schema::parameters::DataFrameParameter as DataFrameParameterV1;
@@ -72,7 +72,7 @@ pub enum TimeseriesError {
     PythonNotEnabled,
     #[cfg(feature = "core")]
     #[error("Scenario error: {0}")]
-    Scenario(#[from] pywr_core::scenario::ScenarioError),
+    Scenario(#[from] pywr_core::scenario::ScenarioDomainBuilderError),
     #[cfg(feature = "core")]
     #[error("Shape error: {0}")]
     NdarrayShape(#[from] ShapeError),

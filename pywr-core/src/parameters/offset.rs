@@ -1,6 +1,6 @@
 use crate::metric::MetricF64;
 use crate::network::Network;
-use crate::parameters::errors::ParameterCalculationError;
+use crate::parameters::errors::GeneralCalculationError;
 use crate::parameters::{
     ActivationFunction, GeneralParameter, Parameter, ParameterMeta, ParameterName, ParameterState, VariableConfig,
     VariableParameter, VariableParameterError, downcast_internal_state_mut, downcast_internal_state_ref,
@@ -60,7 +60,7 @@ impl GeneralParameter<f64> for OffsetParameter {
         model: &Network,
         state: &State,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<f64>, ParameterCalculationError> {
+    ) -> Result<Option<f64>, GeneralCalculationError> {
         let offset = self.offset(internal_state);
         // Current value
         let x = self.metric.get_value(model, state)?;

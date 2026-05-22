@@ -381,7 +381,7 @@ impl AggregatedStorageNode {
             })?;
 
         let metric = match attr {
-            AggregatedStorageNodeAttribute::Volume => MetricF64::AggregatedNodeVolume(idx),
+            AggregatedStorageNodeAttribute::Volume => MetricF64::AggregatedStorageNodeVolume(idx),
             AggregatedStorageNodeAttribute::ProportionalVolume => MetricF64::AggregatedNodeProportionalVolume(idx),
         };
 

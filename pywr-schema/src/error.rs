@@ -80,7 +80,7 @@ pub enum SchemaError {
     RbfEpsilonEstimation,
     #[error("Scenario error: {0}")]
     #[cfg(feature = "core")]
-    Scenario(#[from] pywr_core::scenario::ScenarioError),
+    Scenario(#[from] pywr_core::scenario::ScenarioDomainBuilderError),
     #[error("Inter-network transfer with name {0} not found")]
     InterNetworkTransferNotFound(String),
     #[error("Invalid rolling window definition on parameter {name}. Must convert to a positive integer.")]

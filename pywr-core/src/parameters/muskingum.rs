@@ -1,7 +1,7 @@
 use crate::metric::MetricF64;
 use crate::network::Network;
 use crate::parameters::{
-    GeneralParameter, Parameter, ParameterCalculationError, ParameterMeta, ParameterName, ParameterState,
+    GeneralCalculationError, GeneralParameter, Parameter, ParameterMeta, ParameterName, ParameterState,
 };
 use crate::scenario::ScenarioIndex;
 use crate::state::{MultiValue, State};
@@ -76,7 +76,7 @@ impl GeneralParameter<MultiValue> for MuskingumParameter {
         model: &Network,
         state: &State,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<MultiValue>, ParameterCalculationError> {
+    ) -> Result<Option<MultiValue>, GeneralCalculationError> {
         let weight = self.weight.get_value(model, state)?;
         let travel_time = self.travel_time.get_value(model, state)?;
 

@@ -403,11 +403,11 @@ impl Recorder for MemoryRecorder {
 mod tests {
     use super::{Aggregation, InternalState, MemoryRecorderResult};
     use crate::agg_funcs::AggFuncF64;
-    use crate::models::ModelDomain;
+    use crate::models::ModelDomainBuilder;
     use crate::recorders::RecorderMeta;
     use crate::recorders::aggregator::PeriodValue;
     use crate::scenario::{ScenarioDomainBuilder, ScenarioGroupBuilder};
-    use crate::test_utils::default_timestepper;
+    use crate::test_utils::default_time_domain_builder;
     use float_cmp::assert_approx_eq;
     use rand::{RngExt, SeedableRng};
     use rand_chacha::ChaCha8Rng;
@@ -419,7 +419,10 @@ mod tests {
         let scenario_group = ScenarioGroupBuilder::new("test-scenario", 2).build().unwrap();
         scenario_builder = scenario_builder.with_group(scenario_group).unwrap();
 
-        let domain = ModelDomain::try_from(default_timestepper(), scenario_builder).unwrap();
+        let mut domain_builder = ModelDomainBuilder::new(default_time_domain_builder());
+        domain_builder.scenario(scenario_builder);
+
+        let domain = domain_builder.build().unwrap();
 
         let num_metrics = 3;
         let mut state = InternalState::new(domain.scenarios().len());

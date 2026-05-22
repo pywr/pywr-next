@@ -1,7 +1,7 @@
 use super::{Parameter, ParameterName, SimpleParameter};
 use crate::metric::{MetricF64, SimpleMetricF64};
 use crate::network::Network;
-use crate::parameters::errors::{ParameterCalculationError, SimpleCalculationError};
+use crate::parameters::errors::{GeneralCalculationError, SimpleCalculationError};
 use crate::parameters::{GeneralParameter, ParameterMeta, ParameterState};
 use crate::scenario::ScenarioIndex;
 use crate::state::{SimpleParameterValues, State};
@@ -52,7 +52,7 @@ impl GeneralParameter<f64> for DifferenceParameter<MetricF64> {
         model: &Network,
         state: &State,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<f64>, ParameterCalculationError> {
+    ) -> Result<Option<f64>, GeneralCalculationError> {
         let a = self.a.get_value(model, state)?;
         let b = self.b.get_value(model, state)?;
         let min = self.min.as_ref().map(|m| m.get_value(model, state)).transpose()?;

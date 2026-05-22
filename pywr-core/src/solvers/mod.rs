@@ -1,4 +1,4 @@
-use crate::network::Network;
+use crate::network::{AggregatedNodeIndex, Network};
 use crate::state::{ConstParameterValues, State};
 use crate::timestep::Timestep;
 use std::ops::{Add, AddAssign};
@@ -38,8 +38,7 @@ pub use self::ipm_ocl::{ClIpmF32Solver, ClIpmF64Solver, ClIpmSolverSettings, ClI
 pub use self::ipm_simd::build_ipm_simd_settings_py;
 #[cfg(feature = "ipm-simd")]
 pub use self::ipm_simd::{SimdIpmF64Solver, SimdIpmSolverSettings, SimdIpmSolverSettingsBuilder};
-use crate::aggregated_node::AggregatedNodeIndex;
-use crate::node::NodeIndex;
+use crate::NodeIndex;
 #[cfg(all(feature = "cbc", feature = "pyo3"))]
 pub use cbc::build_cbc_settings_py;
 #[cfg(feature = "cbc")]

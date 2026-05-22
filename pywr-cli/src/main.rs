@@ -15,7 +15,7 @@ use pywr_core::solvers::{HighsSolver, HighsSolverSettings, HighsSolverSettingsBu
 use pywr_core::solvers::{MicroLpSolver, MicroLpSolverSettings, MicroLpSolverSettingsBuilder};
 #[cfg(feature = "ipm-simd")]
 use pywr_core::solvers::{SimdIpmF64Solver, SimdIpmSolverSettings, SimdIpmSolverSettingsBuilder};
-use pywr_core::test_utils::make_random_model;
+use pywr_core::test_utils::make_random_model_builder;
 use pywr_schema::{ComponentConversionError, ModelSchema, MultiNetworkModelSchema, NetworkSchema};
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
@@ -406,7 +406,7 @@ fn run_multi(path: &Path, solver: &Solver, data_path: Option<&Path>, output_path
 
 fn run_random(num_systems: usize, density: usize, num_scenarios: usize, solver: &Solver) {
     let mut rng = ChaCha8Rng::seed_from_u64(0);
-    let model = make_random_model(num_systems, density, num_scenarios, &mut rng).unwrap();
+    let model = make_random_model_builder(num_systems, density, num_scenarios, &mut rng).unwrap();
 
     match *solver {
         Solver::Clp => model.run::<ClpSolver>(&ClpSolverSettings::default()),

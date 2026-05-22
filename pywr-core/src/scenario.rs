@@ -1,12 +1,12 @@
 #![warn(clippy::pedantic)]
 #[cfg(feature = "pyo3")]
 use pyo3::{pyclass, pymethods};
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 use thiserror::Error;
 
 /// Errors that can occur when building a [`ScenarioDomain`].
 #[derive(Error, Debug)]
-pub enum ScenarioError {
+pub enum ScenarioDomainBuilderError {
     #[error("Scenario group name `{0}` already exists")]
     DuplicateGroupName(String),
     #[error("Scenario group name `{0}` not found")]
@@ -86,18 +86,20 @@ impl ScenarioGroup {
     ///
     /// # Errors
     ///
-    /// - [`ScenarioError::NoLabels`] if no labels are defined for the group
-    /// - [`ScenarioError::LabelNotFound`] if the label is not found in the labels for the group
-    fn label_position(&self, label: &str) -> Result<usize, ScenarioError> {
+    /// - [`ScenarioDomainBuilderError::NoLabels`] if no labels are defined for the group
+    /// - [`ScenarioDomainBuilderError::LabelNotFound`] if the label is not found in the labels for the group
+    fn label_position(&self, label: &str) -> Result<usize, ScenarioDomainBuilderError> {
         match &self.labels {
-            Some(labels) => labels
-                .iter()
-                .position(|l| l == label)
-                .ok_or_else(|| ScenarioError::LabelNotFound {
-                    group: self.name.clone(),
-                    label: label.to_string(),
-                }),
-            None => Err(ScenarioError::NoLabels {
+            Some(labels) => {
+                labels
+                    .iter()
+                    .position(|l| l == label)
+                    .ok_or_else(|| ScenarioDomainBuilderError::LabelNotFound {
+                        group: self.name.clone(),
+                        label: label.to_string(),
+                    })
+            }
+            None => Err(ScenarioDomainBuilderError::NoLabels {
                 group: self.name.clone(),
             }),
         }
@@ -174,15 +176,15 @@ impl ScenarioGroupBuilder {
     ///
     /// # Errors
     ///
-    /// - [`ScenarioError::InvalidSlice`] if the slice is invalid (e.g. start >= end or end > size)
-    /// - [`ScenarioError::NoLabels`] if a label subset is defined but no labels are provided
-    /// - [`ScenarioError::LabelNotFound`] if a label in the subset is not found in the labels for the group
-    /// - [`ScenarioError::IncorrectNumberOfLabels`] if the number of labels provided does not match the group size
-    pub fn build(self) -> Result<ScenarioGroup, ScenarioError> {
+    /// - [`ScenarioDomainBuilderError::InvalidSlice`] if the slice is invalid (e.g. start >= end or end > size)
+    /// - [`ScenarioDomainBuilderError::NoLabels`] if a label subset is defined but no labels are provided
+    /// - [`ScenarioDomainBuilderError::LabelNotFound`] if a label in the subset is not found in the labels for the group
+    /// - [`ScenarioDomainBuilderError::IncorrectNumberOfLabels`] if the number of labels provided does not match the group size
+    pub fn build(self) -> Result<ScenarioGroup, ScenarioDomainBuilderError> {
         let subset = match self.subset {
             Some(ScenarioGroupSubsetBuilder::Slice { start, end }) => {
                 if start >= end || end > self.size {
-                    return Err(ScenarioError::InvalidSlice {
+                    return Err(ScenarioDomainBuilderError::InvalidSlice {
                         group: self.name.clone(),
                         size: self.size,
                         start,
@@ -198,19 +200,18 @@ impl ScenarioGroupBuilder {
                     let indices: Vec<usize> = subset_labels
                         .iter()
                         .map(|l| {
-                            labels
-                                .iter()
-                                .position(|label| label == l)
-                                .ok_or_else(|| ScenarioError::LabelNotFound {
+                            labels.iter().position(|label| label == l).ok_or_else(|| {
+                                ScenarioDomainBuilderError::LabelNotFound {
                                     label: l.clone(),
                                     group: self.name.clone(),
-                                })
+                                }
+                            })
                         })
-                        .collect::<Result<Vec<usize>, ScenarioError>>()?;
+                        .collect::<Result<Vec<usize>, ScenarioDomainBuilderError>>()?;
 
                     Some(ScenarioGroupSubset::Indices(indices))
                 } else {
-                    return Err(ScenarioError::NoLabels {
+                    return Err(ScenarioDomainBuilderError::NoLabels {
                         group: self.name.clone(),
                     });
                 }
@@ -220,7 +221,7 @@ impl ScenarioGroupBuilder {
 
         if let Some(labels) = &self.labels {
             if labels.len() != self.size {
-                return Err(ScenarioError::IncorrectNumberOfLabels {
+                return Err(ScenarioDomainBuilderError::IncorrectNumberOfLabels {
                     group: self.name,
                     found: labels.len(),
                     expected: self.size,
@@ -269,15 +270,24 @@ pub struct ScenarioDomainBuilder {
 }
 
 impl ScenarioDomainBuilder {
+    #[must_use]
+    pub fn group_map(&self) -> HashMap<String, usize> {
+        self.groups
+            .iter()
+            .enumerate()
+            .map(|(i, g)| (g.name.clone(), i))
+            .collect()
+    }
+
     /// Add a [`ScenarioGroup`] to the collection
     ///
     /// # Errors
     ///
-    /// - [`ScenarioError::DuplicateGroupName`] if a group with the same name already exists in the builder
-    pub fn with_group(mut self, group: ScenarioGroup) -> Result<Self, ScenarioError> {
+    /// - [`ScenarioDomainBuilderError::DuplicateGroupName`] if a group with the same name already exists in the builder
+    pub fn with_group(mut self, group: ScenarioGroup) -> Result<Self, ScenarioDomainBuilderError> {
         for g in &self.groups {
             if g.name == group.name {
-                return Err(ScenarioError::DuplicateGroupName(group.name.clone()));
+                return Err(ScenarioDomainBuilderError::DuplicateGroupName(group.name.clone()));
             }
         }
 
@@ -363,9 +373,9 @@ impl ScenarioDomainBuilder {
     ///
     /// # Errors
     ///
-    /// A [`ScenarioError::CombinationsAndSlices`] will be returned if the combinations and slices
+    /// A [`ScenarioDomainBuilderError::CombinationsAndSlices`] will be returned if the combinations and slices
     /// are both defined as this is not currently supported.
-    /// Other [`ScenarioError`] variants may be returned from the group builders if the groups are
+    /// Other [`ScenarioDomainBuilderError`] variants may be returned from the group builders if the groups are
     /// not valid (e.g. invalid slices or labels).
     ///
     /// # Panics
@@ -374,7 +384,7 @@ impl ScenarioDomainBuilder {
     /// corresponding group labels, or if the number of labels does not match the group size.
     /// However, these cases should be caught by the group builders when building the groups.
     #[allow(clippy::too_many_lines)]
-    pub fn build(self) -> Result<ScenarioDomain, ScenarioError> {
+    pub fn build(self) -> Result<ScenarioDomain, ScenarioDomainBuilderError> {
         let (indices, groups, scenario_map) = if self.groups.is_empty() {
             // Default to a single scenario if no groups are defined.
             (
@@ -387,7 +397,7 @@ impl ScenarioDomainBuilder {
             let mut scenario_indices: Vec<ScenarioIndex> = Vec::with_capacity(num);
 
             if self.groups.iter().any(|grp| grp.subset.is_some()) && self.combinations.is_some() {
-                return Err(ScenarioError::CombinationsAndSlices);
+                return Err(ScenarioDomainBuilderError::CombinationsAndSlices);
             }
 
             // Handle the case where there are specific combinations of scenarios
@@ -403,9 +413,9 @@ impl ScenarioDomainBuilder {
                                 ScenarioLabelOrIndex::Label(label) => group.label_position(label),
                                 ScenarioLabelOrIndex::Index(index) => Ok(*index),
                             })
-                            .collect::<Result<Vec<usize>, ScenarioError>>()
+                            .collect::<Result<Vec<usize>, ScenarioDomainBuilderError>>()
                     })
-                    .collect::<Result<Vec<Vec<usize>>, ScenarioError>>()?;
+                    .collect::<Result<Vec<Vec<usize>>, ScenarioDomainBuilderError>>()?;
 
                 let scenario_map_from_combinations = self.build_scenario_map_from_combinations(&combinations);
 
@@ -445,7 +455,7 @@ impl ScenarioDomainBuilder {
                 let is_sliced = scenario_map_from_slices.iter().any(Option::is_some);
 
                 if is_sliced && self.combinations.is_some() {
-                    return Err(ScenarioError::CombinationsAndSlices);
+                    return Err(ScenarioDomainBuilderError::CombinationsAndSlices);
                 }
 
                 for scenario_id in 0..num {
@@ -699,12 +709,12 @@ impl ScenarioDomain {
     ///
     /// # Errors
     ///
-    /// - [`ScenarioError::GroupNameNotFound`] if the group name is not found in the domain.
-    pub fn group_index(&self, name: &str) -> Result<usize, ScenarioError> {
+    /// - [`ScenarioDomainBuilderError::GroupNameNotFound`] if the group name is not found in the domain.
+    pub fn group_index(&self, name: &str) -> Result<usize, ScenarioDomainBuilderError> {
         self.groups
             .iter()
             .position(|g| g.name == name)
-            .ok_or_else(|| ScenarioError::GroupNameNotFound(name.to_string()))
+            .ok_or_else(|| ScenarioDomainBuilderError::GroupNameNotFound(name.to_string()))
     }
 
     /// Return the scenario groups for the domain.
@@ -717,8 +727,8 @@ impl ScenarioDomain {
     ///
     /// # Errors
     ///
-    /// - [`ScenarioError::GroupNameNotFound`] if the group name is not found
-    pub fn group_scenario_subset(&self, name: &str) -> Result<Option<&[usize]>, ScenarioError> {
+    /// - [`ScenarioDomainBuilderError::GroupNameNotFound`] if the group name is not found
+    pub fn group_scenario_subset(&self, name: &str) -> Result<Option<&[usize]>, ScenarioDomainBuilderError> {
         let group_index = self.group_index(name)?;
         Ok(self.scenario_map[group_index].as_deref())
     }
@@ -727,8 +737,8 @@ impl ScenarioDomain {
     ///
     /// # Errors
     ///
-    /// - [`ScenarioError::GroupNameNotFound`] if the group name is not found
-    pub fn group_size(&self, name: &str) -> Result<usize, ScenarioError> {
+    /// - [`ScenarioDomainBuilderError::GroupNameNotFound`] if the group name is not found
+    pub fn group_size(&self, name: &str) -> Result<usize, ScenarioDomainBuilderError> {
         let group_index = self.group_index(name)?;
         Ok(self.groups[group_index].size())
     }
@@ -736,7 +746,7 @@ impl ScenarioDomain {
 
 #[cfg(test)]
 mod tests {
-    use super::{ScenarioDomain, ScenarioDomainBuilder, ScenarioError, ScenarioGroupBuilder};
+    use super::{ScenarioDomain, ScenarioDomainBuilder, ScenarioDomainBuilderError, ScenarioGroupBuilder};
 
     #[test]
     fn test_group_builder() {
@@ -759,7 +769,7 @@ mod tests {
         assert!(group.is_err());
         assert!(matches!(
             group.err().unwrap(),
-            ScenarioError::IncorrectNumberOfLabels {
+            ScenarioDomainBuilderError::IncorrectNumberOfLabels {
                 group: _,
                 found: 4,
                 expected: 3
@@ -774,7 +784,10 @@ mod tests {
             .build();
 
         assert!(group.is_err());
-        assert!(matches!(group.err().unwrap(), ScenarioError::NoLabels { group: _ }));
+        assert!(matches!(
+            group.err().unwrap(),
+            ScenarioDomainBuilderError::NoLabels { group: _ }
+        ));
     }
 
     #[test]
@@ -784,7 +797,7 @@ mod tests {
         assert!(group.is_err());
         assert!(matches!(
             group.err().unwrap(),
-            ScenarioError::InvalidSlice {
+            ScenarioDomainBuilderError::InvalidSlice {
                 group: _,
                 size: 3,
                 start: 0,
@@ -805,7 +818,10 @@ mod tests {
             .with_group(group_b);
 
         assert!(result.is_err());
-        assert!(matches!(result.err().unwrap(), ScenarioError::DuplicateGroupName(_)));
+        assert!(matches!(
+            result.err().unwrap(),
+            ScenarioDomainBuilderError::DuplicateGroupName(_)
+        ));
     }
 
     #[test]
@@ -829,7 +845,10 @@ mod tests {
             .build();
 
         assert!(result.is_err());
-        assert!(matches!(result.err().unwrap(), ScenarioError::CombinationsAndSlices));
+        assert!(matches!(
+            result.err().unwrap(),
+            ScenarioDomainBuilderError::CombinationsAndSlices
+        ));
     }
 
     #[test]

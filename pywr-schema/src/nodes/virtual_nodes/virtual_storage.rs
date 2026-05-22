@@ -11,7 +11,7 @@ use crate::parameters::Parameter;
 use crate::v1::{ConversionData, TryFromV1, try_convert_initial_storage, try_convert_node_attr, try_convert_node_meta};
 use crate::{ConversionError, node_attribute_subset_enum};
 #[cfg(feature = "core")]
-use pywr_core::{metric::MetricF64, timestep::TimeDomain, virtual_storage::VirtualStorageBuilder};
+use pywr_core::{metric::MetricF64, timestep::TimeDomain, virtual_storage::VirtualStorageNodeBuilder};
 use pywr_schema_macros::PywrVisitAll;
 use pywr_schema_macros::skip_serializing_none;
 use pywr_v1_schema::nodes::{
@@ -251,8 +251,8 @@ impl VirtualStorageNode {
     pub fn add_to_model(&self, network: &mut pywr_core::network::Network, args: &LoadArgs) -> Result<(), SchemaError> {
         let node_idxs = self.node_indices_for_flow_constraints(network, args)?;
 
-        let mut builder =
-            VirtualStorageBuilder::new(self.meta.name.as_str(), &node_idxs).initial_volume(self.initial_volume.into());
+        let mut builder = VirtualStorageNodeBuilder::new(self.meta.name.as_str(), &node_idxs)
+            .initial_volume(self.initial_volume.into());
 
         if let Some(r) = self.reset.clone() {
             let reset = r.try_into()?;

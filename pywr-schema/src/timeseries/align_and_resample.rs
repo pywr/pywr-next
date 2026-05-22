@@ -116,7 +116,7 @@ mod tests {
     use pywr_core::{
         models::ModelDomain,
         scenario::{ScenarioDomain, ScenarioDomainBuilder},
-        timestep::{TimeDomain, TimestepDuration, Timestepper},
+        timestep::{TimeDomain, TimeDomainBuilder, TimestepDuration},
     };
     use std::num::NonZeroU64;
 
@@ -127,7 +127,7 @@ mod tests {
         let start = NaiveDateTime::parse_from_str("2021-01-07 00:00:00", "%Y-%m-%d %H:%M:%S").unwrap();
         let end = NaiveDateTime::parse_from_str("2021-01-20 00:00:00", "%Y-%m-%d %H:%M:%S").unwrap();
         let timestep = TimestepDuration::Days(NonZeroU64::new(7).unwrap());
-        let timestepper = Timestepper::new(start, end, timestep);
+        let timestepper = TimeDomainBuilder::new(start, end, timestep);
         let time_domain = TimeDomain::try_from(timestepper).unwrap();
 
         let scenario_domain: ScenarioDomain = ScenarioDomainBuilder::default().build().unwrap();
@@ -182,7 +182,7 @@ mod tests {
         let start = NaiveDateTime::parse_from_str("2021-01-01 00:00:00", "%Y-%m-%d %H:%M:%S").unwrap();
         let end = NaiveDateTime::parse_from_str("2021-01-14 00:00:00", "%Y-%m-%d %H:%M:%S").unwrap();
         let timestep = TimestepDuration::Days(NonZeroU64::new(1).unwrap());
-        let timestepper = Timestepper::new(start, end, timestep);
+        let timestepper = TimeDomainBuilder::new(start, end, timestep);
         let time_domain = TimeDomain::try_from(timestepper).unwrap();
 
         let scenario_domain: ScenarioDomain = ScenarioDomainBuilder::default().build().unwrap();
@@ -222,7 +222,7 @@ mod tests {
         let start = NaiveDateTime::parse_from_str("2021-01-01 00:00:00", "%Y-%m-%d %H:%M:%S").unwrap();
         let end = NaiveDateTime::parse_from_str("2021-01-03 00:00:00", "%Y-%m-%d %H:%M:%S").unwrap();
         let timestep = TimestepDuration::Days(NonZeroU64::new(1).unwrap());
-        let timestepper = Timestepper::new(start, end, timestep);
+        let timestepper = TimeDomainBuilder::new(start, end, timestep);
         let time_domain = TimeDomain::try_from(timestepper).unwrap();
 
         let scenario_domain: ScenarioDomain = ScenarioDomainBuilder::default().build().unwrap();

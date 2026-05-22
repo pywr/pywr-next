@@ -1,6 +1,6 @@
 use crate::metric::MetricF64;
 use crate::network::Network;
-use crate::parameters::errors::{ParameterCalculationError, ParameterSetupError};
+use crate::parameters::errors::{GeneralCalculationError, ParameterSetupError};
 use crate::parameters::{
     GeneralParameter, Parameter, ParameterMeta, ParameterName, ParameterState, downcast_internal_state_mut,
 };
@@ -79,7 +79,7 @@ impl GeneralParameter<u64> for ThresholdParameter {
         model: &Network,
         state: &State,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<u64>, ParameterCalculationError> {
+    ) -> Result<Option<u64>, GeneralCalculationError> {
         // Downcast the internal state to the correct type
         let previously_activated = downcast_internal_state_mut::<bool>(internal_state);
 

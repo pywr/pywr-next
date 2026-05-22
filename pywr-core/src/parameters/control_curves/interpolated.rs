@@ -1,28 +1,21 @@
-use crate::metric::MetricF64;
-use crate::network::Network;
-use crate::parameters::errors::ParameterCalculationError;
+use crate::metric::{MetricF64, UnresolvedMetricF64};
+use crate::network::{Network, ResolutionMaps};
+use crate::parameters::errors::GeneralCalculationError;
 use crate::parameters::interpolate::interpolate;
-use crate::parameters::{GeneralParameter, Parameter, ParameterMeta, ParameterName, ParameterState};
+use crate::parameters::{
+    BuiltParameter, GeneralParameter, MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder,
+    ParameterMeta, ParameterName, ParameterState,
+};
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
 use crate::timestep::Timestep;
+use crate::{resolve_metric_f64, resolve_metric_f64_vec};
 
 pub struct ControlCurveInterpolatedParameter {
     meta: ParameterMeta,
     metric: MetricF64,
     control_curves: Vec<MetricF64>,
     values: Vec<MetricF64>,
-}
-
-impl ControlCurveInterpolatedParameter {
-    pub fn new(name: ParameterName, metric: MetricF64, control_curves: Vec<MetricF64>, values: Vec<MetricF64>) -> Self {
-        Self {
-            meta: ParameterMeta::new(name),
-            metric,
-            control_curves,
-            values,
-        }
-    }
 }
 
 impl Parameter for ControlCurveInterpolatedParameter {
@@ -39,7 +32,7 @@ impl GeneralParameter<f64> for ControlCurveInterpolatedParameter {
         model: &Network,
         state: &State,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<f64>, ParameterCalculationError> {
+    ) -> Result<Option<f64>, GeneralCalculationError> {
         // Current value
         let x = self.metric.get_value(model, state)?;
 
@@ -71,5 +64,65 @@ impl GeneralParameter<f64> for ControlCurveInterpolatedParameter {
         Self: Sized,
     {
         self
+    }
+}
+
+pub struct ControlCurveInterpolatedParameterBuilder {
+    meta: ParameterMeta,
+    metric: UnresolvedMetricF64,
+    control_curves: Vec<UnresolvedMetricF64>,
+    values: Vec<UnresolvedMetricF64>,
+}
+
+impl ControlCurveInterpolatedParameterBuilder {
+    pub fn new(name: ParameterName, metric: UnresolvedMetricF64) -> Self {
+        Self {
+            meta: ParameterMeta::new(name),
+            metric,
+            control_curves: Vec::new(),
+            values: Vec::new(),
+        }
+    }
+
+    pub fn control_curve(&mut self, control_curve: UnresolvedMetricF64) -> &mut Self {
+        self.control_curves.push(control_curve);
+        self
+    }
+
+    pub fn value(&mut self, value: UnresolvedMetricF64) -> &mut Self {
+        self.values.push(value);
+        self
+    }
+}
+
+impl ParameterBuilder<f64> for ControlCurveInterpolatedParameterBuilder {
+    fn name(&self) -> &ParameterName {
+        &self.meta.name
+    }
+
+    fn build(
+        self: Box<Self>,
+        resolution_maps: &ResolutionMaps,
+    ) -> Result<MaybeBuiltParameter<f64>, ParameterBuildError> {
+        let metric = resolve_metric_f64!(self, self.metric, resolution_maps, "metrics");
+        let control_curves = resolve_metric_f64_vec!(self, &self.control_curves, resolution_maps, "control_curves");
+        let values = resolve_metric_f64_vec!(self, &self.values, resolution_maps, "values");
+
+        let p = ControlCurveInterpolatedParameter {
+            meta: self.meta,
+            metric,
+            control_curves,
+            values,
+        };
+
+        let bp = match p.try_into_simple() {
+            None => BuiltParameter::General(Box::new(p)),
+            Some(sp) => match sp.try_into_const() {
+                None => BuiltParameter::Simple(sp),
+                Some(cp) => BuiltParameter::Const(cp),
+            },
+        };
+
+        Ok(bp.into())
     }
 }

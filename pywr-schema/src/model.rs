@@ -19,7 +19,7 @@ use pyo3::Python;
 use pyo3::{Bound, PyErr, PyResult, exceptions::PyRuntimeError, pyclass, pymethods, types::PyType};
 #[cfg(feature = "core")]
 use pywr_core::{
-    models::{Model, ModelDomain, MultiNetworkModel, MultiNetworkModelError},
+    models::{Model, ModelBuilder, ModelDomain, MultiModelBuilder, MultiModelBuilderError, MultiNetworkModel},
     timestep::TimestepDuration,
 };
 use pywr_schema_macros::skip_serializing_none;
@@ -144,7 +144,7 @@ impl From<pywr_v1_schema::model::Timestepper> for Timestepper {
 }
 
 #[cfg(feature = "core")]
-impl From<Timestepper> for pywr_core::timestep::Timestepper {
+impl From<Timestepper> for pywr_core::timestep::TimeDomainBuilder {
     fn from(ts: Timestepper) -> Self {
         let timestep = match ts.timestep {
             Timestep::Hours { hours } => TimestepDuration::Hours(hours),
@@ -213,7 +213,7 @@ pub struct ScenarioGroup {
 
 #[cfg(feature = "core")]
 impl TryInto<pywr_core::scenario::ScenarioGroup> for ScenarioGroup {
-    type Error = pywr_core::scenario::ScenarioError;
+    type Error = pywr_core::scenario::ScenarioDomainBuilderError;
 
     fn try_into(self) -> Result<pywr_core::scenario::ScenarioGroup, Self::Error> {
         let mut builder = pywr_core::scenario::ScenarioGroupBuilder::new(&self.name, self.size);
@@ -365,7 +365,7 @@ impl TryFrom<Vec<pywr_v1_schema::model::Scenario>> for ScenarioDomain {
 
 #[cfg(feature = "core")]
 impl TryInto<pywr_core::scenario::ScenarioDomainBuilder> for ScenarioDomain {
-    type Error = pywr_core::scenario::ScenarioError;
+    type Error = pywr_core::scenario::ScenarioDomainBuilderError;
 
     fn try_into(self) -> Result<pywr_core::scenario::ScenarioDomainBuilder, Self::Error> {
         let mut builder = pywr_core::scenario::ScenarioDomainBuilder::default();
@@ -402,7 +402,7 @@ impl From<ModelSchemaReadError> for PyErr {
 #[cfg(feature = "core")]
 pub enum ModelSchemaBuildError {
     #[error("Failed to construct scenario builder: {0}")]
-    ScenarioBuilderError(#[from] pywr_core::scenario::ScenarioError),
+    ScenarioBuilderError(#[from] pywr_core::scenario::ScenarioDomainBuilderError),
     #[error("Failed to construct model domain: {0}")]
     CoreModelDomainError(#[from] pywr_core::models::ModelDomainError),
     #[error("Failed to construct the network: {source}")]
@@ -652,7 +652,7 @@ pub struct MultiNetworkEntry {
 #[cfg(feature = "core")]
 pub enum MultiNetworkModelSchemaBuildError {
     #[error("Failed to construct scenario builder: {0}")]
-    ScenarioBuilderError(#[from] pywr_core::scenario::ScenarioError),
+    ScenarioBuilderError(#[from] pywr_core::scenario::ScenarioDomainBuilderError),
     #[error("Failed to construct model domain: {0}")]
     CoreModelDomainError(#[from] pywr_core::models::ModelDomainError),
     #[error("Failed to construct the network `{name}`: {source}")]
