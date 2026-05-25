@@ -10,6 +10,8 @@
 //! It also tracks a count of unnamed parameters and timeseries. This is used during conversion
 //! of meta-data to provide a unique name for unnamed parameters and timeseries.
 
+use std::collections::HashMap;
+
 use crate::ConversionError;
 use crate::error::ComponentConversionError;
 use crate::metric::Metric;
@@ -110,6 +112,20 @@ impl FromV1<ParameterMetaV1> for ParameterMeta {
                 pname
             }),
             comment: v1.comment,
+            tags: v1
+                .tags
+                .unwrap_or_default()
+                .into_iter()
+                .map(|(k, v)| {
+                    (
+                        k,
+                        match v {
+                            serde_json::Value::String(s) => s,
+                            other => other.to_string(),
+                        },
+                    )
+                })
+                .collect(),
         }
     }
 }
@@ -122,6 +138,7 @@ impl FromV1<Option<ParameterMetaV1>> for ParameterMeta {
                 let meta = Self {
                     name: format!("unnamed-{}", conversion_data.unnamed_count),
                     comment: None,
+                    tags: HashMap::new(),
                 };
                 conversion_data.unnamed_count += 1;
                 meta

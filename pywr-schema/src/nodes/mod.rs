@@ -96,6 +96,7 @@ pub use river_split_with_gauge::{
 };
 use schemars::JsonSchema;
 pub use slots::NodeSlot;
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticStr};
 pub use turbine::{TargetType, TurbineNode, TurbineNodeAttribute, TurbineNodeComponent};
@@ -132,6 +133,8 @@ pub struct NodeMeta {
     pub comment: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub position: Option<NodePosition>,
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub tags: HashMap<String, String>,
 }
 
 impl From<NodeMetaV1> for NodeMeta {
@@ -140,6 +143,18 @@ impl From<NodeMetaV1> for NodeMeta {
             name: v1.name,
             comment: v1.comment,
             position: v1.position.map(|p| p.into()),
+            tags: v1
+                .tags
+                .unwrap_or_default()
+                .into_iter()
+                .map(|(k, v)| {
+                    let v = match v {
+                        serde_json::Value::String(s) => s,
+                        other => other.to_string(),
+                    };
+                    (k, v)
+                })
+                .collect(),
         }
     }
 }

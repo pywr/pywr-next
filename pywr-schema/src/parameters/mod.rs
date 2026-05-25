@@ -68,6 +68,7 @@ use pywr_v1_schema::parameters::{
 };
 pub use rolling::{RollingIndexParameter, RollingParameter};
 use schemars::JsonSchema;
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticStr};
 pub use tables::TablesArrayParameter;
@@ -79,6 +80,8 @@ pub struct ParameterMeta {
     pub name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub comment: Option<String>,
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub tags: HashMap<String, String>,
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, EnumDiscriminants, Clone, JsonSchema, Display)]
