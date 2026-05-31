@@ -1283,6 +1283,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f70749695b063ecbf6b62949ccccde2e733ec3ecbbd71d467dca4e5c6c97cca0"
 
 [[package]]
+name = "glam"
+version = "0.33.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8fb167719045debebe9f532320accc7b5c993c5a3b813f5696a11d5ca7bdc57b"
+
+[[package]]
 name = "glob"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2045,7 +2051,27 @@ dependencies = [
  "num-complex",
  "num-rational",
  "num-traits 0.2.19",
- "simba",
+ "simba 0.9.0",
+ "typenum",
+]
+
+[[package]]
+name = "nalgebra"
+version = "0.35.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "adc43a60c217b0c6ff46e47f26911015ad8d2e5a8be1af668c67e370d99a4346"
+dependencies = [
+ "approx",
+ "glam 0.30.5",
+ "glam 0.31.1",
+ "glam 0.32.1",
+ "glam 0.33.0",
+ "matrixmultiply",
+ "nalgebra-macros",
+ "num-complex",
+ "num-rational",
+ "num-traits 0.2.19",
+ "simba 0.10.0",
  "typenum",
 ]
 
@@ -2062,11 +2088,11 @@ dependencies = [
 
 [[package]]
 name = "nalgebra-sparse"
-version = "0.11.0"
+version = "0.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "df054d7815152d4e66955fc59a1f97f4036e5103134a381b6b54ec55babfa6b7"
+checksum = "e8935b578b6a012f3667131452add895472f37c242d2844497daf7c49f6b8059"
 dependencies = [
- "nalgebra",
+ "nalgebra 0.35.0",
  "num-traits 0.2.19",
 ]
 
@@ -3269,7 +3295,7 @@ dependencies = [
  "ipm-simd",
  "libc",
  "microlp",
- "nalgebra",
+ "nalgebra 0.34.2",
  "ndarray",
  "num",
  "ocl",
@@ -4082,6 +4108,18 @@ dependencies = [
  "num-traits 0.2.19",
  "paste",
  "wide 0.7.33",
+]
+
+[[package]]
+name = "simba"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8f45c644a9f3a386f9288625d9f0c1e999e1acf07a37df35d0516c7f199d9cb2"
+dependencies = [
+ "approx",
+ "num-complex",
+ "num-traits 0.2.19",
+ "wide 1.4.0",
 ]
 
 [[package]]

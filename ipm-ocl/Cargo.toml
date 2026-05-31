@@ -10,5 +10,5 @@ repository.workspace = true
 [dependencies]
 ipm-common = { path = "../ipm-common" }
 log = "0.4.30"
-nalgebra-sparse = "0.11.0"
+nalgebra-sparse = "0.12.0"
 ocl = "0.19"
