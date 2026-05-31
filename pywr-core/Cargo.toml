@@ -38,7 +38,7 @@ ipm-ocl = { path = "../ipm-ocl", optional = true }
 ipm-simd = { path = "../ipm-simd", optional = true }
 libc = "0.2"
 microlp = { workspace = true, optional = true }
-nalgebra = "0.34"
+nalgebra = "0.35"
 ndarray = { workspace = true }
 num = { workspace = true }
 ocl = { version = "0.19", optional = true }
