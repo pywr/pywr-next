@@ -661,6 +661,7 @@ mod tests {
         let meta = ParameterMeta {
             name: "test".to_string(),
             comment: None,
+            tags: Default::default(),
         };
         let values = ConstantFloatVec::Literal { values: vec![1.0; 366] };
         let param = DailyProfileParameter { meta, values };
@@ -680,6 +681,7 @@ mod tests {
         let meta = ParameterMeta {
             name: "test".to_string(),
             comment: None,
+            tags: Default::default(),
         };
 
         let values = vec![1.0; 365];
@@ -701,6 +703,7 @@ mod tests {
         let meta = ParameterMeta {
             name: "test".to_string(),
             comment: None,
+            tags: Default::default(),
         };
         let values = ConstantFloatVec::Literal { values: vec![1.0; 364] };
         let param = DailyProfileParameter { meta, values };

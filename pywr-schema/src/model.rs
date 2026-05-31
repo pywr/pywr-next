@@ -1177,6 +1177,7 @@ mod core_tests {
                     meta: ParameterMeta {
                         name: "agg1".to_string(),
                         comment: None,
+                        tags: Default::default(),
                     },
                     agg_func: AggFunc::Sum,
                     metrics: vec![
@@ -1194,6 +1195,7 @@ mod core_tests {
                     meta: ParameterMeta {
                         name: "p1".to_string(),
                         comment: None,
+                        tags: Default::default(),
                     },
                     value: 10.0.into(),
                     variable: None,
@@ -1202,6 +1204,7 @@ mod core_tests {
                     meta: ParameterMeta {
                         name: "agg2".to_string(),
                         comment: None,
+                        tags: Default::default(),
                     },
                     agg_func: AggFunc::Sum,
                     metrics: vec![
@@ -1234,6 +1237,7 @@ mod core_tests {
                     meta: ParameterMeta {
                         name: "agg1".to_string(),
                         comment: None,
+                        tags: Default::default(),
                     },
                     agg_func: AggFunc::Sum,
                     metrics: vec![
@@ -1251,6 +1255,7 @@ mod core_tests {
                     meta: ParameterMeta {
                         name: "p1".to_string(),
                         comment: None,
+                        tags: Default::default(),
                     },
                     value: 10.0.into(),
                     variable: None,
@@ -1259,6 +1264,7 @@ mod core_tests {
                     meta: ParameterMeta {
                         name: "p2".to_string(),
                         comment: None,
+                        tags: Default::default(),
                     },
                     value: 10.0.into(),
                     variable: None,
