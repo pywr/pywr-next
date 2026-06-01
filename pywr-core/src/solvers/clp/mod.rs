@@ -154,6 +154,15 @@ impl Default for ClpSimplex {
     }
 }
 
+/// Ensure the Clp model is deleted when the struct goes out of scope
+impl Drop for ClpSimplex {
+    fn drop(&mut self) {
+        unsafe {
+            Clp_deleteModel(self.ptr);
+        }
+    }
+}
+
 impl ClpSimplex {
     #[allow(dead_code)]
     pub fn print(&mut self) {
