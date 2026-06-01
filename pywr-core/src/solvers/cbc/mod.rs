@@ -43,6 +43,14 @@ impl Default for Cbc {
     }
 }
 
+impl Drop for Cbc {
+    fn drop(&mut self) {
+        unsafe {
+            Cbc_deleteModel(self.ptr);
+        }
+    }
+}
+
 impl Cbc {
     #[allow(dead_code)]
     pub fn print(&mut self) {
