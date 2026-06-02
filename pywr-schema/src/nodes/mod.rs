@@ -137,25 +137,29 @@ pub struct NodeMeta {
     pub tags: HashMap<String, String>,
 }
 
-impl From<NodeMetaV1> for NodeMeta {
-    fn from(v1: NodeMetaV1) -> Self {
-        Self {
+impl TryFrom<NodeMetaV1> for NodeMeta {
+    type Error = ConversionError;
+
+    fn try_from(v1: NodeMetaV1) -> Result<Self, Self::Error> {
+        let tags = v1
+            .tags
+            .unwrap_or_default()
+            .into_iter()
+            .map(|(k, v)| match v {
+                serde_json::Value::String(s) => Ok((k, s)),
+                other => Err(ConversionError::UnexpectedType {
+                    expected: "String".to_string(),
+                    actual: other.to_string(),
+                }),
+            })
+            .collect::<Result<_, _>>()?;
+
+        Ok(Self {
             name: v1.name,
             comment: v1.comment,
             position: v1.position.map(|p| p.into()),
-            tags: v1
-                .tags
-                .unwrap_or_default()
-                .into_iter()
-                .map(|(k, v)| {
-                    let v = match v {
-                        serde_json::Value::String(s) => s,
-                        other => other.to_string(),
-                    };
-                    (k, v)
-                })
-                .collect(),
-        }
+            tags,
+        })
     }
 }
 
@@ -747,7 +751,7 @@ impl TryFromV1<Box<CoreNodeV1>> for NodeOrVirtualNode {
                 Node::RiverSplitWithGauge(n.try_into_v2(parent_node, conversion_data)?).into()
             }
             CoreNodeV1::Aggregated(n) => VirtualNode::Aggregated(n.try_into_v2(parent_node, conversion_data)?).into(),
-            CoreNodeV1::AggregatedStorage(n) => VirtualNode::AggregatedStorage(n.into()).into(),
+            CoreNodeV1::AggregatedStorage(n) => VirtualNode::AggregatedStorage(n.try_into()?).into(),
             CoreNodeV1::VirtualStorage(n) => {
                 VirtualNode::VirtualStorage(n.try_into_v2(parent_node, conversion_data)?).into()
             }

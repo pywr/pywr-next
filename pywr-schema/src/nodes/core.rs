@@ -7,7 +7,7 @@ use crate::network::LoadArgs;
 use crate::nodes::{NodeAttribute, NodeComponent};
 use crate::nodes::{NodeMeta, NodeSlot};
 use crate::parameters::Parameter;
-use crate::v1::{ConversionData, TryFromV1, try_convert_initial_storage, try_convert_node_attr};
+use crate::v1::{ConversionData, TryFromV1, try_convert_initial_storage, try_convert_node_attr, try_convert_node_meta};
 use crate::{mermaid, node_attribute_subset_enum, node_component_subset_enum};
 #[cfg(feature = "core")]
 use pywr_core::{
@@ -179,7 +179,7 @@ impl TryFromV1<InputNodeV1> for InputNode {
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: NodeMeta = v1.meta.into();
+        let meta: NodeMeta = try_convert_node_meta(v1.meta)?;
 
         let cost = try_convert_node_attr(&meta.name, "cost", v1.cost, parent_node, conversion_data)?;
         let max_flow = try_convert_node_attr(&meta.name, "max_flow", v1.max_flow, parent_node, conversion_data)?;
@@ -687,7 +687,7 @@ impl TryFromV1<LinkNodeV1> for LinkNode {
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: NodeMeta = v1.meta.into();
+        let meta: NodeMeta = try_convert_node_meta(v1.meta)?;
 
         let cost = try_convert_node_attr(&meta.name, "cost", v1.cost, parent_node, conversion_data)?;
         let max_flow = try_convert_node_attr(&meta.name, "max_flow", v1.max_flow, parent_node, conversion_data)?;
@@ -717,7 +717,7 @@ impl TryFromV1<BreakLinkNodeV1> for LinkNode {
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: NodeMeta = v1.meta.into();
+        let meta: NodeMeta = try_convert_node_meta(v1.meta)?;
         let cost = try_convert_node_attr(&meta.name, "cost", v1.cost, parent_node, conversion_data)?;
         let max_flow = try_convert_node_attr(&meta.name, "max_flow", v1.max_flow, parent_node, conversion_data)?;
         let min_flow = try_convert_node_attr(&meta.name, "min_flow", v1.min_flow, parent_node, conversion_data)?;
@@ -896,7 +896,7 @@ impl TryFromV1<OutputNodeV1> for OutputNode {
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: NodeMeta = v1.meta.into();
+        let meta: NodeMeta = try_convert_node_meta(v1.meta)?;
 
         let cost = try_convert_node_attr(&meta.name, "cost", v1.cost, parent_node, conversion_data)?;
         let max_flow = try_convert_node_attr(&meta.name, "max_flow", v1.max_flow, parent_node, conversion_data)?;
@@ -1094,7 +1094,7 @@ impl TryFromV1<StorageNodeV1> for StorageNode {
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: NodeMeta = v1.meta.into();
+        let meta: NodeMeta = try_convert_node_meta(v1.meta)?;
 
         let cost = try_convert_node_attr(&meta.name, "cost", v1.cost, parent_node, conversion_data)?;
         let max_volume = try_convert_node_attr(&meta.name, "max_volume", v1.max_volume, parent_node, conversion_data)?;
@@ -1123,7 +1123,7 @@ impl TryFromV1<ReservoirNodeV1> for StorageNode {
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: NodeMeta = v1.meta.into();
+        let meta: NodeMeta = try_convert_node_meta(v1.meta)?;
 
         let cost = try_convert_node_attr(&meta.name, "cost", v1.cost, parent_node, conversion_data)?;
         let max_volume = try_convert_node_attr(&meta.name, "max_volume", v1.max_volume, parent_node, conversion_data)?;
@@ -1291,7 +1291,7 @@ impl TryFromV1<CatchmentNodeV1> for CatchmentNode {
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: NodeMeta = v1.meta.into();
+        let meta: NodeMeta = try_convert_node_meta(v1.meta)?;
 
         let cost = try_convert_node_attr(&meta.name, "cost", v1.cost, parent_node, conversion_data)?;
         let flow = try_convert_node_attr(&meta.name, "min_flow", v1.flow, parent_node, conversion_data)?;

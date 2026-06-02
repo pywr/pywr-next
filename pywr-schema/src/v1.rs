@@ -15,9 +15,10 @@ use std::collections::HashMap;
 use crate::ConversionError;
 use crate::error::ComponentConversionError;
 use crate::metric::Metric;
-use crate::nodes::StorageInitialVolume;
+use crate::nodes::{NodeMeta, StorageInitialVolume};
 use crate::parameters::{ConstantFloatVec, Parameter, ParameterMeta};
 use crate::timeseries::Timeseries;
+use pywr_v1_schema::nodes::NodeMeta as NodeMetaV1;
 use pywr_v1_schema::parameters::{
     ExternalDataRef, ParameterMeta as ParameterMetaV1, ParameterValue, ParameterValues, TableDataRef,
 };
@@ -189,6 +190,20 @@ where
                 error,
             })
         })
+}
+
+/// Helper function to convert node meta from v1 to v2.
+///
+/// Returns an error if any tag value is not a string.
+pub fn try_convert_node_meta(v1: NodeMetaV1) -> Result<NodeMeta, Box<ComponentConversionError>> {
+    let name = v1.name.clone();
+    NodeMeta::try_from(v1).map_err(|error| {
+        Box::new(ComponentConversionError::Node {
+            attr: "tags".to_string(),
+            name,
+            error,
+        })
+    })
 }
 
 /// Helper function to convert initial storage from v1 to v2.

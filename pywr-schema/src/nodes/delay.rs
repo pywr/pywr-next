@@ -6,6 +6,7 @@ use crate::network::LoadArgs;
 use crate::nodes::{NodeAttribute, NodeComponent};
 use crate::nodes::{NodeMeta, NodeSlot};
 use crate::parameters::{ConstantValue, Parameter};
+use crate::v1::try_convert_node_meta;
 use crate::{mermaid, node_attribute_subset_enum, node_component_subset_enum};
 #[cfg(feature = "core")]
 use pywr_core::{metric::MetricF64, parameters::ParameterName};
@@ -209,7 +210,7 @@ impl TryFrom<DelayNodeV1> for DelayNode {
     type Error = Box<ComponentConversionError>;
 
     fn try_from(v1: DelayNodeV1) -> Result<Self, Self::Error> {
-        let meta: NodeMeta = v1.meta.into();
+        let meta: NodeMeta = try_convert_node_meta(v1.meta)?;
 
         // TODO convert days & timesteps to a usize as we don;t support non-daily timesteps at the moment
         let delay = match v1.days {
