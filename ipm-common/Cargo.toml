@@ -8,5 +8,5 @@ repository.workspace = true
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-log = "0.4.30"
+log = "0.4.31"
 nalgebra-sparse = "0.12.0"
