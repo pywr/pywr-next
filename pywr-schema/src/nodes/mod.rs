@@ -141,24 +141,11 @@ impl TryFrom<NodeMetaV1> for NodeMeta {
     type Error = ConversionError;
 
     fn try_from(v1: NodeMetaV1) -> Result<Self, Self::Error> {
-        let tags = v1
-            .tags
-            .unwrap_or_default()
-            .into_iter()
-            .map(|(k, v)| match v {
-                serde_json::Value::String(s) => Ok((k, s)),
-                other => Err(ConversionError::UnexpectedType {
-                    expected: "String".to_string(),
-                    actual: other.to_string(),
-                }),
-            })
-            .collect::<Result<_, _>>()?;
-
         Ok(Self {
             name: v1.name,
             comment: v1.comment,
             position: v1.position.map(|p| p.into()),
-            tags,
+            tags: crate::v1::convert_tags(v1.tags)?,
         })
     }
 }

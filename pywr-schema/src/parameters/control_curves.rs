@@ -6,7 +6,7 @@ use crate::metric::{Metric, NodeAttrReference, VirtualNodeAttrReference};
 use crate::network::LoadArgs;
 use crate::nodes::NodeAttribute;
 use crate::parameters::{ConversionData, ParameterMeta};
-use crate::v1::{IntoV2, TryFromV1, try_convert_control_curves, try_convert_parameter_attr};
+use crate::v1::{TryFromV1, TryIntoV2, try_convert_control_curves, try_convert_parameter_attr};
 
 #[cfg(feature = "core")]
 use pywr_core::parameters::{ParameterIndex, ParameterName};
@@ -68,7 +68,7 @@ impl TryFromV1<ControlCurveInterpolatedParameterV1> for ControlCurveInterpolated
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.into_v2(parent_node, conversion_data);
+        let meta: ParameterMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
 
         let control_curves = try_convert_control_curves(
             &meta.name,
@@ -171,7 +171,7 @@ impl TryFromV1<ControlCurveIndexParameterV1> for ControlCurveIndexParameter {
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.into_v2(parent_node, conversion_data);
+        let meta: ParameterMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
 
         let control_curves = v1
             .control_curves
@@ -213,7 +213,7 @@ impl TryFromV1<ControlCurveParameterV1> for ControlCurveIndexParameter {
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.into_v2(parent_node, conversion_data);
+        let meta: ParameterMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
 
         let control_curves = try_convert_control_curves(
             &meta.name,
@@ -297,7 +297,7 @@ impl TryFromV1<ControlCurveParameterV1> for ControlCurveParameter {
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.into_v2(parent_node, conversion_data);
+        let meta: ParameterMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
 
         let control_curves = try_convert_control_curves(
             &meta.name,
@@ -402,7 +402,7 @@ impl TryFromV1<ControlCurvePiecewiseInterpolatedParameterV1> for ControlCurvePie
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.into_v2(parent_node, conversion_data);
+        let meta: ParameterMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
 
         let control_curves = try_convert_control_curves(
             &meta.name,
