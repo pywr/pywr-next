@@ -579,8 +579,11 @@ mod tests {
         output_node0.sub_name("0").max_flow(10.0.into()).cost((-10.0).into());
         network_builder.node(output_node0);
 
-        network_builder.connect("input", None, "link", Some("0"));
-        network_builder.connect("link", Some("0"), "output", Some("0"));
+        network_builder.connect("input", UnresolvedNode::new("link", Some("0")));
+        network_builder.connect(
+            UnresolvedNode::new("link", Some("0")),
+            UnresolvedNode::new("output", Some("0")),
+        );
 
         let mut link_node1 = NodeBuilder::new("link", NodeType::Link);
         link_node1.sub_name("1");
@@ -590,8 +593,11 @@ mod tests {
         output_node1.sub_name("1").max_flow(10.0.into()).cost((-10.0).into());
         network_builder.node(output_node1);
 
-        network_builder.connect("input", None, "link", Some("1"));
-        network_builder.connect("link", Some("1"), "output", Some("1"));
+        network_builder.connect("input", UnresolvedNode::new("link", Some("1")));
+        network_builder.connect(
+            UnresolvedNode::new("link", Some("1")),
+            UnresolvedNode::new("output", Some("1")),
+        );
 
         // Virtual storage with contributions from link-node0 than link-node1
         let mut vs_builder = VirtualStorageNodeBuilder::new(

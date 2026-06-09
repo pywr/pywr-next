@@ -1,25 +1,19 @@
-use crate::metric::MetricF64;
-use crate::network::Network;
+use crate::metric::{MetricF64, UnresolvedMetricF64};
+use crate::network::{Network, ResolutionMaps};
 use crate::parameters::errors::GeneralCalculationError;
-use crate::parameters::{GeneralParameter, Parameter, ParameterMeta, ParameterName, ParameterState};
+use crate::parameters::{
+    BuiltParameter, GeneralParameter, MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder,
+    ParameterMeta, ParameterName, ParameterState,
+};
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
 use crate::timestep::Timestep;
+use crate::{resolve_metric_f64, resolve_metric_f64_vec};
 
 pub struct ControlCurveIndexParameter {
     meta: ParameterMeta,
     metric: MetricF64,
     control_curves: Vec<MetricF64>,
-}
-
-impl ControlCurveIndexParameter {
-    pub fn new(name: ParameterName, metric: MetricF64, control_curves: Vec<MetricF64>) -> Self {
-        Self {
-            meta: ParameterMeta::new(name),
-            metric,
-            control_curves,
-        }
-    }
 }
 
 impl Parameter for ControlCurveIndexParameter {
@@ -53,5 +47,48 @@ impl GeneralParameter<u64> for ControlCurveIndexParameter {
         Self: Sized,
     {
         self
+    }
+}
+
+pub struct ControlCurveIndexParameterBuilder {
+    meta: ParameterMeta,
+    metric: UnresolvedMetricF64,
+    control_curves: Vec<UnresolvedMetricF64>,
+}
+
+impl ControlCurveIndexParameterBuilder {
+    pub fn new(name: ParameterName, metric: UnresolvedMetricF64) -> Self {
+        Self {
+            meta: ParameterMeta::new(name),
+            metric,
+            control_curves: Vec::new(),
+        }
+    }
+
+    pub fn control_curve(&mut self, cc: UnresolvedMetricF64) -> &mut Self {
+        self.control_curves.push(cc);
+        self
+    }
+}
+
+impl ParameterBuilder<u64> for ControlCurveIndexParameterBuilder {
+    fn name(&self) -> &ParameterName {
+        &self.meta.name
+    }
+
+    fn build(
+        self: Box<Self>,
+        resolution_maps: &ResolutionMaps,
+    ) -> Result<MaybeBuiltParameter<u64>, ParameterBuildError> {
+        let metric = resolve_metric_f64!(self, self.metric, resolution_maps, "metric");
+        let control_curves = resolve_metric_f64_vec!(self, &self.control_curves, resolution_maps, "control_curves");
+
+        let p = ControlCurveIndexParameter {
+            meta: self.meta,
+            metric,
+            control_curves,
+        };
+
+        Ok(MaybeBuiltParameter::Built(BuiltParameter::General(Box::new(p))))
     }
 }

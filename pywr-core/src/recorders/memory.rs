@@ -1,11 +1,11 @@
 use crate::agg_funcs::{AggFuncError, AggFuncF64};
 use crate::models::ModelDomain;
-use crate::network::Network;
+use crate::network::{MetricSetIndex, Network, ResolutionMaps};
 use crate::recorders::aggregator::PeriodValue;
 use crate::recorders::{
-    MetricSetIndex, MetricSetState, Recorder, RecorderAggregationError, RecorderDataFrameError, RecorderFinalResult,
-    RecorderFinaliseError, RecorderInternalState, RecorderMeta, RecorderSaveError, RecorderSetupError,
-    downcast_internal_state, downcast_internal_state_mut,
+    MetricSetState, Recorder, RecorderAggregationError, RecorderBuilder, RecorderBuilderError, RecorderDataFrameError,
+    RecorderFinalResult, RecorderFinaliseError, RecorderInternalState, RecorderMeta, RecorderSaveError,
+    RecorderSetupError, downcast_internal_state, downcast_internal_state_mut,
 };
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
@@ -303,17 +303,6 @@ pub struct MemoryRecorder {
     order: AggregationOrder,
 }
 
-impl MemoryRecorder {
-    pub fn new(name: &str, metric_set_idx: MetricSetIndex, aggregation: Aggregation, order: AggregationOrder) -> Self {
-        Self {
-            meta: RecorderMeta::new(name),
-            metric_set_idx,
-            aggregation,
-            order,
-        }
-    }
-}
-
 impl Recorder for MemoryRecorder {
     fn meta(&self) -> &RecorderMeta {
         &self.meta
@@ -396,6 +385,47 @@ impl Recorder for MemoryRecorder {
         };
 
         Ok(Some(Box::new(result)))
+    }
+}
+
+pub struct MemoryRecorderBuilder {
+    meta: RecorderMeta,
+    metric_set: String,
+    aggregation: Aggregation,
+    order: AggregationOrder,
+}
+
+impl MemoryRecorderBuilder {
+    pub fn new(name: &str, metric_set: &str, aggregation: Aggregation, order: AggregationOrder) -> Self {
+        Self {
+            meta: RecorderMeta::new(name),
+            metric_set: metric_set.to_string(),
+            aggregation,
+            order,
+        }
+    }
+}
+
+impl RecorderBuilder for MemoryRecorderBuilder {
+    fn name(&self) -> &str {
+        &self.meta.name
+    }
+
+    fn build(self: Box<Self>, resolution_maps: &ResolutionMaps) -> Result<Box<dyn Recorder>, RecorderBuilderError> {
+        let metric_set_idx = resolution_maps.metric_sets.get(&self.metric_set).ok_or_else(|| {
+            RecorderBuilderError::MetricSetNotFound {
+                name: self.metric_set.clone(),
+            }
+        })?;
+
+        let r = MemoryRecorder {
+            meta: self.meta,
+            metric_set_idx: *metric_set_idx,
+            aggregation: self.aggregation,
+            order: self.order,
+        };
+
+        Ok(Box::new(r))
     }
 }
 

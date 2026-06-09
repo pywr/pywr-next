@@ -609,6 +609,13 @@ pub enum ModelBuilderError {
     NetworkBuildError(#[from] NetworkBuildError),
 }
 
+#[cfg(feature = "pyo3")]
+impl From<ModelBuilderError> for PyErr {
+    fn from(err: ModelBuilderError) -> PyErr {
+        PyRuntimeError::new_err(err.to_string())
+    }
+}
+
 pub struct ModelBuilder {
     domain: ModelDomainBuilder,
     network: NetworkBuilder,
@@ -625,12 +632,8 @@ impl ModelBuilder {
     }
 
     pub fn build(self) -> Result<Model, ModelBuilderError> {
-        let scenario_group_map = match &self.domain.scenario {
-            Some(scenario) => scenario.group_map(),
-            None => Default::default(),
-        };
         let domain = self.domain.build()?;
-        let (network, _) = self.network.build(&scenario_group_map, &HashMap::new())?;
+        let (network, _) = self.network.build(&domain, &HashMap::new())?;
         Ok(Model { domain, network })
     }
 }

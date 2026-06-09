@@ -22,7 +22,7 @@ pub struct MonthlyProfileParameter {
 }
 
 pub struct MonthlyProfileParameterBuilder {
-    name: ParameterName,
+    meta: ParameterMeta,
     values: [f64; 12],
     interp_day: Option<MonthlyInterpDay>,
 }
@@ -30,7 +30,7 @@ pub struct MonthlyProfileParameterBuilder {
 impl MonthlyProfileParameterBuilder {
     pub fn new(name: ParameterName, values: [f64; 12]) -> Self {
         Self {
-            name,
+            meta: ParameterMeta::new(name),
             values,
             interp_day: None,
         }
@@ -44,7 +44,7 @@ impl MonthlyProfileParameterBuilder {
 
 impl ParameterBuilder<f64> for MonthlyProfileParameterBuilder {
     fn name(&self) -> &ParameterName {
-        &self.name
+        &self.meta.name
     }
 
     fn build(
@@ -52,7 +52,7 @@ impl ParameterBuilder<f64> for MonthlyProfileParameterBuilder {
         _resolution_maps: &ResolutionMaps,
     ) -> Result<MaybeBuiltParameter<f64>, ParameterBuildError> {
         Ok(BuiltParameter::Simple(Box::new(MonthlyProfileParameter {
-            meta: ParameterMeta::new(self.name.clone()),
+            meta: self.meta,
             values: self.values,
             interp_day: self.interp_day,
         }))

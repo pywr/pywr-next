@@ -1,7 +1,11 @@
-use crate::metric::MetricF64;
-use crate::network::Network;
+use crate::metric::{MetricF64, UnresolvedMetricF64};
+use crate::network::{Network, ResolutionMaps};
 use crate::parameters::errors::GeneralCalculationError;
-use crate::parameters::{GeneralParameter, Parameter, ParameterMeta, ParameterName, ParameterState};
+use crate::parameters::{
+    BuiltParameter, GeneralParameter, MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder,
+    ParameterMeta, ParameterName, ParameterState,
+};
+use crate::resolve_metric_f64;
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
 use crate::timestep::Timestep;
@@ -10,16 +14,6 @@ pub struct MinParameter {
     meta: ParameterMeta,
     metric: MetricF64,
     threshold: f64,
-}
-
-impl MinParameter {
-    pub fn new(name: ParameterName, metric: MetricF64, threshold: f64) -> Self {
-        Self {
-            meta: ParameterMeta::new(name),
-            metric,
-            threshold,
-        }
-    }
 }
 
 impl Parameter for MinParameter {
@@ -45,5 +39,42 @@ impl GeneralParameter<f64> for MinParameter {
         Self: Sized,
     {
         self
+    }
+}
+
+pub struct MinParameterBuilder {
+    meta: ParameterMeta,
+    metric: UnresolvedMetricF64,
+    threshold: f64,
+}
+
+impl MinParameterBuilder {
+    pub fn new(name: ParameterName, metric: UnresolvedMetricF64, threshold: f64) -> Self {
+        Self {
+            meta: ParameterMeta::new(name),
+            metric,
+            threshold,
+        }
+    }
+}
+
+impl ParameterBuilder<f64> for MinParameterBuilder {
+    fn name(&self) -> &ParameterName {
+        &self.meta.name
+    }
+
+    fn build(
+        self: Box<Self>,
+        resolution_maps: &ResolutionMaps,
+    ) -> Result<MaybeBuiltParameter<f64>, ParameterBuildError> {
+        let metric = resolve_metric_f64!(self, self.metric, resolution_maps, "metric");
+
+        let p = MinParameter {
+            meta: self.meta,
+            metric,
+            threshold: self.threshold,
+        };
+
+        Ok(MaybeBuiltParameter::Built(BuiltParameter::General(Box::new(p))))
     }
 }

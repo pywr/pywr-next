@@ -1,15 +1,17 @@
-use crate::SchemaError;
 use crate::metric::Metric;
-#[cfg(feature = "core")]
-use crate::network::LoadArgs;
-#[cfg(feature = "core")]
-use crate::nodes::{NodeAttribute, NodeComponent};
-use crate::nodes::{NodeMeta, NodeSlot};
+use crate::nodes::NodeMeta;
 use crate::parameters::Parameter;
+#[cfg(feature = "core")]
+use crate::{
+    error::SchemaError,
+    network::LoadArgs,
+    nodes::{NodeAttribute, NodeComponent, NodeSlot},
+};
 use crate::{node_attribute_subset_enum, node_component_subset_enum};
 #[cfg(feature = "core")]
 use pywr_core::{
-    metric::MetricF64,
+    metric::UnresolvedMetricF64,
+    node::UnresolvedNode,
     parameters::{HydropowerTargetData, ParameterName},
 };
 use pywr_schema_macros::{PywrVisitAll, skip_serializing_none};
@@ -123,21 +125,6 @@ impl TurbineNode {
     const DEFAULT_ATTRIBUTE: TurbineNodeAttribute = TurbineNodeAttribute::Outflow;
     const DEFAULT_COMPONENT: TurbineNodeComponent = TurbineNodeComponent::Outflow;
 
-    pub fn input_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
-        if let Some(slot) = slot {
-            Err(SchemaError::InputNodeSlotNotSupported { slot: slot.clone() })
-        } else {
-            Ok(vec![(self.meta.name.as_str(), None)])
-        }
-    }
-    pub fn output_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
-        if let Some(slot) = slot {
-            Err(SchemaError::OutputNodeSlotNotSupported { slot: slot.clone() })
-        } else {
-            Ok(vec![(self.meta.name.as_str(), None)])
-        }
-    }
-
     pub fn default_attribute(&self) -> TurbineNodeAttribute {
         Self::DEFAULT_ATTRIBUTE
     }
@@ -149,40 +136,49 @@ impl TurbineNode {
 
 #[cfg(feature = "core")]
 impl TurbineNode {
-    pub fn node_indices_for_flow_constraints(
+    fn name(&self) -> UnresolvedNode {
+        UnresolvedNode::new(&self.meta.name, None)
+    }
+
+    pub fn input_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<UnresolvedNode>, SchemaError> {
+        if let Some(slot) = slot {
+            Err(SchemaError::InputNodeSlotNotSupported { slot: slot.clone() })
+        } else {
+            Ok(vec![self.name()])
+        }
+    }
+    pub fn output_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<UnresolvedNode>, SchemaError> {
+        if let Some(slot) = slot {
+            Err(SchemaError::OutputNodeSlotNotSupported { slot: slot.clone() })
+        } else {
+            Ok(vec![self.name()])
+        }
+    }
+    pub fn nodes_for_flow_constraints(
         &self,
-        network: &pywr_core::network::Network,
         component: Option<NodeComponent>,
-    ) -> Result<Vec<pywr_core::node::NodeIndex>, SchemaError> {
+    ) -> Result<Vec<UnresolvedNode>, SchemaError> {
         // Use the default component if none is specified
         let component = match component {
             Some(c) => c.try_into()?,
             None => Self::DEFAULT_COMPONENT,
         };
-        let idx = match component {
-            TurbineNodeComponent::Inflow | TurbineNodeComponent::Outflow => network
-                .get_node_index_by_name(self.meta.name.as_str(), None)
-                .ok_or_else(|| SchemaError::CoreNodeNotFound {
-                    name: self.meta.name.clone(),
-                    sub_name: None,
-                })?,
+        let name = match component {
+            TurbineNodeComponent::Inflow | TurbineNodeComponent::Outflow => self.name(),
         };
 
-        Ok(vec![idx])
+        Ok(vec![name])
     }
-    pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
-        network.add_link_node(self.meta.name.as_str(), None)?;
-        Ok(())
-    }
-
-    pub fn set_constraints(
+    pub fn add_to_network(
         &self,
-        network: &mut pywr_core::network::Network,
+        network: &mut pywr_core::network::NetworkBuilder,
         args: &LoadArgs,
     ) -> Result<(), SchemaError> {
+        let mut link_node = pywr_core::node::NodeBuilder::link(self.name());
+
         if let Some(cost) = &self.cost {
             let value = cost.load(network, args, Some(&self.meta.name))?;
-            network.set_node_cost(self.meta.name.as_str(), None, value.into())?;
+            link_node.cost(value);
         }
 
         let name = ParameterName::new("power", Some(self.meta.name.as_str()));
@@ -198,14 +194,7 @@ impl TurbineNode {
             .map(|t| t.load(network, args, Some(&self.meta.name)))
             .transpose()?;
 
-        let inflow_metric: MetricF64 = MetricF64::NodeInFlow(
-            network
-                .get_node_index_by_name(self.meta.name.as_str(), None)
-                .ok_or_else(|| SchemaError::CoreNodeNotFound {
-                    name: self.meta.name.clone(),
-                    sub_name: None,
-                })?,
-        );
+        let inflow_metric = UnresolvedMetricF64::NodeInFlow(self.name());
 
         let turbine_data = HydropowerTargetData {
             actual_flow: Some(inflow_metric),
@@ -221,63 +210,48 @@ impl TurbineNode {
             energy_unit_conversion: Some(self.energy_unit_conversion),
         };
 
-        let p = pywr_core::parameters::HydropowerTargetParameter::new(name, turbine_data);
-        let power_idx = network.add_parameter(Box::new(p))?;
+        let p = pywr_core::parameters::HydropowerTargetParameterBuilder::new(name.clone(), turbine_data);
+        network.parameters().f64(Box::new(p));
 
         // Only set flow constraints if a target is defined
         if self.target.is_some() {
-            let metric: MetricF64 = power_idx.into_metric_f64_before();
+            let metric = UnresolvedMetricF64::new_parameter_before(name);
 
             match self.target_type.clone().unwrap_or_default() {
                 TargetType::MaxFlow => {
-                    network.set_node_max_flow(self.meta.name.as_str(), None, metric.clone().into())?;
+                    link_node.max_flow(metric);
                 }
                 TargetType::MinFlow => {
-                    network.set_node_min_flow(self.meta.name.as_str(), None, metric.clone().into())?;
+                    link_node.min_flow(metric);
                 }
                 TargetType::Both => {
-                    network.set_node_max_flow(self.meta.name.as_str(), None, metric.clone().into())?;
-                    network.set_node_min_flow(self.meta.name.as_str(), None, metric.clone().into())?
+                    link_node.min_flow(metric.clone());
+                    link_node.max_flow(metric);
                 }
             }
         }
 
+        network.node(link_node);
+
         Ok(())
     }
 
-    pub fn create_metric(
-        &self,
-        network: &mut pywr_core::network::Network,
-        attribute: Option<NodeAttribute>,
-    ) -> Result<MetricF64, SchemaError> {
+    pub fn create_metric(&self, attribute: Option<NodeAttribute>) -> Result<UnresolvedMetricF64, SchemaError> {
         // Use the default attribute if none is specified
         let attr = match attribute {
             Some(attr) => attr.try_into()?,
             None => Self::DEFAULT_ATTRIBUTE,
         };
 
-        let idx = network
-            .get_node_index_by_name(self.meta.name.as_str(), None)
-            .ok_or_else(|| SchemaError::CoreNodeNotFound {
-                name: self.meta.name.clone(),
-                sub_name: None,
-            })?;
+        let name = self.name();
 
         let metric = match attr {
-            TurbineNodeAttribute::Outflow => MetricF64::NodeOutFlow(idx),
-            TurbineNodeAttribute::Inflow => MetricF64::NodeInFlow(idx),
+            TurbineNodeAttribute::Outflow => UnresolvedMetricF64::NodeOutFlow(name),
+            TurbineNodeAttribute::Inflow => UnresolvedMetricF64::NodeInFlow(name),
             TurbineNodeAttribute::Power => {
                 // Retrieve the parameter created for the hydropower calculation
                 let name = ParameterName::new("power", Some(self.meta.name.as_str()));
-                let power_param =
-                    network
-                        .get_parameter_index_by_name(&name)
-                        .ok_or_else(|| SchemaError::CoreParameterNotFound {
-                            name: name.to_string(),
-                            key: None,
-                        })?;
-
-                power_param.into_metric_f64_after()
+                UnresolvedMetricF64::new_parameter_after(name)
             }
         };
 

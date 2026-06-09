@@ -459,7 +459,7 @@ mod tests {
 
         let parameter = RollingParameterBuilder::new(
             "my-parameter".into(),
-            UnresolvedMetricU64::new_index_parameter_before("my-metric"),
+            UnresolvedMetricU64::new_parameter_before("my-metric"),
             3,
             0,
             3,

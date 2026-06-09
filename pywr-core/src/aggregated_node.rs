@@ -158,10 +158,19 @@ impl Exclusivity {
     }
 }
 
-#[derive(Default, Clone)]
+#[derive(Clone)]
 pub struct ExclusivityBuilder {
     min_active: u64,
     max_active: u64,
+}
+
+impl Default for ExclusivityBuilder {
+    fn default() -> Self {
+        Self {
+            min_active: 0,
+            max_active: 1,
+        }
+    }
 }
 
 impl ExclusivityBuilder {
@@ -192,35 +201,6 @@ pub enum Relationship {
     Factored(Factors),
     /// Node flows are mutually exclusive.
     Exclusive(Exclusivity),
-}
-
-impl Relationship {
-    #[must_use]
-    pub fn new_ratio_factors(factors: &[MetricF64]) -> Self {
-        Relationship::Factored(Factors::Ratio {
-            factors: factors.to_vec(),
-        })
-    }
-
-    #[must_use]
-    pub fn new_proportion_factors(factors: &[MetricF64]) -> Self {
-        Relationship::Factored(Factors::Proportion {
-            factors: factors.to_vec(),
-        })
-    }
-
-    #[must_use]
-    pub fn new_coefficient_factors(factors: &[MetricF64], rhs: Option<MetricF64>) -> Self {
-        Relationship::Factored(Factors::Coefficients {
-            factors: factors.to_vec(),
-            rhs,
-        })
-    }
-
-    #[must_use]
-    pub fn new_exclusive(min_active: u64, max_active: u64) -> Self {
-        Relationship::Exclusive(Exclusivity { min_active, max_active })
-    }
 }
 
 #[derive(Debug, Error)]
@@ -577,8 +557,8 @@ pub struct AggregatedNodeBuilder {
 
 impl AggregatedNodeBuilder {
     #[must_use]
-    pub fn new(name: &str) -> Self {
-        let name = UnresolvedNode::new(name, None);
+    pub fn new<N: Into<UnresolvedNode>>(name: N) -> Self {
+        let name = name.into();
 
         Self {
             name,
@@ -1105,7 +1085,7 @@ mod tests {
     use crate::metric::UnresolvedMetricF64;
     use crate::models::ModelBuilder;
     use crate::network::NetworkBuilder;
-    use crate::node::NodeBuilder;
+    use crate::node::{NodeBuilder, UnresolvedNode};
     use crate::parameters::{MonthlyProfileParameterBuilder, ParameterName};
     use crate::recorders::AssertionF64RecorderBuilder;
     use crate::state::ParameterReturnValue;
@@ -1132,8 +1112,11 @@ mod tests {
         output_node0.sub_name("0").max_flow(100.0.into()).cost((-10.0).into());
         builder.node(output_node0);
 
-        builder.connect("input", None, "link", Some("0"));
-        builder.connect("link", Some("0"), "output", Some("0"));
+        builder.connect("input", UnresolvedNode::new("link", Some("0")));
+        builder.connect(
+            UnresolvedNode::new("link", Some("0")),
+            UnresolvedNode::new("output", Some("0")),
+        );
 
         let mut link_node1 = NodeBuilder::link("link");
         link_node1.sub_name("1");
@@ -1144,8 +1127,11 @@ mod tests {
         output_node1.sub_name("1");
         builder.node(output_node1);
 
-        builder.connect("input", None, "link", Some("1"));
-        builder.connect("link", Some("1"), "output", Some("1"));
+        builder.connect("input", UnresolvedNode::new("link", Some("1")));
+        builder.connect(
+            UnresolvedNode::new("link", Some("1")),
+            UnresolvedNode::new("output", Some("1")),
+        );
 
         let mut relationship = RatioFactorsBuilder::default();
         relationship.factor(2.0.into()).factor(1.0.into());
@@ -1201,8 +1187,11 @@ mod tests {
         output_node0.sub_name("0").max_flow(100.0.into()).cost((-10.0).into());
         builder.node(output_node0);
 
-        builder.connect("input", None, "link", Some("0"));
-        builder.connect("link", Some("0"), "output", Some("0"));
+        builder.connect("input", UnresolvedNode::new("link", Some("0")));
+        builder.connect(
+            UnresolvedNode::new("link", Some("0")),
+            UnresolvedNode::new("output", Some("0")),
+        );
 
         let mut link_node1 = NodeBuilder::link("link");
         link_node1.sub_name("1");
@@ -1213,8 +1202,11 @@ mod tests {
         output_node1.sub_name("1");
         builder.node(output_node1);
 
-        builder.connect("input", None, "link", Some("1"));
-        builder.connect("link", Some("1"), "output", Some("1"));
+        builder.connect("input", UnresolvedNode::new("link", Some("1")));
+        builder.connect(
+            UnresolvedNode::new("link", Some("1")),
+            UnresolvedNode::new("output", Some("1")),
+        );
 
         let factor_profile_name = ParameterName::new("factor-profile", None);
         let factor_profile = MonthlyProfileParameterBuilder::new(factor_profile_name.clone(), [2.0; 12]);
@@ -1280,8 +1272,11 @@ mod tests {
         output_node0.sub_name("0").max_flow(100.0.into()).cost((-10.0).into());
         builder.node(output_node0);
 
-        builder.connect("input", None, "link", Some("0"));
-        builder.connect("link", Some("0"), "output", Some("0"));
+        builder.connect("input", UnresolvedNode::new("link", Some("0")));
+        builder.connect(
+            UnresolvedNode::new("link", Some("0")),
+            UnresolvedNode::new("output", Some("0")),
+        );
 
         let mut link_node1 = NodeBuilder::link("link");
         link_node1.sub_name("1");
@@ -1292,8 +1287,11 @@ mod tests {
         output_node1.sub_name("1").max_flow(100.0.into()).cost((-5.0).into());
         builder.node(output_node1);
 
-        builder.connect("input", None, "link", Some("1"));
-        builder.connect("link", Some("1"), "output", Some("1"));
+        builder.connect("input", UnresolvedNode::new("link", Some("1")));
+        builder.connect(
+            UnresolvedNode::new("link", Some("1")),
+            UnresolvedNode::new("output", Some("1")),
+        );
 
         let mut relationship = ExclusivityBuilder::default();
         relationship.min_active(0).max_active(1);
@@ -1354,8 +1352,11 @@ mod tests {
         output_node0.sub_name("0").max_flow(100.0.into()).cost((-5.0).into());
         builder.node(output_node0);
 
-        builder.connect("input", None, "link", Some("0"));
-        builder.connect("link", Some("0"), "output", Some("0"));
+        builder.connect("input", UnresolvedNode::new("link", Some("0")));
+        builder.connect(
+            UnresolvedNode::new("link", Some("0")),
+            UnresolvedNode::new("output", Some("0")),
+        );
 
         let mut link_node1 = NodeBuilder::link("link");
         link_node1.sub_name("1");
@@ -1366,8 +1367,11 @@ mod tests {
         output_node1.sub_name("1").max_flow(100.0.into()).cost((-15.0).into());
         builder.node(output_node1);
 
-        builder.connect("input", None, "link", Some("1"));
-        builder.connect("link", Some("1"), "output", Some("1"));
+        builder.connect("input", UnresolvedNode::new("link", Some("1")));
+        builder.connect(
+            UnresolvedNode::new("link", Some("1")),
+            UnresolvedNode::new("output", Some("1")),
+        );
 
         let mut link_node2 = NodeBuilder::link("link");
         link_node2.sub_name("2");
@@ -1378,8 +1382,11 @@ mod tests {
         output_node2.sub_name("2").max_flow(100.0.into()).cost((-5.0).into());
         builder.node(output_node2);
 
-        builder.connect("input", None, "link", Some("2"));
-        builder.connect("link", Some("2"), "output", Some("2"));
+        builder.connect("input", UnresolvedNode::new("link", Some("2")));
+        builder.connect(
+            UnresolvedNode::new("link", Some("2")),
+            UnresolvedNode::new("output", Some("2")),
+        );
 
         let mut relationship = ExclusivityBuilder::default();
         relationship.min_active(0).max_active(1);

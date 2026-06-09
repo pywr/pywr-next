@@ -79,8 +79,8 @@ pub fn simple_network(builder: &mut NetworkBuilder, inflow_scenario: &str, num_i
         .cost(UnresolvedMetricF64::new_parameter_before("demand-cost"));
     builder.node(output_node);
 
-    builder.connect("input", None, "link", None);
-    builder.connect("link", None, "output", None);
+    builder.connect("input", "link");
+    builder.connect("link", "output");
 
     let inflow = Array::from_shape_fn((366, num_inflow_scenarios), |(i, j)| 1.0 + i as f64 + j as f64);
     let inflow = Array2ParameterBuilder::new("inflow".into(), inflow, inflow_scenario);
@@ -133,7 +133,7 @@ pub fn simple_storage_network() -> NetworkBuilder {
         .cost(UnresolvedMetricF64::new_parameter_before("demand-cost"));
     builder.node(output_node);
 
-    builder.connect("reservoir", None, "output", None);
+    builder.connect("reservoir", "output");
 
     // Apply demand to the model
     // TODO convenience function for adding a constant constraint.
@@ -220,7 +220,7 @@ pub fn run_and_assert_parameter_u64(
 
     let rec = AssertionU64RecorderBuilder::new(
         "assert",
-        UnresolvedMetricU64::new_index_parameter_before(p_name),
+        UnresolvedMetricU64::new_parameter_before(p_name),
         expected_values,
     );
     model_builder.network_builder().recorder(Box::new(rec));
@@ -579,8 +579,14 @@ fn make_simple_system<R: Rng + ?Sized>(
         .cost((-500.0).into());
     builder.node(output_node);
 
-    builder.connect("input", Some(suffix), "link", Some(suffix));
-    builder.connect("link", Some(suffix), "output", Some(suffix));
+    builder.connect(
+        UnresolvedNode::new("input", Some(suffix)),
+        UnresolvedNode::new("link", Some(suffix)),
+    );
+    builder.connect(
+        UnresolvedNode::new("link", Some(suffix)),
+        UnresolvedNode::new("output", Some(suffix)),
+    );
 
     let inflow_distr: Normal<f64> = Normal::new(9.0, 1.0).unwrap();
 
@@ -630,8 +636,14 @@ fn make_simple_connections<R: Rng>(
 
             network_builder.node(node_builder);
 
-            network_builder.connect("link", Some(&format!("sys-{i:04}")), "transfer", Some(&sub_name));
-            network_builder.connect("transfer", Some(&sub_name), "link", Some(&format!("sys-{j:04}")));
+            network_builder.connect(
+                UnresolvedNode::new("link", Some(&format!("sys-{i:04}"))),
+                UnresolvedNode::new("transfer", Some(&sub_name)),
+            );
+            network_builder.connect(
+                UnresolvedNode::new("transfer", Some(&sub_name)),
+                UnresolvedNode::new("link", Some(&format!("sys-{j:04}"))),
+            );
 
             connections_added += 1;
         }

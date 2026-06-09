@@ -4,9 +4,8 @@ use crate::metric::{IndexMetric, Metric};
 #[cfg(feature = "core")]
 use crate::network::LoadArgs;
 use crate::parameters::ParameterMeta;
-
 #[cfg(feature = "core")]
-use pywr_core::parameters::{ParameterIndex, ParameterName};
+use pywr_core::parameters::ParameterName;
 use pywr_schema_macros::PywrVisitAll;
 use schemars::JsonSchema;
 
@@ -22,20 +21,23 @@ pub struct DelayParameter {
 
 #[cfg(feature = "core")]
 impl DelayParameter {
-    pub fn add_to_model(
+    pub fn add_to_network(
         &self,
-        network: &mut pywr_core::network::Network,
+        network: &mut pywr_core::network::NetworkBuilder,
         args: &LoadArgs,
         parent: Option<&str>,
-    ) -> Result<ParameterIndex<f64>, SchemaError> {
+    ) -> Result<(), SchemaError> {
         let metric = self.metric.load(network, args, None)?;
-        let p = pywr_core::parameters::DelayParameter::new(
+        let p = pywr_core::parameters::DelayParameterBuilder::new(
             ParameterName::new(&self.meta.name, parent),
             metric,
             self.delay,
             self.initial_value,
         );
-        Ok(network.add_parameter(Box::new(p))?)
+
+        network.parameters().f64(Box::new(p));
+
+        Ok(())
     }
 }
 
@@ -51,19 +53,22 @@ pub struct DelayIndexParameter {
 
 #[cfg(feature = "core")]
 impl DelayIndexParameter {
-    pub fn add_to_model(
+    pub fn add_to_network(
         &self,
-        network: &mut pywr_core::network::Network,
+        network: &mut pywr_core::network::NetworkBuilder,
         args: &LoadArgs,
         parent: Option<&str>,
-    ) -> Result<ParameterIndex<u64>, SchemaError> {
+    ) -> Result<(), SchemaError> {
         let metric = self.metric.load(network, args, None)?;
-        let p = pywr_core::parameters::DelayParameter::new(
+        let p = pywr_core::parameters::DelayParameterBuilder::new(
             ParameterName::new(&self.meta.name, parent),
             metric,
             self.delay,
             self.initial_value,
         );
-        Ok(network.add_index_parameter(Box::new(p))?)
+
+        network.parameters().u64(Box::new(p));
+
+        Ok(())
     }
 }

@@ -121,7 +121,7 @@ impl ParameterBuilder<u64> for MultiThresholdParameterBuilder {
         self: Box<Self>,
         resolution_maps: &ResolutionMaps,
     ) -> Result<MaybeBuiltParameter<u64>, ParameterBuildError> {
-        let metric = resolve_metric_f64!(self, self.metric, resolution_maps, "metrics");
+        let metric = resolve_metric_f64!(self, self.metric, resolution_maps, "metric");
         let thresholds = resolve_metric_f64_vec!(self, &self.thresholds, resolution_maps, "thresholds");
 
         let p = MultiThresholdParameter {

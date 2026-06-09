@@ -3,10 +3,11 @@ use super::{
     ParameterName, ParameterState, SimpleParameter,
 };
 use crate::agg_funcs::AggFuncF64;
-use crate::metric::{ConstantMetricF64, MetricF64, MetricF64ResolutionError, SimpleMetricF64, UnresolvedMetricF64};
+use crate::metric::{ConstantMetricF64, MetricF64, SimpleMetricF64, UnresolvedMetricF64};
 use crate::network::{Network, ResolutionMaps};
 use crate::parameters::errors::{ConstCalculationError, GeneralCalculationError, SimpleCalculationError};
 use crate::parameters::{GeneralParameter, ParameterMeta};
+use crate::resolve_metric_f64_vec;
 use crate::scenario::ScenarioIndex;
 use crate::state::{ConstParameterValues, SimpleParameterValues, State};
 use crate::timestep::Timestep;
@@ -163,37 +164,15 @@ impl ParameterBuilder<f64> for AggregatedParameterBuilder {
         self: Box<Self>,
         resolution_maps: &ResolutionMaps,
     ) -> Result<MaybeBuiltParameter<f64>, ParameterBuildError> {
-        let mut metrics = Vec::with_capacity(self.metrics.len());
-        for m in &self.metrics {
-            match m.resolve(resolution_maps) {
-                Ok(m) => metrics.push(m),
-                Err(err) => {
-                    return if let MetricF64ResolutionError::ParameterNotFound { .. } = err {
-                        Ok(MaybeBuiltParameter::Retry(self))
-                    } else {
-                        Err(ParameterBuildError::ResolveMetricF64Error {
-                            attr: "metrics".to_string(),
-                            source: err,
-                        })
-                    };
-                }
-            }
-        }
+        let metrics = resolve_metric_f64_vec!(self, &self.metrics, resolution_maps, "metrics");
 
         let p = AggregatedParameter {
-            meta: self.meta.clone(),
+            meta: self.meta,
             metrics,
-            agg_func: self.agg_func.clone(),
+            agg_func: self.agg_func,
         };
 
-        let bp = match p.try_into_simple() {
-            None => BuiltParameter::General(Box::new(p)),
-            Some(sp) => match sp.try_into_const() {
-                None => BuiltParameter::Simple(sp),
-                Some(cp) => BuiltParameter::Const(cp),
-            },
-        };
-
-        Ok(MaybeBuiltParameter::Built(bp))
+        let bp = BuiltParameter::General(Box::new(p));
+        Ok(bp.into())
     }
 }

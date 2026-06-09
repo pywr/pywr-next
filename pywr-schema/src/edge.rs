@@ -5,7 +5,7 @@ use crate::SchemaError;
 use crate::network::LoadArgs;
 use crate::nodes::NodeSlot;
 #[cfg(feature = "core")]
-use pywr_core::{edge::EdgeIndex, metric::MetricF64, node::NodeIndex};
+use pywr_core::{metric::UnresolvedMetricF64, network::UnresolvedEdge, node::UnresolvedNode};
 use pywr_schema_macros::skip_serializing_none;
 use schemars::JsonSchema;
 use std::fmt::{Display, Formatter};
@@ -67,11 +67,10 @@ impl Edge {
     /// Returns an iterator of the pairs (from, to) of `NodeIndex` that represent this
     /// edge when added to a model. In general this can be several nodes because some nodes
     /// have multiple internal nodes when connected from or to.
-    fn iter_node_index_pairs(
+    fn iter_node_connection_pairs(
         &self,
-        network: &pywr_core::network::Network,
         args: &LoadArgs,
-    ) -> Result<impl Iterator<Item = (NodeIndex, NodeIndex)> + use<>, SchemaError> {
+    ) -> Result<impl Iterator<Item = (UnresolvedNode, UnresolvedNode)> + use<>, SchemaError> {
         let from_node =
             args.schema
                 .get_node_by_name(self.from_node.as_str())
@@ -87,70 +86,41 @@ impl Edge {
             })?;
 
         // Collect the node indices at each end of the edge
-        let from_node_indices: Vec<NodeIndex> = from_node
-            .output_connectors(self.from_slot.as_ref())?
-            .into_iter()
-            .map(|(name, sub_name)| {
-                network
-                    .get_node_index_by_name(name, sub_name.as_deref())
-                    .ok_or_else(|| SchemaError::CoreNodeNotFound {
-                        name: name.to_string(),
-                        sub_name,
-                    })
-            })
-            .collect::<Result<_, _>>()?;
+        let from_node_nodes = from_node.output_connectors(self.from_slot.as_ref())?;
+        let to_node_nodes = to_node.input_connectors(self.to_slot.as_ref())?;
 
-        let to_node_indices: Vec<NodeIndex> = to_node
-            .input_connectors(self.to_slot.as_ref())?
+        let pairs: Vec<_> = from_node_nodes
+            .clone()
             .into_iter()
-            .map(|(name, sub_name)| {
-                network
-                    .get_node_index_by_name(name, sub_name.as_deref())
-                    .ok_or_else(|| SchemaError::CoreNodeNotFound {
-                        name: name.to_string(),
-                        sub_name,
-                    })
-            })
-            .collect::<Result<_, _>>()?;
-
-        let pairs: Vec<_> = from_node_indices
-            .into_iter()
-            .flat_map(|from_node_index| std::iter::repeat(from_node_index).zip(to_node_indices.iter().copied()))
+            .flat_map(|from| std::iter::repeat(from).zip(to_node_nodes.iter().cloned()))
             .collect();
 
         Ok(pairs.into_iter())
     }
 
     /// Add the edge to the network
-    pub fn add_to_model(&self, network: &mut pywr_core::network::Network, args: &LoadArgs) -> Result<(), SchemaError> {
+    pub fn add_to_network(
+        &self,
+        network: &mut pywr_core::network::NetworkBuilder,
+        args: &LoadArgs,
+    ) -> Result<(), SchemaError> {
         // Connect each "from" connector to each "to" connector
-        for (from_node_index, to_node_index) in self.iter_node_index_pairs(network, args)? {
-            network.connect_nodes(from_node_index, to_node_index)?;
+        for (from_node, to_node) in self.iter_node_connection_pairs(args)? {
+            network.connect(from_node, to_node);
         }
 
         Ok(())
     }
 
     /// Create a metric that will return this edge's total flow in the model.
-    pub fn create_metric(
-        &self,
-        network: &pywr_core::network::Network,
-        args: &LoadArgs,
-    ) -> Result<MetricF64, SchemaError> {
-        let indices: Vec<EdgeIndex> = self
-            .iter_node_index_pairs(network, args)?
-            .map(|(from_node_index, to_node_index)| {
-                network
-                    .get_edge_index(from_node_index, to_node_index)
-                    .ok_or_else(|| SchemaError::EdgeNotFound {
-                        from_node: self.from_node.clone(),
-                        to_node: self.to_node.clone(),
-                    })
-            })
-            .collect::<Result<_, _>>()?;
+    pub fn create_metric(&self, args: &LoadArgs) -> Result<UnresolvedMetricF64, SchemaError> {
+        let edges = self
+            .iter_node_connection_pairs(args)?
+            .map(|(from_node, to_node)| UnresolvedEdge::new(from_node, to_node))
+            .collect::<Vec<_>>();
 
-        let metric = MetricF64::MultiEdgeFlow {
-            indices,
+        let metric = UnresolvedMetricF64::MultiEdgeFlow {
+            edges,
             name: self.to_string(),
         };
 

@@ -1,5 +1,9 @@
+use crate::network::ResolutionMaps;
 use crate::parameters::errors::SimpleCalculationError;
-use crate::parameters::{Parameter, ParameterMeta, ParameterName, ParameterState, SimpleParameter};
+use crate::parameters::{
+    BuiltParameter, MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder, ParameterMeta,
+    ParameterName, ParameterState, SimpleParameter,
+};
 use crate::scenario::ScenarioIndex;
 use crate::state::SimpleParameterValues;
 use crate::timestep::Timestep;
@@ -159,16 +163,6 @@ pub struct WeeklyProfileParameter {
     interp_day: Option<WeeklyInterpDay>,
 }
 
-impl WeeklyProfileParameter {
-    pub fn new(name: ParameterName, values: WeeklyProfileValues, interp_day: Option<WeeklyInterpDay>) -> Self {
-        Self {
-            meta: ParameterMeta::new(name),
-            values,
-            interp_day,
-        }
-    }
-}
-
 impl Parameter for WeeklyProfileParameter {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
@@ -191,6 +185,46 @@ impl SimpleParameter<f64> for WeeklyProfileParameter {
         Self: Sized,
     {
         self
+    }
+}
+
+pub struct WeeklyProfileParameterBuilder {
+    meta: ParameterMeta,
+    values: WeeklyProfileValues,
+    interp_day: Option<WeeklyInterpDay>,
+}
+
+impl WeeklyProfileParameterBuilder {
+    pub fn new(name: ParameterName, values: WeeklyProfileValues) -> Self {
+        Self {
+            meta: ParameterMeta::new(name),
+            values,
+            interp_day: None,
+        }
+    }
+
+    pub fn interp_day(&mut self, interp_day: WeeklyInterpDay) -> &mut Self {
+        self.interp_day = Some(interp_day);
+        self
+    }
+}
+
+impl ParameterBuilder<f64> for WeeklyProfileParameterBuilder {
+    fn name(&self) -> &ParameterName {
+        &self.meta.name
+    }
+
+    fn build(
+        self: Box<Self>,
+        _resolution_maps: &ResolutionMaps,
+    ) -> Result<MaybeBuiltParameter<f64>, ParameterBuildError> {
+        let p = WeeklyProfileParameter {
+            meta: self.meta,
+            values: self.values,
+            interp_day: self.interp_day,
+        };
+
+        Ok(MaybeBuiltParameter::Built(BuiltParameter::Simple(Box::new(p))))
     }
 }
 

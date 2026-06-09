@@ -9,8 +9,6 @@ use thiserror::Error;
 pub enum ScenarioDomainBuilderError {
     #[error("Scenario group name `{0}` already exists")]
     DuplicateGroupName(String),
-    #[error("Scenario group name `{0}` not found")]
-    GroupNameNotFound(String),
     #[error("Cannot use both combinations and slices")]
     CombinationsAndSlices,
     #[error("No labels provided for for scenario group `{group}`.")]
@@ -678,6 +676,13 @@ impl ScenarioIndex {
     }
 }
 
+/// Errors that can occur from [`ScenarioDomain`].
+#[derive(Error, Debug)]
+#[error("Scenario group name `{name}` not found")]
+pub struct ScenarioGroupNotFound {
+    pub name: String,
+}
+
 /// The scenario domain for a model.
 #[derive(Debug, Clone)]
 pub struct ScenarioDomain {
@@ -709,12 +714,12 @@ impl ScenarioDomain {
     ///
     /// # Errors
     ///
-    /// - [`ScenarioDomainBuilderError::GroupNameNotFound`] if the group name is not found in the domain.
-    pub fn group_index(&self, name: &str) -> Result<usize, ScenarioDomainBuilderError> {
+    /// - [`ScenarioGroupNotFound`] if the group name is not found in the domain.
+    pub fn group_index(&self, name: &str) -> Result<usize, ScenarioGroupNotFound> {
         self.groups
             .iter()
             .position(|g| g.name == name)
-            .ok_or_else(|| ScenarioDomainBuilderError::GroupNameNotFound(name.to_string()))
+            .ok_or_else(|| ScenarioGroupNotFound { name: name.to_string() })
     }
 
     /// Return the scenario groups for the domain.
@@ -727,8 +732,8 @@ impl ScenarioDomain {
     ///
     /// # Errors
     ///
-    /// - [`ScenarioDomainBuilderError::GroupNameNotFound`] if the group name is not found
-    pub fn group_scenario_subset(&self, name: &str) -> Result<Option<&[usize]>, ScenarioDomainBuilderError> {
+    /// - [`ScenarioGroupNotFound`] if the group name is not found
+    pub fn group_scenario_subset(&self, name: &str) -> Result<Option<&[usize]>, ScenarioGroupNotFound> {
         let group_index = self.group_index(name)?;
         Ok(self.scenario_map[group_index].as_deref())
     }
@@ -737,8 +742,8 @@ impl ScenarioDomain {
     ///
     /// # Errors
     ///
-    /// - [`ScenarioDomainBuilderError::GroupNameNotFound`] if the group name is not found
-    pub fn group_size(&self, name: &str) -> Result<usize, ScenarioDomainBuilderError> {
+    /// - [`ScenarioGroupNotFound`] if the group name is not found
+    pub fn group_size(&self, name: &str) -> Result<usize, ScenarioGroupNotFound> {
         let group_index = self.group_index(name)?;
         Ok(self.groups[group_index].size())
     }

@@ -117,19 +117,22 @@ impl VariableParameter<f64> for ConstantParameter {
 }
 
 pub struct ConstantParameterBuilder {
-    name: ParameterName,
+    meta: ParameterMeta,
     value: f64,
 }
 
 impl ConstantParameterBuilder {
     pub fn new(name: ParameterName, value: f64) -> Self {
-        Self { name, value }
+        Self {
+            meta: ParameterMeta::new(name),
+            value,
+        }
     }
 }
 
 impl ParameterBuilder<f64> for ConstantParameterBuilder {
     fn name(&self) -> &ParameterName {
-        &self.name
+        &self.meta.name
     }
 
     fn build(
@@ -137,7 +140,7 @@ impl ParameterBuilder<f64> for ConstantParameterBuilder {
         _resolution_maps: &ResolutionMaps,
     ) -> Result<MaybeBuiltParameter<f64>, ParameterBuildError> {
         Ok(BuiltParameter::Const(Box::new(ConstantParameter {
-            meta: ParameterMeta::new(self.name.clone()),
+            meta: self.meta,
             value: self.value,
         }))
         .into())

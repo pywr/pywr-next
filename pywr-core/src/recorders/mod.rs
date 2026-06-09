@@ -12,7 +12,7 @@ use crate::metric::{
     UnresolvedMetricF64, UnresolvedMetricU64,
 };
 use crate::models::ModelDomain;
-use crate::network::{Network, ResolutionMaps};
+use crate::network::{MetricSetIndex, Network, ResolutionMaps};
 use crate::recorders::csv::CsvError;
 #[cfg(feature = "hdf5")]
 use crate::recorders::hdf::Hdf5Error;
@@ -20,12 +20,15 @@ use crate::scenario::ScenarioIndex;
 use crate::state::State;
 use crate::timestep::Timestep;
 pub use aggregator::{AggregationFrequency, Aggregator, PeriodValue};
-pub use csv::{CsvLongFmtOutput, CsvLongFmtRecord, CsvWideFmtOutput};
+pub use csv::{CsvLongFmtOutput, CsvLongFmtOutputBuilder, CsvLongFmtRecord, CsvWideFmtOutput, CsvWideFmtOutputBuilder};
 use float_cmp::{ApproxEq, F64Margin, approx_eq};
 #[cfg(feature = "hdf5")]
-pub use hdf::HDF5Recorder;
-pub use memory::{Aggregation, AggregationError, AggregationOrder, MemoryRecorder};
-pub use metric_set::{MetricSet, MetricSetIndex, MetricSetSaveError, MetricSetState, OutputMetric};
+pub use hdf::{HDF5Recorder, HDF5RecorderBuilder};
+pub use memory::{Aggregation, AggregationError, AggregationOrder, MemoryRecorder, MemoryRecorderBuilder};
+pub use metric_set::{
+    MetricSet, MetricSetBuilder, MetricSetBuilderError, MetricSetSaveError, MetricSetState, OutputMetric,
+    UnresolvedOutputMetric,
+};
 use ndarray::Array2;
 use ndarray::prelude::*;
 use polars::prelude::PolarsError;
@@ -227,6 +230,8 @@ pub enum RecorderBuilderError {
         #[source]
         source: MetricU64ResolutionError,
     },
+    #[error("Metric set `{name}` not found.")]
+    MetricSetNotFound { name: String },
 }
 
 pub trait RecorderBuilder {

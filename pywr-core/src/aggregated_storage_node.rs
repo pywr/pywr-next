@@ -12,20 +12,24 @@ pub struct AggregatedStorageNode {
 }
 
 impl AggregatedStorageNode {
+    #[must_use]
     pub fn name(&self) -> &str {
         self.meta.name()
     }
 
     /// Get a node's sub-name
+    #[must_use]
     pub fn sub_name(&self) -> Option<&str> {
         self.meta.sub_name()
     }
 
     /// Get a node's full name
+    #[must_use]
     pub fn full_name(&self) -> (&str, Option<&str>) {
         self.meta.full_name()
     }
 
+    #[must_use]
     pub fn index(&self) -> AggregatedStorageNodeIndex {
         *self.meta.index()
     }
@@ -34,6 +38,7 @@ impl AggregatedStorageNode {
         self.nodes.iter()
     }
 
+    #[must_use]
     pub fn default_metric(&self) -> Vec<MetricF64> {
         self.nodes.iter().map(|n| MetricF64::NodeOutFlow(*n)).collect()
     }
@@ -53,8 +58,8 @@ pub struct AggregatedStorageNodeBuilder {
 }
 
 impl AggregatedStorageNodeBuilder {
-    pub fn new(name: &str) -> Self {
-        let name = UnresolvedNode::new(name, None);
+    pub fn new<N: Into<UnresolvedNode>>(name: N) -> Self {
+        let name = name.into();
 
         Self {
             name,
@@ -62,6 +67,7 @@ impl AggregatedStorageNodeBuilder {
         }
     }
 
+    #[must_use]
     pub fn name(&self) -> &UnresolvedNode {
         &self.name
     }
@@ -76,6 +82,14 @@ impl AggregatedStorageNodeBuilder {
         self
     }
 
+    /// Try to construct an [`AggregatedStorageNode`] from this builder.
+    ///
+    /// # Errors
+    ///
+    /// The construction will fail if the name of the aggregated storage node is not found in the
+    /// resolution maps, or if any of the nodes referenced by this builder are not found in the
+    /// resolution maps.
+    ///
     pub fn build(
         &self,
         resolution_maps: &ResolutionMaps,

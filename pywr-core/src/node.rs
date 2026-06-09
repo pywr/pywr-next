@@ -85,26 +85,23 @@ impl NodeBuilder {
     pub fn name(&self) -> &UnresolvedNode {
         &self.name
     }
-    pub fn input(name: &str) -> Self {
+    pub fn input<N: Into<UnresolvedNode>>(name: N) -> Self {
         Self::new(name, NodeType::Input)
     }
 
-    pub fn output(name: &str) -> Self {
+    pub fn output<N: Into<UnresolvedNode>>(name: N) -> Self {
         Self::new(name, NodeType::Output)
     }
 
-    pub fn link(name: &str) -> Self {
+    pub fn link<N: Into<UnresolvedNode>>(name: N) -> Self {
         Self::new(name, NodeType::Link)
     }
 
-    pub fn storage(name: &str) -> Self {
+    pub fn storage<N: Into<UnresolvedNode>>(name: N) -> Self {
         Self::new(name, NodeType::Storage)
     }
-    pub fn new(name: &str, node_type: NodeType) -> Self {
-        let meta = UnresolvedNode {
-            name: name.to_string(),
-            sub_name: None,
-        };
+    pub fn new<N: Into<UnresolvedNode>>(name: N, node_type: NodeType) -> Self {
+        let meta = name.into();
         Self {
             name: meta,
             node_type,
@@ -227,6 +224,7 @@ impl NodeBuilder {
         &self,
         resolution_maps: &ResolutionMaps,
     ) -> Result<StorageConstraints, NodeBuilderError> {
+        println!("Min volume: {:#?}", &self.min_volume);
         let min_volume = self
             .min_volume
             .as_ref()
@@ -239,7 +237,7 @@ impl NodeBuilder {
                     })?
                     .try_into()
                     .map_err(|source| NodeBuilderError::CouldNotSimplifyMetricF64 {
-                        attr: "max_volume".to_string(),
+                        attr: "min_volume".to_string(),
                         source,
                     })
             })
@@ -407,7 +405,7 @@ impl NodeBuilder {
                 Node::Link(LinkNode {
                     meta,
                     cost,
-                    flow_constraints: Default::default(),
+                    flow_constraints: self.build_flow_constraints(resolution_maps)?,
                     incoming_edges,
                     outgoing_edges,
                 })

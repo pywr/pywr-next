@@ -1,13 +1,17 @@
-use crate::metric::MetricF64;
-use crate::network::Network;
+use crate::metric::{MetricF64, UnresolvedMetricF64};
+use crate::network::{Network, ResolutionMaps};
 use crate::parameters::errors::GeneralCalculationError;
-use crate::parameters::{GeneralParameter, Parameter, ParameterMeta, ParameterName, ParameterState};
+use crate::parameters::{
+    BuiltParameter, GeneralParameter, MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder,
+    ParameterMeta, ParameterName, ParameterState,
+};
+use crate::resolve_metric_f64;
 use crate::scenario::ScenarioIndex;
 use crate::state::{MultiValue, State};
 use crate::timestep::Timestep;
 use std::collections::HashMap;
 
-/// A parameter which divides a apportions a metric to an upper and lower amount based
+/// A parameter which apportions a metric to an upper and lower amount based
 /// on the current value of a control curve.
 ///
 /// The control curve is expected to produce values between 0.0 and 1.0. If the control curve
@@ -19,16 +23,6 @@ pub struct ApportionParameter {
     meta: ParameterMeta,
     metric: MetricF64,
     control_curve: MetricF64,
-}
-
-impl ApportionParameter {
-    pub fn new(name: ParameterName, metric: MetricF64, control_curve: MetricF64) -> Self {
-        Self {
-            meta: ParameterMeta::new(name),
-            metric,
-            control_curve,
-        }
-    }
 }
 
 impl Parameter for ApportionParameter {
@@ -65,5 +59,44 @@ impl GeneralParameter<MultiValue> for ApportionParameter {
         Self: Sized,
     {
         self
+    }
+}
+
+pub struct ApportionParameterBuilder {
+    meta: ParameterMeta,
+    metric: UnresolvedMetricF64,
+    control_curve: UnresolvedMetricF64,
+}
+
+impl ApportionParameterBuilder {
+    pub fn new(name: ParameterName, metric: UnresolvedMetricF64, control_curve: UnresolvedMetricF64) -> Self {
+        Self {
+            meta: ParameterMeta::new(name),
+            metric,
+            control_curve,
+        }
+    }
+}
+
+impl ParameterBuilder<MultiValue> for ApportionParameterBuilder {
+    fn name(&self) -> &ParameterName {
+        &self.meta.name
+    }
+
+    fn build(
+        self: Box<Self>,
+        resolution_maps: &ResolutionMaps,
+    ) -> Result<MaybeBuiltParameter<MultiValue>, ParameterBuildError> {
+        let metric = resolve_metric_f64!(self, self.metric, resolution_maps, "metric");
+        let control_curve = resolve_metric_f64!(self, self.control_curve, resolution_maps, "control_curve");
+
+        let p = ApportionParameter {
+            meta: self.meta,
+            metric,
+            control_curve,
+        };
+
+        let bp = BuiltParameter::General(Box::new(p));
+        Ok(bp.into())
     }
 }

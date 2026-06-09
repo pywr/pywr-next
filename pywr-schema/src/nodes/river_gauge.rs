@@ -1,16 +1,17 @@
 use crate::error::ComponentConversionError;
-use crate::error::SchemaError;
 use crate::metric::Metric;
-#[cfg(feature = "core")]
-use crate::network::LoadArgs;
-#[cfg(feature = "core")]
-use crate::nodes::{NodeAttribute, NodeComponent};
-use crate::nodes::{NodeMeta, NodeSlot};
+use crate::nodes::NodeMeta;
 use crate::parameters::Parameter;
 use crate::v1::{ConversionData, TryFromV1, try_convert_node_attr, try_convert_node_meta};
+#[cfg(feature = "core")]
+use crate::{
+    error::SchemaError,
+    network::LoadArgs,
+    nodes::{NodeAttribute, NodeComponent, NodeSlot},
+};
 use crate::{mermaid, node_attribute_subset_enum, node_component_subset_enum};
 #[cfg(feature = "core")]
-use pywr_core::metric::MetricF64;
+use pywr_core::{metric::UnresolvedMetricF64, node::UnresolvedNode};
 use pywr_schema_macros::PywrVisitAll;
 use pywr_schema_macros::skip_serializing_none;
 use pywr_v1_schema::nodes::RiverGaugeNode as RiverGaugeNodeV1;
@@ -58,36 +59,6 @@ impl RiverGaugeNode {
     const DEFAULT_ATTRIBUTE: RiverGaugeNodeAttribute = RiverGaugeNodeAttribute::Outflow;
     const DEFAULT_COMPONENT: RiverGaugeNodeComponent = RiverGaugeNodeComponent::Outflow;
 
-    fn mrf_sub_name() -> Option<&'static str> {
-        Some("mrf")
-    }
-
-    fn bypass_sub_name() -> Option<&'static str> {
-        Some("bypass")
-    }
-
-    pub fn input_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
-        if let Some(slot) = slot {
-            Err(SchemaError::InputNodeSlotNotSupported { slot: slot.clone() })
-        } else {
-            Ok(vec![
-                (self.meta.name.as_str(), Self::mrf_sub_name().map(|s| s.to_string())),
-                (self.meta.name.as_str(), Self::bypass_sub_name().map(|s| s.to_string())),
-            ])
-        }
-    }
-
-    pub fn output_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
-        if let Some(slot) = slot {
-            Err(SchemaError::OutputNodeSlotNotSupported { slot: slot.clone() })
-        } else {
-            Ok(vec![
-                (self.meta.name.as_str(), Self::mrf_sub_name().map(|s| s.to_string())),
-                (self.meta.name.as_str(), Self::bypass_sub_name().map(|s| s.to_string())),
-            ])
-        }
-    }
-
     pub fn default_attribute(&self) -> RiverGaugeNodeAttribute {
         Self::DEFAULT_ATTRIBUTE
     }
@@ -99,100 +70,93 @@ impl RiverGaugeNode {
 
 #[cfg(feature = "core")]
 impl RiverGaugeNode {
-    pub fn node_indices_for_flow_constraints(
+    fn mrf_sub_name(&self) -> UnresolvedNode {
+        UnresolvedNode::new(&self.meta.name, Some("mrf"))
+    }
+
+    fn bypass_sub_name(&self) -> UnresolvedNode {
+        UnresolvedNode::new(&self.meta.name, Some("bypass"))
+    }
+
+    pub fn input_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<UnresolvedNode>, SchemaError> {
+        if let Some(slot) = slot {
+            Err(SchemaError::InputNodeSlotNotSupported { slot: slot.clone() })
+        } else {
+            Ok(vec![self.mrf_sub_name(), self.bypass_sub_name()])
+        }
+    }
+
+    pub fn output_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<UnresolvedNode>, SchemaError> {
+        if let Some(slot) = slot {
+            Err(SchemaError::OutputNodeSlotNotSupported { slot: slot.clone() })
+        } else {
+            Ok(vec![self.mrf_sub_name(), self.bypass_sub_name()])
+        }
+    }
+    pub fn nodes_for_flow_constraints(
         &self,
-        network: &pywr_core::network::Network,
         component: Option<NodeComponent>,
-    ) -> Result<Vec<pywr_core::node::NodeIndex>, SchemaError> {
+    ) -> Result<Vec<UnresolvedNode>, SchemaError> {
         // Use the default component if none is specified
         let component = match component {
             Some(c) => c.try_into()?,
             None => Self::DEFAULT_COMPONENT,
         };
 
-        let indices = match component {
+        let nodes = match component {
             // Inflow and Outflow components both use the same nodes.
             RiverGaugeNodeComponent::Inflow | RiverGaugeNodeComponent::Outflow => {
-                vec![
-                    network
-                        .get_node_index_by_name(self.meta.name.as_str(), Self::mrf_sub_name())
-                        .ok_or_else(|| SchemaError::CoreNodeNotFound {
-                            name: self.meta.name.clone(),
-                            sub_name: Self::mrf_sub_name().map(String::from),
-                        })?,
-                    network
-                        .get_node_index_by_name(self.meta.name.as_str(), Self::bypass_sub_name())
-                        .ok_or_else(|| SchemaError::CoreNodeNotFound {
-                            name: self.meta.name.clone(),
-                            sub_name: Self::bypass_sub_name().map(String::from),
-                        })?,
-                ]
+                vec![self.mrf_sub_name(), self.bypass_sub_name()]
             }
         };
-        Ok(indices)
+        Ok(nodes)
     }
-    pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
-        network.add_link_node(self.meta.name.as_str(), Self::mrf_sub_name())?;
-        network.add_link_node(self.meta.name.as_str(), Self::bypass_sub_name())?;
-
-        Ok(())
-    }
-    pub fn set_constraints(
+    pub fn add_to_network(
         &self,
-        network: &mut pywr_core::network::Network,
+        network: &mut pywr_core::network::NetworkBuilder,
         args: &LoadArgs,
     ) -> Result<(), SchemaError> {
+        let mut mrf_node = pywr_core::node::NodeBuilder::link(self.mrf_sub_name());
+        let bypass_node = pywr_core::node::NodeBuilder::link(self.bypass_sub_name());
+
         // MRF applies as a maximum on the MRF node.
         if let Some(cost) = &self.mrf_cost {
             let value = cost.load(network, args, Some(&self.meta.name))?;
-            network.set_node_cost(self.meta.name.as_str(), Self::mrf_sub_name(), value.into())?;
+            mrf_node.cost(value);
         }
 
         if let Some(mrf) = &self.mrf {
             let value = mrf.load(network, args, Some(&self.meta.name))?;
-            network.set_node_max_flow(self.meta.name.as_str(), Self::mrf_sub_name(), value.into())?;
+            mrf_node.max_flow(value);
         }
 
         if let Some(cost) = &self.bypass_cost {
             let value = cost.load(network, args, Some(&self.meta.name))?;
-            network.set_node_cost(self.meta.name.as_str(), Self::bypass_sub_name(), value.into())?;
+            mrf_node.min_flow(value);
         }
+
+        network.node(mrf_node);
+        network.node(bypass_node);
 
         Ok(())
     }
-    pub fn create_metric(
-        &self,
-        network: &pywr_core::network::Network,
-        attribute: Option<NodeAttribute>,
-    ) -> Result<MetricF64, SchemaError> {
+
+    pub fn create_metric(&self, attribute: Option<NodeAttribute>) -> Result<UnresolvedMetricF64, SchemaError> {
         // Use the default attribute if none is specified
         let attr = match attribute {
             Some(attr) => attr.try_into()?,
             None => Self::DEFAULT_ATTRIBUTE,
         };
 
-        let indices = vec![
-            network
-                .get_node_index_by_name(self.meta.name.as_str(), Self::mrf_sub_name())
-                .ok_or_else(|| SchemaError::CoreNodeNotFound {
-                    name: self.meta.name.clone(),
-                    sub_name: Self::mrf_sub_name().map(String::from),
-                })?,
-            network
-                .get_node_index_by_name(self.meta.name.as_str(), Self::bypass_sub_name())
-                .ok_or_else(|| SchemaError::CoreNodeNotFound {
-                    name: self.meta.name.clone(),
-                    sub_name: Self::bypass_sub_name().map(String::from),
-                })?,
-        ];
+        let nodes = vec![self.mrf_sub_name(), self.bypass_sub_name()];
 
         let metric = match attr {
-            RiverGaugeNodeAttribute::Inflow => MetricF64::MultiNodeInFlow {
-                indices,
+            RiverGaugeNodeAttribute::Inflow => UnresolvedMetricF64::MultiNodeInFlow {
+                nodes,
                 name: self.meta.name.to_string(),
             },
-            RiverGaugeNodeAttribute::Outflow => MetricF64::MultiNodeOutFlow {
-                indices,
+            RiverGaugeNodeAttribute::Outflow => UnresolvedMetricF64::MultiNodeOutFlow {
+                nodes,
                 name: self.meta.name.to_string(),
             },
         };

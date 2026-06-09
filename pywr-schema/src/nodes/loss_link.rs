@@ -1,16 +1,21 @@
 use crate::error::ComponentConversionError;
-use crate::error::SchemaError;
 use crate::metric::Metric;
-#[cfg(feature = "core")]
-use crate::network::LoadArgs;
-#[cfg(feature = "core")]
-use crate::nodes::{NodeAttribute, NodeComponent};
-use crate::nodes::{NodeMeta, NodeSlot};
+use crate::nodes::NodeMeta;
 use crate::parameters::Parameter;
 use crate::v1::{ConversionData, TryFromV1, try_convert_node_attr, try_convert_node_meta};
+#[cfg(feature = "core")]
+use crate::{
+    error::SchemaError,
+    network::LoadArgs,
+    nodes::{NodeAttribute, NodeComponent, NodeSlot},
+};
 use crate::{mermaid, node_attribute_subset_enum, node_component_subset_enum};
 #[cfg(feature = "core")]
-use pywr_core::{aggregated_node::Relationship, metric::MetricF64};
+use pywr_core::{
+    aggregated_node::{ProportionalFactorsBuilder, RatioFactorsBuilder, RelationshipBuilder},
+    metric::UnresolvedMetricF64,
+    node::UnresolvedNode,
+};
 use pywr_schema_macros::PywrVisitAll;
 use pywr_schema_macros::skip_serializing_none;
 use pywr_v1_schema::nodes::LossLinkNode as LossLinkNodeV1;
@@ -37,10 +42,10 @@ impl LossFactor {
     /// not a constant zero. If a zero is loaded, then `None` is returned.
     pub fn load(
         &self,
-        network: &mut pywr_core::network::Network,
+        network: &mut pywr_core::network::NetworkBuilder,
         args: &LoadArgs,
         parent: Option<&str>,
-    ) -> Result<Option<Relationship>, SchemaError> {
+    ) -> Result<Option<Box<dyn RelationshipBuilder>>, SchemaError> {
         match self {
             LossFactor::Gross { factor } => {
                 let lf = factor.load(network, args, parent)?;
@@ -50,7 +55,10 @@ impl LossFactor {
                     return Ok(None);
                 }
                 // Gross losses are configured as a proportion of the net flow
-                Ok(Some(Relationship::new_proportion_factors(&[lf])))
+                let mut builder = ProportionalFactorsBuilder::default();
+                builder.factor(lf);
+
+                Ok(Some(Box::new(builder)))
             }
             LossFactor::Net { factor } => {
                 let lf = factor.load(network, args, parent)?;
@@ -60,7 +68,10 @@ impl LossFactor {
                     return Ok(None);
                 }
                 // Net losses are configured as a ratio of the net flow
-                Ok(Some(Relationship::new_ratio_factors(&[1.0.into(), lf])))
+                let mut builder = RatioFactorsBuilder::default();
+                builder.factor(1.0.into());
+                builder.factor(lf);
+                Ok(Some(Box::new(builder)))
             }
         }
     }
@@ -116,42 +127,6 @@ impl LossLinkNode {
     const DEFAULT_ATTRIBUTE: LossLinkNodeAttribute = LossLinkNodeAttribute::Outflow;
     const DEFAULT_COMPONENT: LossLinkNodeComponent = LossLinkNodeComponent::Outflow;
 
-    fn loss_sub_name() -> Option<&'static str> {
-        Some("loss")
-    }
-
-    fn net_sub_name() -> Option<&'static str> {
-        Some("net")
-    }
-
-    pub fn input_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
-        if let Some(slot) = slot {
-            Err(SchemaError::InputNodeSlotNotSupported { slot: slot.clone() })
-        } else {
-            // Gross inflow always goes to the net node ...
-            let mut input_connectors = vec![(self.meta.name.as_str(), Self::net_sub_name().map(|s| s.to_string()))];
-
-            // ... but only to the loss node if a loss is defined
-            if self.loss_factor.is_some() {
-                input_connectors.push((self.meta.name.as_str(), Self::loss_sub_name().map(|s| s.to_string())));
-            }
-
-            Ok(input_connectors)
-        }
-    }
-
-    pub fn output_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
-        if let Some(slot) = slot {
-            Err(SchemaError::OutputNodeSlotNotSupported { slot: slot.clone() })
-        } else {
-            // Only net goes to the downstream.
-            Ok(vec![(
-                self.meta.name.as_str(),
-                Self::net_sub_name().map(|s| s.to_string()),
-            )])
-        }
-    }
-
     pub fn default_attribute(&self) -> LossLinkNodeAttribute {
         Self::DEFAULT_ATTRIBUTE
     }
@@ -163,122 +138,125 @@ impl LossLinkNode {
 
 #[cfg(feature = "core")]
 impl LossLinkNode {
-    fn agg_sub_name() -> Option<&'static str> {
-        Some("agg")
+    fn loss_sub_name(&self) -> UnresolvedNode {
+        UnresolvedNode::new(&self.meta.name, Some("loss"))
     }
 
-    pub fn node_indices_for_flow_constraints(
+    fn net_sub_name(&self) -> UnresolvedNode {
+        UnresolvedNode::new(&self.meta.name, Some("net"))
+    }
+
+    pub fn input_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<UnresolvedNode>, SchemaError> {
+        if let Some(slot) = slot {
+            Err(SchemaError::InputNodeSlotNotSupported { slot: slot.clone() })
+        } else {
+            // Gross inflow always goes to the net node ...
+            let mut input_connectors = vec![self.net_sub_name()];
+
+            // ... but only to the loss node if a loss is defined
+            if self.loss_factor.is_some() {
+                input_connectors.push(self.loss_sub_name());
+            }
+
+            Ok(input_connectors)
+        }
+    }
+
+    pub fn output_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<UnresolvedNode>, SchemaError> {
+        if let Some(slot) = slot {
+            Err(SchemaError::OutputNodeSlotNotSupported { slot: slot.clone() })
+        } else {
+            // Only net goes to the downstream.
+            Ok(vec![self.net_sub_name()])
+        }
+    }
+    fn agg_sub_name(&self) -> UnresolvedNode {
+        UnresolvedNode::new(&self.meta.name, Some("agg"))
+    }
+
+    pub fn nodes_for_flow_constraints(
         &self,
-        network: &pywr_core::network::Network,
         component: Option<NodeComponent>,
-    ) -> Result<Vec<pywr_core::node::NodeIndex>, SchemaError> {
+    ) -> Result<Vec<UnresolvedNode>, SchemaError> {
         // Use the default attribute if none is specified
         let component = match component {
             Some(c) => c.try_into()?,
             None => Self::DEFAULT_COMPONENT,
         };
 
-        let indices = match component {
+        let nodes = match component {
             LossLinkNodeComponent::Inflow => {
                 // If the loss node is defined, we need to return both the net and loss nodes
-                match network.get_node_index_by_name(self.meta.name.as_str(), Self::loss_sub_name()) {
-                    Some(loss_idx) => {
-                        vec![
-                            network
-                                .get_node_index_by_name(self.meta.name.as_str(), Self::net_sub_name())
-                                .ok_or_else(|| SchemaError::CoreNodeNotFound {
-                                    name: self.meta.name.clone(),
-                                    sub_name: Self::net_sub_name().map(String::from),
-                                })?,
-                            loss_idx,
-                        ]
-                    }
-                    None => vec![
-                        network
-                            .get_node_index_by_name(self.meta.name.as_str(), Self::net_sub_name())
-                            .ok_or_else(|| SchemaError::CoreNodeNotFound {
-                                name: self.meta.name.clone(),
-                                sub_name: Self::net_sub_name().map(String::from),
-                            })?,
-                    ],
+                if self.loss_factor.is_some() {
+                    vec![self.net_sub_name(), self.loss_sub_name()]
+                } else {
+                    vec![self.net_sub_name()]
                 }
             }
             LossLinkNodeComponent::Outflow => {
-                vec![
-                    network
-                        .get_node_index_by_name(self.meta.name.as_str(), Self::net_sub_name())
-                        .ok_or_else(|| SchemaError::CoreNodeNotFound {
-                            name: self.meta.name.clone(),
-                            sub_name: Self::net_sub_name().map(String::from),
-                        })?,
-                ]
+                vec![self.net_sub_name()]
             }
             LossLinkNodeComponent::Loss => {
-                match network.get_node_index_by_name(self.meta.name.as_str(), Self::loss_sub_name()) {
-                    Some(idx) => vec![idx],
-                    None => return Ok(vec![]), // No loss node defined, so return empty
+                if self.loss_factor.is_some() {
+                    vec![self.loss_sub_name()]
+                } else {
+                    vec![]
                 }
             }
         };
 
-        Ok(indices)
+        Ok(nodes)
     }
-    pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
-        let idx_net = network.add_link_node(self.meta.name.as_str(), Self::net_sub_name())?;
+    pub fn add_to_network(
+        &self,
+        network: &mut pywr_core::network::NetworkBuilder,
+        args: &LoadArgs,
+    ) -> Result<(), SchemaError> {
+        let mut net_node = pywr_core::node::NodeBuilder::link(self.net_sub_name());
         // TODO make the loss node configurable (i.e. it could be a link if a network wanted to use the loss)
         // The above would need to support slots in the connections.
 
-        if self.loss_factor.is_some() {
-            let idx_loss = network.add_output_node(self.meta.name.as_str(), Self::loss_sub_name())?;
-            // This aggregated node will contain the factors to enforce the loss
-            network.add_aggregated_node(
-                self.meta.name.as_str(),
-                Self::agg_sub_name(),
-                &[vec![idx_net], vec![idx_loss]],
-                None,
-            )?;
-        }
-        Ok(())
-    }
-
-    pub fn set_constraints(
-        &self,
-        network: &mut pywr_core::network::Network,
-        args: &LoadArgs,
-    ) -> Result<(), SchemaError> {
         if let Some(cost) = &self.net_cost {
             let value = cost.load(network, args, Some(&self.meta.name))?;
-            network.set_node_cost(self.meta.name.as_str(), Self::net_sub_name(), value.into())?;
+            net_node.cost(value);
         }
 
         if let Some(max_flow) = &self.max_net_flow {
             let value = max_flow.load(network, args, Some(&self.meta.name))?;
-            network.set_node_max_flow(self.meta.name.as_str(), Self::net_sub_name(), value.into())?;
+            net_node.max_flow(value);
         }
 
         if let Some(min_flow) = &self.min_net_flow {
             let value = min_flow.load(network, args, Some(&self.meta.name))?;
-            network.set_node_min_flow(self.meta.name.as_str(), Self::net_sub_name(), value.into())?;
+            net_node.min_flow(value);
         }
 
         if let Some(loss_factor) = &self.loss_factor {
+            let mut loss_node = pywr_core::node::NodeBuilder::output(self.loss_sub_name());
+            // This aggregated node will contain the factors to enforce the loss
+            let mut agg_node = pywr_core::AggregatedNodeBuilder::new(self.agg_sub_name());
+
+            agg_node.nodes(vec![net_node.name().clone()]);
+            agg_node.nodes(vec![loss_node.name().clone()]);
+
             let factors = loss_factor.load(network, args, Some(&self.meta.name))?;
 
-            if factors.is_none() {
+            if let Some(factors) = factors {
+                agg_node.relationship(factors);
+            } else {
                 // Loaded a constant zero factor; ensure that the loss node has zero flow
-                network.set_node_max_flow(self.meta.name.as_str(), Self::loss_sub_name(), Some(0.0.into()))?;
+                loss_node.max_flow(0.0.into());
             }
-            network.set_aggregated_node_relationship(self.meta.name.as_str(), Self::agg_sub_name(), factors)?;
+
+            network.agg_node(agg_node);
+            network.node(loss_node);
         }
+        network.node(net_node);
 
         Ok(())
     }
 
-    pub fn create_metric(
-        &self,
-        network: &pywr_core::network::Network,
-        attribute: Option<NodeAttribute>,
-    ) -> Result<MetricF64, SchemaError> {
+    pub fn create_metric(&self, attribute: Option<NodeAttribute>) -> Result<UnresolvedMetricF64, SchemaError> {
         // Use the default attribute if none is specified
         let attr = match attribute {
             Some(attr) => attr.try_into()?,
@@ -287,47 +265,23 @@ impl LossLinkNode {
 
         let metric = match attr {
             LossLinkNodeAttribute::Inflow => {
-                match network.get_node_index_by_name(self.meta.name.as_str(), Self::loss_sub_name()) {
-                    // Loss node is defined. The total inflow is the sum of the net and loss nodes;
-                    Some(loss_idx) => {
-                        let indices = vec![
-                            network
-                                .get_node_index_by_name(self.meta.name.as_str(), Self::net_sub_name())
-                                .ok_or_else(|| SchemaError::CoreNodeNotFound {
-                                    name: self.meta.name.clone(),
-                                    sub_name: Self::net_sub_name().map(String::from),
-                                })?,
-                            loss_idx,
-                        ];
-                        MetricF64::MultiNodeInFlow {
-                            indices,
-                            name: self.meta.name.to_string(),
-                        }
+                if self.loss_factor.is_some() {
+                    let nodes = vec![self.net_sub_name(), self.loss_sub_name()];
+                    UnresolvedMetricF64::MultiNodeInFlow {
+                        nodes,
+                        name: self.meta.name.to_string(),
                     }
+                } else {
                     // No loss node defined, so just use the net node
-                    None => MetricF64::NodeInFlow(
-                        network
-                            .get_node_index_by_name(self.meta.name.as_str(), Self::net_sub_name())
-                            .ok_or_else(|| SchemaError::CoreNodeNotFound {
-                                name: self.meta.name.clone(),
-                                sub_name: Self::net_sub_name().map(String::from),
-                            })?,
-                    ),
+                    UnresolvedMetricF64::NodeInFlow(self.net_sub_name())
                 }
             }
-            LossLinkNodeAttribute::Outflow => {
-                let idx = network
-                    .get_node_index_by_name(self.meta.name.as_str(), Self::net_sub_name())
-                    .ok_or_else(|| SchemaError::CoreNodeNotFound {
-                        name: self.meta.name.clone(),
-                        sub_name: Self::net_sub_name().map(String::from),
-                    })?;
-                MetricF64::NodeOutFlow(idx)
-            }
+            LossLinkNodeAttribute::Outflow => UnresolvedMetricF64::NodeOutFlow(self.net_sub_name()),
             LossLinkNodeAttribute::Loss => {
-                match network.get_node_index_by_name(self.meta.name.as_str(), Self::loss_sub_name()) {
-                    Some(idx) => MetricF64::NodeInFlow(idx),
-                    None => 0.0.into(),
+                if self.loss_factor.is_some() {
+                    UnresolvedMetricF64::NodeInFlow(self.loss_sub_name())
+                } else {
+                    0.0.into()
                 }
             }
         };

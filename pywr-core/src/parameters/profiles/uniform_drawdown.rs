@@ -1,5 +1,9 @@
+use crate::network::ResolutionMaps;
 use crate::parameters::errors::SimpleCalculationError;
-use crate::parameters::{Parameter, ParameterMeta, ParameterName, ParameterState, SimpleParameter};
+use crate::parameters::{
+    BuiltParameter, MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder, ParameterMeta,
+    ParameterName, ParameterState, SimpleParameter,
+};
 use crate::scenario::ScenarioIndex;
 use crate::state::SimpleParameterValues;
 use crate::timestep::Timestep;
@@ -13,21 +17,6 @@ pub struct UniformDrawdownProfileParameter {
     meta: ParameterMeta,
     residual_days: u8,
     reset_doy: u16,
-}
-
-impl UniformDrawdownProfileParameter {
-    pub fn new(name: ParameterName, reset_day: u32, reset_month: u32, residual_days: u8) -> Self {
-        // Calculate the reset day of year in a known leap year.
-        let reset_doy = NaiveDate::from_ymd_opt(2016, reset_month, reset_day)
-            .expect("Invalid reset day")
-            .ordinal() as u16;
-
-        Self {
-            meta: ParameterMeta::new(name),
-            residual_days,
-            reset_doy,
-        }
-    }
 }
 
 impl Parameter for UniformDrawdownProfileParameter {
@@ -83,5 +72,45 @@ impl SimpleParameter<f64> for UniformDrawdownProfileParameter {
         Self: Sized,
     {
         self
+    }
+}
+
+pub struct UniformDrawdownProfileParameterBuilder {
+    meta: ParameterMeta,
+    residual_days: u8,
+    reset_doy: u16,
+}
+
+impl UniformDrawdownProfileParameterBuilder {
+    pub fn new(name: ParameterName, reset_day: u32, reset_month: u32, residual_days: u8) -> Self {
+        // Calculate the reset day of year in a known leap year.
+        let reset_doy = NaiveDate::from_ymd_opt(2016, reset_month, reset_day)
+            .expect("Invalid reset day")
+            .ordinal() as u16;
+
+        Self {
+            meta: ParameterMeta::new(name),
+            residual_days,
+            reset_doy,
+        }
+    }
+}
+
+impl ParameterBuilder<f64> for UniformDrawdownProfileParameterBuilder {
+    fn name(&self) -> &ParameterName {
+        &self.meta.name
+    }
+
+    fn build(
+        self: Box<Self>,
+        _resolution_maps: &ResolutionMaps,
+    ) -> Result<MaybeBuiltParameter<f64>, ParameterBuildError> {
+        let p = UniformDrawdownProfileParameter {
+            meta: self.meta,
+            residual_days: self.residual_days,
+            reset_doy: self.reset_doy,
+        };
+
+        Ok(MaybeBuiltParameter::Built(BuiltParameter::Simple(Box::new(p))))
     }
 }

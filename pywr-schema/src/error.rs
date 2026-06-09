@@ -54,9 +54,6 @@ pub enum SchemaError {
     #[error("Pywr model domain error: {0}")]
     #[cfg(feature = "core")]
     CoreModelDomainError(#[from] pywr_core::models::ModelDomainError),
-    #[error("Multi-network model error: {0}")]
-    #[cfg(feature = "core")]
-    CoreMultiNetworkModelError(#[from] pywr_core::models::MultiNetworkModelError),
     #[error("Metric F64 error: {0}")]
     #[cfg(feature = "core")]
     CoreMetricF64Error(#[from] pywr_core::metric::MetricF64Error),
@@ -121,15 +118,6 @@ pub enum SchemaError {
     NodeConnectionSlotRequired { msg: String },
     #[error("Checksum error: {0}")]
     ChecksumError(#[from] ChecksumError),
-    #[error(
-        "Number of values ({values}) for parameter '{name}' does not match the size ({scenarios}) of the specified scenario group '{group}'."
-    )]
-    ScenarioValuesLengthMismatch {
-        values: usize,
-        name: String,
-        scenarios: usize,
-        group: String,
-    },
 }
 
 #[cfg(all(feature = "core", feature = "pyo3"))]

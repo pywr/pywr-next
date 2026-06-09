@@ -1,16 +1,19 @@
-use crate::error::SchemaError;
 use crate::metric::Metric;
-#[cfg(feature = "core")]
-use crate::network::LoadArgs;
-#[cfg(feature = "core")]
-use crate::nodes::NodeAttribute;
-use crate::nodes::{NodeMeta, NodeSlot, StorageInitialVolume};
+use crate::nodes::{NodeMeta, StorageInitialVolume};
 use crate::parameters::Parameter;
+#[cfg(feature = "core")]
+use crate::{
+    error::SchemaError,
+    network::LoadArgs,
+    nodes::{NodeAttribute, NodeSlot},
+};
 use crate::{mermaid, node_attribute_subset_enum};
 #[cfg(feature = "core")]
 use pywr_core::{
-    metric::{MetricF64, SimpleMetricF64},
-    parameters::{DifferenceParameter, ParameterIndex, ParameterName, VolumeBetweenControlCurvesParameter},
+    metric::UnresolvedMetricF64,
+    node::{UnresolvedNode, UnresolvedStorageInitialVolume},
+    parameters::ParameterName,
+    parameters::{DifferenceParameterBuilder, VolumeBetweenControlCurvesParameterBuilder},
 };
 use pywr_schema_macros::{PywrVisitAll, skip_serializing_none};
 use schemars::JsonSchema;
@@ -68,25 +71,6 @@ pub struct PiecewiseStorageNode {
 impl PiecewiseStorageNode {
     const DEFAULT_ATTRIBUTE: PiecewiseStorageNodeAttribute = PiecewiseStorageNodeAttribute::Volume;
 
-    fn step_sub_name(i: usize) -> Option<String> {
-        Some(format!("store-{i:02}"))
-    }
-
-    pub fn input_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
-        if let Some(slot) = slot {
-            Err(SchemaError::InputNodeSlotNotSupported { slot: slot.clone() })
-        } else {
-            Ok(vec![(self.meta.name.as_str(), Self::step_sub_name(self.steps.len()))])
-        }
-    }
-    pub fn output_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
-        if let Some(slot) = slot {
-            Err(SchemaError::OutputNodeSlotNotSupported { slot: slot.clone() })
-        } else {
-            Ok(vec![(self.meta.name.as_str(), Self::step_sub_name(self.steps.len()))])
-        }
-    }
-
     pub fn default_attribute(&self) -> PiecewiseStorageNodeAttribute {
         Self::DEFAULT_ATTRIBUTE
     }
@@ -94,97 +78,61 @@ impl PiecewiseStorageNode {
 
 #[cfg(feature = "core")]
 impl PiecewiseStorageNode {
-    fn agg_sub_name() -> Option<&'static str> {
-        Some("agg-store")
+    fn step_sub_name(&self, i: usize) -> UnresolvedNode {
+        UnresolvedNode::new(self.meta.name.as_str(), Some(&format!("store-{i:02}")))
     }
 
-    pub fn node_indices_for_storage_constraints(
-        &self,
-        network: &pywr_core::network::Network,
-    ) -> Result<Vec<pywr_core::node::NodeIndex>, SchemaError> {
+    pub fn input_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<UnresolvedNode>, SchemaError> {
+        if let Some(slot) = slot {
+            Err(SchemaError::InputNodeSlotNotSupported { slot: slot.clone() })
+        } else {
+            Ok((0..self.steps.len()).map(|i| self.step_sub_name(i)).collect())
+        }
+    }
+    pub fn output_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<UnresolvedNode>, SchemaError> {
+        if let Some(slot) = slot {
+            Err(SchemaError::OutputNodeSlotNotSupported { slot: slot.clone() })
+        } else {
+            Ok((0..self.steps.len()).map(|i| self.step_sub_name(i)).collect())
+        }
+    }
+    fn agg_sub_name(&self) -> UnresolvedNode {
+        UnresolvedNode::new(&self.meta.name, Some("agg-store"))
+    }
+
+    pub fn nodes_for_storage_constraints(&self) -> Result<Vec<UnresolvedNode>, SchemaError> {
         // Get the indices of all the sub-nodes for this piecewise storage node (including
         // the final one that represents the residual part above the last step).
-        let indices = (0..self.steps.len() + 1)
-            .map(|i| {
-                network
-                    .get_node_index_by_name(self.meta.name.as_str(), Self::step_sub_name(i).as_deref())
-                    .ok_or_else(|| SchemaError::CoreNodeNotFound {
-                        name: self.meta.name.clone(),
-                        sub_name: Self::step_sub_name(i),
-                    })
-            })
-            .collect::<Result<Vec<_>, _>>()?;
+        let nodes = (0..self.steps.len() + 1)
+            .map(|i| self.step_sub_name(i))
+            .collect::<Vec<_>>();
 
-        Ok(indices)
+        Ok(nodes)
     }
 
-    pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
-        let mut store_node_indices = Vec::new();
-
-        // create a storage node for each step
-        for (i, _step) in self.steps.iter().enumerate() {
-            // Assume each store is full to start with
-            let initial_volume = pywr_core::node::StorageInitialVolume::Proportional(1.0);
-
-            let idx = network.add_storage_node(
-                self.meta.name.as_str(),
-                Self::step_sub_name(i).as_deref(),
-                initial_volume,
-                None,
-                None,
-            )?;
-
-            if let Some(prev_idx) = store_node_indices.last() {
-                // There was a lower store; connect to it in both directions
-                network.connect_nodes(idx, *prev_idx)?;
-                network.connect_nodes(*prev_idx, idx)?;
-            }
-
-            store_node_indices.push(idx);
-        }
-
-        // Assume each store is full to start with
-        let initial_volume = pywr_core::node::StorageInitialVolume::Proportional(1.0);
-
-        // And one for the residual part above the less step
-        let idx = network.add_storage_node(
-            self.meta.name.as_str(),
-            Self::step_sub_name(self.steps.len()).as_deref(),
-            initial_volume,
-            None,
-            None,
-        )?;
-
-        if let Some(prev_idx) = store_node_indices.last() {
-            // There was a lower store; connect to it in both directions
-            network.connect_nodes(idx, *prev_idx)?;
-            network.connect_nodes(*prev_idx, idx)?;
-        }
-
-        store_node_indices.push(idx);
-
-        // Finally, add an aggregate storage node covering all the individual stores
-        network.add_aggregated_storage_node(self.meta.name.as_str(), Self::agg_sub_name(), store_node_indices)?;
-
-        Ok(())
-    }
-
-    pub fn set_constraints(
+    pub fn add_to_network(
         &self,
-        network: &mut pywr_core::network::Network,
+        network: &mut pywr_core::network::NetworkBuilder,
         args: &LoadArgs,
     ) -> Result<(), SchemaError> {
+        let mut store_nodes: Vec<UnresolvedNode> = Vec::new();
+
         // These are the min and max volume of the overall node
-        let total_volume: SimpleMetricF64 = self.max_volume.load(network, args, Some(&self.meta.name))?.try_into()?;
-        let total_min_volume: Option<SimpleMetricF64> = match &self.min_volume {
-            Some(min_volume) => Some(min_volume.load(network, args, Some(&self.meta.name))?.try_into()?),
+        let total_volume: UnresolvedMetricF64 = self.max_volume.load(network, args, Some(&self.meta.name))?;
+        let total_min_volume: Option<UnresolvedMetricF64> = match &self.min_volume {
+            Some(min_volume) => Some(min_volume.load(network, args, Some(&self.meta.name))?),
             None => None,
         };
 
-        let mut prior_max_volumes: Vec<SimpleMetricF64> = Vec::new();
+        let mut prior_max_volumes: Vec<UnresolvedMetricF64> = Vec::new();
 
         for (i, step) in self.steps.iter().enumerate() {
-            let sub_name = Self::step_sub_name(i);
+            // Create a storage node builder for each step
+            let mut storage = pywr_core::node::NodeBuilder::storage(self.step_sub_name(i));
+
+            // Assume each store is full to start with
+            let initial_volume = UnresolvedStorageInitialVolume::Proportional(1.0);
+            storage.initial_volume(initial_volume);
 
             // The volume of this step is the proportion between the last control curve
             // (or zero if first) and this control curve.
@@ -192,8 +140,7 @@ impl PiecewiseStorageNode {
                 Some(
                     self.steps[i - 1]
                         .control_curve
-                        .load(network, args, Some(&self.meta.name))?
-                        .try_into()?,
+                        .load(network, args, Some(&self.meta.name))?,
                 )
             } else {
                 None
@@ -201,86 +148,141 @@ impl PiecewiseStorageNode {
 
             let upper = step.control_curve.load(network, args, Some(&self.meta.name))?;
 
-            let max_volume_parameter_idx =
-                self.set_sub_node_max_volume(i, total_volume.clone(), Some(upper.try_into()?), lower, network)?;
+            // Set the max volume
+            let max_volume_metric = self.set_sub_node_max_volume(
+                i,
+                total_volume.clone(),
+                Some(upper),
+                lower.clone(),
+                network,
+                &mut storage,
+            );
 
-            let prior_max_volume = pywr_core::parameters::AggregatedParameter::new(
-                ParameterName::new(
-                    format!("{}-prior-max-volume", Self::step_sub_name(i).unwrap()).as_str(),
-                    Some(&self.meta.name),
-                ),
-                &prior_max_volumes,
+            let prior_max_volume_name =
+                ParameterName::new(&format!("store-{i:02}-prior-max-volume"), Some(&self.meta.name));
+            let mut prior_max_volume = pywr_core::parameters::AggregatedParameterBuilder::new(
+                prior_max_volume_name.clone(),
                 pywr_core::agg_funcs::AggFuncF64::Sum,
             );
-            let prior_max_volume_idx = network.add_simple_parameter(Box::new(prior_max_volume))?;
+            let prior_max_volume_metric = UnresolvedMetricF64::new_parameter_before(prior_max_volume_name.clone());
+
+            // Add all the prior maxs to the aggregated node
+            for pmv in &prior_max_volumes {
+                prior_max_volume.metric(pmv.clone());
+            }
+            network.parameters().f64(Box::new(prior_max_volume));
 
             if let Some(total_min_volume) = total_min_volume.clone() {
                 self.set_sub_node_min_volume(
                     i,
                     total_min_volume.clone(),
-                    prior_max_volume_idx,
-                    max_volume_parameter_idx,
+                    prior_max_volume_metric.clone(),
+                    max_volume_metric.clone(),
                     network,
-                )?;
+                    &mut storage,
+                );
             }
 
-            self.set_sub_node_initial_volume(i, total_volume.clone(), prior_max_volume_idx, network)?;
+            self.set_sub_node_initial_volume(total_volume.clone(), prior_max_volume_metric, &mut storage);
+
+            // Append the max volume parameter of this node to the prior list
+            prior_max_volumes.push(max_volume_metric);
 
             if let Some(cost) = &step.cost {
                 let value = cost.load(network, args, Some(&self.meta.name))?;
-                network.set_node_cost(self.meta.name.as_str(), sub_name.as_deref(), value.into())?;
+                storage.cost(value);
             }
 
-            // Append the max volume parameter of this node to the prior list
-            prior_max_volumes.push(max_volume_parameter_idx.try_into()?);
+            let name = storage.name();
+
+            if let Some(prev_name) = store_nodes.last() {
+                // There was a lower store; connect to it in both directions
+                network.connect(name.clone(), prev_name.clone());
+                network.connect(prev_name.clone(), name.clone());
+            }
+
+            store_nodes.push(name.clone());
+            network.node(storage);
         }
+
+        // Assume each store is full to start with
+        let initial_volume = UnresolvedStorageInitialVolume::Proportional(1.0);
+
+        // And one for the residual part above the less step
+        let mut storage = pywr_core::node::NodeBuilder::storage(self.step_sub_name(self.steps.len()));
+        storage.initial_volume(initial_volume);
 
         // The volume of this store is the remain proportion above the last control curve
         let lower = match self.steps.last() {
-            Some(step) => Some(
-                step.control_curve
-                    .load(network, args, Some(&self.meta.name))?
-                    .try_into()?,
-            ),
+            Some(step) => Some(step.control_curve.load(network, args, Some(&self.meta.name))?),
             None => None,
         };
 
         let upper = None;
 
-        let max_volume_parameter_idx =
-            self.set_sub_node_max_volume(self.steps.len(), total_volume.clone(), upper, lower, network)?;
+        let max_volume_parameter_metric = self.set_sub_node_max_volume(
+            self.steps.len(),
+            total_volume.clone(),
+            upper,
+            lower,
+            network,
+            &mut storage,
+        );
 
-        let prior_max_volume = pywr_core::parameters::AggregatedParameter::new(
-            ParameterName::new(
-                format!("{}-prior-max-volume", Self::step_sub_name(self.steps.len()).unwrap()).as_str(),
-                Some(&self.meta.name),
-            ),
-            &prior_max_volumes,
+        let prior_max_volume_name = ParameterName::new(
+            &format!("store-{:02}-prior-max-volume", self.steps.len()),
+            Some(&self.meta.name),
+        );
+
+        let mut prior_max_volume = pywr_core::parameters::AggregatedParameterBuilder::new(
+            prior_max_volume_name.clone(),
             pywr_core::agg_funcs::AggFuncF64::Sum,
         );
-        let prior_max_volume_idx = network.add_simple_parameter(Box::new(prior_max_volume))?;
+
+        for pmv in &prior_max_volumes {
+            prior_max_volume.metric(pmv.clone());
+        }
+        let prior_max_volume_metric = UnresolvedMetricF64::new_parameter_before(prior_max_volume_name.clone());
+
+        network.parameters().f64(Box::new(prior_max_volume));
 
         if let Some(total_min_volume) = total_min_volume.clone() {
             self.set_sub_node_min_volume(
                 self.steps.len(),
                 total_min_volume.clone(),
-                prior_max_volume_idx,
-                max_volume_parameter_idx,
+                prior_max_volume_metric.clone(),
+                max_volume_parameter_metric,
                 network,
-            )?;
+                &mut storage,
+            );
         }
 
-        self.set_sub_node_initial_volume(self.steps.len(), total_volume.clone(), prior_max_volume_idx, network)?;
+        self.set_sub_node_initial_volume(total_volume.clone(), prior_max_volume_metric, &mut storage);
 
         // Set the cost for the last step
         if let Some(cost) = &self.cost {
             let value = cost.load(network, args, Some(&self.meta.name))?;
-            network.set_node_cost(
-                self.meta.name.as_str(),
-                Self::step_sub_name(self.steps.len()).as_deref(),
-                value.into(),
-            )?;
+            storage.cost(value);
         }
+
+        let name = storage.name();
+
+        if let Some(prev_name) = store_nodes.last() {
+            // There was a lower store; connect to it in both directions
+            network.connect(name.clone(), prev_name.clone());
+            network.connect(prev_name.clone(), name.clone());
+        }
+
+        store_nodes.push(name.clone());
+        network.node(storage);
+
+        // Finally, add an aggregate storage node covering all the individual stores
+        let mut agg_storage = pywr_core::AggregatedStorageNodeBuilder::new(self.agg_sub_name());
+
+        for node in store_nodes {
+            agg_storage.node(node);
+        }
+        network.agg_storage_node(agg_storage);
 
         Ok(())
     }
@@ -294,28 +296,32 @@ impl PiecewiseStorageNode {
     fn set_sub_node_max_volume(
         &self,
         step_index: usize,
-        total_volume: SimpleMetricF64,
-        upper: Option<SimpleMetricF64>,
-        lower: Option<SimpleMetricF64>,
-        network: &mut pywr_core::network::Network,
-    ) -> Result<ParameterIndex<f64>, SchemaError> {
-        let sub_name = Self::step_sub_name(step_index);
+        total_volume: UnresolvedMetricF64,
+        upper: Option<UnresolvedMetricF64>,
+        lower: Option<UnresolvedMetricF64>,
+        network: &mut pywr_core::network::NetworkBuilder,
+        node: &mut pywr_core::node::NodeBuilder,
+    ) -> UnresolvedMetricF64 {
+        let max_volume_name = ParameterName::new(&format!("store-{:02}-max-volume", step_index), Some(&self.meta.name));
 
-        let max_volume_parameter = VolumeBetweenControlCurvesParameter::new(
+        let mut max_volume_parameter = VolumeBetweenControlCurvesParameterBuilder::new(
             // Node's name is the parent identifier
-            ParameterName::new(
-                format!("{}-max-volume", Self::step_sub_name(step_index).unwrap()).as_str(),
-                Some(&self.meta.name),
-            ),
-            total_volume.clone(),
-            upper,
-            lower,
+            max_volume_name.clone(),
+            total_volume,
         );
-        let max_volume_parameter_idx = network.add_simple_parameter(Box::new(max_volume_parameter))?;
-        let max_volume = Some(max_volume_parameter_idx.try_into()?);
-        network.set_node_max_volume(self.meta.name.as_str(), sub_name.as_deref(), max_volume)?;
 
-        Ok(max_volume_parameter_idx)
+        if let Some(upper) = upper {
+            max_volume_parameter.upper(upper);
+        }
+        if let Some(lower) = lower {
+            max_volume_parameter.lower(lower);
+        }
+
+        // Add the parameter and link it to the node's max volume.
+        network.parameters().f64(Box::new(max_volume_parameter));
+        let max_volume = UnresolvedMetricF64::new_parameter_before(max_volume_name);
+        node.max_volume(max_volume.clone());
+        max_volume
     }
 
     /// Set the minimum volume of the node at a specific step index.
@@ -326,83 +332,63 @@ impl PiecewiseStorageNode {
     fn set_sub_node_min_volume(
         &self,
         step_index: usize,
-        total_min_volume: SimpleMetricF64,
-        prior_max_volume_idx: ParameterIndex<f64>,
-        max_volume_parameter_idx: ParameterIndex<f64>,
-        network: &mut pywr_core::network::Network,
-    ) -> Result<(), SchemaError> {
-        let sub_name = Self::step_sub_name(step_index);
+        total_min_volume: UnresolvedMetricF64,
+        prior_max_volume: UnresolvedMetricF64,
+        max_volume_parameter: UnresolvedMetricF64,
+        network: &mut pywr_core::network::NetworkBuilder,
+        node: &mut pywr_core::node::NodeBuilder,
+    ) {
+        let min_volume_name = ParameterName::new(&format!("store-{:02}-min-volume", step_index), Some(&self.meta.name));
         // The minimum volume is the difference between the total volume and
         // the maximum volume of the previous steps, but limited to be between zero and the maximum volume of this step.
-        let min_volume_parameter = DifferenceParameter::new(
-            ParameterName::new(
-                format!("{}-min-volume", Self::step_sub_name(step_index).unwrap()).as_str(),
-                Some(&self.meta.name),
-            ),
-            total_min_volume,
-            prior_max_volume_idx.try_into()?,
-            Some(0.0.into()),
-            Some(max_volume_parameter_idx.try_into()?),
-        );
-        let min_volume_parameter_idx = network.add_simple_parameter(Box::new(min_volume_parameter))?;
-        network.set_node_min_volume(
-            self.meta.name.as_str(),
-            sub_name.as_deref(),
-            Some(min_volume_parameter_idx.try_into()?),
-        )?;
+        let mut min_volume_parameter =
+            DifferenceParameterBuilder::new(min_volume_name.clone(), total_min_volume, prior_max_volume.clone());
 
-        Ok(())
+        min_volume_parameter.min(0.0.into()).max(max_volume_parameter);
+
+        network.parameters().f64(Box::new(min_volume_parameter));
+        node.min_volume(UnresolvedMetricF64::new_parameter_before(min_volume_name));
     }
 
     /// Set the initial volume of the node at a specific step index.
     fn set_sub_node_initial_volume(
         &self,
-        step_index: usize,
-        total_volume: SimpleMetricF64,
-        prior_max_volume_idx: ParameterIndex<f64>,
-        network: &mut pywr_core::network::Network,
-    ) -> Result<(), SchemaError> {
-        let sub_name = Self::step_sub_name(step_index);
+        total_volume: UnresolvedMetricF64,
+        prior_max_volume: UnresolvedMetricF64,
+        node: &mut pywr_core::node::NodeBuilder,
+    ) {
         // Set the initial volume of this step
         let initial_volume = match &self.initial_volume {
             StorageInitialVolume::Proportional { proportion } => {
-                pywr_core::node::StorageInitialVolume::DistributedProportional {
+                UnresolvedStorageInitialVolume::DistributedProportional {
                     total_volume: total_volume.clone(),
                     proportion: *proportion,
-                    prior_max_volume: prior_max_volume_idx.try_into()?,
+                    prior_max_volume,
                 }
             }
-            StorageInitialVolume::Absolute { volume } => pywr_core::node::StorageInitialVolume::DistributedAbsolute {
+            StorageInitialVolume::Absolute { volume } => UnresolvedStorageInitialVolume::DistributedAbsolute {
                 absolute: *volume,
-                prior_max_volume: prior_max_volume_idx.try_into()?,
+                prior_max_volume,
             },
         };
-        network.set_node_initial_volume(self.meta.name.as_str(), sub_name.as_deref(), initial_volume)?;
 
-        Ok(())
+        node.initial_volume(initial_volume);
     }
 
-    pub fn create_metric(
-        &self,
-        network: &mut pywr_core::network::Network,
-        attribute: Option<NodeAttribute>,
-    ) -> Result<MetricF64, SchemaError> {
+    pub fn create_metric(&self, attribute: Option<NodeAttribute>) -> Result<UnresolvedMetricF64, SchemaError> {
         // Use the default attribute if none is specified
         let attr = match attribute {
             Some(attr) => attr.try_into()?,
             None => Self::DEFAULT_ATTRIBUTE,
         };
 
-        let idx = network
-            .get_aggregated_storage_node_index_by_name(self.meta.name.as_str(), Self::agg_sub_name())
-            .ok_or_else(|| SchemaError::CoreNodeNotFound {
-                name: self.meta.name.clone(),
-                sub_name: Self::agg_sub_name().map(String::from),
-            })?;
+        let name = self.agg_sub_name();
 
         let metric = match attr {
-            PiecewiseStorageNodeAttribute::Volume => MetricF64::AggregatedStorageNodeVolume(idx),
-            PiecewiseStorageNodeAttribute::ProportionalVolume => MetricF64::AggregatedNodeProportionalVolume(idx),
+            PiecewiseStorageNodeAttribute::Volume => UnresolvedMetricF64::AggregatedStorageNodeVolume(name),
+            PiecewiseStorageNodeAttribute::ProportionalVolume => {
+                UnresolvedMetricF64::AggregatedStorageNodeProportionalVolume(name)
+            }
         };
 
         Ok(metric)

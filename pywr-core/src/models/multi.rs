@@ -83,7 +83,7 @@ struct MultiNetworkTransfer {
     initial_value: Option<f64>,
 }
 
-pub struct UnresolvedMultiNetworkTransfer {
+pub struct MultiNetworkTransferBuilder {
     /// Name of this transfer
     name: String,
     /// Name of the network to get the value from.
@@ -92,6 +92,22 @@ pub struct UnresolvedMultiNetworkTransfer {
     from_metric: UnresolvedMetricF64,
     /// Optional initial value to use on the first time-step
     initial_value: Option<f64>,
+}
+
+impl MultiNetworkTransferBuilder {
+    pub fn new(name: &str, from_model: &str, from_metric: UnresolvedMetricF64) -> Self {
+        Self {
+            name: name.to_string(),
+            from_model: from_model.to_string(),
+            from_metric,
+            initial_value: None,
+        }
+    }
+
+    pub fn initial_value(&mut self, initial_value: f64) -> &mut Self {
+        self.initial_value = Some(initial_value);
+        self
+    }
 }
 
 struct MultiNetworkEntry {
@@ -103,7 +119,7 @@ struct MultiNetworkEntry {
 pub struct MultiNetworkEntryBuilder {
     name: String,
     network: NetworkBuilder,
-    transfers: Vec<UnresolvedMultiNetworkTransfer>,
+    transfers: Vec<MultiNetworkTransferBuilder>,
 }
 
 impl MultiNetworkEntryBuilder {
@@ -116,8 +132,13 @@ impl MultiNetworkEntryBuilder {
         }
     }
 
+    /// Get a reference to the [`NetworkBuilder`]
+    pub fn network_builder(&mut self) -> &mut NetworkBuilder {
+        &mut self.network
+    }
+
     /// Add a new unresolved transfer to the builder.
-    pub fn transfer(&mut self, transfer: UnresolvedMultiNetworkTransfer) -> &mut Self {
+    pub fn transfer(&mut self, transfer: MultiNetworkTransferBuilder) -> &mut Self {
         self.transfers.push(transfer);
         self
     }
@@ -929,7 +950,7 @@ impl MultiNetworkModel {
 }
 
 #[derive(Debug, Error)]
-pub enum MultiModelBuilderError {
+pub enum MultiNetworkModelBuilderError {
     #[error("Error building model domain: {0}")]
     ModelDomainBuilderError(#[from] ModelDomainBuilderError),
     #[error("Error building network `{name}`: {source}")]
@@ -950,12 +971,19 @@ pub enum MultiModelBuilderError {
     DuplicateNetworkName { name: String },
 }
 
-pub struct MultiModelBuilder {
+#[cfg(feature = "pyo3")]
+impl From<MultiNetworkModelBuilderError> for PyErr {
+    fn from(err: MultiNetworkModelBuilderError) -> PyErr {
+        PyRuntimeError::new_err(err.to_string())
+    }
+}
+
+pub struct MultiNetworkModelBuilder {
     domain: ModelDomainBuilder,
     networks: Vec<MultiNetworkEntryBuilder>,
 }
 
-impl MultiModelBuilder {
+impl MultiNetworkModelBuilder {
     pub fn new(domain: ModelDomainBuilder) -> Self {
         Self {
             domain,
@@ -963,17 +991,17 @@ impl MultiModelBuilder {
         }
     }
 
+    /// Get a reference to the [`MultiNetworkEntryBuilder`]
+    pub fn entry_builder(&mut self, name: &str) -> Option<&mut MultiNetworkEntryBuilder> {
+        self.networks.iter_mut().find(|nb| nb.name == name)
+    }
+
     pub fn network(&mut self, network: MultiNetworkEntryBuilder) -> &mut Self {
         self.networks.push(network);
         self
     }
 
-    pub fn build(self) -> Result<MultiNetworkModel, MultiModelBuilderError> {
-        let scenario_group_map = match &self.domain.scenario {
-            Some(scenario) => scenario.group_map(),
-            None => Default::default(),
-        };
-
+    pub fn build(self) -> Result<MultiNetworkModel, MultiNetworkModelBuilderError> {
         let domain = self.domain.build()?;
 
         let mut networks = Vec::with_capacity(self.networks.len());
@@ -993,19 +1021,18 @@ impl MultiModelBuilder {
                 })
                 .collect();
 
-            let (network, resolution_map) = entry_builder
-                .network
-                .build(&scenario_group_map, &transfers_map)
-                .map_err(|source| MultiModelBuilderError::NetworkBuilderError {
+            let (network, resolution_map) = entry_builder.network.build(&domain, &transfers_map).map_err(|source| {
+                MultiNetworkModelBuilderError::NetworkBuilderError {
                     name: name.clone(),
                     source: Box::new(source),
-                })?;
+                }
+            })?;
 
             networks.push((name.clone(), network, entry_builder.transfers));
             resolution_maps.push(resolution_map);
 
             if network_map.contains_key(&name) {
-                return Err(MultiModelBuilderError::DuplicateNetworkName { name });
+                return Err(MultiNetworkModelBuilderError::DuplicateNetworkName { name });
             }
 
             network_map.insert(name.clone(), i);
@@ -1017,7 +1044,7 @@ impl MultiModelBuilder {
                 .iter()
                 .map(|t| {
                     let idx = network_map.get(&t.from_model).copied().ok_or_else(|| {
-                        MultiModelBuilderError::NetworkNotFoundForTransfer {
+                        MultiNetworkModelBuilderError::NetworkNotFoundForTransfer {
                             name: t.name.clone(),
                             network_name: t.from_model.clone(),
                         }
@@ -1026,7 +1053,7 @@ impl MultiModelBuilder {
                     let r_map = &resolution_maps[idx];
 
                     let metric = t.from_metric.resolve(r_map).map_err(|source| {
-                        MultiModelBuilderError::ResolveMetricF64ForTransferError {
+                        MultiNetworkModelBuilderError::ResolveMetricF64ForTransferError {
                             name: t.name.clone(),
                             source,
                         }
@@ -1038,7 +1065,7 @@ impl MultiModelBuilder {
                         initial_value: t.initial_value,
                     })
                 })
-                .collect::<Result<Vec<_>, MultiModelBuilderError>>()?;
+                .collect::<Result<Vec<_>, MultiNetworkModelBuilderError>>()?;
 
             entries.push({
                 MultiNetworkEntry {
@@ -1124,7 +1151,7 @@ fn compute_inter_network_transfers(
 
 #[cfg(test)]
 mod tests {
-    use super::{MultiModelBuilder, MultiNetworkEntryBuilder, MultiNetworkModelTimings};
+    use super::{MultiNetworkEntryBuilder, MultiNetworkModelBuilder, MultiNetworkModelTimings};
     use crate::models::ModelDomainBuilder;
     use crate::network::NetworkBuilder;
     use crate::scenario::{ScenarioDomainBuilder, ScenarioGroupBuilder};
@@ -1144,7 +1171,7 @@ mod tests {
         let mut domain_builder = ModelDomainBuilder::new(time_builder);
         domain_builder.scenario(scenario_builder);
 
-        let mut builder = MultiModelBuilder::new(domain_builder);
+        let mut builder = MultiNetworkModelBuilder::new(domain_builder);
 
         let mut network1 = NetworkBuilder::default();
         simple_network(&mut network1, "test-scenario", 2);
@@ -1173,7 +1200,7 @@ mod tests {
     fn test_duplicate_network_names() {
         let time_builder = default_time_domain_builder();
 
-        let mut builder = MultiModelBuilder::new(ModelDomainBuilder::new(time_builder));
+        let mut builder = MultiNetworkModelBuilder::new(ModelDomainBuilder::new(time_builder));
 
         builder.network(MultiNetworkEntryBuilder::new("network1", NetworkBuilder::default()));
         builder.network(MultiNetworkEntryBuilder::new("network1", NetworkBuilder::default()));

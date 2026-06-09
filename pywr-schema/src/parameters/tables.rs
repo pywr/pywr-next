@@ -4,8 +4,6 @@ use crate::error::SchemaError;
 #[cfg(feature = "core")]
 use crate::network::LoadArgs;
 use crate::parameters::{ConversionData, ParameterMeta};
-#[cfg(all(feature = "core", feature = "hdf5"))]
-use crate::timeseries::subset_array2;
 use crate::v1::{TryIntoV2, try_convert_parameter_attr};
 use crate::{ComponentConversionError, TryFromV1};
 #[cfg(all(feature = "core", feature = "hdf5"))]
@@ -33,13 +31,13 @@ pub struct TablesArrayParameter {
 
 #[cfg(all(feature = "core", feature = "hdf5"))]
 impl TablesArrayParameter {
-    pub fn add_to_model(
+    pub fn add_to_network(
         &self,
-        network: &mut pywr_core::network::Network,
+        network: &mut pywr_core::network::NetworkBuilder,
         args: &LoadArgs,
         parent: Option<&str>,
-    ) -> Result<pywr_core::parameters::ParameterIndex<f64>, SchemaError> {
-        // 1. Load the file from the HDF5 file (NB this is not Pandas format).
+    ) -> Result<(), SchemaError> {
+        // Load the file from the HDF5 file (NB this is not Pandas format).
 
         // Handle the case of an optional data path with a relative url.
         let pth = if let Some(dp) = args.data_path {
@@ -65,36 +63,33 @@ impl TablesArrayParameter {
             .dataset(&self.node)
             .map_err(|e| SchemaError::HDF5Error(e.to_string()))?; // find the dataset
 
-        let mut array = ds.read_2d::<f64>().map_err(|e| SchemaError::HDF5Error(e.to_string()))?;
-        // 2. TODO Validate the shape of the data array. I.e. check number of columns matches scenario
-        //    and number of rows matches time-steps.
+        let array = ds.read_2d::<f64>().map_err(|e| SchemaError::HDF5Error(e.to_string()))?;
 
-        // 3. Create an ArrayParameter using the loaded array.
+        // Create an ArrayParameter using the loaded array.
         if let Some(scenario) = &self.scenario {
-            let scenario_group_index = args.domain.scenarios().group_index(scenario)?;
+            let mut builder = pywr_core::parameters::Array2ParameterBuilder::new(
+                ParameterName::new(&self.meta.name, parent),
+                array,
+                scenario,
+            );
 
-            // If there is a scenario subset then we can reduce the data to align with the scenarios
-            // that are actually used in the model.
-            if let Some(subset) = args.domain.scenarios().group_scenario_subset(scenario)? {
-                array = subset_array2(&array, subset)?;
+            if let Some(to) = &self.timestep_offset {
+                builder.timestep_offset(*to);
             }
 
-            let p = pywr_core::parameters::Array2Parameter::new(
-                ParameterName::new(&self.meta.name, parent),
-                array,
-                scenario_group_index,
-                self.timestep_offset,
-            );
-            Ok(network.add_simple_parameter(Box::new(p))?)
+            network.parameters().f64(Box::new(builder));
         } else {
             let array = array.slice_move(s![.., 0]);
-            let p = pywr_core::parameters::Array1Parameter::new(
-                ParameterName::new(&self.meta.name, parent),
-                array,
-                self.timestep_offset,
-            );
-            Ok(network.add_simple_parameter(Box::new(p))?)
+            let mut builder =
+                pywr_core::parameters::Array1ParameterBuilder::new(ParameterName::new(&self.meta.name, parent), array);
+            if let Some(to) = &self.timestep_offset {
+                builder.timestep_offset(*to);
+            }
+
+            network.parameters().f64(Box::new(builder));
         }
+
+        Ok(())
     }
 }
 

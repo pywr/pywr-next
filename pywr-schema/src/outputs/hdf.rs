@@ -1,7 +1,7 @@
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
 #[cfg(all(feature = "core", feature = "hdf5"))]
-use pywr_core::recorders::HDF5Recorder;
+use pywr_core::recorders::HDF5RecorderBuilder;
 use pywr_schema_macros::PywrVisitPaths;
 use schemars::JsonSchema;
 #[cfg(feature = "core")]
@@ -20,7 +20,7 @@ pub struct Hdf5Output {
 impl Hdf5Output {
     pub fn add_to_model(
         &self,
-        network: &mut pywr_core::network::Network,
+        network: &mut pywr_core::network::NetworkBuilder,
         output_path: Option<&Path>,
     ) -> Result<(), SchemaError> {
         let filename = match (output_path, self.filename.is_relative()) {
@@ -28,11 +28,9 @@ impl Hdf5Output {
             _ => self.filename.to_path_buf(),
         };
 
-        let metric_set_idx = network.get_metric_set_index_by_name(&self.metric_set)?;
+        let recorder = HDF5RecorderBuilder::new(&self.name, filename, &self.metric_set);
 
-        let recorder = HDF5Recorder::new(&self.name, filename, metric_set_idx);
-
-        network.add_recorder(Box::new(recorder))?;
+        network.recorder(Box::new(recorder));
 
         Ok(())
     }
@@ -92,7 +90,8 @@ mod tests {
 
         let temp_dir = TempDir::new().unwrap();
 
-        let model = schema.build_model(None, Some(temp_dir.path())).unwrap();
+        let builder = schema.create_model_builder(None, Some(temp_dir.path())).unwrap();
+        let model = builder.build().unwrap();
 
         model.run::<ClpSolver>(&ClpSolverSettings::default()).unwrap();
 

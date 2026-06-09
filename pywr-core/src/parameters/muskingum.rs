@@ -1,8 +1,10 @@
-use crate::metric::MetricF64;
-use crate::network::Network;
+use crate::metric::{MetricF64, UnresolvedMetricF64};
+use crate::network::{Network, ResolutionMaps};
 use crate::parameters::{
-    GeneralCalculationError, GeneralParameter, Parameter, ParameterMeta, ParameterName, ParameterState,
+    BuiltParameter, GeneralCalculationError, GeneralParameter, MaybeBuiltParameter, Parameter, ParameterBuildError,
+    ParameterBuilder, ParameterMeta, ParameterName, ParameterState,
 };
+use crate::resolve_metric_f64;
 use crate::scenario::ScenarioIndex;
 use crate::state::{MultiValue, State};
 use crate::timestep::Timestep;
@@ -40,26 +42,6 @@ pub struct MuskingumParameter {
     weight: MetricF64,
     /// Initial condition for the Muskingum routing.
     initial_condition: MuskingumInitialCondition,
-}
-
-impl MuskingumParameter {
-    pub fn new(
-        name: ParameterName,
-        inflow: MetricF64,
-        outflow: MetricF64,
-        travel_time: MetricF64,
-        weight: MetricF64,
-        initial_condition: MuskingumInitialCondition,
-    ) -> Self {
-        Self {
-            meta: ParameterMeta::new(name),
-            inflow,
-            outflow,
-            travel_time,
-            weight,
-            initial_condition,
-        }
-    }
 }
 
 impl Parameter for MuskingumParameter {
@@ -138,4 +120,63 @@ fn steady_state_inflow_factor(weight: f64, travel_time: f64) -> f64 {
 /// Compute the outflow factor for the steady-state initial condition.
 fn steady_state_outflow_factor(weight: f64, travel_time: f64) -> f64 {
     1.0 - (2.0 * travel_time * (1.0 - weight) - 1.0) / (2.0 * travel_time * (1.0 - weight) + 1.0)
+}
+
+pub struct MuskingumParameterBuilder {
+    meta: ParameterMeta,
+    inflow: UnresolvedMetricF64,
+    outflow: UnresolvedMetricF64,
+    /// Travel time of the flood wave through routing reach / node (K)
+    travel_time: UnresolvedMetricF64,
+    /// Dimensionless weight (0 ≤ X ≤ 0.5).
+    weight: UnresolvedMetricF64,
+    /// Initial condition for the Muskingum routing.
+    initial_condition: MuskingumInitialCondition,
+}
+
+impl MuskingumParameterBuilder {
+    pub fn new(
+        name: ParameterName,
+        inflow: UnresolvedMetricF64,
+        outflow: UnresolvedMetricF64,
+        travel_time: UnresolvedMetricF64,
+        weight: UnresolvedMetricF64,
+        initial_condition: MuskingumInitialCondition,
+    ) -> Self {
+        Self {
+            meta: ParameterMeta::new(name),
+            inflow,
+            outflow,
+            travel_time,
+            weight,
+            initial_condition,
+        }
+    }
+}
+
+impl ParameterBuilder<MultiValue> for MuskingumParameterBuilder {
+    fn name(&self) -> &ParameterName {
+        &self.meta.name
+    }
+
+    fn build(
+        self: Box<Self>,
+        resolution_maps: &ResolutionMaps,
+    ) -> Result<MaybeBuiltParameter<MultiValue>, ParameterBuildError> {
+        let inflow = resolve_metric_f64!(self, self.inflow, resolution_maps, "inflow");
+        let outflow = resolve_metric_f64!(self, self.outflow, resolution_maps, "outflow");
+        let travel_time = resolve_metric_f64!(self, self.travel_time, resolution_maps, "travel_time");
+        let weight = resolve_metric_f64!(self, self.weight, resolution_maps, "weight");
+
+        let p = MuskingumParameter {
+            meta: self.meta,
+            inflow,
+            outflow,
+            travel_time,
+            weight,
+            initial_condition: self.initial_condition,
+        };
+
+        Ok(MaybeBuiltParameter::Built(BuiltParameter::General(Box::new(p))))
+    }
 }

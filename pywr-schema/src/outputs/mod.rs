@@ -29,7 +29,7 @@ pub enum Output {
 impl Output {
     pub fn add_to_model(
         &self,
-        network: &mut pywr_core::network::Network,
+        network: &mut pywr_core::network::NetworkBuilder,
         data_path: Option<&Path>,
         output_path: Option<&Path>,
     ) -> Result<(), SchemaError> {

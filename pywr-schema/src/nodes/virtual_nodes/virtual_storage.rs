@@ -11,7 +11,9 @@ use crate::parameters::Parameter;
 use crate::v1::{ConversionData, TryFromV1, try_convert_initial_storage, try_convert_node_attr, try_convert_node_meta};
 use crate::{ConversionError, node_attribute_subset_enum};
 #[cfg(feature = "core")]
-use pywr_core::{metric::MetricF64, timestep::TimeDomain, virtual_storage::VirtualStorageNodeBuilder};
+use pywr_core::{
+    metric::UnresolvedMetricF64, node::UnresolvedNode, timestep::TimeDomain, virtual_storage::VirtualStorageNodeBuilder,
+};
 use pywr_schema_macros::PywrVisitAll;
 use pywr_schema_macros::skip_serializing_none;
 use pywr_v1_schema::nodes::{
@@ -226,12 +228,8 @@ impl VirtualStorageNode {
     ///
     /// Note that this is a private function, as it is not supported using this node itself
     /// inside a flow constraint.
-    fn node_indices_for_flow_constraints(
-        &self,
-        network: &pywr_core::network::Network,
-        args: &LoadArgs,
-    ) -> Result<Vec<pywr_core::node::NodeIndex>, SchemaError> {
-        let indices = self
+    fn nodes_for_flow_constraints(&self, args: &LoadArgs) -> Result<Vec<UnresolvedNode>, SchemaError> {
+        let nodes = self
             .nodes
             .iter()
             .map(|node_ref| {
@@ -240,27 +238,47 @@ impl VirtualStorageNode {
                     .ok_or_else(|| SchemaError::NodeNotFound {
                         name: node_ref.name.to_string(),
                     })?
-                    .node_indices_for_flow_constraints(network, node_ref.component)
+                    .nodes_for_flow_constraints(node_ref.component)
             })
             .collect::<Result<Vec<_>, _>>()?
             .into_iter()
             .flatten()
             .collect();
-        Ok(indices)
+        Ok(nodes)
     }
-    pub fn add_to_model(&self, network: &mut pywr_core::network::Network, args: &LoadArgs) -> Result<(), SchemaError> {
-        let node_idxs = self.node_indices_for_flow_constraints(network, args)?;
+    pub fn add_to_network(
+        &self,
+        network: &mut pywr_core::network::NetworkBuilder,
+        args: &LoadArgs,
+    ) -> Result<(), SchemaError> {
+        let nodes = self.nodes_for_flow_constraints(args)?;
 
-        let mut builder = VirtualStorageNodeBuilder::new(self.meta.name.as_str(), &node_idxs)
-            .initial_volume(self.initial_volume.into());
+        let mut builder = VirtualStorageNodeBuilder::new(self.meta.name.as_str(), &nodes);
+
+        builder.initial_volume(self.initial_volume.into());
+
+        if let Some(cost) = &self.cost {
+            let value = cost.load(network, args, Some(&self.meta.name))?;
+            builder.cost(value);
+        }
+
+        if let Some(min_volume) = &self.min_volume {
+            let value = min_volume.load(network, args, Some(&self.meta.name))?;
+            builder.min_volume(value);
+        }
+
+        if let Some(max_volume) = &self.max_volume {
+            let value = max_volume.load(network, args, Some(&self.meta.name))?;
+            builder.max_volume(value);
+        }
 
         if let Some(r) = self.reset.clone() {
             let reset = r.try_into()?;
-            builder = builder.reset(reset);
+            builder.reset(reset);
         }
 
         if let Some(rv) = &self.reset_volume {
-            builder = builder.reset_volume((*rv).into());
+            builder.reset_volume((*rv).into());
         }
 
         // Set the active period if this is a seasonal reset
@@ -273,7 +291,7 @@ impl VirtualStorageNode {
                 end_day: seasonal.end_day as u32,
                 end_month,
             };
-            builder = builder.active_period(period);
+            builder.active_period(period);
         }
 
         if let Some(window) = &self.window {
@@ -283,61 +301,31 @@ impl VirtualStorageNode {
                     .ok_or_else(|| SchemaError::InvalidRollingWindow {
                         name: self.meta.name.clone(),
                     })?;
-            builder = builder.rolling_window(rolling_window);
+            builder.rolling_window(rolling_window);
         }
 
         if let Some(factors) = &self.factors {
-            builder = builder.factors(factors);
+            builder.factors(factors);
         }
 
-        network.add_virtual_storage_node(builder)?;
+        network.virtual_storage_node(builder);
         Ok(())
     }
 
-    pub fn set_constraints(
-        &self,
-        network: &mut pywr_core::network::Network,
-        args: &LoadArgs,
-    ) -> Result<(), SchemaError> {
-        if let Some(cost) = &self.cost {
-            let value = cost.load(network, args, Some(&self.meta.name))?;
-            network.set_virtual_storage_cost(self.meta.name.as_str(), None, value.into())?;
-        }
-
-        if let Some(min_volume) = &self.min_volume {
-            let value = min_volume.load(network, args, Some(&self.meta.name))?;
-            network.set_virtual_storage_min_volume(self.meta.name.as_str(), None, Some(value.try_into()?))?;
-        }
-
-        if let Some(max_volume) = &self.max_volume {
-            let value = max_volume.load(network, args, Some(&self.meta.name))?;
-            network.set_virtual_storage_max_volume(self.meta.name.as_str(), None, Some(value.try_into()?))?;
-        }
-
-        Ok(())
-    }
-
-    pub fn create_metric(
-        &self,
-        network: &mut pywr_core::network::Network,
-        attribute: Option<NodeAttribute>,
-    ) -> Result<MetricF64, SchemaError> {
+    pub fn create_metric(&self, attribute: Option<NodeAttribute>) -> Result<UnresolvedMetricF64, SchemaError> {
         // Use the default attribute if none is specified
         let attr = match attribute {
             Some(attr) => attr.try_into()?,
             None => Self::DEFAULT_ATTRIBUTE,
         };
 
-        let idx = network
-            .get_virtual_storage_node_index_by_name(self.meta.name.as_str(), None)
-            .ok_or_else(|| SchemaError::CoreNodeNotFound {
-                name: self.meta.name.clone(),
-                sub_name: None,
-            })?;
+        let name = UnresolvedNode::new(self.meta.name.as_str(), None);
 
         let metric = match attr {
-            VirtualStorageNodeAttribute::Volume => MetricF64::VirtualStorageVolume(idx),
-            VirtualStorageNodeAttribute::ProportionalVolume => MetricF64::VirtualStorageProportionalVolume(idx),
+            VirtualStorageNodeAttribute::Volume => UnresolvedMetricF64::VirtualStorageVolume(name),
+            VirtualStorageNodeAttribute::ProportionalVolume => {
+                UnresolvedMetricF64::VirtualStorageProportionalVolume(name)
+            }
         };
 
         Ok(metric)

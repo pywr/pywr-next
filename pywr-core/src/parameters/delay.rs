@@ -315,14 +315,7 @@ impl ParameterBuilder<f64> for DelayParameterBuilder<UnresolvedMetricF64, f64> {
             initial_value: self.initial_value,
         };
 
-        let bp = match p.try_into_simple() {
-            None => BuiltParameter::General(Box::new(p)),
-            Some(sp) => match sp.try_into_const() {
-                None => BuiltParameter::Simple(sp),
-                Some(cp) => BuiltParameter::Const(cp),
-            },
-        };
-
+        let bp = BuiltParameter::General(Box::new(p));
         Ok(bp.into())
     }
 }
@@ -345,14 +338,7 @@ impl ParameterBuilder<u64> for DelayParameterBuilder<UnresolvedMetricU64, u64> {
             initial_value: self.initial_value,
         };
 
-        let bp = match p.try_into_simple() {
-            None => BuiltParameter::General(Box::new(p)),
-            Some(sp) => match sp.try_into_const() {
-                None => BuiltParameter::Simple(sp),
-                Some(cp) => BuiltParameter::Const(cp),
-            },
-        };
-
+        let bp = BuiltParameter::General(Box::new(p));
         Ok(bp.into())
     }
 }
@@ -417,7 +403,7 @@ mod test {
         const DELAY: u64 = 3; // 3 time-step delay
         let parameter = DelayParameterBuilder::new(
             "test-parameter".into(),
-            UnresolvedMetricU64::new_index_parameter_before("test-x"),
+            UnresolvedMetricU64::new_parameter_before("test-x"),
             DELAY,
             0,
         );

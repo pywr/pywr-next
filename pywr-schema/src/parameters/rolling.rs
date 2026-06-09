@@ -8,7 +8,7 @@ use crate::parameters::ParameterMeta;
 use crate::v1::TryIntoV2;
 use crate::{ComponentConversionError, ConversionData, ConversionError, TryFromV1};
 #[cfg(feature = "core")]
-use pywr_core::parameters::{ParameterIndex, ParameterName};
+use pywr_core::parameters::ParameterName;
 use pywr_schema_macros::{PywrVisitAll, skip_serializing_none};
 use pywr_v1_schema::parameters::RollingMeanFlowNodeParameter as RollingMeanFlowNodeParameterV1;
 use schemars::JsonSchema;
@@ -34,14 +34,14 @@ pub struct RollingParameter {
 
 #[cfg(feature = "core")]
 impl RollingParameter {
-    pub fn add_to_model(
+    pub fn add_to_network(
         &self,
-        network: &mut pywr_core::network::Network,
+        network: &mut pywr_core::network::NetworkBuilder,
         args: &LoadArgs,
         parent: Option<&str>,
-    ) -> Result<ParameterIndex<f64>, SchemaError> {
+    ) -> Result<(), SchemaError> {
         let metric = self.metric.load(network, args, None)?;
-        let p = pywr_core::parameters::RollingParameter::new(
+        let p = pywr_core::parameters::RollingParameterBuilder::new(
             ParameterName::new(&self.meta.name, parent),
             metric,
             self.window_size as usize,
@@ -49,7 +49,10 @@ impl RollingParameter {
             self.min_values.unwrap_or(self.window_size) as usize,
             self.agg_func.load(args.data_path)?,
         );
-        Ok(network.add_parameter(Box::new(p))?)
+
+        network.parameters().f64(Box::new(p));
+
+        Ok(())
     }
 }
 
@@ -74,14 +77,14 @@ pub struct RollingIndexParameter {
 
 #[cfg(feature = "core")]
 impl RollingIndexParameter {
-    pub fn add_to_model(
+    pub fn add_to_network(
         &self,
-        network: &mut pywr_core::network::Network,
+        network: &mut pywr_core::network::NetworkBuilder,
         args: &LoadArgs,
         parent: Option<&str>,
-    ) -> Result<ParameterIndex<u64>, SchemaError> {
+    ) -> Result<(), SchemaError> {
         let metric = self.metric.load(network, args, None)?;
-        let p = pywr_core::parameters::RollingParameter::new(
+        let p = pywr_core::parameters::RollingParameterBuilder::new(
             ParameterName::new(&self.meta.name, parent),
             metric,
             self.window_size as usize,
@@ -89,7 +92,9 @@ impl RollingIndexParameter {
             self.min_values.unwrap_or(self.window_size) as usize,
             self.agg_func.load(args.data_path)?,
         );
-        Ok(network.add_index_parameter(Box::new(p))?)
+        network.parameters().u64(Box::new(p));
+
+        Ok(())
     }
 }
 

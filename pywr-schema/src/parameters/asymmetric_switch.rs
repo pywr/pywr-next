@@ -8,7 +8,7 @@ use crate::parameters::{ConversionData, ParameterMeta};
 use crate::v1::{TryFromV1, TryIntoV2, try_convert_parameter_attr};
 
 #[cfg(feature = "core")]
-use pywr_core::parameters::{ParameterIndex, ParameterName};
+use pywr_core::parameters::ParameterName;
 use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::parameters::AsymmetricSwitchIndexParameter as AsymmetricSwitchIndexParameterV1;
 use schemars::JsonSchema;
@@ -23,22 +23,24 @@ pub struct AsymmetricSwitchIndexParameter {
 
 #[cfg(feature = "core")]
 impl AsymmetricSwitchIndexParameter {
-    pub fn add_to_model(
+    pub fn add_to_network(
         &self,
-        network: &mut pywr_core::network::Network,
+        network: &mut pywr_core::network::NetworkBuilder,
         args: &LoadArgs,
         parent: Option<&str>,
-    ) -> Result<ParameterIndex<u64>, SchemaError> {
+    ) -> Result<(), SchemaError> {
         let on_index_parameter = self.on_index_parameter.load(network, args, None)?;
         let off_index_parameter = self.off_index_parameter.load(network, args, None)?;
 
-        let p = pywr_core::parameters::AsymmetricSwitchIndexParameter::new(
+        let p = pywr_core::parameters::AsymmetricSwitchIndexParameterBuilder::new(
             ParameterName::new(&self.meta.name, parent),
             on_index_parameter,
             off_index_parameter,
         );
 
-        Ok(network.add_index_parameter(Box::new(p))?)
+        network.parameters().u64(Box::new(p));
+
+        Ok(())
     }
 }
 

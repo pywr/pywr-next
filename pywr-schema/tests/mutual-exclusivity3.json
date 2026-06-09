@@ -4,7 +4,7 @@
     "description": "Test mutual exclusivities work with piecewise link node types",
     "minimum_version": "0.1"
   },
-  "timestepper": {
+  "time": {
     "start": "2015-01-01",
     "end": "2015-01-03",
     "timestep": {

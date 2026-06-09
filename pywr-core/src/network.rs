@@ -13,9 +13,9 @@ use crate::parameters::{
     ParameterTimings, VariableConfig,
 };
 use crate::recorders::{
-    MetricSet, MetricSetIndex, MetricSetSaveError, MetricSetState, RecorderAggregationError, RecorderBuilder,
-    RecorderBuilderError, RecorderFinalResult, RecorderFinaliseError, RecorderInternalState, RecorderSaveError,
-    RecorderSetupError,
+    MetricSet, MetricSetBuilder, MetricSetBuilderError, MetricSetSaveError, MetricSetState, RecorderAggregationError,
+    RecorderBuilder, RecorderBuilderError, RecorderFinalResult, RecorderFinaliseError, RecorderInternalState,
+    RecorderSaveError, RecorderSetupError,
 };
 use crate::scenario::ScenarioIndex;
 use crate::solvers::{
@@ -1565,6 +1565,12 @@ pub struct UnresolvedEdge {
     to: UnresolvedNode,
 }
 
+impl UnresolvedEdge {
+    pub fn new(from: UnresolvedNode, to: UnresolvedNode) -> Self {
+        Self { from, to }
+    }
+}
+
 impl Display for UnresolvedEdge {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{} -> {}", self.from, self.to)
@@ -1680,9 +1686,31 @@ impl Display for RecorderIndex {
     }
 }
 
+#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Debug)]
+pub struct MetricSetIndex(usize);
+
+impl MetricSetIndex {
+    pub fn new(idx: usize) -> Self {
+        Self(idx)
+    }
+}
+
+impl Deref for MetricSetIndex {
+    type Target = usize;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl Display for MetricSetIndex {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
 /// A helper struct for building a network. This struct contains look-ups and references
 /// for resolving names and other unresolved references during the build process.
-#[derive(Default)]
 pub struct ResolutionMaps {
     pub nodes: HashMap<UnresolvedNode, NodeIndex>,
     /// The edges incoming to each node.
@@ -1703,11 +1731,36 @@ pub struct ResolutionMaps {
     pub aggregated_storage_nodes: HashMap<UnresolvedNode, AggregatedStorageNodeIndex>,
     /// The index associated with each unresolved edge.
     pub edges: HashMap<UnresolvedEdge, EdgeIndex>,
-    /// Scenario group index
-    pub scenario_group: HashMap<String, usize>,
+    /// The model domain
+    pub domain: ModelDomain,
     /// Inter-network transfer indices
     pub inter_network_transfers: HashMap<String, MultiNetworkTransferIndex>,
+    /// The index associated wit heach metric set
+    pub metric_sets: HashMap<String, MetricSetIndex>,
 }
+
+impl ResolutionMaps {
+    pub fn new(domain: ModelDomain) -> Self {
+        Self {
+            nodes: Default::default(),
+            incoming_edges: Default::default(),
+            outgoing_edges: Default::default(),
+            parameters_f64: Default::default(),
+            parameters_u64: Default::default(),
+            parameters_multi: Default::default(),
+            virtual_storage_node: Default::default(),
+            virtual_storage_associated_nodes: Default::default(),
+            aggregated_nodes: Default::default(),
+            aggregated_storage_nodes: Default::default(),
+            edges: Default::default(),
+            domain,
+            inter_network_transfers: Default::default(),
+            metric_sets: Default::default(),
+        }
+    }
+}
+
+type NodeEdgeMap = HashMap<NodeIndex, Vec<EdgeIndex>>;
 
 #[derive(Debug, Error)]
 pub enum NetworkBuildError {
@@ -1717,6 +1770,10 @@ pub enum NetworkBuildError {
     DuplicateParameterName { name: ParameterName },
     #[error("Duplicate aggregated node names found: {name}")]
     DuplicateAggregatedNodeName { name: UnresolvedNode },
+    #[error("Duplicate metric set names found: {name}")]
+    DuplicateMetricSetName { name: String },
+    #[error("Duplicate edge found: {edge}")]
+    DuplicateEdge { edge: Box<UnresolvedEdge> },
     #[error("Node `{name}` not found while resolving edge: {edge}")]
     NodeNotFoundForEdge {
         name: UnresolvedNode,
@@ -1757,6 +1814,12 @@ pub enum NetworkBuildError {
         #[source]
         source: Box<RecorderBuilderError>,
     },
+    #[error("Error building metric set `{name}`: {source}")]
+    MetricSetBuilderError {
+        name: String,
+        #[source]
+        source: Box<MetricSetBuilderError>,
+    },
     #[error("Could not load all parameters due to circulate reference(s).")]
     CircularParameterReference,
     #[error("Parameter collection build error: {0}")]
@@ -1775,6 +1838,7 @@ pub struct NetworkBuilder {
     aggregated_nodes: Vec<AggregatedNodeBuilder>,
     aggregated_storage_nodes: Vec<AggregatedStorageNodeBuilder>,
     recorders: Vec<Box<dyn RecorderBuilder>>,
+    metric_sets: Vec<MetricSetBuilder>,
 }
 
 impl NetworkBuilder {
@@ -1796,16 +1860,10 @@ impl NetworkBuilder {
     }
 
     /// Connect two nodes together
-    pub fn connect(
-        &mut self,
-        from_name: &str,
-        from_sub_name: Option<&str>,
-        to_name: &str,
-        to_sub_name: Option<&str>,
-    ) -> &mut Self {
+    pub fn connect<N1: Into<UnresolvedNode>, N2: Into<UnresolvedNode>>(&mut self, from: N1, to: N2) -> &mut Self {
         self.edges.push(UnresolvedEdge {
-            from: UnresolvedNode::new(from_name, from_sub_name),
-            to: UnresolvedNode::new(to_name, to_sub_name),
+            from: from.into(),
+            to: to.into(),
         });
         self
     }
@@ -1830,6 +1888,11 @@ impl NetworkBuilder {
         self
     }
 
+    pub fn metric_set(&mut self, metric_set: MetricSetBuilder) -> &mut Self {
+        self.metric_sets.push(metric_set);
+        self
+    }
+
     fn node_index_map(&self) -> Result<HashMap<UnresolvedNode, NodeIndex>, NetworkBuildError> {
         // Build the NodeIndex map checking for any duplicate node names.
         let mut node_index_map: HashMap<UnresolvedNode, NodeIndex> = HashMap::with_capacity(self.nodes.len());
@@ -1847,12 +1910,28 @@ impl NetworkBuilder {
         Ok(node_index_map)
     }
 
+    fn edge_index_map(&self) -> Result<HashMap<UnresolvedEdge, EdgeIndex>, NetworkBuildError> {
+        let mut edge_index_map: HashMap<UnresolvedEdge, EdgeIndex> = HashMap::with_capacity(self.edges.len());
+
+        for (i, edge) in self.edges.iter().enumerate() {
+            let unresolved_edge = edge.clone();
+            if edge_index_map.contains_key(&unresolved_edge) {
+                return Err(NetworkBuildError::DuplicateEdge {
+                    edge: Box::new(unresolved_edge),
+                });
+            }
+            edge_index_map.insert(unresolved_edge, EdgeIndex(i));
+        }
+
+        Ok(edge_index_map)
+    }
+
     fn node_edge_maps(
         &self,
         node_indices: &HashMap<UnresolvedNode, NodeIndex>,
-    ) -> Result<(HashMap<NodeIndex, Vec<EdgeIndex>>, HashMap<NodeIndex, Vec<EdgeIndex>>), NetworkBuildError> {
-        let mut incoming: HashMap<NodeIndex, Vec<EdgeIndex>> = HashMap::with_capacity(self.nodes.len());
-        let mut outgoing: HashMap<NodeIndex, Vec<EdgeIndex>> = HashMap::with_capacity(self.nodes.len());
+    ) -> Result<(NodeEdgeMap, NodeEdgeMap), NetworkBuildError> {
+        let mut incoming: NodeEdgeMap = HashMap::with_capacity(self.nodes.len());
+        let mut outgoing: NodeEdgeMap = HashMap::with_capacity(self.nodes.len());
 
         for (i, edge) in self.edges.iter().enumerate() {
             let ei = EdgeIndex(i);
@@ -1957,17 +2036,35 @@ impl NetworkBuilder {
         Ok(vs_associated_nodes)
     }
 
+    fn metric_set_map(&self) -> Result<HashMap<String, MetricSetIndex>, NetworkBuildError> {
+        let mut metric_set_map: HashMap<String, MetricSetIndex> = HashMap::with_capacity(self.nodes.len());
+        for (i, ms) in self.metric_sets.iter().enumerate() {
+            let msi = MetricSetIndex(i);
+
+            if metric_set_map.contains_key(ms.name()) {
+                return Err(NetworkBuildError::DuplicateMetricSetName {
+                    name: ms.name().to_string(),
+                });
+            }
+            metric_set_map.insert(ms.name().to_string(), msi);
+        }
+
+        Ok(metric_set_map)
+    }
+
     fn build_resolution_map(
         &self,
-        scenario_group_map: &HashMap<String, usize>,
+        domain: &ModelDomain,
         inter_network_transfer_map: &HashMap<String, MultiNetworkTransferIndex>,
     ) -> Result<ResolutionMaps, NetworkBuildError> {
         let nodes = self.node_index_map()?;
+        let edges = self.edge_index_map()?;
         let (incoming_edges, outgoing_edges) = self.node_edge_maps(&nodes)?;
         let aggregated_nodes = self.aggregated_node_map()?;
         let aggregated_storage_nodes = self.aggregated_storage_node_map()?;
         let virtual_storage_node = self.virtual_storage_node_map()?;
         let virtual_storage_associated_nodes = self.node_associated_vs_nodes(&nodes)?;
+        let metric_sets = self.metric_set_map()?;
 
         Ok(ResolutionMaps {
             nodes,
@@ -1981,23 +2078,23 @@ impl NetworkBuilder {
             virtual_storage_associated_nodes,
             aggregated_nodes,
             aggregated_storage_nodes,
-            edges: Default::default(),
-            scenario_group: scenario_group_map.clone(), // TODO can this clone be removed; needs tying to the lifetime of the reference in `build`.
+            edges,
+            domain: domain.clone(), // TODO can this clone be removed; needs tying to the lifetime of the reference in `build`.
             inter_network_transfers: inter_network_transfer_map.clone(),
+            metric_sets,
         })
     }
 
     /// Build the network.
     pub fn build(
         self,
-        scenario_group_map: &HashMap<String, usize>,
+        domain: &ModelDomain,
         inter_network_transfer_map: &HashMap<String, MultiNetworkTransferIndex>,
     ) -> Result<(Network, ResolutionMaps), NetworkBuildError> {
         // Resolution map
-        let mut resolution_map = self.build_resolution_map(scenario_group_map, inter_network_transfer_map)?;
+        let mut resolution_map = self.build_resolution_map(domain, inter_network_transfer_map)?;
 
         // Iterative load the parameters
-
         let parameters = self
             .parameters
             .build(&mut resolution_map)
@@ -2084,6 +2181,19 @@ impl NetworkBuilder {
             edges.push(edge);
         }
 
+        let mut metric_sets = Vec::with_capacity(nodes.len());
+        for metric_set_builder in self.metric_sets {
+            let name = metric_set_builder.name().to_string();
+            let metric_set = metric_set_builder.build(&resolution_map).map_err(|source| {
+                NetworkBuildError::MetricSetBuilderError {
+                    name,
+                    source: Box::new(source),
+                }
+            })?;
+
+            metric_sets.push(metric_set);
+        }
+
         // Construct all recorders
         let mut recorders = Vec::with_capacity(self.recorders.len());
         for recorder_builder in self.recorders.into_iter() {
@@ -2103,10 +2213,10 @@ impl NetworkBuilder {
             nodes,
             edges,
             aggregated_nodes,
-            aggregated_storage_nodes: Default::default(),
+            aggregated_storage_nodes,
             virtual_storage_nodes,
             parameters,
-            metric_sets: vec![],
+            metric_sets,
             recorders,
         };
 
@@ -2123,7 +2233,8 @@ mod tests {
     use crate::recorders::AssertionF64RecorderBuilder;
     use crate::solvers::{ClpSolver, ClpSolverSettings};
     use crate::test_utils::{
-        default_domain_builder, run_all_solvers, simple_model, simple_storage_model, simple_storage_network,
+        default_domain, default_domain_builder, run_all_solvers, simple_model, simple_storage_model,
+        simple_storage_network,
     };
     use float_cmp::assert_approx_eq;
     use ndarray::{Array, Array2};
@@ -2139,11 +2250,11 @@ mod tests {
             .node(NodeBuilder::link("link"))
             .node(NodeBuilder::output("output"));
 
-        builder.connect("input", None, "link", None);
-        builder.connect("link", None, "output", None);
+        builder.connect("input", "link");
+        builder.connect("link", "output");
 
-        let scenario_group_map = HashMap::new();
-        let (network, _) = builder.build(&scenario_group_map, &HashMap::new()).unwrap();
+        let domain = default_domain();
+        let (network, _) = builder.build(&domain, &HashMap::new()).unwrap();
 
         // Now assert the internal structure is as expected.
         let input_node = network.get_node_by_name("input", None).unwrap();
@@ -2164,13 +2275,13 @@ mod tests {
     /// Test the duplicate node names are not permitted.
     fn test_duplicate_node_name() {
         let mut builder = NetworkBuilder::default();
-        let scenario_group_map = HashMap::new();
 
         builder
             .node(NodeBuilder::input("my-node"))
             .node(NodeBuilder::link("my-node"));
 
-        let result = builder.build(&scenario_group_map, &HashMap::new());
+        let domain = default_domain();
+        let result = builder.build(&domain, &HashMap::new());
         assert!(
             matches!(result, Err(NetworkBuildError::DuplicateNodeName { name, .. }) if name.to_string() == "my-node"
             )
@@ -2182,7 +2293,7 @@ mod tests {
             .node(NodeBuilder::input("my-node"));
 
         assert!(
-            matches!(builder.build(&scenario_group_map, &HashMap::new()), Err(NetworkBuildError::DuplicateNodeName { name, .. }) if name.to_string() == "my-node"
+            matches!(builder.build(&domain, &HashMap::new()), Err(NetworkBuildError::DuplicateNodeName { name, .. }) if name.to_string() == "my-node"
             )
         );
 
@@ -2192,7 +2303,7 @@ mod tests {
             .node(NodeBuilder::link("my-other-node"))
             .node(NodeBuilder::output("my-node"));
         assert!(
-            matches!(builder.build(&scenario_group_map, &HashMap::new()), Err(NetworkBuildError::DuplicateNodeName { name, .. }) if name.to_string() == "my-node"
+            matches!(builder.build(&domain, &HashMap::new()), Err(NetworkBuildError::DuplicateNodeName { name, .. }) if name.to_string() == "my-node"
             )
         );
         // Second add with the same name
@@ -2204,7 +2315,7 @@ mod tests {
         let mut builder = NetworkBuilder::default();
         builder.node(n1).node(n2);
         assert!(
-            matches!(builder.build(&scenario_group_map, &HashMap::new()), Err(NetworkBuildError::DuplicateNodeName { name, .. }) if name.to_string() == "my-node[sub1]"
+            matches!(builder.build(&domain, &HashMap::new()), Err(NetworkBuildError::DuplicateNodeName { name, .. }) if name.to_string() == "my-node[sub1]"
             )
         );
     }
@@ -2213,7 +2324,6 @@ mod tests {
     /// Test adding a constant parameter to a network.
     fn test_constant_parameter() {
         let mut builder = NetworkBuilder::default();
-        let scenario_group_map = HashMap::new();
 
         let mut input_node_builder = NodeBuilder::input("input");
         // Add the reference to the constant parameter we have not yet added.
@@ -2223,12 +2333,13 @@ mod tests {
         let output_node_builder = NodeBuilder::output("output");
         builder.node(output_node_builder);
 
-        builder.connect("input", None, "output", None);
+        builder.connect("input", "output");
 
         let input_max_flow_builder = parameters::ConstantParameterBuilder::new("my-constant".into(), 10.0);
         builder.parameters().f64(Box::new(input_max_flow_builder));
 
-        builder.build(&scenario_group_map, &HashMap::new()).unwrap();
+        let domain = default_domain();
+        builder.build(&domain, &HashMap::new()).unwrap();
     }
 
     #[test]

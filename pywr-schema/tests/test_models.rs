@@ -87,7 +87,7 @@ model_tests! {
     test_seasonal_vs2: ("seasonal-vs2.json", vec![("seasonal-vs2-expected.csv", ResultsShape::Long)], vec!["ipm-simd", "ipm-ocl"], vec![]),
     test_thirty_day_licence: ("30-day-licence.json", vec![], vec!["ipm-simd", "ipm-ocl"], vec![]),
     test_wtw1: ("wtw1.json", vec![("wtw1-expected.csv", ResultsShape::Long)], vec!["ipm-simd", "ipm-ocl"], vec![]),
-    test_wtw2: ("wtw2.json", vec![("wtw2-expected.csv", ResultsShape::Long)], vec!["ipm-simd", "ipm-ocl"], vec![]),
+    test_wtw2: ("wtw2.json", vec![("wtw2-expected.csv", ResultsShape::Long)], vec![], vec![]),
     test_local_parameter1: ("local-parameter1.json", vec![("local-parameter1-expected.csv", ResultsShape::Long)], vec![], vec![]),
     test_python_agg_func1: ("python-agg-func1.json", vec![("python-agg-func1-expected.csv", ResultsShape::Long)], vec![], vec![]),
     test_python_parameter2: ("python-parameter2.json", vec![("python-parameter2-expected.csv", ResultsShape::Long)], vec![], vec![]),
@@ -139,7 +139,9 @@ fn run_test_model(
 ) {
     let temp_dir = TempDir::new().unwrap();
     let data_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests");
-    let model = schema.build_model(Some(&data_dir), Some(temp_dir.path())).unwrap();
+    let builder = schema
+        .create_model_builder(Some(&data_dir), Some(temp_dir.path()))
+        .unwrap();
     // After model run there should be an output file.
     let expected_outputs: Vec<Box<dyn VerifyExpected>> = result_paths
         .iter()
@@ -154,6 +156,8 @@ fn run_test_model(
             )) as Box<dyn VerifyExpected>,
         })
         .collect();
+
+    let model = builder.build().unwrap();
 
     // Test all solvers
     run_all_solvers(&model, solvers_without_features, solvers_to_skip, &expected_outputs);

@@ -1,15 +1,16 @@
-use crate::error::SchemaError;
 use crate::metric::Metric;
-#[cfg(feature = "core")]
-use crate::network::LoadArgs;
+use crate::nodes::NodeMeta;
 use crate::nodes::loss_link::LossFactor;
-#[cfg(feature = "core")]
-use crate::nodes::{NodeAttribute, NodeComponent};
-use crate::nodes::{NodeMeta, NodeSlot};
 use crate::parameters::Parameter;
+#[cfg(feature = "core")]
+use crate::{
+    error::SchemaError,
+    network::LoadArgs,
+    nodes::{NodeAttribute, NodeComponent, NodeSlot},
+};
 use crate::{mermaid, node_attribute_subset_enum, node_component_subset_enum};
 #[cfg(feature = "core")]
-use pywr_core::metric::MetricF64;
+use pywr_core::{metric::UnresolvedMetricF64, node::UnresolvedNode};
 use pywr_schema_macros::{PywrVisitAll, skip_serializing_none};
 use schemars::JsonSchema;
 
@@ -76,54 +77,6 @@ impl WaterTreatmentWorksNode {
     const DEFAULT_ATTRIBUTE: WaterTreatmentWorksNodeAttribute = WaterTreatmentWorksNodeAttribute::Outflow;
     const DEFAULT_COMPONENT: WaterTreatmentWorksNodeComponent = WaterTreatmentWorksNodeComponent::Outflow;
 
-    fn loss_sub_name() -> Option<&'static str> {
-        Some("loss")
-    }
-
-    fn net_sub_name() -> Option<&'static str> {
-        Some("net")
-    }
-
-    fn net_soft_min_flow_sub_name() -> Option<&'static str> {
-        Some("net_soft_min_flow")
-    }
-
-    fn net_above_soft_min_flow_sub_name() -> Option<&'static str> {
-        Some("net_above_soft_min_flow")
-    }
-
-    pub fn input_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
-        if let Some(slot) = slot {
-            Err(SchemaError::InputNodeSlotNotSupported { slot: slot.clone() })
-        } else {
-            // Connect directly to the total net
-            let mut connectors = vec![(self.meta.name.as_str(), Self::net_sub_name().map(|s| s.to_string()))];
-            // Only connect to the loss link if it is created
-            if self.loss_factor.is_some() {
-                connectors.push((self.meta.name.as_str(), Self::loss_sub_name().map(|s| s.to_string())))
-            }
-            Ok(connectors)
-        }
-    }
-
-    pub fn output_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
-        if let Some(slot) = slot {
-            Err(SchemaError::OutputNodeSlotNotSupported { slot: slot.clone() })
-        } else {
-            // Connect to the split of the net flow.
-            Ok(vec![
-                (
-                    self.meta.name.as_str(),
-                    Self::net_soft_min_flow_sub_name().map(|s| s.to_string()),
-                ),
-                (
-                    self.meta.name.as_str(),
-                    Self::net_above_soft_min_flow_sub_name().map(|s| s.to_string()),
-                ),
-            ])
-        }
-    }
-
     pub fn default_attribute(&self) -> WaterTreatmentWorksNodeAttribute {
         Self::DEFAULT_ATTRIBUTE
     }
@@ -135,15 +88,54 @@ impl WaterTreatmentWorksNode {
 
 #[cfg(feature = "core")]
 impl WaterTreatmentWorksNode {
-    fn agg_sub_name() -> Option<&'static str> {
-        Some("agg")
+    fn loss_sub_name(&self) -> UnresolvedNode {
+        UnresolvedNode::new(&self.meta.name, Some("loss"))
     }
 
-    pub fn node_indices_for_flow_constraints(
+    fn net_sub_name(&self) -> UnresolvedNode {
+        UnresolvedNode::new(&self.meta.name, Some("net"))
+    }
+
+    fn net_soft_min_flow_sub_name(&self) -> UnresolvedNode {
+        UnresolvedNode::new(&self.meta.name, Some("net_soft_min_flow"))
+    }
+
+    fn net_above_soft_min_flow_sub_name(&self) -> UnresolvedNode {
+        UnresolvedNode::new(&self.meta.name, Some("net_above_soft_min_flow"))
+    }
+    fn agg_sub_name(&self) -> UnresolvedNode {
+        UnresolvedNode::new(&self.meta.name, Some("agg"))
+    }
+    pub fn input_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<UnresolvedNode>, SchemaError> {
+        if let Some(slot) = slot {
+            Err(SchemaError::InputNodeSlotNotSupported { slot: slot.clone() })
+        } else {
+            // Connect directly to the total net
+            let mut connectors = vec![self.net_sub_name()];
+            // Only connect to the loss link if it is created
+            if self.loss_factor.is_some() {
+                connectors.push(self.loss_sub_name())
+            }
+            Ok(connectors)
+        }
+    }
+
+    pub fn output_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<UnresolvedNode>, SchemaError> {
+        if let Some(slot) = slot {
+            Err(SchemaError::OutputNodeSlotNotSupported { slot: slot.clone() })
+        } else {
+            // Connect to the split of the net flow.
+            Ok(vec![
+                self.net_soft_min_flow_sub_name(),
+                self.net_above_soft_min_flow_sub_name(),
+            ])
+        }
+    }
+
+    pub fn nodes_for_flow_constraints(
         &self,
-        network: &pywr_core::network::Network,
         component: Option<NodeComponent>,
-    ) -> Result<Vec<pywr_core::node::NodeIndex>, SchemaError> {
+    ) -> Result<Vec<UnresolvedNode>, SchemaError> {
         // Use the default attribute if none is specified
         let component = match component {
             Some(c) => c.try_into()?,
@@ -153,127 +145,91 @@ impl WaterTreatmentWorksNode {
         let indices = match component {
             WaterTreatmentWorksNodeComponent::Inflow => {
                 // If the loss node is defined, we need to return both the net and loss nodes
-                match network.get_node_index_by_name(self.meta.name.as_str(), Self::loss_sub_name()) {
-                    Some(loss_idx) => {
-                        vec![
-                            network
-                                .get_node_index_by_name(self.meta.name.as_str(), Self::net_sub_name())
-                                .ok_or_else(|| SchemaError::CoreNodeNotFound {
-                                    name: self.meta.name.clone(),
-                                    sub_name: Self::net_sub_name().map(String::from),
-                                })?,
-                            loss_idx,
-                        ]
-                    }
-                    None => vec![
-                        network
-                            .get_node_index_by_name(self.meta.name.as_str(), Self::net_sub_name())
-                            .ok_or_else(|| SchemaError::CoreNodeNotFound {
-                                name: self.meta.name.clone(),
-                                sub_name: Self::net_sub_name().map(String::from),
-                            })?,
-                    ],
+                match self.loss_factor.is_some() {
+                    true => vec![self.net_sub_name(), self.loss_sub_name()],
+                    false => vec![self.net_sub_name()],
                 }
             }
             WaterTreatmentWorksNodeComponent::Outflow => {
-                vec![
-                    network
-                        .get_node_index_by_name(self.meta.name.as_str(), Self::net_sub_name())
-                        .ok_or_else(|| SchemaError::CoreNodeNotFound {
-                            name: self.meta.name.clone(),
-                            sub_name: Self::net_sub_name().map(String::from),
-                        })?,
-                ]
+                vec![self.net_sub_name()]
             }
             WaterTreatmentWorksNodeComponent::Loss => {
-                match network.get_node_index_by_name(self.meta.name.as_str(), Self::loss_sub_name()) {
-                    Some(idx) => vec![idx],
-                    None => return Ok(vec![]), // No loss node defined, so return empty
-                }
+                vec![self.loss_sub_name()]
             }
         };
 
         Ok(indices)
     }
-    pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
-        let idx_net = network.add_link_node(self.meta.name.as_str(), Self::net_sub_name())?;
-        let idx_soft_min_flow = network.add_link_node(self.meta.name.as_str(), Self::net_soft_min_flow_sub_name())?;
-        let idx_above_soft_min_flow =
-            network.add_link_node(self.meta.name.as_str(), Self::net_above_soft_min_flow_sub_name())?;
-
-        // Create the internal connections
-        network.connect_nodes(idx_net, idx_soft_min_flow)?;
-        network.connect_nodes(idx_net, idx_above_soft_min_flow)?;
-
-        if self.loss_factor.is_some() {
-            let idx_loss = network.add_output_node(self.meta.name.as_str(), Self::loss_sub_name())?;
-            // This aggregated node will contain the factors to enforce the loss
-            network.add_aggregated_node(
-                self.meta.name.as_str(),
-                Self::agg_sub_name(),
-                &[vec![idx_net], vec![idx_loss]],
-                None,
-            )?;
-        }
-
-        Ok(())
-    }
-
-    pub fn set_constraints(
+    pub fn add_to_network(
         &self,
-        network: &mut pywr_core::network::Network,
+        network: &mut pywr_core::network::NetworkBuilder,
         args: &LoadArgs,
     ) -> Result<(), SchemaError> {
+        let mut net_node = pywr_core::node::NodeBuilder::link(self.net_sub_name());
+        let mut soft_min_flow_node = pywr_core::node::NodeBuilder::link(self.net_soft_min_flow_sub_name());
+        let above_soft_min_flow = pywr_core::node::NodeBuilder::link(self.net_above_soft_min_flow_sub_name());
+
         if let Some(cost) = &self.cost {
             let value = cost.load(network, args, Some(&self.meta.name))?;
-            network.set_node_cost(self.meta.name.as_str(), Self::net_sub_name(), value.into())?;
+            net_node.cost(value);
         }
 
         if let Some(max_flow) = &self.max_flow {
             let value = max_flow.load(network, args, Some(&self.meta.name))?;
-            network.set_node_max_flow(self.meta.name.as_str(), Self::net_sub_name(), value.into())?;
+            net_node.max_flow(value);
         }
 
         if let Some(min_flow) = &self.min_flow {
             let value = min_flow.load(network, args, Some(&self.meta.name))?;
-            network.set_node_min_flow(self.meta.name.as_str(), Self::net_sub_name(), value.into())?;
+            net_node.min_flow(value);
         }
 
         // soft min flow constraints; This typically applies a negative cost upto a maximum
         // defined by the `soft_min_flow`
         if let Some(cost) = &self.soft_min_flow_cost {
             let value = cost.load(network, args, Some(&self.meta.name))?;
-            network.set_node_cost(
-                self.meta.name.as_str(),
-                Self::net_soft_min_flow_sub_name(),
-                value.into(),
-            )?;
+            soft_min_flow_node.cost(value);
         }
         if let Some(min_flow) = &self.soft_min_flow {
             let value = min_flow.load(network, args, Some(&self.meta.name))?;
-            network.set_node_max_flow(
-                self.meta.name.as_str(),
-                Self::net_soft_min_flow_sub_name(),
-                value.into(),
-            )?;
+            soft_min_flow_node.max_flow(value);
         }
 
+        // Create the internal connections
+        network.connect(self.net_sub_name(), self.net_soft_min_flow_sub_name());
+        network.connect(self.net_sub_name(), self.net_above_soft_min_flow_sub_name());
+
         if let Some(loss_factor) = &self.loss_factor {
+            let mut loss_node = pywr_core::node::NodeBuilder::output(self.loss_sub_name());
+
             let factors = loss_factor.load(network, args, Some(&self.meta.name))?;
-            if factors.is_none() {
-                // Loaded a constant zero factor; ensure that the loss node has zero flow
-                network.set_node_max_flow(self.meta.name.as_str(), Self::loss_sub_name(), Some(0.0.into()))?;
+            match factors {
+                Some(relationship) => {
+                    // This aggregated node will contain the factors to enforce the loss
+                    let mut agg_node = pywr_core::AggregatedNodeBuilder::new(self.agg_sub_name());
+                    agg_node
+                        .nodes(vec![self.net_sub_name()])
+                        .nodes(vec![self.loss_sub_name()])
+                        .relationship(relationship);
+
+                    network.agg_node(agg_node);
+                }
+                None => {
+                    loss_node.max_flow(0.0.into());
+                }
             }
-            network.set_aggregated_node_relationship(self.meta.name.as_str(), Self::agg_sub_name(), factors)?;
+
+            network.node(loss_node);
         }
+
+        network.node(net_node);
+        network.node(soft_min_flow_node);
+        network.node(above_soft_min_flow);
 
         Ok(())
     }
-    pub fn create_metric(
-        &self,
-        network: &pywr_core::network::Network,
-        attribute: Option<NodeAttribute>,
-    ) -> Result<MetricF64, SchemaError> {
+
+    pub fn create_metric(&self, attribute: Option<NodeAttribute>) -> Result<UnresolvedMetricF64, SchemaError> {
         // Use the default attribute if none is specified
         let attr = match attribute {
             Some(attr) => attr.try_into()?,
@@ -282,49 +238,24 @@ impl WaterTreatmentWorksNode {
 
         let metric = match attr {
             WaterTreatmentWorksNodeAttribute::Inflow => {
-                match network.get_node_index_by_name(self.meta.name.as_str(), Self::loss_sub_name()) {
+                match self.loss_factor.is_some() {
                     // Loss node is defined. The total inflow is the sum of the net and loss nodes;
-                    Some(loss_idx) => {
-                        let indices = vec![
-                            network
-                                .get_node_index_by_name(self.meta.name.as_str(), Self::net_sub_name())
-                                .ok_or_else(|| SchemaError::CoreNodeNotFound {
-                                    name: self.meta.name.clone(),
-                                    sub_name: Self::net_sub_name().map(String::from),
-                                })?,
-                            loss_idx,
-                        ];
-                        MetricF64::MultiNodeInFlow {
-                            indices,
+                    true => {
+                        let nodes = vec![self.net_sub_name(), self.loss_sub_name()];
+                        UnresolvedMetricF64::MultiNodeInFlow {
+                            nodes,
                             name: self.meta.name.to_string(),
                         }
                     }
                     // No loss node defined, so just use the net node
-                    None => MetricF64::NodeInFlow(
-                        network
-                            .get_node_index_by_name(self.meta.name.as_str(), Self::net_sub_name())
-                            .ok_or_else(|| SchemaError::CoreNodeNotFound {
-                                name: self.meta.name.clone(),
-                                sub_name: Self::net_sub_name().map(String::from),
-                            })?,
-                    ),
+                    false => UnresolvedMetricF64::NodeInFlow(self.net_sub_name()),
                 }
             }
-            WaterTreatmentWorksNodeAttribute::Outflow => {
-                let idx = network
-                    .get_node_index_by_name(self.meta.name.as_str(), Self::net_sub_name())
-                    .ok_or_else(|| SchemaError::CoreNodeNotFound {
-                        name: self.meta.name.clone(),
-                        sub_name: Self::net_sub_name().map(String::from),
-                    })?;
-                MetricF64::NodeOutFlow(idx)
-            }
-            WaterTreatmentWorksNodeAttribute::Loss => {
-                match network.get_node_index_by_name(self.meta.name.as_str(), Self::loss_sub_name()) {
-                    Some(idx) => MetricF64::NodeInFlow(idx),
-                    None => 0.0.into(),
-                }
-            }
+            WaterTreatmentWorksNodeAttribute::Outflow => UnresolvedMetricF64::NodeOutFlow(self.net_sub_name()),
+            WaterTreatmentWorksNodeAttribute::Loss => match self.loss_factor.is_some() {
+                true => UnresolvedMetricF64::NodeInFlow(self.loss_sub_name()),
+                false => 0.0.into(),
+            },
         };
 
         Ok(metric)

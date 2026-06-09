@@ -6,9 +6,8 @@ use crate::metric::{IndexMetric, Metric};
 use crate::network::LoadArgs;
 use crate::parameters::{ConversionData, ParameterMeta};
 use crate::v1::{TryFromV1, TryIntoV2, try_convert_parameter_attr};
-
 #[cfg(feature = "core")]
-use pywr_core::parameters::{ParameterIndex, ParameterName};
+use pywr_core::parameters::ParameterName;
 use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::parameters::IndexedArrayParameter as IndexedArrayParameterV1;
 use schemars::JsonSchema;
@@ -24,27 +23,26 @@ pub struct IndexedArrayParameter {
 
 #[cfg(feature = "core")]
 impl IndexedArrayParameter {
-    pub fn add_to_model(
+    pub fn add_to_network(
         &self,
-        network: &mut pywr_core::network::Network,
+        network: &mut pywr_core::network::NetworkBuilder,
         args: &LoadArgs,
         parent: Option<&str>,
-    ) -> Result<ParameterIndex<f64>, SchemaError> {
+    ) -> Result<(), SchemaError> {
         let index_parameter = self.index_parameter.load(network, args, None)?;
 
-        let metrics = self
-            .metrics
-            .iter()
-            .map(|v| v.load(network, args, None))
-            .collect::<Result<Vec<_>, _>>()?;
-
-        let p = pywr_core::parameters::IndexedArrayParameter::new(
+        let mut builder = pywr_core::parameters::IndexedArrayParameterBuilder::new(
             ParameterName::new(&self.meta.name, parent),
             index_parameter,
-            &metrics,
         );
 
-        Ok(network.add_parameter(Box::new(p))?)
+        for m in &self.metrics {
+            builder.metric(m.load(network, args, parent)?);
+        }
+
+        network.parameters().f64(Box::new(builder));
+
+        Ok(())
     }
 }
 

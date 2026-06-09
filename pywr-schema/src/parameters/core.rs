@@ -7,7 +7,7 @@ use crate::network::LoadArgs;
 use crate::parameters::{ConstantFloatVec, ConstantValue, ConversionData, ParameterMeta};
 use crate::v1::{TryFromV1, TryIntoV2, try_convert_parameter_attr, try_convert_values};
 #[cfg(feature = "core")]
-use pywr_core::parameters::{ParameterIndex, ParameterName};
+use pywr_core::parameters::ParameterName;
 use pywr_schema_macros::{PywrVisitAll, skip_serializing_none};
 use pywr_v1_schema::parameters::{
     ConstantParameter as ConstantParameterV1, ConstantScenarioParameter as ConstantScenarioParameterV1,
@@ -171,15 +171,16 @@ pub struct ConstantParameter {
 
 #[cfg(feature = "core")]
 impl ConstantParameter {
-    pub fn add_to_model(
+    pub fn add_to_network(
         &self,
-        network: &mut pywr_core::network::Network,
+        network: &mut pywr_core::network::NetworkBuilder,
         args: &LoadArgs,
         parent: Option<&str>,
-    ) -> Result<ParameterIndex<f64>, SchemaError> {
+    ) -> Result<(), SchemaError> {
         let name = ParameterName::new(&self.meta.name, parent);
-        let p = pywr_core::parameters::ConstantParameter::new(name, self.value.load(args.tables)?);
-        Ok(network.add_const_parameter(Box::new(p))?)
+        let builder = pywr_core::parameters::ConstantParameterBuilder::new(name, self.value.load(args.tables)?);
+        network.parameters().f64(Box::new(builder));
+        Ok(())
     }
 }
 
@@ -232,28 +233,21 @@ pub struct ConstantScenarioParameter {
 
 #[cfg(feature = "core")]
 impl ConstantScenarioParameter {
-    pub fn add_to_model(
+    pub fn add_to_network(
         &self,
-        network: &mut pywr_core::network::Network,
+        network: &mut pywr_core::network::NetworkBuilder,
         args: &LoadArgs,
         parent: Option<&str>,
-    ) -> Result<ParameterIndex<f64>, SchemaError> {
+    ) -> Result<(), SchemaError> {
         let name = ParameterName::new(&self.meta.name, parent);
-        let scenario_group_index = args.domain.scenarios().group_index(&self.scenario_group)?;
+
         let values = self.values.load(args.tables)?;
 
-        let scenario_group_size = args.domain.scenarios().group_size(&self.scenario_group)?;
-        if values.len() != scenario_group_size {
-            return Err(SchemaError::ScenarioValuesLengthMismatch {
-                name: name.to_string(),
-                values: values.len(),
-                scenarios: scenario_group_size,
-                group: self.scenario_group.clone(),
-            });
-        }
+        let p = pywr_core::parameters::ConstantScenarioParameterBuilder::new(name, values, &self.scenario_group);
 
-        let p = pywr_core::parameters::ConstantScenarioParameter::new(name, values, scenario_group_index);
-        Ok(network.add_const_parameter(Box::new(p))?)
+        network.parameters().f64(Box::new(p));
+
+        Ok(())
     }
 }
 
@@ -289,17 +283,24 @@ pub struct MaxParameter {
 
 #[cfg(feature = "core")]
 impl MaxParameter {
-    pub fn add_to_model(
+    pub fn add_to_network(
         &self,
-        network: &mut pywr_core::network::Network,
+        network: &mut pywr_core::network::NetworkBuilder,
         args: &LoadArgs,
         parent: Option<&str>,
-    ) -> Result<ParameterIndex<f64>, SchemaError> {
+    ) -> Result<(), SchemaError> {
         let idx = self.parameter.load(network, args, None)?;
         let threshold = self.threshold.unwrap_or(0.0);
 
-        let p = pywr_core::parameters::MaxParameter::new(ParameterName::new(&self.meta.name, parent), idx, threshold);
-        Ok(network.add_parameter(Box::new(p))?)
+        let p = pywr_core::parameters::MaxParameterBuilder::new(
+            ParameterName::new(&self.meta.name, parent),
+            idx,
+            threshold,
+        );
+
+        network.parameters().f64(Box::new(p));
+
+        Ok(())
     }
 }
 
@@ -347,17 +348,19 @@ pub struct DivisionParameter {
 
 #[cfg(feature = "core")]
 impl DivisionParameter {
-    pub fn add_to_model(
+    pub fn add_to_network(
         &self,
-        network: &mut pywr_core::network::Network,
+        network: &mut pywr_core::network::NetworkBuilder,
         args: &LoadArgs,
         parent: Option<&str>,
-    ) -> Result<ParameterIndex<f64>, SchemaError> {
+    ) -> Result<(), SchemaError> {
         let n = self.numerator.load(network, args, None)?;
         let d = self.denominator.load(network, args, None)?;
 
-        let p = pywr_core::parameters::DivisionParameter::new(ParameterName::new(&self.meta.name, parent), n, d);
-        Ok(network.add_parameter(Box::new(p))?)
+        let p = pywr_core::parameters::DivisionParameterBuilder::new(ParameterName::new(&self.meta.name, parent), n, d);
+
+        network.parameters().f64(Box::new(p));
+        Ok(())
     }
 }
 
@@ -408,17 +411,23 @@ pub struct MinParameter {
 
 #[cfg(feature = "core")]
 impl MinParameter {
-    pub fn add_to_model(
+    pub fn add_to_network(
         &self,
-        network: &mut pywr_core::network::Network,
+        network: &mut pywr_core::network::NetworkBuilder,
         args: &LoadArgs,
         parent: Option<&str>,
-    ) -> Result<ParameterIndex<f64>, SchemaError> {
-        let idx = self.parameter.load(network, args, None)?;
+    ) -> Result<(), SchemaError> {
+        let metric = self.parameter.load(network, args, None)?;
         let threshold = self.threshold.unwrap_or(0.0);
 
-        let p = pywr_core::parameters::MinParameter::new(ParameterName::new(&self.meta.name, parent), idx, threshold);
-        Ok(network.add_parameter(Box::new(p))?)
+        let p = pywr_core::parameters::MinParameterBuilder::new(
+            ParameterName::new(&self.meta.name, parent),
+            metric,
+            threshold,
+        );
+
+        network.parameters().f64(Box::new(p));
+        Ok(())
     }
 }
 
@@ -453,16 +462,20 @@ pub struct NegativeParameter {
 
 #[cfg(feature = "core")]
 impl NegativeParameter {
-    pub fn add_to_model(
+    pub fn add_to_network(
         &self,
-        network: &mut pywr_core::network::Network,
+        network: &mut pywr_core::network::NetworkBuilder,
         args: &LoadArgs,
         parent: Option<&str>,
-    ) -> Result<ParameterIndex<f64>, SchemaError> {
-        let idx = self.parameter.load(network, args, None)?;
+    ) -> Result<(), SchemaError> {
+        let metric = self.parameter.load(network, args, None)?;
 
-        let p = pywr_core::parameters::NegativeParameter::new(ParameterName::new(&self.meta.name, parent), idx);
-        Ok(network.add_parameter(Box::new(p))?)
+        let p =
+            pywr_core::parameters::NegativeParameterBuilder::new(ParameterName::new(&self.meta.name, parent), metric);
+
+        network.parameters().f64(Box::new(p));
+
+        Ok(())
     }
 }
 
@@ -509,21 +522,24 @@ pub struct NegativeMaxParameter {
 
 #[cfg(feature = "core")]
 impl NegativeMaxParameter {
-    pub fn add_to_model(
+    pub fn add_to_network(
         &self,
-        network: &mut pywr_core::network::Network,
+        network: &mut pywr_core::network::NetworkBuilder,
         args: &LoadArgs,
         parent: Option<&str>,
-    ) -> Result<ParameterIndex<f64>, SchemaError> {
-        let idx = self.metric.load(network, args, None)?;
+    ) -> Result<(), SchemaError> {
+        let metric = self.metric.load(network, args, None)?;
         let threshold = self.threshold.unwrap_or(0.0);
 
-        let p = pywr_core::parameters::NegativeMaxParameter::new(
+        let p = pywr_core::parameters::NegativeMaxParameterBuilder::new(
             ParameterName::new(&self.meta.name, parent),
-            idx,
+            metric,
             threshold,
         );
-        Ok(network.add_parameter(Box::new(p))?)
+
+        network.parameters().f64(Box::new(p));
+
+        Ok(())
     }
 }
 
@@ -574,21 +590,24 @@ pub struct NegativeMinParameter {
 
 #[cfg(feature = "core")]
 impl NegativeMinParameter {
-    pub fn add_to_model(
+    pub fn add_to_network(
         &self,
-        network: &mut pywr_core::network::Network,
+        network: &mut pywr_core::network::NetworkBuilder,
         args: &LoadArgs,
         parent: Option<&str>,
-    ) -> Result<ParameterIndex<f64>, SchemaError> {
-        let idx = self.metric.load(network, args, None)?;
+    ) -> Result<(), SchemaError> {
+        let metric = self.metric.load(network, args, None)?;
         let threshold = self.threshold.unwrap_or(0.0);
 
-        let p = pywr_core::parameters::NegativeMinParameter::new(
+        let p = pywr_core::parameters::NegativeMinParameterBuilder::new(
             ParameterName::new(&self.meta.name, parent),
-            idx,
+            metric,
             threshold,
         );
-        Ok(network.add_parameter(Box::new(p))?)
+
+        network.parameters().f64(Box::new(p));
+
+        Ok(())
     }
 }
 

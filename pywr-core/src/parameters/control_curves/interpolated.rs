@@ -104,7 +104,7 @@ impl ParameterBuilder<f64> for ControlCurveInterpolatedParameterBuilder {
         self: Box<Self>,
         resolution_maps: &ResolutionMaps,
     ) -> Result<MaybeBuiltParameter<f64>, ParameterBuildError> {
-        let metric = resolve_metric_f64!(self, self.metric, resolution_maps, "metrics");
+        let metric = resolve_metric_f64!(self, self.metric, resolution_maps, "metric");
         let control_curves = resolve_metric_f64_vec!(self, &self.control_curves, resolution_maps, "control_curves");
         let values = resolve_metric_f64_vec!(self, &self.values, resolution_maps, "values");
 
@@ -115,14 +115,7 @@ impl ParameterBuilder<f64> for ControlCurveInterpolatedParameterBuilder {
             values,
         };
 
-        let bp = match p.try_into_simple() {
-            None => BuiltParameter::General(Box::new(p)),
-            Some(sp) => match sp.try_into_const() {
-                None => BuiltParameter::Simple(sp),
-                Some(cp) => BuiltParameter::Const(cp),
-            },
-        };
-
+        let bp = BuiltParameter::General(Box::new(p));
         Ok(bp.into())
     }
 }

@@ -4,9 +4,9 @@ mod simple;
 use crate::scenario::{ScenarioDomain, ScenarioDomainBuilder, ScenarioDomainBuilderError};
 use crate::timestep::{TimeDomain, TimeDomainBuilder, TimeDomainBuilderError};
 pub use multi::{
-    InterNetworkTransferError, MultiModelBuilder, MultiModelBuilderError, MultiNetworkEntryBuilder, MultiNetworkModel,
-    MultiNetworkModelFinaliseError, MultiNetworkModelResult, MultiNetworkModelRunError, MultiNetworkModelSetupError,
-    MultiNetworkModelTimings, MultiNetworkTransferIndex,
+    InterNetworkTransferError, MultiNetworkEntryBuilder, MultiNetworkModel, MultiNetworkModelBuilder,
+    MultiNetworkModelBuilderError, MultiNetworkModelFinaliseError, MultiNetworkModelResult, MultiNetworkModelRunError,
+    MultiNetworkModelSetupError, MultiNetworkModelTimings, MultiNetworkTransferBuilder, MultiNetworkTransferIndex,
 };
 pub use simple::{
     Model, ModelBuilder, ModelBuilderError, ModelFinaliseError, ModelResult, ModelRunError, ModelSetupError,

@@ -7,7 +7,7 @@ use crate::parameters::{
 use crate::scenario::ScenarioIndex;
 use crate::state::SimpleParameterValues;
 use crate::timestep::{Timestep, TimestepIndex};
-use ndarray::{Array1, Array2, Axis};
+use ndarray::{Array1, Array2, Axis, s};
 
 pub struct Array1Parameter<T> {
     meta: ParameterMeta,
@@ -297,17 +297,24 @@ impl ParameterBuilder<f64> for Array2ParameterBuilder<f64> {
         self: Box<Self>,
         resolution_maps: &ResolutionMaps,
     ) -> Result<MaybeBuiltParameter<f64>, ParameterBuildError> {
-        let scenario_group_index = resolution_maps
-            .scenario_group
-            .get(&self.scenario_group)
-            .ok_or_else(|| ParameterBuildError::ScenarioGroupNotFound {
-                name: self.scenario_group.clone(),
-            })?;
+        let scenario_group_index = resolution_maps.domain.scenarios().group_index(&self.scenario_group)?;
+
+        let mut array = self.array;
+
+        // If there is a scenario subset then we can reduce the data to align with the scenarios
+        // that are actually used in the model.
+        if let Some(subset) = resolution_maps
+            .domain
+            .scenarios()
+            .group_scenario_subset(&self.scenario_group)?
+        {
+            array = subset_array2(&array, subset)?;
+        }
 
         let p = Array2Parameter {
             meta: self.meta,
-            array: self.array,
-            scenario_group_index: *scenario_group_index,
+            array,
+            scenario_group_index,
             timestep_offset: self.timestep_offset,
         };
 
@@ -323,21 +330,47 @@ impl ParameterBuilder<u64> for Array2ParameterBuilder<u64> {
         self: Box<Self>,
         resolution_maps: &ResolutionMaps,
     ) -> Result<MaybeBuiltParameter<u64>, ParameterBuildError> {
-        let scenario_group_index = resolution_maps
-            .scenario_group
-            .get(&self.scenario_group)
-            .ok_or_else(|| ParameterBuildError::ScenarioGroupNotFound {
-                name: self.scenario_group.clone(),
-            })?;
+        let scenario_group_index = resolution_maps.domain.scenarios().group_index(&self.scenario_group)?;
+
+        let mut array = self.array;
+
+        // If there is a scenario subset then we can reduce the data to align with the scenarios
+        // that are actually used in the model.
+        if let Some(subset) = resolution_maps
+            .domain
+            .scenarios()
+            .group_scenario_subset(&self.scenario_group)?
+        {
+            array = subset_array2(&array, subset)?;
+        }
 
         let p = Array2Parameter {
             meta: self.meta,
-            array: self.array,
-            scenario_group_index: *scenario_group_index,
+            array,
+            scenario_group_index,
             timestep_offset: self.timestep_offset,
         };
         Ok(BuiltParameter::Simple(Box::new(p)).into())
     }
+}
+
+/// Create a subset of a 2D array based on the column indices.
+///
+/// This function is used to reduce the size of a timeseries dataframe to only include the columns
+/// that are used in a simulation.
+fn subset_array2<T>(array: &Array2<T>, subset: &[usize]) -> Result<Array2<T>, ParameterBuildError>
+where
+    T: Copy,
+{
+    // Slice the array to only include the columns that are used in the scenario
+    let slices = subset.iter().map(|c| array.slice(s![.., *c])).collect::<Vec<_>>();
+    // Stack the slices to create a new array; this should be infallible because
+    // the slices are all the same length.
+    ndarray::stack(ndarray::Axis(1), &slices).map_err(|source| ParameterBuildError::ArraySubSetError {
+        array_shape: array.shape().to_vec(),
+        subset: subset.to_vec(),
+        source,
+    })
 }
 
 #[cfg(test)]
