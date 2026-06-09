@@ -695,7 +695,7 @@ impl ReservoirNode {
                                 name: self.meta().name.clone(),
                                 sub_name: None,
                             })?;
-                        MetricF64::NodeVolume(idx)
+                        MetricF64::NodeProportionalVolume(idx)
                     }
                     ReservoirNodeAttribute::MaxVolume => {
                         let idx = network

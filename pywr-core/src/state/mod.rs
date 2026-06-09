@@ -913,7 +913,7 @@ impl State {
     }
 
     fn get_parameter_index_after(&self, idx: GeneralParameterIndex<u64>) -> Result<u64, StateError> {
-        self.parameters_before
+        self.parameters_after
             .general
             .get_index(*idx)
             .ok_or(StateError::GeneralIndexParameterIndexNotFound(idx))

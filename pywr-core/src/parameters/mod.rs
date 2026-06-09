@@ -1685,7 +1685,7 @@ impl ParameterCollection {
                         .get_simple_mut_multi_state(*idx)
                         .ok_or(ParameterCollectionSimpleCalculationError::MultiIndexNotFound(*idx))?;
 
-                    p.before(
+                    p.after(
                         timestep,
                         scenario_index,
                         &state.get_simple_parameter_values(),
