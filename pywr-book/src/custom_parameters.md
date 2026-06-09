@@ -340,6 +340,58 @@ And the returned values can be accessed in the model using the keys defined in t
 }
 ```
 
+## Before and after methods
+
+The majority of parameters will only need to implement the `before` method, which is called before the resource
+allocation is performed for the time step[^before_v1]. However, in some cases it may be necessary to perform some
+calculations after the resource allocation has been completed. Typically, this is the case when the parameter needs to
+access the results of the resource allocation, such as the allocated flow or the new volume of a reservoir after the
+allocation. In this case, the parameter can implement an `after` method.
+
+The example below lists a custom parameter that implements both `before` and `after` methods. It is a simple crop
+water requirement parameter that calculates the water requirement for a crop based on the current month in `before`,
+and then computes a crop yield in `after` based on the allocated water and the water requirement.
+
+[//]: # (@formatter:off)
+
+```python,ignore
+{{ #include ../py-listings/agri-parameter/agri_parameter.py}}
+```
+
+When referring to the parameter in the model, the `return_value` field can be used to specify whether to use the value 
+returned by the `before` or `after` method. By default, the value returned by the `before` method is used, but if you 
+want to use the value from the `after` method you can set `return_value` to `"After"`. The example below shows how to 
+use the `CropParameter` above parameter in a metric set, and specify that the value from the `after` method should be used.
+
+[//]: # (@formatter:off)
+
+```json,ignore
+    "metric_sets": [
+      {
+        "name": "parameters",
+        "aggregator": {
+          "freq": {
+            "type": "Annual"
+          },
+          "func": {
+            "type": "Sum"
+          }
+        },
+        "metrics": [
+          {
+            "type": "Parameter",
+            "name": "crop1",
+            "return_value": "After"
+          }
+        ]
+      }
+    ],
+```
+
+
+[^before_v1]: This also is the same as Pywr v1.x where the `before` method was the only method that could be
+implemented.
+
 ## Cython (and other compiled languages)
 
 Cython functions and classes can be used in Pywr as long as they accessible from Python, and can be
