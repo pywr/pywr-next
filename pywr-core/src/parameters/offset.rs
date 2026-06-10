@@ -53,18 +53,18 @@ impl Parameter for OffsetParameter {
     }
 }
 impl GeneralParameter<f64> for OffsetParameter {
-    fn compute(
+    fn before(
         &self,
         _timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
         model: &Network,
         state: &State,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<f64, ParameterCalculationError> {
+    ) -> Result<Option<f64>, ParameterCalculationError> {
         let offset = self.offset(internal_state);
         // Current value
         let x = self.metric.get_value(model, state)?;
-        Ok(x + offset)
+        Ok(Some(x + offset))
     }
 
     fn as_parameter(&self) -> &dyn Parameter

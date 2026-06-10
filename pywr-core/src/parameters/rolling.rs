@@ -133,22 +133,22 @@ where
 }
 
 impl GeneralParameter<f64> for RollingParameter<MetricF64, f64, AggFuncF64> {
-    fn compute(
+    fn before(
         &self,
         _timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
         _model: &Network,
         _state: &State,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<f64, ParameterCalculationError> {
+    ) -> Result<Option<f64>, ParameterCalculationError> {
         // Downcast the internal state to the correct type
         let memory = downcast_internal_state_ref::<VecDeque<f64>>(internal_state);
 
         if memory.len() < self.min_values {
             // Not enough values collected yet, return the initial value
-            Ok(self.initial_value)
+            Ok(Some(self.initial_value))
         } else {
-            Ok(self.agg_func.calc_iter_f64(memory)?)
+            Ok(Some(self.agg_func.calc_iter_f64(memory)?))
         }
     }
 
@@ -159,7 +159,7 @@ impl GeneralParameter<f64> for RollingParameter<MetricF64, f64, AggFuncF64> {
         model: &Network,
         state: &State,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<(), ParameterCalculationError> {
+    ) -> Result<Option<f64>, ParameterCalculationError> {
         // Downcast the internal state to the correct type
         let memory = downcast_internal_state_mut::<VecDeque<f64>>(internal_state);
 
@@ -172,7 +172,7 @@ impl GeneralParameter<f64> for RollingParameter<MetricF64, f64, AggFuncF64> {
             memory.pop_front();
         }
 
-        Ok(())
+        Ok(None)
     }
 
     fn try_into_simple(&self) -> Option<Box<dyn SimpleParameter<f64>>>
@@ -193,21 +193,21 @@ impl GeneralParameter<f64> for RollingParameter<MetricF64, f64, AggFuncF64> {
 }
 
 impl SimpleParameter<f64> for RollingParameter<SimpleMetricF64, f64, AggFuncF64> {
-    fn compute(
+    fn before(
         &self,
         _timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
         _values: &SimpleParameterValues,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<f64, SimpleCalculationError> {
+    ) -> Result<Option<f64>, SimpleCalculationError> {
         // Downcast the internal state to the correct type
         let memory = downcast_internal_state_ref::<VecDeque<f64>>(internal_state);
 
         if memory.len() < self.min_values {
             // Not enough values collected yet, return the initial value
-            Ok(self.initial_value)
+            Ok(Some(self.initial_value))
         } else {
-            Ok(self.agg_func.calc_iter_f64(memory)?)
+            Ok(Some(self.agg_func.calc_iter_f64(memory)?))
         }
     }
 
@@ -217,7 +217,7 @@ impl SimpleParameter<f64> for RollingParameter<SimpleMetricF64, f64, AggFuncF64>
         _scenario_index: &ScenarioIndex,
         values: &SimpleParameterValues,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<(), SimpleCalculationError> {
+    ) -> Result<Option<f64>, SimpleCalculationError> {
         // Downcast the internal state to the correct type
         let memory = downcast_internal_state_mut::<VecDeque<f64>>(internal_state);
 
@@ -230,7 +230,7 @@ impl SimpleParameter<f64> for RollingParameter<SimpleMetricF64, f64, AggFuncF64>
             memory.pop_front();
         }
 
-        Ok(())
+        Ok(None)
     }
 
     fn as_parameter(&self) -> &dyn Parameter
@@ -242,22 +242,22 @@ impl SimpleParameter<f64> for RollingParameter<SimpleMetricF64, f64, AggFuncF64>
 }
 
 impl GeneralParameter<u64> for RollingParameter<MetricU64, u64, AggFuncU64> {
-    fn compute(
+    fn before(
         &self,
         _timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
         _model: &Network,
         _state: &State,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<u64, ParameterCalculationError> {
+    ) -> Result<Option<u64>, ParameterCalculationError> {
         // Downcast the internal state to the correct type
         let memory = downcast_internal_state_ref::<VecDeque<u64>>(internal_state);
 
         if memory.len() < self.min_values {
             // Not enough values collected yet, return the initial value
-            Ok(self.initial_value)
+            Ok(Some(self.initial_value))
         } else {
-            Ok(self.agg_func.calc_iter_u64(memory.iter())?)
+            Ok(Some(self.agg_func.calc_iter_u64(memory.iter())?))
         }
     }
 
@@ -268,7 +268,7 @@ impl GeneralParameter<u64> for RollingParameter<MetricU64, u64, AggFuncU64> {
         model: &Network,
         state: &State,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<(), ParameterCalculationError> {
+    ) -> Result<Option<u64>, ParameterCalculationError> {
         // Downcast the internal state to the correct type
         let memory = downcast_internal_state_mut::<VecDeque<u64>>(internal_state);
 
@@ -281,7 +281,7 @@ impl GeneralParameter<u64> for RollingParameter<MetricU64, u64, AggFuncU64> {
             memory.pop_front();
         }
 
-        Ok(())
+        Ok(None)
     }
 
     fn try_into_simple(&self) -> Option<Box<dyn SimpleParameter<u64>>>
@@ -302,21 +302,21 @@ impl GeneralParameter<u64> for RollingParameter<MetricU64, u64, AggFuncU64> {
 }
 
 impl SimpleParameter<u64> for RollingParameter<SimpleMetricU64, u64, AggFuncU64> {
-    fn compute(
+    fn before(
         &self,
         _timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
         _values: &SimpleParameterValues,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<u64, SimpleCalculationError> {
+    ) -> Result<Option<u64>, SimpleCalculationError> {
         // Downcast the internal state to the correct type
         let memory = downcast_internal_state_ref::<VecDeque<u64>>(internal_state);
 
         if memory.len() < self.min_values {
             // Not enough values collected yet, return the initial value
-            Ok(self.initial_value)
+            Ok(Some(self.initial_value))
         } else {
-            Ok(self.agg_func.calc_iter_u64(memory.iter())?)
+            Ok(Some(self.agg_func.calc_iter_u64(memory.iter())?))
         }
     }
 
@@ -326,7 +326,7 @@ impl SimpleParameter<u64> for RollingParameter<SimpleMetricU64, u64, AggFuncU64>
         _scenario_index: &ScenarioIndex,
         values: &SimpleParameterValues,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<(), SimpleCalculationError> {
+    ) -> Result<Option<u64>, SimpleCalculationError> {
         // Downcast the internal state to the correct type
         let memory = downcast_internal_state_mut::<VecDeque<u64>>(internal_state);
 
@@ -339,7 +339,7 @@ impl SimpleParameter<u64> for RollingParameter<SimpleMetricU64, u64, AggFuncU64>
             memory.pop_front();
         }
 
-        Ok(())
+        Ok(None)
     }
 
     fn as_parameter(&self) -> &dyn Parameter
@@ -367,7 +367,7 @@ mod tests {
             .network_mut()
             .add_simple_parameter(Box::new(metric))
             .unwrap()
-            .into();
+            .into_metric_f64_before();
 
         let parameter = RollingParameter::new("my-parameter".into(), metric_idx, 3, 0.0, 3, AggFuncF64::Mean);
 
@@ -397,7 +397,7 @@ mod tests {
             .network_mut()
             .add_simple_index_parameter(Box::new(metric))
             .unwrap()
-            .into();
+            .into_metric_u64_before();
 
         let parameter = RollingParameter::new("my-parameter".into(), metric_idx, 3, 0, 3, AggFuncU64::Max);
 

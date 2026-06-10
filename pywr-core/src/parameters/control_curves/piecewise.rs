@@ -41,14 +41,14 @@ impl Parameter for PiecewiseInterpolatedParameter {
     }
 }
 impl GeneralParameter<f64> for PiecewiseInterpolatedParameter {
-    fn compute(
+    fn before(
         &self,
         _timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
         model: &Network,
         state: &State,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<f64, ParameterCalculationError> {
+    ) -> Result<Option<f64>, ParameterCalculationError> {
         // Current value
         let x = self.metric.get_value(model, state)?;
 
@@ -64,7 +64,7 @@ impl GeneralParameter<f64> for PiecewiseInterpolatedParameter {
                         index: idx,
                         length: self.values.len(),
                     })?;
-                return Ok(interpolate(x, cc_value, cc_previous_value, v[1], v[0]));
+                return Ok(Some(interpolate(x, cc_value, cc_previous_value, v[1], v[0])));
             }
             cc_previous_value = cc_value;
         }
@@ -76,7 +76,7 @@ impl GeneralParameter<f64> for PiecewiseInterpolatedParameter {
                 index: 0,
                 length: self.values.len(),
             })?;
-        Ok(interpolate(x, self.minimum, cc_previous_value, v[1], v[0]))
+        Ok(Some(interpolate(x, self.minimum, cc_previous_value, v[1], v[0])))
     }
 
     fn as_parameter(&self) -> &dyn Parameter
@@ -105,7 +105,7 @@ mod test {
 
         let parameter = PiecewiseInterpolatedParameter::new(
             "test-parameter".into(),
-            volume_idx.into(), // Interpolate with the parameter based values
+            volume_idx.into_metric_f64_before(), // Interpolate with the parameter based values
             vec![0.8.into(), 0.5.into()],
             vec![[10.0, 1.0], [0.0, 0.0], [-1.0, -10.0]],
             1.0,

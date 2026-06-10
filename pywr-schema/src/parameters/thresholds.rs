@@ -143,7 +143,7 @@ impl ThresholdParameter {
 
                 let values_param = pywr_core::parameters::IndexedArrayParameter::new(
                     ParameterName::new(&self.meta.name, parent),
-                    p_idx.into(),
+                    p_idx.into_metric_u64_before(),
                     &metrics,
                 );
                 Ok(network.add_parameter(Box::new(values_param))?.into())
@@ -366,7 +366,7 @@ impl MultiThresholdParameter {
                     .collect::<Result<Vec<_>, _>>()?;
                 let values_param = pywr_core::parameters::IndexedArrayParameter::new(
                     ParameterName::new(&self.meta.name, parent),
-                    p_idx.into(),
+                    p_idx.into_metric_u64_before(),
                     &metrics,
                 );
                 Ok(network.add_parameter(Box::new(values_param))?.into())
