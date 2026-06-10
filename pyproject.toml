@@ -9,7 +9,7 @@ requires-python = ">=3.10"
 license = "MIT OR Apache-2.0"
 dependencies = [
     "pandas",
-    "polars>=1.40.1",
+    "polars>=1.41.2",
     "pyarrow",
     "click",
 ]
@@ -22,7 +22,7 @@ hdf = ["h5py"]
 [dependency-groups]
 dev = [
     "pytest>=9.0.3",
-    "ruff>=0.15.14",
+    "ruff>=0.15.15",
     "maturin>=1.13.3,<2.0",
 ]
 docs = [
