@@ -4,7 +4,7 @@ mod py;
 #[cfg(feature = "pyo3")]
 pub use py::PyAggFunc;
 
-use crate::recorders::PeriodValue;
+use crate::recorders::{Event, PeriodValue};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -77,6 +77,85 @@ impl AggFuncF64 {
             #[cfg(feature = "pyo3")]
             Self::Python(py_func) => {
                 let vals: Vec<f64> = values.iter().map(|v| v.value).collect();
+                match py_func.call_f64(vals) {
+                    Ok(result) => Some(result),
+                    Err(e) => panic!("Error in Python aggregation function: {}", e),
+                }
+            }
+        }
+    }
+
+    /// Calculate the aggregation over the given slice of `Event`.
+    ///
+    /// This function computes the aggregation based on the duration of each event in fraction days.
+    /// Only completed events (those with a defined end time) are included.
+    /// It returns an `Option<f64>`, which will be `None` if the aggregation cannot be computed (e.g., for `Mean` with no events).
+    pub fn calc_events(&self, events: &[Event]) -> Option<f64> {
+        match self {
+            Self::Sum => Some(
+                events
+                    .iter()
+                    .filter_map(|e| e.duration().map(|d| d.fractional_days()))
+                    .sum(),
+            ),
+            Self::Mean => {
+                let total_duration: f64 = events
+                    .iter()
+                    .filter_map(|e| e.duration().map(|d| d.fractional_days()))
+                    .sum();
+                let count = events.len() as f64;
+                if count == 0.0 {
+                    None
+                } else {
+                    Some(total_duration / count)
+                }
+            }
+            Self::Min => events
+                .iter()
+                .filter_map(|e| e.duration().map(|d| d.fractional_days()))
+                .min_by(|a, b| {
+                    a.partial_cmp(b)
+                        .expect("Failed to calculate minimum of event durations containing a NaN.")
+                }),
+            Self::Max => events
+                .iter()
+                .filter_map(|e| e.duration().map(|d| d.fractional_days()))
+                .max_by(|a, b| {
+                    a.partial_cmp(b)
+                        .expect("Failed to calculate maximum of event durations containing a NaN.")
+                }),
+            Self::CountNonZero => {
+                let count = events.iter().filter(|e| e.end.is_some()).count();
+                Some(count as f64)
+            }
+            Self::CountFunc { func } => {
+                let count = events
+                    .iter()
+                    .filter(|e| e.duration().map(|d| func(d.fractional_days())).unwrap_or(false))
+                    .count();
+                Some(count as f64)
+            }
+            Self::Product => {
+                let product = events
+                    .iter()
+                    .filter_map(|e| e.duration().map(|d| d.fractional_days()))
+                    .product();
+                Some(product)
+            }
+            Self::AnyNonZero { tolerance } => {
+                let any = events.iter().any(|e| {
+                    e.duration()
+                        .map(|d| d.fractional_days().abs() > *tolerance)
+                        .unwrap_or(false)
+                });
+                Some(any as u8 as f64)
+            }
+            #[cfg(feature = "pyo3")]
+            Self::Python(py_func) => {
+                let vals: Vec<f64> = events
+                    .iter()
+                    .filter_map(|e| e.duration().map(|d| d.fractional_days()))
+                    .collect();
                 match py_func.call_f64(vals) {
                     Ok(result) => Some(result),
                     Err(e) => panic!("Error in Python aggregation function: {}", e),

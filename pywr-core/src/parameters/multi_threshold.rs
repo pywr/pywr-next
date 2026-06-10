@@ -2,8 +2,9 @@ use crate::metric::MetricF64;
 use crate::network::Network;
 use crate::parameters::errors::{ParameterCalculationError, ParameterSetupError};
 use crate::parameters::{
-    GeneralParameter, Parameter, ParameterMeta, ParameterName, ParameterState, Predicate, downcast_internal_state_mut,
+    GeneralParameter, Parameter, ParameterMeta, ParameterName, ParameterState, downcast_internal_state_mut,
 };
+use crate::predicate::Predicate;
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
 use crate::timestep::Timestep;
@@ -100,7 +101,8 @@ impl GeneralParameter<u64> for MultiThresholdParameter {
 mod tests {
     use super::MultiThresholdParameter;
     use crate::metric::MetricF64;
-    use crate::parameters::{Array1Parameter, Predicate};
+    use crate::parameters::Array1Parameter;
+    use crate::predicate::Predicate;
     use crate::test_utils::{run_and_assert_parameter_u64, simple_model};
     use ndarray::{Array1, Array2, Axis, concatenate};
 

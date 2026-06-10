@@ -96,6 +96,7 @@
       {
         "name": "reservoir-metrics",
         "aggregator": {
+          "type": "Periodic",
           "freq": {
             "type": "Annual"
           },

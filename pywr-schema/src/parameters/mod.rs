@@ -71,7 +71,7 @@ use schemars::JsonSchema;
 use std::path::{Path, PathBuf};
 use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticStr};
 pub use tables::TablesArrayParameter;
-pub use thresholds::{MultiThresholdParameter, Predicate, ThresholdParameter};
+pub use thresholds::{MultiThresholdParameter, ThresholdParameter};
 
 #[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]

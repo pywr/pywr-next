@@ -4,6 +4,7 @@ use super::{
 };
 use crate::models::ModelDomain;
 use crate::network::Network;
+use crate::recorders::aggregator::AggregatorValue;
 use crate::recorders::metric_set::MetricSetIndex;
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
@@ -26,6 +27,8 @@ pub enum CsvError {
         #[source]
         source: ::csv::Error,
     },
+    #[error("Event value is not supported in wide format")]
+    EventValueInWideFormat,
 }
 
 /// Output the values from a [`crate::recorders::MetricSet`] to a CSV file.
@@ -61,15 +64,35 @@ impl CsvWideFmtOutput {
                         index: self.metric_set_idx,
                     })?;
 
-            if let Some(current_values) = metric_set_state.current_values() {
-                let values = current_values
+            // If the metric set has values then turn them into a row.
+            if metric_set_state.has_some_values() {
+                let values = metric_set_state
+                    .current_values()
                     .iter()
-                    .map(|v| format!("{:.2}", v.value))
-                    .collect::<Vec<_>>();
+                    .map(|maybe_v| match maybe_v {
+                        Some(v) => match v {
+                            AggregatorValue::Periodic(p) => Ok(format!("{:.2}", p.value)),
+                            AggregatorValue::Event(_) => Err(CsvError::EventValueInWideFormat),
+                        },
+                        None => Ok("".to_string()), // Missing value
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
 
                 // If the row is empty, add the start time
                 if row.is_empty() {
-                    row.push(current_values.first().unwrap().start.to_string())
+                    // Find the first non-None value and use that as the start time
+                    let start = metric_set_state
+                        .current_values()
+                        .iter()
+                        .find_map(|maybe_v| {
+                            maybe_v.as_ref().and_then(|v| match v {
+                                AggregatorValue::Periodic(p) => Some(p.start.to_string()),
+                                AggregatorValue::Event(_) => None,
+                            })
+                        })
+                        .unwrap_or_else(|| "unknown".to_string());
+
+                    row.push(start)
                 }
 
                 row.extend(values);
@@ -192,7 +215,7 @@ impl Recorder for CsvWideFmtOutput {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct CsvLongFmtRecord {
+pub struct CsvLongFmtValueRecord {
     time_start: NaiveDateTime,
     time_end: NaiveDateTime,
     simulation_id: usize,
@@ -201,6 +224,17 @@ pub struct CsvLongFmtRecord {
     name: String,
     attribute: String,
     value: f64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CsvLongFmtEventRecord {
+    time_start: NaiveDateTime,
+    time_end: Option<NaiveDateTime>,
+    simulation_id: usize,
+    label: String,
+    metric_set: String,
+    name: String,
+    attribute: String,
 }
 
 /// Output the values from a several [`crate::recorders::MetricSet`]s to a CSV file in long format.
@@ -245,37 +279,57 @@ impl CsvLongFmtOutput {
                     .get(*metric_set_idx.deref())
                     .ok_or(CsvError::MetricSetIndexNotFound { index: *metric_set_idx })?;
 
-                if let Some(current_values) = metric_set_state.current_values() {
-                    let metric_set = network
-                        .get_metric_set(*metric_set_idx)
-                        .ok_or(CsvError::MetricSetIndexNotFound { index: *metric_set_idx })?;
+                let metric_set = network
+                    .get_metric_set(*metric_set_idx)
+                    .ok_or(CsvError::MetricSetIndexNotFound { index: *metric_set_idx })?;
 
-                    for (metric, value) in metric_set.iter_metrics().zip(current_values.iter()) {
+                for (metric, maybe_value) in metric_set.iter_metrics().zip(metric_set_state.current_values()) {
+                    if let Some(value) = maybe_value {
                         let name = metric.name().to_string();
                         let attribute = metric.attribute().to_string();
 
-                        let value_scaled = if let Some(decimal_places) = self.decimal_places {
-                            let scale = 10.0_f64.powi(decimal_places.get() as i32);
-                            (value.value * scale).round() / scale
-                        } else {
-                            value.value
-                        };
+                        match value {
+                            AggregatorValue::Periodic(value) => {
+                                let value_scaled = if let Some(decimal_places) = self.decimal_places {
+                                    let scale = 10.0_f64.powi(decimal_places.get() as i32);
+                                    (value.value * scale).round() / scale
+                                } else {
+                                    value.value
+                                };
 
-                        let record = CsvLongFmtRecord {
-                            time_start: value.start,
-                            time_end: value.end(),
-                            simulation_id: scenario_index.simulation_id(),
-                            label: scenario_index.label(),
-                            metric_set: metric_set.name().to_string(),
-                            name,
-                            attribute,
-                            value: value_scaled,
-                        };
+                                let record = CsvLongFmtValueRecord {
+                                    time_start: value.start,
+                                    time_end: value.end(),
+                                    simulation_id: scenario_index.simulation_id(),
+                                    label: scenario_index.label(),
+                                    metric_set: metric_set.name().to_string(),
+                                    name,
+                                    attribute,
+                                    value: value_scaled,
+                                };
 
-                        internal.writer.serialize(record).map_err(|source| CsvError::CSVError {
-                            path: self.filename.clone(),
-                            source,
-                        })?;
+                                internal.writer.serialize(record).map_err(|source| CsvError::CSVError {
+                                    path: self.filename.clone(),
+                                    source,
+                                })?;
+                            }
+                            AggregatorValue::Event(event) => {
+                                let record = CsvLongFmtEventRecord {
+                                    time_start: event.start,
+                                    time_end: event.end,
+                                    simulation_id: scenario_index.simulation_id(),
+                                    label: scenario_index.label(),
+                                    metric_set: metric_set.name().to_string(),
+                                    name,
+                                    attribute,
+                                };
+
+                                internal.writer.serialize(record).map_err(|source| CsvError::CSVError {
+                                    path: self.filename.clone(),
+                                    source,
+                                })?;
+                            }
+                        }
                     }
                 }
             }
