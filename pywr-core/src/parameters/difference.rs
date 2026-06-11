@@ -45,20 +45,20 @@ where
     }
 }
 impl GeneralParameter<f64> for DifferenceParameter<MetricF64> {
-    fn compute(
+    fn before(
         &self,
         _timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
         model: &Network,
         state: &State,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<f64, ParameterCalculationError> {
+    ) -> Result<Option<f64>, ParameterCalculationError> {
         let a = self.a.get_value(model, state)?;
         let b = self.b.get_value(model, state)?;
         let min = self.min.as_ref().map(|m| m.get_value(model, state)).transpose()?;
         let max = self.max.as_ref().map(|m| m.get_value(model, state)).transpose()?;
 
-        Ok(difference(a, b, min, max))
+        Ok(Some(difference(a, b, min, max)))
     }
 
     fn as_parameter(&self) -> &dyn Parameter
@@ -86,19 +86,19 @@ impl GeneralParameter<f64> for DifferenceParameter<MetricF64> {
 }
 
 impl SimpleParameter<f64> for DifferenceParameter<SimpleMetricF64> {
-    fn compute(
+    fn before(
         &self,
         _timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
         values: &SimpleParameterValues,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<f64, SimpleCalculationError> {
+    ) -> Result<Option<f64>, SimpleCalculationError> {
         let a = self.a.get_value(values)?;
         let b = self.b.get_value(values)?;
         let min = self.min.as_ref().map(|m| m.get_value(values)).transpose()?;
         let max = self.max.as_ref().map(|m| m.get_value(values)).transpose()?;
 
-        Ok(difference(a, b, min, max))
+        Ok(Some(difference(a, b, min, max)))
     }
 
     fn as_parameter(&self) -> &dyn Parameter

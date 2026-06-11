@@ -1,6 +1,5 @@
 use crate::aggregated_node::{AggregatedNode, AggregatedNodeIndex, AggregatedNodeVec, Relationship};
 use crate::aggregated_storage_node::{AggregatedStorageNode, AggregatedStorageNodeIndex, AggregatedStorageNodeVec};
-use crate::derived_metric::{DerivedMetric, DerivedMetricError, DerivedMetricIndex};
 use crate::edge::{Edge, EdgeIndex, EdgeVec};
 use crate::metric::{MetricF64, SimpleMetricF64};
 use crate::models::ModelDomain;
@@ -30,7 +29,6 @@ use pyo3::{PyResult, exceptions::PyKeyError, pyclass, pymethods};
 use pyo3_polars::PyDataFrame;
 use rayon::prelude::*;
 use std::collections::{HashMap, HashSet};
-use std::ops::Deref;
 use std::slice::{Iter, IterMut};
 use std::sync::Arc;
 use std::time::Duration;
@@ -294,7 +292,7 @@ impl NetworkTimings {
             info!("Slowest components:");
             info!(
                 "  {: <24} | {: <10}  | {: <10}  | {: <10}  | {:5}",
-                "Component", "Calc", "After", "Total", "% of total"
+                "Component", "before", "after", "total", "% of total"
             );
             for (ct, duration) in slowest {
                 info!(
@@ -315,7 +313,6 @@ pub enum ComponentType {
     Node(NodeIndex),
     VirtualStorageNode(VirtualStorageIndex),
     Parameter(GeneralParameterType),
-    DerivedMetric(DerivedMetricIndex),
 }
 
 impl ComponentType {
@@ -334,12 +331,6 @@ impl ComponentType {
                     network.parameters.get_general_multi(idx).unwrap().name().to_string()
                 }
             },
-            ComponentType::DerivedMetric(idx) => network
-                .get_derived_metric(idx)
-                .unwrap()
-                .name(network)
-                .unwrap()
-                .to_string(),
         }
     }
 }
@@ -457,26 +448,6 @@ pub enum NetworkStepError {
         name: ParameterName,
         #[source]
         source: SetStateError<GeneralParameterIndex<MultiValue>>,
-    },
-    #[error("Derived metric index not found: {0}")]
-    DerivedMetricIndexNotFound(DerivedMetricIndex),
-    #[error("Error performing `before` method on derived metric `{name}`: `{source}`")]
-    DerivedMetricBeforeError {
-        name: String,
-        #[source]
-        source: DerivedMetricError,
-    },
-    #[error("Error setting state for derived metric `{name}`: {source}")]
-    DerivedMetricSetStateError {
-        name: String,
-        #[source]
-        source: SetStateError<DerivedMetricIndex>,
-    },
-    #[error("Error calculating derived metric `{name}`: `{source}`")]
-    DerivedMetricCalculationError {
-        name: String,
-        #[source]
-        source: DerivedMetricError,
     },
     #[error("Error saving metric set `{name}`: `{source}`")]
     MetricSetSaveError {
@@ -653,7 +624,6 @@ pub struct Network {
     aggregated_storage_nodes: AggregatedStorageNodeVec,
     virtual_storage_nodes: VirtualStorageVec,
     parameters: ParameterCollection,
-    derived_metrics: Vec<DerivedMetric>,
     metric_sets: Vec<MetricSet>,
     resolve_order: Vec<ComponentType>,
     recorders: Vec<Box<dyn recorders::Recorder>>,
@@ -704,7 +674,6 @@ impl Network {
             let state_builder = StateBuilder::new(initial_node_states, self.edges.len())
                 .with_virtual_storage_states(initial_virtual_storage_states)
                 .with_parameters(&self.parameters)
-                .with_derived_metrics(self.derived_metrics.len())
                 .with_inter_network_transfers(num_inter_network_transfers);
 
             let mut state = state_builder.build();
@@ -1150,13 +1119,13 @@ impl Network {
                                 .ok_or_else(|| NetworkStepError::ParameterF64IndexNotFound(*idx))?;
 
                             let value = p
-                                .compute(timestep, scenario_index, self, state, internal_state)
+                                .before(timestep, scenario_index, self, state, internal_state)
                                 .map_err(|source| NetworkStepError::ParameterCalculationError {
                                     name: p.name().clone(),
                                     source: Box::new(source),
                                 })?;
 
-                            state.set_parameter_value(*idx, value).map_err(|source| {
+                            state.set_parameter_value_before(*idx, value).map_err(|source| {
                                 NetworkStepError::ParameterF64SetStateError {
                                     name: p.name().clone(),
                                     source,
@@ -1175,13 +1144,13 @@ impl Network {
                                 .ok_or_else(|| NetworkStepError::ParameterU64IndexNotFound(*idx))?;
 
                             let value = p
-                                .compute(timestep, scenario_index, self, state, internal_state)
+                                .before(timestep, scenario_index, self, state, internal_state)
                                 .map_err(|source| NetworkStepError::ParameterCalculationError {
                                     name: p.name().clone(),
                                     source: Box::new(source),
                                 })?;
 
-                            state.set_parameter_index(*idx, value).map_err(|source| {
+                            state.set_parameter_index_before(*idx, value).map_err(|source| {
                                 NetworkStepError::ParameterU64SetStateError {
                                     name: p.name().clone(),
                                     source,
@@ -1200,39 +1169,19 @@ impl Network {
                                 .ok_or_else(|| NetworkStepError::ParameterMultiIndexNotFound(*idx))?;
 
                             let value = p
-                                .compute(timestep, scenario_index, self, state, internal_state)
+                                .before(timestep, scenario_index, self, state, internal_state)
                                 .map_err(|source| NetworkStepError::ParameterCalculationError {
                                     name: p.name().clone(),
                                     source: Box::new(source),
                                 })?;
                             // debug!("Current value of index parameter {}: {}", p.name(), value);
-                            state.set_multi_parameter_value(*idx, value).map_err(|source| {
+                            state.set_multi_parameter_value_before(*idx, value).map_err(|source| {
                                 NetworkStepError::ParameterMultiSetStateError {
                                     name: p.name().clone(),
                                     source,
                                 }
                             })?;
                         }
-                    }
-                }
-                ComponentType::DerivedMetric(idx) => {
-                    // Compute derived metrics in before
-                    let m = self
-                        .derived_metrics
-                        .get(*idx.deref())
-                        .ok_or(NetworkStepError::DerivedMetricIndexNotFound(*idx))?;
-
-                    let maybe_new_value = m.before(timestep, self, state).map_err(|source| {
-                        // There could be an error determining the name of the metric!
-                        let name = m.name(self).unwrap_or("unknown").to_string();
-                        NetworkStepError::DerivedMetricBeforeError { name, source }
-                    })?;
-
-                    if let Some(value) = maybe_new_value {
-                        state.set_derived_metric_value(*idx, value).map_err(|source| {
-                            let name = m.name(self).unwrap_or("unknown").to_string();
-                            NetworkStepError::DerivedMetricSetStateError { name, source }
-                        })?;
                     }
                 }
             }
@@ -1291,11 +1240,19 @@ impl Network {
                                 .get_general_mut_f64_state(*idx)
                                 .ok_or_else(|| NetworkStepError::ParameterF64IndexNotFound(*idx))?;
 
-                            p.after(timestep, scenario_index, self, state, internal_state)
-                                .map_err(|source| NetworkStepError::ParameterAfterError {
+                            let value =
+                                p.after(timestep, scenario_index, self, state, internal_state)
+                                    .map_err(|source| NetworkStepError::ParameterAfterError {
+                                        name: p.name().clone(),
+                                        source: Box::new(source),
+                                    })?;
+
+                            state.set_parameter_value_after(*idx, value).map_err(|source| {
+                                NetworkStepError::ParameterF64SetStateError {
                                     name: p.name().clone(),
-                                    source: Box::new(source),
-                                })?;
+                                    source,
+                                }
+                            })?;
                         }
                         GeneralParameterType::Index(idx) => {
                             let p = self
@@ -1308,11 +1265,19 @@ impl Network {
                                 .get_general_mut_u64_state(*idx)
                                 .ok_or_else(|| NetworkStepError::ParameterU64IndexNotFound(*idx))?;
 
-                            p.after(timestep, scenario_index, self, state, internal_state)
-                                .map_err(|source| NetworkStepError::ParameterAfterError {
+                            let value =
+                                p.after(timestep, scenario_index, self, state, internal_state)
+                                    .map_err(|source| NetworkStepError::ParameterAfterError {
+                                        name: p.name().clone(),
+                                        source: Box::new(source),
+                                    })?;
+
+                            state.set_parameter_index_after(*idx, value).map_err(|source| {
+                                NetworkStepError::ParameterU64SetStateError {
                                     name: p.name().clone(),
-                                    source: Box::new(source),
-                                })?;
+                                    source,
+                                }
+                            })?;
                         }
                         GeneralParameterType::Multi(idx) => {
                             let p = self
@@ -1325,31 +1290,21 @@ impl Network {
                                 .get_general_mut_multi_state(*idx)
                                 .ok_or_else(|| NetworkStepError::ParameterMultiIndexNotFound(*idx))?;
 
-                            p.after(timestep, scenario_index, self, state, internal_state)
-                                .map_err(|source| NetworkStepError::ParameterAfterError {
+                            let value =
+                                p.after(timestep, scenario_index, self, state, internal_state)
+                                    .map_err(|source| NetworkStepError::ParameterAfterError {
+                                        name: p.name().clone(),
+                                        source: Box::new(source),
+                                    })?;
+
+                            state.set_multi_parameter_value_after(*idx, value).map_err(|source| {
+                                NetworkStepError::ParameterMultiSetStateError {
                                     name: p.name().clone(),
-                                    source: Box::new(source),
-                                })?;
+                                    source,
+                                }
+                            })?;
                         }
                     }
-                }
-                ComponentType::DerivedMetric(idx) => {
-                    // Compute derived metrics in "after"
-                    let m = self
-                        .derived_metrics
-                        .get(*idx.deref())
-                        .ok_or(NetworkStepError::DerivedMetricIndexNotFound(*idx))?;
-
-                    let value = m.compute(self, state).map_err(|source| {
-                        // There could be an error determining the name of the metric!
-                        let name = m.name(self).unwrap_or("unknown").to_string();
-                        NetworkStepError::DerivedMetricCalculationError { name, source }
-                    })?;
-
-                    state.set_derived_metric_value(*idx, value).map_err(|source| {
-                        let name = m.name(self).unwrap_or("unknown").to_string();
-                        NetworkStepError::DerivedMetricSetStateError { name, source }
-                    })?;
                 }
             }
 
@@ -1758,70 +1713,6 @@ impl Network {
 
         node.set_min_volume_constraint(value);
         Ok(())
-    }
-
-    pub fn get_storage_node_metric(
-        &mut self,
-        name: &str,
-        sub_name: Option<&str>,
-        proportional: bool,
-    ) -> Result<MetricF64, NetworkError> {
-        if let Some(idx) = self.get_node_index_by_name(name, sub_name) {
-            // A regular node
-            if proportional {
-                // Proportional is a derived metric
-                let dm_idx = self.add_derived_metric(DerivedMetric::NodeProportionalVolume(idx));
-                Ok(MetricF64::DerivedMetric(dm_idx))
-            } else {
-                Ok(MetricF64::NodeVolume(idx))
-            }
-        } else if let Some(idx) = self.get_aggregated_storage_node_index_by_name(name, sub_name) {
-            if proportional {
-                // Proportional is a derived metric
-                let dm_idx = self.add_derived_metric(DerivedMetric::AggregatedNodeProportionalVolume(idx));
-                Ok(MetricF64::DerivedMetric(dm_idx))
-            } else {
-                Ok(MetricF64::AggregatedNodeVolume(idx))
-            }
-        } else if let Some(node) = self.get_virtual_storage_node_by_name(name, sub_name) {
-            if proportional {
-                // Proportional is a derived metric
-                let dm_idx = self.add_derived_metric(DerivedMetric::VirtualStorageProportionalVolume(node.index()));
-                Ok(MetricF64::DerivedMetric(dm_idx))
-            } else {
-                Ok(MetricF64::VirtualStorageVolume(node.index()))
-            }
-        } else {
-            Err(NetworkError::NodeNotFound {
-                name: name.to_string(),
-                sub_name: sub_name.map(|s| s.to_string()),
-            })
-        }
-    }
-
-    /// Get a [`DerivedMetricIndex`] for the given derived metric
-    pub fn get_derived_metric_index(&self, derived_metric: &DerivedMetric) -> Option<DerivedMetricIndex> {
-        self.derived_metrics
-            .iter()
-            .position(|dm| dm == derived_metric)
-            .map(DerivedMetricIndex::new)
-    }
-
-    /// Get a [`DerivedMetricIndex`] for the given derived metric
-    pub fn get_derived_metric(&self, index: &DerivedMetricIndex) -> Option<&DerivedMetric> {
-        self.derived_metrics.get(*index.deref())
-    }
-
-    pub fn add_derived_metric(&mut self, derived_metric: DerivedMetric) -> DerivedMetricIndex {
-        match self.get_derived_metric_index(&derived_metric) {
-            Some(idx) => idx,
-            None => {
-                self.derived_metrics.push(derived_metric);
-                let idx = DerivedMetricIndex::new(self.derived_metrics.len() - 1);
-                self.resolve_order.push(ComponentType::DerivedMetric(idx));
-                idx
-            }
-        }
     }
 
     /// Get a `Parameter` from a parameter's name
@@ -2530,7 +2421,8 @@ mod tests {
 
         // assign the new parameter to one of the nodes.
         let node = network.get_mut_node_by_name("input", None).unwrap();
-        node.set_max_flow_constraint(Some(parameter.into())).unwrap();
+        node.set_max_flow_constraint(Some(parameter.into_metric_f64_before()))
+            .unwrap();
 
         // Try to assign a constraint not defined for particular node type
         assert!(matches!(
@@ -2591,7 +2483,7 @@ mod tests {
             .get_parameter_index_by_name(&"total-demand".into())
             .unwrap();
         let expected = Array2::from_elem((366, 10), 12.0);
-        let recorder = AssertionF64Recorder::new("total-demand", idx.into(), expected, None, None);
+        let recorder = AssertionF64Recorder::new("total-demand", idx.into_metric_f64_before(), expected, None, None);
         model.network_mut().add_recorder(Box::new(recorder)).unwrap();
 
         // Test all solvers
@@ -2631,13 +2523,12 @@ mod tests {
         let mut model = simple_storage_model();
         let network = model.network_mut();
         let idx = network.get_node_by_name("reservoir", None).unwrap().index();
-        let dm_idx = network.add_derived_metric(DerivedMetric::NodeProportionalVolume(idx));
 
         // These are the expected values for the proportional volume at the end of the time-step
         let expected = Array2::from_shape_fn((15, 10), |(i, _j)| (90.0 - 10.0 * i as f64).max(0.0) / 100.0);
         let recorder = AssertionF64Recorder::new(
             "reservoir-proportion-volume",
-            MetricF64::DerivedMetric(dm_idx),
+            MetricF64::NodeProportionalVolume(idx),
             expected,
             None,
             None,
@@ -2648,14 +2539,14 @@ mod tests {
         // This should be use the initial proportion (100%) on the first time-step, and then the previous day's end value
         let cc = ControlCurveInterpolatedParameter::new(
             "interp".into(),
-            MetricF64::DerivedMetric(dm_idx),
+            MetricF64::NodeProportionalVolume(idx),
             vec![],
             vec![100.0.into(), 0.0.into()],
         );
         let p_idx = network.add_parameter(Box::new(cc)).unwrap();
         let expected = Array2::from_shape_fn((15, 10), |(i, _j)| (100.0 - 10.0 * i as f64).max(0.0));
 
-        let recorder = AssertionF64Recorder::new("reservoir-cc", p_idx.into(), expected, None, None);
+        let recorder = AssertionF64Recorder::new("reservoir-cc", p_idx.into_metric_f64_before(), expected, None, None);
         network.add_recorder(Box::new(recorder)).unwrap();
 
         // Test all solvers
@@ -2679,7 +2570,8 @@ mod tests {
 
         // assign the new parameter to one of the nodes.
         let node = model.network_mut().get_mut_node_by_name("input", None).unwrap();
-        node.set_max_flow_constraint(Some(input_max_flow_idx.into())).unwrap();
+        node.set_max_flow_constraint(Some(input_max_flow_idx.into_metric_f64_before()))
+            .unwrap();
 
         let mut state = model.setup::<ClpSolver>(&ClpSolverSettings::default()).unwrap();
 

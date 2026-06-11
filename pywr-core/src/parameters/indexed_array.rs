@@ -29,14 +29,14 @@ impl Parameter for IndexedArrayParameter {
 }
 
 impl GeneralParameter<f64> for IndexedArrayParameter {
-    fn compute(
+    fn before(
         &self,
         _timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
         network: &Network,
         state: &State,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<f64, ParameterCalculationError> {
+    ) -> Result<Option<f64>, ParameterCalculationError> {
         let index = self.index_parameter.get_value(network, state)? as usize;
 
         let metric = self
@@ -48,7 +48,7 @@ impl GeneralParameter<f64> for IndexedArrayParameter {
                 axis: 0,
             })?;
 
-        Ok(metric.get_value(network, state)?)
+        Ok(Some(metric.get_value(network, state)?))
     }
 
     fn as_parameter(&self) -> &dyn Parameter

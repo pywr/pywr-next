@@ -1,0 +1,107 @@
+{
+  "metadata": {
+    "title": "Turbine 1",
+    "description": "A simple example of using the Turbine node.",
+    "minimum_version": "0.1"
+  },
+  "timestepper": {
+    "start": "2015-01-01",
+    "end": "2015-01-03",
+    "timestep": {
+      "type": "Days",
+      "days": 1
+    }
+  },
+  "network": {
+    "nodes": [
+      {
+        "meta": {
+          "name": "supply1"
+        },
+        "type": "Input",
+        "max_flow": {
+          "type": "Literal",
+          "value": 15.0
+        }
+      },
+      {
+        "meta": {
+          "name": "turbine1"
+        },
+        "type": "Turbine",
+        "target": {
+          "type": "Literal",
+          "value": 10.0
+        },
+        "turbine_elevation": 100.0,
+        "min_head": 0.0,
+        "efficiency": 1.0,
+        "water_density": 1000.0,
+        "flow_unit_conversion": 1.0,
+        "energy_unit_conversion": 1e-6
+      },
+      {
+        "meta": {
+          "name": "demand1"
+        },
+        "type": "Output",
+        "max_flow": {
+          "type": "Parameter",
+          "name": "demand"
+        },
+        "cost": {
+          "type": "Literal",
+          "value": -10
+        }
+      }
+    ],
+    "edges": [
+      {
+        "from_node": "supply1",
+        "to_node": "turbine1"
+      },
+      {
+        "from_node": "turbine1",
+        "to_node": "demand1"
+      }
+    ],
+    "parameters": [
+      {
+        "meta": {
+          "name": "demand"
+        },
+        "type": "Constant",
+        "value": {
+          "type": "Literal",
+          "value": 10.0
+        }
+      }
+    ],
+    "metric_sets": [
+      {
+        "name": "nodes",
+        "metrics": [
+          {
+            "type": "Node",
+            "name": "turbine1",
+            "attribute": "Inflow"
+          },
+          {
+            "type": "Node",
+            "name": "turbine1",
+            "attribute": "Power"
+          }
+        ]
+      }
+    ],
+    "outputs": [
+      {
+        "name": "nodes",
+        "type": "CSV",
+        "format": "Long",
+        "filename": "turbine1-expected.csv",
+        "metric_set": "nodes"
+      }
+    ]
+  }
+}

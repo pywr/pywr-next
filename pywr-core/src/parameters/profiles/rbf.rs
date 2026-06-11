@@ -141,17 +141,17 @@ impl Parameter for RbfProfileParameter {
 }
 
 impl SimpleParameter<f64> for RbfProfileParameter {
-    fn compute(
+    fn before(
         &self,
         timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
         _values: &SimpleParameterValues,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<f64, SimpleCalculationError> {
+    ) -> Result<Option<f64>, SimpleCalculationError> {
         // Get the profile from the internal state
         let internal_state = downcast_internal_state_ref::<RbfProfileInternalState>(internal_state);
         // Return today's value from the profile
-        Ok(internal_state.profile[timestep.day_of_year_index()])
+        Ok(Some(internal_state.profile[timestep.day_of_year_index()]))
     }
 
     fn as_parameter(&self) -> &dyn Parameter
