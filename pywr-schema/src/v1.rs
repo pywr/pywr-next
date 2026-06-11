@@ -86,7 +86,15 @@ pub(crate) fn convert_tags(
             serde_json::Value::String(s) => Ok((k, s)),
             other => Err(ConversionError::UnexpectedType {
                 expected: "String".to_string(),
-                actual: other.to_string(),
+                actual: match other {
+                    serde_json::Value::Null => "Null",
+                    serde_json::Value::Bool(_) => "Bool",
+                    serde_json::Value::Number(_) => "Number",
+                    serde_json::Value::Array(_) => "Array",
+                    serde_json::Value::Object(_) => "Object",
+                    serde_json::Value::String(_) => unreachable!(),
+                }
+                .to_string(),
             }),
         })
         .collect()
