@@ -8,7 +8,7 @@ use crate::nodes::abstraction::AbstractionOutputNodeSlot;
 use crate::nodes::{NodeAttribute, NodeComponent};
 use crate::nodes::{NodeMeta, NodeSlot};
 use crate::parameters::Parameter;
-use crate::v1::{ConversionData, TryFromV1, try_convert_node_attr};
+use crate::v1::{ConversionData, TryFromV1, try_convert_node_attr, try_convert_node_meta};
 use crate::{ConversionError, TryIntoV2, mermaid, node_attribute_subset_enum, node_component_subset_enum};
 #[cfg(feature = "core")]
 use pywr_core::{aggregated_node::Relationship, metric::MetricF64, node::NodeIndex};
@@ -370,7 +370,7 @@ impl TryFromV1<RiverSplitWithGaugeNodeV1> for RiverSplitWithGaugeNode {
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: NodeMeta = v1.meta.into();
+        let meta: NodeMeta = try_convert_node_meta(v1.meta)?;
 
         let mrf = try_convert_node_attr(&meta.name, "mrf", v1.mrf, parent_node, conversion_data)?;
         let mrf_cost = try_convert_node_attr(&meta.name, "mrf_cost", v1.mrf_cost, parent_node, conversion_data)?;

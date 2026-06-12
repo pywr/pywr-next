@@ -38,6 +38,7 @@ mod test {
             meta: ParameterMeta {
                 name: "placeholder".to_string(),
                 comment: None,
+                tags: Default::default(),
             },
         };
 

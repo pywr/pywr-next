@@ -36,7 +36,7 @@ use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::network::LoadArgs;
 use crate::timeseries::ConvertedTimeseriesReference;
-use crate::v1::{ConversionData, IntoV2, TryFromV1, TryIntoV2};
+use crate::v1::{ConversionData, TryFromV1, TryIntoV2};
 use crate::visit::{VisitMetrics, VisitPaths};
 pub use aggregated::{AggregatedIndexParameter, AggregatedParameter};
 pub use asymmetric_switch::AsymmetricSwitchIndexParameter;
@@ -68,6 +68,7 @@ use pywr_v1_schema::parameters::{
 };
 pub use rolling::{RollingIndexParameter, RollingParameter};
 use schemars::JsonSchema;
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticStr};
 pub use tables::TablesArrayParameter;
@@ -79,6 +80,8 @@ pub struct ParameterMeta {
     pub name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub comment: Option<String>,
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub tags: HashMap<String, String>,
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, EnumDiscriminants, Clone, JsonSchema, Display)]
@@ -511,12 +514,12 @@ impl TryFromV1<ParameterV1> for ParameterOrTimeseriesRef {
                     Parameter::MonthlyProfile(p.try_into_v2(parent_node, conversion_data)?).into()
                 }
                 CoreParameter::UniformDrawdownProfile(p) => {
-                    Parameter::UniformDrawdownProfile(p.into_v2(parent_node, conversion_data)).into()
+                    Parameter::UniformDrawdownProfile(p.try_into_v2(parent_node, conversion_data)?).into()
                 }
                 CoreParameter::Max(p) => Parameter::Max(p.try_into_v2(parent_node, conversion_data)?).into(),
                 CoreParameter::Negative(p) => Parameter::Negative(p.try_into_v2(parent_node, conversion_data)?).into(),
                 CoreParameter::Polynomial1D(p) => {
-                    Parameter::Polynomial1D(p.into_v2(parent_node, conversion_data)).into()
+                    Parameter::Polynomial1D(p.try_into_v2(parent_node, conversion_data)?).into()
                 }
                 CoreParameter::ParameterThreshold(p) => {
                     Parameter::Threshold(p.try_into_v2(parent_node, conversion_data)?).into()
@@ -559,7 +562,7 @@ impl TryFromV1<ParameterV1> for ParameterOrTimeseriesRef {
                     }));
                 }
                 CoreParameter::DiscountFactor(p) => {
-                    Parameter::DiscountFactor(p.into_v2(parent_node, conversion_data)).into()
+                    Parameter::DiscountFactor(p.try_into_v2(parent_node, conversion_data)?).into()
                 }
                 CoreParameter::InterpolatedVolume(p) => {
                     Parameter::Interpolated(p.try_into_v2(parent_node, conversion_data)?).into()

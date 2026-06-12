@@ -5,7 +5,7 @@ use crate::metric::{IndexMetric, Metric, NodeAttrReference};
 #[cfg(feature = "core")]
 use crate::network::LoadArgs;
 use crate::parameters::ParameterMeta;
-use crate::v1::IntoV2;
+use crate::v1::TryIntoV2;
 use crate::{ComponentConversionError, ConversionData, ConversionError, TryFromV1};
 #[cfg(feature = "core")]
 use pywr_core::parameters::{ParameterIndex, ParameterName};
@@ -101,7 +101,7 @@ impl TryFromV1<RollingMeanFlowNodeParameterV1> for RollingParameter {
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.into_v2(parent_node, conversion_data);
+        let meta: ParameterMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
 
         let window_size = match (v1.timesteps, v1.days) {
             (Some(timesteps), None) => timesteps as u64,

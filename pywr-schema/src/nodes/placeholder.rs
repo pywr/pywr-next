@@ -74,6 +74,7 @@ mod test {
                 name: "placeholder".to_string(),
                 comment: None,
                 position: None,
+                tags: Default::default(),
             },
         };
 

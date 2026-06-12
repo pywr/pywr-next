@@ -7,6 +7,7 @@ use crate::nodes::{LossFactor, NodeMeta, NodeSlot};
 #[cfg(feature = "core")]
 use crate::nodes::{NodeAttribute, NodeComponent};
 use crate::parameters::{ConstantValue, Parameter};
+use crate::v1::try_convert_node_meta;
 use crate::{mermaid, node_attribute_subset_enum, node_component_subset_enum};
 #[cfg(feature = "core")]
 use pywr_core::{
@@ -502,7 +503,7 @@ impl TryFrom<LinkNodeV1> for RiverNode {
     type Error = Box<ComponentConversionError>;
 
     fn try_from(v1: LinkNodeV1) -> Result<Self, Self::Error> {
-        let meta: NodeMeta = v1.meta.into();
+        let meta: NodeMeta = try_convert_node_meta(v1.meta)?;
 
         if v1.max_flow.is_some() {
             return Err(Box::new(ComponentConversionError::Node {

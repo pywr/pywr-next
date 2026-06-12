@@ -96,6 +96,7 @@ pub use river_split_with_gauge::{
 };
 use schemars::JsonSchema;
 pub use slots::NodeSlot;
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticStr};
 pub use turbine::{TargetType, TurbineNode, TurbineNodeAttribute, TurbineNodeComponent};
@@ -132,15 +133,20 @@ pub struct NodeMeta {
     pub comment: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub position: Option<NodePosition>,
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub tags: HashMap<String, String>,
 }
 
-impl From<NodeMetaV1> for NodeMeta {
-    fn from(v1: NodeMetaV1) -> Self {
-        Self {
+impl TryFrom<NodeMetaV1> for NodeMeta {
+    type Error = ConversionError;
+
+    fn try_from(v1: NodeMetaV1) -> Result<Self, Self::Error> {
+        Ok(Self {
             name: v1.name,
             comment: v1.comment,
             position: v1.position.map(|p| p.into()),
-        }
+            tags: crate::v1::convert_tags(v1.tags)?,
+        })
     }
 }
 
@@ -731,7 +737,7 @@ impl TryFromV1<Box<CoreNodeV1>> for NodeOrVirtualNode {
                 Node::RiverSplitWithGauge(n.try_into_v2(parent_node, conversion_data)?).into()
             }
             CoreNodeV1::Aggregated(n) => VirtualNode::Aggregated(n.try_into_v2(parent_node, conversion_data)?).into(),
-            CoreNodeV1::AggregatedStorage(n) => VirtualNode::AggregatedStorage(n.into()).into(),
+            CoreNodeV1::AggregatedStorage(n) => VirtualNode::AggregatedStorage(n.try_into()?).into(),
             CoreNodeV1::VirtualStorage(n) => {
                 VirtualNode::VirtualStorage(n.try_into_v2(parent_node, conversion_data)?).into()
             }

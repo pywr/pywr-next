@@ -7,7 +7,7 @@ use crate::ConversionError;
 use crate::digest::Checksum;
 use crate::error::ComponentConversionError;
 use crate::parameters::ParameterMeta;
-use crate::v1::{ConversionData, IntoV2, TryFromV1};
+use crate::v1::{ConversionData, TryFromV1, TryIntoV2};
 use crate::visit::VisitPaths;
 #[cfg(feature = "core")]
 use ndarray::{Array2, ShapeError, s};
@@ -513,7 +513,7 @@ impl TryFromV1<DataFrameParameterV1> for ConvertedTimeseriesReference {
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.into_v2(parent_node, conversion_data);
+        let meta: ParameterMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
         let mut ts_name = meta.name.clone();
 
         if let Some(url) = v1.url {

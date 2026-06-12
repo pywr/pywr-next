@@ -4,7 +4,7 @@ use crate::error::{ComponentConversionError, ConversionError};
 #[cfg(feature = "core")]
 use crate::network::LoadArgs;
 use crate::parameters::{ConstantFloatVec, ConstantValue, ConversionData, ParameterMeta};
-use crate::v1::{FromV1, IntoV2, TryFromV1, try_convert_values};
+use crate::v1::{TryFromV1, TryIntoV2, try_convert_values};
 #[cfg(feature = "core")]
 use pywr_core::parameters::{ParameterIndex, ParameterName, WeeklyProfileError, WeeklyProfileValues};
 use pywr_schema_macros::{PywrVisitAll, skip_serializing_none};
@@ -70,7 +70,7 @@ impl TryFromV1<DailyProfileParameterV1> for DailyProfileParameter {
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.into_v2(parent_node, conversion_data);
+        let meta: ParameterMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
 
         let values = try_convert_values(&meta.name, v1.values, v1.external, v1.table_ref)?;
 
@@ -145,7 +145,7 @@ impl TryFromV1<MonthlyProfileParameterV1> for MonthlyProfileParameter {
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.into_v2(parent_node, conversion_data);
+        let meta: ParameterMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
         let interp_day = v1.interp_day.map(|id| id.into());
 
         let values = try_convert_values(&meta.name, v1.values.map(|v| v.to_vec()), v1.external, v1.table_ref)?;
@@ -200,20 +200,22 @@ impl UniformDrawdownProfileParameter {
     }
 }
 
-impl FromV1<UniformDrawdownProfileParameterV1> for UniformDrawdownProfileParameter {
-    fn from_v1(
+impl TryFromV1<UniformDrawdownProfileParameterV1> for UniformDrawdownProfileParameter {
+    type Error = Box<ComponentConversionError>;
+
+    fn try_from_v1(
         v1: UniformDrawdownProfileParameterV1,
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
-    ) -> Self {
-        let meta: ParameterMeta = v1.meta.into_v2(parent_node, conversion_data);
+    ) -> Result<Self, Self::Error> {
+        let meta: ParameterMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
 
-        Self {
+        Ok(Self {
             meta,
             reset_day: v1.reset_day.map(|v| v.into()),
             reset_month: v1.reset_month.map(|v| v.into()),
             residual_days: v1.residual_days.map(|v| v.into()),
-        }
+        })
     }
 }
 
@@ -390,7 +392,7 @@ impl TryFromV1<RbfProfileParameterV1> for RbfProfileParameter {
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.into_v2(parent_node, conversion_data);
+        let meta: ParameterMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
 
         let points = v1.days_of_year.into_iter().zip(v1.values).collect();
 
@@ -594,7 +596,7 @@ impl TryFromV1<WeeklyProfileParameterV1> for WeeklyProfileParameter {
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.into_v2(parent_node, conversion_data);
+        let meta: ParameterMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
 
         let values = try_convert_values(&meta.name, v1.values, v1.external, v1.table_ref)?;
 
@@ -661,6 +663,7 @@ mod tests {
         let meta = ParameterMeta {
             name: "test".to_string(),
             comment: None,
+            tags: Default::default(),
         };
         let values = ConstantFloatVec::Literal { values: vec![1.0; 366] };
         let param = DailyProfileParameter { meta, values };
@@ -680,6 +683,7 @@ mod tests {
         let meta = ParameterMeta {
             name: "test".to_string(),
             comment: None,
+            tags: Default::default(),
         };
 
         let values = vec![1.0; 365];
@@ -701,6 +705,7 @@ mod tests {
         let meta = ParameterMeta {
             name: "test".to_string(),
             comment: None,
+            tags: Default::default(),
         };
         let values = ConstantFloatVec::Literal { values: vec![1.0; 364] };
         let param = DailyProfileParameter { meta, values };

@@ -10,12 +10,15 @@
 //! It also tracks a count of unnamed parameters and timeseries. This is used during conversion
 //! of meta-data to provide a unique name for unnamed parameters and timeseries.
 
+use std::collections::HashMap;
+
 use crate::ConversionError;
 use crate::error::ComponentConversionError;
 use crate::metric::Metric;
-use crate::nodes::StorageInitialVolume;
+use crate::nodes::{NodeMeta, StorageInitialVolume};
 use crate::parameters::{ConstantFloatVec, Parameter, ParameterMeta};
 use crate::timeseries::Timeseries;
+use pywr_v1_schema::nodes::NodeMeta as NodeMetaV1;
 use pywr_v1_schema::parameters::{
     ExternalDataRef, ParameterMeta as ParameterMetaV1, ParameterValue, ParameterValues, TableDataRef,
 };
@@ -32,33 +35,6 @@ pub struct ConversionData {
 impl ConversionData {
     pub fn reset_count(&mut self) {
         self.unnamed_count = 0;
-    }
-}
-
-pub trait FromV1<T>: Sized {
-    fn from_v1(v1: T, parent_node: Option<&str>, conversion_data: &mut ConversionData) -> Self;
-}
-
-pub trait IntoV2<T> {
-    fn into_v2(self, parent_node: Option<&str>, conversion_data: &mut ConversionData) -> T;
-}
-
-impl<T, U> FromV1<Option<U>> for Option<T>
-where
-    T: FromV1<U>,
-{
-    fn from_v1(v1: Option<U>, parent_node: Option<&str>, conversion_data: &mut ConversionData) -> Self {
-        v1.map(|v| v.into_v2(parent_node, conversion_data))
-    }
-}
-
-// FromV1Parameter implies IntoV2Parameter
-impl<T, U> IntoV2<U> for T
-where
-    U: FromV1<T>,
-{
-    fn into_v2(self, parent_node: Option<&str>, conversion_data: &mut ConversionData) -> U {
-        U::from_v1(self, parent_node, conversion_data)
     }
 }
 
@@ -98,33 +74,83 @@ where
     }
 }
 
-impl FromV1<ParameterMetaV1> for ParameterMeta {
-    fn from_v1(v1: ParameterMetaV1, parent_node: Option<&str>, conversion_data: &mut ConversionData) -> Self {
-        Self {
-            name: v1.name.unwrap_or_else(|| {
-                let pname = match parent_node {
-                    Some(pn) => format!("{pn}-p{}", conversion_data.unnamed_count),
-                    None => format!("unnamed-{}", conversion_data.unnamed_count),
-                };
-                conversion_data.unnamed_count += 1;
-                pname
+/// Convert v1 metadata tags (arbitrary JSON values) to v2 tags (string values).
+///
+/// Returns an error if any tag value is not a string.
+pub(crate) fn convert_tags(
+    tags: Option<HashMap<String, serde_json::Value>>,
+) -> Result<HashMap<String, String>, ConversionError> {
+    tags.unwrap_or_default()
+        .into_iter()
+        .map(|(k, v)| match v {
+            serde_json::Value::String(s) => Ok((k, s)),
+            other => Err(ConversionError::UnexpectedType {
+                expected: "String".to_string(),
+                actual: match other {
+                    serde_json::Value::Null => "Null",
+                    serde_json::Value::Bool(_) => "Bool",
+                    serde_json::Value::Number(_) => "Number",
+                    serde_json::Value::Array(_) => "Array",
+                    serde_json::Value::Object(_) => "Object",
+                    serde_json::Value::String(_) => unreachable!(),
+                }
+                .to_string(),
             }),
+        })
+        .collect()
+}
+
+impl TryFromV1<ParameterMetaV1> for ParameterMeta {
+    type Error = Box<ComponentConversionError>;
+
+    fn try_from_v1(
+        v1: ParameterMetaV1,
+        parent_node: Option<&str>,
+        conversion_data: &mut ConversionData,
+    ) -> Result<Self, Self::Error> {
+        let name = v1.name.unwrap_or_else(|| {
+            let pname = match parent_node {
+                Some(pn) => format!("{pn}-p{}", conversion_data.unnamed_count),
+                None => format!("unnamed-{}", conversion_data.unnamed_count),
+            };
+            conversion_data.unnamed_count += 1;
+            pname
+        });
+
+        let tags = convert_tags(v1.tags).map_err(|error| {
+            Box::new(ComponentConversionError::Parameter {
+                attr: "tags".to_string(),
+                name: name.clone(),
+                error,
+            })
+        })?;
+
+        Ok(Self {
+            name,
             comment: v1.comment,
-        }
+            tags,
+        })
     }
 }
 
-impl FromV1<Option<ParameterMetaV1>> for ParameterMeta {
-    fn from_v1(v1: Option<ParameterMetaV1>, parent_node: Option<&str>, conversion_data: &mut ConversionData) -> Self {
+impl TryFromV1<Option<ParameterMetaV1>> for ParameterMeta {
+    type Error = Box<ComponentConversionError>;
+
+    fn try_from_v1(
+        v1: Option<ParameterMetaV1>,
+        parent_node: Option<&str>,
+        conversion_data: &mut ConversionData,
+    ) -> Result<Self, Self::Error> {
         match v1 {
-            Some(meta) => meta.into_v2(parent_node, conversion_data),
+            Some(meta) => meta.try_into_v2(parent_node, conversion_data),
             None => {
                 let meta = Self {
                     name: format!("unnamed-{}", conversion_data.unnamed_count),
                     comment: None,
+                    tags: HashMap::new(),
                 };
                 conversion_data.unnamed_count += 1;
-                meta
+                Ok(meta)
             }
         }
     }
@@ -172,6 +198,20 @@ where
                 error,
             })
         })
+}
+
+/// Helper function to convert node meta from v1 to v2.
+///
+/// Returns an error if any tag value is not a string.
+pub fn try_convert_node_meta(v1: NodeMetaV1) -> Result<NodeMeta, Box<ComponentConversionError>> {
+    let name = v1.name.clone();
+    NodeMeta::try_from(v1).map_err(|error| {
+        Box::new(ComponentConversionError::Node {
+            attr: "tags".to_string(),
+            name,
+            error,
+        })
+    })
 }
 
 /// Helper function to convert initial storage from v1 to v2.
@@ -269,4 +309,30 @@ pub fn try_convert_control_curves(
     };
 
     Ok(control_curves)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::convert_tags;
+    use crate::ConversionError;
+    use std::collections::HashMap;
+
+    #[test]
+    fn convert_tags_none_is_empty() {
+        assert!(convert_tags(None).unwrap().is_empty());
+    }
+
+    #[test]
+    fn convert_tags_string_values_ok() {
+        let tags = HashMap::from([("group".to_string(), serde_json::json!("supply"))]);
+        let converted = convert_tags(Some(tags)).unwrap();
+        assert_eq!(converted.get("group").map(String::as_str), Some("supply"));
+    }
+
+    #[test]
+    fn convert_tags_non_string_value_errors() {
+        let tags = HashMap::from([("priority".to_string(), serde_json::json!(5))]);
+        let err = convert_tags(Some(tags)).unwrap_err();
+        assert!(matches!(err, ConversionError::UnexpectedType { .. }));
+    }
 }

@@ -8,7 +8,7 @@ use crate::nodes::NodeAttribute;
 use crate::nodes::NodeMeta;
 use crate::nodes::core::StorageInitialVolume;
 use crate::parameters::Parameter;
-use crate::v1::{ConversionData, TryFromV1, try_convert_initial_storage, try_convert_node_attr};
+use crate::v1::{ConversionData, TryFromV1, try_convert_initial_storage, try_convert_node_attr, try_convert_node_meta};
 use crate::{ConversionError, node_attribute_subset_enum};
 #[cfg(feature = "core")]
 use pywr_core::{metric::MetricF64, timestep::TimeDomain, virtual_storage::VirtualStorageBuilder};
@@ -352,7 +352,7 @@ impl TryFromV1<VirtualStorageNodeV1> for VirtualStorageNode {
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: NodeMeta = v1.meta.into();
+        let meta: NodeMeta = try_convert_node_meta(v1.meta)?;
 
         let cost = try_convert_node_attr(&meta.name, "cost", v1.cost, parent_node, conversion_data)?;
         let max_volume = try_convert_node_attr(&meta.name, "max_volume", v1.max_volume, parent_node, conversion_data)?;
@@ -388,7 +388,7 @@ impl TryFromV1<AnnualVirtualStorageNodeV1> for VirtualStorageNode {
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: NodeMeta = v1.meta.into();
+        let meta: NodeMeta = try_convert_node_meta(v1.meta)?;
 
         let cost = try_convert_node_attr(&meta.name, "cost", v1.cost, parent_node, conversion_data)?;
         let max_volume = try_convert_node_attr(&meta.name, "max_volume", v1.max_volume, parent_node, conversion_data)?;
@@ -433,7 +433,7 @@ impl TryFromV1<MonthlyVirtualStorageNodeV1> for VirtualStorageNode {
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: NodeMeta = v1.meta.into();
+        let meta: NodeMeta = try_convert_node_meta(v1.meta)?;
 
         let cost = try_convert_node_attr(&meta.name, "cost", v1.cost, parent_node, conversion_data)?;
         let max_volume = try_convert_node_attr(&meta.name, "max_volume", v1.max_volume, parent_node, conversion_data)?;
@@ -475,7 +475,7 @@ impl TryFromV1<RollingVirtualStorageNodeV1> for VirtualStorageNode {
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: NodeMeta = v1.meta.into();
+        let meta: NodeMeta = try_convert_node_meta(v1.meta)?;
 
         let cost = try_convert_node_attr(&meta.name, "cost", v1.cost, parent_node, conversion_data)?;
         let max_volume = try_convert_node_attr(&meta.name, "max_volume", v1.max_volume, parent_node, conversion_data)?;
@@ -545,7 +545,7 @@ impl TryFromV1<SeasonalVirtualStorageNodeV1> for VirtualStorageNode {
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: NodeMeta = v1.meta.into();
+        let meta: NodeMeta = try_convert_node_meta(v1.meta)?;
 
         let cost = try_convert_node_attr(&meta.name, "cost", v1.cost, parent_node, conversion_data)?;
         let max_volume = try_convert_node_attr(&meta.name, "max_volume", v1.max_volume, parent_node, conversion_data)?;

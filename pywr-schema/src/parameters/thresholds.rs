@@ -6,7 +6,7 @@ use crate::metric::{Metric, NodeAttrReference};
 #[cfg(feature = "core")]
 use crate::network::LoadArgs;
 use crate::parameters::{ConversionData, ParameterMeta};
-use crate::v1::{IntoV2, TryFromV1, try_convert_parameter_attr};
+use crate::v1::{TryFromV1, TryIntoV2, try_convert_parameter_attr};
 #[cfg(feature = "core")]
 use pywr_core::parameters::{ParameterName, ParameterType};
 use pywr_schema_macros::{PywrVisitAll, skip_serializing_none};
@@ -161,7 +161,7 @@ impl TryFromV1<ParameterThresholdParameterV1> for ThresholdParameter {
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.into_v2(parent_node, conversion_data);
+        let meta: ParameterMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
 
         let metric = try_convert_parameter_attr(&meta.name, "parameter", v1.parameter, parent_node, conversion_data)?;
         let threshold =
@@ -207,7 +207,7 @@ impl TryFromV1<NodeThresholdParameterV1> for ThresholdParameter {
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.into_v2(parent_node, conversion_data);
+        let meta: ParameterMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
 
         let metric = Metric::Node(NodeAttrReference::new(v1.node, None));
 
@@ -254,7 +254,7 @@ impl TryFromV1<StorageThresholdParameterV1> for ThresholdParameter {
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.into_v2(parent_node, conversion_data);
+        let meta: ParameterMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
 
         let metric = Metric::Node(NodeAttrReference::new(v1.storage_node, None));
 
@@ -384,7 +384,7 @@ impl TryFromV1<MultiThresholdIndexParameterV1> for MultiThresholdParameter {
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.into_v2(parent_node, conversion_data);
+        let meta: ParameterMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
 
         let metric = Metric::Node(NodeAttrReference::new(v1.node, None));
 
@@ -414,7 +414,7 @@ impl TryFromV1<MultipleThresholdParameterIndexParameterV1> for MultiThresholdPar
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.into_v2(parent_node, conversion_data);
+        let meta: ParameterMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
 
         let metric = try_convert_parameter_attr(&meta.name, "parameter", v1.parameter, parent_node, conversion_data)?;
 
