@@ -41,11 +41,15 @@ The `ParameterMeta` struct is used to store the metadata for all parameters and 
 {{#rustdoc_include ../../listings/adding-a-parameter/src/main.rs:parameter}}
 ```
 
-To allow the parameter to be used in the model it is helpful to add a `new` function that creates a new instance of the
-parameter. This will be used by the schema to create the parameter when it is loaded from a model file.
+To allow the parameter to be used in the model a "builder" is required. This struct must implement the
+`ParameterBuilder<T>` trait. This builder be used by the schema to create the parameter when it is loaded from a model
+file. Builders will typically have the same fields as the parameter itself, but will use "unresolved" types
+(e.g. `UnresolvedMetricF64` or `UnresolvedNode`). This allows the builder to be created without first resolving the
+dependencies of the parameter. The `build` function is then used to resolve the dependencies and create the parameter
+used in the model.
 
 ```rust,ignore
-{{#rustdoc_include ../../listings/adding-a-parameter/src/main.rs:impl-new}}
+{{#rustdoc_include ../../listings/adding-a-parameter/src/main.rs:impl-builder}}
 ```
 
 Finally, the minimum implementation of the `Parameter` and one of the three types of parameter compute traits should be
