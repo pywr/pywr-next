@@ -192,12 +192,12 @@ impl PythonParameter {
 
 #[cfg(all(feature = "core", not(feature = "pyo3")))]
 impl PythonParameter {
-    pub fn add_to_model(
+    pub fn add_to_network(
         &self,
-        _network: &mut pywr_core::network::Network,
+        _network: &mut pywr_core::network::NetworkBuilder,
         _args: &LoadArgs,
         _parent: Option<&str>,
-    ) -> Result<ParameterType, SchemaError> {
+    ) -> Result<(), SchemaError> {
         Err(SchemaError::FeatureNotEnabled("pyo3".to_string()))
     }
 }

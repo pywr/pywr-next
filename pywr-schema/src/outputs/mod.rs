@@ -34,9 +34,9 @@ impl Output {
         output_path: Option<&Path>,
     ) -> Result<(), SchemaError> {
         match self {
-            Self::CSV(o) => o.add_to_model(network, output_path),
-            Self::HDF5(o) => o.add_to_model(network, output_path),
-            Self::Memory(o) => o.add_to_model(network, data_path),
+            Self::CSV(o) => o.add_to_network(network, output_path),
+            Self::HDF5(o) => o.add_to_network(network, output_path),
+            Self::Memory(o) => o.add_to_network(network, data_path),
         }
     }
 

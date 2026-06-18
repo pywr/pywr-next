@@ -54,7 +54,7 @@ pub struct CsvOutput {
 
 #[cfg(feature = "core")]
 impl CsvOutput {
-    pub fn add_to_model(
+    pub fn add_to_network(
         &self,
         network: &mut pywr_core::network::NetworkBuilder,
         output_path: Option<&Path>,

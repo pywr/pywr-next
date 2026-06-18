@@ -17,10 +17,12 @@ use chrono::{NaiveDate, NaiveDateTime};
 use pyo3::Python;
 #[cfg(feature = "pyo3")]
 use pyo3::{Bound, PyErr, PyResult, exceptions::PyRuntimeError, pyclass, pymethods, types::PyType};
+#[cfg(all(feature = "core", feature = "pyo3"))]
+use pywr_core::models::Model;
 #[cfg(feature = "core")]
 use pywr_core::{
     models::{
-        Model, ModelBuilder, ModelDomainBuilder, MultiNetworkEntryBuilder, MultiNetworkModelBuilder,
+        ModelBuilder, ModelDomainBuilder, MultiNetworkEntryBuilder, MultiNetworkModelBuilder,
         MultiNetworkModelBuilderError, MultiNetworkTransferBuilder,
     },
     timestep::TimestepDuration,

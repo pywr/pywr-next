@@ -18,7 +18,7 @@ pub struct Hdf5Output {
 
 #[cfg(all(feature = "core", feature = "hdf5"))]
 impl Hdf5Output {
-    pub fn add_to_model(
+    pub fn add_to_network(
         &self,
         network: &mut pywr_core::network::NetworkBuilder,
         output_path: Option<&Path>,
@@ -38,9 +38,9 @@ impl Hdf5Output {
 
 #[cfg(all(feature = "core", not(feature = "hdf5")))]
 impl Hdf5Output {
-    pub fn add_to_model(
+    pub fn add_to_network(
         &self,
-        _network: &mut pywr_core::network::Network,
+        _network: &mut pywr_core::network::NetworkBuilder,
         _output_path: Option<&Path>,
     ) -> Result<(), SchemaError> {
         Err(SchemaError::FeatureNotEnabled("hdf5".to_string()))

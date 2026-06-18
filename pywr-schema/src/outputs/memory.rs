@@ -55,7 +55,7 @@ pub struct MemoryOutput {
 
 #[cfg(feature = "core")]
 impl MemoryOutput {
-    pub fn add_to_model(
+    pub fn add_to_network(
         &self,
         network: &mut pywr_core::network::NetworkBuilder,
         data_path: Option<&Path>,
