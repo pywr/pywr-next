@@ -46,7 +46,7 @@ use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticS
 #[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
 // This creates a separate enum called `MetricType` that is available in this module.
 #[strum_discriminants(name(MetricType))]
-#[cfg_attr(feature = "pyo3", pyclass)]
+#[cfg_attr(feature = "pyo3", pyclass(from_py_object))]
 pub enum Metric {
     /// A literal floating point value.
     Literal { value: f64 },
@@ -286,7 +286,7 @@ impl TryFromV1<ParameterValueV1> for Metric {
 #[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll, PartialEq)]
 #[serde(deny_unknown_fields)]
-#[cfg_attr(feature = "pyo3", pyclass)]
+#[cfg_attr(feature = "pyo3", pyclass(from_py_object))]
 pub struct NodeAttrReference {
     /// The name of the node
     pub name: String,
@@ -378,7 +378,7 @@ impl From<String> for NodeAttrReference {
 #[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll, PartialEq)]
 #[serde(deny_unknown_fields)]
-#[cfg_attr(feature = "pyo3", pyclass)]
+#[cfg_attr(feature = "pyo3", pyclass(from_py_object))]
 pub struct VirtualNodeAttrReference {
     /// The name of the node
     pub name: String,
@@ -510,7 +510,7 @@ impl From<ParameterReturnValue> for pywr_core::state::ParameterReturnValue {
 #[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PartialEq)]
 #[serde(deny_unknown_fields)]
-#[cfg_attr(feature = "pyo3", pyclass)]
+#[cfg_attr(feature = "pyo3", pyclass(from_py_object))]
 pub struct ParameterReference {
     /// The name of the parameter
     pub name: String,
@@ -632,7 +632,7 @@ impl ParameterReference {
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PartialEq)]
 #[serde(deny_unknown_fields)]
-#[cfg_attr(feature = "pyo3", pyclass)]
+#[cfg_attr(feature = "pyo3", pyclass(from_py_object))]
 pub struct EdgeReference {
     /// The edge referred to by this reference.
     pub edge: Edge,

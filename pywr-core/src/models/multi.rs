@@ -166,7 +166,7 @@ impl From<MultiNetworkModelRunError> for PyErr {
 }
 
 /// Internal struct for tracking model timings.
-#[cfg_attr(feature = "pyo3", pyclass)]
+#[cfg_attr(feature = "pyo3", pyclass(skip_from_py_object))]
 #[derive(Clone)]
 pub struct MultiNetworkModelTimings {
     run_duration: RunDuration,
@@ -239,7 +239,7 @@ pub enum MultiNetworkModelError {
 /// The results of a model run.
 ///
 /// Only recorders which produced a result will be present.
-#[cfg_attr(feature = "pyo3", pyclass)]
+#[cfg_attr(feature = "pyo3", pyclass(skip_from_py_object))]
 #[derive(Clone)]
 pub struct MultiNetworkModelResult {
     pub timings: MultiNetworkModelTimings,

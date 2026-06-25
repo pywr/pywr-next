@@ -458,7 +458,7 @@ impl From<ModelSchemaBuildError> for PyErr {
 ///
 #[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Clone, JsonSchema)]
-#[cfg_attr(feature = "pyo3", pyclass)]
+#[cfg_attr(feature = "pyo3", pyclass(skip_from_py_object))]
 pub struct ModelSchema {
     pub metadata: Metadata,
     pub timestepper: Timestepper,
@@ -767,7 +767,7 @@ impl From<MultiNetworkModelSchemaBuildError> for PyErr {
 ///
 #[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Clone)]
-#[cfg_attr(feature = "pyo3", pyclass)]
+#[cfg_attr(feature = "pyo3", pyclass(skip_from_py_object))]
 pub struct MultiNetworkModelSchema {
     pub metadata: Metadata,
     pub timestepper: Timestepper,
