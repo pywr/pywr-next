@@ -1355,9 +1355,9 @@ checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
 
 [[package]]
 name = "highs-sys"
-version = "1.14.2"
+version = "1.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "11a9fa9dea5b5f277075460b695db30ad7e5ce28554f2dd27c312c640acd101f"
+checksum = "e4da0c52322648e2360a5a8896d23301fa5ed99ed7607c5faf229bd0bbb30d3f"
 dependencies = [
  "bindgen",
  "cmake",
