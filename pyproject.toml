@@ -9,7 +9,7 @@ requires-python = ">=3.10"
 license = "MIT OR Apache-2.0"
 dependencies = [
     "pandas",
-    "polars>=1.32",
+    "polars>=1.42.0",
     "pyarrow",
     "click",
 ]
@@ -21,9 +21,9 @@ hdf = ["h5py"]
 
 [dependency-groups]
 dev = [
-    "pytest>=8.4.1",
-    "ruff>=0.12.3",
-    "maturin>=1.0,<2.0",
+    "pytest>=9.1.1",
+    "ruff>=0.15.18",
+    "maturin>=1.14.1,<2.0",
 ]
 docs = [
     "json-schema-for-humans>=1.4.1",
@@ -31,14 +31,14 @@ docs = [
 ]
 
 [build-system]
-requires = ["maturin>=1.0,<2.0"]
+requires = ["maturin>=1.14.1,<2.0"]
 build-backend = "maturin"
 
 [tool.maturin]
 manifest-path = "pywr-python/Cargo.toml"
 python-source = "pywr-python"
 # "extension-module" tells pyo3 we want to build an extension module (skips linking against libpython.so)
-features = ["pyo3/extension-module"]
+features = ["pyo3/extension-module", "ipm-simd"]
 
 [tool.ruff]
 exclude = ["coin-or-sys/vendor"]

@@ -2,14 +2,13 @@ use crate::error::SchemaError;
 use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::network::LoadArgs;
-use crate::node_attribute_subset_enum;
 #[cfg(feature = "core")]
 use crate::nodes::NodeAttribute;
 use crate::nodes::{NodeMeta, NodeSlot, StorageInitialVolume};
 use crate::parameters::Parameter;
+use crate::{mermaid, node_attribute_subset_enum};
 #[cfg(feature = "core")]
 use pywr_core::{
-    derived_metric::DerivedMetric,
     metric::{MetricF64, SimpleMetricF64},
     parameters::{DifferenceParameter, ParameterIndex, ParameterName, VolumeBetweenControlCurvesParameter},
 };
@@ -32,7 +31,6 @@ node_attribute_subset_enum! {
     }
 }
 
-#[doc = svgbobdoc::transform!(
 /// This node is used to create a series of storage nodes with separate costs.
 ///
 /// The series of storage nodes are created with bi-directional transfers to enable transfer
@@ -46,26 +44,13 @@ node_attribute_subset_enum! {
 ///
 /// Note that this node adds additional complexity to models over the standard storage node.
 ///
-/// ```svgbob
-///
-///            <node>.00            D
-///     -*---------->S ----------->*-
-///      U           ^
-///                  |
-///                  v
-///       <node>.01  S
-///                  ^
-///                  :
-///                  v
-///      <node>.n    S
-/// ```
+#[doc = mermaid!("doc_diagrams/piecewise-storage.mmd")]
 ///
 /// # Available attributes and components
 ///
 /// The enum [`PiecewiseStorageNodeAttribute`] defines the available attributes. There are no components
 /// to choose from.
 ///
-)]
 #[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
@@ -417,11 +402,7 @@ impl PiecewiseStorageNode {
 
         let metric = match attr {
             PiecewiseStorageNodeAttribute::Volume => MetricF64::AggregatedNodeVolume(idx),
-            PiecewiseStorageNodeAttribute::ProportionalVolume => {
-                let dm = DerivedMetric::AggregatedNodeProportionalVolume(idx);
-                let derived_metric_idx = network.add_derived_metric(dm);
-                MetricF64::DerivedMetric(derived_metric_idx)
-            }
+            PiecewiseStorageNodeAttribute::ProportionalVolume => MetricF64::AggregatedNodeProportionalVolume(idx),
         };
 
         Ok(metric)

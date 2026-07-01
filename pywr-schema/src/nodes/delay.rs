@@ -6,7 +6,8 @@ use crate::network::LoadArgs;
 use crate::nodes::{NodeAttribute, NodeComponent};
 use crate::nodes::{NodeMeta, NodeSlot};
 use crate::parameters::{ConstantValue, Parameter};
-use crate::{node_attribute_subset_enum, node_component_subset_enum};
+use crate::v1::try_convert_node_meta;
+use crate::{mermaid, node_attribute_subset_enum, node_component_subset_enum};
 #[cfg(feature = "core")]
 use pywr_core::{metric::MetricF64, parameters::ParameterName};
 use pywr_schema_macros::{PywrVisitAll, skip_serializing_none};
@@ -29,7 +30,6 @@ node_component_subset_enum! {
     }
 }
 
-#[doc = svgbobdoc::transform!(
 /// This node is used to introduce a delay between flows entering and leaving the node.
 ///
 /// This is often useful in long river reaches as a simply way to model time-of-travel. Internally
@@ -40,19 +40,13 @@ node_component_subset_enum! {
 /// "-delay".
 ///
 ///
-/// ```svgbob
-///
-///      U  <node.inflow>  D
-///     -*---> O    I --->*-
-///             <node.outflow>
-/// ```
+#[doc = mermaid!("doc_diagrams/delay.mmd")]
 ///
 /// # Available attributes and components
 ///
 /// The enums [`DelayNodeAttribute`] and [`DelayNodeComponent`] define the available
 /// attributes and components for this node.
 ///
-)]
 #[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
@@ -169,7 +163,7 @@ impl DelayNode {
         let delay_idx = network.add_parameter(Box::new(p))?;
 
         // Apply it as a constraint on the input node.
-        let metric: MetricF64 = delay_idx.into();
+        let metric: MetricF64 = delay_idx.into_metric_f64_before();
         network.set_node_max_flow(self.meta.name.as_str(), Self::input_sub_name(), metric.clone().into())?;
         network.set_node_min_flow(self.meta.name.as_str(), Self::input_sub_name(), metric.into())?;
 
@@ -213,10 +207,10 @@ impl DelayNode {
 }
 
 impl TryFrom<DelayNodeV1> for DelayNode {
-    type Error = ComponentConversionError;
+    type Error = Box<ComponentConversionError>;
 
     fn try_from(v1: DelayNodeV1) -> Result<Self, Self::Error> {
-        let meta: NodeMeta = v1.meta.into();
+        let meta: NodeMeta = try_convert_node_meta(v1.meta)?;
 
         // TODO convert days & timesteps to a usize as we don;t support non-daily timesteps at the moment
         let delay = match v1.days {
@@ -224,13 +218,13 @@ impl TryFrom<DelayNodeV1> for DelayNode {
             None => match v1.timesteps {
                 Some(ts) => ts,
                 None => {
-                    return Err(ComponentConversionError::Node {
+                    return Err(Box::new(ComponentConversionError::Node {
                         name: meta.name,
                         attr: "delay".to_string(),
                         error: ConversionError::MissingAttribute {
                             attrs: vec!["days".to_string(), "timesteps".to_string()],
                         },
-                    });
+                    }));
                 }
             },
         } as u64;

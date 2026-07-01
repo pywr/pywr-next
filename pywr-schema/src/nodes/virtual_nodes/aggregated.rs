@@ -8,9 +8,9 @@ use crate::node_attribute_subset_enum;
 use crate::nodes::NodeAttribute;
 use crate::nodes::NodeMeta;
 use crate::parameters::Parameter;
-use crate::v1::{ConversionData, TryFromV1, try_convert_node_attr, try_convert_parameter_attr};
+use crate::v1::{ConversionData, TryFromV1, try_convert_node_attr, try_convert_node_meta, try_convert_parameter_attr};
 #[cfg(feature = "core")]
-use pywr_core::{derived_metric::DerivedMetric, metric::MetricF64};
+use pywr_core::metric::MetricF64;
 use pywr_schema_macros::PywrVisitAll;
 use pywr_schema_macros::skip_serializing_none;
 use pywr_v1_schema::nodes::{AggregatedNode as AggregatedNodeV1, AggregatedStorageNode as AggregatedStorageNodeV1};
@@ -240,14 +240,14 @@ impl AggregatedNode {
 }
 
 impl TryFromV1<AggregatedNodeV1> for AggregatedNode {
-    type Error = ComponentConversionError;
+    type Error = Box<ComponentConversionError>;
 
     fn try_from_v1(
         v1: AggregatedNodeV1,
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: NodeMeta = v1.meta.into();
+        let meta: NodeMeta = try_convert_node_meta(v1.meta)?;
 
         let relationship = match v1.factors {
             Some(f) => Some(Relationship::Ratio {
@@ -382,25 +382,23 @@ impl AggregatedStorageNode {
 
         let metric = match attr {
             AggregatedStorageNodeAttribute::Volume => MetricF64::AggregatedNodeVolume(idx),
-            AggregatedStorageNodeAttribute::ProportionalVolume => {
-                let dm = DerivedMetric::AggregatedNodeProportionalVolume(idx);
-                let derived_metric_idx = network.add_derived_metric(dm);
-                MetricF64::DerivedMetric(derived_metric_idx)
-            }
+            AggregatedStorageNodeAttribute::ProportionalVolume => MetricF64::AggregatedNodeProportionalVolume(idx),
         };
 
         Ok(metric)
     }
 }
 
-impl From<AggregatedStorageNodeV1> for AggregatedStorageNode {
-    fn from(v1: AggregatedStorageNodeV1) -> Self {
+impl TryFrom<AggregatedStorageNodeV1> for AggregatedStorageNode {
+    type Error = Box<ComponentConversionError>;
+
+    fn try_from(v1: AggregatedStorageNodeV1) -> Result<Self, Self::Error> {
         let storage_nodes = v1.storage_nodes.into_iter().map(|n| n.into()).collect();
 
-        Self {
-            meta: v1.meta.into(),
+        Ok(Self {
+            meta: try_convert_node_meta(v1.meta)?,
             parameters: None,
             storage_nodes,
-        }
+        })
     }
 }

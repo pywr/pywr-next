@@ -7,8 +7,8 @@ use crate::network::LoadArgs;
 use crate::nodes::{NodeAttribute, NodeComponent};
 use crate::nodes::{NodeMeta, NodeSlot};
 use crate::parameters::Parameter;
-use crate::v1::{ConversionData, TryFromV1, try_convert_node_attr};
-use crate::{node_attribute_subset_enum, node_component_subset_enum};
+use crate::v1::{ConversionData, TryFromV1, try_convert_node_attr, try_convert_node_meta};
+use crate::{mermaid, node_attribute_subset_enum, node_component_subset_enum};
 #[cfg(feature = "core")]
 use pywr_core::{aggregated_node::Relationship, metric::MetricF64};
 use pywr_schema_macros::PywrVisitAll;
@@ -84,7 +84,6 @@ node_component_subset_enum! {
     }
 }
 
-#[doc = svgbobdoc::transform!(
 /// This is used to represent a link with losses.
 ///
 /// The loss is applied using a loss factor, [`LossFactor`], which can be applied to either the
@@ -93,23 +92,13 @@ node_component_subset_enum! {
 ///
 /// The default output metric for this node is the net flow.
 ///
-/// ```svgbob
-///
-///            <node>.net    D
-///          .------>L ---->*
-///      U  |
-///     -*--|
-///         |
-///          '------>O
-///            <node>.loss
-/// ```
+#[doc = mermaid!("doc_diagrams/loss-link.mmd")]
 ///
 /// # Available attributes and components
 ///
 /// The enums [`LossLinkNodeAttribute`] and [`LossLinkNodeComponent`] define the available
 /// attributes and components for this node.
 ///
-)]
 #[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
@@ -348,14 +337,14 @@ impl LossLinkNode {
 }
 
 impl TryFromV1<LossLinkNodeV1> for LossLinkNode {
-    type Error = ComponentConversionError;
+    type Error = Box<ComponentConversionError>;
 
     fn try_from_v1(
         v1: LossLinkNodeV1,
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: NodeMeta = v1.meta.into();
+        let meta: NodeMeta = try_convert_node_meta(v1.meta)?;
 
         let loss_factor: Option<Metric> =
             try_convert_node_attr(&meta.name, "loss_factor", v1.loss_factor, parent_node, conversion_data)?;

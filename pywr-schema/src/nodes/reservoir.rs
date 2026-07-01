@@ -1,4 +1,3 @@
-use crate::SchemaError;
 use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::network::LoadArgs;
@@ -6,11 +5,10 @@ use crate::network::LoadArgs;
 use crate::nodes::{NodeAttribute, NodeComponent};
 use crate::nodes::{NodeMeta, NodeSlot, StorageNode, StorageNodeAttribute};
 use crate::parameters::ConstantFloatVec;
+use crate::{SchemaError, mermaid};
 use crate::{node_attribute_subset_enum, node_component_subset_enum};
 #[cfg(feature = "core")]
 use pywr_core::agg_funcs::AggFuncF64;
-#[cfg(feature = "core")]
-use pywr_core::derived_metric::DerivedMetric;
 #[cfg(feature = "core")]
 use pywr_core::metric::ConstantMetricF64::Constant;
 #[cfg(feature = "core")]
@@ -154,33 +152,10 @@ impl TryFrom<NodeSlot> for ReservoirOutputNodeSlot {
 /// A reservoir node with compensation, leakage, direct rainfall and evaporation.
 ///
 /// # Implementation
-#[doc = svgbobdoc::transform!(
-/// ```svgbob
 ///
-///             <Reservoir>.Rainfall
-///                      *
-///     U                |            if OutputNode                if LinkNode
-/// - - *--.             |                                         D[from_spill]
-///        |             |           <Reservoir>.Spill   - or -     <Reservoir>.Spill
-///        V             V             D[to_spill]                 D[to_spill]
-///        .----------------+----------------->o               --------->*- - -
-///        |                |
-///        |  StorageNode   |
-///        |                |-------------->o   <Reservoir>.Evaporation
-///        +-------------+--+---------------------------.
-///        |             |                              |
-///        |             +--------->*- -                +------>o  <Reservoir>.Leakage
-///        |               <Reservoir>.Compensation
-///        |                   D[compensation]
-///        +---->*- - -
-///             D[<default>]
-///
-/// ```
-)]
-///
-/// This is a [`StorageNode`] connected to an upstream node `U` and downstream network node `D`. When
+/// This is a [`StorageNode`] connected to an upstream node `Upstream` and downstream network node `D`. When
 /// an edge to this component is created without slots, the target nodes are directly connected to
-/// `D[<default>]`.
+/// `Downstream 1` via the "Storage" slot.
 ///
 /// This component has the following internal nodes, which the modeller still needs to connect to
 /// other network nodes using slots:
@@ -200,6 +175,12 @@ impl TryFrom<NodeSlot> for ReservoirOutputNodeSlot {
 ///   the node's behaviour.
 /// - Leakage: this is an optional [`pywr_core::node::OutputNode`] with a `max_flow` equal to the
 ///   provided [`Metric`]'s value.
+///
+/// The internal layout when configured with a `LinkNode` spill:
+#[doc = mermaid!("doc_diagrams/reservoir-spill-link.mmd")]
+///
+/// The internal layout when configured with an `OutputNode` spill:
+#[doc = mermaid!("doc_diagrams/reservoir-spill-output.mmd")]
 ///
 /// ## Rainfall and evaporation calculation
 /// The rainfall and evaporation volumes are calculated by multiplying the reservoir current
@@ -231,12 +212,15 @@ impl TryFrom<NodeSlot> for ReservoirOutputNodeSlot {
 ///
 /// # JSON Examples
 /// ## Reservoir with output spill
+///
+///
 /// ```json
 #[doc = include_str!("../../tests/reservoir_with_spill1.json")]
 /// ```
 ///
 /// ## Reservoir with link spill
 /// The compensation goes into the spill which routes water to the "River termination" node.
+///
 /// ```json
 #[doc = include_str!("../../tests/reservoir_with_river1.json")]
 /// ```
@@ -534,7 +518,7 @@ impl ReservoirNode {
                     AggFuncF64::Product,
                 );
                 let rainfall_idx = network.add_parameter(Box::new(rainfall_flow_parameter))?;
-                let rainfall_flow_metric: MetricF64 = rainfall_idx.into();
+                let rainfall_flow_metric: MetricF64 = rainfall_idx.into_metric_f64_before();
 
                 network.set_node_min_flow(
                     self.meta().name.as_str(),
@@ -562,7 +546,7 @@ impl ReservoirNode {
                     AggFuncF64::Product,
                 );
                 let evaporation_idx = network.add_parameter(Box::new(evaporation_flow_parameter))?;
-                let evaporation_flow_metric: MetricF64 = evaporation_idx.into();
+                let evaporation_flow_metric: MetricF64 = evaporation_idx.into_metric_f64_before();
 
                 network.set_node_max_flow(
                     self.meta().name.as_str(),
@@ -619,11 +603,7 @@ impl ReservoirNode {
         // the storage (absolute or relative) can be the current or max volume
         let current_storage = match (bathymetry.is_storage_proportional, use_max_area) {
             (false, false) => MetricF64::NodeVolume(storage_node),
-            (true, false) => {
-                let dm = DerivedMetric::NodeProportionalVolume(storage_node);
-                let derived_metric_idx = network.add_derived_metric(dm);
-                MetricF64::DerivedMetric(derived_metric_idx)
-            }
+            (true, false) => MetricF64::NodeProportionalVolume(storage_node),
             (false, true) => MetricF64::NodeMaxVolume(storage_node),
             (true, true) => MetricF64::Simple(SimpleMetricF64::Constant(Constant(1.0))),
         };
@@ -647,7 +627,7 @@ impl ReservoirNode {
                     true,
                 );
                 let area_idx = network.add_parameter(Box::new(interpolated_area_parameter))?;
-                let interpolated_area_metric: MetricF64 = area_idx.into();
+                let interpolated_area_metric: MetricF64 = area_idx.into_metric_f64_before();
                 interpolated_area_metric
             }
             BathymetryType::Polynomial(coeffs) => {
@@ -659,7 +639,7 @@ impl ReservoirNode {
                     0.0,
                 );
                 let area_idx = network.add_parameter(Box::new(poly_area_parameter))?;
-                let poly_area_metric: MetricF64 = area_idx.into();
+                let poly_area_metric: MetricF64 = area_idx.into_metric_f64_before();
                 poly_area_metric
             }
         };
@@ -715,9 +695,7 @@ impl ReservoirNode {
                                 name: self.meta().name.clone(),
                                 sub_name: None,
                             })?;
-                        let dm = DerivedMetric::NodeProportionalVolume(idx);
-                        let derived_metric_idx = network.add_derived_metric(dm);
-                        MetricF64::DerivedMetric(derived_metric_idx)
+                        MetricF64::NodeProportionalVolume(idx)
                     }
                     ReservoirNodeAttribute::MaxVolume => {
                         let idx = network

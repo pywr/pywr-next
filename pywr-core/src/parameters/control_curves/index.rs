@@ -29,24 +29,24 @@ impl Parameter for ControlCurveIndexParameter {
 }
 
 impl GeneralParameter<u64> for ControlCurveIndexParameter {
-    fn compute(
+    fn before(
         &self,
         _timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
         model: &Network,
         state: &State,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<u64, ParameterCalculationError> {
+    ) -> Result<Option<u64>, ParameterCalculationError> {
         // Current value
         let x = self.metric.get_value(model, state)?;
 
         for (idx, control_curve) in self.control_curves.iter().enumerate() {
             let cc_value = control_curve.get_value(model, state)?;
             if x >= cc_value {
-                return Ok(idx as u64);
+                return Ok(Some(idx as u64));
             }
         }
-        Ok(self.control_curves.len() as u64)
+        Ok(Some(self.control_curves.len() as u64))
     }
     fn as_parameter(&self) -> &dyn Parameter
     where

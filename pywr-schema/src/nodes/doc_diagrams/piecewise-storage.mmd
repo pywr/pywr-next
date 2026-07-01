@@ -1,0 +1,27 @@
+graph LR
+    subgraph ThisNode["PiecewiseStorage"]
+
+        s_in@{ shape: small-circle, label: "Incoming slot" }
+        s_out@{ shape: framed-circle, label: "Outgoing slot" }
+
+        S0("[name].00")
+        S1("[name].01")
+        Sn("[name].n")
+
+        S0 --> S1
+        S1 --> S0
+        S1 -.-> Sn
+        Sn -.-> S1
+
+        s_in --> S0 --> s_out
+    end
+
+    U(Upstream) --> s_in
+    s_out --> D1(Downstream)
+
+    class S0 storageNode;
+    class S1 storageNode;
+    class Sn storageNode;
+    class ThisNode thisNode;
+    class s_in slot;
+    class s_out slot;

@@ -105,13 +105,13 @@ impl Parameter for MonthlyProfileParameter {
     }
 }
 impl SimpleParameter<f64> for MonthlyProfileParameter {
-    fn compute(
+    fn before(
         &self,
         timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
         _values: &SimpleParameterValues,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<f64, SimpleCalculationError> {
+    ) -> Result<Option<f64>, SimpleCalculationError> {
         let v = match &self.interp_day {
             Some(interp_day) => match interp_day {
                 MonthlyInterpDay::First => {
@@ -132,7 +132,7 @@ impl SimpleParameter<f64> for MonthlyProfileParameter {
             },
             None => self.value_for_month0(timestep.date.month() as usize - 1, internal_state),
         };
-        Ok(v)
+        Ok(Some(v))
     }
 
     fn as_parameter(&self) -> &dyn Parameter

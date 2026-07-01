@@ -8,12 +8,10 @@ use crate::nodes::NodeAttribute;
 use crate::nodes::NodeMeta;
 use crate::nodes::core::StorageInitialVolume;
 use crate::parameters::Parameter;
-use crate::v1::{ConversionData, TryFromV1, try_convert_initial_storage, try_convert_node_attr};
+use crate::v1::{ConversionData, TryFromV1, try_convert_initial_storage, try_convert_node_attr, try_convert_node_meta};
 use crate::{ConversionError, node_attribute_subset_enum};
 #[cfg(feature = "core")]
-use pywr_core::{
-    derived_metric::DerivedMetric, metric::MetricF64, timestep::TimeDomain, virtual_storage::VirtualStorageBuilder,
-};
+use pywr_core::{metric::MetricF64, timestep::TimeDomain, virtual_storage::VirtualStorageBuilder};
 use pywr_schema_macros::PywrVisitAll;
 use pywr_schema_macros::skip_serializing_none;
 use pywr_v1_schema::nodes::{
@@ -339,11 +337,7 @@ impl VirtualStorageNode {
 
         let metric = match attr {
             VirtualStorageNodeAttribute::Volume => MetricF64::VirtualStorageVolume(idx),
-            VirtualStorageNodeAttribute::ProportionalVolume => {
-                let dm = DerivedMetric::VirtualStorageProportionalVolume(idx);
-                let derived_metric_idx = network.add_derived_metric(dm);
-                MetricF64::DerivedMetric(derived_metric_idx)
-            }
+            VirtualStorageNodeAttribute::ProportionalVolume => MetricF64::VirtualStorageProportionalVolume(idx),
         };
 
         Ok(metric)
@@ -351,14 +345,14 @@ impl VirtualStorageNode {
 }
 
 impl TryFromV1<VirtualStorageNodeV1> for VirtualStorageNode {
-    type Error = ComponentConversionError;
+    type Error = Box<ComponentConversionError>;
 
     fn try_from_v1(
         v1: VirtualStorageNodeV1,
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: NodeMeta = v1.meta.into();
+        let meta: NodeMeta = try_convert_node_meta(v1.meta)?;
 
         let cost = try_convert_node_attr(&meta.name, "cost", v1.cost, parent_node, conversion_data)?;
         let max_volume = try_convert_node_attr(&meta.name, "max_volume", v1.max_volume, parent_node, conversion_data)?;
@@ -387,14 +381,14 @@ impl TryFromV1<VirtualStorageNodeV1> for VirtualStorageNode {
 }
 
 impl TryFromV1<AnnualVirtualStorageNodeV1> for VirtualStorageNode {
-    type Error = ComponentConversionError;
+    type Error = Box<ComponentConversionError>;
 
     fn try_from_v1(
         v1: AnnualVirtualStorageNodeV1,
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: NodeMeta = v1.meta.into();
+        let meta: NodeMeta = try_convert_node_meta(v1.meta)?;
 
         let cost = try_convert_node_attr(&meta.name, "cost", v1.cost, parent_node, conversion_data)?;
         let max_volume = try_convert_node_attr(&meta.name, "max_volume", v1.max_volume, parent_node, conversion_data)?;
@@ -432,14 +426,14 @@ impl TryFromV1<AnnualVirtualStorageNodeV1> for VirtualStorageNode {
 }
 
 impl TryFromV1<MonthlyVirtualStorageNodeV1> for VirtualStorageNode {
-    type Error = ComponentConversionError;
+    type Error = Box<ComponentConversionError>;
 
     fn try_from_v1(
         v1: MonthlyVirtualStorageNodeV1,
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: NodeMeta = v1.meta.into();
+        let meta: NodeMeta = try_convert_node_meta(v1.meta)?;
 
         let cost = try_convert_node_attr(&meta.name, "cost", v1.cost, parent_node, conversion_data)?;
         let max_volume = try_convert_node_attr(&meta.name, "max_volume", v1.max_volume, parent_node, conversion_data)?;
@@ -474,14 +468,14 @@ impl TryFromV1<MonthlyVirtualStorageNodeV1> for VirtualStorageNode {
 }
 
 impl TryFromV1<RollingVirtualStorageNodeV1> for VirtualStorageNode {
-    type Error = ComponentConversionError;
+    type Error = Box<ComponentConversionError>;
 
     fn try_from_v1(
         v1: RollingVirtualStorageNodeV1,
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: NodeMeta = v1.meta.into();
+        let meta: NodeMeta = try_convert_node_meta(v1.meta)?;
 
         let cost = try_convert_node_attr(&meta.name, "cost", v1.cost, parent_node, conversion_data)?;
         let max_volume = try_convert_node_attr(&meta.name, "max_volume", v1.max_volume, parent_node, conversion_data)?;
@@ -494,34 +488,34 @@ impl TryFromV1<RollingVirtualStorageNodeV1> for VirtualStorageNode {
             if let Some(days) = NonZeroUsize::new(days as usize) {
                 RollingWindow::Days { days }
             } else {
-                return Err(ComponentConversionError::Node {
+                return Err(Box::new(ComponentConversionError::Node {
                     name: meta.name.clone(),
                     attr: "window".to_string(),
                     error: ConversionError::UnsupportedFeature {
                         feature: "Rolling window with zero `days` is not supported".to_string(),
                     },
-                });
+                }));
             }
         } else if let Some(timesteps) = v1.timesteps {
             if let Some(timesteps) = NonZeroUsize::new(timesteps as usize) {
                 RollingWindow::Timesteps { timesteps }
             } else {
-                return Err(ComponentConversionError::Node {
+                return Err(Box::new(ComponentConversionError::Node {
                     name: meta.name.clone(),
                     attr: "window".to_string(),
                     error: ConversionError::UnsupportedFeature {
                         feature: "Rolling window with zero `timesteps` is not supported".to_string(),
                     },
-                });
+                }));
             }
         } else {
-            return Err(ComponentConversionError::Node {
+            return Err(Box::new(ComponentConversionError::Node {
                 name: meta.name.clone(),
                 attr: "window".to_string(),
                 error: ConversionError::MissingAttribute {
                     attrs: vec!["days".to_string(), "timesteps".to_string()],
                 },
-            });
+            }));
         };
 
         let nodes = v1.nodes.into_iter().map(|n| n.into()).collect();
@@ -544,14 +538,14 @@ impl TryFromV1<RollingVirtualStorageNodeV1> for VirtualStorageNode {
 }
 
 impl TryFromV1<SeasonalVirtualStorageNodeV1> for VirtualStorageNode {
-    type Error = ComponentConversionError;
+    type Error = Box<ComponentConversionError>;
 
     fn try_from_v1(
         v1: SeasonalVirtualStorageNodeV1,
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: NodeMeta = v1.meta.into();
+        let meta: NodeMeta = try_convert_node_meta(v1.meta)?;
 
         let cost = try_convert_node_attr(&meta.name, "cost", v1.cost, parent_node, conversion_data)?;
         let max_volume = try_convert_node_attr(&meta.name, "max_volume", v1.max_volume, parent_node, conversion_data)?;

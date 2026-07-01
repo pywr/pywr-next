@@ -34,7 +34,7 @@ struct Lp<I> {
     /// The maximum value for a floating point number to be used as a bound.
     f64_max: f64,
     /// The minimum value for a floating point number to be used as a bound.
-    f64_min: f64,
+    f64_neg_max: f64,
     col_lower: Vec<f64>,
     col_upper: Vec<f64>,
     col_obj_coef: Vec<f64>,
@@ -72,7 +72,7 @@ where
             .zip(self.row_upper.iter_mut())
         {
             if mask == &I::one() {
-                *lb = self.f64_min;
+                *lb = self.f64_neg_max;
                 *ub = self.f64_max;
             }
         }
@@ -131,7 +131,7 @@ where
 /// variable rows, but not the fixed rows.
 struct LpBuilder<I> {
     f64_max: f64,
-    f64_min: f64,
+    f64_neg_max: f64,
     col_lower: Vec<f64>,
     col_upper: Vec<f64>,
     col_obj_coef: Vec<f64>,
@@ -144,10 +144,10 @@ impl<I> LpBuilder<I>
 where
     I: num::PrimInt,
 {
-    fn new(f64_max: f64, f64_min: f64) -> Self {
+    fn new(f64_max: f64, f64_neg_max: f64) -> Self {
         Self {
             f64_max,
-            f64_min,
+            f64_neg_max,
             col_lower: Vec::new(),
             col_upper: Vec::new(),
             col_obj_coef: Vec::new(),
@@ -230,7 +230,7 @@ where
 
         Lp {
             f64_max: self.f64_max,
-            f64_min: self.f64_min,
+            f64_neg_max: self.f64_neg_max,
             col_lower: self.col_lower,
             col_upper: self.col_upper,
             col_obj_coef: self.col_obj_coef,
@@ -530,7 +530,7 @@ where
                 .ok_or(SolverSolveError::AggregatedNodeIndexNotFound(agg_node_row.agg_node_idx))?;
 
             // Only create row for nodes that have factors
-            if let Some(node_pairs) = agg_node.get_norm_factor_pairs(network, state) {
+            if let Some(Ok(node_pairs)) = agg_node.get_norm_factor_pairs(network, state) {
                 assert_eq!(
                     agg_node_row.row_indices.len(),
                     node_pairs.len(),
@@ -587,13 +587,14 @@ where
             .iter()
             .zip(network.aggregated_nodes().deref())
         {
-            let (lb, ub): (f64, f64) = agg_node.get_current_flow_bounds(network, state).map_err(|e| {
-                SolverSolveError::AggregatedNodeError {
-                    name: agg_node.name().to_string(),
-                    sub_name: agg_node.sub_name().map(|s| s.to_string()),
-                    source: e,
-                }
-            })?;
+            let (lb, ub): (f64, f64) =
+                agg_node
+                    .get_flow_bounds(network, state)
+                    .map_err(|e| SolverSolveError::AggregatedNodeError {
+                        name: agg_node.name().to_string(),
+                        sub_name: agg_node.sub_name().map(|s| s.to_string()),
+                        source: e,
+                    })?;
             self.builder.apply_row_bounds(*row_id, lb, ub);
         }
 
@@ -618,7 +619,7 @@ where
                 (-avail / dt, missing / dt)
             } else {
                 // Node is inactive, so set bounds to be unbounded
-                (self.builder.f64_min, self.builder.f64_max)
+                (self.builder.f64_neg_max, self.builder.f64_max)
             };
 
             self.builder.apply_row_bounds(*row_id, lb, ub);
@@ -639,9 +640,9 @@ impl<I> SolverBuilder<I>
 where
     I: num::PrimInt + Default + Debug,
 {
-    pub fn new(f64_max: f64, f64_min: f64) -> Self {
+    pub fn new(f64_max: f64, f64_neg_max: f64) -> Self {
         Self {
-            builder: LpBuilder::new(f64_max, f64_min),
+            builder: LpBuilder::new(f64_max, f64_neg_max),
             col_edge_map: ColumnEdgeMapBuilder::default(),
             node_bin_col_map: HashMap::new(),
             node_set_bin_col_map: HashMap::new(),
@@ -951,7 +952,7 @@ where
 
         for agg_node in network.aggregated_nodes().deref() {
             // Only create row for nodes that have factors
-            if let Some(node_pairs) = agg_node.get_const_norm_factor_pairs(values) {
+            if let Some(Ok(node_pairs)) = agg_node.get_const_norm_factor_pairs(values) {
                 let mut row_indices_for_agg_node = Vec::with_capacity(node_pairs.len());
 
                 for node_pair in node_pairs {
@@ -1098,7 +1099,7 @@ mod tests {
 
     #[test]
     fn builder_solve2() {
-        let mut builder = LpBuilder::new(f64::MAX, f64::MIN);
+        let mut builder = LpBuilder::new(f64::MAX, -f64::MAX);
 
         builder.add_column(-2.0, Bounds::Lower(0.0), ColType::Continuous);
         builder.add_column(-3.0, Bounds::Lower(0.0), ColType::Continuous);

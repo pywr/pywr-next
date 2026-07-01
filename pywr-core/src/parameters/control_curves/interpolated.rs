@@ -32,14 +32,14 @@ impl Parameter for ControlCurveInterpolatedParameter {
 }
 
 impl GeneralParameter<f64> for ControlCurveInterpolatedParameter {
-    fn compute(
+    fn before(
         &self,
         _timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
         model: &Network,
         state: &State,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<f64, ParameterCalculationError> {
+    ) -> Result<Option<f64>, ParameterCalculationError> {
         // Current value
         let x = self.metric.get_value(model, state)?;
 
@@ -51,7 +51,7 @@ impl GeneralParameter<f64> for ControlCurveInterpolatedParameter {
                 let lower_value = self.values[idx + 1].get_value(model, state)?;
                 let upper_value = self.values[idx].get_value(model, state)?;
 
-                return Ok(interpolate(x, cc_value, cc_prev, lower_value, upper_value));
+                return Ok(Some(interpolate(x, cc_value, cc_prev, lower_value, upper_value)));
             }
 
             cc_prev = cc_value
@@ -63,7 +63,7 @@ impl GeneralParameter<f64> for ControlCurveInterpolatedParameter {
         let lower_value = self.values[n - 1].get_value(model, state)?;
         let upper_value = self.values[n - 2].get_value(model, state)?;
 
-        Ok(interpolate(x, cc_value, cc_prev, lower_value, upper_value))
+        Ok(Some(interpolate(x, cc_value, cc_prev, lower_value, upper_value)))
     }
 
     fn as_parameter(&self) -> &dyn Parameter

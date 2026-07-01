@@ -6,7 +6,7 @@ use crate::metric::{Metric, NodeAttrReference};
 #[cfg(feature = "core")]
 use crate::network::LoadArgs;
 use crate::parameters::{ConversionData, ParameterMeta};
-use crate::v1::{IntoV2, TryFromV1, try_convert_parameter_attr};
+use crate::v1::{TryFromV1, TryIntoV2, try_convert_parameter_attr};
 #[cfg(feature = "core")]
 use pywr_core::parameters::{ParameterName, ParameterType};
 use pywr_schema_macros::{PywrVisitAll, skip_serializing_none};
@@ -143,7 +143,7 @@ impl ThresholdParameter {
 
                 let values_param = pywr_core::parameters::IndexedArrayParameter::new(
                     ParameterName::new(&self.meta.name, parent),
-                    p_idx.into(),
+                    p_idx.into_metric_u64_before(),
                     &metrics,
                 );
                 Ok(network.add_parameter(Box::new(values_param))?.into())
@@ -154,14 +154,14 @@ impl ThresholdParameter {
 }
 
 impl TryFromV1<ParameterThresholdParameterV1> for ThresholdParameter {
-    type Error = ComponentConversionError;
+    type Error = Box<ComponentConversionError>;
 
     fn try_from_v1(
         v1: ParameterThresholdParameterV1,
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.into_v2(parent_node, conversion_data);
+        let meta: ParameterMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
 
         let metric = try_convert_parameter_attr(&meta.name, "parameter", v1.parameter, parent_node, conversion_data)?;
         let threshold =
@@ -173,14 +173,14 @@ impl TryFromV1<ParameterThresholdParameterV1> for ThresholdParameter {
                 match values.try_into() {
                     Ok(array) => Some(array),
                     Err(v) => {
-                        return Err(ComponentConversionError::Parameter {
+                        return Err(Box::new(ComponentConversionError::Parameter {
                             name: meta.name.to_string(),
                             attr: "values".to_string(),
                             error: ConversionError::IncorrectNumberOfValues {
                                 expected: 2,
                                 found: v.len(),
                             },
-                        });
+                        }));
                     }
                 }
             }
@@ -200,14 +200,14 @@ impl TryFromV1<ParameterThresholdParameterV1> for ThresholdParameter {
 }
 
 impl TryFromV1<NodeThresholdParameterV1> for ThresholdParameter {
-    type Error = ComponentConversionError;
+    type Error = Box<ComponentConversionError>;
 
     fn try_from_v1(
         v1: NodeThresholdParameterV1,
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.into_v2(parent_node, conversion_data);
+        let meta: ParameterMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
 
         let metric = Metric::Node(NodeAttrReference::new(v1.node, None));
 
@@ -220,14 +220,14 @@ impl TryFromV1<NodeThresholdParameterV1> for ThresholdParameter {
                 match values.try_into() {
                     Ok(array) => Some(array),
                     Err(v) => {
-                        return Err(ComponentConversionError::Parameter {
+                        return Err(Box::new(ComponentConversionError::Parameter {
                             name: meta.name.to_string(),
                             attr: "values".to_string(),
                             error: ConversionError::IncorrectNumberOfValues {
                                 expected: 2,
                                 found: v.len(),
                             },
-                        });
+                        }));
                     }
                 }
             }
@@ -247,14 +247,14 @@ impl TryFromV1<NodeThresholdParameterV1> for ThresholdParameter {
 }
 
 impl TryFromV1<StorageThresholdParameterV1> for ThresholdParameter {
-    type Error = ComponentConversionError;
+    type Error = Box<ComponentConversionError>;
 
     fn try_from_v1(
         v1: StorageThresholdParameterV1,
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.into_v2(parent_node, conversion_data);
+        let meta: ParameterMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
 
         let metric = Metric::Node(NodeAttrReference::new(v1.storage_node, None));
 
@@ -264,14 +264,14 @@ impl TryFromV1<StorageThresholdParameterV1> for ThresholdParameter {
                 match values.try_into() {
                     Ok(array) => Some(array),
                     Err(v) => {
-                        return Err(ComponentConversionError::Parameter {
+                        return Err(Box::new(ComponentConversionError::Parameter {
                             name: meta.name.to_string(),
                             attr: "values".to_string(),
                             error: ConversionError::IncorrectNumberOfValues {
                                 expected: 2,
                                 found: v.len(),
                             },
-                        });
+                        }));
                     }
                 }
             }
@@ -366,7 +366,7 @@ impl MultiThresholdParameter {
                     .collect::<Result<Vec<_>, _>>()?;
                 let values_param = pywr_core::parameters::IndexedArrayParameter::new(
                     ParameterName::new(&self.meta.name, parent),
-                    p_idx.into(),
+                    p_idx.into_metric_u64_before(),
                     &metrics,
                 );
                 Ok(network.add_parameter(Box::new(values_param))?.into())
@@ -377,14 +377,14 @@ impl MultiThresholdParameter {
 }
 
 impl TryFromV1<MultiThresholdIndexParameterV1> for MultiThresholdParameter {
-    type Error = ComponentConversionError;
+    type Error = Box<ComponentConversionError>;
 
     fn try_from_v1(
         v1: MultiThresholdIndexParameterV1,
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.into_v2(parent_node, conversion_data);
+        let meta: ParameterMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
 
         let metric = Metric::Node(NodeAttrReference::new(v1.node, None));
 
@@ -407,14 +407,14 @@ impl TryFromV1<MultiThresholdIndexParameterV1> for MultiThresholdParameter {
 }
 
 impl TryFromV1<MultipleThresholdParameterIndexParameterV1> for MultiThresholdParameter {
-    type Error = ComponentConversionError;
+    type Error = Box<ComponentConversionError>;
 
     fn try_from_v1(
         v1: MultipleThresholdParameterIndexParameterV1,
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.into_v2(parent_node, conversion_data);
+        let meta: ParameterMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
 
         let metric = try_convert_parameter_attr(&meta.name, "parameter", v1.parameter, parent_node, conversion_data)?;
 

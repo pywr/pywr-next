@@ -154,6 +154,15 @@ impl Default for ClpSimplex {
     }
 }
 
+/// Ensure the Clp model is deleted when the struct goes out of scope
+impl Drop for ClpSimplex {
+    fn drop(&mut self) {
+        unsafe {
+            Clp_deleteModel(self.ptr);
+        }
+    }
+}
+
 impl ClpSimplex {
     #[allow(dead_code)]
     pub fn print(&mut self) {
@@ -370,7 +379,7 @@ impl Solver for ClpSolver {
         values: &ConstParameterValues,
         _settings: &Self::Settings,
     ) -> Result<Box<Self>, SolverSetupError> {
-        let builder = SolverBuilder::new(f64::MAX, f64::MIN);
+        let builder = SolverBuilder::new(f64::MAX, -f64::MAX);
         let built = builder.create(model, values)?;
 
         let solver = ClpSolver::from_builder(built);

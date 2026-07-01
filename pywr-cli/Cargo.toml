@@ -22,7 +22,7 @@ microlp = ["pywr-core/microlp"]
 
 [dependencies]
 anyhow = "1.0"
-clap = { version = "4.5", features = ["derive"] }
+clap = { version = "4.6", features = ["derive"] }
 
 pywr-core = { path = "../pywr-core" }
 pywr-schema = { path = "../pywr-schema" }

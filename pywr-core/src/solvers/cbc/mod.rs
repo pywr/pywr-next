@@ -43,6 +43,14 @@ impl Default for Cbc {
     }
 }
 
+impl Drop for Cbc {
+    fn drop(&mut self) {
+        unsafe {
+            Cbc_deleteModel(self.ptr);
+        }
+    }
+}
+
 impl Cbc {
     #[allow(dead_code)]
     pub fn print(&mut self) {
@@ -248,7 +256,7 @@ impl Solver for CbcSolver {
         values: &ConstParameterValues,
         _settings: &Self::Settings,
     ) -> Result<Box<Self>, SolverSetupError> {
-        let builder = SolverBuilder::new(f64::MAX, f64::MIN);
+        let builder = SolverBuilder::new(f64::MAX, -f64::MAX);
         let built = builder.create(model, values)?;
 
         let solver = CbcSolver::from_builder(built);

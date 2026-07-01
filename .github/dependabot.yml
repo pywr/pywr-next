@@ -5,6 +5,17 @@ updates:
     schedule:
       interval: "weekly"
     groups:
+      digest:
+        patterns:
+          - "digest*"
+          - "md-5*"
+          - "sha*"
+      rand:
+        patterns:
+          - "rand*"
+      strum:
+        patterns:
+          - "strum*"
       minor-patch:
         update-types:
           - "patch"

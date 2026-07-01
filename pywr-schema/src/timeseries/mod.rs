@@ -7,7 +7,7 @@ use crate::ConversionError;
 use crate::digest::Checksum;
 use crate::error::ComponentConversionError;
 use crate::parameters::ParameterMeta;
-use crate::v1::{ConversionData, IntoV2, TryFromV1};
+use crate::v1::{ConversionData, TryFromV1, TryIntoV2};
 use crate::visit::VisitPaths;
 #[cfg(feature = "core")]
 use ndarray::{Array2, ShapeError, s};
@@ -506,14 +506,14 @@ pub struct ConvertedTimeseriesReference {
 }
 
 impl TryFromV1<DataFrameParameterV1> for ConvertedTimeseriesReference {
-    type Error = ComponentConversionError;
+    type Error = Box<ComponentConversionError>;
 
     fn try_from_v1(
         v1: DataFrameParameterV1,
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.into_v2(parent_node, conversion_data);
+        let meta: ParameterMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
         let mut ts_name = meta.name.clone();
 
         if let Some(url) = v1.url {
@@ -557,13 +557,13 @@ impl TryFromV1<DataFrameParameterV1> for ConvertedTimeseriesReference {
             // ignore the original parameter's name entirely.
             ts_name = table;
         } else {
-            return Err(ComponentConversionError::Parameter {
+            return Err(Box::new(ComponentConversionError::Parameter {
                 name: meta.name,
                 attr: "url".to_string(),
                 error: ConversionError::MissingAttribute {
                     attrs: vec!["url".to_string(), "table".to_string()],
                 },
-            });
+            }));
         };
 
         // Create the reference to the timeseries data
@@ -571,13 +571,13 @@ impl TryFromV1<DataFrameParameterV1> for ConvertedTimeseriesReference {
             (Some(name), None) => Some(TimeseriesColumns::Column { name }),
             (None, Some(name)) => Some(TimeseriesColumns::Scenario { name }),
             (Some(_), Some(_)) => {
-                return Err(ComponentConversionError::Parameter {
+                return Err(Box::new(ComponentConversionError::Parameter {
                     name: meta.name.clone(),
                     attr: "column".to_string(),
                     error: ConversionError::AmbiguousAttributes {
                         attrs: vec!["column".to_string(), "scenario".to_string()],
                     },
-                });
+                }));
             }
             (None, None) => None,
         };

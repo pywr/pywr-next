@@ -7,7 +7,8 @@ use crate::nodes::{LossFactor, NodeMeta, NodeSlot};
 #[cfg(feature = "core")]
 use crate::nodes::{NodeAttribute, NodeComponent};
 use crate::parameters::{ConstantValue, Parameter};
-use crate::{node_attribute_subset_enum, node_component_subset_enum};
+use crate::v1::try_convert_node_meta;
+use crate::{mermaid, node_attribute_subset_enum, node_component_subset_enum};
 #[cfg(feature = "core")]
 use pywr_core::{
     aggregated_node::Relationship,
@@ -76,49 +77,22 @@ pub enum RoutingMethod {
 #[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
-#[doc = svgbobdoc::transform!(
 /// A link node representing a river with an optional proportional loss and routing method.
 ///
 /// With no routing method or loss this is simply a link node. With only a loss factor it
 /// creates a link node with an output node to represent the loss:
 ///
-/// ```svgbob
-///
-///             <RiverNode>.net    D
-///          .-------->L---------->*
-///      U  |
-///     -*--|
-///         !
-///         '-.-.-.-.->O
-///               <RiverNode>.loss
-///
-/// ```
+#[doc = mermaid!("doc_diagrams/river-no-routing.mmd")]
 ///
 /// With only a routing method it creates an input and output node with an aggregated node
 /// to represent the routing:
 ///
-/// ```svgbob
-///
-///
-///      U                D
-///     -*---> O    I --->*
-///
-/// ```
+#[doc = mermaid!("doc_diagrams/river-delay.mmd")]
 ///
 /// With both a loss factor and routing method it creates a link node, output node, input node
 /// and two aggregated nodes to represent the loss and routing:
 ///
-/// ```svgbob
-///
-///                            <RiverNode>.net    D
-///                         .-------->L---------->*
-///      U                  |
-///     -*---> O    I --->*-|
-///                         !
-///                         '-.-.-.-.->O
-///                                 <RiverNode>.loss
-///
-/// ```
+#[doc = mermaid!("doc_diagrams/river-delay-with-loss.mmd")]
 ///
 /// # Routing methods
 ///
@@ -134,7 +108,6 @@ pub enum RoutingMethod {
 /// The enums [`RiverNodeAttribute`] and [`RiverNodeComponent`] define the available
 /// attributes and components for this node.
 ///
-)]
 pub struct RiverNode {
     pub meta: NodeMeta,
     /// Optional local parameters.
@@ -421,7 +394,7 @@ impl RiverNode {
                     let delay_idx = network.add_parameter(Box::new(p))?;
 
                     // Apply it as a constraint on the input node.
-                    let metric: MetricF64 = delay_idx.into();
+                    let metric: MetricF64 = delay_idx.into_metric_f64_before();
                     network.set_node_max_flow(
                         self.meta.name.as_str(),
                         Self::input_sub_name(),
@@ -465,8 +438,11 @@ impl RiverNode {
 
                     // Set the relationship on the aggregated node to enforce the Muskingum routing
                     let factors = Relationship::new_coefficient_factors(
-                        &[1.0.into(), (muskingum_idx.clone(), "inflow_factor".to_string()).into()],
-                        Some((muskingum_idx, "rhs".to_string()).into()),
+                        &[
+                            1.0.into(),
+                            muskingum_idx.clone().into_metric_f64_before("inflow_factor"),
+                        ],
+                        Some(muskingum_idx.into_metric_f64_before("rhs")),
                     );
 
                     network.set_aggregated_node_relationship(
@@ -524,37 +500,37 @@ impl RiverNode {
 }
 
 impl TryFrom<LinkNodeV1> for RiverNode {
-    type Error = ComponentConversionError;
+    type Error = Box<ComponentConversionError>;
 
     fn try_from(v1: LinkNodeV1) -> Result<Self, Self::Error> {
-        let meta: NodeMeta = v1.meta.into();
+        let meta: NodeMeta = try_convert_node_meta(v1.meta)?;
 
         if v1.max_flow.is_some() {
-            return Err(ComponentConversionError::Node {
+            return Err(Box::new(ComponentConversionError::Node {
                 name: meta.name,
                 attr: "max_flow".to_string(),
                 error: ConversionError::ExtraAttribute {
                     attr: "max_flow".to_string(),
                 },
-            });
+            }));
         }
         if v1.min_flow.is_some() {
-            return Err(ComponentConversionError::Node {
+            return Err(Box::new(ComponentConversionError::Node {
                 name: meta.name,
                 attr: "min_flow".to_string(),
                 error: ConversionError::ExtraAttribute {
                     attr: "min_flow".to_string(),
                 },
-            });
+            }));
         }
         if v1.cost.is_some() {
-            return Err(ComponentConversionError::Node {
+            return Err(Box::new(ComponentConversionError::Node {
                 name: meta.name,
                 attr: "cost".to_string(),
                 error: ConversionError::ExtraAttribute {
                     attr: "cost".to_string(),
                 },
-            });
+            }));
         }
 
         let n = Self {

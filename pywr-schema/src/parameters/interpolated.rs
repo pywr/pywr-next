@@ -6,7 +6,7 @@ use crate::metric::{Metric, NodeAttrReference};
 #[cfg(feature = "core")]
 use crate::network::LoadArgs;
 use crate::parameters::{ConversionData, ParameterMeta};
-use crate::v1::{IntoV2, TryFromV1, try_convert_parameter_attr};
+use crate::v1::{TryFromV1, TryIntoV2, try_convert_parameter_attr};
 
 #[cfg(feature = "core")]
 use pywr_core::parameters::{ParameterIndex, ParameterName};
@@ -75,14 +75,14 @@ impl InterpolatedParameter {
 }
 
 impl TryFromV1<InterpolatedFlowParameterV1> for InterpolatedParameter {
-    type Error = ComponentConversionError;
+    type Error = Box<ComponentConversionError>;
 
     fn try_from_v1(
         v1: InterpolatedFlowParameterV1,
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.into_v2(parent_node, conversion_data);
+        let meta: ParameterMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
 
         // Convert the node reference to a metric
         let node_ref = NodeAttrReference {
@@ -118,13 +118,13 @@ impl TryFromV1<InterpolatedFlowParameterV1> for InterpolatedParameter {
             if let Some(kind) = interp_kwargs.get("kind") {
                 if let Some(kind_str) = kind.as_str() {
                     if kind_str != "linear" {
-                        return Err(ComponentConversionError::Parameter {
+                        return Err(Box::new(ComponentConversionError::Parameter {
                             name: meta.name.clone(),
                             attr: "interp_kwargs".to_string(),
                             error: ConversionError::UnsupportedFeature {
                                 feature: "Interpolation with `kind` other than `linear` is not supported.".to_string(),
                             },
-                        });
+                        }));
                     }
                 }
             }
@@ -141,14 +141,14 @@ impl TryFromV1<InterpolatedFlowParameterV1> for InterpolatedParameter {
 }
 
 impl TryFromV1<InterpolatedVolumeParameterV1> for InterpolatedParameter {
-    type Error = ComponentConversionError;
+    type Error = Box<ComponentConversionError>;
 
     fn try_from_v1(
         v1: InterpolatedVolumeParameterV1,
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.into_v2(parent_node, conversion_data);
+        let meta: ParameterMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
 
         // Convert the node reference to a metric
         let node_ref = NodeAttrReference {
@@ -184,13 +184,13 @@ impl TryFromV1<InterpolatedVolumeParameterV1> for InterpolatedParameter {
             if let Some(kind) = interp_kwargs.get("kind") {
                 if let Some(kind_str) = kind.as_str() {
                     if kind_str != "linear" {
-                        return Err(ComponentConversionError::Parameter {
+                        return Err(Box::new(ComponentConversionError::Parameter {
                             name: meta.name.clone(),
                             attr: "interp_kwargs".to_string(),
                             error: ConversionError::UnsupportedFeature {
                                 feature: "Interpolation with `kind` other than `linear` is not supported.".to_string(),
                             },
-                        });
+                        }));
                     }
                 }
             }

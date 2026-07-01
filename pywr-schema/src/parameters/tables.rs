@@ -6,7 +6,7 @@ use crate::network::LoadArgs;
 use crate::parameters::{ConversionData, ParameterMeta};
 #[cfg(all(feature = "core", feature = "hdf5"))]
 use crate::timeseries::subset_array2;
-use crate::v1::{IntoV2, try_convert_parameter_attr};
+use crate::v1::{TryIntoV2, try_convert_parameter_attr};
 use crate::{ComponentConversionError, TryFromV1};
 #[cfg(all(feature = "core", feature = "hdf5"))]
 use ndarray::s;
@@ -111,13 +111,13 @@ impl TablesArrayParameter {
 }
 
 impl TryFromV1<TablesArrayParameterV1> for TablesArrayParameter {
-    type Error = ComponentConversionError;
+    type Error = Box<ComponentConversionError>;
     fn try_from_v1(
         v1: TablesArrayParameterV1,
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.into_v2(parent_node, conversion_data);
+        let meta: ParameterMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
 
         let checksum = match v1.checksum {
             Some(checksum) => Some(try_convert_parameter_attr(

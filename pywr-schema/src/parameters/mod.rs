@@ -36,7 +36,7 @@ use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::network::LoadArgs;
 use crate::timeseries::ConvertedTimeseriesReference;
-use crate::v1::{ConversionData, IntoV2, TryFromV1, TryIntoV2};
+use crate::v1::{ConversionData, TryFromV1, TryIntoV2};
 use crate::visit::{VisitMetrics, VisitPaths};
 pub use aggregated::{AggregatedIndexParameter, AggregatedParameter};
 pub use asymmetric_switch::AsymmetricSwitchIndexParameter;
@@ -68,6 +68,7 @@ use pywr_v1_schema::parameters::{
 };
 pub use rolling::{RollingIndexParameter, RollingParameter};
 use schemars::JsonSchema;
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticStr};
 pub use tables::TablesArrayParameter;
@@ -79,6 +80,8 @@ pub struct ParameterMeta {
     pub name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub comment: Option<String>,
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub tags: HashMap<String, String>,
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, EnumDiscriminants, Clone, JsonSchema, Display)]
@@ -127,43 +130,47 @@ pub enum Parameter {
 
 impl Parameter {
     pub fn name(&self) -> &str {
+        self.meta().name.as_str()
+    }
+
+    pub fn meta(&self) -> &ParameterMeta {
         match self {
-            Self::Constant(p) => p.meta.name.as_str(),
-            Self::ConstantScenario(p) => p.meta.name.as_str(),
-            Self::ControlCurveInterpolated(p) => p.meta.name.as_str(),
-            Self::Aggregated(p) => p.meta.name.as_str(),
-            Self::AggregatedIndex(p) => p.meta.name.as_str(),
-            Self::AsymmetricSwitchIndex(p) => p.meta.name.as_str(),
-            Self::ControlCurvePiecewiseInterpolated(p) => p.meta.name.as_str(),
-            Self::ControlCurveIndex(p) => p.meta.name.as_str(),
-            Self::ControlCurve(p) => p.meta.name.as_str(),
-            Self::DailyProfile(p) => p.meta.name.as_str(),
-            Self::IndexedArray(p) => p.meta.name.as_str(),
-            Self::MonthlyProfile(p) => p.meta.name.as_str(),
-            Self::WeeklyProfile(p) => p.meta.name.as_str(),
-            Self::UniformDrawdownProfile(p) => p.meta.name.as_str(),
-            Self::Max(p) => p.meta.name.as_str(),
-            Self::Min(p) => p.meta.name.as_str(),
-            Self::MultiThreshold(p) => p.meta.name.as_str(),
-            Self::Negative(p) => p.meta.name.as_str(),
-            Self::Polynomial1D(p) => p.meta.name.as_str(),
-            Self::Threshold(p) => p.meta.name.as_str(),
-            Self::TablesArray(p) => p.meta.name.as_str(),
-            Self::Python(p) => p.meta.name.as_str(),
-            Self::Division(p) => p.meta.name.as_str(),
-            Self::Delay(p) => p.meta.name.as_str(),
-            Self::DelayIndex(p) => p.meta.name.as_str(),
-            Self::Offset(p) => p.meta.name.as_str(),
-            Self::DiscountFactor(p) => p.meta.name.as_str(),
-            Self::Interpolated(p) => p.meta.name.as_str(),
-            Self::HydropowerTarget(p) => p.meta.name.as_str(),
-            Self::RbfProfile(p) => p.meta.name.as_str(),
-            Self::NegativeMax(p) => p.meta.name.as_str(),
-            Self::NegativeMin(p) => p.meta.name.as_str(),
-            Self::Rolling(p) => p.meta.name.as_str(),
-            Self::RollingIndex(p) => p.meta.name.as_str(),
-            Self::Placeholder(p) => p.meta.name.as_str(),
-            Self::DiurnalProfile(p) => p.meta.name.as_str(),
+            Self::Constant(p) => &p.meta,
+            Self::ConstantScenario(p) => &p.meta,
+            Self::ControlCurveInterpolated(p) => &p.meta,
+            Self::Aggregated(p) => &p.meta,
+            Self::AggregatedIndex(p) => &p.meta,
+            Self::AsymmetricSwitchIndex(p) => &p.meta,
+            Self::ControlCurvePiecewiseInterpolated(p) => &p.meta,
+            Self::ControlCurveIndex(p) => &p.meta,
+            Self::ControlCurve(p) => &p.meta,
+            Self::DailyProfile(p) => &p.meta,
+            Self::IndexedArray(p) => &p.meta,
+            Self::MonthlyProfile(p) => &p.meta,
+            Self::WeeklyProfile(p) => &p.meta,
+            Self::UniformDrawdownProfile(p) => &p.meta,
+            Self::Max(p) => &p.meta,
+            Self::Min(p) => &p.meta,
+            Self::MultiThreshold(p) => &p.meta,
+            Self::Negative(p) => &p.meta,
+            Self::Polynomial1D(p) => &p.meta,
+            Self::Threshold(p) => &p.meta,
+            Self::TablesArray(p) => &p.meta,
+            Self::Python(p) => &p.meta,
+            Self::Division(p) => &p.meta,
+            Self::Delay(p) => &p.meta,
+            Self::DelayIndex(p) => &p.meta,
+            Self::Offset(p) => &p.meta,
+            Self::DiscountFactor(p) => &p.meta,
+            Self::Interpolated(p) => &p.meta,
+            Self::HydropowerTarget(p) => &p.meta,
+            Self::RbfProfile(p) => &p.meta,
+            Self::NegativeMax(p) => &p.meta,
+            Self::NegativeMin(p) => &p.meta,
+            Self::Rolling(p) => &p.meta,
+            Self::RollingIndex(p) => &p.meta,
+            Self::Placeholder(p) => &p.meta,
+            Self::DiurnalProfile(p) => &p.meta,
         }
     }
 
@@ -462,7 +469,7 @@ impl From<ConvertedTimeseriesReference> for ParameterOrTimeseriesRef {
 }
 
 impl TryFromV1<ParameterV1> for ParameterOrTimeseriesRef {
-    type Error = ComponentConversionError;
+    type Error = Box<ComponentConversionError>;
 
     fn try_from_v1(
         v1: ParameterV1,
@@ -507,12 +514,12 @@ impl TryFromV1<ParameterV1> for ParameterOrTimeseriesRef {
                     Parameter::MonthlyProfile(p.try_into_v2(parent_node, conversion_data)?).into()
                 }
                 CoreParameter::UniformDrawdownProfile(p) => {
-                    Parameter::UniformDrawdownProfile(p.into_v2(parent_node, conversion_data)).into()
+                    Parameter::UniformDrawdownProfile(p.try_into_v2(parent_node, conversion_data)?).into()
                 }
                 CoreParameter::Max(p) => Parameter::Max(p.try_into_v2(parent_node, conversion_data)?).into(),
                 CoreParameter::Negative(p) => Parameter::Negative(p.try_into_v2(parent_node, conversion_data)?).into(),
                 CoreParameter::Polynomial1D(p) => {
-                    Parameter::Polynomial1D(p.into_v2(parent_node, conversion_data)).into()
+                    Parameter::Polynomial1D(p.try_into_v2(parent_node, conversion_data)?).into()
                 }
                 CoreParameter::ParameterThreshold(p) => {
                     Parameter::Threshold(p.try_into_v2(parent_node, conversion_data)?).into()
@@ -545,17 +552,17 @@ impl TryFromV1<ParameterV1> for ParameterOrTimeseriesRef {
                     .into()
                 }
                 CoreParameter::Deficit(p) => {
-                    return Err(ComponentConversionError::Parameter {
+                    return Err(Box::new(ComponentConversionError::Parameter {
                         name: p.meta.and_then(|m| m.name).unwrap_or("unnamed".to_string()),
                         attr: "".to_string(),
                         error: ConversionError::DeprecatedParameter {
                             ty: "DeficitParameter".to_string(),
                             instead: "Use a derived metric instead.".to_string(),
                         },
-                    });
+                    }));
                 }
                 CoreParameter::DiscountFactor(p) => {
-                    Parameter::DiscountFactor(p.into_v2(parent_node, conversion_data)).into()
+                    Parameter::DiscountFactor(p.try_into_v2(parent_node, conversion_data)?).into()
                 }
                 CoreParameter::InterpolatedVolume(p) => {
                     Parameter::Interpolated(p.try_into_v2(parent_node, conversion_data)?).into()
@@ -570,28 +577,28 @@ impl TryFromV1<ParameterV1> for ParameterOrTimeseriesRef {
                     Parameter::WeeklyProfile(p.try_into_v2(parent_node, conversion_data)?).into()
                 }
                 CoreParameter::Storage(p) => {
-                    return Err(ComponentConversionError::Parameter {
+                    return Err(Box::new(ComponentConversionError::Parameter {
                         name: p.meta.and_then(|m| m.name).unwrap_or("unnamed".to_string()),
                         attr: "".to_string(),
                         error: ConversionError::DeprecatedParameter {
                             ty: "StorageParameter".to_string(),
                             instead: "Use a derived metric instead.".to_string(),
                         },
-                    });
+                    }));
                 }
                 CoreParameter::RollingMeanFlowNode(p) => {
                     Parameter::Rolling(p.try_into_v2(parent_node, conversion_data)?).into()
                 }
                 CoreParameter::ScenarioWrapper(_) => todo!("Implement ScenarioWrapperParameter"),
                 CoreParameter::Flow(p) => {
-                    return Err(ComponentConversionError::Parameter {
+                    return Err(Box::new(ComponentConversionError::Parameter {
                         name: p.meta.and_then(|m| m.name).unwrap_or("unnamed".to_string()),
                         attr: "".to_string(),
                         error: ConversionError::DeprecatedParameter {
                             ty: "FlowParameter".to_string(),
                             instead: "Use a derived metric instead.".to_string(),
                         },
-                    });
+                    }));
                 }
                 CoreParameter::RbfProfile(p) => {
                     Parameter::RbfProfile(p.try_into_v2(parent_node, conversion_data)?).into()
@@ -604,11 +611,11 @@ impl TryFromV1<ParameterV1> for ParameterOrTimeseriesRef {
                 }
             },
             ParameterV1::Custom(p) => {
-                return Err(ComponentConversionError::Parameter {
+                return Err(Box::new(ComponentConversionError::Parameter {
                     name: p.meta.name.unwrap_or_else(|| "unnamed".to_string()),
                     attr: "".to_string(),
                     error: ConversionError::UnrecognisedType { ty: p.ty },
-                });
+                }));
             }
         };
 

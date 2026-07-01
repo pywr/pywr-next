@@ -299,7 +299,7 @@ impl NetworkSchema {
                         NodeOrVirtualNode::Virtual(vn) => virtual_nodes.push(*vn),
                     },
                     Err(e) => {
-                        errors.push(e);
+                        errors.push(*e);
                     }
                 }
             }
@@ -340,7 +340,7 @@ impl NetworkSchema {
                         ParameterOrTimeseriesRef::Parameter(p) => parameters.push(*p),
                         ParameterOrTimeseriesRef::Timeseries(t) => timeseries_refs.push(t),
                     },
-                    Err(e) => errors.push(e),
+                    Err(e) => errors.push(*e),
                 }
             }
         }

@@ -5,7 +5,7 @@ use crate::metric::{IndexMetric, Metric, NodeAttrReference};
 #[cfg(feature = "core")]
 use crate::network::LoadArgs;
 use crate::parameters::ParameterMeta;
-use crate::v1::IntoV2;
+use crate::v1::TryIntoV2;
 use crate::{ComponentConversionError, ConversionData, ConversionError, TryFromV1};
 #[cfg(feature = "core")]
 use pywr_core::parameters::{ParameterIndex, ParameterName};
@@ -94,43 +94,43 @@ impl RollingIndexParameter {
 }
 
 impl TryFromV1<RollingMeanFlowNodeParameterV1> for RollingParameter {
-    type Error = ComponentConversionError;
+    type Error = Box<ComponentConversionError>;
 
     fn try_from_v1(
         v1: RollingMeanFlowNodeParameterV1,
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.into_v2(parent_node, conversion_data);
+        let meta: ParameterMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
 
         let window_size = match (v1.timesteps, v1.days) {
             (Some(timesteps), None) => timesteps as u64,
             (None, Some(_)) => {
-                return Err(ComponentConversionError::Parameter {
+                return Err(Box::new(ComponentConversionError::Parameter {
                         attr: "days".to_string(),
                         name: meta.name.clone(),
                         error: ConversionError::UnsupportedFeature {
                             feature: "`RollingMeanFlowNodeParameter` days window size must be specified as a number of time-steps. Use `window_size` in the updated schema, or convert a v1.x parameter with the `timesteps` attribute.".to_string(),
                         },
-                    });
+                    }));
             }
             (Some(_), Some(_)) => {
-                return Err(ComponentConversionError::Parameter {
+                return Err(Box::new(ComponentConversionError::Parameter {
                     attr: "timesteps".to_string(),
                     name: meta.name.clone(),
                     error: ConversionError::UnsupportedFeature {
                         feature: "`RollingMeanFlowNodeParameter` cannot have both `timesteps` and `days` specified. Use `window_size` in the updated schema, or correct the v1.x definition.".to_string(),
                     },
-                });
+                }));
             }
             (None, None) => {
-                return Err(ComponentConversionError::Parameter {
+                return Err(Box::new(ComponentConversionError::Parameter {
                     attr: "timesteps".to_string(),
                     name: meta.name.clone(),
                     error: ConversionError::UnsupportedFeature {
                         feature: "`RollingMeanFlowNodeParameter` must have `timesteps` specified. Use `window_size` in the updated schema.".to_string(),
                     },
-                });
+                }));
             }
         };
 
