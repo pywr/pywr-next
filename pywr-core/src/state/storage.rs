@@ -1,3 +1,4 @@
+use crate::STORAGE_MASS_BALANCE_TOLERANCE;
 use crate::state::FlowState;
 use crate::timestep::Timestep;
 use num::Zero;
@@ -84,13 +85,13 @@ impl StorageState {
     /// is more than 1E6 outside the min or max volume then this function will panic,
     /// reporting a mass-balance message.
     fn clamp(&mut self, min_volume: f64, max_volume: f64) {
-        if (self.volume - min_volume) < -1e-6 {
+        if (self.volume - min_volume) < STORAGE_MASS_BALANCE_TOLERANCE {
             panic!(
                 "Mass-balance error detected. Volume ({}) is smaller than minimum volume ({}).",
                 self.volume, min_volume
             );
         }
-        if (self.volume - max_volume) > 1e-6 {
+        if (self.volume - max_volume) > STORAGE_MASS_BALANCE_TOLERANCE {
             panic!(
                 "Mass-balance error detected. Volume ({}) is greater than maximum volume ({}).",
                 self.volume, max_volume,
