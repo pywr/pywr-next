@@ -85,7 +85,7 @@ impl StorageState {
     /// is more than 1E6 outside the min or max volume then this function will panic,
     /// reporting a mass-balance message.
     fn clamp(&mut self, min_volume: f64, max_volume: f64) {
-        if (self.volume - min_volume) < STORAGE_MASS_BALANCE_TOLERANCE {
+        if (self.volume - min_volume) < -STORAGE_MASS_BALANCE_TOLERANCE {
             panic!(
                 "Mass-balance error detected. Volume ({}) is smaller than minimum volume ({}).",
                 self.volume, min_volume
